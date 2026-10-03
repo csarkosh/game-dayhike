@@ -424,3 +424,106 @@ The plunging curl on the face (the breaker sub-project); swash, the run-up's
 sheet and the moving wet line; the lake's mirror; insects and their sound;
 surf sound (it would sit with the breaker); tide; opening the beach (the road
 wall stays); persistent whitecap streaks; the lakes' waves.
+
+## 13. As built (2026-10-03)
+
+What the build changed from the sections above, each on the branch's own
+measurement, and what the gates and the cost showed.
+
+- **§2.5.** The swell and the high tier's FFT run on the shared clock; the
+  medium tier's loop phase and the low tier's whitecap cells run on each
+  page's own clock (their speed follows the wind, which a closed form of the
+  shared seconds would make jump). Two players in one party read the sea's
+  clock within 0.03 s of each other.
+- **§4.3.** The tables are at 1 m over d, with Ψ integrated by Simpson's rule
+  at 0.25 m; the coastline row steps 12 m and reaches 5,200 m past the camera
+  along z, beyond the outermost ring. The bay's and the cove's phases differ
+  by up to about 24 rad at the shore, so the phase (Ψ, kn) blends across the
+  cove's ends by its own weight over 250 m, flat on the cove's centre line,
+  while the depth, the breaker index and the amplitude factor keep the sim's
+  60 m window; the wavevector's along-shore part carries ΔΨ·wp′. On the lobby
+  worlds the blend's added turn stays under 0.62 of the wave's own wavenumber.
+  Over dry sand the depth is held at 0.05 m, so the capped swell there is the
+  bore's few centimetres and meets the waterline continuously.
+- **§4.4.** The headland's shadow fades over a fixed 40 m, with a hard edge on
+  the ridge's own side (land).
+- **§5.** The foam's brightness and its cover are two quantities: the albedo
+  fades from 0.4 (fresh) toward 0.06 with a 4.7 s constant (0.10 at 10 s), the
+  spilling roll counting as fresh; the cover is the foam amount, a sheet on the
+  roll thinning to lace, never under 0.6 of the surface where a wave is broken.
+  The lace is thresholded at the measured quantile of its own noise, so its mean
+  cover is the amount and the far value equals the near mean. Whitecaps on every
+  tier are the Callaghan statistic over the crests: the high tier's folds were
+  dropped, since with unit choppiness the physical spectrum's Jacobian never
+  falls below 0.65 (0.4 is about five standard deviations away).
+- **§6.1.** Under a wind off the land the wind sea follows the Coastal
+  Engineering Manual's fetch law from the coastline outward (3 cm at 50 m and
+  12 cm at 1 km at 8 m/s), mixed toward the full sea as the wind turns onshore;
+  the flat near-shore cut it replaces would have left 0.85 m of chop at the
+  waterline. The wind the sea follows lags the game's wind by 60 s, so a
+  weather fade rebuilds the FFT's spectrum at most once.
+- **§6.2.** The high tier draws the loop (mode 0, then 1) until the FFT reports
+  running, and falls back to the loop if it is still compiling after 30 s of
+  drawn frames; the FFT is stepped only while a sea ring is drawn; a validation
+  error at its first dispatch marks it failed. The FFT's spectra live in storage
+  buffers. The sea's constants per world (12 components) are uniforms, not atlas
+  reads: 54 fetches a pixel on medium and high, 38 on low.
+- **§6.4.** The low tier's bump scrolls as before.
+- **§7.2 and §7.3.** The swell is summed once per vertex, not per pixel: the
+  fragment takes the swell's normal, height and envelope from two varyings and
+  builds the break, the roll and the foam's age per pixel from the interpolated
+  envelope with its own coast and profile reads. Measured per pixel, the sum
+  was the sea's cost (about 9 ns a shader lane, 8–15 ms of the open sea's frame
+  at 4K); the arrays in it were a quarter of that. The price is a normal
+  interpolated over the ring's cells (1–4 m near the camera under 50 m waves)
+  and, beyond about a kilometre, the shorter swell leaving the pixel normal
+  where a pixel already spans a wavelength; the wind sea's per-pixel normal and
+  the foam's per-pixel edge stay.
+- **§7.1.** The vertex stage slides each border vertex onto the coarser ring's
+  lattice by the terrain's blend weight and evaluates the waves once there; the
+  rings' culling boxes grow by 12 m plus a cell on every side.
+- **§7.2 and §3.** The ocean's uniforms join every water material's block, so a
+  lake's compiled stages change while its injected code and look do not; the
+  corpus holds the lakes' new stages on every tier.
+
+### Cost
+
+Measured as §10 says, GPU-bound at 3840 × 2160 against `main`, paired on fresh
+pages, on the development machine (an M4 Air; the same build on both sides of a
+pair read within 0.35 ms in the morning and about 3 ms once the machine had
+warmed, which bounds the figures below).
+
+| Tier | The cove from the pad | The open sea |
+| --- | --- | --- |
+| high (WebGPU) | +2.8 ms | +3.4 ms |
+| medium (WebGL2) | +2.1 ms | +3.9 ms |
+| low (WebGL2) | +1.3 ms | +3.0 ms |
+
+Before the swell moved to the vertex stage the open sea cost +9.6 / +16.9 /
++9.7 ms (high / medium / low) and the pad +4.7 / +7.9 / +3.6: the per-pixel
+sum was the cost, and neither its texture reads (cut by a third with no
+change) nor the wind sea's sampling nor the whitecap cells (each under 1.3 ms)
+were. The two unknowns measured first, before the shaders were built: the
+WebGPU FFT about 0.8 ms a frame, fixed; the seven rings with a vertex stage of
+the swell's reads about 2 ms at 4K.
+
+### Gates
+
+Stills at the poses of §11, the sun pinned per reading, on the high tier
+(WebGPU) with the cove's overview on every tier, taken before and after the
+swell moved to the vertex stage; every page on its tier's engine with no
+console error. Two players in one party saw the same sea (their sea clocks
+within 0.03 s).
+
+| Gate | What the stills showed | The owner's word |
+| --- | --- | --- |
+| The cove's surf | From the pad at eye height the 3 m berm hides most of the surf zone; from 18 m up the break line, the spilling crests and the lace show on every tier | passed |
+| Sets and white water | The white water lies as a sheet along the shore with lace beyond; over three minutes the larger crests come in groups | passed |
+| The headland's lee | Calmer water behind the up-swell headland | passed |
+| A calm dawn | A glassy sea under a 1.0 m swell and a 1.2 m/s wind | passed |
+| The open sea | The storm sea's whitecaps at 1.1 % coverage; the horizon smooth from a low eye after the far-sea fade | passed |
+
+The one thing turned back lies outside this work: at 18:00 and 06:00 the sky
+reads near black above a sun at the horizon while the ground and the trees
+stay gold, which is the atmosphere's own lighting at those hours and shows on
+`main` the same way.
