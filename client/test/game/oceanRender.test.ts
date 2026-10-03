@@ -9,7 +9,10 @@ import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { OCEAN_NO_TIP, createOcean, oceanTipsFor } from "../../src/game/oceanRender.js";
 import { attachWater, oceanArrayPlaceholder } from "../../src/game/waterPlugin.js";
 import { WATER_ROWS } from "../../src/game/waterShading.js";
-import { coastProfilesFor, writeCoastRow } from "../../src/game/oceanTables.js";
+import {
+  OCEAN_COAST_RECENTRE, OCEAN_COAST_SAMPLES, OCEAN_COAST_STEP, coastProfilesFor, writeCoastRow,
+} from "../../src/game/oceanTables.js";
+import { WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/game/water.js";
 import { oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
 import { windSeaAtSpeed, windSeaStateFor } from "../../src/game/oceanWindSea.js";
 import type { LoopReply } from "../../src/game/oceanLoopBake.js";
@@ -46,7 +49,7 @@ describe("the sea's waves as the water material reads them (createOcean)", () =>
     writeCoastRow(reference, coastProfilesFor(SEED), 0);
     const data = uploaded(ocean.atlas);
     expect(data.length).toBe(116480);
-    expect(reference.coastOriginZ).toBe(-2080);
+    expect(reference.coastOriginZ).toBe(-6240);
     expect(Array.from(data)).toEqual(Array.from(reference.data));
     ocean.dispose();
   }, timeLimit(30_000));
@@ -80,7 +83,7 @@ describe("the sea's waves as the water material reads them (createOcean)", () =>
       expect(binding.atlas).toBe(ocean.atlas);
       expect(binding.windDisp).toBe(ocean.windDisp);
       expect(binding.windSlope).toBe(ocean.windSlope);
-      expect(binding.coast).toEqual([-2080, 4, count, 0]);
+      expect(binding.coast).toEqual([-6240, 12, count, 0]);
       const field = oceanFieldFor(SEED, count);
       expect(binding.swell).toEqual([field.travel[0], field.travel[1], field.tp, field.hs]);
       expect(binding.tips).toEqual(oceanTipsFor(field.tips));
@@ -145,22 +148,51 @@ describe("the sea's waves as the water material reads them (createOcean)", () =>
     frame(0, 1000);
     frame(0, -1000);
     expect(upload).not.toHaveBeenCalled();
-    expect(plugin.ocean!.coast[0]).toBe(-2080);
-    // 1,200 m: the row about z = 1,200, 4,160 m long
+    expect(plugin.ocean!.coast[0]).toBe(-6240);
+    // 1,200 m: the row about z = 1,200, 12,480 m long
     frame(0, 1200);
     expect(upload).toHaveBeenCalledTimes(1);
-    expect(plugin.ocean!.coast[0]).toBe(-880);
+    expect(plugin.ocean!.coast[0]).toBe(-5040);
     const profiles = coastProfilesFor(SEED);
     const data = upload.mock.calls[0]![0] as Float32Array;
     const coastTexel = (j: number): number => data[(27 * 1040 + j) * 4] as number;
-    expect(coastTexel(0)).toBe(Math.fround(profiles.coastlineX(-880)));
-    expect(coastTexel(1039)).toBe(Math.fround(profiles.coastlineX(3276)));
+    expect(coastTexel(0)).toBe(Math.fround(profiles.coastlineX(-5040)));
+    expect(coastTexel(1039)).toBe(Math.fround(profiles.coastlineX(7428)));
     // and from there, not again until the camera is 1,000 m from 1,200
     frame(0, 2100);
     expect(upload).toHaveBeenCalledTimes(1);
     frame(0, -200);
     expect(upload).toHaveBeenCalledTimes(2);
-    expect(plugin.ocean!.coast[0]).toBe(-2280);
+    expect(plugin.ocean!.coast[0]).toBe(-6444);
+    ocean.dispose();
+  }, timeLimit(30_000));
+
+  it("keeps the coastline row past the outermost water ring's reach wherever the camera is along z", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const plugin = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
+    const ocean = createOcean(scene, SEED, "low");
+    ocean.bind(plugin);
+    // The outermost ring is 128 cells of 64 m about its origin, which lags the camera by up to two of its cells.
+    const spacing = waterRingSpacing(WATER_RING_COUNT - 1);
+    const reach = (WATER_RING_CELLS * spacing) / 2 + 2 * spacing;
+    expect(reach).toBe(4224);
+    expect([OCEAN_COAST_STEP, OCEAN_COAST_SAMPLES, OCEAN_COAST_RECENTRE]).toEqual([12, 1040, 1000]);
+    let behind = Infinity;
+    let ahead = Infinity;
+    const frame = (z: number): void => {
+      ocean.update(0, z, 1, 0.25, [1, 0], 12);
+      const first = plugin.ocean!.coast[0] as number;
+      behind = Math.min(behind, z - first);
+      ahead = Math.min(ahead, first + (OCEAN_COAST_SAMPLES - 1) * OCEAN_COAST_STEP - z);
+    };
+    // A walk out along z and back by steps that are no multiple of the row's, so the row is recentred at
+    // every remainder of its step, and the camera met at each recentre's threshold.
+    for (let z = 0; z <= 30_000; z += 7) frame(z);
+    for (let z = 30_000; z >= -30_000; z -= 7) frame(z);
+    for (let z = -30_000; z <= 0; z += 7) frame(z);
+    expect(behind).toBeGreaterThanOrEqual(4224);
+    expect(ahead).toBeGreaterThanOrEqual(4224);
     ocean.dispose();
   }, timeLimit(30_000));
 

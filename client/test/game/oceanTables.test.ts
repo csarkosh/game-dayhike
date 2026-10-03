@@ -272,14 +272,14 @@ describe("buildOceanTables", () => {
 describe("the coastline row", () => {
   it("starts half a row behind the centre snapped to its step", () => {
     const { profiles, tables } = world(SEED);
-    expect([OCEAN_COAST_STEP, OCEAN_COAST_SAMPLES]).toEqual([4, 1040]);
-    expect(tables.coastOriginZ).toBe(-2080);
+    expect([OCEAN_COAST_STEP, OCEAN_COAST_SAMPLES]).toEqual([12, 1040]);
+    expect(tables.coastOriginZ).toBe(-6240);
     writeCoastRow(tables, profiles, 1001);
-    expect(tables.coastOriginZ).toBe(-1080);
-    writeCoastRow(tables, profiles, -3);
-    expect(tables.coastOriginZ).toBe(-2084);
+    expect(tables.coastOriginZ).toBe(-5244);
+    writeCoastRow(tables, profiles, -7);
+    expect(tables.coastOriginZ).toBe(-6252);
     writeCoastRow(tables, profiles, 5123);
-    expect(tables.coastOriginZ).toBe(3044);
+    expect(tables.coastOriginZ).toBe(-1116);
   });
 
   it("holds the coastline, its slope by central difference, the cove's weight and the phase weight at each z", () => {
@@ -288,7 +288,7 @@ describe("the coastline row", () => {
       const z = tables.coastOriginZ + j * OCEAN_COAST_STEP;
       expect(texel(tables, OCEAN_ROW_COAST, j, 0)).toBe(Math.fround(profiles.coastlineX(z)));
       expect(texel(tables, OCEAN_ROW_COAST, j, 1)).toBeCloseTo(
-        (profiles.coastlineX(z + 4) - profiles.coastlineX(z - 4)) / 8, 6,
+        (profiles.coastlineX(z + 12) - profiles.coastlineX(z - 12)) / 24, 6,
       );
       expect(texel(tables, OCEAN_ROW_COAST, j, 2)).toBe(Math.fround(profiles.coveWeight(z)));
       expect(texel(tables, OCEAN_ROW_COAST, j, 3)).toBe(Math.fround(profiles.phaseWeight(z)));

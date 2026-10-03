@@ -5,9 +5,10 @@
  * holds (`OceanBinding`): what the shaders read the swell from, the same
  * tables `swellAt` reads on the CPU.
  *
- * The coastline row covers 4,160 m along z; it is written again around the
+ * The coastline row covers 12,480 m along z; it is written again around the
  * camera, and the texture uploaded, whenever the camera has moved more than
- * `OCEAN_COAST_RECENTRE` along z from where it was last written.
+ * `OCEAN_COAST_RECENTRE` along z from where it was last written, so it always
+ * reaches past the outermost water ring.
  *
  * Renderer-only; the maths is in the Babylon-free modules it reads.
  */
@@ -77,10 +78,10 @@ export function createOcean(
   const field = oceanFieldFor(seed, tier === "low" ? SWELL_COMPONENTS_LOW : SWELL_COMPONENTS);
   const profiles = coastProfilesFor(seed);
   const { tables } = field;
-  // The coastline row around z = 0, the cove's middle, whatever the field
-  // was built around: the first update moves it to the camera if it is far.
-  let coastCentreZ = 0;
-  writeCoastRow(tables, profiles, coastCentreZ);
+  const cove = coveFor(seed);
+  // The field's coastline row is about the cove's middle (`oceanFieldFor`):
+  // the first update moves it to the camera if the camera is far from there.
+  let coastCentreZ = cove.z0;
   const atlas = new RawTexture(
     tables.data,
     tables.width,
@@ -100,7 +101,6 @@ export function createOcean(
   const windSea = createWindSeaSource(scene, seed, tier, wind.startLoop, wind.startGpu);
   // The wind sea's fields turn with the wind about the cove's waterline
   // centre, where the sea is seen up close, so nothing slides there.
-  const cove = coveFor(seed);
   const binding: OceanBinding = {
     atlas,
     windDisp: placeholder,

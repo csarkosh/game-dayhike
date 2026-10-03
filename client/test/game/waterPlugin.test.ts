@@ -387,7 +387,7 @@ function testOcean(): OceanBinding {
     phases: Float32Array.from({ length: 12 }, (_, i) => i + 0.5),
     swell: [0.96, 0.28, 11, 2],
     tips: [-520, -150, -505, 160],
-    coast: [-2080, 4, 12, 0],
+    coast: [-6240, 12, 12, 0],
     wind: [0.4, 0.81, 0, 0.01],
     windDir: [0.6, -0.8, 9, 0.35],
     windStats: [0.7, 0.02, 0.03, 0.04],
@@ -494,7 +494,7 @@ describe("the sea's waves in the water plugin", () => {
     expect(bound.oceanPhase2).toEqual([8.5, 9.5, 10.5, 11.5]);
     expect(bound.oceanSwell).toEqual([0.96, 0.28, 11, 2]);
     expect(bound.oceanTips).toEqual([-520, -150, -505, 160]);
-    expect(bound.oceanCoast).toEqual([-2080, 4, 12, 0]);
+    expect(bound.oceanCoast).toEqual([-6240, 12, 12, 0]);
     expect(bound.oceanWind).toEqual([0.4, 0.81, 0, 0.01]);
     expect(bound.oceanWindDir).toEqual([0.6, -0.8, 9, 0.35]);
     expect(bound.oceanWindStats).toEqual([0.7, 0.02, 0.03, 0.04]);

@@ -61,7 +61,7 @@ describe("atlasRead and coastRead", () => {
   });
 
   it("read the coastline row by z from its origin: its four channels and the phase weight's slope to the +z side", () => {
-    for (const i of [37, 580, 640]) {
+    for (const i of [359, 540, 560]) {
       const z = t.coastOriginZ + i * OCEAN_COAST_STEP;
       const here = raw(OCEAN_ROW_COAST, i);
       const next = raw(OCEAN_ROW_COAST, i + 1);
@@ -73,14 +73,14 @@ describe("atlasRead and coastRead", () => {
       expect(mid[4]).toBe(slope);
     }
     // The flank of the cove's phase window has a slope to read: the weight falls from 1 to 0 over 385 m.
-    expect(coastRead(t, t.coastOriginZ + 580 * OCEAN_COAST_STEP)[4]).toBeLessThan(-0.0005);
+    expect(coastRead(t, t.coastOriginZ + 540 * OCEAN_COAST_STEP)[4]).toBeLessThan(-0.0005);
   });
 
   it("holds the phase weight's slope at 0 where the read is clamped, before the row's first texel", () => {
     const f = oceanFieldFor(SEED, 1);
-    writeCoastRow(f.tables, coastProfilesFor(SEED), 2280);
-    expect(f.tables.coastOriginZ).toBe(200);
-    const first = coastRead(f.tables, 200);
+    writeCoastRow(f.tables, coastProfilesFor(SEED), 6432);
+    expect(f.tables.coastOriginZ).toBe(192);
+    const first = coastRead(f.tables, 192);
     expect(first[3]).toBeGreaterThan(0.4);
     expect(first[4]).toBeLessThan(-0.001);
     const before = coastRead(f.tables, 100);
@@ -291,10 +291,11 @@ describe("swellAt", () => {
       const { z0, halfWidth } = coveFor(seed);
       let wet = 0;
       let misses = 0;
-      // On the centre line the phase weight is 1 and flat: its read there is the texel difference to the +z side, about 3e-6 per metre.
+      // On the centre line the phase weight is 1 and flat: its read there is the texel difference to the +z side,
+      // about 2e-5 per metre over the row's 12 m step.
       const centre = coastRead(field.tables, z0);
       expect(centre[3]).toBe(1);
-      expect(centre[4]).toBeGreaterThan(-0.00001);
+      expect(centre[4]).toBeGreaterThan(-0.00005);
       expect(centre[4]).toBeLessThanOrEqual(0);
       for (const end of [-1, 1]) {
         // Each end from the cove's centre line to OCEAN_PHASE_BLEND past the end.

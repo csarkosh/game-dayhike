@@ -38,8 +38,17 @@ import { SWELL_COMPONENTS, type SwellComponent } from "./oceanSwell.js";
 export const OCEAN_D_MIN = -1000;
 export const OCEAN_D_STEP = 1;
 export const OCEAN_TABLE_SAMPLES = 1040;
-/** The coastline row: OCEAN_COAST_SAMPLES texels, OCEAN_COAST_STEP m apart along z (4,160 m). */
-export const OCEAN_COAST_STEP = 4;
+/**
+ * The coastline row: OCEAN_COAST_SAMPLES texels, OCEAN_COAST_STEP m apart along
+ * z (12,480 m). Recentred whenever the camera is more than OCEAN_COAST_RECENTRE
+ * from its centre, it reaches at least 5,220 m past the camera either way, past
+ * the outermost water ring's 4,224 m (half its 8,192 m side and the 128 m its
+ * origin may lag the camera by). The coastline's warp, about 1,100 m long, is
+ * sampled some ninety times a wavelength; the cove's weight blends over 60 m,
+ * five texels, where the row's linear read is within 0.029 of its quintic; the
+ * phase weight blends over 250 m and more.
+ */
+export const OCEAN_COAST_STEP = 12;
 export const OCEAN_COAST_SAMPLES = 1040;
 /** The coastline row is recentred when the camera is this far (m) from its centre. */
 export const OCEAN_COAST_RECENTRE = 1000;

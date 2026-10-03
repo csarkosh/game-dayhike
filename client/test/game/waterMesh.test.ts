@@ -234,7 +234,7 @@ describe("createWater under NullEngine", () => {
     expect(sea.ocean ?? null).not.toBeNull();
     expect(oceanDefine(sea)).toBe(true);
     // the low tier draws the swell's eight largest components; the coastline row about z = 0
-    expect(sea.ocean!.coast).toEqual([-2080, 4, 8, 0]);
+    expect(sea.ocean!.coast).toEqual([-6240, 12, 8, 0]);
     expect(sea.ocean!.atlas.getSize()).toEqual({ width: 1040, height: 28 });
     expect(water.lakeMeshes).toHaveLength(2);
     for (const pond of water.lakeMeshes) {
