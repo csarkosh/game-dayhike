@@ -51,6 +51,7 @@
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
+#define ALPHABLEND
 #define ALPHATESTVALUE 0.4
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
@@ -88,6 +89,7 @@
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
+#define VERTEX_PULLING_INDEX_BUFFER_32BITS
 #define CLUSTLIGHT_SLICES 0
 #define CLUSTLIGHT_BATCH 0
 #define LIGHT0
@@ -239,11 +241,23 @@ vec4 waterBed;
 float waterBedTexels;
 float waterTime;
 vec2 waterWind;
+vec2 waterWindTime;
 vec2 waterScreen;
 float waterHigh;
 float waterOctaves;
 vec2 waterNearFar;
 vec2 waterSkin;
+float waterRain;
+vec4 oceanPhase0;
+vec4 oceanPhase1;
+vec4 oceanPhase2;
+vec4 oceanSwell;
+vec4 oceanTips;
+vec4 oceanCoast;
+vec4 oceanWind;
+vec4 oceanWindDir;
+vec4 oceanWindStats;
+vec4 oceanWindPivot;
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;

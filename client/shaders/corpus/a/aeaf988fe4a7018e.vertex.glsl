@@ -42,8 +42,16 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define TONEMAPPING 0
-#define IMAGEPROCESSINGPOSTPROCESS
+#define IMAGEPROCESSING
+#define VIGNETTE
+#define VIGNETTEBLENDMODEMULTIPLY
+#define TONEMAPPING 3
+#define CONTRAST
+#define COLORCURVES
+#define SAMPLER3DGREENDEPTH
+#define SAMPLER3DBGRMAP
+#define DITHER
+#define EXPOSURE
 #define PBR
 #define NUM_SAMPLES 0
 #define ALBEDODIRECTUV 0
@@ -51,6 +59,7 @@
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
+#define ALPHABLEND
 #define ALPHATESTVALUE 0.4
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
@@ -88,6 +97,7 @@
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
+#define VERTEX_PULLING_INDEX_BUFFER_32BITS
 #define CLUSTLIGHT_SLICES 0
 #define CLUSTLIGHT_BATCH 0
 #define LIGHT0
@@ -96,20 +106,21 @@
 #define DIRLIGHT1
 #define LIGHT2
 #define HEMILIGHT2
-#define LIGHTCOUNT 7
+#define LIGHTCOUNT 3
 #define MAXLIGHTCOUNT 7
-#define LIGHT3
-#define SPOTLIGHT3
-#define LIGHT4
-#define SPOTLIGHT4
-#define LIGHT5
-#define SPOTLIGHT5
-#define LIGHT6
-#define SPOTLIGHT6
 
 #define SHADER_NAME vertex:pbr
-layout(set = 1, binding = 24) uniform LeftOver {
-        vec4 vFogInfos;
+layout(set = 1, binding = 20) uniform LeftOver {
+        float exposureLinear;
+    float contrast;
+    vec2 vInverseScreenSize;
+    vec4 vignetteSettings1;
+    vec4 vignetteSettings2;
+    vec4 vCameraColorCurveNegative;
+    vec4 vCameraColorCurveNeutral;
+    vec4 vCameraColorCurvePositive;
+    float ditherIntensity;
+    vec4 vFogInfos;
     vec3 vFogColor;
 };
 
@@ -247,10 +258,23 @@ vec4 waterBed;
 float waterBedTexels;
 float waterTime;
 vec2 waterWind;
+vec2 waterWindTime;
 vec2 waterScreen;
 float waterHigh;
 float waterOctaves;
 vec2 waterNearFar;
+vec2 waterSkin;
+float waterRain;
+vec4 oceanPhase0;
+vec4 oceanPhase1;
+vec4 oceanPhase2;
+vec4 oceanSwell;
+vec4 oceanTips;
+vec4 oceanCoast;
+vec4 oceanWind;
+vec4 oceanWindDir;
+vec4 oceanWindStats;
+vec4 oceanWindPivot;
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -457,42 +481,6 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
-layout(set = 1, binding = 6) uniform Light3
-{vec4 vLightData;
-vec4 vLightDiffuse;
-vec4 vLightSpecular;
-vec4 vLightDirection;
-vec4 vLightFalloff;
-vec4 shadowsInfo;
-vec2 depthValues;
-} light3;
-layout(set = 1, binding = 7) uniform Light4
-{vec4 vLightData;
-vec4 vLightDiffuse;
-vec4 vLightSpecular;
-vec4 vLightDirection;
-vec4 vLightFalloff;
-vec4 shadowsInfo;
-vec2 depthValues;
-} light4;
-layout(set = 1, binding = 8) uniform Light5
-{vec4 vLightData;
-vec4 vLightDiffuse;
-vec4 vLightSpecular;
-vec4 vLightDirection;
-vec4 vLightFalloff;
-vec4 shadowsInfo;
-vec2 depthValues;
-} light5;
-layout(set = 1, binding = 9) uniform Light6
-{vec4 vLightData;
-vec4 vLightDiffuse;
-vec4 vLightSpecular;
-vec4 vLightDirection;
-vec4 vLightFalloff;
-vec4 shadowsInfo;
-vec2 depthValues;
-} light6;
 // Water plugin, vertex definitions: the ring's per-vertex bed depth (metres
 // of water under the vertex, from the terrain height the ring sampled), which
 // the fragment stage falls back to outside the bed height texture's square,

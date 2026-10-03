@@ -89,6 +89,7 @@
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
+#define VERTEX_PULLING_INDEX_BUFFER_32BITS
 #define CLUSTLIGHT_SLICES 0
 #define CLUSTLIGHT_BATCH 0
 #define LIGHT0
@@ -253,6 +254,16 @@ float waterOctaves;
 vec2 waterNearFar;
 vec2 waterSkin;
 float waterRain;
+vec4 oceanPhase0;
+vec4 oceanPhase1;
+vec4 oceanPhase2;
+vec4 oceanSwell;
+vec4 oceanTips;
+vec4 oceanCoast;
+vec4 oceanWind;
+vec4 oceanWindDir;
+vec4 oceanWindStats;
+vec4 oceanWindPivot;
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;

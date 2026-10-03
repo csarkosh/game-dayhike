@@ -25,7 +25,7 @@
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
 #define WATER
-#define UV1
+#define OCEAN
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -51,6 +51,7 @@
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
+#define ALPHABLEND
 #define ALPHATESTVALUE 0.4
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
@@ -64,7 +65,6 @@
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
-#define BUMP
 #define BUMPDIRECTUV 0
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
@@ -88,7 +88,6 @@
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
-#define VERTEX_PULLING_INDEX_BUFFER_32BITS
 #define CLUSTLIGHT_SLICES 0
 #define CLUSTLIGHT_BATCH 0
 #define LIGHT0
@@ -101,7 +100,7 @@
 #define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME fragment:pbr
-layout(set = 1, binding = 20) uniform LeftOver {
+layout(set = 1, binding = 24) uniform LeftOver {
         vec4 vFogInfos;
     vec3 vFogColor;
 };
@@ -115,7 +114,6 @@ vec4 glFragCoord_;
 
 #define PBR_FRAGMENT_SHADER
 #define CUSTOM_FRAGMENT_EXTENSION
-
 
 #define CUSTOM_FRAGMENT_BEGIN
 precision highp float;
@@ -253,6 +251,16 @@ float waterOctaves;
 vec2 waterNearFar;
 vec2 waterSkin;
 float waterRain;
+vec4 oceanPhase0;
+vec4 oceanPhase1;
+vec4 oceanPhase2;
+vec4 oceanSwell;
+vec4 oceanTips;
+vec4 oceanCoast;
+vec4 oceanWind;
+vec4 oceanWindDir;
+vec4 oceanWindStats;
+vec4 oceanWindPivot;
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -267,9 +275,9 @@ layout(set = 1, binding = 2) uniform Mesh
 float visibility;
 };
 #define WORLD_UBO
-layout(location = 1)  in vec3 vPositionW;
-layout(location = 2)  in vec3 vNormalW;
-layout(location = 3)  in vec3 vEnvironmentIrradiance;
+layout(location = 0)  in vec3 vPositionW;
+layout(location = 1)  in vec3 vNormalW;
+layout(location = 2)  in vec3 vEnvironmentIrradiance;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -295,12 +303,12 @@ vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
 #define sampleReflection(s,c) texture(s,c)
-layout(set = 1, binding = 7) uniform sampler reflectionSamplerSampler;
-                        layout(set = 1, binding = 6) uniform textureCube reflectionSamplerTexture;
+layout(set = 1, binding = 11) uniform sampler reflectionSamplerSampler;
+                        layout(set = 1, binding = 10) uniform textureCube reflectionSamplerTexture;
                         #define reflectionSampler samplerCube(reflectionSamplerTexture, reflectionSamplerSampler)
 #define sampleReflectionLod(s,c,l) textureLod(s,c,l)
-layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
-                        layout(set = 1, binding = 8) uniform texture2D environmentBrdfSamplerTexture;
+layout(set = 1, binding = 13) uniform sampler environmentBrdfSamplerSampler;
+                        layout(set = 1, binding = 12) uniform texture2D environmentBrdfSamplerTexture;
                         #define environmentBrdfSampler sampler2D(environmentBrdfSamplerTexture, environmentBrdfSamplerSampler)
 #define FOGMODE_NONE 0.
 #define FOGMODE_EXP 1.
@@ -309,7 +317,7 @@ layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
 #define E 2.71828
 
 
-layout(location = 4)  in vec3 vFogDistance;
+layout(location = 3)  in vec3 vFogDistance;
 float CalcFogFactor()
 {float fogCoeff=1.0;
 float fogStart=vFogInfos.y;
@@ -758,33 +766,6 @@ float environmentHorizonOcclusion(vec3 view,vec3 normal,vec3 geometricNormal) {v
 float temp=saturate(1.0+1.1*dot(reflection,geometricNormal));
 return square(temp);
 }
-vec3 perturbNormalBase(mat3 cotangentFrame,vec3 normal,float scale)
-{
-normal=normalize(normal*vec3(scale,scale,1.0));
-return normalize(cotangentFrame*normal);
-}
-vec3 perturbNormal(mat3 cotangentFrame,vec3 textureSample,float scale)
-{return perturbNormalBase(cotangentFrame,textureSample*2.0-1.0,scale);
-}
-mat3 cotangent_frame(vec3 normal,vec3 p,vec2 uv,vec2 tangentSpaceParams)
-{vec3 dp1=dFdx(p);
-vec3 dp2=(-yFactor_)*dFdy(p);
-vec2 duv1=dFdx(uv);
-vec2 duv2=(-yFactor_)*dFdy(uv);
-vec3 dp2perp=cross(dp2,normal);
-vec3 dp1perp=cross(normal,dp1);
-vec3 tangent=dp2perp*duv1.x+dp1perp*duv2.x;
-vec3 bitangent=dp2perp*duv1.y+dp1perp*duv2.y;
-tangent*=tangentSpaceParams.x;
-bitangent*=tangentSpaceParams.y;
-float det=max(dot(tangent,tangent),dot(bitangent,bitangent));
-float invmax=det==0.0 ? 0.0 : inversesqrt(det);
-return mat3(tangent*invmax,bitangent*invmax,normal);
-}
-layout(location = 0)  in vec2 vBumpUV;
-layout(set = 1, binding = 11) uniform sampler bumpSamplerSampler;
-                        layout(set = 1, binding = 10) uniform texture2D bumpSamplerTexture;
-                        #define bumpSampler sampler2D(bumpSamplerTexture, bumpSamplerSampler)
 vec3 computeFixedEquirectangularCoords(vec4 worldPos,vec3 worldNormal,vec3 direction)
 {float lon=atan(direction.z,direction.x);
 float lat=acos(direction.y);
@@ -872,8 +853,8 @@ return computeCubicCoords(worldPos,worldNormal,vEyePosition.xyz,reflectionMatrix
 // and every PBR fragment shader would fail to compile. This file lands at
 // CUSTOM_FRAGMENT_DEFINITIONS on both paths, the terrainTexture.ts precedent
 // for the same trap. getSamplers still lists atmGradient, unchanged.
-layout(set = 1, binding = 13) uniform sampler atmGradientSampler;
-                        layout(set = 1, binding = 12) uniform texture2D atmGradientTexture;
+layout(set = 1, binding = 15) uniform sampler atmGradientSampler;
+                        layout(set = 1, binding = 14) uniform texture2D atmGradientTexture;
                         #define atmGradient sampler2D(atmGradientTexture, atmGradientSampler)
 // Slope below which a ray counts as level, to keep the closed form finite.
 const float ATM_LEVEL_SLOPE = 1.0e-3;
@@ -911,18 +892,18 @@ return mix(air, lit, clamp(transmit, 0.0, 1.0));
 // shaderHygiene test enforces both.
 //
 // The literals mirror waterShading.ts and a lockstep test asserts they agree.
-layout(set = 1, binding = 15) uniform sampler waterBedHeightSampler;
-                        layout(set = 1, binding = 14) uniform texture2D waterBedHeightTexture;
+layout(set = 1, binding = 17) uniform sampler waterBedHeightSampler;
+                        layout(set = 1, binding = 16) uniform texture2D waterBedHeightTexture;
                         #define waterBedHeight sampler2D(waterBedHeightTexture, waterBedHeightSampler)
-layout(set = 1, binding = 17) uniform sampler waterSceneSampler;
-                        layout(set = 1, binding = 16) uniform texture2D waterSceneTexture;
+layout(set = 1, binding = 19) uniform sampler waterSceneSampler;
+                        layout(set = 1, binding = 18) uniform texture2D waterSceneTexture;
                         #define waterScene sampler2D(waterSceneTexture, waterSceneSampler)
-layout(set = 1, binding = 19) uniform sampler waterDepthSampler;
-                        layout(set = 1, binding = 18) uniform texture2D waterDepthTexture;
+layout(set = 1, binding = 21) uniform sampler waterDepthSampler;
+                        layout(set = 1, binding = 20) uniform texture2D waterDepthTexture;
                         #define waterDepth sampler2D(waterDepthTexture, waterDepthSampler)
-layout(location = 5)  in float vBedDepth;
+layout(location = 4)  in float vBedDepth;
 // The surface's view depth in metres, from the vertex stage.
-layout(location = 6)  in float vWaterViewDepth;
+layout(location = 5)  in float vWaterViewDepth;
 const float WATER_F0 = 0.02;
 const float WATER_HORIZON = 0.02;
 const float WATER_REFRACT = 0.02;
@@ -946,8 +927,7 @@ const float WATER_RAIN_INSET = 0.25;
 // scrolled by the shell). Returns an xz slope to add to the normal.
 vec2 waterRipple2(vec2 xz) {
 vec2 uv = xz / WATER_OCTAVE2_TILE + waterWindTime * WATER_OCTAVE2_DRIFT;
-vec3 n = texture(bumpSampler, uv).xyz * 2.0 - 1.0;
-return n.xy * WATER_OCTAVE2_WEIGHT;
+return vec2(0.0);
 }
 // Bed height under world xz from the R32F square, bilinear by hand: r32float
 // is not filterable on WebGPU and OES_texture_float_linear is not a given on
@@ -1056,6 +1036,608 @@ return waterRainLayer(xz, t, 0.0, 2.5, vec2(0.0, 0.0), 1.0, 0.0)
 + waterRainLayer(xz, t, 1.0, 3.2, vec2(0.37, 0.61), 0.85, 0.2)
 + waterRainLayer(xz, t, 2.0, 2.1, vec2(0.71, 0.13), 0.93, 0.45)
 + waterRainLayer(xz, t, 3.0, 3.8, vec2(0.19, 0.83), 1.13, 0.7);
+}
+// The sea's waves, fragment definitions, spliced after the water's own at
+// CUSTOM_FRAGMENT_DEFINITIONS. Everything here, comments too, sits under the
+// sea's define, so a lake's shader is the text it was. The samplers are
+// declared here and not in getUniforms().fragment, as the water's own are.
+//
+// COMMENT RULES: never put a semicolon inside a trailing comment on a code
+// line, and never spell a hashed preprocessor keyword in comment prose. The
+// shaderHygiene test enforces both.
+layout(set = 1, binding = 7) uniform sampler oceanAtlasSampler;
+                        layout(set = 1, binding = 6) uniform texture2D oceanAtlasTexture;
+                        #define oceanAtlas sampler2D(oceanAtlasTexture, oceanAtlasSampler)
+layout(set = 1, binding = 9) uniform sampler oceanWindDispSampler;
+                        layout(set = 1, binding = 8) uniform texture2DArray oceanWindDispTexture;
+                        #define oceanWindDisp sampler2DArray(oceanWindDispTexture, oceanWindDispSampler)
+layout(set = 1, binding = 23) uniform sampler oceanWindSlopeSampler;
+                        layout(set = 1, binding = 22) uniform texture2DArray oceanWindSlopeTexture;
+                        #define oceanWindSlope sampler2DArray(oceanWindSlopeTexture, oceanWindSlopeSampler)
+// The world xz the surface's waves are evaluated at: where the vertex stood
+// before they moved it.
+layout(location = 6)  in vec2 vOceanXZ;
+// Water plugin, the sea's surface: spliced into the definitions of both
+// stages, after the ocean's declarations (ocean.vertex.fx, ocean.fragment.fx).
+// The vertex stage displaces the rings with it and the fragment stage shades
+// with it. The swell's sum is swellAt's in oceanWaves.ts line for line: the
+// same atlas rows, the same reads between texel centres, the same blend of
+// the bay and the cove (the phase by its own weight along the coast, the
+// depth and the rest by the cove's), the same cap, the same scale of
+// steepness, the same foam.
+//
+// COMMENT RULES: never put a semicolon inside a trailing comment on a code
+// line, and never spell a hashed preprocessor keyword in comment prose. The
+// shaderHygiene test enforces both.
+//
+// The literals mirror oceanPhysics.ts, oceanSwell.ts, oceanTables.ts,
+// oceanWaves.ts, oceanSpectrum.ts, oceanWindSea.ts, water.ts and
+// waterShading.ts, and lockstep tests assert they agree. Every read is at
+// level 0, which the atlas's only level is: a read at a fixed level needs no
+// derivatives, so it is legal in any control flow on WebGPU, in the vertex
+// stage and the fragment stage alike.
+const float OCEAN_G = 9.81;
+const float OCEAN_TWO_PI = 6.283185307179586;
+const float OCEAN_D_MIN = -1000.0;
+const float OCEAN_D_STEP = 1.0;
+const float OCEAN_TABLE_SAMPLES = 1040.0;
+const float OCEAN_ATLAS_ROWS = 28.0;
+const float OCEAN_ROW_BAY_PROFILE = 0.0;
+const float OCEAN_ROW_COVE_PROFILE = 1.0;
+const float OCEAN_ROW_BAY_FIRST = 2.0;
+const float OCEAN_ROW_COVE_FIRST = 14.0;
+const float OCEAN_ROW_COMPONENTS = 26.0;
+const float OCEAN_ROW_COAST = 27.0;
+const float OCEAN_DRY_DEPTH = 0.05;
+const float WEGGEL_GAMMA_MIN = 0.78;
+const float WEGGEL_GAMMA_MAX = 1.56;
+const float SWELL_Q_SUM_MAX = 0.9;
+const float OCEAN_BORE_RATIO = 0.42;
+const float OCEAN_BREAK_FULL = 1.5;
+const float OCEAN_BREAK_FOAM_LO = 1.0;
+const float OCEAN_BREAK_FOAM_HI = 1.3;
+const float OCEAN_FOAM_LIFE = 20.0;
+const float OCEAN_ROLL_WIDTH = 0.6;
+const float OCEAN_INNER_FOAM = 0.5;
+const float SHELTER_SWELL = 0.3;
+const float SHELTER_CHOP = 0.15;
+const float SHELTER_WIDTH = 40.0;
+// A drawn wave keeps all of its share while its phase turns by at most a
+// quarter turn over one step of the drawing (four steps a wavelength), and
+// none of it from a half turn (two steps), where it would alias.
+const float OCEAN_RESOLVE_PHASE_LO = 1.5707963267948966;
+const float OCEAN_RESOLVE_PHASE_HI = 3.141592653589793;
+// The finest ring's spacing, and how many of a ring's cells lie between the
+// eye and the ring's inner edge (a quarter of its side).
+const float OCEAN_RING_BASE = 1.0;
+const float OCEAN_RING_REACH = 32.0;
+// One texel of the atlas, at its centre: the atlas is sampled nearest.
+vec4 oceanAtlasTexel(float row, float column) {
+return textureLod(oceanAtlas, vec2((column + 0.5) / OCEAN_TABLE_SAMPLES, (row + 0.5) / OCEAN_ATLAS_ROWS), 0.0);
+}
+// A row read at a fractional column, as atlasRead in oceanWaves.ts reads it:
+// the column held to the table, linear between the two nearest texels.
+vec4 oceanAtlasRead(float row, float column) {
+float c = clamp(column, 0.0, OCEAN_TABLE_SAMPLES - 1.0);
+float i0 = floor(c);
+vec4 a = oceanAtlasTexel(row, i0);
+vec4 b = oceanAtlasTexel(row, min(i0 + 1.0, OCEAN_TABLE_SAMPLES - 1.0));
+return a + (b - a) * (c - i0);
+}
+// A row over d, the distance from the coastline (negative at sea), at d.
+vec4 oceanAtlasRow(float row, float d) {
+return oceanAtlasRead(row, (d - OCEAN_D_MIN) / OCEAN_D_STEP);
+}
+// The coastline's row at z, as coastRead has it: x the coastline's x, y its
+// slope along z, z the cove's weight and w the phase weight, each the linear
+// read of the row's channel. phaseDz is the phase weight's slope along z: the
+// difference of the two texels the read mixes over the row's step, the
+// derivative of the linear read exactly, and 0 where the column is below the
+// row. Both texels are read whatever the column, the select is on values. The
+// row starts at oceanCoast.x and steps oceanCoast.y metres a texel. Named
+// apart from the oceanCoast uniform, which shares its scope.
+vec4 oceanCoastAt(float z, out float phaseDz) {
+float column = (z - oceanCoast.x) / oceanCoast.y;
+float c = clamp(column, 0.0, OCEAN_TABLE_SAMPLES - 1.0);
+float i0 = floor(c);
+vec4 a = oceanAtlasTexel(OCEAN_ROW_COAST, i0);
+vec4 b = oceanAtlasTexel(OCEAN_ROW_COAST, min(i0 + 1.0, OCEAN_TABLE_SAMPLES - 1.0));
+phaseDz = column < 0.0 ? 0.0 : (b.w - a.w) / oceanCoast.y;
+return a + (b - a) * (c - i0);
+}
+// One headland's shadow at p, as shelterAt has it: the share of the height
+// kept, keep deep in the lee and 1 outside it. The lee lies downstream of the
+// tip, on the ridge's side the swell's along-shore travel points to, and past
+// the swell's line through the tip, fading in over SHELTER_WIDTH metres.
+float oceanShelterTip(vec2 p, vec2 tip, float keep) {
+vec2 u = oceanSwell.xy;
+vec2 r = p - tip;
+float side = u.y >= 0.0 ? 1.0 : -1.0;
+float on = step(0.0, dot(u, r)) * step(0.0, r.y * side);
+float lambda = -(u.x * r.y - u.y * r.x) * side;
+return 1.0 - (1.0 - keep) * smoothstep(0.0, SHELTER_WIDTH, lambda) * on;
+}
+// Both headlands' shelter at p, keep being SHELTER_SWELL or SHELTER_CHOP.
+float oceanShelter(vec2 p, float keep) {
+return oceanShelterTip(p, oceanTips.xy, keep) * oceanShelterTip(p, oceanTips.zw, keep);
+}
+// The swell at the undisplaced point p: disp its displacement (x, height, z),
+// normal its Gerstner normal, foam (foam, B, foamAge, depth) and drawn the
+// slope variance its drawn waves carry. dpx and dpy are how far p moves over
+// one step of the drawing, a pixel or a ring's cells: a component fades out
+// of what is drawn as its phase turns by more than a quarter turn a step,
+// gone at a half turn. With both zero nothing fades and the sum is exactly
+// swellAt's. The envelope, the break and the foam are the whole swell's and
+// never fade. The loops run to a constant 12 and stop at the count, a uniform.
+void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, out vec4 foam, out float drawn) {
+float phaseDz;
+vec4 coast = oceanCoastAt(p.y, phaseDz);
+float d = p.x - coast.x;
+float column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
+  // Seaward of the table each phase runs on as the plane wave it is there.
+float deep = min(d - OCEAN_D_MIN, 0.0);
+vec4 bay = oceanAtlasRead(OCEAN_ROW_BAY_PROFILE, column);
+vec4 cove = oceanAtlasRead(OCEAN_ROW_COVE_PROFILE, column);
+float h = bay.x + (cove.x - bay.x) * coast.z;
+float a = bay.y + (cove.y - bay.y) * coast.z;
+float b = bay.z + (cove.z - bay.z) * coast.z;
+float shelter = oceanShelter(p, SHELTER_SWELL);
+float theta[12];
+theta[0] = oceanPhase0.x;
+theta[1] = oceanPhase0.y;
+theta[2] = oceanPhase0.z;
+theta[3] = oceanPhase0.w;
+theta[4] = oceanPhase1.x;
+theta[5] = oceanPhase1.y;
+theta[6] = oceanPhase1.z;
+theta[7] = oceanPhase1.w;
+theta[8] = oceanPhase2.x;
+theta[9] = oceanPhase2.y;
+theta[10] = oceanPhase2.z;
+theta[11] = oceanPhase2.w;
+float phi[12];
+float amp[12];
+float q0[12];
+vec2 kv[12];
+vec2 env = vec2(0.0);
+for (int c = 0;
+c < 12;
+c++) {
+float fc = float(c);
+if (fc >= oceanCoast.z) break;
+vec4 k = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc);
+vec4 rb = oceanAtlasRead(OCEAN_ROW_BAY_FIRST + fc, column);
+vec4 rc = oceanAtlasRead(OCEAN_ROW_COVE_FIRST + fc, column);
+    // The phase and its onshore wavenumber blend by the phase weight, the
+    // amplitude factor by the cove's. The wavevector's z part carries the
+    // coastline's turn and what the phase weight's change along z adds.
+float dpsi = rc.x - rb.x;
+float psi = rb.x + dpsi * coast.w + k.x * deep;
+float kn = rb.y + (rc.y - rb.y) * coast.w;
+float shoal = rb.z + (rc.z - rb.z) * coast.z;
+phi[c] = psi + k.x * coast.x + k.y * p.y + theta[c];
+kv[c] = vec2(kn, k.y + (k.x - kn) * coast.y + dpsi * phaseDz);
+amp[c] = k.w * shoal * shelter;
+q0[c] = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc + 1.0).x;
+env += amp[c] * vec2(cos(phi[c]), sin(phi[c]));
+}
+float envelope = length(env);
+float unbroken = 2.0 * envelope;
+float crestPhase = envelope > 0.0 ? atan(env.y, env.x) : 0.0;
+  // No dry branch: over sand the depth is held at OCEAN_DRY_DEPTH, so the
+  // swell there is the bore's few centimetres.
+float hc = max(h, OCEAN_DRY_DEPTH);
+float gamma = clamp(b - a * unbroken / (OCEAN_G * oceanSwell.z * oceanSwell.z), WEGGEL_GAMMA_MIN, WEGGEL_GAMMA_MAX);
+float ratio = unbroken / (gamma * hc);
+float scale = 1.0;
+if (ratio > 1.0) {
+float cap = gamma + (OCEAN_BORE_RATIO - gamma) * smoothstep(1.0, OCEAN_BREAK_FULL, ratio);
+scale = hc * cap / max(unbroken, 1.0e-6);
+}
+float breaking = smoothstep(OCEAN_BREAK_FOAM_LO, OCEAN_BREAK_FOAM_HI, ratio);
+float steepness = 0.0;
+for (int c = 0;
+c < 12;
+c++) {
+if (float(c) >= oceanCoast.z) break;
+amp[c] *= scale;
+steepness += q0[c] * length(kv[c]) * amp[c];
+}
+float s = min(1.0, SWELL_Q_SUM_MAX / max(steepness, 1.0e-6));
+float height = 0.0;
+vec2 across = vec2(0.0);
+vec2 slope = vec2(0.0);
+float fold = 0.0;
+drawn = 0.0;
+for (int c = 0;
+c < 12;
+c++) {
+if (float(c) >= oceanCoast.z) break;
+float kmag = length(kv[c]);
+float turn = max(abs(dot(dpx, kv[c])), abs(dot(dpy, kv[c])));
+float A = amp[c] * (1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, turn));
+float Q = q0[c] * s;
+float sn = sin(phi[c]);
+float cs = cos(phi[c]);
+height += A * cs;
+across -= Q * A * kv[c] * sn / kmag;
+slope += A * kv[c] * sn;
+fold += Q * A * kmag * cs;
+drawn += 0.5 * (A * kmag) * (A * kmag);
+}
+disp = vec3(across.x, height, across.y);
+normal = normalize(vec3(slope.x, 1.0 - fold, slope.y));
+float foamAge = mod(-crestPhase, OCEAN_TWO_PI) / (OCEAN_TWO_PI / oceanSwell.z);
+float roll = breaking * (1.0 - smoothstep(0.0, OCEAN_ROLL_WIDTH, mod(crestPhase, OCEAN_TWO_PI)));
+float trailing = breaking * exp(-foamAge / OCEAN_FOAM_LIFE);
+foam = vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);
+}
+// The swell at p as swellAt has it, nothing faded.
+void oceanSwellEval(vec2 p, out vec3 disp, out vec3 normal, out vec4 foam) {
+float drawn;
+oceanSwellSum(p, vec2(0.0), vec2(0.0), disp, normal, foam, drawn);
+}
+// The spacing of the ring that draws p, from p's distance to the eye: a ring
+// of spacing s lies from 32 s to 64 s from the eye, so this is the ring's own
+// spacing at its inner edge and the next ring's at its outer. It depends on
+// the point alone, so two rings drawing one point displace it alike.
+float oceanRingCell(vec2 p) {
+vec2 r = abs(p - vEyePosition.xz);
+return max(OCEAN_RING_BASE, max(r.x, r.y) / OCEAN_RING_REACH);
+}
+// The wind sea's fields: the medium tier's loop, LOOP_FRAMES frames of
+// LOOP_N texels a side over LOOP_SIZE metres at WIND_SEA_U_REF, and the high
+// tier's three cascades, FFT_N texels a side over FFT_CASCADE_ metres. Both
+// are made with the wind along +x and turned to the wind here.
+const float LOOP_N = 128.0;
+const float LOOP_SIZE = 60.0;
+const float LOOP_FRAMES = 64.0;
+const float LOOP_SECONDS = 20.0;
+const float FFT_N = 256.0;
+const float FFT_CASCADE_0 = 1000.0;
+const float FFT_CASCADE_1 = 150.0;
+const float FFT_CASCADE_2 = 25.0;
+// The loop's least scale, the wind's floor's: (0.5 / 10) squared.
+const float OCEAN_LOOP_SCALE_MIN = 0.0025;
+// A ring displaces a field while its cells are at most a sixteenth of the
+// field's tile, and none of it from an eighth.
+const float OCEAN_WIND_TILE_CELLS = 16.0;
+// The wind sea off the land: over a fetch X metres of water the fetch law
+// gives Hs = 0.0016 sqrt(g X / U^2) U^2 / g, which over the fully developed
+// height is OCEAN_FETCH_RATIO sqrt(g X) / U, the wind's speed U held to at
+// least WIND_SEA_U_FLOOR.
+const float OCEAN_FETCH_RATIO = 0.005714285714285714;
+const float WIND_SEA_U_FLOOR = 0.5;
+// The share of the wind sea's fully developed height (oceanWind.x) at p, as
+// windSeaShare in oceanWindSea.ts has it: under a wind off the land the fetch
+// law's share for the water the wind has crossed since the coastline, none at
+// the waterline and more with the distance out, mixed toward the whole sea by
+// how onshore the wind blows (the onshore weight, oceanWindDir.w).
+float oceanWindAmp(vec2 p) {
+float phaseDz;
+float fetch = max(oceanCoastAt(p.y, phaseDz).x - p.x, 0.0);
+float share = min(1.0, OCEAN_FETCH_RATIO * sqrt(OCEAN_G * fetch) / max(oceanWindDir.z, WIND_SEA_U_FLOOR));
+return share + (1.0 - share) * oceanWindDir.w;
+}
+// p in the wind's frame: x down the wind, z across it, about the pivot
+// (oceanWindPivot.xy, the cove's waterline centre). As the wind turns, the
+// fields turn about that point, where the sea is seen up close, so nothing
+// slides there; a point r metres off slides at r times the wind's turn.
+vec2 oceanWindFrame(vec2 p) {
+vec2 d = oceanWindDir.xy;
+vec2 r = p - oceanWindPivot.xy;
+return vec2(dot(r, d), d.x * r.y - d.y * r.x);
+}
+// A vector of the wind's frame turned back into the world's.
+vec2 oceanFromWind(vec2 v) {
+vec2 d = oceanWindDir.xy;
+return vec2(v.x * d.x - v.y * d.y, v.x * d.y + v.y * d.x);
+}
+// The loop's tile in metres at this wind: LOOP_SIZE times the loop's scale.
+float oceanLoopSize() {
+return LOOP_SIZE * max(oceanWind.y, OCEAN_LOOP_SCALE_MIN);
+}
+// The loop's (height, dx, dz) at uv as baked, between the two frames about
+// the loop's time (oceanWind.z, already run at the wind's rate and folded).
+vec3 oceanLoopRead(vec2 uv) {
+float f = oceanWind.z / LOOP_SECONDS * LOOP_FRAMES;
+float f0 = floor(f);
+vec3 a = textureLod(oceanWindDisp, vec3(uv, f0), 0.0).xyz;
+vec3 b = textureLod(oceanWindDisp, vec3(uv, mod(f0 + 1.0, LOOP_FRAMES)), 0.0).xyz;
+return a + (b - a) * (f - f0);
+}
+// The share of a field size metres across that a ring of cell metres displaces.
+float oceanWindRingKeep(float size, float cell) {
+return 1.0 - smoothstep(1.0, 2.0, OCEAN_WIND_TILE_CELLS * cell / size);
+}
+// The wind sea's displacement (x, height, z) at p as its field draws it,
+// each field faded on a ring too coarse for it (a cell of 0 fades nothing):
+// the high tier's three cascades summed, the medium tier's loop scaled to the
+// wind, nothing on the low tier. Not yet cut by the shore. The tier is a
+// uniform (oceanCoast.w), and every read is at level 0.
+vec3 oceanWindDisplaceAt(vec2 p, float cell) {
+vec2 w = oceanWindFrame(p);
+vec3 t = vec3(0.0);
+if (oceanCoast.w > 1.5) {
+t = textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_0, 0.0), 0.0).xyz * oceanWindRingKeep(FFT_CASCADE_0, cell)
++ textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_1, 1.0), 0.0).xyz * oceanWindRingKeep(FFT_CASCADE_1, cell)
++ textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_2, 2.0), 0.0).xyz * oceanWindRingKeep(FFT_CASCADE_2, cell);
+} else if (oceanCoast.w > 0.5) {
+float size = oceanLoopSize();
+t = oceanLoopRead(w / size) * (size / LOOP_SIZE) * oceanWindRingKeep(size, cell);
+}
+vec2 across = oceanFromWind(t.yz);
+return vec3(across.x, t.x, across.y);
+}
+// The wind sea's displacement at p, nothing faded.
+vec3 oceanWindDisplace(vec2 p) {
+return oceanWindDisplaceAt(p, 0.0);
+}
+// The sea's displacement of a ring's vertex at p: a swell component under four
+// of the ring's cells a wavelength, or a wind sea field a ring too coarse
+// for, is left to the pixels' normal, so no ring aliases it. The wind sea is
+// its share here, the fetch's off the land, and dies shoreward of the break,
+// where the broken waves eat it, and in a headland's lee.
+vec3 oceanDisplace(vec2 p) {
+float cell = oceanRingCell(p);
+vec3 disp;
+vec3 normal;
+vec4 foam;
+float drawn;
+oceanSwellSum(p, vec2(2.0 * cell, 0.0), vec2(0.0, 2.0 * cell), disp, normal, foam, drawn);
+float chop = oceanWindAmp(p) * (1.0 - foam.y) * oceanShelter(p, SHELTER_CHOP);
+return disp + oceanWindDisplaceAt(p, cell) * chop;
+}
+// Water plugin, the sea's shading: fragment definitions spliced after the
+// sea's surface (oceanSurface.fx), for the code under OCEAN in
+// waterLights.fragment.fx, waterCompose.fragment.fx and the roughness line.
+//
+// COMMENT RULES: never put a semicolon inside a trailing comment on a code
+// line, and never spell a hashed preprocessor keyword in comment prose. The
+// shaderHygiene test enforces both.
+//
+// The literals mirror waterShading.ts and a lockstep test asserts they agree.
+// Cox and Munk's slope variance, A + B U, and the least the sea keeps for its
+// roughness however much the drawn waves carry: half the calm intercept, so
+// a glassy sea's glint stays wider than a pixel.
+const float WATER_COX_MUNK_A = 0.003;
+const float WATER_COX_MUNK_B = 0.00512;
+const float OCEAN_SLOPE_VAR_FLOOR = 0.0015;
+// The slope variance the roughness carries: Cox and Munk's for the wind sea's
+// wind, scaled by the shelter, less the variance the drawn waves already put
+// in the normal.
+float oceanUndrawnVariance(float u10, float shelter, float drawn) {
+return max((WATER_COX_MUNK_A + WATER_COX_MUNK_B * u10) * shelter - drawn, OCEAN_SLOPE_VAR_FLOOR);
+}
+// The white water's look, two things apart. A foam's brightness, its albedo, is
+// OCEAN_FOAM_ALBEDO when fresh and falls toward OCEAN_FOAM_ALBEDO_OLD with the
+// time since its crest, by a factor e every OCEAN_FOAM_FADE seconds (4.7, which
+// puts it at 0.1 ten seconds on: spec 5's fresh foam reflecting about 40 % and
+// old foam 3 to 10 %, near the 3.85 s laboratory decay). Its cover,
+// the share of the surface it whitens, thins from a sheet to a lace with the
+// foam's amount, which itself thins over OCEAN_FOAM_LIFE, down to the inner
+// surf's floor: where the broken swell renews the foam every period,
+// OCEAN_INNER_COVER of the surface stays in foam, weighted by how broken the
+// swell is (foam over 0.35 to 0.55 of the surf zone on average and nearly all
+// of its inner part). The lace's cell (m), its drift along the swell's travel
+// (m/s) and its edge's softness.
+const float OCEAN_FOAM_ALBEDO = 0.4;
+const float OCEAN_FOAM_ALBEDO_OLD = 0.06;
+const float OCEAN_FOAM_FADE = 4.7;
+const float OCEAN_INNER_COVER = 0.6;
+const float OCEAN_LACE_TILE = 3.0;
+const float OCEAN_LACE_DRIFT = 0.4;
+const float OCEAN_LACE_SOFT = 0.06;
+// The lace's noise: the coarse octave's weight (the fine octave has the rest),
+// the fine octave's cell as a fraction of the coarse one's, and its shift. The
+// level a given cover lies above, for covers from none to all: a polynomial in
+// the cover's square root, which fits the noise's top tail, and one in the
+// fourth root of what the cover leaves, which fits its bottom, fitted to the
+// noise's measured quantiles (error under 0.002 in cover, with the soft edge
+// centred on it). And the cover under which the lace is held back, so none
+// shows where there is no foam.
+const float OCEAN_LACE_WEIGHT = 0.65;
+const float OCEAN_LACE_FINE = 0.37;
+const float OCEAN_LACE_FINE_SHIFT = 19.0;
+const float OCEAN_LACE_FIT_A = 0.4334;
+const float OCEAN_LACE_FIT_B = -0.1923;
+const float OCEAN_LACE_FIT_C = 0.1369;
+const float OCEAN_LACE_FIT_D = 0.5144;
+const float OCEAN_LACE_FIT_E = 0.1083;
+const float OCEAN_LACE_ONSET = 0.01;
+// A pattern is drawn whole while a pixel spans under a tenth of its size and
+// has faded to its mean by two fifths of it.
+const float OCEAN_DETAIL_LO = 0.1;
+const float OCEAN_DETAIL_HI = 0.4;
+// The whitecaps where no wind sea is drawn: a cap a cell (m), each cell's
+// cycle (s), a cap's radius and its centre's least inset (in cells), the
+// cells' drift down the wind (m/s), the cover a cell gives when its cap fires
+// every cycle (its area's share times its mean brightness), and the cycles
+// after which the hashed pattern of which caps fire repeats.
+const float OCEAN_CAP_CELL = 5.0;
+const float OCEAN_CAP_PERIOD = 5.0;
+const float OCEAN_CAP_RADIUS = 0.3;
+const float OCEAN_CAP_INSET = 0.3;
+const float OCEAN_CAP_DRIFT = 2.0;
+const float OCEAN_CAP_SHARE = 0.1028;
+const float OCEAN_CAP_CYCLES = 97.0;
+// The whitecaps on a drawn wind sea: their soft edge, in standard deviations
+// of its height.
+const float OCEAN_CAP_SOFT = 0.4;
+// The foam's lace at p: two octaves of ridged noise, near 1 along the lines
+// of a net, drifting with the swell's travel and offset by the world's seed
+// (the sea's waterSkin.y, its skin itself off).
+float oceanLace(vec2 p) {
+vec2 q = p + waterSkin.y - oceanSwell.xy * (OCEAN_LACE_DRIFT * waterTime);
+float a = 1.0 - abs(2.0 * waterSkinNoise(q / OCEAN_LACE_TILE) - 1.0);
+float b = 1.0 - abs(2.0 * waterSkinNoise(q / (OCEAN_LACE_FINE * OCEAN_LACE_TILE) + OCEAN_LACE_FINE_SHIFT) - 1.0);
+return OCEAN_LACE_WEIGHT * a + (1.0 - OCEAN_LACE_WEIGHT) * b;
+}
+// The age the foam's look goes by: the time since the crest passed, except on
+// the spilling roll at the crest's front face, where the swell's age has
+// wrapped to nearly a whole period and the foam is fresh.
+float oceanFoamLookAge(float foamAge) {
+float ahead = OCEAN_TWO_PI - foamAge * (OCEAN_TWO_PI / oceanSwell.z);
+return foamAge * smoothstep(0.0, OCEAN_ROLL_WIDTH, ahead);
+}
+// The share of the surface a foam covers on average: the foam's amount, a
+// sheet at the roll and thinning with the time since the crest, or the inner
+// surf's floor, its breaking weight times OCEAN_INNER_COVER, whichever is the
+// more. The inner surf's foam is renewed by every bore, so the floor does not
+// thin with age.
+float oceanFoamShare(float foam, float breaking) {
+return max(foam, breaking * OCEAN_INNER_COVER);
+}
+// The lace's value that a share of the surface lies above: the quantile at
+// one less the share, in closed form.
+float oceanLaceLevel(float share) {
+float c = clamp(share, 0.0, 1.0);
+float s = sqrt(c);
+float p = 1.0 - sqrt(sqrt(1.0 - c));
+return 1.0 - s * (OCEAN_LACE_FIT_A + s * (OCEAN_LACE_FIT_B + s * OCEAN_LACE_FIT_C)) - p * (OCEAN_LACE_FIT_D + p * OCEAN_LACE_FIT_E);
+}
+// The share of the surface the foam covers: the lace above the level that
+// leaves the foam's share of it, so the mean cover is that share, a sheet when
+// the foam is full and a net of thinning lines as it thins. Where a lace cell
+// spans under a few pixels the share stands in for it, so the net never
+// shimmers and the surf keeps its brightness across the distance.
+float oceanFoamCover(vec2 p, float foam, float breaking, float pixel) {
+float share = oceanFoamShare(foam, breaking);
+float level = oceanLaceLevel(share);
+float lace = smoothstep(level - 0.5 * OCEAN_LACE_SOFT, level + 0.5 * OCEAN_LACE_SOFT, oceanLace(p)) * smoothstep(0.0, OCEAN_LACE_ONSET, share);
+return mix(lace, share, smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / OCEAN_LACE_TILE));
+}
+// The foam's albedo by its age: fresh foam's, falling to old foam's.
+float oceanFoamWhite(float lookAge) {
+return mix(OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_ALBEDO, exp(-lookAge / OCEAN_FOAM_FADE));
+}
+// What cuts the whitecaps at p as it cuts the chop: a headland's lee, and
+// share, the wind sea's share of its fully developed height at p
+// (oceanWindAmp), which is the fetch's near shore under a wind off the land.
+float oceanCapDamp(vec2 p, float share) {
+return oceanShelter(p, SHELTER_CHOP) * min(share, 1.0);
+}
+// The whitecaps' coverage at p: Callaghan's for the wind (oceanWind.w), cut
+// as the chop is, share the wind sea's share at p.
+float oceanCapCoverage(vec2 p, float share) {
+return oceanWind.w * oceanCapDamp(p, share);
+}
+// How many standard deviations above its mean a Gaussian sea's height stands
+// over the coverage's share of the surface: Abramowitz and Stegun's 26.2.23,
+// within 4.5e-4.
+float oceanCapThreshold(float coverage) {
+float s = sqrt(-2.0 * log(clamp(coverage, 1.0e-6, 0.5)));
+return s - (2.515517 + 0.802853 * s + 0.010328 * s * s) / (1.0 + 1.432788 * s + 0.189269 * s * s + 0.001308 * s * s * s);
+}
+// A whitecap on a drawn wind sea whose height here is crest standard
+// deviations above its mean, coverage the whitecaps' coverage here
+// (oceanCapCoverage): white over the coverage's top share of the crests, so
+// the caps cover what Callaghan's fraction says and flash and fade as each
+// crest rises through the threshold and falls back.
+float oceanWhitecap(float coverage, float crest) {
+float t = oceanCapThreshold(coverage);
+return smoothstep(t - 0.5 * OCEAN_CAP_SOFT, t + 0.5 * OCEAN_CAP_SOFT, crest) * step(1.0e-6, coverage);
+}
+// Whether a cell's cap fires in cycle k, 1 or 0: its hash, drawn afresh every
+// cycle by a shift of the cell that is itself hashed from the cycle, so no two
+// cycles share a pattern or a neighbour's. It fires only while the hash is
+// under the chance, so a chance of none never fires. The cycle counts from 0
+// to OCEAN_CAP_CYCLES.
+float oceanCapFire(vec2 h, float k, float chance) {
+float n = mod(k, OCEAN_CAP_CYCLES);
+vec2 shift = vec2(waterSkinHash(vec2(n, 31.0)), waterSkinHash(vec2(n, 77.0))) * 512.0;
+return 1.0 - step(chance, waterSkinHash(h + shift));
+}
+// Whitecaps where no wind sea is drawn, the same coverage by construction: a
+// cap a cell, its centre and its cycle's phase hashed from the cell (folded
+// to 512, as the rain's rings are), the cells drifting down the wind. In each
+// cycle the cap fires with the chance coverage over OCEAN_CAP_SHARE, the
+// coverage taken at the cap's centre so a lee's gradient never cuts a cap,
+// flashes white and fades through the cycle. The clock folds by
+// OCEAN_CAP_CYCLES periods, the pattern's own repeat, so no cycle is ever cut
+// short. Where a cap spans under a few pixels the coverage stands in for it.
+// share is the wind sea's share at p, the cap's centre taking its own.
+float oceanCapCells(vec2 p, float pixel, float share) {
+vec2 q = (p + waterSkin.y - waterWindTime * OCEAN_CAP_DRIFT) / OCEAN_CAP_CELL;
+vec2 c = floor(q);
+vec2 h = mod(c, 512.0);
+vec2 centre = vec2(waterSkinHash(h + vec2(13.0, 0.0)), waterSkinHash(h + vec2(0.0, 57.0))) * (1.0 - 2.0 * OCEAN_CAP_INSET) + OCEAN_CAP_INSET;
+vec2 at = (c + centre) * OCEAN_CAP_CELL - waterSkin.y + waterWindTime * OCEAN_CAP_DRIFT;
+float cycle = mod(waterTime, OCEAN_CAP_CYCLES * OCEAN_CAP_PERIOD) / OCEAN_CAP_PERIOD + waterSkinHash(h);
+float k = floor(cycle);
+float fire = oceanCapFire(h, k, oceanCapCoverage(at, oceanWindAmp(at)) / OCEAN_CAP_SHARE);
+float r = length(q - c - centre) / OCEAN_CAP_RADIUS;
+float cap = fire * (1.0 - (cycle - k)) * (1.0 - smoothstep(0.7, 1.0, r));
+return mix(cap, oceanCapCoverage(p, share), smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / (2.0 * OCEAN_CAP_RADIUS * OCEAN_CAP_CELL)));
+}
+// The low tier's bump under the wind sea: its slope a metre of the wind
+// sea's height draws, and the most it is scaled.
+const float OCEAN_BUMP_HS = 1.0;
+const float OCEAN_BUMP_MAX = 2.0;
+// The share of a field size metres across, n texels a side, that a pixel of
+// pixel metres draws: all while its shortest wave, of wavenumber pi n / size,
+// spans four pixels, none from two.
+float oceanWindPixelKeep(float size, float n, float pixel) {
+return 1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, 0.5 * OCEAN_TWO_PI * n * pixel / size);
+}
+// The wind sea's slopes at p as a normal's horizontal part (minus the height's
+// gradient), each field faded by the pixel's footprint, and in drawn the
+// slope variance the drawn fields carry (oceanWindStats.yzw, each field's
+// whole). The high tier's from the slope texture, the medium tier's from the
+// loop's heights, two taps an axis a texel apart: the loop's heights and
+// lengths scale alike with the wind, so its slopes are the bake's.
+vec2 oceanWindSlopesAt(vec2 p, float pixel, out float drawn) {
+vec2 w = oceanWindFrame(p);
+vec2 g = vec2(0.0);
+drawn = 0.0;
+if (oceanCoast.w > 1.5) {
+float k0 = oceanWindPixelKeep(FFT_CASCADE_0, FFT_N, pixel);
+float k1 = oceanWindPixelKeep(FFT_CASCADE_1, FFT_N, pixel);
+float k2 = oceanWindPixelKeep(FFT_CASCADE_2, FFT_N, pixel);
+g = textureLod(oceanWindSlope, vec3(w / FFT_CASCADE_0, 0.0), 0.0).xy * k0
++ textureLod(oceanWindSlope, vec3(w / FFT_CASCADE_1, 1.0), 0.0).xy * k1
++ textureLod(oceanWindSlope, vec3(w / FFT_CASCADE_2, 2.0), 0.0).xy * k2;
+drawn = k0 * k0 * oceanWindStats.y + k1 * k1 * oceanWindStats.z + k2 * k2 * oceanWindStats.w;
+} else if (oceanCoast.w > 0.5) {
+float size = oceanLoopSize();
+vec2 uv = w / size;
+float e = 1.0 / LOOP_N;
+float keep = oceanWindPixelKeep(size, LOOP_N, pixel);
+float gx = oceanLoopRead(uv + vec2(e, 0.0)).x - oceanLoopRead(uv - vec2(e, 0.0)).x;
+float gz = oceanLoopRead(uv + vec2(0.0, e)).x - oceanLoopRead(uv - vec2(0.0, e)).x;
+g = vec2(gx, gz) * (LOOP_N / (2.0 * LOOP_SIZE)) * keep;
+drawn = keep * keep * oceanWindStats.y;
+}
+return -oceanFromWind(g);
+}
+// The wind sea's slopes at p, nothing faded.
+vec2 oceanWindSlopes(vec2 p) {
+float drawn;
+return oceanWindSlopesAt(p, 0.0, drawn);
+}
+// How much of a drawn wind sea's crests a pixel of pixel metres draws, so
+// their whitecaps fade to their coverage before the waves that shape them
+// fall under the pixel: on the medium tier the loop's own shortest wave, on
+// the high tier cascade 1's, the finest cascade whose heights move a crest
+// across the caps' soft edge. Cascade 2 holds under a sixth of the sea's
+// standard deviation wherever the caps cover a ten-thousandth of it or more,
+// and the soft edge absorbs that.
+float oceanCrestKeep(float pixel) {
+if (oceanCoast.w > 1.5) return oceanWindPixelKeep(FFT_CASCADE_1, FFT_N, pixel);
+return oceanWindPixelKeep(oceanLoopSize(), LOOP_N, pixel);
+}
+// The low tier's bump scaled by the wind sea's height here, share its share
+// of the fully developed height (oceanWindAmp), which the broken waves and the
+// headland's lee cut down. Zero on the other tiers, whose sea carries no bump.
+float oceanBumpScale(float share, float breaking, float shelter) {
+return min(oceanWind.x * share * (1.0 - breaking) * shelter / OCEAN_BUMP_HS, OCEAN_BUMP_MAX);
+}
+// The most of the drawn wind sea's slopes the normal takes, so the variance
+// they carry, drawn, is never more than Cox and Munk's whole sea for the wind
+// in this shelter: the loop, one bake scaled to every wind, keeps a strong
+// wind's steepness in a light one, where a calm sea is glassy.
+float oceanWindSlopeLimit(float u10, float shelter, float drawn) {
+return min(1.0, sqrt((WATER_COX_MUNK_A + WATER_COX_MUNK_B * u10) * shelter / max(drawn, 1.0e-6)));
 }
 #define CUSTOM_FRAGMENT_DEFINITIONS
 struct albedoOpacityOutParams
@@ -1188,10 +1770,6 @@ vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
 vec3 normalW=normalize(vNormalW);
 vec3 geometricNormalW=normalW;
 vec2 uvOffset=vec2(0.0,0.0);
-float normalScale=1.0;
-vec2 TBNUV=gl_FrontFacing ? vBumpUV : -vBumpUV;
-mat3 TBN=cotangent_frame(normalW*normalScale,vPositionW,TBNUV,vTangentSpaceParams);
-normalW=perturbNormal(TBN,TEXRD(bumpSampler,vBumpUV+uvOffset).xyz,vBumpInfos.y);
 albedoOpacityOutParams albedoOpacityOut;
 albedoOpacityOut=albedoOpacityBlock(
 vAlbedoColor
@@ -1205,13 +1783,41 @@ float alpha=albedoOpacityOut.alpha;
 // transmitted colour is read from the scene copy instead and the surface
 // writes unblended (waterHigh is the gate, a uniform, since plugin code is
 // applied before conditional evaluation).
-float wDepth = waterBedDepth(vPositionW.xz);
+// The sea's swell at this pixel's undisplaced point, its drawn waves faded
+// by the pixel's own footprint (the derivatives are taken here, in uniform
+// control flow, before any branch). The depth is the displaced surface's
+// over the bed, so the water's edge rises and falls with each wave.
+vec2 wOceanDx = dFdx(vOceanXZ);
+vec2 wOceanDy = (-yFactor_)*dFdy(vOceanXZ);
+vec3 wOceanDisp;
+vec3 wOceanNormal;
+vec4 wOceanFoam;
+float wOceanDrawn;
+oceanSwellSum(vOceanXZ, wOceanDx, wOceanDy, wOceanDisp, wOceanNormal, wOceanFoam, wOceanDrawn);
+float wOceanChop = oceanShelter(vOceanXZ, SHELTER_CHOP);
+// The wind sea here: its height for the water's edge and the whitecaps, its
+// slopes faded by the pixel's footprint, both scaled by its share of the
+// fully developed sea here, which the fetch off the land, the broken waves
+// and the headland's lee cut down. The fetch's share is read once, here, for
+// everything below that takes it.
+float wWindShare = oceanWindAmp(vOceanXZ);
+float wWindAmp = wWindShare * (1.0 - wOceanFoam.y) * wOceanChop;
+vec3 wWind = oceanWindDisplace(vOceanXZ);
+float wWindDrawn;
+vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOceanDy)), wWindDrawn);
+float wDepth = waterBedDepth(vPositionW.xz) + wOceanDisp.y + wWind.y * wWindAmp;
 if (wDepth <= 0.0) discard;
 float wKdMean = (waterKd.r + waterKd.g + waterKd.b) / 3.0;
-if (waterOctaves > 1.5) {
-vec2 wSlope = waterRipple2(vPositionW.xz);
-normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y));
-}
+// The sea's normal is the swell's with the wind sea's slopes on it. PBR's
+// bump is on the sea on the low tier alone, where its slope rides on the
+// swell's, scaled by the wind sea's height: elsewhere normalW is still the
+// ring's up and adds nothing. The second octave never runs on the sea.
+float wWindSteep = wWindAmp * oceanWindSlopeLimit(oceanWindDir.z, wOceanChop, wWindDrawn * wWindAmp * wWindAmp);
+vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(wWindShare, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;
+normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOceanNormal.y);
+// What Cox and Munk's slope variance for the wind leaves to the roughness
+// once the drawn waves carry theirs, calmer in a headland's lee as the chop is.
+float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn + wWindDrawn * wWindSteep * wWindSteep);
 // The rain's rings, every tier, scaled by the rain as the puddles' are. The
 // skin's flatten below damps them where it lies.
 if (waterRain > 0.0) {
@@ -1260,6 +1866,32 @@ wTransmit *= 1.0 - wSkin;
 alpha = mix(alpha, 1.0, wSkin);
 normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wSkin));
 }
+// The white water, a matte layer over the sea the way the skin is over a
+// lake: the swell's foam through its lace, and the whitecaps, which the
+// broken waves eat shoreward of the break. The foam's cover is its amount
+// through the lace, a sheet at the roll and thinning behind, over the inner
+// surf's floor. Its albedo is the foam's by its age, a whitecap's fresh. Both
+// patterns fade to their mean as their cells shrink on the screen, from ten
+// pixels a cell to two and a half.
+float wOceanPixel = max(length(wOceanDx), length(wOceanDy));
+float wFoamAge = oceanFoamLookAge(wOceanFoam.z);
+float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wOceanFoam.y, wOceanPixel);
+float wOceanCap;
+if (oceanCoast.w > 0.5) {
+  // A drawn wind sea's own crests, faded to their coverage as the waves that
+  // shape them fall under the pixel, as the cells fade where none is drawn.
+float wCapCover = oceanCapCoverage(vOceanXZ, wWindShare);
+wOceanCap = mix(wCapCover, oceanWhitecap(wCapCover, wWind.y / max(oceanWindStats.x, 1.0e-4)), oceanCrestKeep(wOceanPixel));
+} else {
+wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel, wWindShare);
+}
+wOceanCap *= 1.0 - wOceanFoam.y;
+float wFoam = max(wOceanLace, wOceanCap);
+float wFoamWhite = wOceanLace >= wOceanCap ? oceanFoamWhite(wFoamAge) : OCEAN_FOAM_ALBEDO;
+surfaceAlbedo = mix(surfaceAlbedo, vec3(wFoamWhite), wFoam);
+wTransmit *= 1.0 - wFoam;
+alpha = mix(alpha, 1.0, wFoam);
+normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wFoam));
 #define CUSTOM_FRAGMENT_BEFORE_LIGHTS
 ambientOcclusionOutParams aoOut;
 aoOut=ambientOcclusionBlock(
@@ -1274,7 +1906,7 @@ vReflectivityColor
 ,baseDiffuseRoughness
 );
 float microSurface=reflectivityOut.microSurface;
-float roughness=reflectivityOut.roughness;
+float roughness=min(sqrt(sqrt(2.0 * wOceanVar)), 1.0);
 float diffuseRoughness=reflectivityOut.diffuseRoughness;
 surfaceAlbedo=reflectivityOut.surfaceAlbedo;
 float NdotVUnclamped=dot(normalW,viewDirectionW);
@@ -1284,7 +1916,6 @@ vec2 AARoughnessFactors=getAARoughnessFactors(normalW.xyz);
 vec3 environmentBrdf=getBRDFLookup(NdotV,roughness);
 float ambientMonochrome=getLuminance(aoOut.ambientOcclusionColor);
 float seo=environmentRadianceOcclusion(ambientMonochrome,NdotVUnclamped);
-float eho=environmentHorizonOcclusion(-viewDirectionW,normalW,geometricNormalW);
 reflectionOutParams reflectionOut;
 reflectionOutParams reflectionBlock_0;
 {reflectionOutParams outParams;
@@ -1321,7 +1952,6 @@ clearcoatOut.specularEnvironmentR0=specularEnvironmentR0;
 vec3 baseSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(vec3(reflectanceF0),reflectivityOut.reflectanceF90,environmentBrdf);
 vec3 colorSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90,environmentBrdf);
 colorSpecularEnvironmentReflectance*=seo;
-colorSpecularEnvironmentReflectance*=eho;
 subSurfaceOutParams subSurfaceOut;
 subSurfaceOut.specularEnvironmentReflectance=colorSpecularEnvironmentReflectance;
 vec3 diffuseBase=vec3(0.,0.,0.);
@@ -1396,6 +2026,10 @@ vec3 finalRadiance=reflectionOut.environmentRadiance.rgb;
 finalRadiance*=colorSpecularEnvironmentReflectance;
 vec3 finalRadianceScaled=finalRadiance*vLightingIntensity.z;
 finalRadianceScaled*=coloredEnergyConservationFactor;
+float luminanceOverAlpha=0.0;
+luminanceOverAlpha+=getLuminance(finalRadianceScaled);
+luminanceOverAlpha+=getLuminance(finalSpecularScaled);
+alpha=saturate(alpha+luminanceOverAlpha*luminanceOverAlpha);
 vec3 finalDiffuse=diffuseBase;
 finalDiffuse*=surfaceAlbedo;
 finalDiffuse=max(finalDiffuse,0.0);
@@ -1417,6 +2051,9 @@ finalDiffuse*=ambientOcclusionForDirectDiffuse;
 // The skin is matte: the sky's reflection and the sun's glint are held off it.
 finalRadianceScaled *= 1.0 - wSkin;
 finalSpecularScaled *= 1.0 - wSkin;
+// The white water is matte too.
+finalRadianceScaled *= 1.0 - wFoam;
+finalSpecularScaled *= 1.0 - wFoam;
 finalEmissive += wTransmit;
 #define CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION
 vec4 finalColor=vec4(
