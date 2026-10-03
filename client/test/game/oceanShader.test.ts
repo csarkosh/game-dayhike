@@ -32,9 +32,9 @@ import {
 import { oceanTipsFor } from "../../src/game/oceanRender.js";
 import {
   OCEAN_CAP_CELL, OCEAN_CAP_CYCLES, OCEAN_CAP_DRIFT, OCEAN_CAP_INSET, OCEAN_CAP_PERIOD, OCEAN_CAP_RADIUS, OCEAN_CAP_SHARE,
-  OCEAN_CAP_SOFT, OCEAN_DETAIL_HI, OCEAN_DETAIL_LO, OCEAN_FOAM_ALBEDO, OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_REFLECT_FRESH,
+  OCEAN_CAP_SOFT, OCEAN_DETAIL_HI, OCEAN_DETAIL_LO, OCEAN_FOAM_ALBEDO, OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_FADE,
   OCEAN_INNER_COVER, OCEAN_LACE_DRIFT, OCEAN_LACE_FINE, OCEAN_LACE_FINE_SHIFT, OCEAN_LACE_FIT_A, OCEAN_LACE_FIT_B,
-  OCEAN_LACE_FIT_C, OCEAN_LACE_FIT_D, OCEAN_LACE_FIT_MAX, OCEAN_LACE_ONSET, OCEAN_LACE_SOFT, OCEAN_LACE_THIN, OCEAN_LACE_TILE, OCEAN_LACE_WEIGHT,
+  OCEAN_LACE_FIT_C, OCEAN_LACE_FIT_D, OCEAN_LACE_FIT_E, OCEAN_LACE_ONSET, OCEAN_LACE_SOFT, OCEAN_LACE_TILE, OCEAN_LACE_WEIGHT,
   OCEAN_RESOLVE_PHASE_HI, OCEAN_RESOLVE_PHASE_LO, OCEAN_RING_REACH, OCEAN_SLOPE_VAR_FLOOR, WATER_COX_MUNK_A,
   WATER_COX_MUNK_B, WATER_ROWS, capProfile, coxMunkVariance, foamWhite, oceanRingCell, resolvedShare,
   resolvedSlopeVariance, roughnessFor, roughnessFromVariance, slopeVariance, undrawnSlopeVariance, whitecapThreshold,
@@ -618,13 +618,12 @@ describe("the white water", () => {
     const f = fx("oceanShade.fragment.fx");
     const look: [string, number][] = [
       ["OCEAN_FOAM_ALBEDO", OCEAN_FOAM_ALBEDO], ["OCEAN_FOAM_ALBEDO_OLD", OCEAN_FOAM_ALBEDO_OLD],
-      ["OCEAN_FOAM_REFLECT_FRESH", OCEAN_FOAM_REFLECT_FRESH], ["OCEAN_LACE_THIN", OCEAN_LACE_THIN],
-      ["OCEAN_INNER_COVER", OCEAN_INNER_COVER],
+      ["OCEAN_FOAM_FADE", OCEAN_FOAM_FADE], ["OCEAN_INNER_COVER", OCEAN_INNER_COVER],
       ["OCEAN_LACE_TILE", OCEAN_LACE_TILE], ["OCEAN_LACE_DRIFT", OCEAN_LACE_DRIFT], ["OCEAN_LACE_SOFT", OCEAN_LACE_SOFT],
       ["OCEAN_LACE_WEIGHT", OCEAN_LACE_WEIGHT], ["OCEAN_LACE_FINE", OCEAN_LACE_FINE],
       ["OCEAN_LACE_FINE_SHIFT", OCEAN_LACE_FINE_SHIFT], ["OCEAN_LACE_FIT_A", OCEAN_LACE_FIT_A],
       ["OCEAN_LACE_FIT_B", OCEAN_LACE_FIT_B], ["OCEAN_LACE_FIT_C", OCEAN_LACE_FIT_C], ["OCEAN_LACE_FIT_D", OCEAN_LACE_FIT_D],
-      ["OCEAN_LACE_FIT_MAX", OCEAN_LACE_FIT_MAX],
+      ["OCEAN_LACE_FIT_E", OCEAN_LACE_FIT_E],
       ["OCEAN_LACE_ONSET", OCEAN_LACE_ONSET], ["OCEAN_DETAIL_LO", OCEAN_DETAIL_LO], ["OCEAN_DETAIL_HI", OCEAN_DETAIL_HI],
       ["OCEAN_CAP_CELL", OCEAN_CAP_CELL], ["OCEAN_CAP_PERIOD", OCEAN_CAP_PERIOD], ["OCEAN_CAP_RADIUS", OCEAN_CAP_RADIUS],
       ["OCEAN_CAP_INSET", OCEAN_CAP_INSET], ["OCEAN_CAP_DRIFT", OCEAN_CAP_DRIFT], ["OCEAN_CAP_SHARE", OCEAN_CAP_SHARE],
@@ -632,8 +631,8 @@ describe("the white water", () => {
     ];
     for (const [name, value] of look) pinned(f, name, value);
     for (const signature of [
-      "float oceanLace(vec2 p)", "float oceanFoamLookAge(float foamAge)", "float oceanFoamShare(float foam, float lookAge, float breaking)",
-      "float oceanLaceLevel(float share)", "float oceanFoamCover(vec2 p, float foam, float lookAge, float breaking, float pixel)",
+      "float oceanLace(vec2 p)", "float oceanFoamLookAge(float foamAge)", "float oceanFoamShare(float foam, float breaking)",
+      "float oceanLaceLevel(float share)", "float oceanFoamCover(vec2 p, float foam, float breaking, float pixel)",
       "float oceanFoamWhite(float lookAge)", "float oceanCapCoverage(vec2 p)", "float oceanCapThreshold(float coverage)",
       "float oceanWhitecap(vec2 p, float crest)", "float oceanCapFire(vec2 h, float k, float chance)",
       "float oceanCapCells(vec2 p, float pixel)",
@@ -661,21 +660,23 @@ describe("the white water", () => {
     ]) expect(w).toContain(line);
   });
 
-  it("whitens fresh foam to 0.8 and old foam toward 0.5, through a lace that covers the foam's share of the surface", () => {
-    expect(foamWhite(0)).toBeCloseTo(0.8, 12);
-    expect(foamWhite(20)).toBeCloseTo(0.6103638, 6);
-    expect(foamWhite(1000)).toBeCloseTo(0.5, 9);
+  it("whitens fresh foam to 0.4 and old foam toward 0.06 by its age, and covers the foam's amount of the surface through a lace", () => {
+    expect(foamWhite(0)).toBeCloseTo(0.4, 12);
+    expect(foamWhite(10)).toBeCloseTo(0.1004995, 6);
+    expect(foamWhite(1000)).toBeCloseTo(0.06, 9);
     const f = fx("oceanShade.fragment.fx");
-    // The share (the inner surf's, which the bores renew, never thinning), the level that leaves it, the lace above
-    // the level through a soft edge centred on it, held back as the share goes to none, and the share itself where
-    // a pixel spans more than a few of the lace's cells.
+    // The share (the foam's amount or the inner surf's floor, which the bores renew and which never thins with age),
+    // the level that leaves it, the lace above the level through a soft edge centred on it, held back as the share
+    // goes to none, and the share itself where a pixel spans more than a few of the lace's cells.
     for (const line of [
-      "  return max(foam * (OCEAN_FOAM_REFLECT_FRESH / OCEAN_FOAM_ALBEDO) * exp(-lookAge / OCEAN_LACE_THIN), breaking * OCEAN_INNER_COVER);",
-      "  float s = sqrt(clamp(share, 0.0, OCEAN_LACE_FIT_MAX));",
-      "  return 1.0 - s * (OCEAN_LACE_FIT_A + s * (OCEAN_LACE_FIT_B + s * (OCEAN_LACE_FIT_C + s * OCEAN_LACE_FIT_D)));",
+      "  return max(foam, breaking * OCEAN_INNER_COVER);",
+      "  float c = clamp(share, 0.0, 1.0);",
+      "  float s = sqrt(c);",
+      "  float p = 1.0 - sqrt(sqrt(1.0 - c));",
+      "  return 1.0 - s * (OCEAN_LACE_FIT_A + s * (OCEAN_LACE_FIT_B + s * OCEAN_LACE_FIT_C)) - p * (OCEAN_LACE_FIT_D + p * OCEAN_LACE_FIT_E);",
       "  float lace = smoothstep(level - 0.5 * OCEAN_LACE_SOFT, level + 0.5 * OCEAN_LACE_SOFT, oceanLace(p)) * smoothstep(0.0, OCEAN_LACE_ONSET, share);",
       "  return mix(lace, share, smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / OCEAN_LACE_TILE));",
-      "  return mix(OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_ALBEDO, exp(-lookAge / OCEAN_FOAM_LIFE));",
+      "  return mix(OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_ALBEDO, exp(-lookAge / OCEAN_FOAM_FADE));",
     ]) expect(f).toContain(line);
     // The roll on the crest's front face is fresh: the age is the swell's less the phase the roll spans.
     expect(f).toContain("  float ahead = OCEAN_TWO_PI - foamAge * (OCEAN_TWO_PI / oceanSwell.z);");
@@ -683,6 +684,9 @@ describe("the white water", () => {
     // The lace drifts with the swell's travel and is offset by the world's seed, the sea's waterSkin.y.
     expect(f).toContain("  vec2 q = p + waterSkin.y - oceanSwell.xy * (OCEAN_LACE_DRIFT * waterTime);");
     expect(f).not.toContain("1.0 - foam + OCEAN_LACE_SOFT");
+    // The cover has no age in it: the albedo alone fades with the foam's age.
+    expect(f).not.toContain("OCEAN_LACE_THIN");
+    expect(f).not.toContain("OCEAN_FOAM_REFLECT_FRESH");
   });
 
   it("puts the whitecaps over Callaghan's share of a Gaussian sea's crests", () => {
@@ -741,7 +745,7 @@ describe("the white water", () => {
     // The swell's foam through its lace, and the caps, which the broken waves eat, both faded by the pixel's span.
     expect(at(l, "float wOceanPixel = max(length(wOceanDx), length(wOceanDy));")).toBeLessThan(layer);
     expect(at(l, "float wFoamAge = oceanFoamLookAge(wOceanFoam.z);")).toBeLessThan(layer);
-    expect(at(l, "float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wFoamAge, wOceanFoam.y, wOceanPixel);")).toBeLessThan(layer);
+    expect(at(l, "float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wOceanFoam.y, wOceanPixel);")).toBeLessThan(layer);
     expect(at(l, "float wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel);")).toBeLessThan(layer);
     expect(at(l, "wOceanCap *= 1.0 - wOceanFoam.y;")).toBeLessThan(layer);
     expect(l).toContain("float wFoamWhite = wOceanLace >= wOceanCap ? oceanFoamWhite(wFoamAge) : OCEAN_FOAM_ALBEDO;");

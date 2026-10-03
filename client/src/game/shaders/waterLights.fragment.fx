@@ -89,12 +89,14 @@ if (waterSkin.x > 0.0) {
 #ifdef OCEAN
 // The white water, a matte layer over the sea the way the skin is over a
 // lake: the swell's foam through its lace, and the whitecaps, which the
-// broken waves eat shoreward of the break. Its albedo is the foam's by its
-// age, a whitecap's fresh. Both patterns fade to their mean where a pixel
-// spans more than a few of their cells.
+// broken waves eat shoreward of the break. The foam's cover is its amount
+// through the lace, a sheet at the roll and thinning behind, over the inner
+// surf's floor. Its albedo is the foam's by its age, a whitecap's fresh. Both
+// patterns fade to their mean where a pixel spans more than a few of their
+// cells.
 float wOceanPixel = max(length(wOceanDx), length(wOceanDy));
 float wFoamAge = oceanFoamLookAge(wOceanFoam.z);
-float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wFoamAge, wOceanFoam.y, wOceanPixel);
+float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wOceanFoam.y, wOceanPixel);
 float wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel);
 wOceanCap *= 1.0 - wOceanFoam.y;
 float wFoam = max(wOceanLace, wOceanCap);

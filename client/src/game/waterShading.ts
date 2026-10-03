@@ -10,7 +10,7 @@
 import { clamp01 } from "./colour.js";
 import { CLUTTER_WATER_MURK_HI, CLUTTER_WATER_MURK_LO } from "../sim/clutter.js";
 import { WATER_BASE_SPACING, WATER_RING_CELLS } from "./water.js";
-import { OCEAN_FOAM_LIFE, OCEAN_ROLL_WIDTH } from "./oceanWaves.js";
+import { OCEAN_ROLL_WIDTH } from "./oceanWaves.js";
 
 /** One body of water, from the world at build time (spec §7). */
 export type WaterBody = {
@@ -216,20 +216,20 @@ export function oceanRingCell(dx: number, dz: number): number {
 }
 
 /**
- * The white water's look (spec §5): fresh foam's albedo and old foam's, and the share of the surface fresh
- * foam reflects (OCEAN_FOAM_REFLECT_FRESH, 40 %, spec §5: the lace covers that over OCEAN_FOAM_ALBEDO of the
- * surface, see `foamShare`). The lace thins by a factor e every OCEAN_LACE_THIN seconds, solved (8.08) so
- * that a lone bore's trailing foam (amount exp(-10 / OCEAN_FOAM_LIFE) at 10 s) reflects 6 % ten seconds
- * on, inside spec §5's 3 to 10 % for old foam, and rounded to one decimal. The inner surf, where the
- * broken swell renews the foam every period, keeps OCEAN_INNER_COVER of the surface in foam whatever the
- * time since the last crest, weighted by the breaking weight B (spec §5: foam over 0.35 to 0.55 of the
- * surf zone on average, nearly all of its inner part). The lace's cell (m), its drift along the swell's
- * travel (m/s) and its edge's softness. Mirrored in shaders/oceanShade.fragment.fx.
+ * The white water's look, two things apart (spec §5). A foam's brightness, its albedo, is OCEAN_FOAM_ALBEDO
+ * when fresh (fresh foam reflects about 40 %) and falls toward OCEAN_FOAM_ALBEDO_OLD with the time since its
+ * crest, by a factor e every OCEAN_FOAM_FADE seconds: 4.7 s puts it at 0.1 ten seconds on, inside spec §5's
+ * 3 to 10 % for old foam and near the 3.85 s laboratory decay (`foamWhite`). Its cover, the share of the
+ * surface it whitens, thins from a sheet to a lace with the foam's amount, which itself thins over
+ * OCEAN_FOAM_LIFE (`swellAt`), down to the inner surf's floor: where the broken swell renews the foam every
+ * period, OCEAN_INNER_COVER of the surface stays in foam, weighted by the breaking weight B (spec §5: foam
+ * over 0.35 to 0.55 of the surf zone on average, nearly all of its inner part) (`foamShare`). The lace's
+ * cell (m), its drift along the swell's travel (m/s) and its edge's softness. Mirrored in
+ * shaders/oceanShade.fragment.fx.
  */
-export const OCEAN_FOAM_ALBEDO = 0.8;
-export const OCEAN_FOAM_ALBEDO_OLD = 0.5;
-export const OCEAN_FOAM_REFLECT_FRESH = 0.4;
-export const OCEAN_LACE_THIN = 8.1;
+export const OCEAN_FOAM_ALBEDO = 0.4;
+export const OCEAN_FOAM_ALBEDO_OLD = 0.06;
+export const OCEAN_FOAM_FADE = 4.7;
 export const OCEAN_INNER_COVER = 0.6;
 export const OCEAN_LACE_TILE = 3;
 export const OCEAN_LACE_DRIFT = 0.4;
@@ -237,22 +237,23 @@ export const OCEAN_LACE_SOFT = 0.06;
 
 /**
  * The lace's noise (`oceanLace`): the coarse octave's weight (the fine octave has the rest), the fine
- * octave's cell as a fraction of the coarse one's, and its shift. OCEAN_LACE_FIT_A to D: the level a share
- * of the lace lies above, 1 - s (A + s (B + s (C + s D))) for s the share's square root, fitted to the
- * noise's quantiles measured over 2^20 points of a square kilometre (`laceLevel`, which holds to 0.0008 of
- * the quantile for shares up to OCEAN_LACE_FIT_MAX, and gives the mean cover within 0.002 of the share with
- * the soft edge centred on it). OCEAN_LACE_ONSET: the share under which the lace is held back. OCEAN_DETAIL_LO and
+ * octave's cell as a fraction of the coarse one's, and its shift. OCEAN_LACE_FIT_A to E: the level a share
+ * c of the lace lies above, for shares from none to all: 1 - s (A + s (B + s C)) - p (D + p E), for s the
+ * share's square root and p one less the fourth root of what the share leaves, 1 - (1 - c)^(1/4). The first
+ * fits the noise's top tail and the second its bottom. Fitted to the noise's quantiles measured over 2^20
+ * points of a square kilometre (`laceLevel`, which gives the mean cover within 0.002 of the share with the
+ * soft edge centred on it). OCEAN_LACE_ONSET: the share under which the lace is held back. OCEAN_DETAIL_LO and
  * HI: a pattern is drawn whole while a pixel spans under the first of its size and has faded to its mean by
  * the second. Mirrored in shaders/oceanShade.fragment.fx.
  */
 export const OCEAN_LACE_WEIGHT = 0.65;
 export const OCEAN_LACE_FINE = 0.37;
 export const OCEAN_LACE_FINE_SHIFT = 19;
-export const OCEAN_LACE_FIT_A = 0.4101;
-export const OCEAN_LACE_FIT_B = 0.1029;
-export const OCEAN_LACE_FIT_C = -0.2382;
-export const OCEAN_LACE_FIT_D = 0.3427;
-export const OCEAN_LACE_FIT_MAX = 0.6;
+export const OCEAN_LACE_FIT_A = 0.4334;
+export const OCEAN_LACE_FIT_B = -0.1923;
+export const OCEAN_LACE_FIT_C = 0.1369;
+export const OCEAN_LACE_FIT_D = 0.5144;
+export const OCEAN_LACE_FIT_E = 0.1083;
 export const OCEAN_LACE_ONSET = 0.01;
 export const OCEAN_DETAIL_LO = 0.1;
 export const OCEAN_DETAIL_HI = 0.4;
@@ -346,27 +347,28 @@ export function foamLookAge(foamAge: number, tp: number): number {
   return foamAge * smoothstep(0, OCEAN_ROLL_WIDTH, ahead);
 }
 
-/** The foam's albedo at an age (s): fresh foam's, falling to old foam's over OCEAN_FOAM_LIFE (`oceanFoamWhite`). */
+/** The foam's albedo at an age (s): fresh foam's, falling to old foam's by a factor e every OCEAN_FOAM_FADE seconds (`oceanFoamWhite`). */
 export function foamWhite(foamAge: number): number {
-  const fresh = Math.exp(-foamAge / OCEAN_FOAM_LIFE);
+  const fresh = Math.exp(-foamAge / OCEAN_FOAM_FADE);
   return OCEAN_FOAM_ALBEDO_OLD + (OCEAN_FOAM_ALBEDO - OCEAN_FOAM_ALBEDO_OLD) * fresh;
 }
 
 /**
- * The share of the surface a foam's lace covers on average (`oceanFoamShare`): the foam's amount (0 to 1)
- * times the share a full, fresh foam covers (OCEAN_FOAM_REFLECT_FRESH of OCEAN_FOAM_ALBEDO, a half),
- * thinning with its age (s), or the inner surf's, the breaking weight `breaking` (0 to 1) times
- * OCEAN_INNER_COVER, whichever is the more. The inner surf's foam is renewed by every bore, so it does not
- * thin.
+ * The share of the surface a foam covers on average (`oceanFoamShare`): the foam's amount `foam` (0 to 1),
+ * a sheet at the roll and thinning with the time since the crest, or the inner surf's floor, the breaking
+ * weight `breaking` (0 to 1) times OCEAN_INNER_COVER, whichever is the more. The inner surf's foam is
+ * renewed by every bore, so the floor does not thin with age.
  */
-export function foamShare(foam: number, lookAge: number, breaking: number): number {
-  return Math.max(foam * (OCEAN_FOAM_REFLECT_FRESH / OCEAN_FOAM_ALBEDO) * Math.exp(-lookAge / OCEAN_LACE_THIN), breaking * OCEAN_INNER_COVER);
+export function foamShare(foam: number, breaking: number): number {
+  return Math.max(foam, breaking * OCEAN_INNER_COVER);
 }
 
-/** The lace's value that a `share` (0 to OCEAN_LACE_FIT_MAX) of the surface lies above: the fitted quantile at one less the share (`oceanLaceLevel`). */
+/** The lace's value that a `share` (0 to 1) of the surface lies above: the fitted quantile at one less the share (`oceanLaceLevel`). */
 export function laceLevel(share: number): number {
-  const s = Math.sqrt(Math.min(Math.max(share, 0), OCEAN_LACE_FIT_MAX));
-  return 1 - s * (OCEAN_LACE_FIT_A + s * (OCEAN_LACE_FIT_B + s * (OCEAN_LACE_FIT_C + s * OCEAN_LACE_FIT_D)));
+  const c = Math.min(Math.max(share, 0), 1);
+  const s = Math.sqrt(c);
+  const p = 1 - Math.sqrt(Math.sqrt(1 - c));
+  return 1 - s * (OCEAN_LACE_FIT_A + s * (OCEAN_LACE_FIT_B + s * OCEAN_LACE_FIT_C)) - p * (OCEAN_LACE_FIT_D + p * OCEAN_LACE_FIT_E);
 }
 
 /**
@@ -382,12 +384,12 @@ export function laceCover(ridge: number, share: number): number {
 }
 
 /**
- * The foam's cover at a point where the lace is `ridge`, its amount `foam`, its look's age `lookAge`, the
- * breaking weight `breaking` and a pixel spans `pixel` metres (`oceanFoamCover`): the lace, faded to the
- * share it averages to where a pixel spans more than a tenth of its cell.
+ * The foam's cover at a point where the lace is `ridge`, its amount `foam`, the breaking weight `breaking`
+ * and a pixel spans `pixel` metres (`oceanFoamCover`): the lace, faded to the share it averages to where a
+ * pixel spans more than a tenth of its cell.
  */
-export function foamCover(ridge: number, foam: number, lookAge: number, breaking: number, pixel: number): number {
-  const share = foamShare(foam, lookAge, breaking);
+export function foamCover(ridge: number, foam: number, breaking: number, pixel: number): number {
+  const share = foamShare(foam, breaking);
   return mix(laceCover(ridge, share), share, smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / OCEAN_LACE_TILE));
 }
 
