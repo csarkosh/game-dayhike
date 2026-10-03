@@ -42,16 +42,8 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define IMAGEPROCESSING
-#define VIGNETTE
-#define VIGNETTEBLENDMODEMULTIPLY
-#define TONEMAPPING 3
-#define CONTRAST
-#define COLORCURVES
-#define SAMPLER3DGREENDEPTH
-#define SAMPLER3DBGRMAP
-#define DITHER
-#define EXPOSURE
+#define TONEMAPPING 0
+#define IMAGEPROCESSINGPOSTPROCESS
 #define PBR
 #define NUM_SAMPLES 0
 #define ALBEDODIRECTUV 0
@@ -59,7 +51,6 @@
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
-#define ALPHABLEND
 #define ALPHATESTVALUE 0.4
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
@@ -111,16 +102,7 @@
 
 #define SHADER_NAME fragment:pbr
 layout(set = 1, binding = 20) uniform LeftOver {
-        float exposureLinear;
-    float contrast;
-    vec2 vInverseScreenSize;
-    vec4 vignetteSettings1;
-    vec4 vignetteSettings2;
-    vec4 vCameraColorCurveNegative;
-    vec4 vCameraColorCurveNeutral;
-    vec4 vCameraColorCurvePositive;
-    float ditherIntensity;
-    vec4 vFogInfos;
+        vec4 vFogInfos;
     vec3 vFogColor;
 };
 
@@ -281,6 +263,7 @@ vec4 oceanWind;
 vec4 oceanWindDir;
 vec4 oceanWindStats;
 vec4 oceanWindPivot;
+vec4 oceanK[12];
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -330,15 +313,6 @@ layout(set = 1, binding = 7) uniform sampler reflectionSamplerSampler;
 layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
                         layout(set = 1, binding = 8) uniform texture2D environmentBrdfSamplerTexture;
                         #define environmentBrdfSampler sampler2D(environmentBrdfSamplerTexture, environmentBrdfSamplerSampler)
-
-
-
-
-
-
-
-
-
 #define FOGMODE_NONE 0.
 #define FOGMODE_EXP 1.
 #define FOGMODE_EXP2 2.
@@ -551,47 +525,11 @@ return reflectance90;
 vec2 getAARoughnessFactors(vec3 normalVector) {
 return vec2(0.);
 }
-const float PBRNeutralStartCompression=0.8-0.04;
-const float PBRNeutralDesaturation=0.15;
-vec3 PBRNeutralToneMapping( vec3 color ) {float x=min(color.r,min(color.g,color.b));
-float offset=x<0.08 ? x-6.25*x*x : 0.04;
-color-=offset;
-float peak=max(color.r,max(color.g,color.b));
-if (peak<PBRNeutralStartCompression) return color;
-float d=1.-PBRNeutralStartCompression;
-float newPeak=1.-d*d/(peak+d-PBRNeutralStartCompression);
-color*=newPeak/peak;
-float g=1.-1./(PBRNeutralDesaturation*(peak-newPeak)+1.);
-return mix(color,newPeak*vec3(1,1,1),g);
-}
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_DEFINITIONS
 vec4 applyImageProcessing(vec4 result) {
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATSTART
-result.rgb*=exposureLinear;
-vec2 viewportXY=glFragCoord_.xy*vInverseScreenSize;
-viewportXY=viewportXY*2.0-1.0;
-vec3 vignetteXY1=vec3(viewportXY*vignetteSettings1.xy+vignetteSettings1.zw,1.0);
-float vignetteTerm=dot(vignetteXY1,vignetteXY1);
-float vignette=pow(vignetteTerm,vignetteSettings2.w);
-vec3 vignetteColor=vignetteSettings2.rgb;
-vec3 vignetteColorMultiplier=mix(vignetteColor,vec3(1,1,1),vignette);
-result.rgb*=vignetteColorMultiplier;
-result.rgb=PBRNeutralToneMapping(result.rgb);
 result.rgb=toGammaSpace(result.rgb);
 result.rgb=saturate(result.rgb);
-vec3 resultHighContrast=result.rgb*result.rgb*(3.0-2.0*result.rgb);
-if (contrast<1.0) {result.rgb=mix(vec3(0.5,0.5,0.5),result.rgb,contrast);
-} else {result.rgb=mix(result.rgb,resultHighContrast,contrast-1.0);
-}
-result.rgb=max(result.rgb,0.);
-float luma=getLuminance(result.rgb);
-vec2 curveMix=clamp(vec2(luma*3.0-1.5,luma*-3.0+1.5),vec2(0.0),vec2(1.0));
-vec4 colorCurve=vCameraColorCurveNeutral+curveMix.x*vCameraColorCurvePositive-curveMix.y*vCameraColorCurveNegative;
-result.rgb*=colorCurve.rgb;
-result.rgb=mix(vec3(luma),result.rgb,colorCurve.a);
-float rand=getRand(glFragCoord_.xy*vInverseScreenSize);
-float dither=mix(-ditherIntensity,ditherIntensity,rand);
-result.rgb=saturate(result.rgb+vec3(dither));
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATEND
 return result;
 }
@@ -1469,10 +1407,6 @@ vec3 finalRadiance=reflectionOut.environmentRadiance.rgb;
 finalRadiance*=colorSpecularEnvironmentReflectance;
 vec3 finalRadianceScaled=finalRadiance*vLightingIntensity.z;
 finalRadianceScaled*=coloredEnergyConservationFactor;
-float luminanceOverAlpha=0.0;
-luminanceOverAlpha+=getLuminance(finalRadianceScaled);
-luminanceOverAlpha+=getLuminance(finalSpecularScaled);
-alpha=saturate(alpha+luminanceOverAlpha*luminanceOverAlpha);
 vec3 finalDiffuse=diffuseBase;
 finalDiffuse*=surfaceAlbedo;
 finalDiffuse=max(finalDiffuse,0.0);
@@ -1509,7 +1443,7 @@ finalColor=max(finalColor,0.0);
 float fog=CalcFogFactor();
 fog=toLinearSpace(fog);
 finalColor.rgb=atmosphereFog(finalColor.rgb,fog);
-finalColor=applyImageProcessing(finalColor);
+finalColor.rgb=clamp(finalColor.rgb,0.,30.0);
 finalColor.a*=visibility;
 #define CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR
 glFragColor=finalColor;

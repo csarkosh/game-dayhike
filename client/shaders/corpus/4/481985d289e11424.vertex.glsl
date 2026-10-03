@@ -256,6 +256,7 @@ vec4 oceanWind;
 vec4 oceanWindDir;
 vec4 oceanWindStats;
 vec4 oceanWindPivot;
+vec4 oceanK[12];
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -496,14 +497,23 @@ layout(set = 1, binding = 9) uniform sampler oceanWindDispSampler;
                         #define oceanWindDisp sampler2DArray(oceanWindDispTexture, oceanWindDispSampler)
 // The vertex's world xz before the waves move it.
 layout(location = 6)  out vec2 vOceanXZ;
+// The swell the vertex stage sums for the displacement, for the fragment
+// stage: its normal's x and z, its height and the slope variance its drawn
+// waves carry (vOceanSwellA), and its envelope vector in x and y with the
+// vector's length in z (vOceanSwellB), the length interpolated on its own.
+layout(location = 7)  out vec4 vOceanSwellA;
+layout(location = 8)  out vec4 vOceanSwellB;
 // Water plugin, the sea's surface: spliced into the definitions of both
 // stages, after the ocean's declarations (ocean.vertex.fx, ocean.fragment.fx).
-// The vertex stage displaces the rings with it and the fragment stage shades
-// with it. The swell's sum is swellAt's in oceanWaves.ts line for line: the
-// same atlas rows, the same reads between texel centres, the same blend of
-// the bay and the cove (the phase by its own weight along the coast, the
-// depth and the rest by the cove's), the same cap, the same scale of
-// steepness, the same foam.
+// The vertex stage sums the swell, displaces the rings with it and hands the
+// fragment stage the swell's normal, height, drawn variance and envelope
+// vector, from which the fragment stage makes the foam per pixel
+// (oceanFoamFromEnvelope). The swell's sum is swellAt's in oceanWaves.ts line
+// for line: the same atlas rows, the same reads between texel centres (each
+// component's constants the same floats, bound as the oceanK uniforms rather
+// than read from the components' row), the same blend of the bay and the cove
+// (the phase by its own weight along the coast, the depth and the rest by the
+// cove's), the same cap, the same scale of steepness, the same foam.
 //
 // COMMENT RULES: never put a semicolon inside a trailing comment on a code
 // line, and never spell a hashed preprocessor keyword in comment prose. The
@@ -525,7 +535,6 @@ const float OCEAN_ROW_BAY_PROFILE = 0.0;
 const float OCEAN_ROW_COVE_PROFILE = 1.0;
 const float OCEAN_ROW_BAY_FIRST = 2.0;
 const float OCEAN_ROW_COVE_FIRST = 14.0;
-const float OCEAN_ROW_COMPONENTS = 26.0;
 const float OCEAN_ROW_COAST = 27.0;
 const float OCEAN_DRY_DEPTH = 0.05;
 const float WEGGEL_GAMMA_MIN = 0.78;
@@ -601,14 +610,18 @@ float oceanShelter(vec2 p, float keep) {
 return oceanShelterTip(p, oceanTips.xy, keep) * oceanShelterTip(p, oceanTips.zw, keep);
 }
 // The swell at the undisplaced point p: disp its displacement (x, height, z),
-// normal its Gerstner normal, foam (foam, B, foamAge, depth) and drawn the
-// slope variance its drawn waves carry. dpx and dpy are how far p moves over
-// one step of the drawing, a pixel or a ring's cells: a component fades out
-// of what is drawn as its phase turns by more than a quarter turn a step,
-// gone at a half turn. With both zero nothing fades and the sum is exactly
+// normal its Gerstner normal, foam (foam, B, foamAge, depth), drawn the slope
+// variance its drawn waves carry and env its envelope vector, the sum of the
+// components' amplitudes on their phases. dpx and dpy are how far p moves over
+// one step of the drawing, a ring's cells: a component fades out of what is
+// drawn as its phase turns by more than a quarter turn a step, gone at a half
+// turn. With both zero nothing fades and the sum is exactly
 // swellAt's. The envelope, the break and the foam are the whole swell's and
 // never fade. The loops run to a constant 12 and stop at the count, a uniform.
-void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, out vec4 foam, out float drawn) {
+// Each component's constants are oceanK's, (k0x, k0z, q0, a0), the floats the
+// atlas's components row holds, and each phase's sine and cosine are taken
+// once, in the first loop, for the envelope and the drawn terms alike.
+void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, out vec4 foam, out float drawn, out vec2 env) {
 float phaseDz;
 vec4 coast = oceanCoastAt(p.y, phaseDz);
 float d = p.x - coast.x;
@@ -638,13 +651,15 @@ float phi[12];
 float amp[12];
 float q0[12];
 vec2 kv[12];
-vec2 env = vec2(0.0);
+float sn[12];
+float cs[12];
+env = vec2(0.0);
 for (int c = 0;
 c < 12;
 c++) {
 float fc = float(c);
 if (fc >= oceanCoast.z) break;
-vec4 k = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc);
+vec4 k = oceanK[c];
 vec4 rb = oceanAtlasRead(OCEAN_ROW_BAY_FIRST + fc, column);
 vec4 rc = oceanAtlasRead(OCEAN_ROW_COVE_FIRST + fc, column);
     // The phase and its onshore wavenumber blend by the phase weight, the
@@ -657,12 +672,14 @@ float shoal = rb.z + (rc.z - rb.z) * coast.z;
 phi[c] = psi + k.x * coast.x + k.y * p.y + theta[c];
 kv[c] = vec2(kn, k.y + (k.x - kn) * coast.y + dpsi * phaseDz);
 amp[c] = k.w * shoal * shelter;
-q0[c] = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc + 1.0).x;
-env += amp[c] * vec2(cos(phi[c]), sin(phi[c]));
+q0[c] = k.z;
+sn[c] = sin(phi[c]);
+cs[c] = cos(phi[c]);
+env += amp[c] * vec2(cs[c], sn[c]);
 }
 float envelope = length(env);
 float unbroken = 2.0 * envelope;
-float crestPhase = envelope > 0.0 ? atan(env.y, env.x) : 0.0;
+float crestPhase = dot(env, env) > 0.0 ? atan(env.y, env.x) : 0.0;
   // No dry branch: over sand the depth is held at OCEAN_DRY_DEPTH, so the
   // swell there is the bore's few centimetres.
 float hc = max(h, OCEAN_DRY_DEPTH);
@@ -692,16 +709,18 @@ for (int c = 0;
 c < 12;
 c++) {
 if (float(c) >= oceanCoast.z) break;
-float kmag = length(kv[c]);
 float turn = max(abs(dot(dpx, kv[c])), abs(dot(dpy, kv[c])));
+    // Faded wholly from a half turn a step: A would be 0 and add nothing, so
+    // the drawn terms alone are skipped. The envelope above keeps every
+    // component, so the break and the foam do not depend on the step.
+if (turn >= OCEAN_RESOLVE_PHASE_HI) continue;
+float kmag = length(kv[c]);
 float A = amp[c] * (1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, turn));
 float Q = q0[c] * s;
-float sn = sin(phi[c]);
-float cs = cos(phi[c]);
-height += A * cs;
-across -= Q * A * kv[c] * sn / kmag;
-slope += A * kv[c] * sn;
-fold += Q * A * kmag * cs;
+height += A * cs[c];
+across -= Q * A * kv[c] * sn[c] / kmag;
+slope += A * kv[c] * sn[c];
+fold += Q * A * kmag * cs[c];
 drawn += 0.5 * (A * kmag) * (A * kmag);
 }
 disp = vec3(across.x, height, across.y);
@@ -711,10 +730,56 @@ float roll = breaking * (1.0 - smoothstep(0.0, OCEAN_ROLL_WIDTH, mod(crestPhase,
 float trailing = breaking * exp(-foamAge / OCEAN_FOAM_LIFE);
 foam = vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);
 }
-// The swell at p as swellAt has it, nothing faded.
-void oceanSwellEval(vec2 p, out vec3 disp, out vec3 normal, out vec4 foam) {
-float drawn;
-oceanSwellSum(p, vec2(0.0), vec2(0.0), disp, normal, foam, drawn);
+// The swell's foam (foam, B, foamAge, depth) at the undisplaced point p from
+// an envelope vector env and its magnitude envelope, as oceanSwellSum makes it
+// once it has its envelope: the break from p's own depth, Weggel's index (the
+// coastline's row and the two profile rows, six texels) and the magnitude, the
+// crest's phase from env's angle, and from those the roll, the age and the
+// trailing foam: the sum's own lines, so where env and envelope are the sum's
+// at p the foam is the sum's. The fragment stage passes both interpolated
+// between the ring's vertices, so the break and the age are a pixel's own and
+// the roll's edge stays sharp, with no seam at a crest, where the age wraps.
+// The magnitude is interpolated apart from the vector: the vector turns with
+// the crest's phase across a cell, so its interpolation is a chord, whose
+// length dips mid-cell to the cosine of half the turn, and the break would
+// scallop along the ring's lattice. The magnitude's own interpolation keeps
+// the break smooth, and the vector's angle still places the crest.
+vec4 oceanFoamFromEnvelope(vec2 p, vec2 env, float envelope) {
+float phaseDz;
+vec4 coast = oceanCoastAt(p.y, phaseDz);
+float d = p.x - coast.x;
+float column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
+vec4 bay = oceanAtlasRead(OCEAN_ROW_BAY_PROFILE, column);
+vec4 cove = oceanAtlasRead(OCEAN_ROW_COVE_PROFILE, column);
+float h = bay.x + (cove.x - bay.x) * coast.z;
+float a = bay.y + (cove.y - bay.y) * coast.z;
+float b = bay.z + (cove.z - bay.z) * coast.z;
+float unbroken = 2.0 * envelope;
+float crestPhase = dot(env, env) > 0.0 ? atan(env.y, env.x) : 0.0;
+float hc = max(h, OCEAN_DRY_DEPTH);
+float gamma = clamp(b - a * unbroken / (OCEAN_G * oceanSwell.z * oceanSwell.z), WEGGEL_GAMMA_MIN, WEGGEL_GAMMA_MAX);
+float ratio = unbroken / (gamma * hc);
+float breaking = smoothstep(OCEAN_BREAK_FOAM_LO, OCEAN_BREAK_FOAM_HI, ratio);
+float foamAge = mod(-crestPhase, OCEAN_TWO_PI) / (OCEAN_TWO_PI / oceanSwell.z);
+float roll = breaking * (1.0 - smoothstep(0.0, OCEAN_ROLL_WIDTH, mod(crestPhase, OCEAN_TWO_PI)));
+float trailing = breaking * exp(-foamAge / OCEAN_FOAM_LIFE);
+return vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);
+}
+// The share of the swell's interpolated normal a pixel keeps, from how far its
+// undisplaced point moves over the pixel (dpx, dpy, the derivatives of the
+// point across the screen): the vertex stage fades a component over two of the
+// ring's cells, and where a pixel spans more than that, far out at a grazing
+// eye, the ring still draws a swell the pixel cannot, which would crawl in
+// bands. The fade is the vertex's own, a quarter to a half turn of the phase
+// over a step, taken here at the peak period's deep-water wavenumber along the
+// swell's travel (oceanSwell.xy). The deep wavenumber is the least the peak
+// takes, since a wave shortens as it shoals, so this fades no more than the
+// pixel needs: it under-fades the shallows, where the pixels lie near the eye
+// and are fine enough to need no fade.
+float oceanSwellPixelKeep(vec2 dpx, vec2 dpy) {
+float kDeep = OCEAN_TWO_PI * OCEAN_TWO_PI / (OCEAN_G * oceanSwell.z * oceanSwell.z);
+vec2 u = oceanSwell.xy;
+return 1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, kDeep * max(abs(dot(dpx, u)), abs(dot(dpy, u))));
 }
 // The spacing of the ring that draws p, from p's distance to the eye: a ring
 // of spacing s lies from 32 s to 64 s from the eye, so this is the ring's own
@@ -814,16 +879,19 @@ return oceanWindDisplaceAt(p, 0.0);
 }
 // The sea's displacement of a ring's vertex at p: a swell component under four
 // of the ring's cells a wavelength, or a wind sea field a ring too coarse
-// for, is left to the pixels' normal, so no ring aliases it. The wind sea is
-// its share here, the fetch's off the land, and dies shoreward of the break,
-// where the broken waves eat it, and in a headland's lee.
-vec3 oceanDisplace(vec2 p) {
+// for, is faded out, so no ring aliases it. The wind sea is its share here,
+// the fetch's off the land, and dies shoreward of the break, where the broken
+// waves eat it, and in a headland's lee. The swell's sum is handed on for the
+// fragment stage: swell its normal's x and z, its height and the slope
+// variance its drawn waves carry, and env its envelope vector.
+vec3 oceanDisplace(vec2 p, out vec4 swell, out vec2 env) {
 float cell = oceanRingCell(p);
 vec3 disp;
 vec3 normal;
 vec4 foam;
 float drawn;
-oceanSwellSum(p, vec2(2.0 * cell, 0.0), vec2(0.0, 2.0 * cell), disp, normal, foam, drawn);
+oceanSwellSum(p, vec2(2.0 * cell, 0.0), vec2(0.0, 2.0 * cell), disp, normal, foam, drawn, env);
+swell = vec4(normal.x, normal.z, disp.y, drawn);
 float chop = oceanWindAmp(p) * (1.0 - foam.y) * oceanShelter(p, SHELTER_CHOP);
 return disp + oceanWindDisplaceAt(p, cell) * chop;
 }
@@ -839,11 +907,16 @@ vec3 normalUpdated=normal;
 // (oceanCoarse): at the ring's edge the weight is whole and the vertex lies
 // on a vertex of the coarser ring, which evaluates the same point, so no
 // border cracks. The sea is evaluated once, at that point, which is the point
-// the fragment stage shades. The ring's normal stays up: the sea's normal is
-// made per pixel.
+// the fragment stage shades, and the swell's sum goes on to it, so it sums no
+// swell of its own. The ring's normal stays up: the sea's normal is made per
+// pixel, from the swell's interpolated here and the wind sea's.
 positionUpdated.xz -= oceanMorph * oceanCoarse;
 vOceanXZ = positionUpdated.xz;
-positionUpdated += oceanDisplace(positionUpdated.xz);
+vec4 oceanVertexSwell;
+vec2 oceanVertexEnv;
+positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);
+vOceanSwellA = oceanVertexSwell;
+vOceanSwellB = vec4(oceanVertexEnv, length(oceanVertexEnv), 0.0);
 #define CUSTOM_VERTEX_UPDATE_POSITION
 #define CUSTOM_VERTEX_UPDATE_NORMAL
 mat4 finalWorld=world;

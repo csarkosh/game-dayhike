@@ -275,6 +275,7 @@ vec4 oceanWind;
 vec4 oceanWindDir;
 vec4 oceanWindStats;
 vec4 oceanWindPivot;
+vec4 oceanK[12];
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;

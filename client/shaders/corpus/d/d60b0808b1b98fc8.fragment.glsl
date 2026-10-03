@@ -51,6 +51,7 @@
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
+#define ALPHABLEND
 #define ALPHATESTVALUE 0.4
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
@@ -263,6 +264,7 @@ vec4 oceanWind;
 vec4 oceanWindDir;
 vec4 oceanWindStats;
 vec4 oceanWindPivot;
+vec4 oceanK[12];
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -1406,6 +1408,10 @@ vec3 finalRadiance=reflectionOut.environmentRadiance.rgb;
 finalRadiance*=colorSpecularEnvironmentReflectance;
 vec3 finalRadianceScaled=finalRadiance*vLightingIntensity.z;
 finalRadianceScaled*=coloredEnergyConservationFactor;
+float luminanceOverAlpha=0.0;
+luminanceOverAlpha+=getLuminance(finalRadianceScaled);
+luminanceOverAlpha+=getLuminance(finalSpecularScaled);
+alpha=saturate(alpha+luminanceOverAlpha*luminanceOverAlpha);
 vec3 finalDiffuse=diffuseBase;
 finalDiffuse*=surfaceAlbedo;
 finalDiffuse=max(finalDiffuse,0.0);
