@@ -72,7 +72,7 @@ describe("the sea's waves as the water material reads them (createOcean)", () =>
     expect(placeholder.getInternalTexture()).not.toBeNull();
   }, timeLimit(30_000));
 
-  it("binds itself to a water plugin: its OCEAN define on, the tier's count of components, the coastline row's origin and step", () => {
+  it("binds itself to a water plugin: its OCEAN define on, the tier's count of components, the coastline row's origin and step, the components", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     for (const [tier, count] of [["low", 8], ["medium", 12], ["high", 12]] as const) {
@@ -87,6 +87,14 @@ describe("the sea's waves as the water material reads them (createOcean)", () =>
       const field = oceanFieldFor(SEED, count);
       expect(binding.swell).toEqual([field.travel[0], field.travel[1], field.tp, field.hs]);
       expect(binding.tips).toEqual(oceanTipsFor(field.tips));
+      // The swell's components as the shaders read them, every one the world has, whatever the tier draws:
+      // (k0x, k0z, q0, a0) each, as float32, the same floats the atlas holds.
+      expect(binding.components).toHaveLength(48);
+      expect(field.components).toHaveLength(12);
+      field.components.forEach((comp, c) => {
+        const got = Array.from(binding.components.subarray(c * 4, c * 4 + 4));
+        expect(got, `component ${c}`).toEqual([comp.k0x, comp.k0z, comp.q0, comp.a0].map(Math.fround));
+      });
       const defines: Record<string, unknown> = {};
       plugin.prepareDefines(defines as never, scene, undefined as never);
       expect(defines.OCEAN).toBe(true);

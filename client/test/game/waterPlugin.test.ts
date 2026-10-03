@@ -8,7 +8,7 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
-import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
+import { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
@@ -198,7 +198,7 @@ describe("water plugin", () => {
     const record = (): void => undefined;
     const ubo = {
       updateFloat: (name: string, v: number) => { floats.push([name, v]); },
-      updateFloat2: record, updateFloat3: record, updateFloat4: record, setTexture: vi.fn(),
+      updateFloat2: record, updateFloat3: record, updateFloat4: record, updateFloatArray: record, setTexture: vi.fn(),
     } as unknown as UniformBuffer;
     p.bindForSubMesh(ubo);
     expect(floats).toContainEqual(["waterHigh", 1]);
@@ -223,7 +223,9 @@ describe("water plugin", () => {
     // and bindForSubMesh, skipped between back-to-back draws, no longer writes it
     const writes: string[] = [];
     const record = (name: string) => { writes.push(name); };
-    const full = { updateFloat: record, updateFloat2: record, updateFloat3: record, updateFloat4: record, setTexture: record } as unknown as UniformBuffer;
+    const full = {
+      updateFloat: record, updateFloat2: record, updateFloat3: record, updateFloat4: record, updateFloatArray: record, setTexture: record,
+    } as unknown as UniformBuffer;
     p.bindForSubMesh(full);
     expect(writes).toContain("waterKd");
     expect(writes).not.toContain("waterLevel");
@@ -239,7 +241,7 @@ describe("water plugin", () => {
     const pairs: [string, number, number][] = [];
     const record = (): void => undefined;
     const ubo = {
-      updateFloat: record, updateFloat3: record, updateFloat4: record, setTexture: vi.fn(),
+      updateFloat: record, updateFloat3: record, updateFloat4: record, updateFloatArray: record, setTexture: vi.fn(),
       updateFloat2: (name: string, a: number, b: number) => { pairs.push([name, a, b]); },
     } as unknown as UniformBuffer;
     p.bindForSubMesh(ubo);
@@ -293,7 +295,7 @@ describe("the rain's rings on the water", () => {
     const floats: [string, number][] = [];
     const record = (): void => undefined;
     const ubo = {
-      updateFloat2: record, updateFloat3: record, updateFloat4: record, setTexture: vi.fn(),
+      updateFloat2: record, updateFloat3: record, updateFloat4: record, updateFloatArray: record, setTexture: vi.fn(),
       updateFloat: (name: string, v: number) => { floats.push([name, v]); },
     } as unknown as UniformBuffer;
     p.bindForSubMesh(ubo);
@@ -364,7 +366,7 @@ describe("the rain's rings on the water", () => {
     const pairs: [string, number, number][] = [];
     const record = (): void => undefined;
     const ubo = {
-      updateFloat: record, updateFloat3: record, updateFloat4: record, setTexture: vi.fn(),
+      updateFloat: record, updateFloat3: record, updateFloat4: record, updateFloatArray: record, setTexture: vi.fn(),
       updateFloat2: (name: string, a: number, b: number) => { pairs.push([name, a, b]); },
     } as unknown as UniformBuffer;
     p.bindForSubMesh(ubo);
@@ -372,7 +374,7 @@ describe("the rain's rings on the water", () => {
   });
 });
 
-/** The ten vec4 uniforms the sea's waves read, in their order. */
+/** The ten vec4 uniforms the sea's waves read, in their order, before the components' array. */
 const OCEAN_UNIFORMS = [
   "oceanPhase0", "oceanPhase1", "oceanPhase2", "oceanSwell", "oceanTips", "oceanCoast", "oceanWind", "oceanWindDir",
   "oceanWindStats", "oceanWindPivot",
@@ -385,6 +387,7 @@ function testOcean(): OceanBinding {
     windDisp: oceanArrayPlaceholder(scene),
     windSlope: oceanArrayPlaceholder(scene),
     phases: Float32Array.from({ length: 12 }, (_, i) => i + 0.5),
+    components: Float32Array.from({ length: 48 }, (_, i) => i + 0.25),
     swell: [0.96, 0.28, 11, 2],
     tips: [-520, -150, -505, 160],
     coast: [-6240, 12, 12, 0],
@@ -400,7 +403,7 @@ const bedTexture = (): RawTexture =>
   RawTexture.CreateRTexture(new Float32Array(4), 2, 2, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
 
 describe("the sea's waves in the water plugin", () => {
-  it("declares the ten vec4 uniforms on every path, ocean or none", () => {
+  it("declares the ten vec4 uniforms and the components' twelve on every path, ocean or none", () => {
     const p = attachWater(new PBRMaterial("wO1", scene), WATER_ROWS.lowlandLake);
     const u = p.getUniforms();
     for (const name of OCEAN_UNIFORMS) {
@@ -409,8 +412,12 @@ describe("the sea's waves in the water plugin", () => {
       // the vertex stage reads them too, which takes this where uniform buffers are not supported
       expect(u.vertex).toContain(`uniform vec4 ${name};`);
     }
-    expect(u.ubo.map((e) => e.name).slice(-10)).toEqual(OCEAN_UNIFORMS);
-    expect(u.ubo).toHaveLength(23);
+    expect(u.ubo.map((e) => e.name).slice(-11, -1)).toEqual(OCEAN_UNIFORMS);
+    // the swell's components last, an array of twelve vec4s, on both paths
+    expect(u.ubo[u.ubo.length - 1]).toEqual({ name: "oceanK", size: 4, type: "vec4", arraySize: 12 });
+    expect(u.fragment).toContain("uniform vec4 oceanK[12];");
+    expect(u.vertex).toContain("uniform vec4 oceanK[12];");
+    expect(u.ubo).toHaveLength(24);
   });
 
   it("declares its samplers in the .fx and never in getUniforms, and gates every line of its GLSL on OCEAN", () => {
@@ -481,12 +488,14 @@ describe("the sea's waves in the water plugin", () => {
       const ubo = {
         updateFloat: ignore, updateFloat2: ignore, updateFloat3: ignore, setTexture: ignore,
         updateFloat4: (name: string, a: number, b: number, c: number, d: number) => { quads[name] = [a, b, c, d]; },
+        updateFloatArray: (name: string, array: Float32Array) => { quads[name] = Array.from(array); },
       } as unknown as UniformBuffer;
       p.bindForSubMesh(ubo);
       return quads;
     };
     const none = record();
     for (const name of OCEAN_UNIFORMS) expect(none[name], name).toEqual([0, 0, 0, 0]);
+    expect(none.oceanK).toEqual(new Array(48).fill(0));
     p.ocean = testOcean();
     const bound = record();
     expect(bound.oceanPhase0).toEqual([0.5, 1.5, 2.5, 3.5]);
@@ -499,6 +508,46 @@ describe("the sea's waves in the water plugin", () => {
     expect(bound.oceanWindDir).toEqual([0.6, -0.8, 9, 0.35]);
     expect(bound.oceanWindStats).toEqual([0.7, 0.02, 0.03, 0.04]);
     expect(bound.oceanWindPivot).toEqual([-412.5, 37, 0, 0]);
+    expect(bound.oceanK).toEqual(Array.from({ length: 48 }, (_, i) => i + 0.25));
+  });
+
+  it("writes the components into a uniform buffer laid out from its list on every bind: the sea's twelve vec4s, a lake's zeros", () => {
+    // An engine with uniform buffers, so Babylon's buffer lays the array out as std140 and writes it in place.
+    const own = webgpuProcessingEngine();
+    try {
+      const s = new Scene(own);
+      const p = attachWater(new PBRMaterial("wOK", s), WATER_ROWS.sea);
+      p.bedTexture = RawTexture.CreateRTexture(new Float32Array(4), 2, 2, s, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+      // Babylon's own buffer, laid out as the plugin manager lays it out from the list
+      const ubo = new UniformBuffer(own, undefined, false, "waterTest");
+      for (const u of p.getUniforms().ubo) ubo.addUniform(u.name, u.size, u.arraySize ?? 0);
+      ubo.create();
+      // the textures go to an effect, which this buffer has none of
+      ubo.setTexture = (): void => undefined;
+      const view = ubo as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+      const data = (): number[] => {
+        const at = view._uniformLocations.oceanK as number;
+        return Array.from(view._bufferData.subarray(at, at + 48));
+      };
+      // the array starts on a vec4 and closes the buffer: twelve vec4s, no padding between them
+      expect((view._uniformLocations.oceanK as number) % 4).toBe(0);
+      expect(view._bufferData.length - (view._uniformLocations.oceanK as number)).toBe(48);
+      // a lake's draw: zeros
+      p.bindForSubMesh(ubo);
+      expect(data()).toEqual(new Array(48).fill(0));
+      // the sea's draw: the binding's components, in order, (k0x, k0z, q0, a0) each
+      const ocean = { ...testOcean(), atlas: p.bedTexture, windDisp: oceanArrayPlaceholder(s), windSlope: oceanArrayPlaceholder(s) };
+      p.ocean = ocean;
+      p.bindForSubMesh(ubo);
+      expect(data()).toEqual(Array.from(ocean.components));
+      // the waves gone: zeros again
+      p.ocean = null;
+      p.bindForSubMesh(ubo);
+      expect(data()).toEqual(new Array(48).fill(0));
+      ubo.dispose();
+    } finally {
+      own.dispose();
+    }
   });
 
   it("binds every sampler it lists in every state it is drawn in: a lake, the sea, the high tier's sea, the sea's waves gone", () => {

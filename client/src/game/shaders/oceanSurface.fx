@@ -3,10 +3,11 @@
 // stages, after the ocean's declarations (ocean.vertex.fx, ocean.fragment.fx).
 // The vertex stage displaces the rings with it and the fragment stage shades
 // with it. The swell's sum is swellAt's in oceanWaves.ts line for line: the
-// same atlas rows, the same reads between texel centres, the same blend of
-// the bay and the cove (the phase by its own weight along the coast, the
-// depth and the rest by the cove's), the same cap, the same scale of
-// steepness, the same foam.
+// same atlas rows, the same reads between texel centres (each component's
+// constants the same floats, bound as the oceanK uniforms rather than read
+// from the components' row), the same blend of the bay and the cove (the
+// phase by its own weight along the coast, the depth and the rest by the
+// cove's), the same cap, the same scale of steepness, the same foam.
 //
 // COMMENT RULES: never put a semicolon inside a trailing comment on a code
 // line, and never spell a hashed preprocessor keyword in comment prose. The
@@ -28,7 +29,6 @@ const float OCEAN_ROW_BAY_PROFILE = 0.0;
 const float OCEAN_ROW_COVE_PROFILE = 1.0;
 const float OCEAN_ROW_BAY_FIRST = 2.0;
 const float OCEAN_ROW_COVE_FIRST = 14.0;
-const float OCEAN_ROW_COMPONENTS = 26.0;
 const float OCEAN_ROW_COAST = 27.0;
 const float OCEAN_DRY_DEPTH = 0.05;
 const float WEGGEL_GAMMA_MIN = 0.78;
@@ -118,6 +118,9 @@ float oceanShelter(vec2 p, float keep) {
 // gone at a half turn. With both zero nothing fades and the sum is exactly
 // swellAt's. The envelope, the break and the foam are the whole swell's and
 // never fade. The loops run to a constant 12 and stop at the count, a uniform.
+// Each component's constants are oceanK's, (k0x, k0z, q0, a0), the floats the
+// atlas's components row holds, and each phase's sine and cosine are taken
+// once, in the first loop, for the envelope and the drawn terms alike.
 void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, out vec4 foam, out float drawn) {
   float phaseDz;
   vec4 coast = oceanCoastAt(p.y, phaseDz);
@@ -148,11 +151,13 @@ void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, o
   float amp[12];
   float q0[12];
   vec2 kv[12];
+  float sn[12];
+  float cs[12];
   vec2 env = vec2(0.0);
   for (int c = 0; c < 12; c++) {
     float fc = float(c);
     if (fc >= oceanCoast.z) break;
-    vec4 k = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc);
+    vec4 k = oceanK[c];
     vec4 rb = oceanAtlasRead(OCEAN_ROW_BAY_FIRST + fc, column);
     vec4 rc = oceanAtlasRead(OCEAN_ROW_COVE_FIRST + fc, column);
     // The phase and its onshore wavenumber blend by the phase weight, the
@@ -165,8 +170,10 @@ void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, o
     phi[c] = psi + k.x * coast.x + k.y * p.y + theta[c];
     kv[c] = vec2(kn, k.y + (k.x - kn) * coast.y + dpsi * phaseDz);
     amp[c] = k.w * shoal * shelter;
-    q0[c] = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc + 1.0).x;
-    env += amp[c] * vec2(cos(phi[c]), sin(phi[c]));
+    q0[c] = k.z;
+    sn[c] = sin(phi[c]);
+    cs[c] = cos(phi[c]);
+    env += amp[c] * vec2(cs[c], sn[c]);
   }
   float envelope = length(env);
   float unbroken = 2.0 * envelope;
@@ -196,16 +203,18 @@ void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, o
   drawn = 0.0;
   for (int c = 0; c < 12; c++) {
     if (float(c) >= oceanCoast.z) break;
-    float kmag = length(kv[c]);
     float turn = max(abs(dot(dpx, kv[c])), abs(dot(dpy, kv[c])));
+    // Faded wholly from a half turn a step: A would be 0 and add nothing, so
+    // the drawn terms alone are skipped. The envelope above keeps every
+    // component, so the break and the foam do not depend on the step.
+    if (turn >= OCEAN_RESOLVE_PHASE_HI) continue;
+    float kmag = length(kv[c]);
     float A = amp[c] * (1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, turn));
     float Q = q0[c] * s;
-    float sn = sin(phi[c]);
-    float cs = cos(phi[c]);
-    height += A * cs;
-    across -= Q * A * kv[c] * sn / kmag;
-    slope += A * kv[c] * sn;
-    fold += Q * A * kmag * cs;
+    height += A * cs[c];
+    across -= Q * A * kv[c] * sn[c] / kmag;
+    slope += A * kv[c] * sn[c];
+    fold += Q * A * kmag * cs[c];
     drawn += 0.5 * (A * kmag) * (A * kmag);
   }
   disp = vec3(across.x, height, across.y);

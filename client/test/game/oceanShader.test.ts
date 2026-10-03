@@ -29,7 +29,7 @@ import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import {
   OCEAN_ROUGHNESS_ANCHOR, OCEAN_ROUGHNESS_CODE, attachWater, oceanArrayPlaceholder, type OceanBinding,
 } from "../../src/game/waterPlugin.js";
-import { oceanTipsFor } from "../../src/game/oceanRender.js";
+import { oceanComponentsFor, oceanTipsFor } from "../../src/game/oceanRender.js";
 import {
   OCEAN_BUMP_HS, OCEAN_BUMP_MAX, OCEAN_CAP_CELL, OCEAN_CAP_CYCLES, OCEAN_CAP_DRIFT, OCEAN_CAP_INSET, OCEAN_CAP_PERIOD,
   OCEAN_CAP_RADIUS, OCEAN_CAP_SHARE, OCEAN_CAP_SOFT, OCEAN_DETAIL_HI, OCEAN_DETAIL_LO, OCEAN_FOAM_ALBEDO,
@@ -114,6 +114,7 @@ function bindingFor(scene: Scene, tier: Tier): OceanBinding {
     windDisp: oceanArrayPlaceholder(scene),
     windSlope: oceanArrayPlaceholder(scene),
     phases: swellPhases(field, 0),
+    components: oceanComponentsFor(field.components),
     swell: [field.travel[0], field.travel[1], field.tp, field.hs],
     tips: oceanTipsFor(field.tips),
     coast: [field.tables.coastOriginZ, OCEAN_COAST_STEP, field.count, MODE[tier]],
@@ -174,15 +175,19 @@ const mod = (x: number, y: number): number => x - y * Math.floor(x / y);
 
 /**
  * oceanSwellSum (shaders/oceanSurface.fx) read line for line into TypeScript: the atlas read as the GPU
- * reads the nearest-sampled texture at texel centres, the uniforms as oceanRender.ts writes them, steps
- * (dpx, dpy) as the shader gets them. A difference between this and swellAt is a difference between the
- * shader and swellAt.
+ * reads the nearest-sampled texture at texel centres, the uniforms as oceanRender.ts writes them (the
+ * components' oceanK as the Float32Array it binds), steps (dpx, dpy) as the shader gets them. A
+ * difference between this and swellAt is a difference between the shader and swellAt. `skipFaded` false
+ * sums a wholly faded component's terms instead of skipping them, as the shader did before it skipped.
  */
-function shaderSwell(field: OceanField, phases: Float32Array, px: number, pz: number, dpx: [number, number], dpy: [number, number]) {
+function shaderSwell(
+  field: OceanField, phases: Float32Array, px: number, pz: number, dpx: [number, number], dpy: [number, number], skipFaded = true,
+) {
   const t = field.tables;
   const swell = [field.travel[0], field.travel[1], field.tp];
   const tips = field.tips;
   const coastU = [t.coastOriginZ, OCEAN_COAST_STEP, field.count];
+  const oceanK = oceanComponentsFor(field.components);
   const texel = (row: number, column: number): number[] => {
     const o = (row * t.width + column) * 4;
     return [t.data[o] as number, t.data[o + 1] as number, t.data[o + 2] as number, t.data[o + 3] as number];
@@ -224,11 +229,13 @@ function shaderSwell(field: OceanField, phases: Float32Array, px: number, pz: nu
   const amp: number[] = [];
   const q0: number[] = [];
   const kv: [number, number][] = [];
+  const sn: number[] = [];
+  const cs: number[] = [];
   let ex = 0;
   let ey = 0;
   for (let c = 0; c < 12; c++) {
     if (c >= (coastU[2] as number)) break;
-    const k = texel(OCEAN_ROW_COMPONENTS, 2 * c) as [number, number, number, number];
+    const k = Array.from(oceanK.subarray(c * 4, c * 4 + 4)) as [number, number, number, number];
     const rb = read(OCEAN_ROW_BAY_FIRST + c, column) as [number, number, number, number];
     const rc = read(OCEAN_ROW_COVE_FIRST + c, column) as [number, number, number, number];
     const dpsi = rc[0] - rb[0];
@@ -238,9 +245,11 @@ function shaderSwell(field: OceanField, phases: Float32Array, px: number, pz: nu
     phi[c] = psi + k[0] * cx + k[1] * pz + (phases[c] as number);
     kv[c] = [kn, k[1] + (k[0] - kn) * cdz + dpsi * phaseDz];
     amp[c] = k[3] * shoal * shelter;
-    q0[c] = texel(OCEAN_ROW_COMPONENTS, 2 * c + 1)[0] as number;
-    ex += (amp[c] as number) * Math.cos(phi[c] as number);
-    ey += (amp[c] as number) * Math.sin(phi[c] as number);
+    q0[c] = k[2];
+    sn[c] = Math.sin(phi[c] as number);
+    cs[c] = Math.cos(phi[c] as number);
+    ex += (amp[c] as number) * (cs[c] as number);
+    ey += (amp[c] as number) * (sn[c] as number);
   }
   const envelope = Math.hypot(ex, ey);
   const unbroken = 2 * envelope;
@@ -271,18 +280,17 @@ function shaderSwell(field: OceanField, phases: Float32Array, px: number, pz: nu
   for (let c = 0; c < 12; c++) {
     if (c >= (coastU[2] as number)) break;
     const [kx, kz] = kv[c] as [number, number];
-    const kmag = Math.hypot(kx, kz);
     const turn = Math.max(Math.abs(dpx[0] * kx + dpx[1] * kz), Math.abs(dpy[0] * kx + dpy[1] * kz));
+    if (skipFaded && turn >= OCEAN_RESOLVE_PHASE_HI) continue;
+    const kmag = Math.hypot(kx, kz);
     const A = (amp[c] as number) * (1 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, turn));
     const Q = (q0[c] as number) * s;
-    const sn = Math.sin(phi[c] as number);
-    const cs = Math.cos(phi[c] as number);
-    height += A * cs;
-    dx -= (Q * A * kx * sn) / kmag;
-    dz -= (Q * A * kz * sn) / kmag;
-    slopeX += A * kx * sn;
-    slopeZ += A * kz * sn;
-    fold += Q * A * kmag * cs;
+    height += A * (cs[c] as number);
+    dx -= (Q * A * kx * (sn[c] as number)) / kmag;
+    dz -= (Q * A * kz * (sn[c] as number)) / kmag;
+    slopeX += A * kx * (sn[c] as number);
+    slopeZ += A * kz * (sn[c] as number);
+    fold += Q * A * kmag * (cs[c] as number);
     drawn += 0.5 * (A * kmag) * (A * kmag);
   }
   const foamAge = mod(-crestPhase, 2 * Math.PI) / ((2 * Math.PI) / (swell[2] as number));
@@ -302,7 +310,7 @@ describe("the sea's shader constants and functions", () => {
       ["OCEAN_TABLE_SAMPLES", OCEAN_TABLE_SAMPLES], ["OCEAN_ATLAS_ROWS", OCEAN_ATLAS_ROWS],
       ["OCEAN_ROW_BAY_PROFILE", OCEAN_ROW_BAY_PROFILE], ["OCEAN_ROW_COVE_PROFILE", OCEAN_ROW_COVE_PROFILE],
       ["OCEAN_ROW_BAY_FIRST", OCEAN_ROW_BAY_FIRST], ["OCEAN_ROW_COVE_FIRST", OCEAN_ROW_COVE_FIRST],
-      ["OCEAN_ROW_COMPONENTS", OCEAN_ROW_COMPONENTS], ["OCEAN_ROW_COAST", OCEAN_ROW_COAST],
+      ["OCEAN_ROW_COAST", OCEAN_ROW_COAST],
       ["OCEAN_DRY_DEPTH", OCEAN_DRY_DEPTH], ["WEGGEL_GAMMA_MIN", WEGGEL_GAMMA_MIN], ["WEGGEL_GAMMA_MAX", WEGGEL_GAMMA_MAX],
       ["SWELL_Q_SUM_MAX", SWELL_Q_SUM_MAX], ["OCEAN_BORE_RATIO", OCEAN_BORE_RATIO], ["OCEAN_BREAK_FULL", OCEAN_BREAK_FULL],
       ["OCEAN_BREAK_FOAM_LO", OCEAN_BREAK_FOAM_LO], ["OCEAN_BREAK_FOAM_HI", OCEAN_BREAK_FOAM_HI],
@@ -312,6 +320,8 @@ describe("the sea's shader constants and functions", () => {
       ["OCEAN_RING_BASE", WATER_BASE_SPACING], ["OCEAN_RING_REACH", WATER_RING_CELLS / 4],
     ];
     for (const [name, value] of surface) pinned(s, name, value);
+    // The components are the oceanK uniforms, not the atlas's components row.
+    expect(s).not.toContain("OCEAN_ROW_COMPONENTS");
     const f = fx("oceanShade.fragment.fx");
     pinned(f, "WATER_COX_MUNK_A", WATER_COX_MUNK_A);
     pinned(f, "WATER_COX_MUNK_B", WATER_COX_MUNK_B);
@@ -370,6 +380,7 @@ describe("the sea's shader constants and functions", () => {
       "  float a = bay.y + (cove.y - bay.y) * coast.z;",
       "  float b = bay.z + (cove.z - bay.z) * coast.z;",
       // the phase and its onshore wavenumber blend by the phase weight, the rest by the cove's
+      "    vec4 k = oceanK[c];",
       "    float dpsi = rc.x - rb.x;",
       "    float psi = rb.x + dpsi * coast.w + k.x * deep;",
       "    float kn = rb.y + (rc.y - rb.y) * coast.w;",
@@ -377,12 +388,16 @@ describe("the sea's shader constants and functions", () => {
       "    phi[c] = psi + k.x * coast.x + k.y * p.y + theta[c];",
       "    kv[c] = vec2(kn, k.y + (k.x - kn) * coast.y + dpsi * phaseDz);",
       "    amp[c] = k.w * shoal * shelter;",
-      "    q0[c] = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc + 1.0).x;",
+      "    q0[c] = k.z;",
+      "    sn[c] = sin(phi[c]);",
+      "    cs[c] = cos(phi[c]);",
+      "    env += amp[c] * vec2(cs[c], sn[c]);",
+      "    if (turn >= OCEAN_RESOLVE_PHASE_HI) continue;",
       "  float hc = max(h, OCEAN_DRY_DEPTH);",
       "  float ratio = unbroken / (gamma * hc);",
       "    scale = hc * cap / max(unbroken, 1.0e-6);",
       "  float s = min(1.0, SWELL_Q_SUM_MAX / max(steepness, 1.0e-6));",
-      "    across -= Q * A * kv[c] * sn / kmag;",
+      "    across -= Q * A * kv[c] * sn[c] / kmag;",
       "  normal = normalize(vec3(slope.x, 1.0 - fold, slope.y));",
       "  foam = vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);",
     ]) expect(s, line).toContain(line);
@@ -426,11 +441,13 @@ describe("the sea's shader constants and functions", () => {
   float amp[12];
   float q0[12];
   vec2 kv[12];
+  float sn[12];
+  float cs[12];
   vec2 env = vec2(0.0);
   for (int c = 0; c < 12; c++) {
     float fc = float(c);
     if (fc >= oceanCoast.z) break;
-    vec4 k = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc);
+    vec4 k = oceanK[c];
     vec4 rb = oceanAtlasRead(OCEAN_ROW_BAY_FIRST + fc, column);
     vec4 rc = oceanAtlasRead(OCEAN_ROW_COVE_FIRST + fc, column);
     // The phase and its onshore wavenumber blend by the phase weight, the
@@ -443,8 +460,10 @@ describe("the sea's shader constants and functions", () => {
     phi[c] = psi + k.x * coast.x + k.y * p.y + theta[c];
     kv[c] = vec2(kn, k.y + (k.x - kn) * coast.y + dpsi * phaseDz);
     amp[c] = k.w * shoal * shelter;
-    q0[c] = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc + 1.0).x;
-    env += amp[c] * vec2(cos(phi[c]), sin(phi[c]));
+    q0[c] = k.z;
+    sn[c] = sin(phi[c]);
+    cs[c] = cos(phi[c]);
+    env += amp[c] * vec2(cs[c], sn[c]);
   }
   float envelope = length(env);
   float unbroken = 2.0 * envelope;
@@ -474,16 +493,18 @@ describe("the sea's shader constants and functions", () => {
   drawn = 0.0;
   for (int c = 0; c < 12; c++) {
     if (float(c) >= oceanCoast.z) break;
-    float kmag = length(kv[c]);
     float turn = max(abs(dot(dpx, kv[c])), abs(dot(dpy, kv[c])));
+    // Faded wholly from a half turn a step: A would be 0 and add nothing, so
+    // the drawn terms alone are skipped. The envelope above keeps every
+    // component, so the break and the foam do not depend on the step.
+    if (turn >= OCEAN_RESOLVE_PHASE_HI) continue;
+    float kmag = length(kv[c]);
     float A = amp[c] * (1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, turn));
     float Q = q0[c] * s;
-    float sn = sin(phi[c]);
-    float cs = cos(phi[c]);
-    height += A * cs;
-    across -= Q * A * kv[c] * sn / kmag;
-    slope += A * kv[c] * sn;
-    fold += Q * A * kmag * cs;
+    height += A * cs[c];
+    across -= Q * A * kv[c] * sn[c] / kmag;
+    slope += A * kv[c] * sn[c];
+    fold += Q * A * kmag * cs[c];
     drawn += 0.5 * (A * kmag) * (A * kmag);
   }
   disp = vec3(across.x, height, across.y);
@@ -525,6 +546,54 @@ describe("the sea's shader constants and functions", () => {
     // The points cross the break line: some of them break.
     expect(broken).toBeGreaterThan(100);
   }, timeLimit(60_000));
+
+  it("skips a wholly faded component's terms to the same numbers, to the bit, as summing its zeros", () => {
+    let skipped = 0;
+    let kept = 0;
+    for (const seed of [SEED, 12345, 777]) {
+      const field = oceanFieldFor(seed);
+      const phases = swellPhases(field, 37.5);
+      const coastline = coastProfilesFor(seed).coastlineX;
+      for (let i = 0; i <= 12; i++) {
+        for (let j = 0; j <= 8; j++) {
+          const z = -400 + j * 100;
+          const x = coastline(z) - 700 + i * 60;
+          // Steps from a fine pixel to a coarse ring's cells: some components faded wholly, some in part, some not.
+          for (const step of [0.25, 1, 2, 4, 8, 16, 64]) {
+            const dpx: [number, number] = [step, 0.3 * step];
+            const dpy: [number, number] = [-0.2 * step, step];
+            const got = shaderSwell(field, phases, x, z, dpx, dpy);
+            const want = shaderSwell(field, phases, x, z, dpx, dpy, false);
+            for (const key of ["height", "dx", "dz", "slopeX", "slopeZ", "normalY", "depth", "breaking", "foamAge", "foam", "drawn"] as const) {
+              expect(Object.is(got[key], want[key]), `${key} at (${x}, ${z}) step ${step}`).toBe(true);
+            }
+            if (got.drawn === 0) skipped++;
+            else kept++;
+          }
+        }
+      }
+    }
+    // The steps reach both ends: points where every component is skipped, and points where some are drawn.
+    expect(skipped).toBeGreaterThan(0);
+    expect(kept).toBeGreaterThan(0);
+  }, timeLimit(60_000));
+
+  it("binds the components as the floats the atlas's components row holds, to the bit", () => {
+    for (const seed of [SEED, 12345, 777]) {
+      const field = oceanFieldFor(seed);
+      const t = field.tables;
+      const oceanK = oceanComponentsFor(field.components);
+      expect(oceanK).toHaveLength(48);
+      const row = (c: number, j: number): number => t.data[(OCEAN_ROW_COMPONENTS * t.width + c) * 4 + j] as number;
+      for (let c = 0; c < 12; c++) {
+        // (k0x, k0z, q0, a0): texel 2c's x, y and w, and texel 2c + 1's x.
+        expect(Object.is(oceanK[c * 4], row(2 * c, 0)), `k0x ${c}`).toBe(true);
+        expect(Object.is(oceanK[c * 4 + 1], row(2 * c, 1)), `k0z ${c}`).toBe(true);
+        expect(Object.is(oceanK[c * 4 + 2], row(2 * c + 1, 0)), `q0 ${c}`).toBe(true);
+        expect(Object.is(oceanK[c * 4 + 3], row(2 * c, 3)), `a0 ${c}`).toBe(true);
+      }
+    }
+  });
 
   it("estimates a vertex's ring from its distance alone: its own spacing at the inner edge, the next ring's at the outer", () => {
     expect(OCEAN_RING_REACH).toBe(32);
@@ -696,6 +765,14 @@ describe("the water material's stages, compiled", () => {
         const { vertex, fragment } = translated(effect, defines);
         expect(vertex).toContain("oceanAtlas");
         expect(vertex).toContain("oceanSwellSum");
+        // The components from the material's uniforms, twelve vec4s, in both stages.
+        expect(v).toMatch(/\bvec4 oceanK\[12\];/);
+        expect(f).toMatch(/\bvec4 oceanK\[12\];/);
+        // In the uniform block's struct, read by the loop's index.
+        for (const stage of [vertex, fragment]) {
+          expect(stage).toMatch(/\boceanK : \w+,/);
+          expect(stage).toMatch(/\.oceanK\[\w+\]/);
+        }
         expect(vertex).toContain("oceanWindDisplaceAt");
         // WGSL allows no implicit-derivative sample in a vertex stage.
         expect(vertex).toMatch(/textureSampleLevel\(/);

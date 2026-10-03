@@ -73,6 +73,9 @@ export type OceanBinding = {
   windSlope: BaseTexture;
   /** The swell's twelve phases, radians (`swellPhases`), zeros past the drawn count. */
   phases: Float32Array;
+  /** The swell's components, (k0x, k0z, q0, a0) a component, twelve vec4s
+   * (`oceanComponentsFor`): the `oceanK` uniforms, constant for the world. */
+  components: Float32Array;
   /** The swell's unit direction of travel (x, z), its peak period (s) and its significant height (m). */
   swell: [number, number, number, number];
   /** The cove's two headland tips, (x0, z0, x1, z1); an absent one far inland (`OCEAN_NO_TIP`). */
@@ -100,8 +103,13 @@ const OCEAN_UNIFORMS = [
   "oceanWindStats", "oceanWindPivot",
 ] as const;
 
+/** The swell's components, a uniform array of twelve vec4s, bound after the ten. */
+const OCEAN_COMPONENTS = "oceanK";
+const OCEAN_COMPONENT_COUNT = 12;
+
 /** Bound without an ocean: the uniforms exist on every water material. */
 const NO_PHASES = new Float32Array(12);
+const NO_COMPONENTS = new Float32Array(OCEAN_COMPONENT_COUNT * 4);
 const NO_VEC4: readonly [number, number, number, number] = [0, 0, 0, 0];
 
 /** One of the sea's vec4 uniforms, zeros where there is no sea: on every draw, so nothing is made for it. */
@@ -246,7 +254,10 @@ export class WaterPlugin extends MaterialPluginBase {
     samplers.push("waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope");
   }
 
-  override getUniforms(): { ubo: { name: string; size: number; type: string }[]; vertex: string; fragment: string } {
+  override getUniforms(): {
+    ubo: { name: string; size: number; type: string; arraySize?: number }[]; vertex: string; fragment: string;
+  } {
+    const components = `uniform vec4 ${OCEAN_COMPONENTS}[${OCEAN_COMPONENT_COUNT}];`;
     return {
       ubo: [
         { name: "waterLevel", size: 1, type: "float" },
@@ -263,10 +274,11 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: "waterSkin", size: 2, type: "vec2" },
         { name: "waterRain", size: 1, type: "float" },
         ...OCEAN_UNIFORMS.map((name) => ({ name, size: 4, type: "vec4" })),
+        { name: OCEAN_COMPONENTS, size: 4, type: "vec4", arraySize: OCEAN_COMPONENT_COUNT },
       ],
       // The sea's waves read theirs in the vertex stage too, which takes this
       // where uniform buffers are not supported.
-      vertex: OCEAN_UNIFORMS.map((name) => `uniform vec4 ${name};`).join("\n"),
+      vertex: [...OCEAN_UNIFORMS.map((name) => `uniform vec4 ${name};`), components].join("\n"),
       fragment: [
         "uniform float waterLevel;",
         "uniform vec3 waterKd;",
@@ -282,6 +294,7 @@ export class WaterPlugin extends MaterialPluginBase {
         "uniform vec2 waterSkin;",
         "uniform float waterRain;",
         ...OCEAN_UNIFORMS.map((name) => `uniform vec4 ${name};`),
+        components,
       ].join("\n"),
     };
   }
@@ -337,6 +350,7 @@ export class WaterPlugin extends MaterialPluginBase {
     bindVec4(uniformBuffer, "oceanWindDir", ocean?.windDir);
     bindVec4(uniformBuffer, "oceanWindStats", ocean?.windStats);
     bindVec4(uniformBuffer, "oceanWindPivot", ocean?.windPivot);
+    uniformBuffer.updateFloatArray(OCEAN_COMPONENTS, ocean?.components ?? NO_COMPONENTS);
     const atlas = ocean?.atlas ?? this.bedTexture;
     if (atlas !== null) uniformBuffer.setTexture("oceanAtlas", atlas);
     uniformBuffer.setTexture("oceanWindDisp", ocean?.windDisp ?? this._arrayPlaceholder);

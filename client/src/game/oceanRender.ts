@@ -18,7 +18,7 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { QualityTier } from "./quality.js";
-import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "./oceanSwell.js";
+import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW, type SwellComponent } from "./oceanSwell.js";
 import { OCEAN_COAST_RECENTRE, OCEAN_COAST_STEP, coastProfilesFor, writeCoastRow } from "./oceanTables.js";
 import { oceanFieldFor, swellPhases } from "./oceanWaves.js";
 import { windSeaStateFor } from "./oceanWindSea.js";
@@ -60,6 +60,24 @@ export function oceanTipsFor(tips: readonly (readonly [number, number])[]): [num
     const tip = tips[i] as readonly [number, number];
     out[i * 2] = tip[0];
     out[i * 2 + 1] = tip[1];
+  }
+  return out;
+}
+
+/**
+ * The swell's components as the shaders read them, the `oceanK` uniforms:
+ * (k0x, k0z, q0, a0) a component, twelve vec4s, the floats the atlas's
+ * components row holds for the same components (`buildOceanTables`), so the
+ * shaders read the same values as `swellAt`; zeros past those there are.
+ */
+export function oceanComponentsFor(components: readonly SwellComponent[]): Float32Array {
+  const out = new Float32Array(SWELL_COMPONENTS * 4);
+  for (let c = 0; c < Math.min(components.length, SWELL_COMPONENTS); c++) {
+    const comp = components[c] as SwellComponent;
+    out[c * 4] = comp.k0x;
+    out[c * 4 + 1] = comp.k0z;
+    out[c * 4 + 2] = comp.q0;
+    out[c * 4 + 3] = comp.a0;
   }
   return out;
 }
@@ -109,6 +127,7 @@ export function createOcean(
     windDisp: placeholder,
     windSlope: placeholder,
     phases: new Float32Array(12),
+    components: oceanComponentsFor(field.components),
     swell: [field.travel[0], field.travel[1], field.tp, field.hs],
     tips: oceanTipsFor(field.tips),
     coast: [tables.coastOriginZ, OCEAN_COAST_STEP, field.count, windMode],

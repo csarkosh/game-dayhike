@@ -23,7 +23,8 @@
  * - rows 2..13 (bay) and 14..25 (cove), one a component: Ψ, kn, the amplitude
  *   factor K_s·K_r (blended to 1 in deep water), 0; landward of the last wet
  *   sample each holds that sample's values;
- * - row 26, the components: texel 2c (k0x, k0z, ω, a0), texel 2c + 1 (q0, 0, 0, 0);
+ * - row 26, the components: texel 2c (k0x, k0z, ω, a0), texel 2c + 1 (q0, 0, 0, 0),
+ *   read by `swellAt`; the shaders take the same floats as uniforms (`oceanComponentsFor`);
  * - row 27, the coastline along z from coastOriginZ every OCEAN_COAST_STEP:
  *   coastlineX, its slope dx/dz, the cove's weight (depth, Weggel's a and b and
  *   the amplitude factor blend by it), the phase weight (Ψ and kn blend by it).
