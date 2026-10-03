@@ -125,14 +125,11 @@ against the zenith can be matched (§3.6).
   - The elevation is mapped as v = ½ + ½·sign(e)·√(|e| / 90°), which puts
     half the rows within about 22° of the horizon, where the colour changes.
   - Slices are taken every 0.5° from −18° to +12°, and every 2° from 12° to
-    76°, the noon sun's height on the arc: 94 slices.
+    76°, the noon sun's height on the arc: 93 slices.
 
-A prototype under Node took:
-- 45 ms for the transmittance table;
-- 250 ms for multiple scattering;
-- 18 ms per slice.
-
-That is about 2 s for the whole set. Its values:
+Built in TypeScript under Node, the two fixed tables take about 80 ms and a
+slice about 3 ms: about 0.4 s for the whole set. The values below are from a
+first prototype at the default aerosols, before the scale of §3.6:
 
 | Sun | Zenith, × noon | Zenith colour | Horizon toward the sun | Horizon away | Ground's sky light, × noon, colour |
 |---|---|---|---|---|---|
@@ -192,8 +189,15 @@ The light falls about 40× from noon to sunset, and a further 1,000× by −6°.
   so that the noon zenith at clear has the luminance of today's dome, 0.42.
   A test checks it against the ported shader.
 - **The aerosol scale.** It is then tuned so that the noon horizon is no more
-  than about twice the zenith. The prototype's default aerosols put it at
-  4.5×.
+  than about twice the zenith. The default aerosols put it at 4.4×; fewer
+  aerosols make it brighter still, since the noon zenith, 14° from the sun,
+  takes much of its light from their forward scattering. Five times the
+  default meets it, an aerosol optical depth of about 0.05, a clear day. The
+  noon zenith is then paler, and the zenith at sunset 4 % of noon's.
+- **Below the horizon.** The dome reads the table at the horizon for every
+  direction below it, as today's dome does. A slice's lower rows hold only
+  the air's own glow, 2 % of the zenith at the nadir, which would darken the
+  image-based light on every downward face.
 - **The sun's light at noon.** `SUN_PEAK` (4) at noon, as today.
 
 ## 4. Computing it
@@ -201,9 +205,9 @@ The light falls about 40× from noon to sunset, and a further 1,000× by −6°.
 - **At load, in a worker.** The worker computes the two fixed tables, then
   the slices in the order the start hour needs them: the two either side of
   it first, then outward. Before the first frame is shown the renderer waits
-  for those first two slices, about 0.3 s. The ocean's wind-sea loop already
-  bakes in a worker the same way. The full set takes about 2 s, off the main
-  thread.
+  for the slices the noon and the start hour need, under 0.1 s. The ocean's
+  wind-sea loop already bakes in a worker the same way. The full set takes
+  about 0.4 s, off the main thread.
 - **On each change of hour or weather**, on the main thread:
   - the renderer blends the two slices either side of the sun's altitude
     linearly, together with their derived values (§6);
@@ -241,12 +245,15 @@ With cloud cover c, the dome is mix(clear, deck, c).
 
 ### 5.2 Mist, rain and dread
 
-`fogColourUnder` keeps its steps, in order and with their constants: the
-pull toward mist air, cloud desaturation, the overcast dusk dimming, rain's
-greying and dread's pull.
+The fog colour keeps today's steps, in order and with their constants: the
+pull toward mist air, cloud desaturation, rain's greying and dread's pull.
+It becomes `airColourUnder(weather, base)`, over a base colour it is given.
 
 - **The base.** Its base is the sky's horizon colour (§6) instead of
   `skyColourAt`.
+- **The overcast dusk dimming goes.** It existed because `skyColourAt`
+  stayed bright under cloud at dusk. The deck now dims the base itself, so
+  keeping the step would dim it twice.
 - **The dome's horizon.** The dome blends toward that same fog colour near
   the horizon, weighted by mist. Mist is the one part of the air the table
   does not model, so with this blend the dome and the fog meet without a
@@ -270,7 +277,7 @@ sun's height.
 | Consumer | Today | With the table |
 |---|---|---|
 | The dome | `SkyMaterial` | A new material on the skybox that reads the slice texture (§7) |
-| Image-based light (every PBR material, the water) | The probe captures `SkyMaterial`, 8-bit, gamma space | The probe captures the new dome, linear and half-float, so the dusk horizon's brightness above 1 survives |
+| Image-based light (every PBR material, the water) | The probe captures `SkyMaterial`, 8-bit and flagged gamma-encoded. On medium and high the dome writes linear values into it, so materials decode the sky to the power 2.2 | The probe captures the new dome half-float and still flagged gamma-encoded, so no material's shader changes. The dome writes the gamma encoding, so materials decode its true linear radiance, and the dusk horizon's brightness above 1 survives. `SKY_IBL_SCALE` (1) is left for the checks by eye |
 | The sun light (light 0; the foliage plugin needs it first) | Hand curves | The transmittance's colour and strength, × A |
 | The fill light (light 1) | `ambientColourFor`, `fillIntensityFor` | Day share: `FILL_DAY` × the sky's light on level ground (relative to noon) × A, in its colour. Night share: today's moonlight. A night factor n weights the two |
 | Fog colour, clear colour, the haze gradient's far end | `fogColourUnder` on `skyColourAt` | `fogColourUnder` on the sky's horizon colour away from the sun |
@@ -310,7 +317,8 @@ plugin already binds, and the fit is the work of `atmosphereParams.ts`.
   4. adds the disc;
   5. on the low tier only, applies exposure and the tone map.
 
-  The capture always takes the linear branch, with the disc capped.
+  The capture always writes the gamma encoding of the linear composition,
+  never tone-mapped, with the disc capped.
 - **The corpus.** The dome's stages are recorded on every tier, and the four
   `SkyMaterial` stages are retired by path.
 - **PBR stages.** No PBR stage changes. A test pins
