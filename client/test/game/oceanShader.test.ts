@@ -253,7 +253,7 @@ function shaderSwell(
   }
   const envelope = Math.hypot(ex, ey);
   const unbroken = 2 * envelope;
-  const crestPhase = envelope > 0 ? Math.atan2(ey, ex) : 0;
+  const crestPhase = ex * ex + ey * ey > 0 ? Math.atan2(ey, ex) : 0;
   const hc = Math.max(h, OCEAN_DRY_DEPTH);
   const gamma = Math.min(WEGGEL_GAMMA_MAX, Math.max(WEGGEL_GAMMA_MIN, b - (a * unbroken) / (OCEAN_G * (swell[2] as number) * (swell[2] as number))));
   const ratio = unbroken / (gamma * hc);
@@ -333,7 +333,7 @@ function shaderFoamFromEnvelope(
   const a = (bay[1] as number) + ((cove[1] as number) - (bay[1] as number)) * wc;
   const b = (bay[2] as number) + ((cove[2] as number) - (bay[2] as number)) * wc;
   const unbroken = 2 * envelope;
-  const crestPhase = envelope > 0 ? Math.atan2(envY, envX) : 0;
+  const crestPhase = envX * envX + envY * envY > 0 ? Math.atan2(envY, envX) : 0;
   const hc = Math.max(h, OCEAN_DRY_DEPTH);
   const gamma = Math.min(WEGGEL_GAMMA_MAX, Math.max(WEGGEL_GAMMA_MIN, b - (a * unbroken) / (OCEAN_G * tp * tp)));
   const ratio = unbroken / (gamma * hc);
@@ -512,7 +512,7 @@ describe("the sea's shader constants and functions", () => {
   }
   float envelope = length(env);
   float unbroken = 2.0 * envelope;
-  float crestPhase = envelope > 0.0 ? atan(env.y, env.x) : 0.0;
+  float crestPhase = dot(env, env) > 0.0 ? atan(env.y, env.x) : 0.0;
   // No dry branch: over sand the depth is held at OCEAN_DRY_DEPTH, so the
   // swell there is the bore's few centimetres.
   float hc = max(h, OCEAN_DRY_DEPTH);
@@ -577,7 +577,7 @@ describe("the sea's shader constants and functions", () => {
   float a = bay.y + (cove.y - bay.y) * coast.z;
   float b = bay.z + (cove.z - bay.z) * coast.z;
   float unbroken = 2.0 * envelope;
-  float crestPhase = envelope > 0.0 ? atan(env.y, env.x) : 0.0;
+  float crestPhase = dot(env, env) > 0.0 ? atan(env.y, env.x) : 0.0;
   float hc = max(h, OCEAN_DRY_DEPTH);
   float gamma = clamp(b - a * unbroken / (OCEAN_G * oceanSwell.z * oceanSwell.z), WEGGEL_GAMMA_MIN, WEGGEL_GAMMA_MAX);
   float ratio = unbroken / (gamma * hc);

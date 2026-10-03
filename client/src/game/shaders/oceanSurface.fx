@@ -180,7 +180,7 @@ void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, o
   }
   float envelope = length(env);
   float unbroken = 2.0 * envelope;
-  float crestPhase = envelope > 0.0 ? atan(env.y, env.x) : 0.0;
+  float crestPhase = dot(env, env) > 0.0 ? atan(env.y, env.x) : 0.0;
   // No dry branch: over sand the depth is held at OCEAN_DRY_DEPTH, so the
   // swell there is the bore's few centimetres.
   float hc = max(h, OCEAN_DRY_DEPTH);
@@ -253,7 +253,7 @@ vec4 oceanFoamFromEnvelope(vec2 p, vec2 env, float envelope) {
   float a = bay.y + (cove.y - bay.y) * coast.z;
   float b = bay.z + (cove.z - bay.z) * coast.z;
   float unbroken = 2.0 * envelope;
-  float crestPhase = envelope > 0.0 ? atan(env.y, env.x) : 0.0;
+  float crestPhase = dot(env, env) > 0.0 ? atan(env.y, env.x) : 0.0;
   float hc = max(h, OCEAN_DRY_DEPTH);
   float gamma = clamp(b - a * unbroken / (OCEAN_G * oceanSwell.z * oceanSwell.z), WEGGEL_GAMMA_MIN, WEGGEL_GAMMA_MAX);
   float ratio = unbroken / (gamma * hc);
