@@ -133,7 +133,8 @@ describe("createWater under NullEngine", () => {
     expect((mat.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([lakeSkin(1), waterSkinOffset(1)]);
     expect(lakeSkin(1)).toBe(1);
     const sea = water.meshes[0]!.material as PBRMaterial;
-    expect((sea.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([0, 0]);
+    // the sea's skin stays off; its offset seeds the white water's pattern
+    expect((sea.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([0, waterSkinOffset(1)]);
     water.dispose();
     expect(scene.getMeshByName("pond_0")).toBeNull();
     expect(scene.getMaterialByName("mat_water_lake_0")).toBeNull();

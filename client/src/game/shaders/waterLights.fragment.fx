@@ -86,3 +86,18 @@ if (waterSkin.x > 0.0) {
   alpha = mix(alpha, 1.0, wSkin);
   normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wSkin));
 }
+#ifdef OCEAN
+// The white water, a matte layer over the sea the way the skin is over a
+// lake: the swell's foam through its lace, and the whitecaps, which the
+// broken waves eat shoreward of the break. Its albedo is the foam's by its
+// age, a whitecap's fresh.
+float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, max(length(wOceanDx), length(wOceanDy)));
+float wOceanCap = oceanCapCells(vOceanXZ);
+wOceanCap *= 1.0 - wOceanFoam.y;
+float wFoam = max(wOceanLace, wOceanCap);
+float wFoamWhite = wOceanLace >= wOceanCap ? oceanFoamWhite(wOceanFoam.z) : OCEAN_FOAM_ALBEDO;
+surfaceAlbedo = mix(surfaceAlbedo, vec3(wFoamWhite), wFoam);
+wTransmit *= 1.0 - wFoam;
+alpha = mix(alpha, 1.0, wFoam);
+normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wFoam));
+#endif

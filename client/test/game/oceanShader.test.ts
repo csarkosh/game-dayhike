@@ -31,9 +31,11 @@ import {
 } from "../../src/game/waterPlugin.js";
 import { oceanTipsFor } from "../../src/game/oceanRender.js";
 import {
+  OCEAN_CAP_CELL, OCEAN_CAP_DRIFT, OCEAN_CAP_INSET, OCEAN_CAP_PERIOD, OCEAN_CAP_RADIUS, OCEAN_CAP_SHARE, OCEAN_CAP_SOFT,
+  OCEAN_FOAM_ALBEDO, OCEAN_FOAM_ALBEDO_OLD, OCEAN_LACE_DRIFT, OCEAN_LACE_SOFT, OCEAN_LACE_TILE,
   OCEAN_RESOLVE_PHASE_HI, OCEAN_RESOLVE_PHASE_LO, OCEAN_RING_REACH, OCEAN_SLOPE_VAR_FLOOR, WATER_COX_MUNK_A,
-  WATER_COX_MUNK_B, WATER_ROWS, coxMunkVariance, oceanRingCell, resolvedShare, resolvedSlopeVariance, roughnessFor,
-  roughnessFromVariance, slopeVariance, undrawnSlopeVariance,
+  WATER_COX_MUNK_B, WATER_ROWS, capProfile, coxMunkVariance, foamWhite, laceCover, oceanRingCell, resolvedShare,
+  resolvedSlopeVariance, roughnessFor, roughnessFromVariance, slopeVariance, undrawnSlopeVariance, whitecapThreshold,
 } from "../../src/game/waterShading.js";
 import { OCEAN_G, WEGGEL_GAMMA_MAX, WEGGEL_GAMMA_MIN } from "../../src/game/oceanPhysics.js";
 import { SWELL_Q_SUM_MAX } from "../../src/game/oceanSwell.js";
@@ -583,6 +585,8 @@ describe("the water material's stages, compiled", () => {
         expect(fragment).toMatch(/textureSampleLevel\(\s*oceanAtlasTexture/);
         expect(fragment).not.toMatch(/textureSample(?:Bias|Grad|Compare)?\(\s*ocean/);
         expect(fragment).toContain("oceanSwellSum");
+        expect(fragment).toContain("oceanFoamCover");
+        expect(fragment).toContain("oceanCapCells");
       } finally {
         sea.dispose();
       }
@@ -603,4 +607,90 @@ describe("the water material's stages, compiled", () => {
       lake.dispose();
     }
   }, timeLimit(60_000));
+});
+
+describe("the white water", () => {
+  it("holds the TypeScript's look and cap numbers", () => {
+    const f = fx("oceanShade.fragment.fx");
+    const look: [string, number][] = [
+      ["OCEAN_FOAM_ALBEDO", OCEAN_FOAM_ALBEDO], ["OCEAN_FOAM_ALBEDO_OLD", OCEAN_FOAM_ALBEDO_OLD],
+      ["OCEAN_LACE_TILE", OCEAN_LACE_TILE], ["OCEAN_LACE_DRIFT", OCEAN_LACE_DRIFT], ["OCEAN_LACE_SOFT", OCEAN_LACE_SOFT],
+      ["OCEAN_CAP_CELL", OCEAN_CAP_CELL], ["OCEAN_CAP_PERIOD", OCEAN_CAP_PERIOD], ["OCEAN_CAP_RADIUS", OCEAN_CAP_RADIUS],
+      ["OCEAN_CAP_INSET", OCEAN_CAP_INSET], ["OCEAN_CAP_DRIFT", OCEAN_CAP_DRIFT], ["OCEAN_CAP_SHARE", OCEAN_CAP_SHARE],
+      ["OCEAN_CAP_SOFT", OCEAN_CAP_SOFT],
+    ];
+    for (const [name, value] of look) pinned(f, name, value);
+    for (const signature of [
+      "float oceanLace(vec2 p)", "float oceanFoamCover(vec2 p, float foam, float pixel)", "float oceanFoamWhite(float foamAge)",
+      "float oceanCapCoverage(vec2 p)", "float oceanCapThreshold(float coverage)", "float oceanWhitecap(vec2 p, float crest)",
+      "float oceanCapCells(vec2 p)",
+    ]) expect(f).toContain(signature);
+  });
+
+  it("whitens fresh foam to 0.8 and old foam toward 0.5, through a lace that is a sheet when full and nothing when gone", () => {
+    expect(foamWhite(0)).toBeCloseTo(0.8, 12);
+    expect(foamWhite(20)).toBeCloseTo(0.6103638, 6);
+    expect(foamWhite(1000)).toBeCloseTo(0.5, 9);
+    expect(laceCover(1, 0)).toBe(0);
+    expect(laceCover(0.5, 0)).toBe(0);
+    expect(laceCover(0.06, 1)).toBe(1);
+    expect(laceCover(0.5, 0.5)).toBe(0);
+    expect(laceCover(0.56, 0.5)).toBe(1);
+    const f = fx("oceanShade.fragment.fx");
+    expect(f).toContain("  float lace = smoothstep(1.0 - foam, 1.0 - foam + OCEAN_LACE_SOFT, oceanLace(p));");
+    expect(f).toContain("  return mix(OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_ALBEDO, exp(-foamAge / OCEAN_FOAM_LIFE));");
+    // The lace drifts with the swell's travel and is offset by the world's seed, the sea's waterSkin.y.
+    expect(f).toContain("  vec2 q = p + waterSkin.y - oceanSwell.xy * (OCEAN_LACE_DRIFT * waterTime);");
+  });
+
+  it("puts the whitecaps over Callaghan's share of a Gaussian sea's crests", () => {
+    expect(Math.abs(whitecapThreshold(0.1) - 1.28155)).toBeLessThan(1e-3);
+    expect(Math.abs(whitecapThreshold(0.01) - 2.32635)).toBeLessThan(1e-3);
+    expect(Math.abs(whitecapThreshold(0.001) - 3.09023)).toBeLessThan(1e-3);
+    expect(Math.abs(whitecapThreshold(0.5))).toBeLessThan(1e-3);
+    expect(fx("oceanShade.fragment.fx")).toContain(
+      "  return s - (2.515517 + 0.802853 * s + 0.010328 * s * s) / (1.0 + 1.432788 * s + 0.189269 * s * s + 0.001308 * s * s * s);",
+    );
+  });
+
+  it("gives the low tier's cells Callaghan's coverage by construction: a fired cap covers OCEAN_CAP_SHARE of its cell", () => {
+    // The cap's profile over its cell by the midpoint rule, times its mean brightness over a cycle.
+    const n = 1000;
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const x = (i + 0.5) / n - 0.5;
+        const z = (j + 0.5) / n - 0.5;
+        sum += capProfile(Math.hypot(x, z) / OCEAN_CAP_RADIUS);
+      }
+    }
+    expect(Math.abs((sum / (n * n)) * 0.5 - OCEAN_CAP_SHARE)).toBeLessThan(1e-4);
+    // A cap stays inside its cell: its centre is inset by at least its radius.
+    expect(OCEAN_CAP_INSET).toBeGreaterThanOrEqual(OCEAN_CAP_RADIUS);
+    const f = fx("oceanShade.fragment.fx");
+    expect(f).toContain("  float fire = step(waterSkinHash(h + vec2(mod(k, 97.0) * 3.0, 7.0)), oceanCapCoverage(p) / OCEAN_CAP_SHARE);");
+    expect(f).toContain("  return fire * (1.0 - (cycle - k)) * (1.0 - smoothstep(0.7, 1.0, r));");
+  });
+
+  it("lays the white water over the sea as the skin lies over a lake: after the transmission, matte in the compose", () => {
+    const l = fx("waterLights.fragment.fx");
+    const layer = at(l, "float wFoam = max(wOceanLace, wOceanCap);");
+    expect(layer).toBeGreaterThan(at(l, "if (waterSkin.x > 0.0) {"));
+    expect(layer).toBeGreaterThan(at(l, "wTransmit = wBed * wT * (1.0 - wF);"));
+    // The swell's foam through its lace, and the caps, which the broken waves eat.
+    expect(at(l, "float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, max(length(wOceanDx), length(wOceanDy)));")).toBeLessThan(layer);
+    expect(at(l, "wOceanCap *= 1.0 - wOceanFoam.y;")).toBeLessThan(layer);
+    // Then the matte layer: albedo toward the foam's white, transmission held, alpha toward 1, normal toward up.
+    for (const line of [
+      "surfaceAlbedo = mix(surfaceAlbedo, vec3(wFoamWhite), wFoam);",
+      "wTransmit *= 1.0 - wFoam;",
+      "alpha = mix(alpha, 1.0, wFoam);",
+      "normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wFoam));",
+    ]) expect(at(l, line)).toBeGreaterThan(layer);
+    const c = fx("waterCompose.fragment.fx");
+    const foam = at(c, "finalRadianceScaled *= 1.0 - wFoam;");
+    expect(c).toContain("finalSpecularScaled *= 1.0 - wFoam;");
+    expect(foam).toBeGreaterThan(at(c, "#ifdef OCEAN"));
+    expect(foam).toBeLessThan(at(c, "finalEmissive += wTransmit;"));
+  });
 });

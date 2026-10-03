@@ -857,6 +857,9 @@ export function createWater(
   const seaMat = new PBRMaterial("mat_water_sea", scene);
   seaMat.backFaceCulling = false;
   const seaPlugin = attachWater(seaMat, WATER_ROWS.sea);
+  // The sea's skin stays off (x = 0); its offset seeds the white water's lace
+  // and whitecaps (oceanShade.fragment.fx), so two worlds' foam differs.
+  seaPlugin.skin = [0, waterSkinOffset(seed)];
   // The sea's waves, bound before any draw: the swell's tables and what moves
   // each frame. The lakes have none (no `OCEAN` on their materials).
   const ocean = createOcean(scene, seed, tier);

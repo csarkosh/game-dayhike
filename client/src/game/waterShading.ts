@@ -10,6 +10,7 @@
 import { clamp01 } from "./colour.js";
 import { CLUTTER_WATER_MURK_HI, CLUTTER_WATER_MURK_LO } from "../sim/clutter.js";
 import { WATER_BASE_SPACING, WATER_RING_CELLS } from "./water.js";
+import { OCEAN_FOAM_LIFE } from "./oceanWaves.js";
 
 /** One body of water, from the world at build time (spec §7). */
 export type WaterBody = {
@@ -212,6 +213,61 @@ export function resolvedSlopeVariance(waves: readonly { amplitude: number; k: nu
 export const OCEAN_RING_REACH = WATER_RING_CELLS / 4;
 export function oceanRingCell(dx: number, dz: number): number {
   return Math.max(WATER_BASE_SPACING, Math.max(Math.abs(dx), Math.abs(dz)) / OCEAN_RING_REACH);
+}
+
+/**
+ * The white water's look (spec §5): fresh foam's albedo and old foam's, under the lace that thins the
+ * cover itself (fresh foam reflects about 40 % of the surface it lies on, old foam 3 to 10 %: its albedo
+ * times the share the lace covers); the lace's cell (m), its drift along the swell's travel (m/s) and its
+ * edge's softness. Mirrored in shaders/oceanShade.fragment.fx.
+ */
+export const OCEAN_FOAM_ALBEDO = 0.8;
+export const OCEAN_FOAM_ALBEDO_OLD = 0.5;
+export const OCEAN_LACE_TILE = 3;
+export const OCEAN_LACE_DRIFT = 0.4;
+export const OCEAN_LACE_SOFT = 0.06;
+
+/**
+ * The whitecaps where no wind sea is drawn (the low tier, `oceanCapCells`): a cap a cell (m), each cell's
+ * cycle (s), a cap's radius and its centre's least inset (in cells), the cells' drift down the wind (m/s
+ * of the wind's integral), and OCEAN_CAP_SHARE, the cover a cell gives when its cap fires every cycle:
+ * the cap's profile integrated over the cell (`capProfile`, 0.2056 of it) times its mean brightness over
+ * the cycle (it fades linearly, ½). A cap fires with the chance coverage / OCEAN_CAP_SHARE, so the mean
+ * cover is Callaghan's coverage by construction. And OCEAN_CAP_SOFT, the soft edge (in standard
+ * deviations of its height) of the caps on a drawn wind sea (`oceanWhitecap`). Mirrored in
+ * shaders/oceanShade.fragment.fx.
+ */
+export const OCEAN_CAP_CELL = 5;
+export const OCEAN_CAP_PERIOD = 5;
+export const OCEAN_CAP_RADIUS = 0.3;
+export const OCEAN_CAP_INSET = 0.3;
+export const OCEAN_CAP_DRIFT = 2;
+export const OCEAN_CAP_SHARE = 0.1028;
+export const OCEAN_CAP_SOFT = 0.4;
+
+/** The foam's albedo at an age (s): fresh foam's, falling to old foam's over OCEAN_FOAM_LIFE (`oceanFoamWhite`). */
+export function foamWhite(foamAge: number): number {
+  const fresh = Math.exp(-foamAge / OCEAN_FOAM_LIFE);
+  return OCEAN_FOAM_ALBEDO_OLD + (OCEAN_FOAM_ALBEDO - OCEAN_FOAM_ALBEDO_OLD) * fresh;
+}
+
+/** The lace's cover where the ridged noise is `ridge` (0 to 1) and the foam's amount `foam`: none at no
+ * foam, nearly all of it at a full amount (`oceanFoamCover`'s threshold). */
+export function laceCover(ridge: number, foam: number): number {
+  return smoothstep(1 - foam, 1 - foam + OCEAN_LACE_SOFT, ridge);
+}
+
+/** How many standard deviations above its mean a Gaussian sea's height stands over a `coverage` share of
+ * its surface: Abramowitz and Stegun's 26.2.23, within 4.5e-4, the coverage held to [1e-6, 0.5]
+ * (`oceanCapThreshold`). */
+export function whitecapThreshold(coverage: number): number {
+  const s = Math.sqrt(-2 * Math.log(Math.min(Math.max(coverage, 1e-6), 0.5)));
+  return s - (2.515517 + 0.802853 * s + 0.010328 * s * s) / (1 + 1.432788 * s + 0.189269 * s * s + 0.001308 * s * s * s);
+}
+
+/** A whitecap's brightness at `r` of its radius from its centre (`oceanCapCells`). */
+export function capProfile(r: number): number {
+  return 1 - smoothstep(0.7, 1, r);
 }
 
 /**
