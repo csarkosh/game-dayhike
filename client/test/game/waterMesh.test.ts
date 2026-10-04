@@ -17,7 +17,8 @@ import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { createRain } from "../../src/game/rain.js";
 import { createMotes } from "../../src/game/motes.js";
 import { createMistMeshes } from "../../src/game/mistMeshes.js";
-import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterRingSpacing } from "../../src/game/water.js";
+import { OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterRingSpacing } from "../../src/game/water.js";
+import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
@@ -27,6 +28,9 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { WATER_GROUP } from "../../src/game/waterFrame.js";
+import { oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
+import { windSeaStateFor } from "../../src/game/oceanWindSea.js";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 
 // Whether the high tier's frame can be made is a question for the engine
 // (WebGPU, a multisampled first pass), which NullEngine cannot answer yes to;
@@ -35,6 +39,25 @@ const frameSupport = vi.hoisted(() => ({ supported: false }));
 vi.mock("../../src/game/waterFrame.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/game/waterFrame.js")>();
   return { ...actual, waterFrameSupported: () => frameSupport.supported };
+});
+
+// What the sea's waves are told each frame of whether the sea is drawn: the
+// real ocean, its `update` recorded on the way in.
+const seaFrames = vi.hoisted(() => ({ drawn: [] as (boolean | undefined)[] }));
+vi.mock("../../src/game/oceanRender.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/oceanRender.js")>();
+  return {
+    ...actual,
+    createOcean: (...args: Parameters<typeof actual.createOcean>) => {
+      const ocean = actual.createOcean(...args);
+      const update = ocean.update.bind(ocean);
+      ocean.update = (...frame: Parameters<typeof update>) => {
+        seaFrames.drawn.push(frame[6]);
+        update(...frame);
+      };
+      return ocean;
+    },
+  };
 });
 
 setActiveTerrainVariant("olympic");
@@ -53,18 +76,29 @@ describe("createWater under NullEngine", () => {
     const scene = new Scene(engine);
     const water = createWater(scene, 0x5eed, 0);
     expect(water.meshes.length).toBe(WATER_RING_COUNT);
-    for (const m of water.meshes) {
+    expect(WATER_RING_COUNT).toBe(7);
+    water.meshes.forEach((m) => {
       expect(m.getTotalVertices()).toBeGreaterThan(0);
       expect(m.isVerticesDataPresent("bedDepth")).toBe(true);
       expect(m.isVerticesDataPresent(VertexBuffer.ColorKind)).toBe(false);
       expect(m.useVertexColors).toBe(false);
       expect((m.metadata as { waterLevel: number }).waterLevel).toBe(0);
+      // the stitch: a float and an (x, z) per vertex
+      expect(m.getVertexBuffer("oceanMorph")!.getSize()).toBe(1);
+      expect(m.getVertexBuffer("oceanCoarse")!.getSize()).toBe(2);
+      expect(m.getVerticesData("oceanMorph")!.length).toBe(m.getTotalVertices());
+      // one vertex buffer a kind: six, inside the eight the WebGPU device is made with
+      expect(m.getVerticesDataKinds().sort()).toEqual(["bedDepth", "normal", "oceanCoarse", "oceanMorph", "position", "uv"]);
+      expect(m.getVerticesDataKinds().length).toBeLessThanOrEqual(WEBGPU_REQUIRED_LIMITS.maxVertexBuffers as number);
+      // the vertices are world positions: the vertex stage's position is the world's
+      expect(m.computeWorldMatrix(true).isIdentity()).toBe(true);
       const mat = m.material as PBRMaterial;
       expect(mat.name).toBe("mat_water_sea");
       expect(mat.transparencyMode).toBe(PBRMaterial.PBRMATERIAL_ALPHABLEND);
       expect(mat.pluginManager?.getPlugin("Water")).toBeInstanceOf(WaterPlugin);
       expect(m.receiveShadows).toBe(false);
-    }
+    });
+    expect(WEBGPU_REQUIRED_LIMITS.maxVertexBuffers).toBe(8);
     water.update(-500, 300, 1); // must re-emit and re-bake without throwing
     water.dispose();
   }, timeLimit(30_000));
@@ -73,7 +107,8 @@ describe("createWater under NullEngine", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     let ms = 1000;
-    const water = createWater(scene, 0x5eed, 0, [], "medium", 0, 0, () => ms);
+    // The low tier's sea carries the bump; on high and medium its normal is its waves'.
+    const water = createWater(scene, 0x5eed, 0, [], "low", 0, 0, () => ms);
     const bump = (water.meshes[0]?.material as PBRMaterial).bumpTexture as Texture;
     const u0 = bump.uOffset;
     scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -84,6 +119,18 @@ describe("createWater under NullEngine", () => {
     expect(bump.uOffset).toBeCloseTo(u0 + 0.5 * WATER_UV_SCROLL[0], 9);
     water.dispose();
   });
+
+  it("keeps PBR's bump on the sea on the low tier alone, the sea's normal its waves' elsewhere, and on every lake", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    for (const tier of ["high", "medium", "low"] as const) {
+      const water = createWater(scene, 0x5eed, 0, [lake()], tier);
+      const sea = water.meshes[0]!.material as PBRMaterial;
+      expect(sea.bumpTexture !== null, tier).toBe(tier === "low");
+      expect((water.lakeMeshes[0]!.material as PBRMaterial).bumpTexture, tier).not.toBeNull();
+      water.dispose();
+    }
+  }, timeLimit(60_000));
 
   it("adds one surface per lake on its own material, at its level, with its murk's water, and disposes both", () => {
     engine = new NullEngine();
@@ -105,7 +152,8 @@ describe("createWater under NullEngine", () => {
     expect((mat.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([lakeSkin(1), waterSkinOffset(1)]);
     expect(lakeSkin(1)).toBe(1);
     const sea = water.meshes[0]!.material as PBRMaterial;
-    expect((sea.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([0, 0]);
+    // the sea's skin stays off; its offset seeds the white water's pattern
+    expect((sea.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([0, waterSkinOffset(1)]);
     water.dispose();
     expect(scene.getMeshByName("pond_0")).toBeNull();
     expect(scene.getMaterialByName("mat_water_lake_0")).toBeNull();
@@ -187,6 +235,53 @@ describe("createWater under NullEngine", () => {
     expect(plugin.octaves).toBe(1);
     water.setWind(1, [0, 1]);
     expect((water.meshes[0]!.material as PBRMaterial).roughness).toBeGreaterThan(0.5);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("gives the sea's material the sea's waves and no lake's: OCEAN on the sea alone", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 1, 0, [lake({ murk: 1 }), lake({ x: -300, z: 200, murk: 0 })], "low");
+    const pluginOf = (m: AbstractMesh): WaterPlugin => (m.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const oceanDefine = (p: WaterPlugin): unknown => {
+      const d: Record<string, unknown> = {};
+      p.prepareDefines(d as never, scene, undefined as never);
+      return d.OCEAN;
+    };
+    const sea = pluginOf(water.meshes[0]!);
+    for (const m of water.meshes) expect(pluginOf(m)).toBe(sea);
+    expect(sea.ocean ?? null).not.toBeNull();
+    expect(oceanDefine(sea)).toBe(true);
+    // the low tier draws the swell's eight largest components; the coastline row about z = 0
+    expect(sea.ocean!.coast).toEqual([-6240, 12, 8, 0]);
+    expect(sea.ocean!.atlas.getSize()).toEqual({ width: 1040, height: 28 });
+    expect(water.lakeMeshes).toHaveLength(2);
+    for (const pond of water.lakeMeshes) {
+      expect(pluginOf(pond)).not.toBe(sea);
+      expect(pluginOf(pond).ocean).toBeNull();
+      expect(oceanDefine(pluginOf(pond))).toBe(false);
+    }
+    const atlas = sea.ocean!.atlas;
+    water.dispose();
+    expect(atlas.getInternalTexture()).toBeNull();
+  }, timeLimit(30_000));
+
+  it("hands the sea's waves the clock's seconds, the wind setWind last had and the hour, noon when none is given", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 1, 0, [], "medium");
+    const sea = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const field = oceanFieldFor(1, 12);
+    water.setWind(0.9, [0, 1]);
+    water.update(0, 0, 42.5, 15);
+    expect(Array.from(sea.ocean!.phases)).toEqual(Array.from(swellPhases(field, 42.5)));
+    const afternoon = windSeaStateFor(0.9, [0, 1], 15);
+    expect(sea.ocean!.windDir).toEqual([afternoon.dir[0], afternoon.dir[1], afternoon.u10, afternoon.onshoreWeight]);
+    water.update(0, 0, 43);
+    const noon = windSeaStateFor(0.9, [0, 1], 12);
+    expect(sea.ocean!.windDir).toEqual([noon.dir[0], noon.dir[1], noon.u10, noon.onshoreWeight]);
+    // the hour reached it: the afternoon's sea breeze is the stronger wind
+    expect(afternoon.u10).toBeGreaterThan(noon.u10);
     water.dispose();
   }, timeLimit(30_000));
 
@@ -331,12 +426,12 @@ describe("createWater under NullEngine", () => {
   describe("rings without water are off, and a wet ring's bounds are its wet cells (seed atmo)", () => {
     // The olympic variant's sea is at level 0; on seed atmo the coast at z = 0
     // is near x = -372, and pond_0 sits on high ground at (249.6, 84), about
-    // 620 m inland. Ring 0 is 1,024 m across, so it holds no sea only with the
-    // camera more than 512 m from the coast.
+    // 620 m inland. Ring 3 is 1,024 m across, so it and the three inside it
+    // hold no sea only with the camera more than 512 m from the coast.
     const seed = seedFromToken("atmo");
     const pondCam = { x: 249.6, z: 84 };
 
-    it("inland: ring 0 is disabled, ring 1's box ends at the coast, the pond disc stays on", () => {
+    it("inland: rings 0 to 3 are disabled, ring 4's box ends at the coast, the pond disc stays on", () => {
       engine = new NullEngine();
       const scene = new Scene(engine);
       const level = activeTerrainVariant().waterLevel!;
@@ -345,23 +440,26 @@ describe("createWater under NullEngine", () => {
       expect(lakes[0]!.x).toBeCloseTo(pondCam.x, 0);
       const water = createWater(scene, seed, level, lakes, "medium", pondCam.x, pondCam.z);
       const check = (): void => {
-        expect(water.meshes[0]!.isEnabled()).toBe(false);
-        const ring1 = water.meshes[1]!;
-        expect(ring1.isEnabled()).toBe(true);
-        const box = ring1.getBoundingInfo().boundingBox;
+        for (const ring of water.meshes.slice(0, 4)) expect(ring.isEnabled()).toBe(false);
+        const ring4 = water.meshes[4]!;
+        expect(ring4.isEnabled()).toBe(true);
+        const box = ring4.getBoundingInfo().boundingBox;
         // the whole plane would reach 1,024 m east of the camera
-        const planeMaxX = box.minimumWorld.x + WATER_RING_CELLS * waterRingSpacing(1);
+        const planeMaxX = box.minimumWorld.x + OCEAN_BOUND + waterRingSpacing(4) + WATER_RING_CELLS * waterRingSpacing(4);
         expect(planeMaxX).toBeGreaterThan(pondCam.x);
-        // the ring's east-most wet vertex is on the coast, and the box ends one 16 m cell past it
-        const pos = ring1.getVerticesData(VertexBuffer.PositionKind)!;
-        const depth = ring1.getVerticesData("bedDepth")!;
+        // the ring's east-most wet vertex is on the coast, and the box ends one
+        // 16 m cell past it, and past that the waves' 12 m and the stitch's
+        // move of a vertex, up to a cell, 16 m
+        const pos = ring4.getVerticesData(VertexBuffer.PositionKind)!;
+        const depth = ring4.getVerticesData("bedDepth")!;
         let wetMaxX = -Infinity;
         for (let i = 0; i < depth.length; i++) if ((depth[i] as number) > 0) wetMaxX = Math.max(wetMaxX, pos[i * 3] as number);
         expect(wetMaxX).toBeLessThan(-360);
-        expect(box.maximumWorld.x).toBeGreaterThanOrEqual(wetMaxX);
-        expect(box.maximumWorld.x).toBeLessThanOrEqual(wetMaxX + waterRingSpacing(1));
-        expect(box.minimumWorld.y).toBe(level);
-        expect(box.maximumWorld.y).toBe(level);
+        expect(box.maximumWorld.x).toBeGreaterThanOrEqual(wetMaxX + 12 + 16);
+        expect(box.maximumWorld.x).toBeLessThanOrEqual(wetMaxX + 16 + 12 + 16);
+        // the crest above the level and the trough below it
+        expect(box.minimumWorld.y).toBe(level - 12);
+        expect(box.maximumWorld.y).toBe(level + 12);
         expect(scene.getMeshByName("pond_0")!.isEnabled()).toBe(true);
       };
       check();
@@ -390,18 +488,45 @@ describe("createWater under NullEngine", () => {
         }
         return names;
       };
-      // inland, east: the camera is inside ring 1's wet box's bounding sphere,
+      // inland, east: the camera is inside ring 4's wet box's bounding sphere,
       // so only the box test can cull it
       camera.setTarget(new Vector3(1209.6, 87.5, 84));
       scene.render();
-      expect(water.meshes[1]!.isEnabled()).toBe(true);
-      const sphere = water.meshes[1]!.getBoundingInfo().boundingSphere;
+      expect(water.meshes[4]!.isEnabled()).toBe(true);
+      const sphere = water.meshes[4]!.getBoundingInfo().boundingSphere;
       expect(Vector3.Distance(camera.position, sphere.centerWorld)).toBeLessThan(sphere.radiusWorld);
       expect(activeRings()).toEqual([]);
       // west, toward the coast
       camera.setTarget(new Vector3(-790.4, 87.5, 84));
       scene.render();
       expect(activeRings().length).toBeGreaterThan(0);
+      water.dispose();
+    }, timeLimit(30_000));
+
+    it("tells the sea's waves the sea is drawn only after a frame whose culling kept a sea ring, a lake in view or not", () => {
+      engine = new NullEngine();
+      const scene = new Scene(engine);
+      const lakes = activeTerrainVariant().waterBodies!(seed).filter((b): b is LakeSource => b.kind === "lake");
+      const camera = new FreeCamera("c", new Vector3(209.6, 87.5, 84), scene);
+      camera.maxZ = 10_000;
+      const water = createWater(scene, seed, 0, lakes, "high", 209.6, 84);
+      seaFrames.drawn.length = 0;
+      // Before any frame is drawn: nothing kept.
+      water.update(209.6, 84, 0);
+      // Inland, east, the pond beside the camera and no sea ring in view.
+      camera.setTarget(new Vector3(1209.6, 87.5, 84));
+      scene.render();
+      expect(scene.getActiveMeshes().contains(scene.getMeshByName("pond_0")!)).toBe(true);
+      water.update(209.6, 84, 1);
+      // West, toward the coast.
+      camera.setTarget(new Vector3(-790.4, 87.5, 84));
+      scene.render();
+      water.update(209.6, 84, 2);
+      // East again.
+      camera.setTarget(new Vector3(1209.6, 87.5, 84));
+      scene.render();
+      water.update(209.6, 84, 3);
+      expect(seaFrames.drawn).toEqual([false, false, true, false]);
       water.dispose();
     }, timeLimit(30_000));
 
@@ -412,6 +537,10 @@ describe("createWater under NullEngine", () => {
       expect(water.meshes[0]!.isEnabled()).toBe(true);
       const box = water.meshes[0]!.getBoundingInfo().boundingBox;
       expect(box.minimumWorld.x).toBeLessThan(-374);
+      // ring 0 is 128 m across: its box, grown by the waves' 12 m and the stitch's 1 m, starts at most 77 m west of the camera
+      expect(box.minimumWorld.x).toBeGreaterThanOrEqual(-374 - 77);
+      expect(box.minimumWorld.y).toBe(-12);
+      expect(box.maximumWorld.y).toBe(12);
       water.dispose();
     }, timeLimit(30_000));
   });

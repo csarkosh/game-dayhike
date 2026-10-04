@@ -1,0 +1,1329 @@
+// client/test/game/oceanShader.test.ts
+/**
+ * The sea's shaders: shaders/oceanSurface.fx (both stages), oceanShade.fragment.fx,
+ * the displacement in oceanDisplace.vertex.fx and the OCEAN blocks of
+ * waterLights.fragment.fx and waterCompose.fragment.fx. Their constants in
+ * lockstep with the TypeScript, their swell the same sum as swellAt's, their
+ * order in the stages Babylon builds, the lakes' text untouched, and every
+ * tier's stages compiled through glslang and translated to WGSL under Node as
+ * the page translates them, the sea's textures read at a fixed level only.
+ */
+import { describe, it, expect, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { Constants } from "@babylonjs/core/Engines/constants.js";
+import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder.js";
+import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
+import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage.js";
+import "../../src/sim/olympic.js";
+import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import {
+  OCEAN_ROUGHNESS_ANCHOR, OCEAN_ROUGHNESS_CODE, attachWater, oceanArrayPlaceholder, type OceanBinding,
+} from "../../src/game/waterPlugin.js";
+import { oceanComponentsFor, oceanTipsFor } from "../../src/game/oceanRender.js";
+import {
+  OCEAN_BUMP_HS, OCEAN_BUMP_MAX, OCEAN_CAP_CELL, OCEAN_CAP_CYCLES, OCEAN_CAP_DRIFT, OCEAN_CAP_INSET, OCEAN_CAP_PERIOD,
+  OCEAN_CAP_RADIUS, OCEAN_CAP_SHARE, OCEAN_CAP_SOFT, OCEAN_DETAIL_HI, OCEAN_DETAIL_LO, OCEAN_FOAM_ALBEDO,
+  OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_FADE, OCEAN_INNER_COVER, OCEAN_LACE_DRIFT,
+  OCEAN_LACE_FINE, OCEAN_LACE_FINE_SHIFT, OCEAN_LACE_FIT_A, OCEAN_LACE_FIT_B, OCEAN_LACE_FIT_C, OCEAN_LACE_FIT_D,
+  OCEAN_LACE_FIT_E, OCEAN_LACE_ONSET, OCEAN_LACE_SOFT, OCEAN_LACE_TILE, OCEAN_LACE_WEIGHT, OCEAN_LOOP_SCALE_MIN,
+  OCEAN_RESOLVE_PHASE_HI, OCEAN_RESOLVE_PHASE_LO, OCEAN_RING_REACH, OCEAN_SLOPE_VAR_FLOOR, OCEAN_WIND_TILE_CELLS,
+  WATER_COX_MUNK_A, WATER_COX_MUNK_B, WATER_ROWS, bumpScale, capProfile, coxMunkVariance, drawnWhitecap, foamWhite,
+  oceanRingCell, resolvedShare, resolvedSlopeVariance, roughnessFor, roughnessFromVariance, slopeVariance, swellPixelKeep,
+  undrawnSlopeVariance, whitecapThreshold, windFrame, windPixelKeep, windRingKeep, windSlopeLimit,
+} from "../../src/game/waterShading.js";
+import { WIND_DIR_PERIOD } from "../../src/game/windParams.js";
+import { FFT_CASCADES, FFT_N, LOOP_FRAMES, LOOP_N, LOOP_SECONDS, LOOP_SIZE, WIND_SEA_HS_COEFF } from "../../src/game/oceanSpectrum.js";
+import {
+  WIND_SEA_FETCH_COEFF, WIND_SEA_U_FLOOR, WIND_SEA_U_REF, fetchShare, windSeaShare, windSeaStateFor,
+} from "../../src/game/oceanWindSea.js";
+import { OCEAN_G, WEGGEL_GAMMA_MAX, WEGGEL_GAMMA_MIN, WHITECAP_MAX } from "../../src/game/oceanPhysics.js";
+import { SWELL_Q_SUM_MAX } from "../../src/game/oceanSwell.js";
+import {
+  OCEAN_ATLAS_ROWS, OCEAN_COAST_STEP, OCEAN_D_MIN, OCEAN_D_STEP, OCEAN_DRY_DEPTH, OCEAN_ROW_BAY_FIRST,
+  OCEAN_ROW_BAY_PROFILE, OCEAN_ROW_COAST, OCEAN_ROW_COMPONENTS, OCEAN_ROW_COVE_FIRST, OCEAN_ROW_COVE_PROFILE,
+  OCEAN_TABLE_SAMPLES, coastProfilesFor,
+} from "../../src/game/oceanTables.js";
+import {
+  OCEAN_BORE_RATIO, OCEAN_BREAK_FOAM_HI, OCEAN_BREAK_FOAM_LO, OCEAN_BREAK_FULL, OCEAN_FOAM_LIFE, OCEAN_INNER_FOAM,
+  OCEAN_ROLL_WIDTH, SHELTER_CHOP, SHELTER_SWELL, SHELTER_WIDTH, coastRead, oceanFieldFor, swellAt, swellPhases,
+  type OceanField,
+} from "../../src/game/oceanWaves.js";
+import { WATER_BASE_SPACING, WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/game/water.js";
+import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
+import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
+import { drawnEffect, webgpuProcessingEngine, type ProcessedEffect } from "./helpers/webgpuProcessing.js";
+import { timeLimit } from "../helpers/timeLimit.js";
+
+setActiveTerrainVariant("olympic");
+
+const fx = (name: string): string => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
+const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
+function pinned(text: string, name: string, value: number): void {
+  expect(text, name).toContain(`const float ${name} = ${glslFloat(value)};`);
+}
+
+/** Babylon's preprocessor over one hook's text, as shaderHygiene.test.ts runs it, with a lake's gates on. */
+const LAKE_DEFINES = ["#define WATER", "#define BUMP", "#define REFLECTION", "#define SPECULARTERM"];
+function processed(source: string, isFragment: boolean): Promise<string> {
+  const options: _IProcessingOptions = {
+    defines: LAKE_DEFINES,
+    indexParameters: {},
+    isFragment,
+    shouldUseHighPrecisionShader: true,
+    supportsUniformBuffers: false,
+    shadersRepository: "",
+    includesShadersStore: {},
+    processor: { shaderLanguage: ShaderLanguage.GLSL },
+    version: "",
+    platformName: "WEBGL2",
+    processingContext: null,
+    isNDCHalfZRange: false,
+    useReverseDepthBuffer: false,
+  };
+  return new Promise((resolve) => Process(source, options, (code) => resolve(code)));
+}
+const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
+
+type Tier = "high" | "medium" | "low";
+const MODE: Record<Tier, number> = { high: 2, medium: 1, low: 0 };
+const SEED = 0x5eed;
+
+function floatTexture(scene: Scene): RawTexture {
+  return RawTexture.CreateRTexture(new Float32Array(4), 2, 2, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+}
+
+/** The sea's binding for a tier, as oceanRender.ts makes it: the world's atlas and swell, the scene's array
+ * placeholder for the wind sea's fields, the tier's mode. */
+function bindingFor(scene: Scene, tier: Tier): OceanBinding {
+  const field = oceanFieldFor(SEED, tier === "low" ? 8 : 12);
+  return {
+    atlas: new RawTexture(
+      field.tables.data, field.tables.width, field.tables.rows, Constants.TEXTUREFORMAT_RGBA, scene,
+      false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
+    ),
+    windDisp: oceanArrayPlaceholder(scene),
+    windSlope: oceanArrayPlaceholder(scene),
+    phases: swellPhases(field, 0),
+    components: oceanComponentsFor(field.components),
+    swell: [field.travel[0], field.travel[1], field.tp, field.hs],
+    tips: oceanTipsFor(field.tips),
+    coast: [field.tables.coastOriginZ, OCEAN_COAST_STEP, field.count, MODE[tier]],
+    wind: [0, 1, 0, 0],
+    windDir: [1, 0, 6, 0],
+    windStats: [0.5, 0.01, 0.02, 0.03],
+    windPivot: [-412.5, 37, 0, 0],
+  };
+}
+
+/** The water material's effect as Babylon's WebGPU processing builds it for a tier: the sea's, or a lake's. */
+async function waterEffect(tier: Tier, lake = false): Promise<{ effect: ProcessedEffect; defines: string; dispose(): void }> {
+  const engine = webgpuProcessingEngine();
+  const scene = new Scene(engine);
+  new UniversalCamera("c", new Vector3(0, 2, 0), scene);
+  const mat = new PBRMaterial(lake ? "mat_water_lake_0" : "mat_water_sea", scene);
+  mat.backFaceCulling = false;
+  mat.transparencyMode = tier === "high" ? PBRMaterial.PBRMATERIAL_OPAQUE : PBRMaterial.PBRMATERIAL_ALPHABLEND;
+  const plugin = attachWater(mat, lake ? WATER_ROWS.lowlandLake : WATER_ROWS.sea);
+  plugin.octaves = tier === "low" ? 1 : 2;
+  plugin.bedTexture = floatTexture(scene);
+  if (tier === "high") {
+    plugin.sceneTexture = floatTexture(scene);
+    plugin.depthTexture = floatTexture(scene);
+  }
+  // As createWater sets it: the bump on every lake, and on the sea on the low tier alone.
+  if (lake || tier === "low") mat.bumpTexture = RawTexture.CreateRGBATexture(new Uint8Array(16), 2, 2, scene);
+  if (!lake) plugin.ocean = bindingFor(scene, tier);
+  const mesh = CreateGround("water_0", { width: 64, height: 64, subdivisions: 4 }, scene);
+  const count = mesh.getTotalVertices();
+  mesh.setVerticesData("bedDepth", new Float32Array(count), false, 1);
+  mesh.setVerticesData("oceanMorph", new Float32Array(count), false, 1);
+  mesh.setVerticesData("oceanCoarse", new Float32Array(count * 2), false, 2);
+  mesh.material = mat;
+  const effect = await drawnEffect(mesh);
+  return {
+    effect,
+    defines: (effect as unknown as { defines: string }).defines,
+    dispose: () => {
+      scene.dispose();
+      engine.dispose();
+    },
+  };
+}
+
+/** Where `needle` sits in `text`, failing when it is not there. */
+function at(text: string, needle: string): number {
+  const i = text.indexOf(needle);
+  expect(i, needle).toBeGreaterThan(-1);
+  return i;
+}
+
+const smoothstep = (e0: number, e1: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+const mod = (x: number, y: number): number => x - y * Math.floor(x / y);
+
+/**
+ * oceanSwellSum (shaders/oceanSurface.fx) read line for line into TypeScript: the atlas read as the GPU
+ * reads the nearest-sampled texture at texel centres, the uniforms as oceanRender.ts writes them (the
+ * components' oceanK as the Float32Array it binds), steps (dpx, dpy) as the shader gets them. A
+ * difference between this and swellAt is a difference between the shader and swellAt. `skipFaded` false
+ * sums a wholly faded component's terms instead of skipping them, as the shader did before it skipped.
+ */
+function shaderSwell(
+  field: OceanField, phases: Float32Array, px: number, pz: number, dpx: [number, number], dpy: [number, number], skipFaded = true,
+) {
+  const t = field.tables;
+  const swell = [field.travel[0], field.travel[1], field.tp];
+  const tips = field.tips;
+  const coastU = [t.coastOriginZ, OCEAN_COAST_STEP, field.count];
+  const oceanK = oceanComponentsFor(field.components);
+  const texel = (row: number, column: number): number[] => {
+    const o = (row * t.width + column) * 4;
+    return [t.data[o] as number, t.data[o + 1] as number, t.data[o + 2] as number, t.data[o + 3] as number];
+  };
+  const read = (row: number, column: number): number[] => {
+    const c = Math.min(Math.max(column, 0), OCEAN_TABLE_SAMPLES - 1);
+    const i0 = Math.floor(c);
+    const a = texel(row, i0);
+    const b = texel(row, Math.min(i0 + 1, OCEAN_TABLE_SAMPLES - 1));
+    return a.map((v, j) => v + ((b[j] as number) - v) * (c - i0));
+  };
+  const shelterTip = (x: number, z: number, tip: [number, number], keep: number): number => {
+    const [ux, uz] = [swell[0] as number, swell[1] as number];
+    const rx = x - tip[0];
+    const rz = z - tip[1];
+    const side = uz >= 0 ? 1 : -1;
+    const on = (ux * rx + uz * rz >= 0 ? 1 : 0) * (rz * side >= 0 ? 1 : 0);
+    const lambda = -(ux * rz - uz * rx) * side;
+    return 1 - (1 - keep) * smoothstep(0, SHELTER_WIDTH, lambda) * on;
+  };
+  // oceanCoastAt: the row at the column, and the phase weight's slope from the two texels that read mixes.
+  const coastColumn = (pz - (coastU[0] as number)) / (coastU[1] as number);
+  const coast = read(OCEAN_ROW_COAST, coastColumn);
+  const coastI0 = Math.floor(Math.min(Math.max(coastColumn, 0), OCEAN_TABLE_SAMPLES - 1));
+  const coastHere = texel(OCEAN_ROW_COAST, coastI0)[3] as number;
+  const coastNext = texel(OCEAN_ROW_COAST, Math.min(coastI0 + 1, OCEAN_TABLE_SAMPLES - 1))[3] as number;
+  const phaseDz = coastColumn < 0 ? 0 : (coastNext - coastHere) / (coastU[1] as number);
+  const [cx, cdz, wc, wp] = coast as [number, number, number, number];
+  const d = px - cx;
+  const column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
+  const deep = Math.min(d - OCEAN_D_MIN, 0);
+  const bay = read(OCEAN_ROW_BAY_PROFILE, column);
+  const cove = read(OCEAN_ROW_COVE_PROFILE, column);
+  const h = (bay[0] as number) + ((cove[0] as number) - (bay[0] as number)) * wc;
+  const a = (bay[1] as number) + ((cove[1] as number) - (bay[1] as number)) * wc;
+  const b = (bay[2] as number) + ((cove[2] as number) - (bay[2] as number)) * wc;
+  const shelter = shelterTip(px, pz, tips[0] as [number, number], SHELTER_SWELL) * shelterTip(px, pz, tips[1] as [number, number], SHELTER_SWELL);
+  const phi: number[] = [];
+  const amp: number[] = [];
+  const q0: number[] = [];
+  const kv: [number, number][] = [];
+  const sn: number[] = [];
+  const cs: number[] = [];
+  let ex = 0;
+  let ey = 0;
+  for (let c = 0; c < 12; c++) {
+    if (c >= (coastU[2] as number)) break;
+    const k = Array.from(oceanK.subarray(c * 4, c * 4 + 4)) as [number, number, number, number];
+    const rb = read(OCEAN_ROW_BAY_FIRST + c, column) as [number, number, number, number];
+    const rc = read(OCEAN_ROW_COVE_FIRST + c, column) as [number, number, number, number];
+    const dpsi = rc[0] - rb[0];
+    const psi = rb[0] + dpsi * wp + k[0] * deep;
+    const kn = rb[1] + (rc[1] - rb[1]) * wp;
+    const shoal = rb[2] + (rc[2] - rb[2]) * wc;
+    phi[c] = psi + k[0] * cx + k[1] * pz + (phases[c] as number);
+    kv[c] = [kn, k[1] + (k[0] - kn) * cdz + dpsi * phaseDz];
+    amp[c] = k[3] * shoal * shelter;
+    q0[c] = k[2];
+    sn[c] = Math.sin(phi[c] as number);
+    cs[c] = Math.cos(phi[c] as number);
+    ex += (amp[c] as number) * (cs[c] as number);
+    ey += (amp[c] as number) * (sn[c] as number);
+  }
+  const envelope = Math.hypot(ex, ey);
+  const unbroken = 2 * envelope;
+  const crestPhase = ex * ex + ey * ey > 0 ? Math.atan2(ey, ex) : 0;
+  const hc = Math.max(h, OCEAN_DRY_DEPTH);
+  const gamma = Math.min(WEGGEL_GAMMA_MAX, Math.max(WEGGEL_GAMMA_MIN, b - (a * unbroken) / (OCEAN_G * (swell[2] as number) * (swell[2] as number))));
+  const ratio = unbroken / (gamma * hc);
+  let scale = 1;
+  if (ratio > 1) {
+    const cap = gamma + (OCEAN_BORE_RATIO - gamma) * smoothstep(1, OCEAN_BREAK_FULL, ratio);
+    scale = (hc * cap) / Math.max(unbroken, 1e-6);
+  }
+  const breaking = smoothstep(OCEAN_BREAK_FOAM_LO, OCEAN_BREAK_FOAM_HI, ratio);
+  let steepness = 0;
+  for (let c = 0; c < 12; c++) {
+    if (c >= (coastU[2] as number)) break;
+    amp[c] = (amp[c] as number) * scale;
+    steepness += (q0[c] as number) * Math.hypot(...(kv[c] as [number, number])) * (amp[c] as number);
+  }
+  const s = Math.min(1, SWELL_Q_SUM_MAX / Math.max(steepness, 1e-6));
+  let height = 0;
+  let dx = 0;
+  let dz = 0;
+  let slopeX = 0;
+  let slopeZ = 0;
+  let fold = 0;
+  let drawn = 0;
+  for (let c = 0; c < 12; c++) {
+    if (c >= (coastU[2] as number)) break;
+    const [kx, kz] = kv[c] as [number, number];
+    const turn = Math.max(Math.abs(dpx[0] * kx + dpx[1] * kz), Math.abs(dpy[0] * kx + dpy[1] * kz));
+    if (skipFaded && turn >= OCEAN_RESOLVE_PHASE_HI) continue;
+    const kmag = Math.hypot(kx, kz);
+    const A = (amp[c] as number) * (1 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, turn));
+    const Q = (q0[c] as number) * s;
+    height += A * (cs[c] as number);
+    dx -= (Q * A * kx * (sn[c] as number)) / kmag;
+    dz -= (Q * A * kz * (sn[c] as number)) / kmag;
+    slopeX += A * kx * (sn[c] as number);
+    slopeZ += A * kz * (sn[c] as number);
+    fold += Q * A * kmag * (cs[c] as number);
+    drawn += 0.5 * (A * kmag) * (A * kmag);
+  }
+  const foamAge = mod(-crestPhase, 2 * Math.PI) / ((2 * Math.PI) / (swell[2] as number));
+  const roll = breaking * (1 - smoothstep(0, OCEAN_ROLL_WIDTH, mod(crestPhase, 2 * Math.PI)));
+  const trailing = breaking * Math.exp(-foamAge / OCEAN_FOAM_LIFE);
+  return {
+    height, dx, dz, slopeX, slopeZ, normalY: 1 - fold, depth: h, breaking, foamAge,
+    foam: Math.max(roll, trailing, breaking * OCEAN_INNER_FOAM), drawn, envX: ex, envY: ey,
+  };
+}
+
+/**
+ * oceanFoamFromEnvelope (shaders/oceanSurface.fx) read line for line into TypeScript, the atlas and the
+ * uniforms read as shaderSwell reads them: the foam at (px, pz) from the envelope vector (envX, envY) and
+ * its magnitude, which the vertex stage hands on beside it.
+ */
+function shaderFoamFromEnvelope(
+  field: OceanField, px: number, pz: number, envX: number, envY: number, envelope: number,
+) {
+  const t = field.tables;
+  const tp = field.tp;
+  const texel = (row: number, column: number): number[] => {
+    const o = (row * t.width + column) * 4;
+    return [t.data[o] as number, t.data[o + 1] as number, t.data[o + 2] as number, t.data[o + 3] as number];
+  };
+  const read = (row: number, column: number): number[] => {
+    const c = Math.min(Math.max(column, 0), OCEAN_TABLE_SAMPLES - 1);
+    const i0 = Math.floor(c);
+    const a = texel(row, i0);
+    const b = texel(row, Math.min(i0 + 1, OCEAN_TABLE_SAMPLES - 1));
+    return a.map((v, j) => v + ((b[j] as number) - v) * (c - i0));
+  };
+  const coast = read(OCEAN_ROW_COAST, (pz - t.coastOriginZ) / OCEAN_COAST_STEP);
+  const [cx, , wc] = coast as [number, number, number, number];
+  const d = px - cx;
+  const column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
+  const bay = read(OCEAN_ROW_BAY_PROFILE, column);
+  const cove = read(OCEAN_ROW_COVE_PROFILE, column);
+  const h = (bay[0] as number) + ((cove[0] as number) - (bay[0] as number)) * wc;
+  const a = (bay[1] as number) + ((cove[1] as number) - (bay[1] as number)) * wc;
+  const b = (bay[2] as number) + ((cove[2] as number) - (bay[2] as number)) * wc;
+  const unbroken = 2 * envelope;
+  const crestPhase = envX * envX + envY * envY > 0 ? Math.atan2(envY, envX) : 0;
+  const hc = Math.max(h, OCEAN_DRY_DEPTH);
+  const gamma = Math.min(WEGGEL_GAMMA_MAX, Math.max(WEGGEL_GAMMA_MIN, b - (a * unbroken) / (OCEAN_G * tp * tp)));
+  const ratio = unbroken / (gamma * hc);
+  const breaking = smoothstep(OCEAN_BREAK_FOAM_LO, OCEAN_BREAK_FOAM_HI, ratio);
+  const foamAge = mod(-crestPhase, 2 * Math.PI) / ((2 * Math.PI) / tp);
+  const roll = breaking * (1 - smoothstep(0, OCEAN_ROLL_WIDTH, mod(crestPhase, 2 * Math.PI)));
+  const trailing = breaking * Math.exp(-foamAge / OCEAN_FOAM_LIFE);
+  return { foam: Math.max(roll, trailing, breaking * OCEAN_INNER_FOAM), breaking, foamAge, depth: h };
+}
+
+describe("the sea's shader constants and functions", () => {
+  it("hold the TypeScript's values", () => {
+    const s = fx("oceanSurface.fx");
+    const surface: [string, number][] = [
+      ["OCEAN_G", OCEAN_G], ["OCEAN_TWO_PI", 2 * Math.PI], ["OCEAN_D_MIN", OCEAN_D_MIN], ["OCEAN_D_STEP", OCEAN_D_STEP],
+      ["OCEAN_TABLE_SAMPLES", OCEAN_TABLE_SAMPLES], ["OCEAN_ATLAS_ROWS", OCEAN_ATLAS_ROWS],
+      ["OCEAN_ROW_BAY_PROFILE", OCEAN_ROW_BAY_PROFILE], ["OCEAN_ROW_COVE_PROFILE", OCEAN_ROW_COVE_PROFILE],
+      ["OCEAN_ROW_BAY_FIRST", OCEAN_ROW_BAY_FIRST], ["OCEAN_ROW_COVE_FIRST", OCEAN_ROW_COVE_FIRST],
+      ["OCEAN_ROW_COAST", OCEAN_ROW_COAST],
+      ["OCEAN_DRY_DEPTH", OCEAN_DRY_DEPTH], ["WEGGEL_GAMMA_MIN", WEGGEL_GAMMA_MIN], ["WEGGEL_GAMMA_MAX", WEGGEL_GAMMA_MAX],
+      ["SWELL_Q_SUM_MAX", SWELL_Q_SUM_MAX], ["OCEAN_BORE_RATIO", OCEAN_BORE_RATIO], ["OCEAN_BREAK_FULL", OCEAN_BREAK_FULL],
+      ["OCEAN_BREAK_FOAM_LO", OCEAN_BREAK_FOAM_LO], ["OCEAN_BREAK_FOAM_HI", OCEAN_BREAK_FOAM_HI],
+      ["OCEAN_FOAM_LIFE", OCEAN_FOAM_LIFE], ["OCEAN_ROLL_WIDTH", OCEAN_ROLL_WIDTH], ["OCEAN_INNER_FOAM", OCEAN_INNER_FOAM],
+      ["SHELTER_SWELL", SHELTER_SWELL], ["SHELTER_CHOP", SHELTER_CHOP], ["SHELTER_WIDTH", SHELTER_WIDTH],
+      ["OCEAN_RESOLVE_PHASE_LO", OCEAN_RESOLVE_PHASE_LO], ["OCEAN_RESOLVE_PHASE_HI", OCEAN_RESOLVE_PHASE_HI],
+      ["OCEAN_RING_BASE", WATER_BASE_SPACING], ["OCEAN_RING_REACH", WATER_RING_CELLS / 4],
+    ];
+    for (const [name, value] of surface) pinned(s, name, value);
+    // The components are the oceanK uniforms, not the atlas's components row.
+    expect(s).not.toContain("OCEAN_ROW_COMPONENTS");
+    const f = fx("oceanShade.fragment.fx");
+    pinned(f, "WATER_COX_MUNK_A", WATER_COX_MUNK_A);
+    pinned(f, "WATER_COX_MUNK_B", WATER_COX_MUNK_B);
+    pinned(f, "OCEAN_SLOPE_VAR_FLOOR", OCEAN_SLOPE_VAR_FLOOR);
+  });
+
+  it("declares the sea's functions under OCEAN alone, the coastline's named apart from the oceanCoast uniform", () => {
+    const s = fx("oceanSurface.fx");
+    for (const signature of [
+      "vec4 oceanAtlasRow(float row, float d)",
+      "vec4 oceanCoastAt(float z, out float phaseDz)",
+      "float oceanShelter(vec2 p, float keep)",
+      "void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, out vec4 foam, out float drawn, out vec2 env)",
+      "vec4 oceanFoamFromEnvelope(vec2 p, vec2 env, float envelope)",
+      "float oceanSwellPixelKeep(vec2 dpx, vec2 dpy)",
+      "float oceanRingCell(vec2 p)",
+      "vec3 oceanDisplace(vec2 p, out vec4 swell, out vec2 env)",
+    ]) expect(s).toContain(signature);
+    // The swell is summed in the vertex stage alone, which needs no unfaded sum of its own.
+    expect(s).not.toContain("oceanSwellEval");
+    expect(s).not.toMatch(/\boceanCoast\s*\(/);
+    // Every line, comments too, inside the gate: a lake's definitions carry none of it.
+    for (const name of ["oceanSurface.fx", "oceanShade.fragment.fx"]) {
+      expect(fx(name).startsWith("#ifdef OCEAN\n"), name).toBe(true);
+      expect(fx(name).endsWith("#endif\n"), name).toBe(true);
+    }
+  });
+
+  it("reads every texture at a fixed level, in loops bounded by a constant and broken on the uniform count", () => {
+    for (const name of ["oceanSurface.fx", "oceanShade.fragment.fx", "oceanDisplace.vertex.fx"]) {
+      expect(fx(name), name).not.toMatch(/\btexture2D\s*\(|\btexture\s*\(/);
+    }
+    const s = fx("oceanSurface.fx");
+    expect(s).toContain("return textureLod(oceanAtlas, vec2((column + 0.5) / OCEAN_TABLE_SAMPLES, (row + 0.5) / OCEAN_ATLAS_ROWS), 0.0);");
+    expect(s.match(/for \(int c = 0; c < 12; c\+\+\) \{/g)).toHaveLength(3);
+    expect(s.match(/if \(fc >= oceanCoast\.z\) break;/g)).toHaveLength(1);
+    expect(s.match(/if \(float\(c\) >= oceanCoast\.z\) break;/g)).toHaveLength(2);
+    // Every read is a textureLod at level 0, and there is no other texture call in the file: the atlas's
+    // texel, the loop's two frames and the high tier's three cascades.
+    expect(s.match(/\btextureLod\(/g)).toHaveLength(6);
+    expect(s.match(/\btexture\w*\(/g)).toHaveLength(6);
+  });
+
+  it("writes swellAt's sum: the phase, the wave vector, the dry rule, the cap, the Gerstner normal, the foam", () => {
+    const s = fx("oceanSurface.fx");
+    for (const line of [
+      "  return a + (b - a) * (c - i0);",
+      // oceanCoastAt, coastRead's five values: the row's four channels, and the phase weight's slope along z
+      "  float column = (z - oceanCoast.x) / oceanCoast.y;",
+      "  vec4 a = oceanAtlasTexel(OCEAN_ROW_COAST, i0);",
+      "  vec4 b = oceanAtlasTexel(OCEAN_ROW_COAST, min(i0 + 1.0, OCEAN_TABLE_SAMPLES - 1.0));",
+      "  phaseDz = column < 0.0 ? 0.0 : (b.w - a.w) / oceanCoast.y;",
+      "  float side = u.y >= 0.0 ? 1.0 : -1.0;",
+      "  float on = step(0.0, dot(u, r)) * step(0.0, r.y * side);",
+      "  float lambda = -(u.x * r.y - u.y * r.x) * side;",
+      "  float phaseDz;",
+      "  vec4 coast = oceanCoastAt(p.y, phaseDz);",
+      "  float h = bay.x + (cove.x - bay.x) * coast.z;",
+      "  float a = bay.y + (cove.y - bay.y) * coast.z;",
+      "  float b = bay.z + (cove.z - bay.z) * coast.z;",
+      // the phase and its onshore wavenumber blend by the phase weight, the rest by the cove's
+      "    vec4 k = oceanK[c];",
+      "    float dpsi = rc.x - rb.x;",
+      "    float psi = rb.x + dpsi * coast.w + k.x * deep;",
+      "    float kn = rb.y + (rc.y - rb.y) * coast.w;",
+      "    float shoal = rb.z + (rc.z - rb.z) * coast.z;",
+      "    phi[c] = psi + k.x * coast.x + k.y * p.y + theta[c];",
+      "    kv[c] = vec2(kn, k.y + (k.x - kn) * coast.y + dpsi * phaseDz);",
+      "    amp[c] = k.w * shoal * shelter;",
+      "    q0[c] = k.z;",
+      "    sn[c] = sin(phi[c]);",
+      "    cs[c] = cos(phi[c]);",
+      "    env += amp[c] * vec2(cs[c], sn[c]);",
+      "    if (turn >= OCEAN_RESOLVE_PHASE_HI) continue;",
+      "  float hc = max(h, OCEAN_DRY_DEPTH);",
+      "  float ratio = unbroken / (gamma * hc);",
+      "    scale = hc * cap / max(unbroken, 1.0e-6);",
+      "  float s = min(1.0, SWELL_Q_SUM_MAX / max(steepness, 1.0e-6));",
+      "    across -= Q * A * kv[c] * sn[c] / kmag;",
+      "  normal = normalize(vec3(slope.x, 1.0 - fold, slope.y));",
+      "  foam = vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);",
+    ]) expect(s, line).toContain(line);
+    // The atlas read and the coastline read both end in the same mix of two texels.
+    expect(s.match(/return a \+ \(b - a\) \* \(c - i0\);/g)).toHaveLength(2);
+    // No branch on the depth: the dry rule holds the depth instead.
+    expect(s).not.toContain("if (h > OCEAN_DRY_DEPTH)");
+  });
+
+  it("holds oceanSwellSum's whole body, the text shaderSwell transcribes, so no change to it passes unseen", () => {
+    const s = fx("oceanSurface.fx");
+    const start = at(s, "void oceanSwellSum(");
+    const body = s.slice(start, s.indexOf("\n}\n", start) + 3);
+    expect(body).toBe(`void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, out vec4 foam, out float drawn, out vec2 env) {
+  float phaseDz;
+  vec4 coast = oceanCoastAt(p.y, phaseDz);
+  float d = p.x - coast.x;
+  float column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
+  // Seaward of the table each phase runs on as the plane wave it is there.
+  float deep = min(d - OCEAN_D_MIN, 0.0);
+  vec4 bay = oceanAtlasRead(OCEAN_ROW_BAY_PROFILE, column);
+  vec4 cove = oceanAtlasRead(OCEAN_ROW_COVE_PROFILE, column);
+  float h = bay.x + (cove.x - bay.x) * coast.z;
+  float a = bay.y + (cove.y - bay.y) * coast.z;
+  float b = bay.z + (cove.z - bay.z) * coast.z;
+  float shelter = oceanShelter(p, SHELTER_SWELL);
+  float theta[12];
+  theta[0] = oceanPhase0.x;
+  theta[1] = oceanPhase0.y;
+  theta[2] = oceanPhase0.z;
+  theta[3] = oceanPhase0.w;
+  theta[4] = oceanPhase1.x;
+  theta[5] = oceanPhase1.y;
+  theta[6] = oceanPhase1.z;
+  theta[7] = oceanPhase1.w;
+  theta[8] = oceanPhase2.x;
+  theta[9] = oceanPhase2.y;
+  theta[10] = oceanPhase2.z;
+  theta[11] = oceanPhase2.w;
+  float phi[12];
+  float amp[12];
+  float q0[12];
+  vec2 kv[12];
+  float sn[12];
+  float cs[12];
+  env = vec2(0.0);
+  for (int c = 0; c < 12; c++) {
+    float fc = float(c);
+    if (fc >= oceanCoast.z) break;
+    vec4 k = oceanK[c];
+    vec4 rb = oceanAtlasRead(OCEAN_ROW_BAY_FIRST + fc, column);
+    vec4 rc = oceanAtlasRead(OCEAN_ROW_COVE_FIRST + fc, column);
+    // The phase and its onshore wavenumber blend by the phase weight, the
+    // amplitude factor by the cove's. The wavevector's z part carries the
+    // coastline's turn and what the phase weight's change along z adds.
+    float dpsi = rc.x - rb.x;
+    float psi = rb.x + dpsi * coast.w + k.x * deep;
+    float kn = rb.y + (rc.y - rb.y) * coast.w;
+    float shoal = rb.z + (rc.z - rb.z) * coast.z;
+    phi[c] = psi + k.x * coast.x + k.y * p.y + theta[c];
+    kv[c] = vec2(kn, k.y + (k.x - kn) * coast.y + dpsi * phaseDz);
+    amp[c] = k.w * shoal * shelter;
+    q0[c] = k.z;
+    sn[c] = sin(phi[c]);
+    cs[c] = cos(phi[c]);
+    env += amp[c] * vec2(cs[c], sn[c]);
+  }
+  float envelope = length(env);
+  float unbroken = 2.0 * envelope;
+  float crestPhase = dot(env, env) > 0.0 ? atan(env.y, env.x) : 0.0;
+  // No dry branch: over sand the depth is held at OCEAN_DRY_DEPTH, so the
+  // swell there is the bore's few centimetres.
+  float hc = max(h, OCEAN_DRY_DEPTH);
+  float gamma = clamp(b - a * unbroken / (OCEAN_G * oceanSwell.z * oceanSwell.z), WEGGEL_GAMMA_MIN, WEGGEL_GAMMA_MAX);
+  float ratio = unbroken / (gamma * hc);
+  float scale = 1.0;
+  if (ratio > 1.0) {
+    float cap = gamma + (OCEAN_BORE_RATIO - gamma) * smoothstep(1.0, OCEAN_BREAK_FULL, ratio);
+    scale = hc * cap / max(unbroken, 1.0e-6);
+  }
+  float breaking = smoothstep(OCEAN_BREAK_FOAM_LO, OCEAN_BREAK_FOAM_HI, ratio);
+  float steepness = 0.0;
+  for (int c = 0; c < 12; c++) {
+    if (float(c) >= oceanCoast.z) break;
+    amp[c] *= scale;
+    steepness += q0[c] * length(kv[c]) * amp[c];
+  }
+  float s = min(1.0, SWELL_Q_SUM_MAX / max(steepness, 1.0e-6));
+  float height = 0.0;
+  vec2 across = vec2(0.0);
+  vec2 slope = vec2(0.0);
+  float fold = 0.0;
+  drawn = 0.0;
+  for (int c = 0; c < 12; c++) {
+    if (float(c) >= oceanCoast.z) break;
+    float turn = max(abs(dot(dpx, kv[c])), abs(dot(dpy, kv[c])));
+    // Faded wholly from a half turn a step: A would be 0 and add nothing, so
+    // the drawn terms alone are skipped. The envelope above keeps every
+    // component, so the break and the foam do not depend on the step.
+    if (turn >= OCEAN_RESOLVE_PHASE_HI) continue;
+    float kmag = length(kv[c]);
+    float A = amp[c] * (1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, turn));
+    float Q = q0[c] * s;
+    height += A * cs[c];
+    across -= Q * A * kv[c] * sn[c] / kmag;
+    slope += A * kv[c] * sn[c];
+    fold += Q * A * kmag * cs[c];
+    drawn += 0.5 * (A * kmag) * (A * kmag);
+  }
+  disp = vec3(across.x, height, across.y);
+  normal = normalize(vec3(slope.x, 1.0 - fold, slope.y));
+  float foamAge = mod(-crestPhase, OCEAN_TWO_PI) / (OCEAN_TWO_PI / oceanSwell.z);
+  float roll = breaking * (1.0 - smoothstep(0.0, OCEAN_ROLL_WIDTH, mod(crestPhase, OCEAN_TWO_PI)));
+  float trailing = breaking * exp(-foamAge / OCEAN_FOAM_LIFE);
+  foam = vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);
+}
+`);
+  });
+
+  it("holds oceanFoamFromEnvelope's whole body, the text shaderFoamFromEnvelope transcribes: the sum's lines after its envelope's magnitude", () => {
+    const s = fx("oceanSurface.fx");
+    const start = at(s, "vec4 oceanFoamFromEnvelope(");
+    const body = s.slice(start, s.indexOf("\n}\n", start) + 3);
+    expect(body).toBe(`vec4 oceanFoamFromEnvelope(vec2 p, vec2 env, float envelope) {
+  float phaseDz;
+  vec4 coast = oceanCoastAt(p.y, phaseDz);
+  float d = p.x - coast.x;
+  float column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
+  vec4 bay = oceanAtlasRead(OCEAN_ROW_BAY_PROFILE, column);
+  vec4 cove = oceanAtlasRead(OCEAN_ROW_COVE_PROFILE, column);
+  float h = bay.x + (cove.x - bay.x) * coast.z;
+  float a = bay.y + (cove.y - bay.y) * coast.z;
+  float b = bay.z + (cove.z - bay.z) * coast.z;
+  float unbroken = 2.0 * envelope;
+  float crestPhase = dot(env, env) > 0.0 ? atan(env.y, env.x) : 0.0;
+  float hc = max(h, OCEAN_DRY_DEPTH);
+  float gamma = clamp(b - a * unbroken / (OCEAN_G * oceanSwell.z * oceanSwell.z), WEGGEL_GAMMA_MIN, WEGGEL_GAMMA_MAX);
+  float ratio = unbroken / (gamma * hc);
+  float breaking = smoothstep(OCEAN_BREAK_FOAM_LO, OCEAN_BREAK_FOAM_HI, ratio);
+  float foamAge = mod(-crestPhase, OCEAN_TWO_PI) / (OCEAN_TWO_PI / oceanSwell.z);
+  float roll = breaking * (1.0 - smoothstep(0.0, OCEAN_ROLL_WIDTH, mod(crestPhase, OCEAN_TWO_PI)));
+  float trailing = breaking * exp(-foamAge / OCEAN_FOAM_LIFE);
+  return vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);
+}
+`);
+    // Its lines are the sum's own, word for word, the magnitude a parameter where the sum has its line.
+    const sum = s.slice(at(s, "void oceanSwellSum("), at(s, "vec4 oceanFoamFromEnvelope("));
+    for (const line of body.split("\n").slice(1, -3)) expect(sum, line).toContain(line);
+    expect(sum).toContain("  float envelope = length(env);");
+    expect(body).not.toContain("length(env)");
+  });
+
+  it("makes the sum's foam and swellAt's from the sum's envelope, to the bit, at the rings' vertex steps", () => {
+    let broken = 0;
+    let rolling = 0;
+    for (const seed of [SEED, 12345, 777]) {
+      const field = oceanFieldFor(seed);
+      const phases = swellPhases(field, 37.5);
+      const coastline = coastProfilesFor(seed).coastlineX;
+      for (let i = 0; i <= 24; i++) {
+        for (let j = 0; j <= 16; j++) {
+          const z = -400 + j * 50;
+          const x = coastline(z) - 700 + i * 30;
+          const want = swellAt(field, phases, x, z);
+          // The vertex stage's steps, ring 0's to ring 6's: the envelope, and so the foam, never fade. The
+          // magnitude is the vertex's length(env), which at the vertex is the sum's own.
+          for (const cell of [1, 2, 64]) {
+            const sum = shaderSwell(field, phases, x, z, [2 * cell, 0], [0, 2 * cell]);
+            const got = shaderFoamFromEnvelope(field, x, z, sum.envX, sum.envY, Math.hypot(sum.envX, sum.envY));
+            for (const key of ["foam", "breaking", "foamAge", "depth"] as const) {
+              expect(Object.is(got[key], sum[key]), `${key} at (${x}, ${z}) cell ${cell}`).toBe(true);
+              expect(Object.is(got[key], want[key]), `swellAt's ${key} at (${x}, ${z}) cell ${cell}`).toBe(true);
+            }
+          }
+          if (want.breaking > 0.5) broken++;
+          if (want.breaking > 0.5 && want.foam > OCEAN_INNER_FOAM) rolling++;
+        }
+      }
+    }
+    // The points cross the break line, and some lie on a crest's roll or the foam it trails.
+    expect(broken).toBeGreaterThan(100);
+    expect(rolling).toBeGreaterThan(0);
+  }, timeLimit(60_000));
+
+  it("gives swellAt's numbers, transcribed line for line, at 1,275 points over three worlds, and fades only what is drawn", () => {
+    let broken = 0;
+    for (const seed of [SEED, 12345, 777]) {
+      const field = oceanFieldFor(seed);
+      const phases = swellPhases(field, 37.5);
+      const coastline = coastProfilesFor(seed).coastlineX;
+      for (let i = 0; i <= 24; i++) {
+        for (let j = 0; j <= 16; j++) {
+          const z = -400 + j * 50;
+          const x = coastline(z) - 700 + i * 30;
+          const want = swellAt(field, phases, x, z);
+          const got = shaderSwell(field, phases, x, z, [0, 0], [0, 0]);
+          for (const key of ["height", "dx", "dz", "slopeX", "slopeZ", "normalY", "depth", "breaking", "foamAge", "foam"] as const) {
+            expect(Math.abs(got[key] - want[key]), `${key} at (${x}, ${z})`).toBeLessThan(1e-9);
+          }
+          if (want.breaking > 0.5) broken++;
+          // A step of a kilometre fades every component out of what is drawn, never the break or its foam.
+          const far = shaderSwell(field, phases, x, z, [1000, 0], [0, 1000]);
+          expect(far.height).toBe(0);
+          expect(far.slopeX).toBe(0);
+          expect(far.drawn).toBe(0);
+          expect(far.breaking).toBe(got.breaking);
+          expect(far.foam).toBe(got.foam);
+        }
+      }
+    }
+    // The points cross the break line: some of them break.
+    expect(broken).toBeGreaterThan(100);
+  }, timeLimit(60_000));
+
+  it("skips a wholly faded component's terms to the same numbers, to the bit, as summing its zeros", () => {
+    let skipped = 0;
+    let kept = 0;
+    for (const seed of [SEED, 12345, 777]) {
+      const field = oceanFieldFor(seed);
+      const phases = swellPhases(field, 37.5);
+      const coastline = coastProfilesFor(seed).coastlineX;
+      for (let i = 0; i <= 12; i++) {
+        for (let j = 0; j <= 8; j++) {
+          const z = -400 + j * 100;
+          const x = coastline(z) - 700 + i * 60;
+          // Steps from a fine pixel to a coarse ring's cells: some components faded wholly, some in part, some not.
+          for (const step of [0.25, 1, 2, 4, 8, 16, 64]) {
+            const dpx: [number, number] = [step, 0.3 * step];
+            const dpy: [number, number] = [-0.2 * step, step];
+            const got = shaderSwell(field, phases, x, z, dpx, dpy);
+            const want = shaderSwell(field, phases, x, z, dpx, dpy, false);
+            for (const key of ["height", "dx", "dz", "slopeX", "slopeZ", "normalY", "depth", "breaking", "foamAge", "foam", "drawn"] as const) {
+              expect(Object.is(got[key], want[key]), `${key} at (${x}, ${z}) step ${step}`).toBe(true);
+            }
+            if (got.drawn === 0) skipped++;
+            else kept++;
+          }
+        }
+      }
+    }
+    // The steps reach both ends: points where every component is skipped, and points where some are drawn.
+    expect(skipped).toBeGreaterThan(0);
+    expect(kept).toBeGreaterThan(0);
+  }, timeLimit(60_000));
+
+  it("binds the components as the floats the atlas's components row holds, to the bit", () => {
+    for (const seed of [SEED, 12345, 777]) {
+      const field = oceanFieldFor(seed);
+      const t = field.tables;
+      const oceanK = oceanComponentsFor(field.components);
+      expect(oceanK).toHaveLength(48);
+      const row = (c: number, j: number): number => t.data[(OCEAN_ROW_COMPONENTS * t.width + c) * 4 + j] as number;
+      for (let c = 0; c < 12; c++) {
+        // (k0x, k0z, q0, a0): texel 2c's x, y and w, and texel 2c + 1's x.
+        expect(Object.is(oceanK[c * 4], row(2 * c, 0)), `k0x ${c}`).toBe(true);
+        expect(Object.is(oceanK[c * 4 + 1], row(2 * c, 1)), `k0z ${c}`).toBe(true);
+        expect(Object.is(oceanK[c * 4 + 2], row(2 * c + 1, 0)), `q0 ${c}`).toBe(true);
+        expect(Object.is(oceanK[c * 4 + 3], row(2 * c, 3)), `a0 ${c}`).toBe(true);
+      }
+    }
+  });
+
+  it("estimates a vertex's ring from its distance alone: its own spacing at the inner edge, the next ring's at the outer", () => {
+    expect(OCEAN_RING_REACH).toBe(32);
+    expect(oceanRingCell(0, 0)).toBe(WATER_BASE_SPACING);
+    for (let level = 1; level < WATER_RING_COUNT; level++) {
+      const spacing = waterRingSpacing(level);
+      expect(oceanRingCell(32 * spacing, -5)).toBe(spacing);
+      expect(oceanRingCell(-3, 64 * spacing)).toBe(2 * spacing);
+    }
+    expect(fx("oceanSurface.fx")).toContain("  return max(OCEAN_RING_BASE, max(r.x, r.y) / OCEAN_RING_REACH);");
+  });
+
+  it("displaces in UPDATE_POSITION once, at the vertex slid toward the coarser ring's lattice, the point it shades", () => {
+    const d = fx("oceanDisplace.vertex.fx");
+    const slide = at(d, "positionUpdated.xz -= oceanMorph * oceanCoarse;");
+    const assign = at(d, "vOceanXZ = positionUpdated.xz;");
+    const displace = at(d, "positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);");
+    expect(slide).toBeLessThan(assign);
+    expect(assign).toBeLessThan(displace);
+    expect(d.match(/oceanDisplace\(/g)).toHaveLength(1);
+    // The sum goes on to the fragment stage: its normal's x and z, height and drawn variance, and its envelope.
+    expect(at(d, "vOceanSwellA = oceanVertexSwell;")).toBeGreaterThan(displace);
+    expect(at(d, "vOceanSwellB = vec4(oceanVertexEnv, length(oceanVertexEnv), 0.0);")).toBeGreaterThan(displace);
+    // The ring's normal is left up: the sea's normal is made per pixel.
+    expect(d).not.toContain("normalUpdated");
+    // Each ring fades the swell at four of its cells a wavelength.
+    const s = fx("oceanSurface.fx");
+    expect(s).toContain("  oceanSwellSum(p, vec2(2.0 * cell, 0.0), vec2(0.0, 2.0 * cell), disp, normal, foam, drawn, env);");
+    expect(s).toContain("  swell = vec4(normal.x, normal.z, disp.y, drawn);");
+    // Summed once a vertex, there alone: the fragment stage takes it from the varyings.
+    expect(s.match(/\boceanSwellSum\(/g)).toHaveLength(2);
+  });
+});
+
+describe("the sea's normal, waterline and roughness", () => {
+  it("takes the swell's derivatives in uniform control flow, before any branch, and its depth under the displaced surface", () => {
+    const l = fx("waterLights.fragment.fx");
+    const top = l.slice(0, at(l, "vec2 wOceanDx = dFdx(vOceanXZ);"));
+    expect(top.split("{").length).toBe(top.split("}").length);
+    expect(l).toContain("vec2 wOceanDy = dFdy(vOceanXZ);");
+    // The swell from the vertex stage: no sum here, its foam made from the interpolated envelope.
+    expect(l).not.toContain("oceanSwellSum");
+    for (const line of [
+      "float wOceanHeight = vOceanSwellA.z;",
+      "vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);",
+    ]) expect(l, line).toContain(line);
+    const depth = "float wDepth = waterBedDepth(vPositionW.xz) + wOceanHeight + wWind.y * wWindAmp;";
+    expect(at(l, depth)).toBeLessThan(at(l, "if (wDepth <= 0.0) discard;"));
+  });
+
+  it("fades the swell's interpolated normal by the pixel's footprint before its up part is rebuilt, its drawn variance by the square", () => {
+    const l = fx("waterLights.fragment.fx");
+    const keep = at(l, "float wOceanKeep = oceanSwellPixelKeep(wOceanDx, wOceanDy);");
+    const tilt = at(l, "vec2 wOceanTilt = vOceanSwellA.xy * wOceanKeep;");
+    const rebuild = at(l, "vec3 wOceanNormal = vec3(wOceanTilt.x, sqrt(max(1.0 - dot(wOceanTilt, wOceanTilt), 0.0)), wOceanTilt.y);");
+    const drawn = at(l, "float wOceanDrawn = vOceanSwellA.w * wOceanKeep * wOceanKeep;");
+    expect(keep).toBeGreaterThan(at(l, "vec2 wOceanDy = dFdy(vOceanXZ);"));
+    expect(tilt).toBeGreaterThan(keep);
+    expect(rebuild).toBeGreaterThan(tilt);
+    expect(drawn).toBeGreaterThan(keep);
+    expect(drawn).toBeLessThan(at(l, "float wOceanVar ="));
+    // The normal is made from the faded tilt alone, never from the varying's own x and z.
+    expect(l).not.toContain("vec3 wOceanNormal = vec3(vOceanSwellA.x");
+    // swellPixelKeep (waterShading.ts) line for line: the deep wavenumber of the peak period along the travel.
+    const s = fx("oceanSurface.fx");
+    const start = at(s, "float oceanSwellPixelKeep(");
+    expect(s.slice(start, s.indexOf("\n}\n", start) + 3)).toBe(`float oceanSwellPixelKeep(vec2 dpx, vec2 dpy) {
+  float kDeep = OCEAN_TWO_PI * OCEAN_TWO_PI / (OCEAN_G * oceanSwell.z * oceanSwell.z);
+  vec2 u = oceanSwell.xy;
+  return 1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, kDeep * max(abs(dot(dpx, u)), abs(dot(dpy, u))));
+}
+`);
+    // A 50 m step along a 10 s swell keeps 0.8075 of it, one across its travel all of it (waterShading.test.ts
+    // holds the rest).
+    expect(swellPixelKeep(10, 1, 0, [50, 0], [0, 0])).toBeCloseTo(0.80752266, 8);
+    expect(swellPixelKeep(10, 1, 0, [0, 50], [0, 0])).toBe(1);
+  });
+
+  it("puts the swell's normal before the rain's rings, the horizon clamp and Fresnel, and the second octave off the sea", () => {
+    const l = fx("waterLights.fragment.fx");
+    const swell = at(l, "normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOceanNormal.y);");
+    expect(swell).toBeLessThan(at(l, "if (waterRain > 0.0) {"));
+    expect(swell).toBeLessThan(at(l, "normalW = waterHorizonNormal(normalW, viewDirectionW);"));
+    expect(swell).toBeLessThan(at(l, "float wF = WATER_F0"));
+    // The ripple's block sits in the gate's other branch: never on the sea, unchanged on a lake.
+    expect(at(l, "if (waterOctaves > 1.5) {")).toBeGreaterThan(swell);
+    expect(l.slice(swell, at(l, "if (waterOctaves > 1.5) {"))).toContain("#else");
+  });
+
+  it("is Cox and Munk's variance for the wind less what the drawn waves carry, never under the floor", () => {
+    expect(coxMunkVariance(10)).toBeCloseTo(0.0542, 12);
+    expect(slopeVariance(10 / 12, 1)).toBeCloseTo(coxMunkVariance(10), 12);
+    expect(undrawnSlopeVariance(10, 1, 0)).toBeCloseTo(0.0542, 12);
+    expect(undrawnSlopeVariance(10, 1, 0.02)).toBeCloseTo(0.0342, 12);
+    expect(undrawnSlopeVariance(10, 0.15, 0)).toBeCloseTo(0.00813, 12);
+    expect(undrawnSlopeVariance(0, 1, 0.01)).toBe(OCEAN_SLOPE_VAR_FLOOR);
+    expect(roughnessFromVariance(0.0542)).toBeCloseTo(0.5737957, 6);
+    expect(roughnessFromVariance(OCEAN_SLOPE_VAR_FLOOR)).toBeCloseTo(0.2340347, 6);
+    expect(roughnessFromVariance(slopeVariance(0.5, 1))).toBeCloseTo(roughnessFor(0.5, 1), 12);
+    expect(roughnessFromVariance(10)).toBe(1);
+    expect(fx("oceanShade.fragment.fx")).toContain("  return max((WATER_COX_MUNK_A + WATER_COX_MUNK_B * u10) * shelter - drawn, OCEAN_SLOPE_VAR_FLOOR);");
+    expect(fx("waterLights.fragment.fx")).toContain(
+      "float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn + wWindDrawn * wWindSteep * wWindSteep);",
+    );
+  });
+
+  it("fades a drawn wave between four steps a wavelength and two, its variance moving to the roughness", () => {
+    expect(resolvedShare(0)).toBe(1);
+    expect(resolvedShare(Math.PI / 2)).toBe(1);
+    expect(resolvedShare(0.75 * Math.PI)).toBeCloseTo(0.5, 12);
+    expect(resolvedShare(Math.PI)).toBe(0);
+    const wave = [{ amplitude: 0.5, k: 0.1 }];
+    expect(resolvedSlopeVariance(wave, 0)).toBeCloseTo(0.00125, 12);
+    expect(resolvedSlopeVariance(wave, 7.5 * Math.PI)).toBeCloseTo(0.0003125, 12);
+    expect(resolvedSlopeVariance(wave, 10 * Math.PI)).toBe(0);
+  });
+
+  it("reads the roughness at Babylon's one roughness line, on the sea alone", () => {
+    expect(OCEAN_ROUGHNESS_ANCHOR).toBe("!float roughness=reflectivityOut\\.roughness;");
+    expect(OCEAN_ROUGHNESS_CODE).toBe("float roughness=min(sqrt(sqrt(2.0 * wOceanVar)), 1.0);");
+    // A canary on the installed Babylon: the line is there, once.
+    const pbr = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Shaders/pbr.fragment.js"), "utf8");
+    expect(pbr.match(new RegExp(OCEAN_ROUGHNESS_ANCHOR.slice(1), "g"))).toHaveLength(1);
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const sea = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
+      const lake = attachWater(new PBRMaterial("lake", scene), WATER_ROWS.lowlandLake);
+      sea.ocean = bindingFor(scene, "medium");
+      expect(sea.getCustomCode("fragment")![OCEAN_ROUGHNESS_ANCHOR]).toBe(OCEAN_ROUGHNESS_CODE);
+      // An empty string injects nothing: the lake's line stays Babylon's own.
+      expect(lake.getCustomCode("fragment")![OCEAN_ROUGHNESS_ANCHOR]).toBe("");
+    } finally {
+      engine.dispose();
+    }
+  }, timeLimit(30_000));
+});
+
+describe("a lake's shaders", () => {
+  it("process to the text they had before the sea moved", async () => {
+    // Each hook through Babylon's preprocessor with a lake's gates, hashed as it was at 9edee7e.
+    const before: Record<string, string> = {
+      "water.vertex.fx": "3732482554b89e357fec2298edc8724ad085cc9defe35017b243df6b7782d50b",
+      "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
+      "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
+      "waterLights.fragment.fx": "e43c7dd65420563ad94555469e69b237229563a6cf07e4ea5f86b53e73a1c5cb",
+      "waterCompose.fragment.fx": "a3cdf837137ae07cea47e0facfbc0b6ad44269d7a723b9f157e487da0cf34447",
+    };
+    for (const [name, hash] of Object.entries(before)) {
+      expect(sha256(await processed(fx(name), !name.includes(".vertex."))), name).toBe(hash);
+    }
+  });
+
+  it("carry none of the sea's text: its definitions vanish under a lake's gates", async () => {
+    const engine = new NullEngine();
+    try {
+      const lake = attachWater(new PBRMaterial("lake", new Scene(engine)), WATER_ROWS.lowlandLake);
+      const v = lake.getCustomCode("vertex")!;
+      const f = lake.getCustomCode("fragment")!;
+      expect(await processed(v.CUSTOM_VERTEX_DEFINITIONS!, false)).toBe(await processed(fx("water.vertex.fx"), false));
+      expect(await processed(f.CUSTOM_FRAGMENT_DEFINITIONS!, true)).toBe(await processed(fx("water.fragment.fx"), true));
+    } finally {
+      engine.dispose();
+    }
+  });
+});
+
+describe("the water material's stages, compiled", () => {
+  let translators: StartedTranslators;
+  beforeAll(async () => {
+    translators = await startTranslators();
+  }, timeLimit(60_000));
+
+  const translated = (effect: ProcessedEffect, defines: string): { vertex: string; fragment: string } => {
+    const stage = (kind: "vertex" | "fragment", code: string): string =>
+      translateStage(translators, { stage: kind, flag: uniformityOff(code), glsl: translatorInput(code, defines) });
+    return { vertex: stage("vertex", effect._vertexSourceCode), fragment: stage("fragment", effect._fragmentSourceCode) };
+  };
+
+  for (const tier of ["high", "medium", "low"] as const) {
+    it(`compile through glslang and translate to WGSL for the sea on the ${tier} tier, its textures read at a fixed level, in order`, async () => {
+      const sea = await waterEffect(tier);
+      try {
+        const { effect, defines } = sea;
+        expect(defines).toContain("#define OCEAN");
+        expect(defines.split("\n").includes("#define BUMP")).toBe(tier === "low");
+        const v = effect._vertexSourceCode;
+        const f = effect._fragmentSourceCode;
+        // The displacement before worldPos, so it reaches the position, vPositionW and the view depth.
+        const displaced = at(v, "positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);");
+        expect(displaced).toBeGreaterThan(at(v, "vOceanXZ = positionUpdated.xz;"));
+        expect(at(v, "vOceanXZ = positionUpdated.xz;")).toBeGreaterThan(at(v, "positionUpdated.xz -= oceanMorph * oceanCoarse;"));
+        expect(displaced).toBeLessThan(at(v, "vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);"));
+        // The swell's normal and the variance it leaves, then the rain's rings, the horizon clamp and
+        // Fresnel; Babylon's roughness line, rewritten, after them all.
+        const order = [
+          "vec2 wOceanTilt = vOceanSwellA.xy * wOceanKeep;",
+          "vec3 wOceanNormal = vec3(wOceanTilt.x,",
+          "vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);",
+          "normalW = normalize(wOceanNormal",
+          "float wOceanVar =",
+          "if (waterRain > 0.0) {",
+          "normalW = waterHorizonNormal(normalW, viewDirectionW);",
+          "float wF = WATER_F0",
+          OCEAN_ROUGHNESS_CODE,
+        ].map((needle) => at(f, needle));
+        for (let i = 1; i < order.length; i++) expect(order[i]).toBeGreaterThan(order[i - 1] as number);
+        expect(f).not.toContain("float roughness=reflectivityOut.roughness;");
+        expect(f).not.toContain("waterRipple2(vPositionW.xz)");
+        // A stage that does not parse throws here, with glslang's message on stderr.
+        const { vertex, fragment } = translated(effect, defines);
+        expect(vertex).toContain("oceanAtlas");
+        expect(vertex).toContain("oceanSwellSum");
+        // The components from the material's uniforms, twelve vec4s, declared in both stages.
+        expect(v).toMatch(/\bvec4 oceanK\[12\];/);
+        expect(f).toMatch(/\bvec4 oceanK\[12\];/);
+        // In the uniform block's struct of both, read by the loop's index in the vertex stage alone, which
+        // sums the swell: the fragment stage takes it from the varyings and makes no sum.
+        for (const stage of [vertex, fragment]) expect(stage).toMatch(/\boceanK : \w+,/);
+        expect(vertex).toMatch(/\.oceanK\[\w+\]/);
+        expect(fragment).not.toMatch(/\.oceanK\[\w+\]/);
+        expect(fragment).not.toContain("oceanSwellSum");
+        expect(vertex).toMatch(/\bvOceanSwellA\b/);
+        expect(vertex).toMatch(/\bvOceanSwellB\b/);
+        expect(fragment).toMatch(/\bvOceanSwellA\b/);
+        expect(fragment).toMatch(/\bvOceanSwellB\b/);
+        expect(vertex).toContain("oceanWindDisplaceAt");
+        // WGSL allows no implicit-derivative sample in a vertex stage.
+        expect(vertex).toMatch(/textureSampleLevel\(/);
+        expect(vertex).not.toMatch(/textureSample\(/);
+        // And the fragment stage reads the sea's textures at a fixed level only, so no read of theirs can
+        // stand in non-uniform control flow.
+        expect(fragment).toMatch(/textureSampleLevel\(\s*oceanAtlasTexture/);
+        expect(fragment).not.toMatch(/textureSample(?:Bias|Grad|Compare)?\(\s*ocean/);
+        expect(fragment).toContain("oceanFoamFromEnvelope");
+        expect(fragment).toContain("oceanSwellPixelKeep");
+        expect(fragment).toContain("oceanFoamCover");
+        expect(fragment).toContain("oceanLaceLevel");
+        expect(fragment).toContain("oceanCapCells");
+        expect(fragment).toContain("oceanWindSlopesAt");
+        expect(fragment).toContain("oceanCapFire");
+      } finally {
+        sea.dispose();
+      }
+    }, timeLimit(120_000));
+  }
+
+  it("leave a lake's roughness line, its ripples and its vertices as they were", async () => {
+    const lake = await waterEffect("medium", true);
+    try {
+      const f = lake.effect._fragmentSourceCode;
+      expect(lake.defines).not.toContain("#define OCEAN");
+      expect(f).toContain("float roughness=reflectivityOut.roughness;");
+      expect(f).toContain("waterRipple2(vPositionW.xz)");
+      expect(f).not.toContain("wOcean");
+      expect(lake.effect._vertexSourceCode).not.toContain("oceanDisplace");
+      translated(lake.effect, lake.defines);
+    } finally {
+      lake.dispose();
+    }
+  }, timeLimit(60_000));
+});
+
+describe("the white water", () => {
+  it("holds the TypeScript's look, lace and cap numbers", () => {
+    const f = fx("oceanShade.fragment.fx");
+    const look: [string, number][] = [
+      ["OCEAN_FOAM_ALBEDO", OCEAN_FOAM_ALBEDO], ["OCEAN_FOAM_ALBEDO_OLD", OCEAN_FOAM_ALBEDO_OLD],
+      ["OCEAN_FOAM_FADE", OCEAN_FOAM_FADE], ["OCEAN_INNER_COVER", OCEAN_INNER_COVER],
+      ["OCEAN_LACE_TILE", OCEAN_LACE_TILE], ["OCEAN_LACE_DRIFT", OCEAN_LACE_DRIFT], ["OCEAN_LACE_SOFT", OCEAN_LACE_SOFT],
+      ["OCEAN_LACE_WEIGHT", OCEAN_LACE_WEIGHT], ["OCEAN_LACE_FINE", OCEAN_LACE_FINE],
+      ["OCEAN_LACE_FINE_SHIFT", OCEAN_LACE_FINE_SHIFT], ["OCEAN_LACE_FIT_A", OCEAN_LACE_FIT_A],
+      ["OCEAN_LACE_FIT_B", OCEAN_LACE_FIT_B], ["OCEAN_LACE_FIT_C", OCEAN_LACE_FIT_C], ["OCEAN_LACE_FIT_D", OCEAN_LACE_FIT_D],
+      ["OCEAN_LACE_FIT_E", OCEAN_LACE_FIT_E],
+      ["OCEAN_LACE_ONSET", OCEAN_LACE_ONSET], ["OCEAN_DETAIL_LO", OCEAN_DETAIL_LO], ["OCEAN_DETAIL_HI", OCEAN_DETAIL_HI],
+      ["OCEAN_CAP_CELL", OCEAN_CAP_CELL], ["OCEAN_CAP_PERIOD", OCEAN_CAP_PERIOD], ["OCEAN_CAP_RADIUS", OCEAN_CAP_RADIUS],
+      ["OCEAN_CAP_INSET", OCEAN_CAP_INSET], ["OCEAN_CAP_DRIFT", OCEAN_CAP_DRIFT], ["OCEAN_CAP_SHARE", OCEAN_CAP_SHARE],
+      ["OCEAN_CAP_CYCLES", OCEAN_CAP_CYCLES], ["OCEAN_CAP_SOFT", OCEAN_CAP_SOFT],
+    ];
+    for (const [name, value] of look) pinned(f, name, value);
+    for (const signature of [
+      "float oceanLace(vec2 p)", "float oceanFoamLookAge(float foamAge)", "float oceanFoamShare(float foam, float breaking)",
+      "float oceanLaceLevel(float share)", "float oceanFoamCover(vec2 p, float foam, float breaking, float pixel)",
+      "float oceanFoamWhite(float lookAge)", "float oceanCapCoverage(vec2 p, float share)",
+      "float oceanCapThreshold(float coverage)", "float oceanWhitecap(float coverage, float crest)",
+      "float oceanCapFire(vec2 h, float k, float chance)", "float oceanCapCells(vec2 p, float pixel, float share)",
+    ]) expect(f).toContain(signature);
+  });
+
+  it("keeps the lace's noise and its hash the TypeScript mirror's, line for line", () => {
+    const f = fx("oceanShade.fragment.fx");
+    for (const line of [
+      "  float a = 1.0 - abs(2.0 * waterSkinNoise(q / OCEAN_LACE_TILE) - 1.0);",
+      "  float b = 1.0 - abs(2.0 * waterSkinNoise(q / (OCEAN_LACE_FINE * OCEAN_LACE_TILE) + OCEAN_LACE_FINE_SHIFT) - 1.0);",
+      "  return OCEAN_LACE_WEIGHT * a + (1.0 - OCEAN_LACE_WEIGHT) * b;",
+    ]) expect(f).toContain(line);
+    // The water's own hash and noise, which the lace and the caps reuse: waterShading.ts mirrors these lines.
+    const w = fx("water.fragment.fx");
+    for (const line of [
+      "  vec3 p3 = fract(vec3(p.xyx) * 0.1031);",
+      "  p3 += dot(p3, p3.yzx + 33.33);",
+      "  return fract((p3.x + p3.y) * p3.z);",
+      "  vec2 u = f * f * (3.0 - 2.0 * f);",
+      "  float b = waterSkinHash(i + vec2(1.0, 0.0));",
+      "  float c = waterSkinHash(i + vec2(0.0, 1.0));",
+      "  float d = waterSkinHash(i + vec2(1.0, 1.0));",
+      "  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);",
+    ]) expect(w).toContain(line);
+  });
+
+  it("whitens fresh foam to 0.4 and old foam toward 0.06 by its age, and covers the foam's amount of the surface through a lace", () => {
+    expect(foamWhite(0)).toBeCloseTo(0.4, 12);
+    expect(foamWhite(10)).toBeCloseTo(0.1004995, 6);
+    expect(foamWhite(1000)).toBeCloseTo(0.06, 9);
+    const f = fx("oceanShade.fragment.fx");
+    // The share (the foam's amount or the inner surf's floor, which the bores renew and which never thins with age),
+    // the level that leaves it, the lace above the level through a soft edge centred on it, held back as the share
+    // goes to none, and the share itself where a pixel spans more than a few of the lace's cells.
+    for (const line of [
+      "  return max(foam, breaking * OCEAN_INNER_COVER);",
+      "  float c = clamp(share, 0.0, 1.0);",
+      "  float s = sqrt(c);",
+      "  float p = 1.0 - sqrt(sqrt(1.0 - c));",
+      "  return 1.0 - s * (OCEAN_LACE_FIT_A + s * (OCEAN_LACE_FIT_B + s * OCEAN_LACE_FIT_C)) - p * (OCEAN_LACE_FIT_D + p * OCEAN_LACE_FIT_E);",
+      "  float lace = smoothstep(level - 0.5 * OCEAN_LACE_SOFT, level + 0.5 * OCEAN_LACE_SOFT, oceanLace(p)) * smoothstep(0.0, OCEAN_LACE_ONSET, share);",
+      "  return mix(lace, share, smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / OCEAN_LACE_TILE));",
+      "  return mix(OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_ALBEDO, exp(-lookAge / OCEAN_FOAM_FADE));",
+    ]) expect(f).toContain(line);
+    // The roll on the crest's front face is fresh: the age is the swell's less the phase the roll spans.
+    expect(f).toContain("  float ahead = OCEAN_TWO_PI - foamAge * (OCEAN_TWO_PI / oceanSwell.z);");
+    expect(f).toContain("  return foamAge * smoothstep(0.0, OCEAN_ROLL_WIDTH, ahead);");
+    // The lace drifts with the swell's travel and is offset by the world's seed, the sea's waterSkin.y.
+    expect(f).toContain("  vec2 q = p + waterSkin.y - oceanSwell.xy * (OCEAN_LACE_DRIFT * waterTime);");
+    expect(f).not.toContain("1.0 - foam + OCEAN_LACE_SOFT");
+  });
+
+  it("puts the whitecaps over Callaghan's share of a Gaussian sea's crests", () => {
+    expect(Math.abs(whitecapThreshold(0.1) - 1.28155)).toBeLessThan(1e-3);
+    expect(Math.abs(whitecapThreshold(0.01) - 2.32635)).toBeLessThan(1e-3);
+    expect(Math.abs(whitecapThreshold(0.001) - 3.09023)).toBeLessThan(1e-3);
+    expect(Math.abs(whitecapThreshold(0.5))).toBeLessThan(1e-3);
+    expect(fx("oceanShade.fragment.fx")).toContain(
+      "  return s - (2.515517 + 0.802853 * s + 0.010328 * s * s) / (1.0 + 1.432788 * s + 0.189269 * s * s + 0.001308 * s * s * s);",
+    );
+  });
+
+  it("gives the low tier's cells Callaghan's coverage by construction: a fired cap covers OCEAN_CAP_SHARE of its cell", () => {
+    // The cap's profile over its cell by the midpoint rule, times its mean brightness over a cycle.
+    const n = 1000;
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const x = (i + 0.5) / n - 0.5;
+        const z = (j + 0.5) / n - 0.5;
+        sum += capProfile(Math.hypot(x, z) / OCEAN_CAP_RADIUS);
+      }
+    }
+    expect(Math.abs((sum / (n * n)) * 0.5 - OCEAN_CAP_SHARE)).toBeLessThan(1e-4);
+    // A cap stays inside its cell: its centre is inset by at least its radius.
+    expect(OCEAN_CAP_INSET).toBeGreaterThanOrEqual(OCEAN_CAP_RADIUS);
+    // A fired cap's chance, coverage over the share, is a chance: the wind's greatest coverage stays under it.
+    expect(WHITECAP_MAX).toBeLessThanOrEqual(OCEAN_CAP_SHARE);
+  });
+
+  it("draws the cells' caps from a hash fresh every cycle, a strict chance, the coverage at the cap's centre and a clock that folds by the pattern's repeat", () => {
+    const f = fx("oceanShade.fragment.fx");
+    for (const line of [
+      "  float n = mod(k, OCEAN_CAP_CYCLES);",
+      "  vec2 shift = vec2(waterSkinHash(vec2(n, 31.0)), waterSkinHash(vec2(n, 77.0))) * 512.0;",
+      "  return 1.0 - step(chance, waterSkinHash(h + shift));",
+      "  vec2 q = (p + waterSkin.y - waterWindTime * OCEAN_CAP_DRIFT) / OCEAN_CAP_CELL;",
+      "  vec2 centre = vec2(waterSkinHash(h + vec2(13.0, 0.0)), waterSkinHash(h + vec2(0.0, 57.0))) * (1.0 - 2.0 * OCEAN_CAP_INSET) + OCEAN_CAP_INSET;",
+      "  vec2 at = (c + centre) * OCEAN_CAP_CELL - waterSkin.y + waterWindTime * OCEAN_CAP_DRIFT;",
+      "  float cycle = mod(waterTime, OCEAN_CAP_CYCLES * OCEAN_CAP_PERIOD) / OCEAN_CAP_PERIOD + waterSkinHash(h);",
+      "  float fire = oceanCapFire(h, k, oceanCapCoverage(at, oceanWindAmp(at)) / OCEAN_CAP_SHARE);",
+      "  float cap = fire * (1.0 - (cycle - k)) * (1.0 - smoothstep(0.7, 1.0, r));",
+      "  return mix(cap, oceanCapCoverage(p, share), smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / (2.0 * OCEAN_CAP_RADIUS * OCEAN_CAP_CELL)));",
+    ]) expect(f).toContain(line);
+    // Not the hash that stepped by a whole cell a cycle, the hour's fold, or a hash that fires at a chance of none.
+    expect(f).not.toContain("mod(k, 97.0) * 3.0");
+    expect(f).not.toContain("mod(waterTime, 3600.0)");
+    expect(f).not.toContain("float fire = step(");
+  });
+
+  it("lays the white water over the sea as the skin lies over a lake: after the transmission, matte in the compose", () => {
+    const l = fx("waterLights.fragment.fx");
+    const layer = at(l, "float wFoam = max(wOceanLace, wOceanCap);");
+    expect(layer).toBeGreaterThan(at(l, "if (waterSkin.x > 0.0) {"));
+    expect(layer).toBeGreaterThan(at(l, "wTransmit = wBed * wT * (1.0 - wF);"));
+    // The swell's foam through its lace, and the caps, which the broken waves eat, both faded by the pixel's span.
+    expect(at(l, "float wOceanPixel = max(length(wOceanDx), length(wOceanDy));")).toBeLessThan(layer);
+    expect(at(l, "float wFoamAge = oceanFoamLookAge(wOceanFoam.z);")).toBeLessThan(layer);
+    expect(at(l, "float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wOceanFoam.y, wOceanPixel);")).toBeLessThan(layer);
+    expect(at(l, "  wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel, wWindShare);")).toBeLessThan(layer);
+    expect(at(l, "wOceanCap *= 1.0 - wOceanFoam.y;")).toBeLessThan(layer);
+    expect(l).toContain("float wFoamWhite = wOceanLace >= wOceanCap ? oceanFoamWhite(wFoamAge) : OCEAN_FOAM_ALBEDO;");
+    // Then the matte layer: albedo toward the foam's white, transmission held, alpha toward 1, normal toward up.
+    for (const line of [
+      "surfaceAlbedo = mix(surfaceAlbedo, vec3(wFoamWhite), wFoam);",
+      "wTransmit *= 1.0 - wFoam;",
+      "alpha = mix(alpha, 1.0, wFoam);",
+      "normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wFoam));",
+    ]) expect(at(l, line)).toBeGreaterThan(layer);
+    const c = fx("waterCompose.fragment.fx");
+    const foam = at(c, "finalRadianceScaled *= 1.0 - wFoam;");
+    expect(c).toContain("finalSpecularScaled *= 1.0 - wFoam;");
+    expect(foam).toBeGreaterThan(at(c, "#ifdef OCEAN"));
+    expect(foam).toBeLessThan(at(c, "finalEmissive += wTransmit;"));
+  });
+});
+
+describe("the wind sea in the shaders", () => {
+  it("holds the TypeScript's fields, scales and limits", () => {
+    const s = fx("oceanSurface.fx");
+    const fields: [string, number][] = [
+      ["LOOP_N", LOOP_N], ["LOOP_SIZE", LOOP_SIZE], ["LOOP_FRAMES", LOOP_FRAMES], ["LOOP_SECONDS", LOOP_SECONDS],
+      ["FFT_N", FFT_N], ["FFT_CASCADE_0", FFT_CASCADES[0]], ["FFT_CASCADE_1", FFT_CASCADES[1]], ["FFT_CASCADE_2", FFT_CASCADES[2]],
+      ["OCEAN_LOOP_SCALE_MIN", OCEAN_LOOP_SCALE_MIN],
+      ["OCEAN_WIND_TILE_CELLS", OCEAN_WIND_TILE_CELLS],
+    ];
+    for (const [name, value] of fields) pinned(s, name, value);
+    expect(OCEAN_LOOP_SCALE_MIN).toBeCloseTo((WIND_SEA_U_FLOOR / WIND_SEA_U_REF) ** 2, 15);
+    const f = fx("oceanShade.fragment.fx");
+    for (const [name, value] of [
+      ["OCEAN_BUMP_HS", OCEAN_BUMP_HS], ["OCEAN_BUMP_MAX", OCEAN_BUMP_MAX],
+    ] as const) pinned(f, name, value);
+    expect(s).toContain("vec3 oceanWindDisplace(vec2 p)");
+    expect(f).toContain("vec2 oceanWindSlopes(vec2 p)");
+    expect(f).toContain("float oceanCrestKeep(float pixel)");
+    // No folds: the FFT's Jacobian stays in its texture, read by no stage.
+    expect(f).not.toContain("oceanWindFold");
+    expect(f).not.toContain("OCEAN_FOLD");
+  });
+
+  it("keeps the wind sea's share near shore windSeaShare's: the fetch off the land, mixed toward the whole onshore", () => {
+    const s = fx("oceanSurface.fx");
+    pinned(s, "OCEAN_FETCH_RATIO", WIND_SEA_FETCH_COEFF / WIND_SEA_HS_COEFF);
+    pinned(s, "WIND_SEA_U_FLOOR", WIND_SEA_U_FLOOR);
+    for (const line of [
+      "float oceanWindAmp(vec2 p) {",
+      "  float fetch = max(oceanCoastAt(p.y, phaseDz).x - p.x, 0.0);",
+      "  float share = min(1.0, OCEAN_FETCH_RATIO * sqrt(OCEAN_G * fetch) / max(oceanWindDir.z, WIND_SEA_U_FLOOR));",
+      "  return share + (1.0 - share) * oceanWindDir.w;",
+    ]) expect(s, line).toContain(line);
+    // Every caller passes its own point: the ring's vertex, the pixel, the caps' cut and the low tier's bump.
+    const f = fx("oceanShade.fragment.fx");
+    const l = fx("waterLights.fragment.fx");
+    // The fragment stage reads the share once, at the pixel, and hands it on; only a whitecap cell's centre,
+    // another point, reads its own. The vertex stage reads it once more, at the vertex.
+    expect(l).toContain("float wWindShare = oceanWindAmp(vOceanXZ);");
+    expect(l).toContain("float wWindAmp = wWindShare * (1.0 - wOceanFoam.y) * wOceanChop;");
+    expect(l.match(/oceanWindAmp\(/g)).toHaveLength(1);
+    expect(f.match(/oceanWindAmp\(/g)).toHaveLength(1);
+    expect(f).toContain("oceanCapCoverage(at, oceanWindAmp(at))");
+    expect(s.match(/oceanWindAmp\(/g)).toHaveLength(2);
+    expect(f).toContain("  return oceanShelter(p, SHELTER_CHOP) * min(share, 1.0);");
+    expect(f).toContain("  return oceanWind.w * oceanCapDamp(p, share);");
+    expect(f).toContain("  return min(oceanWind.x * share * (1.0 - breaking) * shelter / OCEAN_BUMP_HS, OCEAN_BUMP_MAX);");
+    expect(`${s}${f}${l}`).not.toContain("oceanWindAmp()");
+    // oceanWindAmp read line for line into TypeScript: the coastline's x as oceanCoastAt reads the atlas's
+    // row, between texel centres, and the uniforms as oceanRender.ts writes them (oceanWindDir's z the wind's
+    // speed, its w the onshore weight).
+    const t = oceanFieldFor(SEED).tables;
+    const coastX = (z: number): number => {
+      const column = (z - t.coastOriginZ) / OCEAN_COAST_STEP;
+      const c = Math.min(Math.max(column, 0), OCEAN_TABLE_SAMPLES - 1);
+      const i0 = Math.floor(c);
+      const a = t.data[(OCEAN_ROW_COAST * t.width + i0) * 4] as number;
+      const b = t.data[(OCEAN_ROW_COAST * t.width + Math.min(i0 + 1, OCEAN_TABLE_SAMPLES - 1)) * 4] as number;
+      return a + (b - a) * (c - i0);
+    };
+    const shaderWindAmp = (windDir: readonly number[], px: number, pz: number): number => {
+      const fetch = Math.max(coastX(pz) - px, 0);
+      const ratio = WIND_SEA_FETCH_COEFF / WIND_SEA_HS_COEFF;
+      const share = Math.min(1, (ratio * Math.sqrt(OCEAN_G * fetch)) / Math.max(windDir[2] as number, WIND_SEA_U_FLOOR));
+      return share + (1 - share) * (windDir[3] as number);
+    };
+    const coastline = coastProfilesFor(SEED).coastlineX;
+    let checked = 0;
+    for (const dir of [[-1, 0], [0, 1], [1, 0], [-0.6, 0.8]] as const) {
+      for (const wind01 of [0, 8 / 12, 1]) {
+        const sea = windSeaStateFor(wind01, [dir[0], dir[1]], 12);
+        const windDir = [sea.dir[0], sea.dir[1], sea.u10, sea.onshoreWeight];
+        for (const z of [-300, 0, 37, 150]) {
+          for (const d of [-2000, -1000, -200, -50, -5, 0, 10]) {
+            const x = coastline(z) + d;
+            // windSeaShare at the point's distance from the coastline the shaders read (coastRead's).
+            const want = windSeaShare(sea, x - (coastRead(t, z)[0] as number));
+            expect(Math.abs(shaderWindAmp(windDir, x, z) - want), `${dir} at ${wind01}, (${x}, ${z})`).toBeLessThan(1e-12);
+            checked++;
+          }
+        }
+      }
+    }
+    expect(checked).toBe(336);
+    // Off the land at 8 m/s: the fetch law's 3 cm of the whole sea's 1.8 m over 50 m, none on the sand;
+    // along the shore a third of the way to the whole; onshore the whole sea at the waterline.
+    const at8 = (dir: [number, number]): number[] => {
+      const sea = windSeaStateFor(8 / 12, dir, 12);
+      return [sea.dir[0], sea.dir[1], sea.u10, sea.onshoreWeight];
+    };
+    expect(shaderWindAmp(at8([-1, 0]), coastX(0) - 50, 0)).toBeCloseTo(fetchShare(8, 50), 12);
+    expect(shaderWindAmp(at8([-1, 0]), coastX(0) - 50, 0)).toBeCloseTo(0.01581945, 8);
+    expect(shaderWindAmp(at8([-1, 0]), coastX(0) + 10, 0)).toBe(0);
+    expect(shaderWindAmp(at8([0, 1]), coastX(0) + 10, 0)).toBeCloseTo(0.352, 12);
+    expect(shaderWindAmp(at8([1, 0]), coastX(0), 0)).toBe(1);
+  });
+
+  it("samples both fields in the wind's frame: the loop's frames blended at the loop's time and scale, the cascades summed", () => {
+    const s = fx("oceanSurface.fx");
+    for (const line of [
+      "  vec2 r = p - oceanWindPivot.xy;",
+      "  return vec2(dot(r, d), d.x * r.y - d.y * r.x);",
+      "  return vec2(v.x * d.x - v.y * d.y, v.x * d.y + v.y * d.x);",
+      "  float f = oceanWind.z / LOOP_SECONDS * LOOP_FRAMES;",
+      "  vec3 b = textureLod(oceanWindDisp, vec3(uv, mod(f0 + 1.0, LOOP_FRAMES)), 0.0).xyz;",
+      "    t = oceanLoopRead(w / size) * (size / LOOP_SIZE) * oceanWindRingKeep(size, cell);",
+      "    t = textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_0, 0.0), 0.0).xyz * oceanWindRingKeep(FFT_CASCADE_0, cell)",
+      "  return share + (1.0 - share) * oceanWindDir.w;",
+      // The wind sea on the rings, cut by the break and the lee as the chop is.
+      "  float chop = oceanWindAmp(p) * (1.0 - foam.y) * oceanShelter(p, SHELTER_CHOP);",
+      "  return disp + oceanWindDisplaceAt(p, cell) * chop;",
+    ]) expect(s, line).toContain(line);
+    const f = fx("oceanShade.fragment.fx");
+    // The slope texture's (slopeX, slopeZ) (oceanGpuFft.ts).
+    expect(f).toContain("    g = textureLod(oceanWindSlope, vec3(w / FFT_CASCADE_0, 0.0), 0.0).xy * k0");
+    expect(f).toContain("    g = vec2(gx, gz) * (LOOP_N / (2.0 * LOOP_SIZE)) * keep;");
+    expect(f).toContain("  return -oceanFromWind(g);");
+  });
+
+  it("turns the fields about the cove's waterline centre: nothing slides there, half a metre a second 100 m off", () => {
+    const [px, pz] = [-412.5, 37];
+    for (const angle of [0, 1, 2.5, -2]) {
+      const [u, v] = windFrame(px, pz, Math.cos(angle), Math.sin(angle), px, pz);
+      expect(Math.abs(u) + Math.abs(v), `${angle}`).toBe(0);
+    }
+    // One second of the wind's turn, at 100 m and at 250 m from the pivot (the old frame's
+    // origin lay about 250 m from the cove): the slide is the distance times the turn.
+    const turn = (2 * Math.PI) / WIND_DIR_PERIOD;
+    const slide = (r: number): number => {
+      const before = windFrame(px + r, pz, 1, 0, px, pz);
+      const after = windFrame(px + r, pz, Math.cos(turn), Math.sin(turn), px, pz);
+      return Math.hypot(after[0] - before[0], after[1] - before[1]);
+    };
+    expect(slide(100)).toBeCloseTo(0.5236, 4);
+    expect(slide(250)).toBeCloseTo(1.309, 3);
+    // The frame keeps distances: a turn, not a stretch.
+    const [u, v] = windFrame(px + 30, pz - 40, 0.6, 0.8, px, pz);
+    expect(Math.hypot(u, v)).toBeCloseTo(50, 9);
+  });
+
+  it("fades a field on a ring too coarse for it and in a pixel too wide for its shortest wave", () => {
+    expect(windRingKeep(60, 3.75)).toBe(1);
+    expect(windRingKeep(60, 5.625)).toBeCloseTo(0.5, 12);
+    expect(windRingKeep(60, 7.5)).toBe(0);
+    expect(windPixelKeep(60, 128, 60 / 256)).toBe(1);
+    expect(windPixelKeep(25, 256, 0.0732421875)).toBeCloseTo(0.5, 12);
+    expect(windPixelKeep(60, 128, 60 / 128)).toBe(0);
+    expect(fx("oceanShade.fragment.fx")).toContain(
+      "  return 1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, 0.5 * OCEAN_TWO_PI * n * pixel / size);",
+    );
+  });
+
+  it("keeps the drawn chop within Cox and Munk's sea for the wind, and the low tier's bump to the wind sea's height", () => {
+    expect(windSlopeLimit(10, 1, 0.04)).toBe(1);
+    expect(windSlopeLimit(1.2, 1, 0.04)).toBeCloseTo(0.4781213, 6);
+    expect(windSlopeLimit(1.2, 1, 0)).toBe(1);
+    expect(bumpScale(0.5, 0, 1)).toBe(0.5);
+    expect(bumpScale(1, 0, 1)).toBe(1);
+    expect(bumpScale(3, 0, 1)).toBe(2);
+    expect(bumpScale(1, 0.5, 1)).toBe(0.5);
+    expect(bumpScale(1, 0, 0.15)).toBe(0.15);
+    // A calm dawn, the wind onshore: the bump nearly gone, the sea glassy.
+    const dawn = windSeaStateFor(0.25, [1, 0], 6);
+    expect(bumpScale(dawn.hs * windSeaShare(dawn, -50), 0, 1)).toBeCloseTo(0.0411, 4);
+    const l = fx("waterLights.fragment.fx");
+    expect(l).toContain("float wWindSteep = wWindAmp * oceanWindSlopeLimit(oceanWindDir.z, wOceanChop, wWindDrawn * wWindAmp * wWindAmp);");
+    expect(l).toContain(
+      "vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(wWindShare, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;",
+    );
+  });
+
+  it("whitens a drawn wind sea's own crests, faded to their coverage as their waves fall under the pixel, the cells only where none is drawn", () => {
+    const l = fx("waterLights.fragment.fx");
+    const f = fx("oceanShade.fragment.fx");
+    const branch = at(l, "if (oceanCoast.w > 0.5) {");
+    for (const line of [
+      "  float wCapCover = oceanCapCoverage(vOceanXZ, wWindShare);",
+      "  wOceanCap = mix(wCapCover, oceanWhitecap(wCapCover, wWind.y / max(oceanWindStats.x, 1.0e-4)), oceanCrestKeep(wOceanPixel));",
+    ]) expect(at(l, line), line).toBeGreaterThan(branch);
+    // The cells, and the reads they make, in the other branch of the uniform alone: where no wind sea is drawn.
+    const cells = at(l, "  wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel, wWindShare);");
+    expect(l.slice(branch, cells)).toContain("} else {");
+    expect(l.match(/oceanCapCells\(/g)).toHaveLength(1);
+    expect(at(l, "wOceanCap *= 1.0 - wOceanFoam.y;")).toBeGreaterThan(cells);
+    // The keep: on medium the loop's own shortest wave, on high cascade 1's.
+    expect(f).toContain("  if (oceanCoast.w > 1.5) return oceanWindPixelKeep(FFT_CASCADE_1, FFT_N, pixel);");
+    expect(f).toContain("  return oceanWindPixelKeep(oceanLoopSize(), LOOP_N, pixel);");
+    expect(f).toContain("  return smoothstep(t - 0.5 * OCEAN_CAP_SOFT, t + 0.5 * OCEAN_CAP_SOFT, crest) * step(1.0e-6, coverage);");
+    // Cascade 1's shortest waves fall under a pixel between 0.29 m and 0.59 m: whole caps nearer, their mean beyond.
+    expect(windPixelKeep(150, 256, 0.29296875)).toBe(1);
+    expect(windPixelKeep(150, 256, 0.439453125)).toBeCloseTo(0.5, 12);
+    expect(windPixelKeep(150, 256, 0.5859375)).toBe(0);
+    // The mirror: whole caps at a keep of 1, the coverage at 0, none without coverage.
+    const t = whitecapThreshold(0.01);
+    expect(drawnWhitecap(t + 1, 0.01, 1)).toBeCloseTo(1, 12);
+    expect(drawnWhitecap(t - 1, 0.01, 1)).toBe(0);
+    expect(drawnWhitecap(t + 1, 0.01, 0)).toBe(0.01);
+    expect(drawnWhitecap(t + 1, 0, 1)).toBe(0);
+    // Over a Gaussian sea's crests (the midpoint rule over eight standard deviations each side) the faded caps
+    // cover the coverage at every keep, within the soft edge's few percent.
+    for (const keep of [0, 0.5, 1]) {
+      const n = 32_000;
+      const dx = 16 / n;
+      let mean = 0;
+      for (let i = 0; i < n; i++) {
+        const x = -8 + (i + 0.5) * dx;
+        mean += (drawnWhitecap(x, 0.01, keep) * Math.exp((-x * x) / 2) * dx) / Math.sqrt(2 * Math.PI);
+      }
+      expect(Math.abs(mean / 0.01 - 1), `${keep}`).toBeLessThan(0.03);
+    }
+  });
+});

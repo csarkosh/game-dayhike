@@ -227,7 +227,7 @@ const SHORE_TRIM = ((BEACH_GRADE - SURF_GRADE) * GRADE_MORPH * 3) / 16;
  * Monotone: `near + FLOOR_DEPTH > 0` throughout the blend, so both terms of
  * the derivative are non-negative.
  */
-function shoreProfileD(d: number): { v: number; dd: number } {
+export function shoreProfileD(d: number): { v: number; dd: number } {
   const ramp = smoothPosD(d, GRADE_MORPH);
   const near = SURF_GRADE * d + (BEACH_GRADE - SURF_GRADE) * ramp.v - SHORE_TRIM;
   const nearDd = SURF_GRADE + (BEACH_GRADE - SURF_GRADE) * ramp.d;

@@ -29,10 +29,13 @@ import { createAtmosphere } from "../../src/game/atmosphere.js";
 import { createLighting } from "../../src/game/lighting.js";
 import { createHeadlamp } from "../../src/game/headlamp.js";
 import { createForestMeshes } from "../../src/game/forestMeshes.js";
+import { createWater } from "../../src/game/renderer.js";
+import type { WaterPlugin } from "../../src/game/waterPlugin.js";
+import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { FOG_DISTANCE } from "../../src/sim/forestConstants.js";
 import { pluginsInStates } from "./helpers/pluginText.js";
-import { drawnEffect, probeReady, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
+import { drawnEffect, probeReady, stageBindings, webgpuProcessingEngine, type ProcessedEffect } from "./helpers/webgpuProcessing.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
@@ -452,5 +455,88 @@ describe("inter-stage variables on WebGPU", () => {
   it("keeps the limit in one place", () => {
     const src = readFileSync(new URL("../../src/game/engineChoice.ts", import.meta.url), "utf8");
     expect(src.match(/maxInterStageShaderVariables: \d+/g)?.length).toBe(1);
+  });
+});
+
+/** What to do when a pin on the sea's material turns red. */
+const WEIGH_SEA =
+  "the varyings of the sea's water material changed: count them against `maxInterStageShaderVariables` " +
+  "in engineChoice.ts, and read the effect's locations in a browser if the count grew";
+
+describe("inter-stage variables of the sea's water material on WebGPU, its waves on", () => {
+  const limit = WEBGPU_REQUIRED_LIMITS.maxInterStageShaderVariables as number;
+  const seas = new Map<QualityTier, { effect: ProcessedEffect; ocean: boolean; receivesShadows: boolean }>();
+  const disposers: (() => void)[] = [];
+
+  // The renderer's order on each tier: the atmosphere, the camera, the local
+  // lamp, the lighting, then the water, at the coast so ring 0 holds sea.
+  beforeAll(async () => {
+    for (const tier of ["low", "medium", "high"] as const) {
+      const engine = webgpuProcessingEngine();
+      const scene = new Scene(engine);
+      const atmosphere = createAtmosphere(scene, FOG_DISTANCE);
+      scene.activeCamera = new UniversalCamera("player", new Vector3(-380, 3, 0), scene);
+      createHeadlamp(scene, "lamp_local");
+      const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: "post", sky: skyFixture() });
+      probeReady(scene);
+      const water = createWater(scene, seedFromToken("atmo"), 0, [], tier, -380, 0);
+      const mesh = water.meshes[0] as Mesh;
+      const plugin = (mesh.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+      seas.set(tier, { effect: await drawnEffect(mesh), ocean: (plugin.ocean ?? null) !== null, receivesShadows: mesh.receiveShadows });
+      disposers.push(() => {
+        water.dispose();
+        lighting.dispose();
+        atmosphere.dispose();
+        scene.dispose();
+        engine.dispose();
+      });
+    }
+  }, timeLimit(60_000));
+  afterAll(() => {
+    for (const dispose of disposers) dispose();
+  });
+
+  it("writes nine vertex outputs on the low tier and eight on high and medium, and reads front_facing on the low tier alone: 10 and 8 of the 19", () => {
+    for (const [tier, sea] of seas) {
+      expect(sea.ocean, tier).toBe(true);
+      // The water takes no shadows, so no light's shadow varyings join these.
+      expect(sea.receivesShadows, tier).toBe(false);
+      const varyings = [...sea.effect._vertexSourceCode.matchAll(/layout\(location = \d+\)\s*(?:flat\s+)?out (\w+) (\w+);/g)].map(
+        ([, type, name]) => `${type} ${name}`,
+      );
+      // The bump's UV, on the low tier's sea alone: on high and medium the sea's
+      // normal is its waves', and the material carries no bump.
+      const bump = tier === "low";
+      expect(varyings, `${tier}: ${WEIGH_SEA}`).toEqual([
+        ...(bump ? ["vec2 vMainUV1"] : []),
+        "vec3 vPositionW",
+        "vec3 vNormalW",
+        "vec3 vFogDistance",
+        "float vBedDepth",
+        "float vWaterViewDepth",
+        "vec2 vOceanXZ",
+        // The swell the vertex stage sums, handed to the fragment stage.
+        "vec4 vOceanSwellA",
+        "vec4 vOceanSwellB",
+      ]);
+      expect(sea.effect._processingContext._varyingNextLocation, tier).toBe(bump ? 9 : 8);
+      // The bump's tangent frame reads front_facing in the fragment stage, on the low tier alone.
+      const frontFacing = sea.effect._fragmentSourceCode.includes("gl_FrontFacing");
+      expect(frontFacing, tier).toBe(bump);
+      expect(sea.effect._processingContext._varyingNextLocation + (frontFacing ? 1 : 0), `${tier}: ${WEIGH_SEA}`).toBe(bump ? 10 : 8);
+      expect(bump ? 10 : 8).toBeLessThanOrEqual(limit);
+    }
+  });
+
+  it("binds the waves' textures within a stage's 16: two in the vertex stage, ten in the fragment stage on low, nine without the bump", () => {
+    for (const [tier, sea] of seas) {
+      const { vertex, fragment } = stageBindings(sea.effect);
+      const textures = tier === "low" ? 10 : 9;
+      expect({ vertex: [vertex.textures, vertex.samplers], fragment: [fragment.textures, fragment.samplers] }, tier).toEqual({
+        vertex: [2, 2],
+        fragment: [textures, textures],
+      });
+      expect(fragment.textures).toBeLessThanOrEqual(WEBGPU_REQUIRED_LIMITS.maxSampledTexturesPerShaderStage as number);
+    }
   });
 });

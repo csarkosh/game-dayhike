@@ -68,6 +68,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
+    // NullEngine given a raw 2D array texture maker (the file says why).
+    setupFiles: ["test/setup/nullEngineArrays.ts"],
     // vitest's own defaults (5 s a test, 10 s a hook), scaled like every
     // explicit limit. Only under vitest, which sets VITEST before it loads this
     // file: `vite dev` and `vite build` load it too, and must not read or

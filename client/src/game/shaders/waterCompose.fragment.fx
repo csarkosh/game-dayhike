@@ -12,4 +12,13 @@ finalRadianceScaled *= 1.0 - wSkin;
 #ifdef SPECULARTERM
 finalSpecularScaled *= 1.0 - wSkin;
 #endif
+#ifdef OCEAN
+// The white water is matte too.
+#ifdef REFLECTION
+finalRadianceScaled *= 1.0 - wFoam;
+#endif
+#ifdef SPECULARTERM
+finalSpecularScaled *= 1.0 - wFoam;
+#endif
+#endif
 finalEmissive += wTransmit;

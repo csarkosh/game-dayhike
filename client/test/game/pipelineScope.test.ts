@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
-// As in `rendererCleanup.test.ts`: the ground's texture arrays NullEngine
-// cannot create, and `createRenderer`'s WebGL `Engine`, stand-ins at the
-// module boundary.
+// As in `rendererCleanup.test.ts`: the ground's texture arrays, whose real
+// loader fetches and decodes the layer images, and `createRenderer`'s WebGL
+// `Engine`, stand-ins at the module boundary.
 vi.mock("../../src/game/groundMaps.js", () => ({
   reportLayer: () => undefined,
   loadGroundArrays: () => ({

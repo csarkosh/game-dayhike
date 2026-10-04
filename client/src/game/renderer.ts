@@ -31,6 +31,7 @@ import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
 import { budgetLights, budgetMaterial, createHeadlamp, setLamp } from "./headlamp.js";
 import { lampUnder } from "./lampParams.js";
 import { windRecordUnder, type WindRecord } from "./windParams.js";
+import { sharedSeconds } from "./oceanWindSea.js";
 import { setFoliageWind, FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED } from "./foliagePlugin.js";
 import {
   createRingSamples,
@@ -77,6 +78,7 @@ import {
 } from "./water.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater } from "./waterPlugin.js";
+import { createOcean } from "./oceanRender.js";
 import { createWaterPlants } from "./waterPlants.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
 import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "./waterShading.js";
@@ -634,7 +636,8 @@ function createWaterBump(scene: Scene): RawTexture {
 /**
  * Uploads a water ring's buffers. Mirrors `applyRingGeometry` — same typed
  * arrays straight through, same `updatable` reasoning — plus the UV set the
- * scrolling bump texture samples.
+ * scrolling bump texture samples, and what the vertex stage stitches the
+ * ring's waves to the coarser ring's with (`oceanMorph`, `oceanCoarse`).
  */
 function applyWaterGeometry(mesh: Mesh, geometry: WaterGeometry): void {
   const data = new VertexData();
@@ -644,13 +647,15 @@ function applyWaterGeometry(mesh: Mesh, geometry: WaterGeometry): void {
   data.uvs = geometry.uvs;
   data.applyToMesh(mesh, true);
   mesh.setVerticesData("bedDepth", geometry.bedDepth, true, 1);
+  mesh.setVerticesData("oceanMorph", geometry.oceanMorph, true, 1);
+  mesh.setVerticesData("oceanCoarse", geometry.oceanCoarse, true, 2);
 }
 
 /** Rows of the bed grid baked per frame: a whole 256² grid measured 260 to 295 ms. */
 const BED_ROWS_PER_FRAME = 1;
 
 export type Water = {
-  /** One mesh per ring, coarsening outward — four draw calls, capped by design.
+  /** One mesh per ring, coarsening outward — seven draw calls, capped by design.
    * NEVER added to the shadow caster list: water neither casts nor receives. */
   readonly meshes: readonly Mesh[];
   /** One surface per lake (`lakeSurface`), static, on its lake's own material. */
@@ -659,7 +664,8 @@ export type Water = {
    * opaque pass through the surface (`waterFrame.ts`), so a wet object's own
    * depth is attenuated by the water and the wet plugin need not darken it. */
   readonly high: boolean;
-  update(camX: number, camZ: number, seconds: number): void;
+  /** Per frame: the camera's place, the sea's shared seconds and the hour (12 when absent), which the sea's waves read. */
+  update(camX: number, camZ: number, seconds: number, hour?: number): void;
   /** Per frame from the wind record: the 0..1 speed and the direction it blows toward. */
   setWind(wind01: number, dir: [number, number]): void;
   /** Per frame from the weather: the rain, 0 to 1, that rings the surface. */
@@ -819,7 +825,7 @@ function lakeSurfaceGrid(
 }
 
 /**
- * The four-ring camera-following ocean surface. Same shape as `createClipmap`
+ * The seven-ring camera-following ocean surface. Same shape as `createClipmap`
  * — rings array, `emitRing`, moved-or-finer-moved re-emit — because the hole
  * in a coarser ring tracks the finer ring's footprint exactly as the terrain
  * clipmap's does. Takes only a `Scene` so it runs under `NullEngine`.
@@ -853,6 +859,16 @@ export function createWater(
   const seaMat = new PBRMaterial("mat_water_sea", scene);
   seaMat.backFaceCulling = false;
   const seaPlugin = attachWater(seaMat, WATER_ROWS.sea);
+  // The sea's skin stays off (x = 0); its offset seeds the white water's lace
+  // and whitecaps (oceanShade.fragment.fx), so two worlds' foam differs.
+  seaPlugin.skin = [0, waterSkinOffset(seed)];
+  // The sea's waves, bound before any draw: the swell's tables and what moves
+  // each frame. The lakes have none (no `OCEAN` on their materials).
+  const ocean = createOcean(scene, seed, tier);
+  ocean.bind(seaPlugin);
+  // The wind the sea's waves are given in `update`, as `setWind` last had it.
+  let seaWind = 0;
+  let seaWindDir: [number, number] = [1, 0];
   // One material per lake, on the row its murk gives (a world has at most one).
   const lakeMats = lakes.map((_, i) => {
     const mat = new PBRMaterial(`mat_water_lake_${i}`, scene);
@@ -896,14 +912,18 @@ export function createWater(
   const group = high ? WATER_GROUP : 0;
 
   const bump = createWaterBump(scene);
-  seaMat.bumpTexture = bump;
+  // The sea's normal is its waves' on high and medium (oceanSurface.fx): PBR's
+  // bump stays on the low tier's sea alone, where it draws the wind sea, and on
+  // every lake.
+  if (tier === "low") seaMat.bumpTexture = bump;
   for (const mat of lakeMats) mat.bumpTexture = bump;
 
   // Cosmetic drift: scroll the bump's UV offset each frame by the clock's
   // delta, not per-frame constants, so the ripple speed survives
   // refresh-rate differences, and a scene's own clock (`now`) moves the
   // water in step with it, or holds it on a held frame. One texture, so
-  // one scroll drives both materials.
+  // one scroll drives every material that carries it: each lake's, and the
+  // sea's on the low tier alone.
   let last = now();
   const scroll = scene.onBeforeRenderObservable.add(() => {
     const at = now();
@@ -957,8 +977,10 @@ export function createWater(
   const meshes: Mesh[] = [];
 
   // A ring with no wet cell is off, and a wet ring's bounds are its wet
-  // cells, not the whole plane: a flat plane at the level is in view from
-  // almost anywhere, which would ask for the high tier's copy inland too.
+  // cells, not the whole plane: a plane at the level is in view from almost
+  // anywhere, which would ask for the high tier's copy inland too. The
+  // bounds hold the waves: `OCEAN_BOUND` past the wet cells every way, and
+  // the stitch's move of up to a cell besides, across.
   function emitRing(level: number): void {
     const ring = rings[level] as WaterRingSamples;
     const finer = level > 0 ? (rings[level - 1] as WaterRingSamples) : null;
@@ -994,11 +1016,23 @@ export function createWater(
   for (const mesh of lakeMeshes) mesh.renderingGroupId = group;
   waterMeshes.push(...meshes, ...lakeMeshes);
 
+  // Whether the last frame drew the sea: its culling kept one of the sea's
+  // rings (never a disabled ring, one outside the frustum, or a lake).
+  // `update` runs before this frame is culled, so this is the frame before's
+  // answer, a frame late: the high tier's FFT is stepped only while it is
+  // true, and the first frame the sea comes back into sight shows the last
+  // field the FFT made.
+  const seaDrawn = (): boolean => {
+    const active = scene.getActiveMeshes();
+    for (const mesh of meshes) if (active.contains(mesh)) return true;
+    return false;
+  };
+
   return {
     meshes,
     lakeMeshes,
     high,
-    update(camX, camZ, seconds) {
+    update(camX, camZ, seconds, hour = 12) {
       const moved: boolean[] = [];
       for (let level = 0; level < WATER_RING_COUNT; level++) {
         moved.push(updateWaterRingSamples(rings[level] as WaterRingSamples, seed, camX, camZ));
@@ -1038,6 +1072,7 @@ export function createWater(
         uploadBed();
       }
       for (const p of plugins) p.advance(seconds);
+      ocean.update(camX, camZ, seconds, seaWind, seaWindDir, hour, seaDrawn());
       // The copy's depth is linearised with the camera's planes, read each
       // frame: the active camera can change (the freecam, a cutscene).
       const camera = scene.activeCamera;
@@ -1049,6 +1084,8 @@ export function createWater(
       }
     },
     setWind(wind01, dir) {
+      seaWind = wind01;
+      seaWindDir = dir;
       for (const p of plugins) p.setWind(wind01, dir);
     },
     setRain(rain) {
@@ -1060,6 +1097,7 @@ export function createWater(
       for (const mesh of lakeMeshes) mesh.dispose();
       bump.dispose();
       bedTexture?.dispose();
+      ocean.dispose();
       frame?.dispose();
       seaMat.dispose();
       for (const mat of lakeMats) mat.dispose();
@@ -1903,12 +1941,16 @@ function buildRenderer(
       // BEFORE the views sync, which needs the lamp state derived from it.
       const weather = lighting.weather;
       const seconds = clock() / 1000;
+      // The sea's time, and the wind's: the simulation's tick and this frame's
+      // fraction of the next, so every peer's waves break together and its
+      // wind sea blows the same way. A scene that hands in its own clock keeps it.
+      const oceanSeconds = options.clock !== undefined ? seconds : sharedSeconds(state.tick, alpha);
       const lampState = lampUnder(weather, seconds);
       // The one wind record every moving thing reads this frame: the
       // weather-driven speed, or the `/wind` override in its place. The
       // players bend it — `windPlayers` is reused, not allocated, and absent
       // slots are parked far off in XZ so the bend never reaches them.
-      wind = windRecordUnder(weather, seconds, windOverride ?? undefined);
+      wind = windRecordUnder(weather, oceanSeconds, windOverride ?? undefined);
       let n = 0;
       windPlayers.fill(0);
       for (let i = 0; i < FOLIAGE_PLAYERS; i++) {
@@ -1978,7 +2020,7 @@ function buildRenderer(
         // The clipmap follows the *camera* here, not the player. Anchored to
         // the player, flying 500 m away shows void with no error.
         clipmap?.update(freecam.x, freecam.z);
-        water?.update(freecam.x, freecam.z, seconds);
+        water?.update(freecam.x, freecam.z, oceanSeconds, lighting.hour);
         updateWet(freecam.x, freecam.z);
         propMeshes?.update(freecam.x, freecam.z);
         forestMeshes?.update(freecam.x, freecam.z);
@@ -2021,7 +2063,7 @@ function buildRenderer(
       const local = state.players.get(localId);
       if (local) {
         clipmap?.update(local.pos.x, local.pos.z);
-        water?.update(local.pos.x, local.pos.z, seconds);
+        water?.update(local.pos.x, local.pos.z, oceanSeconds, lighting.hour);
         updateWet(local.pos.x, local.pos.z);
         propMeshes?.update(local.pos.x, local.pos.z);
         forestMeshes?.update(local.pos.x, local.pos.z);
