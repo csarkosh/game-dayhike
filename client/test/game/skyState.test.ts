@@ -667,3 +667,80 @@ describe("continuity through dusk", () => {
     }
   });
 });
+
+describe("deep twilight under a clear sky", () => {
+  let table: SkyTable;
+  // The slices from -15 to -7 degrees, which hold 18:30 (-7.27) to 19:00 (-14.54), and the noon bracket.
+  beforeAll(() => {
+    table = buildSkyTableSync(SLICE_ALTITUDES_DEG.filter((a) => (a >= -15 && a <= -7) || a >= 74));
+  }, timeLimit(20_000));
+
+  /** The dome's luma every quarter degree of elevation from 0 to 30, `azimuth` radians round from the sun's. */
+  function domeProfile(s: SkyState, azimuth: number): number[] {
+    return Array.from({ length: 121 }, (_, k) => luma(domeRadiance(s, around(s, k / 4, azimuth))));
+  }
+
+  it("draws the arch toward the sun within 4 degrees of the horizon at 18:45, falling from it to 30 degrees, out to 45 degrees round", () => {
+    const s = skyStateFor(table, 18.75, CLEAR);
+    for (const round of [0, 45]) {
+      const toward = domeProfile(s, round * DEG);
+      for (const v of toward) expect(Number.isFinite(v)).toBe(true);
+      const peak = toward.indexOf(Math.max(...toward));
+      expect(peak / 4, `${round} degrees round`).toBeLessThanOrEqual(4);
+      for (let k = peak + 1; k < toward.length; k++) {
+        expect(toward[k], `${round} degrees round, ${k / 4} up`).toBeLessThanOrEqual(toward[k - 1] as number);
+      }
+    }
+  });
+
+  it("draws no band away from the sun at 18:45: no maximum between 2 and 30 degrees up", () => {
+    const s = skyStateFor(table, 18.75, CLEAR);
+    for (const azimuth of [0.75 * Math.PI, Math.PI]) {
+      const away = domeProfile(s, azimuth);
+      for (const v of away) expect(Number.isFinite(v)).toBe(true);
+      for (let k = 8; k < 120; k++) {
+        const v = away[k] as number;
+        expect(v > (away[k - 1] as number) && v >= (away[k + 1] as number), `${k / 4} degrees up`).toBe(false);
+      }
+    }
+  });
+
+  /**
+   * The glow's weight is smoothstep of the horizon's contrast, toward the sun
+   * over away, across the band 1.05 to 1.25: its slope is at most 1.5 and its
+   * curvature 6, over the band's width. The weight's step changes from one
+   * step to the next by about its curvature times the contrast's step squared
+   * plus its slope times the contrast's own bend. Where the contrast moves by
+   * under 0.03 a step inside the band, as it does here (checked), the first
+   * term is at most 6 x (0.03 / 0.2)^2 = 0.135; the second, 1.5 / 0.2 times a
+   * bend of a few thousandths, adds under 0.03. So the bend is under about
+   * 0.16 in the worst case; 0.135, the first term, is the limit asserted, and
+   * the largest measured is 0.075.
+   * The lobe, the weight times cos(phi)^power, bends no more where the power
+   * moves smoothly. A larger bend is a step: the linear read of the
+   * multiple scattering held the weight at 1 until 18:39 and then dropped it
+   * by 0.26 in one step (the lobe at 30 degrees by 0.24), as the contrast
+   * fell by 0.11 inside the band.
+   */
+  it("keeps the glow's weight and lobe continuous from 18:30 to 19:00 every 0.01 h", () => {
+    const states: SkyState[] = [];
+    for (let k = 0; k <= 50; k++) states.push(skyStateFor(table, 18.5 + k * 0.01, CLEAR));
+    const contrast = states.map((s) => luma(s.horizonToward) / luma(s.horizonAway));
+    for (let k = 1; k < contrast.length; k++) {
+      const a = contrast[k - 1] as number;
+      const b = contrast[k] as number;
+      if (Math.max(a, b) >= 1.05 && Math.min(a, b) <= 1.25) expect(Math.abs(b - a), `contrast at ${(18.5 + 0.01 * k).toFixed(2)}`).toBeLessThan(0.03);
+    }
+    const series: [string, number[]][] = [
+      ["weight", states.map((s) => s.glowWeight)],
+      ...[10, 30, 60].map((deg): [string, number[]] => [`lobe at ${deg}`, states.map((s) => s.glowWeight * Math.cos(deg * DEG) ** s.glowPower)]),
+    ];
+    for (const [name, v] of series) {
+      for (const x of v) expect(Number.isFinite(x), name).toBe(true);
+      for (let k = 2; k < v.length; k++) {
+        const bend = (v[k] as number) - 2 * (v[k - 1] as number) + (v[k - 2] as number);
+        expect(Math.abs(bend), `${name} at ${(18.5 + 0.01 * k).toFixed(2)}`).toBeLessThanOrEqual(0.135);
+      }
+    }
+  });
+});

@@ -25,14 +25,20 @@
  *
  * On the material colour path (no post chain) the stage tone-maps itself
  * (`skyToneMap`), as Babylon's image processing does every other material
- * there; the exposure comes in through `update` and the contrast is the
- * scene's own.
+ * there, and the contrast is the scene's own. The exposure (the frame's, the
+ * stare's dimming included), the vignette, the colour curves (the grade
+ * `post.ts` writes every frame) and the dither are bound from the scene's
+ * configuration at each draw, as Babylon binds them to every other material
+ * (`bindSkyImageProcessing`).
  */
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { Effect } from "@babylonjs/core/Materials/effect.js";
+import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration.js";
+import { ColorCurvesBind } from "@babylonjs/core/Materials/colorCurves.js";
+import { Mix } from "@babylonjs/core/Misc/tools.functions.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
@@ -48,11 +54,20 @@ import skyDomeFragment from "./shaders/skyDome.fragment.fx?raw";
 /** The material's and the mesh's name, and the stages' name in Babylon's shader store. */
 export const SKY_DOME_NAME = "skyDome";
 
-/** The stages' uniforms: the two matrices, then the sky's. */
+/** The colour curves', the vignette's and the dither's uniforms, bound at
+ * each draw from the scene's image processing (`bindSkyImageProcessing`). */
+export const SKY_DOME_IMAGE_UNIFORMS: readonly string[] = [
+  "skyCurveNeutral", "skyCurvePositive", "skyCurveNegative",
+  "skyInverseScreenSize", "skyVignette1", "skyVignette2", "skyVignetteOpaque",
+  "skyDitherIntensity",
+];
+
+/** The stages' uniforms: the two matrices, then the sky's, then the image's. */
 export const SKY_DOME_UNIFORMS: readonly string[] = [
   "world", "viewProjection",
   "skyScale", "skyCloud", "skyDeckZenith", "skyNight", "skyMistAir", "skyMistWeight", "skySunDir", "skyDisc",
   "skyCapture", "skyExposure", "skyToneMap", "skyContrast",
+  ...SKY_DOME_IMAGE_UNIFORMS,
 ];
 
 /** Big enough to sit outside any view, small enough to stay inside the far plane. */
@@ -64,13 +79,63 @@ export type SkyDome = {
   readonly material: ShaderMaterial;
   /** Sets every uniform from `s`, and uploads the clear slice times its scale
    * as the table texture where the sun's altitude or the table's count has
-   * moved since the last upload; `exposure` is the material path's image
-   * exposure. */
+   * moved since the last upload. `exposure` is the stage's exposure on the
+   * post path, where nothing the dome shows reads it; on the material path
+   * each draw binds the scene's image exposure over it instead, the value
+   * every other material there draws with. */
   update(s: SkyState, exposure: number): void;
   /** The probe's capture: the disc capped, the linear sky gamma-encoded, no tone map. */
   setCapture(on: boolean): void;
   dispose(): void;
 };
+
+/**
+ * Binds `image`'s colour curves, vignette and dither to the dome's `effect`
+ * as `ImageProcessingConfiguration.bind` binds them to every other material:
+ * the curves through Babylon's own binding under the dome's names, while
+ * `colorCurvesEnabled`; the screen's size (over the output's size, or the
+ * render's where none is set), which the vignette and the dither share,
+ * while either is on; the vignette's settings computed as Babylon computes
+ * them, while `vignetteEnabled`, with the blend chosen as Babylon chooses
+ * its define: multiply, or opaque for any other mode; the dither's step,
+ * half the intensity either way, while `ditheringEnabled`. Off, each binds
+ * the values that leave the colour as it is: the neutral curve 1 and the
+ * other two 0, a vignette of power 0, a dither of 0.
+ */
+export function bindSkyImageProcessing(effect: Effect, image: ImageProcessingConfiguration): void {
+  if (image.colorCurvesEnabled && image.colorCurves) {
+    ColorCurvesBind(image.colorCurves, effect, "skyCurvePositive", "skyCurveNeutral", "skyCurveNegative");
+  } else {
+    effect.setFloat4("skyCurveNeutral", 1, 1, 1, 1);
+    effect.setFloat4("skyCurvePositive", 0, 0, 0, 0);
+    effect.setFloat4("skyCurveNegative", 0, 0, 0, 0);
+  }
+  const engine = effect.getEngine();
+  const inverseWidth = 1 / (image.outputTextureWidth || engine.getRenderWidth());
+  const inverseHeight = 1 / (image.outputTextureHeight || engine.getRenderHeight());
+  if (image.vignetteEnabled || image.ditheringEnabled) {
+    effect.setFloat2("skyInverseScreenSize", inverseWidth, inverseHeight);
+  } else {
+    effect.setFloat2("skyInverseScreenSize", 0, 0);
+  }
+  effect.setFloat("skyDitherIntensity", image.ditheringEnabled ? 0.5 * image.ditheringIntensity : 0);
+  if (image.vignetteEnabled) {
+    const aspectRatio = inverseHeight / inverseWidth;
+    let scaleY = Math.tan(image.vignetteCameraFov * 0.5);
+    let scaleX = scaleY * aspectRatio;
+    const geometricMean = Math.sqrt(scaleX * scaleY);
+    scaleX = Mix(scaleX, geometricMean, image.vignetteStretch);
+    scaleY = Mix(scaleY, geometricMean, image.vignetteStretch);
+    effect.setFloat4("skyVignette1", scaleX, scaleY, -scaleX * image.vignetteCenterX, -scaleY * image.vignetteCenterY);
+    const power = -2.0 * image.vignetteWeight;
+    effect.setFloat4("skyVignette2", image.vignetteColor.r, image.vignetteColor.g, image.vignetteColor.b, power);
+    effect.setFloat("skyVignetteOpaque", image.vignetteBlendMode === ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY ? 0 : 1);
+  } else {
+    effect.setFloat4("skyVignette1", 0, 0, 0, 0);
+    effect.setFloat4("skyVignette2", 1, 1, 1, 0);
+    effect.setFloat("skyVignetteOpaque", 0);
+  }
+}
 
 export function createSkyDome(scene: Scene, colourPath: "post" | "material"): SkyDome {
   Effect.ShadersStore[`${SKY_DOME_NAME}VertexShader`] = skyDomeVertex;
@@ -139,6 +204,21 @@ export function createSkyDome(scene: Scene, colourPath: "post" | "material"): Sk
   // compile of the dome, which the suite, compiling without fog, never sees.
   mesh.applyFog = false;
 
+  // At each draw, as Babylon binds its image processing to every other
+  // material: post.ts writes the grade every frame, while update runs only
+  // when the sky moves. The box's one submesh holds the effect of the pass
+  // being drawn (the frame's, or the probe's, which Babylon's cache makes
+  // the same object, so each draw binds its own values again). On the
+  // material path the exposure too, read from the same configuration every
+  // other material binds it from at its draw, the stare's dimming included.
+  const bindImage = material.onBindObservable.add((drawn) => {
+    const effect = drawn.subMeshes[0]?.effect;
+    if (!effect) return;
+    const image = scene.imageProcessingConfiguration;
+    bindSkyImageProcessing(effect, image);
+    if (colourPath === "material") effect.setFloat("skyExposure", image.exposure);
+  });
+
   return {
     mesh,
     material,
@@ -164,6 +244,7 @@ export function createSkyDome(scene: Scene, colourPath: "post" | "material"): Sk
       material.setFloat("skyCapture", on ? 1 : 0);
     },
     dispose() {
+      material.onBindObservable.remove(bindImage);
       mesh.dispose();
       material.dispose();
       table.dispose();

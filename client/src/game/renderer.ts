@@ -2012,6 +2012,9 @@ function buildRenderer(
         lensCanopy = forestDensity(forest.seed, lensCanopyX, lensCanopyZ);
       }
       lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x, lensCanopy), engine.getDeltaTime() / 1000);
+      // The stare dims the frame's exposure: the lighting's on the material
+      // path, so a weather fade's applies keep it; the grade's on the post path.
+      lighting.setStare(stare);
       // Before the sky's first slices there is no night factor; the day's 0
       // stands in, for frames no one sees.
       post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, stare, lensStrength);

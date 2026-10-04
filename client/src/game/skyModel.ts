@@ -34,16 +34,16 @@ export const SKY_MIE_HEIGHT_KM = 1.2;
 export const SKY_MIE_G = 0.8;
 /**
  * Multiplies both aerosol coefficients. Under the standard atmosphere's
- * aerosols the clear noon horizon is about 4.4 times as bright as the zenith,
+ * aerosols the clear noon horizon is about 4 times as bright as the zenith,
  * and fewer aerosols make it brighter still: the zenith, 14 degrees from the
  * noon sun, takes much of its light from the aerosols' forward scattering.
  * This is the smallest scale on a 0.05 grid from 1 up at which the horizon's
  * luminance 2 degrees up (its mean away from the sun) is at most twice the
- * zenith's, which keeps noon's sky close to even, as the game's noon has
- * always looked. At the horizon itself, where the ring is read, the noon
- * horizon is 1.69 times the zenith.
+ * zenith's (1.99; at 3.7 it is 2.01), which keeps noon's sky close to even,
+ * as the game's noon has always looked. At the horizon itself, where the
+ * ring is read, the noon horizon is 1.72 times the zenith.
  */
-export const SKY_MIE_SCALE = 5;
+export const SKY_MIE_SCALE = 3.75;
 export const SKY_OZONE: Rgb = { r: 0.65e-3, g: 1.881e-3, b: 0.085e-3 };
 export const SKY_OZONE_PEAK_KM = 25;
 export const SKY_OZONE_HALF_WIDTH_KM = 15;
@@ -57,10 +57,26 @@ export const TRANSMITTANCE_WIDTH = 256;
 export const TRANSMITTANCE_HEIGHT = 64;
 /** The multiple-scattering table is square: muSun across, height up, at texel centres. */
 export const MULTI_SIZE = 32;
+/**
+ * The least value the multiple-scattering table is read as. The read
+ * interpolates the table's logarithm, so it needs a floor under the texels
+ * that are 0 (from deep in the earth's shadow the stratified sphere finds no
+ * sunlit air). 10^-20 of the solar irradiance is far below anything the
+ * scene's largest scale (about 6 x 10^4, the night's) brings into view.
+ */
+export const MULTI_FLOOR = 1e-20;
 /** Directions the multiple scattering integrates over: an 8 x 8 stratified sphere. */
 export const MULTI_DIRECTIONS = 64;
 export const TRANSMITTANCE_STEPS = 40;
 export const MULTI_STEPS = 20;
+/**
+ * Steps of the view march, from the eye to the top of the air or the ground,
+ * spaced by the square of the step's index (VIEW_STEP_AT): doubling them
+ * moves the clear noon zenith and horizon by half a per cent.
+ * SKY_MIE_SCALE was set on these 24 steps (converged it would be about 3.8),
+ * so a change here can move that calibration, and the scale must be set again
+ * for it; its test does not always catch the move.
+ */
 export const VIEW_STEPS = 24;
 /** Rows of a slice, elevation from the nadir to the zenith. */
 export const SLICE_ELEVATIONS = 64;
@@ -71,7 +87,7 @@ export const SLICE_AZIMUTHS = 32;
  * ring evaluated grazing it, where the fog meets the dome and the sea meets
  * the sky. A level ray from the eye's height misses the ground (the horizon
  * dips 0.45 degrees below level from 200 m) and is marched to the top of the
- * air or VIEW_MAX_KM like any other.
+ * air like any other.
  */
 export const RING_ELEVATION_DEG = 0;
 
@@ -86,7 +102,13 @@ export const SLICE_ALTITUDES_DEG: readonly number[] = Object.freeze([
   ...Array.from({ length: 32 }, (_, k) => 14 + 2 * k),
 ]);
 
-export type SkyTables = { transmittance: Float32Array; multi: Float32Array; mieScale: number };
+export type SkyTables = {
+  transmittance: Float32Array;
+  multi: Float32Array;
+  /** ln(max(multi, MULTI_FLOOR)), texel for texel: what the read interpolates. */
+  multiLog: Float32Array;
+  mieScale: number;
+};
 export type SkySlice = {
   altitudeDeg: number;
   /** SLICE_ELEVATIONS x SLICE_AZIMUTHS x 3, row-major (index = (row * SLICE_AZIMUTHS + col) * 3).
@@ -106,13 +128,16 @@ export type SkySlice = {
 const AIR_DEPTH_KM = SKY_TOP_KM - SKY_GROUND_KM;
 
 /**
- * The longest stretch of a view ray that is marched, km. A ray along the
- * horizon crosses about 1,100 km of air; capped here, its VIEW_STEPS stay
- * short where the air is dense. At 400 km a level ray is 12.6 km up, above
- * which about a fifth of the air's Rayleigh column and almost none of its
- * aerosols remain.
+ * Where each step of the view march samples, as a fraction of the ray's
+ * length: step s covers (s / N)^2 to ((s + 1) / N)^2 of it and samples at
+ * ((s + 0.5) / N)^2, so the steps are short near the eye, where the air is
+ * dense, and long far out, where a ray is high. The whole ray is marched: a
+ * ray toward the sun in deep twilight finds its sunlit air hundreds of
+ * kilometres out (600 km along the horizon under a sun 11 degrees down).
  */
-const VIEW_MAX_KM = 400;
+const VIEW_STEP_AT: Float64Array = Float64Array.from({ length: VIEW_STEPS }, (_, s) => ((s + 0.5) / VIEW_STEPS) ** 2);
+/** Each step's width, the same fraction: ((s + 1)^2 - s^2) / N^2. */
+const VIEW_STEP_WIDTH: Float64Array = Float64Array.from({ length: VIEW_STEPS }, (_, s) => (2 * s + 1) / VIEW_STEPS ** 2);
 
 /** Isotropic phase: the multiple-scattering term scatters equally every way. */
 const ISOTROPIC = 1 / (4 * Math.PI);
@@ -190,12 +215,21 @@ function sampleTransmittance(table: Float32Array, radiusKm: number, mu: number, 
   bilinear(table, TRANSMITTANCE_WIDTH, i0, j0, fi - i0, fj - j0, out);
 }
 
-function sampleMulti(table: Float32Array, radiusKm: number, muSun: number, out: Rgb): void {
+/**
+ * The multiple scattering read in its logarithm: exp of the bilinear mix of
+ * ln texels between texel centres. Below the horizon the light falls by
+ * orders of magnitude from one column to the next, and a linear read there
+ * is many times too bright between them.
+ */
+function sampleMulti(logTable: Float32Array, radiusKm: number, muSun: number, out: Rgb): void {
   const fj = clamp(((radiusKm - SKY_GROUND_KM) / AIR_DEPTH_KM) * MULTI_SIZE - 0.5, 0, MULTI_SIZE - 1);
   const fi = clamp(((clamp(muSun, -1, 1) + 1) / 2) * MULTI_SIZE - 0.5, 0, MULTI_SIZE - 1);
   const j0 = Math.min(MULTI_SIZE - 2, Math.floor(fj));
   const i0 = Math.min(MULTI_SIZE - 2, Math.floor(fi));
-  bilinear(table, MULTI_SIZE, i0, j0, fi - i0, fj - j0, out);
+  bilinear(logTable, MULTI_SIZE, i0, j0, fi - i0, fj - j0, out);
+  out.r = Math.exp(out.r);
+  out.g = Math.exp(out.g);
+  out.b = Math.exp(out.b);
 }
 
 function buildTransmittance(mieScale: number): Float32Array {
@@ -323,7 +357,9 @@ function buildMulti(transmittance: Float32Array, mieScale: number): Float32Array
 export function buildSkyTables(mieScale: number = SKY_MIE_SCALE): SkyTables {
   if (!Number.isFinite(mieScale) || mieScale < 0) throw new RangeError(`the aerosol scale must be finite and non-negative; got ${mieScale}`);
   const transmittance = buildTransmittance(mieScale);
-  return { transmittance, multi: buildMulti(transmittance, mieScale), mieScale };
+  const multi = buildMulti(transmittance, mieScale);
+  const multiLog = Float32Array.from(multi, (v) => Math.log(Math.max(v, MULTI_FLOOR)));
+  return { transmittance, multi, multiLog, mieScale };
 }
 
 /** The transmittance from radius radiusKm along mu to the top of the air, read bilinearly from the table. */
@@ -333,10 +369,11 @@ export function transmittanceAt(t: SkyTables, radiusKm: number, mu: number): Rgb
   return out;
 }
 
-/** The multiple scattering at radius radiusKm under a sun at cosine muSun, bilinear between texel centres. */
+/** The multiple scattering at radius radiusKm under a sun at cosine muSun: bilinear in its logarithm between texel
+ *  centres, so exactly a texel at its centre (MULTI_FLOOR for a texel of 0). */
 export function multiAt(t: SkyTables, radiusKm: number, muSun: number): Rgb {
   const out: Rgb = { r: 0, g: 0, b: 0 };
-  sampleMulti(t.multi, radiusKm, muSun, out);
+  sampleMulti(t.multiLog, radiusKm, muSun, out);
   return out;
 }
 
@@ -363,7 +400,7 @@ function radianceInto(t: SkyTables, x: number, y: number, z: number, sx: number,
   const mieDenominator = 1 + SKY_MIE_G * SKY_MIE_G - 2 * SKY_MIE_G * cosTheta;
   const miePhase = (MIE_PHASE_K * (1 + cosTheta * cosTheta)) / (mieDenominator * Math.sqrt(mieDenominator));
   const ground = rayToGround(r, dy);
-  const dt = Math.min(ground >= 0 ? ground : rayToTop(r, dy), VIEW_MAX_KM) / VIEW_STEPS;
+  const span = ground >= 0 ? ground : rayToTop(r, dy);
   const med = scratchMedium;
   const ts = scratchSun;
   const ms = scratchMulti;
@@ -371,14 +408,15 @@ function radianceInto(t: SkyTables, x: number, y: number, z: number, sx: number,
   let tG = 1;
   let tB = 1;
   for (let s = 0; s < VIEW_STEPS; s++) {
-    const t0 = (s + 0.5) * dt;
+    const t0 = span * (VIEW_STEP_AT[s] as number);
+    const dt = span * (VIEW_STEP_WIDTH[s] as number);
     const px = dx * t0;
     const py = r + dy * t0;
     const pz = dz * t0;
     const ri = Math.sqrt(px * px + py * py + pz * pz);
     const muS = ri > 0 ? (px * sx + py * sy) / ri : 0;
     sampleTransmittance(t.transmittance, ri, muS, ts);
-    sampleMulti(t.multi, ri, muS, ms);
+    sampleMulti(t.multiLog, ri, muS, ms);
     mediumAt(ri - SKY_GROUND_KM, t.mieScale, med);
     const mieIn = med.ms * miePhase;
     out.r += tR * stepIntegral(ts.r * (med.rr * rayleighPhase + mieIn) + ms.r * (med.rr + med.ms), med.er, dt);

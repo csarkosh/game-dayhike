@@ -86,6 +86,11 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     expect(ip.colorCurves?.midtonesDensity ?? 0).toBeGreaterThan(0);
     post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0);
     expect(ip.colorCurves?.midtonesDensity).toBe(0);
+    // The exposure is the lighting's to write on this path, the stare's
+    // dimming with it (`Lighting.setStare`): the grade's record leaves it be.
+    ip.exposure = 0.7;
+    post.update(WEATHER_PRESETS.eerie, 17, 0, 1, 0.5);
+    expect(ip.exposure).toBe(0.7);
     post.dispose();
   });
 

@@ -474,6 +474,17 @@ describe("the sky's table", () => {
     lighting.dispose();
   });
 
+  it("sets the exposure from its weather and hour before the table holds a slice, as the fog's density, the stare's share with it", () => {
+    const s = scene();
+    const lighting = light(s, { hour: 12, sky: createSkyTable() });
+    expect(lighting.sky).toBeNull();
+    // The default weather's (mist's) exposure at noon.
+    expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(0.7875393580810008, 12);
+    lighting.setStare(0.5);
+    expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(0.1968848395202502, 12);
+    lighting.dispose();
+  });
+
   it("moves the fog's density with a weather set while the table waits", () => {
     const s = scene();
     const lighting = light(s, { hour: 12, sky: createSkyTable() });
@@ -623,6 +634,38 @@ describe("weather in lighting", () => {
     s.onBeforeRenderObservable.notifyObservers(s);
     expect(dome.updates.length).toBe(before + 1);
     expect(lighting.weather).toEqual(WEATHER_PRESETS.rain);
+    lighting.dispose();
+  });
+
+  it("on the material path keeps the stare's dimming in the exposure through a weather fade", () => {
+    const s = scene();
+    const lighting = light(s, { hour: 12, weather: CLEAR });
+    const ip = s.imageProcessingConfiguration;
+    // A half stare leaves a quarter: clear noon's 0.91045012 times it.
+    lighting.setStare(0.5);
+    expect(ip.exposure).toBeCloseTo(0.22761253123728348, 12);
+    // Half a second into a 3 s fade toward eerie, applied as a frame renders.
+    vi.spyOn(s.getEngine(), "getDeltaTime").mockReturnValue(500);
+    lighting.setWeather(WEATHER_PRESETS.eerie, 3);
+    s.onBeforeRenderObservable.notifyObservers(s);
+    expect(ip.exposure).toBeCloseTo(0.21822351432374554, 12);
+    expect(dome.updates.at(-1)!.exposure).toBe(ip.exposure);
+    // The stare let go mid-fade: the weather's exposure alone.
+    lighting.setStare(0);
+    expect(ip.exposure).toBeCloseTo(0.8728940572949822, 12);
+    lighting.dispose();
+  });
+
+  it("on the post path leaves the stare to the grade pass: the image's exposure stays the weather's and the hour's", () => {
+    const s = scene();
+    const lighting = light(s, { tier: "high", hour: 12, weather: CLEAR, colourPath: "post" });
+    const ip = s.imageProcessingConfiguration;
+    lighting.setStare(0.5);
+    expect(ip.exposure).toBeCloseTo(0.9104501249491339, 12);
+    vi.spyOn(s.getEngine(), "getDeltaTime").mockReturnValue(500);
+    lighting.setWeather(WEATHER_PRESETS.eerie, 3);
+    s.onBeforeRenderObservable.notifyObservers(s);
+    expect(ip.exposure).toBeCloseTo(0.8728940572949822, 12);
     lighting.dispose();
   });
 

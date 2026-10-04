@@ -17,6 +17,14 @@ layout(set = 1, binding = 3) uniform LeftOver {
     float skyExposure;
     float skyToneMap;
     float skyContrast;
+    vec4 skyCurveNeutral;
+    vec4 skyCurvePositive;
+    vec4 skyCurveNegative;
+    vec2 skyInverseScreenSize;
+    vec4 skyVignette1;
+    vec4 skyVignette2;
+    float skyVignetteOpaque;
+    float skyDitherIntensity;
 };
 
 precision highp float;
@@ -25,6 +33,7 @@ layout(set = 1, binding = 0) uniform Internals {
 float yFactor_;
 float textureOutputHeight_;
 };
+vec4 glFragCoord_;
 
 // The sky dome's fragment stage, built by skyDome.ts: the clear sky's slice
 // of the scattering table at the sun's altitude, scaled to the scene and
@@ -32,11 +41,12 @@ float textureOutputHeight_;
 // night sky, appearing as the twilight fades), the sun's disc, then the mist's
 // blend toward the fog colour at the horizon. On the
 // material colour path (no post chain) it applies the image's exposure, the
-// Khronos PBR Neutral tone map, the sRGB encode and the contrast itself, in
-// the order Babylon's image processing applies them to every other material
-// there. The probe's capture is never tone-mapped: it takes the linear
-// composition with the disc capped, raised to 1/2.2, because the probe is
-// flagged as gamma and every material that reads it raises it to 2.2 again.
+// vignette, the Khronos PBR Neutral tone map, the sRGB encode, the contrast,
+// the colour curves and the dither itself, in the order Babylon's image
+// processing applies them to every other material there. The probe's
+// capture is never tone-mapped: it takes the linear composition with the
+// disc capped, raised to 1/2.2, because the probe is flagged as gamma and
+// every material that reads it raises it to 2.2 again.
 //
 // skyState.ts transcribes every step (domeRadiance, skyTableUv, deckRadiance,
 // captureEncode) and a lockstep test holds the constants below to its own.
@@ -64,6 +74,14 @@ layout(set = 1, binding = 2) uniform sampler skyTableSampler;
 
 
 
+
+
+
+
+
+
+
+
 layout(location = 0)  in vec3 vSkyDir;
 const float SKY_PI = 3.14159265;
 const float SKY_AZIMUTHS = 32.0;
@@ -76,6 +94,8 @@ const float SKY_DISC_CAPTURE_MAX = 1.0;
 // how far a compressed colour desaturates.
 const float SKY_NEUTRAL_START = 0.76;
 const float SKY_NEUTRAL_DESATURATION = 0.15;
+// The luminance weights Babylon's colour curves read the colour by.
+const vec3 SKY_LUMINANCE = vec3(0.2126, 0.7152, 0.0722);
 vec2 skyTableUv(vec3 d, vec3 sunDir) {
 vec2 h = d.xz;
 vec2 s = sunDir.xz;
@@ -109,8 +129,59 @@ vec3 high = c * c * (3.0 - 2.0 * c);
 vec3 shaped = skyContrast < 1.0 ? mix(vec3(0.5), c, skyContrast) : mix(c, high, skyContrast - 1.0);
 return max(shaped, 0.0);
 }
+// Babylon's vignette, after the exposure and before the tone map, as its
+// image processing applies it: the colour multiplied toward the vignette's
+// colour away from the frame's centre, or, in the opaque blend, mixed over
+// by it. At a power of 0 it leaves the colour as it is.
+vec3 skyVignetteOf(vec3 color) {
+vec2 viewportXY = glFragCoord_.xy * skyInverseScreenSize;
+viewportXY = viewportXY * 2.0 - 1.0;
+vec3 vignetteXY1 = vec3(viewportXY * skyVignette1.xy + skyVignette1.zw, 1.0);
+float vignetteTerm = dot(vignetteXY1, vignetteXY1);
+float vignette = pow(vignetteTerm, skyVignette2.w);
+vec3 vignetteColor = skyVignette2.rgb;
+vec3 vignetteColorMultiplier = mix(vignetteColor, vec3(1, 1, 1), vignette);
+vec3 multiplied = color * vignetteColorMultiplier;
+vec3 opaque = mix(vignetteColor, color, vignette);
+return mix(multiplied, opaque, skyVignetteOpaque);
+}
+// Babylon's luminance, clamped, as its colour curves read it.
+float skyLuminance(vec3 color) {
+return clamp(dot(color, SKY_LUMINANCE), 0.0, 1.0);
+}
+// Babylon's colour curves, after the contrast, as its image processing
+// applies them: the neutral curve, plus the positive toward the highlights
+// and less the negative toward the shadows, by the luminance. The neutral
+// curve at 1 and the others at 0 leave the colour as it is.
+vec3 skyCurvesOf(vec3 color) {
+float luma = skyLuminance(color);
+vec2 curveMix = clamp(vec2(luma * 3.0 - 1.5, luma * -3.0 + 1.5), vec2(0.0), vec2(1.0));
+vec4 colorCurve = skyCurveNeutral + curveMix.x * skyCurvePositive - curveMix.y * skyCurveNegative;
+color *= colorCurve.rgb;
+color = mix(vec3(luma), color, colorCurve.a);
+return color;
+}
+// Babylon's random number for a seed, as its dither draws one.
+float skyRand(vec2 seed) {
+return fract(sin(dot(seed.xy, vec2(12.9898, 78.233))) * 43758.5453);
+}
+// Babylon's dither, last, after the colour curves, as its image processing
+// applies it: a step of up to the intensity either way, drawn from the
+// pixel's place on the frame, then the colour clamped. At an intensity of 0
+// it only clamps.
+vec3 skyDitherOf(vec3 color) {
+float rand = skyRand(glFragCoord_.xy * skyInverseScreenSize);
+float dither = mix(-skyDitherIntensity, skyDitherIntensity, rand);
+color = clamp(color + vec3(dither), 0.0, 1.0);
+return color;
+}
 layout(location = 0) out vec4 glFragColor;
 void main(void) {
+                glFragCoord_ = gl_FragCoord;
+                if (yFactor_ == 1.) {
+                    glFragCoord_.y = textureOutputHeight_ - glFragCoord_.y;
+                }
+            
 vec3 d = normalize(vSkyDir);
 vec3 sky = skyScale * textureLod(skyTable, skyTableUv(d, skySunDir), 0.0).rgb;
 sky = mix(sky, skyDeck(skyDeckZenith, d.y), skyCloud);
@@ -119,9 +190,11 @@ float inDisc = step(SKY_DISC_COS, dot(d, skySunDir));
 sky += inDisc * mix(skyDisc, min(skyDisc, vec3(SKY_DISC_CAPTURE_MAX)), skyCapture);
 float h = skyMistWeight * exp(-max(d.y, 0.0) / SKY_MIST_HORIZON);
 sky = mix(sky, skyMistAir, h);
-vec3 toned = skyNeutral(sky * skyExposure);
+vec3 toned = skyNeutral(skyVignetteOf(sky * skyExposure));
 toned = clamp(pow(max(toned, vec3(0.0)), vec3(1.0 / 2.2)), 0.0, 1.0);
 toned = skyContrastOf(toned);
+toned = skyCurvesOf(toned);
+toned = skyDitherOf(toned);
 vec3 captured = pow(max(sky, vec3(0.0)), vec3(1.0 / 2.2));
 vec3 viewed = mix(sky, toned, step(0.5, skyToneMap));
 glFragColor = vec4(mix(viewed, captured, step(0.5, skyCapture)), 1.0);

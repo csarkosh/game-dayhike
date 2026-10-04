@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { luma, type Rgb } from "../../src/game/colour.js";
 import { sunPositionAt, type Vec3 } from "../../src/game/sky.js";
 import {
+  MULTI_FLOOR,
   MULTI_SIZE,
   RING_ELEVATION_DEG,
   SKY_GROUND_KM,
@@ -179,6 +180,48 @@ describe("the multiple scattering", () => {
     expect(luma(day)).toBeGreaterThan(luma(shadow));
     expect(luma(day)).toBeGreaterThan(0);
   });
+
+  it("is read in its logarithm: a texel at its centre, the floor for a texel of 0, the geometric mean halfway", () => {
+    expect(MULTI_FLOOR).toBe(1e-20);
+    expect(tables.multiLog.length).toBe(MULTI_SIZE * MULTI_SIZE * 3);
+    for (let k = 0; k < tables.multi.length; k++) {
+      expect(tables.multiLog[k]).toBeCloseTo(Math.log(Math.max(tables.multi[k] as number, 1e-20)), 5);
+    }
+    /** The texel at column i, row j, channel c. */
+    const texelAt = (i: number, j: number, c: number): number => tables.multi[(j * MULTI_SIZE + i) * 3 + c] as number;
+    const radius = (j: number): number => SKY_GROUND_KM + ((j + 0.5) / MULTI_SIZE) * (SKY_TOP_KM - SKY_GROUND_KM);
+    const muSun = (i: number): number => -1 + (2 * (i + 0.5)) / MULTI_SIZE;
+    for (const [i, j] of [[3, 0], [12, 0], [13, 5], [15, 16], [20, 31], [30, 9]] as const) {
+      const centre = multiAt(tables, radius(j), muSun(i));
+      const halfway = multiAt(tables, radius(j), (muSun(i) + muSun(i + 1)) / 2);
+      (["r", "g", "b"] as const).forEach((c, k) => {
+        const texel = Math.max(texelAt(i, j, k), 1e-20);
+        const next = Math.max(texelAt(i + 1, j, k), 1e-20);
+        expect(Math.abs(centre[c] / texel - 1), `column ${i}, row ${j}, ${c}`).toBeLessThan(1e-5);
+        expect(Math.abs(halfway[c] / Math.sqrt(texel * next) - 1), `column ${i}, row ${j}, ${c}`).toBeLessThan(1e-5);
+      });
+    }
+  });
+
+  /**
+   * At the eye, from the deepest column with light (12, muSun -0.22, a sun
+   * 12.6 degrees down) up to muSun 0.1, the steepest neighbouring columns
+   * differ by a factor of 113.5 (12 to 13, in blue), under 2^8: read in its
+   * logarithm, the light moves by under 2 times an eighth of a column (1/128
+   * in muSun). A linear read moves by 15 times over the first eighth.
+   */
+  it("moves by under 2 times an eighth of a column at the eye across deep twilight, rising all the way", () => {
+    const eye = SKY_GROUND_KM + 0.2;
+    let previous = multiAt(tables, eye, -0.21875);
+    for (let k = 1; k <= 41; k++) {
+      const next = multiAt(tables, eye, -0.21875 + k / 128);
+      for (const c of ["r", "g", "b"] as const) {
+        expect(next[c], `muSun ${-0.21875 + k / 128}, ${c}`).toBeGreaterThanOrEqual(previous[c]);
+        expect(next[c] / previous[c], `muSun ${-0.21875 + k / 128}, ${c}`).toBeLessThan(2);
+      }
+      previous = next;
+    }
+  });
 });
 
 describe("the sky's light", () => {
@@ -219,11 +262,11 @@ describe("the sky's light", () => {
     expect(horizonOverZenith(fewer, buildSlice(fewer, NOON_DEG))).toBeGreaterThan(2);
   });
 
-  it("reads the ring at the horizon itself, where the clear noon horizon is 1.69 times the zenith", () => {
+  it("reads the ring at the horizon itself, where the clear noon horizon is 1.72 times the zenith", () => {
     expect(RING_ELEVATION_DEG).toBe(0);
     const ratio = luma(ringMean(noon.ring, 16, 31)) / luma(noon.zenith);
-    expect(ratio).toBeGreaterThan(1.68);
-    expect(ratio).toBeLessThan(1.69);
+    expect(ratio).toBeGreaterThan(1.71);
+    expect(ratio).toBeLessThan(1.72);
   });
 
   it("keeps a blue zenith at sunset, between 3 % and 15 % of noon's light", () => {
@@ -294,8 +337,8 @@ describe("the sky's light", () => {
    * near the horizon is the exception (its path through the haze changes many
    * times over), so it is held to the bound only from 10 degrees up; so is the
    * horizon toward a sun at or below it, whose light comes to the eye along
-   * the same grazing path (from the ground it is 5.9 times as bright at 0
-   * degrees, 2.6 at -3, 2.5 at -6).
+   * the same grazing path (from 1 km it is 3.7 times as bright as from the
+   * ground at 0 degrees, 4.0 at -3, 5.7 at -6).
    */
   it("changes by less than the aerosols' column factor between eye heights of 0 and 1 km", () => {
     for (const altitude of [NOON_DEG, 30, 10, 2, 0, -3, -6, -12]) {
@@ -310,6 +353,44 @@ describe("the sky's light", () => {
       const ratio = luma(sunTransmittance(tables, altitude * DEG, 1)) / luma(sunTransmittance(tables, altitude * DEG, 0));
       expect(ratio).toBeGreaterThan(1 / 2.3);
       expect(ratio).toBeLessThan(2.3);
+    }
+  });
+});
+
+/**
+ * Deep twilight, 18:45, the sun 10.9 degrees down. A ray toward the sun meets
+ * sunlit air, above the earth's shadow, 607 km out along the horizon and
+ * 395 km out 6 degrees up: marched whole, the twilight arch sits on the
+ * horizon. A ray cut short of that air leaves the horizon dark under a red
+ * band, out to 45 degrees either side of the sun, that climbs as the sun
+ * sinks.
+ */
+describe("the sky's light in deep twilight", () => {
+  const altitude = Math.asin(sunPositionAt(18.75).y);
+  /** Luma every quarter degree of elevation from 0 to 30, at azimuth az from the sun's. */
+  const profile = (az: number): number[] =>
+    Array.from({ length: 121 }, (_, k) => luma(skyRadiance(tables, dir(k / 4, az), altitude)));
+
+  it("puts the arch toward the sun within 4 degrees of the horizon at 18:45, falling from it to 30 degrees, out to 45 degrees round", () => {
+    for (const az of [0, 45]) {
+      const toward = profile(az);
+      for (const v of toward) expect(Number.isFinite(v)).toBe(true);
+      const peak = toward.indexOf(Math.max(...toward));
+      expect(peak / 4, `${az} degrees round`).toBeLessThanOrEqual(4);
+      for (let k = peak + 1; k < toward.length; k++) {
+        expect(toward[k], `${az} degrees round, ${k / 4} up`).toBeLessThanOrEqual(toward[k - 1] as number);
+      }
+    }
+  });
+
+  it("has no band away from the sun at 18:45: no maximum between 2 and 30 degrees up", () => {
+    for (const az of [135, 180]) {
+      const away = profile(az);
+      for (const v of away) expect(Number.isFinite(v)).toBe(true);
+      for (let k = 8; k < 120; k++) {
+        const v = away[k] as number;
+        expect(v > (away[k - 1] as number) && v >= (away[k + 1] as number), `${az} degrees round, ${k / 4} up`).toBe(false);
+      }
     }
   });
 });
