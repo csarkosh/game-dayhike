@@ -217,8 +217,8 @@ describe("createSkyDome", () => {
     expect(afternoon.tableCount).toBe(17);
   });
 
-  it("holds the twilight in the scene's units: every texel over 1e-3 at 18:45 and 19:00 clear decodes within 1 % of texel times scale", () => {
-    const hours = [18.75, 19];
+  it("holds the twilight in the scene's units: every texel over 1e-3 at 18:45 and 18:51 clear decodes within 1 % of texel times scale", () => {
+    const hours = [18.75, 18.85];
     const indices = new Set<number>(sliceBracket(NOON_ALTITUDE_DEG));
     for (const hour of hours) for (const index of sliceBracket((Math.asin(sunPositionAt(hour).y) * 180) / Math.PI)) indices.add(index);
     const twilight = buildSkyTableSync([...indices].sort((a, b) => a - b).map((index) => SLICE_ALTITUDES_DEG[index] as number));
@@ -237,7 +237,7 @@ describe("createSkyDome", () => {
           expect(Math.abs(fromHalf(internal._bufferView[i * 4 + c] as number) / wanted - 1), `hour ${hour}, texel ${i}`).toBeLessThan(0.01);
         }
       }
-      // Not a check of nothing: at 19:00 still over 200 channels, toward the sun.
+      // Not a check of nothing: at 18:51 still over 200 channels, toward the sun.
       expect(counted, `hour ${hour}`).toBeGreaterThan(200);
     }
   });

@@ -10,7 +10,7 @@ import { buildSkyTableSync, createSkyTable, NOON_ALTITUDE_DEG, sliceBracket, typ
 import {
   DECK_TAU, FILL_DAY_LUMA, GLOW_FALLOFF_FLOOR, GLOW_FIT_FROM_DEG, GLOW_FIT_TO_DEG, GLOW_FULL_CONTRAST, GLOW_MIN_CONTRAST,
   GLOW_POWER_MAX, GLOW_POWER_MIN, MIST_HORIZON,
-  NIGHT_YA_DAY, NIGHT_YA_NIGHT, SKY_GAMMA, SKY_IBL_SCALE, SKY_NOON_ZENITH_LUMINANCE, SUN_DISC_CAPTURE_MAX, SUN_DISC_COS,
+  NIGHT_YA_DAY, NIGHT_YA_NIGHT, SKY_GAMMA, SKY_IBL_SCALE, SKY_NOON_ZENITH_LUMINANCE, SKY_Y_FLOOR, SUN_DISC_CAPTURE_MAX, SUN_DISC_COS,
   SUN_DISC_RADIANCE, SUN_DISC_VIEW_MAX, adaptationFor, captureEncode, deckRadiance, domeRadiance, fitGlow, levelLight,
   nightFactor, skyScale, skyStateFor, skyTableUv, sunUpFor, type SkyState,
 } from "../../src/game/skyState.js";
@@ -89,17 +89,20 @@ describe("the pieces", () => {
     expect(down).toEqual({ r: 0.1, g: 0.2, b: 0.3 });
   });
 
-  it("adaptationFor is 1 at noon's light, goes as its -1/2 power below, and stops at the floor", () => {
+  it("adaptationFor is 1 at noon's light, goes as its -3/4 power below, and stops at the floor", () => {
     expect(adaptationFor(1, 1)).toBe(1);
-    expect(adaptationFor(0.25, 1)).toBeCloseTo(2, 12);
-    expect(adaptationFor(2.5, 10)).toBeCloseTo(2, 12);
-    expect(adaptationFor(0.01, 1)).toBeCloseTo(10, 12);
-    expect(adaptationFor(0, 1) / 1e6).toBeCloseTo(1, 12);
-    expect(SKY_GAMMA).toBe(0.5);
+    expect(adaptationFor(0.25, 1)).toBeCloseTo(2.8284271247461903, 12);
+    expect(adaptationFor(2.5, 10)).toBeCloseTo(2.8284271247461903, 12);
+    expect(adaptationFor(0.01, 1)).toBeCloseTo(31.622776601683793, 12);
+    expect(SKY_Y_FLOOR).toBeCloseTo(1.296e-5, 17);
+    expect(adaptationFor(0, 1) / 4629.62962962963).toBeCloseTo(1, 12);
+    expect(adaptationFor(1e-9, 1) / 4629.62962962963).toBeCloseTo(1, 12);
+    expect(adaptationFor(1.296e-5, 1) / 4629.62962962963).toBeCloseTo(1, 9);
+    expect(SKY_GAMMA).toBe(0.25);
   });
 
   it("nightFactor is exactly 0 from NIGHT_YA_DAY up and exactly 1 from NIGHT_YA_NIGHT down, linear in the log between", () => {
-    expect([NIGHT_YA_DAY, NIGHT_YA_NIGHT]).toEqual([0.1, 0.003]);
+    expect([NIGHT_YA_DAY, NIGHT_YA_NIGHT]).toEqual([0.5, 0.06]);
     expect(nightFactor(NIGHT_YA_DAY)).toBe(0);
     expect(nightFactor(1)).toBe(0);
     expect(nightFactor(NIGHT_YA_NIGHT)).toBe(1);
@@ -417,7 +420,7 @@ describe("the cloud deck", () => {
     }
     const noon = skyStateFor(skyFixture(), 12, MIST);
     const dusk = skyStateFor(skyFixture(), 18, MIST);
-    expect(luma(dusk.deckZenith)).toBeLessThan(0.2 * luma(noon.deckZenith));
+    expect(luma(dusk.deckZenith)).toBeLessThan(0.4 * luma(noon.deckZenith));
   });
 
   it("gives noon in mist the old mist dome overhead, luma 0.80", () => {
@@ -617,8 +620,8 @@ describe("continuity through dusk", () => {
    * blended linearly in the altitude, so a step differs from the steps either
    * side only by how the slope bends at a boundary. The table's light falls
    * by under 1.5 decades a degree wherever night is not complete (the next
-   * test checks it): an adapted value, which goes as its square root, bends
-   * by a factor under 2.4 across a 0.5 degree slice. A step more than 3 times
+   * test checks it): an adapted value, which goes as its fourth root, bends
+   * by a factor under 1.6 across a 0.5 degree slice. A step more than 3 times
    * both its neighbours, beyond 0.5 % of the value's largest magnitude over
    * the sweep (below anything the eye sees), is a jump.
    */
@@ -641,12 +644,12 @@ describe("continuity through dusk", () => {
 
   /**
    * The night factor is linear in log10 of the adapted light over
-   * log10(NIGHT_YA_DAY / NIGHT_YA_NIGHT) = 1.52 decades; the adapted light goes
+   * log10(NIGHT_YA_DAY / NIGHT_YA_NIGHT) = 0.92 decades; the adapted light goes
    * as the level light's SKY_GAMMA power, and the level light falls by under
    * 1.5 decades a degree wherever the night is not complete (checked here), so
-   * n moves at most 0.5 x 1.5 x 0.146 / 1.52 = 0.072 a step.
+   * n moves at most 0.25 x 1.5 x 0.146 / 0.92 = 0.059 a step.
    */
-  it("moves the night factor by at most 0.072 a step", () => {
+  it("moves the night factor by at most 0.06 a step", () => {
     const yNoon = luma(levelLight(table.blendAt(NOON_ALTITUDE_DEG)));
     let previous = luma(levelLight(table.blendAt(16)));
     for (let a = 15.95; a >= -18; a -= 0.05) {
@@ -658,7 +661,7 @@ describe("continuity through dusk", () => {
       let n = skyStateFor(table, 17, WEATHER_PRESETS[name]).night;
       for (let k = 1; k <= 250; k++) {
         const next = skyStateFor(table, 17 + k * 0.01, WEATHER_PRESETS[name]).night;
-        expect(Math.abs(next - n)).toBeLessThanOrEqual(0.072);
+        expect(Math.abs(next - n)).toBeLessThanOrEqual(0.06);
         n = next;
       }
     }

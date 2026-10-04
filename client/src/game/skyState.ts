@@ -26,15 +26,18 @@ import { NOON_ALTITUDE_DEG, type SkyTable } from "./skyTable.js";
 export const SKY_NOON_ZENITH_LUMINANCE = 0.416;
 /** The adaptation's exponent. Every light the sky gives is multiplied by
  * (Y / Y_noon)^(SKY_GAMMA - 1), so the scene's brightness goes as
- * (Y / Y_noon)^SKY_GAMMA: at 0.5, sunset reads about a quarter of noon. */
-export const SKY_GAMMA = 0.5;
-/** The floor on Y / Y_noon under the adaptation's power: below it the table
- * is black and the factor stops growing. */
-export const SKY_Y_FLOOR = 1e-12;
+ * (Y / Y_noon)^SKY_GAMMA: at 0.25, sunset reads about two fifths of noon. */
+export const SKY_GAMMA = 0.25;
 /** Adapted light at and above which the night factor is exactly 0. */
-export const NIGHT_YA_DAY = 0.1;
+export const NIGHT_YA_DAY = 0.5;
 /** Adapted light at and below which the night factor is exactly 1. */
-export const NIGHT_YA_NIGHT = 0.003;
+export const NIGHT_YA_NIGHT = 0.06;
+/** The floor on Y / Y_noon under the adaptation's power, NIGHT_YA_NIGHT to
+ * the power 1 / SKY_GAMMA (1.296e-5): the eye stops adapting where the adapted
+ * light, (Y / Y_noon)^SKY_GAMMA, reaches NIGHT_YA_NIGHT and the night factor
+ * is 1. Below it the factor stops growing, so the table's light falls with the
+ * sun and fades into the night floor. */
+export const SKY_Y_FLOOR = Math.pow(NIGHT_YA_NIGHT, 1 / SKY_GAMMA);
 /** The cloud deck's transmission: its zenith is DECK_TAU times the zenith an
  * overcast sky has over the clear sky's light on level ground. Set so the
  * dome's zenith at noon in mist (cloud 0.9) has a luma of 0.80, the noon mist
