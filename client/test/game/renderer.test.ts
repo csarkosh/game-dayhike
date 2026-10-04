@@ -738,6 +738,12 @@ describe("world shell wiring", () => {
     expect(src).toContain("    canopyOver() {\n      return lensCanopy;\n    },");
   });
 
+  it("hands the forest its sky, so no billboard bakes before the sky is held", () => {
+    const forestOptions = slice("createForestMeshes(scene, forest.seed, {", "      })");
+    expect(forestOptions).toContain("sky: skyReady(),");
+    expect(src).toContain("const skyReady = (): Promise<void> => whenSkyHeld(skyTable, () => lighting.hour);");
+  });
+
   it("rings the water with the weather's rain each frame, beside the puddles", () => {
     const feed = slice("applyWetness(scene, weather);", "if (sky !== null) atmosphere.update(weather, sky);");
     expect(feed).toContain(

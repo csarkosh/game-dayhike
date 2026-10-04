@@ -222,8 +222,10 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
 
   const sun = new DirectionalLight("sun", new Vector3(0, -1, 0), scene);
   // Hemispheric fill stays for ambient. Its intensity and colour are the sky
-  // state's, set by `apply()` once the table holds its slices; until then it
-  // keeps Babylon's defaults, which no frame shows.
+  // state's, set by `apply()` once the table holds its slices; until then the
+  // sun and the fill keep Babylon's defaults, which neither a frame nor an
+  // impostor bake shows: the renderer starts no frame and bakes no billboard
+  // before its sky is held (`Renderer.skyReady`).
   const fill = new HemisphericLight("fill", new Vector3(0, 1, 0), scene);
 
   // CascadedShadowGenerator needs float or half-float render targets, which

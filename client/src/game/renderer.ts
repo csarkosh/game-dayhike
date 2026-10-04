@@ -1123,8 +1123,9 @@ export type Renderer = {
   /** Resolves once the sky's table holds the slices the lighting needs:
    * those either side of noon and of the hour the renderer is set to, read
    * again as each slice arrives (`whenSkyHeld`). Until then the lighting has
-   * applied nothing, so no start draws a frame before it: the hike's, the
-   * scene routes', the tier check's. */
+   * applied nothing, so no start draws a frame before it (the hike's, the
+   * scene routes', the tier check's) and the forest bakes no billboard
+   * before it (`BakeOptions.sky`). */
   skyReady(): Promise<void>;
   /**
    * `frame` carries this frame's local, non-simulated view inputs — its
@@ -1506,6 +1507,8 @@ function buildRenderer(
   partOf(ownSky);
   const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });
   partOf(lighting);
+  /** `Renderer.skyReady`: the table holds what the lighting needs at the hour it is set to, read again at each slice. */
+  const skyReady = (): Promise<void> => whenSkyHeld(skyTable, () => lighting.hour);
   const clock = options.clock ?? (() => performance.now());
   const post = createPost(scene, camera, postFeatures, { now: clock });
   partOf(post);
@@ -1659,6 +1662,8 @@ function buildRenderer(
       ? createForestMeshes(scene, forest.seed, {
         nearRadius: tier === "low" ? lowTierNearRadius : undefined,
         pipelines: bakePipelines(pipelines, scope),
+        // The billboards bake under the sky's light, never Babylon's defaults.
+        sky: skyReady(),
         jobs,
       })
       : null;
@@ -1873,9 +1878,7 @@ function buildRenderer(
     shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
     cover,
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
-    skyReady() {
-      return whenSkyHeld(skyTable, () => lighting.hour);
-    },
+    skyReady,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
       // of materials x four property writes: cheap enough to do every frame.
