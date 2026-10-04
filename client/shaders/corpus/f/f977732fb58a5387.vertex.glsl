@@ -17,6 +17,14 @@ layout(set = 1, binding = 3) uniform LeftOver {
     float skyExposure;
     float skyToneMap;
     float skyContrast;
+    vec4 skyCurveNeutral;
+    vec4 skyCurvePositive;
+    vec4 skyCurveNegative;
+    vec2 skyInverseScreenSize;
+    vec4 skyVignette1;
+    vec4 skyVignette2;
+    float skyVignetteOpaque;
+    float skyDitherIntensity;
 };
 
 precision highp float;
