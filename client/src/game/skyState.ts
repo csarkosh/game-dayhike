@@ -42,7 +42,7 @@ export const SKY_Y_FLOOR = Math.pow(NIGHT_YA_NIGHT, 1 / SKY_GAMMA);
  * overcast sky has over the clear sky's light on level ground. Set so the
  * dome's zenith at noon in mist (cloud 0.9) has a luma of 0.80, the noon mist
  * dome of the sky the table replaced. */
-export const DECK_TAU = 0.1598;
+export const DECK_TAU = 0.1729;
 /** Scale, in the sine of the elevation, of the mist's blend toward the fog
  * colour at the horizon. Mist is the one part of the air the table does not
  * hold, so with this blend the dome meets the fog without a band. */
