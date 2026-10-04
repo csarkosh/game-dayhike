@@ -518,10 +518,10 @@ function buildGame(
   }
 
   // The hour and weather `syncAtmosphere` last actually pushed to the
-  // renderer and the ambient bed: `renderer.setHour` and `renderer.setWeather`
-  // both recompute the sky, the sun and the fog and re-render the reflection
-  // probe, so calling both unconditionally every frame would pay that cost
-  // twice a frame for a state that moves in fractions over seconds. `applyView`
+  // renderer and the ambient bed: `renderer.setView` recomputes the sky, the
+  // sun and the fog and re-renders the reflection probe, so calling it
+  // unconditionally every frame would pay that cost every frame for a state
+  // that moves in fractions over seconds. `applyView`
   // below writes both locals directly after its own renderer pushes, so a
   // console override at full escalation is not read as no-op drift on the
   // next `syncAtmosphere` and left standing for the rest of the match.
@@ -708,8 +708,8 @@ function buildGame(
     const a = atmosphereUnder(base, escalation);
     wildlifePresence = wildlifePresenceUnder(a.weather);
     // Skip the renderer and ambient pushes on a frame the eased state barely
-    // moved: `renderer.setHour`/`setWeather` recompute the sky, the sun and
-    // the fog and re-render the reflection probe on every call.
+    // moved: `renderer.setView` recomputes the sky, the sun and the fog and
+    // re-renders the reflection probe on every call, once for both.
     const hourMoved = Math.abs(a.hour - appliedHour) > 0.01;
     const weatherMoved =
       Math.abs(a.weather.cloudCover - appliedWeather.cloudCover) > 0.005 ||
@@ -720,8 +720,7 @@ function buildGame(
     if (!hourMoved && !weatherMoved) return;
     appliedHour = a.hour;
     appliedWeather = a.weather;
-    renderer.setHour(a.hour);
-    renderer.setWeather(a.weather, 0);
+    renderer.setView(a.hour, a.weather);
     ambient.setWeather(a.weather);
   }
 
@@ -1524,8 +1523,7 @@ function buildGame(
 
   /** Puts back on a new renderer what the old one was told. */
   function restoreView(r: Renderer): void {
-    r.setHour(appliedHour);
-    r.setWeather(appliedWeather, 0);
+    r.setView(appliedHour, appliedWeather);
     r.setWireframe(wireframe);
     r.setSkinShading(skin);
     r.setBobScale(bobScale);

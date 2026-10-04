@@ -99,6 +99,10 @@ export type SkyState = {
   nightFloor: Rgb;
   /** The clear sky's slice at the sun's altitude, unscaled. */
   clear: SkySlice;
+  /** How many slices the table held: with `clear.altitudeDeg`, all that
+   * `clear` and `scale` depend on, so the dome uploads again only when
+   * either moves. */
+  tableCount: number;
   /** The cloud deck's zenith, scene units. */
   deckZenith: Rgb;
   /** The fog colour and the clear colour: the air over the horizon away from the sun. */
@@ -367,21 +371,41 @@ export function fitGlow(ring: readonly Rgb[], away: Rgb): { power: number; weigh
   return { power, weight };
 }
 
+/** What the state reads of the noon slice: K, the noon's light on level
+ * ground, and the luma of its sun. */
+type NoonReading = { count: number; K: number; yNoon: number; sunLuma: number };
+
+/** The noon reading of each table, made again only when the table's count of
+ * slices moves: a state is made every frame of a weather fade, and blending
+ * the noon slice for each would double the work. A slice replaced at an
+ * altitude the table already holds is not seen; the sky's sources make each
+ * altitude once. */
+const noonReadings = new WeakMap<SkyTable, NoonReading>();
+
+function noonReading(table: SkyTable): NoonReading {
+  const held = noonReadings.get(table);
+  if (held !== undefined && held.count === table.count) return held;
+  const noon = table.blendAt(NOON_ALTITUDE_DEG);
+  const reading = { count: table.count, K: skyScale(noon), yNoon: luma(levelLight(noon)), sunLuma: luma(noon.sun) };
+  noonReadings.set(table, reading);
+  return reading;
+}
+
 /**
  * The sky's state at `hour` under `w`. The table is to hold the noon bracket
  * and the slices at or bracketing the sun's altitude (`table.has`); short of
- * that, the nearest held slices stand in.
+ * that, the nearest held slices stand in. The noon slice is read once for
+ * each count of slices the table holds (`noonReading`), so a state blends one
+ * slice, the sun's.
  */
 export function skyStateFor(table: SkyTable, hour: number, w: WeatherParams): SkyState {
   const sunDir = sunPositionAt(hour);
   const altitude = Math.asin(sunDir.y);
-  const noon = table.blendAt(NOON_ALTITUDE_DEG);
+  const { K, yNoon, sunLuma: noonSunLuma } = noonReading(table);
   // The same expression as NOON_ALTITUDE_DEG's, so noon blends the same slice
-  // twice and its anchors hold exactly.
+  // the noon reading did and its anchors hold exactly.
   const clear = table.blendAt((altitude * 180) / Math.PI);
 
-  const K = skyScale(noon);
-  const yNoon = luma(levelLight(noon));
   const light = levelLight(clear);
   const y = luma(light);
   const adaptation = adaptationFor(y, yNoon);
@@ -409,7 +433,7 @@ export function skyStateFor(table: SkyTable, hour: number, w: WeatherParams): Sk
   const sunLuma = luma(sun);
   const sunHue = sunLuma > 0 ? scaled(sun, 1 / sunLuma) : { r: 1, g: 1, b: 1 };
   const up = sunUpFor(altitude);
-  const sunIntensity = SUN_PEAK * (sunLuma / luma(noon.sun)) * adaptation * (1 - SUN_CLOUD_LOSS * cloud) * up;
+  const sunIntensity = SUN_PEAK * (sunLuma / noonSunLuma) * adaptation * (1 - SUN_CLOUD_LOSS * cloud) * up;
   const disc = scaled(sun, SUN_DISC_RADIANCE * scale);
   const discPeak = Math.max(disc.r, disc.g, disc.b);
   const discCap = discPeak > SUN_DISC_VIEW_MAX ? SUN_DISC_VIEW_MAX / discPeak : 1;
@@ -439,6 +463,7 @@ export function skyStateFor(table: SkyTable, hour: number, w: WeatherParams): Sk
     cloud,
     nightFloor,
     clear,
+    tableCount: table.count,
     deckZenith,
     mistAir: airColourUnder(w, horizonAway),
     mistWeight: clamp01(w.mist),

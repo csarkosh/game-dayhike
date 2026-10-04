@@ -55,6 +55,19 @@ describe("toHalf", () => {
     expect(toHalf(Number.NaN)).toBe(0x7e00);
   });
 
+  it("rounds a value that is not a float32 by its own side of a tie, never twice", () => {
+    // Each is read as the float32 1 + 2^-11, a tie between 0x3c00 and 0x3c01.
+    expect(toHalf(1 + 2 ** -11 + 2 ** -40)).toBe(0x3c01);
+    expect(toHalf(1 + 2 ** -11 - 2 ** -40)).toBe(0x3c00);
+    // Among the subnormals, either side of half a step.
+    expect(toHalf(2 ** -25 + 2 ** -60)).toBe(0x0001);
+    expect(toHalf(2 ** -25 - 2 ** -60)).toBe(0x0000);
+    // Either side of 65520, the tie between 65504 and infinity.
+    expect(toHalf(65520 - 2 ** -20)).toBe(0x7bff);
+    expect(toHalf(65520 + 2 ** -20)).toBe(0x7c00);
+    expect(toHalf(-(65520 - 2 ** -20))).toBe(0xfbff);
+  });
+
   it("gives back every finite half from its own value", () => {
     for (let bits = 0; bits < 0x10000; bits++) {
       if (((bits >> 10) & 0x1f) === 31) continue;
@@ -68,6 +81,14 @@ describe("rgbToHalfRgba", () => {
     const packed = rgbToHalfRgba(new Float32Array([0, 1, -2, 0.5, 65504, 2 ** -24]));
     expect(packed).toBeInstanceOf(Uint16Array);
     expect([...packed]).toEqual([0x0000, 0x3c00, 0xc000, 0x3c00, 0x3800, 0x7bff, 0x0001, 0x3c00]);
+  });
+
+  it("packs each channel times the scale it is given, alpha still 1", () => {
+    const packed = rgbToHalfRgba(new Float32Array([0.25, 1, -2, 1e-7, 3e4, 0]), undefined, 4);
+    expect([...packed]).toEqual([0x3c00, 0x4400, 0xc800, 0x3c00, 0x0007, 0x7c00, 0x0000, 0x3c00]);
+    const out = new Uint16Array(8);
+    expect(rgbToHalfRgba(new Float32Array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5]), out, 0.5)).toBe(out);
+    expect([...out]).toEqual([0x3400, 0x3400, 0x3400, 0x3c00, 0x3400, 0x3400, 0x3400, 0x3c00]);
   });
 
   it("packs a whole slice: 32 x 64 texels to 8192 halves", () => {

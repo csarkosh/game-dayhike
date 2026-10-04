@@ -9,10 +9,15 @@
  * 1/2.2 (`captureEncode`), since the probe is flagged as gamma and every PBR
  * material raises what it reads from it to 2.2 again.
  *
- * The slice goes up on each change of hour or weather as a 32 x 64 RGBA16F
- * texture, 16 KB: half float is filterable on WebGL2 and on WebGPU's core
- * features, where float32 filtering is optional. The stage reads it once, at
- * an explicit level, in uniform control flow.
+ * The slice goes up as a 32 x 64 RGBA16F texture, 16 KB: half float is
+ * filterable on WebGL2 and on WebGPU's core features, where float32
+ * filtering is optional. It goes up already in the scene's units (the
+ * state's scale applied, `skyScale` 1), since the table's own units fall to
+ * 10^-7 and below in the twilight, where half float holds nothing but steps
+ * of 6 x 10^-8; and only when the sun's altitude or the table's count of
+ * slices has moved since the last upload, the two the scaled slice depends
+ * on, so a weather fade uploads nothing. The stage reads it once, at an
+ * explicit level, in uniform control flow.
  *
  * GLSL on every engine, as a ShaderMaterial is unless told otherwise
  * (`rainMap.ts` builds its own the same way): on WebGPU the stages are
@@ -57,8 +62,10 @@ export type SkyDome = {
   /** A box of SKYBOX_SIZE riding with the eye, never picked. */
   readonly mesh: Mesh;
   readonly material: ShaderMaterial;
-  /** Uploads the clear slice as the table texture and sets every uniform from `s`;
-   * `exposure` is the material path's image exposure. */
+  /** Sets every uniform from `s`, and uploads the clear slice times its scale
+   * as the table texture where the sun's altitude or the table's count has
+   * moved since the last upload; `exposure` is the material path's image
+   * exposure. */
   update(s: SkyState, exposure: number): void;
   /** The probe's capture: the disc capped, the linear sky gamma-encoded, no tone map. */
   setCapture(on: boolean): void;
@@ -82,6 +89,9 @@ export function createSkyDome(scene: Scene, colourPath: "post" | "material"): Sk
   // WebGL2 and WebGPU both copy the data as the upload is made, so the next
   // packing cannot reach a texture already sent.
   const halves = new Uint16Array(SLICE_AZIMUTHS * SLICE_ELEVATIONS * 4);
+  /** The sun's altitude and the table's count the texture was last uploaded at. */
+  let uploadedAltitude = Number.NaN;
+  let uploadedCount = -1;
   // Linear filtering where the engine filters half floats (WebGL2 and WebGPU
   // both do; RawTexture falls back to nearest where it does not), clamped so
   // the azimuth's ends and the zenith row never wrap.
@@ -133,8 +143,13 @@ export function createSkyDome(scene: Scene, colourPath: "post" | "material"): Sk
     mesh,
     material,
     update(s, exposure) {
-      table.update(rgbToHalfRgba(s.clear.texels, halves));
-      material.setFloat("skyScale", s.scale);
+      if (s.clear.altitudeDeg !== uploadedAltitude || s.tableCount !== uploadedCount) {
+        table.update(rgbToHalfRgba(s.clear.texels, halves, s.scale));
+        uploadedAltitude = s.clear.altitudeDeg;
+        uploadedCount = s.tableCount;
+      }
+      // The texture holds the slice already scaled.
+      material.setFloat("skyScale", 1);
       material.setFloat("skyCloud", s.cloud);
       material.setVector3("skyNight", night.set(s.nightFloor.r, s.nightFloor.g, s.nightFloor.b));
       material.setVector3("skyDeckZenith", deckZenith.set(s.deckZenith.r, s.deckZenith.g, s.deckZenith.b));

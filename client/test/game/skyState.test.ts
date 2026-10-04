@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { desaturateRgb, luma, type Rgb } from "../../src/game/colour.js";
 import { MOONLIGHT, NIGHT_SKY, sunPositionAt, type Vec3 } from "../../src/game/sky.js";
 import { AMBIENT_DESAT, WEATHER_PRESETS, airColourUnder, type WeatherParams } from "../../src/game/weather.js";
@@ -6,7 +6,7 @@ import {
   RING_ELEVATION_DEG, SKY_EYE_KM, SKY_GROUND_KM, SLICE_ALTITUDES_DEG, SLICE_AZIMUTHS, SLICE_ELEVATIONS, rowOfElevation,
   type SkySlice,
 } from "../../src/game/skyModel.js";
-import { buildSkyTableSync, NOON_ALTITUDE_DEG, sliceBracket, type SkyTable } from "../../src/game/skyTable.js";
+import { buildSkyTableSync, createSkyTable, NOON_ALTITUDE_DEG, sliceBracket, type SkyTable } from "../../src/game/skyTable.js";
 import {
   DECK_TAU, FILL_DAY_LUMA, GLOW_FULL_CONTRAST, GLOW_MIN_CONTRAST, GLOW_POWER_MAX, GLOW_POWER_MIN, MIST_HORIZON,
   NIGHT_YA_DAY, NIGHT_YA_NIGHT, SKY_GAMMA, SKY_IBL_SCALE, SKY_NOON_ZENITH_LUMINANCE, SUN_DISC_CAPTURE_MAX, SUN_DISC_COS,
@@ -193,6 +193,44 @@ describe("clear noon keeps the anchors of the sky the table replaced", () => {
     expect(luma(s.fillColour)).toBeCloseTo(0.5633, 12);
     expect(s.cloud).toBe(0);
     expect(s.mistWeight).toBe(0);
+  });
+});
+
+describe("the noon reading", () => {
+  /** A table of the fixture's noon bracket and the afternoon's. */
+  function afternoonTable(): SkyTable {
+    const table = createSkyTable();
+    for (const deg of [74, 76, 42, 44]) table.add(skyFixture().blendAt(deg));
+    return table;
+  }
+
+  it("blends the noon slice once for each count of slices the table holds, so a state blends one slice", () => {
+    const table = afternoonTable();
+    const blend = vi.spyOn(table, "blendAt");
+    skyStateFor(table, 15, CLEAR);
+    expect(blend).toHaveBeenCalledTimes(2);
+    skyStateFor(table, 15, MIST);
+    skyStateFor(table, 15.1, CLEAR);
+    expect(blend).toHaveBeenCalledTimes(4);
+    // A slice arrives: the noon slice is read again, once.
+    table.add(skyFixture().blendAt(28));
+    skyStateFor(table, 15, CLEAR);
+    expect(blend).toHaveBeenCalledTimes(6);
+    skyStateFor(table, 15, CLEAR);
+    expect(blend).toHaveBeenCalledTimes(7);
+  });
+
+  it("changes no value: a state from a table read before is the state from one read afresh, and says how many slices it was made from", () => {
+    const warm = afternoonTable();
+    skyStateFor(warm, 12, CLEAR);
+    skyStateFor(warm, 15, MIST);
+    const fresh = afternoonTable();
+    for (const w of [CLEAR, MIST, WEATHER_PRESETS.rain]) expect(skyStateFor(warm, 15, w)).toEqual(skyStateFor(afternoonTable(), 15, w));
+    expect(skyStateFor(fresh, 15, CLEAR).tableCount).toBe(4);
+    // Noon's anchors, from the reading.
+    const noon = skyStateFor(warm, 12, CLEAR);
+    expect(noon.sunIntensity).toBe(4);
+    expect(noon.scale * luma(noon.clear.zenith)).toBeCloseTo(0.416, 12);
   });
 });
 

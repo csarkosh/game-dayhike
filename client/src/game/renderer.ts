@@ -1176,6 +1176,9 @@ export type Renderer = {
   setSkinShading(on: boolean): void;
   setHour(hour: number): void;
   setWeather(next: WeatherParams, fadeSeconds?: number): void;
+  /** The hour and the weather together, the weather at once, applied once
+   * (`Lighting.setView`). */
+  setView(hour: number, weather: WeatherParams): void;
   /** 0 switches the walking cue off; 1 is the tuned default. */
   setBobScale(scale: number): void;
   /** 0 silences the lens-side dread effects; 1 is full. */
@@ -2173,6 +2176,9 @@ function buildRenderer(
     },
     setWeather(next, fadeSeconds) {
       lighting.setWeather(next, fadeSeconds);
+    },
+    setView(hour, weather) {
+      lighting.setView(hour, weather);
     },
     setBobScale(scale) {
       bob.setScale(scale);

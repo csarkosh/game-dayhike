@@ -532,6 +532,25 @@ describe("weather in lighting", () => {
     lighting.dispose();
   });
 
+  it("setView sets the hour and the weather together and applies once, ending any fade", () => {
+    const s = scene();
+    const lighting = light(s, { hour: 12, weather: CLEAR });
+    lighting.setWeather(WEATHER_PRESETS.mist, 3);
+    const before = dome.updates.length;
+    lighting.setView(15, WEATHER_PRESETS.rain);
+    expect(dome.updates.length).toBe(before + 1);
+    expect(dome.updates.at(-1)!.state.hour).toBe(15);
+    expect(dome.updates.at(-1)!.state.cloud).toBe(1);
+    expect(lighting.hour).toBe(15);
+    expect(lighting.weather).toEqual(WEATHER_PRESETS.rain);
+    expect(s.fogDensity).toBe(fogDensityUnder(WEATHER_PRESETS.rain, 70));
+    // The fade toward mist is over: a frame moves nothing.
+    s.onBeforeRenderObservable.notifyObservers(s);
+    expect(dome.updates.length).toBe(before + 1);
+    expect(lighting.weather).toEqual(WEATHER_PRESETS.rain);
+    lighting.dispose();
+  });
+
   it("a timed fade does not jump: current weather is unchanged until a frame renders", () => {
     const s = scene();
     const lighting = light(s, { hour: 12, weather: CLEAR });

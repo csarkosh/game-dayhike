@@ -130,6 +130,14 @@ export type Lighting = {
    * distinction is load-bearing.
    */
   setWeather(next: WeatherParams, fadeSeconds?: number): void;
+  /**
+   * Sets the hour and the weather together, the weather at once as
+   * `setWeather(next, 0)` sets it (ending any fade), and applies once: for a
+   * caller that moves both in one frame (the escalation's chase, a swap
+   * putting the view back), where `setHour` then `setWeather` would apply,
+   * and re-capture the probe, twice.
+   */
+  setView(hour: number, weather: WeatherParams): void;
   /** A copy of the current, possibly mid-fade, weather parameters. */
   readonly weather: WeatherParams;
   /**
@@ -429,6 +437,12 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
       fadeTarget = { ...next };
       fadeDuration = fadeSeconds;
       fadeElapsed = 0;
+    },
+    setView(nextHour, next) {
+      hour = nextHour;
+      weather = { ...next };
+      fadeFrom = null;
+      apply();
     },
     addShadowMesh(mesh) {
       mesh.receiveShadows = true;

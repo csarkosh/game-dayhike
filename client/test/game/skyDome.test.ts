@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -13,8 +13,9 @@ import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/sha
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors.js";
 import { createSkyDome, SKY_DOME_NAME, SKY_DOME_UNIFORMS, type SkyDome } from "../../src/game/skyDome.js";
 import { rgbToHalfRgba } from "../../src/game/halfFloat.js";
-import { NIGHT_SKY } from "../../src/game/sky.js";
-import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "../../src/game/skyModel.js";
+import { NIGHT_SKY, sunPositionAt } from "../../src/game/sky.js";
+import { SLICE_ALTITUDES_DEG, SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "../../src/game/skyModel.js";
+import { buildSkyTableSync, NOON_ALTITUDE_DEG, sliceBracket } from "../../src/game/skyTable.js";
 import { MIST_HORIZON, SUN_DISC_CAPTURE_MAX, SUN_DISC_COS, skyStateFor } from "../../src/game/skyState.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
@@ -24,6 +25,15 @@ import { skyFixture } from "./helpers/skyFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
+/** A half's value, decoded the long way: sign, exponent and mantissa. */
+function fromHalf(bits: number): number {
+  const sign = bits & 0x8000 ? -1 : 1;
+  const exponent = (bits >> 10) & 0x1f;
+  const mantissa = bits & 0x3ff;
+  if (exponent === 0) return sign * mantissa * 2 ** -24;
+  if (exponent === 31) return mantissa === 0 ? sign * Infinity : Number.NaN;
+  return sign * (1 + mantissa / 1024) * 2 ** (exponent - 15);
+}
 const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 const VERTEX = fx("skyDome.vertex.fx");
 const FRAGMENT = fx("skyDome.fragment.fx");
@@ -135,7 +145,7 @@ describe("createSkyDome", () => {
     expect(held(dome.material)._floats["skyToneMap"]).toBe(1);
   });
 
-  it("update uploads the clear slice as halves and sets every uniform of the sky from the state", () => {
+  it("update uploads the clear slice times its scale as halves and sets every uniform of the sky from the state", () => {
     const s = scene();
     s.imageProcessingConfiguration.contrast = 1.1;
     dome = createSkyDome(s, "post");
@@ -146,10 +156,11 @@ describe("createSkyDome", () => {
     const uploaded = (table.getInternalTexture() as unknown as { _bufferView: Uint16Array })._bufferView;
     expect(uploaded).toBeInstanceOf(Uint16Array);
     expect(uploaded.length).toBe(32 * 64 * 4);
-    expect([...uploaded]).toEqual([...rgbToHalfRgba(state.clear.texels)]);
+    expect([...uploaded]).toEqual([...rgbToHalfRgba(state.clear.texels, undefined, state.scale)]);
     const m = held(dome.material);
     expect(m._floats).toEqual({
-      skyScale: state.scale,
+      // The texture holds the slice already in the scene's units.
+      skyScale: 1,
       skyCloud: 0.9,
       skyMistWeight: 1,
       skyCapture: 0,
@@ -177,11 +188,58 @@ describe("createSkyDome", () => {
     const noon = skyStateFor(skyFixture(), 12, WEATHER_PRESETS.clear);
     dome.update(noon, 0.9);
     expect(internal._bufferView).toBe(made);
-    expect([...made]).toEqual([...rgbToHalfRgba(noon.clear.texels)]);
+    expect([...made]).toEqual([...rgbToHalfRgba(noon.clear.texels, undefined, noon.scale)]);
     const dusk = skyStateFor(skyFixture(), 18, WEATHER_PRESETS.clear);
     dome.update(dusk, 1.3);
     expect(internal._bufferView).toBe(made);
-    expect([...made]).toEqual([...rgbToHalfRgba(dusk.clear.texels)]);
+    expect([...made]).toEqual([...rgbToHalfRgba(dusk.clear.texels, undefined, dusk.scale)]);
+  });
+
+  it("uploads nothing for a change of weather alone, and again for a change of hour or a slice's arrival", () => {
+    const s = scene();
+    dome = createSkyDome(s, "post");
+    const table = held(dome.material)._textures["skyTable"]!;
+    const uploads = vi.spyOn(table as unknown as { update(data: ArrayBufferView): void }, "update");
+    dome.update(skyStateFor(skyFixture(), 12, WEATHER_PRESETS.clear), 0.9);
+    expect(uploads).toHaveBeenCalledTimes(1);
+    // The weather moves the uniforms, never the scaled slice.
+    const mist = skyStateFor(skyFixture(), 12, WEATHER_PRESETS.mist);
+    dome.update(mist, 0.9);
+    dome.update(skyStateFor(skyFixture(), 12, WEATHER_PRESETS.rain), 0.9);
+    expect(uploads).toHaveBeenCalledTimes(1);
+    expect(held(dome.material)._floats["skyCloud"]).toBe(1);
+    const afternoon = skyStateFor(skyFixture(), 15, WEATHER_PRESETS.clear);
+    dome.update(afternoon, 0.9);
+    expect(uploads).toHaveBeenCalledTimes(2);
+    // The same hour after a slice has arrived: the blend may have moved.
+    dome.update({ ...afternoon, tableCount: afternoon.tableCount + 1 }, 0.9);
+    expect(uploads).toHaveBeenCalledTimes(3);
+    expect(afternoon.tableCount).toBe(17);
+  });
+
+  it("holds the twilight in the scene's units: every texel over 1e-3 at 18:45 and 19:00 clear decodes within 1 % of texel times scale", () => {
+    const hours = [18.75, 19];
+    const indices = new Set<number>(sliceBracket(NOON_ALTITUDE_DEG));
+    for (const hour of hours) for (const index of sliceBracket((Math.asin(sunPositionAt(hour).y) * 180) / Math.PI)) indices.add(index);
+    const twilight = buildSkyTableSync([...indices].sort((a, b) => a - b).map((index) => SLICE_ALTITUDES_DEG[index] as number));
+    const s = scene();
+    dome = createSkyDome(s, "post");
+    const internal = held(dome.material)._textures["skyTable"]!.getInternalTexture() as unknown as { _bufferView: Uint16Array };
+    for (const hour of hours) {
+      const state = skyStateFor(twilight, hour, WEATHER_PRESETS.clear);
+      dome.update(state, 1.6);
+      let counted = 0;
+      for (let i = 0; i < SLICE_AZIMUTHS * SLICE_ELEVATIONS; i++) {
+        for (let c = 0; c < 3; c++) {
+          const wanted = (state.clear.texels[i * 3 + c] as number) * state.scale;
+          if (!(wanted > 1e-3)) continue;
+          counted++;
+          expect(Math.abs(fromHalf(internal._bufferView[i * 4 + c] as number) / wanted - 1), `hour ${hour}, texel ${i}`).toBeLessThan(0.01);
+        }
+      }
+      // Not a check of nothing: at 19:00 still over 200 channels, toward the sun.
+      expect(counted, `hour ${hour}`).toBeGreaterThan(200);
+    }
   });
 
   it("setCapture switches the capture output on and off", () => {

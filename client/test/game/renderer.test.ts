@@ -140,7 +140,9 @@ import {
   RING_COUNT,
   type RingSamples,
 } from "../../src/game/clipmap.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { WEATHER_PRESETS, fogDensityUnder } from "../../src/game/weather.js";
+import { sunPositionAt } from "../../src/game/sky.js";
+import { FOG_DISTANCE } from "../../src/sim/forestConstants.js";
 import type { Level } from "../../src/sim/level.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
 import { createForest } from "../../src/sim/forest.js";
@@ -476,6 +478,23 @@ describe("the renderer's sky", () => {
       renderer.dispose();
     }
   }, timeLimit(60_000));
+});
+
+describe("the renderer's view", () => {
+  it("sets the hour and the weather together through the lighting, at once", () => {
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture() });
+    try {
+      renderer.setView(15, WEATHER_PRESETS.rain);
+      const sun = renderer.scene.getLightByName("sun") as unknown as { direction: { x: number; y: number; z: number } };
+      const toward = sunPositionAt(15);
+      expect(sun.direction.x).toBeCloseTo(-toward.x, 12);
+      expect(sun.direction.y).toBeCloseTo(-toward.y, 12);
+      expect(sun.direction.z).toBeCloseTo(-toward.z, 12);
+      expect(renderer.scene.fogDensity).toBe(fogDensityUnder(WEATHER_PRESETS.rain, FOG_DISTANCE));
+    } finally {
+      renderer.dispose();
+    }
+  });
 });
 
 describe("the renderer's engine", () => {
