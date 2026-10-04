@@ -7,6 +7,11 @@ import {
   grassTrailGate, CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_FAR,
   CLUTTER_LITTER_CORE, CLUTTER_LITTER_FADE, CLUTTER_LITTER_CELL, CLUTTER_LITTER_D, litterBand,
   CLUTTER_CLASS_COUNT,
+  CLUTTER_FERN, CLUTTER_SHRUB,
+  CLUTTER_FERN_ALT_HI, CLUTTER_FERN_ALT_HI_FADE, CLUTTER_FERN_MONTANE, CLUTTER_FERN_OPEN, CLUTTER_FERN_PATCH_FLOOR,
+  CLUTTER_FERN_SCALE_MIN, CLUTTER_FERN_SCALE_MAX, CLUTTER_FERN_TRAIL_CLEAR,
+  CLUTTER_SHRUB_CANOPY_W, CLUTTER_SHRUB_HIGH_LO, CLUTTER_SHRUB_HIGH_LO_FADE, CLUTTER_SHRUB_HIGH_W, CLUTTER_SHRUB_PATCH_FLOOR,
+  CLUTTER_SHRUB_SCALE_MIN, CLUTTER_SHRUB_SCALE_MAX, CLUTTER_SHRUB_TRAIL_CLEAR,
   CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO_FADE,
   CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI_FADE,
   CLUTTER_GRASS_SLOPE_LO, CLUTTER_GRASS_SLOPE_HI,
@@ -224,13 +229,13 @@ describe("bush density gates", () => {
     expect(dCanopy).toBeGreaterThan(dOpen);
   });
 
-  it("extends the class-range sweep to the litter class (CLUTTER_CLASS_COUNT = 9)", () => {
+  it("extends the class-range sweep to every model-drawn class (CLUTTER_CLASS_COUNT = 11)", () => {
     // The pre-existing "stays in [0, 1] for every class" sweep above loops
     // cls < CLUTTER_CLASS_COUNT, so it already covers class 5 (bush) — and,
-    // now that the constant is 9, classes 6-8
-    // (meadow, flower, litter) too — automatically; this assertion is the loop bound.
+    // now that the constant is 11, classes 6-10
+    // (meadow, flower, litter, sword fern, shrub) too — automatically; this assertion is the loop bound.
     // Same for the road-bed sweep in the domain census describe block below.
-    expect(CLUTTER_CLASS_COUNT).toBe(9);
+    expect(CLUTTER_CLASS_COUNT).toBe(11);
   });
 });
 
@@ -395,7 +400,6 @@ describe("the litter class", () => {
 
   it("is the ninth class with three variants and no instance farther than the fade", () => {
     expect(CLUTTER_LITTER).toBe(8);
-    expect(CLUTTER_CLASS_COUNT).toBe(9);
     const seed = SEED;
     // A "no instance farther than the fade" scan over a 1200 m square of 1 m
     // cells would be far too slow. Scan a 100 x 100 m window
@@ -1428,9 +1432,9 @@ import { lobePoints, marshWeightAt, POND_SHORE } from "../../src/sim/features.js
 import { elevationAt, type LakeSource } from "../../src/sim/terrain.js";
 
 describe("the water plants", { timeout: timeLimit(120_000) }, () => {
-  it("follow the model-drawn classes, which still number nine", () => {
-    expect(CLUTTER_CLASS_COUNT).toBe(9);
-    expect([CLUTTER_REED, CLUTTER_LILY]).toEqual([9, 10]);
+  it("follow the model-drawn classes, which number eleven", () => {
+    expect(CLUTTER_CLASS_COUNT).toBe(11);
+    expect([CLUTTER_REED, CLUTTER_LILY]).toEqual([11, 12]);
     for (const k of ["CLUTTER_REED_CELL", "CLUTTER_REED_D", "CLUTTER_LILY_CELL", "CLUTTER_LILY_D", "CLUTTER_WATER_MURK_LO", "CLUTTER_WATER_MURK_HI"]) {
       expect(CLUTTER_TUNABLES[k], k).toBeTypeOf("number");
     }
@@ -1503,5 +1507,82 @@ describe("driftwood in the cove", () => {
       }
     }
     expect(found).toBeGreaterThan(0);
+  });
+});
+
+describe("sword fern and shrub habitats", () => {
+  const flat = (h: number) => ({ h, dx: 0.01, dz: -0.02 });
+  const steep = (h: number) => ({ h, dx: 0.9, dz: 0.4 });
+  /** Inland points over the bowl's ground, well off the road. */
+  const points: { x: number; z: number }[] = [];
+  for (let i = 0; i < 4000; i++) points.push({ x: 600 + ((i * 7919) % 6000), z: -3000 + ((i * 104729) % 6000) });
+
+  it("grows neither on the sand, on steep ground nor on the road", () => {
+    for (const cls of [CLUTTER_FERN, CLUTTER_SHRUB]) {
+      expect(clutterDensity(SEED, cls, 300.5, 40.5, flat(CLUTTER_GRASS_ALT_LO - 1))).toBe(0);
+      expect(clutterDensity(SEED, cls, 300.5, 40.5, steep(40))).toBe(0);
+      expect(clutterDensity(SEED, cls, centerlineX(1000.5), 1000.5)).toBe(0);
+    }
+  });
+
+  it("keeps every density in [0, 1]", () => {
+    for (const p of points) {
+      for (const cls of [CLUTTER_FERN, CLUTTER_SHRUB]) {
+        const d = clutterDensity(SEED, cls, p.x, p.z);
+        expect(d).toBeGreaterThanOrEqual(0);
+        expect(d).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("puts the fern under the canopy on low ground, and thins it uphill and in the open", () => {
+    let under = 0, underN = 0, open = 0, openN = 0;
+    for (const p of points) {
+      const s = { ...elevationSampleAt(SEED, p.x, p.z), h: 40, dx: 0.02, dz: 0.02 };
+      const rho = forestDensity(SEED, p.x, p.z, s);
+      const d = clutterDensity(SEED, CLUTTER_FERN, p.x, p.z, s);
+      if (rho > 0.7) { under += d; underN++; }
+      if (rho < 0.05) { open += d; openN++; expect(d).toBeLessThanOrEqual(CLUTTER_FERN_OPEN + 1e-9); }
+      // The same ground, lifted past the lowland: never more than the montane share.
+      const high = clutterDensity(SEED, CLUTTER_FERN, p.x, p.z, { ...s, h: CLUTTER_FERN_ALT_HI + CLUTTER_FERN_ALT_HI_FADE + 1 });
+      expect(high).toBeLessThanOrEqual(CLUTTER_FERN_MONTANE + 1e-9);
+    }
+    expect(underN).toBeGreaterThan(100);
+    expect(openN).toBeGreaterThan(50);
+    // In patches: on average well over the floor between them, and far over the open ground's.
+    expect(under / underN).toBeGreaterThan(CLUTTER_FERN_PATCH_FLOOR * 1.5);
+    expect(under / underN).toBeGreaterThan(5 * (open / openN));
+  });
+
+  it("puts the shrub's thickets on the high ground and thins them under a level lowland canopy", () => {
+    let high = 0, low = 0, n = 0;
+    for (const p of points) {
+      const s = elevationSampleAt(SEED, p.x, p.z);
+      const level = { ...s, dx: 0.02, dz: 0.02 };
+      const dHigh = clutterDensity(SEED, CLUTTER_SHRUB, p.x, p.z, { ...level, h: CLUTTER_SHRUB_HIGH_LO + CLUTTER_SHRUB_HIGH_LO_FADE + 5 });
+      const dLow = clutterDensity(SEED, CLUTTER_SHRUB, p.x, p.z, { ...level, h: 40 });
+      expect(dHigh).toBeLessThanOrEqual(CLUTTER_SHRUB_HIGH_W + 1e-9);
+      expect(dLow).toBeLessThanOrEqual(Math.max(CLUTTER_SHRUB_CANOPY_W, 0) + 1e-9);
+      high += dHigh; low += dLow; n++;
+    }
+    expect(high / n).toBeGreaterThan(CLUTTER_SHRUB_HIGH_W * CLUTTER_SHRUB_PATCH_FLOOR);
+    expect(high / n).toBeGreaterThan(2 * (low / n));
+  });
+
+  it("stands every instance in its scale band and off the trail", () => {
+    const v = activeTerrainVariant();
+    const cx = centerlineX(0);
+    for (const [cls, lo, hi, clear] of [
+      [CLUTTER_FERN, CLUTTER_FERN_SCALE_MIN, CLUTTER_FERN_SCALE_MAX, CLUTTER_FERN_TRAIL_CLEAR],
+      [CLUTTER_SHRUB, CLUTTER_SHRUB_SCALE_MIN, CLUTTER_SHRUB_SCALE_MAX, CLUTTER_SHRUB_TRAIL_CLEAR],
+    ] as const) {
+      const list = clutterInRect(SEED, cls, cx, -200, cx + 500, 200);
+      expect(list.length).toBeGreaterThan(50);
+      for (const inst of list) {
+        expect(inst.scale).toBeGreaterThanOrEqual(lo);
+        expect(inst.scale).toBeLessThanOrEqual(hi);
+        expect(v.trailDistance?.(SEED, inst.x, inst.z) ?? Infinity).toBeGreaterThanOrEqual(clear);
+      }
+    }
   });
 });

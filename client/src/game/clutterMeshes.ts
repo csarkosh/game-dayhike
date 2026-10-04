@@ -1,7 +1,8 @@
 /**
  * The Babylon shell over `clutterField.ts`: thin-
- * instance buckets for the nine clutter classes — grass, rock, boulder,
- * driftwood, fungus, bush, meadow, flower, litter — two LOD levels deep. All band
+ * instance buckets for the eleven clutter classes — grass, rock, boulder,
+ * driftwood, fungus, bush, meadow, flower, litter, sword fern, shrub — two LOD
+ * levels deep. All band
  * math is `clutterField.ts` (via its memoizing `createClutterCollector`,
  * output-identical to the pure `collectClutter`); what lives here is buffers,
  * matrices and dispose — the same split as `forestField.ts`/`forestMeshes.ts`,
@@ -61,6 +62,8 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
@@ -71,6 +74,7 @@ import {
   CLUTTER_BUSH,
   CLUTTER_CLASS_COUNT,
   CLUTTER_DRIFTWOOD,
+  CLUTTER_FERN,
   CLUTTER_FLOWER,
   CLUTTER_FUNGUS,
   CLUTTER_GRASS,
@@ -78,6 +82,7 @@ import {
   CLUTTER_LITTER,
   CLUTTER_MEADOW,
   CLUTTER_ROCK,
+  CLUTTER_SHRUB,
   type ClutterInstance,
 } from "../sim/clutter.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
@@ -87,6 +92,7 @@ import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from ".
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
+import { SHRUB_CHARACTERS, shrubGeometry } from "./shrubClump.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
 import { macroNoise, macroTint } from "./groundHexParams.js";
 import { forestDensity } from "../sim/vegetation.js";
@@ -115,11 +121,13 @@ import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../sim/passes/
 /**
  * Model per class per variant, indexed by the class ids of `sim/clutter.ts`
  * (grass 0, rock 1, boulder 2, driftwood 3, fungus 4, bush 5, meadow 6,
- * flower 7, litter 8) and then by the instance's own `variant` draw. Driftwood and
+ * flower 7, litter 8, fern 9, shrub 10) and then by the instance's own `variant` draw. Driftwood and
  * meadow ship ONE model each, which is why the sim gives those classes
  * `variants: 1` and their instances always draw variant 0. Litter reuses the
  * rock and driftwood models at its own (small) scale range rather than
- * shipping dedicated pebble/twig geometry.
+ * shipping dedicated pebble/twig geometry. Sword fern draws the forest's
+ * understory fern, placed by its own habitat. The shrub class has no model:
+ * its mounds are built in code (`shrubClump.ts`, `builtShrubs` below).
  */
 const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
   [modelUrl("models/clutter.grass_a.glb"), modelUrl("models/clutter.grass_b.glb")],
@@ -131,7 +139,17 @@ const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
   [modelUrl("models/clutter.meadow.glb")],
   [modelUrl("models/clutter.flower_a.glb"), modelUrl("models/clutter.flower_b.glb")],
   [modelUrl("models/clutter.rock_a.glb"), modelUrl("models/clutter.rock_b.glb"), modelUrl("models/clutter.driftwood.glb")],
+  [modelUrl("models/understory.fern.glb")],
+  [],
 ];
+
+/** A shrub leaf's roughness, and its reflectance at normal incidence as a
+ * share of a dielectric's. Salal's leaf is leathery and a little glossy, but
+ * a mound of glossy facets mirrors the sky: at the material's defaults the
+ * leaves read pale blue-grey whatever their own colour (halving the albedo
+ * changed nothing), so the reflection is all but taken away. */
+const SHRUB_ROUGHNESS = 0.85;
+const SHRUB_F0 = 0.12;
 
 /** LOD node names inside each shipped GLB, in bucket order: index 0 is the
  * `near` band's bucket, index 1 the `far` band's. Every file also ships an
@@ -256,6 +274,8 @@ const FOLIAGE_BY_CLASS = new Map<number, FoliageProfile>([
   [CLUTTER_MEADOW, FOLIAGE_PROFILES.MEADOW],
   [CLUTTER_FLOWER, FOLIAGE_PROFILES.FLOWER],
   [CLUTTER_BUSH, FOLIAGE_PROFILES.BUSH],
+  [CLUTTER_FERN, FOLIAGE_PROFILES.UNDERSTORY],
+  [CLUTTER_SHRUB, FOLIAGE_PROFILES.UNDERSTORY],
 ]);
 
 /** The weather's porosity cap per class (wetPlugin.ts): the cards glaze,
@@ -272,6 +292,8 @@ export const WET_CAP_BY_CLASS: ReadonlyMap<number, number> = new Map<number, num
   [CLUTTER_MEADOW, WET_CAP.leaf],
   [CLUTTER_FLOWER, WET_CAP.leaf],
   [CLUTTER_LITTER, WET_CAP.rock],
+  [CLUTTER_FERN, WET_CAP.leaf],
+  [CLUTTER_SHRUB, WET_CAP.leaf],
 ]);
 
 /** Classes that LIE on the ground rather than stand on it, so they take the
@@ -325,7 +347,7 @@ export type ClutterMeshesOptions = {
    * draws its collected set whole and `cull` does nothing. */
   cull?: boolean;
   /** NullEngine escape hatch: bucket meshes per class → variant → LOD in
-   * place of the seventeen production GLBs (the forestMeshes `assets` idiom).
+   * place of the eighteen production GLBs (the forestMeshes `assets` idiom).
    * `adopt` runs synchronously on them. */
   assets?: Mesh[][][][];
   /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
@@ -362,7 +384,7 @@ export type ClutterMeshes = {
 
 /**
  * One logical bucket: every geometry-bearing mesh of one model's one LOD
- * level (single-primitive for all seventeen clutter GLBs, so one mesh in practice)
+ * level (single-primitive for all eighteen clutter GLBs, so one mesh in practice)
  * sharing a single reused instance buffer.
  */
 type Bucket = {
@@ -738,7 +760,7 @@ const KEPT_STRIDE = 20;
 const KEPT_FOLIAGE = 16;
 
 /**
- * The clutter's Babylon shell. Production loads the seventeen shipped GLBs
+ * The clutter's Babylon shell. Production loads the eighteen shipped GLBs
  * asynchronously and builds buckets when they arrive; the returned object is
  * complete immediately — an `update` before the assets exist just remembers
  * the camera, and is replayed the moment they land.
@@ -777,6 +799,8 @@ export function createClutterMeshes(
 
   const casterMeshes: Mesh[] = [];
   const containers: AssetContainer[] = [];
+  /** The materials of the classes built in code, which no container owns. */
+  const builtMaterials: PBRMaterial[] = [];
   /** `buckets[class][variant * cutsFor(class) + cut][lod]`, or null until the
    * GLBs land — plain `[class][variant][lod]` for every class outside
    * `CUT_CLASSES`, where `cutsFor` is 1 and the cut is always 0. */
@@ -1099,6 +1123,33 @@ export function createClutterMeshes(
     });
   }
 
+  /** The shrub class's mesh groups, `[variant][lod]`, built in code: one
+   * material a mound, white under the leaves' own vertex colours, shared by
+   * its two levels of detail as a model's are. */
+  function builtShrubs(): Mesh[][][] {
+    return SHRUB_CHARACTERS.map((_, variant) => {
+      const mat = new PBRMaterial(`clutter_shrub_${variant}_mat`, scene);
+      mat.albedoColor = new Color3(1, 1, 1);
+      mat.metallic = 0;
+      mat.roughness = SHRUB_ROUGHNESS;
+      mat.metallicF0Factor = SHRUB_F0;
+      mat.backFaceCulling = false;
+      builtMaterials.push(mat);
+      return LOD_NAMES.map((lodName, lod) => {
+        const g = shrubGeometry(variant, lod);
+        const mesh = new Mesh(`clutter_shrub_${variant}_${lodName}`, scene);
+        const data = new VertexData();
+        data.positions = g.positions;
+        data.normals = g.normals;
+        data.colors = g.colors;
+        data.indices = g.indices;
+        data.applyToMesh(mesh, false);
+        mesh.material = mat;
+        return [mesh];
+      });
+    });
+  }
+
   /** Turns the loaded mesh groups into buckets and replays any update that
    * arrived while they were loading. */
   function adopt(loaded: Mesh[][][][]): void {
@@ -1181,13 +1232,17 @@ export function createClutterMeshes(
     maybeBuild(true);
   }
 
-  /** Production path: the seventeen clutter GLBs, `forestMeshes.ts`'s loading
+  /** Production path: the eighteen clutter GLBs, `forestMeshes.ts`'s loading
    * idiom (itself `characterModel.ts`'s). */
   async function loadAssets(): Promise<void> {
     registerBuiltInLoaders();
     try {
       const loaded: Mesh[][][][] = [];
       for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+        if (cls === CLUTTER_SHRUB) {
+          loaded.push(builtShrubs());
+          continue;
+        }
         const urls = CLUTTER_MODEL_URLS[cls] as readonly string[];
         const variants: Mesh[][][] = [];
         for (const url of urls) {
@@ -1261,6 +1316,7 @@ export function createClutterMeshes(
       // meshes, wrapper nodes); mesh.dispose is idempotent, so the overlap
       // with the loop above is harmless.
       for (const container of containers) container.dispose();
+      for (const mat of builtMaterials) mat.dispose();
       casterMeshes.length = 0;
       buckets = null;
       culledBuckets = [];

@@ -270,7 +270,7 @@ describe("clutter shell: values computed once per instance", () => {
     compose.mockRestore();
     const fresh = newIn(after, before);
     const freshTinted = newIn(tintedOf(after), tintedOf(before));
-    expect([fresh, freshTinted]).toEqual([543, 528]);
+    expect([fresh, freshTinted]).toEqual([600, 585]);
     // One matrix, and so one trample frame, per new instance; one ground
     // colour per new instance of a tinted class.
     expect(matrices).toBe(fresh);
@@ -290,7 +290,7 @@ describe("clutter shell: values computed once per instance", () => {
       expect(differences(got, expectedClutter(meshes, ref.collect(x, z))), `crossing ${i}`).toEqual([]);
       floats += totalFloats(got);
     }
-    expect(floats).toBe(10474740);
+    expect(floats).toBe(12095460);
     clutter.dispose();
     spy.mockRestore();
     engine.dispose();
@@ -310,13 +310,13 @@ describe("clutter shell: values computed once per instance", () => {
       ref.collect(CLUTTER_CAM.x + i * CLUTTER_GRASS_CELL, CLUTTER_CAM.z);
     }
     const inRange = clutterUnique(ref.collect(CLUTTER_CAM.x + 200 * CLUTTER_GRASS_CELL, CLUTTER_CAM.z)).size;
-    // Kept: the 15,824 instances in range, plus those the collector still
-    // holds past it (its 97,964 include the empty cells).
-    expect([clutter.kept, inRange, ref.size]).toEqual([36920, 15824, 97964]);
+    // Kept: the 17,932 instances in range, plus those the collector still
+    // holds past it (its 98,361 include the empty cells).
+    expect([clutter.kept, inRange, ref.size]).toEqual([37310, 17932, 98361]);
     vi.mocked(surfaceAlbedo).mockClear();
     expect(differences(step(CLUTTER_CAM.x, CLUTTER_CAM.z), first)).toEqual([]);
     expect(vi.mocked(surfaceAlbedo).mock.calls.length).toBe(start.size);
-    expect(start.size).toBe(17028);
+    expect(start.size).toBe(19435);
     clutter.dispose();
     spy.mockRestore();
     engine.dispose();

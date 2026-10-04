@@ -56,6 +56,7 @@ import {
   type BakeOptions,
   type SpeciesMeshes,
 } from "../../src/game/forestMeshes.js";
+import { LOG_SINK } from "../../src/game/logSeat.js";
 import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
 import { whenSkyHeld } from "../../src/game/lighting.js";
 import { createSkyTable } from "../../src/game/skyTable.js";
@@ -413,8 +414,10 @@ describe("createForestMeshes under NullEngine", () => {
       // The stub box's local X (-4..4) is the trunk's long axis (the
       // production asset's convention — see `deadwoodMatrixBuffer`); its
       // local Y minimum (-0.5) is the trunk's underside. For each LOG
-      // instance, both ends of that underside line must sit on the terrain
-      // sampled AT THEIR OWN world x/z — not at the instance origin's x/z.
+      // instance, both ends of that underside line must lie the log's sink
+      // (LOG_SINK of the box's 1 m diameter, at the instance's scale) under
+      // the terrain sampled AT THEIR OWN world x/z — not at the instance
+      // origin's x/z: a fallen log has settled into the floor (logSeat.ts).
       let checkedLogs = 0;
       for (let i = 0; i < bands.deadwood.length; i++) {
         const t = bands.deadwood[i]!;
@@ -429,7 +432,7 @@ describe("createForestMeshes under NullEngine", () => {
           // m the live-engine bug measured and the ~1.26 m this harness's
           // own pre-fix placement (t.groundH + baseOffset*scale, no pitch)
           // measures at this same camera and slope.
-          expect(Math.abs(world.y - ground)).toBeLessThan(0.05);
+          expect(Math.abs(world.y - (ground - LOG_SINK * t.scale))).toBeLessThan(0.05);
         }
       }
       expect(checkedLogs).toBeGreaterThan(0);
@@ -1247,7 +1250,8 @@ describe("createForestMeshes under NullEngine", () => {
           const m = Matrix.FromArray(buf, i * 16);
           for (const flank of [-0.5, 0.5]) {
             const p = Vector3.TransformCoordinates(new Vector3(0, -0.5, flank), m);
-            expect(Math.abs(p.y - elevationAt(SEED, p.x, p.z))).toBeLessThan(0.12);
+            // Each flank lies the log's sink under its own ground (LOG_SINK of the box's 1 m diameter).
+            expect(Math.abs(p.y - (elevationAt(SEED, p.x, p.z) - LOG_SINK * t.scale))).toBeLessThan(0.12);
           }
         }
         expect(checked).toBeGreaterThan(0);
