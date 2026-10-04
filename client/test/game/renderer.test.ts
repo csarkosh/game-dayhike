@@ -678,7 +678,7 @@ describe("world shell wiring", () => {
   });
 
   it("rings the water with the weather's rain each frame, beside the puddles", () => {
-    const feed = slice("applyWetness(scene, weather);", "atmosphere.update(weather, lighting.hour);");
+    const feed = slice("applyWetness(scene, weather);", "if (sky !== null) atmosphere.update(weather, sky);");
     expect(feed).toContain(
       "setTerrainRain(scene, terrainMaterialFor(scene, \"terrain\"), weather.rain, seconds);\n      water?.setRain(weather.rain);",
     );

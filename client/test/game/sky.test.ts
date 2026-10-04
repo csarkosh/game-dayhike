@@ -3,8 +3,6 @@ import {
   FOG_FLOOR,
   exposureFor,
   fogDensityFor,
-  skyColourAt,
-  sunColourAt,
   sunPositionAt,
 } from "../../src/game/sky.js";
 
@@ -63,74 +61,6 @@ describe("sunPositionAt", () => {
 
   it("is deterministic", () => {
     expect(sunPositionAt(9.37)).toEqual(sunPositionAt(9.37));
-  });
-});
-
-describe("sunColourAt", () => {
-  it("is warm at the horizon and near-neutral overhead", () => {
-    const dawn = sunColourAt(6);
-    const noon = sunColourAt(12);
-    // Warmth is red over blue. Asserting the *relationship* rather than fixed
-    // numbers keeps the palette tunable without rewriting the test.
-    expect(dawn.r - dawn.b).toBeGreaterThan(0.5);
-    expect(noon.r - noon.b).toBeLessThan(0.2);
-  });
-
-  it("stays in gamut", () => {
-    for (let h = 0; h < 24; h += 0.5) {
-      const c = sunColourAt(h);
-      for (const v of [c.r, c.g, c.b]) {
-        expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThanOrEqual(1);
-      }
-    }
-  });
-});
-
-describe("skyColourAt", () => {
-  it("is darkest at midnight and brightest at noon", () => {
-    const sum = (h: number) => {
-      const c = skyColourAt(h);
-      return c.r + c.g + c.b;
-    };
-    expect(sum(0)).toBeLessThan(sum(6));
-    expect(sum(6)).toBeLessThan(sum(12));
-  });
-
-  it("is blue-dominant at noon", () => {
-    const noon = skyColourAt(12);
-    expect(noon.b).toBeGreaterThan(noon.r);
-  });
-
-  it("is continuous where the night and day branches meet", () => {
-    // The two branches join at sun altitude 0, which is hour 6. This guards C0
-    // continuity only: that both branches agree in value at the join, so the
-    // sky doesn't visibly snap as /time crosses dawn. It does NOT pin the
-    // transition widths (NIGHT_ALTITUDE, DAY_ALTITUDE) — those are visual
-    // tuning constants, deliberately different from each other, and changing
-    // either only changes the *slope* each branch approaches the join with, not
-    // the value at the join itself, so this test is correctly insensitive to
-    // them. That slope mismatch does mean there's a real kink near the join, so
-    // the sample offset has to be small enough that the kink itself stays under
-    // the tolerance: at +-0.01 hour it does not (worst channel delta ~0.0066,
-    // over the 0.005 threshold at precision 2), so this samples at +-0.001 hour
-    // instead, where the kink-induced delta is ~0.0007. A smaller offset is a
-    // *better* test of continuity-at-a-limit, not a weaker one.
-    const before = skyColourAt(5.999);
-    const after = skyColourAt(6.001);
-    expect(before.r).toBeCloseTo(after.r, 2);
-    expect(before.g).toBeCloseTo(after.g, 2);
-    expect(before.b).toBeCloseTo(after.b, 2);
-  });
-
-  it("stays in gamut", () => {
-    for (let h = 0; h < 24; h += 0.5) {
-      const c = skyColourAt(h);
-      for (const v of [c.r, c.g, c.b]) {
-        expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThanOrEqual(1);
-      }
-    }
   });
 });
 

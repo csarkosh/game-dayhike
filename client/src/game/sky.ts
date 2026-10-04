@@ -1,4 +1,4 @@
-import { clamp01, mixRgb, type Rgb } from "./colour.js";
+import { clamp01, type Rgb } from "./colour.js";
 
 /**
  * Sun and sky maths: pure, Babylon-free, and therefore testable under
@@ -35,11 +35,6 @@ const ARC_TILT = 0.25;
  * had (`skyState.ts`).
  */
 export const NIGHT_SKY: Readonly<Rgb> = Object.freeze({ r: 0.02, g: 0.03, b: 0.06 });
-const HORIZON_SKY: Rgb = { r: 0.62, g: 0.5, b: 0.42 };
-const DAY_SKY: Rgb = { r: 0.42, g: 0.58, b: 0.82 };
-
-const HORIZON_SUN: Rgb = { r: 1, g: 0.52, b: 0.24 };
-const ZENITH_SUN: Rgb = { r: 1, g: 0.96, b: 0.9 };
 
 /** Sun altitude at which the sky has finished turning from dawn to full day. */
 const DAY_ALTITUDE = 0.35;
@@ -99,24 +94,6 @@ export function sunPositionAt(hour: number): Vec3 {
   const z = -ARC_TILT;
   const length = Math.hypot(x, y, z);
   return { x: x / length, y: y / length, z: z / length };
-}
-
-/** Warm at the horizon, near-white overhead — the long path through air. */
-export function sunColourAt(hour: number): Rgb {
-  return mixRgb(HORIZON_SUN, ZENITH_SUN, Math.sqrt(clamp01(sunPositionAt(hour).y)));
-}
-
-/**
- * Drives the fog tint and the scene clear colour together, so haze and sky agree
- * as the sun moves. A fixed fog colour under a moving sun is the tell that gives
- * away a static skybox.
- */
-export function skyColourAt(hour: number): Rgb {
-  const altitude = sunPositionAt(hour).y;
-  if (altitude <= 0) {
-    return mixRgb(NIGHT_SKY, HORIZON_SKY, clamp01((altitude + NIGHT_ALTITUDE) / NIGHT_ALTITUDE));
-  }
-  return mixRgb(HORIZON_SKY, DAY_SKY, clamp01(altitude / DAY_ALTITUDE));
 }
 
 /**

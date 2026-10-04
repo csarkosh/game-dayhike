@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   airColourUnder, ambientGainsUnder, exposureUnder,
-  fogColourUnder, fogDensityUnder, mistOpacityUnder,
+  fogDensityUnder, mistOpacityUnder,
   saturationUnder, shadowDarknessUnder, wetSurfaceUnder,
   DEFAULT_WEATHER,
   lerpWeather,
@@ -39,7 +39,7 @@ import {
   rainWindCut,
 } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
-import { exposureFor, fogDensityFor, skyColourAt, sunPositionAt } from "../../src/game/sky.js";
+import { exposureFor, fogDensityFor, sunPositionAt } from "../../src/game/sky.js";
 import { desaturateRgb, luma, type Rgb } from "../../src/game/colour.js";
 
 describe("weather model", () => {
@@ -93,11 +93,18 @@ describe("weather model", () => {
 const CLEAR = WEATHER_PRESETS.clear;
 const RAIN = WEATHER_PRESETS.rain;
 const MIST = WEATHER_PRESETS.mist;
+/** Horizon colours the fog is built over: a noon blue, a sunset orange
+ * brighter than 1, a dusk and a deep night. */
+const BASES: readonly Rgb[] = [
+  { r: 0.42, g: 0.58, b: 0.82 },
+  { r: 1.4, g: 0.62, b: 0.21 },
+  { r: 0.11, g: 0.09, b: 0.14 },
+  { r: 0.02, g: 0.03, b: 0.06 },
+];
 
 describe("clear-identity sweep — the sunny look survives, exactly", () => {
-  it("every hour-domain modifier at clear returns its base value", () => {
+  it("the exposure at clear is the altitude's own at every hour", () => {
     for (let hour = 0; hour < 24; hour += 0.25) {
-      expect(fogColourUnder(CLEAR, hour)).toEqual(skyColourAt(hour));
       const altitude = sunPositionAt(hour).y;
       expect(exposureUnder(CLEAR, altitude)).toBe(exposureFor(altitude));
     }
@@ -207,15 +214,15 @@ describe("modifiers under weather", () => {
     expect(fogDensityUnder({ ...CLEAR, rain: 0.5 }, 4000)).toBeCloseTo(1.25 * fogDensityFor(4000), 10);
     expect(fogDensityUnder(RAIN, 4000)).toBeCloseTo(11.4 * fogDensityFor(4000), 10);
     expect(fogDensityUnder(RAIN, 4000)).toBeCloseTo(1.5 * fogDensityUnder({ ...RAIN, rain: 0 }, 4000), 10);
-    for (const hour of [6, 12, 18, 22]) {
-      const dry = fogColourUnder({ ...RAIN, rain: 0 }, hour);
-      const wet = fogColourUnder(RAIN, hour);
+    for (const base of BASES) {
+      const dry = airColourUnder({ ...RAIN, rain: 0 }, base);
+      const wet = airColourUnder(RAIN, base);
       const spread = (c: { r: number; g: number; b: number }) => Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
       // The pull is toward the colour's own luminance, so the luminance holds
       // and the colour's spread shrinks by the 0.3 pulled out.
       expect(luma(wet)).toBeCloseTo(luma(dry), 10);
       expect(spread(wet)).toBeCloseTo(0.7 * spread(dry), 10);
-      const half = fogColourUnder({ ...RAIN, rain: 0.5 }, hour);
+      const half = airColourUnder({ ...RAIN, rain: 0.5 }, base);
       expect(spread(half)).toBeCloseTo(0.85 * spread(dry), 10);
     }
   });
@@ -230,18 +237,16 @@ describe("dread modifiers — identity at dread 0, monotonic toward the pit", ()
   const DREAD_ONLY: WeatherParams = { cloudCover: 0, mist: 0, rain: 0, wetness: 0, dread: 1 };
 
   it("dread alone shifts the fog's balance toward green", () => {
-    const base = fogColourUnder(CLEAR, 12);
-    const pulled = fogColourUnder(DREAD_ONLY, 12);
+    const plain = airColourUnder(CLEAR, BASES[0]!);
+    const pulled = airColourUnder(DREAD_ONLY, BASES[0]!);
     const greenShare = (c: { r: number; g: number; b: number }) => c.g / (c.r + c.g + c.b);
-    expect(pulled).not.toEqual(base);
-    expect(greenShare(pulled)).toBeGreaterThan(greenShare(base));
+    expect(pulled).not.toEqual(plain);
+    expect(greenShare(pulled)).toBeGreaterThan(greenShare(plain));
   });
 
   it("dread never brightens the fog — no glowing air at night", () => {
-    for (let hour = 0; hour <= 24; hour += 0.25) {
-      expect(luma(fogColourUnder(DREAD_ONLY, hour))).toBeLessThanOrEqual(
-        luma(fogColourUnder(CLEAR, hour)) + 1e-12,
-      );
+    for (const base of BASES) {
+      expect(luma(airColourUnder(DREAD_ONLY, base))).toBeLessThanOrEqual(luma(airColourUnder(CLEAR, base)) + 1e-12);
     }
   });
 
@@ -372,12 +377,12 @@ describe("stepped dread — the world moves in plateaus, the lens moves continuo
     const b = { ...WEATHER_PRESETS.eerie, dread: 0.42 };
     expect(dreadWorldUnder(a)).toBe(dreadWorldUnder(b));
     expect(dreadLensUnder(b)).toBeGreaterThan(dreadLensUnder(a));
-    expect(fogColourUnder(a, 17)).toEqual(fogColourUnder(b, 17));
+    expect(airColourUnder(a, BASES[1]!)).toEqual(airColourUnder(b, BASES[1]!));
   });
 });
 
-describe("airColourUnder: fogColourUnder's steps over a horizon colour from the sky, minus its dusk dimming", () => {
-  /** Today's day sky and dusk horizon, a red sunset horizon past 1, a dim twilight and the night floor. */
+describe("airColourUnder: the air over a horizon colour from the sky, with no dusk dimming of its own", () => {
+  /** A day sky and a dusk horizon, a red sunset horizon past 1, a dim twilight and the night floor. */
   const BASES: Rgb[] = [
     { r: 0.42, g: 0.58, b: 0.82 },
     { r: 0.62, g: 0.5, b: 0.42 },
@@ -393,16 +398,6 @@ describe("airColourUnder: fogColourUnder's steps over a horizon colour from the 
       expect(air).toEqual(base);
       expect(air).not.toBe(base);
     }
-  });
-
-  it("agrees with fogColourUnder over skyColourAt wherever its dusk dimming is the identity", () => {
-    for (const w of Object.values(WEATHER_PRESETS)) {
-      for (let hour = 0; hour < 24; hour += 0.25) {
-        if (w.cloudCover > 0 && sunPositionAt(hour).y < 0.35) continue;
-        expect(airColourUnder(w, skyColourAt(hour))).toEqual(fogColourUnder(w, hour));
-      }
-    }
-    // This test goes when fogColourUnder and skyColourAt do.
   });
 
   it("pulls halfway to mist air scaled to the base's luma under full mist, the target capped at 1.2 times mist air", () => {

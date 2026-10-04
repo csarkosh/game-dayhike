@@ -1,5 +1,5 @@
 import { clamp01, desaturateRgb, luma, mixRgb, type Rgb } from "./colour.js";
-import { exposureFor, fogDensityFor, skyColourAt, sunPositionAt } from "./sky.js";
+import { exposureFor, fogDensityFor } from "./sky.js";
 
 /**
  * The weather axis, alongside `hour`. Pure and Babylon-free like `sky.ts`;
@@ -229,43 +229,6 @@ export function fogDensityUnder(w: WeatherParams, viewDistance: number): number 
     (1 + FOG_RAIN_GAIN * clamp01(w.rain)) *
     (1 + FOG_DREAD_GAIN * dreadWorldUnder(w))
   );
-}
-
-/**
- * Fog colour under weather: pulled toward mist air by mist, then desaturated
- * by cloud, so the horizon dissolves into the greyed sky rather than banding
- * against it. The mist-air target scales with the base sky's own luminance —
- * a fixed bright grey made the fog band GLOW against a near-black dusk sky
- * (browser-measured at hour 18); tracking the sky's brightness keeps
- * the noon look identical while dusk fog dims with the dusk. At clear every
- * step is an exact copy of `skyColourAt`.
- */
-export function fogColourUnder(w: WeatherParams, hour: number): Rgb {
-  const c = clamp01(w.cloudCover);
-  const base = skyColourAt(hour);
-  const lift = Math.min(1.2, luma(base) / luma(MIST_AIR));
-  const air = { r: MIST_AIR.r * lift, g: MIST_AIR.g * lift, b: MIST_AIR.b * lift };
-  const grey = desaturateRgb(mixRgb(base, air, 0.5 * clamp01(w.mist)), 0.9 * c);
-  // skyColourAt models a CLEAR sky's bright sunset horizon, but a cloud deck
-  // blocks exactly that low light — without this the fog band glowed white
-  // against a near-black overcast dusk dome (browser-measured at hour 18).
-  // Identity at clear (c = 0) and by day (daylight 1), both exact.
-  const daylight = clamp01(sunPositionAt(hour).y / 0.35);
-  const duskDim = 1 - 0.85 * c * (1 - daylight);
-  const dusk = { r: grey.r * duskDim, g: grey.g * duskDim, b: grey.b * duskDim };
-  // Under rain the far field greys: pulled toward its own luminance, so the
-  // brightness the dusk term set is kept. Guarded, so the clear path is the
-  // same object arithmetic as before the rain term existed.
-  const r = clamp01(w.rain);
-  const dimmed = r === 0 ? dusk : mixRgb(dusk, { r: luma(dusk), g: luma(dusk), b: luma(dusk) }, FOG_RAIN_GREY * r);
-  const d = dreadWorldUnder(w);
-  // Early return to ensure no dread-term arithmetic touches the clear path; the
-  // preceding cloud-term arithmetic is IEEE-exact at zero (dimmed is a freshly built
-  // object; the sweep asserts value equality, not identity).
-  if (d === 0) return dimmed;
-  const dreadLift = Math.min(1, luma(dimmed) / luma(DREAD_AIR));
-  const target = { r: DREAD_AIR.r * dreadLift, g: DREAD_AIR.g * dreadLift, b: DREAD_AIR.b * dreadLift };
-  return mixRgb(dimmed, target, DREAD_FOG_PULL * d);
 }
 
 /**

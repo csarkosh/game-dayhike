@@ -19,6 +19,8 @@ import "../../../src/sim/passes/index.js";
 import { seedFromToken } from "../../../src/game/seed.js";
 import { createAtmosphere } from "../../../src/game/atmosphere.js";
 import { WEATHER_PRESETS } from "../../../src/game/weather.js";
+import { skyStateFor } from "../../../src/game/skyState.js";
+import { skyFixture } from "./skyFixture.js";
 import { attachSkinShading } from "../../../src/game/skin.js";
 import {
   attachTerrainTexture,
@@ -93,7 +95,7 @@ export function pluginsInStates(): { cases: PluginCase[]; dispose(): void } {
   add("atmosphere", () => undefined, "Atmosphere", [
     // Before the first update: the effect is off and nothing has set a record.
     () => undefined,
-    () => atmosphere.update(WEATHER_PRESETS.mist, 12),
+    () => atmosphere.update(WEATHER_PRESETS.mist, skyStateFor(skyFixture(), 12, WEATHER_PRESETS.mist)),
   ]);
   add(
     "skin",

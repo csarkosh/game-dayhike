@@ -1,12 +1,15 @@
 import { clamp01, mixRgb, type Rgb } from "./colour.js";
-import { sunColourAt, sunPositionAt, type Vec3 } from "./sky.js";
-import { dreadWorldUnder, fogColourUnder, fogDensityUnder, type WeatherParams } from "./weather.js";
+import type { Vec3 } from "./sky.js";
+import type { SkyState } from "./skyState.js";
+import { airColourUnder, dreadWorldUnder, fogDensityUnder, type WeatherParams } from "./weather.js";
 
 /**
  * The pure arithmetic of the atmosphere plugin: height fog, the distance
- * gradient and the sun-direction inscatter. Babylon-free and on the
- * architecture test's BABYLON_FREE_FILES list; `atmosphere.ts` is the shell
- * that binds it. Every function is exact at `clear`.
+ * gradient and the glow toward the sun. Babylon-free and on the architecture
+ * test's BABYLON_FREE_FILES list; `atmosphere.ts` is the shell that binds it.
+ * Its colours are the sky state's (`skyState.ts`): the gradient ends on the
+ * dome's horizon away from the sun, and the glow is its horizon toward it, so
+ * the haze and the sky behind it cannot disagree.
  */
 
 export type AtmosphereRecord = {
@@ -23,7 +26,7 @@ export type AtmosphereRecord = {
 
 export const GRADIENT_STEPS = 256;
 
-// ---- Browser-tunable magnitudes. `clear` identity is not. ----
+// ---- Browser-tunable magnitudes. ----
 
 /** Quílez `a` at clear: a faint valley haze even on a sunny day. */
 export const HEIGHT_DENSITY_BASE = 0.004;
@@ -37,10 +40,6 @@ export const REFERENCE_LEVEL_BASE = -20;
 export const LEVEL_MIST_RISE = 8;
 /** Additional rise on the top dread plateau. */
 export const LEVEL_DREAD_RISE = 6;
-/** Exponent on dot(rd, sunDir): 8 is a broad warm glow, 64 a tight disc. */
-export const SUN_POWER = 8;
-/** How much of the sun glow survives full cloud cover. */
-export const SUN_CLOUD_SURVIVAL = 0.1;
 /** Near-end dimming of the gradient: air close by is denser and darker. */
 export const GRADIENT_NEAR_DIM = 0.85;
 /** Bias of the gradient toward the near colour: t^(1/GRADIENT_BIAS). */
@@ -58,17 +57,14 @@ export function heightFogAmount(camY: number, rdY: number, t: number, a: number,
   return ((a / b) * Math.exp(-y0 * b) * (1 - Math.exp(-t * slope * b))) / slope;
 }
 
-/** 1 with the sun up under clear; scaled by cloud; 0 once the sun is below the horizon. */
-export function sunWeightUnder(w: WeatherParams, altitude: number): number {
-  if (altitude <= 0) return 0;
-  const c = clamp01(w.cloudCover);
-  const up = clamp01(altitude / 0.1);
-  return up * (1 - (1 - SUN_CLOUD_SURVIVAL) * c);
-}
-
-/** Near → far, GRADIENT_STEPS entries, linear. Far end is exactly `fogColourUnder`. */
-export function fogGradientUnder(w: WeatherParams, hour: number): Rgb[] {
-  const far = fogColourUnder(w, hour);
+/**
+ * Near → far, GRADIENT_STEPS entries, linear. The far end is exactly the sky
+ * state's mist air: the fog colour, the clear colour and, at clear, the
+ * dome's horizon away from the sun, one colour. `w` is the weather the state
+ * was made under; its mist, cloud, rain and dread are in that colour already.
+ */
+export function fogGradientUnder(w: WeatherParams, sky: SkyState): Rgb[] {
+  const far = { r: sky.mistAir.r, g: sky.mistAir.g, b: sky.mistAir.b };
   const near = { r: far.r * GRADIENT_NEAR_DIM, g: far.g * GRADIENT_NEAR_DIM, b: far.b * GRADIENT_NEAR_DIM };
   const out: Rgb[] = [];
   for (let i = 0; i < GRADIENT_STEPS; i++) {
@@ -78,19 +74,25 @@ export function fogGradientUnder(w: WeatherParams, hour: number): Rgb[] {
   return out;
 }
 
-export function atmosphereUnder(w: WeatherParams, hour: number, viewDistance: number): AtmosphereRecord {
+/**
+ * The plugin's record. The glow is the horizon toward the sun under the
+ * weather's air, centred on the sun's azimuth at the horizon and as wide as
+ * the horizon's fall-off away from it (`fitGlow`, `skyState.ts`): it outlasts
+ * the sun while the twilight glows, and a full cloud deck, even all round the
+ * horizon, has none.
+ */
+export function atmosphereUnder(w: WeatherParams, sky: SkyState, viewDistance: number): AtmosphereRecord {
   const m = clamp01(w.mist);
   const d = dreadWorldUnder(w);
-  const toSun = sunPositionAt(hour);
   return {
     baseDensity: fogDensityUnder(w, viewDistance),
     heightDensity: HEIGHT_DENSITY_BASE * (1 + HEIGHT_MIST_GAIN * m),
     heightFalloff: HEIGHT_FALLOFF,
     referenceLevel: REFERENCE_LEVEL_BASE + LEVEL_MIST_RISE * m + LEVEL_DREAD_RISE * d,
     gradientScale: 1 / viewDistance,
-    sunDir: toSun,
-    sunColour: sunColourAt(hour),
-    sunWeight: sunWeightUnder(w, toSun.y),
-    sunPower: SUN_POWER,
+    sunDir: sky.glowDir,
+    sunColour: airColourUnder(w, sky.horizonToward),
+    sunWeight: sky.glowWeight,
+    sunPower: sky.glowPower,
   };
 }

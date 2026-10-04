@@ -1928,7 +1928,10 @@ function buildRenderer(
       setTerrainRain(scene, terrainMaterialFor(scene, "terrain"), weather.rain, seconds);
       water?.setRain(weather.rain);
       setWetWeather(weather.wetness);
-      atmosphere.update(weather, lighting.hour);
+      // The haze reads the sky state the lighting last applied; there is
+      // none until the table holds its first slices.
+      const sky = lighting.sky;
+      if (sky !== null) atmosphere.update(weather, sky);
       const stare = state.players.get(localId)?.stare ?? 0;
       // Rain on the lens: strongest looking up, cleared under the canopy,
       // smoothed over a second. The camera's pose is last frame's (it is set
