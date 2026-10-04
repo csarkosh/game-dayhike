@@ -50,14 +50,19 @@ describe("agx — the TS reference of the GLSL tone map", () => {
 });
 
 describe("white point", () => {
-  it("is the identity while the night factor is 0: through the day and the twilight", () => {
-    expect(whitePointMatrix(0)).toBe(IDENTITY);
-    // Noon is day by definition: its adapted light is the reference.
-    expect(skyStateFor(table, 12, CLEAR).night).toBe(0);
-    for (const hour of [12, 15, 17, 18, 18.25, 18.5, 19]) {
+  it("is the identity by day", () => {
+    // The morning, noon and the afternoon are day: no night factor, no shift.
+    for (const hour of [8, 12, 15, 17]) {
       const night = skyStateFor(table, hour, CLEAR).night;
-      expect(gradeRecordUnder(CLEAR, hour, night, 1).whitePoint === IDENTITY, `hour ${hour}`).toBe(night === 0);
+      expect(night, `hour ${hour}`).toBe(0);
+      expect(gradeRecordUnder(CLEAR, hour, night, 1).whitePoint, `hour ${hour}`).toBe(IDENTITY);
     }
+    // A quarter and a half hour past sunset the night factor has risen, and the white point has left the identity.
+    for (const hour of [18.25, 18.5]) {
+      const night = skyStateFor(table, hour, CLEAR).night;
+      expect(gradeRecordUnder(CLEAR, hour, night, 1).whitePoint, `hour ${hour}`).not.toBe(IDENTITY);
+    }
+    expect(whitePointMatrix(0)).toBe(IDENTITY);
   });
 
   it("cools with the night factor, to midnight's night white, unchanged", () => {
@@ -100,6 +105,8 @@ describe("gradeRecordUnder", () => {
     expect(gradeRecordUnder(CLEAR, 12, 0, 1).purkinjeStrength).toBe(0);
     expect(gradeRecordUnder(CLEAR, 18.5, 0.5, 1).purkinjeStrength).toBeCloseTo(0.4, 12);
     expect(gradeRecordUnder(CLEAR, 1, 1, 1).purkinjeStrength).toBeCloseTo(0.8, 10);
+    // Clamped as the white point's blend is: past 1 is still full night.
+    expect(gradeRecordUnder(CLEAR, 1, 1.5, 1).purkinjeStrength).toBe(0.8);
     // Through the sky state: noon's night factor and midnight's.
     expect(gradeRecordUnder(CLEAR, 12, skyStateFor(table, 12, CLEAR).night, 1).purkinjeStrength).toBe(0);
     expect(gradeRecordUnder(CLEAR, 0, skyStateFor(table, 0, CLEAR).night, 1).purkinjeStrength).toBeCloseTo(0.8, 10);
