@@ -27,7 +27,14 @@ export const FOG_FLOOR = 0.05;
  */
 const ARC_TILT = 0.25;
 
-const NIGHT_SKY: Rgb = { r: 0.02, g: 0.03, b: 0.06 };
+/**
+ * The night sky's own colour. The scattering table is effectively black from
+ * about 12 degrees below the horizon, so the dome adds this as its floor,
+ * standing in for the moonlit night sky: weighted by the night factor, it
+ * appears as the twilight fades, and midnight keeps the colour it has always
+ * had (`skyState.ts`).
+ */
+export const NIGHT_SKY: Readonly<Rgb> = Object.freeze({ r: 0.02, g: 0.03, b: 0.06 });
 const HORIZON_SKY: Rgb = { r: 0.62, g: 0.5, b: 0.42 };
 const DAY_SKY: Rgb = { r: 0.42, g: 0.58, b: 0.82 };
 
@@ -58,8 +65,12 @@ export const FILL_DAY = 0.15;
  */
 export const FILL_NIGHT = 1.2;
 
-/** A desaturated cool blue: moonlight, not the night sky's own near-black colour. */
-const MOONLIGHT: Rgb = { r: 0.2, g: 0.26, b: 0.4 };
+/**
+ * A desaturated cool blue: moonlight, not the night sky's own near-black
+ * colour. The fill's colour once the night factor has taken over from the
+ * sky's light (`skyState.ts`).
+ */
+export const MOONLIGHT: Readonly<Rgb> = Object.freeze({ r: 0.2, g: 0.26, b: 0.4 });
 
 /**
  * Where in the sun's altitude the day/night blend sits: 0 at the bottom of the

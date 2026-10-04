@@ -326,6 +326,31 @@ export function fogColourUnder(w: WeatherParams, hour: number): Rgb {
   return mixRgb(dimmed, target, DREAD_FOG_PULL * d);
 }
 
+/**
+ * The colour of the air over a horizon colour from the sky (`skyState.ts`):
+ * over the horizon away from the sun, the fog colour, the clear colour and the
+ * far end of the haze gradient; over the horizon toward it, the haze's glow.
+ * Nothing here dims a cloudy dusk: the sky's cloud deck already dims the base
+ * with the light. In order: pulled toward mist air by mist, the target scaled
+ * to the base's own luminance and capped at 1.2, so a dim dusk base is never
+ * lit by a fixed bright grey; desaturated by cloud; greyed toward its own
+ * luminance by rain; pulled toward the dread air without ever brightening. At
+ * clear every step is an exact copy of the base.
+ */
+export function airColourUnder(w: WeatherParams, base: Rgb): Rgb {
+  const c = clamp01(w.cloudCover);
+  const lift = Math.min(1.2, luma(base) / luma(MIST_AIR));
+  const air = { r: MIST_AIR.r * lift, g: MIST_AIR.g * lift, b: MIST_AIR.b * lift };
+  const grey = desaturateRgb(mixRgb(base, air, 0.5 * clamp01(w.mist)), 0.9 * c);
+  const r = clamp01(w.rain);
+  const wet = r === 0 ? grey : mixRgb(grey, { r: luma(grey), g: luma(grey), b: luma(grey) }, FOG_RAIN_GREY * r);
+  const d = dreadWorldUnder(w);
+  if (d === 0) return wet;
+  const dreadLift = Math.min(1, luma(wet) / luma(DREAD_AIR));
+  const target = { r: DREAD_AIR.r * dreadLift, g: DREAD_AIR.g * dreadLift, b: DREAD_AIR.b * dreadLift };
+  return mixRgb(wet, target, DREAD_FOG_PULL * d);
+}
+
 /** Babylon ShadowGenerator darkness: 0 = full shadows, 1 = invisible. */
 export function shadowDarknessUnder(w: WeatherParams): number {
   return clamp01(w.cloudCover);
