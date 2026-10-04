@@ -18,7 +18,7 @@ The physics and the costs behind the numbers here are in
 (section numbers below are the research's: §3 the coast's waves, §6 and §8 the
 techniques and their costs, §9 the options for this game).
 
-The owner's rulings that shape it:
+What shapes it:
 
 - As realistic as performance allows; costs are measured and reported, not set
   as bars beforehand.
@@ -416,7 +416,8 @@ pinned per reading, at noon, at dusk, and in the rain weather's storm sea:
 | A calm dawn | the cove at dawn, glassy | `ruby-11`, `rialto-11` |
 | The open sea | to the horizon, low sun | `kalaloch-11` |
 
-A gate passes on the owner's word. The cost is reported for the owner to judge.
+A gate passes when its stills show what it names. The cost is reported, with no
+bar set beforehand.
 
 ## 12. Out of scope
 
@@ -500,9 +501,10 @@ warmed, which bounds the figures below).
 | low (WebGL2) | +1.3 ms | +3.0 ms |
 
 Measured again on a quiet machine after the scattering sky shipped, against
-`main` with the sky and without the waves, at noon, twelve samples a side (the
-same build on both sides of a pair read +0.07 ms), the pad cost +2.70 / +1.35 /
-+0.25 ms (high / medium / low) and the open sea +4.49 / +2.02 / +2.63.
+`main` with the sky and without the waves, at noon, at 4K, twelve samples a
+side (the same build on both sides of a pair read +0.07 ms), the pad cost
++2.70 / +1.35 / +0.25 ms (high / medium / low) and the open sea
++4.49 / +2.02 / +2.63.
 
 Before the swell moved to the vertex stage the open sea cost +9.6 / +16.9 /
 +9.7 ms (high / medium / low) and the pad +4.7 / +7.9 / +3.6: the per-pixel
@@ -520,7 +522,7 @@ swell moved to the vertex stage; every page on its tier's engine with no
 console error. Two players in one party saw the same sea (their sea clocks
 within 0.03 s).
 
-| Gate | What the stills showed | The owner's word |
+| Gate | What the stills showed | Result |
 | --- | --- | --- |
 | The cove's surf | From the pad at eye height the 3 m berm hides most of the surf zone; from 18 m up the break line, the spilling crests and the lace show on every tier | passed |
 | Sets and white water | The white water lies as a sheet along the shore with lace beyond; over three minutes the larger crests come in groups | passed |
@@ -529,6 +531,7 @@ within 0.03 s).
 | The open sea | The storm sea's whitecaps at 1.1 % coverage; the horizon smooth from a low eye after the far-sea fade | passed |
 
 The one thing turned back lies outside this work: at 18:00 and 06:00 the sky
-reads near black above a sun at the horizon while the ground and the trees
-stay gold, which is the atmosphere's own lighting at those hours and shows on
-`main` the same way.
+read near black above a sun at the horizon while the ground and the trees
+stayed gold, which was the atmosphere's own lighting at those hours and showed
+on `main` the same way. The scattering sky has since replaced that sky
+([the scattering sky](2026-10-03-scattering-sky-design.md)).

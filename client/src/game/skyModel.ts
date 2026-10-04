@@ -74,7 +74,8 @@ export const MULTI_STEPS = 20;
  * spaced by the square of the step's index (VIEW_STEP_AT): doubling them
  * moves the clear noon zenith and horizon by half a per cent.
  * SKY_MIE_SCALE was set on these 24 steps (converged it would be about 3.8),
- * so a change here sets the scale again; its test fails until it is.
+ * so a change here can move that calibration, and the scale must be set again
+ * for it; its test does not always catch the move.
  */
 export const VIEW_STEPS = 24;
 /** Rows of a slice, elevation from the nadir to the zenith. */

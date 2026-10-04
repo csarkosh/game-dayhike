@@ -713,7 +713,9 @@ describe("deep twilight under a clear sky", () => {
    * plus its slope times the contrast's own bend. Where the contrast moves by
    * under 0.03 a step inside the band, as it does here (checked), the first
    * term is at most 6 x (0.03 / 0.2)^2 = 0.135; the second, 1.5 / 0.2 times a
-   * bend of a few thousandths, adds under 0.03. So the bound is about 0.135.
+   * bend of a few thousandths, adds under 0.03. So the bend is under about
+   * 0.16 in the worst case; 0.135, the first term, is the limit asserted, and
+   * the largest measured is 0.075.
    * The lobe, the weight times cos(phi)^power, bends no more where the power
    * moves smoothly. A larger bend is a step: the linear read of the
    * multiple scattering held the weight at 1 until 18:39 and then dropped it
