@@ -6,7 +6,7 @@ import {
   RING_ELEVATION_DEG, SKY_EYE_KM, SKY_GROUND_KM, SLICE_ALTITUDES_DEG, SLICE_AZIMUTHS, SLICE_ELEVATIONS, rowOfElevation,
   type SkySlice,
 } from "../../src/game/skyModel.js";
-import { buildSkyTableSync, NOON_ALTITUDE_DEG, type SkyTable } from "../../src/game/skyTable.js";
+import { buildSkyTableSync, NOON_ALTITUDE_DEG, sliceBracket, type SkyTable } from "../../src/game/skyTable.js";
 import {
   DECK_TAU, FILL_DAY_LUMA, GLOW_FULL_CONTRAST, GLOW_MIN_CONTRAST, GLOW_POWER_MAX, GLOW_POWER_MIN, MIST_HORIZON,
   NIGHT_YA_DAY, NIGHT_YA_NIGHT, SKY_GAMMA, SKY_IBL_SCALE, SKY_NOON_ZENITH_LUMINANCE, SUN_DISC_CAPTURE_MAX, SUN_DISC_COS,
@@ -376,12 +376,30 @@ describe("the haze glow's fit", () => {
     return out;
   }
 
-  it("recovers the power of a known fall-off at full weight", () => {
-    for (const power of [2, 8, 32]) {
+  it("recovers the power of a known fall-off at full weight, to within 1e-9", () => {
+    for (const power of [2, 5.5, 8, 20, 32]) {
       const fit = fitGlow(ring(power), grey(0.2));
       expect(fit.weight).toBe(1);
-      expect(fit.power).toBeCloseTo(power, 9);
+      expect(Math.abs(fit.power - power)).toBeLessThan(1e-9);
     }
+  });
+
+  it("fits in linear space: the power whose lobe misses the fall-off by the least sum of squares", () => {
+    // A sharp core over a long tail, as the dusk horizon has: no single power
+    // fits both, and the fit in linear space follows the bright core.
+    const falloff = (i: number): number => {
+      const c = Math.cos((Math.PI * i) / (SLICE_AZIMUTHS - 1));
+      return 0.7 * c ** 40 + 0.3 * c ** 3;
+    };
+    const twoLobes = Array.from({ length: SLICE_AZIMUTHS }, (_, i) => grey(i < SLICE_AZIMUTHS / 2 ? 0.2 + 0.8 * falloff(i) : 0.2));
+    const misfit = (p: number): number => {
+      let sum = 0;
+      for (let i = 1; i < SLICE_AZIMUTHS / 2; i++) sum += (Math.cos((Math.PI * i) / (SLICE_AZIMUTHS - 1)) ** p - falloff(i)) ** 2;
+      return sum;
+    };
+    const fit = fitGlow(twoLobes, grey(0.2));
+    for (let p = 1; p <= 64; p += 0.01) expect(misfit(fit.power)).toBeLessThanOrEqual(misfit(p));
+    expect(fit.power).toBeCloseTo(17.7, 2);
   });
 
   it("clamps the power to its range, and takes the largest when the ring cannot resolve the fall-off", () => {
@@ -403,6 +421,58 @@ describe("the haze glow's fit", () => {
       const w = fitGlow(ring(8, 0.2, 0.2 * (1.05 + 0.01 * k)), grey(0.2)).weight;
       expect(w).toBeGreaterThanOrEqual(previous);
       previous = w;
+    }
+  });
+});
+
+describe("the haze glow on the sky's own horizon toward sunset", () => {
+  /** The hours the reviewed glow was too wide at, 17:50 among them. */
+  const HOURS = [17, 17 + 50 / 60, 18];
+  let table: SkyTable;
+  beforeAll(() => {
+    const indices = new Set<number>(sliceBracket(NOON_ALTITUDE_DEG));
+    for (const hour of HOURS) for (const index of sliceBracket(Math.asin(sunPositionAt(hour).y) / DEG)) indices.add(index);
+    table = buildSkyTableSync([...indices].sort((a, b) => a - b).map((index) => SLICE_ALTITUDES_DEG[index] as number));
+  }, timeLimit(20_000));
+
+  /** The ring's luma per column as the state reads it under a clear sky, between the away mean (0) and toward the sun (1). */
+  function falloff(s: SkyState): number[] {
+    const away = luma(s.horizonAway);
+    const toward = luma(s.horizonToward);
+    return Array.from({ length: SLICE_AZIMUTHS }, (_, i) => {
+      const c = { r: s.clear.ring[i * 3]! * s.scale + s.nightFloor.r, g: s.clear.ring[i * 3 + 1]! * s.scale + s.nightFloor.g, b: s.clear.ring[i * 3 + 2]! * s.scale + s.nightFloor.b };
+      return (luma(c) - away) / (toward - away);
+    });
+  }
+
+  /** The fall-off at `deg` from the sun's azimuth, linear between the columns either side. */
+  function falloffAt(r: number[], deg: number): number {
+    const x = (deg / 180) * (SLICE_AZIMUTHS - 1);
+    const i = Math.floor(x);
+    return r[i]! + (r[i + 1]! - r[i]!) * (x - i);
+  }
+
+  it("is the power whose lobe misses the ring's own fall-off by the least sum of squares", () => {
+    for (const hour of HOURS) {
+      const s = skyStateFor(table, hour, CLEAR);
+      const r = falloff(s);
+      const misfit = (p: number): number => {
+        let sum = 0;
+        for (let i = 1; i < SLICE_AZIMUTHS / 2; i++) sum += (Math.cos((Math.PI * i) / (SLICE_AZIMUTHS - 1)) ** p - r[i]!) ** 2;
+        return sum;
+      };
+      for (let p = 1; p <= 64; p += 0.01) expect(misfit(s.glowPower), `hour ${hour}`).toBeLessThanOrEqual(misfit(p));
+    }
+  });
+
+  it("draws the glow no wider than 1.5 times the ring's fall-off at 20 and 30 degrees from the sun", () => {
+    for (const hour of HOURS) {
+      const s = skyStateFor(table, hour, CLEAR);
+      expect(s.glowWeight, `hour ${hour}`).toBe(1);
+      const r = falloff(s);
+      for (const deg of [20, 30]) {
+        expect(Math.cos(deg * DEG) ** s.glowPower / falloffAt(r, deg), `hour ${hour}, ${deg} degrees`).toBeLessThanOrEqual(1.5);
+      }
     }
   });
 });

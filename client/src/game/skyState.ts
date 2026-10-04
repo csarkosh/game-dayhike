@@ -262,6 +262,43 @@ export function captureEncode(c: Rgb): Rgb {
   return { r: encode(c.r), g: encode(c.g), b: encode(c.b) };
 }
 
+/** The cosine's logarithm at each column the glow's fit reads, 1 to
+ * GLOW_LAST: column i lies at azimuth pi i / (SLICE_AZIMUTHS - 1) from the
+ * sun's, and cos(phi)^p is exp(p ln cos(phi)). */
+const GLOW_LOG_COS: Float64Array = (() => {
+  const out = new Float64Array(GLOW_LAST + 1);
+  for (let i = 1; i <= GLOW_LAST; i++) out[i] = Math.log(Math.cos((Math.PI * i) / (SLICE_AZIMUTHS - 1)));
+  return out;
+})();
+/** Steps of the glow's search grid over its power range, each the same
+ * factor (GLOW_POWER_MAX / GLOW_POWER_MIN)^(1 / GLOW_GRID), 1.14. */
+const GLOW_GRID = 32;
+/** Golden-section steps within the best grid point's neighbours: the bracket
+ * of two grid steps shrinks to 0.618^48 of itself, under 1e-9 of the power. */
+const GLOW_REFINE = 48;
+const GOLDEN = (Math.sqrt(5) - 1) / 2;
+/** Each column's place between the away mean (0) and the column toward the
+ * sun (1), reused by every fit; NaN for a column the ring does not have. */
+const glowFalloff = new Float64Array(GLOW_LAST + 1);
+
+/** The fit's misfit at power p: the sum of the squared differences between
+ * cos(phi)^p and the fall-off held in glowFalloff, over the columns it holds. */
+function glowMisfit(p: number): number {
+  let sum = 0;
+  for (let i = 1; i <= GLOW_LAST; i++) {
+    const r = glowFalloff[i] as number;
+    if (Number.isNaN(r)) continue;
+    const d = Math.exp(p * (GLOW_LOG_COS[i] as number)) - r;
+    sum += d * d;
+  }
+  return sum;
+}
+
+/** The power at grid step k: GLOW_POWER_MIN at 0, GLOW_POWER_MAX at GLOW_GRID, both exactly. */
+function glowGridPower(k: number): number {
+  return GLOW_POWER_MIN * Math.pow(GLOW_POWER_MAX / GLOW_POWER_MIN, k / GLOW_GRID);
+}
+
 /**
  * The haze glow's power and weight, from the ring in scene units (column i at
  * azimuth pi i / (SLICE_AZIMUTHS - 1) from the sun's) and its mean away from
@@ -270,13 +307,17 @@ export function captureEncode(c: Rgb): Rgb {
  * The weight is 0 until the horizon toward the sun is GLOW_MIN_CONTRAST times
  * as bright as away and rises smoothly to 1 at GLOW_FULL_CONTRAST, so the
  * glow fades in and out with the hour rather than switching. The power is the
- * slope, through the origin, of ln r on ln cos(phi) over the columns short of
- * 90 degrees, where r is each column's luma between the away mean (0) and the
- * column toward the sun (1): the power of cos(phi) that the horizon's
- * fall-off follows. Each column counts by r (1 - r), so it enters and leaves
- * the fit smoothly as it nears either end and the power never steps between
- * adjacent hours. GLOW_POWER_MAX when no column lies between the ends: the
- * fall-off is sharper than the ring resolves.
+ * one in [GLOW_POWER_MIN, GLOW_POWER_MAX] whose cos(phi)^p comes nearest, in
+ * least squares, to the horizon's own fall-off r over the columns short of 90
+ * degrees, where r is each column's luma between the away mean (0) and the
+ * column toward the sun (1). Fitted in linear space, as the glow is drawn: the
+ * fog's colour toward the sun is the away colour mixed toward that column by
+ * the lobe, so the misfit counted is the colour the haze would miss the
+ * dome's horizon by, and the bright columns near the sun, where that colour
+ * is, count for most. Searched on a grid even in the power's logarithm, then
+ * by golden section between the best grid point's neighbours: a fixed number
+ * of steps, so the same ring always gives the same power. Either end of the
+ * range is kept exactly where the misfit is least there.
  */
 export function fitGlow(ring: readonly Rgb[], away: Rgb): { power: number; weight: number } {
   const la = luma(away);
@@ -285,20 +326,45 @@ export function fitGlow(ring: readonly Rgb[], away: Rgb): { power: number; weigh
   if (!(lt > GLOW_MIN_CONTRAST * la)) return { power: GLOW_POWER_MIN, weight: 0 };
   const weight = smoothstep01((lt - GLOW_MIN_CONTRAST * la) / ((GLOW_FULL_CONTRAST - GLOW_MIN_CONTRAST) * la));
   const span = lt - la;
-  let xy = 0;
-  let xx = 0;
   for (let i = 1; i <= GLOW_LAST; i++) {
     const column = ring[i];
-    if (column === undefined) continue;
-    const r = (luma(column) - la) / span;
-    if (!(r > 0 && r < 1)) continue;
-    const x = Math.log(Math.cos((Math.PI * i) / (SLICE_AZIMUTHS - 1)));
-    const k = r * (1 - r);
-    xy += k * x * Math.log(r);
-    xx += k * x * x;
+    glowFalloff[i] = column === undefined ? Number.NaN : (luma(column) - la) / span;
   }
-  if (!(xx > 0)) return { power: GLOW_POWER_MAX, weight };
-  return { power: Math.min(GLOW_POWER_MAX, Math.max(GLOW_POWER_MIN, xy / xx)), weight };
+  let best = 0;
+  let bestMisfit = glowMisfit(glowGridPower(0));
+  for (let k = 1; k <= GLOW_GRID; k++) {
+    const misfit = glowMisfit(glowGridPower(k));
+    if (misfit < bestMisfit) {
+      best = k;
+      bestMisfit = misfit;
+    }
+  }
+  let a = glowGridPower(Math.max(best - 1, 0));
+  let b = glowGridPower(Math.min(best + 1, GLOW_GRID));
+  let c = b - GOLDEN * (b - a);
+  let d = a + GOLDEN * (b - a);
+  let fc = glowMisfit(c);
+  let fd = glowMisfit(d);
+  for (let step = 0; step < GLOW_REFINE; step++) {
+    if (fc <= fd) {
+      b = d;
+      d = c;
+      fd = fc;
+      c = b - GOLDEN * (b - a);
+      fc = glowMisfit(c);
+    } else {
+      a = c;
+      c = d;
+      fc = fd;
+      d = a + GOLDEN * (b - a);
+      fd = glowMisfit(d);
+    }
+  }
+  const refined = (a + b) / 2;
+  // The grid point stands where the refined power does no better: at either
+  // end of the range, where the misfit falls all the way to it, that end exactly.
+  const power = glowMisfit(refined) < bestMisfit ? refined : glowGridPower(best);
+  return { power, weight };
 }
 
 /**
