@@ -43,6 +43,25 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
   return { Engine: mod.NullEngine };
 });
 
+// The sky source a renderer starts when it is given no table: here the
+// fixture's table, at once, so every renderer in this file lights itself as
+// it is built, with a record of each source started and stopped.
+const skySources = vi.hoisted(() => ({ started: [] as number[], stopped: 0 }));
+vi.mock("../../src/game/skyWorker.js", async () => {
+  const { skyFixture } = await import("./helpers/skyFixture.js");
+  return {
+    startSkySource: (startDeg: number) => {
+      skySources.started.push(startDeg);
+      return {
+        table: skyFixture(),
+        dispose: () => {
+          skySources.stopped += 1;
+        },
+      };
+    },
+  };
+});
+
 // Every pose the renderer hands the blade field to cut to, recorded on the way
 // through to the real shell (which still cuts), so a test can read what the
 // renderer's per-frame cull hook measured.
@@ -92,6 +111,7 @@ import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldS
 import { createForest } from "../../src/sim/forest.js";
 import { elevationAt } from "../../src/sim/terrain.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 
 let engine: NullEngine | null = null;
 
@@ -371,6 +391,29 @@ describe("renderer.wind()", () => {
     } finally {
       renderer.dispose();
     }
+  });
+});
+
+describe("the renderer's sky", () => {
+  it("starts a source of its own at the default hour's sun when it is given no table, and stops it with itself", () => {
+    skySources.started.length = 0;
+    skySources.stopped = 0;
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low" });
+    // Noon's sun, 75.96 degrees up the tilted arc.
+    expect(skySources.started.length).toBe(1);
+    expect(skySources.started[0]).toBeCloseTo(75.96375653207352, 10);
+    expect(skySources.stopped).toBe(0);
+    renderer.dispose();
+    expect(skySources.stopped).toBe(1);
+  });
+
+  it("reads a table it is given, and starts and stops no source of its own", () => {
+    skySources.started.length = 0;
+    skySources.stopped = 0;
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture() });
+    renderer.dispose();
+    expect(skySources.started).toEqual([]);
+    expect(skySources.stopped).toBe(0);
   });
 });
 
@@ -863,6 +906,6 @@ describe("a part the renderer disposes is also torn down when a build fails", ()
     const registered = new Set([...src.matchAll(/partOf\((\w+)\);/g)].map((m) => m[1]!));
     if (/made\(\(\) => \{\s*for \(const m of brushMeshes\) m\.dispose\(\);/.test(src)) registered.add("brushMeshes");
     expect([...registered].sort()).toEqual([...disposed].sort());
-    expect(disposed.size).toBe(21);
+    expect(disposed.size).toBe(22);
   });
 });

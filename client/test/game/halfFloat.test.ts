@@ -73,4 +73,18 @@ describe("rgbToHalfRgba", () => {
   it("packs a whole slice: 32 x 64 texels to 8192 halves", () => {
     expect(rgbToHalfRgba(new Float32Array(32 * 64 * 3)).length).toBe(32 * 64 * 4);
   });
+
+  it("fills and returns an output it is given, every word of it", () => {
+    const out = new Uint16Array(8).fill(0xffff);
+    const packed = rgbToHalfRgba(new Float32Array([0, 1, -2, 0.5, 65504, 2 ** -24]), out);
+    expect(packed).toBe(out);
+    expect([...out]).toEqual([0x0000, 0x3c00, 0xc000, 0x3c00, 0x3800, 0x7bff, 0x0001, 0x3c00]);
+  });
+
+  it("refuses an output that is not four halves for each RGB triple", () => {
+    const rgb = new Float32Array(6);
+    expect(() => rgbToHalfRgba(rgb, new Uint16Array(7))).toThrow(RangeError);
+    expect(() => rgbToHalfRgba(rgb, new Uint16Array(9))).toThrow(RangeError);
+    expect(() => rgbToHalfRgba(rgb, new Uint16Array(6))).toThrow(RangeError);
+  });
 });

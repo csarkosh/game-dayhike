@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  airColourUnder, ambientColourUnder, ambientGainsUnder, exposureUnder, fillIntensityUnder,
+  airColourUnder, ambientGainsUnder, exposureUnder,
   fogColourUnder, fogDensityUnder, mistOpacityUnder,
-  saturationUnder, shadowDarknessUnder, skyMaterialParamsUnder,
-  sunColourUnder, sunIntensityUnder, wetSurfaceUnder,
+  saturationUnder, shadowDarknessUnder, wetSurfaceUnder,
   DEFAULT_WEATHER,
   lerpWeather,
   weatherFadeAt,
@@ -40,10 +39,7 @@ import {
   rainWindCut,
 } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
-import {
-  ambientColourFor, exposureFor, fillIntensityFor, fogDensityFor,
-  skyColourAt, sunColourAt, sunIntensityAt, sunPositionAt,
-} from "../../src/game/sky.js";
+import { exposureFor, fogDensityFor, skyColourAt, sunPositionAt } from "../../src/game/sky.js";
 import { desaturateRgb, luma, type Rgb } from "../../src/game/colour.js";
 
 describe("weather model", () => {
@@ -101,20 +97,13 @@ const MIST = WEATHER_PRESETS.mist;
 describe("clear-identity sweep — the sunny look survives, exactly", () => {
   it("every hour-domain modifier at clear returns its base value", () => {
     for (let hour = 0; hour < 24; hour += 0.25) {
-      expect(sunIntensityUnder(CLEAR, hour)).toBe(sunIntensityAt(hour));
-      expect(sunColourUnder(CLEAR, hour)).toEqual(sunColourAt(hour));
-      expect(ambientColourUnder(CLEAR, hour)).toEqual(ambientColourFor(hour));
       expect(fogColourUnder(CLEAR, hour)).toEqual(skyColourAt(hour));
       const altitude = sunPositionAt(hour).y;
-      expect(fillIntensityUnder(CLEAR, altitude)).toBe(fillIntensityFor(altitude));
       expect(exposureUnder(CLEAR, altitude)).toBe(exposureFor(altitude));
     }
   });
 
   it("every scalar modifier at clear is the identity or zero", () => {
-    expect(skyMaterialParamsUnder(CLEAR)).toEqual({
-      turbidity: 4, luminance: 1, rayleigh: 2, mieCoefficient: 0.005, mieDirectionalG: 0.8,
-    });
     expect(fogDensityUnder(CLEAR, 4000)).toBe(fogDensityFor(4000));
     expect(shadowDarknessUnder(CLEAR)).toBe(0);
     expect(saturationUnder(CLEAR)).toBe(0); // Babylon curves: 0 is neutral
@@ -188,8 +177,7 @@ describe("the rain's sound", () => {
 });
 
 describe("modifiers under weather", () => {
-  it("full cloud kills 90% of direct sun and full mist multiplies fog 12x", () => {
-    expect(sunIntensityUnder(RAIN, 12)).toBeCloseTo(0.1 * sunIntensityAt(12), 10);
+  it("full mist multiplies fog 12x", () => {
     expect(fogDensityUnder(MIST, 4000)).toBeCloseTo(12 * fogDensityFor(4000), 10);
   });
 
@@ -198,13 +186,7 @@ describe("modifiers under weather", () => {
     expect(saturationUnder(RAIN)).toBe(-SATURATION_DROP);
   });
 
-  it("sun dimming is monotonic in cloud cover; fog is monotonic in mist", () => {
-    let prev = Infinity;
-    for (let c = 0; c <= 1; c += 0.1) {
-      const v = sunIntensityUnder({ ...CLEAR, cloudCover: c }, 12);
-      expect(v).toBeLessThanOrEqual(prev);
-      prev = v;
-    }
+  it("fog is monotonic in mist", () => {
     let prevFog = 0;
     for (let m = 0; m <= 1; m += 0.1) {
       const v = fogDensityUnder({ ...CLEAR, mist: m }, 4000);

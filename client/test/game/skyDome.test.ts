@@ -68,6 +68,23 @@ describe("createSkyDome", () => {
     expect(dome.material.backFaceCulling).toBe(false);
   });
 
+  it("stays out of the scene's fog: under it Babylon would add a fog define the stages never read", async () => {
+    const gpu = webgpuProcessingEngine();
+    const gpuScene = new Scene(gpu);
+    try {
+      gpuScene.activeCamera = new UniversalCamera("eye", new Vector3(0, 2, 0), gpuScene);
+      gpuScene.fogMode = Scene.FOGMODE_EXP2;
+      const made = createSkyDome(gpuScene, "post");
+      expect(made.mesh.applyFog).toBe(false);
+      const effect = await drawnEffect(made.mesh);
+      expect((effect as unknown as { defines: string }).defines).not.toContain("FOG");
+      made.dispose();
+    } finally {
+      gpuScene.dispose();
+      gpu.dispose();
+    }
+  }, timeLimit(10_000));
+
   it("builds its material from the two stages it stores, with the position, the uniforms and the table", () => {
     const s = scene();
     dome = createSkyDome(s, "post");
@@ -149,6 +166,22 @@ describe("createSkyDome", () => {
     // Every sky uniform holds a value: none is left to the engine's default.
     const set = [...Object.keys(m._floats), ...Object.keys(m._vectors3)].sort();
     expect(set).toEqual(SKY_DOME_UNIFORMS.filter((u) => u.startsWith("sky")).sort());
+  });
+
+  it("update uploads from one buffer, made with the dome, refilled each time", () => {
+    const s = scene();
+    dome = createSkyDome(s, "post");
+    const table = held(dome.material)._textures["skyTable"]!;
+    const internal = table.getInternalTexture() as unknown as { _bufferView: Uint16Array };
+    const made = internal._bufferView;
+    const noon = skyStateFor(skyFixture(), 12, WEATHER_PRESETS.clear);
+    dome.update(noon, 0.9);
+    expect(internal._bufferView).toBe(made);
+    expect([...made]).toEqual([...rgbToHalfRgba(noon.clear.texels)]);
+    const dusk = skyStateFor(skyFixture(), 18, WEATHER_PRESETS.clear);
+    dome.update(dusk, 1.3);
+    expect(internal._bufferView).toBe(made);
+    expect([...made]).toEqual([...rgbToHalfRgba(dusk.clear.texels)]);
   });
 
   it("setCapture switches the capture output on and off", () => {

@@ -1,17 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   FOG_FLOOR,
-  SUN_PEAK,
-  ambientColourFor,
   exposureFor,
-  fillIntensityFor,
-  FILL_DAY,
-  FILL_NIGHT,
   fogDensityFor,
   skyColourAt,
   sunColourAt,
-  sunIntensityAt,
-  sunIntensityFor,
   sunPositionAt,
 } from "../../src/game/sky.js";
 
@@ -70,31 +63,6 @@ describe("sunPositionAt", () => {
 
   it("is deterministic", () => {
     expect(sunPositionAt(9.37)).toEqual(sunPositionAt(9.37));
-  });
-});
-
-describe("sunIntensityFor", () => {
-  it("is dark below the horizon", () => {
-    expect(sunIntensityFor(-0.01)).toBe(0);
-    expect(sunIntensityFor(-1)).toBe(0);
-  });
-
-  it("rises monotonically with altitude", () => {
-    let previous = -1;
-    for (let a = 0; a <= 1.0001; a += 0.02) {
-      const value = sunIntensityFor(a);
-      expect(value).toBeGreaterThanOrEqual(previous);
-      previous = value;
-    }
-  });
-
-  it("reaches SUN_PEAK at the zenith", () => {
-    expect(sunIntensityFor(1)).toBeCloseTo(SUN_PEAK, 10);
-  });
-
-  it("is brighter at noon than at dusk", () => {
-    expect(sunIntensityAt(12)).toBeGreaterThan(sunIntensityAt(17.5));
-    expect(sunIntensityAt(0)).toBe(0);
   });
 });
 
@@ -183,67 +151,6 @@ describe("exposureFor", () => {
 
   it("stays positive", () => {
     for (let a = -1; a <= 1; a += 0.1) expect(exposureFor(a)).toBeGreaterThan(0);
-  });
-});
-
-describe("fillIntensityFor", () => {
-  it("is non-increasing as altitude rises", () => {
-    // Brighter fill as the sun sinks: it is the only light left once the sun
-    // sets, so it must never get dimmer while the sun is climbing.
-    let previous = Infinity;
-    for (let a = -1; a <= 1.0001; a += 0.02) {
-      const value = fillIntensityFor(a);
-      expect(value).toBeLessThanOrEqual(previous);
-      previous = value;
-    }
-  });
-
-  it("is continuous, so a /time sweep does not step", () => {
-    let previous = fillIntensityFor(-1);
-    for (let a = -1; a <= 1.0001; a += 0.01) {
-      const value = fillIntensityFor(a);
-      expect(Math.abs(value - previous)).toBeLessThan(0.05);
-      previous = value;
-    }
-  });
-
-  it("is strictly brighter at night than by day", () => {
-    expect(fillIntensityFor(-1)).toBeGreaterThan(fillIntensityFor(1));
-    expect(fillIntensityFor(-1)).toBeCloseTo(FILL_NIGHT, 10);
-    expect(fillIntensityFor(1)).toBeCloseTo(FILL_DAY, 10);
-  });
-
-  it("stays positive", () => {
-    for (let a = -1; a <= 1; a += 0.1) expect(fillIntensityFor(a)).toBeGreaterThan(0);
-  });
-});
-
-describe("ambientColourFor", () => {
-  it("stays in gamut across the whole day", () => {
-    for (let h = 0; h < 24; h += 0.5) {
-      const c = ambientColourFor(h);
-      for (const v of [c.r, c.g, c.b]) {
-        expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThanOrEqual(1);
-      }
-    }
-  });
-
-  it("matches the sky colour by day", () => {
-    const noon = ambientColourFor(12);
-    const sky = skyColourAt(12);
-    expect(noon.r).toBeCloseTo(sky.r, 5);
-    expect(noon.g).toBeCloseTo(sky.g, 5);
-    expect(noon.b).toBeCloseTo(sky.b, 5);
-  });
-
-  it("is a cool moonlight tint at night, not the near-black night sky colour", () => {
-    const midnight = ambientColourFor(0);
-    const sky = skyColourAt(0);
-    // The night sky colour is near-black; moonlight must be substantially
-    // brighter than it so night stays legible.
-    const sum = (c: { r: number; g: number; b: number }) => c.r + c.g + c.b;
-    expect(sum(midnight)).toBeGreaterThan(sum(sky) * 3);
   });
 });
 

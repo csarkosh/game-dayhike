@@ -3,7 +3,6 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color.js";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
-import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
 import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
@@ -16,22 +15,18 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 // hours on thin instances in `renderer.ts`.
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js";
 import { ReflectionProbe } from "@babylonjs/core/Probes/reflectionProbe.js";
-import { SkyMaterial } from "@babylonjs/materials/sky/skyMaterial.js";
 
 import { QUALITY, type QualityTier } from "./quality.js";
 import { sunPositionAt } from "./sky.js";
+import { NOON_ALTITUDE_DEG, type SkyTable } from "./skyTable.js";
+import { SKY_IBL_SCALE, skyStateFor, type SkyState } from "./skyState.js";
+import { createSkyDome } from "./skyDome.js";
 import {
   DEFAULT_WEATHER,
   WEATHER_PRESETS,
   weatherFadeAt,
   type WeatherParams,
-  skyMaterialParamsUnder,
-  sunIntensityUnder,
-  sunColourUnder,
-  fillIntensityUnder,
-  ambientColourUnder,
   fogDensityUnder,
-  fogColourUnder,
   shadowDarknessUnder,
   exposureUnder,
   ambientCollapseUnder,
@@ -40,11 +35,26 @@ import {
 /** Matches the `/time` command's `defaultValue` in `commands.ts`. */
 export const DEFAULT_HOUR = 12;
 
-/** Big enough to sit outside any view, small enough to stay inside the far plane. */
-const SKYBOX_SIZE = 8000;
-
 /** Cube face resolution for the environment probe. */
 const PROBE_SIZE = 128;
+
+/**
+ * The sun's altitude at `hour`, in degrees: the altitude the sky's table is
+ * read at. Below the lowest slice the table serves the lowest slice
+ * (`sliceBracket`), so the deep night needs no slice of its own.
+ */
+export function sunAltitudeDeg(hour: number): number {
+  return (Math.asin(sunPositionAt(hour).y) * 180) / Math.PI;
+}
+
+/**
+ * Whether `table` holds what the sky state at `hour` is made from: the
+ * slices either side of noon, which fix the scale and the adaptation, and
+ * those either side of the hour's sun.
+ */
+export function skyHeld(table: SkyTable, hour: number): boolean {
+  return table.has(NOON_ALTITUDE_DEG) && table.has(sunAltitudeDeg(hour));
+}
 
 /**
  * How far cascaded shadows reach, in metres. Deliberately NOT `viewDistance`.
@@ -82,6 +92,13 @@ export type LightingOptions = {
    * postParams.ts before either this or the post chain is built.
    */
   colourPath: "post" | "material";
+  /**
+   * The sky's slices (`skyTable.ts`), filled off the main thread by whoever
+   * made the table (`skyWorker.ts`). Nothing of the sky is applied until the
+   * table holds the slices either side of noon and of the hour (`skyHeld`);
+   * a slice that arrives while that waits tries again.
+   */
+  sky: SkyTable;
 };
 
 export type Lighting = {
@@ -96,6 +113,13 @@ export type Lighting = {
   setWeather(next: WeatherParams, fadeSeconds?: number): void;
   /** A copy of the current, possibly mid-fade, weather parameters. */
   readonly weather: WeatherParams;
+  /**
+   * The sky state of the last apply (`skyStateFor`), a new object each
+   * apply: what the dome drew and what the haze and the grade read. Null
+   * until the table first holds the slices either side of noon and of the
+   * hour.
+   */
+  readonly sky: SkyState | null;
   readonly shadows: CascadedShadowGenerator | null;
   /** The direction the sun's light travels (the directional light's own
    * vector, live, not a copy): the negation of the direction to the sun. */
@@ -123,29 +147,31 @@ export type Lighting = {
    */
   removeShadowMesh(mesh: AbstractMesh): void;
   /**
-   * Releases the objects this created: the sky material and skybox, the sun
-   * and fill lights, the shadow generator, and the reflection probe. It does
-   * not restore the scene state it borrowed and mutated in place — fog mode,
-   * density and colour, clear colour, tone-mapping enabled/type/contrast,
-   * exposure, and the engine's hardware scaling are the caller's to reset,
-   * because `createLighting` never owned them, only set them. In practice the
-   * renderer disposes the whole `Scene` on teardown, so restoring here would
-   * be dead code; if that ever stops being true, restoring becomes this
-   * function's job too.
+   * Releases the objects this created: the sky dome, the sun and fill
+   * lights, the shadow generator and the reflection probe, and stops
+   * listening to the sky's table, which outlives it. It does not restore the
+   * scene state it borrowed and mutated in place — fog mode, density and
+   * colour, clear colour, tone-mapping enabled/type/contrast, exposure, and
+   * the engine's hardware scaling are the caller's to reset, because
+   * `createLighting` never held them, only set them. In practice the renderer
+   * disposes the whole `Scene` on teardown, so restoring here would be dead
+   * code; if that ever stops being true, restoring becomes this function's
+   * job too.
    */
   dispose(): void;
 };
 
 /**
- * Everything that turns a scene from flat to lit: a procedural sky, a sun with
- * cascaded shadows, image-based ambient captured from that sky, aerial
- * perspective tinted to match, and one of two colour paths — the grade pass
- * on `"post"`, Babylon's own Khronos Neutral tone mapping and colour curves
- * on `"material"` — chosen by `postFeaturesFor` in postParams.ts.
+ * Everything that turns a scene from flat to lit: the scattering sky's dome,
+ * a sun with cascaded shadows, image-based ambient captured from that dome,
+ * aerial perspective tinted to match, and one of two colour paths — the grade
+ * pass on `"post"`, Babylon's own Khronos Neutral tone mapping and colour
+ * curves on `"material"` — chosen by `postFeaturesFor` in postParams.ts.
  *
- * This is the Babylon shell. Every number it applies comes from `sky.ts` and
- * `quality.ts`, which are pure and tested; what is left here is wiring, and the
- * traps are in the wiring rather than the arithmetic.
+ * This is the Babylon shell. Every number it applies comes from the sky state
+ * (`skyState.ts`, made from the table's slices), `weather.ts` and
+ * `quality.ts`, which are pure and tested; what is left here is wiring, and
+ * the traps are in the wiring rather than the arithmetic.
  *
  * On the sky, there are two valid paths and this is the development
  * one: a dynamic sky captured to a reflection probe, which is what lets the sun
@@ -155,6 +181,7 @@ export type Lighting = {
  */
 export function createLighting(scene: Scene, options: LightingOptions): Lighting {
   const settings = QUALITY[options.tier];
+  const table = options.sky;
   let hour = options.hour ?? DEFAULT_HOUR;
   let weather: WeatherParams = { ...(options.weather ?? WEATHER_PRESETS[DEFAULT_WEATHER]) };
   const viewDistance = options.viewDistance;
@@ -162,37 +189,22 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   let fadeTarget: WeatherParams = weather;
   let fadeDuration = 0;
   let fadeElapsed = 0;
+  /** The state of the last apply that found its slices; null before the first. */
+  let sky: SkyState | null = null;
+  /** The last apply found the table without its slices: the next slice to arrive applies again. */
+  let waiting = true;
 
   scene.getEngine().setHardwareScalingLevel(settings.hardwareScaling);
 
-  // GLSL on every engine (the third argument), so the sky is one source on
-  // WebGL2 and WebGPU alike; a no-op on WebGL2, where every material is GLSL.
-  const sky = new SkyMaterial("skyMaterial", scene, true);
-  sky.backFaceCulling = false;
-  // Drive the sky from an explicit sun vector rather than from its own
-  // inclination and azimuth, so exactly one function decides where the sun is
-  // and the light and the sky cannot disagree.
-  sky.useSunPosition = true;
-
-  const skybox = MeshBuilder.CreateBox("skybox", { size: SKYBOX_SIZE }, scene);
-  skybox.material = sky;
-  skybox.infiniteDistance = true;
-  skybox.isPickable = false;
-  // Load-bearing, not cosmetic. SkyMaterial participates in fog like any other
-  // material, and `infiniteDistance` only translates the box with the camera —
-  // it does not shrink the geometry, so a face centre is still ~4000m out at
-  // SKYBOX_SIZE = 8000. EXP2 fog's exponent grows with distance squared, so at
-  // any view distance worth having, that saturates to fully fogged: the sun
-  // disc, Rayleigh gradient and Mie scatter all collapse to one flat colour,
-  // and the reflection probe (which renders exactly this skybox) captures six
-  // uniform faces instead of a directional sky.
-  skybox.applyFog = false;
+  // The dome: the sky's table drawn on a box that rides with the camera. It
+  // adds no light, so the sun below stays light 0 and the fill light 1, the
+  // order the foliage light plugin reads them in.
+  const dome = createSkyDome(scene, options.colourPath);
 
   const sun = new DirectionalLight("sun", new Vector3(0, -1, 0), scene);
-  // Hemispheric fill stays for ambient. Intensity and
-  // colour are both set by `apply()`, below, which runs once at the end of
-  // this function — there is no separate value assigned here to drift out of
-  // step with it.
+  // Hemispheric fill stays for ambient. Its intensity and colour are the sky
+  // state's, set by `apply()` once the table holds its slices; until then it
+  // keeps Babylon's defaults, which no frame shows.
   const fill = new HemisphericLight("fill", new Vector3(0, 1, 0), scene);
 
   // CascadedShadowGenerator needs float or half-float render targets, which
@@ -248,15 +260,30 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     shadows.normalBias = 0.3;
   }
 
-  const probe = new ReflectionProbe("environment", PROBE_SIZE, scene);
+  // Half float where the engine renders it: the dusk horizon is brighter
+  // than 1, and an 8-bit capture clipped it before any material read it.
+  // Half float rather than float because RGBA16F filters on WebGL2 and on
+  // WebGPU's core features alike. Gamma-flagged (linearSpace false) as it
+  // always was: a linear probe flips Babylon's GAMMAREFLECTION define in
+  // every PBR material, so the dome's capture branch writes the gamma
+  // encoding instead and every material decodes the dome's linear radiance.
+  const halfFloatTargets = scene.getEngine().getCaps().textureHalfFloatRender;
+  const probe = new ReflectionProbe("environment", PROBE_SIZE, scene, true, halfFloatTargets, false);
   // Assignment, not `renderList?.push(...)`: a null `renderList` means "render
   // the entire scene" in Babylon, so the optional chain would silently skip
   // rather than fail loudly if that default ever changed.
-  probe.renderList = [skybox];
-  // The sky only changes when the hour does, so re-rendering the probe every
-  // frame would be six cube faces of pure waste.
+  probe.renderList = [dome.mesh];
+  // The sky changes only with the hour, the weather or the table, so
+  // re-rendering the probe every frame would be six cube faces of pure waste.
   probe.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
-  scene.environmentTexture = probe.cubeTexture;
+  // Each face the probe draws takes the dome's capture branch: the gamma
+  // encoding of the linear composition on either colour path, never tone
+  // mapped, and the sun's disc capped so a few texels of HDR sun do not
+  // sparkle in rough reflections.
+  const capture = probe.cubeTexture;
+  const captureOn = capture.onBeforeRenderObservable.add(() => dome.setCapture(true));
+  const captureOff = capture.onAfterRenderObservable.add(() => dome.setCapture(false));
+  scene.environmentTexture = capture;
 
   const image = scene.imageProcessingConfiguration;
   if (options.colourPath === "post") {
@@ -281,66 +308,62 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   scene.fogMode = Scene.FOGMODE_EXP2;
 
   function apply(): void {
-    const toSun = sunPositionAt(hour);
+    // Until the table holds the slices either side of noon and of the hour,
+    // the state cannot be made: whatever stands (the defaults, or the last
+    // hour's light) stays, and the next slice to arrive tries again.
+    waiting = !skyHeld(table, hour);
+    if (waiting) return;
+    const s = skyStateFor(table, hour, weather);
+    sky = s;
+
     // A DirectionalLight's `direction` is the direction light TRAVELS, which is
     // the negation of the direction toward the sun. Backwards here lights the
     // world from underground at noon.
-    sun.direction.set(-toSun.x, -toSun.y, -toSun.z);
-
-    const skyParams = skyMaterialParamsUnder(weather);
-    sky.turbidity = skyParams.turbidity;
-    sky.luminance = skyParams.luminance;
-    sky.rayleigh = skyParams.rayleigh;
-    sky.mieCoefficient = skyParams.mieCoefficient;
-    sky.mieDirectionalG = skyParams.mieDirectionalG;
-
-    sun.intensity = sunIntensityUnder(weather, hour);
-    const warm = sunColourUnder(weather, hour);
-    sun.diffuse = new Color3(warm.r, warm.g, warm.b);
+    sun.direction.set(-s.sunDir.x, -s.sunDir.y, -s.sunDir.z);
+    sun.intensity = s.sunIntensity;
+    sun.diffuse = new Color3(s.sunColour.r, s.sunColour.g, s.sunColour.b);
     // Specular defaults to white; without this, sunrise goes warm orange while
     // every highlight stays neutral, disagreeing about what colour the sun is.
     sun.specular = sun.diffuse;
 
-    sky.sunPosition = new Vector3(toSun.x, toSun.y, toSun.z);
-
-    const air = fogColourUnder(weather, hour);
-    scene.fogColor = new Color3(air.r, air.g, air.b);
-    // Matters even behind a skybox: it is what shows through on any frame the
-    // skybox has not drawn, and it keeps the sandbox level coherent too.
-    scene.clearColor = new Color4(air.r, air.g, air.b, 1);
+    // The fog and the clear colour are the dome's horizon away from the sun
+    // under the weather's mist (`SkyState.mistAir`), so the haze dissolves into
+    // the sky it stands against. The clear colour matters even behind the
+    // dome: it is what shows through on any frame the dome has not drawn.
+    scene.fogColor = new Color3(s.mistAir.r, s.mistAir.g, s.mistAir.b);
+    scene.clearColor = new Color4(s.mistAir.r, s.mistAir.g, s.mistAir.b, 1);
     scene.fogDensity = fogDensityUnder(weather, viewDistance);
 
-    // The fill's colour and intensity, not the sky's own colour and a fixed
-    // intensity: at night the sky is near-black, and a fill lit by it plus a
-    // sun contributing zero is why night used to render pure black (roughly
-    // 0.005 of ambient light at hour 21 versus ~4.0 at noon). `ambientColourFor`
-    // swaps in a moonlight tint instead of
-    // following the sky all the way to black, and `fillIntensityFor` raises
-    // the intensity to match, since the fill is the only light left once the
-    // sun sets. Kept low by day for the opposite reason: the reflection probe
-    // below is doing most of the ambient work by then, and a fixed 0.55 (the
-    // old constant) would wash out everything the image-based lighting
-    // contributes.
-    const ambient = ambientColourUnder(weather, hour);
-    fill.diffuse = new Color3(ambient.r, ambient.g, ambient.b);
+    // The fill: the sky's light on level ground by day and moonlight by night,
+    // weighed by the night factor (`skyState.ts`). By day the probe below does
+    // most of the ambient work; at night the fill is the light left.
+    fill.diffuse = new Color3(s.fillColour.r, s.fillColour.g, s.fillColour.b);
     const collapse = ambientCollapseUnder(weather);
-    fill.intensity = fillIntensityUnder(weather, toSun.y) * collapse;
+    fill.intensity = s.fillIntensity * collapse;
     // The probe's share of the ambient collapses with the fill, so the top
     // plateau reads as the light going, not the fill alone dimming.
-    scene.environmentIntensity = collapse;
+    scene.environmentIntensity = collapse * SKY_IBL_SCALE;
 
     // Read on both paths: the grade pass reads it from the same record, and on
     // the post path the value is simply unused by materials.
-    image.exposure = exposureUnder(weather, toSun.y);
+    image.exposure = exposureUnder(weather, s.sunDir.y);
     // Overcast has no directional shadows: fade them rather than reconfigure the CSM.
     shadows?.setDarkness(shadowDarknessUnder(weather));
 
-    // One more capture at the new sun angle, then idle again.
-    probe.cubeTexture.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+    dome.update(s, image.exposure);
+    // One more capture of the dome as it now stands, then idle again.
+    capture.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
   }
 
-  // The /weather fade — and, later, the scripted sunny-to-eerie turn — advance
-  // here. apply() re-renders the probe each tick; its render list is one skybox,
+  // A slice that arrives while an apply waits for one tries it again. Once
+  // the table holds an hour's slices, later ones fill hours the sun has not
+  // reached and change nothing for this one.
+  const offTable = table.onChange(() => {
+    if (waiting) apply();
+  });
+
+  // The /weather fade — and the escalation's turn toward eerie — advance
+  // here. apply() re-renders the probe each tick; its render list is one dome,
   // six cheap faces.
   const fadeObserver = scene.onBeforeRenderObservable.add(() => {
     if (fadeFrom === null) return;
@@ -358,6 +381,9 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     },
     get weather() {
       return { ...weather };
+    },
+    get sky() {
+      return sky;
     },
     get sunDirection() {
       return sun.direction;
@@ -387,23 +413,25 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
       shadows?.removeShadowCaster(mesh);
     },
     dispose() {
+      offTable();
       scene.onBeforeRenderObservable.remove(fadeObserver);
+      capture.onBeforeRenderObservable.remove(captureOn);
+      capture.onAfterRenderObservable.remove(captureOff);
       // Guarded by identity: only clear the environment texture if it is still
       // the one this created. ReflectionProbe.dispose() disposes its render
       // target and nulls its own reference but never touches
       // `scene.environmentTexture`, which would otherwise keep pointing at a
       // disposed cube texture that `scene.pure.js` re-adds to `_renderTargets`
       // every frame. The identity check means this never clobbers an
-      // environment texture a later task installed instead.
-      if (scene.environmentTexture === probe.cubeTexture) {
+      // environment texture something else installed instead.
+      if (scene.environmentTexture === capture) {
         scene.environmentTexture = null;
       }
       probe.dispose();
       shadows?.dispose();
       sun.dispose();
       fill.dispose();
-      skybox.dispose();
-      sky.dispose();
+      dome.dispose();
     },
   };
 }

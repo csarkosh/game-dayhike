@@ -49,6 +49,7 @@ import { FOG_DISTANCE } from "../../src/sim/forestConstants.js";
 import { MAX_PLAYERS } from "../../src/sim/constants.js";
 import { drawnEffect, probeReady, stageBindings, webgpuProcessingEngine, type StageBindings } from "./helpers/webgpuProcessing.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 
 /**
  * Three of WebGPU's per-stage limits sit exactly at their defaults in the
@@ -98,7 +99,7 @@ async function buildWorld(): Promise<{ drawn: Map<string, Drawn>; lights: number
   const atmosphere = createAtmosphere(scene, FOG_DISTANCE);
   scene.activeCamera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
   createHeadlamp(scene, "lamp_local");
-  const lighting = createLighting(scene, { tier: "high", viewDistance: FOG_DISTANCE, colourPath: "post" });
+  const lighting = createLighting(scene, { tier: "high", viewDistance: FOG_DISTANCE, colourPath: "post", sky: skyFixture() });
   const clipmap = createClipmap(scene, seed);
   for (const mesh of clipmap.meshes) lighting.addShadowMesh(mesh);
   const forest = createForestMeshes(scene, seed, { bakeImpostor: () => null });

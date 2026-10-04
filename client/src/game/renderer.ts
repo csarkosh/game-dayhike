@@ -50,7 +50,9 @@ import {
   type RingSamples,
 } from "./clipmap.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
-import { createLighting } from "./lighting.js";
+import { createLighting, DEFAULT_HOUR, sunAltitudeDeg } from "./lighting.js";
+import type { SkyTable } from "./skyTable.js";
+import { startSkySource, type SkySource } from "./skyWorker.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
@@ -1230,6 +1232,11 @@ export type RendererOptions = {
   /** The wildlife shell: absent or true, as the world's forest allows; false, none at
    * all (a scene recorded a frame at a time, which the director's own steps would not follow). */
   wildlife?: boolean;
+  /** The sky's slices (`skyTable.ts`): the page's table, made once for its
+   * life (`app.ts`) and handed to every renderer it builds, so a swap of
+   * tier makes none of them again. Absent, the renderer starts a source of
+   * its own (`startSkySource`) and stops it on dispose. */
+  skyTable?: SkyTable;
 };
 
 /** What the impostor bakes read of the pipelines and the scope: the draws a
@@ -1449,7 +1456,7 @@ function buildRenderer(
   const camera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
   camera.minZ = 0.05;
   // Far plane moves with the fog: the outermost ring's corner is
-  // ~5.8 km out and the skybox is 8 km across, so Babylon's default clips the
+  // ~5.8 km out and the sky dome is 8 km across, so Babylon's default clips the
   // entire distant view away.
   camera.maxZ = 10000;
   camera.fov = GAME_FOV;
@@ -1479,7 +1486,19 @@ function buildRenderer(
   // Who owns colour is decided once, before lighting and the post chain are
   // built, from the tier and the float-target capability.
   const postFeatures = postFeaturesFor(tier, fxSupportedBy(engine));
-  const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath });
+  // The sky's slices: the page's table or, given none, a source of this
+  // renderer's own, started at the default hour (the slices either side of
+  // noon come first whatever the hour) and stopped with the renderer.
+  let ownSky: SkySource | null = null;
+  let skyTable: SkyTable;
+  if (options.skyTable !== undefined) {
+    skyTable = options.skyTable;
+  } else {
+    ownSky = startSkySource(sunAltitudeDeg(DEFAULT_HOUR));
+    skyTable = ownSky.table;
+  }
+  partOf(ownSky);
+  const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });
   partOf(lighting);
   const clock = options.clock ?? (() => performance.now());
   const post = createPost(scene, camera, postFeatures, { now: clock });
@@ -2104,6 +2123,8 @@ function buildRenderer(
       post.dispose();
       skinShading.dispose();
       lighting.dispose();
+      // After the lighting, which stops listening to its table first.
+      ownSky?.dispose();
       atmosphere.dispose();
       // Before the engine, which may wait for its BRDF texture: nothing of a
       // renderer that has gone asks for a pipeline, and nothing it asked for

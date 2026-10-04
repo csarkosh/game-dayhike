@@ -54,10 +54,18 @@ export function toHalf(value: number): number {
   return sign | ((exponent + 15) << 10) | mantissa;
 }
 
-/** RGB triples packed as RGBA halves, alpha 1: the data an RGBA16F texture takes. */
-export function rgbToHalfRgba(rgb: Float32Array): Uint16Array {
+/**
+ * RGB triples packed as RGBA halves, alpha 1: the data an RGBA16F texture
+ * takes. Into `out` when given, which must hold four halves for each triple
+ * (a RangeError otherwise), so a caller that packs every frame allocates
+ * nothing; else into a new array. Returns the array packed into.
+ */
+export function rgbToHalfRgba(rgb: Float32Array, out?: Uint16Array): Uint16Array {
   const texels = Math.floor(rgb.length / 3);
-  const out = new Uint16Array(texels * 4);
+  if (out !== undefined && out.length !== texels * 4) {
+    throw new RangeError(`${texels} RGB triples pack into ${texels * 4} halves; the output holds ${out.length}`);
+  }
+  out ??= new Uint16Array(texels * 4);
   for (let i = 0; i < texels; i++) {
     out[i * 4] = toHalf(rgb[i * 3] ?? 0);
     out[i * 4 + 1] = toHalf(rgb[i * 3 + 1] ?? 0);

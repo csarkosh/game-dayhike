@@ -77,11 +77,16 @@ export function createSkyDome(scene: Scene, colourPath: "post" | "material"): Sk
   // Seen from inside.
   material.backFaceCulling = false;
 
+  // The halves the table goes up from, made once: each update packs the
+  // slice into them again (lighting applies every frame of a weather fade).
+  // WebGL2 and WebGPU both copy the data as the upload is made, so the next
+  // packing cannot reach a texture already sent.
+  const halves = new Uint16Array(SLICE_AZIMUTHS * SLICE_ELEVATIONS * 4);
   // Linear filtering where the engine filters half floats (WebGL2 and WebGPU
   // both do; RawTexture falls back to nearest where it does not), clamped so
   // the azimuth's ends and the zenith row never wrap.
   const table = RawTexture.CreateRGBATexture(
-    new Uint16Array(SLICE_AZIMUTHS * SLICE_ELEVATIONS * 4),
+    halves,
     SLICE_AZIMUTHS,
     SLICE_ELEVATIONS,
     scene,
@@ -118,12 +123,17 @@ export function createSkyDome(scene: Scene, colourPath: "post" | "material"): Sk
   mesh.material = material;
   mesh.infiniteDistance = true;
   mesh.isPickable = false;
+  // The stage blends the mist toward the fog colour at the horizon itself.
+  // Under the scene's fog Babylon would also give the material a fog define
+  // and three uniforms the stages never read: dead text in the page's every
+  // compile of the dome, which the suite, compiling without fog, never sees.
+  mesh.applyFog = false;
 
   return {
     mesh,
     material,
     update(s, exposure) {
-      table.update(rgbToHalfRgba(s.clear.texels));
+      table.update(rgbToHalfRgba(s.clear.texels, halves));
       material.setFloat("skyScale", s.scale);
       material.setFloat("skyCloud", s.cloud);
       material.setVector3("skyNight", night.set(s.nightFloor.r, s.nightFloor.g, s.nightFloor.b));

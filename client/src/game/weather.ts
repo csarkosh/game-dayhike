@@ -1,8 +1,5 @@
 import { clamp01, desaturateRgb, luma, mixRgb, type Rgb } from "./colour.js";
-import {
-  ambientColourFor, exposureFor, fillIntensityFor, fogDensityFor,
-  skyColourAt, sunColourAt, sunIntensityAt, sunPositionAt,
-} from "./sky.js";
+import { exposureFor, fogDensityFor, skyColourAt, sunPositionAt } from "./sky.js";
 
 /**
  * The weather axis, alongside `hour`. Pure and Babylon-free like `sky.ts`;
@@ -224,61 +221,6 @@ export const GRADE_MIDTONE_SATURATION = 60;
 export const GRADE_HIGHLIGHT_HUE = 200;
 export const GRADE_HIGHLIGHT_DENSITY = 30;
 export const GRADE_HIGHLIGHT_SATURATION = -10;
-
-export type SkyMaterialParams = {
-  turbidity: number;
-  luminance: number;
-  rayleigh: number;
-  mieCoefficient: number;
-  mieDirectionalG: number;
-};
-
-/**
- * SkyMaterial under weather. At clear these are exactly the five constants
- * `lighting.ts` shipped with; high turbidity + low luminance turns the
- * scattering sky into flat grey-white haze — and the reflection probe capturing
- * that sky is what greys the IBL automatically.
- */
-export function skyMaterialParamsUnder(w: WeatherParams): SkyMaterialParams {
-  const c = clamp01(w.cloudCover);
-  return {
-    turbidity: 4 + 16 * c,
-    luminance: 1 - 0.6 * c,
-    // Browser-measured: turbidity alone whitens only the horizon —
-    // the zenith stays saturated blue (probe faces r~180 b~232 under full
-    // mist) — and DRAINING rayleigh darkens the dome to navy rather than
-    // greying it (less scattered light, not whiter light). What actually
-    // reads as overcast is leaving rayleigh alone and flooding the dome with
-    // near-isotropic Mie haze: white, wavelength-independent scattering
-    // everywhere, which is roughly what a cloud deck is.
-    rayleigh: 2,
-    mieCoefficient: 0.005 + 0.075 * c,
-    mieDirectionalG: 0.8 - 0.8 * c,
-  };
-}
-
-export function sunIntensityUnder(w: WeatherParams, hour: number): number {
-  return sunIntensityAt(hour) * (1 - SUN_CLOUD_LOSS * clamp01(w.cloudCover));
-}
-
-export function sunColourUnder(w: WeatherParams, hour: number): Rgb {
-  return desaturateRgb(sunColourAt(hour), SUN_DESAT * clamp01(w.cloudCover));
-}
-
-export function fillIntensityUnder(w: WeatherParams, altitude: number): number {
-  // The lift stands in for the flat light a cloud deck scatters DOWNWARD by
-  // day, so it must follow the sun: unconditional, it triple-lit the ground
-  // at hour 18 under a near-black dusk sky (browser-measured). The
-  // ramp matches sky.ts's DAY_ALTITUDE (0.35) so the lift fades in step with
-  // the sky's own dusk transition. At night cloud adds nothing — the fill is
-  // already the moonlight stand-in.
-  const daylight = clamp01(altitude / 0.35);
-  return fillIntensityFor(altitude) * (1 + FILL_LIFT * clamp01(w.cloudCover) * daylight);
-}
-
-export function ambientColourUnder(w: WeatherParams, hour: number): Rgb {
-  return desaturateRgb(ambientColourFor(hour), AMBIENT_DESAT * clamp01(w.cloudCover));
-}
 
 export function fogDensityUnder(w: WeatherParams, viewDistance: number): number {
   return (
