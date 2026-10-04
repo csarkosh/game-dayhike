@@ -57,6 +57,25 @@ export function skyHeld(table: SkyTable, hour: number): boolean {
 }
 
 /**
+ * Resolves once `skyHeld(table, hour())` holds. `hour` is read again at every
+ * slice that arrives, so an hour changed while the first slices are made is
+ * the one waited for.
+ */
+export function whenSkyHeld(table: SkyTable, hour: () => number): Promise<void> {
+  return new Promise((resolve) => {
+    if (skyHeld(table, hour())) {
+      resolve();
+      return;
+    }
+    const off = table.onChange(() => {
+      if (!skyHeld(table, hour())) return;
+      off();
+      resolve();
+    });
+  });
+}
+
+/**
  * How far cascaded shadows reach, in metres. Deliberately NOT `viewDistance`.
  *
  * The two were one number while the fog horizon was 70 m and the difference did
@@ -306,6 +325,10 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   }
 
   scene.fogMode = Scene.FOGMODE_EXP2;
+  // The density is the weather's, which is known before any slice is: a
+  // frame drawn before the first apply (a swap's cover, a scene route) is
+  // not fogged at Babylon's default of 0.1. Each apply sets it again.
+  scene.fogDensity = fogDensityUnder(weather, viewDistance);
 
   function apply(): void {
     // Until the table holds the slices either side of noon and of the hour,

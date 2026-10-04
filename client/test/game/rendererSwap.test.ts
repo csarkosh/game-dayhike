@@ -70,6 +70,8 @@ import {
 } from "../../src/game/rendererSwap.js";
 import type { QualityTier } from "../../src/game/quality.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import type { SkyTable } from "../../src/game/skyTable.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 
 // ---- the order, with stubs --------------------------------------------------
 
@@ -567,6 +569,55 @@ describe("the grass cull after a swap, on NullEngine", () => {
     }
     expect(EngineStore.Instances.length).toBe(0);
   }, timeLimit(180_000));
+});
+
+describe("a swap keeps the hike's sky", () => {
+  it("hands the new renderer the table the old one read, which the old one lets go of and nothing disposes", async () => {
+    const fixture = skyFixture();
+    let listening = 0;
+    // The fixture's table, counting who listens to it.
+    const table: SkyTable = {
+      add: (slice) => fixture.add(slice),
+      get count() {
+        return fixture.count;
+      },
+      has: (altitudeDeg) => fixture.has(altitudeDeg),
+      blendAt: (altitudeDeg) => fixture.blendAt(altitudeDeg),
+      whenReady: (altitudeDeg) => fixture.whenReady(altitudeDeg),
+      onChange(listener) {
+        listening += 1;
+        const off = fixture.onChange(listener);
+        return () => {
+          listening -= 1;
+          off();
+        };
+      },
+    };
+    const held = table.count;
+    const current = { renderer: createRenderer(nullCanvas(), LEVEL, null, { tier: "medium", skyTable: table }), canvas: nullCanvas() };
+    expect(listening).toBe(1);
+    const bindings: SwapBindings = {
+      build: (canvas, tier) => createRenderer(canvas, LEVEL, null, { tier, skyTable: table }),
+      freshCanvas: nullCanvas,
+      extras: { dispose: () => undefined, build: () => undefined },
+      rebind: () => undefined,
+      restore: () => undefined,
+      loop: () => undefined,
+      unwatch: () => undefined,
+      watch: () => undefined,
+      engineFailed: () => undefined,
+    };
+    const next = swapRenderer(current, { tier: "low", engine: null, fallbackTier: "medium" }, bindings);
+    try {
+      // The old lighting stopped listening; the new one listens to the same table.
+      expect(listening).toBe(1);
+      await expect(next.renderer.skyReady()).resolves.toBeUndefined();
+      expect(table.count).toBe(held);
+    } finally {
+      next.renderer.dispose();
+    }
+    expect(listening).toBe(0);
+  }, timeLimit(120_000));
 });
 
 describe("a swap that fails at every tier, on NullEngine", () => {

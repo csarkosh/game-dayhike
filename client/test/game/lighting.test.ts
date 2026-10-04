@@ -461,6 +461,17 @@ describe("the sky's table", () => {
     lighting.dispose();
   });
 
+  it("sets the fog's density from its weather before the table holds a slice", () => {
+    const s = scene();
+    // Babylon's own default, which would fog a frame drawn before the sky.
+    expect(s.fogDensity).toBe(0.1);
+    const lighting = light(s, { hour: 12, sky: createSkyTable() });
+    expect(lighting.sky).toBeNull();
+    // The default weather's (mist's) density at this file's 70 m.
+    expect(s.fogDensity).toBeCloseTo(0.29671172273182034, 12);
+    lighting.dispose();
+  });
+
   it("stops listening to the table when disposed", () => {
     const s = scene();
     const table = createSkyTable();

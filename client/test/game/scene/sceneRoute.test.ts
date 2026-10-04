@@ -18,6 +18,8 @@ import "../../../src/sim/passes/index.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { startSceneRoute } from "../../../src/game/scene/sceneRoute.js";
+import { createSkyTable } from "../../../src/game/skyTable.js";
+import { skyFixture } from "../helpers/skyFixture.js";
 import { asHtml, installStandInDom } from "../helpers/standInDom.js";
 import { timeLimit } from "../../helpers/timeLimit.js";
 
@@ -41,9 +43,11 @@ describe("the scene route", () => {
     const ms = 0;
     const frames: ((ms: number) => void)[] = [];
     const run = startSceneRoute(
-      { canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => ms, loadCar: async () => null, raf: (fn) => { frames.push(fn); return frames.length; }, paint: (s, name) => new PBRMaterial(name, s), worldIn: async () => undefined },
+      { canvas: nullCanvas(), container: asHtml(container), tier: "low", skyTable: skyFixture(), now: () => ms, loadCar: async () => null, raf: (fn) => { frames.push(fn); return frames.length; }, paint: (s, name) => new PBRMaterial(name, s), worldIn: async () => undefined },
       { t: 20, step: null },
     );
+    // The loop asks for its first frame once the sky's slices are in, a turn later.
+    await new Promise((r) => setTimeout(r, 0));
     const before = JSON.stringify(run.worldState());
     // The loop draws inside the engine's own frame: its frame count moves.
     const frameId = run.scene().getEngine().frameId;
@@ -76,7 +80,7 @@ describe("the scene route", () => {
     const container = doc.createElement("div");
     let ms = 0;
     const run = startSceneRoute(
-      { canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => ms, loadCar: async () => null, raf: () => 0, paint: (s, name) => new PBRMaterial(name, s) },
+      { canvas: nullCanvas(), container: asHtml(container), tier: "low", skyTable: skyFixture(), now: () => ms, loadCar: async () => null, raf: () => 0, paint: (s, name) => new PBRMaterial(name, s) },
       { t: null, step: 240 },
     );
     const api = (globalThis as { dayhikeScene?: { time(): number } }).dayhikeScene;
@@ -92,7 +96,7 @@ describe("the scene route", () => {
     let root: TransformNode | null = null;
     const run = startSceneRoute(
       {
-        canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => 0, raf: () => 0, paint: (s, name) => new PBRMaterial(name, s),
+        canvas: nullCanvas(), container: asHtml(container), tier: "low", skyTable: skyFixture(), now: () => 0, raf: () => 0, paint: (s, name) => new PBRMaterial(name, s),
         loadCar: async (scene) => {
           root = new TransformNode("film_car", scene);
           return { node: root, meshes: [], dispose() {} };
@@ -113,7 +117,7 @@ describe("the scene route", () => {
     const doc = installStandInDom();
     const container = doc.createElement("div");
     const run = startSceneRoute(
-      { canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => 0, loadCar: async () => null, raf: () => 0, paint: (s, name) => new PBRMaterial(name, s) },
+      { canvas: nullCanvas(), container: asHtml(container), tier: "low", skyTable: skyFixture(), now: () => 0, loadCar: async () => null, raf: () => 0, paint: (s, name) => new PBRMaterial(name, s) },
       { t: 20, step: null },
     );
     const api = (globalThis as { dayhikeScene?: { ready: Promise<void>; engine(): string } }).dayhikeScene!;
@@ -131,7 +135,7 @@ describe("the scene route", () => {
     const worldIn = vi.fn<(maxMs: number) => Promise<void>>(() => new Promise<void>((resolve) => { release = resolve; }));
     const run = startSceneRoute(
       {
-        canvas: nullCanvas(), container: asHtml(doc.createElement("div")), tier: "low", now: () => 0, raf: () => 0,
+        canvas: nullCanvas(), container: asHtml(doc.createElement("div")), tier: "low", skyTable: skyFixture(), now: () => 0, raf: () => 0,
         paint: (s, name) => new PBRMaterial(name, s), worldIn,
         loadCar: async () => { carLoads += 1; return null; },
       },
@@ -159,7 +163,7 @@ describe("the scene route", () => {
     let waits = 0;
     const run = startSceneRoute(
       {
-        canvas: nullCanvas(), container: asHtml(doc.createElement("div")), tier: "low", now: () => 0,
+        canvas: nullCanvas(), container: asHtml(doc.createElement("div")), tier: "low", skyTable: skyFixture(), now: () => 0,
         raf: (fn) => { frames.push(fn); return frames.length; }, paint: (s, name) => new PBRMaterial(name, s),
         worldIn: async () => { waits += 1; },
       },
@@ -178,6 +182,33 @@ describe("the scene route", () => {
     api.seek(7.05);
     await drain(frames, api.frame());
     expect([renders, waits]).toEqual([51, 2]);
+    run.dispose();
+    vi.unstubAllGlobals();
+  }, timeLimit(120_000));
+
+  it("asks for no frame, and is not ready, before the sky's first slices are in", async () => {
+    const doc = installStandInDom();
+    const frames: ((ms: number) => void)[] = [];
+    const table = createSkyTable();
+    const run = startSceneRoute(
+      {
+        canvas: nullCanvas(), container: asHtml(doc.createElement("div")), tier: "low", skyTable: table, now: () => 0, loadCar: async () => null,
+        raf: (fn) => { frames.push(fn); return frames.length; }, paint: (s, name) => new PBRMaterial(name, s), worldIn: async () => undefined,
+      },
+      { t: 20, step: null },
+    );
+    const api = (globalThis as { dayhikeScene?: { ready: Promise<void> } }).dayhikeScene!;
+    let readied = false;
+    void api.ready.then(() => { readied = true; });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(frames.length).toBe(0);
+    expect(readied).toBe(false);
+    // The intro's noon: the slices either side of the noon sun.
+    const fixture = skyFixture();
+    table.add(fixture.blendAt(74));
+    table.add(fixture.blendAt(76));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(frames.length).toBe(1);
     run.dispose();
     vi.unstubAllGlobals();
   }, timeLimit(120_000));

@@ -82,6 +82,41 @@ vi.mock("../../src/game/bladeMeshes.js", async (importOriginal) => {
   };
 });
 
+// Every update the renderer gives the mist banks and the motes, counted on the
+// way through to the real shells.
+const effectUpdates = vi.hoisted(() => ({ mist: 0, motes: 0 }));
+vi.mock("../../src/game/mistMeshes.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/mistMeshes.js")>();
+  return {
+    ...mod,
+    createMistMeshes: (...args: Parameters<typeof mod.createMistMeshes>) => {
+      const mist = mod.createMistMeshes(...args);
+      const update = mist.update.bind(mist);
+      mist.update = (...at) => {
+        effectUpdates.mist += 1;
+        update(...at);
+      };
+      return mist;
+    },
+  };
+});
+vi.mock("../../src/game/motes.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/motes.js")>();
+  return {
+    ...mod,
+    createMotes: (...args: Parameters<typeof mod.createMotes>) => {
+      const motes = mod.createMotes(...args);
+      if (motes === null) return null;
+      const update = motes.update.bind(motes);
+      motes.update = (...at) => {
+        effectUpdates.motes += 1;
+        update(...at);
+      };
+      return motes;
+    },
+  };
+});
+
 // The terrain field lives behind the variant registry, and `activeTerrainVariant`
 // throws until something has registered one. `app.ts` gets that transitively
 // through `forest.ts`; a renderer-only test has to ask for it.
@@ -111,6 +146,7 @@ import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldS
 import { createForest } from "../../src/sim/forest.js";
 import { elevationAt } from "../../src/sim/terrain.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { createSkyTable } from "../../src/game/skyTable.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
 let engine: NullEngine | null = null;
@@ -415,6 +451,31 @@ describe("the renderer's sky", () => {
     expect(skySources.started).toEqual([]);
     expect(skySources.stopped).toBe(0);
   });
+
+  it("moves no mist bank or mote before the table holds its first slices, on either camera, and moves both once it does", () => {
+    const table = createSkyTable();
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, createForest(388817), { tier: "medium", skyTable: table });
+    const state = windTestState(windTestPlayer(1));
+    try {
+      effectUpdates.mist = 0;
+      effectUpdates.motes = 0;
+      // The player's camera, then the free one: their colour would be the
+      // empty gradient's black.
+      renderer.sync(state, 1, 0);
+      renderer.setFreecam({ x: 0, y: 50, z: 0, yaw: 0, pitch: 0 });
+      renderer.sync(state, 1, 0);
+      expect([effectUpdates.mist, effectUpdates.motes]).toEqual([0, 0]);
+      const fixture = skyFixture();
+      table.add(fixture.blendAt(74));
+      table.add(fixture.blendAt(76));
+      renderer.sync(state, 1, 0);
+      renderer.setFreecam(null);
+      renderer.sync(state, 1, 0);
+      expect([effectUpdates.mist, effectUpdates.motes]).toEqual([2, 2]);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(60_000));
 });
 
 describe("the renderer's engine", () => {

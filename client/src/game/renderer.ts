@@ -50,7 +50,7 @@ import {
   type RingSamples,
 } from "./clipmap.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
-import { createLighting, DEFAULT_HOUR, sunAltitudeDeg } from "./lighting.js";
+import { createLighting, DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "./lighting.js";
 import type { SkyTable } from "./skyTable.js";
 import { startSkySource, type SkySource } from "./skyWorker.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
@@ -1120,6 +1120,12 @@ export type Renderer = {
   /** Resolves once the forest's first fill, billboards included, is drawn
    * (`ForestMeshes.ready`); at once in a world without a forest. */
   readonly forestReady: Promise<void>;
+  /** Resolves once the sky's table holds the slices the lighting needs:
+   * those either side of noon and of the hour the renderer is set to, read
+   * again as each slice arrives (`whenSkyHeld`). Until then the lighting has
+   * applied nothing, so no start draws a frame before it: the hike's, the
+   * scene routes', the tier check's. */
+  skyReady(): Promise<void>;
   /**
    * `frame` carries this frame's local, non-simulated view inputs — its
    * duration in seconds and whether sprint is held. Only the walking cue reads
@@ -1867,6 +1873,9 @@ function buildRenderer(
     shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
     cover,
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
+    skyReady() {
+      return whenSkyHeld(skyTable, () => lighting.hour);
+    },
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
       // of materials x four property writes: cheap enough to do every frame.
@@ -1971,7 +1980,9 @@ function buildRenderer(
         wildlifeMatch.hour = lighting.hour;
         wildlifeMatch.mist = weather.mist;
         wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);
-        mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour(), wind, seconds);
+        // The mist banks and the motes take their colour from the haze's
+        // gradient, which is black until the sky's first slices are in.
+        if (sky !== null) mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour(), wind, seconds);
         camera.position.set(freecam.x, freecam.y, freecam.z);
         camera.rotation.set(freecam.pitch, freecam.yaw, freecam.roll ?? 0);
         camera.fov = freecam.fov ?? GAME_FOV;
@@ -1983,7 +1994,7 @@ function buildRenderer(
         rainMap?.update(camera.position);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
-        motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
+        if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         jobs.run();
         return;
       }
@@ -2018,7 +2029,8 @@ function buildRenderer(
         wildlifeMatch.hour = lighting.hour;
         wildlifeMatch.mist = weather.mist;
         wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);
-        mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour(), wind, seconds);
+        // As on the free camera: no mist or motes before the sky's slices.
+        if (sky !== null) mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour(), wind, seconds);
         const offset = bob.update(
           {
             x: local.pos.x,
@@ -2050,7 +2062,7 @@ function buildRenderer(
         rainMap?.update(local.pos);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
-        motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
+        if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
       }
       // This frame's share of the rebuilds the updates above began, once
       // every shell has seen the view.

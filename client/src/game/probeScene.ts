@@ -4,12 +4,14 @@
  * Each step builds the canopy pose (`probePose`) on a fresh canvas filling the
  * game's container, at the tier being measured, the way the landing backdrop
  * builds its own scenery: a forest, the stub level and an empty
- * non-authoritative world, mist, noon. It waits for the scene to be ready,
- * discards the warm-up frames, measures the intervals between render-loop
- * callbacks, and disposes the renderer and removes the canvas whatever
- * happened, so no probe renderer outlives its step.
+ * non-authoritative world, mist, noon. It waits for the sky's first slices
+ * and the scene to be ready, discards the warm-up frames, measures the
+ * intervals between render-loop callbacks, and disposes the renderer and
+ * removes the canvas whatever happened, so no probe renderer outlives its
+ * step.
  */
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import type { Scene } from "@babylonjs/core/scene.js";
 import { createForest } from "../sim/forest.js";
 import { parseLevel } from "../sim/level.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../sim/terrain.js";
@@ -88,6 +90,17 @@ export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier, en
 }
 
 /**
+ * Whether a probe step's scene counts as ready this frame. Once the meter has
+ * found it so, it stays so. Before that, the sky's first slices must be in
+ * (`Renderer.skyReady`) as well as the scene ready with nothing waiting:
+ * otherwise the frames warmed and measured could be the sky arriving (its
+ * texture uploaded, the probe captured again), not the scene the tier draws.
+ */
+export function probeSceneReady(meterReady: boolean, skyIn: boolean, scene: Pick<Scene, "isReady" | "getWaitingItemsCount">): boolean {
+  return meterReady || (skyIn && scene.isReady() && scene.getWaitingItemsCount() === 0);
+}
+
+/**
  * Measures `tier` in `container`, frame by frame through `createProbeMeter`:
  * ready, warm, measured, with a late shader compile starting the warm-up
  * again. On `opts.on`'s canvas and engine when given (the engine the WebGPU
@@ -124,6 +137,12 @@ export function runProbeStep(
       return;
     }
     const { engine, scene } = probe.renderer;
+    // The step is not ready until the sky's first slices are in
+    // (`probeSceneReady`); the meter's bound counts from here regardless.
+    let skyIn = false;
+    void probe.renderer.skyReady().then(() => {
+      skyIn = true;
+    });
     // Ready within `PROBE_READY_MAX_MS` of the end of the build, and by
     // `readyBy` (a `performance.now()` time: what the probe's cap leaves the
     // step, the paint wait and the build spent from it), whichever is sooner.
@@ -154,7 +173,7 @@ export function runProbeStep(
       try {
         const now = performance.now();
         probe.frame();
-        const sceneReady = meter.ready || (scene.isReady() && scene.getWaitingItemsCount() === 0);
+        const sceneReady = probeSceneReady(meter.ready, skyIn, scene);
         const step = meter.frame(now, sceneReady);
         if (!step.done) return;
         finish(

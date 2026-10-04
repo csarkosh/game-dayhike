@@ -20,6 +20,9 @@ import { loadContainer, loadUntilAborted } from "../modelLoad.js";
 import { modelUrl } from "../assetUrls.js";
 import { placeStaticModel, type PlacedModel } from "../staticModel.js";
 import { createRenderer } from "../renderer.js";
+import type { SkyTable } from "../skyTable.js";
+import { startSkySource } from "../skyWorker.js";
+import { sunAltitudeDeg } from "../lighting.js";
 import type { QualityTier } from "../quality.js";
 import { seedFromToken } from "../seed.js";
 import { carYaw, createCarShadowPatch, createTrailheadMeshes, type CarShadowPatch } from "../trailheadMeshes.js";
@@ -45,8 +48,9 @@ export type DayhikeScene = {
   seek(t: number): void;
   frame(): Promise<void>;
   time(): number;
-  /** Resolves once the intro's ranger and car have loaded or failed, or the
-   * title's world is in around its first camera: a recorder waits on it. */
+  /** Resolves once the sky's first slices are in and the intro's ranger and
+   * car have loaded or failed, or the title's world is in around its first
+   * camera: a recorder waits on it. */
   ready: Promise<void>;
   engine(): "webgpu" | "webgl2";
 };
@@ -67,6 +71,10 @@ export type SceneRouteDeps = {
    * default the scene's own readiness and the forest's layers; under Node's
    * null engine the scene never says it is ready, so a test hands in its own. */
   worldIn?: (maxMs: number) => Promise<void>;
+  /** The sky's slices. Absent, the route makes its own, from its hour
+   * outward (`startSkySource`), and stops them on leaving; a test hands in a
+   * table of its own. */
+  skyTable?: SkyTable;
 };
 
 /** How dark the film car's patch is against the hike's parked car's (its alpha). */
@@ -94,9 +102,15 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   const forest = createForest(seed);
   const world = createWorld(level, seed, false);
   const clock: SceneClock = createSceneClock(now);
-  const renderer = createRenderer(deps.canvas, level, forest, { tier: deps.tier, engine: deps.engine, clock: () => clock.time() * 1000, wildlife: false });
+  const hour = title ? TITLE_HOUR : INTRO_HOUR;
+  // The sky's slices, from the route's hour outward: handed in, or made here
+  // and stopped on leaving the route.
+  const ownSky = deps.skyTable === undefined ? startSkySource(sunAltitudeDeg(hour)) : null;
+  const renderer = createRenderer(deps.canvas, level, forest, {
+    tier: deps.tier, engine: deps.engine, clock: () => clock.time() * 1000, wildlife: false, skyTable: deps.skyTable ?? ownSky?.table,
+  });
   renderer.setWeather(title ? TITLE_WEATHER : INTRO_WEATHER, 0);
-  renderer.setHour(title ? TITLE_HOUR : INTRO_HOUR);
+  renderer.setHour(hour);
   const worldIn = deps.worldIn ?? ((maxMs: number) => whenSceneReady(renderer.scene, maxMs, renderer.forestReady));
 
   const variant = activeTerrainVariant();
@@ -193,7 +207,8 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     carPatch.mesh.name = "film_car_shadow";
     carPatch.mesh.parent = placed.node;
   });
-  const ready = title ? worldIn(READY_MAX_MS) : Promise.all([rangerLoaded, carLoaded]).then(() => undefined);
+  const loaded = title ? worldIn(READY_MAX_MS) : Promise.all([rangerLoaded, carLoaded]).then(() => undefined);
+  const ready = Promise.all([renderer.skyReady(), loaded]).then(() => undefined);
 
   const black = document.createElement("div");
   black.className = "scene-black";
@@ -243,7 +258,11 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     drawOneFrame();
     raf(loop);
   };
-  raf(loop);
+  // No frame before the sky's first slices are in (`Renderer.skyReady`):
+  // until then the lighting has applied nothing.
+  void renderer.skyReady().then(() => {
+    if (!disposed) raf(loop);
+  });
 
   const onVisibility = (): void => player.hidden(document.visibilityState === "hidden");
   document.addEventListener("visibilitychange", onVisibility);
@@ -295,6 +314,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       carPatch?.dispose();
       carModel?.dispose();
       renderer.dispose();
+      ownSky?.dispose();
     },
   };
 }

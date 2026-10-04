@@ -45,7 +45,7 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
 import "../../src/sim/passes/index.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { buildProbeScene, measureOnRuleEngine, runProbeStep, type StepEngine } from "../../src/game/probeScene.js";
+import { buildProbeScene, measureOnRuleEngine, probeSceneReady, runProbeStep, type StepEngine } from "../../src/game/probeScene.js";
 import type { ProbeReading } from "../../src/game/quality.js";
 import { readFileSync } from "node:fs";
 import { OVER_PLAY_Z, PROBE_SCREEN_LINE, showProbeScreen, timeIdleCadence } from "../../src/game/probeScreen.js";
@@ -69,6 +69,24 @@ describe("buildProbeScene", () => {
     probe.dispose();
     expect(EngineStore.Instances.length).toBe(0);
   }, timeLimit(60_000));
+});
+
+describe("a probe step's readiness", () => {
+  it("waits for the sky's first slices as well as the scene, and stays ready once the meter has found it so", () => {
+    const ready = { isReady: () => true, getWaitingItemsCount: () => 0 };
+    const loading = { isReady: () => true, getWaitingItemsCount: () => 2 };
+    expect(probeSceneReady(false, false, ready)).toBe(false);
+    expect(probeSceneReady(false, true, ready)).toBe(true);
+    expect(probeSceneReady(false, true, loading)).toBe(false);
+    expect(probeSceneReady(true, false, loading)).toBe(true);
+  });
+
+  it("is what each step's frame asks, the sky in once the renderer says so", () => {
+    // A step's frames need a page to run; its wiring is read from the source.
+    const src = readFileSync(new URL("../../src/game/probeScene.ts", import.meta.url), "utf8");
+    expect(src).toContain("void probe.renderer.skyReady().then(() => {\n      skyIn = true;\n    });");
+    expect(src).toContain("const sceneReady = probeSceneReady(meter.ready, skyIn, scene);");
+  });
 });
 
 describe("a probe step's engine", () => {
