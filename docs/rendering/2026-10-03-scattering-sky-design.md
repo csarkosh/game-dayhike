@@ -415,3 +415,52 @@ repository. γ, the aerosol scale and τ are chosen at these checks.
   terrain.
 - **The films.** Record the title and intro again, so they match the live
   look.
+
+## 12. As built
+
+### What the build changed from the design
+
+- **§3.1, §3.6: the aerosols.** `SKY_MIE_SCALE` is 5, the smallest scale at which the clear noon horizon, measured 2° up, is within twice the zenith. Fewer aerosols brighten the horizon against a zenith lit by their forward scattering, so the property is met from above, not below. Part of the scale stands in for the view ray's coarse first step (24 uniform steps; the zenith's first is 4.2 km against the aerosols' 1.2 km height), so it is not a physical aerosol amount; the sky is calibrated as a whole.
+- **§3.4, §3.5: the night and the adaptation.** The night floor is `NIGHT_SKY` × the night factor, so the clear noon dome keeps the 0.416 anchor exactly and midnight is today's night sky exactly. The night factor is linear in the logarithm of the adapted light between `NIGHT_YA_DAY` 0.5 and `NIGHT_YA_NIGHT` 0.06. `SKY_GAMMA` is 0.25, and the adaptation stops where the night begins: `SKY_Y_FLOOR` = `NIGHT_YA_NIGHT`^(1/`SKY_GAMMA`), about 1.3 × 10⁻⁵ of noon's light, near −8° of sun. At 0.5 with the first thresholds, shaded ground at sunset was darker than the moonlit night that followed (1.7× in clear, 3.4× in mist); the light on level ground after exposure now falls steadily from noon into the night (clear 3.95 at noon, 1.68 at 18:00, 0.77 at 18:30, 0.45 at 19:00; mist 1.29, 0.48, 0.44, 0.39), rising after 19:00 only by the exposure curve's own climb.
+- **§3.3: the disc.** Full cloud removes it (× (1 − cloud)); in view it is capped at 16 so a half-float target cannot overflow; it fades over its own width as it sets, below the horizon the raised eye sees (−0.45°).
+- **§4: the dome's texture.** The upload is the blended slice × the scale (the shader's scale uniform is 1), because the unscaled texels fell below half float's range in deep twilight and posterised the dome from 18:40 to 19:00. The pack is bit-exact on the float32 bits, the upload is skipped while the altitude and the table are unchanged, the noon blend is cached per table, and a change of hour and weather applies once (`Lighting.setView`).
+- **§5.1, §6: below the horizon and at it.** The dome reads its horizon row for every direction below the horizon, as the old dome did; a slice's lower rows hold only the air's own glow. The horizon colours the fog and the glow take are read at 0°, where the sea meets the sky, not 2° up: at sunset the Earth's shadow darkens the last 2°, and a fog read above it turned the far water salmon under a dimmer strip of sky.
+- **§5.2: the fog over the base.** `airColourUnder` keeps today's steps without the overcast dusk dimming, which would dim twice now that the deck dims the base. The deck is anchored to a mist-noon dome zenith of 0.80, the old mist dome's 0.795.
+- **§6: the image-based light.** The probe stays flagged gamma-encoded, because a linear probe flips a define in every PBR material; it is half float where the engine renders it, and the dome's capture writes the gamma encoding of its linear radiance, so every material decodes the dome's true radiance. The old dome's capture was decoded twice on medium and high (the sky to the power 2.2). `SKY_IBL_SCALE` stays 1.
+- **§6: the haze's glow.** Its power is fitted by the worst ratio between the lobe and the horizon's own fall-off over the columns 20° to 30° from the sun, with a weight that rises smoothly between toward/away contrasts of 1.05 and 1.25; a least-squares fit was too wide or too narrow on the real sunset ring, which is a sharp core and a long tail. At 18:00 the lobe is within 1.53× of the ring at 20° and 0.64× at 30°.
+- **§6, §8: the start.** The page's one sky source outlives tier swaps; nothing is drawn, revealed or baked before the noon bracket and the hour's slices are in — the render loop, the reveal, the far forest's impostor bake, a swapped renderer's frames and the start-up tier check, whose steps share one source. The scene's fog density is set from the weather before the first slice, and a warning is logged if the sky has not arrived after 10 s.
+- **§7: the corpus.** The dome's two stages, the same text on every tier, are recorded and the old sky material's four retired. Every recorded visit met no other new stage: no PBR material's compiled stage changed.
+- **`@babylonjs/materials`** is gone with the sky material, its only use. The client's first module worker (`sky.worker.ts`) builds into its own chunk under the site's base.
+
+### Cost
+
+Measured as §8 says, GPU-bound at 3840 × 2160 against `main`, paired on
+fresh pages from the trailhead pad over the cove, twelve samples a side on
+the development machine (an M4 Air); the same build on both sides of a pair
+read +0.04 ms.
+
+| Tier | 12:00 | 18:00 |
+| --- | --- | --- |
+| high (WebGPU) | +0.12 ms | +0.56 ms |
+| medium (WebGL2) | +0.05 ms | +1.03 ms |
+| low (WebGL2) | +0.04 ms | −0.10 ms |
+
+Noon costs nothing, and neither does the low tier at dusk. The probe does
+not re-render while the hour holds still, and the grade computes its night
+terms at every hour, so neither explains the half to one millisecond the
+tiers with a post chain pay at dusk; `main` itself is about 1.5 ms dearer at
+dusk than at noon on high, which points at the low sun. The table and its
+slices build in about 0.4 s under Node, in a worker off the page's thread;
+a change of hour costs the main thread one blend and a pack of 2,048 texels,
+and a change of weather alone uploads nothing.
+
+### The checks
+
+Stills at the cove from 18 m, along the coast at the sea horizon, at the forest lake and from the pad, on the high tier, beside `main` and beside the Olympic coast references, every page without a console error: clear at 12:00, 17:00, 18:00, 18:30, 18:45, 19:00 and 22:00; mist at 12:00 and 18:00; overcast at 15:00; eerie at 20:00; rain at 18:00; dawn at 06:00. The sunset glow sits on the sun with a glitter path, the sea horizon meets the sky without a seam, 18:30 is a blue hour, noon keeps today's look and the night is today's night. Of a darker dusk (`SKY_GAMMA` 0.5, a richer sky over very dark ground) and the lighter one, the lighter was chosen.
+
+### Left for later
+
+- The low tier's dome takes exposure, the tone map and contrast but not the colour curves, so under mist or dread the low tier's sky lacks the split-tone tint the ground gets.
+- In deep twilight the multiple-scattering table is read linearly between bins 3.6° of sun apart, which leaves a faint pink band above the horizon near 18:45 and a small step in the glow near 18:39; a read in the logarithm would smooth both.
+- A GPU profile of the half to one millisecond the post-chain tiers pay at dusk.
+- Stars and a moon; relighting the impostors when the hour moves far from their bake; recording the title and intro films again to match the live look.
