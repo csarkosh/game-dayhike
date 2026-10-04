@@ -21,6 +21,7 @@ import { sunPositionAt } from "./sky.js";
 import { NOON_ALTITUDE_DEG, type SkyTable } from "./skyTable.js";
 import { SKY_IBL_SCALE, skyStateFor, type SkyState } from "./skyState.js";
 import { createSkyDome } from "./skyDome.js";
+import { sightUnder } from "./gradeParams.js";
 import {
   DEFAULT_WEATHER,
   WEATHER_PRESETS,
@@ -155,6 +156,15 @@ export type Lighting = {
    * and re-capture the probe, twice.
    */
   setView(hour: number, weather: WeatherParams): void;
+  /**
+   * The local player's stare (hollow.ts), handed in every frame. On the
+   * material path the frame's exposure is the weather's and the hour's
+   * times what the stare leaves (`sightUnder`), written here and at every
+   * apply, so a weather fade, which applies as each render starts, keeps
+   * the stare's dimming. On the post path the grade pass dims by the stare
+   * instead, and this changes nothing.
+   */
+  setStare(stare: number): void;
   /** A copy of the current, possibly mid-fade, weather parameters. */
   readonly weather: WeatherParams;
   /**
@@ -237,6 +247,10 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   let sky: SkyState | null = null;
   /** The last apply found the table without its slices: the next slice to arrive applies again. */
   let waiting = true;
+  /** The weather's and the hour's exposure, as of the last apply. */
+  let exposure = 1;
+  /** What the stare leaves of it on the material path (`setStare`); 1 on the post path. */
+  let sight = 1;
 
   scene.getEngine().setHardwareScalingLevel(settings.hardwareScaling);
 
@@ -359,6 +373,14 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // first slices (a swap's cover) is fogged as the weather now stands, not
     // at Babylon's default of 0.1 or a weather since changed.
     scene.fogDensity = fogDensityUnder(weather, viewDistance);
+    // The exposure too is the weather's and the hour's alone (at the sun's
+    // altitude, as the sky state takes it), so it is set held or not. On the
+    // material path it is the frame's own, times what the stare leaves, and
+    // this is its one writer there: an apply inside a frame, a weather
+    // fade's, keeps the stare's dimming. On the post path the grade pass
+    // carries its own exposure and no material reads this one.
+    exposure = exposureUnder(weather, sunPositionAt(hour).y);
+    image.exposure = exposure * sight;
     // Until the table holds the slices either side of noon and of the hour,
     // the state cannot be made: whatever stands (the defaults, or the last
     // hour's light) stays, and the next slice to arrive tries again.
@@ -394,9 +416,6 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // plateau reads as the light going, not the fill alone dimming.
     scene.environmentIntensity = collapse * SKY_IBL_SCALE;
 
-    // Read on both paths: the grade pass reads it from the same record, and on
-    // the post path the value is simply unused by materials.
-    image.exposure = exposureUnder(weather, s.sunDir.y);
     // Overcast has no directional shadows: fade them rather than reconfigure the CSM.
     shadows?.setDarkness(shadowDarknessUnder(weather));
 
@@ -412,9 +431,9 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     if (waiting) apply();
   });
 
-  // The /weather fade — and the escalation's turn toward eerie — advance
-  // here. apply() re-renders the probe each tick; its render list is one dome,
-  // six cheap faces.
+  // The /weather fade advances here (the escalation eases the weather itself
+  // and sets it with no fade). apply() re-renders the probe each tick; its
+  // render list is one dome, six cheap faces.
   const fadeObserver = scene.onBeforeRenderObservable.add(() => {
     if (fadeFrom === null) return;
     fadeElapsed += scene.getEngine().getDeltaTime() / 1000;
@@ -460,6 +479,11 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
       weather = { ...next };
       fadeFrom = null;
       apply();
+    },
+    setStare(stare) {
+      if (options.colourPath !== "material") return;
+      sight = sightUnder(stare);
+      image.exposure = exposure * sight;
     },
     addShadowMesh(mesh) {
       mesh.receiveShadows = true;

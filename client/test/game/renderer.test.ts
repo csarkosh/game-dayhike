@@ -519,6 +519,43 @@ describe("the renderer's view", () => {
   });
 });
 
+describe("the low tier's exposure", () => {
+  it("keeps the stare's dimming through a weather fade, frame after frame, as outside one", () => {
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture() });
+    try {
+      const image = renderer.scene.imageProcessingConfiguration;
+      // Half a second a frame: a 3 s fade is a sixth further on at each.
+      vi.spyOn(renderer.engine, "getDeltaTime").mockReturnValue(500);
+      // A half stare leaves a quarter of the light: (1 - 0.5) squared.
+      const state = windTestState({ ...windTestPlayer(1), stare: 0.5 });
+      const frame = () => {
+        renderer.sync(state, 1, 0);
+        renderer.scene.render();
+      };
+      renderer.setView(12, WEATHER_PRESETS.clear);
+      frame();
+      // Clear noon's exposure, 0.91045012, times the quarter.
+      expect(image.exposure).toBeCloseTo(0.22761253123728348, 12);
+      // The fade toward eerie moves inside each render, after the frame's
+      // sync: the exposure each frame draws with is the weather's then, still
+      // times the quarter.
+      renderer.setWeather(WEATHER_PRESETS.eerie, 3);
+      frame();
+      expect(image.exposure).toBeCloseTo(0.21822351432374554, 12);
+      frame();
+      expect(image.exposure).toBeCloseTo(0.209024174519572, 12);
+      for (let i = 0; i < 4; i++) frame();
+      // Eerie's noon exposure, 0.69649435, times the quarter: the fade has
+      // ended with the stare's dimming as it began.
+      expect(image.exposure).toBeCloseTo(0.17412358639652187, 12);
+      frame();
+      expect(image.exposure).toBeCloseTo(0.17412358639652187, 12);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(60_000));
+});
+
 describe("the renderer's engine", () => {
   // `Engine` here is this file's module mock (NullEngine standing in for the
   // WebGL2 engine), so an instance of it is what the WebGL2 path constructs.

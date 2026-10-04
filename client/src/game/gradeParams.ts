@@ -200,6 +200,16 @@ function tint(hue: number, density: number, saturation: number, mood: number): T
 }
 
 /**
+ * What a `stare` (hollow.ts) of 0 to 1 leaves of the frame's exposure: all
+ * of it at 0, none at 1, falling as the square of what is left open between.
+ * The grade's record carries it on the post path, the lighting's exposure on
+ * the material path (`Lighting.setStare`).
+ */
+export function sightUnder(stare: number): number {
+  return (1 - clamp01(stare)) * (1 - clamp01(stare));
+}
+
+/**
  * The grade pass's record. `night` is the sky's night factor
  * (`SkyState.night`): the white point cools and the rods take over by it.
  * `timeSeconds` only drives the vignette's breath; it defaults to 0 so
@@ -215,9 +225,8 @@ export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, 
   // The resting weight, then the breath: at lens 0 the multiplier is exactly 1.
   const restingVignette = lens === 0 ? vignetteWeightUnder({ ...w, dread: 0 }) : vignetteWeightUnder({ ...w, dread: lens });
   const breath = lens === 0 ? 1 : 1 + VIGNETTE_PULSE * lens * Math.sin((2 * Math.PI * timeSeconds) / VIGNETTE_PULSE_PERIOD);
-  const sight = (1 - clamp01(stare)) * (1 - clamp01(stare));
   return {
-    exposure: exposureUnder(w, altitude) * sight,
+    exposure: exposureUnder(w, altitude) * sightUnder(stare),
     whitePoint: whitePointMatrix(night),
     purkinje: PURKINJE_MATRIX,
     purkinjeThreshold: PURKINJE_THRESHOLD,
