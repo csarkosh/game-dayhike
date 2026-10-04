@@ -1942,7 +1942,9 @@ function buildRenderer(
         lensCanopy = forestDensity(forest.seed, lensCanopyX, lensCanopyZ);
       }
       lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x, lensCanopy), engine.getDeltaTime() / 1000);
-      post.update(weather, lighting.hour, unsettle, stare, lensStrength);
+      // Before the sky's first slices there is no night factor; the day's 0
+      // stands in, for frames no one sees.
+      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, stare, lensStrength);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
