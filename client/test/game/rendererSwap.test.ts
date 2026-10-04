@@ -75,14 +75,18 @@ import { skyFixture } from "./helpers/skyFixture.js";
 
 // ---- the order, with stubs --------------------------------------------------
 
-function stubRenderer(id: string, log: string[]): Renderer {
+function stubRenderer(id: string, log: string[], sky: Promise<void> = Promise.resolve()): Renderer {
   return {
     id,
     engine: { stopRenderLoop: () => log.push(`stop ${id}`), runRenderLoop: () => log.push(`run ${id}`) },
     scene: { id },
+    skyReady: () => sky,
     dispose: () => log.push(`dispose ${id}`),
   } as unknown as Renderer;
 }
+
+/** One turn of the event loop: a held sky's start has run. */
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 function stubCanvas(id: string, log: string[]): HTMLCanvasElement {
   return {
@@ -132,13 +136,14 @@ function stubBindings(
 }
 
 describe("swapRenderer's order", () => {
-  it("tears the old renderer down first, then builds on a fresh canvas and rebinds", () => {
+  it("tears the old renderer down first, then builds on a fresh canvas and rebinds", async () => {
     const log: string[] = [];
     const got = swapRenderer(
       { renderer: stubRenderer("medium@c0", log), canvas: stubCanvas("c0", log) },
       { tier: "high", engine: null, fallbackTier: "medium" },
       stubBindings(log),
     );
+    await flush();
     expect(got.tier).toBe("high");
     expect(got.fellBack).toBe(false);
     expect((got.canvas as unknown as { style: { touchAction?: string } }).style.touchAction).toBe("none");
@@ -157,7 +162,7 @@ describe("swapRenderer's order", () => {
     ]);
   });
 
-  it("rebuilds the running tier on WebGL2 when the new build throws, and throws on a second failure", () => {
+  it("rebuilds the running tier on WebGL2 when the new build throws, and throws on a second failure", async () => {
     const log: string[] = [];
     const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
@@ -167,6 +172,7 @@ describe("swapRenderer's order", () => {
         { tier: "high", engine, fallbackTier: "medium" },
         stubBindings(log, new Set<QualityTier>(["high"])),
       );
+      await flush();
       expect(got.tier).toBe("medium");
       expect(got.fellBack).toBe(true);
       // The given engine's rung failing may be the engine's fault: its tier
@@ -196,6 +202,7 @@ describe("swapRenderer's order", () => {
         { tier: "high", engine: null, fallbackTier: "medium" },
         stubBindings(log2, new Set<QualityTier>(["high", "medium"])),
       );
+      await flush();
       expect(low.tier).toBe("low");
       expect(low.fellBack).toBe(true);
       expect(log2.slice(-5)).toEqual(["build c3 low webgl2", "restore low@c3", "extras build low@c3", "rebind c3", "run low@c3"]);
@@ -213,22 +220,46 @@ describe("swapRenderer's order", () => {
   });
 });
 
+describe("a swap's first frame", () => {
+  it("waits for the new renderer's sky: its loop runs only once the sky is held", async () => {
+    const log: string[] = [];
+    let hold = (): void => undefined;
+    const sky = new Promise<void>((resolve) => {
+      hold = resolve;
+    });
+    const bindings = stubBindings(log);
+    bindings.build = (canvas, tier) => {
+      log.push(`build ${idOf(canvas)} ${tier}`);
+      return stubRenderer(`${tier}@${idOf(canvas)}`, log, sky);
+    };
+    swapRenderer({ renderer: stubRenderer("medium@c0", log), canvas: stubCanvas("c0", log) }, { tier: "high", engine: null, fallbackTier: "medium" }, bindings);
+    await flush();
+    expect(log.at(-1)).toBe("rebind c1");
+    expect(log.some((line) => line.startsWith("run"))).toBe(false);
+    hold();
+    await flush();
+    expect(log.at(-1)).toBe("run high@c1");
+    expect(log.filter((line) => line.startsWith("run"))).toEqual(["run high@c1"]);
+  });
+});
+
 describe("a swap onto a given engine", () => {
   const engine = (log: string[]) => ({ dispose: () => log.push("dispose given engine") }) as unknown as AbstractEngine;
   const detector = () => () => undefined;
 
-  it("listens to the new engine once its rung stands, never to a rung that failed", () => {
+  it("listens to the new engine once its rung stands, never to a rung that failed", async () => {
     const log: string[] = [];
     const got = swapRenderer(
       { renderer: stubRenderer("low@c0", log), canvas: stubCanvas("c0", log) },
       { tier: "high", engine: engine(log), watch: detector, fallbackTier: "low" },
       stubBindings(log),
     );
+    await flush();
     expect([got.tier, got.fellBack, got.engineFellBack]).toEqual(["high", false, false]);
-    expect(log.slice(-3)).toEqual(["rebind c1", "run high@c1", "watch high@c1"]);
+    expect(log.slice(-3)).toEqual(["rebind c1", "watch high@c1", "run high@c1"]);
   });
 
-  it("takes a given engine's failure as the engine's: remembered, and the same tier built on WebGL2, no tier fallback", () => {
+  it("takes a given engine's failure as the engine's: remembered, and the same tier built on WebGL2, no tier fallback", async () => {
     const log: string[] = [];
     const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
@@ -237,6 +268,7 @@ describe("a swap onto a given engine", () => {
         { tier: "high", engine: engine(log), watch: detector, fallbackTier: "low" },
         stubBindings(log, new Set(), new Set(), new Set<QualityTier>(["high"])),
       );
+      await flush();
       expect([got.tier, got.fellBack, got.engineFellBack]).toEqual(["high", false, true]);
       expect(log.filter((line) => line.startsWith("watch"))).toEqual([]);
       expect(log.filter((line) => line.startsWith("engine failed"))).toEqual(["engine failed: no high"]);
@@ -252,8 +284,8 @@ describe("a swap onto a given engine", () => {
         "restore high@c2",
         "extras build high@c2",
         "rebind c2",
-        "run high@c2",
         "engine failed: no high",
+        "run high@c2",
       ]);
     } finally {
       quiet.mockRestore();
@@ -310,7 +342,7 @@ describe("a swap that throws before its first rung", () => {
 });
 
 describe("a throw after the build", () => {
-  it("disposes the renderer just built, with what was built into its scene, and falls back", () => {
+  it("disposes the renderer just built, with what was built into its scene, and falls back", async () => {
     const log: string[] = [];
     const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
@@ -319,6 +351,7 @@ describe("a throw after the build", () => {
         { tier: "high", engine: null, fallbackTier: "medium" },
         stubBindings(log, new Set(), new Set<QualityTier>(["high"])),
       );
+      await flush();
       expect(got.tier).toBe("medium");
       expect(log.slice(4)).toEqual([
         "fresh c1",

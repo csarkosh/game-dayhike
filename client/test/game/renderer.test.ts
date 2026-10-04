@@ -760,7 +760,7 @@ describe("world shell wiring", () => {
   it("hands the forest its sky, so no billboard bakes before the sky is held", () => {
     const forestOptions = slice("createForestMeshes(scene, forest.seed, {", "      })");
     expect(forestOptions).toContain("sky: skyReady(),");
-    expect(src).toContain("const skyReady = (): Promise<void> => whenSkyHeld(skyTable, () => lighting.hour);");
+    expect(src).toContain("skyWait ??= whenSkyHeld(skyTable, () => lighting.hour, { signal: disposal.signal }).then(() => {");
   });
 
   it("rings the water with the weather's rain each frame, beside the puddles", () => {

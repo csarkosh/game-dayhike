@@ -44,7 +44,9 @@ vi.mock("../../src/game/skyDome.js", async (importOriginal) => {
   };
 });
 
-import { createLighting, DEFAULT_HOUR, sunAltitudeDeg, type Lighting, type LightingOptions } from "../../src/game/lighting.js";
+import {
+  createLighting, DEFAULT_HOUR, SKY_WAIT_WARN_MS, sunAltitudeDeg, whenSkyHeld, type Lighting, type LightingOptions,
+} from "../../src/game/lighting.js";
 import { SKY_DOME_NAME } from "../../src/game/skyDome.js";
 import { createSkyTable } from "../../src/game/skyTable.js";
 import { SKY_IBL_SCALE, skyStateFor } from "../../src/game/skyState.js";
@@ -491,6 +493,78 @@ describe("the sky's table", () => {
     table.add(fixture.blendAt(74));
     table.add(fixture.blendAt(76));
     expect(dome.updates).toEqual([]);
+  });
+});
+
+describe("the wait for the sky", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("warns once, naming the sky's slices, when they have not arrived 10 s after it began, and waits on", async () => {
+    expect(SKY_WAIT_WARN_MS).toBe(10_000);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const table = createSkyTable();
+    let held = false;
+    void whenSkyHeld(table, () => 12).then(() => {
+      held = true;
+    });
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(warnings).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(warnings.mock.calls.map((c) => String(c[0]))).toEqual(["the sky's slices have not arrived after 10 s; still waiting for them"]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(warnings).toHaveBeenCalledTimes(1);
+    expect(held).toBe(false);
+    const fixture = skyFixture();
+    table.add(fixture.blendAt(74));
+    table.add(fixture.blendAt(76));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(held).toBe(true);
+    expect(warnings).toHaveBeenCalledTimes(1);
+  });
+
+  it("says nothing when the slices arrive in time, or were in already", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const table = createSkyTable();
+    const waiting = whenSkyHeld(table, () => 12);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const fixture = skyFixture();
+    table.add(fixture.blendAt(74));
+    table.add(fixture.blendAt(76));
+    await waiting;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await whenSkyHeld(table, () => 12);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(warnings).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops listening and never resolves once its signal is aborted, and says nothing", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const table = createSkyTable();
+    const listening = vi.spyOn(table, "onChange");
+    const gone = new AbortController();
+    let held = false;
+    void whenSkyHeld(table, () => 12, { signal: gone.signal }).then(() => {
+      held = true;
+    });
+    expect(listening).toHaveBeenCalledTimes(1);
+    gone.abort();
+    expect(vi.getTimerCount()).toBe(0);
+    const fixture = skyFixture();
+    table.add(fixture.blendAt(74));
+    table.add(fixture.blendAt(76));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(held).toBe(false);
+    expect(warnings).not.toHaveBeenCalled();
+    // An aborted signal from the start: nothing is listened to at all.
+    void whenSkyHeld(createSkyTable(), () => 12, { signal: gone.signal });
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

@@ -8,7 +8,9 @@
  * and the scene to be ready, discards the warm-up frames, measures the
  * intervals between render-loop callbacks, and disposes the renderer and
  * removes the canvas whatever happened, so no probe renderer outlives its
- * step.
+ * step. The steps of one probe read one sky, started at its first step and
+ * stopped when the probe ends (`probeDeps`), so no step makes the slices
+ * again.
  */
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Scene } from "@babylonjs/core/scene.js";
@@ -28,8 +30,11 @@ import {
 import { afterNextPaint } from "./paint.js";
 import { showProbeScreen, timeIdleCadence } from "./probeScreen.js";
 import { containerPixels, type ProbeReading, type QualityTier, type VerdictEngine } from "./quality.js";
+import { sunAltitudeDeg } from "./lighting.js";
 import { createRenderer, type Renderer } from "./renderer.js";
 import { seedFromToken } from "./seed.js";
+import { startSkySource, type SkySource } from "./skyWorker.js";
+import type { SkyTable } from "./skyTable.js";
 import { pageStorage } from "./tierChoice.js";
 import { WEATHER_PRESETS } from "./weather.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
@@ -55,18 +60,19 @@ export const ENGINE_FAILED = "engine-failed";
 
 /**
  * The canopy pose at `tier` on `canvas`, drawn on `engine` when one is given
- * (WebGPU, made for `canvas`), else on WebGL2: `frame()` puts the free camera
- * on the pose, syncs and renders once; `dispose()` disposes the renderer and
- * its engine.
+ * (WebGPU, made for `canvas`), else on WebGL2, its sky read from `sky` when
+ * given (the probe's own, shared by its steps), else from a source of the
+ * renderer's own: `frame()` puts the free camera on the pose, syncs and
+ * renders once; `dispose()` disposes the renderer and its engine.
  */
-export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier, engine: AbstractEngine | null = null): ProbeScene {
+export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier, engine: AbstractEngine | null = null, sky?: SkyTable): ProbeScene {
   // Module state survives a game's `/terrain` command; the pose is the
   // default variant's.
   setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
   const seed = seedFromToken(PROBE_SEED_TOKEN);
   const level = parseLevel(sandbox01);
   const forest = createForest(seed);
-  const renderer = createRenderer(canvas, level, forest, { tier, engine: engine ?? undefined });
+  const renderer = createRenderer(canvas, level, forest, { tier, engine: engine ?? undefined, skyTable: sky });
   try {
     renderer.setWeather(WEATHER_PRESETS.mist, 0);
     renderer.setHour(PROBE_HOUR);
@@ -111,11 +117,12 @@ export function probeSceneReady(meterReady: boolean, skyIn: boolean, scene: Pick
  * only the step's own watcher hears, never the game's. `signal` stops it at
  * once, disposing the renderer before `abort()` returns, so the page can
  * build its next renderer straight after without two living at once.
+ * `opts.sky` is the probe's sky, shared by its steps (`buildProbeScene`).
  */
 export function runProbeStep(
   container: HTMLElement,
   tier: QualityTier,
-  opts: { cancelled(): boolean; signal?: AbortSignal; on?: StepEngine; readyBy?: number },
+  opts: { cancelled(): boolean; signal?: AbortSignal; on?: StepEngine; readyBy?: number; sky?: SkyTable },
 ): Promise<ProbeReading | null | typeof ENGINE_FAILED> {
   return new Promise((resolve) => {
     const given = opts.on?.engine ?? null;
@@ -129,7 +136,7 @@ export function runProbeStep(
     let probe: ProbeScene;
     try {
       // A renderer whose build throws disposes the engine it was given.
-      probe = buildProbeScene(canvas, tier, given);
+      probe = buildProbeScene(canvas, tier, given, opts.sky);
     } catch (error) {
       console.warn("quality probe: the scene could not be built.", error);
       canvas.remove();
@@ -261,7 +268,10 @@ function webgl2Step(): StepEngine {
  * The page's `StartupDeps` for `container`. `engines` gives each step the
  * engine the WebGPU rule gives its tier, hears of a WebGPU step that failed,
  * and says whether a step can settle on the engine it got
- * (`measureOnRuleEngine`); without it every step is WebGL2.
+ * (`measureOnRuleEngine`); without it every step is WebGL2. The probe's sky
+ * is one source (`startSky`, at the probe's hour) started at its first step,
+ * read by every step after, and stopped when the probe ends (`endProbe`) or
+ * the page moves on (`abort`).
  */
 export function probeDeps(
   container: HTMLElement,
@@ -271,8 +281,15 @@ export function probeDeps(
     // Every step WebGL2: the start has already skipped a probe it cannot settle.
     settles: () => true,
   },
+  startSky: (startDeg: number) => SkySource = startSkySource,
 ): PageProbe {
   const aborts = new AbortController();
+  /** The probe's sky, from its first step until it ends. */
+  let sky: SkySource | null = null;
+  const endSky = (): void => {
+    sky?.dispose();
+    sky = null;
+  };
   return {
     storage: pageStorage(),
     pixels: () => containerPixels(container),
@@ -283,12 +300,14 @@ export function probeDeps(
       await new Promise<void>((resolve) => afterNextPaint(resolve));
       const stopped = (): boolean => aborts.signal.aborted || cancelled();
       if (stopped()) return null;
+      sky ??= startSky(sunAltitudeDeg(PROBE_HOUR));
+      const table = sky.table;
       const reading = await measureOnRuleEngine(
         tier,
         stopped,
         {
           ...engines,
-          measure: (step, on, by) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on, readyBy: by }),
+          measure: (step, on, by) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on, readyBy: by, sky: table }),
           webgl2: webgl2Step,
         },
         readyBy,
@@ -321,6 +340,11 @@ export function probeDeps(
     // cadence with nothing to draw.
     idleCadence: () => timeIdleCadence(aborts.signal),
     log: (line) => console.info(line),
-    abort: () => aborts.abort(),
+    endProbe: endSky,
+    abort: () => {
+      // The step's renderer goes first, as the abort reaches it.
+      aborts.abort();
+      endSky();
+    },
   };
 }

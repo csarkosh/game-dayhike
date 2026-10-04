@@ -1123,9 +1123,10 @@ export type Renderer = {
   /** Resolves once the sky's table holds the slices the lighting needs:
    * those either side of noon and of the hour the renderer is set to, read
    * again as each slice arrives (`whenSkyHeld`). Until then the lighting has
-   * applied nothing, so no start draws a frame before it (the hike's, the
-   * scene routes', the tier check's) and the forest bakes no billboard
-   * before it (`BakeOptions.sky`). */
+   * applied nothing, so no start draws a frame before it (the hike's, a
+   * swap's, the scene routes', the tier check's) and the forest bakes no
+   * billboard before it (`BakeOptions.sky`). Callers while it waits share
+   * one wait; for a renderer disposed first it never resolves. */
   skyReady(): Promise<void>;
   /**
    * `frame` carries this frame's local, non-simulated view inputs — its
@@ -1510,8 +1511,20 @@ function buildRenderer(
   partOf(ownSky);
   const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });
   partOf(lighting);
+  /** Aborted on dispose, or as a build that throws is undone: a wait for the
+   * sky then stops listening and never resolves. */
+  const disposal = new AbortController();
+  made(() => disposal.abort());
+  /** The wait for the sky its callers share while it is pending, so a sky
+   * that never comes is warned of once. */
+  let skyWait: Promise<void> | null = null;
   /** `Renderer.skyReady`: the table holds what the lighting needs at the hour it is set to, read again at each slice. */
-  const skyReady = (): Promise<void> => whenSkyHeld(skyTable, () => lighting.hour);
+  const skyReady = (): Promise<void> => {
+    skyWait ??= whenSkyHeld(skyTable, () => lighting.hour, { signal: disposal.signal }).then(() => {
+      skyWait = null;
+    });
+    return skyWait;
+  };
   const clock = options.clock ?? (() => performance.now());
   const post = createPost(scene, camera, postFeatures, { now: clock });
   partOf(post);
@@ -2145,6 +2158,8 @@ function buildRenderer(
       motes?.dispose();
       post.dispose();
       skinShading.dispose();
+      // A wait for the sky ends unresolved: nothing waits on what has gone.
+      disposal.abort();
       lighting.dispose();
       // After the lighting, which stops listening to its table first.
       ownSky?.dispose();

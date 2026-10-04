@@ -168,7 +168,8 @@ export type SwapBindings = {
   /** Puts the view back: the hour, the weather, the console's toggles, the
    * free camera. */
   restore(renderer: Renderer): void;
-  /** The render loop, stopped on the old engine and run on the new. */
+  /** The render loop, stopped on the old engine and run on the new once its
+   * sky is held. */
   loop(): void;
   /** Stops listening to the running engine, before anything of it goes. */
   unwatch(): void;
@@ -194,7 +195,8 @@ const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium"
  * scene extras while their scene lives; dispose the renderer (its engine loses
  * its context); then, on a fresh canvas in the old one's place, build at the
  * target tier, put the view back, rebuild the extras, rebind the listeners and
- * run the loop.
+ * run the loop once the new renderer's sky is held (`Renderer.skyReady`), so
+ * no frame of it is drawn under Babylon's default lights.
  *
  * A rung that fails, in its build or in anything after it, is taken down
  * whole (the renderer it built, and with it the engine and the atmosphere's
@@ -254,7 +256,10 @@ function climb(
       bindings.restore(renderer);
       bindings.extras.build(renderer);
       bindings.rebind(canvas);
-      renderer.engine.runRenderLoop(bindings.loop);
+      // Its loop, and so its first frame, waits for its sky (`Renderer.skyReady`),
+      // which never comes for a renderer disposed first.
+      const standing = renderer;
+      void standing.skyReady().then(() => standing.engine.runRenderLoop(bindings.loop));
       if (engine !== null && watch !== null) bindings.watch(renderer, watch);
       engineFaultShown(engineThrow, tier, bindings);
       return { renderer, canvas, tier, fellBack: tier !== target.tier, engineFellBack: target.engine !== null && engine === null };

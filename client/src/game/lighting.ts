@@ -56,22 +56,39 @@ export function skyHeld(table: SkyTable, hour: number): boolean {
   return table.has(NOON_ALTITUDE_DEG) && table.has(sunAltitudeDeg(hour));
 }
 
+/** How long a wait for the sky goes on before it says so in the console. */
+export const SKY_WAIT_WARN_MS = 10_000;
+
 /**
  * Resolves once `skyHeld(table, hour())` holds. `hour` is read again at every
  * slice that arrives, so an hour changed while the first slices are made is
- * the one waited for.
+ * the one waited for. Still waiting `SKY_WAIT_WARN_MS` after it began, it
+ * warns once, and waits on: a page whose slices never come is held, not shown
+ * unlit, but not in silence. Once `options.signal` is aborted it stops
+ * listening to the table and never resolves: what waited on it has gone.
  */
-export function whenSkyHeld(table: SkyTable, hour: () => number): Promise<void> {
+export function whenSkyHeld(table: SkyTable, hour: () => number, options: { signal?: AbortSignal } = {}): Promise<void> {
   return new Promise((resolve) => {
+    const signal = options.signal;
+    if (signal?.aborted) return;
     if (skyHeld(table, hour())) {
       resolve();
       return;
     }
+    const warning = setTimeout(() => {
+      console.warn(`the sky's slices have not arrived after ${SKY_WAIT_WARN_MS / 1000} s; still waiting for them`);
+    }, SKY_WAIT_WARN_MS);
+    const stop = (): void => {
+      off();
+      clearTimeout(warning);
+      signal?.removeEventListener("abort", stop);
+    };
     const off = table.onChange(() => {
       if (!skyHeld(table, hour())) return;
-      off();
+      stop();
       resolve();
     });
+    signal?.addEventListener("abort", stop, { once: true });
   });
 }
 

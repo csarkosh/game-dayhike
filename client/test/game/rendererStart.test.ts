@@ -106,6 +106,23 @@ describe("the renderer's sky before its first frame", () => {
     }
   }, timeLimit(60_000));
 
+  it("is one wait for every caller while it waits, and never resolves for a renderer disposed first", async () => {
+    const table = createSkyTable();
+    const fixture = skyFixture();
+    const r = createRenderer(nullCanvas(), LEVEL, null, { tier: "low", skyTable: table });
+    let ready = false;
+    const waiting = r.skyReady();
+    expect(r.skyReady()).toBe(waiting);
+    void waiting.then(() => {
+      ready = true;
+    });
+    r.dispose();
+    table.add(fixture.blendAt(74));
+    table.add(fixture.blendAt(76));
+    await tick();
+    expect(ready).toBe(false);
+  }, timeLimit(60_000));
+
   it("is ready at once on a table that already holds them", async () => {
     const r = createRenderer(nullCanvas(), LEVEL, null, { tier: "low", skyTable: skyFixture() });
     try {
