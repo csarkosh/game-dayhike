@@ -19,7 +19,8 @@ import {
 import type { Rgb } from "./colour.js";
 
 export type SkyTable = {
-  /** Holds a slice, replacing one of the same altitude. Throws on a slice of the wrong size or altitude. */
+  /** Holds a slice, replacing one of the same altitude. Throws on a slice of the wrong size or
+   *  altitude, and only on that: a listener's error is rethrown from a microtask instead. */
   add(slice: SkySlice): void;
   readonly count: number;
   /** True when the slices at or bracketing altitudeDeg are held (an exact altitude needs one). */
@@ -29,7 +30,8 @@ export type SkyTable = {
    *  Throws when empty. Never returns a slice object held in the table (callers may keep it). */
   blendAt(altitudeDeg: number): SkySlice;
   whenReady(altitudeDeg: number): Promise<void>;
-  /** Called after every add. Returns an unsubscribe. */
+  /** Called after every add, in the order registered; a listener that throws does not stop the
+   *  others, and its error is rethrown from a microtask. Returns an unsubscribe. */
   onChange(listener: () => void): () => void;
 };
 
@@ -125,8 +127,20 @@ export function createSkyTable(): SkyTable {
       const ready = waiting.filter((w) => has(w.altitudeDeg));
       waiting = waiting.filter((w) => !has(w.altitudeDeg));
       for (const w of ready) w.resolve();
-      // A snapshot, so a listener may unsubscribe itself, or another, as it runs.
-      for (const listener of [...listeners]) listener();
+      // A snapshot, so a listener may unsubscribe itself, or another, as it runs; a listener
+      // that a sibling has unsubscribed earlier in this pass is skipped. A listener that throws
+      // must not stop the rest or fail the add (the slice is held), so its error is rethrown
+      // from a microtask, where it still reaches the console.
+      for (const listener of [...listeners]) {
+        if (!listeners.has(listener)) continue;
+        try {
+          listener();
+        } catch (error) {
+          queueMicrotask(() => {
+            throw error;
+          });
+        }
+      }
     },
     get count() {
       return slices.length;

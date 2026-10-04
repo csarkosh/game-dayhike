@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SLICE_ALTITUDES_DEG,
   SLICE_AZIMUTHS,
@@ -30,6 +30,19 @@ function flatSlice(altitudeDeg: number, v: number): SkySlice {
 
 /** Lets every promise already settled run its callbacks. */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** Stands in for queueMicrotask and keeps what is queued, so a test can see an error rethrown there. */
+function captureMicrotasks(): (() => void)[] {
+  const queued: (() => void)[] = [];
+  vi.stubGlobal("queueMicrotask", (callback: () => void) => {
+    queued.push(callback);
+  });
+  return queued;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("the order the slices are made in", () => {
   it("knows the noon sun's altitude on the arc", () => {
@@ -203,6 +216,51 @@ describe("the sky table", () => {
     table.add(flatSlice(11, 1));
     expect(seen).toEqual([1, 2]);
     expect(other).toEqual([1]);
+  });
+
+  it("skips a listener that a sibling unsubscribed earlier in the same pass", () => {
+    const table = createSkyTable();
+    const calls: string[] = [];
+    let stopSecond: () => void = () => {};
+    table.onChange(() => {
+      calls.push("first");
+      stopSecond();
+    });
+    stopSecond = table.onChange(() => calls.push("second"));
+    table.onChange(() => calls.push("third"));
+    table.add(flatSlice(10, 1));
+    expect(calls).toEqual(["first", "third"]);
+    table.add(flatSlice(10.5, 1));
+    expect(calls).toEqual(["first", "third", "first", "third"]);
+  });
+
+  it("holds the slice and calls the other listeners when one throws, and rethrows its error from a microtask", () => {
+    const queued = captureMicrotasks();
+    const table = createSkyTable();
+    const seen: number[] = [];
+    table.onChange(() => {
+      throw new Error("listener failed");
+    });
+    table.onChange(() => seen.push(table.count));
+    expect(() => table.add(flatSlice(10, 1))).not.toThrow();
+    expect(table.count).toBe(1);
+    expect(table.has(10)).toBe(true);
+    expect(seen).toEqual([1]);
+    expect(queued.length).toBe(1);
+    expect(() => (queued[0] as () => void)()).toThrow("listener failed");
+    expect(() => table.add(flatSlice(10.5, 1))).not.toThrow();
+    expect(seen).toEqual([1, 2]);
+    expect(queued.length).toBe(2);
+  });
+
+  it("still throws for a slice it cannot hold, and calls no listener for it", () => {
+    const queued = captureMicrotasks();
+    const table = createSkyTable();
+    const seen: number[] = [];
+    table.onChange(() => seen.push(table.count));
+    expect(() => table.add({ ...flatSlice(10, 1), ring: new Float32Array(3) })).toThrow("ring");
+    expect(seen).toEqual([]);
+    expect(queued.length).toBe(0);
   });
 });
 

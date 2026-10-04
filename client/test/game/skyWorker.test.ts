@@ -41,6 +41,15 @@ class FakeWorker {
   }
 }
 
+/** Stands in for queueMicrotask and keeps what is queued, so a test can see an error rethrown there. */
+function captureMicrotasks(): (() => void)[] {
+  const queued: (() => void)[] = [];
+  vi.stubGlobal("queueMicrotask", (callback: () => void) => {
+    queued.push(callback);
+  });
+  return queued;
+}
+
 afterEach(() => {
   FakeWorker.made = [];
   FakeWorker.refuse = false;
@@ -92,8 +101,10 @@ describe("the sky's worker", () => {
 
 describe("the sky's source", () => {
   it("starts a module worker in the form Vite bundles", () => {
-    const source = readFileSync(new URL("../../src/game/skyWorker.ts", import.meta.url), "utf8");
-    expect(source).toContain('new Worker(new URL("./sky.worker.ts", import.meta.url), { type: "module" })');
+    const text = readFileSync(new URL("../../src/game/skyWorker.ts", import.meta.url), "utf8");
+    // The code alone: the form is also written in the doc comment, which would pass whatever the call said.
+    const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(code).toContain('new Worker(new URL("./sky.worker.ts", import.meta.url), { type: "module" })');
   });
 
   it("without a Worker, makes the slices in this thread, one per timer, in sliceOrder, until disposed", () => {
@@ -156,6 +167,61 @@ describe("the sky's source", () => {
     // The worker's slices stay as it sent them.
     expect(source.table.blendAt(74).texels[0]).toBe(7);
     source.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  }, timeLimit(20_000));
+
+  it("keeps taking the worker's slices when a listener throws, and rethrows its error", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("Worker", FakeWorker);
+    const queued = captureMicrotasks();
+    const source = startSkySource(10.2);
+    const worker = FakeWorker.made.at(-1) as FakeWorker;
+    source.table.onChange(() => {
+      throw new Error("listener failed");
+    });
+    worker.send(flatSlice(74));
+    worker.send(flatSlice(76));
+    expect(source.table.count).toBe(2);
+    expect(worker.terminated).toBe(0);
+    // The worker is not taken for a failed one: nothing is made in this thread.
+    expect(vi.getTimerCount()).toBe(0);
+    expect(queued.length).toBe(2);
+    expect(() => (queued[0] as () => void)()).toThrow("listener failed");
+    for (const altitude of SLICE_ALTITUDES_DEG) worker.send(flatSlice(altitude));
+    expect(source.table.count).toBe(93);
+    expect(worker.terminated).toBe(1);
+    // Two adds above, then the 91 altitudes below them: the worker is ended on the last new one.
+    expect(queued.length).toBe(93);
+    source.dispose();
+  });
+
+  it("makes every slice in this thread when a listener throws on each, and rethrows each error", () => {
+    vi.useFakeTimers();
+    const queued = captureMicrotasks();
+    const source = startSkySource(10.2);
+    source.table.onChange(() => {
+      throw new Error("listener failed");
+    });
+    vi.advanceTimersToNextTimer();
+    expect(source.table.count).toBe(1);
+    // The chain goes on: the next timer is set before the slice is added.
+    expect(vi.getTimerCount()).toBe(1);
+    vi.runAllTimers();
+    expect(source.table.count).toBe(93);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(queued.length).toBe(93);
+    expect(() => (queued[92] as () => void)()).toThrow("listener failed");
+    source.dispose();
+  }, timeLimit(20_000));
+
+  it("stops the fallback's chain when a listener disposes the source", () => {
+    vi.useFakeTimers();
+    const source = startSkySource(10.2);
+    source.table.onChange(() => {
+      if (source.table.count === 2) source.dispose();
+    });
+    vi.runAllTimers();
+    expect(source.table.count).toBe(2);
     expect(vi.getTimerCount()).toBe(0);
   }, timeLimit(20_000));
 

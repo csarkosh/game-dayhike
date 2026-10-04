@@ -42,9 +42,11 @@ export function startSkySource(startDeg: number): SkySource {
       while (next < order.length && table.has(SLICE_ALTITUDES_DEG[order[next] as number] as number)) next++;
       if (next >= order.length) return;
       tables ??= buildSkyTables();
-      table.add(buildSlice(tables, SLICE_ALTITUDES_DEG[order[next] as number] as number));
+      const altitudeDeg = SLICE_ALTITUDES_DEG[order[next] as number] as number;
       next++;
+      // The next timer first, so nothing the add runs can end the chain.
       if (next < order.length) timer = setTimeout(step, 0);
+      table.add(buildSlice(tables, altitudeDeg));
     };
     timer = setTimeout(step, 0);
   }
