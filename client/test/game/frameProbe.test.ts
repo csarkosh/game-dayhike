@@ -350,6 +350,27 @@ describe("startupTier", () => {
     expect(readAutoRecord(t.storage)!.verdict!.tier).toBe("medium");
   });
 
+  it("ends the probe once it is over, after its two steps, and only a probe that ran", async () => {
+    const t = fakes((tier) => reading(tier, tier === "high" ? 23.96 : 16.7));
+    let ended = 0;
+    let stepsAtEnd: QualityTier[] = [];
+    t.deps.endProbe = () => {
+      ended += 1;
+      stepsAtEnd = [...t.steps];
+    };
+    await startupTier(SAFARI, page(), t.deps);
+    expect(ended).toBe(1);
+    expect(stepsAtEnd).toEqual(["high", "medium"]);
+    // A named class runs no probe, and has nothing to end.
+    const named = fakes(() => reading("high", 16.7));
+    let namedEnded = 0;
+    named.deps.endProbe = () => {
+      namedEnded += 1;
+    };
+    await startupTier(M4, page(), named.deps);
+    expect(namedEnded).toBe(0);
+  });
+
   it("does not probe again once the verdict holds", async () => {
     const t = fakes((tier) => reading(tier, 16.7));
     await startupTier(SAFARI, page(), t.deps);

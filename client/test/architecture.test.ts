@@ -452,6 +452,12 @@ describe("layer boundaries", () => {
       join(SRC, "game", "oceanPhysics.ts"),
       join(SRC, "game", "oceanSpectrum.ts"),
       join(SRC, "game", "oceanFft.ts"),
+      join(SRC, "game", "skyModel.ts"),
+      join(SRC, "game", "skyTable.ts"),
+      join(SRC, "game", "sky.worker.ts"),
+      join(SRC, "game", "skyWorker.ts"),
+      join(SRC, "game", "skyState.ts"),
+      join(SRC, "game", "halfFloat.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files

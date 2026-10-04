@@ -168,7 +168,8 @@ export type SwapBindings = {
   /** Puts the view back: the hour, the weather, the console's toggles, the
    * free camera. */
   restore(renderer: Renderer): void;
-  /** The render loop, stopped on the old engine and run on the new. */
+  /** The render loop, stopped on the old engine and run on the new once its
+   * sky is held. */
   loop(): void;
   /** Stops listening to the running engine, before anything of it goes. */
   unwatch(): void;
@@ -194,7 +195,8 @@ const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium"
  * scene extras while their scene lives; dispose the renderer (its engine loses
  * its context); then, on a fresh canvas in the old one's place, build at the
  * target tier, put the view back, rebuild the extras, rebind the listeners and
- * run the loop.
+ * run the loop once the new renderer's sky is held (`Renderer.skyReady`), so
+ * no frame of it is drawn under Babylon's default lights.
  *
  * A rung that fails, in its build or in anything after it, is taken down
  * whole (the renderer it built, and with it the engine and the atmosphere's
@@ -248,17 +250,26 @@ function climb(
   for (const { tier, engine, watch } of ladder) {
     canvas = replaceCanvas(canvas, bindings.freshCanvas());
     let renderer: Renderer | null = null;
+    /** Whether this rung stands: a throw after its loop is promised takes it down. */
+    let stands = true;
     try {
       if (engine !== null) taken();
       renderer = bindings.build(canvas, tier, engine);
       bindings.restore(renderer);
       bindings.extras.build(renderer);
       bindings.rebind(canvas);
-      renderer.engine.runRenderLoop(bindings.loop);
+      // Its loop, and so its first frame, waits for its sky (`Renderer.skyReady`),
+      // which never comes for a renderer disposed first; a sky already held
+      // starts it a turn later, so a rung taken down in this turn starts none.
+      const standing = renderer;
+      void standing.skyReady().then(() => {
+        if (stands && !standing.engine.isDisposed) standing.engine.runRenderLoop(bindings.loop);
+      });
       if (engine !== null && watch !== null) bindings.watch(renderer, watch);
       engineFaultShown(engineThrow, tier, bindings);
       return { renderer, canvas, tier, fellBack: tier !== target.tier, engineFellBack: target.engine !== null && engine === null };
     } catch (error) {
+      stands = false;
       failure = error;
       console.error(`quality: the ${tier} renderer could not be ${renderer === null ? "built" : "started"}.`, error);
       takeDown(renderer, bindings);
@@ -353,6 +364,24 @@ export function buildFirstRenderer(
     }
   }
   throw failure;
+}
+
+/**
+ * Resolves once the renderer standing, `standing()`, has its sky held
+ * (`Renderer.skyReady`). A renderer a swap disposes never resolves its wait,
+ * so each swap, told through `swapped()` (a promise that resolves at the next
+ * swap), hands the wait to the renderer that replaced it: the hike's start,
+ * which waits for its first renderer's sky, is not stranded by a swap made
+ * meanwhile (a live rebuild after a WebGPU failure, say). Never resolves
+ * while the renderer standing is one disposed without a swap: the hike has
+ * ended.
+ */
+export async function whenStandingSkyHeld(standing: () => Renderer, swapped: () => Promise<void>): Promise<void> {
+  for (;;) {
+    const renderer = standing();
+    const held = await Promise.race([renderer.skyReady().then(() => true), swapped().then(() => false)]);
+    if (held && standing() === renderer) return;
+  }
 }
 
 /**

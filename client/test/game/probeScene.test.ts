@@ -44,7 +44,10 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
 import "../../src/sim/passes/index.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { buildProbeScene, measureOnRuleEngine, runProbeStep, type StepEngine } from "../../src/game/probeScene.js";
+import { buildProbeScene, measureOnRuleEngine, probeDeps, probeSceneReady, runProbeStep, type StepEngine } from "../../src/game/probeScene.js";
+import type { SkySource } from "../../src/game/skyWorker.js";
+import { createSkyTable } from "../../src/game/skyTable.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 import type { ProbeReading } from "../../src/game/quality.js";
 import { readFileSync } from "node:fs";
 import { OVER_PLAY_Z, PROBE_SCREEN_LINE, showProbeScreen, timeIdleCadence } from "../../src/game/probeScreen.js";
@@ -68,6 +71,97 @@ describe("buildProbeScene", () => {
     probe.dispose();
     expect(EngineStore.Instances.length).toBe(0);
   }, timeLimit(60_000));
+});
+
+describe("the probe's sky", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("is one source for every step of a probe, started at its first, at the probe's noon, and stopped when the probe ends", async () => {
+    // A frame, then the timer `afterNextPaint` waits for.
+    vi.stubGlobal("requestAnimationFrame", (paint: () => void) => setTimeout(paint, 0));
+    const started: number[] = [];
+    let stopped = 0;
+    const startSky = (startDeg: number): SkySource => {
+      started.push(startDeg);
+      return { table: createSkyTable(), dispose: () => void (stopped += 1) };
+    };
+    // Steps that cannot settle build no scene: what is counted is the source alone.
+    const probe = probeDeps({} as HTMLElement, {
+      engineFor: async () => ({ canvas: {} as HTMLCanvasElement, engine: null, watch: null }),
+      failed: () => undefined,
+      settles: () => false,
+    }, startSky);
+    expect(await probe.runStep("high", () => false, 10_000)).toBeNull();
+    expect(await probe.runStep("medium", () => false, 10_000)).toBeNull();
+    expect(started.length).toBe(1);
+    expect(started[0]).toBeCloseTo(75.96375653207352, 10);
+    expect(stopped).toBe(0);
+    probe.endProbe!();
+    expect(stopped).toBe(1);
+    // The page moving on after has nothing more to stop.
+    probe.abort();
+    expect(stopped).toBe(1);
+  });
+
+  it("is stopped when the page moves on in the middle of a probe", async () => {
+    vi.stubGlobal("requestAnimationFrame", (paint: () => void) => setTimeout(paint, 0));
+    let stopped = 0;
+    const probe = probeDeps({} as HTMLElement, {
+      engineFor: async () => ({ canvas: {} as HTMLCanvasElement, engine: null, watch: null }),
+      failed: () => undefined,
+      settles: () => false,
+    }, () => ({ table: createSkyTable(), dispose: () => void (stopped += 1) }));
+    await probe.runStep("high", () => false, 10_000);
+    probe.abort();
+    expect(stopped).toBe(1);
+  });
+
+  it("is the table each step's scene reads", async () => {
+    const table = createSkyTable();
+    const probe = buildProbeScene(FAKE_CANVAS, "low", null, table);
+    try {
+      let ready = false;
+      void probe.renderer.skyReady().then(() => {
+        ready = true;
+      });
+      // Long enough for a source of the scene's own to have made noon's slices.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(ready).toBe(false);
+      const fixture = skyFixture();
+      table.add(fixture.blendAt(74));
+      table.add(fixture.blendAt(76));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(ready).toBe(true);
+    } finally {
+      probe.dispose();
+    }
+  }, timeLimit(60_000));
+
+  it("is handed to each step's scene by the step", () => {
+    const src = readFileSync(new URL("../../src/game/probeScene.ts", import.meta.url), "utf8");
+    expect(src).toContain("probe = buildProbeScene(canvas, tier, given, opts.sky);");
+    expect(src).toContain("measure: (step, on, by) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on, readyBy: by, sky: table }),");
+  });
+});
+
+describe("a probe step's readiness", () => {
+  it("waits for the sky's first slices as well as the scene, and stays ready once the meter has found it so", () => {
+    const ready = { isReady: () => true, getWaitingItemsCount: () => 0 };
+    const loading = { isReady: () => true, getWaitingItemsCount: () => 2 };
+    expect(probeSceneReady(false, false, ready)).toBe(false);
+    expect(probeSceneReady(false, true, ready)).toBe(true);
+    expect(probeSceneReady(false, true, loading)).toBe(false);
+    expect(probeSceneReady(true, false, loading)).toBe(true);
+  });
+
+  it("is what each step's frame asks, the sky in once the renderer says so", () => {
+    // A step's frames need a page to run; its wiring is read from the source.
+    const src = readFileSync(new URL("../../src/game/probeScene.ts", import.meta.url), "utf8");
+    expect(src).toContain("void probe.renderer.skyReady().then(() => {\n      skyIn = true;\n    });");
+    expect(src).toContain("const sceneReady = probeSceneReady(meter.ready, skyIn, scene);");
+  });
 });
 
 describe("a probe step's engine", () => {

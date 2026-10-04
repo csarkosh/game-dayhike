@@ -1,8 +1,5 @@
 import { clamp01, desaturateRgb, luma, mixRgb, type Rgb } from "./colour.js";
-import {
-  ambientColourFor, exposureFor, fillIntensityFor, fogDensityFor,
-  skyColourAt, sunColourAt, sunIntensityAt, sunPositionAt,
-} from "./sky.js";
+import { exposureFor, fogDensityFor } from "./sky.js";
 
 /**
  * The weather axis, alongside `hour`. Pure and Babylon-free like `sky.ts`;
@@ -225,61 +222,6 @@ export const GRADE_HIGHLIGHT_HUE = 200;
 export const GRADE_HIGHLIGHT_DENSITY = 30;
 export const GRADE_HIGHLIGHT_SATURATION = -10;
 
-export type SkyMaterialParams = {
-  turbidity: number;
-  luminance: number;
-  rayleigh: number;
-  mieCoefficient: number;
-  mieDirectionalG: number;
-};
-
-/**
- * SkyMaterial under weather. At clear these are exactly the five constants
- * `lighting.ts` shipped with; high turbidity + low luminance turns the
- * scattering sky into flat grey-white haze — and the reflection probe capturing
- * that sky is what greys the IBL automatically.
- */
-export function skyMaterialParamsUnder(w: WeatherParams): SkyMaterialParams {
-  const c = clamp01(w.cloudCover);
-  return {
-    turbidity: 4 + 16 * c,
-    luminance: 1 - 0.6 * c,
-    // Browser-measured: turbidity alone whitens only the horizon —
-    // the zenith stays saturated blue (probe faces r~180 b~232 under full
-    // mist) — and DRAINING rayleigh darkens the dome to navy rather than
-    // greying it (less scattered light, not whiter light). What actually
-    // reads as overcast is leaving rayleigh alone and flooding the dome with
-    // near-isotropic Mie haze: white, wavelength-independent scattering
-    // everywhere, which is roughly what a cloud deck is.
-    rayleigh: 2,
-    mieCoefficient: 0.005 + 0.075 * c,
-    mieDirectionalG: 0.8 - 0.8 * c,
-  };
-}
-
-export function sunIntensityUnder(w: WeatherParams, hour: number): number {
-  return sunIntensityAt(hour) * (1 - SUN_CLOUD_LOSS * clamp01(w.cloudCover));
-}
-
-export function sunColourUnder(w: WeatherParams, hour: number): Rgb {
-  return desaturateRgb(sunColourAt(hour), SUN_DESAT * clamp01(w.cloudCover));
-}
-
-export function fillIntensityUnder(w: WeatherParams, altitude: number): number {
-  // The lift stands in for the flat light a cloud deck scatters DOWNWARD by
-  // day, so it must follow the sun: unconditional, it triple-lit the ground
-  // at hour 18 under a near-black dusk sky (browser-measured). The
-  // ramp matches sky.ts's DAY_ALTITUDE (0.35) so the lift fades in step with
-  // the sky's own dusk transition. At night cloud adds nothing — the fill is
-  // already the moonlight stand-in.
-  const daylight = clamp01(altitude / 0.35);
-  return fillIntensityFor(altitude) * (1 + FILL_LIFT * clamp01(w.cloudCover) * daylight);
-}
-
-export function ambientColourUnder(w: WeatherParams, hour: number): Rgb {
-  return desaturateRgb(ambientColourFor(hour), AMBIENT_DESAT * clamp01(w.cloudCover));
-}
-
 export function fogDensityUnder(w: WeatherParams, viewDistance: number): number {
   return (
     fogDensityFor(viewDistance) *
@@ -290,40 +232,28 @@ export function fogDensityUnder(w: WeatherParams, viewDistance: number): number 
 }
 
 /**
- * Fog colour under weather: pulled toward mist air by mist, then desaturated
- * by cloud, so the horizon dissolves into the greyed sky rather than banding
- * against it. The mist-air target scales with the base sky's own luminance —
- * a fixed bright grey made the fog band GLOW against a near-black dusk sky
- * (browser-measured at hour 18); tracking the sky's brightness keeps
- * the noon look identical while dusk fog dims with the dusk. At clear every
- * step is an exact copy of `skyColourAt`.
+ * The colour of the air over a horizon colour from the sky (`skyState.ts`):
+ * over the horizon away from the sun, the fog colour, the clear colour and the
+ * far end of the haze gradient; over the horizon toward it, the haze's glow.
+ * Nothing here dims a cloudy dusk: the sky's cloud deck already dims the base
+ * with the light. In order: pulled toward mist air by mist, the target scaled
+ * to the base's own luminance and capped at 1.2, so a dim dusk base is never
+ * lit by a fixed bright grey; desaturated by cloud; greyed toward its own
+ * luminance by rain; pulled toward the dread air without ever brightening. At
+ * clear every step is an exact copy of the base.
  */
-export function fogColourUnder(w: WeatherParams, hour: number): Rgb {
+export function airColourUnder(w: WeatherParams, base: Rgb): Rgb {
   const c = clamp01(w.cloudCover);
-  const base = skyColourAt(hour);
   const lift = Math.min(1.2, luma(base) / luma(MIST_AIR));
   const air = { r: MIST_AIR.r * lift, g: MIST_AIR.g * lift, b: MIST_AIR.b * lift };
   const grey = desaturateRgb(mixRgb(base, air, 0.5 * clamp01(w.mist)), 0.9 * c);
-  // skyColourAt models a CLEAR sky's bright sunset horizon, but a cloud deck
-  // blocks exactly that low light — without this the fog band glowed white
-  // against a near-black overcast dusk dome (browser-measured at hour 18).
-  // Identity at clear (c = 0) and by day (daylight 1), both exact.
-  const daylight = clamp01(sunPositionAt(hour).y / 0.35);
-  const duskDim = 1 - 0.85 * c * (1 - daylight);
-  const dusk = { r: grey.r * duskDim, g: grey.g * duskDim, b: grey.b * duskDim };
-  // Under rain the far field greys: pulled toward its own luminance, so the
-  // brightness the dusk term set is kept. Guarded, so the clear path is the
-  // same object arithmetic as before the rain term existed.
   const r = clamp01(w.rain);
-  const dimmed = r === 0 ? dusk : mixRgb(dusk, { r: luma(dusk), g: luma(dusk), b: luma(dusk) }, FOG_RAIN_GREY * r);
+  const wet = r === 0 ? grey : mixRgb(grey, { r: luma(grey), g: luma(grey), b: luma(grey) }, FOG_RAIN_GREY * r);
   const d = dreadWorldUnder(w);
-  // Early return to ensure no dread-term arithmetic touches the clear path; the
-  // preceding cloud-term arithmetic is IEEE-exact at zero (dimmed is a freshly built
-  // object; the sweep asserts value equality, not identity).
-  if (d === 0) return dimmed;
-  const dreadLift = Math.min(1, luma(dimmed) / luma(DREAD_AIR));
+  if (d === 0) return wet;
+  const dreadLift = Math.min(1, luma(wet) / luma(DREAD_AIR));
   const target = { r: DREAD_AIR.r * dreadLift, g: DREAD_AIR.g * dreadLift, b: DREAD_AIR.b * dreadLift };
-  return mixRgb(dimmed, target, DREAD_FOG_PULL * d);
+  return mixRgb(wet, target, DREAD_FOG_PULL * d);
 }
 
 /** Babylon ShadowGenerator darkness: 0 = full shadows, 1 = invisible. */

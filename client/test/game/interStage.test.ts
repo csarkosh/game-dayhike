@@ -37,6 +37,7 @@ import { FOG_DISTANCE } from "../../src/sim/forestConstants.js";
 import { pluginsInStates } from "./helpers/pluginText.js";
 import { drawnEffect, probeReady, stageBindings, webgpuProcessingEngine, type ProcessedEffect } from "./helpers/webgpuProcessing.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 
 /**
  * The WebGPU limit on inter-stage variables, held the way the specification
@@ -143,7 +144,7 @@ async function buildForest(): Promise<{ drawn: Map<string, Drawn>; dispose(): vo
   const atmosphere = createAtmosphere(scene, FOG_DISTANCE);
   scene.activeCamera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
   createHeadlamp(scene, "lamp_local");
-  const lighting = createLighting(scene, { tier: "high", viewDistance: FOG_DISTANCE, colourPath: "post" });
+  const lighting = createLighting(scene, { tier: "high", viewDistance: FOG_DISTANCE, colourPath: "post", sky: skyFixture() });
   const forest = createForestMeshes(scene, seedFromToken("atmo"), { bakeImpostor: () => null });
   await forest.ready;
   forest.update(0, 0);
@@ -352,7 +353,7 @@ describe("inter-stage variables on WebGPU", () => {
     // material is a plain PBR one with the distance fade, well inside.
     expect([...forest.drawn.keys()].sort()).toEqual([
       "deadwood.snag.material0",
-      "skyMaterial",
+      "skyDome",
       "tree.conifer_a.material0",
       "tree.conifer_a.material0_lod2",
       "tree.conifer_a.material1",
@@ -476,7 +477,7 @@ describe("inter-stage variables of the sea's water material on WebGPU, its waves
       const atmosphere = createAtmosphere(scene, FOG_DISTANCE);
       scene.activeCamera = new UniversalCamera("player", new Vector3(-380, 3, 0), scene);
       createHeadlamp(scene, "lamp_local");
-      const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: "post" });
+      const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: "post", sky: skyFixture() });
       probeReady(scene);
       const water = createWater(scene, seedFromToken("atmo"), 0, [], tier, -380, 0);
       const mesh = water.meshes[0] as Mesh;

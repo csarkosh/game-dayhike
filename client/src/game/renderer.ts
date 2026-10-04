@@ -51,7 +51,9 @@ import {
   type RingSamples,
 } from "./clipmap.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
-import { createLighting } from "./lighting.js";
+import { createLighting, DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "./lighting.js";
+import type { SkyTable } from "./skyTable.js";
+import { startSkySource, type SkySource } from "./skyWorker.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
@@ -1156,6 +1158,14 @@ export type Renderer = {
   /** Resolves once the forest's first fill, billboards included, is drawn
    * (`ForestMeshes.ready`); at once in a world without a forest. */
   readonly forestReady: Promise<void>;
+  /** Resolves once the sky's table holds the slices the lighting needs:
+   * those either side of noon and of the hour the renderer is set to, read
+   * again as each slice arrives (`whenSkyHeld`). Until then the lighting has
+   * applied nothing, so no start draws a frame before it (the hike's, a
+   * swap's, the scene routes', the tier check's) and the forest bakes no
+   * billboard before it (`BakeOptions.sky`). Callers while it waits share
+   * one wait; for a renderer disposed first it never resolves. */
+  skyReady(): Promise<void>;
   /**
    * `frame` carries this frame's local, non-simulated view inputs — its
    * duration in seconds and whether sprint is held. Only the walking cue reads
@@ -1205,6 +1215,9 @@ export type Renderer = {
   setSkinShading(on: boolean): void;
   setHour(hour: number): void;
   setWeather(next: WeatherParams, fadeSeconds?: number): void;
+  /** The hour and the weather together, the weather at once, applied once
+   * (`Lighting.setView`). */
+  setView(hour: number, weather: WeatherParams): void;
   /** 0 switches the walking cue off; 1 is the tuned default. */
   setBobScale(scale: number): void;
   /** 0 silences the lens-side dread effects; 1 is full. */
@@ -1268,6 +1281,11 @@ export type RendererOptions = {
   /** The wildlife shell: absent or true, as the world's forest allows; false, none at
    * all (a scene recorded a frame at a time, which the director's own steps would not follow). */
   wildlife?: boolean;
+  /** The sky's slices (`skyTable.ts`): the page's table, made once for its
+   * life (`app.ts`) and handed to every renderer it builds, so a swap of
+   * tier makes none of them again. Absent, the renderer starts a source of
+   * its own (`startSkySource`) and stops it on dispose. */
+  skyTable?: SkyTable;
 };
 
 /** What the impostor bakes read of the pipelines and the scope: the draws a
@@ -1487,7 +1505,7 @@ function buildRenderer(
   const camera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
   camera.minZ = 0.05;
   // Far plane moves with the fog: the outermost ring's corner is
-  // ~5.8 km out and the skybox is 8 km across, so Babylon's default clips the
+  // ~5.8 km out and the sky dome is 8 km across, so Babylon's default clips the
   // entire distant view away.
   camera.maxZ = 10000;
   camera.fov = GAME_FOV;
@@ -1517,8 +1535,34 @@ function buildRenderer(
   // Who owns colour is decided once, before lighting and the post chain are
   // built, from the tier and the float-target capability.
   const postFeatures = postFeaturesFor(tier, fxSupportedBy(engine));
-  const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath });
+  // The sky's slices: the page's table or, given none, a source of this
+  // renderer's own, started at the default hour (the slices either side of
+  // noon come first whatever the hour) and stopped with the renderer.
+  let ownSky: SkySource | null = null;
+  let skyTable: SkyTable;
+  if (options.skyTable !== undefined) {
+    skyTable = options.skyTable;
+  } else {
+    ownSky = startSkySource(sunAltitudeDeg(DEFAULT_HOUR));
+    skyTable = ownSky.table;
+  }
+  partOf(ownSky);
+  const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });
   partOf(lighting);
+  /** Aborted on dispose, or as a build that throws is undone: a wait for the
+   * sky then stops listening and never resolves. */
+  const disposal = new AbortController();
+  made(() => disposal.abort());
+  /** The wait for the sky its callers share while it is pending, so a sky
+   * that never comes is warned of once. */
+  let skyWait: Promise<void> | null = null;
+  /** `Renderer.skyReady`: the table holds what the lighting needs at the hour it is set to, read again at each slice. */
+  const skyReady = (): Promise<void> => {
+    skyWait ??= whenSkyHeld(skyTable, () => lighting.hour, { signal: disposal.signal }).then(() => {
+      skyWait = null;
+    });
+    return skyWait;
+  };
   const clock = options.clock ?? (() => performance.now());
   const post = createPost(scene, camera, postFeatures, { now: clock });
   partOf(post);
@@ -1672,6 +1716,8 @@ function buildRenderer(
       ? createForestMeshes(scene, forest.seed, {
         nearRadius: tier === "low" ? lowTierNearRadius : undefined,
         pipelines: bakePipelines(pipelines, scope),
+        // The billboards bake under the sky's light, never Babylon's defaults.
+        sky: skyReady(),
         jobs,
       })
       : null;
@@ -1886,6 +1932,7 @@ function buildRenderer(
     shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
     cover,
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
+    skyReady,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
       // of materials x four property writes: cheap enough to do every frame.
@@ -1951,7 +1998,10 @@ function buildRenderer(
       setTerrainRain(scene, terrainMaterialFor(scene, "terrain"), weather.rain, seconds);
       water?.setRain(weather.rain);
       setWetWeather(weather.wetness);
-      atmosphere.update(weather, lighting.hour);
+      // The haze reads the sky state the lighting last applied; there is
+      // none until the table holds its first slices.
+      const sky = lighting.sky;
+      if (sky !== null) atmosphere.update(weather, sky);
       const stare = state.players.get(localId)?.stare ?? 0;
       // Rain on the lens: strongest looking up, cleared under the canopy,
       // smoothed over a second. The camera's pose is last frame's (it is set
@@ -1962,7 +2012,9 @@ function buildRenderer(
         lensCanopy = forestDensity(forest.seed, lensCanopyX, lensCanopyZ);
       }
       lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x, lensCanopy), engine.getDeltaTime() / 1000);
-      post.update(weather, lighting.hour, unsettle, stare, lensStrength);
+      // Before the sky's first slices there is no night factor; the day's 0
+      // stands in, for frames no one sees.
+      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, stare, lensStrength);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
@@ -1989,7 +2041,9 @@ function buildRenderer(
         wildlifeMatch.hour = lighting.hour;
         wildlifeMatch.mist = weather.mist;
         wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);
-        mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour(), wind, seconds);
+        // The mist banks and the motes take their colour from the haze's
+        // gradient, which is black until the sky's first slices are in.
+        if (sky !== null) mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour(), wind, seconds);
         camera.position.set(freecam.x, freecam.y, freecam.z);
         camera.rotation.set(freecam.pitch, freecam.yaw, freecam.roll ?? 0);
         camera.fov = freecam.fov ?? GAME_FOV;
@@ -2001,7 +2055,7 @@ function buildRenderer(
         rainMap?.update(camera.position);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
-        motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
+        if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         jobs.run();
         return;
       }
@@ -2036,7 +2090,8 @@ function buildRenderer(
         wildlifeMatch.hour = lighting.hour;
         wildlifeMatch.mist = weather.mist;
         wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);
-        mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour(), wind, seconds);
+        // As on the free camera: no mist or motes before the sky's slices.
+        if (sky !== null) mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour(), wind, seconds);
         const offset = bob.update(
           {
             x: local.pos.x,
@@ -2068,7 +2123,7 @@ function buildRenderer(
         rainMap?.update(local.pos);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
-        motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
+        if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
       }
       // This frame's share of the rebuilds the updates above began, once
       // every shell has seen the view.
@@ -2145,7 +2200,11 @@ function buildRenderer(
       motes?.dispose();
       post.dispose();
       skinShading.dispose();
+      // A wait for the sky ends unresolved: nothing waits on what has gone.
+      disposal.abort();
       lighting.dispose();
+      // After the lighting, which stops listening to its table first.
+      ownSky?.dispose();
       atmosphere.dispose();
       // Before the engine, which may wait for its BRDF texture: nothing of a
       // renderer that has gone asks for a pipeline, and nothing it asked for
@@ -2174,6 +2233,9 @@ function buildRenderer(
     },
     setWeather(next, fadeSeconds) {
       lighting.setWeather(next, fadeSeconds);
+    },
+    setView(hour, weather) {
+      lighting.setView(hour, weather);
     },
     setBobScale(scale) {
       bob.setScale(scale);

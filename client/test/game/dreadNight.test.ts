@@ -6,14 +6,18 @@ import {
   FOG_DREAD_GAIN, FOG_MIST_GAIN, AMBIENT_COLLAPSE, DREAD_SATURATION_DROP, DREAD_FOG_PULL,
 } from "../../src/game/weather.js";
 import { fogDensityFor } from "../../src/game/sky.js";
+import { skyStateFor } from "../../src/game/skyState.js";
 import {
   gradeRecordUnder, LIFT_DREAD, VIGNETTE_PULSE, VIGNETTE_PULSE_PERIOD, PURKINJE_MAX, ABERRATION_DREAD_GAIN,
 } from "../../src/game/gradeParams.js";
 import { finishUnder, OVERLAP_MAX, OVERLAP_INNER, OVERLAP_ECHO, GRAIN_DREAD_GAIN } from "../../src/game/postParams.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 
 const CLEAR = WEATHER_PRESETS.clear;
 const EERIE = WEATHER_PRESETS.eerie;
 const DREAD_ONLY = { ...CLEAR, dread: 1 };
+/** The escalation's end, 20:00, is full night: the sun is 29 degrees down. */
+const NIGHT = 1;
 
 function glslFloat(n: number): string {
   return Number.isInteger(n) ? `${n}.0` : `${n}`;
@@ -35,26 +39,31 @@ describe("darker and swallowed", () => {
 
   it("night rods pull harder", () => {
     expect(PURKINJE_MAX).toBeGreaterThanOrEqual(0.8);
-    expect(gradeRecordUnder(CLEAR, 1, 1).purkinjeStrength).toBeCloseTo(PURKINJE_MAX, 10);
+    // Midnight's night factor is 1, and the rods take 0.8 of the colour.
+    const night = skyStateFor(skyFixture(), 0, CLEAR).night;
+    expect(night).toBe(1);
+    expect(gradeRecordUnder(CLEAR, 0, night, 1).purkinjeStrength).toBeCloseTo(0.8, 10);
   });
 });
 
 describe("sicker, not just darker", () => {
   it("shadows lift toward a green-grey under dread, and stay black at clear", () => {
     for (let hour = 0; hour < 24; hour += 1) {
-      expect(gradeRecordUnder(CLEAR, hour, 1).lift).toEqual({ r: 0, g: 0, b: 0 });
+      for (const night of [0, 0.5, 1]) {
+        expect(gradeRecordUnder(CLEAR, hour, night, 1).lift).toEqual({ r: 0, g: 0, b: 0 });
+      }
     }
-    const lifted = gradeRecordUnder(EERIE, 20, 1).lift;
+    const lifted = gradeRecordUnder(EERIE, 20, NIGHT, 1).lift;
     expect(lifted).toEqual(LIFT_DREAD);
     expect(lifted.g).toBeGreaterThan(lifted.r);
     expect(lifted.g).toBeGreaterThan(lifted.b);
     // World-side: the slider does not touch it.
-    expect(gradeRecordUnder(EERIE, 20, 0).lift).toEqual(LIFT_DREAD);
+    expect(gradeRecordUnder(EERIE, 20, NIGHT, 0).lift).toEqual(LIFT_DREAD);
   });
 
   it("the grade pass carries a global desaturation that is exactly 0 at clear", () => {
-    expect(gradeRecordUnder(CLEAR, 12, 1).saturation).toBe(0);
-    expect(gradeRecordUnder(EERIE, 20, 1).saturation).toBeCloseTo(saturationUnder(EERIE) / 100, 12);
+    expect(gradeRecordUnder(CLEAR, 12, 0, 1).saturation).toBe(0);
+    expect(gradeRecordUnder(EERIE, 20, NIGHT, 1).saturation).toBeCloseTo(saturationUnder(EERIE) / 100, 12);
     expect(DREAD_SATURATION_DROP).toBeGreaterThanOrEqual(30);
     expect(DREAD_FOG_PULL).toBeGreaterThanOrEqual(0.7);
   });
@@ -78,12 +87,12 @@ describe("heavier lens", () => {
 
   it("the vignette breathes under dread and holds still at clear", () => {
     const quarter = VIGNETTE_PULSE_PERIOD / 4;
-    const rest = gradeRecordUnder(EERIE, 20, 1, 0).vignetteWeight;
-    const peak = gradeRecordUnder(EERIE, 20, 1, quarter).vignetteWeight;
+    const rest = gradeRecordUnder(EERIE, 20, NIGHT, 1, 0).vignetteWeight;
+    const peak = gradeRecordUnder(EERIE, 20, NIGHT, 1, quarter).vignetteWeight;
     expect(peak).toBeCloseTo(rest * (1 + VIGNETTE_PULSE), 10);
-    expect(gradeRecordUnder(EERIE, 20, 0, quarter).vignetteWeight).toBe(gradeRecordUnder(EERIE, 20, 0, 0).vignetteWeight);
+    expect(gradeRecordUnder(EERIE, 20, NIGHT, 0, quarter).vignetteWeight).toBe(gradeRecordUnder(EERIE, 20, NIGHT, 0, 0).vignetteWeight);
     for (const t of [0, 1.7, quarter, 5.5]) {
-      expect(gradeRecordUnder(CLEAR, 20, 1, t).vignetteWeight).toBe(gradeRecordUnder(CLEAR, 20, 1, 0).vignetteWeight);
+      expect(gradeRecordUnder(CLEAR, 20, NIGHT, 1, t).vignetteWeight).toBe(gradeRecordUnder(CLEAR, 20, NIGHT, 1, 0).vignetteWeight);
     }
   });
 });
