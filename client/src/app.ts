@@ -89,6 +89,7 @@ import {
   swapRenderer,
   switchOutcome,
   whenSceneReady,
+  whenStandingSkyHeld,
   type EngineOnCanvas,
   type EngineWatchers,
   type SwapBindings,
@@ -336,6 +337,10 @@ function buildGame(
     options.engine === undefined ? null : { engine: options.engine, watch: watchers?.failures ?? null },
   );
   let renderer: Renderer = first.renderer;
+  /** Told once at the next swap of the renderer (`switchTo`), then let go. */
+  const swapListeners = new Set<() => void>();
+  /** Resolves at the next swap of the renderer. */
+  const nextSwap = (): Promise<void> => new Promise((resolve) => void swapListeners.add(resolve));
   canvas = first.canvas;
   made(() => renderer.dispose());
   // Newest first: the listener goes before the renderer it listens to.
@@ -1486,8 +1491,10 @@ function buildGame(
     clipmapBuilt = Promise.resolve();
   }
   // No frame is drawn, and so none shown, before the sky's first slices are
-  // in (`Renderer.skyReady`): until then the lighting has applied nothing.
-  const firstBuild = Promise.all([clipmapBuilt, built.skyReady()]).then(() => {
+  // in (`Renderer.skyReady`): until then the lighting has applied nothing. A
+  // renderer swapped in meanwhile takes the wait over (`whenStandingSkyHeld`),
+  // since the one it replaced never resolves its own, and starts its own loop.
+  const firstBuild = Promise.all([clipmapBuilt, whenStandingSkyHeld(() => renderer, nextSwap)]).then(() => {
     if (!disposed && !broken && renderer === built) built.engine.runRenderLoop(loop);
   });
   progress?.start("world", "bakes");
@@ -1657,6 +1664,8 @@ function buildGame(
         throw error;
       }
       renderer = got.renderer;
+      for (const tell of swapListeners) tell();
+      swapListeners.clear();
       canvas = got.canvas;
       tier = got.tier;
       const outcome = switchOutcome(save ?? "auto", got);

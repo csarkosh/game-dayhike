@@ -140,9 +140,7 @@ import {
   RING_COUNT,
   type RingSamples,
 } from "../../src/game/clipmap.js";
-import { WEATHER_PRESETS, fogDensityUnder } from "../../src/game/weather.js";
-import { sunPositionAt } from "../../src/game/sky.js";
-import { FOG_DISTANCE } from "../../src/sim/forestConstants.js";
+import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { Level } from "../../src/sim/level.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
 import { createForest } from "../../src/sim/forest.js";
@@ -486,11 +484,12 @@ describe("the renderer's view", () => {
     try {
       renderer.setView(15, WEATHER_PRESETS.rain);
       const sun = renderer.scene.getLightByName("sun") as unknown as { direction: { x: number; y: number; z: number } };
-      const toward = sunPositionAt(15);
-      expect(sun.direction.x).toBeCloseTo(-toward.x, 12);
-      expect(sun.direction.y).toBeCloseTo(-toward.y, 12);
-      expect(sun.direction.z).toBeCloseTo(-toward.z, 12);
-      expect(renderer.scene.fogDensity).toBe(fogDensityUnder(WEATHER_PRESETS.rain, FOG_DISTANCE));
+      // The way 15:00's light travels, away from the sun.
+      expect(sun.direction.x).toBeCloseTo(0.6859943405700353, 12);
+      expect(sun.direction.y).toBeCloseTo(-0.6859943405700354, 12);
+      expect(sun.direction.z).toBeCloseTo(0.24253562503633297, 12);
+      // Rain's density at the forest's 4 km.
+      expect(renderer.scene.fogDensity).toBeCloseTo(0.004932832390416513, 15);
     } finally {
       renderer.dispose();
     }

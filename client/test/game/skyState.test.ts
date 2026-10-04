@@ -490,7 +490,7 @@ describe("the haze glow's fit", () => {
 });
 
 describe("the haze glow on the sky's own horizon toward sunset", () => {
-  /** The hours the reviewed glow was too wide at, 17:50 among them. */
+  /** The hours the old fit made the glow too wide at, 17:50 among them. */
   const HOURS = [17, 17 + 50 / 60, 18];
   let table: SkyTable;
   beforeAll(() => {

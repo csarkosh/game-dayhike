@@ -617,7 +617,8 @@ describe("weather in lighting", () => {
     expect(dome.updates.at(-1)!.state.cloud).toBe(1);
     expect(lighting.hour).toBe(15);
     expect(lighting.weather).toEqual(WEATHER_PRESETS.rain);
-    expect(s.fogDensity).toBe(fogDensityUnder(WEATHER_PRESETS.rain, 70));
+    // Rain's density at this file's 70 m.
+    expect(s.fogDensity).toBeCloseTo(0.2818761365952293, 12);
     // The fade toward mist is over: a frame moves nothing.
     s.onBeforeRenderObservable.notifyObservers(s);
     expect(dome.updates.length).toBe(before + 1);

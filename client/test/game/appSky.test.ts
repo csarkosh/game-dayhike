@@ -44,8 +44,11 @@ describe("the hike's sky", () => {
 
   it("starts the loop, and so shows the world, only once the clipmap stands and the sky's first slices are in, on either start", () => {
     expect(src).toContain(
-      "  const firstBuild = Promise.all([clipmapBuilt, built.skyReady()]).then(() => {\n    if (!disposed && !broken && renderer === built) built.engine.runRenderLoop(loop);\n  });",
+      "  const firstBuild = Promise.all([clipmapBuilt, whenStandingSkyHeld(() => renderer, nextSwap)]).then(() => {\n    if (!disposed && !broken && renderer === built) built.engine.runRenderLoop(loop);\n  });",
     );
+    // A swap meanwhile hands the wait to the renderer it builds: it is told, once, as the renderer changes.
+    expect(src).toContain("      renderer = got.renderer;\n      for (const tell of swapListeners) tell();\n      swapListeners.clear();");
+    expect(src.match(/\brenderer = got\.renderer;/g)).toHaveLength(1);
     // The first build's, and the governor's restart after it times the idle
     // frames; a swap's own runs in `rendererSwap.ts`.
     expect(src.match(/\.runRenderLoop\(loop\)/g)).toHaveLength(2);
