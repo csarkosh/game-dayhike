@@ -325,12 +325,13 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   }
 
   scene.fogMode = Scene.FOGMODE_EXP2;
-  // The density is the weather's, which is known before any slice is: a
-  // frame drawn before the first apply (a swap's cover, a scene route) is
-  // not fogged at Babylon's default of 0.1. Each apply sets it again.
-  scene.fogDensity = fogDensityUnder(weather, viewDistance);
 
   function apply(): void {
+    // The fog's density is the weather's alone, known before any slice is,
+    // so it is set on every apply, held or not: a frame drawn before the
+    // first slices (a swap's cover) is fogged as the weather now stands, not
+    // at Babylon's default of 0.1 or a weather since changed.
+    scene.fogDensity = fogDensityUnder(weather, viewDistance);
     // Until the table holds the slices either side of noon and of the hour,
     // the state cannot be made: whatever stands (the defaults, or the last
     // hour's light) stays, and the next slice to arrive tries again.
@@ -355,7 +356,6 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // dome: it is what shows through on any frame the dome has not drawn.
     scene.fogColor = new Color3(s.mistAir.r, s.mistAir.g, s.mistAir.b);
     scene.clearColor = new Color4(s.mistAir.r, s.mistAir.g, s.mistAir.b, 1);
-    scene.fogDensity = fogDensityUnder(weather, viewDistance);
 
     // The fill: the sky's light on level ground by day and moonlight by night,
     // weighed by the night factor (`skyState.ts`). By day the probe below does

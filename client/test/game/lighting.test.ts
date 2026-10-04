@@ -472,6 +472,16 @@ describe("the sky's table", () => {
     lighting.dispose();
   });
 
+  it("moves the fog's density with a weather set while the table waits", () => {
+    const s = scene();
+    const lighting = light(s, { hour: 12, sky: createSkyTable() });
+    lighting.setWeather(WEATHER_PRESETS.rain, 0);
+    expect(lighting.sky).toBeNull();
+    // Rain's density at this file's 70 m.
+    expect(s.fogDensity).toBeCloseTo(0.2818761365952293, 12);
+    lighting.dispose();
+  });
+
   it("stops listening to the table when disposed", () => {
     const s = scene();
     const table = createSkyTable();

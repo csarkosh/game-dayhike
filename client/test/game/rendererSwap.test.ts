@@ -593,7 +593,6 @@ describe("a swap keeps the hike's sky", () => {
         };
       },
     };
-    const held = table.count;
     const current = { renderer: createRenderer(nullCanvas(), LEVEL, null, { tier: "medium", skyTable: table }), canvas: nullCanvas() };
     expect(listening).toBe(1);
     const bindings: SwapBindings = {
@@ -612,7 +611,8 @@ describe("a swap keeps the hike's sky", () => {
       // The old lighting stopped listening; the new one listens to the same table.
       expect(listening).toBe(1);
       await expect(next.renderer.skyReady()).resolves.toBeUndefined();
-      expect(table.count).toBe(held);
+      // The fixture's 17 slices, none made again.
+      expect(table.count).toBe(17);
     } finally {
       next.renderer.dispose();
     }
