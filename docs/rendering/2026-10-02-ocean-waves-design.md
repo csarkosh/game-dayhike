@@ -499,6 +499,11 @@ warmed, which bounds the figures below).
 | medium (WebGL2) | +2.1 ms | +3.9 ms |
 | low (WebGL2) | +1.3 ms | +3.0 ms |
 
+Measured again on a quiet machine after the scattering sky shipped, against
+`main` with the sky and without the waves, at noon, twelve samples a side (the
+same build on both sides of a pair read +0.07 ms), the pad cost +2.70 / +1.35 /
++0.25 ms (high / medium / low) and the open sea +4.49 / +2.02 / +2.63.
+
 Before the swell moved to the vertex stage the open sea cost +9.6 / +16.9 /
 +9.7 ms (high / medium / low) and the pad +4.7 / +7.9 / +3.6: the per-pixel
 sum was the cost, and neither its texture reads (cut by a third with no

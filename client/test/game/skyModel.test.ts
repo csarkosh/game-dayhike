@@ -362,7 +362,8 @@ describe("the sky's light", () => {
  * sunlit air, above the earth's shadow, 607 km out along the horizon and
  * 395 km out 6 degrees up: marched whole, the twilight arch sits on the
  * horizon. A ray cut short of that air leaves the horizon dark under a red
- * band that climbs as the sun sinks.
+ * band, out to 45 degrees either side of the sun, that climbs as the sun
+ * sinks.
  */
 describe("the sky's light in deep twilight", () => {
   const altitude = Math.asin(sunPositionAt(18.75).y);
@@ -370,12 +371,16 @@ describe("the sky's light in deep twilight", () => {
   const profile = (az: number): number[] =>
     Array.from({ length: 121 }, (_, k) => luma(skyRadiance(tables, dir(k / 4, az), altitude)));
 
-  it("puts the arch toward the sun within 4 degrees of the horizon at 18:45, falling from it to 30 degrees", () => {
-    const toward = profile(0);
-    for (const v of toward) expect(Number.isFinite(v)).toBe(true);
-    const peak = toward.indexOf(Math.max(...toward));
-    expect(peak / 4).toBeLessThanOrEqual(4);
-    for (let k = peak + 1; k < toward.length; k++) expect(toward[k], `${k / 4} degrees`).toBeLessThanOrEqual(toward[k - 1] as number);
+  it("puts the arch toward the sun within 4 degrees of the horizon at 18:45, falling from it to 30 degrees, out to 45 degrees round", () => {
+    for (const az of [0, 45]) {
+      const toward = profile(az);
+      for (const v of toward) expect(Number.isFinite(v)).toBe(true);
+      const peak = toward.indexOf(Math.max(...toward));
+      expect(peak / 4, `${az} degrees round`).toBeLessThanOrEqual(4);
+      for (let k = peak + 1; k < toward.length; k++) {
+        expect(toward[k], `${az} degrees round, ${k / 4} up`).toBeLessThanOrEqual(toward[k - 1] as number);
+      }
+    }
   });
 
   it("has no band away from the sun at 18:45: no maximum between 2 and 30 degrees up", () => {

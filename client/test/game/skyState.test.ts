@@ -680,13 +680,17 @@ describe("deep twilight under a clear sky", () => {
     return Array.from({ length: 121 }, (_, k) => luma(domeRadiance(s, around(s, k / 4, azimuth))));
   }
 
-  it("draws the arch toward the sun within 4 degrees of the horizon at 18:45, falling from it to 30 degrees", () => {
+  it("draws the arch toward the sun within 4 degrees of the horizon at 18:45, falling from it to 30 degrees, out to 45 degrees round", () => {
     const s = skyStateFor(table, 18.75, CLEAR);
-    const toward = domeProfile(s, 0);
-    for (const v of toward) expect(Number.isFinite(v)).toBe(true);
-    const peak = toward.indexOf(Math.max(...toward));
-    expect(peak / 4).toBeLessThanOrEqual(4);
-    for (let k = peak + 1; k < toward.length; k++) expect(toward[k], `${k / 4} degrees`).toBeLessThanOrEqual(toward[k - 1] as number);
+    for (const round of [0, 45]) {
+      const toward = domeProfile(s, round * DEG);
+      for (const v of toward) expect(Number.isFinite(v)).toBe(true);
+      const peak = toward.indexOf(Math.max(...toward));
+      expect(peak / 4, `${round} degrees round`).toBeLessThanOrEqual(4);
+      for (let k = peak + 1; k < toward.length; k++) {
+        expect(toward[k], `${round} degrees round, ${k / 4} up`).toBeLessThanOrEqual(toward[k - 1] as number);
+      }
+    }
   });
 
   it("draws no band away from the sun at 18:45: no maximum between 2 and 30 degrees up", () => {
@@ -704,9 +708,12 @@ describe("deep twilight under a clear sky", () => {
   /**
    * The glow's weight is smoothstep of the horizon's contrast, toward the sun
    * over away, across the band 1.05 to 1.25: its slope is at most 1.5 and its
-   * curvature 6, over the band's width. Where the contrast moves by under
-   * 0.03 a step inside the band, as it does here (checked), the weight's step
-   * changes from one step to the next by at most 6 x (0.03 / 0.2)^2 = 0.135.
+   * curvature 6, over the band's width. The weight's step changes from one
+   * step to the next by about its curvature times the contrast's step squared
+   * plus its slope times the contrast's own bend. Where the contrast moves by
+   * under 0.03 a step inside the band, as it does here (checked), the first
+   * term is at most 6 x (0.03 / 0.2)^2 = 0.135; the second, 1.5 / 0.2 times a
+   * bend of a few thousandths, adds under 0.03. So the bound is about 0.135.
    * The lobe, the weight times cos(phi)^power, bends no more where the power
    * moves smoothly. A larger bend is a step: the linear read of the
    * multiple scattering held the weight at 1 until 18:39 and then dropped it
