@@ -4,12 +4,12 @@
 // night sky, appearing as the twilight fades), the sun's disc, then the mist's
 // blend toward the fog colour at the horizon. On the
 // material colour path (no post chain) it applies the image's exposure, the
-// vignette, the Khronos PBR Neutral tone map, the sRGB encode, the contrast
-// and the colour curves itself, in the order Babylon's image processing
-// applies them to every other material there. The probe's capture is never
-// tone-mapped: it takes the linear composition with the disc capped, raised
-// to 1/2.2, because the probe is flagged as gamma and every material that
-// reads it raises it to 2.2 again.
+// vignette, the Khronos PBR Neutral tone map, the sRGB encode, the contrast,
+// the colour curves and the dither itself, in the order Babylon's image
+// processing applies them to every other material there. The probe's
+// capture is never tone-mapped: it takes the linear composition with the
+// disc capped, raised to 1/2.2, because the probe is flagged as gamma and
+// every material that reads it raises it to 2.2 again.
 //
 // skyState.ts transcribes every step (domeRadiance, skyTableUv, deckRadiance,
 // captureEncode) and a lockstep test holds the constants below to its own.
@@ -43,6 +43,7 @@ uniform vec2 skyInverseScreenSize;
 uniform vec4 skyVignette1;
 uniform vec4 skyVignette2;
 uniform float skyVignetteOpaque;
+uniform float skyDitherIntensity;
 
 varying vec3 vSkyDir;
 
@@ -131,6 +132,22 @@ vec3 skyCurvesOf(vec3 color) {
   return color;
 }
 
+// Babylon's random number for a seed, as its dither draws one.
+float skyRand(vec2 seed) {
+  return fract(sin(dot(seed.xy, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+// Babylon's dither, last, after the colour curves, as its image processing
+// applies it: a step of up to the intensity either way, drawn from the
+// pixel's place on the frame, then the colour clamped. At an intensity of 0
+// it only clamps.
+vec3 skyDitherOf(vec3 color) {
+  float rand = skyRand(gl_FragCoord.xy * skyInverseScreenSize);
+  float dither = mix(-skyDitherIntensity, skyDitherIntensity, rand);
+  color = clamp(color + vec3(dither), 0.0, 1.0);
+  return color;
+}
+
 void main(void) {
   vec3 d = normalize(vSkyDir);
   vec3 sky = skyScale * textureLod(skyTable, skyTableUv(d, skySunDir), 0.0).rgb;
@@ -144,6 +161,7 @@ void main(void) {
   toned = clamp(pow(max(toned, vec3(0.0)), vec3(1.0 / 2.2)), 0.0, 1.0);
   toned = skyContrastOf(toned);
   toned = skyCurvesOf(toned);
+  toned = skyDitherOf(toned);
   vec3 captured = pow(max(sky, vec3(0.0)), vec3(1.0 / 2.2));
   vec3 viewed = mix(sky, toned, step(0.5, skyToneMap));
   gl_FragColor = vec4(mix(viewed, captured, step(0.5, skyCapture)), 1.0);

@@ -12,6 +12,7 @@ import { imageProcessingFunctions } from "@babylonjs/core/Shaders/ShadersInclude
 import { helperFunctions } from "@babylonjs/core/Shaders/ShadersInclude/helperFunctions.js";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
 import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
@@ -116,11 +117,13 @@ describe("createSkyDome", () => {
       "skyCapture", "skyExposure", "skyToneMap", "skyContrast",
       "skyCurveNeutral", "skyCurvePositive", "skyCurveNegative",
       "skyInverseScreenSize", "skyVignette1", "skyVignette2", "skyVignetteOpaque",
+      "skyDitherIntensity",
     ]);
     expect(SKY_DOME_UNIFORMS).toEqual(options.uniforms);
     expect(SKY_DOME_IMAGE_UNIFORMS).toEqual([
       "skyCurveNeutral", "skyCurvePositive", "skyCurveNegative",
       "skyInverseScreenSize", "skyVignette1", "skyVignette2", "skyVignetteOpaque",
+      "skyDitherIntensity",
     ]);
     expect(options.samplers).toEqual(["skyTable"]);
     // Every uniform the stages declare is one the material lists, and the reverse.
@@ -330,7 +333,11 @@ const float SKY_DISC_CAPTURE_MAX = 1.0;`);
   it("compose the dome as domeRadiance does, choosing the disc, the capture and the tone map by step and mix", () => {
     expect(VERTEX).toContain("vSkyDir = position;");
     expect(VERTEX).toContain("gl_Position = viewProjection * world * vec4(position, 1.0);");
-    for (const line of [
+    // main whole, the last thing in the stage: a statement added anywhere in
+    // it (the curves on the capture, say, which would grade every PBR
+    // material's image-based light twice) fails here.
+    const main = [
+      // The sky in domeRadiance's order: the slice, the deck, the night, the disc, the mist.
       "vec3 d = normalize(vSkyDir);",
       "vec3 sky = skyScale * textureLod(skyTable, skyTableUv(d, skySunDir), 0.0).rgb;",
       "sky = mix(sky, skyDeck(skyDeckZenith, d.y), skyCloud);",
@@ -339,28 +346,20 @@ const float SKY_DISC_CAPTURE_MAX = 1.0;`);
       "sky += inDisc * mix(skyDisc, min(skyDisc, vec3(SKY_DISC_CAPTURE_MAX)), skyCapture);",
       "float h = skyMistWeight * exp(-max(d.y, 0.0) / SKY_MIST_HORIZON);",
       "sky = mix(sky, skyMistAir, h);",
+      // The tone map in Babylon's order: exposure, vignette, Neutral, encode, contrast, curves, dither.
       "vec3 toned = skyNeutral(skyVignetteOf(sky * skyExposure));",
       "toned = clamp(pow(max(toned, vec3(0.0)), vec3(1.0 / 2.2)), 0.0, 1.0);",
       "toned = skyContrastOf(toned);",
       "toned = skyCurvesOf(toned);",
+      "toned = skyDitherOf(toned);",
       // The capture: the linear sky, disc capped, gamma-encoded as captureEncode, never tone-mapped.
       "vec3 captured = pow(max(sky, vec3(0.0)), vec3(1.0 / 2.2));",
       "vec3 viewed = mix(sky, toned, step(0.5, skyToneMap));",
       "gl_FragColor = vec4(mix(viewed, captured, step(0.5, skyCapture)), 1.0);",
-    ]) {
-      expect(FRAGMENT).toContain(line);
-    }
-    // The steps in domeRadiance's order.
-    const at = (text: string) => FRAGMENT.indexOf(text);
-    expect(at("sky = mix(sky, skyDeck")).toBeLessThan(at("sky += skyNight;"));
-    expect(at("sky += skyNight;")).toBeLessThan(at("float inDisc"));
-    expect(at("float inDisc")).toBeLessThan(at("sky = mix(sky, skyMistAir, h);"));
-    // The tone map in Babylon's order: exposure, vignette, Neutral, encode, contrast, curves.
-    expect(at("sky = mix(sky, skyMistAir, h);")).toBeLessThan(at("vec3 toned = skyNeutral(skyVignetteOf(sky * skyExposure));"));
-    expect(at("vec3 toned = skyNeutral(")).toBeLessThan(at("toned = clamp(pow("));
-    expect(at("toned = clamp(pow(")).toBeLessThan(at("toned = skyContrastOf(toned);"));
-    expect(at("toned = skyContrastOf(toned);")).toBeLessThan(at("toned = skyCurvesOf(toned);"));
-    expect(at("toned = skyCurvesOf(toned);")).toBeLessThan(at("vec3 captured ="));
+    ];
+    const mainAt = FRAGMENT.indexOf("void main(void) {");
+    expect(mainAt).toBeGreaterThan(-1);
+    expect(FRAGMENT.slice(mainAt)).toBe(`void main(void) {\n  ${main.join("\n  ")}\n}\n`);
     // Khronos PBR Neutral and Babylon's contrast, as its image processing has them.
     expect(FRAGMENT).toContain("float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;");
     expect(FRAGMENT).toContain("float newPeak = 1.0 - k * k / (peak + k - SKY_NEUTRAL_START);");
@@ -450,9 +449,15 @@ describe("the dome's image processing on the material path", () => {
     "result.rgb*=colorCurve.rgb;",
     "result.rgb=mix(vec3(luma),result.rgb,colorCurve.a);",
   ];
+  const BABYLON_DITHER = [
+    "float rand=getRand(gl_FragCoord.xy*vInverseScreenSize);",
+    "float dither=mix(-ditherIntensity,ditherIntensity,rand);",
+    "result.rgb=saturate(result.rgb+vec3(dither));",
+  ] as const;
+  const BABYLON_RAND = "float getRand(vec2 seed) {return fract(sin(dot(seed.xy ,vec2(12.9898,78.233)))*43758.5453);}";
   const babylon = imageProcessingFunctions.shader;
 
-  it("are Babylon's blocks as installed, in its order: exposure, vignette, Neutral, encode, contrast, curves", () => {
+  it("are Babylon's blocks as installed, in its order: exposure, vignette, Neutral, encode, contrast, curves, dither", () => {
     expect(babylon).toContain(`#ifdef VIGNETTE
 ${BABYLON_VIGNETTE.join("")}
 #ifdef VIGNETTEBLENDMODEMULTIPLY
@@ -465,6 +470,11 @@ ${BABYLON_OPAQUE}
     expect(babylon).toContain(`#ifdef COLORCURVES
 ${BABYLON_CURVES.join("")}
 #endif`);
+    expect(babylon).toContain(`#ifdef DITHER
+${BABYLON_DITHER.join("")}
+#endif`);
+    // The dither's random number, from the helpers every material includes.
+    expect(helperFunctions.shader).toContain(`\n${BABYLON_RAND}\n`);
     expect(helperFunctions.shader).toContain("float getLuminance(vec3 color)\n{return saturate(getLuminanceUnclamped(color));}");
     expect(helperFunctions.shader).toContain("float getLuminanceUnclamped(vec3 color)\n{return dot(color,LuminanceEncodeApprox);}");
     expect(helperFunctions.shader).toContain("#define saturate(x) clamp(x,0.0,1.0)");
@@ -476,6 +486,7 @@ ${BABYLON_CURVES.join("")}
       "result.rgb=toGammaSpace(result.rgb);result.rgb=saturate(result.rgb);",
       "#ifdef CONTRAST\n",
       "#ifdef COLORCURVES\n",
+      "#ifdef DITHER\n",
     ];
     for (const step of order) expect(at(step), step).toBeGreaterThan(-1);
     for (let i = 1; i < order.length; i++) expect(at(order[i - 1] as string)).toBeLessThan(at(order[i] as string));
@@ -503,9 +514,17 @@ ${BABYLON_CURVES.join("")}
       "color *= colorCurve.rgb;",
       "color = mix(vec3(luma), color, colorCurve.a);",
     ];
+    const dither = [
+      "float rand = skyRand(gl_FragCoord.xy * skyInverseScreenSize);",
+      "float dither = mix(-skyDitherIntensity, skyDitherIntensity, rand);",
+      "color = clamp(color + vec3(dither), 0.0, 1.0);",
+    ];
+    const rand = "return fract(sin(dot(seed.xy, vec2(12.9898, 78.233))) * 43758.5453);";
     // The dome's names put back to Babylon's, the spaces taken out.
     const names: [RegExp, string][] = [
       [/\bskyInverseScreenSize\b/g, "vInverseScreenSize"],
+      [/\bskyDitherIntensity\b/g, "ditherIntensity"],
+      [/\bskyRand\b/g, "getRand"],
       [/\bskyVignette1\b/g, "vignetteSettings1"],
       [/\bskyVignette2\b/g, "vignetteSettings2"],
       [/\bskyCurveNeutral\b/g, "vCameraColorCurveNeutral"],
@@ -519,6 +538,10 @@ ${BABYLON_CURVES.join("")}
     expect(vignette.map(asBabylon)).toEqual(BABYLON_VIGNETTE.map(squashed));
     expect(asBabylon(multiplier)).toBe(squashed(BABYLON_MULTIPLY[0]));
     expect(curves.map(asBabylon)).toEqual(BABYLON_CURVES.map(squashed));
+    // Babylon's saturate is its macro for the same clamp (pinned above).
+    const unsaturated = (statement: string) => statement.replace(/saturate\((.+)\);$/, "clamp($1,0.0,1.0);");
+    expect(dither.map(asBabylon)).toEqual(BABYLON_DITHER.map((line) => unsaturated(squashed(line))));
+    expect(asBabylon(`float skyRand(vec2 seed) {${rand}}`)).toBe(squashed(BABYLON_RAND));
     // What a statement assigns: `a*=b` assigns a*b.
     const assigned = (statement: string) => {
       const compound = /^([\w.]+)\*=(.+)$/.exec(statement);
@@ -526,8 +549,8 @@ ${BABYLON_CURVES.join("")}
     };
     expect(blends.map((line) => assigned(asBabylon(line)))).toEqual([BABYLON_MULTIPLY[1], BABYLON_OPAQUE].map((line) => assigned(squashed(line))));
 
-    const body = (name: string) => {
-      const start = FRAGMENT.indexOf(`${name}(vec3 color) {`);
+    const body = (name: string, parameter = "vec3 color") => {
+      const start = FRAGMENT.indexOf(`${name}(${parameter}) {`);
       expect(start, name).toBeGreaterThan(-1);
       return FRAGMENT.slice(start, FRAGMENT.indexOf("\n}\n", start));
     };
@@ -539,6 +562,20 @@ ${BABYLON_CURVES.join("")}
     expect(body("vec3 skyCurvesOf")).toBe(`vec3 skyCurvesOf(vec3 color) {
   ${curves.join("\n  ")}
   return color;`);
+    expect(body("float skyRand", "vec2 seed")).toBe(`float skyRand(vec2 seed) {
+  ${rand}`);
+    expect(body("vec3 skyDitherOf")).toBe(`vec3 skyDitherOf(vec3 color) {
+  ${dither.join("\n  ")}
+  return color;`);
+  });
+
+  it("dither as Babylon seeds its dither: from the pixel's place on the frame, which the stage reads already, with no varying added", () => {
+    // gl_FragCoord is the built-in the vignette reads too: the one varying is the direction.
+    expect(FRAGMENT.match(/\bgl_FragCoord\b/g)).toHaveLength(2);
+    expect([...FRAGMENT.matchAll(/^varying\s+\w+\s+(\w+);/gm)].map((m) => m[1])).toEqual(["vSkyDir"]);
+    // The tone-mapped colour alone is dithered: the capture and the post path's sky never are.
+    expect(FRAGMENT.match(/skyDitherOf\(/g)).toHaveLength(2);
+    expect(FRAGMENT).toContain("toned = skyDitherOf(toned);");
   });
 
   it("binds the colour curves as Babylon's own binding does, under the dome's names", () => {
@@ -624,6 +661,44 @@ ${BABYLON_CURVES.join("")}
     }
   });
 
+  it("binds the dither as Babylon does: half the intensity either way, over the screen's size it shares with the vignette", () => {
+    const on = new NullEngine();
+    try {
+      const image = new ImageProcessingConfiguration();
+      image.ditheringEnabled = true;
+      // The vignette off: the dither alone still needs the screen's size.
+      expect(image.vignetteEnabled).toBe(false);
+      const compare = () => {
+        const theirs = recordingEffect(on);
+        image.bind(theirs.effect);
+        const ours = recordingEffect(on);
+        bindSkyImageProcessing(ours.effect, image);
+        expect(ours.bound.get("skyDitherIntensity")).toEqual(theirs.bound.get("ditherIntensity"));
+        expect(ours.bound.get("skyInverseScreenSize")).toEqual(theirs.bound.get("vInverseScreenSize"));
+        return ours.bound;
+      };
+      // Babylon's default intensity, 1/255, the one the material path runs at.
+      expect(image.ditheringIntensity).toBe(1 / 255);
+      const resting = compare();
+      expect(resting.get("skyDitherIntensity")).toEqual([1 / 510]);
+      expect(resting.get("skyInverseScreenSize")).toEqual([1 / 512, 1 / 256]);
+      image.ditheringIntensity = 4 / 255;
+      image.outputTextureWidth = 1920;
+      image.outputTextureHeight = 1080;
+      const strong = compare();
+      expect(strong.get("skyDitherIntensity")).toEqual([2 / 255]);
+      expect(strong.get("skyInverseScreenSize")).toEqual([1 / 1920, 1 / 1080]);
+      // Off, a dither of 0, whatever the intensity holds.
+      image.ditheringEnabled = false;
+      const off = recordingEffect(on);
+      bindSkyImageProcessing(off.effect, image);
+      expect(off.bound.get("skyDitherIntensity")).toEqual([0]);
+      expect(off.bound.get("skyInverseScreenSize")).toEqual([0, 0]);
+    } finally {
+      on.dispose();
+    }
+  });
+
   it("binds them from the scene's configuration at each draw, on both paths, with no update between", async () => {
     for (const colourPath of ["material", "post"] as const) {
       const s = scene();
@@ -663,11 +738,80 @@ ${BABYLON_CURVES.join("")}
       image.vignetteWeight = 1;
       draw();
       expect(bound.get("skyVignette2")).toEqual([0.01, 0.02, 0.03, -2]);
+      // The dither the material path turns on, between two draws.
+      expect(bound.get("skyDitherIntensity")).toEqual([0]);
+      image.ditheringEnabled = true;
+      draw();
+      expect(bound.get("skyDitherIntensity")).toEqual([1 / 510]);
+      // The frame's exposure, the stare's dimming in it, written between two
+      // draws with no update: the material path draws with it, as every
+      // other material there does; the post path keeps the stage's own.
+      image.exposure = 0.25;
+      draw();
+      expect(bound.get("skyExposure"), colourPath).toEqual(colourPath === "material" ? [0.25] : [1]);
       dome.dispose();
       dome = null;
       engine?.dispose();
       engine = null;
     }
+  });
+
+  it("binds the frame's values again at the frame's draw after a draw in the probe's pass, which shares its effect", async () => {
+    const s = scene();
+    dome = createSkyDome(s, "material");
+    const frame = await drawnEffect(dome.mesh);
+    // The probe draws the dome in a pass of its own, into a 128-texel target.
+    const probe = new RenderTargetTexture("probe", 128, s);
+    engine!.currentRenderPassId = probe.renderPassId;
+    const probed = await drawnEffect(dome.mesh);
+    // Babylon's cache hands both passes one effect: what the probe's draw
+    // binds is still bound when the frame's draw comes.
+    expect(probed).toBe(frame);
+    const bound = new Map<string, number[]>();
+    const live = frame as unknown as Effect;
+    vi.spyOn(live, "setFloat").mockImplementation((name: string, x: number) => {
+      bound.set(name, [x]);
+      return live;
+    });
+    vi.spyOn(live, "setFloat2").mockImplementation((name: string, x: number, y: number) => {
+      bound.set(name, [x, y]);
+      return live;
+    });
+    vi.spyOn(live, "setFloat4").mockImplementation((name: string, x: number, y: number, z: number, w: number) => {
+      bound.set(name, [x, y, z, w]);
+      return live;
+    });
+    // Each render starts with no material cached, so the stored values go up too.
+    const draw = () => {
+      s.resetCachedMaterial();
+      dome!.material.bindForSubMesh(Matrix.Identity(), dome!.mesh, dome!.mesh.subMeshes[0]!);
+    };
+    const image = s.imageProcessingConfiguration;
+    image.vignetteEnabled = true;
+    image.vignetteWeight = 2.5;
+    image.ditheringEnabled = true;
+    image.exposure = 0.25;
+    // The probe's draw: its pass, its target, the capture on.
+    engine!.bindFramebuffer(probe.renderTarget!);
+    dome.setCapture(true);
+    draw();
+    dome.setCapture(false);
+    engine!.unBindFramebuffer(probe.renderTarget!);
+    expect(bound.get("skyInverseScreenSize")).toEqual([1 / 128, 1 / 128]);
+    expect(bound.get("skyCapture")).toEqual([1]);
+    const probeVignette = bound.get("skyVignette1");
+    // The frame's draw, in the main pass, over the frame's 512 x 256.
+    engine!.currentRenderPassId = 0;
+    draw();
+    const theirs = recordingEffect(engine!);
+    image.bind(theirs.effect);
+    expect(bound.get("skyInverseScreenSize")).toEqual([1 / 512, 1 / 256]);
+    expect(bound.get("skyVignette1")).toEqual(theirs.bound.get("vignetteSettings1"));
+    expect(bound.get("skyVignette1")).not.toEqual(probeVignette);
+    expect(bound.get("skyCapture")).toEqual([0]);
+    expect(bound.get("skyExposure")).toEqual([0.25]);
+    expect(bound.get("skyDitherIntensity")).toEqual([1 / 510]);
+    probe.dispose();
   });
 });
 
@@ -696,6 +840,7 @@ describe("the dome's stages, compiled", () => {
         expect(fragment).toMatch(/@builtin\(position\)/);
         expect(fragment).toContain("skyVignette1");
         expect(fragment).toContain("skyCurveNeutral");
+        expect(fragment).toContain("skyDitherIntensity");
         made.dispose();
       } finally {
         gpuScene.dispose();
