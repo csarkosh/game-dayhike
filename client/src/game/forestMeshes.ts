@@ -160,6 +160,12 @@ export type BakeOptions = {
    * that left nothing out (`renderedWhole`). Absent, it renders once, as
    * always. */
   pipelines?: BakePipelines;
+  /** Resolves once the renderer's sky is held (`Renderer.skyReady`): the bake
+   * renders nothing before, since until then the lights are Babylon's
+   * defaults, and a billboard keeps the light it was baked under for the
+   * life of the page. Its bounds (`warnMs`, `failMs`) count from then.
+   * Absent, it renders as soon as it is ready. */
+  sky?: Promise<void>;
 };
 
 /** One billboard's bake, as the forest last saw it: still baking, landed
@@ -211,6 +217,9 @@ export type ForestMeshesOptions = {
   /** The WebGPU engine's asynchronous pipelines, handed to every bake
    * (`BakeOptions.pipelines`); absent on WebGL2. */
   pipelines?: BakePipelines;
+  /** The renderer's sky, held (`Renderer.skyReady`), handed to every bake
+   * (`BakeOptions.sky`): no billboard is baked under Babylon's default lights. */
+  sky?: Promise<void>;
   /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
    * over the frames that follow rather than in the frame of the crossing. */
   jobs?: SyncJobs;
@@ -727,6 +736,11 @@ const IMPOSTOR_BAKE_LAYER = 0x10000000;
  * Still waiting at `options.warnMs` (`IMPOSTOR_BAKE_WARN_MS`), it says so once,
  * as a warning, and waits on.
  *
+ * Given `options.sky`, no poll starts until it resolves, and the bounds count
+ * from then: before the renderer's sky is held the lights are Babylon's
+ * defaults, which the billboard would keep for the life of the page. Aborted
+ * while it waits, it disposes its target and resolves null without a word.
+ *
  * `pose` rotates the bake clone before anything is measured, for a model
  * whose rest orientation is not how it stands in the world: `deadwood.snag`
  * ships lying down, so the snag billboard bakes under `SNAG_POSE`. It has to
@@ -808,6 +822,14 @@ export async function defaultBakeImpostor(
     camera.setTarget(centre);
     rtt.activeCamera = camera;
 
+    // Nothing is rendered before the renderer's sky is held: the lights are
+    // Babylon's defaults until then, and the billboard would keep them.
+    if (options.sky !== undefined && !(await heldUnlessAborted(options.sky, options.signal))) {
+      camera.dispose();
+      rtt.dispose();
+      return null;
+    }
+
     // Readiness under the BAKE pass and camera (see the function comment):
     // each poll triggers the missing compiles and texture loads, so this
     // normally settles in a few frames' worth of 16 ms hops. It ends aborted,
@@ -868,6 +890,20 @@ export async function defaultBakeImpostor(
     // exclusively by this bake, never shared with the live buckets.
     clone.dispose(false, true);
   }
+}
+
+/** True once `held` resolves, false at once if `signal` is aborted first,
+ * with nothing left listening to the signal either way. */
+function heldUnlessAborted(held: Promise<void>, signal: AbortSignal | undefined): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const onAbort = (): void => resolve(false);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    void held.then(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve(true);
+    });
+  });
 }
 
 /**
@@ -978,7 +1014,7 @@ export function createForestMeshes(
   const loads = new AbortController();
   // The bakes share the signal: a bake still waiting on its shaders stops
   // polling and lets its target go.
-  const bakeOptions: BakeOptions = { signal: loads.signal, pipelines: options.pipelines };
+  const bakeOptions: BakeOptions = { signal: loads.signal, pipelines: options.pipelines, sky: options.sky };
   const loadModel = (url: string): Promise<AssetContainer> =>
     loadUntilAborted(() => loadContainer(url, scene), loads.signal);
 

@@ -34,7 +34,8 @@ import {
   type ScriptEntry,
 } from "./game/script.js";
 import { stepFreecam, type FreecamState } from "./game/freecam.js";
-import { DEFAULT_HOUR } from "./game/lighting.js";
+import { DEFAULT_HOUR, sunAltitudeDeg } from "./game/lighting.js";
+import { startSkySource } from "./game/skyWorker.js";
 import { seedFromToken } from "./game/seed.js";
 import { createAmbientAudio } from "./game/ambientAudio.js";
 import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
@@ -88,6 +89,7 @@ import {
   swapRenderer,
   switchOutcome,
   whenSceneReady,
+  whenStandingSkyHeld,
   type EngineOnCanvas,
   type EngineWatchers,
   type SwapBindings,
@@ -121,9 +123,10 @@ export type GameHandle = {
   graphics(): { tier: QualityTier; engine: "webgl2" | "webgpu" };
   /** Shows a line on the HUD for a few seconds. */
   notify(line: string): void;
-  /** The world ready to be looked at (`startReady`): the scene ready, the
-   * forest's billboards in, on WebGPU a whole frame drawn; a minute after
-   * the build at the latest. The loading bar reads ready with it. */
+  /** The world ready to be looked at (`startReady`): the sky's first slices
+   * in and the first frame drawn, then the scene ready, the forest's
+   * billboards in, on WebGPU a whole frame drawn; a minute after that first
+   * frame at the latest. The loading bar reads ready with it. */
   ready: Promise<void>;
   /** Covers play as the probe's screen does (the controls held, the pause
    * menu kept), until the function returned is called: what an intro playing
@@ -276,6 +279,17 @@ function buildGame(
   );
 
   const forest = createForest(seed);
+  // The sky's slices, made off the main thread once for the whole hike and
+  // handed to every renderer it builds, a swap of tier's included, so no
+  // swap makes them again. Made from the hour the script starts the hike at
+  // outward (`sliceOrder`): the first frame waits only for the slices either
+  // side of noon and of that hour. The hour is read as `applyView`'s `time`
+  // branch reads it, before that branch applies it to the renderer.
+  const timeEntry = lastEntry(view, "time");
+  const timeValue = timeEntry === undefined ? undefined : findCommand("time")?.scriptValue?.(timeEntry.args);
+  const startHour = typeof timeValue === "number" ? timeValue : DEFAULT_HOUR;
+  const skySource = startSkySource(sunAltitudeDeg(startHour));
+  made(() => skySource.dispose());
   /** The WebGPU module's watchers, once a WebGPU engine has been made. */
   let watchers: EngineWatchers | null = options.watchers ?? null;
   /** Stops listening to the running engine for failures (`watchWebGpu`). */
@@ -316,13 +330,17 @@ function buildGame(
     [options.tier, ...options.fallbackTiers],
     {
       build: (next, at, engine) =>
-        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap }),
+        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, skyTable: skySource.table }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
     options.engine === undefined ? null : { engine: options.engine, watch: watchers?.failures ?? null },
   );
   let renderer: Renderer = first.renderer;
+  /** Told once at the next swap of the renderer (`switchTo`), then let go. */
+  const swapListeners = new Set<() => void>();
+  /** Resolves at the next swap of the renderer. */
+  const nextSwap = (): Promise<void> => new Promise((resolve) => void swapListeners.add(resolve));
   canvas = first.canvas;
   made(() => renderer.dispose());
   // Newest first: the listener goes before the renderer it listens to.
@@ -505,10 +523,10 @@ function buildGame(
   }
 
   // The hour and weather `syncAtmosphere` last actually pushed to the
-  // renderer and the ambient bed: `renderer.setHour` and `renderer.setWeather`
-  // both recompute the sky, the sun and the fog and re-render the reflection
-  // probe, so calling both unconditionally every frame would pay that cost
-  // twice a frame for a state that moves in fractions over seconds. `applyView`
+  // renderer and the ambient bed: `renderer.setView` recomputes the sky, the
+  // sun and the fog and re-renders the reflection probe, so calling it
+  // unconditionally every frame would pay that cost every frame for a state
+  // that moves in fractions over seconds. `applyView`
   // below writes both locals directly after its own renderer pushes, so a
   // console override at full escalation is not read as no-op drift on the
   // next `syncAtmosphere` and left standing for the rest of the match.
@@ -695,8 +713,8 @@ function buildGame(
     const a = atmosphereUnder(base, escalation);
     wildlifePresence = wildlifePresenceUnder(a.weather);
     // Skip the renderer and ambient pushes on a frame the eased state barely
-    // moved: `renderer.setHour`/`setWeather` recompute the sky, the sun and
-    // the fog and re-render the reflection probe on every call.
+    // moved: `renderer.setView` recomputes the sky, the sun and the fog and
+    // re-renders the reflection probe on every call, once for both.
     const hourMoved = Math.abs(a.hour - appliedHour) > 0.01;
     const weatherMoved =
       Math.abs(a.weather.cloudCover - appliedWeather.cloudCover) > 0.005 ||
@@ -707,8 +725,7 @@ function buildGame(
     if (!hourMoved && !weatherMoved) return;
     appliedHour = a.hour;
     appliedWeather = a.weather;
-    renderer.setHour(a.hour);
-    renderer.setWeather(a.weather, 0);
+    renderer.setView(a.hour, a.weather);
     ambient.setWeather(a.weather);
   }
 
@@ -1454,27 +1471,32 @@ function buildGame(
   }
   // The world stage of the loading bar: the clipmap's rings, then the
   // forest's billboards. With the build deferred, the rings are made a slice
-  // at a time with a paint between (`CLIPMAP_YIELD_EVERY`), and the render
-  // loop starts once they stand; otherwise they stood with the renderer.
+  // at a time with a paint between (`CLIPMAP_YIELD_EVERY`); otherwise they
+  // stood with the renderer. The render loop starts once they stand and the
+  // sky's first slices are in.
   const progress = reportProgress();
   progress?.total("world", RING_COUNT + 1);
   const ringBuilt = (level: number): void => {
     progress?.start("world", `ring${level}`);
     progress?.done("world", `ring${level}`);
   };
-  let firstBuild: Promise<void>;
+  // The renderer both waits are for: one swapped in meanwhile
+  // (`swapRenderer`) runs its own loop already.
+  const built = renderer;
+  let clipmapBuilt: Promise<void>;
   if (options.deferClipmap === true) {
-    // The loop starts on the renderer the build was for: one swapped in
-    // meanwhile (`swapRenderer`) runs its own already.
-    const built = renderer;
-    firstBuild = built.buildFirstClipmap(CLIPMAP_YIELD_EVERY, ringBuilt).then(() => {
-      if (!disposed && !broken && renderer === built) built.engine.runRenderLoop(loop);
-    });
+    clipmapBuilt = built.buildFirstClipmap(CLIPMAP_YIELD_EVERY, ringBuilt);
   } else {
     for (let level = 0; level < RING_COUNT; level++) ringBuilt(level);
-    renderer.engine.runRenderLoop(loop);
-    firstBuild = Promise.resolve();
+    clipmapBuilt = Promise.resolve();
   }
+  // No frame is drawn, and so none shown, before the sky's first slices are
+  // in (`Renderer.skyReady`): until then the lighting has applied nothing. A
+  // renderer swapped in meanwhile takes the wait over (`whenStandingSkyHeld`),
+  // since the one it replaced never resolves its own, and starts its own loop.
+  const firstBuild = Promise.all([clipmapBuilt, whenStandingSkyHeld(() => renderer, nextSwap)]).then(() => {
+    if (!disposed && !broken && renderer === built) built.engine.runRenderLoop(loop);
+  });
   progress?.start("world", "bakes");
   void renderer.forestReady.then(
     () => progress?.done("world", "bakes"),
@@ -1508,8 +1530,7 @@ function buildGame(
 
   /** Puts back on a new renderer what the old one was told. */
   function restoreView(r: Renderer): void {
-    r.setHour(appliedHour);
-    r.setWeather(appliedWeather, 0);
+    r.setView(appliedHour, appliedWeather);
     r.setWireframe(wireframe);
     r.setSkinShading(skin);
     r.setBobScale(bobScale);
@@ -1526,7 +1547,7 @@ function buildGame(
     // The target's engine is made before the swap by the WebGPU rule
     // (`options.engineFor`), on the canvas `freshCanvas` hands out first;
     // null, the renderer makes WebGL2's.
-    build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine) }),
+    build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table }),
     freshCanvas: () => document.createElement("canvas"),
     extras: { dispose: disposeExtras, build: buildExtras },
     rebind: (next) => {
@@ -1643,6 +1664,8 @@ function buildGame(
         throw error;
       }
       renderer = got.renderer;
+      for (const tell of swapListeners) tell();
+      swapListeners.clear();
       canvas = got.canvas;
       tier = got.tier;
       const outcome = switchOutcome(save ?? "auto", got);
@@ -1836,6 +1859,7 @@ function buildGame(
       prompt.dispose();
       input.dispose();
       if (!broken) renderer.dispose();
+      skySource.dispose();
       wildlifeAudio?.dispose();
       ambient.dispose();
     },

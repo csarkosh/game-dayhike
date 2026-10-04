@@ -477,6 +477,9 @@ export type StartupDeps = {
   runStep(tier: QualityTier, cancelled: () => boolean, readyMaxMs: number): Promise<ProbeReading | null>;
   /** The "Setting up graphics…" screen over the probe's canvas. */
   showScreen(): { dispose(): void };
+  /** The probe is over, measured or not: what its steps shared (the sky's
+   * source, `probeDeps`) can go. Called once after a probe that ran. */
+  endProbe?(): void;
   /** A timer; the function returned clears it. */
   setTimer(fn: () => void, ms: number): () => void;
   /** Resolves true once the tab is visible, false if the page moves on first. */
@@ -569,6 +572,7 @@ export async function startupTier(
       else deps.log(`quality probe: verdict ${outcome.tier} (${cls})`);
     } finally {
       screen.dispose();
+      deps.endProbe?.();
     }
   }
   return { tier, source: decided.source, cls };

@@ -17,7 +17,8 @@ import {
 import atmosphereFragment from "./shaders/atmosphereFog.fragment.fx?raw";
 import type { Rgb } from "./colour.js";
 import { HOLLOW_MATERIAL } from "./hollowLook.js";
-import { WEATHER_PRESETS, type WeatherParams } from "./weather.js";
+import type { WeatherParams } from "./weather.js";
+import type { SkyState } from "./skyState.js";
 import {
   atmosphereUnder, fogGradientUnder, GRADIENT_STEPS, type AtmosphereRecord,
 } from "./atmosphereParams.js";
@@ -124,13 +125,18 @@ class AtmospherePlugin extends MaterialPluginBase {
 }
 
 export type Atmosphere = {
-  /** Recomputes the record and, if hour or weather changed, the gradient texture. */
-  update(weather: WeatherParams, hour: number): void;
-  readonly record: AtmosphereRecord;
+  /**
+   * Recomputes the record from the weather and the sky state the lighting
+   * last applied (`Lighting.sky`), and the gradient texture when that state
+   * is a new one or a weather axis moved.
+   */
+  update(weather: WeatherParams, sky: SkyState): void;
+  /** The last update's record; null before the first, while the plugin is off. */
+  readonly record: AtmosphereRecord | null;
   readonly gradientBuilds: number;
   /** The gradient's middle colour, for mist banks. */
   midColour(): Rgb;
-  /** The gradient's near-end colour (sun-tinted, cloud-faded inscatter), for motes. */
+  /** The gradient's near-end colour, for motes. */
   nearColour(): Rgb;
   dispose(): void;
 };
@@ -150,12 +156,12 @@ function gradientTexels(gradient: Rgb[]): Uint8Array {
 /**
  * Registers the plugin factory. MUST run before any PBR material exists —
  * RegisterMaterialPlugin only reaches materials created afterwards. The
- * factory declines non-PBR materials (sky, mist, particles) by returning null,
- * and declines the Hollow's PBR material by name: it keeps fog off, and the
- * plugin's spliced code reads `vFogColor`, which Babylon declares only while
- * the FOG define is set, so with the plugin attached that material would fail
- * to compile on an undeclared identifier (entityViews.ts says why fog stays
- * off).
+ * factory declines non-PBR materials (the sky dome, mist, particles) by
+ * returning null, and declines the Hollow's PBR material by name: it keeps fog
+ * off, and the plugin's spliced code reads `vFogColor`, which Babylon declares
+ * only while the FOG define is set, so with the plugin attached that material
+ * would fail to compile on an undeclared identifier (entityViews.ts says why
+ * fog stays off).
  *
  * The gradient is a 256x1 RGBA8 strip in LINEAR space (the grade pass
  * tone-maps after it); the finish pass's dither hides its 8-bit steps.
@@ -165,12 +171,17 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
     material instanceof PBRMaterial && material.name !== HOLLOW_MATERIAL ? new AtmospherePlugin(material) : null,
   );
   registered = true;
-  let record = atmosphereUnder(WEATHER_PRESETS.clear, 12, viewDistance);
+  let record: AtmosphereRecord | null = null;
   let gradient: Rgb[] = [];
-  let lastKey = "";
+  let lastSky: SkyState | null = null;
+  let lastWeather = "";
   let builds = 0;
+  // Black until the first update. Nothing reads it before then (the plugin is
+  // off while `current` is null), but WebGPU validates every binding a
+  // pipeline declares, so the texture exists from the start.
+  const blank: Rgb[] = Array.from({ length: GRADIENT_STEPS }, () => ({ r: 0, g: 0, b: 0 }));
   const tex = RawTexture.CreateRGBATexture(
-    gradientTexels(fogGradientUnder(WEATHER_PRESETS.clear, 12)),
+    gradientTexels(blank),
     GRADIENT_STEPS, 1, scene, false, false, Texture.BILINEAR_SAMPLINGMODE, Engine.TEXTURETYPE_UNSIGNED_BYTE,
   );
   tex.wrapU = Texture.CLAMP_ADDRESSMODE;
@@ -184,21 +195,23 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
     get gradientBuilds() {
       return builds;
     },
-    update(weather, hour) {
-      record = atmosphereUnder(weather, hour, viewDistance);
+    update(weather, sky) {
+      record = atmosphereUnder(weather, sky, viewDistance);
       current = record;
-      // The five weather axes and the hour are the whole input to the
-      // gradient; a fade rebuilds every tick (256 texels, trivial), a still
-      // frame never does.
-      const key = `${hour}|${weather.cloudCover}|${weather.mist}|${weather.rain}|${weather.wetness}|${weather.dread}`;
-      if (key !== lastKey) {
-        gradient = fogGradientUnder(weather, hour);
+      // The sky state and the five weather axes are the whole input to the
+      // gradient. The lighting makes a new state at each apply (an hour, a
+      // weather, a fade's tick, a slice arriving), so a fade rebuilds every
+      // tick (256 texels, trivial) and a still frame never does.
+      const weatherKey = `${weather.cloudCover}|${weather.mist}|${weather.rain}|${weather.wetness}|${weather.dread}`;
+      if (sky !== lastSky || weatherKey !== lastWeather) {
+        gradient = fogGradientUnder(weather, sky);
         tex.update(gradientTexels(gradient));
         const far = gradient[GRADIENT_STEPS - 1] as Rgb;
         // Non-PBR materials (mist, rain) still read Babylon's fog colour.
         scene.fogColor = new Color3(far.r, far.g, far.b);
         scene.fogDensity = record.baseDensity;
-        lastKey = key;
+        lastSky = sky;
+        lastWeather = weatherKey;
         builds += 1;
       }
     },

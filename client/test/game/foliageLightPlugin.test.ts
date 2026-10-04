@@ -8,6 +8,7 @@ import diffuseFx from "../../src/game/shaders/foliageDiffuse.fragment.fx?raw";
 import { attachFoliageLight, FOLIAGE_LIGHT_INJECTION_POINT, FOLIAGE_WRAP } from "../../src/game/foliageLightPlugin.js";
 import { attachFoliage, FOLIAGE_PROFILES } from "../../src/game/foliagePlugin.js";
 import { createLighting } from "../../src/game/lighting.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -30,10 +31,11 @@ describe("foliage light plugin", () => {
     expect(m![2]).toBe("{X}");
   });
 
-  it("the sun is light 0", () => {
+  it("the sun is light 0 and the fill light 1", () => {
     const s = new Scene(new NullEngine());
-    createLighting(s, { tier: "high", viewDistance: 70, colourPath: "material" });
+    createLighting(s, { tier: "high", viewDistance: 70, colourPath: "material", sky: skyFixture() });
     expect(s.lights[0]!.name).toBe("sun");
+    expect(s.lights[1]!.name).toBe("fill");
     s.getEngine().dispose();
   });
 

@@ -57,6 +57,9 @@ import {
   type SpeciesMeshes,
 } from "../../src/game/forestMeshes.js";
 import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
+import { whenSkyHeld } from "../../src/game/lighting.js";
+import { createSkyTable } from "../../src/game/skyTable.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { wetCapOf } from "../../src/game/wetPlugin.js";
 
@@ -693,6 +696,26 @@ describe("createForestMeshes under NullEngine", () => {
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
     expect(given.length).toBe(5);
     expect(given.every((p) => p === pipelines)).toBe(true);
+    forest.dispose();
+  });
+
+  it("hands every bake the renderer's sky, so none bakes under Babylon's default lights", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const sky = new Promise<void>(() => undefined);
+    const given: unknown[] = [];
+    const forest = createForestMeshes(scene, SEED, {
+      assets: stubAssets(scene),
+      sky,
+      bakeImpostor: (_mesh, _s, options) => {
+        given.push(options?.sky);
+        return null;
+      },
+    });
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    expect(given.length).toBe(5);
+    expect(given.every((held) => held === sky)).toBe(true);
     forest.dispose();
   });
 
@@ -1502,6 +1525,60 @@ describe("defaultBakeImpostor readiness gate", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(await defaultBakeImpostor(mesh, scene)).not.toBeNull();
     expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("renders nothing while the sky's table is empty, and bakes once the slices the lighting needs are held", async () => {
+    const { scene, mesh } = bakeScene();
+    const gate = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    const render = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
+    const table = createSkyTable();
+    const pending = defaultBakeImpostor(mesh, scene, { sky: whenSkyHeld(table, () => 12) });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(render).not.toHaveBeenCalled();
+    expect(gate).not.toHaveBeenCalled();
+    // The slices either side of noon: noon's sky is held.
+    const fixture = skyFixture();
+    table.add(fixture.blendAt(74));
+    table.add(fixture.blendAt(76));
+    expect(await pending).not.toBeNull();
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops waiting for the sky when aborted, disposes the target, and logs nothing", async () => {
+    const { scene, mesh } = bakeScene();
+    const render = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const abort = new AbortController();
+    const pending = defaultBakeImpostor(mesh, scene, { signal: abort.signal, sky: new Promise<void>(() => undefined) });
+    await new Promise((r) => setTimeout(r, 20));
+    abort.abort();
+    expect(await pending).toBeNull();
+    expect(render).not.toHaveBeenCalled();
+    expect(errors).not.toHaveBeenCalled();
+    expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
+  });
+
+  it("counts its bounds from the sky's arrival, not from its start", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
+    const { scene, mesh } = bakeScene();
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(false);
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let arrive = (): void => undefined;
+    const sky = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
+    const abort = new AbortController();
+    const pending = defaultBakeImpostor(mesh, scene, { signal: abort.signal, sky });
+    await vi.advanceTimersByTimeAsync(40_000);
+    arrive();
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(warnings).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(warnings).toHaveBeenCalledTimes(1);
+    abort.abort();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await pending).toBeNull();
+    vi.useRealTimers();
   });
 
   it("stops polling when aborted, disposes the target, and logs nothing", async () => {

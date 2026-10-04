@@ -43,6 +43,25 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
   return { Engine: mod.NullEngine };
 });
 
+// The sky source a renderer starts when it is given no table: here the
+// fixture's table, at once, so every renderer in this file lights itself as
+// it is built, with a record of each source started and stopped.
+const skySources = vi.hoisted(() => ({ started: [] as number[], stopped: 0 }));
+vi.mock("../../src/game/skyWorker.js", async () => {
+  const { skyFixture } = await import("./helpers/skyFixture.js");
+  return {
+    startSkySource: (startDeg: number) => {
+      skySources.started.push(startDeg);
+      return {
+        table: skyFixture(),
+        dispose: () => {
+          skySources.stopped += 1;
+        },
+      };
+    },
+  };
+});
+
 // Every pose the renderer hands the blade field to cut to, recorded on the way
 // through to the real shell (which still cuts), so a test can read what the
 // renderer's per-frame cull hook measured.
@@ -59,6 +78,41 @@ vi.mock("../../src/game/bladeMeshes.js", async (importOriginal) => {
         cull(pose);
       };
       return blades;
+    },
+  };
+});
+
+// Every update the renderer gives the mist banks and the motes, counted on the
+// way through to the real shells.
+const effectUpdates = vi.hoisted(() => ({ mist: 0, motes: 0 }));
+vi.mock("../../src/game/mistMeshes.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/mistMeshes.js")>();
+  return {
+    ...mod,
+    createMistMeshes: (...args: Parameters<typeof mod.createMistMeshes>) => {
+      const mist = mod.createMistMeshes(...args);
+      const update = mist.update.bind(mist);
+      mist.update = (...at) => {
+        effectUpdates.mist += 1;
+        update(...at);
+      };
+      return mist;
+    },
+  };
+});
+vi.mock("../../src/game/motes.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/motes.js")>();
+  return {
+    ...mod,
+    createMotes: (...args: Parameters<typeof mod.createMotes>) => {
+      const motes = mod.createMotes(...args);
+      if (motes === null) return null;
+      const update = motes.update.bind(motes);
+      motes.update = (...at) => {
+        effectUpdates.motes += 1;
+        update(...at);
+      };
+      return motes;
     },
   };
 });
@@ -92,6 +146,8 @@ import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldS
 import { createForest } from "../../src/sim/forest.js";
 import { elevationAt } from "../../src/sim/terrain.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { createSkyTable } from "../../src/game/skyTable.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 
 let engine: NullEngine | null = null;
 
@@ -374,6 +430,72 @@ describe("renderer.wind()", () => {
   });
 });
 
+describe("the renderer's sky", () => {
+  it("starts a source of its own at the default hour's sun when it is given no table, and stops it with itself", () => {
+    skySources.started.length = 0;
+    skySources.stopped = 0;
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low" });
+    // Noon's sun, 75.96 degrees up the tilted arc.
+    expect(skySources.started.length).toBe(1);
+    expect(skySources.started[0]).toBeCloseTo(75.96375653207352, 10);
+    expect(skySources.stopped).toBe(0);
+    renderer.dispose();
+    expect(skySources.stopped).toBe(1);
+  });
+
+  it("reads a table it is given, and starts and stops no source of its own", () => {
+    skySources.started.length = 0;
+    skySources.stopped = 0;
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture() });
+    renderer.dispose();
+    expect(skySources.started).toEqual([]);
+    expect(skySources.stopped).toBe(0);
+  });
+
+  it("moves no mist bank or mote before the table holds its first slices, on either camera, and moves both once it does", () => {
+    const table = createSkyTable();
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, createForest(388817), { tier: "medium", skyTable: table });
+    const state = windTestState(windTestPlayer(1));
+    try {
+      effectUpdates.mist = 0;
+      effectUpdates.motes = 0;
+      // The player's camera, then the free one: their colour would be the
+      // empty gradient's black.
+      renderer.sync(state, 1, 0);
+      renderer.setFreecam({ x: 0, y: 50, z: 0, yaw: 0, pitch: 0 });
+      renderer.sync(state, 1, 0);
+      expect([effectUpdates.mist, effectUpdates.motes]).toEqual([0, 0]);
+      const fixture = skyFixture();
+      table.add(fixture.blendAt(74));
+      table.add(fixture.blendAt(76));
+      renderer.sync(state, 1, 0);
+      renderer.setFreecam(null);
+      renderer.sync(state, 1, 0);
+      expect([effectUpdates.mist, effectUpdates.motes]).toEqual([2, 2]);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(60_000));
+});
+
+describe("the renderer's view", () => {
+  it("sets the hour and the weather together through the lighting, at once", () => {
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture() });
+    try {
+      renderer.setView(15, WEATHER_PRESETS.rain);
+      const sun = renderer.scene.getLightByName("sun") as unknown as { direction: { x: number; y: number; z: number } };
+      // The way 15:00's light travels, away from the sun.
+      expect(sun.direction.x).toBeCloseTo(0.6859943405700353, 12);
+      expect(sun.direction.y).toBeCloseTo(-0.6859943405700354, 12);
+      expect(sun.direction.z).toBeCloseTo(0.24253562503633297, 12);
+      // Rain's density at the forest's 4 km.
+      expect(renderer.scene.fogDensity).toBeCloseTo(0.004932832390416513, 15);
+    } finally {
+      renderer.dispose();
+    }
+  });
+});
+
 describe("the renderer's engine", () => {
   // `Engine` here is this file's module mock (NullEngine standing in for the
   // WebGL2 engine), so an instance of it is what the WebGL2 path constructs.
@@ -634,8 +756,14 @@ describe("world shell wiring", () => {
     expect(src).toContain("    canopyOver() {\n      return lensCanopy;\n    },");
   });
 
+  it("hands the forest its sky, so no billboard bakes before the sky is held", () => {
+    const forestOptions = slice("createForestMeshes(scene, forest.seed, {", "      })");
+    expect(forestOptions).toContain("sky: skyReady(),");
+    expect(src).toContain("skyWait ??= whenSkyHeld(skyTable, () => lighting.hour, { signal: disposal.signal }).then(() => {");
+  });
+
   it("rings the water with the weather's rain each frame, beside the puddles", () => {
-    const feed = slice("applyWetness(scene, weather);", "atmosphere.update(weather, lighting.hour);");
+    const feed = slice("applyWetness(scene, weather);", "if (sky !== null) atmosphere.update(weather, sky);");
     expect(feed).toContain(
       "setTerrainRain(scene, terrainMaterialFor(scene, \"terrain\"), weather.rain, seconds);\n      water?.setRain(weather.rain);",
     );
@@ -863,6 +991,6 @@ describe("a part the renderer disposes is also torn down when a build fails", ()
     const registered = new Set([...src.matchAll(/partOf\((\w+)\);/g)].map((m) => m[1]!));
     if (/made\(\(\) => \{\s*for \(const m of brushMeshes\) m\.dispose\(\);/.test(src)) registered.add("brushMeshes");
     expect([...registered].sort()).toEqual([...disposed].sort());
-    expect(disposed.size).toBe(21);
+    expect(disposed.size).toBe(22);
   });
 });

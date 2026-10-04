@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { createHash } from "node:crypto";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -10,10 +11,13 @@ import atmosphereFragment from "../../src/game/shaders/atmosphereFog.fragment.fx
 import { ATMOSPHERE_FOG_ANCHOR, createAtmosphere, type Atmosphere } from "../../src/game/atmosphere.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { fogGradientUnder, GRADIENT_STEPS } from "../../src/game/atmosphereParams.js";
+import { skyStateFor } from "../../src/game/skyState.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 
 let engine: NullEngine;
 let scene: Scene;
 let atmosphere: Atmosphere;
+const table = skyFixture();
 
 beforeEach(() => {
   engine = new NullEngine();
@@ -67,33 +71,47 @@ describe("createAtmosphere", () => {
     expect(hollow.isReady(box)).toBe(true);
   });
 
-  it("update writes the record, keeps scene.fogColor on the gradient's far end, and rebuilds the gradient only on change", () => {
-    atmosphere.update(WEATHER_PRESETS.clear, 12);
-    const far = fogGradientUnder(WEATHER_PRESETS.clear, 12)[GRADIENT_STEPS - 1]!;
-    expect(scene.fogColor.r).toBeCloseTo(far.r, 6);
-    expect(scene.fogDensity).toBe(atmosphere.record.baseDensity);
-    expect(atmosphere.record.sunWeight).toBe(1);
-    const before = atmosphere.gradientBuilds;
-    atmosphere.update(WEATHER_PRESETS.clear, 12);
-    expect(atmosphere.gradientBuilds).toBe(before);
-    atmosphere.update(WEATHER_PRESETS.eerie, 12);
-    expect(atmosphere.gradientBuilds).toBe(before + 1);
-    expect(atmosphere.record.sunWeight).toBeLessThan(1);
+  it("leaves the plugin off and holds no record before its first update", () => {
+    expect(atmosphere.record).toBeNull();
+    expect(atmosphere.gradientBuilds).toBe(0);
+  });
+
+  it("update writes the record, keeps scene.fogColor on the sky state's mist air, and rebuilds the gradient only for a new state or a weather change", () => {
+    const sky = skyStateFor(table, 12, WEATHER_PRESETS.clear);
+    atmosphere.update(WEATHER_PRESETS.clear, sky);
+    expect(scene.fogColor.r).toBeCloseTo(sky.mistAir.r, 6);
+    expect(scene.fogColor.g).toBeCloseTo(sky.mistAir.g, 6);
+    expect(scene.fogColor.b).toBeCloseTo(sky.mistAir.b, 6);
+    expect(scene.fogDensity).toBe(atmosphere.record!.baseDensity);
+    expect(atmosphere.record!.sunWeight).toBe(sky.glowWeight);
+    expect(atmosphere.record!.sunPower).toBe(sky.glowPower);
+    expect(atmosphere.gradientBuilds).toBe(1);
+    // The same state, a still frame: nothing rebuilt.
+    atmosphere.update(WEATHER_PRESETS.clear, sky);
+    expect(atmosphere.gradientBuilds).toBe(1);
+    // A new state object, as each apply of the lighting makes, even with equal values.
+    const again = { ...sky };
+    atmosphere.update(WEATHER_PRESETS.clear, again);
+    expect(atmosphere.gradientBuilds).toBe(2);
+    // A weather axis moved under the same state.
+    atmosphere.update(WEATHER_PRESETS.eerie, again);
+    expect(atmosphere.gradientBuilds).toBe(3);
   });
 
   it("midColour is between the gradient's ends", () => {
-    atmosphere.update(WEATHER_PRESETS.mist, 12);
-    const g = fogGradientUnder(WEATHER_PRESETS.mist, 12);
+    const sky = skyStateFor(table, 12, WEATHER_PRESETS.mist);
+    atmosphere.update(WEATHER_PRESETS.mist, sky);
+    const g = fogGradientUnder(WEATHER_PRESETS.mist, sky);
     const mid = atmosphere.midColour();
     expect(mid.r).toBeGreaterThanOrEqual(Math.min(g[0]!.r, g[GRADIENT_STEPS - 1]!.r));
     expect(mid.r).toBeLessThanOrEqual(Math.max(g[0]!.r, g[GRADIENT_STEPS - 1]!.r));
   });
 
   it("nearColour is the gradient's near end", () => {
-    atmosphere.update(WEATHER_PRESETS.mist, 12);
-    const g = fogGradientUnder(WEATHER_PRESETS.mist, 12);
-    const near = atmosphere.nearColour();
-    expect(near).toEqual(g[0]);
+    const sky = skyStateFor(table, 12, WEATHER_PRESETS.mist);
+    atmosphere.update(WEATHER_PRESETS.mist, sky);
+    const g = fogGradientUnder(WEATHER_PRESETS.mist, sky);
+    expect(atmosphere.nearColour()).toEqual(g[0]);
   });
 });
 
@@ -164,5 +182,15 @@ describe("F1 regression: atmGradient compiles into the fragment source on both p
       uboScene.dispose();
       uboEngine.dispose();
     }
+  });
+});
+
+describe("the fog's shader text", () => {
+  it("is byte for byte the text every PBR material's stage is built with", () => {
+    // The scattering sky changes no PBR shader: the glow's new shape is all in
+    // the values the plugin binds (`atmosphereParams.ts`).
+    expect(createHash("sha256").update(atmosphereFragment).digest("hex")).toBe(
+      "a9c4be1c436ff9b91fffeba91a93dc1baf458a6ab385077b0d93103fef39b828",
+    );
   });
 });

@@ -66,21 +66,28 @@ import {
   swapRenderer,
   switchOutcome,
   whenSceneReady,
+  whenStandingSkyHeld,
   type SwapBindings,
 } from "../../src/game/rendererSwap.js";
 import type { QualityTier } from "../../src/game/quality.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { createSkyTable, type SkyTable } from "../../src/game/skyTable.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 
 // ---- the order, with stubs --------------------------------------------------
 
-function stubRenderer(id: string, log: string[]): Renderer {
+function stubRenderer(id: string, log: string[], sky: Promise<void> = Promise.resolve()): Renderer {
   return {
     id,
     engine: { stopRenderLoop: () => log.push(`stop ${id}`), runRenderLoop: () => log.push(`run ${id}`) },
     scene: { id },
+    skyReady: () => sky,
     dispose: () => log.push(`dispose ${id}`),
   } as unknown as Renderer;
 }
+
+/** One turn of the event loop: a held sky's start has run. */
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 function stubCanvas(id: string, log: string[]): HTMLCanvasElement {
   return {
@@ -130,13 +137,14 @@ function stubBindings(
 }
 
 describe("swapRenderer's order", () => {
-  it("tears the old renderer down first, then builds on a fresh canvas and rebinds", () => {
+  it("tears the old renderer down first, then builds on a fresh canvas and rebinds", async () => {
     const log: string[] = [];
     const got = swapRenderer(
       { renderer: stubRenderer("medium@c0", log), canvas: stubCanvas("c0", log) },
       { tier: "high", engine: null, fallbackTier: "medium" },
       stubBindings(log),
     );
+    await flush();
     expect(got.tier).toBe("high");
     expect(got.fellBack).toBe(false);
     expect((got.canvas as unknown as { style: { touchAction?: string } }).style.touchAction).toBe("none");
@@ -155,7 +163,7 @@ describe("swapRenderer's order", () => {
     ]);
   });
 
-  it("rebuilds the running tier on WebGL2 when the new build throws, and throws on a second failure", () => {
+  it("rebuilds the running tier on WebGL2 when the new build throws, and throws on a second failure", async () => {
     const log: string[] = [];
     const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
@@ -165,6 +173,7 @@ describe("swapRenderer's order", () => {
         { tier: "high", engine, fallbackTier: "medium" },
         stubBindings(log, new Set<QualityTier>(["high"])),
       );
+      await flush();
       expect(got.tier).toBe("medium");
       expect(got.fellBack).toBe(true);
       // The given engine's rung failing may be the engine's fault: its tier
@@ -194,6 +203,7 @@ describe("swapRenderer's order", () => {
         { tier: "high", engine: null, fallbackTier: "medium" },
         stubBindings(log2, new Set<QualityTier>(["high", "medium"])),
       );
+      await flush();
       expect(low.tier).toBe("low");
       expect(low.fellBack).toBe(true);
       expect(log2.slice(-5)).toEqual(["build c3 low webgl2", "restore low@c3", "extras build low@c3", "rebind c3", "run low@c3"]);
@@ -211,22 +221,72 @@ describe("swapRenderer's order", () => {
   });
 });
 
+describe("a swap's first frame", () => {
+  it("waits for the new renderer's sky: its loop runs only once the sky is held", async () => {
+    const log: string[] = [];
+    let hold = (): void => undefined;
+    const sky = new Promise<void>((resolve) => {
+      hold = resolve;
+    });
+    const bindings = stubBindings(log);
+    bindings.build = (canvas, tier) => {
+      log.push(`build ${idOf(canvas)} ${tier}`);
+      return stubRenderer(`${tier}@${idOf(canvas)}`, log, sky);
+    };
+    swapRenderer({ renderer: stubRenderer("medium@c0", log), canvas: stubCanvas("c0", log) }, { tier: "high", engine: null, fallbackTier: "medium" }, bindings);
+    await flush();
+    expect(log.at(-1)).toBe("rebind c1");
+    expect(log.some((line) => line.startsWith("run"))).toBe(false);
+    hold();
+    await flush();
+    expect(log.at(-1)).toBe("run high@c1");
+    expect(log.filter((line) => line.startsWith("run"))).toEqual(["run high@c1"]);
+  });
+});
+
+describe("a rung taken down after its loop was promised", () => {
+  it("starts no loop, though its sky was held: only the rung that stands runs", async () => {
+    const log: string[] = [];
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const bindings = stubBindings(log);
+      bindings.watch = (r) => {
+        log.push(`watch ${idOf(r)}`);
+        if (idOf(r) === "high@c1") throw new Error("watch high");
+      };
+      const given = { dispose: () => log.push("dispose given engine") } as unknown as AbstractEngine;
+      const got = swapRenderer(
+        { renderer: stubRenderer("low@c0", log), canvas: stubCanvas("c0", log) },
+        { tier: "high", engine: given, watch: () => () => undefined, fallbackTier: "low" },
+        bindings,
+      );
+      await flush();
+      expect(idOf(got.renderer)).toBe("high@c2");
+      expect(log).toContain("dispose high@c1");
+      expect(log.filter((line) => line.startsWith("run"))).toEqual(["run high@c2"]);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+});
+
 describe("a swap onto a given engine", () => {
   const engine = (log: string[]) => ({ dispose: () => log.push("dispose given engine") }) as unknown as AbstractEngine;
   const detector = () => () => undefined;
 
-  it("listens to the new engine once its rung stands, never to a rung that failed", () => {
+  it("listens to the new engine once its rung stands, never to a rung that failed", async () => {
     const log: string[] = [];
     const got = swapRenderer(
       { renderer: stubRenderer("low@c0", log), canvas: stubCanvas("c0", log) },
       { tier: "high", engine: engine(log), watch: detector, fallbackTier: "low" },
       stubBindings(log),
     );
+    await flush();
     expect([got.tier, got.fellBack, got.engineFellBack]).toEqual(["high", false, false]);
-    expect(log.slice(-3)).toEqual(["rebind c1", "run high@c1", "watch high@c1"]);
+    expect(log.slice(-3)).toEqual(["rebind c1", "watch high@c1", "run high@c1"]);
   });
 
-  it("takes a given engine's failure as the engine's: remembered, and the same tier built on WebGL2, no tier fallback", () => {
+  it("takes a given engine's failure as the engine's: remembered, and the same tier built on WebGL2, no tier fallback", async () => {
     const log: string[] = [];
     const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
@@ -235,6 +295,7 @@ describe("a swap onto a given engine", () => {
         { tier: "high", engine: engine(log), watch: detector, fallbackTier: "low" },
         stubBindings(log, new Set(), new Set(), new Set<QualityTier>(["high"])),
       );
+      await flush();
       expect([got.tier, got.fellBack, got.engineFellBack]).toEqual(["high", false, true]);
       expect(log.filter((line) => line.startsWith("watch"))).toEqual([]);
       expect(log.filter((line) => line.startsWith("engine failed"))).toEqual(["engine failed: no high"]);
@@ -250,8 +311,8 @@ describe("a swap onto a given engine", () => {
         "restore high@c2",
         "extras build high@c2",
         "rebind c2",
-        "run high@c2",
         "engine failed: no high",
+        "run high@c2",
       ]);
     } finally {
       quiet.mockRestore();
@@ -308,7 +369,7 @@ describe("a swap that throws before its first rung", () => {
 });
 
 describe("a throw after the build", () => {
-  it("disposes the renderer just built, with what was built into its scene, and falls back", () => {
+  it("disposes the renderer just built, with what was built into its scene, and falls back", async () => {
     const log: string[] = [];
     const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
@@ -317,6 +378,7 @@ describe("a throw after the build", () => {
         { tier: "high", engine: null, fallbackTier: "medium" },
         stubBindings(log, new Set(), new Set<QualityTier>(["high"])),
       );
+      await flush();
       expect(got.tier).toBe("medium");
       expect(log.slice(4)).toEqual([
         "fresh c1",
@@ -567,6 +629,128 @@ describe("the grass cull after a swap, on NullEngine", () => {
     }
     expect(EngineStore.Instances.length).toBe(0);
   }, timeLimit(180_000));
+});
+
+describe("a swap keeps the hike's sky", () => {
+  it("hands the new renderer the table the old one read, which the old one lets go of and nothing disposes", async () => {
+    const fixture = skyFixture();
+    let listening = 0;
+    // The fixture's table, counting who listens to it.
+    const table: SkyTable = {
+      add: (slice) => fixture.add(slice),
+      get count() {
+        return fixture.count;
+      },
+      has: (altitudeDeg) => fixture.has(altitudeDeg),
+      blendAt: (altitudeDeg) => fixture.blendAt(altitudeDeg),
+      whenReady: (altitudeDeg) => fixture.whenReady(altitudeDeg),
+      onChange(listener) {
+        listening += 1;
+        const off = fixture.onChange(listener);
+        return () => {
+          listening -= 1;
+          off();
+        };
+      },
+    };
+    const current = { renderer: createRenderer(nullCanvas(), LEVEL, null, { tier: "medium", skyTable: table }), canvas: nullCanvas() };
+    expect(listening).toBe(1);
+    const bindings: SwapBindings = {
+      build: (canvas, tier) => createRenderer(canvas, LEVEL, null, { tier, skyTable: table }),
+      freshCanvas: nullCanvas,
+      extras: { dispose: () => undefined, build: () => undefined },
+      rebind: () => undefined,
+      restore: () => undefined,
+      loop: () => undefined,
+      unwatch: () => undefined,
+      watch: () => undefined,
+      engineFailed: () => undefined,
+    };
+    const next = swapRenderer(current, { tier: "low", engine: null, fallbackTier: "medium" }, bindings);
+    try {
+      // The old lighting stopped listening; the new one listens to the same table.
+      expect(listening).toBe(1);
+      await expect(next.renderer.skyReady()).resolves.toBeUndefined();
+      // The fixture's 17 slices, none made again.
+      expect(table.count).toBe(17);
+    } finally {
+      next.renderer.dispose();
+    }
+    expect(listening).toBe(0);
+  }, timeLimit(120_000));
+});
+
+describe("the hike's start across a swap, on NullEngine", () => {
+  it("is not stranded by a swap made before the sky's slices arrive: it waits for the new renderer's sky, whose loop runs, and the old one's never", async () => {
+    const table = createSkyTable();
+    const loop = (): void => undefined;
+    const first = createRenderer(nullCanvas(), LEVEL, null, { tier: "medium", skyTable: table });
+    const firstRuns = vi.spyOn(first.engine, "runRenderLoop").mockImplementation(() => undefined);
+    let nextRuns: ReturnType<typeof vi.spyOn> | null = null;
+    // As the app holds them: the renderer standing, and who to tell at a swap.
+    let standing: Renderer = first;
+    const listeners = new Set<() => void>();
+    const nextSwap = (): Promise<void> => new Promise((resolve) => void listeners.add(resolve));
+    let ready = false;
+    void whenStandingSkyHeld(() => standing, nextSwap).then(() => {
+      if (standing === first) first.engine.runRenderLoop(loop);
+      ready = true;
+    });
+    const bindings: SwapBindings = {
+      build: (canvas, tier) => {
+        const made = createRenderer(canvas, LEVEL, null, { tier, skyTable: table });
+        nextRuns = vi.spyOn(made.engine, "runRenderLoop").mockImplementation(() => undefined);
+        return made;
+      },
+      freshCanvas: nullCanvas,
+      extras: { dispose: () => undefined, build: () => undefined },
+      rebind: () => undefined,
+      restore: () => undefined,
+      loop,
+      unwatch: () => undefined,
+      watch: () => undefined,
+      engineFailed: () => undefined,
+    };
+    const got = swapRenderer({ renderer: first, canvas: nullCanvas() }, { tier: "low", engine: null, fallbackTier: "medium" }, bindings);
+    standing = got.renderer;
+    for (const tell of listeners) tell();
+    listeners.clear();
+    try {
+      await flush();
+      expect(ready).toBe(false);
+      const fixture = skyFixture();
+      table.add(fixture.blendAt(74));
+      table.add(fixture.blendAt(76));
+      await flush();
+      expect(ready).toBe(true);
+      expect(nextRuns).not.toBeNull();
+      expect(nextRuns!).toHaveBeenCalledTimes(1);
+      expect(nextRuns!).toHaveBeenCalledWith(loop);
+      expect(firstRuns).not.toHaveBeenCalled();
+    } finally {
+      got.renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("ends with the first renderer's sky when no swap comes", async () => {
+    const table = createSkyTable();
+    const first = createRenderer(nullCanvas(), LEVEL, null, { tier: "low", skyTable: table });
+    try {
+      let ready = false;
+      void whenStandingSkyHeld(() => first, () => new Promise<void>(() => undefined)).then(() => {
+        ready = true;
+      });
+      await flush();
+      expect(ready).toBe(false);
+      const fixture = skyFixture();
+      table.add(fixture.blendAt(74));
+      table.add(fixture.blendAt(76));
+      await flush();
+      expect(ready).toBe(true);
+    } finally {
+      first.dispose();
+    }
+  }, timeLimit(60_000));
 });
 
 describe("a swap that fails at every tier, on NullEngine", () => {

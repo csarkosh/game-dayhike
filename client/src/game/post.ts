@@ -26,8 +26,10 @@ import finishFragment from "./shaders/finish.fragment.fx?raw";
 
 export type Post = {
   readonly features: PostFeatures;
-  /** `lens` is the smoothed strength of the rain on the glass (lensParams.ts), 0 when dry. */
-  update(weather: WeatherParams, hour: number, unsettle: number, stare: number, lens?: number): void;
+  /** `night` is the sky's night factor (`SkyState.night`), which the white
+   * point and the rods follow. `lens` is the smoothed strength of the rain
+   * on the glass (lensParams.ts), 0 when dry. */
+  update(weather: WeatherParams, hour: number, night: number, unsettle: number, stare: number, lens?: number): void;
   dispose(): void;
 };
 
@@ -141,7 +143,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let lensSlot = -1;
   let lensAttached = false;
   let lensIdleSince: number | null = null;
-  let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 1);
+  let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 0, 1);
   let finishRecord = finishUnder(WEATHER_PRESETS.clear, 1, 0);
   const start = now();
 
@@ -298,9 +300,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
 
   return {
     features,
-    update(weather, hour, unsettle, stare, lensTarget = 0) {
+    update(weather, hour, night, unsettle, stare, lensTarget = 0) {
       const seconds = (now() - start) / 1000;
-      record = gradeRecordUnder(weather, hour, unsettle, seconds, stare);
+      record = gradeRecordUnder(weather, hour, night, unsettle, seconds, stare);
       finishRecord = finishUnder(weather, unsettle, seconds);
       lensStrength = lensTarget;
       if (lens !== null) {

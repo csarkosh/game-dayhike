@@ -1,5 +1,5 @@
 import { clamp01, type Rgb } from "./colour.js";
-import { sunPositionAt, twilightT } from "./sky.js";
+import { sunPositionAt } from "./sky.js";
 import {
   dreadLensUnder, dreadWorldUnder, exposureUnder, moodUnder, saturationUnder, vignetteWeightUnder,
   GRADE_SHADOW_HUE, GRADE_SHADOW_DENSITY, GRADE_SHADOW_SATURATION,
@@ -97,11 +97,9 @@ const BRADFORD: Mat3 = [0.8951, -0.7502, 0.0389, 0.2664, 1.7135, -0.0685, -0.161
 const BRADFORD_INV: Mat3 = [0.9869929, 0.4323053, -0.0085287, -0.1470543, 0.5183603, 0.0400428, 0.1599627, 0.0492912, 0.9684867];
 const SRGB_TO_XYZ: Mat3 = [0.4124564, 0.2126729, 0.0193339, 0.3575761, 0.7151522, 0.1191920, 0.1804375, 0.0721750, 0.9503041];
 const XYZ_TO_SRGB: Mat3 = [3.2404542, -0.9692660, 0.0556434, -1.5371385, 1.8760108, -0.2040259, -0.4985314, 0.0415560, 1.0572252];
-/** D65, the sRGB white: the adaptation SOURCE, so noon is the identity. */
+/** D65, the sRGB white: the adaptation SOURCE, so the day is the identity. */
 const WHITE_NOON = { x: 0.3127, y: 0.329 };
-/** A warm dusk white (~4300 K) the image is adapted TOWARD at the horizon. */
-export const WHITE_DUSK = { x: 0.3660, y: 0.3730 };
-/** A cool night white (~8500 K). */
+/** A cool night white (~8500 K): the image's adaptation in full night. */
 export const WHITE_NIGHT = { x: 0.2920, y: 0.3020 };
 
 function mulMat3Mat3(a: Mat3, b: Mat3): Mat3 {
@@ -127,18 +125,15 @@ export function bradfordMatrix(target: { x: number; y: number }): Mat3 {
   return mulMat3Mat3(XYZ_TO_SRGB, mulMat3Mat3(cat, SRGB_TO_XYZ));
 }
 
-/** Identity at noon (altitude ≥ 0.35), warm at the horizon, cool below it. */
-export function whitePointMatrix(altitude: number): Mat3 {
-  if (altitude >= 0.35) return IDENTITY;
-  const t = twilightT(altitude);
-  // t is 0 deep in the night, 1 at full day; the horizon sits where the
-  // altitude is 0, i.e. t = NIGHT_ALTITUDE / (NIGHT_ALTITUDE + DAY_ALTITUDE).
-  const horizon = twilightT(0);
-  const target =
-    t >= horizon
-      ? lerpXy(WHITE_DUSK, WHITE_NOON, (t - horizon) / (1 - horizon))
-      : lerpXy(WHITE_NIGHT, WHITE_DUSK, t / horizon);
-  return bradfordMatrix(target);
+/**
+ * The identity while the sky's night factor (`SkyState.night`) is 0, as it is
+ * by day: the sky itself carries the dusk's colour now, so a warm white point
+ * on top would warm it twice. Cooler toward the night white as the factor
+ * rises from sunset, and the night white itself at 1.
+ */
+export function whitePointMatrix(night: number): Mat3 {
+  if (night === 0) return IDENTITY;
+  return bradfordMatrix(lerpXy(WHITE_NOON, WHITE_NIGHT, night));
 }
 
 function lerpXy(a: { x: number; y: number }, b: { x: number; y: number }, t: number): { x: number; y: number } {
@@ -205,27 +200,28 @@ function tint(hue: number, density: number, saturation: number, mood: number): T
 }
 
 /**
- * The grade pass's record. `timeSeconds` only drives the vignette's breath;
- * it defaults to 0 so callers that do not animate (and every identity test)
- * see the resting weight. `stare` (hollow.ts) darkens the image toward black
- * at 1 and closes the vignette.
+ * The grade pass's record. `night` is the sky's night factor
+ * (`SkyState.night`): the white point cools and the rods take over by it.
+ * `timeSeconds` only drives the vignette's breath; it defaults to 0 so
+ * callers that do not animate (and every identity test) see the resting
+ * weight. `stare` (hollow.ts) darkens the image toward black at 1 and closes
+ * the vignette.
  */
-export function gradeRecordUnder(w: WeatherParams, hour: number, unsettle: number, timeSeconds = 0, stare = 0): GradeRecord {
+export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, unsettle: number, timeSeconds = 0, stare = 0): GradeRecord {
   const altitude = sunPositionAt(hour).y;
   const lens = dreadLensUnder(w) * clamp01(unsettle);
   const world = dreadWorldUnder(w);
   const mood = moodUnder(w);
-  const night = 1 - clamp01(twilightT(altitude) / twilightT(0));
   // The resting weight, then the breath: at lens 0 the multiplier is exactly 1.
   const restingVignette = lens === 0 ? vignetteWeightUnder({ ...w, dread: 0 }) : vignetteWeightUnder({ ...w, dread: lens });
   const breath = lens === 0 ? 1 : 1 + VIGNETTE_PULSE * lens * Math.sin((2 * Math.PI * timeSeconds) / VIGNETTE_PULSE_PERIOD);
   const sight = (1 - clamp01(stare)) * (1 - clamp01(stare));
   return {
     exposure: exposureUnder(w, altitude) * sight,
-    whitePoint: whitePointMatrix(altitude),
+    whitePoint: whitePointMatrix(night),
     purkinje: PURKINJE_MATRIX,
     purkinjeThreshold: PURKINJE_THRESHOLD,
-    purkinjeStrength: night === 0 ? 0 : PURKINJE_MAX * night,
+    purkinjeStrength: night === 0 ? 0 : PURKINJE_MAX * clamp01(night),
     shadows: tint(GRADE_SHADOW_HUE, GRADE_SHADOW_DENSITY, GRADE_SHADOW_SATURATION, mood),
     midtones: tint(GRADE_MIDTONE_HUE, GRADE_MIDTONE_DENSITY, GRADE_MIDTONE_SATURATION, mood),
     highlights: tint(GRADE_HIGHLIGHT_HUE, GRADE_HIGHLIGHT_DENSITY, GRADE_HIGHLIGHT_SATURATION, mood),

@@ -1,4 +1,4 @@
-import { clamp01, mixRgb, type Rgb } from "./colour.js";
+import { clamp01, type Rgb } from "./colour.js";
 
 /**
  * Sun and sky maths: pure, Babylon-free, and therefore testable under
@@ -27,12 +27,14 @@ export const FOG_FLOOR = 0.05;
  */
 const ARC_TILT = 0.25;
 
-const NIGHT_SKY: Rgb = { r: 0.02, g: 0.03, b: 0.06 };
-const HORIZON_SKY: Rgb = { r: 0.62, g: 0.5, b: 0.42 };
-const DAY_SKY: Rgb = { r: 0.42, g: 0.58, b: 0.82 };
-
-const HORIZON_SUN: Rgb = { r: 1, g: 0.52, b: 0.24 };
-const ZENITH_SUN: Rgb = { r: 1, g: 0.96, b: 0.9 };
+/**
+ * The night sky's own colour. The scattering table is effectively black from
+ * about 12 degrees below the horizon, so the dome adds this as its floor,
+ * standing in for the moonlit night sky: weighted by the night factor, it
+ * appears as the twilight fades, and midnight keeps the colour it has always
+ * had (`skyState.ts`).
+ */
+export const NIGHT_SKY: Readonly<Rgb> = Object.freeze({ r: 0.02, g: 0.03, b: 0.06 });
 
 /** Sun altitude at which the sky has finished turning from dawn to full day. */
 const DAY_ALTITUDE = 0.35;
@@ -49,8 +51,8 @@ const EXPOSURE_DAY = 0.9;
 export const FILL_DAY = 0.15;
 
 /**
- * Hemispheric fill intensity at night. Once the sun sets and `sunIntensityAt`
- * is 0, the fill is the *only* remaining light — measured: at hour 21 the old fixed 0.15 fill tinted by the
+ * Hemispheric fill intensity at night. Once the sun has set, the fill is the
+ * *only* remaining light — measured: at hour 21 the old fixed 0.15 fill tinted by the
  * near-black night sky colour totalled roughly 0.005 of ambient light versus
  * ~4.0 at noon, which is why night rendered pure black no matter what
  * `exposureFor` did. This needs to be high enough on its own to keep the frame
@@ -58,14 +60,17 @@ export const FILL_DAY = 0.15;
  */
 export const FILL_NIGHT = 1.2;
 
-/** A desaturated cool blue: moonlight, not the night sky's own near-black colour. */
-const MOONLIGHT: Rgb = { r: 0.2, g: 0.26, b: 0.4 };
+/**
+ * A desaturated cool blue: moonlight, not the night sky's own near-black
+ * colour. The fill's colour once the night factor has taken over from the
+ * sky's light (`skyState.ts`).
+ */
+export const MOONLIGHT: Readonly<Rgb> = Object.freeze({ r: 0.2, g: 0.26, b: 0.4 });
 
 /**
  * Where in the sun's altitude the day/night blend sits: 0 at the bottom of the
- * night transition band, 1 at the top of the day one. Shared by
- * `fillIntensityFor` and `ambientColourFor` so the two ramp in step rather than
- * drifting apart as `/time` sweeps.
+ * night transition band, 1 at the top of the day one. The airborne motes pick
+ * their species by it (`motesParams.ts`).
  */
 export function twilightT(altitude: number): number {
   return clamp01((altitude + NIGHT_ALTITUDE) / (NIGHT_ALTITUDE + DAY_ALTITUDE));
@@ -92,38 +97,6 @@ export function sunPositionAt(hour: number): Vec3 {
 }
 
 /**
- * Sun intensity from its altitude: nothing below the horizon, then rising fast
- * and flattening out, which is roughly how a clear day behaves once the sun is
- * clear of the haze.
- */
-export function sunIntensityFor(altitude: number): number {
-  if (altitude <= 0) return 0;
-  return SUN_PEAK * Math.pow(Math.min(altitude, 1), 0.4);
-}
-
-export function sunIntensityAt(hour: number): number {
-  return sunIntensityFor(sunPositionAt(hour).y);
-}
-
-/** Warm at the horizon, near-white overhead — the long path through air. */
-export function sunColourAt(hour: number): Rgb {
-  return mixRgb(HORIZON_SUN, ZENITH_SUN, Math.sqrt(clamp01(sunPositionAt(hour).y)));
-}
-
-/**
- * Drives the fog tint and the scene clear colour together, so haze and sky agree
- * as the sun moves. A fixed fog colour under a moving sun is the tell that gives
- * away a static skybox.
- */
-export function skyColourAt(hour: number): Rgb {
-  const altitude = sunPositionAt(hour).y;
-  if (altitude <= 0) {
-    return mixRgb(NIGHT_SKY, HORIZON_SKY, clamp01((altitude + NIGHT_ALTITUDE) / NIGHT_ALTITUDE));
-  }
-  return mixRgb(HORIZON_SKY, DAY_SKY, clamp01(altitude / DAY_ALTITUDE));
-}
-
-/**
  * Stands in for an eye adapting: a bright sky needs less exposure than a dark
  * one. Strictly decreasing in altitude, which is the property the test pins —
  * a non-monotonic exposure curve makes the image pump as `/time` sweeps.
@@ -131,33 +104,6 @@ export function skyColourAt(hour: number): Rgb {
 export function exposureFor(altitude: number): number {
   const a = altitude < -1 ? -1 : altitude > 1 ? 1 : altitude;
   return EXPOSURE_NIGHT + (EXPOSURE_DAY - EXPOSURE_NIGHT) * ((a + 1) / 2);
-}
-
-/**
- * The hemispheric fill's intensity, from the sun's altitude: low by day, since
- * the sun and IBL dominate, and substantially higher at night, since the fill
- * becomes the only light once the sun sets (see `FILL_NIGHT`). Monotonically
- * non-increasing in altitude and ramped across the same twilight band as
- * `skyColourAt`, rather than switching at exactly zero, so a `/time` sweep
- * dims smoothly rather than stepping.
- */
-export function fillIntensityFor(altitude: number): number {
-  return FILL_NIGHT + (FILL_DAY - FILL_NIGHT) * twilightT(altitude);
-}
-
-/**
- * The hemispheric fill's colour, from the hour. By day this tracks
- * `skyColourAt`, which is the same choice the renderer made before this
- * existed. At night it blends toward `MOONLIGHT` instead of following
- * `skyColourAt` all the way to its near-black night value — the sky's own
- * colour and the colour of the light it casts are not the same thing once the
- * sun is gone, and a fill lit by the night sky's actual colour is why night
- * used to render pure black. Blended across the same
- * twilight band as `fillIntensityFor` so the two stay in step.
- */
-export function ambientColourFor(hour: number): Rgb {
-  const altitude = sunPositionAt(hour).y;
-  return mixRgb(MOONLIGHT, skyColourAt(hour), twilightT(altitude));
 }
 
 /**
