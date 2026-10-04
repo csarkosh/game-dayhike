@@ -38,9 +38,10 @@ export const SKY_MIE_G = 0.8;
  * and fewer aerosols make it brighter still: the zenith, 14 degrees from the
  * noon sun, takes much of its light from the aerosols' forward scattering.
  * This is the smallest scale on a 0.05 grid from 1 up at which the horizon's
- * luminance (the ring's mean away from the sun) is at most twice the
+ * luminance 2 degrees up (its mean away from the sun) is at most twice the
  * zenith's, which keeps noon's sky close to even, as the game's noon has
- * always looked.
+ * always looked. At the horizon itself, where the ring is read, the noon
+ * horizon is 1.69 times the zenith.
  */
 export const SKY_MIE_SCALE = 5;
 export const SKY_OZONE: Rgb = { r: 0.65e-3, g: 1.881e-3, b: 0.085e-3 };
@@ -65,8 +66,14 @@ export const VIEW_STEPS = 24;
 export const SLICE_ELEVATIONS = 64;
 /** Columns of a slice, azimuth 0 to 180 degrees from the sun's. The sky is mirror-symmetric about the sun's vertical plane. */
 export const SLICE_AZIMUTHS = 32;
-/** The elevation of a slice's horizon ring, degrees: low enough to be the horizon, high enough to stay clear of the ground. */
-export const RING_ELEVATION_DEG = 2;
+/**
+ * The elevation of a slice's horizon ring, degrees: the horizon itself, the
+ * ring evaluated grazing it, where the fog meets the dome and the sea meets
+ * the sky. A level ray from the eye's height misses the ground (the horizon
+ * dips 0.45 degrees below level from 200 m) and is marched to the top of the
+ * air or VIEW_MAX_KM like any other.
+ */
+export const RING_ELEVATION_DEG = 0;
 
 /**
  * The sun altitudes a slice is made at, degrees, ascending: every 0.5 from -18

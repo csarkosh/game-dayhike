@@ -219,29 +219,50 @@ describe("midnight keeps the night it had", () => {
 describe("one sky for the dome, the fog and the glow", () => {
   const MISTLESS: WeatherParams[] = [CLEAR, { ...WEATHER_PRESETS.overcast, mist: 0 }, { ...WEATHER_PRESETS.rain, mist: 0 }];
 
-  it("the horizon away from the sun is the dome's own, at the ring's elevation, 90 to 180 degrees round", () => {
-    // The ring is the table's at exactly 2 degrees; the dome reads it between
-    // the rows at 1.84 and 2.74 degrees, which moves a channel by a few per
-    // cent of the luma at most where the horizon's colour bends fastest.
+  /** The dome's mean at the horizon, elevation 0, over the columns past 90 degrees from the sun (93 to 180). */
+  function domeAway(s: SkyState): Rgb {
+    let mean: Rgb = { r: 0, g: 0, b: 0 };
+    for (let i = SLICE_AZIMUTHS / 2; i < SLICE_AZIMUTHS; i++) {
+      const c = domeRadiance(s, around(s, 0, (Math.PI * i) / (SLICE_AZIMUTHS - 1)));
+      const k = 1 / (SLICE_AZIMUTHS / 2);
+      mean = { r: mean.r + c.r * k, g: mean.g + c.g * k, b: mean.b + c.b * k };
+    }
+    return mean;
+  }
+
+  /** The dome at the horizon, elevation 0, toward the sun's azimuth: the sky's colour there, without
+   * the disc, which sits on that very direction at sunrise and sunset. */
+  function domeToward(s: SkyState): Rgb {
+    return domeRadiance({ ...s, discColour: { r: 0, g: 0, b: 0 } }, around(s, 0, 0));
+  }
+
+  // The ring is the table's at exactly 0 degrees, grazing the horizon; the
+  // dome reads the horizon between the rows either side of it, 0.023 degrees
+  // below and above, which moves a channel by well under half a per cent of
+  // the luma.
+  it("the horizon's colours are the dome's own at the horizon at 12:00, 17:00, 18:00 and 18:30 clear", () => {
+    expect(RING_ELEVATION_DEG).toBe(0);
+    for (const hour of [12, 17, 18, 18.5]) {
+      const s = skyStateFor(skyFixture(), hour, CLEAR);
+      expect(apart(domeAway(s), s.horizonAway), `hour ${hour}`).toBeLessThan(0.005);
+      expect(apart(domeToward(s), s.horizonToward), `hour ${hour}`).toBeLessThan(0.005);
+    }
+  });
+
+  it("the horizon away from the sun is the dome's own at the horizon, 90 to 180 degrees round", () => {
     for (const w of MISTLESS) {
       for (const hour of SKY_FIXTURE_HOURS) {
         const s = skyStateFor(skyFixture(), hour, w);
-        let mean: Rgb = { r: 0, g: 0, b: 0 };
-        for (let i = SLICE_AZIMUTHS / 2; i < SLICE_AZIMUTHS; i++) {
-          const c = domeRadiance(s, around(s, RING_ELEVATION_DEG, (Math.PI * i) / (SLICE_AZIMUTHS - 1)));
-          const k = 1 / (SLICE_AZIMUTHS / 2);
-          mean = { r: mean.r + c.r * k, g: mean.g + c.g * k, b: mean.b + c.b * k };
-        }
-        expect(apart(mean, s.horizonAway), `hour ${hour}`).toBeLessThan(0.05);
+        expect(apart(domeAway(s), s.horizonAway), `hour ${hour}`).toBeLessThan(0.005);
       }
     }
   });
 
-  it("the horizon toward the sun is the dome's own toward the sun's azimuth", () => {
+  it("the horizon toward the sun is the dome's own at the horizon toward the sun's azimuth", () => {
     for (const w of MISTLESS) {
       for (const hour of SKY_FIXTURE_HOURS) {
         const s = skyStateFor(skyFixture(), hour, w);
-        expect(apart(domeRadiance(s, around(s, RING_ELEVATION_DEG, 0)), s.horizonToward), `hour ${hour}`).toBeLessThan(0.05);
+        expect(apart(domeToward(s), s.horizonToward), `hour ${hour}`).toBeLessThan(0.005);
       }
     }
   });
@@ -520,15 +541,23 @@ describe("continuity through dusk", () => {
   const scaled = (c: Rgb, k: number): Rgb => ({ r: c.r * k, g: c.g * k, b: c.b * k });
   const channels = (name: string, f: (s: SkyState) => Rgb): [string, (s: SkyState) => number][] =>
     (["r", "g", "b"] as const).map((k) => [`${name}.${k}`, (s: SkyState) => f(s)[k]]);
-  /** Every value the state hands a consumer: the lights as their colour times their
-   * intensity (a colour at zero intensity is not seen), and the glow as its lobe at
-   * three angles, weight times cos^power. */
+  /** The haze's glow at `deg` from the sun as the haze draws it: the lobe, weight times
+   * cos^power, mixing the away colour toward the toward colour, so what it adds is the
+   * lobe times the toward colour's lead over the away colour. */
+  const glowSeen = (s: SkyState, deg: number): Rgb => {
+    const lobe = s.glowWeight * Math.cos(deg * DEG) ** s.glowPower;
+    return { r: lobe * (s.horizonToward.r - s.horizonAway.r), g: lobe * (s.horizonToward.g - s.horizonAway.g), b: lobe * (s.horizonToward.b - s.horizonAway.b) };
+  };
+  /** Every value the state hands a consumer, as it is seen: the lights as their colour
+   * times their intensity (a colour at zero intensity is not seen), and the glow as what
+   * it adds to the haze at three angles (a weight on no difference of colour is not
+   * seen: in deep twilight, as the contrast between the horizon's colours falls through
+   * the weight's fade, the weight moves fast where that difference is a few per cent). */
   const VALUES: [string, (s: SkyState) => number][] = [
     ["night", (s) => s.night],
     ["sunIntensity", (s) => s.sunIntensity],
     ["fillIntensity", (s) => s.fillIntensity],
-    ["glowWeight", (s) => s.glowWeight],
-    ...[10, 30, 60].map((deg): [string, (s: SkyState) => number] => [`glow${deg}`, (s) => s.glowWeight * Math.cos(deg * DEG) ** s.glowPower]),
+    ...[10, 30, 60].flatMap((deg) => channels(`glow${deg}`, (s) => glowSeen(s, deg))),
     ...channels("zenith", (s) => domeRadiance(s, UP)),
     ...channels("horizonAway", (s) => s.horizonAway),
     ...channels("horizonToward", (s) => s.horizonToward),

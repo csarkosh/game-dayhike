@@ -49,9 +49,17 @@ function ringMean(ring: Float32Array, from: number, to: number): Rgb {
   return out;
 }
 
-/** The clear noon horizon away from the sun (columns 16..31, azimuth 93 to 180 degrees) over the zenith, in luminance. */
-function horizonOverZenith(slice: SkySlice): number {
-  return luma(ringMean(slice.ring, 16, 31)) / luma(slice.zenith);
+/** The clear noon horizon 2 degrees up, away from the sun (the columns' azimuths 93 to 180 degrees), over the zenith, in
+ * luminance: where SKY_MIE_SCALE was set. */
+function horizonOverZenith(t: SkyTables, slice: SkySlice): number {
+  const away: Rgb = { r: 0, g: 0, b: 0 };
+  for (let i = 16; i <= 31; i++) {
+    const c = skyRadiance(t, dir(2, (180 * i) / 31), slice.altitudeDeg * DEG);
+    away.r += c.r / 16;
+    away.g += c.g / 16;
+    away.b += c.b / 16;
+  }
+  return luma(away) / luma(slice.zenith);
 }
 
 /** Every value that is not a finite, non-negative number, as "what[k] = v". */
@@ -202,13 +210,20 @@ describe("the sky's light", () => {
     expect(noon.zenith.g).toBeGreaterThan(noon.zenith.r);
   });
 
-  it("keeps the clear noon horizon at most twice the zenith, at the smallest aerosol scale that does", () => {
-    expect(horizonOverZenith(noon)).toBeLessThanOrEqual(2);
+  it("keeps the clear noon horizon 2 degrees up at most twice the zenith, at the smallest aerosol scale that does", () => {
+    expect(horizonOverZenith(tables, noon)).toBeLessThanOrEqual(2);
     // On the 0.05 grid, from the standard atmosphere's 1 up: one step less and the horizon is over twice the zenith.
     expect(Math.abs(SKY_MIE_SCALE * 20 - Math.round(SKY_MIE_SCALE * 20))).toBeLessThan(1e-9);
     expect(SKY_MIE_SCALE).toBeGreaterThanOrEqual(1);
-    const less = buildSlice(buildSkyTables(SKY_MIE_SCALE - 0.05), NOON_DEG);
-    expect(horizonOverZenith(less)).toBeGreaterThan(2);
+    const fewer = buildSkyTables(SKY_MIE_SCALE - 0.05);
+    expect(horizonOverZenith(fewer, buildSlice(fewer, NOON_DEG))).toBeGreaterThan(2);
+  });
+
+  it("reads the ring at the horizon itself, where the clear noon horizon is 1.69 times the zenith", () => {
+    expect(RING_ELEVATION_DEG).toBe(0);
+    const ratio = luma(ringMean(noon.ring, 16, 31)) / luma(noon.zenith);
+    expect(ratio).toBeGreaterThan(1.68);
+    expect(ratio).toBeLessThan(1.69);
   });
 
   it("keeps a blue zenith at sunset, between 3 % and 15 % of noon's light", () => {
@@ -236,7 +251,7 @@ describe("the sky's light", () => {
     expect(luma(deep.zenith) / luma(noon.zenith)).toBeLessThan(1e-6);
   });
 
-  it("is finite and non-negative everywhere: whole slices at noon, sunset and -18 degrees, and every slice altitude sampled", () => {
+  it("is finite and non-negative everywhere: whole slices at noon, sunset and -18 degrees, and every slice altitude sampled, its ring whole", () => {
     const bad: string[] = [];
     for (const slice of [noon, sunset, deep]) {
       bad.push(...badValues(slice.texels, `texels at ${slice.altitudeDeg}`));
@@ -245,6 +260,11 @@ describe("the sky's light", () => {
     }
     for (const altitude of SLICE_ALTITUDES_DEG) {
       const sampled: number[] = rgbValues(sunTransmittance(tables, altitude * DEG));
+      // The ring grazes the horizon: every column of it, from the eye and from the ground, where a level ray is tangent to it.
+      for (let i = 0; i < SLICE_AZIMUTHS; i++) {
+        const along = dir(RING_ELEVATION_DEG, (180 * i) / (SLICE_AZIMUTHS - 1));
+        sampled.push(...rgbValues(skyRadiance(tables, along, altitude * DEG)), ...rgbValues(skyRadiance(tables, along, altitude * DEG, 0)));
+      }
       for (let j = 0; j < SLICE_ELEVATIONS; j += 7) {
         for (let i = 0; i < SLICE_AZIMUTHS; i += 5) {
           const e = elevationOfRow(j / (SLICE_ELEVATIONS - 1));
@@ -272,11 +292,15 @@ describe("the sky's light", () => {
    * lowest kilometre holds most of the haze, so no direction's light can move
    * by more than that column's factor, e^(1/1.2) = 2.30. The sun's own light
    * near the horizon is the exception (its path through the haze changes many
-   * times over), so it is held to the bound only from 10 degrees up.
+   * times over), so it is held to the bound only from 10 degrees up; so is the
+   * horizon toward a sun at or below it, whose light comes to the eye along
+   * the same grazing path (from the ground it is 5.9 times as bright at 0
+   * degrees, 2.6 at -3, 2.5 at -6).
    */
   it("changes by less than the aerosols' column factor between eye heights of 0 and 1 km", () => {
     for (const altitude of [NOON_DEG, 30, 10, 2, 0, -3, -6, -12]) {
-      for (const d of [UP, dir(RING_ELEVATION_DEG, 0), dir(RING_ELEVATION_DEG, 90), dir(RING_ELEVATION_DEG, 180)]) {
+      const horizon = altitude > 0 ? [0, 90, 180] : [90, 180];
+      for (const d of [UP, ...horizon.map((az) => dir(RING_ELEVATION_DEG, az))]) {
         const ratio = luma(skyRadiance(tables, d, altitude * DEG, 1)) / luma(skyRadiance(tables, d, altitude * DEG, 0));
         expect(ratio).toBeGreaterThan(1 / 2.3);
         expect(ratio).toBeLessThan(2.3);
