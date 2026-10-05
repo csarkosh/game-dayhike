@@ -1,6 +1,6 @@
 /**
- * The ground-clutter fields: twelve per-cell jittered scatter grids — grass, rocks, boulders,
- * driftwood, fungus, bushes, meadow carpet, flowers, litter, sword ferns, shrubs, drift logs — each a pure point
+ * The ground-clutter fields: thirteen per-cell jittered scatter grids — grass, rocks, boulders,
+ * driftwood, fungus, bushes, meadow carpet, flowers, litter, sword ferns, shrubs, drift logs, wet-ground plants — each a pure point
  * function of (seed, class, cell), the vegetation.ts idiom.
  * Presence is Bernoulli against a biome-keyed density; at most one instance
  * per cell per class. `hash` is a plain [0,1) draw so the RENDERER derives
@@ -38,12 +38,15 @@ export const CLUTTER_SHRUB = 10;
 /** Drift logs: whole trunks the sea has thrown up, jumbled along the top of
  * the beach. */
 export const CLUTTER_DRIFTLOG = 11;
-export const CLUTTER_CLASS_COUNT = 12;
+/** The plants of wet ground: skunk cabbage and devil's club, along seeps
+ * under the lowland canopy and round a lake's shore. */
+export const CLUTTER_WETPLANT = 12;
+export const CLUTTER_CLASS_COUNT = 13;
 /** Reeds and cattails at a murky lake's margin and on its marsh. Placed here
  * like every class; drawn by `waterPlants.ts`, not the model-drawn clutter. */
-export const CLUTTER_REED = 12;
+export const CLUTTER_REED = 13;
 /** Yellow pond-lily pads on a murky lake's shallows; drawn by `waterPlants.ts`. */
-export const CLUTTER_LILY = 13;
+export const CLUTTER_LILY = 14;
 
 // ---- Tunables (every one appears in CLUTTER_TUNABLES) ------------
 /** Cell sides (m): at most one instance per cell per class. */
@@ -347,6 +350,36 @@ export const CLUTTER_DRIFTLOG_ALT_FADE = 0.5;
 export const CLUTTER_DRIFTLOG_SCALE_MIN = 1.6;
 export const CLUTTER_DRIFTLOG_SCALE_MAX = 3.2;
 export const CLUTTER_DRIFTLOG_SALT = 0xd10c;
+/** Wet-ground plants stand where the ground is wet, and say so from a
+ * distance. Two habitats, the stronger taken. A SEEP is a winding ribbon a
+ * few metres wide: the band of a low-frequency noise within SEEP_HALF of its
+ * middle value (fading out to SEEP_EDGE), under the lowland canopy (CANOPY
+ * band of forest density, below ALT_HI) on ground no steeper than a bench
+ * (SLOPE band). A LAKESIDE is the ring round a lake from its bare shore out
+ * LAKE_REACH, fading over LAKE_FADE. */
+export const CLUTTER_WETPLANT_CELL = 1.5;
+/** Two cells in three hold a plant where a seep is full: at every cell the
+ * devil's club's leaves closed into a roof with nothing to see under it. */
+export const CLUTTER_WETPLANT_D = 0.3;
+export const CLUTTER_WETPLANT_SEEP_WAVELENGTH = 140;
+export const CLUTTER_WETPLANT_SEEP_OCTAVES = 2;
+export const CLUTTER_WETPLANT_SEEP_HALF = 0.01;
+export const CLUTTER_WETPLANT_SEEP_EDGE = 0.026;
+export const CLUTTER_WETPLANT_CANOPY_LO = 0.2;
+export const CLUTTER_WETPLANT_CANOPY_HI = 0.5;
+export const CLUTTER_WETPLANT_ALT_HI = 110;
+export const CLUTTER_WETPLANT_ALT_HI_FADE = 40;
+export const CLUTTER_WETPLANT_SLOPE_LO = 0.25;
+export const CLUTTER_WETPLANT_SLOPE_HI = 0.5;
+export const CLUTTER_WETPLANT_LAKE_REACH = 7;
+export const CLUTTER_WETPLANT_LAKE_FADE = 5;
+export const CLUTTER_WETPLANT_TRAIL_CLEAR = 1.8;
+/** The renderer's plants are built at their own sizes (`game/wetPlantClump.ts`:
+ * a skunk cabbage 0.7 m, a devil's club 1.1 to 1.9 m); this varies each. */
+export const CLUTTER_WETPLANT_SCALE_MIN = 0.75;
+export const CLUTTER_WETPLANT_SCALE_MAX = 1.3;
+export const CLUTTER_WETPLANT_SALT = 0x3e7a;
+export const CLUTTER_WETPLANT_SEEP_SALT = 0x5ee9;
 /** Meadow carpet: the coverage lattice. One clump per
  * 0.7 m cell at saturation ≈ 2.0/m², which with a ~0.5 m clump footprint closes
  * the ground inside the class radius. Gates are the ground-cover field's
@@ -630,6 +663,7 @@ const CLASSES: readonly ClassConfig[] = [
   { cell: CLUTTER_FERN_CELL, density: CLUTTER_FERN_D, salt: CLUTTER_FERN_SALT, scaleMin: CLUTTER_FERN_SCALE_MIN, scaleMax: CLUTTER_FERN_SCALE_MAX, variants: 1, trailClear: CLUTTER_FERN_TRAIL_CLEAR },
   { cell: CLUTTER_SHRUB_CELL, density: CLUTTER_SHRUB_D, salt: CLUTTER_SHRUB_SALT, scaleMin: CLUTTER_SHRUB_SCALE_MIN, scaleMax: CLUTTER_SHRUB_SCALE_MAX, variants: 2, trailClear: CLUTTER_SHRUB_TRAIL_CLEAR, standsTall: true },
   { cell: CLUTTER_DRIFTLOG_CELL, density: CLUTTER_DRIFTLOG_D, salt: CLUTTER_DRIFTLOG_SALT, scaleMin: CLUTTER_DRIFTLOG_SCALE_MIN, scaleMax: CLUTTER_DRIFTLOG_SCALE_MAX, variants: 1, trailClear: 0 },
+  { cell: CLUTTER_WETPLANT_CELL, density: CLUTTER_WETPLANT_D, salt: CLUTTER_WETPLANT_SALT, scaleMin: CLUTTER_WETPLANT_SCALE_MIN, scaleMax: CLUTTER_WETPLANT_SCALE_MAX, variants: 2, trailClear: CLUTTER_WETPLANT_TRAIL_CLEAR, standsTall: true },
   { cell: CLUTTER_REED_CELL, density: CLUTTER_REED_D, salt: CLUTTER_REED_SALT, scaleMin: CLUTTER_REED_SCALE_MIN, scaleMax: CLUTTER_REED_SCALE_MAX, variants: 3, trailClear: CLUTTER_REED_TRAIL_CLEAR },
   { cell: CLUTTER_LILY_CELL, density: CLUTTER_LILY_D, salt: CLUTTER_LILY_SALT, scaleMin: CLUTTER_LILY_SCALE_MIN, scaleMax: CLUTTER_LILY_SCALE_MAX, variants: 1, trailClear: 0 },
 ];
@@ -760,6 +794,43 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       // See forestDensity: the floor is what lets a CARVED talus exist on ground
       // the slope gate would leave bare.
       return Math.min(1, Math.max(raw * mask.boulder, mask.boulderFloor));
+    }
+    case CLUTTER_WETPLANT: {
+      const sh = shoreHeight(seed, x, z, s.h);
+      if (sh < CLUTTER_GRASS_ALT_LO || r < CLUTTER_BUSH_ROAD_NEAR) return 0;
+      const shore = smoothstep(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, sh);
+      const road = smoothstep(CLUTTER_BUSH_ROAD_NEAR, CLUTTER_BUSH_ROAD_FAR, r);
+      // Round a lake: from its bare shore out, on ground over its water.
+      let lakeside = 0;
+      const bodies = variant.waterBodies?.(seed);
+      if (bodies !== undefined) {
+        for (const b of bodies) {
+          if (b.kind !== "lake" || s.h < b.level) continue;
+          const dx = x - b.x, dz = z - b.z;
+          const inner = b.radius + POND_SHORE;
+          const outer = inner + CLUTTER_WETPLANT_LAKE_REACH + CLUTTER_WETPLANT_LAKE_FADE;
+          const q2 = dx * dx + dz * dz;
+          if (q2 >= outer * outer || q2 <= inner * inner) continue;
+          const q = Math.sqrt(q2);
+          lakeside = Math.max(lakeside, smoothstep(inner, inner + 1, q) * (1 - smoothstep(inner + CLUTTER_WETPLANT_LAKE_REACH, outer, q)));
+        }
+      }
+      // A seep: the noise's middle band, a ribbon, under the lowland canopy on a bench.
+      let seep = 0;
+      const lowland = 1 - smoothstep(CLUTTER_WETPLANT_ALT_HI, CLUTTER_WETPLANT_ALT_HI + CLUTTER_WETPLANT_ALT_HI_FADE, s.h);
+      const bench = 1 - smoothstep(
+        CLUTTER_WETPLANT_SLOPE_LO * CLUTTER_WETPLANT_SLOPE_LO, CLUTTER_WETPLANT_SLOPE_HI * CLUTTER_WETPLANT_SLOPE_HI, slopeSq,
+      );
+      if (lowland > 0 && bench > 0) {
+        const n = fbm2(x / CLUTTER_WETPLANT_SEEP_WAVELENGTH, z / CLUTTER_WETPLANT_SEEP_WAVELENGTH, seed ^ CLUTTER_WETPLANT_SEEP_SALT, CLUTTER_WETPLANT_SEEP_OCTAVES);
+        const off = n > 0.5 ? n - 0.5 : 0.5 - n;
+        const ribbon = 1 - smoothstep(CLUTTER_WETPLANT_SEEP_HALF, CLUTTER_WETPLANT_SEEP_EDGE, off);
+        if (ribbon > 0) {
+          const canopy = smoothstep(CLUTTER_WETPLANT_CANOPY_LO, CLUTTER_WETPLANT_CANOPY_HI, forestDensity(seed, x, z, s));
+          seep = ribbon * canopy * lowland * bench * fm.clutter;
+        }
+      }
+      return Math.max(seep, lakeside) * shore * road;
     }
     case CLUTTER_DRIFTLOG: {
       // Its own reach inland and the cove, in the drift line's band of height.
@@ -1041,7 +1112,12 @@ export function clutterInRect(seed: number, cls: number, minX: number, minZ: num
  * pass's `tunables` getter spreads this, so registryDigest covers it. */
 export const CLUTTER_TUNABLES: Readonly<Record<string, number>> = {
   CLUTTER_REED, CLUTTER_LILY,
-  CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_DRIFTLOG,
+  CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_DRIFTLOG, CLUTTER_WETPLANT,
+  CLUTTER_WETPLANT_CELL, CLUTTER_WETPLANT_D, CLUTTER_WETPLANT_SEEP_WAVELENGTH, CLUTTER_WETPLANT_SEEP_OCTAVES,
+  CLUTTER_WETPLANT_SEEP_HALF, CLUTTER_WETPLANT_SEEP_EDGE, CLUTTER_WETPLANT_CANOPY_LO, CLUTTER_WETPLANT_CANOPY_HI,
+  CLUTTER_WETPLANT_ALT_HI, CLUTTER_WETPLANT_ALT_HI_FADE, CLUTTER_WETPLANT_SLOPE_LO, CLUTTER_WETPLANT_SLOPE_HI,
+  CLUTTER_WETPLANT_LAKE_REACH, CLUTTER_WETPLANT_LAKE_FADE, CLUTTER_WETPLANT_TRAIL_CLEAR,
+  CLUTTER_WETPLANT_SCALE_MIN, CLUTTER_WETPLANT_SCALE_MAX, CLUTTER_WETPLANT_SALT, CLUTTER_WETPLANT_SEEP_SALT,
   CLUTTER_DRIFTLOG_CELL, CLUTTER_DRIFTLOG_D, CLUTTER_DRIFTLOG_ALT_LO, CLUTTER_DRIFTLOG_ALT_HI, CLUTTER_DRIFTLOG_ALT_FADE,
   CLUTTER_DRIFTLOG_SCALE_MIN, CLUTTER_DRIFTLOG_SCALE_MAX, CLUTTER_DRIFTLOG_SALT,
   CLUTTER_DRIFTLOG_INLAND, CLUTTER_DRIFTLOG_INLAND_FADE,

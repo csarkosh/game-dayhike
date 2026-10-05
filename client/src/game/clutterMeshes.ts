@@ -1,7 +1,7 @@
 /**
  * The Babylon shell over `clutterField.ts`: thin-
- * instance buckets for the twelve clutter classes — grass, rock, boulder,
- * driftwood, fungus, bush, meadow, flower, litter, sword fern, shrub, drift log — two LOD
+ * instance buckets for the thirteen clutter classes — grass, rock, boulder,
+ * driftwood, fungus, bush, meadow, flower, litter, sword fern, shrub, drift log, wet plant — two LOD
  * levels deep. All band
  * math is `clutterField.ts` (via its memoizing `createClutterCollector`,
  * output-identical to the pure `collectClutter`); what lives here is buffers,
@@ -84,6 +84,7 @@ import {
   CLUTTER_MEADOW,
   CLUTTER_ROCK,
   CLUTTER_SHRUB,
+  CLUTTER_WETPLANT,
   type ClutterInstance,
 } from "../sim/clutter.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
@@ -94,6 +95,7 @@ import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
 import { SHRUB_CHARACTERS, shrubGeometry } from "./shrubClump.js";
+import { WET_PLANT_COUNT, wetPlantGeometry } from "./wetPlantClump.js";
 import { trunkSeat, type TrunkSeat } from "./logSeat.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
 import { macroNoise, macroTint } from "./groundHexParams.js";
@@ -123,13 +125,14 @@ import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../sim/passes/
 /**
  * Model per class per variant, indexed by the class ids of `sim/clutter.ts`
  * (grass 0, rock 1, boulder 2, driftwood 3, fungus 4, bush 5, meadow 6,
- * flower 7, litter 8, fern 9, shrub 10, drift log 11) and then by the instance's own `variant` draw. Driftwood and
+ * flower 7, litter 8, fern 9, shrub 10, drift log 11, wet plant 12) and then by the instance's own `variant` draw. Driftwood and
  * meadow ship ONE model each, which is why the sim gives those classes
  * `variants: 1` and their instances always draw variant 0. Litter reuses the
  * rock and driftwood models at its own (small) scale range rather than
  * shipping dedicated pebble/twig geometry. Sword fern draws the forest's
  * understory fern, placed by its own habitat. The shrub class has no model:
- * its mounds are built in code (`shrubClump.ts`, `builtShrubs` below).
+ * its mounds are built in code (`shrubClump.ts`, `built` below), as the
+ * wet-ground plants are (`wetPlantClump.ts`).
  */
 const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
   [modelUrl("models/clutter.grass_a.glb"), modelUrl("models/clutter.grass_b.glb")],
@@ -144,6 +147,7 @@ const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
   [modelUrl("models/understory.fern.glb")],
   [],
   [modelUrl("models/deadwood.snag.glb")],
+  [],
 ];
 
 /** A shrub leaf's roughness, and its reflectance at normal incidence as a
@@ -301,6 +305,7 @@ const FOLIAGE_BY_CLASS = new Map<number, FoliageProfile>([
   [CLUTTER_BUSH, FOLIAGE_PROFILES.BUSH],
   [CLUTTER_FERN, FOLIAGE_PROFILES.UNDERSTORY],
   [CLUTTER_SHRUB, FOLIAGE_PROFILES.UNDERSTORY],
+  [CLUTTER_WETPLANT, FOLIAGE_PROFILES.UNDERSTORY],
 ]);
 
 /** The weather's porosity cap per class (wetPlugin.ts): the cards glaze,
@@ -320,6 +325,7 @@ export const WET_CAP_BY_CLASS: ReadonlyMap<number, number> = new Map<number, num
   [CLUTTER_FERN, WET_CAP.leaf],
   [CLUTTER_SHRUB, WET_CAP.leaf],
   [CLUTTER_DRIFTLOG, WET_CAP.deadwood],
+  [CLUTTER_WETPLANT, WET_CAP.leaf],
 ]);
 
 /** Classes that LIE on the ground rather than stand on it, so they take the
@@ -1180,12 +1186,12 @@ export function createClutterMeshes(
     });
   }
 
-  /** The shrub class's mesh groups, `[variant][lod]`, built in code: one
-   * material a mound, white under the leaves' own vertex colours, shared by
-   * its two levels of detail as a model's are. */
-  function builtShrubs(): Mesh[][][] {
-    return SHRUB_CHARACTERS.map((_, variant) => {
-      const mat = new PBRMaterial(`clutter_shrub_${variant}_mat`, scene);
+  /** A class built in code, as mesh groups `[variant][lod]`: one material a
+   * variant, white under the leaves' own vertex colours, shared by its two
+   * levels of detail as a model's are. */
+  function built(name: string, variants: number, geometry: (variant: number, lod: number) => { positions: Float32Array; normals: Float32Array; colors: Float32Array; indices: Uint16Array }): Mesh[][][] {
+    return Array.from({ length: variants }, (_, variant) => {
+      const mat = new PBRMaterial(`clutter_${name}_${variant}_mat`, scene);
       mat.albedoColor = new Color3(1, 1, 1);
       mat.metallic = 0;
       mat.roughness = SHRUB_ROUGHNESS;
@@ -1193,8 +1199,8 @@ export function createClutterMeshes(
       mat.backFaceCulling = false;
       builtMaterials.push(mat);
       return LOD_NAMES.map((lodName, lod) => {
-        const g = shrubGeometry(variant, lod);
-        const mesh = new Mesh(`clutter_shrub_${variant}_${lodName}`, scene);
+        const g = geometry(variant, lod);
+        const mesh = new Mesh(`clutter_${name}_${variant}_${lodName}`, scene);
         const data = new VertexData();
         data.positions = g.positions;
         data.normals = g.normals;
@@ -1309,7 +1315,11 @@ export function createClutterMeshes(
       const loaded: Mesh[][][][] = [];
       for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
         if (cls === CLUTTER_SHRUB) {
-          loaded.push(builtShrubs());
+          loaded.push(built("shrub", SHRUB_CHARACTERS.length, shrubGeometry));
+          continue;
+        }
+        if (cls === CLUTTER_WETPLANT) {
+          loaded.push(built("wetplant", WET_PLANT_COUNT, wetPlantGeometry));
           continue;
         }
         const urls = CLUTTER_MODEL_URLS[cls] as readonly string[];
