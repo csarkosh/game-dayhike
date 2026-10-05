@@ -82,6 +82,8 @@ export function windBedGain(speed: number, mist: number, gust: number): number {
 export const WILDLIFE_LEVEL = 0.7;
 /** setTargetAtTime time constant — slow enough that weather fades are audible. */
 export const GAIN_RAMP_S = 2;
+/** The world bus's own ramp, for a stare's muffling and a hush: short, so silence lands within a breath. */
+export const HUSH_RAMP_S = 0.08;
 /** The birdsong bed's bus at full song, how far each of its two passes sits to its ear,
  * the seconds one pass's end lies under the next's start (the bed is faded that long at
  * each end), how far ahead a pass is scheduled, and the gain's own short ramp: the level
@@ -168,6 +170,12 @@ export type AmbientAudio = {
    */
   hollowCall(buffer: AudioBuffer, dx: number, dy: number, dz: number, level: number, cutoffHz: number): void;
   /**
+   * Cuts the world's beds and calls by `share`, 0 to 1, within a breath
+   * (woodsVoice.ts: the reveal's silence), on top of what a stare takes.
+   * The stare's own sounds are left. Inert before `unlock()`.
+   */
+  setHush(share: number): void;
+  /**
    * The local player's stare (stareLens.ts), every frame: the world's beds
    * and calls go muffled and quiet under it, and the heart and the whispers
    * play (stareAudio.ts). Inert before `unlock()`.
@@ -225,6 +233,9 @@ export function createAmbientAudio(
   let world: GainNode | null = null;
   let worldFilter: BiquadFilterNode | null = null;
   let stare: StareAudio | null = null;
+  /** What the world's bus is cut by, and the stare's level: its gain is the product of what each leaves. */
+  let hush = 0;
+  let stareLevel = 0;
   let birdGain: GainNode | null = null;
   let birdBed: AudioBuffer | null = null;
   /** Each ear's pan node, and when its next pass of the bed starts on the context's clock. */
@@ -485,10 +496,16 @@ export function createAmbientAudio(
         src.start(at + voice.after);
       }
     },
+    setHush(share) {
+      hush = clamp01(share);
+      if (!ctx || !world) return;
+      world.gain.setTargetAtTime(muffleGain(stareLevel) * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
+    },
     setStare(lens) {
       if (!ctx || !world || !worldFilter || !stare) return;
       worldFilter.frequency.setTargetAtTime(muffleHz(lens.level), ctx.currentTime, 0.15);
-      world.gain.setTargetAtTime(muffleGain(lens.level), ctx.currentTime, 0.15);
+      stareLevel = lens.level;
+      world.gain.setTargetAtTime(muffleGain(stareLevel) * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
       stare.set(lens, earX, earY, earZ);
     },
     setVolume(v) {

@@ -1,13 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
   BIRDS_FULL_UNTIL, BIRDS_GONE_AT, BIRDS_HOLD_S, BIRDS_RAIN_SHARE, CALL_CLIMBS, CALL_FAR_HZ, CALL_FAR_LEVEL, CALL_FAR_M,
-  CALL_NEAR_HZ, CALL_NEAR_LEVEL, CALL_NEAR_M, HOLLOW_CALL_CLIP, WOODS_REST, birdsAt, callCue, stepWoods,
+  CALL_NEAR_HZ, CALL_NEAR_LEVEL, CALL_NEAR_M, HOLLOW_CALL_CLIP, REVEAL_HZ, REVEAL_LEVEL, REVEAL_NEAR_M, REVEAL_SILENCE_S,
+  WOODS_REST, birdsAt, callCue, revealCue, stepWoods,
   type WoodsInputs, type WoodsState,
 } from "../../src/game/woodsVoice.js";
 import { CALL_CLIP } from "../../src/game/wildlifeAudio.js";
 
 const DT = 1 / 60;
-const CLIMBING: WoodsInputs = { climb: 0, chase: false, hollow: false, rain: 0 };
+const CLIMBING: WoodsInputs = { climb: 0, chase: false, hollow: false, rain: 0, crest: 500 };
 function run(from: WoodsState, input: WoodsInputs, seconds: number): { state: WoodsState; calls: number } {
   let state = from;
   let calls = 0;
@@ -82,12 +83,12 @@ describe("the Hollow's call", () => {
     expect(run(state, { ...CLIMBING, climb: 1 }, 5).calls).toBe(0);
   });
 
-  it("is one a frame when a climb jumps several marks", () => {
-    let state = stepWoods(WOODS_REST, CLIMBING, DT).state;
-    const first = stepWoods(state, { ...CLIMBING, climb: 0.5 }, DT);
-    expect(first.call).toEqual(callCue(0));
-    state = first.state;
-    expect(stepWoods(state, { ...CLIMBING, climb: 0.5 }, DT).call).toEqual(callCue(1));
+  it("is the latest mark's alone when a climb jumps several at once", () => {
+    const state = stepWoods(WOODS_REST, CLIMBING, DT).state;
+    const jumped = stepWoods(state, { ...CLIMBING, climb: 0.5 }, DT);
+    expect(jumped.call).toEqual(callCue(2));
+    expect(jumped.state.calls).toBe(3);
+    expect(stepWoods(jumped.state, { ...CLIMBING, climb: 0.5 }, DT).call).toBeNull();
   });
 
   it("is not heard for the marks a screen joins past, nor in the chase", () => {
@@ -96,7 +97,55 @@ describe("the Hollow's call", () => {
     expect(joined.state.calls).toBe(4);
     expect(stepWoods(joined.state, { ...CLIMBING, climb: 0.8 }, DT).call).toEqual(callCue(4));
     const chase = run(stepWoods(WOODS_REST, CLIMBING, DT).state, { ...CLIMBING, climb: 1, chase: true }, 2);
-    expect(chase.calls).toBe(0);
+    // One call in the chase: the reveal's, not a mark's.
+    expect(chase.calls).toBe(1);
     expect(chase.state.calls).toBe(CALL_CLIMBS.length);
+  });
+});
+
+describe("the reveal", () => {
+  const CHASE: WoodsInputs = { ...CLIMBING, climb: 1, chase: true, hollow: true, crest: 12 };
+
+  it("cuts the world's sound as the chase begins, holds the silence, then calls once from the body", () => {
+    let state = run(WOODS_REST, { ...CLIMBING, climb: 1 }, 1).state;
+    const first = stepWoods(state, CHASE, DT);
+    expect(first.hush).toBe(1);
+    expect(first.call).toBeNull();
+    state = first.state;
+    let called = -1;
+    let cue = null;
+    for (let i = 1; i <= 600; i++) {
+      const out = stepWoods(state, CHASE, DT);
+      state = out.state;
+      if (out.call !== null) {
+        expect(called).toBe(-1);
+        called = i;
+        cue = out.call;
+        expect(out.hush).toBe(0);
+      } else expect(out.hush).toBe(called < 0 ? 1 : 0);
+    }
+    expect(called * DT).toBeGreaterThanOrEqual(REVEAL_SILENCE_S - DT);
+    expect(called * DT).toBeLessThanOrEqual(REVEAL_SILENCE_S + 2 * DT);
+    expect(cue).toEqual(revealCue(12));
+  });
+
+  it("is louder and clearer beside the body than any call of the climb, and the climb's far call from far off", () => {
+    expect(revealCue(0)).toEqual({ distance: 0, level: REVEAL_LEVEL, cutoffHz: REVEAL_HZ });
+    expect(revealCue(REVEAL_NEAR_M).level).toBe(REVEAL_LEVEL);
+    expect(REVEAL_LEVEL).toBeGreaterThan(CALL_NEAR_LEVEL);
+    expect(REVEAL_HZ).toBeGreaterThan(CALL_NEAR_HZ);
+    const far = revealCue(CALL_FAR_M + 300);
+    expect(far.level).toBeCloseTo(CALL_FAR_LEVEL, 12);
+    expect(far.cutoffHz).toBeCloseTo(CALL_FAR_HZ, 12);
+    expect(revealCue(200).level).toBeLessThan(revealCue(100).level);
+  });
+
+  it("is not staged for a screen that joins a chase under way, and never twice", () => {
+    const joined = run(WOODS_REST, CHASE, 10);
+    expect(joined.calls).toBe(0);
+    expect(stepWoods(WOODS_REST, CHASE, DT).hush).toBe(0);
+    const once = run(run(WOODS_REST, { ...CLIMBING, climb: 1 }, 1).state, CHASE, 30);
+    expect(once.calls).toBe(1);
+    expect(once.state.reveal).toBe(-1);
   });
 });

@@ -2,7 +2,9 @@
  * What the woods say on the climb (docs/gameplay/2026-10-05-the-woods-voice.md):
  * a bed of birdsong, full at the trailhead, thinner with every stretch climbed
  * and cut dead whenever the watcher shows; and the Hollow's call, heard from
- * up the trail each time the party passes a mark, nearer every time.
+ * up the trail each time the party passes a mark, nearer every time. And at
+ * the crest, the reveal: the world's sound cut to nothing as the body is
+ * found, then the same call from where the Hollow stands.
  *
  * Stepped on each screen from state every peer already has, like the
  * escalation (escalation.ts) whose ratcheted progress it reads. Nothing is on
@@ -35,6 +37,16 @@ export const CALL_NEAR_LEVEL = 0.9;
 export const CALL_FAR_HZ = 1400;
 export const CALL_NEAR_HZ = 3200;
 
+/** The reveal: seconds of nothing from the finding of the body to the call. With the
+ * call's own three and a half seconds it spans the Hollow's stand behind the body
+ * (hollow.ts SUMMIT_REVEAL_S), which ends in the middle of the call. */
+export const REVEAL_SILENCE_S = 1.6;
+/** The reveal's call for a listener within REVEAL_NEAR_M of the body: louder and clearer
+ * than any on the climb. Further off it falls to the climb's far call at CALL_FAR_M. */
+export const REVEAL_NEAR_M = 30;
+export const REVEAL_LEVEL = 1.3;
+export const REVEAL_HZ = 6000;
+
 export type WoodsInputs = {
   /** The party's best climb so far, 0 at the trailhead and 1 at the crest (`EscalationState.progressMax`). */
   climb: number;
@@ -44,6 +56,8 @@ export type WoodsInputs = {
   hollow: boolean;
   /** The weather's rain, 0 to 1. */
   rain: number;
+  /** Metres from the listener to the body at the crest. */
+  crest: number;
 };
 
 export type WoodsState = {
@@ -53,9 +67,13 @@ export type WoodsState = {
   hold: number;
   /** How many of `CALL_CLIMBS` have been passed; negative before the first step. */
   calls: number;
+  /** Whether the chase was on at the last step. */
+  chase: boolean;
+  /** Seconds since this screen saw the chase begin while its call is still to come; negative otherwise. */
+  reveal: number;
 };
 
-export const WOODS_REST: WoodsState = Object.freeze({ birds: -1, hold: 0, calls: -1 });
+export const WOODS_REST: WoodsState = Object.freeze({ birds: -1, hold: 0, calls: -1, chase: false, reveal: -1 });
 
 /** One call: how far up the trail it sounds from, its level, and the low-pass it is heard through. */
 export type CallCue = { distance: number; level: number; cutoffHz: number };
@@ -75,14 +93,25 @@ export function callCue(index: number): CallCue {
   };
 }
 
+/** The reveal's call for a listener `distance` metres from the body. */
+export function revealCue(distance: number): CallCue {
+  const t = clamp01((distance - REVEAL_NEAR_M) / (CALL_FAR_M - REVEAL_NEAR_M));
+  return { distance: Math.max(0, distance), level: lerp(REVEAL_LEVEL, CALL_FAR_LEVEL, t), cutoffHz: lerp(REVEAL_HZ, CALL_FAR_HZ, t) };
+}
+
 /**
  * One frame. The birds stop within a breath while a Hollow is out or the
  * chase is on, stay stopped BIRDS_HOLD_S after, and come back slowly to what
  * the climb and the rain leave. A call is cued on the frame the climb passes
- * a mark, one a frame at most, and never in the chase; a screen that joins a
+ * a mark, the latest alone when several are passed at once, and never in the chase; a screen that joins a
  * climb under way starts from the marks already passed and hears none of them.
+ *
+ * The reveal begins on the frame a screen that was watching the climb sees
+ * the chase begin: `hush` is 1, the world's sound cut, for REVEAL_SILENCE_S,
+ * and then the call is cued from the body. A screen that joins a chase under
+ * way has no reveal.
  */
-export function stepWoods(prev: WoodsState, input: WoodsInputs, dt: number): { state: WoodsState; call: CallCue | null } {
+export function stepWoods(prev: WoodsState, input: WoodsInputs, dt: number): { state: WoodsState; call: CallCue | null; hush: number } {
   const climb = clamp01(input.climb);
   const hushed = input.hollow || input.chase;
   const hold = hushed ? BIRDS_HOLD_S : Math.max(0, prev.hold - Math.max(0, dt));
@@ -99,8 +128,17 @@ export function stepWoods(prev: WoodsState, input: WoodsInputs, dt: number): { s
   let call: CallCue | null = null;
   if (calls < 0 || input.chase) calls = Math.max(calls, passed);
   else if (passed > calls) {
-    call = callCue(calls);
-    calls++;
+    // A climb that jumps several marks at once is heard as its latest alone.
+    call = callCue(passed - 1);
+    calls = passed;
   }
-  return { state: { birds, hold, calls }, call };
+  let reveal = prev.reveal;
+  if (input.chase && !prev.chase && prev.calls >= 0) reveal = 0;
+  else if (reveal >= 0) reveal += Math.max(0, dt);
+  if (!input.chase) reveal = -1;
+  if (reveal >= REVEAL_SILENCE_S) {
+    call = revealCue(input.crest);
+    reveal = -1;
+  }
+  return { state: { birds, hold, calls, chase: input.chase, reveal }, call, hush: reveal >= 0 ? 1 : 0 };
 }

@@ -1,7 +1,7 @@
 # The woods' voice
 
 **Date:** 2026-10-05
-**Status:** Built 2026-10-05.
+**Status:** Built 2026-10-05, the reveal (§3) with it.
 **Parent:** [`2026-09-16-escalation-and-atmosphere.md`](2026-09-16-escalation-and-atmosphere.md)
 (the world answering the game: the same ratcheted progress drives this) and
 [`2026-09-16-the-summit.md`](2026-09-16-the-summit.md) §4 (the watcher).
@@ -48,7 +48,7 @@ one of 9 s. The watcher is in the world only while it shows, so its showing is t
 ## 2. The call
 
 **The marks.** Climbs of 0.12, 0.30, 0.48, 0.64, 0.78 and 0.90. On the frame the party's best
-climb passes one, the call sounds, one a frame at most. A screen that joins a climb under way
+climb passes one, the call sounds; a climb that jumps several at once is heard as its latest alone. A screen that joins a climb under way
 starts from the marks already passed and hears none of them. There is no call in the chase.
 
 **The cue.** Evenly from the first mark to the last: 420 m to 60 m, a level of 0.4 to 0.9, heard
@@ -59,7 +59,26 @@ low-pass, not by a position: the call is placed 20 m from the ear in the directi
 octave down, and a second voice a fourth under that 90 ms later. A player who has heard an elk
 on this mountain has something to mistake the first call for, and less each time.
 
-## 3. Where it lives
+## 3. The reveal
+
+Added 2026-10-05. The finding of the body was the Hollow appearing behind it, standing two
+seconds and hunting, with no sound. It is staged now, in the same voice the climb used:
+
+1. **The body is found.** The Hollow is there, behind it, standing. On every screen that was
+   watching the climb, the world's sound (rain, wind, drips, animals) is cut to nothing within
+   a breath (`AmbientAudio.setHush`). A player who looks at the Hollow hears their own heart
+   and the whispers, which are not the world's.
+2. **`REVEAL_SILENCE_S` (1.6 s) of nothing.**
+3. **The call**, the one the climb has been bringing nearer, from where the body is. Within
+   30 m it is louder (1.3) and clearer (6 kHz) than any call of the climb; further off it
+   falls to the climb's far call at 420 m, so a straggler down the trail hears it from above.
+   The world's sound comes back with it.
+4. **The hunt.** The Hollow stands `SUMMIT_REVEAL_S`, now 4 s (was 2), so it moves in the
+   middle of its own call.
+
+A screen that joins a chase already under way has no reveal.
+
+## 4. Where it lives
 
 - `client/src/game/woodsVoice.ts`: the level's step and the marks. Babylon-free.
 - `client/src/game/ambientAudio.ts`: the bed's bus and loop (`setBirdBed`, `setBirds`), and the
@@ -68,7 +87,7 @@ on this mountain has something to mistake the first call for, and less each time
 - `client/src/app.ts`: steps the woods beside the escalation on a forest world with a search,
   and nowhere else.
 
-## 4. Tests
+## 5. Tests
 
 `test/game/woodsVoice.test.ts` (the thinning, the hush, the hold and the return; each mark's
 call once and in order; none for a late joiner's past marks or in the chase),
@@ -76,7 +95,7 @@ call once and in order; none for a late joiner's past marks or in the chase),
 level; the call's two voices, its low-pass and its direction), `test/game/birdBed.test.ts` (the
 bytes and the unlock in either order; a missing bed is silence).
 
-## 5. Not in this
+## 6. Not in this
 
-The reveal at the crest, which will use the same call. The levels are set by measurement, not
+A call for the Hollows that step out at the forks. The levels are set by measurement, not
 by ear.
