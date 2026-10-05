@@ -45,9 +45,9 @@ describe("highPlantGeometry", () => {
   });
 
   it("colours the flowers: blue on the lupine, pink on the heather, pale on the beargrass", () => {
-    const has = (variant: number, test: (r: number, g: number, b: number) => boolean): boolean => {
+    const has = (variant: number, match: (r: number, g: number, b: number) => boolean): boolean => {
       const c = highPlantGeometry(variant, 0).colors;
-      for (let i = 0; i < c.length; i += 4) if (test(c[i]!, c[i + 1]!, c[i + 2]!)) return true;
+      for (let i = 0; i < c.length; i += 4) if (match(c[i]!, c[i + 1]!, c[i + 2]!)) return true;
       return false;
     };
     expect(has(HIGH_PLANT_LUPINE, (r, g, b) => b > 2 * g && b > 2 * r)).toBe(true);
