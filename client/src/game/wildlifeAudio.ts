@@ -73,6 +73,8 @@ export type WildlifeAudio = {
    * silenced by weather, or further away than the call kind's `maxDistance`.
    * Events of any other kind are ignored. */
   play(events: readonly WildlifeEvent[], presence: Presence): void;
+  /** A call's decoded recording by its clip id (`CALL_CLIP`), or undefined until it is in. */
+  clip(id: string): AudioBuffer | undefined;
   setListener(l: ListenerPose): void;
   dispose(): void;
 };
@@ -263,6 +265,9 @@ export function createWildlifeAudio(
         // panner's resolution in that time.
         ambient.emitter(buffer, e.x, e.y, -e.z, gain, ref, max);
       }
+    },
+    clip(id) {
+      return buffers.get(id);
     },
     setListener(l) {
       // Kept UNMIRRORED: the gate below compares against event positions, which
