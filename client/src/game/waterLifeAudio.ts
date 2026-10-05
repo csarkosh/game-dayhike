@@ -16,6 +16,14 @@
  *   at most `FROG_VOICES_MAX` and `RUSTLE_MAX` sounding, the nearest of a
  *   frame's new ones taking the free slots, none beyond its range. A slot
  *   frees, and its emitter is stopped, once its voice has run its length.
+ * - A frog voice calls a recording: one of `FROG_CALL_CLIPS`, and a playback
+ *   rate within `FROG_RATE`, each picked once a voice by a hash of its index,
+ *   so every voice keeps its own call and pitch. Until that clip is decoded
+ *   (before the unlock, or for good if it failed to load) the voice calls the
+ *   synthesized call (`frogCallVoice`) instead.
+ *
+ * The clips are fetched at once and decoded once the context exists, as
+ * `birdBed.ts` does its bed; a clip that fails is absent, and warned of once.
  *
  * Positions arrive in Babylon's left-handed frame and go to Web Audio with z
  * negated, as `wildlifeAudio.ts` sends its calls (`app.ts` places the
@@ -23,7 +31,9 @@
  * context is unlocked, and nothing is queued: a frame's frog calls are that
  * frame's alone, so the first frame after unlock plays none from before it.
  */
+import { hash3 } from "../sim/field.js";
 import { LOOP_GAIN_RAMP_S, type AmbientAudio, type LoopEmitter, type VoiceSource } from "./ambientAudio.js";
+import { audioUrl } from "./assetUrls.js";
 import type { FrogCall } from "./frogChorus.js";
 import {
   FROG_CALL_S, FROG_CARRIER_HZ, RUSTLE_LOUD_S, RUSTLE_S, frogCallVoice, humVoice, rustleVoice,
@@ -39,6 +49,12 @@ export const HUM_MIDGES_UNIT = 200;
 export const RUSTLE_WING_HZ: readonly [number, number] = [30, 36];
 /** A one-shot's slot frees this long after its voice's own length, so its tail is never cut. */
 export const SHOT_MARGIN_S = 0.1;
+/** The chorus frog's recorded calls, the catalog's `audio` ids: a voice calls one of them. */
+export const FROG_CALL_CLIPS: readonly string[] = ["call.frog_single_a", "call.frog_single_b", "call.frog_single_c"];
+/** A voice's playback rate lies between these: its own pitch. */
+export const FROG_RATE: readonly [number, number] = [0.94, 1.06];
+/** The hash salts of a voice's clip and rate: the frogs' own (`frogChorus.ts` holds 80 and 81). */
+const SALT_CLIP = 82, SALT_RATE = 83;
 /** Changes smaller than these are not sent, so a steady hum adds no automation event a frame. */
 const GAIN_STEP = 0.005, PITCH_STEP = 0.5;
 
@@ -58,6 +74,11 @@ export type WaterLifeAudio = {
   /** One frame of the water life's sound, heard from `listener` (Babylon's frame). */
   update(s: WaterLifeSound, listener: { x: number; y: number; z: number }): void;
   dispose(): void;
+};
+
+export type WaterLifeAudioOptions = {
+  /** Injected by the tests; production fetches the hashed URL Vite serves. */
+  fetchClip?: (id: string) => Promise<ArrayBuffer>;
 };
 
 type Point = { x: number; y: number; z: number };
@@ -82,6 +103,9 @@ type ShotSlot = {
   endsAt: number;
   hz: number;
   loud: boolean;
+  /** A frog's recording and its rate, or null for the synthesized call. */
+  clip: AudioBuffer | null;
+  rate: number;
   readonly build: (ctx: BaseAudioContext) => VoiceSource;
 };
 
@@ -91,6 +115,25 @@ function lerp(range: readonly [number, number], u: number): number {
 
 function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+/** `buffer` played once at `rate`, ending itself. */
+function clipVoice(ctx: BaseAudioContext, buffer: AudioBuffer, rate: number): VoiceSource {
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.playbackRate.value = rate;
+  src.start();
+  return {
+    output: src,
+    stop() {
+      try {
+        src.stop();
+      } catch {
+        /* already ended: a call that ran its length is not an error */
+      }
+      src.disconnect();
+    },
+  };
 }
 
 /** Stops the one-shots that have run their length. */
@@ -107,12 +150,14 @@ function release(slots: readonly ShotSlot[], t: number): void {
 /**
  * `random` draws the voices' variations and each frog voice's carrier;
  * `now` is the clock, in seconds, the hums' fades and the one-shots' lengths
- * are measured on. Both are injectable for the tests.
+ * are measured on; `options.fetchClip` fetches a clip's bytes. All are
+ * injectable for the tests.
  */
 export function createWaterLifeAudio(
-  ambient: Pick<AmbientAudio, "loopEmitter" | "onUnlock">,
+  ambient: Pick<AmbientAudio, "loopEmitter" | "onUnlock" | "decode">,
   random: () => number = Math.random,
   now: () => number = () => performance.now() / 1000,
+  options: WaterLifeAudioOptions = {},
 ): WaterLifeAudio {
   let unlocked = false;
   let disposed = false;
@@ -126,17 +171,47 @@ export function createWaterLifeAudio(
   const carriers: number[] = [];
 
   function shotSlot(voice: (ctx: BaseAudioContext, slot: ShotSlot) => VoiceSource): ShotSlot {
-    const slot: ShotSlot = { emitter: null, endsAt: 0, hz: 0, loud: false, build: (c) => voice(c, slot) };
+    const slot: ShotSlot = { emitter: null, endsAt: 0, hz: 0, loud: false, clip: null, rate: 1, build: (c) => voice(c, slot) };
     return slot;
   }
   const frogSlots: ShotSlot[] = [];
-  for (let i = 0; i < FROG_VOICES_MAX; i++) frogSlots.push(shotSlot((c, slot) => frogCallVoice(c, slot.hz, random)));
+  for (let i = 0; i < FROG_VOICES_MAX; i++) {
+    frogSlots.push(shotSlot((c, slot) => (slot.clip !== null ? clipVoice(c, slot.clip, slot.rate) : frogCallVoice(c, slot.hz, random))));
+  }
   const rustleSlots: ShotSlot[] = [];
   for (let i = 0; i < RUSTLE_MAX; i++) rustleSlots.push(shotSlot((c, slot) => rustleVoice(c, slot.hz, slot.loud, random)));
+  /** `FROG_CALL_CLIPS` decoded, by index; a hole until (or unless) its clip is in. */
+  const callClips: (AudioBuffer | undefined)[] = [];
 
   ambient.onUnlock(() => {
     unlocked = true;
   });
+
+  const fetchClip = options.fetchClip ?? (async (id: string) => {
+    const response = await fetch(audioUrl(`audio/${id}.mp3`));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.arrayBuffer();
+  });
+  /** Fetches clip `id` now and decodes it once the context exists, into `into[k]`. */
+  function load(id: string, into: (AudioBuffer | undefined)[], k: number): void {
+    const warn = (reason: string): void => console.warn(`water life clip "${id}" will not play: ${reason}`);
+    fetchClip(id).then(
+      (bytes) => {
+        if (disposed) return;
+        ambient.onUnlock(() => {
+          void ambient.decode(bytes).then((buffer) => {
+            if (disposed) return;
+            if (buffer === null) warn("the browser could not decode it");
+            else into[k] = buffer;
+          });
+        });
+      },
+      (e: unknown) => {
+        if (!disposed) warn(e instanceof Error ? e.message : String(e));
+      },
+    );
+  }
+  for (let k = 0; k < FROG_CALL_CLIPS.length; k++) load(FROG_CALL_CLIPS[k]!, callClips, k);
 
   /** Swarm `k`'s slot, made the first time the swarm is heard. */
   function humSlot(k: number): HumSlot {
@@ -289,9 +364,16 @@ export function createWaterLifeAudio(
       if (i < 0) break;
       taken[takenN++] = i;
       const call = calls[i]!;
-      slot.hz = carrierOf(call.voice);
+      const clip = callClips[Math.floor(hash3(call.voice, 0, SALT_CLIP, 0) * FROG_CALL_CLIPS.length)];
+      if (clip !== undefined) {
+        slot.clip = clip;
+        slot.rate = lerp(FROG_RATE, hash3(call.voice, 0, SALT_RATE, 0));
+      } else {
+        slot.clip = null;
+        slot.hz = carrierOf(call.voice);
+      }
       slot.emitter = ambient.loopEmitter(slot.build, call.x, call.y, -call.z, call.gain, FROG_REF, FROG_RANGE);
-      slot.endsAt = t + FROG_CALL_S + SHOT_MARGIN_S;
+      slot.endsAt = t + (slot.clip !== null ? slot.clip.duration / slot.rate : FROG_CALL_S) + SHOT_MARGIN_S;
     }
   }
 
@@ -336,6 +418,8 @@ export function createWaterLifeAudio(
       stopAll(frogSlots);
       stopAll(rustleSlots);
       liveHums = 0;
+      callClips.length = 0;
+      for (const slot of frogSlots) slot.clip = null;
     },
   };
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { VoiceSource } from "../../src/game/ambientAudio.js";
 import type { FrogCall } from "../../src/game/frogChorus.js";
 import {
@@ -7,7 +7,8 @@ import {
 } from "../../src/game/waterLifeAudio.js";
 
 /** Enough of a context for the voices to build on: every node takes
- * connections, and an oscillator's frequency records its glides. */
+ * connections, an oscillator's frequency records its glides, and a buffer
+ * source keeps its buffer, rate, loop and the arguments it was started with. */
 function stubCtx() {
   const oscillators: { type: string; frequency: { value: number; targets: number[] } }[] = [];
   function param() {
@@ -22,10 +23,14 @@ function stubCtx() {
     return p;
   }
   function node() {
-    return {
-      connect() {}, disconnect() {}, start() {}, stop() {},
-      gain: param(), frequency: param(), Q: param(), type: "", buffer: null as unknown,
+    const n = {
+      connect() {}, disconnect() {}, stop() {},
+      starts: [] as number[][],
+      start(...at: number[]) { n.starts.push(at); },
+      gain: param(), frequency: param(), Q: param(), playbackRate: param(), type: "", buffer: null as unknown,
+      loop: false, loopStart: 0, loopEnd: 0,
     };
+    return n;
   }
   const ctx = {
     currentTime: 0,
@@ -44,24 +49,57 @@ type Loop = {
   moves: number[][]; gains: number[]; stopped: boolean; voice: VoiceSource;
 };
 
+/** A source node as the stub context makes it. */
+type Source = { buffer: unknown; playbackRate: { value: number }; loop: boolean; loopStart: number; loopEnd: number; starts: number[][] };
+const sourceOf = (l: Loop): Source => l.voice.output as unknown as Source;
+
 /**
  * The ambient as `waterLifeAudio` sees it: `loopEmitter` builds the voice on a
  * stub context and records the emitter; `unlocked: false` models the real
  * start, with no context until the first pointerdown.
+ *
+ * `clips` are the recordings that fetch, by id, each decoded to a buffer of
+ * that many seconds; any other id fails to fetch. Without `clips` no fetch
+ * ever lands, as on a slow connection, and the voices stay synthesized.
+ * `decode` answers null before unlock, as the real one does, and counts its calls.
  */
-function fakeAmbient({ unlocked = true }: { unlocked?: boolean } = {}) {
+function fakeAmbient({ unlocked = true, clips }: { unlocked?: boolean; clips?: Record<string, number> } = {}) {
   const loops: Loop[] = [];
   const { ctx, oscillators } = stubCtx();
   let ready = unlocked;
   const unlockListeners: (() => void)[] = [];
-  return {
+  const named = new Map<ArrayBuffer, string>();
+  const buffers = new Map<string, AudioBuffer>();
+  const fake = {
     loops,
     oscillators,
+    decodes: 0,
+    /** The buffer `id` decodes to: one object an id, so a test can tell which clip a voice plays. */
+    buffer(id: string): AudioBuffer {
+      let b = buffers.get(id);
+      if (b === undefined) {
+        b = { id, duration: clips?.[id] ?? 0 } as unknown as AudioBuffer;
+        buffers.set(id, b);
+      }
+      return b;
+    },
+    fetchClip(id: string): Promise<ArrayBuffer> {
+      if (clips === undefined) return new Promise<ArrayBuffer>(() => undefined);
+      if (clips[id] === undefined) return Promise.reject(new Error("HTTP 404"));
+      const bytes = new ArrayBuffer(8);
+      named.set(bytes, id);
+      return Promise.resolve(bytes);
+    },
     unlock() {
       ready = true;
       for (const fn of unlockListeners.splice(0)) fn();
     },
     ambient: {
+      decode(bytes: ArrayBuffer): Promise<AudioBuffer | null> {
+        fake.decodes++;
+        const id = named.get(bytes);
+        return Promise.resolve(ready && id !== undefined ? fake.buffer(id) : null);
+      },
       loopEmitter(
         build: (c: BaseAudioContext) => VoiceSource,
         x: number, y: number, z: number, gain: number, ref: number, max: number,
@@ -81,7 +119,18 @@ function fakeAmbient({ unlocked = true }: { unlocked?: boolean } = {}) {
       },
     },
   };
+  return fake;
 }
+
+type Fake = ReturnType<typeof fakeAmbient>;
+
+/** The water life's audio on `fake`, its clips fetched through the fake. */
+function audioOf(fake: Fake, random: () => number, now: () => number) {
+  return createWaterLifeAudio(fake.ambient, random, now, { fetchClip: (id) => fake.fetchClip(id) });
+}
+
+/** Lets every fetch and decode already under way land. */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 const hums = (loops: Loop[]) => loops.filter((l) => l.ref === HUM_REF && l.max === HUM_RANGE);
 const frogs = (loops: Loop[]) => loops.filter((l) => l.ref === FROG_REF && l.max === FROG_RANGE);
@@ -98,13 +147,15 @@ function sound(over: Partial<WaterLifeSound> = {}): WaterLifeSound {
   return { hums: [], hums_n: 0, pitch: 230, rustles: [], frogCalls: [], ...over };
 }
 
+/** The three single calls, all landing: 0.48, 0.52 and 0.5 s long. */
+const SINGLES = { "call.frog_single_a": 0.48, "call.frog_single_b": 0.52, "call.frog_single_c": 0.5 };
 const frogCall = (voice: number, x: number, z = 5): FrogCall => ({ voice, x, y: 1, z, gain: 3 });
 const ORIGIN = { x: 0, y: 1, z: 0 };
 
 describe("waterLifeAudio", () => {
   it("is silent before unlock; the first frame after it starts the hums and plays none of the calls from before", () => {
     const fake = fakeAmbient({ unlocked: false });
-    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => 0);
+    const audio = audioOf(fake, () => 0.5, () => 0);
     for (let f = 0; f < 120; f++) {
       audio.update(sound({ hums: rowOfSwarms(), hums_n: 10, frogCalls: [frogCall(0, 20), frogCall(1, 30)] }), ORIGIN);
     }
@@ -120,7 +171,7 @@ describe("waterLifeAudio", () => {
 
   it("the eight nearest swarms keep a hum each, at −z, gained by presence and size; the next frame moves them in place", () => {
     const fake = fakeAmbient();
-    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => 0);
+    const audio = audioOf(fake, () => 0.5, () => 0);
     const swarms = rowOfSwarms().map((h) => ({ ...h, z: 2 }));
     audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
     const made = hums(fake.loops);
@@ -141,7 +192,7 @@ describe("waterLifeAudio", () => {
 
   it("a swarm out of range, without midges, without presence, at no place or past hums_n makes no hum", () => {
     const fake = fakeAmbient();
-    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => 0);
+    const audio = audioOf(fake, () => 0.5, () => 0);
     const swarms: WaterLifeSound["hums"] = [
       { x: 10.5, y: 1, z: 0, midges: 200, presence: 1 },
       { x: 2, y: 1, z: 0, midges: 0, presence: 1 },
@@ -158,7 +209,7 @@ describe("waterLifeAudio", () => {
   it("a hum that drops out fades over half a second, is sent silence, and stops a tenth of a second after that; the cap holds until it has stopped", () => {
     const fake = fakeAmbient();
     let t = 10;
-    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => t);
+    const audio = audioOf(fake, () => 0.5, () => t);
     const swarms = rowOfSwarms();
     audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
     const [first, second] = hums(fake.loops);
@@ -196,7 +247,7 @@ describe("waterLifeAudio", () => {
   it("a hum too quiet for its steps to be sent is still sent silence before it stops", () => {
     const fake = fakeAmbient();
     let t = 5;
-    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => t);
+    const audio = audioOf(fake, () => 0.5, () => t);
     const quiet = [{ x: 1, y: 1, z: 0, midges: 200, presence: 0.003 }];
     audio.update(sound({ hums: quiet, hums_n: 1 }), ORIGIN);
     const hum = hums(fake.loops)[0]!;
@@ -217,7 +268,7 @@ describe("waterLifeAudio", () => {
   it("a hum that comes back before its fade ends, or while its silence settles, is the same voice, gained again", () => {
     const fake = fakeAmbient();
     let t = 10;
-    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => t);
+    const audio = audioOf(fake, () => 0.5, () => t);
     const swarms = rowOfSwarms();
     audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
     const first = hums(fake.loops)[0]!;
@@ -249,7 +300,7 @@ describe("waterLifeAudio", () => {
 
   it("the hums glide to a new pitch, and a change under half a hertz is not sent", () => {
     const fake = fakeAmbient();
-    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => 0);
+    const audio = audioOf(fake, () => 0.5, () => 0);
     const swarms = [{ x: 1, y: 1, z: 0, midges: 200, presence: 1 }];
     audio.update(sound({ hums: swarms, hums_n: 1, pitch: 230 }), ORIGIN);
     const saws = fake.oscillators.filter((o) => o.type === "sawtooth");
@@ -266,7 +317,7 @@ describe("waterLifeAudio", () => {
   it("frog calls: a one-shot each at −z at the call's gain, at most twelve sounding, the nearest first, none beyond 120 m", () => {
     const fake = fakeAmbient();
     let t = 1;
-    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => t);
+    const audio = audioOf(fake, () => 0.5, () => t);
     // Fourteen calls 5 m to 70 m along x, and one 125 m along it, all 5 m off on z.
     const calls = Array.from({ length: 14 }, (_, i) => frogCall(i, 70 - 5 * i)).concat([frogCall(14, 125)]);
     audio.update(sound({ frogCalls: calls }), ORIGIN);
@@ -292,7 +343,7 @@ describe("waterLifeAudio", () => {
     let t = 0;
     const draws = [0.2, 0.5, 0.8, 0.5];
     let d = 0;
-    const audio = createWaterLifeAudio(fake.ambient, () => draws[d++ % draws.length]!, () => t);
+    const audio = audioOf(fake, () => draws[d++ % draws.length]!, () => t);
     audio.update(sound({ frogCalls: [frogCall(3, 20)] }), ORIGIN);
     t = 2;
     audio.update(sound({ frogCalls: [frogCall(3, 20)] }), ORIGIN);
@@ -301,10 +352,66 @@ describe("waterLifeAudio", () => {
     audio.dispose();
   });
 
+  it("a voice calls its own recording at its own rate, the same from call to call, and holds its slot for the clip's length at that rate", async () => {
+    const fake = fakeAmbient({ clips: SINGLES });
+    let t = 1;
+    const audio = audioOf(fake, () => 0.5, () => t);
+    await settle();
+    audio.update(sound({ frogCalls: [frogCall(0, 20), frogCall(1, 30), frogCall(2, 40)] }), ORIGIN);
+    const made = frogs(fake.loops);
+    expect(made.map((l) => [l.x, l.z, l.gain])).toEqual([[20, -5, 3], [30, -5, 3], [40, -5, 3]]);
+    // Voice 0 the third clip, voice 1 the first, voice 2 the second: each its own clip and pitch.
+    expect(made.map((l) => sourceOf(l).buffer)).toEqual([
+      fake.buffer("call.frog_single_c"), fake.buffer("call.frog_single_a"), fake.buffer("call.frog_single_b"),
+    ]);
+    expect(sourceOf(made[0]!).playbackRate.value).toBeCloseTo(0.953113, 6);
+    expect(sourceOf(made[1]!).playbackRate.value).toBeCloseTo(0.988115, 6);
+    expect(sourceOf(made[2]!).playbackRate.value).toBeCloseTo(1.054751, 6);
+    // A one-shot, started at once, and nothing synthesized.
+    expect(made.every((l) => !sourceOf(l).loop && sourceOf(l).starts.length === 1)).toBe(true);
+    expect(fake.oscillators).toEqual([]);
+    // Voice 0's 0.5 s clip at 0.953 runs 0.525 s: its slot frees 0.1 s after that, at 1.625 s.
+    t = 1.62;
+    audio.update(sound(), ORIGIN);
+    expect(made[0]!.stopped).toBe(false);
+    t = 1.63;
+    audio.update(sound({ frogCalls: [frogCall(0, 20)] }), ORIGIN);
+    expect(made[0]!.stopped).toBe(true);
+    // Its next call is the same clip at the same rate.
+    const again = frogs(fake.loops)[3]!;
+    expect(sourceOf(again).buffer).toBe(fake.buffer("call.frog_single_c"));
+    expect(sourceOf(again).playbackRate.value).toBe(sourceOf(made[0]!).playbackRate.value);
+    audio.dispose();
+  });
+
+  it("decodes nothing before unlock; a voice whose clip did not land calls the synthesized call, and none of the calls from before unlock play", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fake = fakeAmbient({ unlocked: false, clips: { "call.frog_single_a": 0.48, "call.frog_single_b": 0.52 } });
+    const audio = audioOf(fake, () => 0.5, () => 0);
+    await settle();
+    for (let f = 0; f < 60; f++) audio.update(sound({ frogCalls: [frogCall(0, 20), frogCall(1, 30)] }), ORIGIN);
+    expect([fake.loops.length, fake.decodes]).toEqual([0, 0]);
+    fake.unlock();
+    await settle();
+    expect(fake.decodes).toBe(2);
+    expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([
+      'water life clip "call.frog_single_c" will not play: HTTP 404',
+    ]);
+    // Voice 0's clip is the third, which failed: synthesized. Voice 1's landed.
+    audio.update(sound({ frogCalls: [frogCall(0, 20), frogCall(1, 30)] }), ORIGIN);
+    const made = frogs(fake.loops);
+    expect(made.length).toBe(2);
+    expect(sourceOf(made[0]!).buffer).toBe(null);
+    expect(fake.oscillators.filter((o) => o.frequency.value > 1000).length).toBe(2);
+    expect(sourceOf(made[1]!).buffer).toBe(fake.buffer("call.frog_single_a"));
+    audio.dispose();
+    warn.mockRestore();
+  });
+
   it("rustles: at most two at once, the nearest first, none beyond 3 m; a chase's clatter holds its slot longer", () => {
     const fake = fakeAmbient();
     let t = 0;
-    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => t);
+    const audio = audioOf(fake, () => 0.5, () => t);
     audio.update(sound({
       rustles: [
         { x: 2.5, y: 1, z: 0, loud: false },
@@ -328,7 +435,7 @@ describe("waterLifeAudio", () => {
 
   it("dispose stops every hum, call and rustle, and an update after it builds nothing", () => {
     const fake = fakeAmbient();
-    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => 0);
+    const audio = audioOf(fake, () => 0.5, () => 0);
     audio.update(sound({
       hums: rowOfSwarms(), hums_n: 10,
       frogCalls: [frogCall(0, 20)],

@@ -420,7 +420,8 @@ function buildGame(
   made(() => wildlifeAudio?.dispose());
   // The lake's insects and frogs, on the same context and the same unlock.
   // Null in a world without them (no lake, a hand-authored level), where the
-  // per-frame update would voice nothing.
+  // per-frame update would voice nothing and the frogs' clips would be
+  // fetched for nothing.
   const waterLifeAudio = renderer.hasWaterLife ? createWaterLifeAudio(ambient) : null;
   made(() => waterLifeAudio?.dispose());
   // The forest's birdsong bed: fetched now, decoded at the unlock, silent
