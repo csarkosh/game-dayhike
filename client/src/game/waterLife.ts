@@ -11,6 +11,13 @@
  * (`dragonflies.ts`) and the frogs' chorus (`frogChorus.ts`), and fills one
  * reused `WaterLifeSound` for `waterLifeAudio.ts` to voice.
  *
+ * Under the frogs' voices lies a far chorus, the frogs farther out: two
+ * places over the water, fixed once a world (the marsh's middle, or without
+ * a marsh the rim across the lake from its first frog, and the rim across
+ * from that), and a level that follows the frogs' presence, is gone while
+ * the Hollow holds them silent, and thins to `BED_FLOOR` as players' nearness
+ * stops the voices.
+ *
  * With the camera beyond the reach of everything the lake holds
  * (`WATER_LIFE_REACH` past the farthest of it), nothing is stepped: the
  * draws are off, the sound is silent, the swarms over the players' heads
@@ -34,7 +41,7 @@ import {
   type DragonflyShare,
   type WaterLifePresence,
 } from "./waterLifeParams.js";
-import { inShoreBand, waterLifeLayout } from "./waterLifeField.js";
+import { MARSH_MID, inShoreBand, waterLifeLayout, type FrogVoice } from "./waterLifeField.js";
 import {
   HEAD_MIDGES,
   HEAD_ROW0,
@@ -70,6 +77,36 @@ const BLOCK_FULLNESS = 1.3;
 /** How far a swarm's centre leaves its marker, in radii: the wind's shift
  * and surge reach one and a half. */
 const SHIFT_RADII = 2;
+
+/** The far chorus's places stand this far above the water (m). */
+const BED_HEIGHT = 0.3;
+/** The far chorus's level with every voice that may call stopped by a player: it thins, never vanishes. */
+const BED_FLOOR = 0.35;
+
+type Place = { x: number; y: number; z: number };
+
+/**
+ * The far chorus's two places: the marsh's middle where the lake has one,
+ * else the rim across the lake from its first frog; then the rim across the
+ * lake from the first place. `BED_HEIGHT` over the water.
+ */
+function bedPlaces(lake: LakeSource, voices: readonly FrogVoice[]): readonly [Place, Place] {
+  let dirX = 1, dirZ = 0, from = lake.radius;
+  if (lake.lobe !== null) {
+    dirX = lake.lobe.dirX;
+    dirZ = lake.lobe.dirZ;
+    from = lake.radius - MARSH_MID;
+  } else if (voices.length > 0) {
+    const away = Math.atan2(voices[0]!.z - lake.z, voices[0]!.x - lake.x) + Math.PI;
+    dirX = Math.cos(away);
+    dirZ = Math.sin(away);
+  }
+  const y = lake.level + BED_HEIGHT;
+  return [
+    { x: lake.x + dirX * from, y, z: lake.z + dirZ * from },
+    { x: lake.x - dirX * lake.radius, y, z: lake.z - dirZ * lake.radius },
+  ];
+}
 
 /** A head swarm is a ball sized as a marker of its count is
  * (`waterLifeField.ts`: 0.3 m and 1.2 mm a midge). */
@@ -221,7 +258,10 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
   const target = noPresence();
   let primed = false;
 
-  const sound: WaterLifeSound = { hums: [], hums_n: 0, pitch: 0, rustles: NO_RUSTLES, frogCalls: NO_CALLS };
+  const sound: WaterLifeSound = {
+    hums: [], hums_n: 0, pitch: 0, rustles: NO_RUSTLES, frogCalls: NO_CALLS,
+    bed: { level: 0, points: bedPlaces(lake, layout.voices) },
+  };
   for (let r = 0; r < ROWS; r++) sound.hums.push({ x: 0, y: 0, z: 0, midges: 0, presence: 0 });
   let resting = false;
   let disposed = false;
@@ -381,6 +421,7 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
     sound.hums_n = 0;
     sound.rustles = NO_RUSTLES;
     sound.frogCalls = NO_CALLS;
+    sound.bed.level = 0;
   }
 
   const meshes = [midges.mesh, ...dragonflyMeshes.meshes];
@@ -411,6 +452,7 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
       sound.pitch = midgeHumPitch(summerTemperature(f.hour, f.weather));
       sound.rustles = dragonflies.rustles;
       sound.frogCalls = frogs.calls;
+      sound.bed.level = frogs.stopped ? 0 : presence.frog * (BED_FLOOR + (1 - BED_FLOOR) * (1 - frogs.hushedShare));
     },
     sound() {
       return sound;
@@ -423,6 +465,7 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
       sound.hums_n = 0;
       sound.rustles = NO_RUSTLES;
       sound.frogCalls = NO_CALLS;
+      sound.bed.level = 0;
     },
   };
 }

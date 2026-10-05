@@ -755,7 +755,10 @@ export function pixelAtOneMetre(fov: number, renderHeight: number): number {
 }
 
 /** What a world without the lake's life sounds like: nothing. */
-const SILENT_WATER_LIFE: WaterLifeSound = { hums: [], hums_n: 0, pitch: 0, rustles: [], frogCalls: [] };
+const SILENT_WATER_LIFE: WaterLifeSound = {
+  hums: [], hums_n: 0, pitch: 0, rustles: [], frogCalls: [],
+  bed: { level: 0, points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
+};
 
 /** A player's position in their slot: the sim's own, y the body's centre. */
 export type SlotPoint = { x: number; y: number; z: number };

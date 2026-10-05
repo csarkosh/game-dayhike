@@ -110,7 +110,7 @@ const STEM_DENSITY = 0.3;
 const BED_PATCH = 4;
 const STEM_UP: readonly [number, number] = [0.3, 1];
 /** The marsh's middle, in from the rim, where its frogs call (m). */
-const MARSH_MID = LAKE_SHELF_WIDTH / 2;
+export const MARSH_MID = LAKE_SHELF_WIDTH / 2;
 const FROG_MARSH_SHARE = 1.5;
 /** A frog's place about the rim (± m) and its slip along it (± a share of the spacing). */
 const FROG_EDGE = 0.5;

@@ -229,6 +229,48 @@ describe("frogChorus", () => {
     expect(firstCalls(log, 60)).toEqual({ 0: 89.75, 1: 62, 2: 89.75, 3: 62, 4: 89.75, 5: 62, 6: 89.75, 7: 62, 8: 89.75, 9: 62 });
   });
 
+  it("tells the share of the calling voices a player's nearness has stopped, until they call again", () => {
+    const at = (i: number) => ({ x: RING[i]!.x, z: RING[i]!.z });
+    // One player by voice 0 for 10 s: one voice of ten, until its 30 s wait has run out at 39.75 s.
+    const one = createFrogChorus(RING, SEED, () => 0.5);
+    expect(one.hushedShare).toBe(0);
+    const shares: number[] = [];
+    for (let k = 0; k <= 40 * 4; k++) {
+      const t = k / 4;
+      one.step(t, 0.25, t < 10 ? [at(0)] : AWAY, FAR, 1);
+      if (t === 0 || t === 9.75 || t === 39.5 || t === 39.75) shares.push(one.hushedShare);
+    }
+    expect(shares).toEqual([0.1, 0.1, 0.1, 0]);
+    // Five players by every other voice: five of ten.
+    const five = createFrogChorus(RING, SEED, () => 0.5);
+    five.step(0, 0.25, [0, 2, 4, 6, 8].map(at), FAR, 1);
+    expect(five.hushedShare).toBe(0.5);
+    // At presence 0.3 voices 0, 2, 3 and 5 call: a player by voice 0 stops one of the four;
+    // one by voice 1, which does not call, none.
+    const thin = createFrogChorus(RING, SEED, () => 0.5);
+    thin.step(0, 0.25, [at(0)], FAR, 0.3);
+    expect(thin.hushedShare).toBe(0.25);
+    const quiet = createFrogChorus(RING, SEED, () => 0.5);
+    quiet.step(0, 0.25, [at(1)], FAR, 0.3);
+    expect(quiet.hushedShare).toBe(0);
+    // None calling: no share.
+    thin.step(0.25, 0.25, [at(0)], FAR, 0);
+    expect(thin.hushedShare).toBe(0);
+  });
+
+  it("tells whether the Hollow holds the chorus stopped: from within 60 m until beyond 80 m", () => {
+    const chorus = createFrogChorus(RING, SEED, () => 0.5);
+    const by0 = [{ x: RING[0]!.x, z: RING[0]!.z }];
+    expect(chorus.stopped).toBe(false);
+    const seen: [boolean, number][] = [];
+    for (const [k, hollow] of [FAR, 59, 70, 81].entries()) {
+      chorus.step(k / 4, 0.25, by0, hollow, 1);
+      seen.push([chorus.stopped, chorus.hushedShare]);
+    }
+    // While it is stopped no voice calls, so none is a player's to stop.
+    expect(seen).toEqual([[false, 0.1], [true, 0], [true, 0], [false, 0.1]]);
+  });
+
   it("makes nothing per step: the calls array and its entries are the chorus's own, reused", () => {
     const chorus = createFrogChorus(RING, SEED, () => 0.5);
     const calls = chorus.calls;

@@ -28,6 +28,10 @@
  * so the lake does not start in one burst; a step after a stall longer than
  * the longest gap does the same rather than firing every call it owes.
  *
+ * After each step the chorus tells how much of it a player's nearness holds
+ * silent (`hushedShare`) and whether the Hollow does (`stopped`), for the far
+ * chorus under the voices (`waterLife.ts`).
+ *
  * Timings are drawn from `random`, each player's own; a voice's rank and
  * loudness come from the world's seed. Nothing is allocated per step: the
  * state is typed arrays made once, and `calls` holds one reused entry a voice.
@@ -59,6 +63,14 @@ export type FrogCall = { voice: number; x: number; y: number; z: number; gain: n
 export type FrogChorus = {
   /** The calls that start this step; emptied by the next. The array and its entries are reused. */
   readonly calls: FrogCall[];
+  /**
+   * Of the voices the Hollow and the presence let call, the share a player's
+   * nearness holds silent (hushed, or waiting to join their stretch again),
+   * as of the last step: 0 to 1, and 0 while none may call.
+   */
+  readonly hushedShare: number;
+  /** Whether the Hollow holds every voice silent, as of the last step. */
+  readonly stopped: boolean;
   /**
    * Advances the chorus to `t` seconds, `dt` after the last step. `players`
    * are every player's ground position, `hollowDistance` how far the Hollow
@@ -100,6 +112,7 @@ export function createFrogChorus(voices: readonly FrogVoice[], seed: number, ran
   const pool: FrogCall[] = [];
   const calls: FrogCall[] = [];
   let hollowQuiet = false;
+  let hushedShare = 0;
 
   for (let i = 0; i < n; i++) {
     const v = voices[i]!;
@@ -183,6 +196,12 @@ export function createFrogChorus(voices: readonly FrogVoice[], seed: number, ran
 
   return {
     calls,
+    get hushedShare() {
+      return hushedShare;
+    },
+    get stopped() {
+      return hollowQuiet;
+    },
     step(t, dt, players, hollowDistance, presence) {
       calls.length = 0;
       if (hollowDistance < FROG_HOLLOW_STOP) hollowQuiet = true;
@@ -218,13 +237,16 @@ export function createFrogChorus(voices: readonly FrogVoice[], seed: number, ran
         if (state[i] === HUSHED && !near[i] && clear[i]! >= restartAfter[i]!) restartStretch(i, t);
       }
 
-      // The calls.
+      // The calls, and the share of the voices that may call a player holds silent.
+      let liveN = 0, hushedN = 0;
       for (let i = 0; i < n; i++) {
         // Written as "not below" so a presence that is not a number silences too.
         if (hollowQuiet || !(rank[i]! < presence)) {
           live[i] = 0;
           continue;
         }
+        liveN++;
+        if (state[i] !== CHORUS) hushedN++;
         if (!live[i]) {
           live[i] = 1;
           nextCall[i] = t + random() * FROG_ONSET_S;
@@ -248,6 +270,7 @@ export function createFrogChorus(voices: readonly FrogVoice[], seed: number, ran
           nextCall[i] = t + lerp(FROG_BOUT_REST_S, random());
         }
       }
+      hushedShare = liveN > 0 ? hushedN / liveN : 0;
     },
   };
 }

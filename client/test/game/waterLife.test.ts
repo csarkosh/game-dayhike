@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
+import { marshWeightAt } from "../../src/sim/features.js";
 import { elevationAt } from "../../src/sim/terrain.js";
 import { WEATHER_PRESETS, type WeatherParams } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
@@ -90,8 +91,10 @@ vi.mock("../../src/game/frogChorus.js", async (importOriginal) => {
   };
 });
 
-/** The suite's world: its lake is clear, its rim 31 m from its centre. */
+/** The suite's world: its lake is clear, its rim 31 m from its centre, eight frogs about it and no marsh. */
 const SEED = 388817;
+/** A world whose murky lake has a marsh. */
+const MARSH_SEED = -1065037390;
 /** A row's count and presence in the swarms' table (three vec4 a row). */
 const COUNT = 5;
 const PRESENCE = 6;
@@ -440,6 +443,87 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     expect(life.sound().hums[25]!.presence).toBe(0);
     expect(seen.table![25 * ROW + COUNT]).toBe(0);
     life.dispose();
+  });
+
+  it("lays the far chorus over the marsh's middle and on the rim across the lake from it, 0.3 m above the water", () => {
+    const lake = lakeOf(MARSH_SEED);
+    const lobe = lake.lobe!;
+    const life = createWaterLife(scene(), MARSH_SEED, lake, "low");
+    const [marsh, across] = life.sound().bed.points;
+    const from = (p: { x: number; z: number }) => Math.hypot(p.x - lake.x, p.z - lake.z);
+    const along = (p: { x: number; z: number }) => ((p.x - lake.x) * lobe.dirX + (p.z - lake.z) * lobe.dirZ) / from(p);
+    // The marsh's middle: 5 m in from the rim along the marsh's own direction, its core.
+    expect(from(marsh) - lake.radius).toBeCloseTo(-5, 9);
+    expect(along(marsh)).toBeCloseTo(1, 9);
+    expect(marshWeightAt(lake, marsh.x, marsh.z)).toBe(1);
+    // Straight across, on the rim.
+    expect(from(across) - lake.radius).toBeCloseTo(0, 9);
+    expect(along(across)).toBeCloseTo(-1, 9);
+    expect([marsh.y - lake.level, across.y - lake.level].map((h) => h.toFixed(9))).toEqual(["0.300000000", "0.300000000"]);
+    life.dispose();
+  });
+
+  it("without a marsh, lays the far chorus on the rim across the lake from its first frog, and on the rim by that frog", () => {
+    const lake = lakeOf(SEED);
+    expect(lake.lobe).toBeNull();
+    const life = createWaterLife(scene(), SEED, lake, "low");
+    const v = seen.layout!.voices[0]!;
+    const [far, by] = life.sound().bed.points;
+    const from = (p: { x: number; z: number }) => Math.hypot(p.x - lake.x, p.z - lake.z);
+    const toward = (p: { x: number; z: number }) => ((p.x - lake.x) * (v.x - lake.x) + (p.z - lake.z) * (v.z - lake.z)) / (from(p) * from(v));
+    expect([from(far) - lake.radius, from(by) - lake.radius].map((d) => d.toFixed(9))).toEqual(["0.000000000", "0.000000000"]);
+    expect(toward(far)).toBeCloseTo(-1, 9);
+    expect(toward(by)).toBeCloseTo(1, 9);
+    expect([far.y - lake.level, by.y - lake.level].map((h) => h.toFixed(9))).toEqual(["0.300000000", "0.300000000"]);
+    life.dispose();
+  });
+
+  it("sounds the far chorus at night, thinner with a player among the frogs, and not by day, under dread, with the Hollow near, out of reach or once disposed", () => {
+    const lake = lakeOf(SEED);
+    const life = createWaterLife(scene(), SEED, lake, "low");
+    const at = shore(0);
+    const f = frameAt(at.x, at.ground + 1.6, at.z, 22);
+    const level = () => life.sound().bed.level;
+    life.update(f);
+    expect(level()).toBe(1);
+    // A player by the first of the eight frogs stops it: the chorus at 0.35 + 0.65 · 7/8.
+    const v = seen.layout!.voices[0]!;
+    f.players = [{ x: v.x, y: v.y + 0.9, z: v.z }];
+    run(life, f, 0.1);
+    expect(level()).toBeCloseTo(0.91875, 9);
+    f.players = [];
+    // The Hollow within 60 m: none at once, and back beyond 80 m (the stopped frog still waiting).
+    f.hollowDistance = 50;
+    run(life, f, 0.1);
+    expect(level()).toBe(0);
+    f.hollowDistance = 100;
+    run(life, f, 0.1);
+    expect(level()).toBeCloseTo(0.91875, 9);
+    // Noon: the frogs' presence eases out over 3 s.
+    f.hour = 12;
+    run(life, f, 1.5);
+    expect(level()).toBeGreaterThan(0);
+    run(life, f, 1.5);
+    expect(level()).toBe(0);
+    // Back at night under dread: none.
+    f.hour = 22;
+    f.weather = WEATHER_PRESETS.eerie;
+    f.wind = windRecordUnder(WEATHER_PRESETS.eerie, f.time);
+    run(life, f, 3);
+    expect(level()).toBe(0);
+    // A clear night again, then the camera out of reach: none.
+    f.weather = WEATHER_PRESETS.clear;
+    f.wind = windRecordUnder(WEATHER_PRESETS.clear, f.time);
+    run(life, f, 3);
+    expect(level()).toBeGreaterThan(0);
+    f.camX = lake.x + 1000;
+    run(life, f, 0.1);
+    expect(level()).toBe(0);
+    f.camX = at.x;
+    run(life, f, 0.1);
+    expect(level()).toBeGreaterThan(0);
+    life.dispose();
+    expect(level()).toBe(0);
   });
 
   it("steps, draws and voices nothing once disposed, and disposes once", () => {

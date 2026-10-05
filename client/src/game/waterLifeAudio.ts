@@ -21,6 +21,12 @@
  *   so every voice keeps its own call and pitch. Until that clip is decoded
  *   (before the unlock, or for good if it failed to load) the voice calls the
  *   synthesized call (`frogCallVoice`) instead.
+ * - The far chorus: the frogs farther out than the voices, `FROG_BED_CLIPS`
+ *   looping at the bed's two places over the water, each from a random point
+ *   in its seamless stretch (`FROG_BED_LOOP_S`), gained by the bed's level.
+ *   A loop starts once its clip is decoded and its level is above nothing,
+ *   none beyond `FROG_RANGE`; when its level reaches nothing it is sent a
+ *   gain of nothing, and it stops after `FROG_BED_HOLD_S` of it.
  *
  * The clips are fetched at once and decoded once the context exists, as
  * `birdBed.ts` does its bed; a clip that fails is absent, and warned of once.
@@ -34,7 +40,7 @@
 import { hash3 } from "../sim/field.js";
 import { LOOP_GAIN_RAMP_S, type AmbientAudio, type LoopEmitter, type VoiceSource } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
-import type { FrogCall } from "./frogChorus.js";
+import { FROG_GAIN, type FrogCall } from "./frogChorus.js";
 import {
   FROG_CALL_S, FROG_CARRIER_HZ, RUSTLE_LOUD_S, RUSTLE_S, frogCallVoice, humVoice, rustleVoice,
 } from "./insectVoices.js";
@@ -55,6 +61,23 @@ export const FROG_CALL_CLIPS: readonly string[] = ["call.frog_single_a", "call.f
 export const FROG_RATE: readonly [number, number] = [0.94, 1.06];
 /** The hash salts of a voice's clip and rate: the frogs' own (`frogChorus.ts` holds 80 and 81). */
 const SALT_CLIP = 82, SALT_RATE = 83;
+/** The far chorus's recordings, at the bed's first place and its second: a dense chorus and a soft, distant one. */
+export const FROG_BED_CLIPS: readonly string[] = ["call.frog_chorus_near", "call.frog_chorus_far"];
+/** The chorus recordings' seamless stretch, s: they loop within it, never to the files' own ends. */
+export const FROG_BED_LOOP_S: readonly [number, number] = [0.5, 10.5];
+export const FROG_BED_REF = 8;
+/**
+ * Each chorus loop's gain at a level of 1: 0.6 and 0.4 of a call of
+ * middling loudness (`FROG_GAIN`'s middle) at the same distance, at or
+ * beyond `FROG_BED_REF`, where the inverse model leaves a call
+ * `FROG_REF / d` of its gain and a loop `FROG_BED_REF / d` of its own.
+ */
+export const FROG_BED_GAIN: readonly [number, number] = [
+  (0.6 * ((FROG_GAIN[0] + FROG_GAIN[1]) / 2) * FROG_REF) / FROG_BED_REF,
+  (0.4 * ((FROG_GAIN[0] + FROG_GAIN[1]) / 2) * FROG_REF) / FROG_BED_REF,
+];
+/** A chorus loop whose level has been nothing this long stops. */
+export const FROG_BED_HOLD_S = 2;
 /** Changes smaller than these are not sent, so a steady hum adds no automation event a frame. */
 const GAIN_STEP = 0.005, PITCH_STEP = 0.5;
 
@@ -68,6 +91,11 @@ export type WaterLifeSound = {
   rustles: readonly { x: number; y: number; z: number; loud: boolean }[];
   /** This frame's frog calls. */
   frogCalls: readonly FrogCall[];
+  /** The far chorus: its level, 0 to 1, and its two places, one a `FROG_BED_CLIPS` loop in order. */
+  bed: {
+    level: number;
+    points: readonly [{ x: number; y: number; z: number }, { x: number; y: number; z: number }];
+  };
 };
 
 export type WaterLifeAudio = {
@@ -98,6 +126,13 @@ type HumSlot = {
   /** The frame this swarm was last among the nearest. */
   chosen: number;
 };
+type BedLoop = {
+  emitter: LoopEmitter | null;
+  readonly build: (ctx: BaseAudioContext) => VoiceSource;
+  gain: number;
+  /** When its level fell to nothing, while it still sounds; −1 while above. */
+  silentFrom: number;
+};
 type ShotSlot = {
   emitter: LoopEmitter | null;
   endsAt: number;
@@ -117,12 +152,23 @@ function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
-/** `buffer` played once at `rate`, ending itself. */
-function clipVoice(ctx: BaseAudioContext, buffer: AudioBuffer, rate: number): VoiceSource {
+/**
+ * `buffer` played at `rate` from `offset` seconds in: once, ending itself, or
+ * with `loop` round that stretch of it until it is stopped.
+ */
+function clipVoice(
+  ctx: BaseAudioContext, buffer: AudioBuffer, rate: number, offset: number,
+  loop: readonly [number, number] | null,
+): VoiceSource {
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.playbackRate.value = rate;
-  src.start();
+  if (loop !== null) {
+    src.loop = true;
+    src.loopStart = loop[0];
+    src.loopEnd = loop[1];
+  }
+  src.start(0, offset);
   return {
     output: src,
     stop() {
@@ -176,12 +222,19 @@ export function createWaterLifeAudio(
   }
   const frogSlots: ShotSlot[] = [];
   for (let i = 0; i < FROG_VOICES_MAX; i++) {
-    frogSlots.push(shotSlot((c, slot) => (slot.clip !== null ? clipVoice(c, slot.clip, slot.rate) : frogCallVoice(c, slot.hz, random))));
+    frogSlots.push(shotSlot((c, slot) => (slot.clip !== null ? clipVoice(c, slot.clip, slot.rate, 0, null) : frogCallVoice(c, slot.hz, random))));
   }
   const rustleSlots: ShotSlot[] = [];
   for (let i = 0; i < RUSTLE_MAX; i++) rustleSlots.push(shotSlot((c, slot) => rustleVoice(c, slot.hz, slot.loud, random)));
-  /** `FROG_CALL_CLIPS` decoded, by index; a hole until (or unless) its clip is in. */
+  /** `FROG_CALL_CLIPS` and `FROG_BED_CLIPS` decoded, by index; a hole until (or unless) its clip is in. */
   const callClips: (AudioBuffer | undefined)[] = [];
+  const bedClips: (AudioBuffer | undefined)[] = [];
+  const bedLoops: BedLoop[] = [];
+  for (let k = 0; k < FROG_BED_CLIPS.length; k++) {
+    // Built only once its clip is in, from a random point in its stretch.
+    const offset = (): number => lerp(FROG_BED_LOOP_S, random());
+    bedLoops.push({ emitter: null, gain: 0, silentFrom: -1, build: (c) => clipVoice(c, bedClips[k]!, 1, offset(), FROG_BED_LOOP_S) });
+  }
 
   ambient.onUnlock(() => {
     unlocked = true;
@@ -212,6 +265,7 @@ export function createWaterLifeAudio(
     );
   }
   for (let k = 0; k < FROG_CALL_CLIPS.length; k++) load(FROG_CALL_CLIPS[k]!, callClips, k);
+  for (let k = 0; k < FROG_BED_CLIPS.length; k++) load(FROG_BED_CLIPS[k]!, bedClips, k);
 
   /** Swarm `k`'s slot, made the first time the swarm is heard. */
   function humSlot(k: number): HumSlot {
@@ -394,7 +448,44 @@ export function createWaterLifeAudio(
     }
   }
 
-  function stopAll(slots: readonly (ShotSlot | HumSlot | undefined)[]): void {
+  function bed(b: WaterLifeSound["bed"], listener: Point, t: number): void {
+    for (let k = 0; k < bedLoops.length; k++) {
+      const loop = bedLoops[k]!;
+      const p = b.points[k]!;
+      // Written as "within" and "above" so a place or a level that is not a number is silence.
+      const gain = distance(p, listener) <= FROG_RANGE && b.level > 0 ? b.level * FROG_BED_GAIN[k]! : 0;
+      if (loop.emitter === null) {
+        if (gain <= 0 || bedClips[k] === undefined) continue;
+        // Made silent and raised through the emitter's ramp: a loop entered
+        // mid-stretch at its full gain would click.
+        loop.emitter = ambient.loopEmitter(loop.build, p.x, p.y, -p.z, 0, FROG_BED_REF, FROG_RANGE);
+        if (loop.emitter === null) continue;
+        loop.emitter.setGain(gain);
+        loop.gain = gain;
+        loop.silentFrom = -1;
+        continue;
+      }
+      if (gain > 0) {
+        loop.silentFrom = -1;
+        if (Math.abs(gain - loop.gain) >= GAIN_STEP) {
+          loop.gain = gain;
+          loop.emitter.setGain(gain);
+        }
+        continue;
+      }
+      // Silence is sent outright, as a dropped hum's is; the loop stops once it has held.
+      if (loop.silentFrom < 0) {
+        loop.silentFrom = t;
+        loop.gain = 0;
+        loop.emitter.setGain(0);
+      } else if (t - loop.silentFrom >= FROG_BED_HOLD_S) {
+        loop.emitter.stop();
+        loop.emitter = null;
+      }
+    }
+  }
+
+  function stopAll(slots: readonly (ShotSlot | HumSlot | BedLoop | undefined)[]): void {
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i];
       if (slot === undefined || slot.emitter === null) continue;
@@ -411,14 +502,17 @@ export function createWaterLifeAudio(
       hums(s, listener, t);
       frogs(s.frogCalls, listener, t);
       rustles(s.rustles, listener, t);
+      bed(s.bed, listener, t);
     },
     dispose() {
       disposed = true;
       stopAll(humSlots);
       stopAll(frogSlots);
       stopAll(rustleSlots);
+      stopAll(bedLoops);
       liveHums = 0;
       callClips.length = 0;
+      bedClips.length = 0;
       for (const slot of frogSlots) slot.clip = null;
     },
   };

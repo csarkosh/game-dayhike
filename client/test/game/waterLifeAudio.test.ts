@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { VoiceSource } from "../../src/game/ambientAudio.js";
 import type { FrogCall } from "../../src/game/frogChorus.js";
 import {
-  createWaterLifeAudio, FROG_RANGE, FROG_REF, HUM_RANGE, HUM_REF, RUSTLE_RANGE, RUSTLE_REF,
+  createWaterLifeAudio, FROG_BED_REF, FROG_RANGE, FROG_REF, HUM_RANGE, HUM_REF, RUSTLE_RANGE, RUSTLE_REF,
   type WaterLifeSound,
 } from "../../src/game/waterLifeAudio.js";
 
@@ -135,6 +135,7 @@ const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 const hums = (loops: Loop[]) => loops.filter((l) => l.ref === HUM_REF && l.max === HUM_RANGE);
 const frogs = (loops: Loop[]) => loops.filter((l) => l.ref === FROG_REF && l.max === FROG_RANGE);
 const rustles = (loops: Loop[]) => loops.filter((l) => l.ref === RUSTLE_REF && l.max === RUSTLE_RANGE);
+const beds = (loops: Loop[]) => loops.filter((l) => l.ref === FROG_BED_REF && l.max === FROG_RANGE);
 
 /** Ten swarms in a row along x, 0.5 m to 9.5 m from the origin, 2 m off on z.
  * The first has 50 midges at presence 0.8 (gain 0.4); the rest 200 at 0.5 (gain 0.5). */
@@ -143,12 +144,20 @@ function rowOfSwarms(): WaterLifeSound["hums"] {
     ({ x: k + 0.5, y: 1, z: 0, midges: k === 0 ? 50 : 200, presence: k === 0 ? 0.8 : 0.5 }));
 }
 
+/** The far chorus's two places: 36 m and 41 m from the origin. */
+const BED_POINTS: WaterLifeSound["bed"]["points"] = [{ x: 20, y: 1, z: 30 }, { x: -40, y: 1, z: -10 }];
+
 function sound(over: Partial<WaterLifeSound> = {}): WaterLifeSound {
-  return { hums: [], hums_n: 0, pitch: 230, rustles: [], frogCalls: [], ...over };
+  return { hums: [], hums_n: 0, pitch: 230, rustles: [], frogCalls: [], bed: { level: 0, points: BED_POINTS }, ...over };
 }
+
+/** A frame of nothing but the far chorus at `level`. */
+const bedAt = (level: number, points = BED_POINTS) => sound({ bed: { level, points } });
 
 /** The three single calls, all landing: 0.48, 0.52 and 0.5 s long. */
 const SINGLES = { "call.frog_single_a": 0.48, "call.frog_single_b": 0.52, "call.frog_single_c": 0.5 };
+/** The two chorus loops, landing. */
+const CHORUSES = { "call.frog_chorus_near": 11.05, "call.frog_chorus_far": 11.05 };
 const frogCall = (voice: number, x: number, z = 5): FrogCall => ({ voice, x, y: 1, z, gain: 3 });
 const ORIGIN = { x: 0, y: 1, z: 0 };
 
@@ -386,14 +395,14 @@ describe("waterLifeAudio", () => {
 
   it("decodes nothing before unlock; a voice whose clip did not land calls the synthesized call, and none of the calls from before unlock play", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const fake = fakeAmbient({ unlocked: false, clips: { "call.frog_single_a": 0.48, "call.frog_single_b": 0.52 } });
+    const fake = fakeAmbient({ unlocked: false, clips: { "call.frog_single_a": 0.48, "call.frog_single_b": 0.52, ...CHORUSES } });
     const audio = audioOf(fake, () => 0.5, () => 0);
     await settle();
     for (let f = 0; f < 60; f++) audio.update(sound({ frogCalls: [frogCall(0, 20), frogCall(1, 30)] }), ORIGIN);
     expect([fake.loops.length, fake.decodes]).toEqual([0, 0]);
     fake.unlock();
     await settle();
-    expect(fake.decodes).toBe(2);
+    expect(fake.decodes).toBe(4);
     expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([
       'water life clip "call.frog_single_c" will not play: HTTP 404',
     ]);
@@ -406,6 +415,114 @@ describe("waterLifeAudio", () => {
     expect(sourceOf(made[1]!).buffer).toBe(fake.buffer("call.frog_single_a"));
     audio.dispose();
     warn.mockRestore();
+  });
+
+  it("the far chorus: its two recordings loop at their places once decoded and its level is above nothing, from a random point in the loop, gained by the level", async () => {
+    const fake = fakeAmbient({ clips: { ...SINGLES, ...CHORUSES } });
+    const audio = audioOf(fake, () => 0.25, () => 0);
+    // Not decoded yet: nothing, however loud.
+    audio.update(bedAt(1), ORIGIN);
+    expect(beds(fake.loops)).toEqual([]);
+    await settle();
+    audio.update(bedAt(0), ORIGIN);
+    expect(beds(fake.loops)).toEqual([]);
+    audio.update(bedAt(1), ORIGIN);
+    const [near, far] = beds(fake.loops);
+    expect([near!.x, near!.y, near!.z, far!.x, far!.y, far!.z]).toEqual([20, 1, -30, -40, 1, 10]);
+    expect([sourceOf(near!).buffer, sourceOf(far!).buffer])
+      .toEqual([fake.buffer("call.frog_chorus_near"), fake.buffer("call.frog_chorus_far")]);
+    // Looped between 0.5 s and 10.5 s, at their own rate, started 0.5 + 0.25 · 10 s in.
+    for (const l of [near!, far!]) {
+      const src = sourceOf(l);
+      expect([src.loop, src.loopStart, src.loopEnd, src.playbackRate.value]).toEqual([true, 0.5, 10.5, 1]);
+      expect(src.starts).toEqual([[0, 3]]);
+    }
+    // Made silent and raised at once through the emitter's ramp: the near at 0.6 and the far at 0.4
+    // of a call of middling loudness (3) at 0.5 m, here at 8 m.
+    expect([near!.gain, far!.gain]).toEqual([0, 0]);
+    expect(near!.gains.map((g) => g.toFixed(6))).toEqual(["0.112500"]);
+    expect(far!.gains.map((g) => g.toFixed(6))).toEqual(["0.075000"]);
+    audio.update(bedAt(0.5), ORIGIN);
+    audio.update(bedAt(0.5), ORIGIN);
+    expect(near!.gains.map((g) => g.toFixed(6))).toEqual(["0.112500", "0.056250"]);
+    expect(far!.gains.map((g) => g.toFixed(6))).toEqual(["0.075000", "0.037500"]);
+    expect(beds(fake.loops).length).toBe(2);
+    audio.dispose();
+    expect([near!.stopped, far!.stopped]).toEqual([true, true]);
+  });
+
+  it("the far chorus is sent silence when its level reaches nothing and stops 2 s on; back before then, it is the same loops", async () => {
+    const fake = fakeAmbient({ clips: { ...SINGLES, ...CHORUSES } });
+    let t = 10;
+    const audio = audioOf(fake, () => 0.5, () => t);
+    await settle();
+    audio.update(bedAt(1), ORIGIN);
+    const [near, far] = beds(fake.loops);
+    t = 11;
+    audio.update(bedAt(0), ORIGIN);
+    expect(near!.gains.map((g) => g.toFixed(5))).toEqual(["0.11250", "0.00000"]);
+    t = 12;
+    audio.update(bedAt(0.5), ORIGIN);
+    expect(near!.gains.map((g) => g.toFixed(5))).toEqual(["0.11250", "0.00000", "0.05625"]);
+    expect([near!.stopped, far!.stopped]).toEqual([false, false]);
+    t = 13;
+    audio.update(bedAt(0), ORIGIN);
+    t = 14.9;
+    audio.update(bedAt(0), ORIGIN);
+    expect([near!.stopped, far!.stopped]).toEqual([false, false]);
+    expect(far!.gains.map((g) => g.toFixed(5))).toEqual(["0.07500", "0.00000", "0.03750", "0.00000"]);
+    t = 15;
+    audio.update(bedAt(0), ORIGIN);
+    expect([near!.stopped, far!.stopped]).toEqual([true, true]);
+    // Rising again: new loops.
+    t = 16;
+    audio.update(bedAt(1), ORIGIN);
+    expect(beds(fake.loops).length).toBe(4);
+    audio.dispose();
+  });
+
+  it("the far chorus: a place beyond 120 m is not heard, and a recording that did not land is simply absent", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fake = fakeAmbient({ clips: CHORUSES });
+    let t = 0;
+    const audio = audioOf(fake, () => 0.5, () => t);
+    await settle();
+    // The far place 130 m off: only the near loop.
+    const points: WaterLifeSound["bed"]["points"] = [{ x: 20, y: 1, z: 30 }, { x: -130, y: 1, z: 0 }];
+    audio.update(bedAt(1, points), ORIGIN);
+    expect(beds(fake.loops).map((l) => l.x)).toEqual([20]);
+    // Walking out of the near place's reach and into the far one's: the near is sent silence, the far starts.
+    t = 1;
+    audio.update(bedAt(1, points), { x: -100, y: 1, z: 0 });
+    const [near, far] = beds(fake.loops);
+    expect(near!.gains.map((g) => g.toFixed(5))).toEqual(["0.11250", "0.00000"]);
+    expect(far!.x).toBe(-130);
+    audio.dispose();
+    // Without the near recording, only the far loop plays.
+    const lacking = fakeAmbient({ clips: { "call.frog_chorus_far": 11.05 } });
+    const other = audioOf(lacking, () => 0.5, () => 0);
+    await settle();
+    other.update(bedAt(1), ORIGIN);
+    expect(beds(lacking.loops).map((l) => sourceOf(l).buffer)).toEqual([lacking.buffer("call.frog_chorus_far")]);
+    expect(warn.mock.calls.map((c) => String(c[0]))).toContain('water life clip "call.frog_chorus_near" will not play: HTTP 404');
+    other.dispose();
+    warn.mockRestore();
+  });
+
+  it("the far chorus is silent before unlock, starts on the first frame its clips are in after it, and stops on dispose", async () => {
+    const fake = fakeAmbient({ unlocked: false, clips: { ...SINGLES, ...CHORUSES } });
+    const audio = audioOf(fake, () => 0.5, () => 0);
+    await settle();
+    for (let f = 0; f < 60; f++) audio.update(bedAt(1), ORIGIN);
+    expect([fake.loops.length, fake.decodes]).toEqual([0, 0]);
+    fake.unlock();
+    await settle();
+    audio.update(bedAt(1), ORIGIN);
+    expect(beds(fake.loops).length).toBe(2);
+    audio.dispose();
+    expect(fake.loops.every((l) => l.stopped)).toBe(true);
+    audio.update(bedAt(1), ORIGIN);
+    expect(fake.loops.length).toBe(2);
   });
 
   it("rustles: at most two at once, the nearest first, none beyond 3 m; a chase's clatter holds its slot longer", () => {
