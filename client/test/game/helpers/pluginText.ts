@@ -50,8 +50,8 @@ export type PluginCase = {
   states: (() => void)[];
 };
 
-/** A stand-in for `loadGroundArrays`, which NullEngine cannot build (the
- * `terrainTexture.test.ts` stub). */
+/** A stand-in for `loadGroundArrays`, whose real loader fetches and decodes
+ * the ground's layer images (the `terrainTexture.test.ts` stub). */
 function stubGroundArrays(scene: Scene) {
   const tex = (name: string) => {
     const t = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene);

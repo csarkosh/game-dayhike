@@ -118,8 +118,10 @@ const HALATION_KERNEL = 32;
  *
  * On the material path no post-process is created and `image.colorCurves` is
  * only ensured to exist here; `update()` writes the same grade record onto
- * Babylon's in-material image processing (exposure, vignette, colour
- * curves) every call.
+ * Babylon's in-material image processing (the vignette and the colour
+ * curves) every call. The exposure there, the stare's dimming included, is
+ * the lighting's to write (`Lighting.setStare`), so the applies of a weather
+ * fade, which run inside the render after this, keep it.
  */
 export function createPost(scene: Scene, camera: Camera, features: PostFeatures, options: { now?: () => number } = {}): Post {
   /** The clock (ms) the effects' motion reads: the renderer's, so a stepped scene steps them. */
@@ -324,8 +326,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
         aberration.aberrationAmount = record.aberrationAmount;
         return;
       }
-      // Material path: the same intent through Babylon's own operators.
-      image.exposure = record.exposure;
+      // Material path: the same intent through Babylon's own operators, the
+      // exposure aside (see the doc comment above).
       image.vignetteWeight = record.vignetteWeight;
       if (image.colorCurves) {
         const curves = image.colorCurves;

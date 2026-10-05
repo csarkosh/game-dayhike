@@ -48,8 +48,8 @@ describe("loadGroundArrays under NullEngine", () => {
     const created: number[] = [];
     const arrays = loadGroundArrays(scene, undefined, decode, {
       size: 2,
-      // NullEngine cannot create a 2D-array texture; the factory is the seam the
-      // real loader and this test share.
+      // The factory is the seam the real loader and this test share: it
+      // records each array the loader asks for.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       createArray: (data: Uint8Array, size: number, depth: number) => { created.push(data.length); return { dispose() {}, name: `arr${created.length}`, isReady: () => true } as never; },
     });

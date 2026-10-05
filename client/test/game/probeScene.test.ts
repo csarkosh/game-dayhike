@@ -3,10 +3,9 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 // `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
 // whenever it isn't handed a factory, and `renderer.ts`'s own
 // `attachTerrainTexture(scene, mat)` call site never passes one — so the real
-// loader builds a `RawTexture2DArray`, which NullEngine cannot create (the
-// same gap `groundMaps.test.ts` documents and works around with its own
-// factory injection). Mocked here, at the module boundary, rather than by
-// touching `renderer.ts`.
+// loader would fetch the ground's layer images and decode them, which a suite
+// under Node cannot (`groundMaps.test.ts` hands the loader its own decoder).
+// Mocked here, at the module boundary, rather than by touching `renderer.ts`.
 vi.mock("../../src/game/groundMaps.js", () => ({
   reportLayer: () => undefined,
   loadGroundArrays: () => ({

@@ -13,10 +13,9 @@ import type { TerrainTexturePlugin } from "../../src/game/terrainTexture.js";
 // `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
 // whenever it isn't handed a factory, and `renderer.ts`'s own
 // `attachTerrainTexture(scene, mat)` call site never passes one — so the real
-// loader builds a `RawTexture2DArray`, which NullEngine cannot create (the
-// same gap `groundMaps.test.ts` documents and works around with its own
-// factory injection). Mocked here, at the module boundary, rather than by
-// touching `renderer.ts`.
+// loader would fetch the ground's layer images and decode them, which a suite
+// under Node cannot (`groundMaps.test.ts` hands the loader its own decoder).
+// Mocked here, at the module boundary, rather than by touching `renderer.ts`.
 vi.mock("../../src/game/groundMaps.js", () => ({
   reportLayer: () => undefined,
   loadGroundArrays: () => ({
@@ -430,6 +429,30 @@ describe("renderer.wind()", () => {
   });
 });
 
+describe("the sea's clock", () => {
+  it("runs the wind on the simulation's tick and its fraction, unless a scene hands in its own clock", () => {
+    const canvas = {} as unknown as HTMLCanvasElement;
+    const state = { ...windTestState(windTestPlayer(1)), tick: 7200 };
+    const shared = createRenderer(canvas, EMPTY_LEVEL, null);
+    try {
+      shared.sync(state, 1, 0.5);
+      // (7200 + 0.5) ticks at 60 Hz: the same on every peer at that tick.
+      expect(shared.wind().time).toBeCloseTo(120.00833333333333, 9);
+      expect(shared.wind().dirX).toBeCloseTo(0.335780920274179, 9);
+      expect(shared.wind().dirZ).toBeCloseTo(0.9419401114613526, 9);
+    } finally {
+      shared.dispose();
+    }
+    const stepped = createRenderer(canvas, EMPTY_LEVEL, null, { clock: () => 5000 });
+    try {
+      stepped.sync(state, 1, 0.5);
+      expect(stepped.wind().time).toBeCloseTo(5, 9);
+    } finally {
+      stepped.dispose();
+    }
+  });
+});
+
 describe("the renderer's sky", () => {
   it("starts a source of its own at the default hour's sun when it is given no table, and stops it with itself", () => {
     skySources.started.length = 0;
@@ -494,6 +517,43 @@ describe("the renderer's view", () => {
       renderer.dispose();
     }
   });
+});
+
+describe("the low tier's exposure", () => {
+  it("keeps the stare's dimming through a weather fade, frame after frame, as outside one", () => {
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture() });
+    try {
+      const image = renderer.scene.imageProcessingConfiguration;
+      // Half a second a frame: a 3 s fade is a sixth further on at each.
+      vi.spyOn(renderer.engine, "getDeltaTime").mockReturnValue(500);
+      // A half stare leaves a quarter of the light: (1 - 0.5) squared.
+      const state = windTestState({ ...windTestPlayer(1), stare: 0.5 });
+      const frame = () => {
+        renderer.sync(state, 1, 0);
+        renderer.scene.render();
+      };
+      renderer.setView(12, WEATHER_PRESETS.clear);
+      frame();
+      // Clear noon's exposure, 0.91045012, times the quarter.
+      expect(image.exposure).toBeCloseTo(0.22761253123728348, 12);
+      // The fade toward eerie moves inside each render, after the frame's
+      // sync: the exposure each frame draws with is the weather's then, still
+      // times the quarter.
+      renderer.setWeather(WEATHER_PRESETS.eerie, 3);
+      frame();
+      expect(image.exposure).toBeCloseTo(0.21822351432374554, 12);
+      frame();
+      expect(image.exposure).toBeCloseTo(0.209024174519572, 12);
+      for (let i = 0; i < 4; i++) frame();
+      // Eerie's noon exposure, 0.69649435, times the quarter: the fade has
+      // ended with the stare's dimming as it began.
+      expect(image.exposure).toBeCloseTo(0.17412358639652187, 12);
+      frame();
+      expect(image.exposure).toBeCloseTo(0.17412358639652187, 12);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(60_000));
 });
 
 describe("the renderer's engine", () => {
@@ -768,6 +828,29 @@ describe("world shell wiring", () => {
       "setTerrainRain(scene, terrainMaterialFor(scene, \"terrain\"), weather.rain, seconds);\n      water?.setRain(weather.rain);",
     );
     expect(src.match(/water\?\.setRain\(/g)).toHaveLength(1);
+  });
+
+  it("runs the sea's waves and the wind on the shared seconds, and keeps the page's clock for everything else", () => {
+    expect(src).toContain('import { sharedSeconds } from "./oceanWindSea.js";');
+    expect(src).toContain("update(camX: number, camZ: number, seconds: number, hour?: number): void;");
+    const syncBlock = slice("sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {", "hasWildlife: wildlife !== null,");
+    expect(syncBlock).toContain("const seconds = clock() / 1000;");
+    expect(syncBlock).toContain(
+      "const oceanSeconds = options.clock !== undefined ? seconds : sharedSeconds(state.tick, alpha);",
+    );
+    expect(syncBlock).toContain("wind = windRecordUnder(weather, oceanSeconds, windOverride ?? undefined);");
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
+    expect(freecamBranch.match(/water\?\.update\(/g)).toHaveLength(1);
+    expect(playerBranch.match(/water\?\.update\(/g)).toHaveLength(1);
+    expect(freecamBranch).toContain("water?.update(freecam.x, freecam.z, oceanSeconds, lighting.hour);");
+    expect(playerBranch).toContain("water?.update(local.pos.x, local.pos.z, oceanSeconds, lighting.hour);");
+    // The declaration, the wind and the two water updates: nothing else in the frame moves clock.
+    expect(syncBlock.match(/oceanSeconds/g)).toHaveLength(4);
+    expect(syncBlock).toContain("const lampState = lampUnder(weather, seconds);");
+    expect(syncBlock).toContain('setTerrainRain(scene, terrainMaterialFor(scene, "terrain"), weather.rain, seconds);');
+    expect(syncBlock.match(/mist\?\.update\([^;]*, wind, seconds\);/g)).toHaveLength(2);
+    expect(syncBlock.match(/rainSplash\?\.update\([^;]*, seconds\);/g)).toHaveLength(2);
   });
 });
 
