@@ -155,6 +155,12 @@ const SHRUB_F0 = 0.12;
  * `near` band's bucket, index 1 the `far` band's. Every file also ships an
  * "LOD2"; see the file-head comment for why it is unused. */
 const LOD_NAMES = ["LOD0", "LOD1"] as const;
+/** The sword fern's far band draws the model's LOD2, not its LOD1: a clump
+ * past the seam stands under a canopy 30 to 70 m off, a few pixels of frond,
+ * and there are some 1,800 of them in a forest view, which at LOD1's 351
+ * triangles were a third of everything the understory added to the frame
+ * (measured: 647,000 of 1.97 million triangles at a forest pose). */
+const FERN_LOD_NAMES = ["LOD0", "LOD2"] as const;
 const NEAR_LOD = 0;
 const FAR_LOD = 1;
 
@@ -1041,7 +1047,7 @@ export function createClutterMeshes(
    * brought that isn't in one of the returned bucket groups (LOD2, empty
    * wrappers). Returns null if disposed mid-await — the caller must bail out
    * without adopting anything. */
-  async function loadBucketed(url: string): Promise<Mesh[][] | null> {
+  async function loadBucketed(url: string, lodNames: readonly string[] = LOD_NAMES): Promise<Mesh[][] | null> {
     const container = await loadUntilAborted(() => loadContainer(url, scene), loads.signal);
     containers.push(container);
     // Disposed while awaiting: dispose() has already run over an earlier
@@ -1051,7 +1057,7 @@ export function createClutterMeshes(
       return null;
     }
     container.addAllToScene();
-    const groups = LOD_NAMES.map((lodName) => lodMeshes(container, lodName));
+    const groups = lodNames.map((lodName) => lodMeshes(container, lodName));
     const bucketed = new Set<Mesh>(groups.flat());
     for (const mesh of container.meshes) {
       if (mesh instanceof Mesh && !bucketed.has(mesh)) mesh.setEnabled(false);
@@ -1246,7 +1252,7 @@ export function createClutterMeshes(
         const urls = CLUTTER_MODEL_URLS[cls] as readonly string[];
         const variants: Mesh[][][] = [];
         for (const url of urls) {
-          const groups = await loadBucketed(url);
+          const groups = await loadBucketed(url, cls === CLUTTER_FERN ? FERN_LOD_NAMES : LOD_NAMES);
           if (groups === null) return;
           variants.push(groups);
         }

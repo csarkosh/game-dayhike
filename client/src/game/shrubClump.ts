@@ -46,11 +46,11 @@ export type ShrubCharacter = {
 /** Two mounds: a low, wide one and a taller, narrower one. */
 export const SHRUB_CHARACTERS: readonly ShrubCharacter[] = [
   {
-    name: "low mound", stems: [12, 6], stemLeaves: [8, 4], shellLeaves: [260, 80], leaf: [0.15, 0.28],
+    name: "low mound", stems: [12, 6], stemLeaves: [8, 4], shellLeaves: [170, 80], leaf: [0.17, 0.28],
     height: 0.85, radius: 0.8, dark: { r: 0.012, g: 0.03, b: 0.012 }, light: { r: 0.032, g: 0.07, b: 0.022 },
   },
   {
-    name: "tall mound", stems: [10, 5], stemLeaves: [10, 5], shellLeaves: [230, 70], leaf: [0.14, 0.26],
+    name: "tall mound", stems: [10, 5], stemLeaves: [10, 5], shellLeaves: [150, 70], leaf: [0.16, 0.26],
     height: 1.1, radius: 0.62, dark: { r: 0.014, g: 0.034, b: 0.014 }, light: { r: 0.036, g: 0.076, b: 0.024 },
   },
 ];
