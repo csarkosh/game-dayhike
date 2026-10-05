@@ -1,6 +1,6 @@
 /**
- * The ground-clutter fields: thirteen per-cell jittered scatter grids — grass, rocks, boulders,
- * driftwood, fungus, bushes, meadow carpet, flowers, litter, sword ferns, shrubs, drift logs, wet-ground plants — each a pure point
+ * The ground-clutter fields: fourteen per-cell jittered scatter grids — grass, rocks, boulders,
+ * driftwood, fungus, bushes, meadow carpet, flowers, litter, sword ferns, shrubs, drift logs, wet-ground plants, high-ground plants — each a pure point
  * function of (seed, class, cell), the vegetation.ts idiom.
  * Presence is Bernoulli against a biome-keyed density; at most one instance
  * per cell per class. `hash` is a plain [0,1) draw so the RENDERER derives
@@ -41,12 +41,15 @@ export const CLUTTER_DRIFTLOG = 11;
 /** The plants of wet ground: skunk cabbage and devil's club, along seeps
  * under the lowland canopy and round a lake's shore. */
 export const CLUTTER_WETPLANT = 12;
-export const CLUTTER_CLASS_COUNT = 13;
+/** The plants of the high ground: beargrass, lupine and mountain heather,
+ * in the parkland from the high forest to the snow. */
+export const CLUTTER_HIGHPLANT = 13;
+export const CLUTTER_CLASS_COUNT = 14;
 /** Reeds and cattails at a murky lake's margin and on its marsh. Placed here
  * like every class; drawn by `waterPlants.ts`, not the model-drawn clutter. */
-export const CLUTTER_REED = 13;
+export const CLUTTER_REED = 14;
 /** Yellow pond-lily pads on a murky lake's shallows; drawn by `waterPlants.ts`. */
-export const CLUTTER_LILY = 14;
+export const CLUTTER_LILY = 15;
 
 // ---- Tunables (every one appears in CLUTTER_TUNABLES) ------------
 /** Cell sides (m): at most one instance per cell per class. */
@@ -380,6 +383,29 @@ export const CLUTTER_WETPLANT_SCALE_MIN = 0.75;
 export const CLUTTER_WETPLANT_SCALE_MAX = 1.3;
 export const CLUTTER_WETPLANT_SALT = 0x3e7a;
 export const CLUTTER_WETPLANT_SEEP_SALT = 0x5ee9;
+/** High-ground plants grow in the subalpine parkland: from ALT_LO, coming in
+ * over ALT_LO_FADE, to the grass's own upper edge at the snow; mostly in the
+ * open (SHADE of their open-ground weight under full canopy, across the
+ * CANOPY band), on the grass's own slopes, in drifts (a patch noise with a
+ * floor between the drifts), as a meadow's flowers come. */
+export const CLUTTER_HIGHPLANT_CELL = 1.5;
+export const CLUTTER_HIGHPLANT_D = 0.3;
+export const CLUTTER_HIGHPLANT_ALT_LO = 140;
+export const CLUTTER_HIGHPLANT_ALT_LO_FADE = 35;
+export const CLUTTER_HIGHPLANT_SHADE = 0.25;
+export const CLUTTER_HIGHPLANT_CANOPY_LO = 0.3;
+export const CLUTTER_HIGHPLANT_CANOPY_HI = 0.7;
+export const CLUTTER_HIGHPLANT_PATCH_FLOOR = 0.12;
+export const CLUTTER_HIGHPLANT_PATCH_WAVELENGTH = 22;
+export const CLUTTER_HIGHPLANT_PATCH_OCTAVES = 2;
+export const CLUTTER_HIGHPLANT_PATCH_LO = 0.68;
+export const CLUTTER_HIGHPLANT_PATCH_HI = 0.84;
+export const CLUTTER_HIGHPLANT_TRAIL_CLEAR = 1.3;
+/** The renderer's plants are built at their own sizes (`game/highPlantClump.ts`); this varies each. */
+export const CLUTTER_HIGHPLANT_SCALE_MIN = 0.8;
+export const CLUTTER_HIGHPLANT_SCALE_MAX = 1.25;
+export const CLUTTER_HIGHPLANT_SALT = 0xa1b3;
+export const CLUTTER_HIGHPLANT_PATCH_SALT = 0xa1b4;
 /** Meadow carpet: the coverage lattice. One clump per
  * 0.7 m cell at saturation ≈ 2.0/m², which with a ~0.5 m clump footprint closes
  * the ground inside the class radius. Gates are the ground-cover field's
@@ -664,6 +690,7 @@ const CLASSES: readonly ClassConfig[] = [
   { cell: CLUTTER_SHRUB_CELL, density: CLUTTER_SHRUB_D, salt: CLUTTER_SHRUB_SALT, scaleMin: CLUTTER_SHRUB_SCALE_MIN, scaleMax: CLUTTER_SHRUB_SCALE_MAX, variants: 2, trailClear: CLUTTER_SHRUB_TRAIL_CLEAR, standsTall: true },
   { cell: CLUTTER_DRIFTLOG_CELL, density: CLUTTER_DRIFTLOG_D, salt: CLUTTER_DRIFTLOG_SALT, scaleMin: CLUTTER_DRIFTLOG_SCALE_MIN, scaleMax: CLUTTER_DRIFTLOG_SCALE_MAX, variants: 1, trailClear: 0 },
   { cell: CLUTTER_WETPLANT_CELL, density: CLUTTER_WETPLANT_D, salt: CLUTTER_WETPLANT_SALT, scaleMin: CLUTTER_WETPLANT_SCALE_MIN, scaleMax: CLUTTER_WETPLANT_SCALE_MAX, variants: 2, trailClear: CLUTTER_WETPLANT_TRAIL_CLEAR, standsTall: true },
+  { cell: CLUTTER_HIGHPLANT_CELL, density: CLUTTER_HIGHPLANT_D, salt: CLUTTER_HIGHPLANT_SALT, scaleMin: CLUTTER_HIGHPLANT_SCALE_MIN, scaleMax: CLUTTER_HIGHPLANT_SCALE_MAX, variants: 4, trailClear: CLUTTER_HIGHPLANT_TRAIL_CLEAR },
   { cell: CLUTTER_REED_CELL, density: CLUTTER_REED_D, salt: CLUTTER_REED_SALT, scaleMin: CLUTTER_REED_SCALE_MIN, scaleMax: CLUTTER_REED_SCALE_MAX, variants: 3, trailClear: CLUTTER_REED_TRAIL_CLEAR },
   { cell: CLUTTER_LILY_CELL, density: CLUTTER_LILY_D, salt: CLUTTER_LILY_SALT, scaleMin: CLUTTER_LILY_SCALE_MIN, scaleMax: CLUTTER_LILY_SCALE_MAX, variants: 1, trailClear: 0 },
 ];
@@ -794,6 +821,24 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       // See forestDensity: the floor is what lets a CARVED talus exist on ground
       // the slope gate would leave bare.
       return Math.min(1, Math.max(raw * mask.boulder, mask.boulderFloor));
+    }
+    case CLUTTER_HIGHPLANT: {
+      if (s.h < CLUTTER_HIGHPLANT_ALT_LO || r < CLUTTER_GRASS_ROAD_NEAR) return 0;
+      const alt =
+        smoothstep(CLUTTER_HIGHPLANT_ALT_LO, CLUTTER_HIGHPLANT_ALT_LO + CLUTTER_HIGHPLANT_ALT_LO_FADE, s.h) *
+        (1 - smoothstep(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h));
+      if (alt === 0) return 0;
+      const grade = 1 - smoothstep(CLUTTER_GRASS_SLOPE_LO * CLUTTER_GRASS_SLOPE_LO, CLUTTER_GRASS_SLOPE_HI * CLUTTER_GRASS_SLOPE_HI, slopeSq);
+      if (grade === 0) return 0;
+      const shade = smoothstep(CLUTTER_HIGHPLANT_CANOPY_LO, CLUTTER_HIGHPLANT_CANOPY_HI, forestDensity(seed, x, z, s));
+      const open = 1 - (1 - CLUTTER_HIGHPLANT_SHADE) * shade;
+      const road = smoothstep(CLUTTER_GRASS_ROAD_NEAR, CLUTTER_GRASS_ROAD_FAR, r);
+      const patch = CLUTTER_HIGHPLANT_PATCH_FLOOR + (1 - CLUTTER_HIGHPLANT_PATCH_FLOOR) * smoothstep(
+        CLUTTER_HIGHPLANT_PATCH_LO,
+        CLUTTER_HIGHPLANT_PATCH_HI,
+        0.5 + 0.5 * fbm2(x / CLUTTER_HIGHPLANT_PATCH_WAVELENGTH, z / CLUTTER_HIGHPLANT_PATCH_WAVELENGTH, seed ^ CLUTTER_HIGHPLANT_PATCH_SALT, CLUTTER_HIGHPLANT_PATCH_OCTAVES),
+      );
+      return alt * grade * open * road * patch * fm.clutter;
     }
     case CLUTTER_WETPLANT: {
       const sh = shoreHeight(seed, x, z, s.h);
@@ -1112,7 +1157,12 @@ export function clutterInRect(seed: number, cls: number, minX: number, minZ: num
  * pass's `tunables` getter spreads this, so registryDigest covers it. */
 export const CLUTTER_TUNABLES: Readonly<Record<string, number>> = {
   CLUTTER_REED, CLUTTER_LILY,
-  CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_DRIFTLOG, CLUTTER_WETPLANT,
+  CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_DRIFTLOG, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT,
+  CLUTTER_HIGHPLANT_CELL, CLUTTER_HIGHPLANT_D, CLUTTER_HIGHPLANT_ALT_LO, CLUTTER_HIGHPLANT_ALT_LO_FADE,
+  CLUTTER_HIGHPLANT_SHADE, CLUTTER_HIGHPLANT_CANOPY_LO, CLUTTER_HIGHPLANT_CANOPY_HI,
+  CLUTTER_HIGHPLANT_PATCH_FLOOR, CLUTTER_HIGHPLANT_PATCH_WAVELENGTH, CLUTTER_HIGHPLANT_PATCH_OCTAVES,
+  CLUTTER_HIGHPLANT_PATCH_LO, CLUTTER_HIGHPLANT_PATCH_HI, CLUTTER_HIGHPLANT_TRAIL_CLEAR,
+  CLUTTER_HIGHPLANT_SCALE_MIN, CLUTTER_HIGHPLANT_SCALE_MAX, CLUTTER_HIGHPLANT_SALT, CLUTTER_HIGHPLANT_PATCH_SALT,
   CLUTTER_WETPLANT_CELL, CLUTTER_WETPLANT_D, CLUTTER_WETPLANT_SEEP_WAVELENGTH, CLUTTER_WETPLANT_SEEP_OCTAVES,
   CLUTTER_WETPLANT_SEEP_HALF, CLUTTER_WETPLANT_SEEP_EDGE, CLUTTER_WETPLANT_CANOPY_LO, CLUTTER_WETPLANT_CANOPY_HI,
   CLUTTER_WETPLANT_ALT_HI, CLUTTER_WETPLANT_ALT_HI_FADE, CLUTTER_WETPLANT_SLOPE_LO, CLUTTER_WETPLANT_SLOPE_HI,

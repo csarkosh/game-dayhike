@@ -67,6 +67,8 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   [-500, -200, 15, 1695110814],
   // wet-ground plants, 2026-10-05: the seeps under the forest's rect.
   [-200, -3000, 328, -315121291],
+  // high-ground plants, 2026-10-05: on high ground, which the forest's rect has none of.
+  [1600, 600, 2636, -1084818991],
 ];
 
 describe("instances carry the ground gradient", () => {
@@ -784,6 +786,9 @@ describe("the level id does not move", () => {
     // Re-baselined 2026-10-05 from 125191152: the wet-ground plants' class and
     // its habitat's tunables are declared (registryDigest moves), and the water
     // plants' class ids move up behind it.
-    expect(passHash()).toBe(1882926903);
+    // Re-baselined 2026-10-05 from 1882926903: the high-ground plants' class
+    // and its habitat's tunables are declared (registryDigest moves), and the
+    // water plants' class ids move up behind it.
+    expect(passHash()).toBe(622505373);
   });
 });

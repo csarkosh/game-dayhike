@@ -407,7 +407,7 @@ function keeper(): SyncJobs & { held: Slices | null } {
  * start, with nothing prepared ahead: each loop of a rebuild yields by the
  * work it has done, so a rebuild that stops slicing, in any of its loops,
  * changes these. */
-const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 99, blades: 18, duff: 5, forest: 138 };
+const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 106, blades: 18, duff: 5, forest: 138 };
 
 /** How a walk that turns meets each shell's grid: its rebuild cell (m), and
  * where its lines lie. The clipmap's step is ring 0's snap, whose lines lie
@@ -660,13 +660,13 @@ describe("rebuilds as jobs: what is computed", () => {
     engine.dispose();
   }, timeLimit(60_000));
 
-  it("looks up 1,273 clutter cells a grass cell on, where a walk of every cell looks up 52,380", () => {
+  it("looks up 1,435 clutter cells a grass cell on, where a walk of every cell looks up 58,941", () => {
     const collector = createClutterCollector(SEED);
     collector.collect(100.5, 100.5);
-    expect(collector.walked).toBe(52380);
+    expect(collector.walked).toBe(58941);
     const bands = collector.collect(103.5, 100.5);
-    // The strips the thirteen classes' squares add, a column or a few each.
-    expect(collector.walked).toBe(1273);
+    // The strips the fourteen classes' squares add, a column or a few each.
+    expect(collector.walked).toBe(1435);
     expect(bands).toEqual(collectClutter(SEED, 103.5, 100.5));
   }, timeLimit(60_000));
 
@@ -721,10 +721,10 @@ describe("rebuilds as jobs: what is computed", () => {
       if (clutter.size < size) break;
       size = clutter.size;
     }
-    // The sweep 126 m on; the collect after it looks up the thirteen strips and
-    // the corner cells the sweep let go, 3,442 in all.
+    // The sweep 198 m on; the collect after it looks up the fourteen strips and
+    // the corner cells the sweep let go, 3,883 in all.
     const bands = clutter.collect(cx + 3, 100.5);
-    expect([cx, clutter.walked]).toEqual([226.5, 3442]);
+    expect([cx, clutter.walked]).toEqual([298.5, 3883]);
     expect(bands).toEqual(collectClutter(SEED, cx + 3, 100.5));
   }, timeLimit(120_000));
 
@@ -737,7 +737,7 @@ describe("rebuilds as jobs: what is computed", () => {
     finishSlices(clutter.prefetchSlices(100.5, 100.5, 0.0875, 0, 1));
     const ahead = clutter.size;
     const bands = clutter.collect(102.05, 100.5);
-    expect([ahead - cold, clutter.size - ahead]).toEqual([750, 0]);
+    expect([ahead - cold, clutter.size - ahead]).toEqual([831, 0]);
     expect(bands).toEqual(collectClutter(SEED, 102.05, 100.5));
 
     const blades = createBladeCollector(SEED);

@@ -7,7 +7,9 @@ import {
   grassTrailGate, CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_FAR,
   CLUTTER_LITTER_CORE, CLUTTER_LITTER_FADE, CLUTTER_LITTER_CELL, CLUTTER_LITTER_D, litterBand,
   CLUTTER_CLASS_COUNT,
-  CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_DRIFTLOG, CLUTTER_WETPLANT,
+  CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_DRIFTLOG, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT,
+  CLUTTER_HIGHPLANT_ALT_LO, CLUTTER_HIGHPLANT_ALT_LO_FADE, CLUTTER_HIGHPLANT_SHADE, CLUTTER_HIGHPLANT_PATCH_FLOOR,
+  CLUTTER_HIGHPLANT_SCALE_MIN, CLUTTER_HIGHPLANT_SCALE_MAX,
   CLUTTER_WETPLANT_ALT_HI, CLUTTER_WETPLANT_ALT_HI_FADE, CLUTTER_WETPLANT_LAKE_REACH, CLUTTER_WETPLANT_LAKE_FADE,
   CLUTTER_WETPLANT_SCALE_MIN, CLUTTER_WETPLANT_SCALE_MAX, CLUTTER_WETPLANT_TRAIL_CLEAR,
   CLUTTER_DRIFTLOG_ALT_LO, CLUTTER_DRIFTLOG_ALT_HI, CLUTTER_DRIFTLOG_ALT_FADE, CLUTTER_DRIFTLOG_INLAND, CLUTTER_DRIFTLOG_INLAND_FADE,
@@ -233,13 +235,13 @@ describe("bush density gates", () => {
     expect(dCanopy).toBeGreaterThan(dOpen);
   });
 
-  it("extends the class-range sweep to every model-drawn class (CLUTTER_CLASS_COUNT = 13)", () => {
+  it("extends the class-range sweep to every model-drawn class (CLUTTER_CLASS_COUNT = 14)", () => {
     // The pre-existing "stays in [0, 1] for every class" sweep above loops
     // cls < CLUTTER_CLASS_COUNT, so it already covers class 5 (bush) — and,
-    // now that the constant is 13, classes 6-12
-    // (meadow, flower, litter, sword fern, shrub, drift log, wet plant) too — automatically; this assertion is the loop bound.
+    // now that the constant is 14, classes 6-13
+    // (meadow, flower, litter, sword fern, shrub, drift log, wet plant, high plant) too — automatically; this assertion is the loop bound.
     // Same for the road-bed sweep in the domain census describe block below.
-    expect(CLUTTER_CLASS_COUNT).toBe(13);
+    expect(CLUTTER_CLASS_COUNT).toBe(14);
   });
 });
 
@@ -1436,9 +1438,9 @@ import { lobePoints, marshWeightAt, POND_SHORE } from "../../src/sim/features.js
 import { elevationAt, type LakeSource } from "../../src/sim/terrain.js";
 
 describe("the water plants", { timeout: timeLimit(120_000) }, () => {
-  it("follow the model-drawn classes, which number thirteen", () => {
-    expect(CLUTTER_CLASS_COUNT).toBe(13);
-    expect([CLUTTER_REED, CLUTTER_LILY]).toEqual([13, 14]);
+  it("follow the model-drawn classes, which number fourteen", () => {
+    expect(CLUTTER_CLASS_COUNT).toBe(14);
+    expect([CLUTTER_REED, CLUTTER_LILY]).toEqual([14, 15]);
     for (const k of ["CLUTTER_REED_CELL", "CLUTTER_REED_D", "CLUTTER_LILY_CELL", "CLUTTER_LILY_D", "CLUTTER_WATER_MURK_LO", "CLUTTER_WATER_MURK_HI"]) {
       expect(CLUTTER_TUNABLES[k], k).toBeTypeOf("number");
     }
@@ -1675,5 +1677,49 @@ describe("wet-ground plants", () => {
       expect(inst.scale).toBeLessThanOrEqual(CLUTTER_WETPLANT_SCALE_MAX);
       expect(v.trailDistance?.(SEED, inst.x, inst.z) ?? Infinity).toBeGreaterThanOrEqual(CLUTTER_WETPLANT_TRAIL_CLEAR);
     }
+  });
+});
+
+describe("high-ground plants", () => {
+  const level = (h: number) => ({ h, dx: 0.02, dz: 0.02 });
+
+  it("grow from the high forest to the snow and nowhere below, in drifts, mostly in the open", () => {
+    const high = CLUTTER_HIGHPLANT_ALT_LO + CLUTTER_HIGHPLANT_ALT_LO_FADE + 5;
+    let openSum = 0, openN = 0, shadeMax = 0, drift = 0, n = 0;
+    for (let i = 0; i < 5000; i++) {
+      const x = 600 + ((i * 7919) % 6000), z = -3000 + ((i * 104729) % 6000);
+      expect(clutterDensity(SEED, CLUTTER_HIGHPLANT, x, z, level(CLUTTER_HIGHPLANT_ALT_LO - 1))).toBe(0);
+      expect(clutterDensity(SEED, CLUTTER_HIGHPLANT, x, z, level(CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE + 1))).toBe(0);
+      expect(clutterDensity(SEED, CLUTTER_HIGHPLANT, x, z, { h: high, dx: 0.9, dz: 0.4 })).toBe(0);
+      const s = level(high);
+      const d = clutterDensity(SEED, CLUTTER_HIGHPLANT, x, z, s);
+      expect(d).toBeGreaterThanOrEqual(0);
+      expect(d).toBeLessThanOrEqual(1);
+      const rho = forestDensity(SEED, x, z, s);
+      n++;
+      if (d > 0.5) drift++;
+      if (rho < 0.05) { openSum += d; openN++; }
+      if (rho > 0.9) shadeMax = Math.max(shadeMax, d);
+    }
+    // Under full canopy never more than the shade's share.
+    expect(shadeMax).toBeLessThanOrEqual(CLUTTER_HIGHPLANT_SHADE + 1e-9);
+    // In the open: over the floor between drifts on average, with some ground in a drift and most of it not.
+    if (openN > 20) expect(openSum / openN).toBeGreaterThan(CLUTTER_HIGHPLANT_PATCH_FLOOR * 0.9);
+    expect(drift / n).toBeLessThan(0.5);
+  });
+
+  it("stands every instance in its scale band", () => {
+    let seen = 0;
+    for (let k = 0; k < 30 && seen < 200; k++) {
+      const cx = centerlineX(k * 300) + 300 + k * 37;
+      for (const inst of clutterInRect(SEED, CLUTTER_HIGHPLANT, cx, k * 300, cx + 300, k * 300 + 300)) {
+        seen++;
+        expect(inst.scale).toBeGreaterThanOrEqual(CLUTTER_HIGHPLANT_SCALE_MIN);
+        expect(inst.scale).toBeLessThanOrEqual(CLUTTER_HIGHPLANT_SCALE_MAX);
+        expect(inst.groundH).toBeGreaterThan(CLUTTER_HIGHPLANT_ALT_LO - 15);
+        expect([0, 1, 2, 3]).toContain(inst.variant);
+      }
+    }
+    expect(seen).toBeGreaterThan(20);
   });
 });
