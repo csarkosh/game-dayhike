@@ -259,7 +259,7 @@ describe("createForestMeshes under NullEngine", () => {
     expect(ready).toBe(true);
   });
 
-  it("stays inside the 32-draw-call vegetation budget", () => {
+  it("stays inside the 33-draw-call vegetation budget", () => {
     const { scene, forest } = build();
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
     // FOREST_CAM fills every bucket kind at once — near, understory,
@@ -274,7 +274,11 @@ describe("createForestMeshes under NullEngine", () => {
     // `SubMesh` each — never one mesh with two submeshes — so each pair is 2
     // draw calls: 2 giant species × 3 LODs × 2 siblings (12) + 2 sapling
     // species × 3 LODs × 2 siblings (12) + 2 understory (2) + 5 impostor
-    // planes, 2 giants + 2 saplings + 1 snag (5) + 1 deadwood bucket (1) = 32.
+    // planes, 2 giants + 2 saplings + 1 snag (5) + 1 deadwood bucket (1) = 32,
+    // and the nurse logs' seedling (1) = 33. The stubs still carry the
+    // one-a-tree understory the shipped forest has retired, and no nurse
+    // fern: the shipped forest draws 12 + 12 + 5 + 1 + the nurse logs' fern
+    // and seedling (2) = 32.
     // The budget was raised 30 → 32 at one point when saplings and snags
     // gained billboards: three planes, immaterial against the 250-call frame
     // ceiling.
@@ -283,8 +287,8 @@ describe("createForestMeshes under NullEngine", () => {
       if (spy.mock.calls[k]![0] === "matrix") bucketMeshes.add(spy.mock.instances[k] as Mesh);
     }
     const inventory = [...bucketMeshes].reduce((n, m) => n + m.subMeshes.length, 0);
-    expect(inventory).toBe(32);
-    expect(inventory).toBeLessThanOrEqual(32);
+    expect(inventory).toBe(33);
+    expect(inventory).toBeLessThanOrEqual(33);
 
     // AND what this camera actually reaches: buckets whose instance buffer is
     // non-empty. Note the filter is `thinInstanceCount > 0`, NOT "enabled" —
@@ -332,7 +336,9 @@ describe("createForestMeshes under NullEngine", () => {
     // the terrain this camera sees, and the graph carved into it, both
     // change shape again, emptying more sapling sibling pairs at this
     // camera. The INVENTORY above is unchanged at 32.
-    expect(calls).toBe(22);
+    // Re-anchored 2026-10-04 from 22: a nurse log in reach, and its seedlings'
+    // bucket with it. The INVENTORY above is 33.
+    expect(calls).toBe(23);
     expect(calls).toBeLessThanOrEqual(inventory);
   });
 
@@ -432,7 +438,8 @@ describe("createForestMeshes under NullEngine", () => {
           // m the live-engine bug measured and the ~1.26 m this harness's
           // own pre-fix placement (t.groundH + baseOffset*scale, no pitch)
           // measures at this same camera and slope.
-          expect(Math.abs(world.y - (ground - LOG_SINK * t.scale))).toBeLessThan(0.05);
+          // Within 2 cm a unit of scale: a log is 2.2 to 4.25 of them.
+          expect(Math.abs(world.y - (ground - LOG_SINK * t.scale))).toBeLessThan(0.02 * t.scale);
         }
       }
       expect(checkedLogs).toBeGreaterThan(0);
@@ -763,7 +770,8 @@ describe("createForestMeshes under NullEngine", () => {
     for (const mesh of withMaterial) {
       const mat = mesh.material!;
       const plugin = mat.pluginManager?.getPlugin("DistanceFade");
-      if (mesh.name === "deadwood") {
+      if (mesh.name === "deadwood" || mesh.name === "nurse_seedling") {
+        // Forced: the logs, and the seedling that ends with them.
         expect(mat.needAlphaTesting(), mesh.name).toBe(false);
         expect(plugin, mesh.name).toBeInstanceOf(DistanceFadePlugin);
       } else if (mat.needAlphaTesting()) {
@@ -793,6 +801,9 @@ describe("createForestMeshes under NullEngine", () => {
       const cap = wetCapOf(mat);
       if (mesh.name === "deadwood") {
         expect(cap, mesh.name).toBe(1);
+      } else if (mesh.name === "nurse_seedling") {
+        // Needles, though its material is opaque: a leaf's cap.
+        expect(cap, mesh.name).toBe(0.3);
       } else if (mat.needAlphaTesting()) {
         leaves++;
         expect(cap, mesh.name).toBe(0.3);

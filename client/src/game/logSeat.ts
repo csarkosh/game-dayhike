@@ -86,6 +86,51 @@ export function trunkSeat(positions: ArrayLike<number>): TrunkSeat {
   return { a, b, diameter: median(widths) };
 }
 
+/** A station's top is this quantile of its vertices' heights. A trunk's
+ * vertices lie round its section, so most of them are well under its top: at
+ * 0.75 the line ran a fifth of the diameter inside the trunk, and what stood
+ * on it was buried. */
+const TOP_QUANTILE = 0.95;
+
+/**
+ * The line along the top of a trunk lying along local X, `y = a + b·x`: the
+ * same fit as `trunkSeat`'s underside, through each station's upper heights.
+ * What grows on a log stands on this line.
+ */
+export function trunkTop(positions: ArrayLike<number>): { a: number; b: number } {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i] as number;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+  }
+  const span = maxX - minX;
+  if (!(span > 0)) return { a: 0, b: 0 };
+  const ys: number[][] = Array.from({ length: SEAT_BINS }, () => []);
+  for (let i = 0; i < positions.length; i += 3) {
+    const bin = Math.min(SEAT_BINS - 1, Math.floor((((positions[i] as number) - minX) / span) * SEAT_BINS));
+    (ys[bin] as number[]).push(positions[i + 1] as number);
+  }
+  const xs: number[] = [];
+  const tops: number[] = [];
+  for (let bin = 0; bin < SEAT_BINS; bin++) {
+    const heights = ys[bin] as number[];
+    if (heights.length === 0) continue;
+    heights.sort((p, q) => p - q);
+    xs.push(minX + ((bin + 0.5) / SEAT_BINS) * span);
+    tops.push(heights[Math.floor((heights.length - 1) * TOP_QUANTILE)] as number);
+  }
+  const slopes: number[] = [];
+  for (let i = 0; i < xs.length; i++) {
+    for (let j = i + 1; j < xs.length; j++) {
+      slopes.push(((tops[j] as number) - (tops[i] as number)) / ((xs[j] as number) - (xs[i] as number)));
+    }
+  }
+  const b = slopes.length === 0 ? 0 : median(slopes);
+  return { a: median(tops.map((y, i) => y - b * (xs[i] as number))), b };
+}
+
 /** The stations' places along the trunk, in the model's own X (m at scale 1), written into `out`. */
 export function logStationOffsets(minX: number, maxX: number, out: number[]): void {
   for (let i = 0; i < LOG_STATIONS; i++) out[i] = minX + (i / (LOG_STATIONS - 1)) * (maxX - minX);

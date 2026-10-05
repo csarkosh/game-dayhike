@@ -7,7 +7,9 @@ import {
   grassTrailGate, CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_FAR,
   CLUTTER_LITTER_CORE, CLUTTER_LITTER_FADE, CLUTTER_LITTER_CELL, CLUTTER_LITTER_D, litterBand,
   CLUTTER_CLASS_COUNT,
-  CLUTTER_FERN, CLUTTER_SHRUB,
+  CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_DRIFTLOG,
+  CLUTTER_DRIFTLOG_ALT_LO, CLUTTER_DRIFTLOG_ALT_HI, CLUTTER_DRIFTLOG_ALT_FADE, CLUTTER_DRIFTLOG_INLAND, CLUTTER_DRIFTLOG_INLAND_FADE,
+  CLUTTER_DRIFTLOG_SCALE_MIN, CLUTTER_DRIFTLOG_SCALE_MAX,
   CLUTTER_FERN_ALT_HI, CLUTTER_FERN_ALT_HI_FADE, CLUTTER_FERN_MONTANE, CLUTTER_FERN_OPEN, CLUTTER_FERN_PATCH_FLOOR,
   CLUTTER_FERN_SCALE_MIN, CLUTTER_FERN_SCALE_MAX, CLUTTER_FERN_TRAIL_CLEAR,
   CLUTTER_SHRUB_CANOPY_W, CLUTTER_SHRUB_HIGH_LO, CLUTTER_SHRUB_HIGH_LO_FADE, CLUTTER_SHRUB_HIGH_W, CLUTTER_SHRUB_PATCH_FLOOR,
@@ -229,13 +231,13 @@ describe("bush density gates", () => {
     expect(dCanopy).toBeGreaterThan(dOpen);
   });
 
-  it("extends the class-range sweep to every model-drawn class (CLUTTER_CLASS_COUNT = 11)", () => {
+  it("extends the class-range sweep to every model-drawn class (CLUTTER_CLASS_COUNT = 12)", () => {
     // The pre-existing "stays in [0, 1] for every class" sweep above loops
     // cls < CLUTTER_CLASS_COUNT, so it already covers class 5 (bush) — and,
-    // now that the constant is 11, classes 6-10
-    // (meadow, flower, litter, sword fern, shrub) too — automatically; this assertion is the loop bound.
+    // now that the constant is 12, classes 6-11
+    // (meadow, flower, litter, sword fern, shrub, drift log) too — automatically; this assertion is the loop bound.
     // Same for the road-bed sweep in the domain census describe block below.
-    expect(CLUTTER_CLASS_COUNT).toBe(11);
+    expect(CLUTTER_CLASS_COUNT).toBe(12);
   });
 });
 
@@ -1432,9 +1434,9 @@ import { lobePoints, marshWeightAt, POND_SHORE } from "../../src/sim/features.js
 import { elevationAt, type LakeSource } from "../../src/sim/terrain.js";
 
 describe("the water plants", { timeout: timeLimit(120_000) }, () => {
-  it("follow the model-drawn classes, which number eleven", () => {
-    expect(CLUTTER_CLASS_COUNT).toBe(11);
-    expect([CLUTTER_REED, CLUTTER_LILY]).toEqual([11, 12]);
+  it("follow the model-drawn classes, which number twelve", () => {
+    expect(CLUTTER_CLASS_COUNT).toBe(12);
+    expect([CLUTTER_REED, CLUTTER_LILY]).toEqual([12, 13]);
     for (const k of ["CLUTTER_REED_CELL", "CLUTTER_REED_D", "CLUTTER_LILY_CELL", "CLUTTER_LILY_D", "CLUTTER_WATER_MURK_LO", "CLUTTER_WATER_MURK_HI"]) {
       expect(CLUTTER_TUNABLES[k], k).toBeTypeOf("number");
     }
@@ -1584,5 +1586,32 @@ describe("sword fern and shrub habitats", () => {
         expect(v.trailDistance?.(SEED, inst.x, inst.z) ?? Infinity).toBeGreaterThanOrEqual(clear);
       }
     }
+  });
+});
+
+describe("drift logs", () => {
+  it("lie in the drift line's band of the beach and nowhere above or below it", () => {
+    const v = activeTerrainVariant();
+    let found = 0;
+    for (let k = 0; k < 40 && found < 60; k++) {
+      const z = -4000 + k * 211;
+      const cx = centerlineX(z);
+      for (const log of clutterInRect(SEED, CLUTTER_DRIFTLOG, cx - 700, z, cx, z + 200)) {
+        found++;
+        expect(log.scale).toBeGreaterThanOrEqual(CLUTTER_DRIFTLOG_SCALE_MIN);
+        expect(log.scale).toBeLessThanOrEqual(CLUTTER_DRIFTLOG_SCALE_MAX);
+        // The gate is read at the cell's centre and the log stands at its own
+        // jittered place: within the band's fades and a cell's worth of beach.
+        expect(log.groundH).toBeGreaterThan(0);
+        const coast = v.coastDistance?.(SEED, log.x, log.z) ?? Infinity;
+        const cove = v.coveMask?.(SEED, log.x, log.z) ?? 0;
+        expect(coast < CLUTTER_DRIFTLOG_INLAND + CLUTTER_DRIFTLOG_INLAND_FADE + 12 || cove > 0).toBe(true);
+      }
+    }
+    expect(found).toBeGreaterThan(20);
+    const flat = (h: number) => ({ h, dx: 0.02, dz: 0 });
+    const x = centerlineX(1000.5) - 60;
+    expect(clutterDensity(SEED, CLUTTER_DRIFTLOG, x, 1000.5, flat(CLUTTER_DRIFTLOG_ALT_LO - 0.01))).toBe(0);
+    expect(clutterDensity(SEED, CLUTTER_DRIFTLOG, x, 1000.5, flat(CLUTTER_DRIFTLOG_ALT_HI + CLUTTER_DRIFTLOG_ALT_FADE + 0.01))).toBe(0);
   });
 });

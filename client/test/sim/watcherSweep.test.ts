@@ -273,13 +273,16 @@ describe("the watcher on fifty seeds", () => {
     console.info(`[watcher sweep]\n${summary}`);
     expect(cases.length, summary).toBe(924);
     expect(shown.length, summary).toBeGreaterThanOrEqual(899);
-    expect(admitted, summary).toBeGreaterThanOrEqual(74240);
+    // 74,240 until 2026-10-04: a tree that would have fallen across a trail
+    // stands dead beside it instead, and a snag is in a stand's way where a
+    // log was not (74,228 admitted).
+    expect(admitted, summary).toBeGreaterThanOrEqual(74200);
     expect(refused.flee, summary).toBe(0);
     expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
     expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
     expect(bySlot.map((b) => `${b.slot} ${b.stands}`), summary).toEqual(["climb 0 200", "climb 0.25 200", "climb 0.5 200", "climb 0.75 200", "top fork 180"]);
     const floors = [187, 197, 191, 200, 180];
-    const admittedFloors = [3980, 12528, 17134, 25792, 22864];
+    const admittedFloors = [3980, 12516, 17134, 25792, 22864];
     bySlot.forEach((b, i) => {
       expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
       expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);

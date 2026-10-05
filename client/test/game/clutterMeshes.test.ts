@@ -169,7 +169,7 @@ describe("foliage attribute and plugin", () => {
   it("gives every class a porosity cap for the weather's wetting, and attaches it to both LOD buckets", () => {
     expect(WET_CAP_BY_CLASS.size).toBe(CLUTTER_CLASS_COUNT);
     expect([...WET_CAP_BY_CLASS.entries()].sort((a, b) => a[0] - b[0])).toEqual([
-      [0, 0.3], [1, 0.5], [2, 0.5], [3, 1], [4, 1], [5, 0.3], [6, 0.3], [7, 0.3], [8, 0.5], [9, 0.3], [10, 0.3],
+      [0, 0.3], [1, 0.5], [2, 0.5], [3, 1], [4, 1], [5, 0.3], [6, 0.3], [7, 0.3], [8, 0.5], [9, 0.3], [10, 0.3], [11, 1],
     ]);
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) expect(WET_CAP_BY_CLASS.has(cls), `class ${cls}`).toBe(true);
     const { meshes, assets, engine } = buildWithAssets();

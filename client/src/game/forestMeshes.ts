@@ -55,6 +55,7 @@ import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color4 } from "@babylonjs/core/Maths/math.color.js";
@@ -85,6 +86,7 @@ import {
   COHORT_GIANT,
   COHORT_SAPLING,
   COHORT_SNAG,
+  COHORT_LOG,
   TREE_CELL,
   forestDensity,
   type TreeInstance,
@@ -95,7 +97,8 @@ import { elevationAt } from "../sim/terrain.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageEdges } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { groundNormalTilt, groundNormalY, seatOnGround } from "./groundTilt.js";
-import { LOG_STATIONS, logStationOffsets, seatLog, trunkSeat, type TrunkSeat } from "./logSeat.js";
+import { LOG_STATIONS, logStationOffsets, seatLog, trunkSeat, trunkTop, type TrunkSeat } from "./logSeat.js";
+import { mossColours, NURSE_FERN, nursePlants, seedlingGeometry } from "./nurseLog.js";
 import { attachGroundConform } from "./groundConformPlugin.js";
 import {
   attachDistanceFade,
@@ -119,10 +122,7 @@ const SAPLING_URLS = [modelUrl("models/tree.conifer_a.glb"), modelUrl("models/tr
  * `deadwoodMatrixBuffer`). */
 const DEADWOOD_URL = modelUrl("models/deadwood.snag.glb");
 /** Understory follows the tree species split: ferns under a, shrubs under b. */
-const UNDERSTORY_URLS = [
-  modelUrl("models/understory.fern.glb"),
-  modelUrl("models/understory.shrub.glb"),
-];
+const NURSE_FERN_URL = modelUrl("models/understory.fern.glb");
 
 /** Impostor bake resolution — a quad this far away needs no more. */
 const IMPOSTOR_BAKE_SIZE = 256;
@@ -574,6 +574,56 @@ function deadwoodMatrixBuffer(
   return buf;
 }
 
+/** What grows on a log is drawn to this distance and dithers out over the band (m). */
+const NURSE_BANDS: FadeBands = fadeBands(null, [60, 75]);
+/** Its albedo, of its texture's. The floor's own ferns are shaded by the
+ * canopy's density and tinted to the ground; a plant on a log is left at its
+ * texture's own colour, a little brighter than they are, so that it stands
+ * out from the ferns behind the log and is not lost among them. */
+const NURSE_SHADE = 1;
+
+const scratchLog = new Matrix();
+const scratchLocal = new Vector3();
+const scratchWorld = new Vector3();
+/** A plant stands this far (m at the log's scale 1) under the trunk's top line, rooted in the moss. */
+const NURSE_ROOT = 0.03;
+
+/**
+ * World matrices for what grows on the nurse logs (`nurseLog.ts`): each
+ * plant's place on its log's top line, carried to the world by the log's own
+ * matrix from `deadwood` (index-aligned with `list`), then stood plumb at its
+ * own yaw and scale, since a fern or a seedling grows up whatever way the log
+ * lies.
+ */
+function nurseBuffers(
+  list: readonly TreeInstance[],
+  deadwood: Float32Array,
+  logMinX: number,
+  logMaxX: number,
+  top: { a: number; b: number },
+  diameter: number,
+): { ferns: Float32Array; seedlings: Float32Array } {
+  const ferns: number[] = [];
+  const seedlings: number[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i] as TreeInstance;
+    if (t.cohort !== COHORT_LOG) continue;
+    const plants = nursePlants(t.hash, logMinX, logMaxX);
+    if (plants.length === 0) continue;
+    Matrix.FromArrayToRef(deadwood, i * 16, scratchLog);
+    for (const plant of plants) {
+      scratchLocal.copyFromFloats(plant.along, top.a + top.b * plant.along - NURSE_ROOT, plant.side * diameter);
+      Vector3.TransformCoordinatesToRef(scratchLocal, scratchLog, scratchWorld);
+      Quaternion.RotationAxisToRef(UP, plant.yaw, scratchQ);
+      scratchScale.copyFromFloats(plant.scale, plant.scale, plant.scale);
+      Matrix.ComposeToRef(scratchScale, scratchQ, scratchWorld, scratchMat);
+      const out = plant.kind === NURSE_FERN ? ferns : seedlings;
+      for (let k = 0; k < 16; k++) out.push(scratchMat.m[k] as number);
+    }
+  }
+  return { ferns: new Float32Array(ferns), seedlings: new Float32Array(seedlings) };
+}
+
 /**
  * World matrices for impostor quads, each oriented toward the camera at
  * rebuild time. Babylon does NOT billboard thin instances (`billboardMode`
@@ -993,6 +1043,10 @@ export function createForestMeshes(
   let deadwoodLogMinX = 0;
   let deadwoodLogMaxX = 0;
   let deadwoodLogSeat: TrunkSeat = { a: 0, b: 0, diameter: 0 };
+  let deadwoodLogTop = { a: 0, b: 0 };
+  /** The ferns and the seedlings on the nurse logs, or null where the assets gave no source for them. */
+  let nurseFernBucket: Bucket | null = null;
+  let nurseSeedlingBucket: Bucket | null = null;
   let disposed = false;
   /** Every billboard bake still to land, as it settles into its bucket. */
   const bakes: Promise<void>[] = [];
@@ -1293,6 +1347,8 @@ export function createForestMeshes(
     giants: { lods: [Mesh[], Mesh[], Mesh[]]; understory: Mesh[] | null }[];
     saplings: [Mesh[], Mesh[], Mesh[]][];
     deadwood: Mesh[];
+    /** The fern on the nurse logs; none under the stubs. */
+    nurseFern?: Mesh[];
   }): void {
     species = loaded.giants.map((s, i) => adoptSpecies(i, s.lods, s.understory, "giant"));
     // Saplings are a species like the giants now, understory aside: their own
@@ -1303,6 +1359,16 @@ export function createForestMeshes(
     // meshes — the same rule `adoptSpecies` records for the tree bakes — and
     // posed upright, because the asset is modelled lying down (`SNAG_POSE`).
     // The bake options are the third parameter, the pose the fourth.
+    // Moss on the trunk's upper side, as vertex colours over the bark
+    // (`nurseLog.ts`): set before the bake, so the snag's billboard carries
+    // it too. A snag stands the trunk on end, and its moss is down one side.
+    for (const mesh of loaded.deadwood) {
+      const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+      const normals = mesh.getVerticesData(VertexBuffer.NormalKind);
+      if (positions === null || normals === null) continue;
+      mesh.setVerticesData(VertexBuffer.ColorKind, mossColours(positions, normals), false, 4);
+      mesh.useVertexColors = true;
+    }
     const snagSource = loaded.deadwood[0];
     const snagBake =
       snagSource === undefined ? null : bakeImpostor(snagSource, scene, bakeOptions, SNAG_POSE);
@@ -1327,7 +1393,62 @@ export function createForestMeshes(
     // is the root flare's.
     deadwoodLogMinX = deadwoodBounds.min.x;
     deadwoodLogMaxX = deadwoodBounds.max.x;
-    deadwoodLogSeat = trunkSeat(loaded.deadwood.flatMap((mesh) => Array.from(mesh.getVerticesData(VertexBuffer.PositionKind) ?? [])));
+    const deadwoodPositions = loaded.deadwood.flatMap((mesh) => Array.from(mesh.getVerticesData(VertexBuffer.PositionKind) ?? []));
+    deadwoodLogSeat = trunkSeat(deadwoodPositions);
+    deadwoodLogTop = trunkTop(deadwoodPositions);
+    // What grows on a nurse log (`nurseLog.ts`): the fern and a seedling.
+    // The fern wears a plain material made here from its model's textures,
+    // with the dither and nothing else: a plant on a log
+    // stands a metre off the ground, so it takes no ground tint and no base
+    // conform, and it is too small to need the wind.
+    const plain = (mesh: Mesh): void => {
+      const source = mesh.material;
+      if (!(source instanceof PBRMaterial)) return;
+      const mat = new PBRMaterial(`${source.name}_nurse`, scene);
+      mat.albedoTexture = source.albedoTexture;
+      mat.albedoColor.copyFromFloats(NURSE_SHADE, NURSE_SHADE, NURSE_SHADE);
+      mat.metallic = 0;
+      mat.roughness = 1;
+      mat.metallicF0Factor = 0;
+      mat.transparencyMode = source.transparencyMode;
+      mat.alphaCutOff = source.alphaCutOff;
+      mat.useAlphaFromAlbedoTexture = source.useAlphaFromAlbedoTexture;
+      mat.backFaceCulling = source.backFaceCulling;
+      attachDistanceFade(mat, { force: true });
+      attachWet(mat, WET_CAP.leaf);
+      materials.push(mat);
+      mesh.material = mat;
+    };
+    const nurseBucket = (meshes: Mesh[]): Bucket => {
+      for (const mesh of meshes) {
+        plain(mesh);
+        prepBucketMesh(mesh);
+      }
+      return { meshes, fade: NURSE_BANDS };
+    };
+    const fern = loaded.nurseFern;
+    nurseFernBucket = fern === undefined || fern.length === 0 ? null : nurseBucket(fern);
+    // The seedling is built in code (`seedlingGeometry`): white under its
+    // own vertex colours, matt, and with the dither forced, as its fern has.
+    const seedling = seedlingGeometry();
+    const seedlingMesh = new Mesh("nurse_seedling", scene);
+    const seedlingData = new VertexData();
+    seedlingData.positions = seedling.positions;
+    seedlingData.normals = seedling.normals;
+    seedlingData.colors = seedling.colors;
+    seedlingData.indices = seedling.indices;
+    seedlingData.applyToMesh(seedlingMesh, false);
+    const seedlingMat = new PBRMaterial("nurse_seedling_mat", scene);
+    seedlingMat.metallic = 0;
+    seedlingMat.roughness = 1;
+    seedlingMat.metallicF0Factor = 0;
+    seedlingMat.backFaceCulling = false;
+    attachDistanceFade(seedlingMat, { force: true });
+    attachWet(seedlingMat, WET_CAP.leaf);
+    materials.push(seedlingMat);
+    seedlingMesh.material = seedlingMat;
+    prepBucketMesh(seedlingMesh);
+    nurseSeedlingBucket = { meshes: [seedlingMesh], fade: NURSE_BANDS };
 
     // The snag billboard's quad, in the ROLLED frame: local X becomes world Y
     // (see `deadwoodMatrixBuffer`), so the trunk's length is the quad's
@@ -1408,37 +1529,30 @@ export function createForestMeshes(
       const giants: { lods: [Mesh[], Mesh[], Mesh[]]; understory: Mesh[] | null }[] = [];
       for (let s = 0; s < SPECIES_COUNT; s++) {
         const tree = await loadModel(TREE_URLS[s] as string);
-        let under: AssetContainer;
-        try {
-          under = await loadModel(UNDERSTORY_URLS[s] as string);
-        } catch (error) {
-          // The tree already landed and is nobody's yet.
-          tree.dispose();
-          throw error;
-        }
-        containers.push(tree, under);
+        containers.push(tree);
         if (disposed) {
           tree.dispose();
-          under.dispose();
           return;
         }
         tree.addAllToScene();
-        under.addAllToScene();
         const entry = {
           lods: [lodMeshes(tree, "LOD0"), lodMeshes(tree, "LOD1"), lodMeshes(tree, "LOD2")] as [
             Mesh[],
             Mesh[],
             Mesh[],
           ],
-          // Understory renders only inside 50 m, so its LOD0 is the only
-          // level worth a bucket; the container's LOD1/2 stay disabled below.
-          understory: lodMeshes(under, "LOD0"),
+          // No plant of its own at a tree's foot: the understory is the
+          // clutter's sword fern and shrub, placed by habitat
+          // (`sim/clutter.ts`). The one-a-tree fern and shrub this loaded
+          // were scaled with their tree, to a fern over two metres across
+          // under a giant, and are retired.
+          understory: null,
         };
         giants.push(entry);
-        // Everything the containers brought that is not a bucket (understory
-        // LOD1/2, empty wrappers) must never draw.
-        const bucketed = new Set<Mesh>([...entry.lods.flat(), ...entry.understory]);
-        for (const mesh of [...tree.meshes, ...under.meshes]) {
+        // Everything the container brought that is not a bucket (empty
+        // wrappers) must never draw.
+        const bucketed = new Set<Mesh>(entry.lods.flat());
+        for (const mesh of tree.meshes) {
           if (mesh instanceof Mesh && !bucketed.has(mesh)) mesh.setEnabled(false);
         }
       }
@@ -1456,15 +1570,22 @@ export function createForestMeshes(
         saplings.push(lods as [Mesh[], Mesh[], Mesh[]]);
       }
 
-      // Deadwood instances the asset's LOD2 mesh, not LOD0: at LOD0 the
+      // Deadwood instances the asset's LOD1 mesh, not LOD0: at LOD0 the
       // ~70-100 near-band deadwood instances would cost 294-420k triangles,
       // roughly half the whole vegetation budget on set dressing (see the
-      // file-head comment).
-      const deadwoodGroups = await loadBucketed(DEADWOOD_URL, (c) => [lodMeshes(c, "LOD2")]);
+      // file-head comment). It was LOD2 while a log was 6 to 8 m long; at
+      // 9 to 17 m and over a metre through, LOD2's 754 triangles are a
+      // faceted spindle from the trail, and LOD1's 1,880 hold the trunk's
+      // round and its root flare.
+      const deadwoodGroups = await loadBucketed(DEADWOOD_URL, (c) => [lodMeshes(c, "LOD1")]);
       if (deadwoodGroups === null) return;
       const deadwood = deadwoodGroups[0] as Mesh[];
 
-      adopt({ giants, saplings, deadwood });
+      // The fern that grows on the nurse logs (`nurseLog.ts`).
+      const fernGroups = await loadBucketed(NURSE_FERN_URL, (c) => [lodMeshes(c, "LOD0")]);
+      if (fernGroups === null) return;
+
+      adopt({ giants, saplings, deadwood, nurseFern: fernGroups[0] as Mesh[] });
     } catch {
       // A missing or broken asset costs the trees, never the match — the same
       // degrade-don't-block rule as the character pool's `load`. A dispose
@@ -1595,6 +1716,22 @@ export function createForestMeshes(
     const applies: (() => void)[] = [];
     yield;
 
+    // One bucket, both dead-tree roles — see `deadwoodMatrixBuffer`.
+    const deadwoodBuf = deadwoodMatrixBuffer(
+      seed,
+      bands.deadwood,
+      deadwoodSnagBaseOffset,
+      deadwoodLogMinX,
+      deadwoodLogMaxX,
+      deadwoodLogSeat,
+    );
+    applies.push(bucketApply(deadwoodBucket as Bucket, deadwoodBuf));
+    // What grows on the nurse logs, placed on each log's own matrix.
+    const nurse = nurseBuffers(bands.deadwood, deadwoodBuf, deadwoodLogMinX, deadwoodLogMaxX, deadwoodLogTop, deadwoodLogSeat.diameter);
+    if (nurseFernBucket !== null) applies.push(bucketApply(nurseFernBucket, nurse.ferns));
+    if (nurseSeedlingBucket !== null) applies.push(bucketApply(nurseSeedlingBucket, nurse.seedlings));
+    yield;
+
     // Giants and saplings run the identical shape, off different near lists
     // (`near` is GIANT-only, `saplings` SAPLING-only) and different slots of
     // the split impostor lists.
@@ -1641,18 +1778,6 @@ export function createForestMeshes(
     ));
     yield;
 
-    // One bucket, both dead-tree roles — see `deadwoodMatrixBuffer`.
-    applies.push(bucketApply(
-      deadwoodBucket as Bucket,
-      deadwoodMatrixBuffer(
-        seed,
-        bands.deadwood,
-        deadwoodSnagBaseOffset,
-        deadwoodLogMinX,
-        deadwoodLogMaxX,
-        deadwoodLogSeat,
-      ),
-    ));
     // The hand-over is one step: every bucket's new buffers at once.
     yield FOREST_UPLOAD_MS;
     for (const apply of applies) apply();
@@ -1750,7 +1875,7 @@ export function createForestMeshes(
           for (const mesh of bucket.meshes) mesh.dispose();
         }
       }
-      for (const bucket of [deadwoodBucket, snagImpostor?.bucket ?? null]) {
+      for (const bucket of [deadwoodBucket, snagImpostor?.bucket ?? null, nurseFernBucket, nurseSeedlingBucket]) {
         if (bucket === null) continue;
         for (const mesh of bucket.meshes) mesh.dispose();
       }
@@ -1765,6 +1890,8 @@ export function createForestMeshes(
       saplingSpecies = null;
       deadwoodBucket = null;
       snagImpostor = null;
+      nurseFernBucket = null;
+      nurseSeedlingBucket = null;
     },
   };
 }

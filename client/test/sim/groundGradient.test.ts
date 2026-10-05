@@ -63,6 +63,8 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   // sword fern and shrub, 2026-10-04: under the forest the fungus and the bush stand in.
   [-200, -3000, 3886, -1115141397],
   [-200, -3000, 1161, -668084287],
+  // drift logs, 2026-10-04: on a beach, which the forest's rect has none of.
+  [-500, -200, 15, 1695110814],
 ];
 
 describe("instances carry the ground gradient", () => {
@@ -264,8 +266,12 @@ describe("the scatter censuses are untouched", () => {
     // ground the trees stand on moves with its bed. As many trees clear it
     // under this rect as did, 731, on other ground. A deliberate
     // elevation-field change; the level id moves with it.
+    // Re-baselined 2026-10-04 from (731, 1882046793): a fallen log is 2.2 to
+    // 3.4 of the trunk model where it was 1.5 to 2, and one that would lie
+    // across a trail or the road stands dead instead. The same 731 trees, on
+    // the same ground.
     expect(list.length).toBe(731);
-    expect(h | 0).toBe(1882046793);
+    expect(h | 0).toBe(-612707025);
   });
 
   it("keeps every clutter field bit-identical, class by class", () => {
@@ -769,6 +775,10 @@ describe("the level id does not move", () => {
     // classes, the sword fern and the shrub, with their habitats' tunables, and
     // the water plants' class ids move up behind them (registryDigest moves).
     // No collider changed: neither class collides.
-    expect(passHash()).toBe(-1077797422);
+    // Re-baselined 2026-10-04 from -1077797422: the logs' own scale and their
+    // clearance of the trail and the road, and the drift logs' class, are
+    // declared (registryDigest moves); the water plants' class ids move up
+    // again.
+    expect(passHash()).toBe(125191152);
   });
 });

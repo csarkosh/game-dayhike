@@ -471,13 +471,6 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC0-1.0
 - **URL:** https://polyhaven.com/a/fern_02
 
-## understory.shrub
-
-- **Source:** Poly Haven: Shrub 02
-- **Author:** Rico Cilliers
-- **Licence:** CC0-1.0
-- **URL:** https://polyhaven.com/a/shrub_02
-
 ## wildlife.crow_perched
 
 - **Source:** Sketchfab: Crow

@@ -353,6 +353,7 @@ describe("inter-stage variables on WebGPU", () => {
     // material is a plain PBR one with the distance fade, well inside.
     expect([...forest.drawn.keys()].sort()).toEqual([
       "deadwood.snag.material0",
+      "nurse_seedling_mat",
       "skyDome",
       "tree.conifer_a.material0",
       "tree.conifer_a.material0_lod2",
@@ -370,8 +371,7 @@ describe("inter-stage variables on WebGPU", () => {
       "tree.giant_pine.material0_lod2",
       "tree.giant_pine.material1",
       "tree.giant_pine.material1_lod2",
-      "understory.fern.material0",
-      "understory.shrub.material0",
+      "understory.fern.material0_nurse",
     ]);
     for (const [name, drawn] of forest.drawn) {
       // The processed shader's outputs and Babylon's own count agree.
