@@ -166,12 +166,13 @@ const SHRUB_F0 = 0.12;
  * `near` band's bucket, index 1 the `far` band's. Every file also ships an
  * "LOD2"; see the file-head comment for why it is unused. */
 const LOD_NAMES = ["LOD0", "LOD1"] as const;
-/** The sword fern's far band draws the model's LOD2, not its LOD1: a clump
- * past the seam stands under a canopy 30 to 70 m off, a few pixels of frond,
- * and there are some 1,800 of them in a forest view, which at LOD1's 351
- * triangles were a third of everything the understory added to the frame
- * (measured: 647,000 of 1.97 million triangles at a forest pose). */
-const FERN_LOD_NAMES = ["LOD0", "LOD2"] as const;
+/** The sword fern draws the model's LOD1 near and its LOD2 far, not LOD0 and
+ * LOD1. The ferns were the most of the understory's triangles: at LOD0's 784
+ * the 660 near clumps of a forest view were 520,000, and at LOD1's 351 the
+ * 1,840 far ones 650,000. A clump is a metre across and seen from standing
+ * height, where LOD1's 351 triangles and LOD0's are not told apart; past the
+ * seam it is a few pixels under the canopy. */
+const FERN_LOD_NAMES = ["LOD1", "LOD2"] as const;
 /** A drift log draws the trunk's LOD1 near and its LOD2 far: the forest's own
  * logs draw LOD1 (`forestMeshes.ts`), and LOD0's 4,196 triangles buy nothing
  * on a beach seen from the road. */
