@@ -3,7 +3,7 @@ import {
   createAmbientAudio, DEFAULT_VOLUME, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
   WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
   WIND_GAIN_DEPTH, WIND_GAIN_RAMP_S, windBedGain, BIRD_LEVEL, BIRD_PAN, BIRD_OVERLAP_S, BIRD_GAIN_RAMP_S,
-  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES,
+  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HUSH_RAMP_S,
 } from "../../src/game/ambientAudio.js";
 import { ambientGainsUnder, WEATHER_PRESETS } from "../../src/game/weather.js";
 import { MUFFLE_OPEN_HZ, MUFFLE_SHUT_HZ, MUFFLE_GAIN, HEART_LEVEL, WHISPER_LEVEL, WHISPER_VOICES } from "../../src/game/stareAudio.js";
@@ -661,6 +661,27 @@ describe("the stare", () => {
     }
     expect(ramps()).toBe(settled);
     expect(created.gains[8]!.gain.targets.at(-1)!.value).toBe(0);
+    audio.dispose();
+  });
+});
+
+describe("the hush", () => {
+  it("cuts the world's bus within a breath, on top of what a stare takes, and leaves the stare's own buses alone", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx, () => 0.5);
+    audio.setHush(1); // pre-unlock: inert, not a throw
+    audio.unlock();
+    const world = created.gains[1]!;
+    audio.setHush(1);
+    expect(world.gain.targets.at(-1)).toEqual({ value: 0, time: 0, tc: HUSH_RAMP_S });
+    audio.setHush(0);
+    expect(world.gain.targets.at(-1)!.value).toBe(1);
+    audio.setStare({ ...STARE_LENS_REST, level: 1 });
+    audio.setHush(0.5);
+    expect(world.gain.targets.at(-1)!.value).toBeCloseTo(MUFFLE_GAIN * 0.5, 12);
+    // The heart's bus and the whispers' are not the world's.
+    expect(created.gains[7]!.connections).toEqual([created.gains[0]]);
+    expect(created.gains[8]!.connections).toEqual([created.gains[0]]);
     audio.dispose();
   });
 });

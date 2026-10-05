@@ -729,13 +729,18 @@ function buildGame(
     // direction: z is mirrored into Web Audio's frame, as a listener's is.
     let hollow = false;
     for (const e of state.enemies.values()) if (isHollowState(e.ai)) { hollow = true; break; }
-    const voiced = stepWoods(woods, { climb: escalation.progressMax, chase: state.phase === Phase.Chase, hollow, rain: a.weather.rain }, dt);
+    const ear = renderer.listener();
+    const crest = world.search.body.pos;
+    const voiced = stepWoods(woods, {
+      climb: escalation.progressMax, chase: state.phase === Phase.Chase, hollow, rain: a.weather.rain,
+      crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
+    }, dt);
     woods = voiced.state;
     ambient.setBirds(woods.birds);
+    // The reveal's silence, then its call, from the body the Hollow stands behind.
+    ambient.setHush(voiced.hush);
     const bugle = wildlifeAudio?.clip(HOLLOW_CALL_CLIP);
     if (voiced.call !== null && bugle !== undefined) {
-      const ear = renderer.listener();
-      const crest = world.search.body.pos;
       ambient.hollowCall(bugle, crest.x - ear.x, crest.y - ear.y, -(crest.z - ear.z), voiced.call.level, voiced.call.cutoffHz);
     }
     // Skip the renderer and ambient pushes on a frame the eased state barely
