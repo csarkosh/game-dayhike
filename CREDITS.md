@@ -436,6 +436,13 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC-BY-4.0
 - **URL:** https://sketchfab.com/3d-models/wooden-sign-with-roof-d3c14c892ce54564b7fde91c73896ca3
 
+## tree.alder
+
+- **Source:** Poly Haven: Tree Small 02
+- **Author:** Rico Cilliers
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/tree_small_02
+
 ## tree.conifer_a
 
 - **Source:** Poly Haven: Fir Sapling Medium

@@ -1,9 +1,11 @@
 import { registerPass } from "../chunk.js";
 import { CHUNK_SIZE } from "../forestConstants.js";
-import { treesInRect, VEGETATION_TUNABLES, COHORT_LOG } from "../vegetation.js";
+import { treesInRect, VEGETATION_TUNABLES, COHORT_LOG, SPECIES_ALDER } from "../vegetation.js";
 
 export const TRUNK_HALF = 0.35;
 export const TRUNK_COLLIDER_HEIGHT = 3;
+/** An alder's trunk is a pole beside a conifer's: its box's half-width a unit of its scale (m). */
+export const ALDER_TRUNK_HALF = 0.09;
 
 /** Pass 6. Ids 2-5 are retired with the old forest generator and never return;
  * this is the first of the new passes. One slim axis-aligned brush per trunk —
@@ -12,7 +14,7 @@ registerPass({
   id: 6,
   name: "trees",
   get tunables() {
-    return { ...VEGETATION_TUNABLES, TRUNK_HALF, TRUNK_COLLIDER_HEIGHT };
+    return { ...VEGETATION_TUNABLES, TRUNK_HALF, TRUNK_COLLIDER_HEIGHT, ALDER_TRUNK_HALF };
   },
   run(chunk, worldSeed) {
     const minX = chunk.cx * CHUNK_SIZE;
@@ -25,7 +27,7 @@ registerPass({
       // cannot see — the same call `understory` makes. Snags DO collide: they
       // are standing trunks.
       if (t.cohort === COHORT_LOG) continue;
-      const half = TRUNK_HALF * t.scale;
+      const half = (t.species === SPECIES_ALDER ? ALDER_TRUNK_HALF : TRUNK_HALF) * t.scale;
       // Clamped to the chunk footprint: `near` only surfaces the props of
       // chunks in a query's range, so a box overhanging its owning chunk
       // would be invisible to queries that stop short of that chunk. Tree

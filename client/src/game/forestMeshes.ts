@@ -117,7 +117,13 @@ import { createCrossing, crossingAt, finish, nextCrossing, turn, type Heading, t
 const TREE_URLS = [modelUrl("models/tree.giant_fir.glb"), modelUrl("models/tree.giant_pine.glb")];
 /** The regeneration cohort re-casts the two conifer GLBs the canopy giants
  * used to use — same species split, smaller stand-in trees. */
-const SAPLING_URLS = [modelUrl("models/tree.conifer_a.glb"), modelUrl("models/tree.conifer_b.glb")];
+/** The regeneration cohort's models, by `TreeInstance.species`: the two
+ * conifers, then the alder (`SPECIES_ALDER`). */
+const SAPLING_URLS = [
+  modelUrl("models/tree.conifer_a.glb"),
+  modelUrl("models/tree.conifer_b.glb"),
+  modelUrl("models/tree.alder.glb"),
+];
 /** Deadwood is species-agnostic: one asset, one bucket, both roles (see
  * `deadwoodMatrixBuffer`). */
 const DEADWOOD_URL = modelUrl("models/deadwood.snag.glb");
@@ -1558,7 +1564,7 @@ export function createForestMeshes(
       }
 
       const saplings: [Mesh[], Mesh[], Mesh[]][] = [];
-      for (let s = 0; s < SPECIES_COUNT; s++) {
+      for (let s = 0; s < SAPLING_URLS.length; s++) {
         // The full LOD ladder, same rings as the giants — and, since the
         // no-visible-spawn design, the same billboard beyond them.
         const lods = await loadBucketed(SAPLING_URLS[s] as string, (c) => [

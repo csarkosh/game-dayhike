@@ -24,6 +24,7 @@ import {
   ROAD_CLEAR,
   ROAD_CLEAR_FADE,
   LOG_SCALE_MIN, LOG_HALF_LENGTH, LOG_SPAN_STATIONS, LOG_TRAIL_CLEAR, LOG_ROAD_CLEAR, logAxis,
+  SPECIES_ALDER, SPECIES_COUNT, ALDER_SCALE_MIN, ALDER_SCALE_MAX, ALDER_ALT_HI, ALDER_ALT_HI_FADE, ALDER_ROAD_BAND, alderHabitat,
 } from "../../src/sim/vegetation.js";
 import {
   DEFAULT_TERRAIN_VARIANT,
@@ -79,7 +80,7 @@ describe("tree field", () => {
         expect(a.x).toBeGreaterThanOrEqual(cx * TREE_CELL);
         expect(a.x).toBeLessThan((cx + 1) * TREE_CELL);
         expect(a.scale).toBeGreaterThanOrEqual(TREE_SCALE_MIN);
-        expect(a.species === 0 || a.species === 1).toBe(true);
+        expect(a.species === 0 || a.species === 1 || a.species === SPECIES_ALDER).toBe(true);
       }
     }
   });
@@ -143,7 +144,8 @@ describe("cohorts", () => {
   it("scales giants into the old-growth band and saplings out of it", () => {
     const trees = sweep();
     const giants = trees.filter((t) => t.cohort === COHORT_GIANT);
-    const saplings = trees.filter((t) => t.cohort === COHORT_SAPLING);
+    // The conifers' saplings: an alder is a model of its own, at its own scale.
+    const saplings = trees.filter((t) => t.cohort === COHORT_SAPLING && t.species !== SPECIES_ALDER);
     expect(giants.length).toBeGreaterThan(0);
     expect(saplings.length).toBeGreaterThan(0);
     // VALLEY_SCALE_BOOST multiplies on top, so the upper bound carries it.
@@ -159,7 +161,7 @@ describe("cohorts", () => {
   it("keeps species independent of cohort", () => {
     const trees = sweep();
     for (const c of [COHORT_GIANT, COHORT_SAPLING]) {
-      const of = trees.filter((t) => t.cohort === c);
+      const of = trees.filter((t) => t.cohort === c && t.species !== SPECIES_ALDER);
       expect(new Set(of.map((t) => t.species)).size).toBe(2);
     }
   });
@@ -356,6 +358,60 @@ describe("logs keep off the trail and the road", () => {
       }
     }
     expect(logs).toBeGreaterThan(20);
+  });
+});
+
+describe("alders", () => {
+  it("stand only on alder ground, as the regeneration cohort, at their own size", () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    let alders = 0, conifersOnOpenAlderGround = 0;
+    for (const seed of [0x5eed, 1, 12345]) {
+      const v = terrainVariant("olympic")!;
+      const cx = v.roadCenterX!(seed, 0);
+      for (const t of treesInRect(seed, cx, -600, cx + 700, 600)) {
+        const cellX = Math.floor(t.x / TREE_CELL), cellZ = Math.floor(t.z / TREE_CELL);
+        const habitat = alderHabitat(seed, (cellX + 0.5) * TREE_CELL, (cellZ + 0.5) * TREE_CELL);
+        if (t.species === SPECIES_ALDER) {
+          alders++;
+          expect(t.cohort).toBe(COHORT_SAPLING);
+          expect(habitat).toBeGreaterThan(0);
+          expect(t.scale).toBeGreaterThanOrEqual(ALDER_SCALE_MIN);
+          expect(t.scale).toBeLessThanOrEqual(ALDER_SCALE_MAX);
+          expect(t.groundH).toBeLessThan(ALDER_ALT_HI + ALDER_ALT_HI_FADE + 25);
+        } else {
+          expect(t.species).toBeLessThan(SPECIES_COUNT);
+          // A conifer stands on alder ground only where the forest's own density put it.
+          if (habitat > 0 && forestDensity(seed, (cellX + 0.5) * TREE_CELL, (cellZ + 0.5) * TREE_CELL) === 0) conifersOnOpenAlderGround++;
+        }
+      }
+    }
+    expect(alders).toBeGreaterThan(60);
+    expect(conifersOnOpenAlderGround).toBe(0);
+  });
+
+  it("is ground along the road's verge and nowhere on the road, the sand, a steep slope or the high ground", () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    const v = terrainVariant("olympic")!;
+    const seed = 0x5eed;
+    let verge = 0;
+    for (let k = 0; k < 60; k++) {
+      const z = -3000 + k * 97;
+      const cx = v.roadCenterX!(seed, z);
+      expect(alderHabitat(seed, cx, z)).toBe(0);
+      expect(alderHabitat(seed, cx + ROAD_CLEAR - 0.5, z)).toBe(0);
+      if (alderHabitat(seed, cx + ROAD_CLEAR + ALDER_ROAD_BAND / 2, z) > 0.5) verge++;
+      const s = { h: 40, dx: 0.02, dz: 0.02 };
+      const x = cx + 400;
+      const low = alderHabitat(seed, x, z, s);
+      expect(low).toBeGreaterThanOrEqual(0);
+      expect(low).toBeLessThanOrEqual(1);
+      expect(alderHabitat(seed, x, z, { ...s, h: ALDER_ALT_HI + ALDER_ALT_HI_FADE + 1 })).toBe(0);
+      expect(alderHabitat(seed, x, z, { ...s, dx: 0.9, dz: 0.4 })).toBe(0);
+      expect(alderHabitat(seed, x, z, { ...s, h: 1 })).toBe(0);
+    }
+    // A good share of the verge inland of the road is alder ground; the pad's
+    // strip, cliffs, the shore and the high ground take the rest (16 of 60 here).
+    expect(verge).toBeGreaterThan(10);
   });
 });
 
