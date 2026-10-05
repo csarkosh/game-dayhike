@@ -16,11 +16,9 @@ import { timeLimit } from "../helpers/timeLimit.js";
 const SEED = -1065037390;
 /** Another lobby world's murky lake, radius 30.5 m. */
 const OTHER_SEED = -1458473702;
-/** Lobby worlds whose lakes have banks that fall away from the water: in the
- * first, perches stand on shrubs and bushes up to 9 m below it; in the second
- * (radius 26.1 m), the wet plants of the outer bank are 7 m below it. */
+/** A lobby world whose lake has banks that fall away from the water: 6 of its
+ * 21 perches are on shrubs and bushes 1 to 9 m below it. */
 const DOWNHILL_SEED = -1098592628;
-const FALLING_SEED = -1048259771;
 
 /** The lake at another radius, the rest of it as it is. */
 const sized = (lake: LakeSource, radius: number): LakeSource => ({ ...lake, radius });
@@ -229,27 +227,38 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
     expect([layout.perches.length, layout.stems.length, near]).toEqual([20, 40, 36]);
   });
 
-  it("stands a perch or a stem on its ground, not on the water's level, where the bank falls away", () => {
-    // [seed, perches, stems, perches and stems on ground over 1 m below the water]
+  it("stands a perch on its footing: a reed's from the water, a shrub's or a log's on its ground", () => {
+    // [seed, perches, stems, perches on reeds, perches on land over 1 m below the water]
     const cases: [number, number, number, number, number][] = [
-      [DOWNHILL_SEED, 21, 40, 6, 0],
-      [FALLING_SEED, 20, 40, 11, 16],
+      [DOWNHILL_SEED, 21, 40, 0, 6],
+      [SEED, 20, 40, 19, 0],
+      [OTHER_SEED, 24, 40, 24, 0],
     ];
-    for (const [seed, perches, stems, perchesBelow, stemsBelow] of cases) {
+    for (const [seed, perches, stems, onReeds, onLandBelow] of cases) {
       const lake = lakeOf(seed);
       const layout = waterLifeLayout(seed, lake);
-      const below = (list: { x: number; z: number }[]): number => list.filter((p) => lake.level - elevationAt(seed, p.x, p.z) > 1).length;
-      expect([seed, layout.perches.length, layout.stems.length, below(layout.perches), below(layout.stems)])
-        .toEqual([seed, perches, stems, perchesBelow, stemsBelow]);
-      // up from the ground 0.3 to 1.5 m for a perch, 0.3 to 1 m for a stem, and a reed in the
-      // shallows, ground within 1 m below the water, lifted to the water: 2.5 m and 2 m at most
-      for (const p of layout.perches) {
-        expect(p.y - elevationAt(seed, p.x, p.z)).toBeGreaterThanOrEqual(0.3);
-        expect(p.y - elevationAt(seed, p.x, p.z)).toBeLessThanOrEqual(2.5);
+      const reach = lake.radius + SHORE_BAND_OUT;
+      const reeds = clutterInRect(seed, CLUTTER_REED, lake.x - reach, lake.z - reach, lake.x + reach, lake.z + reach)
+        .filter((c) => inShoreBand(lake, c.x, c.z));
+      const onReed = (p: { x: number; z: number }): boolean => reeds.some((c) => c.x === p.x && c.z === p.z);
+      const ground = (p: { x: number; z: number }): number => elevationAt(seed, p.x, p.z);
+      const reedPerches = layout.perches.filter(onReed);
+      const landPerches = layout.perches.filter((p) => !onReed(p));
+      expect([seed, layout.perches.length, layout.stems.length, reedPerches.length, landPerches.filter((p) => lake.level - ground(p) > 1).length])
+        .toEqual([seed, perches, stems, onReeds, onLandBelow]);
+      // a perch is 0.3 to 1.5 m up from its footing, a stem 0.3 to 1 m: the ground for a shrub, bush or log,
+      // however far the bank falls below the water, and the water where it is above the ground for a reed
+      for (const p of landPerches) {
+        expect(p.y - ground(p)).toBeGreaterThanOrEqual(0.3);
+        expect(p.y - ground(p)).toBeLessThanOrEqual(1.5);
+      }
+      for (const p of reedPerches) {
+        expect(p.y - Math.max(ground(p), lake.level)).toBeGreaterThanOrEqual(0.3);
+        expect(p.y - Math.max(ground(p), lake.level)).toBeLessThanOrEqual(1.5);
       }
       for (const st of layout.stems) {
-        expect(st.y - elevationAt(seed, st.x, st.z)).toBeGreaterThanOrEqual(0.3);
-        expect(st.y - elevationAt(seed, st.x, st.z)).toBeLessThanOrEqual(2);
+        expect(st.y - Math.max(ground(st), lake.level)).toBeGreaterThanOrEqual(0.3);
+        expect(st.y - Math.max(ground(st), lake.level)).toBeLessThanOrEqual(1);
       }
     }
   });
