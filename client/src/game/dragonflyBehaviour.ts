@@ -13,9 +13,12 @@
  * throws a unit off its beat.
  *
  * Only units within `DRAGONFLY_RANGE` of the camera are stepped and posed, and of those
- * only the ones the kind's `seen` share keeps out of cover. Nothing is made per frame: the
- * pose objects, the pose lists and a handful of rustle events are made at creation and
- * rewritten in place.
+ * only the ones the kind's shares bring out of cover. A unit draws once, for life, against
+ * both: it is out of cover while its draw is under `seen`, and aloft while it is under
+ * `flying`. A skimmer that is not aloft sits on its perch and a damselfly on its stem, both
+ * real things to sit on; a darner has nothing to settle on, so out of the air it is in cover.
+ * Nothing is made per frame: the pose objects, the pose lists and a handful of rustle events
+ * are made at creation and rewritten in place.
  *
  * Renderer-only by design: nothing here may migrate into sim/.
  */
@@ -42,15 +45,17 @@ export const SKIMMER_SALLY: readonly [number, number] = [2, 5];
 export const SKIMMER_SPEED = 3;
 /** Seconds a damselfly sits on a stem between hops. */
 export const DAMSEL_PERCH_S: readonly [number, number] = [2, 15];
-/** A damselfly's hop (m). */
-export const DAMSEL_HOP: readonly [number, number] = [0.3, 1];
+/** How far a damselfly's hop reaches (m): to another stem of its bed at least the first and at most the
+ * second from the one it sits on. A bed's stems stand about 2 m apart (`STEM_AREA` of 4 m² a stem, jittered
+ * about 0.8 m), so 3 m takes in the stems about it. */
+export const DAMSEL_HOP: readonly [number, number] = [0.3, 3];
 /** A damselfly's speed on a hop (m/s). */
 export const DAMSEL_SPEED = 1;
 /** Anything perched within this of a player (m, across the ground) flushes; a darner's beat bends around it. */
 export const FLUSH_RADIUS = 2;
-/** How far from its own stem a damselfly's hops take it (m): its share of the bed (`STEM_AREA`, a disc of
- * 1.13 m) with room to overlap its neighbours'. */
-export const DAMSEL_BED_RADIUS = 1.5;
+/** A damselfly's bed is the stems within this of its own (m): where its hops take it. At 1.5 m six stems in
+ * ten would have no other to hop to; at 3 m it is one in twenty. */
+export const DAMSEL_BED_RADIUS = 3;
 /** A flying darner or skimmer this near the camera (m) rustles, once a pass. */
 export const RUSTLE_PASS = 2;
 /** Two beats are neighbours when an end of one lies within this of an end of the other (m); they meet
@@ -89,7 +94,7 @@ const END_MARGIN = 0.5;
 /** The share of hover points a passing darner stops at: about one a lap of two legs, so it patrols
  * more than it hovers. */
 const HOVER_SHARE = 1 / 3;
-/** Within this of its hover point or roost (m) a darner is on it. */
+/** Within this of its hover point (m) a darner is on it. */
 const HOLD = 0.03;
 /** A darner closing on a point flies no faster than this times its distance across the ground (1/s);
  * below half its turn rate (5.2/s), so it closes in rather than circling the point. */
@@ -101,12 +106,9 @@ const CHASE_TURN = (900 * Math.PI) / 180;
 /** The circle a chase's leader flies about the meeting point (m), and how far ahead on it it aims (rad). */
 const CHASE_RADIUS = 1.2;
 const CHASE_LEAD = 0.8;
-/** A darner roosts this far shoreward of a hover point (m) when it cannot fly. */
-const ROOST_IN = 2;
-/** Seconds a roosting darner stays once it could fly again. */
-const ROOST_S: readonly [number, number] = [1, 10];
-/** Perched pitch (rad) by kind: a darner hangs nose up, a skimmer sits nearly level, a damselfly level. */
-const PERCH_PITCH: readonly [number, number, number] = [1.2, 0.1, 0];
+/** Perched pitch (rad) of a skimmer, which sits nearly level, and of a damselfly, which sits level; indexed
+ * by the kind less `KIND_SKIMMER`. */
+const PERCH_PITCH: readonly [number, number] = [0.1, 0];
 /** A sally's loop is this share of its reach wide, and rises this high (m) at its far end. */
 const SALLY_WIDTH = 0.3;
 const SALLY_RISE = 0.4;
@@ -121,8 +123,6 @@ const FLUSH_REACH = 15;
 const CLEAR_RADIUS = FLUSH_RADIUS + 1;
 /** A damselfly's hop rises this much (m). */
 const HOP_LIFT = 0.15;
-/** Radians either side of straight away from a player a flushed damselfly hops. */
-const HOP_SPREAD = 1;
 /** A unit must be this far from the camera (m) before its next pass rustles. */
 const RUSTLE_CLEAR = 2.5;
 /** The most rustles a single frame reports. */
@@ -134,15 +134,15 @@ const UNIT_STRIDE = 4096;
 /** The steepest a flying unit pitches (rad). */
 const PITCH_MAX = 0.6;
 
-const PERCHED = 0, PATROL = 1, HOVER = 2, CHASE = 3, ROOSTING = 4, ARC = 5, SALLY = 6;
+const PERCHED = 0, PATROL = 1, HOVER = 2, CHASE = 3, ARC = 4, SALLY = 5;
 
 /**
  * Salts, in 70–79 (clear of the wildlife's and of `WATER_LIFE_SALT`'s; `dragonflies.ts` takes 75 and 76):
- * a unit's two lifelong draws against its kind's shares, then the first, second and third draw of an
- * episode. An episode's number tells episodes apart and these tell its own draws apart, so no phase
- * needs a salt of its own: none draws more than three.
+ * a unit's one lifelong draw against its kind's shares (71 is spare), then the first, second and third
+ * draw of an episode. An episode's number tells episodes apart and these tell its own draws apart, so no
+ * phase needs a salt of its own: none draws more than three.
  */
-const SALT_SEEN = 70, SALT_FLYING = 71, SALT_1 = 72, SALT_2 = 73, SALT_3 = 74;
+const SALT_SHARE = 70, SALT_1 = 72, SALT_2 = 73, SALT_3 = 74;
 
 /** A beat, flattened once for the patrol's arithmetic. */
 type Beat = {
@@ -154,8 +154,6 @@ type Beat = {
   hovers: readonly HoverPoint[];
   /** Each hover point's arc length along the beat. */
   hoverS: Float64Array;
-  /** x, y, z per roost: one shoreward of each hover point, or one shoreward of the middle without any. */
-  roosts: Float64Array;
 };
 
 type Unit = {
@@ -165,12 +163,14 @@ type Unit = {
   /** A skimmer's own perch, a damselfly's own stem. */
   homeX: number; homeY: number; homeZ: number;
   beat: Beat | null;
-  /** The unit's draws against its kind's `seen` and `flying` shares. */
-  seenDraw: number; flyDraw: number;
+  /** The unit's draw against its kind's `seen` and `flying` shares. */
+  share: number;
+  /** A damselfly: the stems of its bed, as indices into the layout's stems, its own among them. */
+  bed: Int32Array;
   inRange: boolean; live: boolean; near: boolean;
   phase: number; episode: number; t: number; dur: number;
   x: number; y: number; z: number; yaw: number; pitch: number; speed: number;
-  /** The perch, stem or roost it sits on or is bound for; `at` its index (a perch's or a roost's). */
+  /** The perch or stem it sits on or is bound for; `at` its index; a darner's hover point's index. */
   px: number; py: number; pz: number; at: number;
   /** An arc's start and lift; a sally's heading (ox, oz), side (±1) and reach. */
   fx: number; fy: number; fz: number; lift: number;
@@ -198,7 +198,7 @@ function clampPitch(p: number): number {
   return p > PITCH_MAX ? PITCH_MAX : p < -PITCH_MAX ? -PITCH_MAX : p;
 }
 
-function makeBeat(src: DarnerBeat, lakeX: number, lakeZ: number): Beat {
+function makeBeat(src: DarnerBeat): Beat {
   const n = src.points.length;
   const pts = new Float64Array(n * 3);
   const cum = new Float64Array(n);
@@ -209,22 +209,11 @@ function makeBeat(src: DarnerBeat, lakeX: number, lakeZ: number): Beat {
   }
   const beat: Beat = {
     pts, cum, length: n > 0 ? cum[n - 1]! : 0, hovers: src.hovers,
-    hoverS: new Float64Array(src.hovers.length), roosts: new Float64Array(Math.max(1, src.hovers.length) * 3),
+    hoverS: new Float64Array(src.hovers.length),
   };
   for (let k = 0; k < src.hovers.length; k++) {
     const h = src.hovers[k]!;
     beat.hoverS[k] = project(beat, h.x, h.z);
-    beat.roosts[k * 3] = h.x + h.faceX * ROOST_IN;
-    beat.roosts[k * 3 + 1] = h.y;
-    beat.roosts[k * 3 + 2] = h.z + h.faceZ * ROOST_IN;
-  }
-  if (src.hovers.length === 0) {
-    const mid = { x: 0, y: 0, z: 0, tx: 0, tz: 1 };
-    pointAt(beat, beat.length / 2, mid);
-    const ox = mid.x - lakeX, oz = mid.z - lakeZ, ol = Math.hypot(ox, oz);
-    beat.roosts[0] = mid.x + (ol > 0 ? (ox / ol) * ROOST_IN : 0);
-    beat.roosts[1] = mid.y;
-    beat.roosts[2] = mid.z + (ol > 0 ? (oz / ol) * ROOST_IN : 0);
   }
   return beat;
 }
@@ -316,8 +305,8 @@ export function createDragonflyBehaviour(layout: WaterLifeLayout, seed: number):
     const uid = kind * UNIT_STRIDE + index;
     return {
       kind, uid, index, ax, az, homeX: hx, homeY: hy, homeZ: hz, beat,
-      seenDraw: hash3(uid, 0, SALT_SEEN, seed), flyDraw: hash3(uid, 0, SALT_FLYING, seed),
-      inRange: false, live: false, near: false, phase: PERCHED, episode: 0, t: 0, dur: 0,
+      share: hash3(uid, 0, SALT_SHARE, seed), bed: new Int32Array(0),
+      inRange: false, live: false, near: false, phase: kind === KIND_DARNER ? PATROL : PERCHED, episode: 0, t: 0, dur: 0,
       x: hx, y: hy, z: hz, yaw: 0, pitch: 0, speed: DARNER_SPEED[0],
       px: hx, py: hy, pz: hz, at: index, fx: hx, fy: hy, fz: hz, lift: 0, ox: 0, oz: 1, side: 1, reach: 0,
       dir: 1, s: 0, skip: -1, rearm: 0, partner: null, leader: false, mx: 0, my: 0, mz: 0,
@@ -328,7 +317,7 @@ export function createDragonflyBehaviour(layout: WaterLifeLayout, seed: number):
   for (let i = 0; i < layout.beats.length; i++) {
     const src = layout.beats[i]!;
     if (src.points.length === 0) continue;
-    const beat = makeBeat(src, lakeX, lakeZ);
+    const beat = makeBeat(src);
     pointAt(beat, beat.length / 2, aim);
     byKind[KIND_DARNER].push(unit(KIND_DARNER, i, aim.x, aim.z, aim.x, aim.y, aim.z, beat));
   }
@@ -339,6 +328,14 @@ export function createDragonflyBehaviour(layout: WaterLifeLayout, seed: number):
   for (let i = 0; i < layout.stems.length; i++) {
     const p = layout.stems[i]!;
     byKind[KIND_DAMSELFLY].push(unit(KIND_DAMSELFLY, i, p.x, p.z, p.x, p.y, p.z, null));
+  }
+  // A damselfly's bed: the stems about its own, its own among them.
+  for (const u of byKind[KIND_DAMSELFLY]) {
+    const bed: number[] = [];
+    for (let j = 0; j < layout.stems.length; j++) {
+      if (Math.hypot(layout.stems[j]!.x - u.homeX, layout.stems[j]!.z - u.homeZ) <= DAMSEL_BED_RADIUS) bed.push(j);
+    }
+    u.bed = Int32Array.from(bed);
   }
 
   // Neighbouring beats and where they meet: the middle of their two nearest ends.
@@ -388,7 +385,7 @@ export function createDragonflyBehaviour(layout: WaterLifeLayout, seed: number):
     u.phase = PERCHED;
     u.episode++;
     u.x = u.px; u.y = u.py; u.z = u.pz;
-    u.pitch = PERCH_PITCH[u.kind]!;
+    u.pitch = PERCH_PITCH[u.kind - KIND_SKIMMER]!;
     u.t = 0;
     u.dur = lerp(range, draw(u, SALT_1));
   }
@@ -427,29 +424,6 @@ export function createDragonflyBehaviour(layout: WaterLifeLayout, seed: number):
     u.dir = draw(u, SALT_2) < 0.5 ? -1 : 1;
     u.s = project(u.beat!, u.x, u.z);
     u.partner = null;
-  }
-
-  function startRoost(u: Unit, k: number): void {
-    const r = u.beat!.roosts;
-    u.phase = ROOSTING;
-    u.episode++;
-    u.at = k;
-    u.px = r[k * 3]!; u.py = r[k * 3 + 1]!; u.pz = r[k * 3 + 2]!;
-    u.partner = null;
-  }
-
-  /** The roost nearest (x, z), or with `far` the one farthest from it. */
-  function roostBy(b: Beat, x: number, z: number, far: boolean): number {
-    let pick = 0;
-    let best = far ? -1 : Infinity;
-    for (let k = 0; k * 3 < b.roosts.length; k++) {
-      const d2 = (b.roosts[k * 3]! - x) ** 2 + (b.roosts[k * 3 + 2]! - z) ** 2;
-      if (far ? d2 > best : d2 < best) {
-        best = d2;
-        pick = k;
-      }
-    }
-    return pick;
   }
 
   /**
@@ -547,31 +521,10 @@ export function createDragonflyBehaviour(layout: WaterLifeLayout, seed: number):
     u.mx = at.x; u.my = at.y; u.mz = at.z;
   }
 
-  function stepDarner(u: Unit, h: number, players: readonly { x: number; z: number }[], flyOk: boolean): void {
-    const b = u.beat!;
-    switch (u.phase) {
-      case PATROL: case HOVER: case CHASE:
-        if (!flyOk) startRoost(u, roostBy(b, u.x, u.z, false));
-        else if (u.phase === PATROL) patrol(u, h, players);
-        else if (u.phase === HOVER) hover(u, h, players);
-        else chase(u, h);
-        return;
-      case ROOSTING:
-        if (flyOk) { startPatrol(u); return; }
-        if (Math.hypot(u.px - u.x, u.py - u.y, u.pz - u.z) > HOLD) steer(u, u.px, u.py, u.pz, u.speed, DARNER_TURN, h, true);
-        else if (nearestPlayer(players, u.px, u.pz, FLUSH_RADIUS) < 0) perch(u, ROOST_S);
-        return;
-      default: {
-        const p = nearestPlayer(players, u.x, u.z, FLUSH_RADIUS);
-        if (p >= 0) {
-          if (flyOk) startPatrol(u);
-          else startRoost(u, roostBy(b, players[p]!.x, players[p]!.z, true));
-          return;
-        }
-        u.t += h;
-        if (flyOk && u.t >= u.dur) startPatrol(u);
-      }
-    }
+  function stepDarner(u: Unit, h: number, players: readonly { x: number; z: number }[]): void {
+    if (u.phase === HOVER) hover(u, h, players);
+    else if (u.phase === CHASE) chase(u, h);
+    else patrol(u, h, players);
   }
 
   // ---- Skimmers ----
@@ -659,22 +612,55 @@ export function createDragonflyBehaviour(layout: WaterLifeLayout, seed: number):
 
   // ---- Damselflies ----
 
-  /** A hop to another spot in the bed: anywhere, or away from a player; kept within `DAMSEL_BED_RADIUS`. */
-  function startHop(u: Unit, from: { x: number; z: number } | null): void {
-    u.episode++;
-    const len = lerp(DAMSEL_HOP, draw(u, SALT_1));
-    const a = from !== null
-      ? Math.atan2(u.x - from.x, u.z - from.z) + (2 * draw(u, SALT_2) - 1) * HOP_SPREAD
-      : 2 * Math.PI * draw(u, SALT_2);
-    let tx = u.x + len * Math.sin(a);
-    let tz = u.z + len * Math.cos(a);
-    const dx = tx - u.homeX, dz = tz - u.homeZ;
-    const r = Math.hypot(dx, dz);
-    if (r > DAMSEL_BED_RADIUS) {
-      tx = u.homeX + (dx * DAMSEL_BED_RADIUS) / r;
-      tz = u.homeZ + (dz * DAMSEL_BED_RADIUS) / r;
+  /** Whether `u`, sitting on stem `u.at`, may hop to stem `j` of its bed: another, `DAMSEL_HOP` away. */
+  function hopsTo(u: Unit, j: number): boolean {
+    if (j === u.at) return false;
+    const here = layout.stems[u.at]!, there = layout.stems[j]!;
+    const hop = Math.hypot(there.x - here.x, there.z - here.z);
+    return hop >= DAMSEL_HOP[0] && hop <= DAMSEL_HOP[1];
+  }
+
+  /**
+   * A hop to another stem of the bed: a drawn one, or with `from` the one farthest from that player, if it is
+   * farther than the stem the damselfly sits on. False, the damselfly left where it is, when there is none:
+   * a lone stem is sat on.
+   */
+  function startHop(u: Unit, from: { x: number; z: number } | null): boolean {
+    const bed = u.bed;
+    let n = 0;
+    let pick = -1;
+    if (from !== null) {
+      const here = layout.stems[u.at]!;
+      let far = (here.x - from.x) ** 2 + (here.z - from.z) ** 2;
+      for (let i = 0; i < bed.length; i++) {
+        const j = bed[i]!;
+        if (!hopsTo(u, j)) continue;
+        const d2 = (layout.stems[j]!.x - from.x) ** 2 + (layout.stems[j]!.z - from.z) ** 2;
+        if (d2 > far) {
+          far = d2;
+          pick = j;
+        }
+      }
+      if (pick < 0) return false;
+    } else {
+      for (let i = 0; i < bed.length; i++) if (hopsTo(u, bed[i]!)) n++;
+      if (n === 0) return false;
     }
-    startArc(u, tx, u.homeY, tz, HOP_LIFT, DAMSEL_SPEED);
+    u.episode++;
+    if (from === null) {
+      let k = Math.min(n - 1, Math.floor(draw(u, SALT_1) * n));
+      for (let i = 0; i < bed.length; i++) {
+        if (!hopsTo(u, bed[i]!)) continue;
+        if (k-- === 0) {
+          pick = bed[i]!;
+          break;
+        }
+      }
+    }
+    const stem = layout.stems[pick]!;
+    startArc(u, stem.x, stem.y, stem.z, HOP_LIFT, DAMSEL_SPEED);
+    u.at = pick;
+    return true;
   }
 
   function stepDamselfly(u: Unit, h: number, players: readonly { x: number; z: number }[], flyOk: boolean): void {
@@ -683,19 +669,16 @@ export function createDragonflyBehaviour(layout: WaterLifeLayout, seed: number):
       return;
     }
     const p = nearestPlayer(players, u.x, u.z, FLUSH_RADIUS);
-    if (p >= 0) {
-      startHop(u, players[p]!);
-      return;
-    }
+    if (p >= 0 && startHop(u, players[p]!)) return;
     u.t += h;
     if (flyOk && u.t >= u.dur) startHop(u, null);
   }
 
   // ---- Range ----
 
-  /** A unit coming into range starts afresh: a darner on its beat (or at a roost if it cannot fly), the
-   * others sitting at home part-way through a dwell. */
-  function activate(u: Unit, tick: number, flyOk: boolean): void {
+  /** A unit coming into range starts afresh: a darner on its beat, the others sitting at home part-way
+   * through a dwell. */
+  function activate(u: Unit, tick: number): void {
     u.episode = Number.isFinite(tick) ? Math.floor(tick / ACTIVATE_SLOT) : 0;
     u.near = false;
     u.partner = null;
@@ -704,12 +687,6 @@ export function createDragonflyBehaviour(layout: WaterLifeLayout, seed: number):
     if (u.kind === KIND_DARNER) {
       const b = u.beat!;
       u.speed = lerp(DARNER_SPEED, draw(u, SALT_1));
-      if (!flyOk) {
-        startRoost(u, Math.floor(draw(u, SALT_2) * (b.roosts.length / 3)));
-        perch(u, ROOST_S);
-        u.t = draw(u, SALT_2) * u.dur;
-        return;
-      }
       pointAt(b, draw(u, SALT_2) * b.length, aim);
       u.x = aim.x; u.y = aim.y; u.z = aim.z;
       u.dir = draw(u, SALT_3) < 0.5 ? -1 : 1;
@@ -749,15 +726,16 @@ export function createDragonflyBehaviour(layout: WaterLifeLayout, seed: number):
             u.live = false;
             continue;
           }
-          const flyOk = u.flyDraw < share.flying;
           if (!u.inRange) {
             u.inRange = true;
-            activate(u, tick, flyOk);
+            activate(u, tick);
           }
-          // In cover: neither stepped nor drawn until the share brings it out again.
-          u.live = u.seenDraw < share.seen;
+          // In cover: neither stepped nor drawn until the shares bring it out again. A darner not aloft
+          // is in cover too: it has nothing to sit on.
+          const flyOk = u.share < share.flying;
+          u.live = u.share < share.seen && (flyOk || k !== KIND_DARNER);
           if (!u.live) continue;
-          if (k === KIND_DARNER) stepDarner(u, h, players, flyOk);
+          if (k === KIND_DARNER) stepDarner(u, h, players);
           else if (k === KIND_SKIMMER) stepSkimmer(u, h, players, flyOk);
           else stepDamselfly(u, h, players, flyOk);
           if (k !== KIND_DAMSELFLY) {

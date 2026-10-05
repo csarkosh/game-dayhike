@@ -41,6 +41,12 @@ function perch(a: number, r: number, y: number, seed = 1): Perch {
   return { ...at(a, r, y), seed };
 }
 
+/** A bed of twelve stems in a 4 × 3 grid at the water's edge, 2 m apart, each a little higher than the last
+ * (but the fifth, the tenth). */
+function bed(): Perch[] {
+  return Array.from({ length: 12 }, (_, i) => ({ x: 30 + 2 * (i % 4), y: 10.4 + 0.05 * (i % 5), z: 2 * Math.floor(i / 4) - 2, seed: i }));
+}
+
 function layout(parts: Partial<WaterLifeLayout>): WaterLifeLayout {
   return { lake: LAKE, markers: [], beats: [], perches: [], stems: [], voices: [], ...parts };
 }
@@ -222,41 +228,87 @@ describe("the skimmers and the damselflies", () => {
     expect(shoreward).toBeLessThan(31.5);
   }, timeLimit(20_000));
 
-  it("keeps a damselfly within its bed, low among the stems, hopping 0.3–1 m at a time", () => {
-    const stem = perch(0.3, 30.5, 10.4);
-    const d = createDragonflyBehaviour(layout({ stems: [stem] }), SEED);
-    let hops = 0, wasPerched = true, away = 0, lowest = Infinity, highest = -Infinity, longest = 0, shortest = Infinity;
-    let fromX = stem.x, fromZ = stem.z;
+  it("hops a damselfly from stem to stem of its bed, low, no faster than 1 m/s, and never rests off a stem", () => {
+    const stems = bed();
+    const d = createDragonflyBehaviour(layout({ stems }), SEED);
+    // A damselfly's bed is the stems within 3 m of its own.
+    const beds = stems.map((s) => stems.filter((t) => Math.hypot(t.x - s.x, t.z - s.z) <= 3));
+    const was = stems.map(() => true);
+    const from = stems.map((s) => ({ x: s.x, z: s.z }));
+    const last = stems.map((s) => ({ x: s.x, y: s.y, z: s.z }));
+    let hops = 0, off = 0, away = 0, lowest = Infinity, highest = -Infinity, longest = 0, shortest = Infinity, speed = 0;
     run(d, 0, 36_000, MIDDLE, [], ABOUT, () => {
-      const p = d.poses[KIND_DAMSELFLY][0]!;
-      if (wasPerched && !p.perched) hops++;
-      if (!wasPerched && p.perched) {
-        const hop = Math.hypot(p.x - fromX, p.z - fromZ);
-        longest = Math.max(longest, hop);
-        shortest = Math.min(shortest, hop);
+      expect(d.count[KIND_DAMSELFLY]).toBe(12);
+      for (let j = 0; j < 12; j++) {
+        const p = d.poses[KIND_DAMSELFLY][j]!;
+        if (p.id !== 2 * 4096 + j) throw new Error(`pose ${j} is unit ${p.id}`);
+        if (was[j] && !p.perched) hops++;
+        if (p.perched) {
+          if (!beds[j]!.some((t) => t.x === p.x && t.y === p.y && t.z === p.z)) off++;
+          if (!was[j]) {
+            const hop = Math.hypot(p.x - from[j]!.x, p.z - from[j]!.z);
+            longest = Math.max(longest, hop);
+            shortest = Math.min(shortest, hop);
+          }
+          from[j] = { x: p.x, z: p.z };
+        }
+        was[j] = p.perched;
+        away = Math.max(away, Math.hypot(p.x - stems[j]!.x, p.z - stems[j]!.z));
+        lowest = Math.min(lowest, p.y);
+        highest = Math.max(highest, p.y);
+        speed = Math.max(speed, Math.hypot(p.x - last[j]!.x, p.y - last[j]!.y, p.z - last[j]!.z) / DT);
+        last[j] = { x: p.x, y: p.y, z: p.z };
       }
-      if (p.perched) { fromX = p.x; fromZ = p.z; }
-      wasPerched = p.perched;
-      away = Math.max(away, Math.hypot(p.x - stem.x, p.z - stem.z));
-      lowest = Math.min(lowest, p.y);
-      highest = Math.max(highest, p.y);
     });
-    expect(hops).toBe(64);
-    expect(away).toBeLessThanOrEqual(1.5000001);
+    expect(hops).toBe(677);
+    expect(off).toBe(0);
+    expect(away).toBeLessThanOrEqual(3.0000001);
+    // Low among the stems: never under the lowest, never over the highest and a hop's lift of 0.15 m.
     expect(lowest).toBe(10.4);
-    expect(highest).toBeLessThanOrEqual(10.5500001);
-    expect(longest).toBeLessThanOrEqual(1.0000001);
-    expect(shortest).toBeGreaterThan(0);
+    expect(highest).toBeLessThanOrEqual(10.7500001);
+    expect(longest).toBeLessThanOrEqual(3.0000001);
+    expect(shortest).toBeGreaterThanOrEqual(0.3);
+    expect(speed).toBeLessThanOrEqual(1.0000001);
   }, timeLimit(20_000));
 
-  it("flushes anything perched within 2 m of a player, and nothing at 2.1 m", () => {
-    const parts: Partial<WaterLifeLayout>[] = [
-      { beats: [beat(0)] },
-      { perches: [perch(0, 31, 10.8, 0), perch(8 / 31, 31, 10.8, 1)] },
-      { stems: [perch(0.3, 30.5, 10.4)] },
+  it("keeps a damselfly on a stem with no other in its bed, left alone or flushed", () => {
+    const stem = perch(0.3, 30.5, 10.4);
+    // A second stem 3.5 m off: out of the first's bed.
+    const d = createDragonflyBehaviour(layout({ stems: [stem, { ...stem, x: stem.x + 3.5 }] }), SEED);
+    let off = 0;
+    const where = (): void => {
+      const p = d.poses[KIND_DAMSELFLY][0]!;
+      if (!p.perched || p.x !== stem.x || p.y !== stem.y || p.z !== stem.z) off++;
+    };
+    const tick = run(d, 0, 36_000, MIDDLE, [], ABOUT, where);
+    run(d, tick, 600, MIDDLE, [{ x: stem.x - 1, y: 10, z: stem.z }], ABOUT, where);
+    expect(off).toBe(0);
+  }, timeLimit(20_000));
+
+  it("hops a flushed damselfly to the stem of its bed farthest from the player, and sits tight where none is farther", () => {
+    const a = perch(0.3, 30.5, 10.4), b = { ...a, x: a.x - 2, y: 10.5 };
+    const d = createDragonflyBehaviour(layout({ stems: [a, b] }), SEED);
+    const mine = d.poses[KIND_DAMSELFLY][0]!, theirs = d.poses[KIND_DAMSELFLY][1]!;
+    // A gale: nothing leaves a stem on its own.
+    d.step(0, DT, MIDDLE.x, MIDDLE.y, MIDDLE.z, [], GROUNDED);
+    // A player 1.9 m beyond the first stem: it hops to the second, 3.9 m from them.
+    const tick = run(d, 1, 600, MIDDLE, [{ x: a.x + 1.9, y: 10, z: a.z }], GROUNDED);
+    expect([mine.perched, mine.x, mine.y, mine.z]).toEqual([true, b.x, b.y, b.z]);
+    // A player 0.5 m from the second stem, toward the first: both damselflies on the second hop to the first,
+    // which is the farther from the player, and there, 1.5 m from them, sit tight, the second being nearer.
+    run(d, tick, 600, MIDDLE, [{ x: b.x + 0.5, y: 10, z: b.z }], GROUNDED);
+    for (const p of [mine, theirs]) expect([p.perched, p.x, p.y, p.z]).toEqual([true, a.x, a.y, a.z]);
+  });
+
+  it("flushes a skimmer or a damselfly perched within 2 m of a player, and none at 2.1 m", () => {
+    // A damselfly's stem has another in its bed, 2 m farther from the player, to hop to.
+    const stem = perch(0.3, 30.5, 10.4);
+    const parts: [number, Partial<WaterLifeLayout>][] = [
+      [KIND_SKIMMER, { perches: [perch(0, 31, 10.8, 0), perch(8 / 31, 31, 10.8, 1)] }],
+      [KIND_DAMSELFLY, { stems: [stem, { ...stem, x: stem.x - 2 }] }],
     ];
-    for (const kind of [KIND_DARNER, KIND_SKIMMER, KIND_DAMSELFLY]) {
-      const d = createDragonflyBehaviour(layout(parts[kind]!), SEED);
+    for (const [kind, part] of parts) {
+      const d = createDragonflyBehaviour(layout(part), SEED);
       // A gale: nothing leaves a perch on its own, so only a player can flush it.
       d.step(0, DT, MIDDLE.x, MIDDLE.y, MIDDLE.z, [], GROUNDED);
       const pose = d.poses[kind]![0]!;
@@ -312,6 +364,43 @@ describe("presence", () => {
     for (const k of [KIND_DARNER, KIND_SKIMMER, KIND_DAMSELFLY]) {
       expect(again.poses[k]!.slice(0, again.count[k]).map((p) => p.id)).toEqual(d.poses[k]!.slice(0, d.count[k]).map((p) => p.id));
     }
+  });
+
+  it("shows only darners aloft, none sitting or roosting, at cloud 0.55 and at dread 0.4", () => {
+    // Thirty-six beats, so that a share of a half is a crowd of them.
+    const l = layout({ beats: Array.from({ length: 36 }, (_, i) => beat((i * 2 * Math.PI) / 36, (2 * Math.PI) / 36)) });
+    const weathers: WeatherParams[] = [{ ...WEATHER_PRESETS.clear, cloudCover: 0.55 }, { ...WEATHER_PRESETS.clear, dread: 0.4 }];
+    const counts: number[] = [];
+    for (const w of weathers) {
+      const d = createDragonflyBehaviour(l, SEED);
+      let perched = 0;
+      run(d, 0, 3_600, MIDDLE, [], waterLifePresenceUnder(w, 12, 0.25), () => {
+        for (let j = 0; j < d.count[KIND_DARNER]; j++) if (d.poses[KIND_DARNER][j]!.perched) perched++;
+      });
+      counts.push(d.count[KIND_DARNER]);
+      expect(perched).toBe(0);
+    }
+    expect(counts).toEqual([21, 21]);
+  });
+
+  it("puts every darner in cover in a gale, the skimmers perched on their perches and the damselflies on their stems", () => {
+    const l = crowd();
+    const d = createDragonflyBehaviour(l, SEED);
+    let darners = 0, wrong = 0;
+    run(d, 0, 3_600, MIDDLE, [], waterLifePresenceUnder(WEATHER_PRESETS.clear, 12, 1), () => {
+      darners += d.count[KIND_DARNER];
+      for (let j = 0; j < d.count[KIND_SKIMMER]; j++) {
+        const q = d.poses[KIND_SKIMMER][j]!, home = l.perches[q.id - KIND_SKIMMER * 4096]!;
+        if (!q.perched || q.x !== home.x || q.y !== home.y || q.z !== home.z) wrong++;
+      }
+      for (let j = 0; j < d.count[KIND_DAMSELFLY]; j++) {
+        const q = d.poses[KIND_DAMSELFLY][j]!, home = l.stems[q.id - KIND_DAMSELFLY * 4096]!;
+        if (!q.perched || q.x !== home.x || q.y !== home.y || q.z !== home.z) wrong++;
+      }
+    });
+    expect(darners).toBe(0);
+    expect(wrong).toBe(0);
+    expect(d.count).toEqual([0, 16, 20]);
   });
 
   it("shows nothing at dread 0.5, and nothing rustles", () => {
