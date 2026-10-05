@@ -98,7 +98,7 @@ const SEED_RANGE = 4096;
 const BEAT_POINTS = 5;
 const BEAT_OUT: readonly [number, number] = [1, 3];
 const BEAT_UP: readonly [number, number] = [0.5, 2];
-/** A skimmer's perch above its footing, the candidate's ground or, for a reed, the water (m). */
+/** A skimmer's perch above its footing: the candidate's ground, or for a reed where there is water under it, the water (m). */
 const PERCH_UP: readonly [number, number] = [0.3, 1.5];
 /** A reed bed: reeds or wet plants above this density. Stems fill whole
  * patches of BED_PATCH × BED_PATCH cells before the next, so the
@@ -116,6 +116,14 @@ const FROG_SLIP = 0.15;
 const RIM_STEP = 1;
 
 type Candidate = { x: number; z: number; ground: number; rank: number; angle: number };
+
+/** What a reed's perch or a stem stands up from at (x, z): the water's level
+ * where there is water under it, inside the rim or on the marsh, if the
+ * ground is below it; anywhere else its own ground, a plant on dry land. */
+function footingOf(lake: LakeSource, x: number, z: number, ground: number): number {
+  const wet = Math.hypot(x - lake.x, z - lake.z) < lake.radius || marshWeightAt(lake, x, z) > 0;
+  return wet ? Math.max(ground, lake.level) : ground;
+}
 
 function lerp(range: readonly [number, number], t: number): number {
   return range[0] + (range[1] - range[0]) * t;
@@ -235,9 +243,9 @@ function perchesOf(seed: number, lake: LakeSource, cands: readonly Candidate[]):
     const at = ((p + draw(0)) / n) * TAU;
     const c = pick(cands, p, n, lake.x + lake.radius * Math.cos(at), lake.z + lake.radius * Math.sin(at), RANK_DRIFTLOG, false);
     if (c === null) continue;
-    // A reed stands up out of the water, so it is perched from the water where its ground is below it;
-    // a shrub, bush or drift log stands on its own ground, though the bank falls away from the lake.
-    const footing = c.rank === RANK_REED ? Math.max(c.ground, lake.level) : c.ground;
+    // A reed stands up out of the water where there is water under it; a shrub, bush or drift log
+    // stands on its own ground, though the bank falls away from the lake.
+    const footing = c.rank === RANK_REED ? footingOf(lake, c.x, c.z, c.ground) : c.ground;
     out.push({ x: c.x, y: footing + lerp(PERCH_UP, draw(1)), z: c.z, seed: Math.floor(draw(2) * SEED_RANGE) });
   }
   return out;
@@ -268,7 +276,7 @@ function stemsOf(seed: number, lake: LakeSource): Perch[] {
     const draw = (j: number): number => hash3(k, j, WATER_LIFE_SALT.stemDraw, seed);
     const x = (cell.cx + 0.5 + 0.8 * (draw(0) - 0.5)) * step;
     const z = (cell.cz + 0.5 + 0.8 * (draw(1) - 0.5)) * step;
-    out.push({ x, y: Math.max(elevationAt(seed, x, z), lake.level) + lerp(STEM_UP, draw(2)), z, seed: Math.floor(draw(3) * SEED_RANGE) });
+    out.push({ x, y: footingOf(lake, x, z, elevationAt(seed, x, z)) + lerp(STEM_UP, draw(2)), z, seed: Math.floor(draw(3) * SEED_RANGE) });
   }
   return out;
 }
