@@ -1,5 +1,6 @@
 import { clamp01, type Rgb } from "./colour.js";
 import { sunPositionAt } from "./sky.js";
+import { STARE_LENS_REST, stareShadeUnder, type StareLens, type StareShade } from "./stareLens.js";
 import {
   dreadLensUnder, dreadWorldUnder, exposureUnder, moodUnder, saturationUnder, vignetteWeightUnder,
   GRADE_SHADOW_HUE, GRADE_SHADOW_DENSITY, GRADE_SHADOW_SATURATION,
@@ -32,6 +33,8 @@ export type GradeRecord = {
   saturation: number;
   vignetteWeight: number;
   vignetteColour: Rgb;
+  /** The stare's darkness (stareLens.ts): at reach 0 the pass draws none. */
+  stare: StareShade;
   halationStrength: number;
   aberrationAmount: number;
 };
@@ -160,8 +163,12 @@ export const VIGNETTE_COLOUR: Rgb = { r: 0.01, g: 0.02, b: 0.03 };
  * screen pulse). Zero amplitude at clear, so the vignette holds still there. */
 export const VIGNETTE_PULSE = 0.12;
 export const VIGNETTE_PULSE_PERIOD = 7;
-/** Vignette weight added at a full stare, on top of the weather's. */
+/** Vignette weight the material path adds where the stare's darkness has
+ * closed all the way, on top of the weather's: that path has Babylon's own
+ * vignette to draw it with, moved off the Hollow, and no crawling edge. */
 export const STARE_VIGNETTE = 3;
+/** The share of the frame's exposure a full stare takes, everywhere. */
+export const STARE_DIM = 0.3;
 
 // ---- World-side sickness. Browser-tunable; `clear` identity is not. ----
 /** The green-grey the shadows lift toward on the top dread plateau (the Alan
@@ -200,13 +207,14 @@ function tint(hue: number, density: number, saturation: number, mood: number): T
 }
 
 /**
- * What a `stare` (hollow.ts) of 0 to 1 leaves of the frame's exposure: all
- * of it at 0, none at 1, falling as the square of what is left open between.
+ * What a stare of 0 to 1 (the lens's level, stareLens.ts) leaves of the
+ * frame's exposure: all of it at 0, all but STARE_DIM at 1. It never takes
+ * the frame: the darkness that closes is the lens's shade, drawn over this.
  * The grade's record carries it on the post path, the lighting's exposure on
  * the material path (`Lighting.setStare`).
  */
 export function sightUnder(stare: number): number {
-  return (1 - clamp01(stare)) * (1 - clamp01(stare));
+  return 1 - STARE_DIM * clamp01(stare);
 }
 
 /**
@@ -214,10 +222,10 @@ export function sightUnder(stare: number): number {
  * (`SkyState.night`): the white point cools and the rods take over by it.
  * `timeSeconds` only drives the vignette's breath; it defaults to 0 so
  * callers that do not animate (and every identity test) see the resting
- * weight. `stare` (hollow.ts) darkens the image toward black at 1 and closes
- * the vignette.
+ * weight. `stare` is the local player's lens (stareLens.ts): it dims the
+ * frame a little and carries the darkness the pass closes over it.
  */
-export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, unsettle: number, timeSeconds = 0, stare = 0): GradeRecord {
+export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, unsettle: number, timeSeconds = 0, stare: StareLens = STARE_LENS_REST): GradeRecord {
   const altitude = sunPositionAt(hour).y;
   const lens = dreadLensUnder(w) * clamp01(unsettle);
   const world = dreadWorldUnder(w);
@@ -226,7 +234,7 @@ export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, 
   const restingVignette = lens === 0 ? vignetteWeightUnder({ ...w, dread: 0 }) : vignetteWeightUnder({ ...w, dread: lens });
   const breath = lens === 0 ? 1 : 1 + VIGNETTE_PULSE * lens * Math.sin((2 * Math.PI * timeSeconds) / VIGNETTE_PULSE_PERIOD);
   return {
-    exposure: exposureUnder(w, altitude) * sightUnder(stare),
+    exposure: exposureUnder(w, altitude) * sightUnder(stare.level),
     whitePoint: whitePointMatrix(night),
     purkinje: PURKINJE_MATRIX,
     purkinjeThreshold: PURKINJE_THRESHOLD,
@@ -237,8 +245,9 @@ export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, 
     lift: world === 0 ? { r: 0, g: 0, b: 0 } : { r: LIFT_DREAD.r * world, g: LIFT_DREAD.g * world, b: LIFT_DREAD.b * world },
     saturation: saturationUnder(w) / 100,
     // The dread share of the vignette is lens-side: at unsettle 0 the base weight stands.
-    vignetteWeight: restingVignette * breath + STARE_VIGNETTE * clamp01(stare),
+    vignetteWeight: restingVignette * breath,
     vignetteColour: VIGNETTE_COLOUR,
+    stare: stareShadeUnder(stare, timeSeconds),
     halationStrength: lens === 0 ? HALATION_BASE : HALATION_BASE * (1 + HALATION_DREAD_GAIN * lens),
     aberrationAmount: lens === 0 ? ABERRATION_BASE : ABERRATION_BASE * (1 + ABERRATION_DREAD_GAIN * lens),
   };

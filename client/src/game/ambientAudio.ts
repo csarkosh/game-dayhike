@@ -1,5 +1,7 @@
 import { clamp01 } from "./colour.js";
 import { gustAt, type WindRecord } from "./windParams.js";
+import { createStareAudio, MUFFLE_OPEN_HZ, muffleGain, muffleHz, type StareAudio } from "./stareAudio.js";
+import type { StareLens } from "./stareLens.js";
 import {
   DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut, type WeatherParams,
 } from "./weather.js";
@@ -127,6 +129,12 @@ export type AmbientAudio = {
    * every frame; inert before `unlock()`.
    */
   setDrip(canopyWater: number, canopyAtListener: number): void;
+  /**
+   * The local player's stare (stareLens.ts), every frame: the world's beds
+   * and calls go muffled and quiet under it, and the heart and the whispers
+   * play (stareAudio.ts). Inert before `unlock()`.
+   */
+  setStare(lens: StareLens): void;
   setVolume(v: number): void;
   /**
    * Decodes compressed clip bytes on the ambient context. Resolves null rather
@@ -175,6 +183,12 @@ export function createAmbientAudio(
   let pending: WeatherParams = { ...WEATHER_PRESETS[DEFAULT_WEATHER] };
   let volume = DEFAULT_VOLUME;
   let master: GainNode | null = null;
+  /** What the rain, the wind, the drips and the wildlife are mixed through: the stare muffles it, and nothing else. */
+  let world: GainNode | null = null;
+  let worldFilter: BiquadFilterNode | null = null;
+  let stare: StareAudio | null = null;
+  /** The listener, in Web Audio's frame, for the whispers' circles. */
+  let earX = 0, earY = 0, earZ = 0;
   let rainGain: GainNode | null = null;
   let rainFilter: BiquadFilterNode | null = null;
   let windGain: GainNode | null = null;
@@ -240,6 +254,10 @@ export function createAmbientAudio(
       master = ctx.createGain();
       master.gain.value = volume;
       master.connect(ctx.destination);
+      // The world's bus: every bed and call below is mixed into it, and it
+      // reaches the master through a low-pass the stare shuts (wired last).
+      world = ctx.createGain();
+      world.gain.value = 1;
 
       // One shared noise buffer; two looping readers with different filters,
       // and the drips' bursts.
@@ -267,7 +285,7 @@ export function createAmbientAudio(
       rainGain.gain.value = 0;
       noiseSource().connect(rainFilter);
       rainFilter.connect(rainGain);
-      rainGain.connect(master);
+      rainGain.connect(world);
 
       // Wind: noise -> low-pass. `setWind` drives the cutoff and this gain
       // from the shared wind field; the floor below keeps it audible — a
@@ -279,7 +297,7 @@ export function createAmbientAudio(
       windGain.gain.value = WIND_LEVEL * WIND_GAIN_FLOOR;
       noiseSource().connect(windFilter);
       windFilter.connect(windGain);
-      windGain.connect(master);
+      windGain.connect(world);
 
       // The wildlife bus. Unlike the three beds above it carries no weather
       // ramp of its own: weather scales each call's own gain as it is emitted
@@ -288,14 +306,22 @@ export function createAmbientAudio(
       // silent.
       wildlifeGain = ctx.createGain();
       wildlifeGain.gain.value = WILDLIFE_LEVEL;
-      wildlifeGain.connect(master);
+      wildlifeGain.connect(world);
 
       // The drips' bus: each drip carries its own envelope, so this holds no
       // level of its own; `setDrip` builds the drips into it.
       dripGain = ctx.createGain();
       dripGain.gain.value = 1;
-      dripGain.connect(master);
+      dripGain.connect(world);
       dripping = false;
+
+      worldFilter = ctx.createBiquadFilter();
+      worldFilter.type = "lowpass";
+      worldFilter.frequency.value = MUFFLE_OPEN_HZ;
+      world.connect(worldFilter);
+      worldFilter.connect(master);
+      // The stare's own sounds sit beside the world, not in it: they are not muffled.
+      stare = createStareAudio(ctx, master, noise, random);
 
       applyGains(pending);
 
@@ -349,6 +375,12 @@ export function createAmbientAudio(
         fireDrip(nextDrip, level);
         nextDrip += dripInterval(level);
       }
+    },
+    setStare(lens) {
+      if (!ctx || !world || !worldFilter || !stare) return;
+      worldFilter.frequency.setTargetAtTime(muffleHz(lens.level), ctx.currentTime, 0.15);
+      world.gain.setTargetAtTime(muffleGain(lens.level), ctx.currentTime, 0.15);
+      stare.set(lens, earX, earY, earZ);
     },
     setVolume(v) {
       volume = clamp01(v);
@@ -419,6 +451,9 @@ export function createAmbientAudio(
       // that mirror so `gustAt` samples the gust in the world it was built for.
       listenerX = x;
       listenerZ = -z;
+      earX = x;
+      earY = y;
+      earZ = z;
       const l = ctx.listener;
       l.positionX.value = x;
       l.positionY.value = y;
@@ -433,8 +468,9 @@ export function createAmbientAudio(
     dispose() {
       void ctx?.close();
       ctx = null;
-      master = rainGain = windGain = wildlifeGain = dripGain = null;
-      rainFilter = windFilter = null;
+      master = world = rainGain = windGain = wildlifeGain = dripGain = null;
+      rainFilter = windFilter = worldFilter = null;
+      stare = null;
       noise = null;
       dripping = false;
       unlockListeners.length = 0;

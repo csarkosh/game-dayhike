@@ -147,6 +147,7 @@ import { elevationAt } from "../../src/sim/terrain.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { createSkyTable } from "../../src/game/skyTable.js";
 import { skyFixture } from "./helpers/skyFixture.js";
+import { sightUnder } from "../../src/game/gradeParams.js";
 
 let engine: NullEngine | null = null;
 
@@ -526,30 +527,34 @@ describe("the low tier's exposure", () => {
       const image = renderer.scene.imageProcessingConfiguration;
       // Half a second a frame: a 3 s fade is a sixth further on at each.
       vi.spyOn(renderer.engine, "getDeltaTime").mockReturnValue(500);
-      // A half stare leaves a quarter of the light: (1 - 0.5) squared.
+      // A half stare: the lens's level eases toward it frame by frame, and
+      // what it leaves of the light is `sightUnder` of the level that frame.
       const state = windTestState({ ...windTestPlayer(1), stare: 0.5 });
       const frame = () => {
         renderer.sync(state, 1, 0);
         renderer.scene.render();
       };
+      const left = () => sightUnder(renderer.stare().level);
       renderer.setView(12, WEATHER_PRESETS.clear);
       frame();
-      // Clear noon's exposure, 0.91045012, times the quarter.
-      expect(image.exposure).toBeCloseTo(0.22761253123728348, 12);
+      expect(renderer.stare().level).toBeGreaterThan(0.45);
+      expect(left()).toBeLessThan(1);
+      // Clear noon's exposure, 0.91045012, times what the stare leaves.
+      expect(image.exposure).toBeCloseTo(0.9104501249491339 * left(), 12);
       // The fade toward eerie moves inside each render, after the frame's
       // sync: the exposure each frame draws with is the weather's then, still
-      // times the quarter.
+      // times what the stare leaves.
       renderer.setWeather(WEATHER_PRESETS.eerie, 3);
       frame();
-      expect(image.exposure).toBeCloseTo(0.21822351432374554, 12);
+      expect(image.exposure).toBeCloseTo(0.8728940572949822 * left(), 12);
       frame();
-      expect(image.exposure).toBeCloseTo(0.209024174519572, 12);
+      expect(image.exposure).toBeCloseTo(0.836096698078288 * left(), 12);
       for (let i = 0; i < 4; i++) frame();
-      // Eerie's noon exposure, 0.69649435, times the quarter: the fade has
-      // ended with the stare's dimming as it began.
-      expect(image.exposure).toBeCloseTo(0.17412358639652187, 12);
+      // Eerie's noon exposure, 0.69649435: the fade has ended with the
+      // stare's dimming as it began.
+      expect(image.exposure).toBeCloseTo(0.6964943455860875 * left(), 12);
       frame();
-      expect(image.exposure).toBeCloseTo(0.17412358639652187, 12);
+      expect(image.exposure).toBeCloseTo(0.6964943455860875 * left(), 12);
     } finally {
       renderer.dispose();
     }

@@ -54,6 +54,7 @@ import { exposureFor, fogDensityFor, sunPositionAt } from "../../src/game/sky.js
 import { QUALITY } from "../../src/game/quality.js";
 import { WEATHER_PRESETS, fogDensityUnder, exposureUnder, ambientCollapseUnder } from "../../src/game/weather.js";
 import { skyFixture } from "./helpers/skyFixture.js";
+import { STARE_DIM } from "../../src/game/gradeParams.js";
 
 const CLEAR = WEATHER_PRESETS.clear;
 
@@ -481,7 +482,7 @@ describe("the sky's table", () => {
     // The default weather's (mist's) exposure at noon.
     expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(0.7875393580810008, 12);
     lighting.setStare(0.5);
-    expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(0.1968848395202502, 12);
+    expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(0.7875393580810008 * (1 - STARE_DIM / 2), 12);
     lighting.dispose();
   });
 
@@ -641,14 +642,15 @@ describe("weather in lighting", () => {
     const s = scene();
     const lighting = light(s, { hour: 12, weather: CLEAR });
     const ip = s.imageProcessingConfiguration;
-    // A half stare leaves a quarter: clear noon's 0.91045012 times it.
+    // A half stare takes half of STARE_DIM: clear noon's 0.91045012 times what is left.
+    const left = 1 - STARE_DIM / 2;
     lighting.setStare(0.5);
-    expect(ip.exposure).toBeCloseTo(0.22761253123728348, 12);
+    expect(ip.exposure).toBeCloseTo(0.9104501249491339 * left, 12);
     // Half a second into a 3 s fade toward eerie, applied as a frame renders.
     vi.spyOn(s.getEngine(), "getDeltaTime").mockReturnValue(500);
     lighting.setWeather(WEATHER_PRESETS.eerie, 3);
     s.onBeforeRenderObservable.notifyObservers(s);
-    expect(ip.exposure).toBeCloseTo(0.21822351432374554, 12);
+    expect(ip.exposure).toBeCloseTo(0.8728940572949822 * left, 12);
     expect(dome.updates.at(-1)!.exposure).toBe(ip.exposure);
     // The stare let go mid-fade: the weather's exposure alone.
     lighting.setStare(0);
