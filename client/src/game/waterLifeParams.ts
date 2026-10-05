@@ -58,9 +58,10 @@ const SUN_CLOUD0 = 0.4, SUN_CLOUD1 = 0.7;
 const DRAGONFLY_RAIN_GONE = 0.05;
 /** Wind: every dragonfly perched above 0.7 (5.6 m/s). */
 const DRAGONFLY_WIND_FROM = 0.6, DRAGONFLY_WIND_GONE = 0.7;
-/** The frogs: up to 0.6 over 19:00→19:30, to 1 over 19:30→21:00, full to
- * midnight, back to 0.6 over 00:00→00:30, holding it to 04:30, gone by 05:00. */
-const FROG_DUSK0 = 19, FROG_DUSK1 = 19.5;
+/** The frogs, silent before 19:30: 0.6 of the chorus up over 19:30→20:00 and
+ * the rest up with it to 1 by 21:00, full to midnight, back to 0.6 over
+ * 00:00→00:30, holding it to 04:30, gone by 05:00. */
+const FROG_DUSK0 = 19.5, FROG_DUSK1 = 20;
 const FROG_SWELL0 = 19.5, FROG_SWELL1 = 21;
 const FROG_EASE0 = 0, FROG_EASE1 = 0.5;
 const FROG_DAWN0 = 4.5, FROG_DAWN1 = 5;

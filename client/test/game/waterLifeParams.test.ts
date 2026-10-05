@@ -50,9 +50,9 @@ describe("the water life's presence", () => {
     }
   });
 
-  it("starts the chorus after sunset, fullest from 21:00 to midnight, gone by 05:00", () => {
+  it("starts the chorus at 19:30, fullest from 21:00 to midnight, gone by 05:00", () => {
     const table: [number, number][] = [
-      [12, 0], [18.5, 0], [19, 0], [19.25, 0.3], [19.5, 0.6], [20, 0.703704], [21, 1], [22, 1], [23.99, 1],
+      [12, 0], [18.5, 0], [19, 0], [19.25, 0], [19.5, 0], [19.75, 0.32963], [20, 0.703704], [20.5, 0.896296], [21, 1], [22, 1], [23.99, 1],
       [0, 1], [0.25, 0.8], [0.5, 0.6], [2, 0.6], [4.5, 0.6], [4.75, 0.3], [5, 0], [6, 0],
     ];
     for (const [hour, frog] of table) expect([hour, six(waterLifePresenceUnder(CLEAR, hour, 0).frog)]).toEqual([hour, frog]);
@@ -117,6 +117,26 @@ describe("the water life's presence", () => {
       const noon = waterLifePresenceUnder(CLEAR, 12, wind);
       expect([wind, six(dusk.midge), six(noon.darner.seen), six(noon.darner.flying), six(noon.skimmer.flying)])
         .toEqual([wind, midge, seen, flying, skimmer]);
+    }
+  });
+
+  it("fades the midges out by rain 0.3, the dragonflies by rain 0.05 and by cloud 0.7, the skimmers still seen under cloud", () => {
+    // [cloud, rain, midge at 18:30, then at noon: darner seen, skimmer seen, damselfly seen, darner flying]
+    const table: [number, number, number, number, number, number, number][] = [
+      [0.4, 0, 1, 1, 1, 1, 1],
+      [0.55, 0, 1, 0.5, 1, 0.5, 0.5],
+      [0.7, 0, 1, 0, 1, 0, 0],
+      [0, 0.025, 0.980324, 0.5, 0.5, 0.5, 1],
+      [0, 0.05, 0.925926, 0, 0, 0, 1],
+      [0, 0.15, 0.5, 0, 0, 0, 1],
+      [0, 0.3, 0, 0, 0, 0, 1],
+    ];
+    for (const [cloudCover, rain, midge, darner, skimmer, damselfly, flying] of table) {
+      const w = { ...CLEAR, cloudCover, rain };
+      const dusk = waterLifePresenceUnder(w, 18.5, 0);
+      const noon = waterLifePresenceUnder(w, 12, 0);
+      expect([cloudCover, rain, six(dusk.midge), six(noon.darner.seen), six(noon.skimmer.seen), six(noon.damselfly.seen), six(noon.darner.flying)])
+        .toEqual([cloudCover, rain, midge, darner, skimmer, damselfly, flying]);
     }
   });
 
