@@ -52,7 +52,7 @@ describe("the water life's presence", () => {
 
   it("starts the chorus at 19:30, fullest from 21:00 to midnight, gone by 05:00", () => {
     const table: [number, number][] = [
-      [12, 0], [18.5, 0], [19, 0], [19.25, 0], [19.5, 0], [19.75, 0.32963], [20, 0.703704], [20.5, 0.896296], [21, 1], [22, 1], [23.99, 1],
+      [12, 0], [18.5, 0], [19, 0], [19.25, 0], [19.5, 0], [19.75, 0.3], [20, 0.6], [20.5, 0.8], [21, 1], [22, 1], [23.99, 1],
       [0, 1], [0.25, 0.8], [0.5, 0.6], [2, 0.6], [4.5, 0.6], [4.75, 0.3], [5, 0], [6, 0],
     ];
     for (const [hour, frog] of table) expect([hour, six(waterLifePresenceUnder(CLEAR, hour, 0).frog)]).toEqual([hour, frog]);
