@@ -14,6 +14,7 @@ import { shoreHeight } from "./shoreStrip.js";
 import { TRAIL_Z_ANCHOR, TRAILHEAD_U } from "./bowl.js";
 import { forestDensity, SLOPE_HI, SLOPE_LO } from "./vegetation.js";
 import { NO_FEATURE_MASK, marshWeightAt, POND_SHORE, type FeatureMask } from "./features.js";
+import { SEEP_OCTAVES, SEEP_SALT, SEEP_WAVELENGTH, seepOffset } from "./seep.js";
 
 // ---- Class ids (not tunables) ---------------------------------------------
 export const CLUTTER_GRASS = 0;
@@ -364,8 +365,9 @@ export const CLUTTER_WETPLANT_CELL = 1.5;
 /** Two cells in three hold a plant where a seep is full: at every cell the
  * devil's club's leaves closed into a roof with nothing to see under it. */
 export const CLUTTER_WETPLANT_D = 0.3;
-export const CLUTTER_WETPLANT_SEEP_WAVELENGTH = 140;
-export const CLUTTER_WETPLANT_SEEP_OCTAVES = 2;
+/** The seep's own field (`seep.ts`), which the alders read too. */
+export const CLUTTER_WETPLANT_SEEP_WAVELENGTH = SEEP_WAVELENGTH;
+export const CLUTTER_WETPLANT_SEEP_OCTAVES = SEEP_OCTAVES;
 export const CLUTTER_WETPLANT_SEEP_HALF = 0.01;
 export const CLUTTER_WETPLANT_SEEP_EDGE = 0.026;
 export const CLUTTER_WETPLANT_CANOPY_LO = 0.2;
@@ -382,7 +384,7 @@ export const CLUTTER_WETPLANT_TRAIL_CLEAR = 1.8;
 export const CLUTTER_WETPLANT_SCALE_MIN = 0.75;
 export const CLUTTER_WETPLANT_SCALE_MAX = 1.3;
 export const CLUTTER_WETPLANT_SALT = 0x3e7a;
-export const CLUTTER_WETPLANT_SEEP_SALT = 0x5ee9;
+export const CLUTTER_WETPLANT_SEEP_SALT = SEEP_SALT;
 /** High-ground plants grow in the subalpine parkland: from ALT_LO, coming in
  * over ALT_LO_FADE, to the grass's own upper edge at the snow; mostly in the
  * open (SHADE of their open-ground weight under full canopy, across the
@@ -867,8 +869,7 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
         CLUTTER_WETPLANT_SLOPE_LO * CLUTTER_WETPLANT_SLOPE_LO, CLUTTER_WETPLANT_SLOPE_HI * CLUTTER_WETPLANT_SLOPE_HI, slopeSq,
       );
       if (lowland > 0 && bench > 0) {
-        const n = fbm2(x / CLUTTER_WETPLANT_SEEP_WAVELENGTH, z / CLUTTER_WETPLANT_SEEP_WAVELENGTH, seed ^ CLUTTER_WETPLANT_SEEP_SALT, CLUTTER_WETPLANT_SEEP_OCTAVES);
-        const off = n > 0.5 ? n - 0.5 : 0.5 - n;
+        const off = seepOffset(seed, x, z);
         const ribbon = 1 - smoothstep(CLUTTER_WETPLANT_SEEP_HALF, CLUTTER_WETPLANT_SEEP_EDGE, off);
         if (ribbon > 0) {
           const canopy = smoothstep(CLUTTER_WETPLANT_CANOPY_LO, CLUTTER_WETPLANT_CANOPY_HI, forestDensity(seed, x, z, s));

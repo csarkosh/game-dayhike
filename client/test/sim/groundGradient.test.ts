@@ -274,8 +274,11 @@ describe("the scatter censuses are untouched", () => {
     // 3.4 of the trunk model where it was 1.5 to 2, and one that would lie
     // across a trail or the road stands dead instead. The same 731 trees, on
     // the same ground.
-    expect(list.length).toBe(731);
-    expect(h | 0).toBe(-612707025);
+    // Re-baselined 2026-10-05 from (731, -612707025): the alders. Eight cells
+    // the forest's own density left empty hold one, on alder ground, and 68 of
+    // the 739 trees under this rect are alders.
+    expect(list.length).toBe(739);
+    expect(h | 0).toBe(-845926807);
   });
 
   it("keeps every clutter field bit-identical, class by class", () => {
@@ -789,6 +792,9 @@ describe("the level id does not move", () => {
     // Re-baselined 2026-10-05 from 1882926903: the high-ground plants' class
     // and its habitat's tunables are declared (registryDigest moves), and the
     // water plants' class ids move up behind it.
-    expect(passHash()).toBe(622505373);
+    // Re-baselined 2026-10-05 from 622505373: the alder's habitat and scale
+    // and its trunk's box are declared (registryDigest moves), and its boxes
+    // stand in the probe's chunks (probeDigest moves).
+    expect(passHash()).toBe(962002917);
   });
 });

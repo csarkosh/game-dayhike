@@ -15,6 +15,8 @@ import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./t
 import { TRAIL_CLEAR } from "./trail.js";
 import { shoreStrip, STRIP_FOREST_FLOOR, STRIP_LIFT } from "./shoreStrip.js";
 import { facingDir } from "./facing.js";
+import { seepOffset } from "./seep.js";
+import { POND_TREE_MARGIN } from "./features.js";
 
 // ---- Tunables (every one of these must appear in VEGETATION_TUNABLES) ------
 /** Below this altitude (m) the treeline gate is fully open. Re-anchored for
@@ -74,6 +76,31 @@ export const SPECIES_COUNT = 2;
 /** Fraction of the cell the jitter may roam — trees keep a 0.15-cell margin
  * from every cell border, so a tree can never leave its own cell. */
 export const JITTER_SPAN = 0.7;
+
+/** The alder: a broadleaf tree of wet and broken ground, drawn as a third
+ * species of the regeneration cohort. It is not one of SPECIES_COUNT, which
+ * the canopy's two conifers share: only `alderHabitat` makes a tree one. */
+export const SPECIES_ALDER = 2;
+/** Along the road's verge: from the trees' own clearance out ALDER_ROAD_BAND
+ * (m), coming in over ALDER_EDGE_FADE and going out over the same. */
+export const ALDER_ROAD_BAND = 26;
+export const ALDER_EDGE_FADE = 6;
+/** Round a lake: from the lake's own tree margin out ALDER_LAKE_BAND (m). */
+export const ALDER_LAKE_BAND = 22;
+/** Along a seep (`seep.ts`): full within ALDER_SEEP_HALF of its middle value, none past ALDER_SEEP_EDGE. */
+export const ALDER_SEEP_HALF = 0.02;
+export const ALDER_SEEP_EDGE = 0.045;
+/** A lowland tree: full below ALDER_ALT_HI, gone over the next ALDER_ALT_HI_FADE (m). */
+export const ALDER_ALT_HI = 100;
+export const ALDER_ALT_HI_FADE = 40;
+/** Where the habitat is full, this share of cells hold a tree whatever the
+ * forest's own density says there (an alder stand fills a verge the conifers
+ * leave open), and this share of the trees standing there are alders. */
+export const ALDER_FILL = 0.8;
+export const ALDER_SHARE = 0.85;
+/** The model stands 4.5 m; an alder here 10 to 15 m. */
+export const ALDER_SCALE_MIN = 2.2;
+export const ALDER_SCALE_MAX = 3.4;
 
 /** Cohort ids. Orthogonal to `species`: a giant and a sapling can both be
  * species 0. Widening SPECIES_COUNT instead would repartition the understory,
@@ -250,6 +277,50 @@ function logCrossesPath(seed: number, x: number, z: number, hash: number, scale:
 }
 
 /**
+ * How much a point is alder ground, in [0, 1]: the strongest of the road's
+ * verge, a lake's shore and a seep, on lowland ground a tree can stand on
+ * (the trees' own gates of shore, slope and the trail system's features).
+ * Zero wherever no tree may stand at all.
+ */
+export function alderHabitat(seed: number, x: number, z: number, sample?: TerrainSample): number {
+  const variant = activeTerrainVariant();
+  const s = sample ?? variant.sample(seed, x, z);
+  const lowland = 1 - smoothstep(ALDER_ALT_HI, ALDER_ALT_HI + ALDER_ALT_HI_FADE, s.h);
+  if (lowland === 0) return 0;
+  const r = variant.roadDistance?.(seed, x, z) ?? Infinity;
+  const d = variant.coastDistance?.(seed, x, z) ?? Infinity;
+  // None in the strip at the trailhead: the wood that stands at the pad is
+  // the forest's own, placed for the arrival, and stays as it was.
+  if (shoreStrip(seed, x, z) > 0) return 0;
+  if (s.h < SHORE_ALT || d < SHORE_D || r < ROAD_CLEAR) return 0;
+  const slope = Math.sqrt(s.dx * s.dx + s.dz * s.dz);
+  const grade = 1 - smoothstep(SLOPE_LO, SLOPE_HI, slope);
+  const shore = smoothstep(SHORE_ALT, SHORE_ALT + SHORE_ALT_FADE, s.h) * smoothstep(SHORE_D, SHORE_D + SHORE_D_FADE, d);
+  const ground = grade * shore * lowland * (variant.featureMask?.(seed, x, z, s.h)?.tree ?? 1);
+  if (ground === 0) return 0;
+  const verge =
+    smoothstep(ROAD_CLEAR, ROAD_CLEAR + ALDER_EDGE_FADE, r) *
+    (1 - smoothstep(ROAD_CLEAR + ALDER_ROAD_BAND - ALDER_EDGE_FADE, ROAD_CLEAR + ALDER_ROAD_BAND, r));
+  let lakeside = 0;
+  const bodies = variant.waterBodies?.(seed);
+  if (bodies !== undefined) {
+    for (const b of bodies) {
+      if (b.kind !== "lake") continue;
+      const dx = x - b.x, dz = z - b.z;
+      const inner = b.radius + POND_TREE_MARGIN;
+      const outer = inner + ALDER_LAKE_BAND;
+      const q2 = dx * dx + dz * dz;
+      if (q2 >= outer * outer || q2 <= inner * inner) continue;
+      const q = Math.sqrt(q2);
+      const w = smoothstep(inner, inner + ALDER_EDGE_FADE, q) * (1 - smoothstep(outer - ALDER_EDGE_FADE, outer, q));
+      if (w > lakeside) lakeside = w;
+    }
+  }
+  const seep = 1 - smoothstep(ALDER_SEEP_HALF, ALDER_SEEP_EDGE, seepOffset(seed, x, z));
+  return Math.max(verge, lakeside, seep) * ground;
+}
+
+/**
  * The tree of cell (cellX, cellZ), or null if the density gate keeps the
  * cell bare. Jittered grid: presence is Bernoulli with
  * p = clamp01(ρ(cell centre) · TREE_CELL² · TREE_DENSITY_MAX), and the tree
@@ -260,15 +331,22 @@ export function treeInCell(seed: number, cellX: number, cellZ: number): TreeInst
   const centreX = (cellX + 0.5) * TREE_CELL;
   const centreZ = (cellZ + 0.5) * TREE_CELL;
   const rho = forestDensity(seed, centreX, centreZ);
-  const p = Math.min(1, rho * TREE_CELL * TREE_CELL * TREE_DENSITY_MAX);
+  const pForest = Math.min(1, rho * TREE_CELL * TREE_CELL * TREE_DENSITY_MAX);
+  // Alder ground holds a tree where the forest's own density would leave the
+  // cell empty: a stand along a verge, a shore or a seep.
+  const alder = alderHabitat(seed, centreX, centreZ);
   const salted = seed ^ TREE_SALT;
-  if (hash3(cellX, cellZ, 0, salted) >= p) return null;
+  const presence = hash3(cellX, cellZ, 0, salted);
+  if (presence >= pForest && presence >= alder * ALDER_FILL) return null;
   const x = centreX + (hash3(cellX, cellZ, 1, salted) - 0.5) * JITTER_SPAN * TREE_CELL;
   const z = centreZ + (hash3(cellX, cellZ, 2, salted) - 0.5) * JITTER_SPAN * TREE_CELL;
   // A trail is 2 m wide and a tree cell is 10 m: the density gate cannot
   // resolve it, so reject the INSTANCE by its own position.
   const trail = activeTerrainVariant().trailDistance?.(seed, x, z) ?? Infinity;
   if (trail < TRAIL_CLEAR) return null;
+  // The road's clearance likewise: alder ground comes right up to it, and a
+  // cell whose centre is clear can jitter its tree inside.
+  if ((activeTerrainVariant().roadDistance?.(seed, x, z) ?? Infinity) < ROAD_CLEAR) return null;
   // Re-sample at the jittered position: the cell-centre sample gated
   // presence, but the tree stands (and roots) at its own spot.
   const ground = elevationSampleAt(seed, x, z);
@@ -305,6 +383,21 @@ export function treeInCell(seed: number, cellX: number, cellZ: number): TreeInst
   } else if (cohort !== COHORT_SAPLING) {
     scaleMin = DEADWOOD_SCALE_MIN;
     scaleMax = DEADWOOD_SCALE_MAX;
+  }
+  // An alder: every tree the forest's own density did not place, and
+  // ALDER_SHARE of the habitat's weight of those it did. It takes the
+  // regeneration cohort's place whatever the tree would have been, at its own
+  // size, with no valley boost: a short-lived tree of open ground.
+  if (alder > 0 && (presence >= pForest || hash3(cellX, cellZ, 9, salted) < alder * ALDER_SHARE)) {
+    return {
+      x, z, groundH,
+      groundDx: ground.dx,
+      groundDz: ground.dz,
+      species: SPECIES_ALDER,
+      scale: ALDER_SCALE_MIN + size * (ALDER_SCALE_MAX - ALDER_SCALE_MIN),
+      cohort: COHORT_SAPLING,
+      hash,
+    };
   }
   const scale = (scaleMin + size * (scaleMax - scaleMin)) * valley;
   return {
@@ -383,5 +476,17 @@ export const VEGETATION_TUNABLES: Readonly<Record<string, number>> = {
   LOG_TRAIL_CLEAR,
   LOG_ROAD_CLEAR,
   LOG_SPAN_STATIONS,
+  SPECIES_ALDER,
+  ALDER_ROAD_BAND,
+  ALDER_EDGE_FADE,
+  ALDER_LAKE_BAND,
+  ALDER_SEEP_HALF,
+  ALDER_SEEP_EDGE,
+  ALDER_ALT_HI,
+  ALDER_ALT_HI_FADE,
+  ALDER_FILL,
+  ALDER_SHARE,
+  ALDER_SCALE_MIN,
+  ALDER_SCALE_MAX,
   TRAIL_CLEAR,
 };

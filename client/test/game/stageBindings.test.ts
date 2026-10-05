@@ -206,7 +206,7 @@ describe("WebGPU's per-stage bindings, at the defaults the device keeps", () => 
   it("holds every material the terrain and the forest draw within the device's limits on every tier", () => {
     // The device asks for WebGPU's defaults of the three, no more.
     expect(LIMITS).toEqual({ textures: 16, samplers: 16, uniformBuffers: 12 });
-    expect(world.drawn.size).toBe(21);
+    expect(world.drawn.size).toBe(25);
     for (const [name, drawn] of world.drawn) {
       for (const tier of Object.keys(QUALITY) as QualityTier[]) {
         const stages = onTier(drawn, tier);

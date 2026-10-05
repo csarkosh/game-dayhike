@@ -180,7 +180,10 @@ describe("the placement", SUITE, () => {
     // 2026-09-29: 11 before the trail left the pad inland. The player on the
     // pad faces up another first edge, and the wedge they look into is
     // another part of the hillside.
-    expect(landed).toBe(14);
+    // 2026-10-05: 14 before the alders. Along the road's verge either side of
+    // the pad's own wood a slim alder stands where a conifer's wide trunk did,
+    // or where nothing did, and other stands clear their rules.
+    expect(landed).toBe(19);
   });
 
   it("lands only where every rule holds at the top fork, 25 m out, and the count is pinned", () => {
@@ -293,7 +296,8 @@ describe("the tick", SUITE, () => {
   it("keeps trying, a tick at a time, from the pad where most placements fail", () => {
     const { w, p } = forestWorld();
     standOnStem(w, p, 0);
-    expect(showWatcher(w)).toBe(2);
+    // The second tick until 2026-10-05; with the alders' stands the first try lands.
+    expect(showWatcher(w)).toBe(1);
     const h = shownWatcher(w)!;
     expect(horizontal(p.pos, h.pos)).toBeCloseTo(90, 0);
     expect(h.targetId).toBe(p.id);

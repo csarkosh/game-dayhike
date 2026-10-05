@@ -135,6 +135,12 @@
       "bytes": 2894004
     },
     {
+      "id": "tree.alder",
+      "kind": "prop",
+      "output": "models/tree.alder.glb",
+      "bytes": 3327080
+    },
+    {
       "id": "tree.conifer_b",
       "kind": "prop",
       "output": "models/tree.conifer_b.glb",

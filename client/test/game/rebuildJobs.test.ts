@@ -407,7 +407,7 @@ function keeper(): SyncJobs & { held: Slices | null } {
  * start, with nothing prepared ahead: each loop of a rebuild yields by the
  * work it has done, so a rebuild that stops slicing, in any of its loops,
  * changes these. */
-const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 106, blades: 18, duff: 5, forest: 138 };
+const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 106, blades: 18, duff: 5, forest: 139 };
 
 /** How a walk that turns meets each shell's grid: its rebuild cell (m), and
  * where its lines lie. The clipmap's step is ring 0's snap, whose lines lie
