@@ -11,10 +11,12 @@
  *
  * The silences, as a pond's frogs keep them:
  * - A voice with a player within `FROG_QUIET_RADIUS` stops at once. Once no
- *   player has been that near for its own draw of `FROG_RESTART_S`, its
- *   stretch of shore (the silent voices linked to it neighbour by neighbour)
- *   starts again: one voice first, the one nearest the stretch's centre with
- *   no player near it, and the others join over `FROG_JOIN_S`.
+ *   player has been that near for its own draw of `FROG_RESTART_S`, it may
+ *   start again, but only one voice of its stretch of shore (the silent
+ *   voices linked to it neighbour by neighbour) restarts first: the one
+ *   nearest the stretch's centre among those whose own wait has run out. The
+ *   others, with no player near, join over `FROG_JOIN_S`, none before its own
+ *   wait has run out.
  * - Every voice stops while the Hollow is within `FROG_HOLLOW_STOP` and stays
  *   silent until it is beyond `FROG_HOLLOW_RESUME`.
  * - `presence` (the frogs' share of the hour and the dread) thins the chorus
@@ -131,8 +133,10 @@ export function createFrogChorus(voices: readonly FrogVoice[], seed: number, ran
   /**
    * Voice `i` has waited out its draw: its stretch (the hushed voices linked
    * to it neighbour by neighbour) starts again from the voice nearest the
-   * stretch's centre with no player near, and the rest of the stretch joins
-   * over `FROG_JOIN_S`. A voice a player still stands by keeps its own wait.
+   * stretch's centre among those with no player near and their own wait run
+   * out, and the rest of the stretch with no player near joins over
+   * `FROG_JOIN_S`, none before its own wait has run out. A voice a player
+   * still stands by keeps waiting.
    */
   function restartStretch(i: number, t: number): void {
     linked.fill(0);
@@ -152,10 +156,11 @@ export function createFrogChorus(voices: readonly FrogVoice[], seed: number, ran
     }
     cx /= found;
     cz /= found;
+    // Voice `i` is clear and has waited, so the leader is always found.
     let leader = i, best = Infinity;
     for (let k = 0; k < found; k++) {
       const a = queue[k]!;
-      if (near[a]) continue;
+      if (near[a] || clear[a]! < restartAfter[a]!) continue;
       const d = Math.hypot(voices[a]!.x - cx, voices[a]!.z - cz);
       if (d < best) {
         best = d;
@@ -171,7 +176,7 @@ export function createFrogChorus(voices: readonly FrogVoice[], seed: number, ran
         callsLeft[a] = boutCalls();
       } else {
         state[a] = JOINING;
-        joinAt[a] = t + lerp(FROG_JOIN_S, random());
+        joinAt[a] = t + Math.max(lerp(FROG_JOIN_S, random()), restartAfter[a]! - clear[a]!);
       }
     }
   }

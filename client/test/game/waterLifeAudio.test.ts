@@ -155,7 +155,7 @@ describe("waterLifeAudio", () => {
     audio.dispose();
   });
 
-  it("a hum that drops out fades over half a second, then stops; the cap holds while it fades", () => {
+  it("a hum that drops out fades over half a second, is sent silence, and stops a tenth of a second after that; the cap holds until it has stopped", () => {
     const fake = fakeAmbient();
     let t = 10;
     const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => t);
@@ -172,15 +172,49 @@ describe("waterLifeAudio", () => {
     expect(second!.gains).toEqual([0.25]);
     expect(first!.stopped || second!.stopped).toBe(false);
     expect(fake.loops.length).toBe(8);
+    // The fade is over: silence is sent, and the voices still sound while the gain follows.
     t = 10.5;
     audio.update(sound({ hums: swarms, hums_n: 10 }), there);
+    expect(first!.gains).toEqual([0.2, 0]);
+    expect(second!.gains).toEqual([0.25, 0]);
+    expect(first!.stopped || second!.stopped).toBe(false);
+    expect(fake.loops.length).toBe(8);
+    t = 10.55;
+    audio.update(sound({ hums: swarms, hums_n: 10 }), there);
+    expect(first!.stopped || second!.stopped).toBe(false);
+    expect(fake.loops.length).toBe(8);
+    // A tenth of a second on they stop, and the swarms that were waiting take their places.
+    t = 10.75;
+    audio.update(sound({ hums: swarms, hums_n: 10 }), there);
     expect(first!.stopped && second!.stopped).toBe(true);
+    expect(first!.gains).toEqual([0.2, 0]);
     expect(hums(fake.loops).slice(8).map((l) => l.x)).toEqual([8.5, 9.5]);
     expect(fake.loops.filter((l) => !l.stopped).length).toBe(8);
     audio.dispose();
   });
 
-  it("a hum that comes back before its fade ends is the same voice, gained again", () => {
+  it("a hum too quiet for its steps to be sent is still sent silence before it stops", () => {
+    const fake = fakeAmbient();
+    let t = 5;
+    const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => t);
+    const quiet = [{ x: 1, y: 1, z: 0, midges: 200, presence: 0.003 }];
+    audio.update(sound({ hums: quiet, hums_n: 1 }), ORIGIN);
+    const hum = hums(fake.loops)[0]!;
+    audio.update(sound({ hums: quiet, hums_n: 0 }), ORIGIN);
+    t = 5.25;
+    audio.update(sound({ hums: quiet, hums_n: 0 }), ORIGIN);
+    expect(hum.gains).toEqual([]);
+    t = 5.5;
+    audio.update(sound({ hums: quiet, hums_n: 0 }), ORIGIN);
+    expect(hum.gains).toEqual([0]);
+    expect(hum.stopped).toBe(false);
+    t = 5.6;
+    audio.update(sound({ hums: quiet, hums_n: 0 }), ORIGIN);
+    expect(hum.stopped).toBe(true);
+    audio.dispose();
+  });
+
+  it("a hum that comes back before its fade ends, or while its silence settles, is the same voice, gained again", () => {
     const fake = fakeAmbient();
     let t = 10;
     const audio = createWaterLifeAudio(fake.ambient, () => 0.5, () => t);
@@ -193,6 +227,21 @@ describe("waterLifeAudio", () => {
     t = 10.3;
     audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
     expect(first.gains).toEqual([0.2, 0.4]);
+    expect(first.stopped).toBe(false);
+    expect(fake.loops.length).toBe(8);
+    // Dropped again at 10.5 s, silenced at 11 s, back at 11.05 s: gained again, and not stopped at 11.15 s.
+    t = 10.5;
+    audio.update(sound({ hums: swarms, hums_n: 10 }), { x: 9, y: 1, z: 0 });
+    t = 10.75;
+    audio.update(sound({ hums: swarms, hums_n: 10 }), { x: 9, y: 1, z: 0 });
+    t = 11;
+    audio.update(sound({ hums: swarms, hums_n: 10 }), { x: 9, y: 1, z: 0 });
+    expect(first.gains).toEqual([0.2, 0.4, 0.2, 0]);
+    t = 11.05;
+    audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
+    t = 11.15;
+    audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
+    expect(first.gains).toEqual([0.2, 0.4, 0.2, 0, 0.4]);
     expect(first.stopped).toBe(false);
     expect(fake.loops.length).toBe(8);
     audio.dispose();

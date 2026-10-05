@@ -8,8 +8,10 @@
  * - Hums: the `HUM_MAX` nearest swarms within `HUM_RANGE` that have midges
  *   and presence keep a loop emitter each, kept by swarm (its index in
  *   `hums`) from frame to frame and moved, re-gained and re-pitched in place.
- *   A swarm that drops out fades over `HUM_FADE_S` and then stops; until its
- *   fade ends it still counts against the cap.
+ *   A swarm that drops out fades over `HUM_FADE_S`, is sent a gain of nothing
+ *   and is stopped once the emitter's gain has followed (`LOOP_GAIN_RAMP_S`
+ *   on), so the cut falls on silence; until it stops it still counts against
+ *   the cap.
  * - Frog calls and rustles: each a voice on a loop emitter that ends itself;
  *   at most `FROG_VOICES_MAX` and `RUSTLE_MAX` sounding, the nearest of a
  *   frame's new ones taking the free slots, none beyond its range. A slot
@@ -21,7 +23,7 @@
  * context is unlocked, and nothing is queued: a frame's frog calls are that
  * frame's alone, so the first frame after unlock plays none from before it.
  */
-import type { AmbientAudio, LoopEmitter, VoiceSource } from "./ambientAudio.js";
+import { LOOP_GAIN_RAMP_S, type AmbientAudio, type LoopEmitter, type VoiceSource } from "./ambientAudio.js";
 import type { FrogCall } from "./frogChorus.js";
 import {
   FROG_CALL_S, FROG_CARRIER_HZ, RUSTLE_LOUD_S, RUSTLE_S, frogCallVoice, humVoice, rustleVoice,
@@ -29,7 +31,7 @@ import {
 
 export const HUM_MAX = 8, FROG_VOICES_MAX = 12, RUSTLE_MAX = 2;
 export const HUM_REF = 0.5, HUM_RANGE = 10, FROG_REF = 0.5, FROG_RANGE = 120, RUSTLE_REF = 0.3, RUSTLE_RANGE = 3;
-/** A dropped hum's gain falls linearly to nothing over this long, then it stops. */
+/** A dropped hum's gain falls linearly to nothing over this long; it stops `LOOP_GAIN_RAMP_S` later. */
 export const HUM_FADE_S = 0.5;
 /** A hum's gain is `presence · sqrt(midges / HUM_MIDGES_UNIT)`. */
 export const HUM_MIDGES_UNIT = 200;
@@ -69,6 +71,9 @@ type HumSlot = {
   fading: boolean;
   fadeFrom: number;
   fadeGain: number;
+  /** The fade is over and the gain of nothing sent: the voice stops at `stopAt`. */
+  draining: boolean;
+  stopAt: number;
   /** The frame this swarm was last among the nearest. */
   chosen: number;
 };
@@ -138,7 +143,7 @@ export function createWaterLifeAudio(
     let slot = humSlots[k];
     if (slot === undefined) {
       const made: HumSlot = {
-        emitter: null, voice: null, gain: 0, pitch: 0, fading: false, fadeFrom: 0, fadeGain: 0, chosen: -1,
+        emitter: null, voice: null, gain: 0, pitch: 0, fading: false, fadeFrom: 0, fadeGain: 0, draining: false, stopAt: 0, chosen: -1,
         build: (c) => {
           const v = humVoice(c, made.pitch, random);
           made.voice = v;
@@ -209,12 +214,15 @@ export function createWaterLifeAudio(
     }
     for (let m = 0; m < chosenN; m++) humSlot(chosenIdx[m]!).chosen = frame;
 
-    // The dropped fade, and stop once faded: the cap frees as they end.
+    // The dropped fade, are sent a gain of nothing and stop once it has
+    // followed: the cap frees as they end. One chosen again before it stops
+    // is the same voice, gained again.
     for (let k = 0; k < humSlots.length; k++) {
       const slot = humSlots[k];
       if (slot === undefined || slot.emitter === null) continue;
       if (slot.chosen === frame) {
         slot.fading = false;
+        slot.draining = false;
         continue;
       }
       if (!slot.fading) {
@@ -222,16 +230,29 @@ export function createWaterLifeAudio(
         slot.fadeFrom = t;
         slot.fadeGain = slot.gain;
       }
-      const left = 1 - (t - slot.fadeFrom) / HUM_FADE_S;
-      if (left <= 0) {
-        slot.emitter.stop();
-        slot.emitter = null;
-        slot.voice = null;
-        slot.fading = false;
-        liveHums--;
-      } else {
-        setGain(slot, slot.fadeGain * left);
+      if (slot.draining) {
+        if (t >= slot.stopAt) {
+          slot.emitter.stop();
+          slot.emitter = null;
+          slot.voice = null;
+          slot.fading = false;
+          slot.draining = false;
+          liveHums--;
+        }
+        continue;
       }
+      const left = 1 - (t - slot.fadeFrom) / HUM_FADE_S;
+      if (left > 0) {
+        setGain(slot, slot.fadeGain * left);
+        continue;
+      }
+      // Sent outright: a change under `GAIN_STEP` would be held back, and the
+      // emitter's gain follows its target over `LOOP_GAIN_RAMP_S`, so the voice
+      // is cut only after that.
+      slot.gain = 0;
+      slot.emitter.setGain(0);
+      slot.draining = true;
+      slot.stopAt = t + LOOP_GAIN_RAMP_S;
     }
 
     // The chosen: moved, re-gained and re-pitched in place, or started while the cap allows.

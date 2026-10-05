@@ -94,26 +94,64 @@ describe("frogChorus", () => {
     expect(heard.map(([, t]) => t)).toEqual([5, 6, 7, 8, 9, 10, 11, 12]);
   });
 
-  it("once the players have gone, the stretch starts again from the voice nearest its centre, and the others join 5 to 15 s later", () => {
+  it("once the players have gone, the voice whose own wait has run out starts again first, and the others join 5 to 15 s later, never before their own waits", () => {
     // A player halfway between voices 0 and 1 for 10 s, then between 1 and 2
-    // for 10 s, then gone. Voice 0 was last near at 9.75 s; at its 30 s draw
-    // the stretch {0, 1, 2} starts again, and voice 1 (its middle) leads.
+    // for 10 s, then gone. Voice 0 was last near at 9.75 s, voices 1 and 2 at
+    // 19.75 s. At voice 0's 30 s draw (39.75 s) it is the only voice of the
+    // stretch {0, 1, 2} that has waited, so it leads alone.
     const chorus = createFrogChorus(RING, SEED, () => 0.5);
     const walk = (t: number) => (t < 10 ? [between(0, 1)] : t < 20 ? [between(1, 2)] : AWAY);
     const log = run(chorus, 0, 70, walk).filter(([v]) => v <= 2);
     // Voices 0 and 1 silent from the start, voice 2 from 10 s.
     expect(log.filter(([, t]) => t >= 10 && t < 39.75)).toEqual([]);
-    // Voice 1 alone for its whole bout, then 0 and 2 at the join's draw of 10 s.
+    // Voice 0 alone for its whole bout (the call due at 43.75 s waits a quarter
+    // second for a neighbour's call to end).
     expect(log.filter(([, t]) => t >= 20 && t < 49.75).map(([v, t]) => `${v}@${t}`)).toEqual([
+      "0@39.75", "0@40.75", "0@41.75", "0@42.75", "0@44", "0@45", "0@46", "0@47",
+    ]);
+    // Voices 1 and 2 have 10 s of their waits to go and the join's draw is 10 s:
+    // both join at 49.75 s, voice 2 calling as soon as voice 1's call has ended.
+    expect(firstCalls(log, 49.75)).toEqual({ 0: 59, 1: 49.75, 2: 50.25 });
+    // Draws of 0: the waits are 20 s and the joins 5 s. Voice 0 leads at 29.75 s; voices 1 and 2
+    // have waited 10 s of theirs, so they join at 39.75 s, not 5 s after voice 0.
+    const quick = createFrogChorus(RING, SEED, () => 0);
+    const early = run(quick, 0, 50, walk).filter(([v]) => v <= 2);
+    expect(early.filter(([, t]) => t >= 10 && t < 29.75)).toEqual([]);
+    expect(firstCalls(early, 20)).toEqual({ 0: 29.75, 1: 39.75, 2: 40.25 });
+  });
+
+  it("when the waits of a stretch end together, the voice nearest its centre leads and the others join 5 to 15 s later", () => {
+    // One player halfway between voices 0 and 1 and another between 1 and 2,
+    // both gone at 10 s: all three waits end at 39.75 s and voice 1 is the
+    // middle of the stretch.
+    const chorus = createFrogChorus(RING, SEED, () => 0.5);
+    const there = (t: number) => (t < 10 ? [between(0, 1), between(1, 2)] : AWAY);
+    const log = run(chorus, 0, 70, there).filter(([v]) => v <= 2);
+    expect(log.filter(([, t]) => t >= 0 && t < 39.75)).toEqual([]);
+    expect(log.filter(([, t]) => t < 49.75).map(([v, t]) => `${v}@${t}`)).toEqual([
       "1@39.75", "1@40.75", "1@41.75", "1@42.75", "1@43.75", "1@44.75", "1@45.75", "1@46.75",
     ]);
-    // Both join at 49.75 s and call as soon as no neighbour is mid-call.
-    expect(firstCalls(log, 49.75)).toEqual({ 0: 50, 1: 58.75, 2: 50 });
-    // Draws of 0: the restart at 20 s and the join at 5 s.
-    const quick = createFrogChorus(RING, SEED, () => 0);
-    const early = run(quick, 0, 40, walk).filter(([v]) => v <= 2);
-    expect(early.filter(([, t]) => t >= 10 && t < 29.75)).toEqual([]);
-    expect(firstCalls(early, 20)).toEqual({ 0: 34.75, 1: 29.75, 2: 34.75 });
+    expect(firstCalls(log, 49.75)).toEqual({ 0: 49.75, 1: 58.75, 2: 49.75 });
+  });
+
+  it("a player walking the shore past three voices: each starts again no sooner than 20 s after the player was last within 12 m of it", () => {
+    let s = 8;
+    const chorus = createFrogChorus(RING.slice(0, 3), SEED, () => (s = (s * 16807) % 2147483647) / 2147483647);
+    // 3 m/s along the circle the voices stand on, from 1 radian before voice 0,
+    // then gone at 30 s. Voice by voice the player is within 12 m from
+    // 6, 12.5 and 18.75 s, and was last within 12 m at 14, 20.25 and 26.5 s.
+    const walk = (t: number) => {
+      const angle = -1 + 0.1 * t;
+      return t < 30 ? [{ x: 30 * Math.cos(angle), z: 30 * Math.sin(angle) }] : AWAY;
+    };
+    const log = run(chorus, 0, 90, walk);
+    const HUSHED_FROM = [6, 12.5, 18.75], LAST_NEAR = [14, 20.25, 26.5];
+    for (let v = 0; v < 3; v++) {
+      expect(log.filter(([w, t]) => w === v && t >= HUSHED_FROM[v]! && t < LAST_NEAR[v]! + 20)).toEqual([]);
+    }
+    // Each voice's first call after the player, 21.5, 26.75 and 27.75 s on:
+    // its own wait, then its stretch's lead or its join.
+    expect([0, 1, 2].map((v) => log.find(([w, t]) => w === v && t > LAST_NEAR[v]!)![1])).toEqual([35.5, 47, 54.25]);
   });
 
   it("neighbours never start within a call's length of each other", () => {
