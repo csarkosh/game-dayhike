@@ -316,21 +316,21 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 936 recorded stages, each file\'s bytes hashing to the name it has: 753 on the medium and high tiers, 169 on low, 8 on high alone, 4 on medium alone, 2 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(936);
+  it('holds the 946 recorded stages, each file\'s bytes hashing to the name it has: 763 on the medium and high tiers, 169 on low, 8 on high alone, 4 on medium alone, 2 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(946);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(936);
+    expect(read.stages).toHaveLength(946);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(496);
-    // The 753 recorded on the medium and high tiers, the low tier's 169,
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(503);
+    // The 763 recorded on the medium and high tiers, the low tier's 169,
     // recorded on it alone, the 8 the high tier alone met, the 4 the
     // medium tier alone met, and the sky dome's 2, whose text is the same
     // on every tier. Stages whose text a shader no longer produces are
     // retired, not kept.
-    expect(read.tiers.size).toBe(936);
+    expect(read.tiers.size).toBe(946);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([171, 759, 763]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(753);
+    expect([on('low'), on('medium'), on('high')]).toEqual([171, 769, 773]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(763);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(169);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(8);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(2);
