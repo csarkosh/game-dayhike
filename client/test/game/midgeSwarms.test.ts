@@ -16,6 +16,13 @@ import {
   MIDGE_AMPS, MIDGE_BALL_FLAT, MIDGE_CARD, MIDGE_FLASH_HZ, MIDGE_MIN_PX, MIDGE_RATES, MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS,
   midgeHash, midgeOffset,
 } from "../../src/game/midgeMotion.js";
+import { luma } from "../../src/game/colour.js";
+import { sunPositionAt } from "../../src/game/sky.js";
+import { buildSkyTables, buildSlice, SLICE_ALTITUDES_DEG } from "../../src/game/skyModel.js";
+import { skyStateFor } from "../../src/game/skyState.js";
+import { sliceBracket } from "../../src/game/skyTable.js";
+import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
 import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
 import { drawnEffect, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
@@ -349,7 +356,7 @@ describe("the midges' stages", () => {
   float a = vAlpha * tent.x * tent.y;
   float day = 1.0 - midgeNight;
   vec3 sunGlint = midgeSunLight * day * vSunGlint;
-  vec3 skyGlint = midgeSkyGlow * day * vSkyGlint;
+  vec3 skyGlint = midgeSkyGlow * vSkyGlint;
   float speck = MIDGE_DARK * clamp(midgeSkyLuma, 0.0, 1.0);
   gl_FragColor = vec4((sunGlint + skyGlint) * a, speck * a);`);
     const both = `${VERTEX}\n${FRAGMENT}`;
@@ -427,7 +434,7 @@ describe("the midges' stages", () => {
   const glintColour = (
     sunLight: readonly [number, number, number], skyGlow: readonly [number, number, number], night: number,
     sunGlint: number, sky: number,
-  ): number[] => [0, 1, 2].map((i) => sunLight[i]! * (1 - night) * sunGlint + skyGlow[i]! * (1 - night) * sky);
+  ): number[] => [0, 1, 2].map((i) => sunLight[i]! * (1 - night) * sunGlint + skyGlow[i]! * sky);
 
   it("glint with the sky toward the sun's azimuth after sunset, and not away from it", () => {
     // The sun 7 degrees under the horizon in the west-south-west.
@@ -449,14 +456,53 @@ describe("the midges' stages", () => {
     expect(skyGlint([1, 0, 0], [0, 1, 0])).toBeCloseTo(0.6, 12);
     expect(skyGlint([-1, 0, 0], [0, 1, 0])).toBe(0);
     // In the fragment, the sky's share takes the horizon's colour toward the
-    // sun, the sun's its own light (none once it has set); both gone at night.
+    // sun, the sun's its own light (none once it has set). The sun's is gone
+    // at night; the sky's is not cut by the night factor, its colour fades
+    // with the twilight by itself.
     const glow = [0.9, 0.5, 0.3] as const;
     const set = [0, 0, 0] as const;
     const g = skyGlint(toward(0, 0), sun);
-    glintColour(set, glow, 0.25, 0.8, g).forEach((v, i) => expect(v).toBeCloseTo([0.405, 0.225, 0.135][i]!, 12));
-    expect(glintColour(set, glow, 1, 0.8, g)).toEqual([0, 0, 0]);
+    glintColour(set, glow, 0.25, 0.8, g).forEach((v, i) => expect(v).toBeCloseTo([0.54, 0.3, 0.18][i]!, 12));
+    glintColour(set, glow, 1, 0.8, g).forEach((v, i) => expect(v).toBeCloseTo([0.54, 0.3, 0.18][i]!, 12));
     glintColour([2, 1.5, 1], glow, 0, 0.5, 0).forEach((v, i) => expect(v).toBeCloseTo([1, 0.75, 0.5][i]!, 12));
+    expect(glintColour([2, 1.5, 1], [0, 0, 0], 1, 0.5, 0)).toEqual([0, 0, 0]);
   });
+
+  it("keep the sky's glint through the swarms' full hour after sunset, fading with the twilight by night", () => {
+    // The suite's sky, with the two slices that bracket the sun at 18:45 added
+    // so the state there is the sky's own, not its neighbours' stand-in.
+    const table = skyFixture();
+    const tables = buildSkyTables();
+    for (const i of sliceBracket((Math.asin(sunPositionAt(18.75).y) * 180) / Math.PI)) {
+      table.add(buildSlice(tables, SLICE_ALTITUDES_DEG[i]!));
+    }
+    /** The glint's colour, before the coverage, of a midge seen level toward
+     * the sun's azimuth at `hour` under a clear sky, the frame filled as
+     * waterLife.ts fills it: the sun's light, the horizon toward the sun. */
+    const at = (hour: number): { night: number; colour: number[] } => {
+      const sky = skyStateFor(table, hour, WEATHER_PRESETS.clear);
+      expect(table.has((sky.altitude * 180) / Math.PI), `${hour}`).toBe(true);
+      const d = sky.sunDir;
+      const level = Math.hypot(d.x, d.z);
+      const look = [d.x / level, 0, d.z / level] as const;
+      const sunLight = [sky.sunColour.r * sky.sunIntensity, sky.sunColour.g * sky.sunIntensity, sky.sunColour.b * sky.sunIntensity] as const;
+      const glow = [sky.horizonToward.r, sky.horizonToward.g, sky.horizonToward.b] as const;
+      return { night: sky.night, colour: glintColour(sunLight, glow, sky.night, 1, skyGlint(look, [d.x, d.y, d.z])) };
+    };
+    // 18:45: full night by the sky's own factor and the sun gives nothing, yet
+    // the western horizon still glows red, and the midges with it.
+    const dusk = at(18.75);
+    expect(dusk.night).toBe(1);
+    dusk.colour.forEach((v, i) => expect(v).toBeCloseTo([0.173467, 0.035212, 0.038471][i]!, 6));
+    const duskLuma = luma({ r: dusk.colour[0]!, g: dusk.colour[1]!, b: dusk.colour[2]! });
+    expect(duskLuma).toBeCloseTo(0.06484, 5);
+    // 22:00: the twilight gone, only the night sky's own floor toward the
+    // west, under a third of the glint at 18:45 and none of its red.
+    const night = at(22);
+    expect(night.night).toBe(1);
+    night.colour.forEach((v, i) => expect(v).toBeCloseTo([0.012149, 0.018012, 0.036][i]!, 6));
+    expect(luma({ r: night.colour[0]!, g: night.colour[1]!, b: night.colour[2]! })).toBeCloseTo(0.018064, 6);
+  }, timeLimit(10_000));
 });
 
 describe("the midges' stages, compiled", () => {
