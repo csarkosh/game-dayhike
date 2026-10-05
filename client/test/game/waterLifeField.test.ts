@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
 import { marshWeightAt } from "../../src/sim/features.js";
-import type { LakeSource } from "../../src/sim/terrain.js";
+import { elevationAt, type LakeSource } from "../../src/sim/terrain.js";
 import { COHORT_SNAG, treesInRect } from "../../src/sim/vegetation.js";
 import { CLUTTER_BUSH, CLUTTER_DRIFTLOG, CLUTTER_REED, CLUTTER_SHRUB, clutterInRect } from "../../src/sim/clutter.js";
 import {
@@ -16,6 +16,11 @@ import { timeLimit } from "../helpers/timeLimit.js";
 const SEED = -1065037390;
 /** Another lobby world's murky lake, radius 30.5 m. */
 const OTHER_SEED = -1458473702;
+/** Lobby worlds whose lakes have banks that fall away from the water: in the
+ * first, perches stand on shrubs and bushes up to 9 m below it; in the second
+ * (radius 26.1 m), the wet plants of the outer bank are 7 m below it. */
+const DOWNHILL_SEED = -1098592628;
+const FALLING_SEED = -1048259771;
 
 /** The lake at another radius, the rest of it as it is. */
 const sized = (lake: LakeSource, radius: number): LakeSource => ({ ...lake, radius });
@@ -211,7 +216,9 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
     const layout = waterLifeLayout(SEED, lake);
     for (const p of layout.perches) {
       expect(inShoreBand(lake, p.x, p.z)).toBe(true);
-      expect(p.y - lake.level).toBeGreaterThanOrEqual(0.3);
+      // 0.3 to 1.5 m up, and 0.6 m more for a reed in the shallows, lifted to the water
+      expect(p.y - elevationAt(SEED, p.x, p.z)).toBeGreaterThanOrEqual(0.3);
+      expect(p.y - elevationAt(SEED, p.x, p.z)).toBeLessThanOrEqual(2.1);
     }
     for (const s of layout.stems) {
       expect(inShoreBand(lake, s.x, s.z)).toBe(true);
@@ -220,6 +227,31 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
     // a few beds, not forty scattered stems: most stems have another within 3 m
     const near = layout.stems.filter((s) => layout.stems.some((t) => t !== s && Math.hypot(t.x - s.x, t.z - s.z) < 3)).length;
     expect([layout.perches.length, layout.stems.length, near]).toEqual([20, 40, 36]);
+  });
+
+  it("stands a perch or a stem on its ground, not on the water's level, where the bank falls away", () => {
+    // [seed, perches, stems, perches and stems on ground over 1 m below the water]
+    const cases: [number, number, number, number, number][] = [
+      [DOWNHILL_SEED, 21, 40, 6, 0],
+      [FALLING_SEED, 20, 40, 11, 16],
+    ];
+    for (const [seed, perches, stems, perchesBelow, stemsBelow] of cases) {
+      const lake = lakeOf(seed);
+      const layout = waterLifeLayout(seed, lake);
+      const below = (list: { x: number; z: number }[]): number => list.filter((p) => lake.level - elevationAt(seed, p.x, p.z) > 1).length;
+      expect([seed, layout.perches.length, layout.stems.length, below(layout.perches), below(layout.stems)])
+        .toEqual([seed, perches, stems, perchesBelow, stemsBelow]);
+      // up from the ground 0.3 to 1.5 m for a perch, 0.3 to 1 m for a stem, and a reed in the
+      // shallows, ground within 1 m below the water, lifted to the water: 2.5 m and 2 m at most
+      for (const p of layout.perches) {
+        expect(p.y - elevationAt(seed, p.x, p.z)).toBeGreaterThanOrEqual(0.3);
+        expect(p.y - elevationAt(seed, p.x, p.z)).toBeLessThanOrEqual(2.5);
+      }
+      for (const st of layout.stems) {
+        expect(st.y - elevationAt(seed, st.x, st.z)).toBeGreaterThanOrEqual(0.3);
+        expect(st.y - elevationAt(seed, st.x, st.z)).toBeLessThanOrEqual(2);
+      }
+    }
   });
 
   it("sets the frogs at the water's edge, more of them along the marsh", () => {

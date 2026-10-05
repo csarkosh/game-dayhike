@@ -100,6 +100,10 @@ const BEAT_OUT: readonly [number, number] = [1, 3];
 const BEAT_UP: readonly [number, number] = [0.5, 2];
 /** A skimmer's perch above its candidate's ground, or the water (m). */
 const PERCH_UP: readonly [number, number] = [0.3, 1.5];
+/** Ground this far below the water or less is the shallows: a reed there
+ * stands up out of the water, so its perch is lifted to the level. Ground
+ * further below, a bank falling away from the lake, is stood on as it is (m). */
+const WADE_DEPTH = 1;
 /** A reed bed: reeds or wet plants above this density. Stems fill whole
  * patches of BED_PATCH × BED_PATCH cells before the next, so the
  * damselflies stand together in a few beds. */
@@ -116,6 +120,12 @@ const FROG_SLIP = 0.15;
 const RIM_STEP = 1;
 
 type Candidate = { x: number; z: number; ground: number; rank: number; angle: number };
+
+/** The height a perch or stem stands up from: the ground, or the water's
+ * level where the ground lies within WADE_DEPTH below it. */
+function footingOf(ground: number, level: number): number {
+  return level - ground <= WADE_DEPTH ? Math.max(ground, level) : ground;
+}
 
 function lerp(range: readonly [number, number], t: number): number {
   return range[0] + (range[1] - range[0]) * t;
@@ -235,7 +245,7 @@ function perchesOf(seed: number, lake: LakeSource, cands: readonly Candidate[]):
     const at = ((p + draw(0)) / n) * TAU;
     const c = pick(cands, p, n, lake.x + lake.radius * Math.cos(at), lake.z + lake.radius * Math.sin(at), RANK_DRIFTLOG, false);
     if (c === null) continue;
-    out.push({ x: c.x, y: Math.max(c.ground, lake.level) + lerp(PERCH_UP, draw(1)), z: c.z, seed: Math.floor(draw(2) * SEED_RANGE) });
+    out.push({ x: c.x, y: footingOf(c.ground, lake.level) + lerp(PERCH_UP, draw(1)), z: c.z, seed: Math.floor(draw(2) * SEED_RANGE) });
   }
   return out;
 }
@@ -265,7 +275,7 @@ function stemsOf(seed: number, lake: LakeSource): Perch[] {
     const draw = (j: number): number => hash3(k, j, WATER_LIFE_SALT.stemDraw, seed);
     const x = (cell.cx + 0.5 + 0.8 * (draw(0) - 0.5)) * step;
     const z = (cell.cz + 0.5 + 0.8 * (draw(1) - 0.5)) * step;
-    out.push({ x, y: Math.max(elevationAt(seed, x, z), lake.level) + lerp(STEM_UP, draw(2)), z, seed: Math.floor(draw(3) * SEED_RANGE) });
+    out.push({ x, y: footingOf(elevationAt(seed, x, z), lake.level) + lerp(STEM_UP, draw(2)), z, seed: Math.floor(draw(3) * SEED_RANGE) });
   }
   return out;
 }
