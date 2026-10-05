@@ -1,7 +1,14 @@
-// The midges' fragment stage, built by midgeSwarms.ts: a soft disc on the
-// card, no texture. Its light is the vertex stage's glint (the forward
-// scatter toward the sun and the wing's flash) times the sun's colour and
-// strength, gone at night, added to what lies behind. Its coverage darkens
+// The midges' fragment stage, built by midgeSwarms.ts: a tent on the card,
+// (1 - |u|)(1 - |v|) with u and v running -1 to 1 across it, no texture. At
+// the card's fewest pixels, two across, the tent's values at the pixel
+// centres it covers sum the same wherever the midge lies, so a far midge
+// holds steady as it crosses them.
+//
+// Its light is the vertex stage's two glints, lit apart and gone at night,
+// added to what lies behind: the sun's share (the forward scatter toward the
+// sun and the wing's flash) times the sun's colour and strength, and the
+// sky's share (toward the sun's azimuth) times the horizon's colour toward
+// the sun, which still glows after the sun has set. Its coverage darkens
 // what lies behind by the sky's brightness, so a swarm against a bright sky
 // reads as dark specks. The output is premultiplied: the colour carries its
 // own alpha, and the alpha says how much of the background the speck hides.
@@ -11,18 +18,23 @@
 // shaderHygiene test enforces both.
 
 uniform vec3 midgeSunLight;
+uniform vec3 midgeSkyGlow;
 uniform float midgeNight;
 uniform float midgeSkyLuma;
 
 varying vec2 vCorner;
 varying float vAlpha;
-varying float vLight;
+varying float vSunGlint;
+varying float vSkyGlint;
 
-const float MIDGE_DARK = 0.6;
+const float MIDGE_DARK = 0.9;
 
 void main(void) {
-  float a = vAlpha * clamp(1.0 - dot(vCorner, vCorner), 0.0, 1.0);
-  vec3 glint = midgeSunLight * (1.0 - midgeNight) * vLight;
+  vec2 tent = clamp(1.0 - abs(vCorner), 0.0, 1.0);
+  float a = vAlpha * tent.x * tent.y;
+  float day = 1.0 - midgeNight;
+  vec3 sunGlint = midgeSunLight * day * vSunGlint;
+  vec3 skyGlint = midgeSkyGlow * day * vSkyGlint;
   float speck = MIDGE_DARK * clamp(midgeSkyLuma, 0.0, 1.0);
-  gl_FragColor = vec4(glint * a, speck * a);
+  gl_FragColor = vec4((sunGlint + skyGlint) * a, speck * a);
 }

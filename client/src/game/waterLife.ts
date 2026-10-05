@@ -239,6 +239,7 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
   const midgeFrame: MidgeFrame = {
     eyeX: 0, eyeY: 0, eyeZ: 0, time: 0,
     sunX: 0, sunY: 1, sunZ: 0, sunR: 0, sunG: 0, sunB: 0,
+    glowR: 0, glowG: 0, glowB: 0,
     night: 0, skyLuma: 0, pixelAt1m: 0, table,
   };
 
@@ -369,15 +370,24 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
       midgeFrame.sunR = sky.sunColour.r * sky.sunIntensity;
       midgeFrame.sunG = sky.sunColour.g * sky.sunIntensity;
       midgeFrame.sunB = sky.sunColour.b * sky.sunIntensity;
+      // The horizon toward the sun as the dome draws it: the table's ring
+      // already times the dome's scale, with the cloud deck and the night's
+      // floor in it, the colour the haze's glow starts from.
+      midgeFrame.glowR = sky.horizonToward.r;
+      midgeFrame.glowG = sky.horizonToward.g;
+      midgeFrame.glowB = sky.horizonToward.b;
       midgeFrame.night = sky.night;
     } else {
-      // Before the sky's first slices: no sun, and the day's night factor.
+      // Before the sky's first slices: no sun, no glow, and the day's night factor.
       midgeFrame.sunX = 0;
       midgeFrame.sunY = 1;
       midgeFrame.sunZ = 0;
       midgeFrame.sunR = 0;
       midgeFrame.sunG = 0;
       midgeFrame.sunB = 0;
+      midgeFrame.glowR = 0;
+      midgeFrame.glowG = 0;
+      midgeFrame.glowB = 0;
       midgeFrame.night = 0;
     }
     midgeFrame.skyLuma = f.skyLuma;

@@ -22,6 +22,9 @@ const seen = vi.hoisted(() => ({
   layout: null as WaterLifeLayout | null,
   blocks: [] as number[],
   table: null as Float32Array | null,
+  /** The sun's light and the sky's glow the last midge frame carried. */
+  sunLight: null as number[] | null,
+  skyGlow: null as number[] | null,
   midgeUpdates: 0,
   dragonflies: null as Dragonflies | null,
   dragonflySteps: 0,
@@ -51,6 +54,8 @@ vi.mock("../../src/game/midgeSwarms.js", async (importOriginal) => {
       swarms.update = (f) => {
         seen.midgeUpdates += 1;
         seen.table = f.table;
+        seen.sunLight = [f.sunR, f.sunG, f.sunB];
+        seen.skyGlow = [f.glowR, f.glowG, f.glowB];
         update(f);
       };
       return swarms;
@@ -112,6 +117,8 @@ afterEach(() => {
   seen.layout = null;
   seen.blocks = [];
   seen.table = null;
+  seen.sunLight = null;
+  seen.skyGlow = null;
   seen.midgeUpdates = 0;
   seen.dragonflies = null;
   seen.dragonflySteps = 0;
@@ -212,6 +219,25 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     // 19.04 °C at 18:30 under a clear sky: 230 Hz at 15 °C and 10 Hz a degree.
     expect(sound.pitch).toBeCloseTo(270.43807145043604, 9);
     expect(sound.frogCalls).toHaveLength(0);
+    life.dispose();
+  });
+
+  it("lights the midges with the sun and with the dome's horizon toward it, and with neither before the sky's first slices", () => {
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const m = seen.layout!.markers[0]!;
+    // A quarter hour after sunset: the sun is down and gives no light, the
+    // horizon toward it still glows (the sky state's horizonToward, in the
+    // scene's units as the dome draws it).
+    const f = frameAt(m.x, m.y, m.z + 1, 18.25);
+    life.update(f);
+    expect(seen.sunLight).toEqual([0, 0, 0]);
+    expect(seen.skyGlow![0]).toBeCloseTo(1.8279791202740467, 9);
+    expect(seen.skyGlow![1]).toBeCloseTo(0.46724543707121463, 9);
+    expect(seen.skyGlow![2]).toBeCloseTo(0.5186590210160579, 9);
+    f.sky = null;
+    run(life, f, 0.05);
+    expect(seen.sunLight).toEqual([0, 0, 0]);
+    expect(seen.skyGlow).toEqual([0, 0, 0]);
     life.dispose();
   });
 

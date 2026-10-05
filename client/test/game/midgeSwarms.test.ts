@@ -8,7 +8,8 @@ import { Effect } from "@babylonjs/core/Materials/effect.js";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import {
-  createMidgeSwarms, MIDGE_DARK, MIDGE_FLASH_GAIN, MIDGE_FLASH_POWER, MIDGE_LOBE_POWER, MIDGE_NAME, MIDGE_UNIFORMS,
+  createMidgeSwarms, MIDGE_ALPHA_FLOOR, MIDGE_DARK, MIDGE_FLASH_GAIN, MIDGE_FLASH_POWER, MIDGE_LOBE_POWER, MIDGE_NAME,
+  MIDGE_SKY_GLINT, MIDGE_SKY_LOBE_POWER, MIDGE_UNIFORMS,
   type MidgeFrame, type MidgeSwarms,
 } from "../../src/game/midgeSwarms.js";
 import {
@@ -56,6 +57,7 @@ function frame(time: number): MidgeFrame {
   return {
     eyeX: 1, eyeY: 2, eyeZ: 3, time,
     sunX: 0, sunY: 0.6, sunZ: 0.8, sunR: 2, sunG: 1.5, sunB: 1,
+    glowR: 0.9, glowG: 0.5, glowB: 0.3,
     night: 0.25, skyLuma: 0.4, pixelAt1m: 0.0011, table,
   };
 }
@@ -108,7 +110,7 @@ describe("createMidgeSwarms", () => {
     expect(options.attributes).toEqual(["position", "midge"]);
     expect(options.uniforms).toEqual([
       "viewProjection",
-      "midgeEye", "midgeTime", "midgeSun", "midgeSunLight", "midgeNight", "midgeSkyLuma", "midgePixel",
+      "midgeEye", "midgeTime", "midgeSun", "midgeSunLight", "midgeSkyGlow", "midgeNight", "midgeSkyLuma", "midgePixel",
       "midgeSwarms",
     ]);
     expect(MIDGE_UNIFORMS).toEqual(options.uniforms);
@@ -171,6 +173,7 @@ describe("createMidgeSwarms", () => {
     expect(m._vectors3["midgeEye"]!.asArray()).toEqual([0, 0, 0]);
     expect(m._vectors3["midgeSun"]!.asArray()).toEqual([0, 1, 0]);
     expect(m._vectors3["midgeSunLight"]!.asArray()).toEqual([0, 0, 0]);
+    expect(m._vectors3["midgeSkyGlow"]!.asArray()).toEqual([0, 0, 0]);
     const table = m._vectors4Arrays["midgeSwarms"]!;
     expect(table.length).toBe(384);
     expect(table.every((v) => v === 0)).toBe(true);
@@ -184,26 +187,31 @@ describe("createMidgeSwarms", () => {
     const eye = m._vectors3["midgeEye"];
     const sun = m._vectors3["midgeSun"];
     const sunLight = m._vectors3["midgeSunLight"];
+    const skyGlow = m._vectors3["midgeSkyGlow"];
     const table = m._vectors4Arrays["midgeSwarms"];
     expect(m._floats).toEqual({ midgeTime: 12.5, midgeNight: 0.25, midgeSkyLuma: 0.4, midgePixel: 0.0011 });
     expect(eye!.asArray()).toEqual([1, 2, 3]);
     expect(sun!.asArray()).toEqual([0, 0.6, 0.8]);
     expect(sunLight!.asArray()).toEqual([2, 1.5, 1]);
+    expect(skyGlow!.asArray()).toEqual([0.9, 0.5, 0.3]);
     expect([...table!.subarray(0, 12)]).toEqual([4, 2.5, -6, 0.5, 0.5, 40, 1, 0, 0, 0, 17, 0]);
 
     const next = frame(13);
     next.eyeX = 7;
+    next.glowR = 0.2;
     next.table[5] = 25;
     swarms.update(next);
     // The same objects, refilled: nothing is made per frame.
     expect(m._vectors3["midgeEye"]).toBe(eye);
     expect(m._vectors3["midgeSun"]).toBe(sun);
     expect(m._vectors3["midgeSunLight"]).toBe(sunLight);
+    expect(m._vectors3["midgeSkyGlow"]).toBe(skyGlow);
     expect(m._vectors4Arrays["midgeSwarms"]).toBe(table);
     // Its own table, a copy of the frame's.
     expect(table).not.toBe(next.table);
     expect(m._floats["midgeTime"]).toBe(13);
     expect(eye!.asArray()).toEqual([7, 2, 3]);
+    expect(skyGlow!.asArray()).toEqual([0.2, 0.5, 0.3]);
     expect(table![5]).toBe(25);
   });
 
@@ -240,22 +248,28 @@ describe("the midges' stages", () => {
       MIDGE_RATE_0: "0.7", MIDGE_RATE_1: "1.3", MIDGE_RATE_2: "2.1",
       MIDGE_AMP_0: "0.55", MIDGE_AMP_1: "0.3", MIDGE_AMP_2: "0.15",
       MIDGE_BALL_FLAT: "0.6666666666666666",
-      MIDGE_CARD: "0.002", MIDGE_MIN_PX: "1.2",
+      MIDGE_CARD: "0.003", MIDGE_MIN_PX: "2.0", MIDGE_ALPHA_FLOOR: "0.6",
       MIDGE_FLASH_LOW: "9.0", MIDGE_FLASH_HIGH: "14.0",
       MIDGE_LOBE_POWER: "8.0", MIDGE_FLASH_POWER: "24.0", MIDGE_FLASH_GAIN: "0.5",
-      MIDGE_DARK: "0.6",
+      MIDGE_SKY_GLINT: "0.6", MIDGE_SKY_LOBE_POWER: "2.0",
+      MIDGE_DARK: "0.9",
     });
+    expect([MIDGE_CARD, MIDGE_MIN_PX, MIDGE_ALPHA_FLOOR, MIDGE_SKY_GLINT, MIDGE_SKY_LOBE_POWER, MIDGE_DARK])
+      .toEqual([0.003, 2, 0.6, 0.6, 2, 0.9]);
     expect(consts["MIDGE_TAU"]).toBe((2 * Math.PI).toFixed(8));
     MIDGE_RATES.forEach((rate, k) => expect(consts[`MIDGE_RATE_${k}`]).toBe(glslFloat(rate)));
     MIDGE_AMPS.forEach((amp, k) => expect(consts[`MIDGE_AMP_${k}`]).toBe(glslFloat(amp)));
     expect(consts["MIDGE_BALL_FLAT"]).toBe(glslFloat(MIDGE_BALL_FLAT));
     expect(consts["MIDGE_CARD"]).toBe(glslFloat(MIDGE_CARD));
     expect(consts["MIDGE_MIN_PX"]).toBe(glslFloat(MIDGE_MIN_PX));
+    expect(consts["MIDGE_ALPHA_FLOOR"]).toBe(glslFloat(MIDGE_ALPHA_FLOOR));
     expect(consts["MIDGE_FLASH_LOW"]).toBe(glslFloat(MIDGE_FLASH_HZ[0]));
     expect(consts["MIDGE_FLASH_HIGH"]).toBe(glslFloat(MIDGE_FLASH_HZ[1]));
     expect(consts["MIDGE_LOBE_POWER"]).toBe(glslFloat(MIDGE_LOBE_POWER));
     expect(consts["MIDGE_FLASH_POWER"]).toBe(glslFloat(MIDGE_FLASH_POWER));
     expect(consts["MIDGE_FLASH_GAIN"]).toBe(glslFloat(MIDGE_FLASH_GAIN));
+    expect(consts["MIDGE_SKY_GLINT"]).toBe(glslFloat(MIDGE_SKY_GLINT));
+    expect(consts["MIDGE_SKY_LOBE_POWER"]).toBe(glslFloat(MIDGE_SKY_LOBE_POWER));
     expect(consts["MIDGE_DARK"]).toBe(glslFloat(MIDGE_DARK));
   });
 
@@ -321,22 +335,127 @@ describe("the midges' stages", () => {
     expect(VERTEX).toContain("float size = max(MIDGE_CARD, MIDGE_MIN_PX * midgePixel * far);");
     expect(VERTEX).toContain("float alive = (1.0 - step(shape.y, slot)) * (1.0 - step(shape.z, 0.0));");
     expect(VERTEX).toContain("vec3 corner = centre + (side * position.x + rise * position.y) * size * alive;");
-    expect(VERTEX).toContain("vAlpha = MIDGE_CARD / size * shape.z * alive;");
+    expect(VERTEX).toContain("vAlpha = max(MIDGE_CARD / size, MIDGE_ALPHA_FLOOR) * shape.z * alive;");
     expect(VERTEX).toContain("float lobe = pow(max(dot(-view, midgeSun), 0.0), MIDGE_LOBE_POWER);");
     expect(VERTEX).toContain("float rate = mix(MIDGE_FLASH_LOW, MIDGE_FLASH_HIGH, midgeHash(slot, seed + 73.0));");
     expect(VERTEX).toContain(
       "float flash = pow(max(sin(MIDGE_TAU * rate * t + MIDGE_TAU * midgeHash(slot, seed + 71.0)), 0.0), MIDGE_FLASH_POWER);",
     );
-    expect(VERTEX).toContain("vLight = lobe + MIDGE_FLASH_GAIN * flash;");
-    expect(FRAGMENT).toContain("vec3 glint = midgeSunLight * (1.0 - midgeNight) * vLight;");
-    expect(FRAGMENT).toContain("float speck = MIDGE_DARK * clamp(midgeSkyLuma, 0.0, 1.0);");
-    expect(FRAGMENT).toContain("gl_FragColor = vec4(glint * a, speck * a);");
+    expect(VERTEX).toContain("vSunGlint = lobe + MIDGE_FLASH_GAIN * flash;");
+    expect(VERTEX).toContain(`  vec3 sunLevel = vec3(midgeSun.x, 0.0, midgeSun.z);
+  vec3 sunFlat = normalize(mix(vec3(1.0, 0.0, 0.0), sunLevel, step(1.0e-8, dot(sunLevel, sunLevel))));
+  vSkyGlint = MIDGE_SKY_GLINT * pow(max(dot(-view, sunFlat), 0.0), MIDGE_SKY_LOBE_POWER);`);
+    expect(FRAGMENT).toContain(`  vec2 tent = clamp(1.0 - abs(vCorner), 0.0, 1.0);
+  float a = vAlpha * tent.x * tent.y;
+  float day = 1.0 - midgeNight;
+  vec3 sunGlint = midgeSunLight * day * vSunGlint;
+  vec3 skyGlint = midgeSkyGlow * day * vSkyGlint;
+  float speck = MIDGE_DARK * clamp(midgeSkyLuma, 0.0, 1.0);
+  gl_FragColor = vec4((sunGlint + skyGlint) * a, speck * a);`);
     const both = `${VERTEX}\n${FRAGMENT}`;
     expect(both).not.toMatch(/\btexture\w*\s*\(/);
     expect(both).not.toMatch(/sampler/);
     expect(both).not.toMatch(/\bif\s*\(/);
     expect(both).not.toMatch(/\?/);
     expect(both).not.toContain("discard");
+  });
+
+  /** The vertex stage's coverage, transcribed from its pinned lines: the card
+   * `far` metres from the eye, a pixel `pixel` metres across at 1 m. */
+  const coverage = (far: number, pixel: number, presence: number): number => {
+    const size = Math.max(c("MIDGE_CARD"), c("MIDGE_MIN_PX") * pixel * far);
+    return Math.max(c("MIDGE_CARD") / size, c("MIDGE_ALPHA_FLOOR")) * presence;
+  };
+
+  it("keep a far midge's coverage at the floor: a dot, not a ghost", () => {
+    // 1100 pixels to a metre at 1 m: within 1.36 m the card covers 2 px or
+    // more and keeps its whole coverage.
+    expect(coverage(1, 0.0011, 1)).toBe(1);
+    // Enlarged to 2 px, it covers 0.68 of them at 2 m, and the floor holds it
+    // at 0.6 from 2.27 m out: the 2 mm card it replaced, held to 1.2 px,
+    // covered a tenth at 15 m.
+    expect(coverage(2, 0.0011, 1)).toBeCloseTo(0.681818, 6);
+    expect(coverage(2.27272727, 0.0011, 1)).toBeCloseTo(0.6, 6);
+    expect(coverage(15, 0.0011, 1)).toBe(0.6);
+    expect(coverage(60, 0.0011, 1)).toBe(0.6);
+    // Still scaled by the swarm's presence.
+    expect(coverage(15, 0.0011, 0.5)).toBe(0.3);
+    expect(coverage(15, 0.0011, 0)).toBe(0);
+  });
+
+  /** The fragment stage's footprint, transcribed from its pinned lines: u and v
+   * run -1 to 1 across the card. */
+  const tent = (u: number, v: number): number =>
+    Math.min(Math.max(1 - Math.abs(u), 0), 1) * Math.min(Math.max(1 - Math.abs(v), 0), 1);
+  /** The footprint summed over the pixel centres a midge at (x, y), in pixels,
+   * covers at its fewest pixels across. */
+  const pixelSum = (x: number, y: number, footprint: (u: number, v: number) => number): number => {
+    const half = c("MIDGE_MIN_PX") / 2;
+    let sum = 0;
+    for (let i = -4; i <= 4; i++) {
+      for (let j = -4; j <= 4; j++) sum += footprint((i + 0.5 - x) / half, (j + 0.5 - y) / half);
+    }
+    return sum;
+  };
+
+  it("lay a tent on the card whose pixel centres sum the same wherever a far midge lies", () => {
+    expect(tent(0, 0)).toBe(1);
+    expect(tent(0.5, 0)).toBe(0.5);
+    expect(tent(0.5, -0.5)).toBe(0.25);
+    expect(tent(1, 0.2)).toBe(0);
+    for (const [x, y] of [[0, 0], [0.5, 0.5], [0.25, 0.1], [0.77, 0.31], [-0.4, 0.9]] as const) {
+      expect(pixelSum(x, y, tent), `(${x}, ${y})`).toBeCloseTo(1, 12);
+    }
+    // The disc it replaced summed 1 on a pixel's centre and 2 on its corner:
+    // a far midge flickered as it crossed the pixels.
+    const disc = (u: number, v: number): number => Math.min(Math.max(1 - (u * u + v * v), 0), 1);
+    expect(pixelSum(0.5, 0.5, disc)).toBeCloseTo(1, 12);
+    expect(pixelSum(0, 0, disc)).toBeCloseTo(2, 12);
+  });
+
+  /** The vertex stage's sky glint, transcribed from its pinned lines: `look` the
+   * direction from the eye to the midge, `sun` toward the sun. */
+  const skyGlint = (look: readonly [number, number, number], sun: readonly [number, number, number]): number => {
+    const level = [sun[0], 0, sun[2]] as const;
+    const length2 = level[0] * level[0] + level[2] * level[2];
+    const flat = length2 >= 1e-8 ? [level[0], 0, level[2]] : [1, 0, 0];
+    const n = Math.hypot(flat[0]!, flat[1]!, flat[2]!);
+    const d = (look[0] * flat[0]! + look[1] * flat[1]! + look[2] * flat[2]!) / n;
+    return c("MIDGE_SKY_GLINT") * Math.pow(Math.max(d, 0), c("MIDGE_SKY_LOBE_POWER"));
+  };
+  /** The fragment stage's colour before the coverage, from its pinned lines. */
+  const glintColour = (
+    sunLight: readonly [number, number, number], skyGlow: readonly [number, number, number], night: number,
+    sunGlint: number, sky: number,
+  ): number[] => [0, 1, 2].map((i) => sunLight[i]! * (1 - night) * sunGlint + skyGlow[i]! * (1 - night) * sky);
+
+  it("glint with the sky toward the sun's azimuth after sunset, and not away from it", () => {
+    // The sun 7 degrees under the horizon in the west-south-west.
+    const sun = [-0.962, -0.127, -0.243] as const;
+    const toward = (up: number, turn: number): [number, number, number] => {
+      const az = Math.atan2(-0.243, -0.962) + turn;
+      return [Math.cos(up) * Math.cos(az), Math.sin(up), Math.cos(up) * Math.sin(az)];
+    };
+    // Level toward the sun's azimuth: the whole of it, though the sun is down.
+    expect(skyGlint(toward(0, 0), sun)).toBeCloseTo(0.6, 12);
+    // Thirty degrees up, or sixty to the side: three quarters, and a quarter.
+    expect(skyGlint(toward(Math.PI / 6, 0), sun)).toBeCloseTo(0.45, 12);
+    expect(skyGlint(toward(0, Math.PI / 3), sun)).toBeCloseTo(0.15, 12);
+    // Square to it, and away: none.
+    expect(skyGlint(toward(0, Math.PI / 2), sun)).toBeCloseTo(0, 12);
+    expect(skyGlint(toward(0, Math.PI), sun)).toBe(0);
+    expect(skyGlint(toward(-0.3, 2.5), sun)).toBe(0);
+    // The sun straight overhead has no azimuth: the level falls back to +x, never NaN.
+    expect(skyGlint([1, 0, 0], [0, 1, 0])).toBeCloseTo(0.6, 12);
+    expect(skyGlint([-1, 0, 0], [0, 1, 0])).toBe(0);
+    // In the fragment, the sky's share takes the horizon's colour toward the
+    // sun, the sun's its own light (none once it has set); both gone at night.
+    const glow = [0.9, 0.5, 0.3] as const;
+    const set = [0, 0, 0] as const;
+    const g = skyGlint(toward(0, 0), sun);
+    glintColour(set, glow, 0.25, 0.8, g).forEach((v, i) => expect(v).toBeCloseTo([0.405, 0.225, 0.135][i]!, 12));
+    expect(glintColour(set, glow, 1, 0.8, g)).toEqual([0, 0, 0]);
+    glintColour([2, 1.5, 1], glow, 0, 0.5, 0).forEach((v, i) => expect(v).toBeCloseTo([1, 0.75, 0.5][i]!, 12));
   });
 });
 
@@ -361,6 +480,7 @@ describe("the midges' stages, compiled", () => {
       expect(vertex).toContain("array<vec4<f32>, 96u>");
       expect(vertex).toContain("midge");
       expect(fragment).toContain("midgeSunLight");
+      expect(fragment).toContain("midgeSkyGlow");
       expect(vertex).not.toMatch(/textureSample/);
       expect(fragment).not.toMatch(/textureSample/);
       made.dispose();

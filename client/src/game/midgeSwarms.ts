@@ -13,8 +13,9 @@
  *
  * GLSL on every engine, as a ShaderMaterial is unless told otherwise: on
  * WebGPU the stages are translated, or found in the WGSL map once the corpus
- * holds them. Blended premultiplied: the glint adds, the speck's coverage
- * darkens. Out of the scene's fog, under which Babylon would give the
+ * holds them. Blended premultiplied: the glints add (the sun's, and the
+ * bright sky's toward the sun, which outlasts it after sunset), the speck's
+ * coverage darkens. Out of the scene's fog, under which Babylon would give the
  * material a fog define and uniforms the stages never read; never culled
  * (the stages place the midges, the mesh's own bounds say nothing of where);
  * never a shadow caster.
@@ -38,7 +39,7 @@ export const MIDGE_NAME = "midge";
 /** The stages' uniforms: the camera's matrix, then the midges'. */
 export const MIDGE_UNIFORMS: readonly string[] = [
   "viewProjection",
-  "midgeEye", "midgeTime", "midgeSun", "midgeSunLight", "midgeNight", "midgeSkyLuma", "midgePixel",
+  "midgeEye", "midgeTime", "midgeSun", "midgeSunLight", "midgeSkyGlow", "midgeNight", "midgeSkyLuma", "midgePixel",
   "midgeSwarms",
 ];
 
@@ -48,8 +49,17 @@ export const MIDGE_LOBE_POWER = 8;
 export const MIDGE_FLASH_POWER = 24;
 /** The flash's weight beside the lobe's. */
 export const MIDGE_FLASH_GAIN = 0.5;
+/** The sky's glint at its fullest, looking level toward the sun's azimuth:
+ * its share of the horizon's colour toward the sun. */
+export const MIDGE_SKY_GLINT = 0.6;
+/** The sky glint's lobe: the cosine between the view and the sun's azimuth,
+ * level, raised to this, a broad lobe as the glow along the horizon is. */
+export const MIDGE_SKY_LOBE_POWER = 2;
+/** The least coverage a midge enlarged to its fewest pixels keeps, so a far
+ * midge reads as a dot, not a ghost. */
+export const MIDGE_ALPHA_FLOOR = 0.6;
 /** How much of the background a speck hides against the brightest sky. */
-export const MIDGE_DARK = 0.6;
+export const MIDGE_DARK = 0.9;
 
 /** One frame of the midges: the eye, the shared clock, the sun, the sky and the table. */
 export type MidgeFrame = {
@@ -60,6 +70,9 @@ export type MidgeFrame = {
   sunX: number; sunY: number; sunZ: number;
   /** The sun's colour times its intensity. */
   sunR: number; sunG: number; sunB: number;
+  /** The dome's horizon toward the sun, in the scene's units
+   * (`SkyState.horizonToward`): the light of the sky's glint. */
+  glowR: number; glowG: number; glowB: number;
   night: number; skyLuma: number;
   /** The world size of one pixel at 1 m from the eye. */
   pixelAt1m: number;
@@ -107,11 +120,13 @@ export function createMidgeSwarms(scene: Scene, blocks: readonly number[]): Midg
   const eye = new Vector3();
   const sun = new Vector3(0, 1, 0);
   const sunLight = new Vector3();
+  const skyGlow = new Vector3();
   const table = new Float32Array(SWARM_ROW_FLOATS * MIDGE_SWARMS_MAX);
   material.setVector3("midgeEye", eye);
   material.setFloat("midgeTime", 0);
   material.setVector3("midgeSun", sun);
   material.setVector3("midgeSunLight", sunLight);
+  material.setVector3("midgeSkyGlow", skyGlow);
   material.setFloat("midgeNight", 0);
   material.setFloat("midgeSkyLuma", 0);
   material.setFloat("midgePixel", 0);
@@ -161,6 +176,7 @@ export function createMidgeSwarms(scene: Scene, blocks: readonly number[]): Midg
       material.setFloat("midgeTime", f.time);
       material.setVector3("midgeSun", sun.set(f.sunX, f.sunY, f.sunZ));
       material.setVector3("midgeSunLight", sunLight.set(f.sunR, f.sunG, f.sunB));
+      material.setVector3("midgeSkyGlow", skyGlow.set(f.glowR, f.glowG, f.glowB));
       material.setFloat("midgeNight", f.night);
       material.setFloat("midgeSkyLuma", f.skyLuma);
       material.setFloat("midgePixel", f.pixelAt1m);
