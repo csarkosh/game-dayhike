@@ -1,0 +1,320 @@
+/**
+ * The water life's sound on the ambient context's loop emitters: the midge
+ * swarms' hum, the dragonflies' wings and the chorus frogs' calls. What
+ * sounds where is decided elsewhere and arrives each frame as a
+ * `WaterLifeSound`; this shell holds the voices, caps them and mirrors
+ * Babylon's world into Web Audio's.
+ *
+ * - Hums: the `HUM_MAX` nearest swarms within `HUM_RANGE` that have midges
+ *   and presence keep a loop emitter each, kept by swarm (its index in
+ *   `hums`) from frame to frame and moved, re-gained and re-pitched in place.
+ *   A swarm that drops out fades over `HUM_FADE_S` and then stops; until its
+ *   fade ends it still counts against the cap.
+ * - Frog calls and rustles: each a voice on a loop emitter that ends itself;
+ *   at most `FROG_VOICES_MAX` and `RUSTLE_MAX` sounding, the nearest of a
+ *   frame's new ones taking the free slots, none beyond its range. A slot
+ *   frees, and its emitter is stopped, once its voice has run its length.
+ *
+ * Positions arrive in Babylon's left-handed frame and go to Web Audio with z
+ * negated, as `wildlifeAudio.ts` sends its calls (`app.ts` places the
+ * listener every frame through `listenerToAudio`). Nothing happens before the
+ * context is unlocked, and nothing is queued: a frame's frog calls are that
+ * frame's alone, so the first frame after unlock plays none from before it.
+ */
+import type { AmbientAudio, LoopEmitter, VoiceSource } from "./ambientAudio.js";
+import type { FrogCall } from "./frogChorus.js";
+import {
+  FROG_CALL_S, FROG_CARRIER_HZ, RUSTLE_LOUD_S, RUSTLE_S, frogCallVoice, humVoice, rustleVoice,
+} from "./insectVoices.js";
+
+export const HUM_MAX = 8, FROG_VOICES_MAX = 12, RUSTLE_MAX = 2;
+export const HUM_REF = 0.5, HUM_RANGE = 10, FROG_REF = 0.5, FROG_RANGE = 120, RUSTLE_REF = 0.3, RUSTLE_RANGE = 3;
+/** A dropped hum's gain falls linearly to nothing over this long, then it stops. */
+export const HUM_FADE_S = 0.5;
+/** A hum's gain is `presence · sqrt(midges / HUM_MIDGES_UNIT)`. */
+export const HUM_MIDGES_UNIT = 200;
+/** A rustle's wingbeat is drawn between these, Hz: the skimmers' and the darners'. */
+export const RUSTLE_WING_HZ: readonly [number, number] = [30, 36];
+/** A one-shot's slot frees this long after its voice's own length, so its tail is never cut. */
+export const SHOT_MARGIN_S = 0.1;
+/** Changes smaller than these are not sent, so a steady hum adds no automation event a frame. */
+const GAIN_STEP = 0.005, PITCH_STEP = 0.5;
+
+export type WaterLifeSound = {
+  /** The swarms by row, the first `hums_n` valid; a row's index is its swarm's identity. */
+  hums: { x: number; y: number; z: number; midges: number; presence: number }[];
+  hums_n: number;
+  /** The hum's pitch, Hz. */
+  pitch: number;
+  /** This frame's dragonfly rustles. */
+  rustles: readonly { x: number; y: number; z: number; loud: boolean }[];
+  /** This frame's frog calls. */
+  frogCalls: readonly FrogCall[];
+};
+
+export type WaterLifeAudio = {
+  /** One frame of the water life's sound, heard from `listener` (Babylon's frame). */
+  update(s: WaterLifeSound, listener: { x: number; y: number; z: number }): void;
+  dispose(): void;
+};
+
+type Point = { x: number; y: number; z: number };
+type Hum = VoiceSource & { setPitch(hz: number): void };
+type HumSlot = {
+  emitter: LoopEmitter | null;
+  voice: Hum | null;
+  readonly build: (ctx: BaseAudioContext) => VoiceSource;
+  gain: number;
+  pitch: number;
+  fading: boolean;
+  fadeFrom: number;
+  fadeGain: number;
+  /** The frame this swarm was last among the nearest. */
+  chosen: number;
+};
+type ShotSlot = {
+  emitter: LoopEmitter | null;
+  endsAt: number;
+  hz: number;
+  loud: boolean;
+  readonly build: (ctx: BaseAudioContext) => VoiceSource;
+};
+
+function lerp(range: readonly [number, number], u: number): number {
+  return range[0] + (range[1] - range[0]) * u;
+}
+
+function distance(a: Point, b: Point): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+/** Stops the one-shots that have run their length. */
+function release(slots: readonly ShotSlot[], t: number): void {
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i]!;
+    if (slot.emitter !== null && t >= slot.endsAt) {
+      slot.emitter.stop();
+      slot.emitter = null;
+    }
+  }
+}
+
+/**
+ * `random` draws the voices' variations and each frog voice's carrier;
+ * `now` is the clock, in seconds, the hums' fades and the one-shots' lengths
+ * are measured on. Both are injectable for the tests.
+ */
+export function createWaterLifeAudio(
+  ambient: Pick<AmbientAudio, "loopEmitter" | "onUnlock">,
+  random: () => number = Math.random,
+  now: () => number = () => performance.now() / 1000,
+): WaterLifeAudio {
+  let unlocked = false;
+  let disposed = false;
+  let frame = 0;
+  let liveHums = 0;
+  const humSlots: (HumSlot | undefined)[] = [];
+  const chosenIdx = new Int32Array(HUM_MAX);
+  const chosenDist = new Float64Array(HUM_MAX);
+  const taken = new Int32Array(Math.max(FROG_VOICES_MAX, RUSTLE_MAX));
+  /** Each frog voice's carrier, drawn on its first call and kept. */
+  const carriers: number[] = [];
+
+  function shotSlot(voice: (ctx: BaseAudioContext, slot: ShotSlot) => VoiceSource): ShotSlot {
+    const slot: ShotSlot = { emitter: null, endsAt: 0, hz: 0, loud: false, build: (c) => voice(c, slot) };
+    return slot;
+  }
+  const frogSlots: ShotSlot[] = [];
+  for (let i = 0; i < FROG_VOICES_MAX; i++) frogSlots.push(shotSlot((c, slot) => frogCallVoice(c, slot.hz, random)));
+  const rustleSlots: ShotSlot[] = [];
+  for (let i = 0; i < RUSTLE_MAX; i++) rustleSlots.push(shotSlot((c, slot) => rustleVoice(c, slot.hz, slot.loud, random)));
+
+  ambient.onUnlock(() => {
+    unlocked = true;
+  });
+
+  /** Swarm `k`'s slot, made the first time the swarm is heard. */
+  function humSlot(k: number): HumSlot {
+    let slot = humSlots[k];
+    if (slot === undefined) {
+      const made: HumSlot = {
+        emitter: null, voice: null, gain: 0, pitch: 0, fading: false, fadeFrom: 0, fadeGain: 0, chosen: -1,
+        build: (c) => {
+          const v = humVoice(c, made.pitch, random);
+          made.voice = v;
+          return v;
+        },
+      };
+      humSlots[k] = made;
+      slot = made;
+    }
+    return slot;
+  }
+
+  function setGain(slot: HumSlot, gain: number): void {
+    if (Math.abs(gain - slot.gain) < GAIN_STEP) return;
+    slot.gain = gain;
+    slot.emitter?.setGain(gain);
+  }
+
+  function carrierOf(voice: number): number {
+    let hz = carriers[voice];
+    if (hz === undefined) {
+      hz = lerp(FROG_CARRIER_HZ, random());
+      carriers[voice] = hz;
+    }
+    return hz;
+  }
+
+  /** The index of the nearest of `events` within `range` not yet taken this frame, or −1. */
+  function nearest(events: readonly Point[], listener: Point, range: number, takenN: number): number {
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < events.length; i++) {
+      let seen = false;
+      for (let k = 0; k < takenN; k++) {
+        if (taken[k] === i) {
+          seen = true;
+          break;
+        }
+      }
+      if (seen) continue;
+      const d = distance(events[i]!, listener);
+      if (d <= range && d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  function hums(s: WaterLifeSound, listener: Point, t: number): void {
+    // The nearest audible swarms, sorted, in fixed arrays.
+    let chosenN = 0;
+    for (let k = 0; k < s.hums_n; k++) {
+      const h = s.hums[k]!;
+      if (h.presence <= 0 || h.midges <= 0) continue;
+      const d = distance(h, listener);
+      // Written as "not within" so a swarm whose place is not a number is never heard.
+      if (!(d <= HUM_RANGE)) continue;
+      if (chosenN === HUM_MAX && d >= chosenDist[HUM_MAX - 1]!) continue;
+      let at = chosenN < HUM_MAX ? chosenN : HUM_MAX - 1;
+      while (at > 0 && chosenDist[at - 1]! > d) {
+        chosenIdx[at] = chosenIdx[at - 1]!;
+        chosenDist[at] = chosenDist[at - 1]!;
+        at--;
+      }
+      chosenIdx[at] = k;
+      chosenDist[at] = d;
+      if (chosenN < HUM_MAX) chosenN++;
+    }
+    for (let m = 0; m < chosenN; m++) humSlot(chosenIdx[m]!).chosen = frame;
+
+    // The dropped fade, and stop once faded: the cap frees as they end.
+    for (let k = 0; k < humSlots.length; k++) {
+      const slot = humSlots[k];
+      if (slot === undefined || slot.emitter === null) continue;
+      if (slot.chosen === frame) {
+        slot.fading = false;
+        continue;
+      }
+      if (!slot.fading) {
+        slot.fading = true;
+        slot.fadeFrom = t;
+        slot.fadeGain = slot.gain;
+      }
+      const left = 1 - (t - slot.fadeFrom) / HUM_FADE_S;
+      if (left <= 0) {
+        slot.emitter.stop();
+        slot.emitter = null;
+        slot.voice = null;
+        slot.fading = false;
+        liveHums--;
+      } else {
+        setGain(slot, slot.fadeGain * left);
+      }
+    }
+
+    // The chosen: moved, re-gained and re-pitched in place, or started while the cap allows.
+    for (let m = 0; m < chosenN; m++) {
+      const k = chosenIdx[m]!;
+      const h = s.hums[k]!;
+      const slot = humSlots[k]!;
+      const gain = h.presence * Math.sqrt(h.midges / HUM_MIDGES_UNIT);
+      if (slot.emitter === null) {
+        if (liveHums >= HUM_MAX) continue;
+        slot.pitch = s.pitch;
+        slot.emitter = ambient.loopEmitter(slot.build, h.x, h.y, -h.z, gain, HUM_REF, HUM_RANGE);
+        if (slot.emitter === null) continue;
+        slot.gain = gain;
+        liveHums++;
+        continue;
+      }
+      slot.emitter.move(h.x, h.y, -h.z);
+      setGain(slot, gain);
+      if (Math.abs(s.pitch - slot.pitch) >= PITCH_STEP) {
+        slot.pitch = s.pitch;
+        slot.voice?.setPitch(s.pitch);
+      }
+    }
+  }
+
+  function frogs(calls: readonly FrogCall[], listener: Point, t: number): void {
+    release(frogSlots, t);
+    let takenN = 0;
+    for (let k = 0; k < frogSlots.length; k++) {
+      const slot = frogSlots[k]!;
+      if (slot.emitter !== null) continue;
+      const i = nearest(calls, listener, FROG_RANGE, takenN);
+      if (i < 0) break;
+      taken[takenN++] = i;
+      const call = calls[i]!;
+      slot.hz = carrierOf(call.voice);
+      slot.emitter = ambient.loopEmitter(slot.build, call.x, call.y, -call.z, call.gain, FROG_REF, FROG_RANGE);
+      slot.endsAt = t + FROG_CALL_S + SHOT_MARGIN_S;
+    }
+  }
+
+  function rustles(events: WaterLifeSound["rustles"], listener: Point, t: number): void {
+    release(rustleSlots, t);
+    let takenN = 0;
+    for (let k = 0; k < rustleSlots.length; k++) {
+      const slot = rustleSlots[k]!;
+      if (slot.emitter !== null) continue;
+      const i = nearest(events, listener, RUSTLE_RANGE, takenN);
+      if (i < 0) break;
+      taken[takenN++] = i;
+      const e = events[i]!;
+      slot.hz = lerp(RUSTLE_WING_HZ, random());
+      slot.loud = e.loud;
+      slot.emitter = ambient.loopEmitter(slot.build, e.x, e.y, -e.z, 1, RUSTLE_REF, RUSTLE_RANGE);
+      slot.endsAt = t + (e.loud ? RUSTLE_LOUD_S : RUSTLE_S) + SHOT_MARGIN_S;
+    }
+  }
+
+  function stopAll(slots: readonly (ShotSlot | HumSlot | undefined)[]): void {
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      if (slot === undefined || slot.emitter === null) continue;
+      slot.emitter.stop();
+      slot.emitter = null;
+    }
+  }
+
+  return {
+    update(s, listener) {
+      if (disposed || !unlocked) return;
+      const t = now();
+      frame++;
+      hums(s, listener, t);
+      frogs(s.frogCalls, listener, t);
+      rustles(s.rustles, listener, t);
+    },
+    dispose() {
+      disposed = true;
+      stopAll(humSlots);
+      stopAll(frogSlots);
+      stopAll(rustleSlots);
+      liveHums = 0;
+    },
+  };
+}
