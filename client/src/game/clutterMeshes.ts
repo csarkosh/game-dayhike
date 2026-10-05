@@ -1,7 +1,7 @@
 /**
  * The Babylon shell over `clutterField.ts`: thin-
- * instance buckets for the thirteen clutter classes — grass, rock, boulder,
- * driftwood, fungus, bush, meadow, flower, litter, sword fern, shrub, drift log, wet plant — two LOD
+ * instance buckets for the fourteen clutter classes — grass, rock, boulder,
+ * driftwood, fungus, bush, meadow, flower, litter, sword fern, shrub, drift log, wet plant, high plant — two LOD
  * levels deep. All band
  * math is `clutterField.ts` (via its memoizing `createClutterCollector`,
  * output-identical to the pure `collectClutter`); what lives here is buffers,
@@ -80,6 +80,7 @@ import {
   CLUTTER_FUNGUS,
   CLUTTER_GRASS,
   CLUTTER_GRASS_CELL,
+  CLUTTER_HIGHPLANT,
   CLUTTER_LITTER,
   CLUTTER_MEADOW,
   CLUTTER_ROCK,
@@ -96,6 +97,7 @@ import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
 import { SHRUB_CHARACTERS, shrubGeometry } from "./shrubClump.js";
 import { WET_PLANT_COUNT, wetPlantGeometry } from "./wetPlantClump.js";
+import { HIGH_PLANT_COUNT, highPlantGeometry } from "./highPlantClump.js";
 import { trunkSeat, type TrunkSeat } from "./logSeat.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
 import { macroNoise, macroTint } from "./groundHexParams.js";
@@ -125,14 +127,15 @@ import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../sim/passes/
 /**
  * Model per class per variant, indexed by the class ids of `sim/clutter.ts`
  * (grass 0, rock 1, boulder 2, driftwood 3, fungus 4, bush 5, meadow 6,
- * flower 7, litter 8, fern 9, shrub 10, drift log 11, wet plant 12) and then by the instance's own `variant` draw. Driftwood and
+ * flower 7, litter 8, fern 9, shrub 10, drift log 11, wet plant 12, high plant 13) and then by the instance's own `variant` draw. Driftwood and
  * meadow ship ONE model each, which is why the sim gives those classes
  * `variants: 1` and their instances always draw variant 0. Litter reuses the
  * rock and driftwood models at its own (small) scale range rather than
  * shipping dedicated pebble/twig geometry. Sword fern draws the forest's
  * understory fern, placed by its own habitat. The shrub class has no model:
  * its mounds are built in code (`shrubClump.ts`, `built` below), as the
- * wet-ground plants are (`wetPlantClump.ts`).
+ * wet-ground plants (`wetPlantClump.ts`) and the high ground's
+ * (`highPlantClump.ts`) are.
  */
 const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
   [modelUrl("models/clutter.grass_a.glb"), modelUrl("models/clutter.grass_b.glb")],
@@ -147,6 +150,7 @@ const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
   [modelUrl("models/understory.fern.glb")],
   [],
   [modelUrl("models/deadwood.snag.glb")],
+  [],
   [],
 ];
 
@@ -306,6 +310,7 @@ const FOLIAGE_BY_CLASS = new Map<number, FoliageProfile>([
   [CLUTTER_FERN, FOLIAGE_PROFILES.UNDERSTORY],
   [CLUTTER_SHRUB, FOLIAGE_PROFILES.UNDERSTORY],
   [CLUTTER_WETPLANT, FOLIAGE_PROFILES.UNDERSTORY],
+  [CLUTTER_HIGHPLANT, FOLIAGE_PROFILES.UNDERSTORY],
 ]);
 
 /** The weather's porosity cap per class (wetPlugin.ts): the cards glaze,
@@ -326,6 +331,7 @@ export const WET_CAP_BY_CLASS: ReadonlyMap<number, number> = new Map<number, num
   [CLUTTER_SHRUB, WET_CAP.leaf],
   [CLUTTER_DRIFTLOG, WET_CAP.deadwood],
   [CLUTTER_WETPLANT, WET_CAP.leaf],
+  [CLUTTER_HIGHPLANT, WET_CAP.leaf],
 ]);
 
 /** Classes that LIE on the ground rather than stand on it, so they take the
@@ -1320,6 +1326,10 @@ export function createClutterMeshes(
         }
         if (cls === CLUTTER_WETPLANT) {
           loaded.push(built("wetplant", WET_PLANT_COUNT, wetPlantGeometry));
+          continue;
+        }
+        if (cls === CLUTTER_HIGHPLANT) {
+          loaded.push(built("highplant", HIGH_PLANT_COUNT, highPlantGeometry));
           continue;
         }
         const urls = CLUTTER_MODEL_URLS[cls] as readonly string[];

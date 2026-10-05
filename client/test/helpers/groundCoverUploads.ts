@@ -10,7 +10,7 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { CLUTTER_BUSH, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_WETPLANT, CLUTTER_CLASS_COUNT, CLUTTER_FLOWER, CLUTTER_GRASS, CLUTTER_MEADOW, type ClutterInstance } from "../../src/sim/clutter.js";
+import { CLUTTER_BUSH, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT, CLUTTER_CLASS_COUNT, CLUTTER_FLOWER, CLUTTER_GRASS, CLUTTER_MEADOW, type ClutterInstance } from "../../src/sim/clutter.js";
 import { CLUTTER_SINK, cutOf, cutsFor, instanceMatrixFor, trampleFrame, writeFoliage } from "../../src/game/clutterMeshes.js";
 import type { BladeTiers } from "../../src/game/bladeField.js";
 import { bladeHeightScale, bladeMeshName } from "../../src/game/bladeMeshes.js";
@@ -152,7 +152,7 @@ export function expectedDuff(meshes: readonly Mesh[], tiers: DuffTiers): Uploads
 
 // ---------------------------------------------------------------- clutter
 
-export const TINTED = new Set([CLUTTER_GRASS, CLUTTER_MEADOW, CLUTTER_FLOWER, CLUTTER_BUSH, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_WETPLANT]);
+export const TINTED = new Set([CLUTTER_GRASS, CLUTTER_MEADOW, CLUTTER_FLOWER, CLUTTER_BUSH, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT]);
 const VARIANTS = 2;
 
 function baseName(cls: number, variant: number, lod: number): string {
