@@ -10,7 +10,7 @@ import { Engine } from "@babylonjs/core/Engines/engine.js";
 import type { Rgb } from "./colour.js";
 import type { QualityTier } from "./quality.js";
 import type { WeatherParams } from "./weather.js";
-import { MOTE_CAPACITY, motesUnder, type MoteSpecies } from "./motesParams.js";
+import { MOTE_CAPACITY, MOTE_SHARES, MOTE_SPECIES, motesUnder } from "./motesParams.js";
 import type { WindRecord } from "./windParams.js";
 
 /** Emitter box half-width, metres, centred on the camera. */
@@ -44,13 +44,13 @@ export type Motes = {
   readonly systems: readonly ParticleSystem[];
 };
 
-const SPECIES: readonly MoteSpecies[] = ["pollen", "midge", "frost"];
-
 /**
- * Three CPU particle systems, one per species, sharing a capacity budget and
- * a soft-disc sprite, additive so motes vanish over dark ground and shine in
- * lit air. Null on low: the tier has no capacity, and creating an idle system
- * would still cost a draw.
+ * Two CPU particle systems, the pollen's and the frost's, each a third of the
+ * tier's capacity as before (500 on high, 200 on medium), so the two spend
+ * two thirds of MOTE_CAPACITY: the third the dusk's midges held is not spent.
+ * They share a soft-disc sprite, additive so motes vanish over dark ground
+ * and shine in lit air. Null on low: the tier has no capacity, and creating
+ * an idle system would still cost a draw.
  */
 export function createMotes(scene: Scene, tier: QualityTier): Motes | null {
   const capacity = MOTE_CAPACITY[tier];
@@ -63,8 +63,8 @@ export function createMotes(scene: Scene, tier: QualityTier): Motes | null {
   const emitter = new Vector3(0, 0, 0);
   const systems: ParticleSystem[] = [];
   const emitting: boolean[] = [];
-  for (const name of SPECIES) {
-    const system = new ParticleSystem(`motes_${name}`, Math.ceil(capacity / 3), scene);
+  for (const name of MOTE_SPECIES) {
+    const system = new ParticleSystem(`motes_${name}`, Math.ceil(capacity / MOTE_SHARES), scene);
     system.particleTexture = tex;
     system.emitter = emitter;
     system.minEmitBox = new Vector3(-MOTE_BOX_HALF, -MOTE_BOX_HALF * 0.5, -MOTE_BOX_HALF);
@@ -83,7 +83,7 @@ export function createMotes(scene: Scene, tier: QualityTier): Motes | null {
       emitter.set(camPos.x, camPos.y, camPos.z);
       const r = motesUnder(w, hour, air, tier, wind);
       const colour = new Color4(r.colour.r, r.colour.g, r.colour.b, MOTE_ALPHA);
-      SPECIES.forEach((name, i) => {
+      MOTE_SPECIES.forEach((name, i) => {
         const s = r.species[name];
         const system = systems[i] as ParticleSystem;
         system.emitRate = s.rate;
