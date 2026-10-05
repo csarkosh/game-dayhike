@@ -26,6 +26,9 @@ import type { Dragonflies } from "./dragonflyBehaviour.js";
 
 /** Body length (m) by kind: darner, skimmer, damselfly. */
 export const DRAGONFLY_LENGTH: readonly [number, number, number] = [0.07, 0.045, 0.03];
+/** How much larger than life every card is drawn, in its instance's matrix: at their real
+ * lengths the dragonflies are specks a few metres out. */
+export const DRAGONFLY_DRAWN_SCALE = 1.5;
 /** The wingbeat shown (Hz) by kind. */
 export const DRAGONFLY_WING_HZ: readonly [number, number, number] = [36, 30, 18];
 /** ω by kind (rad/s): 2π·Hz, written as 2π·n / WING_TIME_WRAP with n whole so the shader's time wrap
@@ -44,11 +47,13 @@ export const DRAGONFLY_WING_ALPHA = 0.4;
  * over the pattern `dragonflyGeometry` bakes into the vertex colours, as the butterfly's are:
  * darners blue, green or brown (blue and green on brown across a shore); skimmers the four-spotted
  * skimmer's brown or a meadowhawk's red-brown; damselflies a bluet's blue or a forktail's teal.
+ * Brighter than the real insects' by 1.3 in every channel, so each keeps its hue and saturation
+ * and reads at a distance.
  */
 export const DRAGONFLY_COLOURS: readonly (readonly [number, number, number])[][] = [
-  [[0.06, 0.26, 0.52], [0.14, 0.4, 0.16], [0.3, 0.2, 0.1]],
-  [[0.4, 0.23, 0.08], [0.52, 0.14, 0.05]],
-  [[0.08, 0.28, 0.72], [0.05, 0.34, 0.42]],
+  [[0.078, 0.338, 0.676], [0.182, 0.52, 0.208], [0.39, 0.26, 0.13]],
+  [[0.52, 0.299, 0.104], [0.676, 0.182, 0.065]],
+  [[0.104, 0.364, 0.936], [0.065, 0.442, 0.546]],
 ];
 
 const KIND_NAMES = ["darner", "skimmer", "damselfly"] as const;
@@ -199,7 +204,7 @@ export function createDragonflyMeshes(scene: Scene, now?: () => number): Dragonf
   const scratchQ = new Quaternion();
   const scratchPos = new Vector3();
   const scratchMat = new Matrix();
-  const unitScale = new Vector3(1, 1, 1);
+  const drawnScale = new Vector3(DRAGONFLY_DRAWN_SCALE, DRAGONFLY_DRAWN_SCALE, DRAGONFLY_DRAWN_SCALE);
   let disposed = false;
 
   /** Grows a bucket's buffers to hold `count` instances, doubling from `MIN_INSTANCES`, together under
@@ -255,7 +260,7 @@ export function createDragonflyMeshes(scene: Scene, now?: () => number): Dragonf
           const p = poses[i]!;
           Quaternion.RotationYawPitchRollToRef(p.yaw, -p.pitch, 0, scratchQ);
           scratchPos.copyFromFloats(p.x, p.y, p.z);
-          Matrix.ComposeToRef(unitScale, scratchQ, scratchPos, scratchMat);
+          Matrix.ComposeToRef(drawnScale, scratchQ, scratchPos, scratchMat);
           scratchMat.copyToArray(b.matrices, i * 16);
           // Drawn from the individual's id, not its slot: the slot is wherever the range and the
           // presence left it this frame, the id is the same dragonfly every frame.
