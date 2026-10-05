@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   agx, gradeRecordUnder, whitePointMatrix, hueToRgb, IDENTITY,
-  HALATION_BASE, ABERRATION_BASE, AGX_MIN_EV, AGX_MAX_EV, STARE_VIGNETTE,
+  HALATION_BASE, ABERRATION_BASE, AGX_MIN_EV, AGX_MAX_EV, STARE_DIM, sightUnder,
 } from "../../src/game/gradeParams.js";
 import { WEATHER_PRESETS, exposureUnder, vignetteWeightUnder, VIGNETTE_WEIGHT_BASE } from "../../src/game/weather.js";
 import { sunPositionAt } from "../../src/game/sky.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { skyFixture } from "./helpers/skyFixture.js";
+import { STARE_LENS_REST, STARE_SIDE_SHIFT, stareReach, type StareLens } from "../../src/game/stareLens.js";
 
 const CLEAR = WEATHER_PRESETS.clear;
 const EERIE = WEATHER_PRESETS.eerie;
@@ -134,18 +135,33 @@ describe("gradeRecordUnder", () => {
 });
 
 describe("the stare", () => {
-  it("leaves the record untouched at 0, darkens monotonically, and is black at 1", () => {
-    expect(gradeRecordUnder(CLEAR, 12, 0, 1, 0, 0)).toEqual(gradeRecordUnder(CLEAR, 12, 0, 1));
+  const at = (level: number, phase = 0.6): StareLens => ({ ...STARE_LENS_REST, level, phase, sideX: 1, sideY: 0 });
+
+  it("leaves the record untouched at rest, dims and closes monotonically, and never takes the frame", () => {
+    expect(gradeRecordUnder(CLEAR, 12, 0, 1, 0, STARE_LENS_REST)).toEqual(gradeRecordUnder(CLEAR, 12, 0, 1));
+    expect(gradeRecordUnder(CLEAR, 12, 0, 1).stare).toEqual({ x: 0, y: 0, reach: 0, time: 0 });
     let lastExposure = Infinity;
-    let lastVignette = -Infinity;
-    for (const stare of [0, 0.25, 0.5, 0.75, 1]) {
-      const r = gradeRecordUnder(EERIE, 12, 0, 1, 0, stare);
+    let lastReach = -Infinity;
+    for (const level of [0, 0.25, 0.5, 0.75, 1]) {
+      const r = gradeRecordUnder(EERIE, 12, 0, 1, 0, at(level));
       expect(r.exposure).toBeLessThanOrEqual(lastExposure);
-      expect(r.vignetteWeight).toBeGreaterThanOrEqual(lastVignette);
+      expect(r.stare.reach).toBeGreaterThanOrEqual(lastReach);
+      // The weather's vignette is its own: the stare's darkness is the shade.
+      expect(r.vignetteWeight).toBe(gradeRecordUnder(EERIE, 12, 0, 1).vignetteWeight);
       lastExposure = r.exposure;
-      lastVignette = r.vignetteWeight;
+      lastReach = r.stare.reach;
     }
-    expect(gradeRecordUnder(EERIE, 12, 0, 1, 0, 1).exposure).toBe(0);
-    expect(gradeRecordUnder(EERIE, 12, 0, 1, 0, 1).vignetteWeight).toBeCloseTo(gradeRecordUnder(EERIE, 12, 0, 1).vignetteWeight + STARE_VIGNETTE, 9);
+    const rest = gradeRecordUnder(EERIE, 12, 0, 1).exposure;
+    expect(gradeRecordUnder(EERIE, 12, 0, 1, 0, at(1)).exposure).toBeCloseTo(rest * (1 - STARE_DIM), 12);
+    expect(sightUnder(0)).toBe(1);
+    expect(sightUnder(2)).toBe(1 - STARE_DIM);
+  });
+
+  it("carries the lens's shade: the open centre off the Hollow's side, and the clock its edge crawls on", () => {
+    const r = gradeRecordUnder(CLEAR, 12, 0, 1, 7.5, at(1));
+    expect(r.stare.x).toBeCloseTo(-STARE_SIDE_SHIFT, 12);
+    expect(r.stare.y).toBeCloseTo(0, 12);
+    expect(r.stare.time).toBe(7.5);
+    expect(r.stare.reach).toBe(stareReach(at(1)));
   });
 });

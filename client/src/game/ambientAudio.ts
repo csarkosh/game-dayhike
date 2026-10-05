@@ -1,5 +1,7 @@
 import { clamp01 } from "./colour.js";
 import { gustAt, type WindRecord } from "./windParams.js";
+import { createStareAudio, MUFFLE_OPEN_HZ, muffleGain, muffleHz, type StareAudio } from "./stareAudio.js";
+import type { StareLens } from "./stareLens.js";
 import {
   DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut, type WeatherParams,
 } from "./weather.js";
@@ -80,6 +82,26 @@ export function windBedGain(speed: number, mist: number, gust: number): number {
 export const WILDLIFE_LEVEL = 0.7;
 /** setTargetAtTime time constant — slow enough that weather fades are audible. */
 export const GAIN_RAMP_S = 2;
+/** The world bus's own ramp, for a stare's muffling and a hush: short, so silence lands within a breath. */
+export const HUSH_RAMP_S = 0.08;
+/** The birdsong bed's bus at full song, how far each of its two passes sits to its ear,
+ * the seconds one pass's end lies under the next's start (the bed is faded that long at
+ * each end), how far ahead a pass is scheduled, and the gain's own short ramp: the level
+ * handed in is already eased, and a hush has to land within a breath. */
+export const BIRD_LEVEL = 0.5;
+export const BIRD_PAN = 0.6;
+export const BIRD_OVERLAP_S = 2;
+export const BIRD_LOOKAHEAD_S = 1;
+export const BIRD_GAIN_RAMP_S = 0.05;
+/** The Hollow's call: its bus level at a cue's full level, the metres from the ear it
+ * is placed at, and its two voices: the recording an octave down, and a fourth under
+ * that a moment later, so no animal the player knows made it. */
+export const HOLLOW_CALL_LEVEL = 3;
+export const HOLLOW_CALL_STANDOFF_M = 20;
+export const HOLLOW_CALL_VOICES: readonly { rate: number; share: number; after: number }[] = [
+  { rate: 0.5, share: 1, after: 0 },
+  { rate: 0.375, share: 0.6, after: 0.09 },
+];
 export const DEFAULT_VOLUME = 0.5;
 
 /** A playing one-shot: `move` follows the animal, `stop` cuts it short. */
@@ -153,6 +175,38 @@ export type AmbientAudio = {
    * every frame; inert before `unlock()`.
    */
   setDrip(canopyWater: number, canopyAtListener: number): void;
+  /**
+   * The forest's birdsong bed, decoded (birdBed.ts): from here it loops, two
+   * passes of it half its length apart, one to each ear, each pass's end
+   * under the next's start. Silent until `setBirds` raises it.
+   */
+  setBirdBed(buffer: AudioBuffer): void;
+  /**
+   * The birdsong's level, 0 to 1 (woodsVoice.ts), every frame: the caller
+   * has eased it, so the gain only follows. Also keeps the bed's loop
+   * scheduled. Inert before `unlock()`.
+   */
+  setBirds(level: number): void;
+  /**
+   * The Hollow's call (woodsVoice.ts): `buffer` an octave down and again a
+   * fourth under that, from the direction given (Web Audio's right-handed
+   * frame, any length), at `level` through a low-pass at `cutoffHz`. It is
+   * placed by direction alone: how far it sounds is the level's and the
+   * low-pass's to say. Inert before `unlock()`.
+   */
+  hollowCall(buffer: AudioBuffer, dx: number, dy: number, dz: number, level: number, cutoffHz: number): void;
+  /**
+   * Cuts the world's beds and calls by `share`, 0 to 1, within a breath
+   * (woodsVoice.ts: the reveal's silence), on top of what a stare takes.
+   * The stare's own sounds are left. Inert before `unlock()`.
+   */
+  setHush(share: number): void;
+  /**
+   * The local player's stare (stareLens.ts), every frame: the world's beds
+   * and calls go muffled and quiet under it, and the heart and the whispers
+   * play (stareAudio.ts). Inert before `unlock()`.
+   */
+  setStare(lens: StareLens): void;
   setVolume(v: number): void;
   /**
    * Decodes compressed clip bytes on the ambient context. Resolves null rather
@@ -175,9 +229,10 @@ export type AmbientAudio = {
    * `unlock()` and after `dispose()`, when `build` is not called. `build` makes
    * the voice's graph on the context; its output goes through the same
    * equal-power panner and inverse distance model as `emitter`'s, then a gain
-   * of its own that `setGain` ramps, into the wildlife bus. Coordinates are in
-   * Web Audio's right-handed frame, as `emitter`'s are. `dispose()` stops every
-   * one still playing.
+   * of its own that `setGain` ramps, into the wildlife bus, and so through the
+   * world's bus: a stare muffles it and a hush cuts it, as they do the calls.
+   * Coordinates are in Web Audio's right-handed frame, as `emitter`'s are.
+   * `dispose()` stops every one still playing.
    */
   loopEmitter(
     build: (ctx: BaseAudioContext) => VoiceSource,
@@ -215,6 +270,19 @@ export function createAmbientAudio(
   let pending: WeatherParams = { ...WEATHER_PRESETS[DEFAULT_WEATHER] };
   let volume = DEFAULT_VOLUME;
   let master: GainNode | null = null;
+  /** What the rain, the wind, the drips and the wildlife are mixed through: the stare muffles it, and nothing else. */
+  let world: GainNode | null = null;
+  let worldFilter: BiquadFilterNode | null = null;
+  let stare: StareAudio | null = null;
+  /** What the world's bus is cut by, and the stare's level: its gain is the product of what each leaves. */
+  let hush = 0;
+  let stareLevel = 0;
+  let birdGain: GainNode | null = null;
+  let birdBed: AudioBuffer | null = null;
+  /** Each ear's pan node, and when its next pass of the bed starts on the context's clock. */
+  let birdSides: { pan: StereoPannerNode; next: number }[] = [];
+  /** The listener, in Web Audio's frame, for the whispers' circles. */
+  let earX = 0, earY = 0, earZ = 0;
   let rainGain: GainNode | null = null;
   let rainFilter: BiquadFilterNode | null = null;
   let windGain: GainNode | null = null;
@@ -303,6 +371,10 @@ export function createAmbientAudio(
       master = ctx.createGain();
       master.gain.value = volume;
       master.connect(ctx.destination);
+      // The world's bus: every bed and call below is mixed into it, and it
+      // reaches the master through a low-pass the stare shuts (wired last).
+      world = ctx.createGain();
+      world.gain.value = 1;
 
       // One shared noise buffer; two looping readers with different filters,
       // and the drips' bursts.
@@ -330,7 +402,7 @@ export function createAmbientAudio(
       rainGain.gain.value = 0;
       noiseSource().connect(rainFilter);
       rainFilter.connect(rainGain);
-      rainGain.connect(master);
+      rainGain.connect(world);
 
       // Wind: noise -> low-pass. `setWind` drives the cutoff and this gain
       // from the shared wind field; the floor below keeps it audible — a
@@ -342,7 +414,7 @@ export function createAmbientAudio(
       windGain.gain.value = WIND_LEVEL * WIND_GAIN_FLOOR;
       noiseSource().connect(windFilter);
       windFilter.connect(windGain);
-      windGain.connect(master);
+      windGain.connect(world);
 
       // The wildlife bus. Unlike the three beds above it carries no weather
       // ramp of its own: weather scales each call's own gain as it is emitted
@@ -351,14 +423,29 @@ export function createAmbientAudio(
       // silent.
       wildlifeGain = ctx.createGain();
       wildlifeGain.gain.value = WILDLIFE_LEVEL;
-      wildlifeGain.connect(master);
+      wildlifeGain.connect(world);
 
       // The drips' bus: each drip carries its own envelope, so this holds no
       // level of its own; `setDrip` builds the drips into it.
       dripGain = ctx.createGain();
       dripGain.gain.value = 1;
-      dripGain.connect(master);
+      dripGain.connect(world);
       dripping = false;
+
+      // The birdsong's bus: silent until the bed is in and `setBirds` raises it.
+      birdGain = ctx.createGain();
+      birdGain.gain.value = 0;
+      birdGain.connect(world);
+      birdSides = [];
+      birdBed = null;
+
+      worldFilter = ctx.createBiquadFilter();
+      worldFilter.type = "lowpass";
+      worldFilter.frequency.value = MUFFLE_OPEN_HZ;
+      world.connect(worldFilter);
+      worldFilter.connect(master);
+      // The stare's own sounds sit beside the world, not in it: they are not muffled.
+      stare = createStareAudio(ctx, master, noise, random);
 
       applyGains(pending);
 
@@ -412,6 +499,78 @@ export function createAmbientAudio(
         fireDrip(nextDrip, level);
         nextDrip += dripInterval(level);
       }
+    },
+    setBirdBed(buffer) {
+      if (!ctx || !birdGain || birdSides.length > 0) return;
+      birdBed = buffer;
+      for (const [i, side] of [-BIRD_PAN, BIRD_PAN].entries()) {
+        const pan = ctx.createStereoPanner();
+        pan.pan.value = side;
+        pan.connect(birdGain);
+        // The second ear starts half a bed in, so the two never sing the same bar.
+        const at = ctx.currentTime;
+        const offset = i * buffer.duration * 0.5;
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(pan);
+        src.start(at, offset);
+        birdSides.push({ pan, next: at + buffer.duration - offset - BIRD_OVERLAP_S });
+      }
+    },
+    setBirds(level) {
+      if (!ctx || !birdGain) return;
+      birdGain.gain.setTargetAtTime(BIRD_LEVEL * clamp01(level), ctx.currentTime, BIRD_GAIN_RAMP_S);
+      if (birdBed === null) return;
+      for (const side of birdSides) {
+        // A tab left in the background comes back with its passes long over: start from now.
+        if (side.next < ctx.currentTime) side.next = ctx.currentTime;
+        if (side.next > ctx.currentTime + BIRD_LOOKAHEAD_S) continue;
+        const src = ctx.createBufferSource();
+        src.buffer = birdBed;
+        src.connect(side.pan);
+        src.start(side.next);
+        side.next += birdBed.duration - BIRD_OVERLAP_S;
+      }
+    },
+    hollowCall(buffer, dx, dy, dz, level, cutoffHz) {
+      if (!ctx || !world) return;
+      const length = Math.hypot(dx, dy, dz);
+      if (!(length > 0) || !(level > 0)) return;
+      const at = ctx.currentTime;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = cutoffHz;
+      const panner = ctx.createPanner();
+      panner.panningModel = "HRTF";
+      panner.distanceModel = "inverse";
+      panner.rolloffFactor = 0;
+      panner.positionX.value = earX + (dx / length) * HOLLOW_CALL_STANDOFF_M;
+      panner.positionY.value = earY + (dy / length) * HOLLOW_CALL_STANDOFF_M;
+      panner.positionZ.value = earZ + (dz / length) * HOLLOW_CALL_STANDOFF_M;
+      filter.connect(panner);
+      panner.connect(world);
+      for (const voice of HOLLOW_CALL_VOICES) {
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.playbackRate.value = voice.rate;
+        const g = ctx.createGain();
+        g.gain.value = HOLLOW_CALL_LEVEL * clamp01(level) * voice.share;
+        src.connect(g);
+        g.connect(filter);
+        src.start(at + voice.after);
+      }
+    },
+    setHush(share) {
+      hush = clamp01(share);
+      if (!ctx || !world) return;
+      world.gain.setTargetAtTime(muffleGain(stareLevel) * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
+    },
+    setStare(lens) {
+      if (!ctx || !world || !worldFilter || !stare) return;
+      worldFilter.frequency.setTargetAtTime(muffleHz(lens.level), ctx.currentTime, 0.15);
+      stareLevel = lens.level;
+      world.gain.setTargetAtTime(muffleGain(stareLevel) * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
+      stare.set(lens, earX, earY, earZ);
     },
     setVolume(v) {
       volume = clamp01(v);
@@ -509,6 +668,9 @@ export function createAmbientAudio(
       // that mirror so `gustAt` samples the gust in the world it was built for.
       listenerX = x;
       listenerZ = -z;
+      earX = x;
+      earY = y;
+      earZ = z;
       const l = ctx.listener;
       l.positionX.value = x;
       l.positionY.value = y;
@@ -526,8 +688,11 @@ export function createAmbientAudio(
       for (const loop of loops) loop.stop();
       void ctx?.close();
       ctx = null;
-      master = rainGain = windGain = wildlifeGain = dripGain = null;
-      rainFilter = windFilter = null;
+      master = world = rainGain = windGain = wildlifeGain = dripGain = birdGain = null;
+      birdBed = null;
+      birdSides = [];
+      rainFilter = windFilter = worldFilter = null;
+      stare = null;
       noise = null;
       dripping = false;
       unlockListeners.length = 0;

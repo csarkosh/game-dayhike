@@ -3,7 +3,8 @@
  * the climb. It stands off the trail at the edge of sight, facing the lead,
  * closer with every showing as the party climbs; it never walks and never
  * touches, and it is gone the moment nobody has it in view or someone comes
- * near. The stare fills while you look at it, so the climb's danger is your
+ * near. Its first showings are not at the edge of sight: it stands on the
+ * trail itself, up ahead, where a party walking the trail cannot miss it. The stare fills while you look at it, so the climb's danger is your
  * own curiosity. It is removed for good when the body is found; the summit
  * Hollow is a separate spawn.
  *
@@ -27,7 +28,7 @@ import { AiState, cloneVec3, nextRandom } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { trailDistance } from "./trail.js";
-import { stemProgress } from "./trailRoute.js";
+import { stemAhead, stemProgress } from "./trailRoute.js";
 import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";
@@ -71,6 +72,24 @@ export const WATCH_REST_NEAR_SCALE = 0.4;
 export const WATCH_VIEW_COS = 0.1736;
 /** The least ground-normal y it stands on: the 0.9 gradient the trail treats as hard. */
 export const WATCH_SLOPE_NY = 0.74;
+/** How many of its first showings stand on the trail ahead instead of in the trees. */
+export const WATCH_BOLD_SHOWS = 2;
+/** Metres up the stem from the lead such a showing stands, drawn between the two. */
+export const WATCH_BOLD_NEAR = 22;
+export const WATCH_BOLD_FAR = 34;
+/**
+ * cos 15°: it must be that near the lead's horizontal look, inside the
+ * stare's 20° cone (hollow.ts), so the stare begins to fill as it shows. At
+ * these ranges the figure alone is small against the woods; the dark closing
+ * from its side and the heart starting are what nobody misses.
+ */
+export const WATCH_BOLD_VIEW_COS = 0.9659;
+/** Horizontal metres from any living player within which a showing on the trail will not stand, and hides. */
+export const WATCH_BOLD_FLEE_RADIUS = 12;
+/** The lead's climb below which no showing on the trail is tried, and so none at all: the first stretch of the trail is only a trail. */
+export const WATCH_BOLD_MIN_CLIMB = 0.1;
+/** Seconds of tries with no place on the trail found, after which one showing is made in the trees instead. */
+export const WATCH_BOLD_PATIENCE_S = 20;
 /** Mixed into the world seed for the watcher's own stream. */
 export const WATCH_SALT = 0x57a7c4;
 
@@ -82,6 +101,12 @@ export type WatcherRecord = {
   rest: number;
   /** The watcher's own random stream, seeded from the world's seed. */
   rng: { rngSeed: number };
+  /** Showings on the trail still to be made. */
+  bold: number;
+  /** Seconds the present try for one has gone without a place. */
+  waited: number;
+  /** Whether the showing now out is one on the trail. */
+  onTrail: boolean;
 };
 
 /** A rest from the band, unscaled: the pad's. */
@@ -95,7 +120,7 @@ function drawRest(rng: { rngSeed: number }): number {
  */
 export function createWatcherRecord(seed: number): WatcherRecord {
   const rng = { rngSeed: (seed ^ WATCH_SALT) | 0 };
-  return { id: -1, rest: drawRest(rng), rng };
+  return { id: -1, rest: drawRest(rng), rng, bold: WATCH_BOLD_SHOWS, waited: 0, onTrail: false };
 }
 
 /** How far up the stem a point is: 1 − stemProgress, 0 at the pad, 1 at the crest. */
@@ -200,6 +225,39 @@ export function placeWatcher(world: World, lead: PlayerState, reach: number): Ve
 }
 
 /**
+ * One attempt at a showing on the trail: the point on the stem a drawn
+ * WATCH_BOLD_NEAR to WATCH_BOLD_FAR metres above the lead; null unless it is
+ * short of the crest, standable, off the road corridor, at least
+ * WATCH_BOLD_FLEE_RADIUS from every living player, within WATCH_BOLD_VIEW_COS
+ * of the lead's horizontal look, and in a clear sightline from the lead's
+ * eye. Null at once, with no draw, on a world without forest, ground, trail
+ * or record; otherwise it always spends its one draw.
+ */
+export function placeWatcherAhead(world: World, lead: PlayerState): Vec3 | null {
+  const record = world.watcher;
+  const graph = world.trail;
+  if (record === null || graph === null || world.forest === null || world.ground === null) return null;
+
+  const metres = WATCH_BOLD_NEAR + nextRandom(record.rng) * (WATCH_BOLD_FAR - WATCH_BOLD_NEAR);
+  const at = stemAhead(graph, lead.pos.x, lead.pos.z, metres);
+  if (at === null) return null;
+  const centre = groundSpawn(world.boxes, world.forest.seed, at.x, at.z, ENEMY_HALF);
+  if (centre === null) return null;
+  if (isOnCorridor(world, at.x, at.z)) return null;
+  for (const p of world.state.players.values()) {
+    if (p.health > 0 && horizontalDistSq(p.pos, centre) < WATCH_BOLD_FLEE_RADIUS * WATCH_BOLD_FLEE_RADIUS) return null;
+  }
+  const look = aimDirection(lead.yaw, 0);
+  const dx = at.x - lead.pos.x;
+  const dz = at.z - lead.pos.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (!(dist > 0) || (dx * look.x + dz * look.z) / dist < WATCH_BOLD_VIEW_COS) return null;
+  const eye: Vec3 = { x: lead.pos.x, y: lead.pos.y + PLAYER_EYE_OFFSET, z: lead.pos.z };
+  if (!hasLineOfSight(eye, centre, world.boxes, world.ground)) return null;
+  return centre;
+}
+
+/**
  * Spawns the watcher at `at`, facing `leadId`, and records its id. Its yaw
  * starts at 0 and `stepHollow`'s Watch case turns it to the lead the same
  * tick. Null, and nothing spawned, on a world without a record: an entity
@@ -245,7 +303,10 @@ export function hideWatcher(world: World): void {
  * (`tickWorld` guards the phase, the outcome and the record). While hidden
  * the rest counts down and, at zero, up to WATCH_PLACE_TRIES placements are
  * tried for the lead; the first that fits shows it, and none fitting waits a
- * tick, the stream having moved on. No lead alive spends no draw. While
+ * tick, the stream having moved on. The first WATCH_BOLD_SHOWS showings are
+ * tried on the trail ahead instead (`placeWatcherAhead`), once the lead has
+ * climbed WATCH_BOLD_MIN_CLIMB and not before, and hide at
+ * WATCH_BOLD_FLEE_RADIUS. No lead alive spends no draw. While
  * shown it hides the first tick a living player is within WATCH_FLEE_RADIUS
  * or no living player has it in the wide view (WATCH_VIEW_COS,
  * HOLLOW_LOOK_RANGE, a clear sightline), and a new rest is drawn from the
@@ -270,22 +331,45 @@ export function stepWatcher(world: World, dt: number): void {
     if (record.rest > 0) return;
     const lead = leadOf(world);
     if (lead === null) return;
+    // Its first showings stand on the trail ahead. A try that finds no place
+    // there waits a tick, as any does; one that has waited
+    // WATCH_BOLD_PATIENCE_S (the lead is off the stem, or looking back down
+    // it) is made in the trees for once, and the showing on the trail is
+    // still owed.
+    if (record.bold > 0 && climbOf(world.trail as TrailGraph, lead.pos.x, lead.pos.z) < WATCH_BOLD_MIN_CLIMB) return;
+    if (record.bold > 0 && record.waited < WATCH_BOLD_PATIENCE_S) {
+      for (let i = 0; i < WATCH_PLACE_TRIES; i++) {
+        const at = placeWatcherAhead(world, lead);
+        if (at !== null) {
+          spawnWatcher(world, at, lead.id);
+          record.bold--;
+          record.waited = 0;
+          record.onTrail = true;
+          return;
+        }
+      }
+      record.waited += dt;
+      return;
+    }
     const reach = reachOf(world, lead);
     for (let i = 0; i < WATCH_PLACE_TRIES; i++) {
       const at = placeWatcher(world, lead, reach);
       if (at !== null) {
         spawnWatcher(world, at, lead.id);
+        record.waited = 0;
+        record.onTrail = false;
         return;
       }
     }
     return;
   }
 
+  const fleeRadius = record.onTrail ? WATCH_BOLD_FLEE_RADIUS : WATCH_FLEE_RADIUS;
   let flee = false;
   let inView = false;
   for (const p of world.state.players.values()) {
     if (p.health <= 0) continue;
-    if (horizontalDistSq(p.pos, shown.pos) < WATCH_FLEE_RADIUS * WATCH_FLEE_RADIUS) flee = true;
+    if (horizontalDistSq(p.pos, shown.pos) < fleeRadius * fleeRadius) flee = true;
     if (playerHasInView(p, shown, world, WATCH_VIEW_COS)) inView = true;
   }
   const lead = leadOf(world);

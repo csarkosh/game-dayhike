@@ -2,6 +2,13 @@
 
 Everything not listed below is original work by Cyrus Sarkosh.
 
+## ambience.forest_birds
+
+- **Source:** Freesound: PDX-Birds-Forrest-Park.wav
+- **Author:** tallfunnyjew
+- **Licence:** CC0-1.0
+- **URL:** https://freesound.org/people/tallfunnyjew/sounds/625455/
+
 ## board.paper
 
 - **Source:** ambientCG: Paper 002

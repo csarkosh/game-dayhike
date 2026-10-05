@@ -470,6 +470,11 @@
       "id": "call.eagle_cry",
       "output": "audio/call.eagle_cry.mp3",
       "bytes": 16613
+    },
+    {
+      "id": "ambience.forest_birds",
+      "output": "audio/ambience.forest_birds.mp3",
+      "bytes": 552646
     }
   ],
   "video": [

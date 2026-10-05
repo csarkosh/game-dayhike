@@ -188,7 +188,7 @@ describe("looking", () => {
     expect(playerSees(q, behind, walled)).toBe(false);
   });
 
-  it("fills the stare over HOLLOW_STARE_FILL_S, empties it over HOLLOW_STARE_EMPTY_S, and kills at 1", () => {
+  it("fills the stare over HOLLOW_STARE_FILL_S, empties it over HOLLOW_STARE_EMPTY_S, and a full stare kills nobody", () => {
     const w = world();
     const p = spawnPlayer(w);
     p.pos = { x: 0, y: 0.9, z: 0 };
@@ -205,7 +205,11 @@ describe("looking", () => {
     p.yaw = 0;
     tick(w, fillTicks + 1);
     expect(p.stare).toBe(1);
-    expect(p.health).toBe(0);
+    // Held at full for as long again: it costs the screen, never the life.
+    tick(w, fillTicks);
+    expect(p.stare).toBe(1);
+    expect(p.health).toBe(100);
+    expect(w.state.outcome).toBe(Outcome.Playing);
   });
 });
 
@@ -575,11 +579,11 @@ describe("the watcher's state", () => {
     expect(p.stare).toBeCloseTo(60 / 360, 12);
     expect(q.stare).toBe(0);
     // Swapped: the other centres it (from +x, it stands at yaw −π/4) and the
-    // first looks away, whose stare is empty again after 60 of its 180 ticks.
+    // first looks away, whose stare has fallen by 60 of its 480 ticks' emptying.
     p.yaw = Math.PI;
     q.yaw = -Math.PI / 4;
     tick(w, 60);
-    expect(p.stare).toBe(0);
+    expect(p.stare).toBeCloseTo(60 / 360 - 60 / 480, 12);
     expect(q.stare).toBeCloseTo(60 / 360, 12);
   });
 

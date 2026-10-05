@@ -101,7 +101,10 @@ import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFr
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
-import { Button, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
+import { Button, Outcome, Phase, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
+import { isHollowState } from "./sim/hollow.js";
+import { HOLLOW_CALL_CLIP, stepWoods, WOODS_REST, type WoodsState } from "./game/woodsVoice.js";
+import { loadBirdBed } from "./game/birdBed.js";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
@@ -420,6 +423,9 @@ function buildGame(
   // per-frame update would voice nothing.
   const waterLifeAudio = renderer.hasWaterLife ? createWaterLifeAudio(ambient) : null;
   made(() => waterLifeAudio?.dispose());
+  // The forest's birdsong bed: fetched now, decoded at the unlock, silent
+  // until a forest world's climb raises it (`syncAtmosphere`).
+  if (renderer.hasWildlife) void loadBirdBed(ambient);
   let weatherName: WeatherPresetName = DEFAULT_WEATHER;
   /**
    * The console's preset and hour: what the escalation departs from on a
@@ -428,6 +434,8 @@ function buildGame(
   let base: AtmosphereBase = { weather: WEATHER_PRESETS[DEFAULT_WEATHER], hour: DEFAULT_HOUR };
   /** The escalation's eased state, reset when a match starts. */
   let escalation: EscalationState = ESCALATION_REST;
+  /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
+  let woods: WoodsState = WOODS_REST;
   // Recomputed when the weather does: on a `weather` command directly below,
   // and on a forest world every frame by `syncAtmosphere`, as the escalation
   // moves the weather on its own. `wildlifePresenceUnder` builds a
@@ -659,6 +667,9 @@ function buildGame(
    */
   function syncDrip(): void {
     ambient.setDrip(renderer.canopyWater(), renderer.canopyOver());
+    // The stare rides the same call: `sync` stepped its lens, and the
+    // listener `syncWind` placed is where its whispers circle.
+    ambient.setStare(renderer.stare());
   }
 
   /**
@@ -733,6 +744,26 @@ function buildGame(
     escalation = stepEscalation(escalation, targets, dt);
     const a = atmosphereUnder(base, escalation);
     wildlifePresence = wildlifePresenceUnder(a.weather);
+    // The woods' voice: the birdsong's level, and the Hollow's call from up
+    // the trail as the climb passes each mark. The call is the elk's bugle,
+    // played wrong (`AmbientAudio.hollowCall`), and sounds from the crest's
+    // direction: z is mirrored into Web Audio's frame, as a listener's is.
+    let hollow = false;
+    for (const e of state.enemies.values()) if (isHollowState(e.ai)) { hollow = true; break; }
+    const ear = renderer.listener();
+    const crest = world.search.body.pos;
+    const voiced = stepWoods(woods, {
+      climb: escalation.progressMax, chase: state.phase === Phase.Chase, hollow, rain: a.weather.rain,
+      crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
+    }, dt);
+    woods = voiced.state;
+    ambient.setBirds(woods.birds);
+    // The reveal's silence, then its call, from the body the Hollow stands behind.
+    ambient.setHush(voiced.hush);
+    const bugle = wildlifeAudio?.clip(HOLLOW_CALL_CLIP);
+    if (voiced.call !== null && bugle !== undefined) {
+      ambient.hollowCall(bugle, crest.x - ear.x, crest.y - ear.y, -(crest.z - ear.z), voiced.call.level, voiced.call.cutoffHz);
+    }
     // Skip the renderer and ambient pushes on a frame the eased state barely
     // moved: `renderer.setView` recomputes the sky, the sun and the fog and
     // re-renders the reflection probe on every call, once for both.
@@ -1210,6 +1241,7 @@ function buildGame(
     session = host;
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
+    woods = WOODS_REST;
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
     names.set(host.localEntityId, selfPeerId);
@@ -1316,6 +1348,7 @@ function buildGame(
     session = client;
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
+    woods = WOODS_REST;
     registerInteractables(client.world);
     activeWorld = client.world;
     buildExtras(renderer);

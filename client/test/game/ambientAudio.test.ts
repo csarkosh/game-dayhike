@@ -2,10 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   createAmbientAudio, DEFAULT_VOLUME, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
   WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
-  WIND_GAIN_DEPTH, WIND_GAIN_RAMP_S, windBedGain, type VoiceSource,
+  WIND_GAIN_DEPTH, WIND_GAIN_RAMP_S, windBedGain, BIRD_LEVEL, BIRD_PAN, BIRD_OVERLAP_S, BIRD_GAIN_RAMP_S,
+  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HUSH_RAMP_S, type VoiceSource,
 } from "../../src/game/ambientAudio.js";
 import { frogCallVoice, humVoice, rustleVoice } from "../../src/game/insectVoices.js";
 import { ambientGainsUnder, WEATHER_PRESETS } from "../../src/game/weather.js";
+import { MUFFLE_OPEN_HZ, MUFFLE_SHUT_HZ, MUFFLE_GAIN, HEART_LEVEL, WHISPER_LEVEL, WHISPER_VOICES } from "../../src/game/stareAudio.js";
+import { HEART_DUB_AT, STARE_LENS_REST } from "../../src/game/stareLens.js";
 import { gustAt, windRecordUnder } from "../../src/game/windParams.js";
 
 /** The smallest AudioContext fake that can carry the graph. Every node records
@@ -31,6 +34,7 @@ function fakeCtx() {
   const created = {
     gains: [] as ReturnType<typeof gainNode>[],
     panners: [] as ReturnType<typeof pannerNode>[],
+    stereo: [] as { pan: FakeParam; connections: unknown[] }[],
     sources: [] as ReturnType<typeof sourceNode>[],
     filterNodes: [] as ReturnType<typeof filterNode>[],
     oscillatorNodes: [] as ReturnType<typeof oscillatorNode>[],
@@ -57,7 +61,7 @@ function fakeCtx() {
   function sourceNode() {
     return {
       ...node(),
-      buffer: null as unknown, loop: false, stopped: false,
+      buffer: null as unknown, loop: false, stopped: false, playbackRate: param(1),
       startedAt: undefined as number | undefined, offset: undefined as number | undefined,
       stoppedAt: undefined as number | undefined,
       start(when?: number, offset?: number) { this.startedAt = when; this.offset = offset; },
@@ -104,6 +108,7 @@ function fakeCtx() {
     },
     createBufferSource() { const s = sourceNode(); created.sources.push(s); return s; },
     createPanner() { const p = pannerNode(); created.panners.push(p); return p; },
+    createStereoPanner() { const p = { ...node(), pan: param(0) }; created.stereo.push(p); return p; },
     createBiquadFilter() { created.filters++; const f = filterNode(); created.filterNodes.push(f); return f; },
     createBuffer(_ch: number, len: number, rate: number) {
       const b = bufferOf(len, rate);
@@ -123,13 +128,15 @@ describe("createAmbientAudio", () => {
     audio.setWeather(WEATHER_PRESETS.rain); // must not throw pre-unlock
     expect(created.oscillators).toBe(0);
     audio.unlock();
-    // 2 noise sources (rain, wind), no oscillators, 2 filters (rain, wind),
-    // and gains: master + rain + wind + wildlife + drip = 5. The drips' own
-    // sources, filters and gains are made as they fire, not here.
+    // 2 noise sources (rain, wind), no oscillators, 3 filters (rain, wind,
+    // the world's), and gains: master + world + rain + wind + wildlife +
+    // drip + birdsong + the stare's heart and whispers = 9. The drips' own sources,
+    // filters and gains are made as they fire, not here, and the whispers'
+    // voices on the first stare.
     expect(created.sources.length).toBe(2);
     expect(created.oscillators).toBe(0);
-    expect(created.filters).toBe(2);
-    expect(created.gains.length).toBe(5);
+    expect(created.filters).toBe(3);
+    expect(created.gains.length).toBe(9);
     audio.dispose();
   });
 
@@ -168,7 +175,7 @@ describe("createAmbientAudio", () => {
     audio.dispose();
   });
 
-  it("wires the master gain to destination and every layer gain to the master", () => {
+  it("wires the master gain to destination, every layer gain to the world's bus, and that through its low-pass to the master", () => {
     const { ctx, created } = fakeCtx();
     const audio = createAmbientAudio(() => ctx);
     audio.unlock();
@@ -178,17 +185,25 @@ describe("createAmbientAudio", () => {
 
     // No gain feeds an AudioParam any more (the LFO depth gain is gone —
     // `setWind` drives the wind filter's frequency directly); every
-    // non-master gain is a bus gain (rain/wind/wildlife/drip) and must reach
-    // the master gain directly.
+    // layer gain (rain/wind/wildlife/drip/birdsong) reaches the world's bus, which
+    // reaches the master through the low-pass the stare shuts; the stare's
+    // own two buses reach the master directly, unmuffled.
     const isParam = (t: unknown): boolean =>
       Array.isArray((t as { targets?: unknown[] }).targets);
-    const layerGains = created.gains.slice(1);
+    const world = created.gains[1]!;
+    const layerGains = created.gains.slice(2, 7);
+    const stareGains = created.gains.slice(7);
 
-    expect(layerGains.some((g) => g.connections.some(isParam))).toBe(false);
-    expect(layerGains.length).toBe(4);
-    for (const g of layerGains) {
-      expect(g.connections).toContain(master);
-    }
+    expect(created.gains.slice(1).some((g) => g.connections.some(isParam))).toBe(false);
+    expect(layerGains.length).toBe(5);
+    for (const g of layerGains) expect(g.connections).toEqual([world]);
+    const muffle = created.filterNodes[2]!;
+    expect(muffle.type).toBe("lowpass");
+    expect(muffle.frequency.value).toBe(MUFFLE_OPEN_HZ);
+    expect(world.connections).toEqual([muffle]);
+    expect(muffle.connections).toEqual([master]);
+    expect(stareGains.length).toBe(2);
+    for (const g of stareGains) expect(g.connections).toEqual([master]);
 
     audio.dispose();
   });
@@ -301,7 +316,7 @@ describe("createAmbientAudio", () => {
     const wildlifeGain = created.gains.find((g) => g.gain.value === WILDLIFE_LEVEL)!;
     expect(wildlifeGain).toBeDefined();
     expect(callGain.connections).toContain(wildlifeGain);
-    expect(wildlifeGain.connections).toContain(created.gains[0]);
+    expect(wildlifeGain.connections).toContain(created.gains[1]);
 
     e.move(4, 5, 6);
     expect(panner.positionX.value).toBe(4);
@@ -421,9 +436,10 @@ describe("createAmbientAudio", () => {
     audio.unlock();
     const beds = created.sources.length;
     const master = created.gains[0]!;
-    const dripGain = created.gains[4]!;
+    const dripGain = created.gains[5]!;
     expect(dripGain.gain.value).toBe(1);
-    expect(dripGain.connections).toContain(master);
+    expect(master.connections).toContain(ctx.destination);
+    expect(dripGain.connections).toContain(created.gains[1]);
 
     // The train starts one interval out, past the 0.2 s look-ahead: nothing yet.
     audio.setDrip(1, 1);
@@ -606,9 +622,11 @@ describe("loopEmitter", () => {
     expect(voice.connections).toEqual([panner]);
     expect(panner.connections).toEqual([loopGain]);
     expect(loopGain.gain.value).toBe(0.6);
-    // Into the same bus as the calls, so the master volume and the bus level trim it.
+    // Into the same bus as the calls, so the master volume and the bus level trim it,
+    // and with them through the world's bus, which a stare muffles and a hush cuts.
     const wildlifeGain = created.gains.find((g) => g.gain.value === WILDLIFE_LEVEL)!;
     expect(loopGain.connections).toEqual([wildlifeGain]);
+    expect(wildlifeGain.connections).toEqual([created.gains[1]]);
     audio.dispose();
   });
 
@@ -824,5 +842,234 @@ describe("the insects' voices", () => {
     expect(second.gain.ramps.map((r) => r.time.toFixed(6))).toEqual(["2.190000", "2.200000", "2.350000"]);
     voice.stop();
     expect(created.oscillatorNodes.every((o) => o.stopped && o.disconnected)).toBe(true);
+  });
+});
+
+describe("the stare", () => {
+  const lens = (level: number, beats: number) => ({ ...STARE_LENS_REST, level, beats, period: 0.8 });
+
+  it("is inert before unlock, and at rest leaves the world open and builds no voice", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx, () => 0.5);
+    audio.setStare(lens(1, 3)); // pre-unlock: inert, not a throw
+    audio.unlock();
+    const sources = created.sources.length;
+    audio.setStare(STARE_LENS_REST);
+    const muffle = created.filterNodes[2]!;
+    expect(muffle.frequency.targets.at(-1)!.value).toBe(MUFFLE_OPEN_HZ);
+    expect(created.gains[1]!.gain.targets.at(-1)!.value).toBe(1);
+    expect(created.sources.length).toBe(sources);
+    expect(created.oscillators).toBe(0);
+    expect(created.panners.length).toBe(0);
+    audio.dispose();
+  });
+
+  it("muffles and quiets the world under a full stare, and the stare's own buses are left alone", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx, () => 0.5);
+    audio.unlock();
+    audio.setStare(lens(1, 0));
+    expect(created.filterNodes[2]!.frequency.targets.at(-1)!.value).toBeCloseTo(MUFFLE_SHUT_HZ, 6);
+    expect(created.gains[1]!.gain.targets.at(-1)!.value).toBeCloseTo(MUFFLE_GAIN, 12);
+    expect(created.gains[8]!.gain.targets.at(-1)!.value).toBeCloseTo(WHISPER_LEVEL, 12);
+    audio.dispose();
+  });
+
+  it("plays a beat's two sounds each time the lens begins one, and none for the beats before it first heard", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx, () => 0.5);
+    audio.unlock();
+    clock.currentTime = 4;
+    audio.setStare(lens(1, 7));
+    expect(created.oscillators).toBe(0);
+    audio.setStare(lens(1, 7));
+    expect(created.oscillators).toBe(0);
+    audio.setStare(lens(1, 8));
+    // Two sounds, each a tone and its octave.
+    expect(created.oscillators).toBe(4);
+    expect(created.oscillatorNodes.map((o) => o.startedAt)).toEqual([4, 4, 4 + HEART_DUB_AT * 0.8, 4 + HEART_DUB_AT * 0.8]);
+    for (const o of created.oscillatorNodes) expect(o.stoppedAt).toBeGreaterThan(o.startedAt!);
+    // The first sound swells to the heart's level, and every one ends near silence.
+    const sounds = created.gains.filter((g) => g.connections.includes(created.gains[7]));
+    expect(sounds.length).toBe(4);
+    const first = sounds[0]!;
+    expect(first.gain.ramps.map((r) => r.kind)).toEqual(["set", "linear", "exponential"]);
+    expect(first.gain.ramps[1]!.value).toBeCloseTo(HEART_LEVEL, 12);
+    expect(first.connections).toEqual([created.gains[7]]);
+    // A beat at rest is not heard.
+    audio.setStare(lens(0, 9));
+    expect(created.oscillators).toBe(4);
+    audio.dispose();
+  });
+
+  it("builds the whispers' voices on the first stare deep enough, circles them round the listener, and schedules syllables within the look-ahead", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx, () => 0.5);
+    audio.unlock();
+    audio.setListener(10, 2, -30, 0, 0, -1, 0, 1, 0);
+    const sources = created.sources.length;
+    audio.setStare(lens(0.05, 0));
+    expect(created.panners.length).toBe(0);
+    clock.currentTime = 2;
+    audio.setStare(lens(0.9, 0));
+    expect(created.sources.length).toBe(sources + WHISPER_VOICES);
+    expect(created.panners.length).toBe(WHISPER_VOICES);
+    for (const p of created.panners) {
+      expect(p.panningModel).toBe("HRTF");
+      expect(p.rolloffFactor).toBe(0);
+      const d = Math.hypot(p.positionX.value - 10, p.positionZ.value + 30);
+      expect(d).toBeGreaterThan(0.4);
+      expect(d).toBeLessThan(0.95);
+      expect(Math.abs(p.positionY.value - 2)).toBeLessThan(0.3);
+      expect(p.connections).toEqual([created.gains[8]]);
+    }
+    // A minute of frames: every syllable's envelope opens from nothing and
+    // shuts to nothing, in time order, never further ahead than the look-ahead.
+    for (let f = 0; f < 3600; f++) {
+      clock.currentTime = 2 + f / 60;
+      audio.setStare(lens(0.9, 0));
+    }
+    const voiceGains = created.gains.slice(9).filter((g) => g.gain.ramps.length > 0);
+    expect(voiceGains.length).toBeGreaterThanOrEqual(WHISPER_VOICES);
+    let syllables = 0;
+    for (const g of voiceGains) {
+      let last = -Infinity;
+      for (const r of g.gain.ramps) {
+        expect(r.time).toBeGreaterThanOrEqual(last);
+        expect(r.time).toBeLessThanOrEqual(62 + 1);
+        last = r.time;
+        if (r.kind === "set") { expect(r.value).toBe(0); syllables++; }
+      }
+      expect(g.gain.ramps.at(-1)!.value).toBe(0);
+    }
+    expect(syllables).toBeGreaterThan(100);
+    // The stare lets go: a second on, nothing more is scheduled.
+    const ramps = () => voiceGains.reduce((n, g) => n + g.gain.ramps.length, 0);
+    for (let f = 0; f < 120; f++) {
+      clock.currentTime = 62 + f / 60;
+      audio.setStare(STARE_LENS_REST);
+    }
+    const settled = ramps();
+    for (let f = 0; f < 300; f++) {
+      clock.currentTime = 64 + f / 60;
+      audio.setStare(STARE_LENS_REST);
+    }
+    expect(ramps()).toBe(settled);
+    expect(created.gains[8]!.gain.targets.at(-1)!.value).toBe(0);
+    audio.dispose();
+  });
+});
+
+describe("the hush", () => {
+  it("cuts the world's bus within a breath, on top of what a stare takes, and leaves the stare's own buses alone", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx, () => 0.5);
+    audio.setHush(1); // pre-unlock: inert, not a throw
+    audio.unlock();
+    const world = created.gains[1]!;
+    audio.setHush(1);
+    expect(world.gain.targets.at(-1)).toEqual({ value: 0, time: 0, tc: HUSH_RAMP_S });
+    audio.setHush(0);
+    expect(world.gain.targets.at(-1)!.value).toBe(1);
+    audio.setStare({ ...STARE_LENS_REST, level: 1 });
+    audio.setHush(0.5);
+    expect(world.gain.targets.at(-1)!.value).toBeCloseTo(MUFFLE_GAIN * 0.5, 12);
+    // The heart's bus and the whispers' are not the world's.
+    expect(created.gains[7]!.connections).toEqual([created.gains[0]]);
+    expect(created.gains[8]!.connections).toEqual([created.gains[0]]);
+    audio.dispose();
+  });
+});
+
+describe("the birdsong bed", () => {
+  const BED = { duration: 46 } as unknown as AudioBuffer;
+
+  it("is silent and unscheduled until the bed is in, then loops two passes half a bed apart, one to each ear", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.setBirdBed(BED); // pre-unlock: inert, not a throw
+    audio.unlock();
+    const birds = created.gains[6]!;
+    expect(birds.gain.value).toBe(0);
+    const beds = created.sources.length;
+    audio.setBirds(1);
+    expect(created.sources.length).toBe(beds);
+    expect(birds.gain.targets.at(-1)).toEqual({ value: BIRD_LEVEL, time: 0, tc: BIRD_GAIN_RAMP_S });
+
+    clock.currentTime = 10;
+    audio.setBirdBed(BED);
+    audio.setBirdBed(BED); // a second hand-over changes nothing
+    const first = created.sources.slice(beds);
+    expect(first.length).toBe(2);
+    expect(first.map((s) => [s.startedAt, s.offset])).toEqual([[10, 0], [10, 23]]);
+    expect(created.stereo.map((p) => p.pan.value)).toEqual([-BIRD_PAN, BIRD_PAN]);
+    for (const [i, s] of first.entries()) {
+      expect(s.loop).toBe(false);
+      expect(s.connections).toEqual([created.stereo[i]]);
+      expect(created.stereo[i]!.connections).toEqual([birds]);
+    }
+
+    // Two minutes of frames: each ear's next pass starts BIRD_OVERLAP_S before
+    // the one before it ends, scheduled no more than the look-ahead early.
+    for (let f = 0; f <= 120 * 60; f++) {
+      clock.currentTime = 10 + f / 60;
+      audio.setBirds(1);
+    }
+    const starts = (ear: number) => created.sources.slice(beds).filter((s) => s.connections[0] === created.stereo[ear]).map((s) => s.startedAt);
+    const pass = 46 - BIRD_OVERLAP_S;
+    expect(starts(0)).toEqual([10, 10 + pass, 10 + 2 * pass]);
+    expect(starts(1)).toEqual([10, 10 + 23 - BIRD_OVERLAP_S, 10 + 23 - BIRD_OVERLAP_S + pass, 10 + 23 - BIRD_OVERLAP_S + 2 * pass]);
+    audio.dispose();
+  });
+
+  it("follows the level it is handed, clamped, and a hush is a gain of none", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    const birds = created.gains[6]!;
+    audio.setBirds(0.5);
+    expect(birds.gain.targets.at(-1)!.value).toBe(BIRD_LEVEL * 0.5);
+    audio.setBirds(0);
+    expect(birds.gain.targets.at(-1)!.value).toBe(0);
+    audio.setBirds(7);
+    expect(birds.gain.targets.at(-1)!.value).toBe(BIRD_LEVEL);
+    audio.dispose();
+  });
+});
+
+describe("the Hollow's call", () => {
+  it("plays the recording an octave down and a fourth under that, from a direction, through a low-pass, into the world's bus", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    const clip = { duration: 1.9 } as unknown as AudioBuffer;
+    audio.hollowCall(clip, 1, 0, 0, 1, 2000); // pre-unlock: inert, not a throw
+    audio.unlock();
+    audio.setListener(5, 2, -7, 0, 0, -1, 0, 1, 0);
+    clock.currentTime = 3;
+    const sources = created.sources.length;
+    const gains = created.gains.length;
+    audio.hollowCall(clip, 0, 30, -40, 0.5, 2000);
+    const voices = created.sources.slice(sources);
+    expect(voices.map((s) => s.playbackRate.value)).toEqual(HOLLOW_CALL_VOICES.map((v) => v.rate));
+    expect(voices.map((s) => s.startedAt)).toEqual(HOLLOW_CALL_VOICES.map((v) => 3 + v.after));
+    const voiceGains = created.gains.slice(gains);
+    expect(voiceGains.map((g) => g.gain.value)).toEqual(HOLLOW_CALL_VOICES.map((v) => HOLLOW_CALL_LEVEL * 0.5 * v.share));
+    const filter = created.filterNodes.at(-1)!;
+    expect(filter.type).toBe("lowpass");
+    expect(filter.frequency.value).toBe(2000);
+    for (const g of voiceGains) expect(g.connections).toEqual([filter]);
+    // Placed by direction alone, HOLLOW_CALL_STANDOFF_M from the ear: (0, 3, -4) / 5.
+    const panner = created.panners.at(-1)!;
+    expect(filter.connections).toEqual([panner]);
+    expect(panner.rolloffFactor).toBe(0);
+    expect(panner.positionX.value).toBeCloseTo(5, 12);
+    expect(panner.positionY.value).toBeCloseTo(2 + 0.6 * HOLLOW_CALL_STANDOFF_M, 12);
+    expect(panner.positionZ.value).toBeCloseTo(-7 - 0.8 * HOLLOW_CALL_STANDOFF_M, 12);
+    expect(panner.connections).toEqual([created.gains[1]]);
+    // No direction, or no level: nothing is made.
+    audio.hollowCall(clip, 0, 0, 0, 1, 2000);
+    audio.hollowCall(clip, 1, 0, 0, 0, 2000);
+    expect(created.sources.length).toBe(sources + HOLLOW_CALL_VOICES.length);
+    audio.dispose();
   });
 });

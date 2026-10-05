@@ -14,6 +14,11 @@ import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
 import { createPost, finishFragmentFor, fxSupportedBy } from "../../src/game/post.js";
 import { postFeaturesFor, MSAA_SAMPLES } from "../../src/game/postParams.js";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "../../src/game/weather.js";
+import { STARE_LENS_REST, stareReach, type StareLens } from "../../src/game/stareLens.js";
+import { gradeRecordUnder, STARE_VIGNETTE } from "../../src/game/gradeParams.js";
+
+/** A lens half closed, the Hollow to the right, between beats. */
+const HALF_STARE: StareLens = { ...STARE_LENS_REST, level: 0.5, phase: 0.6, sideX: 1 };
 
 // A pass's own ratio (Babylon's private, constructor-set `_options`) sizes the
 // target its PREDECESSOR writes into — the general rule the doc comment above
@@ -70,8 +75,8 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       const post = createPost(scene, camera, postFeaturesFor(tier, fxSupportedBy(engine)));
       expect(post.features.pipeline).toBe(false);
       expect(camera._postProcesses.length).toBe(0);
-      post.update(WEATHER_PRESETS.eerie, 17, 0, 1, 0);
-      post.update(WEATHER_PRESETS.clear, 12, 0, 0, 0);
+      post.update(WEATHER_PRESETS.eerie, 17, 0, 1, STARE_LENS_REST);
+      post.update(WEATHER_PRESETS.clear, 12, 0, 0, STARE_LENS_REST);
       post.dispose();
       camera.dispose();
     }
@@ -80,24 +85,32 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
   it("with the material path, update writes the grade record onto the image processing config", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     const post = createPost(scene, camera, postFeaturesFor("low", false));
-    post.update(WEATHER_PRESETS.eerie, 17, 0, 1, 0);
+    post.update(WEATHER_PRESETS.eerie, 17, 0, 1, STARE_LENS_REST);
     const ip = scene.imageProcessingConfiguration;
     expect(ip.vignetteEnabled).toBe(true);
     expect(ip.colorCurves?.midtonesDensity ?? 0).toBeGreaterThan(0);
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST);
     expect(ip.colorCurves?.midtonesDensity).toBe(0);
     // The exposure is the lighting's to write on this path, the stare's
     // dimming with it (`Lighting.setStare`): the grade's record leaves it be.
     ip.exposure = 0.7;
-    post.update(WEATHER_PRESETS.eerie, 17, 0, 1, 0.5);
+    post.update(WEATHER_PRESETS.eerie, 17, 0, 1, HALF_STARE);
     expect(ip.exposure).toBe(0.7);
+    // The stare on this path is Babylon's own vignette: heavier by the
+    // lens's reach, and its centre moved off the Hollow's side.
+    const rest = gradeRecordUnder(WEATHER_PRESETS.eerie, 17, 0, 1).vignetteWeight;
+    expect(ip.vignetteWeight).toBeCloseTo(rest + STARE_VIGNETTE * stareReach(HALF_STARE), 2);
+    expect(ip.vignetteCenterX).toBeLessThan(0);
+    expect(ip.vignetteCenterY).toBeCloseTo(0, 12);
+    post.update(WEATHER_PRESETS.eerie, 17, 0, 1, STARE_LENS_REST);
+    expect(ip.vignetteCenterX).toBe(0);
     post.dispose();
   });
 
   it("writes the split-tone grade onto colorCurves when weather changes", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     const post = createPost(scene, camera, postFeaturesFor("low", false));
-    post.update(WEATHER_PRESETS.eerie, 12, 0, 1, 0);
+    post.update(WEATHER_PRESETS.eerie, 12, 0, 1, STARE_LENS_REST);
     const c = scene.imageProcessingConfiguration.colorCurves;
     const g = gradeUnder(WEATHER_PRESETS.eerie);
     expect(c?.globalSaturation).toBe(saturationUnder(WEATHER_PRESETS.eerie));
@@ -116,7 +129,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
   it("leaves the colour filter inert under clear — the sunny frame is untouched", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     const post = createPost(scene, camera, postFeaturesFor("low", false));
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST);
     const c = scene.imageProcessingConfiguration.colorCurves;
     expect(c?.shadowsDensity).toBe(0);
     expect(c?.midtonesDensity).toBe(0);
@@ -132,7 +145,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       // `_postProcesses` is `Nullable<PostProcess>[]`: a detached pass leaves
       // a null in its slot, read here as null.
       const fresh = camera._postProcesses.map((p) => p?.name ?? null);
-      post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 1);
+      post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 1);
       const order = camera._postProcesses.map((p) => p?.name ?? null);
       post.dispose();
       camera.dispose();
@@ -153,7 +166,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
       const post = createPost(scene, camera, postFeaturesFor(tier, true));
       expect(post.features.lens).toBe(true);
-      post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 1);
+      post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 1);
       const lens = passNamed(camera, "lens");
       expect(ratioOf(lens)).toBe(1.0);
       // Babylon appends its own `scale` and `textureSampler` to what a pass declares.
@@ -170,7 +183,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       const bigScene = new Scene(bigEngine);
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), bigScene);
       const post = createPost(bigScene, camera, postFeaturesFor(tier, true));
-      post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 1);
+      post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 1);
       const lens = passNamed(camera, "lens");
       const calls: { fn: string; args: unknown[] }[] = [];
       const fakeEffect = new Proxy(
@@ -204,7 +217,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), bigScene);
     let ms = 0;
     const post = createPost(bigScene, camera, postFeaturesFor("medium", true), { now: () => ms });
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 0.3);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0.3);
     ms = 3_601_000;
     const calls: { fn: string; args: unknown[] }[] = [];
     const fakeEffect = new Proxy(
@@ -238,11 +251,11 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     };
     // Sunset at clear, where the warm dusk white point was, with a night
     // factor of 0: no warmth and no rods.
-    post.update(WEATHER_PRESETS.clear, 18, 0, 1, 0);
+    post.update(WEATHER_PRESETS.clear, 18, 0, 1, STARE_LENS_REST);
     const day = uniforms();
     expect(day.floats["purkinjeStrength"]).toBe(0);
     expect(day.whitePoint).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
-    post.update(WEATHER_PRESETS.clear, 0, 1, 1, 0);
+    post.update(WEATHER_PRESETS.clear, 0, 1, 1, STARE_LENS_REST);
     const night = uniforms();
     expect(night.floats["purkinjeStrength"]).toBeCloseTo(0.8, 6);
     // The night white's blue gain, as a float32 uniform.
@@ -260,32 +273,32 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     const detached = ["grade", "chromaticAberration", "fxaa", null, "finish"];
     expect(names()).toEqual(detached);
     // An update with no strength (every other call site) leaves it so.
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST);
     expect(names()).toEqual(detached);
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 0.019);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0.019);
     expect(names()).toEqual(detached);
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 0.02);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0.02);
     expect(names()).toEqual(attached);
     ms = 999;
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 0.019);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0.019);
     expect(names()).toEqual(attached);
     ms = 1000;
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 0.019);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0.019);
     expect(names()).toEqual(attached);
     ms = 1999;
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 0.019);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0.019);
     expect(names()).toEqual(detached);
     // Back above the floor: attached at once, in the same slot.
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 0.02);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0.02);
     expect(names()).toEqual(attached);
     // The idle clock restarts from the fall, not from the last attach.
     ms = 1500;
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 0);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0);
     ms = 2499;
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 0);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0);
     expect(names()).toEqual(attached);
     ms = 2500;
-    post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 0);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0);
     expect(names()).toEqual(detached);
     // Disposing a detached lens leaves the chain's other passes to their own dispose.
     post.dispose();
@@ -300,7 +313,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       engine.getCaps().maxMSAASamples = 4;
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
       const post = createPost(scene, camera, postFeaturesFor(tier, true));
-      post.update(WEATHER_PRESETS.clear, 12, 0, 1, 0, 1);
+      post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 1);
       const passes = camera._postProcesses.map((p) => p!);
       expect(passes[0]!.name).toBe(tier === "high" ? "scene" : "grade");
       expect(passes[0]!.samples).toBe(MSAA_SAMPLES);

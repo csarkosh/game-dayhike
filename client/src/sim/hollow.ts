@@ -2,7 +2,8 @@
  * The Hollow (docs/gameplay/2026-09-16-the-summit.md §5): the figure that
  * steps out at the crest when the body is found and hunts the party down the
  * mountain. It cannot be killed. Contact kills, and being looked at slows it
- * at the price of the looker's stare.
+ * at the price of the looker's stare: their sight and their hearing
+ * (game/stareLens.ts), never their life.
  *
  * A Hollow is an `EnemyState` whose `ai` is Hunt, Emerge, Stand or Watch (the
  * climb's watcher, watcher.ts), so the snapshot's enemy channel carries it as
@@ -40,7 +41,7 @@ export const HOLLOW_HUNT_SPEED = 6.3;
 /** Its speed while a living player has it in view: a glance back buys distance and costs the screen. */
 export const HOLLOW_LOOK_FACTOR = 0.6;
 /** Seconds it stands still at the crest as it steps out, before the hunt. */
-export const SUMMIT_REVEAL_S = 2;
+export const SUMMIT_REVEAL_S = 4;
 /** Seconds a fork Hollow stands at the mouth of its branch, facing its trigger, before it hunts. */
 export const FORK_REVEAL_S = 1;
 /** Seconds a fork Hollow may spend walking to the mouth before it reveals where it stands. */
@@ -51,8 +52,8 @@ export const HOLLOW_LOOK_COS = 0.9397;
 export const HOLLOW_LOOK_RANGE = 120;
 /** Seconds of continuous looking that fill the stare from 0 to 1. */
 export const HOLLOW_STARE_FILL_S = 6;
-/** Seconds of looking away that empty it from 1 to 0. */
-export const HOLLOW_STARE_EMPTY_S = 3;
+/** Seconds of looking away that empty it from 1 to 0: longer than the fill, so a look lingers. */
+export const HOLLOW_STARE_EMPTY_S = 8;
 /** Added to the two half-widths: the hulls need not interpenetrate to touch. */
 export const HOLLOW_CONTACT_MARGIN = 0.1;
 /** Horizontal metres within which a route node counts as reached. */
@@ -471,7 +472,8 @@ export function playerSees(player: PlayerState, hollow: EnemyState, world: World
 /**
  * The per-tick rules, host only, after every Hollow has moved: contact
  * kills, and the look test, which slows a seen Hollow next tick and fills or
- * empties each player's stare. The loss is `updateLoss`, which every world
+ * empties each player's stare. A full stare kills nobody: what it costs is
+ * the screen's and the ears' to take. The loss is `updateLoss`, which every world
  * runs, Hollow or not.
  */
 export function updateHollows(world: World): void {
@@ -506,7 +508,6 @@ export function updateHollows(world: World): void {
       }
     }
     p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
-    if (p.stare >= 1) p.health = 0;
   }
 
   // Prey: a hunting Hollow whose target is dead, gone or safe takes the

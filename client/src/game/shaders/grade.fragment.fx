@@ -2,7 +2,7 @@
 // on linear HDR before the pipeline's chromatic aberration and FXAA. Order:
 // exposure, AgX, white point, Purkinje, split-tone, global saturation, lift
 // (a colour: under dread the shadows go milky green-grey), vignette,
-// halation, sRGB encode. Every knob is a uniform from gradeRecordUnder in
+// halation, the stare's darkness, sRGB encode. Every knob is a uniform from gradeRecordUnder in
 // gradeParams.ts, so nothing recompiles at runtime.
 //
 // The AgX tone map is ported from three.js, MIT License, Copyright 2010-2024 three.js authors
@@ -34,6 +34,9 @@ uniform float saturation;
 uniform float vignetteWeight;
 uniform vec3 vignetteColour;
 uniform float halationStrength;
+// The stare (stareLens.ts): xy the open centre's offset, z how far the
+// darkness has closed, w the seconds its edge crawls on.
+uniform vec4 stareShade;
 
 const mat3 SRGB_TO_REC2020 = mat3(0.6274, 0.0691, 0.0164, 0.3293, 0.9195, 0.088, 0.0433, 0.0113, 0.8956);
 const mat3 REC2020_TO_SRGB = mat3(1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187);
@@ -102,5 +105,16 @@ void main(void) {
   c = mix(vignetteColour, c, vig);
   vec3 halo = texture2D(halationSampler, vUV).rgb * halationStrength;
   c = 1.0 - (1.0 - c) * (1.0 - clamp(halo, 0.0, 1.0));
+  // The stare: black closing on an open centre that sits off the Hollow,
+  // its edge pushed in and out round the frame by three slow waves so it is
+  // never a lens's ring. At reach 0 the gate is 0 and nothing is drawn.
+  vec2 sp = centred - stareShade.xy;
+  float sa = atan(sp.y, sp.x);
+  float st = stareShade.w;
+  float crawl = 0.5 * sin(sa * 2.0 + st * 0.61) + 0.3 * sin(sa * 3.0 - st * 0.93 + 1.7) + 0.2 * sin(sa * 7.0 + st * 1.57 + 4.1);
+  float sr = length(sp) / 1.41421356 + crawl * 0.11 * stareShade.z;
+  float openTo = mix(1.2, 0.28, stareShade.z);
+  float dark = smoothstep(openTo - 0.26, openTo + 0.1, sr) * min(1.0, stareShade.z * 4.0);
+  c *= 1.0 - 0.97 * dark;
   gl_FragColor = vec4(toSrgb(clamp(c, 0.0, 1.0)), 1.0);
 }
