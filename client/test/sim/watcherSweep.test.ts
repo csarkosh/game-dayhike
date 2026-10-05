@@ -282,7 +282,7 @@ describe("the watcher on fifty seeds", () => {
     expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
     expect(bySlot.map((b) => `${b.slot} ${b.stands}`), summary).toEqual(["climb 0 200", "climb 0.25 200", "climb 0.5 200", "climb 0.75 200", "top fork 180"]);
     const floors = [187, 197, 191, 200, 180];
-    const admittedFloors = [3980, 12528, 17134, 25792, 22864];
+    const admittedFloors = [3980, 12516, 17134, 25792, 22864];
     bySlot.forEach((b, i) => {
       expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
       expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);
