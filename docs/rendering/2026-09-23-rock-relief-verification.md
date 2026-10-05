@@ -13,7 +13,7 @@ out, exercised directly by its own test file on a synthetic icosphere (and an
 anisotropic stretch of one — see §4) rather than through the engine.
 `clutterMeshes.ts` is exercised through a `NullEngine` scene, the same escape
 hatch the rest of the clutter shell's tests use. Both are unit-level and run
-in milliseconds; neither substitutes for the gates below, which need a real
+in milliseconds; neither substitutes for the checks below, which need a real
 page, a real GPU and a control build at the commit this work started from.
 
 ## 2. What was built
@@ -52,7 +52,7 @@ both copies along it by the same signed amount along the same direction
 keeps them coincident. The triangle's face normal is still written to the
 output `normals` array, unchanged, so shading still reads each facet as flat.
 
-A synthetic-fixture test caught the one place this ruling has a cost: the
+A synthetic-fixture test caught the one place this decision has a cost: the
 stored (flat) face normal is no longer exactly the geometric normal of the
 triangle's own roughened output positions, because the three vertices of a
 triangle now move along three different (vertex) directions rather than one
@@ -184,11 +184,11 @@ collider divergence in the design's §3 comes from.
 
 ## 8. LOD-swap walk
 
-The concern this gate exists for is that a rock could change SHAPE, not just
+The concern this check exists for is that a rock could change SHAPE, not just
 detail, at the moment its LOD swaps — which is what the one-plane-list-per-
 model rule in `expandCutVariants` prevents.
 
-**The gate was specified as three stills at the boulder, and stills do not
+**The check was specified as three stills at the boulder, and stills do not
 answer it.** They were taken — backing away along +x from the boulder at
 `(367.9, 135.2, 593.8)` to 30 m, 60 m and 90 m — and they show nothing
 usable: at the first station a tree trunk stands in the line of sight, and by
@@ -397,11 +397,11 @@ on a sphere, in all four cuts. Anyone reading the tests, or the tests
 themselves, would see the cut working perfectly. It was working perfectly, on
 the only shape it was ever shown.
 
-The visual gate did not catch it either; it confirmed the wrong thing. The
+The visual check did not catch it either; it confirmed the wrong thing. The
 stills in §7 are real — the rocks genuinely did stop looking like smooth
 loaves and start looking like broken stone. What produced that was the
 unwelding and the flat face normals, which are most of the look and which
-worked from the first commit. So the gate asked "does it look like fractured
+worked from the first commit. So the check asked "does it look like fractured
 rock?", answered yes, and said nothing whatever about whether the fractures
 existed. A green suite and a set of before-and-after stills both passed over a
 mechanism that was seeded, judged and discarded without ever cutting
@@ -416,7 +416,7 @@ The general lesson, stated plainly for whoever reads this next:
   differences hid a separate defect here — the anisotropy hid this one, the
   concavity hid a 21 µm bound violation (§4), and the uniform sampling hid the
   fact that the cap-share ceiling can never fire on a sphere at all.
-- **A look gate confirms the look, not the mechanism.** When a change is meant
+- **A look check confirms the look, not the mechanism.** When a change is meant
   to work by a specific mechanism, something has to measure that the mechanism
   ran. "It looks right" is compatible with the named cause contributing
   nothing, and here it was.
@@ -463,11 +463,6 @@ boulder's height so it cannot quietly grow.
   new rule with its own look consequences — a boulder that can never be
   cleaved is a boulder that keeps its dome — and that is a design question,
   not a bug fix.
-- **Retire or rewrite `2026-09-23-rock-relief-plan.md`.** It predates the work
-  this note records, it is written as a sequence of tasks rather than as a
-  description of the game, and its code sketch calls `rockHalfExtent` eight
-  times — a function the cut no longer has. A reader who finds it first will
-  be reading a shape the code left behind.
 - Moss and lichen on the north faces of facets, as a vertex-colour tint by
   facet normal (from the design's own follow-ups).
 - Cut the ground's scree paint to match, so a boulder and the scree it sits in

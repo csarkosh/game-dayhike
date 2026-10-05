@@ -1,7 +1,7 @@
 # The Hollow — sub-project C
 
 **Date:** 2026-09-15
-**Status:** Built 2026-09-16 (`docs/gameplay/2026-09-15-the-hollow-plan.md`). What moved in execution:
+**Status:** Built 2026-09-16. What moved in execution:
 the placeholder is a `StandardMaterial`, not a PBR one — the atmosphere's fog plugin replaces
 Babylon's fog line by an anchor a fog-off PBR material never emits, so that material never compiles
 (found only in the browser: the sim saw the Hollow, the screen never did); a rebuilt hunt route
@@ -54,7 +54,7 @@ Taken 2026-09-15, in the order they were made.
     it unchanged; the rules live in one new module, `sim/hollow.ts`, and `sim/ai.ts` stays the
     sandbox's chaser.
 11. **A hunt ends on the hunted player's own sign-out** of any hiker — "completes the register" read
-    as their sign-out, not the whole book. (Carried in from the design; not asked separately.)
+    as their sign-out, not the whole book. (Carried in from the design; not decided separately.)
 
 ## 2. The rules
 

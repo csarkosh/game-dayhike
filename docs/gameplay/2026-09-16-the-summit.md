@@ -14,7 +14,7 @@ on 132 (58 %, floor 55 %), and on the rest the guide returns the longest of its 
 571 bed pairs on 142 worlds sit closer than the 16 m corridor gap (never under 4 m, so beds never
 overlap) because the simplifier's gap test works in cell space — a world-space test there is the
 follow-up that would raise every one of these numbers; build time about 400 ms a seed.
-What S1's build ruled, amending the sections below: the Poe passages leave
+What S1's build decided, amending the sections below: the Poe passages leave
 `game/registerHud.ts` for a new `game/passages.ts`, which the end screen's three passages join;
 the roster is untouched (it is the lobby's party list and carries no dead-versus-living state), so
 the end panel is the only place the groups show; `PlayerState.respawnTimer` leaves the wire and
@@ -29,7 +29,7 @@ unused; `roadLine` survives with the wall, reading "Not yet. Somebody is still u
 climb and nothing in the chase, because reaching the corridor is its own line on the end panel;
 and the sign posts stay, reading the summit as their one site, while the trailhead board's lines
 become the poster's — the poster's date and the number to call (§7) are deferred, and the
-placeholder shows the name and "last seen" lines only. Three more rulings came out of the build itself: the safety pass runs at the
+placeholder shows the name and "last seen" lines only. Three more decisions came out of the build itself: the safety pass runs at the
 top of the authoritative tail, before the Hollows step rather than after them, so a player who
 crosses onto the corridor cannot be killed by contact in the tick they reach it (discovery and the
 end rule stay at the tail; deaths are settled before the summit step, so a contact kill and the end
@@ -145,7 +145,7 @@ level; the dead stay as peers. Two Poe-like death passages.
 ### 3.1 What stays
 
 Everything T shipped: the made peak and its crest platform; the stem pad → crest as the routing
-backbone and the owner of `progress`; the seeded loops (1–3) around meadows and ponds, with their
+backbone, which holds `progress`; the seeded loops (1–3) around meadows and ponds, with their
 hubs; the corridor, bed, bench cut, paint table and walkability-grid Dijkstra; the pad, the road and
 the car.
 
@@ -168,7 +168,7 @@ Loops keep hanging off the stem as today, and their two junctions are forks like
 and rungs treat every meadow's and pond's disc plus its apron as forbidden ground, so no strand cuts
 through a meadow its loop circles; the peak's dome is walkable, and a bed that would stand more than
 1.5 m off the ground on its skirt is dropped instead. Loops off the other strands are a
-**follow-up**, not part of T2 (decided 2026-09-16 while planning): the fork band is met without them,
+**follow-up**, not part of T2 (decided 2026-09-16): the fork band is met without them,
 and they need the loop stage made generic over its spine, a refactor of a carefully measured stage
 with its own risk.
 
@@ -472,15 +472,15 @@ rewriting the layer now.
 
 ## 9. Build order
 
-Four sub-projects, each with its own plan, subagent-driven build, browser pass, push and deploy,
-in this order. Each leaves the game playable.
+Four sub-projects, in this order, each delivering the sections in its row to the live game.
+Each leaves the game playable.
 
 | # | Sub-project | Sections | Status |
 | --- | --- | --- | --- |
-| T2 | Loops and braids | §3 | Built 2026-09-16 (docs/trail/2026-09-16-loops-and-braids-plan.md) |
-| S1 | The summit loop: phase, poster, body, discovery, the summit Hollow, safety, the end, escalation, protocol 5 | §2, §5.1, §5.2, §6, §7 | Built 2026-09-22 (docs/gameplay/2026-09-16-the-summit-loop-plan.md) |
-| S3 | The cut: the guide, the fork cuts, `Emerge`, the fork Hollows | §5.3 | Built 2026-09-25 (docs/gameplay/2026-09-25-the-cut-plan.md) |
-| S2 | The watcher | §4 | Built 2026-09-26 (docs/gameplay/2026-09-26-the-watcher-plan.md) |
+| T2 | Loops and braids | §3 | Built 2026-09-16 |
+| S1 | The summit loop: phase, poster, body, discovery, the summit Hollow, safety, the end, escalation, protocol 5 | §2, §5.1, §5.2, §6, §7 | Built 2026-09-22 |
+| S3 | The cut: the guide, the fork cuts, `Emerge`, the fork Hollows | §5.3 | Built 2026-09-25 |
+| S2 | The watcher | §4 | Built 2026-09-26 |
 
 After S1 the game is: climb unstalked, find the body, one Hollow chases you home. S3 makes the
 descent the maze; S2 gives the climb its stalker. S3 went before S2 because the chase is the heart

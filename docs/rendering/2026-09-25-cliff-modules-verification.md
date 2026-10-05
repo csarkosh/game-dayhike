@@ -5,7 +5,7 @@ What was measured against
 before the rock-wall modules shipped, how, and what the numbers were, in the
 format of
 [`2026-09-24-forest-floor-verification.md`](2026-09-24-forest-floor-verification.md).
-The gates are the design's §8; the bars are its §1.
+The checks are the design's §8; the bars are its §1.
 
 The stills, the bucket counts, the seam and the invariant check were read
 against the client code at `7ce02f2` (unchanged by the docs-only commit
@@ -146,7 +146,7 @@ reaching it is the hemispheric fill, intensity 0.15 and diffuse
 points (0, −0.970, 0.243) — 76° above the horizon. A near-vertical wall
 catches almost none of a sun that is nearly overhead.
 
-Everything else was ruled out by experiment on one page at one pose:
+Everything else was eliminated by experiment on one page at one pose:
 
 | change | module mean RGB |
 | --- | --- |
@@ -172,7 +172,7 @@ The sun angle settles it. The same pose at 16:00, sun at 29° instead of 76°:
 | 16:00, sun 29° up | 75.5 | 123.2 | **0.613** |
 
 The modules more than double in brightness while the ground barely moves.
-Every gate pose in this note was shot at `time 12`, which is the worst hour
+Every check pose in this note was shot at `time 12`, which is the worst hour
 in the day for a near-vertical face. The walls being dark at noon is the
 scene lighting working, not a fault — but it is still how the game looks at
 noon, and if they should read lighter the levers are the fill light, the
@@ -494,7 +494,7 @@ cell asked three questions: is the ground there walkable
 an edge), is it on the road (within the bed and half a metre of shoulder).
 **6 of 302 modules** have a box over walkable ground, 13 cells between
 them, the nearest 56 m from the scarp; **0 of 302** over the trail bed;
-**0 of 302** over the road. This replaces gate 2's "0 / 167" (which asked
+**0 of 302** over the road. This replaces the second check's "0 / 167" (which asked
 the same of the base plane only); the boxes are larger than the drawn rock
 by design, and this is what that costs here.
 
@@ -714,7 +714,7 @@ nor still sliding were then tried for escape in eight directions.
 | --- | --- | --- | --- | --- | --- |
 | §15, faces in place | 131 | 117 | 12 | 2 | 6 |
 | sim test at this tip | 119 | 115 | 4 | 0 | 0 |
-| **this gate, in the page** | **119** | **115** | **4** | **0** | **0** |
+| **this check, in the page** | **119** | **115** | **4** | **0** | **0** |
 
 The page agrees with the test exactly. The four other rests are all grounded,
 on ground at the stand limit (normal 0.701–0.708), and they walk away 35–57 m.

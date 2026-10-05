@@ -1,7 +1,7 @@
 # The trailhead board
 
 **Date:** 2026-09-28
-**Status:** Built. The steps that built it are `docs/trail/2026-09-28-trailhead-board-plan.md`; how it looks in the game is `docs/trail/2026-09-28-trailhead-board-verification.md`.
+**Status:** Built. How it looks in the game is `docs/trail/2026-09-28-trailhead-board-verification.md`.
 **Amends:** `docs/trail/2026-09-28-trail-14-trailhead.md` §3.3 (the sign at the entrance, which
 goes) and §3.4 (the notice board, which moves). The car, the player's place and facing, the
 trail's name and the road wall are unchanged.

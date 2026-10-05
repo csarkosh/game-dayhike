@@ -1,14 +1,14 @@
 # The grass floor: browser verification
 
-**Status:** gated 2026-09-16, against the gates `docs/rendering/2026-09-16-grass-floor-design.md`
-§9 lists. Branch `worktree-grass-floor-impl` first at `7f25772` (Tasks 1–4), then at the retuned
+**Status:** checked 2026-09-16, against the checks `docs/rendering/2026-09-16-grass-floor-design.md`
+§9 lists. Branch `worktree-grass-floor-impl` first at `7f25772` (the design as first built), then at the retuned
 commit `0fa9be4`; control at the branch base `9de010d` on `main`.
 
 ## The rig
 
 Both builds served from their own worktrees: the branch on port 5174 (signaling on 8081), the
 control on port 5175 (signaling on 8082), each with a temporary Vite port and proxy edit and the
-gate hooks (`__scene`, `__engine`, `__renderer`, `__fcSet`, `__fc`, `__lampOn`), all reverted
+debug hooks (`__scene`, `__engine`, `__renderer`, `__fcSet`, `__fc`, `__lampOn`), all reverted
 before commit. Chrome ran through the chrome-devtools CLI daemon
 (`--isolated --allowUnrestrictedPaths --headless=false`), one game page at a time, on the real
 GPU: `ANGLE (Apple, ANGLE Metal Renderer: Apple M4)`.
@@ -29,7 +29,7 @@ Plus the floor crop at the meadow viewpoint: the same pose at pitch 0.55 for the
 on every branch page; the ground shader compiles on the real GPU with `dFdx`, `textureGrad` and
 the hex include.
 
-## Gate 1: open meadow
+## Check 1: open meadow
 
 **As first built (7f25772): FAIL.** The near floor was indistinguishable from the control at any
 strength of the detail term; live overrides of the plugin's uniforms at one pose showed the term
@@ -46,20 +46,20 @@ depth between the clumps at 3–6 m and visible ground structure across 5–20 m
 control's flat plane; weight 1.0 read as stains and was rejected. Faint lush/dry patches in the
 far field, no pale band, the far slope a touch greener.
 
-## Gate 2: forest edge, 14 h — PASS
+## Check 2: forest edge, 14 h — PASS
 
 Branch and control read near-identical: tufts and floor agree, no seam at the treeline. After
 the retune the meadow-side floor is slightly patchier than the control; nothing else changes.
 
-## Gate 3: the trail at eerie 20 h, lamp on — PASS
+## Check 3: the trail at eerie 20 h, lamp on — PASS
 
 Read on both builds, `7f25772` and the retuned `0fa9be4`: no sparkle, no banding in the lamp pool
 with the detail term under the near light. The two builds read identical apart from the rain's
 own frame-to-frame variance.
 
-## Gate 4: deep forest — PASS (visual)
+## Check 4: deep forest — PASS (visual)
 
-Branch and control read identical under the canopy; the gate here is the frame pair below, since
+Branch and control read identical under the canopy; the check here is the frame pair below, since
 the ground carries a small non-zero grass weight at this pose.
 
 ## Frame time

@@ -15,9 +15,9 @@ and its bed litter as two terms of that field, built by that work. This
 design owns the paint, the litter density and the trample, and runs after the
 ground cover lands.
 
-## 1. Rulings
+## 1. Decisions
 
-| question | ruling |
+| question | decision |
 | --- | --- |
 | Abandonment model | Uniform along the whole trail; the trailhead's own elements are iterated later |
 | Legibility | Always readable as a path: neglect is texture, never navigation difficulty |
@@ -40,7 +40,7 @@ Goals:
 Non-goals:
 
 - Anything about the trailhead pad, the poster, the car or the box.
-- Neglect that varies with distance from the trailhead (ruled out; the field
+- Neglect that varies with distance from the trailhead (decided against; the field
   terms are written so a positional ramp could be added later without
   restructuring).
 - New assets. The pieces are the ground cover's duff generator.
@@ -48,7 +48,7 @@ Non-goals:
 
 ## 3. What the ground-cover field already does for the trail
 
-Two terms of `groundCover` (`sim/clutter.ts`), specified and planned with the
+Two terms of `groundCover` (`sim/clutter.ts`), specified with the
 ground cover so both are built once:
 
 - **Encroachment.** The grass trail ramp's reach varies along the trail by a
@@ -96,7 +96,7 @@ dirt at the edges of the drift.
 - **Trample** weakened to 0.6 of today's strength in `trailBenchParams.ts`:
   the grass beside the bed stands up more.
 
-## 6. Budget, tests and gates
+## 6. Budget, tests and checks
 
 **Budget:** +0.5 ms at 4× pixels, paired both orders, two pairs, at TRAIL and
 TRAILSIDE, re-based against `main` after the ground cover lands; native p95
@@ -118,7 +118,7 @@ litter density adds a few dozen pebbles inside the reach.
   identity frame off the band.
 - *Level id.* The tunables change moves it.
 
-**Gates, before/after against `main`, sun pinned, every game page blanked
+**Checks, before/after against `main`, sun pinned, every game page blanked
 before each sample:** TRAIL and TRAILSIDE under clear noon and mist, at eye
 level and looking down at the bed; counts of duff and litter instances on the
 bed; a walk along 40 m of stem as three stills, to check the drifts read as
@@ -133,14 +133,14 @@ cover's field); the drift and wash-out smoothstep edges narrowed, for fewer
 and smaller patches; the encroachment reach's floor 0.35 → 0.5 if islands read
 as blocking.
 
-## 8. Ownership and order
+## 8. What each design builds, and in what order
 
 - The ground cover builds: `trailReach`, `grassTrailRamp`, `trailDriftNoise`,
   the bed-duff term, their constants and tests.
 - This design builds: the third terrain weight channel carrying `duff` to the
   fragment; the two paint modulations and the core darkening with their
   mirror tests; `CLUTTER_LITTER_D`; the trample strength; a verification
-  note; an `ARCHITECTURE.md` sentence. Three tasks.
+  note; an `ARCHITECTURE.md` sentence.
 - It runs after the ground cover lands and merges on top of it. Rock relief
   and wildlife touch none of these files and run at any point.
 

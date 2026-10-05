@@ -14,9 +14,8 @@ below and are marked where they occur: the wet rule rides the existing
 branch on the rain, not read from a texture (§6.2); splashes land on roofs at
 full strength (§5); and the lens frosts toward a two-texel blur of the scene
 itself at a quarter weight, not the halation blur (§7.1). The measurements are
-in the verification note. The plan
-([2026-10-01-rain-system-plan](2026-10-01-rain-system-plan.md)) builds the
-layers in order, each behind its own gate, and the verification note
+in the verification note. The layers were built in order, each behind its
+own check, and the verification note
 ([2026-10-01-rain-system-verification](2026-10-01-rain-system-verification.md))
 holds every measurement. The survey this design follows is published at
 [csarko.sh/research/photorealistic-rain-for-browser-games](https://csarko.sh/research/photorealistic-rain-for-browser-games);
@@ -58,7 +57,7 @@ the lens droplets) is generated in code, as the streak sprite is today.
 | Wet materials | A `WetPlugin` on the forest, understory, clutter, cliff and prop PBR materials: Lagarde's porosity rule from the material's own roughness, with a per-material porosity cap. The terrain keeps its own wetness. Four-layer ring-texture ripples on the trail's puddles, scaled by rain (§6) |
 | The lens | On medium and high: one post-process pass between FXAA and the finish pass, a code-generated droplet normal-and-mask texture that refracts the scene, a few procedural sliding drops, and a lerp toward a small blur of the scene itself for the foggy glass (as designed, the halation blur on high; as built, the scene's own blur on every tier, §7.1). Gated by rain, by pitch (strongest looking up) and by the canopy at the camera, smoothed over a second (§7) |
 | Sound | The hiss's band centre falls with rain intensity and wind dulls it; a drip layer of sparse synthesised plops under canopy follows the canopy-water scalar (§7.3) |
-| Order | Air and fog first (they remove the chasing emitter and the missing far field with no new render target), then wet materials and ripples, then the height map with splashes and drip, then the lens, then sound. Each behind a gate; a layer that misses its share of the budget ships smaller or not at all, and the note says which |
+| Order | Air and fog first (they remove the chasing emitter and the missing far field with no new render target), then wet materials and ripples, then the height map with splashes and drip, then the lens, then sound. Each behind a check; a layer that misses its share of the budget ships smaller or not at all, and the note says which |
 | WebGPU | Nothing WebGPU-specific. Every new plugin, define combination and post-process is recorded into the WGSL corpus before the branch is offered (§9) |
 | Unchanged | Everything under `sim/`; the weather presets and their fades; the terrain's trail-paint wetness and puddles (ripples are added to them, not in place of them); the motes; the mist banks; the level id |
 
@@ -213,7 +212,7 @@ rains; accepted.
 
 Cost: two terrain ring draws and a handful of props with a trivial
 shader into a 512-texel target, once per 8 m. Expected under 0.1 ms amortised
-on the reference machine; the gate measures it both as the amortised figure
+on the reference machine; the check measures it both as the amortised figure
 and as the cost of the frame it falls on.
 
 Low has no map. Its streaks fall through everything, as they do today, and it
@@ -348,8 +347,8 @@ from the page before every round and written into the note.
 
 **Builds.** The branch, and a control detached at the `origin/main` commit
 the branch starts from (`b43952d`), each serving its own build on its own
-port. The gate hooks (`__fcSet`, `__scene`, `__engine`, `__lampOn`, the port)
-are applied for a gate and reverted after it, never committed. One more
+port. The debug hooks (`__fcSet`, `__scene`, `__engine`, `__lampOn`, the port)
+are applied for a check and reverted after it, never committed. One more
 never-committed hook on the branch: `__rainLayers({streaks, map, splashes,
 drip, lens, wet, ripples})`, which switches each layer off so the stack can
 be measured whole and by parts on one page.
@@ -402,7 +401,7 @@ night, a party of two) until no new stages appear, merges it, and checks the
 build. The `RainPlugin` is appended to the plugin order after `WaterPlugin`
 so no existing plugin's define number moves.
 
-## 10. What does not ship if a gate misses
+## 10. What does not ship if a check misses
 
 The order of §1 is the order of value per millisecond. If the whole stack
 misses its bar on a tier, the layers are removed from the end: the lens

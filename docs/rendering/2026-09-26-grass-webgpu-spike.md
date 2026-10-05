@@ -1,8 +1,7 @@
 # The WebGPU blade culling spike
 
 A bounded experiment beside the grass frame reclaim
-([design](2026-09-26-grass-frame-reclaim-design.md) §9,
-[plan](2026-09-26-grass-frame-reclaim-plan.md) Task 6): run the game on Babylon's
+([design](2026-09-26-grass-frame-reclaim-design.md) §9): run the game on Babylon's
 WebGPU engine with every existing material and plugin, then cull and pack the
 blade field on the GPU with a compute pass, and measure whether that route
 pays. Its code lives on its own branch behind `?engine=webgpu`, off by

@@ -2,8 +2,8 @@
 
 **Date:** 2026-09-30
 **Commit:** `b075a82` on `worktree-intro-scene-2` (main `1fe1a65` plus the scene player).
-**Spec:** [`2026-09-29-intro-scene.md`](2026-09-29-intro-scene.md), §2, §3 and §8.1's last bullet. **Plan:** [`2026-09-30-intro-scene-plan-2.md`](2026-09-30-intro-scene-plan-2.md), Task 12.
-**Machine:** Apple M4 (`ANGLE (Apple, ANGLE Metal Renderer: Apple M4)`), Chrome 154 headless through DevTools, the dev server, a 1280 by 640 viewport, `?tier=high` on WebGL2 (this Chrome's WebGPU adapter does not answer; part 1's note says so).
+**Spec:** [`2026-09-29-intro-scene.md`](2026-09-29-intro-scene.md), §2, §3 and §8.1's last bullet.
+**Machine:** Apple M4 (`ANGLE (Apple, ANGLE Metal Renderer: Apple M4)`), Chrome 154 headless through DevTools, the dev server, a 1280 by 640 viewport, `?tier=high` on WebGL2 (this Chrome's WebGPU adapter does not answer; [the playback's note](2026-09-30-intro-playback-verification.md) says so).
 **Stand-ins:** today's car (`trailhead.car`, no wheels, door or interior as parts), `ranger.nathan` with its four game clips, no voices. The frames are in the look's archive outside the repository.
 
 ## What was seen
@@ -31,7 +31,7 @@ Other checks:
 - Leaving the route through the router leaves no canvas, no caption, no black and no `dayhikeScene`; the title page renders with its roster.
 - The car slides along the road as a whole (no wheel spin, no door), stops beside the board at 43 s; the ranger appears at the door at 43.5 s, walks to the spawn and stands facing the trail by 48.5 s.
 
-## After the branch review, on `c66de97`
+## After checking the whole branch, on `c66de97`
 
 - The route's loop drew outside the engine's `beginFrame`/`endFrame` (no delta time on WebGL2, nothing presented on WebGPU); every frame is drawn inside them now, `frame()` included. Not re-driven in the browser; pinned by the route's frame count moving under the loop.
 - The car's parts: a node the loader made carries a rotation quaternion, under which the stage's Euler writes were ignored; folded and cleared, pinned by a part with a quaternion turning as a bare node does.

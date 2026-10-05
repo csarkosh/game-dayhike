@@ -1,6 +1,6 @@
 # The trail as a bench: browser verification
 
-**Status:** gated 2026-09-16, against the gates `docs/rendering/2026-09-16-trail-bench-design.md`
+**Status:** checked 2026-09-16, against the checks `docs/rendering/2026-09-16-trail-bench-design.md`
 §8 lists. Branch `worktree-trail-bench-impl` first at `ad9fa02`, then retuned at `427f2a3`;
 control at the branch base `3a5a89a` on `main`.
 
@@ -8,7 +8,7 @@ control at the branch base `3a5a89a` on `main`.
 
 Both builds served from their own worktrees: the branch on port 5174 (signaling 8081), the
 control on port 5175 (signaling 8082), each with a temporary Vite port and proxy edit and the
-gate hooks (`__scene`, `__engine`, `__renderer`, `__fcSet`, `__fc`, `__lampOn`), all reverted
+debug hooks (`__scene`, `__engine`, `__renderer`, `__fcSet`, `__fc`, `__lampOn`), all reverted
 before commit. Chrome ran through the chrome-devtools CLI daemon
 (`--isolated --allowUnrestrictedPaths --headless=false`), one game page at a time, on the real
 GPU: `ANGLE (Apple, ANGLE Metal Renderer: Apple M4)`.
@@ -29,15 +29,15 @@ viewpoints:
 - MEADOW: (−216.1, eye 22.38, 414), yaw 0.393, pitch 0.08 — the frame-pair control view.
 
 Before-stills of the shipped trail at the branch base (noon, 16 h and rain, along and down)
-gave the baseline the gates below compare against.
+gave the baseline the checks below compare against.
 
 ## Console and compile
 
-All eighteen gate pages (nine poses on each of the two builds) loaded with zero console errors;
+All eighteen check pages (nine poses on each of the two builds) loaded with zero console errors;
 the two-row segment table, the along-length wear noise, the hex include's noise functions and
 the `terrainWet` uniform all compiled on the real GPU.
 
-## Gate 1: the trail at noon, 16 h and in rain
+## Check 1: the trail at noon, 16 h and in rain
 
 **As first built: two faults.** The 3 m ruled gravel band was gone, replaced by a narrow
 footpath whose edge wanders and whose width varies along its length, the core darkening and
@@ -51,25 +51,25 @@ contrast entirely. Taking 60% of the vertex colour, with the margin retuned to `
 0.30)` at a gain of 0.75, the core to `(0.30, 0.26, 0.21)` at a gain of 0.5, and the trampled
 tint to `(0.90, 0.88, 0.80)`, gave a pale grey margin at about twice the core's brightness that
 still darkens under canopy, and a light olive trampled band in place of the yellow ribbon; this
-is what shipped, as `TRAIL_BENCH_SHADE = 0.6`. A re-gate against the retuned build, across the
+is what shipped, as `TRAIL_BENCH_SHADE = 0.6`. A re-check against the retuned build, across the
 trail at noon and in rain, the junction and the side-hill at 16 h, confirmed the same read: a
 pale grey margin at about twice the core's brightness, a textured grey-brown core, both
 darkening under canopy, the core going dark and glossy inside pale margins in rain, and the
 trampled band staying a light olive. Zero console errors.
 
-## Gate 2: junction and trailhead — PASS
+## Check 2: junction and trailhead — PASS
 
 The bench scuffs wide into the junction, with pebbles sitting on the widened core; at the
 trailhead the core lands on the sand pad with its ragged edge intact, while the margin merges
 into the sand rather than standing out against it.
 
-## Gate 3: side-hill, 16 h — PASS (visual)
+## Check 3: side-hill, 16 h — PASS (visual)
 
 The route's steepest side-hill rises only 0.39 m over 6 m, so the face this stretch shows is
 slight: the bench reads as a dark path under canopy, and the lip is not distinguishable at this
 pose. No shimmer showed on the edge noise or the lip in any of the stills.
 
-## Gate 4: on the bench — PASS
+## Check 4: on the bench — PASS
 
 With the eye at the sunk tread, the cards beside the bench are visibly shorter and lean
 outward, away from the bed; there is no floating-feet artifact, because the sim's walk height

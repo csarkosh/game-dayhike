@@ -281,7 +281,7 @@ the filter found 9,850, 5,068 and 3,872 of them outside the frustum.
 did (a floor of 23.5 ms, not 24.0), and every layer's cost is lower with it.
 The blades and the grass class sit inside their bands, low. The filter's
 saving does not: on three pages it is **0.58 ± 0.08 ms**, against the
-profile's 0.82 ± 0.14, within the plan's 0.3 ms tolerance of the band but
+profile's 0.82 ± 0.14, within the confirmation run's 0.3 ms tolerance of the band but
 outside the band itself on all three. The filter's "on" windows add no JS
 (+0.00 to +0.12 ms, inside the pages' noise) and no draw call.
 
@@ -323,7 +323,7 @@ once per round; every round still opened with a discarded warm-up page.
 | meadow | blades | 1,752 / 6,587 (0.27) | 12 |
 | meadow | grass class | 891 / 4,731 (0.19) | 4 |
 
-The kept counts are the plan's to the instance. **Draw calls do not move**: at
+The kept counts are the expected ones to the instance. **Draw calls do not move**: at
 the canopy pose 159–163 a frame on both builds, at the meadow pose 201–205 on
 both, and 169–172 on both in a 1920 × 1080 window.
 
@@ -343,7 +343,7 @@ in every column; the layer isolation stills agree to 0.01 as well. The meadow's
 cover ratio sits at 0.92–0.94 on both builds today: the 0.94 of design §12.1 is
 at the top of the control's own spread, and the filter does not move it.
 
-**Invisible culling** (plan Task 2, gate item 2). At each still pose, the
+**Invisible culling** (design §12.1). At each still pose, the
 filtered and the whole set drawn back to back on one page:
 
 - With the wind held still (`/wind 0`), per 6 × 6 pixel block of mean luma,
@@ -356,7 +356,7 @@ filtered and the whole set drawn back to back on one page:
   with 1 block changed against 2.
 - With the weather's wind, the screenshots' differences are the wind's (8–14
   against 8–10); the switch's pair spans more time than the reference pair,
-  so the plan's 10 % rule cannot be read there, and the frame-matched in-page
+  so the 10 % rule cannot be read there, and the frame-matched in-page
   count is lower across the switch than without it at every still.
 
 ### 5.3 Frame
@@ -511,11 +511,11 @@ ms, and it is invisible. What culling leaves at the pose is the in-view blades
 (about 0.9 ms of the 1.2 they cost unculled) and the in-view grass class (about
 0.1 ms).
 
-What the plan names to close the rest (design §5.4, §13), measured against the
+What design §5.4 and §13 name to close the rest, measured against the
 0.38 ms still missing:
 
 - **Step 1b, the meadow's buckets:** about 0.05 ms at native (§5.5). Not worth
-  its own step by the plan's 0.15 ms rule, and not enough to close the gap.
+  its own step by design §5.1's 0.15 ms rule, and not enough to close the gap.
 - **Step 2's far trim:** expected about 0.12 ms while the meadow is not
   filtered (design §6.3). With it the frame is expected near −0.55 ms.
 - **Narrowed margins** are no longer among the design's closers (§5.4 as

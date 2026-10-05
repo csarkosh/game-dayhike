@@ -18,7 +18,7 @@ a wrong conclusion during the work:
   with the sun's direction and intensity recorded beside it, and only readings
   sharing a sun are compared.
 - **Frame-time samples must be paired, both orders.** Unpaired readings drift
-  far enough to invert the gate.
+  far enough to invert the verdict.
 
 ## 2. Frame time
 
@@ -34,7 +34,7 @@ Native resolution, meadow, high tier, 4 s samples after a 3 s warm-up:
 
 Mean **+0.77 ms**, inside the bar. The absolute figures are high because the
 machine was loaded and the display is retina; both builds pay that baseline
-equally, which is why the gate is the delta and not the absolute.
+equally, which is why the bar is on the delta and not the absolute.
 
 The control already draws the blade clumps this work replaces, so +0.77 ms is
 the cost of the wider, denser field over the narrower one it supersedes, not
@@ -85,7 +85,7 @@ most of its area low down. A seed head sat at about nine tenths of its blade's
 height and, at a base width of 2.5 times the blade's, was **wider than it was
 long** — a broad face at grazing incidence, which crushes to black.
 
-What ruled out the alternatives, in order: turning on two-sided lighting
+What eliminated the alternatives, in order: turning on two-sided lighting
 changed nothing (so not winding); turning off shadow receiving changed nothing
 (so not self-shadowing); a dump of the generated vertices showed correct
 positions and straw-coloured vertex colours (so not the generator); hiding the
@@ -126,7 +126,7 @@ blade clumps.
 
 Two things about how this got through. The test asserted the bug as a
 guarantee — `expect(meadowNear.thinInstanceCount).toBe(0)` — so it passed
-review; it now checks that every surviving card sits on uncovered ground. And
+unquestioned; it now checks that every surviving card sits on uncovered ground. And
 the meadow-card half of the fix is close to a no-op: the meadow and grass
 gates track each other so nearly that no point on seed 1 has meadow cards the
 field does not cover. The grass-card fade was the bug.

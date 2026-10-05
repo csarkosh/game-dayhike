@@ -48,7 +48,7 @@ no engine change, no asset change. §11 is the one simulation change.
 | Step 2 | Inside the blade field's reach, ground carrying a sward is pulled toward a shaded thatch colour by the ground-cover field's grass, carried per terrain vertex; open ground beyond 18 m unchanged |
 | Step 3 | The coarse blade tier gets a full-strength stretch: `CLUTTER_BLADE_HANDOFF` 10 → 4.5, so the meadow seam is [13.5, 18] as the blade-field design's table has it. The coarse counts 10/8/4/8 → 16/12/4/12 only if the handoff alone misses, with the vertex budget raised to fit (§5.3) |
 | Step 4 | Only if still missed, and only for a luminance or colour miss: `BLADE_ALBEDO` (0.03, 0.04, 0.013) → (0.16, 0.21, 0.065), with the near/far colour match re-run |
-| Placement for the gate | None needed. Freecam re-centres every field on the camera, not the player (`renderer.ts:988–998`), so a pose set on the free camera is what the blade field and the cards are built around |
+| Placement for the check | None needed. Freecam re-centres every field on the camera, not the player (`renderer.ts:988–998`), so a pose set on the free camera is what the blade field and the cards are built around |
 | Frame | ≤ +1.0 ms at both poses, high tier, 4× pixels, paired builds by the method of §8.3; native p95 reported |
 | Unchanged | Blade width and the fine/mid tier counts; the low tier; the card models and textures; everything under `sim/` |
 
@@ -199,7 +199,7 @@ free camera (`app.ts:261–266`); `weather mist` is the preset `{ cloudCover 0.9
 mist 1, rain 0, wetness 0.5 }` (`weather.ts:40`); `time 12` sets the hour at load
 (`app.ts:277–289`), which the world clock then advances, so every still is taken
 within 30 s of the page loading. The pose itself and the tier (`high`) are set
-by two small measurement patches never committed (plan, Task 1): one exposes
+by two small measurement patches never committed: one exposes
 `__fcSet` to pin the free camera, the other reads `?tier=` because a desktop
 browser reports at most 8 GB of device memory and so detects medium.
 
@@ -209,7 +209,7 @@ field followed the player; it does not while the free camera is on. With
 is updated at the free camera's XZ (`renderer.ts:988–998`); only without it do
 they follow the local player (`renderer.ts:1025–1032`). The player-bend of the
 foliage reads player positions, not the camera, but its radius
-(`FOLIAGE_BEND_R = 0.6` m) is inside the near cards' dither-in (§5.1), so a gate
+(`FOLIAGE_BEND_R = 0.6` m) is inside the near cards' dither-in (§5.1), so a check
 still at the free camera sees what a player standing there sees.
 
 ### 4.2 The crops and the numbers
@@ -276,9 +276,9 @@ of it.
 
 ## 5. The four steps
 
-Each step is a task in the plan with its own gate (§8). Step *n* + 1 is taken
+Each step has its own check (§8). Step *n* + 1 is taken
 only if, after step *n*, either pose still misses the bar. Each step's constants
-are starting values; the gate may move them within the stated range.
+are starting values; the check may move them within the stated range.
 
 ### 5.1 Step 1: keep the near cards under the blades
 
@@ -316,7 +316,7 @@ through the sward now parts the cards as well as the blades.
 draw: 1,400 (canopy) and 3,168 (meadow) LOD0 instances, 28 k and 63 k
 triangles, alpha-tested, one extra draw call, and the overdraw of cards that
 cover a large share of the lower frame. Expected well inside +1.0 ms at 4×
-pixels; the gate measures it.
+pixels; the check measures it.
 
 **Expected effect.** The near crop gains the same cover the mid crop has, in
 the same material. With the blades on top it should reach the bar at the meadow
@@ -385,12 +385,12 @@ threshold. Its job is that what shows between the blades reads as shaded sward.
 the vertex colour, not from `surfaceAlbedo` (`trailPaint.ts:395–397`), so the bed
 and bank are unaffected; the ground beside a meadow trail is darker, which
 raises the floor-look design's bed/beside ratio at a trail pose inside 18 m. The
-gate reports that ratio at two of the floor-look poses. The lever, if it pushes
+check reports that ratio at two of the floor-look poses. The lever, if it pushes
 one out of its 0.9–1.3 window, is `SWARD_COVER[0]` 0.05 → 0.3, which leaves the
 trail's grass ramp mostly unpulled.
 
 **Cost.** One float attribute, one varying, one `mix` and two `smoothstep`s per
-terrain fragment. Nil at the frame bar; the gate measures it.
+terrain fragment. Nil at the frame bar; the check measures it.
 
 ### 5.3 Step 3: close the 8–18 m stretch
 
@@ -491,7 +491,7 @@ bar still holds with the threshold unchanged.
   as literals; the worst case under the new budget and above half of it.
 - `bladeClump.test.ts` (step 4 only): `BLADE_ALBEDO` pinned.
 
-## 8. Gates
+## 8. Checks
 
 ### 8.1 Stills and the fullness bar
 
@@ -499,7 +499,7 @@ Paired stills, control (`main`) against the branch, at the two poses of §4.1, e
 from a fresh page load, the two builds back to back. The crops, the thresholds
 and the arithmetic are §4.2's, unchanged for every step. **Bar, on both poses:
 near cover ≥ 0.8 × mid cover, and near/mid mean luminance in 0.8–1.25.** Each
-gate also repeats the layer isolation of §4.3 on the branch, so the note says
+check also repeats the layer isolation of §4.3 on the branch, so the note says
 what fills the near crop after that step.
 
 ### 8.2 Regression stills
@@ -533,11 +533,11 @@ The two poses are the frame poses because they put the near field across most
 of the frame, the worst case for the near cards' overdraw; the blade-field and
 floor-look notes' MEADOW and TRAILSIDE views (pitch 0.08 and 0.25) show less of
 it. TRAILSIDE (`__fcSet(263.9, 85.77, 118, 0.6, 0.25)`, mist, noon) is measured
-once more at the last gate, for continuity with those notes.
+once more at the last check, for continuity with those notes.
 
 ### 8.4 The look, and the walk
 
-A verdict in words per pose per gate: does the near field read as the same sward
+A verdict in words per pose per check: does the near field read as the same sward
 as the mid field, and does anything read as a card. Then the walk, at the canopy
 pose, scripted on the free camera: twelve steps of 0.25 m along the trail
 heading at pitch 0.3, then a turn in place through a full circle in sixteen steps
@@ -560,7 +560,7 @@ In order, each one constant:
 ## 10. Follow-ups
 
 - A committed pose command (`/pose x y z yaw pitch` on the free camera), so a
-  gate's poses reproduce from a URL alone.
+  check's poses reproduce from a URL alone.
 - If the canopy pose still misses after step 4: the sward under a closed canopy
   is half the open's by the sim's own rule (§3.6), and a fuller forest floor is a
   change to that rule, with its level-id move.
@@ -709,9 +709,9 @@ differently under every closed canopy.
   and into step 2's pull ramp, which darkens it and raises the ratio;
   `trail-along` has 0.06 of headroom.
 
-### 11.5 Gates and the fallback
+### 11.5 Checks and the fallback
 
-The gate measures, on the branch against `main`, and against this branch
+The check measures, on the branch against `main`, and against this branch
 before the change for the floor-look poses (their 1.19 and 1.24 were measured
 before steps 1 and 2):
 
@@ -724,7 +724,7 @@ before steps 1 and 2):
   litter still show between the grass, and how the canopy floor past 18 m
   reads with less litter paint), and §8.4's walk.
 
-**The decision.** The gate (verification §7) measured 0.75 and the 0.65
+**The decision.** The check (verification §7) measured 0.75 and the 0.65
 fallback. Neither meets every bar, and 0.75 ships.
 
 - **Cover.** The canopy pose's cover-ratio bar is flawed for this change: its

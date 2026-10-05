@@ -23,7 +23,7 @@ committed:
 - the dev server's port in `client/vite.config.ts`.
 
 `main` also takes the tier patch of the earlier notes (`?tier=`); the branch
-reads `?tier=` itself since Task 1.
+reads `?tier=` itself since the engine choice was built.
 
 **Browser.** Chrome 153, headless, on the reference machine (Apple M4). The
 renderer string, read from `WEBGL_debug_renderer_info` on a control page, is
@@ -78,15 +78,16 @@ the last three documents is read from the browser at the end of each case.
 
 The canopy pose of the earlier notes, `__fcSet(123, 110.87, -105.5, 1.571, 0.3)`
 on seed `atmo` (627994160), `weather mist`, `time 12`, high tier, is the one
-pose Task 1's gate reads a frame at. The fallback cases load the same page
+pose the engine choice's gate reads a frame at. The fallback cases load the same page
 without a pose: they read what the page does, not what it draws. The start as
 a player sees it begins at the landing page, `/dayhike/?engine=webgpu&tier=high`
 (or `?tier=high` for WebGL2), and its Play button.
 
-## 3. Task 1's gate
+## 3. The engine choice's gate
 
-Measured 2026-09-26 on the branch at `bd3b1ae` (Tasks 1, 3 and 4 built; Task
-2's compatibility changes not yet), against `origin/main` at `ba0fd95`.
+Measured 2026-09-26 on the branch at `bd3b1ae` (the engine choice, the
+pipeline-cache workaround and the event-driven impostor bake built; the six
+compatibility changes not yet), against `origin/main` at `ba0fd95`.
 
 ### 3.1 Switched off, the branch is `main`
 
@@ -202,7 +203,7 @@ No sample between the press and the first frame, taken every 50 ms, showed a
 canvas without "Loading…" on it or the landing behind it. A game URL opened
 directly shows the HUD's "Loading…" from its first paint, half a second in,
 until the game. On WebGPU the game then meets §3.3's faults and falls back,
-until Task 2 lands.
+until the six compatibility changes land.
 
 ### 3.5 The bundle and the translators
 
@@ -235,18 +236,18 @@ The fallback does what the design says in every case, including the one it was
 not written for: the WebGPU start as built fails on the translators' loaders,
 and ends on WebGL2 after its 10 s budget. That failure is a defect of the start,
 not of the GPU, and it must be fixed before the switch can be turned on, since
-it would otherwise be remembered as a GPU failure for 30 days. Task 2's gates
-start from WebGPU actually starting.
+it would otherwise be remembered as a GPU failure for 30 days. The gates of the
+six compatibility changes start from WebGPU actually starting.
 
 ## 4. The required limits, measured
 
-Task 2 Step 7 (2D). Read on 2026-09-27 over 13 WebGPU pages, 7 on the high
+The limits of design §6.4, the last of the six compatibility changes. Read on 2026-09-27 over 13 WebGPU pages, 7 on the high
 tier and 6 on medium: mist, clear, rain with the lamp on, and the eerie
 weather at 21 h with the lamp on; every pose of design §7.1 and the spawn
 view; the trailhead with the five rangers in view, every lamp of a full party
 lit (seven lights bound, the game's cap), and the Hollow; the kiosk with its
 poster, the car, the summit body and a fingerpost; then the compile sweep of
-Step 8. Every pipeline the engine made was counted, 1,603 in all (98–142 a
+the six compatibility changes. Every pipeline the engine made was counted, 1,603 in all (98–142 a
 page), and replayed on a second device at chosen limits, so each verdict is
 the browser's own. The reference adapter is an Apple M4 (Metal, not a
 fallback) in Chrome 154.
@@ -437,16 +438,16 @@ sharp, stepped edge some metres out, with a pale band toward the crest; nearer
 than the edge it is the right warm brown, and the ground beside it, under the
 same material, matches WebGL2.
 
-### 6.5 The branch of the ladder taken, and what was ruled out
+### 6.5 The branch of the ladder taken, and what was excluded
 
 (b) does not close the gap: it widens it (WebGPU's bed goes to L* 2.6, black,
 where WebGL2's keeps its brown). So the ladder's second branch: the uncommitted
-patch of Task 5 Step 1, the bed's `surfaceAlbedo` replaced by the snow mix, the
+patch of the trail-bed diagnosis's first step, the bed's `surfaceAlbedo` replaced by the snow mix, the
 wetness and the canopy weight as three channels, and
 `WebGPUCacheRenderPipeline.LogErrorIfNoVertexBuffer` set. The three channels
 agree between the engines within the lighting difference seen elsewhere (bed
 luminance ratio 1.13, near bed 1.34), with no stepped edge; no missing vertex
-buffer is reported. Ruled out: **the snow mix, the wetness, the weights
+buffer is reported. Excluded: **the snow mix, the wetness, the weights
 attribute and a missing vertex buffer**. The black is made inside the bed's
 own colour. Read back on both engines at the canopy pose in mist: **the
 probe's six faces** are identical at levels 0 and 1 to the second decimal, and

@@ -1,7 +1,7 @@
 # Escalation and atmosphere — sub-project D
 
 **Date:** 2026-09-16
-**Status:** Built 2026-09-16 (`docs/gameplay/2026-09-16-escalation-and-atmosphere-plan.md`). What moved
+**Status:** Built 2026-09-16. What moved
 in execution: no constant; the renderer's `setHour`/`setWeather` re-render the reflection probe on every
 call, so `syncAtmosphere` applies them (and the ambient gains) only when the hour has moved 0.01 or a
 weather field 0.005 since the last application — slow drift still lands, because the gate compares

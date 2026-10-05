@@ -11,7 +11,7 @@ everything it does not name.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md` §§3–4, §14. This is the first
 of that design's ten sub-projects and the one everything else stands on.
 
-**Decisions for this sub-project (2026-09-08):** W1 + T1 + L3 (§0), prototype the
+**Decisions for this sub-project (2026-09-08):** W1 + T1 + L3 (§0), spike the
 corridor math first. The corridor spike passed (§3.3). The wall is **one-way**: a player may
 slide down to the road and can never climb back — the design's aim was "cliffs that make
 it difficult to get *back* to the forest."
@@ -588,7 +588,7 @@ new world — and `forest.test.ts` pins only stability and difference, not a lit
 | the wall sweep | every column where the wall is at full strength (`|z| ≤ WALL_Z_HALF − WALL_Z_FADE`) carries a CONTIGUOUS unwalkable run of ≥ 20 m across the face, on three seeds — the barrier's width, not merely its existence (amended 2026-09-09; it broke at the first unwalkable sample, which a one-sample riser would have satisfied) | the escarpment probe |
 | **the bed scan** | the composed field's gradient along the CENTRELINE of every edge of every graph, at ≤ 1 m steps, over 200 hashed lobby seeds plus the seeds already probed and checked, never exceeds `MAX_WALKABLE_GRADIENT`; and no graph outgrows `TRAIL_PAINT_MAX_SEGMENTS` (added 2026-09-09 — a check this work had been missing, and the only test on it that measures the union rather than restating the builder) | new |
 | carved landmarks on real terrain | a carved overlook raises a real dome and its fork's bed stays walkable through it; a carved stand puts real trees on the composed field (added 2026-09-09 — 47 % of seeds carve the overlook and it had only synthetic coverage) | new |
-| the walk | an agent traverses every edge of the graph with slope along the path ≤ the walkable limit | `groundWalk.test.ts` |
+| the walk | a simulated player traverses every edge of the graph with slope along the path ≤ the walkable limit | `groundWalk.test.ts` |
 | graph determinism | same seed → same graph (hash), different seeds differ; query-order independence | `forest.test.ts`, the lattice memo test |
 | graph invariants | every ascent leg under `ASCENT_PEAK_SLOPE_MAX`; EVERY edge under `TRAIL_HARD_SLOPE_MAX`; every non-adjacent pair of edges at least `TRAIL_EDGE_MIN_GAP` apart; every node inside the bowl; forks on distinct spine nodes, alternating sides | new |
 | the tunables records | `TRAIL_TUNABLES` and `LANDMARK_TUNABLES` are EXHAUSTIVE — every key asserted and the key count pinned, so a new module-private constant cannot steer the graph past the level id | `bowl.test.ts` |

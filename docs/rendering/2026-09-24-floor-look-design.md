@@ -94,9 +94,9 @@ Non-goals:
   (the ground colour it runs through), so under the canopy the earth is
   brown and in the meadow it is tan.
 - `TRAIL_CORE_GAIN` 0.45 → 0.32 and `TRAIL_MARGIN_GAIN` 0.75 → 0.55: the
-  bed's own brightness comes down to where the ratio gate says it belongs;
+  bed's own brightness comes down to where the ratio check says it belongs;
   these two are the tuning levers if the first measurement misses, and
-  the plan's gate task may move them within ±0.08 to land the range.
+  the ratio check may move them within ±0.08 to land the range.
 - `TRAIL_WASH_DARK` 0.7 → 0.55: wash-outs read as pale sand today; darker,
   they read as bare earth the drift has left.
 - `TRAIL_TRAMPLE_TINT` and the trample frame are untouched.
@@ -114,7 +114,7 @@ Non-goals:
 - `foliagePlugin.test.ts`: the litter profile's `groundTint` pinned at 0.5.
 - The level-id pin (`groundGradient.test.ts`) unchanged.
 
-## 5. Gates
+## 5. Checks
 
 Paired stills, `main` against the branch, seed `atmo` clear noon and seed
 `ypeqauxk`, at the canopy litter pose, the meadow trail pose and the
@@ -134,10 +134,10 @@ If the ratio misses: gains first (±0.08), then `TRAIL_BENCH_SHADE` (0.8 →
 - Leaves lying on the trail itself, as the canopy photographs show (the
   drift mechanism carries paint only; pieces on the bed are a field change).
 
-## 7. Amendment (2026-09-24, after the first gate)
+## 7. Amendment (2026-09-24, after the first check)
 
 The first stills (`2026-09-24-floor-look-verification.md`) missed the ratio
-gate in both directions: canopy beds 0.63–0.86, meadow beds 1.38–1.46. The
+check in both directions: canopy beds 0.63–0.86, meadow beds 1.38–1.46. The
 two ends move for different reasons, and the levers §5 allowed move every
 bed by the same factor, so no permitted retune could close both. Two
 mechanisms, two levers of their own:
@@ -158,15 +158,15 @@ mechanisms, two levers of their own:
   brightness comes down by the allowance §5 named: `TRAIL_CORE_GAIN` 0.32 →
   0.24, `TRAIL_MARGIN_GAIN` 0.55 → 0.47.
 
-The gate stands as written; the measurement is repeated at the same crops.
+The check stands as written; the measurement is repeated at the same crops.
 The canopy floor's other miss — the carpet reads sparse and the pieces dark
 against the photographs — is a lighting and density matter (the canopy shade
 on the ground, the litter's 15 % coverage) outside this design; it is
 recorded for the next one.
 
-## 8. Amendment (2026-09-24, after the second gate)
+## 8. Amendment (2026-09-24, after the second check)
 
-The second gate (`2026-09-24-floor-look-verification.md` §7) closed the
+The second check (`2026-09-24-floor-look-verification.md` §7) closed the
 canopy litter end (canopy-floor 1.14) and left the open end high (1.43,
 1.60) and the canopy gravel beds low (0.83, 0.64). Two measurements
 changed the picture: the gains are almost not a lever — at the full
@@ -185,7 +185,7 @@ between drifts is the same litter floor's earth and must not fall below it.
 already read, so the two ends separate on the same term. `TRAIL_WASH_DARK`
 is retired; the gains stay at 0.24 / 0.47 and the drift at 0.66.
 
-Gate: the same crops, plus a replacement crop pair for `trail-along` (its
+Check: the same crops, plus a replacement crop pair for `trail-along` (its
 beside rectangle lay on drifted bed). The frame pair at TRAIL is repeated
 once.
 
@@ -195,14 +195,14 @@ carpet's density and lighting.
 
 ## 9. Amendment (2026-09-25): the bed under the canopy, and the cost
 
-Three gates (`2026-09-24-floor-look-verification.md` §4, §7, §8) settled
+Three checks (`2026-09-24-floor-look-verification.md` §4, §7, §8) settled
 what the levers of §3, §7 and §8 could and could not do. Two beds never
 moved, whatever the lever, and the reason is structural:
 
 - **The bed under the canopy never received the floor's lift.** §3.1 lifted
   the canopy floor by moving `NEEDLE_BED`, but the paint mixes that colour
   in by the vertex's *litter* weight, and the bed's core carries no litter
-  by design (the trail run keeps pieces off the core). So the ground beside
+  by design (the trail neglect design keeps pieces off the core). So the ground beside
   the bed rose 1.5× and the bed — painted from the same vertex colour
   through `tBankBase` — did not. Under the canopy the bed is now painted as
   if the litter floor continued under it: `tBankBase` mixes toward
@@ -217,11 +217,11 @@ moved, whatever the lever, and the reason is structural:
   class instead: `mix(TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER,
   vTerrainW.y)`, the same weight as above.
 
-The third gate also measured **+0.55 ms at TRAIL** (4× pixels, both
-orders averaged), over the +0.3 ms bar, and the first two gates' pairs
+The third check also measured **+0.55 ms at TRAIL** (4× pixels, both
+orders averaged), over the +0.3 ms bar, and the first two checks' pairs
 were single un-averaged rounds, so the cost was never attributed. Before
 any further look work the cost is attributed per commit — the earth mix
-(Task 2), the relief mix (Task 4), the wash blend (Task 6) — at TRAIL with
+(§3.2), the relief mix (§7), the wash blend (§8) — at TRAIL with
 averaged orders; whichever step carries it is either confined to fragments
 inside the bench (`tOnBench > 0`, where the mixes are needed) or its
 texture reads are shared with the reads the bank already makes. The bar
@@ -256,11 +256,11 @@ the geometry copy carry it), and both of §9's mixes key on
   bank line keeps the raw `tBankBase`, because the bank is ground beside the bed
   and its vertex colour already carries the litter mix. Drifts ride `tBenchBase`
   as before, so they take the lift under the canopy (the drift-along pose is
-  gated and reports it);
+  checked and reports it);
 - the wash-out's darkness, `mix(TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER, ρ)`.
 
 In a meadow ρ is near zero, so nothing changes there — which is what §9 claimed
-and could not deliver. Two consequences the fourth gate reports rather than
+and could not deliver. Two consequences the fourth check reports rather than
 tunes: a washed-out bed under canopy takes both the 0.75 wash constant and the
 lifted base, multiplied (about +10 % on the bench base), and the two canopy poses
 already in band (1.14, 1.17) take the same lift, so their margin against 1.3 is

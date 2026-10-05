@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-28
 **Amended by:** `docs/trail/2026-09-28-trailhead-board.md`, which removes the sign at the entrance (§3.3) and moves the notice board there (§3.4).
-**Status:** Built 2026-09-28, by the steps in `docs/trail/2026-09-28-trail-14-trailhead-plan.md`; not yet looked at in the running game (§8.2). What the build found: the watcher's sweep stands at the pad's centre, never where a player now arrives, so its readings did not move and say nothing of the new start; a Hollow started on the road behind the car walks into it and stays, which is a fault in the chase's stuck test older than this change (`client/test/sim/hollowWalk.test.ts` has the trace); and the level id's probe gained the chunk that holds the sign's post.
+**Status:** Built 2026-09-28; not yet looked at in the running game (§8.2). What the build found: the watcher's sweep stands at the pad's centre, never where a player now arrives, so its readings did not move and say nothing of the new start; a Hollow started on the road behind the car walks into it and stays, which is a fault in the chase's stuck test older than this change (`client/test/sim/hollowWalk.test.ts` has the trace); and the level id's probe gained the chunk that holds the sign's post.
 **Amends:** `docs/trail/2026-09-11-trail-system.md` (the pad's props and the spawn) and
 `docs/gameplay/2026-09-16-the-summit.md` §7 (the poster's line). The trail graph, the pad, the
 road wall and the notice board's site are unchanged.

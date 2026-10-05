@@ -1,10 +1,10 @@
 # Atmosphere restyle: browser verification
 
-**Status:** gated 2026-09-15, against the gates `docs/rendering/2026-09-15-atmosphere-restyle-design.md`
+**Status:** checked 2026-09-15, against the checks `docs/rendering/2026-09-15-atmosphere-restyle-design.md`
 §10 lists. Branch `worktree-atmosphere-restyle` at `8f3c940`, control `main` at the branch's
 base, `434931f`.
 
-## What was gated
+## What was checked
 
 **Rig.** Both builds served from their own worktrees: the branch on port 5173 (signaling on
 8080), the control on port 5174 (signaling on 8081, a temporary Vite port and proxy edit,
@@ -59,7 +59,7 @@ control's fog is flatter and teal by comparison. PASS.
 forest edge readable, cooler from the Purkinje term, rain streaks. Freecam carries no
 headlamp, so halation on the lamp itself went unverified. PASS on what could be judged.
 
-## The other gates
+## The other checks
 
 - **Banding** (night sky, top-left quarter at 4× brightness): a smooth gradient, only the
   fine dither pattern visible. PASS.
@@ -84,7 +84,7 @@ headlamp, so halation on the lamp itself went unverified. PASS on what could be 
 
 Measured at the eerie 21 h spawn pose, one fresh page at a time, hardware scaling 0.5 (so
 both builds render at 3840×2160 and neither is capped by vsync), a 3 s warm-up and a 4 s
-sample, with no other agents or test suites running.
+sample, with no other work or test suites running on the machine.
 
 | Round | Order | Build | n | mean ms | p95 ms |
 | --- | --- | --- | --- | --- | --- |
@@ -99,7 +99,7 @@ control in both orders. The retired outline pass took its own depth and g-buffer
 with it — a second full scene render on high — and that saving outweighs the cost of the
 new post chain. Motes cost about 2.7 ms at 4× pixel count, roughly 0.7 ms at native
 resolution. Halation's own share was not attributed — only motes were toggled in this
-session — so the design's ~2 ms post-chain budget (§2) is inferred from the net-negative
+run — so the design's ~2 ms post-chain budget (§2) is inferred from the net-negative
 delta against `main`, not measured for the halation/grade/finish chain alone. PASS.
 
 ## Open tuning items
@@ -117,13 +117,12 @@ delta against `main`, not measured for the halation/grade/finish chain alone. PA
 - Halation on the headlamp (freecam has no lamp) and on the low sun through the canopy.
 - The overlap's look at higher gains, and the plateau steps' visibility from a darker pose.
 - Frame time at native resolution under vsync — both builds cap at 16.7 ms there.
-- Halation's own frame-time share: only motes were toggled in the same session, so the
+- Halation's own frame-time share: only motes were toggled in the same run, so the
   halation/grade/finish chain's cost is not separately attributed, only inferred from the
   net-negative delta against `main` (see Frame time, above).
 
 ## Images
 
-Screenshots are archived outside the repository at
-`~/Projects/fps-sdd-archive/2026-09-15-atmosphere-restyle/shots/`: `branch-*` is pass 1,
+Screenshots are archived outside the repository: `branch-*` is pass 1,
 `branch2-*` is pass 2, `control-*` is the control, `sheet-*.jpeg` are contact sheets, and
 `branch2-eerie21-skycrop-x4.jpeg` is the banding crop.

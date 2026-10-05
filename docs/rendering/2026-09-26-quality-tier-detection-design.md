@@ -450,7 +450,7 @@ where the tier asked for did not build and a lower one did:
 
 ### 6.4 The literal matrix
 
-The plan's Task 2 pins, as a table of literals, the class and the Auto tier for
+The tier verdict's tests pin, as a table of literals, the class and the Auto tier for
 33 inputs: every row of §5.2 by a real renderer string (Chrome's ANGLE strings
 for Apple M4, M3 Max, M2 Pro, RTX 3060, GTX 1060, GT 730, RX 6700 XT, RX 580,
 Radeon 780M, a bare Radeon Graphics under three adapters, UHD 620, Iris Xe, Arc
