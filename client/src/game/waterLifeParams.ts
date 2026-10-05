@@ -21,8 +21,10 @@ export const WATER_LIFE_WIND_MPS = 8;
 export const DREAD_QUIET_FROM = 0.3;
 export const DREAD_QUIET_SPAN = 0.2;
 
-/** `seen`: the share of a kind's units drawn at all; `flying`: the share of
- * those aloft, the rest perched. */
+/** `seen`: the share of a kind's units out of cover; `flying`: the share aloft;
+ * a unit draws once against both. A skimmer not aloft sits on its perch and a
+ * damselfly on its stem, both seen there; a darner has nothing to settle on, so
+ * one not aloft is in cover with the ones not seen. */
 export type DragonflyShare = { seen: number; flying: number };
 export type WaterLifePresence = {
   /** 0–1: swarms present. */
@@ -56,7 +58,8 @@ const DARNER_DUSK0 = 18.5, DARNER_DUSK1 = 19;
 const SUN_CLOUD0 = 0.4, SUN_CLOUD1 = 0.7;
 /** Rain: no dragonfly flies above 0.05. */
 const DRAGONFLY_RAIN_GONE = 0.05;
-/** Wind: every dragonfly perched above 0.7 (5.6 m/s). */
+/** Wind: no dragonfly flies above 0.7 (5.6 m/s): the darners go to cover, the
+ * skimmers and the damselflies sit on their perches and stems. */
 const DRAGONFLY_WIND_FROM = 0.6, DRAGONFLY_WIND_GONE = 0.7;
 /** The frogs, silent before 19:30: up to 0.6 over 19:30→20:00, to 1 over
  * 20:00→21:00, full to midnight, back to 0.6 over 00:00→00:30, holding it to
@@ -143,7 +146,8 @@ export function waterLifePresenceUnder(
   const flying = sun * calm * quiet;
   out.darner.seen = darnerDay * sun * dry * quiet;
   out.darner.flying = flying;
-  // A skimmer under cloud stays on its perch, and is seen there.
+  // Under cloud the skimmers stay on their perches, seen there, while the darners
+  // and damselflies go to cover.
   out.skimmer.seen = day * dry * quiet;
   out.skimmer.flying = flying;
   out.damselfly.seen = day * sun * dry * quiet;
