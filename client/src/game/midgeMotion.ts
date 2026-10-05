@@ -189,10 +189,11 @@ export function createHeads(seed: number): HeadSwarm[] {
  * the midges are out, for HEAD_FORM_S, and a swarm forms over the head; it
  * eases after the head at up to HEAD_FOLLOW m/s, and lets go once the player
  * has moved faster than HEAD_RELEASE_SPEED for HEAD_RELEASE_S, leaves the
- * band, or the midges go. A head past the players' array waits. Allocates nothing.
+ * band, or the midges go. A head whose player is absent (undefined, or past
+ * the players' array) waits. Allocates nothing.
  */
 export function stepHeads(
-  heads: HeadSwarm[], players: readonly { x: number; y: number; z: number }[], speeds: readonly number[],
+  heads: HeadSwarm[], players: readonly ({ x: number; y: number; z: number } | undefined)[], speeds: readonly number[],
   inBand: readonly boolean[], presence: number, dt: number,
 ): void {
   for (let i = 0; i < heads.length; i++) {

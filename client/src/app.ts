@@ -39,6 +39,7 @@ import { startSkySource } from "./game/skyWorker.js";
 import { seedFromToken } from "./game/seed.js";
 import { createAmbientAudio } from "./game/ambientAudio.js";
 import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
+import { createWaterLifeAudio } from "./game/waterLifeAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
@@ -414,6 +415,11 @@ function buildGame(
   // listener write would both be for nothing.
   const wildlifeAudio = renderer.hasWildlife ? createWildlifeAudio(ambient, seed) : null;
   made(() => wildlifeAudio?.dispose());
+  // The lake's insects and frogs, on the same context and the same unlock.
+  // Null in a world without them (no lake, a hand-authored level), where the
+  // per-frame update would voice nothing.
+  const waterLifeAudio = renderer.hasWaterLife ? createWaterLifeAudio(ambient) : null;
+  made(() => waterLifeAudio?.dispose());
   let weatherName: WeatherPresetName = DEFAULT_WEATHER;
   /**
    * The console's preset and hour: what the escalation departs from on a
@@ -653,6 +659,21 @@ function buildGame(
    */
   function syncDrip(): void {
     ambient.setDrip(renderer.canopyWater(), renderer.canopyOver());
+  }
+
+  /**
+   * Voices the lake's life as the renderer stepped it this frame: the swarms'
+   * hum, the dragonflies' wings and the frogs (`waterLifeAudio.ts`), heard
+   * from the camera (`renderer.listener()`). Both loops, after
+   * `renderer.sync`, which is what steps it, and every frame, the camera far
+   * from the lake included, where the sound lists no hum and the last ones
+   * fade out. Read through `renderer`, the one binding a switch of tier
+   * replaces, so the swapped-in renderer's life is the one heard, and the old
+   * one's hums, which its sound no longer lists, fade out and stop.
+   */
+  function syncWaterLife(): void {
+    if (waterLifeAudio === null) return;
+    waterLifeAudio.update(renderer.waterLifeSound(), renderer.listener());
   }
 
   /**
@@ -1224,6 +1245,7 @@ function buildGame(
       playWildlifeAudio();
       syncWind();
       syncDrip();
+      syncWaterLife();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(host.world, self);
       if (cmd !== null) syncPoster(host.world, self, cmd);
@@ -1362,6 +1384,7 @@ function buildGame(
       playWildlifeAudio();
       syncWind();
       syncDrip();
+      syncWaterLife();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(client.world, self);
       if (cmd !== null) syncPoster(client.world, self, cmd);
@@ -1861,6 +1884,7 @@ function buildGame(
       if (!broken) renderer.dispose();
       skySource.dispose();
       wildlifeAudio?.dispose();
+      waterLifeAudio?.dispose();
       ambient.dispose();
     },
   };

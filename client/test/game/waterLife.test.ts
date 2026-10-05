@@ -25,6 +25,9 @@ const seen = vi.hoisted(() => ({
   dragonflies: null as Dragonflies | null,
   dragonflySteps: 0,
   frogSteps: 0,
+  /** The players the last steps of the dragonflies and of the frogs were handed. */
+  dragonflyPlayers: null as readonly unknown[] | null,
+  frogPlayers: null as readonly unknown[] | null,
 }));
 vi.mock("../../src/game/waterLifeField.js", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../../src/game/waterLifeField.js")>();
@@ -62,6 +65,7 @@ vi.mock("../../src/game/dragonflyBehaviour.js", async (importOriginal) => {
       const step = d.step.bind(d);
       d.step = (...at) => {
         seen.dragonflySteps += 1;
+        seen.dragonflyPlayers = [...at[5]];
         step(...at);
       };
       seen.dragonflies = d;
@@ -78,6 +82,7 @@ vi.mock("../../src/game/frogChorus.js", async (importOriginal) => {
       const step = chorus.step.bind(chorus);
       chorus.step = (...at) => {
         seen.frogSteps += 1;
+        seen.frogPlayers = [...at[2]];
         step(...at);
       };
       return chorus;
@@ -108,6 +113,8 @@ afterEach(() => {
   seen.dragonflies = null;
   seen.dragonflySteps = 0;
   seen.frogSteps = 0;
+  seen.dragonflyPlayers = null;
+  seen.frogPlayers = null;
 });
 
 function scene(): Scene {
@@ -173,6 +180,8 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     expect(seen.blocks.slice(25)).toEqual([150, 150, 150, 150, 150, 0, 0]);
     // Nothing drawn before the first frame.
     expect(life.meshes[0]!.isEnabled()).toBe(false);
+    // Their bounds sit at the origin: they sort by their index alone, last.
+    for (const mesh of life.meshes) expect(mesh.alphaIndex).toBe(Number.POSITIVE_INFINITY);
     life.dispose();
   });
 
@@ -379,6 +388,78 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
       expect(Math.hypot(hum.x - players[h]!.x, hum.z - players[h]!.z)).toBeLessThan(1);
     }
     life.dispose();
+  });
+
+  it("keeps each swarm over its own player's head when a slot between them empties", () => {
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "low");
+    const players = [0, 0.6, 1.2].map((angle) => {
+      const at = shore(angle);
+      return { x: at.x, y: at.ground + 0.9, z: at.z };
+    });
+    const first = players[0]!;
+    const f = frameAt(first.x, first.y + 0.7, first.z, 18.5);
+    f.players = players;
+    run(life, f, 11);
+    for (let h = 0; h < 3; h++) expect(life.sound().hums[25 + h]!.presence).toBe(1);
+    // The second player's slot empties; the third keeps the third.
+    f.players = [players[0], undefined, players[2]];
+    run(life, f, 2);
+    const hums = life.sound().hums;
+    expect(hums[26]!.presence).toBe(0);
+    expect(seen.table![26 * ROW + COUNT]).toBe(0);
+    for (const h of [0, 2]) {
+      expect(hums[25 + h]!.presence).toBe(1);
+      expect(Math.hypot(hums[25 + h]!.x - players[h]!.x, hums[25 + h]!.z - players[h]!.z)).toBeLessThan(1);
+    }
+    // The dragonflies and the frogs are handed the players there are.
+    expect(seen.dragonflyPlayers).toEqual([players[0], players[2]]);
+    expect(seen.frogPlayers).toEqual([players[0], players[2]]);
+    life.dispose();
+  });
+
+  it("lets every head swarm go while the camera is out of reach, so none passes to a player who takes a slot meanwhile", () => {
+    const lake = lakeOf(SEED);
+    const life = createWaterLife(scene(), SEED, lake, "high");
+    const a = shore(0);
+    const b = shore(2);
+    const f = frameAt(a.x, a.ground + 1.6, a.z, 18.5);
+    f.players = [{ x: a.x, y: a.ground + 0.9, z: a.z }];
+    run(life, f, 11);
+    expect(life.sound().hums[25]!.presence).toBe(1);
+    // The camera goes beyond the reach; the first player leaves and another,
+    // elsewhere on the shore, takes the slot.
+    f.camX = lake.x + 1000;
+    run(life, f, 0.1);
+    f.players = [{ x: b.x, y: b.ground + 0.9, z: b.z }];
+    run(life, f, 0.1);
+    // Back by the newcomer: no swarm over them until they have stood long enough.
+    f.camX = b.x;
+    f.camY = b.ground + 1.6;
+    f.camZ = b.z;
+    run(life, f, 0.1);
+    expect(life.sound().hums[25]!.presence).toBe(0);
+    expect(seen.table![25 * ROW + COUNT]).toBe(0);
+    life.dispose();
+  });
+
+  it("steps, draws and voices nothing once disposed, and disposes once", () => {
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const m = seen.layout!.markers[0]!;
+    life.update(frameAt(m.x, m.y, m.z + 1, 18.5));
+    expect(life.sound().hums_n).toBe(30);
+    life.dispose();
+    const steps = [seen.dragonflySteps, seen.frogSteps, seen.midgeUpdates];
+    // At night on the shore, where the frogs call: nothing.
+    const at = shore(0);
+    const f = frameAt(at.x, at.ground + 1.6, at.z, 22);
+    let calls = 0;
+    run(life, f, 30, 1 / 20, () => {
+      calls += life.sound().frogCalls.length;
+    });
+    expect(life.sound().hums_n).toBe(0);
+    expect(calls).toBe(0);
+    expect([seen.dragonflySteps, seen.frogSteps, seen.midgeUpdates]).toEqual(steps);
+    expect(() => life.dispose()).not.toThrow();
   });
 
   it("takes every mesh and material it made out of the scene on dispose, and falls silent", () => {

@@ -13,8 +13,9 @@
  *
  * With the camera beyond the reach of everything the lake holds
  * (`WATER_LIFE_REACH` past the farthest of it), nothing is stepped: the
- * draws are off, the sound is silent, and the presence starts again from the
- * weather's own when the camera comes back.
+ * draws are off, the sound is silent, the swarms over the players' heads
+ * let go, and the presence starts again from the weather's own when the
+ * camera comes back.
  */
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -76,6 +77,16 @@ function headRadius(midges: number): number {
   return 0.3 + 0.0012 * midges;
 }
 
+/**
+ * The midges' and the dragonflies' blended sort index: last in their group.
+ * Their bounds sit at the origin, so a sort by distance would flip with the
+ * camera's distance from there; and Babylon's default (`Number.MAX_VALUE`,
+ * kept by the water's blended surface off the high path and by the mist
+ * banks) is above the rain's (`Number.MAX_SAFE_INTEGER` and the two under
+ * it), so no index both draws them after the water and before the rain.
+ */
+const ALPHA_INDEX = Number.POSITIVE_INFINITY;
+
 /** A step of `step` toward `target`, landing on it (the animals' ramp). */
 function rampTo(current: number, target: number, step: number): number {
   const gap = target - current;
@@ -110,11 +121,18 @@ function copyPresence(from: WaterLifePresence, to: WaterLifePresence): void {
 const NO_RUSTLES: readonly { x: number; y: number; z: number; loud: boolean }[] = Object.freeze([]);
 const NO_CALLS: readonly FrogCall[] = Object.freeze([]);
 
+/** A player's position as the sim holds it: y is the body's centre. */
+type PlayerAt = { x: number; y: number; z: number };
+
 export type WaterLifeFrame = {
   camX: number; camY: number; camZ: number;
   tick: number; dt: number; time: number;              // shared seconds
-  /** Each player's position as the sim holds it: y is the body's centre. */
-  players: readonly { x: number; y: number; z: number }[];
+  /**
+   * The players by slot: each keeps their index for as long as they are in
+   * the world (a head swarm and a speed are kept by it), and a slot with no
+   * player is undefined.
+   */
+  players: readonly (PlayerAt | undefined)[];
   weather: WeatherParams; hour: number; wind: WindRecord;
   sky: SkyState | null; skyLuma: number; pixelAt1m: number;
   hollowDistance: number;
@@ -189,6 +207,8 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
 
   // The heads, and what the players did since the last frame.
   const heads = createHeads(seed);
+  /** The players there are this frame, in slot order: what the dragonflies and the frogs read. */
+  const present: PlayerAt[] = [];
   const speeds: number[] = new Array<number>(MAX_PLAYERS).fill(0);
   const inBand: boolean[] = new Array<boolean>(MAX_PLAYERS).fill(false);
   const lastX = new Float64Array(MAX_PLAYERS);
@@ -204,6 +224,7 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
   const sound: WaterLifeSound = { hums: [], hums_n: 0, pitch: 0, rustles: NO_RUSTLES, frogCalls: NO_CALLS };
   for (let r = 0; r < ROWS; r++) sound.hums.push({ x: 0, y: 0, z: 0, midges: 0, presence: 0 });
   let resting = false;
+  let disposed = false;
 
   function ease(f: WaterLifeFrame, dt: number): void {
     const want = waterLifePresenceUnder(f.weather, f.hour, f.wind.speed, target);
@@ -223,8 +244,15 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
     presence.frog = rampTo(presence.frog, want.frog, step);
   }
 
-  /** Each player's speed over the ground since the last frame, and whether they stand in the shore band. */
+  /** Each player's speed over the ground since the last frame, and whether they
+   * stand in the shore band; and the players there are, gathered. */
   function measure(players: WaterLifeFrame["players"], frameDt: number): void {
+    let n = 0;
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i];
+      if (p !== undefined) present[n++] = p;
+    }
+    present.length = n;
     for (let i = 0; i < MAX_PLAYERS; i++) {
       const p = players[i];
       if (p === undefined) {
@@ -335,11 +363,17 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
     sound.hums_n = ROWS;
   }
 
-  /** Out of reach: nothing drawn, nothing heard, nothing stepped. */
+  /** Out of reach: nothing drawn, nothing heard, nothing stepped, and the
+   * heads let go, so none is kept for a slot whose player leaves meanwhile. */
   function rest(): void {
     if (!resting) {
       midges.mesh.setEnabled(false);
       dragonflyMeshes.update(noDragonflies, seed);
+      for (const h of heads) {
+        h.active = false;
+        h.still = 0;
+        h.fast = 0;
+      }
       resting = true;
     }
     primed = false;
@@ -349,9 +383,14 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
     sound.frogCalls = NO_CALLS;
   }
 
+  const meshes = [midges.mesh, ...dragonflyMeshes.meshes];
+  for (const mesh of meshes) mesh.alphaIndex = ALPHA_INDEX;
+
   return {
-    meshes: [midges.mesh, ...dragonflyMeshes.meshes],
+    meshes,
     update(f) {
+      // Gone with its renderer: a late call must not refill the sound.
+      if (disposed) return;
       const dx = f.camX - lake.x;
       const dz = f.camZ - lake.z;
       if (dx * dx + dz * dz > reach * reach) {
@@ -365,9 +404,9 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
       measure(f.players, frameDt);
       if (stepMidges(f, dt) > 0) drawMidges(f);
       else midges.mesh.setEnabled(false);
-      dragonflies.step(f.tick, dt, f.camX, f.camY, f.camZ, f.players, presence);
+      dragonflies.step(f.tick, dt, f.camX, f.camY, f.camZ, present, presence);
       dragonflyMeshes.update(dragonflies, seed);
-      frogs.step(f.time, dt, f.players, f.hollowDistance, presence.frog);
+      frogs.step(f.time, dt, present, f.hollowDistance, presence.frog);
       listHums();
       sound.pitch = midgeHumPitch(summerTemperature(f.hour, f.weather));
       sound.rustles = dragonflies.rustles;
@@ -377,6 +416,8 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
       return sound;
     },
     dispose() {
+      if (disposed) return;
+      disposed = true;
       midges.dispose();
       dragonflyMeshes.dispose();
       sound.hums_n = 0;

@@ -72,6 +72,13 @@ import type { QualityTier } from "../../src/game/quality.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { createSkyTable, type SkyTable } from "../../src/game/skyTable.js";
 import { skyFixture } from "./helpers/skyFixture.js";
+import { Outcome, Phase, type WorldState } from "../../src/sim/types.js";
+import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { LOOP_GAIN_RAMP_S, type AmbientAudio } from "../../src/game/ambientAudio.js";
+import { MIDGE_NAME } from "../../src/game/midgeSwarms.js";
+import { waterLifeLayout } from "../../src/game/waterLifeField.js";
+import { HUM_FADE_S, HUM_RANGE, createWaterLifeAudio } from "../../src/game/waterLifeAudio.js";
+import { lakeOf } from "../sim/helpers/lakes.js";
 
 // ---- the order, with stubs --------------------------------------------------
 
@@ -626,6 +633,98 @@ describe("the grass cull after a swap, on NullEngine", () => {
     } finally {
       swapped.dispose();
     }
+    expect(EngineStore.Instances.length).toBe(0);
+  }, timeLimit(180_000));
+});
+
+describe("a swap and the lake's life, on NullEngine", () => {
+  it("takes the old renderer's lake life down, and the hike's audio fades out its hums and stops them until the new one has stepped", () => {
+    const forest = createForest(SEED);
+    const marker = waterLifeLayout(SEED, lakeOf(SEED)).markers[0]!;
+    const state: WorldState = {
+      tick: 1, players: new Map(), enemies: new Map(), outcome: Outcome.Playing, phase: Phase.Climb, nextEntityId: 1, rngSeed: 1,
+    };
+    /** One frame by the first swarm at dusk, as the hike's loop draws it. */
+    const atDusk = (r: Renderer): void => {
+      r.setView(18.5, WEATHER_PRESETS.clear);
+      r.setFreecam({ x: marker.x, y: marker.y, z: marker.z + 1, yaw: 0, pitch: 0 });
+      r.sync(state, -1, 0, { dt: 1 / 60, sprinting: false });
+    };
+    // The hike's one water-life audio (`app.ts` builds it once and keeps it
+    // across a swap) on a context's looping emitters, each recorded, and on a
+    // clock of its own, in seconds.
+    const emitters: { gain: number; max: number; stopped: boolean }[] = [];
+    const ambient = {
+      loopEmitter: (_build: unknown, _x: number, _y: number, _z: number, gain: number, _ref: number, max: number) => {
+        const e = {
+          gain, max, stopped: false,
+          move() {},
+          setGain(g: number) {
+            e.gain = g;
+          },
+          stop() {
+            e.stopped = true;
+          },
+        };
+        emitters.push(e);
+        return e;
+      },
+      onUnlock: (fn: () => void) => fn(),
+    } as unknown as AmbientAudio;
+    let clock = 0;
+    const audio = createWaterLifeAudio(ambient, () => 0.5, () => clock);
+    const hums = (): { gain: number; stopped: boolean }[] => emitters.filter((e) => e.max === HUM_RANGE);
+    const humming = (): number => hums().filter((e) => !e.stopped && e.gain > 0).length;
+
+    const current = { renderer: createRenderer(nullCanvas(), LEVEL, forest, { tier: "medium" }), canvas: nullCanvas() };
+    const old = current.renderer;
+    expect(old.hasWaterLife).toBe(true);
+    atDusk(old);
+    audio.update(old.waterLifeSound(), old.listener());
+    expect(humming()).toBeGreaterThan(0);
+    const midges = old.scene.meshes.filter((m) => m.material?.name === MIDGE_NAME);
+    expect(midges).toHaveLength(1);
+    const oldSound = old.waterLifeSound();
+    const bindings: SwapBindings = {
+      build: (canvas, tier) => createRenderer(canvas, LEVEL, forest, { tier }),
+      freshCanvas: nullCanvas,
+      extras: { dispose: () => undefined, build: () => undefined },
+      rebind: () => undefined,
+      restore: () => undefined,
+      loop: () => undefined,
+      unwatch: () => undefined,
+      watch: () => undefined,
+      engineFailed: () => undefined,
+    };
+    const next = swapRenderer(current, { tier: "high", engine: null, fallbackTier: "medium" }, bindings).renderer;
+    try {
+      expect(old.scene.isDisposed).toBe(true);
+      expect(midges[0]!.isDisposed()).toBe(true);
+      // The old one fell silent as it went; the new renderer made its own.
+      expect(oldSound.hums_n).toBe(0);
+      expect(next.hasWaterLife).toBe(true);
+      expect(next.waterLifeSound()).not.toBe(oldSound);
+      expect(next.scene.meshes.filter((m) => m.material?.name === MIDGE_NAME)).toHaveLength(1);
+      // The new renderer's life is silent until a frame has stepped it, so
+      // the hums the old one left the audio fade out, are sent a gain of
+      // nothing and stop once the emitters' gain has followed.
+      clock += 1 / 60;
+      audio.update(next.waterLifeSound(), next.listener());
+      clock += HUM_FADE_S + 0.1;
+      audio.update(next.waterLifeSound(), next.listener());
+      expect(humming()).toBe(0);
+      clock += LOOP_GAIN_RAMP_S;
+      audio.update(next.waterLifeSound(), next.listener());
+      expect(hums().every((e) => e.stopped)).toBe(true);
+      atDusk(next);
+      clock += 1 / 60;
+      audio.update(next.waterLifeSound(), next.listener());
+      expect(humming()).toBeGreaterThan(0);
+    } finally {
+      audio.dispose();
+      next.dispose();
+    }
+    expect(humming()).toBe(0);
     expect(EngineStore.Instances.length).toBe(0);
   }, timeLimit(180_000));
 });
