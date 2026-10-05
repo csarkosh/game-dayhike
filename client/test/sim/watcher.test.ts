@@ -9,19 +9,30 @@ import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from ".
 import { AiState, Phase, nextRandom } from "../../src/sim/types.js";
 import type { PlayerState, Vec3 } from "../../src/sim/types.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET, TICK_DT } from "../../src/sim/constants.js";
+import { HOLLOW_LOOK_COS, HOLLOW_STARE_FILL_S } from "../../src/sim/hollow.js";
 import { trailDistance } from "../../src/sim/trail.js";
 import type { TrailNode } from "../../src/sim/trail.js";
-import { stemNodes } from "../../src/sim/trailRoute.js";
+import { stemAhead, stemNodes, stemProgress } from "../../src/sim/trailRoute.js";
+import { aimDirection } from "../../src/sim/view.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { groundSpawn } from "../../src/sim/spawn.js";
 import { hasLineOfSight } from "../../src/sim/ai.js";
 import {
+  WATCH_BOLD_FAR,
+  WATCH_BOLD_FLEE_RADIUS,
+  WATCH_BOLD_MIN_CLIMB,
+  WATCH_BOLD_NEAR,
+  WATCH_BOLD_PATIENCE_S,
+  WATCH_BOLD_SHOWS,
+  WATCH_BOLD_VIEW_COS,
+  WATCH_FLEE_RADIUS,
   WATCH_SALT,
   climbOf,
   createWatcherRecord,
   hideWatcher,
   leadOf,
   placeWatcher,
+  placeWatcherAhead,
   reachOf,
   spawnWatcher,
   stepWatcher,
@@ -38,6 +49,8 @@ const SUITE = { timeout: timeLimit(120_000) };
 
 function forestWorld() {
   const w = createForestWorld(createForest(seed));
+  // Past its showings on the trail, which have a describe of their own below.
+  w.watcher!.bold = 0;
   const p = spawnPlayer(w);
   return { w, p };
 }
@@ -58,7 +71,8 @@ function standOnStem(w: World, p: PlayerState, i: number) {
 const flatWorld = () =>
   createWorld(parseLevel({ id: "flat", brushes: [{ min: [-300, -1, -300], max: [300, 0, 300], material: "concrete" }], playerSpawns: [[0, 0.9, 0]], enemySpawns: [] }), 1);
 /** The record the tests draw from: no first rest spent, so the sequence starts at the seed. */
-const record = (): WatcherRecord => ({ id: -1, rest: 0, rng: { rngSeed: (seed ^ WATCH_SALT) | 0 } });
+/** A record past its showings on the trail: the showings in the trees are what most of this file pins. */
+const record = (): WatcherRecord => ({ id: -1, rest: 0, rng: { rngSeed: (seed ^ WATCH_SALT) | 0 }, bold: 0, waited: 0, onTrail: false });
 const horizontal = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.sqrt((a.x - b.x) ** 2 + (a.z - b.z) ** 2);
 const tick = (w: World, n = 1) => { for (let i = 0; i < n; i++) tickWorld(w, new Map()); };
 /** Aims a player's eye straight at `at`, yaw and pitch both. */
@@ -499,5 +513,134 @@ describe("the tick", SUITE, () => {
     expect(w.watcher.rest).toBe(0);
     stepWatcher(w, TICK_DT);
     expect(w.state.enemies.size).toBe(1);
+  });
+});
+
+describe("the first showings, on the trail", () => {
+  /** A world whose watcher still owes its showings on the trail. */
+  function boldWorld() {
+    const w = createForestWorld(createForest(seed));
+    const p = spawnPlayer(w);
+    return { w, p };
+  }
+
+  it("owes WATCH_BOLD_SHOWS of them from the start", () => {
+    const { w } = boldWorld();
+    expect(w.watcher!.bold).toBe(WATCH_BOLD_SHOWS);
+    expect(w.watcher!.waited).toBe(0);
+    expect(w.watcher!.onTrail).toBe(false);
+    expect(WATCH_BOLD_FLEE_RADIUS).toBeLessThan(WATCH_FLEE_RADIUS);
+    expect(WATCH_BOLD_NEAR).toBeGreaterThan(WATCH_BOLD_FLEE_RADIUS);
+    // Inside the stare's cone, so the stare fills as it shows.
+    expect(WATCH_BOLD_VIEW_COS).toBeGreaterThan(HOLLOW_LOOK_COS);
+  });
+
+  it("stemAhead is the point that many metres further up the stem, and null past the crest", () => {
+    const { w } = boldWorld();
+    const graph = w.trail!;
+    const here = node(w, 36);
+    const before = stemProgress(graph, here.x, here.z);
+    const at = stemAhead(graph, here.x, here.z, 50)!;
+    expect((before - stemProgress(graph, at.x, at.z)) * graph.stemLen).toBeCloseTo(50, 6);
+    expect(trailDistance(graph, at.x, at.z)).toBeLessThan(1e-6);
+    const crest = node(w, graph.summit);
+    expect(stemAhead(graph, crest.x, crest.z, 1)).toBeNull();
+    expect(stemAhead(graph, here.x, here.z, 0)).not.toBeNull();
+  });
+
+  it("stands on the trail bed ahead of the lead, in front of them and in their sight, and is the stare's to fill at once", () => {
+    const { w, p } = boldWorld();
+    standOnStem(w, p, 36);
+    const ticks = showWatcher(w);
+    expect(ticks).toBeGreaterThan(0);
+    const h = shownWatcher(w)!;
+    expect(w.watcher!.onTrail).toBe(true);
+    expect(w.watcher!.bold).toBe(WATCH_BOLD_SHOWS - 1);
+    expect(trailDistance(w.trail!, h.pos.x, h.pos.z)).toBeLessThan(1e-6);
+    const ahead = (stemProgress(w.trail!, p.pos.x, p.pos.z) - stemProgress(w.trail!, h.pos.x, h.pos.z)) * w.trail!.stemLen;
+    expect(ahead).toBeGreaterThanOrEqual(WATCH_BOLD_NEAR - 1e-6);
+    expect(ahead).toBeLessThanOrEqual(WATCH_BOLD_FAR + 1e-6);
+    const look = aimDirection(p.yaw, 0);
+    const dx = h.pos.x - p.pos.x, dz = h.pos.z - p.pos.z;
+    expect((dx * look.x + dz * look.z) / Math.sqrt(dx * dx + dz * dz)).toBeGreaterThanOrEqual(WATCH_BOLD_VIEW_COS);
+    expect(hasLineOfSight({ x: p.pos.x, y: p.pos.y + PLAYER_EYE_OFFSET, z: p.pos.z }, h.pos, w.boxes, w.ground)).toBe(true);
+    expect(isOnCorridor(w, h.pos.x, h.pos.z)).toBe(false);
+    // The lead has not turned to it: walking the trail is looking at it, and
+    // the stare is already filling. The showing nobody misses.
+    expect(p.stare).toBeGreaterThan(0);
+    tick(w, 30);
+    expect(shownWatcher(w)).toBe(h);
+    expect(p.stare).toBeCloseTo(31 * TICK_DT / HOLLOW_STARE_FILL_S, 6);
+  });
+
+  it("hides when a player comes within WATCH_BOLD_FLEE_RADIUS", () => {
+    const { w, p } = boldWorld();
+    standOnStem(w, p, 36);
+    expect(showWatcher(w)).toBeGreaterThan(0);
+    const h = shownWatcher(w)!;
+    lookAt(p, h.pos);
+    const dx = p.pos.x - h.pos.x, dz = p.pos.z - h.pos.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    // Just outside the radius it stays; just inside, it is gone.
+    standAt(p, h.pos.x + (dx / d) * (WATCH_BOLD_FLEE_RADIUS + 1), h.pos.z + (dz / d) * (WATCH_BOLD_FLEE_RADIUS + 1));
+    lookAt(p, h.pos);
+    tick(w);
+    expect(shownWatcher(w)).toBe(h);
+    standAt(p, h.pos.x + (dx / d) * (WATCH_BOLD_FLEE_RADIUS - 1), h.pos.z + (dz / d) * (WATCH_BOLD_FLEE_RADIUS - 1));
+    lookAt(p, h.pos);
+    tick(w);
+    expect(shownWatcher(w)).toBeUndefined();
+    expect(w.watcher!.rest).toBeGreaterThan(0);
+  });
+
+  it("is not placed behind a lead who looks back down the trail; after WATCH_BOLD_PATIENCE_S one showing is made in the trees, and the trail's is still owed", () => {
+    const { w, p } = boldWorld();
+    standOnStem(w, p, 36);
+    p.yaw += Math.PI;
+    expect(placeWatcherAhead(w, p)).toBeNull();
+    w.watcher!.rest = 0;
+    const patience = Math.round(WATCH_BOLD_PATIENCE_S / TICK_DT);
+    tick(w, patience - 2);
+    expect(shownWatcher(w)).toBeUndefined();
+    expect(w.watcher!.bold).toBe(WATCH_BOLD_SHOWS);
+    let shown = -1;
+    for (let i = 0; i < 240 && shown < 0; i++) {
+      tick(w);
+      if (w.watcher!.id !== -1) shown = i;
+    }
+    expect(shown).toBeGreaterThanOrEqual(0);
+    expect(w.watcher!.onTrail).toBe(false);
+    expect(w.watcher!.bold).toBe(WATCH_BOLD_SHOWS);
+    expect(w.watcher!.waited).toBe(0);
+    expect(trailDistance(w.trail!, shownWatcher(w)!.pos.x, shownWatcher(w)!.pos.z)).toBeGreaterThan(1);
+  });
+
+  it("shows nothing at all on the trail's first stretch: no showing is tried under WATCH_BOLD_MIN_CLIMB", () => {
+    const { w, p } = boldWorld();
+    const chain = stemNodes(w.trail!);
+    const low = chain.find((i) => i !== 0 && climbOf(w.trail!, node(w, i).x, node(w, i).z) < WATCH_BOLD_MIN_CLIMB && !isOnCorridor(w, node(w, i).x, node(w, i).z));
+    expect(low).toBeDefined();
+    standOnStem(w, p, low!);
+    const spent = w.watcher!.rng.rngSeed;
+    expect(showWatcher(w, 600)).toBe(-1);
+    expect(w.watcher!.rng.rngSeed).toBe(spent);
+    expect(w.watcher!.waited).toBe(0);
+    expect(w.watcher!.bold).toBe(WATCH_BOLD_SHOWS);
+  });
+
+  it("makes WATCH_BOLD_SHOWS showings on the trail, and the next is in the trees", () => {
+    const { w, p } = boldWorld();
+    standOnStem(w, p, 36);
+    for (let i = 0; i < WATCH_BOLD_SHOWS; i++) {
+      expect(showWatcher(w), `showing ${i}`).toBeGreaterThan(0);
+      expect(w.watcher!.onTrail).toBe(true);
+      p.yaw += Math.PI;
+      tick(w);
+      expect(shownWatcher(w)).toBeUndefined();
+      p.yaw -= Math.PI;
+    }
+    expect(w.watcher!.bold).toBe(0);
+    expect(showWatcher(w)).toBeGreaterThan(0);
+    expect(w.watcher!.onTrail).toBe(false);
   });
 });
