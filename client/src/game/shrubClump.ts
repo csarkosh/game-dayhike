@@ -43,14 +43,17 @@ export type ShrubCharacter = {
   light: Rgb;
 };
 
-/** Two mounds: a low, wide one and a taller, narrower one. */
+/** Two mounds: a low, wide one and a taller, narrower one. Their leaf counts
+ * are what the class costs a frame, so they are as few as close the mound:
+ * about 750 triangles near and 130 far, with the far leaves larger to cover
+ * the same dome. */
 export const SHRUB_CHARACTERS: readonly ShrubCharacter[] = [
   {
-    name: "low mound", stems: [12, 6], stemLeaves: [8, 4], shellLeaves: [170, 80], leaf: [0.17, 0.28],
+    name: "low mound", stems: [9, 4], stemLeaves: [7, 3], shellLeaves: [115, 40], leaf: [0.2, 0.38],
     height: 0.85, radius: 0.8, dark: { r: 0.012, g: 0.03, b: 0.012 }, light: { r: 0.032, g: 0.07, b: 0.022 },
   },
   {
-    name: "tall mound", stems: [10, 5], stemLeaves: [10, 5], shellLeaves: [150, 70], leaf: [0.16, 0.26],
+    name: "tall mound", stems: [8, 4], stemLeaves: [8, 3], shellLeaves: [100, 36], leaf: [0.19, 0.36],
     height: 1.1, radius: 0.62, dark: { r: 0.014, g: 0.034, b: 0.014 }, light: { r: 0.036, g: 0.076, b: 0.024 },
   },
 ];
