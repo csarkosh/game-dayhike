@@ -54,6 +54,7 @@
 import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color4 } from "@babylonjs/core/Maths/math.color.js";
@@ -94,6 +95,7 @@ import { elevationAt } from "../sim/terrain.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageEdges } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { groundNormalTilt, groundNormalY, seatOnGround } from "./groundTilt.js";
+import { LOG_STATIONS, logStationOffsets, seatLog, trunkSeat, type TrunkSeat } from "./logSeat.js";
 import { attachGroundConform } from "./groundConformPlugin.js";
 import {
   attachDistanceFade,
@@ -435,6 +437,10 @@ function treeFoliageBuffer(seed: number, list: readonly TreeInstance[]): Float32
   return buf;
 }
 
+/** The log role's stations along its trunk and the ground under each, reused across instances. */
+const logOffsets: number[] = [];
+const logHeights: number[] = [];
+
 /**
  * World matrices for the one deadwood bucket, which rides two roles.
  * `deadwood.snag` is modelled LYING DOWN in its shipped file — its long axis
@@ -458,9 +464,11 @@ function treeFoliageBuffer(seed: number, list: readonly TreeInstance[]): Float32
  *  - SNAG: the roll above maps local X to world Y, so the snag's base is
  *    the bucket's local X MINIMUM — a large offset, since it is close to
  *    half the trunk's ~4 m length.
- *  - LOG: the log's base is the bucket's local Y MINIMUM — a small offset,
- *    since the trunk's cross-section is only mildly asymmetric about its
- *    own centre.
+ *  - LOG: the log's base is the UNDERSIDE OF ITS TRUNK, a line fitted through
+ *    the loaded geometry (`trunkSeat`, logSeat.ts), not the bucket's local Y
+ *    minimum: that minimum is the root flare, 0.3 to 0.6 m under the trunk
+ *    over the rest of its length, and a log seated by it rests on the flare
+ *    with its trunk in the air (up to 1.5 m at full scale).
  * Both offsets are measured from the ACTUAL loaded bucket geometry (see
  * `createForestMeshes`'s `unionBounds` call on the deadwood meshes at adopt
  * time) rather than hardcoded, so a future update to `deadwood.snag`
@@ -476,22 +484,17 @@ function treeFoliageBuffer(seed: number, list: readonly TreeInstance[]): Float32
  * The LOG role also PITCHES. `t.groundH` is the terrain height at the
  * instance's ORIGIN x/z only; that is enough for a standing snag (narrow,
  * vertical, one sample covers it) but not for a log lying along its local X
- * axis, which at deadwood scale runs roughly 8 m — long enough that on a
- * slope the far end floats by roughly slope × length (measured live: up to
- * 1.05 m). A real fallen log follows the ground along its own length
- * instead of lying dead level, so this samples the terrain at the log's two
- * ends (from its hashed yaw — kept exactly as before, so logs still lie in
- * varied directions — and its native length, `logMaxX - logMinX`, taken
- * from the loaded geometry's bounds, same as the base offsets above) and
- * pitches to match: rotating about local Z (this file's "roll" parameter)
- * tilts local X toward Y without touching local Z, exactly like the snag's
- * 90° roll above but partial, so it is applied here through the same Euler
- * "roll" slot, with yaw composed after it (Babylon's FromEulerAnglesToRef
- * order) so the tilt survives being pointed in the hashed direction. The
- * two endpoints are computed from yaw and length alone, ignoring the small
- * cosine foreshortening the pitch itself introduces — negligible at the
- * grades this guards against and exactly what keeps this a closed-form,
- * one-pass computation instead of an iterative solve.
+ * axis, which at deadwood scale runs 6 to 10 m. A real fallen log follows the
+ * ground along its own length and has settled into it, so this samples the
+ * terrain at `LOG_STATIONS` places under the trunk (from its hashed yaw, so
+ * logs still lie in varied directions, and its native length, taken from the
+ * loaded geometry's bounds) and `seatLog` fits the ground's line through
+ * them, pitches the trunk's underside onto it and sinks it a fifth of its
+ * diameter: rotating about local Z (this file's "roll" parameter) tilts local
+ * X toward Y without touching local Z, exactly like the snag's 90° roll above
+ * but partial, so it is applied through the same Euler "roll" slot, with yaw
+ * composed after it (Babylon's FromEulerAnglesToRef order) so the tilt
+ * survives being pointed in the hashed direction.
  */
 function deadwoodMatrixBuffer(
   seed: number,
@@ -499,12 +502,12 @@ function deadwoodMatrixBuffer(
   snagBaseOffset: number,
   logMinX: number,
   logMaxX: number,
-  logMinY: number,
+  logSeat: TrunkSeat,
 ): Float32Array {
   const buf = new Float32Array(16 * list.length);
-  // Native trunk length along local X, scale-independent (each instance
-  // multiplies by its own t.scale below).
-  const logLength = logMaxX - logMinX;
+  // The stations along the trunk's native length on local X, scale-independent
+  // (each instance multiplies by its own t.scale below).
+  logStationOffsets(logMinX, logMaxX, logOffsets);
   for (let i = 0; i < list.length; i++) {
     const t = list[i] as TreeInstance;
     const isSnag = t.cohort === COHORT_SNAG;
@@ -535,50 +538,35 @@ function deadwoodMatrixBuffer(
       const footH = elevationAt(seed, footX, footZ);
       scratchPos.copyFromFloats(t.x, footH + footOffset * nY, t.z);
     } else {
-      // World XZ of the log's two ends, from yaw + native length only (see
-      // the function comment on why the pitch's own foreshortening is
-      // ignored here): rotating local +X by yaw about world Y lands it on
-      // (cosYaw, -sinYaw) — the same convention `impostorMatrixSlices`
-      // documents for rotating local +Z by atan2(dx, dz) onto (dx, dz).
+      // The ground under the trunk at `LOG_STATIONS` places along it, from
+      // yaw and the native length alone (the pitch's own foreshortening is
+      // ignored: negligible at these grades, and what keeps this one pass):
+      // rotating local +X by yaw about world Y lands it on (cosYaw, -sinYaw) —
+      // the same convention `impostorMatrixSlices` documents for rotating
+      // local +Z by atan2(dx, dz) onto (dx, dz).
       const cosYaw = Math.cos(yaw);
       const sinYaw = Math.sin(yaw);
-      const endAx = t.x + logMinX * t.scale * cosYaw;
-      const endAz = t.z - logMinX * t.scale * sinYaw;
-      const endBx = t.x + logMaxX * t.scale * cosYaw;
-      const endBz = t.z - logMaxX * t.scale * sinYaw;
-      const endAH = elevationAt(seed, endAx, endAz);
-      const endBH = elevationAt(seed, endBx, endBz);
-      const horizLen = logLength * t.scale;
-      // The angle that carries the local-X spine from endAH to endBH over
-      // that length — this IS the "roll" slot (see the function comment):
-      // rotating local X toward Y is exactly rotation about local Z.
-      const pitch = horizLen > 0 ? Math.atan2(endBH - endAH, horizLen) : 0;
-      // The pitch seats the trunk ALONG its spine, from two real samples — the
-      // right tool over a span that reaches 10 m at full scale. It leaves the
-      // other axis untouched, which is what makes a log lying across the fall
-      // line hang on one flank. Roll about the trunk's own axis closes it,
-      // from the analytic gradient resolved perpendicular to the spine.
-      // Rotating local +X by yaw lands it on (cosYaw, −sinYaw) in world xz, so
-      // the perpendicular horizontal direction is (sinYaw, cosYaw), and a
-      // positive roll about local +X carries local +Z downward — hence the
-      // negation.
+      for (let k = 0; k < LOG_STATIONS; k++) {
+        const along = (logOffsets[k] as number) * t.scale;
+        logHeights[k] = elevationAt(seed, t.x + along * cosYaw, t.z - along * sinYaw);
+      }
+      // The pitch seats the trunk ALONG its spine. It leaves the other axis
+      // untouched, which is what makes a log lying across the fall line hang
+      // on one flank. Roll about the trunk's own axis closes it, from the
+      // analytic gradient resolved perpendicular to the spine. Rotating local
+      // +X by yaw lands it on (cosYaw, −sinYaw) in world xz, so the
+      // perpendicular horizontal direction is (sinYaw, cosYaw), and a positive
+      // roll about local +X carries local +Z downward — hence the negation.
       const across = t.groundDx * sinYaw + t.groundDz * cosYaw;
       const roll = -Math.atan(across);
-      Quaternion.FromEulerAnglesToRef(roll, yaw, pitch, scratchQ);
-      // Seat end A on its sampled height. `FromEulerAnglesToRef(roll, yaw,
-      // pitch)` composes as Ry(yaw)·Rx(roll)·Rz(pitch), so roll is about the
-      // trunk's own axis only to FIRST ORDER; the cos(roll) correction below
-      // is applied on that basis to the logMinY term (the roll swings the
-      // underside about the trunk axis, so the offset that used to reach
-      // straight down now reaches down by roughly cos(roll)) but not to the
-      // logMinX·sin(pitch) term above it. Measured over 720 yaws: within
-      // 0.021 m of an axis-correct composition at every gradient up to 0.86,
-      // against a roll that by itself takes max daylight from 0.887 m down
-      // to 0.124 m — the approximation costs little of what the roll buys.
-      const endAOffsetY =
-        logMinX * t.scale * Math.sin(pitch)
-        + logMinY * t.scale * Math.cos(pitch) * Math.cos(roll);
-      scratchPos.copyFromFloats(t.x, endAH - endAOffsetY, t.z);
+      // The trunk's underside onto the ground's line, sunk into the floor
+      // (`logSeat.ts`). The pitch is rotation about local Z, the Euler "roll"
+      // slot; `FromEulerAnglesToRef(roll, yaw, pitch)` composes as
+      // Ry(yaw)·Rx(roll)·Rz(pitch), so the roll is about the trunk's own axis
+      // only to first order, which `seatLog`'s cos(roll) allows for.
+      const seated = seatLog(logSeat, logOffsets, logHeights, t.scale, roll);
+      Quaternion.FromEulerAnglesToRef(roll, yaw, seated.pitch, scratchQ);
+      scratchPos.copyFromFloats(t.x, seated.y, t.z);
     }
     Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchMat);
     scratchMat.copyToArray(buf, i * 16);
@@ -994,8 +982,8 @@ export function createForestMeshes(
   let saplingSpecies: SpeciesBuckets[] | null = null;
   let deadwoodBucket: Bucket | null = null;
   let snagImpostor: Impostor | null = null;
-  // Base-to-ground offset for the snag role, and the log role's local X/Y
-  // bounds (its trunk-axis extent and its base-to-ground offset), measured
+  // Base-to-ground offset for the snag role, and the log role's local X
+  // bounds and its trunk's underside line (`trunkSeat`), measured
   // once from the loaded bucket geometry (see `adopt()`) — never hardcoded,
   // so an updated `deadwood.snag` with different bounds updates these
   // instead of silently reintroducing a half-buried snag or a floating log.
@@ -1004,7 +992,7 @@ export function createForestMeshes(
   let deadwoodSnagBaseOffset = 0;
   let deadwoodLogMinX = 0;
   let deadwoodLogMaxX = 0;
-  let deadwoodLogMinY = 0;
+  let deadwoodLogSeat: TrunkSeat = { a: 0, b: 0, diameter: 0 };
   let disposed = false;
   /** Every billboard bake still to land, as it settles into its bucket. */
   const bakes: Promise<void>[] = [];
@@ -1334,12 +1322,12 @@ export function createForestMeshes(
     // minimum sits at ground level.
     deadwoodSnagBaseOffset = -deadwoodBounds.min.x;
     // LOG keeps local X as its trunk axis: its ends are the local X
-    // min/max, and its base (the underside of the trunk) is the local Y
-    // minimum — used un-negated, since `deadwoodMatrixBuffer` seats end A
-    // directly rather than offsetting from an already-vertical axis.
+    // min/max, and its base is its trunk's underside, measured from the
+    // vertices themselves (`trunkSeat`), not the box's local Y minimum, which
+    // is the root flare's.
     deadwoodLogMinX = deadwoodBounds.min.x;
     deadwoodLogMaxX = deadwoodBounds.max.x;
-    deadwoodLogMinY = deadwoodBounds.min.y;
+    deadwoodLogSeat = trunkSeat(loaded.deadwood.flatMap((mesh) => Array.from(mesh.getVerticesData(VertexBuffer.PositionKind) ?? [])));
 
     // The snag billboard's quad, in the ROLLED frame: local X becomes world Y
     // (see `deadwoodMatrixBuffer`), so the trunk's length is the quad's
@@ -1662,7 +1650,7 @@ export function createForestMeshes(
         deadwoodSnagBaseOffset,
         deadwoodLogMinX,
         deadwoodLogMaxX,
-        deadwoodLogMinY,
+        deadwoodLogSeat,
       ),
     ));
     // The hand-over is one step: every bucket's new buffers at once.

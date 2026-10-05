@@ -1,6 +1,6 @@
 /**
- * The ground-clutter fields: nine per-cell jittered scatter grids — grass, rocks, boulders,
- * driftwood, fungus, bushes, meadow carpet, flowers, litter — each a pure point
+ * The ground-clutter fields: eleven per-cell jittered scatter grids — grass, rocks, boulders,
+ * driftwood, fungus, bushes, meadow carpet, flowers, litter, sword ferns, shrubs — each a pure point
  * function of (seed, class, cell), the vegetation.ts idiom.
  * Presence is Bernoulli against a biome-keyed density; at most one instance
  * per cell per class. `hash` is a plain [0,1) draw so the RENDERER derives
@@ -29,12 +29,18 @@ export const CLUTTER_MEADOW = 6;
 export const CLUTTER_FLOWER = 7;
 /** Litter: pebbles, twigs and torn turf along the trail's loose margin. */
 export const CLUTTER_LITTER = 8;
-export const CLUTTER_CLASS_COUNT = 9;
+/** Sword fern (Polystichum munitum): evergreen vase clumps, the lowland
+ * forest's commonest fern, thick under the canopy on low, moist ground. */
+export const CLUTTER_FERN = 9;
+/** The evergreen shrub layer: salal thickets behind the beach and on drained
+ * slopes under the lowland canopy, huckleberry and heath below the treeline. */
+export const CLUTTER_SHRUB = 10;
+export const CLUTTER_CLASS_COUNT = 11;
 /** Reeds and cattails at a murky lake's margin and on its marsh. Placed here
  * like every class; drawn by `waterPlants.ts`, not the model-drawn clutter. */
-export const CLUTTER_REED = 9;
+export const CLUTTER_REED = 11;
 /** Yellow pond-lily pads on a murky lake's shallows; drawn by `waterPlants.ts`. */
-export const CLUTTER_LILY = 10;
+export const CLUTTER_LILY = 12;
 
 // ---- Tunables (every one appears in CLUTTER_TUNABLES) ------------
 /** Cell sides (m): at most one instance per cell per class. */
@@ -257,6 +263,69 @@ export const CLUTTER_BUSH_PATCH_OCTAVES = 2;
 export const CLUTTER_BUSH_PATCH_FLOOR = 0.5;
 export const CLUTTER_BUSH_PATCH_LO = 0.35;
 export const CLUTTER_BUSH_PATCH_HI = 0.65;
+/** Sword fern: one clump a 2 m cell where its habitat is full. A shade plant
+ * of low, moist forest: about a quarter of the floor on average in old growth
+ * and over 60 % where it dominates, so it stands in patches with a thin
+ * scatter between them, a trace in the open, and thins uphill as the lowland
+ * forest gives way to the montane. */
+export const CLUTTER_FERN_CELL = 2;
+/** Above the one-per-cell cap (1/4 per m²): a patch's cells saturate. */
+export const CLUTTER_FERN_D = 0.3;
+/** The habitat in the open, as a share of that under full canopy. */
+export const CLUTTER_FERN_OPEN = 0.1;
+export const CLUTTER_FERN_CANOPY_LO = 0.15;
+export const CLUTTER_FERN_CANOPY_HI = 0.55;
+/** Full below ALT_HI, falling over the fade to the MONTANE share above it. */
+export const CLUTTER_FERN_ALT_HI = 90;
+export const CLUTTER_FERN_ALT_HI_FADE = 60;
+export const CLUTTER_FERN_MONTANE = 0.15;
+/** The patches: the share between them, the noise's wavelength (m) and band. */
+export const CLUTTER_FERN_PATCH_FLOOR = 0.2;
+export const CLUTTER_FERN_PATCH_WAVELENGTH = 35;
+export const CLUTTER_FERN_PATCH_OCTAVES = 2;
+export const CLUTTER_FERN_PATCH_LO = 0.62;
+export const CLUTTER_FERN_PATCH_HI = 0.82;
+/** A clump stands this far off a trail's centreline (m): its fronds reach
+ * to the bench's edge and not over the tread. */
+export const CLUTTER_FERN_TRAIL_CLEAR = 1.6;
+/** The shipped fern is 0.55 m across and 0.29 m tall; a sword fern's clump
+ * is 1 to 1.9 m across with fronds standing 0.5 to 1 m. */
+export const CLUTTER_FERN_SCALE_MIN = 1.8;
+export const CLUTTER_FERN_SCALE_MAX = 3.4;
+export const CLUTTER_FERN_SALT = 0xfe27;
+export const CLUTTER_FERN_PATCH_SALT = 0x5fe2;
+/** The evergreen shrub layer, in thickets. Three habitats, the strongest
+ * taken: the salal belt behind the beach (COAST), drained slopes under the
+ * lowland canopy (CANOPY, full from SLOPE_HI of grade), and the huckleberry
+ * and heath of the high forest and its parkland up to the treeline (HIGH). */
+export const CLUTTER_SHRUB_CELL = 2.5;
+/** Above the one-per-cell cap (1/6.25 per m²): a thicket's cells saturate,
+ * and mounds 0.7 to 2 m across on a 2.5 m cell close into one mass. */
+export const CLUTTER_SHRUB_D = 0.17;
+export const CLUTTER_SHRUB_COAST_NEAR = 120;
+export const CLUTTER_SHRUB_COAST_FAR = 260;
+export const CLUTTER_SHRUB_CANOPY_W = 0.45;
+export const CLUTTER_SHRUB_CANOPY_LO = 0.2;
+export const CLUTTER_SHRUB_CANOPY_HI = 0.6;
+export const CLUTTER_SHRUB_SLOPE_FLAT = 0.3;
+export const CLUTTER_SHRUB_SLOPE_LO = 0.1;
+export const CLUTTER_SHRUB_SLOPE_HI = 0.35;
+export const CLUTTER_SHRUB_HIGH_W = 0.85;
+export const CLUTTER_SHRUB_HIGH_LO = 110;
+export const CLUTTER_SHRUB_HIGH_LO_FADE = 50;
+/** The thickets: the share between them, the noise's wavelength (m) and band. */
+export const CLUTTER_SHRUB_PATCH_FLOOR = 0.12;
+export const CLUTTER_SHRUB_PATCH_WAVELENGTH = 28;
+export const CLUTTER_SHRUB_PATCH_OCTAVES = 2;
+export const CLUTTER_SHRUB_PATCH_LO = 0.66;
+export const CLUTTER_SHRUB_PATCH_HI = 0.84;
+export const CLUTTER_SHRUB_TRAIL_CLEAR = 2.2;
+/** The renderer's mound is about a metre tall and 1.2 to 1.6 m across at
+ * scale 1 (`game/shrubClump.ts`); salal stands 0.5 to 1.3 m. */
+export const CLUTTER_SHRUB_SCALE_MIN = 0.55;
+export const CLUTTER_SHRUB_SCALE_MAX = 1.3;
+export const CLUTTER_SHRUB_SALT = 0x5a1a;
+export const CLUTTER_SHRUB_PATCH_SALT = 0x7a1c;
 /** Meadow carpet: the coverage lattice. One clump per
  * 0.7 m cell at saturation ≈ 2.0/m², which with a ~0.5 m clump footprint closes
  * the ground inside the class radius. Gates are the ground-cover field's
@@ -537,6 +606,8 @@ const CLASSES: readonly ClassConfig[] = [
   { cell: CLUTTER_MEADOW_CELL, density: CLUTTER_MEADOW_D, salt: CLUTTER_MEADOW_SALT, scaleMin: CLUTTER_MEADOW_SCALE_MIN, scaleMax: CLUTTER_MEADOW_SCALE_MAX, variants: 1, trailClear: 0 },
   { cell: CLUTTER_FLOWER_CELL, density: CLUTTER_FLOWER_D, salt: CLUTTER_FLOWER_SALT, scaleMin: CLUTTER_FLOWER_SCALE_MIN, scaleMax: CLUTTER_FLOWER_SCALE_MAX, variants: 2, trailClear: 0 },
   { cell: CLUTTER_LITTER_CELL, density: CLUTTER_LITTER_D, salt: CLUTTER_LITTER_SALT, scaleMin: CLUTTER_LITTER_SCALE_MIN, scaleMax: CLUTTER_LITTER_SCALE_MAX, variants: 3, trailClear: 0 },
+  { cell: CLUTTER_FERN_CELL, density: CLUTTER_FERN_D, salt: CLUTTER_FERN_SALT, scaleMin: CLUTTER_FERN_SCALE_MIN, scaleMax: CLUTTER_FERN_SCALE_MAX, variants: 1, trailClear: CLUTTER_FERN_TRAIL_CLEAR },
+  { cell: CLUTTER_SHRUB_CELL, density: CLUTTER_SHRUB_D, salt: CLUTTER_SHRUB_SALT, scaleMin: CLUTTER_SHRUB_SCALE_MIN, scaleMax: CLUTTER_SHRUB_SCALE_MAX, variants: 2, trailClear: CLUTTER_SHRUB_TRAIL_CLEAR, standsTall: true },
   { cell: CLUTTER_REED_CELL, density: CLUTTER_REED_D, salt: CLUTTER_REED_SALT, scaleMin: CLUTTER_REED_SCALE_MIN, scaleMax: CLUTTER_REED_SCALE_MAX, variants: 3, trailClear: CLUTTER_REED_TRAIL_CLEAR },
   { cell: CLUTTER_LILY_CELL, density: CLUTTER_LILY_D, salt: CLUTTER_LILY_SALT, scaleMin: CLUTTER_LILY_SCALE_MIN, scaleMax: CLUTTER_LILY_SCALE_MAX, variants: 1, trailClear: 0 },
 ];
@@ -775,6 +846,49 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       const snow = 1 - smoothstep(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h);
       return band * snow;
     }
+    case CLUTTER_FERN: {
+      const sh = shoreHeight(seed, x, z, s.h);
+      if (sh < CLUTTER_GRASS_ALT_LO || r < CLUTTER_GRASS_ROAD_NEAR) return 0;
+      // The forest's own slope band: a clump holds wherever a tree does.
+      const grade = 1 - smoothstep(CLUTTER_FUNGUS_SLOPE_LO * CLUTTER_FUNGUS_SLOPE_LO, CLUTTER_FUNGUS_SLOPE_HI * CLUTTER_FUNGUS_SLOPE_HI, slopeSq);
+      if (grade === 0) return 0;
+      const shade = smoothstep(CLUTTER_FERN_CANOPY_LO, CLUTTER_FERN_CANOPY_HI, forestDensity(seed, x, z, s));
+      const canopy = CLUTTER_FERN_OPEN + (1 - CLUTTER_FERN_OPEN) * shade;
+      const alt =
+        smoothstep(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, sh) *
+        (1 - (1 - CLUTTER_FERN_MONTANE) * smoothstep(CLUTTER_FERN_ALT_HI, CLUTTER_FERN_ALT_HI + CLUTTER_FERN_ALT_HI_FADE, s.h)) *
+        (1 - smoothstep(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h));
+      const road = smoothstep(CLUTTER_GRASS_ROAD_NEAR, CLUTTER_GRASS_ROAD_FAR, r);
+      const patch = CLUTTER_FERN_PATCH_FLOOR + (1 - CLUTTER_FERN_PATCH_FLOOR) * smoothstep(
+        CLUTTER_FERN_PATCH_LO,
+        CLUTTER_FERN_PATCH_HI,
+        0.5 + 0.5 * fbm2(x / CLUTTER_FERN_PATCH_WAVELENGTH, z / CLUTTER_FERN_PATCH_WAVELENGTH, seed ^ CLUTTER_FERN_PATCH_SALT, CLUTTER_FERN_PATCH_OCTAVES),
+      );
+      return canopy * alt * grade * road * patch * fm.clutter;
+    }
+    case CLUTTER_SHRUB: {
+      const sh = shoreHeight(seed, x, z, s.h);
+      if (sh < CLUTTER_BUSH_ALT_LO || r < CLUTTER_BUSH_ROAD_NEAR) return 0;
+      const grade = 1 - smoothstep(CLUTTER_BUSH_SLOPE_LO * CLUTTER_BUSH_SLOPE_LO, CLUTTER_BUSH_SLOPE_HI * CLUTTER_BUSH_SLOPE_HI, slopeSq);
+      if (grade === 0) return 0;
+      const coast = 1 - smoothstep(CLUTTER_SHRUB_COAST_NEAR, CLUTTER_SHRUB_COAST_FAR, c);
+      const drained = CLUTTER_SHRUB_SLOPE_FLAT + (1 - CLUTTER_SHRUB_SLOPE_FLAT) * smoothstep(
+        CLUTTER_SHRUB_SLOPE_LO * CLUTTER_SHRUB_SLOPE_LO, CLUTTER_SHRUB_SLOPE_HI * CLUTTER_SHRUB_SLOPE_HI, slopeSq,
+      );
+      const under = CLUTTER_SHRUB_CANOPY_W * drained * smoothstep(CLUTTER_SHRUB_CANOPY_LO, CLUTTER_SHRUB_CANOPY_HI, forestDensity(seed, x, z, s));
+      const high = CLUTTER_SHRUB_HIGH_W * smoothstep(CLUTTER_SHRUB_HIGH_LO, CLUTTER_SHRUB_HIGH_LO + CLUTTER_SHRUB_HIGH_LO_FADE, s.h);
+      const habitat = Math.max(coast, under, high);
+      const alt =
+        smoothstep(CLUTTER_BUSH_ALT_LO, CLUTTER_BUSH_ALT_LO + CLUTTER_BUSH_ALT_LO_FADE, sh) *
+        (1 - smoothstep(CLUTTER_BUSH_ALT_HI, CLUTTER_BUSH_ALT_HI + CLUTTER_BUSH_ALT_HI_FADE, s.h));
+      const road = smoothstep(CLUTTER_BUSH_ROAD_NEAR, CLUTTER_BUSH_ROAD_FAR, r);
+      const patch = CLUTTER_SHRUB_PATCH_FLOOR + (1 - CLUTTER_SHRUB_PATCH_FLOOR) * smoothstep(
+        CLUTTER_SHRUB_PATCH_LO,
+        CLUTTER_SHRUB_PATCH_HI,
+        0.5 + 0.5 * fbm2(x / CLUTTER_SHRUB_PATCH_WAVELENGTH, z / CLUTTER_SHRUB_PATCH_WAVELENGTH, seed ^ CLUTTER_SHRUB_PATCH_SALT, CLUTTER_SHRUB_PATCH_OCTAVES),
+      );
+      return habitat * alt * grade * road * patch * fm.clutter;
+    }
     case CLUTTER_REED:
     case CLUTTER_LILY:
       return waterPlantDensity(seed, cls, x, z, s.h, variant.waterBodies?.(seed));
@@ -890,6 +1004,17 @@ export function clutterInRect(seed: number, cls: number, minX: number, minZ: num
  * pass's `tunables` getter spreads this, so registryDigest covers it. */
 export const CLUTTER_TUNABLES: Readonly<Record<string, number>> = {
   CLUTTER_REED, CLUTTER_LILY,
+  CLUTTER_FERN, CLUTTER_SHRUB,
+  CLUTTER_FERN_CELL, CLUTTER_FERN_D, CLUTTER_FERN_OPEN, CLUTTER_FERN_CANOPY_LO, CLUTTER_FERN_CANOPY_HI,
+  CLUTTER_FERN_ALT_HI, CLUTTER_FERN_ALT_HI_FADE, CLUTTER_FERN_MONTANE,
+  CLUTTER_FERN_PATCH_FLOOR, CLUTTER_FERN_PATCH_WAVELENGTH, CLUTTER_FERN_PATCH_OCTAVES, CLUTTER_FERN_PATCH_LO, CLUTTER_FERN_PATCH_HI,
+  CLUTTER_FERN_TRAIL_CLEAR, CLUTTER_FERN_SCALE_MIN, CLUTTER_FERN_SCALE_MAX, CLUTTER_FERN_SALT, CLUTTER_FERN_PATCH_SALT,
+  CLUTTER_SHRUB_CELL, CLUTTER_SHRUB_D, CLUTTER_SHRUB_COAST_NEAR, CLUTTER_SHRUB_COAST_FAR,
+  CLUTTER_SHRUB_CANOPY_W, CLUTTER_SHRUB_CANOPY_LO, CLUTTER_SHRUB_CANOPY_HI,
+  CLUTTER_SHRUB_SLOPE_FLAT, CLUTTER_SHRUB_SLOPE_LO, CLUTTER_SHRUB_SLOPE_HI,
+  CLUTTER_SHRUB_HIGH_W, CLUTTER_SHRUB_HIGH_LO, CLUTTER_SHRUB_HIGH_LO_FADE,
+  CLUTTER_SHRUB_PATCH_FLOOR, CLUTTER_SHRUB_PATCH_WAVELENGTH, CLUTTER_SHRUB_PATCH_OCTAVES, CLUTTER_SHRUB_PATCH_LO, CLUTTER_SHRUB_PATCH_HI,
+  CLUTTER_SHRUB_TRAIL_CLEAR, CLUTTER_SHRUB_SCALE_MIN, CLUTTER_SHRUB_SCALE_MAX, CLUTTER_SHRUB_SALT, CLUTTER_SHRUB_PATCH_SALT,
   CLUTTER_REED_CELL, CLUTTER_REED_D, CLUTTER_REED_SCALE_MIN, CLUTTER_REED_SCALE_MAX, CLUTTER_REED_SALT,
   CLUTTER_REED_DEPTH_LO, CLUTTER_REED_DEPTH_HI, CLUTTER_REED_PATCH_WAVE,
   CLUTTER_REED_DEPTH_FADE_IN, CLUTTER_REED_DEPTH_FADE_OUT, CLUTTER_REED_PATCH_LO, CLUTTER_REED_PATCH_HI,

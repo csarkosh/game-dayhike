@@ -60,6 +60,9 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   // 164 -> 143 on 2026-09-29 (the trail leaves the pad inland, through the
   // doorway, and takes another line under this rect by the trailhead).
   [-500, -100, 143, -1041637376],
+  // sword fern and shrub, 2026-10-04: under the forest the fungus and the bush stand in.
+  [-200, -3000, 3886, -1115141397],
+  [-200, -3000, 1161, -668084287],
 ];
 
 describe("instances carry the ground gradient", () => {
@@ -762,6 +765,10 @@ describe("the level id does not move", () => {
     // that a wood stands at the pad on a world whose shore is open.
     // Re-baselined 2026-09-30 from -1513373362: the level's tunables carry the
     // lake's and the cove's, so the id moves, and the world with it.
-    expect(passHash()).toBe(-418956087);
+    // Re-baselined 2026-10-04 from -418956087: the clutter declares two more
+    // classes, the sword fern and the shrub, with their habitats' tunables, and
+    // the water plants' class ids move up behind them (registryDigest moves).
+    // No collider changed: neither class collides.
+    expect(passHash()).toBe(-1077797422);
   });
 });
