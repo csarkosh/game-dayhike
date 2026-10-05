@@ -362,11 +362,11 @@ describe("the tick", SUITE, () => {
     expect(p.stare).toBeCloseTo(60 / 360, 12);
     const before = p.stare;
     // Looked away: it hides before the look pass runs, which finds nothing, so
-    // the stare has already fallen by 1/180 on the very tick it went.
+    // the stare has already fallen by 1/480 on the very tick it went.
     p.yaw += Math.PI;
     tick(w);
     expect(shownWatcher(w)).toBeUndefined();
-    expect(p.stare).toBeCloseTo(before - 1 / 180, 12);
+    expect(p.stare).toBeCloseTo(before - 1 / 480, 12);
     let last = p.stare;
     for (let i = 0; i < 20; i++) {
       tick(w);

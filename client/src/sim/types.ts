@@ -68,9 +68,10 @@ export type PlayerState = {
    */
   lamp: { on: boolean; charge: number };
   /**
-   * The stare, 0 to 1: fills while a Hollow is in this player's view, empties
-   * when it is not, and kills at 1 (hollow.ts). Host truth; rides the snapshot
-   * as one byte so the screen's darkening and the death agree on every peer.
+   * The stare, 0 to 1: fills while a Hollow is in this player's view and
+   * empties, more slowly, when it is not (hollow.ts). Host truth; rides the
+   * snapshot as one byte, and the player's own screen and ears read it
+   * (game/stareLens.ts).
    */
   stare: number;
   /**

@@ -16,7 +16,8 @@ import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
 
 import type { WeatherParams } from "./weather.js";
 import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
-import { gradeRecordUnder, type GradeRecord } from "./gradeParams.js";
+import { gradeRecordUnder, STARE_VIGNETTE, type GradeRecord } from "./gradeParams.js";
+import type { StareLens } from "./stareLens.js";
 import { finishUnder, MSAA_SAMPLES, type PostFeatures } from "./postParams.js";
 import { LENS, lensDropletMap } from "./lensParams.js";
 import halationExtractFragment from "./shaders/halationExtract.fragment.fx?raw";
@@ -29,7 +30,7 @@ export type Post = {
   /** `night` is the sky's night factor (`SkyState.night`), which the white
    * point and the rods follow. `lens` is the smoothed strength of the rain
    * on the glass (lensParams.ts), 0 when dry. */
-  update(weather: WeatherParams, hour: number, night: number, unsettle: number, stare: number, lens?: number): void;
+  update(weather: WeatherParams, hour: number, night: number, unsettle: number, stare: StareLens, lens?: number): void;
   dispose(): void;
 };
 
@@ -187,7 +188,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     grade = new PostProcess("grade", "grade",
       ["exposure", "whitePoint", "purkinje", "purkinjeThreshold", "purkinjeStrength", "shadowTint", "shadowAmount",
         "midtoneTint", "midtoneAmount", "highlightTint", "highlightAmount", "saturation", "lift", "vignetteWeight",
-        "vignetteColour", "halationStrength"],
+        "vignetteColour", "halationStrength", "stareShade"],
       ["halationSampler"], gradeRatio, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
     const boundScenePass = scenePass;
     const boundBlurY = blurY;
@@ -218,6 +219,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       effect.setFloat("vignetteWeight", r.vignetteWeight);
       effect.setFloat3("vignetteColour", r.vignetteColour.r, r.vignetteColour.g, r.vignetteColour.b);
       effect.setFloat("halationStrength", r.halationStrength);
+      effect.setFloat4("stareShade", r.stare.x, r.stare.y, r.stare.reach, r.stare.time);
     };
 
     aberration = new ChromaticAberrationPostProcess("chromaticAberration", engine.getRenderWidth(),
@@ -328,7 +330,11 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       }
       // Material path: the same intent through Babylon's own operators, the
       // exposure aside (see the doc comment above).
-      image.vignetteWeight = record.vignetteWeight;
+      // The stare here is Babylon's own vignette, heavier and moved off the
+      // Hollow: this path has no pass to draw the crawling edge with.
+      image.vignetteWeight = record.vignetteWeight + STARE_VIGNETTE * record.stare.reach;
+      image.vignetteCenterX = record.stare.x;
+      image.vignetteCenterY = record.stare.y;
       if (image.colorCurves) {
         const curves = image.colorCurves;
         const g = gradeUnder(weather);

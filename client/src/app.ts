@@ -653,6 +653,9 @@ function buildGame(
    */
   function syncDrip(): void {
     ambient.setDrip(renderer.canopyWater(), renderer.canopyOver());
+    // The stare rides the same call: `sync` stepped its lens, and the
+    // listener `syncWind` placed is where its whispers circle.
+    ambient.setStare(renderer.stare());
   }
 
   /**

@@ -23,6 +23,7 @@ import type { Vec3, WorldState } from "../sim/types.js";
 import { AiState } from "../sim/types.js";
 import type { Forest } from "../sim/forest.js";
 import { isHollow } from "../sim/hollow.js";
+import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
@@ -1203,6 +1204,8 @@ export type Renderer = {
    * read every frame and its nine numbers are copied straight into AudioParams.
    */
   listener(): ListenerPose;
+  /** The local player's stare as `sync` last stepped it, for the audio (stareAudio.ts). */
+  stare(): StareLens;
   /**
    * A world point as CSS pixels on the canvas, with its distance from the
    * camera, or null when it is behind the camera. Drives the interact prompt.
@@ -1569,6 +1572,9 @@ function buildRenderer(
   let unsettle = 1;
   /** The rain on the lens, smoothed (lensParams.ts). */
   let lensStrength = 0;
+  /** The local player's stare as their screen and ears take it (stareLens.ts). */
+  let stareLens: StareLens = STARE_LENS_REST;
+  const stareAt = new Vector3();
   // The forest's density over the camera, a full terrain sample: taken
   // again only once the camera has moved a metre from where it was taken.
   let lensCanopyX = Number.NaN;
@@ -2002,7 +2008,23 @@ function buildRenderer(
       // none until the table holds its first slices.
       const sky = lighting.sky;
       if (sky !== null) atmosphere.update(weather, sky);
-      const stare = state.players.get(localId)?.stare ?? 0;
+      // The stare's lens: the dead have none, and the Hollow nearest the aim
+      // is the side its darkness closes from. The camera's pose is last
+      // frame's, as for the lens's rain below, and the lens's own ease hides it.
+      const starer = state.players.get(localId);
+      const stare = starer !== undefined && starer.health > 0 ? starer.stare : 0;
+      let side: { x: number; y: number; cos: number } | null = null;
+      if (stare > 0) {
+        const view = camera.getViewMatrix();
+        for (const e of state.enemies.values()) {
+          if (!isHollow(e)) continue;
+          stareAt.set(e.pos.x, e.pos.y, e.pos.z);
+          Vector3.TransformCoordinatesToRef(stareAt, view, stareAt);
+          const s = stareSide(stareAt.x, stareAt.y, stareAt.z);
+          if (s !== null && (side === null || s.cos > side.cos)) side = s;
+        }
+      }
+      stareLens = stepStareLens(stareLens, stare, side, engine.getDeltaTime() / 1000);
       // Rain on the lens: strongest looking up, cleared under the canopy,
       // smoothed over a second. The camera's pose is last frame's (it is set
       // below), one frame behind, which the smoothing hides.
@@ -2014,10 +2036,10 @@ function buildRenderer(
       lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x, lensCanopy), engine.getDeltaTime() / 1000);
       // The stare dims the frame's exposure: the lighting's on the material
       // path, so a weather fade's applies keep it; the grade's on the post path.
-      lighting.setStare(stare);
+      lighting.setStare(stareLens.level);
       // Before the sky's first slices there is no night factor; the day's 0
       // stands in, for frames no one sees.
-      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, stare, lensStrength);
+      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, stareLens, lensStrength);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
@@ -2145,6 +2167,9 @@ function buildRenderer(
     },
     wildlifeDirectorLog() {
       return wildlife?.directorLog() ?? [];
+    },
+    stare() {
+      return stareLens;
     },
     listener() {
       // `camera.rotation` rather than the sim's yaw/pitch: it is set on both of
