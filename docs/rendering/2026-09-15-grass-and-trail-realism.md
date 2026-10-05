@@ -1,6 +1,6 @@
 # Grass and trails: fuller, alive, and moving with the wind
 
-**Question:** the grass and the trails read as flat and game-like. The owner wants grass that is
+**Question:** the grass and the trails read as flat and game-like. The aim is grass that is
 fuller, has volume, looks alive, and moves *with* a wind the rest of the world shares, and a trail
 that reads as trodden ground rather than a stripe of another texture, all inside the 60 Hz frame
 contract. What do modern games do to get there, which of it is a grounding problem and which a
@@ -361,8 +361,8 @@ the 2×2 quad rasterisation tax outweighs the fill saving. That lines up with th
   `post.ts`, clamped by the engine to its maximum and tolerant of Safari forcing it back to 1.
   Expect +0.5–1.5 ms.
 - **A depth pre-pass** (`needDepthPrePass`) reruns the vertex shader and the discard to buy early-Z
-  in the colour pass; with three to five layers of full PBR it plausibly pays but it is a
-  measurement, not a plan. **Sorting the instance buffer nearest-first at rebuild** is nearly free
+  in the colour pass; with three to five layers of full PBR it plausibly pays but only a
+  measurement can settle it. **Sorting the instance buffer nearest-first at rebuild** is nearly free
   (the collector already computes the squared distance) and is the real front-to-back win;
   Babylon's submesh sort does nothing for a single-draw bucket.
 
@@ -430,7 +430,7 @@ vertex work and a few dozen ALU on corridor fragments: well under 0.5 ms in tota
 **How to measure.** Paired branch-versus-main frame-time samples, back to back, both orders,
 vsync cap checked before trusting a pair, warm-up before every sample, at four viewpoints:
 
-1. Open meadow at noon (peak fill and overdraw, no canopy shadow) — the gate.
+1. Open meadow at noon (peak fill and overdraw, no canopy shadow) — the deciding viewpoint.
 2. Forest edge (grass, understory, bush and the shadow cascades interacting).
 3. The trail at eerie 20 h (the trail branch live, the headlamp, the atmosphere chain at its most
    expensive).
@@ -453,7 +453,7 @@ The grass stops looking pasted on before a single blade is drawn.
 **B. One wind (renderer-only, days).** `windParams.ts` with direction, weather-driven speed, a
 biased lean and a two-octave gust travelling downwind with a ragged front, three motion tiers,
 consumed by every card class, the understory, the trees, the motes, the mist, the rain and the
-audio LFO, plus the five-player bend. Buys cause 5 entirely. The one thing the owner asked for by
+audio LFO, plus the five-player bend. Buys cause 5 entirely. The one thing asked for by
 name, "in sync with the wind", is this package.
 
 **C. The trail as a bench (renderer-only except the litter class, a week).** Height-aware
@@ -466,14 +466,14 @@ optional level-id item and should batch with any other geometry retune.
 The static clump mesh on the 0.7 m lattice to 10–20 m, opaque, MSAA on the scene pass, a
 geometric hand-off to the cards beyond. Buys real volume at eye height and the fill budget that
 pays for everything else, but it is the only package that can regress the frame, and the fade
-constraint means the near/far seam has to be redesigned rather than reused. Gate it on the paired
+constraint means the near/far seam has to be redesigned rather than reused. Test it with the paired
 measurement at the four viewpoints before it is allowed to stay.
 
 Recommended order: A and B together (they share the plugin and the per-instance attribute), then
-C, then D behind its gate. A and B alone should move the owner's read from "flat and game-like" to
+C, then D behind its frame-time check. A and B alone should move the read from "flat and game-like" to
 "grounded and windy"; D is what makes it "full".
 
-## 9. Questions for the owner
+## 9. Open questions
 
 1. **How far does "volume" have to hold?** Blades pay only inside 10–20 m; beyond that the cards
    stay. Is a near field of real blades with grounded cards behind it the target, or must the whole
@@ -516,7 +516,7 @@ C, then D behind its gate. A and B alone should move the owner's read from "flat
 - Plugin attach is reached more than once per material (LOD buckets share a GLB's material) and
   must stay idempotent.
 - Small masked cards die in the mip chain; any new alpha texture needs coverage-preserving mips.
-- Tests and reviews have blessed wrong shapes before: drive the game, take a control, and pair the
+- Tests and code checks have blessed wrong shapes before: drive the game, take a control, and pair the
   frame-time samples.
 
 ## Sources

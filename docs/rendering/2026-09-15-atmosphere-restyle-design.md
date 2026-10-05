@@ -1,9 +1,9 @@
 # Atmosphere restyle: design
 
-**Status:** design, ruled 2026-09-15. Implementation plan to follow.
+**Status:** design, decided 2026-09-15.
 
 **What this is.** A full redo of Day Hike's identity layer, the shaders and post-processes
-that turn a lit PBR world into a look. The ruling behind it: *closer to photoreal, but artsy
+that turn a lit PBR world into a look. The decision behind it: *closer to photoreal, but artsy
 and atmospheric*, keeping the ominous, eerie theme. The research is in
 [2026-09-14-stylized-shader-looks](2026-09-14-stylized-shader-looks.md) and
 [2026-09-15-atmosphere-and-dread-shaders](2026-09-15-atmosphere-and-dread-shaders.md); this
@@ -15,16 +15,16 @@ map followed by a grade, and a film treatment so a dark, foggy image survives 8-
 The horror layer rides the existing `dread` axis, drives the world in steps and the lens
 continuously, and keeps the screen distortion small and peripheral.
 
-## 1. Rulings
+## 1. Decisions
 
-| Question | Ruling |
+| Question | Decision |
 | --- | --- |
 | Scope against the unbuilt horror sub-projects | Base look plus the dread channels, all on the existing `weather.dread` axis, testable through `/weather eerie`. The Hollow's rendering and the retroreflective tape are specified later inside sub-projects C and F, reusing the plugin hooks this design establishes. |
 | The etched outline and the cel band | Retired, along with `/style`. The identity moves entirely to fog, grade and film treatment. |
-| Hero frames the look is tuned and gated against | All four: sunny start (`clear`, hour 10–14), the eerie turn (`eerie`, hour 16–18), night with the headlamp (`eerie`, hour 20–22), and dawn (`clear`, hour 6–7). Every term is therefore a curve over the clock and the weather, not a preset. |
+| Hero frames the look is tuned and checked against | All four: sunny start (`clear`, hour 10–14), the eerie turn (`eerie`, hour 16–18), night with the headlamp (`eerie`, hour 20–22), and dawn (`clear`, hour 6–7). Every term is therefore a curve over the clock and the weather, not a preset. |
 | Colour identity of the eerie state | Rich-eerie rebuilt: violet shadows, green-teal midtones, drained cyan highlights survive as the intent, re-expressed on a neutral tone map. A `lift` term (shadows never reaching black, the Alan Wake 2 look) exists as a parameter at 0 so that look can be dialled in later without restructuring. |
 | Film treatment | Subtle by day, committed under dread. Halation, luminance grain and dither are always on but near-invisible in the sunny frame; grain, aberration and vignette climb with dread. No letterbox. |
-| Frame-time gate and the low tier | High tier on the development Mac is the gate. Medium drops halation and the particles' upper capacity. Low has no post passes: it keeps the fog plugin and in-material image processing so the colour intent survives on phones. |
+| Frame-time check and the low tier | Frame time is checked on the high tier on the development Mac. Medium drops halation and the particles' upper capacity. Low has no post passes: it keeps the fog plugin and in-material image processing so the colour intent survives on phones. |
 | Airborne matter | In scope on high and medium: one particle system, species by the sun's altitude, coloured by the fog. |
 | Dread channels added | The peripheral overlap, lighting collapse in steps, and a `/unsettle` slider. A SOMA-style aberration spike is deferred to the Hollow's proximity in sub-project C. |
 | Architecture | One custom grade pass owns colour and film treatment; Babylon's pipeline keeps only chromatic aberration and FXAA; a second custom pass finishes the frame. |
@@ -199,8 +199,8 @@ On medium, step 1 is absent and the grade pass binds a 1×1 black texture as
 - **Split-tone**: the rich-eerie grade re-expressed analytically: three tints (violet,
   green-teal, cyan) applied through luma-banded weights (shadows, midtones, highlights),
   each with a density and a saturation, all scaled by `moodUnder(weather)` so `clear` is
-  the exact identity. Hues and starting densities are today's constants; the browser gate
-  retunes them, since Babylon's curve operator is not being matched numerically.
+  the exact identity. Hues and starting densities are today's constants; the browser checks
+  retune them, since Babylon's curve operator is not being matched numerically.
 - **Lift**: `rgb = lift + rgb·(1 − lift)`, `lift = 0` in every preset today.
 - **Vignette**: today's weight and colour, in-pass; the dread share is lens-side.
 - **Halation**: `screen(rgb, halation · tint · strength)` where strength is small by day
@@ -299,21 +299,21 @@ All headless, under Vitest:
   still constructs under `NullEngine`; `commands.test.ts` covers `/unsettle` and the
   silent drop of `style`.
 
-## 10. Browser gates
+## 10. Browser checks
 
-Per the repository's visual-gate practice: a green suite is not evidence on visual work.
+A green suite is not evidence on visual work.
 
 - The four hero frames at one fixed pose each, a control screenshot from `main` beside the
-  restyle, judged by the owner.
+  restyle, judged side by side.
 - A 0→1 dread fade at hour 17, watched for the three steps landing as distinct changes.
 - The night frame inspected for banding in the fog and the sky.
 - `/unsettle 0`: the world still steps; the lens is clean.
 - The low tier forced on: the in-material path renders and `clear` is unchanged.
 - Paired frame-time samples, both orders, on high, against the ~2 ms post budget; motes
-  and halation toggled in the same session to attribute their share.
+  and halation toggled in the same run to attribute their share.
 
-Write-up at `docs/rendering/YYYY-MM-DD-atmosphere-restyle-verification.md`, dated the day
-the gates run; images archived outside the repository.
+Write-up at [`2026-09-15-atmosphere-restyle-verification.md`](2026-09-15-atmosphere-restyle-verification.md);
+images archived outside the repository.
 
 ## 11. Follow-ups this design creates
 

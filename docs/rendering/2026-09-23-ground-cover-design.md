@@ -12,9 +12,9 @@ the unkempt trail, wildlife on a sighting cadence, rock relief). It owns the
 grass gate in `sim/clutter.ts` and the new litter files; the trail sub-project
 consumes its litter generator.
 
-## 1. Rulings
+## 1. Decisions
 
-| question | ruling |
+| question | decision |
 | --- | --- |
 | Where grass grows | Wherever the floor is grass — the `patch` noise stops being a gate |
 | Under the canopy | Yes, thinner — and the thinning is paid back with dead leaves, twigs and small branches so the floor reads as full as open grass |
@@ -171,7 +171,7 @@ That sums past the bar, so the design pays:
 
 | tier | blades | litter | paint coupling |
 | --- | --- | --- | --- |
-| high | full counts, boost per the gate | 12 m, two tiers | yes |
+| high | full counts, boost as the frame check allows | 12 m, two tiers | yes |
 | medium | half counts | 8 m | yes |
 | low | none | none | yes — the whole of its fullness |
 
@@ -202,7 +202,7 @@ Pure and Babylon-free unless named otherwise.
   expectations updated to the new field.
 - **Level id** — the tunables change moves the id.
 
-## 9. Gates
+## 9. Checks
 
 Every still from a fresh load with the sun pinned and recorded; frame pairs on
 the repaired rig (every game page blanked before each sample, 8 s samples).
@@ -342,7 +342,7 @@ under the canopy falls by about a quarter as grass rises (the field's
 `1 − grass / boost` term), which is right: the leaves are visible now and
 the sward is back.
 
-**Gates, before any deploy.** Paired stills against the `main` this branches
+**Checks, before any deploy.** Paired stills against the `main` this branches
 from at two poses found from the field — a full-canopy floor and an
 interior grass cell — eye level and looking down; the near-field blade
 histogram at both (clumps per square metre by distance ring, which must not

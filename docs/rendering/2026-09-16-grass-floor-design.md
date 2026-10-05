@@ -1,6 +1,6 @@
 # The grass floor: design
 
-**Status:** design, ruled 2026-09-16. Implementation plan to follow.
+**Status:** design, decided 2026-09-16.
 
 **What this is.** The first of three sub-projects that follow the grass grounding and wind pass
 ([2026-09-15-grass-grounding-and-wind-design](2026-09-15-grass-grounding-and-wind-design.md)):
@@ -10,17 +10,17 @@ colour. The research is in
 [2026-09-15-grass-and-trail-realism](2026-09-15-grass-and-trail-realism.md); this document
 records the decisions and the design, not the evidence.
 
-The owner named four faults and all four are in scope: the texture repeats visibly, the ground
+Four faults were named and all four are in scope: the texture repeats visibly, the ground
 is flat and smooth, its colour is uniform, and past the tufts' reach the field turns to bare
 texture. Every fix here is renderer-only, in the ground plugin, with no new sampler (the
 terrain material sits at WebGL2's ceiling of sixteen) and no new asset. Every value is a
-starting point; the browser gates tune them and the tests pin the shapes.
+starting point; the browser checks tune them and the tests pin the shapes.
 
-## 1. Rulings
+## 1. Decisions
 
-| Question | Ruling |
+| Question | Decision |
 | --- | --- |
-| Order of the three sub-projects | Floor first (cheapest, and it changes what the trail and the blades sit on), then the trail as a bench carrying the one level-id release, then blade clumps gated on frame time. |
+| Order of the three sub-projects | Floor first (cheapest, and it changes what the trail and the blades sit on), then the trail as a bench carrying the one level-id release, then blade clumps conditional on frame time. |
 | New textures | None. The terrain material has twelve plugin samplers plus the PBR material's own; the floor comes from sampling the bound textures differently. |
 | Which layers get hex tiling | The grass layer only. Forest floor lives under canopy where the repeat is hidden; rock is triplanar; sand and pebble are small areas. |
 | Parallax on grass | No. The rock parallax swam underfoot at 3 cm and blades are too fine for a march to help; depth comes from a finer second scale and an occlusion term. |
@@ -116,7 +116,7 @@ card horizon stops reading as a line.
 
 Per grass fragment: +2 albedo fetches everywhere; +4 map fetches inside 140 m; +3 fetches
 inside 20 m; the noise and tint are ALU (two hashed lattice lookups). The ground is the
-fill-heaviest surface after the grass cards, so the meadow pair is the gate. All tiers run the
+fill-heaviest surface after the grass cards, so the meadow pair decides. All tiers run the
 same code; the low tier's 1.5× hardware scaling already halves its fill.
 
 ## 8. Tests
@@ -137,20 +137,20 @@ same code; the low tier's 1.5× hardware scaling already halves its fill.
 - `shaderHygiene.test.ts` covers the new `.fx` by its glob; `architecture.test.ts` lists
   `groundHexParams.ts` as Babylon-free.
 
-## 9. Browser gates
+## 9. Browser checks
 
 Branch beside a control build at the base, paired in both orders, one page at a time, the
-gate hooks reverted before commit.
+debug hooks reverted before commit.
 
 1. **Open meadow, noon.** A crop of the floor at 5–15 m for the repeat and the blade mat, and the
-   same pose looking 60–110 m out for the horizon. The frame-time gate, sampled at native and
+   same pose looking 60–110 m out for the horizon. The frame-time check, sampled at native and
    at the low tier's 1.5× scaling.
 2. **Forest edge, 14 h.** The macro patches against the tufts, and the tuft/floor agreement.
 3. **The trail at eerie 20 h, lamp on.** The detail scale and the occlusion term under a near
    light: no sparkle, no banding.
 4. **Deep forest, 12 h.** Frame pair only.
 
-Success is the owner's read of the paired frames plus no regression on any pair.
+Success is the paired frames reading right by eye, plus no regression on any pair.
 
 ## 10. Fallbacks
 
@@ -163,7 +163,7 @@ relief fade only (plain tiling beyond 140 m); the horizon tint stays regardless 
 - Blade clumps reuse `TUFT_ALBEDO` as their base colour.
 - A drainage term, once the trail release adds its sim field.
 
-## 12. Amendments (from the browser gates)
+## 12. Amendments (from the browser checks)
 
 - **§5, the detail scale.** The detail albedo term is gone. The grass maps are 512 px over 2 m;
   at a 3–6 m footprint their albedo carries about ±3 % visible contrast, so a second copy of it

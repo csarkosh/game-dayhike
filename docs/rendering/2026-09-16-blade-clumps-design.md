@@ -1,6 +1,6 @@
 # Blade clumps near the eye: design
 
-**Status:** design, ruled 2026-09-16. Implementation plan to follow.
+**Status:** design, decided 2026-09-16.
 
 **What this is.** The third and last of the sub-projects that follow the grass grounding and
 wind pass ([2026-09-15-grass-grounding-and-wind-design](2026-09-15-grass-grounding-and-wind-design.md)):
@@ -15,16 +15,16 @@ without compute"), §7 and §8 (package D); this document records the decisions 
 not the evidence.
 
 It is renderer-only: no sim change, no level id. It is also the one package of the series that
-can regress the frame, so it ships only behind the paired frame-time gate in §8. Every value is
-a starting point; the browser gates tune them and the tests pin the shapes.
+can regress the frame, so it ships only if it passes the paired frame-time check in §8. Every value is
+a starting point; the browser checks tune them and the tests pin the shapes.
 
-## 1. Rulings
+## 1. Decisions
 
-| Question | Ruling |
+| Question | Decision |
 | --- | --- |
 | How far must the volume hold? | The near field: blades to 12 m, the cards beyond. A 2 cm blade cluster still resolves at 12 m at 1080p; past that a blade costs more than a card and looks no better. |
 | Which tiers draw blades? | High and medium. Low keeps today's cards: its 1.5× scaling is where blades resolve worst, and it has no post chain to carry MSAA. |
-| Does MSAA land in this pass? | Yes, 4× on high and medium, on the first post-process of the chain, gated by the same frame pairs. Opaque blade edges are exactly what MSAA fixes and the blades earn back the fill that pays for it. |
+| Does MSAA land in this pass? | Yes, 4× on high and medium, on the first post-process of the chain, conditional on the same frame pairs. Opaque blade edges are exactly what MSAA fixes and the blades earn back the fill that pays for it. |
 | Where does the mesh come from? | Built in code at load: a pure module generates the clump from constants and a seeded hash. No asset, no LFS object, no catalog entry, and every constant can be retuned live. |
 | How do blades fit the clutter? | A third, renderer-only bucket of the meadow class on the same 0.7 m lattice and the same instances. Not a new sim class (a level-id release for a cosmetic feature) and not blades over untouched cards (nothing saved, two grasses at the eye). |
 | The hand-off | Geometric on the blade side, dither on the card side, over one shared band: each blade shrinks to its root in its own order across the last 4.5 m of the blade disc while the card at the same cell dithers in. Same instance, same yaw, same scale, same trample on both sides. |
@@ -215,10 +215,10 @@ compiled, so both the uniform-buffer and the non-UBO paths are exercised.
 - `architecture.test.ts`: `bladeClump.ts` on `BABYLON_FREE_FILES`; `shaderHygiene.test.ts`
   covers the two `.fx` files as before.
 
-## 10. Browser gates
+## 10. Browser checks
 
 Run against a control build at the branch base, with the trail-bench rig (the
-gate hooks, branch on :5174/:8081, control on :5175/:8082) and its poses: MEADOW
+debug hooks, branch on :5174/:8081, control on :5175/:8082) and its poses: MEADOW
 (−216.1, 22.38, 414) yaw 0.393 pitch 0.08 and the floor crop at pitch 0.55; EDGE
 (231.9, 85.61, 54) yaw −1.571; TRAIL (263.9, 85.77, 118) yaw 1.571; DEEP (159.9, 114.68, −234)
 yaw −1.078. Same seed, same weather and hour on both builds.
@@ -257,7 +257,7 @@ Each is one constant, and none crosses a module boundary.
 
 ## 13. Amendments (2026-09-16)
 
-**§5, the constants.** The browser gates retuned six of the mesh constants: `BLADE_COUNT` 24 →
+**§5, the constants.** The browser checks retuned six of the mesh constants: `BLADE_COUNT` 24 →
 40 (24 blades per clump read as sparse wisps against the cards' dense tufts); `BLADE_HEIGHT`
 [0.35, 0.6] → [0.2, 0.45] m (the card model is 0.35 m tall, and the hand-off needs matching
 heights); `BLADE_WIDTH` 0.02 → 0.012 m (it is a half-width, so 0.02 drew 4 cm reeds);
@@ -273,7 +273,7 @@ costs about a card in triangles.
 **§5, the normals.** `BLADE_ROUND` is 0.3 rad, per the retune above. The up bias is not baked
 into the mesh: it is a foliage-plugin profile value, `normalUp`, applied to the world normal in
 the vertex block, so it is independent of the trample lean. Added to the §7 profile line:
-`normalUp: 1.0`. Ruling: `normalUp` applies to the blade profile only — the blade mesh's own
+`normalUp: 1.0`. Decision: `normalUp` applies to the blade profile only — the blade mesh's own
 normals lie flat, so the bias is what lets a blade take the sun like the turf under it. Every
 card profile keeps `normalUp: 0`, since a card model already carries normals of its own.
 

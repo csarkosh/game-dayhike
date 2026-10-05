@@ -13,7 +13,7 @@ measurements behind the numbers here are in
 [Photorealistic water rendering: lakes and oceans](https://csarko.sh/research/photorealistic-water-rendering)
 (section numbers below are the research's: §4 the real coast, §5 lakes).
 
-The owner's rulings that shape it:
+The decisions that shape it:
 
 - The water is built as if the player can reach it, in this game later and in
   other games built on these systems.
@@ -141,7 +141,7 @@ today's dish:
 The smallest pond (R 25) keeps a middle: the shelf takes its outer 10 m, the
 slope the next 8, the flat the rest.
 
-The player wades the shelf and no further. Sub-project 1's ruling is that a
+The player wades the shelf and no further. Sub-project 1's decision is that a
 player wades to the waist and the camera never goes under; the old 0.6 m dish
 kept that by being shallow, and a 3 to 6 m middle does not. So a wall stands at
 the shelf's inner edge, 10 m in from the rim, where the water is 0.9 m deep, in
@@ -288,7 +288,7 @@ Every new sim number folds into the level id through the tunables the files
 already export into it (`FEATURE_TUNABLES`, the olympic variant's, the
 clutter's). The level id moves once, for the whole release.
 
-## 8. Tests and gates
+## 8. Tests and checks
 
 Node tests:
 
@@ -321,16 +321,16 @@ The WGSL shader corpus is recorded again at noon and at night, with a lake world
 among the visits, and checked live after the deploy (fresh first visits,
 `?wgsl=record`), as for sub-project 1.
 
-Look gates, each a still at a pose matched to photos of the approved reference
+Look checks, each a still at a pose matched to photos of the approved reference
 set, the sun pinned per reading:
 
-| Gate | Pose | Reference |
+| Check | Pose | Reference |
 | --- | --- | --- |
 | The cove | from the pad, looking out | `rialto-03`, `ruby-05` |
 | A murky lake | across it, marsh and lilies in view | `ozette-08`, `lily-pond-08`, `duckweed-11` |
 | A clear high lake | a shallow bed in view | `crescent-04`, `crescent-13` |
 
-A gate passes on the owner's word.
+A check passes when the still is judged to match its photos.
 
 Stills taken 2026-10-01 on the high tier on WebGPU, weather clear, at noon
 (sun direction (0, −0.97, 0.243), intensity 3.95) and at night with the
@@ -338,18 +338,18 @@ headlamp, the console clean on every page: the cove from the pad, from the
 berm and along the beach toward a headland; a murky lake (room-3's, murk 0.99)
 from across, from its shelf and from inside its marsh; a clear high lake
 (room-1's, murk 0.15) from its shelf and from across. Judged 2026-10-01: every
-posed gate passes, with no change asked.
+posed check passes, with no change asked.
 
 Cost, measured as the water material's was (the water material's §8): frame
 times at 3840×2160 where every tier is fragment-bound, scaled to each tier's
 pixels, a control build of `main`, a silent machine; at the worst poses (a lake
 world close to the lake; the cove from the pad); reported as cost added over
-`main` on the three tiers, for the owner to judge. No bar is set in advance.
+`main` on the three tiers, to be judged on the figures. No bar is set in advance.
 
 Measured 2026-10-01 at 3840×2160 (hardware scaling 0.5), fresh pages, the
 order control/branch/branch/control and then the reverse, three 5 s samples a
-page, the control a build of `main` at b43952d, twice: once with another
-session's load rising from 3 to 140 over the run, and again in the quietest
+page, the control a build of `main` at b43952d, twice: once with other
+work on the machine raising the load from 3 to 140 over the run, and again in the quietest
 window the day offered, at load 3 to 16 with page-to-page spreads of up to
 30 ms. Neither run was silent, so the figures are the sign and the order of
 the cost, not its size. Cost added over `main`, in ms per frame at that size,

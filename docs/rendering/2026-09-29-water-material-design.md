@@ -9,7 +9,7 @@ for it.
 
 The physics and the numbers come from
 [Photorealistic water rendering: lakes and oceans](https://csarko.sh/research/photorealistic-water-rendering)
-(the research doc; section numbers below are its). The owner's rulings that
+(the research doc; section numbers below are its). The decisions that
 shape it: build as if the player reaches the water, and future games built on
 these systems will; lakes sit at low ground and high ground both; the player
 wades to the waist and the camera never goes under.
@@ -210,7 +210,7 @@ variance is σ² = 0.003 + 0.00512 U, U the wind at 10 m in m/s. The game's wind
 is a clamp of 0 to 1 (`windParams.ts`, `windSpeedUnder`); U = 12 m/s × wind,
 so the rain-and-cloud maximum is a fresh breeze and calm is calm. A body's
 `shelter` scales σ² (1 for the sea; a lowland lake in old growth 0.1, a high
-lake by its exposure, set per body); the plan calibrates the floor against
+lake by its exposure, set per body); the floor is calibrated against
 the mirror photos. Beckmann's slope variance converts to a microfacet width
 α = √(2σ²) and PBR's perceptual roughness is √α. A shelter of 0.1 in calm air
 gives roughness 0.16; the open sea in the rain, 0.6. The plugin writes
@@ -397,7 +397,7 @@ A tier over its budget cuts in this order: the second ripple octave, the
 refracted offset (sample unrefracted), the height texture to the next size
 down, and on high the copy itself (high drawing medium's blended path).
 
-## 9. Tests and gates
+## 9. Tests and checks
 
 Node tests, in `client/test/`:
 
@@ -422,7 +422,7 @@ Node tests, in `client/test/`:
   channel 5 m outside the footprint even 4 m below the level.
 
 The plugin's GLSL compiled and checked on both backends through the corpus
-tools, the corpus re-recorded at the gate poses several times each (a variant
+tools, the corpus re-recorded at the check poses several times each (a variant
 can show on one visit in three), and the built map checked as CI does.
 
 Tests on the real water (`createWater` under NullEngine) asserting the
@@ -441,13 +441,13 @@ toward the coast; on the high tier
 the frame is asked for its copy only while a water mesh is among the active
 meshes, the material is ready with the bed alone, reading the far placeholder,
 and the first copy points it at the resolved depth. No pixel is read under
-Node; the look is the gates' below.
+Node; the look is the checks' below.
 
-Look gates, each a still from the game at a pose matched to a photo of the
-approved reference set (kept outside the repository; a gate names its ids),
+Look checks, each a still from the game at a pose matched to a photo of the
+approved reference set (kept outside the repository; a check names its ids),
 the sun pinned per reading and the reading recorded with it:
 
-| Gate | Pose | Reference | What must hold |
+| Check | Pose | Reference | What must hold |
 | --- | --- | --- | --- |
 | Murky pond | pond at 3 m, looking across | `ozette-08`, `mountain-lake-04` | amber rim, dark mirror beyond, sharp waterline |
 | Clear lake | a shallow bed in the clear row | `crescent-04`, `crescent-13` | pebbles visible to a few metres, blue with depth |
@@ -456,8 +456,8 @@ the sun pinned per reading and the reading recorded with it:
 | Night | the pond, headlamp on | none (research §2.5) | black water, a lamp glitter, nothing teal |
 | Wading | the player's legs in the pond | none | legs darken with depth, wet above the line |
 
-Stills, 2026-09-30 (in the archive outside the repository). Every posed gate
-passed on the owner's word the same day; the clear lake and wading could not be
+Stills, 2026-09-30 (in the archive outside the repository). Every posed check
+passed the same day; the clear lake and wading could not be
 posed on this build (below).
 
 - Murky pond: `g-high-noon-murky-pond.jpeg` (high, WebGPU, noon, sun y −0.97,
@@ -475,10 +475,10 @@ posed on this build (below).
 - Wading: not posed. The local player has no body mesh in first person and the
   rig had no remote player or creature in the water.
 
-The sea gate's pose is found on the coast.
+The sea check's pose is found on the coast.
 
-The gate passes when the owner says the still resembles the photo in the
-column's terms; a gate without a photo passes on the "what must hold" alone.
+A check passes when the still resembles the photo in the
+column's terms; a check without a photo passes on the "what must hold" alone.
 
 ## 10. Out of scope
 

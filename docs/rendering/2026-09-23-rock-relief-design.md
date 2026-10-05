@@ -11,9 +11,9 @@ roughness — in code, on the meshes as they are.
 It changes how the rock and boulder meshes are built at load and nothing
 else: no other clutter class, no ground paint, no collision.
 
-## 1. Rulings
+## 1. Decisions
 
-| question | ruling |
+| question | decision |
 | --- | --- |
 | The kind of rock | Fractured and angular: planar facets and sharp edges, as rock split along joints |
 | Variety | Four cuts per model, instances spread across them by hash |
@@ -105,7 +105,7 @@ shape, and the existing dither seam hides it.
 In `clutterMeshes.ts` the rock and boulder classes gain a cut dimension: an
 instance's cut is `hash & 3`; its bucket is `[class][variant][cut][lod]` —
 sixteen buckets where there were four, each at the near and the far LOD, so
-thirty-two meshes where there were eight, the same counting §1's cost ruling
+thirty-two meshes where there were eight, the same counting §1's cost decision
 and the load-time pass use. The GLB's mesh is cut four ways as it lands and
 the four results become the four cut buckets' meshes, sharing the model's
 material with `useVertexColors` on. Every other class is untouched.
@@ -131,12 +131,12 @@ the same path the tests already use for GLB-backed classes):
   and each cut bucket's count equals its share; the materials carry vertex
   colours.
 
-## 7. Gates
+## 7. Checks
 
 Before/after against `main`, sun pinned, pages blanked:
 
 - a rock at 2 m and a boulder at 4 m (the boulder found by a scan of the
-  boulder class near a gate pose), clear noon and mist — the pass/fail by
+  boulder class near a check pose), clear noon and mist — the pass/fail by
   eye: facets and edges visible, an angular silhouette, not a loaf;
 - a LOD-swap walk at the boulder, three stills, no pop;
 - the 4× pixel pair at TRAILSIDE and EDGE within noise; the load-time pass

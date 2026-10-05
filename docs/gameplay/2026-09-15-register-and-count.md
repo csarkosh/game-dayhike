@@ -1,7 +1,7 @@
 # The Register and the count — sub-project B
 
 **Date:** 2026-09-15
-**Status:** Built 2026-09-15 (`docs/gameplay/2026-09-15-register-and-count-plan.md`). Numbers that
+**Status:** Built 2026-09-15. Numbers that
 moved in execution: the wall stands at `ROAD_BED_HALF + 0.5 + PLAYER_HALF.x` (6.4 m) so the hull's
 face, not its centre, stops half a metre off the pavement; a fallback site keeps `SITE_SPACING` 20 m
 from every other site (a landmark past the crest projects onto the summit itself: seed 331); the

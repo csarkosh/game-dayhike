@@ -1,6 +1,6 @@
 # The trail as a bench: design
 
-**Status:** design, ruled 2026-09-16. Implementation plan to follow.
+**Status:** design, decided 2026-09-16.
 
 **What this is.** The second of three sub-projects that follow the grass grounding and wind pass
 ([2026-09-15-grass-grounding-and-wind-design](2026-09-15-grass-grounding-and-wind-design.md)):
@@ -13,11 +13,11 @@ in [2026-09-15-grass-and-trail-realism](2026-09-15-grass-and-trail-realism.md) �
 
 It carries the one level-id release of the series: the tread narrows and sinks in the sim, and a
 ninth clutter class puts litter along the margin. Everything else is renderer-only. Every value
-is a starting point; the browser gates tune them and the tests pin the shapes.
+is a starting point; the browser checks tune them and the tests pin the shapes.
 
-## 1. Rulings
+## 1. Decisions
 
-| Question | Ruling |
+| Question | Decision |
 | --- | --- |
 | Does the sim carry the bench? | Yes. The tread narrows to a footpath and sinks 6 cm with a short ramp, so feet, the clipmap and the paint agree. The level id moves once, through the tunables the digest already covers. |
 | Where do the litter meshes come from? | Existing models scaled down: `clutter.rock_a`/`rock_b` at pebble scale, `clutter.driftwood` at twig scale. A dedicated model can replace them later without touching the level id. |
@@ -234,10 +234,10 @@ ordinary `CLUTTER_SINK` to break coplanarity.
 - `client/test/architecture.test.ts` lists `trailBenchParams.ts` as Babylon-free;
   `shaderHygiene.test.ts` unchanged.
 
-## 8. Browser gates
+## 8. Browser checks
 
 Branch beside a control build at the base, paired in both orders, one page at a time, the
-gate hooks reverted before commit. The control stills for the trail are the daylight set
+debug hooks reverted before commit. The control stills for the trail are the daylight set
 taken on 2026-09-16 at the TRAIL viewpoint (noon, 16 h, rain; along and down).
 
 1. **The trail at noon, 16 h and in rain**, along and down: the four bands, the ragged edge,
@@ -248,7 +248,7 @@ taken on 2026-09-16 at the TRAIL viewpoint (noon, 16 h, rain; along and down).
    trampled cards leaning away.
 5. **Frame pairs** at the trail and the meadow, at 4× pixels and at the low tier's 1.5×.
 
-Success is the owner's read of the pairs plus no regression on any pair.
+Success is the pairs reading right by eye, plus no regression on any pair.
 
 ## 9. Fallbacks
 
@@ -264,7 +264,7 @@ core), then the 0.4 m edge octave. If the sink reads as a trench at the 1 m ring
   most), once the graph exposes a walked-count per edge.
 - Blade clumps (sub-project 3) should respect the trampled band the same way the cards do.
 
-## 11. Amendments (from the browser gates)
+## 11. Amendments (from the browser checks)
 
 **§5, the bench colours.** The core and margin colours take the ground's vertex colour at
 `TRAIL_BENCH_SHADE = 0.6` (`mix(1, vertexColour, 0.6)`) instead of the material's white constant:

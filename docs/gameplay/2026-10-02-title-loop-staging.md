@@ -1,7 +1,7 @@
 # The title loop, as staged and measured
 
 **Date:** 2026-10-02
-**Design:** [`2026-10-01-title-loop.md`](2026-10-01-title-loop.md). **Plan:** [`2026-10-01-title-loop-plan.md`](2026-10-01-title-loop-plan.md).
+**Design:** [`2026-10-01-title-loop.md`](2026-10-01-title-loop.md).
 
 Measured on an Apple M4 Mac (macOS 26.6.2), Chrome 154, the title scene drawn on WebGPU at the
 high tier, the world `hollow` in the overcast at the held hour 15.

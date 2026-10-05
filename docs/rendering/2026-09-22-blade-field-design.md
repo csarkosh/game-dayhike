@@ -1,6 +1,6 @@
 # The blade field: design
 
-**Status:** design, ruled 2026-09-22. Implementation plan to follow.
+**Status:** design, decided 2026-09-22.
 
 **What this is.** The fourth pass of the grass series, after the grass floor
 ([2026-09-16-grass-floor-design](2026-09-16-grass-floor-design.md)), the trail bench
@@ -14,12 +14,12 @@ continuous rather than a coin flip per cell, in three distance tiers, of several
 with wildflowers among them, coloured like a meadow, handing off to the cards at the carpet's
 own 18 m seam.
 
-Renderer-only: no sim change, no level id. Every value is a starting point; the browser gates
+Renderer-only: no sim change, no level id. Every value is a starting point; the browser checks
 tune them and the tests pin the shapes.
 
-## 1. Rulings
+## 1. Decisions
 
-| Question | Ruling |
+| Question | Decision |
 | --- | --- |
 | Where does the dense grass appear? | Wherever the floor is grass: a near-field lattice gated by the sim's own grass gate (`clutterDensity(seed, CLUTTER_GRASS, x, z)`, read-only). Dense on meadows, fields and roadsides; short and thin under canopy; absent on rock, sand, the trail bed and above the grass line. |
 | How is a thin spot drawn? | Continuously: a cell's gate sets how much grass it draws (blade count and height), not whether it draws. Only cells under a small floor draw nothing. |
@@ -197,7 +197,7 @@ changes.
 
 | tier | blades | notes |
 | --- | --- | --- |
-| high | full counts | the +2 ms gate |
+| high | full counts | the +2 ms bar |
 | medium | half counts | its own frame pair at the meadow |
 | low | none | cards as shipped, including the meadow's near cards |
 
@@ -227,12 +227,12 @@ only; its `update(camX, camZ)` runs every frame and rebuilds on its own 1 m cros
   no blade bucket remains.
 - `architecture.test.ts`: `bladeField.ts` and `bladeClump.ts` Babylon-free.
 
-## 10. Browser gates
+## 10. Browser checks
 
 Against the shipped build at the branch base, seed `atmo`, the trail-bench rig with the tier
 hook: MEADOW, EDGE, TRAIL, DEEP, plus **TRAILSIDE** (263.9, 85.77, 118) yaw 0.6 pitch 0.25
 under `weather mist`, the pose that reproduced the report, and any pose reproduced from a
-`/snapshot` JSON the owner supplies.
+supplied `/snapshot` JSON.
 
 1. **Stills** at noon, 16 h, mist and rain: a continuous sward on grassy ground, thin and
    short under canopy, gone on the trail bed and rock; tussocks, weeds and flowers visible

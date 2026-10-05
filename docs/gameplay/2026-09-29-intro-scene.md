@@ -265,7 +265,7 @@ frames are captured and encoded is the asset repository's tooling and is not wri
   about 60 to 65 s; at 25 Mbps under 30 s; on the lines below the floor the held frame and the
   bar cover the rest. The connection medians are far above the floor.
 - Egress: the video's bytes per play times plays per month against the hosting plan's rate, as a
-  number in the plan, not a guess.
+  recorded number (§8.5), not a guess.
 - Mesh compression of the models (the glTF mesh compressions usually halve them; gzip takes
   23 percent off) is the lever outside this spec that moves every row of that table.
 - The title page: under 1.5 MB on first load.

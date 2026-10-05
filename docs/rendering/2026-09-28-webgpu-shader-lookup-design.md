@@ -1,9 +1,8 @@
 # WebGPU shader lookup: design
 
 **As built, 2026-09-28.** The lookup layer, the browser's store and the
-recorder, on `worktree-webgpu-wgsl`, and the translations made at build time
-and shipped as the lookup's first source (§5.2), on
-`worktree-webgpu-wgsl-map`, behind the WebGPU engine's off switch
+recorder, and the translations made at build time and shipped as the
+lookup's first source (§5.2), behind the WebGPU engine's off switch
 (`WEBGPU_ENABLED = false`, so reached only with `?engine=webgpu`). Nothing
 here but the lookup and the store has yet been measured in a browser (their
 first readings are in §8): §8 says what has to be, and §9 the

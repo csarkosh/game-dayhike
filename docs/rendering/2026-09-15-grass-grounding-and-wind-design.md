@@ -1,8 +1,8 @@
 # Grass grounding and one wind: design
 
-**Status:** design, ruled 2026-09-15. Implementation plan to follow.
+**Status:** design, decided 2026-09-15.
 
-**What this is.** The first pass on the owner's complaint that the grass and the trails read as
+**What this is.** The first pass on the complaint that the grass and the trails read as
 flat and game-like. The research is in
 [2026-09-15-grass-and-trail-realism](2026-09-15-grass-and-trail-realism.md); this document
 records the decisions and the design, not the evidence. Its diagnosis is that the flat read is a
@@ -10,15 +10,15 @@ grounding failure, not a triangle-count one, so this pass changes what a card *i
 tinted, rounded, backlit) and what moves it (one wind field the whole world reads) without
 changing its geometry. The trail bench and opaque blade clumps are follow-ups.
 
-Every value below is a starting point. The browser gates tune them; the tests pin the shapes.
+Every value below is a starting point. The browser checks tune them; the tests pin the shapes.
 
-## 1. Rulings
+## 1. Decisions
 
-| Question | Ruling |
+| Question | Decision |
 | --- | --- |
 | Scope | Packages A (ground the cards) and B (one wind) from the research, plus removing the pulsing "eerie air" audio bed. Package C (the trail as a bench) and D (blade clumps) are follow-ups. |
 | The pulsing hum | The two detuned sines are removed outright. Under mist the wind bed sits lower and slower instead, so eerie stays distinct from clear without a tone. |
-| Trees | The near LOD rings sway from the same field at a tree amplitude, gated on the paired deep-forest frame time. Shadow casters stay static. |
+| Trees | The near LOD rings sway from the same field at a tree amplitude, conditional on the paired deep-forest frame time. Shadow casters stay static. |
 | Dread | Wind follows the weather only. Dread's pull on the wind and its sound is issue #15. |
 | Architecture | One foliage plugin (vertex and fragment) fed by a Babylon-free `windParams.ts`, one new per-instance attribute written in the existing clutter rebuild, and a small second plugin for translucency on the `skin.ts` idiom. No custom shader material. |
 | Wind on clear | A light breeze. `clear` was never the wind's identity: today everything moves at one strength regardless of weather. |
@@ -35,7 +35,7 @@ Every value below is a starting point. The browser gates tune them; the tests pi
 - One wind. A gust is one event that crosses grass, shrubs, understory, crowns, motes, mist and
   rain together and swells the wind sound as it passes. The field leans permanently and the
   oscillation rides on the lean, so it reads as pressure, not vibration.
-- Frame time within the 60 Hz contract on the four gate viewpoints, branch beside main.
+- Frame time within the 60 Hz contract on the four viewpoints of §10, branch beside main.
 - Nothing seeded, nothing in `sim/`, no level-id change, no new `discard`.
 
 **Non-goals.** Blade geometry, the trail edge, trampling memory, wind under dread, moving shadow
@@ -277,9 +277,9 @@ The plugin runs on all three tiers: it is vertex work plus a few fragment ALU, a
 material colour path is unaffected because the tint is applied to `surfaceAlbedo` before image
 processing. Translucency is on all tiers for the same reason.
 
-If the deep-forest gate misses 60 Hz with the branch and holds it with tree sway disabled, the
+If the deep-forest check misses 60 Hz with the branch and holds it with tree sway disabled, the
 fallback ladder is: trees on LOD0 only (the `attachFoliage` on LOD1 skipped), then trees off; the
-cards keep everything. If the open-meadow gate regresses, the suspects in order are the
+cards keep everything. If the open-meadow check regresses, the suspects in order are the
 five-player loop (drop to the local player) and the translucency plugin (off on medium and low).
 
 The plugin is GLSL-only and silently dropped on WebGPU, as every plugin in the repo is.
@@ -314,11 +314,11 @@ The plugin is GLSL-only and silently dropped on WebGPU, as every plugin in the r
   `windPlugin.ts` gone.
 - `shaderHygiene.test.ts` covers the four new `.fx` files by its glob.
 
-## 10. Browser gates
+## 10. Browser checks
 
 Branch beside main on two ports, both builds seeded with the same world, paired samples in both
 orders, warm-up before every sample, the vsync cap checked, hardware scaling 0.5 for the frame
-pairs. Success is the owner's read of the paired frames and clips plus no regression on any pair.
+pairs. Success is the paired frames and clips reading right by eye, plus no regression on any pair.
 
 1. **Open meadow, noon, clear and rain.** Still frames for grounding (tint, root darkening,
    no black cards, backlight with the sun low behind the grass at 17 h as a bonus frame) and a
@@ -329,7 +329,7 @@ pairs. Success is the owner's read of the paired frames and clips plus no regres
 3. **The trail at eerie 20 h, lamp on.** Eerie still reads with the air bed gone (the wind bed
    lower and slower); the lamp lights swaying grass without artefacts; the per-instance tint
    does not fight the dread grade.
-4. **Deep forest, 12 h.** The tree-sway frame gate. Fallback ladder per §8.
+4. **Deep forest, 12 h.** The tree-sway frame check. Fallback ladder per §8.
 
 Also: the audio checked by ear at clear, mist and eerie with the clip playing, and a `/wind 0`
 frame to confirm everything stands still and the sound is a steady low bed.

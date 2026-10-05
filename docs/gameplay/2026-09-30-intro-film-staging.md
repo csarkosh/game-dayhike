@@ -1,8 +1,8 @@
 # The intro with the film's own models, as it looks on the scene route
 
 **Date:** 2026-09-30
-**Commit:** on `worktree-intro-assets` after `f42838e` (main `65ed63e` plus part 3).
-**Spec:** [`2026-09-29-intro-scene.md`](2026-09-29-intro-scene.md), §2, §3 and §6. **Plan:** [`2026-09-30-intro-scene-plan-3.md`](2026-09-30-intro-scene-plan-3.md), Task 8.
+**Commit:** on `worktree-intro-assets` after `f42838e` (main `65ed63e` plus the film's car and ranger).
+**Spec:** [`2026-09-29-intro-scene.md`](2026-09-29-intro-scene.md), §2, §3 and §6.
 **Machine:** Apple M4, Chrome 154 headed through DevTools, the dev server, a 1200 by 736 viewport at twice the pixels, `?tier=high`. `dayhikeScene.engine()` reads `"webgpu"`.
 **Models:** `intro.car` (wheels, steering wheel, driver's door, handset and cradle as parts, the cab inside) and `intro.ranger` (ten clips). The frames are in the look's archive outside the repository.
 

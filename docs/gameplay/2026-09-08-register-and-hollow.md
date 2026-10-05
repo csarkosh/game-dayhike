@@ -2,8 +2,8 @@
 
 **Date:** 2026-09-08
 **Status:** Design agreed. Sub-projects A, G1 and T are built; the rest are not (§17).
-Implementation planning happens separately; this document deliberately contains no
-tasks, phases, or file-level plan.
+This document is the design alone; it deliberately contains no
+build steps, phases, or file-level breakdown.
 
 ## 0. What this document is
 
@@ -282,7 +282,7 @@ and **the input bit becomes Interact**: same wire, new verb, nothing to rip out.
 
 **Death and rejoining is the one hole this design has not closed.** Contact kills and there
 is no rescue, so one death early means spectating the rest of the run — the most common way
-a co-op horror game stops being played. The mechanism to fix it is already approved for
+a co-op horror game stops being played. The mechanism to fix it is already part of the design for
 another reason: a dead player **rejoins as a new hiker emerging from the forest**, which is
 the join path above, reused. It is diegetically correct rather than a concession. What a
 death should *cost* is open (§13).
@@ -382,7 +382,7 @@ Three pieces are genuinely new. Everything else leans on systems that already ex
 
 ## 15. What already exists to build on
 
-Recorded so the plan does not rebuild any of it.
+Recorded so none of it is built again.
 
 | Need | What is already there |
 | --- | --- |
@@ -430,7 +430,7 @@ with the design. Letters are the ones the sub-project specs use.
 
 **Order:** A → G1 → T → B → C is the vertical slice (T added 2026-09-11 — B places the register on T's graph) — the game with placeholders, and the earliest
 point at which the loop can be judged. Then D, F, E, P, H, I, J (P added 2026-09-15: it pairs with
-permanent death, so it follows C, which is what kills anybody). Nothing gates a sub-project any
+permanent death, so it follows C, which is what kills anybody). No open dial holds back a sub-project any
 more: §13.1 was decided on 2026-09-15.
 
 Two facts agreed at the same time that later sub-projects should not rediscover: the trail graph

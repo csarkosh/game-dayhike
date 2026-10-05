@@ -5,10 +5,9 @@ what was measured (§5.10); nothing else yet. This is the design as written on 2
 builds on the near-grass work
 ([2026-09-25-near-grass-fullness-design](2026-09-25-near-grass-fullness-design.md)
 and its verification), which merges to `main` before any code here starts;
-every "control" below is `main` at that merge. The plan
-([2026-09-26-grass-frame-reclaim-plan](2026-09-26-grass-frame-reclaim-plan.md))
-builds four steps in order, each behind its own gate, and runs a bounded WebGPU
-spike beside them on its own branch. When the work lands, this paragraph is
+every "control" below is `main` at that merge. Four steps are built in order,
+each behind its own gate, with a bounded WebGPU spike run beside them on its
+own branch. When the work lands, this paragraph is
 rewritten to say which steps shipped and with what values; the sections below
 stay the design as written.
 
@@ -248,14 +247,14 @@ from the mid crop for that reason as well as for its cover (§6.1).
 Step 2 changes the ground past 24 m, which neither crop sees. A **far crop**
 (ground ≈ 30–38 m) is added at both poses, placed as the others were: the ground
 distance projected through the camera, then the rectangle drawn back onto the
-still and checked to lie on the sward, clear of trunks and props. Task 1 records
+still and checked to lie on the sward, clear of trunks and props. The baseline records
 it as a literal beside the others. It carries no bar of its own; step 2's gate
 compares it with the control (§6.6).
 
 ### 4.3 The control
 
 `main` at the merge of the near-grass work, which is build A of its fourth
-gate. Task 1 reproduces the table above to within 0.02 of cover ratio before
+gate. The baseline reproduces the table above to within 0.02 of cover ratio before
 anything else is measured.
 
 ### 4.4 Attribution on one page: the profile
@@ -263,9 +262,9 @@ anything else is measured.
 The pair method (§12.3) measures a build against a build. It cannot say which
 layer a millisecond belongs to. An in-page profile of the canopy pose on the
 near-grass tip (build A) against the control, at native and 4× pixels, did that,
-and its figures are this design's baseline; Task 1 pins them in the
-verification note as literals and confirms them with one short-page run rather
-than measuring them again.
+and its figures are this design's baseline, pinned in the
+verification note as literals and confirmed with one short-page run rather
+than measured again.
 
 **Its method.** Each condition toggled on and off every 1.5 s for six cycles
 (eight in a long-page run), alternating which state goes first; three
@@ -304,7 +303,7 @@ The filter is §5.2's mechanism done once on the page: each bucket's
 buffers rewritten to its in-view instances and the count set. It is the most
 culling can give, and the bar is set at its reliable figure.
 
-The layers the profile toggled, and Task 1's confirmation run toggles:
+The layers the profile toggled, and the baseline's confirmation run toggles:
 
 | layer | meshes |
 | --- | --- |
@@ -332,7 +331,7 @@ That mechanism, done every frame the view moves, is step 1:
 
 1. **Step 1a: the blade field's 36 buckets and the grass class's 4, filtered
    to the frustum** (§5.2). Not conditional.
-2. **Step 1b: the meadow's two buckets, by the same filter**, only if Task 2's
+2. **Step 1b: the meadow's two buckets, by the same filter**, only if step 1's
    gate, with 1a in, measures the meadow's filter saving at native at
    ≥ 0.15 ms by the profile's toggle method.
 3. **Step 1c: sector meshes** (§5.6–§5.9), the fallback, only if the filter's
@@ -746,7 +745,7 @@ blades still saves 0.88–0.94 ms at the canopy pose, of the 1.20 ms they cost
 unculled, and hiding the grass class 0.11 of its 0.43. The blades the camera
 sees carry what the frame still spends, and no culling reaches them. The next
 target, before step 2, is those blades, by levers that leave every blade in
-its place (plan Task 2D):
+its place:
 
 1. **Fewer rings per blade in the mid and coarse tiers.** Every blade is
    `BLADE_RINGS` = 3 cross-sections below its tip, 7 vertices and 5 triangles,
@@ -767,8 +766,8 @@ its place (plan Task 2D):
    pull, and taking it early means taking step 2 early, whole.
 
 Which of the vertex or fragment stage the in-view blades spend is not known
-(§3.3); Task 2D measures that split first, then each lever by the toggle
-method, and keeps a lever only on a measured saving with fullness inside the
+(§3.3); that split is measured first, then each lever by the toggle
+method, and a lever is kept only on a measured saving with fullness inside the
 control's spread at both poses.
 
 ## 6. Step 2: the far sward on the terrain
@@ -1093,8 +1092,7 @@ whether the route pays here, and what it would cost to take.
   WebGPU as a default or a shipped option; Safari, which removed timestamp
   queries; any change on `main`.
 
-Its own worktree and branch (`worktree-grass-webgpu`), from `main` after
-step 1 lands, so its control carries the frustum filter.
+Its own branch, from `main` after step 1 lands, so its control carries the frustum filter.
 
 ### 9.3 The engine first
 

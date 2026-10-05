@@ -15,9 +15,9 @@ is.
 It is the fourth of four concurrent world-richness sub-projects and touches
 none of the others' files.
 
-## 1. Rulings
+## 1. Decisions
 
-| question | ruling |
+| question | decision |
 | --- | --- |
 | A sighting | An animal on screen: inside the view within its species' notice distance, not fogged, not behind terrain, for at least a second. Calls heard but not seen do not count |
 | The cadence | A jittered target gap of 5–10 s that relaxes when it should: longer when the player stands still and at night, and quiet during the chase and whenever the Hollow is near |
@@ -36,7 +36,7 @@ Goals:
   last species.
 - No animal is ever seen appearing or disappearing.
 - The woods go still when the horror needs them to.
-- The rule is measurable: the director keeps a log a gate can histogram.
+- The rule is measurable: the director keeps a log a check can histogram.
 
 Non-goals:
 
@@ -177,10 +177,10 @@ files:
   world; the eight-candidate cover search giving up cleanly;
 - the thousand-second seeded drive, over seven seeds and four player models:
   the invariant asserted on every event of all four, and on the two graded
-  models the gaps' WHOLE distribution against §10's gate — the median inside
+  models the gaps' WHOLE distribution against §10's check — the median inside
   the band, most gaps inside it, nothing over `GAP_CEILING` either among the
   gaps the player walked through or among all of them, and no stretch longer
-  than that with nothing on screen at all. A median alone is not the gate: one
+  than that with nothing on screen at all. A median alone is not the check: one
   has sat inside the band over a distribution with a quarter of its gaps past
   twenty seconds and a worst case of ninety-six;
 - recycling preferred over spawning when a unit is available; removal only
@@ -198,7 +198,7 @@ files:
   less than the runner's own churn, and GC-event counts and the sampling heap
   profiler both read zero either way.
 
-## 10. Gates
+## 10. Checks
 
 In the game, against `main`:
 
@@ -210,12 +210,12 @@ In the game, against `main`:
   0.14 rad/s, 6.8 at 0.44 and 3.8 at 0.8, so a player who turns a lot gets a
   shorter median from unchanged code. A median under the band is therefore only
   excused **if the same log shows a high yaw rate** — at an ordinary one it is
-  over-cueing, and it is a regression. This is a condition on the gate, not a
+  over-cueing, and it is a regression. This is a condition on the check, not a
   second band: 5–10 s remains the number, and "a lively player" is not an
   explanation anyone may reach for without the yaw rate to back it;
 - the same walk at night showing the gaps stretched by about 2.5;
 - a chase segment with zero cues in the log;
-- the log reviewed for any event the invariant flagged — there must be none;
+- the log read through for any event the invariant flagged — there must be none;
 - stills: a butterfly over the meadow, a squirrel breaking cover, a deer at
   the tree line;
 - the 4× pixel pair at TRAIL and MEADOW within noise; the native cap check.

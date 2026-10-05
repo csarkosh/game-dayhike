@@ -227,7 +227,7 @@ exactly a headlamp.
 
 The parent design already has an escalation scalar (task completion and leaving the
 trail), one persistent Hollow that must read from far away, a headlamp, retroreflective
-tape and a planned dread stack. The survey maps onto each:
+tape and a dread stack still to be built. The survey maps onto each:
 
 - **The scalar drives rate and severity, not amplitude.** Whispers and misleading
   one-shots on a rate curve and a severity curve (Phasmophobia, Visage); the screen warp
@@ -312,7 +312,7 @@ discussion to pick from.
 4. **A letterbox** as both a film cue and a resolution rebate, if the post chain needs the
    headroom.
 
-Open questions for the owner:
+Open questions:
 
 - Does the outline pass go entirely, or survive as an optional `/style`?
 - Is the Hollow allowed a hue of its own (Control's one-meaning red), given the model
@@ -320,8 +320,7 @@ Open questions for the owner:
 - Which quality tier is the reference for the 2 ms post budget?
 
 Fuller per-game notes, with every fetched URL and the list of what could not be verified,
-are archived outside the repository at
-`~/Projects/fps-sdd-archive/2026-09-15-shader-restyle-research/` (three files: photoreal
+are archived outside the repository (three files: photoreal
 atmosphere, horror mechanics, Babylon feasibility).
 
 ## Sources

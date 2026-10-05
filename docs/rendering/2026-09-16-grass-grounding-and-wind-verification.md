@@ -1,14 +1,14 @@
 # Grass grounding and one wind: browser verification
 
-**Status:** gated 2026-09-16, against the gates `docs/rendering/2026-09-15-grass-grounding-and-wind-design.md`
-§10 lists. Branch `worktree-grass-wind` at `27eb827` (Tasks 1–8), control at the branch's base,
+**Status:** checked 2026-09-16, against the checks `docs/rendering/2026-09-15-grass-grounding-and-wind-design.md`
+§10 lists. Branch `worktree-grass-wind` at `27eb827` (the design as first built), control at the branch's base,
 `a431e5d` on `main`.
 
 ## The rig
 
 Both builds served from their own worktrees: the branch on port 5174 (signaling on 8081), the
 control on port 5175 (signaling on 8082), each with a temporary Vite port and proxy edit and the
-gate hooks (`__scene`, `__engine`, `__renderer`, `__fcSet`, `__fc`, `__lampOn`), all reverted
+debug hooks (`__scene`, `__engine`, `__renderer`, `__fcSet`, `__fc`, `__lampOn`), all reverted
 before commit. Chrome ran through the chrome-devtools CLI daemon
 (`--isolated --allowUnrestrictedPaths --headless=false`), one game page at a time, on the real
 GPU: `ANGLE (Apple, ANGLE Metal Renderer: Apple M4)`.
@@ -25,11 +25,11 @@ vitest script) so every still is directly comparable:
   the trail, lamp forced on.
 - DEEP: (159.9, eye 114.68, −234), yaw −1.078, pitch 0.05 — canopy 1.0, 79 m off the trail.
 
-Branch page checks: the gate hooks all present, `__renderer.wind()` reads speed 0.25 on clear
+Branch page checks: the debug hooks all present, `__renderer.wind()` reads speed 0.25 on clear
 (lean 0.0875, gust 0.0625), 17 materials carry `Foliage`, 9 carry `FoliageLight`, and every page
 loaded with zero console errors.
 
-## Gate 1: open meadow — PASS
+## Check 1: open meadow — PASS
 
 Clear, noon, on the control: every tuft is a black cut-out with a hard edge on a flat pale-green
 ground, trees dark. The flat, game-like read the spec set out to fix.
@@ -48,10 +48,10 @@ the fog.
 Motion, not vibration. The amplitude is modest at this pose.
 
 Tuning note: the blade cores stay darker than the ground — root darkening at 0.45 plus the
-cards' own dark texture. A lighter `rootAO`, 0.55 to 0.6, is the first lever if the owner wants
-paler tufts.
+cards' own dark texture. A lighter `rootAO`, 0.55 to 0.6, is the first lever if paler tufts
+are wanted.
 
-## Gate 2: forest edge, 14 h — PASS
+## Check 2: forest edge, 14 h — PASS
 
 Control: dark, near-black tufts under the treeline shadow.
 
@@ -59,18 +59,18 @@ Branch: the tufts read pale grey-green and lit; the meadow reads continuous up t
 canopy shadow still falls on the ground as before.
 
 Tuning note: the tufts are on the pale side here, from the ground tint under the canopy palette
-running light. Acceptable, worth an owner look.
+running light. Acceptable, worth a second look.
 
-## Gate 3: the trail at eerie 20 h, lamp on — PASS
+## Check 3: the trail at eerie 20 h, lamp on — PASS
 
 Branch and control are near-identical: the lamp pool on the bed, the bush beside it, rain
 streaks, the dark green-grey night. The eerie read survives the removal of the air bed. Visual
 only — audio was not checked by ear in this rig.
 
-## Gate 4: deep forest, clear 12 h — PASS (visual)
+## Check 4: deep forest, clear 12 h — PASS (visual)
 
 Branch and control are near-identical; the understory ferns read slightly lighter, from the
-ground tint. Tree sway is not judged from a still frame — the frame-time pair below is the gate,
+ground tint. Tree sway is not judged from a still frame — the frame-time pair below is the check,
 and it clears without the fallback ladder.
 
 ## /wind 0
@@ -104,7 +104,7 @@ orders.
 
 Verdict: the branch costs about +1 to +5 ms at 14 Mpx on the fill-heaviest views (meadow, edge)
 — the added fragment work on grass cards: the ground tint, the normal blend, the wrap diffuse.
-Scaled to native 1080p (2 Mpx) that is well under 1 ms. The deep-forest pair — the tree-sway gate
+Scaled to native 1080p (2 Mpx) that is well under 1 ms. The deep-forest pair — the tree-sway check
 — is within noise in both orders (+2.8, −0.5), so the fallback ladder in §8 is not needed. Both
 builds sit far off the 16.7 ms cap only because of the 4x pixel load from hardware scaling; at
 native resolution both are vsync-locked at this pose. PASS.
@@ -112,11 +112,11 @@ native resolution both are vsync-locked at this pose. PASS.
 ## Unverified in this rig
 
 - The wind bed and the removed air tone by ear, at clear, mist and eerie. The rig took stills and
-  frame-time samples only; the owner should confirm the audio.
+  frame-time samples only; the audio is still to be confirmed by ear.
 - A 10 s motion clip at the forest edge — only the meadow got a `/wind 100` strip.
 - The low tier's 1.5x hardware-scaling frame pair.
 
-## Re-gate after the fix wave
+## Re-check after the fixes
 
 - The understory now carries a real per-instance `foliage` buffer and the shader ignores tint
   data that is absent, so the understory was re-shot: a deep-forest pose at clear 12 h, pitched
@@ -126,8 +126,8 @@ native resolution both are vsync-locked at this pose. PASS.
   amplitude is now a fraction of the drawn height rather than the model height. At the forest
   edge the crown silhouettes and the tufts shift visibly between frames. In deep forest the
   understory fronds move and the trunks stay planted; the canopy motion is subtle at that pose.
-  Pass, with the owner's in-game read at `/wind 100` as the final word on the amplitude.
-- The meadow `/wind 100` strip in gate 1 predates that change; grass cards draw at 0.74 to 1.49
+  Pass, with an in-game read at `/wind 100` as the final word on the amplitude.
+- The meadow `/wind 100` strip in check 1 predates that change; grass cards draw at 0.74 to 1.49
   times model scale, so their amplitude changed by at most that factor.
-- The full suite was green on an idle machine before the fix wave (client 1724 tests, server 92,
-  tools 70) and is re-run after it; the result is recorded in the commit that lands the branch.
+- The full suite was green on an idle machine before the fixes (client 1724 tests, server 92,
+  tools 70) and is re-run after them; the result is recorded in the commit that lands the branch.

@@ -35,7 +35,7 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `_infra/test-rig-aws-windows/` | Terraform for a rented Windows machine with an NVIDIA GPU on AWS, run only on the days frame times are measured on it. The root a person runs: backend, provider, one call of `_infra/modules/aws-test-rig-windows/` (the resources and the start-up script), `moved.tf` (the addresses from before the resources moved there), the probe for its first run and the tests. Its own state, not called from `_infra/main.tf`: nothing in it can touch `_infra/`'s resources. |
 | `_infra/test-rig-gcp-windows/` | Terraform for a rented Windows machine with an NVIDIA GPU on Google Cloud, run only on the days frame times are measured on it. The root a person runs: backend, providers, one call of `_infra/modules/gcp-test-rig-windows/` (the resources and the start-up script), `moved.tf` (the addresses from before the resources moved there), the probe for its first run and the tests. Its own state, not called from `_infra/main.tf`: nothing in it can touch `_infra/`'s resources. |
 | `_infra/test-rig-scaleway-mac/` | **Incomplete, never applied.** Terraform for Apple silicon Macs rented by the day from Scaleway. The root a person runs: backend, provider, one call of `_infra/modules/scaleway-test-rig-mac/` (the resources, the set-up script and the script that asks Scaleway's API directly), and the probe for its first day. Its README's first section says where it stands, the known gaps and how to pick it up; `plan` refuses to run until `acknowledge_incomplete` is set. Its own state (it holds each Mac's admin password), not called from `_infra/main.tf`: nothing in it can touch `_infra/`'s resources or either Windows machine. |
-| `docs/` | Research notes, specs, plans and design docs, grouped by subject (`docs/rendering/`, …). Every file is named `YYYY-MM-DD-<topic>.md`; see [Docs](#docs). |
+| `docs/` | Research notes, specs, design docs and verification notes, grouped by subject (`docs/rendering/`, …). Every file is named `YYYY-MM-DD-<topic>.md`; see [Docs](#docs). |
 | `tools/` | `deploy/` (deploy and verify scripts), `wgsl/` (the shader corpus translated to the WGSL maps the build ships, one a quality tier, and merged from recorded pages; every tool reads the corpus's files and its index of tiers through `wgsl/lib/corpus.mjs`, which checks each file's name against its bytes and the index against the files; the dev server makes the maps as it starts unless `DAYHIKE_SKIP_WGSL_MAP` is set), `vendor-ktx2.mjs`, `docs/` (the docs file-name test), and their tests. |
 | `.agents/skills/` | Agent skills. `.claude/skills` is a symlink to it so Claude Code discovers them. |
 | `.claude/settings.json` | Imports the shared skill plugins from [`csarkosh/skills-general`](https://github.com/csarkosh/skills-general); see [Skills](#skills). |
@@ -78,6 +78,8 @@ Every file committed under `docs/` is named `YYYY-MM-DD-<topic>.md`:
 
 `tools/docs/test/docNames.test.mjs` fails `npm test` if any file under `docs/` breaks this rule.
 
+A doc describes the game and how it is built, never how the work on it was organised. Implementation plans, step lists and working notes are not committed: keep them under `.superpowers/`, which is gitignored. A design doc records what was built in its own terms (an "As built" section, or the amendments as they landed), never by pointing at a step of a plan.
+
 ## Skills
 
 This repository's own skills, in `.agents/skills/`:
@@ -87,7 +89,7 @@ This repository's own skills, in `.agents/skills/`:
 
 Shared skills, imported from the [`csarkosh/skills-general`](https://github.com/csarkosh/skills-general) plugin marketplace rather than copied here:
 
-- `general:doc-preview` — opening a repo document (spec, plan, research note, design doc) as a styled page in Chrome on this machine, without publishing it. Claude Code and Codex.
+- `general:doc-preview` — opening a repo document (spec, research note, design doc) as a styled page in Chrome on this machine, without publishing it. Claude Code and Codex.
 - `general-claude:doc-artifact` — publishing a repo document as a claude.ai Artifact. Claude Code only.
 
 To change a shared skill, change it in `skills-general`, not here. Claude Code reads the import from `.claude/settings.json`; on a machine that has never installed the plugins, run `claude plugin install general@csarkosh` and `claude plugin install general-claude@csarkosh` once. Codex has no per-repository import, so install once per machine with `codex plugin marketplace add csarkosh/skills-general` and `codex plugin add general@csarkosh`.

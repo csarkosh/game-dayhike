@@ -1,6 +1,6 @@
 # Blade clumps near the eye: verification
 
-**Spec:** [2026-09-16-blade-clumps-design](2026-09-16-blade-clumps-design.md). **Plan:** [2026-09-16-blade-clumps-plan](2026-09-16-blade-clumps-plan.md).
+**Spec:** [2026-09-16-blade-clumps-design](2026-09-16-blade-clumps-design.md).
 
 ## Tests
 
@@ -9,19 +9,19 @@ tools 8 files / 70 tests. New: `bladeClump.test.ts` (9), and the blade cases in
 `clutterField.test.ts` (6), `foliagePlugin.test.ts` (two new cases, three existing cases
 extended), `clutterMeshes.test.ts` (5), `post.test.ts` (2).
 
-## Browser gates
+## Browser checks
 
 The branch merged after `dd8c6fb` against control `dd8c6fb` (the branch base), same seed
 (`atmo`), weather and hour on both.
 
-| Gate | Result |
+| Check | Result |
 | --- | --- |
 | Stills at MEADOW, EDGE, TRAIL, DEEP, noon and 16 h; rain on the trail | PASS. The near field is full, splayed blade clumps that match the card's height; the trail's blades splay beside the bench; DEEP has no meadow and is unchanged. One seam noted: beyond 12 m the meadow cards read darker than the blades because the card texture reads dark once minified (see the spec's amendments). |
 | The hand-off: floor crop across 7.5–12 m; two stills 3 m apart; the `/wind 100` strip | PASS. No pop between the two crops; blades and cards lean with the one wind. |
 | Frame pairs, high tier native, all four poses, both orders, p95 | At 3× pixels: meadow control 16.67 ms (on the vsync cap) against the branch's 22.0–25.0 ms; edge 21.9 against 26.5–28.4 ms; deep (no meadow, so MSAA alone) 24.9 against 28.4–29.1 ms. Both orders agree within 0.4 ms. |
 | Frame pairs, medium tier native, MEADOW and DEEP | At 4× pixels: meadow 33.7 against 41.2 ms; deep 37.1 against 41.1 ms. |
 | Low tier sanity pair at MEADOW | At 4× pixels: 30.9 against 30.8 ms, unchanged. |
-| Console errors, both builds, both paths | Zero on all 26 gate pages; the scene pass reports 4 samples on every branch page. |
+| Console errors, both builds, both paths | Zero on all 26 check pages; the scene pass reports 4 samples on every branch page. |
 
 Fill-bound costs scale with the pixel count: at native resolution the package costs about
 0.9 ms for the multisampling and 1.0–1.5 ms for the blades with shadow receiving at the meadow,
