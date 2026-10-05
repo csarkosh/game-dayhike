@@ -14,6 +14,7 @@ import { fbm2, hash3 } from "./field.js";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
 import { TRAIL_CLEAR } from "./trail.js";
 import { shoreStrip, STRIP_FOREST_FLOOR, STRIP_LIFT } from "./shoreStrip.js";
+import { facingDir } from "./facing.js";
 
 // ---- Tunables (every one of these must appear in VEGETATION_TUNABLES) ------
 /** Below this altitude (m) the treeline gate is fully open. Re-anchored for
@@ -105,9 +106,25 @@ export const LOG_SHARE = 0.05;
  * valley-bottom giants run taller still, which is also the real pattern. */
 export const GIANT_SCALE_MIN = 2.8;
 export const GIANT_SCALE_MAX = 4.1;
-/** Deadwood scale spread: ~1.5-2x a 4.1 m model gives a 6-8 m snag or log. */
+/** Snag scale spread: ~1.5-2x a 4.1 m model gives a 6-8 m snag. */
 export const DEADWOOD_SCALE_MIN = 1.5;
 export const DEADWOOD_SCALE_MAX = 2;
+/** A fallen log's scale spread. An old-growth log is over a metre through
+ * and many metres long: 2.2-3.4x the 4.05 m, 0.45 m model is a log 9 to 14 m
+ * long and 1 to 1.5 m through, and the valley's boost takes the largest to
+ * 17 m and 1.9 m. */
+export const LOG_SCALE_MIN = 2.2;
+export const LOG_SCALE_MAX = 3.4;
+/** Half the model's length along its trunk (m at scale 1), which the
+ * renderer lays along the yaw `hash` gives. */
+export const LOG_HALF_LENGTH = 2.1;
+/** No part of a log lies within this of a trail's centreline (m), nor
+ * within LOG_ROAD_CLEAR of the road's: a tree that would fall across either
+ * stands dead instead. The log is tested at LOG_SPAN_STATIONS places along
+ * each half of its length. */
+export const LOG_TRAIL_CLEAR = 3;
+export const LOG_ROAD_CLEAR = 9;
+export const LOG_SPAN_STATIONS = 3;
 
 // Salts stay module-private and out of the tunables — the montane convention.
 const RAG_SALT = 0x4e57;
@@ -205,6 +222,33 @@ export type TreeInstance = {
   hash: number;
 };
 
+/** The unit direction a log lies along, from its `hash`: the renderer turns
+ * the model's +X by the yaw `hash · 2π` about the vertical, which lands it on
+ * (cos yaw, −sin yaw). */
+export function logAxis(hash: number): { x: number; z: number } {
+  const yaw = hash * 2 * Math.PI;
+  const d = facingDir(yaw > Math.PI ? yaw - 2 * Math.PI : yaw);
+  return { x: d.z, z: -d.x };
+}
+
+/** Whether a log at (x, z), lying along `hash`'s axis at `scale`, would lie
+ * across a trail or the road: tested along both halves of its length. */
+function logCrossesPath(seed: number, x: number, z: number, hash: number, scale: number): boolean {
+  const variant = activeTerrainVariant();
+  if (variant.trailDistance === undefined && variant.roadDistance === undefined) return false;
+  const axis = logAxis(hash);
+  const half = LOG_HALF_LENGTH * scale;
+  for (let i = 1; i <= LOG_SPAN_STATIONS; i++) {
+    for (const side of [-1, 1]) {
+      const along = (side * half * i) / LOG_SPAN_STATIONS;
+      const px = x + axis.x * along, pz = z + axis.z * along;
+      if ((variant.trailDistance?.(seed, px, pz) ?? Infinity) < LOG_TRAIL_CLEAR) return true;
+      if ((variant.roadDistance?.(seed, px, pz) ?? Infinity) < LOG_ROAD_CLEAR) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * The tree of cell (cellX, cellZ), or null if the density gate keeps the
  * cell bare. Jittered grid: presence is Bernoulli with
@@ -243,24 +287,32 @@ export function treeInCell(seed: number, cellX: number, cellZ: number): TreeInst
     if (dead < SNAG_SHARE) cohort = COHORT_SNAG;
     else if (dead < SNAG_SHARE + LOG_SHARE) cohort = COHORT_LOG;
   }
+  const valley = 1 + (VALLEY_SCALE_BOOST - 1) * (1 - Math.min(1, groundH / TREELINE_HI));
+  const size = hash3(cellX, cellZ, 4, salted);
+  const hash = hash3(cellX, cellZ, 5, salted);
+  if (cohort === COHORT_LOG && logCrossesPath(seed, x, z, hash, (LOG_SCALE_MIN + size * (LOG_SCALE_MAX - LOG_SCALE_MIN)) * valley)) {
+    cohort = COHORT_SNAG;
+  }
 
   let scaleMin = TREE_SCALE_MIN;
   let scaleMax = TREE_SCALE_MAX;
   if (cohort === COHORT_GIANT) {
     scaleMin = GIANT_SCALE_MIN;
     scaleMax = GIANT_SCALE_MAX;
+  } else if (cohort === COHORT_LOG) {
+    scaleMin = LOG_SCALE_MIN;
+    scaleMax = LOG_SCALE_MAX;
   } else if (cohort !== COHORT_SAPLING) {
     scaleMin = DEADWOOD_SCALE_MIN;
     scaleMax = DEADWOOD_SCALE_MAX;
   }
-  const valley = 1 + (VALLEY_SCALE_BOOST - 1) * (1 - Math.min(1, groundH / TREELINE_HI));
-  const scale = (scaleMin + hash3(cellX, cellZ, 4, salted) * (scaleMax - scaleMin)) * valley;
+  const scale = (scaleMin + size * (scaleMax - scaleMin)) * valley;
   return {
     x, z, groundH,
     groundDx: ground.dx,
     groundDz: ground.dz,
     species, scale, cohort,
-    hash: hash3(cellX, cellZ, 5, salted),
+    hash,
   };
 }
 
@@ -325,5 +377,11 @@ export const VEGETATION_TUNABLES: Readonly<Record<string, number>> = {
   GIANT_SCALE_MAX,
   DEADWOOD_SCALE_MIN,
   DEADWOOD_SCALE_MAX,
+  LOG_SCALE_MIN,
+  LOG_SCALE_MAX,
+  LOG_HALF_LENGTH,
+  LOG_TRAIL_CLEAR,
+  LOG_ROAD_CLEAR,
+  LOG_SPAN_STATIONS,
   TRAIL_CLEAR,
 };

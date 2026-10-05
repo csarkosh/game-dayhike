@@ -1,6 +1,6 @@
 /**
- * The ground-clutter fields: eleven per-cell jittered scatter grids — grass, rocks, boulders,
- * driftwood, fungus, bushes, meadow carpet, flowers, litter, sword ferns, shrubs — each a pure point
+ * The ground-clutter fields: twelve per-cell jittered scatter grids — grass, rocks, boulders,
+ * driftwood, fungus, bushes, meadow carpet, flowers, litter, sword ferns, shrubs, drift logs — each a pure point
  * function of (seed, class, cell), the vegetation.ts idiom.
  * Presence is Bernoulli against a biome-keyed density; at most one instance
  * per cell per class. `hash` is a plain [0,1) draw so the RENDERER derives
@@ -35,12 +35,15 @@ export const CLUTTER_FERN = 9;
 /** The evergreen shrub layer: salal thickets behind the beach and on drained
  * slopes under the lowland canopy, huckleberry and heath below the treeline. */
 export const CLUTTER_SHRUB = 10;
-export const CLUTTER_CLASS_COUNT = 11;
+/** Drift logs: whole trunks the sea has thrown up, jumbled along the top of
+ * the beach. */
+export const CLUTTER_DRIFTLOG = 11;
+export const CLUTTER_CLASS_COUNT = 12;
 /** Reeds and cattails at a murky lake's margin and on its marsh. Placed here
  * like every class; drawn by `waterPlants.ts`, not the model-drawn clutter. */
-export const CLUTTER_REED = 11;
+export const CLUTTER_REED = 12;
 /** Yellow pond-lily pads on a murky lake's shallows; drawn by `waterPlants.ts`. */
-export const CLUTTER_LILY = 12;
+export const CLUTTER_LILY = 13;
 
 // ---- Tunables (every one appears in CLUTTER_TUNABLES) ------------
 /** Cell sides (m): at most one instance per cell per class. */
@@ -326,6 +329,24 @@ export const CLUTTER_SHRUB_SCALE_MIN = 0.55;
 export const CLUTTER_SHRUB_SCALE_MAX = 1.3;
 export const CLUTTER_SHRUB_SALT = 0x5a1a;
 export const CLUTTER_SHRUB_PATCH_SALT = 0x7a1c;
+/** Drift logs lie where storms leave them, along the top of the beach: in a
+ * band of the beach's height from ALT_LO, fading in over the next ALT_FADE,
+ * to ALT_HI, fading out over the same, within INLAND of the coast (fading
+ * out over INLAND_FADE; a bay's beach at 1:40 reaches the band's top 180 m
+ * in) and on the cove's backshore. One log in six of every ten 12 m cells of
+ * that band. */
+export const CLUTTER_DRIFTLOG_INLAND = 180;
+export const CLUTTER_DRIFTLOG_INLAND_FADE = 40;
+export const CLUTTER_DRIFTLOG_CELL = 12;
+export const CLUTTER_DRIFTLOG_D = 0.0042;
+export const CLUTTER_DRIFTLOG_ALT_LO = 2.6;
+export const CLUTTER_DRIFTLOG_ALT_HI = 4.6;
+export const CLUTTER_DRIFTLOG_ALT_FADE = 0.5;
+/** The trunk model is 4.05 m long and 0.45 m through: 6.5 to 13 m, and 0.7
+ * to 1.45 m through. */
+export const CLUTTER_DRIFTLOG_SCALE_MIN = 1.6;
+export const CLUTTER_DRIFTLOG_SCALE_MAX = 3.2;
+export const CLUTTER_DRIFTLOG_SALT = 0xd10c;
 /** Meadow carpet: the coverage lattice. One clump per
  * 0.7 m cell at saturation ≈ 2.0/m², which with a ~0.5 m clump footprint closes
  * the ground inside the class radius. Gates are the ground-cover field's
@@ -608,6 +629,7 @@ const CLASSES: readonly ClassConfig[] = [
   { cell: CLUTTER_LITTER_CELL, density: CLUTTER_LITTER_D, salt: CLUTTER_LITTER_SALT, scaleMin: CLUTTER_LITTER_SCALE_MIN, scaleMax: CLUTTER_LITTER_SCALE_MAX, variants: 3, trailClear: 0 },
   { cell: CLUTTER_FERN_CELL, density: CLUTTER_FERN_D, salt: CLUTTER_FERN_SALT, scaleMin: CLUTTER_FERN_SCALE_MIN, scaleMax: CLUTTER_FERN_SCALE_MAX, variants: 1, trailClear: CLUTTER_FERN_TRAIL_CLEAR },
   { cell: CLUTTER_SHRUB_CELL, density: CLUTTER_SHRUB_D, salt: CLUTTER_SHRUB_SALT, scaleMin: CLUTTER_SHRUB_SCALE_MIN, scaleMax: CLUTTER_SHRUB_SCALE_MAX, variants: 2, trailClear: CLUTTER_SHRUB_TRAIL_CLEAR, standsTall: true },
+  { cell: CLUTTER_DRIFTLOG_CELL, density: CLUTTER_DRIFTLOG_D, salt: CLUTTER_DRIFTLOG_SALT, scaleMin: CLUTTER_DRIFTLOG_SCALE_MIN, scaleMax: CLUTTER_DRIFTLOG_SCALE_MAX, variants: 1, trailClear: 0 },
   { cell: CLUTTER_REED_CELL, density: CLUTTER_REED_D, salt: CLUTTER_REED_SALT, scaleMin: CLUTTER_REED_SCALE_MIN, scaleMax: CLUTTER_REED_SCALE_MAX, variants: 3, trailClear: CLUTTER_REED_TRAIL_CLEAR },
   { cell: CLUTTER_LILY_CELL, density: CLUTTER_LILY_D, salt: CLUTTER_LILY_SALT, scaleMin: CLUTTER_LILY_SCALE_MIN, scaleMax: CLUTTER_LILY_SCALE_MAX, variants: 1, trailClear: 0 },
 ];
@@ -738,6 +760,21 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       // See forestDensity: the floor is what lets a CARVED talus exist on ground
       // the slope gate would leave bare.
       return Math.min(1, Math.max(raw * mask.boulder, mask.boulderFloor));
+    }
+    case CLUTTER_DRIFTLOG: {
+      // Its own reach inland and the cove, in the drift line's band of height.
+      let cove = 0;
+      if (c > CLUTTER_DRIFTLOG_INLAND) {
+        cove = variant.coveMask?.(seed, x, z) ?? 0;
+        if (c > CLUTTER_DRIFTLOG_INLAND + CLUTTER_DRIFTLOG_INLAND_FADE && cove === 0) return 0;
+      }
+      const alt =
+        smoothstep(CLUTTER_DRIFTLOG_ALT_LO, CLUTTER_DRIFTLOG_ALT_LO + CLUTTER_DRIFTLOG_ALT_FADE, s.h) *
+        (1 - smoothstep(CLUTTER_DRIFTLOG_ALT_HI, CLUTTER_DRIFTLOG_ALT_HI + CLUTTER_DRIFTLOG_ALT_FADE, s.h));
+      const inland = 1 - smoothstep(CLUTTER_DRIFTLOG_INLAND, CLUTTER_DRIFTLOG_INLAND + CLUTTER_DRIFTLOG_INLAND_FADE, c);
+      // Clear of the road's bed, as the rocks are.
+      const road = smoothstep(CLUTTER_ROCK_ROAD_NEAR, CLUTTER_ROCK_ROAD_FAR, r);
+      return alt * Math.max(inland, cove) * road;
     }
     case CLUTTER_DRIFTWOOD: {
       // The cove's backshore holds drift logs up to the road's corridor, past
@@ -1004,7 +1041,10 @@ export function clutterInRect(seed: number, cls: number, minX: number, minZ: num
  * pass's `tunables` getter spreads this, so registryDigest covers it. */
 export const CLUTTER_TUNABLES: Readonly<Record<string, number>> = {
   CLUTTER_REED, CLUTTER_LILY,
-  CLUTTER_FERN, CLUTTER_SHRUB,
+  CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_DRIFTLOG,
+  CLUTTER_DRIFTLOG_CELL, CLUTTER_DRIFTLOG_D, CLUTTER_DRIFTLOG_ALT_LO, CLUTTER_DRIFTLOG_ALT_HI, CLUTTER_DRIFTLOG_ALT_FADE,
+  CLUTTER_DRIFTLOG_SCALE_MIN, CLUTTER_DRIFTLOG_SCALE_MAX, CLUTTER_DRIFTLOG_SALT,
+  CLUTTER_DRIFTLOG_INLAND, CLUTTER_DRIFTLOG_INLAND_FADE,
   CLUTTER_FERN_CELL, CLUTTER_FERN_D, CLUTTER_FERN_OPEN, CLUTTER_FERN_CANOPY_LO, CLUTTER_FERN_CANOPY_HI,
   CLUTTER_FERN_ALT_HI, CLUTTER_FERN_ALT_HI_FADE, CLUTTER_FERN_MONTANE,
   CLUTTER_FERN_PATCH_FLOOR, CLUTTER_FERN_PATCH_WAVELENGTH, CLUTTER_FERN_PATCH_OCTAVES, CLUTTER_FERN_PATCH_LO, CLUTTER_FERN_PATCH_HI,

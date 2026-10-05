@@ -311,8 +311,8 @@ describe("clutter shell: values computed once per instance", () => {
     }
     const inRange = clutterUnique(ref.collect(CLUTTER_CAM.x + 200 * CLUTTER_GRASS_CELL, CLUTTER_CAM.z)).size;
     // Kept: the 17,932 instances in range, plus those the collector still
-    // holds past it (its 98,361 include the empty cells).
-    expect([clutter.kept, inRange, ref.size]).toEqual([37310, 17932, 98361]);
+    // holds past it (its 103,230 include the empty cells).
+    expect([clutter.kept, inRange, ref.size]).toEqual([38095, 17932, 103230]);
     vi.mocked(surfaceAlbedo).mockClear();
     expect(differences(step(CLUTTER_CAM.x, CLUTTER_CAM.z), first)).toEqual([]);
     expect(vi.mocked(surfaceAlbedo).mock.calls.length).toBe(start.size);

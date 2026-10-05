@@ -159,12 +159,6 @@
       "bytes": 570916
     },
     {
-      "id": "understory.shrub",
-      "kind": "prop",
-      "output": "models/understory.shrub.glb",
-      "bytes": 903528
-    },
-    {
       "id": "deadwood.snag",
       "kind": "prop",
       "output": "models/deadwood.snag.glb",

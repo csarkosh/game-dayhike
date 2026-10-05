@@ -407,7 +407,7 @@ function keeper(): SyncJobs & { held: Slices | null } {
  * start, with nothing prepared ahead: each loop of a rebuild yields by the
  * work it has done, so a rebuild that stops slicing, in any of its loops,
  * changes these. */
-const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 90, blades: 18, duff: 5, forest: 137 };
+const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 92, blades: 18, duff: 5, forest: 138 };
 
 /** How a walk that turns meets each shell's grid: its rebuild cell (m), and
  * where its lines lie. The clipmap's step is ring 0's snap, whose lines lie
@@ -660,12 +660,12 @@ describe("rebuilds as jobs: what is computed", () => {
     engine.dispose();
   }, timeLimit(60_000));
 
-  it("looks up 1,111 clutter cells a grass cell on, where a walk of every cell looks up 45,035", () => {
+  it("looks up 1,111 clutter cells a grass cell on, where a walk of every cell looks up 45,819", () => {
     const collector = createClutterCollector(SEED);
     collector.collect(100.5, 100.5);
-    expect(collector.walked).toBe(45035);
+    expect(collector.walked).toBe(45819);
     const bands = collector.collect(103.5, 100.5);
-    // The strips the eleven classes' squares add, a column or a few each.
+    // The strips the twelve classes' squares add, a column or a few each.
     expect(collector.walked).toBe(1111);
     expect(bands).toEqual(collectClutter(SEED, 103.5, 100.5));
   }, timeLimit(60_000));
@@ -721,10 +721,10 @@ describe("rebuilds as jobs: what is computed", () => {
       if (clutter.size < size) break;
       size = clutter.size;
     }
-    // The sweep 162 m on; the collect after it looks up the eleven strips and
-    // the corner cells the sweep let go, 2,973 in all.
+    // The sweep 159 m on; the collect after it looks up the twelve strips and
+    // the corner cells the sweep let go, 3,121 in all.
     const bands = clutter.collect(cx + 3, 100.5);
-    expect([cx, clutter.walked]).toEqual([262.5, 2973]);
+    expect([cx, clutter.walked]).toEqual([259.5, 3121]);
     expect(bands).toEqual(collectClutter(SEED, cx + 3, 100.5));
   }, timeLimit(120_000));
 

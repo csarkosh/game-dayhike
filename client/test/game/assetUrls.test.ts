@@ -10,7 +10,7 @@ describe("modelUrl", () => {
     // The whole point of the indirection: the catalog is the list of models,
     // and each entry's `output` is the key. A catalog entry that `modelUrl`
     // cannot resolve is a model that will not load in the game.
-    expect(OUTPUTS.length).toBe(44);
+    expect(OUTPUTS.length).toBe(43);
     for (const output of OUTPUTS) {
       expect(typeof modelUrl(output)).toBe("string");
       expect(modelUrl(output).length).toBeGreaterThan(0);
@@ -20,7 +20,7 @@ describe("modelUrl", () => {
   it("counts toward a hike only the models a hike loads: the film's own are left out", () => {
     const filmOnly = (catalog.assets as Array<{ id: string; scene?: string }>).filter((a) => a.scene !== undefined).map((a) => a.id);
     expect(filmOnly).toEqual(["intro.car", "intro.ranger"]);
-    expect(MODEL_COUNT).toBe(42);
+    expect(MODEL_COUNT).toBe(41);
   });
 
   it("gives every model its own URL", () => {

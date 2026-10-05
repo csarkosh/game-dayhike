@@ -1,7 +1,7 @@
 /**
  * The Babylon shell over `clutterField.ts`: thin-
- * instance buckets for the eleven clutter classes — grass, rock, boulder,
- * driftwood, fungus, bush, meadow, flower, litter, sword fern, shrub — two LOD
+ * instance buckets for the twelve clutter classes — grass, rock, boulder,
+ * driftwood, fungus, bush, meadow, flower, litter, sword fern, shrub, drift log — two LOD
  * levels deep. All band
  * math is `clutterField.ts` (via its memoizing `createClutterCollector`,
  * output-identical to the pure `collectClutter`); what lives here is buffers,
@@ -73,6 +73,7 @@ import {
   CLUTTER_BOULDER,
   CLUTTER_BUSH,
   CLUTTER_CLASS_COUNT,
+  CLUTTER_DRIFTLOG,
   CLUTTER_DRIFTWOOD,
   CLUTTER_FERN,
   CLUTTER_FLOWER,
@@ -93,6 +94,7 @@ import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
 import { SHRUB_CHARACTERS, shrubGeometry } from "./shrubClump.js";
+import { trunkSeat, type TrunkSeat } from "./logSeat.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
 import { macroNoise, macroTint } from "./groundHexParams.js";
 import { forestDensity } from "../sim/vegetation.js";
@@ -121,7 +123,7 @@ import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../sim/passes/
 /**
  * Model per class per variant, indexed by the class ids of `sim/clutter.ts`
  * (grass 0, rock 1, boulder 2, driftwood 3, fungus 4, bush 5, meadow 6,
- * flower 7, litter 8, fern 9, shrub 10) and then by the instance's own `variant` draw. Driftwood and
+ * flower 7, litter 8, fern 9, shrub 10, drift log 11) and then by the instance's own `variant` draw. Driftwood and
  * meadow ship ONE model each, which is why the sim gives those classes
  * `variants: 1` and their instances always draw variant 0. Litter reuses the
  * rock and driftwood models at its own (small) scale range rather than
@@ -141,6 +143,7 @@ const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
   [modelUrl("models/clutter.rock_a.glb"), modelUrl("models/clutter.rock_b.glb"), modelUrl("models/clutter.driftwood.glb")],
   [modelUrl("models/understory.fern.glb")],
   [],
+  [modelUrl("models/deadwood.snag.glb")],
 ];
 
 /** A shrub leaf's roughness, and its reflectance at normal incidence as a
@@ -161,6 +164,22 @@ const LOD_NAMES = ["LOD0", "LOD1"] as const;
  * triangles were a third of everything the understory added to the frame
  * (measured: 647,000 of 1.97 million triangles at a forest pose). */
 const FERN_LOD_NAMES = ["LOD0", "LOD2"] as const;
+/** A drift log draws the trunk's LOD1 near and its LOD2 far: the forest's own
+ * logs draw LOD1 (`forestMeshes.ts`), and LOD0's 4,196 triangles buy nothing
+ * on a beach seen from the road. */
+const DRIFTLOG_LOD_NAMES = ["LOD1", "LOD2"] as const;
+/** A drift log lies along the shore, within this (rad) either way of it: the
+ * sea leaves a trunk where the last wave turned it, mostly side-on. */
+export const DRIFTLOG_SWING = 0.9;
+/** It is sunk this share of its diameter into the sand. */
+export const DRIFTLOG_SINK = 0.25;
+/** Its albedo over the bark's: bleached by salt and sun. Over 1, since the
+ * bark's own texture is a dark brown and the factor multiplies it. */
+const DRIFTLOG_BLEACH: readonly [number, number, number] = [2.3, 2.2, 2.1];
+/** The trunk's underside in the model (`logSeat.ts`), measured from the
+ * loaded geometry when the class's meshes are adopted; the model's own
+ * figures until then, and under the tests' stubs. */
+let driftLogSeat: TrunkSeat = { a: 0.13, b: 0.09, diameter: 0.45 };
 const NEAR_LOD = 0;
 const FAR_LOD = 1;
 
@@ -300,6 +319,7 @@ export const WET_CAP_BY_CLASS: ReadonlyMap<number, number> = new Map<number, num
   [CLUTTER_LITTER, WET_CAP.rock],
   [CLUTTER_FERN, WET_CAP.leaf],
   [CLUTTER_SHRUB, WET_CAP.leaf],
+  [CLUTTER_DRIFTLOG, WET_CAP.deadwood],
 ]);
 
 /** Classes that LIE on the ground rather than stand on it, so they take the
@@ -353,7 +373,7 @@ export type ClutterMeshesOptions = {
    * draws its collected set whole and `cull` does nothing. */
   cull?: boolean;
   /** NullEngine escape hatch: bucket meshes per class → variant → LOD in
-   * place of the eighteen production GLBs (the forestMeshes `assets` idiom).
+   * place of the nineteen production GLBs (the forestMeshes `assets` idiom).
    * `adopt` runs synchronously on them. */
   assets?: Mesh[][][][];
   /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
@@ -390,7 +410,7 @@ export type ClutterMeshes = {
 
 /**
  * One logical bucket: every geometry-bearing mesh of one model's one LOD
- * level (single-primitive for all eighteen clutter GLBs, so one mesh in practice)
+ * level (single-primitive for all nineteen clutter GLBs, so one mesh in practice)
  * sharing a single reused instance buffer.
  */
 type Bucket = {
@@ -717,6 +737,10 @@ export function trampleFrame(seed: number, inst: ClutterInstance): Readonly<{ he
  *  - everything else sinks `CLUTTER_SINK`, purely to break coplanarity.
  */
 export function instanceMatrixFor(inst: ClutterInstance, frame: ReturnType<typeof trampleFrame>, out: Float32Array): void {
+  if (inst.cls === CLUTTER_DRIFTLOG) {
+    driftLogMatrix(inst, out);
+    return;
+  }
   const yaw = inst.hash * Math.PI * 2;
   if (TILTED.has(inst.cls)) {
     seatOnGround(yaw, inst.groundDx, inst.groundDz, scratchQ);
@@ -737,6 +761,33 @@ export function instanceMatrixFor(inst: ClutterInstance, frame: ReturnType<typeo
   const boulderBaseH = inst.variant === 1 ? BOULDER_B_BASE_H : BOULDER_A_BASE_H;
   const sink = inst.cls === CLUTTER_BOULDER ? BOULDER_SINK * boulderBaseH * inst.scale : CLUTTER_SINK;
   scratchPos.copyFromFloats(inst.x, inst.groundH - sink, inst.z);
+  Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchMat);
+  scratchMat.copyToArray(out);
+}
+
+const Z_AXIS = new Vector3(0, 0, 1);
+const scratchLevel = new Quaternion();
+
+/**
+ * A drift log's matrix: laid along the shore (across the beach's fall line,
+ * swung up to `DRIFTLOG_SWING` either way and end for end by its hash; any
+ * way round on level sand), on the beach's own plane, its trunk's underside
+ * and not its bounding box on the sand (`logSeat.ts`), sunk `DRIFTLOG_SINK`
+ * of its diameter. A beach is near enough a plane over a log's length that
+ * the one sample under its middle seats it.
+ */
+function driftLogMatrix(inst: ClutterInstance, out: Float32Array): void {
+  const steep = Math.hypot(inst.groundDx, inst.groundDz);
+  // The model's +X lands on (cos yaw, −sin yaw); across the gradient (dx, dz) is (−dz, dx).
+  const along = steep > 1e-3 ? Math.atan2(-inst.groundDx, -inst.groundDz) : inst.hash * Math.PI * 2;
+  const flip = Math.floor(inst.hash * 1024) % 2 === 0 ? 0 : Math.PI;
+  const yaw = along + flip + (inst.hash - 0.5) * 2 * DRIFTLOG_SWING;
+  seatOnGround(yaw, inst.groundDx, inst.groundDz, scratchQ);
+  // The trunk's underside climbs at `b` in the model: levelled first, in the model's own frame.
+  Quaternion.RotationAxisToRef(Z_AXIS, -Math.atan(driftLogSeat.b), scratchLevel);
+  scratchQ.multiplyToRef(scratchLevel, scratchQ);
+  scratchScale.copyFromFloats(inst.scale, inst.scale, inst.scale);
+  scratchPos.copyFromFloats(inst.x, inst.groundH - (driftLogSeat.a + DRIFTLOG_SINK * driftLogSeat.diameter) * inst.scale, inst.z);
   Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchMat);
   scratchMat.copyToArray(out);
 }
@@ -766,7 +817,7 @@ const KEPT_STRIDE = 20;
 const KEPT_FOLIAGE = 16;
 
 /**
- * The clutter's Babylon shell. Production loads the eighteen shipped GLBs
+ * The clutter's Babylon shell. Production loads the nineteen shipped GLBs
  * asynchronously and builds buckets when they arrive; the returned object is
  * complete immediately — an `update` before the assets exist just remembers
  * the camera, and is replayed the moment they land.
@@ -1159,6 +1210,18 @@ export function createClutterMeshes(
   /** Turns the loaded mesh groups into buckets and replays any update that
    * arrived while they were loading. */
   function adopt(loaded: Mesh[][][][]): void {
+    // The drift log's seat and its bleach, from its own meshes and on its own
+    // material (the class loads the trunk for itself, so the forest's logs
+    // keep their bark).
+    const driftLogs = (loaded[CLUTTER_DRIFTLOG] ?? []).flat(2);
+    const driftPositions = driftLogs[0]?.getVerticesData(VertexBuffer.PositionKind);
+    if (driftPositions !== null && driftPositions !== undefined && driftPositions.length > 0) {
+      const seat = trunkSeat(driftPositions);
+      if (seat.diameter > 0) driftLogSeat = seat;
+    }
+    for (const mesh of driftLogs) {
+      if (mesh.material instanceof PBRMaterial) mesh.material.albedoColor.copyFromFloats(...DRIFTLOG_BLEACH);
+    }
     buckets = loaded.map((variants, cls) =>
       expandCutVariants(cls, nearLodVariants(cls, variants)).map((perLod) =>
         perLod.map((meshes, lod) => {
@@ -1238,7 +1301,7 @@ export function createClutterMeshes(
     maybeBuild(true);
   }
 
-  /** Production path: the eighteen clutter GLBs, `forestMeshes.ts`'s loading
+  /** Production path: the nineteen clutter GLBs, `forestMeshes.ts`'s loading
    * idiom (itself `characterModel.ts`'s). */
   async function loadAssets(): Promise<void> {
     registerBuiltInLoaders();
@@ -1252,7 +1315,7 @@ export function createClutterMeshes(
         const urls = CLUTTER_MODEL_URLS[cls] as readonly string[];
         const variants: Mesh[][][] = [];
         for (const url of urls) {
-          const groups = await loadBucketed(url, cls === CLUTTER_FERN ? FERN_LOD_NAMES : LOD_NAMES);
+          const groups = await loadBucketed(url, cls === CLUTTER_FERN ? FERN_LOD_NAMES : cls === CLUTTER_DRIFTLOG ? DRIFTLOG_LOD_NAMES : LOD_NAMES);
           if (groups === null) return;
           variants.push(groups);
         }

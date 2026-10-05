@@ -23,6 +23,7 @@ import {
   LOG_SHARE,
   ROAD_CLEAR,
   ROAD_CLEAR_FADE,
+  LOG_SCALE_MIN, LOG_HALF_LENGTH, LOG_SPAN_STATIONS, LOG_TRAIL_CLEAR, LOG_ROAD_CLEAR, logAxis,
 } from "../../src/sim/vegetation.js";
 import {
   DEFAULT_TERRAIN_VARIANT,
@@ -322,6 +323,42 @@ describe("trees keep off the trail", () => {
     }
   });
 });
+describe("logs keep off the trail and the road", () => {
+  it("lays no part of a log within LOG_TRAIL_CLEAR of a trail or LOG_ROAD_CLEAR of the road, five seeds", () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    const v = terrainVariant("olympic")!;
+    let logs = 0;
+    for (const seed of [0x5eed, 1, 12345, 777, 4242]) {
+      const g = v.trailGraph!(seed);
+      let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+      for (const n of g.nodes) {
+        minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+        minZ = Math.min(minZ, n.z); maxZ = Math.max(maxZ, n.z);
+      }
+      for (const t of treesInRect(seed, minX - 60, minZ - 60, maxX + 60, maxZ + 60)) {
+        if (t.cohort !== COHORT_LOG) continue;
+        logs++;
+        expect(t.scale).toBeGreaterThanOrEqual(LOG_SCALE_MIN);
+        const axis = logAxis(t.hash);
+        expect(axis.x * axis.x + axis.z * axis.z).toBeCloseTo(1, 9);
+        const half = LOG_HALF_LENGTH * t.scale;
+        // The sim tests LOG_SPAN_STATIONS places a half; between two of them
+        // the log is at most a third of its half-length from one, and a trail
+        // is no nearer the log there than its clearance less that.
+        for (let i = -LOG_SPAN_STATIONS; i <= LOG_SPAN_STATIONS; i++) {
+          const along = (half * i) / LOG_SPAN_STATIONS;
+          const px = t.x + axis.x * along, pz = t.z + axis.z * along;
+          if (i !== 0) {
+            expect(v.trailDistance!(seed, px, pz), `seed ${seed}`).toBeGreaterThanOrEqual(LOG_TRAIL_CLEAR);
+            expect(v.roadDistance!(seed, px, pz), `seed ${seed}`).toBeGreaterThanOrEqual(LOG_ROAD_CLEAR);
+          }
+        }
+      }
+    }
+    expect(logs).toBeGreaterThan(20);
+  });
+});
+
 describe("the forest in the strip at the trailhead", () => {
   const HOLLOW = 2032433950;
 

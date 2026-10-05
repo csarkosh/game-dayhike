@@ -273,7 +273,10 @@ describe("the watcher on fifty seeds", () => {
     console.info(`[watcher sweep]\n${summary}`);
     expect(cases.length, summary).toBe(924);
     expect(shown.length, summary).toBeGreaterThanOrEqual(899);
-    expect(admitted, summary).toBeGreaterThanOrEqual(74240);
+    // 74,240 until 2026-10-04: a tree that would have fallen across a trail
+    // stands dead beside it instead, and a snag is in a stand's way where a
+    // log was not (74,228 admitted).
+    expect(admitted, summary).toBeGreaterThanOrEqual(74200);
     expect(refused.flee, summary).toBe(0);
     expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
     expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
