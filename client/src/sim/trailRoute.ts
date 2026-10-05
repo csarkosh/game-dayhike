@@ -126,6 +126,37 @@ export function stemProgress(graph: TrailGraph, x: number, z: number): number {
 }
 
 /**
+ * The point `metres` further up the stem than (x, z)'s nearest point on it,
+ * by arc length; null when that is past the crest, or the stem has no
+ * length. The watcher's first showings stand there (watcher.ts).
+ */
+export function stemAhead(graph: TrailGraph, x: number, z: number, metres: number): { x: number; z: number } | null {
+  const chain = stemNodes(graph);
+  let total = 0;
+  for (let i = 0; i + 1 < chain.length; i++) {
+    const a = graph.nodes[chain[i] as number] as TrailNode;
+    const b = graph.nodes[chain[i + 1] as number] as TrailNode;
+    total += Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
+  }
+  if (!(total > 0)) return null;
+  const want = (1 - stemProgress(graph, x, z)) * total + metres;
+  if (want > total) return null;
+  let arc = 0;
+  for (let i = 0; i + 1 < chain.length; i++) {
+    const a = graph.nodes[chain[i] as number] as TrailNode;
+    const b = graph.nodes[chain[i + 1] as number] as TrailNode;
+    const len = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
+    if (len > 0 && want <= arc + len) {
+      const t = (want - arc) / len;
+      return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+    }
+    arc += len;
+  }
+  const crest = graph.nodes[chain[chain.length - 1] as number] as TrailNode;
+  return { x: crest.x, z: crest.z };
+}
+
+/**
  * The shortest trail distance from every node to the pad (node 0), by arc
  * length: Dijkstra from the pad over every edge. Infinity for a node no edge
  * chain reaches. The same settle order as `route` (lowest index among equal

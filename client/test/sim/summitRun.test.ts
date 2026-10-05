@@ -29,6 +29,9 @@ describe("one run on the seed `hollow`", SUITE, () => {
   it("climbs the stem, finds the body, is hunted, reaches the road, and wins", () => {
     const seed = seedFromToken("hollow");
     const w = createForestWorld(createForest(seed));
+    // The sightings below are the ones in the trees, at the reach's range:
+    // the first showings, on the trail, are watcher.test.ts's.
+    w.watcher!.bold = 0;
     const p = spawnPlayer(w);
     const graph = w.trail!;
     const chain = stemNodes(graph);
