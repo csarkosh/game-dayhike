@@ -17,8 +17,9 @@ const SEED = -1065037390;
 /** Another lobby world's murky lake, radius 30.5 m. */
 const OTHER_SEED = -1458473702;
 /** Lobby worlds whose lakes have banks that fall away from the water: in the
- * first, 6 of the 21 perches are on shrubs and bushes 1 to 9 m below it; in
- * the second (radius 26.1 m), 16 stems are wet plants of the outer bank 7 m
+ * first, 6 of 21 perches would be on shrubs and bushes 1 to 9 m below it, and
+ * in the second 11 of 20, so they are left out (16 perches and 12); in the
+ * second (radius 26.1 m), 16 stems are wet plants of the outer bank 7 m
  * below it, on dry ground. */
 const DOWNHILL_SEED = -1098592628;
 const FALLING_SEED = -1048259771;
@@ -67,7 +68,7 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
     // [radius, markers, beats, perches, stems, voices]
     const table: [number, number, number, number, number, number][] = [
       [25, 16, 8, 20, 40, 7],
-      [40, 25, 13, 31, 40, 11],
+      [40, 25, 13, 16, 40, 11],
     ];
     for (const [radius, markers, beats, perches, stems, voices] of table) {
       const layout = waterLifeLayout(SEED, sized(lake, radius));
@@ -230,11 +231,11 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
     expect([layout.perches.length, layout.stems.length, near]).toEqual([20, 40, 36]);
   });
 
-  it("stands a perch or a stem on its footing: the water's level only where there is water under a reed", () => {
+  it("stands a perch or a stem on its footing: the water's level only where there is water under a reed, and no perch on a bank over 1 m below it", () => {
     // [seed, perches, stems, perches on reeds, perches on land over 1 m below the water, stems on dry ground over 1 m below it]
     const cases: [number, number, number, number, number, number][] = [
-      [DOWNHILL_SEED, 21, 40, 0, 6, 0],
-      [FALLING_SEED, 20, 40, 0, 11, 16],
+      [DOWNHILL_SEED, 16, 40, 0, 0, 0],
+      [FALLING_SEED, 12, 40, 0, 0, 16],
       [SEED, 20, 40, 19, 0, 0],
       [OTHER_SEED, 24, 40, 24, 0, 0],
     ];
@@ -257,7 +258,7 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
         layout.stems.filter((st) => !wet(st) && lake.level - ground(st) > 1).length,
       ]).toEqual([seed, perches, stems, onReeds, onLandBelow, onDryBelow]);
       // a perch is 0.3 to 1.5 m up from its footing, a stem 0.3 to 1 m: the ground for a shrub, bush or log,
-      // however far the bank falls below the water; for a reed or a stem the ground too, unless it is
+      // none of which stands over 1 m below the water; for a reed or a stem the ground too, unless it is
       // inside the rim or on the marsh, where the water's level if that is above the ground
       for (const p of landPerches) {
         expect(p.y - ground(p)).toBeGreaterThanOrEqual(0.3);

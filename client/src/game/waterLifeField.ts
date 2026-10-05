@@ -100,6 +100,9 @@ const BEAT_OUT: readonly [number, number] = [1, 3];
 const BEAT_UP: readonly [number, number] = [0.5, 2];
 /** A skimmer's perch above its footing: the candidate's ground, or for a reed where there is water under it, the water (m). */
 const PERCH_UP: readonly [number, number] = [0.3, 1.5];
+/** A shrub, bush or drift log whose ground lies more than this below the water (m) is no perch: a
+ * skimmer sallying from it toward the lake would fly into the bank. */
+const PERCH_BANK_DROP = 1;
 /** A reed bed: reeds or wet plants above this density. Stems fill whole
  * patches of BED_PATCH × BED_PATCH cells before the next, so the
  * damselflies stand together in a few beds. */
@@ -238,10 +241,11 @@ function beatsOf(seed: number, lake: LakeSource): DarnerBeat[] {
 function perchesOf(seed: number, lake: LakeSource, cands: readonly Candidate[]): Perch[] {
   const out: Perch[] = [];
   const n = Math.max(1, Math.round((TAU * lake.radius) / PERCH_SPACING));
+  const perchable = cands.filter((c) => c.rank === RANK_REED || c.ground >= lake.level - PERCH_BANK_DROP);
   for (let p = 0; p < n; p++) {
     const draw = (j: number): number => hash3(p, j, WATER_LIFE_SALT.perch, seed);
     const at = ((p + draw(0)) / n) * TAU;
-    const c = pick(cands, p, n, lake.x + lake.radius * Math.cos(at), lake.z + lake.radius * Math.sin(at), RANK_DRIFTLOG, false);
+    const c = pick(perchable, p, n, lake.x + lake.radius * Math.cos(at), lake.z + lake.radius * Math.sin(at), RANK_DRIFTLOG, false);
     if (c === null) continue;
     // A reed stands up out of the water where there is water under it; a shrub, bush or drift log
     // stands on its own ground, though the bank falls away from the lake.
