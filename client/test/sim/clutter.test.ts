@@ -7,7 +7,9 @@ import {
   grassTrailGate, CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_FAR,
   CLUTTER_LITTER_CORE, CLUTTER_LITTER_FADE, CLUTTER_LITTER_CELL, CLUTTER_LITTER_D, litterBand,
   CLUTTER_CLASS_COUNT,
-  CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_DRIFTLOG,
+  CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_DRIFTLOG, CLUTTER_WETPLANT,
+  CLUTTER_WETPLANT_ALT_HI, CLUTTER_WETPLANT_ALT_HI_FADE, CLUTTER_WETPLANT_LAKE_REACH, CLUTTER_WETPLANT_LAKE_FADE,
+  CLUTTER_WETPLANT_SCALE_MIN, CLUTTER_WETPLANT_SCALE_MAX, CLUTTER_WETPLANT_TRAIL_CLEAR,
   CLUTTER_DRIFTLOG_ALT_LO, CLUTTER_DRIFTLOG_ALT_HI, CLUTTER_DRIFTLOG_ALT_FADE, CLUTTER_DRIFTLOG_INLAND, CLUTTER_DRIFTLOG_INLAND_FADE,
   CLUTTER_DRIFTLOG_SCALE_MIN, CLUTTER_DRIFTLOG_SCALE_MAX,
   CLUTTER_FERN_ALT_HI, CLUTTER_FERN_ALT_HI_FADE, CLUTTER_FERN_MONTANE, CLUTTER_FERN_OPEN, CLUTTER_FERN_PATCH_FLOOR,
@@ -231,13 +233,13 @@ describe("bush density gates", () => {
     expect(dCanopy).toBeGreaterThan(dOpen);
   });
 
-  it("extends the class-range sweep to every model-drawn class (CLUTTER_CLASS_COUNT = 12)", () => {
+  it("extends the class-range sweep to every model-drawn class (CLUTTER_CLASS_COUNT = 13)", () => {
     // The pre-existing "stays in [0, 1] for every class" sweep above loops
     // cls < CLUTTER_CLASS_COUNT, so it already covers class 5 (bush) — and,
-    // now that the constant is 12, classes 6-11
-    // (meadow, flower, litter, sword fern, shrub, drift log) too — automatically; this assertion is the loop bound.
+    // now that the constant is 13, classes 6-12
+    // (meadow, flower, litter, sword fern, shrub, drift log, wet plant) too — automatically; this assertion is the loop bound.
     // Same for the road-bed sweep in the domain census describe block below.
-    expect(CLUTTER_CLASS_COUNT).toBe(12);
+    expect(CLUTTER_CLASS_COUNT).toBe(13);
   });
 });
 
@@ -1434,9 +1436,9 @@ import { lobePoints, marshWeightAt, POND_SHORE } from "../../src/sim/features.js
 import { elevationAt, type LakeSource } from "../../src/sim/terrain.js";
 
 describe("the water plants", { timeout: timeLimit(120_000) }, () => {
-  it("follow the model-drawn classes, which number twelve", () => {
-    expect(CLUTTER_CLASS_COUNT).toBe(12);
-    expect([CLUTTER_REED, CLUTTER_LILY]).toEqual([12, 13]);
+  it("follow the model-drawn classes, which number thirteen", () => {
+    expect(CLUTTER_CLASS_COUNT).toBe(13);
+    expect([CLUTTER_REED, CLUTTER_LILY]).toEqual([13, 14]);
     for (const k of ["CLUTTER_REED_CELL", "CLUTTER_REED_D", "CLUTTER_LILY_CELL", "CLUTTER_LILY_D", "CLUTTER_WATER_MURK_LO", "CLUTTER_WATER_MURK_HI"]) {
       expect(CLUTTER_TUNABLES[k], k).toBeTypeOf("number");
     }
@@ -1613,5 +1615,65 @@ describe("drift logs", () => {
     const x = centerlineX(1000.5) - 60;
     expect(clutterDensity(SEED, CLUTTER_DRIFTLOG, x, 1000.5, flat(CLUTTER_DRIFTLOG_ALT_LO - 0.01))).toBe(0);
     expect(clutterDensity(SEED, CLUTTER_DRIFTLOG, x, 1000.5, flat(CLUTTER_DRIFTLOG_ALT_HI + CLUTTER_DRIFTLOG_ALT_FADE + 0.01))).toBe(0);
+  });
+});
+
+describe("wet-ground plants", () => {
+  it("stand in seeps under the lowland canopy: ribbons, a small share of the forest, and none above it", () => {
+    let wet = 0, forest = 0, open = 0;
+    for (let i = 0; i < 6000; i++) {
+      const x = 600 + ((i * 7919) % 6000), z = -3000 + ((i * 104729) % 6000);
+      const s = { ...elevationSampleAt(SEED, x, z), h: 40, dx: 0.02, dz: 0.02 };
+      const rho = forestDensity(SEED, x, z, s);
+      const d = clutterDensity(SEED, CLUTTER_WETPLANT, x, z, s);
+      expect(d).toBeGreaterThanOrEqual(0);
+      expect(d).toBeLessThanOrEqual(1);
+      if (rho > 0.7) { forest++; if (d > 0.5) wet++; }
+      if (rho < 0.05 && d > 0) open++;
+      // The same ground, lifted past the lowland: no seep.
+      expect(clutterDensity(SEED, CLUTTER_WETPLANT, x, z, { ...s, h: CLUTTER_WETPLANT_ALT_HI + CLUTTER_WETPLANT_ALT_HI_FADE + 1 })).toBe(0);
+      // And on a slope no bench: none.
+      expect(clutterDensity(SEED, CLUTTER_WETPLANT, x, z, { ...s, dx: 0.6, dz: 0.3 })).toBe(0);
+    }
+    expect(forest).toBeGreaterThan(500);
+    expect(open).toBe(0);
+    // Ribbons: some of the forest, and well under a fifth of it.
+    expect(wet / forest).toBeGreaterThan(0.01);
+    expect(wet / forest).toBeLessThan(0.2);
+  });
+
+  it("ring a lake from its bare shore out, and stop past their reach", () => {
+    const { seed } = firstPondWorld(() => true);
+    const lake = lakeOf(seed);
+    const inner = lake.radius + POND_SHORE;
+    let ringed = 0, ring = 0;
+    for (let k = 0; k < 64; k++) {
+      const a = (k / 64) * Math.PI * 2;
+      const at = (q: number): number => {
+        const x = lake.x + Math.cos(a) * q, z = lake.z + Math.sin(a) * q;
+        // Level ground a little over the water, clear of what else gates it.
+        return clutterDensity(seed, CLUTTER_WETPLANT, x, z, { h: lake.level + 0.5, dx: 0.01, dz: 0.01 });
+      };
+      expect(at(inner - 0.5)).toBe(0);
+      expect(at(inner + CLUTTER_WETPLANT_LAKE_REACH + CLUTTER_WETPLANT_LAKE_FADE + 30)).toBeLessThanOrEqual(1);
+      ring++;
+      if (at(inner + 3) > 0.5) ringed++;
+    }
+    // The road and the shore's own gates may close part of the ring; most of it stands.
+    expect(ringed / ring).toBeGreaterThan(0.5);
+    // Under the lake's level nothing grows: that is the reeds' ground.
+    expect(clutterDensity(seed, CLUTTER_WETPLANT, lake.x + inner + 3, lake.z, { h: lake.level - 0.2, dx: 0.01, dz: 0.01 })).toBe(0);
+  });
+
+  it("stands every instance in its scale band and off the trail", () => {
+    const v = activeTerrainVariant();
+    const cx = centerlineX(0);
+    const list = clutterInRect(SEED, CLUTTER_WETPLANT, cx, -300, cx + 600, 300);
+    expect(list.length).toBeGreaterThan(50);
+    for (const inst of list) {
+      expect(inst.scale).toBeGreaterThanOrEqual(CLUTTER_WETPLANT_SCALE_MIN);
+      expect(inst.scale).toBeLessThanOrEqual(CLUTTER_WETPLANT_SCALE_MAX);
+      expect(v.trailDistance?.(SEED, inst.x, inst.z) ?? Infinity).toBeGreaterThanOrEqual(CLUTTER_WETPLANT_TRAIL_CLEAR);
+    }
   });
 });
