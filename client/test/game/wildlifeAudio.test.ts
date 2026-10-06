@@ -388,7 +388,7 @@ describe("app.ts wiring", () => {
     // Two call sites feed it now: the `weather` command's own base, and
     // `syncAtmosphere`'s eased weather on a forest world's escalation.
     expect(src).toContain("wildlifePresence = wildlifePresenceUnder(base.weather);");
-    expect(src).toContain("wildlifePresence = wildlifePresenceUnder(a.weather);");
+    expect(src).toContain("wildlifePresence = wildlifePresenceUnder(a.weather, a.hour);");
     expect(src).toContain("wildlifeAudio?.dispose();");
   });
 

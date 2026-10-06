@@ -1,7 +1,10 @@
 # The woods' voice
 
 **Date:** 2026-10-05
-**Status:** Built 2026-10-05, the reveal (§3) with it.
+**Status:** Built 2026-10-05, the reveal (§3) with it. Amended the same day by
+[`2026-10-05-three-acts.md`](2026-10-05-three-acts.md): the birds follow the acts, not the climb's
+metres; the marks are all in the night; the watcher no longer shows, so only the chase hushes the
+birds. The numbers below are as first built.
 **Parent:** [`2026-09-16-escalation-and-atmosphere.md`](2026-09-16-escalation-and-atmosphere.md)
 (the world answering the game: the same ratcheted progress drives this) and
 [`2026-09-16-the-summit.md`](2026-09-16-the-summit.md) §4 (the watcher).

@@ -35,6 +35,17 @@ export const NEAR_START = 80;
 export const NEAR_BLIND = 0.5;
 /** The hour the world reaches at full escalation: the sun is up 6–18. */
 export const NIGHT_HOUR = 22;
+/**
+ * The three acts of the climb, by the party's ratcheted progress. The first
+ * act is the day the match started in. From WET_AT the weather turns, over
+ * WET_SPAN, to ACT_WET: cloud, mist and rain, the animals of a wet day. From
+ * DUSK_AT the sun goes, and by the crest it is night and the eerie preset.
+ */
+export const WET_AT = 0.25;
+export const WET_SPAN = 0.15;
+export const DUSK_AT = 0.55;
+/** The second act's weather: a wet day, and a first touch of the dread axis. */
+export const ACT_WET: WeatherParams = Object.freeze({ cloudCover: 1, mist: 0.9, rain: 0.55, wetness: 0.85, dread: 0.35 });
 /** The sky's sunrise; a base before it is already dark and stays. */
 export const DAWN_HOUR = 6;
 /** Time constant of the world's easing, seconds: the light goes over about a minute. */
@@ -139,17 +150,27 @@ function smootherstep(x: number): number {
   return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
+/** How far into the wet act and into the night a world of 0 to 1 is, each 0 to 1 by smootherstep. */
+export function actsUnder(world: number): { wet: number; night: number } {
+  const w = clamp01(world);
+  return {
+    wet: smootherstep(clamp01((w - WET_AT) / WET_SPAN)),
+    night: smootherstep(clamp01((w - DUSK_AT) / (1 - DUSK_AT))),
+  };
+}
+
 /**
- * The sky and the weather for an eased state: the sun from the base hour to
- * NIGHT_HOUR (a base already past it, or before DAWN_HOUR, stays), the
- * weather from the base preset to eerie, both by smootherstep of the world;
- * then dread lifted to the lens.
+ * The sky and the weather for an eased state, in three acts (`actsUnder`):
+ * the weather from the base preset to ACT_WET by the wet act, then to eerie
+ * by the night; the sun from the base hour to NIGHT_HOUR by the night alone
+ * (a base already past it, or before DAWN_HOUR, stays); then dread lifted
+ * to the lens.
  */
 export function atmosphereUnder(base: AtmosphereBase, s: EscalationState): AtmosphereBase {
-  const e = smootherstep(clamp01(s.world));
+  const { wet, night } = actsUnder(s.world);
   const hour =
-    base.hour >= NIGHT_HOUR || base.hour <= DAWN_HOUR ? base.hour : base.hour + (NIGHT_HOUR - base.hour) * e;
-  const weather = lerpWeather(base.weather, WEATHER_PRESETS.eerie, e);
+    base.hour >= NIGHT_HOUR || base.hour <= DAWN_HOUR ? base.hour : base.hour + (NIGHT_HOUR - base.hour) * night;
+  const weather = lerpWeather(lerpWeather(base.weather, ACT_WET, wet), WEATHER_PRESETS.eerie, night);
   const lens = clamp01(s.lens);
   return { weather: { ...weather, dread: Math.min(1, Math.max(weather.dread, lens)) }, hour };
 }

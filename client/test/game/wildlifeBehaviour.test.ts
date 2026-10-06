@@ -662,6 +662,21 @@ describe("birds", () => {
 });
 
 describe("calls and presence", () => {
+  it("falls quiet for the night, the ravens too: all there in the afternoon, none an hour past dusk", () => {
+    const day = wildlifePresenceUnder(WEATHER_PRESETS.clear, 15);
+    expect(day.ground).toBe(1);
+    expect(day.raven).toBe(1);
+    const dusk = wildlifePresenceUnder(WEATHER_PRESETS.clear, DUSK_HOUR);
+    expect(dusk.ground).toBeGreaterThan(0);
+    expect(dusk.ground).toBeLessThan(0.5);
+    const night = wildlifePresenceUnder(WEATHER_PRESETS.eerie, DUSK_HOUR + 1);
+    expect(night.ground).toBe(0);
+    expect(night.aloft).toBe(0);
+    expect(night.raven).toBe(0);
+    expect(night.callGain.every((g) => g === 0)).toBe(true);
+    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 22).raven).toBe(0);
+  });
+
   it("a flier's call comes from the bird, not from the centre of its loop", () => {
     // In the real game: `u.x/u.z` is the loop CENTRE for every aloft species, so a
     // cry was spatialized up to a loop radius away from the only bird on screen — 126 m for

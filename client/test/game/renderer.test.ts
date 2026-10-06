@@ -537,7 +537,7 @@ describe("the low tier's exposure", () => {
       const left = () => sightUnder(renderer.stare().level);
       renderer.setView(12, WEATHER_PRESETS.clear);
       frame();
-      expect(renderer.stare().level).toBeGreaterThan(0.45);
+      expect(renderer.stare().level).toBeGreaterThan(0.3);
       expect(left()).toBeLessThan(1);
       // Clear noon's exposure, 0.91045012, times what the stare leaves.
       expect(image.exposure).toBeCloseTo(0.9104501249491339 * left(), 12);

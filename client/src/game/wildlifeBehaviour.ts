@@ -219,6 +219,8 @@ export const SQUIRREL_CHATTER_INTERVAL: readonly [number, number] = [15, 40];
 export const EAGLE_CRY_INTERVAL: readonly [number, number] = [180, 480];
 export const DAWN_HOUR = 6;
 export const DUSK_HOUR = 20;
+/** Hours before dusk the animals begin to fall quiet for the night; all quiet an hour after it. */
+export const NIGHT_QUIET_RAMP = 2.5;
 export const DAWN_DUSK_WINDOW = 1.5;
 export const DAWN_DUSK_BUGLE_BOOST = 3;
 /** Ticks integrated per call at most; beyond this the state jumps (a tab that was hidden). */
@@ -1091,9 +1093,12 @@ export function wildlifePresenceUnder(w: WeatherParams, hour = 12): Presence {
   const rain = clamp01(w.rain);
   const dread = clamp01(w.dread);
   const k = clamp01((dread - 0.3) / 0.2);
-  const ground = 1 - k;
-  const aloft = (1 - k) * (1 - 0.7 * rain);
-  const raven = (1 + k) * (1 - 0.5 * rain * (1 - k));
+  // Every animal, the ravens too, is quiet by night: the woods after dark
+  // have other voices (woodsSounds.ts).
+  const awake = 1 - smoothstep(DUSK_HOUR - NIGHT_QUIET_RAMP, DUSK_HOUR + 1, hour);
+  const ground = (1 - k) * awake;
+  const aloft = (1 - k) * (1 - 0.7 * rain) * awake;
+  const raven = (1 + k) * (1 - 0.5 * rain * (1 - k)) * awake;
   const daylight =
     smoothstep(DAWN_HOUR, DAWN_HOUR + BUTTERFLY_DAY_RAMP, hour) *
     (1 - smoothstep(DUSK_HOUR - BUTTERFLY_DAY_RAMP, DUSK_HOUR, hour));

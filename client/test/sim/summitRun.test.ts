@@ -31,6 +31,7 @@ describe("one run on the seed `hollow`", SUITE, () => {
     const w = createForestWorld(createForest(seed));
     // The sightings below are the ones in the trees, at the reach's range:
     // the first showings, on the trail, are watcher.test.ts's.
+    w.watcher!.active = true;
     w.watcher!.bold = 0;
     const p = spawnPlayer(w);
     const graph = w.trail!;

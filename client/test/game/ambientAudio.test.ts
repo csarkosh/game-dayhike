@@ -3,12 +3,14 @@ import {
   createAmbientAudio, DEFAULT_VOLUME, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
   WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
   WIND_GAIN_DEPTH, WIND_GAIN_RAMP_S, windBedGain, BIRD_LEVEL, BIRD_PAN, BIRD_OVERLAP_S, BIRD_GAIN_RAMP_S,
-  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HUSH_RAMP_S,
+  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HUSH_RAMP_S, FLY_PASS_S,
 } from "../../src/game/ambientAudio.js";
 import { ambientGainsUnder, WEATHER_PRESETS } from "../../src/game/weather.js";
 import { MUFFLE_OPEN_HZ, MUFFLE_SHUT_HZ, MUFFLE_GAIN, HEART_LEVEL, WHISPER_LEVEL, WHISPER_VOICES } from "../../src/game/stareAudio.js";
 import { HEART_DUB_AT, STARE_LENS_REST } from "../../src/game/stareLens.js";
 import { gustAt, windRecordUnder } from "../../src/game/windParams.js";
+import { ODD_KINDS } from "../../src/game/woodsSounds.js";
+import { ODD_LEVEL } from "../../src/game/oddSounds.js";
 
 /** The smallest AudioContext fake that can carry the graph. Every node records
  * its connections; every AudioParam records setTargetAtTime calls and, for
@@ -135,12 +137,12 @@ describe("createAmbientAudio", () => {
     audio.dispose();
   });
 
-  it("defaults: pending weather is the mist preset, volume 0.5, wind bed not silent", () => {
+  it("defaults: pending weather is the bright preset, volume 0.5, wind bed not silent", () => {
     const { ctx, created } = fakeCtx();
     const audio = createAmbientAudio(() => ctx);
     audio.unlock();
     expect(created.gains[0]?.gain.value).toBe(DEFAULT_VOLUME);
-    const gains = ambientGainsUnder(WEATHER_PRESETS.mist);
+    const gains = ambientGainsUnder(WEATHER_PRESETS.bright);
     const targets = created.gains.flatMap((g) => g.gain.targets.map((t) => t.value));
     expect(targets).toContain(gains.rain * RAIN_LEVEL);
     // The wind bed starts at its floor gain, not silence, before the first setWind.
@@ -738,6 +740,64 @@ describe("the birdsong bed", () => {
     expect(birds.gain.targets.at(-1)!.value).toBe(0);
     audio.setBirds(7);
     expect(birds.gain.targets.at(-1)!.value).toBe(BIRD_LEVEL);
+    audio.dispose();
+  });
+});
+
+describe("the woods' other voices", () => {
+  it("places a sound from the cue's place in the listener's frame, into the world's bus, through a panner with no rolloff", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.playOdd({ kind: "snap", x: 1, y: 0, z: 1, level: 1 }); // pre-unlock: inert, not a throw
+    audio.unlock();
+    // Facing −z in Web Audio's frame, right is +x.
+    audio.setListener(10, 2, -30, 0, 0, -1, 0, 1, 0);
+    const before = created.sources.length;
+    audio.playOdd({ kind: "snap", x: 3, y: 0.5, z: 4, level: 1 });
+    const panner = created.panners.at(-1)!;
+    expect(panner.rolloffFactor).toBe(0);
+    expect(panner.positionX.value).toBeCloseTo(13, 12);
+    expect(panner.positionY.value).toBeCloseTo(2.5, 12);
+    expect(panner.positionZ.value).toBeCloseTo(-34, 12);
+    expect(panner.connections).toEqual([created.gains[1]]);
+    expect(created.sources.length).toBe(before + 1);
+    const src = created.sources.at(-1)!;
+    expect(src.stopped).toBe(true);
+    expect(src.stoppedAt).toBeGreaterThan(src.startedAt!);
+    audio.dispose();
+  });
+
+  it("makes every kind without a throw, at the kind's level, and a swell on the bus itself", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    const panners = created.panners.length;
+    for (const kind of ODD_KINDS) {
+      const gains = created.gains.length;
+      audio.playOdd({ kind, x: 0, y: 0, z: -5, level: 0.5 });
+      expect(created.gains.length, kind).toBeGreaterThan(gains);
+      const top = Math.max(...created.gains.slice(gains).flatMap((g) => g.gain.ramps.map((r) => r.value)));
+      expect(top, kind).toBeCloseTo(ODD_LEVEL[kind] * 0.5, 9);
+    }
+    // Six kinds have a place; the swell has none.
+    expect(created.panners.length).toBe(panners + ODD_KINDS.length - 1);
+    // A level of 0 makes nothing.
+    const sources = created.sources.length;
+    audio.playOdd({ kind: "knock", x: 0, y: 0, z: 5, level: 0 });
+    expect(created.sources.length).toBe(sources);
+    audio.dispose();
+  });
+
+  it("passes a fly from its place to the mirror of it over FLY_PASS_S", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    audio.setListener(0, 0, 0, 0, 0, -1, 0, 1, 0);
+    clock.currentTime = 5;
+    audio.playOdd({ kind: "fly", x: 1.2, y: 0.2, z: 0, level: 1 });
+    const panner = created.panners.at(-1)!;
+    expect(panner.positionX.ramps).toEqual([{ kind: "set", value: 1.2, time: 5 }, { kind: "linear", value: -1.2, time: 5 + FLY_PASS_S }]);
+    expect(created.oscillators).toBe(2);
     audio.dispose();
   });
 });

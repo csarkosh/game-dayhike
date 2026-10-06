@@ -52,7 +52,8 @@ import { createSkyTable } from "../../src/game/skyTable.js";
 import { SKY_IBL_SCALE, skyStateFor } from "../../src/game/skyState.js";
 import { exposureFor, fogDensityFor, sunPositionAt } from "../../src/game/sky.js";
 import { QUALITY } from "../../src/game/quality.js";
-import { WEATHER_PRESETS, fogDensityUnder, exposureUnder, ambientCollapseUnder } from "../../src/game/weather.js";
+import { WEATHER_PRESETS, SUN_CLOUD_LOSS, fogDensityUnder, exposureUnder, ambientCollapseUnder } from "../../src/game/weather.js";
+import { SUN_PEAK } from "../../src/game/sky.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 import { STARE_DIM } from "../../src/game/gradeParams.js";
 
@@ -470,8 +471,8 @@ describe("the sky's table", () => {
     expect(s.fogDensity).toBe(0.1);
     const lighting = light(s, { hour: 12, sky: createSkyTable() });
     expect(lighting.sky).toBeNull();
-    // The default weather's (mist's) density at this file's 70 m.
-    expect(s.fogDensity).toBeCloseTo(0.29671172273182034, 12);
+    // The default weather's (bright's) density at this file's 70 m.
+    expect(s.fogDensity).toBeCloseTo(fogDensityUnder(WEATHER_PRESETS.bright, 70), 12);
     lighting.dispose();
   });
 
@@ -479,10 +480,11 @@ describe("the sky's table", () => {
     const s = scene();
     const lighting = light(s, { hour: 12, sky: createSkyTable() });
     expect(lighting.sky).toBeNull();
-    // The default weather's (mist's) exposure at noon.
-    expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(0.7875393580810008, 12);
+    // The default weather's (bright's) exposure at noon.
+    const rest = exposureUnder(WEATHER_PRESETS.bright, sunPositionAt(12).y);
+    expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(rest, 12);
     lighting.setStare(0.5);
-    expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(0.7875393580810008 * (1 - STARE_DIM / 2), 12);
+    expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(rest * (1 - STARE_DIM / 2), 12);
     lighting.dispose();
   });
 
@@ -581,14 +583,14 @@ describe("the wait for the sky", () => {
 });
 
 describe("weather in lighting", () => {
-  it("defaults to the mist preset — fog, sun and exposure all shifted", () => {
+  it("defaults to the bright preset — fog, sun and exposure all shifted", () => {
     const s = scene();
     const lighting = light(s, { hour: 12 });
-    const w = WEATHER_PRESETS.mist;
+    const w = WEATHER_PRESETS.bright;
     expect(lighting.weather).toEqual(w);
     expect(s.fogDensity).toBeCloseTo(fogDensityUnder(w, 70), 12);
-    // SUN_PEAK x (1 - SUN_CLOUD_LOSS x 0.9).
-    expect(sunOf(s).intensity).toBeCloseTo(0.76, 6);
+    // SUN_PEAK x (1 - SUN_CLOUD_LOSS x 0.45).
+    expect(sunOf(s).intensity).toBeCloseTo(SUN_PEAK * (1 - SUN_CLOUD_LOSS * 0.45), 6);
     expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(exposureUnder(w, sunPositionAt(12).y), 12);
     lighting.dispose();
   });
