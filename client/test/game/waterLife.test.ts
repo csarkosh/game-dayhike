@@ -178,7 +178,7 @@ function shore(angle: number, out = 2): { x: number; z: number; ground: number }
 
 describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   it("makes one midge draw and the three kinds' cards, with a block of instances for every marker and every head", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     expect(life.meshes).toHaveLength(4);
     expect(life.meshes[0]!.material?.name).toBe(MIDGE_NAME);
     const markers = seen.layout!.markers;
@@ -195,8 +195,19 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     life.dispose();
   });
 
+  it("tones its midges for the frame's colour path, as the sky dome is toned", () => {
+    for (const [colourPath, toneMap] of [["post", 0], ["material", 1]] as const) {
+      const life = createWaterLife(scene(), SEED, lakeOf(SEED), "low", colourPath);
+      const floats = (life.meshes[0]!.material as unknown as { _floats: Record<string, number> })._floats;
+      expect(floats["midgeToneMap"], colourPath).toBe(toneMap);
+      life.dispose();
+      engine?.dispose();
+      engine = null;
+    }
+  });
+
   it("at dusk by a marker, fills its row at full presence and hums it at the summer's pitch", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     const m = seen.layout!.markers[0]!;
     const f = frameAt(m.x, m.y, m.z + 1, 18.5);
     life.update(f);
@@ -223,7 +234,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   });
 
   it("lights the midges with the sun and with the dome's horizon toward it, and with neither before the sky's first slices", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     const m = seen.layout!.markers[0]!;
     // A quarter hour after sunset: the sun is down and gives no light, the
     // horizon toward it still glows (the sky state's horizonToward, in the
@@ -242,7 +253,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   });
 
   it("lights the sky's glint with the horizon toward the sun as the dome draws it, the mist's blend in it", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     const m = seen.layout!.markers[0]!;
     // Sunset in mist: the dome's horizon is wholly the mist's air (its weight
     // 1), not the red glow the clear sky's ring holds under it.
@@ -256,7 +267,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
 
   it("keeps a swarm's hum at its row, and zeroes its presence when the swarm is out of sight", () => {
     const lake = lakeOf(SEED);
-    const life = createWaterLife(scene(), SEED, lake, "high");
+    const life = createWaterLife(scene(), SEED, lake, "high", "post");
     const m = seen.layout!.markers[0]!;
     const f = frameAt(m.x, m.y, m.z + 1, 18.5);
     life.update(f);
@@ -276,7 +287,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   });
 
   it("at noon on the shore, flies the dragonflies and neither draws nor hums a midge", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     const at = shore(0);
     const f = frameAt(at.x, at.ground + 1.6, at.z, 12);
     let hums = 0;
@@ -293,7 +304,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   });
 
   it("at night on the shore, the frogs call and nothing hums", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     const at = shore(0);
     const f = frameAt(at.x, at.ground + 1.6, at.z, 22);
     let calls = 0;
@@ -311,7 +322,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
 
   it("far from the lake, steps, draws and voices nothing, even with a player at the water, until the camera comes back", () => {
     const lake = lakeOf(SEED);
-    const life = createWaterLife(scene(), SEED, lake, "high");
+    const life = createWaterLife(scene(), SEED, lake, "high", "post");
     const m = seen.layout!.markers[0]!;
     const at = shore(0);
     const f = frameAt(lake.x + 1000, at.ground + 100, lake.z, 18.5);
@@ -334,7 +345,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   });
 
   it("eases the midges out over 3 s when the hour jumps from dusk to noon", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     const m = seen.layout!.markers[0]!;
     const f = frameAt(m.x, m.y, m.z + 1, 18.5);
     life.update(f);
@@ -352,7 +363,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   });
 
   it("holds no NaN through jumps of the hour and the weather, with a swarm over a player's head", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     const m = seen.layout!.markers[0]!;
     const at = shore(0);
     const f = frameAt(m.x, m.y, m.z + 1, 18.5);
@@ -401,7 +412,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   });
 
   it("gathers a swarm over each of five players standing at dusk, within the rows and the low tier's 800 midges", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "low");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "low", "material");
     const players = [0, 0.3, 0.6, 0.9, 1.2].map((angle) => {
       const at = shore(angle);
       return { x: at.x, y: at.ground + 0.9, z: at.z };
@@ -433,7 +444,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   });
 
   it("keeps each swarm over its own player's head when a slot between them empties", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "low");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "low", "material");
     const players = [0, 0.6, 1.2].map((angle) => {
       const at = shore(angle);
       return { x: at.x, y: at.ground + 0.9, z: at.z };
@@ -461,7 +472,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
 
   it("lets every head swarm go while the camera is out of reach, so none passes to a player who takes a slot meanwhile", () => {
     const lake = lakeOf(SEED);
-    const life = createWaterLife(scene(), SEED, lake, "high");
+    const life = createWaterLife(scene(), SEED, lake, "high", "post");
     const a = shore(0);
     const b = shore(2);
     const f = frameAt(a.x, a.ground + 1.6, a.z, 18.5);
@@ -487,7 +498,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   it("lays the far chorus over the marsh's middle and on the rim across the lake from it, 0.3 m above the water", () => {
     const lake = lakeOf(MARSH_SEED);
     const lobe = lake.lobe!;
-    const life = createWaterLife(scene(), MARSH_SEED, lake, "low");
+    const life = createWaterLife(scene(), MARSH_SEED, lake, "low", "material");
     const [marsh, across] = life.sound().bed.points;
     const from = (p: { x: number; z: number }) => Math.hypot(p.x - lake.x, p.z - lake.z);
     const along = (p: { x: number; z: number }) => ((p.x - lake.x) * lobe.dirX + (p.z - lake.z) * lobe.dirZ) / from(p);
@@ -505,7 +516,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   it("without a marsh, lays the far chorus on the rim across the lake from its first frog, and on the rim by that frog", () => {
     const lake = lakeOf(SEED);
     expect(lake.lobe).toBeNull();
-    const life = createWaterLife(scene(), SEED, lake, "low");
+    const life = createWaterLife(scene(), SEED, lake, "low", "material");
     const v = seen.layout!.voices[0]!;
     const [far, by] = life.sound().bed.points;
     const from = (p: { x: number; z: number }) => Math.hypot(p.x - lake.x, p.z - lake.z);
@@ -519,7 +530,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
 
   it("sounds the far chorus at night, thinner with a player among the frogs, and not by day, under dread, with the Hollow near, out of reach or once disposed", () => {
     const lake = lakeOf(SEED);
-    const life = createWaterLife(scene(), SEED, lake, "low");
+    const life = createWaterLife(scene(), SEED, lake, "low", "material");
     const at = shore(0);
     const f = frameAt(at.x, at.ground + 1.6, at.z, 22);
     const level = () => life.sound().bed.level;
@@ -566,7 +577,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   });
 
   it("steps, draws and voices nothing once disposed, and disposes once", () => {
-    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     const m = seen.layout!.markers[0]!;
     life.update(frameAt(m.x, m.y, m.z + 1, 18.5));
     expect(life.sound().hums_n).toBe(30);
@@ -588,7 +599,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
   it("takes every mesh and material it made out of the scene on dispose, and falls silent", () => {
     const s = scene();
     const before = { meshes: s.meshes.length, materials: s.materials.length };
-    const life = createWaterLife(s, SEED, lakeOf(SEED), "high");
+    const life = createWaterLife(s, SEED, lakeOf(SEED), "high", "post");
     const m = seen.layout!.markers[0]!;
     const f = frameAt(m.x, m.y, m.z + 1, 18.5);
     life.update(f);

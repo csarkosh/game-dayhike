@@ -185,7 +185,13 @@ export type WaterLife = {
   dispose(): void;
 };
 
-export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, tier: QualityTier): WaterLife {
+/**
+ * The life of `lake` in `scene`, placed from the world's `seed`, its midges
+ * capped by `tier` and toned for the frame's `colourPath`, as the sky dome is.
+ */
+export function createWaterLife(
+  scene: Scene, seed: number, lake: LakeSource, tier: QualityTier, colourPath: "post" | "material",
+): WaterLife {
   const layout = waterLifeLayout(seed, lake);
   const markers = layout.markers;
   const markerRows = Math.min(markers.length, HEAD_ROW0);
@@ -195,7 +201,7 @@ export function createWaterLife(scene: Scene, seed: number, lake: LakeSource, ti
   const blocks: number[] = new Array<number>(MIDGE_SWARMS_MAX).fill(0);
   for (let r = 0; r < markerRows; r++) blocks[r] = Math.ceil(markers[r]!.midges * BLOCK_FULLNESS);
   for (let h = 0; h < MAX_PLAYERS; h++) blocks[HEAD_ROW0 + h] = HEAD_MIDGES[1];
-  const midges = createMidgeSwarms(scene, blocks);
+  const midges = createMidgeSwarms(scene, blocks, colourPath);
   midges.mesh.setEnabled(false);
 
   const dragonflies = createDragonflyBehaviour(layout, seed);

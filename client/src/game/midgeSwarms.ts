@@ -19,6 +19,16 @@
  * material a fog define and uniforms the stages never read; never culled
  * (the stages place the midges, the mesh's own bounds say nothing of where);
  * never a shadow caster.
+ *
+ * On the material colour path (no post chain) the fragment stage tones the
+ * light each speck adds as Babylon's image processing tones every other
+ * material there, and as the sky dome's stage tones the sky (`skyDome.ts`):
+ * the exposure, the Khronos PBR Neutral tone map, the sRGB encode and the
+ * contrast, the scene's own. The exposure (the frame's, the stare's dimming
+ * included) is bound from the scene's configuration at each draw, as Babylon
+ * binds it to every other material; the contrast with each update. On the
+ * post path the light goes out linear, for the post chain to tone with the
+ * frame.
  */
 import type { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -36,11 +46,12 @@ import midgeFragment from "./shaders/midge.fragment.fx?raw";
 /** The material's and the mesh's name, and the stages' name in Babylon's shader store. */
 export const MIDGE_NAME = "midge";
 
-/** The stages' uniforms: the camera's matrix, then the midges'. */
+/** The stages' uniforms: the camera's matrix, then the midges', then the image's. */
 export const MIDGE_UNIFORMS: readonly string[] = [
   "viewProjection",
   "midgeEye", "midgeTime", "midgeSun", "midgeSunLight", "midgeSkyGlow", "midgeNight", "midgeSkyLuma", "midgePixel",
   "midgeSwarms",
+  "midgeExposure", "midgeToneMap", "midgeContrast",
 ];
 
 /** The forward scatter's lobe: the cosine between the view and the sun raised to this. */
@@ -60,6 +71,11 @@ export const MIDGE_SKY_LOBE_POWER = 2;
 export const MIDGE_ALPHA_FLOOR = 0.6;
 /** How much of the background a speck hides against the brightest sky. */
 export const MIDGE_DARK = 0.9;
+/** Khronos PBR Neutral's published constants, as Babylon's image processing
+ * and the sky dome's stage have them: where compression starts, and how far
+ * a compressed colour desaturates. */
+export const MIDGE_NEUTRAL_START = 0.76;
+export const MIDGE_NEUTRAL_DESATURATION = 0.15;
 
 /** One frame of the midges: the eye, the shared clock, the sun, the sky and the table. */
 export type MidgeFrame = {
@@ -83,7 +99,8 @@ export type MidgeFrame = {
 
 export type MidgeSwarms = {
   readonly mesh: Mesh;
-  /** Sets every uniform from `f`, the table copied into the material's own. */
+  /** Sets every uniform from `f`, the table copied into the material's own,
+   * and the contrast from the scene's image processing. */
   update(f: MidgeFrame): void;
   dispose(): void;
 };
@@ -98,10 +115,10 @@ function cardData(): VertexData {
 
 /**
  * The midges' mesh and material, `blocks[r]` instances in row r (0 for a row
- * not used), at most MIDGE_SWARMS_MAX rows. Until the first update every row
- * is empty and nothing draws.
+ * not used), at most MIDGE_SWARMS_MAX rows, toned for `colourPath`. Until
+ * the first update every row is empty and nothing draws.
  */
-export function createMidgeSwarms(scene: Scene, blocks: readonly number[]): MidgeSwarms {
+export function createMidgeSwarms(scene: Scene, blocks: readonly number[], colourPath: "post" | "material"): MidgeSwarms {
   if (blocks.length > MIDGE_SWARMS_MAX) {
     throw new Error(`createMidgeSwarms: ${blocks.length} rows, the table holds ${MIDGE_SWARMS_MAX}`);
   }
@@ -131,6 +148,9 @@ export function createMidgeSwarms(scene: Scene, blocks: readonly number[]): Midg
   material.setFloat("midgeNight", 0);
   material.setFloat("midgeSkyLuma", 0);
   material.setFloat("midgePixel", 0);
+  material.setFloat("midgeExposure", 1);
+  material.setFloat("midgeToneMap", colourPath === "material" ? 1 : 0);
+  material.setFloat("midgeContrast", 1);
   // setArray4 is typed for a number[] and reads its argument by index alone,
   // on WebGL (uniform4fv) and on WebGPU (the uniform buffer's update): the
   // typed array goes up as it is.
@@ -170,6 +190,19 @@ export function createMidgeSwarms(scene: Scene, blocks: readonly number[]): Midg
   // With no instance Babylon would draw the bare card.
   mesh.setEnabled(total > 0);
 
+  // At each draw on the material path, as Babylon binds its image processing
+  // to every other material there: the exposure, read from the same
+  // configuration every other material binds it from, the stare's dimming
+  // included, which the lighting writes between updates. The card's one
+  // submesh holds the effect being drawn.
+  const bindExposure = colourPath === "material"
+    ? material.onBindObservable.add((drawn) => {
+      const effect = drawn.subMeshes[0]?.effect;
+      if (!effect) return;
+      effect.setFloat("midgeExposure", scene.imageProcessingConfiguration.exposure);
+    })
+    : null;
+
   return {
     mesh,
     update(f) {
@@ -183,8 +216,10 @@ export function createMidgeSwarms(scene: Scene, blocks: readonly number[]): Midg
       material.setFloat("midgePixel", f.pixelAt1m);
       table.set(f.table);
       material.setArray4("midgeSwarms", table as unknown as number[]);
+      material.setFloat("midgeContrast", scene.imageProcessingConfiguration.contrast);
     },
     dispose() {
+      if (bindExposure !== null) material.onBindObservable.remove(bindExposure);
       mesh.dispose();
       material.dispose();
     },

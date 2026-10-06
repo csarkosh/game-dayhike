@@ -1,15 +1,17 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Effect } from "@babylonjs/core/Materials/effect.js";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
+import { imageProcessingFunctions } from "@babylonjs/core/Shaders/ShadersInclude/imageProcessingFunctions.js";
+import { helperFunctions } from "@babylonjs/core/Shaders/ShadersInclude/helperFunctions.js";
 import {
   createMidgeSwarms, MIDGE_ALPHA_FLOOR, MIDGE_DARK, MIDGE_FLASH_GAIN, MIDGE_FLASH_POWER, MIDGE_LOBE_POWER, MIDGE_NAME,
-  MIDGE_SKY_GLINT, MIDGE_SKY_LOBE_POWER, MIDGE_UNIFORMS,
+  MIDGE_NEUTRAL_DESATURATION, MIDGE_NEUTRAL_START, MIDGE_SKY_GLINT, MIDGE_SKY_LOBE_POWER, MIDGE_UNIFORMS,
   type MidgeFrame, type MidgeSwarms,
 } from "../../src/game/midgeSwarms.js";
 import {
@@ -17,6 +19,7 @@ import {
   midgeHash, midgeOffset,
 } from "../../src/game/midgeMotion.js";
 import { luma } from "../../src/game/colour.js";
+import { sightUnder } from "../../src/game/gradeParams.js";
 import { sunPositionAt } from "../../src/game/sky.js";
 import { SLICE_ALTITUDES_DEG } from "../../src/game/skyModel.js";
 import { skyStateFor } from "../../src/game/skyState.js";
@@ -31,6 +34,7 @@ const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name
 const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 const VERTEX = fx("midge.vertex.fx");
 const FRAGMENT = fx("midge.fragment.fx");
+const SKY_FRAGMENT = fx("skyDome.fragment.fx");
 
 /** What a ShaderMaterial holds of its options and uniform values. */
 type Held = {
@@ -71,7 +75,7 @@ function frame(time: number): MidgeFrame {
 describe("createMidgeSwarms", () => {
   it("is one unit card named midge, blended premultiplied, out of the fog, never culled, picked or shadowed", () => {
     const s = scene();
-    swarms = createMidgeSwarms(s, [4]);
+    swarms = createMidgeSwarms(s, [4], "post");
     const mesh = swarms.mesh;
     expect(mesh.name).toBe(MIDGE_NAME);
     expect(MIDGE_NAME).toBe("midge");
@@ -97,7 +101,7 @@ describe("createMidgeSwarms", () => {
     try {
       gpuScene.activeCamera = new UniversalCamera("eye", new Vector3(0, 2, 0), gpuScene);
       gpuScene.fogMode = Scene.FOGMODE_EXP2;
-      const made = createMidgeSwarms(gpuScene, [4]);
+      const made = createMidgeSwarms(gpuScene, [4], "post");
       const effect = await drawnEffect(made.mesh);
       expect((effect as unknown as { defines: string }).defines).not.toContain("FOG");
       made.dispose();
@@ -109,7 +113,7 @@ describe("createMidgeSwarms", () => {
 
   it("builds its material from the two stages it stores, with the position, the midge and the uniforms", () => {
     const s = scene();
-    swarms = createMidgeSwarms(s, [4]);
+    swarms = createMidgeSwarms(s, [4], "post");
     expect(Effect.ShadersStore["midgeVertexShader"]).toBe(VERTEX);
     expect(Effect.ShadersStore["midgeFragmentShader"]).toBe(FRAGMENT);
     const options = held(swarms)._options;
@@ -118,6 +122,7 @@ describe("createMidgeSwarms", () => {
       "viewProjection",
       "midgeEye", "midgeTime", "midgeSun", "midgeSunLight", "midgeSkyGlow", "midgeNight", "midgeSkyLuma", "midgePixel",
       "midgeSwarms",
+      "midgeExposure", "midgeToneMap", "midgeContrast",
     ]);
     expect(MIDGE_UNIFORMS).toEqual(options.uniforms);
     expect(options.samplers).toEqual([]);
@@ -129,7 +134,7 @@ describe("createMidgeSwarms", () => {
 
   it("lays out one instance a slot of each row's block, its row and slot written once", () => {
     const s = scene();
-    swarms = createMidgeSwarms(s, [3, 0, 2, 1]);
+    swarms = createMidgeSwarms(s, [3, 0, 2, 1], "post");
     const mesh = swarms.mesh;
     expect(mesh.thinInstanceCount).toBe(6);
     expect(mesh.isEnabled()).toBe(true);
@@ -150,7 +155,7 @@ describe("createMidgeSwarms", () => {
     const s = scene();
     const blocks = [...Array<number>(25).fill(520), ...Array<number>(5).fill(150), 0, 0];
     expect(blocks.length).toBe(32);
-    swarms = createMidgeSwarms(s, blocks);
+    swarms = createMidgeSwarms(s, blocks, "post");
     expect(swarms.mesh.thinInstanceCount).toBe(13_750);
     const midge = swarms.mesh.getVertexBuffer("midge")!.getData() as Float32Array;
     expect(midge.length).toBe(27_500);
@@ -160,7 +165,7 @@ describe("createMidgeSwarms", () => {
 
   it("draws nothing where no row has an instance", () => {
     const s = scene();
-    swarms = createMidgeSwarms(s, [0, 0, 0]);
+    swarms = createMidgeSwarms(s, [0, 0, 0], "post");
     expect(swarms.mesh.thinInstanceCount).toBe(0);
     expect(swarms.mesh.isEnabled()).toBe(false);
     expect(swarms.mesh.isVerticesDataPresent("midge")).toBe(false);
@@ -168,14 +173,16 @@ describe("createMidgeSwarms", () => {
 
   it("refuses more rows than the table holds", () => {
     const s = scene();
-    expect(() => createMidgeSwarms(s, Array<number>(33).fill(1))).toThrow("createMidgeSwarms: 33 rows, the table holds 32");
+    expect(() => createMidgeSwarms(s, Array<number>(33).fill(1), "post")).toThrow("createMidgeSwarms: 33 rows, the table holds 32");
   });
 
-  it("starts with every row empty, no count and no presence, so nothing shows before the first update", () => {
+  it("starts with every row empty, no count and no presence, so nothing shows before the first update, the tone map set by the colour path", () => {
     const s = scene();
-    swarms = createMidgeSwarms(s, [4]);
+    swarms = createMidgeSwarms(s, [4], "post");
     const m = held(swarms);
-    expect(m._floats).toEqual({ midgeTime: 0, midgeNight: 0, midgeSkyLuma: 0, midgePixel: 0 });
+    expect(m._floats).toEqual({
+      midgeTime: 0, midgeNight: 0, midgeSkyLuma: 0, midgePixel: 0, midgeExposure: 1, midgeToneMap: 0, midgeContrast: 1,
+    });
     expect(m._vectors3["midgeEye"]!.asArray()).toEqual([0, 0, 0]);
     expect(m._vectors3["midgeSun"]!.asArray()).toEqual([0, 1, 0]);
     expect(m._vectors3["midgeSunLight"]!.asArray()).toEqual([0, 0, 0]);
@@ -183,11 +190,15 @@ describe("createMidgeSwarms", () => {
     const table = m._vectors4Arrays["midgeSwarms"]!;
     expect(table.length).toBe(384);
     expect(table.every((v) => v === 0)).toBe(true);
+    swarms.dispose();
+    swarms = createMidgeSwarms(s, [4], "material");
+    expect(held(swarms)._floats["midgeToneMap"]).toBe(1);
   });
 
-  it("update sets every uniform from the frame, through the objects made with the midges, every time", () => {
+  it("update sets every uniform from the frame, through the objects made with the midges, every time, the contrast the scene's", () => {
     const s = scene();
-    swarms = createMidgeSwarms(s, [4]);
+    s.imageProcessingConfiguration.contrast = 1.1;
+    swarms = createMidgeSwarms(s, [4], "post");
     const m = held(swarms);
     swarms.update(frame(12.5));
     const eye = m._vectors3["midgeEye"];
@@ -195,7 +206,10 @@ describe("createMidgeSwarms", () => {
     const sunLight = m._vectors3["midgeSunLight"];
     const skyGlow = m._vectors3["midgeSkyGlow"];
     const table = m._vectors4Arrays["midgeSwarms"];
-    expect(m._floats).toEqual({ midgeTime: 12.5, midgeNight: 0.25, midgeSkyLuma: 0.4, midgePixel: 0.0011 });
+    // The exposure stands until a draw binds the frame's (below).
+    expect(m._floats).toEqual({
+      midgeTime: 12.5, midgeNight: 0.25, midgeSkyLuma: 0.4, midgePixel: 0.0011, midgeExposure: 1, midgeToneMap: 0, midgeContrast: 1.1,
+    });
     expect(eye!.asArray()).toEqual([1, 2, 3]);
     expect(sun!.asArray()).toEqual([0, 0.6, 0.8]);
     expect(sunLight!.asArray()).toEqual([2, 1.5, 1]);
@@ -221,9 +235,40 @@ describe("createMidgeSwarms", () => {
     expect(table![5]).toBe(25);
   });
 
+  it("binds the frame's exposure at each draw on the material path, the stare's dimming in it; the post path keeps the stage's own", async () => {
+    for (const colourPath of ["material", "post"] as const) {
+      const s = scene();
+      swarms = createMidgeSwarms(s, [4], colourPath);
+      const mesh = swarms.mesh;
+      const live = (await drawnEffect(mesh)) as unknown as Effect;
+      const bound = new Map<string, number>();
+      vi.spyOn(live, "setFloat").mockImplementation((name: string, x: number) => {
+        bound.set(name, x);
+        return live;
+      });
+      const draw = () => (mesh.material as ShaderMaterial).bindForSubMesh(Matrix.Identity(), mesh, mesh.subMeshes[0]!);
+      // The frame's exposure at a quarter past six under a clear sky.
+      const image = s.imageProcessingConfiguration;
+      image.exposure = 1.27;
+      draw();
+      expect(bound.get("midgeExposure"), colourPath).toBe(colourPath === "material" ? 1.27 : 1);
+      // The stare at its fullest, written between two draws with no update,
+      // as the lighting writes it: the material path draws with it, as every
+      // other material there does; the post path's grade dims the frame whole.
+      expect(sightUnder(1)).toBe(0.7);
+      image.exposure = 1.27 * sightUnder(1);
+      draw();
+      expect(bound.get("midgeExposure"), colourPath).toBeCloseTo(colourPath === "material" ? 0.889 : 1, 12);
+      swarms.dispose();
+      swarms = null;
+      engine?.dispose();
+      engine = null;
+    }
+  });
+
   it("dispose takes the mesh and the material out of the scene", () => {
     const s = scene();
-    const made = createMidgeSwarms(s, [4, 2]);
+    const made = createMidgeSwarms(s, [4, 2], "post");
     const material = made.mesh.material!;
     expect(s.meshes).toContain(made.mesh);
     expect(s.materials).toContain(material);
@@ -259,6 +304,7 @@ describe("the midges' stages", () => {
       MIDGE_LOBE_POWER: "8.0", MIDGE_FLASH_POWER: "24.0", MIDGE_FLASH_GAIN: "0.5",
       MIDGE_SKY_GLINT: "0.6", MIDGE_SKY_LOBE_POWER: "2.0",
       MIDGE_DARK: "0.9",
+      MIDGE_NEUTRAL_START: "0.76", MIDGE_NEUTRAL_DESATURATION: "0.15",
     });
     expect([MIDGE_CARD, MIDGE_MIN_PX, MIDGE_ALPHA_FLOOR, MIDGE_SKY_GLINT, MIDGE_SKY_LOBE_POWER, MIDGE_DARK])
       .toEqual([0.003, 2, 0.6, 0.6, 2, 0.9]);
@@ -277,6 +323,13 @@ describe("the midges' stages", () => {
     expect(consts["MIDGE_SKY_GLINT"]).toBe(glslFloat(MIDGE_SKY_GLINT));
     expect(consts["MIDGE_SKY_LOBE_POWER"]).toBe(glslFloat(MIDGE_SKY_LOBE_POWER));
     expect(consts["MIDGE_DARK"]).toBe(glslFloat(MIDGE_DARK));
+    // Khronos PBR Neutral's published constants: the dome's, and Babylon's as installed.
+    expect([MIDGE_NEUTRAL_START, MIDGE_NEUTRAL_DESATURATION]).toEqual([0.76, 0.15]);
+    expect(consts["MIDGE_NEUTRAL_START"]).toBe(glslFloat(MIDGE_NEUTRAL_START));
+    expect(consts["MIDGE_NEUTRAL_DESATURATION"]).toBe(glslFloat(MIDGE_NEUTRAL_DESATURATION));
+    expect(SKY_FRAGMENT).toContain("const float SKY_NEUTRAL_START = 0.76;");
+    expect(SKY_FRAGMENT).toContain("const float SKY_NEUTRAL_DESATURATION = 0.15;");
+    expect(imageProcessingFunctions.shader).toContain("const float PBRNeutralStartCompression=0.8-0.04;const float PBRNeutralDesaturation=0.15;");
   });
 
   it("hold the table as three vec4 a swarm, a row for every swarm the table holds", () => {
@@ -351,13 +404,26 @@ describe("the midges' stages", () => {
     expect(VERTEX).toContain(`  vec3 sunLevel = vec3(midgeSun.x, 0.0, midgeSun.z);
   vec3 sunFlat = normalize(mix(vec3(1.0, 0.0, 0.0), sunLevel, step(1.0e-8, dot(sunLevel, sunLevel))));
   vSkyGlint = MIDGE_SKY_GLINT * pow(max(dot(-view, sunFlat), 0.0), MIDGE_SKY_LOBE_POWER);`);
-    expect(FRAGMENT).toContain(`  vec2 tent = clamp(1.0 - abs(vCorner), 0.0, 1.0);
-  float a = vAlpha * tent.x * tent.y;
-  float day = 1.0 - midgeNight;
-  vec3 sunGlint = midgeSunLight * day * vSunGlint;
-  vec3 skyGlint = midgeSkyGlow * vSkyGlint;
-  float speck = MIDGE_DARK * clamp(midgeSkyLuma, 0.0, 1.0);
-  gl_FragColor = vec4((sunGlint + skyGlint) * a, speck * a);`);
+    // The fragment's main whole, the last thing in the stage: the glint times
+    // its coverage, then on the material path toned in Babylon's order
+    // (exposure, Neutral, encode, contrast), chosen by step on the colour
+    // path's uniform; the coverage's alpha never toned.
+    const main = [
+      "vec2 tent = clamp(1.0 - abs(vCorner), 0.0, 1.0);",
+      "float a = vAlpha * tent.x * tent.y;",
+      "float day = 1.0 - midgeNight;",
+      "vec3 sunGlint = midgeSunLight * day * vSunGlint;",
+      "vec3 skyGlint = midgeSkyGlow * vSkyGlint;",
+      "float speck = MIDGE_DARK * clamp(midgeSkyLuma, 0.0, 1.0);",
+      "vec3 light = (sunGlint + skyGlint) * a;",
+      "vec3 toned = midgeNeutral(light * midgeExposure);",
+      "toned = clamp(pow(max(toned, vec3(0.0)), vec3(1.0 / 2.2)), 0.0, 1.0);",
+      "toned = midgeContrastOf(toned);",
+      "gl_FragColor = vec4(mix(light, toned, step(0.5, midgeToneMap)), speck * a);",
+    ];
+    const mainAt = FRAGMENT.indexOf("void main(void) {");
+    expect(mainAt).toBeGreaterThan(-1);
+    expect(FRAGMENT.slice(mainAt)).toBe(`void main(void) {\n  ${main.join("\n  ")}\n}\n`);
     const both = `${VERTEX}\n${FRAGMENT}`;
     expect(both).not.toMatch(/\btexture\w*\s*\(/);
     expect(both).not.toMatch(/sampler/);
@@ -504,36 +570,151 @@ describe("the midges' stages", () => {
     night.colour.forEach((v, i) => expect(v).toBeCloseTo([0.012149, 0.018012, 0.036][i]!, 6));
     expect(luma({ r: night.colour[0]!, g: night.colour[1]!, b: night.colour[2]! })).toBeCloseTo(0.018064, 6);
   }, timeLimit(10_000));
+
+  const mix = (x: number, y: number, t: number): number => x * (1 - t) + y * t;
+  const step = (edge: number, x: number): number => (x < edge ? 0 : 1);
+  /** Babylon's Khronos PBR Neutral, transcribed from its installed text (pinned below), its early return kept. */
+  const babylonNeutral = (rgb: readonly number[]): number[] => {
+    const start = 0.8 - 0.04;
+    const x = Math.min(rgb[0]!, rgb[1]!, rgb[2]!);
+    const offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+    const color = rgb.map((v) => v - offset);
+    const peak = Math.max(...color);
+    if (peak < start) return color;
+    const d = 1 - start;
+    const newPeak = 1 - (d * d) / (peak + d - start);
+    const g = 1 - 1 / (0.15 * (peak - newPeak) + 1);
+    return color.map((v) => mix(v * (newPeak / peak), newPeak, g));
+  };
+  /** The fragment stage's Neutral, transcribed from its pinned lines. */
+  const stageNeutral = (rgb: readonly number[]): number[] => {
+    const start = c("MIDGE_NEUTRAL_START");
+    const x = Math.min(rgb[0]!, rgb[1]!, rgb[2]!);
+    const offset = mix(x - 6.25 * x * x, 0.04, step(0.08, x));
+    const color = rgb.map((v) => v - offset);
+    const peak = Math.max(...color);
+    const top = Math.max(peak, start);
+    const k = 1 - start;
+    const newPeak = 1 - (k * k) / (top + k - start);
+    const g = 1 - 1 / (c("MIDGE_NEUTRAL_DESATURATION") * (top - newPeak) + 1);
+    return color.map((v) => mix(v, mix(v * (newPeak / top), newPeak, g), step(start, peak)));
+  };
+  /** The fragment stage's colour, transcribed from its pinned lines: `light`
+   * the glint times its coverage, then the tail by the colour path's uniform. */
+  const stageColour = (light: readonly number[], exposure: number, toneMap: number, contrast: number): number[] => {
+    const encoded = stageNeutral(light.map((v) => v * exposure)).map((v) => Math.min(Math.max(Math.pow(Math.max(v, 0), 1 / 2.2), 0), 1));
+    const toned = encoded.map((v) => {
+      const high = v * v * (3 - 2 * v);
+      return Math.max(mix(mix(0.5, v, contrast), mix(v, high, contrast - 1), step(1, contrast)), 0);
+    });
+    return light.map((v, i) => mix(v, toned[i]!, step(0.5, toneMap)));
+  };
+
+  it("tone the glint on the material path as Babylon's image processing tones every other material there, and leave it as it was on the post path", () => {
+    // Babylon's blocks as installed: an upgrade that changes one fails here
+    // before the midges can drift from the frame they land in.
+    const babylon = imageProcessingFunctions.shader;
+    expect(babylon).toContain(
+      "float x=min(color.r,min(color.g,color.b));float offset=x<0.08 ? x-6.25*x*x : 0.04;color-=offset;" +
+        "float peak=max(color.r,max(color.g,color.b));if (peak<PBRNeutralStartCompression) return color;" +
+        "float d=1.-PBRNeutralStartCompression;float newPeak=1.-d*d/(peak+d-PBRNeutralStartCompression);color*=newPeak/peak;" +
+        "float g=1.-1./(PBRNeutralDesaturation*(peak-newPeak)+1.);return mix(color,newPeak*vec3(1,1,1),g);}",
+    );
+    expect(babylon).toContain("result.rgb=toGammaSpace(result.rgb);result.rgb=saturate(result.rgb);");
+    expect(helperFunctions.shader).toContain("const float LinearEncodePowerApprox=2.2;const float GammaEncodePowerApprox=1.0/LinearEncodePowerApprox;");
+    expect(babylon).toContain(
+      "vec3 resultHighContrast=result.rgb*result.rgb*(3.0-2.0*result.rgb);if (contrast<1.0) {result.rgb=mix(vec3(0.5,0.5,0.5),result.rgb,contrast);} " +
+        "else {result.rgb=mix(result.rgb,resultHighContrast,contrast-1.0);}\nresult.rgb=max(result.rgb,0.);",
+    );
+    // The stage's: Babylon's selections made by step and mix, the compression
+    // worked from the peak held at the start or above it.
+    expect(FRAGMENT).toContain(`vec3 midgeNeutral(vec3 color) {
+  float x = min(color.r, min(color.g, color.b));
+  float offset = mix(x - 6.25 * x * x, 0.04, step(0.08, x));
+  color -= offset;
+  float peak = max(color.r, max(color.g, color.b));
+  float top = max(peak, MIDGE_NEUTRAL_START);
+  float k = 1.0 - MIDGE_NEUTRAL_START;
+  float newPeak = 1.0 - k * k / (top + k - MIDGE_NEUTRAL_START);
+  float g = 1.0 - 1.0 / (MIDGE_NEUTRAL_DESATURATION * (top - newPeak) + 1.0);
+  vec3 compressed = mix(color * (newPeak / top), vec3(newPeak), g);
+  return mix(color, compressed, step(MIDGE_NEUTRAL_START, peak));
+}`);
+    expect(FRAGMENT).toContain(`vec3 midgeContrastOf(vec3 c) {
+  vec3 high = c * c * (3.0 - 2.0 * c);
+  vec3 low = mix(vec3(0.5), c, midgeContrast);
+  vec3 raised = mix(c, high, midgeContrast - 1.0);
+  return max(mix(low, raised, step(1.0, midgeContrast)), 0.0);
+}`);
+    // The stage's Neutral is Babylon's: dark, below the start, about it and far past it.
+    const colours = [[0, 0, 0], [0.05, 0.02, 0.01], [0.3, 0.1, 0.12], [0.79, 0.06, 0.07], [0.8, 0.8, 0.8], [1.2, 0.9, 0.3], [6.875, 0.825, 0.175], [40, 3, 1]];
+    for (const rgb of colours) {
+      const theirs = babylonNeutral(rgb);
+      stageNeutral(rgb).forEach((v, i) => expect(v, `${rgb}`).toBeCloseTo(theirs[i]!, 12));
+    }
+    // At a peak of 0.52 the compression's divisor is 0: worked from the peak
+    // itself, the side not taken would be no number, and a mix that takes
+    // none of it still takes the NaN. Held at the start, it stays a number.
+    const start = c("MIDGE_NEUTRAL_START");
+    expect(0.52 + (1 - start) - start).toBe(0);
+    expect(mix(0.52, Number.NaN, 0)).toBeNaN();
+    expect(stageNeutral([0.52, 0, 0])).toEqual([0.52, 0, 0]);
+
+    // A midge seen level toward the sun at a quarter past six under a clear
+    // sky, at the coverage floor: its glint times its coverage, at the
+    // frame's exposure then and the material path's contrast.
+    const dusk = [0.66, 0.17, 0.19];
+    // The post path: as it was, whatever the exposure and the contrast; the
+    // post chain tones it with the frame it lands in.
+    expect(stageColour(dusk, 1.27, 0, 1.1)).toEqual([0.66, 0.17, 0.19]);
+    expect(stageColour(dusk, 0.25, 0, 0.9)).toEqual([0.66, 0.17, 0.19]);
+    // The material path: exposed, compressed, encoded and contrasted as the
+    // trees behind it were, brighter and less red than the linear glint
+    // written into the encoded frame.
+    stageColour(dusk, 1.27, 1, 1.1).forEach((v, i) => expect(v).toBeCloseTo([0.907123, 0.450767, 0.480724][i]!, 6));
+    // The stare at its fullest leaves 0.7 of the exposure: the midges dim with the frame.
+    stageColour(dusk, 1.27 * sightUnder(1), 1, 1.1).forEach((v, i) => expect(v).toBeCloseTo([0.769478, 0.362247, 0.389022][i]!, 6));
+    // Forty-five degrees off the sun at six: the linear glint clipped to a
+    // saturated orange, (1, 0.66, 0.14); toned, it rolls off toward white.
+    stageColour([5.5, 0.66, 0.14], 1.25, 1, 1.1).forEach((v, i) => expect(v).toBeCloseTo([0.996254, 0.754451, 0.720447][i]!, 6));
+    // An empty corner of the card adds no light.
+    expect(stageColour([0, 0, 0], 1.27, 1, 1.1)).toEqual([0, 0, 0]);
+  });
 });
 
 describe("the midges' stages, compiled", () => {
   let translators: StartedTranslators;
   beforeAll(async () => { translators = await startTranslators(); }, timeLimit(60_000));
 
-  it("compile through glslang and translate to WGSL, reading no texture", async () => {
-    const gpu = webgpuProcessingEngine();
-    const gpuScene = new Scene(gpu);
-    try {
-      gpuScene.activeCamera = new UniversalCamera("eye", new Vector3(0, 2, 0), gpuScene);
-      const made = createMidgeSwarms(gpuScene, [4, 2]);
-      const effect = await drawnEffect(made.mesh);
-      const defines = (effect as unknown as { defines: string }).defines;
-      expect(defines).toContain("THIN_INSTANCES");
-      const stage = (kind: "vertex" | "fragment", code: string) =>
-        translateStage(translators, { stage: kind, flag: uniformityOff(code), glsl: translatorInput(code, defines) });
-      const vertex = stage("vertex", effect._vertexSourceCode);
-      const fragment = stage("fragment", effect._fragmentSourceCode);
-      expect(vertex).toContain("midgeSwarms");
-      expect(vertex).toContain("array<vec4<f32>, 96u>");
-      expect(vertex).toContain("midge");
-      expect(fragment).toContain("midgeSunLight");
-      expect(fragment).toContain("midgeSkyGlow");
-      expect(vertex).not.toMatch(/textureSample/);
-      expect(fragment).not.toMatch(/textureSample/);
-      made.dispose();
-    } finally {
-      gpuScene.dispose();
-      gpu.dispose();
-    }
-  }, timeLimit(60_000));
+  for (const colourPath of ["post", "material"] as const) {
+    it(`compile through glslang and translate to WGSL on the ${colourPath} path, reading no texture`, async () => {
+      const gpu = webgpuProcessingEngine();
+      const gpuScene = new Scene(gpu);
+      try {
+        gpuScene.activeCamera = new UniversalCamera("eye", new Vector3(0, 2, 0), gpuScene);
+        const made = createMidgeSwarms(gpuScene, [4, 2], colourPath);
+        const effect = await drawnEffect(made.mesh);
+        const defines = (effect as unknown as { defines: string }).defines;
+        expect(defines).toContain("THIN_INSTANCES");
+        const stage = (kind: "vertex" | "fragment", code: string) =>
+          translateStage(translators, { stage: kind, flag: uniformityOff(code), glsl: translatorInput(code, defines) });
+        const vertex = stage("vertex", effect._vertexSourceCode);
+        const fragment = stage("fragment", effect._fragmentSourceCode);
+        expect(vertex).toContain("midgeSwarms");
+        expect(vertex).toContain("array<vec4<f32>, 96u>");
+        expect(vertex).toContain("midge");
+        expect(fragment).toContain("midgeSunLight");
+        expect(fragment).toContain("midgeSkyGlow");
+        expect(fragment).toContain("midgeExposure");
+        expect(fragment).toContain("midgeToneMap");
+        expect(fragment).toContain("midgeContrast");
+        expect(vertex).not.toMatch(/textureSample/);
+        expect(fragment).not.toMatch(/textureSample/);
+        made.dispose();
+      } finally {
+        gpuScene.dispose();
+        gpu.dispose();
+      }
+    }, timeLimit(60_000));
+  }
 });

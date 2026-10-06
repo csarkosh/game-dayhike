@@ -852,7 +852,11 @@ describe("world shell wiring", () => {
     const creation = slice("const firstLake = lakes[0];", "partOf(waterLife);");
     // A world without a lake, a hand-authored level and a scene recorded a
     // frame at a time get none.
-    expect(creation).toMatch(/forest !== null && firstLake !== undefined && options\.wildlife !== false\s*\?\s*createWaterLife\(scene, forest\.seed, firstLake, tier\)/);
+    // Its midges toned for the frame's colour path, as the lighting's dome is.
+    expect(creation).toMatch(
+      /forest !== null && firstLake !== undefined && options\.wildlife !== false\s*\?\s*createWaterLife\(scene, forest\.seed, firstLake, tier, postFeatures\.colourPath\)/,
+    );
+    expect(src).toContain("createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });");
     // Its insects draw among the see-through effects, in the water's group on high.
     expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife });");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
@@ -1023,6 +1027,10 @@ describe("the lake's life in a renderer", () => {
     try {
       const life = renderer.scene.meshes.filter((m) => m.name === MIDGE_NAME || m.name.startsWith("dragonfly_"));
       expect(life.map((m) => m.name)).toEqual([MIDGE_NAME, "dragonfly_darner", "dragonfly_skimmer", "dragonfly_damselfly"]);
+      // The midges are toned as the dome is: the NullEngine has no float
+      // targets, so even the high tier draws on the material path here.
+      const floats = (name: string) => (renderer.scene.getMaterialByName(name) as unknown as { _floats: Record<string, number> })._floats;
+      expect([floats(MIDGE_NAME)["midgeToneMap"], floats("skyDome")["skyToneMap"]]).toEqual([1, 1]);
       // At noon on the shore, so the dragonflies are out, over a few frames
       // that register the casters that land late.
       const marker = waterLifeLayout(SEED, lakeOf(SEED)).markers[0]!;

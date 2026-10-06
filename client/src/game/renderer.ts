@@ -1764,11 +1764,12 @@ function buildRenderer(
   partOf(waterPlants);
   // The midges, the dragonflies and the frogs of the world's lake: cosmetic
   // like the animals, so under their guard too (a scene recorded a frame at a
-  // time has neither). None of their meshes casts a shadow.
+  // time has neither). None of their meshes casts a shadow. The midges are
+  // toned for the frame's colour path, as the lighting's dome is.
   const firstLake = lakes[0];
   const waterLife =
     forest !== null && firstLake !== undefined && options.wildlife !== false
-      ? createWaterLife(scene, forest.seed, firstLake, tier)
+      ? createWaterLife(scene, forest.seed, firstLake, tier, postFeatures.colourPath)
       : null;
   partOf(waterLife);
 

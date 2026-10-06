@@ -644,7 +644,7 @@ describe("createWater under NullEngine", () => {
     const rain = createRain(scene, "high");
     const motes = createMotes(scene, "high");
     const mist = createMistMeshes(scene, 7, "high");
-    const waterLife = createWaterLife(scene, 388817, lakeOf(388817), "high");
+    const waterLife = createWaterLife(scene, 388817, lakeOf(388817), "high", "post");
     setEffectsGroup(effectsGroupFor(water), { rain, splash: null, motes, mist, waterLife });
     expect(motes).not.toBeNull();
     expect(mist.meshes.length).toBeGreaterThan(0);
