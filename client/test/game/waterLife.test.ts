@@ -181,11 +181,14 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     expect(life.meshes).toHaveLength(4);
     expect(life.meshes[0]!.material?.name).toBe(MIDGE_NAME);
-    const markers = seen.layout!.markers;
+    expect(seen.layout!.markers).toHaveLength(19);
     expect(seen.blocks).toHaveLength(32);
-    // A marker's swarm at its fullest, mist's 30 % more.
-    for (let r = 0; r < markers.length; r++) expect(seen.blocks[r]).toBe(Math.ceil(markers[r]!.midges * 1.3));
-    for (let r = markers.length; r < 25; r++) expect(seen.blocks[r]).toBe(0);
+    // A marker's swarm at its fullest, mist's 30 % more (the first marker's 81
+    // midges are a block of 106); the unused marker rows hold none.
+    expect(seen.blocks.slice(0, 25)).toEqual([
+      106, 302, 85, 78, 491, 78, 259, 440, 206, 205, 394, 207, 489, 266, 385, 98, 240, 505, 143,
+      0, 0, 0, 0, 0, 0,
+    ]);
     // One head row a player, each the largest head swarm; the last two rows unused.
     expect(seen.blocks.slice(25)).toEqual([150, 150, 150, 150, 150, 0, 0]);
     // Nothing drawn before the first frame.
@@ -225,7 +228,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     expect(Math.hypot(sound.hums[0]!.x - m.x, sound.hums[0]!.z - m.z)).toBeLessThan(2 * m.radius);
     expect(sound.hums[0]!.presence).toBe(1);
     // Its marker's midges: no mist, no fuller.
-    expect(sound.hums[0]!.midges).toBeCloseTo(m.midges, 3);
+    expect(sound.hums[0]!.midges).toBeCloseTo(81, 3);
     for (let h = 25; h < 30; h++) expect(sound.hums[h]!.presence).toBe(0);
     // 19.04 °C at 18:30 under a clear sky: 230 Hz at 15 °C and 10 Hz a degree.
     expect(sound.pitch).toBeCloseTo(270.43807145043604, 9);
