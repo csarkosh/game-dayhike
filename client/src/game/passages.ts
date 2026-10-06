@@ -1,7 +1,6 @@
 /**
- * The lines the game speaks at the road wall, on a player's death, and at
- * the end of the match — the last picked by who came down, not by a single
- * outcome byte.
+ * The lines the game speaks at the road wall, on a player's death, and on
+ * a win. There is no panel of names at the end: the line is the end.
  */
 import { ROAD_WALL_U } from "../sim/containment.js";
 import { Phase } from "../sim/types.js";
@@ -21,17 +20,11 @@ export const DEATH_LINE = "A short fall; the ground, soft; and overhead the coun
  */
 export const WON_LINE = "A hard night; a long way down; and the woods, for once, counting one fewer than they meant to.";
 
-/** The match's last line, chosen by who came down: all, some, none. */
-export const END_PASSAGES = {
-  all: "You came down out of the woods with the last of the light, every one of you, and the trees let you go. They will count again tomorrow.",
-  some: "Not all of you came down. The woods kept what they kept, and those who reached the road did not look back; those who did are looking still.",
-  none: "Nobody came down. The woods went back to counting, and the road ran on to a car that nobody drove home.",
-} as const;
-
-/** After the end, win or loss, the panel holds this long before the return to the landing. */
+/** After a loss, the return to the landing comes this long after the end. */
 export const END_LANDING_MS = 8000;
-/** Won: the camera's lift under the line runs this long before the panel comes (ending.ts WON_LIFT_S and the blur after it). */
-export const WON_PANEL_AFTER_MS = 6000;
+/** Won: the camera's lift under the line runs this long before the view goes dark (ending.ts WON_LIFT_S and the blur after it), and the landing comes at WON_LANDING_MS. */
+export const WON_FADE_AFTER_MS = 7000;
+export const WON_LANDING_MS = 10000;
 /** Died: the HUD's own fade finishes the black this long after the fall begins, once the dark has closed (ending.ts). */
 export const DEATH_FADE_AFTER_MS = 3500;
 

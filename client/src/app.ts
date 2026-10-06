@@ -66,9 +66,8 @@ import type { Transport } from "./net/transport.js";
 import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
-import { createEndPanel, endPanelModel } from "./game/endPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
-import { DEATH_LINE, DEATH_FADE_AFTER_MS, END_LANDING_MS, WON_LINE, WON_PANEL_AFTER_MS, roadLine } from "./game/passages.js";
+import { DEATH_LINE, DEATH_FADE_AFTER_MS, END_LANDING_MS, WON_LINE, WON_FADE_AFTER_MS, WON_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
@@ -858,8 +857,6 @@ function buildGame(
 
   const posterPanel = createPosterPanel(container);
   made(() => posterPanel.dispose());
-  const endPanel = createEndPanel(container);
-  made(() => endPanel.dispose());
   let lastButtons = 0;
   /**
    * The poster is this player's own screen: it opens on an Interact press at
@@ -895,7 +892,7 @@ function buildGame(
 
   let dead = false;
   let deathFadeTimer: ReturnType<typeof setTimeout> | null = null;
-  let endPanelTimer: ReturnType<typeof setTimeout> | null = null;
+  let endFadeTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Death, once: the poster closed, the view faded onto the passage. Input
    * stays live — the sim already ignores a dead player's movement and
@@ -923,19 +920,10 @@ function buildGame(
    * `onNamed` — never from the snapshot: a name is the lobby's, not the
    * sim's. The peer id is stored, not the display name: a pairing can land
    * before the lobby's state broadcast does, and a name resolved then would
-   * stick at the peer-id prefix for good. `nameOf` resolves it when needed.
+   * stick at the peer-id prefix for good.
    */
   const names = new Map<number, string>();
   const selfPeerId = options.peerId;
-  /**
-   * The lobby's name for a peer: "You" for this player, whichever side they
-   * are on, and the short peer id for anyone the lobby has not named — at
-   * least stable, and distinct between two strangers.
-   */
-  function nameOf(peerId: string): string {
-    if (peerId === selfPeerId) return "You";
-    return lobby?.state.members.find((m) => m.id === peerId)?.name ?? peerId.slice(0, 8);
-  }
   let ended = false;
   /**
    * The end, once: the view fades onto the panel naming who came down and who
@@ -946,37 +934,21 @@ function buildGame(
   function syncOutcome(state: WorldState): void {
     if (ended || state.outcome === Outcome.Playing) return;
     ended = true;
-    // Names resolve here, as the panel is built, so a pairing that landed
-    // before the lobby's state did still gets the lobby's name. Unsorted:
-    // `endPanelModel` orders by id, and one sort is enough. The fallback
-    // covers anyone no pairing ever named — a peer whose Named event has not
-    // landed — rather than leaving them off the roll entirely.
-    const players = [...state.players.values()].map((p) => {
-      const peerId = names.get(p.id);
-      return { id: p.id, name: peerId === undefined ? `Hiker ${p.id}` : nameOf(peerId), safe: p.safe, dead: p.health <= 0 };
-    });
     gate.refresh();
     posterPanel.hide();
-    const view = endPanelModel(players);
     const won = state.outcome === Outcome.Won && !dead;
     // Won, and alive to see it: the camera lifts to the sky under the line
-    // (ending.ts), and the panel comes once it has. Otherwise the panel at
-    // once: a dead player is already under their own last word, which the
-    // panel replaces, since the HUD's status sits where the panel covers.
+    // (ending.ts), and the view goes dark under it before the landing. A
+    // dead player is already under their own last word, which stays. There
+    // is no panel of names: the line is the end.
     if (won) {
       renderer.setEnding("won");
       hud.setStatus(WON_LINE);
-    }
-    const showPanel = () => {
-      hud.fade(true);
-      hud.setStatus(null);
-      endPanel.show(view);
-    };
-    if (endPanelTimer !== null) clearTimeout(endPanelTimer);
-    if (won) endPanelTimer = setTimeout(showPanel, WON_PANEL_AFTER_MS);
-    else showPanel();
+      if (endFadeTimer !== null) clearTimeout(endFadeTimer);
+      endFadeTimer = setTimeout(() => hud.fade(true), WON_FADE_AFTER_MS);
+    } else if (!dead) hud.fade(true);
     if (landingTimer !== null) clearTimeout(landingTimer);
-    landingTimer = setTimeout(navigateToLanding, END_LANDING_MS + (won ? WON_PANEL_AFTER_MS : 0));
+    landingTimer = setTimeout(navigateToLanding, won ? WON_LANDING_MS : END_LANDING_MS);
     sessionOver();
   }
 
@@ -1925,8 +1897,7 @@ function buildGame(
       connectPanel.dispose();
       posterPanel.dispose();
       if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
-      if (endPanelTimer !== null) clearTimeout(endPanelTimer);
-      endPanel.dispose();
+      if (endFadeTimer !== null) clearTimeout(endFadeTimer);
       disposeExtras();
       touchLayer.dispose();
       prompt.dispose();

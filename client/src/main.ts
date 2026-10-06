@@ -87,10 +87,14 @@ import {
   type EngineEnv,
   type EngineInput,
 } from "./game/engineChoice.js";
+import { createVeil, VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "./game/veil.js";
 
 const found = document.querySelector<HTMLDivElement>("#app");
 if (!found) throw new Error("#app not found");
 const app: HTMLDivElement = found;
+/** The veil the pages switch behind (veil.ts), and the milliseconds a new page gets to settle before it lifts. */
+const veil = createVeil(document.body);
+const VEIL_SETTLE_MS = 250;
 
 let running: { dispose(): void } | null = null;
 // The match on this page, when the route is the game's: what a lobby opened
@@ -274,11 +278,25 @@ function endIntro(run: IntroRun | null): void {
   if (activeIntro === run) activeIntro = null;
 }
 
-/** The intro cut: the overlay goes, and the hike, once launched, takes over. */
+/**
+ * The intro cut: the overlay goes, and the hike, once launched, takes over.
+ * Behind a quick dip of the veil (veil.ts), so the film's last frame and the
+ * hike's first are not one hard cut; a film that failed cuts at once.
+ */
 function cutIntro(run: IntroRun, reason: CutReason): void {
-  endIntro(run);
-  if (run.launched !== null) run.launched(reason);
-  else run.cutEarly = reason;
+  const cut = (): void => {
+    endIntro(run);
+    if (run.launched !== null) run.launched(reason);
+    else run.cutEarly = reason;
+  };
+  if (reason === "error" || activeIntro !== run) {
+    cut();
+    return;
+  }
+  void veil.cover(VEIL_CUT_COVER_MS).then(() => {
+    cut();
+    setTimeout(() => veil.lift(VEIL_CUT_LIFT_MS), VEIL_SETTLE_MS);
+  });
 }
 
 function startIntro(src: string, muted: boolean): IntroRun {
@@ -783,9 +801,28 @@ function makeWebGpu(
 
 // `app` is passed in rather than closed over: the null check above does not
 // narrow inside a hoisted function declaration, which could be called first.
+/** Which page a route is, for the veil: the title, the game, or a scene. */
+function pageOf(route: ReturnType<typeof parseRoute>): "landing" | "game" | "scene" {
+  if (route.kind === "scene") return "scene";
+  return isLandingRoute(route) ? "landing" : "game";
+}
+/** The page the last render put up, so a change of page can go behind the veil. */
+let shownPage: "landing" | "game" | "scene" | null = null;
+
 function render(container: HTMLDivElement): void {
-  const token = ++renderToken;
   const route = parseRoute(location.pathname);
+  // A change of page goes behind the veil (veil.ts): it comes down first,
+  // this render runs again under it, and it lifts once the page is up. The
+  // intro's own film carries the title into the game, so it goes without.
+  const page = pageOf(route);
+  if (shownPage !== null && page !== shownPage && !veil.down && pendingIntro === null) {
+    void veil.cover().then(() => render(container));
+    return;
+  }
+  const switched = shownPage !== page;
+  shownPage = page;
+  if (switched && veil.down) setTimeout(() => veil.lift(), VEIL_SETTLE_MS);
+  const token = ++renderToken;
 
   // An invite: consume it (so back/forward never re-join), show the landing
   // page, and join in the background. The roster reports how that went.

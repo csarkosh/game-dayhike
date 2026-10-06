@@ -20,8 +20,8 @@ const STYLE = `
   .poster {
     position: absolute; inset: 0; display: none;
     align-items: center; justify-content: center;
-    /* Above the touch layer (touchControls.ts, 15), below the end panel
-       (endPanel.ts, 17), the pause menu (pauseMenu.ts, 18) and the roster
+    /* Above the touch layer (touchControls.ts, 15), below the pause menu
+       (pauseMenu.ts, 18) and the roster
        (roster.ts, 20). */
     z-index: 16; pointer-events: none;
     font-family: ui-monospace, monospace; color: #f2ead8;
