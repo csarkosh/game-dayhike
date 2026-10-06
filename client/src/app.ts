@@ -732,6 +732,7 @@ function buildGame(
     const a = atmosphereUnder(base, escalation);
     // The chase's cast and its pulse, every frame: neither waits on the weather's gate below.
     renderer.setChase(escalation.chase);
+    renderer.setHaunt(escalation.haunt);
     ambient.setChase(escalation.chase, escalation.lens);
     wildlifePresence = wildlifePresenceUnder(a.weather, a.hour);
     // The woods' voice: the birdsong's level, and the Hollow's call from up

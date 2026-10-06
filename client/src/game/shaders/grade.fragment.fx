@@ -41,6 +41,12 @@ uniform vec4 stareShade;
 // channel is multiplied by at a cast of 1, and w how far in the cast is.
 uniform vec4 chaseTint;
 uniform vec3 chaseLift;
+// The haunt's shades (shadeSilhouette.ts): a mask of their silhouettes, red
+// the softness, read back through a blur of radius x (in the frame's width),
+// darkening the frame by y of it; z is the frame's aspect, w is 1 while any
+// shade is in the mask and 0 to skip the taps.
+uniform sampler2D shadeSampler;
+uniform vec4 shadeShape;
 
 const mat3 SRGB_TO_REC2020 = mat3(0.6274, 0.0691, 0.0164, 0.3293, 0.9195, 0.088, 0.0433, 0.0113, 0.8956);
 const mat3 REC2020_TO_SRGB = mat3(1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187);
@@ -105,6 +111,21 @@ void main(void) {
   c = lift + c * (1.0 - lift);
   // The chase: the whole frame, sky and rain and ground, pulled toward burgundy.
   c = mix(c, c * chaseTint.xyz + chaseLift, chaseTint.w);
+  // The shades: nine taps of the mask, the centre and a ring, the figure a
+  // dark blur. Unbranched, scaled by w instead: a texture read under a
+  // branch is one the WGSL translation has to be told about (uniformity.ts).
+  vec2 shadeStep = vec2(shadeShape.x, shadeShape.x * shadeShape.z);
+  float shadeMask = texture2D(shadeSampler, vUV).r * 2.0;
+  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(1.0, 0.0)).r;
+  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(-1.0, 0.0)).r;
+  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, 1.0)).r;
+  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, -1.0)).r;
+  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, 0.7)).r;
+  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, 0.7)).r;
+  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, -0.7)).r;
+  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, -0.7)).r;
+  shadeMask *= shadeShape.w / 10.0;
+  c *= 1.0 - shadeMask * shadeShape.y;
   vec2 centred = (vUV - 0.5) * 2.0;
   float vr = length(centred) / 1.41421356;
   float vig = 1.0 - smoothstep(0.55, 1.0, vr) * clamp(vignetteWeight * 0.22, 0.0, 0.8);

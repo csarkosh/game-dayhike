@@ -8,6 +8,7 @@ import { BlurPostProcess } from "@babylonjs/core/PostProcesses/blurPostProcess.j
 import { ChromaticAberrationPostProcess } from "@babylonjs/core/PostProcesses/chromaticAberrationPostProcess.js";
 import { FxaaPostProcess } from "@babylonjs/core/PostProcesses/fxaaPostProcess.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Vector2 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color4 } from "@babylonjs/core/Maths/math.color.js";
@@ -31,11 +32,16 @@ export type Post = {
    * point and the rods follow. `lens` is the smoothed strength of the rain
    * on the glass (lensParams.ts), 0 when dry. */
   update(weather: WeatherParams, hour: number, night: number, unsettle: number, stare: StareLens, lens?: number, chase?: number, blur?: number): void;
+  /** The haunt's mask to read the shades from, and whether any shade is in it this frame (shadeSilhouette.ts). */
+  setShades(mask: BaseTexture | null, any: boolean): void;
   dispose(): void;
 };
 
 /** How long the lens's strength sits under its floor before the pass is detached. */
 const LENS_IDLE_S = 1;
+/** The shades' blur radius as a share of the frame's width, and how dark the mask makes the frame at full. */
+export const SHADE_BLUR = 0.009;
+export const SHADE_DARK = 1;
 /** The end's blur at its fullest, in texels: soft, not a wash. */
 export const END_BLUR_KERNEL = 28;
 /** The kernels the end's blur steps through: a blur pass compiles afresh for each kernel it is given, so a smooth ramp would compile every frame; three steps compile three times. */
@@ -184,6 +190,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     }
   }
   let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 0, 1);
+  /** The haunt's mask (shadeSilhouette.ts), once handed in, and whether any shade is in it this frame. */
+  let shadeMask: BaseTexture | null = null;
+  let shadeAny = false;
   let finishRecord = finishUnder(WEATHER_PRESETS.clear, 1, 0);
   const start = now();
 
@@ -209,9 +218,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
         Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
       blurY = new BlurPostProcess("halationBlurY", new Vector2(0, 1), HALATION_KERNEL, HALATION_RATIO, camera,
         Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
-    } else {
-      black = RawTexture.CreateRGBATexture(new Uint8Array([0, 0, 0, 255]), 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
     }
+    // A black texel for any sampler with nothing to read: the halation's without halation, the shades' without a mask.
+    black = RawTexture.CreateRGBATexture(new Uint8Array([0, 0, 0, 255]), 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
 
     // On high, grade's own ratio sizes blur Y's write target (Babylon sizes
     // a pass's write target by the NEXT pass's ratio — see the doc comment
@@ -225,8 +234,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     grade = new PostProcess("grade", "grade",
       ["exposure", "whitePoint", "purkinje", "purkinjeThreshold", "purkinjeStrength", "shadowTint", "shadowAmount",
         "midtoneTint", "midtoneAmount", "highlightTint", "highlightAmount", "saturation", "lift", "vignetteWeight",
-        "vignetteColour", "halationStrength", "stareShade", "chaseTint", "chaseLift"],
-      ["halationSampler"], gradeRatio, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
+        "vignetteColour", "halationStrength", "stareShade", "chaseTint", "chaseLift", "shadeShape"],
+      ["halationSampler", "shadeSampler"], gradeRatio, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
     const boundScenePass = scenePass;
     const boundBlurY = blurY;
     const boundBlack = black;
@@ -259,6 +268,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       effect.setFloat4("stareShade", r.stare.x, r.stare.y, r.stare.reach, r.stare.time);
       effect.setFloat4("chaseTint", CHASE_TINT.r, CHASE_TINT.g, CHASE_TINT.b, r.chase);
       effect.setFloat3("chaseLift", CHASE_LIFT.r, CHASE_LIFT.g, CHASE_LIFT.b);
+      if (shadeMask !== null) effect.setTexture("shadeSampler", shadeMask);
+      else if (boundBlack !== null) effect.setTexture("shadeSampler", boundBlack);
+      effect.setFloat4("shadeShape", SHADE_BLUR, SHADE_DARK, engine.getRenderWidth() / engine.getRenderHeight(), shadeMask !== null && shadeAny ? 1 : 0);
     };
 
     aberration = new ChromaticAberrationPostProcess("chromaticAberration", engine.getRenderWidth(),
@@ -348,6 +360,10 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
 
   return {
     features,
+    setShades(mask, any) {
+      shadeMask = mask;
+      shadeAny = any;
+    },
     update(weather, hour, night, unsettle, stare, lensTarget = 0, chase = 0, blur = 0) {
       setEndBlur(blur);
       const seconds = (now() - start) / 1000;
