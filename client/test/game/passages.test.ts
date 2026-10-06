@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { DEATH_LINE, END_PASSAGES, ROAD_LINE_U, roadLine } from "../../src/game/passages.js";
+import { DEATH_LINE, WON_LINE, END_PASSAGES, ROAD_LINE_U, roadLine } from "../../src/game/passages.js";
 import { Phase } from "../../src/sim/types.js";
 
 describe("the passages", () => {
   it("closes a player's story on death, and the match by who came down", () => {
-    expect(DEATH_LINE).toMatch(/missing/);
+    // Both the title's shape: three parts and a turn; the death's turn unsettling, the win's a relief.
+    expect(DEATH_LINE).toMatch(/^A [^;]+; [^;]+; and [^.]+\.$/);
+    expect(DEATH_LINE).toMatch(/counting/);
+    expect(WON_LINE).toMatch(/^A [^;]+; [^;]+; and [^.]+\.$/);
+    expect(WON_LINE).toMatch(/one fewer/);
     expect(END_PASSAGES.all).toMatch(/every one of you/);
     expect(END_PASSAGES.some).toMatch(/Not all of you/);
     expect(END_PASSAGES.none).toMatch(/Nobody came down/);

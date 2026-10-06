@@ -24,8 +24,9 @@ import { AiState } from "../sim/types.js";
 import type { Forest } from "../sim/forest.js";
 import { isHollow } from "../sim/hollow.js";
 import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
+import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import { forestDensity } from "../sim/vegetation.js";
-import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
+import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
 import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
@@ -1208,6 +1209,8 @@ export type Renderer = {
   stare(): StareLens;
   /** The chase's cast, 0 to 1 (escalation.ts): the grade pulls the frame toward burgundy by it. */
   setChase(cast: number): void;
+  /** The end for this player (ending.ts): the camera is the ending's from now, won or died. Once; a second call changes nothing. */
+  setEnding(kind: EndingKind): void;
   /**
    * A world point as CSS pixels on the canvas, with its distance from the
    * camera, or null when it is behind the camera. Drives the interact prompt.
@@ -1578,6 +1581,11 @@ function buildRenderer(
   let stareLens: StareLens = STARE_LENS_REST;
   /** The chase's cast (escalation.ts), as the app last set it. */
   let chaseCast = 0;
+  /** What the ending asks of the pass: the picture's softness and the dark's closing, 0 to 1, posed after the pass reads them, so a frame late. */
+  let endBlur = 0;
+  let endClose = 0;
+  /** The ending, once begun: its kind, when it began, and the pose it began from, taken on its first frame. */
+  let ending: { kind: EndingKind; since: number; base: EndingBase | null } = { kind: "won", since: -1, base: null };
   const stareAt = new Vector3();
   // The forest's density over the camera, a full terrain sample: taken
   // again only once the camera has moved a metre from where it was taken.
@@ -2043,7 +2051,10 @@ function buildRenderer(
       lighting.setStare(stareLens.level);
       // Before the sky's first slices there is no night factor; the day's 0
       // stands in, for frames no one sees.
-      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, stareLens, lensStrength, chaseCast);
+      // The death's closing dark rides the stare's shade, driven to full.
+      const shown = endClose > 0 ? { ...stareLens, level: Math.max(stareLens.level, endClose), phase: 0.9 } : stareLens;
+      lighting.setStare(shown.level);
+      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, shown, lensStrength, chaseCast, endBlur);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
@@ -2146,6 +2157,16 @@ function buildRenderer(
         // and its default forward is +Z, which matches the sim convention.
         // Roll goes on z — the only thing that ever writes it.
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
+        // The end: from its first frame the camera is the ending's, from the
+        // pose the player had then, and the pass takes its blur and its dark.
+        if (ending.since >= 0) {
+          ending.base ??= { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: local.yaw, pitch: local.pitch, feetY: local.pos.y - PLAYER_HALF.y };
+          const pose = endingPose(ending.kind, seconds - ending.since, ending.base);
+          camera.position.set(pose.x, pose.y, pose.z);
+          camera.rotation.set(pose.pitch, pose.yaw, pose.roll);
+          endBlur = pose.blur;
+          endClose = pose.close;
+        }
         // A hike after a scene draws with the game's lens again.
         camera.fov = GAME_FOV;
         setLamp(localLamp, local.lamp.on, lampState);
@@ -2177,6 +2198,10 @@ function buildRenderer(
     },
     setChase(cast) {
       chaseCast = Math.max(0, Math.min(1, cast));
+    },
+    setEnding(kind) {
+      if (ending.since >= 0) return;
+      ending = { kind, since: clock() / 1000, base: null };
     },
     listener() {
       // `camera.rotation` rather than the sim's yaw/pitch: it is set on both of
