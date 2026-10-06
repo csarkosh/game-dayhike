@@ -9,8 +9,17 @@ import { Phase } from "../sim/types.js";
 /** Within this of the wall, the line speaks — on the climb only. */
 export const ROAD_LINE_U = ROAD_WALL_U + 0.5;
 
-/** A player's death: their story closes on this line, and the view holds it. */
-export const DEATH_LINE = "The woods had counted you among the missing before you knew that you were lost.";
+/**
+ * A player's death: their story closes on this line as the body goes down
+ * and the dark closes (ending.ts). The title's shape, three parts and a
+ * turn, and the turn leaves them unsure of what becomes of them.
+ */
+export const DEATH_LINE = "A short fall; the ground, soft; and overhead the counting, which did not stop at you.";
+/**
+ * The match won, as the camera lifts to the sky: the same shape, and the
+ * turn is the one the title's conviction gets wrong.
+ */
+export const WON_LINE = "A hard night; a long way down; and the woods, for once, counting one fewer than they meant to.";
 
 /** The match's last line, chosen by who came down: all, some, none. */
 export const END_PASSAGES = {
@@ -21,6 +30,10 @@ export const END_PASSAGES = {
 
 /** After the end, win or loss, the panel holds this long before the return to the landing. */
 export const END_LANDING_MS = 8000;
+/** Won: the camera's lift under the line runs this long before the panel comes (ending.ts WON_LIFT_S and the blur after it). */
+export const WON_PANEL_AFTER_MS = 6000;
+/** Died: the HUD's own fade finishes the black this long after the fall begins, once the dark has closed (ending.ts). */
+export const DEATH_FADE_AFTER_MS = 3500;
 
 /**
  * What a player at road offset `u` is told at the wall, or null: on the

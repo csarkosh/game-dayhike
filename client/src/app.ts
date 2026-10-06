@@ -68,7 +68,7 @@ import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { createEndPanel, endPanelModel } from "./game/endPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
-import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
+import { DEATH_LINE, DEATH_FADE_AFTER_MS, END_LANDING_MS, WON_LINE, WON_PANEL_AFTER_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
@@ -576,6 +576,11 @@ function buildGame(
     } else if (name === "skin") {
       skin = value !== false;
       renderer.setSkinShading(skin);
+    } else if (name === "end") {
+      // The ending, on the spot (ending.ts): the camera and the line, nothing of the match.
+      const kind = args[0] === "won" ? "won" : "died";
+      renderer.setEnding(kind);
+      hud.setStatus(kind === "won" ? WON_LINE : DEATH_LINE);
     } else if (name === "time") {
       // Instant, like every other view command: the sun moves, the world is not
       // rebuilt. Validation has already bounded this to [0, 24), so the fallback
@@ -887,6 +892,8 @@ function buildGame(
   }
 
   let dead = false;
+  let deathFadeTimer: ReturnType<typeof setTimeout> | null = null;
+  let endPanelTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Death, once: the poster closed, the view faded onto the passage. Input
    * stays live — the sim already ignores a dead player's movement and
@@ -898,7 +905,11 @@ function buildGame(
     if (dead || self === undefined || self.health > 0) return;
     dead = true;
     posterPanel.hide();
-    hud.fade(true);
+    // The body goes down and the dark closes (ending.ts); the HUD's own fade
+    // finishes the black after it, and the line sits on top.
+    renderer.setEnding("died");
+    if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
+    deathFadeTimer = setTimeout(() => hud.fade(true), DEATH_FADE_AFTER_MS);
     hud.setStatus(DEATH_LINE);
   }
 
@@ -944,14 +955,26 @@ function buildGame(
     });
     gate.refresh();
     posterPanel.hide();
-    hud.fade(true);
-    // The death line is this player's last word, the panel the match's:
-    // the HUD's status sits at 55% of the view the panel covers the middle of,
-    // so leaving both up prints one across the other.
-    hud.setStatus(null);
-    endPanel.show(endPanelModel(players));
+    const view = endPanelModel(players);
+    const won = state.outcome === Outcome.Won && !dead;
+    // Won, and alive to see it: the camera lifts to the sky under the line
+    // (ending.ts), and the panel comes once it has. Otherwise the panel at
+    // once: a dead player is already under their own last word, which the
+    // panel replaces, since the HUD's status sits where the panel covers.
+    if (won) {
+      renderer.setEnding("won");
+      hud.setStatus(WON_LINE);
+    }
+    const showPanel = () => {
+      hud.fade(true);
+      hud.setStatus(null);
+      endPanel.show(view);
+    };
+    if (endPanelTimer !== null) clearTimeout(endPanelTimer);
+    if (won) endPanelTimer = setTimeout(showPanel, WON_PANEL_AFTER_MS);
+    else showPanel();
     if (landingTimer !== null) clearTimeout(landingTimer);
-    landingTimer = setTimeout(navigateToLanding, END_LANDING_MS);
+    landingTimer = setTimeout(navigateToLanding, END_LANDING_MS + (won ? WON_PANEL_AFTER_MS : 0));
     sessionOver();
   }
 
@@ -1899,6 +1922,8 @@ function buildGame(
       menu.dispose();
       connectPanel.dispose();
       posterPanel.dispose();
+      if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
+      if (endPanelTimer !== null) clearTimeout(endPanelTimer);
       endPanel.dispose();
       disposeExtras();
       touchLayer.dispose();

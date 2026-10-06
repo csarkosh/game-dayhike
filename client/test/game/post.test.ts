@@ -11,11 +11,12 @@ import type { PostProcess } from "@babylonjs/core/PostProcesses/postProcess.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
-import { createPost, finishFragmentFor, fxSupportedBy } from "../../src/game/post.js";
+import { END_BLUR_KERNEL, END_BLUR_STEPS, endBlurKernel, createPost, finishFragmentFor, fxSupportedBy } from "../../src/game/post.js";
 import { postFeaturesFor, MSAA_SAMPLES } from "../../src/game/postParams.js";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "../../src/game/weather.js";
 import { STARE_LENS_REST, stareReach, type StareLens } from "../../src/game/stareLens.js";
 import { CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, gradeRecordUnder, STARE_VIGNETTE } from "../../src/game/gradeParams.js";
+import { BlurPostProcess } from "@babylonjs/core/PostProcesses/blurPostProcess.js";
 
 /** A lens half closed, the Hollow to the right, between beats. */
 const HALF_STARE: StareLens = { ...STARE_LENS_REST, level: 0.5, phase: 0.6, sideX: 1 };
@@ -144,7 +145,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     post.dispose();
   });
 
-  it("attaches the passes in the spec's order on high and medium, the lens's slot empty until there is rain on the glass", () => {
+  it("attaches the passes in the spec's order on high and medium, the lens's slot empty until there is rain on the glass, and the end's two blurs' until the end", () => {
     const names = (tier: "high" | "medium") => {
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
       const post = createPost(scene, camera, postFeaturesFor(tier, true));
@@ -158,13 +159,34 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       return { fresh, order };
     };
     expect(names("high")).toEqual({
-      fresh: ["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", null, "finish"],
-      order: ["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "lens", "finish"],
+      fresh: ["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", null, null, null, "finish"],
+      order: ["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"],
     });
     expect(names("medium")).toEqual({
-      fresh: ["grade", "chromaticAberration", "fxaa", null, "finish"],
-      order: ["grade", "chromaticAberration", "fxaa", "lens", "finish"],
+      fresh: ["grade", "chromaticAberration", "fxaa", null, null, null, "finish"],
+      order: ["grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"],
     });
+  });
+
+  it("attaches the end's blurs ahead of the finish while there is any blur, their kernel by it, and detaches them after", () => {
+    const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+    const post = createPost(scene, camera, postFeaturesFor("medium", true));
+    const names = () => camera._postProcesses.map((p) => p?.name ?? null);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0, 0, 0.5);
+    expect(names()).toEqual(["grade", "chromaticAberration", "fxaa", null, "endBlurX", "endBlurY", "finish"]);
+    const blurs = camera._postProcesses.filter((p) => p?.name.startsWith("endBlur")) as BlurPostProcess[];
+    for (const b of blurs) expect(b.kernel).toBeCloseTo(endBlurKernel(0.5), 6);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0, 0, 1);
+    for (const b of blurs) expect(b.kernel).toBeCloseTo(END_BLUR_KERNEL, 6);
+    // Stepped, never a kernel under the first step: a pass compiles for each kernel it is given.
+    expect(endBlurKernel(0.001)).toBeCloseTo(END_BLUR_KERNEL / END_BLUR_STEPS, 9);
+    expect(endBlurKernel(0.5)).toBeCloseTo((END_BLUR_KERNEL / END_BLUR_STEPS) * 2, 9);
+    expect(endBlurKernel(0)).toBe(0);
+    expect(new Set([0.01, 0.2, 0.4, 0.6, 0.8, 1].map(endBlurKernel)).size).toBe(END_BLUR_STEPS);
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0, 0, 0);
+    expect(names()).toEqual(["grade", "chromaticAberration", "fxaa", null, null, null, "finish"]);
+    post.dispose();
+    camera.dispose();
   });
 
   it("builds the lens at ratio 1.0 with its uniforms and samplers, on both tiers", () => {
@@ -275,8 +297,8 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     let ms = 0;
     const post = createPost(scene, camera, postFeaturesFor("medium", true), { now: () => ms });
     const names = () => camera._postProcesses.map((p) => p?.name ?? null);
-    const attached = ["grade", "chromaticAberration", "fxaa", "lens", "finish"];
-    const detached = ["grade", "chromaticAberration", "fxaa", null, "finish"];
+    const attached = ["grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"];
+    const detached = ["grade", "chromaticAberration", "fxaa", null, null, null, "finish"];
     expect(names()).toEqual(detached);
     // An update with no strength (every other call site) leaves it so.
     post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST);
@@ -320,7 +342,8 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
       const post = createPost(scene, camera, postFeaturesFor(tier, true));
       post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 1);
-      const passes = camera._postProcesses.map((p) => p!);
+      // The end's blurs sit detached, null in their slots, until the end.
+      const passes = camera._postProcesses.filter((p) => p !== null);
       expect(passes[0]!.name).toBe(tier === "high" ? "scene" : "grade");
       expect(passes[0]!.samples).toBe(MSAA_SAMPLES);
       for (const p of passes.slice(1)) expect(p.samples, p.name).toBe(1);

@@ -181,6 +181,16 @@ const SPECS: readonly CommandSpec[] = [
     },
   },
   {
+    name: "end",
+    kind: "view",
+    // `end won` or `end died`: plays this player's ending (ending.ts) on
+    // the spot, for looking at it and for recording its shader stages. Not
+    // persisted: no `scriptValue`, so it never rides the URL into a match.
+    validate(args) {
+      return args.length === 1 && (args[0] === "won" || args[0] === "died") ? null : "end takes won or died";
+    },
+  },
+  {
     name: "debug",
     kind: "world",
     // Bare only: on a forest world it registers the trailhead pad marker

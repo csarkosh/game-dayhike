@@ -30,12 +30,22 @@ export type Post = {
   /** `night` is the sky's night factor (`SkyState.night`), which the white
    * point and the rods follow. `lens` is the smoothed strength of the rain
    * on the glass (lensParams.ts), 0 when dry. */
-  update(weather: WeatherParams, hour: number, night: number, unsettle: number, stare: StareLens, lens?: number, chase?: number): void;
+  update(weather: WeatherParams, hour: number, night: number, unsettle: number, stare: StareLens, lens?: number, chase?: number, blur?: number): void;
   dispose(): void;
 };
 
 /** How long the lens's strength sits under its floor before the pass is detached. */
 const LENS_IDLE_S = 1;
+/** The end's blur at its fullest, in texels: soft, not a wash. */
+export const END_BLUR_KERNEL = 28;
+/** The kernels the end's blur steps through: a blur pass compiles afresh for each kernel it is given, so a smooth ramp would compile every frame; three steps compile three times. */
+export const END_BLUR_STEPS = 3;
+
+/** The kernel for a blur of 0 to 1: none below the first step, then END_BLUR_STEPS even steps up to END_BLUR_KERNEL. */
+export function endBlurKernel(blur: number): number {
+  const step = Math.min(END_BLUR_STEPS, Math.ceil(Math.max(0, Math.min(1, blur)) * END_BLUR_STEPS));
+  return (END_BLUR_KERNEL / END_BLUR_STEPS) * step;
+}
 
 /** The capability every HDR pass needs: float or half-float render targets. */
 export function fxSupportedBy(engine: AbstractEngine): boolean {
@@ -146,6 +156,33 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let lensSlot = -1;
   let lensAttached = false;
   let lensIdleSince: number | null = null;
+  /** The end's softening (ending.ts): two blur passes ahead of the finish, attached while there is any, their kernel by it. */
+  let endBlurX: BlurPostProcess | null = null;
+  let endBlurY: BlurPostProcess | null = null;
+  let endBlurAttached = false;
+  let endBlurSlot = -1;
+  function setEndBlur(blur: number): void {
+    if (endBlurX === null || endBlurY === null) return;
+    if (blur <= 0) {
+      if (endBlurAttached) {
+        camera.detachPostProcess(endBlurX);
+        camera.detachPostProcess(endBlurY);
+        endBlurAttached = false;
+      }
+      return;
+    }
+    if (!endBlurAttached) {
+      // Back into their own slots, ahead of the finish, as the lens returns to its.
+      camera.attachPostProcess(endBlurX, endBlurSlot);
+      camera.attachPostProcess(endBlurY, endBlurSlot + 1);
+      endBlurAttached = true;
+    }
+    const kernel = endBlurKernel(blur);
+    if (endBlurX.kernel !== kernel) {
+      endBlurX.kernel = kernel;
+      endBlurY.kernel = kernel;
+    }
+  }
   let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 0, 1);
   let finishRecord = finishUnder(WEATHER_PRESETS.clear, 1, 0);
   const start = now();
@@ -268,6 +305,11 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       lensSlot = camera._postProcesses.indexOf(lens);
       camera.detachPostProcess(lens);
       lensAttached = false;
+      endBlurX = new BlurPostProcess("endBlurX", new Vector2(1, 0), 1, 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
+      endBlurY = new BlurPostProcess("endBlurY", new Vector2(0, 1), 1, 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
+      endBlurSlot = camera._postProcesses.indexOf(endBlurX);
+      camera.detachPostProcess(endBlurX);
+      camera.detachPostProcess(endBlurY);
       const boundDroplets = droplets;
       lens.onApply = (effect) => {
         effect.setTexture("lensSampler", boundDroplets);
@@ -306,7 +348,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
 
   return {
     features,
-    update(weather, hour, night, unsettle, stare, lensTarget = 0, chase = 0) {
+    update(weather, hour, night, unsettle, stare, lensTarget = 0, chase = 0, blur = 0) {
+      setEndBlur(blur);
       const seconds = (now() - start) / 1000;
       record = gradeRecordUnder(weather, hour, night, unsettle, seconds, stare, chase);
       finishRecord = finishUnder(weather, unsettle, seconds);
@@ -354,6 +397,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       }
     },
     dispose() {
+      endBlurX?.dispose();
+      endBlurY?.dispose();
       finish?.dispose();
       lens?.dispose();
       droplets?.dispose();
