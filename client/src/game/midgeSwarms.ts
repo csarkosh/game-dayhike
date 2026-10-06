@@ -70,8 +70,9 @@ export type MidgeFrame = {
   sunX: number; sunY: number; sunZ: number;
   /** The sun's colour times its intensity. */
   sunR: number; sunG: number; sunB: number;
-  /** The dome's horizon toward the sun, in the scene's units
-   * (`SkyState.horizonToward`): the light of the sky's glint. */
+  /** The dome's horizon toward the sun as it draws it level, in the scene's
+   * units (`SkyState.horizonToward` blended toward `mistAir` by
+   * `mistWeight`): the light of the sky's glint. */
   glowR: number; glowG: number; glowB: number;
   night: number; skyLuma: number;
   /** The world size of one pixel at 1 m from the eye. */

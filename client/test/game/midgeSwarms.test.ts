@@ -18,11 +18,10 @@ import {
 } from "../../src/game/midgeMotion.js";
 import { luma } from "../../src/game/colour.js";
 import { sunPositionAt } from "../../src/game/sky.js";
-import { buildSkyTables, buildSlice, SLICE_ALTITUDES_DEG } from "../../src/game/skyModel.js";
+import { SLICE_ALTITUDES_DEG } from "../../src/game/skyModel.js";
 import { skyStateFor } from "../../src/game/skyState.js";
-import { sliceBracket } from "../../src/game/skyTable.js";
+import { buildSkyTableSync, NOON_ALTITUDE_DEG, sliceBracket } from "../../src/game/skyTable.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
-import { skyFixture } from "./helpers/skyFixture.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
 import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
 import { drawnEffect, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
@@ -395,7 +394,8 @@ describe("the midges' stages", () => {
   const tent = (u: number, v: number): number =>
     Math.min(Math.max(1 - Math.abs(u), 0), 1) * Math.min(Math.max(1 - Math.abs(v), 0), 1);
   /** The footprint summed over the pixel centres a midge at (x, y), in pixels,
-   * covers at its fewest pixels across. */
+   * covers at its fewest pixels across, its card square to the screen as it is
+   * on the view axis. */
   const pixelSum = (x: number, y: number, footprint: (u: number, v: number) => number): number => {
     const half = c("MIDGE_MIN_PX") / 2;
     let sum = 0;
@@ -405,7 +405,7 @@ describe("the midges' stages", () => {
     return sum;
   };
 
-  it("lay a tent on the card whose pixel centres sum the same wherever a far midge lies", () => {
+  it("lay a tent on the card whose pixel centres sum the same wherever a far midge lies on the view axis", () => {
     expect(tent(0, 0)).toBe(1);
     expect(tent(0.5, 0)).toBe(0.5);
     expect(tent(0.5, -0.5)).toBe(0.25);
@@ -469,16 +469,16 @@ describe("the midges' stages", () => {
   });
 
   it("keep the sky's glint through the swarms' full hour after sunset, fading with the twilight by night", () => {
-    // The suite's sky, with the two slices that bracket the sun at 18:45 added
-    // so the state there is the sky's own, not its neighbours' stand-in.
-    const table = skyFixture();
-    const tables = buildSkyTables();
-    for (const i of sliceBracket((Math.asin(sunPositionAt(18.75).y) * 180) / Math.PI)) {
-      table.add(buildSlice(tables, SLICE_ALTITUDES_DEG[i]!));
-    }
+    // A sky of its own: the slices that bracket noon and the sun at 18:45 and
+    // at 22:00, so each state is the sky's own, not its neighbours' stand-in.
+    const altitudeAt = (hour: number): number => (Math.asin(sunPositionAt(hour).y) * 180) / Math.PI;
+    const indices = new Set([NOON_ALTITUDE_DEG, altitudeAt(18.75), altitudeAt(22)].flatMap(sliceBracket));
+    const table = buildSkyTableSync([...indices].sort((a, b) => a - b).map((i) => SLICE_ALTITUDES_DEG[i]!));
+    expect(table.count).toBe(5);
     /** The glint's colour, before the coverage, of a midge seen level toward
      * the sun's azimuth at `hour` under a clear sky, the frame filled as
-     * waterLife.ts fills it: the sun's light, the horizon toward the sun. */
+     * waterLife.ts fills it: the sun's light, the horizon toward the sun
+     * blended toward the mist's air (none under a clear sky). */
     const at = (hour: number): { night: number; colour: number[] } => {
       const sky = skyStateFor(table, hour, WEATHER_PRESETS.clear);
       expect(table.has((sky.altitude * 180) / Math.PI), `${hour}`).toBe(true);
@@ -486,7 +486,8 @@ describe("the midges' stages", () => {
       const level = Math.hypot(d.x, d.z);
       const look = [d.x / level, 0, d.z / level] as const;
       const sunLight = [sky.sunColour.r * sky.sunIntensity, sky.sunColour.g * sky.sunIntensity, sky.sunColour.b * sky.sunIntensity] as const;
-      const glow = [sky.horizonToward.r, sky.horizonToward.g, sky.horizonToward.b] as const;
+      const h = sky.horizonToward, air = sky.mistAir, mist = sky.mistWeight;
+      const glow = [h.r + (air.r - h.r) * mist, h.g + (air.g - h.g) * mist, h.b + (air.b - h.b) * mist] as const;
       return { night: sky.night, colour: glintColour(sunLight, glow, sky.night, 1, skyGlint(look, [d.x, d.y, d.z])) };
     };
     // 18:45: full night by the sky's own factor and the sun gives nothing, yet

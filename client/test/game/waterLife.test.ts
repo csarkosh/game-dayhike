@@ -241,6 +241,19 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     life.dispose();
   });
 
+  it("lights the sky's glint with the horizon toward the sun as the dome draws it, the mist's blend in it", () => {
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high");
+    const m = seen.layout!.markers[0]!;
+    // Sunset in mist: the dome's horizon is wholly the mist's air (its weight
+    // 1), not the red glow the clear sky's ring holds under it.
+    const f = frameAt(m.x, m.y, m.z + 1, 18, WEATHER_PRESETS.mist);
+    life.update(f);
+    expect(seen.skyGlow![0]).toBeCloseTo(0.13512684221165877, 9);
+    expect(seen.skyGlow![1]).toBeCloseTo(0.13365015103716507, 9);
+    expect(seen.skyGlow![2]).toBeCloseTo(0.13812700476024908, 9);
+    life.dispose();
+  });
+
   it("keeps a swarm's hum at its row, and zeroes its presence when the swarm is out of sight", () => {
     const lake = lakeOf(SEED);
     const life = createWaterLife(scene(), SEED, lake, "high");

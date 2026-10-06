@@ -29,7 +29,8 @@ export const MIDGE_CUTOFF = 80;
 /** A midge's card across (m), half again a real midge's 2 mm so a swarm
  * reads at a few metres, and the fewest pixels it covers: at two, the tent the
  * fragment stage lays on it sums the same over the pixel centres wherever the
- * midge lies, so a far midge holds steady as it crosses them. */
+ * midge lies on the view axis, where the card is square to the screen, so a
+ * far midge holds steady as it crosses them. */
 export const MIDGE_CARD = 0.003;
 export const MIDGE_MIN_PX = 2;
 /** The three sinusoids' base rates (Hz), each midge's × (0.85 + 0.3 · hash), and their weights (sum 1). */
