@@ -758,7 +758,8 @@ function buildGame(
     ambient.setHush(voiced.hush);
     const bugle = wildlifeAudio?.clip(HOLLOW_CALL_CLIP);
     if (voiced.call !== null && bugle !== undefined) {
-      ambient.hollowCall(bugle, crest.x - ear.x, crest.y - ear.y, -(crest.z - ear.z), voiced.call.level, voiced.call.cutoffHz);
+      // The cry's variant is this screen's own draw: the sound is not on the wire.
+      ambient.hollowCall(bugle, crest.x - ear.x, crest.y - ear.y, -(crest.z - ear.z), voiced.call.level, voiced.call.cutoffHz, Math.random());
     }
     // Skip the renderer and ambient pushes on a frame the eased state barely
     // moved: `renderer.setView` recomputes the sky, the sun and the fog and

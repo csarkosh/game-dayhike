@@ -38,23 +38,23 @@ import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js"
 /** The night below which the climb is not haunted. */
 export const HAUNT_NIGHT_MIN = 0.3;
 /** Seconds between episodes on the climb, and in the chase, drawn between each pair. */
-export const HAUNT_REST_CLIMB: readonly [number, number] = [40, 85];
-export const HAUNT_REST_CHASE: readonly [number, number] = [16, 36];
+export const HAUNT_REST_CLIMB: readonly [number, number] = [14, 32];
+export const HAUNT_REST_CHASE: readonly [number, number] = [0, 2];
 /** An episode's length, the seconds between its shades, and how many it has. */
-export const HAUNT_EPISODE_S: readonly [number, number] = [14, 24];
-export const HAUNT_SHADE_GAP_S: readonly [number, number] = [2.5, 5];
-export const HAUNT_SHADES: readonly [number, number] = [3, 6];
+export const HAUNT_EPISODE_S: readonly [number, number] = [18, 30];
+export const HAUNT_SHADE_GAP_S: readonly [number, number] = [0.9, 2.2];
+export const HAUNT_SHADES: readonly [number, number] = [8, 14];
 /** The chance an episode's last shade is a lunge, on the climb and in the chase. */
-export const HAUNT_REAL_CLIMB = 0.35;
-export const HAUNT_REAL_CHASE = 0.5;
+export const HAUNT_REAL_CLIMB = 0.55;
+export const HAUNT_REAL_CHASE = 0.75;
 /**
  * Metres from its player a shade stands, how long it stands, how near a
  * player may come, and how long it may be looked at. Close, and inside the
  * headlamp: at night an unlit figure is black on black, and the first
  * showings, 12 to 28 m out and 30° to 70° off the look, were never seen.
  */
-export const SHADE_RANGE: readonly [number, number] = [9, 22];
-export const SHADE_DWELL_S: readonly [number, number] = [6, 12];
+export const SHADE_RANGE: readonly [number, number] = [7, 40];
+export const SHADE_DWELL_S: readonly [number, number] = [8, 18];
 export const SHADE_FLEE_RADIUS = 5;
 export const SHADE_WATCHED_S = 2.5;
 /**

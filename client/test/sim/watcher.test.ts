@@ -54,6 +54,8 @@ function forestWorld() {
   // on the trail, which have a describe of their own below.
   w.watcher!.active = true;
   w.watcher!.bold = 0;
+  // The haunt's shades are haunt.test.ts's: these pin the watcher alone.
+  w.haunt!.active = false;
   const p = spawnPlayer(w);
   return { w, p };
 }
@@ -539,6 +541,7 @@ describe("the first showings, on the trail", () => {
   function boldWorld() {
     const w = createForestWorld(createForest(seed));
     w.watcher!.active = true;
+    w.haunt!.active = false;
     const p = spawnPlayer(w);
     return { w, p };
   }
