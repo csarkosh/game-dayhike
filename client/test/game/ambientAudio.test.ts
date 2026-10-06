@@ -11,6 +11,7 @@ import { HEART_DUB_AT, STARE_LENS_REST } from "../../src/game/stareLens.js";
 import { gustAt, windRecordUnder } from "../../src/game/windParams.js";
 import { ODD_KINDS } from "../../src/game/woodsSounds.js";
 import { ODD_LEVEL } from "../../src/game/oddSounds.js";
+import { CHASE_BPM_FAR, CHASE_BPM_NEAR, CHASE_DRONE_FAR_HZ, CHASE_DRONE_NEAR_HZ } from "../../src/game/chaseAudio.js";
 
 /** The smallest AudioContext fake that can carry the graph. Every node records
  * its connections; every AudioParam records setTargetAtTime calls and, for
@@ -106,13 +107,13 @@ describe("createAmbientAudio", () => {
     audio.unlock();
     // 2 noise sources (rain, wind), no oscillators, 3 filters (rain, wind,
     // the world's), and gains: master + world + rain + wind + wildlife +
-    // drip + birdsong + the stare's heart and whispers = 9. The drips' own sources,
+    // drip + birdsong + the stare's heart and whispers + the chase's pulse = 10. The drips' own sources,
     // filters and gains are made as they fire, not here, and the whispers'
     // voices on the first stare.
     expect(created.sources.length).toBe(2);
     expect(created.oscillators).toBe(0);
     expect(created.filters).toBe(3);
-    expect(created.gains.length).toBe(9);
+    expect(created.gains.length).toBe(10);
     audio.dispose();
   });
 
@@ -163,7 +164,7 @@ describe("createAmbientAudio", () => {
     // `setWind` drives the wind filter's frequency directly); every
     // layer gain (rain/wind/wildlife/drip/birdsong) reaches the world's bus, which
     // reaches the master through the low-pass the stare shuts; the stare's
-    // own two buses reach the master directly, unmuffled.
+    // own two buses and the chase's reach the master directly, unmuffled.
     const isParam = (t: unknown): boolean =>
       Array.isArray((t as { targets?: unknown[] }).targets);
     const world = created.gains[1]!;
@@ -178,7 +179,7 @@ describe("createAmbientAudio", () => {
     expect(muffle.frequency.value).toBe(MUFFLE_OPEN_HZ);
     expect(world.connections).toEqual([muffle]);
     expect(muffle.connections).toEqual([master]);
-    expect(stareGains.length).toBe(2);
+    expect(stareGains.length).toBe(3);
     for (const g of stareGains) expect(g.connections).toEqual([master]);
 
     audio.dispose();
@@ -835,6 +836,63 @@ describe("the Hollow's call", () => {
     audio.hollowCall(clip, 0, 0, 0, 1, 2000);
     audio.hollowCall(clip, 1, 0, 0, 0, 2000);
     expect(created.sources.length).toBe(sources + HOLLOW_CALL_VOICES.length);
+    audio.dispose();
+  });
+});
+
+describe("the chase's pulse", () => {
+  it("is silent and unscheduled before the chase, then beats thump and tick by turns at the far tempo under a drone", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.setChase(1, 0); // pre-unlock: inert, not a throw
+    audio.unlock();
+    const bus = created.gains[9]!;
+    expect(bus.gain.value).toBe(0);
+    expect(bus.connections).toEqual([created.gains[0]]);
+    const oscillators = created.oscillators;
+    audio.setChase(0, 0);
+    expect(created.oscillators).toBe(oscillators);
+    expect(bus.gain.targets.at(-1)!.value).toBe(0);
+
+    clock.currentTime = 100;
+    audio.setChase(1, 0);
+    expect(bus.gain.targets.at(-1)!.value).toBe(1);
+    // The drone: three sawtooths through a low-pass at the far cutoff.
+    expect(created.oscillators).toBeGreaterThanOrEqual(oscillators + 3);
+    const drone = created.filterNodes.find((f) => f.type === "lowpass" && f.frequency.value === CHASE_DRONE_FAR_HZ)!;
+    expect(drone).toBeDefined();
+    expect(drone.frequency.targets.at(-1)!.value).toBeCloseTo(CHASE_DRONE_FAR_HZ, 9);
+    // Ten seconds of frames at the far tempo: a thump on each beat, a tick between.
+    for (let f = 1; f <= 600; f++) {
+      clock.currentTime = 100 + f / 60;
+      audio.setChase(1, 0);
+    }
+    const half = 30 / CHASE_BPM_FAR;
+    const thumps = created.oscs.filter((o) => o.startedAt !== undefined && o.frequency.ramps.length > 0);
+    const ticks = created.sources.filter((s) => s.startedAt !== undefined && s.startedAt >= 100 && s.loop);
+    expect(thumps.length).toBeGreaterThanOrEqual(Math.floor(10 / (2 * half)) - 1);
+    expect(ticks.length).toBeGreaterThanOrEqual(Math.floor(10 / (2 * half)) - 1);
+    for (let i = 1; i < thumps.length; i++) expect(thumps[i]!.startedAt! - thumps[i - 1]!.startedAt!).toBeCloseTo(2 * half, 9);
+    const first = thumps[0]!.startedAt!;
+    expect(ticks[0]!.startedAt).toBeCloseTo(first + half, 9);
+    audio.dispose();
+  });
+
+  it("quickens to the near tempo and opens the drone as the Hollow closes", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    clock.currentTime = 50;
+    audio.setChase(1, 1);
+    const drone = created.filterNodes.find((f) => f.type === "lowpass" && f.frequency.targets.some((t) => t.value === CHASE_DRONE_NEAR_HZ))!;
+    expect(drone).toBeDefined();
+    for (let f = 1; f <= 600; f++) {
+      clock.currentTime = 50 + f / 60;
+      audio.setChase(1, 1);
+    }
+    const thumps = created.oscs.filter((o) => o.startedAt !== undefined && o.frequency.ramps.length > 0);
+    for (let i = 1; i < thumps.length; i++) expect(thumps[i]!.startedAt! - thumps[i - 1]!.startedAt!).toBeCloseTo(60 / CHASE_BPM_NEAR, 9);
+    expect(CHASE_BPM_NEAR).toBeGreaterThan(CHASE_BPM_FAR);
     audio.dispose();
   });
 });

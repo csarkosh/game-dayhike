@@ -38,7 +38,7 @@ const PINS: Record<string, string> = {
   "foliageLight.fragment": "ae5b873be2cb7e2c35baaa379a229a37cdf5df08f9ccc3cab48060d173dbe14c",
   "groundConform.vertex": "a9f54562519ab094b2883463cec48050737f16a4f17e4a18852cfb414e227cea",
   "post.finish": "4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5",
-  "post.grade": "efc8c60fa4e39640ea197e66ddf13cbbc7bbd4b86dc8655157aee361c2e624d9",
+  "post.grade": "f9f9085f380a29bc2272c418c7f9877fc2268fec5a7e8e5604f3a22a6d425a0b",
   "post.halationExtract": "1ee9b9ed30d66fd1e10e4a327104c3e9016a91a2b4ed6aa2cec64cb09df5d3fd",
   "skin.fragment": "111388dbf745542db596dae9ac3c41d726c7c0c61aeb4c8e87cc16e9e8c07fdf",
   // Re-pinned for the WGSL-reserved local `macro` renamed `macroRgb`. The

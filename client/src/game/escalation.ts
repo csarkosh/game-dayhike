@@ -50,6 +50,8 @@ export const ACT_WET: WeatherParams = Object.freeze({ cloudCover: 1, mist: 0.9, 
 export const DAWN_HOUR = 6;
 /** Time constant of the world's easing, seconds: the light goes over about a minute. */
 export const WORLD_EASE_S = 20;
+/** Seconds the chase's cast (the burgundy the grade puts over the night, gradeParams.ts) takes to come in after the flip. */
+export const CHASE_EASE_S = 25;
 /** Time constant of the lens's easing, seconds. */
 export const LENS_EASE_S = 1.5;
 
@@ -62,6 +64,8 @@ export type EscalationTargets = {
   near: number;
   /** The local player is dead: their spike and lens hold. */
   dead: boolean;
+  /** The chase is on. */
+  chase: boolean;
 };
 
 export type EscalationState = {
@@ -73,9 +77,11 @@ export type EscalationState = {
   world: number;
   /** The eased lens, 0 to 1. */
   lens: number;
+  /** How far the chase's cast has come in, 0 to 1: eased from the flip, never back. */
+  chase: number;
 };
 
-export const ESCALATION_REST: EscalationState = Object.freeze({ progressMax: 0, spike: 0, world: 0, lens: 0 });
+export const ESCALATION_REST: EscalationState = Object.freeze({ progressMax: 0, spike: 0, world: 0, lens: 0, chase: 0 });
 
 export type AtmosphereBase = { weather: WeatherParams; hour: number };
 
@@ -104,7 +110,7 @@ export function escalationTargets(
   }
 
   const me = state.players.get(localId);
-  if (me === undefined) return { world, offTrail: 0, near: 0, dead: false };
+  if (me === undefined) return { world, offTrail: 0, near: 0, dead: false, chase: state.phase === Phase.Chase };
 
   const d = trailDistance(graph, me.pos.x, me.pos.z);
   const offTrail = clamp01((d - OFF_TRAIL_START) / (OFF_TRAIL_FULL - OFF_TRAIL_START));
@@ -120,7 +126,7 @@ export function escalationTargets(
     if (n > 0 && !hasLineOfSight(eye, h, boxes, ground)) n *= NEAR_BLIND;
     if (n > near) near = n;
   }
-  return { world, offTrail, near, dead: me.health <= 0 };
+  return { world, offTrail, near, dead: me.health <= 0, chase: state.phase === Phase.Chase };
 }
 
 /** First-order lag toward `to` with time constant `tau`, seconds. */
@@ -137,13 +143,14 @@ export function stepEscalation(prev: EscalationState, t: EscalationTargets, dt: 
   if (dt <= 0) return prev;
   const progressMax = Math.max(prev.progressMax, clamp01(t.world));
   const world = lag(prev.world, progressMax, dt, WORLD_EASE_S);
-  if (t.dead) return { progressMax, spike: prev.spike, world, lens: prev.lens };
+  const chase = t.chase ? lag(prev.chase, 1, dt, CHASE_EASE_S) : prev.chase;
+  if (t.dead) return { progressMax, spike: prev.spike, world, lens: prev.lens, chase };
   const spike =
     t.offTrail > 0
       ? Math.min(1, prev.spike + (t.offTrail / SPIKE_RISE_S) * dt)
       : Math.max(0, prev.spike - dt / SPIKE_DECAY_S);
   const lens = lag(prev.lens, Math.max(spike, clamp01(t.near)), dt, LENS_EASE_S);
-  return { progressMax, spike, world, lens };
+  return { progressMax, spike, world, lens, chase };
 }
 
 function smootherstep(x: number): number {

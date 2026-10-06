@@ -3,6 +3,7 @@ import { gustAt, type WindRecord } from "./windParams.js";
 import { createStareAudio, MUFFLE_OPEN_HZ, muffleGain, muffleHz, type StareAudio } from "./stareAudio.js";
 import type { StareLens } from "./stareLens.js";
 import { makeOddSound, ODD_LEVEL } from "./oddSounds.js";
+import { createChaseAudio, type ChaseAudio } from "./chaseAudio.js";
 import type { OddCue } from "./woodsSounds.js";
 import {
   DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut, type WeatherParams,
@@ -181,6 +182,13 @@ export type AmbientAudio = {
    */
   playOdd(cue: OddCue): void;
   /**
+   * The chase's pulse (chaseAudio.ts), every frame: `cast` is how far the
+   * chase is in (escalation.ts), `near` the local lens, which quickens it.
+   * Plays beside the world, not in it, so nothing hushes it. Inert before
+   * `unlock()`.
+   */
+  setChase(cast: number, near: number): void;
+  /**
    * Cuts the world's beds and calls by `share`, 0 to 1, within a breath
    * (woodsVoice.ts: the reveal's silence), on top of what a stare takes.
    * The stare's own sounds are left. Inert before `unlock()`.
@@ -247,6 +255,7 @@ export function createAmbientAudio(
   /** What the world's bus is cut by, and the stare's level: its gain is the product of what each leaves. */
   let hush = 0;
   let stareLevel = 0;
+  let chase: ChaseAudio | null = null;
   let birdGain: GainNode | null = null;
   let birdBed: AudioBuffer | null = null;
   /** Each ear's pan node, and when its next pass of the bed starts on the context's clock. */
@@ -394,6 +403,7 @@ export function createAmbientAudio(
       worldFilter.connect(master);
       // The stare's own sounds sit beside the world, not in it: they are not muffled.
       stare = createStareAudio(ctx, master, noise, random);
+      chase = createChaseAudio(ctx, master, noise);
 
       applyGains(pending);
 
@@ -541,6 +551,9 @@ export function createAmbientAudio(
       panner.connect(world);
       makeOddSound({ ctx, noise, into: panner }, cue.kind, at, level);
     },
+    setChase(cast, near) {
+      chase?.set(cast, near);
+    },
     setHush(share) {
       hush = clamp01(share);
       if (!ctx || !world) return;
@@ -646,6 +659,7 @@ export function createAmbientAudio(
       birdSides = [];
       rainFilter = windFilter = worldFilter = null;
       stare = null;
+      chase = null;
       noise = null;
       dripping = false;
       unlockListeners.length = 0;

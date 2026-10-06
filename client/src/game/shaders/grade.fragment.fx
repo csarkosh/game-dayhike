@@ -37,6 +37,10 @@ uniform float halationStrength;
 // The stare (stareLens.ts): xy the open centre's offset, z how far the
 // darkness has closed, w the seconds its edge crawls on.
 uniform vec4 stareShade;
+// The chase's cast (gradeParams.ts CHASE_TINT, CHASE_LIFT): x, y, z what each
+// channel is multiplied by at a cast of 1, and w how far in the cast is.
+uniform vec4 chaseTint;
+uniform vec3 chaseLift;
 
 const mat3 SRGB_TO_REC2020 = mat3(0.6274, 0.0691, 0.0164, 0.3293, 0.9195, 0.088, 0.0433, 0.0113, 0.8956);
 const mat3 REC2020_TO_SRGB = mat3(1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187);
@@ -99,6 +103,8 @@ void main(void) {
   c = gradeBand(c, highlightMask, highlightTint, highlightAmount);
   c = mix(vec3(gradeLuma(c)), c, 1.0 + saturation);
   c = lift + c * (1.0 - lift);
+  // The chase: the whole frame, sky and rain and ground, pulled toward burgundy.
+  c = mix(c, c * chaseTint.xyz + chaseLift, chaseTint.w);
   vec2 centred = (vUV - 0.5) * 2.0;
   float vr = length(centred) / 1.41421356;
   float vig = 1.0 - smoothstep(0.55, 1.0, vr) * clamp(vignetteWeight * 0.22, 0.0, 0.8);
