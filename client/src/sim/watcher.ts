@@ -90,6 +90,14 @@ export const WATCH_BOLD_FLEE_RADIUS = 12;
 export const WATCH_BOLD_MIN_CLIMB = 0.1;
 /** Seconds of tries with no place on the trail found, after which one showing is made in the trees instead. */
 export const WATCH_BOLD_PATIENCE_S = 20;
+/**
+ * Whether the watcher shows on the climb at all. Off since 2026-10-05: the
+ * Hollow is first seen at the crest, and the climb's dread is the woods'
+ * (game/woodsSounds.ts). The record is still made and its rules still
+ * tested, against the day it is wanted back; a record's `active` is this at
+ * creation, and the tests turn it on.
+ */
+export const WATCHER_ON_CLIMB = false;
 /** Mixed into the world seed for the watcher's own stream. */
 export const WATCH_SALT = 0x57a7c4;
 
@@ -101,6 +109,8 @@ export type WatcherRecord = {
   rest: number;
   /** The watcher's own random stream, seeded from the world's seed. */
   rng: { rngSeed: number };
+  /** Whether it shows at all (WATCHER_ON_CLIMB at creation). */
+  active: boolean;
   /** Showings on the trail still to be made. */
   bold: number;
   /** Seconds the present try for one has gone without a place. */
@@ -120,7 +130,7 @@ function drawRest(rng: { rngSeed: number }): number {
  */
 export function createWatcherRecord(seed: number): WatcherRecord {
   const rng = { rngSeed: (seed ^ WATCH_SALT) | 0 };
-  return { id: -1, rest: drawRest(rng), rng, bold: WATCH_BOLD_SHOWS, waited: 0, onTrail: false };
+  return { id: -1, rest: drawRest(rng), rng, active: WATCHER_ON_CLIMB, bold: WATCH_BOLD_SHOWS, waited: 0, onTrail: false };
 }
 
 /** How far up the stem a point is: 1 − stemProgress, 0 at the pad, 1 at the crest. */
@@ -322,7 +332,7 @@ export function hideWatcher(world: World): void {
  */
 export function stepWatcher(world: World, dt: number): void {
   const record = world.watcher;
-  if (record === null) return;
+  if (record === null || !record.active) return;
   const shown = record.id === -1 ? undefined : world.state.enemies.get(record.id);
 
   if (shown === undefined) {

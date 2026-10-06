@@ -16,10 +16,10 @@ describe("the heartbeat", () => {
   it("swells twice a beat, the second smaller, and rests for the beat's last half", () => {
     expect(heartbeat(0)).toBe(0);
     expect(heartbeat(HEART_ATTACK)).toBeCloseTo(1, 12);
-    expect(heartbeat(HEART_DUB_AT)).toBeLessThan(0.1);
+    expect(heartbeat(HEART_DUB_AT)).toBeLessThan(0.5);
     expect(heartbeat(HEART_DUB_AT + HEART_ATTACK)).toBeGreaterThan(HEART_DUB_SHARE);
-    expect(heartbeat(HEART_DUB_AT + HEART_ATTACK)).toBeLessThan(HEART_DUB_SHARE + 0.05);
-    for (let p = 0.6; p < 1; p += 0.05) expect(heartbeat(p)).toBeLessThan(0.02);
+    expect(heartbeat(HEART_DUB_AT + HEART_ATTACK)).toBeLessThan(HEART_DUB_SHARE + 0.25);
+    for (let p = 0.75; p < 1; p += 0.05) expect(heartbeat(p)).toBeLessThan(0.05);
     for (let p = 0; p < 1; p += 0.001) {
       expect(heartbeat(p)).toBeGreaterThanOrEqual(0);
       expect(heartbeat(p)).toBeLessThanOrEqual(1);
@@ -46,7 +46,7 @@ describe("stepStareLens", () => {
     expect(first.phase).toBeGreaterThan(0);
     const second = stepStareLens(first, 0.5, null, DT);
     expect(second.beats).toBe(1);
-    expect(run(STARE_LENS_REST, 0.5, null, 1).level).toBeCloseTo(0.5, 3);
+    expect(run(STARE_LENS_REST, 0.5, null, 2).level).toBeCloseTo(0.5, 2);
   });
 
   it("beats at the rest rate as the stare begins and at the full rate at a full stare", () => {
@@ -72,7 +72,7 @@ describe("stepStareLens", () => {
   });
 
   it("eases its side toward the Hollow's, and holds it when none is in front", () => {
-    const toward = run(STARE_LENS_REST, 1, { x: 1, y: -0.5 }, 5);
+    const toward = run(STARE_LENS_REST, 1, { x: 1, y: -0.5 }, 8);
     expect(toward.sideX).toBeCloseTo(1, 2);
     expect(toward.sideY).toBeCloseTo(-0.5, 2);
     const held = run(toward, 1, null, 5);
@@ -88,7 +88,8 @@ describe("the shade", () => {
     expect(stareShadeUnder(STARE_LENS_REST, 9)).toEqual({ x: 0, y: 0, reach: 0, time: 0 });
     expect(stareReach(at(0.2, 0.6))).toBeLessThan(0.1);
     expect(stareReach(at(1, HEART_ATTACK))).toBeCloseTo(1, 12);
-    expect(stareReach(at(1, 0.6))).toBeCloseTo(1 - STARE_PULSE, 2);
+    expect(stareReach(at(1, 0.7))).toBeCloseTo(1 - STARE_PULSE * (1 - heartbeat(0.7)), 9);
+    expect(stareReach(at(1, 0.95))).toBeCloseTo(1 - STARE_PULSE, 2);
   });
 
   it("swells with the beat at any level, and puts the open centre off the Hollow's side", () => {

@@ -20,16 +20,16 @@ export const HEART_BPM_FULL = 84;
 export const HEART_DUB_AT = 0.28;
 export const HEART_DUB_SHARE = 0.4;
 /** The share of a beat a swell takes to reach its top; it falls away after as it rose. */
-export const HEART_ATTACK = 0.045;
+export const HEART_ATTACK = 0.09;
 /** Below this level there is no pulse and the heart is at rest. */
 export const STARE_FLOOR = 0.02;
 /** Seconds the level takes to follow the stare (the snapshot's byte steps), and the darkness's centre to follow the Hollow. */
-export const STARE_LEVEL_EASE_S = 0.12;
-export const STARE_SIDE_EASE_S = 0.7;
+export const STARE_LEVEL_EASE_S = 0.35;
+export const STARE_SIDE_EASE_S = 1.2;
 /** How far the open centre moves off the Hollow, in the frame's half-widths, when the Hollow stands at the cone's edge. */
 export const STARE_SIDE_SHIFT = 0.34;
 /** The share of the closing a beat's swell adds. */
-export const STARE_PULSE = 0.24;
+export const STARE_PULSE = 0.14;
 
 export type StareLens = {
   /** The stare as the screen shows it, 0 to 1. */

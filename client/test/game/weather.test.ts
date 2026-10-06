@@ -47,9 +47,10 @@ describe("weather model", () => {
     expect(WEATHER_PRESETS.clear).toEqual({ cloudCover: 0, mist: 0, rain: 0, wetness: 0, dread: 0 });
   });
 
-  it("ships the eerie identity as the default", () => {
-    expect(DEFAULT_WEATHER).toBe("mist");
-    expect(WEATHER_NAMES).toEqual(["clear", "overcast", "mist", "rain", "eerie"]);
+  it("ships the semi-sunny day as the default, and the presets in their order", () => {
+    expect(DEFAULT_WEATHER).toBe("bright");
+    expect(WEATHER_PRESETS.bright).toEqual({ cloudCover: 0.45, mist: 0.12, rain: 0, wetness: 0.15, dread: 0 });
+    expect(WEATHER_NAMES).toEqual(["clear", "bright", "overcast", "mist", "rain", "eerie"]);
   });
 
   it("eerie is the dread destination the scripted turn aims at", () => {

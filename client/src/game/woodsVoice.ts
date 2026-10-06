@@ -1,10 +1,11 @@
 /**
  * What the woods say on the climb (docs/gameplay/2026-10-05-the-woods-voice.md):
- * a bed of birdsong, full at the trailhead, thinner with every stretch climbed
- * and cut dead whenever the watcher shows; and the Hollow's call, heard from
- * up the trail each time the party passes a mark, nearer every time. And at
- * the crest, the reveal: the world's sound cut to nothing as the body is
- * found, then the same call from where the Hollow stands.
+ * a bed of birdsong, full in the day the climb starts in, thinner in the wet
+ * act, gone by night, and cut dead whenever a Hollow is out; and the Hollow's
+ * call, heard from up the trail each time the party passes a mark of the
+ * night, nearer every time. And at the crest, the reveal: the world's sound
+ * cut to nothing as the body is found, then the same call from where the
+ * Hollow stands. The night's other voices are woodsSounds.ts.
  *
  * Stepped on each screen from state every peer already has, like the
  * escalation (escalation.ts) whose ratcheted progress it reads. Nothing is on
@@ -14,11 +15,10 @@
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
-/** The climb up to which the birds are all there, and the climb past which there are none. */
-export const BIRDS_FULL_UNTIL = 0.12;
-export const BIRDS_GONE_AT = 0.88;
-/** The share of the birdsong rain leaves. */
-export const BIRDS_RAIN_SHARE = 0.3;
+/** The share of the birdsong the wet act takes: a wet day has fewer singers. */
+export const BIRDS_WET_CUT = 0.5;
+/** The share of the birdsong rain leaves, on top of that. */
+export const BIRDS_RAIN_SHARE = 0.45;
 /** Seconds the birds take to stop, to stay stopped after the watcher has gone, and to come back. */
 export const BIRDS_HUSH_S = 0.1;
 export const BIRDS_HOLD_S = 8;
@@ -26,8 +26,8 @@ export const BIRDS_RETURN_S = 9;
 
 /** The recording the Hollow's call is made from (wildlifeAudio.ts `CALL_CLIP`): the elk's bugle. */
 export const HOLLOW_CALL_CLIP = "call.elk_bugle";
-/** The climbs at which the Hollow calls, low to high. */
-export const CALL_CLIMBS: readonly number[] = [0.12, 0.3, 0.48, 0.64, 0.78, 0.9];
+/** The climbs at which the Hollow calls, low to high: all in the night (escalation.ts DUSK_AT). */
+export const CALL_CLIMBS: readonly number[] = [0.6, 0.69, 0.77, 0.84, 0.9, 0.95];
 /** Metres up the trail the first call and the last sound from. */
 export const CALL_FAR_M = 420;
 export const CALL_NEAR_M = 60;
@@ -50,6 +50,9 @@ export const REVEAL_HZ = 6000;
 export type WoodsInputs = {
   /** The party's best climb so far, 0 at the trailhead and 1 at the crest (`EscalationState.progressMax`). */
   climb: number;
+  /** How far into the wet act and the night the world is (`actsUnder`), each 0 to 1. */
+  wet: number;
+  night: number;
   /** The chase has begun. */
   chase: boolean;
   /** A Hollow is out: the watcher shown, or any other. */
@@ -78,9 +81,9 @@ export const WOODS_REST: WoodsState = Object.freeze({ birds: -1, hold: 0, calls:
 /** One call: how far up the trail it sounds from, its level, and the low-pass it is heard through. */
 export type CallCue = { distance: number; level: number; cutoffHz: number };
 
-/** The birdsong a climb leaves, before rain: all of it low down, falling evenly to none near the crest. */
-export function birdsAt(climb: number): number {
-  return 1 - clamp01((climb - BIRDS_FULL_UNTIL) / (BIRDS_GONE_AT - BIRDS_FULL_UNTIL));
+/** The birdsong the acts leave, before rain: all of it in the day, half in the wet act, none by night. */
+export function birdsAt(wet: number, night: number): number {
+  return (1 - BIRDS_WET_CUT * clamp01(wet)) * (1 - clamp01(night));
 }
 
 /** The cue for the `index`th call: the first far, quiet and dull, the last near, loud and clear. */
@@ -115,7 +118,7 @@ export function stepWoods(prev: WoodsState, input: WoodsInputs, dt: number): { s
   const climb = clamp01(input.climb);
   const hushed = input.hollow || input.chase;
   const hold = hushed ? BIRDS_HOLD_S : Math.max(0, prev.hold - Math.max(0, dt));
-  const target = hold > 0 ? 0 : birdsAt(climb) * (1 - (1 - BIRDS_RAIN_SHARE) * clamp01(input.rain));
+  const target = hold > 0 ? 0 : birdsAt(input.wet, input.night) * (1 - (1 - BIRDS_RAIN_SHARE) * clamp01(input.rain));
   let birds = target;
   if (prev.birds >= 0 && dt > 0) {
     const tau = target < prev.birds ? BIRDS_HUSH_S : BIRDS_RETURN_S;

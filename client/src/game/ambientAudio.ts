@@ -2,6 +2,8 @@ import { clamp01 } from "./colour.js";
 import { gustAt, type WindRecord } from "./windParams.js";
 import { createStareAudio, MUFFLE_OPEN_HZ, muffleGain, muffleHz, type StareAudio } from "./stareAudio.js";
 import type { StareLens } from "./stareLens.js";
+import { makeOddSound, ODD_LEVEL } from "./oddSounds.js";
+import type { OddCue } from "./woodsSounds.js";
 import {
   DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut, type WeatherParams,
 } from "./weather.js";
@@ -98,6 +100,8 @@ export const BIRD_GAIN_RAMP_S = 0.05;
  * that a moment later, so no animal the player knows made it. */
 export const HOLLOW_CALL_LEVEL = 3;
 export const HOLLOW_CALL_STANDOFF_M = 20;
+/** Seconds a fly takes to pass the ear (oddSounds.ts's buzz is as long). */
+export const FLY_PASS_S = 1.5;
 export const HOLLOW_CALL_VOICES: readonly { rate: number; share: number; after: number }[] = [
   { rate: 0.5, share: 1, after: 0 },
   { rate: 0.375, share: 0.6, after: 0.09 },
@@ -170,6 +174,13 @@ export type AmbientAudio = {
    */
   hollowCall(buffer: AudioBuffer, dx: number, dy: number, dz: number, level: number, cutoffHz: number): void;
   /**
+   * One of the woods' other voices (woodsSounds.ts, oddSounds.ts): made at
+   * once from the cue's place relative to the listener (x right, y up, z
+   * ahead, in metres; a cue with no place plays on the bus itself). A fly
+   * passes from its place to the mirror of it. Inert before `unlock()`.
+   */
+  playOdd(cue: OddCue): void;
+  /**
    * Cuts the world's beds and calls by `share`, 0 to 1, within a breath
    * (woodsVoice.ts: the reveal's silence), on top of what a stare takes.
    * The stare's own sounds are left. Inert before `unlock()`.
@@ -240,8 +251,9 @@ export function createAmbientAudio(
   let birdBed: AudioBuffer | null = null;
   /** Each ear's pan node, and when its next pass of the bed starts on the context's clock. */
   let birdSides: { pan: StereoPannerNode; next: number }[] = [];
-  /** The listener, in Web Audio's frame, for the whispers' circles. */
+  /** The listener, in Web Audio's frame, for the whispers' circles, and its forward and up for the odd sounds' places. */
   let earX = 0, earY = 0, earZ = 0;
+  let earFx = 0, earFy = 0, earFz = -1, earUx = 0, earUy = 1, earUz = 0;
   let rainGain: GainNode | null = null;
   let rainFilter: BiquadFilterNode | null = null;
   let windGain: GainNode | null = null;
@@ -496,6 +508,39 @@ export function createAmbientAudio(
         src.start(at + voice.after);
       }
     },
+    playOdd(cue) {
+      if (!ctx || !world || !noise) return;
+      const level = ODD_LEVEL[cue.kind] * clamp01(cue.level);
+      if (!(level > 0)) return;
+      const at = ctx.currentTime;
+      if (cue.kind === "swell") {
+        makeOddSound({ ctx, noise, into: world }, cue.kind, at, level);
+        return;
+      }
+      // The cue's frame to the world's: right is forward across up.
+      const rx = earFy * earUz - earFz * earUy;
+      const ry = earFz * earUx - earFx * earUz;
+      const rz = earFx * earUy - earFy * earUx;
+      const px = earX + rx * cue.x + earUx * cue.y + earFx * cue.z;
+      const py = earY + ry * cue.x + earUy * cue.y + earFy * cue.z;
+      const pz = earZ + rz * cue.x + earUz * cue.y + earFz * cue.z;
+      const panner = ctx.createPanner();
+      panner.panningModel = "HRTF";
+      panner.distanceModel = "inverse";
+      panner.rolloffFactor = 0;
+      panner.positionX.value = px;
+      panner.positionY.value = py;
+      panner.positionZ.value = pz;
+      if (cue.kind === "fly") {
+        // Across the head and out the other side.
+        panner.positionX.setValueAtTime(px, at);
+        panner.positionX.linearRampToValueAtTime(earX - rx * cue.x - earFx * cue.z, at + FLY_PASS_S);
+        panner.positionZ.setValueAtTime(pz, at);
+        panner.positionZ.linearRampToValueAtTime(earZ - rz * cue.x - earFz * cue.z, at + FLY_PASS_S);
+      }
+      panner.connect(world);
+      makeOddSound({ ctx, noise, into: panner }, cue.kind, at, level);
+    },
     setHush(share) {
       hush = clamp01(share);
       if (!ctx || !world) return;
@@ -580,6 +625,8 @@ export function createAmbientAudio(
       earX = x;
       earY = y;
       earZ = z;
+      earFx = fx; earFy = fy; earFz = fz;
+      earUx = ux; earUy = uy; earUz = uz;
       const l = ctx.listener;
       l.positionX.value = x;
       l.positionY.value = y;

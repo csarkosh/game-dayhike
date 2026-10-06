@@ -42,7 +42,7 @@ import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
-import {
+import { actsUnder,
   ESCALATION_REST,
   atmosphereUnder,
   escalationTargets,
@@ -104,6 +104,7 @@ import { Button, Outcome, Phase, type InputCommand, type PlayerState, type World
 import { isHollowState } from "./sim/hollow.js";
 import { HOLLOW_CALL_CLIP, stepWoods, WOODS_REST, type WoodsState } from "./game/woodsVoice.js";
 import { loadBirdBed } from "./game/birdBed.js";
+import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "./game/woodsSounds.js";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
@@ -430,6 +431,8 @@ function buildGame(
   let escalation: EscalationState = ESCALATION_REST;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
   let woods: WoodsState = WOODS_REST;
+  /** The woods' other voices (woodsSounds.ts), on this screen's own stream. */
+  let woodsSounds: WoodsSoundsState = WOODS_SOUNDS_REST;
   // Recomputed when the weather does: on a `weather` command directly below,
   // and on a forest world every frame by `syncAtmosphere`, as the escalation
   // moves the weather on its own. `wildlifePresenceUnder` builds a
@@ -722,7 +725,7 @@ function buildGame(
     const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground);
     escalation = stepEscalation(escalation, targets, dt);
     const a = atmosphereUnder(base, escalation);
-    wildlifePresence = wildlifePresenceUnder(a.weather);
+    wildlifePresence = wildlifePresenceUnder(a.weather, a.hour);
     // The woods' voice: the birdsong's level, and the Hollow's call from up
     // the trail as the climb passes each mark. The call is the elk's bugle,
     // played wrong (`AmbientAudio.hollowCall`), and sounds from the crest's
@@ -731,11 +734,16 @@ function buildGame(
     for (const e of state.enemies.values()) if (isHollowState(e.ai)) { hollow = true; break; }
     const ear = renderer.listener();
     const crest = world.search.body.pos;
+    const acts = actsUnder(escalation.world);
     const voiced = stepWoods(woods, {
-      climb: escalation.progressMax, chase: state.phase === Phase.Chase, hollow, rain: a.weather.rain,
+      climb: escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase === Phase.Chase, hollow, rain: a.weather.rain,
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
     }, dt);
     woods = voiced.state;
+    // The night's other voices, and the day's flies.
+    const odd = stepWoodsSounds(woodsSounds, { night: acts.night, day: 1 - acts.wet, chase: state.phase === Phase.Chase }, dt);
+    woodsSounds = odd.state;
+    if (odd.cue !== null) ambient.playOdd(odd.cue);
     ambient.setBirds(woods.birds);
     // The reveal's silence, then its call, from the body the Hollow stands behind.
     ambient.setHush(voiced.hush);
@@ -1221,6 +1229,7 @@ function buildGame(
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     woods = WOODS_REST;
+    woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
     names.set(host.localEntityId, selfPeerId);
@@ -1327,6 +1336,7 @@ function buildGame(
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     woods = WOODS_REST;
+    woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     registerInteractables(client.world);
     activeWorld = client.world;
     buildExtras(renderer);

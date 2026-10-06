@@ -111,10 +111,10 @@ void main(void) {
   vec2 sp = centred - stareShade.xy;
   float sa = atan(sp.y, sp.x);
   float st = stareShade.w;
-  float crawl = 0.5 * sin(sa * 2.0 + st * 0.61) + 0.3 * sin(sa * 3.0 - st * 0.93 + 1.7) + 0.2 * sin(sa * 7.0 + st * 1.57 + 4.1);
+  float crawl = 0.5 * sin(sa * 2.0 + st * 0.37) + 0.3 * sin(sa * 3.0 - st * 0.56 + 1.7) + 0.2 * sin(sa * 7.0 + st * 0.94 + 4.1);
   float sr = length(sp) / 1.41421356 + crawl * 0.11 * stareShade.z;
-  float openTo = mix(1.2, 0.28, stareShade.z);
-  float dark = smoothstep(openTo - 0.26, openTo + 0.1, sr) * min(1.0, stareShade.z * 4.0);
+  float openTo = mix(1.25, 0.3, stareShade.z);
+  float dark = smoothstep(openTo - 0.42, openTo + 0.14, sr) * min(1.0, stareShade.z * 3.0);
   c *= 1.0 - 0.97 * dark;
   gl_FragColor = vec4(toSrgb(clamp(c, 0.0, 1.0)), 1.0);
 }
