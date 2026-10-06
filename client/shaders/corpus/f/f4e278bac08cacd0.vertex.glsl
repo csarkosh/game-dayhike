@@ -12,6 +12,7 @@ layout(set = 1, binding = 1) uniform LeftOver {
     float midgePixel;
     vec4 midgeSwarms[96];
     vec3 midgeSunLight;
+    vec3 midgeSkyGlow;
     float midgeNight;
     float midgeSkyLuma;
 };
@@ -34,8 +35,14 @@ float textureOutputHeight_;
 // A midge whose slot is at or above its row's count, or whose row has no
 // presence, collapses to a point and draws nothing: chosen by step, never by
 // a branch, so every midge keeps its slot (and its hash) as counts change.
-// The card faces the eye, 2 mm across in the world but never under 1.2
-// pixels, its alpha scaled down by how much it was enlarged.
+// The card faces the eye, 3 mm across in the world but never under 2
+// pixels, its alpha scaled down by how much it was enlarged but never below
+// a floor, so a far midge reads as a dot.
+//
+// Two glints, each a share handed to the fragment stage, which lights them
+// apart: the sun's (a narrow lobe toward the sun and the wing's flash) and
+// the sky's (a broad lobe toward the sun's azimuth, level, where the horizon
+// still glows after the sun has set).
 //
 // COMMENT RULES: never put a semicolon inside a trailing comment on a code
 // line, and never spell a hashed preprocessor keyword in comment prose. The
@@ -50,7 +57,8 @@ layout(location = 1) in vec2 midge;
 
 layout(location = 0)  out vec2 vCorner;
 layout(location = 1)  out float vAlpha;
-layout(location = 2)  out float vLight;
+layout(location = 2)  out float vSunGlint;
+layout(location = 3)  out float vSkyGlint;
 const float MIDGE_TAU = 6.28318531;
 const float MIDGE_RATE_0 = 0.7;
 const float MIDGE_RATE_1 = 1.3;
@@ -59,13 +67,16 @@ const float MIDGE_AMP_0 = 0.55;
 const float MIDGE_AMP_1 = 0.3;
 const float MIDGE_AMP_2 = 0.15;
 const float MIDGE_BALL_FLAT = 0.6666666666666666;
-const float MIDGE_CARD = 0.002;
-const float MIDGE_MIN_PX = 1.2;
+const float MIDGE_CARD = 0.003;
+const float MIDGE_MIN_PX = 2.0;
+const float MIDGE_ALPHA_FLOOR = 0.6;
 const float MIDGE_FLASH_LOW = 9.0;
 const float MIDGE_FLASH_HIGH = 14.0;
 const float MIDGE_LOBE_POWER = 8.0;
 const float MIDGE_FLASH_POWER = 24.0;
 const float MIDGE_FLASH_GAIN = 0.5;
+const float MIDGE_SKY_GLINT = 0.6;
+const float MIDGE_SKY_LOBE_POWER = 2.0;
 // Hoskins' hash without sine, of a slot and a seed: 0 to 1.
 float midgeHash(float i, float s) {
 vec3 p = fract(vec3(i, s, i + s) * 0.1031);
@@ -105,10 +116,13 @@ vec3 rise = cross(view, side);
 vec3 corner = centre + (side * position.x + rise * position.y) * size * alive;
 gl_Position = viewProjection * vec4(corner, 1.0);
 vCorner = 2.0 * position.xy;
-vAlpha = MIDGE_CARD / size * shape.z * alive;
+vAlpha = max(MIDGE_CARD / size, MIDGE_ALPHA_FLOOR) * shape.z * alive;
 float lobe = pow(max(dot(-view, midgeSun), 0.0), MIDGE_LOBE_POWER);
 float rate = mix(MIDGE_FLASH_LOW, MIDGE_FLASH_HIGH, midgeHash(slot, seed + 73.0));
 float flash = pow(max(sin(MIDGE_TAU * rate * t + MIDGE_TAU * midgeHash(slot, seed + 71.0)), 0.0), MIDGE_FLASH_POWER);
-vLight = lobe + MIDGE_FLASH_GAIN * flash;
+vSunGlint = lobe + MIDGE_FLASH_GAIN * flash;
+vec3 sunLevel = vec3(midgeSun.x, 0.0, midgeSun.z);
+vec3 sunFlat = normalize(mix(vec3(1.0, 0.0, 0.0), sunLevel, step(1.0e-8, dot(sunLevel, sunLevel))));
+vSkyGlint = MIDGE_SKY_GLINT * pow(max(dot(-view, sunFlat), 0.0), MIDGE_SKY_LOBE_POWER);
 gl_Position.y *= yFactor_;
 }
