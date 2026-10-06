@@ -31,7 +31,7 @@ import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";
 import { isOnCorridor } from "./containment.js";
 import { faceToward, horizontalDistSq, playerSees, walkToward } from "./hollow.js";
-import { climbOf, WATCH_BEARING_MAX_COS, WATCH_BEARING_MAX_SIN, WATCH_BEARING_MIN_COS, WATCH_BEARING_MIN_SIN, WATCH_SLOPE_NY, WATCH_VIEW_COS } from "./watcher.js";
+import { climbOf, WATCH_SLOPE_NY, WATCH_VIEW_COS } from "./watcher.js";
 import { actsUnder } from "./acts.js";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
 
@@ -47,13 +47,29 @@ export const HAUNT_SHADES: readonly [number, number] = [3, 6];
 /** The chance an episode's last shade is a lunge, on the climb and in the chase. */
 export const HAUNT_REAL_CLIMB = 0.35;
 export const HAUNT_REAL_CHASE = 0.5;
-/** Metres from its player a shade stands, how long it stands, how near a player may come, and how long it may be looked at. */
-export const SHADE_RANGE: readonly [number, number] = [12, 28];
+/**
+ * Metres from its player a shade stands, how long it stands, how near a
+ * player may come, and how long it may be looked at. Close, and inside the
+ * headlamp: at night an unlit figure is black on black, and the first
+ * showings, 12 to 28 m out and 30° to 70° off the look, were never seen.
+ */
+export const SHADE_RANGE: readonly [number, number] = [9, 20];
 export const SHADE_DWELL_S: readonly [number, number] = [6, 12];
 export const SHADE_FLEE_RADIUS = 5;
-export const SHADE_WATCHED_S = 1.2;
+export const SHADE_WATCHED_S = 2.5;
+/**
+ * The bearing band off the player's look a shade or a lunge stands in, 10°
+ * to 32°, as the cosines and sines of its two edges (the watcher's method,
+ * watcher.ts): inside the headlamp's useful cone (LAMP_ANGLE's 43° a side
+ * falls to nothing well before its edge), and the near edge inside the
+ * stare's 20°, so a shade can be looked straight at.
+ */
+export const SHADE_BEARING_MIN_COS = 0.9848;
+export const SHADE_BEARING_MIN_SIN = 0.1736;
+export const SHADE_BEARING_MAX_COS = 0.848;
+export const SHADE_BEARING_MAX_SIN = 0.5299;
 /** A lunge: where it starts, its speed (under a sprint), how far its line may drift toward its player a second, and its most seconds. */
-export const LUNGE_RANGE: readonly [number, number] = [18, 30];
+export const LUNGE_RANGE: readonly [number, number] = [16, 26];
 export const LUNGE_SPEED = 6;
 export const LUNGE_DRIFT = 1.2;
 export const LUNGE_MAX_S = 8;
@@ -138,9 +154,10 @@ function admits(world: World, x: number, z: number, eye: Vec3): Vec3 | null {
 }
 
 /**
- * One try at a place in the band off `target`'s look, as the watcher's
- * (watcher.ts `placeWatcher`): a drawn side, a drawn mix of the band's two
- * edges, at a drawn range. Spends three draws whatever the ground says.
+ * One try at a place in the band off `target`'s look, by the watcher's
+ * method (watcher.ts `placeWatcher`) in the shade's own band: a drawn side,
+ * a drawn mix of the band's two edges, at a drawn range. Spends three
+ * draws whatever the ground says.
  */
 export function placeShade(world: World, target: PlayerState, rng: { rngSeed: number }, range: readonly [number, number]): Vec3 | null {
   const side = nextRandom(rng) < 0.5 ? -1 : 1;
@@ -148,10 +165,10 @@ export function placeShade(world: World, target: PlayerState, rng: { rngSeed: nu
   const metres = between(rng, range);
   if (world.trail === null) return null;
   const look = aimDirection(target.yaw, 0);
-  const minX = look.x * WATCH_BEARING_MIN_COS - side * look.z * WATCH_BEARING_MIN_SIN;
-  const minZ = side * look.x * WATCH_BEARING_MIN_SIN + look.z * WATCH_BEARING_MIN_COS;
-  const maxX = look.x * WATCH_BEARING_MAX_COS - side * look.z * WATCH_BEARING_MAX_SIN;
-  const maxZ = side * look.x * WATCH_BEARING_MAX_SIN + look.z * WATCH_BEARING_MAX_COS;
+  const minX = look.x * SHADE_BEARING_MIN_COS - side * look.z * SHADE_BEARING_MIN_SIN;
+  const minZ = side * look.x * SHADE_BEARING_MIN_SIN + look.z * SHADE_BEARING_MIN_COS;
+  const maxX = look.x * SHADE_BEARING_MAX_COS - side * look.z * SHADE_BEARING_MAX_SIN;
+  const maxZ = side * look.x * SHADE_BEARING_MAX_SIN + look.z * SHADE_BEARING_MAX_COS;
   let bx = (1 - mix) * minX + mix * maxX;
   let bz = (1 - mix) * minZ + mix * maxZ;
   const len = Math.sqrt(bx * bx + bz * bz);
