@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
+import { CHASE_TINT,
   agx, gradeRecordUnder, whitePointMatrix, hueToRgb, IDENTITY,
   HALATION_BASE, ABERRATION_BASE, AGX_MIN_EV, AGX_MAX_EV, STARE_DIM, sightUnder,
 } from "../../src/game/gradeParams.js";
@@ -155,6 +155,17 @@ describe("the stare", () => {
     expect(gradeRecordUnder(EERIE, 12, 0, 1, 0, at(1)).exposure).toBeCloseTo(rest * (1 - STARE_DIM), 12);
     expect(sightUnder(0)).toBe(1);
     expect(sightUnder(2)).toBe(1 - STARE_DIM);
+  });
+
+  it("carries the chase's cast, clamped, and none by default", () => {
+    expect(gradeRecordUnder(CLEAR, 12, 0, 1).chase).toBe(0);
+    expect(gradeRecordUnder(CLEAR, 12, 0, 1, 0, STARE_LENS_REST, 0.4).chase).toBe(0.4);
+    expect(gradeRecordUnder(CLEAR, 12, 0, 1, 0, STARE_LENS_REST, 3).chase).toBe(1);
+    // Burgundy, and darker than it brightens: the night stays night.
+    expect(CHASE_TINT.r).toBeGreaterThan(1);
+    expect(CHASE_TINT.g).toBeLessThan(CHASE_TINT.b);
+    expect(CHASE_TINT.b).toBeLessThan(1);
+    expect((CHASE_TINT.r + CHASE_TINT.g + CHASE_TINT.b) / 3).toBeLessThan(1);
   });
 
   it("carries the lens's shade: the open centre off the Hollow's side, and the clock its edge crawls on", () => {

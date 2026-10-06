@@ -15,7 +15,7 @@ import { createPost, finishFragmentFor, fxSupportedBy } from "../../src/game/pos
 import { postFeaturesFor, MSAA_SAMPLES } from "../../src/game/postParams.js";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "../../src/game/weather.js";
 import { STARE_LENS_REST, stareReach, type StareLens } from "../../src/game/stareLens.js";
-import { gradeRecordUnder, STARE_VIGNETTE } from "../../src/game/gradeParams.js";
+import { CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, gradeRecordUnder, STARE_VIGNETTE } from "../../src/game/gradeParams.js";
 
 /** A lens half closed, the Hollow to the right, between beats. */
 const HALF_STARE: StareLens = { ...STARE_LENS_REST, level: 0.5, phase: 0.6, sideX: 1 };
@@ -104,6 +104,12 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     expect(ip.vignetteCenterY).toBeCloseTo(0, 12);
     post.update(WEATHER_PRESETS.eerie, 17, 0, 1, STARE_LENS_REST);
     expect(ip.vignetteCenterX).toBe(0);
+    // The chase on this path: the shadows turned toward burgundy and deepened.
+    const g = gradeUnder(WEATHER_PRESETS.eerie);
+    expect(ip.colorCurves!.shadowsHue).toBeCloseTo(g.shadowsHue, 9);
+    post.update(WEATHER_PRESETS.eerie, 17, 0, 1, STARE_LENS_REST, 0, 1);
+    expect(ip.colorCurves!.shadowsHue).toBeCloseTo(CHASE_SHADOW_HUE, 9);
+    expect(ip.colorCurves!.shadowsDensity).toBeCloseTo(g.shadowsDensity + CHASE_SHADOW_DENSITY, 9);
     post.dispose();
   });
 

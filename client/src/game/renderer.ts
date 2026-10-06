@@ -1206,6 +1206,8 @@ export type Renderer = {
   listener(): ListenerPose;
   /** The local player's stare as `sync` last stepped it, for the audio (stareAudio.ts). */
   stare(): StareLens;
+  /** The chase's cast, 0 to 1 (escalation.ts): the grade pulls the frame toward burgundy by it. */
+  setChase(cast: number): void;
   /**
    * A world point as CSS pixels on the canvas, with its distance from the
    * camera, or null when it is behind the camera. Drives the interact prompt.
@@ -1574,6 +1576,8 @@ function buildRenderer(
   let lensStrength = 0;
   /** The local player's stare as their screen and ears take it (stareLens.ts). */
   let stareLens: StareLens = STARE_LENS_REST;
+  /** The chase's cast (escalation.ts), as the app last set it. */
+  let chaseCast = 0;
   const stareAt = new Vector3();
   // The forest's density over the camera, a full terrain sample: taken
   // again only once the camera has moved a metre from where it was taken.
@@ -2039,7 +2043,7 @@ function buildRenderer(
       lighting.setStare(stareLens.level);
       // Before the sky's first slices there is no night factor; the day's 0
       // stands in, for frames no one sees.
-      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, stareLens, lensStrength);
+      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, stareLens, lensStrength, chaseCast);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
@@ -2170,6 +2174,9 @@ function buildRenderer(
     },
     stare() {
       return stareLens;
+    },
+    setChase(cast) {
+      chaseCast = Math.max(0, Math.min(1, cast));
     },
     listener() {
       // `camera.rotation` rather than the sim's yaw/pitch: it is set on both of
