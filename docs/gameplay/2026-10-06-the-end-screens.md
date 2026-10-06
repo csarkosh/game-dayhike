@@ -1,7 +1,8 @@
 # The end screens
 
 **Date:** 2026-10-06
-**Status:** Built 2026-10-06.
+**Status:** Built 2026-10-06. Amended the same day: the panel of names is gone, the line is the
+end, and the pages switch behind a veil (§3).
 **Parent:** [`2026-09-16-the-summit.md`](2026-09-16-the-summit.md) §2 (the end and the death) and the
 title's line in `game/landing.ts`, whose shape the two lines here take: three parts, and a turn.
 
@@ -13,15 +14,15 @@ of names at once. Both are staged now, each in the camera.
 **Won, and alive to see it.** The camera lifts from where the player stands to the sky, fast at
 first and slowing, over 5 s; from 0.8 s the picture softens over 3.5 s; the line is up
 throughout: "A hard night; a long way down; and the woods, for once, counting one fewer than
-they meant to." After 6 s the panel of names comes, and the landing 8 s after that. A player
-who is dead when the match is won sees the panel at once, as before: they are under their own
-last line.
+they meant to." At 7 s the view goes dark under the line, and the landing comes at 10 s. A player
+who is dead when the match is won stays under their own last line. There is no panel of names
+(there was one, as first built; it read as a text box over the end).
 
 **Died.** The body goes down on its back: over 1.3 s, slowly and then all at once, the eye drops
 to 22 cm off the ground, the look turns to near straight up and the head settles a little over.
 From 1 s the dark closes over 3 s, the stare's own darkness driven to full, and the view's fade
 finishes the black at 3.5 s. The line sits on top throughout: "A short fall; the ground, soft;
-and overhead the counting, which did not stop at you."
+and overhead the counting, which did not stop at you." The landing comes at 8 s.
 
 ## 1. Where it lives
 
@@ -39,7 +40,15 @@ and overhead the counting, which did not stop at you."
 - `app.ts`: death sets the ending and the line and schedules the fade; the end, won and alive,
   sets the ending and the line and schedules the panel; otherwise the panel at once.
 
-## 2. Tests
+## 2. The veil (`game/veil.ts`, `main.ts`)
+
+The title and the game used to swap in one frame. A black sheet over the whole page now comes
+down over `VEIL_COVER_MS` (0.6 s) before any change of page (the title, the game, a scene),
+the page is swapped under it, and it lifts over `VEIL_LIFT_MS` (1.6 s) a quarter second after
+the new page is up. It takes no input. The intro's film carries the title into the game on its
+own and goes without.
+
+## 3. Tests
 
 `test/game/ending.test.ts`: the eases; the win's lift from the given pose, its end and its
 softening; the death's fall, its end, its roll and its closing. The browser pass is the camera
