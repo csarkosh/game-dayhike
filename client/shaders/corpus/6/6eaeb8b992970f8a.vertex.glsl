@@ -15,6 +15,9 @@ layout(set = 1, binding = 1) uniform LeftOver {
     vec3 midgeSkyGlow;
     float midgeNight;
     float midgeSkyLuma;
+    float midgeExposure;
+    float midgeToneMap;
+    float midgeContrast;
 };
 
 precision highp float;
