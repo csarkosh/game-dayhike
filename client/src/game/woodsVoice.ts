@@ -27,7 +27,7 @@ export const BIRDS_RETURN_S = 9;
 /** The recording the Hollow's call is made from (wildlifeAudio.ts `CALL_CLIP`): the elk's bugle. */
 export const HOLLOW_CALL_CLIP = "call.elk_bugle";
 /** The climbs at which the Hollow calls, low to high: all in the night (escalation.ts DUSK_AT). */
-export const CALL_CLIMBS: readonly number[] = [0.6, 0.69, 0.77, 0.84, 0.9, 0.95];
+export const CALL_CLIMBS: readonly number[] = [0.38, 0.5, 0.62, 0.74, 0.85, 0.94];
 /** Metres up the trail the first call and the last sound from. */
 export const CALL_FAR_M = 420;
 export const CALL_NEAR_M = 60;

@@ -15,7 +15,7 @@ import { hasLineOfSight } from "../../src/sim/ai.js";
 import { climbOf } from "../../src/sim/watcher.js";
 import { actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
 import {
-  GUIDE_REACH, HAUNT_NIGHT_MIN, HAUNT_REST_CLIMB, HAUNT_SHADES, LUNGE_MAX_S, LUNGE_RANGE, SHADE_DWELL_S, SHADE_FLEE_RADIUS,
+  GUIDE_REACH, HAUNT_NIGHT_MIN, HAUNT_REST_CLIMB, HAUNT_SHADES, LUNGE_MAX_S, LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS,
   SHADE_RANGE, SHADE_WATCHED_S, bestClimb, isHaunting, isShadeState, placeShadeOnGuide, spawnShade,
 } from "../../src/sim/haunt.js";
 import { isHollow } from "../../src/sim/hollow.js";
@@ -104,6 +104,11 @@ describe("the director", () => {
     expect(isOnCorridor(w, h.pos.x, h.pos.z)).toBe(false);
     expect(hasLineOfSight({ x: p.pos.x, y: p.pos.y + PLAYER_EYE_OFFSET, z: p.pos.z }, h.pos, w.boxes, w.ground)).toBe(true);
     expect(h.yaw).toBeCloseTo(Math.atan2(p.pos.x - h.pos.x, p.pos.z - h.pos.z), 6);
+    // In the band off the look: 10° to 32°, inside the headlamp.
+    const bx = h.pos.x - p.pos.x, bz = h.pos.z - p.pos.z;
+    const cos = (bx * Math.sin(p.yaw) + bz * Math.cos(p.yaw)) / d;
+    expect(cos).toBeGreaterThanOrEqual(SHADE_BEARING_MAX_COS - 1e-3);
+    expect(cos).toBeLessThanOrEqual(SHADE_BEARING_MIN_COS + 1e-3);
     expect(h.stateTimer).toBeGreaterThan(SHADE_DWELL_S[0] - TICK_DT * 2);
     // The episode goes on: more of them, and the count is the episode's.
     expect(w.haunt!.episode).not.toBeNull();

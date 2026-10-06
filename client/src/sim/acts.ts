@@ -11,12 +11,12 @@
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
-/** The progress at which the weather turns, and over how much it turns. */
-export const WET_AT = 0.25;
-export const WET_SPAN = 0.1;
-/** The progress at which the sun begins to go, and over how much it is gone. */
-export const DUSK_AT = 0.55;
-export const NIGHT_SPAN = 0.12;
+/** The progress at which the weather turns, and over how much it turns: a tenth of the way is day. */
+export const WET_AT = 0.1;
+export const WET_SPAN = 0.08;
+/** The progress at which the sun begins to go, and over how much it is gone: a fifth of the way is the wet, and the rest is night. */
+export const DUSK_AT = 0.3;
+export const NIGHT_SPAN = 0.1;
 
 /** Flat at both ends: Ken Perlin's smootherstep. */
 export function smootherstep(x: number): number {

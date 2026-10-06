@@ -16,11 +16,13 @@ The climb is three acts, by the party's progress up the stem (ratcheted, so it n
 
 1. **The day.** A semi-sunny day on the peninsula: broken cloud, a little haze, the forest
    lively. Full birdsong, every animal's call, the odd fly passing the ear.
-2. **The wet.** From a quarter of the way up, over the next 15 %, cloud closes in, mist and
+2. **The wet.** From a tenth of the way up, over the next 8 % (a quarter, over 15 %, as first
+   built), cloud closes in, mist and
    rain come, the ground wets, and the look takes a first touch of the dread axis. The birds
    are half what they were, the rain takes more, the ground animals fall back and the ravens
    grow bolder: a wet day's woods.
-3. **The night.** From a little past half way the sun goes, and by the crest it is night and
+3. **The night.** From three tenths of the way the sun goes (a little past half, as first built),
+   and from four tenths it is night and
    the eerie preset. Every animal, the ravens too, is quiet by night. In their place: sounds
    that are not animals. A knock of wood on wood, twice. A trunk's long creak. A stick snapped
    close by. Steps in the litter that come nearer and stop. A breath at the shoulder. A thin
@@ -34,9 +36,9 @@ and record are kept against the day it is wanted back). The Hollow is first seen
 ## 1. The acts (`game/escalation.ts`)
 
 `actsUnder(progress)` (`sim/acts.ts`, since 2026-10-06; the sky and the haunt read the same
-marks) gives `wet` and `night`, each 0 to 1 by smootherstep: `wet` from `WET_AT` (0.25) over
-`WET_SPAN` (0.1); `night` from `DUSK_AT` (0.55) over `NIGHT_SPAN` (0.12), so the dark is in by
-two thirds of the way. As first built the night ran from 0.55 to the crest, which read as dusk
+marks) gives `wet` and `night`, each 0 to 1 by smootherstep: `wet` from `WET_AT` (0.1) over
+`WET_SPAN` (0.08); `night` from `DUSK_AT` (0.3) over `NIGHT_SPAN` (0.1), so a tenth of the way is
+day, a fifth is the wet, and the rest is night (since 2026-10-06; a quarter and 0.55 before). As first built the night ran from 0.55 to the crest, which read as dusk
 until the top. The progress is the living player nearest the crest, by distance along the
 trail (`stemProgress`), ratcheted and eased over 20 s. The weather runs from the base
 preset to `ACT_WET` (cloud 1, mist 0.9, rain 0.55, wetness 0.85, dread 0.35) by `wet`, then to

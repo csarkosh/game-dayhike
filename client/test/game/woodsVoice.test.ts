@@ -91,16 +91,16 @@ describe("the Hollow's call", () => {
   it("is the latest mark's alone when a climb jumps several at once", () => {
     const state = stepWoods(WOODS_REST, CLIMBING, DT).state;
     const jumped = stepWoods(state, { ...CLIMBING, climb: 0.8 }, DT);
-    expect(jumped.call).toEqual(callCue(2));
-    expect(jumped.state.calls).toBe(3);
+    expect(jumped.call).toEqual(callCue(3));
+    expect(jumped.state.calls).toBe(4);
     expect(stepWoods(jumped.state, { ...CLIMBING, climb: 0.8 }, DT).call).toBeNull();
   });
 
   it("is not heard for the marks a screen joins past, nor in the chase", () => {
     const joined = stepWoods(WOODS_REST, { ...CLIMBING, climb: 0.8 }, DT);
     expect(joined.call).toBeNull();
-    expect(joined.state.calls).toBe(3);
-    expect(stepWoods(joined.state, { ...CLIMBING, climb: 0.86 }, DT).call).toEqual(callCue(3));
+    expect(joined.state.calls).toBe(4);
+    expect(stepWoods(joined.state, { ...CLIMBING, climb: 0.86 }, DT).call).toEqual(callCue(4));
     const chase = run(stepWoods(WOODS_REST, CLIMBING, DT).state, { ...CLIMBING, climb: 1, chase: true }, 2);
     // One call in the chase: the reveal's, not a mark's.
     expect(chase.calls).toBe(1);
