@@ -50,7 +50,7 @@ describe("the shade mask", () => {
     const mask = createShadeSilhouette(scene, camera);
     const soft = figure(scene, "shade");
     const meshes = soft.getChildMeshes(false);
-    mask.sync([{ node: soft, fade: 0.5, soft: 1 }]);
+    mask.sync([{ node: soft, fade: 0.5, soft: 1, near: 1 }]);
     expect(mask.texture.renderList?.length).toBe(meshes.length);
     for (const m of meshes) expect(mask.texture.renderList).toContain(m);
     for (const m of meshes) {
@@ -64,7 +64,7 @@ describe("the shade mask", () => {
     mask.texture.onAfterRenderObservable.notifyObservers(0);
     for (const m of meshes) expect(m.visibility).toBe(0);
     // Resolving: on both layers, the frame's share rising.
-    mask.sync([{ node: soft, fade: 1, soft: 0.25 }]);
+    mask.sync([{ node: soft, fade: 1, soft: 0.25, near: 1 }]);
     for (const m of meshes) {
       expect(m.layerMask).toBe(SHADE_LAYER | MAIN_LAYER);
       expect(m.visibility).toBeCloseTo(0.75, 12);
@@ -73,8 +73,13 @@ describe("the shade mask", () => {
     for (const m of meshes) expect(m.visibility).toBeCloseTo(0.25, 12);
     mask.texture.onAfterRenderObservable.notifyObservers(0);
     // Resolved: nothing in the mask.
-    mask.sync([{ node: soft, fade: 1, soft: 0 }]);
+    mask.sync([{ node: soft, fade: 1, soft: 0, near: 1 }]);
     expect(mask.any()).toBe(false);
+    // A far figure is fainter in the mask: its share there is scaled by `near`.
+    mask.sync([{ node: soft, fade: 1, soft: 1, near: 0.4 }]);
+    mask.texture.onBeforeRenderObservable.notifyObservers(0);
+    for (const m of meshes) expect(m.visibility).toBeCloseTo(0.4, 12);
+    mask.texture.onAfterRenderObservable.notifyObservers(0);
     // Gone: out of the list, back on the main layer, whole.
     mask.sync([]);
     expect(mask.texture.renderList?.length).toBe(0);

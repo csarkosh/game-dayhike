@@ -81,6 +81,10 @@ export const SHADE_FADE_OUT_S = 1.1;
 /** Metres from the local eye within which a lunge resolves from the mist into the Hollow, and the seconds that takes. */
 export const SHADE_RESOLVE_M = 12;
 export const SHADE_RESOLVE_S = 1.4;
+/** Metres within which a shade is whole in the mask, the metres at which it is SHADE_FAR_SHARE of itself, and that share. */
+export const SHADE_NEAR_M = 10;
+export const SHADE_FAR_M = 40;
+export const SHADE_FAR_SHARE = 0.35;
 
 /** Writes `visibility` on every mesh under `node`: 1 is drawn as it is, under 1 is blended toward nothing. */
 function setVisibility(node: TransformNode, level: number): void {
@@ -98,9 +102,10 @@ export class EntityViews {
   /** Each enemy's fade, 0 to 1 (`visibility`), and the state it was last seen in: a shade, a lunge or a Hollow stepping out comes in from nothing, and a shade or a lunge goes out to nothing after it is gone. */
   private readonly fades = new Map<number, { level: number; ai: number }>();
   /** Views of shades gone from the state, fading out: the model is held until the fade ends. */
-  private readonly fading = new Map<number, { entry: ModelView; level: number; soft: number }>();
+  private readonly fading = new Map<number, { entry: ModelView; level: number; soft: number; near: number }>();
   /** Each shade's softness (shadeSilhouette.ts): 1 a blur in the mist, 0 the Hollow; a lunge resolves as it closes on the local eye. */
   private readonly soft = new Map<number, number>();
+  private readonly near = new Map<number, number>();
   /**
    * Whether the shades are drawn soft, through the silhouette mask
    * (shadeSilhouette.ts): then this sets their fade and softness and leaves
@@ -249,14 +254,17 @@ export class EntityViews {
         const was = this.soft.get(id) ?? 1;
         const soft = dt > 0 ? was + (want - was) * Math.min(1, dt / SHADE_RESOLVE_S) : was;
         this.soft.set(id, soft);
-      } else this.soft.delete(id);
+        // Fainter with distance: whole within SHADE_NEAR_M, SHADE_FAR_SHARE of itself at SHADE_FAR_M.
+        const t = Math.max(0, Math.min(1, (d - SHADE_NEAR_M) / (SHADE_FAR_M - SHADE_NEAR_M)));
+        this.near.set(id, 1 - (1 - SHADE_FAR_SHARE) * t);
+      } else { this.soft.delete(id); this.near.delete(id); }
       const instance = this.models.acquire(id, HOLLOW_MODEL);
       if (instance !== null) {
         const entry = this.ensureHollowModel(id, instance, enemy.pos.x, feet, enemy.pos.z);
         this.enemies.get(id)?.node.setEnabled(false);
         this.advance(entry.view, enemy.pos.x, feet, enemy.pos.z, clamped);
         entry.view.node.rotation.y = enemy.yaw;
-        if (this.softShades && this.soft.has(id)) this.shadeList.push({ node: entry.view.node, fade: fade.level, soft: this.soft.get(id) as number });
+        if (this.softShades && this.soft.has(id)) this.shadeList.push({ node: entry.view.node, fade: fade.level, soft: this.soft.get(id) as number, near: this.near.get(id) ?? 1 });
         else setVisibility(entry.view.node, fade.level);
         // Enemy velocity never reaches a client (it is zeroed there), so the
         // pace is measured from how far the drawn body moved: the same on
@@ -298,10 +306,11 @@ export class EntityViews {
       const entry = this.enemyModels.get(id);
       if (entry !== undefined && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge)) {
         this.enemyModels.delete(id);
-        this.fading.set(id, { entry, level: fade.level, soft: this.soft.get(id) ?? 1 });
+        this.fading.set(id, { entry, level: fade.level, soft: this.soft.get(id) ?? 1, near: this.near.get(id) ?? 1 });
       }
       this.fades.delete(id);
       this.soft.delete(id);
+      this.near.delete(id);
     }
     for (const [id, out] of this.fading) {
       if (dt > 0) out.level -= dt / SHADE_FADE_OUT_S;
@@ -310,7 +319,7 @@ export class EntityViews {
         this.fading.delete(id);
         continue;
       }
-      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: out.level, soft: out.soft });
+      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: out.level, soft: out.soft, near: out.near });
       else setVisibility(out.entry.view.node, out.level);
     }
     this.pruneModels(this.enemyModels, state.enemies);

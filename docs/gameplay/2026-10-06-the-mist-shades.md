@@ -21,10 +21,14 @@ comes in under it, one over the other, until it is the thing it was. Every chang
 
 ## 1. The mist (`game/hauntMist.ts`)
 
-Two billboard quads, 16 m across, on the mist banks' alpha map, with no lighting and a grey of
-their own (`HAUNT_MIST_GREY` 0.36, lit from within): 7 m to each side of the eye and 5 m ahead,
-swaying a little. Their opacity is `HAUNT_MIST_ALPHA` (0.6) × the haunt's level × the night, so
-they come in with the haunt (over 2 s, escalation.ts) and go with it, and never show by day.
+Twelve puffs on the mist banks' alpha map, with no lighting and a grey of their own
+(`HAUNT_MIST_GREY` 0.36, lit from within), seated on the terrain round the eye: each born 4 to
+16 m off on a drawn bearing, 5 to 12 m across, its centre 0.3 of its size above the ground, with a
+life of 10 to 24 s that it comes into and goes out of over 2.5 s, drifting at 0.35 m/s on its own
+heading and breathing on its own clock; left behind past 22 m and reborn round the eye. Each
+puff's opacity is `HAUNT_MIST_ALPHA` (0.55) × its own weight × the haunt's level × the night, so
+the mist comes in with the haunt and goes with it, and never shows by day. (As first built, two
+quads 7 m to each side of the eye: a wall glued to the screen.)
 
 ## 2. The figure (`game/shadeSilhouette.ts`, `shaders/grade.fragment.fx`)
 
@@ -44,6 +48,9 @@ the frame the Hollow's, from one mesh.
 
 **Fade.** A shade comes in over `SHADE_FADE_IN_S` (0.9 s) and goes out over `SHADE_FADE_OUT_S`
 (1.1 s), its model held after the state has dropped it until the fade ends (entityViews.ts).
+
+**Distance.** A shade is whole in the mask within `SHADE_NEAR_M` (10 m) and `SHADE_FAR_SHARE`
+(0.35) of itself at `SHADE_FAR_M` (40 m): the far ones are the fainter blurs.
 
 **Resolve.** A lunge within `SHADE_RESOLVE_M` (12 m) of the local eye eases its softness from 1
 to 0 over `SHADE_RESOLVE_S` (1.4 s); a shade never resolves.

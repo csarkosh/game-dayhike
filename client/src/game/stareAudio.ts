@@ -4,7 +4,8 @@
  * head. All of it is synthesized on the ambient context (ambientAudio.ts,
  * which also muffles the world under a stare): the heart is two falling
  * tones a beat, and a whisper is the shared noise through a mouth's two
- * resonances, opened and shut a syllable at a time. No voice says a word.
+ * resonances, opened and shut a syllable at a time, with no consonant (the
+ * hiss one made read as a snare). No voice says a word.
  */
 import { HEART_DUB_AT, STARE_FLOOR, type StareLens } from "./stareLens.js";
 
@@ -63,7 +64,6 @@ type Voice = {
   low: BiquadFilterNode;
   high: BiquadFilterNode;
   open: GainNode;
-  hiss: GainNode;
   panner: PannerNode;
   /** When its next syllable begins on the context's clock, and how many are left in its phrase. */
   next: number;
@@ -137,27 +137,18 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
       high.Q.value = 7;
       const open = ctx.createGain();
       open.gain.value = 0;
-      // The hiss a consonant makes ahead of its vowel.
-      const edge = ctx.createBiquadFilter();
-      edge.type = "highpass";
-      edge.frequency.value = 3800;
-      const hiss = ctx.createGain();
-      hiss.gain.value = 0;
       const panner = ctx.createPanner();
       panner.panningModel = "HRTF";
       panner.distanceModel = "inverse";
       panner.rolloffFactor = 0;
       src.connect(low);
       src.connect(high);
-      src.connect(edge);
       low.connect(open);
       high.connect(open);
-      edge.connect(hiss);
       open.connect(panner);
-      hiss.connect(panner);
       panner.connect(whispers);
       made.push({
-        low, high, open, hiss, panner,
+        low, high, open, panner,
         next: now + between(0, 0.8), left: 0,
         angle: between(0, 2 * Math.PI), turn: between(0.25, 0.9) * (random() < 0.5 ? -1 : 1),
         radius: between(0.45, 0.9), height: between(-0.15, 0.25),
@@ -184,11 +175,6 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
       v.open.gain.setValueAtTime(0, at);
       v.open.gain.linearRampToValueAtTime(loud, at + length * 0.3);
       v.open.gain.linearRampToValueAtTime(0, at + length);
-      if (random() < 0.4) {
-        v.hiss.gain.setValueAtTime(0, at);
-        v.hiss.gain.linearRampToValueAtTime(loud * 0.5, at + 0.025);
-        v.hiss.gain.linearRampToValueAtTime(0, at + 0.11);
-      }
       v.next = at + length + between(WHISPER_GAP_S[0], WHISPER_GAP_S[1]);
       v.left--;
     }

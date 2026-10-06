@@ -37,8 +37,8 @@ export const MAIN_LAYER = 0x0fffffff;
 /** The mask's size as a share of the frame: a blurred figure wants no more. */
 export const SHADE_MASK_RATIO = 0.5;
 
-/** One figure in the mask: its node, how far in it is (0 to 1), and how soft (1 a blur in the mist, 0 the Hollow itself). */
-export type ShadeEntry = { node: TransformNode; fade: number; soft: number };
+/** One figure in the mask: its node, how far in it is (0 to 1), how soft (1 a blur in the mist, 0 the Hollow itself), and how near (1 close, less far off: a far figure is fainter in the mist). */
+export type ShadeEntry = { node: TransformNode; fade: number; soft: number; near: number };
 
 export type ShadeSilhouette = {
   /** The mask, for the grade pass to read. */
@@ -84,7 +84,7 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
     maskCamera.fov = camera.fov;
     maskCamera.minZ = camera.minZ;
     maskCamera.maxZ = camera.maxZ;
-    for (const e of current) for (const m of meshesOf(e.node)) m.visibility = e.fade * e.soft;
+    for (const e of current) for (const m of meshesOf(e.node)) m.visibility = e.fade * e.soft * e.near;
   });
   texture.onAfterRenderObservable.add(() => {
     for (const e of current) for (const m of meshesOf(e.node)) m.visibility = e.fade * (1 - e.soft);

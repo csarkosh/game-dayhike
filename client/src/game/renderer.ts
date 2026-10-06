@@ -1934,7 +1934,7 @@ function buildRenderer(
   const silhouette = forest !== null && postFeatures.pipeline ? createShadeSilhouette(scene, camera) : null;
   partOf(silhouette);
   views.softShades = silhouette !== null;
-  const hauntMist = forest !== null ? createHauntMist(scene) : null;
+  const hauntMist = forest !== null ? createHauntMist(scene, (x, z) => elevationAt(forest.seed, x, z)) : null;
   partOf(hauntMist);
   let hauntLevel = 0;
   partOf(views);

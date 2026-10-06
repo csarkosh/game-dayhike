@@ -107,6 +107,31 @@ export const HOLLOW_CALL_VOICES: readonly { rate: number; share: number; after: 
   { rate: 0.5, share: 1, after: 0 },
   { rate: 0.375, share: 0.6, after: 0.09 },
 ];
+/** The call's first voice runs from this rate to this, by the variant; the second sits this far under it, and this long after. */
+export const HOLLOW_CALL_RATE: readonly [number, number] = [0.38, 0.62];
+export const HOLLOW_CALL_UNDER: readonly [number, number] = [0.66, 0.82];
+export const HOLLOW_CALL_AFTER: readonly [number, number] = [0.04, 0.22];
+
+/**
+ * The two voices of one cry for a variant of 0 to 1: at 0, the voices as
+ * `HOLLOW_CALL_VOICES` gives them. The variant is turned three ways by
+ * taking it at different rates, so near variants are not near cries; past
+ * 0.5 the second voice is the recording played backwards.
+ */
+export function hollowCallVoices(variant: number): readonly { rate: number; share: number; after: number; reversed: boolean }[] {
+  const v = Math.max(0, Math.min(1, variant));
+  if (v === 0) return HOLLOW_CALL_VOICES.map((voice) => ({ ...voice, reversed: false }));
+  const a = (v * 7.31) % 1;
+  const b = (v * 3.17 + 0.5) % 1;
+  const c = (v * 11.7 + 0.25) % 1;
+  const rate = HOLLOW_CALL_RATE[0] + (HOLLOW_CALL_RATE[1] - HOLLOW_CALL_RATE[0]) * a;
+  const under = HOLLOW_CALL_UNDER[0] + (HOLLOW_CALL_UNDER[1] - HOLLOW_CALL_UNDER[0]) * b;
+  const after = HOLLOW_CALL_AFTER[0] + (HOLLOW_CALL_AFTER[1] - HOLLOW_CALL_AFTER[0]) * c;
+  return [
+    { rate, share: 1, after: 0, reversed: false },
+    { rate: rate * under, share: 0.55 + 0.2 * b, after, reversed: v > 0.5 },
+  ];
+}
 export const DEFAULT_VOLUME = 0.5;
 
 /** A playing one-shot: `move` follows the animal, `stop` cuts it short. */
@@ -173,7 +198,7 @@ export type AmbientAudio = {
    * placed by direction alone: how far it sounds is the level's and the
    * low-pass's to say. Inert before `unlock()`.
    */
-  hollowCall(buffer: AudioBuffer, dx: number, dy: number, dz: number, level: number, cutoffHz: number): void;
+  hollowCall(buffer: AudioBuffer, dx: number, dy: number, dz: number, level: number, cutoffHz: number, variant?: number): void;
   /**
    * One of the woods' other voices (woodsSounds.ts, oddSounds.ts): made at
    * once from the cue's place relative to the listener (x right, y up, z
@@ -256,6 +281,20 @@ export function createAmbientAudio(
   let hush = 0;
   let stareLevel = 0;
   let chase: ChaseAudio | null = null;
+  /** Each call recording's reverse, made once. */
+  const reversed = new Map<AudioBuffer, AudioBuffer>();
+  function reversedOf(buffer: AudioBuffer): AudioBuffer {
+    let out = reversed.get(buffer);
+    if (out !== undefined || !ctx) return out ?? buffer;
+    out = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const from = buffer.getChannelData(c);
+      const to = out.getChannelData(c);
+      for (let i = 0; i < from.length; i++) to[i] = from[from.length - 1 - i] as number;
+    }
+    reversed.set(buffer, out);
+    return out;
+  }
   let birdGain: GainNode | null = null;
   let birdBed: AudioBuffer | null = null;
   /** Each ear's pan node, and when its next pass of the bed starts on the context's clock. */
@@ -490,7 +529,7 @@ export function createAmbientAudio(
         side.next += birdBed.duration - BIRD_OVERLAP_S;
       }
     },
-    hollowCall(buffer, dx, dy, dz, level, cutoffHz) {
+    hollowCall(buffer, dx, dy, dz, level, cutoffHz, variant = 0) {
       if (!ctx || !world) return;
       const length = Math.hypot(dx, dy, dz);
       if (!(length > 0) || !(level > 0)) return;
@@ -507,9 +546,12 @@ export function createAmbientAudio(
       panner.positionZ.value = earZ + (dz / length) * HOLLOW_CALL_STANDOFF_M;
       filter.connect(panner);
       panner.connect(world);
-      for (const voice of HOLLOW_CALL_VOICES) {
+      // No two cries alike: the variant picks the first voice's pitch, the
+      // second's interval and delay, and whether the second is the recording
+      // played backwards (a cry that ends where one begins).
+      for (const voice of hollowCallVoices(clamp01(variant))) {
         const src = ctx.createBufferSource();
-        src.buffer = buffer;
+        src.buffer = voice.reversed ? reversedOf(buffer) : buffer;
         src.playbackRate.value = voice.rate;
         const g = ctx.createGain();
         g.gain.value = HOLLOW_CALL_LEVEL * clamp01(level) * voice.share;

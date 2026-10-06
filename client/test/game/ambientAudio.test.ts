@@ -3,7 +3,7 @@ import {
   createAmbientAudio, DEFAULT_VOLUME, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
   WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
   WIND_GAIN_DEPTH, WIND_GAIN_RAMP_S, windBedGain, BIRD_LEVEL, BIRD_PAN, BIRD_OVERLAP_S, BIRD_GAIN_RAMP_S,
-  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HUSH_RAMP_S, FLY_PASS_S,
+  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HOLLOW_CALL_RATE, HOLLOW_CALL_AFTER, hollowCallVoices, HUSH_RAMP_S, FLY_PASS_S,
 } from "../../src/game/ambientAudio.js";
 import { ambientGainsUnder, WEATHER_PRESETS } from "../../src/game/weather.js";
 import { MUFFLE_OPEN_HZ, MUFFLE_SHUT_HZ, MUFFLE_GAIN, HEART_LEVEL, WHISPER_LEVEL, WHISPER_VOICES } from "../../src/game/stareAudio.js";
@@ -89,8 +89,10 @@ function fakeCtx() {
     createPanner() { const p = pannerNode(); created.panners.push(p); return p; },
     createStereoPanner() { const p = { ...node(), pan: param(0) }; created.stereo.push(p); return p; },
     createBiquadFilter() { created.filters++; const f = filterNode(); created.filterNodes.push(f); return f; },
-    createBuffer(_ch: number, len: number, rate: number) {
-      return { getChannelData: () => new Float32Array(len), length: len, sampleRate: rate };
+    createBuffer(ch: number, len: number, rate: number) {
+      // One array a channel, kept: a reversed recording is written into it and read back.
+      const channels = Array.from({ length: ch }, () => new Float32Array(len));
+      return { getChannelData: (c: number) => channels[c] as Float32Array, length: len, sampleRate: rate, numberOfChannels: ch, duration: len / rate };
     },
     decodeAudioData(bytes: ArrayBuffer) { return Promise.resolve({ token: bytes } as unknown as AudioBuffer); },
     close() {},
@@ -893,6 +895,44 @@ describe("the chase's pulse", () => {
     const thumps = created.oscs.filter((o) => o.startedAt !== undefined && o.frequency.ramps.length > 0);
     for (let i = 1; i < thumps.length; i++) expect(thumps[i]!.startedAt! - thumps[i - 1]!.startedAt!).toBeCloseTo(60 / CHASE_BPM_NEAR, 9);
     expect(CHASE_BPM_NEAR).toBeGreaterThan(CHASE_BPM_FAR);
+    audio.dispose();
+  });
+});
+
+describe("the cry's variants", () => {
+  it("is the voices as given at 0, and otherwise a different pitch, interval and delay, the second voice backwards past a half", () => {
+    expect(hollowCallVoices(0)).toEqual(HOLLOW_CALL_VOICES.map((v) => ({ ...v, reversed: false })));
+    const seen = new Set<string>();
+    for (const v of [0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9]) {
+      const voices = hollowCallVoices(v);
+      expect(voices.length).toBe(2);
+      const [first, second] = voices as [typeof voices[0], typeof voices[0]];
+      expect(first.rate).toBeGreaterThanOrEqual(HOLLOW_CALL_RATE[0]);
+      expect(first.rate).toBeLessThanOrEqual(HOLLOW_CALL_RATE[1]);
+      expect(second.rate).toBeLessThan(first.rate);
+      expect(second.after).toBeGreaterThanOrEqual(HOLLOW_CALL_AFTER[0]);
+      expect(second.reversed).toBe(v > 0.5);
+      expect(first.reversed).toBe(false);
+      seen.add(first.rate.toFixed(3) + ":" + second.after.toFixed(3));
+    }
+    expect(seen.size).toBe(8);
+  });
+
+  it("plays the second voice from the recording reversed, made once per recording", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    const data = new Float32Array([1, 2, 3, 4]);
+    const clip = { duration: 1, numberOfChannels: 1, length: 4, sampleRate: 4, getChannelData: () => data } as unknown as AudioBuffer;
+    const sources = created.sources.length;
+    audio.hollowCall(clip, 0, 0, -1, 1, 2000, 0.9);
+    const [first, second] = created.sources.slice(sources) as unknown as [{ buffer: unknown }, { buffer: AudioBuffer }];
+    expect(first.buffer).toBe(clip);
+    expect(second.buffer).not.toBe(clip);
+    expect([...second.buffer.getChannelData(0)]).toEqual([4, 3, 2, 1]);
+    audio.hollowCall(clip, 0, 0, -1, 1, 2000, 0.7);
+    const again = created.sources.at(-1) as unknown as { buffer: AudioBuffer };
+    expect(again.buffer).toBe(second.buffer);
     audio.dispose();
   });
 });
