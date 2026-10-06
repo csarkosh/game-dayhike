@@ -725,6 +725,9 @@ function buildGame(
     const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground);
     escalation = stepEscalation(escalation, targets, dt);
     const a = atmosphereUnder(base, escalation);
+    // The chase's cast and its pulse, every frame: neither waits on the weather's gate below.
+    renderer.setChase(escalation.chase);
+    ambient.setChase(escalation.chase, escalation.lens);
     wildlifePresence = wildlifePresenceUnder(a.weather, a.hour);
     // The woods' voice: the birdsong's level, and the Hollow's call from up
     // the trail as the climb passes each mark. The call is the elk's bugle,
