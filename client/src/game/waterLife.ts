@@ -251,6 +251,13 @@ export function createWaterLife(
 
   // The heads, and what the players did since the last frame.
   const heads = createHeads(seed);
+  /** Each head swarm's share of the midges' presence: it gathers over
+   * WATER_LIFE_EASE_S once its swarm forms, and thins out as long, where
+   * the head last was, once the swarm lets go. */
+  const headShares = new Float64Array(MAX_PLAYERS);
+  /** Each row's presence this frame, as drawn and as heard: the midges' own
+   * for a marker's swarm, times its share for a head's. */
+  const rowPresence = new Float64Array(ROWS);
   /** The players there are this frame, in slot order: what the dragonflies and the frogs read. */
   const present: PlayerAt[] = [];
   const speeds: number[] = new Array<number>(MAX_PLAYERS).fill(0);
@@ -318,7 +325,8 @@ export function createWaterLife(
   }
 
   /** Fills the swarms' table: each row's frame, then its share of the tier's
-   * midges. Returns how many are drawn. */
+   * midges, and its presence; a head's row eases in and out by its share.
+   * Returns how many are drawn. */
   function stepMidges(f: WaterLifeFrame, dt: number): number {
     const mp = presence.midge;
     stepHeads(heads, f.players, speeds, inBand, mp, dt);
@@ -327,6 +335,7 @@ export function createWaterLife(
     for (let r = 0; r < ROWS; r++) {
       fulls[r] = 0;
       distances[r] = Infinity;
+      rowPresence[r] = r < HEAD_ROW0 ? mp : 0;
     }
     for (let r = 0; r < markerRows; r++) {
       const m = markers[r]!;
@@ -343,7 +352,11 @@ export function createWaterLife(
     for (let h = 0; h < MAX_PLAYERS; h++) {
       const row = HEAD_ROW0 + h;
       const head = heads[h];
-      if (head === undefined || !head.active || mp <= 0) continue;
+      // Let go, the swarm keeps the head's last place while it thins out.
+      const share = rampTo(headShares[h]!, head !== undefined && head.active ? 1 : 0, dt / WATER_LIFE_EASE_S);
+      headShares[h] = share;
+      rowPresence[row] = mp * share;
+      if (head === undefined || share <= 0 || mp <= 0) continue;
       const radius = headRadius(head.midges);
       radii[row] = radius;
       heights[row] = radius;
@@ -357,7 +370,7 @@ export function createWaterLife(
     let total = 0;
     for (let r = 0; r < ROWS; r++) {
       const count = counts[r]!;
-      packSwarm(table, r, frames[r]!, radii[r]!, heights[r]!, count, mp, columns[r] === 1, seeds[r]!);
+      packSwarm(table, r, frames[r]!, radii[r]!, heights[r]!, count, rowPresence[r]!, columns[r] === 1, seeds[r]!);
       total += count;
     }
     return total;
@@ -406,10 +419,10 @@ export function createWaterLife(
     midges.update(midgeFrame);
   }
 
-  /** Every swarm's hum, its row's index its identity from frame to frame:
-   * a row with no swarm this frame (out of sight, gone, or a player not
-   * standing still) is listed with no presence. `waterLifeAudio.ts` picks
-   * the nearest within earshot. */
+  /** Every swarm's hum, its row's index its identity from frame to frame,
+   * at its row's presence: a row with no swarm this frame (out of sight,
+   * gone, or a player not standing still) is listed with none.
+   * `waterLifeAudio.ts` picks the nearest within earshot. */
   function listHums(): void {
     for (let r = 0; r < ROWS; r++) {
       const fr = frames[r]!;
@@ -418,13 +431,14 @@ export function createWaterLife(
       hum.y = fr.cy;
       hum.z = fr.cz;
       hum.midges = fulls[r]!;
-      hum.presence = fulls[r]! > 0 ? presence.midge : 0;
+      hum.presence = fulls[r]! > 0 ? rowPresence[r]! : 0;
     }
     sound.hums_n = ROWS;
   }
 
   /** Out of reach: nothing drawn, nothing heard, nothing stepped, and the
-   * heads let go, so none is kept for a slot whose player leaves meanwhile. */
+   * heads let go, gone outright rather than thinning out where no one sees
+   * them, so none is kept for a slot whose player leaves meanwhile. */
   function rest(): void {
     if (!resting) {
       midges.mesh.setEnabled(false);
@@ -434,6 +448,7 @@ export function createWaterLife(
         h.still = 0;
         h.fast = 0;
       }
+      headShares.fill(0);
       resting = true;
     }
     primed = false;

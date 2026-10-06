@@ -8,6 +8,8 @@
  * - Hums: the `HUM_MAX` nearest swarms within `HUM_RANGE` that have midges
  *   and presence keep a loop emitter each, kept by swarm (its index in
  *   `hums`) from frame to frame and moved, re-gained and re-pitched in place.
+ *   A hum begins silent and is raised to its gain through the emitter's
+ *   ramp, so a swarm forming over the ear never starts at full gain.
  *   A swarm that drops out fades over `HUM_FADE_S`, is sent a gain of nothing
  *   and is stopped once the emitter's gain has followed (`LOOP_GAIN_RAMP_S`
  *   on), so the cut falls on silence; until it stops it still counts against
@@ -393,9 +395,12 @@ export function createWaterLifeAudio(
       if (slot.emitter === null) {
         if (liveHums >= HUM_MAX) continue;
         slot.pitch = s.pitch;
-        slot.emitter = ambient.loopEmitter(slot.build, h.x, h.y, -h.z, gain, HUM_REF, HUM_RANGE);
+        // Made silent and raised through the emitter's ramp, as a chorus
+        // loop is: begun at its gain it would sound at once at full strength.
+        slot.emitter = ambient.loopEmitter(slot.build, h.x, h.y, -h.z, 0, HUM_REF, HUM_RANGE);
         if (slot.emitter === null) continue;
-        slot.gain = gain;
+        slot.gain = 0;
+        setGain(slot, gain);
         liveHums++;
         continue;
       }

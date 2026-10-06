@@ -178,7 +178,7 @@ describe("waterLifeAudio", () => {
     audio.dispose();
   });
 
-  it("the eight nearest swarms keep a hum each, at −z, gained by presence and size; the next frame moves them in place", () => {
+  it("the eight nearest swarms keep a hum each, at −z, begun silent and raised to a gain by presence and size; the next frame moves them in place", () => {
     const fake = fakeAmbient();
     const audio = audioOf(fake, () => 0.5, () => 0);
     const swarms = rowOfSwarms().map((h) => ({ ...h, z: 2 }));
@@ -186,16 +186,30 @@ describe("waterLifeAudio", () => {
     const made = hums(fake.loops);
     expect(made.map((l) => l.x)).toEqual([0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5]);
     expect(made.every((l) => l.y === 1 && l.z === -2)).toBe(true);
-    expect(made.map((l) => l.gain)).toEqual([0.4, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+    // Each made silent and raised to its gain through the emitter's ramp.
+    expect(made.map((l) => l.gain)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(made.map((l) => l.gains)).toEqual([[0.4], [0.5], [0.5], [0.5], [0.5], [0.5], [0.5], [0.5]]);
     audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
     expect(fake.loops.length).toBe(8);
     expect(made[0]!.moves).toEqual([[0.5, 1, -2]]);
-    expect(made.every((l) => l.gains.length === 0 && !l.stopped)).toBe(true);
+    expect(made.every((l) => l.gains.length === 1 && !l.stopped)).toBe(true);
     // A swarm thinning re-gains its own hum, nobody else's.
     swarms[0]!.presence = 0.4;
     audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
-    expect(made[0]!.gains).toEqual([0.2]);
-    expect(made.slice(1).every((l) => l.gains.length === 0)).toBe(true);
+    expect(made[0]!.gains).toEqual([0.4, 0.2]);
+    expect(made.slice(1).every((l) => l.gains.length === 1)).toBe(true);
+    audio.dispose();
+  });
+
+  it("begins a hum silent and raises it through the emitter's ramp, so a swarm over the ear never starts at its full gain", () => {
+    const fake = fakeAmbient();
+    const audio = audioOf(fake, () => 0.5, () => 0);
+    // A head swarm of 150 at full presence, 0.8 m over the ear: a gain of sqrt(0.75).
+    audio.update(sound({ hums: [{ x: 0, y: 1.8, z: 0, midges: 150, presence: 1 }], hums_n: 1 }), ORIGIN);
+    const hum = hums(fake.loops)[0]!;
+    expect(hum.gain).toBe(0);
+    expect(hum.gains).toHaveLength(1);
+    expect(hum.gains[0]).toBeCloseTo(0.866025, 6);
     audio.dispose();
   });
 
@@ -228,15 +242,15 @@ describe("waterLifeAudio", () => {
     expect(fake.loops.length).toBe(8);
     t = 10.25;
     audio.update(sound({ hums: swarms, hums_n: 10 }), there);
-    expect(first!.gains).toEqual([0.2]);
-    expect(second!.gains).toEqual([0.25]);
+    expect(first!.gains).toEqual([0.4, 0.2]);
+    expect(second!.gains).toEqual([0.5, 0.25]);
     expect(first!.stopped || second!.stopped).toBe(false);
     expect(fake.loops.length).toBe(8);
     // The fade is over: silence is sent, and the voices still sound while the gain follows.
     t = 10.5;
     audio.update(sound({ hums: swarms, hums_n: 10 }), there);
-    expect(first!.gains).toEqual([0.2, 0]);
-    expect(second!.gains).toEqual([0.25, 0]);
+    expect(first!.gains).toEqual([0.4, 0.2, 0]);
+    expect(second!.gains).toEqual([0.5, 0.25, 0]);
     expect(first!.stopped || second!.stopped).toBe(false);
     expect(fake.loops.length).toBe(8);
     t = 10.55;
@@ -247,7 +261,7 @@ describe("waterLifeAudio", () => {
     t = 10.75;
     audio.update(sound({ hums: swarms, hums_n: 10 }), there);
     expect(first!.stopped && second!.stopped).toBe(true);
-    expect(first!.gains).toEqual([0.2, 0]);
+    expect(first!.gains).toEqual([0.4, 0.2, 0]);
     expect(hums(fake.loops).slice(8).map((l) => l.x)).toEqual([8.5, 9.5]);
     expect(fake.loops.filter((l) => !l.stopped).length).toBe(8);
     audio.dispose();
@@ -286,7 +300,7 @@ describe("waterLifeAudio", () => {
     audio.update(sound({ hums: swarms, hums_n: 10 }), { x: 9, y: 1, z: 0 });
     t = 10.3;
     audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
-    expect(first.gains).toEqual([0.2, 0.4]);
+    expect(first.gains).toEqual([0.4, 0.2, 0.4]);
     expect(first.stopped).toBe(false);
     expect(fake.loops.length).toBe(8);
     // Dropped again at 10.5 s, silenced at 11 s, back at 11.05 s: gained again, and not stopped at 11.15 s.
@@ -296,12 +310,12 @@ describe("waterLifeAudio", () => {
     audio.update(sound({ hums: swarms, hums_n: 10 }), { x: 9, y: 1, z: 0 });
     t = 11;
     audio.update(sound({ hums: swarms, hums_n: 10 }), { x: 9, y: 1, z: 0 });
-    expect(first.gains).toEqual([0.2, 0.4, 0.2, 0]);
+    expect(first.gains).toEqual([0.4, 0.2, 0.4, 0.2, 0]);
     t = 11.05;
     audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
     t = 11.15;
     audio.update(sound({ hums: swarms, hums_n: 10 }), ORIGIN);
-    expect(first.gains).toEqual([0.2, 0.4, 0.2, 0, 0.4]);
+    expect(first.gains).toEqual([0.4, 0.2, 0.4, 0.2, 0, 0.4]);
     expect(first.stopped).toBe(false);
     expect(fake.loops.length).toBe(8);
     audio.dispose();

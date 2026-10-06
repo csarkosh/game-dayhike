@@ -420,7 +420,8 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     const first = players[0]!;
     const f = frameAt(first.x, first.y + 0.7, first.z, 18.5);
     f.players = players;
-    run(life, f, 13);
+    // Ten seconds still, then three as the swarms gather.
+    run(life, f, 14);
     const table = seen.table!;
     let drawn = 0;
     for (let r = 0; r < 32; r++) drawn += table[r * ROW + COUNT]!;
@@ -443,6 +444,43 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     life.dispose();
   });
 
+  it("gathers a swarm over a head over 3 s once it forms, and thins it out over 3 s where the head last was once it lets go", () => {
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
+    const at = shore(0);
+    const player = { x: at.x, y: at.ground + 0.9, z: at.z };
+    const f = frameAt(at.x, at.ground + 1.6, at.z, 18.5);
+    f.players = [player];
+    const row = 25 * ROW;
+    /** The head's row's presence as drawn and as heard. */
+    const shown = (): number[] => [seen.table![row + PRESENCE]!, life.sound().hums[25]!.presence];
+    // Ten seconds standing still in the band at dusk: the swarm forms, its
+    // midges laid out at once, their presence a first step of the ease.
+    run(life, f, 9.95);
+    expect(seen.table![row + COUNT]).toBe(0);
+    run(life, f, 0.05);
+    expect(seen.table![row + COUNT]).toBeGreaterThan(0);
+    shown().forEach((p) => expect(p).toBeCloseTo(0.016667, 6));
+    // Half gathered a second and a half on, whole at three seconds.
+    run(life, f, 1.5);
+    shown().forEach((p) => expect(p).toBeCloseTo(0.516667, 6));
+    run(life, f, 1.5);
+    expect(shown()).toEqual([1, 1]);
+    // The player leaves: the swarm thins out over three seconds, still over
+    // the place their head last was, then is gone.
+    f.players = [];
+    run(life, f, 0.05);
+    shown().forEach((p) => expect(p).toBeCloseTo(0.983333, 6));
+    run(life, f, 1.5);
+    shown().forEach((p) => expect(p).toBeCloseTo(0.483333, 6));
+    expect(seen.table![row + COUNT]).toBeGreaterThan(0);
+    const hum = life.sound().hums[25]!;
+    expect(Math.hypot(hum.x - player.x, hum.z - player.z)).toBeLessThan(1);
+    run(life, f, 1.45);
+    expect(shown()).toEqual([0, 0]);
+    expect(seen.table![row + COUNT]).toBe(0);
+    life.dispose();
+  });
+
   it("keeps each swarm over its own player's head when a slot between them empties", () => {
     const life = createWaterLife(scene(), SEED, lakeOf(SEED), "low", "material");
     const players = [0, 0.6, 1.2].map((angle) => {
@@ -452,11 +490,12 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     const first = players[0]!;
     const f = frameAt(first.x, first.y + 0.7, first.z, 18.5);
     f.players = players;
-    run(life, f, 11);
+    run(life, f, 14);
     for (let h = 0; h < 3; h++) expect(life.sound().hums[25 + h]!.presence).toBe(1);
-    // The second player's slot empties; the third keeps the third.
+    // The second player's slot empties: their swarm thins out over three
+    // seconds and is gone; the third keeps the third.
     f.players = [players[0], undefined, players[2]];
-    run(life, f, 2);
+    run(life, f, 3);
     const hums = life.sound().hums;
     expect(hums[26]!.presence).toBe(0);
     expect(seen.table![26 * ROW + COUNT]).toBe(0);
@@ -477,7 +516,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     const b = shore(2);
     const f = frameAt(a.x, a.ground + 1.6, a.z, 18.5);
     f.players = [{ x: a.x, y: a.ground + 0.9, z: a.z }];
-    run(life, f, 11);
+    run(life, f, 14);
     expect(life.sound().hums[25]!.presence).toBe(1);
     // The camera goes beyond the reach; the first player leaves and another,
     // elsewhere on the shore, takes the slot.

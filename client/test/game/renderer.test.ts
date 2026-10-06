@@ -1117,12 +1117,13 @@ describe("the lake's life in a renderer", () => {
       renderer.setView(18.5, WEATHER_PRESETS.clear);
       const first = players[0]!.pos;
       renderer.setFreecam({ x: first.x, y: first.y + 0.7, z: first.z, yaw: 0, pitch: 0 });
-      // Eleven seconds standing still: a swarm over each head.
+      // Thirteen seconds standing still: a swarm over each head, formed at
+      // ten and gathered whole three seconds on.
       const frame = (): void => {
         state.tick += 15;
         renderer.sync(state, 1, 0, { dt: 0.25, sprinting: false });
       };
-      for (let i = 0; i < 44; i++) frame();
+      for (let i = 0; i < 52; i++) frame();
       const sound = renderer.waterLifeSound();
       /** The head swarm's hum of slot h: its presence and how far it is from player p. */
       const head = (h: number, p: number): [number, number] => {
@@ -1135,10 +1136,10 @@ describe("the lake's life in a renderer", () => {
         expect(presence).toBe(1);
         expect(off).toBeLessThan(1);
       }
-      // The second player leaves: theirs goes, and the third's stays over
-      // the third player, frame after frame.
+      // The second player leaves: theirs thins out over three seconds and
+      // goes, and the third's stays over the third player, frame after frame.
       state.players.delete(2);
-      for (let i = 0; i < 8; i++) frame();
+      for (let i = 0; i < 12; i++) frame();
       expect(head(1, 1)[0]).toBe(0);
       const [presence, off] = head(2, 2);
       expect(presence).toBe(1);
