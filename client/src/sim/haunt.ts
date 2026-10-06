@@ -53,21 +53,23 @@ export const HAUNT_REAL_CHASE = 0.5;
  * headlamp: at night an unlit figure is black on black, and the first
  * showings, 12 to 28 m out and 30° to 70° off the look, were never seen.
  */
-export const SHADE_RANGE: readonly [number, number] = [9, 20];
+export const SHADE_RANGE: readonly [number, number] = [9, 22];
 export const SHADE_DWELL_S: readonly [number, number] = [6, 12];
 export const SHADE_FLEE_RADIUS = 5;
 export const SHADE_WATCHED_S = 2.5;
 /**
- * The bearing band off the player's look a shade or a lunge stands in, 10°
- * to 32°, as the cosines and sines of its two edges (the watcher's method,
- * watcher.ts): inside the headlamp's useful cone (LAMP_ANGLE's 43° a side
- * falls to nothing well before its edge), and the near edge inside the
- * stare's 20°, so a shade can be looked straight at.
+ * The bearing band off the player's look a shade or a lunge stands in, 16°
+ * to 40°, as the cosines and sines of its two edges (the watcher's method,
+ * watcher.ts): in the player's view and in the mist at their side
+ * (game/hauntMist.ts), and just outside the stare's 20° at its near edge,
+ * so a shade is seen before it is looked at. The figure is drawn as a blur
+ * in the mist, not lit (game/shadeSilhouette.ts), so the headlamp's cone
+ * does not bound it.
  */
-export const SHADE_BEARING_MIN_COS = 0.9848;
-export const SHADE_BEARING_MIN_SIN = 0.1736;
-export const SHADE_BEARING_MAX_COS = 0.848;
-export const SHADE_BEARING_MAX_SIN = 0.5299;
+export const SHADE_BEARING_MIN_COS = 0.9613;
+export const SHADE_BEARING_MIN_SIN = 0.2756;
+export const SHADE_BEARING_MAX_COS = 0.766;
+export const SHADE_BEARING_MAX_SIN = 0.6428;
 /** A lunge: where it starts, its speed (under a sprint), how far its line may drift toward its player a second, and its most seconds. */
 export const LUNGE_RANGE: readonly [number, number] = [16, 26];
 export const LUNGE_SPEED = 6;

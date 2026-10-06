@@ -25,6 +25,8 @@ import type { Forest } from "../sim/forest.js";
 import { isHollow } from "../sim/hollow.js";
 import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
 import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
+import { createShadeSilhouette } from "./shadeSilhouette.js";
+import { createHauntMist } from "./hauntMist.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
@@ -1209,6 +1211,8 @@ export type Renderer = {
   stare(): StareLens;
   /** The chase's cast, 0 to 1 (escalation.ts): the grade pulls the frame toward burgundy by it. */
   setChase(cast: number): void;
+  /** The haunt, 0 to 1 (escalation.ts): the pale mist at the player's sides comes in by it. */
+  setHaunt(level: number): void;
   /** The end for this player (ending.ts): the camera is the ending's from now, won or died. Once; a second call changes nothing. */
   setEnding(kind: EndingKind): void;
   /**
@@ -1925,6 +1929,14 @@ function buildRenderer(
   setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist });
 
   const views = new EntityViews(scene);
+  // The haunt's shades: soft figures in a pale mist on the post tiers (the
+  // mask the grade reads), the Hollow fading in and out on the low tier.
+  const silhouette = forest !== null && postFeatures.pipeline ? createShadeSilhouette(scene, camera) : null;
+  partOf(silhouette);
+  views.softShades = silhouette !== null;
+  const hauntMist = forest !== null ? createHauntMist(scene) : null;
+  partOf(hauntMist);
+  let hauntLevel = 0;
   partOf(views);
   // Fire and forget: the other hikers and the Hollow render as capsules until
   // this resolves, and a model that fails to load stays a capsule for good.
@@ -1985,6 +1997,11 @@ function buildRenderer(
       setFoliageWind(wind, windPlayers);
       water?.setWind(wind.speed, [wind.dirX, wind.dirZ]);
       views.sync(state, localId, alpha, lampState, frame.dt);
+      if (silhouette !== null) {
+        silhouette.sync(views.shades());
+        post.setShades(silhouette.texture, silhouette.any());
+      }
+      hauntMist?.update(camera, hauntLevel, lighting.sky?.night ?? 0, seconds);
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
       // its GLBs have loaded, so new entries are picked up here.
@@ -2199,6 +2216,9 @@ function buildRenderer(
     setChase(cast) {
       chaseCast = Math.max(0, Math.min(1, cast));
     },
+    setHaunt(level) {
+      hauntLevel = Math.max(0, Math.min(1, level));
+    },
     setEnding(kind) {
       if (ending.since >= 0) return;
       ending = { kind, since: clock() / 1000, base: null };
@@ -2239,6 +2259,8 @@ function buildRenderer(
     },
     dispose() {
       views.dispose();
+      silhouette?.dispose();
+      hauntMist?.dispose();
       localLamp.dispose();
       for (const m of brushMeshes) m.dispose();
       // Before the meshes in its list: a render target's list is not told of
