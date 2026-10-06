@@ -4,6 +4,7 @@ import { parseLevel } from "../../src/sim/level.js";
 import { AiState, Outcome } from "../../src/sim/types.js";
 import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
 import {
+  FORK_REVEAL_S,
   HOLLOW_HUNT_SPEED,
   HOLLOW_LOOK_FACTOR,
   HOLLOW_LOOK_RANGE,
@@ -374,7 +375,7 @@ describe("a fork Hollow's emerge", () => {
     return t;
   };
 
-  it("walks to the mouth at the hunt speed, still emerging, stands one second facing its trigger, then hunts", () => {
+  it("walks to the mouth at the hunt speed, still emerging, stands FORK_REVEAL_S facing its trigger, then hunts", () => {
     const w = world();
     const p = spawnPlayer(w);
     p.pos = { x: 12, y: 0.9, z: 20 };
@@ -394,7 +395,7 @@ describe("a fork Hollow's emerge", () => {
     expect(h.ai).toBe(AiState.Emerge);
     expect(dist(h.pos, MOUTH)).toBeLessThanOrEqual(1.5);
     const stood = { ...h.pos };
-    tick(w, 58);
+    tick(w, Math.round(FORK_REVEAL_S / TICK_DT) - 2);
     expect(h.ai).toBe(AiState.Emerge);
     expect(h.pos).toEqual(stood);
     // Facing its trigger, up the z axis: yaw 0 with a little +x, not the walk's pi/2.
@@ -455,7 +456,7 @@ describe("a fork Hollow's emerge", () => {
     expect(h.pos.x).toBeLessThan(1);
     expect(dist(h.pos, MOUTH)).toBeGreaterThan(11);
     const stood = { ...h.pos };
-    tick(w, 58);
+    tick(w, Math.round(FORK_REVEAL_S / TICK_DT) - 2);
     expect(h.ai).toBe(AiState.Emerge);
     expect(h.pos).toEqual(stood);
     tick(w, 4);
@@ -477,7 +478,7 @@ describe("a fork Hollow's emerge", () => {
     // Six seconds at 6.3 m/s, less the wind-up from rest.
     expect(h.pos.x).toBeGreaterThan(37);
     expect(h.pos.x).toBeLessThan(38);
-    tick(w, 62);
+    tick(w, Math.round(FORK_REVEAL_S / TICK_DT) + 2);
     expect(h.ai).toBe(AiState.Hunt);
   });
 

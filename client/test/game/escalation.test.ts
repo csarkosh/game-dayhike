@@ -7,7 +7,7 @@ import { spawnHollow } from "../../src/sim/hollow.js";
 import { Phase } from "../../src/sim/types.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
-import { NIGHT_SPAN, CHASE_EASE_S, ACT_WET, DUSK_AT, WET_AT, WET_SPAN, actsUnder,
+import { HAUNT_DREAD, HAUNT_IN_S, HAUNT_OUT_S, NIGHT_SPAN, CHASE_EASE_S, ACT_WET, DUSK_AT, WET_AT, WET_SPAN, actsUnder,
   ESCALATION_REST, LENS_EASE_S, NEAR_BLIND, NEAR_FULL, NEAR_START, NIGHT_HOUR, OFF_TRAIL_FULL, OFF_TRAIL_START,
   SPIKE_DECAY_S, SPIKE_RISE_S, WORLD_EASE_S, atmosphereUnder, escalationTargets, stepEscalation,
   type EscalationTargets,
@@ -121,7 +121,7 @@ describe("escalationTargets", () => {
   });
 });
 
-const T = (over: Partial<EscalationTargets> = {}): EscalationTargets => ({ world: 0, offTrail: 0, near: 0, dead: false, chase: false, ...over });
+const T = (over: Partial<EscalationTargets> = {}): EscalationTargets => ({ world: 0, offTrail: 0, near: 0, dead: false, chase: false, haunt: 0, ...over });
 const stepFor = (seconds: number, t: EscalationTargets, from = ESCALATION_REST, dt = 1 / 60) => {
   let s = from;
   for (let i = 0; i < Math.round(seconds / dt); i++) s = stepEscalation(s, t, dt);
@@ -134,7 +134,18 @@ describe("stepEscalation", () => {
     expect(s.progressMax).toBeCloseTo(0.6, 9);
     s = stepEscalation(s, T({ world: 0.2 }), 1 / 60);
     expect(s.progressMax).toBeCloseTo(0.6, 9);
-    expect(stepEscalation(ESCALATION_REST, { world: 0.6, offTrail: 0, near: 0, dead: false, chase: false }, 1).progressMax).toBe(0.6);
+    expect(stepEscalation(ESCALATION_REST, { world: 0.6, offTrail: 0, near: 0, dead: false, chase: false, haunt: 0 }, 1).progressMax).toBe(0.6);
+  });
+
+  it("lifts the haunt in over HAUNT_IN_S while a shade stands near and lets it go over HAUNT_OUT_S, and the lens's dread with it to HAUNT_DREAD", () => {
+    const on = stepFor(HAUNT_IN_S, T({ haunt: 1 }));
+    expect(on.haunt).toBeCloseTo(1 - Math.exp(-1), 2);
+    const off = stepFor(HAUNT_OUT_S, T({ haunt: 0 }), stepFor(60, T({ haunt: 1 })));
+    expect(off.haunt).toBeCloseTo(Math.exp(-1), 2);
+    const day = { weather: WEATHER_PRESETS.clear, hour: 12 };
+    const a = atmosphereUnder(day, { ...ESCALATION_REST, haunt: 1 });
+    expect(a.weather.dread).toBeCloseTo(HAUNT_DREAD, 9);
+    expect(atmosphereUnder(day, { ...ESCALATION_REST, haunt: 1, lens: 0.9 }).weather.dread).toBeCloseTo(0.9, 9);
   });
 
   it("brings the chase's cast in over CHASE_EASE_S once the chase is on, holds it for the dead, and never takes it back", () => {
@@ -225,7 +236,7 @@ describe("atmosphereUnder", () => {
   it("never lifts dread past 1", () => {
     const a = atmosphereUnder(
       { weather: { ...WEATHER_PRESETS.eerie, dread: 1 }, hour: 12 },
-      { progressMax: 1, spike: 1, world: 1, lens: 1.4, chase: 0 },
+      { progressMax: 1, spike: 1, world: 1, lens: 1.4, chase: 0, haunt: 0 },
     );
     expect(a.weather.dread).toBe(1);
   });

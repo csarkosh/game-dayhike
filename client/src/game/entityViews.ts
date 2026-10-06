@@ -18,6 +18,7 @@ import {
   HOLLOW_ALBEDO, HOLLOW_EMISSIVE, HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_MATERIAL, HOLLOW_ROUGHNESS,
   HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED,
 } from "./hollowLook.js";
+import { AiState } from "../sim/types.js";
 
 /**
  * The rangers other hikers are drawn as, in a fixed order indexed by player
@@ -73,12 +74,27 @@ function stride(instance: CharacterInstance, speed: number, clipSpeed: number): 
   }
 }
 
+/** Seconds a shade, a lunge or a Hollow stepping out takes to come in from nothing, and a shade or a lunge to go out. */
+export const SHADE_FADE_IN_S = 0.7;
+export const SHADE_FADE_OUT_S = 0.9;
+
+/** Writes `visibility` on every mesh under `node`: 1 is drawn as it is, under 1 is blended toward nothing. */
+function setVisibility(node: TransformNode, level: number): void {
+  const v = level < 0 ? 0 : level > 1 ? 1 : level;
+  for (const m of node.getChildMeshes(false)) m.visibility = v;
+  if ((node as Mesh).visibility !== undefined) (node as Mesh).visibility = v;
+}
+
 export class EntityViews {
   /** Capsules, drawn for a player or a Hollow whose model is not (yet) in the pool. */
   private readonly players = new Map<number, View>();
   private readonly enemies = new Map<number, View>();
   private readonly playerModels = new Map<number, ModelView>();
   private readonly enemyModels = new Map<number, ModelView & { pace: Pace }>();
+  /** Each enemy's fade, 0 to 1 (`visibility`), and the state it was last seen in: a shade, a lunge or a Hollow stepping out comes in from nothing, and a shade or a lunge goes out to nothing after it is gone. */
+  private readonly fades = new Map<number, { level: number; ai: number }>();
+  /** Views of shades gone from the state, fading out: the model is held until the fade ends. */
+  private readonly fading = new Map<number, { entry: ModelView; level: number }>();
   private readonly lamps = new Map<number, SpotLight>();
   private readonly playerMaterial: PBRMaterial;
   private readonly hollowMaterial: PBRMaterial;
@@ -196,15 +212,26 @@ export class EntityViews {
     }
 
     // Every enemy the game spawns is a Hollow, so every enemy is drawn as one:
-    // there is no other shape to give an entity that can still collide.
+    // there is no other shape to give an entity that can still collide. A
+    // shade, a lunge or a Hollow stepping out comes in from nothing over
+    // SHADE_FADE_IN_S (the shadow's look, haunt.ts); the rest stand at once.
     for (const [id, enemy] of state.enemies) {
       const feet = enemy.pos.y - ENEMY_HALF.y;
+      let fade = this.fades.get(id);
+      if (fade === undefined) {
+        const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Emerge;
+        fade = { level: comesIn ? 0 : 1, ai: enemy.ai };
+        this.fades.set(id, fade);
+      }
+      fade.ai = enemy.ai;
+      if (dt > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + dt / SHADE_FADE_IN_S);
       const instance = this.models.acquire(id, HOLLOW_MODEL);
       if (instance !== null) {
         const entry = this.ensureHollowModel(id, instance, enemy.pos.x, feet, enemy.pos.z);
         this.enemies.get(id)?.node.setEnabled(false);
         this.advance(entry.view, enemy.pos.x, feet, enemy.pos.z, clamped);
         entry.view.node.rotation.y = enemy.yaw;
+        setVisibility(entry.view.node, fade.level);
         // Enemy velocity never reaches a client (it is zeroed there), so the
         // pace is measured from how far the drawn body moved: the same on
         // every peer, and it walks through Emerge as well as the hunt.
@@ -236,9 +263,35 @@ export class EntityViews {
       view.node.setEnabled(true);
       this.advance(view, enemy.pos.x, hollowY, enemy.pos.z, clamped);
       view.node.rotation.y = enemy.yaw;
+      setVisibility(view.node, fade.level);
+    }
+    // A shade or a lunge gone from the state goes out to nothing over
+    // SHADE_FADE_OUT_S: its model is held back from the prune until then.
+    for (const [id, fade] of this.fades) {
+      if (state.enemies.has(id)) continue;
+      const entry = this.enemyModels.get(id);
+      if (entry !== undefined && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge)) {
+        this.enemyModels.delete(id);
+        this.fading.set(id, { entry, level: fade.level });
+      }
+      this.fades.delete(id);
+    }
+    for (const [id, out] of this.fading) {
+      if (dt > 0) out.level -= dt / SHADE_FADE_OUT_S;
+      if (out.level <= 0) {
+        this.models.release(id);
+        this.fading.delete(id);
+        continue;
+      }
+      setVisibility(out.entry.view.node, out.level);
     }
     this.pruneModels(this.enemyModels, state.enemies);
     this.prune(this.enemies, state.enemies);
+  }
+
+  /** How many enemies are fading out, for the tests. */
+  fadingOut(): number {
+    return this.fading.size;
   }
 
   private ensureModel(
@@ -333,6 +386,8 @@ export class EntityViews {
   }
 
   dispose(): void {
+    this.fading.clear();
+    this.fades.clear();
     for (const view of this.players.values()) view.node.dispose();
     for (const view of this.enemies.values()) view.node.dispose();
     for (const lamp of this.lamps.values()) lamp.dispose();

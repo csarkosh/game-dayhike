@@ -16,6 +16,8 @@ export const WHISPER_LEVEL = 0.45;
 /** The stare below which no whisper is heard, and at which they are all there. */
 export const WHISPER_START = 0.12;
 export const WHISPER_FULL = 0.75;
+/** The share of the whispers' level the haunt alone brings: under a full stare's, and enough to be heard. */
+export const HAUNT_WHISPER_SHARE = 0.6;
 /** Voices, each on its own circle round the head. */
 export const WHISPER_VOICES = 4;
 /** Seconds ahead of the context's clock a voice's syllables are scheduled. */
@@ -76,7 +78,7 @@ export type StareAudio = {
    * schedules the whispers and moves them round the listener, whose place is
    * given in Web Audio's right-handed frame.
    */
-  set(lens: StareLens, x: number, y: number, z: number): void;
+  set(lens: StareLens, x: number, y: number, z: number, haunt?: number): void;
 };
 
 /**
@@ -190,7 +192,7 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
   }
 
   return {
-    set(lens, x, y, z) {
+    set(lens, x, y, z, haunt = 0) {
       const now = ctx.currentTime;
       // The heart: the beat the lens began, and its second sound in step.
       if (beats < 0) beats = lens.beats;
@@ -202,7 +204,8 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
           thump(now + HEART_DUB_AT * lens.period, level * 0.7, 74);
         }
       }
-      const level = whisperLevel(lens.level);
+      // The whispers: the stare's, or the haunt's (escalation.ts), whichever is more.
+      const level = Math.max(whisperLevel(lens.level), WHISPER_LEVEL * HAUNT_WHISPER_SHARE * clamp01(haunt));
       whispers.gain.setTargetAtTime(level, now, 0.4);
       if (level > 0) silentSince = now;
       // A second past the last stare the bus has faded, and nothing more is scheduled.
@@ -210,7 +213,7 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
       voices ??= build(now);
       const speaking = now - silentSince < 1;
       for (const v of voices) {
-        if (speaking) speak(v, now, clamp01(lens.level));
+        if (speaking) speak(v, now, Math.max(clamp01(lens.level), clamp01(haunt) * 0.5));
         const a = v.angle + v.turn * now;
         v.panner.positionX.value = x + Math.cos(a) * v.radius;
         v.panner.positionY.value = y + v.height;

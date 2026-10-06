@@ -15,7 +15,7 @@ One hiker is missing, last seen at Trail 14, and the poster at the trailhead is 
 
 Play as a park ranger sent to find them. Lead a search party of up to five up the trail to the crest, where the hiker is waiting — and so is whatever left them there. Then get everyone back down to the road.
 
-The day goes first: a quarter of the way up the cloud closes and the rain comes. Then the light goes, and the birds with it, and what you hear in the dark is not animals. Nothing shows itself until the crest. There, looking costs you: the dark closes in from its side of your sight, your own heart drowns the woods, and something starts to whisper. The descent is not a feeling: something comes down off the crest behind you, faster than you walk and slower than you can run, and it does not lose the trail. The road is the only ground it will not cross.
+The day goes first: a quarter of the way up the cloud closes and the rain comes. Then the light goes, and the birds with it, and what you hear in the dark is not animals. Then the woods have figures in them, at the edge of your sight, gone when you look too long; most of them are nothing. One is not. There, looking costs you: the dark closes in from its side of your sight, your own heart drowns the woods, and something starts to whisper. The descent is not a feeling: something comes down off the crest behind you, faster than you walk and slower than you can run, and it does not lose the trail. The road is the only ground it will not cross.
 
 **Play it: [games.csarko.sh/dayhike](https://games.csarko.sh/dayhike)**
 

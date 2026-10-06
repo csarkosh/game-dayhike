@@ -7,6 +7,7 @@ import type { Forest } from "./forest.js";
 import type { TrailGraph } from "./trail.js";
 import type { CutRecord } from "./cut.js";
 import { createWatcherRecord, stepWatcher, type WatcherRecord } from "./watcher.js";
+import { createHauntRecord, stepHaunt, type HauntRecord } from "./haunt.js";
 import { spiralSpawn, trailheadStart } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
@@ -88,6 +89,8 @@ export type World = {
    * the host's alone, like `search` and `trail` beside it.
    */
   cut: CutRecord | null;
+  /** The haunt's director (haunt.ts): host-only, off the wire, outside the fingerprint. */
+  haunt: HauntRecord | null;
   /**
    * The watcher (`watcher.ts`): whether the climb's Hollow is shown, the rest
    * until it shows again and its own random stream, host only. Set for an
@@ -114,6 +117,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     search: null,
     trail: null,
     cut: null,
+    haunt: null,
     watcher: null,
     state: {
       tick: 0,
@@ -150,6 +154,7 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
     trail: graph ?? null,
     cut: null,
     watcher: graph === undefined || !authoritative ? null : createWatcherRecord(forest.seed),
+    haunt: graph === undefined || !authoritative ? null : createHauntRecord(forest.seed),
     state: {
       tick: 0,
       players: new Map(),
@@ -285,6 +290,8 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
     // A forest runs the Hollows it has — the watcher alone until the body is
     // found — and never the director: nothing spawns on a mountain but what
     // walked out of the woods (hollow.ts).
+    // The night's shades, and the director that stands them up (haunt.ts).
+    if (world.haunt !== null && world.state.outcome === Outcome.Playing) stepHaunt(world, TICK_DT);
     stepHollows(world, TICK_DT);
     updateHollows(world);
   } else {

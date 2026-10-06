@@ -25,6 +25,7 @@ const SUITE = { timeout: timeLimit(120_000) };
 
 function forestWorld() {
   const w = createForestWorld(createForest(seed));
+  w.haunt!.active = false;
   const p = spawnPlayer(w);
   return { w, p };
 }

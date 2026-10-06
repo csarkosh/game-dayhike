@@ -66,6 +66,7 @@ describe("the Hollow walks the stem on real terrain", () => {
       const token = `hollow${i}`;
       const seed = seedFromToken(token);
       const w = createForestWorld(createForest(seed));
+      w.haunt!.active = false;
       // The chase is on, as it is whenever a Hollow hunts: on the climb the
       // watcher would show behind this walk once its rest ran out (watcher.ts).
       w.state.phase = Phase.Chase;
@@ -127,6 +128,7 @@ describe("the Hollow walks the stem on real terrain", () => {
     for (const token of ["hollow0", "hollow29", "hollow18"]) {
       const seed = seedFromToken(token);
       const w = createForestWorld(createForest(seed));
+      w.haunt!.active = false;
       // The chase is already on, as it is whenever a Hollow is walking: the
       // target below stands on the body, so otherwise `stepSummit` would read
       // the find on the first tick and step a second Hollow out beside them,
