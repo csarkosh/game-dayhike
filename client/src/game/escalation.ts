@@ -10,6 +10,7 @@
  */
 import { Phase, type WorldState, type Vec3 } from "../sim/types.js";
 import { isHollowState } from "../sim/hollow.js";
+import { isShadeState } from "../sim/haunt.js";
 import { trailDistance, type TrailGraph } from "../sim/trail.js";
 import { stemProgress } from "../sim/trailRoute.js";
 import type { BoxProvider } from "../sim/boxSource.js";
@@ -45,6 +46,11 @@ export const DAWN_HOUR = 6;
 export const WORLD_EASE_S = 20;
 /** Seconds the chase's cast (the burgundy the grade puts over the night, gradeParams.ts) takes to come in after the flip. */
 export const CHASE_EASE_S = 25;
+/** The haunt (haunt.ts): metres from the eye within which a shade counts, the seconds its lens comes in and goes, and the dread it lifts the lens to: a slight vignette, under the stare's. */
+export const HAUNT_NEAR = 60;
+export const HAUNT_IN_S = 2;
+export const HAUNT_OUT_S = 6;
+export const HAUNT_DREAD = 0.4;
 /** Time constant of the lens's easing, seconds. */
 export const LENS_EASE_S = 1.5;
 
@@ -59,6 +65,8 @@ export type EscalationTargets = {
   dead: boolean;
   /** The chase is on. */
   chase: boolean;
+  /** A shade of the haunt stands within HAUNT_NEAR of the local eye (haunt.ts): 1, else 0. */
+  haunt: number;
 };
 
 export type EscalationState = {
@@ -72,9 +80,11 @@ export type EscalationState = {
   lens: number;
   /** How far the chase's cast has come in, 0 to 1: eased from the flip, never back. */
   chase: number;
+  /** The haunt, eased: 1 while a shade stands near, falling away after. The lens lifts by HAUNT_DREAD of it, the whispers by it. */
+  haunt: number;
 };
 
-export const ESCALATION_REST: EscalationState = Object.freeze({ progressMax: 0, spike: 0, world: 0, lens: 0, chase: 0 });
+export const ESCALATION_REST: EscalationState = Object.freeze({ progressMax: 0, spike: 0, world: 0, lens: 0, chase: 0, haunt: 0 });
 
 export type AtmosphereBase = { weather: WeatherParams; hour: number };
 
@@ -103,7 +113,7 @@ export function escalationTargets(
   }
 
   const me = state.players.get(localId);
-  if (me === undefined) return { world, offTrail: 0, near: 0, dead: false, chase: state.phase === Phase.Chase };
+  if (me === undefined) return { world, offTrail: 0, near: 0, dead: false, chase: state.phase === Phase.Chase, haunt: 0 };
 
   const d = trailDistance(graph, me.pos.x, me.pos.z);
   const offTrail = clamp01((d - OFF_TRAIL_START) / (OFF_TRAIL_FULL - OFF_TRAIL_START));
@@ -119,7 +129,14 @@ export function escalationTargets(
     if (n > 0 && !hasLineOfSight(eye, h, boxes, ground)) n *= NEAR_BLIND;
     if (n > near) near = n;
   }
-  return { world, offTrail, near, dead: me.health <= 0, chase: state.phase === Phase.Chase };
+  let haunt = 0;
+  for (const e of state.enemies.values()) {
+    if (!isShadeState(e.ai)) continue;
+    const dx = e.pos.x - eye.x;
+    const dz = e.pos.z - eye.z;
+    if (dx * dx + dz * dz <= HAUNT_NEAR * HAUNT_NEAR) { haunt = 1; break; }
+  }
+  return { world, offTrail, near, dead: me.health <= 0, chase: state.phase === Phase.Chase, haunt };
 }
 
 /** First-order lag toward `to` with time constant `tau`, seconds. */
@@ -137,13 +154,14 @@ export function stepEscalation(prev: EscalationState, t: EscalationTargets, dt: 
   const progressMax = Math.max(prev.progressMax, clamp01(t.world));
   const world = lag(prev.world, progressMax, dt, WORLD_EASE_S);
   const chase = t.chase ? lag(prev.chase, 1, dt, CHASE_EASE_S) : prev.chase;
-  if (t.dead) return { progressMax, spike: prev.spike, world, lens: prev.lens, chase };
+  const haunt = lag(prev.haunt, clamp01(t.haunt), dt, t.haunt > 0 ? HAUNT_IN_S : HAUNT_OUT_S);
+  if (t.dead) return { progressMax, spike: prev.spike, world, lens: prev.lens, chase, haunt };
   const spike =
     t.offTrail > 0
       ? Math.min(1, prev.spike + (t.offTrail / SPIKE_RISE_S) * dt)
       : Math.max(0, prev.spike - dt / SPIKE_DECAY_S);
   const lens = lag(prev.lens, Math.max(spike, clamp01(t.near)), dt, LENS_EASE_S);
-  return { progressMax, spike, world, lens, chase };
+  return { progressMax, spike, world, lens, chase, haunt };
 }
 
 /**
@@ -158,6 +176,7 @@ export function atmosphereUnder(base: AtmosphereBase, s: EscalationState): Atmos
   const hour =
     base.hour >= NIGHT_HOUR || base.hour <= DAWN_HOUR ? base.hour : base.hour + (NIGHT_HOUR - base.hour) * night;
   const weather = lerpWeather(lerpWeather(base.weather, ACT_WET, wet), WEATHER_PRESETS.eerie, night);
-  const lens = clamp01(s.lens);
+  // The lens, and the haunt's slight vignette under it.
+  const lens = Math.max(clamp01(s.lens), HAUNT_DREAD * clamp01(s.haunt));
   return { weather: { ...weather, dread: Math.min(1, Math.max(weather.dread, lens)) }, hour };
 }

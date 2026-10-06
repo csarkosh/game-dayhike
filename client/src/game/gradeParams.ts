@@ -172,11 +172,11 @@ export const STARE_VIGNETTE = 3;
 /** The share of the frame's exposure a full stare takes, everywhere. */
 export const STARE_DIM = 0.3;
 /** The chase's cast at 1: what each channel is multiplied by, and what is added, so the night goes burgundy and stays dark. */
-export const CHASE_TINT: Rgb = { r: 1.1, g: 0.72, b: 0.84 };
-export const CHASE_LIFT: Rgb = { r: 0.014, g: 0.0, b: 0.005 };
+export const CHASE_TINT: Rgb = { r: 1.2, g: 0.55, b: 0.7 };
+export const CHASE_LIFT: Rgb = { r: 0.02, g: 0.0, b: 0.006 };
 /** The material path's shadows under the chase: the hue the grade's shadow hue turns toward, and the density added. */
 export const CHASE_SHADOW_HUE = 345;
-export const CHASE_SHADOW_DENSITY = 35;
+export const CHASE_SHADOW_DENSITY = 50;
 
 // ---- World-side sickness. Browser-tunable; `clear` identity is not. ----
 /** The green-grey the shadows lift toward on the top dread plateau (the Alan

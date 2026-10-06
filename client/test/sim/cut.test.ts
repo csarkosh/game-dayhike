@@ -71,13 +71,13 @@ const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.
 
 describe("the constants", () => {
   it("are the spec's", () => {
-    expect(FORK_CUT_RADIUS).toBe(9);
+    expect(FORK_CUT_RADIUS).toBe(14);
     expect(FORK_SPAWN_DIST).toBe(12);
     expect(FORK_MOUTH_DIST).toBe(3);
     expect(FORK_SPAWN_CLEAR).toBe(1);
     expect(FORK_SPAWN_MIN).toBe(2);
     expect(FORK_SPAWN_PLAYER_CLEAR).toBe(2);
-    expect(FORK_REVEAL_S).toBe(1);
+    expect(FORK_REVEAL_S).toBe(2.5);
     expect(FORK_EMERGE_MAX_S).toBe(6);
     expect(GUIDE_REJOIN_SLACK).toBe(60);
   });
@@ -273,7 +273,8 @@ describe("forkSpawn on a world without ground", () => {
  */
 const SUITE = { timeout: timeLimit(120_000) };
 const seed = seedFromToken("hollow");
-const forestWorld = () => createForestWorld(createForest(seed));
+// The haunt is off in these: they pin the Hollows alone (haunt.test.ts has the shades).
+const forestWorld = () => { const w = createForestWorld(createForest(seed)); w.haunt!.active = false; return w; };
 const edgeBetween = (g: TrailGraph, u: number, v: number) =>
   g.edges.findIndex((e) => (e.a === u && e.b === v) || (e.a === v && e.b === u));
 
@@ -444,6 +445,7 @@ describe("the cut in the tick", SUITE, () => {
   /** The flip: a player at the body, one tick — Chase, the summit Hollow, the guide. */
   const chase = (token = "hollow") => {
     const w = createForestWorld(createForest(seedFromToken(token)));
+    w.haunt!.active = false;
     const p = spawnPlayer(w);
     const body = w.search!.body.pos;
     p.pos = { x: body.x - 5, y: w.ground!.heightAt(body.x - 5, body.z) + 0.9, z: body.z };
@@ -487,18 +489,18 @@ describe("the cut in the tick", SUITE, () => {
     expect(w.cut).toBe(rec);
   });
 
-  it("cuts fork 36 the first tick a living, unsafe player is 8 m up its guide branch, not at 10 m, and only once", () => {
+  it("cuts fork 36 the first tick a living, unsafe player is 12 m up its guide branch, not at 16 m, and only once", () => {
     const { w, p } = chase();
     const g = w.trail!;
     // The guide reaches 36 from 28 by edge 35, 56.7 m long.
     expect(before(w, 36)).toBe(28);
     expect(edgeBetween(g, 28, 36)).toBe(35);
-    p.pos = along(w, 36, 28, 10);
+    p.pos = along(w, 36, 28, 16);
     tick(w);
     expect(p.safe).toBe(false);
     expect(w.cut!.cuts.size).toBe(0);
     expect(w.state.enemies.size).toBe(1);
-    p.pos = along(w, 36, 28, 8);
+    p.pos = along(w, 36, 28, 12);
     tick(w);
     expect([...w.cut!.cuts]).toEqual([[36, 42]]);
     expect([...w.cut!.closed]).toEqual([27]);
@@ -756,20 +758,22 @@ describe("the cut in the tick", SUITE, () => {
   };
 
   // The arithmetic behind the three cases below, measured on the terrain:
-  // the cut fires at 9 m; the Hollow steps out 12 m down edge 27 and walks
+  // the cut fires at 14 m; the Hollow steps out 12 m down edge 27 and walks
   // 9 m to its mouth, 3 m in — 7.5 m to the 1.5 m waypoint radius at 6.3 m/s
-  // is 71 ticks, 76 on the ground — stands 60, and hunts 136 ticks after the
-  // cut. A sprinter (7 m/s) is on the node 68 ticks after the cut, a walker
-  // (5.25 m/s) 91; both are down edge 41 before the Hollow stands, and it is
-  // behind them from the moment they are farther down that edge than its
-  // mouth is: 95 ticks after the cut for the sprinter, 127 for the walker.
+  // is 71 ticks, 77 on the ground — stands 150 (FORK_REVEAL_S 2.5), and hunts
+  // 227 ticks after the cut. A sprinter (7 m/s) is on the node 80 ticks after
+  // the cut, a walker (5.25 m/s) 106; both are down edge 41 before the Hollow
+  // stands, and it is behind them from the moment they are farther down that
+  // edge than its mouth is: 107 ticks after the cut for the sprinter, 142 for
+  // the walker. The fork was cut at 9 m with a 1 s stand as first built; the
+  // buffer is the haunt's (docs/gameplay/2026-10-06-the-haunt.md §3).
 
   it("a sprinter through fork 36 passes the node alive and has the Hollow behind them before it hunts", () => {
     const r = drive("sprint");
     expect(r.cuts).toEqual([[36, 42]]);
-    expect(r.passed - r.cut).toBe(68);
-    expect(r.behind - r.cut).toBe(95);
-    expect(r.hunt - r.cut).toBe(136);
+    expect(r.passed - r.cut).toBe(80);
+    expect(r.behind - r.cut).toBe(107);
+    expect(r.hunt - r.cut).toBe(227);
     expect(r.touched).toBe(-1);
     expect(r.health).toBe(100);
   });
@@ -777,9 +781,9 @@ describe("the cut in the tick", SUITE, () => {
   it("a walker through fork 36 passes the node alive too, the Hollow behind them as it starts to hunt", () => {
     const r = drive("walk");
     expect(r.cuts).toEqual([[36, 42]]);
-    expect(r.passed - r.cut).toBe(91);
-    expect(r.behind - r.cut).toBe(127);
-    expect(r.hunt - r.cut).toBe(136);
+    expect(r.passed - r.cut).toBe(106);
+    expect(r.behind - r.cut).toBe(142);
+    expect(r.hunt - r.cut).toBe(227);
     expect(r.touched).toBe(-1);
     expect(r.health).toBe(100);
   });
@@ -789,8 +793,8 @@ describe("the cut in the tick", SUITE, () => {
     // contact reach from a standstill, 38 ticks after it starts.
     const r = drive("stop");
     expect(r.cuts).toEqual([[36, 42]]);
-    expect(r.hunt - r.cut).toBe(136);
-    expect(r.touched - r.cut).toBe(174);
+    expect(r.hunt - r.cut).toBe(227);
+    expect(r.touched - r.cut).toBe(265);
     expect(r.health).toBe(0);
   });
 });

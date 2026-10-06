@@ -31,11 +31,12 @@ import { ENEMY_HALF } from "./constants.js";
 /**
  * Metres from an uncut fork within which a living, unsafe player on one of
  * its branches cuts it. Its Hollow needs about two seconds to reach its
- * mouth; nine metres is under two seconds at a walk, so a player who keeps
- * moving through the fork is past it before it stands, and it hunts them
- * from behind.
+ * mouth and stands FORK_REVEAL_S there; fourteen metres is under three
+ * seconds at a walk, so a player who keeps moving through the fork is past
+ * it before it moves, and it hunts them from behind. Nine metres, as first
+ * built, had it standing up in their face.
  */
-export const FORK_CUT_RADIUS = 9;
+export const FORK_CUT_RADIUS = 14;
 /** Metres into a closed branch, along the bed, where its Hollow steps out. */
 export const FORK_SPAWN_DIST = 12;
 /**

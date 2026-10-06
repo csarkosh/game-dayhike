@@ -199,7 +199,7 @@ export type AmbientAudio = {
    * and calls go muffled and quiet under it, and the heart and the whispers
    * play (stareAudio.ts). Inert before `unlock()`.
    */
-  setStare(lens: StareLens): void;
+  setStare(lens: StareLens, haunt?: number): void;
   setVolume(v: number): void;
   /**
    * Decodes compressed clip bytes on the ambient context. Resolves null rather
@@ -559,12 +559,12 @@ export function createAmbientAudio(
       if (!ctx || !world) return;
       world.gain.setTargetAtTime(muffleGain(stareLevel) * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
     },
-    setStare(lens) {
+    setStare(lens, haunt = 0) {
       if (!ctx || !world || !worldFilter || !stare) return;
       worldFilter.frequency.setTargetAtTime(muffleHz(lens.level), ctx.currentTime, 0.15);
       stareLevel = lens.level;
       world.gain.setTargetAtTime(muffleGain(stareLevel) * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
-      stare.set(lens, earX, earY, earZ);
+      stare.set(lens, earX, earY, earZ, haunt);
     },
     setVolume(v) {
       volume = clamp01(v);
