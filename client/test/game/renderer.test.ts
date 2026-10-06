@@ -878,7 +878,14 @@ describe("world shell wiring", () => {
     expect(src).toContain("const playerSlots = createPlayerSlots(MAX_PLAYERS);");
     // Published: `app.ts` builds no audio for a world without it.
     expect(src).toContain("hasWaterLife: waterLife !== null,");
-    expect(src).toContain("return waterLife?.sound() ?? SILENT_WATER_LIFE;");
+    // Heard only from a frame that stepped it: the flag cleared at the top of
+    // `sync` and set where the lake's life is stepped.
+    const sync = slice("sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {", "hasWildlife: wildlife !== null,");
+    expect(sync.indexOf("waterLifeStepped = false;")).toBeGreaterThan(-1);
+    expect(sync.indexOf("waterLifeStepped = false;")).toBeLessThan(sync.indexOf("const weather = lighting.weather;"));
+    expect(src).toContain("    waterLife.update(f);\n    waterLifeStepped = true;\n  }");
+    expect(src.match(/waterLifeStepped = true;/g)).toHaveLength(1);
+    expect(src).toContain("return waterLife !== null && waterLifeStepped ? waterLife.sound() : SILENT_WATER_LIFE;");
     expect(src.match(/waterLife\?\.dispose\(\)/g)).toHaveLength(1);
   });
 
@@ -1016,6 +1023,49 @@ describe("the lake's life in a renderer", () => {
       // The same object, refilled each frame.
       renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
       expect(renderer.waterLifeSound()).toBe(sound);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("is heard as silence from a frame that does not step it, never as the last frame's calls again", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "low", skyTable: skyFixture() });
+    try {
+      // At night on the shore, stepped until a frame brings frog calls (the
+      // first within ten seconds).
+      const lake = lakeOf(SEED);
+      const x = lake.x + lake.radius + 2;
+      const at = { x, y: elevationAt(SEED, x, lake.z) + 1.6, z: lake.z, yaw: 0, pitch: 0 };
+      renderer.setView(22, WEATHER_PRESETS.clear);
+      renderer.setFreecam(at);
+      const state = windTestState();
+      const frame = (): void => {
+        state.tick += 15;
+        renderer.sync(state, 1, 0, { dt: 0.25, sprinting: false });
+      };
+      for (let i = 0; i < 60 && renderer.waterLifeSound().frogCalls.length === 0; i++) frame();
+      const stepped = renderer.waterLifeSound();
+      const calls = stepped.frogCalls.length;
+      expect(calls).toBeGreaterThan(0);
+      expect(stepped.bed.level).toBe(1);
+      // The player's branch with no local player steps nothing: the frame is
+      // silent, and the calls are not handed out a second time.
+      renderer.setFreecam(null);
+      frame();
+      const unstepped = renderer.waterLifeSound();
+      expect(unstepped).not.toBe(stepped);
+      expect([unstepped.hums_n, unstepped.rustles.length, unstepped.frogCalls.length, unstepped.bed.level]).toEqual([0, 0, 0, 0]);
+      frame();
+      expect(renderer.waterLifeSound()).toBe(unstepped);
+      // One silent object for every caller, frozen through.
+      for (const part of [unstepped, unstepped.hums, unstepped.rustles, unstepped.frogCalls, unstepped.bed, unstepped.bed.points, ...unstepped.bed.points]) {
+        expect(Object.isFrozen(part)).toBe(true);
+      }
+      // A frame that steps it again is heard again, from its own record.
+      renderer.setFreecam(at);
+      frame();
+      expect(renderer.waterLifeSound()).toBe(stepped);
+      expect(stepped.bed.level).toBe(1);
     } finally {
       renderer.dispose();
     }

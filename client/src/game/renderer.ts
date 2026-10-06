@@ -754,11 +754,20 @@ export function pixelAtOneMetre(fov: number, renderHeight: number): number {
   return (2 * Math.tan(fov / 2)) / Math.max(1, renderHeight);
 }
 
-/** What a world without the lake's life sounds like: nothing. */
-const SILENT_WATER_LIFE: WaterLifeSound = {
+/** `value` and every object it holds, frozen. */
+function frozenThrough<T extends object>(value: T): T {
+  for (const held of Object.values(value)) if (typeof held === "object" && held !== null) frozenThrough(held);
+  Object.freeze(value);
+  return value;
+}
+
+/** What a world without the lake's life sounds like, and a frame that did
+ * not step it: nothing. Frozen through, as every caller is handed this one
+ * object. */
+const SILENT_WATER_LIFE: WaterLifeSound = frozenThrough({
   hums: [], hums_n: 0, pitch: 0, rustles: [], frogCalls: [],
   bed: { level: 0, points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
-};
+});
 
 /** A player's position in their slot: the sim's own, y the body's centre. */
 export type SlotPoint = { x: number; y: number; z: number };
@@ -1310,7 +1319,8 @@ export type Renderer = {
   /**
    * The lake's life as heard on the last `sync` (`WaterLife.sound`): one
    * reused object, read by `app.ts` after each `sync`. Silent, never null,
-   * without a lake, and until the first `sync` has stepped it.
+   * without a lake, and after any `sync` that did not step it (the player's
+   * branch with no local player), so no frame's calls are voiced twice.
    */
   waterLifeSound(): WaterLifeSound;
   /**
@@ -2067,6 +2077,10 @@ function buildRenderer(
     sky: null, skyLuma: 0, pixelAt1m: 0,
     hollowDistance: Infinity,
   };
+  /** Whether this frame's `sync` stepped the lake's life: the sound of a
+   * frame that did not is silence, never the last stepped frame's calls and
+   * rustles again. */
+  let waterLifeStepped = false;
   /**
    * Steps the lake's life (`waterLife.ts`) from the camera as this frame's
    * branch has left it: its place and its lens, the players by their slots,
@@ -2093,6 +2107,7 @@ function buildRenderer(
     f.pixelAt1m = pixelAtOneMetre(camera.fov, engine.getRenderHeight());
     f.hollowDistance = wildlifeMatch.hollowDistance;
     waterLife.update(f);
+    waterLifeStepped = true;
   }
 
   return {
@@ -2105,6 +2120,8 @@ function buildRenderer(
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
     skyReady,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
+      // Nothing has stepped the lake's life this frame yet.
+      waterLifeStepped = false;
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
       // of materials x four property writes: cheap enough to do every frame.
       // Read once: `lighting.weather` is a getter that allocates a fresh copy
@@ -2337,7 +2354,7 @@ function buildRenderer(
     },
     hasWaterLife: waterLife !== null,
     waterLifeSound() {
-      return waterLife?.sound() ?? SILENT_WATER_LIFE;
+      return waterLife !== null && waterLifeStepped ? waterLife.sound() : SILENT_WATER_LIFE;
     },
     stare() {
       return stareLens;
