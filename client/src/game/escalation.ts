@@ -18,6 +18,8 @@ import { hasLineOfSight } from "../sim/ai.js";
 import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { WEATHER_PRESETS, lerpWeather, type WeatherParams } from "./weather.js";
 import { clamp01 } from "./colour.js";
+import { actsUnder } from "../sim/acts.js";
+export { actsUnder, DUSK_AT, NIGHT_SPAN, WET_AT, WET_SPAN } from "../sim/acts.js";
 
 /** Metres from the nearest trail edge at which "off the trail" begins: the corridor's 7 m plus 3. */
 export const OFF_TRAIL_START = 10;
@@ -35,16 +37,7 @@ export const NEAR_START = 80;
 export const NEAR_BLIND = 0.5;
 /** The hour the world reaches at full escalation: the sun is up 6–18. */
 export const NIGHT_HOUR = 22;
-/**
- * The three acts of the climb, by the party's ratcheted progress. The first
- * act is the day the match started in. From WET_AT the weather turns, over
- * WET_SPAN, to ACT_WET: cloud, mist and rain, the animals of a wet day. From
- * DUSK_AT the sun goes, and by the crest it is night and the eerie preset.
- */
-export const WET_AT = 0.25;
-export const WET_SPAN = 0.15;
-export const DUSK_AT = 0.55;
-/** The second act's weather: a wet day, and a first touch of the dread axis. */
+/** The second act's weather (the acts are sim/acts.ts): a wet day, and a first touch of the dread axis. */
 export const ACT_WET: WeatherParams = Object.freeze({ cloudCover: 1, mist: 0.9, rain: 0.55, wetness: 0.85, dread: 0.35 });
 /** The sky's sunrise; a base before it is already dark and stays. */
 export const DAWN_HOUR = 6;
@@ -151,19 +144,6 @@ export function stepEscalation(prev: EscalationState, t: EscalationTargets, dt: 
       : Math.max(0, prev.spike - dt / SPIKE_DECAY_S);
   const lens = lag(prev.lens, Math.max(spike, clamp01(t.near)), dt, LENS_EASE_S);
   return { progressMax, spike, world, lens, chase };
-}
-
-function smootherstep(x: number): number {
-  return x * x * x * (x * (x * 6 - 15) + 10);
-}
-
-/** How far into the wet act and into the night a world of 0 to 1 is, each 0 to 1 by smootherstep. */
-export function actsUnder(world: number): { wet: number; night: number } {
-  const w = clamp01(world);
-  return {
-    wet: smootherstep(clamp01((w - WET_AT) / WET_SPAN)),
-    night: smootherstep(clamp01((w - DUSK_AT) / (1 - DUSK_AT))),
-  };
 }
 
 /**

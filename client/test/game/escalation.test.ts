@@ -7,7 +7,7 @@ import { spawnHollow } from "../../src/sim/hollow.js";
 import { Phase } from "../../src/sim/types.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
-import { CHASE_EASE_S, ACT_WET, DUSK_AT, WET_AT, WET_SPAN, actsUnder,
+import { NIGHT_SPAN, CHASE_EASE_S, ACT_WET, DUSK_AT, WET_AT, WET_SPAN, actsUnder,
   ESCALATION_REST, LENS_EASE_S, NEAR_BLIND, NEAR_FULL, NEAR_START, NIGHT_HOUR, OFF_TRAIL_FULL, OFF_TRAIL_START,
   SPIKE_DECAY_S, SPIKE_RISE_S, WORLD_EASE_S, atmosphereUnder, escalationTargets, stepEscalation,
   type EscalationTargets,
@@ -190,13 +190,14 @@ describe("atmosphereUnder", () => {
     expect(atmosphereUnder({ weather: WEATHER_PRESETS.clear, hour: 2 }, s).hour).toBe(2);
   });
 
-  it("comes in three acts: the day holds to WET_AT, the wet act is in by WET_AT + WET_SPAN, and the sun goes only from DUSK_AT", () => {
+  it("comes in three acts: the day holds to WET_AT, the wet act is in by WET_AT + WET_SPAN, and the sun goes from DUSK_AT and is gone NIGHT_SPAN on", () => {
     expect(actsUnder(0)).toEqual({ wet: 0, night: 0 });
     expect(actsUnder(WET_AT)).toEqual({ wet: 0, night: 0 });
     expect(actsUnder(WET_AT + WET_SPAN / 2).wet).toBeCloseTo(0.5, 9);
-    expect(actsUnder(WET_AT + WET_SPAN)).toEqual({ wet: 1, night: 0 });
+    expect(actsUnder(WET_AT + WET_SPAN).wet).toBeCloseTo(1, 12);
     expect(actsUnder(DUSK_AT)).toEqual({ wet: 1, night: 0 });
-    expect(actsUnder((DUSK_AT + 1) / 2).night).toBeCloseTo(0.5, 9);
+    expect(actsUnder(DUSK_AT + NIGHT_SPAN / 2).night).toBeCloseTo(0.5, 9);
+    expect(actsUnder(DUSK_AT + NIGHT_SPAN).night).toBeCloseTo(1, 12);
     expect(actsUnder(1)).toEqual({ wet: 1, night: 1 });
     // The day: the base, untouched.
     expect(atmosphereUnder(noon, { ...ESCALATION_REST, world: WET_AT })).toEqual(noon);
@@ -205,7 +206,7 @@ describe("atmosphereUnder", () => {
     expect(wet.hour).toBe(12);
     expect(wet.weather).toEqual(ACT_WET);
     // Half way into the night: the sun half way down, the weather half way from wet to eerie.
-    const dusk = atmosphereUnder(noon, { ...ESCALATION_REST, world: (DUSK_AT + 1) / 2 });
+    const dusk = atmosphereUnder(noon, { ...ESCALATION_REST, world: DUSK_AT + NIGHT_SPAN / 2 });
     expect(dusk.hour).toBeCloseTo(12 + (NIGHT_HOUR - 12) * 0.5, 9);
     expect(dusk.weather.rain).toBeCloseTo((ACT_WET.rain + WEATHER_PRESETS.eerie.rain) / 2, 9);
   });

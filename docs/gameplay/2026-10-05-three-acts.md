@@ -33,8 +33,12 @@ and record are kept against the day it is wanted back). The Hollow is first seen
 
 ## 1. The acts (`game/escalation.ts`)
 
-`actsUnder(world)` gives `wet` and `night`, each 0 to 1 by smootherstep: `wet` from `WET_AT`
-(0.25) over `WET_SPAN` (0.15); `night` from `DUSK_AT` (0.55) to 1. The weather runs from the base
+`actsUnder(progress)` (`sim/acts.ts`, since 2026-10-06; the sky and the haunt read the same
+marks) gives `wet` and `night`, each 0 to 1 by smootherstep: `wet` from `WET_AT` (0.25) over
+`WET_SPAN` (0.1); `night` from `DUSK_AT` (0.55) over `NIGHT_SPAN` (0.12), so the dark is in by
+two thirds of the way. As first built the night ran from 0.55 to the crest, which read as dusk
+until the top. The progress is the living player nearest the crest, by distance along the
+trail (`stemProgress`), ratcheted and eased over 20 s. The weather runs from the base
 preset to `ACT_WET` (cloud 1, mist 0.9, rain 0.55, wetness 0.85, dread 0.35) by `wet`, then to
 eerie by `night`. The sun runs from the base hour to 22 by `night` alone. The lens lifts dread
 as before. The three marks are the dials: a quarter, or a tenth, is one number.
