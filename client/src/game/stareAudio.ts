@@ -21,7 +21,10 @@ export const HAUNT_WHISPER_SHARE = 0.6;
 /** Voices, each on its own circle round the head. */
 export const WHISPER_VOICES = 4;
 /** Seconds ahead of the context's clock a voice's syllables are scheduled. */
-export const WHISPER_LOOKAHEAD_S = 0.3;
+export const WHISPER_LOOKAHEAD_S = 0.5;
+/** A syllable's length and the gap after it, in seconds: slow, so each is heard whole (as first built, 80 to 260 ms with gaps of 20 to 120, they ran together). */
+export const WHISPER_SYLLABLE_S: readonly [number, number] = [0.16, 0.42];
+export const WHISPER_GAP_S: readonly [number, number] = [0.08, 0.26];
 /** A syllable's gain at its loudest: the two resonances pass a sliver of the noise, and this is what brings a voice up to the heart's side. */
 export const WHISPER_SYLLABLE_GAIN = 3;
 /** The world's low-pass under a stare: open at none, shut down to this at a full one, and the share of its level left. */
@@ -168,25 +171,25 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
     if (v.next < now) v.next = now;
     while (v.next < now + WHISPER_LOOKAHEAD_S) {
       if (v.left <= 0) {
-        v.left = 3 + Math.floor(random() * 7);
-        v.next += between(0.4, 2.4) * (1.5 - level);
+        v.left = 3 + Math.floor(random() * 5);
+        v.next += between(0.6, 2.8) * (1.5 - level);
         continue;
       }
       const at = v.next;
-      const length = between(0.08, 0.26);
+      const length = between(WHISPER_SYLLABLE_S[0], WHISPER_SYLLABLE_S[1]);
       const loud = WHISPER_SYLLABLE_GAIN * between(0.35, 1);
       const vowel = VOWELS[Math.floor(random() * VOWELS.length) % VOWELS.length] as readonly [number, number];
-      v.low.frequency.setTargetAtTime(vowel[0] * between(0.9, 1.1), at, 0.02);
-      v.high.frequency.setTargetAtTime(vowel[1] * between(0.9, 1.1), at, 0.02);
+      v.low.frequency.setTargetAtTime(vowel[0] * between(0.9, 1.1), at, 0.05);
+      v.high.frequency.setTargetAtTime(vowel[1] * between(0.9, 1.1), at, 0.05);
       v.open.gain.setValueAtTime(0, at);
       v.open.gain.linearRampToValueAtTime(loud, at + length * 0.3);
       v.open.gain.linearRampToValueAtTime(0, at + length);
       if (random() < 0.4) {
         v.hiss.gain.setValueAtTime(0, at);
-        v.hiss.gain.linearRampToValueAtTime(loud * 0.5, at + 0.015);
-        v.hiss.gain.linearRampToValueAtTime(0, at + 0.07);
+        v.hiss.gain.linearRampToValueAtTime(loud * 0.5, at + 0.025);
+        v.hiss.gain.linearRampToValueAtTime(0, at + 0.11);
       }
-      v.next = at + length + between(0.02, 0.12);
+      v.next = at + length + between(WHISPER_GAP_S[0], WHISPER_GAP_S[1]);
       v.left--;
     }
   }
