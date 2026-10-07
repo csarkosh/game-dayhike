@@ -3,8 +3,9 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import {
-  createHauntMist, HAUNT_MIST_ALPHA, HAUNT_MIST_BORN, HAUNT_MIST_BORN_CHASE, HAUNT_MIST_LEAVE, HAUNT_MIST_PUFFS, HAUNT_MIST_SEAT, HAUNT_MIST_SIZE, HAUNT_MIST_TALL, HAUNT_MIST_WIDE,
+  createHauntMist, HAUNT_MIST_ALPHA, HAUNT_MIST_BORN, HAUNT_MIST_BORN_CHASE, HAUNT_MIST_GREY, HAUNT_MIST_LEAVE, HAUNT_MIST_NIGHT_SHARE, HAUNT_MIST_PUFFS, HAUNT_MIST_SEAT, HAUNT_MIST_SIZE, HAUNT_MIST_TALL, HAUNT_MIST_WIDE,
 } from "../../src/game/hauntMist.js";
 
 /** A small stream, so the births are the same every run. */
@@ -14,7 +15,7 @@ function lcg(seed: number): () => number {
 }
 
 describe("the haunt's mist", () => {
-  it("seats a dozen puffs on the ground round the eye while the haunt is on at night, each its own size, and none by day or with no haunt", () => {
+  it("seats its puffs on the ground round the eye all night, each its own size, deeper with the haunt, and none by day", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const camera = new UniversalCamera("player", new Vector3(10, 2, 5), scene);
@@ -60,10 +61,20 @@ describe("the haunt's mist", () => {
       expect(d).toBeLessThanOrEqual(HAUNT_MIST_BORN_CHASE[1] + 0.1);
     }
     expect(Math.max(...puffs().map((p) => p.scaling.x))).toBeGreaterThan(Math.max(...sizeBefore) * 1.1);
-    // By day, nothing, whatever the haunt; with no haunt, nothing, whatever the night.
+    // Outside the scene's fog, so the night's dark never swallows its grey.
+    expect((puffs()[0]!.material as StandardMaterial).fogEnabled).toBe(false);
+    expect((puffs()[0]!.material as StandardMaterial).emissiveColor.toHexString().toLowerCase()).toBe(HAUNT_MIST_GREY);
+    // With no haunt the cloud is still there at night, at HAUNT_MIST_NIGHT_SHARE of its depth; by day, nothing, whatever the haunt.
+    mist.update(camera, 1, 1, 4);
+    const full = puffs().map((p) => p.visibility);
+    mist.update(camera, 0, 1, 4.01);
+    for (const [i, p] of puffs().entries()) {
+      expect(p.isEnabled()).toBe(true);
+      if (full[i]! > 0.05) expect(p.visibility).toBeLessThan(full[i]!);
+    }
+    expect(puffs().filter((p) => p.visibility > 0).length).toBeGreaterThan(HAUNT_MIST_PUFFS / 2);
+    expect(HAUNT_MIST_NIGHT_SHARE).toBeGreaterThanOrEqual(0.5);
     mist.update(camera, 1, 0, 2);
-    expect(puffs().every((p) => !p.isEnabled())).toBe(true);
-    mist.update(camera, 0, 1, 3);
     expect(puffs().every((p) => !p.isEnabled())).toBe(true);
     mist.dispose();
     expect(puffs().length).toBe(0);
