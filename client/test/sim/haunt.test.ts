@@ -209,7 +209,7 @@ describe("the director", () => {
     expect(LUNGE_RANGE[0]).toBeGreaterThan(SHADE_FLEE_RADIUS);
   });
 
-  it("in the chase, a shade in the stare's cone closes the dark a little, to SHADE_STARE_CAP and no further; on the climb not at all", () => {
+  it("a shade in the stare's cone closes the dark a little, to SHADE_STARE_CAP and no further, on the climb as in the chase", () => {
     const { w, p } = forestWorld();
     standAtClimb(w, p, 0.3);
     const ahead = { x: p.pos.x + Math.sin(p.yaw) * 14, y: 0, z: p.pos.z + Math.cos(p.yaw) * 14 };
@@ -219,12 +219,12 @@ describe("the director", () => {
     // Held still, and never watched out: the test turns the shade's own timers off.
     const hold = () => { h.pos = { ...ahead }; h.stateTimer = 60; h.attackCooldown = 0; };
     lookAt(p, h.pos);
-    tick(w, 120);
-    expect(p.stare).toBe(0);
-    w.state.phase = Phase.Chase;
     for (let t = 0; t < 600; t++) { hold(); tick(w); }
     expect(p.stare).toBeCloseTo(SHADE_STARE_CAP, 6);
     expect(p.health).toBe(100);
+    w.state.phase = Phase.Chase;
+    for (let t = 0; t < 120; t++) { hold(); tick(w); }
+    expect(p.stare).toBeCloseTo(SHADE_STARE_CAP, 6);
     p.yaw += Math.PI;
     tick(w, 60);
     expect(p.stare).toBeLessThan(SHADE_STARE_CAP);

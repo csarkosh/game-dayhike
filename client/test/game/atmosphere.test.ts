@@ -197,7 +197,7 @@ describe("the fog's shader text", () => {
     // The scattering sky changes no PBR shader: the glow's new shape is all in
     // the values the plugin binds (`atmosphereParams.ts`).
     expect(createHash("sha256").update(atmosphereFragment).digest("hex")).toBe(
-      "838faad9d0d09c9fd9555536914a06f0e3b448950a833e684f7c48b7e005ccb4",
+      "45e662a37b5f14d5523864394b7d194ba9dfc5e1b7e00c6770d6d9735896ba01",
     );
   });
 });

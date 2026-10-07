@@ -65,6 +65,10 @@ the frame the Hollow's, from one mesh.
 **Distance.** A shade is whole in the mask within `SHADE_NEAR_M` (10 m) and `SHADE_FAR_SHARE`
 (0.35) of itself at `SHADE_FAR_M` (40 m): the far ones are the fainter blurs.
 
+**Facing.** Every Hollow and shade is drawn turned to the local player, whatever way the sim has
+it going (`facingOf`, entityViews.ts): the figure, and its head with it, always faces whoever is
+looking at it.
+
 **Rise.** A shade comes up out of the ground to its height over `SHADE_RISE_S` (2.4 s), eased
 (`risen`), its feet where they are, as if out of the mist. Going, it keeps its height and goes
 slowly, over `SHADE_FADE_OUT_S` (2.6 s), and unevenly: the mask's green carries how far gone it

@@ -276,7 +276,10 @@ export class EntityViews {
         const entry = this.ensureHollowModel(id, instance, enemy.pos.x, feet, enemy.pos.z);
         this.enemies.get(id)?.node.setEnabled(false);
         this.advance(entry.view, enemy.pos.x, feet, enemy.pos.z, clamped);
-        entry.view.node.rotation.y = enemy.yaw;
+        // Every Hollow and shade is drawn facing the local player, whatever
+        // way the sim has it going: the figure, and its head with it, is
+        // always turned to whoever is looking at it.
+        entry.view.node.rotation.y = this.facingOf(state, localId, enemy.pos.x, enemy.pos.z, enemy.yaw);
         entry.instance.root.scaling.y = HOLLOW_SCALE * risen(fade.rise);
         if (this.softShades && this.soft.has(id)) this.shadeList.push({ node: entry.view.node, fade: fade.level, soft: this.soft.get(id) as number, near: this.near.get(id) ?? 1, gone: 0 });
         else setVisibility(entry.view.node, fade.level);
@@ -312,7 +315,7 @@ export class EntityViews {
       );
       view.node.setEnabled(true);
       this.advance(view, enemy.pos.x, hollowY, enemy.pos.z, clamped);
-      view.node.rotation.y = enemy.yaw;
+      view.node.rotation.y = this.facingOf(state, localId, enemy.pos.x, enemy.pos.z, enemy.yaw);
       setVisibility(view.node, fade.level);
     }
     // A shade or a lunge gone from the state goes out to nothing over
@@ -372,6 +375,13 @@ export class EntityViews {
     const entry = { instance, view: placeView(instance.root, x, y, z) };
     map.set(id, entry);
     return entry;
+  }
+
+  /** The yaw that turns a figure at (x, z) to the local player's position, or the sim's yaw when there is no local player. */
+  private facingOf(state: WorldState, localId: number, x: number, z: number, fallback: number): number {
+    const me = state.players.get(localId);
+    if (me === undefined) return fallback;
+    return Math.atan2(me.pos.x - x, me.pos.z - z);
   }
 
   private ensureHollowModel(

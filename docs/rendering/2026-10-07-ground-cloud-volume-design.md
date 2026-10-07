@@ -40,7 +40,10 @@ At a point `p`, the extinction is `atmCloudDensity × h × n`:
 - `n = clamp(large × small × 2.4 − 0.2, 0, 1)`: two reads of the tileable noise (§3), the large
   shapes at `CLOUD_NOISE_LARGE_M` (11 m a tile) drifting with the wind at `CLOUD_WIND_MPS`
   (0.35 m/s), the small at `CLOUD_NOISE_SMALL_M` (4 m), sheared by height and drifting the other
-  way. One octave each, as Wronski found enough.
+  way. One octave each, as Wronski found enough. Within `CLOUD_NEAR_M` (8 m) of the eye the
+  shapes smooth toward a plain veil, the small ones over the first 8 m and the large over the
+  first 4: a feature a metre or two off sweeps across the view at a walker's parallax, tens of
+  degrees a second, and read as the mist rushing past, where it should hang (since 2026-10-07).
 
 ## 3. The map
 
