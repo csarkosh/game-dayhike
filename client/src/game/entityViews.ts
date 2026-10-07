@@ -18,6 +18,8 @@ import {
   HOLLOW_ALBEDO, HOLLOW_EMISSIVE, HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_MATERIAL, HOLLOW_ROUGHNESS,
   HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED,
 } from "./hollowLook.js";
+import { AiState } from "../sim/types.js";
+import type { ShadeEntry } from "./shadeSilhouette.js";
 
 /**
  * The rangers other hikers are drawn as, in a fixed order indexed by player
@@ -73,12 +75,48 @@ function stride(instance: CharacterInstance, speed: number, clipSpeed: number): 
   }
 }
 
+/** Seconds a shade, a lunge or a Hollow stepping out takes to come in from nothing, and a shade or a lunge to go out. */
+export const SHADE_FADE_IN_S = 0.9;
+export const SHADE_FADE_OUT_S = 1.1;
+/** Metres from the local eye within which a lunge resolves from the mist into the Hollow, and the seconds that takes. */
+export const SHADE_RESOLVE_M = 12;
+export const SHADE_RESOLVE_S = 1.4;
+/** Seconds a gone lunge takes to be a shade again as it goes out. */
+export const SHADE_UNRESOLVE_S = 0.5;
+/** Metres within which a shade is whole in the mask, the metres at which it is SHADE_FAR_SHARE of itself, and that share. */
+export const SHADE_NEAR_M = 10;
+export const SHADE_FAR_M = 40;
+export const SHADE_FAR_SHARE = 0.35;
+
+/** Writes `visibility` on every mesh under `node`: 1 is drawn as it is, under 1 is blended toward nothing. */
+function setVisibility(node: TransformNode, level: number): void {
+  const v = level < 0 ? 0 : level > 1 ? 1 : level;
+  for (const m of node.getChildMeshes(false)) m.visibility = v;
+  if ((node as Mesh).visibility !== undefined) (node as Mesh).visibility = v;
+}
+
 export class EntityViews {
   /** Capsules, drawn for a player or a Hollow whose model is not (yet) in the pool. */
   private readonly players = new Map<number, View>();
   private readonly enemies = new Map<number, View>();
   private readonly playerModels = new Map<number, ModelView>();
   private readonly enemyModels = new Map<number, ModelView & { pace: Pace }>();
+  /** Each enemy's fade, 0 to 1 (`visibility`), and the state it was last seen in: a shade, a lunge or a Hollow stepping out comes in from nothing, and a shade or a lunge goes out to nothing after it is gone. */
+  private readonly fades = new Map<number, { level: number; ai: number }>();
+  /** Views of shades gone from the state, fading out: the model is held until the fade ends. */
+  private readonly fading = new Map<number, { entry: ModelView; level: number; soft: number; near: number }>();
+  /** Each shade's softness (shadeSilhouette.ts): 1 a blur in the mist, 0 the Hollow; a lunge resolves as it closes on the local eye. */
+  private readonly soft = new Map<number, number>();
+  private readonly near = new Map<number, number>();
+  /**
+   * Whether the shades are drawn soft, through the silhouette mask
+   * (shadeSilhouette.ts): then this sets their fade and softness and leaves
+   * their `visibility` and layer to the mask; otherwise (the low tier) they
+   * are the Hollow, fading by `visibility` here.
+   */
+  softShades = false;
+  /** This frame's shades for the mask: each node, its fade and its softness. */
+  private readonly shadeList: ShadeEntry[] = [];
   private readonly lamps = new Map<number, SpotLight>();
   private readonly playerMaterial: PBRMaterial;
   private readonly hollowMaterial: PBRMaterial;
@@ -196,15 +234,40 @@ export class EntityViews {
     }
 
     // Every enemy the game spawns is a Hollow, so every enemy is drawn as one:
-    // there is no other shape to give an entity that can still collide.
+    // there is no other shape to give an entity that can still collide. A
+    // shade, a lunge or a Hollow stepping out comes in from nothing over
+    // SHADE_FADE_IN_S (the shadow's look, haunt.ts); the rest stand at once.
+    this.shadeList.length = 0;
     for (const [id, enemy] of state.enemies) {
       const feet = enemy.pos.y - ENEMY_HALF.y;
+      let fade = this.fades.get(id);
+      if (fade === undefined) {
+        const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
+        fade = { level: comesIn ? 0 : 1, ai: enemy.ai };
+        this.fades.set(id, fade);
+      }
+      fade.ai = enemy.ai;
+      if (dt > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + dt / SHADE_FADE_IN_S);
+      // A lunge resolves from the mist as it closes on the local eye; a shade never does.
+      if (enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) {
+        const me = state.players.get(localId);
+        const d = me === undefined ? Infinity : Math.hypot(enemy.pos.x - me.pos.x, enemy.pos.z - me.pos.z);
+        const want = (enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) && d < SHADE_RESOLVE_M ? 0 : 1;
+        const was = this.soft.get(id) ?? 1;
+        const soft = dt > 0 ? was + (want - was) * Math.min(1, dt / SHADE_RESOLVE_S) : was;
+        this.soft.set(id, soft);
+        // Fainter with distance: whole within SHADE_NEAR_M, SHADE_FAR_SHARE of itself at SHADE_FAR_M.
+        const t = Math.max(0, Math.min(1, (d - SHADE_NEAR_M) / (SHADE_FAR_M - SHADE_NEAR_M)));
+        this.near.set(id, 1 - (1 - SHADE_FAR_SHARE) * t);
+      } else { this.soft.delete(id); this.near.delete(id); }
       const instance = this.models.acquire(id, HOLLOW_MODEL);
       if (instance !== null) {
         const entry = this.ensureHollowModel(id, instance, enemy.pos.x, feet, enemy.pos.z);
         this.enemies.get(id)?.node.setEnabled(false);
         this.advance(entry.view, enemy.pos.x, feet, enemy.pos.z, clamped);
         entry.view.node.rotation.y = enemy.yaw;
+        if (this.softShades && this.soft.has(id)) this.shadeList.push({ node: entry.view.node, fade: fade.level, soft: this.soft.get(id) as number, near: this.near.get(id) ?? 1 });
+        else setVisibility(entry.view.node, fade.level);
         // Enemy velocity never reaches a client (it is zeroed there), so the
         // pace is measured from how far the drawn body moved: the same on
         // every peer, and it walks through Emerge as well as the hunt.
@@ -221,7 +284,9 @@ export class EntityViews {
         }
         pace.x = at.x;
         pace.z = at.z;
-        stride(instance, pace.speed, HOLLOW_WALK_CLIP_SPEED * HOLLOW_SCALE);
+        // A strike plays the attack; everything else walks or stands by its pace.
+        if (enemy.ai === AiState.Strike) instance.play("attack");
+        else stride(instance, pace.speed, HOLLOW_WALK_CLIP_SPEED * HOLLOW_SCALE);
         continue;
       }
 
@@ -236,9 +301,48 @@ export class EntityViews {
       view.node.setEnabled(true);
       this.advance(view, enemy.pos.x, hollowY, enemy.pos.z, clamped);
       view.node.rotation.y = enemy.yaw;
+      setVisibility(view.node, fade.level);
+    }
+    // A shade or a lunge gone from the state goes out to nothing over
+    // SHADE_FADE_OUT_S: its model is held back from the prune until then.
+    for (const [id, fade] of this.fades) {
+      if (state.enemies.has(id)) continue;
+      const entry = this.enemyModels.get(id);
+      if (entry !== undefined && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge || fade.ai === AiState.Strike)) {
+        this.enemyModels.delete(id);
+        this.fading.set(id, { entry, level: fade.level, soft: this.soft.get(id) ?? 1, near: this.near.get(id) ?? 1 });
+      }
+      this.fades.delete(id);
+      this.soft.delete(id);
+      this.near.delete(id);
+    }
+    for (const [id, out] of this.fading) {
+      // Going, it is a shade again first: a resolved lunge goes back into
+      // the mist over SHADE_UNRESOLVE_S as it fades, not out of the frame.
+      if (dt > 0) {
+        out.level -= dt / SHADE_FADE_OUT_S;
+        out.soft = Math.min(1, out.soft + dt / SHADE_UNRESOLVE_S);
+      }
+      if (out.level <= 0) {
+        this.models.release(id);
+        this.fading.delete(id);
+        continue;
+      }
+      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: out.level, soft: out.soft, near: out.near });
+      else setVisibility(out.entry.view.node, out.level);
     }
     this.pruneModels(this.enemyModels, state.enemies);
     this.prune(this.enemies, state.enemies);
+  }
+
+  /** How many enemies are fading out, for the tests. */
+  fadingOut(): number {
+    return this.fading.size;
+  }
+
+  /** This frame's shades for the silhouette mask, when `softShades`. */
+  shades(): readonly ShadeEntry[] {
+    return this.shadeList;
   }
 
   private ensureModel(
@@ -333,6 +437,8 @@ export class EntityViews {
   }
 
   dispose(): void {
+    this.fading.clear();
+    this.fades.clear();
     for (const view of this.players.values()) view.node.dispose();
     for (const view of this.enemies.values()) view.node.dispose();
     for (const lamp of this.lamps.values()) lamp.dispose();

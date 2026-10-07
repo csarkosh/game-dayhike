@@ -434,6 +434,8 @@ describe("layer boundaries", () => {
       join(SRC, "game", "escalation.ts"),
       join(SRC, "game", "stareLens.ts"),
       join(SRC, "game", "woodsVoice.ts"),
+      join(SRC, "game", "woodsSounds.ts"),
+      join(SRC, "game", "oddSounds.ts"),
       join(SRC, "game", "stareAudio.ts"),
       join(SRC, "game", "bladeClump.ts"),
       join(SRC, "game", "bladeField.ts"),

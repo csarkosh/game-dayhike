@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { DEATH_LINE, END_PASSAGES, ROAD_LINE_U, roadLine } from "../../src/game/passages.js";
+import { DEATH_LINE, WON_LINE, ROAD_LINE_U, roadLine } from "../../src/game/passages.js";
 import { Phase } from "../../src/sim/types.js";
 
 describe("the passages", () => {
   it("closes a player's story on death, and the match by who came down", () => {
-    expect(DEATH_LINE).toMatch(/missing/);
-    expect(END_PASSAGES.all).toMatch(/every one of you/);
-    expect(END_PASSAGES.some).toMatch(/Not all of you/);
-    expect(END_PASSAGES.none).toMatch(/Nobody came down/);
+    // Both the title's shape: three parts and a turn; the counting is the title's alone. The win's
+    // turn is as many words as the title's ("and the peculiar conviction that the woods were counting us.").
+    for (const line of [DEATH_LINE, WON_LINE]) {
+      expect(line).toMatch(/^(A|The) [^;]+; [^;]+; and [^.]+\.$/);
+      expect(line).not.toMatch(/count/i);
+    }
+    expect(WON_LINE.split("; ")[2]?.split(" ")).toHaveLength(10);
   });
 });
 

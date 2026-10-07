@@ -4,7 +4,8 @@
  * head. All of it is synthesized on the ambient context (ambientAudio.ts,
  * which also muffles the world under a stare): the heart is two falling
  * tones a beat, and a whisper is the shared noise through a mouth's two
- * resonances, opened and shut a syllable at a time. No voice says a word.
+ * resonances, opened and shut a syllable at a time, with no consonant (the
+ * hiss one made read as a snare). No voice says a word.
  */
 import { HEART_DUB_AT, STARE_FLOOR, type StareLens } from "./stareLens.js";
 
@@ -16,10 +17,17 @@ export const WHISPER_LEVEL = 0.45;
 /** The stare below which no whisper is heard, and at which they are all there. */
 export const WHISPER_START = 0.12;
 export const WHISPER_FULL = 0.75;
+/** The share of the whispers' level the haunt alone brings: under a full stare's, and enough to be heard. */
+export const HAUNT_WHISPER_SHARE = 0.6;
 /** Voices, each on its own circle round the head. */
 export const WHISPER_VOICES = 4;
 /** Seconds ahead of the context's clock a voice's syllables are scheduled. */
-export const WHISPER_LOOKAHEAD_S = 0.3;
+export const WHISPER_LOOKAHEAD_S = 0.5;
+/** A syllable's length and the gap after it, in seconds: slow, so each is heard whole (as first built, 80 to 260 ms with gaps of 20 to 120, they ran together). */
+export const WHISPER_SYLLABLE_S: readonly [number, number] = [0.22, 0.55];
+export const WHISPER_GAP_S: readonly [number, number] = [0.14, 0.4];
+/** How many voices may be in a phrase at once: the rest wait, so the whispers are a few, not a crowd. */
+export const WHISPER_MAX_SPEAKING = 2;
 /** A syllable's gain at its loudest: the two resonances pass a sliver of the noise, and this is what brings a voice up to the heart's side. */
 export const WHISPER_SYLLABLE_GAIN = 3;
 /** The world's low-pass under a stare: open at none, shut down to this at a full one, and the share of its level left. */
@@ -58,7 +66,6 @@ type Voice = {
   low: BiquadFilterNode;
   high: BiquadFilterNode;
   open: GainNode;
-  hiss: GainNode;
   panner: PannerNode;
   /** When its next syllable begins on the context's clock, and how many are left in its phrase. */
   next: number;
@@ -76,7 +83,7 @@ export type StareAudio = {
    * schedules the whispers and moves them round the listener, whose place is
    * given in Web Audio's right-handed frame.
    */
-  set(lens: StareLens, x: number, y: number, z: number): void;
+  set(lens: StareLens, x: number, y: number, z: number, haunt?: number): void;
 };
 
 /**
@@ -132,27 +139,18 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
       high.Q.value = 7;
       const open = ctx.createGain();
       open.gain.value = 0;
-      // The hiss a consonant makes ahead of its vowel.
-      const edge = ctx.createBiquadFilter();
-      edge.type = "highpass";
-      edge.frequency.value = 3800;
-      const hiss = ctx.createGain();
-      hiss.gain.value = 0;
       const panner = ctx.createPanner();
       panner.panningModel = "HRTF";
       panner.distanceModel = "inverse";
       panner.rolloffFactor = 0;
       src.connect(low);
       src.connect(high);
-      src.connect(edge);
       low.connect(open);
       high.connect(open);
-      edge.connect(hiss);
       open.connect(panner);
-      hiss.connect(panner);
       panner.connect(whispers);
       made.push({
-        low, high, open, hiss, panner,
+        low, high, open, panner,
         next: now + between(0, 0.8), left: 0,
         angle: between(0, 2 * Math.PI), turn: between(0.25, 0.9) * (random() < 0.5 ? -1 : 1),
         radius: between(0.45, 0.9), height: between(-0.15, 0.25),
@@ -162,35 +160,37 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
   }
 
   /** Schedules one voice's syllables up to the look-ahead: phrases of a few, a breath between, the breaths shorter as the stare deepens. */
-  function speak(v: Voice, now: number, level: number): void {
+  function speak(v: Voice, all: readonly Voice[], now: number, level: number): void {
     if (v.next < now) v.next = now;
     while (v.next < now + WHISPER_LOOKAHEAD_S) {
       if (v.left <= 0) {
-        v.left = 3 + Math.floor(random() * 7);
-        v.next += between(0.4, 2.4) * (1.5 - level);
+        // A new phrase waits while WHISPER_MAX_SPEAKING others are in theirs.
+        let speaking = 0;
+        for (const o of all) if (o !== v && o.left > 0) speaking++;
+        if (speaking >= WHISPER_MAX_SPEAKING) {
+          v.next = now + WHISPER_LOOKAHEAD_S;
+          return;
+        }
+        v.left = 3 + Math.floor(random() * 5);
+        v.next += between(1.0, 3.5) * (1.5 - level);
         continue;
       }
       const at = v.next;
-      const length = between(0.08, 0.26);
+      const length = between(WHISPER_SYLLABLE_S[0], WHISPER_SYLLABLE_S[1]);
       const loud = WHISPER_SYLLABLE_GAIN * between(0.35, 1);
       const vowel = VOWELS[Math.floor(random() * VOWELS.length) % VOWELS.length] as readonly [number, number];
-      v.low.frequency.setTargetAtTime(vowel[0] * between(0.9, 1.1), at, 0.02);
-      v.high.frequency.setTargetAtTime(vowel[1] * between(0.9, 1.1), at, 0.02);
+      v.low.frequency.setTargetAtTime(vowel[0] * between(0.9, 1.1), at, 0.05);
+      v.high.frequency.setTargetAtTime(vowel[1] * between(0.9, 1.1), at, 0.05);
       v.open.gain.setValueAtTime(0, at);
       v.open.gain.linearRampToValueAtTime(loud, at + length * 0.3);
       v.open.gain.linearRampToValueAtTime(0, at + length);
-      if (random() < 0.4) {
-        v.hiss.gain.setValueAtTime(0, at);
-        v.hiss.gain.linearRampToValueAtTime(loud * 0.5, at + 0.015);
-        v.hiss.gain.linearRampToValueAtTime(0, at + 0.07);
-      }
-      v.next = at + length + between(0.02, 0.12);
+      v.next = at + length + between(WHISPER_GAP_S[0], WHISPER_GAP_S[1]);
       v.left--;
     }
   }
 
   return {
-    set(lens, x, y, z) {
+    set(lens, x, y, z, haunt = 0) {
       const now = ctx.currentTime;
       // The heart: the beat the lens began, and its second sound in step.
       if (beats < 0) beats = lens.beats;
@@ -202,7 +202,8 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
           thump(now + HEART_DUB_AT * lens.period, level * 0.7, 74);
         }
       }
-      const level = whisperLevel(lens.level);
+      // The whispers: the stare's, or the haunt's (escalation.ts), whichever is more.
+      const level = Math.max(whisperLevel(lens.level), WHISPER_LEVEL * HAUNT_WHISPER_SHARE * clamp01(haunt));
       whispers.gain.setTargetAtTime(level, now, 0.4);
       if (level > 0) silentSince = now;
       // A second past the last stare the bus has faded, and nothing more is scheduled.
@@ -210,7 +211,7 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
       voices ??= build(now);
       const speaking = now - silentSince < 1;
       for (const v of voices) {
-        if (speaking) speak(v, now, clamp01(lens.level));
+        if (speaking) speak(v, voices, now, Math.max(clamp01(lens.level), clamp01(haunt) * 0.5));
         const a = v.angle + v.turn * now;
         v.panner.positionX.value = x + Math.cos(a) * v.radius;
         v.panner.positionY.value = y + v.height;

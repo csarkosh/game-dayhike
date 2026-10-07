@@ -128,7 +128,7 @@ describe("setEntry", () => {
 
 describe("weather default omission", () => {
   it("weather at its default is omitted from the URL; non-default persists", () => {
-    expect(setEntry([], "weather", ["mist"])).toEqual([]);
+    expect(setEntry([], "weather", ["bright"])).toEqual([]);
     const kept = setEntry([], "weather", ["clear"]);
     expect(kept).toEqual([{ name: "weather", args: ["clear"] }]);
   });

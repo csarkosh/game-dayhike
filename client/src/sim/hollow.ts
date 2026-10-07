@@ -15,7 +15,7 @@
  * `stepMovement` with yaw 0, so movement needs no trig at all.
  */
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
-import { AiState, Button, Outcome, cloneVec3 } from "./types.js";
+import { AiState, Button, Outcome, Phase, cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
@@ -43,7 +43,7 @@ export const HOLLOW_LOOK_FACTOR = 0.6;
 /** Seconds it stands still at the crest as it steps out, before the hunt. */
 export const SUMMIT_REVEAL_S = 4;
 /** Seconds a fork Hollow stands at the mouth of its branch, facing its trigger, before it hunts. */
-export const FORK_REVEAL_S = 1;
+export const FORK_REVEAL_S = 2.5;
 /** Seconds a fork Hollow may spend walking to the mouth before it reveals where it stands. */
 export const FORK_EMERGE_MAX_S = 6;
 /** cos 20°: it must be near the centre of the view, not the edge. */
@@ -54,6 +54,8 @@ export const HOLLOW_LOOK_RANGE = 120;
 export const HOLLOW_STARE_FILL_S = 6;
 /** Seconds of looking away that empty it from 1 to 0: longer than the fill, so a look lingers. */
 export const HOLLOW_STARE_EMPTY_S = 8;
+/** In the chase, how far a shade of the haunt in the cone fills the stare: a slight closing, never the whole. */
+export const SHADE_STARE_CAP = 0.45;
 /** Added to the two half-widths: the hulls need not interpenetrate to touch. */
 export const HOLLOW_CONTACT_MARGIN = 0.1;
 /** Horizontal metres within which a route node counts as reached. */
@@ -73,7 +75,7 @@ export const HOLLOW_HEIGHT = 2.6;
 export const HOLLOW_EXIT_MARGIN = 1;
 
 export function isHollowState(ai: AiState): boolean {
-  return ai === AiState.Hunt || ai === AiState.Emerge || ai === AiState.Stand || ai === AiState.Watch;
+  return ai === AiState.Hunt || ai === AiState.Emerge || ai === AiState.Stand || ai === AiState.Watch || ai === AiState.Lunge || ai === AiState.Strike;
 }
 
 export function isHollow(e: EnemyState): boolean {
@@ -147,7 +149,7 @@ export function nearestPrey(world: World, pos: Vec3): PlayerState | null {
 }
 
 /** The facing toward (tx, tz), for a Hollow that is not walking. Host-only, so atan2 is allowed. */
-function faceToward(h: EnemyState, tx: number, tz: number): void {
+export function faceToward(h: EnemyState, tx: number, tz: number): void {
   const dx = tx - h.pos.x;
   const dz = tz - h.pos.z;
   if (dx * dx + dz * dz > EPSILON * EPSILON) h.yaw = Math.atan2(dx, dz);
@@ -224,7 +226,7 @@ function speedOf(h: EnemyState): number {
  * Returns whether it moved (or had nowhere to move to): false is a step
  * refused at the treeline, which `followRoute` reads.
  */
-function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: number, speed: number): boolean {
+export function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: number, speed: number): boolean {
   const u = roadOffset(world, h.pos.x, h.pos.z);
   const inside = u !== null && (u < 0 ? -u : u) < ROAD_CORRIDOR_HALF;
   if (inside) {
@@ -426,6 +428,10 @@ function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number):
       faceToward(h, th.x, th.z);
       return;
     }
+    case AiState.Lunge:
+    case AiState.Strike:
+      // The haunt's: haunt.ts steps them.
+      return;
     case AiState.Watch: {
       // The watcher: it stands where it was placed and faces the lead it was
       // shown to, and that is all it ever does. Never `walkToward`, so not
@@ -508,6 +514,16 @@ export function updateHollows(world: World): void {
       }
     }
     p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
+    // In the chase a shade of the haunt (not a Hollow: harmless) in the cone
+    // fills the stare too, but only to SHADE_STARE_CAP: the dark closes a
+    // little on it, never all the way, as it does on the thing itself.
+    if (!sees && state.phase === Phase.Chase && p.stare < SHADE_STARE_CAP) {
+      for (const e of state.enemies.values()) {
+        if (e.ai !== AiState.Shade || !playerSees(p, e, world)) continue;
+        p.stare = Math.min(SHADE_STARE_CAP, p.stare + fill + empty);
+        break;
+      }
+    }
   }
 
   // Prey: a hunting Hollow whose target is dead, gone or safe takes the
@@ -516,7 +532,7 @@ export function updateHollows(world: World): void {
   // pack only grows (summit.ts spawns; S3 adds the forks). The watcher is
   // never prey-driven: it would otherwise be a hunt on its first tick.
   for (const h of all) {
-    if (h.ai === AiState.Emerge || h.ai === AiState.Watch) continue;
+    if (h.ai === AiState.Emerge || h.ai === AiState.Watch || h.ai === AiState.Lunge || h.ai === AiState.Strike) continue;
     const target = state.players.get(h.targetId);
     const lost = target === undefined || target.health <= 0 || target.safe;
     if (h.ai === AiState.Hunt && !lost) continue;

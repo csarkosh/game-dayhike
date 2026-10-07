@@ -24,8 +24,11 @@ import { AiState } from "../sim/types.js";
 import type { Forest } from "../sim/forest.js";
 import { isHollow } from "../sim/hollow.js";
 import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
+import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
+import { createShadeSilhouette } from "./shadeSilhouette.js";
+import { createHauntMist } from "./hauntMist.js";
 import { forestDensity } from "../sim/vegetation.js";
-import { MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../sim/constants.js";
+import { MAX_PLAYERS, PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
 import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
@@ -1331,6 +1334,12 @@ export type Renderer = {
   listener(): ListenerPose;
   /** The local player's stare as `sync` last stepped it, for the audio (stareAudio.ts). */
   stare(): StareLens;
+  /** The chase's cast, 0 to 1 (escalation.ts): the grade pulls the frame toward burgundy by it. */
+  setChase(cast: number): void;
+  /** The haunt, 0 to 1 (escalation.ts): the pale mist at the player's sides comes in by it. */
+  setHaunt(level: number): void;
+  /** The end for this player (ending.ts): the camera is the ending's from now, won or died. Once; a second call changes nothing. */
+  setEnding(kind: EndingKind): void;
   /**
    * A world point as CSS pixels on the canvas, with its distance from the
    * camera, or null when it is behind the camera. Drives the interact prompt.
@@ -1699,6 +1708,13 @@ function buildRenderer(
   let lensStrength = 0;
   /** The local player's stare as their screen and ears take it (stareLens.ts). */
   let stareLens: StareLens = STARE_LENS_REST;
+  /** The chase's cast (escalation.ts), as the app last set it. */
+  let chaseCast = 0;
+  /** What the ending asks of the pass: the picture's softness and the dark's closing, 0 to 1, posed after the pass reads them, so a frame late. */
+  let endBlur = 0;
+  let endClose = 0;
+  /** The ending, once begun: its kind, when it began, and the pose it began from, taken on its first frame. */
+  let ending: { kind: EndingKind; since: number; base: EndingBase | null } = { kind: "won", since: -1, base: null };
   const stareAt = new Vector3();
   // The forest's density over the camera, a full terrain sample: taken
   // again only once the camera has moved a metre from where it was taken.
@@ -2048,6 +2064,14 @@ function buildRenderer(
   setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife });
 
   const views = new EntityViews(scene);
+  // The haunt's shades: soft figures in a pale mist on the post tiers (the
+  // mask the grade reads), the Hollow fading in and out on the low tier.
+  const silhouette = forest !== null && postFeatures.pipeline ? createShadeSilhouette(scene, camera) : null;
+  partOf(silhouette);
+  views.softShades = silhouette !== null;
+  const hauntMist = forest !== null ? createHauntMist(scene, (x, z) => elevationAt(forest.seed, x, z)) : null;
+  partOf(hauntMist);
+  let hauntLevel = 0;
   partOf(views);
   // Fire and forget: the other hikers and the Hollow render as capsules until
   // this resolves, and a model that fails to load stays a capsule for good.
@@ -2155,6 +2179,11 @@ function buildRenderer(
       setFoliageWind(wind, windPlayers);
       water?.setWind(wind.speed, [wind.dirX, wind.dirZ]);
       views.sync(state, localId, alpha, lampState, frame.dt);
+      if (silhouette !== null) {
+        silhouette.sync(views.shades());
+        post.setShades(silhouette.texture, silhouette.any());
+      }
+      hauntMist?.update(camera, hauntLevel, lighting.sky?.night ?? 0, seconds, chaseCast);
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
       // its GLBs have loaded, so new entries are picked up here.
@@ -2221,7 +2250,10 @@ function buildRenderer(
       lighting.setStare(stareLens.level);
       // Before the sky's first slices there is no night factor; the day's 0
       // stands in, for frames no one sees.
-      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, stareLens, lensStrength);
+      // The death's closing dark rides the stare's shade, driven to full.
+      const shown = endClose > 0 ? { ...stareLens, level: Math.max(stareLens.level, endClose), phase: 0.9 } : stareLens;
+      lighting.setStare(shown.level);
+      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, shown, lensStrength, chaseCast, endBlur);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
@@ -2325,6 +2357,16 @@ function buildRenderer(
         // and its default forward is +Z, which matches the sim convention.
         // Roll goes on z — the only thing that ever writes it.
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
+        // The end: from its first frame the camera is the ending's, from the
+        // pose the player had then, and the pass takes its blur and its dark.
+        if (ending.since >= 0) {
+          ending.base ??= { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: local.yaw, pitch: local.pitch, feetY: local.pos.y - PLAYER_HALF.y };
+          const pose = endingPose(ending.kind, seconds - ending.since, ending.base);
+          camera.position.set(pose.x, pose.y, pose.z);
+          camera.rotation.set(pose.pitch, pose.yaw, pose.roll);
+          endBlur = pose.blur;
+          endClose = pose.close;
+        }
         // A hike after a scene draws with the game's lens again.
         camera.fov = GAME_FOV;
         setLamp(localLamp, local.lamp.on, lampState);
@@ -2358,6 +2400,16 @@ function buildRenderer(
     },
     stare() {
       return stareLens;
+    },
+    setChase(cast) {
+      chaseCast = Math.max(0, Math.min(1, cast));
+    },
+    setHaunt(level) {
+      hauntLevel = Math.max(0, Math.min(1, level));
+    },
+    setEnding(kind) {
+      if (ending.since >= 0) return;
+      ending = { kind, since: clock() / 1000, base: null };
     },
     listener() {
       // `camera.rotation` rather than the sim's yaw/pitch: it is set on both of
@@ -2395,6 +2447,8 @@ function buildRenderer(
     },
     dispose() {
       views.dispose();
+      silhouette?.dispose();
+      hauntMist?.dispose();
       localLamp.dispose();
       for (const m of brushMeshes) m.dispose();
       // Before the meshes in its list: a render target's list is not told of

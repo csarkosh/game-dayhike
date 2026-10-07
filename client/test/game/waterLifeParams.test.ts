@@ -73,6 +73,13 @@ describe("the water life's presence", () => {
         [1, 1, [0.333333, 1], [0, 1], [0, 1], 0],
         [0, 1, [0, 1], [0, 1], [0, 1], 1],
       ],
+      // cloud 0.45: sun at 0.925926, so the dragonflies fly at that share and mist 0.12 fills the swarms a little
+      bright: [
+        [1, 1.036, [0, 0.925926], [0, 0.925926], [0, 0.925926], 0],
+        [0, 1.036, [0.925926, 0.925926], [1, 0.925926], [0.925926, 0.925926], 0],
+        [1, 1.036, [0.308642, 0.925926], [0, 0.925926], [0, 0.925926], 0],
+        [0, 1.036, [0, 0.925926], [0, 0.925926], [0, 0.925926], 1],
+      ],
       // cloud 0.8: no sun, so the skimmers sit seen on their perches and the rest take cover
       overcast: [
         [1, 1.075, [0, 0], [0, 0], [0, 0], 0],

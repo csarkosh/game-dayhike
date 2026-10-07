@@ -27,6 +27,7 @@ import {
   WATCH_BOLD_VIEW_COS,
   WATCH_FLEE_RADIUS,
   WATCH_SALT,
+  WATCHER_ON_CLIMB,
   climbOf,
   createWatcherRecord,
   hideWatcher,
@@ -49,8 +50,12 @@ const SUITE = { timeout: timeLimit(120_000) };
 
 function forestWorld() {
   const w = createForestWorld(createForest(seed));
-  // Past its showings on the trail, which have a describe of their own below.
+  // Turned on (it is off on the climb, WATCHER_ON_CLIMB) and past its showings
+  // on the trail, which have a describe of their own below.
+  w.watcher!.active = true;
   w.watcher!.bold = 0;
+  // The haunt's shades are haunt.test.ts's: these pin the watcher alone.
+  w.haunt!.active = false;
   const p = spawnPlayer(w);
   return { w, p };
 }
@@ -72,7 +77,7 @@ const flatWorld = () =>
   createWorld(parseLevel({ id: "flat", brushes: [{ min: [-300, -1, -300], max: [300, 0, 300], material: "concrete" }], playerSpawns: [[0, 0.9, 0]], enemySpawns: [] }), 1);
 /** The record the tests draw from: no first rest spent, so the sequence starts at the seed. */
 /** A record past its showings on the trail: the showings in the trees are what most of this file pins. */
-const record = (): WatcherRecord => ({ id: -1, rest: 0, rng: { rngSeed: (seed ^ WATCH_SALT) | 0 }, bold: 0, waited: 0, onTrail: false });
+const record = (): WatcherRecord => ({ id: -1, rest: 0, rng: { rngSeed: (seed ^ WATCH_SALT) | 0 }, active: true, bold: 0, waited: 0, onTrail: false });
 const horizontal = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.sqrt((a.x - b.x) ** 2 + (a.z - b.z) ** 2);
 const tick = (w: World, n = 1) => { for (let i = 0; i < n; i++) tickWorld(w, new Map()); };
 /** Aims a player's eye straight at `at`, yaw and pitch both. */
@@ -498,6 +503,21 @@ describe("the tick", SUITE, () => {
     expect(w.watcher!.rest).toBe(49.14651373401284);
   });
 
+  it("is off on the climb: a forest's record is made inactive, and the tick never shows it", () => {
+    const w = createForestWorld(createForest(seed));
+    const p = spawnPlayer(w);
+    standOnStem(w, p, 36);
+    expect(WATCHER_ON_CLIMB).toBe(false);
+    expect(w.watcher).not.toBeNull();
+    expect(w.watcher!.active).toBe(false);
+    w.watcher!.rest = 0;
+    const spent = w.watcher!.rng.rngSeed;
+    tick(w, 600);
+    expect(w.state.enemies.size).toBe(0);
+    expect(w.watcher!.rng.rngSeed).toBe(spent);
+    expect(w.watcher!.rest).toBe(0);
+  });
+
   it("never shows on a world that is not authoritative", () => {
     const w = createForestWorld(createForest(seed), false);
     const p = spawnPlayer(w);
@@ -520,6 +540,8 @@ describe("the first showings, on the trail", () => {
   /** A world whose watcher still owes its showings on the trail. */
   function boldWorld() {
     const w = createForestWorld(createForest(seed));
+    w.watcher!.active = true;
+    w.haunt!.active = false;
     const p = spawnPlayer(w);
     return { w, p };
   }

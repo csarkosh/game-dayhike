@@ -22,7 +22,7 @@ export type WeatherParams = {
   dread: number;
 };
 
-export type WeatherPresetName = "clear" | "overcast" | "mist" | "rain" | "eerie";
+export type WeatherPresetName = "clear" | "bright" | "overcast" | "mist" | "rain" | "eerie";
 
 /**
  * `clear` is all zeros BY DEFINITION: every modifier in this file returns its
@@ -32,6 +32,8 @@ export type WeatherPresetName = "clear" | "overcast" | "mist" | "rain" | "eerie"
  */
 export const WEATHER_PRESETS: Record<WeatherPresetName, WeatherParams> = Object.freeze({
   clear: Object.freeze({ cloudCover: 0, mist: 0, rain: 0, wetness: 0, dread: 0 }),
+  /** A semi-sunny day on the peninsula: broken cloud, a little haze, the ground not quite dry. The forest's start. */
+  bright: Object.freeze({ cloudCover: 0.45, mist: 0.12, rain: 0, wetness: 0.15, dread: 0 }),
   overcast: Object.freeze({ cloudCover: 0.8, mist: 0.25, rain: 0, wetness: 0.3, dread: 0 }),
   mist: Object.freeze({ cloudCover: 0.9, mist: 1, rain: 0, wetness: 0.5, dread: 0 }),
   rain: Object.freeze({ cloudCover: 1, mist: 0.6, rain: 1, wetness: 1, dread: 0 }),
@@ -43,7 +45,7 @@ export const WEATHER_NAMES = Object.freeze(
 ) as readonly WeatherPresetName[];
 
 /** Matches the `/weather` command's `defaultValue` in `commands.ts`. */
-export const DEFAULT_WEATHER: WeatherPresetName = "mist";
+export const DEFAULT_WEATHER: WeatherPresetName = "bright";
 
 /** Componentwise lerp; exact copies at the endpoints, like `mixRgb`. */
 export function lerpWeather(a: WeatherParams, b: WeatherParams, t: number): WeatherParams {

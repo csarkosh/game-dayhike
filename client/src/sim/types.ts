@@ -18,6 +18,12 @@ export const enum AiState {
   Stand = 8,
   /** The watcher: stands off the trail facing the lead, never walks, never touches; the stare still fills. */
   Watch = 9,
+  /** A shade of the haunt (haunt.ts): stands at the edge of sight, harmless, and is gone when neared, watched or timed out. */
+  Shade = 10,
+  /** A lunge of the haunt: walks its line at a player, kills on contact, and is gone once past them. */
+  Lunge = 11,
+  /** A lunge at its player: the strike, which kills within its reach, and then it is gone. */
+  Strike = 12,
 }
 
 export const enum Button {

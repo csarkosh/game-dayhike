@@ -43,7 +43,7 @@ import { createWaterLifeAudio } from "./game/waterLifeAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
-import {
+import { actsUnder,
   ESCALATION_REST,
   atmosphereUnder,
   escalationTargets,
@@ -67,9 +67,8 @@ import type { Transport } from "./net/transport.js";
 import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
-import { createEndPanel, endPanelModel } from "./game/endPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
-import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
+import { DEATH_LINE, DEATH_FADE_AFTER_MS, END_LANDING_MS, WON_LINE, WON_FADE_AFTER_MS, WON_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
@@ -105,6 +104,7 @@ import { Button, Outcome, Phase, type InputCommand, type PlayerState, type World
 import { isHollowState } from "./sim/hollow.js";
 import { HOLLOW_CALL_CLIP, stepWoods, WOODS_REST, type WoodsState } from "./game/woodsVoice.js";
 import { loadBirdBed } from "./game/birdBed.js";
+import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "./game/woodsSounds.js";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
@@ -437,6 +437,8 @@ function buildGame(
   let escalation: EscalationState = ESCALATION_REST;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
   let woods: WoodsState = WOODS_REST;
+  /** The woods' other voices (woodsSounds.ts), on this screen's own stream. */
+  let woodsSounds: WoodsSoundsState = WOODS_SOUNDS_REST;
   // Recomputed when the weather does: on a `weather` command directly below,
   // and on a forest world every frame by `syncAtmosphere`, as the escalation
   // moves the weather on its own. `wildlifePresenceUnder` builds a
@@ -580,6 +582,11 @@ function buildGame(
     } else if (name === "skin") {
       skin = value !== false;
       renderer.setSkinShading(skin);
+    } else if (name === "end") {
+      // The ending, on the spot (ending.ts): the camera and the line, nothing of the match.
+      const kind = args[0] === "won" ? "won" : "died";
+      renderer.setEnding(kind);
+      hud.setStatus(kind === "won" ? WON_LINE : DEATH_LINE);
     } else if (name === "time") {
       // Instant, like every other view command: the sun moves, the world is not
       // rebuilt. Validation has already bounded this to [0, 24), so the fallback
@@ -670,7 +677,7 @@ function buildGame(
     ambient.setDrip(renderer.canopyWater(), renderer.canopyOver());
     // The stare rides the same call: `sync` stepped its lens, and the
     // listener `syncWind` placed is where its whispers circle.
-    ambient.setStare(renderer.stare());
+    ambient.setStare(renderer.stare(), escalation.haunt);
   }
 
   /**
@@ -744,7 +751,11 @@ function buildGame(
     const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground);
     escalation = stepEscalation(escalation, targets, dt);
     const a = atmosphereUnder(base, escalation);
-    wildlifePresence = wildlifePresenceUnder(a.weather);
+    // The chase's cast and its pulse, every frame: neither waits on the weather's gate below.
+    renderer.setChase(escalation.chase);
+    renderer.setHaunt(escalation.haunt);
+    ambient.setChase(escalation.chase, escalation.lens);
+    wildlifePresence = wildlifePresenceUnder(a.weather, a.hour);
     // The woods' voice: the birdsong's level, and the Hollow's call from up
     // the trail as the climb passes each mark. The call is the elk's bugle,
     // played wrong (`AmbientAudio.hollowCall`), and sounds from the crest's
@@ -753,17 +764,23 @@ function buildGame(
     for (const e of state.enemies.values()) if (isHollowState(e.ai)) { hollow = true; break; }
     const ear = renderer.listener();
     const crest = world.search.body.pos;
+    const acts = actsUnder(escalation.world);
     const voiced = stepWoods(woods, {
-      climb: escalation.progressMax, chase: state.phase === Phase.Chase, hollow, rain: a.weather.rain,
+      climb: escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase === Phase.Chase, hollow, rain: a.weather.rain,
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
     }, dt);
     woods = voiced.state;
+    // The night's other voices, and the day's flies.
+    const odd = stepWoodsSounds(woodsSounds, { night: acts.night, day: 1 - acts.wet, chase: state.phase === Phase.Chase }, dt);
+    woodsSounds = odd.state;
+    if (odd.cue !== null) ambient.playOdd(odd.cue);
     ambient.setBirds(woods.birds);
     // The reveal's silence, then its call, from the body the Hollow stands behind.
     ambient.setHush(voiced.hush);
     const bugle = wildlifeAudio?.clip(HOLLOW_CALL_CLIP);
     if (voiced.call !== null && bugle !== undefined) {
-      ambient.hollowCall(bugle, crest.x - ear.x, crest.y - ear.y, -(crest.z - ear.z), voiced.call.level, voiced.call.cutoffHz);
+      // The cry's variant is this screen's own draw: the sound is not on the wire.
+      ambient.hollowCall(bugle, crest.x - ear.x, crest.y - ear.y, -(crest.z - ear.z), voiced.call.level, voiced.call.cutoffHz, Math.random());
     }
     // Skip the renderer and ambient pushes on a frame the eased state barely
     // moved: `renderer.setView` recomputes the sky, the sun and the fog and
@@ -862,8 +879,6 @@ function buildGame(
 
   const posterPanel = createPosterPanel(container);
   made(() => posterPanel.dispose());
-  const endPanel = createEndPanel(container);
-  made(() => endPanel.dispose());
   let lastButtons = 0;
   /**
    * The poster is this player's own screen: it opens on an Interact press at
@@ -898,6 +913,8 @@ function buildGame(
   }
 
   let dead = false;
+  let deathFadeTimer: ReturnType<typeof setTimeout> | null = null;
+  let endFadeTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Death, once: the poster closed, the view faded onto the passage. Input
    * stays live — the sim already ignores a dead player's movement and
@@ -909,7 +926,11 @@ function buildGame(
     if (dead || self === undefined || self.health > 0) return;
     dead = true;
     posterPanel.hide();
-    hud.fade(true);
+    // The body goes down and the dark closes (ending.ts); the HUD's own fade
+    // finishes the black after it, and the line sits on top.
+    renderer.setEnding("died");
+    if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
+    deathFadeTimer = setTimeout(() => hud.fade(true), DEATH_FADE_AFTER_MS);
     hud.setStatus(DEATH_LINE);
   }
 
@@ -921,19 +942,10 @@ function buildGame(
    * `onNamed` — never from the snapshot: a name is the lobby's, not the
    * sim's. The peer id is stored, not the display name: a pairing can land
    * before the lobby's state broadcast does, and a name resolved then would
-   * stick at the peer-id prefix for good. `nameOf` resolves it when needed.
+   * stick at the peer-id prefix for good.
    */
   const names = new Map<number, string>();
   const selfPeerId = options.peerId;
-  /**
-   * The lobby's name for a peer: "You" for this player, whichever side they
-   * are on, and the short peer id for anyone the lobby has not named — at
-   * least stable, and distinct between two strangers.
-   */
-  function nameOf(peerId: string): string {
-    if (peerId === selfPeerId) return "You";
-    return lobby?.state.members.find((m) => m.id === peerId)?.name ?? peerId.slice(0, 8);
-  }
   let ended = false;
   /**
    * The end, once: the view fades onto the panel naming who came down and who
@@ -944,25 +956,21 @@ function buildGame(
   function syncOutcome(state: WorldState): void {
     if (ended || state.outcome === Outcome.Playing) return;
     ended = true;
-    // Names resolve here, as the panel is built, so a pairing that landed
-    // before the lobby's state did still gets the lobby's name. Unsorted:
-    // `endPanelModel` orders by id, and one sort is enough. The fallback
-    // covers anyone no pairing ever named — a peer whose Named event has not
-    // landed — rather than leaving them off the roll entirely.
-    const players = [...state.players.values()].map((p) => {
-      const peerId = names.get(p.id);
-      return { id: p.id, name: peerId === undefined ? `Hiker ${p.id}` : nameOf(peerId), safe: p.safe, dead: p.health <= 0 };
-    });
     gate.refresh();
     posterPanel.hide();
-    hud.fade(true);
-    // The death line is this player's last word, the panel the match's:
-    // the HUD's status sits at 55% of the view the panel covers the middle of,
-    // so leaving both up prints one across the other.
-    hud.setStatus(null);
-    endPanel.show(endPanelModel(players));
+    const won = state.outcome === Outcome.Won && !dead;
+    // Won, and alive to see it: the camera lifts to the sky under the line
+    // (ending.ts), and the view goes dark under it before the landing. A
+    // dead player is already under their own last word, which stays. There
+    // is no panel of names: the line is the end.
+    if (won) {
+      renderer.setEnding("won");
+      hud.setStatus(WON_LINE);
+      if (endFadeTimer !== null) clearTimeout(endFadeTimer);
+      endFadeTimer = setTimeout(() => hud.fade(true), WON_FADE_AFTER_MS);
+    } else if (!dead) hud.fade(true);
     if (landingTimer !== null) clearTimeout(landingTimer);
-    landingTimer = setTimeout(navigateToLanding, END_LANDING_MS);
+    landingTimer = setTimeout(navigateToLanding, won ? WON_LANDING_MS : END_LANDING_MS);
     sessionOver();
   }
 
@@ -1243,6 +1251,7 @@ function buildGame(
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     woods = WOODS_REST;
+    woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
     names.set(host.localEntityId, selfPeerId);
@@ -1350,6 +1359,7 @@ function buildGame(
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     woods = WOODS_REST;
+    woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     registerInteractables(client.world);
     activeWorld = client.world;
     buildExtras(renderer);
@@ -1910,7 +1920,8 @@ function buildGame(
       menu.dispose();
       connectPanel.dispose();
       posterPanel.dispose();
-      endPanel.dispose();
+      if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
+      if (endFadeTimer !== null) clearTimeout(endFadeTimer);
       disposeExtras();
       touchLayer.dispose();
       prompt.dispose();

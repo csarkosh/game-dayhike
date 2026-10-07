@@ -10,8 +10,8 @@ import type { Rgb } from "./colour.js";
  * never will: a very dark shape the lights can touch, not an unlit black one.
  */
 
-/** Drawn at this many times the model's 1.80 m, so it stands twice a hiker's height. Its hull is unchanged. */
-export const HOLLOW_SCALE = 2;
+/** Drawn at this many times the model's 1.80 m, so it stands three times a hiker's height (twice until 2026-10-06, four for a day). Its hull is unchanged. */
+export const HOLLOW_SCALE = 3;
 /** The eyes: a saturated red, the one colour nothing else in the forest wears. */
 export const HOLLOW_EYE_COLOR: Rgb = { r: 1, g: 0.04, b: 0.02 };
 /**

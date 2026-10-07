@@ -31,7 +31,10 @@ describe("one run on the seed `hollow`", SUITE, () => {
     const w = createForestWorld(createForest(seed));
     // The sightings below are the ones in the trees, at the reach's range:
     // the first showings, on the trail, are watcher.test.ts's.
+    w.watcher!.active = true;
     w.watcher!.bold = 0;
+    // The haunt's shades are haunt.test.ts's: this run pins the Hollows.
+    w.haunt!.active = false;
     const p = spawnPlayer(w);
     const graph = w.trail!;
     const chain = stemNodes(graph);
@@ -182,7 +185,8 @@ describe("one run on the seed `hollow`", SUITE, () => {
       step("waiting at 1");
       waited++;
     }
-    expect(waited).toBe(129);
+    // 129 with the fork's 1 s stand as first built; 2.5 s (FORK_REVEAL_S) is 90 ticks more.
+    expect(waited).toBe(220);
     for (const e of w.state.enemies.values()) {
       expect(e.ai).toBe(AiState.Hunt);
       expect(e.targetId).toBe(p.id);

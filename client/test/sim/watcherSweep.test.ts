@@ -116,7 +116,7 @@ function sweep(token: string): Case[] {
   [0, 0.25, 0.5, 0.75].forEach((c, i) => stand(nearest(c), SLOTS[i]!));
   const top = topForkClimb(g);
   for (const f of g.forks) { const n = g.nodes[f] as TrailNode; if (climbOf(g, n.x, n.z) === top) { stand(f, SLOTS[4]!); break; } }
-  const fresh = (): WatcherRecord => ({ id: -1, rest: 0, rng: { rngSeed: (seed ^ WATCH_SALT) | 0 }, bold: 0, waited: 0, onTrail: false });
+  const fresh = (): WatcherRecord => ({ id: -1, rest: 0, rng: { rngSeed: (seed ^ WATCH_SALT) | 0 }, active: true, bold: 0, waited: 0, onTrail: false });
 
   const out: Case[] = [];
   for (const [node, slot] of stands) {

@@ -3,13 +3,17 @@ import {
   createAmbientAudio, DEFAULT_VOLUME, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
   WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
   WIND_GAIN_DEPTH, WIND_GAIN_RAMP_S, windBedGain, BIRD_LEVEL, BIRD_PAN, BIRD_OVERLAP_S, BIRD_GAIN_RAMP_S,
-  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HUSH_RAMP_S, type VoiceSource,
+  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HOLLOW_CALL_RATE, HOLLOW_CALL_AFTER, hollowCallVoices, HUSH_RAMP_S, FLY_PASS_S,
+  type VoiceSource,
 } from "../../src/game/ambientAudio.js";
 import { frogCallVoice, humVoice, rustleVoice } from "../../src/game/insectVoices.js";
 import { ambientGainsUnder, WEATHER_PRESETS } from "../../src/game/weather.js";
-import { MUFFLE_OPEN_HZ, MUFFLE_SHUT_HZ, MUFFLE_GAIN, HEART_LEVEL, WHISPER_LEVEL, WHISPER_VOICES } from "../../src/game/stareAudio.js";
+import { MUFFLE_OPEN_HZ, MUFFLE_SHUT_HZ, MUFFLE_GAIN, HEART_LEVEL, WHISPER_LEVEL, WHISPER_VOICES, WHISPER_MAX_SPEAKING } from "../../src/game/stareAudio.js";
 import { HEART_DUB_AT, STARE_LENS_REST } from "../../src/game/stareLens.js";
 import { gustAt, windRecordUnder } from "../../src/game/windParams.js";
+import { ODD_KINDS } from "../../src/game/woodsSounds.js";
+import { ODD_LEVEL } from "../../src/game/oddSounds.js";
+import { CHASE_BPM_FAR, CHASE_BPM_NEAR, CHASE_DRONE_FAR_HZ, CHASE_DRONE_NEAR_HZ } from "../../src/game/chaseAudio.js";
 
 /** The smallest AudioContext fake that can carry the graph. Every node records
  * its connections and whether it was disconnected; every AudioParam records
@@ -84,8 +88,10 @@ function fakeCtx() {
       stop(when?: number) { this.stopped = true; this.stoppedAt = when; },
     };
   }
-  function bufferOf(len: number, rate: number) {
-    return { getChannelData: () => new Float32Array(len), length: len, sampleRate: rate };
+  /** One array a channel, kept: a reversed recording is written into it and read back. */
+  function bufferOf(ch: number, len: number, rate: number) {
+    const channels = Array.from({ length: ch }, () => new Float32Array(len));
+    return { getChannelData: (c: number) => channels[c] as Float32Array, length: len, sampleRate: rate, numberOfChannels: ch, duration: len / rate };
   }
   function pannerNode() {
     return {
@@ -116,8 +122,8 @@ function fakeCtx() {
     createStereoPanner() { const p = { ...node(), pan: param(0) }; created.stereo.push(p); return p; },
     createBiquadFilter() { created.filters++; const f = filterNode(); created.filterNodes.push(f); return f; },
     createDynamicsCompressor() { const c = compressorNode(); created.compressors.push(c); return c; },
-    createBuffer(_ch: number, len: number, rate: number) {
-      const b = bufferOf(len, rate);
+    createBuffer(ch: number, len: number, rate: number) {
+      const b = bufferOf(ch, len, rate);
       created.buffers.push(b);
       return b;
     },
@@ -136,14 +142,15 @@ describe("createAmbientAudio", () => {
     audio.unlock();
     // 2 noise sources (rain, wind), no oscillators, 3 filters (rain, wind,
     // the world's), the world's limiter, and gains: master + world + rain +
-    // wind + wildlife + drip + birdsong + the stare's heart and whispers = 9.
-    // The drips' own sources, filters and gains are made as they fire, not
-    // here, and the whispers' voices on the first stare.
+    // wind + wildlife + drip + birdsong + the stare's heart and whispers +
+    // the chase's pulse = 10. The drips' own sources, filters and gains are
+    // made as they fire, not here, and the whispers' voices on the first
+    // stare.
     expect(created.sources.length).toBe(2);
     expect(created.oscillators).toBe(0);
     expect(created.filters).toBe(3);
     expect(created.compressors.length).toBe(1);
-    expect(created.gains.length).toBe(9);
+    expect(created.gains.length).toBe(10);
     audio.dispose();
   });
 
@@ -168,12 +175,12 @@ describe("createAmbientAudio", () => {
     audio.dispose();
   });
 
-  it("defaults: pending weather is the mist preset, volume 0.5, wind bed not silent", () => {
+  it("defaults: pending weather is the bright preset, volume 0.5, wind bed not silent", () => {
     const { ctx, created } = fakeCtx();
     const audio = createAmbientAudio(() => ctx);
     audio.unlock();
     expect(created.gains[0]?.gain.value).toBe(DEFAULT_VOLUME);
-    const gains = ambientGainsUnder(WEATHER_PRESETS.mist);
+    const gains = ambientGainsUnder(WEATHER_PRESETS.bright);
     const targets = created.gains.flatMap((g) => g.gain.targets.map((t) => t.value));
     expect(targets).toContain(gains.rain * RAIN_LEVEL);
     // The wind bed starts at its floor gain, not silence, before the first setWind.
@@ -194,8 +201,8 @@ describe("createAmbientAudio", () => {
     // `setWind` drives the wind filter's frequency directly); every
     // layer gain (rain/wind/wildlife/drip/birdsong) reaches the world's bus, which
     // reaches the master through the low-pass the stare shuts and then a
-    // brick-wall limiter; the stare's own two buses reach the master
-    // directly, unmuffled.
+    // brick-wall limiter; the stare's own two buses and the chase's reach
+    // the master directly, unmuffled.
     const isParam = (t: unknown): boolean =>
       Array.isArray((t as { targets?: unknown[] }).targets);
     const world = created.gains[1]!;
@@ -216,7 +223,7 @@ describe("createAmbientAudio", () => {
     // and off within 100 ms.
     expect([limiter.threshold.value, limiter.knee.value, limiter.ratio.value, limiter.attack.value, limiter.release.value])
       .toEqual([-3, 0, 20, 0.003, 0.1]);
-    expect(stareGains.length).toBe(2);
+    expect(stareGains.length).toBe(3);
     for (const g of stareGains) expect(g.connections).toEqual([master]);
 
     audio.dispose();
@@ -956,7 +963,13 @@ describe("the stare", () => {
       }
       expect(g.gain.ramps.at(-1)!.value).toBe(0);
     }
-    expect(syllables).toBeGreaterThan(100);
+    expect(syllables).toBeGreaterThan(60);
+    // Never more than WHISPER_MAX_SPEAKING voices in a phrase at once: at any
+    // moment, the gains whose envelopes are open number at most that.
+    const open = (t: number) => voiceGains.filter((g) => g.gain.ramps.some((r, i) => r.kind === "set" && r.time <= t && (g.gain.ramps[i + 2]?.time ?? Infinity) >= t)).length;
+    let most = 0;
+    for (let t = 3; t < 60; t += 0.25) most = Math.max(most, open(t));
+    expect(most).toBeLessThanOrEqual(WHISPER_MAX_SPEAKING);
     // The stare lets go: a second on, nothing more is scheduled.
     const ramps = () => voiceGains.reduce((n, g) => n + g.gain.ramps.length, 0);
     for (let f = 0; f < 120; f++) {
@@ -1051,6 +1064,64 @@ describe("the birdsong bed", () => {
   });
 });
 
+describe("the woods' other voices", () => {
+  it("places a sound from the cue's place in the listener's frame, into the world's bus, through a panner with no rolloff", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.playOdd({ kind: "snap", x: 1, y: 0, z: 1, level: 1 }); // pre-unlock: inert, not a throw
+    audio.unlock();
+    // Facing −z in Web Audio's frame, right is +x.
+    audio.setListener(10, 2, -30, 0, 0, -1, 0, 1, 0);
+    const before = created.sources.length;
+    audio.playOdd({ kind: "snap", x: 3, y: 0.5, z: 4, level: 1 });
+    const panner = created.panners.at(-1)!;
+    expect(panner.rolloffFactor).toBe(0);
+    expect(panner.positionX.value).toBeCloseTo(13, 12);
+    expect(panner.positionY.value).toBeCloseTo(2.5, 12);
+    expect(panner.positionZ.value).toBeCloseTo(-34, 12);
+    expect(panner.connections).toEqual([created.gains[1]]);
+    expect(created.sources.length).toBe(before + 1);
+    const src = created.sources.at(-1)!;
+    expect(src.stopped).toBe(true);
+    expect(src.stoppedAt).toBeGreaterThan(src.startedAt!);
+    audio.dispose();
+  });
+
+  it("makes every kind without a throw, at the kind's level, and a swell on the bus itself", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    const panners = created.panners.length;
+    for (const kind of ODD_KINDS) {
+      const gains = created.gains.length;
+      audio.playOdd({ kind, x: 0, y: 0, z: -5, level: 0.5 });
+      expect(created.gains.length, kind).toBeGreaterThan(gains);
+      const top = Math.max(...created.gains.slice(gains).flatMap((g) => g.gain.ramps.map((r) => r.value)));
+      expect(top, kind).toBeCloseTo(ODD_LEVEL[kind] * 0.5, 9);
+    }
+    // Six kinds have a place; the swell has none.
+    expect(created.panners.length).toBe(panners + ODD_KINDS.length - 1);
+    // A level of 0 makes nothing.
+    const sources = created.sources.length;
+    audio.playOdd({ kind: "knock", x: 0, y: 0, z: 5, level: 0 });
+    expect(created.sources.length).toBe(sources);
+    audio.dispose();
+  });
+
+  it("passes a fly from its place to the mirror of it over FLY_PASS_S", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    audio.setListener(0, 0, 0, 0, 0, -1, 0, 1, 0);
+    clock.currentTime = 5;
+    audio.playOdd({ kind: "fly", x: 1.2, y: 0.2, z: 0, level: 1 });
+    const panner = created.panners.at(-1)!;
+    expect(panner.positionX.ramps).toEqual([{ kind: "set", value: 1.2, time: 5 }, { kind: "linear", value: -1.2, time: 5 + FLY_PASS_S }]);
+    expect(created.oscillators).toBe(2);
+    audio.dispose();
+  });
+});
+
 describe("the Hollow's call", () => {
   it("plays the recording an octave down and a fourth under that, from a direction, through a low-pass, into the world's bus", () => {
     const { ctx, created, clock } = fakeCtx();
@@ -1084,6 +1155,101 @@ describe("the Hollow's call", () => {
     audio.hollowCall(clip, 0, 0, 0, 1, 2000);
     audio.hollowCall(clip, 1, 0, 0, 0, 2000);
     expect(created.sources.length).toBe(sources + HOLLOW_CALL_VOICES.length);
+    audio.dispose();
+  });
+});
+
+describe("the chase's pulse", () => {
+  it("is silent and unscheduled before the chase, then beats thump and tick by turns at the far tempo under a drone", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.setChase(1, 0); // pre-unlock: inert, not a throw
+    audio.unlock();
+    const bus = created.gains[9]!;
+    expect(bus.gain.value).toBe(0);
+    expect(bus.connections).toEqual([created.gains[0]]);
+    const oscillators = created.oscillators;
+    audio.setChase(0, 0);
+    expect(created.oscillators).toBe(oscillators);
+    expect(bus.gain.targets.at(-1)!.value).toBe(0);
+
+    clock.currentTime = 100;
+    audio.setChase(1, 0);
+    expect(bus.gain.targets.at(-1)!.value).toBe(1);
+    // The drone: three sawtooths through a low-pass at the far cutoff.
+    expect(created.oscillators).toBeGreaterThanOrEqual(oscillators + 3);
+    const drone = created.filterNodes.find((f) => f.type === "lowpass" && f.frequency.value === CHASE_DRONE_FAR_HZ)!;
+    expect(drone).toBeDefined();
+    expect(drone.frequency.targets.at(-1)!.value).toBeCloseTo(CHASE_DRONE_FAR_HZ, 9);
+    // Ten seconds of frames at the far tempo: a thump on each beat, a tick between.
+    for (let f = 1; f <= 600; f++) {
+      clock.currentTime = 100 + f / 60;
+      audio.setChase(1, 0);
+    }
+    const half = 30 / CHASE_BPM_FAR;
+    const thumps = created.oscillatorNodes.filter((o) => o.startedAt !== undefined && o.frequency.ramps.length > 0);
+    const ticks = created.sources.filter((s) => s.startedAt !== undefined && s.startedAt >= 100 && s.loop);
+    expect(thumps.length).toBeGreaterThanOrEqual(Math.floor(10 / (2 * half)) - 1);
+    expect(ticks.length).toBeGreaterThanOrEqual(Math.floor(10 / (2 * half)) - 1);
+    for (let i = 1; i < thumps.length; i++) expect(thumps[i]!.startedAt! - thumps[i - 1]!.startedAt!).toBeCloseTo(2 * half, 9);
+    const first = thumps[0]!.startedAt!;
+    expect(ticks[0]!.startedAt).toBeCloseTo(first + half, 9);
+    audio.dispose();
+  });
+
+  it("quickens to the near tempo and opens the drone as the Hollow closes", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    clock.currentTime = 50;
+    audio.setChase(1, 1);
+    const drone = created.filterNodes.find((f) => f.type === "lowpass" && f.frequency.targets.some((t) => t.value === CHASE_DRONE_NEAR_HZ))!;
+    expect(drone).toBeDefined();
+    for (let f = 1; f <= 600; f++) {
+      clock.currentTime = 50 + f / 60;
+      audio.setChase(1, 1);
+    }
+    const thumps = created.oscillatorNodes.filter((o) => o.startedAt !== undefined && o.frequency.ramps.length > 0);
+    for (let i = 1; i < thumps.length; i++) expect(thumps[i]!.startedAt! - thumps[i - 1]!.startedAt!).toBeCloseTo(60 / CHASE_BPM_NEAR, 9);
+    expect(CHASE_BPM_NEAR).toBeGreaterThan(CHASE_BPM_FAR);
+    audio.dispose();
+  });
+});
+
+describe("the cry's variants", () => {
+  it("is the voices as given at 0, and otherwise a different pitch, interval and delay, the second voice backwards past a half", () => {
+    expect(hollowCallVoices(0)).toEqual(HOLLOW_CALL_VOICES.map((v) => ({ ...v, reversed: false })));
+    const seen = new Set<string>();
+    for (const v of [0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9]) {
+      const voices = hollowCallVoices(v);
+      expect(voices.length).toBe(2);
+      const [first, second] = voices as [typeof voices[0], typeof voices[0]];
+      expect(first.rate).toBeGreaterThanOrEqual(HOLLOW_CALL_RATE[0]);
+      expect(first.rate).toBeLessThanOrEqual(HOLLOW_CALL_RATE[1]);
+      expect(second.rate).toBeLessThan(first.rate);
+      expect(second.after).toBeGreaterThanOrEqual(HOLLOW_CALL_AFTER[0]);
+      expect(second.reversed).toBe(v > 0.5);
+      expect(first.reversed).toBe(false);
+      seen.add(first.rate.toFixed(3) + ":" + second.after.toFixed(3));
+    }
+    expect(seen.size).toBe(8);
+  });
+
+  it("plays the second voice from the recording reversed, made once per recording", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    const data = new Float32Array([1, 2, 3, 4]);
+    const clip = { duration: 1, numberOfChannels: 1, length: 4, sampleRate: 4, getChannelData: () => data } as unknown as AudioBuffer;
+    const sources = created.sources.length;
+    audio.hollowCall(clip, 0, 0, -1, 1, 2000, 0.9);
+    const [first, second] = created.sources.slice(sources) as unknown as [{ buffer: unknown }, { buffer: AudioBuffer }];
+    expect(first.buffer).toBe(clip);
+    expect(second.buffer).not.toBe(clip);
+    expect([...second.buffer.getChannelData(0)]).toEqual([4, 3, 2, 1]);
+    audio.hollowCall(clip, 0, 0, -1, 1, 2000, 0.7);
+    const again = created.sources.at(-1) as unknown as { buffer: AudioBuffer };
+    expect(again.buffer).toBe(second.buffer);
     audio.dispose();
   });
 });

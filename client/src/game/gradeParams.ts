@@ -35,6 +35,8 @@ export type GradeRecord = {
   vignetteColour: Rgb;
   /** The stare's darkness (stareLens.ts): at reach 0 the pass draws none. */
   stare: StareShade;
+  /** The chase's cast, 0 to 1: the frame pulled toward burgundy, sky, rain and ground alike. */
+  chase: number;
   halationStrength: number;
   aberrationAmount: number;
 };
@@ -169,6 +171,12 @@ export const VIGNETTE_PULSE_PERIOD = 7;
 export const STARE_VIGNETTE = 3;
 /** The share of the frame's exposure a full stare takes, everywhere. */
 export const STARE_DIM = 0.3;
+/** The chase's cast at 1: what each channel is multiplied by, and what is added, so the night goes burgundy and stays dark. */
+export const CHASE_TINT: Rgb = { r: 1.2, g: 0.55, b: 0.7 };
+export const CHASE_LIFT: Rgb = { r: 0.02, g: 0.0, b: 0.006 };
+/** The material path's shadows under the chase: the hue the grade's shadow hue turns toward, and the density added. */
+export const CHASE_SHADOW_HUE = 345;
+export const CHASE_SHADOW_DENSITY = 50;
 
 // ---- World-side sickness. Browser-tunable; `clear` identity is not. ----
 /** The green-grey the shadows lift toward on the top dread plateau (the Alan
@@ -223,9 +231,10 @@ export function sightUnder(stare: number): number {
  * `timeSeconds` only drives the vignette's breath; it defaults to 0 so
  * callers that do not animate (and every identity test) see the resting
  * weight. `stare` is the local player's lens (stareLens.ts): it dims the
- * frame a little and carries the darkness the pass closes over it.
+ * frame a little and carries the darkness the pass closes over it. `chase`
+ * is the chase's cast (escalation.ts), 0 before the body is found.
  */
-export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, unsettle: number, timeSeconds = 0, stare: StareLens = STARE_LENS_REST): GradeRecord {
+export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, unsettle: number, timeSeconds = 0, stare: StareLens = STARE_LENS_REST, chase = 0): GradeRecord {
   const altitude = sunPositionAt(hour).y;
   const lens = dreadLensUnder(w) * clamp01(unsettle);
   const world = dreadWorldUnder(w);
@@ -248,6 +257,7 @@ export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, 
     vignetteWeight: restingVignette * breath,
     vignetteColour: VIGNETTE_COLOUR,
     stare: stareShadeUnder(stare, timeSeconds),
+    chase: clamp01(chase),
     halationStrength: lens === 0 ? HALATION_BASE : HALATION_BASE * (1 + HALATION_DREAD_GAIN * lens),
     aberrationAmount: lens === 0 ? ABERRATION_BASE : ABERRATION_BASE * (1 + ABERRATION_DREAD_GAIN * lens),
   };
