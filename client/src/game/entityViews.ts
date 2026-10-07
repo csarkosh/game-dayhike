@@ -77,8 +77,9 @@ function stride(instance: CharacterInstance, speed: number, clipSpeed: number): 
 
 /** Seconds a shade, a lunge or a Hollow stepping out takes to come in from nothing, and a shade or a lunge to go out. */
 export const SHADE_FADE_IN_S = 0.9;
-export const SHADE_FADE_OUT_S = 1.1;
-/** Seconds a shade takes to rise from the ground to its height as it comes in; going, it sinks with its fade. */
+/** Seconds a gone shade takes to go: slowly, and unevenly (the grade dissolves it by `gone`, shadeSilhouette.ts). */
+export const SHADE_FADE_OUT_S = 2.6;
+/** Seconds a shade takes to rise from the ground to its height as it comes in; going, it keeps its height and dissolves. */
 export const SHADE_RISE_S = 2.4;
 /** Metres from the local eye within which a lunge resolves from the mist into the Hollow, and the seconds that takes. */
 export const SHADE_RESOLVE_M = 12;
@@ -277,7 +278,7 @@ export class EntityViews {
         this.advance(entry.view, enemy.pos.x, feet, enemy.pos.z, clamped);
         entry.view.node.rotation.y = enemy.yaw;
         entry.instance.root.scaling.y = HOLLOW_SCALE * risen(fade.rise);
-        if (this.softShades && this.soft.has(id)) this.shadeList.push({ node: entry.view.node, fade: fade.level, soft: this.soft.get(id) as number, near: this.near.get(id) ?? 1 });
+        if (this.softShades && this.soft.has(id)) this.shadeList.push({ node: entry.view.node, fade: fade.level, soft: this.soft.get(id) as number, near: this.near.get(id) ?? 1, gone: 0 });
         else setVisibility(entry.view.node, fade.level);
         // Enemy velocity never reaches a client (it is zeroed there), so the
         // pace is measured from how far the drawn body moved: the same on
@@ -334,15 +335,14 @@ export class EntityViews {
         out.level -= dt / SHADE_FADE_OUT_S;
         out.soft = Math.min(1, out.soft + dt / SHADE_UNRESOLVE_S);
       }
-      // And sinks back into the ground as it fades.
-      out.rise = Math.min(out.rise, Math.max(0, out.level));
+      // It keeps its height: the going is the grade's, patch by patch, by `gone`.
       out.entry.instance.root.scaling.y = HOLLOW_SCALE * risen(out.rise);
       if (out.level <= 0) {
         this.models.release(id);
         this.fading.delete(id);
         continue;
       }
-      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: out.level, soft: out.soft, near: out.near });
+      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: out.level, soft: out.soft, near: out.near, gone: 1 - out.level });
       else setVisibility(out.entry.view.node, out.level);
     }
     this.pruneModels(this.enemyModels, state.enemies);

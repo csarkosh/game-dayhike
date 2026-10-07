@@ -19,6 +19,10 @@ export const DEATH_LINE = "The light guttering; their name, unanswered; and the 
  * The match won, as the camera lifts to the sky: the same shape, and the
  * turn, ten words like the title's, lets them out but not alone.
  */
+/** The end's titles, in the title screen's voice (hud.ts draws them uppercase). */
+export const WON_TITLE = "You lived";
+export const DEATH_TITLE = "You died";
+
 export const WON_LINE = "The night, outlasted; the car, at last; and in the mirror, a shadow, where no one sat.";
 
 /** After a loss, the return to the landing comes this long after the end. */

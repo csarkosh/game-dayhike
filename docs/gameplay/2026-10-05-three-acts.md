@@ -54,6 +54,10 @@ before dusk (20:00) to none an hour past it. The birdsong bed is all there in th
 the wet act (`BIRDS_WET_CUT`), 45 % of that in full rain, and none by night; it still stops dead
 while any Hollow is out. The Hollow's call's six marks are all in the night (0.6 to 0.95).
 
+*Amended 2026-10-07.* A fourth act inside the night: the mist. From `MIST_AT` (0.4, the night
+fully in) over `MIST_SPAN` (0.1) the ground cloud rises (`actsUnder(progress).mist`, the renderer
+scales the cloud's density by it), and the haunt waits for it to be whole before its first shade.
+
 ## 3. The other voices (`game/woodsSounds.ts`, `game/oddSounds.ts`)
 
 Each screen runs its own stream (a 32-bit LCG seeded from the world's seed and the clock), so no

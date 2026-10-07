@@ -29,7 +29,10 @@ noise on the wind, and lays the cloud over the fogged surface by the optical dep
 ground cuts nothing, since there is no surface to cut; the wisps at the face are the march's
 first steps, walked through; the figures stand in it darker than it. Its density is the night ×
 `CLOUD_NIGHT_DENSITY` (0.3) with no haunt on, lifted by `CLOUD_HAUNT_LIFT` (0.25 of the way to 1)
-at a full haunt, and pulled to `CLOUD_CHASE_DENSITY` (0.7) by the chase's cast; the console's
+at a full haunt, and pulled to `CLOUD_CHASE_DENSITY` (0.7) by the chase's cast, all of it × how
+far the mist has come in (`actsUnder(progress).mist`, which rises over the tenth of the climb
+after the night is in: the mist is not there the moment it is dark, it rises, and the haunt
+waits for it, `docs/gameplay/2026-10-06-the-haunt.md`); the console's
 `mist <density>` holds it at a level in [0, 1] whatever the night, and a bare `mist` lets the
 night set it again. The low tier, with no post pipeline, has the closed-form fog alone.
 
@@ -63,7 +66,11 @@ the frame the Hollow's, from one mesh.
 (0.35) of itself at `SHADE_FAR_M` (40 m): the far ones are the fainter blurs.
 
 **Rise.** A shade comes up out of the ground to its height over `SHADE_RISE_S` (2.4 s), eased
-(`risen`), its feet where they are, as if out of the mist; going, it sinks with its fade. The
+(`risen`), its feet where they are, as if out of the mist. Going, it keeps its height and goes
+slowly, over `SHADE_FADE_OUT_S` (2.6 s), and unevenly: the mask's green carries how far gone it
+is, and the grade keeps each pixel of the figure only where a drifting blotch of in-shader value
+noise (`shadeNoise`, nine blotches across the frame) stands above that, so it loses itself patch
+by patch, never all at once. The
 cloud stands taller as the shades come (`CLOUD_HAUNT_HEIGHT_M`, the design doc §2).
 
 **Resolve.** A lunge within `SHADE_RESOLVE_M` (12 m) of the local eye eases its softness from 1

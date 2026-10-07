@@ -5,6 +5,7 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { createShadeSilhouette, MAIN_LAYER, SHADE_LAYER, SHADE_MASK_RATIO } from "../../src/game/shadeSilhouette.js";
 
 function figure(scene: Scene, name: string): TransformNode {
@@ -43,6 +44,23 @@ describe("the shade mask", () => {
     engine.dispose();
   });
 
+  it("writes a going shade's `gone` into its mask material's green, beside the softness in red", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const camera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
+    const mask = createShadeSilhouette(scene, camera);
+    const node = new TransformNode("shade", scene);
+    const mesh = MeshBuilder.CreateBox("body", { size: 1 }, scene);
+    mesh.parent = node;
+    mask.sync([{ node, fade: 1, soft: 1, near: 1, gone: 0.6 }]);
+    const material = scene.materials.find((m) => m.name.startsWith("mat_shade_mask_")) as StandardMaterial | undefined;
+    expect(material).toBeDefined();
+    expect(material!.emissiveColor.r).toBe(1);
+    expect(material!.emissiveColor.g).toBeCloseTo(0.6, 12);
+    mask.dispose();
+    scene.dispose();
+  });
+
   it("puts a soft shade's meshes in the list on the shade layer, gives each pass its share of the visibility, and lets a resolving one onto both layers and a gone one out", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
@@ -50,7 +68,7 @@ describe("the shade mask", () => {
     const mask = createShadeSilhouette(scene, camera);
     const soft = figure(scene, "shade");
     const meshes = soft.getChildMeshes(false);
-    mask.sync([{ node: soft, fade: 0.5, soft: 1, near: 1 }]);
+    mask.sync([{ node: soft, fade: 0.5, soft: 1, near: 1, gone: 0 }]);
     expect(mask.texture.renderList?.length).toBe(meshes.length);
     for (const m of meshes) expect(mask.texture.renderList).toContain(m);
     for (const m of meshes) {
@@ -64,7 +82,7 @@ describe("the shade mask", () => {
     mask.texture.onAfterRenderObservable.notifyObservers(0);
     for (const m of meshes) expect(m.visibility).toBe(0);
     // Resolving: on both layers, the frame's share rising.
-    mask.sync([{ node: soft, fade: 1, soft: 0.25, near: 1 }]);
+    mask.sync([{ node: soft, fade: 1, soft: 0.25, near: 1, gone: 0 }]);
     for (const m of meshes) {
       expect(m.layerMask).toBe(SHADE_LAYER | MAIN_LAYER);
       expect(m.visibility).toBeCloseTo(0.75, 12);
@@ -73,10 +91,10 @@ describe("the shade mask", () => {
     for (const m of meshes) expect(m.visibility).toBeCloseTo(0.25, 12);
     mask.texture.onAfterRenderObservable.notifyObservers(0);
     // Resolved: nothing in the mask.
-    mask.sync([{ node: soft, fade: 1, soft: 0, near: 1 }]);
+    mask.sync([{ node: soft, fade: 1, soft: 0, near: 1, gone: 0 }]);
     expect(mask.any()).toBe(false);
     // A far figure is fainter in the mask: its share there is scaled by `near`.
-    mask.sync([{ node: soft, fade: 1, soft: 1, near: 0.4 }]);
+    mask.sync([{ node: soft, fade: 1, soft: 1, near: 0.4, gone: 0 }]);
     mask.texture.onBeforeRenderObservable.notifyObservers(0);
     for (const m of meshes) expect(m.visibility).toBeCloseTo(0.4, 12);
     mask.texture.onAfterRenderObservable.notifyObservers(0);

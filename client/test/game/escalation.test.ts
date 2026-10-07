@@ -202,14 +202,14 @@ describe("atmosphereUnder", () => {
   });
 
   it("comes in three acts: the day holds to WET_AT, the wet act is in by WET_AT + WET_SPAN, and the sun goes from DUSK_AT and is gone NIGHT_SPAN on", () => {
-    expect(actsUnder(0)).toEqual({ wet: 0, night: 0 });
-    expect(actsUnder(WET_AT)).toEqual({ wet: 0, night: 0 });
+    expect(actsUnder(0)).toEqual({ wet: 0, night: 0, mist: 0 });
+    expect(actsUnder(WET_AT)).toEqual({ wet: 0, night: 0, mist: 0 });
     expect(actsUnder(WET_AT + WET_SPAN / 2).wet).toBeCloseTo(0.5, 9);
     expect(actsUnder(WET_AT + WET_SPAN).wet).toBeCloseTo(1, 12);
-    expect(actsUnder(DUSK_AT)).toEqual({ wet: 1, night: 0 });
+    expect(actsUnder(DUSK_AT)).toEqual({ wet: 1, night: 0, mist: 0 });
     expect(actsUnder(DUSK_AT + NIGHT_SPAN / 2).night).toBeCloseTo(0.5, 9);
     expect(actsUnder(DUSK_AT + NIGHT_SPAN).night).toBeCloseTo(1, 12);
-    expect(actsUnder(1)).toEqual({ wet: 1, night: 1 });
+    expect(actsUnder(1)).toEqual({ wet: 1, night: 1, mist: 1 });
     // The day: the base, untouched.
     expect(atmosphereUnder(noon, { ...ESCALATION_REST, world: WET_AT })).toEqual(noon);
     // The wet act, in: the wet preset at noon still.

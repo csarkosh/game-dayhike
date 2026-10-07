@@ -8,8 +8,8 @@
  * sometimes, is a lunge: it comes fast and straight, bending only a little
  * toward its player, and at arm's length it strikes, which kills within its
  * reach; a player who steps out of its line sees it pass and dissolve. The
- * haunt begins once the night is fully in, lightly, and presses harder the
- * nearer the party is to the crest. In the chase a shade stands where the open way home
+ * haunt begins once the mist is whole on the ground, lightly, and presses
+ * harder the nearer the party is to the crest. In the chase a shade stands where the open way home
  * runs, beside the path: the thing that hunts the party also shows them the
  * way.
  *
@@ -34,13 +34,13 @@ import { aimDirection } from "./view.js";
 import { isOnCorridor } from "./containment.js";
 import { faceToward, horizontalDistSq, playerSees, walkToward } from "./hollow.js";
 import { climbOf, WATCH_SLOPE_NY, WATCH_VIEW_COS } from "./watcher.js";
-import { actsUnder, DUSK_AT, NIGHT_SPAN, smootherstep } from "./acts.js";
+import { actsUnder, MIST_AT, MIST_SPAN, smootherstep } from "./acts.js";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
 
-/** The night below which the climb is not haunted: the night fully in, so the party has its sounds first. */
-export const HAUNT_NIGHT_MIN = 0.95;
+/** The mist below which the climb is not haunted: the mist whole on the ground, so the shades have it to come out of. */
+export const HAUNT_MIST_MIN = 0.95;
 /**
- * The haunt's pressure, 0 as the night comes fully in and 1 from
+ * The haunt's pressure, 0 as the mist comes whole and 1 from
  * HAUNT_PRESS_SPAN of the climb after that, by smootherstep, so the night
  * is at its full pressure well before the crest (and throughout the chase):
  * the rests between episodes run from the early band to the late, and an
@@ -127,10 +127,10 @@ export function isShadeState(ai: AiState): boolean {
   return ai === AiState.Shade || ai === AiState.Lunge || ai === AiState.Strike;
 }
 
-/** The haunt's pressure for a world: 0 as the night comes fully in, 1 at the crest and in the chase. */
+/** The haunt's pressure for a world: 0 as the mist comes whole, 1 at the crest and in the chase. */
 export function pressureOf(world: World): number {
   if (world.state.phase === Phase.Chase) return 1;
-  const from = DUSK_AT + NIGHT_SPAN;
+  const from = MIST_AT + MIST_SPAN;
   return smootherstep((bestClimb(world) - from) / HAUNT_PRESS_SPAN);
 }
 
@@ -150,7 +150,7 @@ export function bestClimb(world: World): number {
 /** Whether the woods are haunted now: the chase, or the climb once the night is in. */
 export function isHaunting(world: World): boolean {
   if (world.state.phase === Phase.Chase) return true;
-  return actsUnder(bestClimb(world)).night >= HAUNT_NIGHT_MIN;
+  return actsUnder(bestClimb(world)).mist >= HAUNT_MIST_MIN;
 }
 
 /** The players a shade may be shown to: living, and in the chase not yet safe. */
