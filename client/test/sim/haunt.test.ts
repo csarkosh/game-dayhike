@@ -16,10 +16,11 @@ import { climbOf } from "../../src/sim/watcher.js";
 import { MIST_AT, MIST_SPAN, actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
 import {
   GUIDE_REACH, HAUNT_MIST_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_CHASE, HAUNT_REAL_CLIMB, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
-  LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_RANGE, SHADE_WALK, SHADE_WATCHED_S,
+  LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_RANGE, SHADE_WATCHED_S, OFF_TRAIL_FROM_M, OFF_TRAIL_SPAN_M, OFF_TRAIL_REAL_EACH, offTrailOf,
   bestClimb, isHaunting, isShadeState, placeShadeOnGuide, pressureOf, spawnShade,
 } from "../../src/sim/haunt.js";
 import { isHollow, SHADE_STARE_CAP } from "../../src/sim/hollow.js";
+import { trailDistance } from "../../src/sim/trail.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -127,11 +128,11 @@ describe("the director", () => {
     // The episode goes on: more of them, and the count is the episode's.
     expect(w.haunt!.episode).not.toBeNull();
     expect(w.haunt!.episode!.shades).toBeLessThanOrEqual(HAUNT_SHADES_LATE[1] - 1);
-    // It walks at its player, slowly; harmless, it costs nothing but its presence.
+    // It stands where it rose and stares, never a step; harmless, it costs nothing but its presence.
     const before = dist(h.pos, p.pos);
     tick(w, 60);
-    expect(dist(h.pos, p.pos)).toBeLessThan(before - SHADE_WALK * 0.5);
-    expect(dist(h.pos, p.pos)).toBeGreaterThan(before - SHADE_WALK * 1.5);
+    expect(dist(h.pos, p.pos)).toBeCloseTo(before, 6);
+    expect(Math.abs(h.yaw - Math.atan2(p.pos.x - h.pos.x, p.pos.z - h.pos.z))).toBeLessThan(0.05);
     expect(p.health).toBe(100);
   });
 
@@ -228,6 +229,47 @@ describe("the director", () => {
     p.yaw += Math.PI;
     tick(w, 60);
     expect(p.stare).toBeLessThan(SHADE_STARE_CAP);
+  });
+
+  it("in the chase, off the trail, the haunt answers: more shades an episode, and each more likely the real thing", () => {
+    const { w, p } = forestWorld();
+    standAtClimb(w, p, 0.9);
+    w.state.phase = Phase.Chase;
+    expect(offTrailOf(w)).toBe(0);
+    // Step off the trail, far: the measure fills to 1.
+    const graph = w.trail!;
+    const here = { x: p.pos.x, z: p.pos.z };
+    let off = 0;
+    for (let step = 1; step <= 60 && off < 1; step++) {
+      standAt(p, here.x + step, here.z);
+      off = offTrailOf(w);
+    }
+    expect(off).toBe(1);
+    expect(trailDistance(graph, p.pos.x, p.pos.z)).toBeGreaterThanOrEqual(OFF_TRAIL_FROM_M + OFF_TRAIL_SPAN_M);
+    // Over many episodes off the trail, the lunges outnumber the shades by far; on it, the real one is at most one an episode.
+    const count = (offTrail: boolean) => {
+      const { w: w2, p: p2 } = forestWorld();
+      standAtClimb(w2, p2, 0.9);
+      w2.state.phase = Phase.Chase;
+      w2.haunt!.rest = 0;
+      if (offTrail) for (let step = 1; step <= 60 && offTrailOf(w2) < 1; step++) standAt(p2, p2.pos.x + 1, p2.pos.z);
+      let lunges = 0, shades = 0;
+      for (let t = 0; t < 9000; t++) {
+        tick(w2);
+        p2.health = 100;
+        for (const [id, e] of w2.state.enemies) {
+          if (e.ai === AiState.Lunge || e.ai === AiState.Strike) lunges++;
+          else if (e.ai === AiState.Shade) shades++;
+          w2.state.enemies.delete(id);
+        }
+      }
+      return { lunges, shades };
+    };
+    const on = count(false), away = count(true);
+    expect(away.lunges + away.shades).toBeGreaterThan((on.lunges + on.shades) * 1.5);
+    expect(away.lunges / Math.max(1, away.lunges + away.shades)).toBeGreaterThan(0.8);
+    expect(on.lunges / Math.max(1, on.lunges + on.shades)).toBeLessThan(0.5);
+    expect(OFF_TRAIL_REAL_EACH).toBeLessThan(0.3);
   });
 
   it("in the chase, a shade stands beside the open way home, ahead of its player and nearer the pad", () => {

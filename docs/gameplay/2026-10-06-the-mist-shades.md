@@ -81,9 +81,13 @@ cloud stands taller as the shades come (`CLOUD_HAUNT_HEIGHT_M`, the design doc Â
 **Resolve.** A lunge within `SHADE_RESOLVE_M` (12 m) of the local eye eases its softness from 1
 to 0 over `SHADE_RESOLVE_S` (1.4 s); a shade never resolves. The real thing is never the model's
 own surface: as the softness falls, the mask's red (the shade) moves to its blue (the real thing),
-which the grade darkens by `SHADE_MONSTER_DARK` (0.88), near black, and its eyes alone come onto
-the frame, at `SHADE_EYES_DULL` (0.55) of their glow. So the real one begins as a shade in the
-mist and darkens smoothly into the black figure with the dulled red eyes. Going, a resolved lunge is a shade
+which the grade darkens by `SHADE_MONSTER_DARK` (1, whole; 0.88 at first) through the inner ring
+of taps alone, sharper and heavier than the shade, and its eyes alone come onto the frame, at
+`SHADE_EYES_DULL` (0.55) of their glow. So the real one begins as a shade in the mist and darkens
+smoothly into the black figure with the dulled red eyes. A Hollow out in the open (the pack, the
+summit's) is that resolved form from the start: no Hollow is ever drawn in its own surface on the
+post tiers. A shade has the same eyes, fainter: `SHADE_EYES_SHADE` (0.12) of their glow
+(`eyeLevelOf`). It stands, arms at its sides in the idle, turned to the player. Going, a resolved lunge is a shade
 again first, over `SHADE_UNRESOLVE_S` (0.5 s), as it fades: it goes back into the mist, not out of
 the frame. A strike plays the Hollow's attack clip.
 

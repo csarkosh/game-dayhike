@@ -43,7 +43,7 @@ const LENS_IDLE_S = 1;
 export const SHADE_BLUR = 0.015;
 /** How much darker a shade is than what stands behind it, the mist: a little, not black; and the real one, black, nearer to whole. */
 export const SHADE_DARK = 0.3;
-export const SHADE_MONSTER_DARK = 0.88;
+export const SHADE_MONSTER_DARK = 1;
 /** The end's blur at its fullest, in texels: soft, not a wash. */
 export const END_BLUR_KERNEL = 28;
 /** The kernels the end's blur steps through: a blur pass compiles afresh for each kernel it is given, so a smooth ramp would compile every frame; three steps compile three times. */
