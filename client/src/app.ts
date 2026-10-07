@@ -68,7 +68,7 @@ import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
-import { DEATH_LINE, DEATH_FADE_AFTER_MS, END_LANDING_MS, WON_LINE, WON_FADE_AFTER_MS, WON_LANDING_MS, roadLine } from "./game/passages.js";
+import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, END_LANDING_MS, WON_LINE, WON_TITLE, WON_FADE_AFTER_MS, WON_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
@@ -591,7 +591,7 @@ function buildGame(
       // The ending, on the spot (ending.ts): the camera and the line, nothing of the match.
       const kind = args[0] === "won" ? "won" : "died";
       renderer.setEnding(kind);
-      hud.setStatus(kind === "won" ? WON_LINE : DEATH_LINE);
+      hud.setEnding(kind === "won" ? { title: WON_TITLE, line: WON_LINE } : { title: DEATH_TITLE, line: DEATH_LINE });
     } else if (name === "time") {
       // Instant, like every other view command: the sun moves, the world is not
       // rebuilt. Validation has already bounded this to [0, 24), so the fallback
@@ -770,6 +770,7 @@ function buildGame(
     const ear = renderer.listener();
     const crest = world.search.body.pos;
     const acts = actsUnder(escalation.world);
+    renderer.setMistIn(acts.mist);
     const voiced = stepWoods(woods, {
       climb: escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase === Phase.Chase, hollow, rain: a.weather.rain,
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
@@ -936,7 +937,7 @@ function buildGame(
     renderer.setEnding("died");
     if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
     deathFadeTimer = setTimeout(() => hud.fade(true), DEATH_FADE_AFTER_MS);
-    hud.setStatus(DEATH_LINE);
+    hud.setEnding({ title: DEATH_TITLE, line: DEATH_LINE });
   }
 
   // Not const: a host with no party can open a lobby mid-game (`attachLobby`).
@@ -970,7 +971,7 @@ function buildGame(
     // is no panel of names: the line is the end.
     if (won) {
       renderer.setEnding("won");
-      hud.setStatus(WON_LINE);
+      hud.setEnding({ title: WON_TITLE, line: WON_LINE });
       if (endFadeTimer !== null) clearTimeout(endFadeTimer);
       endFadeTimer = setTimeout(() => hud.fade(true), WON_FADE_AFTER_MS);
     } else if (!dead) hud.fade(true);

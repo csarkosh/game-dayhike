@@ -1340,6 +1340,8 @@ export type Renderer = {
   setHaunt(level: number): void;
   /** Hold the ground cloud's density at a level (0 to 1) whatever the night, or null to let the night set it; returns the density now drawn. */
   setMist(density: number | null): number;
+  /** How far the mist has come in, 0 to 1 (acts.ts): the ground cloud rises by it, after the night. */
+  setMistIn(level: number): void;
   /** The end for this player (ending.ts): the camera is the ending's from now, won or died. Once; a second call changes nothing. */
   setEnding(kind: EndingKind): void;
   /**
@@ -2078,6 +2080,7 @@ function buildRenderer(
   let cloudGroundAt: { x: number; z: number } | null = null;
   let cloudHold: number | null = null;
   let cloudDensity = 0;
+  let mistIn = 0;
   let hauntLevel = 0;
   partOf(views);
   // Fire and forget: the other hikers and the Hollow render as capsules until
@@ -2195,7 +2198,7 @@ function buildRenderer(
           cloudGroundAt = { x: camera.position.x, z: camera.position.z };
           atmosphere.setCloudGround(cloudGroundMap((x, z) => elevationAt(forest.seed, x, z), cloudGroundAt.x, cloudGroundAt.z));
         }
-        cloudDensity = cloudHold ?? cloudDensityUnder(lighting.sky?.night ?? 0, hauntLevel, chaseCast);
+        cloudDensity = cloudHold ?? cloudDensityUnder(lighting.sky?.night ?? 0, hauntLevel, chaseCast) * mistIn;
         atmosphere.setCloud(cloudDensity, cloudSteps, seconds, hauntLevel);
       }
 
@@ -2424,6 +2427,9 @@ function buildRenderer(
     setMist(density) {
       cloudHold = density === null ? null : Math.max(0, Math.min(1, density));
       return cloudHold ?? cloudDensity;
+    },
+    setMistIn(level) {
+      mistIn = Math.max(0, Math.min(1, level));
     },
     setEnding(kind) {
       if (ending.since >= 0) return;

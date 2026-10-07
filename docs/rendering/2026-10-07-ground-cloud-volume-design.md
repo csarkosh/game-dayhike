@@ -29,7 +29,9 @@ At a point `p`, the extinction is `atmCloudDensity × h × n`:
 - `atmCloudDensity` is `CLOUD_SIGMA` (0.4 a metre) × the density knob, 0 to 1
   (`cloudDensityUnder`: the night × `CLOUD_NIGHT_DENSITY` 0.3, lifted by the haunt by
   `CLOUD_HAUNT_LIFT` 0.25 of the way to 1, pulled to `CLOUD_CHASE_DENSITY` 0.7 by the chase's
-  cast; or the console's `mist <density>` hold).
+  cast, × how far the mist has come in, `actsUnder(progress).mist` (`sim/acts.ts`), so it rises
+  over the tenth of the climb after the night is in rather than appearing with the dark; or the
+  console's `mist <density>` hold).
 - `h = exp(−max(0, y − floor + CLOUD_SEAT) / height)`: the cloud thins to 1/e every `height`
   metres above the ground, `cloudHeightUnder(haunt)`: `CLOUD_HEIGHT_M` (2.5) with no haunt on and
   `CLOUD_HAUNT_HEIGHT_M` (3) more at its full, so the mist stands taller as the shades come;

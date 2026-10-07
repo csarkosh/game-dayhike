@@ -16,7 +16,8 @@ function stateWith(enemies: EnemyState[]): WorldState {
 }
 
 describe("the shadow's rise", () => {
-  it("eases from nothing to its full height, slowing into it, and takes longer than the fade", () => {
+  it("eases from nothing to its full height, slowing into it, takes longer than the fade, and the going is slower still", () => {
+    expect(SHADE_FADE_OUT_S).toBeGreaterThan(SHADE_FADE_IN_S * 2);
     expect(risen(0)).toBe(0);
     expect(risen(1)).toBe(1);
     expect(risen(0.5)).toBeCloseTo(0.5, 9);

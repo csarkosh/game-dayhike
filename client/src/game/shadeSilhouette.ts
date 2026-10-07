@@ -12,7 +12,7 @@
  * player's every frame and sees only SHADE_LAYER (the main camera does not
  * see that bit). Each shade's meshes are on that layer and, while it
  * resolves, on the main layer too; the mask draws them with a flat material
- * whose red is the shade's softness, and the mesh's `visibility` is set
+ * whose red is the shade's softness and green how far gone it is, and the mesh's `visibility` is set
  * for each pass as the target renders and restores after: the mask's alpha
  * is fade × softness, the frame's fade × (1 − softness).
  *
@@ -38,7 +38,8 @@ export const MAIN_LAYER = 0x0fffffff;
 export const SHADE_MASK_RATIO = 0.5;
 
 /** One figure in the mask: its node, how far in it is (0 to 1), how soft (1 a blur in the mist, 0 the Hollow itself), and how near (1 close, less far off: a far figure is fainter in the mist). */
-export type ShadeEntry = { node: TransformNode; fade: number; soft: number; near: number };
+/** `gone` is how far a going shade has gone, 0 to 1: the mask's green, which the grade dissolves it by, patch by patch. */
+export type ShadeEntry = { node: TransformNode; fade: number; soft: number; near: number; gone: number };
 
 export type ShadeSilhouette = {
   /** The mask, for the grade pass to read. */
@@ -126,6 +127,7 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
           }
         }
         material.emissiveColor.r = e.soft;
+        material.emissiveColor.g = e.gone;
         // In the mask while soft; in the frame too once it begins to resolve.
         const layer = e.soft > 0.999 ? SHADE_LAYER : SHADE_LAYER | MAIN_LAYER;
         for (const m of meshesOf(e.node)) {

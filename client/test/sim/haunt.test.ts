@@ -13,9 +13,9 @@ import { stemNodes } from "../../src/sim/trailRoute.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { hasLineOfSight } from "../../src/sim/ai.js";
 import { climbOf } from "../../src/sim/watcher.js";
-import { actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
+import { MIST_AT, MIST_SPAN, actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
 import {
-  GUIDE_REACH, HAUNT_NIGHT_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_CHASE, HAUNT_REAL_CLIMB, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
+  GUIDE_REACH, HAUNT_MIST_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_CHASE, HAUNT_REAL_CLIMB, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
   LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_RANGE, SHADE_WALK, SHADE_WATCHED_S,
   bestClimb, isHaunting, isShadeState, placeShadeOnGuide, pressureOf, spawnShade,
 } from "../../src/sim/haunt.js";
@@ -55,7 +55,7 @@ function lookAt(p: PlayerState, at: Vec3) {
 }
 const dist = (a: Vec3, b: Vec3) => Math.hypot(a.x - b.x, a.z - b.z);
 /** The night's threshold, as a climb. */
-const NIGHT_CLIMB = DUSK_AT + NIGHT_SPAN + 0.02;
+const NIGHT_CLIMB = MIST_AT + MIST_SPAN + 0.02;
 
 describe("the director", () => {
   it("is made for every authoritative forest world, active, with its first rest drawn, and runs nothing by day", () => {
@@ -73,16 +73,19 @@ describe("the director", () => {
     expect(createForestWorld(createForest(seed), false).haunt).toBeNull();
   });
 
-  it("haunts once the night is fully in, by the best living climb, and through the chase, pressing harder toward the crest", () => {
+  it("haunts once the mist is whole on the ground, after the night, by the best living climb, and through the chase, pressing harder toward the crest", () => {
     const { w, p } = forestWorld();
-    standAtClimb(w, p, DUSK_AT + NIGHT_SPAN * 0.5);
+    standAtClimb(w, p, DUSK_AT + NIGHT_SPAN + 0.02);
+    expect(actsUnder(bestClimb(w)).night).toBeGreaterThan(0.95);
+    expect(isHaunting(w)).toBe(false);
+    standAtClimb(w, p, MIST_AT + MIST_SPAN * 0.5);
     expect(isHaunting(w)).toBe(false);
     standAtClimb(w, p, NIGHT_CLIMB);
-    expect(actsUnder(bestClimb(w)).night).toBeGreaterThanOrEqual(HAUNT_NIGHT_MIN);
+    expect(actsUnder(bestClimb(w)).mist).toBeGreaterThanOrEqual(HAUNT_MIST_MIN);
     expect(isHaunting(w)).toBe(true);
     expect(pressureOf(w)).toBeLessThan(0.1);
     // Full pressure well before the crest: HAUNT_PRESS_SPAN of the climb past full night.
-    standAtClimb(w, p, DUSK_AT + NIGHT_SPAN + HAUNT_PRESS_SPAN + 0.02);
+    standAtClimb(w, p, MIST_AT + MIST_SPAN + HAUNT_PRESS_SPAN + 0.02);
     expect(pressureOf(w)).toBe(1);
     expect(HAUNT_REAL_CHASE).toBeGreaterThan(HAUNT_REAL_CLIMB);
     expect(HAUNT_REST_LATE[1]).toBeLessThan(HAUNT_REST_EARLY[0]);

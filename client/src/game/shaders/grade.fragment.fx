@@ -90,6 +90,22 @@ vec3 gradeBand(vec3 c, float mask, vec3 tintColour, vec2 amount) {
   return mix(c, sat, mask);
 }
 
+// Blotches for the shades' going: one octave of value noise on a hash, no
+// sampler, so it costs the grade no texture unit.
+float shadeHash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float shadeNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = shadeHash(i);
+  float b = shadeHash(i + vec2(1.0, 0.0));
+  float c = shadeHash(i + vec2(0.0, 1.0));
+  float d = shadeHash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
 vec3 toSrgb(vec3 c) {
   return pow(c, vec3(1.0 / 2.2));
 }
@@ -114,17 +130,24 @@ void main(void) {
   // The shades: nine taps of the mask, the centre and a ring, the figure a
   // dark blur. Unbranched, scaled by w instead: a texture read under a
   // branch is one the WGSL translation has to be told about (uniformity.ts).
+  // The mask's red is the figure (its softness, by its visibility), its
+  // green how far gone it is, the same share of each: a going figure loses
+  // itself patch by patch, where the drifting blotches of noise fall under
+  // how far it has gone, never all at once.
   vec2 shadeStep = vec2(shadeShape.x, shadeShape.x * shadeShape.z);
-  float shadeMask = texture2D(shadeSampler, vUV).r * 2.0;
-  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(1.0, 0.0)).r;
-  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(-1.0, 0.0)).r;
-  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, 1.0)).r;
-  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, -1.0)).r;
-  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, 0.7)).r;
-  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, 0.7)).r;
-  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, -0.7)).r;
-  shadeMask += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, -0.7)).r;
-  shadeMask *= shadeShape.w / 10.0;
+  vec2 shadeRG = texture2D(shadeSampler, vUV).rg * 2.0;
+  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(1.0, 0.0)).rg;
+  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(-1.0, 0.0)).rg;
+  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, 1.0)).rg;
+  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, -1.0)).rg;
+  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, 0.7)).rg;
+  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, 0.7)).rg;
+  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, -0.7)).rg;
+  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, -0.7)).rg;
+  float shadeMask = shadeRG.x * shadeShape.w / 10.0;
+  float shadeGone = shadeRG.y / max(shadeRG.x, 1.0e-4);
+  float shadeBlot = shadeNoise(vUV * vec2(shadeShape.z, 1.0) * 9.0 + stareShade.w * 0.12);
+  shadeMask *= smoothstep(shadeGone - 0.35, shadeGone + 0.05, shadeBlot);
   c *= 1.0 - shadeMask * shadeShape.y;
   vec2 centred = (vUV - 0.5) * 2.0;
   float vr = length(centred) / 1.41421356;
