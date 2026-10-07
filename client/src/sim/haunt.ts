@@ -2,12 +2,14 @@
  * The haunt (docs/gameplay/2026-10-06-the-haunt.md): the night's shadow
  * figures. A director on the host runs episodes once the night is in, and
  * through the chase: for a dozen or twenty seconds, every few seconds, a
- * shade stands up somewhere at the edge of a player's sight, faces them,
- * and is gone again when they come near, when they look at it too long, or
- * when its time is up. Most are nothing. One in an episode, sometimes, is
- * a lunge: it walks straight at its player, bending only a little toward
- * them, and kills on contact; a player who steps out of its line sees it
- * pass and dissolve. In the chase a shade stands where the open way home
+ * shade stands up somewhere at the edge of a player's sight and walks at
+ * them, slowly, and is gone again when they come near, when they look at it
+ * too long, or when its time is up. Most are nothing. One in an episode,
+ * sometimes, is a lunge: it comes fast and straight, bending only a little
+ * toward its player, and at arm's length it strikes, which kills within its
+ * reach; a player who steps out of its line sees it pass and dissolve. The
+ * haunt begins once the night is fully in, lightly, and presses harder the
+ * nearer the party is to the crest. In the chase a shade stands where the open way home
  * runs, beside the path: the thing that hunts the party also shows them the
  * way.
  *
@@ -22,7 +24,7 @@
  * `Math.atan2` for a facing is allowed here as in hollow.ts: host-only.
  */
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
-import { AiState, Phase, cloneVec3, nextRandom } from "./types.js";
+import { AiState, Outcome, Phase, cloneVec3, nextRandom } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
@@ -32,18 +34,24 @@ import { aimDirection } from "./view.js";
 import { isOnCorridor } from "./containment.js";
 import { faceToward, horizontalDistSq, playerSees, walkToward } from "./hollow.js";
 import { climbOf, WATCH_SLOPE_NY, WATCH_VIEW_COS } from "./watcher.js";
-import { actsUnder } from "./acts.js";
+import { actsUnder, DUSK_AT, NIGHT_SPAN } from "./acts.js";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
 
-/** The night below which the climb is not haunted. */
-export const HAUNT_NIGHT_MIN = 0.3;
-/** Seconds between episodes on the climb, and in the chase, drawn between each pair. */
-export const HAUNT_REST_CLIMB: readonly [number, number] = [14, 32];
+/** The night below which the climb is not haunted: the night fully in, so the party has its sounds first. */
+export const HAUNT_NIGHT_MIN = 0.95;
+/**
+ * The haunt's pressure, 0 as the night comes fully in and 1 at the crest
+ * (and throughout the chase): the rests between episodes run from the early
+ * band to the late, and an episode's shades from the fewest to the most.
+ */
+export const HAUNT_REST_EARLY: readonly [number, number] = [55, 100];
+export const HAUNT_REST_LATE: readonly [number, number] = [10, 24];
 export const HAUNT_REST_CHASE: readonly [number, number] = [0, 2];
-/** An episode's length, the seconds between its shades, and how many it has. */
+export const HAUNT_SHADES_EARLY: readonly [number, number] = [3, 5];
+export const HAUNT_SHADES_LATE: readonly [number, number] = [8, 14];
+/** An episode's length, and the seconds between its shades. */
 export const HAUNT_EPISODE_S: readonly [number, number] = [18, 30];
 export const HAUNT_SHADE_GAP_S: readonly [number, number] = [0.9, 2.2];
-export const HAUNT_SHADES: readonly [number, number] = [8, 14];
 /** The chance an episode's last shade is a lunge, on the climb and in the chase. */
 export const HAUNT_REAL_CLIMB = 0.55;
 export const HAUNT_REAL_CHASE = 0.75;
@@ -57,6 +65,8 @@ export const SHADE_RANGE: readonly [number, number] = [7, 40];
 export const SHADE_DWELL_S: readonly [number, number] = [8, 18];
 export const SHADE_FLEE_RADIUS = 5;
 export const SHADE_WATCHED_S = 2.5;
+/** Metres a second a shade walks at its player. */
+export const SHADE_WALK = 0.7;
 /**
  * The bearing band off the player's look a shade or a lunge stands in, 16°
  * to 40°, as the cosines and sines of its two edges (the watcher's method,
@@ -70,9 +80,14 @@ export const SHADE_BEARING_MIN_COS = 0.9613;
 export const SHADE_BEARING_MIN_SIN = 0.2756;
 export const SHADE_BEARING_MAX_COS = 0.766;
 export const SHADE_BEARING_MAX_SIN = 0.6428;
-/** A lunge: where it starts, its speed (under a sprint), how far its line may drift toward its player a second, and its most seconds. */
+/** A lunge: where it starts, its speed (over a sprint), how far its line may drift toward its player a second, and its most seconds. */
 export const LUNGE_RANGE: readonly [number, number] = [16, 26];
-export const LUNGE_SPEED = 6;
+export const LUNGE_SPEED = 7.2;
+/** The strike: within this of its player the lunge stops and strikes, the strike lasting this long, landing this far into it, and killing within this reach. */
+export const LUNGE_ATTACK_M = 2.6;
+export const LUNGE_ATTACK_S = 0.9;
+export const LUNGE_ATTACK_HIT_S = 0.4;
+export const LUNGE_ATTACK_REACH = 3.4;
 export const LUNGE_DRIFT = 1.2;
 export const LUNGE_MAX_S = 8;
 /** Metres beyond its player a lunge's line runs. */
@@ -102,11 +117,19 @@ const between = (rng: { rngSeed: number }, band: readonly [number, number]): num
 
 export function createHauntRecord(seed: number): HauntRecord {
   const rng = { rngSeed: (seed ^ HAUNT_SALT) | 0 };
-  return { rng, active: true, rest: between(rng, HAUNT_REST_CLIMB), episode: null };
+  return { rng, active: true, rest: between(rng, HAUNT_REST_EARLY), episode: null };
 }
 
 export function isShadeState(ai: AiState): boolean {
-  return ai === AiState.Shade || ai === AiState.Lunge;
+  return ai === AiState.Shade || ai === AiState.Lunge || ai === AiState.Strike;
+}
+
+/** The haunt's pressure for a world: 0 as the night comes fully in, 1 at the crest and in the chase. */
+export function pressureOf(world: World): number {
+  if (world.state.phase === Phase.Chase) return 1;
+  const from = DUSK_AT + NIGHT_SPAN;
+  const t = (bestClimb(world) - from) / (1 - from);
+  return t < 0 ? 0 : t > 1 ? 1 : t;
 }
 
 /** The best living climb, 0 at the pad and 1 at the crest; 0 with nobody living. */
@@ -257,7 +280,10 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
   const target = world.state.players.get(h.targetId);
   h.stateTimer -= dt;
   if (h.ai === AiState.Shade) {
-    if (target !== undefined && target.health > 0) faceToward(h, target.pos.x, target.pos.z);
+    if (target !== undefined && target.health > 0) {
+      faceToward(h, target.pos.x, target.pos.z);
+      walkToward(h, world, dt, target.pos.x, target.pos.z, SHADE_WALK);
+    }
     let watched = false;
     for (const p of world.state.players.values()) {
       if (p.health <= 0) continue;
@@ -267,11 +293,30 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
     if (watched) h.attackCooldown += dt;
     return h.stateTimer <= 0 || h.attackCooldown >= SHADE_WATCHED_S;
   }
+  if (h.ai === AiState.Strike) {
+    // The strike: it stands at its player for LUNGE_ATTACK_S; LUNGE_ATTACK_HIT_S
+    // in, whoever it struck at within LUNGE_ATTACK_REACH is dead; then it is gone.
+    if (target !== undefined && target.health > 0) faceToward(h, target.pos.x, target.pos.z);
+    if (h.attackCooldown === 0 && h.stateTimer <= LUNGE_ATTACK_S - LUNGE_ATTACK_HIT_S) {
+      h.attackCooldown = 1;
+      if (target !== undefined && target.health > 0 && !target.safe && horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_REACH * LUNGE_ATTACK_REACH) target.health = 0;
+    }
+    return h.stateTimer <= 0;
+  }
   // The lunge: its line drifts toward its player by at most LUNGE_DRIFT a
-  // second, and it walks that line; past the player, or out of time, or
-  // stuck, it is gone. Contact is the Hollows' (updateHollows).
+  // second, and it walks that line; at arm's length it strikes; past the
+  // player, or out of time, or stuck, it is gone. Contact is the Hollows'
+  // (updateHollows) as well.
   const line = h.emergeTo;
   if (line === null || h.stateTimer <= 0) return true;
+  if (target !== undefined && target.health > 0 && horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_M * LUNGE_ATTACK_M) {
+    h.ai = AiState.Strike;
+    h.stateTimer = LUNGE_ATTACK_S;
+    h.attackCooldown = 0;
+    h.vel = { x: 0, y: 0, z: 0 };
+    faceToward(h, target.pos.x, target.pos.z);
+    return false;
+  }
   if (target !== undefined && target.health > 0) {
     const ex = target.pos.x - line.x;
     const ez = target.pos.z - line.z;
@@ -297,8 +342,8 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
 }
 
 /**
- * The haunt's tick, host only, while the match plays: steps every shade and
- * lunge, and runs the director. No haunting (day, or the night not yet in)
+ * The haunt's tick, host only: steps every shade and lunge, and, while the
+ * match plays, runs the director. No haunting (day, or the night not yet in)
  * ends an episode at once and leaves the rest where it is.
  */
 export function stepHaunt(world: World, dt: number): void {
@@ -307,17 +352,20 @@ export function stepHaunt(world: World, dt: number): void {
   for (const [id, e] of world.state.enemies) {
     if (isShadeState(e.ai) && stepShade(e, world, dt)) world.state.enemies.delete(id);
   }
-  if (!isHaunting(world)) {
+  if (world.state.outcome !== Outcome.Playing || !isHaunting(world)) {
     record.episode = null;
     return;
   }
   const chase = world.state.phase === Phase.Chase;
+  const pressure = pressureOf(world);
   if (record.episode === null) {
     record.rest -= dt;
     if (record.rest > 0) return;
+    const fewest = HAUNT_SHADES_EARLY[0] + (HAUNT_SHADES_LATE[0] - HAUNT_SHADES_EARLY[0]) * pressure;
+    const most = HAUNT_SHADES_EARLY[1] + (HAUNT_SHADES_LATE[1] - HAUNT_SHADES_EARLY[1]) * pressure;
     record.episode = {
       left: between(record.rng, HAUNT_EPISODE_S),
-      shades: Math.floor(between(record.rng, [HAUNT_SHADES[0], HAUNT_SHADES[1] + 1])),
+      shades: Math.floor(between(record.rng, [fewest, most + 1])),
       nextShade: 0,
       real: nextRandom(record.rng) < (chase ? HAUNT_REAL_CHASE : HAUNT_REAL_CLIMB),
     };
@@ -344,6 +392,11 @@ export function stepHaunt(world: World, dt: number): void {
   }
   if (ep.left <= 0 || ep.shades === 0) {
     record.episode = null;
-    record.rest = between(record.rng, chase ? HAUNT_REST_CHASE : HAUNT_REST_CLIMB);
+    record.rest = chase
+      ? between(record.rng, HAUNT_REST_CHASE)
+      : between(record.rng, [
+        HAUNT_REST_EARLY[0] + (HAUNT_REST_LATE[0] - HAUNT_REST_EARLY[0]) * pressure,
+        HAUNT_REST_EARLY[1] + (HAUNT_REST_LATE[1] - HAUNT_REST_EARLY[1]) * pressure,
+      ]);
   }
 }

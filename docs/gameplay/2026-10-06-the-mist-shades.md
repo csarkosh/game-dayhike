@@ -21,9 +21,10 @@ comes in under it, one over the other, until it is the thing it was. Every chang
 
 ## 1. The mist (`game/hauntMist.ts`)
 
-Twelve puffs on the mist banks' alpha map, with no lighting and a grey of their own
-(`HAUNT_MIST_GREY` 0.36, lit from within), seated on the terrain round the eye: each born 4 to
-16 m off on a drawn bearing, 5 to 12 m across, its centre 0.3 of its size above the ground, with a
+Sixteen puffs on the mist banks' alpha map, with no lighting and a dark grey of their own
+(`HAUNT_MIST_GREY` 0.22, lit from within), seated on the terrain round the eye: each born 4 to
+16 m off on a drawn bearing, 5 to 12 m of size, drawn 1.7 times that wide and 0.75 as tall, its
+centre 0.12 of its height above the ground so the volume lies on the ground, with a
 life of 10 to 24 s that it comes into and goes out of over 2.5 s, drifting at 0.35 m/s on its own
 heading and breathing on its own clock; left behind past 22 m and reborn round the eye. Each
 puff's opacity is `HAUNT_MIST_ALPHA` (0.55) × its own weight × the haunt's level × the night, so
@@ -53,7 +54,9 @@ the frame the Hollow's, from one mesh.
 (0.35) of itself at `SHADE_FAR_M` (40 m): the far ones are the fainter blurs.
 
 **Resolve.** A lunge within `SHADE_RESOLVE_M` (12 m) of the local eye eases its softness from 1
-to 0 over `SHADE_RESOLVE_S` (1.4 s); a shade never resolves.
+to 0 over `SHADE_RESOLVE_S` (1.4 s); a shade never resolves. Going, a resolved lunge is a shade
+again first, over `SHADE_UNRESOLVE_S` (0.5 s), as it fades: it goes back into the mist, not out of
+the frame. A strike plays the Hollow's attack clip.
 
 **The low tier** has no grade pass: there the shades are the Hollow, fading in and out by
 `visibility` alone.

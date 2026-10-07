@@ -81,6 +81,8 @@ export const SHADE_FADE_OUT_S = 1.1;
 /** Metres from the local eye within which a lunge resolves from the mist into the Hollow, and the seconds that takes. */
 export const SHADE_RESOLVE_M = 12;
 export const SHADE_RESOLVE_S = 1.4;
+/** Seconds a gone lunge takes to be a shade again as it goes out. */
+export const SHADE_UNRESOLVE_S = 0.5;
 /** Metres within which a shade is whole in the mask, the metres at which it is SHADE_FAR_SHARE of itself, and that share. */
 export const SHADE_NEAR_M = 10;
 export const SHADE_FAR_M = 40;
@@ -240,17 +242,17 @@ export class EntityViews {
       const feet = enemy.pos.y - ENEMY_HALF.y;
       let fade = this.fades.get(id);
       if (fade === undefined) {
-        const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Emerge;
+        const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
         fade = { level: comesIn ? 0 : 1, ai: enemy.ai };
         this.fades.set(id, fade);
       }
       fade.ai = enemy.ai;
       if (dt > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + dt / SHADE_FADE_IN_S);
       // A lunge resolves from the mist as it closes on the local eye; a shade never does.
-      if (enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge) {
+      if (enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) {
         const me = state.players.get(localId);
         const d = me === undefined ? Infinity : Math.hypot(enemy.pos.x - me.pos.x, enemy.pos.z - me.pos.z);
-        const want = enemy.ai === AiState.Lunge && d < SHADE_RESOLVE_M ? 0 : 1;
+        const want = (enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) && d < SHADE_RESOLVE_M ? 0 : 1;
         const was = this.soft.get(id) ?? 1;
         const soft = dt > 0 ? was + (want - was) * Math.min(1, dt / SHADE_RESOLVE_S) : was;
         this.soft.set(id, soft);
@@ -282,7 +284,9 @@ export class EntityViews {
         }
         pace.x = at.x;
         pace.z = at.z;
-        stride(instance, pace.speed, HOLLOW_WALK_CLIP_SPEED * HOLLOW_SCALE);
+        // A strike plays the attack; everything else walks or stands by its pace.
+        if (enemy.ai === AiState.Strike) instance.play("attack");
+        else stride(instance, pace.speed, HOLLOW_WALK_CLIP_SPEED * HOLLOW_SCALE);
         continue;
       }
 
@@ -304,7 +308,7 @@ export class EntityViews {
     for (const [id, fade] of this.fades) {
       if (state.enemies.has(id)) continue;
       const entry = this.enemyModels.get(id);
-      if (entry !== undefined && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge)) {
+      if (entry !== undefined && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge || fade.ai === AiState.Strike)) {
         this.enemyModels.delete(id);
         this.fading.set(id, { entry, level: fade.level, soft: this.soft.get(id) ?? 1, near: this.near.get(id) ?? 1 });
       }
@@ -313,7 +317,12 @@ export class EntityViews {
       this.near.delete(id);
     }
     for (const [id, out] of this.fading) {
-      if (dt > 0) out.level -= dt / SHADE_FADE_OUT_S;
+      // Going, it is a shade again first: a resolved lunge goes back into
+      // the mist over SHADE_UNRESOLVE_S as it fades, not out of the frame.
+      if (dt > 0) {
+        out.level -= dt / SHADE_FADE_OUT_S;
+        out.soft = Math.min(1, out.soft + dt / SHADE_UNRESOLVE_S);
+      }
       if (out.level <= 0) {
         this.models.release(id);
         this.fading.delete(id);

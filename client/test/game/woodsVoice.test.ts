@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   BIRDS_HOLD_S, BIRDS_RAIN_SHARE, BIRDS_WET_CUT, CALL_CLIMBS, CALL_FAR_HZ, CALL_FAR_LEVEL, CALL_FAR_M,
-  CALL_NEAR_HZ, CALL_NEAR_LEVEL, CALL_NEAR_M, HOLLOW_CALL_CLIP, REVEAL_HZ, REVEAL_LEVEL, REVEAL_NEAR_M, REVEAL_SILENCE_S,
+  CALL_NEAR_HZ, CALL_NEAR_LEVEL, CALL_NEAR_M, CALL_NIGHT_MIN, HOLLOW_CALL_CLIP, REVEAL_HZ, REVEAL_LEVEL, REVEAL_NEAR_M, REVEAL_SILENCE_S,
   WOODS_REST, birdsAt, callCue, revealCue, stepWoods,
   type WoodsInputs, type WoodsState,
 } from "../../src/game/woodsVoice.js";
@@ -10,6 +10,8 @@ import { DUSK_AT } from "../../src/game/escalation.js";
 
 const DT = 1 / 60;
 const CLIMBING: WoodsInputs = { climb: 0, wet: 0, night: 0, chase: false, hollow: false, rain: 0, crest: 500 };
+/** The climb at full night, for the calls. */
+const DARK: WoodsInputs = { ...CLIMBING, wet: 1, night: 1 };
 /** The night, at the crest. */
 const NIGHT: WoodsInputs = { ...CLIMBING, climb: 1, wet: 1, night: 1 };
 function run(from: WoodsState, input: WoodsInputs, seconds: number): { state: WoodsState; calls: number } {
@@ -80,27 +82,38 @@ describe("the Hollow's call", () => {
     let state = stepWoods(WOODS_REST, CLIMBING, DT).state;
     const heard: number[] = [];
     for (let climb = 0; climb <= 1.0001; climb += 0.002) {
-      const out = stepWoods(state, { ...CLIMBING, climb }, DT);
+      const out = stepWoods(state, { ...DARK, climb }, DT);
       state = out.state;
       if (out.call !== null) heard.push(out.call.distance);
     }
     expect(heard).toEqual(CALL_CLIMBS.map((_, i) => callCue(i).distance));
-    expect(run(state, { ...CLIMBING, climb: 1 }, 5).calls).toBe(0);
+    expect(run(state, { ...DARK, climb: 1 }, 5).calls).toBe(0);
   });
 
   it("is the latest mark's alone when a climb jumps several at once", () => {
     const state = stepWoods(WOODS_REST, CLIMBING, DT).state;
-    const jumped = stepWoods(state, { ...CLIMBING, climb: 0.8 }, DT);
+    const jumped = stepWoods(state, { ...DARK, climb: 0.8 }, DT);
     expect(jumped.call).toEqual(callCue(3));
     expect(jumped.state.calls).toBe(4);
-    expect(stepWoods(jumped.state, { ...CLIMBING, climb: 0.8 }, DT).call).toBeNull();
+    expect(stepWoods(jumped.state, { ...DARK, climb: 0.8 }, DT).call).toBeNull();
+  });
+
+  it("waits for the night to be fully in: a mark passed at dusk is heard, the latest alone, once it is", () => {
+    const state = stepWoods(WOODS_REST, CLIMBING, DT).state;
+    const dusk = stepWoods(state, { ...CLIMBING, climb: 0.5, wet: 1, night: 0.6 }, DT);
+    expect(dusk.call).toBeNull();
+    expect(dusk.state.calls).toBe(0);
+    const night = stepWoods(dusk.state, { ...DARK, climb: 0.56 }, DT);
+    expect(night.call).toEqual(callCue(1));
+    expect(night.state.calls).toBe(2);
+    expect(CALL_NIGHT_MIN).toBeGreaterThan(0.9);
   });
 
   it("is not heard for the marks a screen joins past, nor in the chase", () => {
     const joined = stepWoods(WOODS_REST, { ...CLIMBING, climb: 0.8 }, DT);
     expect(joined.call).toBeNull();
     expect(joined.state.calls).toBe(4);
-    expect(stepWoods(joined.state, { ...CLIMBING, climb: 0.86 }, DT).call).toEqual(callCue(4));
+    expect(stepWoods(joined.state, { ...DARK, climb: 0.86 }, DT).call).toEqual(callCue(4));
     const chase = run(stepWoods(WOODS_REST, CLIMBING, DT).state, { ...CLIMBING, climb: 1, chase: true }, 2);
     // One call in the chase: the reveal's, not a mark's.
     expect(chase.calls).toBe(1);

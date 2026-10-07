@@ -6,7 +6,7 @@ import {
   HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HOLLOW_CALL_RATE, HOLLOW_CALL_AFTER, hollowCallVoices, HUSH_RAMP_S, FLY_PASS_S,
 } from "../../src/game/ambientAudio.js";
 import { ambientGainsUnder, WEATHER_PRESETS } from "../../src/game/weather.js";
-import { MUFFLE_OPEN_HZ, MUFFLE_SHUT_HZ, MUFFLE_GAIN, HEART_LEVEL, WHISPER_LEVEL, WHISPER_VOICES } from "../../src/game/stareAudio.js";
+import { MUFFLE_OPEN_HZ, MUFFLE_SHUT_HZ, MUFFLE_GAIN, HEART_LEVEL, WHISPER_LEVEL, WHISPER_VOICES, WHISPER_MAX_SPEAKING } from "../../src/game/stareAudio.js";
 import { HEART_DUB_AT, STARE_LENS_REST } from "../../src/game/stareLens.js";
 import { gustAt, windRecordUnder } from "../../src/game/windParams.js";
 import { ODD_KINDS } from "../../src/game/woodsSounds.js";
@@ -652,7 +652,13 @@ describe("the stare", () => {
       }
       expect(g.gain.ramps.at(-1)!.value).toBe(0);
     }
-    expect(syllables).toBeGreaterThan(100);
+    expect(syllables).toBeGreaterThan(60);
+    // Never more than WHISPER_MAX_SPEAKING voices in a phrase at once: at any
+    // moment, the gains whose envelopes are open number at most that.
+    const open = (t: number) => voiceGains.filter((g) => g.gain.ramps.some((r, i) => r.kind === "set" && r.time <= t && (g.gain.ramps[i + 2]?.time ?? Infinity) >= t)).length;
+    let most = 0;
+    for (let t = 3; t < 60; t += 0.25) most = Math.max(most, open(t));
+    expect(most).toBeLessThanOrEqual(WHISPER_MAX_SPEAKING);
     // The stare lets go: a second on, nothing more is scheduled.
     const ramps = () => voiceGains.reduce((n, g) => n + g.gain.ramps.length, 0);
     for (let f = 0; f < 120; f++) {

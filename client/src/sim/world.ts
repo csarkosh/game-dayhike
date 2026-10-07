@@ -291,7 +291,9 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
     // found — and never the director: nothing spawns on a mountain but what
     // walked out of the woods (hollow.ts).
     // The night's shades, and the director that stands them up (haunt.ts).
-    if (world.haunt !== null && world.state.outcome === Outcome.Playing) stepHaunt(world, TICK_DT);
+    // The shades step past the match's end too, so a strike that ended it
+    // still passes and goes; only the director stops.
+    if (world.haunt !== null) stepHaunt(world, TICK_DT);
     stepHollows(world, TICK_DT);
     updateHollows(world);
   } else {

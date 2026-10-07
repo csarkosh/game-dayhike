@@ -4,7 +4,7 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import {
-  createHauntMist, HAUNT_MIST_ALPHA, HAUNT_MIST_BORN, HAUNT_MIST_LEAVE, HAUNT_MIST_PUFFS, HAUNT_MIST_SEAT, HAUNT_MIST_SIZE,
+  createHauntMist, HAUNT_MIST_ALPHA, HAUNT_MIST_BORN, HAUNT_MIST_LEAVE, HAUNT_MIST_PUFFS, HAUNT_MIST_SEAT, HAUNT_MIST_SIZE, HAUNT_MIST_TALL, HAUNT_MIST_WIDE,
 } from "../../src/game/hauntMist.js";
 
 /** A small stream, so the births are the same every run. */
@@ -30,9 +30,12 @@ describe("the haunt's mist", () => {
       const d = Math.hypot(p.position.x - 10, p.position.z - 5);
       expect(d).toBeGreaterThanOrEqual(HAUNT_MIST_BORN[0] - 0.1);
       expect(d).toBeLessThanOrEqual(HAUNT_MIST_BORN[1] + 0.1);
-      expect(p.scaling.x).toBeGreaterThanOrEqual(HAUNT_MIST_SIZE[0]);
-      expect(p.scaling.x).toBeLessThanOrEqual(HAUNT_MIST_SIZE[1]);
-      expect(p.position.y).toBeCloseTo(ground(p.position.x, p.position.z) + p.scaling.x * HAUNT_MIST_SEAT, 9);
+      const size = p.scaling.x / HAUNT_MIST_WIDE;
+      expect(size).toBeGreaterThanOrEqual(HAUNT_MIST_SIZE[0] - 1e-9);
+      expect(size).toBeLessThanOrEqual(HAUNT_MIST_SIZE[1] + 1e-9);
+      // Wider than tall, seated low: the volume is on the ground.
+      expect(p.scaling.y).toBeCloseTo(size * HAUNT_MIST_TALL, 9);
+      expect(p.position.y).toBeCloseTo(ground(p.position.x, p.position.z) + size * HAUNT_MIST_TALL * HAUNT_MIST_SEAT, 9);
       expect(p.material!.alpha).toBe(HAUNT_MIST_ALPHA);
       expect(p.visibility).toBeGreaterThan(0);
       expect(p.visibility).toBeLessThanOrEqual(1);

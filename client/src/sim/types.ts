@@ -22,6 +22,8 @@ export const enum AiState {
   Shade = 10,
   /** A lunge of the haunt: walks its line at a player, kills on contact, and is gone once past them. */
   Lunge = 11,
+  /** A lunge at its player: the strike, which kills within its reach, and then it is gone. */
+  Strike = 12,
 }
 
 export const enum Button {

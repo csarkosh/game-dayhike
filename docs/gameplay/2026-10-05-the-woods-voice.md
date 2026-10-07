@@ -50,7 +50,9 @@ one of 9 s. The watcher is in the world only while it shows, so its showing is t
 
 ## 2. The call
 
-**The marks.** Climbs of 0.12, 0.30, 0.48, 0.64, 0.78 and 0.90. On the frame the party's best
+**The marks.** Climbs of 0.45, 0.55, 0.65, 0.75, 0.85 and 0.94 (since 2026-10-06; 0.12 to 0.90 as
+first built), heard only once the night is fully in (`CALL_NIGHT_MIN` 0.95): a mark passed at dusk
+waits. On the frame the party's best
 climb passes one, the call sounds; a climb that jumps several at once is heard as its latest alone. A screen that joins a climb under way
 starts from the marks already passed and hears none of them. There is no call in the chase.
 
