@@ -12,7 +12,7 @@ rain, cloud and the dread each switch them off the way they would.
 
 It builds on the lake the water terrain made
 ([the water terrain](2026-09-30-water-terrain-design.md)): one lake a world at
-most, 25–40 m across its rim, clear or murky, with a marsh on a murky lake's
+most, 25–40 m in radius, clear or murky, with a marsh on a murky lake's
 shelf and reeds and lilies along it. It leaves the sea alone: surf and wind
 keep these insects off the open coast. It replaces the midge share of the
 atmosphere's motes ([the atmosphere restyle](2026-09-15-atmosphere-restyle-design.md)),
@@ -169,9 +169,11 @@ it, with the marsh (`marshWeightAt > 0`) wherever it reaches.
   card facing the camera. Its seed, its swarm's index and its slot in the swarm
   are per-instance; each swarm's centre, size, shape and current presence are
   in a small uniform table (up to 32 swarms: the markers and one over each player's head).
-- The card is 2 mm across in the world but never less than 1.2 px on screen,
-  its alpha scaled down by how much it was enlarged, so a far midge reads as a
-  faint speck rather than a big one.
+- The card is 3 mm across in the world, half again a real midge's 2 mm, but
+  never less than 2 px on screen, with a tent footprint; its alpha is scaled
+  down by how much it was enlarged, but within 6 m of the eye never below
+  0.6, a floor that fades to nothing at 15 m, so a close midge reads as a dot
+  and a far one as a faint speck rather than a big one.
 - **Glint.** Each midge's brightness is a forward-scatter lobe on the angle
   between the view and the sun (bright with the sun behind the swarm, dim
   otherwise) times the sun's light, plus a wing flash: a narrow pulse at a
@@ -212,9 +214,10 @@ the tier's total by its size and distance.
 
 ### 5.4 The motes
 
-The `midge` mote species goes. The pollen and the frost motes keep the
-existing capacity between them (`MOTE_CAPACITY` unchanged), and dusk no longer
-fills the camera's box with midges where there is no water.
+The `midge` mote species goes. The pollen and the frost motes keep their third
+of the existing capacity each, at the size and the rate they had
+(`MOTE_CAPACITY` unchanged, the midges' third left unspent), and dusk no
+longer fills the camera's box with midges where there is no water.
 
 ## 6. The dragonflies
 
@@ -246,7 +249,8 @@ allocation.
 - **Skimmer:** perched for 1–10 s, then darts 2–5 m out in a quick loop and
   back to the same perch at up to 3 m/s.
 - **Damselfly:** perched on a stem for 2–15 s, then a weak, fluttering hop of
-  0.3–1 m at about 1 m/s, low, to another stem in its bed.
+  0.3–3 m (about 2 m, as far apart as a bed's stems stand) at about 1 m/s,
+  low, to another stem in its bed, the stems within 3 m of its own.
 - **Players:** anything perched within 2 m of a player flushes to another perch
   or hover point; a darner bends its beat around a player standing on it.
 - Episodes are drawn from a hash of the unit, its episode and the seed, keyed
@@ -266,8 +270,8 @@ voices and 2 dragonfly rustles at once, the nearest winning.
 - Synthesized: six oscillators a swarm, detuned ±8 % about the pitch, through a
   band-pass, their amplitudes drifting slowly and independently.
 - Pitch: 230 Hz at 15 °C, plus 10 Hz per °C, held between 180 and 330 Hz.
-- The summer temperature: 11 °C at 05:00 rising to 21 °C at 15:00 along a
-  cosine, its swing halved under full cloud, 3 °C cooler at full rain.
+- The summer temperature: 11 °C at 03:00 rising to 21 °C at 15:00 along a
+  24-hour cosine, its swing halved under full cloud, 3 °C cooler at full rain.
 - Heard to 10 m (reference distance 0.5 m), its gain by the swarm's size and
   presence; a swarm over the listener's own head is the loudest.
 
@@ -288,7 +292,8 @@ voices and 2 dragonfly rustles at once, the nearest winning.
   than overlap.
 - **Near players:** a voice with a player within 12 m stops. When no player has
   been within 12 m for 20–40 s (per voice), it may start again, but only one
-  voice in a stretch restarts first; the others join over the next 5–15 s.
+  voice in a stretch restarts first; the others join at the later of a 5–15 s
+  draw and the end of their own wait.
 - **The Hollow:** within 60 m of the Hollow every voice stops at once and stays
   silent until it is beyond 80 m.
 
@@ -302,7 +307,7 @@ The game's sun rises at 06:00 and sets at 18:00. The wind's speed (0–1,
 | | Hours | Wind | Rain | Cloud, mist |
 | --- | --- | --- | --- | --- |
 | Midges | dawn 05:15–07:00; dusk 17:45–19:45, fullest just after sunset | full to 0.5, thinning to none by 0.75 | none by 0.3 | cloud no effect; mist fills swarms up to 30 % fuller |
-| Dragonflies | 09:00–17:00, ramping in from 08:00 and out by 18:00; darners at a third until 19:00 | perch above 0.7 | none above 0.05 | full below cloud 0.4, none by 0.7: skimmers stay perched and seen, darners and damselflies go to cover |
+| Dragonflies | 09:00–17:00, ramping in from 08:00 and out by 18:00; darners at a third to 18:30, gone by 19:00 | none flies above 0.7, from 0.6: skimmers and damselflies perch, darners go to cover | none above 0.05 | full below cloud 0.4, none by 0.7: skimmers stay perched and seen, darners and damselflies go to cover |
 | Frogs | 19:30 to 05:00, fullest 21:00–24:00 | no effect (the wind's bed masks them) | keep calling | no effect |
 
 - Each share ramps over the stated edges with a smoothstep, and every change
@@ -351,6 +356,170 @@ Life on still water (water striders' rings and shadows, whirligig rafts); the
 beach (seaweed flies from the wrack, beach hoppers at night); mosquitoes and
 their whine; a daytime insect buzz; seasons; the breaker, swash and the lake's
 mirror.
+
+## 12. As built (2026-10-05)
+
+What the build changed from the sections above, and what the cost and the
+checks showed.
+
+- **§8: the hours.** Every row of the table gives a share's outer edges, where
+  it starts to rise from nothing and where it is gone, each edge a smoothstep.
+  The frogs are silent until 19:30, reach 0.6 by 20:00 and 1 by 21:00, hold it
+  to midnight, fall back to 0.6 by 00:30 and hold that to 04:30, and are gone
+  by 05:00. The darners fall to a third of their share over 17:00–18:00, hold
+  it to 18:30 and are gone by 19:00. No dragonfly flies above a wind of 0.7
+  (5.6 m/s), the share falling from 0.6.
+- **§7.2: the temperature.** A 24-hour cosine through 21 °C at 15:00 has its
+  minimum, 11 °C, at 03:00, not 05:00.
+- **§4.2: the perches and the stems.** A perch on land (a shrub's, a bush's or
+  a drift log's) stands 0.3–1.5 m above its own ground, and one whose ground
+  lies more than 1 m below the lake's level is left out: a skimmer sallying
+  from it toward the lake would fly into the bank. Only a reed's perch or a
+  damselfly's stem with water under it, inside the rim or on the marsh, stands
+  up from the water's level; on dry ground each stands on its own. A stem
+  stands 0.3–1 m up.
+- **§6.2 and §8: out of the air.** Each unit draws once, for life, against its
+  kind's two shares, out of cover and aloft. A skimmer that is not aloft sits
+  on its perch and a damselfly on its stem; a darner has nothing to settle on,
+  so one not flying is in cover and not drawn, and there are no roosts. A
+  damselfly hops to another stem of its bed, the stems within 3 m of its own,
+  0.3–3 m from the one it sits on: about 2 m, as far apart as a bed's stems
+  stand (4 m² a stem). At the design's 0.3–1 m most stems had no other within
+  reach; at 3 m one in twenty has none, and its damselfly stays on it.
+- **§7.4: the restart.** Each voice waits out its own 20–40 s after a player
+  leaves it. Its stretch is the silent voices linked neighbour by neighbour (a
+  neighbour within 30 m, or the nearest voice). The first of the stretch to
+  call again is the one nearest its centre among those whose wait has run
+  out, and the others with no player near join at the later of a 5–15 s draw
+  and the end of their own wait, so a joiner can come in up to about 40 s
+  after the first. A voice a player still stands by keeps waiting.
+- **§7.4: the calls.** The calls are recorded: five clips from three
+  recordings (CC0 and CC BY 4.0) credited in [`CREDITS.md`](../../CREDITS.md),
+  three single calls and two chorus loops. Each voice calls one of the single
+  calls at a playback rate of its own (0.94–1.06), both fixed by the voice's
+  index, so every voice keeps its call and its pitch; until its clip is
+  decoded, or for good if the clip fails to load, it calls the synthesized
+  call instead. Under the voices lies a far chorus, the frogs farther out: the
+  two loops at two places 0.3 m over the water (the marsh's middle, or without
+  a marsh the rim across the lake from the first voice, and the rim across
+  from that). Its level follows the frogs' presence, so the dread silences it;
+  it is gone while the Hollow holds the voices silent, and thins toward 0.35
+  of itself with the share of the near voices a player's nearness holds
+  silent, those still waiting to join their stretch among them. Each loop
+  also falls quiet around the player nearest its place, as the voices there
+  do: to 0.35 within the voices' 12 m, rising linearly to whole at 30 m.
+- **§7.4: the levels.** At the first levels the frogs were heard only now and
+  then, under the ambience. A call keeps its gain, 1–2 by the voice, to 3 m
+  and falls as 3/d beyond (0.25–0.5 at the 12 m quiet radius, 0.06–0.125 at
+  48 m); the chorus loops play at 0.5 and 0.35 to 30 m and fall as 30/d
+  beyond (0.2 for the far one from 52 m, across a lake of 26 m radius).
+- **§7.1 and §7.2: the loops.** Every loop goes through the animals' bus into
+  the world's, so a stare muffles the lake and a hush cuts it, as they do the
+  animals' calls. The world bus reaches the master through the stare's
+  low-pass and then a brick-wall limiter (threshold −3 dB, knee 0, ratio 20,
+  attack 3 ms, release 0.1 s), so the frogs, a hum over the head and a rustle
+  together cannot clip; its makeup gain raises the whole world bus by about
+  1.7 dB. Every hum starts silent and is raised to its gain through the loop's
+  0.1 s ramp, so a swarm forming at the ear never starts at full strength; a
+  hum that drops out fades over 0.5 s and is stopped once its gain has
+  followed to nothing.
+- **§4.1: the head swarms.** A swarm over a head gathers over 3 s once it
+  forms, and once it lets go it thins out over 3 s where the head last was.
+  With the camera out of the lake's reach the heads let go outright.
+- **§5.1 and §6.1: drawn to be seen.** Drawn at the design's 2 mm and 1.2 px
+  the midges did not show, and the dragonflies were specks at play distance.
+  The midge's card is 3 mm across and never under 2 px, and the fragment lays
+  a tent on it, (1 − |u|)(1 − |v|), whose values at the pixel centres a
+  two-pixel card covers sum the same wherever a midge on the view axis lies,
+  so a far midge holds steady as it crosses them. Its coverage falls with its
+  enlargement but, near the eye, never below 0.6, and against the brightest
+  sky a speck hides 0.9 of what lies behind it. The floor holds to 6 m and
+  fades to nothing at 15 m: held at every distance, it summed the dozens of
+  2 px dots of a swarm across the lake into a solid, sunset-coloured blob, and
+  without it a far midge is a faint speck, its coverage only what its
+  enlargement leaves. Beside the sun's glint lies a second, the sky's:
+  a broad lobe (the cosine squared) toward the sun's azimuth, level, lit by up
+  to 0.6 of the horizon's colour toward the sun as the dome draws it, blended
+  toward the mist's air by the mist's weight as the dome blends its horizon.
+  It carries no night factor, so a swarm glints against the glow that outlasts
+  the sun and fades with it. The dragonflies are drawn 3× their length (at
+  1.5× a skimmer 5 m off was about 12 px and a darner 12 m off about 8), and
+  their colours are 1.3× the real insects' in every channel, which keeps each
+  hue and its saturation.
+- **§5.1: the low tier.** On the material colour path (the low tier, with no
+  post chain) the light a speck adds takes the frame's exposure, bound at each
+  draw so the stare's dimming is in it, then the Khronos PBR Neutral tone map,
+  the sRGB encode and the contrast, in Babylon's order, as the sky dome takes
+  them; the coverage is never toned. On the post path the light goes out
+  linear, for the post chain to tone with the frame.
+- **§5.1 and §6.1: the draw order.** The midges and the dragonflies draw last
+  among the see-through effects, after the rain, the mist and the blended
+  water (an `alphaIndex` of infinity), so the water and the mist never wash
+  them out. Their bounds sit at the origin, so a sort by distance would flip
+  with the camera, and the mist banks and the water's blended surface off the
+  high tier keep Babylon's default index, the largest finite number: only
+  infinity draws after them.
+
+### Cost
+
+§9 asked for the cost against `main` at 4K on every tier. It was not
+measured that way: the development machine was never quiet while this was
+built, and a round of fresh pages at dusk on the high tier, `main` and the
+branch in the order A, B, B, A, drifted 18 ms within the round as the load
+rose from 3 to 17, and was set aside. In its place, one page at 4K hid and
+showed the lake's meshes in turn, six pairs of 2 s each. Showing them read
+−2.5 ms at dusk on the high tier (the pairs from −6 to +1 ms), +2.8 ms at dusk
+on the low tier (a median of −1 ms, with one pair far out) and −2.7 ms at noon
+on the high tier (−18 to +8 ms). All of it lies within the noise of a loaded
+machine: no draw cost was measured on any tier, and §9's expected 0.5 ms is
+neither confirmed nor ruled out. What the lake adds is four thin-instanced
+draws, the midges' on one shader material and one a kind of dragonfly, and a
+step that allocates nothing on a frame without calls.
+
+### Checks
+
+At the murky lake of `room-3`, at 18:30 unless said, on WebGPU pages unless
+said, with no console error on any page.
+
+- **First visits.** With the toned midges' stages recorded, the high tier met
+  234 stages and missed none, the medium 208 and the low 176 (on a WebGPU
+  page). Pages that fell back to WebGL under load met every stage from the
+  shipped maps too, some only once the map had landed. Once the fading
+  floor's vertex stage was recorded, the high tier met 222 stages, the medium
+  216 and the low 174, all on WebGPU pages and none missing, the midges' new
+  stage served from the shipped map on every tier.
+- **Stills** on every tier at dawn, dusk and noon (the dragonflies, four
+  frames), in mist, eerie and overcast weather, and on the low tier at 18:15
+  and 18:30 close and at middle distance: no regression against the earlier
+  set.
+- **Drawn and heard.** At dusk 3,645 midge instances and 16 swarms humming at
+  273 Hz; at noon 8 darners, 20 skimmers and 40 damselflies; at 22:00 158 frog
+  calls a minute from 7 voices 15–55 m from the north shore, the far chorus at
+  a level of 1.
+- **By eye**, at dusk from 1.5 m and 4.5 m, at noon and at night: the close
+  swarms read; the far swarms, which first read as pink blobs, fade to specks;
+  the dragonflies read at 3×; the frogs are heard across the lake.
+
+### Left open
+
+- The sky glint's lobe is broader than the sky's own glow off its axis near
+  sunrise and sunset.
+- A value that is not a finite number reaching an audio setter is not guarded.
+- Frames with calls make small allocations.
+- The midges' instance buffers are larger than needed: Babylon counts thin
+  instances by their matrices, so each midge carries an identity the stages
+  never read.
+- The lake's clips load on every world with a lake, whether or not the hike
+  nears it.
+- A dragonfly whose share takes it out of the air vanishes where it is.
+- The midges and the dragonflies draw over the mist banks.
+- A chorus loop falls quiet around the player nearest its place, not around
+  the listener, so a camera elsewhere hears it quieted.
+- On the material path a contrast below 1 would show each midge's card as a
+  grey square; the contrast there is 1.1.
+- On the low tier the specks darken a bright sky more than on the high tier:
+  the blend works in the encoded space there, as every blended material's
+  does.
 
 ## References
 
