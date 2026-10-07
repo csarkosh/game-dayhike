@@ -26,8 +26,9 @@ export const BIRDS_RETURN_S = 9;
 
 /** The recording the Hollow's call is made from (wildlifeAudio.ts `CALL_CLIP`): the elk's bugle. */
 export const HOLLOW_CALL_CLIP = "call.elk_bugle";
-/** The climbs at which the Hollow calls, low to high: all in the night (escalation.ts DUSK_AT). */
-export const CALL_CLIMBS: readonly number[] = [0.38, 0.5, 0.62, 0.74, 0.85, 0.94];
+/** The climbs at which the Hollow calls, low to high, all in the night; and the night below which none is heard, the marks waiting. */
+export const CALL_CLIMBS: readonly number[] = [0.45, 0.55, 0.65, 0.75, 0.85, 0.94];
+export const CALL_NIGHT_MIN = 0.95;
 /** Metres up the trail the first call and the last sound from. */
 export const CALL_FAR_M = 420;
 export const CALL_NEAR_M = 60;
@@ -106,7 +107,8 @@ export function revealCue(distance: number): CallCue {
  * One frame. The birds stop within a breath while a Hollow is out or the
  * chase is on, stay stopped BIRDS_HOLD_S after, and come back slowly to what
  * the climb and the rain leave. A call is cued on the frame the climb passes
- * a mark, the latest alone when several are passed at once, and never in the chase; a screen that joins a
+ * a mark, the latest alone when several are passed at once, only once the night
+ * is fully in (a mark passed before waits), and never in the chase; a screen that joins a
  * climb under way starts from the marks already passed and hears none of them.
  *
  * The reveal begins on the frame a screen that was watching the climb sees
@@ -130,7 +132,7 @@ export function stepWoods(prev: WoodsState, input: WoodsInputs, dt: number): { s
   let calls = prev.calls;
   let call: CallCue | null = null;
   if (calls < 0 || input.chase) calls = Math.max(calls, passed);
-  else if (passed > calls) {
+  else if (passed > calls && input.night >= CALL_NIGHT_MIN) {
     // A climb that jumps several marks at once is heard as its latest alone.
     call = callCue(passed - 1);
     calls = passed;

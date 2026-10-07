@@ -6,7 +6,7 @@ import {
 
 describe("the Hollow's model", () => {
   it("is drawn at twice the model's player height", () => {
-    expect(HOLLOW_SCALE).toBe(2);
+    expect(HOLLOW_SCALE).toBe(4);
   });
 
   it("has saturated red eyes bright enough to bleed a glow at night", () => {

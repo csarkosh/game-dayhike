@@ -24,8 +24,10 @@ export const WHISPER_VOICES = 4;
 /** Seconds ahead of the context's clock a voice's syllables are scheduled. */
 export const WHISPER_LOOKAHEAD_S = 0.5;
 /** A syllable's length and the gap after it, in seconds: slow, so each is heard whole (as first built, 80 to 260 ms with gaps of 20 to 120, they ran together). */
-export const WHISPER_SYLLABLE_S: readonly [number, number] = [0.16, 0.42];
-export const WHISPER_GAP_S: readonly [number, number] = [0.08, 0.26];
+export const WHISPER_SYLLABLE_S: readonly [number, number] = [0.22, 0.55];
+export const WHISPER_GAP_S: readonly [number, number] = [0.14, 0.4];
+/** How many voices may be in a phrase at once: the rest wait, so the whispers are a few, not a crowd. */
+export const WHISPER_MAX_SPEAKING = 2;
 /** A syllable's gain at its loudest: the two resonances pass a sliver of the noise, and this is what brings a voice up to the heart's side. */
 export const WHISPER_SYLLABLE_GAIN = 3;
 /** The world's low-pass under a stare: open at none, shut down to this at a full one, and the share of its level left. */
@@ -158,12 +160,19 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
   }
 
   /** Schedules one voice's syllables up to the look-ahead: phrases of a few, a breath between, the breaths shorter as the stare deepens. */
-  function speak(v: Voice, now: number, level: number): void {
+  function speak(v: Voice, all: readonly Voice[], now: number, level: number): void {
     if (v.next < now) v.next = now;
     while (v.next < now + WHISPER_LOOKAHEAD_S) {
       if (v.left <= 0) {
+        // A new phrase waits while WHISPER_MAX_SPEAKING others are in theirs.
+        let speaking = 0;
+        for (const o of all) if (o !== v && o.left > 0) speaking++;
+        if (speaking >= WHISPER_MAX_SPEAKING) {
+          v.next = now + WHISPER_LOOKAHEAD_S;
+          return;
+        }
         v.left = 3 + Math.floor(random() * 5);
-        v.next += between(0.6, 2.8) * (1.5 - level);
+        v.next += between(1.0, 3.5) * (1.5 - level);
         continue;
       }
       const at = v.next;
@@ -202,7 +211,7 @@ export function createStareAudio(ctx: AudioContext, out: AudioNode, noise: Audio
       voices ??= build(now);
       const speaking = now - silentSince < 1;
       for (const v of voices) {
-        if (speaking) speak(v, now, Math.max(clamp01(lens.level), clamp01(haunt) * 0.5));
+        if (speaking) speak(v, voices, now, Math.max(clamp01(lens.level), clamp01(haunt) * 0.5));
         const a = v.angle + v.turn * now;
         v.panner.positionX.value = x + Math.cos(a) * v.radius;
         v.panner.positionY.value = y + v.height;

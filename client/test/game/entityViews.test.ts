@@ -248,7 +248,7 @@ describe("EntityViews rangers", () => {
 });
 
 describe("EntityViews the Hollow", () => {
-  it("draws the antlered model at its feet, twice the model's size, with red eyes", async () => {
+  it("draws the antlered model at its feet, four times the model's size, with red eyes", async () => {
     const views = new EntityViews(scene, await loadedPool());
     const world = state();
     world.enemies.set(7, hollow(7, 1, 2, 0.5));
@@ -257,7 +257,7 @@ describe("EntityViews the Hollow", () => {
     expect(root).not.toBeNull();
     expect(scene.getMeshByName("hollow_7")).toBeNull();
     expect(root.position.asArray()).toEqual([1, 0, 2]);
-    expect(root.scaling.asArray()).toEqual([2, 2, 2]);
+    expect(root.scaling.asArray()).toEqual([4, 4, 4]);
     expect(root.rotation.y).toBe(0.5);
     const materials = new Set(root.getChildMeshes(false).flatMap((m) => (m.material === null ? [] : [m.material])));
     const eyes = [...materials].filter((m): m is PBRMaterial => m instanceof PBRMaterial && m.emissiveIntensity !== 1);
@@ -281,8 +281,9 @@ describe("EntityViews the Hollow", () => {
     expect(playing("character_7_").map((g) => g.name)).toEqual(["character_7_idle"]);
     // 0.1 m a frame at 30 frames a second is 3 m/s: two seconds of it
     // settles the smoothed pace, and 3 ÷ (1.5 × 2) is a walk at rate 1.
+    // 6 m/s: the walk clip's own speed at four times the model's size (HOLLOW_WALK_CLIP_SPEED × HOLLOW_SCALE).
     for (let frame = 1; frame <= 60; frame++) {
-      world.enemies.set(7, hollow(7, frame * 0.1, 0));
+      world.enemies.set(7, hollow(7, frame * 0.2, 0));
       views.sync(world, 99, 1, undefined, 1 / 30);
     }
     expect(playing("character_7_").map((g) => g.name)).toEqual(["character_7_walk"]);

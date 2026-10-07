@@ -73,7 +73,7 @@ export const HOLLOW_HEIGHT = 2.6;
 export const HOLLOW_EXIT_MARGIN = 1;
 
 export function isHollowState(ai: AiState): boolean {
-  return ai === AiState.Hunt || ai === AiState.Emerge || ai === AiState.Stand || ai === AiState.Watch || ai === AiState.Lunge;
+  return ai === AiState.Hunt || ai === AiState.Emerge || ai === AiState.Stand || ai === AiState.Watch || ai === AiState.Lunge || ai === AiState.Strike;
 }
 
 export function isHollow(e: EnemyState): boolean {
@@ -427,7 +427,8 @@ function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number):
       return;
     }
     case AiState.Lunge:
-      // The haunt's: haunt.ts steps it.
+    case AiState.Strike:
+      // The haunt's: haunt.ts steps them.
       return;
     case AiState.Watch: {
       // The watcher: it stands where it was placed and faces the lead it was
@@ -519,7 +520,7 @@ export function updateHollows(world: World): void {
   // pack only grows (summit.ts spawns; S3 adds the forks). The watcher is
   // never prey-driven: it would otherwise be a hunt on its first tick.
   for (const h of all) {
-    if (h.ai === AiState.Emerge || h.ai === AiState.Watch || h.ai === AiState.Lunge) continue;
+    if (h.ai === AiState.Emerge || h.ai === AiState.Watch || h.ai === AiState.Lunge || h.ai === AiState.Strike) continue;
     const target = state.players.get(h.targetId);
     const lost = target === undefined || target.health <= 0 || target.safe;
     if (h.ai === AiState.Hunt && !lost) continue;

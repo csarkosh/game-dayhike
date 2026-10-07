@@ -15,8 +15,9 @@ import { hasLineOfSight } from "../../src/sim/ai.js";
 import { climbOf } from "../../src/sim/watcher.js";
 import { actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
 import {
-  GUIDE_REACH, HAUNT_NIGHT_MIN, HAUNT_REST_CLIMB, HAUNT_SHADES, LUNGE_MAX_S, LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS,
-  SHADE_RANGE, SHADE_WATCHED_S, bestClimb, isHaunting, isShadeState, placeShadeOnGuide, spawnShade,
+  GUIDE_REACH, HAUNT_NIGHT_MIN, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
+  LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_RANGE, SHADE_WALK, SHADE_WATCHED_S,
+  bestClimb, isHaunting, isShadeState, placeShadeOnGuide, pressureOf, spawnShade,
 } from "../../src/sim/haunt.js";
 import { isHollow } from "../../src/sim/hollow.js";
 
@@ -54,15 +55,15 @@ function lookAt(p: PlayerState, at: Vec3) {
 }
 const dist = (a: Vec3, b: Vec3) => Math.hypot(a.x - b.x, a.z - b.z);
 /** The night's threshold, as a climb. */
-const NIGHT_CLIMB = DUSK_AT + NIGHT_SPAN * 0.6;
+const NIGHT_CLIMB = DUSK_AT + NIGHT_SPAN + 0.02;
 
 describe("the director", () => {
   it("is made for every authoritative forest world, active, with its first rest drawn, and runs nothing by day", () => {
     const { w, p } = forestWorld();
     expect(w.haunt).not.toBeNull();
     expect(w.haunt!.active).toBe(true);
-    expect(w.haunt!.rest).toBeGreaterThanOrEqual(HAUNT_REST_CLIMB[0]);
-    expect(w.haunt!.rest).toBeLessThanOrEqual(HAUNT_REST_CLIMB[1]);
+    expect(w.haunt!.rest).toBeGreaterThanOrEqual(HAUNT_REST_EARLY[0]);
+    expect(w.haunt!.rest).toBeLessThanOrEqual(HAUNT_REST_EARLY[1]);
     standAtClimb(w, p, 0.2);
     expect(isHaunting(w)).toBe(false);
     const rest = w.haunt!.rest;
@@ -72,16 +73,22 @@ describe("the director", () => {
     expect(createForestWorld(createForest(seed), false).haunt).toBeNull();
   });
 
-  it("haunts once the night is in, by the best living climb, and through the chase", () => {
+  it("haunts once the night is fully in, by the best living climb, and through the chase, pressing harder toward the crest", () => {
     const { w, p } = forestWorld();
+    standAtClimb(w, p, DUSK_AT + NIGHT_SPAN * 0.5);
+    expect(isHaunting(w)).toBe(false);
     standAtClimb(w, p, NIGHT_CLIMB);
     expect(actsUnder(bestClimb(w)).night).toBeGreaterThanOrEqual(HAUNT_NIGHT_MIN);
     expect(isHaunting(w)).toBe(true);
+    expect(pressureOf(w)).toBeLessThan(0.1);
+    expect(HAUNT_REST_LATE[1]).toBeLessThan(HAUNT_REST_EARLY[0]);
+    expect(HAUNT_SHADES_LATE[0]).toBeGreaterThan(HAUNT_SHADES_EARLY[1]);
     p.health = 0;
     expect(bestClimb(w)).toBe(0);
     expect(isHaunting(w)).toBe(false);
     w.state.phase = Phase.Chase;
     expect(isHaunting(w)).toBe(true);
+    expect(pressureOf(w)).toBe(1);
   });
 
   it("stands shades up at night, each at the edge of its player's sight: in range, in a clear sightline, off the corridor, facing them, and harmless", () => {
@@ -112,9 +119,12 @@ describe("the director", () => {
     expect(h.stateTimer).toBeGreaterThan(SHADE_DWELL_S[0] - TICK_DT * 2);
     // The episode goes on: more of them, and the count is the episode's.
     expect(w.haunt!.episode).not.toBeNull();
-    expect(w.haunt!.episode!.shades).toBeLessThanOrEqual(HAUNT_SHADES[1] - 1);
-    // Harmless: standing on it costs nothing but its presence.
+    expect(w.haunt!.episode!.shades).toBeLessThanOrEqual(HAUNT_SHADES_LATE[1] - 1);
+    // It walks at its player, slowly; harmless, it costs nothing but its presence.
+    const before = dist(h.pos, p.pos);
     tick(w, 60);
+    expect(dist(h.pos, p.pos)).toBeLessThan(before - SHADE_WALK * 0.5);
+    expect(dist(h.pos, p.pos)).toBeGreaterThan(before - SHADE_WALK * 1.5);
     expect(p.health).toBe(100);
   });
 
@@ -145,7 +155,7 @@ describe("the director", () => {
     expect(w.state.enemies.has(h.id)).toBe(false);
   });
 
-  it("a lunge walks its line at its player and kills on contact; a player who steps out of its line sees it pass and go", () => {
+  it("a lunge comes at its player, strikes at arm's length, and kills; a player who steps out of its line sees it pass and go", () => {
     const { w, p } = forestWorld();
     w.haunt!.active = false;
     standAtClimb(w, p, 0.3);
@@ -160,13 +170,18 @@ describe("the director", () => {
     tick(w, 60);
     expect(w.state.enemies.has(h.id)).toBe(true);
     expect(dist(h.pos, p.pos)).toBeLessThan(start - 4);
-    // Standing still: it reaches them.
-    let touched = -1;
-    for (let t = 0; t < 300 && touched < 0; t++) {
+    // Standing still: it comes to arm's length, strikes, and they are dead before the strike is over; then it is gone.
+    let struck = -1, touched = -1, gone = -1;
+    for (let t = 0; t < 400 && gone < 0; t++) {
       tick(w);
-      if (p.health <= 0) touched = t;
+      if (struck < 0 && h.ai === AiState.Strike) { struck = t; expect(dist(h.pos, p.pos)).toBeLessThanOrEqual(LUNGE_ATTACK_M + 0.5); }
+      if (touched < 0 && p.health <= 0) touched = t;
+      if (!w.state.enemies.has(h.id)) gone = t;
     }
-    expect(touched).toBeGreaterThanOrEqual(0);
+    expect(struck).toBeGreaterThanOrEqual(0);
+    expect(touched).toBeGreaterThanOrEqual(struck);
+    expect(gone).toBeGreaterThan(struck);
+    expect((gone - struck) * TICK_DT).toBeLessThanOrEqual(LUNGE_ATTACK_S + 0.05);
 
     // Again, and this time they step out of its line: it passes, and is gone, and they live.
     const { w: w2, p: q } = forestWorld();
@@ -177,12 +192,12 @@ describe("the director", () => {
     tick(w2, 30);
     // Six metres across the line, more than the drift can follow.
     standAt(q, q.pos.x + Math.cos(q.yaw) * 6, q.pos.z - Math.sin(q.yaw) * 6);
-    let gone = -1;
-    for (let t = 0; t < Math.round(LUNGE_MAX_S / TICK_DT) + 10 && gone < 0; t++) {
+    let passed = -1;
+    for (let t = 0; t < Math.round(LUNGE_MAX_S / TICK_DT) + 10 && passed < 0; t++) {
       tick(w2);
-      if (!w2.state.enemies.has(l.id)) gone = t;
+      if (!w2.state.enemies.has(l.id)) passed = t;
     }
-    expect(gone).toBeGreaterThanOrEqual(0);
+    expect(passed).toBeGreaterThanOrEqual(0);
     expect(q.health).toBe(100);
     expect(LUNGE_RANGE[0]).toBeGreaterThan(SHADE_FLEE_RADIUS);
   });

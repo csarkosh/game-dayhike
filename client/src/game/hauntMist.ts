@@ -20,18 +20,21 @@ import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { mistAlphaMap, MIST_TEX_SIZE } from "./mistField.js";
 
 /** How many puffs, how far from the eye they are born (least and most), and beyond what they are left behind. */
-export const HAUNT_MIST_PUFFS = 12;
+export const HAUNT_MIST_PUFFS = 16;
 export const HAUNT_MIST_BORN: readonly [number, number] = [4, 16];
 export const HAUNT_MIST_LEAVE = 22;
 /** A puff's size, its life, its drift (m/s) and how far above the ground its centre sits, as a share of its size. */
 export const HAUNT_MIST_SIZE: readonly [number, number] = [5, 12];
 export const HAUNT_MIST_LIFE_S: readonly [number, number] = [10, 24];
 export const HAUNT_MIST_DRIFT = 0.35;
-export const HAUNT_MIST_SEAT = 0.3;
+export const HAUNT_MIST_SEAT = 0.12;
+/** A puff is wider than it is tall: the mist lies on the ground, not in the air. */
+export const HAUNT_MIST_WIDE = 1.7;
+export const HAUNT_MIST_TALL = 0.75;
 /** Seconds a puff takes to come in and to go. */
 export const HAUNT_MIST_EDGE_S = 2.5;
 /** The puffs' grey, lit from within, and a puff's opacity at a full haunt. */
-export const HAUNT_MIST_GREY = 0.36;
+export const HAUNT_MIST_GREY = 0.22;
 export const HAUNT_MIST_ALPHA = 0.55;
 
 type Puff = { mesh: Mesh; x: number; z: number; size: number; life: number; age: number; weight: number; phase: number; dx: number; dz: number };
@@ -99,8 +102,8 @@ export function createHauntMist(scene: Scene, groundY: (x: number, z: number) =>
         if (p.age >= p.life || away > HAUNT_MIST_LEAVE) born(p, cx, cz, fresh);
         p.x += p.dx * dt;
         p.z += p.dz * dt;
-        p.mesh.position.set(p.x, groundY(p.x, p.z) + p.size * HAUNT_MIST_SEAT, p.z);
-        p.mesh.scaling.setAll(p.size);
+        p.mesh.position.set(p.x, groundY(p.x, p.z) + p.size * HAUNT_MIST_TALL * HAUNT_MIST_SEAT, p.z);
+        p.mesh.scaling.set(p.size * HAUNT_MIST_WIDE, p.size * HAUNT_MIST_TALL, 1);
         // In and out over the edges of its life, breathing a little in between.
         const edge = Math.min(1, p.age / HAUNT_MIST_EDGE_S, (p.life - p.age) / HAUNT_MIST_EDGE_S);
         const breath = 0.8 + 0.2 * Math.sin(seconds * 0.5 + p.phase);
