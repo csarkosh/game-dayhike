@@ -39,8 +39,10 @@ float textureOutputHeight_;
 // presence, collapses to a point and draws nothing: chosen by step, never by
 // a branch, so every midge keeps its slot (and its hash) as counts change.
 // The card faces the eye, 3 mm across in the world but never under 2
-// pixels, its alpha scaled down by how much it was enlarged but never below
-// a floor, so a far midge reads as a dot.
+// pixels, its alpha scaled down by how much it was enlarged. Near the eye it
+// is never below a floor, so a close swarm's midge reads as a dot. The floor
+// fades from 6 m to nothing at 15 m, so a far midge is a faint speck and a
+// swarm across the water does not sum to a solid blob.
 //
 // Two glints, each a share handed to the fragment stage, which lights them
 // apart: the sun's (a narrow lobe toward the sun and the wing's flash) and
@@ -73,6 +75,8 @@ const float MIDGE_BALL_FLAT = 0.6666666666666666;
 const float MIDGE_CARD = 0.003;
 const float MIDGE_MIN_PX = 2.0;
 const float MIDGE_ALPHA_FLOOR = 0.6;
+const float MIDGE_FLOOR_NEAR = 6.0;
+const float MIDGE_FLOOR_FAR = 15.0;
 const float MIDGE_FLASH_LOW = 9.0;
 const float MIDGE_FLASH_HIGH = 14.0;
 const float MIDGE_LOBE_POWER = 8.0;
@@ -119,7 +123,8 @@ vec3 rise = cross(view, side);
 vec3 corner = centre + (side * position.x + rise * position.y) * size * alive;
 gl_Position = viewProjection * vec4(corner, 1.0);
 vCorner = 2.0 * position.xy;
-vAlpha = max(MIDGE_CARD / size, MIDGE_ALPHA_FLOOR) * shape.z * alive;
+float nearFloor = MIDGE_ALPHA_FLOOR * clamp((MIDGE_FLOOR_FAR - far) / (MIDGE_FLOOR_FAR - MIDGE_FLOOR_NEAR), 0.0, 1.0);
+vAlpha = max(MIDGE_CARD / size, nearFloor) * shape.z * alive;
 float lobe = pow(max(dot(-view, midgeSun), 0.0), MIDGE_LOBE_POWER);
 float rate = mix(MIDGE_FLASH_LOW, MIDGE_FLASH_HIGH, midgeHash(slot, seed + 73.0));
 float flash = pow(max(sin(MIDGE_TAU * rate * t + MIDGE_TAU * midgeHash(slot, seed + 71.0)), 0.0), MIDGE_FLASH_POWER);
