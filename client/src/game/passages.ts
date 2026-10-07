@@ -11,14 +11,15 @@ export const ROAD_LINE_U = ROAD_WALL_U + 0.5;
 /**
  * A player's death: their story closes on this line as the body goes down
  * and the dark closes (ending.ts). The title's shape, three parts and a
- * turn, and the turn leaves them unsure of what becomes of them.
+ * turn: the one who went looking for the missing,
+ * gone under the leaves with no one left to look for them, in the manner of Poe.
  */
-export const DEATH_LINE = "A short fall; the ground, soft; and overhead the counting, which did not stop at you.";
+export const DEATH_LINE = "The light guttering; their name, unanswered; and the help, cold beneath the leaves, sought nevermore.";
 /**
  * The match won, as the camera lifts to the sky: the same shape, and the
- * turn is the one the title's conviction gets wrong.
+ * turn, ten words like the title's, lets them out but not alone.
  */
-export const WON_LINE = "A hard night; a long way down; and the woods, for once, counting one fewer than they meant to.";
+export const WON_LINE = "The night, outlasted; the car, at last; and in the mirror, a shadow, where no one sat.";
 
 /** After a loss, the return to the landing comes this long after the end. */
 export const END_LANDING_MS = 8000;

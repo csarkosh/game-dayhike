@@ -4,7 +4,9 @@
 **Status:** Built 2026-10-06. Amended the same day: the panel of names is gone, the line is the
 end, and the pages switch behind a veil (§3).
 **Parent:** [`2026-09-16-the-summit.md`](2026-09-16-the-summit.md) §2 (the end and the death) and the
-title's line in `game/landing.ts`, whose shape the two lines here take: three parts, and a turn.
+title's line in `game/landing.ts`, whose shape the two lines here take: three parts, and a turn
+(the win's of ten words, the title's count). The counting is the title's alone; neither line
+speaks of it.
 
 ## 0. What this is
 
@@ -13,16 +15,17 @@ of names at once. Both are staged now, each in the camera.
 
 **Won, and alive to see it.** The camera lifts from where the player stands to the sky, fast at
 first and slowing, over 5 s; from 0.8 s the picture softens over 3.5 s; the line is up
-throughout: "A hard night; a long way down; and the woods, for once, counting one fewer than
-they meant to." At 7 s the view goes dark under the line, and the landing comes at 10 s. A player
+throughout: "The night, outlasted; the car, at last; and in the mirror, a shadow, where no one
+sat." At 7 s the view goes dark under the line, and the landing comes at 10 s. A player
 who is dead when the match is won stays under their own last line. There is no panel of names
 (there was one, as first built; it read as a text box over the end).
 
 **Died.** The body goes down on its back: over 1.3 s, slowly and then all at once, the eye drops
 to 22 cm off the ground, the look turns to near straight up and the head settles a little over.
 From 1 s the dark closes over 3 s, the stare's own darkness driven to full, and the view's fade
-finishes the black at 3.5 s. The line sits on top throughout: "A short fall; the ground, soft;
-and overhead the counting, which did not stop at you." The landing comes at 8 s.
+finishes the black at 3.5 s. The line sits on top throughout, the searcher become one of the
+searched-for: "The light guttering; their name, unanswered; and the help, cold beneath the leaves,
+sought nevermore." The landing comes at 8 s.
 
 ## 1. Where it lives
 
