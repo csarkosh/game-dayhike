@@ -12,7 +12,7 @@ const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 // every plugin injects per stage, and the three post shaders as stored. A
 // change here is a change to what every WebGL2 player compiles.
 const PINS: Record<string, string> = {
-  "atmosphere.fragment": "162e0b3262dcda82d50dd13900b827bfe1e8fbb8520faec325bcd761cc348ff6",
+  "atmosphere.fragment": "90a225899022c63f1fea5a2247280c72f7d68c01cf14d91369eb9eb993a7504e",
   "cliffTint.fragment": "34b80348c2b278087d42892dd31129fc6aac2b12c93f275293617b88e9e2bccd",
   "cliffTint.vertex": "3fcb23ae5aab79e441e6d140e71ad0c149a0702f72c48fa093fc0b9fd3076de1",
   "distanceFade.fragment": "e9fd42d78c56e2f364ac16691996386de60dd9717060cc3822bd296c9c09281f",
@@ -58,7 +58,7 @@ const PINS: Record<string, string> = {
 // attributes and the defines it sets. Taken at the branch's tip, where none of
 // those has changed since the base.
 const INTERFACE_PINS: Record<string, string> = {
-  "atmosphere.interface": "23b38d0a1f9d1181e5324806cd6e5e3361b344ff8d889b9f5942ef35472c3962",
+  "atmosphere.interface": "6ba579ebd197ac27d511d50b09216c7fb73f8003b222acdab35d77f7dd245a55",
   "cliffTint.interface": "17f58097180ad484779cd5302189b01c65ae910a947d6d347ac9eff595479115",
   "distanceFade.interface": "c59e5c6bd9a213d90f127332528ef16d234392159113be81a6cc47b38d2709cb",
   "foliage.BLADES.interface": "38e133af1b4e6322274d74a695851032e14b221b6ff26d3d1a7d783265e6ec29",

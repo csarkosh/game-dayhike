@@ -23,7 +23,7 @@ import {
   atmosphereUnder, fogGradientUnder, GRADIENT_STEPS, type AtmosphereRecord,
 } from "./atmosphereParams.js";
 import {
-  CLOUD_GLOW, CLOUD_GLOW_POWER, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SIZE, CLOUD_NOISE_SMALL_M,
+  CLOUD_GLOW, CLOUD_GLOW_POWER, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_NEAR_M, CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SIZE, CLOUD_NOISE_SMALL_M,
   CLOUD_RANGE, CLOUD_SEAT, CLOUD_SIGMA, CLOUD_WIND_MPS, cloudColourUnder, cloudHeightUnder, cloudNoiseMap, type CloudGround,
 } from "./cloudParams.js";
 
@@ -102,6 +102,7 @@ class AtmospherePlugin extends MaterialPluginBase {
         { name: "atmCloudFalloff", size: 1, type: "float" },
         { name: "atmCloudSeat", size: 1, type: "float" },
         { name: "atmCloudGroundRange", size: 1, type: "float" },
+        { name: "atmCloudNear", size: 1, type: "float" },
         { name: "atmCloudNoiseScale", size: 2, type: "vec2" },
         { name: "atmCloudWind", size: 2, type: "vec2" },
         { name: "atmCloudGlow", size: 2, type: "vec2" },
@@ -125,6 +126,7 @@ class AtmospherePlugin extends MaterialPluginBase {
         "uniform float atmCloudFalloff;",
         "uniform float atmCloudSeat;",
         "uniform float atmCloudGroundRange;",
+        "uniform float atmCloudNear;",
         "uniform vec2 atmCloudNoiseScale;",
         "uniform vec2 atmCloudWind;",
         "uniform vec2 atmCloudGlow;",
@@ -156,6 +158,7 @@ class AtmospherePlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("atmCloudFalloff", 1 / cloudHeightUnder(c.haunt));
     uniformBuffer.updateFloat("atmCloudSeat", CLOUD_SEAT);
     uniformBuffer.updateFloat("atmCloudGroundRange", c.ground.range);
+    uniformBuffer.updateFloat("atmCloudNear", CLOUD_NEAR_M);
     uniformBuffer.updateFloat2("atmCloudNoiseScale", 1 / CLOUD_NOISE_LARGE_M, 1 / CLOUD_NOISE_SMALL_M);
     const wind = (c.seconds * CLOUD_WIND_MPS) / CLOUD_NOISE_LARGE_M;
     uniformBuffer.updateFloat2("atmCloudWind", wind % 1, (wind * 0.6) % 1);

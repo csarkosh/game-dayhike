@@ -30,6 +30,8 @@ export const CLOUD_RANGE = 40;
 /** Steps of the march a tier takes: high, medium, and none on low (the closed-form fog alone). */
 export const CLOUD_STEPS_HIGH = 12;
 export const CLOUD_STEPS_MEDIUM = 8;
+/** Metres from the eye within which the cloud's shapes smooth to a plain veil, the small ones first, so the near mist hangs rather than rushing past a walker. */
+export const CLOUD_NEAR_M = 8;
 /** The noise's two reads: metres a tile spans for the large shapes and the small, and the wind's metres a second. */
 export const CLOUD_NOISE_LARGE_M = 11;
 export const CLOUD_NOISE_SMALL_M = 4;

@@ -59,15 +59,21 @@ float atmCloudFloor(vec2 xz) {
   return atmCloudGroundRect.w + textureLod(atmCloudMap, uv, 0.0).b * atmCloudGroundRange;
 }
 
-// The cloud's extinction at a point: the density, falling off with height
-// above the ground (seated a little below it), shaped by a large and a small
-// read of the noise, each drifting on the wind. Explicit-level reads, so the
+// The cloud's extinction at a point s metres out along the ray: the density,
+// falling off with height above the ground (seated a little below it),
+// shaped by a large and a small read of the noise, each drifting on the
+// wind. Within atmCloudNear of the eye the shapes smooth out to a plain veil,
+// the small ones first: a feature a metre or two off sweeps across the view
+// at a walker's parallax, tens of degrees a second, and read as the mist
+// rushing past, where the mist should hang. Explicit-level reads, so the
 // march is free of the uniformity rules a derivative read would be under.
-float atmCloudAt(vec3 p) {
+float atmCloudAt(vec3 p, float s) {
   float above = p.y - atmCloudFloor(p.xz) + atmCloudSeat;
   float h = exp(-max(above, 0.0) * atmCloudFalloff);
   float large = textureLod(atmCloudMap, p.xz * atmCloudNoiseScale.x + atmCloudWind, 0.0).r;
   float small = textureLod(atmCloudMap, (p.xz + vec2(p.y, -p.y) * 0.7) * atmCloudNoiseScale.y - atmCloudWind.yx, 0.0).g;
+  large = mix(0.7, large, smoothstep(0.0, atmCloudNear * 0.5, s));
+  small = mix(0.7, small, smoothstep(atmCloudNear * 0.2, atmCloudNear, s));
   float n = clamp(large * small * 2.4 - 0.2, 0.0, 1.0);
   return atmCloudDensity * h * n;
 }
@@ -83,7 +89,8 @@ float atmCloudDepth(vec3 ro, vec3 rd, float t) {
     if (float(i) > atmCloudSteps) break;
     float f = float(i) / atmCloudSteps;
     float s = reach * f * f;
-    od += atmCloudAt(ro + rd * (0.5 * (prev + s))) * (s - prev);
+    float mid = 0.5 * (prev + s);
+    od += atmCloudAt(ro + rd * mid, mid) * (s - prev);
     prev = s;
   }
   return od;

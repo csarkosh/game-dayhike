@@ -15,7 +15,7 @@
  * `stepMovement` with yaw 0, so movement needs no trig at all.
  */
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
-import { AiState, Button, Outcome, Phase, cloneVec3 } from "./types.js";
+import { AiState, Button, Outcome, cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
@@ -54,7 +54,7 @@ export const HOLLOW_LOOK_RANGE = 120;
 export const HOLLOW_STARE_FILL_S = 6;
 /** Seconds of looking away that empty it from 1 to 0: longer than the fill, so a look lingers. */
 export const HOLLOW_STARE_EMPTY_S = 8;
-/** In the chase, how far a shade of the haunt in the cone fills the stare: a slight closing, never the whole. */
+/** How far a shade of the haunt in the cone fills the stare: a slight closing, never the whole. */
 export const SHADE_STARE_CAP = 0.45;
 /** Added to the two half-widths: the hulls need not interpenetrate to touch. */
 export const HOLLOW_CONTACT_MARGIN = 0.1;
@@ -514,10 +514,10 @@ export function updateHollows(world: World): void {
       }
     }
     p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
-    // In the chase a shade of the haunt (not a Hollow: harmless) in the cone
-    // fills the stare too, but only to SHADE_STARE_CAP: the dark closes a
-    // little on it, never all the way, as it does on the thing itself.
-    if (!sees && state.phase === Phase.Chase && p.stare < SHADE_STARE_CAP) {
+    // A shade of the haunt (not a Hollow: harmless) in the cone fills the
+    // stare too, but only to SHADE_STARE_CAP: the dark closes a little on
+    // it, never all the way, as it does on the thing itself.
+    if (!sees && p.stare < SHADE_STARE_CAP) {
       for (const e of state.enemies.values()) {
         if (e.ai !== AiState.Shade || !playerSees(p, e, world)) continue;
         p.stare = Math.min(SHADE_STARE_CAP, p.stare + fill + empty);
