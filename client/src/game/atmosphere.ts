@@ -23,8 +23,8 @@ import {
   atmosphereUnder, fogGradientUnder, GRADIENT_STEPS, type AtmosphereRecord,
 } from "./atmosphereParams.js";
 import {
-  CLOUD_FALLOFF, CLOUD_GLOW, CLOUD_GLOW_POWER, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SIZE, CLOUD_NOISE_SMALL_M,
-  CLOUD_RANGE, CLOUD_SEAT, CLOUD_SIGMA, CLOUD_WIND_MPS, cloudColourUnder, cloudNoiseMap, type CloudGround,
+  CLOUD_GLOW, CLOUD_GLOW_POWER, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SIZE, CLOUD_NOISE_SMALL_M,
+  CLOUD_RANGE, CLOUD_SEAT, CLOUD_SIGMA, CLOUD_WIND_MPS, cloudColourUnder, cloudHeightUnder, cloudNoiseMap, type CloudGround,
 } from "./cloudParams.js";
 
 /**
@@ -41,9 +41,10 @@ let current: AtmosphereRecord | null = null;
 /** The ground cloud's map (cloudParams.ts, noise in R and G, the ground in B), and its state for the frame. */
 let cloudMapTexture: RawTexture | null = null;
 export type CloudState = {
-  /** The density knob, 0 to 1 (cloudDensityUnder), and the steps the tier marches (0: no cloud). */
+  /** The density knob, 0 to 1 (cloudDensityUnder), the steps the tier marches (0: no cloud), and the haunt's level, which the cloud stands taller by. */
   density: number;
   steps: number;
+  haunt: number;
   /** The clock, seconds, for the wind. */
   seconds: number;
   /** The cloud's colour, linear. */
@@ -51,7 +52,7 @@ export type CloudState = {
   /** The ground map's centre, base and range (cloudGroundMap). */
   ground: { centreX: number; centreZ: number; base: number; range: number };
 };
-let cloud: CloudState = { density: 0, steps: 0, seconds: 0, colour: { r: 0, g: 0, b: 0 }, ground: { centreX: 0, centreZ: 0, base: 0, range: 1 } };
+let cloud: CloudState = { density: 0, steps: 0, haunt: 0, seconds: 0, colour: { r: 0, g: 0, b: 0 }, ground: { centreX: 0, centreZ: 0, base: 0, range: 1 } };
 /** Whether a registration is live: from `createAtmosphere` until its dispose. */
 let registered = false;
 
@@ -152,7 +153,7 @@ class AtmospherePlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("atmCloudSteps", on ? c.steps : 0);
     uniformBuffer.updateFloat("atmCloudDensity", CLOUD_SIGMA * c.density);
     uniformBuffer.updateFloat("atmCloudRange", CLOUD_RANGE);
-    uniformBuffer.updateFloat("atmCloudFalloff", CLOUD_FALLOFF);
+    uniformBuffer.updateFloat("atmCloudFalloff", 1 / cloudHeightUnder(c.haunt));
     uniformBuffer.updateFloat("atmCloudSeat", CLOUD_SEAT);
     uniformBuffer.updateFloat("atmCloudGroundRange", c.ground.range);
     uniformBuffer.updateFloat2("atmCloudNoiseScale", 1 / CLOUD_NOISE_LARGE_M, 1 / CLOUD_NOISE_SMALL_M);
@@ -201,7 +202,7 @@ export type Atmosphere = {
    * tier's steps, and the clock. Its colour is the gradient's near end lifted
    * toward grey (cloudColourUnder), so it is dark by night and pale by day.
    */
-  setCloud(density: number, steps: number, seconds: number): void;
+  setCloud(density: number, steps: number, seconds: number, haunt?: number): void;
   /** The ground the cloud rests on, rebuilt round a place (cloudGroundMap). */
   setCloudGround(ground: CloudGround): void;
   /** The cloud's state as last set, for tests and the console. */
@@ -278,8 +279,8 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
     nearColour() {
       return gradient[0] ?? { r: 0, g: 0, b: 0 };
     },
-    setCloud(density, steps, seconds) {
-      cloud = { ...cloud, density: Math.max(0, Math.min(1, density)), steps, seconds, colour: cloudColourUnder(gradient[0] ?? { r: 0, g: 0, b: 0 }) };
+    setCloud(density, steps, seconds, haunt = 0) {
+      cloud = { ...cloud, density: Math.max(0, Math.min(1, density)), steps, seconds, haunt: Math.max(0, Math.min(1, haunt)), colour: cloudColourUnder(gradient[0] ?? { r: 0, g: 0, b: 0 }) };
     },
     setCloudGround(g) {
       for (let i = 0; i < CLOUD_GROUND_SIZE * CLOUD_GROUND_SIZE; i++) cloudMap[i * 4 + 2] = g.data[i * 4] as number;

@@ -30,8 +30,10 @@ At a point `p`, the extinction is `atmCloudDensity × h × n`:
   (`cloudDensityUnder`: the night × `CLOUD_NIGHT_DENSITY` 0.3, lifted by the haunt by
   `CLOUD_HAUNT_LIFT` 0.25 of the way to 1, pulled to `CLOUD_CHASE_DENSITY` 0.7 by the chase's
   cast; or the console's `mist <density>` hold).
-- `h = exp(−max(0, y − floor + CLOUD_SEAT) × CLOUD_FALLOFF)`: the cloud thins to 1/e every 2.5 m
-  above the ground, which it is seated 0.3 m under so a slope never shows an edge. The floor is
+- `h = exp(−max(0, y − floor + CLOUD_SEAT) / height)`: the cloud thins to 1/e every `height`
+  metres above the ground, `cloudHeightUnder(haunt)`: `CLOUD_HEIGHT_M` (2.5) with no haunt on and
+  `CLOUD_HAUNT_HEIGHT_M` (3) more at its full, so the mist stands taller as the shades come;
+  seated `CLOUD_SEAT` (0.3 m) under the ground so a slope never shows an edge. The floor is
   the ground's height under `p`, read from the ground map (§3).
 - `n = clamp(large × small × 2.4 − 0.2, 0, 1)`: two reads of the tileable noise (§3), the large
   shapes at `CLOUD_NOISE_LARGE_M` (11 m a tile) drifting with the wind at `CLOUD_WIND_MPS`
