@@ -36,12 +36,16 @@ export const HAUNT_MIST_EDGE_S = 2.5;
 /** The puffs' grey, lit from within, and a puff's opacity at a full haunt. */
 export const HAUNT_MIST_GREY = 0.22;
 export const HAUNT_MIST_ALPHA = 0.55;
+/** In the chase: where the puffs are born instead, how much more opaque they are, and how much larger. */
+export const HAUNT_MIST_BORN_CHASE: readonly [number, number] = [2.5, 10];
+export const HAUNT_MIST_CHASE_ALPHA = 0.6;
+export const HAUNT_MIST_CHASE_SIZE = 0.3;
 
 type Puff = { mesh: Mesh; x: number; z: number; size: number; life: number; age: number; weight: number; phase: number; dx: number; dz: number };
 
 export type HauntMist = {
-  /** One frame: the haunt's level (escalation.ts), the night (0 to 1), and the clock. */
-  update(camera: Camera, haunt: number, night: number, seconds: number): void;
+  /** One frame: the haunt's level (escalation.ts), the night (0 to 1), the clock, and how far in the chase is (its cast, 0 to 1): the mist closes in and thickens with it. */
+  update(camera: Camera, haunt: number, night: number, seconds: number, press?: number): void;
   dispose(): void;
 };
 
@@ -69,9 +73,12 @@ export function createHauntMist(scene: Scene, groundY: (x: number, z: number) =>
   let lastSeconds: number | null = null;
 
   /** A puff born round the eye: a drawn bearing and distance, size, life, weight and drift. */
-  function born(p: Puff, cx: number, cz: number, stagger: boolean): void {
+  function born(p: Puff, cx: number, cz: number, stagger: boolean, press: number): void {
     const a = random() * Math.PI * 2;
-    const r = between(HAUNT_MIST_BORN);
+    const r = between([
+      HAUNT_MIST_BORN[0] + (HAUNT_MIST_BORN_CHASE[0] - HAUNT_MIST_BORN[0]) * press,
+      HAUNT_MIST_BORN[1] + (HAUNT_MIST_BORN_CHASE[1] - HAUNT_MIST_BORN[1]) * press,
+    ]);
     p.x = cx + Math.sin(a) * r;
     p.z = cz + Math.cos(a) * r;
     p.size = between(HAUNT_MIST_SIZE);
@@ -86,8 +93,9 @@ export function createHauntMist(scene: Scene, groundY: (x: number, z: number) =>
   }
 
   return {
-    update(camera, haunt, night, seconds) {
-      const level = Math.max(0, Math.min(1, haunt)) * Math.max(0, Math.min(1, night));
+    update(camera, haunt, night, seconds, press = 0) {
+      const close = Math.max(0, Math.min(1, press));
+      const level = Math.max(0, Math.min(1, haunt)) * Math.max(0, Math.min(1, night)) * (1 + HAUNT_MIST_CHASE_ALPHA * close);
       const dt = lastSeconds === null ? 0 : Math.max(0, Math.min(0.1, seconds - lastSeconds));
       lastSeconds = seconds;
       if (level <= 0.002) {
@@ -99,15 +107,16 @@ export function createHauntMist(scene: Scene, groundY: (x: number, z: number) =>
       for (const p of puffs) {
         p.age += dt;
         const away = Math.hypot(p.x - cx, p.z - cz);
-        if (p.age >= p.life || away > HAUNT_MIST_LEAVE) born(p, cx, cz, fresh);
+        if (p.age >= p.life || away > HAUNT_MIST_LEAVE) born(p, cx, cz, fresh, close);
         p.x += p.dx * dt;
         p.z += p.dz * dt;
-        p.mesh.position.set(p.x, groundY(p.x, p.z) + p.size * HAUNT_MIST_TALL * HAUNT_MIST_SEAT, p.z);
-        p.mesh.scaling.set(p.size * HAUNT_MIST_WIDE, p.size * HAUNT_MIST_TALL, 1);
+        const size = p.size * (1 + HAUNT_MIST_CHASE_SIZE * close);
+        p.mesh.position.set(p.x, groundY(p.x, p.z) + size * HAUNT_MIST_TALL * HAUNT_MIST_SEAT, p.z);
+        p.mesh.scaling.set(size * HAUNT_MIST_WIDE, size * HAUNT_MIST_TALL, 1);
         // In and out over the edges of its life, breathing a little in between.
         const edge = Math.min(1, p.age / HAUNT_MIST_EDGE_S, (p.life - p.age) / HAUNT_MIST_EDGE_S);
         const breath = 0.8 + 0.2 * Math.sin(seconds * 0.5 + p.phase);
-        p.mesh.visibility = level * p.weight * Math.max(0, edge) * breath;
+        p.mesh.visibility = Math.min(1, level * p.weight * Math.max(0, edge) * breath);
         p.mesh.setEnabled(true);
       }
     },

@@ -2001,7 +2001,7 @@ function buildRenderer(
         silhouette.sync(views.shades());
         post.setShades(silhouette.texture, silhouette.any());
       }
-      hauntMist?.update(camera, hauntLevel, lighting.sky?.night ?? 0, seconds);
+      hauntMist?.update(camera, hauntLevel, lighting.sky?.night ?? 0, seconds, chaseCast);
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
       // its GLBs have loaded, so new entries are picked up here.
