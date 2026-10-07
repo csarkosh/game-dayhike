@@ -447,7 +447,7 @@ describe("the midges' stages", () => {
   };
 
   it("hold a near midge's coverage at the floor, a dot not a ghost, and let a far one fade to a faint speck", () => {
-    // 1100 pixels to a metre at 1 m: within 1.36 m the card covers 2 px or
+    // A pixel 1.1 mm across at 1 m: within 1.36 m the card covers 2 px or
     // more and keeps its whole coverage.
     expect(coverage(1, 0.0011, 1)).toBe(1);
     // Enlarged to 2 px, it covers 0.68 of them at 2 m, and the floor holds it

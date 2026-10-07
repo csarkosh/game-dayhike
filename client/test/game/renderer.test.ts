@@ -1058,7 +1058,7 @@ describe("the lake's life in a renderer", () => {
       frame();
       expect(renderer.waterLifeSound()).toBe(unstepped);
       // One silent object for every caller, frozen through.
-      for (const part of [unstepped, unstepped.hums, unstepped.rustles, unstepped.frogCalls, unstepped.bed, unstepped.bed.points, ...unstepped.bed.points]) {
+      for (const part of [unstepped, unstepped.hums, unstepped.rustles, unstepped.frogCalls, unstepped.bed, unstepped.bed.duck, unstepped.bed.points, ...unstepped.bed.points]) {
         expect(Object.isFrozen(part)).toBe(true);
       }
       // A frame that steps it again is heard again, from its own record.

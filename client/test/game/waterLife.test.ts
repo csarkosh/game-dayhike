@@ -570,6 +570,38 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     life.dispose();
   });
 
+  it("quiets each chorus loop around the player nearest its place, as the voices fall silent there, never below 0.35", () => {
+    const lake = lakeOf(SEED);
+    const life = createWaterLife(scene(), SEED, lake, "low", "material");
+    const at = shore(0);
+    const f = frameAt(at.x, at.ground + 1.6, at.z, 22);
+    const [p0, p1] = life.sound().bed.points;
+    /** A player `d` metres out from a loop's place, away from the lake's middle:
+     * the other place, across the lake, stays more than 52 m off. */
+    const outFrom = (p: { x: number; z: number }, d: number) => {
+      const r = Math.hypot(p.x - lake.x, p.z - lake.z);
+      return { x: p.x + ((p.x - lake.x) / r) * d, y: lake.level + 1, z: p.z + ((p.z - lake.z) / r) * d };
+    };
+    const duck = () => [...life.sound().bed.duck];
+    // No player: both whole.
+    life.update(f);
+    expect(duck()).toEqual([1, 1]);
+    // At the place, and at the voices' quiet radius: the floor. Then linearly
+    // from 12 m to 30 m: half at 21 m, whole from 30 m.
+    for (const [d, want] of [[0, 0.35], [12, 0.35], [15, 0.35], [21, 0.5], [27, 0.833333333], [30, 1], [45, 1]] as const) {
+      f.players = [outFrom(p0!, d)];
+      run(life, f, 0.05);
+      expect(duck()[0], `${d} m`).toBeCloseTo(want, 9);
+      expect(duck()[1], `${d} m`).toBe(1);
+    }
+    // Several players: the nearest to each place decides its loop.
+    f.players = [outFrom(p0!, 40), outFrom(p0!, 21), outFrom(p1!, 24)];
+    run(life, f, 0.05);
+    expect(duck()[0]).toBeCloseTo(0.5, 9);
+    expect(duck()[1]).toBeCloseTo(0.666666667, 9);
+    life.dispose();
+  });
+
   it("sounds the far chorus at night, thinner with a player among the frogs, and not by day, under dread, with the Hollow near, out of reach or once disposed", () => {
     const lake = lakeOf(SEED);
     const life = createWaterLife(scene(), SEED, lake, "low", "material");

@@ -25,7 +25,8 @@
  *   synthesized call (`frogCallVoice`) instead.
  * - The far chorus: the frogs farther out than the voices, `FROG_BED_CLIPS`
  *   looping at the bed's two places over the water, each from a random point
- *   in its seamless stretch (`FROG_BED_LOOP_S`), gained by the bed's level.
+ *   in its seamless stretch (`FROG_BED_LOOP_S`), gained by the bed's level
+ *   and by its own loop's quieting around the player nearest its place.
  *   A loop starts once its clip is decoded and its level is above nothing,
  *   none beyond `FROG_RANGE`; when its level reaches nothing it is sent a
  *   gain of nothing, and it stops after `FROG_BED_HOLD_S` of it.
@@ -71,9 +72,10 @@ export const FROG_BED_LOOP_S: readonly [number, number] = [0.5, 10.5];
 export const FROG_BED_REF = 30;
 /**
  * Each chorus loop's gain at a level of 1, the near recording's and the far
- * one's: the chorus carried across the water at a level a player hears from
- * the shore, under the nearer voices' calls but never lost beneath the
- * ambience.
+ * one's: the far frogs, the chorus that sits beneath the voices, carried
+ * across the water at a level a player hears from the shore and never lost
+ * beneath the ambience. Around a player it falls quiet as the voices there
+ * do (`bed.duck`, `waterLife.ts`).
  */
 export const FROG_BED_GAIN: readonly [number, number] = [0.5, 0.35];
 /** A chorus loop whose level has been nothing this long stops. */
@@ -91,9 +93,12 @@ export type WaterLifeSound = {
   rustles: readonly { x: number; y: number; z: number; loud: boolean }[];
   /** This frame's frog calls. */
   frogCalls: readonly FrogCall[];
-  /** The far chorus: its level, 0 to 1, and its two places, one a `FROG_BED_CLIPS` loop in order. */
+  /** The far chorus: its level, 0 to 1, each loop's quieting around the
+   * player nearest its place (`BED_FLOOR` to 1), and its two places, one a
+   * `FROG_BED_CLIPS` loop in order. */
   bed: {
     level: number;
+    duck: [number, number];
     points: readonly [{ x: number; y: number; z: number }, { x: number; y: number; z: number }];
   };
 };
@@ -456,7 +461,7 @@ export function createWaterLifeAudio(
       const loop = bedLoops[k]!;
       const p = b.points[k]!;
       // Written as "within" and "above" so a place or a level that is not a number is silence.
-      const gain = distance(p, listener) <= FROG_RANGE && b.level > 0 ? b.level * FROG_BED_GAIN[k]! : 0;
+      const gain = distance(p, listener) <= FROG_RANGE && b.level > 0 ? b.level * b.duck[k]! * FROG_BED_GAIN[k]! : 0;
       if (loop.emitter === null) {
         if (gain <= 0 || bedClips[k] === undefined) continue;
         // Made silent and raised through the emitter's ramp: a loop entered

@@ -86,7 +86,9 @@ export const GAIN_RAMP_S = 2;
 export const HUSH_RAMP_S = 0.08;
 /** The brick-wall limiter between the world bus and the master, so the frogs, a hum
  * over the head and a rustle together cannot clip: from 3 dB under full scale, no
- * knee, 20 to 1, on within 3 ms and off within 100 ms. */
+ * knee, 20 to 1, on within 3 ms and off within 100 ms. The compressor's automatic
+ * makeup gain raises the whole world bus by about 1.7 dB (×1.22), and settles its
+ * peaks near −1.1 dBFS. */
 export const WORLD_LIMIT = { thresholdDb: -3, knee: 0, ratio: 20, attackS: 0.003, releaseS: 0.1 } as const;
 /** The birdsong bed's bus at full song, how far each of its two passes sits to its ear,
  * the seconds one pass's end lies under the next's start (the bed is faded that long at

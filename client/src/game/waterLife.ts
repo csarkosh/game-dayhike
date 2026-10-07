@@ -16,7 +16,9 @@
  * a marsh the rim across the lake from its first frog, and the rim across
  * from that), and a level that follows the frogs' presence, is gone while
  * the Hollow holds them silent, and thins to `BED_FLOOR` as players' nearness
- * stops the voices.
+ * stops the voices. Each loop also falls quiet around the player nearest
+ * its place, as the voices there do: down to `BED_FLOOR` within the voices'
+ * quiet radius, whole from `FROG_BED_REF` out.
  *
  * With the camera beyond the reach of everything the lake holds
  * (`WATER_LIFE_REACH` past the farthest of it), nothing is stepped: the
@@ -59,8 +61,8 @@ import {
 import { createMidgeSwarms, type MidgeFrame } from "./midgeSwarms.js";
 import { DRAGONFLY_RANGE, createDragonflyBehaviour, type Dragonflies } from "./dragonflyBehaviour.js";
 import { createDragonflyMeshes } from "./dragonflies.js";
-import { createFrogChorus, type FrogCall } from "./frogChorus.js";
-import { FROG_RANGE, type WaterLifeSound } from "./waterLifeAudio.js";
+import { FROG_QUIET_RADIUS, createFrogChorus, type FrogCall } from "./frogChorus.js";
+import { FROG_BED_REF, FROG_RANGE, type WaterLifeSound } from "./waterLifeAudio.js";
 
 /** Seconds a share of presence takes to go from none to full, or back. */
 export const WATER_LIFE_EASE_S = 3;
@@ -274,7 +276,7 @@ export function createWaterLife(
 
   const sound: WaterLifeSound = {
     hums: [], hums_n: 0, pitch: 0, rustles: NO_RUSTLES, frogCalls: NO_CALLS,
-    bed: { level: 0, points: bedPlaces(lake, layout.voices) },
+    bed: { level: 0, duck: [1, 1], points: bedPlaces(lake, layout.voices) },
   };
   for (let r = 0; r < ROWS; r++) sound.hums.push({ x: 0, y: 0, z: 0, midges: 0, presence: 0 });
   let resting = false;
@@ -321,6 +323,23 @@ export function createWaterLife(
       lastX[i] = p.x;
       lastZ[i] = p.z;
       inBand[i] = inShoreBand(lake, p.x, p.z);
+    }
+  }
+
+  /** Each chorus loop's quieting by the nearest player's distance to its
+   * place, over the ground: `BED_FLOOR` within `FROG_QUIET_RADIUS`, rising
+   * linearly to whole at `FROG_BED_REF`, whole with no player. */
+  function duckBed(): void {
+    const points = sound.bed.points;
+    for (let k = 0; k < points.length; k++) {
+      const p = points[k]!;
+      let nearest = Infinity;
+      for (let i = 0; i < present.length; i++) {
+        const d = Math.hypot(present[i]!.x - p.x, present[i]!.z - p.z);
+        if (d < nearest) nearest = d;
+      }
+      const rise = Math.min(Math.max((nearest - FROG_QUIET_RADIUS) / (FROG_BED_REF - FROG_QUIET_RADIUS), 0), 1);
+      sound.bed.duck[k] = Math.max(rise, BED_FLOOR);
     }
   }
 
@@ -488,6 +507,7 @@ export function createWaterLife(
       sound.rustles = dragonflies.rustles;
       sound.frogCalls = frogs.calls;
       sound.bed.level = frogs.stopped ? 0 : presence.frog * (BED_FLOOR + (1 - BED_FLOOR) * (1 - frogs.hushedShare));
+      duckBed();
     },
     sound() {
       return sound;

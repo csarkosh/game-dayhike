@@ -148,11 +148,11 @@ function rowOfSwarms(): WaterLifeSound["hums"] {
 const BED_POINTS: WaterLifeSound["bed"]["points"] = [{ x: 20, y: 1, z: 30 }, { x: -40, y: 1, z: -10 }];
 
 function sound(over: Partial<WaterLifeSound> = {}): WaterLifeSound {
-  return { hums: [], hums_n: 0, pitch: 230, rustles: [], frogCalls: [], bed: { level: 0, points: BED_POINTS }, ...over };
+  return { hums: [], hums_n: 0, pitch: 230, rustles: [], frogCalls: [], bed: { level: 0, duck: [1, 1], points: BED_POINTS }, ...over };
 }
 
 /** A frame of nothing but the far chorus at `level`. */
-const bedAt = (level: number, points = BED_POINTS) => sound({ bed: { level, points } });
+const bedAt = (level: number, points = BED_POINTS, duck: [number, number] = [1, 1]) => sound({ bed: { level, duck, points } });
 
 /** The three single calls, all landing: 0.48, 0.52 and 0.5 s long. */
 const SINGLES = { "call.frog_single_a": 0.48, "call.frog_single_b": 0.52, "call.frog_single_c": 0.5 };
@@ -442,7 +442,7 @@ describe("waterLifeAudio", () => {
     expect(FROG_GAIN.map((g) => heard(g, FROG_REF, 12))).toEqual([0.25, 0.5]);
     expect(FROG_GAIN.map((g) => heard(g, FROG_REF, 15))).toEqual([0.2, 0.4]);
     expect(FROG_GAIN.map((g) => heard(g, FROG_REF, 48))).toEqual([0.0625, 0.125]);
-    // The chorus at a level of 1: whole to 30 m, the far loop 52 m off (across a lake of 26 m) at 0.2.
+    // The chorus at a level of 1: whole to 30 m, the far loop 52 m off (across a lake 26 m in radius) at 0.2.
     expect(FROG_BED_GAIN.map((g) => heard(g, FROG_BED_REF, 20))).toEqual([0.5, 0.35]);
     expect(heard(FROG_BED_GAIN[1], FROG_BED_REF, 52)).toBeCloseTo(0.201923, 6);
   });
@@ -476,6 +476,10 @@ describe("waterLifeAudio", () => {
     audio.update(bedAt(0.5), ORIGIN);
     expect(near!.gains.map((g) => g.toFixed(6))).toEqual(["0.500000", "0.250000"]);
     expect(far!.gains.map((g) => g.toFixed(6))).toEqual(["0.350000", "0.175000"]);
+    // Each loop quieted around the player nearest its place: the near to the floor, the far to 0.8.
+    audio.update(bedAt(1, BED_POINTS, [0.35, 0.8]), ORIGIN);
+    expect(near!.gains.map((g) => g.toFixed(6))).toEqual(["0.500000", "0.250000", "0.175000"]);
+    expect(far!.gains.map((g) => g.toFixed(6))).toEqual(["0.350000", "0.175000", "0.280000"]);
     expect(beds(fake.loops).length).toBe(2);
     audio.dispose();
     expect([near!.stopped, far!.stopped]).toEqual([true, true]);

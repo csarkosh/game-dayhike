@@ -766,7 +766,7 @@ function frozenThrough<T extends object>(value: T): T {
  * object. */
 const SILENT_WATER_LIFE: WaterLifeSound = frozenThrough({
   hums: [], hums_n: 0, pitch: 0, rustles: [], frogCalls: [],
-  bed: { level: 0, points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
+  bed: { level: 0, duck: [1, 1], points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
 });
 
 /** A player's position in their slot: the sim's own, y the body's centre. */
