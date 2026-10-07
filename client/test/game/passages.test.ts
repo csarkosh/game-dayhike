@@ -4,11 +4,13 @@ import { Phase } from "../../src/sim/types.js";
 
 describe("the passages", () => {
   it("closes a player's story on death, and the match by who came down", () => {
-    // Both the title's shape: three parts and a turn; the death's turn unsettling, the win's a relief.
-    expect(DEATH_LINE).toMatch(/^A [^;]+; [^;]+; and [^.]+\.$/);
-    expect(DEATH_LINE).toMatch(/counting/);
-    expect(WON_LINE).toMatch(/^A [^;]+; [^;]+; and [^.]+\.$/);
-    expect(WON_LINE).toMatch(/one fewer/);
+    // Both the title's shape: three parts and a turn; the counting is the title's alone. The win's
+    // turn is as many words as the title's ("and the peculiar conviction that the woods were counting us.").
+    for (const line of [DEATH_LINE, WON_LINE]) {
+      expect(line).toMatch(/^(A|The) [^;]+; [^;]+; and [^.]+\.$/);
+      expect(line).not.toMatch(/count/i);
+    }
+    expect(WON_LINE.split("; ")[2]?.split(" ")).toHaveLength(10);
   });
 });
 
