@@ -23,6 +23,12 @@ export const DEATH_LINE = "The light guttering; their name, unanswered; and the 
 export const WON_TITLE = "You lived";
 export const DEATH_TITLE = "You died";
 
+/** A line as the end draws it: two lines, the turn alone on the second (the title screen's shape). */
+export function endLines(line: string): [string, string] {
+  const at = line.lastIndexOf("; ");
+  return at < 0 ? [line, ""] : [line.slice(0, at + 1), line.slice(at + 2)];
+}
+
 export const WON_LINE = "The night, outlasted; the car, at last; and in the mirror, a shadow, where no one sat.";
 
 /** After a loss, the return to the landing comes this long after the end. */

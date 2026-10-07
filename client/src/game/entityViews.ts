@@ -85,8 +85,9 @@ export const SHADE_FADE_OUT_S = 2.6;
 /** Seconds a shade takes to rise from the ground to its height as it comes in, at half its opacity by then; and the seconds after that to its whole. Going, it keeps its height and dissolves. */
 export const SHADE_RISE_S = 2.4;
 export const SHADE_SETTLE_S = 3;
-/** The real one's eyes, dulled: their share of their glow once it has resolved out of the mist. */
+/** The eyes: the real one's, dulled to this share of their glow once it has resolved; a shade's, fainter still. */
 export const SHADE_EYES_DULL = 0.55;
+export const SHADE_EYES_SHADE = 0.12;
 /** Metres from the local eye within which a lunge resolves from the mist into the Hollow, and the seconds that takes. */
 export const SHADE_RESOLVE_M = 12;
 export const SHADE_RESOLVE_S = 1.4;
@@ -98,6 +99,11 @@ export const SHADE_FAR_M = 40;
 export const SHADE_FAR_SHARE = 0.35;
 
 /** Writes `visibility` on every mesh under `node`: 1 is drawn as it is, under 1 is blended toward nothing. */
+/** The eyes' level on the frame: the real one's dulled glow, a shade's fainter, by the softness between, and the fade. */
+export function eyeLevelOf(soft: number, fade: number): number {
+  return (SHADE_EYES_SHADE * soft + SHADE_EYES_DULL * (1 - soft)) * fade;
+}
+
 /** The share of its height a shade stands at for a rise of `t`: eased, so it slows into its full height. */
 export function risen(t: number): number {
   const r = Math.max(0, Math.min(1, t));
@@ -271,7 +277,9 @@ export class EntityViews {
         else if (dt > 0) fade.settle = Math.min(1, fade.settle + dt / SHADE_SETTLE_S);
         fade.level = 0.5 * risen(fade.rise) + 0.5 * fade.settle;
       } else if (dt > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + dt / SHADE_FADE_IN_S);
-      // A lunge resolves from the mist as it closes on the local eye; a shade never does.
+      // A lunge resolves from the mist as it closes on the local eye; a shade
+      // never does; a Hollow out in the open is the resolved form from the
+      // start, the same black figure with the dulled eyes.
       if (enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) {
         const me = state.players.get(localId);
         const d = me === undefined ? Infinity : Math.hypot(enemy.pos.x - me.pos.x, enemy.pos.z - me.pos.z);
@@ -282,7 +290,7 @@ export class EntityViews {
         // Fainter with distance: whole within SHADE_NEAR_M, SHADE_FAR_SHARE of itself at SHADE_FAR_M.
         const t = Math.max(0, Math.min(1, (d - SHADE_NEAR_M) / (SHADE_FAR_M - SHADE_NEAR_M)));
         this.near.set(id, 1 - (1 - SHADE_FAR_SHARE) * t);
-      } else { this.soft.delete(id); this.near.delete(id); }
+      } else { this.soft.set(id, 0); this.near.set(id, 1); }
       const instance = this.models.acquire(id, HOLLOW_MODEL);
       if (instance !== null) {
         const entry = this.ensureHollowModel(id, instance, enemy.pos.x, feet, enemy.pos.z);
@@ -295,7 +303,7 @@ export class EntityViews {
         entry.instance.root.scaling.y = HOLLOW_SCALE * risen(fade.rise);
         if (this.softShades && this.soft.has(id)) {
           const soft = this.soft.get(id) as number;
-          this.shadeList.push({ node: entry.view.node, fade: fade.level, soft, near: this.near.get(id) ?? 1, gone: 0, eyes: entry.eyes, eyeLevel: (1 - soft) * SHADE_EYES_DULL * fade.level });
+          this.shadeList.push({ node: entry.view.node, fade: fade.level, soft, near: this.near.get(id) ?? 1, gone: 0, eyes: entry.eyes, eyeLevel: eyeLevelOf(soft, fade.level) });
         }
         else setVisibility(entry.view.node, fade.level);
         // Enemy velocity never reaches a client (it is zeroed there), so the
@@ -360,7 +368,7 @@ export class EntityViews {
         this.fading.delete(id);
         continue;
       }
-      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: out.level, soft: out.soft, near: out.near, gone: 1 - out.level, eyes: out.entry.eyes, eyeLevel: (1 - out.soft) * SHADE_EYES_DULL * out.level });
+      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: out.level, soft: out.soft, near: out.near, gone: 1 - out.level, eyes: out.entry.eyes, eyeLevel: eyeLevelOf(out.soft, out.level) });
       else setVisibility(out.entry.view.node, out.level);
     }
     this.pruneModels(this.enemyModels, state.enemies);

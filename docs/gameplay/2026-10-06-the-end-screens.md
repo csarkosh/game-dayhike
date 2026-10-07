@@ -10,9 +10,12 @@ speaks of it.
 
 ## 0. What this is
 
-*Amended 2026-10-07.* Each end has a title over its line, in the title screen's voice (the
-landing's heading: monospace, uppercase, spaced): YOU LIVED and YOU DIED (`WON_TITLE`,
-`DEATH_TITLE` in `passages.ts`; `hud.setEnding`).
+*Amended 2026-10-07.* Each end has a title over its line, in the title screen's text to the
+letter (the landing's heading: monospace, 2 rem, 600, uppercase, spaced 0.12 em): YOU LIVED and
+YOU DIED (`WON_TITLE`, `DEATH_TITLE` in `passages.ts`; `hud.setEnding`). The line is two lines
+(`endLines`): the opening at the tagline's 0.62 white, and the turn alone on the second line in
+the tagline's own dread: #dbe2e2, 500, spaced 0.05 em, oblique 4°, the pale bloom and the dark
+floor, breathing over 7 s (none under reduced motion).
 
 A player's death was a fade to dark with a line over it, and the end of a match was the panel
 of names at once. Both are staged now, each in the camera.

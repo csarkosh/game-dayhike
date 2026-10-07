@@ -138,30 +138,33 @@ void main(void) {
   // patch by patch, where the drifting blotches of noise fall under how far
   // it has gone, never all at once; the shade darkens the frame by
   // shadeShape.y, the real thing by shadeMonster, nearer to black.
+  // The real thing (the blue) is read through the inner ring alone, the
+  // shade (the red) through both: the real one stands sharper and heavier.
   vec2 shadeStep = vec2(shadeShape.x, shadeShape.x * shadeShape.z);
-  vec3 shadeRGB = texture2D(shadeSampler, vUV).rgb * 2.0;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(1.0, 0.0)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-1.0, 0.0)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, 1.0)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, -1.0)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, 0.7)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, 0.7)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, -0.7)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, -0.7)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.5, 0.0)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.5, 0.0)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, 0.5)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, -0.5)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.35, 0.35)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.35, 0.35)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.35, -0.35)).rgb;
-  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.35, -0.35)).rgb;
-  shadeRGB *= shadeShape.w / 18.0;
+  vec3 shadeInner = texture2D(shadeSampler, vUV).rgb * 2.0;
+  shadeInner += texture2D(shadeSampler, vUV + shadeStep * vec2(0.5, 0.0)).rgb;
+  shadeInner += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.5, 0.0)).rgb;
+  shadeInner += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, 0.5)).rgb;
+  shadeInner += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, -0.5)).rgb;
+  shadeInner += texture2D(shadeSampler, vUV + shadeStep * vec2(0.35, 0.35)).rgb;
+  shadeInner += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.35, 0.35)).rgb;
+  shadeInner += texture2D(shadeSampler, vUV + shadeStep * vec2(0.35, -0.35)).rgb;
+  shadeInner += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.35, -0.35)).rgb;
+  vec3 shadeOuter = texture2D(shadeSampler, vUV + shadeStep * vec2(1.0, 0.0)).rgb;
+  shadeOuter += texture2D(shadeSampler, vUV + shadeStep * vec2(-1.0, 0.0)).rgb;
+  shadeOuter += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, 1.0)).rgb;
+  shadeOuter += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, -1.0)).rgb;
+  shadeOuter += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, 0.7)).rgb;
+  shadeOuter += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, 0.7)).rgb;
+  shadeOuter += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, -0.7)).rgb;
+  shadeOuter += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, -0.7)).rgb;
+  vec3 shadeRGB = (shadeInner + shadeOuter) * shadeShape.w / 18.0;
+  float shadeReal = shadeInner.z * shadeShape.w / 10.0;
   float shadeFigure = shadeRGB.x + shadeRGB.z;
   float shadeGone = shadeRGB.y / max(shadeFigure, 1.0e-4);
   float shadeBlot = shadeNoise(vUV * vec2(shadeShape.z, 1.0) * 9.0 + stareShade.w * 0.12);
   float shadeKeep = smoothstep(shadeGone - 0.35, shadeGone + 0.05, shadeBlot);
-  c *= 1.0 - (shadeRGB.x * shadeShape.y + shadeRGB.z * shadeMonster) * shadeKeep;
+  c *= 1.0 - min(1.0, shadeRGB.x * shadeShape.y + shadeReal * shadeMonster) * shadeKeep;
   vec2 centred = (vUV - 0.5) * 2.0;
   float vr = length(centred) / 1.41421356;
   float vig = 1.0 - smoothstep(0.55, 1.0, vr) * clamp(vignetteWeight * 0.22, 0.0, 0.8);

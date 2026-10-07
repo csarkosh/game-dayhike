@@ -1,3 +1,4 @@
+import { endLines } from "./passages.js";
 const STYLE = `
   .hud { position: absolute; inset: 0; pointer-events: none; font-family: system-ui, sans-serif; color: #fff; }
   .hud .status {
@@ -7,12 +8,27 @@ const STYLE = `
   .hud .end {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 100%;
     display: none; flex-direction: column; align-items: center; gap: 0.9rem; text-align: center;
-    font-family: ui-monospace, monospace; text-shadow: 0 1px 4px #000;
+    font-family: ui-monospace, monospace; color: #fff;
   }
   .hud .end.on { display: flex; }
-  /* The title screen's heading (landing.ts), so the end reads in the same voice. */
+  /* The title screen's text, to the letter (landing.ts): its heading, and its
+     turn in the sentence, the cold tint, the letters drawn apart, the pale
+     bloom and the slow breathing. The quote is two lines, the turn alone on
+     the second, as the title's tagline turns. */
   .hud .end-title { margin: 0; font-size: 2rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
-  .hud .end-line { margin: 0; max-width: 32rem; padding: 0 1rem; font-size: 1.1rem; color: #dbe2e2; letter-spacing: 0.05em; }
+  .hud .end-line { margin: 0; max-width: 32rem; padding: 0 1rem; text-wrap: balance; color: rgba(255, 255, 255, 0.62); }
+  .hud .end-line .dread {
+    display: block; color: #dbe2e2; font-weight: 500; letter-spacing: 0.05em; font-style: oblique 4deg;
+    text-shadow: 0 0 14px rgba(198, 222, 222, 0.55), 0 2px 8px rgba(0, 0, 0, 0.85);
+    animation: hud-dread-breathe 7s ease-in-out infinite;
+  }
+  @keyframes hud-dread-breathe {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hud .end-line .dread { animation: none; }
+  }
   .hud .fade {
     position: absolute; inset: 0; background: #000; opacity: 0;
     transition: opacity 1.5s ease-in;
@@ -59,6 +75,11 @@ export function createHud(container: HTMLElement): Hud {
   endTitle.className = "end-title";
   const endLine = document.createElement("div");
   endLine.className = "end-line";
+  const endOpen = document.createElement("span");
+  endOpen.className = "open";
+  const endTurn = document.createElement("span");
+  endTurn.className = "dread";
+  endLine.append(endOpen, endTurn);
   end.append(endTitle, endLine);
 
   root.append(fade, status, end);
@@ -82,11 +103,13 @@ export function createHud(container: HTMLElement): Hud {
       cancelFlash();
       status.textContent = "";
       endTitle.textContent = e?.title ?? "";
-      endLine.textContent = e?.line ?? "";
+      const [open, turn] = endLines(e?.line ?? "");
+      endOpen.textContent = open;
+      endTurn.textContent = turn;
       end.classList.toggle("on", e !== null);
     },
     ending() {
-      return end.classList.contains("on") ? { title: endTitle.textContent ?? "", line: endLine.textContent ?? "" } : null;
+      return end.classList.contains("on") ? { title: endTitle.textContent ?? "", line: `${endOpen.textContent ?? ""} ${endTurn.textContent ?? ""}`.trim() } : null;
     },
     flash(text, ms) {
       cancelFlash();
