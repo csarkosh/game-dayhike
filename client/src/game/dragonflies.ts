@@ -27,8 +27,9 @@ import type { Dragonflies } from "./dragonflyBehaviour.js";
 /** Body length (m) by kind: darner, skimmer, damselfly. */
 export const DRAGONFLY_LENGTH: readonly [number, number, number] = [0.07, 0.045, 0.03];
 /** How much larger than life every card is drawn, in its instance's matrix: at their real
- * lengths the dragonflies are specks a few metres out. */
-export const DRAGONFLY_DRAWN_SCALE = 1.5;
+ * lengths the dragonflies are specks a few metres out, and at half again those lengths a
+ * skimmer 5 m off was still only some 12 pixels and a darner on its beat 12 m off 8. */
+export const DRAGONFLY_DRAWN_SCALE = 3;
 /** The wingbeat shown (Hz) by kind. */
 export const DRAGONFLY_WING_HZ: readonly [number, number, number] = [36, 30, 18];
 /** ω by kind (rad/s): 2π·Hz, written as 2π·n / WING_TIME_WRAP with n whole so the shader's time wrap

@@ -202,12 +202,12 @@ describe("the dragonflies' instances", () => {
     expect(m.meshes.map((mesh) => mesh.isEnabled())).toEqual([true, true, false]);
     const mat = uploaded(spy, "matrix")!;
     // Translation, then the body's forward axis (+z) after the turn, drawn
-    // half again as long: east for a yaw of π/2…
+    // three times as long: east for a yaw of π/2…
     expect([mat[12], mat[13], mat[14]]).toEqual([1, 2, 3]);
-    expect([mat[8], mat[9], mat[10]].map((v) => Math.round(v! * 1e6) / 1e6)).toEqual([1.5, 0, 0]);
+    expect([mat[8], mat[9], mat[10]].map((v) => Math.round(v! * 1e6) / 1e6)).toEqual([3, 0, 0]);
     // …and nose up for a positive pitch.
     expect([mat[28], mat[29], mat[30]]).toEqual([-4, 5, 6]);
-    expect([mat[24], mat[25], mat[26]].map((v) => Math.round(v! * 1e6) / 1e6)).toEqual([0, 0.719138, 1.316374]);
+    expect([mat[24], mat[25], mat[26]].map((v) => Math.round(v! * 1e6) / 1e6)).toEqual([0, 1.438277, 2.632748]);
 
     // The behaviour's own output draws the same way: a count a kind.
     const d = createDragonflyBehaviour({
@@ -225,8 +225,8 @@ describe("the dragonflies' instances", () => {
     engine.dispose();
   });
 
-  it("draws every card half again its real size, the geometry kept at the real lengths", () => {
-    expect(DRAGONFLY_DRAWN_SCALE).toBe(1.5);
+  it("draws every card three times its real size, the geometry kept at the real lengths", () => {
+    expect(DRAGONFLY_DRAWN_SCALE).toBe(3);
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const m = createDragonflyMeshes(scene);
@@ -239,16 +239,16 @@ describe("the dragonflies' instances", () => {
     for (const [k, n] of [[KIND_DARNER, 2], [KIND_SKIMMER, 1], [KIND_DAMSELFLY, 1]] as const) {
       const mat = uploaded(spies[k]!, "matrix")!;
       for (let i = 0; i < n; i++) {
-        // Each of the three axes, whatever the heading, 1.5 long.
+        // Each of the three axes, whatever the heading, 3 long.
         for (const at of [0, 4, 8]) {
           const o = i * 16 + at;
-          expect(Math.hypot(mat[o]!, mat[o + 1]!, mat[o + 2]!), `kind ${k}, instance ${i}, axis ${at / 4}`).toBeCloseTo(1.5, 6);
+          expect(Math.hypot(mat[o]!, mat[o + 1]!, mat[o + 2]!), `kind ${k}, instance ${i}, axis ${at / 4}`).toBeCloseTo(3, 6);
         }
       }
     }
-    // Drawn, the darner is 105 mm long, the skimmer 67.5 and the damselfly 45.
+    // Drawn, the darner is 210 mm long, the skimmer 135 and the damselfly 90.
     expect(DRAGONFLY_LENGTH).toEqual([0.07, 0.045, 0.03]);
-    DRAGONFLY_LENGTH.forEach((length, k) => expect(length * DRAGONFLY_DRAWN_SCALE).toBeCloseTo([0.105, 0.0675, 0.045][k]!, 12));
+    DRAGONFLY_LENGTH.forEach((length, k) => expect(length * DRAGONFLY_DRAWN_SCALE).toBeCloseTo([0.21, 0.135, 0.09][k]!, 12));
     m.dispose();
     engine.dispose();
   });
