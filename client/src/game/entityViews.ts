@@ -78,6 +78,8 @@ function stride(instance: CharacterInstance, speed: number, clipSpeed: number): 
 /** Seconds a shade, a lunge or a Hollow stepping out takes to come in from nothing, and a shade or a lunge to go out. */
 export const SHADE_FADE_IN_S = 0.9;
 export const SHADE_FADE_OUT_S = 1.1;
+/** Seconds a shade takes to rise from the ground to its height as it comes in; going, it sinks with its fade. */
+export const SHADE_RISE_S = 2.4;
 /** Metres from the local eye within which a lunge resolves from the mist into the Hollow, and the seconds that takes. */
 export const SHADE_RESOLVE_M = 12;
 export const SHADE_RESOLVE_S = 1.4;
@@ -89,6 +91,12 @@ export const SHADE_FAR_M = 40;
 export const SHADE_FAR_SHARE = 0.35;
 
 /** Writes `visibility` on every mesh under `node`: 1 is drawn as it is, under 1 is blended toward nothing. */
+/** The share of its height a shade stands at for a rise of `t`: eased, so it slows into its full height. */
+export function risen(t: number): number {
+  const r = Math.max(0, Math.min(1, t));
+  return r * r * (3 - 2 * r);
+}
+
 function setVisibility(node: TransformNode, level: number): void {
   const v = level < 0 ? 0 : level > 1 ? 1 : level;
   for (const m of node.getChildMeshes(false)) m.visibility = v;
@@ -102,9 +110,9 @@ export class EntityViews {
   private readonly playerModels = new Map<number, ModelView>();
   private readonly enemyModels = new Map<number, ModelView & { pace: Pace }>();
   /** Each enemy's fade, 0 to 1 (`visibility`), and the state it was last seen in: a shade, a lunge or a Hollow stepping out comes in from nothing, and a shade or a lunge goes out to nothing after it is gone. */
-  private readonly fades = new Map<number, { level: number; ai: number }>();
+  private readonly fades = new Map<number, { level: number; ai: number; rise: number }>();
   /** Views of shades gone from the state, fading out: the model is held until the fade ends. */
-  private readonly fading = new Map<number, { entry: ModelView; level: number; soft: number; near: number }>();
+  private readonly fading = new Map<number, { entry: ModelView; level: number; rise: number; soft: number; near: number }>();
   /** Each shade's softness (shadeSilhouette.ts): 1 a blur in the mist, 0 the Hollow; a lunge resolves as it closes on the local eye. */
   private readonly soft = new Map<number, number>();
   private readonly near = new Map<number, number>();
@@ -243,11 +251,13 @@ export class EntityViews {
       let fade = this.fades.get(id);
       if (fade === undefined) {
         const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
-        fade = { level: comesIn ? 0 : 1, ai: enemy.ai };
+        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike ? 0 : 1 };
         this.fades.set(id, fade);
       }
       fade.ai = enemy.ai;
       if (dt > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + dt / SHADE_FADE_IN_S);
+      // A shade comes up out of the ground to its height over SHADE_RISE_S, as if out of the mist.
+      if (dt > 0 && fade.rise < 1) fade.rise = Math.min(1, fade.rise + dt / SHADE_RISE_S);
       // A lunge resolves from the mist as it closes on the local eye; a shade never does.
       if (enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) {
         const me = state.players.get(localId);
@@ -266,6 +276,7 @@ export class EntityViews {
         this.enemies.get(id)?.node.setEnabled(false);
         this.advance(entry.view, enemy.pos.x, feet, enemy.pos.z, clamped);
         entry.view.node.rotation.y = enemy.yaw;
+        entry.instance.root.scaling.y = HOLLOW_SCALE * risen(fade.rise);
         if (this.softShades && this.soft.has(id)) this.shadeList.push({ node: entry.view.node, fade: fade.level, soft: this.soft.get(id) as number, near: this.near.get(id) ?? 1 });
         else setVisibility(entry.view.node, fade.level);
         // Enemy velocity never reaches a client (it is zeroed there), so the
@@ -310,7 +321,7 @@ export class EntityViews {
       const entry = this.enemyModels.get(id);
       if (entry !== undefined && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge || fade.ai === AiState.Strike)) {
         this.enemyModels.delete(id);
-        this.fading.set(id, { entry, level: fade.level, soft: this.soft.get(id) ?? 1, near: this.near.get(id) ?? 1 });
+        this.fading.set(id, { entry, level: fade.level, rise: fade.rise, soft: this.soft.get(id) ?? 1, near: this.near.get(id) ?? 1 });
       }
       this.fades.delete(id);
       this.soft.delete(id);
@@ -323,6 +334,9 @@ export class EntityViews {
         out.level -= dt / SHADE_FADE_OUT_S;
         out.soft = Math.min(1, out.soft + dt / SHADE_UNRESOLVE_S);
       }
+      // And sinks back into the ground as it fades.
+      out.rise = Math.min(out.rise, Math.max(0, out.level));
+      out.entry.instance.root.scaling.y = HOLLOW_SCALE * risen(out.rise);
       if (out.level <= 0) {
         this.models.release(id);
         this.fading.delete(id);

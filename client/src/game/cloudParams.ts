@@ -20,8 +20,9 @@ export const CLOUD_CHASE_DENSITY = 0.7;
 export const CLOUD_HAUNT_LIFT = 0.25;
 /** Extinction a metre at a density of 1, at the ground, where the noise is full. */
 export const CLOUD_SIGMA = 0.4;
-/** Per metre above the ground: the cloud thins to 1/e this far up. */
-export const CLOUD_FALLOFF = 1 / 2.5;
+/** Metres above the ground at which the cloud has thinned to 1/e, and the metres the haunt adds to that at its full: the mist stands taller as the shades come. */
+export const CLOUD_HEIGHT_M = 2.5;
+export const CLOUD_HAUNT_HEIGHT_M = 3;
 /** Metres the cloud's floor sits below the ground, so a slope never shows its edge. */
 export const CLOUD_SEAT = 0.3;
 /** Metres from the eye the march reaches; the atmosphere's own fog is beyond. */
@@ -51,6 +52,11 @@ export function cloudDensityUnder(night: number, haunt: number, chase: number): 
   const n = clamp01(night), h = clamp01(haunt), c = clamp01(chase);
   const base = CLOUD_NIGHT_DENSITY + (1 - CLOUD_NIGHT_DENSITY) * h * CLOUD_HAUNT_LIFT;
   return n * (base + (CLOUD_CHASE_DENSITY - base) * c);
+}
+
+/** The cloud's height (metres to 1/e) for a haunt's level. */
+export function cloudHeightUnder(haunt: number): number {
+  return CLOUD_HEIGHT_M + CLOUD_HAUNT_HEIGHT_M * clamp01(haunt);
 }
 
 /** The cloud's colour under the air's near colour: lifted toward its own grey and brightened. */

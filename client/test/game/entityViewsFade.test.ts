@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
-import { EntityViews, SHADE_FADE_IN_S, SHADE_FADE_OUT_S } from "../../src/game/entityViews.js";
+import { EntityViews, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, SHADE_RISE_S, risen } from "../../src/game/entityViews.js";
 import { AiState } from "../../src/sim/types.js";
 import type { EnemyState, WorldState } from "../../src/sim/types.js";
 
@@ -14,6 +14,19 @@ function enemy(id: number, ai: AiState): EnemyState {
 function stateWith(enemies: EnemyState[]): WorldState {
   return { tick: 0, players: new Map(), enemies: new Map(enemies.map((e) => [e.id, e])), phase: 0, outcome: 0, nextEntityId: 100 } as unknown as WorldState;
 }
+
+describe("the shadow's rise", () => {
+  it("eases from nothing to its full height, slowing into it, and takes longer than the fade", () => {
+    expect(risen(0)).toBe(0);
+    expect(risen(1)).toBe(1);
+    expect(risen(0.5)).toBeCloseTo(0.5, 9);
+    expect(risen(0.25)).toBeLessThan(0.25);
+    expect(risen(0.75)).toBeGreaterThan(0.75);
+    expect(risen(-1)).toBe(0);
+    expect(risen(2)).toBe(1);
+    expect(SHADE_RISE_S).toBeGreaterThan(SHADE_FADE_IN_S);
+  });
+});
 
 describe("the shadow's look", () => {
   it("brings a shade in from nothing over SHADE_FADE_IN_S, a Hollow at once, and holds a gone shade while it goes out over SHADE_FADE_OUT_S", () => {

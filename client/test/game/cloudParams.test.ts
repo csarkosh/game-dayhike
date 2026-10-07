@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  CLOUD_CHASE_DENSITY, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_NIGHT_DENSITY, CLOUD_NOISE_SIZE, cloudColourUnder, cloudDensityUnder,
-  cloudGroundMap, cloudNoiseMap,
+  CLOUD_CHASE_DENSITY, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_HAUNT_HEIGHT_M, CLOUD_HEIGHT_M, CLOUD_NIGHT_DENSITY, CLOUD_NOISE_SIZE, cloudColourUnder,
+  cloudDensityUnder, cloudGroundMap, cloudHeightUnder, cloudNoiseMap,
 } from "../../src/game/cloudParams.js";
 
 describe("the ground cloud's density", () => {
@@ -12,6 +12,15 @@ describe("the ground cloud's density", () => {
     expect(cloudDensityUnder(1, 1, 0)).toBeLessThan(CLOUD_CHASE_DENSITY);
     expect(cloudDensityUnder(1, 0, 1)).toBeCloseTo(CLOUD_CHASE_DENSITY, 9);
     expect(cloudDensityUnder(0.5, 0, 0)).toBeCloseTo(CLOUD_NIGHT_DENSITY * 0.5, 9);
+  });
+});
+
+describe("the cloud's height", () => {
+  it("stands taller with the haunt, from its own height to that plus the haunt's", () => {
+    expect(cloudHeightUnder(0)).toBe(CLOUD_HEIGHT_M);
+    expect(cloudHeightUnder(1)).toBe(CLOUD_HEIGHT_M + CLOUD_HAUNT_HEIGHT_M);
+    expect(cloudHeightUnder(0.5)).toBeCloseTo(CLOUD_HEIGHT_M + CLOUD_HAUNT_HEIGHT_M / 2, 9);
+    expect(cloudHeightUnder(3)).toBe(CLOUD_HEIGHT_M + CLOUD_HAUNT_HEIGHT_M);
   });
 });
 

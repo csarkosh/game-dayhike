@@ -2196,7 +2196,7 @@ function buildRenderer(
           atmosphere.setCloudGround(cloudGroundMap((x, z) => elevationAt(forest.seed, x, z), cloudGroundAt.x, cloudGroundAt.z));
         }
         cloudDensity = cloudHold ?? cloudDensityUnder(lighting.sky?.night ?? 0, hauntLevel, chaseCast);
-        atmosphere.setCloud(cloudDensity, cloudSteps, seconds);
+        atmosphere.setCloud(cloudDensity, cloudSteps, seconds, hauntLevel);
       }
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once

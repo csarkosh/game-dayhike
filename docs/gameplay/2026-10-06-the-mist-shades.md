@@ -45,7 +45,9 @@ size, on a camera of its own that copies the player's each frame and sees only `
 (a bit the main camera does not), draws each shade's meshes with a flat unlit material whose
 red is the shade's softness. The grade pass reads that mask back through nine taps, the centre and a
 ring of radius `SHADE_BLUR` (0.9 % of the frame's width), and darkens the frame by
-`SHADE_DARK` (1) of it, after the chase's cast and before the vignette. The taps are unbranched
+`SHADE_DARK` (0.45 since 2026-10-07; 1, black, before) of it, after the chase's cast and before the
+vignette: the figure is what stands behind it, the mist, a little darker, in the mist's own
+colour. The taps are unbranched
 (a texture read under a branch is one the WGSL translation has to be told about) and zeroed
 while no shade is in the mask.
 
@@ -59,6 +61,10 @@ the frame the Hollow's, from one mesh.
 
 **Distance.** A shade is whole in the mask within `SHADE_NEAR_M` (10 m) and `SHADE_FAR_SHARE`
 (0.35) of itself at `SHADE_FAR_M` (40 m): the far ones are the fainter blurs.
+
+**Rise.** A shade comes up out of the ground to its height over `SHADE_RISE_S` (2.4 s), eased
+(`risen`), its feet where they are, as if out of the mist; going, it sinks with its fade. The
+cloud stands taller as the shades come (`CLOUD_HAUNT_HEIGHT_M`, the design doc §2).
 
 **Resolve.** A lunge within `SHADE_RESOLVE_M` (12 m) of the local eye eases its softness from 1
 to 0 over `SHADE_RESOLVE_S` (1.4 s); a shade never resolves. Going, a resolved lunge is a shade
