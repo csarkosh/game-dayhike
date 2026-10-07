@@ -84,6 +84,10 @@ export const WILDLIFE_LEVEL = 0.7;
 export const GAIN_RAMP_S = 2;
 /** The world bus's own ramp, for a stare's muffling and a hush: short, so silence lands within a breath. */
 export const HUSH_RAMP_S = 0.08;
+/** The brick-wall limiter between the world bus and the master, so the frogs, a hum
+ * over the head and a rustle together cannot clip: from 3 dB under full scale, no
+ * knee, 20 to 1, on within 3 ms and off within 100 ms. */
+export const WORLD_LIMIT = { thresholdDb: -3, knee: 0, ratio: 20, attackS: 0.003, releaseS: 0.1 } as const;
 /** The birdsong bed's bus at full song, how far each of its two passes sits to its ear,
  * the seconds one pass's end lies under the next's start (the bed is faded that long at
  * each end), how far ahead a pass is scheduled, and the gain's own short ramp: the level
@@ -372,7 +376,8 @@ export function createAmbientAudio(
       master.gain.value = volume;
       master.connect(ctx.destination);
       // The world's bus: every bed and call below is mixed into it, and it
-      // reaches the master through a low-pass the stare shuts (wired last).
+      // reaches the master through a low-pass the stare shuts and a limiter
+      // (wired last).
       world = ctx.createGain();
       world.gain.value = 1;
 
@@ -443,7 +448,14 @@ export function createAmbientAudio(
       worldFilter.type = "lowpass";
       worldFilter.frequency.value = MUFFLE_OPEN_HZ;
       world.connect(worldFilter);
-      worldFilter.connect(master);
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = WORLD_LIMIT.thresholdDb;
+      limiter.knee.value = WORLD_LIMIT.knee;
+      limiter.ratio.value = WORLD_LIMIT.ratio;
+      limiter.attack.value = WORLD_LIMIT.attackS;
+      limiter.release.value = WORLD_LIMIT.releaseS;
+      worldFilter.connect(limiter);
+      limiter.connect(master);
       // The stare's own sounds sit beside the world, not in it: they are not muffled.
       stare = createStareAudio(ctx, master, noise, random);
 

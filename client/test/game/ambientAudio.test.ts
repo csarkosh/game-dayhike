@@ -38,6 +38,7 @@ function fakeCtx() {
     sources: [] as ReturnType<typeof sourceNode>[],
     filterNodes: [] as ReturnType<typeof filterNode>[],
     oscillatorNodes: [] as ReturnType<typeof oscillatorNode>[],
+    compressors: [] as ReturnType<typeof compressorNode>[],
     buffers: [] as ReturnType<typeof bufferOf>[],
     oscillators: 0,
     filters: 0,
@@ -55,6 +56,10 @@ function fakeCtx() {
   }
   function gainNode() { return { ...node(), gain: param(1) }; }
   function filterNode() { return { ...node(), frequency: param(350), Q: param(1), type: "lowpass" }; }
+  /** Web Audio's own defaults, so a value left unset shows. */
+  function compressorNode() {
+    return { ...node(), threshold: param(-24), knee: param(30), ratio: param(12), attack: param(0.003), release: param(0.25) };
+  }
   /** Records `stop()` rather than ignoring it: a one-shot that is never stopped is
    * the emitter bug that leaks a source node per call. The scheduled times are
    * kept too, for the drips. */
@@ -110,6 +115,7 @@ function fakeCtx() {
     createPanner() { const p = pannerNode(); created.panners.push(p); return p; },
     createStereoPanner() { const p = { ...node(), pan: param(0) }; created.stereo.push(p); return p; },
     createBiquadFilter() { created.filters++; const f = filterNode(); created.filterNodes.push(f); return f; },
+    createDynamicsCompressor() { const c = compressorNode(); created.compressors.push(c); return c; },
     createBuffer(_ch: number, len: number, rate: number) {
       const b = bufferOf(len, rate);
       created.buffers.push(b);
@@ -129,13 +135,14 @@ describe("createAmbientAudio", () => {
     expect(created.oscillators).toBe(0);
     audio.unlock();
     // 2 noise sources (rain, wind), no oscillators, 3 filters (rain, wind,
-    // the world's), and gains: master + world + rain + wind + wildlife +
-    // drip + birdsong + the stare's heart and whispers = 9. The drips' own sources,
-    // filters and gains are made as they fire, not here, and the whispers'
-    // voices on the first stare.
+    // the world's), the world's limiter, and gains: master + world + rain +
+    // wind + wildlife + drip + birdsong + the stare's heart and whispers = 9.
+    // The drips' own sources, filters and gains are made as they fire, not
+    // here, and the whispers' voices on the first stare.
     expect(created.sources.length).toBe(2);
     expect(created.oscillators).toBe(0);
     expect(created.filters).toBe(3);
+    expect(created.compressors.length).toBe(1);
     expect(created.gains.length).toBe(9);
     audio.dispose();
   });
@@ -175,7 +182,7 @@ describe("createAmbientAudio", () => {
     audio.dispose();
   });
 
-  it("wires the master gain to destination, every layer gain to the world's bus, and that through its low-pass to the master", () => {
+  it("wires the master gain to destination, every layer gain to the world's bus, and that through its low-pass and its limiter to the master", () => {
     const { ctx, created } = fakeCtx();
     const audio = createAmbientAudio(() => ctx);
     audio.unlock();
@@ -186,8 +193,9 @@ describe("createAmbientAudio", () => {
     // No gain feeds an AudioParam any more (the LFO depth gain is gone —
     // `setWind` drives the wind filter's frequency directly); every
     // layer gain (rain/wind/wildlife/drip/birdsong) reaches the world's bus, which
-    // reaches the master through the low-pass the stare shuts; the stare's
-    // own two buses reach the master directly, unmuffled.
+    // reaches the master through the low-pass the stare shuts and then a
+    // brick-wall limiter; the stare's own two buses reach the master
+    // directly, unmuffled.
     const isParam = (t: unknown): boolean =>
       Array.isArray((t as { targets?: unknown[] }).targets);
     const world = created.gains[1]!;
@@ -201,7 +209,13 @@ describe("createAmbientAudio", () => {
     expect(muffle.type).toBe("lowpass");
     expect(muffle.frequency.value).toBe(MUFFLE_OPEN_HZ);
     expect(world.connections).toEqual([muffle]);
-    expect(muffle.connections).toEqual([master]);
+    const limiter = created.compressors[0]!;
+    expect(muffle.connections).toEqual([limiter]);
+    expect(limiter.connections).toEqual([master]);
+    // A limiter: from 3 dB under full scale, no knee, 20 to 1, on within 3 ms
+    // and off within 100 ms.
+    expect([limiter.threshold.value, limiter.knee.value, limiter.ratio.value, limiter.attack.value, limiter.release.value])
+      .toEqual([-3, 0, 20, 0.003, 0.1]);
     expect(stareGains.length).toBe(2);
     for (const g of stareGains) expect(g.connections).toEqual([master]);
 

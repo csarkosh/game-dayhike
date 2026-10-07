@@ -42,13 +42,13 @@
 import { hash3 } from "../sim/field.js";
 import { LOOP_GAIN_RAMP_S, type AmbientAudio, type LoopEmitter, type VoiceSource } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
-import { FROG_GAIN, type FrogCall } from "./frogChorus.js";
+import type { FrogCall } from "./frogChorus.js";
 import {
   FROG_CALL_S, FROG_CARRIER_HZ, RUSTLE_LOUD_S, RUSTLE_S, frogCallVoice, humVoice, rustleVoice,
 } from "./insectVoices.js";
 
 export const HUM_MAX = 8, FROG_VOICES_MAX = 12, RUSTLE_MAX = 2;
-export const HUM_REF = 0.5, HUM_RANGE = 10, FROG_REF = 0.5, FROG_RANGE = 120, RUSTLE_REF = 0.3, RUSTLE_RANGE = 3;
+export const HUM_REF = 0.5, HUM_RANGE = 10, FROG_REF = 3, FROG_RANGE = 120, RUSTLE_REF = 0.3, RUSTLE_RANGE = 3;
 /** A dropped hum's gain falls linearly to nothing over this long; it stops `LOOP_GAIN_RAMP_S` later. */
 export const HUM_FADE_S = 0.5;
 /** A hum's gain is `presence · sqrt(midges / HUM_MIDGES_UNIT)`. */
@@ -67,17 +67,15 @@ const SALT_CLIP = 82, SALT_RATE = 83;
 export const FROG_BED_CLIPS: readonly string[] = ["call.frog_chorus_near", "call.frog_chorus_far"];
 /** The chorus recordings' seamless stretch, s: they loop within it, never to the files' own ends. */
 export const FROG_BED_LOOP_S: readonly [number, number] = [0.5, 10.5];
-export const FROG_BED_REF = 8;
+/** A chorus loop keeps its gain to this distance and falls as `FROG_BED_REF / d` beyond. */
+export const FROG_BED_REF = 30;
 /**
- * Each chorus loop's gain at a level of 1: 0.6 and 0.4 of a call of
- * middling loudness (`FROG_GAIN`'s middle) at the same distance, at or
- * beyond `FROG_BED_REF`, where the inverse model leaves a call
- * `FROG_REF / d` of its gain and a loop `FROG_BED_REF / d` of its own.
+ * Each chorus loop's gain at a level of 1, the near recording's and the far
+ * one's: the chorus carried across the water at a level a player hears from
+ * the shore, under the nearer voices' calls but never lost beneath the
+ * ambience.
  */
-export const FROG_BED_GAIN: readonly [number, number] = [
-  (0.6 * ((FROG_GAIN[0] + FROG_GAIN[1]) / 2) * FROG_REF) / FROG_BED_REF,
-  (0.4 * ((FROG_GAIN[0] + FROG_GAIN[1]) / 2) * FROG_REF) / FROG_BED_REF,
-];
+export const FROG_BED_GAIN: readonly [number, number] = [0.5, 0.35];
 /** A chorus loop whose level has been nothing this long stops. */
 export const FROG_BED_HOLD_S = 2;
 /** Changes smaller than these are not sent, so a steady hum adds no automation event a frame. */

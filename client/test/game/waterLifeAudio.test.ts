@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { VoiceSource } from "../../src/game/ambientAudio.js";
-import type { FrogCall } from "../../src/game/frogChorus.js";
+import { FROG_GAIN, FROG_QUIET_RADIUS, type FrogCall } from "../../src/game/frogChorus.js";
 import {
-  createWaterLifeAudio, FROG_BED_REF, FROG_RANGE, FROG_REF, HUM_RANGE, HUM_REF, RUSTLE_RANGE, RUSTLE_REF,
+  createWaterLifeAudio, FROG_BED_GAIN, FROG_BED_REF, FROG_RANGE, FROG_REF, HUM_RANGE, HUM_REF, RUSTLE_RANGE, RUSTLE_REF,
   type WaterLifeSound,
 } from "../../src/game/waterLifeAudio.js";
 
@@ -431,6 +431,22 @@ describe("waterLifeAudio", () => {
     warn.mockRestore();
   });
 
+  it("the frogs are heard across the lake: a call keeps its gain to 3 m, the far chorus to 30 m, each falling as the inverse of distance beyond", () => {
+    expect([FROG_REF, FROG_BED_REF]).toEqual([3, 30]);
+    expect(FROG_GAIN).toEqual([1, 2]);
+    expect(FROG_BED_GAIN).toEqual([0.5, 0.35]);
+    // The panners' inverse model, rolloff 1: ref / max(d, ref) of the gain.
+    const heard = (gain: number, ref: number, d: number) => (gain * ref) / Math.max(d, ref);
+    // The quietest and the loudest voice at the quiet radius (12 m), at 15 m and at 48 m.
+    expect(FROG_QUIET_RADIUS).toBe(12);
+    expect(FROG_GAIN.map((g) => heard(g, FROG_REF, 12))).toEqual([0.25, 0.5]);
+    expect(FROG_GAIN.map((g) => heard(g, FROG_REF, 15))).toEqual([0.2, 0.4]);
+    expect(FROG_GAIN.map((g) => heard(g, FROG_REF, 48))).toEqual([0.0625, 0.125]);
+    // The chorus at a level of 1: whole to 30 m, the far loop 52 m off (across a lake of 26 m) at 0.2.
+    expect(FROG_BED_GAIN.map((g) => heard(g, FROG_BED_REF, 20))).toEqual([0.5, 0.35]);
+    expect(heard(FROG_BED_GAIN[1], FROG_BED_REF, 52)).toBeCloseTo(0.201923, 6);
+  });
+
   it("the far chorus: its two recordings loop at their places once decoded and its level is above nothing, from a random point in the loop, gained by the level", async () => {
     const fake = fakeAmbient({ clips: { ...SINGLES, ...CHORUSES } });
     const audio = audioOf(fake, () => 0.25, () => 0);
@@ -451,15 +467,15 @@ describe("waterLifeAudio", () => {
       expect([src.loop, src.loopStart, src.loopEnd, src.playbackRate.value]).toEqual([true, 0.5, 10.5, 1]);
       expect(src.starts).toEqual([[0, 3]]);
     }
-    // Made silent and raised at once through the emitter's ramp: the near at 0.6 and the far at 0.4
-    // of a call of middling loudness (3) at 0.5 m, here at 8 m.
+    // Made silent and raised at once through the emitter's ramp: the near at 0.5 and the far at 0.35
+    // at a level of 1, each times the level.
     expect([near!.gain, far!.gain]).toEqual([0, 0]);
-    expect(near!.gains.map((g) => g.toFixed(6))).toEqual(["0.112500"]);
-    expect(far!.gains.map((g) => g.toFixed(6))).toEqual(["0.075000"]);
+    expect(near!.gains.map((g) => g.toFixed(6))).toEqual(["0.500000"]);
+    expect(far!.gains.map((g) => g.toFixed(6))).toEqual(["0.350000"]);
     audio.update(bedAt(0.5), ORIGIN);
     audio.update(bedAt(0.5), ORIGIN);
-    expect(near!.gains.map((g) => g.toFixed(6))).toEqual(["0.112500", "0.056250"]);
-    expect(far!.gains.map((g) => g.toFixed(6))).toEqual(["0.075000", "0.037500"]);
+    expect(near!.gains.map((g) => g.toFixed(6))).toEqual(["0.500000", "0.250000"]);
+    expect(far!.gains.map((g) => g.toFixed(6))).toEqual(["0.350000", "0.175000"]);
     expect(beds(fake.loops).length).toBe(2);
     audio.dispose();
     expect([near!.stopped, far!.stopped]).toEqual([true, true]);
@@ -474,17 +490,17 @@ describe("waterLifeAudio", () => {
     const [near, far] = beds(fake.loops);
     t = 11;
     audio.update(bedAt(0), ORIGIN);
-    expect(near!.gains.map((g) => g.toFixed(5))).toEqual(["0.11250", "0.00000"]);
+    expect(near!.gains.map((g) => g.toFixed(5))).toEqual(["0.50000", "0.00000"]);
     t = 12;
     audio.update(bedAt(0.5), ORIGIN);
-    expect(near!.gains.map((g) => g.toFixed(5))).toEqual(["0.11250", "0.00000", "0.05625"]);
+    expect(near!.gains.map((g) => g.toFixed(5))).toEqual(["0.50000", "0.00000", "0.25000"]);
     expect([near!.stopped, far!.stopped]).toEqual([false, false]);
     t = 13;
     audio.update(bedAt(0), ORIGIN);
     t = 14.9;
     audio.update(bedAt(0), ORIGIN);
     expect([near!.stopped, far!.stopped]).toEqual([false, false]);
-    expect(far!.gains.map((g) => g.toFixed(5))).toEqual(["0.07500", "0.00000", "0.03750", "0.00000"]);
+    expect(far!.gains.map((g) => g.toFixed(5))).toEqual(["0.35000", "0.00000", "0.17500", "0.00000"]);
     t = 15;
     audio.update(bedAt(0), ORIGIN);
     expect([near!.stopped, far!.stopped]).toEqual([true, true]);
@@ -509,7 +525,7 @@ describe("waterLifeAudio", () => {
     t = 1;
     audio.update(bedAt(1, points), { x: -100, y: 1, z: 0 });
     const [near, far] = beds(fake.loops);
-    expect(near!.gains.map((g) => g.toFixed(5))).toEqual(["0.11250", "0.00000"]);
+    expect(near!.gains.map((g) => g.toFixed(5))).toEqual(["0.50000", "0.00000"]);
     expect(far!.x).toBe(-130);
     audio.dispose();
     // Without the near recording, only the far loop plays.

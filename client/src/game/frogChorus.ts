@@ -51,8 +51,10 @@ export const FROG_ONSET_S = 10;
 /** Voices this close are neighbours along the shore: they alternate their
  * calls, and silent ones share a stretch. */
 export const FROG_NEIGHBOUR_RANGE = 30;
-/** A voice's loudness at its reference distance, drawn once a voice from the seed. */
-export const FROG_GAIN: readonly [number, number] = [2, 4];
+/** A voice's loudness to its reference distance (`FROG_REF` in `waterLifeAudio.ts`,
+ * 3 m), drawn once a voice from the seed: at the quiet radius it is heard at 0.25
+ * to 0.5, at 48 m at 0.06 to 0.125. */
+export const FROG_GAIN: readonly [number, number] = [1, 2];
 /** The hash salts of a voice's rank and loudness: the frogs' own, 80 to 89,
  * apart from the placement's and the dragonflies'. */
 const SALT_RANK = 80, SALT_GAIN = 81;

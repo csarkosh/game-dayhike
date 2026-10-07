@@ -76,7 +76,7 @@ describe("frogChorus", () => {
     const chorus = createFrogChorus([RING[0]!], SEED, () => 0.5);
     run(chorus, 0, 4.75, () => NOBODY);
     chorus.step(5, 0.25, NOBODY, FAR, 1);
-    expect(chorus.calls).toEqual([{ voice: 0, x: 30, y: 1, z: 0, gain: expect.closeTo(2.0919, 4) }]);
+    expect(chorus.calls).toEqual([{ voice: 0, x: 30, y: 1, z: 0, gain: expect.closeTo(1.04597, 5) }]);
   });
 
   it("no voices, no calls, and nothing throws", () => {
