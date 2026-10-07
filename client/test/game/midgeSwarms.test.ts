@@ -10,8 +10,8 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { imageProcessingFunctions } from "@babylonjs/core/Shaders/ShadersInclude/imageProcessingFunctions.js";
 import { helperFunctions } from "@babylonjs/core/Shaders/ShadersInclude/helperFunctions.js";
 import {
-  createMidgeSwarms, MIDGE_ALPHA_FLOOR, MIDGE_DARK, MIDGE_FLASH_GAIN, MIDGE_FLASH_POWER, MIDGE_LOBE_POWER, MIDGE_NAME,
-  MIDGE_NEUTRAL_DESATURATION, MIDGE_NEUTRAL_START, MIDGE_SKY_GLINT, MIDGE_SKY_LOBE_POWER, MIDGE_UNIFORMS,
+  createMidgeSwarms, MIDGE_ALPHA_FLOOR, MIDGE_DARK, MIDGE_FLASH_GAIN, MIDGE_FLASH_POWER, MIDGE_FLOOR_FAR, MIDGE_FLOOR_NEAR,
+  MIDGE_LOBE_POWER, MIDGE_NAME, MIDGE_NEUTRAL_DESATURATION, MIDGE_NEUTRAL_START, MIDGE_SKY_GLINT, MIDGE_SKY_LOBE_POWER, MIDGE_UNIFORMS,
   type MidgeFrame, type MidgeSwarms,
 } from "../../src/game/midgeSwarms.js";
 import {
@@ -300,14 +300,15 @@ describe("the midges' stages", () => {
       MIDGE_AMP_0: "0.55", MIDGE_AMP_1: "0.3", MIDGE_AMP_2: "0.15",
       MIDGE_BALL_FLAT: "0.6666666666666666",
       MIDGE_CARD: "0.003", MIDGE_MIN_PX: "2.0", MIDGE_ALPHA_FLOOR: "0.6",
+      MIDGE_FLOOR_NEAR: "6.0", MIDGE_FLOOR_FAR: "15.0",
       MIDGE_FLASH_LOW: "9.0", MIDGE_FLASH_HIGH: "14.0",
       MIDGE_LOBE_POWER: "8.0", MIDGE_FLASH_POWER: "24.0", MIDGE_FLASH_GAIN: "0.5",
       MIDGE_SKY_GLINT: "0.6", MIDGE_SKY_LOBE_POWER: "2.0",
       MIDGE_DARK: "0.9",
       MIDGE_NEUTRAL_START: "0.76", MIDGE_NEUTRAL_DESATURATION: "0.15",
     });
-    expect([MIDGE_CARD, MIDGE_MIN_PX, MIDGE_ALPHA_FLOOR, MIDGE_SKY_GLINT, MIDGE_SKY_LOBE_POWER, MIDGE_DARK])
-      .toEqual([0.003, 2, 0.6, 0.6, 2, 0.9]);
+    expect([MIDGE_CARD, MIDGE_MIN_PX, MIDGE_ALPHA_FLOOR, MIDGE_FLOOR_NEAR, MIDGE_FLOOR_FAR, MIDGE_SKY_GLINT, MIDGE_SKY_LOBE_POWER, MIDGE_DARK])
+      .toEqual([0.003, 2, 0.6, 6, 15, 0.6, 2, 0.9]);
     expect(consts["MIDGE_TAU"]).toBe((2 * Math.PI).toFixed(8));
     MIDGE_RATES.forEach((rate, k) => expect(consts[`MIDGE_RATE_${k}`]).toBe(glslFloat(rate)));
     MIDGE_AMPS.forEach((amp, k) => expect(consts[`MIDGE_AMP_${k}`]).toBe(glslFloat(amp)));
@@ -315,6 +316,8 @@ describe("the midges' stages", () => {
     expect(consts["MIDGE_CARD"]).toBe(glslFloat(MIDGE_CARD));
     expect(consts["MIDGE_MIN_PX"]).toBe(glslFloat(MIDGE_MIN_PX));
     expect(consts["MIDGE_ALPHA_FLOOR"]).toBe(glslFloat(MIDGE_ALPHA_FLOOR));
+    expect(consts["MIDGE_FLOOR_NEAR"]).toBe(glslFloat(MIDGE_FLOOR_NEAR));
+    expect(consts["MIDGE_FLOOR_FAR"]).toBe(glslFloat(MIDGE_FLOOR_FAR));
     expect(consts["MIDGE_FLASH_LOW"]).toBe(glslFloat(MIDGE_FLASH_HZ[0]));
     expect(consts["MIDGE_FLASH_HIGH"]).toBe(glslFloat(MIDGE_FLASH_HZ[1]));
     expect(consts["MIDGE_LOBE_POWER"]).toBe(glslFloat(MIDGE_LOBE_POWER));
@@ -394,7 +397,10 @@ describe("the midges' stages", () => {
     expect(VERTEX).toContain("float size = max(MIDGE_CARD, MIDGE_MIN_PX * midgePixel * far);");
     expect(VERTEX).toContain("float alive = (1.0 - step(shape.y, slot)) * (1.0 - step(shape.z, 0.0));");
     expect(VERTEX).toContain("vec3 corner = centre + (side * position.x + rise * position.y) * size * alive;");
-    expect(VERTEX).toContain("vAlpha = max(MIDGE_CARD / size, MIDGE_ALPHA_FLOOR) * shape.z * alive;");
+    expect(VERTEX).toContain(
+      "float nearFloor = MIDGE_ALPHA_FLOOR * clamp((MIDGE_FLOOR_FAR - far) / (MIDGE_FLOOR_FAR - MIDGE_FLOOR_NEAR), 0.0, 1.0);",
+    );
+    expect(VERTEX).toContain("vAlpha = max(MIDGE_CARD / size, nearFloor) * shape.z * alive;");
     expect(VERTEX).toContain("float lobe = pow(max(dot(-view, midgeSun), 0.0), MIDGE_LOBE_POWER);");
     expect(VERTEX).toContain("float rate = mix(MIDGE_FLASH_LOW, MIDGE_FLASH_HIGH, midgeHash(slot, seed + 73.0));");
     expect(VERTEX).toContain(
@@ -436,23 +442,33 @@ describe("the midges' stages", () => {
    * `far` metres from the eye, a pixel `pixel` metres across at 1 m. */
   const coverage = (far: number, pixel: number, presence: number): number => {
     const size = Math.max(c("MIDGE_CARD"), c("MIDGE_MIN_PX") * pixel * far);
-    return Math.max(c("MIDGE_CARD") / size, c("MIDGE_ALPHA_FLOOR")) * presence;
+    const fade = Math.min(Math.max((c("MIDGE_FLOOR_FAR") - far) / (c("MIDGE_FLOOR_FAR") - c("MIDGE_FLOOR_NEAR")), 0), 1);
+    return Math.max(c("MIDGE_CARD") / size, c("MIDGE_ALPHA_FLOOR") * fade) * presence;
   };
 
-  it("keep a far midge's coverage at the floor: a dot, not a ghost", () => {
+  it("hold a near midge's coverage at the floor, a dot not a ghost, and let a far one fade to a faint speck", () => {
     // 1100 pixels to a metre at 1 m: within 1.36 m the card covers 2 px or
     // more and keeps its whole coverage.
     expect(coverage(1, 0.0011, 1)).toBe(1);
     // Enlarged to 2 px, it covers 0.68 of them at 2 m, and the floor holds it
-    // at 0.6 from 2.27 m out: the 2 mm card it replaced, held to 1.2 px,
-    // covered a tenth at 15 m.
+    // at 0.6 from 2.27 m out to 6 m.
     expect(coverage(2, 0.0011, 1)).toBeCloseTo(0.681818, 6);
     expect(coverage(2.27272727, 0.0011, 1)).toBeCloseTo(0.6, 6);
-    expect(coverage(15, 0.0011, 1)).toBe(0.6);
-    expect(coverage(60, 0.0011, 1)).toBe(0.6);
+    expect(coverage(3, 0.0011, 1)).toBe(0.6);
+    expect(coverage(6, 0.0011, 1)).toBe(0.6);
+    // From 6 m to 15 m the floor falls to nothing: half of it at 10.5 m, above
+    // the card's own 0.13 there.
+    expect(coverage(10.5, 0.0011, 1)).toBeCloseTo(0.3, 12);
+    // From 15 m out the card keeps only its own coverage of its 2 px: 0.091 at
+    // 15 m, 0.068 at 20 m, 0.023 at 60 m. A swarm across the lake is faint
+    // specks, not a solid blob.
+    expect(coverage(15, 0.0011, 1)).toBeCloseTo(0.0909091, 6);
+    expect(coverage(20, 0.0011, 1)).toBeCloseTo(0.0681818, 6);
+    expect(coverage(60, 0.0011, 1)).toBeCloseTo(0.0227273, 6);
     // Still scaled by the swarm's presence.
-    expect(coverage(15, 0.0011, 0.5)).toBe(0.3);
-    expect(coverage(15, 0.0011, 0)).toBe(0);
+    expect(coverage(3, 0.0011, 0.5)).toBe(0.3);
+    expect(coverage(20, 0.0011, 0.5)).toBeCloseTo(0.0340909, 6);
+    expect(coverage(20, 0.0011, 0)).toBe(0);
   });
 
   /** The fragment stage's footprint, transcribed from its pinned lines: u and v

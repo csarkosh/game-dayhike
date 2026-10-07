@@ -66,9 +66,15 @@ export const MIDGE_SKY_GLINT = 0.6;
 /** The sky glint's lobe: the cosine between the view and the sun's azimuth,
  * level, raised to this, a broad lobe as the glow along the horizon is. */
 export const MIDGE_SKY_LOBE_POWER = 2;
-/** The least coverage a midge enlarged to its fewest pixels keeps, so a far
- * midge reads as a dot, not a ghost. */
+/** The least coverage a midge enlarged to its fewest pixels keeps near the
+ * eye, so a close swarm's midge reads as a dot, not a ghost. */
 export const MIDGE_ALPHA_FLOOR = 0.6;
+/** The floor holds whole to this many metres from the eye… */
+export const MIDGE_FLOOR_NEAR = 6;
+/** …and falls linearly to nothing here and beyond, so a far midge keeps only
+ * its card's own coverage of its pixels (0.07 at 20 m at 1100 pixels to the
+ * metre at 1 m): a faint speck, and a swarm across the water no solid blob. */
+export const MIDGE_FLOOR_FAR = 15;
 /** How much of the background a speck hides against the brightest sky. */
 export const MIDGE_DARK = 0.9;
 /** Khronos PBR Neutral's published constants, as Babylon's image processing
