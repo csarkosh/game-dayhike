@@ -160,7 +160,7 @@ describe("WebGPU's per-stage bindings, at the defaults the device keeps", () => 
     expect(world.drawn.get("mat_terrain")?.textureNames, CEILING).toEqual([
       "reflectionSampler",
       "environmentBrdfSampler",
-      "atmGradient",
+      "atmCloudMap",
       "terrainGrass",
       "terrainFloor",
       "terrainRock",

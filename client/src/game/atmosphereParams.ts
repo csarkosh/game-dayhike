@@ -22,6 +22,8 @@ export type AtmosphereRecord = {
   sunColour: Rgb;
   sunWeight: number;
   sunPower: number;
+  /** The gradient's far end, the sky state's mist air: the shader draws the gradient on it (fogGradientUnder). */
+  farColour: Rgb;
 };
 
 export const GRADIENT_STEPS = 256;
@@ -62,6 +64,9 @@ export function heightFogAmount(camY: number, rdY: number, t: number, a: number,
  * state's mist air: the fog colour, the clear colour and, at clear, the
  * dome's horizon away from the sun, one colour. `w` is the weather the state
  * was made under; its mist, cloud, rain and dread are in that colour already.
+ * The shader draws the same curve on `farColour` itself (ATM_NEAR_DIM and
+ * ATM_GRADIENT_BIAS in atmosphereFog.fragment.fx mirror GRADIENT_NEAR_DIM and
+ * GRADIENT_BIAS); this list is for the mist banks' and motes' colours.
  */
 export function fogGradientUnder(w: WeatherParams, sky: SkyState): Rgb[] {
   const far = { r: sky.mistAir.r, g: sky.mistAir.g, b: sky.mistAir.b };
@@ -94,5 +99,6 @@ export function atmosphereUnder(w: WeatherParams, sky: SkyState, viewDistance: n
     sunColour: airColourUnder(w, sky.horizonToward),
     sunWeight: sky.glowWeight,
     sunPower: sky.glowPower,
+    farColour: { r: sky.mistAir.r, g: sky.mistAir.g, b: sky.mistAir.b },
   };
 }

@@ -107,6 +107,12 @@ The fog gradient is the one texture rebuilt at runtime: a 256×1 `RawTexture` re
 the CPU from `fogGradientUnder(weather, hour)` whenever hour or weather changes (the fade
 observer already fires `apply()` per tick during a fade; the rebuild rides it).
 
+*Amended 2026-10-07.* The gradient is no longer a texture: it is the far colour dimmed by
+`GRADIENT_NEAR_DIM` at the eye and rising as `t^(1/GRADIENT_BIAS)`, drawn by the shader on the
+`atmFarColour` uniform, since a material has sixteen texture units and one was at them when the
+ground cloud's map (`docs/rendering/2026-10-07-ground-cloud-volume-design.md`) needed one. The
+list `fogGradientUnder` builds is kept for the mist banks' and motes' colours.
+
 ### 3.3 Two colour paths
 
 Medium and high build the `DefaultRenderingPipeline` with `hdr: true` and set
