@@ -17,6 +17,8 @@ import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { createRain } from "../../src/game/rain.js";
 import { createMotes } from "../../src/game/motes.js";
 import { createMistMeshes } from "../../src/game/mistMeshes.js";
+import { createWaterLife } from "../../src/game/waterLife.js";
+import { lakeOf } from "../sim/helpers/lakes.js";
 import { OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterRingSpacing } from "../../src/game/water.js";
 import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -633,7 +635,7 @@ describe("createWater under NullEngine", () => {
   it.each([
     [true, WATER_GROUP],
     [false, 0],
-  ])("puts rain, motes and mist in the water's group when its high path is on (%s: group %i)", (supported, group) => {
+  ])("puts rain, motes, mist and the lake's life in the water's group when its high path is on (%s: group %i)", (supported, group) => {
     frameSupport.supported = supported;
     engine = new NullEngine();
     const scene = new Scene(engine);
@@ -642,14 +644,25 @@ describe("createWater under NullEngine", () => {
     const rain = createRain(scene, "high");
     const motes = createMotes(scene, "high");
     const mist = createMistMeshes(scene, 7, "high");
-    setEffectsGroup(effectsGroupFor(water), { rain, splash: null, motes, mist });
+    const waterLife = createWaterLife(scene, 388817, lakeOf(388817), "high", "post");
+    setEffectsGroup(effectsGroupFor(water), { rain, splash: null, motes, mist, waterLife });
     expect(motes).not.toBeNull();
     expect(mist.meshes.length).toBeGreaterThan(0);
     expect(rain.mesh.renderingGroupId).toBe(group);
     expect(rain.drips?.renderingGroupId).toBe(group);
     for (const system of motes!.systems) expect(system.renderingGroupId).toBe(group);
     for (const mesh of mist.meshes) expect(mesh.renderingGroupId).toBe(group);
+    expect(waterLife.meshes).toHaveLength(4);
+    for (const mesh of waterLife.meshes) expect(mesh.renderingGroupId).toBe(group);
+    // The lake's life's bounds sit at the origin, so it sorts by its index
+    // alone: after the blended water of group 0 (off the high path), the
+    // mist banks and the rain, which share its group.
+    const others = [...water.meshes, ...mist.meshes, rain.mesh, ...(rain.drips === null ? [] : [rain.drips])];
+    for (const mesh of waterLife.meshes) {
+      for (const other of others) expect(mesh.alphaIndex).toBeGreaterThan(other.alphaIndex);
+    }
     expect(effectsGroupFor(null)).toBe(0);
+    waterLife.dispose();
     mist.dispose();
     motes!.dispose();
     rain.dispose();

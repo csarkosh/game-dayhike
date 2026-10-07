@@ -87,6 +87,12 @@ export const WILDLIFE_LEVEL = 0.7;
 export const GAIN_RAMP_S = 2;
 /** The world bus's own ramp, for a stare's muffling and a hush: short, so silence lands within a breath. */
 export const HUSH_RAMP_S = 0.08;
+/** The brick-wall limiter between the world bus and the master, so the frogs, a hum
+ * over the head and a rustle together cannot clip: from 3 dB under full scale, no
+ * knee, 20 to 1, on within 3 ms and off within 100 ms. The compressor's automatic
+ * makeup gain raises the whole world bus by about 1.7 dB (×1.22), and settles its
+ * peaks near −1.1 dBFS. */
+export const WORLD_LIMIT = { thresholdDb: -3, knee: 0, ratio: 20, attackS: 0.003, releaseS: 0.1 } as const;
 /** The birdsong bed's bus at full song, how far each of its two passes sits to its ear,
  * the seconds one pass's end lies under the next's start (the bed is faded that long at
  * each end), how far ahead a pass is scheduled, and the gain's own short ramp: the level
@@ -139,6 +145,32 @@ export type AudioEmitter = {
   move(x: number, y: number, z: number): void;
   stop(): void;
 };
+
+/**
+ * A synthesized voice for `loopEmitter`: the node its sound leaves by, and
+ * `stop`, which ends every source in it and disconnects every node it made.
+ * Built by the caller's builder on the context (`insectVoices.ts`).
+ */
+export type VoiceSource = {
+  readonly output: AudioNode;
+  stop(): void;
+};
+
+/**
+ * A playing positional voice that sounds until it is stopped: `move` and
+ * `setGain` change it in place, never restarting it, and `stop` ends the
+ * voice and disconnects the panner and gain it was given. A stopped one
+ * ignores every call.
+ */
+export type LoopEmitter = {
+  move(x: number, y: number, z: number): void;
+  setGain(gain: number): void;
+  stop(): void;
+};
+
+/** `LoopEmitter.setGain` reaches its target within this long: a
+ * `setTargetAtTime` whose time constant is a third of it is within 5 % by then. */
+export const LOOP_GAIN_RAMP_S = 0.1;
 
 /**
  * Where the listener is and which way it faces, in BABYLON's left-handed world
@@ -242,6 +274,21 @@ export type AmbientAudio = {
     x: number, y: number, z: number,
     gain: number, ref: number, max: number,
   ): AudioEmitter | null;
+  /**
+   * Starts a positioned voice that sounds until it is stopped, or null before
+   * `unlock()` and after `dispose()`, when `build` is not called. `build` makes
+   * the voice's graph on the context; its output goes through the same
+   * equal-power panner and inverse distance model as `emitter`'s, then a gain
+   * of its own that `setGain` ramps, into the wildlife bus, and so through the
+   * world's bus: a stare muffles it and a hush cuts it, as they do the calls.
+   * Coordinates are in Web Audio's right-handed frame, as `emitter`'s are.
+   * `dispose()` stops every one still playing.
+   */
+  loopEmitter(
+    build: (ctx: BaseAudioContext) => VoiceSource,
+    x: number, y: number, z: number,
+    gain: number, ref: number, max: number,
+  ): LoopEmitter | null;
   /** Places the listener, in Web Audio's right-handed frame. Inert before `unlock()`. */
   setListener(
     x: number, y: number, z: number,
@@ -322,6 +369,9 @@ export function createAmbientAudio(
   /** The wind record's own clock at the last applied `setWind`, so a fresh
    * context (or dispose/recreate) never throttles the first call. */
   let lastWindTime = -Infinity;
+  /** Every loop emitter still playing, so `dispose` can stop them: a loop,
+   * unlike a one-shot, never ends on its own. */
+  const loops = new Set<LoopEmitter>();
 
   /** The rain bed's centre and gain for the pending weather and the last
    * wind speed. On `setWind`'s path, so it allocates nothing. */
@@ -359,6 +409,26 @@ export function createAmbientAudio(
     src.stop(t + DRIP_STOP_S);
   }
 
+  /**
+   * The panner every positioned voice goes through. equalpower, not HRTF:
+   * HRTF convolves per source and this can have a dozen calls alive at once.
+   * inverse rolloff with an explicit refDistance/maxDistance is what makes a
+   * squirrel audible only within its 60 m and an elk bugle carry across the
+   * valley.
+   */
+  function positioned(c: AudioContext, x: number, y: number, z: number, ref: number, max: number): PannerNode {
+    const panner = c.createPanner();
+    panner.panningModel = "equalpower";
+    panner.distanceModel = "inverse";
+    panner.refDistance = ref;
+    panner.maxDistance = max;
+    panner.rolloffFactor = 1;
+    panner.positionX.value = x;
+    panner.positionY.value = y;
+    panner.positionZ.value = z;
+    return panner;
+  }
+
   return {
     unlock() {
       if (ctx) return;
@@ -368,7 +438,8 @@ export function createAmbientAudio(
       master.gain.value = volume;
       master.connect(ctx.destination);
       // The world's bus: every bed and call below is mixed into it, and it
-      // reaches the master through a low-pass the stare shuts (wired last).
+      // reaches the master through a low-pass the stare shuts and a limiter
+      // (wired last).
       world = ctx.createGain();
       world.gain.value = 1;
 
@@ -439,7 +510,14 @@ export function createAmbientAudio(
       worldFilter.type = "lowpass";
       worldFilter.frequency.value = MUFFLE_OPEN_HZ;
       world.connect(worldFilter);
-      worldFilter.connect(master);
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = WORLD_LIMIT.thresholdDb;
+      limiter.knee.value = WORLD_LIMIT.knee;
+      limiter.ratio.value = WORLD_LIMIT.ratio;
+      limiter.attack.value = WORLD_LIMIT.attackS;
+      limiter.release.value = WORLD_LIMIT.releaseS;
+      worldFilter.connect(limiter);
+      limiter.connect(master);
       // The stare's own sounds sit beside the world, not in it: they are not muffled.
       stare = createStareAudio(ctx, master, noise, random);
       chase = createChaseAudio(ctx, master, noise);
@@ -620,19 +698,7 @@ export function createAmbientAudio(
       if (!ctx || !wildlifeGain) return null;
       const src = ctx.createBufferSource();
       src.buffer = buffer;
-      // equalpower, not HRTF: HRTF convolves per source and this can have a
-      // dozen calls alive at once. inverse rolloff with an explicit
-      // refDistance/maxDistance is what makes a squirrel audible only within
-      // its 60 m and an elk bugle carry across the valley.
-      const panner = ctx.createPanner();
-      panner.panningModel = "equalpower";
-      panner.distanceModel = "inverse";
-      panner.refDistance = ref;
-      panner.maxDistance = max;
-      panner.rolloffFactor = 1;
-      panner.positionX.value = x;
-      panner.positionY.value = y;
-      panner.positionZ.value = z;
+      const panner = positioned(ctx, x, y, z, ref, max);
       // A gain per call, not one shared node: this is where weather and species
       // presence land, and they differ between two calls playing at once.
       //
@@ -671,6 +737,45 @@ export function createAmbientAudio(
         },
       };
     },
+    loopEmitter(build, x, y, z, gain, ref, max) {
+      if (!ctx || !wildlifeGain) return null;
+      const c = ctx;
+      const voice = build(c);
+      const panner = positioned(c, x, y, z, ref, max);
+      // A gain per loop, as per call: `setGain` moves it while the voice plays.
+      const g = c.createGain();
+      g.gain.value = gain;
+      voice.output.connect(panner);
+      panner.connect(g);
+      g.connect(wildlifeGain);
+      let playing = true;
+      const loop: LoopEmitter = {
+        move(nx, ny, nz) {
+          if (!playing) return;
+          panner.positionX.value = nx;
+          panner.positionY.value = ny;
+          panner.positionZ.value = nz;
+        },
+        setGain(v) {
+          if (!playing) return;
+          g.gain.setTargetAtTime(v, c.currentTime, LOOP_GAIN_RAMP_S / 3);
+        },
+        stop() {
+          if (!playing) return;
+          playing = false;
+          loops.delete(loop);
+          // Torn down by hand, unlike a one-shot's chain: the voice may hold
+          // sources that loop for ever, and the panner and gain stay wired
+          // into the bus until something disconnects them.
+          voice.stop();
+          voice.output.disconnect();
+          panner.disconnect();
+          g.disconnect();
+        },
+      };
+      loops.add(loop);
+      return loop;
+    },
     setListener(x, y, z, fx, fy, fz, ux, uy, uz) {
       if (!ctx) return;
       // Web Audio's frame is right-handed (z mirrored from Babylon's); undo
@@ -694,6 +799,9 @@ export function createAmbientAudio(
       l.upZ.value = uz;
     },
     dispose() {
+      // Before the context goes: a loop's sources would otherwise play on
+      // until the close lands. `stop` takes each out of the set as it goes.
+      for (const loop of loops) loop.stop();
       void ctx?.close();
       ctx = null;
       master = world = rainGain = windGain = wildlifeGain = dripGain = birdGain = null;

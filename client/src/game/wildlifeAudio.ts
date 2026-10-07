@@ -257,9 +257,11 @@ export function createWildlifeAudio(
         // horizontal distance says nothing about whether it can be heard.
         if (listenerSet && Math.hypot(e.x - listenerX, e.y - listenerY, e.z - listenerZ) > max) continue;
         // z negated: Babylon's world is left-handed, Web Audio's is right-handed
-        // (see `ListenerPose`). Mirroring z on every position and every
-        // direction vector — here and in `listenerToAudio`, and nowhere else —
-        // maps one to the other, so a call to the player's left pans left.
+        // (see `ListenerPose`). Whoever hands Web Audio a position or a
+        // direction vector mirrors its z — here, `listenerToAudio` for the
+        // listener, `waterLifeAudio.ts` for its loop emitters, and `app.ts`
+        // for the Hollow's call — which maps one frame to the other, so a call
+        // to the player's left pans left.
         // Emitted and forgotten: a call is a one-shot of at most three seconds
         // that ends on its own, and the animal that made it moves less than the
         // panner's resolution in that time.

@@ -475,6 +475,31 @@
       "id": "ambience.forest_birds",
       "output": "audio/ambience.forest_birds.mp3",
       "bytes": 552646
+    },
+    {
+      "id": "call.frog_single_a",
+      "output": "audio/call.frog_single_a.mp3",
+      "bytes": 6582
+    },
+    {
+      "id": "call.frog_single_b",
+      "output": "audio/call.frog_single_b.mp3",
+      "bytes": 6896
+    },
+    {
+      "id": "call.frog_single_c",
+      "output": "audio/call.frog_single_c.mp3",
+      "bytes": 6896
+    },
+    {
+      "id": "call.frog_chorus_near",
+      "output": "audio/call.frog_chorus_near.mp3",
+      "bytes": 132911
+    },
+    {
+      "id": "call.frog_chorus_far",
+      "output": "audio/call.frog_chorus_far.mp3",
+      "bytes": 132911
     }
   ],
   "video": [

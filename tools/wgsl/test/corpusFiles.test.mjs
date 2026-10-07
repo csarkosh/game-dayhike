@@ -316,24 +316,24 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 994 recorded stages, each file\'s bytes hashing to the name it has: 791 on the medium and high tiers, 189 on low, 8 on high alone, 4 on medium alone, 2 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(994);
+  it('holds the 1010 recorded stages, each file\'s bytes hashing to the name it has: 795 on the medium and high tiers, 197 on low, 10 on high alone, 4 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1010);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(994);
+    expect(read.stages).toHaveLength(1010);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(528);
-    // The 791 recorded on the medium and high tiers, the low tier's 189,
-    // recorded on it alone, the 8 the high tier alone met, the 4 the
-    // medium tier alone met, and the sky dome's 2, whose text is the same
-    // on every tier. Stages whose text a shader no longer produces are
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(536);
+    // The 795 recorded on the medium and high tiers, the low tier's 197,
+    // recorded on it alone, the 10 the high tier alone met, the 4 the
+    // medium tier alone met, and the sky dome's 2 and the midges' 2, whose
+    // text is the same on every tier. Stages whose text a shader no longer produces are
     // retired, not kept.
-    expect(read.tiers.size).toBe(994);
+    expect(read.tiers.size).toBe(1010);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([191, 797, 801]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(791);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(189);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(8);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(2);
+    expect([on('low'), on('medium'), on('high')]).toEqual([201, 803, 809]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(795);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(197);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(10);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
 

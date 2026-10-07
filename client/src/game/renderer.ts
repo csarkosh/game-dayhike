@@ -28,7 +28,7 @@ import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { createHauntMist } from "./hauntMist.js";
 import { forestDensity } from "../sim/vegetation.js";
-import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
+import { MAX_PLAYERS, PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
 import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
@@ -56,6 +56,8 @@ import {
 } from "./clipmap.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
 import { createLighting, DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "./lighting.js";
+import type { SkyState } from "./skyState.js";
+import { luma } from "./colour.js";
 import type { SkyTable } from "./skyTable.js";
 import { startSkySource, type SkySource } from "./skyWorker.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
@@ -115,6 +117,8 @@ import { createRain, type Rain, type RainLamp } from "./rain.js";
 import { createRainMap } from "./rainMap.js";
 import { createRainSplash, type RainSplash } from "./rainSplash.js";
 import { createMotes, type Motes } from "./motes.js";
+import { createWaterLife, type WaterLife, type WaterLifeFrame } from "./waterLife.js";
+import type { WaterLifeSound } from "./waterLifeAudio.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo } from "./rendererSwap.js";
 
@@ -678,8 +682,14 @@ export type Water = {
 };
 
 /** The see-through effects a camera moves among: rain (its streaks and
- * drips), its splashes, motes and the mist banks. */
-export type SeeThroughEffects = { rain: Rain | null; splash: RainSplash | null; motes: Motes | null; mist: MistMeshes | null };
+ * drips), its splashes, motes, the mist banks and the lake's insects. */
+export type SeeThroughEffects = {
+  rain: Rain | null;
+  splash: RainSplash | null;
+  motes: Motes | null;
+  mist: MistMeshes | null;
+  waterLife: WaterLife | null;
+};
 
 /**
  * The rendering group the see-through effects draw in: the water's own on its
@@ -725,6 +735,108 @@ export function setEffectsGroup(group: number, effects: SeeThroughEffects): void
   if (effects.splash !== null) effects.splash.mesh.renderingGroupId = group;
   for (const system of effects.motes?.systems ?? []) system.renderingGroupId = group;
   for (const mesh of effects.mist?.meshes ?? []) mesh.renderingGroupId = group;
+  for (const mesh of effects.waterLife?.meshes ?? []) mesh.renderingGroupId = group;
+}
+
+/**
+ * The sky behind a swarm seen level, 0 to 1, which the midges darken against
+ * (`midgeSwarms.ts`): the luminance of the dome's horizon away from the sun
+ * (`SkyState.horizonAway`), the side where a speck reads dark rather than
+ * glinting. It is in the scene's adapted units with the cloud deck and the
+ * night's floor already in it: 0.03 at night, 0.25 a quarter hour after
+ * sunset, 0.53 at sunrise and sunset, 0.71 at clear noon, held at 1 in a clear
+ * late afternoon (1.22 at 17:00). 0 before the sky's first slices.
+ */
+export function skyLumaOf(sky: SkyState | null): number {
+  return sky === null ? 0 : Math.min(1, luma(sky.horizonAway));
+}
+
+/** The world size of one pixel a metre from the lens: the view's height at a
+ * metre, `2·tan(fov / 2)`, over the render's height in pixels. */
+export function pixelAtOneMetre(fov: number, renderHeight: number): number {
+  return (2 * Math.tan(fov / 2)) / Math.max(1, renderHeight);
+}
+
+/** `value` and every object it holds, frozen. */
+function frozenThrough<T extends object>(value: T): T {
+  for (const held of Object.values(value)) if (typeof held === "object" && held !== null) frozenThrough(held);
+  Object.freeze(value);
+  return value;
+}
+
+/** What a world without the lake's life sounds like, and a frame that did
+ * not step it: nothing. Frozen through, as every caller is handed this one
+ * object. */
+const SILENT_WATER_LIFE: WaterLifeSound = frozenThrough({
+  hums: [], hums_n: 0, pitch: 0, rustles: [], frogCalls: [],
+  bed: { level: 0, duck: [1, 1], points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
+});
+
+/** A player's position in their slot: the sim's own, y the body's centre. */
+export type SlotPoint = { x: number; y: number; z: number };
+
+export type PlayerSlots = {
+  /**
+   * Seats `players` and returns each slot's player's position, undefined for
+   * an empty slot: one array, refilled in place by every call.
+   */
+  fill(players: ReadonlyMap<number, { readonly id: number; readonly pos: Vec3 }>): readonly (SlotPoint | undefined)[];
+};
+
+/**
+ * `count` slots the players keep for as long as they are in the world, for
+ * the lake's life, which keeps a head swarm and a speed by index: a list
+ * rebuilt in the Map's order would close up when a player leaves and hand
+ * theirs to the next. A player who leaves frees their slot; one who joins
+ * takes the lowest slot free before this call, never one it freed, so a slot
+ * stands empty for a frame between two players. Players past the last slot go
+ * without. Allocates nothing per call beyond the Map's iterator.
+ */
+export function createPlayerSlots(count: number): PlayerSlots {
+  const ids: number[] = new Array<number>(count).fill(0);
+  const taken: boolean[] = new Array<boolean>(count).fill(false);
+  const freed: boolean[] = new Array<boolean>(count).fill(false);
+  const points: SlotPoint[] = [];
+  for (let s = 0; s < count; s++) points.push({ x: 0, y: 0, z: 0 });
+  const out: (SlotPoint | undefined)[] = new Array<SlotPoint | undefined>(count).fill(undefined);
+  return {
+    fill(players) {
+      for (let s = 0; s < count; s++) {
+        freed[s] = false;
+        if (taken[s] && !players.has(ids[s]!)) {
+          taken[s] = false;
+          freed[s] = true;
+          out[s] = undefined;
+        }
+      }
+      for (const p of players.values()) {
+        let at = -1;
+        for (let s = 0; s < count; s++) {
+          if (taken[s] && ids[s] === p.id) {
+            at = s;
+            break;
+          }
+        }
+        if (at < 0) {
+          for (let s = 0; s < count; s++) {
+            if (!taken[s] && !freed[s]) {
+              at = s;
+              break;
+            }
+          }
+          if (at < 0) continue;
+          taken[at] = true;
+          ids[at] = p.id;
+        }
+        const q = points[at]!;
+        q.x = p.pos.x;
+        q.y = p.pos.y;
+        q.z = p.pos.z;
+        out[at] = q;
+      }
+      return out;
+    },
+  };
 }
 
 /** Spacing (m) of a lake surface's vertices: fine enough that the per-vertex
@@ -1202,6 +1314,19 @@ export type Renderer = {
    */
   readonly hasWildlife: boolean;
   /**
+   * Whether this world has the lake's insects and frogs (`waterLife.ts`): a
+   * forest world with a lake, the animals not turned off. False, `app.ts`
+   * builds no audio for them.
+   */
+  readonly hasWaterLife: boolean;
+  /**
+   * The lake's life as heard on the last `sync` (`WaterLife.sound`): one
+   * reused object, read by `app.ts` after each `sync`. Silent, never null,
+   * without a lake, and after any `sync` that did not step it (the player's
+   * branch with no local player), so no frame's calls are voiced twice.
+   */
+  waterLifeSound(): WaterLifeSound;
+  /**
    * Where the camera is and which way it looks, in Babylon's left-handed world
    * — `wildlifeAudio.ts` mirrors it for Web Audio. One reused object: this is
    * read every frame and its nine numbers are copied straight into AudioParams.
@@ -1663,6 +1788,16 @@ function buildRenderer(
   // A murky lake's reeds, cattails and lilies: placed by the sim, built here.
   const waterPlants = forest !== null && lakes.length > 0 ? createWaterPlants(scene, forest.seed, lakes) : null;
   partOf(waterPlants);
+  // The midges, the dragonflies and the frogs of the world's lake: cosmetic
+  // like the animals, so under their guard too (a scene recorded a frame at a
+  // time has neither). None of their meshes casts a shadow. The midges are
+  // toned for the frame's colour path, as the lighting's dome is.
+  const firstLake = lakes[0];
+  const waterLife =
+    forest !== null && firstLake !== undefined && options.wildlife !== false
+      ? createWaterLife(scene, forest.seed, firstLake, tier, postFeatures.colourPath)
+      : null;
+  partOf(waterLife);
 
   // The wet line follows the nearest body, sea or pond. No bodies, no call.
   const wetBodies: WetBody[] = [];
@@ -1926,7 +2061,7 @@ function buildRenderer(
   const rainLamp: RainLamp = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, intensity: 0, angle: 0, r: 1, g: 1, b: 1 };
   const motes = createMotes(scene, tier);
   partOf(motes);
-  setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist });
+  setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife });
 
   const views = new EntityViews(scene);
   // The haunt's shades: soft figures in a pale mist on the post tiers (the
@@ -1954,6 +2089,51 @@ function buildRenderer(
   let wind: WindRecord = windRecordUnder(lighting.weather, 0);
   const windPlayers = new Float32Array(FOLIAGE_PLAYERS * 3);
 
+  // Each player in the slot they keep, for the lake's life.
+  const playerSlots = createPlayerSlots(MAX_PLAYERS);
+  // The lake's life's frame, reused across both camera paths as the
+  // director's view is.
+  const waterLifeFrame: WaterLifeFrame = {
+    camX: 0, camY: 0, camZ: 0,
+    tick: 0, dt: 0, time: 0,
+    players: [],
+    weather: lighting.weather, hour: lighting.hour, wind,
+    sky: null, skyLuma: 0, pixelAt1m: 0,
+    hollowDistance: Infinity,
+  };
+  /** Whether this frame's `sync` stepped the lake's life: the sound of a
+   * frame that did not is silence, never the last stepped frame's calls and
+   * rustles again. */
+  let waterLifeStepped = false;
+  /**
+   * Steps the lake's life (`waterLife.ts`) from the camera as this frame's
+   * branch has left it: its place and its lens, the players by their slots,
+   * the shared seconds the swarms move on, the hour, the weather, the wind,
+   * the sun, the sky behind a swarm, and the Hollow's distance from the
+   * branch's own point (`findHollow`, run before it in both branches). After
+   * the motes, in both branches; nothing without a lake.
+   */
+  function updateWaterLife(state: WorldState, dt: number, time: number, weather: WeatherParams, sky: SkyState | null): void {
+    if (waterLife === null) return;
+    const f = waterLifeFrame;
+    f.camX = camera.position.x;
+    f.camY = camera.position.y;
+    f.camZ = camera.position.z;
+    f.tick = state.tick;
+    f.dt = dt;
+    f.time = time;
+    f.players = playerSlots.fill(state.players);
+    f.weather = weather;
+    f.hour = lighting.hour;
+    f.wind = wind;
+    f.sky = sky;
+    f.skyLuma = skyLumaOf(sky);
+    f.pixelAt1m = pixelAtOneMetre(camera.fov, engine.getRenderHeight());
+    f.hollowDistance = wildlifeMatch.hollowDistance;
+    waterLife.update(f);
+    waterLifeStepped = true;
+  }
+
   return {
     scene,
     engine,
@@ -1964,6 +2144,8 @@ function buildRenderer(
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
     skyReady,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
+      // Nothing has stepped the lake's life this frame yet.
+      waterLifeStepped = false;
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
       // of materials x four property writes: cheap enough to do every frame.
       // Read once: `lighting.weather` is a getter that allocates a fresh copy
@@ -2113,6 +2295,7 @@ function buildRenderer(
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
         if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
+        updateWaterLife(state, frame.dt, oceanSeconds, weather, sky);
         jobs.run();
         return;
       }
@@ -2191,6 +2374,7 @@ function buildRenderer(
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
         if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
+        updateWaterLife(state, frame.dt, oceanSeconds, weather, sky);
       }
       // This frame's share of the rebuilds the updates above began, once
       // every shell has seen the view.
@@ -2209,6 +2393,10 @@ function buildRenderer(
     },
     wildlifeDirectorLog() {
       return wildlife?.directorLog() ?? [];
+    },
+    hasWaterLife: waterLife !== null,
+    waterLifeSound() {
+      return waterLife !== null && waterLifeStepped ? waterLife.sound() : SILENT_WATER_LIFE;
     },
     stare() {
       return stareLens;
@@ -2269,6 +2457,7 @@ function buildRenderer(
       clipmap?.dispose();
       water?.dispose();
       waterPlants?.dispose();
+      waterLife?.dispose();
       propMeshes?.dispose();
       forestMeshes?.dispose();
       clutterMeshes?.dispose();
