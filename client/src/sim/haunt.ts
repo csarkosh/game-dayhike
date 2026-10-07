@@ -34,17 +34,20 @@ import { aimDirection } from "./view.js";
 import { isOnCorridor } from "./containment.js";
 import { faceToward, horizontalDistSq, playerSees, walkToward } from "./hollow.js";
 import { climbOf, WATCH_SLOPE_NY, WATCH_VIEW_COS } from "./watcher.js";
-import { actsUnder, DUSK_AT, NIGHT_SPAN } from "./acts.js";
+import { actsUnder, DUSK_AT, NIGHT_SPAN, smootherstep } from "./acts.js";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
 
 /** The night below which the climb is not haunted: the night fully in, so the party has its sounds first. */
 export const HAUNT_NIGHT_MIN = 0.95;
 /**
- * The haunt's pressure, 0 as the night comes fully in and 1 at the crest
- * (and throughout the chase): the rests between episodes run from the early
- * band to the late, and an episode's shades from the fewest to the most.
+ * The haunt's pressure, 0 as the night comes fully in and 1 from
+ * HAUNT_PRESS_SPAN of the climb after that, by smootherstep, so the night
+ * is at its full pressure well before the crest (and throughout the chase):
+ * the rests between episodes run from the early band to the late, and an
+ * episode's shades from the fewest to the most.
  */
-export const HAUNT_REST_EARLY: readonly [number, number] = [55, 100];
+export const HAUNT_PRESS_SPAN = 0.3;
+export const HAUNT_REST_EARLY: readonly [number, number] = [40, 75];
 export const HAUNT_REST_LATE: readonly [number, number] = [10, 24];
 export const HAUNT_REST_CHASE: readonly [number, number] = [0, 2];
 export const HAUNT_SHADES_EARLY: readonly [number, number] = [3, 5];
@@ -54,7 +57,7 @@ export const HAUNT_EPISODE_S: readonly [number, number] = [18, 30];
 export const HAUNT_SHADE_GAP_S: readonly [number, number] = [0.9, 2.2];
 /** The chance an episode's last shade is a lunge, on the climb and in the chase. */
 export const HAUNT_REAL_CLIMB = 0.55;
-export const HAUNT_REAL_CHASE = 0.75;
+export const HAUNT_REAL_CHASE = 0.9;
 /**
  * Metres from its player a shade stands, how long it stands, how near a
  * player may come, and how long it may be looked at. Close, and inside the
@@ -128,8 +131,7 @@ export function isShadeState(ai: AiState): boolean {
 export function pressureOf(world: World): number {
   if (world.state.phase === Phase.Chase) return 1;
   const from = DUSK_AT + NIGHT_SPAN;
-  const t = (bestClimb(world) - from) / (1 - from);
-  return t < 0 ? 0 : t > 1 ? 1 : t;
+  return smootherstep((bestClimb(world) - from) / HAUNT_PRESS_SPAN);
 }
 
 /** The best living climb, 0 at the pad and 1 at the crest; 0 with nobody living. */

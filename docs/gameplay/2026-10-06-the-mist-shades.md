@@ -28,7 +28,8 @@ centre 0.12 of its height above the ground so the volume lies on the ground, wit
 life of 10 to 24 s that it comes into and goes out of over 2.5 s, drifting at 0.35 m/s on its own
 heading and breathing on its own clock; left behind past 22 m and reborn round the eye. Each
 puff's opacity is `HAUNT_MIST_ALPHA` (0.55) × its own weight × the haunt's level × the night, so
-the mist comes in with the haunt and goes with it, and never shows by day. (As first built, two
+the mist comes in with the haunt and goes with it, and never shows by day. In the chase, by its
+cast, the puffs are born nearer (2.5 to 10 m), 30 % larger and 60 % more opaque: the mist closes in. (As first built, two
 quads 7 m to each side of the eye: a wall glued to the screen.)
 
 ## 2. The figure (`game/shadeSilhouette.ts`, `shaders/grade.fragment.fx`)

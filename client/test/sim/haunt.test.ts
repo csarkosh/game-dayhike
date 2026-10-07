@@ -15,11 +15,11 @@ import { hasLineOfSight } from "../../src/sim/ai.js";
 import { climbOf } from "../../src/sim/watcher.js";
 import { actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
 import {
-  GUIDE_REACH, HAUNT_NIGHT_MIN, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
+  GUIDE_REACH, HAUNT_NIGHT_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_CHASE, HAUNT_REAL_CLIMB, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
   LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_RANGE, SHADE_WALK, SHADE_WATCHED_S,
   bestClimb, isHaunting, isShadeState, placeShadeOnGuide, pressureOf, spawnShade,
 } from "../../src/sim/haunt.js";
-import { isHollow } from "../../src/sim/hollow.js";
+import { isHollow, SHADE_STARE_CAP } from "../../src/sim/hollow.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -81,6 +81,10 @@ describe("the director", () => {
     expect(actsUnder(bestClimb(w)).night).toBeGreaterThanOrEqual(HAUNT_NIGHT_MIN);
     expect(isHaunting(w)).toBe(true);
     expect(pressureOf(w)).toBeLessThan(0.1);
+    // Full pressure well before the crest: HAUNT_PRESS_SPAN of the climb past full night.
+    standAtClimb(w, p, DUSK_AT + NIGHT_SPAN + HAUNT_PRESS_SPAN + 0.02);
+    expect(pressureOf(w)).toBe(1);
+    expect(HAUNT_REAL_CHASE).toBeGreaterThan(HAUNT_REAL_CLIMB);
     expect(HAUNT_REST_LATE[1]).toBeLessThan(HAUNT_REST_EARLY[0]);
     expect(HAUNT_SHADES_LATE[0]).toBeGreaterThan(HAUNT_SHADES_EARLY[1]);
     p.health = 0;
@@ -200,6 +204,27 @@ describe("the director", () => {
     expect(passed).toBeGreaterThanOrEqual(0);
     expect(q.health).toBe(100);
     expect(LUNGE_RANGE[0]).toBeGreaterThan(SHADE_FLEE_RADIUS);
+  });
+
+  it("in the chase, a shade in the stare's cone closes the dark a little, to SHADE_STARE_CAP and no further; on the climb not at all", () => {
+    const { w, p } = forestWorld();
+    standAtClimb(w, p, 0.3);
+    const ahead = { x: p.pos.x + Math.sin(p.yaw) * 14, y: 0, z: p.pos.z + Math.cos(p.yaw) * 14 };
+    ahead.y = elevationAt(seed, ahead.x, ahead.z) + 1;
+    w.haunt!.active = false;
+    const h = spawnShade(w, ahead, p, false, 60);
+    // Held still, and never watched out: the test turns the shade's own timers off.
+    const hold = () => { h.pos = { ...ahead }; h.stateTimer = 60; h.attackCooldown = 0; };
+    lookAt(p, h.pos);
+    tick(w, 120);
+    expect(p.stare).toBe(0);
+    w.state.phase = Phase.Chase;
+    for (let t = 0; t < 600; t++) { hold(); tick(w); }
+    expect(p.stare).toBeCloseTo(SHADE_STARE_CAP, 6);
+    expect(p.health).toBe(100);
+    p.yaw += Math.PI;
+    tick(w, 60);
+    expect(p.stare).toBeLessThan(SHADE_STARE_CAP);
   });
 
   it("in the chase, a shade stands beside the open way home, ahead of its player and nearer the pad", () => {
