@@ -1,12 +1,13 @@
 /**
- * The haunt's mist (docs/gameplay/2026-10-06-the-mist-shades.md §1): pale
- * smoke on the ground round the player while the haunt is on, the ground
- * the shades stand against. Not a wall at the eye: a dozen puffs seated on
- * the terrain at the player's sides and ahead, each its own size, drifting
- * on its own, breathing on its own, born and gone on its own clock, left
- * behind as the player walks and reborn ahead. Lit from within, a grey the
- * figures are darker than, as the fog of Silent Hill is. It comes in with
- * the haunt and goes with it.
+ * The night's mist (docs/gameplay/2026-10-06-the-mist-shades.md §1): a
+ * thick cloud resting on the ground round the player all night, the ground
+ * the shades stand against, deeper while the haunt is on and deeper still
+ * in the chase. Not a wall at the eye: puffs seated on the terrain at the
+ * player's sides and ahead, each its own size, wider than tall, drifting on
+ * its own, breathing on its own, born and gone on its own clock, left
+ * behind as the player walks and reborn ahead. Lit from within and outside
+ * the scene's fog, so it keeps its grey against the dark, as the fog of
+ * Silent Hill does; the figures are darker than it.
  */
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Camera } from "@babylonjs/core/Cameras/camera.js";
@@ -20,22 +21,24 @@ import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { mistAlphaMap, MIST_TEX_SIZE } from "./mistField.js";
 
 /** How many puffs, how far from the eye they are born (least and most), and beyond what they are left behind. */
-export const HAUNT_MIST_PUFFS = 16;
-export const HAUNT_MIST_BORN: readonly [number, number] = [4, 16];
+export const HAUNT_MIST_PUFFS = 28;
+export const HAUNT_MIST_BORN: readonly [number, number] = [2, 14];
 export const HAUNT_MIST_LEAVE = 22;
 /** A puff's size, its life, its drift (m/s) and how far above the ground its centre sits, as a share of its size. */
-export const HAUNT_MIST_SIZE: readonly [number, number] = [5, 12];
+export const HAUNT_MIST_SIZE: readonly [number, number] = [8, 18];
 export const HAUNT_MIST_LIFE_S: readonly [number, number] = [10, 24];
 export const HAUNT_MIST_DRIFT = 0.35;
-export const HAUNT_MIST_SEAT = 0.12;
+export const HAUNT_MIST_SEAT = 0.1;
 /** A puff is wider than it is tall: the mist lies on the ground, not in the air. */
-export const HAUNT_MIST_WIDE = 1.7;
-export const HAUNT_MIST_TALL = 0.75;
+export const HAUNT_MIST_WIDE = 2;
+export const HAUNT_MIST_TALL = 0.6;
 /** Seconds a puff takes to come in and to go. */
 export const HAUNT_MIST_EDGE_S = 2.5;
-/** The puffs' grey, lit from within, and a puff's opacity at a full haunt. */
-export const HAUNT_MIST_GREY = 0.22;
-export const HAUNT_MIST_ALPHA = 0.55;
+/** The puffs' grey (#3d3d3d), lit from within, and a puff's opacity at a full haunt. */
+export const HAUNT_MIST_GREY = "#3d3d3d";
+export const HAUNT_MIST_ALPHA = 0.85;
+/** The mist's share at night with no haunt on: the cloud is there all night; the haunt deepens it. */
+export const HAUNT_MIST_NIGHT_SHARE = 0.7;
 /** In the chase: where the puffs are born instead, how much more opaque they are, and how much larger. */
 export const HAUNT_MIST_BORN_CHASE: readonly [number, number] = [2.5, 10];
 export const HAUNT_MIST_CHASE_ALPHA = 0.6;
@@ -59,8 +62,10 @@ export function createHauntMist(scene: Scene, groundY: (x: number, z: number) =>
   mat.opacityTexture = tex;
   mat.disableDepthWrite = true;
   mat.backFaceCulling = false;
-  mat.emissiveColor = new Color3(HAUNT_MIST_GREY, HAUNT_MIST_GREY, HAUNT_MIST_GREY * 1.05);
+  mat.emissiveColor = Color3.FromHexString(HAUNT_MIST_GREY);
   mat.alpha = HAUNT_MIST_ALPHA;
+  // Outside the scene's fog: the night's fog is darker than the cloud, and would swallow it.
+  mat.fogEnabled = false;
   const puffs: Puff[] = [];
   for (let i = 0; i < HAUNT_MIST_PUFFS; i++) {
     const mesh = MeshBuilder.CreatePlane(`haunt_mist_${i}`, { size: 1 }, scene);
@@ -95,7 +100,8 @@ export function createHauntMist(scene: Scene, groundY: (x: number, z: number) =>
   return {
     update(camera, haunt, night, seconds, press = 0) {
       const close = Math.max(0, Math.min(1, press));
-      const level = Math.max(0, Math.min(1, haunt)) * Math.max(0, Math.min(1, night)) * (1 + HAUNT_MIST_CHASE_ALPHA * close);
+      const deep = HAUNT_MIST_NIGHT_SHARE + (1 - HAUNT_MIST_NIGHT_SHARE) * Math.max(0, Math.min(1, haunt));
+      const level = deep * Math.max(0, Math.min(1, night)) * (1 + HAUNT_MIST_CHASE_ALPHA * close);
       const dt = lastSeconds === null ? 0 : Math.max(0, Math.min(0.1, seconds - lastSeconds));
       lastSeconds = seconds;
       if (level <= 0.002) {

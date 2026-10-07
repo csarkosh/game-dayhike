@@ -21,15 +21,19 @@ comes in under it, one over the other, until it is the thing it was. Every chang
 
 ## 1. The mist (`game/hauntMist.ts`)
 
-Sixteen puffs on the mist banks' alpha map, with no lighting and a dark grey of their own
-(`HAUNT_MIST_GREY` 0.22, lit from within), seated on the terrain round the eye: each born 4 to
-16 m off on a drawn bearing, 5 to 12 m of size, drawn 1.7 times that wide and 0.75 as tall, its
-centre 0.12 of its height above the ground so the volume lies on the ground, with a
-life of 10 to 24 s that it comes into and goes out of over 2.5 s, drifting at 0.35 m/s on its own
-heading and breathing on its own clock; left behind past 22 m and reborn round the eye. Each
-puff's opacity is `HAUNT_MIST_ALPHA` (0.55) × its own weight × the haunt's level × the night, so
-the mist comes in with the haunt and goes with it, and never shows by day. In the chase, by its
-cast, the puffs are born nearer (2.5 to 10 m), 30 % larger and 60 % more opaque: the mist closes in. (As first built, two
+Twenty-eight puffs on the mist banks' alpha map, with no lighting and a grey of their own
+(`HAUNT_MIST_GREY`, #3d3d3d, lit from within and outside the scene's fog, which at night is darker
+and would swallow it), seated on the terrain round the eye: each born 2 to 14 m off on a drawn
+bearing, 8 to 18 m of size, drawn twice that wide and 0.6 as tall, its centre 0.1 of its height
+above the ground so the cloud rests on the ground, with a life of 10 to 24 s that it comes into
+and goes out of over 2.5 s, drifting at 0.35 m/s on its own heading and breathing on its own
+clock; left behind past 22 m and reborn round the eye. Each puff's opacity is `HAUNT_MIST_ALPHA`
+(0.85) × its own weight × the night × its depth, which is `HAUNT_MIST_NIGHT_SHARE` (0.7) with no
+haunt on and 1 at a full haunt: the cloud is there all night, deepens with the haunt, and never
+shows by day. In the chase, by its cast, the puffs are born nearer (2.5 to 10 m), 30 % larger and
+60 % more opaque: the mist closes in. (As first built, 0.22 grey, in the fog, and only while the
+haunt was on, which left it unseen most of the night; and before that, two
+quads(As first built, two
 quads 7 m to each side of the eye: a wall glued to the screen.)
 
 ## 2. The figure (`game/shadeSilhouette.ts`, `shaders/grade.fragment.fx`)
