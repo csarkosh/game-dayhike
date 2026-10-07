@@ -582,6 +582,11 @@ function buildGame(
     } else if (name === "skin") {
       skin = value !== false;
       renderer.setSkinShading(skin);
+    } else if (name === "mist") {
+      // The near mist's density, held or let go (nearMist.ts); the status says what is drawn.
+      const held = args.length === 0 ? null : Number(args[0]);
+      const drawn = renderer.setNearMist(held);
+      hud.setStatus(held === null ? `mist: the night's, now ${drawn.toFixed(2)}` : `mist held at ${held.toFixed(2)}`);
     } else if (name === "end") {
       // The ending, on the spot (ending.ts): the camera and the line, nothing of the match.
       const kind = args[0] === "won" ? "won" : "died";
@@ -1063,8 +1068,9 @@ function buildGame(
       const args = resolveTypedArgs(parsed.name, parsed.args, isToggleOn(parsed.name));
       // /volume is not persisted — the URL feeds the invite link, and
       // a volume level is a listener preference, not part of the shared scene.
+      // Nor /mist and /end, which are for looking at the night's effects on the spot.
       // Applied below via applyView; never written back to `?cmd=`.
-      if (parsed.name !== "volume") persist(parsed.name, args);
+      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "end") persist(parsed.name, args);
       if (findCommand(parsed.name)?.kind === "world") {
         // Re-initialise through the path `main.ts` already listens on.
         window.dispatchEvent(new PopStateEvent("popstate"));
