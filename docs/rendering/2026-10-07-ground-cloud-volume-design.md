@@ -26,15 +26,18 @@ the cloud in it, which is why it stands darker than the mist.
 
 At a point `p`, the extinction is `atmCloudDensity × h × n`:
 
-- `atmCloudDensity` is `CLOUD_SIGMA` (0.4 a metre) × the density knob, 0 to 1
+- `atmCloudDensity` is `CLOUD_SIGMA` (0.55 a metre) × the density knob, 0 to 1
   (`cloudDensityUnder`: the night × `CLOUD_NIGHT_DENSITY` 0.3, lifted by the haunt by
   `CLOUD_HAUNT_LIFT` 0.25 of the way to 1, pulled to `CLOUD_CHASE_DENSITY` 0.7 by the chase's
   cast, × how far the mist has come in, `actsUnder(progress).mist` (`sim/acts.ts`), so it rises
   over the tenth of the climb after the night is in rather than appearing with the dark; or the
   console's `mist <density>` hold).
 - `h = exp(−max(0, y − floor + CLOUD_SEAT) / height)`: the cloud thins to 1/e every `height`
-  metres above the ground, `cloudHeightUnder(haunt)`: `CLOUD_HEIGHT_M` (2.5) with no haunt on and
-  `CLOUD_HAUNT_HEIGHT_M` (3) more at its full, so the mist stands taller as the shades come;
+  metres above the ground, `cloudHeightUnder(haunt)`: `CLOUD_HEIGHT_M` (1.6) with no haunt on and
+  `CLOUD_HAUNT_HEIGHT_M` (2.4) more at its full (2.5 and 3 earlier on 2026-10-07: denser at the
+  ground now), × the trail's share: `CLOUD_TRAIL_SHARE` (0.3) of itself on the trail and whole
+  from `CLOUD_TRAIL_FADE_M` (4.5 m) off its edge (`CLOUD_TRAIL_EDGE_M` 0.8), the way open and the
+  sides not; so the mist stands taller as the shades come;
   seated `CLOUD_SEAT` (0.3 m) under the ground so a slope never shows an edge. The floor is
   the ground's height under `p`, read from the ground map (§3).
 - `n = clamp(large × small × 2.4 − 0.2, 0, 1)`: two reads of the tileable noise (§3), the large
@@ -54,6 +57,8 @@ mirroring `atmosphereParams.ts`):
 
 - R and G: two channels of two-octave tileable value noise on their own seeds, each stretched to
   fill 0 to 255 (`cloudNoiseMap`), read wrapping.
+- A: how far off the trail each place is, 0 on it and 255 from the fade's end, from the terrain
+  variant's `trailDistance`.
 - B: the height of the ground round the eye (`cloudGroundMap`), 64 samples a side over
   `CLOUD_GROUND_SPAN` (128 m), the lowest at 0 and the highest at 255 with the base and the range
   in uniforms (`atmCloudGroundRect`, `atmCloudGroundRange`), rebuilt once the eye is

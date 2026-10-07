@@ -81,5 +81,15 @@ describe("the ground map", () => {
     expect(Math.abs(g.data[mid * 4]! - expected)).toBeLessThanOrEqual(1);
     // Flat ground: a range of at least 1 m, so the shader never divides a step by nothing.
     expect(cloudGroundMap(() => 7, 0, 0).range).toBe(1);
+    // With no trail, every place is off it (A 255); with one, the alpha is 0 on it and rises to 255 beyond its edge's fade.
+    expect(g.data[3]).toBe(255);
+    const t = cloudGroundMap(() => 0, 0, 0, (x) => Math.abs(x));
+    const col = (x: number) => Math.round(((x + CLOUD_GROUND_SPAN / 2) / CLOUD_GROUND_SPAN) * CLOUD_GROUND_SIZE - 0.5);
+    const row = CLOUD_GROUND_SIZE / 2;
+    const alphaAt = (x: number) => t.data[(row * CLOUD_GROUND_SIZE + col(x)) * 4 + 3]!;
+    expect(alphaAt(0)).toBeLessThan(5);
+    expect(alphaAt(2)).toBeGreaterThan(0);
+    expect(alphaAt(2)).toBeLessThan(255);
+    expect(alphaAt(20)).toBe(255);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
-import { EntityViews, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, SHADE_RISE_S, risen } from "../../src/game/entityViews.js";
+import { EntityViews, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, SHADE_RISE_S, SHADE_SETTLE_S, risen } from "../../src/game/entityViews.js";
 import { AiState } from "../../src/sim/types.js";
 import type { EnemyState, WorldState } from "../../src/sim/types.js";
 
@@ -42,9 +42,14 @@ describe("the shadow's look", () => {
     views.sync(stateWith([enemy(1, AiState.Shade), enemy(2, AiState.Hunt)]), 0, 0, undefined, 0);
     expect(visibility("hollow_1")).toBe(0);
     expect(visibility("hollow_2")).toBe(1);
-    views.sync(stateWith([enemy(1, AiState.Shade), enemy(2, AiState.Hunt)]), 0, 0, undefined, SHADE_FADE_IN_S / 2);
+    // Half its opacity once it stands at its full height, whole SHADE_SETTLE_S after.
+    views.sync(stateWith([enemy(1, AiState.Shade), enemy(2, AiState.Hunt)]), 0, 0, undefined, SHADE_RISE_S / 2);
+    expect(visibility("hollow_1")).toBeCloseTo(0.25, 6);
+    views.sync(stateWith([enemy(1, AiState.Shade), enemy(2, AiState.Hunt)]), 0, 0, undefined, SHADE_RISE_S / 2);
     expect(visibility("hollow_1")).toBeCloseTo(0.5, 6);
-    views.sync(stateWith([enemy(1, AiState.Shade), enemy(2, AiState.Hunt)]), 0, 0, undefined, SHADE_FADE_IN_S);
+    views.sync(stateWith([enemy(1, AiState.Shade), enemy(2, AiState.Hunt)]), 0, 0, undefined, SHADE_SETTLE_S / 2);
+    expect(visibility("hollow_1")).toBeCloseTo(0.75, 6);
+    views.sync(stateWith([enemy(1, AiState.Shade), enemy(2, AiState.Hunt)]), 0, 0, undefined, SHADE_SETTLE_S / 2);
     expect(visibility("hollow_1")).toBe(1);
     // Gone from the state: the capsule view is pruned at once (the held fade is the model's), and a Hollow likewise.
     views.sync(stateWith([]), 0, 0, undefined, 0.1);

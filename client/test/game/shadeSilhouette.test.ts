@@ -52,7 +52,7 @@ describe("the shade mask", () => {
     const node = new TransformNode("shade", scene);
     const mesh = MeshBuilder.CreateBox("body", { size: 1 }, scene);
     mesh.parent = node;
-    mask.sync([{ node, fade: 1, soft: 1, near: 1, gone: 0.6 }]);
+    mask.sync([{ node, fade: 1, soft: 1, near: 1, gone: 0.6, eyes: [], eyeLevel: 0 }]);
     const material = scene.materials.find((m) => m.name.startsWith("mat_shade_mask_")) as StandardMaterial | undefined;
     expect(material).toBeDefined();
     expect(material!.emissiveColor.r).toBe(1);
@@ -61,14 +61,14 @@ describe("the shade mask", () => {
     scene.dispose();
   });
 
-  it("puts a soft shade's meshes in the list on the shade layer, gives each pass its share of the visibility, and lets a resolving one onto both layers and a gone one out", () => {
+  it("puts a soft shade's meshes in the list on the shade layer, gives the mask the fade and the frame the eyes alone, moves a resolving one from red to blue, and lets a gone one out", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const camera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
     const mask = createShadeSilhouette(scene, camera);
     const soft = figure(scene, "shade");
     const meshes = soft.getChildMeshes(false);
-    mask.sync([{ node: soft, fade: 0.5, soft: 1, near: 1, gone: 0 }]);
+    mask.sync([{ node: soft, fade: 0.5, soft: 1, near: 1, gone: 0, eyes: [], eyeLevel: 0 }]);
     expect(mask.texture.renderList?.length).toBe(meshes.length);
     for (const m of meshes) expect(mask.texture.renderList).toContain(m);
     for (const m of meshes) {
@@ -76,27 +76,35 @@ describe("the shade mask", () => {
       expect(m.visibility).toBe(0);
     }
     expect(mask.any()).toBe(true);
-    // As the mask renders, the meshes carry fade × softness; after, fade × (1 − softness).
+    // As the mask renders, the meshes carry the fade; after, nothing: the body is never on the frame.
     mask.texture.onBeforeRenderObservable.notifyObservers(0);
     for (const m of meshes) expect(m.visibility).toBeCloseTo(0.5, 12);
     mask.texture.onAfterRenderObservable.notifyObservers(0);
     for (const m of meshes) expect(m.visibility).toBe(0);
-    // Resolving: on both layers, the frame's share rising.
-    mask.sync([{ node: soft, fade: 1, soft: 0.25, near: 1, gone: 0 }]);
+    // Resolving: the body stays in the mask alone, its red falling to blue; the eyes come onto the frame at their level.
+    const eye = meshes[0]!;
+    mask.sync([{ node: soft, fade: 1, soft: 0.25, near: 1, gone: 0, eyes: [eye], eyeLevel: 0.4 }]);
     for (const m of meshes) {
-      expect(m.layerMask).toBe(SHADE_LAYER | MAIN_LAYER);
-      expect(m.visibility).toBeCloseTo(0.75, 12);
+      expect(m.layerMask).toBe(m === eye ? SHADE_LAYER | MAIN_LAYER : SHADE_LAYER);
+      expect(m.visibility).toBe(m === eye ? 0.4 : 0);
     }
+    const material = scene.materials.find((m) => m.name.startsWith("mat_shade_mask_")) as StandardMaterial;
+    expect(material.emissiveColor.r).toBeCloseTo(0.25, 12);
+    expect(material.emissiveColor.b).toBeCloseTo(0.75, 12);
     mask.texture.onBeforeRenderObservable.notifyObservers(0);
-    for (const m of meshes) expect(m.visibility).toBeCloseTo(0.25, 12);
+    for (const m of meshes) expect(m.visibility).toBe(1);
     mask.texture.onAfterRenderObservable.notifyObservers(0);
-    // Resolved: nothing in the mask.
-    mask.sync([{ node: soft, fade: 1, soft: 0, near: 1, gone: 0 }]);
-    expect(mask.any()).toBe(false);
-    // A far figure is fainter in the mask: its share there is scaled by `near`.
-    mask.sync([{ node: soft, fade: 1, soft: 1, near: 0.4, gone: 0 }]);
+    expect(eye.visibility).toBe(0.4);
+    // Resolved: still in the mask, as the real thing (blue), its eyes whole at their level.
+    mask.sync([{ node: soft, fade: 1, soft: 0, near: 1, gone: 0, eyes: [eye], eyeLevel: 0.55 }]);
+    expect(mask.any()).toBe(true);
+    expect(material.emissiveColor.r).toBe(0);
+    expect(material.emissiveColor.b).toBe(1);
+    // A far figure is fainter in the mask: its red is scaled by `near`.
+    mask.sync([{ node: soft, fade: 1, soft: 1, near: 0.4, gone: 0, eyes: [], eyeLevel: 0 }]);
+    expect(material.emissiveColor.r).toBeCloseTo(0.4, 12);
     mask.texture.onBeforeRenderObservable.notifyObservers(0);
-    for (const m of meshes) expect(m.visibility).toBeCloseTo(0.4, 12);
+    for (const m of meshes) expect(m.visibility).toBe(1);
     mask.texture.onAfterRenderObservable.notifyObservers(0);
     // Gone: out of the list, back on the main layer, whole.
     mask.sync([]);

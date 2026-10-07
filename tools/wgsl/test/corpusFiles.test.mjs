@@ -316,25 +316,26 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1014 recorded stages, each file\'s bytes hashing to the name it has: 678 on the medium and high tiers, 301 on low, 15 on high alone, 16 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1014);
+  it('holds the 1170 recorded stages, each file\'s bytes hashing to the name it has: 759 on the medium and high tiers, 365 on low, 20 on high alone, 22 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1170);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1014);
+    expect(read.stages).toHaveLength(1170);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(272);
-    // The 678 recorded on the medium and high tiers, the low tier's 301,
-    // recorded on it alone, the 15 the high tier alone met, the 16 the
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(296);
+    // The 759 recorded on the medium and high tiers, the low tier's 365,
+    // recorded on it alone, the 20 the high tier alone met, the 22 the
     // medium tier alone met, and the sky dome's 2 and the midges' 2, whose
     // text is the same on every tier. Stages whose text a shader no longer produces are
     // retired, not kept: the 458 PBR fragments of the atmosphere before the
     // ground cloud (2026-10-07) went that way, the grade's before the
-    // shades' dissolve, and the 156 PBR fragments before the cloud's near veil.
-    expect(read.tiers.size).toBe(1014);
+    // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
+    // and the 149 before the trail's share and the real thing's shadow form.
+    expect(read.tiers.size).toBe(1170);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([305, 698, 697]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(678);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(301);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(15);
+    expect([on('low'), on('medium'), on('high')]).toEqual([369, 785, 783]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(759);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(365);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(20);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));

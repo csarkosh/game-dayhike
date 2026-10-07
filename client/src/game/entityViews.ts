@@ -4,6 +4,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 
@@ -47,6 +48,8 @@ export const HOLLOW_MAX_MEASURED_SPEED = 10;
 
 type View = { node: TransformNode; previous: Vector3; target: Vector3 };
 type ModelView = { instance: CharacterInstance; view: View };
+/** A Hollow's model, with the meshes that are its eyes (the glowing materials), which the shade mask lets onto the frame dulled. */
+type HollowView = ModelView & { pace: Pace; eyes: AbstractMesh[] };
 /** The Hollow's measured pace: where its feet were last frame, and a smoothed speed. */
 type Pace = { x: number; z: number; speed: number };
 
@@ -79,8 +82,11 @@ function stride(instance: CharacterInstance, speed: number, clipSpeed: number): 
 export const SHADE_FADE_IN_S = 0.9;
 /** Seconds a gone shade takes to go: slowly, and unevenly (the grade dissolves it by `gone`, shadeSilhouette.ts). */
 export const SHADE_FADE_OUT_S = 2.6;
-/** Seconds a shade takes to rise from the ground to its height as it comes in; going, it keeps its height and dissolves. */
+/** Seconds a shade takes to rise from the ground to its height as it comes in, at half its opacity by then; and the seconds after that to its whole. Going, it keeps its height and dissolves. */
 export const SHADE_RISE_S = 2.4;
+export const SHADE_SETTLE_S = 3;
+/** The real one's eyes, dulled: their share of their glow once it has resolved out of the mist. */
+export const SHADE_EYES_DULL = 0.55;
 /** Metres from the local eye within which a lunge resolves from the mist into the Hollow, and the seconds that takes. */
 export const SHADE_RESOLVE_M = 12;
 export const SHADE_RESOLVE_S = 1.4;
@@ -109,11 +115,11 @@ export class EntityViews {
   private readonly players = new Map<number, View>();
   private readonly enemies = new Map<number, View>();
   private readonly playerModels = new Map<number, ModelView>();
-  private readonly enemyModels = new Map<number, ModelView & { pace: Pace }>();
+  private readonly enemyModels = new Map<number, HollowView>();
   /** Each enemy's fade, 0 to 1 (`visibility`), and the state it was last seen in: a shade, a lunge or a Hollow stepping out comes in from nothing, and a shade or a lunge goes out to nothing after it is gone. */
-  private readonly fades = new Map<number, { level: number; ai: number; rise: number }>();
+  private readonly fades = new Map<number, { level: number; ai: number; rise: number; settle: number }>();
   /** Views of shades gone from the state, fading out: the model is held until the fade ends. */
-  private readonly fading = new Map<number, { entry: ModelView; level: number; rise: number; soft: number; near: number }>();
+  private readonly fading = new Map<number, { entry: HollowView; level: number; rise: number; soft: number; near: number }>();
   /** Each shade's softness (shadeSilhouette.ts): 1 a blur in the mist, 0 the Hollow; a lunge resolves as it closes on the local eye. */
   private readonly soft = new Map<number, number>();
   private readonly near = new Map<number, number>();
@@ -252,13 +258,19 @@ export class EntityViews {
       let fade = this.fades.get(id);
       if (fade === undefined) {
         const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
-        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike ? 0 : 1 };
+        const shade = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike;
+        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: shade ? 0 : 1, settle: shade ? 0 : 1 };
         this.fades.set(id, fade);
       }
       fade.ai = enemy.ai;
-      if (dt > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + dt / SHADE_FADE_IN_S);
-      // A shade comes up out of the ground to its height over SHADE_RISE_S, as if out of the mist.
-      if (dt > 0 && fade.rise < 1) fade.rise = Math.min(1, fade.rise + dt / SHADE_RISE_S);
+      if (fade.rise < 1 || fade.settle < 1) {
+        // A shade comes up out of the ground to its height over SHADE_RISE_S,
+        // as if out of the mist, at half its opacity by then, and settles to
+        // its whole over SHADE_SETTLE_S after.
+        if (dt > 0 && fade.rise < 1) fade.rise = Math.min(1, fade.rise + dt / SHADE_RISE_S);
+        else if (dt > 0) fade.settle = Math.min(1, fade.settle + dt / SHADE_SETTLE_S);
+        fade.level = 0.5 * risen(fade.rise) + 0.5 * fade.settle;
+      } else if (dt > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + dt / SHADE_FADE_IN_S);
       // A lunge resolves from the mist as it closes on the local eye; a shade never does.
       if (enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) {
         const me = state.players.get(localId);
@@ -281,7 +293,10 @@ export class EntityViews {
         // always turned to whoever is looking at it.
         entry.view.node.rotation.y = this.facingOf(state, localId, enemy.pos.x, enemy.pos.z, enemy.yaw);
         entry.instance.root.scaling.y = HOLLOW_SCALE * risen(fade.rise);
-        if (this.softShades && this.soft.has(id)) this.shadeList.push({ node: entry.view.node, fade: fade.level, soft: this.soft.get(id) as number, near: this.near.get(id) ?? 1, gone: 0 });
+        if (this.softShades && this.soft.has(id)) {
+          const soft = this.soft.get(id) as number;
+          this.shadeList.push({ node: entry.view.node, fade: fade.level, soft, near: this.near.get(id) ?? 1, gone: 0, eyes: entry.eyes, eyeLevel: (1 - soft) * SHADE_EYES_DULL * fade.level });
+        }
         else setVisibility(entry.view.node, fade.level);
         // Enemy velocity never reaches a client (it is zeroed there), so the
         // pace is measured from how far the drawn body moved: the same on
@@ -345,7 +360,7 @@ export class EntityViews {
         this.fading.delete(id);
         continue;
       }
-      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: out.level, soft: out.soft, near: out.near, gone: 1 - out.level });
+      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: out.level, soft: out.soft, near: out.near, gone: 1 - out.level, eyes: out.entry.eyes, eyeLevel: (1 - out.soft) * SHADE_EYES_DULL * out.level });
       else setVisibility(out.entry.view.node, out.level);
     }
     this.pruneModels(this.enemyModels, state.enemies);
@@ -390,13 +405,14 @@ export class EntityViews {
     x: number,
     y: number,
     z: number,
-  ): ModelView & { pace: Pace } {
+  ): HollowView {
     const existing = this.enemyModels.get(id);
     if (existing !== undefined && existing.instance === instance) return existing;
     // Only the picture grows: the hull, the stare and the contact are the sim's.
     instance.root.scaling.setAll(HOLLOW_SCALE);
     // The eyes are the materials that glow in the file. Materials are shared
     // by every instance of the model, so this settles them for all Hollows.
+    const eyes: AbstractMesh[] = [];
     for (const mesh of instance.root.getChildMeshes(false)) {
       const material = mesh.material;
       if (!(material instanceof PBRMaterial)) continue;
@@ -404,8 +420,9 @@ export class EntityViews {
       if (e.r === 0 && e.g === 0 && e.b === 0) continue;
       material.emissiveColor = new Color3(HOLLOW_EYE_COLOR.r, HOLLOW_EYE_COLOR.g, HOLLOW_EYE_COLOR.b);
       material.emissiveIntensity = HOLLOW_EYE_INTENSITY;
+      eyes.push(mesh);
     }
-    const entry = { instance, view: placeView(instance.root, x, y, z), pace: { x, z, speed: 0 } };
+    const entry = { instance, view: placeView(instance.root, x, y, z), pace: { x, z, speed: 0 }, eyes };
     this.enemyModels.set(id, entry);
     return entry;
   }

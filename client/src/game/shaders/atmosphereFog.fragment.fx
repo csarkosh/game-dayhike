@@ -51,12 +51,14 @@ float atmHeightFog(float y0, float rdY, float t, float a, float b) {
   return (a / b) * exp(-y0 * b) * (1.0 - exp(-t * slope * b)) / slope;
 }
 
-// The ground under a place, read from the height map round the player: the
-// rect holds its centre, 1 / its span and its base height, and the range is
-// the metres its 0 to 1 spans. Beyond the map the edge texel repeats.
-float atmCloudFloor(vec2 xz) {
+// The ground under a place, read from the map round the player: the rect
+// holds its centre, 1 / its span and its base height, and the range is the
+// metres its 0 to 1 spans; x is the ground's height, y how far off the trail
+// the place is (0 on it, 1 beside it). Beyond the map the edge texel repeats.
+vec2 atmCloudGround(vec2 xz) {
   vec2 uv = clamp((xz - atmCloudGroundRect.xy) * atmCloudGroundRect.z + 0.5, ATM_CLOUD_EDGE, 1.0 - ATM_CLOUD_EDGE);
-  return atmCloudGroundRect.w + textureLod(atmCloudMap, uv, 0.0).b * atmCloudGroundRange;
+  vec4 g = textureLod(atmCloudMap, uv, 0.0);
+  return vec2(atmCloudGroundRect.w + g.b * atmCloudGroundRange, g.a);
 }
 
 // The cloud's extinction at a point s metres out along the ray: the density,
@@ -68,8 +70,10 @@ float atmCloudFloor(vec2 xz) {
 // rushing past, where the mist should hang. Explicit-level reads, so the
 // march is free of the uniformity rules a derivative read would be under.
 float atmCloudAt(vec3 p, float s) {
-  float above = p.y - atmCloudFloor(p.xz) + atmCloudSeat;
-  float h = exp(-max(above, 0.0) * atmCloudFalloff);
+  vec2 ground = atmCloudGround(p.xz);
+  float above = p.y - ground.x + atmCloudSeat;
+  // Thin on the trail (atmCloudTrail of itself), whole beside it: the way is open, the sides are not.
+  float h = exp(-max(above, 0.0) * atmCloudFalloff) * mix(atmCloudTrail, 1.0, ground.y);
   float large = textureLod(atmCloudMap, p.xz * atmCloudNoiseScale.x + atmCloudWind, 0.0).r;
   float small = textureLod(atmCloudMap, (p.xz + vec2(p.y, -p.y) * 0.7) * atmCloudNoiseScale.y - atmCloudWind.yx, 0.0).g;
   large = mix(0.7, large, smoothstep(0.0, atmCloudNear * 0.5, s));
