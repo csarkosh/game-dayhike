@@ -19,37 +19,24 @@ it comes in from nothing over a second, stands, and goes out to nothing again. A
 same blur until it is close, and then it resolves: the blur falls away and the Hollow itself
 comes in under it, one over the other, until it is the thing it was. Every change is a fade.
 
-## 1. The mist (`game/hauntMist.ts`)
+## 1. The cloud (`game/cloudParams.ts`, `shaders/atmosphereFog.fragment.fx`)
 
-Twenty-eight puffs on the mist banks' alpha map, with no lighting and a grey of their own
-(`HAUNT_MIST_GREY`, #3d3d3d, lit from within and outside the scene's fog, which at night is darker
-and would swallow it), seated on the terrain round the eye: each born 2 to 14 m off on a drawn
-bearing, 8 to 18 m of size, drawn twice that wide and 0.6 as tall, its centre 0.1 of its height
-above the ground so the cloud rests on the ground, with a life of 10 to 24 s that it comes into
-and goes out of over 2.5 s, drifting at 0.35 m/s on its own heading and breathing on its own
-clock; left behind past 22 m and reborn round the eye. Each puff's opacity is `HAUNT_MIST_ALPHA`
-(0.85) × its own weight × the night × its depth, which is `HAUNT_MIST_NIGHT_SHARE` (0.7) with no
-haunt on and 1 at a full haunt: the cloud is there all night, deepens with the haunt, and never
-shows by day. In the chase, by its cast, the puffs are born nearer (2.5 to 10 m), 30 % larger and
-60 % more opaque: the mist closes in. (As first built, 0.22 grey, in the fog, and only while the
-haunt was on, which left it unseen most of the night; and before that, two
-quads(As first built, two
-quads 7 m to each side of the eye: a wall glued to the screen.)
+The night's mist is a volume, not sprites (since 2026-10-07; the design is in
+`docs/rendering/2026-10-07-ground-cloud-volume-design.md`): the atmosphere plugin, which already
+draws the closed-form height fog in every PBR fragment, marches from the eye toward each
+fragment through a cloud whose density falls off with height above the ground and is shaped by
+noise on the wind, and lays the cloud over the fogged surface by the optical depth it found. The
+ground cuts nothing, since there is no surface to cut; the wisps at the face are the march's
+first steps, walked through; the figures stand in it darker than it. Its density is the night ×
+`CLOUD_NIGHT_DENSITY` (0.3) with no haunt on, lifted by `CLOUD_HAUNT_LIFT` (0.25 of the way to 1)
+at a full haunt, and pulled to `CLOUD_CHASE_DENSITY` (0.7) by the chase's cast; the console's
+`mist <density>` holds it at a level in [0, 1] whatever the night, and a bare `mist` lets the
+night set it again. The low tier, with no post pipeline, has the closed-form fog alone.
 
-## 1b. The near mist (`game/nearMist.ts`)
-
-The mist at the face, walked through like a bush: the cloud above is looked at, this is moved
-through. Fourteen small puffs (1.5 to 4 m, the same grey, outside the scene's fog, facing the eye
-on every axis) born 0.6 to 4 m from the eye within a half-turn either side of where it looks and
-within 1 m of its height, standing in the world so the player's own walking carries them past
-and through the eye; each fades over the last `NEAR_MIST_CROSS_M` (0.7 m) as it crosses, so none
-pops, and is reborn ahead once behind the eye past that, past 6 m, or at the end of its 6 to 14 s
-life. Its density is the night × `NEAR_MIST_NIGHT_DENSITY` (0.3) with no haunt on, lifted by
-`NEAR_MIST_HAUNT_LIFT` (0.25 of the way to 1) at a full haunt, and pulled to
-`NEAR_MIST_CHASE_DENSITY` (0.7) by the chase's cast; a puff's opacity is `NEAR_MIST_ALPHA` (0.7) ×
-the density × its own weight. The console's `mist <density>` holds it at a level in [0, 1]
-whatever the night, for looking at it, and a bare `mist` lets the night set it again and says
-what is drawn; neither rides the URL.
+(As first built, 2026-10-06, camera-facing puffs: twelve, then sixteen, then twenty-eight seated
+on the ground, and fourteen more at the face; the terrain cut each quad along a line and their
+flat bottoms lined up, a wall, which the research note
+`docs/rendering/2026-10-07-ground-fog-in-aaa-games.md` explains and this replaces.)
 
 ## 2. The figure (`game/shadeSilhouette.ts`, `shaders/grade.fragment.fx`)
 
@@ -85,19 +72,19 @@ the frame. A strike plays the Hollow's attack clip.
 
 - `game/shadeSilhouette.ts`: the mask, its camera, the per-shade materials, the layer and
   visibility bookkeeping, `any()` for the pass.
-- `game/hauntMist.ts`: the banks.
+- `game/cloudParams.ts`, `game/atmosphere.ts`, `shaders/atmosphereFog.fragment.fx`: the cloud.
 - `game/entityViews.ts`: `softShades`, each shade's softness, `shades()` for the mask.
 - `game/post.ts`: `setShades`, the sampler and `shadeShape`; `shaders/grade.fragment.fx` the taps.
-- `game/renderer.ts`: builds both on a forest world (the mask on the post tiers), feeds them each
-  frame; `setHaunt` from the app.
+- `game/renderer.ts`: builds the mask on the post tiers, rebuilds the cloud's ground map as the
+  eye moves and sets the cloud's density each frame; `setHaunt` and `setMist` from the app.
 
 ## 4. Tests
 
 `test/game/shadeSilhouette.test.ts` (the mask's camera and layer, a shade's meshes into the
 list on its layer, the visibility each pass gets, a resolving shade on both layers, a gone shade
-out of the list), `test/game/hauntMist.test.ts` (the cloud on the ground round the eye all night, deeper with the
-haunt, none by day), `test/game/nearMist.test.ts` (the density by night, haunt and chase; the puffs
-ahead of the eye, one fading as it is crossed and reborn ahead once behind; the console's hold),
+out of the list), `test/game/cloudParams.test.ts` (the density by night, haunt and chase; the colour; the noise
+and the ground map), `test/game/atmosphere.test.ts` (the cloud's uniforms and map on both
+shader paths),
 `test/game/commands.test.ts` (`mist`), `test/game/entityViewsFade.test.ts` (the softness and the
 list). The
 browser pass is the look.

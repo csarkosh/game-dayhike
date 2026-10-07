@@ -26,8 +26,7 @@ import { isHollow } from "../sim/hollow.js";
 import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
 import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
-import { createHauntMist } from "./hauntMist.js";
-import { createNearMist } from "./nearMist.js";
+import { CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { MAX_PLAYERS, PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
@@ -1339,8 +1338,8 @@ export type Renderer = {
   setChase(cast: number): void;
   /** The haunt, 0 to 1 (escalation.ts): the pale mist at the player's sides comes in by it. */
   setHaunt(level: number): void;
-  /** Hold the near mist's density at a level (0 to 1) whatever the night, or null to let the night set it; returns the density now drawn. */
-  setNearMist(density: number | null): number;
+  /** Hold the ground cloud's density at a level (0 to 1) whatever the night, or null to let the night set it; returns the density now drawn. */
+  setMist(density: number | null): number;
   /** The end for this player (ending.ts): the camera is the ending's from now, won or died. Once; a second call changes nothing. */
   setEnding(kind: EndingKind): void;
   /**
@@ -2072,11 +2071,13 @@ function buildRenderer(
   const silhouette = forest !== null && postFeatures.pipeline ? createShadeSilhouette(scene, camera) : null;
   partOf(silhouette);
   views.softShades = silhouette !== null;
-  const hauntMist = forest !== null ? createHauntMist(scene, (x, z) => elevationAt(forest.seed, x, z)) : null;
-  partOf(hauntMist);
-  // The mist at the face, walked through (nearMist.ts).
-  const nearMist = forest !== null ? createNearMist(scene) : null;
-  partOf(nearMist);
+  // The ground cloud (cloudParams.ts): the night's mist as a volume the
+  // atmosphere marches through, on the post tiers, resting on a height map
+  // of the ground round the eye that is rebuilt as the eye moves.
+  const cloudSteps = forest !== null && postFeatures.pipeline ? (postFeatures.halation ? CLOUD_STEPS_HIGH : CLOUD_STEPS_MEDIUM) : 0;
+  let cloudGroundAt: { x: number; z: number } | null = null;
+  let cloudHold: number | null = null;
+  let cloudDensity = 0;
   let hauntLevel = 0;
   partOf(views);
   // Fire and forget: the other hikers and the Hollow render as capsules until
@@ -2189,8 +2190,14 @@ function buildRenderer(
         silhouette.sync(views.shades());
         post.setShades(silhouette.texture, silhouette.any());
       }
-      hauntMist?.update(camera, hauntLevel, lighting.sky?.night ?? 0, seconds, chaseCast);
-      nearMist?.update(camera, lighting.sky?.night ?? 0, hauntLevel, chaseCast, seconds);
+      if (cloudSteps > 0 && forest !== null) {
+        if (cloudGroundAt === null || Math.hypot(camera.position.x - cloudGroundAt.x, camera.position.z - cloudGroundAt.z) > CLOUD_GROUND_REBUILD_M) {
+          cloudGroundAt = { x: camera.position.x, z: camera.position.z };
+          atmosphere.setCloudGround(cloudGroundMap((x, z) => elevationAt(forest.seed, x, z), cloudGroundAt.x, cloudGroundAt.z));
+        }
+        cloudDensity = cloudHold ?? cloudDensityUnder(lighting.sky?.night ?? 0, hauntLevel, chaseCast);
+        atmosphere.setCloud(cloudDensity, cloudSteps, seconds);
+      }
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
       // its GLBs have loaded, so new entries are picked up here.
@@ -2414,9 +2421,9 @@ function buildRenderer(
     setHaunt(level) {
       hauntLevel = Math.max(0, Math.min(1, level));
     },
-    setNearMist(density) {
-      nearMist?.hold(density);
-      return nearMist?.density() ?? 0;
+    setMist(density) {
+      cloudHold = density === null ? null : Math.max(0, Math.min(1, density));
+      return cloudHold ?? cloudDensity;
     },
     setEnding(kind) {
       if (ending.since >= 0) return;
@@ -2459,8 +2466,6 @@ function buildRenderer(
     dispose() {
       views.dispose();
       silhouette?.dispose();
-      hauntMist?.dispose();
-      nearMist?.dispose();
       localLamp.dispose();
       for (const m of brushMeshes) m.dispose();
       // Before the meshes in its list: a render target's list is not told of

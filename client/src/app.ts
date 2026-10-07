@@ -583,9 +583,9 @@ function buildGame(
       skin = value !== false;
       renderer.setSkinShading(skin);
     } else if (name === "mist") {
-      // The near mist's density, held or let go (nearMist.ts); the status says what is drawn.
+      // The ground cloud's density, held or let go (cloudParams.ts); the status says what is drawn.
       const held = args.length === 0 ? null : Number(args[0]);
-      const drawn = renderer.setNearMist(held);
+      const drawn = renderer.setMist(held);
       hud.setStatus(held === null ? `mist: the night's, now ${drawn.toFixed(2)}` : `mist held at ${held.toFixed(2)}`);
     } else if (name === "end") {
       // The ending, on the spot (ending.ts): the camera and the line, nothing of the match.
