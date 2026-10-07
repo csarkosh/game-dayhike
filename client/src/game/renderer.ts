@@ -2196,7 +2196,8 @@ function buildRenderer(
       if (cloudSteps > 0 && forest !== null) {
         if (cloudGroundAt === null || Math.hypot(camera.position.x - cloudGroundAt.x, camera.position.z - cloudGroundAt.z) > CLOUD_GROUND_REBUILD_M) {
           cloudGroundAt = { x: camera.position.x, z: camera.position.z };
-          atmosphere.setCloudGround(cloudGroundMap((x, z) => elevationAt(forest.seed, x, z), cloudGroundAt.x, cloudGroundAt.z));
+          const trailAt = activeTerrainVariant().trailDistance;
+          atmosphere.setCloudGround(cloudGroundMap((x, z) => elevationAt(forest.seed, x, z), cloudGroundAt.x, cloudGroundAt.z, trailAt === undefined ? null : (x, z) => trailAt(forest.seed, x, z)));
         }
         cloudDensity = cloudHold ?? cloudDensityUnder(lighting.sky?.night ?? 0, hauntLevel, chaseCast) * mistIn;
         atmosphere.setCloud(cloudDensity, cloudSteps, seconds, hauntLevel);

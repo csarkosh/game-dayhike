@@ -47,10 +47,10 @@ On the post tiers the shades are not drawn into the frame. A render target at ha
 size, on a camera of its own that copies the player's each frame and sees only `SHADE_LAYER`
 (a bit the main camera does not), draws each shade's meshes with a flat unlit material whose
 red is the shade's softness. The grade pass reads that mask back through nine taps, the centre and a
-ring of radius `SHADE_BLUR` (0.9 % of the frame's width), and darkens the frame by
-`SHADE_DARK` (0.45 since 2026-10-07; 1, black, before) of it, after the chase's cast and before the
-vignette: the figure is what stands behind it, the mist, a little darker, in the mist's own
-colour. The taps are unbranched
+two rings of eight at `SHADE_BLUR` (1.5 % of the frame's width) and at half of it, seventeen taps,
+and darkens the frame by `SHADE_DARK` (0.3) of the mask's red, after the chase's cast and before
+the vignette: the figure is what stands behind it, the mist, a little darker, in the mist's own
+colour. (0.9 %, nine taps and 0.45 earlier on 2026-10-07; 1, black, before.) The taps are unbranched
 (a texture read under a branch is one the WGSL translation has to be told about) and zeroed
 while no shade is in the mask.
 
@@ -70,7 +70,8 @@ it going (`facingOf`, entityViews.ts): the figure, and its head with it, always 
 looking at it.
 
 **Rise.** A shade comes up out of the ground to its height over `SHADE_RISE_S` (2.4 s), eased
-(`risen`), its feet where they are, as if out of the mist. Going, it keeps its height and goes
+(`risen`), its feet where they are, as if out of the mist, from no opacity to half of it by the
+time it stands at its height, and to its whole over `SHADE_SETTLE_S` (3 s) after. Going, it keeps its height and goes
 slowly, over `SHADE_FADE_OUT_S` (2.6 s), and unevenly: the mask's green carries how far gone it
 is, and the grade keeps each pixel of the figure only where a drifting blotch of in-shader value
 noise (`shadeNoise`, nine blotches across the frame) stands above that, so it loses itself patch
@@ -78,7 +79,11 @@ by patch, never all at once. The
 cloud stands taller as the shades come (`CLOUD_HAUNT_HEIGHT_M`, the design doc §2).
 
 **Resolve.** A lunge within `SHADE_RESOLVE_M` (12 m) of the local eye eases its softness from 1
-to 0 over `SHADE_RESOLVE_S` (1.4 s); a shade never resolves. Going, a resolved lunge is a shade
+to 0 over `SHADE_RESOLVE_S` (1.4 s); a shade never resolves. The real thing is never the model's
+own surface: as the softness falls, the mask's red (the shade) moves to its blue (the real thing),
+which the grade darkens by `SHADE_MONSTER_DARK` (0.88), near black, and its eyes alone come onto
+the frame, at `SHADE_EYES_DULL` (0.55) of their glow. So the real one begins as a shade in the
+mist and darkens smoothly into the black figure with the dulled red eyes. Going, a resolved lunge is a shade
 again first, over `SHADE_UNRESOLVE_S` (0.5 s), as it fades: it goes back into the mist, not out of
 the frame. A strike plays the Hollow's attack clip.
 

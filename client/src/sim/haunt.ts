@@ -46,12 +46,12 @@ export const HAUNT_MIST_MIN = 0.95;
  * the rests between episodes run from the early band to the late, and an
  * episode's shades from the fewest to the most.
  */
-export const HAUNT_PRESS_SPAN = 0.3;
-export const HAUNT_REST_EARLY: readonly [number, number] = [40, 75];
-export const HAUNT_REST_LATE: readonly [number, number] = [10, 24];
+export const HAUNT_PRESS_SPAN = 0.45;
+export const HAUNT_REST_EARLY: readonly [number, number] = [60, 110];
+export const HAUNT_REST_LATE: readonly [number, number] = [14, 30];
 export const HAUNT_REST_CHASE: readonly [number, number] = [0, 2];
-export const HAUNT_SHADES_EARLY: readonly [number, number] = [3, 5];
-export const HAUNT_SHADES_LATE: readonly [number, number] = [8, 14];
+export const HAUNT_SHADES_EARLY: readonly [number, number] = [1, 2];
+export const HAUNT_SHADES_LATE: readonly [number, number] = [6, 10];
 /** An episode's length, and the seconds between its shades. */
 export const HAUNT_EPISODE_S: readonly [number, number] = [18, 30];
 export const HAUNT_SHADE_GAP_S: readonly [number, number] = [0.9, 2.2];

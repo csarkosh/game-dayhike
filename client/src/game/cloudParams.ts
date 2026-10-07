@@ -19,10 +19,10 @@ export const CLOUD_NIGHT_DENSITY = 0.3;
 export const CLOUD_CHASE_DENSITY = 0.7;
 export const CLOUD_HAUNT_LIFT = 0.25;
 /** Extinction a metre at a density of 1, at the ground, where the noise is full. */
-export const CLOUD_SIGMA = 0.4;
+export const CLOUD_SIGMA = 0.55;
 /** Metres above the ground at which the cloud has thinned to 1/e, and the metres the haunt adds to that at its full: the mist stands taller as the shades come. */
-export const CLOUD_HEIGHT_M = 2.5;
-export const CLOUD_HAUNT_HEIGHT_M = 3;
+export const CLOUD_HEIGHT_M = 1.6;
+export const CLOUD_HAUNT_HEIGHT_M = 2.4;
 /** Metres the cloud's floor sits below the ground, so a slope never shows its edge. */
 export const CLOUD_SEAT = 0.3;
 /** Metres from the eye the march reaches; the atmosphere's own fog is beyond. */
@@ -30,6 +30,10 @@ export const CLOUD_RANGE = 40;
 /** Steps of the march a tier takes: high, medium, and none on low (the closed-form fog alone). */
 export const CLOUD_STEPS_HIGH = 12;
 export const CLOUD_STEPS_MEDIUM = 8;
+/** The trail: the cloud's share of itself on the trail (thin, the way is open), and the metres off the trail's edge over which it fills to whole beside it. */
+export const CLOUD_TRAIL_SHARE = 0.3;
+export const CLOUD_TRAIL_EDGE_M = 0.8;
+export const CLOUD_TRAIL_FADE_M = 4.5;
 /** Metres from the eye within which the cloud's shapes smooth to a plain veil, the small ones first, so the near mist hangs rather than rushing past a walker. */
 export const CLOUD_NEAR_M = 8;
 /** The noise's two reads: metres a tile spans for the large shapes and the small, and the wind's metres a second. */
@@ -112,7 +116,7 @@ export function cloudNoiseMap(size: number = CLOUD_NOISE_SIZE): Uint8Array {
 }
 
 export type CloudGround = {
-  /** RGBA8, the height in R from `base` over `range` metres. */
+  /** RGBA8: the height in R from `base` over `range` metres, and in A how far off the trail a place is, 0 on it and 255 from CLOUD_TRAIL_FADE_M beyond its edge. */
   data: Uint8Array;
   base: number;
   range: number;
@@ -125,8 +129,9 @@ export type CloudGround = {
  * over `span` metres, centred on (cx, cz), the lowest at 0 and the highest
  * at 255. A cell is span/size metres; the texture is read bilinearly.
  */
-export function cloudGroundMap(elevation: (x: number, z: number) => number, cx: number, cz: number, size: number = CLOUD_GROUND_SIZE, span: number = CLOUD_GROUND_SPAN): CloudGround {
+export function cloudGroundMap(elevation: (x: number, z: number) => number, cx: number, cz: number, trail: ((x: number, z: number) => number) | null = null, size: number = CLOUD_GROUND_SIZE, span: number = CLOUD_GROUND_SPAN): CloudGround {
   const heights = new Float32Array(size * size);
+  const off = new Uint8Array(size * size);
   let lo = Infinity, hi = -Infinity;
   for (let j = 0; j < size; j++) {
     for (let i = 0; i < size; i++) {
@@ -136,13 +141,16 @@ export function cloudGroundMap(elevation: (x: number, z: number) => number, cx: 
       heights[j * size + i] = h;
       if (h < lo) lo = h;
       if (h > hi) hi = h;
+      const d = trail === null ? Infinity : trail(x, z);
+      const t = clamp01((d - CLOUD_TRAIL_EDGE_M) / (CLOUD_TRAIL_FADE_M - CLOUD_TRAIL_EDGE_M));
+      off[j * size + i] = Math.round(t * t * (3 - 2 * t) * 255);
     }
   }
   const range = Math.max(1, hi - lo);
   const data = new Uint8Array(size * size * 4);
   for (let i = 0; i < size * size; i++) {
     data[i * 4] = Math.round((((heights[i] as number) - lo) / range) * 255);
-    data[i * 4 + 3] = 255;
+    data[i * 4 + 3] = off[i] as number;
   }
   return { data, base: lo, range, centreX: cx, centreZ: cz };
 }

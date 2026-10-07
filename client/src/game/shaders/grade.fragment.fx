@@ -47,6 +47,7 @@ uniform vec3 chaseLift;
 // shade is in the mask and 0 to skip the taps.
 uniform sampler2D shadeSampler;
 uniform vec4 shadeShape;
+uniform float shadeMonster;
 
 const mat3 SRGB_TO_REC2020 = mat3(0.6274, 0.0691, 0.0164, 0.3293, 0.9195, 0.088, 0.0433, 0.0113, 0.8956);
 const mat3 REC2020_TO_SRGB = mat3(1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187);
@@ -130,25 +131,37 @@ void main(void) {
   // The shades: nine taps of the mask, the centre and a ring, the figure a
   // dark blur. Unbranched, scaled by w instead: a texture read under a
   // branch is one the WGSL translation has to be told about (uniformity.ts).
-  // The mask's red is the figure (its softness, by its visibility), its
-  // green how far gone it is, the same share of each: a going figure loses
-  // itself patch by patch, where the drifting blotches of noise fall under
-  // how far it has gone, never all at once.
+  // The mask's red is the shade (by its visibility), its blue the real
+  // thing resolved out of it, its green how far gone it is, the same share
+  // of each. Two rings of taps, the inner at half the radius, so the blur
+  // is wide and still a blur, not eight copies. A going figure loses itself
+  // patch by patch, where the drifting blotches of noise fall under how far
+  // it has gone, never all at once; the shade darkens the frame by
+  // shadeShape.y, the real thing by shadeMonster, nearer to black.
   vec2 shadeStep = vec2(shadeShape.x, shadeShape.x * shadeShape.z);
-  vec2 shadeRG = texture2D(shadeSampler, vUV).rg * 2.0;
-  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(1.0, 0.0)).rg;
-  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(-1.0, 0.0)).rg;
-  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, 1.0)).rg;
-  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, -1.0)).rg;
-  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, 0.7)).rg;
-  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, 0.7)).rg;
-  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, -0.7)).rg;
-  shadeRG += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, -0.7)).rg;
-  float shadeMask = shadeRG.x * shadeShape.w / 10.0;
-  float shadeGone = shadeRG.y / max(shadeRG.x, 1.0e-4);
+  vec3 shadeRGB = texture2D(shadeSampler, vUV).rgb * 2.0;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(1.0, 0.0)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-1.0, 0.0)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, 1.0)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, -1.0)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, 0.7)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, 0.7)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.7, -0.7)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.7, -0.7)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.5, 0.0)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.5, 0.0)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, 0.5)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.0, -0.5)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.35, 0.35)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.35, 0.35)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(0.35, -0.35)).rgb;
+  shadeRGB += texture2D(shadeSampler, vUV + shadeStep * vec2(-0.35, -0.35)).rgb;
+  shadeRGB *= shadeShape.w / 18.0;
+  float shadeFigure = shadeRGB.x + shadeRGB.z;
+  float shadeGone = shadeRGB.y / max(shadeFigure, 1.0e-4);
   float shadeBlot = shadeNoise(vUV * vec2(shadeShape.z, 1.0) * 9.0 + stareShade.w * 0.12);
-  shadeMask *= smoothstep(shadeGone - 0.35, shadeGone + 0.05, shadeBlot);
-  c *= 1.0 - shadeMask * shadeShape.y;
+  float shadeKeep = smoothstep(shadeGone - 0.35, shadeGone + 0.05, shadeBlot);
+  c *= 1.0 - (shadeRGB.x * shadeShape.y + shadeRGB.z * shadeMonster) * shadeKeep;
   vec2 centred = (vUV - 0.5) * 2.0;
   float vr = length(centred) / 1.41421356;
   float vig = 1.0 - smoothstep(0.55, 1.0, vr) * clamp(vignetteWeight * 0.22, 0.0, 0.8);

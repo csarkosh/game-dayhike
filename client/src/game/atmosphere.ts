@@ -24,7 +24,7 @@ import {
 } from "./atmosphereParams.js";
 import {
   CLOUD_GLOW, CLOUD_GLOW_POWER, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_NEAR_M, CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SIZE, CLOUD_NOISE_SMALL_M,
-  CLOUD_RANGE, CLOUD_SEAT, CLOUD_SIGMA, CLOUD_WIND_MPS, cloudColourUnder, cloudHeightUnder, cloudNoiseMap, type CloudGround,
+  CLOUD_RANGE, CLOUD_SEAT, CLOUD_SIGMA, CLOUD_TRAIL_SHARE, CLOUD_WIND_MPS, cloudColourUnder, cloudHeightUnder, cloudNoiseMap, type CloudGround,
 } from "./cloudParams.js";
 
 /**
@@ -103,6 +103,7 @@ class AtmospherePlugin extends MaterialPluginBase {
         { name: "atmCloudSeat", size: 1, type: "float" },
         { name: "atmCloudGroundRange", size: 1, type: "float" },
         { name: "atmCloudNear", size: 1, type: "float" },
+        { name: "atmCloudTrail", size: 1, type: "float" },
         { name: "atmCloudNoiseScale", size: 2, type: "vec2" },
         { name: "atmCloudWind", size: 2, type: "vec2" },
         { name: "atmCloudGlow", size: 2, type: "vec2" },
@@ -127,6 +128,7 @@ class AtmospherePlugin extends MaterialPluginBase {
         "uniform float atmCloudSeat;",
         "uniform float atmCloudGroundRange;",
         "uniform float atmCloudNear;",
+        "uniform float atmCloudTrail;",
         "uniform vec2 atmCloudNoiseScale;",
         "uniform vec2 atmCloudWind;",
         "uniform vec2 atmCloudGlow;",
@@ -159,6 +161,7 @@ class AtmospherePlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("atmCloudSeat", CLOUD_SEAT);
     uniformBuffer.updateFloat("atmCloudGroundRange", c.ground.range);
     uniformBuffer.updateFloat("atmCloudNear", CLOUD_NEAR_M);
+    uniformBuffer.updateFloat("atmCloudTrail", CLOUD_TRAIL_SHARE);
     uniformBuffer.updateFloat2("atmCloudNoiseScale", 1 / CLOUD_NOISE_LARGE_M, 1 / CLOUD_NOISE_SMALL_M);
     const wind = (c.seconds * CLOUD_WIND_MPS) / CLOUD_NOISE_LARGE_M;
     uniformBuffer.updateFloat2("atmCloudWind", wind % 1, (wind * 0.6) % 1);
@@ -237,8 +240,8 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
   let lastSky: SkyState | null = null;
   let lastWeather = "";
   let builds = 0;
-  // The cloud's map: the tiling noise in R and G, the ground in B, flat at 0
-  // until the first build. Nothing reads it before the first update (the
+  // The cloud's map: the tiling noise in R and G, the ground in B and how
+  // far off the trail in A, flat at 0 until the first build. Nothing reads it before the first update (the
   // plugin is off while `current` is null), but WebGPU validates every
   // binding a pipeline declares, so the texture exists from the start.
   const cloudMap = cloudNoiseMap();
@@ -286,7 +289,10 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
       cloud = { ...cloud, density: Math.max(0, Math.min(1, density)), steps, seconds, haunt: Math.max(0, Math.min(1, haunt)), colour: cloudColourUnder(gradient[0] ?? { r: 0, g: 0, b: 0 }) };
     },
     setCloudGround(g) {
-      for (let i = 0; i < CLOUD_GROUND_SIZE * CLOUD_GROUND_SIZE; i++) cloudMap[i * 4 + 2] = g.data[i * 4] as number;
+      for (let i = 0; i < CLOUD_GROUND_SIZE * CLOUD_GROUND_SIZE; i++) {
+        cloudMap[i * 4 + 2] = g.data[i * 4] as number;
+        cloudMap[i * 4 + 3] = g.data[i * 4 + 3] as number;
+      }
       map.update(cloudMap);
       cloud = { ...cloud, ground: { centreX: g.centreX, centreZ: g.centreZ, base: g.base, range: g.range } };
     },
