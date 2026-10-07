@@ -36,6 +36,21 @@ haunt was on, which left it unseen most of the night; and before that, two
 quads(As first built, two
 quads 7 m to each side of the eye: a wall glued to the screen.)
 
+## 1b. The near mist (`game/nearMist.ts`)
+
+The mist at the face, walked through like a bush: the cloud above is looked at, this is moved
+through. Fourteen small puffs (1.5 to 4 m, the same grey, outside the scene's fog, facing the eye
+on every axis) born 0.6 to 4 m from the eye within a half-turn either side of where it looks and
+within 1 m of its height, standing in the world so the player's own walking carries them past
+and through the eye; each fades over the last `NEAR_MIST_CROSS_M` (0.7 m) as it crosses, so none
+pops, and is reborn ahead once behind the eye past that, past 6 m, or at the end of its 6 to 14 s
+life. Its density is the night × `NEAR_MIST_NIGHT_DENSITY` (0.3) with no haunt on, lifted by
+`NEAR_MIST_HAUNT_LIFT` (0.25 of the way to 1) at a full haunt, and pulled to
+`NEAR_MIST_CHASE_DENSITY` (0.7) by the chase's cast; a puff's opacity is `NEAR_MIST_ALPHA` (0.7) ×
+the density × its own weight. The console's `mist <density>` holds it at a level in [0, 1]
+whatever the night, for looking at it, and a bare `mist` lets the night set it again and says
+what is drawn; neither rides the URL.
+
 ## 2. The figure (`game/shadeSilhouette.ts`, `shaders/grade.fragment.fx`)
 
 On the post tiers the shades are not drawn into the frame. A render target at half the frame's
@@ -80,6 +95,9 @@ the frame. A strike plays the Hollow's attack clip.
 
 `test/game/shadeSilhouette.test.ts` (the mask's camera and layer, a shade's meshes into the
 list on its layer, the visibility each pass gets, a resolving shade on both layers, a gone shade
-out of the list), `test/game/hauntMist.test.ts` (the banks at the eye's sides, in by the haunt and
-the night, none by day), `test/game/entityViewsFade.test.ts` (the softness and the list). The
+out of the list), `test/game/hauntMist.test.ts` (the cloud on the ground round the eye all night, deeper with the
+haunt, none by day), `test/game/nearMist.test.ts` (the density by night, haunt and chase; the puffs
+ahead of the eye, one fading as it is crossed and reborn ahead once behind; the console's hold),
+`test/game/commands.test.ts` (`mist`), `test/game/entityViewsFade.test.ts` (the softness and the
+list). The
 browser pass is the look.

@@ -182,6 +182,22 @@ describe("/volume", () => {
   });
 });
 
+describe("/mist", () => {
+  it("accepts no argument or a density in [0, 1], rejects everything else, and is never URL-representable", () => {
+    expect(validateCommand({ name: "mist", args: [] })).toBeNull();
+    expect(validateCommand({ name: "mist", args: ["0.6"] })).toBeNull();
+    expect(validateCommand({ name: "mist", args: ["0"] })).toBeNull();
+    expect(validateCommand({ name: "mist", args: ["1"] })).toBeNull();
+    expect(validateCommand({ name: "mist", args: ["1.5"] })).not.toBeNull();
+    expect(validateCommand({ name: "mist", args: ["thick"] })).not.toBeNull();
+    expect(validateCommand({ name: "mist", args: ["0.5", "0.5"] })).not.toBeNull();
+    const spec = findCommand("mist");
+    expect(spec?.kind).toBe("view");
+    expect(spec?.scriptValue).toBeUndefined();
+    expect(spec?.defaultValue).toBeUndefined();
+  });
+});
+
 describe("time command", () => {
   it("keeps its default in step with the renderer's", async () => {
     // Two defaults that must agree: `commands.ts` omits `time` from the URL at

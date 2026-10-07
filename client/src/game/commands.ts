@@ -191,6 +191,21 @@ const SPECS: readonly CommandSpec[] = [
     },
   },
   {
+    name: "mist",
+    kind: "view",
+    // `mist <density>` holds the near mist (nearMist.ts) at a density in
+    // [0, 1] whatever the night, for looking at it; bare `mist` lets the
+    // night set it again and reports the density drawn. Not persisted: no
+    // `scriptValue`, so it never rides the URL into a match.
+    validate(args) {
+      if (args.length === 0) return null;
+      if (args.length > 1) return "mist takes no argument, or a density in [0, 1]";
+      const v = Number(args[0]);
+      if (!Number.isFinite(v) || v < 0 || v > 1) return `"${args[0]}" is not a density in [0, 1]`;
+      return null;
+    },
+  },
+  {
     name: "debug",
     kind: "world",
     // Bare only: on a forest world it registers the trailhead pad marker
