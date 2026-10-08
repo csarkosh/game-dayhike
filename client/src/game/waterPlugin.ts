@@ -179,8 +179,9 @@ export class WaterPlugin extends MaterialPluginBase {
   /** The lake's time: the shared seconds wrapped at WIND_TIME_WRAP, which the
    * cat's-paws and the rain's rings read (`lakeRipples.fragment.fx`). */
   lakeTime = 0;
-  /** How much of the lake the cat's-paws may cover, 0 to 1 (`lakePaw`): 1 on a lake rough all over. */
-  pawCover = 0;
+  /** How much of the lake the cat's-paws may cover, 0 to 1 (`lakePaw`): 1 on
+   * a lake rough all over, as it is until the renderer first sets it. */
+  pawCover = 1;
   private _ocean: OceanBinding | null = null;
   /** What the array samplers are bound to without an ocean. */
   private readonly _arrayPlaceholder: BaseTexture;
@@ -250,14 +251,16 @@ export class WaterPlugin extends MaterialPluginBase {
     this.time = seconds;
   }
 
-  /** Per frame, the shared seconds (wrapped or not): the lake's time, wrapped at WIND_TIME_WRAP as the wind's is. */
+  /** Per frame, the shared seconds (wrapped or not): the lake's time, wrapped
+   * at WIND_TIME_WRAP as the wind's is; 0 for a time that is not finite. */
   setLakeTime(seconds: number): void {
-    this.lakeTime = seconds - Math.floor(seconds / WIND_TIME_WRAP) * WIND_TIME_WRAP;
+    this.lakeTime = Number.isFinite(seconds) ? seconds - Math.floor(seconds / WIND_TIME_WRAP) * WIND_TIME_WRAP : 0;
   }
 
-  /** Per frame, the share of the lake the cat's-paws may cover, clamped to 0..1. */
+  /** Per frame, the share of the lake the cat's-paws may cover, clamped to
+   * 0..1; 0 for a cover that is not finite. */
   setPawCover(cover: number): void {
-    this.pawCover = Math.min(1, Math.max(0, cover));
+    this.pawCover = Number.isFinite(cover) ? Math.min(1, Math.max(0, cover)) : 0;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

@@ -421,7 +421,8 @@ describe("the lake's ripples in the water plugin", () => {
     expect(u.fragment).toContain("uniform float waterPawCover;");
     expect(u.vertex).not.toContain("waterLakeTime");
     expect(lake.lakeTime).toBe(0);
-    expect(lake.pawCover).toBe(0);
+    // rough until the renderer first sets it
+    expect(lake.pawCover).toBe(1);
     const sea = attachWater(new PBRMaterial("wL2", scene), WATER_ROWS.sea);
     sea.ocean = testOcean();
     // the sea's uniforms are as they were before the lake's ripples
@@ -451,7 +452,7 @@ describe("the lake's ripples in the water plugin", () => {
     expect(sea.getUniforms().ubo).toHaveLength(26);
   });
 
-  it("wraps the lake's time as the wind's and clamps the paws' cover to 0..1", () => {
+  it("wraps the lake's time as the wind's and clamps the paws' cover to 0..1, either 0 when it is not finite", () => {
     const p = attachWater(new PBRMaterial("wL3", scene), WATER_ROWS.lowlandLake);
     p.setLakeTime(301.5);
     expect(p.lakeTime).toBeCloseTo(1.5, 9);
@@ -467,6 +468,14 @@ describe("the lake's ripples in the water plugin", () => {
     expect(p.pawCover).toBe(0);
     p.setPawCover(0.35);
     expect(p.pawCover).toBe(0.35);
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      p.setLakeTime(42);
+      p.setLakeTime(bad);
+      expect(p.lakeTime, String(bad)).toBe(0);
+      p.setPawCover(0.35);
+      p.setPawCover(bad);
+      expect(p.pawCover, String(bad)).toBe(0);
+    }
   });
 
   it("assembles the lake's normal from the paws: the octaves at the mask's amplitude, glass where it is 0, then the rings", () => {
@@ -720,12 +729,13 @@ describe("the sea's waves in the water plugin", () => {
       }
     }
     /** The stages one water material compiles to, on an engine of its own (an
-     * engine shares an effect between materials of one define set); drawn as
-     * a lake first, when `lakeFirst`, and given its ocean after. */
+     * engine shares an effect between materials of one define set); drawn
+     * first as the other body, when `turned`, then given its ocean (a sea) or
+     * taken off it (a lake). */
     const compiled = async (
       make: (material: PBRMaterial) => WaterPlugin,
       sea: boolean,
-      lakeFirst = false,
+      turned = false,
     ): Promise<{ vertex: string; fragment: string }> => {
       const own = webgpuProcessingEngine();
       try {
@@ -739,16 +749,17 @@ describe("the sea's waves in the water plugin", () => {
         const bindOcean = (): void => {
           plugin.ocean = { ...testOcean(), atlas: bed, windDisp: oceanArrayPlaceholder(s), windSlope: oceanArrayPlaceholder(s) };
         };
-        if (sea && !lakeFirst) bindOcean();
+        if (sea !== turned) bindOcean();
         const mesh = MeshBuilder.CreateGround("ground", { width: 4, height: 4 }, s);
         const vertices = mesh.getTotalVertices();
         mesh.setVerticesData("bedDepth", new Float32Array(vertices), false, 1);
         mesh.setVerticesData("oceanMorph", new Float32Array(vertices), false, 1);
         mesh.setVerticesData("oceanCoarse", new Float32Array(vertices * 2), false, 2);
         mesh.material = material;
-        if (lakeFirst) {
+        if (turned) {
           await drawnEffect(mesh);
           if (sea) bindOcean();
+          else plugin.ocean = null;
         }
         const effect = await drawnEffect(mesh);
         return { vertex: effect._vertexSourceCode, fragment: effect._fragmentSourceCode };
@@ -774,6 +785,10 @@ describe("the sea's waves in the water plugin", () => {
     const turned = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true, true);
     expect(sha(turned.fragment)).toBe("a37171918cc2c9c3ef0b09433cc8de9060149e9448a574d0d900071aad0baf4d");
     expect(sha(turned.vertex)).toBe("f6751544362772d1905d86fa394cc5074afe09d0cfa3c1315cea90da806a3763");
+    // and one drawn as a sea, then taken off its ocean, rebuilds them to the lake's
+    const back = await compiled((m) => new WaterPlugin(m, WATER_ROWS.lowlandLake), false, true);
+    expect(back.fragment).toBe(lake.fragment);
+    expect(back.vertex).toBe(lake.vertex);
     // The sea's main is the text it compiled to before the lake's ripples, and reads none of them.
     const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
     expect(sha(main(sea.fragment))).toBe("91382f0cd2700903c0d9aae19a4e5d99e7d3382db06b0d2bc8cdf732dc8d553d");

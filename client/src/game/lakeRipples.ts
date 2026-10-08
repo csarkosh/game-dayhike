@@ -1,10 +1,13 @@
 /**
  * The lake's ripples as two states (spec §7): the cat's-paw mask that switches
  * the surface between glass and the rippled octaves, and the rain's rings
- * near the eye. The GLSL lives in `shaders/lakeRipples.fragment.fx`; every
- * function here is its twin, of the same name and arguments, and every
- * `const float` there is one of the constants here or in `windParams.ts`, a
- * lockstep test holding them equal. Babylon-free and on BABYLON_FREE_FILES.
+ * near the eye. The GLSL lives in `shaders/lakeRipples.fragment.fx`: every
+ * function here but `lakeRingHeight` (the height whose derivative
+ * `lakeRingDh` is, kept for its tests) has a GLSL twin of the same name and
+ * arguments, and the GLSL's `lakeRipple2`, which samples the bump, has none
+ * here. Every `const float` there is one of the constants here or in
+ * `windParams.ts`, a lockstep test holding them equal. Babylon-free and on
+ * BABYLON_FREE_FILES.
  *
  * Both read the lake's time: the shared seconds wrapped at WIND_TIME_WRAP, as
  * the wind's are, so peers see the same paws and rings. Every rate here is a
@@ -22,6 +25,16 @@ export const PAW_LIFE_S = 6;
 /** The share of the paws' field left where no gust blows: a paw is likelier
  * where a gust crosses, and a lake rough all over (cover 1) is rough whatever the gust. */
 export const PAW_GUST_FLOOR = 0.5;
+/**
+ * The paws' threshold on the gust-raised field at cover 0, 1/8, 2/8 … 1: the
+ * field's values crowd about the middle and the floor halves it where no gust
+ * blows, so a threshold of 1 − cover covers far less than the cover (0.14 of
+ * the lake at cover 0.5). Each knot is the threshold at which the paws cover
+ * that share of the lake under the real gusts (`lakeGust` at each point, the
+ * wind turning), measured over 120 m squares and the wind's wrap; linear
+ * between, so the covered share follows the cover.
+ */
+export const PAW_COVER_TABLE = [1, 0.521, 0.404, 0.343, 0.294, 0.246, 0.198, 0.144, 0] as const;
 
 /** The rain's rings: drawn within LAKE_RING_REACH metres of the eye, fading
  * over the last LAKE_RING_FADE_M; one drop a LAKE_RING_CELL cell a second; the
@@ -127,8 +140,9 @@ function pawField(x: number, z: number, t: number, dirX: number, dirZ: number, s
  * The cat's-paw mask at world (x, z), 0 on glass to 1 in a paw: two octaves
  * of living value noise, PAW_FEATURE_M a feature, drifting downwind; raised
  * where the gust blows (`gust`, `lakeGust` at the pixel); thresholded at
- * 1 − cover with an edge PAW_EDGE_M metres wide, measured along the field's
- * own gradient. Over the wrap's last PAW_LIFE_S the drift crosses to the next
+ * `lakePawThreshold(cover)`, so the paws cover about `cover` of the lake,
+ * with an edge PAW_EDGE_M metres wide, measured along the field's own
+ * gradient. Over the wrap's last PAW_LIFE_S the drift crosses to the next
  * wrap's, so the pattern runs on through it.
  */
 export function lakePaw(x: number, z: number, t: number, windDirX: number, windDirZ: number, cover: number, gust: number): number {
@@ -140,7 +154,17 @@ export function lakePaw(x: number, z: number, t: number, windDirX: number, windD
   const gx = (a[1] + (b[1] - a[1]) * w) * g;
   const gz = (a[2] + (b[2] - a[2]) * w) * g;
   const slope = Math.max(Math.hypot(gx, gz), 1e-4);
-  return clamp01((f - (1 - clamp01(cover))) / (slope * PAW_EDGE_M));
+  return clamp01((f - lakePawThreshold(cover)) / (slope * PAW_EDGE_M));
+}
+
+/** The paws' threshold at a cover (0 to 1): PAW_COVER_TABLE, linear between its knots, summed as ramps as the GLSL does. */
+export function lakePawThreshold(cover: number): number {
+  const c = (PAW_COVER_TABLE.length - 1) * clamp01(cover);
+  let theta: number = PAW_COVER_TABLE[0];
+  for (let i = 0; i < PAW_COVER_TABLE.length - 1; i++) {
+    theta += ((PAW_COVER_TABLE[i + 1] as number) - (PAW_COVER_TABLE[i] as number)) * clamp01(c - i);
+  }
+  return theta;
 }
 
 /** The octaves' amplitude under the mask: 1 in a paw, 0 on glass, smooth over the edge. */

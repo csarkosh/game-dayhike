@@ -2,16 +2,17 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR,
+  PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR, PAW_COVER_TABLE,
   LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,
   LAKE_RINGS_PER_M2, LAKE_RAIN_MM_H, LAKE_RING_FOLD, LAKE_WIND_TURN,
-  lakeGust, lakePawDrift, lakePaw, octaveAmplitude, lakeLiveRings, lakeRingHeight, lakeRingDh, lakeRingHash, lakeRainSlope,
+  lakeGust, lakePawDrift, lakePaw, lakePawThreshold, octaveAmplitude, lakeLiveRings, lakeRingHeight, lakeRingDh, lakeRingHash, lakeRainSlope,
 } from "../../src/game/lakeRipples.js";
 import {
   WIND_TIME_WRAP, WIND_K1, WIND_K2, WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_RAGGED, WIND_RAGGED_CELL,
   directionAt, gustAt, windRecordUnder,
 } from "../../src/game/windParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const source = (path: string): string => readFileSync(new URL(path, import.meta.url), "utf8");
 const glsl = source("../../src/game/shaders/lakeRipples.fragment.fx");
@@ -38,6 +39,7 @@ function coveredShare(cover: number, gust: number): number {
 describe("the lake's ripples' constants", () => {
   it("are the design's", () => {
     expect([PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR]).toEqual([10, 1.5, 0.5, 6, 0.5]);
+    expect(PAW_COVER_TABLE).toEqual([1, 0.521, 0.404, 0.343, 0.294, 0.246, 0.198, 0.144, 0]);
     expect([LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP])
       .toEqual([8, 2, 0.18, 0.18, 0.03, 0.3, 0.004]);
     expect(LAKE_RINGS_PER_M2).toEqual([35, 77, 150]);
@@ -50,6 +52,7 @@ describe("the lake's ripples' constants", () => {
   it("are every const float of the GLSL, in lockstep with lakeRipples.ts and windParams.ts", () => {
     const mirrored: Record<string, number> = {
       PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR,
+      ...Object.fromEntries(PAW_COVER_TABLE.map((knot, i) => [`PAW_COVER_${i}`, knot])),
       LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,
       LAKE_RINGS_0: LAKE_RINGS_PER_M2[0], LAKE_RINGS_1: LAKE_RINGS_PER_M2[1], LAKE_RINGS_2: LAKE_RINGS_PER_M2[2],
       LAKE_RAIN_MM_H, LAKE_RING_FOLD, LAKE_WIND_TURN,
@@ -67,6 +70,7 @@ describe("the lake's ripples' constants", () => {
       "float lakeGust(vec2 p, float t, vec2 dir)",
       "float lakeHash(float i, float s)",
       "vec2 lakePawDrift(vec2 dir, float span)",
+      "float lakePawThreshold(float cover)",
       "float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust)",
       "float octaveAmplitude(float paw)",
       "float lakeLiveRings(float rate)",
@@ -123,23 +127,61 @@ describe("the cat's-paws", () => {
           for (let z = -40; z <= 40; z += 4.1) expect(lakePaw(x, z, t, DX, DZ, 0, gust)).toBe(0);
   });
 
-  it("are everywhere inside a feature at cover 1 under a gust, and in the edge at cover 0.5 where the field crosses it", () => {
+  it("are everywhere inside a feature at cover 1 under a gust, and in the edge at cover 0.15 where the field crosses it", () => {
     for (const [x, z] of [[0, 0], [12.5, -7.25], [40, 33], [-18, 96]] as const) {
       expect(lakePaw(x, z, 120, DX, DZ, 1, 1)).toBe(1);
     }
-    expect(lakePaw(12.5, -7.25, 120, DX, DZ, 0.5, 1)).toBeCloseTo(0.2839055388705209, 9);
-    expect(lakePaw(0, 0, 120, DX, DZ, 0.5, 1)).toBe(1);
-    expect(lakePaw(-18, 96, 120, DX, DZ, 0.5, 1)).toBe(0);
+    expect(lakePaw(12.5, -7.25, 120, DX, DZ, 0.15, 1)).toBeCloseTo(0.4127939724292886, 9);
+    expect(lakePaw(0, 0, 120, DX, DZ, 0.15, 1)).toBe(1);
+    expect(lakePaw(-18, 96, 120, DX, DZ, 0.15, 1)).toBe(0);
   });
 
+  it("threshold the field by PAW_COVER_TABLE, linear between its knots", () => {
+    expect([0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1].map(lakePawThreshold)).toEqual([
+      1, 0.521, 0.404, 0.343, 0.294, 0.246, 0.198, 0.144, 0,
+    ].map((knot, i) => expect.closeTo(knot, i === 0 || i === 8 ? 15 : 12)));
+    expect(lakePawThreshold(0.0625)).toBeCloseTo(0.7605, 12);
+    expect(lakePawThreshold(0.9)).toBeCloseTo(0.1152, 12);
+    // clamped, and falling all the way
+    expect([lakePawThreshold(-1), lakePawThreshold(2)]).toEqual([1, 0]);
+    for (let c = 0; c < 1; c += 0.01) expect(lakePawThreshold(c + 0.01)).toBeLessThan(lakePawThreshold(c));
+  });
+
+  it("cover the lake's share the cover asks for, under the real gusts", () => {
+    // 120 m square, a metre apart, the gust at each point and the wind turning (times the knots were not measured at)
+    const share = (cover: number): number => {
+      let sum = 0;
+      for (const t of [40, 160, 250]) {
+        const d = directionAt(t);
+        for (let i = 0; i < 120; i++) {
+          for (let j = 0; j < 120; j++) {
+            const [x, z] = [i + 0.37, j + 0.61];
+            sum += lakePaw(x, z, t, d.x, d.z, cover, lakeGust(x, z, t, d.x, d.z));
+          }
+        }
+      }
+      return sum / (3 * 120 * 120);
+    };
+    const at = [0, 0.25, 0.5, 0.75, 1].map(share);
+    expect(at[0]).toBe(0);
+    expect(at[1]).toBeGreaterThan(0.2);
+    expect(at[1]).toBeLessThan(0.3);
+    expect(at[2]).toBeGreaterThan(0.45);
+    expect(at[2]).toBeLessThan(0.55);
+    expect(at[3]).toBeGreaterThan(0.7);
+    expect(at[3]).toBeLessThan(0.8);
+    expect(at[4]).toBeGreaterThan(0.999);
+  }, timeLimit(30_000));
+
   it("cover more of the lake as the cover rises, and more under a gust than without one", () => {
-    expect(coveredShare(0.25, 1)).toBeCloseTo(0.0976, 3);
-    expect(coveredShare(0.5, 1)).toBeCloseTo(0.4784, 3);
-    expect(coveredShare(0.75, 1)).toBeCloseTo(0.8929, 3);
+    expect(coveredShare(0.25, 1)).toBeCloseTo(0.6524, 3);
+    expect(coveredShare(0.5, 1)).toBeCloseTo(0.8367, 3);
+    expect(coveredShare(0.75, 1)).toBeCloseTo(0.9367, 3);
     expect(coveredShare(1, 1)).toBeCloseTo(1, 3);
-    // without a gust the field is halved: none at half cover, and three quarters' cover is half's under a gust
-    expect(coveredShare(0.5, 0)).toBe(0);
-    expect(coveredShare(0.75, 0)).toBeCloseTo(0.4784, 3);
+    // without a gust the field is halved
+    expect(coveredShare(0.25, 0)).toBeCloseTo(0.0509, 3);
+    expect(coveredShare(0.5, 0)).toBeCloseTo(0.3217, 3);
+    expect(coveredShare(0.75, 0)).toBeCloseTo(0.6669, 3);
     // a lull is no gust: a negative gust is no less than none
     expect(lakePaw(12.5, -7.25, 120, DX, DZ, 0.9, -1.5)).toBe(lakePaw(12.5, -7.25, 120, DX, DZ, 0.9, 0));
   });

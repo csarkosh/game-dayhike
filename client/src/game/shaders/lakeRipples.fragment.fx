@@ -16,6 +16,17 @@ const float PAW_SPEED = 1.5;
 const float PAW_EDGE_M = 0.5;
 const float PAW_LIFE_S = 6.0;
 const float PAW_GUST_FLOOR = 0.5;
+// The paws' threshold at cover 0, 1/8, 2/8 and on to 1, measured so the
+// paws cover about the cover under the real gusts (PAW_COVER_TABLE).
+const float PAW_COVER_0 = 1.0;
+const float PAW_COVER_1 = 0.521;
+const float PAW_COVER_2 = 0.404;
+const float PAW_COVER_3 = 0.343;
+const float PAW_COVER_4 = 0.294;
+const float PAW_COVER_5 = 0.246;
+const float PAW_COVER_6 = 0.198;
+const float PAW_COVER_7 = 0.144;
+const float PAW_COVER_8 = 0.0;
 const float LAKE_RING_REACH = 8.0;
 const float LAKE_RING_FADE_M = 2.0;
 const float LAKE_RING_CELL = 0.18;
@@ -93,10 +104,26 @@ vec3 lakePawField(vec2 xz, float t, vec2 dir, float span) {
   return vec3(a.x * 2.0 / 3.0 + b.x / 3.0, (a.yz * 2.0 / 3.0 + b.yz * 2.0 / 3.0) / PAW_FEATURE_M);
 }
 
+// The paws' threshold at a cover, 0 to 1: the table's knots, linear between,
+// summed as ramps so no knot is chosen by a test.
+float lakePawThreshold(float cover) {
+  float c = 8.0 * clamp(cover, 0.0, 1.0);
+  return PAW_COVER_0
+    + (PAW_COVER_1 - PAW_COVER_0) * clamp(c, 0.0, 1.0)
+    + (PAW_COVER_2 - PAW_COVER_1) * clamp(c - 1.0, 0.0, 1.0)
+    + (PAW_COVER_3 - PAW_COVER_2) * clamp(c - 2.0, 0.0, 1.0)
+    + (PAW_COVER_4 - PAW_COVER_3) * clamp(c - 3.0, 0.0, 1.0)
+    + (PAW_COVER_5 - PAW_COVER_4) * clamp(c - 4.0, 0.0, 1.0)
+    + (PAW_COVER_6 - PAW_COVER_5) * clamp(c - 5.0, 0.0, 1.0)
+    + (PAW_COVER_7 - PAW_COVER_6) * clamp(c - 6.0, 0.0, 1.0)
+    + (PAW_COVER_8 - PAW_COVER_7) * clamp(c - 7.0, 0.0, 1.0);
+}
+
 // The cat's-paw mask at xz, 0 on glass to 1 in a paw: the field raised where
-// the gust blows, thresholded at 1 - cover with an edge PAW_EDGE_M metres wide
-// along the field's own gradient. Over the wrap's last life the drift crosses
-// to the next wrap's, so the pattern runs on through it.
+// the gust blows, thresholded at lakePawThreshold(cover), so the paws cover
+// about the cover, with an edge PAW_EDGE_M metres wide along the field's own
+// gradient. Over the wrap's last life the drift crosses to the next wrap's,
+// so the pattern runs on through it.
 float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust) {
   vec3 a = lakePawField(xz, t, windDir, t);
   vec3 b = lakePawField(xz, t, windDir, t - LAKE_TIME_WRAP);
@@ -104,7 +131,7 @@ float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust) {
   float g = PAW_GUST_FLOOR + (1.0 - PAW_GUST_FLOOR) * clamp(gust, 0.0, 1.0);
   vec3 f = mix(a, b, w) * g;
   float slope = max(length(f.yz), 1.0e-4);
-  return clamp((f.x - (1.0 - clamp(cover, 0.0, 1.0))) / (slope * PAW_EDGE_M), 0.0, 1.0);
+  return clamp((f.x - lakePawThreshold(cover)) / (slope * PAW_EDGE_M), 0.0, 1.0);
 }
 
 // The octaves' amplitude under the mask: 1 in a paw, 0 on glass, smooth over the edge.
