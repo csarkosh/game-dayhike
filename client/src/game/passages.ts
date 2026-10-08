@@ -32,12 +32,12 @@ export function endLines(line: string): [string, string] {
 export const WON_LINE = "The night, outlasted; the car, at last; and in the mirror, a shadow, where no one sat.";
 
 /** After a loss, the return to the landing comes this long after the end. */
-export const END_LANDING_MS = 8000;
+export const END_LANDING_MS = 12000;
 /** Won: the camera's lift under the line runs this long before the view goes dark (ending.ts WON_LIFT_S and the blur after it), and the landing comes at WON_LANDING_MS. */
-export const WON_FADE_AFTER_MS = 7000;
-export const WON_LANDING_MS = 10000;
+export const WON_FADE_AFTER_MS = 11000;
+export const WON_LANDING_MS = 15000;
 /** Died: the HUD's own fade finishes the black this long after the fall begins, once the dark has closed (ending.ts). */
-export const DEATH_FADE_AFTER_MS = 3500;
+export const DEATH_FADE_AFTER_MS = 6000;
 
 /**
  * What a player at road offset `u` is told at the wall, or null: on the

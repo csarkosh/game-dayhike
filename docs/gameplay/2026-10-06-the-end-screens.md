@@ -10,6 +10,10 @@ speaks of it.
 
 ## 0. What this is
 
+*Amended 2026-10-07, later.* Longer: won, the view goes dark at 11 s and the landing comes at 15
+(`WON_FADE_AFTER_MS`, `WON_LANDING_MS`); died, dark at 6 s and the landing at 12 (`DEATH_FADE_AFTER_MS`,
+`END_LANDING_MS`). The timings below are as first built.
+
 *Amended 2026-10-07.* Each end has a title over its line, in the title screen's text to the
 letter (the landing's heading: monospace, 2 rem, 600, uppercase, spaced 0.12 em): YOU LIVED and
 YOU DIED (`WON_TITLE`, `DEATH_TITLE` in `passages.ts`; `hud.setEnding`). The line is two lines

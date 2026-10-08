@@ -86,7 +86,7 @@ of taps alone, sharper and heavier than the shade, and its eyes alone come onto 
 `SHADE_EYES_DULL` (0.55) of their glow. So the real one begins as a shade in the mist and darkens
 smoothly into the black figure with the dulled red eyes. A Hollow out in the open (the pack, the
 summit's) is that resolved form from the start: no Hollow is ever drawn in its own surface on the
-post tiers. A shade has the same eyes, fainter: `SHADE_EYES_SHADE` (0.12) of their glow
+post tiers. A shade has the same eyes, fainter: `SHADE_EYES_SHADE` (0.06; 0.12 for an hour) of their glow
 (`eyeLevelOf`). It stands, arms at its sides in the idle, turned to the player. Going, a resolved lunge is a shade
 again first, over `SHADE_UNRESOLVE_S` (0.5 s), as it fades: it goes back into the mist, not out of
 the frame. A strike plays the Hollow's attack clip.
