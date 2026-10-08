@@ -23,11 +23,12 @@
  * so where nothing is drawn the read falls back to the sky probe. Particles
  * and sprites are left out.
  *
- * The pass runs in a frame only when `update` arms it: the lake drawn last
- * frame, the glass's share above 0 and the eye over the mirror's plane. Armed, the target is on
- * `scene.customRenderTargets`, which the scene renders before its main pass,
- * at a refresh rate of every frame; otherwise it is off that list and the
- * scene neither renders it nor waits on it for its readiness.
+ * The pass runs in a frame only when `update` arms it: the lake in the
+ * player's view this frame, the glass's share above 0, the eye over the
+ * mirror's plane and within MIRROR_REACH_M of the lake's rim. Armed, the
+ * target is on `scene.customRenderTargets`, which the scene renders before
+ * its main pass, at a refresh rate of every frame; otherwise it is off that
+ * list and the scene neither renders it nor waits on it for its readiness.
  */
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -52,6 +53,10 @@ export const MIRROR_SCALE = 0.5;
 export const MIRROR_LIFT = 0.02;
 /** How much darker the ground draws under a full canopy in the mirror: `lakeMirrorTerrain.fragment.fx`'s LAKE_MIRROR_CANOPY_SHADE. */
 export const MIRROR_CANOPY_SHADE = 0.5;
+/** How far (m, across the ground) the eye may stand from the lake's rim
+ * with the pass armed: past it the lake is a sliver of the frame, and the
+ * probe's sheen stands in for its image. */
+export const MIRROR_REACH_M = 200;
 /** The terrain stand-in's name in Babylon's shader store. */
 export const LAKE_MIRROR_TERRAIN_SHADER = "lakeMirrorTerrain";
 
@@ -66,7 +71,7 @@ export type LakeMirror = {
   unregister(mesh: Mesh): void;
   /** The ground's lit base colour (linear), for the terrain's stand-in. */
   setTerrainColour(r: number, g: number, b: number): void;
-  /** Called each frame before the scene renders, with the player's camera and whether the lake was drawn last frame and the calm share: arms the pass for this frame or leaves it off (off too with the eye at or under the mirror's plane). Returns whether it is armed. */
+  /** Called each frame before the scene renders, with the player's camera, whether the lake is in its view this frame and the calm share: arms the pass for this frame or leaves it off (off too with the eye at or under the mirror's plane, or MIRROR_REACH_M or more from the rim). Returns whether it is armed. */
   update(camera: Camera, lakeInView: boolean, calmShare: number): boolean;
   dispose(): void;
 };
@@ -213,8 +218,10 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
     update(player, lakeInView, calmShare) {
       if (disposed) return false;
       // An eye at or under the plane would turn the near plane over (the
-      // kept half clipped, the lake bed drawn): nothing to mirror.
-      arm(lakeInView && calmShare > 0 && player.position.y > level);
+      // kept half clipped, the lake bed drawn): nothing to mirror. Nor from
+      // beyond the reach.
+      const rim = Math.hypot(player.position.x - lake.x, player.position.z - lake.z) - lake.radius;
+      arm(lakeInView && calmShare > 0 && player.position.y > level && rim < MIRROR_REACH_M);
       if (!armed) return false;
       // The window may have changed size: the target follows at half.
       const w = targetSize(engine.getRenderWidth(true));

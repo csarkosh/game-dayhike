@@ -2355,15 +2355,16 @@ function buildRenderer(
    * The lake's surface and reflection for the frame (`lakeCalm.ts`): the
    * calm share at the hour under the preset (through a fade), the surface
    * rough or not, the cat's-paws' cover and the smear at their edge; on high
-   * the mirror armed for this frame when last frame drew the lake's disc and
-   * the glass shows, and the weight 0 in any frame it is not (its image is a
-   * frame stale); on medium the panorama re-armed with the sky's probe and
-   * once when its target is first ready, and a sector captured; the
+   * the mirror armed for this frame when the lake's disc is in this frame's
+   * view of an `eye` (false with no local player) and the glass shows, and
+   * the weight 0 in any frame it is not (its image is a frame stale); on
+   * medium the panorama re-armed with the sky's probe and once when its
+   * target is first ready, and a sector captured; the
    * skyline's forest colour from the sky, raw (the shader scales it). After
    * the camera is placed for the frame, in both branches, so the mirror
    * never lags it; nothing without a lake.
    */
-  function updateLake(weather: WeatherParams, sky: SkyState | null): void {
+  function updateLake(weather: WeatherParams, sky: SkyState | null, eye: boolean): void {
     if (lakePlugin === null || lakeMesh === null) return;
     if (calmFadeS > 0) {
       calmElapsedS += engine.getDeltaTime() / 1000;
@@ -2374,8 +2375,15 @@ function buildRenderer(
     }
     const fade = calmFadeS > 0 ? calmElapsedS / calmFadeS : 1;
     const c = lakeCalmUnder(lighting.hour, calmFrom, calmTo, fade, weather, wind.speed, lakeShelter, engine.getRenderHeight(), camera.fov, lakeCalm);
-    // Last frame's culling: a frame late, as the sea's.
-    const inView = scene.getActiveMeshes().contains(lakeMesh);
+    // This frame's frustum, the camera placed for the frame: never a frame
+    // late. Without an eye the lake is in no view.
+    let inView = false;
+    if (eye) {
+      camera.getViewMatrix();
+      camera.getProjectionMatrix();
+      lakeMesh.computeWorldMatrix();
+      inView = camera.isInFrustum(lakeMesh);
+    }
     // Without a mirror the weight is 1 until the surface is rough all over,
     // where the ramped share has already reached 0: no step in the image.
     const armed = lakeMirror !== null ? lakeMirror.update(camera, inView, c.share) : c.roughShare < 1;
@@ -2606,7 +2614,7 @@ function buildRenderer(
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
         if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         updateWaterLife(state, frame.dt, oceanSeconds, weather, sky);
-        updateLake(weather, sky);
+        updateLake(weather, sky, true);
         jobs.run();
         return;
       }
@@ -2686,7 +2694,10 @@ function buildRenderer(
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
         if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         updateWaterLife(state, frame.dt, oceanSeconds, weather, sky);
-        updateLake(weather, sky);
+        updateLake(weather, sky, true);
+      } else {
+        // No eye this frame: the mirror is disarmed, never drawn from a stale view.
+        updateLake(weather, sky, false);
       }
       // This frame's share of the rebuilds the updates above began, once
       // every shell has seen the view.

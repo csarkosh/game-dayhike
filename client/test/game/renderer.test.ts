@@ -994,11 +994,13 @@ describe("world shell wiring", () => {
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
     // After the camera's pose for the frame is written, so the mirror never lags it.
-    const after = "updateWaterLife(state, frame.dt, oceanSeconds, weather, sky);\n        updateLake(weather, sky);";
+    const after = "updateWaterLife(state, frame.dt, oceanSeconds, weather, sky);\n        updateLake(weather, sky, true);";
     expect(freecamBranch).toContain(after);
     expect(playerBranch).toContain(after);
     expect(freecamBranch.match(/updateLake\(/g)).toHaveLength(1);
-    expect(playerBranch.match(/updateLake\(/g)).toHaveLength(1);
+    // And once more with no local player, with no eye: the mirror disarmed.
+    expect(playerBranch.match(/updateLake\(/g)).toHaveLength(2);
+    expect(playerBranch).toContain("} else {\n        // No eye this frame: the mirror is disarmed, never drawn from a stale view.\n        updateLake(weather, sky, false);\n      }");
     expect(freecamBranch.indexOf("updateLake(")).toBeGreaterThan(freecamBranch.indexOf("camera.fov = freecam.fov ?? GAME_FOV;"));
     expect(playerBranch.indexOf("updateLake(")).toBeGreaterThan(playerBranch.indexOf("camera.fov = GAME_FOV;"));
     // The four inner rings through the terrain's stand-in, in either capture.
@@ -1533,6 +1535,50 @@ describe("the lake's reflection in a renderer", () => {
       renderer.setFreecam(shore(EAST));
       look(renderer);
       expect(updates.at(-1)).toEqual({ inView: false, share: 1, armed: false });
+      expect(calm.mock.lastCall).toEqual([1, 0, 89.75979010256552]);
+      expect(read.mock.lastCall![0]).toBe(null);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("reads the lake in view from this frame's camera: turned toward it, one sync arms the mirror with no render between", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "high", skyTable: skyFixture() });
+    try {
+      const updates = lakeReflections.mirrors[0]!.updates;
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setWeatherName("clear", 0);
+      renderer.setFreecam(shore(EAST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(updates.at(-1)).toEqual({ inView: false, share: 1, armed: false });
+      renderer.setFreecam(shore(WEST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(updates.at(-1)).toEqual({ inView: true, share: 1, armed: true });
+      renderer.setFreecam(shore(EAST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(updates.at(-1)).toEqual({ inView: false, share: 1, armed: false });
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("disarms the mirror in a frame with no local player and reads none of it", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "high", skyTable: skyFixture() });
+    const calm = vi.spyOn(WaterPlugin.prototype, "setCalm");
+    const read = vi.spyOn(WaterPlugin.prototype, "setMirror");
+    try {
+      const mirror = lakeReflections.mirrors[0]!;
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setWeatherName("clear", 0);
+      renderer.setFreecam(shore(WEST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(mirror.updates.at(-1)).toEqual({ inView: true, share: 1, armed: true });
+      expect(renderer.scene.customRenderTargets).toContain(mirror.texture);
+      // The free camera off and no player of this id: no eye this frame.
+      renderer.setFreecam(null);
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(mirror.updates.at(-1)).toEqual({ inView: false, share: 1, armed: false });
+      expect(renderer.scene.customRenderTargets).not.toContain(mirror.texture);
       expect(calm.mock.lastCall).toEqual([1, 0, 89.75979010256552]);
       expect(read.mock.lastCall![0]).toBe(null);
     } finally {

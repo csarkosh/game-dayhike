@@ -17,7 +17,8 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Effect } from "@babylonjs/core/Materials/effect.js";
 import {
-  createLakeMirror, createLakeMirrorTerrain, LAKE_MIRROR_TERRAIN_SHADER, MIRROR_CANOPY_SHADE, MIRROR_LIFT, MIRROR_SCALE, type LakeMirror,
+  createLakeMirror, createLakeMirrorTerrain, LAKE_MIRROR_TERRAIN_SHADER, MIRROR_CANOPY_SHADE, MIRROR_LIFT, MIRROR_REACH_M, MIRROR_SCALE,
+  type LakeMirror,
 } from "../../src/game/lakeMirror.js";
 import type { LakeSource } from "../../src/sim/terrain.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
@@ -205,6 +206,27 @@ describe("createLakeMirror", () => {
     player.position.y = 50.02;
     expect(mirror.update(player, true, 1)).toBe(false);
     expect(listed()).toBe(0);
+    mirror.dispose();
+  });
+
+  it("stays off with the eye 200 m or more from the lake's rim, measured across the ground", () => {
+    expect(MIRROR_REACH_M).toBe(200);
+    const { s, player } = scene();
+    const mirror = createLakeMirror(s, LAKE, false);
+    const listed = () => s.customRenderTargets.filter((x) => x === mirror.texture).length;
+    // Due south of the centre (0, 30), the rim 30 m out: 199 m from it.
+    player.position.set(0, 51.72, -199);
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(1);
+    player.position.set(0, 51.72, -200);
+    expect(mirror.update(player, true, 1)).toBe(false);
+    expect(listed()).toBe(0);
+    // High over the lake's level counts for nothing: a ridge 1 km off.
+    player.position.set(0, 400, -1000);
+    expect(mirror.update(player, true, 1)).toBe(false);
+    // Over the water itself, the rim behind: in reach.
+    player.position.set(0, 51.72, 30);
+    expect(mirror.update(player, true, 1)).toBe(true);
     mirror.dispose();
   });
 
