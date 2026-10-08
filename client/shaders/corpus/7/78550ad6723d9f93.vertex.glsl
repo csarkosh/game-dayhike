@@ -1,5 +1,5 @@
 #version 450
-#define MATERIALPLUGIN_19
+#define MATERIALPLUGIN_17
 #define BRDF_V_HEIGHT_CORRELATED
 #define MS_BRDF_ENERGY_CONSERVATION
 #define SPHERICAL_HARMONICS
@@ -16,6 +16,7 @@
 #define IRIDESCENCE_TEXTUREDIRECTUV 0
 #define IRIDESCENCE_THICKNESS_TEXTUREDIRECTUV 0
 #define ANISOTROPIC_TEXTUREDIRECTUV 0
+#define MAINUV1
 #define SHEEN_TEXTUREDIRECTUV 0
 #define SHEEN_TEXTURE_ROUGHNESSDIRECTUV 0
 #define SS_THICKNESSANDMASK_TEXTUREDIRECTUV 0
@@ -24,7 +25,7 @@
 #define SS_TRANSLUCENCYCOLOR_TEXTUREDIRECTUV 0
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
-#define WATER
+#define WING
 #define UV1
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
@@ -42,30 +43,45 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define TONEMAPPING 0
-#define IMAGEPROCESSINGPOSTPROCESS
+#define IMAGEPROCESSING
+#define VIGNETTE
+#define VIGNETTEBLENDMODEMULTIPLY
+#define TONEMAPPING 3
+#define CONTRAST
+#define COLORCURVES
+#define SAMPLER3DGREENDEPTH
+#define SAMPLER3DBGRMAP
+#define DITHER
+#define EXPOSURE
 #define PBR
 #define NUM_SAMPLES 0
-#define ALBEDODIRECTUV 0
+#define ALBEDO
+#define ALBEDODIRECTUV 1
 #define BASE_WEIGHTDIRECTUV 0
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
-#define ALPHATESTVALUE 0.4
+#define ALPHATEST
+#define ALPHAFROMALBEDO
+#define ALPHATESTVALUE 0.5
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
 #define EMISSIVEDIRECTUV 0
-#define REFLECTIVITYDIRECTUV 0
+#define REFLECTIVITY
+#define REFLECTIVITYDIRECTUV 1
 #define SPECULARTERM
 #define LODBASEDMICROSFURACE
 #define MICROSURFACEMAPDIRECTUV 0
 #define METALLICWORKFLOW
+#define ROUGHNESSSTOREINMETALMAPGREEN
+#define METALLNESSSTOREINMETALMAPBLUE
 #define METALLIC_REFLECTANCEDIRECTUV 0
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
+#define TANGENT
 #define BUMP
-#define BUMPDIRECTUV 0
+#define BUMPDIRECTUV 1
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
 #define REFLECTION
@@ -73,22 +89,24 @@
 #define REFLECTIONMAP_CUBIC
 #define INVERTCUBICMAP
 #define USESPHERICALFROMREFLECTIONMAP
-#define USESPHERICALINVERTEX
 #define GAMMAREFLECTION
 #define RADIANCEOCCLUSION
 #define HORIZONOCCLUSION
+#define INSTANCES
+#define THIN_INSTANCES
 #define NUM_BONE_INFLUENCERS 0
 #define BonesPerMesh 0
 #define NUM_MORPH_INFLUENCERS 0
 #define ORDER_INDEPENDENT_TRANSPARENCY_16BITS
 #define USEPHYSICALLIGHTFALLOFF
+#define TWOSIDEDLIGHTING
 #define FOG
 #define CAMERA_PERSPECTIVE
 #define AREALIGHTSUPPORTED
+#define SPECULARAA
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
-#define VERTEX_PULLING_INDEX_BUFFER_32BITS
 #define CLUSTLIGHT_SLICES 0
 #define CLUSTLIGHT_BATCH 0
 #define LIGHT0
@@ -98,11 +116,20 @@
 #define LIGHT2
 #define HEMILIGHT2
 #define LIGHTCOUNT 3
-#define MAXLIGHTCOUNT 7
+#define MAXLIGHTCOUNT 4
 
 #define SHADER_NAME vertex:pbr
-layout(set = 1, binding = 20) uniform LeftOver {
-        vec4 vFogInfos;
+layout(set = 1, binding = 18) uniform LeftOver {
+        float exposureLinear;
+    float contrast;
+    vec2 vInverseScreenSize;
+    vec4 vignetteSettings1;
+    vec4 vignetteSettings2;
+    vec4 vCameraColorCurveNegative;
+    vec4 vCameraColorCurveNeutral;
+    vec4 vCameraColorCurvePositive;
+    float ditherIntensity;
+    vec4 vFogInfos;
     vec3 vFogColor;
 };
 
@@ -234,30 +261,23 @@ float atmSunPower;
 float atmSunWeight;
 vec3 atmSunDir;
 vec3 atmSunColour;
-float waterLevel;
-vec3 waterKd;
-vec4 waterBed;
-float waterBedTexels;
-float waterTime;
-vec2 waterWind;
-vec2 waterWindTime;
-vec2 waterScreen;
-float waterHigh;
-float waterOctaves;
-vec2 waterNearFar;
-vec2 waterSkin;
-float waterRain;
-vec4 oceanPhase0;
-vec4 oceanPhase1;
-vec4 oceanPhase2;
-vec4 oceanSwell;
-vec4 oceanTips;
-vec4 oceanCoast;
-vec4 oceanWind;
-vec4 oceanWindDir;
-vec4 oceanWindStats;
-vec4 oceanWindPivot;
-vec4 oceanK[12];
+vec3 atmFarColour;
+float atmCloudDensity;
+float atmCloudSteps;
+float atmCloudRange;
+float atmCloudFalloff;
+float atmCloudSeat;
+float atmCloudGroundRange;
+float atmCloudNear;
+float atmCloudTrail;
+vec2 atmCloudNoiseScale;
+vec2 atmCloudWind;
+vec2 atmCloudGlow;
+vec3 atmCloudColour;
+vec4 atmCloudGroundRect;
+float wingTime;
+float wingOmega;
+float wingHalfSpan;
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -275,7 +295,9 @@ float visibility;
 #define CUSTOM_VERTEX_BEGIN
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
-layout(location = 2) in vec2 uv;
+layout(location = 2) in vec4 tangent;
+layout(location = 3) in vec2 uv;
+layout(location = 0)  out vec2 vMainUV1;
 const float PI=3.1415926535897932384626433832795;
 const float TWO_PI=6.283185307179586;
 const float HALF_PI=1.5707963267948966;
@@ -425,21 +447,14 @@ uint2float(rstate*2447445414u));
 #define DIELECTRIC_SPECULAR_MODEL_OPENPBR 1
 #define CONDUCTOR_SPECULAR_MODEL_GLTF 0
 #define CONDUCTOR_SPECULAR_MODEL_OPENPBR 1
-layout(location = 0)  out vec2 vBumpUV;
+layout(location = 4) in vec4 world0;
+layout(location = 5) in vec4 world1;
+layout(location = 6) in vec4 world2;
+layout(location = 7) in vec4 world3;
 layout(location = 1)  out vec3 vPositionW;
 layout(location = 2)  out vec3 vNormalW;
-layout(location = 3)  out vec3 vEnvironmentIrradiance;
-vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
-+ vSphericalL1_1*(normal.y)
-+ vSphericalL10*(normal.z)
-+ vSphericalL11*(normal.x)
-+ vSphericalL2_2*(normal.y*normal.x)
-+ vSphericalL2_1*(normal.y*normal.z)
-+ vSphericalL20*((3.0*normal.z*normal.z)-1.0)
-+ vSphericalL21*(normal.z*normal.x)
-+ vSphericalL22*(normal.x*normal.x-(normal.y*normal.y));
-}
-layout(location = 4)  out vec3 vFogDistance;
+layout(location = 3)  out mat3 vTBN;
+layout(location = 6)  out vec3 vFogDistance;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -464,45 +479,40 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
-// Water plugin, vertex definitions: the ring's per-vertex bed depth (metres
-// of water under the vertex, from the terrain height the ring sampled), which
-// the fragment stage falls back to outside the bed height texture's square,
-// and the vertex's view depth, which the high tier compares with the depth of
-// the opaque pass behind it.
-//
-// COMMENT RULES: never put a semicolon inside a trailing comment on a code
-// line, and never spell a hashed preprocessor keyword in comment prose. The
-// shaderHygiene test enforces both.
-layout(location = 3) in float bedDepth;
-layout(location = 5)  out float vBedDepth;
-layout(location = 6)  out float vWaterViewDepth;
+layout(location = 8) in vec2 wing;
 #define CUSTOM_VERTEX_DEFINITIONS
 void main(void) {
 #define CUSTOM_VERTEX_MAIN_BEGIN
 vec3 positionUpdated=position;
 vec3 normalUpdated=normal;
+vec4 tangentUpdated=tangent;
 vec2 uvUpdated=uv;
+float wingSide = positionUpdated.x < 0.0 ? -1.0 : 1.0;
+float wingAbsX = abs(positionUpdated.x);
+float wingSpan = clamp(wingAbsX / wingHalfSpan, 0.0, 1.0);
+float wingA = wing.y * sin(wingTime * wingOmega + wing.x) * wingSpan;
+float wingC = cos(wingA);
+float wingS = sin(wingA);
+float wingY0 = positionUpdated.y;
+positionUpdated.y = wingY0 * wingC + wingAbsX * wingS;
+positionUpdated.x = wingSide * (wingAbsX * wingC - wingY0 * wingS);
 #define CUSTOM_VERTEX_UPDATE_POSITION
 #define CUSTOM_VERTEX_UPDATE_NORMAL
-mat4 finalWorld=world;
+mat4 finalWorld=mat4(world0,world1,world2,world3);
+finalWorld=world*finalWorld;
 vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);
 vPositionW=vec3(worldPos);
 mat3 normalWorld=mat3(finalWorld);
-vNormalW=normalize(normalWorld*normalUpdated);
-vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
-float NdotV=max(dot(vNormalW,viewDirectionW),0.0);
-vec3 roughNormal=mix(vNormalW,viewDirectionW,(0.5*(1.0-NdotV))*baseDiffuseRoughness);
-vec3 reflectionVector=vec3(reflectionMatrix*vec4(roughNormal,0)).xyz;
-vEnvironmentIrradiance=computeEnvironmentIrradiance(reflectionVector);
-vBedDepth = bedDepth;
-// Babylon's view space is left-handed: +z runs forward, so this is positive.
-vWaterViewDepth = (view * worldPos).z;
+vNormalW=normalUpdated/vec3(dot(normalWorld[0],normalWorld[0]),dot(normalWorld[1],normalWorld[1]),dot(normalWorld[2],normalWorld[2]));
+vNormalW=normalize(normalWorld*vNormalW);
 #define CUSTOM_VERTEX_UPDATE_WORLDPOS
 gl_Position=viewProjection*worldPos;
 vec2 uv2Updated=vec2(0.,0.);
-if (vBumpInfos.x==0.)
-{vBumpUV=vec2(bumpMatrix*vec4(uvUpdated,1.0,0.0));
-}
+vMainUV1=uvUpdated;
+vec3 tbnNormal=normalize(normalUpdated);
+vec3 tbnTangent=normalize(tangentUpdated.xyz);
+vec3 tbnBitangent=cross(tbnNormal,tbnTangent)*tangentUpdated.w;
+vTBN=mat3(finalWorld)*mat3(tbnTangent,tbnBitangent,tbnNormal);
 vFogDistance=(view*worldPos).xyz;
 #define CUSTOM_VERTEX_MAIN_END
 gl_Position.y *= yFactor_;
