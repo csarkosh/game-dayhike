@@ -473,12 +473,22 @@ cost showed.
     and reads `front_facing`, 7 of the 19, and the cliffs' LOD1 material
     14; the lake's fragment stage binds ten textures, three more than
     before (the mirror, the panorama, the skyline).
-  - The pass draws every other frame while armed, the first armed frame
+  - The pass draws every third frame while armed, the first armed frame
     always, into a target that is on the scene's list only in the frames it
     draws; between draws the lake reads the last image through the
-    view-projection it was drawn with, so on those frames the reflection is
-    a frame behind the camera. The window's resize is taken on a drawing
-    frame, so the image being read keeps its size.
+    view-projection it was drawn with, which is exact for a turn of the
+    camera, so on those frames the reflection is up to two frames behind the
+    eye's travel. Two things hide the frames between: the mirror camera's
+    field is the player's widened by a fifth each way (the focal terms
+    divided by 1.2), so a turn over those frames reads inside the drawn
+    image rather than the clamped edge; and the read is smeared down the
+    screen by the parallax the eye's travel gives a reflected point at the
+    water point's distance (half a pixel of the frame's height per metre of
+    travel and metre of distance, the travel over the two held frames
+    smoothed by 0.3 a frame, capped at a twentieth of the frame), so the lag
+    reads as motion blur and a still eye reads the image sharp. The window's
+    resize is taken on a drawing frame, so the image being read keeps its
+    size.
   - The read (`waterMirrorUv`, its twin `mirrorUv` in `mirrorView.ts`):
     `uv = clip.xy / clip.w · 0.5 + 0.5`, the v axis running up the target,
     moved by `slope · 0.05 · min(depth / 0.5, 1) / max(viewDepth, 1)`, then
@@ -572,30 +582,35 @@ drawn every frame, at the 960 × 540 target, and the half rate halves it.
 
 About 4.4 ms of the pass is vertex and draw work no target size touches, so
 the design's cut order (which thins the fill) could not reach 2.5 ms; the
-pass was made to draw every other frame into a target capped at 960 × 540
-with the LOD1 buckets out (§11, §5).
+pass was made to draw every third frame into a target capped at 960 × 540
+with the LOD1 buckets out, its field a fifth wider and its read smeared by
+the eye's travel (§11, §5). At every other frame the pass read 2.2 to 2.5 ms
+a frame across and 1.7 to 1.9 at the shore, which with the lake's remaining
+fragment work left the across pose about 0.4 ms over the budget; the third
+frame took it under, and the wider field added nothing measurable to a
+draw.
 
-| As built, 960 × 540 target, every other frame | ms a draw | ms a frame |
+| As built, 960 × 540 target, a fifth wider, every third frame | ms a draw | ms a frame |
 |---|---|---|
-| Dawn, across, 4K | 4.9 (least 4.4) | 2.2 to 2.5 |
-| Dawn, the shore, 4K | 3.8 (least 3.4) | 1.7 to 1.9 |
-| Dawn, across, 1080p | 4.9 (least 4.5) | 2.2 to 2.5 |
-| Dawn, the shore, 1080p | 3.5 (least 3.3) | 1.7 to 1.8 |
+| Dawn, across, 4K | 4.6 to 4.9 (least 4.5) | 1.5 to 1.6 |
+| Dawn, the shore, 4K | 3.9 (least 3.6) | 1.2 to 1.3 |
+| Dawn, across, 1080p | 5.1 (least 4.7) | 1.6 to 1.7 |
+| Dawn, the shore, 1080p | 3.5 (least 3.4) | 1.1 to 1.2 |
 
-The LOD1 buckets' cut bought about 0.75 ms a frame at the shore and nothing
+The LOD1 buckets' cut bought about 0.75 ms a draw at the shore and nothing
 measurable across (the trees across the measured lakes stand past 85 m
 from the eye, at LOD2 and the impostors). Frame-rate pairs at the as-built
-tip read the high tier within 2 ms of the code before it at every pose
-measured on WebGPU (4K across 13.4 against 13.6 frames a second), inside
-the pairs' resolution.
+tips read the high tier within 2 ms of the code before it at every pose
+measured on WebGPU (4K across 13.4 against 13.6 frames a second at every
+other frame), inside the pairs' resolution.
 
-Against §8's 2.5 ms for the pass and the read on high: the pass alone is
-under it at every pose; with the lake's remaining fragment work (under
-1 ms, the noon reading's +0.9 with the paws on, less on glass) the shore is
-under and the across pose, the lake filling the frame, about 0.4 ms over,
-at the edge of what this rig resolves. The next lever is the rate: every
-third frame takes the across pose under, at two frames of lag in the
-reflection.
+Against §8's 2.5 ms for the pass and the read on high: the pass is 1.1 to
+1.7 ms a frame, and with the lake's remaining fragment work (under 1 ms,
+the noon reading's +0.9 with the paws on, less on glass) every pose
+measured is under the budget. What the third frame costs the look is in
+§11 under §5: a reflection up to two frames behind the eye's travel, hidden
+by the wider field and the motion smear; stills at the four gate poses
+read the same as the every-frame ones.
 
 ### Checks
 
