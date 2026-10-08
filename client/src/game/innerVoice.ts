@@ -25,10 +25,10 @@ export type VoiceInputs = {
   lamp: boolean;
   stare: number;
   moving: boolean;
-  /** A shade in the player's view this frame; the Hollow's cry this frame; the birdsong's level, 0 to 1. */
+  /** A shade in the player's view this frame; the Hollow's cry this frame; the Hollow itself before the player's eyes (the summit scene's reveal). */
   shadeSeen: boolean;
   cry: boolean;
-  birds: number;
+  hollowSeen: boolean;
   /** Beside the dropped cap; at the body; safe at the car. */
   nearCap: boolean;
   nearBody: boolean;
@@ -45,11 +45,10 @@ export type VoiceState = {
   /** Each pool's order for this match (indices), and how far through it the voice is. */
   order: Partial<Record<VoiceScenario, number[]>>;
   at: Partial<Record<VoiceScenario, number>>;
-  /** Timers the scenarios watch: off the trail, standing still, the lamp off in the dark, and the birds once heard, a shade once seen, the cries heard. */
+  /** Timers the scenarios watch: off the trail, standing still, the lamp off in the dark, a shade once seen, the cries heard. */
   offTrailFor: number;
   stillFor: number;
   darkUnlitFor: number;
-  birdsHeard: boolean;
   shadeFor: number;
   shadeGoneFor: number;
   cries: number;
@@ -70,9 +69,6 @@ export const OFF_TRAIL_NIGHT = 0.5;
 export const STILL_S = 20;
 /** The lamp off this long into the dark. */
 export const UNLIT_S = 10;
-/** The birdsong level above which the birds were heard, and below which they have stopped. */
-export const BIRDS_HEARD = 0.4;
-export const BIRDS_STOPPED = 0.1;
 /** The stare at which the voice says not to look. */
 export const DONT_LOOK = 0.4;
 /** Seconds without a shade in view, after one, before the voice says there was nobody. */
@@ -85,7 +81,6 @@ const CAPS: Readonly<Record<VoiceScenario, { cap: number; gap: number }>> = {
   offTrailNight: { cap: 3, gap: 60 },
   dusk: { cap: 1, gap: 0 },
   lamp: { cap: 1, gap: 0 },
-  birds: { cap: 1, gap: 0 },
   mist: { cap: 1, gap: 0 },
   cryFirst: { cap: 1, gap: 0 },
   cryAgain: { cap: 1, gap: 0 },
@@ -96,6 +91,7 @@ const CAPS: Readonly<Record<VoiceScenario, { cap: number; gap: number }>> = {
   crest: { cap: 1, gap: 0 },
   cap: { cap: 1, gap: 0 },
   body: { cap: 1, gap: 0 },
+  hollow: { cap: 1, gap: 0 },
   chaseStart: { cap: 1, gap: 0 },
   chaseOffTrail: { cap: 1, gap: 0 },
   safe: { cap: 1, gap: 0 },
@@ -103,12 +99,12 @@ const CAPS: Readonly<Record<VoiceScenario, { cap: number; gap: number }>> = {
 /** The scenarios the chase allows; the rest are the climb's. */
 const CHASE_ONLY: ReadonlySet<VoiceScenario> = new Set(["chaseStart", "chaseOffTrail", "safe"]);
 /** Lines that cut the gap: the body, the chase's start and the car do not wait on the cooldown. */
-const URGENT: ReadonlySet<VoiceScenario> = new Set(["body", "chaseStart", "safe", "cryFirst"]);
+const URGENT: ReadonlySet<VoiceScenario> = new Set(["body", "hollow", "chaseStart", "safe", "cryFirst"]);
 
 export function voiceRest(seed: number): VoiceState {
   return {
     since: Infinity, elapsed: 0, said: {}, last: {}, order: {}, at: {},
-    offTrailFor: 0, stillFor: 0, darkUnlitFor: 0, birdsHeard: false, shadeFor: 0, shadeGoneFor: 0, cries: 0, wasChase: false,
+    offTrailFor: 0, stillFor: 0, darkUnlitFor: 0, shadeFor: 0, shadeGoneFor: 0, cries: 0, wasChase: false,
     rng: (seed >>> 0) || 1,
   };
 }
@@ -166,7 +162,6 @@ export function stepInnerVoice(prev: VoiceState, input: VoiceInputs, dt: number)
   state.offTrailFor = input.offTrail > OFF_TRAIL_M ? state.offTrailFor + dt : 0;
   state.stillFor = input.moving ? 0 : state.stillFor + dt;
   state.darkUnlitFor = input.night >= OFF_TRAIL_NIGHT && !input.lamp ? state.darkUnlitFor + dt : 0;
-  if (input.birds >= BIRDS_HEARD) state.birdsHeard = true;
   if (input.shadeSeen) { state.shadeFor += dt; state.shadeGoneFor = 0; } else if (state.shadeFor > 0) state.shadeGoneFor += dt;
   if (input.cry) state.cries += 1;
   const chaseBegan = input.chase && !state.wasChase;
@@ -178,6 +173,7 @@ export function stepInnerVoice(prev: VoiceState, input: VoiceInputs, dt: number)
   if (input.chase && (chaseBegan || (state.said.chaseStart ?? 0) === 0)) candidates.push("chaseStart");
   if (input.safe) candidates.push("safe");
   if (input.nearBody && !input.chase) candidates.push("body");
+  if (input.hollowSeen && !input.chase) candidates.push("hollow");
   if (input.cry && state.cries === 1) candidates.push("cryFirst");
   if (input.chase) {
     if (state.offTrailFor >= OFF_TRAIL_S / 2 && input.offTrail > OFF_TRAIL_M + 2) candidates.push("chaseOffTrail");
@@ -188,7 +184,6 @@ export function stepInnerVoice(prev: VoiceState, input: VoiceInputs, dt: number)
     if (!input.shadeSeen && state.shadeFor > 0 && state.shadeGoneFor >= SHADE_GONE_S && (state.said.shadeFirst ?? 0) > 0) candidates.push("shadeGone");
     if (input.stare >= DONT_LOOK && input.night >= OFF_TRAIL_NIGHT) candidates.push("dontLook");
     if (state.offTrailFor >= OFF_TRAIL_S) candidates.push(input.night >= OFF_TRAIL_NIGHT ? "offTrailNight" : "offTrailDay");
-    if (state.birdsHeard && input.birds <= BIRDS_STOPPED && input.night >= 0.3) candidates.push("birds");
     if (input.mist >= 0.2 && input.mist <= 0.6) candidates.push("mist");
     if (state.darkUnlitFor >= UNLIT_S) candidates.push("lamp");
     if (input.night >= 0.3 && input.night <= 0.7) candidates.push("dusk");

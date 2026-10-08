@@ -23,14 +23,14 @@ own: their own trail, their own stare, their own first cry.
 - **A pool is drawn in a seeded order, no repeat until it is spent** (`draw`), the seed the
   match's: the woods are made afresh each time, and the voice is not the one thing that repeats.
   Every pool has at least four lines (`innerLines.ts`), most five or six.
-- The timers (off the trail, still, unlit, the birds heard, a shade in view, the cries) step
+- The timers (off the trail, still, unlit, a shade in view, the cries) step
   whether or not a line comes, so a moment is not lost to the cooldown: the scenario speaks when
   the gap allows, if its condition still holds.
 
 The inputs come from the frame (`app.ts`, after the woods' voice): the climb and the acts, the
 chase and the end, metres off the trail (`sim/trail.ts`), the lamp, the stare, whether the player
 moved, a shade in view (`playerSees`), the Hollow's cry this frame (the woods voice's call), the
-birdsong's level, the cap, the body, the car.
+Hollow before the eyes (the summit scene's reveal), the cap, the body, the car.
 
 ## 2. The scenarios
 
@@ -41,15 +41,15 @@ birdsong's level, the cap, the body, the car.
 | `offTrailDay` / `offTrailNight` | more than `OFF_TRAIL_M` (6 m) off the trail for `OFF_TRAIL_S` (8 s); the night's from `OFF_TRAIL_NIGHT` (0.5) | 3 each, 60 s apart |
 | `dusk` | the night coming in (0.3 to 0.7) | once |
 | `lamp` | the lamp off `UNLIT_S` (10 s) into the dark | once |
-| `birds` | the birdsong heard above `BIRDS_HEARD` (0.4), then under `BIRDS_STOPPED` (0.1) at night: a question, so the quiet is the player's to answer | once |
 | `mist` | the mist act rising (0.2 to 0.6) | once |
-| `cryFirst` / `cryAgain` | the first cry; the second: answered once every howl has ended (the clip at its slowest rate, its tail, and `CRY_BEAT_S` 0.6 s; a second howl pushes the answer back) | once each |
+| `cryFirst` / `cryAgain` | the first cry; the second: answered once every howl has ended (the clip at its slowest rate, its tail, and `CRY_BEAT_S` 0.6 s; a second howl pushes the answer back); heard, not understood, so the lines are confusion, not fear. Not the summit scene's cry, which the terror below answers | once each |
 | `shadeFirst` / `shadeGone` | a shade in view for 0.3 s; then none for `SHADE_GONE_S` (1.5 s) after one was | once each |
 | `still` | standing still `STILL_S` (20 s) at night | 2, 90 s apart |
 | `dontLook` | the stare at `DONT_LOOK` (0.4) at night | 2, 90 s apart |
 | `crest` | 90 % of the climb | once |
 | `cap` | within `CAP_NEAR_M` (2.5 m) of the cap: the cap's own scene (`capPose`, `cutscene.ts`), the controls stilled and the camera stepped and turned to it and tipped down at it over 1 s, the line 1.1 s in, back by 4.4 s | once |
-| `body` | within 4 m of the body, before the chase | once, urgent |
+| `body` | within 4 m of the body; in the summit scene, on every screen in the find (the flip comes at the discovery radius, further than a step, so no one need walk up) | once, urgent |
+| `hollow` | the Hollow before the eyes: the summit scene's predator's view, after its howl; terror | once, urgent |
 | `chaseStart` | the chase begins | once, urgent |
 | `chaseOffTrail` | the chase, 8 m off the trail for 4 s | once |
 | `safe` | safe at the car | once, urgent |
@@ -84,7 +84,7 @@ voice actor's recordings replace them file for file.
 ## 6. Tests
 
 `test/game/innerVoice.test.ts` (the pools' size and variety, the trailhead and the gap, off the
-trail by day and night, the birds' question, the cries, the chase's lines alone, silence at the
+trail by day and night, the terror at the Hollow, the cries, the chase's lines alone, silence at the
 end, the seeded draw), `test/game/droppedItem.test.ts` (the cap's place beside the stem, the same
 for a seed and different for another; its meshes), `test/sim/trailRoute.test.ts` (`stemPointAt`),
 `test/game/voiceClips.test.ts` (the clip's name, fetched once, played each time, a missing one

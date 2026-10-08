@@ -853,10 +853,12 @@ function buildGame(
         chase: state.phase === Phase.Chase, ended: ended || dead,
         offTrail: world.trail === null ? 0 : trailDistance(world.trail, self.pos.x, self.pos.z),
         lamp: self.lamp.on, stare: self.stare, moving: Math.hypot(self.vel.x, self.vel.z) > 0.2,
-        shadeSeen, cry: cryOver, birds: woods.birds < 0 ? 1 : woods.birds,
+        shadeSeen, cry: cryOver && !sceneOn(),
+        // The scene's reveal: the terror line in the predator's view, the fourth shot.
+        hollowSeen: sceneOn() && sceneUntil - performance.now() <= (SUMMIT_SCENE_S - ((SHOTS[0] as number) + (SHOTS[1] as number) + (SHOTS[2] as number))) * 1000,
         nearCap: capAt !== null && Math.hypot(self.pos.x - capAt.x, self.pos.z - capAt.z) < CAP_NEAR_M && !sceneOn(),
-        // The body's line waits for the scene's second shot, the find.
-        nearBody: Math.hypot(self.pos.x - body.x, self.pos.z - body.z) < 4 && (!sceneOn() || sceneUntil - performance.now() <= (SUMMIT_SCENE_S - (SHOTS[0] as number)) * 1000),
+        // The scene is the find on every screen (the flip comes at DISCOVERY_RADIUS, further than a step): the body's line in its second shot.
+        nearBody: sceneOn() ? sceneUntil - performance.now() <= (SUMMIT_SCENE_S - (SHOTS[0] as number)) * 1000 : Math.hypot(self.pos.x - body.x, self.pos.z - body.z) < 4,
         safe: self.safe,
       }, dt);
       voice = spoke.state;

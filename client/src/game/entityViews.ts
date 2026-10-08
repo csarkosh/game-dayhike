@@ -123,9 +123,14 @@ export const ARMS: readonly { shoulder: string; elbow: string; wrist: string }[]
   { shoulder: "hollow.antlered.node38", elbow: "hollow.antlered.node37", wrist: "hollow.antlered.node36" },
 ];
 
-/** The eyes' level on the frame: the real one's dulled glow, a shade's fainter, by the softness between, and the fade. */
+/**
+ * The eyes' level on the frame: the real one's dulled glow, a shade's fainter, by the softness
+ * between, and the fade. The level is the eye meshes' alpha, and they glow at HOLLOW_EYE_INTENSITY,
+ * so the alpha is the level over that: a figure half there has eyes half there, the frame showing
+ * through them as through its body, never a glow that saturates while the body is a veil.
+ */
 export function eyeLevelOf(soft: number, fade: number): number {
-  return (SHADE_EYES_SHADE * soft + SHADE_EYES_DULL * (1 - soft)) * fade;
+  return ((SHADE_EYES_SHADE * soft + SHADE_EYES_DULL * (1 - soft)) * fade) / HOLLOW_EYE_INTENSITY;
 }
 
 /** The share of its height a shade stands at for a rise of `t`: eased, so it slows into its full height. */

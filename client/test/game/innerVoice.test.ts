@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
-  BIRDS_HEARD, BIRDS_STOPPED, OFF_TRAIL_M, OFF_TRAIL_S, VOICE_FIRST_S, VOICE_GAP_S, stepInnerVoice, voiceRest, type VoiceInputs, type VoiceState,
+  OFF_TRAIL_M, OFF_TRAIL_S, VOICE_FIRST_S, VOICE_GAP_S, stepInnerVoice, voiceRest, type VoiceInputs, type VoiceState,
 } from "../../src/game/innerVoice.js";
 import { INNER_LINES } from "../../src/game/innerLines.js";
 
 const DAY: VoiceInputs = {
   climb: 0.5, wet: 1, night: 0, mist: 0, chase: false, ended: false, offTrail: 0, lamp: false, stare: 0, moving: true,
-  shadeSeen: false, cry: false, birds: 1, nearCap: false, nearBody: false, safe: false,
+  shadeSeen: false, cry: false, hollowSeen: false, nearCap: false, nearBody: false, safe: false,
 };
-const NIGHT: VoiceInputs = { ...DAY, climb: 0.7, night: 1, mist: 1, lamp: true, birds: 0 };
+const NIGHT: VoiceInputs = { ...DAY, climb: 0.7, night: 1, mist: 1, lamp: true };
 const DT = 1 / 30;
 
 function run(state: VoiceState, input: VoiceInputs, seconds: number): { state: VoiceState; lines: string[] } {
@@ -55,12 +55,12 @@ describe("the inner voice", () => {
     expect(night.lines.filter((l) => INNER_LINES.offTrailNight.includes(l)).length).toBe(3);
   });
 
-  it("asks why the birds stopped only once they were heard and then fell silent in the dark", () => {
-    const quiet = run(voiceRest(4), { ...NIGHT, birds: 0 }, 60);
-    expect(quiet.lines.some((l) => INNER_LINES.birds.includes(l))).toBe(false);
-    const { state } = run(voiceRest(4), { ...DAY, birds: BIRDS_HEARD + 0.1 }, 2);
-    const stopped = run(state, { ...NIGHT, birds: BIRDS_STOPPED - 0.05 }, 60);
-    expect(stopped.lines.some((l) => INNER_LINES.birds.includes(l))).toBe(true);
+  it("speaks its terror at the Hollow before its eyes, once, at once, and the find's shock the same", () => {
+    const { lines } = run(voiceRest(4), { ...NIGHT, hollowSeen: true }, 3);
+    expect(lines.filter((l) => INNER_LINES.hollow.includes(l))).toHaveLength(1);
+    const again = run(run(voiceRest(4), { ...NIGHT, hollowSeen: true }, 3).state, { ...NIGHT, hollowSeen: true }, 120);
+    expect(again.lines.filter((l) => INNER_LINES.hollow.includes(l))).toHaveLength(0);
+    expect(INNER_LINES.body.every((l) => l.length > 0)).toBe(true);
   });
 
   it("answers the first cry at once, the second once more, and no later one", () => {

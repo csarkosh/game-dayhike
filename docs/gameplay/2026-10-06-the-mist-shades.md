@@ -86,7 +86,9 @@ to cover and struck at half its weight before. The real thing is never the model
 own surface: as the softness falls, the mask's red (the shade) moves to its blue (the real thing),
 which the grade darkens by `SHADE_MONSTER_DARK` (1, whole; 0.88 at first) through the inner ring
 of taps alone, sharper and heavier than the shade, and its eyes alone come onto the frame, at
-`SHADE_EYES_DULL` (0.55) of their glow. So the real one begins as a shade in the mist and darkens
+`SHADE_EYES_DULL` (0.55) of their glow (the meshes' alpha is that level over `HOLLOW_EYE_INTENSITY`,
+since 2026-10-08: a glow of 4 at an alpha of 0.55 saturated to a solid eye while the body was a veil;
+now the frame shows through the eyes as through the body). So the real one begins as a shade in the mist and darkens
 smoothly into the black figure with the dulled red eyes. A Hollow out in the open (the pack, the
 summit's) is that resolved form from the start: no Hollow is ever drawn in its own surface on the
 post tiers. A shade has the same eyes, fainter: `SHADE_EYES_SHADE` (0.005; 0.12, then 0.06, for an hour each:
