@@ -403,6 +403,22 @@ describe("the rain's rings on the water", () => {
     expect(p.time).toBe(10);
   });
 
+  it("integrates the wind's direction alone on the sea, whatever its speed: its caps drift as designed", () => {
+    const p = attachWater(new PBRMaterial("wIntSea", scene), WATER_ROWS.sea);
+    p.ocean = testOcean();
+    p.setWind(0.5, [1, 0]);
+    p.advance(1);
+    p.advance(3);
+    expect(p.windTime[0]).toBeCloseTo(2, 9);
+    p.setWind(0, [0, 1]);
+    p.advance(4);
+    expect(p.windTime[0]).toBeCloseTo(2, 9);
+    expect(p.windTime[1]).toBeCloseTo(1, 9);
+    p.setWind(1, [0, 1]);
+    p.advance(6);
+    expect(p.windTime[1]).toBeCloseTo(3, 9);
+  });
+
   it("binds the wind's integral on both paths", () => {
     const p = attachWater(new PBRMaterial("wInt", scene), WATER_ROWS.lowlandLake);
     expect(p.getUniforms().ubo.map((u) => u.name)).toContain("waterWindTime");

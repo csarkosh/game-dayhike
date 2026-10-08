@@ -205,9 +205,11 @@ export class WaterPlugin extends MaterialPluginBase {
   windDir: [number, number] = [1, 0];
   /** The wind's 0..1 speed, as `setWind` last had it. */
   windSpeed = 0;
-  /** The wind's velocity (its direction times its 0..1 speed) integrated over
-   * the run, in seconds: what the skin and the second octave drift by, so
-   * the octave drifts at the wind's speed as well as along it. */
+  /** On a lake, the wind's velocity (its direction times its 0..1 speed)
+   * integrated over the run, in seconds: what the skin and the second octave
+   * drift by, so the octave drifts at the wind's speed as well as along it.
+   * On the sea, its direction alone: the low tier's caps drift by it at
+   * their designed speed (`oceanShade.fragment.fx`'s OCEAN_CAP_DRIFT). */
   windTime: [number, number] = [0, 0];
   private _lastSeconds: number | null = null;
   /** Ripple octaves the fragment blends: 2, or 1 on the low tier (spec §5.3). */
@@ -332,11 +334,14 @@ export class WaterPlugin extends MaterialPluginBase {
     this.windSpeed = wind01;
   }
 
-  /** Per frame, with the renderer's clock: sets the time and adds the wind's velocity times the step to `windTime`. */
+  /** Per frame, with the renderer's clock: sets the time and adds the step to
+   * `windTime`, times the wind's velocity on a lake and its direction alone
+   * on the sea. */
   advance(seconds: number): void {
     const dt = this._lastSeconds === null ? 0 : Math.max(0, seconds - this._lastSeconds);
-    this.windTime[0] += this.windDir[0] * this.windSpeed * dt;
-    this.windTime[1] += this.windDir[1] * this.windSpeed * dt;
+    const speed = this._ocean === null ? this.windSpeed : 1;
+    this.windTime[0] += this.windDir[0] * speed * dt;
+    this.windTime[1] += this.windDir[1] * speed * dt;
     this._lastSeconds = seconds;
     this.time = seconds;
   }
