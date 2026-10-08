@@ -35,7 +35,7 @@ describe("the calm's constants", () => {
     expect(ROUGH_SHELTER).toBe(0.3);
     expect(ROUGH_RAIN).toBe(0.35);
     expect([ROUGH_RAIN_FROM, ROUGH_RAIN_TO]).toEqual([0.35, 0.5]);
-    expect([ROUGH_WIND_FROM, ROUGH_WIND_TO]).toEqual([0.6, 0.8]);
+    expect([ROUGH_WIND_FROM, ROUGH_WIND_TO]).toEqual([0.7, 0.9]);
   });
 });
 
@@ -140,13 +140,16 @@ describe("roughShare", () => {
     expect(roughShare(WEATHER_PRESETS.eerie, 0.69, 0.1)).toBe(0);
     expect(roughShare(WEATHER_PRESETS.eerie, 0.25, 0.3)).toBe(0);
     expect(roughShare(WEATHER_PRESETS.eerie, 0.6, 0.3)).toBe(0);
+    // Nor its own wind, 0.69, on the exposed lake.
+    expect(roughShare(WEATHER_PRESETS.eerie, 0.69, 0.3)).toBe(0);
   });
 
-  it("ramps in with the wind from 0.6 to 0.8 on a body of shelter 0.3, half at the step's 0.7", () => {
+  it("ramps in with the wind from 0.7 to 0.9 on a body of shelter 0.3, half at 0.8, all of it at the rain preset's 0.9", () => {
     const dry = rainOf(0);
-    expect(roughShare(dry, 0.6, 0.3)).toBe(0);
-    expect(roughShare(dry, 0.7, 0.3)).toBe(0.49999999999999956);
-    expect(roughShare(dry, 0.8, 0.3)).toBe(1);
+    expect(roughShare(dry, 0.69, 0.3)).toBe(0);
+    expect(roughShare(dry, 0.7, 0.3)).toBe(0);
+    expect(roughShare(dry, 0.8, 0.3)).toBe(0.5000000000000003);
+    expect(roughShare(dry, 0.9, 0.3)).toBe(1);
   });
 
   it("never ramps in by the wind on a sheltered body of 0.1", () => {
@@ -154,13 +157,15 @@ describe("roughShare", () => {
     expect(roughShare(dry, 0.6, 0.1)).toBe(0);
     expect(roughShare(dry, 0.7, 0.1)).toBe(0);
     expect(roughShare(dry, 0.8, 0.1)).toBe(0);
+    expect(roughShare(dry, 0.9, 0.1)).toBe(0);
     expect(roughShare(dry, 1, 0.1)).toBe(0);
   });
 
   it("takes the larger of the two, and is 0 under clear and bright skies at their own winds", () => {
-    expect(roughShare(rainOf(0.35), 0.75, 0.3)).toBe(0.84375);
+    expect(roughShare(rainOf(0.35), 0.75, 0.3)).toBe(0.15625000000000014);
     expect(roughShare(rainOf(0.5), 0.7, 0.3)).toBe(1);
     expect(roughShare(rainOf(0.425), 0.7, 0.3)).toBe(0.5);
+    expect(roughShare(rainOf(0.425), 0.8, 0.3)).toBe(0.5000000000000003);
     expect(roughShare(WEATHER_PRESETS.clear, 0.25, 0.3)).toBe(0);
     expect(roughShare(WEATHER_PRESETS.bright, 0.4075, 0.3)).toBe(0);
   });

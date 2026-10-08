@@ -42,11 +42,11 @@ export const ROUGH_WIND01 = 0.7;
 export const ROUGH_SHELTER = 0.3;
 /** Rough over the whole surface above this rain (0..1): the eerie preset's drizzle, 0.3, is not. */
 export const ROUGH_RAIN = 0.35;
-/** The rough share's ramps (`roughShare`): the rain's from its step above to 0.5, so the eerie drizzle's 0.3 is none of it; the wind's from 0.6 to 0.8, about its step. */
+/** The rough share's ramps (`roughShare`): the rain's from its step above to 0.5, so the eerie drizzle's 0.3 is none of it; the wind's from its step to 0.9, the rain preset's wind, so no other preset's (0.69 at most, the eerie one's) is any of it. */
 export const ROUGH_RAIN_FROM = 0.35;
 export const ROUGH_RAIN_TO = 0.5;
-export const ROUGH_WIND_FROM = 0.6;
-export const ROUGH_WIND_TO = 0.8;
+export const ROUGH_WIND_FROM = 0.7;
+export const ROUGH_WIND_TO = 0.9;
 
 const SHARE_AT_ENDS: Readonly<Record<WeatherPresetName, number>> = Object.freeze({
   clear: 1,
@@ -116,7 +116,9 @@ function smoothstep(a: number, b: number, x: number): number {
  * The rain's ramp runs from ROUGH_RAIN_FROM to ROUGH_RAIN_TO at any shelter
  * (the eerie preset's drizzle, under it, leaves the glass whole);
  * the wind's from ROUGH_WIND_FROM to ROUGH_WIND_TO on a body as exposed as
- * ROUGH_SHELTER, and not at all on one more sheltered. The larger of the two.
+ * ROUGH_SHELTER (the eerie preset's own wind, under it, leaves the glass
+ * whole too, and the rain preset's is all of it), and not at all on one
+ * more sheltered. The larger of the two.
  */
 export function roughShare(weather: WeatherParams, wind01: number, shelter: number): number {
   const rain = smoothstep(ROUGH_RAIN_FROM, ROUGH_RAIN_TO, weather.rain);

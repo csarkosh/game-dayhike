@@ -1336,9 +1336,9 @@ describe("the lake's calm", () => {
   it("takes the glass away in rain and on an exposed lake in a strong wind, the paws over all of it", () => {
     const rain = lakeCalmUnder(6.25, "rain", "rain", 1, WEATHER_PRESETS.rain, 0.9, 0.1, 900, GAME_FOV, calm());
     expect([rain.share, rain.rough, rain.roughShare, rain.cover]).toEqual([0, true, 1, 1]);
-    // Clear at dawn, but a gale on the clear lake: 0.75 is most of the way up the wind's ramp.
+    // Clear at dawn, but a gale on the clear lake: 0.75 is a little way up the wind's ramp.
     const gale = lakeCalmUnder(6.25, "clear", "clear", 1, WEATHER_PRESETS.clear, 0.75, 0.3, 900, GAME_FOV, calm());
-    expect([gale.share, gale.rough, gale.roughShare, gale.cover]).toEqual([0.15625, true, 0.84375, 0.84375]);
+    expect([gale.share, gale.rough, gale.roughShare, gale.cover]).toEqual([0.8437499999999999, true, 0.15625000000000014, 0.15625000000000014]);
     // The same wind on the sheltered murky lake leaves its glass.
     const sheltered = lakeCalmUnder(6.25, "clear", "clear", 1, WEATHER_PRESETS.clear, 0.75, 0.1, 900, GAME_FOV, calm());
     expect([sheltered.share, sheltered.rough, sheltered.roughShare, sheltered.cover]).toEqual([1, false, 0, 0]);
@@ -1355,13 +1355,16 @@ describe("the lake's calm", () => {
   });
 
   it("leaves the eerie lake the clear sky's glass at every hour: its drizzle is not rough", () => {
-    const shares = (name: "clear" | "eerie"): number[][] =>
+    // At the eerie preset's own wind, 0.69, on the sheltered lake and the exposed one.
+    const shares = (name: "clear" | "eerie", shelter: number): number[][] =>
       [0, 6.25, 8.5, 12, 17.5, 22].map((hour) => {
-        const c = lakeCalmUnder(hour, name, name, 1, WEATHER_PRESETS[name], 0.69, 0.1, 900, GAME_FOV, calm());
+        const c = lakeCalmUnder(hour, name, name, 1, WEATHER_PRESETS[name], 0.69, shelter, 900, GAME_FOV, calm());
         return [c.share, c.roughShare];
       });
-    expect(shares("eerie")).toEqual([[1, 0], [1, 0], [0.5, 0], [0, 0], [0.5, 0], [1, 0]]);
-    expect(shares("eerie")).toEqual(shares("clear"));
+    for (const shelter of [0.1, 0.3]) {
+      expect(shares("eerie", shelter), `${shelter}`).toEqual([[1, 0], [1, 0], [0.5, 0], [0, 0], [0.5, 0], [1, 0]]);
+      expect(shares("eerie", shelter), `${shelter}`).toEqual(shares("clear", shelter));
+    }
   });
 
   it("fades the share between two presets by the fade's progress, and holds a progress that is not a number at the first", () => {
