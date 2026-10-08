@@ -51,3 +51,59 @@ vec4 waterMirrorSample(vec2 uv, float smearPx) {
     + waterMirrorTap(uv - vec2(0.0, 3.0 * stride));
   return vec4(sum.rgb / max(sum.a, 1.0e-4), sum.a * 0.25);
 }
+
+// The medium and low tiers' shore (spec §6): no mirror pass, the reflected
+// ray read against the shore instead. The panorama (lakePanorama.ts) holds
+// the shore seen from the lake's centre PANORAMA_EYE_UP over the level, u the
+// azimuth and v the height over the level on the cylinder of the lake's
+// radius, 0 to PANORAMA_HEIGHT_M. The skyline (lakeSkyline.ts) holds, by
+// the same azimuth, the treeline's elevation from that eye in radians. The
+// two literals mirror lakePanorama.ts and a test holds them equal.
+const float PANORAMA_HEIGHT_M = 64.0;
+const float PANORAMA_EYE_UP = 0.4;
+
+// A horizontal direction's azimuth, 0 to 1 of a turn: 0 facing +z and a
+// quarter facing +x, as the panorama and the skyline lay their u. The nudge
+// keeps the arctangent from being asked for the angle of nothing.
+float waterAzimuth(vec2 d) {
+  return fract(atan(d.x, d.y + 1.0e-20) * RECIPROCAL_PI2 + 1.0);
+}
+
+// The reflected ray from origin against the vertical cylinder of the lake's
+// radius about its centre, where it leaves it (the far shore): x the hit's
+// azimuth, y its height over the level, z 1 where the ray meets the cylinder
+// ahead and 0 where it never does. Mirrors cylinderHit in lakeSkyline.ts.
+// Every term stays finite for any input, a radius of 0 or an upright ray
+// among them, so the mix that drops it never meets a NaN.
+vec3 waterCylinderHit(vec3 origin, vec3 dir) {
+  vec2 o = origin.xz - waterLakeCentre.xz;
+  float a = max(dot(dir.xz, dir.xz), 1.0e-8);
+  float b = dot(o, dir.xz);
+  float c = dot(o, o) - waterLakeRadius * waterLakeRadius;
+  float disc = b * b - a * c;
+  float t = (sqrt(max(disc, 0.0)) - b) / a;
+  return vec3(waterAzimuth(o + dir.xz * t), origin.y + dir.y * t - waterLakeCentre.y, step(0.0, disc) * step(0.0, t));
+}
+
+// Medium: the panorama where the reflected ray meets the shore's cylinder
+// below the skyline and the capture drew something there, the probe's own
+// radiance elsewhere. Seen from the centre's eye, the hit is below the
+// skyline when its rise over the eye is under the radius times the
+// skyline's tangent. The ripples are already in dir, and the cylinder keeps
+// the contact line: the ray's tilt moves the hit by the tilt times the ray's
+// run to the shore, which is nothing at the bank.
+vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 probeRadiance) {
+  vec3 hit = waterCylinderHit(origin, dir);
+  vec4 shore = texture2D(waterPanorama, vec2(hit.x, clamp(hit.y / PANORAMA_HEIGHT_M, 0.0, 1.0)));
+  float skyline = texture2D(waterSkyline, vec2(hit.x, 0.5)).r;
+  float below = step(hit.y - PANORAMA_EYE_UP, waterLakeRadius * tan(skyline));
+  return mix(probeRadiance, shore.rgb, hit.z * below * shore.a);
+}
+
+// Low: the forest's shade below the skyline at the reflected ray's own
+// azimuth and elevation, the probe's radiance above it. One read, one compare.
+vec3 waterSkylineRadiance(vec3 dir, vec3 probeRadiance) {
+  float skyline = texture2D(waterSkyline, vec2(waterAzimuth(dir.xz), 0.5)).r;
+  float below = step(dir.y, length(dir.xz) * tan(skyline));
+  return mix(probeRadiance, waterShadeColour, below);
+}

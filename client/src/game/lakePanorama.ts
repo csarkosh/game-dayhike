@@ -34,6 +34,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera.js";
@@ -41,7 +42,7 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport.js";
 import { Color4 } from "@babylonjs/core/Maths/math.color.js";
 import type { LakeSource } from "../sim/terrain.js";
-import { SKYLINE_EYE_UP } from "./lakeSkyline.js";
+import { SKYLINE_EYE_UP, SKYLINE_TEXELS } from "./lakeSkyline.js";
 
 export const PANORAMA_WIDTH = 1024, PANORAMA_HEIGHT = 128, PANORAMA_SECTORS = 16;
 /** The capture's eye over the level (m): the skyline's own, so the panorama
@@ -207,4 +208,23 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
       camera.dispose();
     },
   };
+}
+
+/**
+ * The skyline as the water reads it (`waterSkyline`, on medium and low):
+ * SKYLINE_TEXELS by 1, one 32-bit float a texel, the treeline's elevation
+ * from `skylineElevations`. Nearest, as a 32-bit float must be sampled on
+ * WebGPU, and clamped: a u in 0 to 1 never reaches past the last texel.
+ */
+export function createSkylineTexture(scene: Scene, elevations: Float32Array): RawTexture {
+  if (elevations.length !== SKYLINE_TEXELS) {
+    throw new Error(`a skyline is ${SKYLINE_TEXELS} elevations, not ${elevations.length}`);
+  }
+  const texture = RawTexture.CreateRTexture(
+    elevations, SKYLINE_TEXELS, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
+  );
+  texture.name = "lake_skyline";
+  texture.wrapU = Texture.CLAMP_ADDRESSMODE;
+  texture.wrapV = Texture.CLAMP_ADDRESSMODE;
+  return texture;
 }

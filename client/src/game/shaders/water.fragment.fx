@@ -14,6 +14,11 @@ uniform sampler2D waterDepth;
 // The lake's mirror (lakeMirror.fragment.fx), declared on a lake alone: the
 // sea binds a placeholder to a name its stages never declare.
 uniform sampler2D waterMirror;
+// The lake's shore on medium and low (lakeMirror.fragment.fx), on a lake
+// alone too: the panorama, half float, and the skyline, a 32-bit float a
+// texel.
+uniform sampler2D waterPanorama;
+uniform highp sampler2D waterSkyline;
 #endif
 
 varying float vBedDepth;

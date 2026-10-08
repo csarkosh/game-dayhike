@@ -599,14 +599,16 @@ describe("inter-stage variables and textures of a lake's water material on WebGP
     }
   });
 
-  it("binds eight textures in the fragment stage, the mirror's the one more, and none in the vertex stage", () => {
+  it("binds ten textures in the fragment stage, the mirror's, the panorama's and the skyline's the three more, and none in the vertex stage", () => {
     for (const [tier, effect] of lakes) {
       const { vertex, fragment } = stageBindings(effect);
       expect({ vertex: [vertex.textures, vertex.samplers], fragment: [fragment.textures, fragment.samplers] }, `${tier}: ${WEIGH_LAKE}`).toEqual({
         vertex: [0, 0],
-        fragment: [8, 8],
+        fragment: [10, 10],
       });
       expect(effect._processingContext.availableTextures, tier).toHaveProperty("waterMirror");
+      expect(effect._processingContext.availableTextures, tier).toHaveProperty("waterPanorama");
+      expect(effect._processingContext.availableTextures, tier).toHaveProperty("waterSkyline");
       expect(fragment.textures).toBeLessThanOrEqual(WEBGPU_REQUIRED_LIMITS.maxSampledTexturesPerShaderStage as number);
     }
   });

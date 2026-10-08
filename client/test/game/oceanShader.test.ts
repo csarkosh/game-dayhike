@@ -848,13 +848,13 @@ describe("a lake's shaders", () => {
     // Each hook through Babylon's preprocessor with a lake's gates, hashed as it was at 9edee7e; the
     // lights' hashed again once the lake's ripples replaced its octaves' and rings' lines (their own
     // test, waterPlugin.test.ts, pins what they are); the water's definitions and the composition
-    // hashed again as the lake's mirror left them (its sampler, its read).
+    // hashed again as the lake's mirror and its shore left them (their samplers, their reads).
     const before: Record<string, string> = {
       "water.vertex.fx": "3732482554b89e357fec2298edc8724ad085cc9defe35017b243df6b7782d50b",
       "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
-      "water.fragment.fx": "759fcb042fdedb3f6fbad01f0e8a644f6e9f4fe2647edc3ad47669e025259e01",
+      "water.fragment.fx": "64d0992cb60dc15186b2dc2e90f3e62ebecca81a74fe09aac825c88328089fb2",
       "waterLights.fragment.fx": "ebeaa270855bcd9af92596e22fcb7f5bad43ee1d6452e64354f3651f90baa0ce",
-      "waterCompose.fragment.fx": "260fab1108e62f563f39a9d52cb7305369f6a2b10e558f2a627a72a46ce79eb8",
+      "waterCompose.fragment.fx": "7e560f0b7fa18d38495011156a18def2987ced4d1ef5a77fba0534823fb65cf3",
     };
     for (const [name, hash] of Object.entries(before)) {
       expect(sha256(await processed(fx(name), !name.includes(".vertex."))), name).toBe(hash);
@@ -987,6 +987,10 @@ describe("the water material's stages, compiled", () => {
       const f = lake.effect._fragmentSourceCode;
       expect(lake.defines).not.toContain("#define OCEAN");
       expect(f).toContain("float roughness=reflectivityOut.roughness;");
+      // the lake's shore read, the panorama's and the skyline's, translated with the rest
+      expect(f).toContain("vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 probeRadiance)");
+      expect(f).toContain("vec3 waterCylinderHit(vec3 origin, vec3 dir)");
+      expect(f).toContain("vec3 waterSkylineRadiance(vec3 dir, vec3 probeRadiance)");
       expect(f).toContain("lakeRipple2(vPositionW.xz)");
       expect(f).toContain("float wPaw = lakePaw(");
       expect(f).toContain("lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain,");

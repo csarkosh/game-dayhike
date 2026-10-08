@@ -12,7 +12,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import type { LakeSource } from "../../src/sim/terrain.js";
 import {
-  createLakePanorama, panoramaProjection, PANORAMA_EYE_UP, PANORAMA_FAR, PANORAMA_HEIGHT, PANORAMA_HEIGHT_M,
+  createLakePanorama, createSkylineTexture, panoramaProjection, PANORAMA_EYE_UP, PANORAMA_FAR, PANORAMA_HEIGHT, PANORAMA_HEIGHT_M,
   PANORAMA_NEAR, PANORAMA_SECTORS, PANORAMA_WIDTH, type LakePanorama,
 } from "../../src/game/lakePanorama.js";
 
@@ -288,5 +288,28 @@ describe("createLakePanorama", () => {
     // A registry call after dispose is a no-op.
     pano.register(ring, null);
     pano.unregister(ring);
+  });
+});
+
+describe("createSkylineTexture", () => {
+  it("is 512 by 1, one 32-bit float a texel, nearest and clamped", () => {
+    const s = scene();
+    const t = createSkylineTexture(s, Float32Array.from({ length: 512 }, (_, i) => i / 1024));
+    expect(t.name).toBe("lake_skyline");
+    expect(t.getSize()).toEqual({ width: 512, height: 1 });
+    expect(t.format).toBe(Constants.TEXTUREFORMAT_R);
+    expect(t.getInternalTexture()?.type).toBe(Constants.TEXTURETYPE_FLOAT);
+    expect(t.getInternalTexture()?.format).toBe(Constants.TEXTUREFORMAT_R);
+    expect(t.samplingMode).toBe(Texture.NEAREST_SAMPLINGMODE);
+    expect([t.wrapU, t.wrapV]).toEqual([Texture.CLAMP_ADDRESSMODE, Texture.CLAMP_ADDRESSMODE]);
+    expect(s.textures).toContain(t);
+    t.dispose();
+    expect(s.textures).not.toContain(t);
+  });
+
+  it("refuses a skyline of any other length", () => {
+    const s = scene();
+    expect(() => createSkylineTexture(s, new Float32Array(511))).toThrow("a skyline is 512 elevations, not 511");
+    expect(() => createSkylineTexture(s, new Float32Array(1024))).toThrow("a skyline is 512 elevations, not 1024");
   });
 });

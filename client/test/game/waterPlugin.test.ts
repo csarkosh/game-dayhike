@@ -20,6 +20,9 @@ import {
   OCEAN_ROUGHNESS_ANCHOR, WaterPlugin, attachWater, oceanArrayPlaceholder, waterMirrorPlaceholder, type OceanBinding,
 } from "../../src/game/waterPlugin.js";
 import { MIRROR_DEPTH_FULL, MIRROR_OFFSET_K } from "../../src/game/mirrorView.js";
+import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../../src/game/lakePanorama.js";
+import { cylinderHit } from "../../src/game/lakeSkyline.js";
+import { helperFunctions } from "@babylonjs/core/Shaders/ShadersInclude/helperFunctions.js";
 import { drawnEffect, probeReady, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH, WATER_SKIN_DRIFT } from "../../src/game/waterShading.js";
@@ -52,7 +55,7 @@ describe("water plugin", () => {
     expect(attributes).toEqual(["bedDepth"]);
     const samplers: string[] = [];
     p.getSamplers(samplers);
-    expect(samplers).toEqual(["waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope", "waterMirror"]);
+    expect(samplers).toEqual(["waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope", "waterMirror", "waterPanorama", "waterSkyline"]);
     const v = p.getCustomCode("vertex")!;
     expect(Object.keys(v).sort()).toEqual(["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_POSITION", "CUSTOM_VERTEX_UPDATE_WORLDPOS"]);
     const f = p.getCustomCode("fragment")!;
@@ -456,7 +459,7 @@ describe("the lake's ripples in the water plugin", () => {
     }
     // taken off its ocean, a material is a lake's again, and declares them
     sea.ocean = null;
-    expect(sea.getUniforms().ubo).toHaveLength(32);
+    expect(sea.getUniforms().ubo).toHaveLength(37);
   });
 
   it("wraps the lake's time as the wind's and clamps the paws' cover to 0..1, either 0 when it is not finite", () => {
@@ -549,7 +552,7 @@ describe("the sea's waves in the water plugin", () => {
     expect(u.ubo[u.ubo.length - 1]).toEqual({ name: "oceanK", size: 4, type: "vec4", arraySize: 12 });
     expect(u.fragment).toContain("uniform vec4 oceanK[12];");
     expect(u.vertex).toContain("uniform vec4 oceanK[12];");
-    expect(u.ubo).toHaveLength(32);
+    expect(u.ubo).toHaveLength(37);
   });
 
   it("declares its samplers in the .fx and never in getUniforms, and gates every line of its GLSL on OCEAN", () => {
@@ -836,14 +839,15 @@ describe("the lake's mirror in the water plugin", () => {
     expect(samplers).toContain("waterMirror");
     expect(fx("water.fragment.fx")).toContain(
       "uniform sampler2D waterDepth;\n#ifndef OCEAN\n// The lake's mirror (lakeMirror.fragment.fx), declared on a lake alone: the\n" +
-        "// sea binds a placeholder to a name its stages never declare.\nuniform sampler2D waterMirror;\n#endif\n",
+        "// sea binds a placeholder to a name its stages never declare.\nuniform sampler2D waterMirror;\n",
     );
     const u = p.getUniforms();
     expect(u.ubo.map((e) => e.name).slice(13, 21)).toEqual(["waterLakeTime", "waterPawCover", ...MIRROR_UNIFORMS]);
     // the view-projection's four columns, an array as the sea's components are
     expect(u.ubo[15]).toEqual({ name: "waterMirrorVP", size: 4, type: "vec4", arraySize: 4 });
-    expect(u.ubo[21]).toEqual({ name: "oceanPhase0", size: 4, type: "vec4" });
-    expect(u.ubo).toHaveLength(32);
+    expect(u.ubo[21]).toEqual({ name: "waterLakeCentre", size: 3, type: "vec3" });
+    expect(u.ubo[26]).toEqual({ name: "oceanPhase0", size: 4, type: "vec4" });
+    expect(u.ubo).toHaveLength(37);
     for (const name of MIRROR_UNIFORMS.slice(1)) {
       expect(u.ubo).toContainEqual({ name, size: 1, type: "float" });
       expect(u.fragment).toContain(`uniform float ${name};`);
@@ -886,6 +890,23 @@ describe("the lake's mirror in the water plugin", () => {
     expect(b.textures.waterMirror).toBe(waterMirrorPlaceholder(scene));
     expect(b.floats.waterMirrorOn).toBe(0);
     expect(b.arrays.waterMirrorVP?.[0]).toBe(99);
+  });
+
+  it("takes a calm that is not finite as 0, the share and the weight clamped to 0..1 and the smear to 0 and up", () => {
+    const p = attachWater(new PBRMaterial("wM2c", scene), WATER_ROWS.lowlandLake);
+    p.bedTexture = bedTexture();
+    const calm = (): (number | undefined)[] => {
+      const { floats } = bound(p);
+      return [floats.waterCalmShare, floats.waterMirrorWeight, floats.waterMirrorSmearPx];
+    };
+    p.setCalm(Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY);
+    expect(calm()).toEqual([0, 0, 0]);
+    p.setCalm(-1, 2, -1);
+    expect(calm()).toEqual([0, 1, 0]);
+    p.setCalm(2, -1, Number.NaN);
+    expect(calm()).toEqual([1, 0, 0]);
+    p.setCalm(0.5, 0.25, 12);
+    expect(calm()).toEqual([0.5, 0.25, 12]);
   });
 
   it("binds every sampler it lists on a lake with and without its mirror, and on the sea, which binds the placeholder and none of the floats", () => {
@@ -943,8 +964,13 @@ describe("the lake's mirror in the water plugin", () => {
     const block = /#ifndef OCEAN\n#ifdef REFLECTION\n(?:\/\/[^\n]*\n)*([^#]*)#endif\n#endif\n/.exec(c);
     expect(block?.[1]).toBe(
       "vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx);\n" +
-        "float wMirrorW = waterMirrorOn * waterMirrorWeight * (1.0 - wPaw) * waterCalmShare * wMirror.a;\n" +
-        "finalRadianceScaled = mix(finalRadianceScaled, wMirror.rgb * colorSpecularEnvironmentReflectance, wMirrorW);\n",
+        "vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb;\n" +
+        "vec3 wShoreRay = reflect(-viewDirectionW, normalW);\n" +
+        "vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));\n" +
+        "wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance), step(0.5, waterPanoramaOn));\n" +
+        "wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);\n" +
+        "float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;\n" +
+        "finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);\n",
     );
     expect(c.indexOf("wMirrorW);")).toBeLessThan(c.indexOf("finalRadianceScaled *= 1.0 - wSkin;"));
     // the paw mask, 0 on glass, in the lake's branch of the lights, declared there once
@@ -1041,4 +1067,399 @@ describe("the lake's mirror in the water plugin", () => {
     expect(off).toContain("#define waterMirror sampler2D(waterMirrorTexture, waterMirrorSampler)");
     expect(on).toBe(off);
   }, timeLimit(30_000));
+});
+
+/** What one bind writes: every float, vector and texture by its name. */
+function boundBy(p: WaterPlugin): { values: Record<string, number[]>; textures: Record<string, unknown> } {
+  const values: Record<string, number[]> = {};
+  const textures: Record<string, unknown> = {};
+  const ubo = new Proxy({}, {
+    get: (_t, key) => {
+      if (key === "setTexture") return (name: string, t: unknown) => void (textures[name] = t);
+      return (name: string, ...rest: unknown[]) => void (values[name] = rest.map(Number));
+    },
+  }) as unknown as UniformBuffer;
+  p.bindForSubMesh(ubo);
+  return { values, textures };
+}
+
+describe("the lake's shore on medium and low in the water plugin", () => {
+  const SHORE_UNIFORMS = ["waterLakeCentre", "waterLakeRadius", "waterShadeColour", "waterPanoramaOn", "waterSkylineOn"];
+
+  it("declares the panorama's and the skyline's samplers in the .fx and lists them, never in getUniforms", () => {
+    const own = new NullEngine();
+    try {
+      const p = attachWater(new PBRMaterial("wShore1", new Scene(own)), WATER_ROWS.lowlandLake);
+      const samplers: string[] = [];
+      p.getSamplers(samplers);
+      expect(samplers.slice(-2)).toEqual(["waterPanorama", "waterSkyline"]);
+      // beside the mirror's, under the same gate: declared on a lake alone
+      expect(fx("water.fragment.fx")).toContain(
+        "uniform sampler2D waterMirror;\n// The lake's shore on medium and low (lakeMirror.fragment.fx), on a lake\n" +
+          "// alone too: the panorama, half float, and the skyline, a 32-bit float a\n// texel.\n" +
+          "uniform sampler2D waterPanorama;\nuniform highp sampler2D waterSkyline;\n#endif\n",
+      );
+      expect(p.getUniforms().fragment).not.toContain("sampler");
+    } finally {
+      own.dispose();
+    }
+  });
+
+  it("declares the lake's body, the shade and the two flags on both paths on a lake alone, after the mirror's and before the sea's", () => {
+    const own = new NullEngine();
+    try {
+      const s = new Scene(own);
+      const u = attachWater(new PBRMaterial("wShore2", s), WATER_ROWS.lowlandLake).getUniforms();
+      const names = u.ubo.map((e) => e.name);
+      const at = names.indexOf("waterLakeCentre");
+      expect(at).toBe(names.indexOf("waterCalmShare") + 1);
+      expect(u.ubo.slice(at, at + 5)).toEqual([
+        { name: "waterLakeCentre", size: 3, type: "vec3" },
+        { name: "waterLakeRadius", size: 1, type: "float" },
+        { name: "waterShadeColour", size: 3, type: "vec3" },
+        { name: "waterPanoramaOn", size: 1, type: "float" },
+        { name: "waterSkylineOn", size: 1, type: "float" },
+      ]);
+      expect(at + 5).toBe(names.indexOf("oceanPhase0"));
+      for (const line of [
+        "uniform vec3 waterLakeCentre;", "uniform float waterLakeRadius;", "uniform vec3 waterShadeColour;",
+        "uniform float waterPanoramaOn;", "uniform float waterSkylineOn;",
+      ]) expect(u.fragment).toContain(line);
+      expect(u.vertex).not.toContain("waterLake");
+      // the sea declares none of them: its uniforms are as they were before the lake's
+      const sea = attachWater(new PBRMaterial("wShore2Sea", s), WATER_ROWS.sea);
+      sea.ocean = testOcean();
+      const seaU = sea.getUniforms();
+      expect(seaU.ubo).toHaveLength(24);
+      for (const name of SHORE_UNIFORMS) {
+        expect(seaU.ubo.map((e) => e.name), name).not.toContain(name);
+        expect(seaU.fragment, name).not.toContain(name);
+      }
+    } finally {
+      own.dispose();
+    }
+  });
+
+  it("binds the three flags at 0, the body and the shade at 0 and the mirror's placeholder on a lake until the shore is set; the sea the placeholder and none of the floats, whatever it is given", () => {
+    const own = new NullEngine();
+    try {
+      const s = new Scene(own);
+      const lake = attachWater(new PBRMaterial("wShore3Lake", s), WATER_ROWS.lowlandLake);
+      const { values, textures } = boundBy(lake);
+      expect(values.waterMirrorOn).toEqual([0]);
+      expect(values.waterPanoramaOn).toEqual([0]);
+      expect(values.waterSkylineOn).toEqual([0]);
+      expect(values.waterLakeCentre).toEqual([0, 0, 0]);
+      expect(values.waterLakeRadius).toEqual([0]);
+      expect(values.waterShadeColour).toEqual([0, 0, 0]);
+      expect(textures.waterPanorama).toBe(waterMirrorPlaceholder(s));
+      expect(textures.waterSkyline).toBe(waterMirrorPlaceholder(s));
+      expect(lake.lakeBody).toEqual([0, 0, 0, 0]);
+      expect(lake.shadeColour).toEqual([0, 0, 0]);
+      const sea = attachWater(new PBRMaterial("wShore3Sea", s), WATER_ROWS.sea);
+      sea.ocean = testOcean();
+      sea.setPanorama(new BaseTexture(s));
+      sea.setSkyline(new BaseTexture(s), [0.03, 0.04, 0.05]);
+      sea.setLakeBody(-97.4, 50.79, 324, 26.1);
+      const onSea = boundBy(sea);
+      for (const name of SHORE_UNIFORMS) expect(onSea.values[name], name).toBeUndefined();
+      expect(onSea.textures.waterPanorama).toBe(waterMirrorPlaceholder(s));
+      expect(onSea.textures.waterSkyline).toBe(waterMirrorPlaceholder(s));
+    } finally {
+      own.dispose();
+    }
+  });
+
+  it("binds the panorama, the skyline, the shade and the lake's body once set, and the placeholder again once cleared", () => {
+    const own = new NullEngine();
+    try {
+      const s = new Scene(own);
+      const p = attachWater(new PBRMaterial("wShore4", s), WATER_ROWS.lowlandLake);
+      const panorama = new BaseTexture(s);
+      const skyline = new BaseTexture(s);
+      p.setPanorama(panorama);
+      p.setSkyline(skyline, [0.03, 0.04, 0.05]);
+      p.setLakeBody(-97.4, 50.79, 324, 26.1);
+      const set = boundBy(p);
+      expect(set.values.waterPanoramaOn).toEqual([1]);
+      expect(set.values.waterSkylineOn).toEqual([1]);
+      expect(set.textures.waterPanorama).toBe(panorama);
+      expect(set.textures.waterSkyline).toBe(skyline);
+      expect(set.values.waterShadeColour).toEqual([0.03, 0.04, 0.05]);
+      expect(set.values.waterLakeCentre).toEqual([-97.4, 50.79, 324]);
+      expect(set.values.waterLakeRadius).toEqual([26.1]);
+      // The low tier: the skyline alone.
+      p.setPanorama(null);
+      const low = boundBy(p);
+      expect(low.values.waterPanoramaOn).toEqual([0]);
+      expect(low.values.waterSkylineOn).toEqual([1]);
+      expect(low.textures.waterPanorama).toBe(waterMirrorPlaceholder(s));
+      p.setSkyline(null, [0, 0, 0]);
+      const none = boundBy(p);
+      expect(none.values.waterSkylineOn).toEqual([0]);
+      expect(none.textures.waterSkyline).toBe(waterMirrorPlaceholder(s));
+      // The shade is copied, not kept: the caller's array is its own.
+      const shade: [number, number, number] = [0.1, 0.2, 0.3];
+      p.setSkyline(skyline, shade);
+      shade[0] = 9;
+      expect(boundBy(p).values.waterShadeColour).toEqual([0.1, 0.2, 0.3]);
+    } finally {
+      own.dispose();
+    }
+  });
+
+  it("binds every sampler it lists on the sea and on a lake with the shore on medium, on low and with none", () => {
+    const own = new NullEngine();
+    try {
+      const s = new Scene(own);
+      const bed = (): RawTexture =>
+        RawTexture.CreateRTexture(new Float32Array(4), 2, 2, s, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+      const panorama = new BaseTexture(s);
+      const skyline = new BaseTexture(s);
+      const sea = attachWater(new PBRMaterial("wShore5Sea", s), WATER_ROWS.sea);
+      const lake = attachWater(new PBRMaterial("wShore5Lake", s), WATER_ROWS.lowlandLake);
+      sea.bedTexture = bed();
+      sea.ocean = testOcean();
+      lake.bedTexture = bed();
+      const states: [string, WaterPlugin, () => void][] = [
+        ["the sea", sea, () => undefined],
+        ["a lake with no shore", lake, () => undefined],
+        ["a lake on medium", lake, () => { lake.setPanorama(panorama); lake.setSkyline(skyline, [0, 0, 0]); }],
+        ["a lake on low", lake, () => { lake.setPanorama(null); }],
+      ];
+      const missing: string[] = [];
+      for (const [state, p, enter] of states) {
+        enter();
+        const declared: string[] = [];
+        p.getSamplers(declared);
+        const { textures } = boundBy(p);
+        for (const sampler of declared) if (!(sampler in textures)) missing.push(`${state}: ${sampler}`);
+      }
+      expect(missing).toEqual([]);
+    } finally {
+      own.dispose();
+    }
+  });
+
+  it("keeps one stage text whatever the shore holds: a lake's and the sea's compile the same with and without it", async () => {
+    /** One material's stages, on an engine of its own (an engine shares an
+     * effect between materials of one define set), after `shore` runs. */
+    const compiled = async (sea: boolean, shore: (p: WaterPlugin, s: Scene) => void): Promise<{ vertex: string; fragment: string }> => {
+      const own = webgpuProcessingEngine();
+      try {
+        const s = new Scene(own);
+        s.activeCamera = new UniversalCamera("c", new Vector3(0, 2, -5), s);
+        // A sky probe, as the game's scene has: the reflection, and the read with it.
+        s.environmentTexture = new ReflectionProbe("environment", 16, s, true, false, false).cubeTexture;
+        probeReady(s);
+        const material = new PBRMaterial("water", s);
+        material.backFaceCulling = false;
+        const plugin = attachWater(material, sea ? WATER_ROWS.sea : WATER_ROWS.lowlandLake);
+        plugin.bedTexture = RawTexture.CreateRTexture(new Float32Array(4), 2, 2, s, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+        if (sea) plugin.ocean = { ...testOcean(), atlas: plugin.bedTexture, windDisp: oceanArrayPlaceholder(s), windSlope: oceanArrayPlaceholder(s) };
+        shore(plugin, s);
+        const mesh = MeshBuilder.CreateGround("ground", { width: 4, height: 4 }, s);
+        const vertices = mesh.getTotalVertices();
+        mesh.setVerticesData("bedDepth", new Float32Array(vertices), false, 1);
+        mesh.setVerticesData("oceanMorph", new Float32Array(vertices), false, 1);
+        mesh.setVerticesData("oceanCoarse", new Float32Array(vertices * 2), false, 2);
+        mesh.material = material;
+        const effect = await drawnEffect(mesh);
+        return { vertex: effect._vertexSourceCode, fragment: effect._fragmentSourceCode };
+      } finally {
+        own.dispose();
+      }
+    };
+    const none = (): void => undefined;
+    const medium = (p: WaterPlugin, s: Scene): void => {
+      p.setPanorama(new BaseTexture(s));
+      p.setSkyline(RawTexture.CreateRTexture(new Float32Array(512), 512, 1, s, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT), [0.02, 0.03, 0.02]);
+      p.setLakeBody(-97.4, 50.79, 324, 26.1);
+    };
+    const lake = await compiled(false, none);
+    const lakeMedium = await compiled(false, medium);
+    expect(lakeMedium.vertex).toBe(lake.vertex);
+    expect(lakeMedium.fragment).toBe(lake.fragment);
+    expect(lake.fragment).toContain("waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance)");
+    const sea = await compiled(true, none);
+    const seaShore = await compiled(true, medium);
+    expect(seaShore.vertex).toBe(sea.vertex);
+    expect(seaShore.fragment).toBe(sea.fragment);
+    // and the sea declares neither sampler nor any of the five uniforms and
+    // reads none of them: its stages never meet the lake's shore
+    for (const name of [
+      /\bwaterPanorama\b/, /\bwaterSkyline\b/, /waterPanoramaRadiance/, /waterSkylineRadiance/, /waterCylinderHit/,
+      /\bwaterLakeCentre\b/, /\bwaterLakeRadius\b/, /\bwaterShadeColour\b/, /\bwaterPanoramaOn\b/, /\bwaterSkylineOn\b/,
+    ]) {
+      expect(sea.fragment, String(name)).not.toMatch(name);
+      expect(lake.fragment, String(name)).toMatch(name);
+    }
+  }, timeLimit(30_000));
+});
+
+/** The read's stage, its lines pinned below and transcribed here. */
+const SHORE = fx("lakeMirror.fragment.fx");
+const COMPOSE = fx("waterCompose.fragment.fx");
+
+describe("the lake's shore read on medium and low", () => {
+  const consts = Object.fromEntries(
+    [...SHORE.matchAll(/const float (PANORAMA_\w+) = ([^;]+);/g)].map((m) => [m[1] as string, m[2] as string]),
+  );
+  const c = (name: string): number => Number(consts[name]);
+  /** Babylon's 1 / 2 pi, as its helper functions declare it (pinned below). */
+  const RECIPROCAL_PI2 = 0.15915494309189535;
+  const fract = (x: number): number => x - Math.floor(x);
+  const step = (edge: number, x: number): number => (x >= edge ? 1 : 0);
+  const clamp01 = (x: number): number => Math.min(Math.max(x, 0), 1);
+  /** waterAzimuth, transcribed. */
+  const azimuth = (x: number, y: number): number => fract(Math.atan2(x, y + 1.0e-20) * RECIPROCAL_PI2 + 1);
+  type V3 = [number, number, number];
+  /** waterCylinderHit, transcribed: the lake's centre (x, level, z) and radius as the uniforms hold them. */
+  const stageHit = (origin: V3, dir: V3, centre: V3, radius: number): V3 => {
+    const o = [origin[0] - centre[0], origin[2] - centre[2]];
+    const a = Math.max(dir[0] * dir[0] + dir[2] * dir[2], 1.0e-8);
+    const b = o[0]! * dir[0] + o[1]! * dir[2];
+    const cc = o[0]! * o[0]! + o[1]! * o[1]! - radius * radius;
+    const disc = b * b - a * cc;
+    const t = (Math.sqrt(Math.max(disc, 0)) - b) / a;
+    return [azimuth(o[0]! + dir[0] * t, o[1]! + dir[2] * t), origin[1] + dir[1] * t - centre[1], step(0, disc) * step(0, t)];
+  };
+  /** How much of waterPanoramaRadiance is the panorama, transcribed, for a panorama alpha and a skyline elevation. */
+  const panoramaShare = (hit: V3, radius: number, alpha: number, skyline: number): number =>
+    hit[2] * step(hit[1] - c("PANORAMA_EYE_UP"), radius * Math.tan(skyline)) * alpha;
+  /** Whether waterSkylineRadiance shades, transcribed, for a skyline elevation. */
+  const skylineShade = (dir: V3, skyline: number): number => step(dir[1], Math.hypot(dir[0], dir[2]) * Math.tan(skyline));
+  const MURKY: V3 = [-97.4, 50.79, 324];
+  const unit = (v: V3): V3 => { const l = Math.hypot(...v); return [v[0] / l, v[1] / l, v[2] / l]; };
+
+  it("holds its literals in lockstep with lakePanorama.ts, takes 1 / 2 pi from Babylon, and branches by step alone", () => {
+    expect(consts).toEqual({ PANORAMA_HEIGHT_M: "64.0", PANORAMA_EYE_UP: "0.4" });
+    expect(consts.PANORAMA_HEIGHT_M).toBe(glslFloat(PANORAMA_HEIGHT_M));
+    expect(consts.PANORAMA_EYE_UP).toBe(glslFloat(PANORAMA_EYE_UP));
+    expect(helperFunctions.shader).toContain("const float RECIPROCAL_PI2=0.15915494309189535;");
+    const read = SHORE.slice(SHORE.indexOf("float waterAzimuth("));
+    expect(read).not.toMatch(/\bif\s*\(/);
+    expect(read).not.toContain("?");
+    expect(read).not.toContain("discard");
+    const chain = COMPOSE.slice(COMPOSE.indexOf("vec3 wProbeRadiance"), COMPOSE.indexOf("finalRadianceScaled *= 1.0 - wSkin;"));
+    expect(chain).not.toMatch(/\bif\s*\(/);
+    expect(chain).not.toContain("?");
+  });
+
+  it("pins the lines transcribed here", () => {
+    for (const line of [
+      "return fract(atan(d.x, d.y + 1.0e-20) * RECIPROCAL_PI2 + 1.0);",
+      "vec2 o = origin.xz - waterLakeCentre.xz;",
+      "float a = max(dot(dir.xz, dir.xz), 1.0e-8);",
+      "float b = dot(o, dir.xz);",
+      "float c = dot(o, o) - waterLakeRadius * waterLakeRadius;",
+      "float disc = b * b - a * c;",
+      "float t = (sqrt(max(disc, 0.0)) - b) / a;",
+      "return vec3(waterAzimuth(o + dir.xz * t), origin.y + dir.y * t - waterLakeCentre.y, step(0.0, disc) * step(0.0, t));",
+      "vec4 shore = texture2D(waterPanorama, vec2(hit.x, clamp(hit.y / PANORAMA_HEIGHT_M, 0.0, 1.0)));",
+      "float skyline = texture2D(waterSkyline, vec2(hit.x, 0.5)).r;",
+      "float below = step(hit.y - PANORAMA_EYE_UP, waterLakeRadius * tan(skyline));",
+      "return mix(probeRadiance, shore.rgb, hit.z * below * shore.a);",
+      "float skyline = texture2D(waterSkyline, vec2(waterAzimuth(dir.xz), 0.5)).r;",
+      "float below = step(dir.y, length(dir.xz) * tan(skyline));",
+      "return mix(probeRadiance, waterShadeColour, below);",
+    ]) expect(SHORE, line).toContain(line);
+  });
+
+  it("meets the shore's cylinder where cylinderHit does: a ray from the murky lake's surface to its far bank", () => {
+    const origin: V3 = [-90, 50.81, 330];
+    const dir = unit([-0.6, 0.2, 0.75]);
+    const hit = stageHit(origin, dir, MURKY, 26.1);
+    const twin = cylinderHit(origin, dir, -97.4, 324, 26.1, 50.79);
+    expect(twin).not.toBeNull();
+    // North-north-west, 24.76 m along the ray, 5.07 m up the cylinder.
+    expect(hit[0]).toBeCloseTo(0.952078, 6);
+    expect(hit[1]).toBeCloseTo(5.066867, 6);
+    expect(hit[2]).toBe(1);
+    expect(twin!.u).toBeCloseTo(0.952078, 6);
+    expect(twin!.height).toBeCloseTo(5.066867, 6);
+    // The panorama's v there: 5.07 m of its 64.
+    expect(clamp01(hit[1] / c("PANORAMA_HEIGHT_M"))).toBeCloseTo(0.079170, 6);
+    // Under a treeline at 0.5 rad (14.26 m up the cylinder over the eye) it
+    // reads the panorama; under one at 0.1 rad (2.62 m) the probe; and the
+    // panorama's own alpha leaves its sky to the probe.
+    expect(panoramaShare(hit, 26.1, 1, 0.5)).toBe(1);
+    expect(panoramaShare(hit, 26.1, 1, 0.1)).toBe(0);
+    expect(panoramaShare(hit, 26.1, 0, 0.5)).toBe(0);
+  });
+
+  it("agrees with cylinderHit round the turn and from the rim, and leaves to the probe the rays that never meet it", () => {
+    const cases: [V3, V3][] = [
+      [[-97.4, 50.81, 324], unit([1, 0.1, 0])],
+      [[-97.4, 50.81, 324], unit([0, 0.3, -1])],
+      [[-110, 50.81, 320], unit([-1, 0.05, 0.2])],
+      [[-80, 50.81, 330], unit([0.3, 0.6, -0.4])],
+    ];
+    const want: [number, number][] = [[0.25, 2.63], [0.5, 7.85], [0.74203, 0.693364], [0.280459, 16.466948]];
+    cases.forEach(([origin, dir], k) => {
+      const hit = stageHit(origin, dir, MURKY, 26.1);
+      const twin = cylinderHit(origin, dir, -97.4, 324, 26.1, 50.79)!;
+      expect(hit[0], `case ${k}`).toBeCloseTo(want[k]![0], 6);
+      expect(hit[1], `case ${k}`).toBeCloseTo(want[k]![1], 6);
+      expect(twin.u, `case ${k}`).toBeCloseTo(want[k]![0], 6);
+      expect(twin.height, `case ${k}`).toBeCloseTo(want[k]![1], 6);
+      expect(hit[2], `case ${k}`).toBe(1);
+    });
+    // From outside the cylinder, pointing away: no hit, and the probe.
+    const away = stageHit([-60, 50.81, 324], [1, 0, 0], MURKY, 26.1);
+    expect(cylinderHit([-60, 50.81, 324], [1, 0, 0], -97.4, 324, 26.1, 50.79)).toBeNull();
+    expect(away[2]).toBe(0);
+    expect(panoramaShare(away, 26.1, 1, 1.5)).toBe(0);
+    // Straight up: cylinderHit has none, and the stage's hit lies so far up
+    // the cylinder that no skyline holds it.
+    const up = stageHit([-90, 50.81, 330], [0, 1, 0], MURKY, 26.1);
+    expect(cylinderHit([-90, 50.81, 330], [0, 1, 0], -97.4, 324, 26.1, 50.79)).toBeNull();
+    expect(Number.isFinite(up[1])).toBe(true);
+    expect(panoramaShare(up, 26.1, 1, 1.5)).toBe(0);
+  });
+
+  it("stays finite with a body of zeros, as the lake's is until it is set, so the mix that drops it never meets a NaN", () => {
+    for (const [origin, dir] of [
+      [[412, 0.02, -88], unit([0.3, 0.2, 0.9])],
+      [[412, 0.02, -88], unit([-412, 5, 88])],
+      [[0, 0.02, 0], [0, 1, 0]],
+      [[0, 0.02, 0], unit([1, 0.1, 0])],
+    ] as [V3, V3][]) {
+      const hit = stageHit(origin, dir, [0, 0, 0], 0);
+      expect(hit.every(Number.isFinite), `${origin} ${dir}`).toBe(true);
+      expect(Number.isFinite(panoramaShare(hit, 0, 0, 0))).toBe(true);
+    }
+    expect(azimuth(0, 0)).toBe(0);
+  });
+
+  it("shades the low tier's reflection below the skyline at the ray's own azimuth and elevation", () => {
+    // A ray 0.3 rad up, facing +x: azimuth a quarter turn.
+    const dir: V3 = [Math.cos(0.3), Math.sin(0.3), 0];
+    expect(azimuth(dir[0], dir[2])).toBeCloseTo(0.25, 12);
+    expect(skylineShade(dir, 0.35)).toBe(1);
+    expect(skylineShade(dir, 0.25)).toBe(0);
+    // Straight up is never under a skyline.
+    expect(skylineShade([0, 1, 0], 1.5)).toBe(0);
+    // Facing -z is half a turn, facing -x three quarters.
+    expect(azimuth(0, -1)).toBeCloseTo(0.5, 12);
+    expect(azimuth(-1, 0)).toBeCloseTo(0.75, 12);
+  });
+
+  it("substitutes the shore before the skin's scaling, the mirror over the panorama over the skyline over the probe", () => {
+    const lines = [
+      "vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb;",
+      "vec3 wShoreRay = reflect(-viewDirectionW, normalW);",
+      "vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));",
+      "wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance), step(0.5, waterPanoramaOn));",
+      "wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);",
+      "float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;",
+      "finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);",
+    ];
+    const at = lines.map((line) => COMPOSE.indexOf(line));
+    expect(at.every((i) => i > -1)).toBe(true);
+    expect([...at].sort((x, y) => x - y)).toEqual(at);
+    expect(at[at.length - 1]).toBeLessThan(COMPOSE.indexOf("finalRadianceScaled *= 1.0 - wSkin;"));
+    // One substitution of the reflection: the line it replaced is gone.
+    expect(COMPOSE.match(/finalRadianceScaled = mix\(/g)).toHaveLength(1);
+  });
 });

@@ -7,14 +7,22 @@
 // shaderHygiene test enforces both.
 #ifndef OCEAN
 #ifdef REFLECTION
-// The lake's mirror (lakeMirror.fragment.fx): where the target drew the
-// shore, its image takes the place of the sky probe's radiance, through
-// PBR's own Fresnel, by the state's weight, the glass's share of the lake
-// and the cat's-paws, and by the share of the reads that met the shore.
-// Before the skin, which then holds it off the fronds as it holds the probe.
+// The lake's shore (lakeMirror.fragment.fx) takes the place of the sky
+// probe's radiance, through PBR's own Fresnel, by the state's weight, the
+// glass's share of the lake and the cat's-paws. Which shore is the tier's:
+// the mirror's image where its target drew something (high), else the
+// panorama (medium), else the skyline's shade (low), else the probe's own.
+// Each flag is 0 or 1, so each mix picks one of its two, and every read
+// runs on every path. Before the skin, which then holds it off the fronds
+// as it holds the probe.
 vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx);
-float wMirrorW = waterMirrorOn * waterMirrorWeight * (1.0 - wPaw) * waterCalmShare * wMirror.a;
-finalRadianceScaled = mix(finalRadianceScaled, wMirror.rgb * colorSpecularEnvironmentReflectance, wMirrorW);
+vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb;
+vec3 wShoreRay = reflect(-viewDirectionW, normalW);
+vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));
+wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance), step(0.5, waterPanoramaOn));
+wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);
+float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;
+finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);
 #endif
 #endif
 // The skin is matte: the sky's reflection and the sun's glint are held off it.
