@@ -10,6 +10,11 @@
 uniform sampler2D waterBedHeight;
 uniform sampler2D waterScene;
 uniform sampler2D waterDepth;
+#ifndef OCEAN
+// The lake's mirror (lakeMirror.fragment.fx), declared on a lake alone: the
+// sea binds a placeholder to a name its stages never declare.
+uniform sampler2D waterMirror;
+#endif
 
 varying float vBedDepth;
 // The surface's view depth in metres, from the vertex stage.

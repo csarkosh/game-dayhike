@@ -155,3 +155,27 @@ export function cameraSpacePlane(view: Float32Array, level: number, out: Float32
   }
   return out;
 }
+
+/** The ripple offset's scale in the mirror's read: the plugin binds it as `waterMirrorK`. */
+export const MIRROR_OFFSET_K = 0.05;
+/** The water depth (m) at which a ripple moves the read by its whole offset: `lakeMirror.fragment.fx`'s WATER_MIRROR_DEPTH. */
+export const MIRROR_DEPTH_FULL = 0.5;
+
+/**
+ * The TypeScript twin of `waterMirrorUv` (`lakeMirror.fragment.fx`): the
+ * mirror target's texel [u, v] for a surface point whose clip position in
+ * the mirrored camera is (clipX, clipY, ·, clipW), mapped to 0..1 as Babylon
+ * samples a target (v up the screen), then moved by the ripple's slope
+ * (slopeX, slopeZ) times `k`, scaled by the water's `depth` over
+ * `MIRROR_DEPTH_FULL` (none at the contact line) and over the view depth
+ * (never under 1 m), and never up the screen: v stays at or below the
+ * unmoved texel's, so no texel from past a bank's reflected top is read.
+ */
+export function mirrorUv(
+  clipX: number, clipY: number, clipW: number, slopeX: number, slopeZ: number, depth: number, viewDepth: number, k: number,
+): [number, number] {
+  const u0 = (clipX / clipW) * 0.5 + 0.5;
+  const v0 = (clipY / clipW) * 0.5 + 0.5;
+  const scale = (k * Math.min(depth / MIRROR_DEPTH_FULL, 1)) / Math.max(viewDepth, 1);
+  return [u0 + slopeX * scale, Math.min(v0 + slopeZ * scale, v0)];
+}

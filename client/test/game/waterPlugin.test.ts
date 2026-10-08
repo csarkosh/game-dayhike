@@ -1,6 +1,7 @@
 // client/test/game/waterPlugin.test.ts
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -14,8 +15,12 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { OCEAN_ROUGHNESS_ANCHOR, WaterPlugin, attachWater, oceanArrayPlaceholder, type OceanBinding } from "../../src/game/waterPlugin.js";
-import { drawnEffect, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
+import { ReflectionProbe } from "@babylonjs/core/Probes/reflectionProbe.js";
+import {
+  OCEAN_ROUGHNESS_ANCHOR, WaterPlugin, attachWater, oceanArrayPlaceholder, waterMirrorPlaceholder, type OceanBinding,
+} from "../../src/game/waterPlugin.js";
+import { MIRROR_DEPTH_FULL, MIRROR_OFFSET_K } from "../../src/game/mirrorView.js";
+import { drawnEffect, probeReady, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH, WATER_SKIN_DRIFT } from "../../src/game/waterShading.js";
 import { RIPPLE_INSET, RIPPLE_LAYERS, RIPPLE_RADIUS, RIPPLE_TIME_WRAP } from "../../src/game/rainParams.js";
@@ -47,7 +52,7 @@ describe("water plugin", () => {
     expect(attributes).toEqual(["bedDepth"]);
     const samplers: string[] = [];
     p.getSamplers(samplers);
-    expect(samplers).toEqual(["waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope"]);
+    expect(samplers).toEqual(["waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope", "waterMirror"]);
     const v = p.getCustomCode("vertex")!;
     expect(Object.keys(v).sort()).toEqual(["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_POSITION", "CUSTOM_VERTEX_UPDATE_WORLDPOS"]);
     const f = p.getCustomCode("fragment")!;
@@ -65,9 +70,10 @@ describe("water plugin", () => {
   it("injects exactly the GLSL the .fx files hold, with the constants in lockstep", () => {
     const mat = new PBRMaterial("w3", scene);
     const p = attachWater(mat, WATER_ROWS.sea);
-    // a lake's (no ocean) carries the lake's ripples after the water's; the sea's never does
+    // a lake's (no ocean) carries the lake's ripples and the mirror's read after the water's; the sea's never does
     expect(p.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS).toBe(
-      fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") + fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanShade.fragment.fx"),
+      fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") + fx("lakeMirror.fragment.fx") +
+        fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanShade.fragment.fx"),
     );
     p.ocean = testOcean();
     const f = p.getCustomCode("fragment")!;
@@ -82,6 +88,7 @@ describe("water plugin", () => {
     expect(fx("water.vertex.fx").endsWith(";\n")).toBe(true);
     expect(fx("water.fragment.fx").endsWith("}\n")).toBe(true);
     expect(fx("lakeRipples.fragment.fx").endsWith("}\n")).toBe(true);
+    expect(fx("lakeMirror.fragment.fx").endsWith("}\n")).toBe(true);
     const d = f.CUSTOM_FRAGMENT_DEFINITIONS;
     expect(d).toContain(`const float WATER_F0 = ${glslFloat(WATER_F0)};`);
     expect(d).toContain(`const float WATER_HORIZON = ${glslFloat(WATER_HORIZON)};`);
@@ -449,7 +456,7 @@ describe("the lake's ripples in the water plugin", () => {
     }
     // taken off its ocean, a material is a lake's again, and declares them
     sea.ocean = null;
-    expect(sea.getUniforms().ubo).toHaveLength(26);
+    expect(sea.getUniforms().ubo).toHaveLength(32);
   });
 
   it("wraps the lake's time as the wind's and clamps the paws' cover to 0..1, either 0 when it is not finite", () => {
@@ -542,7 +549,7 @@ describe("the sea's waves in the water plugin", () => {
     expect(u.ubo[u.ubo.length - 1]).toEqual({ name: "oceanK", size: 4, type: "vec4", arraySize: 12 });
     expect(u.fragment).toContain("uniform vec4 oceanK[12];");
     expect(u.vertex).toContain("uniform vec4 oceanK[12];");
-    expect(u.ubo).toHaveLength(26);
+    expect(u.ubo).toHaveLength(32);
   });
 
   it("declares its samplers in the .fx and never in getUniforms, and gates every line of its GLSL on OCEAN", () => {
@@ -725,7 +732,7 @@ describe("the sea's waves in the water plugin", () => {
         if (shaderType === "vertex") {
           return { CUSTOM_VERTEX_DEFINITIONS: fx("water.vertex.fx"), CUSTOM_VERTEX_UPDATE_WORLDPOS: fx("waterWorldPos.vertex.fx") };
         }
-        return { ...code, CUSTOM_FRAGMENT_DEFINITIONS: fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") };
+        return { ...code, CUSTOM_FRAGMENT_DEFINITIONS: fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") + fx("lakeMirror.fragment.fx") };
       }
     }
     /** The stages one water material compiles to, on an engine of its own (an
@@ -792,7 +799,7 @@ describe("the sea's waves in the water plugin", () => {
     // The sea's main is the text it compiled to before the lake's ripples, and reads none of them.
     const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
     expect(sha(main(sea.fragment))).toBe("91382f0cd2700903c0d9aae19a4e5d99e7d3382db06b0d2bc8cdf732dc8d553d");
-    for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover"]) {
+    for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover", "waterMirror", "waterCalmShare", "wMirror"]) {
       expect(main(sea.fragment), name).not.toContain(name);
     }
     expect(main(sea.fragment)).toContain("vec2 wRs = waterRainSlope(vPositionW.xz);");
@@ -800,5 +807,238 @@ describe("the sea's waves in the water plugin", () => {
     expect(main(lake.fragment)).toContain("float wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));");
     expect(main(lake.fragment)).toContain("vec2 wRs = lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain, length(vPositionW - vEyePosition.xyz));");
     expect(main(lake.fragment)).not.toContain("waterRainSlope(");
+  }, timeLimit(30_000));
+});
+
+describe("the lake's mirror in the water plugin", () => {
+  const MIRROR_UNIFORMS = ["waterMirrorVP", "waterMirrorOn", "waterMirrorK", "waterMirrorWeight", "waterMirrorSmearPx", "waterCalmShare"];
+
+  /** What one bind writes: the floats, the arrays and the textures, by name. */
+  const bound = (p: WaterPlugin): { floats: Record<string, number>; arrays: Record<string, number[]>; textures: Record<string, unknown> } => {
+    const floats: Record<string, number> = {};
+    const arrays: Record<string, number[]> = {};
+    const textures: Record<string, unknown> = {};
+    const ignore = (): void => undefined;
+    const ubo = {
+      updateFloat2: ignore, updateFloat3: ignore, updateFloat4: ignore,
+      updateFloat: (name: string, v: number) => { floats[name] = v; },
+      updateFloatArray: (name: string, a: Float32Array) => { arrays[name] = Array.from(a); },
+      setTexture: (name: string, t: unknown) => { textures[name] = t; },
+    } as unknown as UniformBuffer;
+    p.bindForSubMesh(ubo);
+    return { floats, arrays, textures };
+  };
+
+  it("declares the mirror's sampler in the .fx on a lake alone, and its six uniforms on a lake alone, after the ripples' and before the sea's", () => {
+    const p = attachWater(new PBRMaterial("wM1", scene), WATER_ROWS.lowlandLake);
+    const samplers: string[] = [];
+    p.getSamplers(samplers);
+    expect(samplers).toContain("waterMirror");
+    expect(fx("water.fragment.fx")).toContain(
+      "uniform sampler2D waterDepth;\n#ifndef OCEAN\n// The lake's mirror (lakeMirror.fragment.fx), declared on a lake alone: the\n" +
+        "// sea binds a placeholder to a name its stages never declare.\nuniform sampler2D waterMirror;\n#endif\n",
+    );
+    const u = p.getUniforms();
+    expect(u.ubo.map((e) => e.name).slice(13, 21)).toEqual(["waterLakeTime", "waterPawCover", ...MIRROR_UNIFORMS]);
+    // the view-projection's four columns, an array as the sea's components are
+    expect(u.ubo[15]).toEqual({ name: "waterMirrorVP", size: 4, type: "vec4", arraySize: 4 });
+    expect(u.ubo[21]).toEqual({ name: "oceanPhase0", size: 4, type: "vec4" });
+    expect(u.ubo).toHaveLength(32);
+    for (const name of MIRROR_UNIFORMS.slice(1)) {
+      expect(u.ubo).toContainEqual({ name, size: 1, type: "float" });
+      expect(u.fragment).toContain(`uniform float ${name};`);
+    }
+    expect(u.fragment).toContain("uniform vec4 waterMirrorVP[4];");
+    expect(u.fragment).not.toContain("sampler");
+    expect(u.vertex).not.toContain("waterMirror");
+    // the sea declares none of them: its uniforms are as they were before the lake's
+    const sea = attachWater(new PBRMaterial("wM1s", scene), WATER_ROWS.sea);
+    sea.ocean = testOcean();
+    const seaU = sea.getUniforms();
+    expect(seaU.ubo).toHaveLength(24);
+    expect(seaU.ubo.map((e) => e.name).filter((name) => /waterMirror|waterCalmShare/.test(name))).toEqual([]);
+    expect(seaU.fragment).not.toMatch(/waterMirror|waterCalmShare/);
+  });
+
+  it("binds the placeholder with the read off, the identity and a calm of zero until set; then the mirror, a copy of its view-projection and the calm", () => {
+    const p = attachWater(new PBRMaterial("wM2", scene), WATER_ROWS.lowlandLake);
+    p.bedTexture = bedTexture();
+    let b = bound(p);
+    expect(b.textures.waterMirror).toBe(waterMirrorPlaceholder(scene));
+    expect(b.arrays.waterMirrorVP).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    expect([b.floats.waterMirrorOn, b.floats.waterMirrorK, b.floats.waterMirrorWeight, b.floats.waterMirrorSmearPx, b.floats.waterCalmShare])
+      .toEqual([0, 0.05, 0, 0, 0]);
+    expect(MIRROR_OFFSET_K).toBe(0.05);
+    const target = new BaseTexture(scene);
+    const vp = Float32Array.from({ length: 16 }, (_, i) => i + 0.5);
+    p.setMirror(target, vp);
+    p.setCalm(0.75, 1, 27);
+    // copied, not held: the pass writes its array in place every frame
+    vp[0] = 99;
+    b = bound(p);
+    expect(b.textures.waterMirror).toBe(target);
+    expect(b.arrays.waterMirrorVP).toEqual(Array.from({ length: 16 }, (_, i) => i + 0.5));
+    expect([b.floats.waterMirrorOn, b.floats.waterMirrorK, b.floats.waterMirrorWeight, b.floats.waterMirrorSmearPx, b.floats.waterCalmShare])
+      .toEqual([1, 0.05, 1, 27, 0.75]);
+    // no mirror this frame: the placeholder, the read off
+    p.setMirror(null, vp);
+    b = bound(p);
+    expect(b.textures.waterMirror).toBe(waterMirrorPlaceholder(scene));
+    expect(b.floats.waterMirrorOn).toBe(0);
+    expect(b.arrays.waterMirrorVP?.[0]).toBe(99);
+  });
+
+  it("binds every sampler it lists on a lake with and without its mirror, and on the sea, which binds the placeholder and none of the floats", () => {
+    const lake = attachWater(new PBRMaterial("wM3", scene), WATER_ROWS.lowlandLake);
+    const sea = attachWater(new PBRMaterial("wM4", scene), WATER_ROWS.sea);
+    const target = new BaseTexture(scene);
+    const states: [string, WaterPlugin, () => void][] = [
+      ["a lake before its mirror", lake, () => { lake.bedTexture = bedTexture(); }],
+      ["a lake with its mirror", lake, () => { lake.setMirror(target, new Float32Array(16)); }],
+      ["a lake whose mirror is off", lake, () => { lake.setMirror(null, new Float32Array(16)); }],
+      ["the sea", sea, () => { sea.bedTexture = bedTexture(); sea.ocean = testOcean(); sea.setMirror(target, new Float32Array(16)); }],
+    ];
+    const missing: string[] = [];
+    const mirror: Record<string, unknown> = {};
+    for (const [state, p, enter] of states) {
+      enter();
+      const declared: string[] = [];
+      p.getSamplers(declared);
+      const { textures, floats, arrays } = bound(p);
+      for (const sampler of declared) if (!(sampler in textures)) missing.push(`${state}: ${sampler}`);
+      mirror[state] = [textures.waterMirror, floats.waterMirrorOn, arrays.waterMirrorVP === undefined];
+    }
+    expect(missing).toEqual([]);
+    expect(mirror).toEqual({
+      "a lake before its mirror": [waterMirrorPlaceholder(scene), 0, false],
+      "a lake with its mirror": [target, 1, false],
+      "a lake whose mirror is off": [waterMirrorPlaceholder(scene), 0, false],
+      "the sea": [waterMirrorPlaceholder(scene), undefined, true],
+    });
+  });
+
+  it("makes one placeholder a scene: 1×1 RGBA bytes, black with alpha 0, made again once disposed", () => {
+    const a = waterMirrorPlaceholder(scene);
+    expect(waterMirrorPlaceholder(scene)).toBe(a);
+    expect(a.name).toBe("waterMirrorPlaceholder");
+    expect(a.getSize()).toEqual({ width: 1, height: 1 });
+    const internal = a.getInternalTexture() as unknown as { format: number; type: number; _bufferView: Uint8Array };
+    expect(internal.format).toBe(Constants.TEXTUREFORMAT_RGBA);
+    expect(internal.type).toBe(Constants.TEXTURETYPE_UNSIGNED_BYTE);
+    expect(Array.from(internal._bufferView)).toEqual([0, 0, 0, 0]);
+    const own = new NullEngine();
+    try {
+      const other = new Scene(own);
+      const b = waterMirrorPlaceholder(other);
+      expect(b).not.toBe(a);
+      b.dispose();
+      expect(waterMirrorPlaceholder(other)).not.toBe(b);
+    } finally {
+      own.dispose();
+    }
+  });
+
+  it("reads the mirror where PBR adds the probe's radiance, through PBR's own Fresnel, before the skin, on a lake alone", () => {
+    const c = fx("waterCompose.fragment.fx");
+    const block = /#ifndef OCEAN\n#ifdef REFLECTION\n(?:\/\/[^\n]*\n)*([^#]*)#endif\n#endif\n/.exec(c);
+    expect(block?.[1]).toBe(
+      "vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx);\n" +
+        "float wMirrorW = waterMirrorOn * waterMirrorWeight * (1.0 - wPaw) * waterCalmShare * wMirror.a;\n" +
+        "finalRadianceScaled = mix(finalRadianceScaled, wMirror.rgb * colorSpecularEnvironmentReflectance, wMirrorW);\n",
+    );
+    expect(c.indexOf("wMirrorW);")).toBeLessThan(c.indexOf("finalRadianceScaled *= 1.0 - wSkin;"));
+    // the paw mask, 0 on glass, in the lake's branch of the lights, declared there once
+    const l = fx("waterLights.fragment.fx");
+    const paw = l.indexOf("float wPaw = lakePaw(");
+    expect(paw).toBeGreaterThan(l.indexOf("float wOceanVar ="));
+    expect(paw).toBeLessThan(l.indexOf("if (waterOctaves > 1.5) {"));
+    expect(l.split("float wPaw")).toHaveLength(2);
+    // A canary on the installed Babylon: PBR's Fresnel for the environment is
+    // declared in main's own scope before the hook, and is what scales the
+    // probe's radiance into finalRadianceScaled.
+    const read = (spec: string): string => readFileSync(createRequire(import.meta.url).resolve(spec), "utf8");
+    const pbr = read("@babylonjs/core/Shaders/pbr.fragment.js");
+    const reflectance = pbr.indexOf("#include<pbrBlockReflectance>");
+    const lit = pbr.indexOf("#include<pbrBlockFinalLitComponents>");
+    const hook = pbr.indexOf("#define CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION");
+    expect(reflectance).toBeGreaterThan(-1);
+    expect(reflectance).toBeLessThan(lit);
+    expect(lit).toBeLessThan(hook);
+    expect(hook).toBeLessThan(pbr.indexOf("#include<pbrBlockFinalColorComposition>"));
+    expect(read("@babylonjs/core/Shaders/ShadersInclude/pbrBlockReflectance.js")).toContain(
+      "vec3 colorSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90,environmentBrdf);",
+    );
+    expect(read("@babylonjs/core/Shaders/ShadersInclude/pbrBlockFinalLitComponents.js")).toContain(
+      "vec3 finalRadiance=reflectionOut.environmentRadiance.rgb;finalRadiance*=colorSpecularEnvironmentReflectance;vec3 finalRadianceScaled=finalRadiance*vLightingIntensity.z;",
+    );
+  });
+
+  it("maps a surface point to the mirror's texel as Babylon reads a target, v up, moved by the ripple and never up the screen", () => {
+    const m = fx("lakeMirror.fragment.fx");
+    expect(MIRROR_DEPTH_FULL).toBe(0.5);
+    expect(m).toContain(`const float WATER_MIRROR_DEPTH = ${glslFloat(MIRROR_DEPTH_FULL)};`);
+    // waterMirrorUv, line for line mirrorUv (mirrorView.ts)
+    expect(m).toContain("mat4 vp = mat4(waterMirrorVP[0], waterMirrorVP[1], waterMirrorVP[2], waterMirrorVP[3]);");
+    expect(m).toContain("vec4 clip = vp * vec4(worldPos, 1.0);");
+    expect(m).toContain("vec2 uv0 = clip.xy / clip.w * 0.5 + 0.5;");
+    expect(m).toContain("vec2 uv = uv0 + slope * waterMirrorK * min(depth / WATER_MIRROR_DEPTH, 1.0) / max(viewDepth, 1.0);");
+    expect(m).toContain("uv.y = min(uv.y, uv0.y);");
+    // four level-zero reads from the texel down, nothing outside the target
+    expect(m).toContain("vec2 inside = step(vec2(0.0), uv) * step(uv, vec2(1.0));");
+    expect(m).toContain("return textureLod(waterMirror, clamp(uv, 0.0, 1.0), 0.0) * inside.x * inside.y;");
+    expect(m).toContain("float stride = smearPx * waterScreen.y / 3.0;");
+    expect(m).toContain("+ waterMirrorTap(uv - vec2(0.0, 3.0 * stride));");
+    expect(m).toContain("return vec4(sum.rgb / max(sum.a, 1.0e-4), sum.a * 0.25);");
+    // A canary on the installed Babylon: a projected target is read at
+    // v = 1 − (0.5 − 0.5 · ndc.y) = 0.5 + 0.5 · ndc.y, so v runs up the screen
+    // on every engine, and down the screen is down the target.
+    const read = (spec: string): string => readFileSync(createRequire(import.meta.url).resolve(spec), "utf8");
+    expect(read("@babylonjs/core/Materials/Textures/texture.pure.js")).toContain(
+      "Matrix.FromValuesToRef(0.5, 0.0, 0.0, 0.0, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, this._projectionModeMatrix);",
+    );
+    expect(read("@babylonjs/core/Shaders/ShadersInclude/pbrBlockReflection.js")).toContain(
+      "#ifdef REFLECTIONMAP_PROJECTION\nreflectionCoords/=reflectionVector.z;\n#endif\nreflectionCoords.y=1.0-reflectionCoords.y;",
+    );
+  });
+
+  it("leaves the sea's compiled stages without a line of the mirror, and gives a lake one text whatever its mirror holds", async () => {
+    /** One water material's fragment stage as WebGPU compiles it, under the sky probe, on an engine of its own. */
+    const compiled = async (sea: boolean, mirrored: boolean): Promise<string> => {
+      const own = webgpuProcessingEngine();
+      try {
+        const s = new Scene(own);
+        s.activeCamera = new UniversalCamera("c", new Vector3(0, 2, -5), s);
+        s.environmentTexture = new ReflectionProbe("probe", 1, s).cubeTexture;
+        probeReady(s);
+        const material = new PBRMaterial("water", s);
+        material.backFaceCulling = false;
+        const plugin = new WaterPlugin(material, sea ? WATER_ROWS.sea : WATER_ROWS.lowlandLake);
+        plugin.bedTexture = RawTexture.CreateRTexture(new Float32Array(4), 2, 2, s, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+        if (sea) plugin.ocean = { ...testOcean(), atlas: plugin.bedTexture, windDisp: oceanArrayPlaceholder(s), windSlope: oceanArrayPlaceholder(s) };
+        if (mirrored) {
+          plugin.setMirror(RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, s), Float32Array.from({ length: 16 }, (_, i) => i));
+          plugin.setCalm(1, 1, 12);
+        }
+        const mesh = MeshBuilder.CreateGround("ground", { width: 4, height: 4 }, s);
+        const vertices = mesh.getTotalVertices();
+        mesh.setVerticesData("bedDepth", new Float32Array(vertices), false, 1);
+        mesh.setVerticesData("oceanMorph", new Float32Array(vertices), false, 1);
+        mesh.setVerticesData("oceanCoarse", new Float32Array(vertices * 2), false, 2);
+        mesh.material = material;
+        return (await drawnEffect(mesh))._fragmentSourceCode;
+      } finally {
+        own.dispose();
+      }
+    };
+    const mirrorLines = (text: string): string[] => text.split("\n").filter((line) => /waterMirror|waterCalmShare|wMirror|wPaw/.test(line));
+    // the sea: not a line, its uniform block as it was before the lake's
+    expect(mirrorLines(await compiled(true, false))).toEqual([]);
+    expect(mirrorLines(await compiled(true, true))).toEqual([]);
+    // a lake: the mirror read, its text the same with the mirror on or off
+    const off = await compiled(false, false);
+    const on = await compiled(false, true);
+    expect(off).toContain("vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx);");
+    expect(off).toContain("#define waterMirror sampler2D(waterMirrorTexture, waterMirrorSampler)");
+    expect(on).toBe(off);
   }, timeLimit(30_000));
 });

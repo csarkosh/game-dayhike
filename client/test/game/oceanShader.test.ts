@@ -72,11 +72,12 @@ function pinned(text: string, name: string, value: number): void {
   expect(text, name).toContain(`const float ${name} = ${glslFloat(value)};`);
 }
 
-/** Babylon's preprocessor over one hook's text, as shaderHygiene.test.ts runs it, with a lake's gates on. */
+/** Babylon's preprocessor over one hook's text, as shaderHygiene.test.ts runs it, with a lake's gates on (or the sea's). */
 const LAKE_DEFINES = ["#define WATER", "#define BUMP", "#define REFLECTION", "#define SPECULARTERM"];
-function processed(source: string, isFragment: boolean): Promise<string> {
+const SEA_DEFINES = [...LAKE_DEFINES, "#define OCEAN"];
+function processed(source: string, isFragment: boolean, defines: string[] = LAKE_DEFINES): Promise<string> {
   const options: _IProcessingOptions = {
-    defines: LAKE_DEFINES,
+    defines,
     indexParameters: {},
     isFragment,
     shouldUseHighPrecisionShader: true,
@@ -843,16 +844,17 @@ describe("the sea's normal, waterline and roughness", () => {
 });
 
 describe("a lake's shaders", () => {
-  it("process to the text they had before the sea moved, the lights' as the lake's ripples made it", async () => {
+  it("process to the text they had before the sea moved, the lights' as the lake's ripples made it, the rest but for the lake's mirror", async () => {
     // Each hook through Babylon's preprocessor with a lake's gates, hashed as it was at 9edee7e; the
     // lights' hashed again once the lake's ripples replaced its octaves' and rings' lines (their own
-    // test, waterPlugin.test.ts, pins what they are).
+    // test, waterPlugin.test.ts, pins what they are); the water's definitions and the composition
+    // hashed again as the lake's mirror left them (its sampler, its read).
     const before: Record<string, string> = {
       "water.vertex.fx": "3732482554b89e357fec2298edc8724ad085cc9defe35017b243df6b7782d50b",
       "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
-      "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
+      "water.fragment.fx": "759fcb042fdedb3f6fbad01f0e8a644f6e9f4fe2647edc3ad47669e025259e01",
       "waterLights.fragment.fx": "ebeaa270855bcd9af92596e22fcb7f5bad43ee1d6452e64354f3651f90baa0ce",
-      "waterCompose.fragment.fx": "a3cdf837137ae07cea47e0facfbc0b6ad44269d7a723b9f157e487da0cf34447",
+      "waterCompose.fragment.fx": "260fab1108e62f563f39a9d52cb7305369f6a2b10e558f2a627a72a46ce79eb8",
     };
     for (const [name, hash] of Object.entries(before)) {
       expect(sha256(await processed(fx(name), !name.includes(".vertex."))), name).toBe(hash);
@@ -867,12 +869,36 @@ describe("a lake's shaders", () => {
       const f = lake.getCustomCode("fragment")!;
       expect(await processed(v.CUSTOM_VERTEX_DEFINITIONS!, false)).toBe(await processed(fx("water.vertex.fx"), false));
       expect(await processed(f.CUSTOM_FRAGMENT_DEFINITIONS!, true)).toBe(
-        await processed(fx("water.fragment.fx") + fx("lakeRipples.fragment.fx"), true),
+        await processed(fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") + fx("lakeMirror.fragment.fx"), true),
       );
     } finally {
       engine.dispose();
     }
   });
+});
+
+describe("the sea's shaders", () => {
+  it("process to the text they had before the lake's mirror: its every line vanishes under the sea's gates", async () => {
+    // Each fragment hook through Babylon's preprocessor with the sea's gates, hashed as it was at 378b040.
+    const before: Record<string, string> = {
+      "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
+      "waterLights.fragment.fx": "990c8d146406b1ba91da2c448d1f4c48199a776ae7e90794721d7b7215f8317c",
+      "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
+    };
+    for (const [name, hash] of Object.entries(before)) {
+      expect(sha256(await processed(fx(name), true, SEA_DEFINES)), name).toBe(hash);
+    }
+    // and the sea's definitions never carry the mirror's read
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const sea = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
+      sea.ocean = bindingFor(scene, "medium");
+      expect(sea.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS).not.toContain(fx("lakeMirror.fragment.fx"));
+    } finally {
+      engine.dispose();
+    }
+  }, timeLimit(30_000));
 });
 
 describe("the water material's stages, compiled", () => {

@@ -544,3 +544,70 @@ describe("inter-stage variables of the sea's water material on WebGPU, its waves
     }
   });
 });
+
+/** What to do when a pin on a lake's material turns red. */
+const WEIGH_LAKE =
+  "the varyings or the textures of a lake's water material changed: count them against `maxInterStageShaderVariables` " +
+  "and `maxSampledTexturesPerShaderStage` in engineChoice.ts, and read the effect in a browser if a count grew";
+
+describe("inter-stage variables and textures of a lake's water material on WebGPU, its mirror read", () => {
+  const limit = WEBGPU_REQUIRED_LIMITS.maxInterStageShaderVariables as number;
+  const lakes = new Map<QualityTier, ProcessedEffect>();
+  const disposers: (() => void)[] = [];
+
+  // The renderer's order on each tier: the atmosphere, the camera, the local
+  // lamp, the lighting (whose probe gives the material its reflection), then
+  // the water with one lake, the camera at its shore.
+  beforeAll(async () => {
+    for (const tier of ["low", "medium", "high"] as const) {
+      const engine = webgpuProcessingEngine();
+      const scene = new Scene(engine);
+      const atmosphere = createAtmosphere(scene, FOG_DISTANCE);
+      scene.activeCamera = new UniversalCamera("player", new Vector3(100, 44, 20), scene);
+      createHeadlamp(scene, "lamp_local");
+      const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: "post", sky: skyFixture() });
+      probeReady(scene);
+      const water = createWater(
+        scene, seedFromToken("atmo"), 0, [{ kind: "lake", level: 42, x: 100, z: 50, radius: 30, murk: 1, lobe: null }], tier, 100, 50,
+      );
+      lakes.set(tier, await drawnEffect(water.lakeMeshes[0] as Mesh));
+      disposers.push(() => {
+        water.dispose();
+        lighting.dispose();
+        atmosphere.dispose();
+        scene.dispose();
+        engine.dispose();
+      });
+    }
+  }, timeLimit(60_000));
+  afterAll(() => {
+    for (const dispose of disposers) dispose();
+  });
+
+  it("writes the six vertex outputs it wrote before the mirror and reads front_facing: 7 of the 19", () => {
+    for (const [tier, effect] of lakes) {
+      const varyings = [...effect._vertexSourceCode.matchAll(/layout\(location = \d+\)\s*(?:flat\s+)?out (\w+) (\w+);/g)].map(
+        ([, type, name]) => `${type} ${name}`,
+      );
+      expect(varyings, `${tier}: ${WEIGH_LAKE}`).toEqual([
+        "vec2 vMainUV1", "vec3 vPositionW", "vec3 vNormalW", "vec3 vFogDistance", "float vBedDepth", "float vWaterViewDepth",
+      ]);
+      expect(effect._processingContext._varyingNextLocation, tier).toBe(6);
+      // The bump's tangent frame, on every lake.
+      expect(effect._fragmentSourceCode.includes("gl_FrontFacing"), tier).toBe(true);
+      expect(6 + 1).toBeLessThanOrEqual(limit);
+    }
+  });
+
+  it("binds eight textures in the fragment stage, the mirror's the one more, and none in the vertex stage", () => {
+    for (const [tier, effect] of lakes) {
+      const { vertex, fragment } = stageBindings(effect);
+      expect({ vertex: [vertex.textures, vertex.samplers], fragment: [fragment.textures, fragment.samplers] }, `${tier}: ${WEIGH_LAKE}`).toEqual({
+        vertex: [0, 0],
+        fragment: [8, 8],
+      });
+      expect(effect._processingContext.availableTextures, tier).toHaveProperty("waterMirror");
+      expect(fragment.textures).toBeLessThanOrEqual(WEBGPU_REQUIRED_LIMITS.maxSampledTexturesPerShaderStage as number);
+    }
+  });
+});
