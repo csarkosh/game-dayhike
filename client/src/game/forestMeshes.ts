@@ -244,21 +244,9 @@ export type ForestMeshes = {
    * must watch its length, not snapshot it at creation.
    */
   readonly casterMeshes: readonly Mesh[];
-  /** The giants' and the saplings' LOD1 bucket meshes, append-only as the
-   * GLBs land, as `casterMeshes` is: the far bank's trees the lake's mirror
-   * draws (`lakeMirror.ts`), 42 to 85 m out. Each draws there through its
-   * stand-in, `lod1StandIns` at the same index. */
-  readonly lod1Meshes: readonly Mesh[];
-  /** The LOD2 material each of `lod1Meshes` draws through in the lake's
-   * mirror, index-aligned: the LOD2 copy of its own material where the model
-   * shares one across its ladder (every shipped tree does), else the LOD2
-   * bucket's material of the same kind (alpha-tested crown or opaque bark).
-   * The LOD1 material carries the crowns' sway, the LOD2 one does not, and
-   * both read the same four attributes. */
-  readonly lod1StandIns: readonly Material[];
-  /** The giants' and the saplings' LOD2 bucket meshes, append-only likewise:
-   * the near trees the lake's mirror draws on their own material, 85 to
-   * 120 m out. */
+  /** The giants' and the saplings' LOD2 bucket meshes, append-only as the
+   * GLBs land, as `casterMeshes` is: the trees the lake's mirror draws on
+   * their own material, 85 to 120 m out. */
   readonly lod2Meshes: readonly Mesh[];
   /** The five billboard planes, in the order made: the far forest the lake's
    * reflections draw. */
@@ -344,25 +332,6 @@ function prepBucketMesh(mesh: Mesh): void {
   mesh.doNotSyncBoundingInfo = true;
   // Nothing to draw until the first update fills a buffer.
   mesh.setEnabled(false);
-}
-
-/**
- * The LOD2 material a LOD1 bucket mesh draws through in the lake's mirror:
- * the LOD2 copy of its own material (`clones`, the split in `adoptSpecies`)
- * where its ladder shares one, else the material of the first of `lod2` of
- * the same kind, an alpha-tested crown for a crown and an opaque bark for a
- * bark; null when the mesh has no material or `lod2` none of its kind.
- */
-function lod2StandIn(mesh: Mesh, lod2: readonly Mesh[], clones: ReadonlyMap<Material, Material>): Material | null {
-  const own = mesh.material;
-  if (own === null) return null;
-  const clone = clones.get(own);
-  if (clone !== undefined) return clone;
-  const crown = own.needAlphaTesting();
-  for (const other of lod2) {
-    if (other.material !== null && other.material.needAlphaTesting() === crown) return other.material;
-  }
-  return null;
 }
 
 /** `count` copies of one band quad — every bucket but the impostor planes,
@@ -1061,8 +1030,6 @@ export function createForestMeshes(
   const collector = createBandCollector(seed);
 
   const casterMeshes: Mesh[] = [];
-  const lod1Meshes: Mesh[] = [];
-  const lod1StandIns: Material[] = [];
   const lod2Meshes: Mesh[] = [];
   const impostorMeshes: Mesh[] = [];
   const containers: AssetContainer[] = [];
@@ -1340,15 +1307,8 @@ export function createForestMeshes(
     // reason: they are small, numerous, and sit under the giants'
     // own shadows, so the shadow-map cost is not worth paying.
     if (kind === "giant") casterMeshes.push(...lods[0]);
-    // The lake's mirror: the LOD2 buckets on their own material, and the
-    // LOD1 buckets (the far bank) through a LOD2 material of their kind.
+    // The lake's mirror draws the LOD2 buckets on their own material.
     lod2Meshes.push(...lods[2]);
-    for (const mesh of lods[1]) {
-      const standIn = lod2StandIn(mesh, lods[2], lod2Clones);
-      if (standIn === null) continue;
-      lod1Meshes.push(mesh);
-      lod1StandIns.push(standIn);
-    }
 
     return {
       // Each ring fades in where the previous one fades out, and the last
@@ -1915,8 +1875,6 @@ export function createForestMeshes(
     },
     view,
     casterMeshes,
-    lod1Meshes,
-    lod1StandIns,
     lod2Meshes,
     impostorMeshes,
     impostorBakes() {
@@ -1948,8 +1906,6 @@ export function createForestMeshes(
       // overlap with the loop above is harmless.
       for (const container of containers) container.dispose();
       casterMeshes.length = 0;
-      lod1Meshes.length = 0;
-      lod1StandIns.length = 0;
       lod2Meshes.length = 0;
       impostorMeshes.length = 0;
       species = null;

@@ -1005,12 +1005,10 @@ describe("world shell wiring", () => {
     expect(playerBranch.indexOf("updateLake(")).toBeGreaterThan(playerBranch.indexOf("camera.fov = GAME_FOV;"));
     // The five inner rings through the terrain's stand-in, in either capture.
     expect(src).toContain("for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {\n    lakeMirror?.register(mesh, mirrorTerrain);\n    lakePanorama?.register(mesh, mirrorTerrain);");
-    // The near trees at LOD2 on their own material and the far bank's at
-    // LOD1 through a LOD2 one, in the mirror alone.
+    // The trees at LOD2 on their own material, in the mirror alone; the
+    // LOD1 buckets and the impostors' LOD are not in either.
     expect(src).toContain("lakeMirror?.register(forestMeshes.lod2Meshes[forestLod2Reflected] as Mesh, null);");
-    expect(src).toContain(
-      "lakeMirror?.register(forestMeshes.lod1Meshes[forestLod1Reflected] as Mesh, forestMeshes.lod1StandIns[forestLod1Reflected] as Material);",
-    );
+    expect(src).not.toContain("lod1Meshes");
     expect(src).not.toContain("lakePanorama?.register(forestMeshes.lod");
     // A render target's list is not told of a dispose; the water lets go of
     // the targets before they go.

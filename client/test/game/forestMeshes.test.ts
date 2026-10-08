@@ -564,19 +564,6 @@ describe("createForestMeshes under NullEngine", () => {
     };
     expect(new Set(forest.lod2Meshes)).toEqual(bucketsAt(2));
     expect(forest.lod2Meshes).toHaveLength(8);
-    expect(new Set(forest.lod1Meshes)).toEqual(bucketsAt(1));
-    // Each LOD1 mesh through the LOD2 material of its own kind: the stubs'
-    // ladders share no material, so bark to bark and crown to crown.
-    expect(forest.lod1Meshes.map((m, i) => `${m.name} ${forest.lod1StandIns[i]!.name}`)).toEqual([
-      "s0_lod1_bark s0_lod2_bark_mat",
-      "s0_lod1_canopy s0_lod2_canopy_mat",
-      "s1_lod1_bark s1_lod2_bark_mat",
-      "s1_lod1_canopy s1_lod2_canopy_mat",
-      "sap0_lod1_bark sap0_lod2_bark_mat",
-      "sap0_lod1_canopy sap0_lod2_canopy_mat",
-      "sap1_lod1_bark sap1_lod2_bark_mat",
-      "sap1_lod1_canopy sap1_lod2_canopy_mat",
-    ]);
     expect(forest.impostorMeshes.map((m) => m.name)).toEqual([
       "forest_impostor_giant_0",
       "forest_impostor_giant_1",
@@ -585,41 +572,7 @@ describe("createForestMeshes under NullEngine", () => {
       "forest_impostor_snag",
     ]);
     forest.dispose();
-    expect([forest.lod1Meshes.length, forest.lod1StandIns.length, forest.lod2Meshes.length, forest.impostorMeshes.length]).toEqual([0, 0, 0, 0]);
-  });
-
-  it("draws a LOD1 mesh in the lake's mirror through the LOD2 copy of the material its ladder shares, as every shipped tree's does", () => {
-    const engine = new NullEngine();
-    engines.push(engine);
-    const scene = new Scene(engine);
-    const assets = stubAssets(scene);
-    // One bark and one crown material down each ladder, as the GLBs ship.
-    for (const species of [...assets.giants, ...assets.saplings]) {
-      const [bark, crown] = [species.lods[0], species.lods[0].getChildMeshes(false)[0] as Mesh];
-      for (const lod of [1, 2] as const) {
-        species.lods[lod].material = bark.material;
-        (species.lods[lod].getChildMeshes(false)[0] as Mesh).material = crown.material;
-      }
-    }
-    const forest = createForestMeshes(scene, SEED, { assets, bakeImpostor: () => null });
-    expect(forest.lod1Meshes.map((m, i) => `${m.material!.name} ${forest.lod1StandIns[i]!.name}`)).toEqual([
-      "s0_lod0_bark_mat s0_lod0_bark_mat_lod2",
-      "s0_lod0_canopy_mat s0_lod0_canopy_mat_lod2",
-      "s1_lod0_bark_mat s1_lod0_bark_mat_lod2",
-      "s1_lod0_canopy_mat s1_lod0_canopy_mat_lod2",
-      "sap0_lod0_bark_mat sap0_lod0_bark_mat_lod2",
-      "sap0_lod0_canopy_mat sap0_lod0_canopy_mat_lod2",
-      "sap1_lod0_bark_mat sap1_lod0_bark_mat_lod2",
-      "sap1_lod0_canopy_mat sap1_lod0_canopy_mat_lod2",
-    ]);
-    // The copy is the LOD2 bucket's own material, without the crowns' sway
-    // the LOD1 one carries.
-    expect(forest.lod1Meshes[0]!.material!.pluginManager?.getPlugin("Foliage") ?? null).not.toBe(null);
-    for (const [i, standIn] of forest.lod1StandIns.entries()) {
-      expect(forest.lod2Meshes.some((m) => m.material === standIn), `${i}`).toBe(true);
-      expect(standIn.pluginManager?.getPlugin("Foliage") ?? null, `${i}`).toBe(null);
-    }
-    forest.dispose();
+    expect([forest.lod2Meshes.length, forest.impostorMeshes.length]).toEqual([0, 0]);
   });
 
   it("honours a reduced nearRadius: the LOD2 ring shrinks, LOD0/1 do not", () => {

@@ -127,7 +127,6 @@ import { createLakeMirror, createLakeMirrorTerrain } from "./lakeMirror.js";
 import { createLakePanorama, createSkylineTexture } from "./lakePanorama.js";
 import { SKYLINE_SHADE, skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { NEEDLE_BED } from "./terrainSurface.js";
-import type { Material } from "@babylonjs/core/Materials/material.js";
 
 const MATERIAL_COLORS: Record<string, [number, number, number]> = {
   concrete: [0.42, 0.44, 0.47],
@@ -2132,7 +2131,6 @@ function buildRenderer(
   // What the lake's reflections take of the forest and the cliffs as their
   // GLBs land, by the same high-water marks.
   let forestImpostorsReflected = 0;
-  let forestLod1Reflected = 0;
   let forestLod2Reflected = 0;
   let cliffsReflected = 0;
 
@@ -2497,10 +2495,10 @@ function buildRenderer(
           rainMap?.register(bucket, "hard");
         }
       }
-      // The lake's reflections take the forest's billboards, its LOD2 buckets
-      // on their own material and its LOD1 buckets (the far bank) through a
-      // LOD2 one (the mirror alone: the panorama leaves the near trees out),
-      // and the cliffs' far buckets, as their GLBs land. The mirror takes the
+      // The lake's reflections take the forest's billboards and, the mirror
+      // alone, its LOD2 buckets on their own material (the panorama leaves
+      // the near trees out, and the mirror leaves the LOD1 buckets out: 2 ms a
+      // draw at 4K), and the cliffs' far buckets, as their GLBs land. The mirror takes the
       // cliffs' LOD1 buckets too, on their own material, where the stacks on
       // a lake's shore stand; their LOD0 buckets are left out.
       if (lakeMirror !== null || lakePanorama !== null) {
@@ -2514,9 +2512,6 @@ function buildRenderer(
           }
           for (; forestLod2Reflected < forestMeshes.lod2Meshes.length; forestLod2Reflected++) {
             lakeMirror?.register(forestMeshes.lod2Meshes[forestLod2Reflected] as Mesh, null);
-          }
-          for (; forestLod1Reflected < forestMeshes.lod1Meshes.length; forestLod1Reflected++) {
-            lakeMirror?.register(forestMeshes.lod1Meshes[forestLod1Reflected] as Mesh, forestMeshes.lod1StandIns[forestLod1Reflected] as Material);
           }
         }
         if (cliffMeshes !== null) {
