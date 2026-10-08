@@ -117,8 +117,9 @@ const OCEAN_UNIFORMS = [
 /** The lake's ripples' two floats (`lakeRipples.fragment.fx`), declared on a lake alone, after `waterRain`. */
 const LAKE_UNIFORMS = ["waterLakeTime", "waterPawCover"] as const;
 
-/** The lake's mirror's five floats (`lakeMirror.fragment.fx`), declared on a
- * lake alone, after its view-projection, which follows the ripples'. */
+/** The lake's mirror's six floats (`lakeMirror.fragment.fx`), the last the held
+ * frames' smear (`waterMirrorMotion`), declared on a lake alone, after its
+ * view-projection, which follows the ripples'. */
 const MIRROR_FLOATS = ["waterMirrorOn", "waterMirrorK", "waterMirrorWeight", "waterMirrorSmearPx", "waterCalmShare", "waterMirrorMotion"] as const;
 /** The mirrored camera's view-projection, as its four columns: an array, bound as the sea's components are. */
 const MIRROR_VP = "waterMirrorVP";

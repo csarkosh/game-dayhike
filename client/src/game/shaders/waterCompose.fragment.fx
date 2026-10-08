@@ -23,10 +23,11 @@
 // uniforms, so the branch is the same for every pixel. Before the skin, which
 // then holds it off the fronds as it holds the probe. The mirror's smear is a
 // full paw's scaled by the paw mask, none on glass, plus the eye's motion's: the
-// pass draws every third frame, and on the frames between the read is smeared
-// down the screen by the parallax the eye's travel gives a reflected point at
-// the water's distance, capped at a twentieth of the frame, so the lag reads as
-// motion blur and a still eye reads the image sharp to the pixel.
+// pass draws every third frame, and on every frame the mirror is read it is
+// smeared down the screen by the parallax the eye's travel over the two frames
+// between draws gives a reflected point at the water's distance, capped at a
+// twentieth of the frame, so the lag reads as motion blur and a still eye reads
+// the image sharp to the pixel.
 // No energy-conservation factor or environment intensity on the mirror or the panorama: they are already-lit renders.
 if (waterMirrorWeight * waterCalmShare > 0.0) {
   vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw + min(waterMirrorMotion / max(vWaterViewDepth, 1.0), LAKE_MOTION_SMEAR_CAP / waterScreen.y));

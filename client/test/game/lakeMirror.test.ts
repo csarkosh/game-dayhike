@@ -18,7 +18,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Effect } from "@babylonjs/core/Materials/effect.js";
 import {
   createLakeMirror, createLakeMirrorTerrain, LAKE_MIRROR_TERRAIN_SHADER, MIRROR_CANOPY_SHADE, MIRROR_EVERY, MIRROR_FOV_MARGIN, MIRROR_LIFT, MIRROR_MAX_HEIGHT, MIRROR_MAX_WIDTH,
-  MIRROR_MOTION_SMEAR, MIRROR_MOTION_SMOOTH, MIRROR_REACH_M, MIRROR_SCALE, mirrorMotion,
+  MIRROR_MOTION_SMEAR, MIRROR_MOTION_SMOOTH, MIRROR_MOTION_STEP_MAX_M, MIRROR_REACH_M, MIRROR_SCALE, mirrorMotion,
   type LakeMirror,
 } from "../../src/game/lakeMirror.js";
 import { LAKE_MOTION_SMEAR_CAP } from "../../src/game/mirrorView.js";
@@ -270,6 +270,10 @@ describe("createLakeMirror", () => {
     expect(mirrorMotion(0.06, 0.1)).toBeCloseTo(0.102, 6);
     expect(mirrorMotion(0.102, 0)).toBeCloseTo(0.0714, 6);
     expect(mirrorMotion(0, 0)).toBe(0);
+    // A step over the limit is a teleport, not a walk: it leaves the smear alone.
+    expect(MIRROR_MOTION_STEP_MAX_M).toBe(5);
+    expect(mirrorMotion(0.1, 6)).toBeCloseTo(0.07, 6);
+    expect(mirrorMotion(0.1, 5)).toBeCloseTo(3.07, 6);
   });
 
   it("stays off with the eye at the mirror's plane or under it, where the near plane would turn over", () => {

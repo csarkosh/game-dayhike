@@ -65,6 +65,8 @@ export const MIRROR_FOV_MARGIN = 1.2;
 export const MIRROR_MOTION_SMEAR = 0.5;
 /** How much of the way the eye's travel moves the smoothed travel each frame. */
 export const MIRROR_MOTION_SMOOTH = 0.3;
+/** A step of the eye over this in one frame is a teleport or a respawn, not a walk: it leaves the smear alone. */
+export const MIRROR_MOTION_STEP_MAX_M = 5;
 /** The mirror's plane over the lake's level, metres: the lake's surface mesh's own lift (`lakeSurface`, renderer.ts). */
 export const MIRROR_LIFT = 0.02;
 /** How much darker the ground draws under a full canopy in the mirror: `lakeMirrorTerrain.fragment.fx`'s LAKE_MIRROR_CANOPY_SHADE. */
@@ -134,9 +136,10 @@ function targetSize(engineSize: number, cap: number): number {
   return Math.max(1, Math.min(cap, Math.round(engineSize * MIRROR_SCALE)));
 }
 
-/** The eye's travel the held frames can lag by, metres, smoothed: `motion` is the last value, `eyeStep` the eye's travel this frame. The frames between draws are MIRROR_EVERY − 1, so the lag is that many steps; the smoothing keeps it from flickering with the cadence. */
+/** The eye's travel the held frames can lag by, metres, smoothed: `motion` is the last value, `eyeStep` the eye's travel this frame. The frames between draws are MIRROR_EVERY − 1, so the lag is that many steps; the smoothing keeps it from flickering with the cadence, and a step over MIRROR_MOTION_STEP_MAX_M counts as none. */
 export function mirrorMotion(motion: number, eyeStep: number): number {
-  return motion + ((MIRROR_EVERY - 1) * eyeStep - motion) * MIRROR_MOTION_SMOOTH;
+  const step = eyeStep > MIRROR_MOTION_STEP_MAX_M ? 0 : eyeStep;
+  return motion + ((MIRROR_EVERY - 1) * step - motion) * MIRROR_MOTION_SMOOTH;
 }
 
 /** The high tier's mirror for `lake`; `halfZ` is the engine's depth range (`engine.isNDCHalfZRange`). */

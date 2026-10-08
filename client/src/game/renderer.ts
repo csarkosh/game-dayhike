@@ -2361,7 +2361,7 @@ function buildRenderer(
    * the mirror armed when the lake's disc is in this frame's view of an `eye`
    * (false with no local player) and the glass shows, drawn this frame or
    * every third, and the weight 0 in any frame it is not armed (its image is
-   * a frame stale); on
+   * up to two frames stale); on
    * medium the panorama re-armed whenever the lighting hands over a new sky
    * state (the probe re-armed with it), and whenever content lands late and
    * its target is then ready to render (at first, the forest's first fill
@@ -2369,8 +2369,8 @@ function buildRenderer(
    * sector captured; the
    * skyline's forest colour from the sky, raw (the shader scales it). After
    * the camera is placed for the frame, in both branches, so a pass that
-   * draws is from this frame's view and one that holds is only a frame behind
-   * it; nothing without a lake.
+   * draws is from this frame's view and one that holds is at most two frames
+   * behind it; nothing without a lake.
    */
   function updateLake(weather: WeatherParams, sky: SkyState | null, eye: boolean): void {
     if (lakePlugin === null || lakeMesh === null) return;
