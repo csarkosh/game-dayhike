@@ -502,34 +502,34 @@
       "bytes": 132911
     },
     {
-      "id": "voice.birds.1",
-      "output": "audio/voice.birds.1.mp3",
-      "bytes": 12407
-    },
-    {
-      "id": "voice.birds.2",
-      "output": "audio/voice.birds.2.mp3",
-      "bytes": 13347
-    },
-    {
-      "id": "voice.birds.3",
-      "output": "audio/voice.birds.3.mp3",
-      "bytes": 12407
-    },
-    {
       "id": "voice.body.1",
       "output": "audio/voice.body.1.mp3",
-      "bytes": 14758
+      "bytes": 19147
     },
     {
       "id": "voice.body.2",
       "output": "audio/voice.body.2.mp3",
-      "bytes": 10526
+      "bytes": 14288
     },
     {
       "id": "voice.body.3",
       "output": "audio/voice.body.3.mp3",
-      "bytes": 9586
+      "bytes": 15228
+    },
+    {
+      "id": "voice.hollow.1",
+      "output": "audio/voice.hollow.1.mp3",
+      "bytes": 17736
+    },
+    {
+      "id": "voice.hollow.2",
+      "output": "audio/voice.hollow.2.mp3",
+      "bytes": 13818
+    },
+    {
+      "id": "voice.hollow.3",
+      "output": "audio/voice.hollow.3.mp3",
+      "bytes": 17266
     },
     {
       "id": "voice.cap.1",
@@ -594,17 +594,17 @@
     {
       "id": "voice.cryAgain.1",
       "output": "audio/voice.cryAgain.1.mp3",
-      "bytes": 6608
+      "bytes": 7548
     },
     {
       "id": "voice.cryAgain.2",
       "output": "audio/voice.cryAgain.2.mp3",
-      "bytes": 9116
+      "bytes": 10056
     },
     {
       "id": "voice.cryAgain.3",
       "output": "audio/voice.cryAgain.3.mp3",
-      "bytes": 10996
+      "bytes": 11937
     },
     {
       "id": "voice.cryFirst.1",
@@ -619,7 +619,7 @@
     {
       "id": "voice.cryFirst.3",
       "output": "audio/voice.cryFirst.3.mp3",
-      "bytes": 16325
+      "bytes": 17266
     },
     {
       "id": "voice.dontLook.1",

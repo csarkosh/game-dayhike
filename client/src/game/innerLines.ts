@@ -8,9 +8,9 @@
  * `audio/voice.<scenario>.<n>.mp3`, n from 1 in the pool's order.
  */
 export type VoiceScenario =
-  | "trailhead" | "rain" | "offTrailDay" | "offTrailNight" | "dusk" | "lamp" | "birds" | "mist"
+  | "trailhead" | "rain" | "offTrailDay" | "offTrailNight" | "dusk" | "lamp" | "mist"
   | "cryFirst" | "cryAgain" | "shadeFirst" | "shadeGone" | "still" | "dontLook" | "crest" | "cap"
-  | "body" | "chaseStart" | "chaseOffTrail" | "safe";
+  | "body" | "hollow" | "chaseStart" | "chaseOffTrail" | "safe";
 
 export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
   trailhead: [
@@ -42,11 +42,6 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
     "Lamp.",
     "Can't see. Lamp on.",
     "Light. I need light.",
-  ],
-  birds: [
-    "Why did the birds stop?",
-    "When did it get so quiet?",
-    "What stopped the birds?",
   ],
   mist: [
     "Fog's coming up off the ground.",
@@ -97,6 +92,11 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
     "...Oh. Oh no.",
     "...Oh god.",
     "...What is this?!",
+  ],
+  hollow: [
+    "Oh god. Oh god, oh god.",
+    "What... what is that?!",
+    "No. No, no, no, no.",
   ],
   chaseStart: [
     "Run. NOW.",

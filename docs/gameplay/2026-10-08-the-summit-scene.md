@@ -26,9 +26,9 @@ every shot frames its subject against the sky.
 | Shot | Seconds | Lens | Camera | What it says |
 | --- | --- | --- | --- | --- |
 | 1. The arrival | 0 to 4 | 24 mm | Over the party's shoulder, no face, 0.6 m over their eye and 2.4 m back, pushing 0.9 m up the last of the trail; aimed 1.6 m up the stake ahead, which crosses the frame, what is on it cut off at the top, unremarked | place, person |
-| 2. The find | 4 to 8 | 32 mm | Locked off 2.4 m from the stake on the party's side, 0.5 m up, tilting from its foot to the hiker on it (`BODY_TOP_M` 3.6 m) against the sky; the inner voice's `body` line, held for this shot | problem |
+| 2. The find | 4 to 8 | 32 mm | Locked off 2.4 m from the stake on the party's side, 0.5 m up, tilting from its foot to the hiker on it (`BODY_TOP_M` 3.6 m) against the sky; the inner voice's `body` line, shock, on every screen, held for this shot | problem |
 | 3. The reveal | 8 to 13 | 24 mm | On the ground 1.6 m beside the stake, panning from the hiker's feet to the Hollow's head (`HOLLOW_HEAD_M` 4.5 m) as it comes up out of the ground 6 m past the stake; the cry comes at 9.5 s (`REVEAL_SILENCE_S`), as it stands | the wrong note made whole |
-| 4. The predator's view | 13 to 17 | 32 mm | High behind the Hollow's shoulder, 5.2 m up, 4.5 m back and 1.8 m to the side, pushing in 1.2 m; aimed down at the party, small beyond the stake in the mist; the `cryFirst` line lands here, after the howl | why to run |
+| 4. The predator's view | 13 to 17 | 32 mm | High behind the Hollow's shoulder, 5.2 m up, 4.5 m back and 1.8 m to the side, pushing in 1.2 m; aimed down at the party, small beyond the stake in the mist; the inner voice's `hollow` line, terror, lands here (the scene's cry is the reveal's and gets no cry line) | why to run |
 | 5. The threshold | 17 to 20 | the game's | The player's own eye again, as it was at the flip, the cast turning in front of it; the controls return as it ends and the `chaseStart` line says so | the handoff |
 
 The Hollow waits `SUMMIT_RISE_DELAY_S` (6 s, `entityViews.ts`) before its rise, so the arrival and

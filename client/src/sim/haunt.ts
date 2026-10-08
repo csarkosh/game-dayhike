@@ -68,6 +68,8 @@ export const HAUNT_REAL_CHASE = 0.9;
 export const SHADE_RANGE: readonly [number, number] = [7, 40];
 export const SHADE_DWELL_S: readonly [number, number] = [8, 18];
 export const SHADE_FLEE_RADIUS = 5;
+/** Metres a new shade keeps from every shade standing: no two in one spot. */
+export const SHADE_APART_M = 4;
 export const SHADE_WATCHED_S = 2.5;
 /**
  * The chase, off the trail: from OFF_TRAIL_FROM_M off it, over OFF_TRAIL_SPAN_M,
@@ -94,15 +96,15 @@ export const SHADE_BEARING_MIN_SIN = 0.2756;
 export const SHADE_BEARING_MAX_COS = 0.766;
 export const SHADE_BEARING_MAX_SIN = 0.6428;
 /** A lunge: where it starts, its speed (over a sprint), how far its line may drift toward its player a second, and its most seconds. */
-export const LUNGE_RANGE: readonly [number, number] = [16, 26];
-export const LUNGE_SPEED = 7.2;
+export const LUNGE_RANGE: readonly [number, number] = [30, 44];
+export const LUNGE_SPEED = 6;
 /** The strike: within this of its player the lunge stops and strikes, the strike lasting this long, landing this far into it, and killing within this reach. */
 export const LUNGE_ATTACK_M = 2.6;
 export const LUNGE_ATTACK_S = 0.9;
 export const LUNGE_ATTACK_HIT_S = 0.4;
 export const LUNGE_ATTACK_REACH = 3.4;
 export const LUNGE_DRIFT = 1.2;
-export const LUNGE_MAX_S = 8;
+export const LUNGE_MAX_S = 16;
 /** Metres beyond its player a lunge's line runs. */
 export const LUNGE_LINE_M = 60;
 /** In the chase: how far along the open way home a guide shade's node may be, how far along the way to it the shade stands, and how far beside it. */
@@ -196,6 +198,9 @@ function admits(world: World, x: number, z: number, eye: Vec3): Vec3 | null {
   const clear = SHADE_FLEE_RADIUS + 1;
   for (const p of world.state.players.values()) {
     if (p.health > 0 && horizontalDistSq(p.pos, centre) < clear * clear) return null;
+  }
+  for (const e of world.state.enemies.values()) {
+    if (isShadeState(e.ai) && horizontalDistSq(e.pos, centre) < SHADE_APART_M * SHADE_APART_M) return null;
   }
   if (!hasLineOfSight(eye, centre, world.boxes, world.ground)) return null;
   return centre;
