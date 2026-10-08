@@ -1003,8 +1003,8 @@ describe("world shell wiring", () => {
     expect(playerBranch).toContain("} else {\n        // No eye this frame: the mirror is disarmed, never drawn from a stale view.\n        updateLake(weather, sky, false);\n      }");
     expect(freecamBranch.indexOf("updateLake(")).toBeGreaterThan(freecamBranch.indexOf("camera.fov = freecam.fov ?? GAME_FOV;"));
     expect(playerBranch.indexOf("updateLake(")).toBeGreaterThan(playerBranch.indexOf("camera.fov = GAME_FOV;"));
-    // The four inner rings through the terrain's stand-in, in either capture.
-    expect(src).toContain("for (const mesh of clipmap?.meshes.slice(0, 4) ?? []) {\n    lakeMirror?.register(mesh, mirrorTerrain);\n    lakePanorama?.register(mesh, mirrorTerrain);");
+    // The five inner rings through the terrain's stand-in, in either capture.
+    expect(src).toContain("for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {\n    lakeMirror?.register(mesh, mirrorTerrain);\n    lakePanorama?.register(mesh, mirrorTerrain);");
     // The near trees at LOD2 on their own material and the far bank's at
     // LOD1 through a LOD2 one, in the mirror alone.
     expect(src).toContain("lakeMirror?.register(forestMeshes.lod2Meshes[forestLod2Reflected] as Mesh, null);");
@@ -1420,6 +1420,22 @@ describe("the lake's reflection in a renderer", () => {
     lakeReflections.mirrors.length = 0;
     lakeReflections.panoramas.length = 0;
   });
+
+  it("draws the clipmap's five inner rings, to the ridges past 512 m, through the ground's stand-in in the high mirror and the medium panorama", () => {
+    const listed: Record<string, string[]> = {};
+    for (const tier of ["high", "medium"] as const) {
+      const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier, skyTable: skyFixture() });
+      try {
+        const target = renderer.scene.getTextureByName(tier === "high" ? "lake_mirror" : "lake_panorama") as RenderTargetTexture;
+        const rings = (target.renderList ?? []).filter((m) => m.name.startsWith("clipmap_"));
+        listed[tier] = rings.map((m) => `${m.name} ${m.getMaterialForRenderPass(target.renderPassId)?.name}`);
+      } finally {
+        renderer.dispose();
+      }
+    }
+    const rings = [0, 1, 2, 3, 4].map((level) => `clipmap_${level} lake_mirror_terrain`);
+    expect(listed).toEqual({ high: rings, medium: rings });
+  }, timeLimit(120_000));
 
   it("draws the cliffs' LOD1 buckets in the high mirror on their own material, and the far buckets alone in the medium panorama", () => {
     const listed: Record<string, string[]> = {};

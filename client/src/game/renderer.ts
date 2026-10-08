@@ -1968,13 +1968,13 @@ function buildRenderer(
   const lakeSkyline =
     reflected && tier !== "high" ? createSkylineTexture(scene, skylineElevations(firstLake, forest.seed, skylineTrees(firstLake, forest.seed))) : null;
   partOf(lakeSkyline);
-  // The ground in either: the four inner rings through a cheap lit stand-in,
-  // never the terrain's own material. The mirror owns its own; the panorama's
-  // is made here.
+  // The ground in either: the five inner rings (to the ridges past ring 3's
+  // 512 m) through a cheap lit stand-in, never the terrain's own material.
+  // The mirror owns its own; the panorama's is made here.
   const panoramaTerrain = lakePanorama !== null ? createLakeMirrorTerrain(scene) : null;
   partOf(panoramaTerrain);
   const mirrorTerrain = lakeMirror?.terrainMaterial ?? panoramaTerrain;
-  for (const mesh of clipmap?.meshes.slice(0, 4) ?? []) {
+  for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {
     lakeMirror?.register(mesh, mirrorTerrain);
     lakePanorama?.register(mesh, mirrorTerrain);
   }
