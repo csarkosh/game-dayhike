@@ -194,6 +194,22 @@ vi.mock("../../src/game/lakePanorama.js", async (importOriginal) => {
   };
 });
 
+// Every forest shell the renderer makes, recorded on the way through to the
+// real one, and its first fill held on `gate` for as long as a test sets one.
+const forestShells = vi.hoisted(() => ({ made: [] as unknown[], gate: null as Promise<void> | null }));
+vi.mock("../../src/game/forestMeshes.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/forestMeshes.js")>();
+  return {
+    ...mod,
+    createForestMeshes: (...args: Parameters<typeof mod.createForestMeshes>) => {
+      const forest = mod.createForestMeshes(...args);
+      forestShells.made.push(forest);
+      if (forestShells.gate !== null) (forest as { ready: Promise<void> }).ready = forestShells.gate;
+      return forest;
+    },
+  };
+});
+
 // The terrain field lives behind the variant registry, and `activeTerrainVariant`
 // throws until something has registered one. `app.ts` gets that transitively
 // through `forest.ts`; a renderer-only test has to ask for it.
@@ -240,6 +256,9 @@ import { WaterPlugin } from "../../src/game/waterPlugin.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { LakeCalmFrame } from "../../src/game/renderer.js";
+import type { ForestMeshes } from "../../src/game/forestMeshes.js";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 
 let engine: NullEngine | null = null;
 
@@ -1313,6 +1332,9 @@ describe("the lake's calm", () => {
     expect(lakeCalmUnder(6, "clear", "overcast", 1, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(0.3);
     expect(lakeCalmUnder(6, "clear", "overcast", 2, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(0.3);
     expect(lakeCalmUnder(6, "clear", "overcast", Number.NaN, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(1);
+    // A fade taken over mid-way starts from the share it had reached.
+    expect(lakeCalmUnder(6, 0.65, "rain", 0.5, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(0.325);
+    expect(lakeCalmUnder(6, 0.65, "rain", 0, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(0.65);
   });
 
   it("smears a paw's edge by its four degrees over the frame's height and the lens", () => {
@@ -1535,6 +1557,86 @@ describe("the lake's reflection in a renderer", () => {
       ready.mockReturnValue(true);
       for (let i = 0; i < 3; i++) renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
       expect(panorama.rearms).toBe(2);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("takes a fade over mid-way from the share it had reached, never from the preset it was fading to", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    const calm = vi.spyOn(WaterPlugin.prototype, "setCalm");
+    try {
+      // Half a second a frame, at 06:00: clear's 1, overcast's 0.3, rain's 0.
+      vi.spyOn(renderer.engine, "getDeltaTime").mockReturnValue(500);
+      renderer.setView(6, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      renderer.setWeatherName("clear", 0);
+      const shares: number[] = [];
+      const frame = (): void => {
+        renderer.sync(windTestState(), 1, 0, { dt: 0.5, sprinting: false });
+        shares.push(calm.mock.lastCall![0]);
+      };
+      frame();
+      renderer.setWeatherName("overcast");
+      for (let i = 0; i < 3; i++) frame();
+      // Half-way to overcast, then rain: on down from 0.65, a sixth a frame.
+      renderer.setWeatherName("rain");
+      for (let i = 0; i < 2; i++) frame();
+      expect(shares).toEqual([1, 0.8833333333333333, 0.7666666666666667, 0.65, 0.5416666666666667, 0.43333333333333335]);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("captures the panorama again once the forest's first fill has settled, and when a billboard is added to it late", async () => {
+    let release = (): void => undefined;
+    forestShells.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    forestShells.made.length = 0;
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    forestShells.gate = null;
+    try {
+      const panorama = lakeReflections.panoramas[0]!;
+      const target = renderer.scene.getTextureByName("lake_panorama")!;
+      vi.spyOn(target as unknown as { isReadyForRendering(): boolean }, "isReadyForRendering").mockReturnValue(true);
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      const frame = (): void => renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      frame();
+      frame();
+      // The first sky and the first readiness, in one frame: one capture.
+      expect(panorama.rearms).toBe(1);
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      frame();
+      frame();
+      expect(panorama.rearms).toBe(2);
+      // A billboard lands after the fill.
+      const forest = forestShells.made[0] as ForestMeshes;
+      (forest.impostorMeshes as Mesh[]).push(MeshBuilder.CreatePlane("forest_impostor_late", { size: 1 }, renderer.scene));
+      frame();
+      frame();
+      expect(panorama.rearms).toBe(3);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("walks the panorama's readiness only while a capture waits on it, not every frame of the hike", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    try {
+      const panorama = lakeReflections.panoramas[0]!;
+      const target = renderer.scene.getTextureByName("lake_panorama")!;
+      const ready = vi.spyOn(target as unknown as { isReadyForRendering(): boolean }, "isReadyForRendering").mockReturnValue(true);
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      // The first frame asks once, and the turn's sixteen sectors each ask
+      // before they draw; the frame after the turn asks nothing.
+      for (let i = 0; i < 17; i++) renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect([panorama.rearms, ready.mock.calls.length]).toEqual([1, 17]);
+      for (let i = 0; i < 5; i++) renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect([panorama.rearms, ready.mock.calls.length]).toEqual([1, 17]);
     } finally {
       renderer.dispose();
     }

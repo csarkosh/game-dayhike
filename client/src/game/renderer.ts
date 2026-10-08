@@ -786,9 +786,22 @@ export type LakeCalmFrame = {
 export const PAW_COVER_SHELTER = 0.3;
 
 /**
+ * The glass's share at `hour` faded from `from` to the preset `to` by `t` (0
+ * to 1, a weather fade's progress; exact at the ends, as `lerpWeather` is,
+ * and a progress that is not a number is the start): `from` is a preset, or
+ * the share a fade began at when it took over from another mid-way.
+ */
+export function fadedCalmShare(hour: number, from: WeatherPresetName | number, to: WeatherPresetName, t: number): number {
+  const k = t > 0 ? Math.min(1, t) : 0;
+  const a = typeof from === "number" ? from : calmShare(hour, from);
+  const b = calmShare(hour, to);
+  return k === 1 ? b : a + (b - a) * k;
+}
+
+/**
  * The lake's calm this frame into `out` (one record, refilled): the calm
- * share at `hour` faded from the preset `from` to the preset `to` by `t`
- * (0 to 1, a weather fade's progress), the surface rough under `weather` and
+ * share at `hour` faded from `from` (a preset, or the share a fade began at)
+ * to the preset `to` by `t` (`fadedCalmShare`), the surface rough under `weather` and
  * the wind's 0..1 speed on a lake of `shelter`, the paws' cover
  * `(1 − share) · shelter / PAW_COVER_SHELTER`, and the smear of a paw's
  * slope for a frame `frameHeightPx` tall seen through `fov` (vertical,
@@ -796,7 +809,7 @@ export const PAW_COVER_SHELTER = 0.3;
  */
 export function lakeCalmUnder(
   hour: number,
-  from: WeatherPresetName,
+  from: WeatherPresetName | number,
   to: WeatherPresetName,
   t: number,
   weather: WeatherParams,
@@ -806,11 +819,7 @@ export function lakeCalmUnder(
   fov: number,
   out: LakeCalmFrame,
 ): LakeCalmFrame {
-  // Exact at the ends, as `lerpWeather` is; a progress that is not a number is the start.
-  const k = t > 0 ? Math.min(1, t) : 0;
-  const a = calmShare(hour, from);
-  const b = calmShare(hour, to);
-  const share = k === 1 ? b : a + (b - a) * k;
+  const share = fadedCalmShare(hour, from, to, t);
   out.rough = isRough(weather, wind01, shelter);
   out.share = out.rough ? 0 : share;
   out.cover = out.rough ? 1 : Math.min(1, Math.max(0, ((1 - share) * shelter) / PAW_COVER_SHELTER));
@@ -2306,17 +2315,29 @@ function buildRenderer(
 
   /** The lake's calm, one record refilled each frame (`lakeCalmUnder`). */
   const lakeCalm: LakeCalmFrame = { share: 0, rough: false, cover: 0, smearPx: 0 };
-  /** The presets the calm fades from and to, and the fade's length and progress (s): `setWeatherName`. */
-  let calmFrom: WeatherPresetName = DEFAULT_WEATHER;
+  /** What the calm fades from (a preset, or the share a fade took over at)
+   * and the preset it fades to, and the fade's length and progress (s):
+   * `setWeatherName`. */
+  let calmFrom: WeatherPresetName | number = DEFAULT_WEATHER;
   let calmTo: WeatherPresetName = DEFAULT_WEATHER;
   let calmFadeS = 0;
   let calmElapsedS = 0;
   /** The sky state the panorama was last armed under: the lighting makes a
    * new one at each apply that re-arms the sky's probe (`Lighting.sky`). */
   let panoramaSky: SkyState | null = null;
-  /** Whether the panorama's target has once been ready to render: the first
-   * capture that can draw every registered mesh is asked for then. */
-  let panoramaPrimed = false;
+  /** A capture asked for once the panorama's target is ready to render: at
+   * first, when every registered mesh can draw, and again whenever content
+   * lands late (the forest's first fill settling, a billboard or a cliff
+   * added to the panorama's list). The readiness walk runs only while one
+   * is pending. */
+  let panoramaPending = lakePanorama !== null;
+  if (lakePanorama !== null) {
+    // Settled either way: what landed is what the capture can draw.
+    const landed = (): void => {
+      panoramaPending = true;
+    };
+    void forestMeshes?.ready.then(landed, landed);
+  }
   /** The low tier's forest colour under the skyline, and the reflections' ground colour: reused. */
   const skylineShade: [number, number, number] = [0, 0, 0];
   const mirrorColour = new Color3(0, 0, 0);
@@ -2355,10 +2376,10 @@ function buildRenderer(
     if (lakePanorama !== null) {
       const skyMoved = sky !== null && sky !== panoramaSky;
       if (skyMoved) panoramaSky = sky;
-      const firstReady = !panoramaPrimed && lakePanorama.texture.isReadyForRendering();
-      if (firstReady) panoramaPrimed = true;
+      const nowReady = panoramaPending && lakePanorama.texture.isReadyForRendering();
+      if (nowReady) panoramaPending = false;
       // A rearm mid-capture continues the turn: once a frame at most.
-      if (skyMoved || firstReady) lakePanorama.rearm();
+      if (skyMoved || nowReady) lakePanorama.rearm();
       capturing = lakePanorama.update();
     }
     if (sky === null) return;
@@ -2463,6 +2484,8 @@ function buildRenderer(
             const plane = forestMeshes.impostorMeshes[forestImpostorsReflected] as Mesh;
             lakeMirror?.register(plane, null);
             lakePanorama?.register(plane, null);
+            // The far forest has landed: the panorama is taken again.
+            if (lakePanorama !== null) panoramaPending = true;
           }
           for (; forestLod2Reflected < forestMeshes.lod2Meshes.length; forestLod2Reflected++) {
             lakeMirror?.register(forestMeshes.lod2Meshes[forestLod2Reflected] as Mesh, null);
@@ -2477,6 +2500,7 @@ function buildRenderer(
             if (!bucket.name.endsWith(CLIFF_FAR_SUFFIX)) continue;
             lakeMirror?.register(bucket, null);
             lakePanorama?.register(bucket, null);
+            if (lakePanorama !== null) panoramaPending = true;
           }
         }
       }
@@ -2803,7 +2827,8 @@ function buildRenderer(
         calmElapsedS = 0;
         return;
       }
-      calmFrom = calmTo;
+      // A fade taken over mid-way starts from the share it had reached.
+      calmFrom = calmFadeS > 0 ? fadedCalmShare(lighting.hour, calmFrom, calmTo, calmElapsedS / calmFadeS) : calmTo;
       calmTo = name;
       calmFadeS = fadeSeconds;
       calmElapsedS = 0;
