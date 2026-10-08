@@ -30,6 +30,7 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import vertexDefs from "./shaders/water.vertex.fx?raw";
 import vertexWorldPos from "./shaders/waterWorldPos.vertex.fx?raw";
 import fragmentDefs from "./shaders/water.fragment.fx?raw";
+import lakeRipplesDefs from "./shaders/lakeRipples.fragment.fx?raw";
 import fragmentLights from "./shaders/waterLights.fragment.fx?raw";
 import fragmentCompose from "./shaders/waterCompose.fragment.fx?raw";
 import oceanVertexDefs from "./shaders/ocean.vertex.fx?raw";
@@ -38,16 +39,17 @@ import oceanFragmentDefs from "./shaders/ocean.fragment.fx?raw";
 import oceanSurface from "./shaders/oceanSurface.fx?raw";
 import oceanShade from "./shaders/oceanShade.fragment.fx?raw";
 import { WATER_F0, roughnessFor, type WaterRow } from "./waterShading.js";
+import { WIND_TIME_WRAP } from "./windParams.js";
 
 /** Babylon's dielectric F0 at metallicF0Factor 1 is 0.04; water's 0.02 is half of it. */
 const PBR_DIELECTRIC_F0 = 0.04;
 
-/** The definitions each stage gets: the water's, then the sea's declarations,
- * then the sea's surface, which both stages evaluate (`oceanSurface.fx`), and
- * in the fragment stage the sea's shading (each file ends in a newline, so no
- * two lines join). */
+/** The definitions each stage gets: the water's, in the fragment stage the
+ * lake's ripples, then the sea's declarations, then the sea's surface, which
+ * both stages evaluate (`oceanSurface.fx`), and in the fragment stage the
+ * sea's shading (each file ends in a newline, so no two lines join). */
 const VERTEX_DEFINITIONS = vertexDefs + oceanVertexDefs + oceanSurface;
-const FRAGMENT_DEFINITIONS = fragmentDefs + oceanFragmentDefs + oceanSurface + oceanShade;
+const FRAGMENT_DEFINITIONS = fragmentDefs + lakeRipplesDefs + oceanFragmentDefs + oceanSurface + oceanShade;
 
 /**
  * Babylon 9.18's line that takes the reflectivity block's roughness, which
@@ -152,7 +154,11 @@ export class WaterPlugin extends MaterialPluginBase {
   nearFar: [number, number] = [0.05, 1000];
   time = 0;
   windDir: [number, number] = [1, 0];
-  /** The wind's direction integrated over the run, in seconds: what the skin and the second octave drift by. */
+  /** The wind's 0..1 speed, as `setWind` last had it. */
+  windSpeed = 0;
+  /** The wind's velocity (its direction times its 0..1 speed) integrated over
+   * the run, in seconds: what the skin and the second octave drift by, so
+   * the octave drifts at the wind's speed as well as along it. */
   windTime: [number, number] = [0, 0];
   private _lastSeconds: number | null = null;
   /** Ripple octaves the fragment blends: 2, or 1 on the low tier (spec §5.3). */
@@ -162,8 +168,14 @@ export class WaterPlugin extends MaterialPluginBase {
    * (`waterSkinOffset`). */
   skin: [number, number] = [0, 0];
   /** The weather's rain, 0 to 1, per frame: the drops' rings on the surface,
-   * the puddles' own (`waterRainSlope`). */
+   * the puddles' own on the sea (`waterRainSlope`), the lake's near the eye
+   * (`lakeRainSlope`). */
   rain = 0;
+  /** The lake's time: the shared seconds wrapped at WIND_TIME_WRAP, which the
+   * cat's-paws and the rain's rings read (`lakeRipples.fragment.fx`). */
+  lakeTime = 0;
+  /** How much of the lake the cat's-paws may cover, 0 to 1 (`lakePaw`): 1 on a lake rough all over. */
+  pawCover = 0;
   private _ocean: OceanBinding | null = null;
   /** What the array samplers are bound to without an ocean. */
   private readonly _arrayPlaceholder: BaseTexture;
@@ -211,15 +223,26 @@ export class WaterPlugin extends MaterialPluginBase {
       if (m.roughness === null || Math.abs(m.roughness - r) > 1e-3) m.roughness = r;
     }
     this.windDir = dir;
+    this.windSpeed = wind01;
   }
 
-  /** Per frame, with the renderer's clock: sets the time and adds the wind's direction times the step to `windTime`. */
+  /** Per frame, with the renderer's clock: sets the time and adds the wind's velocity times the step to `windTime`. */
   advance(seconds: number): void {
     const dt = this._lastSeconds === null ? 0 : Math.max(0, seconds - this._lastSeconds);
-    this.windTime[0] += this.windDir[0] * dt;
-    this.windTime[1] += this.windDir[1] * dt;
+    this.windTime[0] += this.windDir[0] * this.windSpeed * dt;
+    this.windTime[1] += this.windDir[1] * this.windSpeed * dt;
     this._lastSeconds = seconds;
     this.time = seconds;
+  }
+
+  /** Per frame, the shared seconds (wrapped or not): the lake's time, wrapped at WIND_TIME_WRAP as the wind's is. */
+  setLakeTime(seconds: number): void {
+    this.lakeTime = seconds - Math.floor(seconds / WIND_TIME_WRAP) * WIND_TIME_WRAP;
+  }
+
+  /** Per frame, the share of the lake the cat's-paws may cover, clamped to 0..1. */
+  setPawCover(cover: number): void {
+    this.pawCover = Math.min(1, Math.max(0, cover));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -273,6 +296,8 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: "waterNearFar", size: 2, type: "vec2" },
         { name: "waterSkin", size: 2, type: "vec2" },
         { name: "waterRain", size: 1, type: "float" },
+        { name: "waterLakeTime", size: 1, type: "float" },
+        { name: "waterPawCover", size: 1, type: "float" },
         ...OCEAN_UNIFORMS.map((name) => ({ name, size: 4, type: "vec4" })),
         { name: OCEAN_COMPONENTS, size: 4, type: "vec4", arraySize: OCEAN_COMPONENT_COUNT },
       ],
@@ -293,6 +318,8 @@ export class WaterPlugin extends MaterialPluginBase {
         "uniform vec2 waterNearFar;",
         "uniform vec2 waterSkin;",
         "uniform float waterRain;",
+        "uniform float waterLakeTime;",
+        "uniform float waterPawCover;",
         ...OCEAN_UNIFORMS.map((name) => `uniform vec4 ${name};`),
         components,
       ].join("\n"),
@@ -324,6 +351,9 @@ export class WaterPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat2("waterNearFar", this.nearFar[0], this.nearFar[1]);
     uniformBuffer.updateFloat2("waterSkin", this.skin[0], this.skin[1]);
     uniformBuffer.updateFloat("waterRain", this.rain);
+    // The lake's ripples: read on a lake alone, bound on every draw.
+    uniformBuffer.updateFloat("waterLakeTime", this.lakeTime);
+    uniformBuffer.updateFloat("waterPawCover", this.pawCover);
     // Every declared sampler is bound on every draw: WebGPU validates the
     // bindings a pipeline declares whether or not a branch reads them. The
     // material is not ready until the bed texture exists, so the null guards

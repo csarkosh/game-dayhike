@@ -35,10 +35,11 @@ const float WATER_RAIN_RADIUS = 0.25;
 const float WATER_RAIN_INSET = 0.25;
 
 // The second octave's slope from the same bump texture at a finer tile,
-// drifting with the wind. The first octave is PBR's own bump (24 m a tile,
+// drifting downwind: the sample runs upwind of the pixel, so the pattern
+// travels with the wind. The first octave is PBR's own bump (24 m a tile,
 // scrolled by the shell). Returns an xz slope to add to the normal.
 vec2 waterRipple2(vec2 xz) {
-  vec2 uv = xz / WATER_OCTAVE2_TILE + waterWindTime * WATER_OCTAVE2_DRIFT;
+  vec2 uv = xz / WATER_OCTAVE2_TILE - waterWindTime * WATER_OCTAVE2_DRIFT;
 #ifdef BUMP
   vec3 n = texture2D(bumpSampler, uv).xyz * 2.0 - 1.0;
   return n.xy * WATER_OCTAVE2_WEIGHT;

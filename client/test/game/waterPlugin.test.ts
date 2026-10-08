@@ -1,6 +1,7 @@
 // client/test/game/waterPlugin.test.ts
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -65,7 +66,9 @@ describe("water plugin", () => {
     const mat = new PBRMaterial("w3", scene);
     const p = attachWater(mat, WATER_ROWS.sea);
     const f = p.getCustomCode("fragment")!;
-    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("water.fragment.fx") + fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanShade.fragment.fx"));
+    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(
+      fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") + fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanShade.fragment.fx"),
+    );
     expect(f.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toBe(fx("waterLights.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION).toBe(fx("waterCompose.fragment.fx"));
     const v = p.getCustomCode("vertex")!;
@@ -75,6 +78,7 @@ describe("water plugin", () => {
     // the water's files end their last line, so the sea's never join it
     expect(fx("water.vertex.fx").endsWith(";\n")).toBe(true);
     expect(fx("water.fragment.fx").endsWith("}\n")).toBe(true);
+    expect(fx("lakeRipples.fragment.fx").endsWith("}\n")).toBe(true);
     const d = f.CUSTOM_FRAGMENT_DEFINITIONS;
     expect(d).toContain(`const float WATER_F0 = ${glslFloat(WATER_F0)};`);
     expect(d).toContain(`const float WATER_HORIZON = ${glslFloat(WATER_HORIZON)};`);
@@ -264,7 +268,7 @@ describe("water plugin", () => {
     expect(d).toContain("vec3 waterSkinColour(vec2 xz, float viewDepth)");
   });
 
-  it("slides the skin along the wind in both its mask and its colour", () => {
+  it("slides the skin along the wind in both its mask and its colour, and the second octave downwind", () => {
     const d = fx("water.fragment.fx");
     const colour = d.indexOf("vec3 waterSkinColour(");
     const mask = d.slice(d.indexOf("float waterSkinMask("), colour);
@@ -273,7 +277,11 @@ describe("water plugin", () => {
     expect(mask).toContain(drift);
     expect(col).toContain(drift);
     const ripple = d.slice(d.indexOf("waterRipple2("), d.indexOf("float waterSkinHash("));
-    expect(ripple).toContain("waterWindTime * WATER_OCTAVE2_DRIFT");
+    expect(ripple).toContain("vec2 uv = xz / WATER_OCTAVE2_TILE - waterWindTime * WATER_OCTAVE2_DRIFT;");
+    // A texel at uv0 is drawn where xz = TILE * (uv0 + waterWindTime * DRIFT), and waterWindTime runs along
+    // the wind's direction times its speed: the octave's pattern travels downwind at TILE * DRIFT m/s at full wind.
+    const octave = (name: string): number => Number(new RegExp(`const float ${name} = ([^;]+);`).exec(d)![1]);
+    expect(octave("WATER_OCTAVE2_TILE") * octave("WATER_OCTAVE2_DRIFT")).toBeCloseTo(0.12, 12);
     for (const part of [mask, col, ripple]) {
       expect(part).not.toContain("waterWind * (waterTime");
       expect(part).not.toContain("waterWind * waterTime");
@@ -302,19 +310,31 @@ describe("the rain's rings on the water", () => {
     expect(floats).toContainEqual(["waterRain", 0.6]);
   });
 
-  it("rings the normal before the horizon clamp and before the skin, on a uniform branch", () => {
+  it("rings the normal before the horizon clamp and before the skin, on a uniform branch: the lake's near the eye, the sea's four layers", () => {
     const d = fx("water.fragment.fx");
     expect(d).toContain("vec2 waterRainSlope(vec2 xz)");
     expect(d).toContain(`mod(waterTime, ${glslFloat(RIPPLE_TIME_WRAP)})`);
     expect(d).toContain("if (waterRain <= 0.0) return vec2(0.0);");
     const l = fx("waterLights.fragment.fx");
-    const rings = l.indexOf("if (waterRain > 0.0) {");
-    expect(rings).toBeGreaterThan(-1);
-    expect(rings).toBeGreaterThan(l.indexOf("waterRipple2(vPositionW.xz)"));
-    expect(rings).toBeLessThan(l.indexOf("waterHorizonNormal("));
-    expect(rings).toBeLessThan(l.indexOf("float wSkin ="));
-    expect(l).toContain("vec2 wRs = waterRainSlope(vPositionW.xz);");
-    expect(l).toContain("normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y) * waterRain);");
+    const lake = l.indexOf("vec2 wRs = lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain, length(vPositionW - vEyePosition.xyz));");
+    const sea = l.indexOf("vec2 wRs = waterRainSlope(vPositionW.xz);");
+    // the lake's in the gate's lake branch, after its octaves; the sea's in a gate of its own after it
+    expect(lake).toBeGreaterThan(l.indexOf("waterRipple2(vPositionW.xz)"));
+    // the normal's gate: the sea's branch, then the lake's
+    const lakeBranch = l.indexOf("#else", l.indexOf("float wOceanVar ="));
+    expect(lakeBranch).toBeGreaterThan(-1);
+    expect(lake).toBeGreaterThan(lakeBranch);
+    expect(l.slice(lakeBranch, lake)).not.toContain("#endif");
+    expect(l.slice(lake, sea)).toContain("#endif\n#ifdef OCEAN\n");
+    expect(l.slice(sea)).toContain("normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y) * waterRain);\n}\n#endif\n");
+    for (const rings of [lake, sea]) {
+      expect(rings).toBeGreaterThan(-1);
+      expect(l.lastIndexOf("if (waterRain > 0.0) {", rings)).toBeGreaterThan(-1);
+      expect(rings).toBeLessThan(l.indexOf("waterHorizonNormal("));
+      expect(rings).toBeLessThan(l.indexOf("float wSkin ="));
+    }
+    // the lake's rings carry their own scale by the rain
+    expect(l).toContain("normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y));");
   });
 
   it("draws the puddles' four layers, their numbers those of rainParams.ts", () => {
@@ -342,20 +362,29 @@ describe("the rain's rings on the water", () => {
     expect(d).toContain("rainParams.ts");
   });
 
-  it("integrates the wind's direction over the clock, turning with it", () => {
+  it("integrates the wind's velocity, its direction times its speed, over the clock, turning with it", () => {
     const p = attachWater(new PBRMaterial("wInt", scene), WATER_ROWS.lowlandLake);
     expect(p.windTime).toEqual([0, 0]);
+    expect(p.windSpeed).toBe(0);
     p.setWind(0.5, [1, 0]);
+    expect(p.windSpeed).toBe(0.5);
     p.advance(1);
     p.advance(2);
-    expect(p.windTime[0]).toBeCloseTo(1, 9);
+    expect(p.windTime[0]).toBeCloseTo(0.5, 9);
     p.advance(3);
-    expect(p.windTime[0]).toBeCloseTo(2, 9);
+    expect(p.windTime[0]).toBeCloseTo(1, 9);
     p.setWind(0.5, [0, 1]);
     p.advance(4);
-    expect(p.windTime[0]).toBeCloseTo(2, 9);
-    expect(p.windTime[1]).toBeCloseTo(1, 9);
-    expect(p.time).toBe(4);
+    expect(p.windTime[0]).toBeCloseTo(1, 9);
+    expect(p.windTime[1]).toBeCloseTo(0.5, 9);
+    // a stronger wind drifts it faster, a still one not at all
+    p.setWind(1, [0, 1]);
+    p.advance(6);
+    expect(p.windTime[1]).toBeCloseTo(2.5, 9);
+    p.setWind(0, [0, 1]);
+    p.advance(10);
+    expect(p.windTime[1]).toBeCloseTo(2.5, 9);
+    expect(p.time).toBe(10);
   });
 
   it("binds the wind's integral on both paths", () => {
@@ -371,6 +400,76 @@ describe("the rain's rings on the water", () => {
     } as unknown as UniformBuffer;
     p.bindForSubMesh(ubo);
     expect(pairs).toContainEqual(["waterWindTime", 3, 4]);
+  });
+});
+
+describe("the lake's ripples in the water plugin", () => {
+  it("declares the lake's time and the paws' cover before the sea's uniforms, and binds them on every draw, on a lake and on the sea", () => {
+    const lake = attachWater(new PBRMaterial("wL1", scene), WATER_ROWS.lowlandLake);
+    const u = lake.getUniforms();
+    const names = u.ubo.map((e) => e.name);
+    expect(names.slice(names.indexOf("waterRain"), names.indexOf("waterRain") + 3)).toEqual(["waterRain", "waterLakeTime", "waterPawCover"]);
+    expect(u.ubo).toContainEqual({ name: "waterLakeTime", size: 1, type: "float" });
+    expect(u.ubo).toContainEqual({ name: "waterPawCover", size: 1, type: "float" });
+    expect(u.fragment).toContain("uniform float waterLakeTime;");
+    expect(u.fragment).toContain("uniform float waterPawCover;");
+    expect(u.vertex).not.toContain("waterLakeTime");
+    expect(lake.lakeTime).toBe(0);
+    expect(lake.pawCover).toBe(0);
+    const sea = attachWater(new PBRMaterial("wL2", scene), WATER_ROWS.sea);
+    sea.ocean = testOcean();
+    for (const [p, time, cover] of [[lake, 12.5, 0.25], [sea, 7, 0.5]] as const) {
+      p.setLakeTime(time);
+      p.setPawCover(cover);
+      for (let draw = 0; draw < 2; draw++) {
+        const floats: Record<string, number> = {};
+        const ubo = new Proxy(
+          {},
+          { get: (_t, key) => (key === "updateFloat" ? (n: string, v: number) => void (floats[n] = v) : () => undefined) },
+        ) as unknown as UniformBuffer;
+        p.bindForSubMesh(ubo);
+        expect(floats.waterLakeTime).toBe(time);
+        expect(floats.waterPawCover).toBe(cover);
+      }
+    }
+  });
+
+  it("wraps the lake's time as the wind's and clamps the paws' cover to 0..1", () => {
+    const p = attachWater(new PBRMaterial("wL3", scene), WATER_ROWS.lowlandLake);
+    p.setLakeTime(301.5);
+    expect(p.lakeTime).toBeCloseTo(1.5, 9);
+    p.setLakeTime(299);
+    expect(p.lakeTime).toBe(299);
+    p.setLakeTime(900);
+    expect(p.lakeTime).toBe(0);
+    p.setLakeTime(-1);
+    expect(p.lakeTime).toBe(299);
+    p.setPawCover(1.4);
+    expect(p.pawCover).toBe(1);
+    p.setPawCover(-0.2);
+    expect(p.pawCover).toBe(0);
+    p.setPawCover(0.35);
+    expect(p.pawCover).toBe(0.35);
+  });
+
+  it("assembles the lake's normal from the paws: the octaves at the mask's amplitude, glass where it is 0, then the rings", () => {
+    const l = fx("waterLights.fragment.fx");
+    // the normal's gate: the sea's branch, then the lake's
+    const branch = l.indexOf("#else", l.indexOf("float wOceanVar ="));
+    const lake = l.slice(branch, l.indexOf("#endif", branch));
+    const order = [
+      "float wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));",
+      "float wOctave = octaveAmplitude(wPaw);",
+      "normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));",
+      "if (waterOctaves > 1.5) {",
+      "normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y) * wOctave);",
+      "if (waterRain > 0.0) {",
+      "vec2 wRs = lakeRainSlope(",
+    ].map((needle) => lake.indexOf(needle));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    for (let i = 1; i < order.length; i++) expect(order[i]).toBeGreaterThan(order[i - 1] as number);
+    // the four stamped layers are the sea's alone
+    expect(lake).not.toContain("waterRainSlope(");
   });
 });
 
@@ -417,7 +516,7 @@ describe("the sea's waves in the water plugin", () => {
     expect(u.ubo[u.ubo.length - 1]).toEqual({ name: "oceanK", size: 4, type: "vec4", arraySize: 12 });
     expect(u.fragment).toContain("uniform vec4 oceanK[12];");
     expect(u.vertex).toContain("uniform vec4 oceanK[12];");
-    expect(u.ubo).toHaveLength(24);
+    expect(u.ubo).toHaveLength(26);
   });
 
   it("declares its samplers in the .fx and never in getUniforms, and gates every line of its GLSL on OCEAN", () => {
@@ -591,7 +690,7 @@ describe("the sea's waves in the water plugin", () => {
     expect(seen["the waves gone"]!.oceanWindSlope).toBe(oceanArrayPlaceholder(scene));
   });
 
-  it("leaves a lake's shader as it was: compiled as WebGPU compiles it, the text the water's own hooks alone give", async () => {
+  it("leaves a lake's shader as the sea's code found it and the sea's main as the lake's ripples found it, compiled as WebGPU compiles them", async () => {
     /** The water plugin with only the water's own hooks, as it was before the sea's waves. */
     class WaterAlone extends WaterPlugin {
       override getCustomCode(shaderType: string): { [pointName: string]: string } | null {
@@ -600,7 +699,7 @@ describe("the sea's waves in the water plugin", () => {
         if (shaderType === "vertex") {
           return { CUSTOM_VERTEX_DEFINITIONS: fx("water.vertex.fx"), CUSTOM_VERTEX_UPDATE_WORLDPOS: fx("waterWorldPos.vertex.fx") };
         }
-        return { ...code, CUSTOM_FRAGMENT_DEFINITIONS: fx("water.fragment.fx") };
+        return { ...code, CUSTOM_FRAGMENT_DEFINITIONS: fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") };
       }
     }
     /** The stages one water material compiles to, on an engine of its own (an
@@ -638,5 +737,16 @@ describe("the sea's waves in the water plugin", () => {
     const sea = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true);
     expect(sea.vertex).toContain("vOceanXZ = positionUpdated.xz;");
     expect(sea.fragment).toContain("vOceanXZ");
+    // The sea's main is the text it compiled to before the lake's ripples, and reads none of them.
+    const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
+    expect(createHash("sha256").update(main(sea.fragment)).digest("hex")).toBe("91382f0cd2700903c0d9aae19a4e5d99e7d3382db06b0d2bc8cdf732dc8d553d");
+    for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover"]) {
+      expect(main(sea.fragment), name).not.toContain(name);
+    }
+    expect(main(sea.fragment)).toContain("vec2 wRs = waterRainSlope(vPositionW.xz);");
+    // and the lake's reads them in place of the four layers: the comparison can see the lake's code
+    expect(main(lake.fragment)).toContain("float wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));");
+    expect(main(lake.fragment)).toContain("vec2 wRs = lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain, length(vPositionW - vEyePosition.xyz));");
+    expect(main(lake.fragment)).not.toContain("waterRainSlope(");
   }, timeLimit(30_000));
 });

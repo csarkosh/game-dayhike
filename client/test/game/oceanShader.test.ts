@@ -843,13 +843,16 @@ describe("the sea's normal, waterline and roughness", () => {
 });
 
 describe("a lake's shaders", () => {
-  it("process to the text they had before the sea moved", async () => {
-    // Each hook through Babylon's preprocessor with a lake's gates, hashed as it was at 9edee7e.
+  it("process to the text they had before the sea moved, the lights' as the lake's ripples made it", async () => {
+    // Each hook through Babylon's preprocessor with a lake's gates, hashed as it was at 9edee7e; the
+    // lights' hashed again once the lake's ripples replaced its octaves' and rings' lines, and the
+    // definitions' once the second octave turned downwind (their own tests, waterPlugin.test.ts, pin
+    // what they are).
     const before: Record<string, string> = {
       "water.vertex.fx": "3732482554b89e357fec2298edc8724ad085cc9defe35017b243df6b7782d50b",
       "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
-      "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
-      "waterLights.fragment.fx": "e43c7dd65420563ad94555469e69b237229563a6cf07e4ea5f86b53e73a1c5cb",
+      "water.fragment.fx": "06b89ba97d94be3b085fbb6c69952ca4982d8fbc073581b7a2211b867fd29624",
+      "waterLights.fragment.fx": "671c4c9cf3ffa95d25e07e9ebf9fb24e39a51b4c3ac0becbd099d6217e515a88",
       "waterCompose.fragment.fx": "a3cdf837137ae07cea47e0facfbc0b6ad44269d7a723b9f157e487da0cf34447",
     };
     for (const [name, hash] of Object.entries(before)) {
@@ -864,7 +867,9 @@ describe("a lake's shaders", () => {
       const v = lake.getCustomCode("vertex")!;
       const f = lake.getCustomCode("fragment")!;
       expect(await processed(v.CUSTOM_VERTEX_DEFINITIONS!, false)).toBe(await processed(fx("water.vertex.fx"), false));
-      expect(await processed(f.CUSTOM_FRAGMENT_DEFINITIONS!, true)).toBe(await processed(fx("water.fragment.fx"), true));
+      expect(await processed(f.CUSTOM_FRAGMENT_DEFINITIONS!, true)).toBe(
+        await processed(fx("water.fragment.fx") + fx("lakeRipples.fragment.fx"), true),
+      );
     } finally {
       engine.dispose();
     }
@@ -951,13 +956,15 @@ describe("the water material's stages, compiled", () => {
     }, timeLimit(120_000));
   }
 
-  it("leave a lake's roughness line, its ripples and its vertices as they were", async () => {
+  it("leave a lake's roughness line, its second octave and its vertices as they were, its paws and rings compiling", async () => {
     const lake = await waterEffect("medium", true);
     try {
       const f = lake.effect._fragmentSourceCode;
       expect(lake.defines).not.toContain("#define OCEAN");
       expect(f).toContain("float roughness=reflectivityOut.roughness;");
       expect(f).toContain("waterRipple2(vPositionW.xz)");
+      expect(f).toContain("float wPaw = lakePaw(");
+      expect(f).toContain("lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain,");
       expect(f).not.toContain("wOcean");
       expect(lake.effect._vertexSourceCode).not.toContain("oceanDisplace");
       translated(lake.effect, lake.defines);
