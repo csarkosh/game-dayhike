@@ -123,6 +123,8 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
   texture.renderList = [];
   texture.renderParticles = false;
   texture.renderSprites = false;
+  // Its readiness never waits on the scene's particles, which it never draws.
+  texture.particleSystemList = [];
   texture.clearColor = new Color4(0, 0, 0, 0);
   // While on the list, a sector every frame.
   texture.refreshRate = 1;
@@ -142,6 +144,8 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
   // lands mid-capture continues the turn rather than restarting it.
   let sector = 0;
   let remaining = 0;
+  // Once disposed, a rearm asks for nothing: the target is gone.
+  let disposed = false;
   // The column the sector now being drawn owns, for the clear.
   let column = 0;
   const columnWidth = PANORAMA_WIDTH / PANORAMA_SECTORS;
@@ -180,6 +184,7 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
       if (!mesh.isDisposed()) texture.setMaterialForRendering(mesh, undefined);
     },
     rearm() {
+      if (disposed) return;
       remaining = PANORAMA_SECTORS;
     },
     update() {
@@ -202,6 +207,8 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
       return true;
     },
     dispose() {
+      if (disposed) return;
+      disposed = true;
       remaining = 0;
       listed(false);
       texture.dispose();

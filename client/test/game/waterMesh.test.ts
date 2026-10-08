@@ -122,6 +122,39 @@ describe("createWater under NullEngine", () => {
     water.dispose();
   });
 
+  it("drifts a lake's ripple downwind at the wind's speed, and the low tier's sea's at its fixed rate on a bump of its own", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    let ms = 1000;
+    for (const tier of ["low", "medium"] as const) {
+      const water = createWater(scene, 0x5eed, 0, [lake()], tier, 0, 0, () => ms);
+      const sea = (water.meshes[0]!.material as PBRMaterial).bumpTexture as Texture | null;
+      const pond = (water.lakeMeshes[0]!.material as PBRMaterial).bumpTexture as Texture;
+      expect(pond).not.toBe(sea);
+      // Half the wind, blowing toward +x and +z.
+      water.setWind(0.5, [0.6, 0.8]);
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      ms += 2000;
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      // Two seconds: the offset runs upwind, so the ripple goes downwind.
+      expect([pond.uOffset, pond.vOffset], tier).toEqual([-0.011160645142642962, -0.014880860190190618]);
+      if (sea !== null) expect([sea.uOffset, sea.vOffset]).toEqual([0.03, 0.022]);
+      expect(sea === null, tier).toBe(tier === "medium");
+      water.dispose();
+    }
+  }, timeLimit(60_000));
+
+  it("hands out each lake's plugin beside its surface, and culls the surface by its box", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 0x5eed, 0, [lake()], "medium");
+    expect(water.lakePlugins).toHaveLength(1);
+    expect(water.lakePlugins[0]).toBe((water.lakeMeshes[0]!.material as PBRMaterial).pluginManager?.getPlugin("Water"));
+    // CULLINGSTRATEGY_STANDARD: the box, not the sphere alone.
+    expect(water.lakeMeshes[0]!.cullingStrategy).toBe(0);
+    water.dispose();
+  }, timeLimit(60_000));
+
   it("keeps PBR's bump on the sea on the low tier alone, the sea's normal its waves' elsewhere, and on every lake", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);

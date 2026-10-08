@@ -138,6 +138,8 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
   texture.renderList = [];
   texture.renderParticles = false;
   texture.renderSprites = false;
+  // Its readiness never waits on the scene's particles, which it never draws.
+  texture.particleSystemList = [];
   // Alpha 0 where nothing is drawn: the read falls back to the sky probe there.
   texture.clearColor = new Color4(0, 0, 0, 0);
   texture.refreshRate = 1;
@@ -175,6 +177,8 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
   const terrainColour = new Color3(0, 0, 0);
 
   let armed = false;
+  // Once disposed, an update arms nothing: the target is gone.
+  let disposed = false;
   function arm(on: boolean): void {
     if (on === armed) return;
     armed = on;
@@ -207,6 +211,7 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
       terrainMaterial.setColor3("lakeMirrorColour", terrainColour);
     },
     update(player, lakeInView, calmShare) {
+      if (disposed) return false;
       // An eye at or under the plane would turn the near plane over (the
       // kept half clipped, the lake bed drawn): nothing to mirror.
       arm(lakeInView && calmShare > 0 && player.position.y > level);
@@ -233,6 +238,8 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
       return true;
     },
     dispose() {
+      if (disposed) return;
+      disposed = true;
       arm(false);
       texture.onBeforeRenderObservable.remove(before);
       texture.onAfterRenderObservable.remove(after);

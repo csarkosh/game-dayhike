@@ -77,6 +77,8 @@ describe("createLakeMirror", () => {
     expect(t.refreshRate).toBe(1);
     expect(t.renderParticles).toBe(false);
     expect(t.renderSprites).toBe(false);
+    // Its readiness never waits on the scene's particles, which it never draws.
+    expect(t.particleSystemList).toEqual([]);
     expect(t.renderList?.length).toBe(0);
     expect(s.customRenderTargets).not.toContain(t);
     mirror.dispose();
@@ -329,6 +331,9 @@ describe("createLakeMirror", () => {
     expect(s.cameras).not.toContain(cam);
     expect(s.materials.filter((m) => m.name === "lake_mirror_terrain")).toEqual([]);
     expect(ring.isDisposed()).toBe(false);
+    // A stray update after dispose arms nothing and never lists the target again.
+    expect(mirror.update(player, true, 1)).toBe(false);
+    expect(s.customRenderTargets).toEqual([]);
   });
 });
 

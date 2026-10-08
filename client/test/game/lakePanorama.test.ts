@@ -67,6 +67,8 @@ describe("createLakePanorama", () => {
     expect(t.refreshRate).toBe(1);
     expect(t.renderParticles).toBe(false);
     expect(t.renderSprites).toBe(false);
+    // Its readiness never waits on the scene's particles, which it never draws.
+    expect(t.particleSystemList).toEqual([]);
     expect(t.ignoreCameraViewport).toBe(false);
     expect(t.renderList?.length).toBe(0);
     expect(s.customRenderTargets).not.toContain(t);
@@ -282,7 +284,11 @@ describe("createLakePanorama", () => {
     expect(s.textures).not.toContain(pano.texture);
     expect(s.cameras).not.toContain(cam);
     expect(ring.isDisposed()).toBe(false);
-    // A stray update after dispose ends the capture and never lists the target again.
+    // A stray update after dispose ends the capture and never lists the target again,
+    // nor does one after a stray rearm.
+    expect(pano.update()).toBe(false);
+    expect(s.customRenderTargets).toEqual([]);
+    pano.rearm();
     expect(pano.update()).toBe(false);
     expect(s.customRenderTargets).toEqual([]);
     // A registry call after dispose is a no-op.
