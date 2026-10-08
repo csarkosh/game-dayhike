@@ -359,10 +359,10 @@ export class WaterPlugin extends MaterialPluginBase {
   }
 
   /**
-   * Per frame on a lake: the mirror's target this frame and the mirrored
-   * camera's view-projection (Babylon layout, copied), or null where none is
-   * read (the pass not run this frame, the medium and low tiers), which
-   * binds the placeholder and turns the read off.
+   * Per frame on a lake: the mirror's target and the view-projection it was
+   * last drawn with (Babylon layout, copied), or null where none is read (the
+   * pass not armed this frame, the medium and low tiers), which binds the
+   * placeholder and turns the read off.
    */
   setMirror(texture: BaseTexture | null, viewProjection: Float32Array): void {
     this._mirror = texture;

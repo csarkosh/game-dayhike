@@ -89,6 +89,20 @@ describe("createLakeMirror", () => {
     mirror.dispose();
   });
 
+  it("makes the target at half the engine's size, 960 x 540 at most, from the first", () => {
+    const { s } = scene();
+    const w = vi.spyOn(engine!, "getRenderWidth").mockReturnValue(3840);
+    const h = vi.spyOn(engine!, "getRenderHeight").mockReturnValue(2160);
+    const big = createLakeMirror(s, LAKE, false);
+    expect([big.texture.getRenderWidth(), big.texture.getRenderHeight()]).toEqual([960, 540]);
+    big.dispose();
+    w.mockReturnValue(1280);
+    h.mockReturnValue(720);
+    const small = createLakeMirror(s, LAKE, false);
+    expect([small.texture.getRenderWidth(), small.texture.getRenderHeight()]).toEqual([640, 360]);
+    small.dispose();
+  });
+
   it("draws through its own camera, never the scene's active one", () => {
     const { s, player } = scene();
     const mirror = createLakeMirror(s, LAKE, false);
@@ -196,6 +210,23 @@ describe("createLakeMirror", () => {
     expect(listed()).toBe(1);
     expect(mirror.update(player, false, 1)).toBe(false);
     expect(listed()).toBe(0);
+    mirror.dispose();
+  });
+
+  it("draws on the first frame it is armed again, whatever the count stood at when it was disarmed", () => {
+    const { s, player } = scene();
+    const mirror = createLakeMirror(s, LAKE, false);
+    const listed = () => s.customRenderTargets.includes(mirror.texture);
+    // A draw frame, then a disarm straight after it.
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(true);
+    expect(mirror.update(player, false, 1)).toBe(false);
+    expect(listed()).toBe(false);
+    // The re-arm draws at once, never reading what the target held before.
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(true);
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(false);
     mirror.dispose();
   });
 

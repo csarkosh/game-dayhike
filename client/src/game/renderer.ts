@@ -2353,17 +2353,19 @@ function buildRenderer(
    * The lake's surface and reflection for the frame (`lakeCalm.ts`): the
    * calm share at the hour under the preset (through a fade), the surface
    * rough or not, the cat's-paws' cover and the smear at their edge; on high
-   * the mirror armed for this frame when the lake's disc is in this frame's
-   * view of an `eye` (false with no local player) and the glass shows, and
-   * the weight 0 in any frame it is not (its image is a frame stale); on
+   * the mirror armed when the lake's disc is in this frame's view of an `eye`
+   * (false with no local player) and the glass shows, drawn this frame or
+   * every other, and the weight 0 in any frame it is not armed (its image is
+   * a frame stale); on
    * medium the panorama re-armed whenever the lighting hands over a new sky
    * state (the probe re-armed with it), and whenever content lands late and
    * its target is then ready to render (at first, the forest's first fill
    * settling, a billboard or a cliff bucket added to its list), and a
    * sector captured; the
    * skyline's forest colour from the sky, raw (the shader scales it). After
-   * the camera is placed for the frame, in both branches, so the mirror
-   * never lags it; nothing without a lake.
+   * the camera is placed for the frame, in both branches, so a pass that
+   * draws is from this frame's view and one that holds is only a frame behind
+   * it; nothing without a lake.
    */
   function updateLake(weather: WeatherParams, sky: SkyState | null, eye: boolean): void {
     if (lakePlugin === null || lakeMesh === null) return;
@@ -2497,10 +2499,11 @@ function buildRenderer(
       }
       // The lake's reflections take the forest's billboards and, the mirror
       // alone, its LOD2 buckets on their own material (the panorama leaves
-      // the near trees out, and the mirror leaves the LOD1 buckets out: 2 ms a
-      // draw at 4K), and the cliffs' far buckets, as their GLBs land. The mirror takes the
-      // cliffs' LOD1 buckets too, on their own material, where the stacks on
-      // a lake's shore stand; their LOD0 buckets are left out.
+      // the near trees out, and the mirror leaves the LOD1 buckets out: 2 ms
+      // a draw at 4K), and the cliffs' far buckets, as their GLBs land. The
+      // mirror takes the cliffs' LOD1 buckets too, on their own material,
+      // where the stacks on a lake's shore stand; their LOD0 buckets are left
+      // out.
       if (lakeMirror !== null || lakePanorama !== null) {
         if (forestMeshes !== null) {
           for (; forestImpostorsReflected < forestMeshes.impostorMeshes.length; forestImpostorsReflected++) {

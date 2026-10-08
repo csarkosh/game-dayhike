@@ -86,7 +86,7 @@ export type LakeMirror = {
 
 /** The mirrored camera: a `TargetCamera` whose view is the one `update` writes, never one made from a position and a rotation. */
 class MirrorCamera extends TargetCamera {
-  /** The mirrored view (Babylon layout), written in place each armed frame. */
+  /** The mirrored view (Babylon layout), written in place each frame the pass draws. */
   readonly mirrorView = Matrix.Identity();
 
   override _getViewMatrix(): Matrix {
@@ -195,10 +195,14 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
   // Once disposed, an update arms nothing: the target is gone.
   let disposed = false;
   /** Puts the target on the scene's list for this frame's pass, or takes it off. */
-  function list(on: boolean): void {
-    const at = scene.customRenderTargets.indexOf(texture);
-    if (on && at === -1) scene.customRenderTargets.push(texture);
-    if (!on && at !== -1) scene.customRenderTargets.splice(at, 1);
+  function listTarget(on: boolean): void {
+    const targets = scene.customRenderTargets;
+    const at = targets.indexOf(texture);
+    if (on && at === -1) targets.push(texture);
+    if (on || at === -1) return;
+    // In place: nothing allocated per frame, the other targets' order kept.
+    for (let i = at; i < targets.length - 1; i++) targets[i] = targets[i + 1] as RenderTargetTexture;
+    targets.pop();
   }
 
   return {
@@ -233,7 +237,7 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
       const on = lakeInView && calmShare > 0 && player.position.y > level && rim < MIRROR_REACH_M;
       if (!on) {
         armed = false;
-        list(false);
+        listTarget(false);
         return false;
       }
       // The first armed frame draws, so no stale image is read, then every
@@ -242,7 +246,7 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
       const draw = !armed || sinceDraw >= MIRROR_EVERY - 1;
       armed = true;
       sinceDraw = draw ? 0 : sinceDraw + 1;
-      list(draw);
+      listTarget(draw);
       if (!draw) return true;
       // The window may have changed size: the target follows, on a frame it
       // draws, so the image being read keeps its size.
@@ -270,7 +274,7 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
       if (disposed) return;
       disposed = true;
       armed = false;
-      list(false);
+      listTarget(false);
       texture.onBeforeRenderObservable.remove(before);
       texture.onAfterRenderObservable.remove(after);
       texture.dispose();

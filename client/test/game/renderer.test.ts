@@ -993,7 +993,7 @@ describe("world shell wiring", () => {
   it("updates the lake's reflection in both camera branches after the lake's life, and disposes it before the meshes in its lists", () => {
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
-    // After the camera's pose for the frame is written, so the mirror never lags it.
+    // After the camera's pose for the frame is written, so a pass that draws is from this frame's view.
     const after = "updateWaterLife(state, frame.dt, oceanSeconds, weather, sky);\n        updateLake(weather, sky, true);";
     expect(freecamBranch).toContain(after);
     expect(playerBranch).toContain(after);
@@ -1006,7 +1006,7 @@ describe("world shell wiring", () => {
     // The five inner rings through the terrain's stand-in, in either capture.
     expect(src).toContain("for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {\n    lakeMirror?.register(mesh, mirrorTerrain);\n    lakePanorama?.register(mesh, mirrorTerrain);");
     // The trees at LOD2 on their own material, in the mirror alone; the
-    // LOD1 buckets and the impostors' LOD are not in either.
+    // LOD1 buckets are in neither.
     expect(src).toContain("lakeMirror?.register(forestMeshes.lod2Meshes[forestLod2Reflected] as Mesh, null);");
     expect(src).not.toContain("lod1Meshes");
     expect(src).not.toContain("lakePanorama?.register(forestMeshes.lod");
