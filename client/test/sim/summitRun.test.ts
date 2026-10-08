@@ -113,7 +113,7 @@ describe("one run on the seed `hollow`", SUITE, () => {
     // The crest: the find.
     at(chain[chain.length - 1]!);
     tickWorld(w, new Map());
-    expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.phase).toBe(Phase.Scene);
     expect(escalationTargets(w.state, p.id, graph, w.boxes, w.ground).world).toBe(1);
     // No watcher survives the flip: the summit Hollow is the only enemy.
     expect(w.watcher!.id).toBe(-1);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SCENE_IN_S, SCENE_OUT_FROM_S, SCENE_OUT_S, SCENE_STAND_M, SCENE_EYE_HEIGHT, SCENE_PITCH, sceneStand, summitPose } from "../../src/game/cutscene.js";
+import { CAP_SCENE_IN_S, CAP_SCENE_OUT_FROM_S, CAP_SCENE_OUT_S, CAP_SCENE_S, CAP_SCENE_STEP_M, capPose, capStand, SCENE_IN_S, SCENE_OUT_FROM_S, SCENE_OUT_S, SCENE_STAND_M, SCENE_EYE_HEIGHT, SCENE_PITCH, sceneStand, summitPose } from "../../src/game/cutscene.js";
 import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
 
 describe("the summit scene", () => {
@@ -30,5 +30,22 @@ describe("the summit scene", () => {
     expect(end.x).toBeCloseTo(base.x, 9);
     expect(end.z).toBeCloseTo(base.z, 9);
     expect(end.pitch).toBeCloseTo(base.pitch, 9);
+  });
+
+  it("the cap's scene steps toward the cap, turns to it and tips down at it, holds, and is back by its end", () => {
+    const cap = { x: 3, y: 0.1, z: 2 };
+    const eye = { x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0 };
+    const s = capStand(eye, cap);
+    expect(Math.hypot(s.x - eye.x, s.z - eye.z)).toBeCloseTo(CAP_SCENE_STEP_M, 9);
+    expect(Math.sin(s.yaw) * (cap.x - s.x) + Math.cos(s.yaw) * (cap.z - s.z)).toBeGreaterThan(0);
+    expect(s.pitch).toBeGreaterThan(0.3);
+    expect(CAP_SCENE_S).toBe(CAP_SCENE_OUT_FROM_S + CAP_SCENE_OUT_S);
+    const at0 = capPose(0, eye, cap);
+    expect([at0.x, at0.yaw, at0.pitch]).toEqual([eye.x, eye.yaw, eye.pitch]);
+    const held = capPose((CAP_SCENE_IN_S + CAP_SCENE_OUT_FROM_S) / 2, eye, cap);
+    expect(held.yaw).toBeCloseTo(s.yaw, 9);
+    const end = capPose(CAP_SCENE_S, eye, cap);
+    expect(end.pitch).toBeCloseTo(eye.pitch, 9);
+    expect(end.x).toBeCloseTo(eye.x, 9);
   });
 });

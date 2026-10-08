@@ -43,10 +43,12 @@ export const enum Outcome {
   Lost = 2,
 }
 
-/** The match's two acts (docs/gameplay/2026-09-16-the-summit.md §2). Host truth, one byte on the wire. */
+/** The match's acts (docs/gameplay/2026-09-16-the-summit.md §2, docs/gameplay/2026-10-08-the-summit-scene.md). Host truth, one byte on the wire. */
 export const enum Phase {
   Climb = 0,
   Chase = 1,
+  /** The find's scene (summit.ts): from the body found until the Hollow has stepped out, the party stilled, nothing killing. Then Chase. */
+  Scene = 2,
 }
 
 export type InputCommand = {
@@ -145,7 +147,7 @@ export type WorldState = {
   players: Map<number, PlayerState>;
   enemies: Map<number, EnemyState>;
   outcome: Outcome;
-  /** Climb until the first living player finds the body; Chase from then on (summit.ts). */
+  /** Climb until the first living player finds the body; the Scene while the Hollow steps out; Chase from then on (summit.ts). */
   phase: Phase;
   nextEntityId: number;
   rngSeed: number;

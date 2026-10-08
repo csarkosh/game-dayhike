@@ -1,7 +1,7 @@
 // The inner voice's lines as the clip generator wants them: one JSON array of
 // { id, scenario, text, file }, the id and file as voiceClips.ts expects
 // (`voice.<scenario>.<n>`, n from 1 in the pool's order). Prints to stdout:
-//   node tools/voice/manifest.mjs > /tmp/voice-manifest.json
+//   node tools/voice/manifest.mjs > /tmp/lines.json
 // The lines live in client/src/game/innerLines.ts; this reads that file's
 // text so the two cannot drift.
 import { readFileSync } from "node:fs";

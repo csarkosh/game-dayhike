@@ -14,9 +14,9 @@ export type VoiceScenario =
 
 export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
   trailhead: [
-    "Last seen up this trail. Three days ago.",
+    "Hmm... last seen up this trail. Three days ago.",
     "Fine day for it. Shouldn't take long.",
-    "Day hike, they said. Three days ago.",
+    "Hmm... day hike, they said. Three days ago.",
   ],
   rain: [
     "There it is. Knew I should've left earlier.",
@@ -25,16 +25,16 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
   ],
   offTrailDay: [
     "Trail's that way.",
-    "They wouldn't have come through here. Back to the path.",
-    "I'm drifting. Trail.",
+    "They wouldn't have come through here.",
+    "I'm drifting. I should get back to the trail.",
   ],
   offTrailNight: [
-    "Not out here. Not in the dark.",
-    "Get back on the trail. Now.",
+    "They wouldn't be out here. Not in the dark.",
+    "I need to get back on the trail. Now.",
     "Nothing good happens off the path at night.",
   ],
   dusk: [
-    "Losing the light. Keep moving.",
+    "Losing the light. I need to keep moving.",
     "Should've been down by now.",
     "Dusk already. Where did the day go?",
   ],
@@ -61,7 +61,7 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
   cryAgain: [
     "Again.",
     "There it is again.",
-    "Same sound. Nearer.",
+    "That sounded nearer.",
   ],
   shadeFirst: [
     "...Someone there?",
@@ -69,24 +69,24 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
     "Who's there?",
   ],
   shadeGone: [
-    "Nobody. Nobody there.",
-    "Just the fog. Just the fog.",
-    "I saw someone. I did.",
+    "Nobody. No one's there.",
+    "Must have just been the fog.",
+    "I swear I saw someone.",
   ],
   still: [
     "Moving's better than this.",
-    "Keep going. Don't stop.",
-    "Why have I stopped? Go.",
+    "I need to keep going.",
+    "Why have I stopped?",
   ],
   dontLook: [
     "Don't look at them.",
     "Eyes on the trail. Not on that.",
-    "Look away. Look away.",
+    "I need to look away.",
   ],
   crest: [
     "Almost there. Just see what's up there and go.",
-    "The top. Find them, and get down.",
-    "Top's close. Whatever's there, be quick.",
+    "Just check the summit, and get down.",
+    "Top's close. I'll be quick.",
   ],
   cap: [
     "That's theirs. That's their cap.",
@@ -95,22 +95,22 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
   ],
   body: [
     "...Oh. Oh no.",
-    "Found you. ...Oh god.",
-    "Three days. Oh, no.",
+    "...Oh god.",
+    "...What is this?!",
   ],
   chaseStart: [
-    "Run.",
-    "Go. Go. GO.",
-    "Down. Down the trail. Run.",
+    "Run. NOW.",
+    "I need to go. NOW.",
+    "I need to get down the trail. NOW.",
   ],
   chaseOffTrail: [
     "The trail. Stay on the trail.",
     "Not through there. The trail!",
-    "Off the path. No. Back!",
+    "I'm off the path. Go back. Now!",
   ],
   safe: [
-    "The car. The car.",
-    "Get in. Get in, get in.",
-    "In. Lock it. Go.",
+    "There's the car!",
+    "Get in, get in, get in.",
+    "Get in. Lock it. Go.",
   ],
 };

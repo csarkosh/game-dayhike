@@ -15,7 +15,7 @@
  * `stepMovement` with yaw 0, so movement needs no trig at all.
  */
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
-import { AiState, Button, Outcome, cloneVec3 } from "./types.js";
+import { AiState, Button, Outcome, Phase, cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
@@ -56,6 +56,13 @@ export const HOLLOW_STARE_FILL_S = 6;
 export const HOLLOW_STARE_EMPTY_S = 8;
 /** How far a shade of the haunt in the cone fills the stare: a slight closing, never the whole. */
 export const SHADE_STARE_CAP = 0.45;
+/** While a Hollow steps out at the crest (the summit scene): the stare closes only this far, at half its pace, and nothing kills. */
+export const REVEAL_STARE_CAP = 0.25;
+
+/** The summit scene (Phase.Scene, summit.ts): the seconds the Hollow steps out in, when the dark is held off and nothing is killed. */
+export function revealing(world: World): boolean {
+  return world.state.phase === Phase.Scene;
+}
 /** Added to the two half-widths: the hulls need not interpenetrate to touch. */
 export const HOLLOW_CONTACT_MARGIN = 0.1;
 /** Horizontal metres within which a route node counts as reached. */
@@ -490,8 +497,10 @@ export function updateHollows(world: World): void {
   // (watcher.ts), and a player who reaches it first is not killed for it.
   const reach = PLAYER_HALF.x + ENEMY_HALF.x + HOLLOW_CONTACT_MARGIN;
   const tall = PLAYER_HALF.y + ENEMY_HALF.y;
+  // The summit scene: while the Hollow steps out, the party stands stilled and nothing touches them.
+  const held = revealing(world);
   for (const h of hollowsOf(world)) {
-    if (h.ai === AiState.Watch) continue;
+    if (h.ai === AiState.Watch || held) continue;
     for (const p of state.players.values()) {
       if (p.health <= 0 || p.safe) continue;
       const dy = p.pos.y - h.pos.y;
@@ -513,7 +522,9 @@ export function updateHollows(world: World): void {
         sees = true;
       }
     }
-    p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
+    // In the scene the dark closes a little, slowly, and no further: a minor vignette, a slowed pulse.
+    if (held) p.stare = sees ? Math.min(REVEAL_STARE_CAP, p.stare + fill * 0.5) : Math.max(0, p.stare - empty);
+    else p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
     // A shade of the haunt (not a Hollow: harmless) in the cone fills the
     // stare too, but only to SHADE_STARE_CAP: the dark closes a little on
     // it, never all the way, as it does on the thing itself.

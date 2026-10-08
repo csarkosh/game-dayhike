@@ -43,12 +43,12 @@ birdsong's level, the cap, the body, the car.
 | `lamp` | the lamp off `UNLIT_S` (10 s) into the dark | once |
 | `birds` | the birdsong heard above `BIRDS_HEARD` (0.4), then under `BIRDS_STOPPED` (0.1) at night: a question, so the quiet is the player's to answer | once |
 | `mist` | the mist act rising (0.2 to 0.6) | once |
-| `cryFirst` / `cryAgain` | the first cry; the second | once each |
+| `cryFirst` / `cryAgain` | the first cry; the second: answered once every howl has ended (the clip at its slowest rate, its tail, and `CRY_BEAT_S` 0.6 s; a second howl pushes the answer back) | once each |
 | `shadeFirst` / `shadeGone` | a shade in view for 0.3 s; then none for `SHADE_GONE_S` (1.5 s) after one was | once each |
 | `still` | standing still `STILL_S` (20 s) at night | 2, 90 s apart |
 | `dontLook` | the stare at `DONT_LOOK` (0.4) at night | 2, 90 s apart |
 | `crest` | 90 % of the climb | once |
-| `cap` | within `CAP_NEAR_M` (2.5 m) of the cap | once |
+| `cap` | within `CAP_NEAR_M` (2.5 m) of the cap: the cap's own scene (`capPose`, `cutscene.ts`), the controls stilled and the camera stepped and turned to it and tipped down at it over 1 s, the line 1.1 s in, back by 4.4 s | once |
 | `body` | within 4 m of the body, before the chase | once, urgent |
 | `chaseStart` | the chase begins | once, urgent |
 | `chaseOffTrail` | the chase, 8 m off the trail for 4 s | once |

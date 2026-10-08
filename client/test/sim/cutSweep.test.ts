@@ -8,6 +8,8 @@ import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { GUIDE_MAX, GUIDE_MIN, homeDistances, pathLength } from "../../src/sim/trailRoute.js";
 import { FORK_CUT_RADIUS } from "../../src/sim/cut.js";
+import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
+import { TICK_DT } from "../../src/sim/constants.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
@@ -48,6 +50,9 @@ function descend(token: string): Descent {
   const body = w.search!.body.pos;
   at(body.x - 5, body.z);
   tickWorld(w, new Map());
+  expect(w.state.phase, token).toBe(Phase.Scene);
+  // Through the scene: the cut runs in the chase proper.
+  for (let i = 0; i < Math.round(SUMMIT_REVEAL_S / TICK_DT) + 2; i++) tickWorld(w, new Map());
   expect(w.state.phase, token).toBe(Phase.Chase);
   const guide = w.cut!.guide;
   expect(guide[0], token).toBe(g.summit);
