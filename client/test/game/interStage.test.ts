@@ -29,6 +29,7 @@ import { createAtmosphere } from "../../src/game/atmosphere.js";
 import { createLighting } from "../../src/game/lighting.js";
 import { createHeadlamp } from "../../src/game/headlamp.js";
 import { createForestMeshes } from "../../src/game/forestMeshes.js";
+import { createCliffMeshes } from "../../src/game/cliffMeshes.js";
 import { createWater } from "../../src/game/renderer.js";
 import type { WaterPlugin } from "../../src/game/waterPlugin.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -610,6 +611,67 @@ describe("inter-stage variables and textures of a lake's water material on WebGP
       expect(effect._processingContext.availableTextures, tier).toHaveProperty("waterPanorama");
       expect(effect._processingContext.availableTextures, tier).toHaveProperty("waterSkyline");
       expect(fragment.textures).toBeLessThanOrEqual(WEBGPU_REQUIRED_LIMITS.maxSampledTexturesPerShaderStage as number);
+    }
+  });
+});
+
+/** What to do when a pin on the cliffs' near material turns red. */
+const WEIGH_CLIFF =
+  "the varyings of the cliffs' LOD1 material changed: it draws in the lake's mirror on high as in the main pass, " +
+  "so count them against `maxInterStageShaderVariables` in engineChoice.ts and read the effect in a browser if the count grew";
+
+describe("inter-stage variables of the cliffs' LOD1 material on WebGPU, which the high tier's lake mirror draws", () => {
+  const limit = WEBGPU_REQUIRED_LIMITS.maxInterStageShaderVariables as number;
+  const drawn = new Map<string, { effect: ProcessedEffect; receivesShadows: boolean; material: string }>();
+  let dispose = (): void => undefined;
+
+  // The renderer's order on high: the atmosphere, the camera, the local lamp,
+  // the lighting, then the cliffs, their near buckets registered with the
+  // lighting as the renderer does, at the scarp where every band holds rock.
+  beforeAll(async () => {
+    const engine = webgpuProcessingEngine();
+    const scene = new Scene(engine);
+    const atmosphere = createAtmosphere(scene, FOG_DISTANCE);
+    scene.activeCamera = new UniversalCamera("player", new Vector3(-340, 60, -897), scene);
+    createHeadlamp(scene, "lamp_local");
+    const lighting = createLighting(scene, { tier: "high", viewDistance: FOG_DISTANCE, colourPath: "post", sky: skyFixture() });
+    const cliffs = createCliffMeshes(scene, 627994160, { quality: "high" });
+    await cliffs.ready;
+    cliffs.update(-340, -897);
+    for (const mesh of cliffs.casterMeshes) lighting.addShadowMesh(mesh);
+    probeReady(scene);
+    for (const mesh of cliffs.meshes) {
+      if (!mesh.name.endsWith("_l1")) continue;
+      drawn.set(mesh.name, { effect: await drawnEffect(mesh), receivesShadows: mesh.receiveShadows, material: mesh.material!.name });
+    }
+    dispose = () => {
+      cliffs.dispose();
+      lighting.dispose();
+      atmosphere.dispose();
+      scene.dispose();
+      engine.dispose();
+    };
+  }, timeLimit(60_000));
+  afterAll(() => dispose());
+
+  it("writes eight vertex outputs, five more for the sun's two cascades, and reads front_facing: 14 of the 19", () => {
+    expect([...drawn.keys()].sort()).toEqual(["cliff_m0_l1", "cliff_m1_l1"]);
+    for (const [name, d] of drawn) {
+      const varyings = [...d.effect._vertexSourceCode.matchAll(/layout\(location = \d+\)\s*(?:flat\s+)?out (\w+) (\w+);/g)].map(
+        ([, type, varying]) => `${type} ${varying}`,
+      );
+      expect(varyings, `${name}: ${WEIGH_CLIFF}`).toEqual([
+        "vec2 vMainUV1", "vec3 vPositionW", "vec3 vNormalW", "mat3 vTBN", "vec3 vFogDistance", "vec4 vCliffTint",
+      ]);
+      expect(d.effect._processingContext._varyingNextLocation, name).toBe(8);
+      // A near bucket casts and takes the sun's shadows.
+      expect(d.receivesShadows, name).toBe(true);
+      expect(shadowLocations("high", 1), name).toBe(5);
+      const frontFacing = d.effect._fragmentSourceCode.includes("gl_FrontFacing");
+      expect(frontFacing, name).toBe(true);
+      const inputs = d.effect._processingContext._varyingNextLocation + shadowLocations("high", 1) + (frontFacing ? 1 : 0);
+      expect(inputs, `${name}: ${WEIGH_CLIFF}`).toBe(14);
+      expect(inputs).toBeLessThanOrEqual(limit);
     }
   });
 });

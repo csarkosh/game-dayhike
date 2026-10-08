@@ -853,6 +853,9 @@ export function lakeMirrorColourOf(sky: SkyState, weather: WeatherParams, out: C
 /** The suffix of a cliff bucket's name at its coarsest LOD (`cliffMeshName`):
  * the ring the lake's reflections draw. */
 const CLIFF_FAR_SUFFIX = `_l${CLIFF_LOD_NODES.length - 1}`;
+/** The suffix of a cliff bucket's name at LOD1: the ring (to 160 m on high)
+ * that holds a lake's shore stacks, which the high mirror draws as well. */
+const CLIFF_LOD1_SUFFIX = "_l1";
 
 /** `value` and every object it holds, frozen. */
 function frozenThrough<T extends object>(value: T): T {
@@ -2486,7 +2489,9 @@ function buildRenderer(
       // The lake's reflections take the forest's billboards, its LOD2 buckets
       // on their own material and its LOD1 buckets (the far bank) through a
       // LOD2 one (the mirror alone: the panorama leaves the near trees out),
-      // and the cliffs' far buckets, as their GLBs land.
+      // and the cliffs' far buckets, as their GLBs land. The mirror takes the
+      // cliffs' LOD1 buckets too, on their own material, where the stacks on
+      // a lake's shore stand; their LOD0 buckets are left out.
       if (lakeMirror !== null || lakePanorama !== null) {
         if (forestMeshes !== null) {
           for (; forestImpostorsReflected < forestMeshes.impostorMeshes.length; forestImpostorsReflected++) {
@@ -2506,6 +2511,7 @@ function buildRenderer(
         if (cliffMeshes !== null) {
           for (; cliffsReflected < cliffMeshes.meshes.length; cliffsReflected++) {
             const bucket = cliffMeshes.meshes[cliffsReflected] as Mesh;
+            if (bucket.name.endsWith(CLIFF_LOD1_SUFFIX)) lakeMirror?.register(bucket, null);
             if (!bucket.name.endsWith(CLIFF_FAR_SUFFIX)) continue;
             lakeMirror?.register(bucket, null);
             lakePanorama?.register(bucket, null);

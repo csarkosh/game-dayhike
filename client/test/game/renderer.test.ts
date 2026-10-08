@@ -194,6 +194,21 @@ vi.mock("../../src/game/lakePanorama.js", async (importOriginal) => {
   };
 });
 
+// Every cliff shell the renderer makes, recorded on the way through to the
+// real one: a test may hand a shell bucket meshes of its own.
+const cliffShells = vi.hoisted(() => ({ made: [] as { meshes: readonly unknown[] }[] }));
+vi.mock("../../src/game/cliffMeshes.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/cliffMeshes.js")>();
+  return {
+    ...mod,
+    createCliffMeshes: (...args: Parameters<typeof mod.createCliffMeshes>) => {
+      const cliffs = mod.createCliffMeshes(...args);
+      cliffShells.made.push(cliffs);
+      return cliffs;
+    },
+  };
+});
+
 // Every forest shell the renderer makes, recorded on the way through to the
 // real one, and its first fill held on `gate` for as long as a test sets one.
 const forestShells = vi.hoisted(() => ({ made: [] as unknown[], gate: null as Promise<void> | null }));
@@ -259,6 +274,8 @@ import type { LakeCalmFrame } from "../../src/game/renderer.js";
 import type { ForestMeshes } from "../../src/game/forestMeshes.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
+import { cliffMeshName } from "../../src/game/cliffMeshes.js";
 
 let engine: NullEngine | null = null;
 
@@ -1401,6 +1418,28 @@ describe("the lake's reflection in a renderer", () => {
     lakeReflections.mirrors.length = 0;
     lakeReflections.panoramas.length = 0;
   });
+
+  it("draws the cliffs' LOD1 buckets in the high mirror on their own material, and the far buckets alone in the medium panorama", () => {
+    const listed: Record<string, string[]> = {};
+    for (const tier of ["high", "medium"] as const) {
+      const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier, skyTable: skyFixture() });
+      try {
+        // A model's three buckets, as its GLB would land them.
+        const buckets = [0, 1, 2].map((lod) => MeshBuilder.CreateBox(cliffMeshName(9, lod), { size: 1 }, renderer.scene));
+        (cliffShells.made.at(-1)!.meshes as Mesh[]).push(...buckets);
+        renderer.setView(6.25, WEATHER_PRESETS.clear);
+        renderer.setFreecam(shore(WEST));
+        renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+        const target = renderer.scene.getTextureByName(tier === "high" ? "lake_mirror" : "lake_panorama") as RenderTargetTexture;
+        listed[tier] = (target.renderList ?? []).map((m) => m.name).filter((name) => name.startsWith("cliff_m9_"));
+        // Each on its own material in the pass, never a stand-in.
+        for (const bucket of buckets) expect(bucket.getMaterialForRenderPass(target.renderPassId), bucket.name).toBe(undefined);
+      } finally {
+        renderer.dispose();
+      }
+    }
+    expect(listed).toEqual({ high: ["cliff_m9_l1", "cliff_m9_l2"], medium: ["cliff_m9_l2"] });
+  }, timeLimit(120_000));
 
   it("makes the mirror on high, the panorama and the skyline on medium, the skyline alone on low, and disposes each with itself", () => {
     const made: string[] = [];
