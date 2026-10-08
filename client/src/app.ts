@@ -101,13 +101,14 @@ import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScree
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, Phase, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
-import { isHollowState, playerSees, SUMMIT_REVEAL_S } from "./sim/hollow.js";
+import { isHollowState, playerSees } from "./sim/hollow.js";
 import { trailDistance } from "./sim/trail.js";
 import { AiState } from "./sim/types.js";
 import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState } from "./game/innerVoice.js";
 import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
 import { createVoiceClips } from "./game/voiceClips.js";
-import { CAP_SCENE_S } from "./game/cutscene.js";
+import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S } from "./game/cutscene.js";
+import { ENEMY_HALF, PLAYER_EYE_OFFSET } from "./sim/constants.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
 
 /** Seconds after the last howl ends before the voice answers it, and the milliseconds into the cap's scene its line comes. */
@@ -825,8 +826,14 @@ function buildGame(
     // The find: the frame the phase flips, the scene begins on this screen.
     const chaseNow = state.phase !== Phase.Climb;
     if (chaseNow && !wasChase) {
-      sceneUntil = performance.now() + SUMMIT_REVEAL_S * 1000;
-      renderer.setScene("summit", world.search.body.pos);
+      sceneUntil = performance.now() + SUMMIT_SCENE_S * 1000;
+      let hollow: { x: number; y: number; z: number } | null = null;
+      for (const e of state.enemies.values()) if (e.ai === AiState.Emerge) { hollow = { x: e.pos.x, y: e.pos.y - ENEMY_HALF.y, z: e.pos.z }; break; }
+      const me = state.players.get(localId);
+      const party = me === undefined ? world.search.body.pos : { x: me.pos.x, y: me.pos.y + PLAYER_EYE_OFFSET, z: me.pos.z };
+      renderer.setScene("summit", world.search.body.pos, hollow === null ? undefined : { hollow, party });
+      hud.setBars(true);
+      setTimeout(() => hud.setBars(false), SUMMIT_SCENE_S * 1000);
     }
     wasChase = chaseNow;
     // The inner voice: what this player is in, this frame; one line at most.
@@ -846,7 +853,8 @@ function buildGame(
         lamp: self.lamp.on, stare: self.stare, moving: Math.hypot(self.vel.x, self.vel.z) > 0.2,
         shadeSeen, cry: cryOver, birds: woods.birds < 0 ? 1 : woods.birds,
         nearCap: capAt !== null && Math.hypot(self.pos.x - capAt.x, self.pos.z - capAt.z) < CAP_NEAR_M && !sceneOn(),
-        nearBody: Math.hypot(self.pos.x - body.x, self.pos.z - body.z) < 4,
+        // The body's line waits for the scene's second shot, the find.
+        nearBody: Math.hypot(self.pos.x - body.x, self.pos.z - body.z) < 4 && (!sceneOn() || sceneUntil - performance.now() <= (SUMMIT_SCENE_S - (SHOTS[0] as number)) * 1000),
         safe: self.safe,
       }, dt);
       voice = spoke.state;

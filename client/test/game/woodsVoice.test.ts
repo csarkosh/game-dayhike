@@ -114,7 +114,7 @@ describe("the Hollow's call", () => {
     expect(joined.call).toBeNull();
     expect(joined.state.calls).toBe(4);
     expect(stepWoods(joined.state, { ...DARK, climb: 0.86 }, DT).call).toEqual(callCue(4));
-    const chase = run(stepWoods(WOODS_REST, CLIMBING, DT).state, { ...CLIMBING, climb: 1, chase: true }, 2);
+    const chase = run(stepWoods(WOODS_REST, CLIMBING, DT).state, { ...CLIMBING, climb: 1, chase: true }, REVEAL_SILENCE_S + 1);
     // One call in the chase: the reveal's, not a mark's.
     expect(chase.calls).toBe(1);
     expect(chase.state.calls).toBe(CALL_CLIMBS.length);

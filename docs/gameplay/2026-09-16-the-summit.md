@@ -292,7 +292,8 @@ else is placed on the crest, as today.
 **Discovery.** The tick the first living player comes within `DISCOVERY_RADIUS` (12 m) of the
 body: `phase` → Chase; the watcher is removed; the **summit Hollow** spawns `SUMMIT_SPAWN_DIST`
 (6 m) behind the body on the far side from that player, facing them, in `AiState.Emerge` with
-`SUMMIT_REVEAL_S` (2 s) on its timer. When the timer runs out it hunts that player.
+`SUMMIT_REVEAL_S` on its timer (2 s then; since 2026-10-08 the summit scene's 20 s). When the
+timer runs out it hunts that player.
 
 **The hunt, revised for the chase.**
 

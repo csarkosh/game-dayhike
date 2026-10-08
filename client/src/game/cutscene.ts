@@ -80,6 +80,105 @@ export function capPose(t: number, base: SceneBase, cap: { x: number; y: number;
   return mix(stand, base, easeInOut((t - CAP_SCENE_OUT_FROM_S) / CAP_SCENE_OUT_S));
 }
 
+/**
+ * The summit scene's five shots (docs/gameplay/2026-10-08-the-summit-scene.md, "The shots"), each a job of
+ * the research's five (csarko.sh/research/opening-a-game-like-a-film): the arrival (place and
+ * person), the find (problem), the reveal (the wrong note made whole), the predator's view (why
+ * to run) and the threshold (the player's own eye again). Hard cuts between them, one slow move
+ * within each, a film lens on all but the last: SHOTS gives each its seconds, and `summitShot`
+ * its camera.
+ */
+export type SceneContext = {
+  /** The eye the player had at the flip. */
+  base: SceneBase;
+  /** The body, the Hollow's feet, and the local player's eye, as the scene found them. */
+  body: { x: number; y: number; z: number };
+  hollow: { x: number; y: number; z: number };
+  party: { x: number; y: number; z: number };
+};
+export type ShotPose = ScenePose & { fov: number; shot: number };
+
+/** The film lenses in the engine's vertical radians: 24 mm, 32 mm, 50 mm; and the game's own. */
+export const LENS_24 = 0.57;
+export const LENS_32 = 0.43;
+export const LENS_50 = 0.28;
+export const LENS_GAME = 1.4;
+/** Each shot's seconds, in order; the scene is their sum (SUMMIT_REVEAL_S matches it). */
+export const SHOTS: readonly number[] = [4, 4, 5, 4, 3];
+export const SUMMIT_SCENE_S = SHOTS.reduce((a, b) => a + b, 0);
+/** The Hollow's head over its feet, drawn at HOLLOW_SCALE. */
+export const HOLLOW_HEAD_M = 4.5;
+/** The hiker on the pole, over its foot: the body is the top of a 4.3 m stake (bodyMesh.ts). */
+export const BODY_TOP_M = 3.6;
+
+function unit(dx: number, dz: number): { x: number; z: number } {
+  const len = Math.hypot(dx, dz);
+  return len > 1e-6 ? { x: dx / len, z: dz / len } : { x: 0, z: 1 };
+}
+
+/** A camera at `at` looking at `to`. */
+function lookAt(at: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }, fov: number, shot: number): ShotPose {
+  const dx = to.x - at.x, dz = to.z - at.z;
+  return { x: at.x, y: at.y, z: at.z, yaw: Math.atan2(dx, dz), pitch: Math.atan2(at.y - to.y, Math.hypot(dx, dz)), fov, shot };
+}
+
+/** The shot `t` seconds into the scene, and the seconds into that shot. */
+export function shotAt(t: number): { shot: number; into: number } {
+  let left = Math.max(0, t);
+  for (let i = 0; i < SHOTS.length; i++) {
+    const s = SHOTS[i] as number;
+    if (left < s || i === SHOTS.length - 1) return { shot: i, into: Math.min(left, s) };
+    left -= s;
+  }
+  return { shot: SHOTS.length - 1, into: 0 };
+}
+
+/**
+ * The camera `t` seconds into the scene. `u` runs from the body toward the party; `p` is across it.
+ * 1. The arrival: a 24 mm over the party's shoulder, no face, pushing slowly up the last of the trail,
+ *    the stake ahead crossing the frame, what is on it unremarked.
+ * 2. The find: a 32 mm low at the stake's foot, tilting up it to the hiker against the sky.
+ * 3. The reveal: a 24 mm on the ground beside the stake, panning from the hiker to the Hollow's head
+ *    as it stands; the cry comes here.
+ * Every shot is lit by the sky alone: the summit at night has no other light, so each frames its
+ *    subject against it.
+ * 4. The predator's view: a 32 mm high behind the Hollow's shoulder, the party small below, a slow push.
+ * 5. The threshold: the player's own eye at the game's lens, the cast turning; then the controls.
+ */
+export function summitShot(t: number, ctx: SceneContext): ShotPose {
+  const { shot, into } = shotAt(t);
+  const u = unit(ctx.party.x - ctx.body.x, ctx.party.z - ctx.body.z);
+  const p = { x: -u.z, z: u.x };
+  const body = ctx.body;
+  const k = SHOTS[shot] as number;
+  const f = Math.min(1, into / k);
+  if (shot === 0) {
+    const back = 2.4 - easeInOut(f) * 0.9;
+    const at = { x: ctx.party.x + u.x * back + p.x * 0.8, y: ctx.party.y + 0.6, z: ctx.party.z + u.z * back + p.z * 0.8 };
+    return lookAt(at, { x: body.x, y: body.y + 1.6, z: body.z }, LENS_24, 0);
+  }
+  if (shot === 1) {
+    const at = { x: body.x + u.x * 2.4 + p.x * 0.8, y: body.y + 0.5, z: body.z + u.z * 2.4 + p.z * 0.8 };
+    const up = easeInOut(f);
+    return lookAt(at, { x: body.x, y: body.y + 0.6 + (BODY_TOP_M - 0.6) * up, z: body.z }, LENS_32, 1);
+  }
+  if (shot === 2) {
+    const at = { x: body.x + p.x * 1.6 + u.x * 0.6, y: body.y + 0.35, z: body.z + p.z * 1.6 + u.z * 0.6 };
+    const head = { x: ctx.hollow.x, y: ctx.hollow.y + HOLLOW_HEAD_M, z: ctx.hollow.z };
+    const low = { x: body.x, y: body.y + BODY_TOP_M, z: body.z };
+    const tilt = easeInOut(f);
+    const aim = { x: low.x + (head.x - low.x) * tilt, y: low.y + (head.y - low.y) * tilt, z: low.z + (head.z - low.z) * tilt };
+    return lookAt(at, aim, LENS_24, 2);
+  }
+  if (shot === 3) {
+    const push = easeInOut(f) * 1.2;
+    const at = { x: ctx.hollow.x - u.x * (4.5 - push) + p.x * 1.8, y: ctx.hollow.y + 5.2, z: ctx.hollow.z - u.z * (4.5 - push) + p.z * 1.8 };
+    return lookAt(at, { x: ctx.party.x, y: ctx.party.y - 0.6, z: ctx.party.z }, LENS_32, 3);
+  }
+  return { x: ctx.base.x, y: ctx.base.y, z: ctx.base.z, yaw: ctx.base.yaw, pitch: ctx.base.pitch, fov: LENS_GAME, shot: 4 };
+}
+
+/** The camera `t` seconds into the scene, from `base` (the eye at the flip) toward the body, and back: the first scene, kept for the cap's and the tests of the way in. */
 /** The camera `t` seconds into the scene, from `base` (the eye at the flip) toward the body, and back. */
 export function summitPose(t: number, base: SceneBase, body: { x: number; y: number; z: number }): ScenePose {
   const stand = sceneStand(base, body);

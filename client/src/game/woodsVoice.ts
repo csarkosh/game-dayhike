@@ -38,10 +38,11 @@ export const CALL_NEAR_LEVEL = 0.9;
 export const CALL_FAR_HZ = 1400;
 export const CALL_NEAR_HZ = 3200;
 
-/** The reveal: seconds of nothing from the finding of the body to the call. With the
- * call's own three and a half seconds it spans the Hollow's stand behind the body
- * (hollow.ts SUMMIT_REVEAL_S), which ends in the middle of the call. */
-export const REVEAL_SILENCE_S = 1.6;
+/** The reveal: seconds of nothing from the finding of the body to the call. The scene's
+ * reveal shot (cutscene.ts SHOTS, the third, from 8 s) has tilted up to the Hollow, standing
+ * behind the body (hollow.ts SUMMIT_REVEAL_S), when it cries; the call's own three and a half
+ * seconds end before the scene does. */
+export const REVEAL_SILENCE_S = 9.5;
 /** The reveal's call for a listener within REVEAL_NEAR_M of the body: louder and clearer
  * than any on the climb. Further off it falls to the climb's far call at CALL_FAR_M. */
 export const REVEAL_NEAR_M = 30;
