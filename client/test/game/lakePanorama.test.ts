@@ -12,7 +12,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import type { LakeSource } from "../../src/sim/terrain.js";
 import {
-  createLakePanorama, createSkylineTexture, panoramaProjection, PANORAMA_EYE_UP, PANORAMA_FAR, PANORAMA_HEIGHT, PANORAMA_HEIGHT_M,
+  createLakePanorama, createSkylineTexture, SKYLINE_READ_MAX, panoramaProjection, PANORAMA_EYE_UP, PANORAMA_FAR, PANORAMA_HEIGHT, PANORAMA_HEIGHT_M,
   PANORAMA_NEAR, PANORAMA_SECTORS, PANORAMA_WIDTH, type LakePanorama,
 } from "../../src/game/lakePanorama.js";
 
@@ -305,6 +305,22 @@ describe("createSkylineTexture", () => {
     expect(s.textures).toContain(t);
     t.dispose();
     expect(s.textures).not.toContain(t);
+  });
+
+  it("caps each elevation at 1.55 rad as it is written, so the read's tangent stays finite, and leaves the caller's array alone", () => {
+    const s = scene();
+    expect(SKYLINE_READ_MAX).toBe(1.55);
+    const elevations = new Float32Array(512);
+    elevations[0] = Math.PI / 2;
+    elevations[1] = 1.6;
+    elevations[2] = 1.2;
+    elevations[3] = 0.3;
+    const t = createSkylineTexture(s, elevations);
+    const stored = (t.getInternalTexture() as unknown as { _bufferView: Float32Array })._bufferView;
+    expect(Array.from(stored.slice(0, 5))).toEqual([Math.fround(1.55), Math.fround(1.55), Math.fround(1.2), Math.fround(0.3), 0]);
+    expect(stored).toHaveLength(512);
+    expect(elevations[0]).toBe(Math.fround(Math.PI / 2));
+    expect(Math.tan(stored[0]!)).toBeCloseTo(48.08, 2);
   });
 
   it("refuses a skyline of any other length", () => {

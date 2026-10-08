@@ -12,11 +12,14 @@
 // glass's share of the lake and the cat's-paws. Which shore is the tier's:
 // the mirror's image where its target drew something (high), else the
 // panorama (medium), else the skyline's shade (low), else the probe's own.
-// Each flag is 0 or 1, so each mix picks one of its two, and every read
-// runs on every path. Before the skin, which then holds it off the fronds
-// as it holds the probe.
+// The probe's radiance and the shade are scaled by the environment's
+// intensity, as PBR scales the probe's own term (the eerie plateau dims
+// it), while the mirror and the panorama are renders of the scene already
+// lit as it is. Each flag is 0 or 1, so each mix picks one of its two, and every
+// read runs on every path. Before the skin, which then holds it off the
+// fronds as it holds the probe.
 vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx);
-vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb;
+vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;
 vec3 wShoreRay = reflect(-viewDirectionW, normalW);
 vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));
 wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance), step(0.5, waterPanoramaOn));

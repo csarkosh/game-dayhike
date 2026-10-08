@@ -210,18 +210,25 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
   };
 }
 
+/** The highest skyline elevation the water reads (rad), just short of a
+ * right angle: the read takes its tangent, which stays finite (48.1) here. */
+export const SKYLINE_READ_MAX = 1.55;
+
 /**
  * The skyline as the water reads it (`waterSkyline`, on medium and low):
  * SKYLINE_TEXELS by 1, one 32-bit float a texel, the treeline's elevation
- * from `skylineElevations`. Nearest, as a 32-bit float must be sampled on
- * WebGPU, and clamped: a u in 0 to 1 never reaches past the last texel.
+ * from `skylineElevations`, each capped at SKYLINE_READ_MAX as it is written
+ * (the caller's array is left as it was). Nearest, as a 32-bit float must be
+ * sampled on WebGPU, and clamped: a u in 0 to 1 never reaches past the last
+ * texel.
  */
 export function createSkylineTexture(scene: Scene, elevations: Float32Array): RawTexture {
   if (elevations.length !== SKYLINE_TEXELS) {
     throw new Error(`a skyline is ${SKYLINE_TEXELS} elevations, not ${elevations.length}`);
   }
+  const capped = Float32Array.from(elevations, (e) => Math.min(e, SKYLINE_READ_MAX));
   const texture = RawTexture.CreateRTexture(
-    elevations, SKYLINE_TEXELS, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
+    capped, SKYLINE_TEXELS, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
   );
   texture.name = "lake_skyline";
   texture.wrapU = Texture.CLAMP_ADDRESSMODE;

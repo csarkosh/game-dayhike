@@ -102,8 +102,10 @@ vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 probeRadiance) {
 
 // Low: the forest's shade below the skyline at the reflected ray's own
 // azimuth and elevation, the probe's radiance above it. One read, one compare.
+// The shade is the probe's horizon times SKYLINE_SHADE, raw: scaled here by
+// the environment's intensity, as the probe's radiance passed in already is.
 vec3 waterSkylineRadiance(vec3 dir, vec3 probeRadiance) {
   float skyline = texture2D(waterSkyline, vec2(waterAzimuth(dir.xz), 0.5)).r;
   float below = step(dir.y, length(dir.xz) * tan(skyline));
-  return mix(probeRadiance, waterShadeColour, below);
+  return mix(probeRadiance, waterShadeColour * vLightingIntensity.z, below);
 }

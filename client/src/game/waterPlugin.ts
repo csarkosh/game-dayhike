@@ -229,7 +229,8 @@ export class WaterPlugin extends MaterialPluginBase {
   /** The lake's centre (x, level, z) and its radius: the cylinder the
    * medium tier reads its panorama on (`setLakeBody`). Zeros until set. */
   readonly lakeBody: [number, number, number, number] = [0, 0, 0, 0];
-  /** The forest's colour under the skyline on the low tier (`setSkyline`). */
+  /** The forest's colour under the skyline on the low tier (`setSkyline`),
+   * raw: the shader scales it by the environment's intensity. */
   readonly shadeColour: [number, number, number] = [0, 0, 0];
   /** The medium tier's shore panorama and the skyline (medium and low), on
    * the lake that has them; null elsewhere, where the probe shows. Bound to
@@ -301,7 +302,9 @@ export class WaterPlugin extends MaterialPluginBase {
   }
 
   /** The skyline (`createSkylineTexture`) and the forest's colour under it,
-   * the probe's horizon times SKYLINE_SHADE (copied); or null for the probe. */
+   * the probe's horizon times SKYLINE_SHADE (copied), raw: the shader scales
+   * it by the environment's intensity, as it does the probe; or null for the
+   * probe. */
   setSkyline(texture: BaseTexture | null, shadeColour: readonly [number, number, number]): void {
     this._skyline = texture;
     this.shadeColour[0] = shadeColour[0];

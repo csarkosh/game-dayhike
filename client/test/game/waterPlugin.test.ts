@@ -964,7 +964,7 @@ describe("the lake's mirror in the water plugin", () => {
     const block = /#ifndef OCEAN\n#ifdef REFLECTION\n(?:\/\/[^\n]*\n)*([^#]*)#endif\n#endif\n/.exec(c);
     expect(block?.[1]).toBe(
       "vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx);\n" +
-        "vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb;\n" +
+        "vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;\n" +
         "vec3 wShoreRay = reflect(-viewDirectionW, normalW);\n" +
         "vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));\n" +
         "wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance), step(0.5, waterPanoramaOn));\n" +
@@ -997,6 +997,15 @@ describe("the lake's mirror in the water plugin", () => {
     expect(read("@babylonjs/core/Shaders/ShadersInclude/pbrBlockFinalLitComponents.js")).toContain(
       "vec3 finalRadiance=reflectionOut.environmentRadiance.rgb;finalRadiance*=colorSpecularEnvironmentReflectance;vec3 finalRadianceScaled=finalRadiance*vLightingIntensity.z;",
     );
+    // and the environment's intensity the shore's chain scales the probe and
+    // the shade by, a uniform of PBR's declared before the definitions the
+    // read is spliced into, on both paths (`__decl__pbrFragment` is the UBO
+    // declaration or the plain one)
+    const declaration = pbr.indexOf("#include<__decl__pbrFragment>");
+    expect(declaration).toBeGreaterThan(-1);
+    expect(declaration).toBeLessThan(pbr.indexOf("#define CUSTOM_FRAGMENT_DEFINITIONS"));
+    expect(read("@babylonjs/core/Shaders/ShadersInclude/pbrFragmentDeclaration.js")).toContain("uniform vec4 vLightingIntensity;");
+    expect(read("@babylonjs/core/Shaders/ShadersInclude/pbrUboDeclaration.js")).toContain("vec4 vLightingIntensity;");
   });
 
   it("maps a surface point to the mirror's texel as Babylon reads a target, v up, moved by the ripple and never up the screen", () => {
@@ -1362,7 +1371,7 @@ describe("the lake's shore read on medium and low", () => {
       "return mix(probeRadiance, shore.rgb, hit.z * below * shore.a);",
       "float skyline = texture2D(waterSkyline, vec2(waterAzimuth(dir.xz), 0.5)).r;",
       "float below = step(dir.y, length(dir.xz) * tan(skyline));",
-      "return mix(probeRadiance, waterShadeColour, below);",
+      "return mix(probeRadiance, waterShadeColour * vLightingIntensity.z, below);",
     ]) expect(SHORE, line).toContain(line);
   });
 
@@ -1447,7 +1456,7 @@ describe("the lake's shore read on medium and low", () => {
 
   it("substitutes the shore before the skin's scaling, the mirror over the panorama over the skyline over the probe", () => {
     const lines = [
-      "vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb;",
+      "vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;",
       "vec3 wShoreRay = reflect(-viewDirectionW, normalW);",
       "vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));",
       "wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance), step(0.5, waterPanoramaOn));",
