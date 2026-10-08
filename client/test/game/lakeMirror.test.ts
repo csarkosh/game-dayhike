@@ -17,7 +17,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Effect } from "@babylonjs/core/Materials/effect.js";
 import {
-  createLakeMirror, createLakeMirrorTerrain, LAKE_MIRROR_TERRAIN_SHADER, MIRROR_CANOPY_SHADE, MIRROR_LIFT, MIRROR_REACH_M, MIRROR_SCALE,
+  createLakeMirror, createLakeMirrorTerrain, LAKE_MIRROR_TERRAIN_SHADER, MIRROR_CANOPY_SHADE, MIRROR_EVERY, MIRROR_LIFT, MIRROR_MAX_HEIGHT, MIRROR_MAX_WIDTH, MIRROR_REACH_M, MIRROR_SCALE,
   type LakeMirror,
 } from "../../src/game/lakeMirror.js";
 import type { LakeSource } from "../../src/sim/terrain.js";
@@ -62,11 +62,13 @@ function deviceDepth(vp: Float32Array, x: number, y: number, z: number): number 
 }
 
 describe("createLakeMirror", () => {
-  it("is one half-size half-float RGBA target with a depth buffer, cleared to alpha 0, off the scene's targets until armed", () => {
+  it("is one half-float RGBA target of half the frame's size, with a depth buffer, cleared to alpha 0, off the scene's targets until armed", () => {
     const { s } = scene();
     const mirror = createLakeMirror(s, LAKE, false);
     const t = mirror.texture;
     expect(MIRROR_SCALE).toBe(0.5);
+    expect([MIRROR_MAX_WIDTH, MIRROR_MAX_HEIGHT]).toEqual([960, 540]);
+    expect(MIRROR_EVERY).toBe(2);
     expect(t.name).toBe("lake_mirror");
     expect([t.getRenderWidth(), t.getRenderHeight()]).toEqual([256, 128]);
     expect(t.renderTargetOptions.type).toBe(Constants.TEXTURETYPE_HALF_FLOAT);
@@ -165,7 +167,7 @@ describe("createLakeMirror", () => {
     mirror.dispose();
   });
 
-  it("arms the pass only with the lake drawn last frame and the glass above 0, and once", () => {
+  it("arms the pass only with the lake drawn last frame and the glass above 0, and lists the target on the frames it draws", () => {
     const { s, player } = scene();
     const mirror = createLakeMirror(s, LAKE, false);
     const t = mirror.texture;
@@ -174,19 +176,44 @@ describe("createLakeMirror", () => {
     expect(listed()).toBe(0);
     expect(mirror.update(player, true, 0)).toBe(false);
     expect(listed()).toBe(0);
+    // The first armed frame draws.
     expect(mirror.update(player, true, 0.4)).toBe(true);
     expect(listed()).toBe(1);
+    // Listed, it renders in that frame.
+    expect(t._shouldRender()).toBe(true);
+    // The frame between: armed, the last image read, nothing drawn.
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(0);
     expect(mirror.update(player, true, 1)).toBe(true);
     expect(listed()).toBe(1);
-    // Armed, it renders every frame.
-    expect(t._shouldRender()).toBe(true);
-    expect(t._shouldRender()).toBe(true);
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(0);
     // A share that is not a number never arms it.
     expect(mirror.update(player, true, Number.NaN)).toBe(false);
     expect(listed()).toBe(0);
+    // Armed again: the first frame draws, whatever the count stood at.
     expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(1);
     expect(mirror.update(player, false, 1)).toBe(false);
     expect(listed()).toBe(0);
+    mirror.dispose();
+  });
+
+  it("holds the view-projection of the image between draws, so the lake reads it as it was drawn", () => {
+    const { s, player } = scene();
+    const mirror = createLakeMirror(s, LAKE, false);
+    const listed = () => s.customRenderTargets.includes(mirror.texture);
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(true);
+    const drawn = Array.from(mirror.viewProjection);
+    expect(drawn.some((v) => v !== 0)).toBe(true);
+    player.position.x = 5;
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(false);
+    expect(Array.from(mirror.viewProjection)).toEqual(drawn);
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(true);
+    expect(Array.from(mirror.viewProjection)).not.toEqual(drawn);
     mirror.dispose();
   });
 
@@ -230,16 +257,40 @@ describe("createLakeMirror", () => {
     mirror.dispose();
   });
 
-  it("follows the engine's size at half when it changes", () => {
+  it("follows the engine's size at half, 960 x 540 at most, on a frame it draws", () => {
     const { s, player } = scene();
     const mirror = createLakeMirror(s, LAKE, false);
-    vi.spyOn(engine!, "getRenderWidth").mockReturnValue(640);
-    vi.spyOn(engine!, "getRenderHeight").mockReturnValue(360);
+    const size = () => [mirror.texture.getRenderWidth(), mirror.texture.getRenderHeight()];
+    const w = vi.spyOn(engine!, "getRenderWidth").mockReturnValue(640);
+    const h = vi.spyOn(engine!, "getRenderHeight").mockReturnValue(360);
     // Not armed: left as it was.
     mirror.update(player, false, 1);
-    expect([mirror.texture.getRenderWidth(), mirror.texture.getRenderHeight()]).toEqual([256, 128]);
+    expect(size()).toEqual([256, 128]);
     mirror.update(player, true, 1);
-    expect([mirror.texture.getRenderWidth(), mirror.texture.getRenderHeight()]).toEqual([320, 180]);
+    expect(size()).toEqual([320, 180]);
+    // Between draws the image being read keeps its size.
+    w.mockReturnValue(3840);
+    h.mockReturnValue(2160);
+    mirror.update(player, true, 1);
+    expect(size()).toEqual([320, 180]);
+    mirror.update(player, true, 1);
+    expect(size()).toEqual([960, 540]);
+    // A 1080p frame's half is the cap; a 1440p frame's half is over it.
+    w.mockReturnValue(1920);
+    h.mockReturnValue(1080);
+    mirror.update(player, true, 1);
+    mirror.update(player, true, 1);
+    expect(size()).toEqual([960, 540]);
+    w.mockReturnValue(2560);
+    h.mockReturnValue(1440);
+    mirror.update(player, true, 1);
+    mirror.update(player, true, 1);
+    expect(size()).toEqual([960, 540]);
+    w.mockReturnValue(1280);
+    h.mockReturnValue(720);
+    mirror.update(player, true, 1);
+    mirror.update(player, true, 1);
+    expect(size()).toEqual([640, 360]);
     mirror.dispose();
   });
 

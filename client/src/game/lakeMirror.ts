@@ -1,7 +1,8 @@
 /**
  * The lake's mirror on the high tier (spec §5): the shore as the player would
- * see it reflected in the lake's plane, drawn each frame into a half-size
- * target that the lake's material reads (`lakeMirror.fragment.fx`).
+ * see it reflected in the lake's plane, drawn every other frame into a target
+ * of half the frame's size, 960 × 540 at most, that the lake's material reads
+ * (`lakeMirror.fragment.fx`).
  *
  * The target has its own camera, never the scene's active one and never in
  * `scene.activeCameras`, after the rain map (`rainMap.ts`): a `TargetCamera`
@@ -26,9 +27,11 @@
  * The pass runs in a frame only when `update` arms it: the lake in the
  * player's view this frame, the glass's share above 0, the eye over the
  * mirror's plane and within MIRROR_REACH_M of the lake's rim. Armed, the
- * target is on `scene.customRenderTargets`, which the scene renders before
- * its main pass, at a refresh rate of every frame; otherwise it is off that
- * list and the scene neither renders it nor waits on it for its readiness.
+ * target is on `scene.customRenderTargets` in the frames it draws (the first
+ * armed frame, then every MIRROR_EVERY-th), which the scene renders before its
+ * main pass; between draws, and unarmed, it is off that list and the scene
+ * neither renders it nor waits on it for its readiness. Between draws the lake
+ * reads the last image through the view-projection it was drawn with.
  */
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -47,8 +50,13 @@ import { cameraSpacePlane, obliqueProjection, reflectionMatrix } from "./mirrorV
 import terrainVertex from "./shaders/lakeMirrorTerrain.vertex.fx?raw";
 import terrainFragment from "./shaders/lakeMirrorTerrain.fragment.fx?raw";
 
-/** The target's size as a share of the engine's render size, each way. */
+/** The target's size as a share of the engine's render size, each way, up to MIRROR_MAX_WIDTH × MIRROR_MAX_HEIGHT. */
 export const MIRROR_SCALE = 0.5;
+/** The target's largest size each way: half the frame up to a 4K frame's quarter, 960 × 540. Past that the pass's cost is its draws, not its fill. */
+export const MIRROR_MAX_WIDTH = 960;
+export const MIRROR_MAX_HEIGHT = 540;
+/** The pass draws every this many frames while armed, the first armed frame always: between draws the lake reads the last image through the view-projection it was drawn with, so on the frames between the reflection is a frame behind the camera. */
+export const MIRROR_EVERY = 2;
 /** The mirror's plane over the lake's level, metres: the lake's surface mesh's own lift (`lakeSurface`, renderer.ts). */
 export const MIRROR_LIFT = 0.02;
 /** How much darker the ground draws under a full canopy in the mirror: `lakeMirrorTerrain.fragment.fx`'s LAKE_MIRROR_CANOPY_SHADE. */
@@ -71,7 +79,7 @@ export type LakeMirror = {
   unregister(mesh: Mesh): void;
   /** The ground's lit base colour (linear), for the terrain's stand-in. */
   setTerrainColour(r: number, g: number, b: number): void;
-  /** Called each frame before the scene renders, with the player's camera, whether the lake is in its view this frame and the calm share: arms the pass for this frame or leaves it off (off too with the eye at or under the mirror's plane, or MIRROR_REACH_M or more from the rim). Returns whether it is armed. */
+  /** Called each frame before the scene renders, with the player's camera, whether the lake is in its view this frame and the calm share: arms the pass or leaves it off (off too with the eye at or under the mirror's plane, or MIRROR_REACH_M or more from the rim). Armed, the pass draws this frame or holds the last image. Returns whether it is armed, so whether the lake may read the target. */
   update(camera: Camera, lakeInView: boolean, calmShare: number): boolean;
   dispose(): void;
 };
@@ -113,17 +121,17 @@ export function createLakeMirrorTerrain(scene: Scene): ShaderMaterial {
   return material;
 }
 
-/** The target's size for an engine render size: half each way, at least a texel. */
-function targetSize(engineSize: number): number {
-  return Math.max(1, Math.round(engineSize * MIRROR_SCALE));
+/** The target's size for an engine render size: half each way, at most `cap`, at least a texel. */
+function targetSize(engineSize: number, cap: number): number {
+  return Math.max(1, Math.min(cap, Math.round(engineSize * MIRROR_SCALE)));
 }
 
 /** The high tier's mirror for `lake`; `halfZ` is the engine's depth range (`engine.isNDCHalfZRange`). */
 export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean): LakeMirror {
   const engine = scene.getEngine();
   // The screen's size, never a render target's that happens to be bound.
-  let width = targetSize(engine.getRenderWidth(true));
-  let height = targetSize(engine.getRenderHeight(true));
+  let width = targetSize(engine.getRenderWidth(true), MIRROR_MAX_WIDTH);
+  let height = targetSize(engine.getRenderHeight(true), MIRROR_MAX_HEIGHT);
 
   const texture = new RenderTargetTexture(
     "lake_mirror",
@@ -182,11 +190,12 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
   const terrainColour = new Color3(0, 0, 0);
 
   let armed = false;
+  // Frames since the pass last drew, while armed.
+  let sinceDraw = 0;
   // Once disposed, an update arms nothing: the target is gone.
   let disposed = false;
-  function arm(on: boolean): void {
-    if (on === armed) return;
-    armed = on;
+  /** Puts the target on the scene's list for this frame's pass, or takes it off. */
+  function list(on: boolean): void {
     const at = scene.customRenderTargets.indexOf(texture);
     if (on && at === -1) scene.customRenderTargets.push(texture);
     if (!on && at !== -1) scene.customRenderTargets.splice(at, 1);
@@ -221,11 +230,24 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
       // kept half clipped, the lake bed drawn): nothing to mirror. Nor from
       // beyond the reach.
       const rim = Math.hypot(player.position.x - lake.x, player.position.z - lake.z) - lake.radius;
-      arm(lakeInView && calmShare > 0 && player.position.y > level && rim < MIRROR_REACH_M);
-      if (!armed) return false;
-      // The window may have changed size: the target follows at half.
-      const w = targetSize(engine.getRenderWidth(true));
-      const h = targetSize(engine.getRenderHeight(true));
+      const on = lakeInView && calmShare > 0 && player.position.y > level && rim < MIRROR_REACH_M;
+      if (!on) {
+        armed = false;
+        list(false);
+        return false;
+      }
+      // The first armed frame draws, so no stale image is read, then every
+      // MIRROR_EVERY-th; between draws the target holds its image and its
+      // view-projection, and is off the scene's list.
+      const draw = !armed || sinceDraw >= MIRROR_EVERY - 1;
+      armed = true;
+      sinceDraw = draw ? 0 : sinceDraw + 1;
+      list(draw);
+      if (!draw) return true;
+      // The window may have changed size: the target follows, on a frame it
+      // draws, so the image being read keeps its size.
+      const w = targetSize(engine.getRenderWidth(true), MIRROR_MAX_WIDTH);
+      const h = targetSize(engine.getRenderHeight(true), MIRROR_MAX_HEIGHT);
       if (w !== width || h !== height) {
         width = w;
         height = h;
@@ -247,7 +269,8 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
     dispose() {
       if (disposed) return;
       disposed = true;
-      arm(false);
+      armed = false;
+      list(false);
       texture.onBeforeRenderObservable.remove(before);
       texture.onAfterRenderObservable.remove(after);
       texture.dispose();

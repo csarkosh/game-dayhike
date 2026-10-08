@@ -2393,7 +2393,7 @@ function buildRenderer(
     lakePlugin.setLakeTime(wind.time);
     lakePlugin.setPawCover(c.cover);
     lakePlugin.setCalm(c.share, armed ? 1 : 0, c.smearPx);
-    // The mirror is read only in a frame it is drawn in.
+    // The mirror is read only while armed: drawn this frame, or holding the last image.
     if (lakeMirror !== null) lakePlugin.setMirror(armed ? lakeMirror.texture : null, lakeMirror.viewProjection);
     let capturing = false;
     if (lakePanorama !== null) {
