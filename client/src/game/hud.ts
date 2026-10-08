@@ -29,6 +29,14 @@ const STYLE = `
   @media (prefers-reduced-motion: reduce) {
     .hud .end-line .dread { animation: none; }
   }
+  /* The inner voice: where the film's captions sat, in their type (introOverlay.ts). */
+  .hud .voice {
+    position: absolute; left: 50%; bottom: 11vh; transform: translateX(-50%); max-width: 44ch; padding: 0 1rem;
+    text-align: center; white-space: pre-line; color: #eee; font: 500 clamp(16px, 2.4vh, 26px)/1.35 system-ui, sans-serif;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.6);
+    opacity: 0; transition: opacity 350ms ease-out;
+  }
+  .hud .voice.on { opacity: 1; }
   .hud .fade {
     position: absolute; inset: 0; background: #000; opacity: 0;
     transition: opacity 1.5s ease-in;
@@ -44,6 +52,10 @@ export type Hud = {
   setEnding(end: { title: string; line: string } | null): void;
   /** The end's title and line now, null while none is up. */
   ending(): { title: string; line: string } | null;
+  /** The inner voice's line, at the bottom where the film's captions were, for `ms`; a new one replaces it. */
+  say(text: string, ms: number): void;
+  /** The inner voice's line now, "" when none is up. */
+  saying(): string;
   /** A line that clears itself after `ms`, unless something replaces it first. */
   flash(text: string, ms: number): void;
   /** Darkens the whole view over 1.5 s; the status line stays readable on top. */
@@ -82,10 +94,14 @@ export function createHud(container: HTMLElement): Hud {
   endLine.append(endOpen, endTurn);
   end.append(endTitle, endLine);
 
-  root.append(fade, status, end);
+  const voice = document.createElement("div");
+  voice.className = "voice";
+
+  root.append(fade, status, end, voice);
   container.append(style, root);
 
   let flashTimer: ReturnType<typeof setTimeout> | null = null;
+  let voiceTimer: ReturnType<typeof setTimeout> | null = null;
   const cancelFlash = () => {
     if (flashTimer !== null) clearTimeout(flashTimer);
     flashTimer = null;
@@ -108,6 +124,18 @@ export function createHud(container: HTMLElement): Hud {
       endTurn.textContent = turn;
       end.classList.toggle("on", e !== null);
     },
+    say(text, ms) {
+      if (voiceTimer !== null) clearTimeout(voiceTimer);
+      voice.textContent = text;
+      voice.classList.add("on");
+      voiceTimer = setTimeout(() => {
+        voice.classList.remove("on");
+        voiceTimer = null;
+      }, ms);
+    },
+    saying() {
+      return voice.classList.contains("on") ? (voice.textContent ?? "") : "";
+    },
     ending() {
       return end.classList.contains("on") ? { title: endTitle.textContent ?? "", line: `${endOpen.textContent ?? ""} ${endTurn.textContent ?? ""}`.trim() } : null;
     },
@@ -123,6 +151,7 @@ export function createHud(container: HTMLElement): Hud {
       fade.classList.toggle("on", on);
     },
     dispose() {
+      if (voiceTimer !== null) clearTimeout(voiceTimer);
       cancelFlash();
       root.remove();
       style.remove();
