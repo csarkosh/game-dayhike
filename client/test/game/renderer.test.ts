@@ -135,6 +135,96 @@ vi.mock("../../src/game/lighting.js", async (importOriginal) => {
   };
 });
 
+// Every mirror and panorama the renderer makes for the lake, recorded on the
+// way through to the real shells: each mirror update's inputs and its answer,
+// each panorama's re-arms and steps, and each one's disposal.
+type MirrorUpdate = { inView: boolean; share: number; armed: boolean };
+const lakeReflections = vi.hoisted(() => ({
+  mirrors: [] as { updates: MirrorUpdate[]; disposed: number; texture: unknown }[],
+  panoramas: [] as { rearms: number; updates: number; disposed: number }[],
+}));
+vi.mock("../../src/game/lakeMirror.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/lakeMirror.js")>();
+  return {
+    ...mod,
+    createLakeMirror: (...args: Parameters<typeof mod.createLakeMirror>) => {
+      const mirror = mod.createLakeMirror(...args);
+      const record = { updates: [] as MirrorUpdate[], disposed: 0, texture: mirror.texture as unknown };
+      lakeReflections.mirrors.push(record);
+      const update = mirror.update.bind(mirror);
+      mirror.update = (camera, inView, share) => {
+        const armed = update(camera, inView, share);
+        record.updates.push({ inView, share, armed });
+        return armed;
+      };
+      const dispose = mirror.dispose.bind(mirror);
+      mirror.dispose = () => {
+        record.disposed += 1;
+        dispose();
+      };
+      return mirror;
+    },
+  };
+});
+vi.mock("../../src/game/lakePanorama.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/lakePanorama.js")>();
+  return {
+    ...mod,
+    createLakePanorama: (...args: Parameters<typeof mod.createLakePanorama>) => {
+      const panorama = mod.createLakePanorama(...args);
+      const record = { rearms: 0, updates: 0, disposed: 0 };
+      lakeReflections.panoramas.push(record);
+      const rearm = panorama.rearm.bind(panorama);
+      panorama.rearm = () => {
+        record.rearms += 1;
+        rearm();
+      };
+      const update = panorama.update.bind(panorama);
+      panorama.update = () => {
+        record.updates += 1;
+        return update();
+      };
+      const dispose = panorama.dispose.bind(panorama);
+      panorama.dispose = () => {
+        record.disposed += 1;
+        dispose();
+      };
+      return panorama;
+    },
+  };
+});
+
+// Every cliff shell the renderer makes, recorded on the way through to the
+// real one: a test may hand a shell bucket meshes of its own.
+const cliffShells = vi.hoisted(() => ({ made: [] as { meshes: readonly unknown[] }[] }));
+vi.mock("../../src/game/cliffMeshes.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/cliffMeshes.js")>();
+  return {
+    ...mod,
+    createCliffMeshes: (...args: Parameters<typeof mod.createCliffMeshes>) => {
+      const cliffs = mod.createCliffMeshes(...args);
+      cliffShells.made.push(cliffs);
+      return cliffs;
+    },
+  };
+});
+
+// Every forest shell the renderer makes, recorded on the way through to the
+// real one, and its first fill held on `gate` for as long as a test sets one.
+const forestShells = vi.hoisted(() => ({ made: [] as unknown[], gate: null as Promise<void> | null }));
+vi.mock("../../src/game/forestMeshes.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/forestMeshes.js")>();
+  return {
+    ...mod,
+    createForestMeshes: (...args: Parameters<typeof mod.createForestMeshes>) => {
+      const forest = mod.createForestMeshes(...args);
+      forestShells.made.push(forest);
+      if (forestShells.gate !== null) (forest as { ready: Promise<void> }).ready = forestShells.gate;
+      return forest;
+    },
+  };
+});
+
 // The terrain field lives behind the variant registry, and `activeTerrainVariant`
 // throws until something has registered one. `app.ts` gets that transitively
 // through `forest.ts`; a renderer-only test has to ask for it.
@@ -147,6 +237,8 @@ import {
   createPlayerSlots,
   createRenderer,
   GAME_FOV,
+  lakeCalmUnder,
+  lakeMirrorColourOf,
   pixelAtOneMetre,
   skyLumaOf,
   terrainMaterialFor,
@@ -175,6 +267,15 @@ import { skyStateFor } from "../../src/game/skyState.js";
 import { waterLifeLayout } from "../../src/game/waterLifeField.js";
 import { MIDGE_NAME } from "../../src/game/midgeSwarms.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
+import { WaterPlugin } from "../../src/game/waterPlugin.js";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import type { LakeCalmFrame } from "../../src/game/renderer.js";
+import type { ForestMeshes } from "../../src/game/forestMeshes.js";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
+import { cliffMeshName } from "../../src/game/cliffMeshes.js";
 
 let engine: NullEngine | null = null;
 
@@ -889,6 +990,43 @@ describe("world shell wiring", () => {
     expect(src.match(/waterLife\?\.dispose\(\)/g)).toHaveLength(1);
   });
 
+  it("updates the lake's reflection in both camera branches after the lake's life, and disposes it before the meshes in its lists", () => {
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
+    // After the camera's pose for the frame is written, so a pass that draws is from this frame's view.
+    const after = "updateWaterLife(state, frame.dt, oceanSeconds, weather, sky);\n        updateLake(weather, sky, true);";
+    expect(freecamBranch).toContain(after);
+    expect(playerBranch).toContain(after);
+    expect(freecamBranch.match(/updateLake\(/g)).toHaveLength(1);
+    // And once more with no local player, with no eye: the mirror disarmed.
+    expect(playerBranch.match(/updateLake\(/g)).toHaveLength(2);
+    expect(playerBranch).toContain("} else {\n        // No eye this frame: the mirror is disarmed, never drawn from a stale view.\n        updateLake(weather, sky, false);\n      }");
+    expect(freecamBranch.indexOf("updateLake(")).toBeGreaterThan(freecamBranch.indexOf("camera.fov = freecam.fov ?? GAME_FOV;"));
+    expect(playerBranch.indexOf("updateLake(")).toBeGreaterThan(playerBranch.indexOf("camera.fov = GAME_FOV;"));
+    // The five inner rings through the terrain's stand-in, in either capture.
+    expect(src).toContain("for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {\n    lakeMirror?.register(mesh, mirrorTerrain);\n    lakePanorama?.register(mesh, mirrorTerrain);");
+    // The trees at LOD2 on their own material, in the mirror alone; the
+    // LOD1 buckets are in neither.
+    expect(src).toContain("lakeMirror?.register(forestMeshes.lod2Meshes[forestLod2Reflected] as Mesh, null);");
+    expect(src).not.toContain("lod1Meshes");
+    expect(src).not.toContain("lakePanorama?.register(forestMeshes.lod");
+    // A render target's list is not told of a dispose; the water lets go of
+    // the targets before they go.
+    const dispose = slice("    dispose() {\n      views.dispose();", "releaseEngine(engine);");
+    for (const part of ["lakeMirror", "lakePanorama"]) {
+      expect(dispose.indexOf(`${part}?.dispose()`)).toBeGreaterThan(-1);
+      expect(dispose.indexOf(`${part}?.dispose()`)).toBeLessThan(dispose.indexOf("clipmap?.dispose()"));
+    }
+    for (const [release, part] of [
+      ["setMirror(null,", "lakeMirror?.dispose()"],
+      ["setPanorama(null)", "lakePanorama?.dispose()"],
+      ["setSkyline(null,", "lakeSkyline?.dispose()"],
+    ] as const) {
+      expect(dispose.indexOf(release), release).toBeGreaterThan(-1);
+      expect(dispose.indexOf(release), release).toBeLessThan(dispose.indexOf(part));
+    }
+  });
+
   it("hands the forest its sky, so no billboard bakes before the sky is held", () => {
     const forestOptions = slice("createForestMeshes(scene, forest.seed, {", "      })");
     expect(forestOptions).toContain("sky: skyReady(),");
@@ -1177,6 +1315,482 @@ describe("the lake's life in a renderer", () => {
   }, timeLimit(120_000));
 });
 
+describe("the lake's calm", () => {
+  const calm = (): LakeCalmFrame => ({ share: -1, rough: true, roughShare: -1, cover: -1, smearPx: -1 });
+
+  it("is glass at 06:15 under a clear sky and none of it at noon, with the paws' cover scaled by the lake's shelter", () => {
+    const clear = WEATHER_PRESETS.clear;
+    // The clear sky's wind is the floor's quarter.
+    const dawn = lakeCalmUnder(6.25, "clear", "clear", 1, clear, 0.25, 0.1, 900, GAME_FOV, calm());
+    expect([dawn.share, dawn.rough, dawn.cover]).toEqual([1, false, 0]);
+    // A bright noon: no glass, the murky lake's paws a third of it, the clear lake's all of it.
+    const bright = WEATHER_PRESETS.bright;
+    const murky = lakeCalmUnder(12, "bright", "bright", 1, bright, 0.4075, 0.1, 900, GAME_FOV, calm());
+    expect([murky.share, murky.rough, murky.cover]).toEqual([0, false, 0.33333333333333337]);
+    const open = lakeCalmUnder(12, "bright", "bright", 1, bright, 0.4075, 0.3, 900, GAME_FOV, calm());
+    expect([open.share, open.rough, open.cover]).toEqual([0, false, 1]);
+  });
+
+  it("takes the glass away in rain and on an exposed lake in a strong wind, the paws over all of it", () => {
+    const rain = lakeCalmUnder(6.25, "rain", "rain", 1, WEATHER_PRESETS.rain, 0.9, 0.1, 900, GAME_FOV, calm());
+    expect([rain.share, rain.rough, rain.roughShare, rain.cover]).toEqual([0, true, 1, 1]);
+    // Clear at dawn, but a gale on the clear lake: 0.75 is a little way up the wind's ramp.
+    const gale = lakeCalmUnder(6.25, "clear", "clear", 1, WEATHER_PRESETS.clear, 0.75, 0.3, 900, GAME_FOV, calm());
+    expect([gale.share, gale.rough, gale.roughShare, gale.cover]).toEqual([0.8437499999999999, true, 0.15625000000000014, 0.15625000000000014]);
+    // The same wind on the sheltered murky lake leaves its glass.
+    const sheltered = lakeCalmUnder(6.25, "clear", "clear", 1, WEATHER_PRESETS.clear, 0.75, 0.1, 900, GAME_FOV, calm());
+    expect([sheltered.share, sheltered.rough, sheltered.roughShare, sheltered.cover]).toEqual([1, false, 0, 0]);
+  });
+
+  it("eases the glass out and the paws in as the rain climbs through its ramp, never in one frame", () => {
+    const at = (rain: number): number[] => {
+      const c = lakeCalmUnder(6.25, "clear", "clear", 1, { ...WEATHER_PRESETS.clear, rain }, 0.25, 0.1, 900, GAME_FOV, calm());
+      return [c.share, c.roughShare, c.cover];
+    };
+    expect(at(0.35)).toEqual([1, 0, 0]);
+    expect(at(0.425)).toEqual([0.5, 0.5, 0.5]);
+    expect(at(0.5)).toEqual([0, 1, 1]);
+  });
+
+  it("leaves the eerie lake the clear sky's glass at every hour: its drizzle is not rough", () => {
+    // At the eerie preset's own wind, 0.69, on the sheltered lake and the exposed one.
+    const shares = (name: "clear" | "eerie", shelter: number): number[][] =>
+      [0, 6.25, 8.5, 12, 17.5, 22].map((hour) => {
+        const c = lakeCalmUnder(hour, name, name, 1, WEATHER_PRESETS[name], 0.69, shelter, 900, GAME_FOV, calm());
+        return [c.share, c.roughShare];
+      });
+    for (const shelter of [0.1, 0.3]) {
+      expect(shares("eerie", shelter), `${shelter}`).toEqual([[1, 0], [1, 0], [0.5, 0], [0, 0], [0.5, 0], [1, 0]]);
+      expect(shares("eerie", shelter), `${shelter}`).toEqual(shares("clear", shelter));
+    }
+  });
+
+  it("fades the share between two presets by the fade's progress, and holds a progress that is not a number at the first", () => {
+    const clear = WEATHER_PRESETS.clear;
+    // 06:00: clear's 1 to overcast's 0.3.
+    expect(lakeCalmUnder(6, "clear", "overcast", 0.5, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(0.65);
+    expect(lakeCalmUnder(6, "clear", "overcast", 1, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(0.3);
+    expect(lakeCalmUnder(6, "clear", "overcast", 2, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(0.3);
+    expect(lakeCalmUnder(6, "clear", "overcast", Number.NaN, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(1);
+    // A fade taken over mid-way starts from the share it had reached.
+    expect(lakeCalmUnder(6, 0.65, "rain", 0.5, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(0.325);
+    expect(lakeCalmUnder(6, 0.65, "rain", 0, clear, 0.25, 0.1, 900, GAME_FOV, calm()).share).toBe(0.65);
+  });
+
+  it("smears a paw's edge by its four degrees over the frame's height and the lens", () => {
+    expect(lakeCalmUnder(12, "clear", "clear", 1, WEATHER_PRESETS.clear, 0.25, 0.1, 1080, GAME_FOV, calm()).smearPx).toBe(107.71174812307862);
+    expect(lakeCalmUnder(12, "clear", "clear", 1, WEATHER_PRESETS.clear, 0.25, 0.1, 2160, GAME_FOV, calm()).smearPx).toBe(215.42349624615724);
+  });
+
+  it("refills the record it is handed and returns it", () => {
+    const out = calm();
+    expect(lakeCalmUnder(6.25, "clear", "clear", 1, WEATHER_PRESETS.clear, 0.25, 0.1, 900, GAME_FOV, out)).toBe(out);
+  });
+});
+
+describe("the reflections' ground colour", () => {
+  it("is the needle bed under the sun on level ground and the fill, the fill collapsing with the dread", () => {
+    const sky = skyStateFor(skyFixture(), 12, WEATHER_PRESETS.clear);
+    const out = new Color3(-1, -1, -1);
+    expect(lakeMirrorColourOf(sky, WEATHER_PRESETS.clear, out)).toBe(out);
+    // The needle bed (0.15, 0.105, 0.06) under the clear noon's sun and its whole fill.
+    expect(out.asArray()).toEqual([0.6330198249202751, 0.41276601161115783, 0.21302384813695235]);
+    // Under the eerie preset the fill all but goes, the sun's term left as it was.
+    expect(lakeMirrorColourOf(sky, WEATHER_PRESETS.eerie, new Color3()).asArray()).toEqual([0.6273726259499178, 0.4059863490191407, 0.20538830865598035]);
+    // A sun under the horizon lights nothing: the fill alone.
+    const night = skyStateFor(skyFixture(), 0, WEATHER_PRESETS.clear);
+    expect(lakeMirrorColourOf(night, WEATHER_PRESETS.clear, new Color3()).asArray()).toEqual([0.036, 0.03276, 0.0288]);
+  });
+});
+
+describe("the lake's reflection in a renderer", () => {
+  const SEED = 388817;
+  const LEVEL: Level = { id: "lake-mirror-test", brushes: [], playerSpawns: [], enemySpawns: [] };
+  const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
+  /** 2 m out from the lake's east rim, eyes 1.6 m over the ground, looking `facing` and a little down. */
+  function shore(facing: number) {
+    const lake = lakeOf(SEED);
+    const x = lake.x + lake.radius + 2;
+    return { x, y: elevationAt(SEED, x, lake.z) + 1.6, z: lake.z, yaw: facing, pitch: 0.2 };
+  }
+  const WEST = 4.712;
+  const EAST = 1.571;
+  /** Two frames with a render between, so the second reads the first's culling. */
+  function look(renderer: ReturnType<typeof createRenderer>): void {
+    renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+    renderer.scene.render();
+    renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    lakeReflections.mirrors.length = 0;
+    lakeReflections.panoramas.length = 0;
+  });
+
+  it("draws the clipmap's five inner rings, to the ridges past 512 m, through the ground's stand-in in the high mirror and the medium panorama", () => {
+    const listed: Record<string, string[]> = {};
+    for (const tier of ["high", "medium"] as const) {
+      const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier, skyTable: skyFixture() });
+      try {
+        const target = renderer.scene.getTextureByName(tier === "high" ? "lake_mirror" : "lake_panorama") as RenderTargetTexture;
+        const rings = (target.renderList ?? []).filter((m) => m.name.startsWith("clipmap_"));
+        listed[tier] = rings.map((m) => `${m.name} ${m.getMaterialForRenderPass(target.renderPassId)?.name}`);
+      } finally {
+        renderer.dispose();
+      }
+    }
+    const rings = [0, 1, 2, 3, 4].map((level) => `clipmap_${level} lake_mirror_terrain`);
+    expect(listed).toEqual({ high: rings, medium: rings });
+  }, timeLimit(120_000));
+
+  it("draws the cliffs' LOD1 buckets in the high mirror on their own material, and the far buckets alone in the medium panorama", () => {
+    const listed: Record<string, string[]> = {};
+    for (const tier of ["high", "medium"] as const) {
+      const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier, skyTable: skyFixture() });
+      try {
+        // A model's three buckets, as its GLB would land them.
+        const buckets = [0, 1, 2].map((lod) => MeshBuilder.CreateBox(cliffMeshName(9, lod), { size: 1 }, renderer.scene));
+        (cliffShells.made.at(-1)!.meshes as Mesh[]).push(...buckets);
+        renderer.setView(6.25, WEATHER_PRESETS.clear);
+        renderer.setFreecam(shore(WEST));
+        renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+        const target = renderer.scene.getTextureByName(tier === "high" ? "lake_mirror" : "lake_panorama") as RenderTargetTexture;
+        listed[tier] = (target.renderList ?? []).map((m) => m.name).filter((name) => name.startsWith("cliff_m9_"));
+        // Each on its own material in the pass, never a stand-in.
+        for (const bucket of buckets) expect(bucket.getMaterialForRenderPass(target.renderPassId), bucket.name).toBe(undefined);
+      } finally {
+        renderer.dispose();
+      }
+    }
+    expect(listed).toEqual({ high: ["cliff_m9_l1", "cliff_m9_l2"], medium: ["cliff_m9_l2"] });
+  }, timeLimit(120_000));
+
+  it("makes the mirror on high, the panorama and the skyline on medium, the skyline alone on low, and disposes each with itself", () => {
+    const made: string[] = [];
+    for (const tier of ["high", "medium", "low"] as const) {
+      lakeReflections.mirrors.length = 0;
+      lakeReflections.panoramas.length = 0;
+      const skyline = vi.spyOn(WaterPlugin.prototype, "setSkyline");
+      const body = vi.spyOn(WaterPlugin.prototype, "setLakeBody");
+      const mirror = vi.spyOn(WaterPlugin.prototype, "setMirror");
+      const panorama = vi.spyOn(WaterPlugin.prototype, "setPanorama");
+      const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier, skyTable: skyFixture() });
+      let texture: BaseTexture | null = null;
+      try {
+        renderer.setView(6.25, WEATHER_PRESETS.clear);
+        renderer.setFreecam(shore(WEST));
+        renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+        // The lake's centre at its level, and its radius.
+        expect(body.mock.calls).toEqual([[18.690155002200072, 154.9599750484422, -20, 31.017482357565314]]);
+        texture = skyline.mock.lastCall?.[0] ?? null;
+        made.push(
+          `${tier}: ${lakeReflections.mirrors.length} mirror, ${lakeReflections.panoramas.length} panorama, ` +
+          `skyline ${texture === null ? "none" : texture.getSize().width}, ` +
+          `mirror read ${mirror.mock.calls.length > 0 ? "set" : "none"}, ` +
+          `panorama read ${panorama.mock.calls.length}`,
+        );
+      } finally {
+        renderer.dispose();
+        // A spy on the class's method is the same spy for every renderer: one a tier.
+        vi.restoreAllMocks();
+      }
+      expect(lakeReflections.mirrors.map((m) => m.disposed)).toEqual(tier === "high" ? [1] : []);
+      expect(lakeReflections.panoramas.map((p) => p.disposed)).toEqual(tier === "medium" ? [1] : []);
+      if (texture !== null) expect(texture.getInternalTexture()).toBe(null);
+    }
+    expect(made).toEqual([
+      "high: 1 mirror, 0 panorama, skyline none, mirror read set, panorama read 0",
+      "medium: 0 mirror, 1 panorama, skyline 512, mirror read none, panorama read 1",
+      "low: 0 mirror, 0 panorama, skyline 512, mirror read none, panorama read 0",
+    ]);
+  }, timeLimit(180_000));
+
+  it("lets the water go of each target before it is disposed", () => {
+    for (const tier of ["high", "medium", "low"] as const) {
+      // Each target's disposals at the last time the water was handed null for it.
+      const released: Record<string, number> = {};
+      let renderer: ReturnType<typeof createRenderer> | null = null;
+      vi.spyOn(WaterPlugin.prototype, "setMirror").mockImplementation((texture) => {
+        if (texture === null) released.mirror = lakeReflections.mirrors.at(-1)!.disposed;
+      });
+      vi.spyOn(WaterPlugin.prototype, "setPanorama").mockImplementation((texture) => {
+        if (texture === null) released.panorama = lakeReflections.panoramas.at(-1)!.disposed;
+      });
+      vi.spyOn(WaterPlugin.prototype, "setSkyline").mockImplementation((texture) => {
+        if (texture === null) released.skyline = renderer!.scene.getTextureByName("lake_skyline")!.getInternalTexture() === null ? 1 : 0;
+      });
+      renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier, skyTable: skyFixture() });
+      renderer.setView(12, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      renderer.dispose();
+      vi.restoreAllMocks();
+      // Each let go of while its target is still whole.
+      expect(released, tier).toEqual({ high: { mirror: 0 }, medium: { panorama: 0, skyline: 0 }, low: { skyline: 0 } }[tier]);
+      lakeReflections.mirrors.length = 0;
+      lakeReflections.panoramas.length = 0;
+    }
+  }, timeLimit(180_000));
+
+  it("arms the mirror at 06:15 under a clear sky with the lake in view, and not at noon, nor with the lake behind the camera", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "high", skyTable: skyFixture() });
+    const calm = vi.spyOn(WaterPlugin.prototype, "setCalm");
+    const read = vi.spyOn(WaterPlugin.prototype, "setMirror");
+    try {
+      const mirror = lakeReflections.mirrors[0]!;
+      const updates = mirror.updates;
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setWeatherName("clear", 0);
+      renderer.setFreecam(shore(WEST));
+      look(renderer);
+      expect(updates.at(-1)).toEqual({ inView: true, share: 1, armed: true });
+      // The share, the weight and a full paw's smear at 900 px (the shader
+      // scales it by the paw mask, none on glass); the target read.
+      expect(calm.mock.lastCall).toEqual([1, 1, 89.75979010256552]);
+      expect(read.mock.lastCall![0]).toBe(mirror.texture);
+      renderer.setView(12, WEATHER_PRESETS.clear);
+      look(renderer);
+      expect(updates.at(-1)).toEqual({ inView: true, share: 0, armed: false });
+      expect(calm.mock.lastCall).toEqual([0, 0, 89.75979010256552]);
+      expect(read.mock.lastCall![0]).toBe(null);
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(EAST));
+      look(renderer);
+      expect(updates.at(-1)).toEqual({ inView: false, share: 1, armed: false });
+      expect(calm.mock.lastCall).toEqual([1, 0, 89.75979010256552]);
+      expect(read.mock.lastCall![0]).toBe(null);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("reads the lake in view from this frame's camera: turned toward it, one sync arms the mirror with no render between", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "high", skyTable: skyFixture() });
+    try {
+      const updates = lakeReflections.mirrors[0]!.updates;
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setWeatherName("clear", 0);
+      renderer.setFreecam(shore(EAST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(updates.at(-1)).toEqual({ inView: false, share: 1, armed: false });
+      renderer.setFreecam(shore(WEST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(updates.at(-1)).toEqual({ inView: true, share: 1, armed: true });
+      renderer.setFreecam(shore(EAST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(updates.at(-1)).toEqual({ inView: false, share: 1, armed: false });
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("disarms the mirror in a frame with no local player and reads none of it", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "high", skyTable: skyFixture() });
+    const calm = vi.spyOn(WaterPlugin.prototype, "setCalm");
+    const read = vi.spyOn(WaterPlugin.prototype, "setMirror");
+    try {
+      const mirror = lakeReflections.mirrors[0]!;
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setWeatherName("clear", 0);
+      renderer.setFreecam(shore(WEST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(mirror.updates.at(-1)).toEqual({ inView: true, share: 1, armed: true });
+      expect(renderer.scene.customRenderTargets).toContain(mirror.texture);
+      // The free camera off and no player of this id: no eye this frame.
+      renderer.setFreecam(null);
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(mirror.updates.at(-1)).toEqual({ inView: false, share: 1, armed: false });
+      expect(renderer.scene.customRenderTargets).not.toContain(mirror.texture);
+      expect(calm.mock.lastCall).toEqual([1, 0, 89.75979010256552]);
+      expect(read.mock.lastCall![0]).toBe(null);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("leaves the mirror off in rain, with no weight and the paws over the whole lake", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "high", skyTable: skyFixture() });
+    const calm = vi.spyOn(WaterPlugin.prototype, "setCalm");
+    const cover = vi.spyOn(WaterPlugin.prototype, "setPawCover");
+    try {
+      renderer.setView(6.25, WEATHER_PRESETS.rain);
+      renderer.setWeatherName("rain", 0);
+      renderer.setFreecam(shore(WEST));
+      look(renderer);
+      expect(lakeReflections.mirrors[0]!.updates.at(-1)).toEqual({ inView: true, share: 0, armed: false });
+      expect(calm.mock.lastCall).toEqual([0, 0, 89.75979010256552]);
+      expect(cover.mock.lastCall).toEqual([1]);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("fades the calm to a new preset over the weather's seconds, frame by frame", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    const calm = vi.spyOn(WaterPlugin.prototype, "setCalm");
+    try {
+      // Half a second a frame.
+      vi.spyOn(renderer.engine, "getDeltaTime").mockReturnValue(500);
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      // The page's start is the default preset's: bright, glass at 06:15.
+      renderer.sync(windTestState(), 1, 0, { dt: 0.5, sprinting: false });
+      const shares = [calm.mock.lastCall![0]];
+      renderer.setWeatherName("overcast");
+      for (let i = 0; i < 7; i++) {
+        renderer.sync(windTestState(), 1, 0, { dt: 0.5, sprinting: false });
+        shares.push(calm.mock.lastCall![0]);
+      }
+      expect(shares).toEqual([1, 0.8833333333333333, 0.7666666666666667, 0.65, 0.5333333333333334, 0.41666666666666663, 0.3, 0.3]);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("captures the panorama again whenever the sky's probe is, a sector a frame", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    try {
+      const panorama = lakeReflections.panoramas[0]!;
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      for (let i = 0; i < 3; i++) renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect([panorama.rearms, panorama.updates]).toEqual([1, 3]);
+      // The hour moves: the probe is captured again, and the panorama with it.
+      renderer.setView(18.5, WEATHER_PRESETS.clear);
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect([panorama.rearms, panorama.updates]).toEqual([2, 4]);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("captures the panorama once more when its target is first ready to render, and only then", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    try {
+      const panorama = lakeReflections.panoramas[0]!;
+      const target = renderer.scene.getTextureByName("lake_panorama")!;
+      // NullEngine compiles no effect, so the stand-in never reads as ready on its own.
+      const ready = vi.spyOn(target as unknown as { isReadyForRendering(): boolean }, "isReadyForRendering").mockReturnValue(false);
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(panorama.rearms).toBe(1);
+      ready.mockReturnValue(true);
+      for (let i = 0; i < 3; i++) renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(panorama.rearms).toBe(2);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("takes a fade over mid-way from the share it had reached, never from the preset it was fading to", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    const calm = vi.spyOn(WaterPlugin.prototype, "setCalm");
+    try {
+      // Half a second a frame, at 06:00: clear's 1, overcast's 0.3, rain's 0.
+      vi.spyOn(renderer.engine, "getDeltaTime").mockReturnValue(500);
+      renderer.setView(6, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      renderer.setWeatherName("clear", 0);
+      const shares: number[] = [];
+      const frame = (): void => {
+        renderer.sync(windTestState(), 1, 0, { dt: 0.5, sprinting: false });
+        shares.push(calm.mock.lastCall![0]);
+      };
+      frame();
+      renderer.setWeatherName("overcast");
+      for (let i = 0; i < 3; i++) frame();
+      // Half-way to overcast, then rain: on down from 0.65, a sixth a frame.
+      renderer.setWeatherName("rain");
+      for (let i = 0; i < 2; i++) frame();
+      expect(shares).toEqual([1, 0.8833333333333333, 0.7666666666666667, 0.65, 0.5416666666666667, 0.43333333333333335]);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("captures the panorama again once the forest's first fill has settled, and when a billboard is added to it late", async () => {
+    let release = (): void => undefined;
+    forestShells.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    forestShells.made.length = 0;
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    forestShells.gate = null;
+    try {
+      const panorama = lakeReflections.panoramas[0]!;
+      const target = renderer.scene.getTextureByName("lake_panorama")!;
+      vi.spyOn(target as unknown as { isReadyForRendering(): boolean }, "isReadyForRendering").mockReturnValue(true);
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      const frame = (): void => renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      frame();
+      frame();
+      // The first sky and the first readiness, in one frame: one capture.
+      expect(panorama.rearms).toBe(1);
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      frame();
+      frame();
+      expect(panorama.rearms).toBe(2);
+      // A billboard lands after the fill.
+      const forest = forestShells.made[0] as ForestMeshes;
+      (forest.impostorMeshes as Mesh[]).push(MeshBuilder.CreatePlane("forest_impostor_late", { size: 1 }, renderer.scene));
+      frame();
+      frame();
+      expect(panorama.rearms).toBe(3);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("walks the panorama's readiness only while a capture waits on it, not every frame of the hike", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    try {
+      const panorama = lakeReflections.panoramas[0]!;
+      const target = renderer.scene.getTextureByName("lake_panorama")!;
+      const ready = vi.spyOn(target as unknown as { isReadyForRendering(): boolean }, "isReadyForRendering").mockReturnValue(true);
+      renderer.setView(6.25, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      // The first frame asks once, and the turn's sixteen sectors each ask
+      // before they draw; the frame after the turn asks nothing.
+      for (let i = 0; i < 17; i++) renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect([panorama.rearms, ready.mock.calls.length]).toEqual([1, 17]);
+      for (let i = 0; i < 5; i++) renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect([panorama.rearms, ready.mock.calls.length]).toEqual([1, 17]);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("makes nothing of it in a world without a lake, or without a forest, and hands the water nothing", () => {
+    const setters = (["setCalm", "setSkyline", "setLakeBody", "setMirror", "setPanorama"] as const).map((name) =>
+      vi.spyOn(WaterPlugin.prototype, name),
+    );
+    for (const tier of ["high", "medium", "low"] as const) {
+      // 4242's world has no lake.
+      const dry = createRenderer(FAKE_CANVAS, LEVEL, createForest(4242), { tier, skyTable: skyFixture() });
+      try {
+        dry.setView(6.25, WEATHER_PRESETS.clear);
+        dry.setFreecam({ x: 0, y: 60, z: 0, yaw: 0, pitch: 0 });
+        dry.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      } finally {
+        dry.dispose();
+      }
+    }
+    const bare = createRenderer(FAKE_CANVAS, EMPTY_LEVEL, null, { tier: "high", skyTable: skyFixture() });
+    try {
+      bare.sync(windTestState(windTestPlayer(1)), 1, 0, { dt: 1 / 60, sprinting: false });
+    } finally {
+      bare.dispose();
+    }
+    expect([lakeReflections.mirrors.length, lakeReflections.panoramas.length]).toEqual([0, 0]);
+    expect(setters.map((s) => s.mock.calls.length)).toEqual([0, 0, 0, 0, 0]);
+  }, timeLimit(180_000));
+});
+
 describe("the wildlife director goes quiet near the Hollow", () => {
   // A real forest and a real renderer — the wind test's `forest: null` shortcut
   // skips exactly the branch this checks, so there is no way to stay on the
@@ -1397,6 +2011,6 @@ describe("a part the renderer disposes is also torn down when a build fails", ()
     const registered = new Set([...src.matchAll(/partOf\((\w+)\);/g)].map((m) => m[1]!));
     if (/made\(\(\) => \{\s*for \(const m of brushMeshes\) m\.dispose\(\);/.test(src)) registered.add("brushMeshes");
     expect([...registered].sort()).toEqual([...disposed].sort());
-    expect(disposed.size).toBe(25);
+    expect(disposed.size).toBe(29);
   });
 });

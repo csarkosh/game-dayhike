@@ -1,5 +1,5 @@
 #version 450
-#define MATERIALPLUGIN_19
+#define MATERIALPLUGIN_12
 #define BRDF_V_HEIGHT_CORRELATED
 #define MS_BRDF_ENERGY_CONSERVATION
 #define SPHERICAL_HARMONICS
@@ -24,8 +24,7 @@
 #define SS_TRANSLUCENCYCOLOR_TEXTUREDIRECTUV 0
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
-#define WATER
-#define UV1
+#define FOLIAGE
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -47,11 +46,11 @@
 #define PBR
 #define NUM_SAMPLES 0
 #define ALBEDODIRECTUV 0
+#define VERTEXCOLOR
 #define BASE_WEIGHTDIRECTUV 0
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
-#define ALPHABLEND
 #define ALPHATESTVALUE 0.4
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
@@ -65,7 +64,6 @@
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
-#define BUMP
 #define BUMPDIRECTUV 0
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
@@ -83,27 +81,37 @@
 #define NUM_MORPH_INFLUENCERS 0
 #define ORDER_INDEPENDENT_TRANSPARENCY_16BITS
 #define USEPHYSICALLIGHTFALLOFF
+#define SHADOWFLOAT
 #define FOG
 #define CAMERA_PERSPECTIVE
 #define AREALIGHTSUPPORTED
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
-#define VERTEX_PULLING_INDEX_BUFFER_32BITS
 #define CLUSTLIGHT_SLICES 0
 #define CLUSTLIGHT_BATCH 0
 #define LIGHT0
 #define SPOTLIGHT0
 #define LIGHT1
 #define DIRLIGHT1
+#define SHADOW1
+#define SHADOWCSM1
+#define SHADOWCSMNUM_CASCADES1 2
+#define SHADOWCSMUSESHADOWMAXZ1
+#define SHADOWPCF1
 #define LIGHT2
 #define HEMILIGHT2
+#define SHADOWS
 #define LIGHTCOUNT 3
 #define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME vertex:pbr
-layout(set = 1, binding = 20) uniform LeftOver {
-        vec4 vFogInfos;
+layout(set = 1, binding = 14) uniform LeftOver {
+        mat4 lightMatrix1[2];
+    float viewFrustumZ1[2];
+    float frustumLengths1[2];
+    float cascadeBlendFactor1;
+    vec4 vFogInfos;
     vec3 vFogColor;
 };
 
@@ -235,30 +243,36 @@ float atmSunPower;
 float atmSunWeight;
 vec3 atmSunDir;
 vec3 atmSunColour;
-float waterLevel;
-vec3 waterKd;
-vec4 waterBed;
-float waterBedTexels;
-float waterTime;
-vec2 waterWind;
-vec2 waterWindTime;
-vec2 waterScreen;
-float waterHigh;
-float waterOctaves;
-vec2 waterNearFar;
-vec2 waterSkin;
-float waterRain;
-vec4 oceanPhase0;
-vec4 oceanPhase1;
-vec4 oceanPhase2;
-vec4 oceanSwell;
-vec4 oceanTips;
-vec4 oceanCoast;
-vec4 oceanWind;
-vec4 oceanWindDir;
-vec4 oceanWindStats;
-vec4 oceanWindPivot;
-vec4 oceanK[12];
+vec3 atmFarColour;
+float atmCloudDensity;
+float atmCloudSteps;
+float atmCloudRange;
+float atmCloudFalloff;
+float atmCloudSeat;
+float atmCloudGroundRange;
+float atmCloudNear;
+float atmCloudTrail;
+vec2 atmCloudNoiseScale;
+vec2 atmCloudWind;
+vec2 atmCloudGlow;
+vec3 atmCloudColour;
+vec4 atmCloudGroundRect;
+vec2 windDir;
+float windLean;
+float windGust;
+float windFlutter;
+float windTime;
+vec3 windEye;
+vec3 windPlayers[5];
+float foliageAmp;
+float foliageHeight;
+float foliageTint;
+float foliageRootAO;
+float foliageNormalRoot;
+float foliageNormalUp;
+vec2 foliageFlags;
+vec2 foliageEdges;
+vec4 foliageBladeEdges;
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -276,7 +290,7 @@ float visibility;
 #define CUSTOM_VERTEX_BEGIN
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
-layout(location = 2) in vec2 uv;
+layout(location = 2) in vec4 color;
 const float PI=3.1415926535897932384626433832795;
 const float TWO_PI=6.283185307179586;
 const float HALF_PI=1.5707963267948966;
@@ -426,10 +440,9 @@ uint2float(rstate*2447445414u));
 #define DIELECTRIC_SPECULAR_MODEL_OPENPBR 1
 #define CONDUCTOR_SPECULAR_MODEL_GLTF 0
 #define CONDUCTOR_SPECULAR_MODEL_OPENPBR 1
-layout(location = 0)  out vec2 vBumpUV;
-layout(location = 1)  out vec3 vPositionW;
-layout(location = 2)  out vec3 vNormalW;
-layout(location = 3)  out vec3 vEnvironmentIrradiance;
+layout(location = 0)  out vec3 vPositionW;
+layout(location = 1)  out vec3 vNormalW;
+layout(location = 2)  out vec3 vEnvironmentIrradiance;
 vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
 + vSphericalL1_1*(normal.y)
 + vSphericalL10*(normal.z)
@@ -440,6 +453,7 @@ vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
 + vSphericalL21*(normal.z*normal.x)
 + vSphericalL22*(normal.x*normal.x-(normal.y*normal.y));
 }
+layout(location = 3)  out vec4 vColor;
 layout(location = 4)  out vec3 vFogDistance;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
@@ -457,6 +471,10 @@ vec4 vLightSpecular;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light1;
+
+layout(location = 5)  out vec4 vPositionFromLight1[SHADOWCSMNUM_CASCADES1];
+layout(location = 7)  out float vDepthMetric1[SHADOWCSMNUM_CASCADES1];
+layout(location = 9)  out vec4 vPositionFromCamera1;
 layout(set = 1, binding = 5) uniform Light2
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -465,24 +483,41 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
-// Water plugin, vertex definitions: the ring's per-vertex bed depth (metres
-// of water under the vertex, from the terrain height the ring sampled), which
-// the fragment stage falls back to outside the bed height texture's square,
-// and the vertex's view depth, which the high tier compares with the depth of
-// the opaque pass behind it.
+// Foliage vertex definitions, spliced by FoliagePlugin (foliagePlugin.ts) at
+// CUSTOM_VERTEX_DEFINITIONS. The record uniforms are declared by the plugin
+// before this text (the declaration include precedes the custom definitions
+// in Babylon's PBR vertex source), so the function below may read windDir.
+// Every constant mirrors windParams.ts and a lockstep test asserts they agree.
 //
-// COMMENT RULES: never put a semicolon inside a trailing comment on a code
-// line, and never spell a hashed preprocessor keyword in comment prose. The
-// shaderHygiene test enforces both.
-layout(location = 3) in float bedDepth;
-layout(location = 5)  out float vBedDepth;
-layout(location = 6)  out float vWaterViewDepth;
+// COMMENT RULES: no semicolon inside a trailing comment on a code line, no
+// hashed preprocessor keyword in comment prose.
+layout(location = 10)  out vec4 vFoliage;
+layout(location = 11)  out float vFoliageH;
+layout(location = 12)  out float vFoliageClump;
+layout(location = 13)  out float vFoliageDist;
+const float WIND_K1 = 0.25132741228718347;
+const float WIND_K2 = 0.6981317007977318;
+const float WIND_OMEGA1 = 0.3769911184;
+const float WIND_OMEGA2 = 0.879645943;
+const float WIND_OMEGA3 = 12.5663706144;
+const float WIND_RAGGED = 1.2;
+const float WIND_RAGGED_CELL = 6.0;
+const float FOLIAGE_CLUMP_CELL = 1.5;
+// Mirrors gustAt in windParams.ts: two octaves whose phase is the position
+// projected onto the wind direction, plus a lattice hash so the front is
+// ragged rather than a stripe.
+float foliageGust(vec2 p, float t) {
+float u = windDir.x * p.x + windDir.y * p.y;
+vec2 c = floor(p / WIND_RAGGED_CELL);
+float ragged = WIND_RAGGED * (fract(c.x * 0.618034 + c.y * 0.381966) - 0.5);
+return sin(WIND_K1 * u - WIND_OMEGA1 * t + ragged) + 0.5 * sin(WIND_K2 * u - WIND_OMEGA2 * t + 1.7 * ragged);
+}
 #define CUSTOM_VERTEX_DEFINITIONS
 void main(void) {
 #define CUSTOM_VERTEX_MAIN_BEGIN
 vec3 positionUpdated=position;
 vec3 normalUpdated=normal;
-vec2 uvUpdated=uv;
+vec4 colorUpdated=color;
 #define CUSTOM_VERTEX_UPDATE_POSITION
 #define CUSTOM_VERTEX_UPDATE_NORMAL
 mat4 finalWorld=world;
@@ -495,16 +530,87 @@ float NdotV=max(dot(vNormalW,viewDirectionW),0.0);
 vec3 roughNormal=mix(vNormalW,viewDirectionW,(0.5*(1.0-NdotV))*baseDiffuseRoughness);
 vec3 reflectionVector=vec3(reflectionMatrix*vec4(roughNormal,0)).xyz;
 vEnvironmentIrradiance=computeEnvironmentIrradiance(reflectionVector);
-vBedDepth = bedDepth;
-// Babylon's view space is left-handed: +z runs forward, so this is positive.
-vWaterViewDepth = (view * worldPos).z;
+// The foliage world-position block, spliced at CUSTOM_VERTEX_UPDATE_WORLDPOS,
+// after the thin-instance matrix: worldPos, positionUpdated and finalWorld
+// are in scope. Order: clump hash, the up bias on the world normal, motion
+// weight, lean, gust (phased at the instance origin so a tuft moves as one),
+// flutter (phased at the vertex so blades break up), camera tilt, player
+// bend, far sink, then for the blade clumps the collapse: a grow-in from the
+// tier inside, the collapse toward the tier outside, and the strength cut,
+// each blade pulled toward its root by its share, last so a collapsed
+// blade's vertices coincide exactly (the root is taken through finalWorld
+// with no displacement).
+//
+// The motion weight carries the instance's own uniform scale — the Y column's
+// length, since thin instances here are uniformly scaled — because
+// foliageHeight is the MODEL bounding height while the displacement is added
+// in world space. Without it a tree drawn at 5x would lean a fifth as far, in
+// drawn terms, as one drawn at 1x. With it the tip lean is the same fraction
+// of DRAWN height at every scale: about 2.9 % at the calmest wind, 19.8 % at
+// speed 1.
+//
+// vPositionW is written BEFORE this hook, so fog, viewDirectionW and the
+// distance fade all see the undisplaced vertex — centimetres for cards, under
+// a metre for crowns, which is below what any of the three can resolve.
+//
+// COMMENT RULES as in foliage.vertex.fx.
+{
+const float FOLIAGE_TILT = 0.04;
+const float FOLIAGE_BEND = 0.25;
+const float FOLIAGE_BEND_R = 0.6;
+const float FOLIAGE_SINK = 0.5;
+const float FOLIAGE_BLADE_SOFT = 0.15;
+vec2 fOrigin = finalWorld[3].xz;
+float fH = clamp(positionUpdated.y / foliageHeight, 0.0, 1.0);
+float fH2 = fH * fH;
+float fDist = distance(fOrigin, windEye.xz);
+vec2 fCell = floor(fOrigin / FOLIAGE_CLUMP_CELL);
+float fClump = fract(fCell.x * 0.618034 + fCell.y * 0.381966);
+float fScale = length(finalWorld[1].xyz);
+vec3 fUp = vNormalW + vec3(0.0, foliageNormalUp, 0.0);
+float fUl = length(fUp);
+vNormalW = fUl > 1.0e-4 ? fUp / fUl : vec3(0.0, 1.0, 0.0);
+float fEdge = 1.0 - smoothstep(foliageEdges.x, foliageEdges.y, fDist);
+float fM = foliageAmp * fH2 * foliageHeight * fScale * fEdge;
+vec3 fDir = vec3(windDir.x, 0.0, windDir.y);
+float fGust = foliageGust(fOrigin, windTime + 0.6 * (fClump - 0.5));
+worldPos.xyz += fDir * (windLean + windGust * fGust) * fM;
+float fFlutter = sin(2.1 * worldPos.x + 1.7 * worldPos.z + WIND_OMEGA3 * windTime);
+worldPos.xz += windFlutter * fM * fFlutter * vec2(0.75, -0.35);
+if (foliageFlags.x > 0.5) {
+vec2 fAway = fOrigin - windEye.xz;
+worldPos.xz += FOLIAGE_TILT * fH2 * fAway / max(length(fAway), 1.0e-3);
+}
+if (foliageFlags.y > 0.5) {
+for (int i = 0;
+i < 5;
+i++) {
+vec2 fD = fOrigin - windPlayers[i].xz;
+float fL = length(fD);
+float fW = 1.0 - clamp(fL / FOLIAGE_BEND_R, 0.0, 1.0);
+worldPos.xz += (fD / max(fL, 1.0e-3)) * (FOLIAGE_BEND * fH2 * fW * fW);
+}
+}
+  // The default, overwritten only where the attribute actually exists. The
+  // fragment stage treats a black rgb as "no tint data" and skips the mix.
+vFoliage = vec4(0.0, 0.0, 0.0, 1.0);
+vFoliageH = fH;
+vFoliageClump = fClump;
+vFoliageDist = fDist;
+}
 #define CUSTOM_VERTEX_UPDATE_WORLDPOS
 gl_Position=viewProjection*worldPos;
+vec2 uvUpdated=vec2(0.,0.);
 vec2 uv2Updated=vec2(0.,0.);
-if (vBumpInfos.x==0.)
-{vBumpUV=vec2(bumpMatrix*vec4(uvUpdated,1.0,0.0));
-}
 vFogDistance=(view*worldPos).xyz;
+vPositionFromCamera1=view*worldPos;
+for (int i=0;
+i<SHADOWCSMNUM_CASCADES1;
+i++) {vPositionFromLight1[i]=lightMatrix1[i]*worldPos;
+vDepthMetric1[i]=(vPositionFromLight1[i].z+light1.depthValues.x)/light1.depthValues.y;
+}
+vColor=vec4(1.0);
+vColor.rgb*=colorUpdated.rgb;
 #define CUSTOM_VERTEX_MAIN_END
 gl_Position.y *= yFactor_;
 }

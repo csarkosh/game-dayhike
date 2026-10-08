@@ -33,6 +33,44 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
   return { Engine: mod.NullEngine };
 });
 
+// Every mirror and panorama a renderer makes for the lake, and how many times
+// each was disposed, recorded on the way through to the real shells.
+const lakeParts = vi.hoisted(() => [] as { kind: "mirror" | "panorama"; disposed: number }[]);
+vi.mock("../../src/game/lakeMirror.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/lakeMirror.js")>();
+  return {
+    ...mod,
+    createLakeMirror: (...args: Parameters<typeof mod.createLakeMirror>) => {
+      const mirror = mod.createLakeMirror(...args);
+      const record = { kind: "mirror" as const, disposed: 0 };
+      lakeParts.push(record);
+      const dispose = mirror.dispose.bind(mirror);
+      mirror.dispose = () => {
+        record.disposed += 1;
+        dispose();
+      };
+      return mirror;
+    },
+  };
+});
+vi.mock("../../src/game/lakePanorama.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/lakePanorama.js")>();
+  return {
+    ...mod,
+    createLakePanorama: (...args: Parameters<typeof mod.createLakePanorama>) => {
+      const panorama = mod.createLakePanorama(...args);
+      const record = { kind: "panorama" as const, disposed: 0 };
+      lakeParts.push(record);
+      const dispose = panorama.dispose.bind(panorama);
+      panorama.dispose = () => {
+        record.disposed += 1;
+        dispose();
+      };
+      return panorama;
+    },
+  };
+});
+
 // The terrain field lives behind the variant registry; a test that builds a
 // forest without `app.ts` has to register the passes itself.
 import "../../src/sim/passes/index.js";
@@ -494,6 +532,8 @@ function census(scene: Scene) {
   return {
     postProcesses: scene.postProcesses.length,
     renderTargets: scene.customRenderTargets.length,
+    // The lake's mirror and panorama each bring a camera of their own.
+    cameras: scene.cameras.length,
     shadowGenerators: scene.lights.filter((light) => light.getShadowGenerator() !== null).length,
     meshes: scene.meshes.length,
     materials: scene.materials.length,
@@ -725,6 +765,47 @@ describe("a swap and the lake's life, on NullEngine", () => {
       next.dispose();
     }
     expect(humming()).toBe(0);
+    expect(EngineStore.Instances.length).toBe(0);
+  }, timeLimit(180_000));
+});
+
+describe("a swap and the lake's reflections, on NullEngine", () => {
+  it("disposes the old renderer's mirror or panorama, and its skyline, swap after swap, and makes the new tier's", () => {
+    const forest = createForest(SEED);
+    lakeParts.length = 0;
+    const made = (): string[] => lakeParts.map((p) => `${p.kind} ${p.disposed}`);
+    let current = { renderer: createRenderer(nullCanvas(), LEVEL, forest, { tier: "high" }), canvas: nullCanvas() };
+    const bindings: SwapBindings = {
+      build: (canvas, tier) => createRenderer(canvas, LEVEL, forest, { tier }),
+      freshCanvas: nullCanvas,
+      extras: { dispose: () => undefined, build: () => undefined },
+      rebind: () => undefined,
+      restore: () => undefined,
+      loop: () => undefined,
+      unwatch: () => undefined,
+      watch: () => undefined,
+      engineFailed: () => undefined,
+    };
+    expect(made()).toEqual(["mirror 0"]);
+    const after: string[][] = [];
+    const skylines: (number | null)[] = [];
+    for (const tier of ["medium", "low", "high"] as const) {
+      const old = current.renderer;
+      const skyline = old.scene.getTextureByName("lake_skyline");
+      current = swapRenderer(current, { tier, engine: null, fallbackTier: "medium" }, bindings);
+      after.push(made());
+      // The old skyline's texture has gone with it, where it had one.
+      skylines.push(skyline === null ? null : skyline.getInternalTexture() === null ? 0 : 1);
+      expect(old.scene.isDisposed).toBe(true);
+    }
+    expect(after).toEqual([
+      ["mirror 1", "panorama 0"],
+      ["mirror 1", "panorama 1"],
+      ["mirror 1", "panorama 1", "mirror 0"],
+    ]);
+    expect(skylines).toEqual([null, 0, 0]);
+    current.renderer.dispose();
+    expect(made()).toEqual(["mirror 1", "panorama 1", "mirror 1"]);
     expect(EngineStore.Instances.length).toBe(0);
   }, timeLimit(180_000));
 });

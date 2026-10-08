@@ -11,7 +11,10 @@
  * The sea's material also draws its waves (`ocean`, `oceanRender.ts`): their
  * GLSL lives in shaders/ocean*.fx, all of it under the `OCEAN` define, which
  * is set only while the plugin has an ocean, so a lake's shader text is
- * unchanged by it.
+ * unchanged by it. A lake's material alone reads the lake's mirror
+ * (`lakeMirror.fragment.fx`, `lakeMirror.ts`) and, on the tiers without
+ * one, its shore panorama and skyline (`lakePanorama.ts`), so the sea's is
+ * unchanged by that in turn.
  */
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
@@ -24,12 +27,15 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { RawTexture2DArray } from "@babylonjs/core/Materials/Textures/rawTexture2DArray.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import vertexDefs from "./shaders/water.vertex.fx?raw";
 import vertexWorldPos from "./shaders/waterWorldPos.vertex.fx?raw";
 import fragmentDefs from "./shaders/water.fragment.fx?raw";
+import lakeRipplesDefs from "./shaders/lakeRipples.fragment.fx?raw";
+import lakeMirrorDefs from "./shaders/lakeMirror.fragment.fx?raw";
 import fragmentLights from "./shaders/waterLights.fragment.fx?raw";
 import fragmentCompose from "./shaders/waterCompose.fragment.fx?raw";
 import oceanVertexDefs from "./shaders/ocean.vertex.fx?raw";
@@ -38,6 +44,8 @@ import oceanFragmentDefs from "./shaders/ocean.fragment.fx?raw";
 import oceanSurface from "./shaders/oceanSurface.fx?raw";
 import oceanShade from "./shaders/oceanShade.fragment.fx?raw";
 import { WATER_F0, roughnessFor, type WaterRow } from "./waterShading.js";
+import { WIND_TIME_WRAP } from "./windParams.js";
+import { MIRROR_OFFSET_K } from "./mirrorView.js";
 
 /** Babylon's dielectric F0 at metallicF0Factor 1 is 0.04; water's 0.02 is half of it. */
 const PBR_DIELECTRIC_F0 = 0.04;
@@ -45,9 +53,12 @@ const PBR_DIELECTRIC_F0 = 0.04;
 /** The definitions each stage gets: the water's, then the sea's declarations,
  * then the sea's surface, which both stages evaluate (`oceanSurface.fx`), and
  * in the fragment stage the sea's shading (each file ends in a newline, so no
- * two lines join). */
+ * two lines join). A lake's fragment stage also gets the lake's ripples and
+ * the mirror's read after the water's; the sea's never does, so its text is as
+ * it was before them. */
 const VERTEX_DEFINITIONS = vertexDefs + oceanVertexDefs + oceanSurface;
-const FRAGMENT_DEFINITIONS = fragmentDefs + oceanFragmentDefs + oceanSurface + oceanShade;
+const SEA_FRAGMENT_DEFINITIONS = fragmentDefs + oceanFragmentDefs + oceanSurface + oceanShade;
+const LAKE_FRAGMENT_DEFINITIONS = fragmentDefs + lakeRipplesDefs + lakeMirrorDefs + oceanFragmentDefs + oceanSurface + oceanShade;
 
 /**
  * Babylon 9.18's line that takes the reflectivity block's roughness, which
@@ -103,6 +114,29 @@ const OCEAN_UNIFORMS = [
   "oceanWindStats", "oceanWindPivot",
 ] as const;
 
+/** The lake's ripples' two floats (`lakeRipples.fragment.fx`), declared on a lake alone, after `waterRain`. */
+const LAKE_UNIFORMS = ["waterLakeTime", "waterPawCover"] as const;
+
+/** The lake's mirror's six floats (`lakeMirror.fragment.fx`), the last the held
+ * frames' smear (`waterMirrorMotion`), declared on a lake alone, after its
+ * view-projection, which follows the ripples'. */
+const MIRROR_FLOATS = ["waterMirrorOn", "waterMirrorK", "waterMirrorWeight", "waterMirrorSmearPx", "waterCalmShare", "waterMirrorMotion"] as const;
+/** The mirrored camera's view-projection, as its four columns: an array, bound as the sea's components are. */
+const MIRROR_VP = "waterMirrorVP";
+const MIRROR_VP_COLUMNS = 4;
+
+/** The lake's shore on medium and low (`lakeMirror.fragment.fx`): the
+ * cylinder's centre and radius, the forest's shade under the skyline and the
+ * panorama's and the skyline's flags, declared on a lake alone, after the
+ * mirror's floats. */
+const SHORE_UNIFORMS = [
+  { name: "waterLakeCentre", size: 3, type: "vec3" },
+  { name: "waterLakeRadius", size: 1, type: "float" },
+  { name: "waterShadeColour", size: 3, type: "vec3" },
+  { name: "waterPanoramaOn", size: 1, type: "float" },
+  { name: "waterSkylineOn", size: 1, type: "float" },
+] as const;
+
 /** The swell's components, a uniform array of twelve vec4s, bound after the ten. */
 const OCEAN_COMPONENTS = "oceanK";
 const OCEAN_COMPONENT_COUNT = 12;
@@ -137,9 +171,27 @@ export function oceanArrayPlaceholder(scene: Scene): BaseTexture {
   return made;
 }
 
+const mirrorPlaceholders = new WeakMap<Scene, BaseTexture>();
+
+/**
+ * A 1×1 RGBA texture, black with alpha 0, made once per scene: what the
+ * lake's mirror sampler is bound to where no mirror is read (the sea, the
+ * medium and low tiers, a lake before its mirror exists). Alpha 0 is
+ * "nothing drawn here", so a read of it leaves the probe. The scene disposes
+ * it with itself; a disposed one is made again.
+ */
+export function waterMirrorPlaceholder(scene: Scene): BaseTexture {
+  const kept = mirrorPlaceholders.get(scene);
+  if (kept !== undefined && kept.getInternalTexture() !== null) return kept;
+  const made = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+  made.name = "waterMirrorPlaceholder";
+  mirrorPlaceholders.set(scene, made);
+  return made;
+}
+
 export class WaterPlugin extends MaterialPluginBase {
   readonly row: WaterRow;
-  /** The bed height square (Task 4 uploads it); null until the first bake. */
+  /** The bed height square (the bed bake uploads it); null until the first bake. */
   bedTexture: BaseTexture | null = null;
   bedOrigin: [number, number] = [0, 0];
   bedTexels = 256;
@@ -152,7 +204,13 @@ export class WaterPlugin extends MaterialPluginBase {
   nearFar: [number, number] = [0.05, 1000];
   time = 0;
   windDir: [number, number] = [1, 0];
-  /** The wind's direction integrated over the run, in seconds: what the skin and the second octave drift by. */
+  /** The wind's 0..1 speed, as `setWind` last had it. */
+  windSpeed = 0;
+  /** On a lake, the wind's velocity (its direction times its 0..1 speed)
+   * integrated over the run, in seconds: what the skin and the second octave
+   * drift by, so the octave drifts at the wind's speed as well as along it.
+   * On the sea, its direction alone: the low tier's caps drift by it at
+   * their designed speed (`oceanShade.fragment.fx`'s OCEAN_CAP_DRIFT). */
   windTime: [number, number] = [0, 0];
   private _lastSeconds: number | null = null;
   /** Ripple octaves the fragment blends: 2, or 1 on the low tier (spec §5.3). */
@@ -162,11 +220,41 @@ export class WaterPlugin extends MaterialPluginBase {
    * (`waterSkinOffset`). */
   skin: [number, number] = [0, 0];
   /** The weather's rain, 0 to 1, per frame: the drops' rings on the surface,
-   * the puddles' own (`waterRainSlope`). */
+   * the puddles' own on the sea (`waterRainSlope`), the lake's near the eye
+   * (`lakeRainSlope`). */
   rain = 0;
+  /** The lake's time: the shared seconds wrapped at WIND_TIME_WRAP, which the
+   * cat's-paws and the rain's rings read (`lakeRipples.fragment.fx`). */
+  lakeTime = 0;
+  /** How much of the lake the cat's-paws may cover, 0 to 1 (`lakePaw`): 1 on
+   * a lake rough all over, as it is until the renderer first sets it. */
+  pawCover = 1;
+  /** The lake's centre (x, level, z) and its radius: the cylinder the
+   * medium tier reads its panorama on (`setLakeBody`). Zeros until set. */
+  readonly lakeBody: [number, number, number, number] = [0, 0, 0, 0];
+  /** The forest's colour under the skyline on the low tier (`setSkyline`),
+   * raw: the shader scales it by the environment's intensity. */
+  readonly shadeColour: [number, number, number] = [0, 0, 0];
+  /** The medium tier's shore panorama and the skyline (medium and low), on
+   * the lake that has them; null elsewhere, where the probe shows. Bound to
+   * the mirror's placeholder without them, and on the sea. */
+  private _panorama: BaseTexture | null = null;
+  private _skyline: BaseTexture | null = null;
   private _ocean: OceanBinding | null = null;
   /** What the array samplers are bound to without an ocean. */
   private readonly _arrayPlaceholder: BaseTexture;
+  /** The lake's mirror (`setMirror`): its target, or null where none is read. */
+  private _mirror: BaseTexture | null = null;
+  /** The mirrored camera's view-projection (Babylon layout), identity until set. */
+  private readonly _mirrorViewProjection = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  /** What the mirror's sampler is bound to without a mirror, and on the sea. */
+  private readonly _mirrorPlaceholder: BaseTexture;
+  /** The calm (`setCalm`): the glass's share, the state's mirror weight, the smear in pixels. */
+  private _calmShare = 0;
+  private _mirrorWeight = 0;
+  private _mirrorSmearPx = 0;
+  /** The held frames' smear (`setMirrorMotion`): pixels of the frame's height times metres, divided by the water's distance in the shader. */
+  private _mirrorMotion = 0;
 
   constructor(material: Material, row: WaterRow) {
     // 230: after the atmosphere's 200 and every look plugin's 205 to 220; the
@@ -174,6 +262,7 @@ export class WaterPlugin extends MaterialPluginBase {
     super(material, "Water", 230, { WATER: false, OCEAN: false });
     this.row = row;
     this._arrayPlaceholder = oceanArrayPlaceholder(material.getScene());
+    this._mirrorPlaceholder = waterMirrorPlaceholder(material.getScene());
     // For hardBindForSubMesh, called on every draw; set before activation,
     // which is when the manager reads it.
     this.registerForExtraEvents = true;
@@ -199,7 +288,41 @@ export class WaterPlugin extends MaterialPluginBase {
   set ocean(binding: OceanBinding | null) {
     const had = this._ocean !== null;
     this._ocean = binding;
-    if (had !== (binding !== null)) this.markAllDefinesAsDirty();
+    if (had !== (binding !== null)) {
+      // The lake's uniforms are a lake's alone (`getUniforms`), so a change of
+      // body rebuilds the uniform buffer's layout, as Babylon does when a
+      // plugin is added to a material already drawn.
+      const m = this._material;
+      if (m._uniformBufferLayoutBuilt) {
+        m.resetDrawCache();
+        m._createUniformBuffer();
+      }
+      this.markAllDefinesAsDirty();
+    }
+  }
+
+  /** The medium tier's shore panorama (`lakePanorama.ts`), or null for the probe. */
+  setPanorama(texture: BaseTexture | null): void {
+    this._panorama = texture;
+  }
+
+  /** The skyline (`createSkylineTexture`) and the forest's colour under it,
+   * the probe's horizon times SKYLINE_SHADE (copied), raw: the shader scales
+   * it by the environment's intensity, as it does the probe; or null for the
+   * probe. */
+  setSkyline(texture: BaseTexture | null, shadeColour: readonly [number, number, number]): void {
+    this._skyline = texture;
+    this.shadeColour[0] = shadeColour[0];
+    this.shadeColour[1] = shadeColour[1];
+    this.shadeColour[2] = shadeColour[2];
+  }
+
+  /** The lake's centre at its level, and its radius: the shore's cylinder. */
+  setLakeBody(x: number, level: number, z: number, radius: number): void {
+    this.lakeBody[0] = x;
+    this.lakeBody[1] = level;
+    this.lakeBody[2] = z;
+    this.lakeBody[3] = radius;
   }
 
   /** Per frame from the renderer's wind record: the game's 0..1 wind and its direction. */
@@ -211,15 +334,63 @@ export class WaterPlugin extends MaterialPluginBase {
       if (m.roughness === null || Math.abs(m.roughness - r) > 1e-3) m.roughness = r;
     }
     this.windDir = dir;
+    this.windSpeed = wind01;
   }
 
-  /** Per frame, with the renderer's clock: sets the time and adds the wind's direction times the step to `windTime`. */
+  /** Per frame, with the renderer's clock: sets the time and adds the step to
+   * `windTime`, times the wind's velocity on a lake and its direction alone
+   * on the sea. */
   advance(seconds: number): void {
     const dt = this._lastSeconds === null ? 0 : Math.max(0, seconds - this._lastSeconds);
-    this.windTime[0] += this.windDir[0] * dt;
-    this.windTime[1] += this.windDir[1] * dt;
+    const speed = this._ocean === null ? this.windSpeed : 1;
+    this.windTime[0] += this.windDir[0] * speed * dt;
+    this.windTime[1] += this.windDir[1] * speed * dt;
     this._lastSeconds = seconds;
     this.time = seconds;
+  }
+
+  /** Per frame, the shared seconds (wrapped or not): the lake's time, wrapped
+   * at WIND_TIME_WRAP as the wind's is; 0 for a time that is not finite. */
+  setLakeTime(seconds: number): void {
+    this.lakeTime = Number.isFinite(seconds) ? seconds - Math.floor(seconds / WIND_TIME_WRAP) * WIND_TIME_WRAP : 0;
+  }
+
+  /** Per frame, the share of the lake the cat's-paws may cover, clamped to
+   * 0..1; 0 for a cover that is not finite. */
+  setPawCover(cover: number): void {
+    this.pawCover = Number.isFinite(cover) ? Math.min(1, Math.max(0, cover)) : 0;
+  }
+
+  /**
+   * Per frame on a lake: the mirror's target and the view-projection it was
+   * last drawn with (Babylon layout, copied), or null where none is read (the
+   * pass not armed this frame, the medium and low tiers), which binds the
+   * placeholder and turns the read off.
+   */
+  setMirror(texture: BaseTexture | null, viewProjection: Float32Array): void {
+    this._mirror = texture;
+    this._mirrorViewProjection.set(viewProjection);
+  }
+
+  /** Per frame on a lake: the glass's share of it (`calmShare`), the state's
+   * mirror weight (0 under rough), and a full paw's smear in pixels
+   * (`smearPx`), which the shader scales by the paw mask (none on glass). The
+   * share and the weight clamped to 0..1 and the smear to 0 and up; any of
+   * them 0 when it is not finite. */
+  setCalm(share: number, weight: number, smearPx: number): void {
+    this._calmShare = Number.isFinite(share) ? Math.min(1, Math.max(0, share)) : 0;
+    this._mirrorWeight = Number.isFinite(weight) ? Math.min(1, Math.max(0, weight)) : 0;
+    this._mirrorSmearPx = Number.isFinite(smearPx) ? Math.max(0, smearPx) : 0;
+  }
+
+  /**
+   * Per frame on a lake: the held frames' smear, the eye's travel the mirror's
+   * image lags by in pixels of the frame's height times metres (the shader
+   * divides by the water point's distance and caps it). 0 where the pass draws
+   * every frame or there is none.
+   */
+  setMirrorMotion(pxMetres: number): void {
+    this._mirrorMotion = Number.isFinite(pxMetres) ? Math.max(0, pxMetres) : 0;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -249,15 +420,27 @@ export class WaterPlugin extends MaterialPluginBase {
   // Always listed, ocean or none: Babylon gathers a plugin's samplers once,
   // when the material's uniform layout is built (`rainPlugin.ts` says why).
   // Undeclared on a lake, the ocean's are a null location on WebGL and
-  // ignored on WebGPU.
+  // ignored on WebGPU, as the lake's mirror, panorama and skyline are on the sea.
   override getSamplers(samplers: string[]): void {
-    samplers.push("waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope");
+    samplers.push(
+      "waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope", "waterMirror", "waterPanorama", "waterSkyline",
+    );
   }
 
+  /**
+   * The water's uniforms, then, on a lake alone, the lake's ripples', its
+   * mirror's and its shore's (the sea's text is as it was before them), then
+   * the sea's ten and its components, declared on a lake too (a lake reads
+   * none of them).
+   */
   override getUniforms(): {
     ubo: { name: string; size: number; type: string; arraySize?: number }[]; vertex: string; fragment: string;
   } {
     const components = `uniform vec4 ${OCEAN_COMPONENTS}[${OCEAN_COMPONENT_COUNT}];`;
+    const isLake = this._ocean === null;
+    const lake = isLake ? LAKE_UNIFORMS : [];
+    const mirror = isLake ? MIRROR_FLOATS : [];
+    const shore = isLake ? SHORE_UNIFORMS : [];
     return {
       ubo: [
         { name: "waterLevel", size: 1, type: "float" },
@@ -273,6 +456,10 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: "waterNearFar", size: 2, type: "vec2" },
         { name: "waterSkin", size: 2, type: "vec2" },
         { name: "waterRain", size: 1, type: "float" },
+        ...lake.map((name) => ({ name, size: 1, type: "float" })),
+        ...(isLake ? [{ name: MIRROR_VP, size: 4, type: "vec4", arraySize: MIRROR_VP_COLUMNS }] : []),
+        ...mirror.map((name) => ({ name, size: 1, type: "float" })),
+        ...shore.map(({ name, size, type }) => ({ name, size, type })),
         ...OCEAN_UNIFORMS.map((name) => ({ name, size: 4, type: "vec4" })),
         { name: OCEAN_COMPONENTS, size: 4, type: "vec4", arraySize: OCEAN_COMPONENT_COUNT },
       ],
@@ -293,6 +480,10 @@ export class WaterPlugin extends MaterialPluginBase {
         "uniform vec2 waterNearFar;",
         "uniform vec2 waterSkin;",
         "uniform float waterRain;",
+        ...lake.map((name) => `uniform float ${name};`),
+        ...(isLake ? [`uniform vec4 ${MIRROR_VP}[${MIRROR_VP_COLUMNS}];`] : []),
+        ...mirror.map((name) => `uniform float ${name};`),
+        ...shore.map(({ name, type }) => `uniform ${type} ${name};`),
         ...OCEAN_UNIFORMS.map((name) => `uniform vec4 ${name};`),
         components,
       ].join("\n"),
@@ -324,6 +515,25 @@ export class WaterPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat2("waterNearFar", this.nearFar[0], this.nearFar[1]);
     uniformBuffer.updateFloat2("waterSkin", this.skin[0], this.skin[1]);
     uniformBuffer.updateFloat("waterRain", this.rain);
+    // The lake's ripples, declared on a lake alone, bound on its every draw.
+    if (this._ocean === null) {
+      uniformBuffer.updateFloat("waterLakeTime", this.lakeTime);
+      uniformBuffer.updateFloat("waterPawCover", this.pawCover);
+      // The lake's mirror: off, the identity and a calm of zero until set.
+      uniformBuffer.updateFloatArray(MIRROR_VP, this._mirrorViewProjection);
+      uniformBuffer.updateFloat("waterMirrorOn", this._mirror !== null ? 1 : 0);
+      uniformBuffer.updateFloat("waterMirrorK", MIRROR_OFFSET_K);
+      uniformBuffer.updateFloat("waterMirrorWeight", this._mirrorWeight);
+      uniformBuffer.updateFloat("waterMirrorSmearPx", this._mirrorSmearPx);
+      uniformBuffer.updateFloat("waterMirrorMotion", this._mirrorMotion);
+      uniformBuffer.updateFloat("waterCalmShare", this._calmShare);
+      // The lake's shore on medium and low: zeros and the flags 0 until set.
+      uniformBuffer.updateFloat3("waterLakeCentre", this.lakeBody[0], this.lakeBody[1], this.lakeBody[2]);
+      uniformBuffer.updateFloat("waterLakeRadius", this.lakeBody[3]);
+      uniformBuffer.updateFloat3("waterShadeColour", this.shadeColour[0], this.shadeColour[1], this.shadeColour[2]);
+      uniformBuffer.updateFloat("waterPanoramaOn", this._panorama !== null ? 1 : 0);
+      uniformBuffer.updateFloat("waterSkylineOn", this._skyline !== null ? 1 : 0);
+    }
     // Every declared sampler is bound on every draw: WebGPU validates the
     // bindings a pipeline declares whether or not a branch reads them. The
     // material is not ready until the bed texture exists, so the null guards
@@ -333,6 +543,11 @@ export class WaterPlugin extends MaterialPluginBase {
     const depth = this.depthTexture ?? this.bedTexture;
     if (scene !== null) uniformBuffer.setTexture("waterScene", scene);
     if (depth !== null) uniformBuffer.setTexture("waterDepth", depth);
+    // The lake's mirror, the placeholder where none is read and on the sea.
+    uniformBuffer.setTexture("waterMirror", this._ocean === null ? (this._mirror ?? this._mirrorPlaceholder) : this._mirrorPlaceholder);
+    // The lake's shore panorama and skyline, the same placeholder likewise.
+    uniformBuffer.setTexture("waterPanorama", this._ocean === null ? (this._panorama ?? this._mirrorPlaceholder) : this._mirrorPlaceholder);
+    uniformBuffer.setTexture("waterSkyline", this._ocean === null ? (this._skyline ?? this._mirrorPlaceholder) : this._mirrorPlaceholder);
     // The sea's waves: zeros and placeholders on a lake, whose shader declares
     // none of it, so every water material binds the same.
     const ocean = this._ocean;
@@ -367,7 +582,7 @@ export class WaterPlugin extends MaterialPluginBase {
     }
     if (shaderType === "fragment") {
       return {
-        CUSTOM_FRAGMENT_DEFINITIONS: FRAGMENT_DEFINITIONS,
+        CUSTOM_FRAGMENT_DEFINITIONS: this._ocean !== null ? SEA_FRAGMENT_DEFINITIONS : LAKE_FRAGMENT_DEFINITIONS,
         CUSTOM_FRAGMENT_BEFORE_LIGHTS: fragmentLights,
         CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: fragmentCompose,
         // Listed always: Babylon gathers a plugin's hook names once, when the

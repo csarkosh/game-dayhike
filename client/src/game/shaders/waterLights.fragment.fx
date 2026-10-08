@@ -52,17 +52,37 @@ normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOc
 // once the drawn waves carry theirs, calmer in a headland's lee as the chop is.
 float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn + wWindDrawn * wWindSteep * wWindSteep);
 #else
+// The lake's two states (lakeRipples.fragment.fx): the cat's-paw mask at this
+// pixel, from the gust that crosses it, and the two octaves at its amplitude,
+// so the surface is glass where the mask is 0. The field is skipped where the
+// cover is 0 (glass all over), where its threshold of 1 is no lower than any
+// value the field takes, so the mask is 0 there either way. PBR's bump, the first
+// octave, is scaled about the up it was built on.
+float wPaw = 0.0;
+if (waterPawCover > 0.0) {
+  wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));
+}
+float wOctave = octaveAmplitude(wPaw);
+normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));
 if (waterOctaves > 1.5) {
-  vec2 wSlope = waterRipple2(vPositionW.xz);
-  normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y));
+  vec2 wSlope = lakeRipple2(vPositionW.xz);
+  normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y) * wOctave);
+}
+// The rain's rings near the eye, every tier: beyond their reach the rain is
+// the roughness it lifts. The skin's flatten below damps them where it lies.
+if (waterRain > 0.0) {
+  vec2 wRs = lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain, length(vPositionW - vEyePosition.xyz));
+  normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y));
 }
 #endif
+#ifdef OCEAN
 // The rain's rings, every tier, scaled by the rain as the puddles' are. The
 // skin's flatten below damps them where it lies.
 if (waterRain > 0.0) {
   vec2 wRs = waterRainSlope(vPositionW.xz);
   normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y) * waterRain);
 }
+#endif
 normalW = waterHorizonNormal(normalW, viewDirectionW);
 // Fresnel on N.V, Schlick with water's F0: the reflected share, which the
 // transmitted light never gets.

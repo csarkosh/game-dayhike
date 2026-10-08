@@ -550,6 +550,31 @@ describe("createForestMeshes under NullEngine", () => {
     expect(new Set(forest.casterMeshes)).toEqual(expected);
   });
 
+  it("lists the giants' and the saplings' LOD1 and LOD2 buckets and the five billboards for the lake's reflections, and empties them on dispose", () => {
+    const { assets, forest } = build();
+    const bucketsAt = (lod: number): Set<Mesh> => {
+      const expected = new Set<Mesh>();
+      for (const species of [...assets.giants, ...assets.saplings]) {
+        // Both siblings of each bark+canopy pair, as for the casters.
+        const lodRoot = species.lods[lod]!;
+        expected.add(lodRoot);
+        for (const child of lodRoot.getChildMeshes(false)) expected.add(child as Mesh);
+      }
+      return expected;
+    };
+    expect(new Set(forest.lod2Meshes)).toEqual(bucketsAt(2));
+    expect(forest.lod2Meshes).toHaveLength(8);
+    expect(forest.impostorMeshes.map((m) => m.name)).toEqual([
+      "forest_impostor_giant_0",
+      "forest_impostor_giant_1",
+      "forest_impostor_sapling_0",
+      "forest_impostor_sapling_1",
+      "forest_impostor_snag",
+    ]);
+    forest.dispose();
+    expect([forest.lod2Meshes.length, forest.impostorMeshes.length]).toEqual([0, 0]);
+  });
+
   it("honours a reduced nearRadius: the LOD2 ring shrinks, LOD0/1 do not", () => {
     // LOD_RING_1/NEAR_RADIUS tightened to 85/120 at one point (was 120/200),
     // so the old "low" value

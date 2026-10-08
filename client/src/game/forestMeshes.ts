@@ -244,6 +244,13 @@ export type ForestMeshes = {
    * must watch its length, not snapshot it at creation.
    */
   readonly casterMeshes: readonly Mesh[];
+  /** The giants' and the saplings' LOD2 bucket meshes, append-only as the
+   * GLBs land, as `casterMeshes` is: the trees the lake's mirror draws on
+   * their own material, 85 to 120 m out. */
+  readonly lod2Meshes: readonly Mesh[];
+  /** The five billboard planes, in the order made: the far forest the lake's
+   * reflections draw. */
+  readonly impostorMeshes: readonly Mesh[];
   /** Every billboard's bake as it stands, in the order the billboards were
    * made: what a far forest missing from view can be traced to. Empty until
    * the models have loaded. */
@@ -1023,6 +1030,8 @@ export function createForestMeshes(
   const collector = createBandCollector(seed);
 
   const casterMeshes: Mesh[] = [];
+  const lod2Meshes: Mesh[] = [];
+  const impostorMeshes: Mesh[] = [];
   const containers: AssetContainer[] = [];
   const materials: Material[] = [];
   const textures: Texture[] = [];
@@ -1117,6 +1126,7 @@ export function createForestMeshes(
   ): Impostor {
     const plane = MeshBuilder.CreatePlane(`forest_impostor_${name}`, { width, height }, scene);
     prepBucketMesh(plane);
+    impostorMeshes.push(plane);
 
     const mat = new PBRMaterial(`mat_forest_impostor_${name}`, scene);
     // Alpha-TESTED, never alpha-blended: blending would need 20k quads sorted
@@ -1297,6 +1307,8 @@ export function createForestMeshes(
     // reason: they are small, numerous, and sit under the giants'
     // own shadows, so the shadow-map cost is not worth paying.
     if (kind === "giant") casterMeshes.push(...lods[0]);
+    // The lake's mirror draws the LOD2 buckets on their own material.
+    lod2Meshes.push(...lods[2]);
 
     return {
       // Each ring fades in where the previous one fades out, and the last
@@ -1863,6 +1875,8 @@ export function createForestMeshes(
     },
     view,
     casterMeshes,
+    lod2Meshes,
+    impostorMeshes,
     impostorBakes() {
       return impostors.map((imp) => ({ ...imp.bake }));
     },
@@ -1892,6 +1906,8 @@ export function createForestMeshes(
       // overlap with the loop above is harmless.
       for (const container of containers) container.dispose();
       casterMeshes.length = 0;
+      lod2Meshes.length = 0;
+      impostorMeshes.length = 0;
       species = null;
       saplingSpecies = null;
       deadwoodBucket = null;

@@ -658,6 +658,8 @@ function buildGame(
       // (0 s) set cancels before it is seen.
       base = { ...base, weather: WEATHER_PRESETS[preset] };
       renderer.setWeather(base.weather, options.instant ? 0 : undefined);
+      // The lake's calm reads the preset by name, and fades with the weather.
+      renderer.setWeatherName(preset, options.instant ? 0 : undefined);
       // Also the local `syncAtmosphere` throttles against — see the `time`
       // branch above.
       appliedWeather = base.weather;
@@ -1716,6 +1718,7 @@ function buildGame(
   /** Puts back on a new renderer what the old one was told. */
   function restoreView(r: Renderer): void {
     r.setView(appliedHour, appliedWeather);
+    r.setWeatherName(weatherName, 0);
     r.setWireframe(wireframe);
     r.setSkinShading(skin);
     r.setBobScale(bobScale);

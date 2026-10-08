@@ -72,11 +72,12 @@ function pinned(text: string, name: string, value: number): void {
   expect(text, name).toContain(`const float ${name} = ${glslFloat(value)};`);
 }
 
-/** Babylon's preprocessor over one hook's text, as shaderHygiene.test.ts runs it, with a lake's gates on. */
+/** Babylon's preprocessor over one hook's text, as shaderHygiene.test.ts runs it, with a lake's gates on (or the sea's). */
 const LAKE_DEFINES = ["#define WATER", "#define BUMP", "#define REFLECTION", "#define SPECULARTERM"];
-function processed(source: string, isFragment: boolean): Promise<string> {
+const SEA_DEFINES = [...LAKE_DEFINES, "#define OCEAN"];
+function processed(source: string, isFragment: boolean, defines: string[] = LAKE_DEFINES): Promise<string> {
   const options: _IProcessingOptions = {
-    defines: LAKE_DEFINES,
+    defines,
     indexParameters: {},
     isFragment,
     shouldUseHighPrecisionShader: true,
@@ -843,14 +844,20 @@ describe("the sea's normal, waterline and roughness", () => {
 });
 
 describe("a lake's shaders", () => {
-  it("process to the text they had before the sea moved", async () => {
-    // Each hook through Babylon's preprocessor with a lake's gates, hashed as it was at 9edee7e.
+  it("process to the text they had before the sea moved, the lights' as the lake's ripples made it, the rest but for the lake's mirror", async () => {
+    // Each hook through Babylon's preprocessor with a lake's gates, hashed as it was at 9edee7e; the
+    // lights' hashed again once the lake's ripples replaced its octaves' and rings' lines (their own
+    // test, waterPlugin.test.ts, pins what they are); the water's definitions and the composition
+    // hashed again as the lake's mirror and its shore left them (their samplers, their reads); the
+    // lights' and the composition hashed again once the paws' field and the shore's reads went
+    // under their uniform branches; the composition once more as the mirror's read gained the eye's
+    // motion's smear.
     const before: Record<string, string> = {
       "water.vertex.fx": "3732482554b89e357fec2298edc8724ad085cc9defe35017b243df6b7782d50b",
       "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
-      "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
-      "waterLights.fragment.fx": "e43c7dd65420563ad94555469e69b237229563a6cf07e4ea5f86b53e73a1c5cb",
-      "waterCompose.fragment.fx": "a3cdf837137ae07cea47e0facfbc0b6ad44269d7a723b9f157e487da0cf34447",
+      "water.fragment.fx": "64d0992cb60dc15186b2dc2e90f3e62ebecca81a74fe09aac825c88328089fb2",
+      "waterLights.fragment.fx": "5841b9be8b5e54d8da49459f91a811f724d54a0a7018c9cb2cbabe39df6cc8cb",
+      "waterCompose.fragment.fx": "404a808f1764a431f855083b4ae12d03c20ed2c3226848fdd6aea4bcf9f4eee0",
     };
     for (const [name, hash] of Object.entries(before)) {
       expect(sha256(await processed(fx(name), !name.includes(".vertex."))), name).toBe(hash);
@@ -864,11 +871,37 @@ describe("a lake's shaders", () => {
       const v = lake.getCustomCode("vertex")!;
       const f = lake.getCustomCode("fragment")!;
       expect(await processed(v.CUSTOM_VERTEX_DEFINITIONS!, false)).toBe(await processed(fx("water.vertex.fx"), false));
-      expect(await processed(f.CUSTOM_FRAGMENT_DEFINITIONS!, true)).toBe(await processed(fx("water.fragment.fx"), true));
+      expect(await processed(f.CUSTOM_FRAGMENT_DEFINITIONS!, true)).toBe(
+        await processed(fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") + fx("lakeMirror.fragment.fx"), true),
+      );
     } finally {
       engine.dispose();
     }
   });
+});
+
+describe("the sea's shaders", () => {
+  it("process to the text they had before the lake's mirror: its every line vanishes under the sea's gates", async () => {
+    // Each fragment hook through Babylon's preprocessor with the sea's gates, hashed as it was at 378b040.
+    const before: Record<string, string> = {
+      "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
+      "waterLights.fragment.fx": "990c8d146406b1ba91da2c448d1f4c48199a776ae7e90794721d7b7215f8317c",
+      "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
+    };
+    for (const [name, hash] of Object.entries(before)) {
+      expect(sha256(await processed(fx(name), true, SEA_DEFINES)), name).toBe(hash);
+    }
+    // and the sea's definitions never carry the mirror's read
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const sea = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
+      sea.ocean = bindingFor(scene, "medium");
+      expect(sea.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS).not.toContain(fx("lakeMirror.fragment.fx"));
+    } finally {
+      engine.dispose();
+    }
+  }, timeLimit(30_000));
 });
 
 describe("the water material's stages, compiled", () => {
@@ -951,13 +984,19 @@ describe("the water material's stages, compiled", () => {
     }, timeLimit(120_000));
   }
 
-  it("leave a lake's roughness line, its ripples and its vertices as they were", async () => {
+  it("leave a lake's roughness line and its vertices as they were, its downwind octave, paws and rings compiling", async () => {
     const lake = await waterEffect("medium", true);
     try {
       const f = lake.effect._fragmentSourceCode;
       expect(lake.defines).not.toContain("#define OCEAN");
       expect(f).toContain("float roughness=reflectivityOut.roughness;");
-      expect(f).toContain("waterRipple2(vPositionW.xz)");
+      // the lake's shore read, the panorama's and the skyline's, translated with the rest
+      expect(f).toContain("vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 fallback)");
+      expect(f).toContain("vec3 waterCylinderHit(vec3 origin, vec3 dir)");
+      expect(f).toContain("vec3 waterSkylineRadiance(vec3 dir, vec3 probeRadiance)");
+      expect(f).toContain("lakeRipple2(vPositionW.xz)");
+      expect(f).toContain("if (waterPawCover > 0.0) {\nwPaw = lakePaw(");
+      expect(f).toContain("lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain,");
       expect(f).not.toContain("wOcean");
       expect(lake.effect._vertexSourceCode).not.toContain("oceanDisplace");
       translated(lake.effect, lake.defines);
