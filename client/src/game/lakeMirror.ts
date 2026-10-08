@@ -1,6 +1,6 @@
 /**
  * The lake's mirror on the high tier (spec §5): the shore as the player would
- * see it reflected in the lake's plane, drawn every other frame into a target
+ * see it reflected in the lake's plane, drawn every third frame into a target
  * of half the frame's size, 960 × 540 at most, that the lake's material reads
  * (`lakeMirror.fragment.fx`).
  *
@@ -31,7 +31,9 @@
  * armed frame, then every MIRROR_EVERY-th), which the scene renders before its
  * main pass; between draws, and unarmed, it is off that list and the scene
  * neither renders it nor waits on it for its readiness. Between draws the lake
- * reads the last image through the view-projection it was drawn with.
+ * reads the last image through the view-projection it was drawn with. The
+ * mirror camera's field is the player's widened by MIRROR_FOV_MARGIN, so a
+ * turn over the frames between draws reads inside the image.
  */
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -55,8 +57,14 @@ export const MIRROR_SCALE = 0.5;
 /** The target's largest size each way: half the frame up to a 4K frame's quarter, 960 × 540. Past that the pass's cost is its draws, not its fill. */
 export const MIRROR_MAX_WIDTH = 960;
 export const MIRROR_MAX_HEIGHT = 540;
-/** The pass draws every this many frames while armed, the first armed frame always: between draws the lake reads the last image through the view-projection it was drawn with, so on the frames between the reflection is a frame behind the camera. */
-export const MIRROR_EVERY = 2;
+/** The pass draws every this many frames while armed, the first armed frame always: between draws the lake reads the last image through the view-projection it was drawn with, so on the frames between the reflection is up to two frames behind the camera. */
+export const MIRROR_EVERY = 3;
+/** The mirror camera's field is the player's widened by this, each way (the tangent of the half field scaled), so a turn over the frames between draws stays inside the drawn image. */
+export const MIRROR_FOV_MARGIN = 1.2;
+/** The held frames' smear, in pixels of the frame's height per metre of the eye's travel over them, divided in the shader by the water point's distance: the parallax a reflected point that far away moves by, about half of it. */
+export const MIRROR_MOTION_SMEAR = 0.5;
+/** How much of the way the eye's travel moves the smoothed travel each frame. */
+export const MIRROR_MOTION_SMOOTH = 0.3;
 /** The mirror's plane over the lake's level, metres: the lake's surface mesh's own lift (`lakeSurface`, renderer.ts). */
 export const MIRROR_LIFT = 0.02;
 /** How much darker the ground draws under a full canopy in the mirror: `lakeMirrorTerrain.fragment.fx`'s LAKE_MIRROR_CANOPY_SHADE. */
@@ -124,6 +132,11 @@ export function createLakeMirrorTerrain(scene: Scene): ShaderMaterial {
 /** The target's size for an engine render size: half each way, at most `cap`, at least a texel. */
 function targetSize(engineSize: number, cap: number): number {
   return Math.max(1, Math.min(cap, Math.round(engineSize * MIRROR_SCALE)));
+}
+
+/** The eye's travel the held frames can lag by, metres, smoothed: `motion` is the last value, `eyeStep` the eye's travel this frame. The frames between draws are MIRROR_EVERY − 1, so the lag is that many steps; the smoothing keeps it from flickering with the cadence. */
+export function mirrorMotion(motion: number, eyeStep: number): number {
+  return motion + ((MIRROR_EVERY - 1) * eyeStep - motion) * MIRROR_MOTION_SMOOTH;
 }
 
 /** The high tier's mirror for `lake`; `halfZ` is the engine's depth range (`engine.isNDCHalfZRange`). */
@@ -264,6 +277,9 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
       camera.mirrorView.copyToArray(mirroredView);
       cameraSpacePlane(mirroredView, level, plane);
       player.getProjectionMatrix().copyToArray(playerProjection);
+      // The field widened by the margin: the focal terms of x and y (Babylon's layout).
+      playerProjection[0] = playerProjection[0]! / MIRROR_FOV_MARGIN;
+      playerProjection[5] = playerProjection[5]! / MIRROR_FOV_MARGIN;
       obliqueProjection(playerProjection, plane, halfZ, oblique);
       Matrix.FromArrayToRef(oblique, 0, projection);
       camera.mirrorView.multiplyToRef(projection, viewProjectionMatrix);

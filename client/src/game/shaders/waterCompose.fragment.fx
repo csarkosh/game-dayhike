@@ -22,11 +22,14 @@
 // the mix keeps PBR's own, so skipping them changes nothing. Both are
 // uniforms, so the branch is the same for every pixel. Before the skin, which
 // then holds it off the fronds as it holds the probe. The mirror's smear is a
-// full paw's scaled by the paw mask: none on glass, where the image is sharp
-// to the pixel.
+// full paw's scaled by the paw mask, none on glass, plus the eye's motion's: the
+// pass draws every third frame, and on the frames between the read is smeared
+// down the screen by the parallax the eye's travel gives a reflected point at
+// the water's distance, capped at a twentieth of the frame, so the lag reads as
+// motion blur and a still eye reads the image sharp to the pixel.
 // No energy-conservation factor or environment intensity on the mirror or the panorama: they are already-lit renders.
 if (waterMirrorWeight * waterCalmShare > 0.0) {
-  vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);
+  vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw + min(waterMirrorMotion / max(vWaterViewDepth, 1.0), LAKE_MOTION_SMEAR_CAP / waterScreen.y));
   vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;
   vec3 wShoreRay = reflect(-viewDirectionW, normalW);
   vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));

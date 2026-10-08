@@ -160,6 +160,8 @@ export function cameraSpacePlane(view: Float32Array, level: number, out: Float32
 export const MIRROR_OFFSET_K = 0.05;
 /** The water depth (m) at which a ripple moves the read by its whole offset: `lakeMirror.fragment.fx`'s WATER_MIRROR_DEPTH. */
 export const MIRROR_DEPTH_FULL = 0.5;
+/** The held frames' smear's cap, a share of the frame's height: `lakeMirror.fragment.fx`'s LAKE_MOTION_SMEAR_CAP. */
+export const LAKE_MOTION_SMEAR_CAP = 0.05;
 
 /**
  * The TypeScript twin of `waterMirrorUv` (`lakeMirror.fragment.fx`): the

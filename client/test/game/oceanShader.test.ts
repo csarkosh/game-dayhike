@@ -850,13 +850,14 @@ describe("a lake's shaders", () => {
     // test, waterPlugin.test.ts, pins what they are); the water's definitions and the composition
     // hashed again as the lake's mirror and its shore left them (their samplers, their reads); the
     // lights' and the composition hashed again once the paws' field and the shore's reads went
-    // under their uniform branches.
+    // under their uniform branches; the composition once more as the mirror's read gained the eye's
+    // motion's smear.
     const before: Record<string, string> = {
       "water.vertex.fx": "3732482554b89e357fec2298edc8724ad085cc9defe35017b243df6b7782d50b",
       "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
       "water.fragment.fx": "64d0992cb60dc15186b2dc2e90f3e62ebecca81a74fe09aac825c88328089fb2",
       "waterLights.fragment.fx": "5841b9be8b5e54d8da49459f91a811f724d54a0a7018c9cb2cbabe39df6cc8cb",
-      "waterCompose.fragment.fx": "ae03c64180cf1f6139e0f6d4dfe76d07018aa82082f368c1a2936b5b0f30befe",
+      "waterCompose.fragment.fx": "1a47ce93677b0215eae54c78958928d8a24df544350c732c77d1a4c79c31e8bb",
     };
     for (const [name, hash] of Object.entries(before)) {
       expect(sha256(await processed(fx(name), !name.includes(".vertex."))), name).toBe(hash);

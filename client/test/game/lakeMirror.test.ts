@@ -17,9 +17,11 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Effect } from "@babylonjs/core/Materials/effect.js";
 import {
-  createLakeMirror, createLakeMirrorTerrain, LAKE_MIRROR_TERRAIN_SHADER, MIRROR_CANOPY_SHADE, MIRROR_EVERY, MIRROR_LIFT, MIRROR_MAX_HEIGHT, MIRROR_MAX_WIDTH, MIRROR_REACH_M, MIRROR_SCALE,
+  createLakeMirror, createLakeMirrorTerrain, LAKE_MIRROR_TERRAIN_SHADER, MIRROR_CANOPY_SHADE, MIRROR_EVERY, MIRROR_FOV_MARGIN, MIRROR_LIFT, MIRROR_MAX_HEIGHT, MIRROR_MAX_WIDTH,
+  MIRROR_MOTION_SMEAR, MIRROR_MOTION_SMOOTH, MIRROR_REACH_M, MIRROR_SCALE, mirrorMotion,
   type LakeMirror,
 } from "../../src/game/lakeMirror.js";
+import { LAKE_MOTION_SMEAR_CAP } from "../../src/game/mirrorView.js";
 import type { LakeSource } from "../../src/sim/terrain.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
 import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
@@ -68,7 +70,9 @@ describe("createLakeMirror", () => {
     const t = mirror.texture;
     expect(MIRROR_SCALE).toBe(0.5);
     expect([MIRROR_MAX_WIDTH, MIRROR_MAX_HEIGHT]).toEqual([960, 540]);
-    expect(MIRROR_EVERY).toBe(2);
+    expect(MIRROR_EVERY).toBe(3);
+    expect(MIRROR_FOV_MARGIN).toBe(1.2);
+    expect([MIRROR_MOTION_SMEAR, MIRROR_MOTION_SMOOTH]).toEqual([0.5, 0.3]);
     expect(t.name).toBe("lake_mirror");
     expect([t.getRenderWidth(), t.getRenderHeight()]).toEqual([256, 128]);
     expect(t.renderTargetOptions.type).toBe(Constants.TEXTURETYPE_HALF_FLOAT);
@@ -138,14 +142,18 @@ describe("createLakeMirror", () => {
     mirror.update(player, true, 1);
     const cam = mirrorCamera(s);
     const projection = Array.from(cam.getProjectionMatrix().m);
+    // The player's focal terms, the field widened by the margin each way.
+    expect(projection[0]).toBeCloseTo(player.getProjectionMatrix().m[0]! / MIRROR_FOV_MARGIN, 5);
+    expect(projection[5]).toBeCloseTo(player.getProjectionMatrix().m[5]! / MIRROR_FOV_MARGIN, 5);
     // Lengyel's third row (m[2], m[6], m[10], m[14]) for the water plane
     // (0, −1, 0, −1.7) in the mirrored camera's space; the rest is the
-    // player's: the game's lens at the engine's 2:1.
+    // player's: the game's lens at the engine's 2:1, its focal terms divided
+    // by the margin 1.2.
     const want = [
-      0.59362, 0, 0, 0,
-      0, 1.18724, -2.37496, 0,
+      0.49468, 0, 0, 0,
+      0, 0.98937, -1.97907, 0,
       0, 0, -1, 1,
-      0, 0, -4.03744, 0,
+      0, 0, -3.36442, 0,
     ];
     projection.forEach((v, i) => expect(v, `m[${i}]`).toBeCloseTo(want[i]!, 4));
     // Points on the water map to the near depth, points under it fall out,
@@ -166,10 +174,10 @@ describe("createLakeMirror", () => {
     mirror.update(player, true, 1);
     const projection = Array.from(mirrorCamera(s).getProjectionMatrix().m);
     const want = [
-      0.59362, 0, 0, 0,
-      0, 1.18724, -1.18748, 0,
+      0.49468, 0, 0, 0,
+      0, 0.98937, -0.98953, 0,
       0, 0, 0, 1,
-      0, 0, -2.01872, 0,
+      0, 0, -1.68221, 0,
     ];
     projection.forEach((v, i) => expect(v, `m[${i}]`).toBeCloseTo(want[i]!, 4));
     const vp = mirror.viewProjection;
@@ -195,7 +203,9 @@ describe("createLakeMirror", () => {
     expect(listed()).toBe(1);
     // Listed, it renders in that frame.
     expect(t._shouldRender()).toBe(true);
-    // The frame between: armed, the last image read, nothing drawn.
+    // The two frames between: armed, the last image read, nothing drawn.
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(0);
     expect(mirror.update(player, true, 1)).toBe(true);
     expect(listed()).toBe(0);
     expect(mirror.update(player, true, 1)).toBe(true);
@@ -227,6 +237,10 @@ describe("createLakeMirror", () => {
     expect(listed()).toBe(true);
     expect(mirror.update(player, true, 1)).toBe(true);
     expect(listed()).toBe(false);
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(false);
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(true);
     mirror.dispose();
   });
 
@@ -243,9 +257,19 @@ describe("createLakeMirror", () => {
     expect(listed()).toBe(false);
     expect(Array.from(mirror.viewProjection)).toEqual(drawn);
     expect(mirror.update(player, true, 1)).toBe(true);
+    expect(listed()).toBe(false);
+    expect(Array.from(mirror.viewProjection)).toEqual(drawn);
+    expect(mirror.update(player, true, 1)).toBe(true);
     expect(listed()).toBe(true);
     expect(Array.from(mirror.viewProjection)).not.toEqual(drawn);
     mirror.dispose();
+  });
+
+  it("smooths the eye's travel over the frames between draws for the held frames' smear", () => {
+    expect(mirrorMotion(0, 0.1)).toBeCloseTo(0.06, 6);
+    expect(mirrorMotion(0.06, 0.1)).toBeCloseTo(0.102, 6);
+    expect(mirrorMotion(0.102, 0)).toBeCloseTo(0.0714, 6);
+    expect(mirrorMotion(0, 0)).toBe(0);
   });
 
   it("stays off with the eye at the mirror's plane or under it, where the near plane would turn over", () => {
@@ -305,10 +329,13 @@ describe("createLakeMirror", () => {
     mirror.update(player, true, 1);
     expect(size()).toEqual([320, 180]);
     mirror.update(player, true, 1);
+    expect(size()).toEqual([320, 180]);
+    mirror.update(player, true, 1);
     expect(size()).toEqual([960, 540]);
     // A 1080p frame's half is the cap; a 1440p frame's half is over it.
     w.mockReturnValue(1920);
     h.mockReturnValue(1080);
+    mirror.update(player, true, 1);
     mirror.update(player, true, 1);
     mirror.update(player, true, 1);
     expect(size()).toEqual([960, 540]);
@@ -316,9 +343,11 @@ describe("createLakeMirror", () => {
     h.mockReturnValue(1440);
     mirror.update(player, true, 1);
     mirror.update(player, true, 1);
+    mirror.update(player, true, 1);
     expect(size()).toEqual([960, 540]);
     w.mockReturnValue(1280);
     h.mockReturnValue(720);
+    mirror.update(player, true, 1);
     mirror.update(player, true, 1);
     mirror.update(player, true, 1);
     expect(size()).toEqual([640, 360]);
@@ -430,6 +459,9 @@ describe("createLakeMirror", () => {
       "vec3 colour = lakeMirrorColour * (1.0 - LAKE_MIRROR_CANOPY_SHADE * vCanopy);",
     );
     expect(fx("lakeMirrorTerrain.vertex.fx")).toContain("vCanopy = terrainWeights2.w;");
+    // The held frames' smear cap, in lockstep with its twin in the mirror's read.
+    expect(fx("lakeMirror.fragment.fx")).toContain("const float LAKE_MOTION_SMEAR_CAP = 0.05;");
+    expect(LAKE_MOTION_SMEAR_CAP).toBe(0.05);
     mirror.dispose();
   });
 

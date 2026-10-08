@@ -475,7 +475,7 @@ describe("the lake's ripples in the water plugin", () => {
     }
     // taken off its ocean, a material is a lake's again, and declares them
     sea.ocean = null;
-    expect(sea.getUniforms().ubo).toHaveLength(37);
+    expect(sea.getUniforms().ubo).toHaveLength(38);
   });
 
   it("wraps the lake's time as the wind's and clamps the paws' cover to 0..1, either 0 when it is not finite", () => {
@@ -570,7 +570,7 @@ describe("the sea's waves in the water plugin", () => {
     expect(u.ubo[u.ubo.length - 1]).toEqual({ name: "oceanK", size: 4, type: "vec4", arraySize: 12 });
     expect(u.fragment).toContain("uniform vec4 oceanK[12];");
     expect(u.vertex).toContain("uniform vec4 oceanK[12];");
-    expect(u.ubo).toHaveLength(37);
+    expect(u.ubo).toHaveLength(38);
   });
 
   it("declares its samplers in the .fx and never in getUniforms, and gates every line of its GLSL on OCEAN", () => {
@@ -832,7 +832,7 @@ describe("the sea's waves in the water plugin", () => {
 });
 
 describe("the lake's mirror in the water plugin", () => {
-  const MIRROR_UNIFORMS = ["waterMirrorVP", "waterMirrorOn", "waterMirrorK", "waterMirrorWeight", "waterMirrorSmearPx", "waterCalmShare"];
+  const MIRROR_UNIFORMS = ["waterMirrorVP", "waterMirrorOn", "waterMirrorK", "waterMirrorWeight", "waterMirrorSmearPx", "waterCalmShare", "waterMirrorMotion"];
 
   /** What one bind writes: the floats, the arrays and the textures, by name. */
   const bound = (p: WaterPlugin): { floats: Record<string, number>; arrays: Record<string, number[]>; textures: Record<string, unknown> } => {
@@ -860,12 +860,12 @@ describe("the lake's mirror in the water plugin", () => {
         "// sea binds a placeholder to a name its stages never declare.\nuniform sampler2D waterMirror;\n",
     );
     const u = p.getUniforms();
-    expect(u.ubo.map((e) => e.name).slice(13, 21)).toEqual(["waterLakeTime", "waterPawCover", ...MIRROR_UNIFORMS]);
+    expect(u.ubo.map((e) => e.name).slice(13, 22)).toEqual(["waterLakeTime", "waterPawCover", ...MIRROR_UNIFORMS]);
     // the view-projection's four columns, an array as the sea's components are
     expect(u.ubo[15]).toEqual({ name: "waterMirrorVP", size: 4, type: "vec4", arraySize: 4 });
-    expect(u.ubo[21]).toEqual({ name: "waterLakeCentre", size: 3, type: "vec3" });
-    expect(u.ubo[26]).toEqual({ name: "oceanPhase0", size: 4, type: "vec4" });
-    expect(u.ubo).toHaveLength(37);
+    expect(u.ubo[22]).toEqual({ name: "waterLakeCentre", size: 3, type: "vec3" });
+    expect(u.ubo[27]).toEqual({ name: "oceanPhase0", size: 4, type: "vec4" });
+    expect(u.ubo).toHaveLength(38);
     for (const name of MIRROR_UNIFORMS.slice(1)) {
       expect(u.ubo).toContainEqual({ name, size: 1, type: "float" });
       expect(u.fragment).toContain(`uniform float ${name};`);
@@ -888,8 +888,8 @@ describe("the lake's mirror in the water plugin", () => {
     let b = bound(p);
     expect(b.textures.waterMirror).toBe(waterMirrorPlaceholder(scene));
     expect(b.arrays.waterMirrorVP).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
-    expect([b.floats.waterMirrorOn, b.floats.waterMirrorK, b.floats.waterMirrorWeight, b.floats.waterMirrorSmearPx, b.floats.waterCalmShare])
-      .toEqual([0, 0.05, 0, 0, 0]);
+    expect([b.floats.waterMirrorOn, b.floats.waterMirrorK, b.floats.waterMirrorWeight, b.floats.waterMirrorSmearPx, b.floats.waterCalmShare, b.floats.waterMirrorMotion])
+      .toEqual([0, 0.05, 0, 0, 0, 0]);
     expect(MIRROR_OFFSET_K).toBe(0.05);
     const target = new BaseTexture(scene);
     const vp = Float32Array.from({ length: 16 }, (_, i) => i + 0.5);
@@ -900,8 +900,8 @@ describe("the lake's mirror in the water plugin", () => {
     b = bound(p);
     expect(b.textures.waterMirror).toBe(target);
     expect(b.arrays.waterMirrorVP).toEqual(Array.from({ length: 16 }, (_, i) => i + 0.5));
-    expect([b.floats.waterMirrorOn, b.floats.waterMirrorK, b.floats.waterMirrorWeight, b.floats.waterMirrorSmearPx, b.floats.waterCalmShare])
-      .toEqual([1, 0.05, 1, 27, 0.75]);
+    expect([b.floats.waterMirrorOn, b.floats.waterMirrorK, b.floats.waterMirrorWeight, b.floats.waterMirrorSmearPx, b.floats.waterCalmShare, b.floats.waterMirrorMotion])
+      .toEqual([1, 0.05, 1, 27, 0.75, 0]);
     // no mirror this frame: the placeholder, the read off
     p.setMirror(null, vp);
     b = bound(p);
@@ -925,6 +925,23 @@ describe("the lake's mirror in the water plugin", () => {
     expect(calm()).toEqual([1, 0, 0]);
     p.setCalm(0.5, 0.25, 12);
     expect(calm()).toEqual([0.5, 0.25, 12]);
+  });
+
+  it("takes the held frames' smear as 0 when it is not finite or negative, and uploads a value", () => {
+    const p = attachWater(new PBRMaterial("wM2m", scene), WATER_ROWS.lowlandLake);
+    p.bedTexture = bedTexture();
+    const motion = (): number | undefined => bound(p).floats.waterMirrorMotion;
+    expect(motion()).toBe(0);
+    p.setMirrorMotion(Number.NaN);
+    expect(motion()).toBe(0);
+    p.setMirrorMotion(Number.POSITIVE_INFINITY);
+    expect(motion()).toBe(0);
+    p.setMirrorMotion(-3);
+    expect(motion()).toBe(0);
+    p.setMirrorMotion(36);
+    expect(motion()).toBe(36);
+    p.setMirrorMotion(0);
+    expect(motion()).toBe(0);
   });
 
   it("binds every sampler it lists on a lake with and without its mirror, and on the sea, which binds the placeholder and none of the floats", () => {
@@ -984,7 +1001,7 @@ describe("the lake's mirror in the water plugin", () => {
     // test are uniforms, so the mirror's texture reads stay in uniform flow.
     expect(block?.[1]).toBe(
       "if (waterMirrorWeight * waterCalmShare > 0.0) {\n" +
-        "  vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);\n" +
+        "  vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw + min(waterMirrorMotion / max(vWaterViewDepth, 1.0), LAKE_MOTION_SMEAR_CAP / waterScreen.y));\n" +
         "  vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;\n" +
         "  vec3 wShoreRay = reflect(-viewDirectionW, normalW);\n" +
         "  vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));\n" +
@@ -1001,10 +1018,12 @@ describe("the lake's mirror in the water plugin", () => {
     expect(paw).toBeGreaterThan(l.indexOf("float wOceanVar ="));
     expect(paw).toBeLessThan(l.indexOf("if (waterOctaves > 1.5) {"));
     expect(l.split("float wPaw")).toHaveLength(2);
-    // The smear is a full paw's scaled by that mask: none on glass, where
-    // the image is sharp to the pixel, the whole of it inside a paw.
-    const read0 = /waterMirrorSample\(waterMirrorUv\([^)]*\), ([^)]*)\);/.exec(c);
-    expect(read0?.[1]).toBe("waterMirrorSmearPx * wPaw");
+    // The smear is a full paw's scaled by that mask, none on glass, plus the
+    // eye's motion's: the parallax over the water's distance, capped.
+    const read0 = /waterMirrorSample\(waterMirrorUv\([^)]*\), (.*)\);/.exec(c);
+    expect(read0?.[1]).toBe(
+      "waterMirrorSmearPx * wPaw + min(waterMirrorMotion / max(vWaterViewDepth, 1.0), LAKE_MOTION_SMEAR_CAP / waterScreen.y)",
+    );
     // A canary on the installed Babylon: PBR's Fresnel for the environment is
     // declared in main's own scope before the hook, and is what scales the
     // probe's radiance into finalRadianceScaled.
@@ -1098,7 +1117,7 @@ describe("the lake's mirror in the water plugin", () => {
     // a lake: the mirror read, its text the same with the mirror on or off
     const off = await compiled(false, false);
     const on = await compiled(false, true);
-    expect(off).toContain("vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);");
+    expect(off).toContain("vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw + min(waterMirrorMotion / max(vWaterViewDepth, 1.0), LAKE_MOTION_SMEAR_CAP / waterScreen.y));");
     expect(off).toContain("#define waterMirror sampler2D(waterMirrorTexture, waterMirrorSampler)");
     expect(on).toBe(off);
   }, timeLimit(30_000));
@@ -1147,7 +1166,7 @@ describe("the lake's shore on medium and low in the water plugin", () => {
       const u = attachWater(new PBRMaterial("wShore2", s), WATER_ROWS.lowlandLake).getUniforms();
       const names = u.ubo.map((e) => e.name);
       const at = names.indexOf("waterLakeCentre");
-      expect(at).toBe(names.indexOf("waterCalmShare") + 1);
+      expect(at).toBe(names.indexOf("waterMirrorMotion") + 1);
       expect(u.ubo.slice(at, at + 5)).toEqual([
         { name: "waterLakeCentre", size: 3, type: "vec3" },
         { name: "waterLakeRadius", size: 1, type: "float" },

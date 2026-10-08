@@ -15,6 +15,9 @@
 // The water depth (m) at which a ripple moves the read by its whole offset.
 const float WATER_MIRROR_DEPTH = 0.5;
 
+// The held frames' smear is capped at this share of the frame's height (mirrorView.ts's LAKE_MOTION_SMEAR_CAP).
+const float LAKE_MOTION_SMEAR_CAP = 0.05;
+
 // The mirror target's texel under a point of the surface: its clip position
 // in the mirrored camera (waterMirrorVP, the four columns of its
 // view-projection), which for a point on the plane is the point's own place

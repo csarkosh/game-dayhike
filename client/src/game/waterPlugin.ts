@@ -119,7 +119,7 @@ const LAKE_UNIFORMS = ["waterLakeTime", "waterPawCover"] as const;
 
 /** The lake's mirror's five floats (`lakeMirror.fragment.fx`), declared on a
  * lake alone, after its view-projection, which follows the ripples'. */
-const MIRROR_FLOATS = ["waterMirrorOn", "waterMirrorK", "waterMirrorWeight", "waterMirrorSmearPx", "waterCalmShare"] as const;
+const MIRROR_FLOATS = ["waterMirrorOn", "waterMirrorK", "waterMirrorWeight", "waterMirrorSmearPx", "waterCalmShare", "waterMirrorMotion"] as const;
 /** The mirrored camera's view-projection, as its four columns: an array, bound as the sea's components are. */
 const MIRROR_VP = "waterMirrorVP";
 const MIRROR_VP_COLUMNS = 4;
@@ -252,6 +252,8 @@ export class WaterPlugin extends MaterialPluginBase {
   private _calmShare = 0;
   private _mirrorWeight = 0;
   private _mirrorSmearPx = 0;
+  /** The held frames' smear (`setMirrorMotion`): pixels of the frame's height times metres, divided by the water's distance in the shader. */
+  private _mirrorMotion = 0;
 
   constructor(material: Material, row: WaterRow) {
     // 230: after the atmosphere's 200 and every look plugin's 205 to 220; the
@@ -378,6 +380,16 @@ export class WaterPlugin extends MaterialPluginBase {
     this._calmShare = Number.isFinite(share) ? Math.min(1, Math.max(0, share)) : 0;
     this._mirrorWeight = Number.isFinite(weight) ? Math.min(1, Math.max(0, weight)) : 0;
     this._mirrorSmearPx = Number.isFinite(smearPx) ? Math.max(0, smearPx) : 0;
+  }
+
+  /**
+   * Per frame on a lake: the held frames' smear, the eye's travel the mirror's
+   * image lags by in pixels of the frame's height times metres (the shader
+   * divides by the water point's distance and caps it). 0 where the pass draws
+   * every frame or there is none.
+   */
+  setMirrorMotion(pxMetres: number): void {
+    this._mirrorMotion = Number.isFinite(pxMetres) ? Math.max(0, pxMetres) : 0;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -512,6 +524,7 @@ export class WaterPlugin extends MaterialPluginBase {
       uniformBuffer.updateFloat("waterMirrorK", MIRROR_OFFSET_K);
       uniformBuffer.updateFloat("waterMirrorWeight", this._mirrorWeight);
       uniformBuffer.updateFloat("waterMirrorSmearPx", this._mirrorSmearPx);
+      uniformBuffer.updateFloat("waterMirrorMotion", this._mirrorMotion);
       uniformBuffer.updateFloat("waterCalmShare", this._calmShare);
       // The lake's shore on medium and low: zeros and the flags 0 until set.
       uniformBuffer.updateFloat3("waterLakeCentre", this.lakeBody[0], this.lakeBody[1], this.lakeBody[2]);

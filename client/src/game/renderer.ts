@@ -123,7 +123,7 @@ import type { WaterLifeSound } from "./waterLifeAudio.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo } from "./rendererSwap.js";
 import { calmShare, isRough, roughShare, smearPx, SLOPE_PAW_DEG } from "./lakeCalm.js";
-import { createLakeMirror, createLakeMirrorTerrain } from "./lakeMirror.js";
+import { createLakeMirror, createLakeMirrorTerrain, MIRROR_MOTION_SMEAR, mirrorMotion } from "./lakeMirror.js";
 import { createLakePanorama, createSkylineTexture } from "./lakePanorama.js";
 import { SKYLINE_SHADE, skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { NEEDLE_BED } from "./terrainSurface.js";
@@ -2323,6 +2323,11 @@ function buildRenderer(
 
   /** The lake's calm, one record refilled each frame (`lakeCalmUnder`). */
   const lakeCalm: LakeCalmFrame = { share: 0, rough: false, roughShare: 0, cover: 0, smearPx: 0 };
+  // The eye's travel since the frame before, for the mirror's held frames'
+  // smear: the eye last seen, whether one was, and the smoothed travel.
+  const lastEye = new Vector3();
+  let eyeSeen = false;
+  let mirrorMotionM = 0;
   /** What the calm fades from (a preset, or the share a fade took over at)
    * and the preset it fades to, and the fade's length and progress (s):
    * `setWeatherName`. */
@@ -2355,7 +2360,7 @@ function buildRenderer(
    * rough or not, the cat's-paws' cover and the smear at their edge; on high
    * the mirror armed when the lake's disc is in this frame's view of an `eye`
    * (false with no local player) and the glass shows, drawn this frame or
-   * every other, and the weight 0 in any frame it is not armed (its image is
+   * every third, and the weight 0 in any frame it is not armed (its image is
    * a frame stale); on
    * medium the panorama re-armed whenever the lighting hands over a new sky
    * state (the probe re-armed with it), and whenever content lands late and
@@ -2395,6 +2400,16 @@ function buildRenderer(
     lakePlugin.setCalm(c.share, armed ? 1 : 0, c.smearPx);
     // The mirror is read only while armed: drawn this frame, or holding the last image.
     if (lakeMirror !== null) lakePlugin.setMirror(armed ? lakeMirror.texture : null, lakeMirror.viewProjection);
+    // The held frames' lag as the eye's travel over them, smoothed, as the
+    // smear's pixels times metres: none when the eye is still, none on the
+    // tiers without a mirror.
+    if (lakeMirror !== null) {
+      const eyeStep = eye && eyeSeen ? Vector3.Distance(camera.position, lastEye) : 0;
+      lastEye.copyFrom(camera.position);
+      eyeSeen = eye;
+      mirrorMotionM = mirrorMotion(mirrorMotionM, eyeStep);
+      lakePlugin.setMirrorMotion(MIRROR_MOTION_SMEAR * mirrorMotionM * engine.getRenderHeight());
+    }
     let capturing = false;
     if (lakePanorama !== null) {
       const skyMoved = sky !== null && sky !== panoramaSky;
