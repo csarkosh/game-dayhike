@@ -40,8 +40,8 @@ import {
 export const HOLLOW_HUNT_SPEED = 6.3;
 /** Its speed while a living player has it in view: a glance back buys distance and costs the screen. */
 export const HOLLOW_LOOK_FACTOR = 0.6;
-/** Seconds it stands still at the crest as it steps out, before the hunt: the summit scene's length (game/cutscene.ts), which it is the centre of. */
-export const SUMMIT_REVEAL_S = 12;
+/** Seconds it stands still at the crest as it steps out, before the hunt: the summit scene's length (game/cutscene.ts SUMMIT_SCENE_S, the five shots' sum), which it is the centre of. */
+export const SUMMIT_REVEAL_S = 20;
 /** Seconds a fork Hollow stands at the mouth of its branch, facing its trigger, before it hunts. */
 export const FORK_REVEAL_S = 2.5;
 /** Seconds a fork Hollow may spend walking to the mouth before it reveals where it stands. */

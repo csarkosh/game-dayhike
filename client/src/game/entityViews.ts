@@ -87,6 +87,8 @@ export const SHADE_FADE_OUT_S = 2.6;
 export const SHADE_RISE_S = 2.4;
 export const SHADE_SETTLE_S = 3;
 export const LUNGE_RISE_S = 1.2;
+/** Seconds the Hollow stepping out at the crest waits before its rise: the scene's first two shots (cutscene.ts). */
+export const SUMMIT_RISE_DELAY_S = 6;
 /**
  * The eyes: the real one's, dulled to this share of their glow once it has
  * resolved; a shade's, fainter still. The share is the eye meshes' alpha over
@@ -145,7 +147,9 @@ export class EntityViews {
   private readonly playerModels = new Map<number, ModelView>();
   private readonly enemyModels = new Map<number, HollowView>();
   /** Each enemy's fade, 0 to 1 (`visibility`), and the state it was last seen in: a shade, a lunge or a Hollow stepping out comes in from nothing, and a shade or a lunge goes out to nothing after it is gone. */
-  private readonly fades = new Map<number, { level: number; ai: number; rise: number; settle: number; quick: boolean }>();
+  /** Whether the local player's own body is drawn: a scene's camera stands elsewhere (renderer.ts). */
+  showLocal = false;
+  private readonly fades = new Map<number, { level: number; ai: number; rise: number; settle: number; quick: boolean; delay: number }>();
   /** Each enemy's reach, 0 to 1: how far its arms are turned out at the local player (REACH_S). */
   private readonly reaches = new Map<number, number>();
   /** Where the reaching arms aim this frame: the local player's eyes, or null with no local player. */
@@ -228,8 +232,9 @@ export class EntityViews {
 
     for (const [id, player] of state.players) {
       // The local player is the camera; drawing their own body would fill
-      // the screen from the inside.
-      if (id === localId) {
+      // the screen from the inside. In a scene (showLocal) the camera is
+      // elsewhere and the body stands in the shot.
+      if (id === localId && !this.showLocal) {
         this.players.get(id)?.node.setEnabled(false);
         this.playerModels.get(id)?.view.node.setEnabled(false);
         continue;
@@ -274,12 +279,13 @@ export class EntityViews {
       lamp.position.set(node.position.x, feetY + PLAYER_HALF.y + PLAYER_EYE_OFFSET, node.position.z);
       const d = aimDirection(player.yaw, player.pitch);
       lamp.direction.set(d.x, d.y, d.z);
-      setLamp(lamp, player.lamp.on, lampState);
+      // The scene's light is the local player's own headlamp, worn on the body it shows, on for its length.
+      setLamp(lamp, player.lamp.on || (id === localId && this.showLocal), lampState);
     }
     this.pruneModels(this.playerModels, state.players);
     this.prune(this.players, state.players);
     for (const [id, lamp] of this.lamps) {
-      if (!state.players.has(id) || id === localId) {
+      if (!state.players.has(id) || (id === localId && !this.showLocal)) {
         lamp.dispose();
         this.lamps.delete(id);
       }
@@ -302,11 +308,13 @@ export class EntityViews {
         // A shade, and the Hollow stepping out at the crest, come up out of the ground; a lunge quick; the rest stand at once.
         const shade = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
         const quick = enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike;
-        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: shade ? 0 : 1, settle: shade && !quick ? 0 : 1, quick };
+        // The Hollow stepping out at the crest waits SUMMIT_RISE_DELAY_S before it rises: the scene's arrival and find come first.
+        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: shade ? 0 : 1, settle: shade && !quick ? 0 : 1, quick, delay: enemy.ai === AiState.Emerge ? SUMMIT_RISE_DELAY_S : 0 };
         this.fades.set(id, fade);
       }
       fade.ai = enemy.ai;
-      if (fade.rise < 1 || fade.settle < 1) {
+      if (fade.delay > 0) fade.delay = Math.max(0, fade.delay - dt);
+      else if (fade.rise < 1 || fade.settle < 1) {
         // A shade comes up out of the ground to its height over SHADE_RISE_S,
         // as if out of the mist, at half its opacity by then, and settles to
         // its whole over SHADE_SETTLE_S after.

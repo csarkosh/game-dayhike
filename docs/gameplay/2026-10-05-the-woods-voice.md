@@ -73,13 +73,14 @@ seconds and hunting, with no sound. It is staged now, in the same voice the clim
    watching the climb, the world's sound (rain, wind, drips, animals) is cut to nothing within
    a breath (`AmbientAudio.setHush`). A player who looks at the Hollow hears their own heart
    and the whispers, which are not the world's.
-2. **`REVEAL_SILENCE_S` (1.6 s) of nothing.**
+2. **`REVEAL_SILENCE_S` of nothing**: 9.5 s since the summit scene (`2026-10-08-the-summit-scene.md`),
+   so the call comes in its reveal shot as the Hollow stands (was 1.6 s).
 3. **The call**, the one the climb has been bringing nearer, from where the body is. Within
    30 m it is louder (1.3) and clearer (6 kHz) than any call of the climb; further off it
    falls to the climb's far call at 420 m, so a straggler down the trail hears it from above.
    The world's sound comes back with it.
-4. **The hunt.** The Hollow stands `SUMMIT_REVEAL_S`, now 4 s (was 2), so it moves in the
-   middle of its own call.
+4. **The hunt.** The Hollow stands `SUMMIT_REVEAL_S`, now the scene's 20 s (was 2, then 4), and
+   moves once the scene ends.
 
 A screen that joins a chase already under way has no reveal.
 

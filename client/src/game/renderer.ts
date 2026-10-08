@@ -28,8 +28,7 @@ import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
-import { CAP_SCENE_S, capPose, summitPose, type SceneBase } from "./cutscene.js";
-import { SUMMIT_REVEAL_S } from "../sim/hollow.js";
+import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, capPose, summitShot, type SceneBase, type SceneContext } from "./cutscene.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { MAX_PLAYERS, PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
@@ -1347,8 +1346,8 @@ export type Renderer = {
   setMistIn(level: number): void;
   /** The end for this player (ending.ts): the camera is the ending's from now, won or died. Once; a second call changes nothing. */
   setEnding(kind: EndingKind): void;
-  /** A scene (cutscene.ts): the camera is the scene's from now; the summit's for SUMMIT_REVEAL_S, down and in to the body; the cap's for CAP_SCENE_S, turned to it. */
-  setScene(kind: "summit" | "cap", at: { x: number; y: number; z: number }): void;
+  /** A scene (cutscene.ts): the camera is the scene's from now; the summit's five shots for SUMMIT_SCENE_S (`at` the body, with the Hollow's feet and the party's eye); the cap's for CAP_SCENE_S, turned to it. */
+  setScene(kind: "summit" | "cap", at: { x: number; y: number; z: number }, more?: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } }): void;
   /**
    * A world point as CSS pixels on the canvas, with its distance from the
    * camera, or null when it is behind the camera. Drives the interact prompt.
@@ -1725,7 +1724,10 @@ function buildRenderer(
   /** The ending, once begun: its kind, when it began, and the pose it began from, taken on its first frame. */
   let ending: { kind: EndingKind; since: number; base: EndingBase | null } = { kind: "won", since: -1, base: null };
   /** The summit scene, while it plays: when it began, the eye it began from, and the body it looks at. */
-  let summitScene: { kind: "summit" | "cap"; since: number; base: SceneBase | null; body: { x: number; y: number; z: number } } | null = null;
+  let summitScene: { kind: "summit" | "cap"; since: number; base: SceneBase | null; body: { x: number; y: number; z: number }; more: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } } | null } | null = null;
+  /** The scene's lens this frame, or null for the game's; and the summit's shot, -1 outside one. */
+  let sceneFov: number | null = null;
+  let sceneShot = -1;
   const stareAt = new Vector3();
   // The forest's density over the camera, a full terrain sample: taken
   // again only once the camera has moved a metre from where it was taken.
@@ -2389,16 +2391,29 @@ function buildRenderer(
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
         // The summit scene: from the flip's frame the camera is the scene's,
         // from the eye the player had then, for the reveal's seconds.
+        sceneFov = null;
+        sceneShot = -1;
         if (summitScene !== null && ending.since < 0) {
           const t = seconds - summitScene.since;
-          if (t >= (summitScene.kind === "summit" ? SUMMIT_REVEAL_S : CAP_SCENE_S)) summitScene = null;
+          if (t >= (summitScene.kind === "summit" ? SUMMIT_SCENE_S : CAP_SCENE_S)) summitScene = null;
           else {
             summitScene.base ??= { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: local.yaw, pitch: local.pitch };
-            const pose = summitScene.kind === "summit" ? summitPose(t, summitScene.base, summitScene.body) : capPose(t, summitScene.base, summitScene.body);
-            camera.position.set(pose.x, pose.y, pose.z);
-            camera.rotation.set(pose.pitch, pose.yaw, 0);
+            if (summitScene.kind === "summit" && summitScene.more !== null) {
+              const ctx: SceneContext = { base: summitScene.base, body: summitScene.body, hollow: summitScene.more.hollow, party: summitScene.more.party };
+              const shot = summitShot(t, ctx);
+              camera.position.set(shot.x, shot.y, shot.z);
+              camera.rotation.set(shot.pitch, shot.yaw, 0);
+              sceneFov = shot.fov;
+              sceneShot = shot.shot;
+            } else {
+              const pose = capPose(t, summitScene.base, summitScene.body);
+              camera.position.set(pose.x, pose.y, pose.z);
+              camera.rotation.set(pose.pitch, pose.yaw, 0);
+            }
           }
         }
+        // The local body stands in the summit's shots, until the last returns to its eye.
+        views.showLocal = sceneShot >= 0 && sceneShot < SHOTS.length - 1;
         // The end: from its first frame the camera is the ending's, from the
         // pose the player had then, and the pass takes its blur and its dark.
         if (ending.since >= 0) {
@@ -2409,9 +2424,10 @@ function buildRenderer(
           endBlur = pose.blur;
           endClose = pose.close;
         }
-        // A hike after a scene draws with the game's lens again.
-        camera.fov = GAME_FOV;
-        setLamp(localLamp, local.lamp.on, lampState);
+        // A hike after a scene draws with the game's lens again; a shot of the summit's with its own.
+        camera.fov = sceneFov ?? GAME_FOV;
+        // In the summit's shots the lamp on the lens is off: the body's own lights them (entityViews.ts).
+        setLamp(localLamp, local.lamp.on && !views.showLocal, lampState);
         rainMap?.update(local.pos);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
@@ -2456,8 +2472,8 @@ function buildRenderer(
     setMistIn(level) {
       mistIn = Math.max(0, Math.min(1, level));
     },
-    setScene(kind, at) {
-      summitScene = { kind, since: clock() / 1000, base: null, body: { x: at.x, y: at.y, z: at.z } };
+    setScene(kind, at, more) {
+      summitScene = { kind, since: clock() / 1000, base: null, body: { x: at.x, y: at.y, z: at.z }, more: more ?? null };
     },
     setEnding(kind) {
       if (ending.since >= 0) return;

@@ -108,6 +108,20 @@ describe("EntityViews lamps", () => {
     views.dispose();
     expect(scene.lights.length).toBe(before);
   });
+
+  it("in a scene (showLocal) the local player's body is drawn and their lamp lit, their own switch aside", () => {
+    const views = new EntityViews(scene);
+    views.sync(state(player(1, false)), 1, 1);
+    expect(scene.lights.filter((l) => l.name === "lamp_player_1")).toHaveLength(0);
+    views.showLocal = true;
+    views.sync(state(player(1, false)), 1, 1);
+    const lamp = scene.lights.find((l) => l.name === "lamp_player_1") as SpotLight | undefined;
+    expect(lamp?.intensity).toBe(LAMP_INTENSITY);
+    views.showLocal = false;
+    views.sync(state(player(1, false)), 1, 1);
+    expect(scene.lights.filter((l) => l.name === "lamp_player_1")).toHaveLength(0);
+    views.dispose();
+  });
 });
 
 describe("EntityViews placement", () => {

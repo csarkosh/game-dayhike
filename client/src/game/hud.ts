@@ -29,6 +29,13 @@ const STYLE = `
   @media (prefers-reduced-motion: reduce) {
     .hud .end-line .dread { animation: none; }
   }
+  /* A scene's letterbox: the film's frame (2.39:1) on the game's, the bars black; the voice's line sits in the lower bar. */
+  .hud .bars::before, .hud .bars::after { content: ""; position: absolute; left: 0; right: 0; height: 12.5vh; background: #000; opacity: 0; transition: opacity 400ms ease-out; }
+  .hud .bars::before { top: 0; }
+  .hud .bars::after { bottom: 0; }
+  .hud .bars.on::before, .hud .bars.on::after { opacity: 1; }
+  /* The roster (roster.ts) leaves the frame while the bars are up. */
+  body.scene .roster { opacity: 0; transition: opacity 400ms ease-out; }
   /* The inner voice: where the film's captions sat, in their type (introOverlay.ts). */
   .hud .voice {
     position: absolute; left: 50%; bottom: 11vh; transform: translateX(-50%); max-width: 44ch; padding: 0 1rem;
@@ -56,6 +63,8 @@ export type Hud = {
   say(text: string, ms: number): void;
   /** The inner voice's line now, "" when none is up. */
   saying(): string;
+  /** A scene's letterbox bars, on or off. */
+  setBars(on: boolean): void;
   /** A line that clears itself after `ms`, unless something replaces it first. */
   flash(text: string, ms: number): void;
   /** Darkens the whole view over 1.5 s; the status line stays readable on top. */
@@ -96,8 +105,10 @@ export function createHud(container: HTMLElement): Hud {
 
   const voice = document.createElement("div");
   voice.className = "voice";
+  const bars = document.createElement("div");
+  bars.className = "bars";
 
-  root.append(fade, status, end, voice);
+  root.append(fade, bars, status, end, voice);
   container.append(style, root);
 
   let flashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -132,6 +143,10 @@ export function createHud(container: HTMLElement): Hud {
         voice.classList.remove("on");
         voiceTimer = null;
       }, ms);
+    },
+    setBars(on) {
+      bars.classList.toggle("on", on);
+      document.body.classList.toggle("scene", on);
     },
     saying() {
       return voice.classList.contains("on") ? (voice.textContent ?? "") : "";
