@@ -126,6 +126,37 @@ export function stemProgress(graph: TrailGraph, x: number, z: number): number {
 }
 
 /**
+ * The point `progress` of the way up the stem (0 the pad's end, 1 the crest),
+ * by arc length, with the stem's unit direction there (up the stem) for a
+ * side to stand off it; null when the stem has no length. The dropped cap
+ * lies beside it (game/droppedItem.ts).
+ */
+export function stemPointAt(graph: TrailGraph, progress: number): { x: number; z: number; dx: number; dz: number } | null {
+  const chain = stemNodes(graph);
+  let total = 0;
+  for (let i = 0; i + 1 < chain.length; i++) {
+    const a = graph.nodes[chain[i] as number] as TrailNode;
+    const b = graph.nodes[chain[i + 1] as number] as TrailNode;
+    total += Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
+  }
+  if (total <= 0) return null;
+  // The chain runs pad first, so the arc from its start is the way up.
+  let want = Math.max(0, Math.min(1, progress)) * total;
+  for (let i = 0; i + 1 < chain.length; i++) {
+    const a = graph.nodes[chain[i] as number] as TrailNode;
+    const b = graph.nodes[chain[i + 1] as number] as TrailNode;
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const len = Math.sqrt(dx * dx + dz * dz);
+    if (want <= len || i + 2 === chain.length) {
+      const t = len > 0 ? Math.max(0, Math.min(1, want / len)) : 0;
+      return { x: a.x + dx * t, z: a.z + dz * t, dx: len > 0 ? dx / len : 0, dz: len > 0 ? dz / len : 0 };
+    }
+    want -= len;
+  }
+  return null;
+}
+
+/**
  * The point `metres` further up the stem than (x, z)'s nearest point on it,
  * by arc length; null when that is past the crest, or the stem has no
  * length. The watcher's first showings stand there (watcher.ts).

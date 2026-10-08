@@ -27,6 +27,7 @@ import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./sta
 import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
+import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { MAX_PLAYERS, PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
@@ -2077,6 +2078,11 @@ function buildRenderer(
   // atmosphere marches through, on the post tiers, resting on a height map
   // of the ground round the eye that is rebuilt as the eye moves.
   const cloudSteps = forest !== null && postFeatures.pipeline ? (postFeatures.halation ? CLOUD_STEPS_HIGH : CLOUD_STEPS_MEDIUM) : 0;
+  // The missing hiker's cap, beside the trail (droppedItem.ts).
+  const capGraph = forest !== null ? activeTerrainVariant().trailGraph?.(forest.seed) ?? null : null;
+  const capAt = capGraph !== null && forest !== null ? droppedCapAt(capGraph, forest.seed) : null;
+  const droppedCap = capAt !== null && forest !== null ? createDroppedCap(scene, capAt, elevationAt(forest.seed, capAt.x, capAt.z)) : null;
+  partOf(droppedCap);
   let cloudGroundAt: { x: number; z: number } | null = null;
   let cloudHold: number | null = null;
   let cloudDensity = 0;
@@ -2473,6 +2479,7 @@ function buildRenderer(
     dispose() {
       views.dispose();
       silhouette?.dispose();
+      droppedCap?.dispose();
       localLamp.dispose();
       for (const m of brushMeshes) m.dispose();
       // Before the meshes in its list: a render target's list is not told of

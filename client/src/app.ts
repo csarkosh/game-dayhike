@@ -101,7 +101,11 @@ import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScree
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, Phase, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
-import { isHollowState } from "./sim/hollow.js";
+import { isHollowState, playerSees } from "./sim/hollow.js";
+import { trailDistance } from "./sim/trail.js";
+import { AiState } from "./sim/types.js";
+import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState } from "./game/innerVoice.js";
+import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
 import { HOLLOW_CALL_CLIP, stepWoods, WOODS_REST, type WoodsState } from "./game/woodsVoice.js";
 import { loadBirdBed } from "./game/birdBed.js";
 import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "./game/woodsSounds.js";
@@ -437,6 +441,9 @@ function buildGame(
   let escalation: EscalationState = ESCALATION_REST;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
   let woods: WoodsState = WOODS_REST;
+  // The inner voice (innerVoice.ts): the ranger's own lines, local to this screen; and where the cap lies, found once a world.
+  let voice: VoiceState = voiceRest(seed ^ 0x5a11);
+  let capAt: DroppedCap | null | undefined;
   /** The woods' other voices (woodsSounds.ts), on this screen's own stream. */
   let woodsSounds: WoodsSoundsState = WOODS_SOUNDS_REST;
   // Recomputed when the weather does: on a `weather` command directly below,
@@ -776,6 +783,26 @@ function buildGame(
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
     }, dt);
     woods = voiced.state;
+    // The inner voice: what this player is in, this frame; one line at most.
+    const self = state.players.get(localId);
+    if (self !== undefined) {
+      if (capAt === undefined) capAt = world.trail === null ? null : droppedCapAt(world.trail, seed);
+      let shadeSeen = false;
+      for (const e of state.enemies.values()) if (e.ai === AiState.Shade && playerSees(self, e, world)) { shadeSeen = true; break; }
+      const body = world.search.body.pos;
+      const spoke = stepInnerVoice(voice, {
+        climb: escalation.progressMax, wet: acts.wet, night: acts.night, mist: acts.mist,
+        chase: state.phase === Phase.Chase, ended: ended || dead,
+        offTrail: world.trail === null ? 0 : trailDistance(world.trail, self.pos.x, self.pos.z),
+        lamp: self.lamp.on, stare: self.stare, moving: Math.hypot(self.vel.x, self.vel.z) > 0.2,
+        shadeSeen, cry: voiced.call !== null, birds: woods.birds < 0 ? 1 : woods.birds,
+        nearCap: capAt !== null && Math.hypot(self.pos.x - capAt.x, self.pos.z - capAt.z) < CAP_NEAR_M,
+        nearBody: Math.hypot(self.pos.x - body.x, self.pos.z - body.z) < 4,
+        safe: self.safe,
+      }, dt);
+      voice = spoke.state;
+      if (spoke.line !== null) hud.say(spoke.line, VOICE_LINE_MS);
+    }
     // The night's other voices, and the day's flies.
     const odd = stepWoodsSounds(woodsSounds, { night: acts.night, day: 1 - acts.wet, chase: state.phase === Phase.Chase }, dt);
     woodsSounds = odd.state;
@@ -1258,6 +1285,8 @@ function buildGame(
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     woods = WOODS_REST;
+    voice = voiceRest(seed ^ 0x5a11);
+    capAt = undefined;
     woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
@@ -1366,6 +1395,8 @@ function buildGame(
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     woods = WOODS_REST;
+    voice = voiceRest(seed ^ 0x5a11);
+    capAt = undefined;
     woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     registerInteractables(client.world);
     activeWorld = client.world;
