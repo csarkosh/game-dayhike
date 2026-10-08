@@ -54,9 +54,14 @@ float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn +
 #else
 // The lake's two states (lakeRipples.fragment.fx): the cat's-paw mask at this
 // pixel, from the gust that crosses it, and the two octaves at its amplitude,
-// so the surface is glass where the mask is 0. PBR's bump, the first octave,
-// is scaled about the up it was built on.
-float wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));
+// so the surface is glass where the mask is 0. The field is skipped where the
+// cover is 0 (glass all over), where its threshold of 1 is above every value
+// the field takes, so the mask is 0 there either way. PBR's bump, the first
+// octave, is scaled about the up it was built on.
+float wPaw = 0.0;
+if (waterPawCover > 0.0) {
+  wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));
+}
 float wOctave = octaveAmplitude(wPaw);
 normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));
 if (waterOctaves > 1.5) {

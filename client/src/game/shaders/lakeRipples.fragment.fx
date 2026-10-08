@@ -123,13 +123,17 @@ float lakePawThreshold(float cover) {
 // the gust blows, thresholded at lakePawThreshold(cover), so the paws cover
 // about the cover, with an edge PAW_EDGE_M metres wide along the field's own
 // gradient. Over the wrap's last life the drift crosses to the next wrap's,
-// so the pattern runs on through it.
+// so the pattern runs on through it. The next wrap's field is read only in
+// those last six seconds, the one span where its blend is above 0: t is the
+// lake's time, a uniform, so the branch is the same for every pixel.
 float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust) {
-  vec3 a = lakePawField(xz, t, windDir, t);
-  vec3 b = lakePawField(xz, t, windDir, t - LAKE_TIME_WRAP);
-  float w = smoothstep(LAKE_TIME_WRAP - PAW_LIFE_S, LAKE_TIME_WRAP, t);
+  vec3 f = lakePawField(xz, t, windDir, t);
+  if (t > LAKE_TIME_WRAP - PAW_LIFE_S) {
+    vec3 b = lakePawField(xz, t, windDir, t - LAKE_TIME_WRAP);
+    f = mix(f, b, smoothstep(LAKE_TIME_WRAP - PAW_LIFE_S, LAKE_TIME_WRAP, t));
+  }
   float g = PAW_GUST_FLOOR + (1.0 - PAW_GUST_FLOOR) * clamp(gust, 0.0, 1.0);
-  vec3 f = mix(a, b, w) * g;
+  f *= g;
   float slope = max(length(f.yz), 1.0e-4);
   return clamp((f.x - lakePawThreshold(cover)) / (slope * PAW_EDGE_M), 0.0, 1.0);
 }

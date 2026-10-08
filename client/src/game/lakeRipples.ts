@@ -143,16 +143,23 @@ function pawField(x: number, z: number, t: number, dirX: number, dirZ: number, s
  * `lakePawThreshold(cover)`, so the paws cover about `cover` of the lake,
  * with an edge PAW_EDGE_M metres wide, measured along the field's own
  * gradient. Over the wrap's last PAW_LIFE_S the drift crosses to the next
- * wrap's, so the pattern runs on through it.
+ * wrap's, so the pattern runs on through it. The next wrap's field is read
+ * only in those last PAW_LIFE_S seconds, the one span where its blend is
+ * above 0, as the GLSL reads it.
  */
 export function lakePaw(x: number, z: number, t: number, windDirX: number, windDirZ: number, cover: number, gust: number): number {
-  const a = pawField(x, z, t, windDirX, windDirZ, t);
-  const b = pawField(x, z, t, windDirX, windDirZ, t - WIND_TIME_WRAP);
-  const w = smoothstep(WIND_TIME_WRAP - PAW_LIFE_S, WIND_TIME_WRAP, t);
+  let [f, gx, gz] = pawField(x, z, t, windDirX, windDirZ, t);
+  if (t > WIND_TIME_WRAP - PAW_LIFE_S) {
+    const b = pawField(x, z, t, windDirX, windDirZ, t - WIND_TIME_WRAP);
+    const w = smoothstep(WIND_TIME_WRAP - PAW_LIFE_S, WIND_TIME_WRAP, t);
+    f += (b[0] - f) * w;
+    gx += (b[1] - gx) * w;
+    gz += (b[2] - gz) * w;
+  }
   const g = PAW_GUST_FLOOR + (1 - PAW_GUST_FLOOR) * clamp01(gust);
-  const f = (a[0] + (b[0] - a[0]) * w) * g;
-  const gx = (a[1] + (b[1] - a[1]) * w) * g;
-  const gz = (a[2] + (b[2] - a[2]) * w) * g;
+  f *= g;
+  gx *= g;
+  gz *= g;
   const slope = Math.max(Math.hypot(gx, gz), 1e-4);
   return clamp01((f - lakePawThreshold(cover)) / (slope * PAW_EDGE_M));
 }

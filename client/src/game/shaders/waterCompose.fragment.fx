@@ -17,18 +17,24 @@
 // intensity, as PBR scales the probe's own term (the eerie plateau dims
 // it), while the mirror and the panorama are renders of the scene already
 // lit as it is. Each flag is 0 or 1, so each mix picks one of its two, and every
-// read runs on every path. Before the skin, which then holds it off the
-// fronds as it holds the probe. The mirror's smear is a full paw's scaled by
-// the paw mask: none on glass, where the image is sharp to the pixel.
+// read runs on every path. The reads run only while the weight can be above
+// 0: where the state's weight or the glass's share is 0 the weight is 0 and
+// the mix keeps PBR's own, so skipping them changes nothing. Both are
+// uniforms, so the branch is the same for every pixel. Before the skin, which
+// then holds it off the fronds as it holds the probe. The mirror's smear is a
+// full paw's scaled by the paw mask: none on glass, where the image is sharp
+// to the pixel.
 // No energy-conservation factor or environment intensity on the mirror or the panorama: they are already-lit renders.
-vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);
-vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;
-vec3 wShoreRay = reflect(-viewDirectionW, normalW);
-vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));
-wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wShore), step(0.5, waterPanoramaOn));
-wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);
-float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;
-finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);
+if (waterMirrorWeight * waterCalmShare > 0.0) {
+  vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);
+  vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;
+  vec3 wShoreRay = reflect(-viewDirectionW, normalW);
+  vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));
+  wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wShore), step(0.5, waterPanoramaOn));
+  wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);
+  float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;
+  finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);
+}
 #endif
 #endif
 // The skin is matte: the sky's reflection and the sun's glint are held off it.

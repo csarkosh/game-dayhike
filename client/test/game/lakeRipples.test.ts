@@ -12,6 +12,7 @@ import {
   directionAt, gustAt, windRecordUnder,
 } from "../../src/game/windParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { midgeHash } from "../../src/game/midgeMotion.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const source = (path: string): string => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -34,6 +35,40 @@ function coveredShare(cover: number, gust: number): number {
   let sum = 0;
   for (let x = 0; x < 200; x++) for (let z = 0; z < 200; z++) sum += lakePaw(x + 0.37, z + 0.61, 120, DX, DZ, cover, gust);
   return sum / 40000;
+}
+
+/**
+ * The paw mask from the field drifted by t alone, never the next wrap's: the
+ * twin's arithmetic in the twin's order, from the exported hash, drift and
+ * threshold.
+ */
+function singleFieldPaw(x: number, z: number, t: number, dirX: number, dirZ: number, cover: number, gust: number): number {
+  const [ox, oz] = lakePawDrift(dirX, dirZ, t);
+  const px = (x - ox) / PAW_FEATURE_M;
+  const pz = (z - oz) / PAW_FEATURE_M;
+  const out = [0, 0, 0];
+  const node = (ix: number, iz: number): number => 0.5 - 0.5 * Math.cos(2 * Math.PI * (t / PAW_LIFE_S + midgeHash(ix, iz)));
+  const noise = (qx: number, qz: number, weight: number, scale: number): void => {
+    const ix = Math.floor(qx);
+    const iz = Math.floor(qz);
+    const fx = qx - ix;
+    const fz = qz - iz;
+    const ux = fx * fx * (3 - 2 * fx);
+    const uz = fz * fz * (3 - 2 * fz);
+    const a = node(ix, iz);
+    const b = node(ix + 1, iz);
+    const c = node(ix, iz + 1);
+    const d = node(ix + 1, iz + 1);
+    const k = a - b - c + d;
+    out[0] = (out[0] as number) + weight * (a + (b - a) * ux + (c - a) * uz + k * ux * uz);
+    out[1] = (out[1] as number) + weight * scale * (6 * fx * (1 - fx)) * (b - a + k * uz);
+    out[2] = (out[2] as number) + weight * scale * (6 * fz * (1 - fz)) * (c - a + k * ux);
+  };
+  noise(px, pz, 2 / 3, 1 / PAW_FEATURE_M);
+  noise(2 * px + 37, 2 * pz + 17, 1 / 3, 2 / PAW_FEATURE_M);
+  const g = PAW_GUST_FLOOR + (1 - PAW_GUST_FLOOR) * Math.min(Math.max(gust, 0), 1);
+  const slope = Math.max(Math.hypot((out[1] as number) * g, (out[2] as number) * g), 1e-4);
+  return Math.min(Math.max(((out[0] as number) * g - lakePawThreshold(cover)) / (slope * PAW_EDGE_M), 0), 1);
 }
 
 describe("the lake's ripples' constants", () => {
@@ -85,8 +120,21 @@ describe("the lake's ripples' constants", () => {
     // Hoskins' hash as the midges' (midge.vertex.fx) and the splashes' (rainSplash.ts) are
     expect(body(glsl, "float lakeHash(float i, float s)")).toBe(body(source("../../src/game/shaders/midge.vertex.fx"), "float midgeHash(float i, float s)"));
     expect(body(glsl, "vec2 lakeRingHash(vec2 p)")).toBe(body(source("../../src/game/rainSplash.ts"), "vec2 splashHash(vec2 p)"));
-    // no test on a varying: the branches are chosen by step, mix, clamp and smoothstep
-    expect(glsl).not.toMatch(/\bif\s*\(/);
+    // no test on a varying: the branches are chosen by step, mix, clamp and
+    // smoothstep. The one if is on the lake's time, a uniform at the one call
+    // (waterLights.fragment.fx passes waterLakeTime): the next wrap's field is
+    // read only over the wrap's last life.
+    expect(glsl.match(/\bif\s*\(/g)).toHaveLength(1);
+    expect(body(glsl, "float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust)")).toContain(
+      "  vec3 f = lakePawField(xz, t, windDir, t);\n" +
+        "  if (t > LAKE_TIME_WRAP - PAW_LIFE_S) {\n" +
+        "    vec3 b = lakePawField(xz, t, windDir, t - LAKE_TIME_WRAP);\n" +
+        "    f = mix(f, b, smoothstep(LAKE_TIME_WRAP - PAW_LIFE_S, LAKE_TIME_WRAP, t));\n" +
+        "  }\n" +
+        "  float g = PAW_GUST_FLOOR + (1.0 - PAW_GUST_FLOOR) * clamp(gust, 0.0, 1.0);\n" +
+        "  f *= g;\n",
+    );
+    expect(source("../../src/game/shaders/waterLights.fragment.fx")).toContain("lakePaw(vPositionW.xz, waterLakeTime, ");
     expect(glsl).not.toContain("?");
     expect(glsl.endsWith("}\n")).toBe(true);
   });
@@ -224,6 +272,27 @@ describe("the cat's-paws", () => {
       }
     }
     expect(jump).toBeLessThan(1e-3);
+  });
+
+  it("read the next wrap's field only over the wrap's last life, where its blend is above 0", () => {
+    // up to WIND_TIME_WRAP − PAW_LIFE_S (294 s) the mask is the field drifted by t alone, to the bit
+    let edge = 0;
+    for (const t of [293.999, 294]) {
+      for (let x = -40; x <= 40; x += 1.3) {
+        for (let z = -40; z <= 40; z += 1.7) {
+          const paw = lakePaw(x, z, t, DX, DZ, 0.5, 1);
+          expect(paw).toBe(singleFieldPaw(x, z, t, DX, DZ, 0.5, 1));
+          if (paw > 0 && paw < 1) edge++;
+        }
+      }
+    }
+    // the comparison sees the edge, not only the clamped 0 and 1
+    expect(edge).toBeGreaterThan(50);
+    expect(lakePaw(-18, 96, 120, DX, DZ, 0.5, 1)).toBe(singleFieldPaw(-18, 96, 120, DX, DZ, 0.5, 1));
+    expect(lakePaw(-18, 96, 120, DX, DZ, 0.5, 1)).toBeCloseTo(0.9521616339921583, 12);
+    // at 299 s the next wrap's field is blended in: the mask is not the single field's
+    expect(lakePaw(-18, 96, 299, DX, DZ, 0.5, 1)).toBe(1);
+    expect(singleFieldPaw(-18, 96, 299, DX, DZ, 0.5, 1)).toBeLessThan(1 - 1e-6);
   });
 
   it("silence the octaves on glass and run them whole in a paw", () => {

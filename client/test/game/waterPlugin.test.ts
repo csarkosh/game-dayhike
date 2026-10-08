@@ -510,8 +510,10 @@ describe("the lake's ripples in the water plugin", () => {
     const branch = l.indexOf("#else", l.indexOf("float wOceanVar ="));
     const lake = l.slice(branch, l.indexOf("#endif", branch));
     const order = [
-      "float wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));",
-      "float wOctave = octaveAmplitude(wPaw);",
+      "float wPaw = 0.0;",
+      "if (waterPawCover > 0.0) {",
+      "  wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));",
+      "}\nfloat wOctave = octaveAmplitude(wPaw);",
       "normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));",
       "if (waterOctaves > 1.5) {",
       "normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y) * wOctave);",
@@ -823,7 +825,7 @@ describe("the sea's waves in the water plugin", () => {
     }
     expect(main(sea.fragment)).toContain("vec2 wRs = waterRainSlope(vPositionW.xz);");
     // and the lake's reads them in place of the four layers: the comparison can see the lake's code
-    expect(main(lake.fragment)).toContain("float wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));");
+    expect(main(lake.fragment)).toContain("float wPaw = 0.0;\nif (waterPawCover > 0.0) {\nwPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));\n}\n");
     expect(main(lake.fragment)).toContain("vec2 wRs = lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain, length(vPositionW - vEyePosition.xyz));");
     expect(main(lake.fragment)).not.toContain("waterRainSlope(");
   }, timeLimit(30_000));
@@ -978,20 +980,24 @@ describe("the lake's mirror in the water plugin", () => {
   it("reads the mirror where PBR adds the probe's radiance, through PBR's own Fresnel, before the skin, on a lake alone", () => {
     const c = fx("waterCompose.fragment.fx");
     const block = /#ifndef OCEAN\n#ifdef REFLECTION\n(?:\/\/[^\n]*\n)*([^#]*)#endif\n#endif\n/.exec(c);
+    // The reads run only while the weight can be above 0: both factors of the
+    // test are uniforms, so the mirror's texture reads stay in uniform flow.
     expect(block?.[1]).toBe(
-      "vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);\n" +
-        "vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;\n" +
-        "vec3 wShoreRay = reflect(-viewDirectionW, normalW);\n" +
-        "vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));\n" +
-        "wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wShore), step(0.5, waterPanoramaOn));\n" +
-        "wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);\n" +
-        "float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;\n" +
-        "finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);\n",
+      "if (waterMirrorWeight * waterCalmShare > 0.0) {\n" +
+        "  vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);\n" +
+        "  vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;\n" +
+        "  vec3 wShoreRay = reflect(-viewDirectionW, normalW);\n" +
+        "  vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));\n" +
+        "  wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wShore), step(0.5, waterPanoramaOn));\n" +
+        "  wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);\n" +
+        "  float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;\n" +
+        "  finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);\n" +
+        "}\n",
     );
     expect(c.indexOf("wMirrorW);")).toBeLessThan(c.indexOf("finalRadianceScaled *= 1.0 - wSkin;"));
     // the paw mask, 0 on glass, in the lake's branch of the lights, declared there once
     const l = fx("waterLights.fragment.fx");
-    const paw = l.indexOf("float wPaw = lakePaw(");
+    const paw = l.indexOf("float wPaw = 0.0;");
     expect(paw).toBeGreaterThan(l.indexOf("float wOceanVar ="));
     expect(paw).toBeLessThan(l.indexOf("if (waterOctaves > 1.5) {"));
     expect(l.split("float wPaw")).toHaveLength(2);
