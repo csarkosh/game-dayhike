@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, beforeAll, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
@@ -13,6 +14,7 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Effect } from "@babylonjs/core/Materials/effect.js";
 import {
   createLakeMirror, createLakeMirrorTerrain, LAKE_MIRROR_TERRAIN_SHADER, MIRROR_CANOPY_SHADE, MIRROR_LIFT, MIRROR_SCALE, type LakeMirror,
@@ -240,6 +242,36 @@ describe("createLakeMirror", () => {
     expect(s.clipPlane).toBeFalsy();
     mirror.dispose();
   });
+
+  it("compiles a PBR material it draws with MIRRORED in its pass and without it in the main pass: a stage of the pass's own", async () => {
+    const { s, player } = scene();
+    const mirror = createLakeMirror(s, LAKE, false);
+    const rock = MeshBuilder.CreateBox("rock", { size: 1 }, s);
+    rock.position.set(0, 52, 30);
+    rock.material = new PBRMaterial("rock", s);
+    mirror.register(rock, null);
+    expect(mirror.update(player, true, 1)).toBe(true);
+    const sub = rock.subMeshes[0]!;
+    // The main pass, as the scene draws it, compiled outside the mirror's.
+    const main = (await drawnEffect(rock)) as unknown as { defines: string };
+    // The mirror's pass, as the scene renders its target: a render a tick
+    // until the pass's own effect is compiled.
+    const inPass = () => sub._getDrawWrapper(mirror.texture.renderPassId)?.effect ?? null;
+    for (let tick = 0; tick < 50 && !(inPass()?.isReady() ?? false); tick++) {
+      mirror.texture.render();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const pass = inPass();
+    expect(pass?.isReady()).toBe(true);
+    expect(main.defines).not.toContain("#define MIRRORED");
+    expect(pass!.defines).toContain("#define MIRRORED");
+    // Two effects for one material: the pass's is a stage of its own.
+    expect(pass).not.toBe(main);
+    // Babylon's rule the count rests on (a canary on the installed engine).
+    const pbr = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Materials/PBR/pbrBaseMaterial.pure.js"), "utf8");
+    expect(pbr).toContain("defines.MIRRORED = !!scene._mirroredCameraPosition;");
+    mirror.dispose();
+  }, timeLimit(30_000));
 
   it("registers a mesh with a stand-in or its own material for the pass, and takes it out again", () => {
     const { s } = scene();
