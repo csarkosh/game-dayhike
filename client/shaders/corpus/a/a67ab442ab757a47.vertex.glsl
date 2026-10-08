@@ -1,5 +1,5 @@
 #version 450
-#define MATERIALPLUGIN_19
+#define MATERIALPLUGIN_18
 #define BRDF_V_HEIGHT_CORRELATED
 #define MS_BRDF_ENERGY_CONSERVATION
 #define SPHERICAL_HARMONICS
@@ -9,6 +9,8 @@
 #define BASE_DIFFUSE_MODEL 0
 #define DIELECTRIC_SPECULAR_MODEL 0
 #define CONDUCTOR_SPECULAR_MODEL 0
+#define CLEARCOAT
+#define CLEARCOAT_DEFAULTIOR
 #define CLEARCOAT_TEXTUREDIRECTUV 0
 #define CLEARCOAT_TEXTURE_ROUGHNESSDIRECTUV 0
 #define CLEARCOAT_BUMPDIRECTUV 0
@@ -16,6 +18,7 @@
 #define IRIDESCENCE_TEXTUREDIRECTUV 0
 #define IRIDESCENCE_THICKNESS_TEXTUREDIRECTUV 0
 #define ANISOTROPIC_TEXTUREDIRECTUV 0
+#define MAINUV1
 #define SHEEN_TEXTUREDIRECTUV 0
 #define SHEEN_TEXTURE_ROUGHNESSDIRECTUV 0
 #define SS_THICKNESSANDMASK_TEXTUREDIRECTUV 0
@@ -24,7 +27,7 @@
 #define SS_TRANSLUCENCYCOLOR_TEXTUREDIRECTUV 0
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
-#define WATER
+#define WET
 #define UV1
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
@@ -46,12 +49,14 @@
 #define IMAGEPROCESSINGPOSTPROCESS
 #define PBR
 #define NUM_SAMPLES 0
-#define ALBEDODIRECTUV 0
+#define ALBEDO
+#define ALBEDODIRECTUV 1
 #define BASE_WEIGHTDIRECTUV 0
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
-#define AMBIENTDIRECTUV 0
+#define AMBIENT
+#define AMBIENTDIRECTUV 1
+#define AMBIENTINGRAYSCALE
 #define OPACITYDIRECTUV 0
-#define ALPHABLEND
 #define ALPHATESTVALUE 0.4
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
@@ -61,11 +66,13 @@
 #define LODBASEDMICROSFURACE
 #define MICROSURFACEMAPDIRECTUV 0
 #define METALLICWORKFLOW
-#define METALLIC_REFLECTANCEDIRECTUV 0
+#define METALLIC_REFLECTANCE
+#define METALLIC_REFLECTANCE_GAMMA
+#define METALLIC_REFLECTANCEDIRECTUV 1
+#define METALLIC_REFLECTANCE_USE_ALPHA_ONLY
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
-#define BUMP
 #define BUMPDIRECTUV 0
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
@@ -74,7 +81,6 @@
 #define REFLECTIONMAP_CUBIC
 #define INVERTCUBICMAP
 #define USESPHERICALFROMREFLECTIONMAP
-#define USESPHERICALINVERTEX
 #define GAMMAREFLECTION
 #define RADIANCEOCCLUSION
 #define HORIZONOCCLUSION
@@ -83,27 +89,40 @@
 #define NUM_MORPH_INFLUENCERS 0
 #define ORDER_INDEPENDENT_TRANSPARENCY_16BITS
 #define USEPHYSICALLIGHTFALLOFF
+#define TWOSIDEDLIGHTING
+#define MIRRORED
+#define SHADOWFLOAT
 #define FOG
 #define CAMERA_PERSPECTIVE
 #define AREALIGHTSUPPORTED
+#define SPECULARAA
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
-#define VERTEX_PULLING_INDEX_BUFFER_32BITS
 #define CLUSTLIGHT_SLICES 0
 #define CLUSTLIGHT_BATCH 0
 #define LIGHT0
 #define SPOTLIGHT0
 #define LIGHT1
 #define DIRLIGHT1
+#define SHADOW1
+#define SHADOWCSM1
+#define SHADOWCSMNUM_CASCADES1 2
+#define SHADOWCSMUSESHADOWMAXZ1
+#define SHADOWPCF1
 #define LIGHT2
 #define HEMILIGHT2
+#define SHADOWS
 #define LIGHTCOUNT 3
 #define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME vertex:pbr
 layout(set = 1, binding = 20) uniform LeftOver {
-        vec4 vFogInfos;
+        mat4 lightMatrix1[2];
+    float viewFrustumZ1[2];
+    float frustumLengths1[2];
+    float cascadeBlendFactor1;
+    vec4 vFogInfos;
     vec3 vFogColor;
 };
 
@@ -235,30 +254,14 @@ float atmSunPower;
 float atmSunWeight;
 vec3 atmSunDir;
 vec3 atmSunColour;
-float waterLevel;
-vec3 waterKd;
-vec4 waterBed;
-float waterBedTexels;
-float waterTime;
-vec2 waterWind;
-vec2 waterWindTime;
-vec2 waterScreen;
-float waterHigh;
-float waterOctaves;
-vec2 waterNearFar;
-vec2 waterSkin;
-float waterRain;
-vec4 oceanPhase0;
-vec4 oceanPhase1;
-vec4 oceanPhase2;
-vec4 oceanSwell;
-vec4 oceanTips;
-vec4 oceanCoast;
-vec4 oceanWind;
-vec4 oceanWindDir;
-vec4 oceanWindStats;
-vec4 oceanWindPivot;
-vec4 oceanK[12];
+float wetLine;
+float wetLevel;
+vec2 wetCentre;
+float wetRadius;
+vec3 wetKd;
+float wetAttenuate;
+float wetWeather;
+float wetCap;
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -277,6 +280,7 @@ float visibility;
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec2 uv;
+layout(location = 0)  out vec2 vMainUV1;
 const float PI=3.1415926535897932384626433832795;
 const float TWO_PI=6.283185307179586;
 const float HALF_PI=1.5707963267948966;
@@ -426,21 +430,9 @@ uint2float(rstate*2447445414u));
 #define DIELECTRIC_SPECULAR_MODEL_OPENPBR 1
 #define CONDUCTOR_SPECULAR_MODEL_GLTF 0
 #define CONDUCTOR_SPECULAR_MODEL_OPENPBR 1
-layout(location = 0)  out vec2 vBumpUV;
 layout(location = 1)  out vec3 vPositionW;
 layout(location = 2)  out vec3 vNormalW;
-layout(location = 3)  out vec3 vEnvironmentIrradiance;
-vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
-+ vSphericalL1_1*(normal.y)
-+ vSphericalL10*(normal.z)
-+ vSphericalL11*(normal.x)
-+ vSphericalL2_2*(normal.y*normal.x)
-+ vSphericalL2_1*(normal.y*normal.z)
-+ vSphericalL20*((3.0*normal.z*normal.z)-1.0)
-+ vSphericalL21*(normal.z*normal.x)
-+ vSphericalL22*(normal.x*normal.x-(normal.y*normal.y));
-}
-layout(location = 4)  out vec3 vFogDistance;
+layout(location = 3)  out vec3 vFogDistance;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -457,6 +449,10 @@ vec4 vLightSpecular;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light1;
+
+layout(location = 4)  out vec4 vPositionFromLight1[SHADOWCSMNUM_CASCADES1];
+layout(location = 6)  out float vDepthMetric1[SHADOWCSMNUM_CASCADES1];
+layout(location = 8)  out vec4 vPositionFromCamera1;
 layout(set = 1, binding = 5) uniform Light2
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -465,18 +461,6 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
-// Water plugin, vertex definitions: the ring's per-vertex bed depth (metres
-// of water under the vertex, from the terrain height the ring sampled), which
-// the fragment stage falls back to outside the bed height texture's square,
-// and the vertex's view depth, which the high tier compares with the depth of
-// the opaque pass behind it.
-//
-// COMMENT RULES: never put a semicolon inside a trailing comment on a code
-// line, and never spell a hashed preprocessor keyword in comment prose. The
-// shaderHygiene test enforces both.
-layout(location = 3) in float bedDepth;
-layout(location = 5)  out float vBedDepth;
-layout(location = 6)  out float vWaterViewDepth;
 #define CUSTOM_VERTEX_DEFINITIONS
 void main(void) {
 #define CUSTOM_VERTEX_MAIN_BEGIN
@@ -490,21 +474,17 @@ vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);
 vPositionW=vec3(worldPos);
 mat3 normalWorld=mat3(finalWorld);
 vNormalW=normalize(normalWorld*normalUpdated);
-vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
-float NdotV=max(dot(vNormalW,viewDirectionW),0.0);
-vec3 roughNormal=mix(vNormalW,viewDirectionW,(0.5*(1.0-NdotV))*baseDiffuseRoughness);
-vec3 reflectionVector=vec3(reflectionMatrix*vec4(roughNormal,0)).xyz;
-vEnvironmentIrradiance=computeEnvironmentIrradiance(reflectionVector);
-vBedDepth = bedDepth;
-// Babylon's view space is left-handed: +z runs forward, so this is positive.
-vWaterViewDepth = (view * worldPos).z;
 #define CUSTOM_VERTEX_UPDATE_WORLDPOS
 gl_Position=viewProjection*worldPos;
 vec2 uv2Updated=vec2(0.,0.);
-if (vBumpInfos.x==0.)
-{vBumpUV=vec2(bumpMatrix*vec4(uvUpdated,1.0,0.0));
-}
+vMainUV1=uvUpdated;
 vFogDistance=(view*worldPos).xyz;
+vPositionFromCamera1=view*worldPos;
+for (int i=0;
+i<SHADOWCSMNUM_CASCADES1;
+i++) {vPositionFromLight1[i]=lightMatrix1[i]*worldPos;
+vDepthMetric1[i]=(vPositionFromLight1[i].z+light1.depthValues.x)/light1.depthValues.y;
+}
 #define CUSTOM_VERTEX_MAIN_END
 gl_Position.y *= yFactor_;
 }
