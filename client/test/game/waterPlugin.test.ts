@@ -65,10 +65,13 @@ describe("water plugin", () => {
   it("injects exactly the GLSL the .fx files hold, with the constants in lockstep", () => {
     const mat = new PBRMaterial("w3", scene);
     const p = attachWater(mat, WATER_ROWS.sea);
-    const f = p.getCustomCode("fragment")!;
-    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(
+    // a lake's (no ocean) carries the lake's ripples after the water's; the sea's never does
+    expect(p.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS).toBe(
       fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") + fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanShade.fragment.fx"),
     );
+    p.ocean = testOcean();
+    const f = p.getCustomCode("fragment")!;
+    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("water.fragment.fx") + fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanShade.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toBe(fx("waterLights.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION).toBe(fx("waterCompose.fragment.fx"));
     const v = p.getCustomCode("vertex")!;
@@ -276,8 +279,11 @@ describe("water plugin", () => {
     const drift = "vec2 p = xz + waterSkin.y - waterWindTime * WATER_SKIN_DRIFT;";
     expect(mask).toContain(drift);
     expect(col).toContain(drift);
-    const ripple = d.slice(d.indexOf("waterRipple2("), d.indexOf("float waterSkinHash("));
+    const lake = fx("lakeRipples.fragment.fx");
+    const ripple = lake.slice(lake.indexOf("vec2 lakeRipple2("));
     expect(ripple).toContain("vec2 uv = xz / WATER_OCTAVE2_TILE - waterWindTime * WATER_OCTAVE2_DRIFT;");
+    expect(fx("waterLights.fragment.fx")).toContain("vec2 wSlope = lakeRipple2(vPositionW.xz);");
+    expect(fx("waterLights.fragment.fx")).not.toContain("waterRipple2(");
     // A texel at uv0 is drawn where xz = TILE * (uv0 + waterWindTime * DRIFT), and waterWindTime runs along
     // the wind's direction times its speed: the octave's pattern travels downwind at TILE * DRIFT m/s at full wind.
     const octave = (name: string): number => Number(new RegExp(`const float ${name} = ([^;]+);`).exec(d)![1]);
@@ -319,7 +325,7 @@ describe("the rain's rings on the water", () => {
     const lake = l.indexOf("vec2 wRs = lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain, length(vPositionW - vEyePosition.xyz));");
     const sea = l.indexOf("vec2 wRs = waterRainSlope(vPositionW.xz);");
     // the lake's in the gate's lake branch, after its octaves; the sea's in a gate of its own after it
-    expect(lake).toBeGreaterThan(l.indexOf("waterRipple2(vPositionW.xz)"));
+    expect(lake).toBeGreaterThan(l.indexOf("lakeRipple2(vPositionW.xz)"));
     // the normal's gate: the sea's branch, then the lake's
     const lakeBranch = l.indexOf("#else", l.indexOf("float wOceanVar ="));
     expect(lakeBranch).toBeGreaterThan(-1);
@@ -404,7 +410,7 @@ describe("the rain's rings on the water", () => {
 });
 
 describe("the lake's ripples in the water plugin", () => {
-  it("declares the lake's time and the paws' cover before the sea's uniforms, and binds them on every draw, on a lake and on the sea", () => {
+  it("declares the lake's time and the paws' cover before the sea's uniforms and binds them on every draw, on a lake alone", () => {
     const lake = attachWater(new PBRMaterial("wL1", scene), WATER_ROWS.lowlandLake);
     const u = lake.getUniforms();
     const names = u.ubo.map((e) => e.name);
@@ -418,7 +424,14 @@ describe("the lake's ripples in the water plugin", () => {
     expect(lake.pawCover).toBe(0);
     const sea = attachWater(new PBRMaterial("wL2", scene), WATER_ROWS.sea);
     sea.ocean = testOcean();
-    for (const [p, time, cover] of [[lake, 12.5, 0.25], [sea, 7, 0.5]] as const) {
+    // the sea's uniforms are as they were before the lake's ripples
+    const seaU = sea.getUniforms();
+    expect(seaU.ubo).toHaveLength(24);
+    const seaNames = seaU.ubo.map((e) => e.name);
+    expect(seaNames.slice(seaNames.indexOf("waterRain"), seaNames.indexOf("waterRain") + 2)).toEqual(["waterRain", "oceanPhase0"]);
+    expect(seaU.fragment).not.toContain("waterLakeTime");
+    expect(seaU.fragment).not.toContain("waterPawCover");
+    for (const [p, time, cover, bound] of [[lake, 12.5, 0.25, true], [sea, 7, 0.5, false]] as const) {
       p.setLakeTime(time);
       p.setPawCover(cover);
       for (let draw = 0; draw < 2; draw++) {
@@ -428,10 +441,14 @@ describe("the lake's ripples in the water plugin", () => {
           { get: (_t, key) => (key === "updateFloat" ? (n: string, v: number) => void (floats[n] = v) : () => undefined) },
         ) as unknown as UniformBuffer;
         p.bindForSubMesh(ubo);
-        expect(floats.waterLakeTime).toBe(time);
-        expect(floats.waterPawCover).toBe(cover);
+        expect(floats.waterLakeTime).toBe(bound ? time : undefined);
+        expect(floats.waterPawCover).toBe(bound ? cover : undefined);
+        expect(floats.waterRain).toBe(0);
       }
     }
+    // taken off its ocean, a material is a lake's again, and declares them
+    sea.ocean = null;
+    expect(sea.getUniforms().ubo).toHaveLength(26);
   });
 
   it("wraps the lake's time as the wind's and clamps the paws' cover to 0..1", () => {
@@ -703,8 +720,13 @@ describe("the sea's waves in the water plugin", () => {
       }
     }
     /** The stages one water material compiles to, on an engine of its own (an
-     * engine shares an effect between materials of one define set). */
-    const compiled = async (make: (material: PBRMaterial) => WaterPlugin, sea: boolean): Promise<{ vertex: string; fragment: string }> => {
+     * engine shares an effect between materials of one define set); drawn as
+     * a lake first, when `lakeFirst`, and given its ocean after. */
+    const compiled = async (
+      make: (material: PBRMaterial) => WaterPlugin,
+      sea: boolean,
+      lakeFirst = false,
+    ): Promise<{ vertex: string; fragment: string }> => {
       const own = webgpuProcessingEngine();
       try {
         const s = new Scene(own);
@@ -712,16 +734,22 @@ describe("the sea's waves in the water plugin", () => {
         const material = new PBRMaterial("water", s);
         material.backFaceCulling = false;
         const plugin = make(material);
-        plugin.bedTexture = RawTexture.CreateRTexture(new Float32Array(4), 2, 2, s, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
-        if (sea) {
-          plugin.ocean = { ...testOcean(), atlas: plugin.bedTexture, windDisp: oceanArrayPlaceholder(s), windSlope: oceanArrayPlaceholder(s) };
-        }
+        const bed = RawTexture.CreateRTexture(new Float32Array(4), 2, 2, s, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+        plugin.bedTexture = bed;
+        const bindOcean = (): void => {
+          plugin.ocean = { ...testOcean(), atlas: bed, windDisp: oceanArrayPlaceholder(s), windSlope: oceanArrayPlaceholder(s) };
+        };
+        if (sea && !lakeFirst) bindOcean();
         const mesh = MeshBuilder.CreateGround("ground", { width: 4, height: 4 }, s);
         const vertices = mesh.getTotalVertices();
         mesh.setVerticesData("bedDepth", new Float32Array(vertices), false, 1);
         mesh.setVerticesData("oceanMorph", new Float32Array(vertices), false, 1);
         mesh.setVerticesData("oceanCoarse", new Float32Array(vertices * 2), false, 2);
         mesh.material = material;
+        if (lakeFirst) {
+          await drawnEffect(mesh);
+          if (sea) bindOcean();
+        }
         const effect = await drawnEffect(mesh);
         return { vertex: effect._vertexSourceCode, fragment: effect._fragmentSourceCode };
       } finally {
@@ -737,9 +765,18 @@ describe("the sea's waves in the water plugin", () => {
     const sea = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true);
     expect(sea.vertex).toContain("vOceanXZ = positionUpdated.xz;");
     expect(sea.fragment).toContain("vOceanXZ");
+    // The sea's whole stages, byte for byte the text they compiled to before the lake's ripples
+    // (3e1942c): neither the ripples' definitions nor their uniforms reach the sea.
+    const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
+    expect(sha(sea.fragment)).toBe("a37171918cc2c9c3ef0b09433cc8de9060149e9448a574d0d900071aad0baf4d");
+    expect(sha(sea.vertex)).toBe("f6751544362772d1905d86fa394cc5074afe09d0cfa3c1315cea90da806a3763");
+    // and a material drawn as a lake, then given its ocean, rebuilds its uniforms to the sea's
+    const turned = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true, true);
+    expect(sha(turned.fragment)).toBe("a37171918cc2c9c3ef0b09433cc8de9060149e9448a574d0d900071aad0baf4d");
+    expect(sha(turned.vertex)).toBe("f6751544362772d1905d86fa394cc5074afe09d0cfa3c1315cea90da806a3763");
     // The sea's main is the text it compiled to before the lake's ripples, and reads none of them.
     const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
-    expect(createHash("sha256").update(main(sea.fragment)).digest("hex")).toBe("91382f0cd2700903c0d9aae19a4e5d99e7d3382db06b0d2bc8cdf732dc8d553d");
+    expect(sha(main(sea.fragment))).toBe("91382f0cd2700903c0d9aae19a4e5d99e7d3382db06b0d2bc8cdf732dc8d553d");
     for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover"]) {
       expect(main(sea.fragment), name).not.toContain(name);
     }

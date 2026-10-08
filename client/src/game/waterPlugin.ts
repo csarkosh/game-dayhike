@@ -44,12 +44,14 @@ import { WIND_TIME_WRAP } from "./windParams.js";
 /** Babylon's dielectric F0 at metallicF0Factor 1 is 0.04; water's 0.02 is half of it. */
 const PBR_DIELECTRIC_F0 = 0.04;
 
-/** The definitions each stage gets: the water's, in the fragment stage the
- * lake's ripples, then the sea's declarations, then the sea's surface, which
- * both stages evaluate (`oceanSurface.fx`), and in the fragment stage the
- * sea's shading (each file ends in a newline, so no two lines join). */
+/** The definitions each stage gets: the water's, then the sea's declarations,
+ * then the sea's surface, which both stages evaluate (`oceanSurface.fx`), and
+ * in the fragment stage the sea's shading (each file ends in a newline, so no
+ * two lines join). A lake's fragment stage also gets the lake's ripples after
+ * the water's; the sea's never does, so its text is as it was before them. */
 const VERTEX_DEFINITIONS = vertexDefs + oceanVertexDefs + oceanSurface;
-const FRAGMENT_DEFINITIONS = fragmentDefs + lakeRipplesDefs + oceanFragmentDefs + oceanSurface + oceanShade;
+const SEA_FRAGMENT_DEFINITIONS = fragmentDefs + oceanFragmentDefs + oceanSurface + oceanShade;
+const LAKE_FRAGMENT_DEFINITIONS = fragmentDefs + lakeRipplesDefs + oceanFragmentDefs + oceanSurface + oceanShade;
 
 /**
  * Babylon 9.18's line that takes the reflectivity block's roughness, which
@@ -104,6 +106,9 @@ const OCEAN_UNIFORMS = [
   "oceanPhase0", "oceanPhase1", "oceanPhase2", "oceanSwell", "oceanTips", "oceanCoast", "oceanWind", "oceanWindDir",
   "oceanWindStats", "oceanWindPivot",
 ] as const;
+
+/** The lake's ripples' two floats (`lakeRipples.fragment.fx`), declared on a lake alone, after `waterRain`. */
+const LAKE_UNIFORMS = ["waterLakeTime", "waterPawCover"] as const;
 
 /** The swell's components, a uniform array of twelve vec4s, bound after the ten. */
 const OCEAN_COMPONENTS = "oceanK";
@@ -211,7 +216,17 @@ export class WaterPlugin extends MaterialPluginBase {
   set ocean(binding: OceanBinding | null) {
     const had = this._ocean !== null;
     this._ocean = binding;
-    if (had !== (binding !== null)) this.markAllDefinesAsDirty();
+    if (had !== (binding !== null)) {
+      // The lake's uniforms are a lake's alone (`getUniforms`), so a change of
+      // body rebuilds the uniform buffer's layout, as Babylon does when a
+      // plugin is added to a material already drawn.
+      const m = this._material;
+      if (m._uniformBufferLayoutBuilt) {
+        m.resetDrawCache();
+        m._createUniformBuffer();
+      }
+      this.markAllDefinesAsDirty();
+    }
   }
 
   /** Per frame from the renderer's wind record: the game's 0..1 wind and its direction. */
@@ -277,10 +292,16 @@ export class WaterPlugin extends MaterialPluginBase {
     samplers.push("waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope");
   }
 
+  /**
+   * The water's uniforms, then, on a lake alone, the lake's ripples' (the
+   * sea's text is as it was before them), then the sea's ten and its
+   * components, declared on a lake too (a lake reads none of them).
+   */
   override getUniforms(): {
     ubo: { name: string; size: number; type: string; arraySize?: number }[]; vertex: string; fragment: string;
   } {
     const components = `uniform vec4 ${OCEAN_COMPONENTS}[${OCEAN_COMPONENT_COUNT}];`;
+    const lake = this._ocean === null ? LAKE_UNIFORMS : [];
     return {
       ubo: [
         { name: "waterLevel", size: 1, type: "float" },
@@ -296,8 +317,7 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: "waterNearFar", size: 2, type: "vec2" },
         { name: "waterSkin", size: 2, type: "vec2" },
         { name: "waterRain", size: 1, type: "float" },
-        { name: "waterLakeTime", size: 1, type: "float" },
-        { name: "waterPawCover", size: 1, type: "float" },
+        ...lake.map((name) => ({ name, size: 1, type: "float" })),
         ...OCEAN_UNIFORMS.map((name) => ({ name, size: 4, type: "vec4" })),
         { name: OCEAN_COMPONENTS, size: 4, type: "vec4", arraySize: OCEAN_COMPONENT_COUNT },
       ],
@@ -318,8 +338,7 @@ export class WaterPlugin extends MaterialPluginBase {
         "uniform vec2 waterNearFar;",
         "uniform vec2 waterSkin;",
         "uniform float waterRain;",
-        "uniform float waterLakeTime;",
-        "uniform float waterPawCover;",
+        ...lake.map((name) => `uniform float ${name};`),
         ...OCEAN_UNIFORMS.map((name) => `uniform vec4 ${name};`),
         components,
       ].join("\n"),
@@ -351,9 +370,11 @@ export class WaterPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat2("waterNearFar", this.nearFar[0], this.nearFar[1]);
     uniformBuffer.updateFloat2("waterSkin", this.skin[0], this.skin[1]);
     uniformBuffer.updateFloat("waterRain", this.rain);
-    // The lake's ripples: read on a lake alone, bound on every draw.
-    uniformBuffer.updateFloat("waterLakeTime", this.lakeTime);
-    uniformBuffer.updateFloat("waterPawCover", this.pawCover);
+    // The lake's ripples, declared on a lake alone, bound on its every draw.
+    if (this._ocean === null) {
+      uniformBuffer.updateFloat("waterLakeTime", this.lakeTime);
+      uniformBuffer.updateFloat("waterPawCover", this.pawCover);
+    }
     // Every declared sampler is bound on every draw: WebGPU validates the
     // bindings a pipeline declares whether or not a branch reads them. The
     // material is not ready until the bed texture exists, so the null guards
@@ -397,7 +418,7 @@ export class WaterPlugin extends MaterialPluginBase {
     }
     if (shaderType === "fragment") {
       return {
-        CUSTOM_FRAGMENT_DEFINITIONS: FRAGMENT_DEFINITIONS,
+        CUSTOM_FRAGMENT_DEFINITIONS: this._ocean !== null ? SEA_FRAGMENT_DEFINITIONS : LAKE_FRAGMENT_DEFINITIONS,
         CUSTOM_FRAGMENT_BEFORE_LIGHTS: fragmentLights,
         CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: fragmentCompose,
         // Listed always: Babylon gathers a plugin's hook names once, when the

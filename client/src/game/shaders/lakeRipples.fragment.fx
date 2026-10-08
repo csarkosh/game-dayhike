@@ -1,10 +1,12 @@
 // The lake's ripples as two states, spliced into the water plugin's fragment
 // definitions after water.fragment.fx: the cat's-paw mask that switches the
 // surface between glass and the rippled octaves, and the rain's rings near
-// the eye. Every function is a pure function of its arguments with a twin of
-// the same name in lakeRipples.ts, and every constant mirrors lakeRipples.ts
-// or windParams.ts, which a lockstep test holds equal. Branches are chosen by
-// step, mix, clamp and smoothstep, never by a test on a varying.
+// the eye, then the lake's second octave. Every function but the octave,
+// which samples PBR's bump, is a pure function of its arguments with a twin
+// of the same name in lakeRipples.ts, and every constant mirrors
+// lakeRipples.ts or windParams.ts, which a lockstep test holds equal.
+// Branches are chosen by step, mix, clamp and smoothstep, never by a test on
+// a varying.
 //
 // COMMENT RULES: never put a semicolon inside a trailing comment on a code
 // line, and never spell a hashed preprocessor keyword in comment prose. The
@@ -158,4 +160,19 @@ vec2 lakeRainSlope(vec2 xz, float t, float rate, float dist) {
   }
   float scale = min(lakeLiveRings(rate) / LAKE_RINGS_1, 1.0) * (1.0 - smoothstep(LAKE_RING_REACH - LAKE_RING_FADE_M, LAKE_RING_REACH, dist));
   return sum * scale;
+}
+
+// The lake's second octave: the bump's slope at a finer tile, its constants
+// water.fragment.fx's (WATER_OCTAVE2_TILE, _WEIGHT and _DRIFT). The sample
+// runs upwind of the pixel, so the pattern travels downwind with the paws,
+// at the tile times the drift, metres a second, at full wind. The sea never
+// draws it. Returns an xz slope to add to the normal.
+vec2 lakeRipple2(vec2 xz) {
+  vec2 uv = xz / WATER_OCTAVE2_TILE - waterWindTime * WATER_OCTAVE2_DRIFT;
+#ifdef BUMP
+  vec3 n = texture2D(bumpSampler, uv).xyz * 2.0 - 1.0;
+  return n.xy * WATER_OCTAVE2_WEIGHT;
+#else
+  return vec2(0.0);
+#endif
 }

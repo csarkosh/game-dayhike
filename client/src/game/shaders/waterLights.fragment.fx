@@ -60,7 +60,7 @@ float wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lak
 float wOctave = octaveAmplitude(wPaw);
 normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));
 if (waterOctaves > 1.5) {
-  vec2 wSlope = waterRipple2(vPositionW.xz);
+  vec2 wSlope = lakeRipple2(vPositionW.xz);
   normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y) * wOctave);
 }
 // The rain's rings near the eye, every tier: beyond their reach the rain is
