@@ -776,7 +776,7 @@ export type LakeCalmFrame = {
   rough: boolean;
   /** How much of the lake the cat's-paws cover, 0 to 1: 1 when rough. */
   cover: number;
-  /** The vertical smear (px) of the shore's image at a paw's edge, for the frame's height and lens. */
+  /** The vertical smear (px) of the shore's image inside a full paw, for the frame's height and lens: the shader scales it by the paw mask. */
   smearPx: number;
 };
 

@@ -1467,7 +1467,8 @@ describe("the lake's reflection in a renderer", () => {
       renderer.setFreecam(shore(WEST));
       look(renderer);
       expect(updates.at(-1)).toEqual({ inView: true, share: 1, armed: true });
-      // The share, the weight and a paw's smear at 900 px; the target read.
+      // The share, the weight and a full paw's smear at 900 px (the shader
+      // scales it by the paw mask, none on glass); the target read.
       expect(calm.mock.lastCall).toEqual([1, 1, 89.75979010256552]);
       expect(read.mock.lastCall![0]).toBe(mirror.texture);
       renderer.setView(12, WEATHER_PRESETS.clear);

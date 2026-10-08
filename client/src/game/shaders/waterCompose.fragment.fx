@@ -17,8 +17,9 @@
 // it), while the mirror and the panorama are renders of the scene already
 // lit as it is. Each flag is 0 or 1, so each mix picks one of its two, and every
 // read runs on every path. Before the skin, which then holds it off the
-// fronds as it holds the probe.
-vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx);
+// fronds as it holds the probe. The mirror's smear is a full paw's scaled by
+// the paw mask: none on glass, where the image is sharp to the pixel.
+vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);
 vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;
 vec3 wShoreRay = reflect(-viewDirectionW, normalW);
 vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));

@@ -365,7 +365,8 @@ export class WaterPlugin extends MaterialPluginBase {
   }
 
   /** Per frame on a lake: the glass's share of it (`calmShare`), the state's
-   * mirror weight (0 under rough), and the smear in pixels (`smearPx`). The
+   * mirror weight (0 under rough), and a full paw's smear in pixels
+   * (`smearPx`), which the shader scales by the paw mask (none on glass). The
    * share and the weight clamped to 0..1 and the smear to 0 and up; any of
    * them 0 when it is not finite. */
   setCalm(share: number, weight: number, smearPx: number): void {

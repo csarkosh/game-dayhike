@@ -963,7 +963,7 @@ describe("the lake's mirror in the water plugin", () => {
     const c = fx("waterCompose.fragment.fx");
     const block = /#ifndef OCEAN\n#ifdef REFLECTION\n(?:\/\/[^\n]*\n)*([^#]*)#endif\n#endif\n/.exec(c);
     expect(block?.[1]).toBe(
-      "vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx);\n" +
+      "vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);\n" +
         "vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;\n" +
         "vec3 wShoreRay = reflect(-viewDirectionW, normalW);\n" +
         "vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));\n" +
@@ -979,6 +979,10 @@ describe("the lake's mirror in the water plugin", () => {
     expect(paw).toBeGreaterThan(l.indexOf("float wOceanVar ="));
     expect(paw).toBeLessThan(l.indexOf("if (waterOctaves > 1.5) {"));
     expect(l.split("float wPaw")).toHaveLength(2);
+    // The smear is a full paw's scaled by that mask: none on glass, where
+    // the image is sharp to the pixel, the whole of it inside a paw.
+    const read0 = /waterMirrorSample\(waterMirrorUv\([^)]*\), ([^)]*)\);/.exec(c);
+    expect(read0?.[1]).toBe("waterMirrorSmearPx * wPaw");
     // A canary on the installed Babylon: PBR's Fresnel for the environment is
     // declared in main's own scope before the hook, and is what scales the
     // probe's radiance into finalRadianceScaled.
@@ -1072,7 +1076,7 @@ describe("the lake's mirror in the water plugin", () => {
     // a lake: the mirror read, its text the same with the mirror on or off
     const off = await compiled(false, false);
     const on = await compiled(false, true);
-    expect(off).toContain("vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx);");
+    expect(off).toContain("vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);");
     expect(off).toContain("#define waterMirror sampler2D(waterMirrorTexture, waterMirrorSampler)");
     expect(on).toBe(off);
   }, timeLimit(30_000));
