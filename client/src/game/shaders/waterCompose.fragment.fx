@@ -16,8 +16,8 @@
 // The probe's radiance and the shade are scaled by the environment's
 // intensity, as PBR scales the probe's own term (the eerie plateau dims
 // it), while the mirror and the panorama are renders of the scene already
-// lit as it is. Each flag is 0 or 1, so each mix picks one of its two, and every
-// read runs on every path. The reads run only while the weight can be above
+// lit as it is. Each flag is 0 or 1, so each mix picks one of its two, and
+// within the branch every read runs. The reads run only while the weight can be above
 // 0: where the state's weight or the glass's share is 0 the weight is 0 and
 // the mix keeps PBR's own, so skipping them changes nothing. Both are
 // uniforms, so the branch is the same for every pixel. Before the skin, which
