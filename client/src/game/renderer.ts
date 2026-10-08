@@ -28,6 +28,8 @@ import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
+import { summitPose, type SceneBase } from "./cutscene.js";
+import { SUMMIT_REVEAL_S } from "../sim/hollow.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { MAX_PLAYERS, PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
@@ -1345,6 +1347,8 @@ export type Renderer = {
   setMistIn(level: number): void;
   /** The end for this player (ending.ts): the camera is the ending's from now, won or died. Once; a second call changes nothing. */
   setEnding(kind: EndingKind): void;
+  /** The summit scene (cutscene.ts): the camera is the scene's from now for SUMMIT_REVEAL_S, down and in to the body at `body`, and back. */
+  setScene(body: { x: number; y: number; z: number }): void;
   /**
    * A world point as CSS pixels on the canvas, with its distance from the
    * camera, or null when it is behind the camera. Drives the interact prompt.
@@ -1720,6 +1724,8 @@ function buildRenderer(
   let endClose = 0;
   /** The ending, once begun: its kind, when it began, and the pose it began from, taken on its first frame. */
   let ending: { kind: EndingKind; since: number; base: EndingBase | null } = { kind: "won", since: -1, base: null };
+  /** The summit scene, while it plays: when it began, the eye it began from, and the body it looks at. */
+  let summitScene: { since: number; base: SceneBase | null; body: { x: number; y: number; z: number } } | null = null;
   const stareAt = new Vector3();
   // The forest's density over the camera, a full terrain sample: taken
   // again only once the camera has moved a metre from where it was taken.
@@ -2381,6 +2387,18 @@ function buildRenderer(
         // and its default forward is +Z, which matches the sim convention.
         // Roll goes on z — the only thing that ever writes it.
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
+        // The summit scene: from the flip's frame the camera is the scene's,
+        // from the eye the player had then, for the reveal's seconds.
+        if (summitScene !== null && ending.since < 0) {
+          const t = seconds - summitScene.since;
+          if (t >= SUMMIT_REVEAL_S) summitScene = null;
+          else {
+            summitScene.base ??= { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: local.yaw, pitch: local.pitch };
+            const pose = summitPose(t, summitScene.base, summitScene.body);
+            camera.position.set(pose.x, pose.y, pose.z);
+            camera.rotation.set(pose.pitch, pose.yaw, 0);
+          }
+        }
         // The end: from its first frame the camera is the ending's, from the
         // pose the player had then, and the pass takes its blur and its dark.
         if (ending.since >= 0) {
@@ -2437,6 +2455,9 @@ function buildRenderer(
     },
     setMistIn(level) {
       mistIn = Math.max(0, Math.min(1, level));
+    },
+    setScene(body) {
+      summitScene = { since: clock() / 1000, base: null, body: { x: body.x, y: body.y, z: body.z } };
     },
     setEnding(kind) {
       if (ending.since >= 0) return;

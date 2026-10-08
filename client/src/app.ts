@@ -101,7 +101,7 @@ import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScree
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, Phase, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
-import { isHollowState, playerSees } from "./sim/hollow.js";
+import { isHollowState, playerSees, SUMMIT_REVEAL_S } from "./sim/hollow.js";
 import { trailDistance } from "./sim/trail.js";
 import { AiState } from "./sim/types.js";
 import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState } from "./game/innerVoice.js";
@@ -441,6 +441,19 @@ function buildGame(
   let escalation: EscalationState = ESCALATION_REST;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
   let woods: WoodsState = WOODS_REST;
+  // The summit scene (cutscene.ts): from the flip, the controls are stilled and the camera is the scene's for SUMMIT_REVEAL_S.
+  let wasChase = false;
+  let sceneUntil = -1;
+  let lastLook = { yaw: 0, pitch: 0 };
+  const sceneOn = (): boolean => performance.now() < sceneUntil;
+  /** The command with the player stilled: no move, no press, the look held where it was. */
+  function stilled(cmd: InputCommand): InputCommand {
+    if (!sceneOn()) {
+      lastLook = { yaw: cmd.yaw, pitch: cmd.pitch };
+      return cmd;
+    }
+    return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: lastLook.yaw, pitch: lastLook.pitch };
+  }
   // The inner voice (innerVoice.ts): the ranger's own lines, local to this screen; and where the cap lies, found once a world.
   let voice: VoiceState = voiceRest(seed ^ 0x5a11);
   let capAt: DroppedCap | null | undefined;
@@ -783,6 +796,13 @@ function buildGame(
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
     }, dt);
     woods = voiced.state;
+    // The find: the frame the phase flips, the scene begins on this screen.
+    const chaseNow = state.phase === Phase.Chase;
+    if (chaseNow && !wasChase) {
+      sceneUntil = performance.now() + SUMMIT_REVEAL_S * 1000;
+      renderer.setScene(world.search.body.pos);
+    }
+    wasChase = chaseNow;
     // The inner voice: what this player is in, this frame; one line at most.
     const self = state.players.get(localId);
     if (self !== undefined) {
@@ -792,7 +812,7 @@ function buildGame(
       const body = world.search.body.pos;
       const spoke = stepInnerVoice(voice, {
         climb: escalation.progressMax, wet: acts.wet, night: acts.night, mist: acts.mist,
-        chase: state.phase === Phase.Chase, ended: ended || dead,
+        chase: chaseNow && !sceneOn(), ended: ended || dead,
         offTrail: world.trail === null ? 0 : trailDistance(world.trail, self.pos.x, self.pos.z),
         lamp: self.lamp.on, stare: self.stare, moving: Math.hypot(self.vel.x, self.vel.z) > 0.2,
         shadeSeen, cry: voiced.call !== null, birds: woods.birds < 0 ? 1 : woods.birds,
@@ -1287,6 +1307,8 @@ function buildGame(
     woods = WOODS_REST;
     voice = voiceRest(seed ^ 0x5a11);
     capAt = undefined;
+    wasChase = false;
+    sceneUntil = -1;
     woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
@@ -1311,7 +1333,7 @@ function buildGame(
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
-        cmd = input.sample(++seq);
+        cmd = stilled(input.sample(++seq));
         host.tick(cmd);
       }
       stepFreecamView(dt);
@@ -1397,6 +1419,8 @@ function buildGame(
     woods = WOODS_REST;
     voice = voiceRest(seed ^ 0x5a11);
     capAt = undefined;
+    wasChase = false;
+    sceneUntil = -1;
     woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     registerInteractables(client.world);
     activeWorld = client.world;
@@ -1454,7 +1478,7 @@ function buildGame(
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
-        cmd = input.sample(++seq);
+        cmd = stilled(input.sample(++seq));
         client.tick(cmd);
       }
       stepFreecamView(dt);
