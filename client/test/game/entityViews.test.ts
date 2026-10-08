@@ -8,10 +8,12 @@ import { readFileSync } from "node:fs";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
-import { EntityViews } from "../../src/game/entityViews.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { ARMS, EntityViews } from "../../src/game/entityViews.js";
 import { createCharacterPool, type CharacterLoader, type CharacterPool } from "../../src/game/characterModel.js";
 import type { EnemyState } from "../../src/sim/types.js";
 import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } from "../../src/game/headlamp.js";
+import { PLAYER_HALF, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
 import { AiState } from "../../src/sim/types.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 import type { PlayerState, WorldState } from "../../src/sim/types.js";
@@ -105,6 +107,20 @@ describe("EntityViews lamps", () => {
     expect(scene.lights.filter((l) => l.name.startsWith("lamp_player_"))).toHaveLength(0);
     views.dispose();
     expect(scene.lights.length).toBe(before);
+  });
+
+  it("in a scene (showLocal) the local player's body is drawn and their lamp lit, their own switch aside", () => {
+    const views = new EntityViews(scene);
+    views.sync(state(player(1, false)), 1, 1);
+    expect(scene.lights.filter((l) => l.name === "lamp_player_1")).toHaveLength(0);
+    views.showLocal = true;
+    views.sync(state(player(1, false)), 1, 1);
+    const lamp = scene.lights.find((l) => l.name === "lamp_player_1") as SpotLight | undefined;
+    expect(lamp?.intensity).toBe(LAMP_INTENSITY);
+    views.showLocal = false;
+    views.sync(state(player(1, false)), 1, 1);
+    expect(scene.lights.filter((l) => l.name === "lamp_player_1")).toHaveLength(0);
+    views.dispose();
   });
 });
 
@@ -291,6 +307,37 @@ describe("EntityViews the Hollow", () => {
     // Stopped, the pace decays under 0.3 m/s within the next second.
     for (let frame = 0; frame < 30; frame++) views.sync(world, 99, 1, undefined, 1 / 30);
     expect(playing("character_7_").map((g) => g.name)).toEqual(["character_7_idle"]);
+    views.dispose();
+  });
+
+  it("in the strike it stands in the idle and reaches: both arms turned out straight at the local player's eyes", async () => {
+    const views = new EntityViews(scene, await loadedPool());
+    const me = player(99, false);
+    const world = state(me);
+    const strike = hollow(7, 0, 6);
+    strike.ai = AiState.Strike;
+    world.enemies.set(7, strike);
+    views.sync(world, 99, 1, undefined, 1 / 30);
+    const names = playing("character_7_").map((g) => g.name);
+    expect(names).toContain("character_7_idle");
+    expect(names).not.toContain("character_7_attack");
+    // The reach turns the arms out over REACH_S; a second of frames is past it.
+    for (let frame = 0; frame < 30; frame++) {
+      views.sync(world, 99, 1, undefined, 1 / 30);
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+    }
+    const eyes = new Vector3(me.pos.x, me.pos.y - PLAYER_HALF.y + PLAYER_HALF.y + PLAYER_EYE_OFFSET, me.pos.z);
+    for (const arm of ARMS) {
+      const shoulder = scene.getTransformNodeByName(`character_7_${arm.shoulder}`)!;
+      const elbow = scene.getTransformNodeByName(`character_7_${arm.elbow}`)!;
+      const wrist = scene.getTransformNodeByName(`character_7_${arm.wrist}`)!;
+      for (const n of [shoulder, elbow, wrist]) n.computeWorldMatrix(true);
+      const upper = elbow.getAbsolutePosition().subtract(shoulder.getAbsolutePosition()).normalize();
+      const fore = wrist.getAbsolutePosition().subtract(elbow.getAbsolutePosition()).normalize();
+      const toEyes = eyes.subtract(shoulder.getAbsolutePosition()).normalize();
+      expect(Vector3.Dot(upper, toEyes)).toBeGreaterThan(0.97);
+      expect(Vector3.Dot(fore, eyes.subtract(elbow.getAbsolutePosition()).normalize())).toBeGreaterThan(0.97);
+    }
     views.dispose();
   });
 

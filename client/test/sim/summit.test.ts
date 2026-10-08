@@ -7,7 +7,9 @@ import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt, activeTe
 import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
 import { DISCOVERY_RADIUS, SUMMIT_SPAWN_DIST } from "../../src/sim/summit.js";
-import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
+import { REVEAL_STARE_CAP, SUMMIT_REVEAL_S, revealing } from "../../src/sim/hollow.js";
+import { spawnShade } from "../../src/sim/haunt.js";
+import { GATHER_SIDE_M, GATHER_STEP_M } from "../../src/sim/summit.js";
 import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -62,6 +64,8 @@ describe("safe ground", SUITE, () => {
     // corridor with the Hollow standing at the edge, 0.4 m away — well inside
     // contact reach. Safety has to be read from where they are now, not from
     // where the last tick left them.
+    // The scene over: the chase's rules, which the test is about.
+    w.state.phase = Phase.Chase;
     h.ai = AiState.Hunt; h.stateTimer = 0; h.targetId = p.id;
     const hx = roadX + ROAD_CORRIDOR_HALF + 0.3;
     h.pos = { x: hx, y: elevationAt(seed, hx, th.z) + ENEMY_HALF.y, z: th.z };
@@ -86,7 +90,7 @@ describe("the discovery", SUITE, () => {
     standAt(p, body.x - (DISCOVERY_RADIUS - 1), body.z);
     standAt(q, body.x + 2, body.z);
     tick(w, 1);
-    expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.phase).toBe(Phase.Scene);
     const hollows = [...w.state.enemies.values()];
     expect(hollows).toHaveLength(1);
     const h = hollows[0]!;
@@ -99,10 +103,61 @@ describe("the discovery", SUITE, () => {
     // The phase never flips back, and a second player arriving spawns nothing more.
     standAt(q, body.x - 5, body.z);
     tick(w, 1);
-    expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.phase).toBe(Phase.Scene);
     expect(w.state.enemies.size).toBe(1);
     tick(w, Math.round(SUMMIT_REVEAL_S / TICK_DT) + 2);
     expect(h.ai).toBe(AiState.Hunt);
+    // The chase from the reveal's end.
+    expect(w.state.phase).toBe(Phase.Chase);
+  });
+
+  it("gathers every other living player to the finder's side at the flip, in a file down the stem, turned as the finder is, and leaves the dead", () => {
+    const { w, p: a } = forestWorld();
+    const b = spawnPlayer(w), c = spawnPlayer(w);
+    const body = w.search!.body.pos;
+    // b far below on the pad, c dead where they fell.
+    const start = { x: b.pos.x, z: b.pos.z };
+    c.health = 0;
+    const cAt = { ...c.pos };
+    standAt(a, body.x + 2, body.z);
+    tick(w, 1);
+    expect(w.state.phase).toBe(Phase.Scene);
+    expect(Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z)).toBeLessThan(GATHER_STEP_M + GATHER_SIDE_M + 1.5);
+    expect(Math.hypot(b.pos.x - start.x, b.pos.z - start.z)).toBeGreaterThan(10);
+    expect(b.vel).toEqual({ x: 0, y: 0, z: 0 });
+    expect(b.yaw).toBe(a.yaw);
+    expect(c.pos).toEqual(cAt);
+  });
+
+  it("clears the climb's shades at the flip, and through the reveal nothing kills and the stare closes only a little", () => {
+    const { w, p } = forestWorld();
+    const body = w.search!.body.pos;
+    standAt(p, body.x + 2, body.z);
+    // A lunge on top of the player at the flip, and a shade: both go with the watcher.
+    spawnShade(w, { x: p.pos.x + 1, y: p.pos.y, z: p.pos.z }, p, true, 30);
+    spawnShade(w, { x: p.pos.x + 8, y: p.pos.y, z: p.pos.z }, p, false, 30);
+    tick(w, 1);
+    expect(w.state.phase).toBe(Phase.Scene);
+    const left = [...w.state.enemies.values()];
+    expect(left).toHaveLength(1);
+    expect(left[0]!.ai).toBe(AiState.Emerge);
+    expect(revealing(w)).toBe(true);
+    // The Hollow three metres off and the player looking straight at it for the reveal: alive, the dark a quarter at most; then on top of them.
+    const h = left[0]!;
+    let most = 0;
+    for (let t = 0; t < Math.round((SUMMIT_REVEAL_S - 0.3) / TICK_DT); t++) {
+      h.pos = { x: p.pos.x + 3, y: p.pos.y, z: p.pos.z };
+      p.yaw = Math.atan2(h.pos.x - p.pos.x, h.pos.z - p.pos.z);
+      tick(w, 1);
+      most = Math.max(most, p.stare);
+    }
+    expect(p.health).toBe(100);
+    expect(most).toBeLessThanOrEqual(REVEAL_STARE_CAP + 1e-9);
+    expect(most).toBeGreaterThan(0.1);
+    // Past the reveal, the same contact kills.
+    for (let t = 0; t < Math.round(1 / TICK_DT); t++) { h.pos = { x: p.pos.x + 0.5, y: p.pos.y, z: p.pos.z }; tick(w, 1); }
+    expect(revealing(w)).toBe(false);
+    expect(p.health).toBe(0);
   });
 
   it("steps out on the +x fallback when the finder is standing on the body", () => {
@@ -147,11 +202,15 @@ describe("the end", SUITE, () => {
     const body = w.search!.body.pos;
     standAt(p, body.x - 5, body.z);
     tick(w, 1);
-    expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.phase).toBe(Phase.Scene);
+    // Not through the scene: the end rule waits for the chase.
     const th = w.trail!.trailhead;
     standAt(p, th.x, th.z);
     tick(w, 1);
     expect(p.safe).toBe(true);
+    expect(w.state.outcome).toBe(Outcome.Playing);
+    tick(w, Math.round(SUMMIT_REVEAL_S / TICK_DT) + 2);
+    expect(w.state.phase).toBe(Phase.Chase);
     expect(w.state.outcome).toBe(Outcome.Won);
   });
 
@@ -161,6 +220,7 @@ describe("the end", SUITE, () => {
     const body = w.search!.body.pos;
     standAt(p, body.x - 5, body.z);
     tick(w, 1);
+    tick(w, Math.round(SUMMIT_REVEAL_S / TICK_DT) + 2);
     q.health = 0;
     const th = w.trail!.trailhead;
     standAt(p, th.x, th.z);
@@ -170,6 +230,7 @@ describe("the end", SUITE, () => {
     const two = forestWorld();
     standAt(two.p, two.w.search!.body.pos.x - 5, two.w.search!.body.pos.z);
     tick(two.w, 1);
+    tick(two.w, Math.round(SUMMIT_REVEAL_S / TICK_DT) + 2);
     two.p.health = 0;
     tick(two.w, 1);
     expect(two.w.state.outcome).toBe(Outcome.Lost);

@@ -500,6 +500,306 @@
       "id": "call.frog_chorus_far",
       "output": "audio/call.frog_chorus_far.mp3",
       "bytes": 132911
+    },
+    {
+      "id": "voice.birds.1",
+      "output": "audio/voice.birds.1.mp3",
+      "bytes": 12407
+    },
+    {
+      "id": "voice.birds.2",
+      "output": "audio/voice.birds.2.mp3",
+      "bytes": 13347
+    },
+    {
+      "id": "voice.birds.3",
+      "output": "audio/voice.birds.3.mp3",
+      "bytes": 12407
+    },
+    {
+      "id": "voice.body.1",
+      "output": "audio/voice.body.1.mp3",
+      "bytes": 14758
+    },
+    {
+      "id": "voice.body.2",
+      "output": "audio/voice.body.2.mp3",
+      "bytes": 10526
+    },
+    {
+      "id": "voice.body.3",
+      "output": "audio/voice.body.3.mp3",
+      "bytes": 9586
+    },
+    {
+      "id": "voice.cap.1",
+      "output": "audio/voice.cap.1.mp3",
+      "bytes": 15228
+    },
+    {
+      "id": "voice.cap.2",
+      "output": "audio/voice.cap.2.mp3",
+      "bytes": 15228
+    },
+    {
+      "id": "voice.cap.3",
+      "output": "audio/voice.cap.3.mp3",
+      "bytes": 16796
+    },
+    {
+      "id": "voice.chaseOffTrail.1",
+      "output": "audio/voice.chaseOffTrail.1.mp3",
+      "bytes": 20557
+    },
+    {
+      "id": "voice.chaseOffTrail.2",
+      "output": "audio/voice.chaseOffTrail.2.mp3",
+      "bytes": 18206
+    },
+    {
+      "id": "voice.chaseOffTrail.3",
+      "output": "audio/voice.chaseOffTrail.3.mp3",
+      "bytes": 25416
+    },
+    {
+      "id": "voice.chaseStart.1",
+      "output": "audio/voice.chaseStart.1.mp3",
+      "bytes": 11467
+    },
+    {
+      "id": "voice.chaseStart.2",
+      "output": "audio/voice.chaseStart.2.mp3",
+      "bytes": 13347
+    },
+    {
+      "id": "voice.chaseStart.3",
+      "output": "audio/voice.chaseStart.3.mp3",
+      "bytes": 15228
+    },
+    {
+      "id": "voice.crest.1",
+      "output": "audio/voice.crest.1.mp3",
+      "bytes": 24476
+    },
+    {
+      "id": "voice.crest.2",
+      "output": "audio/voice.crest.2.mp3",
+      "bytes": 18206
+    },
+    {
+      "id": "voice.crest.3",
+      "output": "audio/voice.crest.3.mp3",
+      "bytes": 15698
+    },
+    {
+      "id": "voice.cryAgain.1",
+      "output": "audio/voice.cryAgain.1.mp3",
+      "bytes": 6608
+    },
+    {
+      "id": "voice.cryAgain.2",
+      "output": "audio/voice.cryAgain.2.mp3",
+      "bytes": 9116
+    },
+    {
+      "id": "voice.cryAgain.3",
+      "output": "audio/voice.cryAgain.3.mp3",
+      "bytes": 10996
+    },
+    {
+      "id": "voice.cryFirst.1",
+      "output": "audio/voice.cryFirst.1.mp3",
+      "bytes": 8018
+    },
+    {
+      "id": "voice.cryFirst.2",
+      "output": "audio/voice.cryFirst.2.mp3",
+      "bytes": 11467
+    },
+    {
+      "id": "voice.cryFirst.3",
+      "output": "audio/voice.cryFirst.3.mp3",
+      "bytes": 16325
+    },
+    {
+      "id": "voice.dontLook.1",
+      "output": "audio/voice.dontLook.1.mp3",
+      "bytes": 9116
+    },
+    {
+      "id": "voice.dontLook.2",
+      "output": "audio/voice.dontLook.2.mp3",
+      "bytes": 17266
+    },
+    {
+      "id": "voice.dontLook.3",
+      "output": "audio/voice.dontLook.3.mp3",
+      "bytes": 10526
+    },
+    {
+      "id": "voice.dusk.1",
+      "output": "audio/voice.dusk.1.mp3",
+      "bytes": 19617
+    },
+    {
+      "id": "voice.dusk.2",
+      "output": "audio/voice.dusk.2.mp3",
+      "bytes": 13347
+    },
+    {
+      "id": "voice.dusk.3",
+      "output": "audio/voice.dusk.3.mp3",
+      "bytes": 18676
+    },
+    {
+      "id": "voice.lamp.1",
+      "output": "audio/voice.lamp.1.mp3",
+      "bytes": 10056
+    },
+    {
+      "id": "voice.lamp.2",
+      "output": "audio/voice.lamp.2.mp3",
+      "bytes": 15228
+    },
+    {
+      "id": "voice.lamp.3",
+      "output": "audio/voice.lamp.3.mp3",
+      "bytes": 14758
+    },
+    {
+      "id": "voice.mist.1",
+      "output": "audio/voice.mist.1.mp3",
+      "bytes": 14758
+    },
+    {
+      "id": "voice.mist.2",
+      "output": "audio/voice.mist.2.mp3",
+      "bytes": 26356
+    },
+    {
+      "id": "voice.mist.3",
+      "output": "audio/voice.mist.3.mp3",
+      "bytes": 14288
+    },
+    {
+      "id": "voice.offTrailDay.1",
+      "output": "audio/voice.offTrailDay.1.mp3",
+      "bytes": 11937
+    },
+    {
+      "id": "voice.offTrailDay.2",
+      "output": "audio/voice.offTrailDay.2.mp3",
+      "bytes": 13347
+    },
+    {
+      "id": "voice.offTrailDay.3",
+      "output": "audio/voice.offTrailDay.3.mp3",
+      "bytes": 20087
+    },
+    {
+      "id": "voice.offTrailNight.1",
+      "output": "audio/voice.offTrailNight.1.mp3",
+      "bytes": 22438
+    },
+    {
+      "id": "voice.offTrailNight.2",
+      "output": "audio/voice.offTrailNight.2.mp3",
+      "bytes": 18206
+    },
+    {
+      "id": "voice.offTrailNight.3",
+      "output": "audio/voice.offTrailNight.3.mp3",
+      "bytes": 18676
+    },
+    {
+      "id": "voice.rain.1",
+      "output": "audio/voice.rain.1.mp3",
+      "bytes": 22908
+    },
+    {
+      "id": "voice.rain.2",
+      "output": "audio/voice.rain.2.mp3",
+      "bytes": 14288
+    },
+    {
+      "id": "voice.rain.3",
+      "output": "audio/voice.rain.3.mp3",
+      "bytes": 17266
+    },
+    {
+      "id": "voice.safe.1",
+      "output": "audio/voice.safe.1.mp3",
+      "bytes": 15698
+    },
+    {
+      "id": "voice.safe.2",
+      "output": "audio/voice.safe.2.mp3",
+      "bytes": 22438
+    },
+    {
+      "id": "voice.safe.3",
+      "output": "audio/voice.safe.3.mp3",
+      "bytes": 22908
+    },
+    {
+      "id": "voice.shadeFirst.1",
+      "output": "audio/voice.shadeFirst.1.mp3",
+      "bytes": 9116
+    },
+    {
+      "id": "voice.shadeFirst.2",
+      "output": "audio/voice.shadeFirst.2.mp3",
+      "bytes": 12407
+    },
+    {
+      "id": "voice.shadeFirst.3",
+      "output": "audio/voice.shadeFirst.3.mp3",
+      "bytes": 7548
+    },
+    {
+      "id": "voice.shadeGone.1",
+      "output": "audio/voice.shadeGone.1.mp3",
+      "bytes": 17266
+    },
+    {
+      "id": "voice.shadeGone.2",
+      "output": "audio/voice.shadeGone.2.mp3",
+      "bytes": 14288
+    },
+    {
+      "id": "voice.shadeGone.3",
+      "output": "audio/voice.shadeGone.3.mp3",
+      "bytes": 15228
+    },
+    {
+      "id": "voice.still.1",
+      "output": "audio/voice.still.1.mp3",
+      "bytes": 12877
+    },
+    {
+      "id": "voice.still.2",
+      "output": "audio/voice.still.2.mp3",
+      "bytes": 10996
+    },
+    {
+      "id": "voice.still.3",
+      "output": "audio/voice.still.3.mp3",
+      "bytes": 10526
+    },
+    {
+      "id": "voice.trailhead.1",
+      "output": "audio/voice.trailhead.1.mp3",
+      "bytes": 24946
+    },
+    {
+      "id": "voice.trailhead.2",
+      "output": "audio/voice.trailhead.2.mp3",
+      "bytes": 15228
+    },
+    {
+      "id": "voice.trailhead.3",
+      "output": "audio/voice.trailhead.3.mp3",
+      "bytes": 24476
     }
   ],
   "video": [

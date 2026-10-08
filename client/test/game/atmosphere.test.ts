@@ -10,7 +10,8 @@ import "@babylonjs/core/Shaders/ShadersInclude/fogFragment.js";
 import atmosphereFragment from "../../src/game/shaders/atmosphereFog.fragment.fx?raw";
 import { ATMOSPHERE_FOG_ANCHOR, createAtmosphere, type Atmosphere } from "../../src/game/atmosphere.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
-import { fogGradientUnder, GRADIENT_STEPS } from "../../src/game/atmosphereParams.js";
+import { fogGradientUnder, GRADIENT_BIAS, GRADIENT_NEAR_DIM, GRADIENT_STEPS } from "../../src/game/atmosphereParams.js";
+import { CLOUD_NOISE_SIZE } from "../../src/game/cloudParams.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
@@ -119,16 +120,21 @@ describe("GLSL literals stay in lockstep with atmosphereParams.ts", () => {
   it("carries the level-slope clamp the TS mirror uses", () => {
     expect(atmosphereFragment).toContain("const float ATM_LEVEL_SLOPE = 1.0e-3;");
   });
+  it("draws the gradient with the TS mirror's near dim and bias, and reads the cloud map half a texel inside its edge", () => {
+    expect(atmosphereFragment).toContain(`const float ATM_NEAR_DIM = ${GRADIENT_NEAR_DIM};`);
+    expect(atmosphereFragment).toContain(`const float ATM_GRADIENT_BIAS = ${GRADIENT_BIAS};`);
+    expect(atmosphereFragment).toContain(`const float ATM_CLOUD_EDGE = 0.5 / ${CLOUD_NOISE_SIZE}.0;`);
+  });
 });
 
-describe("F1 regression: atmGradient compiles into the fragment source on both paths", () => {
+describe("F1 regression: atmCloudMap compiles into the fragment source on both paths", () => {
   // The sampler moved out of getUniforms().fragment (ADDITIONAL_FRAGMENT_DECLARATION,
   // non-UBO only) into atmosphereFog.fragment.fx (CUSTOM_FRAGMENT_DEFINITIONS, both
   // paths). This proves the declaration actually reaches the compiled fragment
   // source under both a UBO-supporting and a non-UBO NullEngine.
   const ATM_IDENTIFIERS = [
     "atmOn", "atmHeightDensity", "atmHeightFalloff", "atmReferenceLevel",
-    "atmGradientScale", "atmSunPower", "atmSunWeight", "atmSunDir", "atmSunColour", "atmGradient",
+    "atmGradientScale", "atmSunPower", "atmSunWeight", "atmSunDir", "atmSunColour", "atmFarColour", "atmCloudMap", "atmCloudSteps",
   ];
 
   async function compiledFragmentSource(targetScene: Scene): Promise<string> {
@@ -163,7 +169,8 @@ describe("F1 regression: atmGradient compiles into the fragment source on both p
   it("non-UBO path (the default NullEngine from beforeEach)", async () => {
     expect(engine.supportsUniformBuffers).toBe(false);
     const source = await compiledFragmentSource(scene);
-    expect((source.match(/uniform sampler2D atmGradient;/g) ?? []).length).toBe(1);
+    expect((source.match(/uniform sampler2D atmCloudMap;/g) ?? []).length).toBe(1);
+    expect(source).not.toContain("atmGradient;");
     for (const name of ATM_IDENTIFIERS) expect(source).toContain(name);
   });
 
@@ -175,7 +182,7 @@ describe("F1 regression: atmGradient compiles into the fragment source on both p
     const uboAtmosphere = createAtmosphere(uboScene, 4000);
     try {
       const source = await compiledFragmentSource(uboScene);
-      expect((source.match(/uniform sampler2D atmGradient;/g) ?? []).length).toBe(1);
+      expect((source.match(/uniform sampler2D atmCloudMap;/g) ?? []).length).toBe(1);
       for (const name of ATM_IDENTIFIERS) expect(source).toContain(name);
     } finally {
       uboAtmosphere.dispose();
@@ -190,7 +197,7 @@ describe("the fog's shader text", () => {
     // The scattering sky changes no PBR shader: the glow's new shape is all in
     // the values the plugin binds (`atmosphereParams.ts`).
     expect(createHash("sha256").update(atmosphereFragment).digest("hex")).toBe(
-      "a9c4be1c436ff9b91fffeba91a93dc1baf458a6ab385077b0d93103fef39b828",
+      "4769023adf97e99e61c873999a9a1f1cec31493dec98421d4d3d709d572a0025",
     );
   });
 });

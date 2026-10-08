@@ -5,16 +5,19 @@
  * silhouettes, which the grade pass reads back through a wide blur and
  * darkens the frame by. What the player sees is a dark blur in the mist,
  * the shape of a figure, that comes in from nothing and goes out to
- * nothing. A lunge resolves: as it closes, its share of the mask falls and
- * the model itself comes in, one over the other, until it is the Hollow.
+ * nothing. A lunge resolves: as it closes, its share of the mask moves from
+ * the red (the shade, a little darker than the mist) to the blue (the real
+ * thing, near black), and its eyes alone come onto the frame, dulled; the
+ * model's own surface is never drawn.
  *
  * The mask is a render target on a camera of its own that copies the
  * player's every frame and sees only SHADE_LAYER (the main camera does not
  * see that bit). Each shade's meshes are on that layer and, while it
  * resolves, on the main layer too; the mask draws them with a flat material
- * whose red is the shade's softness, and the mesh's `visibility` is set
+ * whose red is the shade's softness (fainter far off), blue what has
+ * resolved, and green how far gone it is, and the mesh's `visibility` is set
  * for each pass as the target renders and restores after: the mask's alpha
- * is fade × softness, the frame's fade × (1 − softness).
+ * is the fade; on the frame the body is nothing and the eyes their level.
  *
  * The low tier has no grade pass: there the shades are the Hollow, fading
  * in and out by `visibility` alone (entityViews.ts).
@@ -38,7 +41,11 @@ export const MAIN_LAYER = 0x0fffffff;
 export const SHADE_MASK_RATIO = 0.5;
 
 /** One figure in the mask: its node, how far in it is (0 to 1), how soft (1 a blur in the mist, 0 the Hollow itself), and how near (1 close, less far off: a far figure is fainter in the mist). */
-export type ShadeEntry = { node: TransformNode; fade: number; soft: number; near: number };
+/**
+ * `gone` is how far a going shade has gone, 0 to 1: the mask's green, which the grade dissolves it by, patch by patch.
+ * `eyes` are the meshes that are the figure's eyes, let onto the frame at `eyeLevel` (their glow, dulled) as it resolves; the body never is: the real thing is a darker shadow in the same mask, its blue.
+ */
+export type ShadeEntry = { node: TransformNode; fade: number; soft: number; near: number; gone: number; eyes: readonly AbstractMesh[]; eyeLevel: number };
 
 export type ShadeSilhouette = {
   /** The mask, for the grade pass to read. */
@@ -84,10 +91,13 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
     maskCamera.fov = camera.fov;
     maskCamera.minZ = camera.minZ;
     maskCamera.maxZ = camera.maxZ;
-    for (const e of current) for (const m of meshesOf(e.node)) m.visibility = e.fade * e.soft * e.near;
+    for (const e of current) for (const m of meshesOf(e.node)) m.visibility = e.fade;
   });
   texture.onAfterRenderObservable.add(() => {
-    for (const e of current) for (const m of meshesOf(e.node)) m.visibility = e.fade * (1 - e.soft);
+    for (const e of current) {
+      for (const m of meshesOf(e.node)) m.visibility = 0;
+      for (const m of e.eyes) m.visibility = e.eyeLevel;
+    }
   });
 
   return {
@@ -125,14 +135,20 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
             texture.setMaterialForRendering(m, material);
           }
         }
-        material.emissiveColor.r = e.soft;
-        // In the mask while soft; in the frame too once it begins to resolve.
-        const layer = e.soft > 0.999 ? SHADE_LAYER : SHADE_LAYER | MAIN_LAYER;
+        // Red the shade (fainter far off), blue the real thing resolved out of it, green how far gone.
+        material.emissiveColor.r = e.soft * e.near;
+        material.emissiveColor.g = e.gone;
+        material.emissiveColor.b = 1 - e.soft;
+        // The body is in the mask alone; the eyes are on the frame too, dulled, as it resolves.
         for (const m of meshesOf(e.node)) {
-          m.layerMask = layer;
-          m.visibility = e.fade * (1 - e.soft);
+          m.layerMask = SHADE_LAYER;
+          m.visibility = 0;
         }
-        if (e.fade * e.soft > 0) anyNow = true;
+        for (const m of e.eyes) {
+          m.layerMask = SHADE_LAYER | MAIN_LAYER;
+          m.visibility = e.eyeLevel;
+        }
+        if (e.fade > 0) anyNow = true;
       }
       current = entries;
       texture.refreshRate = anyNow ? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME : RenderTargetTexture.REFRESHRATE_RENDER_ONCE;

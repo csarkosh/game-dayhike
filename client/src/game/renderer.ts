@@ -26,8 +26,9 @@ import { isHollow } from "../sim/hollow.js";
 import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
 import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
-import { createHauntMist } from "./hauntMist.js";
-import { createNearMist } from "./nearMist.js";
+import { CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
+import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
+import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, capPose, summitShot, type SceneBase, type SceneContext } from "./cutscene.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { MAX_PLAYERS, PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
@@ -1455,10 +1456,14 @@ export type Renderer = {
   setChase(cast: number): void;
   /** The haunt, 0 to 1 (escalation.ts): the pale mist at the player's sides comes in by it. */
   setHaunt(level: number): void;
-  /** Hold the near mist's density at a level (0 to 1) whatever the night, or null to let the night set it; returns the density now drawn. */
-  setNearMist(density: number | null): number;
+  /** Hold the ground cloud's density at a level (0 to 1) whatever the night, or null to let the night set it; returns the density now drawn. */
+  setMist(density: number | null): number;
+  /** How far the mist has come in, 0 to 1 (acts.ts): the ground cloud rises by it, after the night. */
+  setMistIn(level: number): void;
   /** The end for this player (ending.ts): the camera is the ending's from now, won or died. Once; a second call changes nothing. */
   setEnding(kind: EndingKind): void;
+  /** A scene (cutscene.ts): the camera is the scene's from now; the summit's five shots for SUMMIT_SCENE_S (`at` the body, with the Hollow's feet and the party's eye); the cap's for CAP_SCENE_S, turned to it. */
+  setScene(kind: "summit" | "cap", at: { x: number; y: number; z: number }, more?: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } }): void;
   /**
    * A world point as CSS pixels on the canvas, with its distance from the
    * camera, or null when it is behind the camera. Drives the interact prompt.
@@ -1839,6 +1844,11 @@ function buildRenderer(
   let endClose = 0;
   /** The ending, once begun: its kind, when it began, and the pose it began from, taken on its first frame. */
   let ending: { kind: EndingKind; since: number; base: EndingBase | null } = { kind: "won", since: -1, base: null };
+  /** The summit scene, while it plays: when it began, the eye it began from, and the body it looks at. */
+  let summitScene: { kind: "summit" | "cap"; since: number; base: SceneBase | null; body: { x: number; y: number; z: number }; more: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } } | null } | null = null;
+  /** The scene's lens this frame, or null for the game's; and the summit's shot, -1 outside one. */
+  let sceneFov: number | null = null;
+  let sceneShot = -1;
   const stareAt = new Vector3();
   // The forest's density over the camera, a full terrain sample: taken
   // again only once the camera has moved a metre from where it was taken.
@@ -2253,11 +2263,19 @@ function buildRenderer(
   const silhouette = forest !== null && postFeatures.pipeline ? createShadeSilhouette(scene, camera) : null;
   partOf(silhouette);
   views.softShades = silhouette !== null;
-  const hauntMist = forest !== null ? createHauntMist(scene, (x, z) => elevationAt(forest.seed, x, z)) : null;
-  partOf(hauntMist);
-  // The mist at the face, walked through (nearMist.ts).
-  const nearMist = forest !== null ? createNearMist(scene) : null;
-  partOf(nearMist);
+  // The ground cloud (cloudParams.ts): the night's mist as a volume the
+  // atmosphere marches through, on the post tiers, resting on a height map
+  // of the ground round the eye that is rebuilt as the eye moves.
+  const cloudSteps = forest !== null && postFeatures.pipeline ? (postFeatures.halation ? CLOUD_STEPS_HIGH : CLOUD_STEPS_MEDIUM) : 0;
+  // The missing hiker's cap, beside the trail (droppedItem.ts).
+  const capGraph = forest !== null ? activeTerrainVariant().trailGraph?.(forest.seed) ?? null : null;
+  const capAt = capGraph !== null && forest !== null ? droppedCapAt(capGraph, forest.seed) : null;
+  const droppedCap = capAt !== null && forest !== null ? createDroppedCap(scene, capAt, elevationAt(forest.seed, capAt.x, capAt.z)) : null;
+  partOf(droppedCap);
+  let cloudGroundAt: { x: number; z: number } | null = null;
+  let cloudHold: number | null = null;
+  let cloudDensity = 0;
+  let mistIn = 0;
   let hauntLevel = 0;
   partOf(views);
   // Fire and forget: the other hikers and the Hollow render as capsules until
@@ -2485,8 +2503,15 @@ function buildRenderer(
         silhouette.sync(views.shades());
         post.setShades(silhouette.texture, silhouette.any());
       }
-      hauntMist?.update(camera, hauntLevel, lighting.sky?.night ?? 0, seconds, chaseCast);
-      nearMist?.update(camera, lighting.sky?.night ?? 0, hauntLevel, chaseCast, seconds);
+      if (cloudSteps > 0 && forest !== null) {
+        if (cloudGroundAt === null || Math.hypot(camera.position.x - cloudGroundAt.x, camera.position.z - cloudGroundAt.z) > CLOUD_GROUND_REBUILD_M) {
+          cloudGroundAt = { x: camera.position.x, z: camera.position.z };
+          const trailAt = activeTerrainVariant().trailDistance;
+          atmosphere.setCloudGround(cloudGroundMap((x, z) => elevationAt(forest.seed, x, z), cloudGroundAt.x, cloudGroundAt.z, trailAt === undefined ? null : (x, z) => trailAt(forest.seed, x, z)));
+        }
+        cloudDensity = cloudHold ?? cloudDensityUnder(lighting.sky?.night ?? 0, hauntLevel, chaseCast) * mistIn;
+        atmosphere.setCloud(cloudDensity, cloudSteps, seconds, hauntLevel);
+      }
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
       // its GLBs have loaded, so new entries are picked up here.
@@ -2692,6 +2717,31 @@ function buildRenderer(
         // and its default forward is +Z, which matches the sim convention.
         // Roll goes on z — the only thing that ever writes it.
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
+        // The summit scene: from the flip's frame the camera is the scene's,
+        // from the eye the player had then, for the reveal's seconds.
+        sceneFov = null;
+        sceneShot = -1;
+        if (summitScene !== null && ending.since < 0) {
+          const t = seconds - summitScene.since;
+          if (t >= (summitScene.kind === "summit" ? SUMMIT_SCENE_S : CAP_SCENE_S)) summitScene = null;
+          else {
+            summitScene.base ??= { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: local.yaw, pitch: local.pitch };
+            if (summitScene.kind === "summit" && summitScene.more !== null) {
+              const ctx: SceneContext = { base: summitScene.base, body: summitScene.body, hollow: summitScene.more.hollow, party: summitScene.more.party };
+              const shot = summitShot(t, ctx);
+              camera.position.set(shot.x, shot.y, shot.z);
+              camera.rotation.set(shot.pitch, shot.yaw, 0);
+              sceneFov = shot.fov;
+              sceneShot = shot.shot;
+            } else {
+              const pose = capPose(t, summitScene.base, summitScene.body);
+              camera.position.set(pose.x, pose.y, pose.z);
+              camera.rotation.set(pose.pitch, pose.yaw, 0);
+            }
+          }
+        }
+        // The local body stands in the summit's shots, until the last returns to its eye.
+        views.showLocal = sceneShot >= 0 && sceneShot < SHOTS.length - 1;
         // The end: from its first frame the camera is the ending's, from the
         // pose the player had then, and the pass takes its blur and its dark.
         if (ending.since >= 0) {
@@ -2702,9 +2752,10 @@ function buildRenderer(
           endBlur = pose.blur;
           endClose = pose.close;
         }
-        // A hike after a scene draws with the game's lens again.
-        camera.fov = GAME_FOV;
-        setLamp(localLamp, local.lamp.on, lampState);
+        // A hike after a scene draws with the game's lens again; a shot of the summit's with its own.
+        camera.fov = sceneFov ?? GAME_FOV;
+        // In the summit's shots the lamp on the lens is off: the body's own lights them (entityViews.ts).
+        setLamp(localLamp, local.lamp.on && !views.showLocal, lampState);
         rainMap?.update(local.pos);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
@@ -2746,9 +2797,15 @@ function buildRenderer(
     setHaunt(level) {
       hauntLevel = Math.max(0, Math.min(1, level));
     },
-    setNearMist(density) {
-      nearMist?.hold(density);
-      return nearMist?.density() ?? 0;
+    setMist(density) {
+      cloudHold = density === null ? null : Math.max(0, Math.min(1, density));
+      return cloudHold ?? cloudDensity;
+    },
+    setMistIn(level) {
+      mistIn = Math.max(0, Math.min(1, level));
+    },
+    setScene(kind, at, more) {
+      summitScene = { kind, since: clock() / 1000, base: null, body: { x: at.x, y: at.y, z: at.z }, more: more ?? null };
     },
     setEnding(kind) {
       if (ending.since >= 0) return;
@@ -2791,8 +2848,7 @@ function buildRenderer(
     dispose() {
       views.dispose();
       silhouette?.dispose();
-      hauntMist?.dispose();
-      nearMist?.dispose();
+      droppedCap?.dispose();
       localLamp.dispose();
       for (const m of brushMeshes) m.dispose();
       // Before the meshes in its list: a render target's list is not told of

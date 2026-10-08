@@ -11,7 +11,8 @@ import { isOnCorridor } from "../../src/sim/containment.js";
 import { homeDistances, forksOf, pathLength } from "../../src/sim/trailRoute.js";
 import { segmentDistance } from "../../src/sim/trail.js";
 import type { TrailEdge, TrailGraph, TrailNode } from "../../src/sim/trail.js";
-import { FORK_EMERGE_MAX_S, FORK_REVEAL_S } from "../../src/sim/hollow.js";
+import { SUMMIT_REVEAL_S, FORK_EMERGE_MAX_S, FORK_REVEAL_S } from "../../src/sim/hollow.js";
+import { TICK_DT } from "../../src/sim/constants.js";
 import {
   FORK_CUT_RADIUS, FORK_MOUTH_DIST, FORK_SPAWN_CLEAR, FORK_SPAWN_DIST, FORK_SPAWN_MIN,
   FORK_SPAWN_PLAYER_CLEAR, GUIDE_REJOIN_SLACK, drawGuide, forkSpawn, openBranch, stepCuts, triggerEdge,
@@ -442,7 +443,7 @@ describe("the cut in the tick", SUITE, () => {
     return { x, y: w.ground!.heightAt(x, z) + 0.9, z };
   };
   const onNode = (w: World, n: number) => along(w, n, n === 0 ? 1 : 0, 0);
-  /** The flip: a player at the body, one tick — Chase, the summit Hollow, the guide. */
+  /** The flip: a player at the body, one tick — the scene, the summit Hollow, the guide; then the reveal's seconds, and the chase. */
   const chase = (token = "hollow") => {
     const w = createForestWorld(createForest(seedFromToken(token)));
     w.haunt!.active = false;
@@ -450,8 +451,10 @@ describe("the cut in the tick", SUITE, () => {
     const body = w.search!.body.pos;
     p.pos = { x: body.x - 5, y: w.ground!.heightAt(body.x - 5, body.z) + 0.9, z: body.z };
     tick(w);
-    expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.phase).toBe(Phase.Scene);
     expect(w.state.enemies.size).toBe(1);
+    tick(w, Math.round(SUMMIT_REVEAL_S / TICK_DT) + 2);
+    expect(w.state.phase).toBe(Phase.Chase);
     return { w, p };
   };
   /** The node the guide reaches `fork` from. */
@@ -478,7 +481,7 @@ describe("the cut in the tick", SUITE, () => {
     const body = w.search!.body.pos;
     p.pos = { x: body.x - 5, y: w.ground!.heightAt(body.x - 5, body.z) + 0.9, z: body.z };
     tick(w);
-    expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.phase).toBe(Phase.Scene);
     const rec = w.cut!;
     expect(rec.guide[0]).toBe(35);
     expect(rec.guide[rec.guide.length - 1]).toBe(0);

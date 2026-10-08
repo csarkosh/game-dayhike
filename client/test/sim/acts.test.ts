@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DUSK_AT, NIGHT_SPAN, WET_AT, WET_SPAN, actsUnder, smootherstep } from "../../src/sim/acts.js";
+import { MIST_AT, MIST_SPAN, DUSK_AT, NIGHT_SPAN, WET_AT, WET_SPAN, actsUnder, smootherstep } from "../../src/sim/acts.js";
 
 describe("the acts", () => {
   it("turn wet at a tenth of the way and go dark from three tenths, each over a short stretch: most of the climb is night", () => {
@@ -7,13 +7,18 @@ describe("the acts", () => {
     expect(DUSK_AT).toBe(0.3);
     expect(WET_AT + WET_SPAN).toBeLessThan(DUSK_AT);
     expect(DUSK_AT + NIGHT_SPAN).toBeLessThan(0.45);
-    expect(actsUnder(0)).toEqual({ wet: 0, night: 0 });
+    expect(actsUnder(0)).toEqual({ wet: 0, night: 0, mist: 0 });
     expect(actsUnder(WET_AT + WET_SPAN).wet).toBeCloseTo(1, 12);
     expect(actsUnder(DUSK_AT).night).toBe(0);
     expect(actsUnder(DUSK_AT + NIGHT_SPAN).night).toBeCloseTo(1, 12);
-    expect(actsUnder(0.7)).toEqual({ wet: 1, night: 1 });
-    expect(actsUnder(-1)).toEqual({ wet: 0, night: 0 });
-    expect(actsUnder(2)).toEqual({ wet: 1, night: 1 });
+    // The mist rises once the night is in, and is whole a tenth of the way later.
+    expect(actsUnder(MIST_AT).mist).toBe(0);
+    expect(actsUnder(MIST_AT).night).toBeCloseTo(1, 12);
+    expect(actsUnder(MIST_AT + MIST_SPAN / 2).mist).toBeCloseTo(0.5, 12);
+    expect(actsUnder(MIST_AT + MIST_SPAN).mist).toBeCloseTo(1, 12);
+    expect(actsUnder(0.7)).toEqual({ wet: 1, night: 1, mist: 1 });
+    expect(actsUnder(-1)).toEqual({ wet: 0, night: 0, mist: 0 });
+    expect(actsUnder(2)).toEqual({ wet: 1, night: 1, mist: 1 });
   });
 
   it("eases each with smootherstep, flat at both ends", () => {

@@ -3,13 +3,13 @@
  * figures. A director on the host runs episodes once the night is in, and
  * through the chase: for a dozen or twenty seconds, every few seconds, a
  * shade stands up somewhere at the edge of a player's sight and walks at
- * them, slowly, and is gone again when they come near, when they look at it
- * too long, or when its time is up. Most are nothing. One in an episode,
+ * and stands and stares at them, and is gone again when they come near,
+ * when they look at it too long, or when its time is up. Most are nothing. One in an episode,
  * sometimes, is a lunge: it comes fast and straight, bending only a little
  * toward its player, and at arm's length it strikes, which kills within its
  * reach; a player who steps out of its line sees it pass and dissolve. The
- * haunt begins once the night is fully in, lightly, and presses harder the
- * nearer the party is to the crest. In the chase a shade stands where the open way home
+ * haunt begins once the mist is whole on the ground, lightly, and presses
+ * harder the nearer the party is to the crest. In the chase a shade stands where the open way home
  * runs, beside the path: the thing that hunts the party also shows them the
  * way.
  *
@@ -32,26 +32,27 @@ import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";
 import { isOnCorridor } from "./containment.js";
-import { faceToward, horizontalDistSq, playerSees, walkToward } from "./hollow.js";
+import { faceToward, horizontalDistSq, playerSees, revealing, walkToward } from "./hollow.js";
 import { climbOf, WATCH_SLOPE_NY, WATCH_VIEW_COS } from "./watcher.js";
-import { actsUnder, DUSK_AT, NIGHT_SPAN, smootherstep } from "./acts.js";
+import { actsUnder, MIST_AT, MIST_SPAN, smootherstep } from "./acts.js";
+import { trailDistance } from "./trail.js";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
 
-/** The night below which the climb is not haunted: the night fully in, so the party has its sounds first. */
-export const HAUNT_NIGHT_MIN = 0.95;
+/** The mist below which the climb is not haunted: the mist whole on the ground, so the shades have it to come out of. */
+export const HAUNT_MIST_MIN = 0.95;
 /**
- * The haunt's pressure, 0 as the night comes fully in and 1 from
+ * The haunt's pressure, 0 as the mist comes whole and 1 from
  * HAUNT_PRESS_SPAN of the climb after that, by smootherstep, so the night
  * is at its full pressure well before the crest (and throughout the chase):
  * the rests between episodes run from the early band to the late, and an
  * episode's shades from the fewest to the most.
  */
-export const HAUNT_PRESS_SPAN = 0.3;
-export const HAUNT_REST_EARLY: readonly [number, number] = [40, 75];
-export const HAUNT_REST_LATE: readonly [number, number] = [10, 24];
+export const HAUNT_PRESS_SPAN = 0.45;
+export const HAUNT_REST_EARLY: readonly [number, number] = [60, 110];
+export const HAUNT_REST_LATE: readonly [number, number] = [14, 30];
 export const HAUNT_REST_CHASE: readonly [number, number] = [0, 2];
-export const HAUNT_SHADES_EARLY: readonly [number, number] = [3, 5];
-export const HAUNT_SHADES_LATE: readonly [number, number] = [8, 14];
+export const HAUNT_SHADES_EARLY: readonly [number, number] = [1, 2];
+export const HAUNT_SHADES_LATE: readonly [number, number] = [6, 10];
 /** An episode's length, and the seconds between its shades. */
 export const HAUNT_EPISODE_S: readonly [number, number] = [18, 30];
 export const HAUNT_SHADE_GAP_S: readonly [number, number] = [0.9, 2.2];
@@ -68,8 +69,17 @@ export const SHADE_RANGE: readonly [number, number] = [7, 40];
 export const SHADE_DWELL_S: readonly [number, number] = [8, 18];
 export const SHADE_FLEE_RADIUS = 5;
 export const SHADE_WATCHED_S = 2.5;
-/** Metres a second a shade walks at its player. */
-export const SHADE_WALK = 0.7;
+/**
+ * The chase, off the trail: from OFF_TRAIL_FROM_M off it, over OFF_TRAIL_SPAN_M,
+ * an episode has up to OFF_TRAIL_SHADES_GAIN times more shades, that much
+ * closer together, and each shade is a lunge with a chance rising from
+ * OFF_TRAIL_REAL_EACH to 1. The trail is
+ * the way home; leaving it is answered.
+ */
+export const OFF_TRAIL_FROM_M = 4;
+export const OFF_TRAIL_SPAN_M = 16;
+export const OFF_TRAIL_SHADES_GAIN = 2;
+export const OFF_TRAIL_REAL_EACH = 0.1;
 /**
  * The bearing band off the player's look a shade or a lunge stands in, 16°
  * to 40°, as the cosines and sines of its two edges (the watcher's method,
@@ -127,10 +137,21 @@ export function isShadeState(ai: AiState): boolean {
   return ai === AiState.Shade || ai === AiState.Lunge || ai === AiState.Strike;
 }
 
-/** The haunt's pressure for a world: 0 as the night comes fully in, 1 at the crest and in the chase. */
+/** How far off the trail the chase's targets are, 0 on it to 1 from OFF_TRAIL_FROM_M + OFF_TRAIL_SPAN_M off: the farthest of them. */
+export function offTrailOf(world: World): number {
+  if (world.trail === null) return 0;
+  let worst = 0;
+  for (const p of targetsOf(world)) {
+    const t = (trailDistance(world.trail, p.pos.x, p.pos.z) - OFF_TRAIL_FROM_M) / OFF_TRAIL_SPAN_M;
+    if (t > worst) worst = t;
+  }
+  return worst > 1 ? 1 : worst;
+}
+
+/** The haunt's pressure for a world: 0 as the mist comes whole, 1 at the crest and in the chase. */
 export function pressureOf(world: World): number {
   if (world.state.phase === Phase.Chase) return 1;
-  const from = DUSK_AT + NIGHT_SPAN;
+  const from = MIST_AT + MIST_SPAN;
   return smootherstep((bestClimb(world) - from) / HAUNT_PRESS_SPAN);
 }
 
@@ -150,7 +171,7 @@ export function bestClimb(world: World): number {
 /** Whether the woods are haunted now: the chase, or the climb once the night is in. */
 export function isHaunting(world: World): boolean {
   if (world.state.phase === Phase.Chase) return true;
-  return actsUnder(bestClimb(world)).night >= HAUNT_NIGHT_MIN;
+  return actsUnder(bestClimb(world)).mist >= HAUNT_MIST_MIN;
 }
 
 /** The players a shade may be shown to: living, and in the chase not yet safe. */
@@ -282,10 +303,8 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
   const target = world.state.players.get(h.targetId);
   h.stateTimer -= dt;
   if (h.ai === AiState.Shade) {
-    if (target !== undefined && target.health > 0) {
-      faceToward(h, target.pos.x, target.pos.z);
-      walkToward(h, world, dt, target.pos.x, target.pos.z, SHADE_WALK);
-    }
+    // It stands where it rose and stares: its face to its player, never a step.
+    if (target !== undefined && target.health > 0) faceToward(h, target.pos.x, target.pos.z);
     let watched = false;
     for (const p of world.state.players.values()) {
       if (p.health <= 0) continue;
@@ -298,8 +317,9 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
   if (h.ai === AiState.Strike) {
     // The strike: it stands at its player for LUNGE_ATTACK_S; LUNGE_ATTACK_HIT_S
     // in, whoever it struck at within LUNGE_ATTACK_REACH is dead; then it is gone.
+    // Never in the summit scene (revealing): the strike is withheld.
     if (target !== undefined && target.health > 0) faceToward(h, target.pos.x, target.pos.z);
-    if (h.attackCooldown === 0 && h.stateTimer <= LUNGE_ATTACK_S - LUNGE_ATTACK_HIT_S) {
+    if (h.attackCooldown === 0 && h.stateTimer <= LUNGE_ATTACK_S - LUNGE_ATTACK_HIT_S && !revealing(world)) {
       h.attackCooldown = 1;
       if (target !== undefined && target.health > 0 && !target.safe && horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_REACH * LUNGE_ATTACK_REACH) target.health = 0;
     }
@@ -354,17 +374,21 @@ export function stepHaunt(world: World, dt: number): void {
   for (const [id, e] of world.state.enemies) {
     if (isShadeState(e.ai) && stepShade(e, world, dt)) world.state.enemies.delete(id);
   }
+  // The reveal is the Hollow's alone: while one is stepping out, the director waits.
+  for (const e of world.state.enemies.values()) if (e.ai === AiState.Emerge) return;
   if (world.state.outcome !== Outcome.Playing || !isHaunting(world)) {
     record.episode = null;
     return;
   }
   const chase = world.state.phase === Phase.Chase;
   const pressure = pressureOf(world);
+  const off = chase ? offTrailOf(world) : 0;
   if (record.episode === null) {
     record.rest -= dt;
     if (record.rest > 0) return;
-    const fewest = HAUNT_SHADES_EARLY[0] + (HAUNT_SHADES_LATE[0] - HAUNT_SHADES_EARLY[0]) * pressure;
-    const most = HAUNT_SHADES_EARLY[1] + (HAUNT_SHADES_LATE[1] - HAUNT_SHADES_EARLY[1]) * pressure;
+    const gain = 1 + OFF_TRAIL_SHADES_GAIN * off;
+    const fewest = (HAUNT_SHADES_EARLY[0] + (HAUNT_SHADES_LATE[0] - HAUNT_SHADES_EARLY[0]) * pressure) * gain;
+    const most = (HAUNT_SHADES_EARLY[1] + (HAUNT_SHADES_LATE[1] - HAUNT_SHADES_EARLY[1]) * pressure) * gain;
     record.episode = {
       left: between(record.rng, HAUNT_EPISODE_S),
       shades: Math.floor(between(record.rng, [fewest, most + 1])),
@@ -379,7 +403,8 @@ export function stepHaunt(world: World, dt: number): void {
     const targets = targetsOf(world);
     if (targets.length > 0) {
       const target = targets[Math.floor(nextRandom(record.rng) * targets.length) % targets.length] as PlayerState;
-      const lunge = ep.real && ep.shades === 1;
+      // The episode's last shade is its lunge, when it has one; off the trail in the chase, any shade may be.
+      const lunge = (ep.real && ep.shades === 1) || (off > 0 && nextRandom(record.rng) < OFF_TRAIL_REAL_EACH + (1 - OFF_TRAIL_REAL_EACH) * off);
       let at: Vec3 | null = null;
       for (let i = 0; i < HAUNT_PLACE_TRIES && at === null; i++) {
         if (chase && !lunge) at = placeShadeOnGuide(world, target, record.rng);
@@ -388,7 +413,8 @@ export function stepHaunt(world: World, dt: number): void {
       if (at !== null) {
         spawnShade(world, at, target, lunge, between(record.rng, SHADE_DWELL_S));
         ep.shades--;
-        ep.nextShade = between(record.rng, HAUNT_SHADE_GAP_S);
+        // Off the trail the shades come that much faster too: an episode's count alone would run out its clock.
+        ep.nextShade = between(record.rng, HAUNT_SHADE_GAP_S) / (1 + OFF_TRAIL_SHADES_GAIN * off);
       }
     }
   }

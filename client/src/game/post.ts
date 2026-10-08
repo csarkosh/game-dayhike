@@ -40,8 +40,10 @@ export type Post = {
 /** How long the lens's strength sits under its floor before the pass is detached. */
 const LENS_IDLE_S = 1;
 /** The shades' blur radius as a share of the frame's width, and how dark the mask makes the frame at full. */
-export const SHADE_BLUR = 0.009;
-export const SHADE_DARK = 1;
+export const SHADE_BLUR = 0.015;
+/** How much darker a shade is than what stands behind it, the mist: a little, not black; and the real one, black, nearer to whole. */
+export const SHADE_DARK = 0.3;
+export const SHADE_MONSTER_DARK = 1;
 /** The end's blur at its fullest, in texels: soft, not a wash. */
 export const END_BLUR_KERNEL = 28;
 /** The kernels the end's blur steps through: a blur pass compiles afresh for each kernel it is given, so a smooth ramp would compile every frame; three steps compile three times. */
@@ -234,7 +236,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     grade = new PostProcess("grade", "grade",
       ["exposure", "whitePoint", "purkinje", "purkinjeThreshold", "purkinjeStrength", "shadowTint", "shadowAmount",
         "midtoneTint", "midtoneAmount", "highlightTint", "highlightAmount", "saturation", "lift", "vignetteWeight",
-        "vignetteColour", "halationStrength", "stareShade", "chaseTint", "chaseLift", "shadeShape"],
+        "vignetteColour", "halationStrength", "stareShade", "chaseTint", "chaseLift", "shadeShape", "shadeMonster"],
       ["halationSampler", "shadeSampler"], gradeRatio, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
     const boundScenePass = scenePass;
     const boundBlurY = blurY;
@@ -271,6 +273,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       if (shadeMask !== null) effect.setTexture("shadeSampler", shadeMask);
       else if (boundBlack !== null) effect.setTexture("shadeSampler", boundBlack);
       effect.setFloat4("shadeShape", SHADE_BLUR, SHADE_DARK, engine.getRenderWidth() / engine.getRenderHeight(), shadeMask !== null && shadeAny ? 1 : 0);
+      effect.setFloat("shadeMonster", SHADE_MONSTER_DARK);
     };
 
     aberration = new ChromaticAberrationPostProcess("chromaticAberration", engine.getRenderWidth(),

@@ -154,6 +154,32 @@ describe("createAmbientAudio", () => {
     audio.dispose();
   });
 
+  it("speaks the inner voice on a bus of its own off the master, made on the first line, never through the world's muffle", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.speak({} as AudioBuffer, 0.9);
+    expect(created.sources).toHaveLength(0);
+    audio.unlock();
+    const gainsBefore = created.gains.length;
+    const master = created.gains[0]!;
+    const world = created.gains[1]!;
+    audio.speak({ length: 1 } as unknown as AudioBuffer, 0.9);
+    expect(created.gains).toHaveLength(gainsBefore + 2);
+    const voiceBus = created.gains[gainsBefore]!;
+    const lineGain = created.gains[gainsBefore + 1]!;
+    expect(voiceBus.connections).toEqual([master]);
+    expect(voiceBus.connections).not.toContain(world);
+    expect(lineGain.gain.value).toBeCloseTo(0.9, 9);
+    expect(lineGain.connections).toEqual([voiceBus]);
+    const src = created.sources[created.sources.length - 1]!;
+    expect(src.connections).toEqual([lineGain]);
+    expect(src.startedAt).toBeUndefined();
+    // A second line reuses the bus: one more gain, not two.
+    audio.speak({ length: 1 } as unknown as AudioBuffer, 0.5);
+    expect(created.gains).toHaveLength(gainsBefore + 3);
+    expect(created.gains[gainsBefore + 2]!.connections).toEqual([voiceBus]);
+  });
+
   it("unlock applies the pending weather through the layer levels", () => {
     const { ctx, created } = fakeCtx();
     const audio = createAmbientAudio(() => ctx);

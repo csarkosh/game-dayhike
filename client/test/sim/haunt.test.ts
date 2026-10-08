@@ -13,13 +13,14 @@ import { stemNodes } from "../../src/sim/trailRoute.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { hasLineOfSight } from "../../src/sim/ai.js";
 import { climbOf } from "../../src/sim/watcher.js";
-import { actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
+import { MIST_AT, MIST_SPAN, actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
 import {
-  GUIDE_REACH, HAUNT_NIGHT_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_CHASE, HAUNT_REAL_CLIMB, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
-  LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_RANGE, SHADE_WALK, SHADE_WATCHED_S,
+  GUIDE_REACH, HAUNT_MIST_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_CHASE, HAUNT_REAL_CLIMB, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
+  LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_RANGE, SHADE_WATCHED_S, OFF_TRAIL_FROM_M, OFF_TRAIL_SPAN_M, OFF_TRAIL_REAL_EACH, offTrailOf,
   bestClimb, isHaunting, isShadeState, placeShadeOnGuide, pressureOf, spawnShade,
 } from "../../src/sim/haunt.js";
-import { isHollow, SHADE_STARE_CAP } from "../../src/sim/hollow.js";
+import { isHollow, SHADE_STARE_CAP, SUMMIT_REVEAL_S, spawnHollow } from "../../src/sim/hollow.js";
+import { trailDistance } from "../../src/sim/trail.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -55,7 +56,7 @@ function lookAt(p: PlayerState, at: Vec3) {
 }
 const dist = (a: Vec3, b: Vec3) => Math.hypot(a.x - b.x, a.z - b.z);
 /** The night's threshold, as a climb. */
-const NIGHT_CLIMB = DUSK_AT + NIGHT_SPAN + 0.02;
+const NIGHT_CLIMB = MIST_AT + MIST_SPAN + 0.02;
 
 describe("the director", () => {
   it("is made for every authoritative forest world, active, with its first rest drawn, and runs nothing by day", () => {
@@ -73,16 +74,19 @@ describe("the director", () => {
     expect(createForestWorld(createForest(seed), false).haunt).toBeNull();
   });
 
-  it("haunts once the night is fully in, by the best living climb, and through the chase, pressing harder toward the crest", () => {
+  it("haunts once the mist is whole on the ground, after the night, by the best living climb, and through the chase, pressing harder toward the crest", () => {
     const { w, p } = forestWorld();
-    standAtClimb(w, p, DUSK_AT + NIGHT_SPAN * 0.5);
+    standAtClimb(w, p, DUSK_AT + NIGHT_SPAN + 0.02);
+    expect(actsUnder(bestClimb(w)).night).toBeGreaterThan(0.95);
+    expect(isHaunting(w)).toBe(false);
+    standAtClimb(w, p, MIST_AT + MIST_SPAN * 0.5);
     expect(isHaunting(w)).toBe(false);
     standAtClimb(w, p, NIGHT_CLIMB);
-    expect(actsUnder(bestClimb(w)).night).toBeGreaterThanOrEqual(HAUNT_NIGHT_MIN);
+    expect(actsUnder(bestClimb(w)).mist).toBeGreaterThanOrEqual(HAUNT_MIST_MIN);
     expect(isHaunting(w)).toBe(true);
     expect(pressureOf(w)).toBeLessThan(0.1);
     // Full pressure well before the crest: HAUNT_PRESS_SPAN of the climb past full night.
-    standAtClimb(w, p, DUSK_AT + NIGHT_SPAN + HAUNT_PRESS_SPAN + 0.02);
+    standAtClimb(w, p, MIST_AT + MIST_SPAN + HAUNT_PRESS_SPAN + 0.02);
     expect(pressureOf(w)).toBe(1);
     expect(HAUNT_REAL_CHASE).toBeGreaterThan(HAUNT_REAL_CLIMB);
     expect(HAUNT_REST_LATE[1]).toBeLessThan(HAUNT_REST_EARLY[0]);
@@ -124,11 +128,11 @@ describe("the director", () => {
     // The episode goes on: more of them, and the count is the episode's.
     expect(w.haunt!.episode).not.toBeNull();
     expect(w.haunt!.episode!.shades).toBeLessThanOrEqual(HAUNT_SHADES_LATE[1] - 1);
-    // It walks at its player, slowly; harmless, it costs nothing but its presence.
+    // It stands where it rose and stares, never a step; harmless, it costs nothing but its presence.
     const before = dist(h.pos, p.pos);
     tick(w, 60);
-    expect(dist(h.pos, p.pos)).toBeLessThan(before - SHADE_WALK * 0.5);
-    expect(dist(h.pos, p.pos)).toBeGreaterThan(before - SHADE_WALK * 1.5);
+    expect(dist(h.pos, p.pos)).toBeCloseTo(before, 6);
+    expect(Math.abs(h.yaw - Math.atan2(p.pos.x - h.pos.x, p.pos.z - h.pos.z))).toBeLessThan(0.05);
     expect(p.health).toBe(100);
   });
 
@@ -206,7 +210,7 @@ describe("the director", () => {
     expect(LUNGE_RANGE[0]).toBeGreaterThan(SHADE_FLEE_RADIUS);
   });
 
-  it("in the chase, a shade in the stare's cone closes the dark a little, to SHADE_STARE_CAP and no further; on the climb not at all", () => {
+  it("a shade in the stare's cone closes the dark a little, to SHADE_STARE_CAP and no further, on the climb as in the chase", () => {
     const { w, p } = forestWorld();
     standAtClimb(w, p, 0.3);
     const ahead = { x: p.pos.x + Math.sin(p.yaw) * 14, y: 0, z: p.pos.z + Math.cos(p.yaw) * 14 };
@@ -216,15 +220,71 @@ describe("the director", () => {
     // Held still, and never watched out: the test turns the shade's own timers off.
     const hold = () => { h.pos = { ...ahead }; h.stateTimer = 60; h.attackCooldown = 0; };
     lookAt(p, h.pos);
-    tick(w, 120);
-    expect(p.stare).toBe(0);
-    w.state.phase = Phase.Chase;
     for (let t = 0; t < 600; t++) { hold(); tick(w); }
     expect(p.stare).toBeCloseTo(SHADE_STARE_CAP, 6);
     expect(p.health).toBe(100);
+    w.state.phase = Phase.Chase;
+    for (let t = 0; t < 120; t++) { hold(); tick(w); }
+    expect(p.stare).toBeCloseTo(SHADE_STARE_CAP, 6);
     p.yaw += Math.PI;
     tick(w, 60);
     expect(p.stare).toBeLessThan(SHADE_STARE_CAP);
+  });
+
+  it("in the chase, off the trail, the haunt answers: more shades an episode, and each more likely the real thing", () => {
+    const { w, p } = forestWorld();
+    standAtClimb(w, p, 0.9);
+    w.state.phase = Phase.Chase;
+    expect(offTrailOf(w)).toBe(0);
+    // Step off the trail, far: the measure fills to 1.
+    const graph = w.trail!;
+    const here = { x: p.pos.x, z: p.pos.z };
+    let off = 0;
+    for (let step = 1; step <= 60 && off < 1; step++) {
+      standAt(p, here.x + step, here.z);
+      off = offTrailOf(w);
+    }
+    expect(off).toBe(1);
+    expect(trailDistance(graph, p.pos.x, p.pos.z)).toBeGreaterThanOrEqual(OFF_TRAIL_FROM_M + OFF_TRAIL_SPAN_M);
+    // Over many episodes off the trail, the lunges outnumber the shades by far; on it, the real one is at most one an episode.
+    const count = (offTrail: boolean) => {
+      const { w: w2, p: p2 } = forestWorld();
+      standAtClimb(w2, p2, 0.9);
+      w2.state.phase = Phase.Chase;
+      w2.haunt!.rest = 0;
+      if (offTrail) for (let step = 1; step <= 60 && offTrailOf(w2) < 1; step++) standAt(p2, p2.pos.x + 1, p2.pos.z);
+      let lunges = 0, shades = 0;
+      for (let t = 0; t < 9000; t++) {
+        tick(w2);
+        p2.health = 100;
+        for (const [id, e] of w2.state.enemies) {
+          if (e.ai === AiState.Lunge || e.ai === AiState.Strike) lunges++;
+          else if (e.ai === AiState.Shade) shades++;
+          w2.state.enemies.delete(id);
+        }
+      }
+      return { lunges, shades };
+    };
+    const on = count(false), away = count(true);
+    expect(away.lunges + away.shades).toBeGreaterThan((on.lunges + on.shades) * 1.5);
+    expect(away.lunges / Math.max(1, away.lunges + away.shades)).toBeGreaterThan(0.8);
+    expect(on.lunges / Math.max(1, on.lunges + on.shades)).toBeLessThan(0.5);
+    expect(OFF_TRAIL_REAL_EACH).toBeLessThan(0.3);
+  });
+
+  it("waits while a Hollow is stepping out: no episode begins during the summit's reveal", () => {
+    const { w, p } = forestWorld();
+    standAtClimb(w, p, 0.9);
+    w.state.phase = Phase.Chase;
+    w.haunt!.rest = 0;
+    const summit = spawnHollow(w, { x: p.pos.x + 30, y: p.pos.y, z: p.pos.z }, p.id, SUMMIT_REVEAL_S);
+    for (let t = 0; t < Math.round((SUMMIT_REVEAL_S - 0.5) / TICK_DT); t++) tick(w);
+    expect(summit.ai).toBe(AiState.Emerge);
+    expect(w.haunt!.episode).toBeNull();
+    expect([...w.state.enemies.values()].filter((e) => e.ai === AiState.Shade || e.ai === AiState.Lunge)).toHaveLength(0);
+    for (let t = 0; t < Math.round(3 / TICK_DT); t++) { tick(w); p.health = 100; }
+    expect(summit.ai).not.toBe(AiState.Emerge);
+    expect(w.haunt!.episode !== null || [...w.state.enemies.values()].some((e) => e.ai === AiState.Shade || e.ai === AiState.Lunge)).toBe(true);
   });
 
   it("in the chase, a shade stands beside the open way home, ahead of its player and nearer the pad", () => {

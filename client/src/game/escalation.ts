@@ -103,7 +103,7 @@ export function escalationTargets(
   }
 
   let world = 0;
-  if (state.phase === Phase.Chase) world = 1;
+  if (state.phase !== Phase.Climb) world = 1;
   else {
     for (const p of state.players.values()) {
       if (p.health <= 0) continue;
@@ -113,7 +113,7 @@ export function escalationTargets(
   }
 
   const me = state.players.get(localId);
-  if (me === undefined) return { world, offTrail: 0, near: 0, dead: false, chase: state.phase === Phase.Chase, haunt: 0 };
+  if (me === undefined) return { world, offTrail: 0, near: 0, dead: false, chase: state.phase !== Phase.Climb, haunt: 0 };
 
   const d = trailDistance(graph, me.pos.x, me.pos.z);
   const offTrail = clamp01((d - OFF_TRAIL_START) / (OFF_TRAIL_FULL - OFF_TRAIL_START));
@@ -136,7 +136,7 @@ export function escalationTargets(
     const dz = e.pos.z - eye.z;
     if (dx * dx + dz * dz <= HAUNT_NEAR * HAUNT_NEAR) { haunt = 1; break; }
   }
-  return { world, offTrail, near, dead: me.health <= 0, chase: state.phase === Phase.Chase, haunt };
+  return { world, offTrail, near, dead: me.health <= 0, chase: state.phase !== Phase.Climb, haunt };
 }
 
 /** First-order lag toward `to` with time constant `tau`, seconds. */

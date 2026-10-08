@@ -12,7 +12,7 @@ const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 // every plugin injects per stage, and the three post shaders as stored. A
 // change here is a change to what every WebGL2 player compiles.
 const PINS: Record<string, string> = {
-  "atmosphere.fragment": "35f73a93548808b564e05c9687e4e20ab54ec34be04fe3baca9e9ab04fef5d13",
+  "atmosphere.fragment": "2f8a58972f2bd3a2af532928ec9f540aabf60eef0963d25bb776a27fe41ffaf6",
   "cliffTint.fragment": "34b80348c2b278087d42892dd31129fc6aac2b12c93f275293617b88e9e2bccd",
   "cliffTint.vertex": "3fcb23ae5aab79e441e6d140e71ad0c149a0702f72c48fa093fc0b9fd3076de1",
   "distanceFade.fragment": "e9fd42d78c56e2f364ac16691996386de60dd9717060cc3822bd296c9c09281f",
@@ -38,7 +38,7 @@ const PINS: Record<string, string> = {
   "foliageLight.fragment": "ae5b873be2cb7e2c35baaa379a229a37cdf5df08f9ccc3cab48060d173dbe14c",
   "groundConform.vertex": "a9f54562519ab094b2883463cec48050737f16a4f17e4a18852cfb414e227cea",
   "post.finish": "4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5",
-  "post.grade": "cb9a39b6485235a868cf31396c3cc862350ffdd5ee226ac38c1368c8a9afd6b5",
+  "post.grade": "74e331711356b6afe2ce371d749cfff39c64bc02473988dd2ba26bc9653ecd3a",
   "post.halationExtract": "1ee9b9ed30d66fd1e10e4a327104c3e9016a91a2b4ed6aa2cec64cb09df5d3fd",
   "skin.fragment": "111388dbf745542db596dae9ac3c41d726c7c0c61aeb4c8e87cc16e9e8c07fdf",
   // Re-pinned for the WGSL-reserved local `macro` renamed `macroRgb`. The
@@ -58,7 +58,7 @@ const PINS: Record<string, string> = {
 // attributes and the defines it sets. Taken at the branch's tip, where none of
 // those has changed since the base.
 const INTERFACE_PINS: Record<string, string> = {
-  "atmosphere.interface": "8d2b4a4042179853de33a6c9f4ff2a4c5ecb33ab7a48d44661530b757a19c34f",
+  "atmosphere.interface": "b3abd6248a3183ba01bc79d415b4a92efa7f63962e43609b041db61bab7a96a6",
   "cliffTint.interface": "17f58097180ad484779cd5302189b01c65ae910a947d6d347ac9eff595479115",
   "distanceFade.interface": "c59e5c6bd9a213d90f127332528ef16d234392159113be81a6cc47b38d2709cb",
   "foliage.BLADES.interface": "38e133af1b4e6322274d74a695851032e14b221b6ff26d3d1a7d783265e6ec29",

@@ -68,7 +68,7 @@ import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
-import { DEATH_LINE, DEATH_FADE_AFTER_MS, END_LANDING_MS, WON_LINE, WON_FADE_AFTER_MS, WON_LANDING_MS, roadLine } from "./game/passages.js";
+import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, END_LANDING_MS, WON_LINE, WON_TITLE, WON_FADE_AFTER_MS, WON_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
@@ -101,7 +101,19 @@ import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScree
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, Phase, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
-import { isHollowState } from "./sim/hollow.js";
+import { isHollowState, playerSees } from "./sim/hollow.js";
+import { trailDistance } from "./sim/trail.js";
+import { AiState } from "./sim/types.js";
+import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState } from "./game/innerVoice.js";
+import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
+import { createVoiceClips } from "./game/voiceClips.js";
+import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S } from "./game/cutscene.js";
+import { ENEMY_HALF, PLAYER_EYE_OFFSET } from "./sim/constants.js";
+import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
+
+/** Seconds after the last howl ends before the voice answers it, and the milliseconds into the cap's scene its line comes. */
+const CRY_BEAT_S = 0.6;
+const CAP_LINE_DELAY_MS = 1100;
 import { HOLLOW_CALL_CLIP, stepWoods, WOODS_REST, type WoodsState } from "./game/woodsVoice.js";
 import { loadBirdBed } from "./game/birdBed.js";
 import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "./game/woodsSounds.js";
@@ -437,6 +449,29 @@ function buildGame(
   let escalation: EscalationState = ESCALATION_REST;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
   let woods: WoodsState = WOODS_REST;
+  // The summit scene (cutscene.ts): from the flip, the controls are stilled and the camera is the scene's for SUMMIT_REVEAL_S.
+  let wasChase = false;
+  let sceneUntil = -1;
+  /** The cry: a line waits until every howl has ended (cryQuietAt), then answers once. */
+  let cryPending = false;
+  let cryQuietAt = -1;
+  /** The `summit` command's hand on the host's own player, installed with the host session; null on a client. */
+  let summitPreview: (() => void) | null = null;
+  let lastLook = { yaw: 0, pitch: 0 };
+  const sceneOn = (): boolean => performance.now() < sceneUntil;
+  /** The command with the player stilled: no move, no press, the look held where it was. */
+  function stilled(cmd: InputCommand): InputCommand {
+    if (!sceneOn()) {
+      lastLook = { yaw: cmd.yaw, pitch: cmd.pitch };
+      return cmd;
+    }
+    return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: lastLook.yaw, pitch: lastLook.pitch };
+  }
+  // The inner voice (innerVoice.ts): the ranger's own lines, local to this screen; and where the cap lies, found once a world.
+  let voice: VoiceState = voiceRest(seed ^ 0x5a11);
+  let capAt: (DroppedCap & { y: number }) | null | undefined;
+  const voiceClips = createVoiceClips(ambient);
+  made(() => voiceClips.dispose());
   /** The woods' other voices (woodsSounds.ts), on this screen's own stream. */
   let woodsSounds: WoodsSoundsState = WOODS_SOUNDS_REST;
   // Recomputed when the weather does: on a `weather` command directly below,
@@ -583,15 +618,19 @@ function buildGame(
       skin = value !== false;
       renderer.setSkinShading(skin);
     } else if (name === "mist") {
-      // The near mist's density, held or let go (nearMist.ts); the status says what is drawn.
+      // The ground cloud's density, held or let go (cloudParams.ts); the status says what is drawn.
       const held = args.length === 0 ? null : Number(args[0]);
-      const drawn = renderer.setNearMist(held);
+      const drawn = renderer.setMist(held);
       hud.setStatus(held === null ? `mist: the night's, now ${drawn.toFixed(2)}` : `mist held at ${held.toFixed(2)}`);
+    } else if (name === "summit") {
+      // The summit scene for a look (cutscene.ts): the host's own player stands at the body, and the next tick is the find.
+      if (summitPreview === null) hud.setStatus("summit: the host's to call");
+      else summitPreview();
     } else if (name === "end") {
       // The ending, on the spot (ending.ts): the camera and the line, nothing of the match.
       const kind = args[0] === "won" ? "won" : "died";
       renderer.setEnding(kind);
-      hud.setStatus(kind === "won" ? WON_LINE : DEATH_LINE);
+      hud.setEnding(kind === "won" ? { title: WON_TITLE, line: WON_LINE } : { title: DEATH_TITLE, line: DEATH_LINE });
     } else if (name === "time") {
       // Instant, like every other view command: the sun moves, the world is not
       // rebuilt. Validation has already bounded this to [0, 24), so the fallback
@@ -772,13 +811,70 @@ function buildGame(
     const ear = renderer.listener();
     const crest = world.search.body.pos;
     const acts = actsUnder(escalation.world);
+    renderer.setMistIn(acts.mist);
     const voiced = stepWoods(woods, {
-      climb: escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase === Phase.Chase, hollow, rain: a.weather.rain,
+      climb: escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase !== Phase.Climb, hollow, rain: a.weather.rain,
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
     }, dt);
     woods = voiced.state;
+    // The voice answers a cry once it is over: the clip at its slowest, its tail, and a beat; a second cry pushes that back.
+    if (voiced.call !== null) {
+      const clipS = wildlifeAudio?.clip(HOLLOW_CALL_CLIP)?.duration ?? 3;
+      cryQuietAt = Math.max(cryQuietAt, performance.now() + (clipS / HOLLOW_CALL_RATE[0] + HOLLOW_CALL_AFTER[1] + CRY_BEAT_S) * 1000);
+      cryPending = true;
+    }
+    const cryOver = cryPending && performance.now() >= cryQuietAt;
+    if (cryOver) cryPending = false;
+    // The find: the frame the phase flips, the scene begins on this screen.
+    const chaseNow = state.phase !== Phase.Climb;
+    if (chaseNow && !wasChase) {
+      sceneUntil = performance.now() + SUMMIT_SCENE_S * 1000;
+      let hollow: { x: number; y: number; z: number } | null = null;
+      for (const e of state.enemies.values()) if (e.ai === AiState.Emerge) { hollow = { x: e.pos.x, y: e.pos.y - ENEMY_HALF.y, z: e.pos.z }; break; }
+      const me = state.players.get(localId);
+      const party = me === undefined ? world.search.body.pos : { x: me.pos.x, y: me.pos.y + PLAYER_EYE_OFFSET, z: me.pos.z };
+      renderer.setScene("summit", world.search.body.pos, hollow === null ? undefined : { hollow, party });
+      hud.setBars(true);
+      setTimeout(() => hud.setBars(false), SUMMIT_SCENE_S * 1000);
+    }
+    wasChase = chaseNow;
+    // The inner voice: what this player is in, this frame; one line at most.
+    const self = state.players.get(localId);
+    if (self !== undefined) {
+      if (capAt === undefined) {
+        const at = world.trail === null ? null : droppedCapAt(world.trail, seed);
+        capAt = at === null ? null : { ...at, y: world.ground?.heightAt(at.x, at.z) ?? self.pos.y };
+      }
+      let shadeSeen = false;
+      for (const e of state.enemies.values()) if (e.ai === AiState.Shade && playerSees(self, e, world)) { shadeSeen = true; break; }
+      const body = world.search.body.pos;
+      const spoke = stepInnerVoice(voice, {
+        climb: escalation.progressMax, wet: acts.wet, night: acts.night, mist: acts.mist,
+        chase: state.phase === Phase.Chase, ended: ended || dead,
+        offTrail: world.trail === null ? 0 : trailDistance(world.trail, self.pos.x, self.pos.z),
+        lamp: self.lamp.on, stare: self.stare, moving: Math.hypot(self.vel.x, self.vel.z) > 0.2,
+        shadeSeen, cry: cryOver, birds: woods.birds < 0 ? 1 : woods.birds,
+        nearCap: capAt !== null && Math.hypot(self.pos.x - capAt.x, self.pos.z - capAt.z) < CAP_NEAR_M && !sceneOn(),
+        // The body's line waits for the scene's second shot, the find.
+        nearBody: Math.hypot(self.pos.x - body.x, self.pos.z - body.z) < 4 && (!sceneOn() || sceneUntil - performance.now() <= (SUMMIT_SCENE_S - (SHOTS[0] as number)) * 1000),
+        safe: self.safe,
+      }, dt);
+      voice = spoke.state;
+      if (spoke.line !== null) {
+        if (spoke.line.scenario === "cap" && capAt !== null) {
+          // The cap's scene: the camera turns to it, and the line comes once it is in view.
+          sceneUntil = performance.now() + CAP_SCENE_S * 1000;
+          renderer.setScene("cap", { x: capAt.x, y: capAt.y, z: capAt.z });
+          const said = spoke.line;
+          setTimeout(() => { hud.say(said.text, VOICE_LINE_MS); voiceClips.speak(said); }, CAP_LINE_DELAY_MS);
+        } else {
+          hud.say(spoke.line.text, VOICE_LINE_MS);
+          voiceClips.speak(spoke.line);
+        }
+      }
+    }
     // The night's other voices, and the day's flies.
-    const odd = stepWoodsSounds(woodsSounds, { night: acts.night, day: 1 - acts.wet, chase: state.phase === Phase.Chase }, dt);
+    const odd = stepWoodsSounds(woodsSounds, { night: acts.night, day: 1 - acts.wet, chase: state.phase !== Phase.Climb }, dt);
     woodsSounds = odd.state;
     if (odd.cue !== null) ambient.playOdd(odd.cue);
     ambient.setBirds(woods.birds);
@@ -938,7 +1034,7 @@ function buildGame(
     renderer.setEnding("died");
     if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
     deathFadeTimer = setTimeout(() => hud.fade(true), DEATH_FADE_AFTER_MS);
-    hud.setStatus(DEATH_LINE);
+    hud.setEnding({ title: DEATH_TITLE, line: DEATH_LINE });
   }
 
   // Not const: a host with no party can open a lobby mid-game (`attachLobby`).
@@ -972,7 +1068,7 @@ function buildGame(
     // is no panel of names: the line is the end.
     if (won) {
       renderer.setEnding("won");
-      hud.setStatus(WON_LINE);
+      hud.setEnding({ title: WON_TITLE, line: WON_LINE });
       if (endFadeTimer !== null) clearTimeout(endFadeTimer);
       endFadeTimer = setTimeout(() => hud.fade(true), WON_FADE_AFTER_MS);
     } else if (!dead) hud.fade(true);
@@ -1072,7 +1168,7 @@ function buildGame(
       // a volume level is a listener preference, not part of the shared scene.
       // Nor /mist and /end, which are for looking at the night's effects on the spot.
       // Applied below via applyView; never written back to `?cmd=`.
-      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "end") persist(parsed.name, args);
+      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "end" && parsed.name !== "summit") persist(parsed.name, args);
       if (findCommand(parsed.name)?.kind === "world") {
         // Re-initialise through the path `main.ts` already listens on.
         window.dispatchEvent(new PopStateEvent("popstate"));
@@ -1255,10 +1351,22 @@ function buildGame(
       forest,
       hostPeerId: selfPeerId,
     });
+    summitPreview = () => {
+      const me = host.world.state.players.get(host.localEntityId);
+      const body = host.world.search?.body.pos;
+      if (me === undefined || body === undefined) return;
+      me.pos = { x: body.x - 3, y: (host.world.ground?.heightAt(body.x - 3, body.z - 2) ?? me.pos.y - 0.9) + 0.9, z: body.z - 2 };
+      me.vel = { x: 0, y: 0, z: 0 };
+      me.yaw = Math.atan2(body.x - me.pos.x, body.z - me.pos.z);
+    };
     session = host;
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     woods = WOODS_REST;
+    voice = voiceRest(seed ^ 0x5a11);
+    capAt = undefined;
+    wasChase = false;
+    sceneUntil = -1;
     woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
@@ -1283,7 +1391,7 @@ function buildGame(
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
-        cmd = input.sample(++seq);
+        cmd = stilled(input.sample(++seq));
         host.tick(cmd);
       }
       stepFreecamView(dt);
@@ -1367,6 +1475,10 @@ function buildGame(
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     woods = WOODS_REST;
+    voice = voiceRest(seed ^ 0x5a11);
+    capAt = undefined;
+    wasChase = false;
+    sceneUntil = -1;
     woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     registerInteractables(client.world);
     activeWorld = client.world;
@@ -1424,7 +1536,7 @@ function buildGame(
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
-        cmd = input.sample(++seq);
+        cmd = stilled(input.sample(++seq));
         client.tick(cmd);
       }
       stepFreecamView(dt);
