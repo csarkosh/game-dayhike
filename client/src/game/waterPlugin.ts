@@ -190,7 +190,7 @@ export function waterMirrorPlaceholder(scene: Scene): BaseTexture {
 
 export class WaterPlugin extends MaterialPluginBase {
   readonly row: WaterRow;
-  /** The bed height square (Task 4 uploads it); null until the first bake. */
+  /** The bed height square (the bed bake uploads it); null until the first bake. */
   bedTexture: BaseTexture | null = null;
   bedOrigin: [number, number] = [0, 0];
   bedTexels = 256;

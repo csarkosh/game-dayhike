@@ -25,8 +25,9 @@ void main(void) {
   vec3 colour = lakeMirrorColour * (1.0 - LAKE_MIRROR_CANOPY_SHADE * vCanopy);
 #ifdef FOG
   // The scene's fog is Babylon's squared exponential (lighting.ts), its
-  // density in vFogInfos.w. PBR takes the factor to linear space before it
-  // mixes, so the ground here fogs as the terrain does in the main view.
+  // density in vFogInfos.w, its factor taken to linear space before the mix
+  // as PBR takes it. That fog alone: not the atmosphere's height fog, which
+  // the terrain also takes in the main view.
   float fogDepth = length(vFogDistance) * vFogInfos.w;
   float fog = pow(clamp(exp(-fogDepth * fogDepth), 0.0, 1.0), 2.2);
   colour = mix(vFogColor, colour, fog);

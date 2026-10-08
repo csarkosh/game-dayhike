@@ -20,6 +20,7 @@
 // read runs on every path. Before the skin, which then holds it off the
 // fronds as it holds the probe. The mirror's smear is a full paw's scaled by
 // the paw mask: none on glass, where the image is sharp to the pixel.
+// No energy-conservation factor or environment intensity on the mirror or the panorama: they are already-lit renders.
 vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw);
 vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;
 vec3 wShoreRay = reflect(-viewDirectionW, normalW);

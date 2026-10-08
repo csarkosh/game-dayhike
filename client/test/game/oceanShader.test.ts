@@ -854,7 +854,7 @@ describe("a lake's shaders", () => {
       "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
       "water.fragment.fx": "64d0992cb60dc15186b2dc2e90f3e62ebecca81a74fe09aac825c88328089fb2",
       "waterLights.fragment.fx": "ebeaa270855bcd9af92596e22fcb7f5bad43ee1d6452e64354f3651f90baa0ce",
-      "waterCompose.fragment.fx": "483a6647d5ffbc0de09459255a7ce34b7c3acf31dbe4b186ee69de4d3e681fa0",
+      "waterCompose.fragment.fx": "870ca5851542855965814812098d203385f66dde080b796b12871021b848bcf7",
     };
     for (const [name, hash] of Object.entries(before)) {
       expect(sha256(await processed(fx(name), !name.includes(".vertex."))), name).toBe(hash);

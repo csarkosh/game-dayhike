@@ -2358,8 +2358,11 @@ function buildRenderer(
    * the mirror armed for this frame when the lake's disc is in this frame's
    * view of an `eye` (false with no local player) and the glass shows, and
    * the weight 0 in any frame it is not (its image is a frame stale); on
-   * medium the panorama re-armed with the sky's probe and once when its
-   * target is first ready, and a sector captured; the
+   * medium the panorama re-armed whenever the lighting hands over a new sky
+   * state (the probe re-armed with it), and whenever content lands late and
+   * its target is then ready to render (at first, the forest's first fill
+   * settling, a billboard or a cliff bucket added to its list), and a
+   * sector captured; the
    * skyline's forest colour from the sky, raw (the shader scales it). After
    * the camera is placed for the frame, in both branches, so the mirror
    * never lags it; nothing without a lake.
