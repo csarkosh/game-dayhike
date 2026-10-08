@@ -1299,7 +1299,7 @@ describe("the lake's life in a renderer", () => {
 });
 
 describe("the lake's calm", () => {
-  const calm = (): LakeCalmFrame => ({ share: -1, rough: true, cover: -1, smearPx: -1 });
+  const calm = (): LakeCalmFrame => ({ share: -1, rough: true, roughShare: -1, cover: -1, smearPx: -1 });
 
   it("is glass at 06:15 under a clear sky and none of it at noon, with the paws' cover scaled by the lake's shelter", () => {
     const clear = WEATHER_PRESETS.clear;
@@ -1316,13 +1316,27 @@ describe("the lake's calm", () => {
 
   it("takes the glass away in rain and on an exposed lake in a strong wind, the paws over all of it", () => {
     const rain = lakeCalmUnder(6.25, "rain", "rain", 1, WEATHER_PRESETS.rain, 0.9, 0.1, 900, GAME_FOV, calm());
-    expect([rain.share, rain.rough, rain.cover]).toEqual([0, true, 1]);
-    // Clear at dawn, but a gale on the clear lake.
+    expect([rain.share, rain.rough, rain.roughShare, rain.cover]).toEqual([0, true, 1, 1]);
+    // Clear at dawn, but a gale on the clear lake: 0.75 is most of the way up the wind's ramp.
     const gale = lakeCalmUnder(6.25, "clear", "clear", 1, WEATHER_PRESETS.clear, 0.75, 0.3, 900, GAME_FOV, calm());
-    expect([gale.share, gale.rough, gale.cover]).toEqual([0, true, 1]);
+    expect([gale.share, gale.rough, gale.roughShare, gale.cover]).toEqual([0.15625, true, 0.84375, 0.84375]);
     // The same wind on the sheltered murky lake leaves its glass.
     const sheltered = lakeCalmUnder(6.25, "clear", "clear", 1, WEATHER_PRESETS.clear, 0.75, 0.1, 900, GAME_FOV, calm());
-    expect([sheltered.share, sheltered.rough, sheltered.cover]).toEqual([1, false, 0]);
+    expect([sheltered.share, sheltered.rough, sheltered.roughShare, sheltered.cover]).toEqual([1, false, 0, 0]);
+  });
+
+  it("eases the glass out and the paws in as the rain climbs through its ramp, never in one frame", () => {
+    const at = (rain: number): number[] => {
+      const c = lakeCalmUnder(6.25, "clear", "clear", 1, { ...WEATHER_PRESETS.clear, rain }, 0.25, 0.1, 900, GAME_FOV, calm());
+      return [c.share, c.roughShare, c.cover];
+    };
+    expect(at(0.25)).toEqual([1, 0, 0]);
+    // Half way at the old step's 0.35, which the rain crosses a second into a fade.
+    expect(at(0.35)).toEqual([0.5000000000000002, 0.4999999999999998, 0.4999999999999998]);
+    expect(at(0.45)).toEqual([0, 1, 1]);
+    // The eerie drizzle's 0.3 takes a little of the glass.
+    const eerie = lakeCalmUnder(6.25, "eerie", "eerie", 1, WEATHER_PRESETS.eerie, 0.69, 0.1, 900, GAME_FOV, calm());
+    expect([eerie.share, eerie.rough, eerie.roughShare, eerie.cover]).toEqual([0.84375, false, 0.15624999999999994, 0.15624999999999994]);
   });
 
   it("fades the share between two presets by the fade's progress, and holds a progress that is not a number at the first", () => {

@@ -122,7 +122,7 @@ import { createWaterLife, type WaterLife, type WaterLifeFrame } from "./waterLif
 import type { WaterLifeSound } from "./waterLifeAudio.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo } from "./rendererSwap.js";
-import { calmShare, isRough, smearPx, SLOPE_PAW_DEG } from "./lakeCalm.js";
+import { calmShare, isRough, roughShare, smearPx, SLOPE_PAW_DEG } from "./lakeCalm.js";
 import { createLakeMirror, createLakeMirrorTerrain } from "./lakeMirror.js";
 import { createLakePanorama, createSkylineTexture } from "./lakePanorama.js";
 import { SKYLINE_SHADE, skylineElevations, skylineTrees } from "./lakeSkyline.js";
@@ -770,11 +770,13 @@ export function pixelAtOneMetre(fov: number, renderHeight: number): number {
 /** The lake's surface as its calm leaves it this frame (`lakeCalmUnder`). */
 export type LakeCalmFrame = {
   /** The glass's share of the lake, 0 to 1: the calm share at the hour,
-   * faded from one preset's to the next's; 0 when the surface is rough. */
+   * faded from one preset's to the next's, times what the rough leaves. */
   share: number;
-  /** Rough over the whole surface (`isRough`): rain, or a strong wind on an exposed lake. */
+  /** Past the rough's steps (`isRough`): rain, or a strong wind on an exposed lake. */
   rough: boolean;
-  /** How much of the lake the cat's-paws cover, 0 to 1: 1 when rough. */
+  /** How rough the whole surface is, 0 to 1 (`roughShare`): the steps eased into ramps. */
+  roughShare: number;
+  /** How much of the lake the cat's-paws cover, 0 to 1: eased to 1 as it turns rough. */
   cover: number;
   /** The vertical smear (px) of the shore's image inside a full paw, for the frame's height and lens: the shader scales it by the paw mask. */
   smearPx: number;
@@ -805,7 +807,9 @@ export function fadedCalmShare(hour: number, from: WeatherPresetName | number, t
  * the wind's 0..1 speed on a lake of `shelter`, the paws' cover
  * `(1 − share) · shelter / PAW_COVER_SHELTER`, and the smear of a paw's
  * slope for a frame `frameHeightPx` tall seen through `fov` (vertical,
- * radians). Rough, the share is 0 and the paws cover the lake.
+ * radians). As the surface turns rough (`roughShare`, r) the share is
+ * scaled by 1 − r and the cover eased to 1 by r: rough all over, the share
+ * is 0 and the paws cover the lake.
  */
 export function lakeCalmUnder(
   hour: number,
@@ -820,9 +824,12 @@ export function lakeCalmUnder(
   out: LakeCalmFrame,
 ): LakeCalmFrame {
   const share = fadedCalmShare(hour, from, to, t);
+  const r = roughShare(weather, wind01, shelter);
+  const cover = Math.min(1, Math.max(0, ((1 - share) * shelter) / PAW_COVER_SHELTER));
   out.rough = isRough(weather, wind01, shelter);
-  out.share = out.rough ? 0 : share;
-  out.cover = out.rough ? 1 : Math.min(1, Math.max(0, ((1 - share) * shelter) / PAW_COVER_SHELTER));
+  out.roughShare = r;
+  out.share = share * (1 - r);
+  out.cover = cover + (1 - cover) * r;
   out.smearPx = smearPx(SLOPE_PAW_DEG, frameHeightPx, fov);
   return out;
 }
@@ -2314,7 +2321,7 @@ function buildRenderer(
   }
 
   /** The lake's calm, one record refilled each frame (`lakeCalmUnder`). */
-  const lakeCalm: LakeCalmFrame = { share: 0, rough: false, cover: 0, smearPx: 0 };
+  const lakeCalm: LakeCalmFrame = { share: 0, rough: false, roughShare: 0, cover: 0, smearPx: 0 };
   /** What the calm fades from (a preset, or the share a fade took over at)
    * and the preset it fades to, and the fade's length and progress (s):
    * `setWeatherName`. */
@@ -2366,7 +2373,9 @@ function buildRenderer(
     const c = lakeCalmUnder(lighting.hour, calmFrom, calmTo, fade, weather, wind.speed, lakeShelter, engine.getRenderHeight(), camera.fov, lakeCalm);
     // Last frame's culling: a frame late, as the sea's.
     const inView = scene.getActiveMeshes().contains(lakeMesh);
-    const armed = lakeMirror !== null ? lakeMirror.update(camera, inView, c.share) : !c.rough;
+    // Without a mirror the weight is 1 until the surface is rough all over,
+    // where the ramped share has already reached 0: no step in the image.
+    const armed = lakeMirror !== null ? lakeMirror.update(camera, inView, c.share) : c.roughShare < 1;
     lakePlugin.setLakeTime(wind.time);
     lakePlugin.setPawCover(c.cover);
     lakePlugin.setCalm(c.share, armed ? 1 : 0, c.smearPx);

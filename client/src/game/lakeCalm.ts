@@ -42,6 +42,11 @@ export const ROUGH_WIND01 = 0.7;
 export const ROUGH_SHELTER = 0.3;
 /** Rough over the whole surface above this rain (0..1): the eerie preset's drizzle, 0.3, is not. */
 export const ROUGH_RAIN = 0.35;
+/** The rough share's ramps (`roughShare`), each about its step above: the rain's from 0.25 to 0.45, the wind's from 0.6 to 0.8. */
+export const ROUGH_RAIN_FROM = 0.25;
+export const ROUGH_RAIN_TO = 0.45;
+export const ROUGH_WIND_FROM = 0.6;
+export const ROUGH_WIND_TO = 0.8;
 
 const SHARE_AT_ENDS: Readonly<Record<WeatherPresetName, number>> = Object.freeze({
   clear: 1,
@@ -97,4 +102,23 @@ export function smearPx(slopeDeg: number, frameHeightPx: number, fovVertical: nu
  */
 export function isRough(weather: WeatherParams, wind01: number, shelter: number): boolean {
   return weather.rain > ROUGH_RAIN || (wind01 > ROUGH_WIND01 && shelter >= ROUGH_SHELTER);
+}
+
+/** Hermite smoothstep of `x` from `a` to `b`, 0 to 1, as GLSL's. */
+function smoothstep(a: number, b: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * How rough the body is over its whole surface, 0 to 1: `isRough`'s two
+ * steps eased into ramps, so the glass and the paws never snap in a frame.
+ * The rain's ramp runs from ROUGH_RAIN_FROM to ROUGH_RAIN_TO at any shelter;
+ * the wind's from ROUGH_WIND_FROM to ROUGH_WIND_TO on a body as exposed as
+ * ROUGH_SHELTER, and not at all on one more sheltered. The larger of the two.
+ */
+export function roughShare(weather: WeatherParams, wind01: number, shelter: number): number {
+  const rain = smoothstep(ROUGH_RAIN_FROM, ROUGH_RAIN_TO, weather.rain);
+  const wind = shelter >= ROUGH_SHELTER ? smoothstep(ROUGH_WIND_FROM, ROUGH_WIND_TO, wind01) : 0;
+  return Math.max(rain, wind);
 }
