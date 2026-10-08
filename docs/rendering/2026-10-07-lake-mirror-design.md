@@ -452,20 +452,20 @@ cost showed.
     range, and pinned in both ranges. For the pass Babylon's
     `_mirroredCameraPosition` and `_forcedViewPosition` hold the mirrored
     eye, so front faces flip and the materials light and fog from it.
-  - The target is half the frame each way (it follows the window), RGBA
-    half float, bilinear, clamped, with a depth buffer, cleared to alpha 0,
-    without particles or sprites.
+  - The target is half the frame each way and at most 960 × 540, a 4K
+    frame's quarter (it follows the window), RGBA half float, bilinear,
+    clamped, with a depth buffer, cleared to alpha 0, without particles or
+    sprites.
   - What it draws: the five inner terrain rings (0–4, past ring 3's 512 m to
     the ridges) through a stand-in of its own (`lakeMirrorTerrain.*.fx`), one
     colour, the forest floor's needle bed under the sun on level ground and
     the fill as the lighting sets them, half as bright under a full canopy,
     with Babylon's EXP2 fog; the cliffs' LOD1 and LOD2 buckets; the forest's
-    impostors; the trees' LOD1 buckets (the far bank, 42 to 85 m from the
-    eye) drawn with the LOD2 copy of their own material, which carries no
-    crown sway (every shipped tree shares one material across its ladder),
-    and their LOD2 buckets on their own; the shore's props; the reeds and
-    the lilies; the midges and the dragonflies; and the animals as they come
-    and go.
+    impostors; the trees' LOD2 buckets (85 to 120 m from the eye) on their
+    own material, their LOD1 buckets (42 to 85 m) left out for their cost
+    (2 ms a draw at 4K; the trees across the lakes measured stand past 85 m
+    from the shore); the shore's props; the reeds and the lilies; the midges
+    and the dragonflies; and the animals as they come and go.
   - The pass is armed as §5.1 says. Every PBR material drawn in it compiles
     once more under Babylon's mirrored flag, a stage of its own: the high
     tier alone meets 46 of the corpus's stages, where it met 10. No
@@ -473,6 +473,12 @@ cost showed.
     and reads `front_facing`, 7 of the 19, and the cliffs' LOD1 material
     14; the lake's fragment stage binds ten textures, three more than
     before (the mirror, the panorama, the skyline).
+  - The pass draws every other frame while armed, the first armed frame
+    always, into a target that is on the scene's list only in the frames it
+    draws; between draws the lake reads the last image through the
+    view-projection it was drawn with, so on those frames the reflection is
+    a frame behind the camera. The window's resize is taken on a drawing
+    frame, so the image being read keeps its size.
   - The read (`waterMirrorUv`, its twin `mirrorUv` in `mirrorView.ts`):
     `uv = clip.xy / clip.w · 0.5 + 0.5`, the v axis running up the target,
     moved by `slope · 0.05 · min(depth / 0.5, 1) / max(viewDepth, 1)`, then
@@ -527,37 +533,69 @@ cost showed.
 
 ### Cost
 
-Measured against the code before this work on the same Mac, at 3,840 × 2,160
-(a 1080p window at a hardware scaling of 0.5, so the GPU bounds the frame),
+Two instruments on the same Mac, at the murky lake, with other work's dev
+servers up (a load of 2 to 7).
+
+Frame-time pairs against the code before this work, at 3,840 × 2,160 (a
+1080p window at a hardware scaling of 0.5, so the GPU bounds the frame),
 fresh pages in the order A B B A and B A A B, three five-second samples a
-page, at the murky lake. The frames present on vsync, so every page's median
-sits on a multiple of 16.7 ms and the means below are the mix of those
-multiples, not a GPU clock; a pair of pages on one build read 0.5 ms apart.
-The machine was not quiet (a load of 2.3 to 3.0, other work's dev servers
-up), and its frame times drifted up by a fifth over the run, which the
-paired order takes out of the difference but not out of the noise. The
-high tier's pages that fell back to WebGL under the busy GPU were discarded
-and taken again.
+page. The frames present on vsync, so every page's median sits on a multiple
+of 16.7 ms and a pair's difference is the mix of those multiples, not a GPU
+clock; a pair of pages on one build read 0.5 ms apart, and the pairs cannot
+tell 2 ms from 3. They set the first readings: with the pass on, +3.2 ms at
+the shore at dawn and +5.3 across; with the pass off, +2.5 ms at the shore
+at noon, which said the lake's own fragment work carried much of the cost.
+Three exact skips under uniform branches brought the noon reading to
++0.9 ms: the cat's-paw field only where its cover is above 0, the wrap's
+second field only in the wrap's last six seconds, the shore's reads only
+while the mirror's weight can be above 0. Medium and low read within the
+pairs' noise (−0.5 to +2.7 ms, their medians the same multiple as before);
+their budgets of 0.3 and 0.05 ms are below what the pairs resolve.
 
-| Tier | Pose | Before | After | Added |
-|---|---|---|---|---|
-| High | dawn, the shore, the pass on | 64.8 ms | 68.0 ms | +3.2 ms |
-| High | dawn, across, the pass on | 76.1 ms | 81.4 ms | +5.3 ms |
-| High | noon, the shore, the pass off | 64.2 ms | 66.7 ms | +2.5 ms |
-| Medium | dawn, the shore | 61.7 ms | 61.2 ms | −0.5 ms |
-| Medium | dawn, across | 66.3 ms | 69.8 ms | +3.5 ms (one sample) |
-| Medium | noon, the shore | 56.3 ms | 56.8 ms | +0.6 ms |
-| Low | dawn, the shore | 43.9 ms | 45.0 ms | +1.2 ms |
-| Low | dawn, across | 46.3 ms | 49.1 ms | +2.7 ms |
-| Low | noon, the shore | 30.5 ms | 31.7 ms | +1.3 ms |
+GPU timestamp queries on WebGPU (the engine made with the timestamp
+feature for the measurement alone, Babylon's per-pass counters) time the
+pass itself, apart from the frame. A pass drawn every other frame has its
+timestamps read back by pass index a frame late, so its counter returns
+whichever pass sits at its index on the frames between; the pass was timed
+drawn every frame, at the 960 × 540 target, and the half rate halves it.
 
-Against §8's budgets: the high tier is over its 2.5 ms at this resolution,
-and the noon reading, with the pass off, says most of the cost is the
-lake's fragment work (the paw mask's two octaves, the rings' field, the
-three reads), not the pass, so §8's cut order, which thins the pass, would
-not bring it under. Medium and low read within this rig's noise; their
-budgets of 0.3 and 0.05 ms are below what it resolves. At 1080p the
-fragment work is a quarter of these figures.
+| What the pass drew (4K, 1,920 × 1,080 target, every frame) | ms a draw |
+|---|---|
+| The whole list, 66 meshes, 930k vertices, 19.7k instances, across | 7 to 9 |
+| The far forest's impostors alone, 14k billboards | 2.9 |
+| The trees' LOD2 buckets alone, 600k vertices | 2.1 |
+| The trees' LOD1 buckets alone | 2.2 |
+| The reeds and the lilies alone | 1.5 |
+| The terrain, the props, the animals, the water life, the cliffs, each alone | 0.4 or less |
+| The whole list at a 960 × 540 target | 4.7 |
+| The whole list at a 480 × 270 target | 4.4 |
+
+About 4.4 ms of the pass is vertex and draw work no target size touches, so
+the design's cut order (which thins the fill) could not reach 2.5 ms; the
+pass was made to draw every other frame into a target capped at 960 × 540
+with the LOD1 buckets out (§11, §5).
+
+| As built, 960 × 540 target, every other frame | ms a draw | ms a frame |
+|---|---|---|
+| Dawn, across, 4K | 4.9 (least 4.4) | 2.2 to 2.5 |
+| Dawn, the shore, 4K | 3.8 (least 3.4) | 1.7 to 1.9 |
+| Dawn, across, 1080p | 4.9 (least 4.5) | 2.2 to 2.5 |
+| Dawn, the shore, 1080p | 3.5 (least 3.3) | 1.7 to 1.8 |
+
+The LOD1 buckets' cut bought about 0.75 ms a frame at the shore and nothing
+measurable across (the trees across the measured lakes stand past 85 m
+from the eye, at LOD2 and the impostors). Frame-rate pairs at the as-built
+tip read the high tier within 2 ms of the code before it at every pose
+measured on WebGPU (4K across 13.4 against 13.6 frames a second), inside
+the pairs' resolution.
+
+Against §8's 2.5 ms for the pass and the read on high: the pass alone is
+under it at every pose; with the lake's remaining fragment work (under
+1 ms, the noon reading's +0.9 with the paws on, less on glass) the shore is
+under and the across pose, the lake filling the frame, about 0.4 ms over,
+at the edge of what this rig resolves. The next lever is the rate: every
+third frame takes the across pose under, at two frames of lag in the
+reflection.
 
 ### Checks
 
