@@ -1349,13 +1349,19 @@ describe("the lake's calm", () => {
       const c = lakeCalmUnder(6.25, "clear", "clear", 1, { ...WEATHER_PRESETS.clear, rain }, 0.25, 0.1, 900, GAME_FOV, calm());
       return [c.share, c.roughShare, c.cover];
     };
-    expect(at(0.25)).toEqual([1, 0, 0]);
-    // Half way at the old step's 0.35, which the rain crosses a second into a fade.
-    expect(at(0.35)).toEqual([0.5000000000000002, 0.4999999999999998, 0.4999999999999998]);
-    expect(at(0.45)).toEqual([0, 1, 1]);
-    // The eerie drizzle's 0.3 takes a little of the glass.
-    const eerie = lakeCalmUnder(6.25, "eerie", "eerie", 1, WEATHER_PRESETS.eerie, 0.69, 0.1, 900, GAME_FOV, calm());
-    expect([eerie.share, eerie.rough, eerie.roughShare, eerie.cover]).toEqual([0.84375, false, 0.15624999999999994, 0.15624999999999994]);
+    expect(at(0.35)).toEqual([1, 0, 0]);
+    expect(at(0.425)).toEqual([0.5, 0.5, 0.5]);
+    expect(at(0.5)).toEqual([0, 1, 1]);
+  });
+
+  it("leaves the eerie lake the clear sky's glass at every hour: its drizzle is not rough", () => {
+    const shares = (name: "clear" | "eerie"): number[][] =>
+      [0, 6.25, 8.5, 12, 17.5, 22].map((hour) => {
+        const c = lakeCalmUnder(hour, name, name, 1, WEATHER_PRESETS[name], 0.69, 0.1, 900, GAME_FOV, calm());
+        return [c.share, c.roughShare];
+      });
+    expect(shares("eerie")).toEqual([[1, 0], [1, 0], [0.5, 0], [0, 0], [0.5, 0], [1, 0]]);
+    expect(shares("eerie")).toEqual(shares("clear"));
   });
 
   it("fades the share between two presets by the fade's progress, and holds a progress that is not a number at the first", () => {

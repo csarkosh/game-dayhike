@@ -34,7 +34,7 @@ describe("the calm's constants", () => {
     expect(ROUGH_WIND01).toBe(0.7);
     expect(ROUGH_SHELTER).toBe(0.3);
     expect(ROUGH_RAIN).toBe(0.35);
-    expect([ROUGH_RAIN_FROM, ROUGH_RAIN_TO]).toEqual([0.25, 0.45]);
+    expect([ROUGH_RAIN_FROM, ROUGH_RAIN_TO]).toEqual([0.35, 0.5]);
     expect([ROUGH_WIND_FROM, ROUGH_WIND_TO]).toEqual([0.6, 0.8]);
   });
 });
@@ -126,16 +126,20 @@ describe("isRough", () => {
 describe("roughShare", () => {
   const rainOf = (rain: number) => ({ ...WEATHER_PRESETS.clear, rain });
 
-  it("ramps in with the rain from 0.25 to 0.45, half at the step's 0.35, at any wind and shelter", () => {
-    expect(roughShare(rainOf(0.25), 0, 0.1)).toBe(0);
-    expect(roughShare(rainOf(0.35), 0, 0.1)).toBe(0.4999999999999998);
-    expect(roughShare(rainOf(0.45), 0, 0.1)).toBe(1);
-    expect(roughShare(rainOf(0.25), 0, 0.3)).toBe(0);
-    expect(roughShare(rainOf(0.35), 0, 0.3)).toBe(0.4999999999999998);
-    expect(roughShare(rainOf(0.45), 0, 0.3)).toBe(1);
+  it("ramps in with the rain from 0.35 to 0.5, half at 0.425, at any wind and shelter", () => {
+    expect(roughShare(rainOf(0.35), 0, 0.1)).toBe(0);
+    expect(roughShare(rainOf(0.425), 0, 0.1)).toBe(0.5);
+    expect(roughShare(rainOf(0.5), 0, 0.1)).toBe(1);
+    expect(roughShare(rainOf(0.35), 0, 0.3)).toBe(0);
+    expect(roughShare(rainOf(0.425), 0, 0.3)).toBe(0.5);
+    expect(roughShare(rainOf(0.5), 0, 0.3)).toBe(1);
     expect(roughShare(WEATHER_PRESETS.rain, 0.9, 0.1)).toBe(1);
-    // The eerie preset's drizzle, 0.3, takes a little of the glass.
-    expect(roughShare(WEATHER_PRESETS.eerie, 0.69, 0.1)).toBe(0.15624999999999994);
+  });
+
+  it("leaves the eerie preset's drizzle, 0.3, all its glass: none of it is rough", () => {
+    expect(roughShare(WEATHER_PRESETS.eerie, 0.69, 0.1)).toBe(0);
+    expect(roughShare(WEATHER_PRESETS.eerie, 0.25, 0.3)).toBe(0);
+    expect(roughShare(WEATHER_PRESETS.eerie, 0.6, 0.3)).toBe(0);
   });
 
   it("ramps in with the wind from 0.6 to 0.8 on a body of shelter 0.3, half at the step's 0.7", () => {
@@ -155,7 +159,8 @@ describe("roughShare", () => {
 
   it("takes the larger of the two, and is 0 under clear and bright skies at their own winds", () => {
     expect(roughShare(rainOf(0.35), 0.75, 0.3)).toBe(0.84375);
-    expect(roughShare(rainOf(0.45), 0.7, 0.3)).toBe(1);
+    expect(roughShare(rainOf(0.5), 0.7, 0.3)).toBe(1);
+    expect(roughShare(rainOf(0.425), 0.7, 0.3)).toBe(0.5);
     expect(roughShare(WEATHER_PRESETS.clear, 0.25, 0.3)).toBe(0);
     expect(roughShare(WEATHER_PRESETS.bright, 0.4075, 0.3)).toBe(0);
   });

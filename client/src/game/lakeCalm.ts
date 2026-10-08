@@ -42,9 +42,9 @@ export const ROUGH_WIND01 = 0.7;
 export const ROUGH_SHELTER = 0.3;
 /** Rough over the whole surface above this rain (0..1): the eerie preset's drizzle, 0.3, is not. */
 export const ROUGH_RAIN = 0.35;
-/** The rough share's ramps (`roughShare`), each about its step above: the rain's from 0.25 to 0.45, the wind's from 0.6 to 0.8. */
-export const ROUGH_RAIN_FROM = 0.25;
-export const ROUGH_RAIN_TO = 0.45;
+/** The rough share's ramps (`roughShare`): the rain's from its step above to 0.5, so the eerie drizzle's 0.3 is none of it; the wind's from 0.6 to 0.8, about its step. */
+export const ROUGH_RAIN_FROM = 0.35;
+export const ROUGH_RAIN_TO = 0.5;
 export const ROUGH_WIND_FROM = 0.6;
 export const ROUGH_WIND_TO = 0.8;
 
@@ -113,7 +113,8 @@ function smoothstep(a: number, b: number, x: number): number {
 /**
  * How rough the body is over its whole surface, 0 to 1: `isRough`'s two
  * steps eased into ramps, so the glass and the paws never snap in a frame.
- * The rain's ramp runs from ROUGH_RAIN_FROM to ROUGH_RAIN_TO at any shelter;
+ * The rain's ramp runs from ROUGH_RAIN_FROM to ROUGH_RAIN_TO at any shelter
+ * (the eerie preset's drizzle, under it, leaves the glass whole);
  * the wind's from ROUGH_WIND_FROM to ROUGH_WIND_TO on a body as exposed as
  * ROUGH_SHELTER, and not at all on one more sheltered. The larger of the two.
  */
