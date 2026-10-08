@@ -16,12 +16,15 @@
  * The turn is drawn in PANORAMA_SECTORS sectors, one a frame, through its own
  * camera (never the scene's active one): yawed to the sector's middle, drawn
  * into the sector's column through the camera's viewport, its projection
- * fixed for the lake by `panoramaProjection`. The first sector clears the
- * whole target and the rest keep what the earlier ones drew. The target is on
+ * fixed for the lake by `panoramaProjection`. Each sector clears its own
+ * column alone, so the rest keep what they hold. The target is on
  * `scene.customRenderTargets`, which the scene renders before its main pass,
- * only while a capture runs: `rearm` starts one (at load, and whenever the
- * sky probe is re-armed by the hour or the weather), each `update` sets up
- * the next sector for that frame's render, and the one after the last takes
+ * only while a capture runs: `rearm` (at load, and whenever the sky probe is
+ * re-armed by the hour or the weather) asks for a whole turn from the sector
+ * next due, so a rearm in the middle of a capture continues the turn and
+ * every column is at most sixteen frames old however often it is called;
+ * each `update` sets up the next sector for that frame's render, holds where
+ * it is while the target cannot yet render, and the one after the last takes
  * the target off the list, so nothing is drawn between captures.
  *
  * Only registered meshes draw into it, each with a stand-in material or its
@@ -63,9 +66,9 @@ export type LakePanorama = {
   readonly texture: RenderTargetTexture;
   register(mesh: Mesh, material: Material | null): void;
   unregister(mesh: Mesh): void;
-  /** Starts a capture (sixteen sectors, one a frame); called at load and when the probe re-arms. */
+  /** Asks for a whole turn (sixteen sectors, one a frame) from the next sector due; called at load and when the probe re-arms. */
   rearm(): void;
-  /** Advances one sector when a capture is in progress; true while capturing. */
+  /** Advances one sector when a capture is in progress, or holds while the target is not ready; true while capturing. */
   update(): boolean;
   dispose(): void;
 };
@@ -132,8 +135,25 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
   camera.freezeProjectionMatrix(panoramaProjection(lake.radius, scene.getEngine().isNDCHalfZRange, new Matrix()));
   texture.activeCamera = camera;
 
-  // The next sector to draw; PANORAMA_SECTORS when no capture runs.
-  let sector = PANORAMA_SECTORS;
+  // The sector the next draw is of, and how many are still to draw in the
+  // capture running (0 when none). The strip holds a whole turn when the count
+  // runs out: a rearm gives sixteen more from the current sector, so one that
+  // lands mid-capture continues the turn rather than restarting it.
+  let sector = 0;
+  let remaining = 0;
+  // The column the sector now being drawn owns, for the clear.
+  let column = 0;
+  const columnWidth = PANORAMA_WIDTH / PANORAMA_SECTORS;
+
+  // A sector clears its own column and nothing else, colour and depth, so
+  // the columns of the other fifteen keep what they hold. This replaces the
+  // target's own clear, which would take the whole attachment.
+  texture.skipInitialClear = true;
+  texture.onClearObservable.add((engine) => {
+    engine.enableScissor(columnWidth * column, 0, columnWidth, PANORAMA_HEIGHT);
+    engine.clear(texture.clearColor, true, true, true);
+    engine.disableScissor();
+  });
 
   const listed = (on: boolean): void => {
     const at = scene.customRenderTargets.indexOf(texture);
@@ -159,23 +179,29 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
       if (!mesh.isDisposed()) texture.setMaterialForRendering(mesh, undefined);
     },
     rearm() {
-      sector = 0;
+      remaining = PANORAMA_SECTORS;
     },
     update() {
-      if (sector >= PANORAMA_SECTORS) {
+      if (remaining <= 0) {
         listed(false);
         return false;
       }
+      // A stand-in whose effect is still compiling would draw nothing: hold
+      // at this sector, off the list, until the target can render.
+      if (!texture.isReadyForRendering()) {
+        listed(false);
+        return true;
+      }
       camera.rotation.y = sectorYaw(sector);
       camera.viewport.x = sector / PANORAMA_SECTORS;
-      // The first sector clears the whole target, colour and depth; the
-      // rest draw over what is there, each only inside its own column.
-      texture.skipInitialClear = sector > 0;
+      column = sector;
       listed(true);
-      sector++;
+      sector = (sector + 1) % PANORAMA_SECTORS;
+      remaining--;
       return true;
     },
     dispose() {
+      remaining = 0;
       listed(false);
       texture.dispose();
       camera.dispose();

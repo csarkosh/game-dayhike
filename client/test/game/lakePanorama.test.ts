@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
@@ -102,9 +102,8 @@ describe("createLakePanorama", () => {
     expect(pano.update()).toBe(false);
     expect(s.customRenderTargets).not.toContain(pano.texture);
     expect(pano.update()).toBe(false);
-    // A rearm mid-capture starts the turn again from the first sector.
-    pano.rearm();
-    for (let k = 0; k < 5; k++) pano.update();
+    // A rearm with none running starts at the sector next due: 16 and 0 are
+    // the same place on the turn.
     pano.rearm();
     for (let k = 0; k < 16; k++) expect(pano.update(), `again ${k}`).toBe(true);
     expect(pano.update()).toBe(false);
@@ -135,20 +134,65 @@ describe("createLakePanorama", () => {
     pano.dispose();
   });
 
-  it("clears the whole target on the first sector and draws the rest over it", () => {
+  it("clears each sector's own column alone, in place of the target's whole clear", () => {
     const s = scene();
     const pano = createLakePanorama(s, LAKE);
-    pano.rearm();
-    const skips: boolean[] = [];
-    for (let k = 0; k < 16; k++) {
-      pano.update();
-      skips.push(pano.texture.skipInitialClear);
-    }
-    expect(skips[0]).toBe(false);
-    expect(skips.slice(1)).toEqual(new Array(15).fill(true));
+    const e = s.getEngine();
+    const calls: string[] = [];
+    vi.spyOn(e, "enableScissor").mockImplementation((x, y, w, h) => { calls.push(`scissor ${x} ${y} ${w} ${h}`); });
+    vi.spyOn(e, "clear").mockImplementation((_c, color, depth, stencil) => { calls.push(`clear ${color} ${depth} ${stencil}`); });
+    vi.spyOn(e, "disableScissor").mockImplementation(() => { calls.push("off"); });
+    expect(pano.texture.skipInitialClear).toBe(true);
     pano.rearm();
     pano.update();
-    expect(pano.texture.skipInitialClear).toBe(false);
+    pano.texture.onClearObservable.notifyObservers(e);
+    pano.update();
+    pano.update();
+    pano.texture.onClearObservable.notifyObservers(e);
+    expect(calls).toEqual([
+      "scissor 0 0 64 128", "clear true true true", "off",
+      "scissor 128 0 64 128", "clear true true true", "off",
+    ]);
+    expect(pano.texture.skipInitialClear).toBe(true);
+    pano.dispose();
+  });
+
+  it("continues the turn on a rearm instead of restarting it, a rearm twice in a row counting once", () => {
+    const s = scene();
+    const pano = createLakePanorama(s, LAKE);
+    const cam = panoramaCamera(s);
+    const drawn = (): number => Math.round(cam.viewport.x * 16);
+    pano.rearm();
+    for (let k = 0; k < 5; k++) pano.update();
+    expect(drawn()).toBe(4);
+    pano.rearm();
+    pano.rearm();
+    const order: number[] = [];
+    while (pano.update()) order.push(drawn());
+    expect(order).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4]);
+    expect(s.customRenderTargets).not.toContain(pano.texture);
+    pano.dispose();
+  });
+
+  it("holds at its sector, off the list, until the target is ready to render", () => {
+    const s = scene();
+    const pano = createLakePanorama(s, LAKE);
+    const cam = panoramaCamera(s);
+    let ready = false;
+    vi.spyOn(pano.texture, "isReadyForRendering").mockImplementation(() => ready);
+    pano.rearm();
+    for (let k = 0; k < 40; k++) {
+      expect(pano.update(), `held ${k}`).toBe(true);
+      expect(s.customRenderTargets).not.toContain(pano.texture);
+    }
+    ready = true;
+    expect(pano.update()).toBe(true);
+    expect(s.customRenderTargets).toContain(pano.texture);
+    expect(cam.viewport.x).toBe(0);
+    // The held frames did not count: sixteen sectors still follow in all.
+    let more = 0;
+    while (pano.update()) more++;
+    expect(more).toBe(15);
     pano.dispose();
   });
 
@@ -172,6 +216,10 @@ describe("createLakePanorama", () => {
     // level just under the frame's foot and 64 m 4 percent over its top.
     expect(ndc(cam, onCylinder(0, 0)).y).toBeCloseTo(-1.000245, 5);
     expect(ndc(cam, onCylinder(0, 64)).y).toBeCloseTo(1.038937, 5);
+    // Within the sector the planar frame departs from the angle by under a
+    // quarter of a 64-texel column's texel: at 0.11386 rad past the middle
+    // x is tan(d) / tan(pi / 16) = 0.5749 against the angle-linear 0.5799, 0.16 texel.
+    expect(ndc(cam, onCylinder(middle + 0.11386, 32)).x).toBeCloseTo(0.5749, 4);
     // Sector 4 faces +x: its middle is 9 pi / 16, its left edge pi / 2.
     for (let k = 1; k < 5; k++) pano.update();
     expect(ndc(cam, onCylinder((9 * Math.PI) / 16, 0)).y).toBeCloseTo(-1, 5);
@@ -224,6 +272,8 @@ describe("createLakePanorama", () => {
     const cam = panoramaCamera(s);
     const ring = MeshBuilder.CreateGround("ring", { width: 2, height: 2 }, s);
     pano.register(ring, null);
+    // NullEngine compiles no effect, so a listed mesh never reads as ready on its own.
+    vi.spyOn(pano.texture, "isReadyForRendering").mockReturnValue(true);
     pano.rearm();
     pano.update();
     expect(s.customRenderTargets).toContain(pano.texture);
@@ -232,6 +282,9 @@ describe("createLakePanorama", () => {
     expect(s.textures).not.toContain(pano.texture);
     expect(s.cameras).not.toContain(cam);
     expect(ring.isDisposed()).toBe(false);
+    // A stray update after dispose ends the capture and never lists the target again.
+    expect(pano.update()).toBe(false);
+    expect(s.customRenderTargets).toEqual([]);
     // A registry call after dispose is a no-op.
     pano.register(ring, null);
     pano.unregister(ring);
