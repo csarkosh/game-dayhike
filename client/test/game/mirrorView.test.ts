@@ -156,6 +156,12 @@ describe("obliqueProjection", () => {
     });
   }
 
+  it("leaves a copy when the eye is on the kept side and the far corner is not: nothing to keep", () => {
+    // The plane 5 m ahead facing the eye, its kept half the eye's: C·Q = −1 + 5/10000 < 0.
+    const p = babylonProjection(false);
+    expect(Array.from(obliqueProjection(p, [0, 0, -1, 5], false, new Float32Array(16)))).toEqual(Array.from(p));
+  });
+
   it("may write over its own input", () => {
     const p = babylonProjection(false);
     const apart = Array.from(obliqueProjection(p, UNDER_EYE, false, new Float32Array(16)));

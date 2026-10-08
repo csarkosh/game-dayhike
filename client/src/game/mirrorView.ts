@@ -99,8 +99,9 @@ function invert4(m: Float32Array, out: Float64Array): boolean {
  * projection takes to (sgn a, sgn b, 1, 1). Points across the plane fall
  * under the near depth and are clipped. Every other entry is `projection`'s.
  * Writes `out` (which may be `projection` itself) and returns it; a singular
- * projection, or a plane the frustum's far corner lies on, leaves `out` a
- * copy of `projection`. `plane` may be a tuple or the Float32Array
+ * projection, or a plane the frustum's far corner lies on or behind (C·Q ≤
+ * 0: nothing of the frustum to keep, the near plane would turn over), leaves
+ * `out` a copy of `projection`. `plane` may be a tuple or the Float32Array
  * `cameraSpacePlane` writes.
  */
 export function obliqueProjection(
@@ -123,7 +124,7 @@ export function obliqueProjection(
   }
   const cDotQ =
     plane[0]! * scratchQ[0]! + plane[1]! * scratchQ[1]! + plane[2]! * scratchQ[2]! + plane[3]! * scratchQ[3]!;
-  if (cDotQ === 0 || !Number.isFinite(cDotQ)) return out;
+  if (cDotQ <= 0 || !Number.isFinite(cDotQ)) return out;
   const wQ =
     scratchQ[0]! * projection[3]! +
     scratchQ[1]! * projection[7]! +
