@@ -86,18 +86,20 @@ vec3 waterCylinderHit(vec3 origin, vec3 dir) {
 }
 
 // Medium: the panorama where the reflected ray meets the shore's cylinder
-// below the skyline and the capture drew something there, the probe's own
-// radiance elsewhere. Seen from the centre's eye, the hit is below the
+// below the skyline and the capture drew something there, the fallback
+// elsewhere: the skyline's read (waterSkylineRadiance), so a texel the
+// capture left empty shows the forest's shade below the treeline and the
+// probe only above it. Seen from the centre's eye, the hit is below the
 // skyline when its rise over the eye is under the radius times the
 // skyline's tangent. The ripples are already in dir, and the cylinder keeps
 // the contact line: the ray's tilt moves the hit by the tilt times the ray's
 // run to the shore, which is nothing at the bank.
-vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 probeRadiance) {
+vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 fallback) {
   vec3 hit = waterCylinderHit(origin, dir);
   vec4 shore = texture2D(waterPanorama, vec2(hit.x, clamp(hit.y / PANORAMA_HEIGHT_M, 0.0, 1.0)));
   float skyline = texture2D(waterSkyline, vec2(hit.x, 0.5)).r;
   float below = step(hit.y - PANORAMA_EYE_UP, waterLakeRadius * tan(skyline));
-  return mix(probeRadiance, shore.rgb, hit.z * below * shore.a);
+  return mix(fallback, shore.rgb, hit.z * below * shore.a);
 }
 
 // Low: the forest's shade below the skyline at the reflected ray's own

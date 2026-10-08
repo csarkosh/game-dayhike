@@ -983,7 +983,7 @@ describe("the lake's mirror in the water plugin", () => {
         "vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;\n" +
         "vec3 wShoreRay = reflect(-viewDirectionW, normalW);\n" +
         "vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));\n" +
-        "wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance), step(0.5, waterPanoramaOn));\n" +
+        "wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wShore), step(0.5, waterPanoramaOn));\n" +
         "wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);\n" +
         "float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;\n" +
         "finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);\n",
@@ -1309,7 +1309,7 @@ describe("the lake's shore on medium and low in the water plugin", () => {
     const lakeMedium = await compiled(false, medium);
     expect(lakeMedium.vertex).toBe(lake.vertex);
     expect(lakeMedium.fragment).toBe(lake.fragment);
-    expect(lake.fragment).toContain("waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance)");
+    expect(lake.fragment).toContain("waterPanoramaRadiance(vPositionW, wShoreRay, wShore)");
     const sea = await compiled(true, none);
     const seaShore = await compiled(true, medium);
     expect(seaShore.vertex).toBe(sea.vertex);
@@ -1388,7 +1388,7 @@ describe("the lake's shore read on medium and low", () => {
       "vec4 shore = texture2D(waterPanorama, vec2(hit.x, clamp(hit.y / PANORAMA_HEIGHT_M, 0.0, 1.0)));",
       "float skyline = texture2D(waterSkyline, vec2(hit.x, 0.5)).r;",
       "float below = step(hit.y - PANORAMA_EYE_UP, waterLakeRadius * tan(skyline));",
-      "return mix(probeRadiance, shore.rgb, hit.z * below * shore.a);",
+      "return mix(fallback, shore.rgb, hit.z * below * shore.a);",
       "float skyline = texture2D(waterSkyline, vec2(waterAzimuth(dir.xz), 0.5)).r;",
       "float below = step(dir.y, length(dir.xz) * tan(skyline));",
       "return mix(probeRadiance, waterShadeColour * vLightingIntensity.z, below);",
@@ -1474,12 +1474,33 @@ describe("the lake's shore read on medium and low", () => {
     expect(azimuth(-1, 0)).toBeCloseTo(0.75, 12);
   });
 
+  it("falls back on medium, where the panorama drew nothing, to the skyline's shade below the treeline and the probe above it", () => {
+    // The chain's mixes, transcribed from the pinned lines, by colour channel.
+    const mix = (a: number, b: number, t: number): number => a * (1 - t) + b * t;
+    const shore = (flags: { skyline: number; panorama: number }, probe: number, shade: number, below: number, pano: number, share: number): number => {
+      const skyline = mix(probe, shade, below);
+      const first = mix(probe, skyline, step(0.5, flags.skyline));
+      return mix(first, mix(first, pano, share), step(0.5, flags.panorama));
+    };
+    const medium = { skyline: 1, panorama: 1 };
+    // Below the treeline with no texel of the panorama: the shade, never the sky.
+    expect(shore(medium, 0.9, 0.05, 1, 0.3, 0)).toBe(0.05);
+    // Above it: the probe's sky.
+    expect(shore(medium, 0.9, 0.05, 0, 0.3, 0)).toBe(0.9);
+    // Where the panorama drew: the panorama.
+    expect(shore(medium, 0.9, 0.05, 1, 0.3, 1)).toBe(0.3);
+    expect(COMPOSE).toContain("vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));");
+    expect(COMPOSE).toContain("wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wShore), step(0.5, waterPanoramaOn));");
+    expect(SHORE).toContain("vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 fallback) {");
+    expect(SHORE).toContain("return mix(fallback, shore.rgb, hit.z * below * shore.a);");
+  });
+
   it("substitutes the shore before the skin's scaling, the mirror over the panorama over the skyline over the probe", () => {
     const lines = [
       "vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;",
       "vec3 wShoreRay = reflect(-viewDirectionW, normalW);",
       "vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));",
-      "wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance), step(0.5, waterPanoramaOn));",
+      "wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wShore), step(0.5, waterPanoramaOn));",
       "wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);",
       "float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;",
       "finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);",

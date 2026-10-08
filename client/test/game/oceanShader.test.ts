@@ -854,7 +854,7 @@ describe("a lake's shaders", () => {
       "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
       "water.fragment.fx": "64d0992cb60dc15186b2dc2e90f3e62ebecca81a74fe09aac825c88328089fb2",
       "waterLights.fragment.fx": "ebeaa270855bcd9af92596e22fcb7f5bad43ee1d6452e64354f3651f90baa0ce",
-      "waterCompose.fragment.fx": "99015020293c73cf8b13ed2f0264a52b6b2596e4848255647ac9bfeade89b186",
+      "waterCompose.fragment.fx": "483a6647d5ffbc0de09459255a7ce34b7c3acf31dbe4b186ee69de4d3e681fa0",
     };
     for (const [name, hash] of Object.entries(before)) {
       expect(sha256(await processed(fx(name), !name.includes(".vertex."))), name).toBe(hash);
@@ -988,7 +988,7 @@ describe("the water material's stages, compiled", () => {
       expect(lake.defines).not.toContain("#define OCEAN");
       expect(f).toContain("float roughness=reflectivityOut.roughness;");
       // the lake's shore read, the panorama's and the skyline's, translated with the rest
-      expect(f).toContain("vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 probeRadiance)");
+      expect(f).toContain("vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 fallback)");
       expect(f).toContain("vec3 waterCylinderHit(vec3 origin, vec3 dir)");
       expect(f).toContain("vec3 waterSkylineRadiance(vec3 dir, vec3 probeRadiance)");
       expect(f).toContain("lakeRipple2(vPositionW.xz)");

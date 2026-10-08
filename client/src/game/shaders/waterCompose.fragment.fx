@@ -11,7 +11,8 @@
 // probe's radiance, through PBR's own Fresnel, by the state's weight, the
 // glass's share of the lake and the cat's-paws. Which shore is the tier's:
 // the mirror's image where its target drew something (high), else the
-// panorama (medium), else the skyline's shade (low), else the probe's own.
+// panorama (medium), else the skyline's shade (low, and medium where the
+// panorama drew nothing), else the probe's own.
 // The probe's radiance and the shade are scaled by the environment's
 // intensity, as PBR scales the probe's own term (the eerie plateau dims
 // it), while the mirror and the panorama are renders of the scene already
@@ -23,7 +24,7 @@ vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, v
 vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;
 vec3 wShoreRay = reflect(-viewDirectionW, normalW);
 vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));
-wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wProbeRadiance), step(0.5, waterPanoramaOn));
+wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wShore), step(0.5, waterPanoramaOn));
 wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);
 float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;
 finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);
