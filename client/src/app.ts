@@ -106,6 +106,7 @@ import { trailDistance } from "./sim/trail.js";
 import { AiState } from "./sim/types.js";
 import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState } from "./game/innerVoice.js";
 import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
+import { createVoiceClips } from "./game/voiceClips.js";
 import { HOLLOW_CALL_CLIP, stepWoods, WOODS_REST, type WoodsState } from "./game/woodsVoice.js";
 import { loadBirdBed } from "./game/birdBed.js";
 import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "./game/woodsSounds.js";
@@ -457,6 +458,8 @@ function buildGame(
   // The inner voice (innerVoice.ts): the ranger's own lines, local to this screen; and where the cap lies, found once a world.
   let voice: VoiceState = voiceRest(seed ^ 0x5a11);
   let capAt: DroppedCap | null | undefined;
+  const voiceClips = createVoiceClips(ambient);
+  made(() => voiceClips.dispose());
   /** The woods' other voices (woodsSounds.ts), on this screen's own stream. */
   let woodsSounds: WoodsSoundsState = WOODS_SOUNDS_REST;
   // Recomputed when the weather does: on a `weather` command directly below,
@@ -821,7 +824,10 @@ function buildGame(
         safe: self.safe,
       }, dt);
       voice = spoke.state;
-      if (spoke.line !== null) hud.say(spoke.line, VOICE_LINE_MS);
+      if (spoke.line !== null) {
+        hud.say(spoke.line.text, VOICE_LINE_MS);
+        voiceClips.speak(spoke.line);
+      }
     }
     // The night's other voices, and the day's flies.
     const odd = stepWoodsSounds(woodsSounds, { night: acts.night, day: 1 - acts.wet, chase: state.phase === Phase.Chase }, dt);

@@ -118,8 +118,11 @@ function next(state: VoiceState): number {
   return state.rng / 4294967296;
 }
 
+/** A line said: its text, and the clip that is it (voiceClips.ts): the scenario and the line's index in its pool. */
+export type VoiceLine = { text: string; scenario: VoiceScenario; index: number };
+
 /** A pool's line for this match: the pool in a seeded order, no repeat until spent, then a new order. */
-function draw(state: VoiceState, scenario: VoiceScenario): string {
+function draw(state: VoiceState, scenario: VoiceScenario): VoiceLine {
   const pool = INNER_LINES[scenario];
   let order = state.order[scenario];
   let at = state.at[scenario] ?? 0;
@@ -135,7 +138,8 @@ function draw(state: VoiceState, scenario: VoiceScenario): string {
     at = 0;
   }
   state.at[scenario] = at + 1;
-  return pool[order[at] as number] as string;
+  const index = order[at] as number;
+  return { text: pool[index] as string, scenario, index };
 }
 
 /** Whether the scenario may speak now: under its cap, past its own gap, and past the voice's. */
@@ -150,11 +154,11 @@ function may(state: VoiceState, scenario: VoiceScenario): boolean {
 }
 
 /**
- * One frame. Returns the state and the line to say, or null. The timers
+ * One frame. Returns the state and the line to say (its text and its clip), or null. The timers
  * step whether or not a line comes, so a scenario's moment is not lost to
  * the cooldown: it speaks when the gap allows, if its condition still holds.
  */
-export function stepInnerVoice(prev: VoiceState, input: VoiceInputs, dt: number): { state: VoiceState; line: string | null } {
+export function stepInnerVoice(prev: VoiceState, input: VoiceInputs, dt: number): { state: VoiceState; line: VoiceLine | null } {
   const state: VoiceState = { ...prev, said: { ...prev.said }, last: { ...prev.last }, order: { ...prev.order }, at: { ...prev.at } };
   state.elapsed += dt;
   state.since += dt;

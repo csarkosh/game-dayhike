@@ -16,15 +16,15 @@ function run(state: VoiceState, input: VoiceInputs, seconds: number): { state: V
   for (let t = 0; t < seconds; t += DT) {
     const out = stepInnerVoice(state, input, DT);
     state = out.state;
-    if (out.line !== null) lines.push(out.line);
+    if (out.line !== null) lines.push(out.line.text);
   }
   return { state, lines };
 }
 
 describe("the inner voice", () => {
-  it("has a pool of at least four lines for every scenario, none of them repeated across the pool", () => {
+  it("has a pool of three lines for every scenario, none of them repeated across the pool: enough variety, few enough clips", () => {
     for (const [scenario, pool] of Object.entries(INNER_LINES)) {
-      expect(pool.length, scenario).toBeGreaterThanOrEqual(4);
+      expect(pool.length, scenario).toBe(3);
       expect(new Set(pool).size, scenario).toBe(pool.length);
     }
   });
@@ -66,13 +66,16 @@ describe("the inner voice", () => {
   it("answers the first cry at once, the second once more, and no later one", () => {
     let { state } = run(voiceRest(5), NIGHT, 30);
     const first = stepInnerVoice(state, { ...NIGHT, cry: true }, DT);
-    expect(INNER_LINES.cryFirst).toContain(first.line);
+    expect(INNER_LINES.cryFirst).toContain(first.line?.text);
+    // The line names its clip: the scenario and its index in the pool.
+    expect(first.line?.scenario).toBe("cryFirst");
+    expect(INNER_LINES.cryFirst[first.line!.index]).toBe(first.line!.text);
     state = run(first.state, NIGHT, VOICE_GAP_S + 1).state;
     const second = stepInnerVoice(state, { ...NIGHT, cry: true }, DT);
-    expect(INNER_LINES.cryAgain).toContain(second.line);
+    expect(INNER_LINES.cryAgain).toContain(second.line?.text);
     state = run(second.state, NIGHT, VOICE_GAP_S + 1).state;
     const third = stepInnerVoice(state, { ...NIGHT, cry: true }, DT);
-    expect(third.line === null || !INNER_LINES.cryAgain.includes(third.line)).toBe(true);
+    expect(third.line === null || !INNER_LINES.cryAgain.includes(third.line.text)).toBe(true);
   });
 
   it("in the chase speaks only the chase's lines: run, the trail, the car", () => {
@@ -82,7 +85,7 @@ describe("the inner voice", () => {
     ({ state, lines } = run(state, { ...NIGHT, chase: true, offTrail: OFF_TRAIL_M + 3, stare: 1, shadeSeen: true, nearCap: true }, 60));
     for (const l of lines) expect(INNER_LINES.chaseOffTrail).toContain(l);
     const car = stepInnerVoice(state, { ...NIGHT, chase: true, safe: true }, DT);
-    expect(INNER_LINES.safe).toContain(car.line);
+    expect(INNER_LINES.safe).toContain(car.line?.text);
   });
 
   it("says nothing once the match has ended", () => {
@@ -95,8 +98,13 @@ describe("the inner voice", () => {
       const out = run(voiceRest(seed), { ...DAY, offTrail: OFF_TRAIL_M + 1 }, 400);
       return out.lines;
     };
-    const a = heard(11), b = heard(12);
-    expect(new Set(a).size).toBe(a.length);
-    expect(a.join("|") === b.join("|")).toBe(false);
+    const orders = new Set<string>();
+    for (let seed = 11; seed < 23; seed++) {
+      const a = heard(seed);
+      expect(new Set(a).size).toBe(a.length);
+      orders.add(a.join("|"));
+    }
+    // Twelve seeds over six orders of three: at least two differ.
+    expect(orders.size).toBeGreaterThan(1);
   });
 });

@@ -259,6 +259,12 @@ export type AmbientAudio = {
   setStare(lens: StareLens, haunt?: number): void;
   setVolume(v: number): void;
   /**
+   * The inner voice's clip (voiceClips.ts): one unpositioned one-shot on the
+   * voice bus, which hangs off the master, not the world, so the stare's
+   * muffle and the world's level never touch it. Inert before `unlock()`.
+   */
+  speak(buffer: AudioBuffer, level: number): void;
+  /**
    * Decodes compressed clip bytes on the ambient context. Resolves null rather
    * than rejecting: before `unlock()` there is no context to decode on, and a
    * clip the browser refuses is silence, not a crash.
@@ -320,6 +326,8 @@ export function createAmbientAudio(
   let pending: WeatherParams = { ...WEATHER_PRESETS[DEFAULT_WEATHER] };
   let volume = DEFAULT_VOLUME;
   let master: GainNode | null = null;
+  /** The inner voice's bus, made on its first line (`speak`). */
+  let voiceGain: GainNode | null = null;
   /** What the rain, the wind, the drips and the wildlife are mixed through: the stare muffles it, and nothing else. */
   let world: GainNode | null = null;
   let worldFilter: BiquadFilterNode | null = null;
@@ -689,6 +697,22 @@ export function createAmbientAudio(
     setVolume(v) {
       volume = clamp01(v);
       if (ctx && master) master.gain.setTargetAtTime(volume, ctx.currentTime, 0.1);
+    },
+    speak(buffer, level) {
+      if (!ctx || !master) return;
+      // Made on the first line, after every other bus: the graph's order is pinned by its tests.
+      if (voiceGain === null) {
+        voiceGain = ctx.createGain();
+        voiceGain.gain.value = 1;
+        voiceGain.connect(master);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const g = ctx.createGain();
+      g.gain.value = clamp01(level);
+      src.connect(g);
+      g.connect(voiceGain);
+      src.start();
     },
     decode(bytes) {
       if (!ctx) return Promise.resolve(null);

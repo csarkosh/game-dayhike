@@ -68,9 +68,24 @@ forest world; the app finds its place once a world for the voice.
 wide, system-ui at 2.4 vh), 11 vh up from the bottom, with a dark shadow for the night, up for
 `VOICE_LINE_MS` (3.6 s) and faded over 350 ms; a new line replaces the one up.
 
-## 5. Tests
+## 5. The voice (`game/voiceClips.ts`, `ambientAudio.ts` `speak`)
+
+Each line is a clip, `client/assets/audio/voice.<scenario>.<n>.mp3`, n from 1 in the pool's
+order (`voiceClipId`); `node tools/voice/manifest.mjs` prints every line with its id and file
+for whatever makes them. The pools are three a scenario, sixty lines, so the clips stay small
+(a line of a second or three at the calls' encoding is tens of kilobytes; the set about a
+megabyte) while a once-only scenario still reads differently across three matches and a capped
+one never repeats within one. A clip is fetched the first time its line is said and kept decoded;
+it plays on the ambient's voice bus, which hangs off the master rather than the world, so the
+stare's muffle and the world's level never touch the ranger's own head. A clip that is not there
+is silent and not asked for again: the subtitle stands on its own. Pre-generated clips first; a
+voice actor's recordings replace them file for file.
+
+## 6. Tests
 
 `test/game/innerVoice.test.ts` (the pools' size and variety, the trailhead and the gap, off the
 trail by day and night, the birds' question, the cries, the chase's lines alone, silence at the
 end, the seeded draw), `test/game/droppedItem.test.ts` (the cap's place beside the stem, the same
-for a seed and different for another; its meshes), `test/sim/trailRoute.test.ts` (`stemPointAt`).
+for a seed and different for another; its meshes), `test/sim/trailRoute.test.ts` (`stemPointAt`),
+`test/game/voiceClips.test.ts` (the clip's name, fetched once, played each time, a missing one
+silent), `test/game/ambientAudio.test.ts` (the voice bus on the master).
