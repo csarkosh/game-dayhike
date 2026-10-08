@@ -11,12 +11,13 @@
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
 import type { PlayerState, Vec3 } from "./types.js";
-import { Outcome, Phase } from "./types.js";
+import { AiState, Outcome, Phase } from "./types.js";
 import type { World } from "./world.js";
 import { isOnCorridor } from "./containment.js";
 import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
 import { drawGuide, stepCuts } from "./cut.js";
 import { hideWatcher } from "./watcher.js";
+import { isShadeState } from "./haunt.js";
 import { ENEMY_HALF, PLAYER_HALF } from "./constants.js";
 import { stemAhead } from "./trailRoute.js";
 
@@ -128,14 +129,22 @@ export function stepSummit(world: World): void {
   if (state.phase === Phase.Climb) {
     const who = finder(world, search.body.pos);
     if (who === null) return;
-    state.phase = Phase.Chase;
+    // The scene first: the Hollow steps out over SUMMIT_REVEAL_S with the party stilled and nothing killing; the chase is from its end.
+    state.phase = Phase.Scene;
     // The watcher first: deleting an enemy here is safe because the deaths
     // and the loss were judged above, and the snapshot is built after the
     // tick. The summit Hollow is a separate spawn, never the watcher kept.
     hideWatcher(world);
+    // The scene is the Hollow's alone: every shade and lunge of the climb goes with the watcher.
+    for (const [id, e] of state.enemies) if (isShadeState(e.ai)) state.enemies.delete(id);
     gatherParty(world, who);
     spawnHollow(world, emergePoint(world, search.body.pos, who.pos), who.id, SUMMIT_REVEAL_S);
     world.cut = drawGuide(world);
+    return;
+  }
+  if (state.phase === Phase.Scene) {
+    for (const e of state.enemies.values()) if (e.ai === AiState.Emerge) return;
+    state.phase = Phase.Chase;
     return;
   }
 

@@ -1,6 +1,7 @@
 # The summit scene
 
-**Status:** Built 2026-10-08.
+**Status:** Built 2026-10-08. Amended the same day: the mechanics held through the scene, and
+the `summit` command for a look.
 
 ## 0. What this is
 
@@ -19,7 +20,15 @@ Hollow, not a film (the intro is a film because its world is not built yet). For
    line from the finder through it, and comes up out of the ground as the shades do (the rise,
    `entityViews.ts`), in the shadow form with its dulled eyes, facing the finder, still: its
    reveal timer is the scene's length, and the haunt's director waits while any Hollow is
-   stepping out.
+   stepping out. Every shade and lunge of the climb is cleared at the flip. The scene is a
+   phase of its own, `Phase.Scene` (`sim/types.ts`), between the climb and the chase, on the
+   phase byte already on the wire: the find sets it, and the Hollow's leaving its emergence sets
+   `Chase`. **Through it (`revealing`, `sim/hollow.ts`) nothing kills:** no contact, no strike;
+   and the stare closes only to `REVEAL_STARE_CAP` (0.25), at half its pace, so the vignette is
+   minor and its pulse slow. The cast turns and the woods hush as from the chase (the escalation
+   and the woods' voice read the scene as the chase begun); the haunt's chase rules, the cut
+   and the end rule, and the inner voice's chase lines, wait for `Chase`. The dark and the kill
+   return the tick the scene ends.
 4. **The cry** (the woods' voice's reveal call, after its hush), close.
 5. **The turn** (9 to 12 s). The camera eases back to the player's eye as the chase's cast comes
    in (`escalation.ts`), and the controls return.
@@ -48,8 +57,15 @@ where they fell.
 - `sim/hollow.ts`: `SUMMIT_REVEAL_S` 12, the reveal the scene's length. `sim/haunt.ts`: the
   director waits while a Hollow is stepping out.
 
-## 3. Tests
+## 3. A look at it
+
+The console's `summit` (host only; not persisted): the host's own player stands at the body
+and the next tick is the find, so the scene plays as it will. A client is told it is the host's
+to call.
+
+## 4. Tests
 
 `test/game/cutscene.test.ts` (the stand, the way in, the hold, the way back inside the reveal),
-`test/sim/summit.test.ts` (the party gathered, the dead left), `test/sim/haunt.test.ts` (the
+`test/sim/summit.test.ts` (the party gathered, the dead left; the shades cleared, nothing
+killing and the stare capped through the reveal, the kill back after), `test/sim/haunt.test.ts` (the
 director's wait), and the summit and hollow suites on the reveal's new length.

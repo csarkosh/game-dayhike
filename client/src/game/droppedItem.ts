@@ -19,7 +19,7 @@ import { hash2 } from "../sim/field.js";
 /** How far up the stem the cap lies (0 the pad, 1 the crest), how far off the path, and how near the player must come to it. */
 export const CAP_PROGRESS = 0.2;
 export const CAP_SIDE_M = 1.6;
-export const CAP_NEAR_M = 2.5;
+export const CAP_NEAR_M = 3.5;
 /** The cap's size, metres, and its colour. */
 export const CAP_RADIUS = 0.11;
 export const CAP_COLOUR = { r: 0.55, g: 0.06, b: 0.05 };

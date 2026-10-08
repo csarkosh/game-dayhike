@@ -182,6 +182,16 @@ describe("/volume", () => {
   });
 });
 
+describe("/summit", () => {
+  it("takes no argument and is never URL-representable", () => {
+    expect(validateCommand({ name: "summit", args: [] })).toBeNull();
+    expect(validateCommand({ name: "summit", args: ["now"] })).not.toBeNull();
+    const spec = findCommand("summit");
+    expect(spec?.kind).toBe("view");
+    expect(spec?.scriptValue).toBeUndefined();
+  });
+});
+
 describe("/mist", () => {
   it("accepts no argument or a density in [0, 1], rejects everything else, and is never URL-representable", () => {
     expect(validateCommand({ name: "mist", args: [] })).toBeNull();

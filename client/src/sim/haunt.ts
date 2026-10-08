@@ -32,7 +32,7 @@ import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";
 import { isOnCorridor } from "./containment.js";
-import { faceToward, horizontalDistSq, playerSees, walkToward } from "./hollow.js";
+import { faceToward, horizontalDistSq, playerSees, revealing, walkToward } from "./hollow.js";
 import { climbOf, WATCH_SLOPE_NY, WATCH_VIEW_COS } from "./watcher.js";
 import { actsUnder, MIST_AT, MIST_SPAN, smootherstep } from "./acts.js";
 import { trailDistance } from "./trail.js";
@@ -317,8 +317,9 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
   if (h.ai === AiState.Strike) {
     // The strike: it stands at its player for LUNGE_ATTACK_S; LUNGE_ATTACK_HIT_S
     // in, whoever it struck at within LUNGE_ATTACK_REACH is dead; then it is gone.
+    // Never in the summit scene (revealing): the strike is withheld.
     if (target !== undefined && target.health > 0) faceToward(h, target.pos.x, target.pos.z);
-    if (h.attackCooldown === 0 && h.stateTimer <= LUNGE_ATTACK_S - LUNGE_ATTACK_HIT_S) {
+    if (h.attackCooldown === 0 && h.stateTimer <= LUNGE_ATTACK_S - LUNGE_ATTACK_HIT_S && !revealing(world)) {
       h.attackCooldown = 1;
       if (target !== undefined && target.health > 0 && !target.safe && horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_REACH * LUNGE_ATTACK_REACH) target.health = 0;
     }

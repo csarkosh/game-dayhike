@@ -43,12 +43,12 @@ birdsong's level, the cap, the body, the car.
 | `lamp` | the lamp off `UNLIT_S` (10 s) into the dark | once |
 | `birds` | the birdsong heard above `BIRDS_HEARD` (0.4), then under `BIRDS_STOPPED` (0.1) at night: a question, so the quiet is the player's to answer | once |
 | `mist` | the mist act rising (0.2 to 0.6) | once |
-| `cryFirst` / `cryAgain` | the first cry; the second | once each |
+| `cryFirst` / `cryAgain` | the first cry; the second: answered once every howl has ended (the clip at its slowest rate, its tail, and `CRY_BEAT_S` 0.6 s; a second howl pushes the answer back) | once each |
 | `shadeFirst` / `shadeGone` | a shade in view for 0.3 s; then none for `SHADE_GONE_S` (1.5 s) after one was | once each |
 | `still` | standing still `STILL_S` (20 s) at night | 2, 90 s apart |
 | `dontLook` | the stare at `DONT_LOOK` (0.4) at night | 2, 90 s apart |
 | `crest` | 90 % of the climb | once |
-| `cap` | within `CAP_NEAR_M` (2.5 m) of the cap | once |
+| `cap` | within `CAP_NEAR_M` (2.5 m) of the cap: the cap's own scene (`capPose`, `cutscene.ts`), the controls stilled and the camera stepped and turned to it and tipped down at it over 1 s, the line 1.1 s in, back by 4.4 s | once |
 | `body` | within 4 m of the body, before the chase | once, urgent |
 | `chaseStart` | the chase begins | once, urgent |
 | `chaseOffTrail` | the chase, 8 m off the trail for 4 s | once |
@@ -68,9 +68,24 @@ forest world; the app finds its place once a world for the voice.
 wide, system-ui at 2.4 vh), 11 vh up from the bottom, with a dark shadow for the night, up for
 `VOICE_LINE_MS` (3.6 s) and faded over 350 ms; a new line replaces the one up.
 
-## 5. Tests
+## 5. The voice (`game/voiceClips.ts`, `ambientAudio.ts` `speak`)
+
+Each line is a clip, `client/assets/audio/voice.<scenario>.<n>.mp3`, n from 1 in the pool's
+order (`voiceClipId`); `node tools/voice/manifest.mjs` prints every line with its id and file
+for whatever makes them. The pools are three a scenario, sixty lines, so the clips stay small
+(a line of a second or three at the calls' encoding is tens of kilobytes; the set about a
+megabyte) while a once-only scenario still reads differently across three matches and a capped
+one never repeats within one. A clip is fetched the first time its line is said and kept decoded;
+it plays on the ambient's voice bus, which hangs off the master rather than the world, so the
+stare's muffle and the world's level never touch the ranger's own head. A clip that is not there
+is silent and not asked for again: the subtitle stands on its own. Pre-generated clips first; a
+voice actor's recordings replace them file for file.
+
+## 6. Tests
 
 `test/game/innerVoice.test.ts` (the pools' size and variety, the trailhead and the gap, off the
 trail by day and night, the birds' question, the cries, the chase's lines alone, silence at the
 end, the seeded draw), `test/game/droppedItem.test.ts` (the cap's place beside the stem, the same
-for a seed and different for another; its meshes), `test/sim/trailRoute.test.ts` (`stemPointAt`).
+for a seed and different for another; its meshes), `test/sim/trailRoute.test.ts` (`stemPointAt`),
+`test/game/voiceClips.test.ts` (the clip's name, fetched once, played each time, a missing one
+silent), `test/game/ambientAudio.test.ts` (the voice bus on the master).

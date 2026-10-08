@@ -400,7 +400,7 @@ describe("the tick", SUITE, () => {
     const body = w.search!.body.pos;
     standAt(p, body.x - 5, body.z);
     tick(w);
-    expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.phase).toBe(Phase.Scene);
     expect(w.state.enemies.size).toBe(1);
     w.watcher!.rest = 0;
     for (let i = 0; i < 2000; i++) {
@@ -427,7 +427,7 @@ describe("the tick", SUITE, () => {
     const body = w.search!.body.pos;
     standAt(q, body.x - 5, body.z);
     tick(w);
-    expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.phase).toBe(Phase.Scene);
     expect(w.state.enemies.has(id)).toBe(false);
     expect(w.watcher!.id).toBe(-1);
     // The rest is what the showing left, one tick under zero: no hide drew a

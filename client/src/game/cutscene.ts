@@ -54,6 +54,32 @@ function mix(a: ScenePose, b: ScenePose, t: number): ScenePose {
   };
 }
 
+/** The cap's scene: seconds to turn to it, when the camera starts back, how long that takes, the step toward it, and how far down to look at a thing on the ground. */
+export const CAP_SCENE_IN_S = 1;
+export const CAP_SCENE_OUT_FROM_S = 3.4;
+export const CAP_SCENE_OUT_S = 1;
+export const CAP_SCENE_STEP_M = 0.6;
+export const CAP_SCENE_S = CAP_SCENE_OUT_FROM_S + CAP_SCENE_OUT_S;
+
+/** Where the cap's scene looks from: a step toward the cap from the eye, turned to it and tipped down to it. */
+export function capStand(base: SceneBase, cap: { x: number; y: number; z: number }): ScenePose {
+  const dx = cap.x - base.x, dz = cap.z - base.z;
+  const len = Math.hypot(dx, dz);
+  const ux = len > 1e-6 ? dx / len : 0, uz = len > 1e-6 ? dz / len : 1;
+  const step = Math.min(CAP_SCENE_STEP_M, Math.max(0, len - 1.2));
+  const x = base.x + ux * step, z = base.z + uz * step;
+  const d = Math.max(0.5, len - step);
+  return { x, y: base.y, z, yaw: Math.atan2(cap.x - x, cap.z - z), pitch: Math.atan2(base.y - cap.y, d) };
+}
+
+/** The camera `t` seconds into the cap's scene: turned to the cap over CAP_SCENE_IN_S, held, and back. */
+export function capPose(t: number, base: SceneBase, cap: { x: number; y: number; z: number }): ScenePose {
+  const stand = capStand(base, cap);
+  if (t < CAP_SCENE_IN_S) return mix(base, stand, easeInOut(t / CAP_SCENE_IN_S));
+  if (t < CAP_SCENE_OUT_FROM_S) return stand;
+  return mix(stand, base, easeInOut((t - CAP_SCENE_OUT_FROM_S) / CAP_SCENE_OUT_S));
+}
+
 /** The camera `t` seconds into the scene, from `base` (the eye at the flip) toward the body, and back. */
 export function summitPose(t: number, base: SceneBase, body: { x: number; y: number; z: number }): ScenePose {
   const stand = sceneStand(base, body);

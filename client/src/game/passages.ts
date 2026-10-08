@@ -45,6 +45,6 @@ export const DEATH_FADE_AFTER_MS = 6000;
  * the only way out and the wall no longer needs explaining.
  */
 export function roadLine(u: number, phase: Phase): string | null {
-  if (phase === Phase.Chase || u > ROAD_LINE_U) return null;
+  if (phase !== Phase.Climb || u > ROAD_LINE_U) return null;
   return "Not yet. Somebody is still up there.";
 }

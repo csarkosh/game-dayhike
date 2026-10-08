@@ -191,6 +191,16 @@ const SPECS: readonly CommandSpec[] = [
     },
   },
   {
+    name: "summit",
+    kind: "view",
+    // Bare: the host's player stands at the body and the next tick is the
+    // find, so the summit scene (cutscene.ts) plays for a look. Not
+    // persisted: no `scriptValue`.
+    validate(args) {
+      return args.length === 0 ? null : "summit takes no argument";
+    },
+  },
+  {
     name: "mist",
     kind: "view",
     // `mist <density>` holds the near mist (nearMist.ts) at a density in
