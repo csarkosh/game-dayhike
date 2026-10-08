@@ -19,7 +19,7 @@ import {
   LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_RANGE, SHADE_WATCHED_S, OFF_TRAIL_FROM_M, OFF_TRAIL_SPAN_M, OFF_TRAIL_REAL_EACH, offTrailOf,
   bestClimb, isHaunting, isShadeState, placeShadeOnGuide, pressureOf, spawnShade,
 } from "../../src/sim/haunt.js";
-import { isHollow, SHADE_STARE_CAP } from "../../src/sim/hollow.js";
+import { isHollow, SHADE_STARE_CAP, SUMMIT_REVEAL_S, spawnHollow } from "../../src/sim/hollow.js";
 import { trailDistance } from "../../src/sim/trail.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
@@ -270,6 +270,21 @@ describe("the director", () => {
     expect(away.lunges / Math.max(1, away.lunges + away.shades)).toBeGreaterThan(0.8);
     expect(on.lunges / Math.max(1, on.lunges + on.shades)).toBeLessThan(0.5);
     expect(OFF_TRAIL_REAL_EACH).toBeLessThan(0.3);
+  });
+
+  it("waits while a Hollow is stepping out: no episode begins during the summit's reveal", () => {
+    const { w, p } = forestWorld();
+    standAtClimb(w, p, 0.9);
+    w.state.phase = Phase.Chase;
+    w.haunt!.rest = 0;
+    const summit = spawnHollow(w, { x: p.pos.x + 30, y: p.pos.y, z: p.pos.z }, p.id, SUMMIT_REVEAL_S);
+    for (let t = 0; t < Math.round((SUMMIT_REVEAL_S - 0.5) / TICK_DT); t++) tick(w);
+    expect(summit.ai).toBe(AiState.Emerge);
+    expect(w.haunt!.episode).toBeNull();
+    expect([...w.state.enemies.values()].filter((e) => e.ai === AiState.Shade || e.ai === AiState.Lunge)).toHaveLength(0);
+    for (let t = 0; t < Math.round(3 / TICK_DT); t++) { tick(w); p.health = 100; }
+    expect(summit.ai).not.toBe(AiState.Emerge);
+    expect(w.haunt!.episode !== null || [...w.state.enemies.values()].some((e) => e.ai === AiState.Shade || e.ai === AiState.Lunge)).toBe(true);
   });
 
   it("in the chase, a shade stands beside the open way home, ahead of its player and nearer the pad", () => {

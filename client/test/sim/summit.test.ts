@@ -8,6 +8,7 @@ import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
 import { DISCOVERY_RADIUS, SUMMIT_SPAWN_DIST } from "../../src/sim/summit.js";
 import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
+import { GATHER_SIDE_M, GATHER_STEP_M } from "../../src/sim/summit.js";
 import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -103,6 +104,24 @@ describe("the discovery", SUITE, () => {
     expect(w.state.enemies.size).toBe(1);
     tick(w, Math.round(SUMMIT_REVEAL_S / TICK_DT) + 2);
     expect(h.ai).toBe(AiState.Hunt);
+  });
+
+  it("gathers every other living player to the finder's side at the flip, in a file down the stem, turned as the finder is, and leaves the dead", () => {
+    const { w, p: a } = forestWorld();
+    const b = spawnPlayer(w), c = spawnPlayer(w);
+    const body = w.search!.body.pos;
+    // b far below on the pad, c dead where they fell.
+    const start = { x: b.pos.x, z: b.pos.z };
+    c.health = 0;
+    const cAt = { ...c.pos };
+    standAt(a, body.x + 2, body.z);
+    tick(w, 1);
+    expect(w.state.phase).toBe(Phase.Chase);
+    expect(Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z)).toBeLessThan(GATHER_STEP_M + GATHER_SIDE_M + 1.5);
+    expect(Math.hypot(b.pos.x - start.x, b.pos.z - start.z)).toBeGreaterThan(10);
+    expect(b.vel).toEqual({ x: 0, y: 0, z: 0 });
+    expect(b.yaw).toBe(a.yaw);
+    expect(c.pos).toEqual(cAt);
   });
 
   it("steps out on the +x fallback when the finder is standing on the body", () => {

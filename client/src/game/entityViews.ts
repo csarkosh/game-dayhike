@@ -299,7 +299,8 @@ export class EntityViews {
       let fade = this.fades.get(id);
       if (fade === undefined) {
         const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
-        const shade = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike;
+        // A shade, and the Hollow stepping out at the crest, come up out of the ground; a lunge quick; the rest stand at once.
+        const shade = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
         const quick = enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike;
         fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: shade ? 0 : 1, settle: shade && !quick ? 0 : 1, quick };
         this.fades.set(id, fade);

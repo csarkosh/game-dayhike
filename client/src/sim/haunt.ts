@@ -373,6 +373,8 @@ export function stepHaunt(world: World, dt: number): void {
   for (const [id, e] of world.state.enemies) {
     if (isShadeState(e.ai) && stepShade(e, world, dt)) world.state.enemies.delete(id);
   }
+  // The reveal is the Hollow's alone: while one is stepping out, the director waits.
+  for (const e of world.state.enemies.values()) if (e.ai === AiState.Emerge) return;
   if (world.state.outcome !== Outcome.Playing || !isHaunting(world)) {
     record.episode = null;
     return;

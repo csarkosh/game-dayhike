@@ -17,7 +17,8 @@ import { isOnCorridor } from "./containment.js";
 import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
 import { drawGuide, stepCuts } from "./cut.js";
 import { hideWatcher } from "./watcher.js";
-import { ENEMY_HALF } from "./constants.js";
+import { ENEMY_HALF, PLAYER_HALF } from "./constants.js";
+import { stemAhead } from "./trailRoute.js";
 
 /** Metres from the body within which a living player has found it: inside the 25 m crest disc. */
 export const DISCOVERY_RADIUS = 12;
@@ -38,6 +39,39 @@ function finder(world: World, body: Vec3): PlayerState | null {
     if (best === null || p.id < best.id) best = p;
   }
   return best;
+}
+
+/** Metres down the stem between each gathered player and the next, and how far off the stem they stand, alternating sides. */
+export const GATHER_STEP_M = 2.2;
+export const GATHER_SIDE_M = 0.9;
+
+/**
+ * The find is the party's: every other living player, wherever they were,
+ * is brought to the finder's side as if they had all come up together, in
+ * a file down the stem behind the finder, each a step back and a little to
+ * one side, turned as the finder is (at the body), still. In id order, so
+ * every peer agrees. A dead player lies where they fell.
+ */
+export function gatherParty(world: World, finder: PlayerState): void {
+  const graph = world.trail;
+  if (graph === null) return;
+  const others = [...world.state.players.values()].filter((p) => p.id !== finder.id && !dead(p)).sort((a, b) => a.id - b.id);
+  for (const [k, p] of others.entries()) {
+    const back = stemAhead(graph, finder.pos.x, finder.pos.z, -GATHER_STEP_M * (k + 1));
+    const at = back ?? { x: finder.pos.x, z: finder.pos.z };
+    // Off the stem's line a little, alternating: a file, not a stack.
+    const ahead = stemAhead(graph, at.x, at.z, 1) ?? { x: at.x + 1, z: at.z };
+    const dx = ahead.x - at.x, dz = ahead.z - at.z;
+    const len = Math.sqrt(dx * dx + dz * dz) || 1;
+    const side = k % 2 === 0 ? 1 : -1;
+    const x = at.x - (dz / len) * GATHER_SIDE_M * side;
+    const z = at.z + (dx / len) * GATHER_SIDE_M * side;
+    const ground = world.ground?.heightAt(x, z) ?? p.pos.y - PLAYER_HALF.y;
+    p.pos = { x, y: ground + PLAYER_HALF.y, z };
+    p.vel = { x: 0, y: 0, z: 0 };
+    // The finder's own facing, which is at the body: no trig in the sim.
+    p.yaw = finder.yaw;
+  }
 }
 
 /** Where the Hollow steps out: SUMMIT_SPAWN_DIST past the body along the line from the finder through it. */
@@ -99,6 +133,7 @@ export function stepSummit(world: World): void {
     // and the loss were judged above, and the snapshot is built after the
     // tick. The summit Hollow is a separate spawn, never the watcher kept.
     hideWatcher(world);
+    gatherParty(world, who);
     spawnHollow(world, emergePoint(world, search.body.pos, who.pos), who.id, SUMMIT_REVEAL_S);
     world.cut = drawGuide(world);
     return;
