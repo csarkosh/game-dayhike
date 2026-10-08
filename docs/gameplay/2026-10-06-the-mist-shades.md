@@ -78,15 +78,19 @@ noise (`shadeNoise`, nine blotches across the frame) stands above that, so it lo
 by patch, never all at once. The
 cloud stands taller as the shades come (`CLOUD_HAUNT_HEIGHT_M`, the design doc §2).
 
-**Resolve.** A lunge within `SHADE_RESOLVE_M` (12 m) of the local eye eases its softness from 1
-to 0 over `SHADE_RESOLVE_S` (1.4 s); a shade never resolves. The real thing is never the model's
+**Resolve.** A lunge within `SHADE_RESOLVE_M` (24 m; 12 at first) of the local eye eases its
+softness from 1 to 0 over `SHADE_RESOLVE_S` (0.7 s; 1.4 at first), so it is the black figure well
+before it arrives; a shade never resolves. A lunge also comes in quicker than a shade: it rises
+over `LUNGE_RISE_S` (1.2 s) and is whole as it stands, with no settling after, since it has metres
+to cover and struck at half its weight before. The real thing is never the model's
 own surface: as the softness falls, the mask's red (the shade) moves to its blue (the real thing),
 which the grade darkens by `SHADE_MONSTER_DARK` (1, whole; 0.88 at first) through the inner ring
 of taps alone, sharper and heavier than the shade, and its eyes alone come onto the frame, at
 `SHADE_EYES_DULL` (0.55) of their glow. So the real one begins as a shade in the mist and darkens
 smoothly into the black figure with the dulled red eyes. A Hollow out in the open (the pack, the
 summit's) is that resolved form from the start: no Hollow is ever drawn in its own surface on the
-post tiers. A shade has the same eyes, fainter: `SHADE_EYES_SHADE` (0.06; 0.12 for an hour) of their glow
+post tiers. A shade has the same eyes, fainter: `SHADE_EYES_SHADE` (0.005; 0.12, then 0.06, for an hour each:
+the share is an alpha over an emissive of 4, so a few hundredths was still a solid glow) of their glow
 (`eyeLevelOf`). It stands, arms at its sides in the idle, turned to the player. Going, a resolved lunge is a shade
 again first, over `SHADE_UNRESOLVE_S` (0.5 s), as it fades: it goes back into the mist, not out of
 the frame. A strike plays the Hollow's attack clip.

@@ -83,15 +83,22 @@ function stride(instance: CharacterInstance, speed: number, clipSpeed: number): 
 export const SHADE_FADE_IN_S = 0.9;
 /** Seconds a gone shade takes to go: slowly, and unevenly (the grade dissolves it by `gone`, shadeSilhouette.ts). */
 export const SHADE_FADE_OUT_S = 2.6;
-/** Seconds a shade takes to rise from the ground to its height as it comes in, at half its opacity by then; and the seconds after that to its whole. Going, it keeps its height and dissolves. */
+/** Seconds a shade takes to rise from the ground to its height as it comes in, at half its opacity by then; and the seconds after that to its whole. Going, it keeps its height and dissolves. A lunge rises in half the time and is whole as it stands: it has metres to cover. */
 export const SHADE_RISE_S = 2.4;
 export const SHADE_SETTLE_S = 3;
-/** The eyes: the real one's, dulled to this share of their glow once it has resolved; a shade's, fainter still. */
+export const LUNGE_RISE_S = 1.2;
+/**
+ * The eyes: the real one's, dulled to this share of their glow once it has
+ * resolved; a shade's, fainter still. The share is the eye meshes' alpha over
+ * an emissive of HOLLOW_EYE_INTENSITY (4), so a few hundredths is a solid
+ * glow after the night's exposure and the halation; a shade's is near
+ * nothing, a faint point.
+ */
 export const SHADE_EYES_DULL = 0.55;
-export const SHADE_EYES_SHADE = 0.06;
+export const SHADE_EYES_SHADE = 0.005;
 /** Metres from the local eye within which a lunge resolves from the mist into the Hollow, and the seconds that takes. */
-export const SHADE_RESOLVE_M = 12;
-export const SHADE_RESOLVE_S = 1.4;
+export const SHADE_RESOLVE_M = 24;
+export const SHADE_RESOLVE_S = 0.7;
 /** Seconds a gone lunge takes to be a shade again as it goes out. */
 export const SHADE_UNRESOLVE_S = 0.5;
 /** Metres within which a shade is whole in the mask, the metres at which it is SHADE_FAR_SHARE of itself, and that share. */
@@ -138,7 +145,7 @@ export class EntityViews {
   private readonly playerModels = new Map<number, ModelView>();
   private readonly enemyModels = new Map<number, HollowView>();
   /** Each enemy's fade, 0 to 1 (`visibility`), and the state it was last seen in: a shade, a lunge or a Hollow stepping out comes in from nothing, and a shade or a lunge goes out to nothing after it is gone. */
-  private readonly fades = new Map<number, { level: number; ai: number; rise: number; settle: number }>();
+  private readonly fades = new Map<number, { level: number; ai: number; rise: number; settle: number; quick: boolean }>();
   /** Each enemy's reach, 0 to 1: how far its arms are turned out at the local player (REACH_S). */
   private readonly reaches = new Map<number, number>();
   /** Where the reaching arms aim this frame: the local player's eyes, or null with no local player. */
@@ -293,7 +300,8 @@ export class EntityViews {
       if (fade === undefined) {
         const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
         const shade = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike;
-        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: shade ? 0 : 1, settle: shade ? 0 : 1 };
+        const quick = enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike;
+        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: shade ? 0 : 1, settle: shade && !quick ? 0 : 1, quick };
         this.fades.set(id, fade);
       }
       fade.ai = enemy.ai;
@@ -301,9 +309,9 @@ export class EntityViews {
         // A shade comes up out of the ground to its height over SHADE_RISE_S,
         // as if out of the mist, at half its opacity by then, and settles to
         // its whole over SHADE_SETTLE_S after.
-        if (dt > 0 && fade.rise < 1) fade.rise = Math.min(1, fade.rise + dt / SHADE_RISE_S);
+        if (dt > 0 && fade.rise < 1) fade.rise = Math.min(1, fade.rise + dt / (fade.quick ? LUNGE_RISE_S : SHADE_RISE_S));
         else if (dt > 0) fade.settle = Math.min(1, fade.settle + dt / SHADE_SETTLE_S);
-        fade.level = 0.5 * risen(fade.rise) + 0.5 * fade.settle;
+        fade.level = fade.quick ? risen(fade.rise) : 0.5 * risen(fade.rise) + 0.5 * fade.settle;
       } else if (dt > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + dt / SHADE_FADE_IN_S);
       // A lunge resolves from the mist as it closes on the local eye; a shade
       // never does; a Hollow out in the open is the resolved form from the
