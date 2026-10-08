@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
-import { EntityViews, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, SHADE_RISE_S, SHADE_SETTLE_S, risen } from "../../src/game/entityViews.js";
+import { EntityViews, LUNGE_RISE_S, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, SHADE_RISE_S, SHADE_SETTLE_S, risen } from "../../src/game/entityViews.js";
 import { AiState } from "../../src/sim/types.js";
 import type { EnemyState, WorldState } from "../../src/sim/types.js";
 
@@ -26,6 +26,28 @@ describe("the shadow's rise", () => {
     expect(risen(-1)).toBe(0);
     expect(risen(2)).toBe(1);
     expect(SHADE_RISE_S).toBeGreaterThan(SHADE_FADE_IN_S);
+    expect(LUNGE_RISE_S).toBeCloseTo(SHADE_RISE_S / 2, 9);
+  });
+});
+
+describe("the lunge's coming", () => {
+  it("rises in half a shade's time and is whole as it stands, with no settling after", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const views = new EntityViews(scene);
+    const visibility = (name: string) => {
+      const m = scene.getMeshByName(name);
+      return m === undefined || m === null ? null : m.visibility;
+    };
+    views.sync(stateWith([enemy(1, AiState.Lunge)]), 0, 0, undefined, 0);
+    expect(visibility("hollow_1")).toBe(0);
+    views.sync(stateWith([enemy(1, AiState.Lunge)]), 0, 0, undefined, LUNGE_RISE_S / 2);
+    expect(visibility("hollow_1")).toBeCloseTo(0.5, 6);
+    views.sync(stateWith([enemy(1, AiState.Lunge)]), 0, 0, undefined, LUNGE_RISE_S / 2);
+    expect(visibility("hollow_1")).toBe(1);
+    views.dispose();
+    scene.dispose();
+    engine.dispose();
   });
 });
 
