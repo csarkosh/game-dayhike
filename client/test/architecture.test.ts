@@ -473,6 +473,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "mirrorView.ts"),
       join(SRC, "game", "lakeSkyline.ts"),
       join(SRC, "game", "lakeRipples.ts"),
+      join(SRC, "game", "swashRunUp.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
