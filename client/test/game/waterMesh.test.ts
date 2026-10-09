@@ -907,6 +907,24 @@ describe("the sea's edge in createWater", () => {
     water.dispose();
   }, timeLimit(60_000));
 
+  it("throws the spray along the swell's travel where the curl draws, as the curl throws its lip", () => {
+    frameSupport.supported = true;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    new FreeCamera("c", Vector3.Zero(), scene);
+    const water = createWater(scene, 7, 0, [], "high");
+    expect(water.edge.lip).not.toBeNull();
+    const spray = water.edge.spray!;
+    plungesOnTheFace(water.edge.tracker);
+    const burst = vi.spyOn(spray, "burst");
+    water.update(-400, 0, 20, 12);
+    expect(burst.mock.calls.map((call) => call[2])).toEqual([0, 10, 20, 30, 40, 50]);
+    // Seed 7's swell travels 7.95 degrees off +x, the curl's throw; the
+    // coast's normal at z = 0 is 5.66 degrees the other way.
+    for (const call of burst.mock.calls) expect([call[3], call[4]]).toEqual([0.9903918900937535, 0.1382892043383079]);
+    water.dispose();
+  }, timeLimit(60_000));
+
   it("throws no spray with the camera far along the coast from the cove, the spray off, while the table still fills", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);

@@ -1332,9 +1332,11 @@ export function createWater(
 
   /**
    * Spray for this frame's plunges within SURF_SPRAY_RANGE_M of the camera,
-   * nearest first, SURF_SPRAY_BURSTS at most: each thrown landward along the
-   * face's normal from the crest's top at the lip's throw, the mean of 1.3
-   * to 1.5 times the shallow-water speed of a wave of the plunge's height.
+   * nearest first, SURF_SPRAY_BURSTS at most: each thrown landward from the
+   * crest's top at the lip's throw, the mean of 1.3 to 1.5 times the
+   * shallow-water speed of a wave of the plunge's height. Where the curl draws
+   * it is thrown along the swell's travel, as the curl throws its lip;
+   * elsewhere along the face's normal, as the sea's fragment lip tilts.
    */
   function throwSpray(sprayOf: SurfSpray, camX: number, camZ: number, seconds: number): void {
     const plunges = tracker.plunges;
@@ -1359,7 +1361,8 @@ export function createWater(
       // The coast runs along z with the land toward +x: its landward normal.
       const slope = (cove.coastX(z + 1) - cove.coastX(z - 1)) / 2;
       sprayOf.burst(
-        cove.coastX(z) + (plunges.d[best] as number), waterLevel + height, z, 1, -slope,
+        cove.coastX(z) + (plunges.d[best] as number), waterLevel + height, z,
+        lip !== null ? ocean.field.travel[0] : 1, lip !== null ? ocean.field.travel[1] : -slope,
         SPRAY_THROW * Math.sqrt(SWASH_G * height), seconds,
       );
     }
@@ -2149,12 +2152,7 @@ function buildRenderer(
     for (const mesh of clipmap?.meshes.slice(0, 2) ?? []) rainMap.register(mesh, "terrain");
     for (const mesh of water?.meshes ?? []) rainMap.register(mesh, "water");
     for (const mesh of water?.lakeMeshes ?? []) rainMap.register(mesh, "water");
-    // The swept curl on the high tier, as the rings it rises from.
-    const lip = water?.edge.lip ?? null;
-    if (lip !== null) {
-      rainMap.register(lip.fine, "water");
-      rainMap.register(lip.coarse, "water");
-    }
+    // Not the swept curl: its positions are not places, so the rings stand for the face.
   }
   // The lake's reflection of its shore, by tier: on high a mirror drawn in
   // each frame the glass shows (`lakeMirror.ts`), on medium a panorama of the

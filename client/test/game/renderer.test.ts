@@ -1032,8 +1032,8 @@ describe("world shell wiring", () => {
     expect(wet).toContain("if (edge === undefined || !edge.filled) return;");
     expect(wet).toContain("setWetCove(cove.z0, cove.halfWidth, cove.toeD, cove.faceGrade);\n    setWetSwash(edge.table.data);");
     expect(src.match(/setWetSwash\(/g)).toHaveLength(1);
-    // The curl is in the rain's map as the rings are; the spray among the see-through effects.
-    expect(src).toContain('rainMap.register(lip.fine, "water");\n      rainMap.register(lip.coarse, "water");');
+    // Not the curl in the rain's map: its positions are not places, the rings stand for the face.
+    expect(src).not.toContain("rainMap.register(lip.");
   });
 
   it("updates the lake's reflection in both camera branches after the lake's life, and disposes it before the meshes in its lists", () => {
