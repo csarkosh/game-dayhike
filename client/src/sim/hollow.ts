@@ -41,7 +41,10 @@ export const HOLLOW_HUNT_SPEED = 6.3;
 /** Its speed while a living player has it in view: a glance back buys distance and costs the screen. */
 export const HOLLOW_LOOK_FACTOR = 0.6;
 /** Seconds it stands still at the crest as it steps out, before the hunt: the summit scene's length (game/cutscene.ts SUMMIT_SCENE_S, the five shots' sum), which it is the centre of. */
-export const SUMMIT_REVEAL_S = 20;
+export const SUMMIT_REVEAL_S = 21;
+/** The last seconds of its stand it walks at whoever found the body, at this pace: the scene's threshold (cutscene.ts), the first steps the player sees before they turn and run. */
+export const HOLLOW_STEP_S = 4;
+export const HOLLOW_STALK_SPEED = 1.5;
 /** Seconds a fork Hollow stands at the mouth of its branch, facing its trigger, before it hunts. */
 export const FORK_REVEAL_S = 2.5;
 /** Seconds a fork Hollow may spend walking to the mouth before it reveals where it stands. */
@@ -412,10 +415,14 @@ function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number):
         return;
       }
       // The reveal: it stands and looks at whoever found the body, or
-      // triggered the cut, giving the party the timer's seconds to see it
-      // before it moves at all.
+      // triggered the cut, giving the party the timer's seconds to see it;
+      // through the last HOLLOW_STEP_S of a summit stand (the scene's
+      // threshold) it walks at them, slowly, the first steps the party sees.
       const target = world.state.players.get(h.targetId);
-      if (target !== undefined) faceToward(h, target.pos.x, target.pos.z);
+      if (target !== undefined) {
+        if (world.state.phase === Phase.Scene && h.stateTimer <= HOLLOW_STEP_S) walkToward(h, world, dt, target.pos.x, target.pos.z, HOLLOW_STALK_SPEED);
+        else faceToward(h, target.pos.x, target.pos.z);
+      }
       h.stateTimer -= dt;
       if (h.stateTimer <= 0) {
         h.ai = AiState.Hunt;

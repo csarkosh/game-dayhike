@@ -79,7 +79,7 @@ seconds and hunting, with no sound. It is staged now, in the same voice the clim
    30 m it is louder (1.3) and clearer (6 kHz) than any call of the climb; further off it
    falls to the climb's far call at 420 m, so a straggler down the trail hears it from above.
    The world's sound comes back with it.
-4. **The hunt.** The Hollow stands `SUMMIT_REVEAL_S`, now the scene's 20 s (was 2, then 4), and
+4. **The hunt.** The Hollow stands `SUMMIT_REVEAL_S`, now the scene's 21 s (was 2, then 4), and
    moves once the scene ends.
 
 A screen that joins a chase already under way has no reveal.

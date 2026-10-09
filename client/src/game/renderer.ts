@@ -2729,8 +2729,11 @@ function buildRenderer(
             if (summitScene.kind === "summit" && summitScene.more !== null) {
               const ctx: SceneContext = { base: summitScene.base, body: summitScene.body, hollow: summitScene.more.hollow, party: summitScene.more.party };
               const shot = summitShot(t, ctx);
-              camera.position.set(shot.x, shot.y, shot.z);
-              camera.rotation.set(shot.pitch, shot.yaw, 0);
+              // A live shot (the threshold) is the player's own camera: the look app.ts drives, the lens the game's.
+              if (!shot.live) {
+                camera.position.set(shot.x, shot.y, shot.z);
+                camera.rotation.set(shot.pitch, shot.yaw, 0);
+              }
               sceneFov = shot.fov;
               sceneShot = shot.shot;
             } else {

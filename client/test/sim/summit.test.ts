@@ -7,7 +7,7 @@ import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt, activeTe
 import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
 import { DISCOVERY_RADIUS, SUMMIT_SPAWN_DIST } from "../../src/sim/summit.js";
-import { REVEAL_STARE_CAP, SUMMIT_REVEAL_S, revealing } from "../../src/sim/hollow.js";
+import { HOLLOW_STEP_S, REVEAL_STARE_CAP, SUMMIT_REVEAL_S, revealing } from "../../src/sim/hollow.js";
 import { spawnShade } from "../../src/sim/haunt.js";
 import { GATHER_SIDE_M, GATHER_STEP_M } from "../../src/sim/summit.js";
 import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
@@ -127,6 +127,26 @@ describe("the discovery", SUITE, () => {
     expect(b.vel).toEqual({ x: 0, y: 0, z: 0 });
     expect(b.yaw).toBe(a.yaw);
     expect(c.pos).toEqual(cAt);
+  });
+
+  it("stands still through the reveal until its last HOLLOW_STEP_S, then walks at the finder, slowly, killing no one", () => {
+    const { w, p } = forestWorld();
+    const body = w.search!.body.pos;
+    standAt(p, body.x + 2, body.z);
+    tick(w, 1);
+    const h = [...w.state.enemies.values()].find((e) => e.ai === AiState.Emerge)!;
+    const from = { x: h.pos.x, z: h.pos.z };
+    const gap = () => Math.hypot(h.pos.x - p.pos.x, h.pos.z - p.pos.z);
+    const before = gap();
+    tick(w, Math.round((SUMMIT_REVEAL_S - HOLLOW_STEP_S - 0.5) / TICK_DT));
+    expect(Math.hypot(h.pos.x - from.x, h.pos.z - from.z)).toBeLessThan(0.01);
+    expect(h.ai).toBe(AiState.Emerge);
+    tick(w, Math.round(1.5 / TICK_DT));
+    expect(h.ai).toBe(AiState.Emerge);
+    expect(before - gap()).toBeGreaterThan(0.8);
+    expect(before - gap()).toBeLessThan(2.5);
+    expect(p.health).toBe(100);
+    expect(w.state.phase).toBe(Phase.Scene);
   });
 
   it("clears the climb's shades at the flip, and through the reveal nothing kills and the stare closes only a little", () => {

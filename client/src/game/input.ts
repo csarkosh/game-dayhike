@@ -24,6 +24,8 @@ export type InputSampler = {
    */
   readonly sprinting: boolean;
   setSuppressed(value: boolean): void;
+  /** The look set from outside (a scene that turned the player): the next sample reads from here, so the controls return without a snap. */
+  setLook(yaw: number, pitch: number): void;
   /** Fires on every change of `engaged`. One handler; the caller is app.ts. */
   onEngagedChange(handler: (engaged: boolean) => void): void;
   /** Requests pointer lock on desktop; engages outright in touch mode. */
@@ -243,6 +245,10 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
     },
     get keys() {
       return keys as ReadonlySet<string>;
+    },
+    setLook(y: number, p: number) {
+      yaw = y;
+      pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, p));
     },
     setSuppressed(value: boolean) {
       suppressed = value;
