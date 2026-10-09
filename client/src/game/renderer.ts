@@ -1334,12 +1334,14 @@ export function createWater(
    * Spray for this frame's plunges within SURF_SPRAY_RANGE_M of the camera,
    * nearest first, SURF_SPRAY_BURSTS at most: each thrown landward from the
    * crest's top at the lip's throw, the mean of 1.3 to 1.5 times the
-   * shallow-water speed of a wave of the plunge's height. Where the curl draws
-   * it is thrown along the swell's travel, as the curl throws its lip;
-   * elsewhere along the face's normal, as the sea's fragment lip tilts.
+   * shallow-water speed of a wave of the plunge's height. While the curl is
+   * shown (made, and the FFT drawing the wind sea) it is thrown along the
+   * swell's travel, as the curl throws its lip; otherwise along the face's
+   * normal, as the sea's fragment lip, which draws then, tilts.
    */
   function throwSpray(sprayOf: SurfSpray, camX: number, camZ: number, seconds: number): void {
     const plunges = tracker.plunges;
+    const curl = lip !== null && ocean.windMode === 2;
     const count = Math.min(plunges.count, thrown.length);
     thrown.fill(0, 0, count);
     for (let k = 0; k < SURF_SPRAY_BURSTS; k++) {
@@ -1362,7 +1364,7 @@ export function createWater(
       const slope = (cove.coastX(z + 1) - cove.coastX(z - 1)) / 2;
       sprayOf.burst(
         cove.coastX(z) + (plunges.d[best] as number), waterLevel + height, z,
-        lip !== null ? ocean.field.travel[0] : 1, lip !== null ? ocean.field.travel[1] : -slope,
+        curl ? ocean.field.travel[0] : 1, curl ? ocean.field.travel[1] : -slope,
         SPRAY_THROW * Math.sqrt(SWASH_G * height), seconds,
       );
     }

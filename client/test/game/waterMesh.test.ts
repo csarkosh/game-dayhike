@@ -907,7 +907,7 @@ describe("the sea's edge in createWater", () => {
     water.dispose();
   }, timeLimit(60_000));
 
-  it("throws the spray along the swell's travel where the curl draws, as the curl throws its lip", () => {
+  it("throws the spray along the swell's travel while the curl is shown, as the curl throws its lip, and along the normal while it is not", () => {
     frameSupport.supported = true;
     engine = new NullEngine();
     const scene = new Scene(engine);
@@ -917,10 +917,19 @@ describe("the sea's edge in createWater", () => {
     const spray = water.edge.spray!;
     plungesOnTheFace(water.edge.tracker);
     const burst = vi.spyOn(spray, "burst");
+    // Before the FFT draws (the swell alone), the curl is made but not shown:
+    // the sea's fragment lip draws, so the spray takes the face's normal.
     water.update(-400, 0, 20, 12);
     expect(burst.mock.calls.map((call) => call[2])).toEqual([0, 10, 20, 30, 40, 50]);
-    // Seed 7's swell travels 7.95 degrees off +x, the curl's throw; the
-    // coast's normal at z = 0 is 5.66 degrees the other way.
+    const [, , , dirX, dirZ] = burst.mock.calls[0]!;
+    expect(dirX).toBe(1);
+    expect(dirZ).toBeCloseTo(-0.0990227897035254, 9);
+    // The FFT drawing, the curl shown: seed 7's swell travels 7.95 degrees
+    // off +x, the curl's throw; the coast's normal at z = 0 is 5.66 degrees the other way.
+    burst.mockClear();
+    seaFrames.mode = 2;
+    water.update(-400, 0, 21, 12);
+    expect(burst.mock.calls.map((call) => call[2])).toEqual([0, 10, 20, 30, 40, 50]);
     for (const call of burst.mock.calls) expect([call[3], call[4]]).toEqual([0.9903918900937535, 0.1382892043383079]);
     water.dispose();
   }, timeLimit(60_000));
