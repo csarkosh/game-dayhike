@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BODY_TOP_M, CAP_SCENE_IN_S, CAP_SCENE_OUT_FROM_S, CAP_SCENE_OUT_S, CAP_SCENE_S, CAP_SCENE_STEP_M, capPose, capStand, HOLLOW_HEAD_M, LENS_24, LENS_32, LENS_GAME, SCENE_IN_S, SCENE_OUT_FROM_S, SCENE_OUT_S, SCENE_STAND_M, SCENE_EYE_HEIGHT, SCENE_PITCH, sceneStand, SHOTS, shotAt, SUMMIT_SCENE_S, summitPose, summitShot, type SceneContext } from "../../src/game/cutscene.js";
+import { BODY_TOP_M, CAP_SCENE_IN_S, CAP_SCENE_OUT_FROM_S, CAP_SCENE_OUT_S, CAP_SCENE_S, CAP_SCENE_STEP_M, capPose, capStand, HOLLOW_HEAD_M, LENS_24, LENS_32, LENS_GAME, SCENE_IN_S, SCENE_OUT_FROM_S, SCENE_OUT_S, SCENE_STAND_M, SCENE_EYE_HEIGHT, SCENE_PITCH, sceneStand, SCENE_LOOK_S, SCENE_TURN_S, SHOTS, shotAt, SUMMIT_SCENE_S, summitPose, summitShot, THRESHOLD_AT_S, thresholdAt, type SceneContext } from "../../src/game/cutscene.js";
 import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
 
 describe("the summit scene", () => {
@@ -116,10 +116,26 @@ describe("the summit's shots", () => {
     expect(HOLLOW_HEAD_M).toBeGreaterThan(BODY_TOP_M);
   });
 
-  it("the last shot is the player's own eye at the game's lens: the threshold", () => {
+  it("the last shot is the player's own eye at the game's lens, live: the threshold", () => {
     const last = summitShot(SUMMIT_SCENE_S - 1, ctx);
     expect(last.shot).toBe(4);
     expect(last.fov).toBe(LENS_GAME);
-    expect([last.x, last.y, last.z, last.yaw, last.pitch]).toEqual([ctx.base.x, ctx.base.y, ctx.base.z, ctx.base.yaw, ctx.base.pitch]);
+    expect(last.live).toBe(true);
+    expect(summitShot(1, ctx).live).toBe(false);
+    expect(THRESHOLD_AT_S).toBe(SHOTS[0]! + SHOTS[1]! + SHOTS[2]! + SHOTS[3]!);
+  });
+
+  it("the threshold looks, then turns, then runs, each stage filling its seconds", () => {
+    expect(thresholdAt(0)).toEqual({ stage: "look", f: 0 });
+    expect(thresholdAt(SCENE_LOOK_S - 0.01).stage).toBe("look");
+    const mid = thresholdAt(SCENE_LOOK_S + SCENE_TURN_S / 2);
+    expect(mid.stage).toBe("turn");
+    expect(mid.f).toBeGreaterThan(0.3);
+    expect(mid.f).toBeLessThan(0.7);
+    expect(thresholdAt(SCENE_LOOK_S + SCENE_TURN_S - 0.01).f).toBeGreaterThan(0.9);
+    const run = thresholdAt(SCENE_LOOK_S + SCENE_TURN_S + 0.01);
+    expect(run.stage).toBe("run");
+    expect(thresholdAt(SHOTS[4]!).f).toBe(1);
+    expect(SHOTS[4]!).toBeGreaterThan(SCENE_LOOK_S + SCENE_TURN_S + 1); // a second at least of running before the controls return
   });
 });

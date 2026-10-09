@@ -4,9 +4,11 @@ import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "../../src/sim/terrain.js";
-import { AiState, Outcome, Phase } from "../../src/sim/types.js";
+import { AiState, Button, Outcome, Phase } from "../../src/sim/types.js";
 import { TICK_DT } from "../../src/sim/constants.js";
-import { stemNodes } from "../../src/sim/trailRoute.js";
+import { stemAhead, stemNodes } from "../../src/sim/trailRoute.js";
+/** The threshold's run (game/cutscene.ts: the last shot less its look and turn): the seconds the scene has the player sprinting before the hunt. */
+const SCENE_RUN_S = 1.8;
 import { DISCOVERY_RADIUS } from "../../src/sim/summit.js";
 import { FORK_EMERGE_MAX_S, FORK_REVEAL_S, SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
 import { FORK_CUT_RADIUS } from "../../src/sim/cut.js";
@@ -120,7 +122,17 @@ describe("one run on the seed `hollow`", SUITE, () => {
     expect(w.state.enemies.size).toBe(1);
     const h = [...w.state.enemies.values()][0]!;
     expect(h.ai).toBe(AiState.Emerge);
-    for (let i = 0; i < Math.round(SUMMIT_REVEAL_S / TICK_DT) + 1; i++) tickWorld(w, new Map());
+    // Through the scene: its last seconds are the threshold (the summit scene), the Hollow walking
+    // at the player, who by then has turned and sprints down the stem before the controls are
+    // theirs (app.ts drives it); the same here, or the stand ends on top of a player standing still.
+    const down = stemAhead(graph, p.pos.x, p.pos.z, -8)!;
+    const runYaw = Math.atan2(down.x - p.pos.x, down.z - p.pos.z);
+    const sceneTicks = Math.round(SUMMIT_REVEAL_S / TICK_DT) + 1;
+    const runTicks = Math.round(SCENE_RUN_S / TICK_DT);
+    for (let i = 0; i < sceneTicks; i++) {
+      const running = i >= sceneTicks - 1 - runTicks;
+      tickWorld(w, running ? new Map([[p.id, { seq: i, moveX: 0, moveZ: 1, yaw: runYaw, pitch: 0, buttons: Button.Sprint }]]) : new Map());
+    }
     expect(h.ai).toBe(AiState.Hunt);
     expect(h.targetId).toBe(p.id);
 
@@ -157,8 +169,12 @@ describe("one run on the seed `hollow`", SUITE, () => {
     for (let i = 1; i + 1 < guide.length; i++) {
       const prev = graph.nodes[guide[i - 1]!]!, node = graph.nodes[guide[i]!]!;
       const len = Math.sqrt((node.x - prev.x) ** 2 + (node.z - prev.z) ** 2);
-      const f = Math.min(FORK_CUT_RADIUS - 1, len) / len;
-      place(node.x + (prev.x - node.x) * f, node.z + (prev.z - node.z) * f);
+      let f = Math.min(FORK_CUT_RADIUS - 1, len) / len;
+      // A way point a Hollow stands on (the summit's, after its steps) is taken half as far from
+      // the node, on the same edge: the same arrival, no kill (cutSweep.test.ts does the same).
+      const wayOf = (k: number) => ({ x: node.x + (prev.x - node.x) * k, z: node.z + (prev.z - node.z) * k });
+      if ([...w.state.enemies.values()].some((e) => Math.hypot(e.pos.x - wayOf(f).x, e.pos.z - wayOf(f).z) < 3)) f /= 2;
+      place(wayOf(f).x, wayOf(f).z);
       step(`on the way to ${guide[i]}`);
       at(guide[i]!);
       step(`at ${guide[i]}`);

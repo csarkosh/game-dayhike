@@ -107,8 +107,9 @@ import { AiState } from "./sim/types.js";
 import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState } from "./game/innerVoice.js";
 import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
 import { createVoiceClips } from "./game/voiceClips.js";
-import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S } from "./game/cutscene.js";
+import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt } from "./game/cutscene.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET } from "./sim/constants.js";
+import { stemAhead } from "./sim/trailRoute.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
 
 /** Seconds after the last howl ends before the voice answers it, and the milliseconds into the cap's scene its line comes. */
@@ -460,10 +461,28 @@ function buildGame(
   let lastLook = { yaw: 0, pitch: 0 };
   const sceneOn = (): boolean => performance.now() < sceneUntil;
   /** The command with the player stilled: no move, no press, the look held where it was. */
+  /** Metres back down the stem the threshold's turn aims at. */
+  const DOWN_TRAIL_M = 8;
+  /** The summit scene's threshold: the way down the trail from where the player stood at the flip, as a yaw; null outside the summit's scene. */
+  let downYaw: number | null = null;
   function stilled(cmd: InputCommand): InputCommand {
     if (!sceneOn()) {
       lastLook = { yaw: cmd.yaw, pitch: cmd.pitch };
       return cmd;
+    }
+    const into = SUMMIT_SCENE_S - (sceneUntil - performance.now()) / 1000;
+    if (downYaw !== null && into >= THRESHOLD_AT_S) {
+      // The threshold (cutscene.ts): the eye held on the Hollow's first steps, then turned to the
+      // way down, then the legs: the player runs before the controls are theirs, and keeps the look.
+      const stage = thresholdAt(into - THRESHOLD_AT_S);
+      if (stage.stage === "look") return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: lastLook.yaw, pitch: lastLook.pitch };
+      let turn = downYaw - lastLook.yaw;
+      turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+      const yaw = stage.stage === "turn" ? lastLook.yaw + turn * stage.f : downYaw;
+      const pitch = stage.stage === "turn" ? lastLook.pitch * (1 - stage.f) : 0;
+      input.setLook(yaw, pitch);
+      if (stage.stage === "turn") return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw, pitch };
+      return { ...cmd, moveX: 0, moveZ: 1, buttons: Button.Sprint, yaw, pitch };
     }
     return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: lastLook.yaw, pitch: lastLook.pitch };
   }
@@ -833,9 +852,12 @@ function buildGame(
       for (const e of state.enemies.values()) if (e.ai === AiState.Emerge) { hollow = { x: e.pos.x, y: e.pos.y - ENEMY_HALF.y, z: e.pos.z }; break; }
       const me = state.players.get(localId);
       const party = me === undefined ? world.search.body.pos : { x: me.pos.x, y: me.pos.y + PLAYER_EYE_OFFSET, z: me.pos.z };
+      // The way down for the threshold: a point back down the stem from where the player stands.
+      const down = me === undefined || world.trail === null ? null : stemAhead(world.trail, me.pos.x, me.pos.z, -DOWN_TRAIL_M);
+      downYaw = down === null || me === undefined ? null : Math.atan2(down.x - me.pos.x, down.z - me.pos.z);
       renderer.setScene("summit", world.search.body.pos, hollow === null ? undefined : { hollow, party });
       hud.setBars(true);
-      setTimeout(() => hud.setBars(false), SUMMIT_SCENE_S * 1000);
+      setTimeout(() => { hud.setBars(false); downYaw = null; }, SUMMIT_SCENE_S * 1000);
     }
     wasChase = chaseNow;
     // The inner voice: what this player is in, this frame; one line at most.
@@ -1369,6 +1391,7 @@ function buildGame(
     capAt = undefined;
     wasChase = false;
     sceneUntil = -1;
+    downYaw = null;
     woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
@@ -1481,6 +1504,7 @@ function buildGame(
     capAt = undefined;
     wasChase = false;
     sceneUntil = -1;
+    downYaw = null;
     woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
     registerInteractables(client.world);
     activeWorld = client.world;

@@ -103,8 +103,13 @@ function descend(token: string): Descent {
   for (let i = 1; i < guide.length && w.state.outcome === Outcome.Playing; i++) {
     const prev = g.nodes[guide[i - 1]!]!, node = g.nodes[guide[i]!]!;
     const len = dist(prev, node);
-    const f = Math.min(FORK_CUT_RADIUS - 1, len) / len;
-    at(node.x + (prev.x - node.x) * f, node.z + (prev.z - node.z) * f);
+    let f = Math.min(FORK_CUT_RADIUS - 1, len) / len;
+    // The scene's last seconds walk the Hollow at the player (the threshold, which in play has
+    // them running down the stem before the hunt); this walk teleports, so a way point a Hollow
+    // stands on is taken half as far from the node, on the same edge: the same arrival, no kill.
+    const wayOf = (k: number) => ({ x: node.x + (prev.x - node.x) * k, z: node.z + (prev.z - node.z) * k });
+    if ([...w.state.enemies.values()].some((e) => dist(e.pos, wayOf(f)) < 3)) f /= 2;
+    at(wayOf(f).x, wayOf(f).z);
     step(`on the way to node ${guide[i]}`);
     if (w.state.outcome !== Outcome.Playing) break;
     at(node.x, node.z);

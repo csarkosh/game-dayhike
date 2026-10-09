@@ -96,7 +96,8 @@ export type SceneContext = {
   hollow: { x: number; y: number; z: number };
   party: { x: number; y: number; z: number };
 };
-export type ShotPose = ScenePose & { fov: number; shot: number };
+/** A shot's camera; `live` when the camera is the player's own this frame (the threshold), the pose then theirs. */
+export type ShotPose = ScenePose & { fov: number; shot: number; live: boolean };
 
 /** The film lenses in the engine's vertical radians: 24 mm, 32 mm, 50 mm; and the game's own. */
 export const LENS_24 = 0.57;
@@ -104,8 +105,25 @@ export const LENS_32 = 0.43;
 export const LENS_50 = 0.28;
 export const LENS_GAME = 1.4;
 /** Each shot's seconds, in order; the scene is their sum (SUMMIT_REVEAL_S matches it). */
-export const SHOTS: readonly number[] = [4, 4, 5, 4, 3];
+export const SHOTS: readonly number[] = [4, 4, 5, 4, 4];
 export const SUMMIT_SCENE_S = SHOTS.reduce((a, b) => a + b, 0);
+/**
+ * The threshold, the last shot, in three: the eye on the Hollow's first steps (SCENE_LOOK_S), the
+ * turn back to the trail (SCENE_TURN_S), and the run down it, the controls' own by the shot's end.
+ */
+export const SCENE_LOOK_S = 1.2;
+export const SCENE_TURN_S = 1;
+export type Threshold = { stage: "look" | "turn" | "run"; f: number };
+export function thresholdAt(into: number): Threshold {
+  if (into < SCENE_LOOK_S) return { stage: "look", f: Math.max(0, into / SCENE_LOOK_S) };
+  const turn = into - SCENE_LOOK_S;
+  if (turn < SCENE_TURN_S) return { stage: "turn", f: easeInOut(turn / SCENE_TURN_S) };
+  const last = SHOTS[SHOTS.length - 1] as number;
+  return { stage: "run", f: Math.min(1, (turn - SCENE_TURN_S) / Math.max(1e-6, last - SCENE_LOOK_S - SCENE_TURN_S)) };
+}
+/** The seconds into the scene at which the threshold begins. */
+export const THRESHOLD_AT_S = SHOTS.slice(0, -1).reduce((a, b) => a + b, 0);
+
 /** The Hollow's head over its feet, drawn at HOLLOW_SCALE. */
 export const HOLLOW_HEAD_M = 4.5;
 /** The hiker on the pole, over its foot: the body is the top of a 4.3 m stake (bodyMesh.ts). */
@@ -119,7 +137,7 @@ function unit(dx: number, dz: number): { x: number; z: number } {
 /** A camera at `at` looking at `to`. */
 function lookAt(at: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }, fov: number, shot: number): ShotPose {
   const dx = to.x - at.x, dz = to.z - at.z;
-  return { x: at.x, y: at.y, z: at.z, yaw: Math.atan2(dx, dz), pitch: Math.atan2(at.y - to.y, Math.hypot(dx, dz)), fov, shot };
+  return { x: at.x, y: at.y, z: at.z, yaw: Math.atan2(dx, dz), pitch: Math.atan2(at.y - to.y, Math.hypot(dx, dz)), fov, shot, live: false };
 }
 
 /** The shot `t` seconds into the scene, and the seconds into that shot. */
@@ -143,7 +161,8 @@ export function shotAt(t: number): { shot: number; into: number } {
  * Every shot is lit by the sky alone: the summit at night has no other light, so each frames its
  *    subject against it.
  * 4. The predator's view: a 32 mm high behind the Hollow's shoulder, the party small below, a slow push.
- * 5. The threshold: the player's own eye at the game's lens, the cast turning; then the controls.
+ * 5. The threshold: the player's own eye at the game's lens, live: the Hollow's first steps toward them,
+ *    the turn back to the trail, the run down it (app.ts drives the look and the legs; thresholdAt).
  */
 export function summitShot(t: number, ctx: SceneContext): ShotPose {
   const { shot, into } = shotAt(t);
@@ -175,7 +194,7 @@ export function summitShot(t: number, ctx: SceneContext): ShotPose {
     const at = { x: ctx.hollow.x - u.x * (4.5 - push) + p.x * 1.8, y: ctx.hollow.y + 5.2, z: ctx.hollow.z - u.z * (4.5 - push) + p.z * 1.8 };
     return lookAt(at, { x: ctx.party.x, y: ctx.party.y - 0.6, z: ctx.party.z }, LENS_32, 3);
   }
-  return { x: ctx.base.x, y: ctx.base.y, z: ctx.base.z, yaw: ctx.base.yaw, pitch: ctx.base.pitch, fov: LENS_GAME, shot: 4 };
+  return { x: ctx.base.x, y: ctx.base.y, z: ctx.base.z, yaw: ctx.base.yaw, pitch: ctx.base.pitch, fov: LENS_GAME, shot: 4, live: true };
 }
 
 /** The camera `t` seconds into the scene, from `base` (the eye at the flip) toward the body, and back: the first scene, kept for the cap's and the tests of the way in. */

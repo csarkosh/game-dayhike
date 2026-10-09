@@ -8,7 +8,7 @@
 The find, in the game itself: the world is loaded and drawn by the time anyone reaches the
 crest, so the scene that introduces the chase is the game's own camera over the game's own
 Hollow, not a film (the intro is a film because its world is not built yet). For
-`SUMMIT_SCENE_S` (20 s, the sum of the shots below, which `SUMMIT_REVEAL_S` matches) from the
+`SUMMIT_SCENE_S` (21 s, the sum of the shots below, which `SUMMIT_REVEAL_S` matches) from the
 frame the phase flips, on every screen, the controls are stilled (no move, no press, the look
 held), the frame is letterboxed to the film's 2.39:1 (the HUD's bars; the roster leaves) and the
 camera is the scene's, cut to cut.
@@ -29,7 +29,7 @@ every shot frames its subject against the sky.
 | 2. The find | 4 to 8 | 32 mm | Locked off 2.4 m from the stake on the party's side, 0.5 m up, tilting from its foot to the hiker on it (`BODY_TOP_M` 3.6 m) against the sky; the inner voice's `body` line, shock, on every screen, held for this shot | problem |
 | 3. The reveal | 8 to 13 | 24 mm | On the ground 1.6 m beside the stake, panning from the hiker's feet to the Hollow's head (`HOLLOW_HEAD_M` 4.5 m) as it comes up out of the ground 6 m past the stake; the cry comes at 9.5 s (`REVEAL_SILENCE_S`), as it stands | the wrong note made whole |
 | 4. The predator's view | 13 to 17 | 32 mm | High behind the Hollow's shoulder, 5.2 m up, 4.5 m back and 1.8 m to the side, pushing in 1.2 m; aimed down at the party, small beyond the stake in the mist; the inner voice's `hollow` line, terror, lands here (the scene's cry is the reveal's and gets no cry line) | why to run |
-| 5. The threshold | 17 to 20 | the game's | The player's own eye again, as it was at the flip, the cast turning in front of it; the controls return as it ends and the `chaseStart` line says so | the handoff |
+| 5. The threshold | 17 to 21 | the game's | The player's own eye, live: for `SCENE_LOOK_S` (1.2 s) held on the Hollow as it takes its first steps toward them (`HOLLOW_STEP_S`, `HOLLOW_STALK_SPEED` 1.5 m/s, `sim/hollow.ts`); over `SCENE_TURN_S` (1 s) the eye turns to the way down the trail (`DOWN_TRAIL_M` 8 m back down the stem, `app.ts`); then the legs, a sprint down it, the controls theirs as it ends with the look kept (`input.setLook`) and the `chaseStart` line saying so | the handoff |
 
 The Hollow waits `SUMMIT_RISE_DELAY_S` (6 s, `entityViews.ts`) before its rise, so the arrival and
 the find see the stake alone; it rises as the shades do, in the shadow form with its dulled eyes,
@@ -72,9 +72,9 @@ where they fell.
   Hollow's rise held `SUMMIT_RISE_DELAY_S`.
 - `game/hud.ts`: `setBars(on)`, the letterbox, the roster hidden under it.
 - `app.ts`: the flip seen in `syncAtmosphere` (the phase in the snapshot), `setScene` with the
-  Hollow and the party, the bars, the controls stilled (`stilled`), the `body` line held for the
-  find, the voice's `chase` held until the scene ends.
-- `sim/hollow.ts`: `SUMMIT_REVEAL_S` 20, the reveal the scene's length. `sim/haunt.ts`: the
+  Hollow and the party, the bars, the controls stilled (`stilled`), then the threshold's look, turn and run
+  through the same; the `body` line held for the find, the voice's `chase` held until the scene ends.
+- `sim/hollow.ts`: `SUMMIT_REVEAL_S` 21, the reveal the scene's length; `HOLLOW_STEP_S`, `HOLLOW_STALK_SPEED`, its steps through the threshold. `sim/haunt.ts`: the
   director waits while a Hollow is stepping out. `game/woodsVoice.ts`: `REVEAL_SILENCE_S` 9.5,
   the cry in the reveal shot.
 
