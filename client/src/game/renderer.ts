@@ -129,6 +129,7 @@ import { createLakeMirror, createLakeMirrorTerrain, MIRROR_MOTION_SMEAR, mirrorM
 import { createLakePanorama, createSkylineTexture } from "./lakePanorama.js";
 import { SKYLINE_SHADE, skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { NEEDLE_BED } from "./terrainSurface.js";
+import { SILENT_SURF_SOUND, type SurfSound } from "./surfSound.js";
 
 const MATERIAL_COLORS: Record<string, [number, number, number]> = {
   concrete: [0.42, 0.44, 0.47],
@@ -1447,6 +1448,16 @@ export type Renderer = {
    * branch with no local player), so no frame's calls are voiced twice.
    */
   waterLifeSound(): WaterLifeSound;
+  /**
+   * Whether this world has the sea's surf to hear (`surfSound.ts`). Fixed at
+   * the renderer's creation; false, `app.ts` builds no audio for it.
+   */
+  readonly hasSea: boolean;
+  /**
+   * The surf as heard on the last `sync`: one reused record, read by
+   * `app.ts` after each `sync`. Silent, never null, without a sea.
+   */
+  surfSound(): SurfSound;
   /**
    * Where the camera is and which way it looks, in Babylon's left-handed world
    * — `wildlifeAudio.ts` mirrors it for Web Audio. One reused object: this is
@@ -2790,6 +2801,10 @@ function buildRenderer(
     hasWaterLife: waterLife !== null,
     waterLifeSound() {
       return waterLife !== null && waterLifeStepped ? waterLife.sound() : SILENT_WATER_LIFE;
+    },
+    hasSea: false,
+    surfSound() {
+      return SILENT_SURF_SOUND;
     },
     stare() {
       return stareLens;
