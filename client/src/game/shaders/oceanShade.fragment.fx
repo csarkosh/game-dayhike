@@ -272,13 +272,6 @@ float oceanWindSlopeLimit(float u10, float shelter, float drawn) {
   return min(1.0, sqrt((WATER_COX_MUNK_A + WATER_COX_MUNK_B * u10) * shelter / max(drawn, 1.0e-6)));
 }
 
-// The cove's share at world z: 1 across it, 0 past OCEAN_COVE_END beyond
-// either end, blended over the ends as the wet ground's is (wet.fragment.fx).
-const float OCEAN_COVE_END = 30.0;
-float oceanCoveShare(float z) {
-  return 1.0 - smoothstep(oceanCove.y - OCEAN_COVE_END, oceanCove.y + OCEAN_COVE_END, abs(z - oceanCove.x));
-}
-
 // The plunging lip on the tiers that draw no strip (oceanBreaker.ts,
 // lipShadeAt): on the cove's face, where the swell plunges, the face's normal
 // tilts shoreward as the crest goes through the plunge, the crest line takes

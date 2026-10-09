@@ -50,8 +50,11 @@ float wBedRead = waterBedDepth(vPositionW.xz);
 float wBedDepth = mix(wBedRead, min(wBedRead, wOceanFoam.w), wBedOutside);
 // Up the cove's face the depth takes the lift the vertex stage gave the
 // surface onto the swash's sheet (oceanSwash.fx), from the same profile's
-// depth, so the film over the pebbles is the sheet's thickness.
-float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);
+// depth, so the film over the pebbles is the sheet's thickness. Between
+// sheets the surface rests on the pebbles, the swell's and the wind's height
+// on it, so the depth there is 0 and the pixel is discarded: the sheet's edge
+// is the table's, a column a metre, never the rings' grid.
+float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w, wOceanHeight + wWind.y * wWindAmp);
 #else
 float wDepth = waterBedDepth(vPositionW.xz);
 #endif

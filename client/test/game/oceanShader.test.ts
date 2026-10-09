@@ -64,8 +64,10 @@ import {
 } from "../../src/game/oceanWaves.js";
 import { OCEAN_BOUND, WATER_BASE_SPACING, WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/game/water.js";
 import {
-  SWASH_COLUMNS, SWASH_SHEET_MIN, SWASH_STRIDE, SwashTable, sheetAt, sheetLiftAt, swashColumnAt, type SwashCove,
+  SWASH_COLUMNS, SWASH_COVE_END, SWASH_SHEET_MIN, SWASH_STRIDE, SwashTable, coveShareAt, sheetAt, sheetLiftAt, swashColumnAt,
+  type SwashCove,
 } from "../../src/game/swashTable.js";
+import { WET_COVE_END } from "../../src/game/wetPlugin.js";
 import { SWASH_REACH_MAX_M } from "../../src/game/swashRunUp.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
 import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
@@ -732,9 +734,10 @@ describe("the sea's shader constants and functions", () => {
     const d = fx("oceanDisplace.vertex.fx");
     const slide = at(d, "positionUpdated.xz -= oceanMorph * oceanCoarse;");
     const assign = at(d, "vOceanXZ = positionUpdated.xz;");
-    const displace = at(d, "positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);");
+    const displace = at(d, "vec3 oceanVertexDisplace = oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);");
     expect(slide).toBeLessThan(assign);
     expect(assign).toBeLessThan(displace);
+    expect(at(d, "positionUpdated += oceanVertexDisplace;")).toBeGreaterThan(displace);
     expect(d.match(/oceanDisplace\(/g)).toHaveLength(1);
     // The sum goes on to the fragment stage: its normal's x and z, height and drawn variance, and its envelope.
     expect(at(d, "vOceanSwellA = oceanVertexSwell;")).toBeGreaterThan(displace);
@@ -762,7 +765,7 @@ describe("the sea's normal, waterline and roughness", () => {
       "float wOceanHeight = vOceanSwellA.z;",
       "vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);",
     ]) expect(l, line).toContain(line);
-    const depth = "float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);";
+    const depth = "float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w, wOceanHeight + wWind.y * wWindAmp);";
     expect(at(l, depth)).toBeLessThan(at(l, "if (wDepth <= 0.0) discard;"));
   });
 
@@ -893,10 +896,12 @@ describe("the sea's swash in the shaders", () => {
         "}\n",
     );
     expect(w).toContain(
-      "float swashLift(vec2 p, float h) {\n" +
+      "float swashLift(vec2 p, float h, float swell) {\n" +
         "  float phaseDz;\n" +
         "  float sheet = swashSheet(p.x - oceanCoastAt(p.y, phaseDz).x, p.y);\n" +
-        "  return max(0.0, sheet - h) * step(SWASH_SHEET_MIN, sheet);\n" +
+        "  float lift = max(0.0, sheet - h) * step(SWASH_SHEET_MIN, sheet);\n" +
+        "  float rest = max(0.0, -(h + swell)) * oceanCoveShare(p.y);\n" +
+        "  return max(lift, rest);\n" +
         "}\n",
     );
     // The profile's depth as oceanSwellSum blends it: the bay's and the cove's rows by the cove's weight.
@@ -929,13 +934,17 @@ describe("the sea's swash in the shaders", () => {
       engine.dispose();
     }
     const d = fx("oceanDisplace.vertex.fx");
-    const lift = at(d, "positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ));");
-    expect(lift).toBeGreaterThan(at(d, "positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);"));
+    const lift = at(d, "positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ), oceanVertexDisplace.y);");
+    expect(lift).toBeGreaterThan(at(d, "positionUpdated += oceanVertexDisplace;"));
     expect(d.match(/swashLift\(/g)).toHaveLength(1);
+    // the strip's shape displaces its own points and never lifts them onto the sheet
+    expect(fx("oceanLipShape.vertex.fx")).not.toContain("swashLift");
     // The fragment stage takes the profile's depth from the foam the swell's envelope makes, its h.
     const l = fx("waterLights.fragment.fx");
-    expect(at(l, "swashLift(vOceanXZ, wOceanFoam.w)")).toBeGreaterThan(at(l, "vec4 wOceanFoam = oceanFoamFromEnvelope("));
-    expect(at(l, "swashLift(vOceanXZ, wOceanFoam.w)")).toBeLessThan(at(l, "if (wDepth <= 0.0) discard;"));
+    const fragmentLift = "swashLift(vOceanXZ, wOceanFoam.w, wOceanHeight + wWind.y * wWindAmp)";
+    expect(at(l, fragmentLift)).toBeGreaterThan(at(l, "vec4 wOceanFoam = oceanFoamFromEnvelope("));
+    expect(at(l, fragmentLift)).toBeGreaterThan(at(l, "vec3 wWind = oceanWindDisplace(vOceanXZ);"));
+    expect(at(l, fragmentLift)).toBeLessThan(at(l, "if (wDepth <= 0.0) discard;"));
     expect(fx("oceanSurface.fx")).toContain("  return vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);");
   });
 
@@ -945,7 +954,7 @@ describe("the sea's swash in the shaders", () => {
       "float wBedOutside = step(min(min(wBedLocal.x, wBedLocal.y), min(1.0 - wBedLocal.x, 1.0 - wBedLocal.y)), 0.0) * oceanCoveShare(vOceanXZ.y);",
       "float wBedRead = waterBedDepth(vPositionW.xz);",
       "float wBedDepth = mix(wBedRead, min(wBedRead, wOceanFoam.w), wBedOutside);",
-      "float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);",
+      "float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w, wOceanHeight + wWind.y * wWindAmp);",
     ];
     const sea = await processed(fx("waterLights.fragment.fx"), true, SEA_DEFINES);
     let last = at(sea, "vec4 wOceanFoam = oceanFoamFromEnvelope(");
@@ -964,9 +973,12 @@ describe("the sea's swash in the shaders", () => {
     expect(w).toContain("  bool outside = local.x <= 0.0 || local.y <= 0.0 || local.x >= 1.0 || local.y >= 1.0;");
     expect(w).toContain("  return outside ? vBedDepth : waterLevel - h;");
     const step = (edge: number, x: number): number => (x < edge ? 0 : 1);
-    // the cove's share at z: 1 across the cove, 0 past OCEAN_COVE_END beyond either end, as the wet ground's
-    const f = fx("oceanShade.fragment.fx");
+    // the cove's share at z: 1 across the cove, 0 past OCEAN_COVE_END beyond either end, as the wet ground's,
+    // in the swash's definitions, which both stages have, and nowhere else
+    const f = fx("oceanSwash.fx");
     pinned(f, "OCEAN_COVE_END", OCEAN_COVE_END);
+    expect(fx("oceanShade.fragment.fx")).not.toContain("OCEAN_COVE_END");
+    expect(fx("oceanShade.fragment.fx")).not.toContain("float oceanCoveShare(");
     expect([OCEAN_COVE_END, OCEAN_COVE_END - COVE_END_BLEND]).toEqual([30, 0]);
     expect(f).toContain(
       "float oceanCoveShare(float z) {\n" +
@@ -984,6 +996,12 @@ describe("the sea's swash in the shaders", () => {
     // halfway through the end's fade half of it, and from 30 m past its end on the vertex's own depth
     expect([0, 20, 154, 184].map((z) => coveShare(z, 20, 164))).toEqual([1, 1, 1, 0.5]);
     expect([214, 400, -200].map((z) => coveShare(z, 20, 164))).toEqual([0, 0, 0]);
+    // the TypeScript's share is the same, its end fade the same 30 m as the sea's and the wet ground's
+    expect([SWASH_COVE_END, WET_COVE_END]).toEqual([OCEAN_COVE_END, OCEAN_COVE_END]);
+    const twinCove: SwashCove = { z0: 20, halfWidth: 164, toeD: -24, faceGrade: 1 / 12, coastX: () => 0 };
+    for (const z of [-400, -200, -150, -144, -124, 0, 20, 154, 160, 184, 200, 214, 400]) {
+      expect(coveShareAt(z, twinCove), `${z}`).toBe(coveShare(z, 20, 164));
+    }
     expect(bedAt(0.25, -0.75, 1, coveShare(20, 20, 164))).toBe(-0.75);
     expect(bedAt(0.25, -0.75, 1, coveShare(184, 20, 164))).toBe(-0.25);
     expect(bedAt(0.25, -0.75, 1, coveShare(214, 20, 164))).toBe(0.25);
@@ -1060,16 +1078,76 @@ describe("the sea's swash in the shaders", () => {
     const data = oneSheet();
     const z = COVE.z0;
     // at the waterline the ground is at the level: the sheet's thickness
-    expect(sheetLiftAt(0, z, 0, data, COVE)).toBe(0.25);
+    expect(sheetLiftAt(0, z, 0, 0, data, COVE)).toBe(0.25);
     // halfway up, the ground 0.5 m above the level under a 0.125 m sheet
-    expect(sheetLiftAt(4.75, z, -0.5, data, COVE)).toBe(0.625);
+    expect(sheetLiftAt(4.75, z, -0.5, 0, data, COVE)).toBe(0.625);
     // 3 m seaward on the 1:12 face the water is 0.25 m deep: the sheet adds nothing
-    expect(sheetLiftAt(-3, z, 0.25, data, COVE)).toBe(0);
+    expect(sheetLiftAt(-3, z, 0.25, 0, data, COVE)).toBe(0);
     // 1.5 m seaward, 0.125 m deep: half the sheet stands over the sea
-    expect(sheetLiftAt(-1.5, z, 0.125, data, COVE)).toBe(0.125);
-    // no sheet, no lift, however high the ground
-    expect(sheetLiftAt(9.75, z, -0.8125, data, COVE)).toBe(0);
-    expect(sheetLiftAt(0, z + 1, -1, data, COVE)).toBe(0);
+    expect(sheetLiftAt(-1.5, z, 0.125, 0, data, COVE)).toBe(0.125);
+    // past the front, and in the next column, no sheet: the sea rests on the ground
+    expect(sheetLiftAt(9.75, z, -0.8125, 0, data, COVE)).toBe(0.8125);
+    expect(sheetLiftAt(0, z + 1, -1, 0, data, COVE)).toBe(1);
+  });
+
+  it("lifts the sheet's top over the face whatever a small swell, the sheet standing higher than the ground", () => {
+    const data = oneSheet();
+    const z = COVE.z0;
+    // 4 m up the 1:12 face, the ground 1/3 m above the level, under 0.25·(1 − 4/9.5) = 11/76 m of sheet:
+    // the lift is 11/76 + 1/3 = 109/228 = 0.47807…, the swell's own height not in it
+    const covered = 109 / 228;
+    expect(covered).toBeCloseTo(0.478070175438596, 15);
+    expect(sheetLiftAt(4, z, -4 / 12, 0, data, COVE)).toBeCloseTo(covered, 15);
+    expect(sheetLiftAt(4, z, -4 / 12, -0.1, data, COVE)).toBeCloseTo(covered, 15);
+    // a trough 0.5 m deep under it takes the sheet's top below the ground: the sea rests on the ground,
+    // 1/3 + 0.5 = 5/6, and its depth there is 0
+    expect(sheetLiftAt(4, z, -4 / 12, -0.5, data, COVE)).toBeCloseTo(5 / 6, 15);
+  });
+
+  it("rests the sea on the dry face between sheets, the swell's height already on it, within the cove alone", () => {
+    const data = oneSheet();
+    const z = COVE.z0;
+    // 11 m up the face, past the front, the ground 11/12 m above the level
+    expect(sheetAt(11, z, data, COVE)).toBe(0);
+    expect(sheetLiftAt(11, z, -11 / 12, 0, data, COVE)).toBe(11 / 12);
+    expect(sheetLiftAt(11, z, -11 / 12, 0.2, data, COVE)).toBeCloseTo(0.716666666666667, 14);
+    expect(sheetLiftAt(11, z, -11 / 12, 0.2, data, COVE)).toBe(-(-11 / 12 + 0.2));
+    // the swell standing above the face lifts nothing more, as before
+    expect(sheetLiftAt(11, z, -11 / 12, 1, data, COVE)).toBe(0);
+    expect(sheetLiftAt(11, z, -11 / 12, -0.3, data, COVE)).toBeCloseTo(1.216666666666667, 14);
+    // 30 m past the cove's end the share is 0, whatever the swell: the bays keep the sea they had
+    const past = COVE.z0 + COVE.halfWidth + 30;
+    expect(coveShareAt(past, COVE)).toBe(0);
+    for (const swell of [-0.5, -0.3, 0, 0.2, 1]) expect(sheetLiftAt(11, past, -11 / 12, swell, data, COVE), `${swell}`).toBe(0);
+    // at the cove's end the share is a half, and so is the rest
+    const end = COVE.z0 + COVE.halfWidth;
+    expect(coveShareAt(end, COVE)).toBe(0.5);
+    expect(sheetLiftAt(11, end, -11 / 12, 0, data, COVE)).toBe(11 / 24);
+    expect(sheetLiftAt(11, end, -11 / 12, 0.2, data, COVE)).toBeCloseTo(0.358333333333333, 14);
+    // under water, 1 m deep and 12 m seaward, the sea is never lifted, sheet or none
+    expect(sheetAt(-12, z, data, COVE)).toBe(0.25);
+    for (const swell of [0, -0.5]) {
+      expect(sheetLiftAt(-12, z, 1, swell, data, COVE), `${swell}`).toBe(0);
+      expect(sheetLiftAt(-12, z + 1, 1, swell, data, COVE), `${swell}`).toBe(0);
+    }
+  });
+
+  it("leaves the fragment stage a depth of exactly 0 wherever the sea rests on the face, so it is discarded there", () => {
+    const empty = new Float32Array(SWASH_COLUMNS * SWASH_STRIDE);
+    let checked = 0;
+    for (let i = 0; i < 40; i++) {
+      const depth = -1 + i / 40;
+      for (let j = 0; j <= 40; j++) {
+        const swell = -0.5 + j / 40;
+        if (depth + swell >= 0) continue;
+        for (const z of [COVE.z0, COVE.z0 - 100, COVE.z0 + COVE.halfWidth - 30]) {
+          expect(coveShareAt(z, COVE)).toBe(1);
+          expect(depth + swell + sheetLiftAt(-12 * depth, z, depth, swell, empty, COVE), `${depth} ${swell} ${z}`).toBe(0);
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(2000);
   });
 
   it("keeps the farthest reach inside the rings' wet bounds", () => {
@@ -1121,10 +1199,11 @@ describe("the sea's shaders", () => {
   it("process to the text they had before the lake's mirror: its every line vanishes under the sea's gates", async () => {
     // Each fragment hook through Babylon's preprocessor with the sea's gates, hashed as it was at 378b040;
     // the lights' hashed again once the sea's depth took the swash's lift, and the profile's depth
-    // outside the bed's square; once more as the plunging lip tilted the normal and lifted the foam.
+    // outside the bed's square; once more as the plunging lip tilted the normal and lifted the foam, and
+    // again as the sea came to rest on the face between the swash's sheets.
     const before: Record<string, string> = {
       "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
-      "waterLights.fragment.fx": "427e69af6c9a8d139bad65dad4a8359e24b2164cb5ffebc1d7831097871af7c8",
+      "waterLights.fragment.fx": "b6e4b9918f12b3c876749b6653e6d83d8b29c5c41d8cfcf27a042c866c1dcc63",
       "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
     };
     for (const [name, hash] of Object.entries(before)) {
@@ -1165,12 +1244,13 @@ describe("the water material's stages, compiled", () => {
         const v = effect._vertexSourceCode;
         const f = effect._fragmentSourceCode;
         // The displacement before worldPos, so it reaches the position, vPositionW and the view depth.
-        const displaced = at(v, "positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);");
+        const displaced = at(v, "positionUpdated += oceanVertexDisplace;");
+        expect(displaced).toBeGreaterThan(at(v, "vec3 oceanVertexDisplace = oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);"));
         expect(displaced).toBeGreaterThan(at(v, "vOceanXZ = positionUpdated.xz;"));
         expect(at(v, "vOceanXZ = positionUpdated.xz;")).toBeGreaterThan(at(v, "positionUpdated.xz -= oceanMorph * oceanCoarse;"));
         expect(displaced).toBeLessThan(at(v, "vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);"));
         // The swash's lift after the waves, before worldPos, so the sheet reaches the position and the depth.
-        const lifted = at(v, "positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ));");
+        const lifted = at(v, "positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ), oceanVertexDisplace.y);");
         expect(lifted).toBeGreaterThan(displaced);
         expect(lifted).toBeLessThan(at(v, "vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);"));
         // The swell's normal and the variance it leaves, then the rain's rings, the horizon clamp and

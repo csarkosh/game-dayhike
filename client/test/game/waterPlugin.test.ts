@@ -613,7 +613,8 @@ describe("the sea's waves in the water plugin", () => {
     const displace = fx("oceanDisplace.vertex.fx");
     expect(displace).toContain("vOceanXZ = positionUpdated.xz;");
     // the waves move it, once (oceanShader.test.ts pins how), and the swell goes on
-    expect(displace).toContain("positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);");
+    expect(displace).toContain("vec3 oceanVertexDisplace = oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);");
+    expect(displace).toContain("positionUpdated += oceanVertexDisplace;");
     expect(displace).toContain("vOceanSwellA = oceanVertexSwell;");
     expect(displace).toContain("vOceanSwellB = vec4(oceanVertexEnv, length(oceanVertexEnv), 0.0);");
   });
@@ -921,24 +922,25 @@ describe("the sea's waves in the water plugin", () => {
     const sea = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true);
     expect(sea.vertex).toContain("vOceanXZ = positionUpdated.xz;");
     expect(sea.fragment).toContain("vOceanXZ");
-    expect(sea.vertex).toContain("positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ));");
-    expect(sea.fragment).toContain("swashLift(vOceanXZ, wOceanFoam.w);");
-    // The sea's whole stages, byte for byte, as the swash's sheet, the bed's fallback and the lip left them:
-    // neither the lake's ripples' definitions nor their uniforms reach the sea.
+    expect(sea.vertex).toContain("positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ), oceanVertexDisplace.y);");
+    expect(sea.fragment).toContain("swashLift(vOceanXZ, wOceanFoam.w, wOceanHeight + wWind.y * wWindAmp);");
+    // The sea's whole stages, byte for byte, as the swash's sheet, the bed's fallback, the lip and the sea's rest
+    // on the face between sheets left them: neither the lake's ripples' definitions nor their uniforms reach the sea.
     const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
-    expect(sha(sea.fragment)).toBe("1639b0a30ad3e02c24aa9e1f53641993e72b217ca9fb33645c5cc0f4ae4d32cb");
-    expect(sha(sea.vertex)).toBe("849a373b3d2d72c77ba8bfcdc02cb6cdfee5d46f041d5d9e75fa208794b74a9f");
+    expect(sha(sea.fragment)).toBe("1f37381a3ce0b78b204f55a69f01b52be98a1b942c7717e389d4c73d51c8d960");
+    expect(sha(sea.vertex)).toBe("e2f0268ec68e07ef17834f36dab55432a1972e05b76365bec6e50091a994b5ed");
     // and a material drawn as a lake, then given its ocean, rebuilds its uniforms to the sea's
     const turned = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true, true);
-    expect(sha(turned.fragment)).toBe("1639b0a30ad3e02c24aa9e1f53641993e72b217ca9fb33645c5cc0f4ae4d32cb");
-    expect(sha(turned.vertex)).toBe("849a373b3d2d72c77ba8bfcdc02cb6cdfee5d46f041d5d9e75fa208794b74a9f");
+    expect(sha(turned.fragment)).toBe("1f37381a3ce0b78b204f55a69f01b52be98a1b942c7717e389d4c73d51c8d960");
+    expect(sha(turned.vertex)).toBe("e2f0268ec68e07ef17834f36dab55432a1972e05b76365bec6e50091a994b5ed");
     // and one drawn as a sea, then taken off its ocean, rebuilds them to the lake's
     const back = await compiled((m) => new WaterPlugin(m, WATER_ROWS.lowlandLake), false, true);
     expect(back.fragment).toBe(lake.fragment);
     expect(back.vertex).toBe(lake.vertex);
-    // The sea's main, as the swash's sheet, the bed's fallback and the lip left it, reads none of the lake's ripples.
+    // The sea's main, as the swash's sheet, the bed's fallback, the lip and the sea's rest on the face left it,
+    // reads none of the lake's ripples.
     const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
-    expect(sha(main(sea.fragment))).toBe("30e161b8f18d9d78f58b51042dab6e09fce39f3001c37c46ba9fefd1a6ed6244");
+    expect(sha(main(sea.fragment))).toBe("0f65093d638a9dfcedf291f2322c73a711407265690815e6fae0405a0603bc33");
     for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover", "waterMirror", "waterCalmShare", "wMirror"]) {
       expect(main(sea.fragment), name).not.toContain(name);
     }

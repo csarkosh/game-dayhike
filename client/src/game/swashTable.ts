@@ -333,10 +333,34 @@ export function sheetAt(d: number, z: number, data: Float32Array, cove: SwashCov
   return cover * thickness * Math.min(1, Math.max(0, 1 - d / Math.max(front, SWASH_SHEET_MIN)));
 }
 
+/** The cove's end fade (m): `OCEAN_COVE_END` in oceanSwash.fx, as the wet
+ * ground's (`WET_COVE_END`, wet.fragment.fx). */
+export const SWASH_COVE_END = 30;
+
+/** GLSL's smoothstep: x held to the edges, then 3t² − 2t³. */
+function smoothstep(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** The cove's share at world z, as `oceanCoveShare` (oceanSwash.fx) and the
+ * wet ground's (wet.fragment.fx) make it: 1 across the cove, 0 past
+ * SWASH_COVE_END beyond either end. */
+export function coveShareAt(z: number, cove: SwashCove): number {
+  return 1 - smoothstep(cove.halfWidth - SWASH_COVE_END, cove.halfWidth + SWASH_COVE_END, Math.abs(z - cove.z0));
+}
+
 /** How far the sheet lifts the sea over ground `depth` metres below the
- * level (negative above it), as `swashLift` in oceanSwash.fx does: to the
- * sheet's top where it stands higher than the still sea, else nothing. */
-export function sheetLiftAt(d: number, z: number, depth: number, data: Float32Array, cove: SwashCove): number {
+ * level (negative above it), the swell's height `swell` already on the
+ * surface, as `swashLift` in oceanSwash.fx does: to the sheet's top where it
+ * stands higher than the still sea, and within the cove up to the ground
+ * wherever the surface would lie under it, so the sea rests on the pebbles
+ * between sheets, its depth there 0. */
+export function sheetLiftAt(
+  d: number, z: number, depth: number, swell: number, data: Float32Array, cove: SwashCove,
+): number {
   const sheet = sheetAt(d, z, data, cove);
-  return sheet >= SWASH_SHEET_MIN ? Math.max(0, sheet - depth) : 0;
+  const lift = sheet >= SWASH_SHEET_MIN ? Math.max(0, sheet - depth) : 0;
+  const rest = Math.max(0, -(depth + swell)) * coveShareAt(z, cove);
+  return Math.max(lift, rest);
 }

@@ -34,15 +34,28 @@ float swashSheet(float d, float z) {
   return cover * col.y * clamp(1.0 - d / max(col.x, SWASH_SHEET_MIN), 0.0, 1.0);
 }
 
+// The cove's share at world z: 1 across it, 0 past OCEAN_COVE_END beyond
+// either end, blended over the ends as the wet ground's is (wet.fragment.fx).
+// Here, so both stages have it: the sheet's rest below and the fragment
+// stage's bed (waterLights.fragment.fx) both take it.
+const float OCEAN_COVE_END = 30.0;
+float oceanCoveShare(float z) {
+  return 1.0 - smoothstep(oceanCove.y - OCEAN_COVE_END, oceanCove.y + OCEAN_COVE_END, abs(z - oceanCove.x));
+}
+
 // How far the sheet lifts the sea at the undisplaced point p over ground h
-// metres below the level (the profile's depth, negative above it): to the
-// sheet's top where the sheet stands higher than the still sea, nothing
-// elsewhere, so the lift grows from 0 where the water is as deep as the sheet
-// is thick and never cuts the sea.
-float swashLift(vec2 p, float h) {
+// metres below the level (the profile's depth, negative above it), with the
+// swell's height swell already on the surface: to the sheet's top where the
+// sheet stands higher than the still sea, and up the face within the cove
+// to the ground itself wherever the surface would lie under it, so the sea
+// hugs the pebbles between sheets and the fragment stage's depth, 0 there,
+// discards it. Never cuts the sea.
+float swashLift(vec2 p, float h, float swell) {
   float phaseDz;
   float sheet = swashSheet(p.x - oceanCoastAt(p.y, phaseDz).x, p.y);
-  return max(0.0, sheet - h) * step(SWASH_SHEET_MIN, sheet);
+  float lift = max(0.0, sheet - h) * step(SWASH_SHEET_MIN, sheet);
+  float rest = max(0.0, -(h + swell)) * oceanCoveShare(p.y);
+  return max(lift, rest);
 }
 
 // The profile's depth at p as the swell's sum blends it (its h): the bay's
