@@ -61,6 +61,8 @@ export type Hud = {
   ending(): { title: string; line: string } | null;
   /** The inner voice's line, at the bottom where the film's captions were, for `ms`; a new one replaces it. */
   say(text: string, ms: number): void;
+  /** The line taken down at once. */
+  hush(): void;
   /** The inner voice's line now, "" when none is up. */
   saying(): string;
   /** A scene's letterbox bars, on or off. */
@@ -143,6 +145,11 @@ export function createHud(container: HTMLElement): Hud {
         voice.classList.remove("on");
         voiceTimer = null;
       }, ms);
+    },
+    hush() {
+      if (voiceTimer !== null) clearTimeout(voiceTimer);
+      voiceTimer = null;
+      voice.classList.remove("on");
     },
     setBars(on) {
       bars.classList.toggle("on", on);

@@ -54,7 +54,7 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
     "No. That's not an animal.",
   ],
   cryAgain: [
-    "Again.",
+    "Again?",
     "There it is again.",
     "That sounded nearer.",
   ],

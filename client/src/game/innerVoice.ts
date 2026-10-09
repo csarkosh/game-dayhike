@@ -25,6 +25,10 @@ export type VoiceInputs = {
   lamp: boolean;
   stare: number;
   moving: boolean;
+  /** The hike covered (the intro's film, a panel over it): the voice waits, its timers with it. */
+  covered: boolean;
+  /** A scene playing (cutscene.ts): the summit's, whose own lines (the find's, the Hollow's) alone may come; the cap's, which is its line's; or none. The timers wait through one. */
+  scene: VoiceScene;
   /** A shade in the player's view this frame; the Hollow's cry this frame; the Hollow itself before the player's eyes (the summit scene's reveal). */
   shadeSeen: boolean;
   cry: boolean;
@@ -116,6 +120,13 @@ function next(state: VoiceState): number {
 
 /** A line said: its text, and the clip that is it (voiceClips.ts): the scenario and the line's index in its pool. */
 export type VoiceLine = { text: string; scenario: VoiceScenario; index: number };
+export type VoiceScene = "none" | "summit" | "cap";
+/** The lines a scene allows: the summit's own; the cap's none (its line starts it). */
+const SCENE_LINES: Readonly<Record<VoiceScene, ReadonlySet<VoiceScenario>>> = {
+  none: new Set(),
+  summit: new Set(["body", "hollow"]),
+  cap: new Set(),
+};
 
 /** A pool's line for this match: the pool in a seeded order, no repeat until spent, then a new order. */
 function draw(state: VoiceState, scenario: VoiceScenario): VoiceLine {
@@ -155,6 +166,25 @@ function may(state: VoiceState, scenario: VoiceScenario): boolean {
  * the cooldown: it speaks when the gap allows, if its condition still holds.
  */
 export function stepInnerVoice(prev: VoiceState, input: VoiceInputs, dt: number): { state: VoiceState; line: VoiceLine | null } {
+  // Covered, the voice waits, its clocks with it: the film's minute is not the hike's.
+  if (input.covered) return { state: prev, line: null };
+  // A scene has the frame: only its own lines, and the clocks wait (the stilled player is not standing still).
+  if (input.scene !== "none") {
+    const state: VoiceState = { ...prev, said: { ...prev.said }, last: { ...prev.last }, order: { ...prev.order }, at: { ...prev.at } };
+    state.since += dt;
+    const allowed = SCENE_LINES[input.scene];
+    const wanted: VoiceScenario[] = [];
+    if (input.nearBody && allowed.has("body")) wanted.push("body");
+    if (input.hollowSeen && allowed.has("hollow")) wanted.push("hollow");
+    for (const scenario of wanted) {
+      if (!may(state, scenario)) continue;
+      state.said[scenario] = (state.said[scenario] ?? 0) + 1;
+      state.last[scenario] = state.elapsed;
+      state.since = 0;
+      return { state, line: draw(state, scenario) };
+    }
+    return { state, line: null };
+  }
   const state: VoiceState = { ...prev, said: { ...prev.said }, last: { ...prev.last }, order: { ...prev.order }, at: { ...prev.at } };
   state.elapsed += dt;
   state.since += dt;
@@ -193,7 +223,9 @@ export function stepInnerVoice(prev: VoiceState, input: VoiceInputs, dt: number)
     if (input.climb < 0.03 && state.elapsed >= VOICE_FIRST_S) candidates.push("trailhead");
   }
   for (const scenario of candidates) {
-    if (input.chase && !CHASE_ONLY.has(scenario)) continue;
+    // The chase's lines are the chase's alone (the car is safe ground before it too: the trailhead
+    // stands on the road), and the climb's are the climb's.
+    if (input.chase !== CHASE_ONLY.has(scenario)) continue;
     if (!may(state, scenario)) continue;
     state.said[scenario] = (state.said[scenario] ?? 0) + 1;
     state.last[scenario] = state.elapsed;

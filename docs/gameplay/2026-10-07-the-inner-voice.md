@@ -18,8 +18,17 @@ own: their own trail, their own stare, their own first cry.
   (4 s). The body, the first cry, the chase's start and the car are urgent and skip the gap.
 - **Each scenario once, or capped**: once for most; off the trail three times by day and three
   by night, a minute apart; standing still and the stare's warning twice, ninety seconds apart.
-- **Nothing over the end.** With an end card up the voice is silent.
-- **In the chase, only the chase's**: run, the trail, the car. Everything else is the climb's.
+- **Nothing over the end, nothing under the film.** With an end card up the voice is silent; with
+  the hike covered (the intro's film, a panel over it: `gate.covered`) it waits, its clocks with it,
+  so the film's minute is not the hike's and the trailhead's line comes after the cut.
+- **A scene has the frame.** While one plays (`scene`: the summit's, the cap's) only its own lines
+  come: the summit's find (`body`) and reveal (`hollow`); the cap's none, since its line starts it.
+  The clocks wait (a player the scene stills is not standing still). And as a scene starts, a line
+  still up or still on its way is cut (`voiceClips.cut`, `hud.hush`, `ambientAudio.cutSpeech`):
+  until 2026-10-08 the crest's line could run into the find, and any line into the cap's turn.
+- **In the chase, only the chase's, and the chase's only in the chase**: run, the trail, the car.
+  Everything else is the climb's. (Until 2026-10-08 the car's line could play at the trailhead,
+  which stands on the road's safe ground too.)
 - **A pool is drawn in a seeded order, no repeat until it is spent** (`draw`), the seed the
   match's: the woods are made afresh each time, and the voice is not the one thing that repeats.
   Every pool has at least four lines (`innerLines.ts`), most five or six.

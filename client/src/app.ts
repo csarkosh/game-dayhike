@@ -104,7 +104,7 @@ import { Button, Outcome, Phase, type InputCommand, type PlayerState, type World
 import { isHollowState, playerSees } from "./sim/hollow.js";
 import { trailDistance } from "./sim/trail.js";
 import { AiState } from "./sim/types.js";
-import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState } from "./game/innerVoice.js";
+import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState, type VoiceScene } from "./game/innerVoice.js";
 import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
 import { createVoiceClips } from "./game/voiceClips.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt } from "./game/cutscene.js";
@@ -453,6 +453,8 @@ function buildGame(
   // The summit scene (cutscene.ts): from the flip, the controls are stilled and the camera is the scene's for SUMMIT_REVEAL_S.
   let wasChase = false;
   let sceneUntil = -1;
+  /** Which scene `sceneUntil` is: the voice's lines are gated by it (innerVoice.ts VoiceScene). */
+  let sceneKind: VoiceScene = "none";
   /** The cry: a line waits until every howl has ended (cryQuietAt), then answers once. */
   let cryPending = false;
   let cryQuietAt = -1;
@@ -848,6 +850,10 @@ function buildGame(
     const chaseNow = state.phase !== Phase.Climb;
     if (chaseNow && !wasChase) {
       sceneUntil = performance.now() + SUMMIT_SCENE_S * 1000;
+      sceneKind = "summit";
+      // The scene's sound takes the frame: a line still up or on its way is cut.
+      voiceClips.cut();
+      hud.hush();
       let hollow: { x: number; y: number; z: number } | null = null;
       for (const e of state.enemies.values()) if (e.ai === AiState.Emerge) { hollow = { x: e.pos.x, y: e.pos.y - ENEMY_HALF.y, z: e.pos.z }; break; }
       const me = state.players.get(localId);
@@ -872,7 +878,7 @@ function buildGame(
       const body = world.search.body.pos;
       const spoke = stepInnerVoice(voice, {
         climb: escalation.progressMax, wet: acts.wet, night: acts.night, mist: acts.mist,
-        chase: state.phase === Phase.Chase, ended: ended || dead,
+        chase: state.phase === Phase.Chase, ended: ended || dead, covered: gate.covered, scene: sceneOn() ? sceneKind : "none",
         offTrail: world.trail === null ? 0 : trailDistance(world.trail, self.pos.x, self.pos.z),
         lamp: self.lamp.on, stare: self.stare, moving: Math.hypot(self.vel.x, self.vel.z) > 0.2,
         shadeSeen, cry: cryOver && !sceneOn(),
@@ -888,6 +894,9 @@ function buildGame(
         if (spoke.line.scenario === "cap" && capAt !== null) {
           // The cap's scene: the camera turns to it, and the line comes once it is in view.
           sceneUntil = performance.now() + CAP_SCENE_S * 1000;
+          sceneKind = "cap";
+          voiceClips.cut();
+          hud.hush();
           renderer.setScene("cap", { x: capAt.x, y: capAt.y, z: capAt.z });
           const said = spoke.line;
           setTimeout(() => { hud.say(said.text, VOICE_LINE_MS); voiceClips.speak(said); }, CAP_LINE_DELAY_MS);

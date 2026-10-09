@@ -22,6 +22,8 @@ export function voiceClipId(line: { scenario: string; index: number }): string {
 export type VoiceClips = {
   /** Says the line: fetches its clip once, and plays it when it has it. */
   speak(line: VoiceLine): void;
+  /** The line cut, playing or still on its way: a scene has the frame. */
+  cut(): void;
   /** How many clips were asked for, and how many came: for tests. */
   readonly asked: number;
   readonly had: number;
@@ -36,6 +38,8 @@ export function createVoiceClips(ambient: AmbientAudio, fetchBytes?: (id: string
   });
   const clips = new Map<string, Promise<AudioBuffer | null>>();
   let asked = 0, had = 0, disposed = false;
+  /** Bumped by a cut: a clip that arrives from before it is not spoken. */
+  let generation = 0;
   return {
     speak(line) {
       const id = voiceClipId(line);
@@ -48,9 +52,14 @@ export function createVoiceClips(ambient: AmbientAudio, fetchBytes?: (id: string
           .catch(() => null);
         clips.set(id, pending);
       }
+      const spokenIn = generation;
       void pending.then((buffer) => {
-        if (buffer !== null && !disposed) ambient.speak(buffer, VOICE_CLIP_LEVEL);
+        if (buffer !== null && !disposed && spokenIn === generation) ambient.speak(buffer, VOICE_CLIP_LEVEL);
       });
+    },
+    cut() {
+      generation++;
+      ambient.cutSpeech();
     },
     get asked() { return asked; },
     get had() { return had; },

@@ -11,7 +11,8 @@ Hollow, not a film (the intro is a film because its world is not built yet). For
 `SUMMIT_SCENE_S` (21 s, the sum of the shots below, which `SUMMIT_REVEAL_S` matches) from the
 frame the phase flips, on every screen, the controls are stilled (no move, no press, the look
 held), the frame is letterboxed to the film's 2.39:1 (the HUD's bars; the roster leaves) and the
-camera is the scene's, cut to cut.
+camera is the scene's, cut to cut. The inner voice is the scene's too: a line up or on its way at
+the flip is cut, and only the scene's own (the find's, the Hollow's) come through it.
 
 ### The shots (`game/cutscene.ts`, `SHOTS`, `summitShot`)
 

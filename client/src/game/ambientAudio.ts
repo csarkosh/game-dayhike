@@ -264,6 +264,8 @@ export type AmbientAudio = {
    * muffle and the world's level never touch it. Inert before `unlock()`.
    */
   speak(buffer: AudioBuffer, level: number): void;
+  /** The line playing, cut: a scene's sound takes the frame. */
+  cutSpeech(): void;
   /**
    * Decodes compressed clip bytes on the ambient context. Resolves null rather
    * than rejecting: before `unlock()` there is no context to decode on, and a
@@ -328,6 +330,8 @@ export function createAmbientAudio(
   let master: GainNode | null = null;
   /** The inner voice's bus, made on its first line (`speak`). */
   let voiceGain: GainNode | null = null;
+  /** The line's source while it plays, for the cut. */
+  let speaking: AudioBufferSourceNode | null = null;
   /** What the rain, the wind, the drips and the wildlife are mixed through: the stare muffles it, and nothing else. */
   let world: GainNode | null = null;
   let worldFilter: BiquadFilterNode | null = null;
@@ -713,6 +717,12 @@ export function createAmbientAudio(
       src.connect(g);
       g.connect(voiceGain);
       src.start();
+      speaking = src;
+    },
+    cutSpeech() {
+      if (speaking === null) return;
+      try { speaking.stop(); } catch { /* already ended */ }
+      speaking = null;
     },
     decode(bytes) {
       if (!ctx) return Promise.resolve(null);
