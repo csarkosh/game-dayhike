@@ -42,6 +42,10 @@ import {
   undrawnSlopeVariance, whitecapThreshold, windFrame, windPixelKeep, windRingKeep, windSlopeLimit,
 } from "../../src/game/waterShading.js";
 import { WIND_DIR_PERIOD } from "../../src/game/windParams.js";
+import {
+  LIP_BAND_M, LIP_BURST_S, LIP_FACE_IRIBARREN_HI, LIP_FACE_IRIBARREN_LO, LIP_FRONT, LIP_HIGHLIGHT, LIP_THROW, LIP_TILT,
+  lipShadeAt, lipShadeFoam, lipShadeNormal, type LipShadeInput,
+} from "../../src/game/oceanBreaker.js";
 import { FFT_CASCADES, FFT_N, LOOP_FRAMES, LOOP_N, LOOP_SECONDS, LOOP_SIZE, WIND_SEA_HS_COEFF } from "../../src/game/oceanSpectrum.js";
 import {
   WIND_SEA_FETCH_COEFF, WIND_SEA_U_FLOOR, WIND_SEA_U_REF, fetchShare, windSeaShare, windSeaStateFor,
@@ -1095,10 +1099,10 @@ describe("the sea's shaders", () => {
   it("process to the text they had before the lake's mirror: its every line vanishes under the sea's gates", async () => {
     // Each fragment hook through Babylon's preprocessor with the sea's gates, hashed as it was at 378b040;
     // the lights' hashed again once the sea's depth took the swash's lift, and the profile's depth
-    // outside the bed's square.
+    // outside the bed's square; once more as the plunging lip tilted the normal and lifted the foam.
     const before: Record<string, string> = {
       "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
-      "waterLights.fragment.fx": "1e7024fbb89aa333bcc0c7dbd4e07791553d2e918e4cc6a2fb68b7b9be5d3b43",
+      "waterLights.fragment.fx": "429e92554b3e7ae882db271abc606400b733082886f14fa846a96d2bba36de95",
       "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
     };
     for (const [name, hash] of Object.entries(before)) {
@@ -1199,6 +1203,7 @@ describe("the water material's stages, compiled", () => {
         expect(fragment).toContain("oceanCapCells");
         expect(fragment).toContain("oceanWindSlopesAt");
         expect(fragment).toContain("oceanCapFire");
+        expect(fragment).toContain("oceanLipFromEnvelope");
       } finally {
         sea.dispose();
       }
@@ -1587,5 +1592,99 @@ describe("the wind sea in the shaders", () => {
       }
       expect(Math.abs(mean / 0.01 - 1), `${keep}`).toBeLessThan(0.03);
     }
+  });
+});
+
+describe("the plunging lip on medium and low", () => {
+  /** Mid-plunge on the cove's face: the ratio at the throw, 10 m up from the toe, a typical day, no wind. */
+  const FACE: LipShadeInput = {
+    ratio: 1.3, coveWeight: 1, coastSlope: 0.1, d: -10, crestPhase: 0.2, depth: 0.8,
+    tp: 11, hs: 2, faceGrade: 1 / 12, toeD: -24, onshoreWeight: 0, windMode: 1,
+  };
+  const shade = (input: Partial<LipShadeInput>): { tilt: number; burst: number; band: number; slope: number } => {
+    const out = { tilt: 0, burst: 0, band: 0, slope: 0 };
+    lipShadeAt({ ...FACE, ...input }, out);
+    return out;
+  };
+
+  it("holds the TypeScript's constants", () => {
+    const f = fx("oceanShade.fragment.fx");
+    for (const [name, value] of [
+      ["LIP_FACE_IRIBARREN_LO", LIP_FACE_IRIBARREN_LO], ["LIP_FACE_IRIBARREN_HI", LIP_FACE_IRIBARREN_HI], ["LIP_THROW", LIP_THROW],
+      ["LIP_TILT", LIP_TILT], ["LIP_HIGHLIGHT", LIP_HIGHLIGHT], ["LIP_BAND_M", LIP_BAND_M], ["LIP_BURST_S", LIP_BURST_S],
+      ["LIP_FRONT", LIP_FRONT],
+    ] as const) pinned(f, name, value);
+    expect([LIP_TILT, LIP_HIGHLIGHT, LIP_BAND_M, LIP_BURST_S]).toEqual([0.35, 0.25, 0.3, 2]);
+  });
+
+  it("reads the break as the foam does, word for word, then lipShadeAt's lines", () => {
+    const f = fx("oceanShade.fragment.fx");
+    const start = at(f, "vec4 oceanLipFromEnvelope(");
+    const body = f.slice(start, f.indexOf("\n}\n", start) + 3);
+    const foam = fx("oceanSurface.fx");
+    const foamStart = at(foam, "vec4 oceanFoamFromEnvelope(");
+    const foamBody = foam.slice(foamStart, foam.indexOf("\n}\n", foamStart) + 3);
+    // its first fourteen lines, the coast, the profiles and the break, are the foam's own
+    for (const line of body.split("\n").slice(1, 15)) expect(foamBody, line).toContain(line);
+    for (const line of [
+      "  float progress = clamp((ratio - 1.0) / (OCEAN_BREAK_FULL - 1.0), 0.0, 1.0);",
+      "  float steepness = max(oceanSwell.w, 1.0e-6) / (OCEAN_G * oceanSwell.z * oceanSwell.z / OCEAN_TWO_PI);",
+      "  float iribarren = oceanCove.w / sqrt(steepness);",
+      "  float share = coast.z * smoothstep(LIP_FACE_IRIBARREN_LO, LIP_FACE_IRIBARREN_HI, iribarren) * (1.0 - oceanWindDir.w) * step(oceanCove.z, d) * step(oceanCoast.w, 1.5);",
+      "  float lip = share * smoothstep(0.0, LIP_THROW, progress) * (1.0 - smoothstep(LIP_THROW, 1.0, progress));",
+      "  float front = step(0.0, ahead) * (1.0 - smoothstep(0.0, LIP_FRONT, ahead));",
+      "  float k = OCEAN_TWO_PI / (oceanSwell.z * sqrt(OCEAN_G * hc));",
+      "  float band = 1.0 - smoothstep(0.0, LIP_BAND_M, abs(ahead) / k);",
+      "  return vec4(lip * front, share * step(1.0, progress), lip * band, coast.y);",
+    ]) expect(body, line).toContain(line);
+    expect(f).toContain("  return normalize(n + vec3(shore.x, 0.0, shore.y) * (LIP_TILT * lip.x));");
+    expect(f).toContain("  float burst = lip.y * (1.0 - smoothstep(0.0, LIP_BURST_S, foamAge));");
+    expect(f).toContain("  return max(foam, max(LIP_HIGHLIGHT * lip.z, burst));");
+    // in the fragment stage alone: the vertex stage's text is unchanged
+    expect(foam).not.toContain("LIP_");
+  });
+
+  it("tilts the normal after the swell's and lifts the foam before the white water is laid, every line under OCEAN", () => {
+    const l = fx("waterLights.fragment.fx");
+    const lip = at(l, "vec4 wOceanLip = oceanLipFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);");
+    expect(lip).toBeGreaterThan(at(l, "vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);"));
+    const tilt = at(l, "normalW = oceanLipNormal(normalW, wOceanLip);");
+    expect(tilt).toBeGreaterThan(at(l, "normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOceanNormal.y);"));
+    expect(tilt).toBeLessThan(at(l, "normalW = waterHorizonNormal(normalW, viewDirectionW);"));
+    const lifted = at(l, "wFoam = oceanLipFoam(wFoam, wOceanLip, wOceanFoam.z);");
+    expect(lifted).toBeGreaterThan(at(l, "float wFoam = max(wOceanLace, wOceanCap);"));
+    expect(lifted).toBeLessThan(at(l, "surfaceAlbedo = mix(surfaceAlbedo, vec3(wFoamWhite), wFoam);"));
+    // no branch on a varying: the lip's every weight is a step or a smoothstep
+    expect(l.slice(lip, lifted)).not.toMatch(/\bif\s*\(wOceanLip/);
+  });
+
+  it("lifts the face mid-plunge on the cove, none on the bays, seaward of the toe, under an onshore wind or on the FFT's tier", () => {
+    const face = shade({});
+    expect(face.tilt).toBeCloseTo(0.955494, 6);
+    expect([face.burst, face.band, face.slope]).toEqual([0, 0, 0.1]);
+    // on the crest line, a centimetre either side of it: the highlight
+    expect(shade({ crestPhase: 0.01 }).band).toBeCloseTo(0.928559, 6);
+    // behind the crest: no tilt; as the face steepens, half the tilt; collapsed: the burst
+    expect(shade({ crestPhase: -0.3 }).tilt).toBe(0);
+    expect(shade({ ratio: 1.15 }).tilt).toBeCloseTo(0.477747, 6);
+    expect(shade({ ratio: 1.6 })).toEqual({ tilt: 0, burst: 1, band: 0, slope: 0.1 });
+    // half an onshore wind halves it; Tp 6 s, Iribarren 0.44 on the face, mostly spills
+    expect(shade({ onshoreWeight: 0.5 }).tilt).toBeCloseTo(0.477747, 6);
+    expect(shade({ tp: 6 }).tilt).toBeCloseTo(0.107639, 6);
+    for (const off of [{ coveWeight: 0 }, { d: -30 }, { windMode: 2 }, { onshoreWeight: 1 }]) {
+      const none = shade({ ...off, ratio: 1.3 });
+      expect([none.tilt, none.burst, none.band], JSON.stringify(off)).toEqual([0, 0, 0]);
+    }
+  });
+
+  it("tilts the normal shoreward across the coastline and bursts the foam whole, thinning over two seconds", () => {
+    const n: [number, number, number] = [0, 0, 0];
+    lipShadeNormal([0, 1, 0], shade({}), n);
+    expect(n[0]).toBeCloseTo(0.315584, 6);
+    expect(n[1]).toBeCloseTo(0.948373, 6);
+    expect(n[2]).toBeCloseTo(-0.031558, 6);
+    const burst = { burst: 1, band: 0 };
+    expect([lipShadeFoam(0.1, burst, 0), lipShadeFoam(0.1, burst, 1), lipShadeFoam(0.1, burst, 2)]).toEqual([1, 0.5, 0.1]);
+    expect(lipShadeFoam(0.1, { burst: 0, band: 1 }, 5)).toBe(0.25);
   });
 });

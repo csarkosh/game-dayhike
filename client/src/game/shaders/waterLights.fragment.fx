@@ -23,6 +23,8 @@ vec3 wOceanNormal = vec3(wOceanTilt.x, sqrt(max(1.0 - dot(wOceanTilt, wOceanTilt
 float wOceanHeight = vOceanSwellA.z;
 float wOceanDrawn = vOceanSwellA.w * wOceanKeep * wOceanKeep;
 vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);
+// The plunging lip on the cove's face, none on the high tier's FFT.
+vec4 wOceanLip = oceanLipFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);
 float wOceanChop = oceanShelter(vOceanXZ, SHELTER_CHOP);
 // The wind sea here: its height for the water's edge and the whitecaps, its
 // slopes faded by the pixel's footprint, both scaled by its share of the
@@ -61,6 +63,7 @@ float wKdMean = (waterKd.r + waterKd.g + waterKd.b) / 3.0;
 float wWindSteep = wWindAmp * oceanWindSlopeLimit(oceanWindDir.z, wOceanChop, wWindDrawn * wWindAmp * wWindAmp);
 vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(wWindShare, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;
 normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOceanNormal.y);
+normalW = oceanLipNormal(normalW, wOceanLip);
 // What Cox and Munk's slope variance for the wind leaves to the roughness
 // once the drawn waves carry theirs, calmer in a headland's lee as the chop is.
 float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn + wWindDrawn * wWindSteep * wWindSteep);
@@ -161,6 +164,7 @@ if (oceanCoast.w > 0.5) {
 }
 wOceanCap *= 1.0 - wOceanFoam.y;
 float wFoam = max(wOceanLace, wOceanCap);
+wFoam = oceanLipFoam(wFoam, wOceanLip, wOceanFoam.z);
 float wFoamWhite = wOceanLace >= wOceanCap ? oceanFoamWhite(wFoamAge) : OCEAN_FOAM_ALBEDO;
 surfaceAlbedo = mix(surfaceAlbedo, vec3(wFoamWhite), wFoam);
 wTransmit *= 1.0 - wFoam;

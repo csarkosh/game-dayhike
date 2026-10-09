@@ -25,7 +25,7 @@ import { OCEAN_G } from "./oceanPhysics.js";
 import {
   OCEAN_BREAK_FULL, atlasRead, coastRead, swellAt, swellAtInto, swellBreakInto, swellScratch, type OceanField,
 } from "./oceanWaves.js";
-import { OCEAN_D_MIN, OCEAN_D_STEP, OCEAN_ROW_BAY_PROFILE, OCEAN_ROW_COVE_PROFILE } from "./oceanTables.js";
+import { OCEAN_DRY_DEPTH, OCEAN_D_MIN, OCEAN_D_STEP, OCEAN_ROW_BAY_PROFILE, OCEAN_ROW_COVE_PROFILE } from "./oceanTables.js";
 import type { SwashCove } from "./swashTable.js";
 import { COVE_END_BLEND } from "../sim/olympic.js";
 
@@ -647,4 +647,64 @@ export class LipTracker {
       }
     }
   }
+}
+
+/** The lip on medium and low (`shaders/oceanShade.fragment.fx`): how far the face's normal tilts shoreward at the
+ * lip's whole weight, the crest line's highlight (a foam's cover), the band (m) either side of the crest line it
+ * covers, the seconds the collapse's burst lasts in the foam's age, and the crest's front the tilt spans (rad,
+ * a quarter wave ahead of the crest). */
+export const LIP_TILT = 0.35;
+export const LIP_HIGHLIGHT = 0.25;
+export const LIP_BAND_M = 0.3;
+export const LIP_BURST_S = 2.0;
+export const LIP_FRONT = Math.PI / 2;
+
+/** What the sea's fragment stage knows at a pixel for the lip: the break's ratio there, the coast row's cove
+ * weight and slope (dx/dz), the coast distance d, the crest phase, the depth, the swell's peak period and
+ * significant height, the cove's face grade and toe d, the onshore weight and the wind sea's mode (2 the FFT). */
+export type LipShadeInput = {
+  ratio: number; coveWeight: number; coastSlope: number; d: number; crestPhase: number; depth: number;
+  tp: number; hs: number; faceGrade: number; toeD: number; onshoreWeight: number; windMode: number;
+};
+
+/**
+ * oceanLipFromEnvelope's lip after its break (`shaders/oceanShade.fragment.fx`), line for line: `tilt` the
+ * normal's tilt weight, `burst` the burst's share once the curl has collapsed, `band` the highlight's weight,
+ * `slope` the coastline's dx/dz. None seaward of the face's toe, none on the FFT's tier, which draws the strip.
+ */
+export function lipShadeAt(i: LipShadeInput, out: { tilt: number; burst: number; band: number; slope: number }): void {
+  const hc = Math.max(i.depth, OCEAN_DRY_DEPTH);
+  const progress = progressOf(i.ratio);
+  const steepness = Math.max(i.hs, 1e-6) / ((OCEAN_G * i.tp * i.tp) / TWO_PI);
+  const iribarren = i.faceGrade / Math.sqrt(steepness);
+  const share = i.coveWeight * smoothstep(LIP_FACE_IRIBARREN_LO, LIP_FACE_IRIBARREN_HI, iribarren) * (1 - i.onshoreWeight)
+    * (i.d >= i.toeD ? 1 : 0) * (1.5 >= i.windMode ? 1 : 0);
+  const lip = share * smoothstep(0, LIP_THROW, progress) * (1 - smoothstep(LIP_THROW, 1, progress));
+  const half = 0.5 * TWO_PI;
+  const ahead = i.crestPhase + half - TWO_PI * Math.floor((i.crestPhase + half) / TWO_PI) - half;
+  const front = (ahead >= 0 ? 1 : 0) * (1 - smoothstep(0, LIP_FRONT, ahead));
+  const k = TWO_PI / (i.tp * Math.sqrt(OCEAN_G * hc));
+  const band = 1 - smoothstep(0, LIP_BAND_M, Math.abs(ahead) / k);
+  out.tilt = lip * front;
+  out.burst = share * (progress >= 1 ? 1 : 0);
+  out.band = lip * band;
+  out.slope = i.coastSlope;
+}
+
+/** oceanLipNormal: the normal n tilted shoreward, across the coastline, by the lip's tilt weight; normalised into `out`. */
+export function lipShadeNormal(n: readonly [number, number, number], lip: { tilt: number; slope: number }, out: [number, number, number]): void {
+  const s = Math.hypot(1, lip.slope);
+  const x = n[0] + (1 / s) * LIP_TILT * lip.tilt;
+  const y = n[1];
+  const z = n[2] + (-lip.slope / s) * LIP_TILT * lip.tilt;
+  const l = Math.hypot(x, y, z);
+  out[0] = x / l;
+  out[1] = y / l;
+  out[2] = z / l;
+}
+
+/** oceanLipFoam: the white water's cover with the crest line's highlight and the collapse's burst, which thins over LIP_BURST_S of the foam's age. */
+export function lipShadeFoam(foam: number, lip: { burst: number; band: number }, foamAge: number): number {
+  const burst = lip.burst * (1 - smoothstep(0, LIP_BURST_S, foamAge));
+  return Math.max(foam, LIP_HIGHLIGHT * lip.band, burst);
 }
