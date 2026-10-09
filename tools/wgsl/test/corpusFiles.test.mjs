@@ -316,30 +316,31 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1303 recorded stages, each file\'s bytes hashing to the name it has: 813 on the medium and high tiers, 416 on low, 55 on high alone, 15 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1303);
+  it('holds the 1017 recorded stages, each file\'s bytes hashing to the name it has: 641 on the medium and high tiers, 300 on low, 58 on high alone, 14 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1017);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1303);
+    expect(read.stages).toHaveLength(1017);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(374);
-    // The 813 recorded on the medium and high tiers, the low tier's 416,
-    // recorded on it alone, the 55 the high tier alone met (the lake's
-    // mirror among them), the 15 the medium tier alone met, and the sky
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(312);
+    // The 641 recorded on the medium and high tiers, the low tier's 300,
+    // recorded on it alone, the 58 the high tier alone met (the lake's
+    // mirror and the sea's curl among them), the 14 the medium tier alone met, and the sky
     // dome's 2 and the midges' 2, whose text is the same on every tier.
     // Stages whose text a shader no longer produces are
-    // retired, not kept: the lake's 3 vertex stages before its mirror
+    // retired, not kept: the sea's 15 stages and the wet ground's 523 before
+    // the swash climbed the beach (2026-10-09), the lake's 3 vertex stages before its mirror
     // smeared by the eye's travel (2026-10-08) went that way, the 458 PBR
     // fragments of the atmosphere before the
     // ground cloud (2026-10-07), the grade's before the
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1303);
+    expect(read.tiers.size).toBe(1017);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([420, 832, 872]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(813);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(416);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(55);
+    expect([on('low'), on('medium'), on('high')]).toEqual([304, 659, 703]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(641);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(300);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(58);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
