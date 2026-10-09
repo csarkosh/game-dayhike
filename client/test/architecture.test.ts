@@ -474,6 +474,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "lakeSkyline.ts"),
       join(SRC, "game", "lakeRipples.ts"),
       join(SRC, "game", "swashRunUp.ts"),
+      join(SRC, "game", "swashTable.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -696,6 +697,7 @@ describe("wall-clock tests", () => {
       "the wall-clock tests changed: if that is meant, update this list and the files test:wall-clock names; if not, remove the tag",
     ).toEqual([
       "game/forestField.test.ts > keeps a warm one-cell-move collect fast — the 25-33 ms rescan must not return",
+      "game/swashTable.test.ts > costs under 0.2 ms an update on average over 600 updates of the widest cove",
       "sim/trailSystem.test.ts > builds a world in budget",
     ]);
   });
