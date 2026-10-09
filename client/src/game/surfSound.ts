@@ -127,6 +127,14 @@ export function fillSurfSound(
   const share = c1 >= c0 ? surfing / (c1 - c0 + 1) : 0;
   if (dt > 0 && Number.isFinite(dt)) out.envelope += (share - out.envelope) * (1 - Math.exp(-dt / SURF_ENVELOPE_S));
 
+  // A listener or a level that is not a number leaves the rest of the record as it was, absent and listing nothing.
+  if (!Number.isFinite(listener.x + listener.y + listener.z + level)) {
+    out.present = false;
+    out.plunges.count = 0;
+    out.backwash.count = 0;
+    return;
+  }
+
   // The nearest point on the toe line, and where the listener stands.
   const zNear = Math.min(cove.z0 + cove.halfWidth, Math.max(cove.z0 - cove.halfWidth, listener.z));
   out.nearX = cove.coastX(zNear) + cove.toeD;
@@ -135,7 +143,7 @@ export function fillSurfSound(
   out.inland = listener.x - cove.coastX(listener.z);
   out.canopy = clamp01(canopy);
   out.hs = hs > 0 && Number.isFinite(hs) ? hs : 0;
-  // Written as "within" so a listener or a point that is not a number is absent.
+  // Written as "within" so a coast that is not a number is absent too.
   out.present = Math.hypot(listener.x - out.nearX, listener.y - out.nearY, listener.z - out.nearZ) <= SURF_RANGE_M;
 
   const plunges = out.plunges;

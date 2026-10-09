@@ -91,6 +91,39 @@ describe("surfSound", () => {
     expect([s.present, s.plunges.count, s.backwash.count]).toEqual([false, 0, 0]);
   });
 
+  it("a listener or a level that is not a number leaves the record as it was: absent, no events, the envelope still running", () => {
+    const s = createSurfSound();
+    const tracker = fakeTracker();
+    tracker.plunges.count = 1;
+    tracker.plunges.z[0] = 120;
+    const table = fakeTable();
+    for (let c = 106; c <= 406; c++) front(table, c, 3);
+    fillSurfSound(s, NEAR, tracker, table, COVE, LEVEL, 2, 0.5, 1);
+    const held = [s.nearX, s.nearY, s.nearZ, s.inland, s.canopy, s.hs];
+    expect([held, s.present, s.plunges.count]).toEqual([[501, 0.25, 250, 60, 0.5, 2], true, 1]);
+    const envelope = s.envelope;
+    for (const [listener, level] of [
+      [{ x: 600, y: 3, z: Number.NaN }, LEVEL],
+      [{ x: Number.NaN, y: 3, z: 400 }, LEVEL],
+      [{ x: 600, y: Infinity, z: 400 }, LEVEL],
+      [NEAR, Number.NaN],
+    ] as const) {
+      fillSurfSound(s, listener, tracker, table, COVE, level, 7, 1, 1);
+      expect([s.nearX, s.nearY, s.nearZ, s.inland, s.canopy, s.hs]).toEqual(held);
+      expect([s.present, s.plunges.count, s.backwash.count]).toEqual([false, 0, 0]);
+    }
+    expect(s.envelope).toBeGreaterThan(envelope);
+  });
+
+  it("is present exactly 400 m from the nearest point, and absent a hair beyond", () => {
+    const s = createSurfSound();
+    // The nearest point is (486, 0.25, 100): abreast of the listener on the toe line.
+    fillSurfSound(s, { x: 886, y: 0.25, z: 100 }, fakeTracker(), fakeTable(), COVE, LEVEL, 2, 0, 1 / 60);
+    expect([s.nearX, s.present]).toEqual([486, true]);
+    fillSurfSound(s, { x: 886.001, y: 0.25, z: 100 }, fakeTracker(), fakeTable(), COVE, LEVEL, 2, 0, 1 / 60);
+    expect(s.present).toBe(false);
+  });
+
   it("the envelope: the share of the cove's columns with a front above 0 or a crest in (0, 1], its running mean over 4 s", () => {
     const tracker = fakeTracker();
     const table = fakeTable();
