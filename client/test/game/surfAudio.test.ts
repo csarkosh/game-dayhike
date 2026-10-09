@@ -15,6 +15,8 @@ type StubNode = {
   buffer: unknown;
   loop: boolean; loopStart: number; loopEnd: number;
   frequency: { value: number; targets: number[] };
+  /** The node last connected into this one. */
+  from: StubNode | undefined;
 };
 
 /** Enough of a context for the voices to build on: buffer sources and filters are kept in the order made. */
@@ -33,12 +35,12 @@ function stubCtx() {
   function node() {
     const n = {
       connections: [] as unknown[],
-      connect(to: unknown) { n.connections.push(to); },
+      connect(to: { from?: unknown }) { n.connections.push(to); to.from = n; },
       disconnect() {}, stop() {},
       starts: [] as number[][],
       start(...at: number[]) { n.starts.push(at); },
       gain: param(), frequency: param(), Q: param(), playbackRate: param(), type: "", buffer: null as unknown,
-      loop: false, loopStart: 0, loopEnd: 0,
+      loop: false, loopStart: 0, loopEnd: 0, from: undefined as StubNode | undefined,
     };
     return n;
   }
@@ -134,8 +136,10 @@ function audioOf(fake: Fake, random: () => number, now: () => number) {
 /** Lets every fetch and decode already under way land. */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-/** The node a loop's voice leaves by: the bed's lowpass, or a one-shot's buffer source. */
+/** The node a loop's voice leaves by: its lowpass, the bed's and each one-shot's alike. */
 const filterOf = (l: Loop) => l.voice.output as unknown as StubNode;
+/** The recording feeding a loop's lowpass. */
+const sourceOf = (l: Loop) => filterOf(l).from;
 
 const ORIGIN = { x: 0, y: 1, z: 0 };
 
@@ -168,8 +172,8 @@ function withBackwash(s: SurfSound, list: readonly [number, number, number, numb
   return s;
 }
 
-const beds = (loops: Loop[]) => loops.filter((l) => filterOf(l).type === "lowpass");
-const shots = (loops: Loop[]) => loops.filter((l) => filterOf(l).type !== "lowpass");
+const beds = (loops: Loop[]) => loops.filter((l) => sourceOf(l)?.loop === true);
+const shots = (loops: Loop[]) => loops.filter((l) => sourceOf(l)?.loop === false);
 
 describe("surfAudio", () => {
   it("holds the levels, distances, cutoffs, caps and the bed's stretch", () => {
@@ -338,6 +342,40 @@ describe("surfAudio", () => {
     expect(fake.stub.sources.slice(1).map((n) => n.buffer)).toEqual([
       fake.buffer("call.surf_backwash_a"), fake.buffer("call.surf_backwash_a"),
     ]);
+    audio.dispose();
+  });
+
+  it("each one-shot through a lowpass of its own, set once at its start to the bed's cutoff: 8 kHz on the shore, 1.5 kHz 300 m inland", async () => {
+    const fake = fakeAmbient();
+    let t = 0;
+    const audio = audioOf(fake, () => 0, () => t);
+    await settle();
+    audio.update(withBackwash(withPlunges(surf({ inland: 0, canopy: 0 }), [[20, 0.5, 0, 2]]), [[15, 1, 0, 20]]), ORIGIN);
+    const [plunge, backwash] = shots(fake.loops);
+    for (const shot of [plunge!, backwash!]) {
+      const filter = filterOf(shot);
+      expect([filter.type, filter.frequency.value]).toEqual(["lowpass", 8000]);
+      // The recording into the filter and nowhere else, played once.
+      expect(sourceOf(shot)!.connections).toEqual([filter]);
+      expect([sourceOf(shot)!.loop, sourceOf(shot)!.starts]).toEqual([false, [[0, 0]]]);
+    }
+    expect([sourceOf(plunge!)!.buffer, sourceOf(backwash!)!.buffer]).toEqual([
+      fake.buffer("call.surf_plunge_a"), fake.buffer("call.surf_backwash_a"),
+    ]);
+    // Inland while they sound: the bed glides, the one-shots keep the cutoff they started on.
+    audio.update(surf({ inland: 300, canopy: 0 }), ORIGIN);
+    expect([filterOf(plunge!).frequency.value, filterOf(plunge!).frequency.targets]).toEqual([8000, []]);
+    expect(filterOf(beds(fake.loops)[0]!).frequency.targets).toEqual([1500]);
+    // Once they have freed, the next start 300 m inland at 1.5 kHz, and under full canopy there at 750 Hz.
+    t = 1;
+    audio.update(withPlunges(surf({ inland: 300, canopy: 0 }), [[20, 0.5, 0, 2]]), ORIGIN);
+    audio.update(withBackwash(surf({ inland: 300, canopy: 1 }), [[15, 1, 0, 20]]), ORIGIN);
+    const [, , inlandPlunge, shadedBackwash] = shots(fake.loops);
+    expect([filterOf(inlandPlunge!).frequency.value, filterOf(shadedBackwash!).frequency.value]).toEqual([1500, 750]);
+    // A cutoff from values that are not numbers is the shore's.
+    t = 2;
+    audio.update(withPlunges(surf({ inland: Number.NaN, canopy: Number.NaN }), [[20, 0.5, 0, 2]]), ORIGIN);
+    expect(filterOf(shots(fake.loops)[4]!).frequency.value).toBe(8000);
     audio.dispose();
   });
 

@@ -19,8 +19,10 @@
  *   itself, as the frogs' calls are; at most `SURF_PLUNGE_VOICES` and
  *   `SURF_BACKWASH_VOICES` sounding, the nearest of a frame's new ones taking
  *   the free slots, none beyond `SURF_RANGE_M`, gained by the plunge's
- *   height and the sheet's reach. A slot frees, and its emitter is stopped,
- *   once its clip has run its length and `SURF_SHOT_MARGIN_S`.
+ *   height and the sheet's reach, each through a lowpass of its own set once
+ *   at its start to `surfCutoffHz(inland, canopy)`, the bed's cutoff then. A
+ *   slot frees, and its emitter is stopped, once its clip has run its length
+ *   and `SURF_SHOT_MARGIN_S`.
  *
  * Gain and cutoff changes smaller than their steps are not sent, and a value
  * that is not a finite number is never sent. Everything joins the world bus
@@ -38,7 +40,7 @@ export { SURF_RANGE_M };
 export const SURF_LEVEL = 0.6;
 /** Every surf voice keeps its gain to this distance (m) and falls as `SURF_REF_M / d` beyond. */
 export const SURF_REF_M = 40;
-/** The bed's lowpass at the waterline and `SURF_LOWPASS_INLAND_M` inland (Hz), and the share full canopy takes off it. */
+/** The lowpass at the waterline and `SURF_LOWPASS_INLAND_M` inland (Hz), and the share full canopy takes off it. */
 export const SURF_LOWPASS_SHORE_HZ = 8000, SURF_LOWPASS_INLAND_HZ = 1500, SURF_LOWPASS_INLAND_M = 300, SURF_CANOPY_LOWPASS = 0.5;
 export const SURF_PLUNGE_VOICES = 4, SURF_BACKWASH_VOICES = 2;
 /** Gain changes smaller than this are not sent. */
@@ -64,7 +66,7 @@ export function surfBedGain(envelope: number, hs: number): number {
   return SURF_LEVEL * (0.5 + 0.5 * Math.min(1, Math.max(0, envelope))) * Math.min(1, Math.max(0, hs) / 2);
 }
 
-/** The bed's cutoff (Hz): from the shore's to the inland one over `SURF_LOWPASS_INLAND_M`, less `SURF_CANOPY_LOWPASS` of it under full canopy. */
+/** The bed's and each one-shot's cutoff (Hz): from the shore's to the inland one over `SURF_LOWPASS_INLAND_M`, less `SURF_CANOPY_LOWPASS` of it under full canopy. */
 export function surfCutoffHz(inland: number, canopy: number): number {
   const u = Number.isFinite(inland) ? Math.min(1, Math.max(0, inland / SURF_LOWPASS_INLAND_M)) : 0;
   const shade = Number.isFinite(canopy) ? Math.min(1, Math.max(0, canopy)) : 0;
@@ -95,6 +97,8 @@ type ShotSlot = {
   emitter: LoopEmitter | null;
   endsAt: number;
   clip: AudioBuffer | null;
+  /** The lowpass's cutoff (Hz) for the next start, set once there. */
+  hz: number;
   readonly build: (ctx: BaseAudioContext) => VoiceSource;
 };
 type Events = { count: number; x: Float32Array; y: Float32Array; z: Float32Array };
@@ -122,6 +126,24 @@ function clipVoice(ctx: BaseAudioContext, buffer: AudioBuffer, offset: number, l
   };
 }
 
+/** `voice` into a lowpass at `hz` that is the voice's output; stopping it stops the voice and parts the filter. */
+function lowpassed(ctx: BaseAudioContext, voice: VoiceSource, hz: number): { voice: VoiceSource; filter: BiquadFilterNode } {
+  const filter = ctx.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.value = hz;
+  voice.output.connect(filter);
+  return {
+    filter,
+    voice: {
+      output: filter,
+      stop() {
+        voice.stop();
+        filter.disconnect();
+      },
+    },
+  };
+}
+
 /**
  * `random` picks the bed's starting point and each one-shot's recording;
  * `now` is the clock, in seconds, the one-shots' lengths and the bed's hold
@@ -145,26 +167,20 @@ export function createSurfAudio(
   // Built only once its clip is in: the recording round its stretch, from a random point in it, into its lowpass.
   const buildBed = (c: BaseAudioContext): VoiceSource => {
     const offset = SURF_BED_LOOP_S[0] + (SURF_BED_LOOP_S[1] - SURF_BED_LOOP_S[0]) * random();
-    const voice = clipVoice(c, bedClip!, offset, SURF_BED_LOOP_S);
-    const filter = c.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = bed.hz;
-    voice.output.connect(filter);
+    const { voice, filter } = lowpassed(c, clipVoice(c, bedClip!, offset, SURF_BED_LOOP_S), bed.hz);
     bed.filter = filter;
     bed.ctx = c;
-    return {
-      output: filter,
-      stop() {
-        voice.stop();
-        filter.disconnect();
-      },
-    };
+    return voice;
   };
 
   function shotSlots(n: number): ShotSlot[] {
     const slots: ShotSlot[] = [];
     for (let i = 0; i < n; i++) {
-      const slot: ShotSlot = { emitter: null, endsAt: 0, clip: null, build: (c) => clipVoice(c, slot.clip!, 0, null) };
+      // Played once, into a lowpass of its own set at its start.
+      const slot: ShotSlot = {
+        emitter: null, endsAt: 0, clip: null, hz: SURF_LOWPASS_SHORE_HZ,
+        build: (c) => lowpassed(c, clipVoice(c, slot.clip!, 0, null), slot.hz).voice,
+      };
       slots.push(slot);
     }
     return slots;
@@ -298,7 +314,7 @@ export function createSurfAudio(
 
   function shots(
     slots: readonly ShotSlot[], clips: readonly (AudioBuffer | undefined)[], n: number,
-    events: Events, amount: Float32Array, full: number, listener: { x: number; y: number; z: number }, t: number,
+    events: Events, amount: Float32Array, full: number, hz: number, listener: { x: number; y: number; z: number }, t: number,
   ): void {
     release(slots, t);
     let takenN = 0;
@@ -319,6 +335,7 @@ export function createSurfAudio(
       const clip = pick(clips, n);
       if (clip === undefined) return;
       slot.clip = clip;
+      slot.hz = hz;
       slot.emitter = ambient.loopEmitter(slot.build, events.x[i]!, events.y[i]!, -events.z[i]!, gain, SURF_REF_M, SURF_RANGE_M);
       if (slot.emitter === null) return;
       slot.endsAt = t + clip.duration + SURF_SHOT_MARGIN_S;
@@ -345,8 +362,9 @@ export function createSurfAudio(
         release(backwashSlots, t);
         return;
       }
-      shots(plungeSlots, plungeClips, SURF_PLUNGE_CLIPS.length, s.plunges, s.plunges.height, SURF_PLUNGE_FULL_M, listener, t);
-      shots(backwashSlots, backwashClips, SURF_BACKWASH_CLIPS.length, s.backwash, s.backwash.reach, SURF_BACKWASH_FULL_M, listener, t);
+      const hz = surfCutoffHz(s.inland, s.canopy);
+      shots(plungeSlots, plungeClips, SURF_PLUNGE_CLIPS.length, s.plunges, s.plunges.height, SURF_PLUNGE_FULL_M, hz, listener, t);
+      shots(backwashSlots, backwashClips, SURF_BACKWASH_CLIPS.length, s.backwash, s.backwash.reach, SURF_BACKWASH_FULL_M, hz, listener, t);
     },
     dispose() {
       disposed = true;
