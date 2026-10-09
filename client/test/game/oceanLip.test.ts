@@ -188,18 +188,49 @@ describe("the strip's vertices", () => {
 });
 
 describe("the strip's leading edge", () => {
-  it("hands the sea's white water whole only as the lip forms: its weight rises from 0 at progress 0 to 1 at the throw", () => {
+  it("hands the sea's white water whole only from the lip's throw, before it the swell's own break", () => {
     const s = fx("oceanLipShape.vertex.fx");
     expect(s).toContain(
-      "  float edge = step(LIP_EDGE_FIRST, strip.z) * step(strip.z, LIP_EDGE_LAST) * step(1.0e-6, size) * smoothstep(0.0, LIP_THROW, slot.y);\n" +
+      "  float edge = step(LIP_EDGE_FIRST, strip.z) * step(strip.z, LIP_EDGE_LAST) * step(1.0e-6, size) * step(LIP_THROW, slot.y);\n" +
         "  env = mix(vec4(sumEnv, length(sumEnv), 0.0), vec4(LIP_FOAM_ENVELOPE, 0.0, LIP_FOAM_ENVELOPE, 0.0), edge);\n",
     );
-    // (vertex, progress, size): none at progress 0 however near the edge, half at half the throw, whole from it on
-    expect([0, 0.15, 0.3, 0.45, 0.6, 0.9, 1].map((p) => lipEdgeWeight(16, p, 1))).toEqual([0, 0.15625, 0.5, 0.84375, 1, 1, 1]);
+    // (vertex, progress, size): none before the throw, whole from it on
+    expect([0, 0.15, 0.3, 0.59, 0.6, 0.9, 1].map((p) => lipEdgeWeight(16, p, 1))).toEqual([0, 0, 0, 0, 1, 1, 1]);
     // the edge's vertices alone, and none on a free slot
     expect([13, 14, 18, 19].map((v) => lipEdgeWeight(v, 0.6, 1))).toEqual([0, 1, 1, 0]);
     expect(lipEdgeWeight(16, 0.6, 0)).toBe(0);
   });
+
+  it("weighs room-3's live slots over a minute: 0 for every one short of the throw, 1 for every one past it", () => {
+    const field = oceanFieldFor(SEED);
+    const tracker = new LipTracker(field, coveOf(SEED, field));
+    const phases = new Float32Array(12);
+    let before = 0;
+    let after = 0;
+    for (let k = 0; k < 1200; k++) {
+      const t = k / 20;
+      tracker.update(t, swellPhases(field, t, phases), 0);
+      const d = tracker.state.data;
+      for (let slot = 0; slot < LIP_SLOTS; slot++) {
+        for (let c = 0; c < LIP_COLUMNS; c++) {
+          const o = (slot * LIP_COLUMNS + c) * 4;
+          const p = d[o + 1] as number;
+          const size = (d[o + 2] as number) * (d[o + 3] as number);
+          if (!(p > 0) || !(size > 0)) continue;
+          const w = lipEdgeWeight(16, p, size);
+          if (p < LIP_THROW) {
+            expect(w).toBe(0);
+            before++;
+          } else {
+            expect(w).toBe(1);
+            after++;
+          }
+        }
+      }
+    }
+    expect(before).toBeGreaterThan(1000);
+    expect(after).toBeGreaterThan(1000);
+  }, timeLimit(60_000));
 });
 
 describe("the strip's meshes", () => {

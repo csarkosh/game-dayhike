@@ -219,12 +219,12 @@ export const LIP_FOAM_ENVELOPE = 1000;
  * How far the strip's vertex v hands the sea its leading edge's envelope in
  * place of the swell's own, at progress p and size (height times share): the
  * `edge` line of oceanLipPlace (`shaders/oceanLipShape.vertex.fx`). On the
- * edge's vertices of a live slot it rises from 0 at progress 0, where the
- * section lies on the rings, to 1 at the throw; 0 everywhere else.
+ * edge's vertices of a live slot it is 1 from the lip's throw on and 0 before
+ * it, where the section lies near the rings and the swell's own break carries
+ * the foam; 0 everywhere else.
  */
 export function lipEdgeWeight(v: number, p: number, size: number): number {
-  const on = (v >= LIP_EDGE_FIRST ? 1 : 0) * (LIP_EDGE_LAST >= v ? 1 : 0) * (size >= 1e-6 ? 1 : 0);
-  return on * smoothstep(0, LIP_THROW, p);
+  return (v >= LIP_EDGE_FIRST ? 1 : 0) * (LIP_EDGE_LAST >= v ? 1 : 0) * (size >= 1e-6 ? 1 : 0) * (p >= LIP_THROW ? 1 : 0);
 }
 
 const shapeScratch = { across: 0, up: 0 };

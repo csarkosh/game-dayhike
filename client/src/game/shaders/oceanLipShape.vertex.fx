@@ -55,8 +55,8 @@ vec4 oceanLipShape(float p, float v) {
 // a free slot, of height 0, folds its vertices onto one point, which draws
 // nothing. xz is that undisplaced point, swell the sum handed on as the rings
 // hand it with its normal turned to the section's and its height the lifted
-// one, and env the envelope, the leading edge's taken toward one so far past
-// any break that its foam is whole as the crest goes through to the throw.
+// one, and env the envelope, the leading edge's, from the throw on, one so
+// far past any break that its foam is whole.
 vec3 oceanLipPlace(vec3 strip, out vec2 xz, out vec4 swell, out vec4 env) {
   float column = clamp(strip.x - oceanCove.x + LIP_HALF, 0.0, LIP_COLUMNS - 1.0);
   vec4 slot = textureLod(oceanLipState, vec2((column + 0.5) / LIP_COLUMNS, (strip.y + 0.5) / LIP_SLOTS), 0.0);
@@ -77,9 +77,10 @@ vec3 oceanLipPlace(vec3 strip, out vec2 xz, out vec4 swell, out vec4 env) {
   vec3 turned = vec3(-t.y * travel.x, t.x, -t.y * travel.y) - vec3(0.0, 1.0, 0.0);
   vec3 normal = normalize(sumNormal + turned * step(1.0e-6, size));
   swell = vec4(normal.x, normal.z, sum.z + lift, sum.w);
-  // The edge's white water rises with the lip, from none at progress 0, where
-  // the section lies on the rings, to whole at the throw.
-  float edge = step(LIP_EDGE_FIRST, strip.z) * step(strip.z, LIP_EDGE_LAST) * step(1.0e-6, size) * smoothstep(0.0, LIP_THROW, slot.y);
+  // The edge's white water is handed whole only from the lip's throw: before
+  // it the section lies near the rings and the swell's own break, nearly
+  // whole by then, carries the foam.
+  float edge = step(LIP_EDGE_FIRST, strip.z) * step(strip.z, LIP_EDGE_LAST) * step(1.0e-6, size) * step(LIP_THROW, slot.y);
   env = mix(vec4(sumEnv, length(sumEnv), 0.0), vec4(LIP_FOAM_ENVELOPE, 0.0, LIP_FOAM_ENVELOPE, 0.0), edge);
   return vec3(xz.x, waterLevel, xz.y) + disp + vec3(0.0, lift, 0.0);
 }
