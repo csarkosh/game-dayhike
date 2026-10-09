@@ -184,20 +184,23 @@ describe("surfSound", () => {
     expect(Array.from(s.plunges.height.subarray(0, 2))).toEqual([1.5, 2]);
   });
 
-  it("the backwash is the table's, at the reach up the face from the toe, nearest the listener first", () => {
+  it("the backwash is the table's, at the reach up the face from the still waterline, nearest the listener first", () => {
     const table = fakeTable();
     table.backwash.count = 3;
     table.backwash.column.set([256, 300, 106]);
-    table.backwash.reach.set([4, 30, 2.5]);
+    table.backwash.reach.set([4, 9, 2.5]);
     const s = createSurfSound();
     fillSurfSound(s, NEAR, fakeTracker(), table, COVE, LEVEL, 2, 0, 1 / 60);
     expect(s.backwash.count).toBe(3);
-    // Column 300 is z = 144, 6 m above the waterline on the face (0.5 m up); 256 is z = 100, 20 m under it.
-    expect(s.backwash.x[0]).toBeCloseTo(520.4, 4);
-    expect(Array.from(s.backwash.x.subarray(1, 3))).toEqual([490, 473.5]);
-    expect(Array.from(s.backwash.y.subarray(0, 3))).toEqual([0.75, 0.25, 0.25]);
+    // Column 300 is z = 144, its waterline at x = 514.4: 9 m up the face, 0.75 m above the level.
+    // Column 256 is z = 100, 4 m up from x = 510; column 106 is z = −50, 2.5 m up from x = 495.
+    expect(s.backwash.x[0]).toBeCloseTo(523.4, 4);
+    expect(Array.from(s.backwash.x.subarray(1, 3))).toEqual([514, 497.5]);
+    expect(s.backwash.y[0]).toBe(1);
+    expect(s.backwash.y[1]).toBeCloseTo(0.583333, 6);
+    expect(s.backwash.y[2]).toBeCloseTo(0.458333, 6);
     expect(Array.from(s.backwash.z.subarray(0, 3))).toEqual([144, 100, -50]);
-    expect(Array.from(s.backwash.reach.subarray(0, 3))).toEqual([30, 4, 2.5]);
+    expect(Array.from(s.backwash.reach.subarray(0, 3))).toEqual([9, 4, 2.5]);
   });
 
   it("keeps the 32 nearest of more backwash than it has room for", () => {

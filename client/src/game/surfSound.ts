@@ -21,7 +21,8 @@
  *   record lists no events.
  * - Events: the tracker's plunges at x = coastX(z) + d on the level, and the
  *   nearest `SURF_EVENTS` of the table's backwash at the front's reach up the
- *   face from the toe, on the face where it stands above the level.
+ *   face from the still waterline, x = coastX(z) + reach, on the face at
+ *   y = level + reach · faceGrade.
  *
  * Positions are in Babylon's left-handed frame; the shell mirrors z.
  */
@@ -170,9 +171,9 @@ export function fillSurfSound(
   for (let i = 0; i < events.count; i++) {
     const reach = events.reach[i]!;
     const z = cove.z0 - SWASH_COLUMNS / 2 + events.column[i]!;
-    const up = cove.toeD + reach;
-    const x = cove.coastX(z) + up;
-    const y = level + Math.max(0, up) * cove.faceGrade;
+    // The reach is up the face from the still waterline (swashTable.ts).
+    const x = cove.coastX(z) + reach;
+    const y = level + Math.max(0, reach) * cove.faceGrade;
     const d = Math.hypot(listener.x - x, listener.y - y, listener.z - z);
     if (!(d < Infinity)) continue;
     if (kept === cap && d >= backwashDist[cap - 1]!) continue;
