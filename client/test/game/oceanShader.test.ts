@@ -935,11 +935,12 @@ describe("the sea's swash in the shaders", () => {
     expect(fx("oceanSurface.fx")).toContain("  return vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);");
   });
 
-  it("gives the sea's bed outside the bed's square the profile's depth where the profile is dry, the ring vertex's where it is wet, on the sea alone", async () => {
+  it("gives the sea's bed outside the bed's square the shallower of the ring vertex's depth and the profile's, on the sea alone", async () => {
     const lines = [
       "vec2 wBedLocal = (vPositionW.xz - waterBed.xy) * waterBed.z;",
       "float wBedOutside = step(min(min(wBedLocal.x, wBedLocal.y), min(1.0 - wBedLocal.x, 1.0 - wBedLocal.y)), 0.0);",
-      "float wBedDepth = mix(waterBedDepth(vPositionW.xz), wOceanFoam.w, wBedOutside * step(wOceanFoam.w, 0.0));",
+      "float wBedRead = waterBedDepth(vPositionW.xz);",
+      "float wBedDepth = mix(wBedRead, min(wBedRead, wOceanFoam.w), wBedOutside);",
       "float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);",
     ];
     const sea = await processed(fx("waterLights.fragment.fx"), true, SEA_DEFINES);
@@ -959,13 +960,23 @@ describe("the sea's swash in the shaders", () => {
     expect(w).toContain("  bool outside = local.x <= 0.0 || local.y <= 0.0 || local.x >= 1.0 || local.y >= 1.0;");
     expect(w).toContain("  return outside ? vBedDepth : waterLevel - h;");
     const step = (edge: number, x: number): number => (x < edge ? 0 : 1);
-    // outside the square the fallback is the ring vertex's depth where the profile says water, the
-    // profile's where it says dry ground: mix(read, h, outside * step(h, 0)), the read being vBedDepth there
+    // outside the square the fallback is the shallower of the ring vertex's depth and the profile's:
+    // mix(read, min(read, h), outside), the read being vBedDepth there, never below 0
     const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
-    const bed = (read: number, h: number, outside: number): number => mix(read, h, outside * step(h, 0));
-    expect(bed(3.5, 2, 1)).toBe(3.5);
+    const bed = (read: number, h: number, outside: number): number => mix(read, Math.min(read, h), outside);
+    // the dry face: the profile's depth, below 0
     expect(bed(0, -0.75, 1)).toBe(-0.75);
-    expect(bed(0, 0, 1)).toBe(0);
+    expect(bed(0.25, -0.75, 1)).toBe(-0.75);
+    // the profile's waterline from both sides: 0 at it, the vertex's depth running on just seaward
+    expect(bed(0.5, 0, 1)).toBe(0);
+    expect(bed(0.5, 0.125, 1)).toBe(0.125);
+    expect(bed(0.5, -0.125, 1)).toBe(-0.125);
+    // open water, the profile deeper than the ground: the ground's own depth
+    expect(bed(3.5, 6, 1)).toBe(3.5);
+    // a stack's base, its ground shallower than the profile: its own depth, to 0 where it stands dry
+    expect(bed(0.5, 4, 1)).toBe(0.5);
+    expect(bed(0, 4, 1)).toBe(0);
+    // inside the square the read stands, whatever the profile says
     expect(bed(1.25, -0.75, 0)).toBe(1.25);
     expect(bed(1.25, 2, 0)).toBe(1.25);
     for (const x of [-0.5, 0, 1e-6, 0.5, 1 - 1e-6, 1, 1.5]) {
@@ -1087,7 +1098,7 @@ describe("the sea's shaders", () => {
     // outside the bed's square.
     const before: Record<string, string> = {
       "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
-      "waterLights.fragment.fx": "446aa61e1f7bcf69fa7f01d7753d89162b81998b32455fd9336264106dc1ea86",
+      "waterLights.fragment.fx": "1e7024fbb89aa333bcc0c7dbd4e07791553d2e918e4cc6a2fb68b7b9be5d3b43",
       "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
     };
     for (const [name, hash] of Object.entries(before)) {
