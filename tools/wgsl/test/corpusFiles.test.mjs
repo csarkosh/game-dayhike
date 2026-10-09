@@ -327,7 +327,8 @@ describe('the committed corpus and the tests\' fixture', () => {
     // mirror and the sea's curl among them), the 14 the medium tier alone met, and the sky
     // dome's 2 and the midges' 2, whose text is the same on every tier.
     // Stages whose text a shader no longer produces are
-    // retired, not kept: the sea's 15 stages and the wet ground's 523 before
+    // retired, not kept: the sea's 8 stages before it rested on the pebbles
+    // between sheets (2026-10-09), its 15 and the wet ground's 523 before
     // the swash climbed the beach (2026-10-09), the lake's 3 vertex stages before its mirror
     // smeared by the eye's travel (2026-10-08) went that way, the 458 PBR
     // fragments of the atmosphere before the

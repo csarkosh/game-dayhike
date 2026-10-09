@@ -26,7 +26,7 @@
 #define DETAIL_NORMALBLENDMETHOD 0
 #define WATER
 #define OCEAN
-#define OCEAN_LIP
+#define UV1
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -43,8 +43,16 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define TONEMAPPING 0
-#define IMAGEPROCESSINGPOSTPROCESS
+#define IMAGEPROCESSING
+#define VIGNETTE
+#define VIGNETTEBLENDMODEMULTIPLY
+#define TONEMAPPING 3
+#define CONTRAST
+#define COLORCURVES
+#define SAMPLER3DGREENDEPTH
+#define SAMPLER3DBGRMAP
+#define DITHER
+#define EXPOSURE
 #define PBR
 #define NUM_SAMPLES 0
 #define ALBEDODIRECTUV 0
@@ -52,6 +60,7 @@
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
+#define ALPHABLEND
 #define ALPHATESTVALUE 0.4
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
@@ -65,6 +74,7 @@
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
+#define BUMP
 #define BUMPDIRECTUV 0
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
@@ -100,8 +110,17 @@
 #define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME vertex:pbr
-layout(set = 1, binding = 30) uniform LeftOver {
-        vec4 vFogInfos;
+layout(set = 1, binding = 28) uniform LeftOver {
+        float exposureLinear;
+    float contrast;
+    vec2 vInverseScreenSize;
+    vec4 vignetteSettings1;
+    vec4 vignetteSettings2;
+    vec4 vCameraColorCurveNegative;
+    vec4 vCameraColorCurveNeutral;
+    vec4 vCameraColorCurvePositive;
+    float ditherIntensity;
+    vec4 vFogInfos;
     vec3 vFogColor;
 };
 
@@ -289,6 +308,7 @@ float visibility;
 #define CUSTOM_VERTEX_BEGIN
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
+layout(location = 2) in vec2 uv;
 const float PI=3.1415926535897932384626433832795;
 const float TWO_PI=6.283185307179586;
 const float HALF_PI=1.5707963267948966;
@@ -438,9 +458,10 @@ uint2float(rstate*2447445414u));
 #define DIELECTRIC_SPECULAR_MODEL_OPENPBR 1
 #define CONDUCTOR_SPECULAR_MODEL_GLTF 0
 #define CONDUCTOR_SPECULAR_MODEL_OPENPBR 1
-layout(location = 0)  out vec3 vPositionW;
-layout(location = 1)  out vec3 vNormalW;
-layout(location = 2)  out vec3 vEnvironmentIrradiance;
+layout(location = 0)  out vec2 vBumpUV;
+layout(location = 1)  out vec3 vPositionW;
+layout(location = 2)  out vec3 vNormalW;
+layout(location = 3)  out vec3 vEnvironmentIrradiance;
 vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
 + vSphericalL1_1*(normal.y)
 + vSphericalL10*(normal.z)
@@ -451,7 +472,7 @@ vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
 + vSphericalL21*(normal.z*normal.x)
 + vSphericalL22*(normal.x*normal.x-(normal.y*normal.y));
 }
-layout(location = 3)  out vec3 vFogDistance;
+layout(location = 4)  out vec3 vFogDistance;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -485,9 +506,9 @@ vec2 depthValues;
 // COMMENT RULES: never put a semicolon inside a trailing comment on a code
 // line, and never spell a hashed preprocessor keyword in comment prose. The
 // shaderHygiene test enforces both.
-layout(location = 2) in float bedDepth;
-layout(location = 4)  out float vBedDepth;
-layout(location = 5)  out float vWaterViewDepth;
+layout(location = 3) in float bedDepth;
+layout(location = 5)  out float vBedDepth;
+layout(location = 6)  out float vWaterViewDepth;
 // The sea's waves, vertex definitions, spliced after the water's own at
 // CUSTOM_VERTEX_DEFINITIONS. Everything here, comments too, sits under the
 // sea's define, so a lake's shader is the text it was.
@@ -498,8 +519,8 @@ layout(location = 5)  out float vWaterViewDepth;
 //
 // The ring's stitch to the coarser ring around it (water.ts): the border
 // blend, 0 to 1, and the half-edge to the coarser lattice, metres.
-layout(location = 3) in float oceanMorph;
-layout(location = 4) in vec2 oceanCoarse;
+layout(location = 4) in float oceanMorph;
+layout(location = 5) in vec2 oceanCoarse;
 // The tables the swell is read from (oceanTables.ts): RGBA32F, one row a
 // profile, a component or the coastline, read texel by texel and blended by
 // hand. highp, since they hold metres and radians in the thousands.
@@ -516,13 +537,13 @@ layout(set = 1, binding = 11) uniform sampler oceanSwashSampler;
                         layout(set = 1, binding = 10) uniform texture2D oceanSwashTexture;
                         #define oceanSwash sampler2D(oceanSwashTexture, oceanSwashSampler)
 // The vertex's world xz before the waves move it.
-layout(location = 6)  out vec2 vOceanXZ;
+layout(location = 7)  out vec2 vOceanXZ;
 // The swell the vertex stage sums for the displacement, for the fragment
 // stage: its normal's x and z, its height and the slope variance its drawn
 // waves carry (vOceanSwellA), and its envelope vector in x and y with the
 // vector's length in z (vOceanSwellB), the length interpolated on its own.
-layout(location = 7)  out vec4 vOceanSwellA;
-layout(location = 8)  out vec4 vOceanSwellB;
+layout(location = 8)  out vec4 vOceanSwellA;
+layout(location = 9)  out vec4 vOceanSwellB;
 // Water plugin, the sea's surface: spliced into the definitions of both
 // stages, after the ocean's declarations (ocean.vertex.fx, ocean.fragment.fx).
 // The vertex stage sums the swell, displaces the rings with it and hands the
@@ -933,6 +954,10 @@ return disp + oceanWindDisplaceAt(p, cell) * chop;
 const float SWASH_COLUMNS = 512.0;
 const float SWASH_HALF = 256.0;
 const float SWASH_SHEET_MIN = 0.001;
+// The depth (m) under which the fragment stage takes the sea as resting on
+// the ground, a hundredth of a millimetre: the rest cancels the surface's
+// height to within rounding, whatever order the sum is taken in.
+const float OCEAN_REST_EPS = 0.00001;
 // The texel u of the column nearest world z: the cove's centre (oceanCove.x)
 // is column SWASH_HALF, a column a metre, held to the table.
 float swashU(float z) {
@@ -947,15 +972,27 @@ vec4 col = textureLod(oceanSwash, vec2(swashU(z), 0.5), 0.0);
 float cover = step(oceanCove.z, d) * step(d, col.x);
 return cover * col.y * clamp(1.0 - d / max(col.x, SWASH_SHEET_MIN), 0.0, 1.0);
 }
+// The cove's share at world z: 1 across it, 0 past OCEAN_COVE_END beyond
+// either end, blended over the ends as the wet ground's is (wet.fragment.fx).
+// Here, so both stages have it: the sheet's rest below and the fragment
+// stage's bed (waterLights.fragment.fx) both take it.
+const float OCEAN_COVE_END = 30.0;
+float oceanCoveShare(float z) {
+return 1.0 - smoothstep(oceanCove.y - OCEAN_COVE_END, oceanCove.y + OCEAN_COVE_END, abs(z - oceanCove.x));
+}
 // How far the sheet lifts the sea at the undisplaced point p over ground h
-// metres below the level (the profile's depth, negative above it): to the
-// sheet's top where the sheet stands higher than the still sea, nothing
-// elsewhere, so the lift grows from 0 where the water is as deep as the sheet
-// is thick and never cuts the sea.
-float swashLift(vec2 p, float h) {
+// metres below the level (the profile's depth, negative above it), with the
+// swell's height swell already on the surface: to the sheet's top where the
+// sheet stands higher than the still sea, and up the face wherever the cove
+// has any share, its ends' fades whole, to the ground itself wherever the
+// surface would lie under it, so the sea hugs the pebbles between sheets and
+// the fragment stage's depth, 0 there, discards it. Never cuts the sea.
+float swashLift(vec2 p, float h, float swell) {
 float phaseDz;
 float sheet = swashSheet(p.x - oceanCoastAt(p.y, phaseDz).x, p.y);
-return max(0.0, sheet - h) * step(SWASH_SHEET_MIN, sheet);
+float lift = max(0.0, sheet - h) * step(SWASH_SHEET_MIN, sheet);
+float rest = max(0.0, -(h + swell)) * step(1.0e-6, oceanCoveShare(p.y));
+return max(lift, rest);
 }
 // The profile's depth at p as the swell's sum blends it (its h): the bay's
 // and the cove's rows by the cove's weight along the coast. For the vertex
@@ -967,110 +1004,34 @@ float column = (p.x - coast.x - OCEAN_D_MIN) / OCEAN_D_STEP;
 float bay = oceanAtlasRead(OCEAN_ROW_BAY_PROFILE, column).x;
 return bay + (oceanAtlasRead(OCEAN_ROW_COVE_PROFILE, column).x - bay) * coast.z;
 }
-// The plunging lip's strip on the high tier (oceanLip.ts), vertex
-// definitions: spliced after the sea's own on the strip's material alone, so
-// the sea's rings and every lake keep the text they had.
-//
-// COMMENT RULES: never put a semicolon inside a trailing comment on a code
-// line, and never spell a hashed preprocessor keyword in comment prose. The
-// shaderHygiene test enforces both.
-//
-// The literals mirror oceanBreaker.ts, and a lockstep test asserts they
-// agree. The crests the strip draws (LipTracker): a row a slot, a texel a
-// column, (crest d, progress, height, share), RGBA32F, nearest. The baked
-// cross-section (lipProfile): a row a keyframe, a texel a vertex, (across,
-// up, tangent across, tangent up) in units of the crest's height. Both are
-// read at level 0, as the atlas is.
-layout(set = 1, binding = 13) uniform sampler oceanLipStateSampler;
-                        layout(set = 1, binding = 12) uniform texture2D oceanLipStateTexture;
-                        #define oceanLipState sampler2D(oceanLipStateTexture, oceanLipStateSampler)
-layout(set = 1, binding = 15) uniform sampler oceanLipProfileSampler;
-                        layout(set = 1, binding = 14) uniform texture2D oceanLipProfileTexture;
-                        #define oceanLipProfile sampler2D(oceanLipProfileTexture, oceanLipProfileSampler)
-const float LIP_COLUMNS = 512.0;
-const float LIP_HALF = 256.0;
-const float LIP_SLOTS = 2.0;
-const float LIP_PROFILE_VERTS = 24.0;
-const float LIP_KEYFRAMES = 8.0;
-const float LIP_THROW = 0.6;
-const float LIP_KEY_THROW = 4.0;
-const float LIP_EDGE_FIRST = 14.0;
-const float LIP_EDGE_LAST = 18.0;
-const float LIP_FOAM_ENVELOPE = 1000.0;
-// The keyframe at progress p, as lipKey has it: four to the throw, three
-// after it.
-float oceanLipKey(float p) {
-float q = clamp(p, 0.0, 1.0);
-float early = q / LIP_THROW * LIP_KEY_THROW;
-float late = LIP_KEY_THROW + (q - LIP_THROW) / (1.0 - LIP_THROW) * (LIP_KEYFRAMES - 1.0 - LIP_KEY_THROW);
-return mix(early, late, step(LIP_THROW, q));
-}
-// The cross-section at progress p and vertex v, between the two keyframes
-// about p, as profileAt reads it.
-vec4 oceanLipShape(float p, float v) {
-float k = oceanLipKey(p);
-float k0 = min(floor(k), LIP_KEYFRAMES - 2.0);
-float u = (v + 0.5) / LIP_PROFILE_VERTS;
-vec4 a = textureLod(oceanLipProfile, vec2(u, (k0 + 0.5) / LIP_KEYFRAMES), 0.0);
-vec4 b = textureLod(oceanLipProfile, vec2(u, (k0 + 1.5) / LIP_KEYFRAMES), 0.0);
-return a + (b - a) * (k - k0);
-}
-// A strip's vertex, as lipVertexAt places it. strip is the column's world z,
-// the slot and the section's vertex. The slot's crest stands crest d metres
-// from the coastline at that z, the section runs from it along the swell's
-// travel, and the vertex is lifted from the sea's own surface at its
-// undisplaced point by the section's up, both in units of the crest's height
-// times its share: so the feet, whose up is 0, lie on the rings' surface, and
-// a free slot, of height 0, folds its vertices onto one point, which draws
-// nothing. xz is that undisplaced point, swell the sum handed on as the rings
-// hand it with its normal turned to the section's and its height the lifted
-// one, and env the envelope, the leading edge's, from the throw on, one so
-// far past any break that its foam is whole.
-vec3 oceanLipPlace(vec3 strip, out vec2 xz, out vec4 swell, out vec4 env) {
-float column = clamp(strip.x - oceanCove.x + LIP_HALF, 0.0, LIP_COLUMNS - 1.0);
-vec4 slot = textureLod(oceanLipState, vec2((column + 0.5) / LIP_COLUMNS, (strip.y + 0.5) / LIP_SLOTS), 0.0);
-float size = slot.z * slot.w;
-vec4 shape = oceanLipShape(slot.y, strip.z);
-float phaseDz;
-vec2 travel = oceanSwell.xy;
-xz = vec2(oceanCoastAt(strip.x, phaseDz).x + slot.x, strip.x) + travel * (shape.x * size);
-vec4 sum;
-vec2 sumEnv;
-vec3 disp = oceanDisplace(xz, sum, sumEnv);
-float lift = shape.y * size;
-  // The section's normal in its plane, the tangent turned a quarter, laid
-  // along the travel: on a flat stretch of the section it is up, and the
-  // swell's own normal is left as it is.
-vec2 t = shape.zw / max(length(shape.zw), 1.0e-4);
-vec3 sumNormal = vec3(sum.x, sqrt(max(1.0 - dot(sum.xy, sum.xy), 0.0)), sum.y);
-vec3 turned = vec3(-t.y * travel.x, t.x, -t.y * travel.y) - vec3(0.0, 1.0, 0.0);
-vec3 normal = normalize(sumNormal + turned * step(1.0e-6, size));
-swell = vec4(normal.x, normal.z, sum.z + lift, sum.w);
-  // The edge's white water is handed whole only from the lip's throw: before
-  // it the section lies near the rings and the swell's own break, nearly
-  // whole by then, carries the foam.
-float edge = step(LIP_EDGE_FIRST, strip.z) * step(strip.z, LIP_EDGE_LAST) * step(1.0e-6, size) * step(LIP_THROW, slot.y);
-env = mix(vec4(sumEnv, length(sumEnv), 0.0), vec4(LIP_FOAM_ENVELOPE, 0.0, LIP_FOAM_ENVELOPE, 0.0), edge);
-return vec3(xz.x, waterLevel, xz.y) + disp + vec3(0.0, lift, 0.0);
-}
 #define CUSTOM_VERTEX_DEFINITIONS
 void main(void) {
 #define CUSTOM_VERTEX_MAIN_BEGIN
 vec3 positionUpdated=position;
 vec3 normalUpdated=normal;
-// The strip's vertex (oceanLip.ts), in place of the rings' displacement on
-// the strip's material: its position carries the column's world z, the slot
-// and the section's vertex, not a place, and oceanLipPlace makes the place
-// from them, the sea's surface there and the crest the tracker found. The
-// swell goes on to the fragment stage as the rings hand it on, so the sea's
-// shading draws the strip unchanged.
-vec2 oceanLipXZ;
-vec4 oceanLipSwell;
-vec4 oceanLipEnv;
-positionUpdated = oceanLipPlace(positionUpdated, oceanLipXZ, oceanLipSwell, oceanLipEnv);
-vOceanXZ = oceanLipXZ;
-vOceanSwellA = oceanLipSwell;
-vOceanSwellB = oceanLipEnv;
+vec2 uvUpdated=uv;
+// The sea's rings carry world positions and no transform, so the position
+// here, before the waves move it, is the world's.
+// A vertex in a ring's outer band first slides toward the coarser ring's
+// lattice, by the band's weight (oceanMorph) along the half-edge to it
+// (oceanCoarse): at the ring's edge the weight is whole and the vertex lies
+// on a vertex of the coarser ring, which evaluates the same point, so no
+// border cracks. The sea is evaluated once, at that point, which is the point
+// the fragment stage shades, and the swell's sum goes on to it, so it sums no
+// swell of its own. The ring's normal stays up: the sea's normal is made per
+// pixel, from the swell's interpolated here and the wind sea's.
+positionUpdated.xz -= oceanMorph * oceanCoarse;
+vOceanXZ = positionUpdated.xz;
+vec4 oceanVertexSwell;
+vec2 oceanVertexEnv;
+vec3 oceanVertexDisplace = oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);
+positionUpdated += oceanVertexDisplace;
+vOceanSwellA = oceanVertexSwell;
+vOceanSwellB = vec4(oceanVertexEnv, length(oceanVertexEnv), 0.0);
+// Up the cove's face the swash's sheet lifts the sea onto the pebbles
+// (oceanSwash.fx), from where the waves were evaluated, and between sheets
+// the sea rests on them, the swell's height already on it.
+positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ), oceanVertexDisplace.y);
 #define CUSTOM_VERTEX_UPDATE_POSITION
 #define CUSTOM_VERTEX_UPDATE_NORMAL
 mat4 finalWorld=world;
@@ -1088,8 +1049,10 @@ vBedDepth = bedDepth;
 vWaterViewDepth = (view * worldPos).z;
 #define CUSTOM_VERTEX_UPDATE_WORLDPOS
 gl_Position=viewProjection*worldPos;
-vec2 uvUpdated=vec2(0.,0.);
 vec2 uv2Updated=vec2(0.,0.);
+if (vBumpInfos.x==0.)
+{vBumpUV=vec2(bumpMatrix*vec4(uvUpdated,1.0,0.0));
+}
 vFogDistance=(view*worldPos).xyz;
 #define CUSTOM_VERTEX_MAIN_END
 gl_Position.y *= yFactor_;
