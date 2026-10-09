@@ -28,12 +28,13 @@ every shot frames its subject against the sky.
 | --- | --- | --- | --- | --- |
 | 1. The arrival | 0 to 4 | 24 mm | Over the party's shoulder, no face, 0.6 m over their eye and 2.4 m back, pushing 0.9 m up the last of the trail; aimed 1.6 m up the stake ahead, which crosses the frame, what is on it cut off at the top, unremarked | place, person |
 | 2. The find | 4 to 8 | 32 mm | Locked off 2.4 m from the stake on the party's side, 0.5 m up, tilting from its foot to the hiker on it (`BODY_TOP_M` 3.6 m) against the sky; the inner voice's `body` line, shock, on every screen, held for this shot | problem |
-| 3. The reveal | 8 to 13 | 24 mm | On the ground 1.6 m beside the stake, panning from the hiker's feet to the Hollow's head (`HOLLOW_HEAD_M` 4.5 m) as it comes up out of the ground 6 m past the stake; the cry comes at 9.5 s (`REVEAL_SILENCE_S`), as it stands | the wrong note made whole |
+| 3. The reveal | 8 to 13 | 24 mm | 1.6 m beside the stake, 1.3 m up (a camera on the ground had the ridge hiding the rise), panning in its first `REVEAL_PAN_S` (0.8 s) from the hiker to the bare ground 6 m past the stake, where the Hollow then comes up out of the mist in full view, the aim climbing with it to its head (`HOLLOW_HEAD_M` 4.5 m); the cry comes at 9.5 s (`REVEAL_SILENCE_S`), as it rises | the wrong note made whole |
 | 4. The predator's view | 13 to 17 | 32 mm | High behind the Hollow's shoulder, 5.2 m up, 4.5 m back and 1.8 m to the side, pushing in 1.2 m; aimed down at the party, small beyond the stake in the mist; the inner voice's `hollow` line, terror, lands here (the scene's cry is the reveal's and gets no cry line) | why to run |
 | 5. The threshold | 17 to 21 | the game's | The player's own eye, live: for `SCENE_LOOK_S` (1.2 s) held on the Hollow as it takes its first steps toward them (`HOLLOW_STEP_S`, `HOLLOW_STALK_SPEED` 1.5 m/s, `sim/hollow.ts`); over `SCENE_TURN_S` (1 s) the eye turns to the way down the trail (`DOWN_TRAIL_M` 8 m back down the stem, `app.ts`); then the legs, a sprint down it, the controls theirs as it ends with the look kept (`input.setLook`) and the `chaseStart` line saying so | the handoff |
 
-The Hollow waits `SUMMIT_RISE_DELAY_S` (6 s, `entityViews.ts`) before its rise, so the arrival and
-the find see the stake alone; it rises as the shades do, in the shadow form with its dulled eyes,
+The Hollow waits `SUMMIT_RISE_DELAY_S` (8.8 s, `entityViews.ts`; `SUMMIT_RISE_AT_S` in `cutscene.ts`
+is the same beat) before its rise, so the arrival and the find see the stake alone and the reveal's
+camera is on its spot before it moves; it rises as the shades do, in the shadow form with its dulled eyes,
 facing the finder, still. The lamp flickers through the scene as the stare fills it, which is
 the game's own language.
 

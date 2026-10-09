@@ -124,6 +124,9 @@ export function thresholdAt(into: number): Threshold {
 /** The seconds into the scene at which the threshold begins. */
 export const THRESHOLD_AT_S = SHOTS.slice(0, -1).reduce((a, b) => a + b, 0);
 
+/** The reveal's first beat: the pan from the hiker to the Hollow's spot, after which it rises (entityViews.ts SUMMIT_RISE_DELAY_S). */
+export const REVEAL_PAN_S = 0.8;
+export const SUMMIT_RISE_AT_S = 4 + 4 + REVEAL_PAN_S;
 /** The Hollow's head over its feet, drawn at HOLLOW_SCALE. */
 export const HOLLOW_HEAD_M = 4.5;
 /** The hiker on the pole, over its foot: the body is the top of a 4.3 m stake (bodyMesh.ts). */
@@ -156,8 +159,9 @@ export function shotAt(t: number): { shot: number; into: number } {
  * 1. The arrival: a 24 mm over the party's shoulder, no face, pushing slowly up the last of the trail,
  *    the stake ahead crossing the frame, what is on it unremarked.
  * 2. The find: a 32 mm low at the stake's foot, tilting up it to the hiker against the sky.
- * 3. The reveal: a 24 mm on the ground beside the stake, panning from the hiker to the Hollow's head
- *    as it stands; the cry comes here.
+ * 3. The reveal: a 24 mm beside the stake, panning in its first beat from the hiker to the bare ground
+ *    past the stake, where the Hollow then comes up out of the mist in full view, the camera tilting up
+ *    with it to its head; the cry comes here.
  * Every shot is lit by the sky alone: the summit at night has no other light, so each frames its
  *    subject against it.
  * 4. The predator's view: a 32 mm high behind the Hollow's shoulder, the party small below, a slow push.
@@ -182,12 +186,16 @@ export function summitShot(t: number, ctx: SceneContext): ShotPose {
     return lookAt(at, { x: body.x, y: body.y + 0.6 + (BODY_TOP_M - 0.6) * up, z: body.z }, LENS_32, 1);
   }
   if (shot === 2) {
-    const at = { x: body.x + p.x * 1.6 + u.x * 0.6, y: body.y + 0.35, z: body.z + p.z * 1.6 + u.z * 0.6 };
-    const head = { x: ctx.hollow.x, y: ctx.hollow.y + HOLLOW_HEAD_M, z: ctx.hollow.z };
-    const low = { x: body.x, y: body.y + BODY_TOP_M, z: body.z };
-    const tilt = easeInOut(f);
-    const aim = { x: low.x + (head.x - low.x) * tilt, y: low.y + (head.y - low.y) * tilt, z: low.z + (head.z - low.z) * tilt };
-    return lookAt(at, aim, LENS_24, 2);
+    const at = { x: body.x + p.x * 1.6 + u.x * 0.6, y: body.y + 1.3, z: body.z + p.z * 1.6 + u.z * 0.6 };
+    const hiker = { x: body.x, y: body.y + BODY_TOP_M, z: body.z };
+    const spot = { x: ctx.hollow.x, y: ctx.hollow.y + 1.2, z: ctx.hollow.z };
+    if (into < REVEAL_PAN_S) {
+      const pan = easeInOut(into / REVEAL_PAN_S);
+      return lookAt(at, { x: hiker.x + (spot.x - hiker.x) * pan, y: hiker.y + (spot.y - hiker.y) * pan, z: hiker.z + (spot.z - hiker.z) * pan }, LENS_24, 2);
+    }
+    // The rise: the aim climbs with the figure from its middle to its head over the shot's rest.
+    const up = easeInOut((into - REVEAL_PAN_S) / (k - REVEAL_PAN_S));
+    return lookAt(at, { x: spot.x, y: spot.y + (HOLLOW_HEAD_M - 1.2) * up, z: spot.z }, LENS_24, 2);
   }
   if (shot === 3) {
     const push = easeInOut(f) * 1.2;

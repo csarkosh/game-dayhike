@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { BODY_TOP_M, CAP_SCENE_IN_S, CAP_SCENE_OUT_FROM_S, CAP_SCENE_OUT_S, CAP_SCENE_S, CAP_SCENE_STEP_M, capPose, capStand, HOLLOW_HEAD_M, LENS_24, LENS_32, LENS_GAME, SCENE_IN_S, SCENE_OUT_FROM_S, SCENE_OUT_S, SCENE_STAND_M, SCENE_EYE_HEIGHT, SCENE_PITCH, sceneStand, SCENE_LOOK_S, SCENE_TURN_S, SHOTS, shotAt, SUMMIT_SCENE_S, summitPose, summitShot, THRESHOLD_AT_S, thresholdAt, type SceneContext } from "../../src/game/cutscene.js";
+import { BODY_TOP_M, CAP_SCENE_IN_S, CAP_SCENE_OUT_FROM_S, CAP_SCENE_OUT_S, CAP_SCENE_S, CAP_SCENE_STEP_M, capPose, capStand, HOLLOW_HEAD_M, LENS_24, LENS_32, LENS_GAME, SCENE_IN_S, SCENE_OUT_FROM_S, SCENE_OUT_S, SCENE_STAND_M, SCENE_EYE_HEIGHT, SCENE_PITCH, sceneStand, REVEAL_PAN_S, SCENE_LOOK_S, SCENE_TURN_S, SHOTS, shotAt, SUMMIT_RISE_AT_S, SUMMIT_SCENE_S, summitPose, summitShot, THRESHOLD_AT_S, thresholdAt, type SceneContext } from "../../src/game/cutscene.js";
 import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
+import { SUMMIT_RISE_DELAY_S } from "../../src/game/entityViews.js";
 
 describe("the summit scene", () => {
   const base = { x: 10, y: 1.7, z: 0, yaw: Math.PI / 2, pitch: -0.1 };
@@ -104,16 +105,21 @@ describe("the summit's shots", () => {
     expect(BODY_TOP_M).toBeGreaterThan(3);
   });
 
-  it("the reveal pans from the hiker to the Hollow's head, low beside the stake, on the widest lens", () => {
+  it("the reveal pans in its first beat from the hiker to the Hollow's spot, beside the stake on the widest lens, then climbs with the rise", () => {
     const t0 = SHOTS[0]! + SHOTS[1]!;
     const start = summitShot(t0 + 0.01, ctx);
+    const spot = summitShot(t0 + REVEAL_PAN_S, ctx);
     const end = summitShot(t0 + SHOTS[2]! - 0.01, ctx);
     expect(start.fov).toBe(LENS_24);
-    expect(start.y).toBeLessThan(ctx.body.y + 0.5);
+    expect(start.y).toBeGreaterThan(ctx.body.y + 1); // over the ridge that hid the rise from the ground
     expect(Math.abs(start.yaw)).toBeGreaterThan(Math.PI / 4); // toward the stake beside it
-    expect(Math.abs(end.yaw)).toBeLessThan(Math.PI / 4); // toward the Hollow past it
-    expect(end.pitch).toBeLessThan(0); // up, at HOLLOW_HEAD_M
+    expect(Math.abs(spot.yaw)).toBeLessThan(Math.PI / 4); // toward the bare ground past it, before the rise
+    expect(spot.pitch).toBeGreaterThan(-0.05); // level or down: nothing stands there yet
+    expect([spot.x, spot.y, spot.z]).toEqual([end.x, end.y, end.z]); // locked off through the rise
+    expect(end.pitch).toBeLessThan(spot.pitch); // up with it, to HOLLOW_HEAD_M
     expect(HOLLOW_HEAD_M).toBeGreaterThan(BODY_TOP_M);
+    expect(SUMMIT_RISE_AT_S).toBe(t0 + REVEAL_PAN_S);
+    expect(SUMMIT_RISE_DELAY_S).toBe(SUMMIT_RISE_AT_S);
   });
 
   it("the last shot is the player's own eye at the game's lens, live: the threshold", () => {
