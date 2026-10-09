@@ -310,6 +310,37 @@ describe("the lip tracker", () => {
     expect(tracker.plunges.count).toBe(0);
   }, timeLimit(60_000));
 
+  it("reports one plunge a crest: none twice in one stretch within half a period, room-3's and a short swell's", () => {
+    const phases = new Float32Array(12);
+    const runOf = (field: OceanField): { count: number; tooClose: number } => {
+      const cove = coveOf(SEED, field);
+      const tracker = new LipTracker(field, cove);
+      // the first probe's z, and a stretch's four probes (20 m) from it
+      const probe0 = cove.z0 - LIP_COLUMNS / 2 + Math.max(0, Math.ceil(LIP_COLUMNS / 2 - (cove.halfWidth + 30)));
+      const last = new Map<number, number>();
+      let count = 0;
+      let tooClose = 0;
+      for (let k = 0; k <= 12_000; k++) {
+        const t = k / 20;
+        tracker.update(t, swellPhases(field, t, phases), 0);
+        for (let e = 0; e < tracker.plunges.count; e++) {
+          const stretch = Math.floor(Math.round(((tracker.plunges.z[e] as number) - probe0) / 5) / 4);
+          const before = last.get(stretch);
+          if (before !== undefined && t - before < field.tp / 2) tooClose++;
+          last.set(stretch, t);
+          count++;
+        }
+      }
+      return { count, tooClose };
+    };
+    const room3 = runOf(oceanFieldFor(SEED));
+    expect(room3.tooClose).toBe(0);
+    expect(room3.count).toBe(939);
+    const short = runOf(oceanFieldFromState(SEED, { hs: 1.2, tp: 6, dirFromDeg: 270, gamma: 3.3, spread: 25 }));
+    expect(short.tooClose).toBe(0);
+    expect(short.count).toBeGreaterThan(1000);
+  }, timeLimit(120_000));
+
   it("refills the same arrays every update: nothing made after construction", () => {
     const field = oceanFieldFor(SEED);
     const tracker = new LipTracker(field, coveOf(SEED, field));

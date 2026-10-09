@@ -236,7 +236,10 @@ export type LipState = { data: Float32Array };
  * progress reaches 1. A plunge is a crest whose progress, the most over a
  * stretch's probes, reaches LIP_COLLAPSE this update from below, across a
  * step of no more than LIP_STEP_MAX_S (a longer step, or a clock run back,
- * reports none).
+ * reports none), and not within half a peak period of the stretch's last:
+ * the crests reach a stretch a period apart, so a sooner one is the same
+ * crest numbered twice where the along-shore unwrapping slips a turn, or
+ * found again by another probe after the best one lost it for a frame.
  *
  * The unwrapping and which crests were bores are the only state carried from
  * one update to the next. Nothing is made after construction.
@@ -292,6 +295,8 @@ export class LipTracker {
   /** The toe's crest phase at the first probe (turns, wrapped) at the last update, and the whole turns added to it since. */
   private lastToe = Number.NaN;
   private wraps = 0;
+  /** The shared seconds of each stretch's last reported plunge, NaN for none: crests reach a stretch a period apart, so a second within half a period is the same crest numbered twice. */
+  private readonly plungedAt: Float64Array;
   /** The shared seconds of the last update, NaN before the first and after a time that was not finite. */
   private lastSeconds = Number.NaN;
 
@@ -362,6 +367,7 @@ export class LipTracker {
     this.crestBore = new Uint8Array(this.probes * 2);
     this.lastN = new Float64Array(this.stretches * 2).fill(Number.NaN);
     this.lastP = new Float64Array(this.stretches * 2);
+    this.plungedAt = new Float64Array(this.stretches).fill(Number.NaN);
     this.state = { data: new Float32Array(LIP_COLUMNS * LIP_SLOTS * 4) };
     this.plunges = {
       count: 0, d: new Float32Array(LIP_PLUNGES), z: new Float32Array(LIP_PLUNGES), height: new Float32Array(LIP_PLUNGES),
@@ -380,6 +386,7 @@ export class LipTracker {
       this.state.data.fill(0);
       this.crestN.fill(Number.NaN);
       this.lastN.fill(Number.NaN);
+      this.plungedAt.fill(Number.NaN);
       this.lastToe = Number.NaN;
       this.lastSeconds = Number.NaN;
       return;
@@ -395,7 +402,7 @@ export class LipTracker {
     }
     for (let j = 0; j < this.probes; j++) this.watch(j);
     this.fill(share);
-    this.listen(share, watch);
+    this.listen(share, watch, seconds);
   }
 
   /** One probe's face: each point's envelope from the frame's phases, the crest phase unwrapped up it, and the crests that stand on it. */
@@ -568,8 +575,10 @@ export class LipTracker {
     return progressOf(this.brk.ratio);
   }
 
-  /** The plunges: each stretch's crest of each parity whose progress reached the collapse this update, none across a step `watch` rules out. */
-  private listen(share: number, watch: boolean): void {
+  /** The plunges: each stretch's crest of each parity whose progress reached the collapse this update, none across a step `watch` rules out
+   * and none in a stretch within half a peak period of its last. */
+  private listen(share: number, watch: boolean, seconds: number): void {
+    const gap = this.field.tp / 2;
     const per = LIP_STRETCH_M / LIP_PROBE_M;
     for (let s = 0; s < this.stretches; s++) {
       for (let parity = 0; parity < 2; parity++) {
@@ -588,8 +597,11 @@ export class LipTracker {
         }
         const crest = this.crestN[best] as number;
         const p = this.crestP[best] as number;
-        const plunged = watch && this.lastN[slot] === crest && (this.lastP[slot] as number) < LIP_COLLAPSE && p >= LIP_COLLAPSE;
+        const since = seconds - (this.plungedAt[s] as number);
+        const plunged = watch && this.lastN[slot] === crest && (this.lastP[slot] as number) < LIP_COLLAPSE && p >= LIP_COLLAPSE
+          && !(since >= 0 && since < gap);
         if (plunged && this.plunges.count < LIP_PLUNGES) {
+          this.plungedAt[s] = seconds;
           const e = this.plunges.count++;
           this.plunges.d[e] = this.crestD[best] as number;
           this.plunges.z[e] = this.probeZ[(best - parity) / 2] as number;
