@@ -26,8 +26,9 @@ export const SWASH_REACH_MAX_M = 12;
 /**
  * How high above the still level the swash can stand on the cove's face (m):
  * the farthest reach up the 1:12 face, 1 m, and the sheet's 0.6 m over it.
- * The sea's rings count ground this far above the level as wet (`wetBounds`),
- * so a ring that covers only the face is still drawn.
+ * Along the cove and its ends' blends the sea's rings count ground this far
+ * above the level as wet (`wetBounds`), so a ring that covers only the face
+ * is still drawn.
  */
 export const SWASH_FACE_LIFT_M = 1.6;
 

@@ -266,6 +266,29 @@ describe("water rings", () => {
       expect(one.max).toEqual([ring.originX + 11 * s + 12 + s, 3 + 12, ring.originZ + 21 * s + 12 + s]);
     });
 
+    it("lifts only the cove's span along z: a face ring outside it is off, one across its end is drawn to it", () => {
+      const ring = createWaterRingSamples(SEED, 0, 0, 0);
+      for (let iz = 0; iz < SIDE; iz++) {
+        for (let ix = 0; ix < SIDE; ix++) ring.h[iz * SIDE + ix] = 3.05 + (0.95 * ix) / WATER_RING_CELLS;
+      }
+      const g = waterRingGeometry(ring, null, 3);
+      const s = ring.spacing;
+      // the cove's span wholly south or north of the ring: plain beach, dry, off
+      expect(wetBounds(g, ring.h, SWASH_FACE_LIFT_M, [ring.originZ - 400, ring.originZ - 1])).toBeNull();
+      expect(wetBounds(g, ring.h, SWASH_FACE_LIFT_M, [ring.originZ + 128 * s + 1, ring.originZ + 900])).toBeNull();
+      // the span over the whole ring: as with no span given, every cell
+      expect(wetBounds(g, ring.h, SWASH_FACE_LIFT_M, [ring.originZ - 1000, ring.originZ + 1000])).toEqual(wetBounds(g, ring.h, SWASH_FACE_LIFT_M));
+      // the cove's end at row 40: the cells with a vertex up to it, rows 0 to 41
+      const part = wetBounds(g, ring.h, SWASH_FACE_LIFT_M, [ring.originZ - 1000, ring.originZ + 40 * s])!;
+      expect(part.min).toEqual([ring.originX - 12 - s, 3 - 12, ring.originZ - 12 - s]);
+      expect(part.max).toEqual([ring.originX + 128 * s + 12 + s, 3 + 12, ring.originZ + 41 * s + 12 + s]);
+      // ground under the level is wet whatever the span, as the depth has it
+      ring.h[90 * SIDE + 10] = 2.5;
+      const under = wetBounds(waterRingGeometry(ring, null, 3), ring.h, SWASH_FACE_LIFT_M, [ring.originZ - 400, ring.originZ - 1])!;
+      expect(under.min).toEqual([ring.originX + 9 * s - 12 - s, 3 - 12, ring.originZ + 89 * s - 12 - s]);
+      expect(under.max).toEqual([ring.originX + 11 * s + 12 + s, 3 + 12, ring.originZ + 91 * s + 12 + s]);
+    });
+
     it("holds every wet vertex of a real ring and is no larger than the cells around them", () => {
       const ring = createWaterRingSamples(SEED, 1, -500, 0);
       const g = waterRingGeometry(ring, null, 0);

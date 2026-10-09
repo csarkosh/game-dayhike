@@ -95,7 +95,7 @@ import { attachWet, setWetCove, setWetLine, setWetSwash, setWetWeather, wetCapOf
 import { SWELL_COMPONENTS } from "./oceanSwell.js";
 import { swellPhases } from "./oceanWaves.js";
 import { coastProfilesFor } from "./oceanTables.js";
-import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../sim/olympic.js";
+import { COVE_END_BLEND, COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../sim/olympic.js";
 import { SwashTable, type SwashCove } from "./swashTable.js";
 import { createSwashTexture } from "./swashTexture.js";
 import { LIP_SPEED_MAX, LIP_SPEED_MIN, LipTracker, lipProfile } from "./oceanBreaker.js";
@@ -1251,6 +1251,21 @@ export function createWater(
   bakeBed(grid, seed, camX, camZ);
   uploadBed();
 
+  // The cove the sea's edge runs along (below), and the span of z its
+  // swash can climb the face over: the cove and its ends' blends.
+  const profiles = coastProfilesFor(seed);
+  const coveOf = coveFor(seed);
+  const cove: SwashCove = {
+    z0: coveOf.z0,
+    halfWidth: coveOf.halfWidth,
+    toeD: -COVE_TOE_DEPTH / COVE_FACE_GRADE,
+    faceGrade: COVE_FACE_GRADE,
+    coastX: (z) => profiles.coastlineX(z),
+  };
+  const faceZ: readonly [number, number] = [
+    cove.z0 - (cove.halfWidth + COVE_END_BLEND), cove.z0 + (cove.halfWidth + COVE_END_BLEND),
+  ];
+
   const rings: WaterRingSamples[] = [];
   const meshes: Mesh[] = [];
 
@@ -1258,16 +1273,18 @@ export function createWater(
   // cells, not the whole plane: a plane at the level is in view from almost
   // anywhere, which would ask for the high tier's copy inland too. The
   // bounds hold the waves: `OCEAN_BOUND` past the wet cells every way, and
-  // the stitch's move of up to a cell besides, across. Ground up to
-  // `SWASH_FACE_LIFT_M` above the level counts as wet, so the rings that
-  // cover the cove's face draw the swash up it.
+  // the stitch's move of up to a cell besides, across. Within the cove's
+  // span of z, ground up to `SWASH_FACE_LIFT_M` above the level counts as
+  // wet, so the rings that cover the cove's face draw the swash up it; along
+  // the rest of the coast, where no swash climbs, the ground must be under
+  // the level.
   function emitRing(level: number): void {
     const ring = rings[level] as WaterRingSamples;
     const finer = level > 0 ? (rings[level - 1] as WaterRingSamples) : null;
     const mesh = meshes[level] as Mesh;
     const geometry = waterRingGeometry(ring, finer === null ? null : waterHoleCellsFor(ring, finer), waterLevel);
     applyWaterGeometry(mesh, geometry);
-    const bounds = wetBounds(geometry, ring.h, SWASH_FACE_LIFT_M);
+    const bounds = wetBounds(geometry, ring.h, SWASH_FACE_LIFT_M, faceZ);
     mesh.setEnabled(bounds !== null);
     // Never refreshBoundingInfo after this: it would put back the whole plane.
     if (bounds !== null) mesh.setBoundingInfo(new BoundingInfo(Vector3.FromArray(bounds.min), Vector3.FromArray(bounds.max)));
@@ -1302,15 +1319,6 @@ export function createWater(
   // the high tier's own path (WebGPU, where the FFT can draw the wind sea).
   // The curl shows only while the FFT does: in any other wind mode the
   // sea's fragment lip draws, and the two never draw together.
-  const profiles = coastProfilesFor(seed);
-  const coveOf = coveFor(seed);
-  const cove: SwashCove = {
-    z0: coveOf.z0,
-    halfWidth: coveOf.halfWidth,
-    toeD: -COVE_TOE_DEPTH / COVE_FACE_GRADE,
-    faceGrade: COVE_FACE_GRADE,
-    coastX: (z) => profiles.coastlineX(z),
-  };
   const table = new SwashTable(ocean.field, cove);
   const swash = createSwashTexture(scene, table);
   const tracker = new LipTracker(ocean.field, cove);

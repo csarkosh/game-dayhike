@@ -244,7 +244,10 @@ export function waterRingGeometry(
  * held to the level) and a lift, a vertex is wet where its ground is below
  * the level plus the lift instead: the sea's swash climbs the cove's face
  * (`SWASH_FACE_LIFT_M`), so a ring covering only the face is still drawn.
- * Without them, as on a lift of 0, the rule is the depth's. Triangles in the
+ * Given a span of z, `[z0, z1]`, the lift is a vertex's only where its z is
+ * within it (the cove's, with its ends' blends): elsewhere along the coast
+ * the ground must be below the level itself. Without them, as on a lift of 0,
+ * the rule is the depth's. Triangles in the
  * hole are not drawn, so they count for nothing. The box is grown by `OCEAN_BOUND` on every side, since the waves
  * carry the surface off the plane: up and down from the water level, and
  * across. Across, it is grown by the stitch's reach as well: the vertex stage
@@ -259,6 +262,7 @@ export function wetBounds(
   geometry: WaterGeometry,
   ground: Float32Array | null = null,
   lift = 0,
+  liftZ: readonly [number, number] | null = null,
 ): { min: [number, number, number]; max: [number, number, number] } | null {
   const { positions, indices, bedDepth, oceanCoarse } = geometry;
   // How far the stitch moves a vertex along an axis, at most: a cell of the
@@ -278,9 +282,15 @@ export function wetBounds(
     if (ground === null) {
       if ((bedDepth[a] as number) <= 0 && (bedDepth[b] as number) <= 0 && (bedDepth[c] as number) <= 0) continue;
     } else {
-      // every vertex is at the level: the ground below the level plus the lift is wet
-      const wetBelow = (positions[a * 3 + 1] as number) + lift;
-      if (!((ground[a] as number) < wetBelow || (ground[b] as number) < wetBelow || (ground[c] as number) < wetBelow)) continue;
+      // every vertex is at the level: the ground below the level, plus the lift within its span, is wet
+      const level = positions[a * 3 + 1] as number;
+      let wet = false;
+      for (const v of [a, b, c]) {
+        const z = positions[v * 3 + 2] as number;
+        const lifted = liftZ === null || (z >= liftZ[0] && z <= liftZ[1]) ? lift : 0;
+        if ((ground[v] as number) < level + lifted) wet = true;
+      }
+      if (!wet) continue;
     }
     for (const v of [a, b, c]) {
       const x = positions[v * 3] as number;

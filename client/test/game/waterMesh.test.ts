@@ -19,7 +19,10 @@ import { createMotes } from "../../src/game/motes.js";
 import { createMistMeshes } from "../../src/game/mistMeshes.js";
 import { createWaterLife } from "../../src/game/waterLife.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
-import { OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterRingSpacing } from "../../src/game/water.js";
+import {
+  OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, createWaterRingSamples, waterRingGeometry, waterRingSpacing, wetBounds,
+} from "../../src/game/water.js";
+import { coastProfilesFor } from "../../src/game/oceanTables.js";
 import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
 import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -541,6 +544,23 @@ describe("createWater under NullEngine", () => {
       water.update(pondCam.x + 40, pondCam.z + 40, 0);
       water.update(pondCam.x, pondCam.z, 0);
       check();
+      water.dispose();
+    }, timeLimit(30_000));
+
+    it("lifts the wet ground by the swash's face only along the cove: a ring over plain beach 1 km along the coast is off", () => {
+      engine = new NullEngine();
+      const scene = new Scene(engine);
+      // Seed 7's cove is about z = 0, 164.5 m half-wide; at z = −1,000 a camera
+      // 100 m inland of the waterline has beach under ring 0 that is above the
+      // level but under the swash's 1.6 m.
+      const camZ = -1000;
+      const camX = coastProfilesFor(7).coastlineX(camZ) + 100;
+      const ring = createWaterRingSamples(7, 0, camX, camZ);
+      const g = waterRingGeometry(ring, null, 0);
+      expect(wetBounds(g, ring.h, SWASH_FACE_LIFT_M)).not.toBeNull();
+      expect(wetBounds(g, ring.h, 0)).toBeNull();
+      const water = createWater(scene, 7, 0, [], "medium", camX, camZ);
+      expect(water.meshes[0]!.isEnabled()).toBe(false);
       water.dispose();
     }, timeLimit(30_000));
 
