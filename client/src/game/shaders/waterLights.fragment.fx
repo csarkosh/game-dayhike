@@ -36,25 +36,28 @@ float wWindAmp = wWindShare * (1.0 - wOceanFoam.y) * wOceanChop;
 vec3 wWind = oceanWindDisplace(vOceanXZ);
 float wWindDrawn;
 vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOceanDy)), wWindDrawn);
-// Outside the bed's square the bed read stands in the ring vertex's depth,
-// which is held to 0 where the ground is above the level. There, along the
-// cove (its share faded over its ends), the sea's bed is the shallower of it
-// and the profile's depth the foam carries: the profile's up the face, where
-// it is below 0, and the vertex's own ground wherever that is shallower, so a
-// far headland keeps its depth. Both meet at 0 on the profile's waterline, so
-// the depth runs on across it. Along the rest of the coast the bed read
-// stands alone, as it does inside the square.
-vec2 wBedLocal = (vPositionW.xz - waterBed.xy) * waterBed.z;
-float wBedOutside = step(min(min(wBedLocal.x, wBedLocal.y), min(1.0 - wBedLocal.x, 1.0 - wBedLocal.y)), 0.0) * oceanCoveShare(vOceanXZ.y);
+// Along the cove (its share faded over its ends) the sea's bed is the
+// shallower of the bed read and the profile's depth the foam carries, inside
+// the bed's square and outside it, where the read stands in the ring vertex's
+// depth, held to 0 where the ground is above the level: the profile's up the
+// face, and the read's own ground wherever that is shallower, so a far
+// headland or a stack keeps its own. Both meet at 0 on the profile's
+// waterline, so the depth runs on across it. Along the rest of the coast the
+// bed read stands alone. The blend is written so that across the cove, its
+// share whole, the bed is the shallower of the two exactly.
 float wBedRead = waterBedDepth(vPositionW.xz);
-float wBedDepth = mix(wBedRead, min(wBedRead, wOceanFoam.w), wBedOutside);
+float wBedLow = min(wBedRead, wOceanFoam.w);
+float wBedDepth = wBedLow + (wBedRead - wBedLow) * (1.0 - oceanCoveShare(vOceanXZ.y));
 // Up the cove's face the depth takes the lift the vertex stage gave the
 // surface onto the swash's sheet (oceanSwash.fx), from the same profile's
 // depth, so the film over the pebbles is the sheet's thickness. Between
 // sheets the surface rests on the pebbles, the swell's and the wind's height
-// on it, so the depth there is 0 and the pixel is discarded: the sheet's edge
-// is the table's, a column a metre, never the rings' grid.
-float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w, wOceanHeight + wWind.y * wWindAmp);
+// on it, so the depth there is at most 0, exactly 0 where the profile is the
+// shallower, and the pixel is discarded: the sheet's edge is the table's, a
+// column a metre, never the rings' grid. The surface's height is summed once
+// and the lift takes that same sum, so the rest cancels it to the last bit.
+float wSurfaceHeight = wOceanHeight + wWind.y * wWindAmp;
+float wDepth = wBedDepth + wSurfaceHeight + swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight);
 #else
 float wDepth = waterBedDepth(vPositionW.xz);
 #endif
