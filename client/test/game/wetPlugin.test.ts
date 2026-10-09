@@ -386,6 +386,7 @@ describe("the swash's wet ground (wet.fragment.fx, wetLights.fragment.fx)", () =
   it("packs the table's reach and age, two columns a vec4, into one array every plugin binds, made once", () => {
     const a = attachWet(new PBRMaterial("ws2", scene))!;
     const b = attachWet(new PBRMaterial("ws3", scene))!;
+    setWetCove(37.25, 155, -24, 0.25);
     const before = swashBound(a).swash;
     expect(before.length).toBe(1024);
     const data = new Float32Array(SWASH_COLUMNS * SWASH_STRIDE);
@@ -410,6 +411,33 @@ describe("the swash's wet ground (wet.fragment.fx, wetLights.fragment.fx)", () =
     expect(Array.from(bound.subarray(14, 16))).toEqual([0, 60]);
     expect(bound[18]).toBe(0);
     expect(bound.every((v) => Number.isFinite(v))).toBe(true);
+  });
+
+  it("writes the table once and then never while there is no cove, and on every bind while there is one", () => {
+    const p = attachWet(new PBRMaterial("ws12", scene))!;
+    let writes = 0;
+    const ignore = (): void => undefined;
+    const ubo = {
+      updateFloat: ignore, updateFloat2: ignore, updateFloat3: ignore, updateFloat4: ignore,
+      updateFloatArray: (n: string) => { if (n === "wetSwash") writes++; },
+    } as unknown as UniformBuffer;
+    for (let f = 0; f < 5; f++) p.bindForSubMesh(ubo);
+    expect(writes).toBe(1);
+    // a table refilled with no cove to read it is still not written
+    setWetSwash(tableOf(6, 5));
+    for (let f = 0; f < 5; f++) p.bindForSubMesh(ubo);
+    expect(writes).toBe(1);
+    // a cove: every bind
+    setWetCove(37.25, 155, -24, 0.25);
+    for (let f = 0; f < 5; f++) p.bindForSubMesh(ubo);
+    expect(writes).toBe(6);
+    // the cove gone: none again
+    setWetCove(Number.NaN, 0, 0, 0);
+    for (let f = 0; f < 5; f++) p.bindForSubMesh(ubo);
+    expect(writes).toBe(6);
+    // another material with no cove writes its own first one
+    attachWet(new PBRMaterial("ws13", scene))!.bindForSubMesh(ubo);
+    expect(writes).toBe(7);
   });
 
   it("binds the cove for every plugin, and no cove when a number of it is not finite", () => {

@@ -163,6 +163,8 @@ export class WetPlugin extends MaterialPluginBase {
   attenuate = true;
   /** The porosity cap, in [0, 1]: 0 leaves the weather's wetness unread. */
   cap = 0;
+  /** Whether a bind has written the swash's table yet: with no cove it is written once, then left. */
+  private swashWritten = false;
 
   constructor(material: Material) {
     super(material, "Wet", 240, { WET: false });
@@ -218,8 +220,13 @@ export class WetPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("wetCap", this.cap);
     uniformBuffer.updateFloat4("wetCove", wetCove[0], wetCove[1], wetCove[2], wetCove[3]);
     // updateFloatArray, not updateArray: without uniform buffers the latter
-    // sets the array as floats, the former as the vec4s it is.
-    uniformBuffer.updateFloatArray("wetSwash", wetSwash);
+    // sets the array as floats, the former as the vec4s it is. With no cove
+    // the share is 0 at every z and the table is never read, so its 4 KB are
+    // written once and then left.
+    if (wetCove[1] !== WET_NO_COVE || !this.swashWritten) {
+      uniformBuffer.updateFloatArray("wetSwash", wetSwash);
+      this.swashWritten = true;
+    }
   }
 
   override getCustomCode(shaderType: string): { [pointName: string]: string } | null {
