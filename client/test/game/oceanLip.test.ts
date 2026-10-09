@@ -23,7 +23,7 @@ import { OCEAN_COAST_STEP } from "../../src/game/oceanTables.js";
 import { coastRead, oceanFieldFor, swellAt, swellPhases, type OceanField } from "../../src/game/oceanWaves.js";
 import {
   LIP_COLUMNS, LIP_EDGE_FIRST, LIP_EDGE_LAST, LIP_FOAM_ENVELOPE, LIP_KEYFRAMES, LIP_KEY_THROW, LIP_PROFILE_VERTS, LIP_SLOTS,
-  LIP_THROW, LipTracker, lipProfile, lipVertexAt, profileAt,
+  LIP_THROW, LipTracker, lipEdgeWeight, lipProfile, lipVertexAt, profileAt,
 } from "../../src/game/oceanBreaker.js";
 import { LIP_COARSE_M, LIP_FINE_M, createOceanLip, lipColumns } from "../../src/game/oceanLip.js";
 import { WaterPlugin, attachWater, oceanArrayPlaceholder, type OceanBinding } from "../../src/game/waterPlugin.js";
@@ -184,6 +184,21 @@ describe("the strip's vertices", () => {
     const body = fx("oceanLip.vertex.fx");
     expect(body).toContain("positionUpdated = oceanLipPlace(positionUpdated, oceanLipXZ, oceanLipSwell, oceanLipEnv);");
     expect(body).toContain("vOceanXZ = oceanLipXZ;");
+  });
+});
+
+describe("the strip's leading edge", () => {
+  it("hands the sea's white water whole only as the lip forms: its weight rises from 0 at progress 0 to 1 at the throw", () => {
+    const s = fx("oceanLipShape.vertex.fx");
+    expect(s).toContain(
+      "  float edge = step(LIP_EDGE_FIRST, strip.z) * step(strip.z, LIP_EDGE_LAST) * step(1.0e-6, size) * smoothstep(0.0, LIP_THROW, slot.y);\n" +
+        "  env = mix(vec4(sumEnv, length(sumEnv), 0.0), vec4(LIP_FOAM_ENVELOPE, 0.0, LIP_FOAM_ENVELOPE, 0.0), edge);\n",
+    );
+    // (vertex, progress, size): none at progress 0 however near the edge, half at half the throw, whole from it on
+    expect([0, 0.15, 0.3, 0.45, 0.6, 0.9, 1].map((p) => lipEdgeWeight(16, p, 1))).toEqual([0, 0.15625, 0.5, 0.84375, 1, 1, 1]);
+    // the edge's vertices alone, and none on a free slot
+    expect([13, 14, 18, 19].map((v) => lipEdgeWeight(v, 0.6, 1))).toEqual([0, 1, 1, 0]);
+    expect(lipEdgeWeight(16, 0.6, 0)).toBe(0);
   });
 });
 

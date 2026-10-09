@@ -215,6 +215,18 @@ export const LIP_EDGE_LAST = 18;
 /** The envelope (m) the leading edge hands the sea's fragment stage: so far past any depth's break that its foam is the roll's, whole and fresh. */
 export const LIP_FOAM_ENVELOPE = 1000;
 
+/**
+ * How far the strip's vertex v hands the sea its leading edge's envelope in
+ * place of the swell's own, at progress p and size (height times share): the
+ * `edge` line of oceanLipPlace (`shaders/oceanLipShape.vertex.fx`). On the
+ * edge's vertices of a live slot it rises from 0 at progress 0, where the
+ * section lies on the rings, to 1 at the throw; 0 everywhere else.
+ */
+export function lipEdgeWeight(v: number, p: number, size: number): number {
+  const on = (v >= LIP_EDGE_FIRST ? 1 : 0) * (LIP_EDGE_LAST >= v ? 1 : 0) * (size >= 1e-6 ? 1 : 0);
+  return on * smoothstep(0, LIP_THROW, p);
+}
+
 const shapeScratch = { across: 0, up: 0 };
 
 /**
