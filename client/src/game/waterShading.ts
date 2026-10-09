@@ -230,6 +230,14 @@ export function swellPixelKeep(
  * finest ring's. It depends on the point alone, so two rings drawing one point displace it alike.
  */
 export const OCEAN_RING_REACH = WATER_RING_CELLS / 4;
+
+/**
+ * The cove's end fade (m), `OCEAN_COVE_END` in oceanShade.fragment.fx: the
+ * sea's cove share (`oceanCoveShare`) is 1 across the cove and falls to 0
+ * this far past either end, as the wet ground's does (`WET_COVE_END`). Outside
+ * the bed's square the sea's depth takes the profile's only by that share.
+ */
+export const OCEAN_COVE_END = 30;
 export function oceanRingCell(dx: number, dz: number): number {
   return Math.max(WATER_BASE_SPACING, Math.max(Math.abs(dx), Math.abs(dz)) / OCEAN_RING_REACH);
 }

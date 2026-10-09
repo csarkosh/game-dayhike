@@ -37,13 +37,15 @@ vec3 wWind = oceanWindDisplace(vOceanXZ);
 float wWindDrawn;
 vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOceanDy)), wWindDrawn);
 // Outside the bed's square the bed read stands in the ring vertex's depth,
-// which is held to 0 where the ground is above the level. There the sea's bed
-// is the shallower of it and the profile's depth the foam carries: the
-// profile's up the face, where it is below 0, and the vertex's own ground
-// wherever that is shallower, so a far headland keeps its depth. Both meet
-// at 0 on the profile's waterline, so the depth runs on across it.
+// which is held to 0 where the ground is above the level. There, along the
+// cove (its share faded over its ends), the sea's bed is the shallower of it
+// and the profile's depth the foam carries: the profile's up the face, where
+// it is below 0, and the vertex's own ground wherever that is shallower, so a
+// far headland keeps its depth. Both meet at 0 on the profile's waterline, so
+// the depth runs on across it. Along the rest of the coast the bed read
+// stands alone, as it does inside the square.
 vec2 wBedLocal = (vPositionW.xz - waterBed.xy) * waterBed.z;
-float wBedOutside = step(min(min(wBedLocal.x, wBedLocal.y), min(1.0 - wBedLocal.x, 1.0 - wBedLocal.y)), 0.0);
+float wBedOutside = step(min(min(wBedLocal.x, wBedLocal.y), min(1.0 - wBedLocal.x, 1.0 - wBedLocal.y)), 0.0) * oceanCoveShare(vOceanXZ.y);
 float wBedRead = waterBedDepth(vPositionW.xz);
 float wBedDepth = mix(wBedRead, min(wBedRead, wOceanFoam.w), wBedOutside);
 // Up the cove's face the depth takes the lift the vertex stage gave the

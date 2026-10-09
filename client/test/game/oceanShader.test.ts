@@ -24,7 +24,7 @@ import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder.js";
 import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
 import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage.js";
-import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
+import { COVE_END_BLEND, COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import {
   OCEAN_ROUGHNESS_ANCHOR, OCEAN_ROUGHNESS_CODE, attachWater, oceanArrayPlaceholder, type OceanBinding,
@@ -32,7 +32,7 @@ import {
 import { oceanComponentsFor, oceanTipsFor } from "../../src/game/oceanRender.js";
 import {
   OCEAN_BUMP_HS, OCEAN_BUMP_MAX, OCEAN_CAP_CELL, OCEAN_CAP_CYCLES, OCEAN_CAP_DRIFT, OCEAN_CAP_INSET, OCEAN_CAP_PERIOD,
-  OCEAN_CAP_RADIUS, OCEAN_CAP_SHARE, OCEAN_CAP_SOFT, OCEAN_DETAIL_HI, OCEAN_DETAIL_LO, OCEAN_FOAM_ALBEDO,
+  OCEAN_CAP_RADIUS, OCEAN_CAP_SHARE, OCEAN_CAP_SOFT, OCEAN_COVE_END, OCEAN_DETAIL_HI, OCEAN_DETAIL_LO, OCEAN_FOAM_ALBEDO,
   OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_FADE, OCEAN_INNER_COVER, OCEAN_LACE_DRIFT,
   OCEAN_LACE_FINE, OCEAN_LACE_FINE_SHIFT, OCEAN_LACE_FIT_A, OCEAN_LACE_FIT_B, OCEAN_LACE_FIT_C, OCEAN_LACE_FIT_D,
   OCEAN_LACE_FIT_E, OCEAN_LACE_ONSET, OCEAN_LACE_SOFT, OCEAN_LACE_TILE, OCEAN_LACE_WEIGHT, OCEAN_LOOP_SCALE_MIN,
@@ -939,10 +939,10 @@ describe("the sea's swash in the shaders", () => {
     expect(fx("oceanSurface.fx")).toContain("  return vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);");
   });
 
-  it("gives the sea's bed outside the bed's square the shallower of the ring vertex's depth and the profile's, on the sea alone", async () => {
+  it("gives the sea's bed outside the bed's square and along the cove the shallower of the ring vertex's depth and the profile's, on the sea alone", async () => {
     const lines = [
       "vec2 wBedLocal = (vPositionW.xz - waterBed.xy) * waterBed.z;",
-      "float wBedOutside = step(min(min(wBedLocal.x, wBedLocal.y), min(1.0 - wBedLocal.x, 1.0 - wBedLocal.y)), 0.0);",
+      "float wBedOutside = step(min(min(wBedLocal.x, wBedLocal.y), min(1.0 - wBedLocal.x, 1.0 - wBedLocal.y)), 0.0) * oceanCoveShare(vOceanXZ.y);",
       "float wBedRead = waterBedDepth(vPositionW.xz);",
       "float wBedDepth = mix(wBedRead, min(wBedRead, wOceanFoam.w), wBedOutside);",
       "float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);",
@@ -964,10 +964,32 @@ describe("the sea's swash in the shaders", () => {
     expect(w).toContain("  bool outside = local.x <= 0.0 || local.y <= 0.0 || local.x >= 1.0 || local.y >= 1.0;");
     expect(w).toContain("  return outside ? vBedDepth : waterLevel - h;");
     const step = (edge: number, x: number): number => (x < edge ? 0 : 1);
-    // outside the square the fallback is the shallower of the ring vertex's depth and the profile's:
-    // mix(read, min(read, h), outside), the read being vBedDepth there, never below 0
+    // the cove's share at z: 1 across the cove, 0 past OCEAN_COVE_END beyond either end, as the wet ground's
+    const f = fx("oceanShade.fragment.fx");
+    pinned(f, "OCEAN_COVE_END", OCEAN_COVE_END);
+    expect([OCEAN_COVE_END, OCEAN_COVE_END - COVE_END_BLEND]).toEqual([30, 0]);
+    expect(f).toContain(
+      "float oceanCoveShare(float z) {\n" +
+        "  return 1.0 - smoothstep(oceanCove.y - OCEAN_COVE_END, oceanCove.y + OCEAN_COVE_END, abs(z - oceanCove.x));\n" +
+        "}\n",
+    );
+    const coveShare = (z: number, z0: number, halfWidth: number): number =>
+      1 - smoothstep(halfWidth - OCEAN_COVE_END, halfWidth + OCEAN_COVE_END, Math.abs(z - z0));
+    // outside the square and along the cove the fallback is the shallower of the ring vertex's depth and the
+    // profile's: mix(read, min(read, h), outside · cove), the read being vBedDepth there, never below 0
     const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
-    const bed = (read: number, h: number, outside: number): number => mix(read, Math.min(read, h), outside);
+    const bedAt = (read: number, h: number, outside: number, cove: number): number => mix(read, Math.min(read, h), outside * cove);
+    const bed = (read: number, h: number, outside: number): number => bedAt(read, h, outside, 1);
+    // a cove 164 m half-wide about z = 20: its centre and its end take the profile's depth up the dry face,
+    // halfway through the end's fade half of it, and from 30 m past its end on the vertex's own depth
+    expect([0, 20, 154, 184].map((z) => coveShare(z, 20, 164))).toEqual([1, 1, 1, 0.5]);
+    expect([214, 400, -200].map((z) => coveShare(z, 20, 164))).toEqual([0, 0, 0]);
+    expect(bedAt(0.25, -0.75, 1, coveShare(20, 20, 164))).toBe(-0.75);
+    expect(bedAt(0.25, -0.75, 1, coveShare(184, 20, 164))).toBe(-0.25);
+    expect(bedAt(0.25, -0.75, 1, coveShare(214, 20, 164))).toBe(0.25);
+    expect(bedAt(0, -2.5, 1, coveShare(-400, 20, 164))).toBe(0);
+    // inside the bed's square the read stands, in the cove or out of it
+    expect(bedAt(1.25, -0.75, 0, coveShare(20, 20, 164))).toBe(1.25);
     // the dry face: the profile's depth, below 0
     expect(bed(0, -0.75, 1)).toBe(-0.75);
     expect(bed(0.25, -0.75, 1)).toBe(-0.75);
@@ -1102,7 +1124,7 @@ describe("the sea's shaders", () => {
     // outside the bed's square; once more as the plunging lip tilted the normal and lifted the foam.
     const before: Record<string, string> = {
       "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
-      "waterLights.fragment.fx": "429e92554b3e7ae882db271abc606400b733082886f14fa846a96d2bba36de95",
+      "waterLights.fragment.fx": "427e69af6c9a8d139bad65dad4a8359e24b2164cb5ffebc1d7831097871af7c8",
       "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
     };
     for (const [name, hash] of Object.entries(before)) {

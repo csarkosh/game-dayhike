@@ -926,11 +926,11 @@ describe("the sea's waves in the water plugin", () => {
     // The sea's whole stages, byte for byte, as the swash's sheet, the bed's fallback and the lip left them:
     // neither the lake's ripples' definitions nor their uniforms reach the sea.
     const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
-    expect(sha(sea.fragment)).toBe("4970f1281bd89d10a02cfd90f8b9606ba692b6b439d5032ddfab10c3b2bb683a");
+    expect(sha(sea.fragment)).toBe("1639b0a30ad3e02c24aa9e1f53641993e72b217ca9fb33645c5cc0f4ae4d32cb");
     expect(sha(sea.vertex)).toBe("849a373b3d2d72c77ba8bfcdc02cb6cdfee5d46f041d5d9e75fa208794b74a9f");
     // and a material drawn as a lake, then given its ocean, rebuilds its uniforms to the sea's
     const turned = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true, true);
-    expect(sha(turned.fragment)).toBe("4970f1281bd89d10a02cfd90f8b9606ba692b6b439d5032ddfab10c3b2bb683a");
+    expect(sha(turned.fragment)).toBe("1639b0a30ad3e02c24aa9e1f53641993e72b217ca9fb33645c5cc0f4ae4d32cb");
     expect(sha(turned.vertex)).toBe("849a373b3d2d72c77ba8bfcdc02cb6cdfee5d46f041d5d9e75fa208794b74a9f");
     // and one drawn as a sea, then taken off its ocean, rebuilds them to the lake's
     const back = await compiled((m) => new WaterPlugin(m, WATER_ROWS.lowlandLake), false, true);
@@ -938,7 +938,7 @@ describe("the sea's waves in the water plugin", () => {
     expect(back.vertex).toBe(lake.vertex);
     // The sea's main, as the swash's sheet, the bed's fallback and the lip left it, reads none of the lake's ripples.
     const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
-    expect(sha(main(sea.fragment))).toBe("eae636a0e7c9aefaf1cf88b2202314f18ec3e7f23849775b0044743581fd2024");
+    expect(sha(main(sea.fragment))).toBe("30e161b8f18d9d78f58b51042dab6e09fce39f3001c37c46ba9fefd1a6ed6244");
     for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover", "waterMirror", "waterCalmShare", "wMirror"]) {
       expect(main(sea.fragment), name).not.toContain(name);
     }
