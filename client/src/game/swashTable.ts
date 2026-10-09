@@ -257,7 +257,7 @@ export class SwashTable {
           continue;
         }
         const was = this.seconds - (this.boreLaunch[slot] as number);
-        if (was < tUp && age >= tUp && reach > SWASH_BACKWASH_MIN_M) {
+        if (watch && was < tUp && age >= tUp && reach > SWASH_BACKWASH_MIN_M && this.backwash.count < SWASH_COLUMNS) {
           const i = this.backwash.count++;
           this.backwash.column[i] = col;
           this.backwash.reach[i] = reach;

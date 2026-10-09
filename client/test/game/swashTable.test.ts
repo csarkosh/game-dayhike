@@ -267,10 +267,28 @@ describe("SwashTable", () => {
     // 30 s on in one step: crests passed, none is reported.
     table.update(t + 30, swellPhases(FIELD, t + 30, phases));
     expect(table.arrivals.count).toBe(0);
+    expect(table.backwash.count).toBe(0);
     // Back to the start: dry again, nothing found on that update.
     table.update(1, swellPhases(FIELD, 1, phases));
     expect(table.arrivals.count).toBe(0);
     for (let c = 0; c < SWASH_COLUMNS; c++) expect(column(table, c).slice(2)).toEqual([0, 600]);
+  }, timeLimit(60_000));
+
+  it("reports no backwash across a stalled page's long step, and never more events than columns", () => {
+    const table = new SwashTable(FIELD, coveOf(FIELD));
+    const phases = new Float32Array(12);
+    run(table, FIELD, 65);
+    table.update(80, swellPhases(FIELD, 80, phases));
+    expect(table.arrivals.count).toBe(0);
+    expect(table.backwash.count).toBe(0);
+    // Stepping on from there at 60 Hz the watch is back: no update reports more than the arrays hold.
+    let most = 0;
+    for (let i = 1; i <= 1200; i++) {
+      const t = 80 + i * STEP;
+      table.update(t, swellPhases(FIELD, t, phases));
+      most = Math.max(most, table.backwash.count);
+    }
+    expect(most).toBeLessThanOrEqual(SWASH_COLUMNS);
   }, timeLimit(60_000));
 
   it("allocates nothing a frame: the same row and the same event arrays after 1,200 updates", () => {
