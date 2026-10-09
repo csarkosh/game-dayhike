@@ -20,7 +20,7 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { QualityTier } from "./quality.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW, type SwellComponent } from "./oceanSwell.js";
 import { OCEAN_COAST_RECENTRE, OCEAN_COAST_STEP, coastProfilesFor, writeCoastRow } from "./oceanTables.js";
-import { oceanFieldFor, swellPhases } from "./oceanWaves.js";
+import { oceanFieldFor, swellPhases, type OceanField } from "./oceanWaves.js";
 import { windSeaStateFor } from "./oceanWindSea.js";
 import { oceanArrayPlaceholder, type OceanBinding, type WaterPlugin } from "./waterPlugin.js";
 import { createWindSeaSource, type GpuStarter, type LoopStarter } from "./oceanWindSource.js";
@@ -34,6 +34,10 @@ import { coveFor } from "../sim/olympic.js";
 export const OCEAN_NO_TIP = 1e9;
 
 export type Ocean = {
+  /** The swell the sea draws, the tier's count of its components: what the
+   * sea's edge reads its crests and bores from, so it follows the waves the
+   * player sees. Its coastline row is the one `update` moves with the camera. */
+  readonly field: OceanField;
   /** The swell's tables, RGBA32F, `OCEAN_TABLE_SAMPLES` × `OCEAN_ATLAS_ROWS`, nearest, clamped. */
   atlas: RawTexture;
   /** The wind sea's displacement and slopes, texture 2D arrays. */
@@ -137,6 +141,7 @@ export function createOcean(
     windPivot: [profiles.coastlineX(cove.z0), cove.z0, 0, 0],
   };
   return {
+    field,
     atlas,
     // What the binding holds, which follows the wind sea's field as it comes.
     get windDisp() {

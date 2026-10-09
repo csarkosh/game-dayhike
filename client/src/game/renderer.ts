@@ -84,14 +84,24 @@ import {
   type WaterGeometry,
   type WaterRingSamples,
 } from "./water.js";
-import { SWASH_FACE_LIFT_M } from "./swashRunUp.js";
+import { SWASH_FACE_LIFT_M, SWASH_G } from "./swashRunUp.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater, type WaterPlugin } from "./waterPlugin.js";
 import { createOcean } from "./oceanRender.js";
 import { createWaterPlants } from "./waterPlants.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
 import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "./waterShading.js";
-import { attachWet, setWetLine, setWetWeather, wetCapOf, wetLineFor, type WetBody } from "./wetPlugin.js";
+import { attachWet, setWetCove, setWetLine, setWetSwash, setWetWeather, wetCapOf, wetLineFor, type WetBody } from "./wetPlugin.js";
+import { SWELL_COMPONENTS } from "./oceanSwell.js";
+import { swellPhases } from "./oceanWaves.js";
+import { coastProfilesFor } from "./oceanTables.js";
+import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../sim/olympic.js";
+import { SwashTable, type SwashCove } from "./swashTable.js";
+import { createSwashTexture } from "./swashTexture.js";
+import { LIP_SPEED_MAX, LIP_SPEED_MIN, LipTracker, lipProfile } from "./oceanBreaker.js";
+import { createOceanLip, type OceanLip } from "./oceanLip.js";
+import { SURF_SPRAY_BURSTS, SURF_SPRAY_RANGE_M, createSurfSpray, type SurfSpray } from "./surfSpray.js";
+import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "./surfSound.js";
 import {
   BED_GRID,
   bakeBed,
@@ -129,7 +139,6 @@ import { createLakeMirror, createLakeMirrorTerrain, MIRROR_MOTION_SMEAR, mirrorM
 import { createLakePanorama, createSkylineTexture } from "./lakePanorama.js";
 import { SKYLINE_SHADE, skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { NEEDLE_BED } from "./terrainSurface.js";
-import { SILENT_SURF_SOUND, type SurfSound } from "./surfSound.js";
 
 const MATERIAL_COLORS: Record<string, [number, number, number]> = {
   concrete: [0.42, 0.44, 0.47],
@@ -690,17 +699,48 @@ export type Water = {
   setWind(wind01: number, dir: [number, number]): void;
   /** Per frame from the weather: the rain, 0 to 1, that rings the surface. */
   setRain(rain: number): void;
+  /** The sea's edge on the cove, made with the sea and moved by `update`. */
+  readonly edge: SeaEdge;
   dispose(): void;
 };
 
+/**
+ * The sea's edge on the cove (`docs/rendering/2026-10-08-sea-edge-design.md`):
+ * the swash's table and the breaker's tracker on every tier, read by the sea's
+ * sheet, the wet ground and the surf's sound; the swept curl and the spray on
+ * the high tier alone. Everything here moves on the sea's shared seconds.
+ */
+export type SeaEdge = {
+  /** The cove as the swash, the breaker and the shaders read it. */
+  readonly cove: SwashCove;
+  /** The swash's run-up a metre of shore, refilled by `Water.update`. */
+  readonly table: SwashTable;
+  /** The table as the sea's sheet reads it, uploaded after each fill. */
+  readonly swash: { readonly texture: RawTexture; update(): void; dispose(): void };
+  /** The plunging crests and this frame's plunges. */
+  readonly tracker: LipTracker;
+  /** The swept curl, on the high tier; null on the others. */
+  readonly lip: OceanLip | null;
+  /** The spray of the plunges, on the high tier; null on the others. */
+  readonly spray: SurfSpray | null;
+  /** The swell's significant height (m), as the sea's binding holds it (`swell[3]`). */
+  readonly hs: number;
+  /** Whether the table holds its first fill: until then the sea draws no
+   * sheet and no curl, the wet ground keeps its still line and the surf is
+   * silent. */
+  readonly filled: boolean;
+};
+
 /** The see-through effects a camera moves among: rain (its streaks and
- * drips), its splashes, motes, the mist banks and the lake's insects. */
+ * drips), its splashes, motes, the mist banks, the lake's insects and the
+ * surf's spray. */
 export type SeeThroughEffects = {
   rain: Rain | null;
   splash: RainSplash | null;
   motes: Motes | null;
   mist: MistMeshes | null;
   waterLife: WaterLife | null;
+  spray?: SurfSpray | null;
 };
 
 /**
@@ -748,6 +788,7 @@ export function setEffectsGroup(group: number, effects: SeeThroughEffects): void
   for (const system of effects.motes?.systems ?? []) system.renderingGroupId = group;
   for (const mesh of effects.mist?.meshes ?? []) mesh.renderingGroupId = group;
   for (const mesh of effects.waterLife?.meshes ?? []) mesh.renderingGroupId = group;
+  if (effects.spray != null) effects.spray.mesh.renderingGroupId = group;
 }
 
 /**
@@ -873,6 +914,9 @@ const SILENT_WATER_LIFE: WaterLifeSound = frozenThrough({
   hums: [], hums_n: 0, pitch: 0, rustles: [], frogCalls: [],
   bed: { level: 0, duck: [1, 1], points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
 });
+
+/** The mean of the lip's throw over the wave's speed (`LIP_SPEED_MIN`..`LIP_SPEED_MAX`): the spray's launch. */
+const SPRAY_THROW = (LIP_SPEED_MIN + LIP_SPEED_MAX) / 2;
 
 /** A player's position in their slot: the sim's own, y the body's centre. */
 export type SlotPoint = { x: number; y: number; z: number };
@@ -1252,6 +1296,90 @@ export function createWater(
   for (const mesh of lakeMeshes) mesh.renderingGroupId = group;
   waterMeshes.push(...meshes, ...lakeMeshes);
 
+  // The sea's edge on the cove: the swash's table and the breaker's tracker
+  // on the swell the sea draws (its tier's components), the table's texture
+  // the sea's sheet reads, the spray on the high tier, and the swept curl on
+  // the high tier's own path (WebGPU, where the FFT can draw the wind sea).
+  // The curl shows only while the FFT does: in any other wind mode the
+  // sea's fragment lip draws, and the two never draw together.
+  const profiles = coastProfilesFor(seed);
+  const coveOf = coveFor(seed);
+  const cove: SwashCove = {
+    z0: coveOf.z0,
+    halfWidth: coveOf.halfWidth,
+    toeD: -COVE_TOE_DEPTH / COVE_FACE_GRADE,
+    faceGrade: COVE_FACE_GRADE,
+    coastX: (z) => profiles.coastlineX(z),
+  };
+  const table = new SwashTable(ocean.field, cove);
+  const swash = createSwashTexture(scene, table);
+  const tracker = new LipTracker(ocean.field, cove);
+  seaPlugin.setCove(cove.z0, cove.halfWidth, cove.toeD, cove.faceGrade);
+  const lip = high ? createOceanLip(scene, () => seaMat, tracker, lipProfile(), cove, waterLevel) : null;
+  if (lip !== null) {
+    lip.fine.renderingGroupId = group;
+    lip.coarse.renderingGroupId = group;
+    // The high path's copy runs for a frame whose culling kept the curl too.
+    waterMeshes.push(lip.fine, lip.coarse);
+  }
+  const spray = tier === "high" ? createSurfSpray(scene, group) : null;
+  // The frame's phases of the sea's swell, the wind as the spray reads it,
+  // and the plunges a frame has thrown spray for: made once, refilled.
+  const edgePhases = new Float32Array(SWELL_COMPONENTS);
+  const sprayWind: WindRecord = { dirX: 1, dirZ: 0, speed: 0, lean: 0, gustAmp: 0, flutterAmp: 0, time: 0 };
+  const thrown = new Uint8Array(tracker.plunges.d.length);
+  let filled = false;
+
+  /**
+   * Spray for this frame's plunges within SURF_SPRAY_RANGE_M of the camera,
+   * nearest first, SURF_SPRAY_BURSTS at most: each thrown landward along the
+   * face's normal from the crest's top at the lip's throw, the mean of 1.3
+   * to 1.5 times the shallow-water speed of a wave of the plunge's height.
+   */
+  function throwSpray(sprayOf: SurfSpray, camX: number, camZ: number, seconds: number): void {
+    const plunges = tracker.plunges;
+    const count = Math.min(plunges.count, thrown.length);
+    thrown.fill(0, 0, count);
+    for (let k = 0; k < SURF_SPRAY_BURSTS; k++) {
+      let best = -1;
+      let bestDist = SURF_SPRAY_RANGE_M;
+      for (let i = 0; i < count; i++) {
+        if (thrown[i] === 1) continue;
+        const z = plunges.z[i] as number;
+        const dist = Math.hypot(cove.coastX(z) + (plunges.d[i] as number) - camX, z - camZ);
+        if (dist <= bestDist) {
+          best = i;
+          bestDist = dist;
+        }
+      }
+      if (best < 0) return;
+      thrown[best] = 1;
+      const z = plunges.z[best] as number;
+      const height = Math.max(0, plunges.height[best] as number);
+      // The coast runs along z with the land toward +x: its landward normal.
+      const slope = (cove.coastX(z + 1) - cove.coastX(z - 1)) / 2;
+      sprayOf.burst(
+        cove.coastX(z) + (plunges.d[best] as number), waterLevel + height, z, 1, -slope,
+        SPRAY_THROW * Math.sqrt(SWASH_G * height), seconds,
+      );
+    }
+  }
+
+  const edge: SeaEdge = {
+    cove,
+    table,
+    swash,
+    tracker,
+    lip,
+    spray,
+    get hs() {
+      return seaPlugin.ocean?.swell[3] ?? 0;
+    },
+    get filled() {
+      return filled;
+    },
+  };
+
   // Whether the last frame drew the sea: its culling kept one of the sea's
   // rings (never a disabled ring, one outside the frustum, or a lake).
   // `update` runs before this frame is culled, so this is the frame before's
@@ -1310,6 +1438,29 @@ export function createWater(
       }
       for (const p of plugins) p.advance(seconds);
       ocean.update(camX, camZ, seconds, seaWind, seaWindDir, hour, seaDrawn());
+      // The sea's edge, on the same seconds and swell, under the onshore
+      // weight the ocean has just written for its wind sea (`windSeaStateFor`).
+      swellPhases(ocean.field, seconds, edgePhases);
+      table.update(seconds, edgePhases);
+      tracker.update(seconds, edgePhases, seaPlugin.ocean?.windDir[3] ?? 0);
+      swash.update();
+      if (!filled) {
+        // The sheet from the first fill on: an empty swash until then.
+        filled = true;
+        seaPlugin.setSwash(swash.texture);
+      }
+      if (lip !== null) {
+        if (ocean.windMode === 2) {
+          lip.update(camX, camZ);
+        } else {
+          lip.fine.setEnabled(false);
+          lip.coarse.setEnabled(false);
+        }
+      }
+      if (spray !== null) {
+        throwSpray(spray, camX, camZ, seconds);
+        spray.update(seconds, sprayWind);
+      }
       // The copy's depth is linearised with the camera's planes, read each
       // frame: the active camera can change (the freecam, a cutscene).
       const camera = scene.activeCamera;
@@ -1323,15 +1474,26 @@ export function createWater(
     setWind(wind01, dir) {
       seaWind = wind01;
       seaWindDir = dir;
+      sprayWind.speed = wind01;
+      sprayWind.dirX = dir[0];
+      sprayWind.dirZ = dir[1];
       for (const p of plugins) p.setWind(wind01, dir);
     },
     setRain(rain) {
       for (const p of plugins) p.rain = rain;
     },
+    edge,
     dispose() {
       scene.onBeforeRenderObservable.remove(scroll);
       for (const mesh of meshes) mesh.dispose();
       for (const mesh of lakeMeshes) mesh.dispose();
+      lip?.dispose();
+      spray?.dispose();
+      // The sea lets go of the table's texture first: it binds what it holds on its next draw.
+      seaPlugin.setSwash(null);
+      swash.dispose();
+      // The wet ground's cove goes with the table: none until a sea's next fill.
+      setWetCove(Number.NaN, 0, 0, 0);
       bump.dispose();
       if (lakeBump !== bump) lakeBump.dispose();
       bedTexture?.dispose();
@@ -1449,13 +1611,17 @@ export type Renderer = {
    */
   waterLifeSound(): WaterLifeSound;
   /**
-   * Whether this world has the sea's surf to hear (`surfSound.ts`). Fixed at
-   * the renderer's creation; false, `app.ts` builds no audio for it.
+   * Whether this world has the sea's surf to hear (`surfSound.ts`): whether it
+   * has a sea, on every tier, so a renderer swapped in on another tier says the
+   * same. Fixed at the renderer's creation; false, `app.ts` builds no audio for it.
    */
   readonly hasSea: boolean;
   /**
    * The surf as heard on the last `sync`: one reused record, read by
-   * `app.ts` after each `sync`. Silent, never null, without a sea.
+   * `app.ts` after each `sync`. Silent and frozen (`SILENT_SURF_SOUND`), never
+   * null, without a sea, before the swash's first fill and after any `sync`
+   * that did not step it (the player's branch with no local player), so no
+   * frame's plunges or backwash are voiced twice.
    */
   surfSound(): SurfSound;
   /**
@@ -1961,6 +2127,14 @@ function buildRenderer(
     // The wet plugin darkens below the level only where the water cannot
     // attenuate what stands in it by its own depth: everywhere but high's path.
     setWetLine(w, water?.high !== true);
+    // The moving wet line on the cove: the cove and the swash's table for
+    // every wet material (module-level, as the line is), once a frame from
+    // the table's first fill.
+    const edge = water?.edge;
+    if (edge === undefined || !edge.filled) return;
+    const cove = edge.cove;
+    setWetCove(cove.z0, cove.halfWidth, cove.toeD, cove.faceGrade);
+    setWetSwash(edge.table.data);
   };
 
   // The rain's cover map, on the tiers that draw one, over the terrain the
@@ -1975,6 +2149,12 @@ function buildRenderer(
     for (const mesh of clipmap?.meshes.slice(0, 2) ?? []) rainMap.register(mesh, "terrain");
     for (const mesh of water?.meshes ?? []) rainMap.register(mesh, "water");
     for (const mesh of water?.lakeMeshes ?? []) rainMap.register(mesh, "water");
+    // The swept curl on the high tier, as the rings it rises from.
+    const lip = water?.edge.lip ?? null;
+    if (lip !== null) {
+      rainMap.register(lip.fine, "water");
+      rainMap.register(lip.coarse, "water");
+    }
   }
   // The lake's reflection of its shore, by tier: on high a mirror drawn in
   // each frame the glass shows (`lakeMirror.ts`), on medium a panorama of the
@@ -2269,7 +2449,7 @@ function buildRenderer(
   const rainLamp: RainLamp = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, intensity: 0, angle: 0, r: 1, g: 1, b: 1 };
   const motes = createMotes(scene, tier);
   partOf(motes);
-  setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife });
+  setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife, spray: water?.edge.spray ?? null });
 
   const views = new EntityViews(scene);
   // The haunt's shades: soft figures in a pale mist on the post tiers (the
@@ -2351,6 +2531,28 @@ function buildRenderer(
     f.hollowDistance = wildlifeMatch.hollowDistance;
     waterLife.update(f);
     waterLifeStepped = true;
+  }
+
+  /** The surf as heard, one record refilled each frame (`surfSound.ts`), and where it is heard from. */
+  const surf: SurfSound = createSurfSound();
+  const surfListener = { x: 0, y: 0, z: 0 };
+  /** Whether this frame's `sync` stepped the surf: the sound of a frame that
+   * did not is silence, never the last stepped frame's plunges again. */
+  let surfStepped = false;
+  /**
+   * Fills the surf's record from the sea's edge as this frame's `water.update`
+   * left it, heard from the camera as this frame's branch has placed it, under
+   * the canopy the lens read (`lensCanopy`). After the lake's reflections, in
+   * both branches; nothing without a sea or before the swash's first fill.
+   */
+  function updateSurf(dt: number): void {
+    const edge = water?.edge;
+    if (edge === undefined || !edge.filled || waterLevel === undefined) return;
+    surfListener.x = camera.position.x;
+    surfListener.y = camera.position.y;
+    surfListener.z = camera.position.z;
+    fillSurfSound(surf, surfListener, edge.tracker, edge.table, edge.cove, waterLevel, edge.hs, lensCanopy, dt);
+    surfStepped = true;
   }
 
   /** The lake's calm, one record refilled each frame (`lakeCalmUnder`). */
@@ -2478,8 +2680,9 @@ function buildRenderer(
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
     skyReady,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
-      // Nothing has stepped the lake's life this frame yet.
+      // Nothing has stepped the lake's life or the surf this frame yet.
       waterLifeStepped = false;
+      surfStepped = false;
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
       // of materials x four property writes: cheap enough to do every frame.
       // Read once: `lighting.weather` is a getter that allocates a fresh copy
@@ -2670,6 +2873,7 @@ function buildRenderer(
         if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         updateWaterLife(state, frame.dt, oceanSeconds, weather, sky);
         updateLake(weather, sky, true);
+        updateSurf(frame.dt);
         jobs.run();
         return;
       }
@@ -2776,6 +2980,7 @@ function buildRenderer(
         if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         updateWaterLife(state, frame.dt, oceanSeconds, weather, sky);
         updateLake(weather, sky, true);
+        updateSurf(frame.dt);
       } else {
         // No eye this frame: the mirror is disarmed, never drawn from a stale view.
         updateLake(weather, sky, false);
@@ -2802,9 +3007,9 @@ function buildRenderer(
     waterLifeSound() {
       return waterLife !== null && waterLifeStepped ? waterLife.sound() : SILENT_WATER_LIFE;
     },
-    hasSea: false,
+    hasSea: water !== null,
     surfSound() {
-      return SILENT_SURF_SOUND;
+      return surfStepped ? surf : SILENT_SURF_SOUND;
     },
     stare() {
       return stareLens;
