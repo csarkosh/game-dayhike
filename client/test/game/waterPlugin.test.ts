@@ -58,7 +58,7 @@ describe("water plugin", () => {
     p.getSamplers(samplers);
     expect(samplers).toEqual([
       "waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope", "waterMirror", "waterPanorama", "waterSkyline",
-      "oceanSwash",
+      "oceanSwash", "oceanLipState", "oceanLipProfile",
     ]);
     const v = p.getCustomCode("vertex")!;
     expect(Object.keys(v).sort()).toEqual(["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_POSITION", "CUSTOM_VERTEX_UPDATE_WORLDPOS"]);
@@ -632,10 +632,10 @@ describe("the sea's waves in the water plugin", () => {
       return a;
     };
     expect(p.ocean).toBeNull();
-    expect(defines()).toEqual({ WATER: true, OCEAN: false });
+    expect(defines()).toEqual({ WATER: true, OCEAN: false, OCEAN_LIP: false });
     expect(attributes()).toEqual(["bedDepth"]);
     p.ocean = testOcean();
-    expect(defines()).toEqual({ WATER: true, OCEAN: true });
+    expect(defines()).toEqual({ WATER: true, OCEAN: true, OCEAN_LIP: false });
     expect(attributes()).toEqual(["bedDepth", "oceanMorph", "oceanCoarse"]);
     expect(dirty).toHaveBeenCalledTimes(1);
     // another ocean: the define stands, nothing to rebuild
@@ -1656,5 +1656,102 @@ describe("the lake's shore read on medium and low", () => {
     expect(at[at.length - 1]).toBeLessThan(COMPOSE.indexOf("finalRadianceScaled *= 1.0 - wSkin;"));
     // One substitution of the reflection: the line it replaced is gone.
     expect(COMPOSE.match(/finalRadianceScaled = mix\(/g)).toHaveLength(1);
+  });
+});
+
+describe("the plunging lip in the water plugin", () => {
+  it("sets OCEAN_LIP on the lip's material with an ocean alone, and never on the sea's", () => {
+    const lip = new WaterPlugin(new PBRMaterial("wL1", scene), WATER_ROWS.sea, { lip: true });
+    const sea = attachWater(new PBRMaterial("wL1s", scene), WATER_ROWS.sea);
+    const defines = (p: WaterPlugin): Record<string, unknown> => {
+      const d: Record<string, unknown> = {};
+      p.prepareDefines(d as never, scene, undefined as never);
+      return d;
+    };
+    expect([lip.lip, sea.lip]).toEqual([true, false]);
+    expect(defines(lip)).toEqual({ WATER: true, OCEAN: false, OCEAN_LIP: false });
+    lip.ocean = testOcean();
+    sea.ocean = testOcean();
+    expect(defines(lip)).toEqual({ WATER: true, OCEAN: true, OCEAN_LIP: true });
+    expect(defines(sea)).toEqual({ WATER: true, OCEAN: true, OCEAN_LIP: false });
+    // the lip draws with the sea's attributes: the strip supplies the rings' three
+    const attributes: string[] = [];
+    lip.getAttributes(attributes, scene, undefined as never);
+    expect(attributes).toEqual(["bedDepth", "oceanMorph", "oceanCoarse"]);
+  });
+
+  it("places the lip's vertices with its own code, after the sea's definitions, and shades them with the sea's", () => {
+    const lip = new WaterPlugin(new PBRMaterial("wL2", scene), WATER_ROWS.sea, { lip: true });
+    const sea = attachWater(new PBRMaterial("wL2s", scene), WATER_ROWS.sea);
+    lip.ocean = testOcean();
+    sea.ocean = testOcean();
+    const v = lip.getCustomCode("vertex")!;
+    const seaV = sea.getCustomCode("vertex")!;
+    expect(Object.keys(v).sort()).toEqual(Object.keys(seaV).sort());
+    expect(v.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx") + fx("ocean.vertex.fx") + fx("oceanSurface.fx") + fx("oceanSwash.fx") + fx("oceanLipShape.vertex.fx"));
+    expect(v.CUSTOM_VERTEX_UPDATE_POSITION).toBe(fx("oceanLip.vertex.fx"));
+    expect(v.CUSTOM_VERTEX_UPDATE_WORLDPOS).toBe(seaV.CUSTOM_VERTEX_UPDATE_WORLDPOS);
+    // the sea's own: the rings' displacement, no lip
+    expect(seaV.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx") + fx("ocean.vertex.fx") + fx("oceanSurface.fx") + fx("oceanSwash.fx"));
+    expect(seaV.CUSTOM_VERTEX_UPDATE_POSITION).toBe(fx("oceanDisplace.vertex.fx"));
+    expect(lip.getCustomCode("fragment")).toEqual(sea.getCustomCode("fragment"));
+    // the level, for the vertex stage where uniform buffers are not supported, on the lip alone
+    expect(lip.getUniforms().vertex).toContain("uniform float waterLevel;");
+    expect(sea.getUniforms().vertex).not.toContain("waterLevel");
+    expect(lip.getUniforms().ubo).toEqual(sea.getUniforms().ubo);
+    expect(lip.getUniforms().fragment).toBe(sea.getUniforms().fragment);
+  });
+
+  it("gates every line of the lip's GLSL on OCEAN_LIP and declares its samplers there, never in getUniforms", () => {
+    for (const name of ["oceanLipShape.vertex.fx", "oceanLip.vertex.fx"]) {
+      const lines = fx(name).trimEnd().split("\n");
+      expect(lines[0], name).toBe("#ifdef OCEAN_LIP");
+      expect(lines[lines.length - 1], name).toBe("#endif");
+      expect(lines.filter((line) => line.trimStart().startsWith("#")), name).toEqual(["#ifdef OCEAN_LIP", "#endif"]);
+      expect(fx(name).endsWith("#endif\n"), name).toBe(true);
+    }
+    expect(fx("oceanLipShape.vertex.fx")).toContain("uniform highp sampler2D oceanLipState;");
+    expect(fx("oceanLipShape.vertex.fx")).toContain("uniform highp sampler2D oceanLipProfile;");
+    const u = new WaterPlugin(new PBRMaterial("wL3", scene), WATER_ROWS.sea, { lip: true }).getUniforms();
+    expect(u.vertex).not.toContain("sampler");
+    expect(u.fragment).not.toContain("sampler");
+  });
+
+  it("binds the lip's two textures on its material once set, and the bed texture everywhere else and before", () => {
+    const lip = new WaterPlugin(new PBRMaterial("wL4", scene), WATER_ROWS.sea, { lip: true });
+    const sea = attachWater(new PBRMaterial("wL4s", scene), WATER_ROWS.sea);
+    const lake = attachWater(new PBRMaterial("wL4l", scene), WATER_ROWS.lowlandLake);
+    const state = new BaseTexture(scene);
+    const profile = new BaseTexture(scene);
+    const bound = (p: WaterPlugin): Record<string, unknown> => {
+      const textures: Record<string, unknown> = {};
+      const ubo = new Proxy(
+        {},
+        { get: (_t, key) => (key === "setTexture" ? (n: string, t: unknown) => void (textures[n] = t) : () => undefined) },
+      ) as unknown as UniformBuffer;
+      p.bindForSubMesh(ubo);
+      return textures;
+    };
+    for (const p of [lip, sea, lake]) p.bedTexture = bedTexture();
+    lip.ocean = testOcean();
+    sea.ocean = testOcean();
+    expect([bound(lip).oceanLipState, bound(lip).oceanLipProfile]).toEqual([lip.bedTexture, lip.bedTexture]);
+    lip.setLip(state, profile);
+    sea.setLip(state, profile);
+    const missing: string[] = [];
+    for (const [name, p] of [["the lip", lip], ["the sea", sea], ["a lake", lake]] as const) {
+      const declared: string[] = [];
+      p.getSamplers(declared);
+      const textures = bound(p);
+      for (const sampler of declared) if (!(sampler in textures)) missing.push(`${name}: ${sampler}`);
+    }
+    expect(missing).toEqual([]);
+    expect(bound(lip).oceanLipState).toBe(state);
+    expect(bound(lip).oceanLipProfile).toBe(profile);
+    // the sea's stages declare neither: it keeps the placeholder whatever it is handed
+    expect(bound(sea).oceanLipState).toBe(sea.bedTexture);
+    expect(bound(lake).oceanLipProfile).toBe(lake.bedTexture);
+    lip.setLip(null, null);
+    expect(bound(lip).oceanLipState).toBe(lip.bedTexture);
   });
 });

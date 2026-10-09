@@ -23,7 +23,7 @@
  */
 import { OCEAN_G } from "./oceanPhysics.js";
 import {
-  OCEAN_BREAK_FULL, atlasRead, coastRead, swellAtInto, swellBreakInto, swellScratch, type OceanField,
+  OCEAN_BREAK_FULL, atlasRead, coastRead, swellAt, swellAtInto, swellBreakInto, swellScratch, type OceanField,
 } from "./oceanWaves.js";
 import { OCEAN_D_MIN, OCEAN_D_STEP, OCEAN_ROW_BAY_PROFILE, OCEAN_ROW_COVE_PROFILE } from "./oceanTables.js";
 import type { SwashCove } from "./swashTable.js";
@@ -207,6 +207,41 @@ export function profileAt(profile: Float32Array, p: number, v: number, out: { ac
   const b = a + LIP_PROFILE_VERTS * 4;
   out.across = (profile[a] as number) + ((profile[b] as number) - (profile[a] as number)) * f;
   out.up = (profile[a + 1] as number) + ((profile[b + 1] as number) - (profile[a + 1] as number)) * f;
+}
+
+/** The vertices of the lip's leading edge, which the strip hands the sea's white water whole. */
+export const LIP_EDGE_FIRST = 14;
+export const LIP_EDGE_LAST = 18;
+/** The envelope (m) the leading edge hands the sea's fragment stage: so far past any depth's break that its foam is the roll's, whole and fresh. */
+export const LIP_FOAM_ENVELOPE = 1000;
+
+const shapeScratch = { across: 0, up: 0 };
+
+/**
+ * Where the strip's vertex stage puts vertex v of a slot, `slot` its four
+ * floats (crest d, progress, height, share), in the column at world z: the
+ * swell's part of oceanLipPlace (`shaders/oceanLipShape.vertex.fx`), line for
+ * line. The crest stands crest d metres from the coastline, read from the
+ * atlas's coast row as the shader reads it; the section runs from the crest
+ * along the swell's travel; the vertex is lifted from the swell's surface at
+ * its undisplaced point by the section's up, both scaled by the height times
+ * the share. So a vertex whose up is 0, the feet, lies on the rings' surface.
+ * The swell is swellAt's, as the finest ring draws it; the shader adds the
+ * wind sea there as the rings do.
+ */
+export function lipVertexAt(
+  field: OceanField, phases: Float32Array, profile: Float32Array, slot: ArrayLike<number>, z: number, v: number, level: number,
+  out: { x: number; y: number; z: number },
+): void {
+  const size = (slot[2] as number) * (slot[3] as number);
+  profileAt(profile, slot[1] as number, v, shapeScratch);
+  const [ux, uz] = field.travel;
+  const ax = coastRead(field.tables, z)[0] + (slot[0] as number) + ux * (shapeScratch.across * size);
+  const az = z + uz * (shapeScratch.across * size);
+  const s = swellAt(field, phases, ax, az);
+  out.x = ax + s.dx;
+  out.y = level + s.height + shapeScratch.up * size;
+  out.z = az + s.dz;
 }
 
 /** What the strip reads: LIP_SLOTS rows of LIP_COLUMNS texels, (crest d, progress, height, share); a free slot all zeros. */

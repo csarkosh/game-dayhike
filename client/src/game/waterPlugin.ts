@@ -44,6 +44,8 @@ import oceanFragmentDefs from "./shaders/ocean.fragment.fx?raw";
 import oceanSurface from "./shaders/oceanSurface.fx?raw";
 import oceanShade from "./shaders/oceanShade.fragment.fx?raw";
 import oceanSwash from "./shaders/oceanSwash.fx?raw";
+import oceanLipShape from "./shaders/oceanLipShape.vertex.fx?raw";
+import oceanLipPlace from "./shaders/oceanLip.vertex.fx?raw";
 import { WATER_F0, roughnessFor, type WaterRow } from "./waterShading.js";
 import { WIND_TIME_WRAP } from "./windParams.js";
 import { MIRROR_OFFSET_K } from "./mirrorView.js";
@@ -58,6 +60,9 @@ const PBR_DIELECTRIC_F0 = 0.04;
  * also gets the lake's ripples and the mirror's read after the water's; the
  * sea's never does, so its text is as it was before them. */
 const VERTEX_DEFINITIONS = vertexDefs + oceanVertexDefs + oceanSurface + oceanSwash;
+/** The plunging lip's strip (`oceanLip.ts`) adds its own after the sea's, and its own place for each vertex in
+ * the rings' displacement's stead: on its material alone, so the rings' text and every lake's is unchanged. */
+const LIP_VERTEX_DEFINITIONS = VERTEX_DEFINITIONS + oceanLipShape;
 const SEA_FRAGMENT_DEFINITIONS = fragmentDefs + oceanFragmentDefs + oceanSurface + oceanSwash + oceanShade;
 const LAKE_FRAGMENT_DEFINITIONS =
   fragmentDefs + lakeRipplesDefs + lakeMirrorDefs + oceanFragmentDefs + oceanSurface + oceanSwash + oceanShade;
@@ -216,8 +221,14 @@ export function waterMirrorPlaceholder(scene: Scene): BaseTexture {
   return made;
 }
 
+/** How a water material is made: `lip` for the high tier's plunging lip (`oceanLip.ts`), whose strip draws
+ * the sea's material with its vertices placed from the crests (`OCEAN_LIP`). */
+export type WaterPluginOptions = { lip?: boolean };
+
 export class WaterPlugin extends MaterialPluginBase {
   readonly row: WaterRow;
+  /** Whether this is the plunging lip's material: set at construction, never changed. */
+  readonly lip: boolean;
   /** The bed height square (the bed bake uploads it); null until the first bake. */
   bedTexture: BaseTexture | null = null;
   bedOrigin: [number, number] = [0, 0];
@@ -268,6 +279,9 @@ export class WaterPlugin extends MaterialPluginBase {
   private _panorama: BaseTexture | null = null;
   private _skyline: BaseTexture | null = null;
   private _ocean: OceanBinding | null = null;
+  /** The lip's crests and its baked profile (`setLip`): on the lip's material alone, null until set. */
+  private _lipState: BaseTexture | null = null;
+  private _lipProfile: BaseTexture | null = null;
   /** What the array samplers are bound to without an ocean. */
   private readonly _arrayPlaceholder: BaseTexture;
   /** The lake's mirror (`setMirror`): its target, or null where none is read. */
@@ -289,11 +303,12 @@ export class WaterPlugin extends MaterialPluginBase {
   /** The cove (`setCove`): z0, halfWidth, toeD, faceGrade; zeros until set. */
   readonly cove: [number, number, number, number] = [0, 0, 0, 0];
 
-  constructor(material: Material, row: WaterRow) {
+  constructor(material: Material, row: WaterRow, options: WaterPluginOptions = {}) {
     // 230: after the atmosphere's 200 and every look plugin's 205 to 220; the
     // water carries only this and the atmosphere, so the order is fixed.
-    super(material, "Water", 230, { WATER: false, OCEAN: false });
+    super(material, "Water", 230, { WATER: false, OCEAN: false, OCEAN_LIP: false });
     this.row = row;
+    this.lip = options.lip === true;
     this._arrayPlaceholder = oceanArrayPlaceholder(material.getScene());
     this._mirrorPlaceholder = waterMirrorPlaceholder(material.getScene());
     this._swashPlaceholder = oceanSwashPlaceholder(material.getScene());
@@ -357,6 +372,13 @@ export class WaterPlugin extends MaterialPluginBase {
     this.lakeBody[1] = level;
     this.lakeBody[2] = z;
     this.lakeBody[3] = radius;
+  }
+
+  /** The plunging lip's crests (`LipTracker`'s state) and its baked profile, as textures; null for none, where
+   * the placeholder is bound. Read by the lip's material alone: any other keeps the placeholder. */
+  setLip(state: BaseTexture | null, profile: BaseTexture | null): void {
+    this._lipState = state;
+    this._lipProfile = profile;
   }
 
   /** Per frame from the renderer's wind record: the game's 0..1 wind and its direction. */
@@ -448,6 +470,7 @@ export class WaterPlugin extends MaterialPluginBase {
   override prepareDefines(defines: MaterialDefines, _scene: Scene, _mesh: AbstractMesh): void {
     defines.WATER = true;
     defines.OCEAN = this._ocean !== null;
+    defines.OCEAN_LIP = this.lip && this._ocean !== null;
   }
 
   /**
@@ -475,7 +498,7 @@ export class WaterPlugin extends MaterialPluginBase {
   override getSamplers(samplers: string[]): void {
     samplers.push(
       "waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope", "waterMirror", "waterPanorama", "waterSkyline",
-      "oceanSwash",
+      "oceanSwash", "oceanLipState", "oceanLipProfile",
     );
   }
 
@@ -518,8 +541,13 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: OCEAN_COMPONENTS, size: 4, type: "vec4", arraySize: OCEAN_COMPONENT_COUNT },
       ],
       // The sea's waves read theirs in the vertex stage too, which takes this
-      // where uniform buffers are not supported.
-      vertex: [...OCEAN_UNIFORMS.map((name) => `uniform vec4 ${name};`), ...cove.map((name) => `uniform vec4 ${name};`), components].join("\n"),
+      // where uniform buffers are not supported, and the lip's strip the level.
+      vertex: [
+        ...OCEAN_UNIFORMS.map((name) => `uniform vec4 ${name};`),
+        ...cove.map((name) => `uniform vec4 ${name};`),
+        components,
+        ...(this.lip ? ["uniform float waterLevel;"] : []),
+      ].join("\n"),
       fragment: [
         "uniform float waterLevel;",
         "uniform vec3 waterKd;",
@@ -629,13 +657,19 @@ export class WaterPlugin extends MaterialPluginBase {
     // there, the placeholder without one and on a lake.
     if (ocean !== null) uniformBuffer.updateFloat4(OCEAN_COVE, this.cove[0], this.cove[1], this.cove[2], this.cove[3]);
     uniformBuffer.setTexture("oceanSwash", ocean !== null ? (this._swash ?? this._swashPlaceholder) : this._swashPlaceholder);
+    // The lip's crests and profile on its own material; elsewhere, and before
+    // they are set, the bed texture, a float texture as theirs are.
+    const lipState = (this.lip ? this._lipState : null) ?? this.bedTexture;
+    const lipProfile = (this.lip ? this._lipProfile : null) ?? this.bedTexture;
+    if (lipState !== null) uniformBuffer.setTexture("oceanLipState", lipState);
+    if (lipProfile !== null) uniformBuffer.setTexture("oceanLipProfile", lipProfile);
   }
 
   override getCustomCode(shaderType: string): { [pointName: string]: string } | null {
     if (shaderType === "vertex") {
       return {
-        CUSTOM_VERTEX_DEFINITIONS: VERTEX_DEFINITIONS,
-        CUSTOM_VERTEX_UPDATE_POSITION: oceanDisplace,
+        CUSTOM_VERTEX_DEFINITIONS: this.lip ? LIP_VERTEX_DEFINITIONS : VERTEX_DEFINITIONS,
+        CUSTOM_VERTEX_UPDATE_POSITION: this.lip ? oceanLipPlace : oceanDisplace,
         CUSTOM_VERTEX_UPDATE_WORLDPOS: vertexWorldPos,
       };
     }
