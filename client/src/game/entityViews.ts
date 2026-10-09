@@ -20,7 +20,7 @@ import {
   HOLLOW_ALBEDO, HOLLOW_EMISSIVE, HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_MATERIAL, HOLLOW_ROUGHNESS,
   HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED,
 } from "./hollowLook.js";
-import { AiState } from "../sim/types.js";
+import { AiState, Phase } from "../sim/types.js";
 import type { ShadeEntry } from "./shadeSilhouette.js";
 
 /**
@@ -87,7 +87,7 @@ export const SHADE_FADE_OUT_S = 2.6;
 export const SHADE_RISE_S = 2.4;
 export const SHADE_SETTLE_S = 3;
 export const LUNGE_RISE_S = 1.2;
-/** Seconds the Hollow stepping out at the crest waits before its rise: the scene's first two shots and the reveal's first beat, the camera on its spot by then (cutscene.ts SUMMIT_RISE_AT_S). */
+/** Seconds the Hollow stepping out at the crest, in the summit scene, waits before its rise: the scene's first two shots and the reveal's first beat, the camera on its spot by then (cutscene.ts SUMMIT_RISE_AT_S). The chase's fork Hollows step out in the same state and never wait. */
 export const SUMMIT_RISE_DELAY_S = 8.8;
 /**
  * The eyes: the real one's, dulled to this share of their glow once it has
@@ -313,20 +313,28 @@ export class EntityViews {
         // A shade, and the Hollow stepping out at the crest, come up out of the ground; a lunge quick; the rest stand at once.
         const shade = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
         const quick = enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike;
-        // The Hollow stepping out at the crest waits SUMMIT_RISE_DELAY_S before it rises: the scene's arrival and find come first.
-        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: shade ? 0 : 1, settle: shade && !quick ? 0 : 1, quick, delay: enemy.ai === AiState.Emerge ? SUMMIT_RISE_DELAY_S : 0 };
+        // The Hollow stepping out at the crest, in the summit scene, waits SUMMIT_RISE_DELAY_S before it
+        // rises: the scene's arrival and find come first. A fork's Hollow steps out in the same state in
+        // the chase, and rises at once: held, it would reach its player before it had drawn.
+        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: shade ? 0 : 1, settle: shade && !quick ? 0 : 1, quick, delay: enemy.ai === AiState.Emerge && state.phase === Phase.Scene ? SUMMIT_RISE_DELAY_S : 0 };
         this.fades.set(id, fade);
       }
       fade.ai = enemy.ai;
-      if (fade.delay > 0) fade.delay = Math.max(0, fade.delay - dt);
-      else if (fade.rise < 1 || fade.settle < 1) {
+      // The held wait spends the frame first; what is left of it begins the rise, so the rise is not a frame late.
+      let step = dt;
+      if (fade.delay > 0) {
+        const held = Math.min(fade.delay, step);
+        fade.delay -= held;
+        step -= held;
+      }
+      if (fade.rise < 1 || fade.settle < 1) {
         // A shade comes up out of the ground to its height over SHADE_RISE_S,
         // as if out of the mist, at half its opacity by then, and settles to
         // its whole over SHADE_SETTLE_S after.
-        if (dt > 0 && fade.rise < 1) fade.rise = Math.min(1, fade.rise + dt / (fade.quick ? LUNGE_RISE_S : SHADE_RISE_S));
-        else if (dt > 0) fade.settle = Math.min(1, fade.settle + dt / SHADE_SETTLE_S);
+        if (step > 0 && fade.rise < 1) fade.rise = Math.min(1, fade.rise + step / (fade.quick ? LUNGE_RISE_S : SHADE_RISE_S));
+        else if (step > 0) fade.settle = Math.min(1, fade.settle + step / SHADE_SETTLE_S);
         fade.level = fade.quick ? risen(fade.rise) : 0.5 * risen(fade.rise) + 0.5 * fade.settle;
-      } else if (dt > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + dt / SHADE_FADE_IN_S);
+      } else if (step > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + step / SHADE_FADE_IN_S);
       // A lunge resolves from the mist as it closes on the local eye; a shade
       // never does; a Hollow out in the open is the resolved form from the
       // start, the same black figure with the dulled eyes.
