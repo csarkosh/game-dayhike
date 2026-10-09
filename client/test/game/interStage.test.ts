@@ -533,12 +533,13 @@ describe("inter-stage variables of the sea's water material on WebGPU, its waves
     }
   });
 
-  it("binds the waves' textures within a stage's 16: two in the vertex stage, ten in the fragment stage on low, nine without the bump", () => {
+  it("binds the waves' textures within a stage's 16: three in the vertex stage, eleven in the fragment stage on low, ten without the bump", () => {
     for (const [tier, sea] of seas) {
       const { vertex, fragment } = stageBindings(sea.effect);
-      const textures = tier === "low" ? 10 : 9;
+      // the swash's table in both stages, beside the swell's atlas
+      const textures = tier === "low" ? 11 : 10;
       expect({ vertex: [vertex.textures, vertex.samplers], fragment: [fragment.textures, fragment.samplers] }, tier).toEqual({
-        vertex: [2, 2],
+        vertex: [3, 3],
         fragment: [textures, textures],
       });
       expect(fragment.textures).toBeLessThanOrEqual(WEBGPU_REQUIRED_LIMITS.maxSampledTexturesPerShaderStage as number);

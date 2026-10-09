@@ -24,7 +24,7 @@ import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder.js";
 import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
 import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage.js";
-import "../../src/sim/olympic.js";
+import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import {
   OCEAN_ROUGHNESS_ANCHOR, OCEAN_ROUGHNESS_CODE, attachWater, oceanArrayPlaceholder, type OceanBinding,
@@ -58,7 +58,11 @@ import {
   OCEAN_ROLL_WIDTH, SHELTER_CHOP, SHELTER_SWELL, SHELTER_WIDTH, coastRead, oceanFieldFor, swellAt, swellPhases,
   type OceanField,
 } from "../../src/game/oceanWaves.js";
-import { WATER_BASE_SPACING, WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/game/water.js";
+import { OCEAN_BOUND, WATER_BASE_SPACING, WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/game/water.js";
+import {
+  SWASH_COLUMNS, SWASH_SHEET_MIN, SWASH_STRIDE, SwashTable, sheetAt, sheetLiftAt, swashColumnAt, type SwashCove,
+} from "../../src/game/swashTable.js";
+import { SWASH_REACH_MAX_M } from "../../src/game/swashRunUp.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
 import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
 import { drawnEffect, webgpuProcessingEngine, type ProcessedEffect } from "./helpers/webgpuProcessing.js";
@@ -394,9 +398,12 @@ describe("the sea's shader constants and functions", () => {
   });
 
   it("reads every texture at a fixed level, in loops bounded by a constant and broken on the uniform count", () => {
-    for (const name of ["oceanSurface.fx", "oceanShade.fragment.fx", "oceanDisplace.vertex.fx"]) {
+    for (const name of ["oceanSurface.fx", "oceanShade.fragment.fx", "oceanDisplace.vertex.fx", "oceanSwash.fx"]) {
       expect(fx(name), name).not.toMatch(/\btexture2D\s*\(|\btexture\s*\(/);
     }
+    // The swash's one read, its table's texel, at level 0 too.
+    expect(fx("oceanSwash.fx").match(/\btexture\w*\(/g)).toHaveLength(1);
+    expect(fx("oceanSwash.fx")).toContain("  vec4 col = textureLod(oceanSwash, vec2(swashU(z), 0.5), 0.0);");
     const s = fx("oceanSurface.fx");
     expect(s).toContain("return textureLod(oceanAtlas, vec2((column + 0.5) / OCEAN_TABLE_SAMPLES, (row + 0.5) / OCEAN_ATLAS_ROWS), 0.0);");
     expect(s.match(/for \(int c = 0; c < 12; c\+\+\) \{/g)).toHaveLength(3);
@@ -751,7 +758,7 @@ describe("the sea's normal, waterline and roughness", () => {
       "float wOceanHeight = vOceanSwellA.z;",
       "vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);",
     ]) expect(l, line).toContain(line);
-    const depth = "float wDepth = waterBedDepth(vPositionW.xz) + wOceanHeight + wWind.y * wWindAmp;";
+    const depth = "float wDepth = waterBedDepth(vPositionW.xz) + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);";
     expect(at(l, depth)).toBeLessThan(at(l, "if (wDepth <= 0.0) discard;"));
   });
 
@@ -843,6 +850,158 @@ describe("the sea's normal, waterline and roughness", () => {
   }, timeLimit(30_000));
 });
 
+describe("the sea's swash in the shaders", () => {
+  /** A cove as the renderer describes it, its centre off the lattice of whole metres. */
+  const COVE: SwashCove = { z0: 37.25, halfWidth: 155, toeD: -24, faceGrade: 1 / 12, coastX: () => -412.5 };
+  /** A table with one sheet, in the cove's middle column: its front 9.5 m up the face, 0.25 m thick at the waterline. */
+  const oneSheet = (): Float32Array => {
+    const data = new Float32Array(SWASH_COLUMNS * SWASH_STRIDE);
+    data[256 * SWASH_STRIDE] = 9.5;
+    data[256 * SWASH_STRIDE + 1] = 0.25;
+    data[256 * SWASH_STRIDE + 2] = 9.5;
+    return data;
+  };
+
+  it("holds the TypeScript's values, under OCEAN alone", () => {
+    const w = fx("oceanSwash.fx");
+    expect(SWASH_COLUMNS).toBe(512);
+    expect(SWASH_SHEET_MIN).toBe(0.001);
+    pinned(w, "SWASH_COLUMNS", SWASH_COLUMNS);
+    pinned(w, "SWASH_HALF", SWASH_COLUMNS / 2);
+    pinned(w, "SWASH_SHEET_MIN", SWASH_SHEET_MIN);
+    expect(w.startsWith("#ifdef OCEAN\n")).toBe(true);
+    expect(w.endsWith("#endif\n")).toBe(true);
+    expect(w.split("\n").filter((line) => line.trimStart().startsWith("#"))).toEqual(["#ifdef OCEAN", "#endif"]);
+  });
+
+  it("holds the functions sheetAt and sheetLiftAt transcribe, whole, so no change to them passes unseen", () => {
+    const w = fx("oceanSwash.fx");
+    expect(w).toContain(
+      "float swashU(float z) {\n" +
+        "  return (clamp(z - oceanCove.x + SWASH_HALF, 0.0, SWASH_COLUMNS - 1.0) + 0.5) / SWASH_COLUMNS;\n" +
+        "}\n",
+    );
+    expect(w).toContain(
+      "float swashSheet(float d, float z) {\n" +
+        "  vec4 col = textureLod(oceanSwash, vec2(swashU(z), 0.5), 0.0);\n" +
+        "  float cover = step(oceanCove.z, d) * step(d, col.x);\n" +
+        "  return cover * col.y * clamp(1.0 - d / max(col.x, SWASH_SHEET_MIN), 0.0, 1.0);\n" +
+        "}\n",
+    );
+    expect(w).toContain(
+      "float swashLift(vec2 p, float h) {\n" +
+        "  float phaseDz;\n" +
+        "  float sheet = swashSheet(p.x - oceanCoastAt(p.y, phaseDz).x, p.y);\n" +
+        "  return max(0.0, sheet - h) * step(SWASH_SHEET_MIN, sheet);\n" +
+        "}\n",
+    );
+    // The profile's depth as oceanSwellSum blends it: the bay's and the cove's rows by the cove's weight.
+    expect(w).toContain(
+      "float swashDepth(vec2 p) {\n" +
+        "  float phaseDz;\n" +
+        "  vec4 coast = oceanCoastAt(p.y, phaseDz);\n" +
+        "  float column = (p.x - coast.x - OCEAN_D_MIN) / OCEAN_D_STEP;\n" +
+        "  float bay = oceanAtlasRead(OCEAN_ROW_BAY_PROFILE, column).x;\n" +
+        "  return bay + (oceanAtlasRead(OCEAN_ROW_COVE_PROFILE, column).x - bay) * coast.z;\n" +
+        "}\n",
+    );
+    const s = fx("oceanSurface.fx");
+    expect(s).toContain("  float d = p.x - coast.x;\n  float column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;");
+    expect(s).toContain("  float h = bay.x + (cove.x - bay.x) * coast.z;");
+  });
+
+  it("is spliced after the sea's surface in both stages, lifts the vertex after the waves, and gives the depth the same lift", () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const sea = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
+      sea.ocean = bindingFor(scene, "medium");
+      const vertex = sea.getCustomCode("vertex")!.CUSTOM_VERTEX_DEFINITIONS!;
+      const fragment = sea.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS!;
+      for (const defs of [vertex, fragment]) {
+        expect(at(defs, fx("oceanSwash.fx"))).toBe(at(defs, fx("oceanSurface.fx")) + fx("oceanSurface.fx").length);
+      }
+    } finally {
+      engine.dispose();
+    }
+    const d = fx("oceanDisplace.vertex.fx");
+    const lift = at(d, "positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ));");
+    expect(lift).toBeGreaterThan(at(d, "positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);"));
+    expect(d.match(/swashLift\(/g)).toHaveLength(1);
+    // The fragment stage takes the profile's depth from the foam the swell's envelope makes, its h.
+    const l = fx("waterLights.fragment.fx");
+    expect(at(l, "swashLift(vOceanXZ, wOceanFoam.w)")).toBeGreaterThan(at(l, "vec4 wOceanFoam = oceanFoamFromEnvelope("));
+    expect(at(l, "swashLift(vOceanXZ, wOceanFoam.w)")).toBeLessThan(at(l, "if (wDepth <= 0.0) discard;"));
+    expect(fx("oceanSurface.fx")).toContain("  return vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);");
+  });
+
+  it("reads the column nearest z, the cove's centre at column 256, held to the table, as the table names its columns", () => {
+    expect(swashColumnAt(37.25, 37.25)).toBe(256);
+    expect(swashColumnAt(37.25 + 0.4, 37.25)).toBe(256);
+    expect(swashColumnAt(37.25 + 0.6, 37.25)).toBe(257);
+    expect(swashColumnAt(37.25 - 255.75, 37.25)).toBe(0);
+    expect(swashColumnAt(37.25 - 1000, 37.25)).toBe(0);
+    expect(swashColumnAt(37.25 + 254.75, 37.25)).toBe(511);
+    expect(swashColumnAt(37.25 + 1000, 37.25)).toBe(511);
+    expect(swashColumnAt(Number.NaN, 37.25)).toBe(0);
+    // the table's own columns, on the world's cove: column c centred at z0 - 256 + c
+    const field = oceanFieldFor(SEED, 12);
+    const { z0, halfWidth } = coveFor(SEED);
+    const cove: SwashCove = {
+      z0, halfWidth, toeD: -COVE_TOE_DEPTH / COVE_FACE_GRADE, faceGrade: COVE_FACE_GRADE, coastX: (z) => coastRead(field.tables, z)[0],
+    };
+    const table = new SwashTable(field, cove);
+    for (const column of [0, 1, 255, 256, 257, 510, 511]) {
+      for (const off of [-0.25, 0.25]) {
+        const z = z0 - 256 + column + off;
+        expect(swashColumnAt(z, z0), `${column} ${off}`).toBe(column);
+        expect(table.columnOf(z), `${column} ${off}`).toBe(column);
+      }
+    }
+  });
+
+  it("gives the sheet its thickness at the waterline, thinning to nothing at the front, held seaward to the toe, none past either", () => {
+    const data = oneSheet();
+    const z = COVE.z0;
+    expect(sheetAt(0, z, data, COVE)).toBe(0.25);
+    expect(sheetAt(4.75, z, data, COVE)).toBe(0.125);
+    expect(sheetAt(9.5, z, data, COVE)).toBe(0);
+    expect(sheetAt(9.75, z, data, COVE)).toBe(0);
+    expect(sheetAt(-3, z, data, COVE)).toBe(0.25);
+    expect(sheetAt(-24, z, data, COVE)).toBe(0.25);
+    expect(sheetAt(-24.5, z, data, COVE)).toBe(0);
+    // the next column has no sheet, and nor has the cove's end or past it
+    expect(sheetAt(0, z + 1, data, COVE)).toBe(0);
+    expect(sheetAt(0, z - 1000, data, COVE)).toBe(0);
+    // a table with nothing in it is no sheet anywhere, never a number that is not one
+    const empty = new Float32Array(SWASH_COLUMNS * SWASH_STRIDE);
+    for (const d of [-30, -24, -1, 0, 1, 12]) expect(sheetAt(d, z, empty, COVE)).toBe(0);
+  });
+
+  it("lifts the sea to the sheet's top where it stands higher than the still sea, from nothing where the water is as deep as the sheet", () => {
+    const data = oneSheet();
+    const z = COVE.z0;
+    // at the waterline the ground is at the level: the sheet's thickness
+    expect(sheetLiftAt(0, z, 0, data, COVE)).toBe(0.25);
+    // halfway up, the ground 0.5 m above the level under a 0.125 m sheet
+    expect(sheetLiftAt(4.75, z, -0.5, data, COVE)).toBe(0.625);
+    // 3 m seaward on the 1:12 face the water is 0.25 m deep: the sheet adds nothing
+    expect(sheetLiftAt(-3, z, 0.25, data, COVE)).toBe(0);
+    // 1.5 m seaward, 0.125 m deep: half the sheet stands over the sea
+    expect(sheetLiftAt(-1.5, z, 0.125, data, COVE)).toBe(0.125);
+    // no sheet, no lift, however high the ground
+    expect(sheetLiftAt(9.75, z, -0.8125, data, COVE)).toBe(0);
+    expect(sheetLiftAt(0, z + 1, -1, data, COVE)).toBe(0);
+  });
+
+  it("keeps the farthest reach inside the rings' wet bounds", () => {
+    expect(SWASH_REACH_MAX_M).toBe(12);
+    expect(OCEAN_BOUND).toBe(12);
+    // a ring's box reaches OCEAN_BOUND past its last wet vertex, at or seaward of the waterline
+    expect(OCEAN_BOUND - SWASH_REACH_MAX_M).toBeGreaterThanOrEqual(0);
+  });
+});
+
 describe("a lake's shaders", () => {
   it("process to the text they had before the sea moved, the lights' as the lake's ripples made it, the rest but for the lake's mirror", async () => {
     // Each hook through Babylon's preprocessor with a lake's gates, hashed as it was at 9edee7e; the
@@ -882,10 +1041,11 @@ describe("a lake's shaders", () => {
 
 describe("the sea's shaders", () => {
   it("process to the text they had before the lake's mirror: its every line vanishes under the sea's gates", async () => {
-    // Each fragment hook through Babylon's preprocessor with the sea's gates, hashed as it was at 378b040.
+    // Each fragment hook through Babylon's preprocessor with the sea's gates, hashed as it was at 378b040;
+    // the lights' hashed again once the sea's depth took the swash's lift.
     const before: Record<string, string> = {
       "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
-      "waterLights.fragment.fx": "990c8d146406b1ba91da2c448d1f4c48199a776ae7e90794721d7b7215f8317c",
+      "waterLights.fragment.fx": "6adcc97a71d01fac33a00c1e47658d9a086f3f7d80b5e538c7e5c75ad20bdb2a",
       "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
     };
     for (const [name, hash] of Object.entries(before)) {
@@ -930,6 +1090,10 @@ describe("the water material's stages, compiled", () => {
         expect(displaced).toBeGreaterThan(at(v, "vOceanXZ = positionUpdated.xz;"));
         expect(at(v, "vOceanXZ = positionUpdated.xz;")).toBeGreaterThan(at(v, "positionUpdated.xz -= oceanMorph * oceanCoarse;"));
         expect(displaced).toBeLessThan(at(v, "vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);"));
+        // The swash's lift after the waves, before worldPos, so the sheet reaches the position and the depth.
+        const lifted = at(v, "positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ));");
+        expect(lifted).toBeGreaterThan(displaced);
+        expect(lifted).toBeLessThan(at(v, "vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);"));
         // The swell's normal and the variance it leaves, then the rain's rings, the horizon clamp and
         // Fresnel; Babylon's roughness line, rewritten, after them all.
         const order = [
@@ -970,6 +1134,10 @@ describe("the water material's stages, compiled", () => {
         // And the fragment stage reads the sea's textures at a fixed level only, so no read of theirs can
         // stand in non-uniform control flow.
         expect(fragment).toMatch(/textureSampleLevel\(\s*oceanAtlasTexture/);
+        // The swash's table, read at a fixed level in both stages.
+        expect(vertex).toMatch(/textureSampleLevel\(\s*oceanSwashTexture/);
+        expect(fragment).toMatch(/textureSampleLevel\(\s*oceanSwashTexture/);
+        expect(vertex).toMatch(/\boceanCove : vec4<f32>,/);
         expect(fragment).not.toMatch(/textureSample(?:Bias|Grad|Compare)?\(\s*ocean/);
         expect(fragment).toContain("oceanFoamFromEnvelope");
         expect(fragment).toContain("oceanSwellPixelKeep");
@@ -998,7 +1166,9 @@ describe("the water material's stages, compiled", () => {
       expect(f).toContain("if (waterPawCover > 0.0) {\nwPaw = lakePaw(");
       expect(f).toContain("lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain,");
       expect(f).not.toContain("wOcean");
+      expect(f).not.toContain("swash");
       expect(lake.effect._vertexSourceCode).not.toContain("oceanDisplace");
+      expect(lake.effect._vertexSourceCode).not.toContain("swash");
       translated(lake.effect, lake.defines);
     } finally {
       lake.dispose();

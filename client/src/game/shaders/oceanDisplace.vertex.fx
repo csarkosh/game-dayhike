@@ -16,4 +16,7 @@ vec2 oceanVertexEnv;
 positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);
 vOceanSwellA = oceanVertexSwell;
 vOceanSwellB = vec4(oceanVertexEnv, length(oceanVertexEnv), 0.0);
+// Up the cove's face the swash's sheet lifts the sea onto the pebbles
+// (oceanSwash.fx), from where the waves were evaluated.
+positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ));
 #endif

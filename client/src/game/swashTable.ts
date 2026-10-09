@@ -300,3 +300,38 @@ export class SwashTable {
     for (let col = 0; col < SWASH_COLUMNS; col++) this.data[col * SWASH_STRIDE + 3] = SWASH_AGE_MAX;
   }
 }
+
+/** The sheet's floor (m), thinner being no sheet, and the least front its
+ * taper divides by: `SWASH_SHEET_MIN` in oceanSwash.fx. */
+export const SWASH_SHEET_MIN = 0.001;
+
+/** The column `oceanSwash.fx` reads at world z: the row's nearest texel, the
+ * cove's centre z0 at column SWASH_COLUMNS / 2, held to the table; 0 for a z
+ * that is not a number, as `columnOf` has it. */
+export function swashColumnAt(z: number, z0: number): number {
+  const c = Math.min(Math.max(z - z0 + SWASH_COLUMNS / 2, 0), SWASH_COLUMNS - 1);
+  return Number.isNaN(c) ? 0 : Math.floor(c + 0.5);
+}
+
+/**
+ * The sheet's thickness (m) at d, metres up the face from the still
+ * waterline (negative seaward), and world z, read from the table's data as
+ * `swashSheet` in oceanSwash.fx reads its texture: the column's thickness
+ * at the waterline, thinning to nothing at its front, held to it seaward,
+ * none past the front or seaward of the face's toe.
+ */
+export function sheetAt(d: number, z: number, data: Float32Array, cove: SwashCove): number {
+  const o = swashColumnAt(z, cove.z0) * SWASH_STRIDE;
+  const front = data[o] as number;
+  const thickness = data[o + 1] as number;
+  const cover = (d >= cove.toeD ? 1 : 0) * (front >= d ? 1 : 0);
+  return cover * thickness * Math.min(1, Math.max(0, 1 - d / Math.max(front, SWASH_SHEET_MIN)));
+}
+
+/** How far the sheet lifts the sea over ground `depth` metres below the
+ * level (negative above it), as `swashLift` in oceanSwash.fx does: to the
+ * sheet's top where it stands higher than the still sea, else nothing. */
+export function sheetLiftAt(d: number, z: number, depth: number, data: Float32Array, cove: SwashCove): number {
+  const sheet = sheetAt(d, z, data, cove);
+  return sheet >= SWASH_SHEET_MIN ? Math.max(0, sheet - depth) : 0;
+}

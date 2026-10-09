@@ -17,7 +17,8 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { ReflectionProbe } from "@babylonjs/core/Probes/reflectionProbe.js";
 import {
-  OCEAN_ROUGHNESS_ANCHOR, WaterPlugin, attachWater, oceanArrayPlaceholder, waterMirrorPlaceholder, type OceanBinding,
+  OCEAN_ROUGHNESS_ANCHOR, WaterPlugin, attachWater, oceanArrayPlaceholder, oceanSwashPlaceholder, waterMirrorPlaceholder,
+  type OceanBinding,
 } from "../../src/game/waterPlugin.js";
 import { MIRROR_DEPTH_FULL, MIRROR_OFFSET_K } from "../../src/game/mirrorView.js";
 import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../../src/game/lakePanorama.js";
@@ -55,7 +56,10 @@ describe("water plugin", () => {
     expect(attributes).toEqual(["bedDepth"]);
     const samplers: string[] = [];
     p.getSamplers(samplers);
-    expect(samplers).toEqual(["waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope", "waterMirror", "waterPanorama", "waterSkyline"]);
+    expect(samplers).toEqual([
+      "waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope", "waterMirror", "waterPanorama", "waterSkyline",
+      "oceanSwash",
+    ]);
     const v = p.getCustomCode("vertex")!;
     expect(Object.keys(v).sort()).toEqual(["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_POSITION", "CUSTOM_VERTEX_UPDATE_WORLDPOS"]);
     const f = p.getCustomCode("fragment")!;
@@ -76,15 +80,17 @@ describe("water plugin", () => {
     // a lake's (no ocean) carries the lake's ripples and the mirror's read after the water's; the sea's never does
     expect(p.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS).toBe(
       fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") + fx("lakeMirror.fragment.fx") +
-        fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanShade.fragment.fx"),
+        fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanSwash.fx") + fx("oceanShade.fragment.fx"),
     );
     p.ocean = testOcean();
     const f = p.getCustomCode("fragment")!;
-    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("water.fragment.fx") + fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanShade.fragment.fx"));
+    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(
+      fx("water.fragment.fx") + fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanSwash.fx") + fx("oceanShade.fragment.fx"),
+    );
     expect(f.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toBe(fx("waterLights.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION).toBe(fx("waterCompose.fragment.fx"));
     const v = p.getCustomCode("vertex")!;
-    expect(v.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx") + fx("ocean.vertex.fx") + fx("oceanSurface.fx"));
+    expect(v.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx") + fx("ocean.vertex.fx") + fx("oceanSurface.fx") + fx("oceanSwash.fx"));
     expect(v.CUSTOM_VERTEX_UPDATE_POSITION).toBe(fx("oceanDisplace.vertex.fx"));
     expect(v.CUSTOM_VERTEX_UPDATE_WORLDPOS).toBe(fx("waterWorldPos.vertex.fx"));
     // the water's files end their last line, so the sea's never join it
@@ -451,9 +457,9 @@ describe("the lake's ripples in the water plugin", () => {
     expect(lake.pawCover).toBe(1);
     const sea = attachWater(new PBRMaterial("wL2", scene), WATER_ROWS.sea);
     sea.ocean = testOcean();
-    // the sea's uniforms are as they were before the lake's ripples
+    // the sea's uniforms carry none of the lake's ripples': the water's, the sea's ten, its cove and its components
     const seaU = sea.getUniforms();
-    expect(seaU.ubo).toHaveLength(24);
+    expect(seaU.ubo).toHaveLength(25);
     const seaNames = seaU.ubo.map((e) => e.name);
     expect(seaNames.slice(seaNames.indexOf("waterRain"), seaNames.indexOf("waterRain") + 2)).toEqual(["waterRain", "oceanPhase0"]);
     expect(seaU.fragment).not.toContain("waterLakeTime");
@@ -742,6 +748,112 @@ describe("the sea's waves in the water plugin", () => {
     expect(seen["a lake"]!.oceanWindDisp).toBe(oceanArrayPlaceholder(scene));
     expect(seen["a lake"]!.oceanWindSlope).toBe(oceanArrayPlaceholder(scene));
     expect(seen["the waves gone"]!.oceanWindSlope).toBe(oceanArrayPlaceholder(scene));
+    // the swash's table: the scene's float placeholder until one is set, on the sea and on a lake alike
+    for (const state of ["a lake", "the sea", "the high tier's sea", "the waves gone"]) {
+      expect(seen[state]!.oceanSwash, state).toBe(oceanSwashPlaceholder(scene));
+    }
+  });
+
+  it("declares the cove on the sea alone, after the ten and before the components, and the swash's sampler in the .fx", () => {
+    // a lake's uniforms are as they were: no cove on either path
+    const lake = attachWater(new PBRMaterial("wS1", scene), WATER_ROWS.lowlandLake).getUniforms();
+    expect(lake.ubo.map((e) => e.name)).not.toContain("oceanCove");
+    expect(lake.ubo).toHaveLength(38);
+    expect(lake.fragment).not.toContain("oceanCove");
+    expect(lake.vertex).not.toContain("oceanCove");
+    const p = attachWater(new PBRMaterial("wS2", scene), WATER_ROWS.sea);
+    p.ocean = testOcean();
+    const u = p.getUniforms();
+    expect(u.ubo.map((e) => e.name).slice(-12, -2)).toEqual(OCEAN_UNIFORMS);
+    expect(u.ubo[u.ubo.length - 2]).toEqual({ name: "oceanCove", size: 4, type: "vec4" });
+    expect(u.ubo[u.ubo.length - 1]).toEqual({ name: "oceanK", size: 4, type: "vec4", arraySize: 12 });
+    expect(u.ubo).toHaveLength(25);
+    // both stages read it, the vertex stage's lift and the fragment stage's depth
+    expect(u.fragment).toContain("uniform vec4 oceanWindPivot;\nuniform vec4 oceanCove;\nuniform vec4 oceanK[12];");
+    expect(u.vertex).toContain("uniform vec4 oceanWindPivot;\nuniform vec4 oceanCove;\nuniform vec4 oceanK[12];");
+    // the table's sampler in both stages' .fx, under the sea's gate, never in getUniforms
+    expect(fx("ocean.vertex.fx")).toContain("uniform highp sampler2D oceanSwash;");
+    expect(fx("ocean.fragment.fx")).toContain("uniform highp sampler2D oceanSwash;");
+    expect(u.fragment).not.toContain("sampler");
+    expect(u.vertex).not.toContain("sampler");
+  });
+
+  it("binds the cove and the swash's table on the sea, the float placeholder without a table and on a lake", () => {
+    const p = attachWater(new PBRMaterial("wS3", scene), WATER_ROWS.sea);
+    p.bedTexture = bedTexture();
+    const record = (): { quads: Record<string, number[]>; textures: Record<string, unknown> } => {
+      const quads: Record<string, number[]> = {};
+      const textures: Record<string, unknown> = {};
+      const ubo = new Proxy(
+        {},
+        {
+          get: (_t, key) => {
+            if (key === "updateFloat4") return (n: string, a: number, b: number, c: number, d: number) => void (quads[n] = [a, b, c, d]);
+            if (key === "setTexture") return (n: string, t: unknown) => void (textures[n] = t);
+            return () => undefined;
+          },
+        },
+      ) as unknown as UniformBuffer;
+      p.bindForSubMesh(ubo);
+      return { quads, textures };
+    };
+    const placeholder = oceanSwashPlaceholder(scene);
+    // a lake declares no cove, so none is written; its swash sampler is the placeholder
+    const lake = record();
+    expect(lake.quads.oceanCove).toBeUndefined();
+    expect(lake.textures.oceanSwash).toBe(placeholder);
+    // the sea before its table and cove: zeros and the placeholder, no sheet
+    p.ocean = testOcean();
+    const unset = record();
+    expect(unset.quads.oceanCove).toEqual([0, 0, 0, 0]);
+    expect(unset.textures.oceanSwash).toBe(placeholder);
+    // the table and the cove as the renderer sets them
+    const table = RawTexture.CreateRGBATexture(
+      new Float32Array(2048), 512, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
+    );
+    p.setSwash(table);
+    p.setCove(37, 155, -24, 0.25);
+    const bound = record();
+    expect(bound.quads.oceanCove).toEqual([37, 155, -24, 0.25]);
+    expect(bound.textures.oceanSwash).toBe(table);
+    // a cove with a number that is not finite is no cove
+    p.setCove(37, Number.NaN, -24, 0.25);
+    expect(record().quads.oceanCove).toEqual([0, 0, 0, 0]);
+    p.setCove(37, 155, -24, Number.POSITIVE_INFINITY);
+    expect(record().quads.oceanCove).toEqual([0, 0, 0, 0]);
+    // the table taken away: the placeholder again
+    p.setSwash(null);
+    expect(record().textures.oceanSwash).toBe(placeholder);
+    // the waves gone with a table still set: a lake's draw, the placeholder and no cove
+    p.setSwash(table);
+    p.ocean = null;
+    const gone = record();
+    expect(gone.quads.oceanCove).toBeUndefined();
+    expect(gone.textures.oceanSwash).toBe(placeholder);
+    table.dispose();
+  });
+
+  it("makes the swash's placeholder once a scene, a zero 1×1 RGBA32F texel read nearest, and again once disposed", () => {
+    const own = new NullEngine();
+    try {
+      const s = new Scene(own);
+      const made = oceanSwashPlaceholder(s);
+      expect(oceanSwashPlaceholder(s)).toBe(made);
+      expect(made.getSize()).toEqual({ width: 1, height: 1 });
+      const internal = made.getInternalTexture()!;
+      expect(internal.type).toBe(Constants.TEXTURETYPE_FLOAT);
+      expect(internal.format).toBe(Constants.TEXTUREFORMAT_RGBA);
+      expect(made.samplingMode).toBe(Texture.NEAREST_SAMPLINGMODE);
+      expect(Array.from((internal as unknown as { _bufferView: Float32Array })._bufferView)).toEqual([0, 0, 0, 0]);
+      // another scene has its own
+      expect(oceanSwashPlaceholder(new Scene(own))).not.toBe(made);
+      made.dispose();
+      const again = oceanSwashPlaceholder(s);
+      expect(again).not.toBe(made);
+      expect(again.getInternalTexture()).not.toBeNull();
+    } finally {
+      own.dispose();
+    }
   });
 
   it("leaves a lake's shader as the sea's code found it and the sea's main as the lake's ripples found it, compiled as WebGPU compiles them", async () => {
@@ -800,26 +912,33 @@ describe("the sea's waves in the water plugin", () => {
     expect(lake.vertex).toBe(before.vertex);
     expect(lake.fragment).toBe(before.fragment);
     expect(lake.vertex).not.toContain("vOceanXZ");
+    // nor any of the swash's: no sampler, no cove, no lift
+    for (const name of ["oceanSwash", "oceanCove", "swashLift"]) {
+      expect(lake.vertex, name).not.toContain(name);
+      expect(lake.fragment, name).not.toContain(name);
+    }
     // and the sea's is not: the comparison can see the ocean's code
     const sea = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true);
     expect(sea.vertex).toContain("vOceanXZ = positionUpdated.xz;");
     expect(sea.fragment).toContain("vOceanXZ");
-    // The sea's whole stages, byte for byte the text they compiled to before the lake's ripples
-    // (3e1942c): neither the ripples' definitions nor their uniforms reach the sea.
+    expect(sea.vertex).toContain("positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ));");
+    expect(sea.fragment).toContain("swashLift(vOceanXZ, wOceanFoam.w);");
+    // The sea's whole stages, byte for byte, as the swash's sheet left them: neither the lake's
+    // ripples' definitions nor their uniforms reach the sea.
     const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
-    expect(sha(sea.fragment)).toBe("a37171918cc2c9c3ef0b09433cc8de9060149e9448a574d0d900071aad0baf4d");
-    expect(sha(sea.vertex)).toBe("f6751544362772d1905d86fa394cc5074afe09d0cfa3c1315cea90da806a3763");
+    expect(sha(sea.fragment)).toBe("08fec9dca70fe18a3e379633cd19df3e1906e31e33fa7f6239f18a2a9718715c");
+    expect(sha(sea.vertex)).toBe("849a373b3d2d72c77ba8bfcdc02cb6cdfee5d46f041d5d9e75fa208794b74a9f");
     // and a material drawn as a lake, then given its ocean, rebuilds its uniforms to the sea's
     const turned = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true, true);
-    expect(sha(turned.fragment)).toBe("a37171918cc2c9c3ef0b09433cc8de9060149e9448a574d0d900071aad0baf4d");
-    expect(sha(turned.vertex)).toBe("f6751544362772d1905d86fa394cc5074afe09d0cfa3c1315cea90da806a3763");
+    expect(sha(turned.fragment)).toBe("08fec9dca70fe18a3e379633cd19df3e1906e31e33fa7f6239f18a2a9718715c");
+    expect(sha(turned.vertex)).toBe("849a373b3d2d72c77ba8bfcdc02cb6cdfee5d46f041d5d9e75fa208794b74a9f");
     // and one drawn as a sea, then taken off its ocean, rebuilds them to the lake's
     const back = await compiled((m) => new WaterPlugin(m, WATER_ROWS.lowlandLake), false, true);
     expect(back.fragment).toBe(lake.fragment);
     expect(back.vertex).toBe(lake.vertex);
-    // The sea's main is the text it compiled to before the lake's ripples, and reads none of them.
+    // The sea's main, as the swash's sheet left it, reads none of the lake's ripples.
     const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
-    expect(sha(main(sea.fragment))).toBe("91382f0cd2700903c0d9aae19a4e5d99e7d3382db06b0d2bc8cdf732dc8d553d");
+    expect(sha(main(sea.fragment))).toBe("6866300001819e56fb64a4b34b04d2472b37f8fd98c9f9c44fedb34297d79ff5");
     for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover", "waterMirror", "waterCalmShare", "wMirror"]) {
       expect(main(sea.fragment), name).not.toContain(name);
     }
@@ -873,11 +992,11 @@ describe("the lake's mirror in the water plugin", () => {
     expect(u.fragment).toContain("uniform vec4 waterMirrorVP[4];");
     expect(u.fragment).not.toContain("sampler");
     expect(u.vertex).not.toContain("waterMirror");
-    // the sea declares none of them: its uniforms are as they were before the lake's
+    // the sea declares none of them: the water's, the sea's ten, its cove and its components
     const sea = attachWater(new PBRMaterial("wM1s", scene), WATER_ROWS.sea);
     sea.ocean = testOcean();
     const seaU = sea.getUniforms();
-    expect(seaU.ubo).toHaveLength(24);
+    expect(seaU.ubo).toHaveLength(25);
     expect(seaU.ubo.map((e) => e.name).filter((name) => /waterMirror|waterCalmShare/.test(name))).toEqual([]);
     expect(seaU.fragment).not.toMatch(/waterMirror|waterCalmShare/);
   });
@@ -1146,7 +1265,8 @@ describe("the lake's shore on medium and low in the water plugin", () => {
       const p = attachWater(new PBRMaterial("wShore1", new Scene(own)), WATER_ROWS.lowlandLake);
       const samplers: string[] = [];
       p.getSamplers(samplers);
-      expect(samplers.slice(-2)).toEqual(["waterPanorama", "waterSkyline"]);
+      const mirror = samplers.indexOf("waterMirror");
+      expect(samplers.slice(mirror + 1, mirror + 3)).toEqual(["waterPanorama", "waterSkyline"]);
       // beside the mirror's, under the same gate: declared on a lake alone
       expect(fx("water.fragment.fx")).toContain(
         "uniform sampler2D waterMirror;\n// The lake's shore on medium and low (lakeMirror.fragment.fx), on a lake\n" +
@@ -1180,11 +1300,11 @@ describe("the lake's shore on medium and low in the water plugin", () => {
         "uniform float waterPanoramaOn;", "uniform float waterSkylineOn;",
       ]) expect(u.fragment).toContain(line);
       expect(u.vertex).not.toContain("waterLake");
-      // the sea declares none of them: its uniforms are as they were before the lake's
+      // the sea declares none of them: the water's, the sea's ten, its cove and its components
       const sea = attachWater(new PBRMaterial("wShore2Sea", s), WATER_ROWS.sea);
       sea.ocean = testOcean();
       const seaU = sea.getUniforms();
-      expect(seaU.ubo).toHaveLength(24);
+      expect(seaU.ubo).toHaveLength(25);
       for (const name of SHORE_UNIFORMS) {
         expect(seaU.ubo.map((e) => e.name), name).not.toContain(name);
         expect(seaU.fragment, name).not.toContain(name);
