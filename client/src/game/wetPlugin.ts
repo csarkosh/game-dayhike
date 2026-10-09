@@ -326,9 +326,9 @@ export function wetLookAt(
   const damp = smoothstep(WET_SOAKED_S, WET_DRY_S / 3, age) - smoothstep(WET_DRY_S / 3, WET_DRY_S, age);
   const fresh = Math.min(1, Math.max(0, 1 - age / WET_SPECKLE_S));
   const above = 1 - wetBelowLine(y, level);
-  const wet = Math.max(wetBelowLine(y, line) * inside, soaked * band * inside);
-  out.wet = wet;
-  out.damp = damp * band * inside * (1 - wet);
+  const still = wetBelowLine(y, line) * inside;
+  out.wet = Math.max(still, soaked * band * inside);
+  out.damp = damp * band * inside * (1 - still);
   out.speckle = WET_SPECKLE * fresh * above * band * inside;
   return out;
 }

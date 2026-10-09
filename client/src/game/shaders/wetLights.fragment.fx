@@ -1,12 +1,12 @@
 float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);
-float wetW = wetBelow(vPositionW.y, wetLine) * wetIn;
+float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;
 // Inside the cove the swash's table wets the face as well (wetShore): soaked
 // up to the still line or the column's reach, whichever is higher, then damp
-// and speckled. Outside it the three are 0 and the still line's look is as
-// it was, to the bit.
+// where the still line leaves the ground dry, and speckled. Outside it the
+// three are 0 and the still line's look is as it was, to the bit.
 vec3 wetCoveW = wetShore(vPositionW.xz, vPositionW.y) * wetIn;
-wetW = max(wetW, wetCoveW.x);
-float wetDamp = wetCoveW.y * (1.0 - wetW);
+float wetW = max(wetStill, wetCoveW.x);
+float wetDamp = wetCoveW.y * (1.0 - wetStill);
 surfaceAlbedo *= mix(1.0, WET_ALBEDO, wetW) * mix(1.0, WET_DAMP_ALBEDO, wetDamp);
 surfaceAlbedo = mix(surfaceAlbedo, vec3(1.0), wetCoveW.z * wetSpeckle(vPositionW.xz, length(vPositionW - vEyePosition.xyz)));
 float wetKdMean = (wetKd.r + wetKd.g + wetKd.b) / 3.0;

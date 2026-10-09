@@ -69,7 +69,7 @@ describe("wet plugin", () => {
     expect(d).toContain("return 1.0 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, y);");
     expect(d).toContain("return 1.0 - smoothstep(radius + 1.0, radius + 3.0, length(xz - centre));");
     expect(fx("wetLights.fragment.fx")).toContain("float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);");
-    expect(fx("wetLights.fragment.fx")).toContain("float wetW = wetBelow(vPositionW.y, wetLine) * wetIn;");
+    expect(fx("wetLights.fragment.fx")).toContain("float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;");
     expect(fx("wetLights.fragment.fx")).toContain("surfaceAlbedo *= mix(1.0, WET_ALBEDO, wetW) * mix(1.0, WET_DAMP_ALBEDO, wetDamp);");
     // the darkening below the level, per channel, held to the footprint, gated on wetAttenuate
     expect(fx("wetLights.fragment.fx")).toContain("vec3 wetResidual = min(vec3(1.0), exp(-2.0 * (wetKd - vec3(wetKdMean)) * max(0.0, wetLevel - vPositionW.y) * wetIn));");
@@ -262,9 +262,9 @@ describe("the weather's wetting (wetWeather.fragment.fx)", () => {
       expect(source).toContain("uniform vec4 wetCove;");
       expect(source).toContain("uniform vec4 wetSwash[256];");
       // the swash's look after the still line's weight, before the albedo takes them
-      expect(source.indexOf("vec3 wetCoveW = wetShore(vPositionW.xz, vPositionW.y) * wetIn;")).toBeGreaterThan(
-        source.indexOf("float wetW = wetBelow(vPositionW.y, wetLine) * wetIn;"),
-      );
+      const still = source.indexOf("float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;");
+      expect(still).toBeGreaterThan(-1);
+      expect(source.indexOf("vec3 wetCoveW = wetShore(vPositionW.xz, vPositionW.y) * wetIn;")).toBeGreaterThan(still);
     } finally {
       s.dispose();
       e.dispose();
@@ -370,14 +370,14 @@ describe("the swash's wet ground (wet.fragment.fx, wetLights.fragment.fx)", () =
         "}\n",
     );
     expect(fx("wetLights.fragment.fx")).toContain(
-      "float wetW = wetBelow(vPositionW.y, wetLine) * wetIn;\n" +
+      "float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;\n" +
         "// Inside the cove the swash's table wets the face as well (wetShore): soaked\n" +
         "// up to the still line or the column's reach, whichever is higher, then damp\n" +
-        "// and speckled. Outside it the three are 0 and the still line's look is as\n" +
-        "// it was, to the bit.\n" +
+        "// where the still line leaves the ground dry, and speckled. Outside it the\n" +
+        "// three are 0 and the still line's look is as it was, to the bit.\n" +
         "vec3 wetCoveW = wetShore(vPositionW.xz, vPositionW.y) * wetIn;\n" +
-        "wetW = max(wetW, wetCoveW.x);\n" +
-        "float wetDamp = wetCoveW.y * (1.0 - wetW);\n" +
+        "float wetW = max(wetStill, wetCoveW.x);\n" +
+        "float wetDamp = wetCoveW.y * (1.0 - wetStill);\n" +
         "surfaceAlbedo *= mix(1.0, WET_ALBEDO, wetW) * mix(1.0, WET_DAMP_ALBEDO, wetDamp);\n" +
         "surfaceAlbedo = mix(surfaceAlbedo, vec3(1.0), wetCoveW.z * wetSpeckle(vPositionW.xz, length(vPositionW - vEyePosition.xyz)));\n",
     );
@@ -533,9 +533,20 @@ describe("the swash's wet ground (wet.fragment.fx, wetLights.fragment.fx)", () =
     expect(at(0.5)).toEqual({ wet: 1, damp: 0, speckle: 0.19 });
     const five = at(5);
     expect(five.wet).toBeCloseTo(0.864816, 6);
-    expect(five.damp).toBeCloseTo(0.018275, 6);
+    expect(five.damp).toBeCloseTo(0.135184, 6);
     expect(five.speckle).toBeCloseTo(0.1, 12);
-    expect(wetAlbedoFactor(out)).toBeCloseTo(0.478473, 6);
+    expect(wetAlbedoFactor(out)).toBeCloseTo(0.461599, 6);
+    // from soaked to damp the albedo rises steadily from 0.4 to 0.7, never past it and never back
+    let albedo = 0.4;
+    for (let age = 0.5; age <= 20; age += 0.5) {
+      at(age);
+      const next = wetAlbedoFactor(out);
+      expect(next, `${age}`).toBeGreaterThanOrEqual(albedo);
+      expect(next, `${age}`).toBeLessThanOrEqual(0.7);
+      albedo = next;
+    }
+    // 15 s on: damp 0.836, the albedo 0.676 on its way to 0.7, where it had swung to 0.713 and back
+    expect([at(15).damp, wetAlbedoFactor(out)].map((v) => v.toFixed(6))).toEqual(["0.836477", "0.675564"]);
     expect(at(10).speckle).toBe(0);
     expect(at(20)).toEqual({ wet: 0, damp: 1, speckle: 0 });
     expect(wetAlbedoFactor(out)).toBe(0.7);
