@@ -61,6 +61,20 @@ describe("swashRunUp", () => {
     expect(thicknessAt(0, 0, 1, 0)).toBe(0);
   });
 
+  it("gives 0, never NaN or Infinity, for a value that is not a finite number", () => {
+    expect(frontAt(1, Number.POSITIVE_INFINITY, 1)).toBe(0);
+    expect(frontAt(0, Number.POSITIVE_INFINITY, 1)).toBe(0);
+    expect(frontAt(0, 9.6, Number.POSITIVE_INFINITY)).toBe(0);
+    expect(thicknessAt(0, 6, 1, Number.NaN)).toBe(0);
+    expect(thicknessAt(0, 6, Number.NaN, 0)).toBe(0);
+    expect(thicknessAt(0, Number.POSITIVE_INFINITY, 1, 0)).toBe(0);
+    expect(tUpOf(9.6, 0)).toBe(0);
+    expect(tUpOf(Number.NaN, 1)).toBe(0);
+    expect(runUpAlongFace(1, 0.8, 0)).toBe(0);
+    expect(runUpAlongFace(1, 0.8, Number.NaN)).toBe(0);
+    expect(runUpVertical(Number.NaN, 0.8)).toBe(0);
+  });
+
   it("overlaps two sheets as the greater front and the greater thickness", () => {
     const out = { front: -1, thick: -1 };
     overlap(5, 0.1, 3, 0.2, out);

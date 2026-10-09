@@ -26,17 +26,22 @@ export const SWASH_REACH_MAX_M = 12;
 
 /** Hunt's rule: the vertical run-up (m) is the Iribarren number times the bore's height. */
 export function runUpVertical(boreHeight: number, iribarren: number): number {
-  return iribarren * boreHeight;
+  const rise = iribarren * boreHeight;
+  return Number.isFinite(rise) ? rise : 0;
 }
 
 /** The run-up along the face (m): the vertical run-up over the face's grade. */
 export function runUpAlongFace(boreHeight: number, iribarren: number, faceGrade: number): number {
-  return runUpVertical(boreHeight, iribarren) / faceGrade;
+  if (!(Number.isFinite(faceGrade) && faceGrade > 0)) return 0;
+  const along = runUpVertical(boreHeight, iribarren) / faceGrade;
+  return Number.isFinite(along) ? along : 0;
 }
 
 /** The climb's time (s): the front's mean speed is half the bore's √(g·h). */
 export function tUpOf(reach: number, boreHeight: number): number {
-  return (2 * reach) / Math.sqrt(SWASH_G * boreHeight);
+  if (!(Number.isFinite(reach) && Number.isFinite(boreHeight) && boreHeight > 0)) return 0;
+  const tUp = (2 * reach) / Math.sqrt(SWASH_G * boreHeight);
+  return Number.isFinite(tUp) ? tUp : 0;
 }
 
 /**
@@ -47,8 +52,9 @@ export function tUpOf(reach: number, boreHeight: number): number {
  * or no height.
  */
 export function frontAt(t: number, reach: number, boreHeight: number): number {
-  if (!(reach > 0) || !(boreHeight > 0)) return 0;
+  if (!(Number.isFinite(reach) && reach > 0) || !(Number.isFinite(boreHeight) && boreHeight > 0)) return 0;
   const tUp = tUpOf(reach, boreHeight);
+  if (!(tUp > 0)) return 0;
   const tDown = SWASH_DOWN_RATIO * tUp;
   if (!(t >= 0) || t > tUp + tDown) return 0;
   if (t <= tUp) {
@@ -63,11 +69,13 @@ export function frontAt(t: number, reach: number, boreHeight: number): number {
  * The sheet's thickness (m) at `s` metres up the face when its front is at
  * `front`: SWASH_THICK_K·boreHeight·(1 − s/front) between the waterline and
  * the front, 0 outside, thinned by (1 − SWASH_SINK·retreating), `retreating`
- * the share of the retreat run (0 while climbing, 1 at its end).
+ * the share of the retreat run (0 while climbing, 1 at its end). Any value
+ * that is not a finite number gives 0, never NaN.
  */
 export function thicknessAt(s: number, front: number, boreHeight: number, retreating: number): number {
-  if (!(front > 0) || !(s >= 0) || s >= front) return 0;
-  const sink = 1 - SWASH_SINK * Math.min(Math.max(retreating, 0), 1);
+  if (!(Number.isFinite(front) && front > 0) || !(Number.isFinite(boreHeight) && boreHeight > 0)) return 0;
+  if (!(s >= 0) || s >= front || Number.isNaN(retreating)) return 0;
+  const sink = 1 - SWASH_SINK * (retreating > 0 ? Math.min(retreating, 1) : 0);
   return SWASH_THICK_K * boreHeight * (1 - s / front) * sink;
 }
 
