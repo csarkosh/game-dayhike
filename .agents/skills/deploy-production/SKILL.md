@@ -24,7 +24,10 @@ thing standing between a mistake and production.**
 
 The site is `games.csarko.sh` with the game under `/dayhike`; `game.csarko.sh` is a
 second custom domain on the same Firebase site and serves only the redirect page that
-`tools/deploy/client.mjs` writes to the site root. Both domains are Terraform-managed
+`tools/deploy/client.mjs` writes to the site root. The root itself, `games.csarko.sh/`,
+is a 301 to the list of games at `https://csarko.sh/games` (`firebase.json` `redirects`,
+2026-10-08); every other path outside `/dayhike` gets the redirect page, which sends
+`game.csarko.sh` links on to the game and anything else to that list. Both domains are Terraform-managed
 (`module.gcp_hosting` has `this` and `legacy`; `module.aws_dns` and `module.aws_dns_legacy`).
 
 Adding a custom domain is a two-step apply: the certificate cannot issue until the CNAME

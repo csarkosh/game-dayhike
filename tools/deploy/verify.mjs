@@ -17,6 +17,7 @@ import { validateLatest } from './lib/desktopRelease.mjs';
 import { filmUrls, findChunkName, findChunkNames, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
 import { bundleMapProblems } from './lib/bundle.mjs';
 import { reach } from './lib/reach.mjs';
+import { GAMES_INDEX } from './lib/redirectPage.mjs';
 
 const siteUrl = tfOutput('site_url');
 const signalingUrl = tfOutput('signaling_url');
@@ -55,13 +56,21 @@ async function verify() {
   const deep = await reach(`${siteUrl}/game/3f2504e0-4f89-41d3-9a0c-0305e82c3301`);
   check(deep.status === 200, 'a /game/<uuid> link resolves', `got ${deep.status}`);
 
-  // 2b. The old host and the new root both serve the redirect page, which
-  // carries the new base URL in its script and its fallback link.
-  for (const target of [`https://${legacyHost}/game/3f2504e0-4f89-41d3-9a0c-0305e82c3301?cmd=x`, `${siteOrigin}/`]) {
+  // 2b. The new root 301s to the list of games on csarko.sh (firebase.json).
+  const root = await reach(`${siteOrigin}/`, { redirect: 'manual' });
+  check(
+    root.status === 301 && root.headers.get('location') === GAMES_INDEX,
+    `${siteOrigin}/ redirects to ${GAMES_INDEX}`,
+    `status ${root.status}, location ${root.headers.get('location')}`,
+  );
+
+  // 2c. An old-host link and a stray path on the new host both serve the
+  // redirect page, which carries the game's base URL and the list of games.
+  for (const target of [`https://${legacyHost}/game/3f2504e0-4f89-41d3-9a0c-0305e82c3301?cmd=x`, `${siteOrigin}/not-a-page`]) {
     const res = await reach(target, { redirect: 'manual' });
     const body = res.status === 200 ? await res.text() : '';
     check(
-      res.status === 200 && body.includes(`${siteUrl}/`) && body.includes('function redirectTarget'),
+      res.status === 200 && body.includes(`"base":"${siteUrl}"`) && body.includes(GAMES_INDEX) && body.includes('function redirectTarget'),
       `${target} serves the redirect page`,
       `status ${res.status}${body ? '' : ', empty body'}`,
     );
