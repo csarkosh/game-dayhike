@@ -3,7 +3,11 @@ import {
   SILENT_SURF_SOUND, SURF_ENVELOPE_S, SURF_EVENTS, SURF_RANGE_M, createSurfSound, fillSurfSound, type SurfSound,
 } from "../../src/game/surfSound.js";
 import { LIP_COLUMNS, LIP_SLOTS } from "../../src/game/oceanBreaker.js";
-import type { SwashCove } from "../../src/game/swashTable.js";
+import { SwashTable, type SwashCove } from "../../src/game/swashTable.js";
+import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
+import { coastRead, oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
+import { seedFromToken } from "../../src/game/seed.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A cove 300 m wide about z = 100, its waterline on x = 500 + 0.1·z, the toe 24 m seaward on a 1:12 face. */
 const COVE: SwashCove = { z0: 100, halfWidth: 150, toeD: -24, faceGrade: 1 / 12, coastX: (z) => 500 + 0.1 * z };
@@ -31,6 +35,9 @@ const progress = (t: ReturnType<typeof fakeTracker>, column: number, slot: numbe
 };
 const front = (t: ReturnType<typeof fakeTable>, column: number, m: number) => {
   t.data[column * 4] = m;
+};
+const thick = (t: ReturnType<typeof fakeTable>, column: number, m: number) => {
+  t.data[column * 4 + 1] = m;
 };
 
 /** 180 m from the toe line's end at z = 250, 60 m inland. */
@@ -97,7 +104,7 @@ describe("surfSound", () => {
     tracker.plunges.count = 1;
     tracker.plunges.z[0] = 120;
     const table = fakeTable();
-    for (let c = 106; c <= 406; c++) front(table, c, 3);
+    for (let c = 106; c <= 406; c++) thick(table, c, 0.3);
     fillSurfSound(s, NEAR, tracker, table, COVE, LEVEL, 2, 0.5, 1);
     const held = [s.nearX, s.nearY, s.nearZ, s.inland, s.canopy, s.hs];
     expect([held, s.present, s.plunges.count]).toEqual([[501, 0.25, 250, 60, 0.5, 2], true, 1]);
@@ -124,31 +131,40 @@ describe("surfSound", () => {
     expect(s.present).toBe(false);
   });
 
-  it("the envelope: the share of the cove's columns with a front above 0 or a crest in (0, 1], its running mean over 4 s", () => {
+  it("the envelope: the cove's mean sheet thickness over 0.3 · Hs, held to 1, its running mean over 4 s", () => {
     const tracker = fakeTracker();
     const table = fakeTable();
-    // The cove's columns are 106 to 406: 301 of them.
-    for (let c = 106; c <= 205; c++) front(table, c, 3); // 100 fronts
-    for (let c = 196; c <= 245; c++) progress(tracker, c, 0, 0.5); // 40 more, 10 already surfing
-    for (let c = 246; c <= 255; c++) progress(tracker, c, 1, 1); // 10 more, in the second slot, at progress 1
-    progress(tracker, 300, 0, 0); // not yet steepening
-    progress(tracker, 301, 1, 1.25); // past its collapse
-    front(table, 50, 3); // outside the cove
-    front(table, 450, 3);
+    // The cove's columns are 106 to 406: 301 of them. Under Hs 2 a full sheet is 0.6 m.
+    for (let c = 106; c <= 205; c++) thick(table, c, 0.6); // 100 full
+    for (let c = 206; c <= 255; c++) thick(table, c, 0.3); // 50 half
+    for (let c = 256; c <= 355; c++) front(table, c, 3); // fronts with no sheet count for nothing
+    for (let c = 196; c <= 245; c++) progress(tracker, c, 0, 0.5); // nor do crests on the face
+    thick(table, 50, 0.6); // outside the cove
+    thick(table, 450, 0.6);
     const s = createSurfSound();
-    // One fill of 4 s: 150/301 of the way times 1 − 1/e.
+    // One fill of 4 s: (60 + 15) / 301 / 0.6 of the way times 1 − 1/e.
     fillSurfSound(s, FAR, tracker, table, COVE, LEVEL, 2, 0, 4);
-    expect(s.envelope).toBeCloseTo(0.315010, 6);
+    expect(s.envelope).toBeCloseTo(0.262509, 6);
     // A step of no time, or not a number, leaves it.
     fillSurfSound(s, FAR, tracker, table, COVE, LEVEL, 2, 0, 0);
     fillSurfSound(s, FAR, tracker, table, COVE, LEVEL, 2, 0, Number.NaN);
-    expect(s.envelope).toBeCloseTo(0.315010, 6);
+    expect(s.envelope).toBeCloseTo(0.262509, 6);
+    // Sheets thicker than 0.3 · Hs hold the share to 1; a height that is not a number or not above 0 gives none.
+    const full = createSurfSound();
+    for (let c = 106; c <= 406; c++) thick(table, c, 2);
+    fillSurfSound(full, FAR, tracker, table, COVE, LEVEL, 2, 0, 4);
+    expect(full.envelope).toBeCloseTo(0.632121, 6);
+    for (const hs of [0, -1, Number.NaN, Infinity]) {
+      const none = createSurfSound();
+      fillSurfSound(none, FAR, tracker, table, COVE, LEVEL, hs, 0, 4);
+      expect(none.envelope).toBe(0);
+    }
   });
 
-  it("the envelope rises 63 % of the way over 4 s of a whole cove surfing, and falls by 1/e over 4 s of none", () => {
+  it("the envelope rises 63 % of the way over 4 s of a whole cove's full sheet, and falls by 1/e over 4 s of none", () => {
     const tracker = fakeTracker();
     const table = fakeTable();
-    for (let c = 0; c < 512; c++) front(table, c, 2);
+    for (let c = 0; c < 512; c++) thick(table, c, 1);
     const s = createSurfSound();
     for (let f = 0; f < 240; f++) fillSurfSound(s, NEAR, tracker, table, COVE, LEVEL, 2, 0, 1 / 60);
     expect(s.envelope).toBeCloseTo(0.632121, 6);
@@ -156,6 +172,34 @@ describe("surfSound", () => {
     for (let f = 0; f < 240; f++) fillSurfSound(s, NEAR, tracker, table, COVE, LEVEL, 2, 0, 1 / 60);
     expect(s.envelope).toBeCloseTo(0.232544, 6);
   });
+
+  it("the envelope moves with the sets: room-3's swash over 10 minutes swings it by more than 0.3", () => {
+    const seed = seedFromToken("room-3");
+    const field = oceanFieldFor(seed);
+    const { z0, halfWidth } = coveFor(seed);
+    const cove: SwashCove = {
+      z0, halfWidth, toeD: -COVE_TOE_DEPTH / COVE_FACE_GRADE, faceGrade: COVE_FACE_GRADE,
+      coastX: (z) => coastRead(field.tables, z)[0],
+    };
+    const table = new SwashTable(field, cove);
+    const tracker = fakeTracker();
+    const phases = new Float32Array(12);
+    const s = createSurfSound();
+    const step = 1 / 20;
+    let low = Infinity;
+    let high = -Infinity;
+    for (let i = 0; i * step < 600; i++) {
+      const t = i * step;
+      table.update(t, swellPhases(field, t, phases));
+      fillSurfSound(s, { x: cove.coastX(z0) + 40, y: 5, z: z0 }, tracker, table, cove, 0, field.hs, 0, step);
+      if (t < 60) continue;
+      low = Math.min(low, s.envelope);
+      high = Math.max(high, s.envelope);
+    }
+    expect(low).toBeGreaterThan(0);
+    expect(high).toBeLessThanOrEqual(1);
+    expect(high - low).toBeGreaterThan(0.3);
+  }, timeLimit(60_000));
 
   it("canopy and the swell's height pass through, held to their ranges, and a value that is not a number is 0", () => {
     const s = createSurfSound();

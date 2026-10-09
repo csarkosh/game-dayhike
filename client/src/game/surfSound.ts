@@ -1,17 +1,18 @@
 /**
  * The surf as heard: one record a frame, refilled in place, that the audio
  * shell (`surfAudio.ts`) voices. What the sea does is decided elsewhere: the
- * breaker's tracker (`oceanBreaker.ts`) gives the plunges and each crest's
- * progress, the swash table (`swashTable.ts`) the fronts on the face and the
- * backwash; both are functions of the shared clock and the seed, so every
+ * breaker's tracker (`oceanBreaker.ts`) gives the plunges, the swash table
+ * (`swashTable.ts`) the sheets on the face and the backwash; both are functions of the shared clock and the seed, so every
  * peer hears a thud on the same wave. Babylon-free (on BABYLON_FREE_FILES).
  *
- * - The set envelope: the share of the cove's columns that are surfing this
- *   frame, a column surfing when either of its tracker's slots holds a crest
- *   with progress in (0, 1] or its table column holds a front above 0, the
- *   cove's columns being those from `columnOf(z0 − halfWidth)` to
- *   `columnOf(z0 + halfWidth)`. The record keeps its running mean over
- *   `SURF_ENVELOPE_S`, the exponential one: each fill moves it toward this
+ * - The set envelope: the cove's mean sheet thickness this frame, the
+ *   table's thickness at the waterline (`data[c · 4 + 1]`) averaged over the
+ *   cove's columns, those from `columnOf(z0 − halfWidth)` to
+ *   `columnOf(z0 + halfWidth)`, over a full sheet `SWASH_THICK_K · Hs` and
+ *   held to [0, 1], none for a height that is not above 0: a sheet lives
+ *   longer than a period, so nearly every column holds one at any moment,
+ *   but the sets' sheets are the thicker. The record keeps its running mean
+ *   over `SURF_ENVELOPE_S`, the exponential one: each fill moves it toward this
  *   frame's share by `1 − exp(−dt / SURF_ENVELOPE_S)`, so a share held for
  *   `SURF_ENVELOPE_S` brings it 63 % of the way. A step of no time, or of a
  *   time that is not a number, leaves it.
@@ -26,7 +27,8 @@
  *
  * Positions are in Babylon's left-handed frame; the shell mirrors z.
  */
-import { LIP_COLUMNS, LIP_SLOTS, type LipTracker } from "./oceanBreaker.js";
+import type { LipTracker } from "./oceanBreaker.js";
+import { SWASH_THICK_K } from "./swashRunUp.js";
 import { SWASH_COLUMNS, SWASH_STRIDE, type SwashCove, type SwashTable } from "./swashTable.js";
 
 /** The seconds the set envelope's running mean spans. */
@@ -41,7 +43,7 @@ export type SurfSound = {
   present: boolean;
   /** The listener's nearest point on the face's toe line (Babylon's frame). */
   nearX: number; nearY: number; nearZ: number;
-  /** The running mean, over `SURF_ENVELOPE_S`, of the share of the cove's columns surfing: 0 to 1. */
+  /** The running mean, over `SURF_ENVELOPE_S`, of the cove's mean sheet thickness over SWASH_THICK_K · Hs: 0 to 1. */
   envelope: number;
   /** The listener's signed coast distance (m): positive inland of the waterline. */
   inland: number;
@@ -96,15 +98,15 @@ function clamp01(v: number): number {
 }
 
 /**
- * Refills `out` from the tracker's plunges and progress, the table's fronts
- * and backwash, the listener (Babylon's frame) and the sea: the cove, its
+ * Refills `out` from the tracker's plunges, the table's sheets and
+ * backwash, the listener (Babylon's frame) and the sea: the cove, its
  * level, the swell's height and the listener's canopy cover. `dt` is the
  * frame's seconds, for the envelope. Allocates nothing.
  */
 export function fillSurfSound(
   out: SurfSound,
   listener: { x: number; y: number; z: number },
-  tracker: Pick<LipTracker, "state" | "plunges">,
+  tracker: Pick<LipTracker, "plunges">,
   table: Pick<SwashTable, "data" | "columnOf" | "backwash">,
   cove: SwashCove,
   level: number,
@@ -112,20 +114,13 @@ export function fillSurfSound(
   canopy: number,
   dt: number,
 ): void {
-  // The share of the cove's columns surfing this frame.
+  // The cove's mean sheet thickness this frame, as a share of a full sheet under this swell.
   const c0 = table.columnOf(cove.z0 - cove.halfWidth);
   const c1 = table.columnOf(cove.z0 + cove.halfWidth);
-  const lip = tracker.state.data;
-  let surfing = 0;
-  for (let c = c0; c <= c1; c++) {
-    let on = table.data[c * SWASH_STRIDE]! > 0;
-    for (let s = 0; s < LIP_SLOTS && !on; s++) {
-      const p = lip[(s * LIP_COLUMNS + c) * 4 + 1]!;
-      on = p > 0 && p <= 1;
-    }
-    if (on) surfing++;
-  }
-  const share = c1 >= c0 ? surfing / (c1 - c0 + 1) : 0;
+  let thickness = 0;
+  for (let c = c0; c <= c1; c++) thickness += table.data[c * SWASH_STRIDE + 1]!;
+  const full = SWASH_THICK_K * (hs > 0 && Number.isFinite(hs) ? hs : 0);
+  const share = c1 >= c0 && full > 0 ? clamp01(thickness / (c1 - c0 + 1) / full) : 0;
   if (dt > 0 && Number.isFinite(dt)) out.envelope += (share - out.envelope) * (1 - Math.exp(-dt / SURF_ENVELOPE_S));
 
   // A listener or a level that is not a number leaves the rest of the record as it was, absent and listing nothing.
