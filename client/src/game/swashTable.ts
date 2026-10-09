@@ -55,7 +55,8 @@ export const SWASH_BORES_PER_COLUMN = 4;
 export const SWASH_BACKWASH_MIN_M = 2;
 /** A front within this (m) of the wet reach wets the line again: frames sample a front's turn a little short of it. */
 export const SWASH_REWET_M = 0.1;
-/** A step longer than this (s), a stalled page or a jump of the clock, finds no crest: the watch starts again. */
+/** A step longer than this (s), a stalled page or a jump of the clock, finds no crest: the watch starts again.
+ * A step back of up to this is a hold; a longer one back starts the table dry. */
 export const SWASH_STEP_MAX_S = 1;
 
 export type SwashCove = { z0: number; halfWidth: number; toeD: number; faceGrade: number; coastX: (z: number) => number };
@@ -182,8 +183,12 @@ export class SwashTable {
     this.backwash.count = 0;
     if (!Number.isFinite(seconds)) return;
     const before = this.seconds;
-    if (seconds < before) this.reset();
-    else if (seconds === before) return;
+    // A client's tick reconciled to the host's steps back a tick or two: hold
+    // until the seconds pass the latest counted. A longer jump back starts again.
+    if (seconds < before) {
+      if (before - seconds <= SWASH_STEP_MAX_S) return;
+      this.reset();
+    } else if (seconds === before) return;
     const step = seconds - this.seconds;
     const watch = this.watching && step <= SWASH_STEP_MAX_S;
     const n = this.n;
@@ -288,7 +293,7 @@ export class SwashTable {
     this.watching = true;
   }
 
-  /** Back to no sheet anywhere and nothing watched: the first update and a clock that runs backwards start here. */
+  /** Back to no sheet anywhere and nothing watched: the first update and a clock run back past SWASH_STEP_MAX_S start here. */
   private reset(): void {
     this.seconds = Number.NaN;
     this.watching = false;

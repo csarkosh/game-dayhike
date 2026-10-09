@@ -310,6 +310,51 @@ describe("the lip tracker", () => {
     expect(tracker.plunges.count).toBe(0);
   }, timeLimit(60_000));
 
+  it("holds through a reconciled tick's step back: two ticks back frees no slot live then and drops no plunge, room-5 over 90 s", () => {
+    const seed = LOBBY_SEEDS[5] as number;
+    const field = oceanFieldFor(seed);
+    const cove = coveOf(seed, field);
+    const phases = new Float32Array(12);
+    const kept = new LipTracker(field, cove);
+    const held = new LipTracker(field, cove);
+    const step = 1 / 60;
+    const keptPlunges: number[][] = [];
+    const heldPlunges: number[][] = [];
+    const take = (tracker: LipTracker, t: number, into: number[][]): void => {
+      for (let e = 0; e < tracker.plunges.count; e++) {
+        into.push([t, tracker.plunges.d[e] as number, tracker.plunges.z[e] as number, tracker.plunges.height[e] as number]);
+      }
+    };
+    // The forward tracker's state two frames back, to set the step back against.
+    const twoBack = new Float32Array(kept.state.data.length);
+    const oneBack = new Float32Array(kept.state.data.length);
+    let stepsBack = 0;
+    let liveThen = 0;
+    for (let i = 0; i < 5400; i++) {
+      const t = i * step;
+      twoBack.set(oneBack);
+      oneBack.set(kept.state.data);
+      kept.update(t, swellPhases(field, t, phases), 0);
+      take(kept, t, keptPlunges);
+      if (i >= 2 && i % 97 === 0) {
+        // the reconciled tick: two back, then on again
+        const back = (i - 2) * step;
+        held.update(back, swellPhases(field, back, phases), 0);
+        expect(held.plunges.count).toBe(0);
+        expect(Array.from(held.state.data)).toEqual(Array.from(twoBack));
+        for (let k = 1; k < twoBack.length; k += 4) if ((twoBack[k] as number) > 0) liveThen++;
+        stepsBack++;
+      }
+      held.update(t, swellPhases(field, t, phases), 0);
+      take(held, t, heldPlunges);
+      expect(Array.from(held.state.data)).toEqual(Array.from(kept.state.data));
+    }
+    expect(stepsBack).toBe(55);
+    expect(liveThen).toBeGreaterThan(0);
+    expect(keptPlunges.length).toBeGreaterThan(50);
+    expect(heldPlunges).toEqual(keptPlunges);
+  }, timeLimit(60_000));
+
   it("reports one plunge a crest: none twice in one stretch within half a period, room-3's and a short swell's", () => {
     const phases = new Float32Array(12);
     const runOf = (field: OceanField): { count: number; tooClose: number } => {

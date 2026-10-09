@@ -274,6 +274,57 @@ describe("SwashTable", () => {
     for (let c = 0; c < SWASH_COLUMNS; c++) expect(column(table, c).slice(2)).toEqual([0, 600]);
   }, timeLimit(60_000));
 
+  it("holds through a reconciled tick's step back: a 2-tick step changes nothing and loses no crest, a 5 s jump back starts again", () => {
+    const seed5 = seedFromToken("room-5");
+    const field5 = oceanFieldFor(seed5);
+    const { z0, halfWidth } = coveFor(seed5);
+    const cove5: SwashCove = {
+      z0, halfWidth, toeD: -COVE_TOE_DEPTH / COVE_FACE_GRADE, faceGrade: COVE_FACE_GRADE,
+      coastX: (z) => coastRead(field5.tables, z)[0],
+    };
+    const held = new SwashTable(field5, cove5);
+    const kept = new SwashTable(field5, cove5);
+    const phases = new Float32Array(12);
+    run(held, field5, 90);
+    run(kept, field5, 90);
+    const last = 5399 * STEP;
+    const wet = (table: SwashTable): number => {
+      let n = 0;
+      for (let c = 0; c < SWASH_COLUMNS; c++) if ((table.data[c * SWASH_STRIDE + 2] as number) > 0) n++;
+      return n;
+    };
+    expect(wet(held)).toBeGreaterThan(100);
+    const before = Array.from(held.data);
+    // Two ticks back, then one back: each a hold, nothing reported.
+    for (const t of [last - 2 * STEP, last - STEP, last]) {
+      held.update(t, swellPhases(field5, t, phases));
+      expect(Array.from(held.data)).toEqual(before);
+      expect(held.arrivals.count).toBe(0);
+      expect(held.backwash.count).toBe(0);
+    }
+    // On past the latest counted: the same crests and the same row as a table never stepped back.
+    let found = 0;
+    for (let i = 1; i <= 600; i++) {
+      const t = last + i * STEP;
+      held.update(t, swellPhases(field5, t, phases));
+      kept.update(t, swellPhases(field5, t, phases));
+      expect(held.arrivals.count).toBe(kept.arrivals.count);
+      expect(Array.from(held.arrivals.t.subarray(0, held.arrivals.count))).toEqual(
+        Array.from(kept.arrivals.t.subarray(0, kept.arrivals.count)),
+      );
+      expect(held.backwash.count).toBe(kept.backwash.count);
+      found += held.arrivals.count;
+    }
+    expect(found).toBeGreaterThan(0);
+    expect(Array.from(held.data)).toEqual(Array.from(kept.data));
+    // A jump back past SWASH_STEP_MAX_S: dry again.
+    const back = last + 600 * STEP - 5;
+    held.update(back, swellPhases(field5, back, phases));
+    expect(held.arrivals.count).toBe(0);
+    expect(wet(held)).toBe(0);
+    for (let c = 0; c < SWASH_COLUMNS; c++) expect(column(held, c)).toEqual([0, 0, 0, 600]);
+  }, timeLimit(60_000));
+
   it("reports no backwash across a stalled page's long step, and never more events than columns", () => {
     const table = new SwashTable(FIELD, coveOf(FIELD));
     const phases = new Float32Array(12);
