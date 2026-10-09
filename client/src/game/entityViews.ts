@@ -87,8 +87,8 @@ export const SHADE_FADE_OUT_S = 2.6;
 export const SHADE_RISE_S = 2.4;
 export const SHADE_SETTLE_S = 3;
 export const LUNGE_RISE_S = 1.2;
-/** Seconds the Hollow stepping out at the crest waits before its rise: the scene's first two shots (cutscene.ts). */
-export const SUMMIT_RISE_DELAY_S = 6;
+/** Seconds the Hollow stepping out at the crest waits before its rise: the scene's first two shots and the reveal's first beat, the camera on its spot by then (cutscene.ts SUMMIT_RISE_AT_S). */
+export const SUMMIT_RISE_DELAY_S = 8.8;
 /**
  * The eyes: the real one's, dulled to this share of their glow once it has
  * resolved; a shade's, fainter still. The share is the eye meshes' alpha over
