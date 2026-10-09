@@ -4,9 +4,10 @@ import { coveFor } from "../../src/sim/olympic.js";
 import { elevationAt } from "../../src/sim/terrain.js";
 import {
   OCEAN_BORE_RATIO, OCEAN_BREAK_FULL, SHELTER_CHOP, SHELTER_SWELL, SHELTER_WIDTH,
-  atlasRead, boreArrivals, coastRead, crestAt, oceanFieldFor, oceanFieldFromState, shelterAt, swellAt, swellNormal,
-  swellPhases, type OceanField,
+  atlasRead, boreArrivals, coastRead, crestAt, oceanFieldFor, oceanFieldFromState, shelterAt, swellAt, swellAtInto,
+  swellBreakInto, swellNormal, swellPhases, swellScratch, type OceanField,
 } from "../../src/game/oceanWaves.js";
+import { seedFromToken } from "../../src/game/seed.js";
 import {
   OCEAN_COAST_STEP, OCEAN_D_MIN, OCEAN_DRY_DEPTH, OCEAN_PHASE_BLEND, OCEAN_ROW_BAY_FIRST, OCEAN_ROW_COAST,
   OCEAN_ROW_COVE_FIRST, OCEAN_ROW_COVE_PROFILE, coastProfilesFor, writeCoastRow,
@@ -459,4 +460,113 @@ describe("boreArrivals", () => {
       expect(a.height).toBeLessThan(1.56 * 2.1);
     }
   }, timeLimit(60_000));
+});
+
+describe("swellAtInto", () => {
+  const field = oceanFieldFor(seedFromToken("room-3"));
+  const cx = shoreX(field, 0);
+
+  it("gives swellAt's numbers over a grid of points and times, written into the scratch's own sample", () => {
+    const scratch = swellScratch(field);
+    let compared = 0;
+    for (const t of [0, 41.5, 3600.25]) {
+      const phases = swellPhases(field, t);
+      for (let d = -1200; d <= 30; d += 41) {
+        for (const z of [-400, -170, -24, 0, 60, 150, 300]) {
+          const got = swellAtInto(field, phases, cx + d, z, scratch);
+          expect(got).toBe(scratch.sample);
+          expect({ ...got }).toEqual(swellAt(field, phases, cx + d, z));
+          compared++;
+        }
+      }
+    }
+    expect(compared).toBe(651);
+  });
+
+  it("leaves swellAt and crestAt bit for bit as they were", () => {
+    const at = (t: number, d: number, z: number) => {
+      const phases = swellPhases(field, t);
+      const s = swellAt(field, phases, cx + d, z);
+      const c = crestAt(field, phases, cx + d, z);
+      return [s.height, s.crestPhase, s.ratio, s.slopeX, s.foam, c.height, c.iribarren];
+    };
+    expect(at(0, -1500, 40)).toEqual([
+      -0.4094257513926414, -2.723728723162701, 0.045945646445589836, -0.012509003874279957, 0, 0.8959401056890018, 0,
+    ]);
+    expect(at(37.25, -24, 0)).toEqual([
+      -0.613040650846169, 2.725327657925398, 0.627748957137904, 0.04902514906194892, 0, 1.3405574622730883,
+      0.6504898922721175,
+    ]);
+    expect(at(37.25, -24, 150)).toEqual([
+      0.11038489580449132, -0.2182247774860741, 3.9325782888197796, -0.008110883179551465, 0.9823404833084972,
+      0.22613291412738773, 0.8034252289145543,
+    ]);
+  });
+
+  it("carries the cap's scale and the local wavelength: 1 unbroken, the bore's height over the unbroken past the break", () => {
+    const phases = swellPhases(field, 37.25);
+    const open = swellAt(field, phases, cx - 1500, 40);
+    expect(open.scale).toBe(1);
+    expect(open.wavelength).toBeCloseTo(118.9726, 4);
+    const toe = swellAt(field, phases, cx - 24, 0);
+    expect(toe.broken).toBe(false);
+    expect(toe.scale).toBe(1);
+    expect(toe.wavelength).toBeCloseTo(38.5395, 4);
+    const surf = swellAt(field, phases, cx - 24, 150);
+    expect(surf.broken).toBe(true);
+    expect(surf.scale).toBeCloseTo(0.0914216, 7);
+    expect(surf.unbroken * surf.scale).toBe(crestAt(field, phases, cx - 24, 150).height);
+  });
+
+  it("holds each component's time-invariant phase: under the frame's phases φ is the zero-phase φ plus θ, the amplitude unchanged", () => {
+    const zero = new Float32Array(12);
+    const still = swellScratch(field);
+    const moving = swellScratch(field);
+    const phases = swellPhases(field, 77.5);
+    swellAtInto(field, zero, cx - 24, 30, still);
+    swellAtInto(field, phases, cx - 24, 30, moving);
+    for (let c = 0; c < field.count; c++) {
+      expect(moving.phase[c]).toBeCloseTo((still.phase[c] as number) + (phases[c] as number), 12);
+      expect(moving.amp[c]).toBe(still.amp[c]);
+    }
+    expect(moving.weggelA).toBe(still.weggelA);
+    expect(moving.weggelB).toBe(still.weggelB);
+  });
+
+  it("allocates nothing across 1,000 calls: the same arrays and the same sample every time", () => {
+    const scratch = swellScratch(field);
+    const { amp, kx, kz, q, phase, sample } = scratch;
+    const phases = new Float32Array(12);
+    for (let i = 0; i < 1000; i++) {
+      swellPhases(field, i / 60, phases);
+      expect(swellAtInto(field, phases, cx - 24, (i % 300) - 150, scratch)).toBe(sample);
+    }
+    expect(scratch.amp).toBe(amp);
+    expect(scratch.kx).toBe(kx);
+    expect(scratch.kz).toBe(kz);
+    expect(scratch.q).toBe(q);
+    expect(scratch.phase).toBe(phase);
+    expect(scratch.sample).toBe(sample);
+    expect(amp).toHaveLength(12);
+  });
+});
+
+describe("swellBreakInto", () => {
+  it("is Weggel's ratio and the cap's scale: 1 under the index, the bore's height by OCEAN_BREAK_FULL, the depth held at OCEAN_DRY_DEPTH", () => {
+    const out = { ratio: 0, scale: 0 };
+    // a = 0, b = 1: the index is 1.
+    swellBreakInto(1, 2, 0, 1, 10, out);
+    expect(out).toEqual({ ratio: 0.5, scale: 1 });
+    swellBreakInto(3, 2, 0, 1, 10, out);
+    expect(out.ratio).toBe(1.5);
+    expect(out.scale * 3).toBeCloseTo(OCEAN_BORE_RATIO * 2, 12);
+    // Dry ground: the depth held at 0.05 m.
+    swellBreakInto(0.04, -1, 0, 1, 10, out);
+    expect(out.ratio).toBeCloseTo(0.8, 12);
+    expect(out.scale).toBe(1);
+    // b = 2 clamps the index to WEGGEL_GAMMA_MAX.
+    swellBreakInto(1.56, 1, 0, 2, 10, out);
+    expect(out.ratio).toBe(1);
+    expect(out.scale).toBe(1);
+  });
 });
