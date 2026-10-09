@@ -5,11 +5,13 @@ import type { AmbientAudio } from "../../src/game/ambientAudio.js";
 function fakeAmbient() {
   const spoken: { buffer: AudioBuffer; level: number }[] = [];
   const decoded: ArrayBuffer[] = [];
+  const cuts = { n: 0 };
   const ambient = {
     decode: async (bytes: ArrayBuffer) => { decoded.push(bytes); return { length: bytes.byteLength } as unknown as AudioBuffer; },
     speak: (buffer: AudioBuffer, level: number) => { spoken.push({ buffer, level }); },
+    cutSpeech: () => { cuts.n++; },
   } as unknown as AmbientAudio;
-  return { ambient, spoken, decoded };
+  return { ambient, spoken, decoded, cuts };
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -41,6 +43,23 @@ describe("the inner voice's clips", () => {
     expect(spoken).toHaveLength(2);
     expect(clips.asked).toBe(2);
     expect(clips.had).toBe(1);
+    clips.dispose();
+  });
+});
+
+describe("the cut", () => {
+  it("stops the line on the bus, and a clip still on its way from before it is not spoken; the next line is", async () => {
+    const { ambient, spoken, cuts } = fakeAmbient();
+    const line = { text: "x", scenario: "crest" as const, index: 0 };
+    const clips = createVoiceClips(ambient, async () => new ArrayBuffer(8));
+    clips.speak(line);
+    clips.cut();
+    await tick(); await tick(); await tick();
+    expect(cuts.n).toBe(1);
+    expect(spoken).toHaveLength(0);
+    clips.speak(line);
+    await tick(); await tick(); await tick();
+    expect(spoken).toHaveLength(1);
     clips.dispose();
   });
 });

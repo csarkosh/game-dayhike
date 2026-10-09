@@ -1279,3 +1279,21 @@ describe("the cry's variants", () => {
     audio.dispose();
   });
 });
+
+describe("the line's cut", () => {
+  it("stops the line's source and no other, and is nothing with no line playing", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    audio.cutSpeech();
+    const before = created.sources.length;
+    audio.speak({ length: 1 } as unknown as AudioBuffer, 0.9);
+    expect(created.sources.length).toBe(before + 1);
+    const line = created.sources[before]!;
+    expect(line.stopped).toBe(false);
+    audio.cutSpeech();
+    expect(line.stopped).toBe(true);
+    audio.cutSpeech();
+    expect(created.sources.filter((s) => s.stopped)).toHaveLength(1 + created.sources.slice(0, before).filter((s) => s.stopped).length);
+  });
+});

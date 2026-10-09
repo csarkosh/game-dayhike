@@ -6,7 +6,7 @@ import { INNER_LINES } from "../../src/game/innerLines.js";
 
 const DAY: VoiceInputs = {
   climb: 0.5, wet: 1, night: 0, mist: 0, chase: false, ended: false, offTrail: 0, lamp: false, stare: 0, moving: true,
-  shadeSeen: false, cry: false, hollowSeen: false, nearCap: false, nearBody: false, safe: false,
+  shadeSeen: false, cry: false, hollowSeen: false, covered: false, scene: "none", nearCap: false, nearBody: false, safe: false,
 };
 const NIGHT: VoiceInputs = { ...DAY, climb: 0.7, night: 1, mist: 1, lamp: true };
 const DT = 1 / 30;
@@ -53,6 +53,36 @@ describe("the inner voice", () => {
     const night = run(voiceRest(3), { ...NIGHT, offTrail: OFF_TRAIL_M + 1 }, 400);
     expect(night.lines.length).toBeGreaterThanOrEqual(3);
     expect(night.lines.filter((l) => INNER_LINES.offTrailNight.includes(l)).length).toBe(3);
+  });
+
+  it("waits while the hike is covered, the film over it, its clocks too, and speaks once it is not", () => {
+    const under = run(voiceRest(3), { ...DAY, climb: 0, covered: true }, 30);
+    expect(under.lines).toHaveLength(0);
+    expect(under.state.elapsed).toBe(0);
+    const after = run(under.state, { ...DAY, climb: 0 }, 30);
+    expect(INNER_LINES.trailhead).toContain(after.lines[0]);
+  });
+
+  it("in the summit's scene says only the find's and the Hollow's lines, the clocks waiting; in the cap's none", () => {
+    // Everything the climb could say at the crest, stilled 21 s: the crest, standing still, the mist, the dark unlit.
+    const crest = { ...NIGHT, climb: 1, moving: false, lamp: false, mist: 0.4, scene: "summit" as const };
+    const quiet = run(voiceRest(5), crest, 25);
+    expect(quiet.lines).toHaveLength(0);
+    expect(quiet.state.stillFor).toBe(0);
+    const find = run(quiet.state, { ...crest, nearBody: true }, 2);
+    expect(find.lines).toHaveLength(1);
+    expect(INNER_LINES.body).toContain(find.lines[0]);
+    const reveal = run(find.state, { ...crest, hollowSeen: true }, 2);
+    expect(INNER_LINES.hollow).toContain(reveal.lines[0]);
+    const cap = run(voiceRest(5), { ...NIGHT, climb: 0.2, nearCap: true, cry: true, scene: "cap" }, 5);
+    expect(cap.lines).toHaveLength(0);
+  });
+
+  it("never says the car's line before the chase: the trailhead stands on safe ground too", () => {
+    const { lines } = run(voiceRest(9), { ...DAY, safe: true }, 60);
+    expect(lines.some((l) => INNER_LINES.safe.includes(l))).toBe(false);
+    const chased = run(voiceRest(9), { ...NIGHT, chase: true, safe: true }, 10);
+    expect(chased.lines.some((l) => INNER_LINES.safe.includes(l))).toBe(true);
   });
 
   it("speaks its terror at the Hollow before its eyes, once, at once, and the find's shock the same", () => {
