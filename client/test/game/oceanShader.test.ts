@@ -758,7 +758,7 @@ describe("the sea's normal, waterline and roughness", () => {
       "float wOceanHeight = vOceanSwellA.z;",
       "vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);",
     ]) expect(l, line).toContain(line);
-    const depth = "float wDepth = waterBedDepth(vPositionW.xz) + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);";
+    const depth = "float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);";
     expect(at(l, depth)).toBeLessThan(at(l, "if (wDepth <= 0.0) discard;"));
   });
 
@@ -935,6 +935,38 @@ describe("the sea's swash in the shaders", () => {
     expect(fx("oceanSurface.fx")).toContain("  return vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);");
   });
 
+  it("gives the sea's bed outside the bed's square the profile's depth, not the ring vertex's held to 0, on the sea alone", async () => {
+    const lines = [
+      "vec2 wBedLocal = (vPositionW.xz - waterBed.xy) * waterBed.z;",
+      "float wBedOutside = step(min(min(wBedLocal.x, wBedLocal.y), min(1.0 - wBedLocal.x, 1.0 - wBedLocal.y)), 0.0);",
+      "float wBedDepth = mix(waterBedDepth(vPositionW.xz), wOceanFoam.w, wBedOutside);",
+      "float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);",
+    ];
+    const sea = await processed(fx("waterLights.fragment.fx"), true, SEA_DEFINES);
+    let last = at(sea, "vec4 wOceanFoam = oceanFoamFromEnvelope(");
+    for (const line of lines) {
+      expect(at(sea, line), line).toBeGreaterThan(last);
+      last = at(sea, line);
+    }
+    expect(last).toBeLessThan(at(sea, "if (wDepth <= 0.0) discard;"));
+    // a lake keeps the bed read and its fallback as they were
+    const lake = await processed(fx("waterLights.fragment.fx"), true);
+    expect(lake).toContain("float wDepth = waterBedDepth(vPositionW.xz);");
+    for (const name of ["wBedLocal", "wBedOutside", "wBedDepth"]) expect(lake, name).not.toContain(name);
+    // the square's test is the bed read's own, whose fallback is the ring vertex's depth
+    const w = fx("water.fragment.fx");
+    expect(w).toContain("  vec2 local = (xz - waterBed.xy) * waterBed.z;");
+    expect(w).toContain("  bool outside = local.x <= 0.0 || local.y <= 0.0 || local.x >= 1.0 || local.y >= 1.0;");
+    expect(w).toContain("  return outside ? vBedDepth : waterLevel - h;");
+    const step = (edge: number, x: number): number => (x < edge ? 0 : 1);
+    for (const x of [-0.5, 0, 1e-6, 0.5, 1 - 1e-6, 1, 1.5]) {
+      for (const y of [-0.5, 0, 1e-6, 0.5, 1 - 1e-6, 1, 1.5]) {
+        const outside = x <= 0 || y <= 0 || x >= 1 || y >= 1 ? 1 : 0;
+        expect(step(Math.min(Math.min(x, y), Math.min(1 - x, 1 - y)), 0), `${x} ${y}`).toBe(outside);
+      }
+    }
+  }, timeLimit(30_000));
+
   it("reads the column nearest z, the cove's centre at column 256, held to the table, as the table names its columns", () => {
     expect(swashColumnAt(37.25, 37.25)).toBe(256);
     expect(swashColumnAt(37.25 + 0.4, 37.25)).toBe(256);
@@ -1042,10 +1074,11 @@ describe("a lake's shaders", () => {
 describe("the sea's shaders", () => {
   it("process to the text they had before the lake's mirror: its every line vanishes under the sea's gates", async () => {
     // Each fragment hook through Babylon's preprocessor with the sea's gates, hashed as it was at 378b040;
-    // the lights' hashed again once the sea's depth took the swash's lift.
+    // the lights' hashed again once the sea's depth took the swash's lift, and the profile's depth
+    // outside the bed's square.
     const before: Record<string, string> = {
       "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
-      "waterLights.fragment.fx": "6adcc97a71d01fac33a00c1e47658d9a086f3f7d80b5e538c7e5c75ad20bdb2a",
+      "waterLights.fragment.fx": "e90b40b9cbab9eaa05ff2e99724e0f89829d768338319bbd587a3908de93a26a",
       "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
     };
     for (const [name, hash] of Object.entries(before)) {

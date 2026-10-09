@@ -20,6 +20,7 @@ import { createMistMeshes } from "../../src/game/mistMeshes.js";
 import { createWaterLife } from "../../src/game/waterLife.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
 import { OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterRingSpacing } from "../../src/game/water.js";
+import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
 import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
@@ -482,14 +483,23 @@ describe("createWater under NullEngine", () => {
         // the whole plane would reach 1,024 m east of the camera
         const planeMaxX = box.minimumWorld.x + OCEAN_BOUND + waterRingSpacing(4) + WATER_RING_CELLS * waterRingSpacing(4);
         expect(planeMaxX).toBeGreaterThan(pondCam.x);
-        // the ring's east-most wet vertex is on the coast, and the box ends one
-        // 16 m cell past it, and past that the waves' 12 m and the stitch's
-        // move of a vertex, up to a cell, 16 m
+        // the ring's east-most wet vertex is on the coast's face, its ground
+        // under the level plus the swash's 1.6 m (the last under the level
+        // itself west of it), and the box ends one 16 m cell past it, and past
+        // that the waves' 12 m and the stitch's move of a vertex, up to a cell, 16 m
         const pos = ring4.getVerticesData(VertexBuffer.PositionKind)!;
         const depth = ring4.getVerticesData("bedDepth")!;
+        let deepMaxX = -Infinity;
         let wetMaxX = -Infinity;
-        for (let i = 0; i < depth.length; i++) if ((depth[i] as number) > 0) wetMaxX = Math.max(wetMaxX, pos[i * 3] as number);
-        expect(wetMaxX).toBeLessThan(-360);
+        expect(SWASH_FACE_LIFT_M).toBe(1.6);
+        for (let i = 0; i < depth.length; i++) {
+          const x = pos[i * 3] as number;
+          if ((depth[i] as number) > 0) deepMaxX = Math.max(deepMaxX, x);
+          if (Math.fround(elevationAt(seed, x, pos[i * 3 + 2] as number)) < level + SWASH_FACE_LIFT_M) wetMaxX = Math.max(wetMaxX, x);
+        }
+        // three 16 m cells of face east of the last vertex under the level
+        expect(deepMaxX).toBe(-368);
+        expect(wetMaxX).toBe(-320);
         expect(box.maximumWorld.x).toBeGreaterThanOrEqual(wetMaxX + 12 + 16);
         expect(box.maximumWorld.x).toBeLessThanOrEqual(wetMaxX + 16 + 12 + 16);
         // the crest above the level and the trough below it

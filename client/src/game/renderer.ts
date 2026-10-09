@@ -84,6 +84,7 @@ import {
   type WaterGeometry,
   type WaterRingSamples,
 } from "./water.js";
+import { SWASH_FACE_LIFT_M } from "./swashRunUp.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater, type WaterPlugin } from "./waterPlugin.js";
 import { createOcean } from "./oceanRender.js";
@@ -1212,14 +1213,16 @@ export function createWater(
   // cells, not the whole plane: a plane at the level is in view from almost
   // anywhere, which would ask for the high tier's copy inland too. The
   // bounds hold the waves: `OCEAN_BOUND` past the wet cells every way, and
-  // the stitch's move of up to a cell besides, across.
+  // the stitch's move of up to a cell besides, across. Ground up to
+  // `SWASH_FACE_LIFT_M` above the level counts as wet, so the rings that
+  // cover the cove's face draw the swash up it.
   function emitRing(level: number): void {
     const ring = rings[level] as WaterRingSamples;
     const finer = level > 0 ? (rings[level - 1] as WaterRingSamples) : null;
     const mesh = meshes[level] as Mesh;
     const geometry = waterRingGeometry(ring, finer === null ? null : waterHoleCellsFor(ring, finer), waterLevel);
     applyWaterGeometry(mesh, geometry);
-    const bounds = wetBounds(geometry);
+    const bounds = wetBounds(geometry, ring.h, SWASH_FACE_LIFT_M);
     mesh.setEnabled(bounds !== null);
     // Never refreshBoundingInfo after this: it would put back the whole plane.
     if (bounds !== null) mesh.setBoundingInfo(new BoundingInfo(Vector3.FromArray(bounds.min), Vector3.FromArray(bounds.max)));

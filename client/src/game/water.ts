@@ -240,8 +240,12 @@ export function waterRingGeometry(
  * cells are the triangles it draws with a wet vertex (`bedDepth > 0`); outside
  * the bed texture the fragment's depth is `bedDepth` interpolated, so such a
  * triangle draws water up to its dry corners, and the box holds all three of
- * its vertices. Triangles in the hole are not drawn, so they count for
- * nothing. The box is grown by `OCEAN_BOUND` on every side, since the waves
+ * its vertices. Given the ring's ground heights (`WaterRingSamples.h`, not
+ * held to the level) and a lift, a vertex is wet where its ground is below
+ * the level plus the lift instead: the sea's swash climbs the cove's face
+ * (`SWASH_FACE_LIFT_M`), so a ring covering only the face is still drawn.
+ * Without them, as on a lift of 0, the rule is the depth's. Triangles in the
+ * hole are not drawn, so they count for nothing. The box is grown by `OCEAN_BOUND` on every side, since the waves
  * carry the surface off the plane: up and down from the water level, and
  * across. Across, it is grown by the stitch's reach as well: the vertex stage
  * moves each vertex to p - `oceanMorph` * `oceanCoarse` before the waves, up to
@@ -251,7 +255,11 @@ export function waterRingGeometry(
  * level is in view from almost anywhere, and a mesh in view is what asks for
  * the high tier's copy.
  */
-export function wetBounds(geometry: WaterGeometry): { min: [number, number, number]; max: [number, number, number] } | null {
+export function wetBounds(
+  geometry: WaterGeometry,
+  ground: Float32Array | null = null,
+  lift = 0,
+): { min: [number, number, number]; max: [number, number, number] } | null {
   const { positions, indices, bedDepth, oceanCoarse } = geometry;
   // How far the stitch moves a vertex along an axis, at most: a cell of the
   // ring on rings 0 to 5, nothing on the outermost.
@@ -267,7 +275,13 @@ export function wetBounds(geometry: WaterGeometry): { min: [number, number, numb
     const a = indices[t] as number;
     const b = indices[t + 1] as number;
     const c = indices[t + 2] as number;
-    if ((bedDepth[a] as number) <= 0 && (bedDepth[b] as number) <= 0 && (bedDepth[c] as number) <= 0) continue;
+    if (ground === null) {
+      if ((bedDepth[a] as number) <= 0 && (bedDepth[b] as number) <= 0 && (bedDepth[c] as number) <= 0) continue;
+    } else {
+      // every vertex is at the level: the ground below the level plus the lift is wet
+      const wetBelow = (positions[a * 3 + 1] as number) + lift;
+      if (!((ground[a] as number) < wetBelow || (ground[b] as number) < wetBelow || (ground[c] as number) < wetBelow)) continue;
+    }
     for (const v of [a, b, c]) {
       const x = positions[v * 3] as number;
       const z = positions[v * 3 + 2] as number;

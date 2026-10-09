@@ -923,22 +923,22 @@ describe("the sea's waves in the water plugin", () => {
     expect(sea.fragment).toContain("vOceanXZ");
     expect(sea.vertex).toContain("positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ));");
     expect(sea.fragment).toContain("swashLift(vOceanXZ, wOceanFoam.w);");
-    // The sea's whole stages, byte for byte, as the swash's sheet left them: neither the lake's
-    // ripples' definitions nor their uniforms reach the sea.
+    // The sea's whole stages, byte for byte, as the swash's sheet and the bed's fallback left them:
+    // neither the lake's ripples' definitions nor their uniforms reach the sea.
     const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
-    expect(sha(sea.fragment)).toBe("08fec9dca70fe18a3e379633cd19df3e1906e31e33fa7f6239f18a2a9718715c");
+    expect(sha(sea.fragment)).toBe("f0a7b8d2577cda06c57f6aba880fe2f30a775049663c53659ef35c82d6d7108d");
     expect(sha(sea.vertex)).toBe("849a373b3d2d72c77ba8bfcdc02cb6cdfee5d46f041d5d9e75fa208794b74a9f");
     // and a material drawn as a lake, then given its ocean, rebuilds its uniforms to the sea's
     const turned = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true, true);
-    expect(sha(turned.fragment)).toBe("08fec9dca70fe18a3e379633cd19df3e1906e31e33fa7f6239f18a2a9718715c");
+    expect(sha(turned.fragment)).toBe("f0a7b8d2577cda06c57f6aba880fe2f30a775049663c53659ef35c82d6d7108d");
     expect(sha(turned.vertex)).toBe("849a373b3d2d72c77ba8bfcdc02cb6cdfee5d46f041d5d9e75fa208794b74a9f");
     // and one drawn as a sea, then taken off its ocean, rebuilds them to the lake's
     const back = await compiled((m) => new WaterPlugin(m, WATER_ROWS.lowlandLake), false, true);
     expect(back.fragment).toBe(lake.fragment);
     expect(back.vertex).toBe(lake.vertex);
-    // The sea's main, as the swash's sheet left it, reads none of the lake's ripples.
+    // The sea's main, as the swash's sheet and the bed's fallback left it, reads none of the lake's ripples.
     const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
-    expect(sha(main(sea.fragment))).toBe("6866300001819e56fb64a4b34b04d2472b37f8fd98c9f9c44fedb34297d79ff5");
+    expect(sha(main(sea.fragment))).toBe("5e33075971cae9e0491e56bbc0be6e7c84d9fe5f6f0a4b45ffd348d8801f71ed");
     for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover", "waterMirror", "waterCalmShare", "wMirror"]) {
       expect(main(sea.fragment), name).not.toContain(name);
     }

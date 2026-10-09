@@ -34,10 +34,16 @@ float wWindAmp = wWindShare * (1.0 - wOceanFoam.y) * wOceanChop;
 vec3 wWind = oceanWindDisplace(vOceanXZ);
 float wWindDrawn;
 vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOceanDy)), wWindDrawn);
+// Outside the bed's square the bed read stands in the ring vertex's depth,
+// which is held to 0 where the ground is above the level: the sea's bed there
+// is the profile's depth the foam carries instead, negative up the face.
+vec2 wBedLocal = (vPositionW.xz - waterBed.xy) * waterBed.z;
+float wBedOutside = step(min(min(wBedLocal.x, wBedLocal.y), min(1.0 - wBedLocal.x, 1.0 - wBedLocal.y)), 0.0);
+float wBedDepth = mix(waterBedDepth(vPositionW.xz), wOceanFoam.w, wBedOutside);
 // Up the cove's face the depth takes the lift the vertex stage gave the
-// surface onto the swash's sheet (oceanSwash.fx), from the profile's depth
-// the foam carries, so the film over the pebbles is the sheet's thickness.
-float wDepth = waterBedDepth(vPositionW.xz) + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);
+// surface onto the swash's sheet (oceanSwash.fx), from the same profile's
+// depth, so the film over the pebbles is the sheet's thickness.
+float wDepth = wBedDepth + wOceanHeight + wWind.y * wWindAmp + swashLift(vOceanXZ, wOceanFoam.w);
 #else
 float wDepth = waterBedDepth(vPositionW.xz);
 #endif
