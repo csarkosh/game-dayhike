@@ -35,11 +35,13 @@ vec3 wWind = oceanWindDisplace(vOceanXZ);
 float wWindDrawn;
 vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOceanDy)), wWindDrawn);
 // Outside the bed's square the bed read stands in the ring vertex's depth,
-// which is held to 0 where the ground is above the level: the sea's bed there
-// is the profile's depth the foam carries instead, negative up the face.
+// which is held to 0 where the ground is above the level. Where the profile
+// the foam carries says the ground is dry (its depth 0 or less, up the face)
+// the sea's bed there is the profile's depth instead. Where it says water,
+// the vertex's own ground stands, so a far headland keeps its depth.
 vec2 wBedLocal = (vPositionW.xz - waterBed.xy) * waterBed.z;
 float wBedOutside = step(min(min(wBedLocal.x, wBedLocal.y), min(1.0 - wBedLocal.x, 1.0 - wBedLocal.y)), 0.0);
-float wBedDepth = mix(waterBedDepth(vPositionW.xz), wOceanFoam.w, wBedOutside);
+float wBedDepth = mix(waterBedDepth(vPositionW.xz), wOceanFoam.w, wBedOutside * step(wOceanFoam.w, 0.0));
 // Up the cove's face the depth takes the lift the vertex stage gave the
 // surface onto the swash's sheet (oceanSwash.fx), from the same profile's
 // depth, so the film over the pebbles is the sheet's thickness.
