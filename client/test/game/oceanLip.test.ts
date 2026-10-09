@@ -272,6 +272,60 @@ describe("the strip's meshes", () => {
     }
   }, timeLimit(30_000));
 
+  it("closes the strip on the live crest where a slot goes free, over a minute of crests", () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const field = oceanFieldFor(SEED);
+      const cove = coveOf(SEED, field);
+      const sea = seaMaterial(scene, field);
+      const tracker = new LipTracker(field, cove);
+      const lip = createOceanLip(scene, () => sea, tracker, lipProfile(), cove, 0);
+      const live = (d: Float32Array, o: number): boolean => {
+        const p = d[o + 1] as number;
+        return p > 0 && p < 1 && (d[o + 2] as number) * (d[o + 3] as number) > 0;
+      };
+      const phases = new Float32Array(12);
+      let boundaries = 0;
+      let liveSlots = 0;
+      const violations: string[] = [];
+      const changed: string[] = [];
+      for (let k = 0; k < 1200; k++) {
+        tracker.update(k / 20, swellPhases(field, k / 20, phases), 0);
+        lip.update(cove.coastX(0), 0);
+        const data = tracker.state.data;
+        // what the texture was last handed
+        const up = (lip.state.getInternalTexture() as unknown as { _bufferView: Float32Array })._bufferView;
+        for (let o = 0; o < data.length; o += 4) {
+          if (!live(data, o)) continue;
+          liveSlots++;
+          for (let j = 0; j < 4; j++) if (up[o + j] !== data[o + j]) changed.push(`frame ${k} slot ${o / 4} lane ${j}`);
+        }
+        for (const step of [LIP_FINE_M, LIP_COARSE_M]) {
+          const columns = lipColumns(cove, step);
+          for (let s = 0; s < LIP_SLOTS; s++) {
+            for (let c = 0; c + 1 < columns.length; c++) {
+              const a = (s * LIP_COLUMNS + (columns[c] as number)) * 4;
+              const b = (s * LIP_COLUMNS + (columns[c + 1] as number)) * 4;
+              if (live(up, a) === live(up, b)) continue;
+              boundaries++;
+              const [l, f] = live(up, a) ? [a, b] : [b, a];
+              const gap = Math.abs((up[f] as number) - (up[l] as number));
+              const size = (up[f + 2] as number) * (up[f + 3] as number);
+              if (gap > LIP_FINE_M + 2 || size !== 0) violations.push(`frame ${k} step ${step} slot ${s} column ${columns[c]}: gap ${gap} size ${size}`);
+            }
+          }
+        }
+      }
+      expect(changed).toEqual([]);
+      expect(violations).toEqual([]);
+      expect([liveSlots, boundaries]).toEqual([52505, 13754]);
+      lip.dispose();
+    } finally {
+      engine.dispose();
+    }
+  }, timeLimit(60_000));
+
   it("frees both meshes, both textures and its material on dispose, and leaves the sea's", () => {
     const engine = new NullEngine();
     try {

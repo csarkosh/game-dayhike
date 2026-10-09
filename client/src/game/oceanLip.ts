@@ -38,7 +38,7 @@ export const LIP_COARSE_M = 2;
 export type OceanLip = {
   readonly fine: Mesh;
   readonly coarse: Mesh;
-  /** The tracker's state, LIP_COLUMNS × LIP_SLOTS RGBA32F, uploaded every update. */
+  /** The tracker's state, LIP_COLUMNS × LIP_SLOTS RGBA32F, uploaded every update with its free slots closed on the live crests near them. */
   readonly state: RawTexture;
   /** The baked profile, LIP_PROFILE_VERTS × LIP_KEYFRAMES RGBA32F. */
   readonly profile: RawTexture;
@@ -90,6 +90,50 @@ export function lipStripGeometry(cove: SwashCove, step: number): { positions: Fl
     }
   }
   return { positions, indices };
+}
+
+/** How far along the shore (columns) a free slot looks for a live one of the same slot to close the strip on. */
+const LIP_CAP_COLUMNS = 2;
+
+/** Whether the slot at offset o holds a crest in mid-plunge: progress in (0, 1) and a size. */
+function slotLive(data: Float32Array, o: number): boolean {
+  const p = data[o + 1] as number;
+  return p > 0 && p < 1 && (data[o + 2] as number) * (data[o + 3] as number) > 0;
+}
+
+/**
+ * What the strip is handed, `out`: the tracker's state, with each free slot
+ * that has a live one of the same slot within LIP_CAP_COLUMNS columns moved
+ * to the nearest such slot's crest d (the nearer side first, the lower
+ * column on a tie) and given no size. A free slot's section is one point,
+ * and the quad from a live column to it would otherwise run to that point
+ * wherever the slot left it, the coastline for an empty one: with the point
+ * at the live crest the strip closes there on the swell's surface, a short
+ * end. Free slots with no live one near keep what they hold. Returns whether
+ * any slot is live.
+ */
+function closeFreeSlots(data: Float32Array, out: Float32Array): boolean {
+  out.set(data);
+  let any = false;
+  for (let s = 0; s < LIP_SLOTS; s++) {
+    const row = s * LIP_COLUMNS;
+    for (let i = 0; i < LIP_COLUMNS; i++) {
+      const o = (row + i) * 4;
+      if (slotLive(data, o)) {
+        any = true;
+        continue;
+      }
+      for (let k = 1; k <= LIP_CAP_COLUMNS; k++) {
+        const from = i - k >= 0 && slotLive(data, o - 4 * k) ? o - 4 * k : i + k < LIP_COLUMNS && slotLive(data, o + 4 * k) ? o + 4 * k : -1;
+        if (from < 0) continue;
+        out[o] = data[from] as number;
+        out[o + 2] = 0;
+        out[o + 3] = 0;
+        break;
+      }
+    }
+  }
+  return any;
 }
 
 /** The water plugin a sea's material carries. */
@@ -144,8 +188,11 @@ export function createOceanLip(
   material.transparencyMode = seaMaterial.transparencyMode;
   material.needDepthPrePass = false;
   budgetMaterial(material);
+  // What the state texture is uploaded from (closeFreeSlots), made once.
+  const upload = new Float32Array(tracker.state.data.length);
+  closeFreeSlots(tracker.state.data, upload);
   const state = new RawTexture(
-    tracker.state.data, LIP_COLUMNS, LIP_SLOTS, Constants.TEXTUREFORMAT_RGBA, scene,
+    upload, LIP_COLUMNS, LIP_SLOTS, Constants.TEXTUREFORMAT_RGBA, scene,
     false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
   );
   const shape = new RawTexture(
@@ -217,13 +264,8 @@ export function createOceanLip(
     update(camX, camZ) {
       const seaNow = seaMaterialOf();
       followSea(plugin, material, waterOf(seaNow), seaNow);
-      const data = tracker.state.data;
-      state.update(data);
-      let live = false;
-      for (let i = 0; i < LIP_COLUMNS * LIP_SLOTS && !live; i++) {
-        const p = data[i * 4 + 1] as number;
-        live = p > 0 && p < 1 && (data[i * 4 + 2] as number) * (data[i * 4 + 3] as number) > 0;
-      }
+      const live = closeFreeSlots(tracker.state.data, upload);
+      state.update(upload);
       // The camera's distance to the face's middle at its nearest column.
       const c = Math.round(Math.min(Math.max(camZ - zFirst, 0), zLast - zFirst));
       const near = Math.hypot(camX - (faceX[c] as number), camZ - (zFirst + c)) <= LIP_RANGE_M;
