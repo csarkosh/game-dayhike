@@ -34,7 +34,9 @@ every shot frames its subject against the sky.
 
 The Hollow waits `SUMMIT_RISE_DELAY_S` (8.8 s, `entityViews.ts`; `SUMMIT_RISE_AT_S` in `cutscene.ts`
 is the same beat) before its rise, so the arrival and the find see the stake alone and the reveal's
-camera is on its spot before it moves; it rises as the shades do, in the shadow form with its dulled eyes,
+camera is on its spot before it moves (the wait is the scene's alone, keyed on its phase: a fork's
+Hollow steps out in the same state in the chase and rises at once, since held it reached its player
+unseen, which it did on 2026-10-08); it rises as the shades do, in the shadow form with its dulled eyes,
 facing the finder, still. The lamp flickers through the scene as the stare fills it, which is
 the game's own language.
 

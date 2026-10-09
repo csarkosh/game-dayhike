@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
-import { EntityViews, LUNGE_RISE_S, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, SHADE_RISE_S, SHADE_SETTLE_S, risen } from "../../src/game/entityViews.js";
-import { AiState } from "../../src/sim/types.js";
+import { EntityViews, LUNGE_RISE_S, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, SHADE_RISE_S, SHADE_SETTLE_S, SUMMIT_RISE_DELAY_S, risen } from "../../src/game/entityViews.js";
+import { AiState, Phase } from "../../src/sim/types.js";
 import type { EnemyState, WorldState } from "../../src/sim/types.js";
 
 function enemy(id: number, ai: AiState): EnemyState {
@@ -11,8 +11,8 @@ function enemy(id: number, ai: AiState): EnemyState {
     attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0, route: [], routeAt: 0, approach: false, seen: false, emergeTo: null,
   };
 }
-function stateWith(enemies: EnemyState[]): WorldState {
-  return { tick: 0, players: new Map(), enemies: new Map(enemies.map((e) => [e.id, e])), phase: 0, outcome: 0, nextEntityId: 100 } as unknown as WorldState;
+function stateWith(enemies: EnemyState[], phase: Phase = Phase.Climb): WorldState {
+  return { tick: 0, players: new Map(), enemies: new Map(enemies.map((e) => [e.id, e])), phase, outcome: 0, nextEntityId: 100 } as unknown as WorldState;
 }
 
 describe("the shadow's rise", () => {
@@ -81,5 +81,26 @@ describe("the shadow's look", () => {
     views.dispose();
     scene.dispose();
     engine.dispose();
+  });
+});
+
+describe("a Hollow stepping out", () => {
+  it("rises at once in the chase (a fork's), and waits SUMMIT_RISE_DELAY_S in the summit scene (the summit's)", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const visibility = (s: Scene, name: string) => s.meshes.find((mesh) => mesh.name === name)?.visibility ?? null;
+    const chase = new EntityViews(scene);
+    chase.sync(stateWith([enemy(1, AiState.Emerge)], Phase.Chase), 0, 0, undefined, 0);
+    chase.sync(stateWith([enemy(1, AiState.Emerge)], Phase.Chase), 0, 0, undefined, SHADE_RISE_S / 2);
+    expect(visibility(scene, "hollow_1")).toBeCloseTo(0.25, 6);
+    chase.dispose();
+    const scene2 = new Scene(engine);
+    const summit = new EntityViews(scene2);
+    summit.sync(stateWith([enemy(1, AiState.Emerge)], Phase.Scene), 0, 0, undefined, 0);
+    summit.sync(stateWith([enemy(1, AiState.Emerge)], Phase.Scene), 0, 0, undefined, SUMMIT_RISE_DELAY_S - 0.1);
+    expect(visibility(scene2, "hollow_1")).toBe(0);
+    summit.sync(stateWith([enemy(1, AiState.Emerge)], Phase.Scene), 0, 0, undefined, 0.1 + SHADE_RISE_S / 2);
+    expect(visibility(scene2, "hollow_1")).toBeCloseTo(0.25, 6);
+    summit.dispose();
   });
 });
