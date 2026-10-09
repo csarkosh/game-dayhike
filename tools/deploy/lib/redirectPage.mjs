@@ -1,19 +1,25 @@
-// The page at the root of the site and on the old host. One function decides
-// where to send the visitor; the page embeds that function's source, so the
-// tested logic and the shipped logic are the same text.
+// The page every path outside the game is rewritten to, on both hosts. The site
+// root itself never reaches it: firebase.json 301s `/` to GAMES_INDEX. One
+// function decides where to send the visitor; the page embeds that function's
+// source, so the tested logic and the shipped logic are the same text.
+
+/** The list of games on csarko.sh. firebase.json's redirect for `/` names it too. */
+export const GAMES_INDEX = 'https://csarko.sh/games';
 
 /**
+ * An old-host link keeps its path, under the game; anything else on the new
+ * host is not a page, so it goes to the list of games.
  * @param {{ host: string; pathname: string; search: string }} loc
- * @param {{ legacyHost: string; base: string }} opts base has no trailing slash
+ * @param {{ legacyHost: string; base: string; index: string }} opts base has no trailing slash
  */
 export function redirectTarget(loc, opts) {
   if (loc.host === opts.legacyHost) return opts.base + loc.pathname + loc.search;
-  return opts.base + '/';
+  return opts.index;
 }
 
-/** @param {{ legacyHost: string; base: string }} opts */
+/** @param {{ legacyHost: string; base: string; index: string }} opts */
 export function renderRedirectPage(opts) {
-  const home = `${opts.base}/`;
+  const home = opts.index;
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -29,7 +35,7 @@ export function renderRedirectPage(opts) {
     </script>
   </head>
   <body>
-    <p>Day Hike has moved to <a href="${home}">${home}</a></p>
+    <p>Find Day Hike and the other games at <a href="${home}">${home}</a></p>
   </body>
 </html>
 `;

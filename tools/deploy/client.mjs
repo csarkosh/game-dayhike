@@ -9,7 +9,7 @@
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { requireCommand, requireProjectMatchesTerraform, runLoud, tfOutput } from './lib/preconditions.mjs';
 import { buildClient } from './lib/buildClient.mjs';
-import { renderRedirectPage } from './lib/redirectPage.mjs';
+import { GAMES_INDEX, renderRedirectPage } from './lib/redirectPage.mjs';
 
 requireCommand('npx', 'Install Node 22 or later.');
 requireProjectMatchesTerraform();
@@ -29,7 +29,7 @@ const sitePath = new URL(siteUrl).pathname.replace(/\/+$/, '');
 rmSync('site', { recursive: true, force: true });
 mkdirSync(`site${sitePath}`, { recursive: true });
 cpSync('client/dist', `site${sitePath}`, { recursive: true });
-writeFileSync('site/index.html', renderRedirectPage({ legacyHost, base: siteUrl }));
+writeFileSync('site/index.html', renderRedirectPage({ legacyHost, base: siteUrl, index: GAMES_INDEX }));
 // Browsers ask the origin for /favicon.ico whatever page they are on, and the
 // catch-all rewrite would answer with the redirect page's HTML.
 cpSync('client/dist/favicon.ico', 'site/favicon.ico');

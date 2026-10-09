@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { redirectTarget, renderRedirectPage } from '../lib/redirectPage.mjs';
+import { GAMES_INDEX, redirectTarget, renderRedirectPage } from '../lib/redirectPage.mjs';
 
-const opts = { legacyHost: 'game.csarko.sh', base: 'https://games.csarko.sh/dayhike' };
+const opts = { legacyHost: 'game.csarko.sh', base: 'https://games.csarko.sh/dayhike', index: GAMES_INDEX };
 
 describe('redirectTarget', () => {
   it('carries an old-host path and query across', () => {
@@ -12,12 +12,12 @@ describe('redirectTarget', () => {
       'https://games.csarko.sh/dayhike/',
     );
   });
-  it('sends the new root and the default hostnames to the game', () => {
-    expect(redirectTarget({ host: 'games.csarko.sh', pathname: '/', search: '' }, opts)).toBe(
-      'https://games.csarko.sh/dayhike/',
+  it('sends any other path on the new and default hostnames to the list of games', () => {
+    expect(redirectTarget({ host: 'games.csarko.sh', pathname: '/anything', search: '' }, opts)).toBe(
+      'https://csarko.sh/games',
     );
     expect(redirectTarget({ host: 'fps-csarko.web.app', pathname: '/anything', search: '?x' }, opts)).toBe(
-      'https://games.csarko.sh/dayhike/',
+      'https://csarko.sh/games',
     );
   });
 });
@@ -29,7 +29,7 @@ describe('renderRedirectPage', () => {
     expect(html).toContain(JSON.stringify(opts));
   });
   it('has a meta refresh and a link as fallbacks', () => {
-    expect(html).toMatch(/<meta http-equiv="refresh" content="0;url=https:\/\/games\.csarko\.sh\/dayhike\/">/);
-    expect(html).toContain('<a href="https://games.csarko.sh/dayhike/">');
+    expect(html).toContain('<meta http-equiv="refresh" content="0;url=https://csarko.sh/games">');
+    expect(html).toContain('<a href="https://csarko.sh/games">');
   });
 });
