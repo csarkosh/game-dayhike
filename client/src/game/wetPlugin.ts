@@ -14,6 +14,17 @@
  * reflectivity call, because the terrain plugin already rewrites that call
  * (terrainTexture.ts) and a second rewrite of it would not match.
  *
+ * The swash: inside the pebble cove the wet line is each shore column's,
+ * from the swash's table (`swashTable.ts`): below the line a column's sheet
+ * last climbed to, the ground is soaked as under the still line for
+ * WET_SOAKED_S, then damp (× WET_DAMP_ALBEDO, rough at most
+ * WET_DAMP_ROUGHNESS) by a third of WET_DRY_S, and dry by WET_DRY_S, with a
+ * speckle of foam above the still sea for WET_SPECKLE_S. The still line
+ * stands under it, and the bays keep it alone, blended over the cove's ends.
+ * The table reaches every plugin as a uniform array, (reach, age) two
+ * columns a vec4, packed once a frame by `setWetSwash`: the terrain's
+ * fragment stage binds every texture it may, so no sampler is added.
+ *
  * The weather: every material with a porosity cap above 0 darkens and
  * glosses with the weather's wetness by Lagarde's porosity rule, the
  * porosity read from the material's own final roughness and held to the
@@ -46,6 +57,7 @@ import fragmentLights from "./shaders/wetLights.fragment.fx?raw";
 import fragmentWeather from "./shaders/wetWeather.fragment.fx?raw";
 import { clamp01 } from "./colour.js";
 import type { WaterBody } from "./waterShading.js";
+import { SWASH_COLUMNS, SWASH_STRIDE } from "./swashTable.js";
 
 export const WET_ALBEDO = 0.4;
 export const WET_ROUGHNESS = 0.15;
@@ -56,8 +68,34 @@ export const WET_LINE_ABOVE = 0.3;
 /** Radius cap for the sea: 1e6 + 1 and 1e6 + 3 are distinct in fp32, 1e9 + 1 is not (smoothstep needs distinct edges). */
 export const WET_RADIUS_MAX = 1e6;
 
+/** The swash's damp ground: its albedo factor and the roughness it is held to at most. */
+export const WET_DAMP_ALBEDO = 0.7;
+export const WET_DAMP_ROUGHNESS = 0.5;
+/** The swash's ground dries over this (s): soaked for WET_SOAKED_S after a
+ * sheet, damp by a third of it, dry by all of it (SWASH_DRY_S). */
+export const WET_DRY_S = 60;
+export const WET_SOAKED_S = 0.5;
+/** The foam speckle on the swash's band: its weight toward white, fading
+ * over WET_SPECKLE_S after a sheet (SWASH_SPECKLE_S); the share of its
+ * WET_SPECKLE_CELL cells it covers, faded to that share between
+ * WET_SPECKLE_NEAR and WET_SPECKLE_FAR metres from the eye. */
+export const WET_SPECKLE = 0.2;
+export const WET_SPECKLE_S = 10;
+export const WET_SPECKLE_CELL = 0.05;
+export const WET_SPECKLE_COVER = 0.25;
+export const WET_SPECKLE_NEAR = 10;
+export const WET_SPECKLE_FAR = 25;
+/** The cove's swash fades into the bays' still line over ± this about each
+ * of its ends, as its ground does (COVE_END_BLEND). */
+export const WET_COVE_END = 30;
+/** The vec4s of `wetSwash`: two columns of the swash's table each. */
+export const WET_SWASH_VECS = SWASH_COLUMNS / 2;
+/** No cove: a half-width so far below zero that the cove's share is 0 at every z. */
+export const WET_NO_COVE = -1e6;
+
 export const WET_ROUGHNESS_ANCHOR = "!float roughness=reflectivityOut\\.roughness;";
-const WET_ROUGHNESS_CODE = "float roughness=mix(reflectivityOut.roughness, WET_ROUGHNESS, wetW);";
+export const WET_ROUGHNESS_CODE =
+  "float roughness=mix(mix(reflectivityOut.roughness, min(reflectivityOut.roughness, WET_DAMP_ROUGHNESS), wetDamp), WET_ROUGHNESS, wetW);";
 
 /** The porosity cap of each kind of material the weather wets. */
 export const WET_CAP = {
@@ -78,6 +116,38 @@ let weatherWet = 0;
 /** Per frame: the weather's wetness in [0, 1], for every attached plugin. */
 export function setWetWeather(wetness: number): void {
   weatherWet = clamp01(wetness);
+}
+
+// Module-level as the weather's wetness is: one cove and one table for the
+// page, bound by every plugin.
+const wetCove: [number, number, number, number] = [0, WET_NO_COVE, 0, 0];
+const wetSwash = new Float32Array(WET_SWASH_VECS * 4);
+for (let i = 1; i < wetSwash.length; i += 2) wetSwash[i] = WET_DRY_S;
+
+/** The cove the swash's table runs along, for every attached plugin: its
+ * centre z, its half-width, the face's toe (signed coast distance, m) and the
+ * face's grade. No cove when any is not finite. */
+export function setWetCove(z0: number, halfWidth: number, toeD: number, faceGrade: number): void {
+  const finite = Number.isFinite(z0) && Number.isFinite(halfWidth) && Number.isFinite(toeD) && Number.isFinite(faceGrade);
+  wetCove[0] = finite ? z0 : 0;
+  wetCove[1] = finite ? halfWidth : WET_NO_COVE;
+  wetCove[2] = finite ? toeD : 0;
+  wetCove[3] = finite ? faceGrade : 0;
+}
+
+/**
+ * Per frame: the swash's table (`SwashTable.data`, (front, thickness, reach,
+ * age) a column), packed for every attached plugin into the one array they
+ * bind: (reach, age) of columns 2i and 2i + 1 in `wetSwash[i]`. A reach that
+ * is not a finite number reads as none, an age as dry; nothing is made.
+ */
+export function setWetSwash(data: Float32Array): void {
+  for (let c = 0; c < SWASH_COLUMNS; c++) {
+    const reach = data[c * SWASH_STRIDE + 2];
+    const age = data[c * SWASH_STRIDE + 3];
+    wetSwash[c * 2] = reach !== undefined && Number.isFinite(reach) ? Math.max(0, reach) : 0;
+    wetSwash[c * 2 + 1] = age !== undefined && Number.isFinite(age) ? Math.max(0, age) : WET_DRY_S;
+  }
 }
 
 export type WetBody = WaterBody & { x: number; z: number; radius: number };
@@ -114,7 +184,7 @@ export class WetPlugin extends MaterialPluginBase {
     defines.WET = true;
   }
 
-  override getUniforms(): { ubo: { name: string; size: number; type: string }[]; fragment: string } {
+  override getUniforms(): { ubo: { name: string; size: number; type: string; arraySize?: number }[]; fragment: string } {
     return {
       ubo: [
         { name: "wetLine", size: 1, type: "float" },
@@ -125,10 +195,14 @@ export class WetPlugin extends MaterialPluginBase {
         { name: "wetAttenuate", size: 1, type: "float" },
         { name: "wetWeather", size: 1, type: "float" },
         { name: "wetCap", size: 1, type: "float" },
+        // The swash's cove and its table, two columns a vec4.
+        { name: "wetCove", size: 4, type: "vec4" },
+        { name: "wetSwash", size: 4, type: "vec4", arraySize: WET_SWASH_VECS },
       ],
       fragment: [
         "uniform float wetLine;", "uniform float wetLevel;", "uniform vec2 wetCentre;", "uniform float wetRadius;",
         "uniform vec3 wetKd;", "uniform float wetAttenuate;", "uniform float wetWeather;", "uniform float wetCap;",
+        "uniform vec4 wetCove;", `uniform vec4 wetSwash[${WET_SWASH_VECS}];`,
       ].join("\n"),
     };
   }
@@ -142,6 +216,10 @@ export class WetPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("wetAttenuate", this.attenuate ? 1 : 0);
     uniformBuffer.updateFloat("wetWeather", weatherWet);
     uniformBuffer.updateFloat("wetCap", this.cap);
+    uniformBuffer.updateFloat4("wetCove", wetCove[0], wetCove[1], wetCove[2], wetCove[3]);
+    // updateFloatArray, not updateArray: without uniform buffers the latter
+    // sets the array as floats, the former as the vec4s it is.
+    uniformBuffer.updateFloatArray("wetSwash", wetSwash);
   }
 
   override getCustomCode(shaderType: string): { [pointName: string]: string } | null {
@@ -204,6 +282,58 @@ export function wetResidual(
   const mean = (kd[0] + kd[1] + kd[2]) / 3;
   const ch = (k: number): number => Math.min(1, Math.exp(-2 * (k - mean) * depth));
   return [ch(kd[0]), ch(kd[1]), ch(kd[2])];
+}
+
+/** GLSL's mix: x · (1 − a) + y · a. */
+function mix(x: number, y: number, a: number): number {
+  return x * (1 - a) + y * a;
+}
+
+/** 1 below the line, 0 above it, blended over WET_BAND: `wetBelow` in wet.fragment.fx. */
+export function wetBelowLine(y: number, line: number): number {
+  return 1 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, y);
+}
+
+/** The wet look at a point, as wetLights.fragment.fx makes it: how wet (the
+ * still line's weight, or the swash's soaked one where higher), how damp,
+ * and the speckle's weight before its cells' mask. */
+export type WetLook = { wet: number; damp: number; speckle: number };
+
+/**
+ * The wet look at height y and world z, as wetLights.fragment.fx makes it
+ * from the still line `line`, the body's `level`, the footprint's `inside`
+ * and the bound cove and table (`wetCove`, `wetSwash`, as `setWetCove` and
+ * `setWetSwash` pack them): the TypeScript twin of `wetShore` and the lines
+ * that take it. Refills `out`.
+ */
+export function wetLookAt(
+  y: number, z: number, line: number, level: number, inside: number,
+  cove: readonly [number, number, number, number], swash: Float32Array, out: WetLook,
+): WetLook {
+  const share = 1 - smoothstep(cove[1] - WET_COVE_END, cove[1] + WET_COVE_END, Math.abs(z - cove[0]));
+  const c = Math.floor(Math.min(Math.max(z - cove[0] + SWASH_COLUMNS / 2, 0), SWASH_COLUMNS - 1) + 0.5);
+  const reach = swash[c * 2] as number;
+  const age = swash[c * 2 + 1] as number;
+  const band = wetBelowLine(y, level + reach * cove[3]) * share;
+  const soaked = 1 - smoothstep(WET_SOAKED_S, WET_DRY_S / 3, age);
+  const damp = smoothstep(WET_SOAKED_S, WET_DRY_S / 3, age) - smoothstep(WET_DRY_S / 3, WET_DRY_S, age);
+  const fresh = Math.min(1, Math.max(0, 1 - age / WET_SPECKLE_S));
+  const above = 1 - wetBelowLine(y, level);
+  const wet = Math.max(wetBelowLine(y, line) * inside, soaked * band * inside);
+  out.wet = wet;
+  out.damp = damp * band * inside * (1 - wet);
+  out.speckle = WET_SPECKLE * fresh * above * band * inside;
+  return out;
+}
+
+/** The albedo factor a look gives (before the speckle and the water above): `mix(1, WET_ALBEDO, wet) · mix(1, WET_DAMP_ALBEDO, damp)`. */
+export function wetAlbedoFactor(look: WetLook): number {
+  return mix(1, WET_ALBEDO, look.wet) * mix(1, WET_DAMP_ALBEDO, look.damp);
+}
+
+/** The roughness a look gives a surface of roughness r, as WET_ROUGHNESS_CODE writes it. */
+export function wetRoughnessOf(r: number, look: WetLook): number {
+  return mix(mix(r, Math.min(r, WET_DAMP_ROUGHNESS), look.damp), WET_ROUGHNESS, look.wet);
 }
 
 /** How far past its rim a pond still claims the wet line over the sea, metres. */
