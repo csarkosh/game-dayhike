@@ -52,12 +52,15 @@ float wBedDepth = wBedLow + (wBedRead - wBedLow) * (1.0 - oceanCoveShare(vOceanX
 // surface onto the swash's sheet (oceanSwash.fx), from the same profile's
 // depth, so the film over the pebbles is the sheet's thickness. Between
 // sheets the surface rests on the pebbles, the swell's and the wind's height
-// on it, so the depth there is at most 0, exactly 0 where the profile is the
-// shallower, and the pixel is discarded: the sheet's edge is the table's, a
+// on it, so the depth there is 0 where the profile is the shallower and below
+// it elsewhere, and the pixel is discarded: the sheet's edge is the table's, a
 // column a metre, never the rings' grid. The surface's height is summed once
-// and the lift takes that same sum, so the rest cancels it to the last bit.
+// and the lift takes that same sum, and the rest cancels it to within
+// rounding: a depth under a hundredth of a millimetre (OCEAN_REST_EPS,
+// oceanSwash.fx) is taken as the sea resting on the ground.
 float wSurfaceHeight = wOceanHeight + wWind.y * wWindAmp;
 float wDepth = wBedDepth + wSurfaceHeight + swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight);
+wDepth = wDepth > OCEAN_REST_EPS ? wDepth : 0.0;
 #else
 float wDepth = waterBedDepth(vPositionW.xz);
 #endif

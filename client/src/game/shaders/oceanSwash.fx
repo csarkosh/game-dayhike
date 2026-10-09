@@ -17,6 +17,10 @@
 const float SWASH_COLUMNS = 512.0;
 const float SWASH_HALF = 256.0;
 const float SWASH_SHEET_MIN = 0.001;
+// The depth (m) under which the fragment stage takes the sea as resting on
+// the ground, a hundredth of a millimetre: the rest cancels the surface's
+// height to within rounding, whatever order the sum is taken in.
+const float OCEAN_REST_EPS = 0.00001;
 
 // The texel u of the column nearest world z: the cove's centre (oceanCove.x)
 // is column SWASH_HALF, a column a metre, held to the table.
@@ -46,15 +50,15 @@ float oceanCoveShare(float z) {
 // How far the sheet lifts the sea at the undisplaced point p over ground h
 // metres below the level (the profile's depth, negative above it), with the
 // swell's height swell already on the surface: to the sheet's top where the
-// sheet stands higher than the still sea, and up the face within the cove
-// to the ground itself wherever the surface would lie under it, so the sea
-// hugs the pebbles between sheets and the fragment stage's depth, 0 there,
-// discards it. Never cuts the sea.
+// sheet stands higher than the still sea, and up the face wherever the cove
+// has any share, its ends' fades whole, to the ground itself wherever the
+// surface would lie under it, so the sea hugs the pebbles between sheets and
+// the fragment stage's depth, 0 there, discards it. Never cuts the sea.
 float swashLift(vec2 p, float h, float swell) {
   float phaseDz;
   float sheet = swashSheet(p.x - oceanCoastAt(p.y, phaseDz).x, p.y);
   float lift = max(0.0, sheet - h) * step(SWASH_SHEET_MIN, sheet);
-  float rest = max(0.0, -(h + swell)) * oceanCoveShare(p.y);
+  float rest = max(0.0, -(h + swell)) * step(1.0e-6, oceanCoveShare(p.y));
   return max(lift, rest);
 }
 

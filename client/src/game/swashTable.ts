@@ -310,6 +310,11 @@ export class SwashTable {
  * taper divides by: `SWASH_SHEET_MIN` in oceanSwash.fx. */
 export const SWASH_SHEET_MIN = 0.001;
 
+/** The depth (m) under which the sea's fragment stage takes the sea as
+ * resting on the ground, a hundredth of a millimetre: `OCEAN_REST_EPS` in
+ * oceanSwash.fx, as waterLights.fragment.fx holds the depth to it. */
+export const SWASH_REST_EPS = 1e-5;
+
 /** The column `oceanSwash.fx` reads at world z: the row's nearest texel, the
  * cove's centre z0 at column SWASH_COLUMNS / 2, held to the table; 0 for a z
  * that is not a number, as `columnOf` has it. */
@@ -353,14 +358,15 @@ export function coveShareAt(z: number, cove: SwashCove): number {
 /** How far the sheet lifts the sea over ground `depth` metres below the
  * level (negative above it), the swell's height `swell` already on the
  * surface, as `swashLift` in oceanSwash.fx does: to the sheet's top where it
- * stands higher than the still sea, and within the cove up to the ground
- * wherever the surface would lie under it, so the sea rests on the pebbles
- * between sheets, its depth there 0. */
+ * stands higher than the still sea, and wherever the cove has any share, its
+ * ends' fades whole (GLSL's `step(1.0e-6, share)`), up to the ground wherever
+ * the surface would lie under it, so the sea rests on the pebbles between
+ * sheets, its depth there 0. */
 export function sheetLiftAt(
   d: number, z: number, depth: number, swell: number, data: Float32Array, cove: SwashCove,
 ): number {
   const sheet = sheetAt(d, z, data, cove);
   const lift = sheet >= SWASH_SHEET_MIN ? Math.max(0, sheet - depth) : 0;
-  const rest = Math.max(0, -(depth + swell)) * coveShareAt(z, cove);
+  const rest = coveShareAt(z, cove) >= 1e-6 ? Math.max(0, -(depth + swell)) : 0;
   return Math.max(lift, rest);
 }

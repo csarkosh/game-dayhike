@@ -925,23 +925,23 @@ describe("the sea's waves in the water plugin", () => {
     expect(sea.vertex).toContain("positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ), oceanVertexDisplace.y);");
     expect(sea.fragment).toContain("swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight);");
     // The sea's whole stages, byte for byte, as the swash's sheet, the bed's fallback, the lip, the sea's rest
-    // on the face between sheets and the cove's bed in the bed's square left them: neither the lake's ripples'
-    // definitions nor their uniforms reach the sea.
+    // on the face between sheets, held to it within a hundredth of a millimetre, and the cove's bed in the bed's
+    // square left them: neither the lake's ripples' definitions nor their uniforms reach the sea.
     const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
-    expect(sha(sea.fragment)).toBe("cc232fdc9a6ccc1bb0494175a8322bab54797d0f1545360a155eb79822cb127a");
-    expect(sha(sea.vertex)).toBe("e2f0268ec68e07ef17834f36dab55432a1972e05b76365bec6e50091a994b5ed");
+    expect(sha(sea.fragment)).toBe("644112137b86c8fa848ce3fc00124793fcd4545bae6e4573e5f3675b955322ec");
+    expect(sha(sea.vertex)).toBe("8567a97912ecb053b293c7ede51379d96a50adabe74c140480a481aebee7e4b7");
     // and a material drawn as a lake, then given its ocean, rebuilds its uniforms to the sea's
     const turned = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true, true);
-    expect(sha(turned.fragment)).toBe("cc232fdc9a6ccc1bb0494175a8322bab54797d0f1545360a155eb79822cb127a");
-    expect(sha(turned.vertex)).toBe("e2f0268ec68e07ef17834f36dab55432a1972e05b76365bec6e50091a994b5ed");
+    expect(sha(turned.fragment)).toBe("644112137b86c8fa848ce3fc00124793fcd4545bae6e4573e5f3675b955322ec");
+    expect(sha(turned.vertex)).toBe("8567a97912ecb053b293c7ede51379d96a50adabe74c140480a481aebee7e4b7");
     // and one drawn as a sea, then taken off its ocean, rebuilds them to the lake's
     const back = await compiled((m) => new WaterPlugin(m, WATER_ROWS.lowlandLake), false, true);
     expect(back.fragment).toBe(lake.fragment);
     expect(back.vertex).toBe(lake.vertex);
-    // The sea's main, as the swash's sheet, the bed's fallback, the lip, the sea's rest on the face and the
-    // cove's bed in the bed's square left it, reads none of the lake's ripples.
+    // The sea's main, as the swash's sheet, the bed's fallback, the lip, the sea's rest on the face and its
+    // hold, and the cove's bed in the bed's square left it, reads none of the lake's ripples.
     const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
-    expect(sha(main(sea.fragment))).toBe("bffb4638cdc0949e02d48f22159d9afd8d617399778da045fe27f62b1e5924b6");
+    expect(sha(main(sea.fragment))).toBe("06f92168a940b0a0b4a01f4d7de584ac37282e352afdb6bcb67a1c8d44e85842");
     for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover", "waterMirror", "waterCalmShare", "wMirror"]) {
       expect(main(sea.fragment), name).not.toContain(name);
     }

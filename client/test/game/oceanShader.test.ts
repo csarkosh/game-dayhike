@@ -64,7 +64,7 @@ import {
 } from "../../src/game/oceanWaves.js";
 import { OCEAN_BOUND, WATER_BASE_SPACING, WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/game/water.js";
 import {
-  SWASH_COLUMNS, SWASH_COVE_END, SWASH_SHEET_MIN, SWASH_STRIDE, SwashTable, coveShareAt, sheetAt, sheetLiftAt, swashColumnAt,
+  SWASH_COLUMNS, SWASH_COVE_END, SWASH_REST_EPS, SWASH_SHEET_MIN, SWASH_STRIDE, SwashTable, coveShareAt, sheetAt, sheetLiftAt, swashColumnAt,
   type SwashCove,
 } from "../../src/game/swashTable.js";
 import { WET_COVE_END } from "../../src/game/wetPlugin.js";
@@ -876,6 +876,8 @@ describe("the sea's swash in the shaders", () => {
     pinned(w, "SWASH_COLUMNS", SWASH_COLUMNS);
     pinned(w, "SWASH_HALF", SWASH_COLUMNS / 2);
     pinned(w, "SWASH_SHEET_MIN", SWASH_SHEET_MIN);
+    expect(SWASH_REST_EPS).toBe(1e-5);
+    pinned(w, "OCEAN_REST_EPS", SWASH_REST_EPS);
     expect(w.startsWith("#ifdef OCEAN\n")).toBe(true);
     expect(w.endsWith("#endif\n")).toBe(true);
     expect(w.split("\n").filter((line) => line.trimStart().startsWith("#"))).toEqual(["#ifdef OCEAN", "#endif"]);
@@ -900,7 +902,7 @@ describe("the sea's swash in the shaders", () => {
         "  float phaseDz;\n" +
         "  float sheet = swashSheet(p.x - oceanCoastAt(p.y, phaseDz).x, p.y);\n" +
         "  float lift = max(0.0, sheet - h) * step(SWASH_SHEET_MIN, sheet);\n" +
-        "  float rest = max(0.0, -(h + swell)) * oceanCoveShare(p.y);\n" +
+        "  float rest = max(0.0, -(h + swell)) * step(1.0e-6, oceanCoveShare(p.y));\n" +
         "  return max(lift, rest);\n" +
         "}\n",
     );
@@ -956,6 +958,7 @@ describe("the sea's swash in the shaders", () => {
       "float wBedDepth = wBedLow + (wBedRead - wBedLow) * (1.0 - oceanCoveShare(vOceanXZ.y));",
       "float wSurfaceHeight = wOceanHeight + wWind.y * wWindAmp;",
       "float wDepth = wBedDepth + wSurfaceHeight + swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight);",
+      "wDepth = wDepth > OCEAN_REST_EPS ? wDepth : 0.0;",
     ];
     const sea = await processed(fx("waterLights.fragment.fx"), true, SEA_DEFINES);
     let last = at(sea, "vec4 wOceanFoam = oceanFoamFromEnvelope(");
@@ -967,7 +970,7 @@ describe("the sea's swash in the shaders", () => {
     // a lake keeps the bed read and its fallback as they were
     const lake = await processed(fx("waterLights.fragment.fx"), true);
     expect(lake).toContain("float wDepth = waterBedDepth(vPositionW.xz);");
-    for (const name of ["wBedLow", "wBedDepth", "wSurfaceHeight"]) expect(lake, name).not.toContain(name);
+    for (const name of ["wBedLow", "wBedDepth", "wSurfaceHeight", "OCEAN_REST_EPS"]) expect(lake, name).not.toContain(name);
     // the sea's bed takes no square of its own: the bed read's, whose fallback outside it is the ring vertex's depth
     for (const name of ["wBedLocal", "wBedOutside"]) expect(sea, name).not.toContain(name);
     const w = fx("water.fragment.fx");
@@ -1108,7 +1111,7 @@ describe("the sea's swash in the shaders", () => {
     expect(sheetAt(11, z, data, COVE)).toBe(0);
     expect(sheetLiftAt(11, z, -11 / 12, 0, data, COVE)).toBe(11 / 12);
     expect(sheetLiftAt(11, z, -11 / 12, 0.2, data, COVE)).toBeCloseTo(0.716666666666667, 14);
-    expect(sheetLiftAt(11, z, -11 / 12, 0.2, data, COVE)).toBe(-(-11 / 12 + 0.2));
+    expect(sheetLiftAt(11, z, -11 / 12, 0.2, data, COVE)).toBe(0.7166666666666666);
     // the swell standing above the face lifts nothing more, as before
     expect(sheetLiftAt(11, z, -11 / 12, 1, data, COVE)).toBe(0);
     expect(sheetLiftAt(11, z, -11 / 12, -0.3, data, COVE)).toBeCloseTo(1.216666666666667, 14);
@@ -1116,11 +1119,16 @@ describe("the sea's swash in the shaders", () => {
     const past = COVE.z0 + COVE.halfWidth + 30;
     expect(coveShareAt(past, COVE)).toBe(0);
     for (const swell of [-0.5, -0.3, 0, 0.2, 1]) expect(sheetLiftAt(11, past, -11 / 12, swell, data, COVE), `${swell}`).toBe(0);
-    // at the cove's end the share is a half, and so is the rest
+    // through the cove's end fades the rest is whole wherever the share is anything at all: at the cove's
+    // end, the share a half, and a tenth of a metre short of the fade's end, the share all but 0
     const end = COVE.z0 + COVE.halfWidth;
     expect(coveShareAt(end, COVE)).toBe(0.5);
-    expect(sheetLiftAt(11, end, -11 / 12, 0, data, COVE)).toBe(11 / 24);
-    expect(sheetLiftAt(11, end, -11 / 12, 0.2, data, COVE)).toBeCloseTo(0.358333333333333, 14);
+    expect(sheetLiftAt(11, end, -11 / 12, 0, data, COVE)).toBe(11 / 12);
+    expect(sheetLiftAt(11, end, -11 / 12, 0.2, data, COVE)).toBe(0.7166666666666666);
+    const fadeEnd = COVE.z0 - COVE.halfWidth - 29.9;
+    expect(coveShareAt(fadeEnd, COVE)).toBeGreaterThan(1e-6);
+    expect(coveShareAt(fadeEnd, COVE)).toBeLessThan(1e-4);
+    expect(sheetLiftAt(11, fadeEnd, -11 / 12, 0, data, COVE)).toBe(11 / 12);
     // under water, 1 m deep and 12 m seaward, the sea is never lifted, sheet or none
     expect(sheetAt(-12, z, data, COVE)).toBe(0.25);
     for (const swell of [0, -0.5]) {
@@ -1184,6 +1192,52 @@ describe("the sea's swash in the shaders", () => {
     expect([zeros, below]).toEqual([1092, 936]);
   });
 
+  it("holds the depth where the sea rests to 0 within a hundredth of a millimetre, whatever order the GPU adds in", () => {
+    // waterLights.fragment.fx after its sum: wDepth > OCEAN_REST_EPS ? wDepth : 0. A compiler may regroup
+    // (bed + s) + lift as bed + (s + lift): in float32 that is a step or two off 0, and the hold takes it
+    // to 0 again. Within the cove's share, its end fades too, the held depth is 0 wherever the read is the
+    // deeper and never above 0 anywhere the read is within the profile's.
+    const f = Math.fround;
+    const held = (depth: number): number => (depth > SWASH_REST_EPS ? depth : 0);
+    const empty = new Float32Array(SWASH_COLUMNS * SWASH_STRIDE);
+    let zeros = 0;
+    let below = 0;
+    let off = 0;
+    for (const z of [COVE.z0, COVE.z0 + 100, COVE.z0 - COVE.halfWidth + 30, COVE.z0 + COVE.halfWidth, COVE.z0 - COVE.halfWidth - 25]) {
+      const share = f(coveShareAt(z, COVE));
+      expect(share).toBeGreaterThan(0);
+      for (const d of [0.5, 1, 2.25, 4, 7.5, 9.75, 11, 12]) {
+        const h = f(-d * COVE.faceGrade);
+        for (let i = -6; i <= 6; i++) {
+          const read = f(h + i * 0.0005);
+          // where the share is short of whole only a read at or above the profile's ground is checked: the
+          // blend to the read alone is what the share fades
+          if (share < 1 && read > h) continue;
+          for (const s0 of [-0.5, -0.3125, -0.1, 0, 0.05, 0.2, h / 2]) {
+            const s = f(s0);
+            if (f(h + s) >= 0) continue;
+            const low = Math.min(read, h);
+            const bed = f(low + f(f(read - low) * f(1 - share)));
+            const lift = f(sheetLiftAt(d, z, h, s, empty, COVE));
+            const inOrder = f(f(bed + s) + lift);
+            const regrouped = f(bed + f(s + lift));
+            if (read >= h && regrouped !== 0) off++;
+            const at = `${z} ${d} ${read} ${s}`;
+            for (const depth of [inOrder, regrouped]) {
+              expect(held(depth), at).toBeLessThanOrEqual(0);
+              if (read >= h) expect(held(depth), at).toBe(0);
+            }
+            if (read >= h) zeros++;
+            else below++;
+          }
+        }
+      }
+    }
+    expect([zeros, below]).toEqual([1196, 1560]);
+    // the regrouped order does come off 0 where the read is the deeper, so the hold is what holds it there
+    expect(off).toBeGreaterThan(0);
+  });
+
   it("keeps the farthest reach inside the rings' wet bounds", () => {
     expect(SWASH_REACH_MAX_M).toBe(12);
     expect(OCEAN_BOUND).toBe(12);
@@ -1235,10 +1289,11 @@ describe("the sea's shaders", () => {
     // the lights' hashed again once the sea's depth took the swash's lift, and the profile's depth
     // outside the bed's square; once more as the plunging lip tilted the normal and lifted the foam, and
     // again as the sea came to rest on the face between the swash's sheets and the cove's bed took the
-    // shallower of the read and the profile's depth inside the bed's square as well.
+    // shallower of the read and the profile's depth inside the bed's square as well, and as the depth where
+    // the sea rests was held to 0 within a hundredth of a millimetre.
     const before: Record<string, string> = {
       "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
-      "waterLights.fragment.fx": "328008445df457a2e37fa191587d44011c0c376b1c003ad1671d69b6537a8e0f",
+      "waterLights.fragment.fx": "355c3f8055f1c8d37b30108510c851a7225ede4ef19bfd889638723545eb5037",
       "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
     };
     for (const [name, hash] of Object.entries(before)) {
