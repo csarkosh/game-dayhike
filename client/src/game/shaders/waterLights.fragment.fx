@@ -43,11 +43,19 @@ vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOcea
 // face, and the read's own ground wherever that is shallower, so a far
 // headland or a stack keeps its own. Both meet at 0 on the profile's
 // waterline, so the depth runs on across it. Along the rest of the coast the
-// bed read stands alone. The blend is written so that across the cove, its
-// share whole, the bed is the shallower of the two exactly.
+// bed read stands alone. On the face's dry side (the profile's ground above
+// the surface) the bed is the shallower of the two wherever the cove has any
+// share, its end fades too: the sea rests there on the profile's ground, and
+// in the fades the profile and the real ground part by millimetres, so a bed
+// blended toward the read would leave a film that thick drawn on the pebbles.
+// Under water the blend over the ends stands. Both are written so that the
+// bed is the shallower of the two exactly where it is taken whole.
+float wSurfaceHeight = wOceanHeight + wWind.y * wWindAmp;
+float wCoveShare = oceanCoveShare(vOceanXZ.y);
+float wDry = step(1.0e-6, wCoveShare) * step(0.0, -(wOceanFoam.w + wSurfaceHeight));
 float wBedRead = waterBedDepth(vPositionW.xz);
 float wBedLow = min(wBedRead, wOceanFoam.w);
-float wBedDepth = wBedLow + (wBedRead - wBedLow) * (1.0 - oceanCoveShare(vOceanXZ.y));
+float wBedDepth = wBedLow + (wBedRead - wBedLow) * (1.0 - wCoveShare) * (1.0 - wDry);
 // Up the cove's face the depth takes the lift the vertex stage gave the
 // surface onto the swash's sheet (oceanSwash.fx), from the same profile's
 // depth, so the film over the pebbles is the sheet's thickness. Between
@@ -58,7 +66,6 @@ float wBedDepth = wBedLow + (wBedRead - wBedLow) * (1.0 - oceanCoveShare(vOceanX
 // and the lift takes that same sum, and the rest cancels it to within
 // rounding: a depth under a hundredth of a millimetre (OCEAN_REST_EPS,
 // oceanSwash.fx) is taken as the sea resting on the ground.
-float wSurfaceHeight = wOceanHeight + wWind.y * wWindAmp;
 float wDepth = wBedDepth + wSurfaceHeight + swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight);
 wDepth = wDepth > OCEAN_REST_EPS ? wDepth : 0.0;
 #else
