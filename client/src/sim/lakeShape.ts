@@ -551,3 +551,294 @@ export function lakeShoreInto(out: LakeShore, shape: LakeShape, x: number, z: nu
   tarnDepthInto(out, shape, s, sx, sz);
   return out;
 }
+
+// ---- Along a line ---------------------------------------------------------------
+/** A line's march toward a shore distance: its step (m) and the halvings that refine the crossing. */
+export const LAKE_RAY_STEP = 0.5;
+export const LAKE_RAY_HALVINGS = 40;
+
+const RAY = newLakeShore();
+
+/**
+ * How far along the line from (ox, oz) in the unit direction (dirX, dirZ)
+ * the shore distance first falls to `target` or below: marched in
+ * LAKE_RAY_STEP steps out to `maxR`, then halved LAKE_RAY_HALVINGS times. 0
+ * where it is there at the start; Infinity where it is not by `maxR`.
+ */
+export function rayToShore(
+  shape: LakeShape, ox: number, oz: number, dirX: number, dirZ: number, target: number, maxR: number,
+): number {
+  if (lakeShoreInto(RAY, shape, ox, oz).s <= target) return 0;
+  let a = 0;
+  for (let r = LAKE_RAY_STEP; r <= maxR + LAKE_RAY_STEP; r += LAKE_RAY_STEP) {
+    if (lakeShoreInto(RAY, shape, ox + dirX * r, oz + dirZ * r).s <= target) {
+      let lo = a, hi = r;
+      for (let i = 0; i < LAKE_RAY_HALVINGS; i++) {
+        const mid = (lo + hi) / 2;
+        if (lakeShoreInto(RAY, shape, ox + dirX * mid, oz + dirZ * mid).s <= target) hi = mid;
+        else lo = mid;
+      }
+      return hi;
+    }
+    a = r;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+// ---- The outline ----------------------------------------------------------------
+/** A closed polyline, counter-clockwise from +x toward +z, its last point joined back to its first. */
+export type LakeOutline = { readonly xs: readonly number[]; readonly zs: readonly number[] };
+
+const OUT = newLakeShore();
+
+/**
+ * The shore's zero set marched by squares over the square of half-side
+ * `extent` about the centre, every `step` metres, its rim held outside so
+ * every loop closes, chained into loops; the loop of largest area,
+ * counter-clockwise. With it the largest shore distance any grid point reads.
+ */
+function march(shape: LakeShape, step: number, extent: number): { outline: LakeOutline; sMax: number } {
+  const n = Math.ceil((2 * extent) / step) + 1;
+  const x0 = shape.cx - extent, z0 = shape.cz - extent;
+  const vals = new Float64Array(n * n);
+  let sMax = 0;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const s = lakeShoreInto(OUT, shape, x0 + i * step, z0 + j * step).s;
+      const v = i === 0 || j === 0 || i === n - 1 || j === n - 1 ? -1 : s === Number.NEGATIVE_INFINITY ? -1e9 : s;
+      vals[j * n + i] = v;
+      if (v > sMax) sMax = v;
+    }
+  }
+  const at = (i: number, j: number): number => vals[j * n + i] as number;
+  // Edge ids: the horizontal edge from (i, j) to (i + 1, j) is j·n + i; the
+  // vertical edge from (i, j) to (i, j + 1) is n·n + j·n + i.
+  const links = new Map<number, number[]>();
+  const link = (a: number, b: number): void => {
+    let la = links.get(a);
+    if (la === undefined) { la = []; links.set(a, la); }
+    la.push(b);
+    let lb = links.get(b);
+    if (lb === undefined) { lb = []; links.set(b, lb); }
+    lb.push(a);
+  };
+  for (let j = 0; j + 1 < n; j++) {
+    for (let i = 0; i + 1 < n; i++) {
+      const v0 = at(i, j), v1 = at(i + 1, j), v2 = at(i + 1, j + 1), v3 = at(i, j + 1);
+      const c = (v0 > 0 ? 1 : 0) | (v1 > 0 ? 2 : 0) | (v2 > 0 ? 4 : 0) | (v3 > 0 ? 8 : 0);
+      if (c === 0 || c === 15) continue;
+      const e0 = j * n + i, e1 = n * n + j * n + i + 1, e2 = (j + 1) * n + i, e3 = n * n + j * n + i;
+      const centreIn = v0 + v1 + v2 + v3 > 0;
+      switch (c) {
+        case 1: case 14: link(e3, e0); break;
+        case 2: case 13: link(e0, e1); break;
+        case 3: case 12: link(e3, e1); break;
+        case 4: case 11: link(e1, e2); break;
+        case 6: case 9: link(e0, e2); break;
+        case 7: case 8: link(e3, e2); break;
+        case 5:
+          if (centreIn) { link(e0, e1); link(e2, e3); } else { link(e3, e0); link(e1, e2); }
+          break;
+        case 10:
+          if (centreIn) { link(e3, e0); link(e1, e2); } else { link(e0, e1); link(e2, e3); }
+          break;
+      }
+    }
+  }
+  // An edge's crossing, by linear interpolation of s between its ends.
+  const pointOf = (e: number): [number, number] => {
+    const vertical = e >= n * n;
+    const k = vertical ? e - n * n : e;
+    const i = k % n, j = (k - i) / n;
+    const a = at(i, j);
+    const b = vertical ? at(i, j + 1) : at(i + 1, j);
+    const t = a / (a - b);
+    return vertical ? [x0 + i * step, z0 + (j + t) * step] : [x0 + (i + t) * step, z0 + j * step];
+  };
+  const seen = new Set<number>();
+  let best: { xs: number[]; zs: number[] } = { xs: [], zs: [] };
+  let bestArea = 0;
+  for (const start of links.keys()) {
+    if (seen.has(start)) continue;
+    const xs: number[] = [], zs: number[] = [];
+    let prev = -1, cur = start;
+    for (;;) {
+      seen.add(cur);
+      const [px, pz] = pointOf(cur);
+      xs.push(px); zs.push(pz);
+      const nb = links.get(cur) as number[];
+      const next = nb[0] !== prev ? (nb[0] as number) : (nb[1] as number);
+      prev = cur;
+      cur = next;
+      if (cur === start || seen.has(cur)) break;
+    }
+    const area = shoelace(xs, zs);
+    if (Math.abs(area) > Math.abs(bestArea)) {
+      bestArea = area;
+      best = { xs, zs };
+    }
+  }
+  if (bestArea < 0) {
+    best.xs.reverse();
+    best.zs.reverse();
+  }
+  return { outline: best, sMax };
+}
+
+/** The signed area of a closed polyline: positive counter-clockwise from +x toward +z. */
+export function shoelace(xs: readonly number[], zs: readonly number[]): number {
+  let a = 0;
+  for (let i = 0, j = xs.length - 1; i < xs.length; j = i++) {
+    a += (xs[j] as number) * (zs[i] as number) - (xs[i] as number) * (zs[j] as number);
+  }
+  return a / 2;
+}
+
+/** The lake's shore as an ordered closed polyline at `step` metres: the checks read it at 1 m, the game at 2 m. */
+export function lakeOutline(shape: LakeShape, step: number, extent: number = shape.shoreMax + 2 * step): LakeOutline {
+  return march(shape, step, extent).outline;
+}
+
+// ---- The bank and the apron ---------------------------------------------------------
+/** The bank: from the shore the ground rises at the bank's grade, eased in
+ * over LAKE_BANK_EASE metres, out to its width; gentle on the side weight's
+ * 0 side and steep on its 1 side, lerped by σ. */
+export const LAKE_BANK_GRADE_GENTLE = 0.12;
+export const LAKE_BANK_GRADE_STEEP = 0.5;
+export const LAKE_BANK_WIDTH_GENTLE = 4;
+export const LAKE_BANK_WIDTH_STEEP = 6;
+export const LAKE_BANK_EASE = 1;
+/** The apron's width in a direction: clamp(LAKE_APRON_RISE / g, MIN, MAX)
+ * for g the mean gradient of the ground in that direction across the band
+ * 0 to LAKE_APRON_BAND metres outside the shore, read every LAKE_APRON_STEP;
+ * fitted on 16 directions with harmonics up to k = 3 and held off MIN by a
+ * smooth floor LAKE_APRON_SOFT wide. */
+export const LAKE_APRON_RISE = 4;
+export const LAKE_APRON_MIN = 4;
+export const LAKE_APRON_MAX = 30;
+export const LAKE_APRON_BAND = 30;
+export const LAKE_APRON_STEP = 2;
+export const LAKE_APRON_SOFT = 1;
+
+/** A direction's apron width from its ground's mean gradient. */
+export function apronWidthFor(g: number): number {
+  if (!(g > 0)) return LAKE_APRON_MAX;
+  return Math.min(LAKE_APRON_MAX, Math.max(LAKE_APRON_MIN, LAKE_APRON_RISE / g));
+}
+
+/**
+ * The harmonics up to k = 3 of 16 widths, one every 22.5° from +x toward +z
+ * (LAKE_DIRECTIONS[4i]): a0 the mean, and a_k and b_k each 2/16 of the sum of
+ * the widths times cos kθ and sin kθ.
+ */
+export function fitApron(widths: readonly number[]): number[] {
+  const out = [0, 0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < 16; i++) {
+    const [ux, uz] = LAKE_DIRECTIONS[4 * i] as readonly [number, number];
+    const a = widths[i] as number;
+    out[0] = (out[0] as number) + a / 16;
+    let c = ux, s = uz;
+    for (let k = 1; k <= 3; k++) {
+      out[2 * k - 1] = (out[2 * k - 1] as number) + (2 * a * c) / 16;
+      out[2 * k] = (out[2 * k] as number) + (2 * a * s) / 16;
+      const nc = c * ux - s * uz;
+      s = s * ux + c * uz;
+      c = nc;
+    }
+  }
+  return out;
+}
+
+/** The apron's width at the unit vector (ux, uz) from the centre, and its
+ * derivative in θ: the fitted series held off LAKE_APRON_MIN by the smooth
+ * floor (A + MIN + √((A − MIN)² + SOFT²)) / 2. */
+export function apronAt(apron: readonly number[], ux: number, uz: number): { v: number; dTheta: number } {
+  let a = apron[0] as number, at = 0;
+  let c = ux, s = uz;
+  for (let k = 1; k <= 3; k++) {
+    const ak = apron[2 * k - 1] as number, bk = apron[2 * k] as number;
+    a += ak * c + bk * s;
+    at += k * (bk * c - ak * s);
+    const nc = c * ux - s * uz;
+    s = s * ux + c * uz;
+    c = nc;
+  }
+  const r = a - LAKE_APRON_MIN;
+  const root = Math.sqrt(r * r + LAKE_APRON_SOFT * LAKE_APRON_SOFT);
+  return { v: (a + LAKE_APRON_MIN + root) / 2, dTheta: ((1 + r / root) / 2) * at };
+}
+
+/** Where the lake's ground gives the hillside back, metres outside the shore,
+ * at a point whose shore record is `r`: the bank's width by σ plus the apron's. */
+export function lakeApronEnd(shape: LakeShape, r: LakeShore): number {
+  const wb = LAKE_BANK_WIDTH_GENTLE + (LAKE_BANK_WIDTH_STEEP - LAKE_BANK_WIDTH_GENTLE) * r.sigma;
+  return wb + apronAt(shape.apron, r.ux, r.uz).v;
+}
+
+// ---- Placement measures ------------------------------------------------------------
+/** The step the placement's outline is marched at (m), and the bound's
+ * margin past the apron's end (m): between the 64 rays the apron's end
+ * reaches up to 4.7 m past the farthest ray's (measured on 200 drawn lakes
+ * at 2,880 directions), so the margin holds twice that. */
+export const LAKE_MEASURE_STEP = 2;
+export const LAKE_BOUND_MARGIN = 10;
+/** The step the bound's rays march at (m), and the farthest any ray marches (m). */
+export const LAKE_BOUND_STEP = 1;
+export const LAKE_BOUND_REACH = 1000;
+
+const BOUND = newLakeShore();
+
+/**
+ * The farthest the lake's ground reaches from the centre: along each of
+ * LAKE_DIRECTIONS from the shore crossing out in LAKE_BOUND_STEP steps until
+ * the point lies past its apron's end, the farthest of the 64, plus
+ * LAKE_BOUND_MARGIN. Read with the shape's bound Infinity.
+ */
+export function lakeBound(shape: LakeShape): number {
+  let far = 0;
+  for (const [dx, dz] of LAKE_DIRECTIONS) {
+    let r = rayToShore(shape, shape.cx, shape.cz, dx, dz, 0, LAKE_BOUND_REACH);
+    while (r <= LAKE_BOUND_REACH) {
+      const p = lakeShoreInto(BOUND, shape, shape.cx + dx * r, shape.cz + dz * r);
+      if (-p.s >= lakeApronEnd(shape, p)) break;
+      r += LAKE_BOUND_STEP;
+    }
+    if (r > far) far = r;
+  }
+  return far + LAKE_BOUND_MARGIN;
+}
+
+/** sMax, meanRadius and shoreMax from the outline marched at `step` over the
+ * square of half-side `extent`, the shape's bound Infinity. */
+export function measureLake(shape: LakeShape, step: number, extent: number): { sMax: number; meanRadius: number; shoreMax: number } {
+  const { outline, sMax } = march(shape, step, extent);
+  let shoreMax = 0;
+  for (let i = 0; i < outline.xs.length; i++) {
+    const dx = (outline.xs[i] as number) - shape.cx, dz = (outline.zs[i] as number) - shape.cz;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d > shoreMax) shoreMax = d;
+  }
+  return { sMax, meanRadius: Math.sqrt(Math.abs(shoelace(outline.xs, outline.zs)) / Math.PI), shoreMax };
+}
+
+/** The 16 apron widths of a shape over `ground`: along each LAKE_DIRECTIONS[4i]
+ * from the shore crossing out across LAKE_APRON_BAND, the mean of
+ * |Δh| / LAKE_APRON_STEP, through `apronWidthFor`. */
+export function apronWidths(shape: LakeShape, ground: (x: number, z: number) => number): number[] {
+  const out: number[] = [];
+  const steps = Math.round(LAKE_APRON_BAND / LAKE_APRON_STEP);
+  for (let i = 0; i < 16; i++) {
+    const [dx, dz] = LAKE_DIRECTIONS[4 * i] as readonly [number, number];
+    const c = rayToShore(shape, shape.cx, shape.cz, dx, dz, 0, LAKE_BOUND_REACH);
+    let sum = 0;
+    let prev = ground(shape.cx + dx * c, shape.cz + dz * c);
+    for (let k = 1; k <= steps; k++) {
+      const r = c + k * LAKE_APRON_STEP;
+      const h = ground(shape.cx + dx * r, shape.cz + dz * r);
+      sum += Math.abs(h - prev);
+      prev = h;
+    }
+    out.push(apronWidthFor(sum / (steps * LAKE_APRON_STEP)));
+  }
+  return out;
+}

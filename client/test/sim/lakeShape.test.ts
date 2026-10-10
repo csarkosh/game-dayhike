@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  LAKE_DIRECTIONS, harmonicPair, harmonicSum, lakeDepthD, lakeShoreInto, lakeWobble, newLakeShore, quantile3,
+  LAKE_DIRECTIONS, apronAt, apronWidthFor, apronWidths, fitApron, harmonicPair, harmonicSum, lakeApronEnd, lakeBound,
+  lakeDepthD, lakeOutline, lakeShoreInto, lakeWobble, measureLake, newLakeShore, quantile3, rayToShore, shoelace,
   smin, smootherstepD, spineMetricInto, type LakeShape,
 } from "../../src/sim/lakeShape.js";
 import { fbm2d } from "../../src/sim/field.js";
@@ -267,5 +268,84 @@ describe("the shore distance's derivatives", { timeout: timeLimit(30_000) }, () 
       }
     }
     expect(worst / steepest).toBeLessThan(TOL_RATIO);
+  });
+});
+
+describe("lines, outlines and measures", { timeout: timeLimit(30_000) }, () => {
+  // A straight stadium 20 m of spine and 15 m of half-width about the origin;
+  // its area πw² + 4·10·w = 1306.858 m², the circle of that area 20.3957 m across.
+  const lake: LakeShape = { ...stadiumShape({ cx: 0, cz: 0, halfLen: 10, w: 15, size: 20, apron: 20 }), bound: Number.POSITIVE_INFINITY };
+
+  it("finds where a line first reaches a shore distance", () => {
+    expect(rayToShore(lake, 0, 0, 1, 0, 0, 100)).toBeCloseTo(15, 9);
+    expect(rayToShore(lake, 0, 0, 1, 0, -7, 100)).toBeCloseTo(22, 9);
+    expect(rayToShore(lake, 0, 0, 0, 1, 0, 100)).toBeCloseTo(25, 9);
+    expect(rayToShore(lake, 30, 0, 1, 0, 0, 100)).toBe(0);
+    expect(rayToShore(lake, 0, 0, 1, 0, -100, 50)).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("marches the shore into one closed counter-clockwise loop on the zero set", () => {
+    const o = lakeOutline(lake, 1, 30);
+    expect(o.xs.length).toBe(o.zs.length);
+    expect(o.xs.length).toBeGreaterThan(120);
+    expect(shoelace(o.xs, o.zs)).toBeGreaterThan(0);
+    expect(Math.abs(shoelace(o.xs, o.zs) - 1306.8583470577034)).toBeLessThan(13);
+    for (let i = 0; i < o.xs.length; i++) {
+      expect(Math.abs(lakeShoreInto(newLakeShore(), lake, o.xs[i]!, o.zs[i]!).s), `vertex ${i}`).toBeLessThan(0.02);
+    }
+  });
+
+  it("measures the largest shore distance, the mean radius and the farthest shore point", () => {
+    const m = measureLake(lake, 1, 30);
+    expect(m.sMax).toBe(15);
+    expect(Math.abs(m.meanRadius - 20.3957331741292)).toBeLessThan(0.05);
+    expect(m.shoreMax).toBeCloseTo(25, 9);
+  });
+
+  it("widens the apron as the ground flattens: 4 m at a grade of 1, 16 m at 0.25, 30 m on the flat", () => {
+    expect(apronWidthFor(1)).toBe(4);
+    expect(apronWidthFor(2)).toBe(4);
+    expect(apronWidthFor(0.25)).toBe(16);
+    expect(apronWidthFor(0.1)).toBe(30);
+    expect(apronWidthFor(0)).toBe(30);
+  });
+
+  it("fits 16 widths with harmonics up to k = 3, and reads them back with a smooth floor", () => {
+    const at = (f: (a: number) => number) => Array.from({ length: 16 }, (_, i) => f((i * Math.PI) / 8));
+    const flat = fitApron(at(() => 12));
+    expect(flat[0]).toBeCloseTo(12, 12);
+    for (let k = 1; k < 7; k++) expect(flat[k]).toBeCloseTo(0, 12);
+    const one = fitApron(at((a) => 10 + 5 * Math.cos(a)));
+    expect(one.map((v) => Math.round(v * 1e9) / 1e9 + 0)).toEqual([10, 5, 0, 0, 0, 0, 0]);
+    const three = fitApron(at((a) => 10 + 3 * Math.sin(3 * a)));
+    expect(three.map((v) => Math.round(v * 1e9) / 1e9 + 0)).toEqual([10, 0, 0, 0, 0, 0, 3]);
+    expect(apronAt([30, 0, 0, 0, 0, 0, 0], 1, 0)).toEqual({ v: 30.009611831257686, dTheta: 0 });
+    expect(apronAt([12, 0, 0, 0, 0, 0, 0], 0, 1).v).toBeCloseTo(12.031128874149275, 12);
+  });
+
+  it("ends the lake's ground at the bank's width by σ plus the apron's", () => {
+    expect(lakeApronEnd(lake, lakeShoreInto(newLakeShore(), lake, -20, 0))).toBeCloseTo(4 + 20.0156097709407, 12);
+    expect(lakeApronEnd(lake, lakeShoreInto(newLakeShore(), lake, 20, 0))).toBeCloseTo(6 + 20.0156097709407, 12);
+  });
+
+  it("reads the apron's widths off the ground's own grade along 16 directions", () => {
+    const widths = apronWidths(lake, (x) => 0.5 * x);
+    const want = [
+      8, 8.659137602339152, 11.31370849898476, 20.90500743802202, 30, 20.905007438022025, 11.313708498984761, 8.659137602339152,
+      8, 8.65913760233915, 11.313708498984758, 20.90500743802204, 30, 20.90500743802201, 11.313708498984763, 8.65913760233915,
+    ];
+    for (let i = 0; i < 16; i++) expect(widths[i], `direction ${i}`).toBeCloseTo(want[i]!, 9);
+    for (const w of apronWidths(lake, (x) => 100 + 0.1 * x)) expect(w).toBe(30);
+  });
+
+  it("bounds the lake's ground: every direction lies past its apron's end half a metre inside the bound", () => {
+    const b = lakeBound(lake);
+    expect(b).toBeGreaterThanOrEqual(61);
+    expect(b).toBeLessThan(62);
+    for (let k = 0; k < 720; k++) {
+      const a = (k * Math.PI) / 360;
+      const p = lakeShoreInto(newLakeShore(), lake, Math.cos(a) * (b - 0.5), Math.sin(a) * (b - 0.5));
+      expect(-p.s, `direction ${k}`).toBeGreaterThanOrEqual(lakeApronEnd(lake, p));
+    }
   });
 });
