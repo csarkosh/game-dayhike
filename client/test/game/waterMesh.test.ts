@@ -494,11 +494,12 @@ describe("createWater under NullEngine", () => {
 
   describe("rings without water are off, and a wet ring's bounds are its wet cells (seed atmo)", () => {
     // The olympic variant's sea is at level 0; on seed atmo the coast at z = 0
-    // is near x = -372, and pond_0 sits on high ground at (249.6, 84), about
+    // is near x = -372, and pond_0 sits on high ground at (254.0, 84), about
     // 620 m inland. Ring 3 is 1,024 m across, so it and the three inside it
     // hold no sea only with the camera more than 512 m from the coast.
     const seed = seedFromToken("atmo");
-    const pondCam = { x: 249.6, z: 84 };
+    // 249.6 -> 254.0: atmo's lake is a drawn outline now, its centre the basin's deepest point.
+    const pondCam = { x: 254.0, z: 84 };
 
     it("inland: rings 0 to 3 are disabled, ring 4's box ends at the coast, the pond disc stays on", () => {
       engine = new NullEngine();

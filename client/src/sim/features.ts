@@ -28,7 +28,8 @@ export type Feature = {
   /** Disc radius (m): the peak's dome, the meadow's flat; a pond's drawn mean radius. */
   radius: number;
   /** peak: the dome's rise above the base ground at its centre. meadow: the
-   * plateau height (absolute). pond: the rim height (absolute). */
+   * plateau height (absolute). pond: the lake's level (absolute) for a pond
+   * with a shape, the rim height (absolute) otherwise. */
   height: number;
   /** peak only: the crest's absolute height, written by the builder once the
    * dome is placed — the treeline is a height, so the mask needs it. */

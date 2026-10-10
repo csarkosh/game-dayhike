@@ -262,7 +262,7 @@ export function buildTrail(
       const r = lakeShoreInto(STEM_SHORE, shape, x, z);
       if (r.s === Number.NEGATIVE_INFINITY) continue;
       if (r.s > -(LAKE_TRAIL_CLEAR + TRAIL_GRID_CELL)) return false;
-      for (const o of [-TRAIL_CORRIDOR_HALF, 0, TRAIL_CORRIDOR_HALF]) {
+      for (const o of STEM_OFFSETS) {
         const qx = x + px * o, qz = z + pz * o;
         const pre = frame.sample(qx, qz);
         if (Math.abs(lakeGroundD(shape, qx, qz, pre).h - pre.h) > LAKE_STEM_SHIFT) return false;
@@ -554,8 +554,10 @@ export function buildTrail(
       const g = meanGradientInDisc(grid, x, z, radius);
       if (g > slopeMax) continue;
       // The ring band the loop will walk: a meadow's apron and RING_BAND past
-      // it; a lake's, LAKE_TRAIL_CLEAR to LAKE_TRAIL_CLEAR + RING_BAND
-      // outside its shore, read about the drawn radius until the shape is drawn.
+      // it; for a lake the scan reads LAKE_TRAIL_CLEAR to LAKE_TRAIL_CLEAR +
+      // RING_BAND (7 to 19 m) outside the drawn radius, before the shape is
+      // drawn, while the ring itself starts at LAKE_TRAIL_CLEAR +
+      // LAKE_RING_MARGIN outside the shore.
       const blocked = 1 - (kind === "meadow"
         ? ringPassFraction(grid, x, z, radius, radius + MEADOW_RIM + RING_BAND)
         : ringPassFraction(grid, x, z, radius + LAKE_TRAIL_CLEAR, radius + LAKE_TRAIL_CLEAR + RING_BAND));
@@ -693,21 +695,22 @@ export function buildTrail(
       // there is no node to read. It is what the turn's side is measured from.
       const an = { x: (stemSample[sA] as StemSample).x, z: (stemSample[sA] as StemSample).z };
 
-      // The ring weight. The disc plus ONE GRID CELL of margin is forbidden
+      // A MEADOW'S ring weight (a lake keeps off by its shore distance, below).
+      // The disc plus ONE GRID CELL of margin is forbidden
       // (weight 0 — `searchFrom` skips the cell outright), and RING_COST runs
       // across the band just outside it: cells
       // inside the feature disc are impassable; cells in the band [R, R + 12 m]
       // cost × 0.35, with the extra cell so that a chord the simplifier draws
-      // ACROSS the band still clears the disc — this task's
-      // own test cases require `segmentDistance(edge, centre) ≥ f.radius` for
-      // every edge and every non-peak feature.
+      // ACROSS the band still clears the disc — the trail sweep requires
+      // `segmentDistance(edge, centre) ≥ f.radius` for every edge and every
+      // meadow.
       //
       // This SUPERSEDES an earlier rule that put a meadow's ring on the stage's own
       // rim ramp — RING_COST on [R − MEADOW_RIM, R + RING_BAND], forbidden only
       // below R − MEADOW_RIM − TRAIL_GRID_CELL, i.e. INSIDE the radius
       // (2026-09-11). While no loop ever
       // built, that was invisible; the first meadow loop to build under it
-      // would have failed the disjointness gate. The ground just outside the
+      // would have failed the disjointness test. The ground just outside the
       // disc is not arbitrary either: the feature is levelled to the MEAN
       // pre-feature height over its own disc, so the stage's ramp meets real
       // ground at R and the band immediately outside is the gentlest ground
@@ -717,8 +720,9 @@ export function buildTrail(
       // prefers is that ramp — levelled ground, and outside the radius, which
       // is what keeps every disc disjoint from every edge.
       //
-      // BOTH KINDS FORBID THE DISC PLUS ONE CELL, and the ring starts where the
-      // forbidding stops. The meadow's forbidden radius was `R − TRAIL_GRID_CELL`
+      // A MEADOW FORBIDS ITS DISC PLUS ONE CELL, and the ring starts where the
+      // forbidding stops (a pond's disc rule, before the lakes kept off by
+      // shore distance, was the same). The meadow's forbidden radius was `R − TRAIL_GRID_CELL`
       // (2026-09-11): a cell short of
       // the true boundary on the INSIDE, where the pond's mirror-image formula is
       // a cell PAST it on the outside. The asymmetry left an ~10 m band
@@ -727,7 +731,7 @@ export function buildTrail(
       // search took it. Measured over the 227-seed sweep: 41 of 164 built meadow
       // loops had an edge inside their own feature's disc, worst penetration
       // 8.12 m ≈ one TRAIL_GRID_CELL, exactly the shortfall; 0 of 108 pond loops.
-      // Every feature disc must be disjoint from every edge, and the loop
+      // Every meadow's disc must be disjoint from every edge, and the loop
       // walks the apron beyond R anyway, so nothing legitimate is lost.
       const meadowApron = kind === "meadow";
       // Only the window the feature can reach is written; every cell outside it
@@ -1140,6 +1144,8 @@ function ringPassFraction(grid: TrailGrid, x: number, z: number, lo: number, hi:
 /** Scratch for the builder's own reads of a lake's shore. */
 const PLACE_SHORE = newLakeShore();
 const STEM_SHORE = newLakeShore();
+/** Where the stem's clearance of a lake reads the ground across the stem: its centreline and its corridor's edges. */
+const STEM_OFFSETS: readonly number[] = [-TRAIL_CORRIDOR_HALF, 0, TRAIL_CORRIDOR_HALF];
 const RING_SHORE = newLakeShore();
 const CLEAR_SHORE = newLakeShore();
 
