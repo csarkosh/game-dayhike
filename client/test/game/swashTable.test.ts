@@ -5,7 +5,7 @@ import {
 } from "../../src/game/oceanWaves.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import {
-  SWASH_DOWN_RATIO, SWASH_REACH_MAX_M, frontAt, runUpAlongFace, thicknessAt, tUpOf,
+  SWASH_DOWN_RATIO, SWASH_REACH_MAX_M, frontAt, reachCapAt, runUpAlongFace, thicknessAt, tUpOf,
 } from "../../src/game/swashRunUp.js";
 import {
   SWASH_AGE_MAX, SWASH_BACKWASH_MIN_M, SWASH_BORES_PER_COLUMN, SWASH_COLUMNS, SWASH_DRY_S, SWASH_REWET_M,
@@ -148,7 +148,7 @@ describe("SwashTable", () => {
       let front = 0;
       let thick = 0;
       for (const a of seen) {
-        const reach = Math.min(runUpAlongFace(a.height, table.iribarren, cove.faceGrade), SWASH_REACH_MAX_M);
+        const reach = Math.min(runUpAlongFace(a.height, table.iribarren, cove.faceGrade), reachCapAt(300));
         const age = t - (a.t + (table.transit[300] as number));
         const f = frontAt(age, reach, a.height);
         if (!(f > 0)) continue;
@@ -188,7 +188,16 @@ describe("SwashTable", () => {
       }
     });
     expect(rewetted).toBeGreaterThan(100);
-    expect(column(table, 256).map((v) => Math.round(v * 1e4) / 1e4)).toEqual([6.492, 0.2125, 12, 8.2333]);
+    expect(column(table, 256).map((v) => Math.round(v * 1e4) / 1e4)).toEqual([2.9324, 0.0415, 8.6303, 10.4]);
+  }, timeLimit(60_000));
+
+  it("ends the sheets in lobes: the wet reaches across the central columns are not all equal", () => {
+    const table = new SwashTable(FIELD, coveOf(FIELD));
+    run(table, FIELD, 120);
+    const reaches: number[] = [];
+    for (let c = 156; c <= 356; c++) reaches.push(column(table, c)[2] as number);
+    for (let c = 156; c <= 356; c++) expect(reaches[c - 156]).toBeLessThanOrEqual(reachCapAt(c) + 1e-6);
+    expect(new Set(reaches.map((r) => r.toFixed(3))).size).toBeGreaterThan(10);
   }, timeLimit(60_000));
 
   it("dries: with the swell held still the line holds for SWASH_DRY_S after its last wetting, then falls, and the age runs to SWASH_AGE_MAX", () => {
@@ -197,16 +206,22 @@ describe("SwashTable", () => {
     run(table, FIELD, 40, (t) => {
       if (table.data[256 * 4 + 3] === 0) wetAt = t;
     });
-    // The last time a front stood within SWASH_REWET_M of the line: the 12 m sheet that turned at 34.38 s, falling back.
-    expect(wetAt).toBeCloseTo(35.3667, 4);
     const held = swellPhases(FIELD, 40);
-    for (let i = 1; i <= 7600; i++) {
+    // The sheets already set off run their course over the next 30 s, the last time a front stands within SWASH_REWET_M of the line among them.
+    for (let i = 1; i <= 300; i++) {
+      const t = 40 + i / 10;
+      table.update(t, held);
+      expect(table.arrivals.count).toBe(0);
+      if (table.data[256 * 4 + 3] === 0) wetAt = t;
+    }
+    expect(wetAt).toBeCloseTo(47.7, 4);
+    for (let i = 301; i <= 7600; i++) {
       const t = 40 + i / 10;
       table.update(t, held);
       expect(table.arrivals.count).toBe(0);
       const [front, , reach, age] = column(table, 256) as [number, number, number, number];
       expect(age).toBeCloseTo(Math.min(t - wetAt, SWASH_AGE_MAX), 3);
-      if (t - wetAt < SWASH_DRY_S) expect(reach).toBeCloseTo(12, 4);
+      if (t - wetAt < SWASH_DRY_S) expect(reach).toBeCloseTo(8.6303, 4);
       else expect(reach).toBe(front);
     }
     expect(column(table, 256)).toEqual([0, 0, 0, 600]);
@@ -221,7 +236,7 @@ describe("SwashTable", () => {
       }
     });
     expect(events.map(([t, r]) => [Math.round(t * 1000) / 1000, Math.round(r * 1e4) / 1e4])).toEqual([
-      [15.95, 7.4651], [26.917, 12], [34.383, 12],
+      [15.95, 7.4651], [25, 8.6303], [32.833, 8.6303],
     ]);
     for (const [, reach] of events) expect(reach).toBeGreaterThan(SWASH_BACKWASH_MIN_M);
   }, timeLimit(60_000));

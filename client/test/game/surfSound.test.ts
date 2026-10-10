@@ -104,7 +104,7 @@ describe("surfSound", () => {
     tracker.plunges.count = 1;
     tracker.plunges.z[0] = 120;
     const table = fakeTable();
-    for (let c = 106; c <= 406; c++) thick(table, c, 0.3);
+    for (let c = 106; c <= 406; c++) thick(table, c, 0.2);
     fillSurfSound(s, NEAR, tracker, table, COVE, LEVEL, 2, 0.5, 1);
     const held = [s.nearX, s.nearY, s.nearZ, s.inland, s.canopy, s.hs];
     expect([held, s.present, s.plunges.count]).toEqual([[501, 0.25, 250, 60, 0.5, 2], true, 1]);
@@ -131,16 +131,16 @@ describe("surfSound", () => {
     expect(s.present).toBe(false);
   });
 
-  it("the envelope: the cove's mean sheet thickness over 0.3 · Hs, held to 1, its running mean over 4 s", () => {
+  it("the envelope: the cove's mean sheet thickness over 0.1 · Hs, held to 1, its running mean over 4 s", () => {
     const tracker = fakeTracker();
     const table = fakeTable();
-    // The cove's columns are 106 to 406: 301 of them. Under Hs 2 a full sheet is 0.6 m.
-    for (let c = 106; c <= 205; c++) thick(table, c, 0.6); // 100 full
-    for (let c = 206; c <= 255; c++) thick(table, c, 0.3); // 50 half
+    // The cove's columns are 106 to 406: 301 of them. Under Hs 2 a full sheet is 0.2 m.
+    for (let c = 106; c <= 205; c++) thick(table, c, 0.2); // 100 full
+    for (let c = 206; c <= 255; c++) thick(table, c, 0.1); // 50 half
     for (let c = 256; c <= 355; c++) front(table, c, 3); // fronts with no sheet count for nothing
     for (let c = 196; c <= 245; c++) progress(tracker, c, 0, 0.5); // nor do crests on the face
-    thick(table, 50, 0.6); // outside the cove
-    thick(table, 450, 0.6);
+    thick(table, 50, 0.2); // outside the cove
+    thick(table, 450, 0.2);
     const s = createSurfSound();
     // One fill of 4 s: (60 + 15) / 301 / 0.6 of the way times 1 − 1/e.
     fillSurfSound(s, FAR, tracker, table, COVE, LEVEL, 2, 0, 4);
@@ -149,7 +149,7 @@ describe("surfSound", () => {
     fillSurfSound(s, FAR, tracker, table, COVE, LEVEL, 2, 0, 0);
     fillSurfSound(s, FAR, tracker, table, COVE, LEVEL, 2, 0, Number.NaN);
     expect(s.envelope).toBeCloseTo(0.262509, 6);
-    // Sheets thicker than 0.3 · Hs hold the share to 1; a height that is not a number or not above 0 gives none.
+    // Sheets thicker than 0.1 · Hs hold the share to 1; a height that is not a number or not above 0 gives none.
     const full = createSurfSound();
     for (let c = 106; c <= 406; c++) thick(table, c, 2);
     fillSurfSound(full, FAR, tracker, table, COVE, LEVEL, 2, 0, 4);

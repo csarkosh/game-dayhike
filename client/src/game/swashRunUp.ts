@@ -18,14 +18,31 @@ export const SWASH_G = 9.81;
 /** The retreat takes this many times as long as the climb. */
 export const SWASH_DOWN_RATIO = 2.0;
 /** The sheet's thickness at the waterline as a share of the bore's height. */
-export const SWASH_THICK_K = 0.3;
+export const SWASH_THICK_K = 0.1;
 /** The share of the sheet the pebbles have taken by the end of the retreat. */
 export const SWASH_SINK = 0.6;
 /** The farthest a front runs along the face (m); the sea's rings reach this far past the waterline. */
 export const SWASH_REACH_MAX_M = 12;
+/** How much less than SWASH_REACH_MAX_M a column's cap can be (m): the lobes' depth along the shore. */
+export const SWASH_REACH_LOBE_M = 3.5;
+/** The lobes' two wavelengths along the shore (m, columns), incommensurate so the pattern does not repeat within the cove. */
+export const SWASH_LOBE_WAVE_A = 23;
+export const SWASH_LOBE_WAVE_B = 61;
+/**
+ * The farthest a front runs along the face at column `col` (m): SWASH_REACH_MAX_M
+ * less a smooth share of SWASH_REACH_LOBE_M that rises and falls along the shore,
+ * two sine waves of SWASH_LOBE_WAVE_A and SWASH_LOBE_WAVE_B columns with fixed
+ * phases. Between SWASH_REACH_MAX_M − SWASH_REACH_LOBE_M and SWASH_REACH_MAX_M,
+ * the same for every peer since it depends on the column alone.
+ */
+export function reachCapAt(col: number): number {
+  const a = Math.sin((col * 2 * Math.PI) / SWASH_LOBE_WAVE_A + 1.3);
+  const b = Math.sin((col * 2 * Math.PI) / SWASH_LOBE_WAVE_B + 0.4);
+  return SWASH_REACH_MAX_M - SWASH_REACH_LOBE_M * (0.5 + 0.25 * (a + b));
+}
 /**
  * How high above the still level the swash can stand on the cove's face (m):
- * the farthest reach up the 1:12 face, 1 m, and the sheet's 0.6 m over it.
+ * the farthest reach up the 1:12 face, 1 m, and room for the sheet.
  * Along the cove and its ends' blends the sea's rings count ground this far
  * above the level as wet (`wetBounds`), so a ring that covers only the face
  * is still drawn.

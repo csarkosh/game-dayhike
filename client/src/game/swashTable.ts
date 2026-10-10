@@ -16,7 +16,7 @@
  * the toe to the waterline over its frequency, the time its crests take to
  * cross. The sheet runs up by `swashRunUp` with the face's Iribarren number
  * (the face's grade over √(Hs/L0), the field's significant height and its
- * deep wavelength g·Tp²/2π) and a reach held to SWASH_REACH_MAX_M.
+ * deep wavelength g·Tp²/2π) and a reach held to the column's cap, `reachCapAt`, which lobes along the shore.
  *
  * Distances up the face are from the still waterline (d = 0). Per column the
  * row holds the front, the sheet's thickness at the waterline (it falls
@@ -36,7 +36,7 @@ import { OCEAN_G } from "./oceanPhysics.js";
 import { SWELL_COMPONENTS, type SwellComponent } from "./oceanSwell.js";
 import { swellAtInto, swellBreakInto, swellScratch, type OceanField } from "./oceanWaves.js";
 import {
-  SWASH_DOWN_RATIO, SWASH_REACH_MAX_M, frontAt, overlap, runUpAlongFace, thicknessAt, tUpOf,
+  SWASH_DOWN_RATIO, frontAt, overlap, reachCapAt, runUpAlongFace, thicknessAt, tUpOf,
 } from "./swashRunUp.js";
 
 /** One a metre of shore, column 0 at z0 − SWASH_COLUMNS/2. */
@@ -99,6 +99,8 @@ export class SwashTable {
   private readonly boreLaunch: Float64Array;
   private readonly boreHeight: Float64Array;
   private readonly boreReach: Float64Array;
+  /** Each column's cap on a bore's reach (m): `reachCapAt`, made once. */
+  private readonly reachCap: Float64Array;
   private readonly boreNext: Uint8Array;
   private readonly wetReach: Float64Array;
   private readonly wetAt: Float64Array;
@@ -138,6 +140,8 @@ export class SwashTable {
     this.boreLaunch = new Float64Array(SWASH_COLUMNS * SWASH_BORES_PER_COLUMN);
     this.boreHeight = new Float64Array(SWASH_COLUMNS * SWASH_BORES_PER_COLUMN);
     this.boreReach = new Float64Array(SWASH_COLUMNS * SWASH_BORES_PER_COLUMN);
+    this.reachCap = new Float64Array(SWASH_COLUMNS);
+    for (let col = 0; col < SWASH_COLUMNS; col++) this.reachCap[col] = reachCapAt(col);
     this.boreNext = new Uint8Array(SWASH_COLUMNS);
     this.wetReach = new Float64Array(SWASH_COLUMNS);
     this.wetAt = new Float64Array(SWASH_COLUMNS);
@@ -240,7 +244,7 @@ export class SwashTable {
         this.boreNext[col] = ((this.boreNext[col] as number) + 1) % SWASH_BORES_PER_COLUMN;
         this.boreLaunch[slot] = t + (this.transit[col] as number);
         this.boreHeight[slot] = h;
-        this.boreReach[slot] = Math.min(runUpAlongFace(h, iribarren, grade), SWASH_REACH_MAX_M);
+        this.boreReach[slot] = Math.min(runUpAlongFace(h, iribarren, grade), this.reachCap[col] as number);
       }
       this.prevQ[col] = q;
       this.prevHeight[col] = height;

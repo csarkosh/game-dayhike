@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   SWASH_DOWN_RATIO, SWASH_G, SWASH_REACH_MAX_M, SWASH_SINK, SWASH_THICK_K,
-  frontAt, overlap, runUpAlongFace, runUpVertical, thicknessAt, tUpOf,
+  frontAt, overlap, reachCapAt, runUpAlongFace, runUpVertical, thicknessAt, tUpOf,
 } from "../../src/game/swashRunUp.js";
 
 describe("swashRunUp", () => {
   it("holds its constants", () => {
-    expect([SWASH_G, SWASH_DOWN_RATIO, SWASH_THICK_K, SWASH_SINK, SWASH_REACH_MAX_M]).toEqual([9.81, 2, 0.3, 0.6, 12]);
+    expect([SWASH_G, SWASH_DOWN_RATIO, SWASH_THICK_K, SWASH_SINK, SWASH_REACH_MAX_M]).toEqual([9.81, 2, 0.1, 0.6, 12]);
   });
 
   it("runs a 1 m bore at Iribarren 0.8 up the 1:12 face 0.8 m vertical, 9.6 m along it", () => {
@@ -48,16 +48,32 @@ describe("swashRunUp", () => {
     expect(frontAt(Number.NaN, 9.6, 1)).toBe(0);
   });
 
-  it("is a wedge: 0.3 of the bore's height at the waterline while climbing, nothing at the front or past it, thinned as it falls back", () => {
-    expect(thicknessAt(0, 6, 1, 0)).toBeCloseTo(0.3, 12);
-    expect(thicknessAt(3, 6, 1, 0)).toBeCloseTo(0.15, 12);
+  it("reachCapAt lobes the cap along the shore, between SWASH_REACH_MAX_M less 3.5 m and SWASH_REACH_MAX_M", () => {
+    expect(reachCapAt(0)).toBeCloseTo(9.066146, 6);
+    expect(reachCapAt(256)).toBeCloseTo(8.630331, 6);
+    expect(reachCapAt(300)).toBeCloseTo(9.475419, 6);
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let c = 0; c < 512; c++) {
+      const cap = reachCapAt(c);
+      expect(cap).toBeGreaterThanOrEqual(8.5);
+      expect(cap).toBeLessThanOrEqual(12);
+      lo = Math.min(lo, cap);
+      hi = Math.max(hi, cap);
+    }
+    expect(hi - lo).toBeGreaterThan(3);
+  });
+
+  it("is a wedge: 0.1 of the bore's height at the waterline while climbing, nothing at the front or past it, thinned as it falls back", () => {
+    expect(thicknessAt(0, 6, 1, 0)).toBeCloseTo(0.1, 12);
+    expect(thicknessAt(3, 6, 1, 0)).toBeCloseTo(0.05, 12);
     expect(thicknessAt(6, 6, 1, 0)).toBe(0);
     expect(thicknessAt(7, 6, 1, 0)).toBe(0);
     expect(thicknessAt(-1, 6, 1, 0)).toBe(0);
-    expect(thicknessAt(0, 6, 2, 0)).toBeCloseTo(0.6, 12);
-    expect(thicknessAt(0, 6, 1, 0.5)).toBeCloseTo(0.21, 12);
-    expect(thicknessAt(0, 6, 1, 1)).toBeCloseTo(0.12, 12);
-    expect(thicknessAt(0, 6, 1, 3)).toBeCloseTo(0.12, 12);
+    expect(thicknessAt(0, 6, 2, 0)).toBeCloseTo(0.2, 12);
+    expect(thicknessAt(0, 6, 1, 0.5)).toBeCloseTo(0.07, 12);
+    expect(thicknessAt(0, 6, 1, 1)).toBeCloseTo(0.04, 12);
+    expect(thicknessAt(0, 6, 1, 3)).toBeCloseTo(0.04, 12);
     expect(thicknessAt(0, 0, 1, 0)).toBe(0);
   });
 
