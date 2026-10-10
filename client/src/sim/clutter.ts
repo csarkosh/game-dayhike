@@ -856,13 +856,12 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       if (bodies !== undefined) {
         for (const b of bodies) {
           if (b.kind !== "lake" || s.h < b.level) continue;
-          const dx = x - b.x, dz = z - b.z;
-          const inner = b.radius + POND_SHORE;
+          // By the shore distance, t = −s: from POND_SHORE out (spec §10.1).
+          const t = -lakeShoreInto(PLANT_SHORE, b.shape, x, z).s;
+          const inner = POND_SHORE;
           const outer = inner + CLUTTER_WETPLANT_LAKE_REACH + CLUTTER_WETPLANT_LAKE_FADE;
-          const q2 = dx * dx + dz * dz;
-          if (q2 >= outer * outer || q2 <= inner * inner) continue;
-          const q = Math.sqrt(q2);
-          lakeside = Math.max(lakeside, smoothstep(inner, inner + 1, q) * (1 - smoothstep(inner + CLUTTER_WETPLANT_LAKE_REACH, outer, q)));
+          if (!(t > inner) || !(t < outer)) continue;
+          lakeside = Math.max(lakeside, smoothstep(inner, inner + 1, t) * (1 - smoothstep(inner + CLUTTER_WETPLANT_LAKE_REACH, outer, t)));
         }
       }
       // A seep: the noise's middle band, a ribbon, under the lowland canopy on a bench.

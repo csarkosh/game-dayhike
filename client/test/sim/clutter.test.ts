@@ -1650,24 +1650,25 @@ describe("wet-ground plants", () => {
   it("ring a lake from its bare shore out, and stop past their reach", () => {
     const { seed } = firstPondWorld(() => true);
     const lake = lakeOf(seed);
-    const inner = lake.radius + POND_SHORE;
     let ringed = 0, ring = 0;
     for (let k = 0; k < 64; k++) {
       const a = (k / 64) * Math.PI * 2;
-      const at = (q: number): number => {
-        const x = lake.x + Math.cos(a) * q, z = lake.z + Math.sin(a) * q;
+      const ux = Math.cos(a), uz = Math.sin(a);
+      // `t` metres outside the shore along this direction from the centre.
+      const at = (t: number, h: number = lake.level + 0.5): number => {
+        const d = rayToShore(lake.shape, lake.x, lake.z, ux, uz, -t, lake.bound);
         // Level ground a little over the water, clear of what else gates it.
-        return clutterDensity(seed, CLUTTER_WETPLANT, x, z, { h: lake.level + 0.5, dx: 0.01, dz: 0.01 });
+        return clutterDensity(seed, CLUTTER_WETPLANT, lake.x + ux * d, lake.z + uz * d, { h, dx: 0.01, dz: 0.01 });
       };
-      expect(at(inner - 0.5)).toBe(0);
-      expect(at(inner + CLUTTER_WETPLANT_LAKE_REACH + CLUTTER_WETPLANT_LAKE_FADE + 30)).toBeLessThanOrEqual(1);
+      expect(at(POND_SHORE - 0.5)).toBe(0);
+      expect(at(POND_SHORE + CLUTTER_WETPLANT_LAKE_REACH + CLUTTER_WETPLANT_LAKE_FADE + 30)).toBeLessThanOrEqual(1);
       ring++;
-      if (at(inner + 3) > 0.5) ringed++;
+      if (at(POND_SHORE + 3) > 0.5) ringed++;
+      // Under the lake's level nothing grows: that is the reeds' ground.
+      expect(at(POND_SHORE + 3, lake.level - 0.2)).toBe(0);
     }
     // The road and the shore's own gates may close part of the ring; most of it stands.
     expect(ringed / ring).toBeGreaterThan(0.5);
-    // Under the lake's level nothing grows: that is the reeds' ground.
-    expect(clutterDensity(seed, CLUTTER_WETPLANT, lake.x + inner + 3, lake.z, { h: lake.level - 0.2, dx: 0.01, dz: 0.01 })).toBe(0);
   });
 
   it("stands every instance in its scale band and off the trail", () => {
