@@ -2129,10 +2129,10 @@ function buildRenderer(
   // The wet line follows the nearest body, sea or pond. No bodies, no call.
   const wetBodies: WetBody[] = [];
   if (forest !== null && waterLevel !== undefined) {
-    wetBodies.push({ ...WATER_ROWS.sea, level: waterLevel, x: 0, z: 0, radius: Number.POSITIVE_INFINITY });
+    wetBodies.push({ ...WATER_ROWS.sea, level: waterLevel, x: 0, z: 0, radius: Number.POSITIVE_INFINITY, bound: Number.POSITIVE_INFINITY });
   }
   for (const l of lakes) {
-    wetBodies.push({ ...lakeWaterRow(l.murk), level: l.level, x: l.x, z: l.z, radius: l.radius });
+    wetBodies.push({ ...lakeWaterRow(l.murk), level: l.level, x: l.x, z: l.z, radius: l.shape.shoreMax, bound: l.bound });
   }
   const updateWet = (x: number, z: number): void => {
     if (wetBodies.length === 0) return;

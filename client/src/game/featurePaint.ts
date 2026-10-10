@@ -163,6 +163,29 @@ export function featurePaintWeights(
   return { meadow, shore, rock };
 }
 
+/**
+ * THE TYPESCRIPT TWIN OF `featureWetInside` (`FEATURE_FRAGMENT_DEFS`): the wet
+ * look's footprint at (x, z) on the terrain for the wet body centred on
+ * (cx, cz) of disc `radius` — the lake whose table entry stands there, 1 to
+ * 3 m outside its shore by the atlas, or the disc for any other body.
+ */
+export function featureWetInside(
+  features: readonly Feature[], atlas: ShoreAtlas, x: number, z: number, cx: number, cz: number, radius: number,
+): number {
+  const t = featureTable(features, atlas);
+  let inside = 1 - smoothstep(radius + 1, radius + 3, Math.hypot(x - cx, z - cz));
+  let fLake = 0;
+  const count = Math.min(features.length, FEATURE_PAINT_MAX);
+  for (let fi = 0; fi < count; fi++) {
+    const fx = t[fi * 4] as number, fz = t[fi * 4 + 1] as number, fb = t[fi * 4 + 2] as number, fw = t[fi * 4 + 3] as number;
+    if (fw > 2.5) {
+      if (Math.hypot(fx - cx, fz - cz) < 0.5) inside = 1 - smoothstep(1, 3, -shoreAtlasRead(atlas.values, fLake, fx, fz, fb, x, z));
+      fLake += 1;
+    }
+  }
+  return inside;
+}
+
 export function createFeatureTexture(scene: Scene, features: readonly Feature[]): RawTexture {
   return RawTexture.CreateRGBATexture(
     featureTable(features, bakeShoreAtlas(paintedLakes(features))), FEATURE_TEX_WIDTH, FEATURE_TEX_ROWS, scene,
@@ -200,6 +223,22 @@ float featureShoreAt(float tile, vec2 c, float b, vec2 xz) {
   float farRow = mix(featureShoreTexel(u0, v1), featureShoreTexel(u1, v1), f.x);
   float inside = step(0.0, local.x) * step(0.0, local.y) * step(local.x, 1.0) * step(local.y, 1.0);
   return mix(${SHORE_ATLAS_FAR.toFixed(1)}, mix(nearRow, farRow, f.y), inside);
+}
+// The wet look's footprint on the terrain (wetPlugin.ts): for the lake whose
+// table entry stands at centre, 1 to 3 m outside its shore by the atlas, as
+// wetInside is about a disc, and the disc for any other body (the sea).
+float featureWetInside(vec2 xz, vec2 centre, float radius, float count) {
+  float inside = 1.0 - smoothstep(radius + 1.0, radius + 3.0, length(xz - centre));
+  float fLake = 0.0;
+  for (int fi = 0; fi < ${FEATURE_PAINT_MAX}; fi++) {
+    if (float(fi) >= count) break;
+    vec4 f = texelFetch(featureTex, ivec2(fi, 0), 0);
+    if (f.w > 2.5) {
+      if (length(f.xy - centre) < 0.5) inside = 1.0 - smoothstep(1.0, 3.0, -featureShoreAt(fLake, f.xy, f.z, xz));
+      fLake += 1.0;
+    }
+  }
+  return inside;
 }
 #endif
 `;

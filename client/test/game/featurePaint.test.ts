@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  FEATURE_PAINT_MAX, FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTable, featurePaintWeights, paintedLakes,
+  FEATURE_PAINT_MAX, FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTable, featurePaintWeights, featureWetInside, paintedLakes,
   FEATURE_FRAGMENT_PAINT, FEATURE_FRAGMENT_DEFS,
 } from "../../src/game/featurePaint.js";
 import { bakeShoreAtlas } from "../../src/game/shoreAtlas.js";
@@ -177,6 +177,33 @@ describe("the feature paint's weights", { timeout: timeLimit(30_000) }, () => {
     expect(featurePaintWeights(all, atlas, 29, 2000, 40).shore).toBeCloseTo(0, 6);
     expect(featurePaintWeights(all, atlas, 29.5, 2000, 40).shore).toBeCloseTo(0.5, 6);
     expect(featurePaintWeights(all, atlas, 30.5, 2000, 40).shore).toBeCloseTo(1, 6);
+  });
+
+  it("holds the wet look's footprint to the lake's shore on the terrain, the disc for the sea", () => {
+    expect(FEATURE_FRAGMENT_DEFS).toContain(
+      "float featureWetInside(vec2 xz, vec2 centre, float radius, float count) {\n" +
+        "  float inside = 1.0 - smoothstep(radius + 1.0, radius + 3.0, length(xz - centre));\n" +
+        "  float fLake = 0.0;\n" +
+        "  for (int fi = 0; fi < 8; fi++) {\n" +
+        "    if (float(fi) >= count) break;\n" +
+        "    vec4 f = texelFetch(featureTex, ivec2(fi, 0), 0);\n" +
+        "    if (f.w > 2.5) {\n" +
+        "      if (length(f.xy - centre) < 0.5) inside = 1.0 - smoothstep(1.0, 3.0, -featureShoreAt(fLake, f.xy, f.z, xz));\n" +
+        "      fLake += 1.0;\n" +
+        "    }\n" +
+        "  }\n" +
+        "  return inside;\n" +
+        "}\n",
+    );
+    // The lake's wet body: its centre, and its disc the farthest shore point, 35 m.
+    const wet = (x: number, z: number): number => featureWetInside(all, atlas, x, z, 0, 2000, 35);
+    expect(wet(29, 2000)).toBeCloseTo(1, 6);
+    expect(wet(32, 2000)).toBeCloseTo(0.5, 6);
+    expect(wet(33.5, 2000)).toBeCloseTo(0, 6);
+    // Where the disc of 35 m would reach (37, 2000) the shore has let go.
+    expect(wet(37, 2000)).toBe(0);
+    // The sea: no lake stands at its centre, so its disc.
+    expect(featureWetInside(all, atlas, 5000, 5000, 0, 0, 1e6)).toBe(1);
   });
 
   it("follows the shore round the cap, not a disc about the centre", () => {
