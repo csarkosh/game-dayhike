@@ -19,7 +19,11 @@ import { createMotes } from "../../src/game/motes.js";
 import { createMistMeshes } from "../../src/game/mistMeshes.js";
 import { createWaterLife } from "../../src/game/waterLife.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
-import { OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterRingSpacing } from "../../src/game/water.js";
+import {
+  OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, createWaterRingSamples, waterRingGeometry, waterRingSpacing, wetBounds,
+} from "../../src/game/water.js";
+import { coastProfilesFor } from "../../src/game/oceanTables.js";
+import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
 import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
@@ -33,6 +37,8 @@ import { WATER_GROUP } from "../../src/game/waterFrame.js";
 import { oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
 import { windSeaStateFor } from "../../src/game/oceanWindSea.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
+import { SwashTable } from "../../src/game/swashTable.js";
+import { LipTracker } from "../../src/game/oceanBreaker.js";
 
 // Whether the high tier's frame can be made is a question for the engine
 // (WebGPU, a multisampled first pass), which NullEngine cannot answer yes to;
@@ -45,7 +51,7 @@ vi.mock("../../src/game/waterFrame.js", async (importOriginal) => {
 
 // What the sea's waves are told each frame of whether the sea is drawn: the
 // real ocean, its `update` recorded on the way in.
-const seaFrames = vi.hoisted(() => ({ drawn: [] as (boolean | undefined)[] }));
+const seaFrames = vi.hoisted(() => ({ drawn: [] as (boolean | undefined)[], mode: null as 0 | 1 | 2 | null }));
 vi.mock("../../src/game/oceanRender.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/game/oceanRender.js")>();
   return {
@@ -53,11 +59,38 @@ vi.mock("../../src/game/oceanRender.js", async (importOriginal) => {
     createOcean: (...args: Parameters<typeof actual.createOcean>) => {
       const ocean = actual.createOcean(...args);
       const update = ocean.update.bind(ocean);
+      // The plugin bound, so a test can hold the wind mode the frame wrote
+      // (`seaFrames.mode`): NullEngine never runs the FFT.
+      let bound: import("../../src/game/waterPlugin.js").WaterPlugin | null = null;
+      const bind = ocean.bind.bind(ocean);
+      ocean.bind = (plugin) => {
+        bound = plugin;
+        bind(plugin);
+      };
       ocean.update = (...frame: Parameters<typeof update>) => {
         seaFrames.drawn.push(frame[6]);
         update(...frame);
+        if (seaFrames.mode !== null && bound?.ocean != null) bound.ocean.coast[3] = seaFrames.mode;
       };
       return ocean;
+    },
+  };
+});
+
+// What the sea's edge hands the wet ground's module, recorded on the way
+// through to the real setters.
+const wetCalls = vi.hoisted(() => ({ cove: [] as number[][], swash: [] as Float32Array[] }));
+vi.mock("../../src/game/wetPlugin.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/wetPlugin.js")>();
+  return {
+    ...actual,
+    setWetCove: (...args: Parameters<typeof actual.setWetCove>) => {
+      wetCalls.cove.push([...args]);
+      actual.setWetCove(...args);
+    },
+    setWetSwash: (data: Float32Array) => {
+      wetCalls.swash.push(data);
+      actual.setWetSwash(data);
     },
   };
 });
@@ -482,14 +515,23 @@ describe("createWater under NullEngine", () => {
         // the whole plane would reach 1,024 m east of the camera
         const planeMaxX = box.minimumWorld.x + OCEAN_BOUND + waterRingSpacing(4) + WATER_RING_CELLS * waterRingSpacing(4);
         expect(planeMaxX).toBeGreaterThan(pondCam.x);
-        // the ring's east-most wet vertex is on the coast, and the box ends one
-        // 16 m cell past it, and past that the waves' 12 m and the stitch's
-        // move of a vertex, up to a cell, 16 m
+        // the ring's east-most wet vertex is on the coast's face, its ground
+        // under the level plus the swash's 1.6 m (the last under the level
+        // itself west of it), and the box ends one 16 m cell past it, and past
+        // that the waves' 12 m and the stitch's move of a vertex, up to a cell, 16 m
         const pos = ring4.getVerticesData(VertexBuffer.PositionKind)!;
         const depth = ring4.getVerticesData("bedDepth")!;
+        let deepMaxX = -Infinity;
         let wetMaxX = -Infinity;
-        for (let i = 0; i < depth.length; i++) if ((depth[i] as number) > 0) wetMaxX = Math.max(wetMaxX, pos[i * 3] as number);
-        expect(wetMaxX).toBeLessThan(-360);
+        expect(SWASH_FACE_LIFT_M).toBe(1.6);
+        for (let i = 0; i < depth.length; i++) {
+          const x = pos[i * 3] as number;
+          if ((depth[i] as number) > 0) deepMaxX = Math.max(deepMaxX, x);
+          if (Math.fround(elevationAt(seed, x, pos[i * 3 + 2] as number)) < level + SWASH_FACE_LIFT_M) wetMaxX = Math.max(wetMaxX, x);
+        }
+        // three 16 m cells of face east of the last vertex under the level
+        expect(deepMaxX).toBe(-368);
+        expect(wetMaxX).toBe(-320);
         expect(box.maximumWorld.x).toBeGreaterThanOrEqual(wetMaxX + 12 + 16);
         expect(box.maximumWorld.x).toBeLessThanOrEqual(wetMaxX + 16 + 12 + 16);
         // the crest above the level and the trough below it
@@ -502,6 +544,23 @@ describe("createWater under NullEngine", () => {
       water.update(pondCam.x + 40, pondCam.z + 40, 0);
       water.update(pondCam.x, pondCam.z, 0);
       check();
+      water.dispose();
+    }, timeLimit(30_000));
+
+    it("lifts the wet ground by the swash's face only along the cove: a ring over plain beach 1 km along the coast is off", () => {
+      engine = new NullEngine();
+      const scene = new Scene(engine);
+      // Seed 7's cove is about z = 0, 164.5 m half-wide; at z = −1,000 a camera
+      // 100 m inland of the waterline has beach under ring 0 that is above the
+      // level but under the swash's 1.6 m.
+      const camZ = -1000;
+      const camX = coastProfilesFor(7).coastlineX(camZ) + 100;
+      const ring = createWaterRingSamples(7, 0, camX, camZ);
+      const g = waterRingGeometry(ring, null, 0);
+      expect(wetBounds(g, ring.h, SWASH_FACE_LIFT_M)).not.toBeNull();
+      expect(wetBounds(g, ring.h, 0)).toBeNull();
+      const water = createWater(scene, 7, 0, [], "medium", camX, camZ);
+      expect(water.meshes[0]!.isEnabled()).toBe(false);
       water.dispose();
     }, timeLimit(30_000));
 
@@ -702,4 +761,251 @@ describe("createWater under NullEngine", () => {
     water.dispose();
     frameSupport.supported = false;
   }, timeLimit(30_000));
+});
+
+describe("the sea's edge in createWater", () => {
+  let engine: NullEngine;
+  afterEach(() => {
+    vi.restoreAllMocks();
+    frameSupport.supported = false;
+    seaFrames.mode = null;
+    engine?.dispose();
+  });
+
+  /** Seed 7's cove: its centre at z = 0, its waterline there at x = −396.93. */
+  const COAST_X0 = -396.92522197833614;
+
+  /** Eight plunges 10 m apart along the cove from its centre, 10 m seaward of
+   * the waterline and 1 m high, and one 500 m out: written in place of the
+   * tracker's own each frame. */
+  function plungesOnTheFace(tracker: LipTracker): void {
+    vi.spyOn(tracker, "update").mockImplementation(() => {
+      const p = tracker.plunges;
+      p.count = 9;
+      for (let i = 0; i < 8; i++) {
+        p.z[i] = 10 * i;
+        p.d[i] = -10;
+        p.height[i] = 1;
+      }
+      p.z[8] = 0;
+      p.d[8] = -500;
+      p.height[8] = 1;
+    });
+  }
+
+  it("builds the swash's table, its texture and the tracker on every tier, the spray on high, and the curl on high's own path alone", () => {
+    const setCove = vi.spyOn(WaterPlugin.prototype, "setCove");
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    for (const tier of ["low", "medium"] as const) {
+      const water = createWater(scene, 7, 0, [], tier);
+      const edge = water.edge;
+      expect(edge.table).toBeInstanceOf(SwashTable);
+      expect(edge.tracker).toBeInstanceOf(LipTracker);
+      expect(edge.swash.texture).toBeInstanceOf(RawTexture);
+      expect(edge.lip).toBeNull();
+      expect(edge.spray).toBeNull();
+      expect(edge.filled).toBe(false);
+      water.dispose();
+    }
+    // High on WebGL2 (no frame, no FFT): the spray, blended in group 0 with
+    // the sea, and no curl: the sea's fragment lip draws there.
+    const meshesBefore = scene.meshes.length;
+    const blended = createWater(scene, 7, 0, [], "high");
+    expect(blended.high).toBe(false);
+    expect(blended.edge.lip).toBeNull();
+    expect(scene.meshes.filter((m) => m.name.includes("lip"))).toEqual([]);
+    expect(blended.edge.spray!.mesh.renderingGroupId).toBe(0);
+    // The seven rings and the spray's quad.
+    expect(scene.meshes.length - meshesBefore).toBe(8);
+    blended.dispose();
+    frameSupport.supported = true;
+    const opaque = createWater(scene, 7, 0, [], "high");
+    expect(opaque.high).toBe(true);
+    expect(opaque.edge.lip!.fine.renderingGroupId).toBe(WATER_GROUP);
+    expect(opaque.edge.lip!.coarse.renderingGroupId).toBe(WATER_GROUP);
+    expect(opaque.edge.spray!.mesh.renderingGroupId).toBe(WATER_GROUP);
+    // The cove: seed 7's centre and half-width, the toe 24 m out on the 1:12 face.
+    const cove = opaque.edge.cove;
+    expect([cove.z0, cove.halfWidth, cove.toeD, cove.faceGrade]).toEqual([0, 164.54241767758504, -24, 1 / 12]);
+    expect(cove.coastX(0)).toBe(COAST_X0);
+    // The sea is told the cove as it is made, once a water (four), and the
+    // curl's own material once, on high's own path.
+    expect(setCove.mock.calls).toHaveLength(5);
+    expect((setCove.mock.contexts as WaterPlugin[]).filter((plugin) => plugin.lip)).toHaveLength(1);
+    for (const call of setCove.mock.calls) expect(call).toEqual([0, 164.54241767758504, -24, 1 / 12]);
+    // The swell's height as the sea's binding holds it.
+    expect(opaque.edge.hs).toBe(0.8);
+    opaque.dispose();
+  }, timeLimit(60_000));
+
+  it("advances the table and the tracker on the sea's seconds and swell under the wind's onshore weight, and hands the sea the swash from the first fill", () => {
+    const setSwash = vi.spyOn(WaterPlugin.prototype, "setSwash");
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 0, [], "medium");
+    const { table, tracker, swash } = water.edge;
+    const tableUpdate = vi.spyOn(table, "update");
+    const trackerUpdate = vi.spyOn(tracker, "update");
+    const upload = vi.spyOn(swash, "update");
+    expect(setSwash).not.toHaveBeenCalled();
+    // A wind along the coast: no share of it onshore, a weight of 0.352.
+    water.setWind(0.5, [0, 1]);
+    water.update(0, 0, 12.5, 14);
+    expect(tableUpdate).toHaveBeenCalledTimes(1);
+    const phases = tableUpdate.mock.calls[0]![1];
+    expect(tableUpdate.mock.calls[0]![0]).toBe(12.5);
+    expect(Array.from(phases)).toEqual(Array.from(swellPhases(oceanFieldFor(7, 12), 12.5)));
+    expect(trackerUpdate).toHaveBeenCalledTimes(1);
+    expect(trackerUpdate.mock.calls[0]![0]).toBe(12.5);
+    expect(trackerUpdate.mock.calls[0]![1]).toBe(phases);
+    expect(trackerUpdate.mock.calls[0]![2]).toBeCloseTo(0.352, 12);
+    // Uploaded after the fill, and the sea reads it from then on.
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(upload.mock.invocationCallOrder[0]!).toBeGreaterThan(tableUpdate.mock.invocationCallOrder[0]!);
+    expect(water.edge.filled).toBe(true);
+    expect(setSwash.mock.calls).toEqual([[swash.texture]]);
+    // The next frame: the same phases refilled, the sea told nothing again.
+    water.update(0, 0, 13, 14);
+    expect(tableUpdate.mock.calls[1]![1]).toBe(phases);
+    expect(setSwash).toHaveBeenCalledTimes(1);
+    water.dispose();
+  }, timeLimit(60_000));
+
+  it("shows the curl only while the FFT draws the wind sea, the strip off in every other mode", () => {
+    frameSupport.supported = true;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    new FreeCamera("c", Vector3.Zero(), scene);
+    const water = createWater(scene, 7, 0, [], "high");
+    const lip = water.edge.lip!;
+    const lipUpdate = vi.spyOn(lip, "update");
+    // No FFT yet (the swell alone): the strip off, not stepped.
+    lip.fine.setEnabled(true);
+    lip.coarse.setEnabled(true);
+    water.update(-400, 0, 1, 12);
+    expect(lipUpdate).not.toHaveBeenCalled();
+    expect([lip.fine.isEnabled(), lip.coarse.isEnabled()]).toEqual([false, false]);
+    // The FFT drawing: the strip stepped from the camera.
+    seaFrames.mode = 2;
+    water.update(-400, 0, 2, 12);
+    expect(lipUpdate.mock.calls).toEqual([[-400, 0]]);
+    // The FFT dropped for the loop: off again.
+    seaFrames.mode = 1;
+    lip.fine.setEnabled(true);
+    water.update(-400, 0, 3, 12);
+    expect(lipUpdate).toHaveBeenCalledTimes(1);
+    expect([lip.fine.isEnabled(), lip.coarse.isEnabled()]).toEqual([false, false]);
+    water.dispose();
+  }, timeLimit(60_000));
+
+  it("throws spray for the frame's plunges within reach of the camera, nearest first, six at most, landward from the crest's top at the lip's throw", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 0, [], "high");
+    const spray = water.edge.spray!;
+    plungesOnTheFace(water.edge.tracker);
+    const burst = vi.spyOn(spray, "burst");
+    const sprayUpdate = vi.spyOn(spray, "update");
+    water.setWind(0.5, [0, 1]);
+    water.update(-400, 0, 20, 12);
+    // Six of the eight on the face, nearest the camera first; the one 500 m out is past the 300 m reach.
+    expect(burst.mock.calls.map((call) => call[2])).toEqual([0, 10, 20, 30, 40, 50]);
+    const [x, y, z, dirX, dirZ, speed, seconds] = burst.mock.calls[0]!;
+    // 10 m seaward of the waterline at z = 0, the crest's top 1 m above the level.
+    expect(x).toBeCloseTo(-406.92522197833614, 9);
+    expect([y, z, dirX]).toEqual([1, 0, 1]);
+    // Against the coast's turn there: the landward normal.
+    expect(dirZ).toBeCloseTo(-0.0990227897035254, 9);
+    // 1.4 times the speed of a 1 m wave, √(9.81).
+    expect(speed).toBeCloseTo(4.384928733742431, 12);
+    expect(seconds).toBe(20);
+    expect(sprayUpdate).toHaveBeenCalledTimes(1);
+    expect(sprayUpdate.mock.calls[0]![0]).toBe(20);
+    expect(sprayUpdate.mock.calls[0]![1]).toMatchObject({ dirX: 0, dirZ: 1, speed: 0.5 });
+    expect(spray.mesh.isEnabled()).toBe(true);
+    water.dispose();
+  }, timeLimit(60_000));
+
+  it("throws the spray along the swell's travel while the curl is shown, as the curl throws its lip, and along the normal while it is not", () => {
+    frameSupport.supported = true;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    new FreeCamera("c", Vector3.Zero(), scene);
+    const water = createWater(scene, 7, 0, [], "high");
+    expect(water.edge.lip).not.toBeNull();
+    const spray = water.edge.spray!;
+    plungesOnTheFace(water.edge.tracker);
+    const burst = vi.spyOn(spray, "burst");
+    // Before the FFT draws (the swell alone), the curl is made but not shown:
+    // the sea's fragment lip draws, so the spray takes the face's normal.
+    water.update(-400, 0, 20, 12);
+    expect(burst.mock.calls.map((call) => call[2])).toEqual([0, 10, 20, 30, 40, 50]);
+    const [, , , dirX, dirZ] = burst.mock.calls[0]!;
+    expect(dirX).toBe(1);
+    expect(dirZ).toBeCloseTo(-0.0990227897035254, 9);
+    // The FFT drawing, the curl shown: seed 7's swell travels 7.95 degrees
+    // off +x, the curl's throw; the coast's normal at z = 0 is 5.66 degrees the other way.
+    burst.mockClear();
+    seaFrames.mode = 2;
+    water.update(-400, 0, 21, 12);
+    expect(burst.mock.calls.map((call) => call[2])).toEqual([0, 10, 20, 30, 40, 50]);
+    for (const call of burst.mock.calls) expect([call[3], call[4]]).toEqual([0.9903918900937535, 0.1382892043383079]);
+    water.dispose();
+  }, timeLimit(60_000));
+
+  it("throws no spray with the camera far along the coast from the cove, the spray off, while the table still fills", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 0, [], "high", -400, 3000);
+    const spray = water.edge.spray!;
+    plungesOnTheFace(water.edge.tracker);
+    const burst = vi.spyOn(spray, "burst");
+    const tableUpdate = vi.spyOn(water.edge.table, "update");
+    for (let i = 0; i < 30; i++) water.update(-400, 3000, 20 + i / 60, 12);
+    expect(burst).not.toHaveBeenCalled();
+    expect(spray.mesh.isEnabled()).toBe(false);
+    expect(tableUpdate).toHaveBeenCalledTimes(30);
+    water.dispose();
+  }, timeLimit(60_000));
+
+  it("puts the spray among the see-through effects' group", () => {
+    frameSupport.supported = true;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 0, [], "high");
+    const spray = water.edge.spray!;
+    setEffectsGroup(0, { rain: null, splash: null, motes: null, mist: null, waterLife: null, spray });
+    expect(spray.mesh.renderingGroupId).toBe(0);
+    setEffectsGroup(effectsGroupFor(water), { rain: null, splash: null, motes: null, mist: null, waterLife: null, spray });
+    expect(spray.mesh.renderingGroupId).toBe(WATER_GROUP);
+    water.dispose();
+  }, timeLimit(60_000));
+
+  it("disposes the table's texture, the curl and the spray with the water, the sea letting go of the swash first", () => {
+    const setSwash = vi.spyOn(WaterPlugin.prototype, "setSwash");
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    frameSupport.supported = true;
+    new FreeCamera("c", Vector3.Zero(), scene);
+    const water = createWater(scene, 7, 0, [], "high");
+    water.update(0, 0, 1, 12);
+    const { lip, spray, swash } = water.edge;
+    const sprayMat = spray!.mesh.material!;
+    expect(scene.textures).toContain(swash.texture);
+    water.dispose();
+    expect(lip!.fine.isDisposed()).toBe(true);
+    expect(lip!.coarse.isDisposed()).toBe(true);
+    expect(spray!.mesh.isDisposed()).toBe(true);
+    expect(scene.materials).not.toContain(sprayMat);
+    expect(scene.textures).not.toContain(swash.texture);
+    expect(setSwash.mock.calls.at(-1)).toEqual([null]);
+    // And the wet ground's cove with it.
+    expect(wetCalls.cove.at(-1)).toEqual([Number.NaN, 0, 0, 0]);
+    // Medium has none of the two to dispose, and its texture goes all the same.
+    const medium = createWater(scene, 7, 0, [], "medium");
+    const texture = medium.edge.swash.texture;
+    medium.dispose();
+    expect(scene.textures).not.toContain(texture);
+  }, timeLimit(60_000));
 });

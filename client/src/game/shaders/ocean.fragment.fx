@@ -10,6 +10,7 @@
 uniform highp sampler2D oceanAtlas;
 uniform highp sampler2DArray oceanWindDisp;
 uniform highp sampler2DArray oceanWindSlope;
+uniform highp sampler2D oceanSwash;
 // The world xz the surface's waves are evaluated at: where the vertex stood
 // before they moved it.
 varying vec2 vOceanXZ;

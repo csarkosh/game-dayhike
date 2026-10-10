@@ -225,6 +225,24 @@ vi.mock("../../src/game/forestMeshes.js", async (importOriginal) => {
   };
 });
 
+// What the sea's edge hands the wet ground's module, recorded on the way
+// through to the real setters.
+const wetCalls = vi.hoisted(() => ({ cove: [] as number[][], swash: [] as Float32Array[] }));
+vi.mock("../../src/game/wetPlugin.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/wetPlugin.js")>();
+  return {
+    ...actual,
+    setWetCove: (...args: Parameters<typeof actual.setWetCove>) => {
+      wetCalls.cove.push([...args]);
+      actual.setWetCove(...args);
+    },
+    setWetSwash: (data: Float32Array) => {
+      wetCalls.swash.push(data);
+      actual.setWetSwash(data);
+    },
+  };
+});
+
 // The terrain field lives behind the variant registry, and `activeTerrainVariant`
 // throws until something has registered one. `app.ts` gets that transitively
 // through `forest.ts`; a renderer-only test has to ask for it.
@@ -268,6 +286,7 @@ import { waterLifeLayout } from "../../src/game/waterLifeField.js";
 import { MIDGE_NAME } from "../../src/game/midgeSwarms.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
+import { SILENT_SURF_SOUND } from "../../src/game/surfSound.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { LakeCalmFrame } from "../../src/game/renderer.js";
@@ -933,7 +952,7 @@ describe("world shell wiring", () => {
     expect(src).toContain('for (const mesh of clipmap?.meshes.slice(0, 2) ?? []) rainMap.register(mesh, "terrain");');
     expect(src).toContain("  const rain = createRain(scene, tier);\n  partOf(rain);\n  rain.setMap(rainMap);");
     expect(src).toContain("  const rainSplash = createRainSplash(scene, tier);\n  partOf(rainSplash);\n  rainSplash?.setMap(rainMap);");
-    expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife });");
+    expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife, spray: water?.edge.spray ?? null });");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
     // After the rain's update, which fills the lamp the splashes read.
@@ -959,7 +978,7 @@ describe("world shell wiring", () => {
     );
     expect(src).toContain("createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });");
     // Its insects draw among the see-through effects, in the water's group on high.
-    expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife });");
+    expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife, spray: water?.edge.spray ?? null });");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
     // After the motes, once the camera's place and lens are final for the frame.
@@ -988,6 +1007,33 @@ describe("world shell wiring", () => {
     expect(src.match(/waterLifeStepped = true;/g)).toHaveLength(1);
     expect(src).toContain("return waterLife !== null && waterLifeStepped ? waterLife.sound() : SILENT_WATER_LIFE;");
     expect(src.match(/waterLife\?\.dispose\(\)/g)).toHaveLength(1);
+  });
+
+  it("fills the surf after the lake's reflections in both camera branches, hands the cove's swash to the wet materials, and hears a frame only once", () => {
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
+    // Once the camera's pose for the frame is written, after this frame's water update.
+    const after = "updateLake(weather, sky, true);\n        updateSurf(frame.dt);";
+    expect(freecamBranch).toContain(after);
+    expect(playerBranch).toContain(after);
+    expect(freecamBranch.match(/updateSurf\(/g)).toHaveLength(1);
+    expect(playerBranch.match(/updateSurf\(/g)).toHaveLength(1);
+    const fill = slice("function updateSurf(", "surfStepped = true;");
+    expect(fill).toContain("if (edge === undefined || !edge.filled || waterLevel === undefined) return;");
+    expect(fill).toContain("fillSurfSound(surf, surfListener, edge.tracker, edge.table, edge.cove, waterLevel, edge.hs, lensCanopy, dt);");
+    const sync = slice("sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {", "hasWildlife: wildlife !== null,");
+    expect(sync.indexOf("surfStepped = false;")).toBeGreaterThan(-1);
+    expect(sync.indexOf("surfStepped = false;")).toBeLessThan(sync.indexOf("const weather = lighting.weather;"));
+    expect(src.match(/surfStepped = true;/g)).toHaveLength(1);
+    expect(src).toContain("    hasSea: water !== null,\n    surfSound() {\n      return surfStepped ? surf : SILENT_SURF_SOUND;\n    },");
+    // The wet line on the cove, each frame the wet line is set, once the table holds a fill.
+    const wet = slice("const updateWet = (x: number, z: number): void => {", "};");
+    expect(wet).toContain("setWetLine(w, water?.high !== true);");
+    expect(wet).toContain("if (edge === undefined || !edge.filled) return;");
+    expect(wet).toContain("setWetCove(cove.z0, cove.halfWidth, cove.toeD, cove.faceGrade);\n    setWetSwash(edge.table.data);");
+    expect(src.match(/setWetSwash\(/g)).toHaveLength(1);
+    // Not the curl in the rain's map: its positions are not places, the rings stand for the face.
+    expect(src).not.toContain("rainMap.register(lip.");
   });
 
   it("updates the lake's reflection in both camera branches after the lake's life, and disposes it before the meshes in its lists", () => {
@@ -1311,6 +1357,60 @@ describe("the lake's life in a renderer", () => {
       expect(off.hasWaterLife).toBe(false);
     } finally {
       off.dispose();
+    }
+  }, timeLimit(120_000));
+});
+
+describe("the surf in a renderer", () => {
+  const SEED = 388817;
+  const LEVEL: Level = { id: "surf-test", brushes: [], playerSpawns: [], enemySpawns: [] };
+  const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
+
+  it("has no sea in a hand-authored level, and is silent and frozen there", () => {
+    const bare = createRenderer(FAKE_CANVAS, EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture() });
+    try {
+      expect(bare.hasSea).toBe(false);
+      bare.sync(windTestState(windTestPlayer(1)), 1, 0, { dt: 1 / 60, sprinting: false });
+      const sound = bare.surfSound();
+      expect(sound).toBe(SILENT_SURF_SOUND);
+      expect(Object.isFrozen(sound)).toBe(true);
+      expect([sound.present, sound.plunges.count, sound.backwash.count]).toEqual([false, 0, 0]);
+    } finally {
+      bare.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("in a world with a sea is silent before its first frame, heard from a frame that steps it, the same record each frame, and silent again from one that does not", () => {
+    wetCalls.cove.length = 0;
+    wetCalls.swash.length = 0;
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    try {
+      expect(renderer.hasSea).toBe(true);
+      expect(renderer.surfSound()).toBe(SILENT_SURF_SOUND);
+      expect(wetCalls.swash).toHaveLength(0);
+      // Above the cove's waterline at its centre (z = 0, x = −472.26 for this seed).
+      renderer.setFreecam({ x: -480, y: 6, z: 0, yaw: Math.PI / 2, pitch: 0 });
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      const sound = renderer.surfSound();
+      expect(sound).not.toBe(SILENT_SURF_SOUND);
+      expect(Object.isFrozen(sound)).toBe(false);
+      // The wet ground was handed the cove and the table's 512 columns, once this frame.
+      expect(wetCalls.cove).toEqual([[0, 163.4167872555554, -24, 1 / 12]]);
+      expect(wetCalls.swash).toHaveLength(1);
+      expect(wetCalls.swash[0]!.length).toBe(2048);
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(renderer.surfSound()).toBe(sound);
+      // And once again the next, the same table.
+      expect(wetCalls.cove).toHaveLength(2);
+      expect(wetCalls.swash).toHaveLength(2);
+      expect(wetCalls.swash[1]).toBe(wetCalls.swash[0]);
+      // No local player and no free camera: the sea's edge is not stepped, and nothing is heard.
+      renderer.setFreecam(null);
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(renderer.surfSound()).toBe(SILENT_SURF_SOUND);
+      expect(wetCalls.swash).toHaveLength(2);
+    } finally {
+      renderer.dispose();
     }
   }, timeLimit(120_000));
 });

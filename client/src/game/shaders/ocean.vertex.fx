@@ -17,6 +17,9 @@ attribute vec2 oceanCoarse;
 uniform highp sampler2D oceanAtlas;
 // The wind sea's displacement, a layer a cascade or a frame of the loop.
 uniform highp sampler2DArray oceanWindDisp;
+// The swash's table (oceanSwash.fx): RGBA32F, a texel a metre of the cove's
+// shore, read at its nearest texel.
+uniform highp sampler2D oceanSwash;
 // The vertex's world xz before the waves move it.
 varying vec2 vOceanXZ;
 // The swell the vertex stage sums for the displacement, for the fragment

@@ -94,6 +94,7 @@ describe("the WebGPU engine's maker, by default", () => {
     await createWebGpuEngine(canvas, { translators: TRANSLATORS });
     expect(numbering._MaterialPluginClassToMainDefine.DistanceFadePlugin).toBe("MATERIALPLUGIN_11");
     expect(numbering._MaterialPluginClassToMainDefine.SomethingEarlier).toBe(undefined);
-    expect(numbering._MaterialPluginCounter).toBe(21);
+    expect(numbering._MaterialPluginClassToMainDefine.SprayPlugin).toBe("MATERIALPLUGIN_22");
+    expect(numbering._MaterialPluginCounter).toBe(22);
   });
 });

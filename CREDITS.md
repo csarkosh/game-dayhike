@@ -9,6 +9,13 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC0-1.0
 - **URL:** https://freesound.org/people/tallfunnyjew/sounds/625455/
 
+## ambience.surf_cove
+
+- **Source:** Freesound: Short Sand Beach: Waves 3
+- **Author:** ghosttropic
+- **Licence:** CC0-1.0
+- **URL:** https://freesound.org/people/ghosttropic/sounds/717146/
+
 ## board.paper
 
 - **Source:** ambientCG: Paper 002
@@ -99,6 +106,41 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Author:** philberts
 - **Licence:** CC0-1.0
 - **URL:** https://freesound.org/people/philberts/sounds/111393/
+
+## call.surf_backwash_a
+
+- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
+- **Author:** National Park Service
+- **Licence:** Public domain
+- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
+
+## call.surf_backwash_b
+
+- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
+- **Author:** National Park Service
+- **Licence:** Public domain
+- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
+
+## call.surf_plunge_a
+
+- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
+- **Author:** National Park Service
+- **Licence:** Public domain
+- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
+
+## call.surf_plunge_b
+
+- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
+- **Author:** National Park Service
+- **Licence:** Public domain
+- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
+
+## call.surf_plunge_c
+
+- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
+- **Author:** National Park Service
+- **Licence:** Public domain
+- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
 
 ## cliff.wall_a
 

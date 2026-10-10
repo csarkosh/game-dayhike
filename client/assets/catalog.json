@@ -502,6 +502,36 @@
       "bytes": 132911
     },
     {
+      "id": "ambience.surf_cove",
+      "output": "audio/ambience.surf_cove.mp3",
+      "bytes": 366759
+    },
+    {
+      "id": "call.surf_plunge_a",
+      "output": "audio/call.surf_plunge_a.mp3",
+      "bytes": 9090
+    },
+    {
+      "id": "call.surf_plunge_b",
+      "output": "audio/call.surf_plunge_b.mp3",
+      "bytes": 9090
+    },
+    {
+      "id": "call.surf_plunge_c",
+      "output": "audio/call.surf_plunge_c.mp3",
+      "bytes": 9090
+    },
+    {
+      "id": "call.surf_backwash_a",
+      "output": "audio/call.surf_backwash_a.mp3",
+      "bytes": 9090
+    },
+    {
+      "id": "call.surf_backwash_b",
+      "output": "audio/call.surf_backwash_b.mp3",
+      "bytes": 7836
+    },
+    {
       "id": "voice.body.1",
       "output": "audio/voice.body.1.mp3",
       "bytes": 19147
