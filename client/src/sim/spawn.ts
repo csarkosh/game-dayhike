@@ -4,11 +4,17 @@ import type { BoxProvider } from "./boxSource.js";
 import { depenetrate } from "./collision.js";
 import { activeTerrainVariant, elevationSampleAt } from "./terrain.js";
 import { carSite, trailheadSpawn, type Start } from "./trailhead.js";
+import { lakeShoreInto, newLakeShore } from "./lakeShape.js";
 
 export { trailheadSpawn, type Start } from "./trailhead.js";
 
 /** Attempts per call. Bounded so a caller cannot hang the tick. */
 const RING_ATTEMPTS = 8;
+
+/** Scratch for the spawn's lake test. */
+const SPAWN_SHORE = newLakeShore();
+/** A spawn on ground under a lake's level is refused this far outside its shore and in (m). */
+export const SPAWN_LAKE_MARGIN = 1;
 
 /** Minimum surface height above sea level for a spawn. */
 export const SPAWN_FREEBOARD = 2;
@@ -34,13 +40,13 @@ export function groundSpawn(
   const variant = activeTerrainVariant();
   const waterLevel = variant.waterLevel;
   if (waterLevel !== undefined && s.h < waterLevel + SPAWN_FREEBOARD) return null;
-  // Nor on a lake's bed: ground under its water, inside its rim.
+  // Nor on a lake's bed: ground under its water, inside its shore or
+  // within SPAWN_LAKE_MARGIN of it.
   const bodies = variant.waterBodies?.(seed);
   if (bodies !== undefined) {
     for (const b of bodies) {
       if (b.kind !== "lake" || s.h >= b.level) continue;
-      const dx = x - b.x, dz = z - b.z;
-      if (dx * dx + dz * dz < b.radius * b.radius) return null;
+      if (lakeShoreInto(SPAWN_SHORE, b.shape, x, z).s > -SPAWN_LAKE_MARGIN) return null;
     }
   }
   const p: Vec3 = { x, y: s.h + half.y, z };

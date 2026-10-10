@@ -3,7 +3,9 @@ import type { World } from "./world.js";
 import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "./road.js";
 import { activeTerrainVariant } from "./terrain.js";
 import { PLAYER_HALF } from "./constants.js";
-import { LAKE_SHELF_WIDTH } from "./features.js";
+import {
+  lakeShelfWidth, lakeShoreInto, newLakeShore, TARN_SHELF_HEAD, TARN_SHELF_OUTLET_SHARE, type LakeShape,
+} from "./lakeShape.js";
 
 /**
  * The invisible wall at the road: the one place the design admits one
@@ -31,21 +33,47 @@ export function containAtRoad(pos: Vec3, vel: Vec3, roadCenterX: number): boolea
 }
 
 /**
- * The wall in a lake: a hull's centre may not go deeper in than `wallQ` from
- * the lake's centre (the shelf's inner edge, where the water is 0.9 m deep),
- * so a player wades to the waist and the camera never goes under. Moves the
- * hull back out along the radius and cancels the velocity into the lake.
+ * The wall's shore distance in a lake at a point of side weight σ: the
+ * shelf's inner edge, where the water is 0.9 m deep (spec §10.1), so a
+ * player wades to the waist and the camera never goes under — a valley
+ * lake's shelf width, a tarn's W_shelf(σ).
  */
-export function containAtLake(pos: Vec3, vel: Vec3, cx: number, cz: number, wallQ: number): boolean {
-  const rx = pos.x - cx, rz = pos.z - cz;
-  const q2 = rx * rx + rz * rz;
-  if (q2 >= wallQ * wallQ) return false;
-  const q = Math.sqrt(q2);
-  // At the very centre there is no outward direction: out along +x.
-  const nx = q > 1e-9 ? rx / q : 1;
-  const nz = q > 1e-9 ? rz / q : 0;
-  pos.x = cx + nx * wallQ;
-  pos.z = cz + nz * wallQ;
+export function lakeWallS(shape: LakeShape, sigma: number): number {
+  if (shape.family === "valley") return lakeShelfWidth(shape.sMax);
+  const wOut = TARN_SHELF_OUTLET_SHARE * shape.sMax;
+  return wOut + (TARN_SHELF_HEAD - wOut) * sigma;
+}
+
+const WALL = newLakeShore();
+/** The Newton steps the wall takes back along ∇s, and the step off the spine's ridge where ∇s vanishes (m). */
+const WALL_STEPS = 6;
+const WALL_RIDGE_STEP = 1e-3;
+
+/**
+ * The wall in a lake: a hull's centre may not go deeper in than the wall's
+ * shore distance (`lakeWallS`). Moves the hull back out along ∇s by Newton
+ * steps onto that contour (off the spine's own ridge first, along +x, where
+ * ∇s vanishes) and cancels the velocity into the lake.
+ */
+export function containAtLake(pos: Vec3, vel: Vec3, shape: LakeShape): boolean {
+  let r = lakeShoreInto(WALL, shape, pos.x, pos.z);
+  if (!(r.s > lakeWallS(shape, r.sigma))) return false;
+  for (let i = 0; i < WALL_STEPS; i++) {
+    const g2 = r.sx * r.sx + r.sz * r.sz;
+    if (g2 < 1e-12) {
+      pos.x += WALL_RIDGE_STEP;
+    } else {
+      const over = r.s - lakeWallS(shape, r.sigma);
+      if (Math.abs(over) < 1e-12) break;
+      pos.x -= (over * r.sx) / g2;
+      pos.z -= (over * r.sz) / g2;
+    }
+    r = lakeShoreInto(WALL, shape, pos.x, pos.z);
+  }
+  const gl = Math.sqrt(r.sx * r.sx + r.sz * r.sz);
+  // Out of the lake is down the shore distance.
+  const nx = gl > 0 ? -r.sx / gl : 1;
+  const nz = gl > 0 ? -r.sz / gl : 0;
   const inward = vel.x * nx + vel.z * nz;
   if (inward < 0) {
     vel.x -= inward * nx;
@@ -66,23 +94,24 @@ export function containInLakes(world: World, pos: Vec3, vel: Vec3, half: Vec3): 
   if (bodies === undefined) return;
   let walled = false;
   for (const b of bodies) {
-    if (b.kind === "lake" && containAtLake(pos, vel, b.x, b.z, b.radius - LAKE_SHELF_WIDTH)) walled = true;
+    if (b.kind === "lake" && containAtLake(pos, vel, b.shape)) walled = true;
   }
   if (walled && world.ground !== null) {
     pos.y = Math.max(pos.y, world.ground.heightAt(pos.x, pos.z) + half.y);
   }
 }
 
-/** The water a hull at (x, z) wades in: a lake's level within its rim (the
- * marsh lies inside it), the world's sea level elsewhere. */
+const WADE = newLakeShore();
+
+/** The water a hull at (x, z) wades in: a lake's level inside its shore
+ * (s > 0, the marsh within it), the world's sea level elsewhere. */
 export function waterLevelAt(world: World, x: number, z: number): number | null {
   if (world.forest !== null) {
     const bodies = activeTerrainVariant().waterBodies?.(world.forest.seed);
     if (bodies !== undefined) {
       for (const b of bodies) {
         if (b.kind !== "lake") continue;
-        const dx = x - b.x, dz = z - b.z;
-        if (dx * dx + dz * dz < b.radius * b.radius) return b.level;
+        if (lakeShoreInto(WADE, b.shape, x, z).s > 0) return b.level;
       }
     }
   }
