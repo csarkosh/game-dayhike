@@ -52,7 +52,7 @@ describe("SwashTable", () => {
     expect([
       SWASH_COLUMNS, SWASH_STRIDE, SWASH_AGE_MAX, SWASH_DRY_S, SWASH_SPECKLE_S, SWASH_BORES_PER_COLUMN,
       SWASH_BACKWASH_MIN_M, SWASH_REWET_M, SWASH_STEP_MAX_S,
-    ]).toEqual([512, 4, 600, 60, 10, 4, 2, 0.1, 1]);
+    ]).toEqual([512, 4, 600, 60, 10, 4, 2, 2, 1]);
   });
 
   it("maps a world z to the nearest column about the cove's centre, clamped to the row, never NaN", () => {
@@ -182,13 +182,15 @@ describe("SwashTable", () => {
         expect(age).toBeLessThanOrEqual(SWASH_AGE_MAX);
         if (c === 256) {
           if (age === 0) rewetted++;
-          else if (prevAge < 600) expect(age).toBeCloseTo(prevAge + STEP, 4);
+          // A sheet may set the age below the tick but never above it; with no sheet over the column it is the tick.
+          if (prevAge < 600) expect(age).toBeLessThanOrEqual(prevAge + STEP + 1e-6);
+          if (age > 0 && front === 0 && prevAge < 600) expect(age).toBeCloseTo(prevAge + STEP, 4);
           prevAge = age;
         }
       }
     });
     expect(rewetted).toBeGreaterThan(100);
-    expect(column(table, 256).map((v) => Math.round(v * 1e4) / 1e4)).toEqual([2.9324, 0.0415, 8.6303, 10.4]);
+    expect(column(table, 256).map((v) => Math.round(v * 1e4) / 1e4)).toEqual([2.9324, 0.0415, 8.6303, 0.5167]);
   }, timeLimit(60_000));
 
   it("ends the sheets in lobes: the wet reaches across the central columns are not all equal", () => {
@@ -200,21 +202,45 @@ describe("SwashTable", () => {
     expect(new Set(reaches.map((r) => r.toFixed(3))).size).toBeGreaterThan(10);
   }, timeLimit(60_000));
 
+  it("ages the wet line smoothly along the shore: neighbouring central columns never differ in age by 15 s or in reach by 1.5 m once the swell is established", () => {
+    const table = new SwashTable(FIELD, coveOf(FIELD));
+    let maxJump = 0;
+    let maxReachJump = 0;
+    run(table, FIELD, 240, (t) => {
+      if (t <= 120) return;
+      for (let c = 157; c <= 356; c++) {
+        maxJump = Math.max(maxJump, Math.abs((table.data[c * 4 + 3] as number) - (table.data[(c - 1) * 4 + 3] as number)));
+        maxReachJump = Math.max(maxReachJump, Math.abs((table.data[c * 4 + 2] as number) - (table.data[(c - 1) * 4 + 2] as number)));
+      }
+    });
+    expect(maxJump).toBeLessThan(15);
+    expect(maxReachJump).toBeLessThan(1.5);
+  }, timeLimit(120_000));
+
   it("dries: with the swell held still the line holds for SWASH_DRY_S after its last wetting, then falls, and the age runs to SWASH_AGE_MAX", () => {
     const table = new SwashTable(FIELD, coveOf(FIELD));
-    let wetAt = Number.NaN;
+    let nearWet = Number.NaN;
     run(table, FIELD, 40, (t) => {
-      if (table.data[256 * 4 + 3] === 0) wetAt = t;
+      if ((table.data[256 * 4 + 3] as number) < 1e-3) nearWet = t;
     });
     const held = swellPhases(FIELD, 40);
-    // The sheets already set off run their course over the next 30 s, the last time a front stands within SWASH_REWET_M of the line among them.
+    // The sheets already set off run their course over the next 30 s. The age reads below 1e-3 for the last time as a
+    // sheet's front stands at the line; a sheet then hovers below the line, holding the age down to a share of the
+    // shortfall, until its front leaves the column, and from that last frame the age ticks.
+    let sheetEnd = Number.NaN;
+    let ageAtEnd = Number.NaN;
     for (let i = 1; i <= 300; i++) {
       const t = 40 + i / 10;
       table.update(t, held);
       expect(table.arrivals.count).toBe(0);
-      if (table.data[256 * 4 + 3] === 0) wetAt = t;
+      const [front, , , age] = column(table, 256) as [number, number, number, number];
+      if (age < 1e-3) nearWet = t;
+      if (front > 0) { sheetEnd = t; ageAtEnd = age; }
     }
-    expect(wetAt).toBeCloseTo(47.7, 4);
+    expect(nearWet).toBeCloseTo(46.8, 4);
+    expect(sheetEnd).toBeCloseTo(57.8, 4);
+    expect(ageAtEnd).toBeCloseTo(0.3333, 4);
+    const wetAt = sheetEnd - ageAtEnd;
     for (let i = 301; i <= 7600; i++) {
       const t = 40 + i / 10;
       table.update(t, held);

@@ -22,8 +22,10 @@
  * row holds the front, the sheet's thickness at the waterline (it falls
  * linearly to 0 at the front), the wet reach and its age: the reach follows
  * the front up and holds as it falls back, the age counting from the last
- * time a front stood at the reach (within SWASH_REWET_M); once the age passes
- * SWASH_DRY_S the line falls to the present front. Columns past the cove's end blend hold zeros
+ * time a front stood at the reach, a sheet that stops short of it within
+ * SWASH_REWET_M taking the age down by the shortfall's share, the more the
+ * nearer the column was to dry; once the age passes SWASH_DRY_S the line
+ * falls to the present front. Columns past the cove's end blend hold zeros
  * and SWASH_AGE_MAX.
  *
  * The swell at the toe is the field's sum with its time-invariant part made
@@ -53,8 +55,9 @@ export const SWASH_SPECKLE_S = 10;
 export const SWASH_BORES_PER_COLUMN = 4;
 /** A front that turns from a reach over this (m) is a backwash event. */
 export const SWASH_BACKWASH_MIN_M = 2;
-/** A front within this (m) of the wet reach wets the line again: frames sample a front's turn a little short of it. */
-export const SWASH_REWET_M = 0.1;
+/** A sheet that stops this far (m) below a column's held line leaves its age alone; one that reaches the line makes it 0;
+ * between, the age falls to its share of the shortfall over this, so neighbouring columns a sheet reaches and just misses age alike. */
+export const SWASH_REWET_M = 2;
 /** A step longer than this (s), a stalled page or a jump of the clock, finds no crest: the watch starts again.
  * A step back of up to this is a hold; a longer one back starts the table dry. */
 export const SWASH_STEP_MAX_S = 1;
@@ -104,6 +107,10 @@ export class SwashTable {
   private readonly boreNext: Uint8Array;
   private readonly wetReach: Float64Array;
   private readonly wetAt: Float64Array;
+  /** The age a column had as the sheet now over it began to rise: the most a sheet that stops short of the line leaves it. */
+  private readonly sheetAge: Float64Array;
+  /** 1 while a column's front rose over the last update, else 0. */
+  private readonly rising: Uint8Array;
   private readonly brk = { ratio: 0, scale: 1 };
   private readonly sheet = { front: 0, thick: 0 };
   private seconds = Number.NaN;
@@ -145,6 +152,8 @@ export class SwashTable {
     this.boreNext = new Uint8Array(SWASH_COLUMNS);
     this.wetReach = new Float64Array(SWASH_COLUMNS);
     this.wetAt = new Float64Array(SWASH_COLUMNS);
+    this.sheetAge = new Float64Array(SWASH_COLUMNS);
+    this.rising = new Uint8Array(SWASH_COLUMNS);
 
     // The time-invariant part of the swell at each column's toe and waterline.
     const zero = new Float32Array(Math.max(n, SWELL_COMPONENTS));
@@ -277,17 +286,36 @@ export class SwashTable {
         overlap(sheet.front, sheet.thick, front, thicknessAt(0, front, h, retreating), sheet);
       }
 
-      // The wet line: up with the front, held as it falls back, down to the front once dry.
+      // The wet line: up with the front, held as it falls back, down to the
+      // front once dry. A sheet that stops short of the line takes the age it
+      // found as the sheet began to rise down to the shortfall's share of
+      // SWASH_REWET_M, and the nearer the column was to dry, the more the
+      // sheet counts as a fresh wetting: its line sinks toward the front and
+      // its age toward 0, so a column that has just dried and one about to
+      // look alike under the same sheet. Every term is continuous in the
+      // front, the line and the age, which vary smoothly along the shore, so
+      // the age does too and no column shows a seam against its neighbour.
       const front = sheet.front;
+      const d = col * SWASH_STRIDE;
+      const before = data[d] as number;
       const wetAt = this.wetAt[col] as number;
       let wetAge = Number.isNaN(wetAt) ? SWASH_AGE_MAX : Math.min(Math.max(seconds - wetAt, 0), SWASH_AGE_MAX);
       if (wetAge >= SWASH_DRY_S) this.wetReach[col] = front;
-      if (front > 0 && front >= (this.wetReach[col] as number) - SWASH_REWET_M) {
-        this.wetReach[col] = Math.max(this.wetReach[col] as number, front);
-        this.wetAt[col] = seconds;
-        wetAge = 0;
+      if (front > before && this.rising[col] === 0) this.sheetAge[col] = wetAge;
+      this.rising[col] = front > before ? 1 : 0;
+      if (front > 0) {
+        const held = this.wetReach[col] as number;
+        if (front >= held) {
+          this.wetReach[col] = front;
+          wetAge = 0;
+        } else {
+          const base = this.sheetAge[col] as number;
+          const dry = smoothstep(SWASH_DRY_S / 2, SWASH_DRY_S, base);
+          this.wetReach[col] = held - (held - front) * dry;
+          wetAge = Math.min(wetAge, base * Math.min((held - front) / SWASH_REWET_M, 1) * (1 - dry));
+        }
+        this.wetAt[col] = seconds - wetAge;
       }
-      const d = col * SWASH_STRIDE;
       data[d] = front;
       data[d + 1] = sheet.thick;
       data[d + 2] = this.wetReach[col] as number;
@@ -305,6 +333,8 @@ export class SwashTable {
     this.boreNext.fill(0);
     this.wetReach.fill(0);
     this.wetAt.fill(Number.NaN);
+    this.sheetAge.fill(SWASH_AGE_MAX);
+    this.rising.fill(0);
     this.data.fill(0);
     for (let col = 0; col < SWASH_COLUMNS; col++) this.data[col * SWASH_STRIDE + 3] = SWASH_AGE_MAX;
   }
