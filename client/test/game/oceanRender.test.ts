@@ -54,6 +54,18 @@ describe("the sea's waves as the water material reads them (createOcean)", () =>
     ocean.dispose();
   }, timeLimit(30_000));
 
+  it("hands out the swell it draws, the tier's count of components, its tables the atlas's", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    for (const [tier, count] of [["low", 8], ["medium", 12], ["high", 12]] as const) {
+      const ocean = createOcean(scene, SEED, tier);
+      expect(ocean.field.count).toBe(count);
+      expect(ocean.field.components).toHaveLength(12);
+      expect(uploaded(ocean.atlas)).toBe(ocean.field.tables.data);
+      ocean.dispose();
+    }
+  }, timeLimit(30_000));
+
   it("draws the wind sea by its normals on every tier here, its textures the scene's one 1×1 array", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);

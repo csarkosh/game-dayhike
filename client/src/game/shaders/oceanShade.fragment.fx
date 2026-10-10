@@ -271,4 +271,69 @@ float oceanBumpScale(float share, float breaking, float shelter) {
 float oceanWindSlopeLimit(float u10, float shelter, float drawn) {
   return min(1.0, sqrt((WATER_COX_MUNK_A + WATER_COX_MUNK_B * u10) * shelter / max(drawn, 1.0e-6)));
 }
+
+// The plunging lip on the tiers that draw no strip (oceanBreaker.ts,
+// lipShadeAt): on the cove's face, where the swell plunges, the face's normal
+// tilts shoreward as the crest goes through the plunge, the crest line takes
+// a highlight, and the collapse bursts into foam that thins over LIP_BURST_S
+// seconds of the foam's age. The share is plungeShare's, from the face's
+// Iribarren number on the swell's offshore steepness, less the onshore wind,
+// faded by the cove's weight, nothing seaward of the face's toe, and nothing
+// on the high tier's FFT, whose strip draws the curl itself. The tilt rises
+// to the throw and falls to the collapse, over the crest's front, a quarter
+// wave ahead of it. The highlight's band is LIP_BAND_M either side of the
+// crest line, the phase over the shallow water's wavenumber there.
+const float LIP_FACE_IRIBARREN_LO = 0.4;
+const float LIP_FACE_IRIBARREN_HI = 0.6;
+const float LIP_THROW = 0.6;
+const float LIP_TILT = 0.35;
+const float LIP_HIGHLIGHT = 0.25;
+const float LIP_BAND_M = 0.3;
+const float LIP_BURST_S = 2.0;
+const float LIP_FRONT = 1.5707963267948966;
+
+// The lip at the undisplaced point p from the envelope vector env and its
+// magnitude, as oceanFoamFromEnvelope takes them, its break read the same
+// way: x the tilt's weight, y the burst's share once the curl has collapsed,
+// z the highlight's weight, w the coastline's slope along z, for the shore's
+// direction.
+vec4 oceanLipFromEnvelope(vec2 p, vec2 env, float envelope) {
+  float phaseDz;
+  vec4 coast = oceanCoastAt(p.y, phaseDz);
+  float d = p.x - coast.x;
+  float column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
+  vec4 bay = oceanAtlasRead(OCEAN_ROW_BAY_PROFILE, column);
+  vec4 cove = oceanAtlasRead(OCEAN_ROW_COVE_PROFILE, column);
+  float h = bay.x + (cove.x - bay.x) * coast.z;
+  float a = bay.y + (cove.y - bay.y) * coast.z;
+  float b = bay.z + (cove.z - bay.z) * coast.z;
+  float unbroken = 2.0 * envelope;
+  float crestPhase = dot(env, env) > 0.0 ? atan(env.y, env.x) : 0.0;
+  float hc = max(h, OCEAN_DRY_DEPTH);
+  float gamma = clamp(b - a * unbroken / (OCEAN_G * oceanSwell.z * oceanSwell.z), WEGGEL_GAMMA_MIN, WEGGEL_GAMMA_MAX);
+  float ratio = unbroken / (gamma * hc);
+  float progress = clamp((ratio - 1.0) / (OCEAN_BREAK_FULL - 1.0), 0.0, 1.0);
+  float steepness = max(oceanSwell.w, 1.0e-6) / (OCEAN_G * oceanSwell.z * oceanSwell.z / OCEAN_TWO_PI);
+  float iribarren = oceanCove.w / sqrt(steepness);
+  float share = coast.z * smoothstep(LIP_FACE_IRIBARREN_LO, LIP_FACE_IRIBARREN_HI, iribarren) * (1.0 - oceanWindDir.w) * step(oceanCove.z, d) * step(oceanCoast.w, 1.5);
+  float lip = share * smoothstep(0.0, LIP_THROW, progress) * (1.0 - smoothstep(LIP_THROW, 1.0, progress));
+  float ahead = mod(crestPhase + 0.5 * OCEAN_TWO_PI, OCEAN_TWO_PI) - 0.5 * OCEAN_TWO_PI;
+  float front = step(0.0, ahead) * (1.0 - smoothstep(0.0, LIP_FRONT, ahead));
+  float k = OCEAN_TWO_PI / (oceanSwell.z * sqrt(OCEAN_G * hc));
+  float band = 1.0 - smoothstep(0.0, LIP_BAND_M, abs(ahead) / k);
+  return vec4(lip * front, share * step(1.0, progress), lip * band, coast.y);
+}
+
+// The sea's normal n tilted shoreward, across the coastline, by the lip.
+vec3 oceanLipNormal(vec3 n, vec4 lip) {
+  vec2 shore = normalize(vec2(1.0, -lip.w));
+  return normalize(n + vec3(shore.x, 0.0, shore.y) * (LIP_TILT * lip.x));
+}
+
+// The white water's cover with the lip's: the crest line's highlight, and
+// the burst, whole at the collapse and gone LIP_BURST_S seconds behind it.
+float oceanLipFoam(float foam, vec4 lip, float foamAge) {
+  float burst = lip.y * (1.0 - smoothstep(0.0, LIP_BURST_S, foamAge));
+  return max(foam, max(LIP_HIGHLIGHT * lip.z, burst));
+}
 #endif

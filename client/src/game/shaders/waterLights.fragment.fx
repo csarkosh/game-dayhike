@@ -23,6 +23,8 @@ vec3 wOceanNormal = vec3(wOceanTilt.x, sqrt(max(1.0 - dot(wOceanTilt, wOceanTilt
 float wOceanHeight = vOceanSwellA.z;
 float wOceanDrawn = vOceanSwellA.w * wOceanKeep * wOceanKeep;
 vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);
+// The plunging lip on the cove's face, none on the high tier's FFT.
+vec4 wOceanLip = oceanLipFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);
 float wOceanChop = oceanShelter(vOceanXZ, SHELTER_CHOP);
 // The wind sea here: its height for the water's edge and the whitecaps, its
 // slopes faded by the pixel's footprint, both scaled by its share of the
@@ -34,7 +36,38 @@ float wWindAmp = wWindShare * (1.0 - wOceanFoam.y) * wOceanChop;
 vec3 wWind = oceanWindDisplace(vOceanXZ);
 float wWindDrawn;
 vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOceanDy)), wWindDrawn);
-float wDepth = waterBedDepth(vPositionW.xz) + wOceanHeight + wWind.y * wWindAmp;
+// Along the cove (its share faded over its ends) the sea's bed is the
+// shallower of the bed read and the profile's depth the foam carries, inside
+// the bed's square and outside it, where the read stands in the ring vertex's
+// depth, held to 0 where the ground is above the level: the profile's up the
+// face, and the read's own ground wherever that is shallower, so a far
+// headland or a stack keeps its own. Both meet at 0 on the profile's
+// waterline, so the depth runs on across it. Along the rest of the coast the
+// bed read stands alone. On the face's dry side (the profile's ground above
+// the surface) the bed is the shallower of the two wherever the cove has any
+// share, its end fades too: the sea rests there on the profile's ground, and
+// in the fades the profile and the real ground part by millimetres, so a bed
+// blended toward the read would leave a film that thick drawn on the pebbles.
+// Under water the blend over the ends stands. Both are written so that the
+// bed is the shallower of the two exactly where it is taken whole.
+float wSurfaceHeight = wOceanHeight + wWind.y * wWindAmp;
+float wCoveShare = oceanCoveShare(vOceanXZ.y);
+float wDry = step(1.0e-6, wCoveShare) * step(0.0, -(wOceanFoam.w + wSurfaceHeight));
+float wBedRead = waterBedDepth(vPositionW.xz);
+float wBedLow = min(wBedRead, wOceanFoam.w);
+float wBedDepth = wBedLow + (wBedRead - wBedLow) * (1.0 - wCoveShare) * (1.0 - wDry);
+// Up the cove's face the depth takes the lift the vertex stage gave the
+// surface onto the swash's sheet (oceanSwash.fx), from the same profile's
+// depth, so the film over the pebbles is the sheet's thickness. Between
+// sheets the surface rests on the pebbles, the swell's and the wind's height
+// on it, so the depth there is 0 where the profile is the shallower and below
+// it elsewhere, and the pixel is discarded: the sheet's edge is the table's, a
+// column a metre, never the rings' grid. The surface's height is summed once
+// and the lift takes that same sum, and the rest cancels it to within
+// rounding: a depth under a hundredth of a millimetre (OCEAN_REST_EPS,
+// oceanSwash.fx) is taken as the sea resting on the ground.
+float wDepth = wBedDepth + wSurfaceHeight + swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight);
+wDepth = wDepth > OCEAN_REST_EPS ? wDepth : 0.0;
 #else
 float wDepth = waterBedDepth(vPositionW.xz);
 #endif
@@ -48,6 +81,7 @@ float wKdMean = (waterKd.r + waterKd.g + waterKd.b) / 3.0;
 float wWindSteep = wWindAmp * oceanWindSlopeLimit(oceanWindDir.z, wOceanChop, wWindDrawn * wWindAmp * wWindAmp);
 vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(wWindShare, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;
 normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOceanNormal.y);
+normalW = oceanLipNormal(normalW, wOceanLip);
 // What Cox and Munk's slope variance for the wind leaves to the roughness
 // once the drawn waves carry theirs, calmer in a headland's lee as the chop is.
 float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn + wWindDrawn * wWindSteep * wWindSteep);
@@ -148,6 +182,7 @@ if (oceanCoast.w > 0.5) {
 }
 wOceanCap *= 1.0 - wOceanFoam.y;
 float wFoam = max(wOceanLace, wOceanCap);
+wFoam = oceanLipFoam(wFoam, wOceanLip, wOceanFoam.z);
 float wFoamWhite = wOceanLace >= wOceanCap ? oceanFoamWhite(wFoamAge) : OCEAN_FOAM_ALBEDO;
 surfaceAlbedo = mix(surfaceAlbedo, vec3(wFoamWhite), wFoam);
 wTransmit *= 1.0 - wFoam;

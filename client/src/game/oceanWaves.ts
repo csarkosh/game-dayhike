@@ -70,12 +70,46 @@ export type SwellSample = {
   crestPhase: number; foamAge: number; foam: number;
   /** Σ Q·A, the most the surface moves across here, and Σ Q·|K|·A, held to SWELL_Q_SUM_MAX. */
   reach: number; steepness: number;
+  /** The local wavelength (m): 2π over the length of the amplitude-weighted wavevector Σ A·K / Σ A, the deep
+   * wavelength g·Tp²/2π where every amplitude is 0. */
+  wavelength: number;
+  /** The cap's scale on every component: 1 unbroken, falling to the bore's by `ratio` = OCEAN_BREAK_FULL. */
+  scale: number;
 };
 
 export type Crest = {
   height: number; period: number; direction: [number, number]; phase: number; depth: number; slope: number;
   offshoreHeight: number; offshoreLength: number; broken: boolean; iribarren: number;
 };
+
+/**
+ * A sample's scratch: made once by the caller (`swellScratch`), refilled by `swellAtInto`, so a caller that
+ * samples every frame allocates nothing. After a call it holds that point's terms, one a component: `amp` the
+ * amplitude before the cap (shoaled, refracted, sheltered), `kx`, `kz` the wavevector, `q` the steepness Q0,
+ * `phase` the phase φ under the frame's phases; and the blended Weggel coefficients `weggelA`, `weggelB` the
+ * break reads. Under all-zero phases `phase` is the part of φ that does not change with time.
+ */
+export type SwellScratch = {
+  amp: Float64Array; kx: Float64Array; kz: Float64Array; q: Float64Array; phase: Float64Array;
+  weggelA: number; weggelB: number;
+  sample: SwellSample;
+};
+
+function makeScratch(n: number): SwellScratch {
+  return {
+    amp: new Float64Array(n), kx: new Float64Array(n), kz: new Float64Array(n), q: new Float64Array(n),
+    phase: new Float64Array(n), weggelA: 0, weggelB: 0,
+    sample: {
+      height: 0, dx: 0, dz: 0, slopeX: 0, slopeZ: 0, normalY: 1, depth: 0, envelope: 0, unbroken: 0, ratio: 0,
+      broken: false, breaking: 0, crestPhase: 0, foamAge: 0, foam: 0, reach: 0, steepness: 0, wavelength: 0, scale: 1,
+    },
+  };
+}
+
+/** A scratch for samples of `field`: long enough for any field's components. */
+export function swellScratch(field: OceanField): SwellScratch {
+  return makeScratch(Math.max(field.count, SWELL_COMPONENTS));
+}
 
 const TWO_PI = 2 * Math.PI;
 
@@ -192,77 +226,132 @@ export function shelterAt(field: OceanField, x: number, z: number, keep: number)
   return factor;
 }
 
-type Evaluation = {
-  sample: SwellSample; scale: number; offshore: number; direction: [number, number]; wc: number; column: number;
-};
+/** One atlas row read at a fractional column into `out`: `atlasRead`'s arithmetic, with no array made. */
+function readRow(tables: OceanTables, row: number, column: number, out: Float64Array): void {
+  const c = Math.min(Math.max(column, 0), tables.width - 1);
+  const i0 = Math.floor(c);
+  const i1 = Math.min(i0 + 1, tables.width - 1);
+  const f = c - i0;
+  const o0 = (row * tables.width + i0) * 4;
+  const o1 = (row * tables.width + i1) * 4;
+  const d = tables.data;
+  out[0] = (d[o0] as number) + ((d[o1] as number) - (d[o0] as number)) * f;
+  out[1] = (d[o0 + 1] as number) + ((d[o1 + 1] as number) - (d[o0 + 1] as number)) * f;
+  out[2] = (d[o0 + 2] as number) + ((d[o1 + 2] as number) - (d[o0 + 2] as number)) * f;
+  out[3] = (d[o0 + 3] as number) + ((d[o1 + 3] as number) - (d[o0 + 3] as number)) * f;
+}
 
-function evaluate(field: OceanField, phases: Float32Array, x: number, z: number): Evaluation {
-  const t = field.tables;
-  const [cx, cdz, wc, wp, wpDz] = coastRead(t, z);
-  const d = x - cx;
-  const column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
-  const deep = Math.min(d - OCEAN_D_MIN, 0);
-  const bay = atlasRead(t, OCEAN_ROW_BAY_PROFILE, column);
-  const cove = atlasRead(t, OCEAN_ROW_COVE_PROFILE, column);
-  const h = bay[0] + (cove[0] - bay[0]) * wc;
-  const a = bay[1] + (cove[1] - bay[1]) * wc;
-  const b = bay[2] + (cove[2] - bay[2]) * wc;
-  const shelter = shelterAt(field, x, z, SHELTER_SWELL);
+/** `coastRead` into `out` (five long), with no array made. */
+function coastReadInto(tables: OceanTables, z: number, out: Float64Array): void {
+  const column = (z - tables.coastOriginZ) / OCEAN_COAST_STEP;
+  readRow(tables, OCEAN_ROW_COAST, column, out);
+  const i0 = Math.floor(Math.min(Math.max(column, 0), tables.width - 1));
+  const i1 = Math.min(i0 + 1, tables.width - 1);
+  const row = OCEAN_ROW_COAST * tables.width;
+  const here = tables.data[(row + i0) * 4 + 3] as number;
+  const next = tables.data[(row + i1) * 4 + 3] as number;
+  out[4] = column < 0 ? 0 : (next - here) / OCEAN_COAST_STEP;
+}
 
-  const n = field.count;
-  const phi = new Float64Array(n);
-  const amp = new Float64Array(n);
-  const q0 = new Float64Array(n);
-  const kx = new Float64Array(n);
-  const kz = new Float64Array(n);
-  let sx = 0;
-  let sy = 0;
-  let ox = 0;
-  let oy = 0;
-  for (let c = 0; c < n; c++) {
-    const k = atlasRead(t, OCEAN_ROW_COMPONENTS, 2 * c);
-    const q = atlasRead(t, OCEAN_ROW_COMPONENTS, 2 * c + 1);
-    const rb = atlasRead(t, OCEAN_ROW_BAY_FIRST + c, column);
-    const rc = atlasRead(t, OCEAN_ROW_COVE_FIRST + c, column);
-    const k0x = k[0];
-    const k0z = k[1];
-    const dPsi = rc[0] - rb[0];
-    const psi = rb[0] + dPsi * wp + k0x * deep;
-    const kn = rb[1] + (rc[1] - rb[1]) * wp;
-    const K = rb[2] + (rc[2] - rb[2]) * wc;
-    const p = psi + k0x * cx + k0z * z + (phases[c] as number);
-    phi[c] = p;
-    kx[c] = kn;
-    kz[c] = k0z + (k0x - kn) * cdz + dPsi * wpDz;
-    const A = k[3] * K * shelter;
-    amp[c] = A;
-    q0[c] = q[0];
-    sx += A * Math.cos(p);
-    sy += A * Math.sin(p);
-    ox += k[3] * Math.cos(p);
-    oy += k[3] * Math.sin(p);
-  }
-  const envelope = Math.hypot(sx, sy);
-  const unbroken = 2 * envelope;
-  const crestPhase = Math.atan2(sy, sx);
-
+/**
+ * The break at a point: the ratio unbroken/(γ_b·h) and the cap's scale on every component, h held at
+ * OCEAN_DRY_DEPTH or more and γ_b Weggel's index from the blended coefficients a and b, clamped to
+ * [WEGGEL_GAMMA_MIN, WEGGEL_GAMMA_MAX]. Written into `out`.
+ */
+export function swellBreakInto(
+  unbroken: number, depth: number, a: number, b: number, tp: number, out: { ratio: number; scale: number },
+): void {
   // The break on the depth held at OCEAN_DRY_DEPTH or more: over dry sand the
   // swell is capped as in the shallowest water, so it falls to the bore's
   // couple of centimetres and meets the waterline without a step.
-  const hc = Math.max(h, OCEAN_DRY_DEPTH);
-  const gamma = Math.min(WEGGEL_GAMMA_MAX, Math.max(WEGGEL_GAMMA_MIN, b - (a * unbroken) / (OCEAN_G * field.tp * field.tp)));
+  const hc = Math.max(depth, OCEAN_DRY_DEPTH);
+  const gamma = Math.min(WEGGEL_GAMMA_MAX, Math.max(WEGGEL_GAMMA_MIN, b - (a * unbroken) / (OCEAN_G * tp * tp)));
   const ratio = unbroken / (gamma * hc);
   let scale = 1;
   if (ratio > 1) {
     const cap = gamma + (OCEAN_BORE_RATIO - gamma) * smoothstep(1, OCEAN_BREAK_FULL, ratio);
     scale = (hc * cap) / unbroken;
   }
+  out.ratio = ratio;
+  out.scale = scale;
+}
+
+/** The reads one evaluation needs, made once. */
+const COAST = new Float64Array(5);
+const BAY = new Float64Array(4);
+const COVE = new Float64Array(4);
+const COMP_K = new Float64Array(4);
+const COMP_Q = new Float64Array(4);
+const ROW_BAY = new Float64Array(4);
+const ROW_COVE = new Float64Array(4);
+const BREAK = { ratio: 0, scale: 1 };
+/** What `crestAt` reads of the last evaluation beyond its sample. */
+const EXTRA = { offshore: 0, dirX: 1, dirZ: 0, wc: 0, column: 0 };
+
+function evaluateInto(field: OceanField, phases: Float32Array, x: number, z: number, scratch: SwellScratch): SwellSample {
+  const t = field.tables;
+  coastReadInto(t, z, COAST);
+  const cx = COAST[0] as number;
+  const cdz = COAST[1] as number;
+  const wc = COAST[2] as number;
+  const wp = COAST[3] as number;
+  const wpDz = COAST[4] as number;
+  const d = x - cx;
+  const column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
+  const deep = Math.min(d - OCEAN_D_MIN, 0);
+  readRow(t, OCEAN_ROW_BAY_PROFILE, column, BAY);
+  readRow(t, OCEAN_ROW_COVE_PROFILE, column, COVE);
+  const h = (BAY[0] as number) + ((COVE[0] as number) - (BAY[0] as number)) * wc;
+  const a = (BAY[1] as number) + ((COVE[1] as number) - (BAY[1] as number)) * wc;
+  const b = (BAY[2] as number) + ((COVE[2] as number) - (BAY[2] as number)) * wc;
+  const shelter = shelterAt(field, x, z, SHELTER_SWELL);
+
+  const n = field.count;
+  const phi = scratch.phase;
+  const amp = scratch.amp;
+  const q0 = scratch.q;
+  const kx = scratch.kx;
+  const kz = scratch.kz;
+  let sx = 0;
+  let sy = 0;
+  let ox = 0;
+  let oy = 0;
+  for (let c = 0; c < n; c++) {
+    readRow(t, OCEAN_ROW_COMPONENTS, 2 * c, COMP_K);
+    readRow(t, OCEAN_ROW_COMPONENTS, 2 * c + 1, COMP_Q);
+    readRow(t, OCEAN_ROW_BAY_FIRST + c, column, ROW_BAY);
+    readRow(t, OCEAN_ROW_COVE_FIRST + c, column, ROW_COVE);
+    const k0x = COMP_K[0] as number;
+    const k0z = COMP_K[1] as number;
+    const a0 = COMP_K[3] as number;
+    const dPsi = (ROW_COVE[0] as number) - (ROW_BAY[0] as number);
+    const psi = (ROW_BAY[0] as number) + dPsi * wp + k0x * deep;
+    const kn = (ROW_BAY[1] as number) + ((ROW_COVE[1] as number) - (ROW_BAY[1] as number)) * wp;
+    const K = (ROW_BAY[2] as number) + ((ROW_COVE[2] as number) - (ROW_BAY[2] as number)) * wc;
+    const p = psi + k0x * cx + k0z * z + (phases[c] as number);
+    phi[c] = p;
+    kx[c] = kn;
+    kz[c] = k0z + (k0x - kn) * cdz + dPsi * wpDz;
+    const A = a0 * K * shelter;
+    amp[c] = A;
+    q0[c] = COMP_Q[0] as number;
+    sx += A * Math.cos(p);
+    sy += A * Math.sin(p);
+    ox += a0 * Math.cos(p);
+    oy += a0 * Math.sin(p);
+  }
+  const envelope = Math.hypot(sx, sy);
+  const unbroken = 2 * envelope;
+  const crestPhase = Math.atan2(sy, sx);
+  swellBreakInto(unbroken, h, a, b, field.tp, BREAK);
+  const ratio = BREAK.ratio;
+  const scale = BREAK.scale;
   const breaking = smoothstep(OCEAN_BREAK_FOAM_LO, OCEAN_BREAK_FOAM_HI, ratio);
 
+  // The capped amplitude is amp·scale wherever it is read: the scratch keeps the amplitude before the cap.
   let steepness = 0;
   for (let c = 0; c < n; c++) {
-    amp[c] = (amp[c] as number) * scale;
-    steepness += (q0[c] as number) * Math.hypot(kx[c] as number, kz[c] as number) * (amp[c] as number);
+    steepness += (q0[c] as number) * Math.hypot(kx[c] as number, kz[c] as number) * ((amp[c] as number) * scale);
   }
   const s = steepness > SWELL_Q_SUM_MAX ? SWELL_Q_SUM_MAX / steepness : 1;
 
@@ -275,8 +364,11 @@ function evaluate(field: OceanField, phases: Float32Array, x: number, z: number)
   let reach = 0;
   let wx = 0;
   let wz = 0;
+  let sumA = 0;
+  let kwx = 0;
+  let kwz = 0;
   for (let c = 0; c < n; c++) {
-    const A = amp[c] as number;
+    const A = (amp[c] as number) * scale;
     const Q = (q0[c] as number) * s;
     const Kx = kx[c] as number;
     const Kz = kz[c] as number;
@@ -292,24 +384,64 @@ function evaluate(field: OceanField, phases: Float32Array, x: number, z: number)
     reach += Q * A;
     wx += (A * A * Kx) / kmag;
     wz += (A * A * Kz) / kmag;
+    sumA += A;
+    kwx += A * Kx;
+    kwz += A * Kz;
   }
   const foamAge = mod(-crestPhase, TWO_PI) / (TWO_PI / field.tp);
   const roll = breaking * (1 - smoothstep(0, OCEAN_ROLL_WIDTH, mod(crestPhase, TWO_PI)));
   const trailing = breaking * Math.exp(-foamAge / OCEAN_FOAM_LIFE);
   const wl = Math.hypot(wx, wz);
-  return {
-    sample: {
-      height, dx, dz, slopeX, slopeZ, normalY: 1 - fold,
-      depth: h, envelope, unbroken, ratio, broken: ratio > 1, breaking,
-      crestPhase, foamAge, foam: Math.max(roll, trailing, breaking * OCEAN_INNER_FOAM),
-      reach, steepness: steepness * s,
-    },
-    scale,
-    offshore: 2 * Math.hypot(ox, oy),
-    direction: wl > 0 ? [wx / wl, wz / wl] : [1, 0],
-    wc,
-    column,
-  };
+  const km = Math.hypot(kwx, kwz) / sumA;
+
+  scratch.weggelA = a;
+  scratch.weggelB = b;
+  const out = scratch.sample;
+  out.height = height;
+  out.dx = dx;
+  out.dz = dz;
+  out.slopeX = slopeX;
+  out.slopeZ = slopeZ;
+  out.normalY = 1 - fold;
+  out.depth = h;
+  out.envelope = envelope;
+  out.unbroken = unbroken;
+  out.ratio = ratio;
+  out.broken = ratio > 1;
+  out.breaking = breaking;
+  out.crestPhase = crestPhase;
+  out.foamAge = foamAge;
+  out.foam = Math.max(roll, trailing, breaking * OCEAN_INNER_FOAM);
+  out.reach = reach;
+  out.steepness = steepness * s;
+  out.wavelength = km > 0 ? TWO_PI / km : (OCEAN_G * field.tp * field.tp) / TWO_PI;
+  out.scale = scale;
+
+  EXTRA.offshore = 2 * Math.hypot(ox, oy);
+  EXTRA.dirX = wl > 0 ? wx / wl : 1;
+  EXTRA.dirZ = wl > 0 ? wz / wl : 0;
+  EXTRA.wc = wc;
+  EXTRA.column = column;
+  return out;
+}
+
+/** The scratch `swellAt`, `crestAt` and `boreArrivals` sample through. */
+const SCRATCH = makeScratch(SWELL_COMPONENTS);
+
+/**
+ * `swellAt` without allocation: the swell at (x, z) under the frame's phases, written into `scratch.sample`
+ * (and the point's terms into the scratch's arrays), which is returned. The same numbers as `swellAt`.
+ */
+export function swellAtInto(
+  field: OceanField, phases: Float32Array, x: number, z: number, scratch: SwellScratch,
+): SwellSample {
+  return evaluateInto(field, phases, x, z, scratch);
+}
+
+/** The sample at a point and its cap's scale, through the module's scratch: read at once, the next call overwrites it. */
+function evaluate(field: OceanField, phases: Float32Array, x: number, z: number): { sample: SwellSample; scale: number } {
+  const sample = evaluateInto(field, phases, x, z, SCRATCH);
+  return { sample, scale: sample.scale };
 }
 
 /**
@@ -319,7 +451,7 @@ function evaluate(field: OceanField, phases: Float32Array, x: number, z: number)
  * phase weight's change along z.
  */
 export function swellAt(field: OceanField, phases: Float32Array, x: number, z: number): SwellSample {
-  return evaluate(field, phases, x, z).sample;
+  return { ...evaluateInto(field, phases, x, z, SCRATCH) };
 }
 
 /** The unit normal of a sample's Gerstner terms. */
@@ -337,26 +469,27 @@ export function swellNormal(s: SwellSample): [number, number, number] {
  * slope/√(H0/L0).
  */
 export function crestAt(field: OceanField, phases: Float32Array, x: number, z: number): Crest {
-  const e = evaluate(field, phases, x, z);
+  const sample = evaluateInto(field, phases, x, z, SCRATCH);
+  const { offshore, dirX, dirZ, wc, column } = EXTRA;
   const t = field.tables;
-  const depthAt = (column: number): number => {
-    const bay = atlasRead(t, OCEAN_ROW_BAY_PROFILE, column)[0];
-    const cove = atlasRead(t, OCEAN_ROW_COVE_PROFILE, column)[0];
-    return bay + (cove - bay) * e.wc;
+  const depthAt = (col: number): number => {
+    const bay = atlasRead(t, OCEAN_ROW_BAY_PROFILE, col)[0];
+    const cove = atlasRead(t, OCEAN_ROW_COVE_PROFILE, col)[0];
+    return bay + (cove - bay) * wc;
   };
-  const slope = Math.abs(depthAt(e.column - 1) - depthAt(e.column + 1)) / (2 * OCEAN_D_STEP);
+  const slope = Math.abs(depthAt(column - 1) - depthAt(column + 1)) / (2 * OCEAN_D_STEP);
   const offshoreLength = (OCEAN_G * field.tp * field.tp) / TWO_PI;
   return {
-    height: e.sample.unbroken * e.scale,
+    height: sample.unbroken * sample.scale,
     period: field.tp,
-    direction: e.direction,
-    phase: e.sample.crestPhase,
-    depth: e.sample.depth,
+    direction: [dirX, dirZ],
+    phase: sample.crestPhase,
+    depth: sample.depth,
     slope,
-    offshoreHeight: e.offshore,
+    offshoreHeight: offshore,
     offshoreLength,
-    broken: e.sample.broken,
-    iribarren: slope / Math.sqrt(Math.max(e.offshore, 1e-6) / offshoreLength),
+    broken: sample.broken,
+    iribarren: slope / Math.sqrt(Math.max(offshore, 1e-6) / offshoreLength),
   };
 }
 

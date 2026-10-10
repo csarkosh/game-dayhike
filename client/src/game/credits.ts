@@ -22,6 +22,8 @@ export type CreditEntry = {
 const LICENSE_URLS: Record<string, string> = {
   "CC0-1.0": "https://creativecommons.org/publicdomain/zero/1.0/",
   "CC-BY-4.0": "https://creativecommons.org/licenses/by/4.0/",
+  // A work of the US government, free of copyright (17 U.S.C. § 105): marked as the Public Domain Mark marks it.
+  "Public domain": "https://creativecommons.org/publicdomain/mark/1.0/",
 };
 
 export function creditsModel(markdown: string): CreditEntry[] {
@@ -77,7 +79,7 @@ export function creditsModel(markdown: string): CreditEntry[] {
 
 /** The licences that ask for nothing to be shown. Everything else on this screen is
  * there because a licence REQUIRES it, which is what decides the order below. */
-const ATTRIBUTION_OPTIONAL = new Set(["CC0-1.0", "UNLICENSED"]);
+const ATTRIBUTION_OPTIONAL = new Set(["CC0-1.0", "Public domain", "UNLICENSED"]);
 
 export function requiresAttribution(license: string): boolean {
   return !ATTRIBUTION_OPTIONAL.has(license);

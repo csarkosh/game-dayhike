@@ -40,6 +40,7 @@ import { seedFromToken } from "./game/seed.js";
 import { createAmbientAudio } from "./game/ambientAudio.js";
 import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
 import { createWaterLifeAudio } from "./game/waterLifeAudio.js";
+import { createSurfAudio } from "./game/surfAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
@@ -437,6 +438,11 @@ function buildGame(
   // fetched for nothing.
   const waterLifeAudio = renderer.hasWaterLife ? createWaterLifeAudio(ambient) : null;
   made(() => waterLifeAudio?.dispose());
+  // The surf on the cove, on the same context and the same unlock. Null in a
+  // world without the sea, where the bed's and the one-shots' clips would be
+  // fetched for nothing.
+  const surfAudio = renderer.hasSea ? createSurfAudio(ambient) : null;
+  made(() => surfAudio?.dispose());
   // The forest's birdsong bed: fetched now, decoded at the unlock, silent
   // until a forest world's climb raises it (`syncAtmosphere`).
   if (renderer.hasWildlife) void loadBirdBed(ambient);
@@ -760,6 +766,19 @@ function buildGame(
   function syncWaterLife(): void {
     if (waterLifeAudio === null) return;
     waterLifeAudio.update(renderer.waterLifeSound(), renderer.listener());
+  }
+
+  /**
+   * Voices the surf as the renderer filled it this frame: the bed, the
+   * plunges and the backwash (`surfAudio.ts`), heard from the camera. Both
+   * loops, after `renderer.sync`, and every frame, the camera far from the
+   * cove included, where the record is absent and the bed falls silent.
+   * Read through `renderer`, the one binding a switch of tier replaces, so
+   * the swapped-in renderer's surf is the one heard by the same voices.
+   */
+  function syncSurf(): void {
+    if (surfAudio === null) return;
+    surfAudio.update(renderer.surfSound(), renderer.listener());
   }
 
   /**
@@ -1443,6 +1462,7 @@ function buildGame(
       syncWind();
       syncDrip();
       syncWaterLife();
+      syncSurf();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(host.world, self);
       if (cmd !== null) syncPoster(host.world, self, cmd);
@@ -1589,6 +1609,7 @@ function buildGame(
       syncWind();
       syncDrip();
       syncWaterLife();
+      syncSurf();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(client.world, self);
       if (cmd !== null) syncPoster(client.world, self, cmd);
@@ -2091,6 +2112,7 @@ function buildGame(
       skySource.dispose();
       wildlifeAudio?.dispose();
       waterLifeAudio?.dispose();
+      surfAudio?.dispose();
       ambient.dispose();
     },
   };

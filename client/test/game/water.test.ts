@@ -9,6 +9,8 @@ import {
   type WaterGeometry, type WaterRingSamples,
 } from "../../src/game/water.js";
 import { HOLE_CELLS, RING_CELLS, blendWeight } from "../../src/game/clipmap.js";
+import { SWASH_FACE_LIFT_M, SWASH_REACH_MAX_M } from "../../src/game/swashRunUp.js";
+import { COVE_FACE_GRADE } from "../../src/sim/olympic.js";
 
 const SEED = 0x5eed;
 setActiveTerrainVariant("olympic");
@@ -229,6 +231,62 @@ describe("water rings", () => {
       coarse.h[inside] = -5;
       expect(wetBounds(waterRingGeometry(coarse, hole, 0))).toBeNull();
       expect(wetBounds(waterRingGeometry(coarse, null, 0))).not.toBeNull();
+    });
+
+    it("lifts the swash's face into the sea's wet cells: the farthest reach up the face and the sheet over it, 1.6 m", () => {
+      expect(SWASH_FACE_LIFT_M).toBe(1.6);
+      expect(SWASH_REACH_MAX_M * COVE_FACE_GRADE + 0.6).toBe(1.6);
+    });
+
+    it("keeps a sea ring that covers only the cove's face, ground up to 1 m above the level, and none 2 m above it", () => {
+      const ring = createWaterRingSamples(SEED, 0, 0, 0);
+      // face ground from 0.05 m to 1 m above a level of 3, rising along x: none of it under the level
+      for (let iz = 0; iz < SIDE; iz++) {
+        for (let ix = 0; ix < SIDE; ix++) ring.h[iz * SIDE + ix] = 3.05 + (0.95 * ix) / WATER_RING_CELLS;
+      }
+      const g = waterRingGeometry(ring, null, 3);
+      expect(Math.max(...g.bedDepth)).toBe(0);
+      // a lake's rule, the depth's: dry, off
+      expect(wetBounds(g)).toBeNull();
+      expect(wetBounds(g, ring.h, 0)).toBeNull();
+      // the sea's: every cell wet, the whole ring and the waves' bound past it
+      const b = wetBounds(g, ring.h, SWASH_FACE_LIFT_M)!;
+      expect(b).not.toBeNull();
+      const s = ring.spacing;
+      expect(s).toBe(1);
+      expect(b.min).toEqual([ring.originX - 12 - s, 3 - 12, ring.originZ - 12 - s]);
+      expect(b.max).toEqual([ring.originX + 128 * s + 12 + s, 3 + 12, ring.originZ + 128 * s + 12 + s]);
+      // 2 m above the level is past any swash: off
+      ring.h.fill(5);
+      expect(wetBounds(waterRingGeometry(ring, null, 3), ring.h, SWASH_FACE_LIFT_M)).toBeNull();
+      // one vertex 1.5 m above: its cells only
+      ring.h[20 * SIDE + 10] = 4.5;
+      const one = wetBounds(waterRingGeometry(ring, null, 3), ring.h, SWASH_FACE_LIFT_M)!;
+      expect(one.min).toEqual([ring.originX + 9 * s - 12 - s, 3 - 12, ring.originZ + 19 * s - 12 - s]);
+      expect(one.max).toEqual([ring.originX + 11 * s + 12 + s, 3 + 12, ring.originZ + 21 * s + 12 + s]);
+    });
+
+    it("lifts only the cove's span along z: a face ring outside it is off, one across its end is drawn to it", () => {
+      const ring = createWaterRingSamples(SEED, 0, 0, 0);
+      for (let iz = 0; iz < SIDE; iz++) {
+        for (let ix = 0; ix < SIDE; ix++) ring.h[iz * SIDE + ix] = 3.05 + (0.95 * ix) / WATER_RING_CELLS;
+      }
+      const g = waterRingGeometry(ring, null, 3);
+      const s = ring.spacing;
+      // the cove's span wholly south or north of the ring: plain beach, dry, off
+      expect(wetBounds(g, ring.h, SWASH_FACE_LIFT_M, [ring.originZ - 400, ring.originZ - 1])).toBeNull();
+      expect(wetBounds(g, ring.h, SWASH_FACE_LIFT_M, [ring.originZ + 128 * s + 1, ring.originZ + 900])).toBeNull();
+      // the span over the whole ring: as with no span given, every cell
+      expect(wetBounds(g, ring.h, SWASH_FACE_LIFT_M, [ring.originZ - 1000, ring.originZ + 1000])).toEqual(wetBounds(g, ring.h, SWASH_FACE_LIFT_M));
+      // the cove's end at row 40: the cells with a vertex up to it, rows 0 to 41
+      const part = wetBounds(g, ring.h, SWASH_FACE_LIFT_M, [ring.originZ - 1000, ring.originZ + 40 * s])!;
+      expect(part.min).toEqual([ring.originX - 12 - s, 3 - 12, ring.originZ - 12 - s]);
+      expect(part.max).toEqual([ring.originX + 128 * s + 12 + s, 3 + 12, ring.originZ + 41 * s + 12 + s]);
+      // ground under the level is wet whatever the span, as the depth has it
+      ring.h[90 * SIDE + 10] = 2.5;
+      const under = wetBounds(waterRingGeometry(ring, null, 3), ring.h, SWASH_FACE_LIFT_M, [ring.originZ - 400, ring.originZ - 1])!;
+      expect(under.min).toEqual([ring.originX + 9 * s - 12 - s, 3 - 12, ring.originZ + 89 * s - 12 - s]);
+      expect(under.max).toEqual([ring.originX + 11 * s + 12 + s, 3 + 12, ring.originZ + 91 * s + 12 + s]);
     });
 
     it("holds every wet vertex of a real ring and is no larger than the cells around them", () => {

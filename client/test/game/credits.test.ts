@@ -45,6 +45,31 @@ describe("creditsModel", () => {
     const entries = creditsModel(SAMPLE.replace("CC0-1.0", "CC-BY-4.0"));
     expect(entries[0]!.licenseUrl).toBe("https://creativecommons.org/licenses/by/4.0/");
   });
+  it("links a public-domain work to the Public Domain Mark, and asks for no credit", () => {
+    const entries = creditsModel(SAMPLE.replace("CC0-1.0", "Public domain"));
+    expect(entries[0]!.licenseUrl).toBe("https://creativecommons.org/publicdomain/mark/1.0/");
+    expect(requiresAttribution("Public domain")).toBe(false);
+  });
+  it("credits the surf's bed to its Oregon recording and its five one-shots to the Park Service's, as two rows", () => {
+    const surf = creditsModel(REAL).filter((e) => e.id === "ambience.surf_cove" || e.id.startsWith("call.surf_"));
+    expect(surf.map((e) => e.id)).toEqual([
+      "ambience.surf_cove", "call.surf_backwash_a", "call.surf_backwash_b",
+      "call.surf_plunge_a", "call.surf_plunge_b", "call.surf_plunge_c",
+    ]);
+    // The bed's source and page are read past the platform's name, which only CREDITS.md spells.
+    const rows = creditsRows(surf);
+    const bed = rows[0]!;
+    expect([bed.source.slice(bed.source.indexOf(": ") + 2), bed.author, bed.license, bed.licenseUrl, new URL(bed.url).pathname]).toEqual([
+      "Short Sand Beach: Waves 3", "ghosttropic", "CC0-1.0",
+      "https://creativecommons.org/publicdomain/zero/1.0/", "/people/ghosttropic/sounds/717146/",
+    ]);
+    expect(rows.slice(1).map((e) => [e.source, e.author, e.license, e.licenseUrl, e.url])).toEqual([
+      [
+        "NPS Sound Gallery: Ocean, Olympic National Park", "National Park Service", "Public domain",
+        "https://creativecommons.org/publicdomain/mark/1.0/", "https://www.nps.gov/subjects/sound/sounds-ocean.htm",
+      ],
+    ]);
+  });
   it("credits only ids the catalog ships, and at least one", () => {
     const shipped = new Set([...catalog.assets, ...catalog.textures, ...catalog.audio].map((a) => a.id));
     const entries = creditsModel(REAL);
