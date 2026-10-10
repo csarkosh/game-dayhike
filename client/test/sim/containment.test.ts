@@ -117,6 +117,21 @@ describe("containAtLake", () => {
     expect(out.x).toBeCloseTo(-13, 6);
   });
 
+  it("moves a hull far inside the water by a bounded step and onto the wall", () => {
+    // A lake 40 m in half-width: its shelf is 10 m wide and the hull stands at
+    // s = 30, over the wall by 20 m. Six steps of at most 4 · 20 m each bound
+    // the hull's travel by 480 m.
+    const deep = stadiumShape({ cx: 100, cz: 50, halfLen: 10, w: 40, size: 45 });
+    const start = { x: 110, y: 1, z: 50 };
+    const pos = { ...start };
+    const sOf = (x: number, z: number): number => lakeShoreInto(newLakeShore(), deep, x, z).s;
+    expect(sOf(pos.x, pos.z)).toBeCloseTo(30, 9);
+    expect(containAtLake(pos, { x: 0, y: 0, z: 0 }, deep)).toBe(true);
+    expect(Math.hypot(pos.x - start.x, pos.z - start.z)).toBeLessThanOrEqual(480);
+    expect(Math.abs(sOf(pos.x, pos.z) - lakeWallS(deep, 0.5))).toBeLessThan(1e-6);
+    expect(lakeWallS(deep, 0.5)).toBe(10);
+  }, timeLimit(10_000));
+
   it("leaves a hull on the shelf alone, velocity included", () => {
     const pos = { x: 115.01, y: 1, z: 50 };
     const vel = { x: -3, y: 0, z: 0 };

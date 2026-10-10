@@ -48,6 +48,8 @@ const WALL = newLakeShore();
 /** The Newton steps the wall takes back along ∇s, and the step off the spine's ridge where ∇s vanishes (m). */
 const WALL_STEPS = 6;
 const WALL_RIDGE_STEP = 1e-3;
+/** The step is over / |∇s|; a floor on |∇s| keeps a saddle's near-zero gradient from flinging the hull. */
+const WALL_GRAD_MIN = 0.25;
 
 /**
  * The wall in a lake: a hull's centre may not go deeper in than the wall's
@@ -58,6 +60,7 @@ const WALL_RIDGE_STEP = 1e-3;
 export function containAtLake(pos: Vec3, vel: Vec3, shape: LakeShape): boolean {
   let r = lakeShoreInto(WALL, shape, pos.x, pos.z);
   if (!(r.s > lakeWallS(shape, r.sigma))) return false;
+  const x0 = pos.x, z0 = pos.z;
   for (let i = 0; i < WALL_STEPS; i++) {
     const g2 = r.sx * r.sx + r.sz * r.sz;
     if (g2 < 1e-12) {
@@ -65,10 +68,20 @@ export function containAtLake(pos: Vec3, vel: Vec3, shape: LakeShape): boolean {
     } else {
       const over = r.s - lakeWallS(shape, r.sigma);
       if (Math.abs(over) < 1e-12) break;
-      pos.x -= (over * r.sx) / g2;
-      pos.z -= (over * r.sz) / g2;
+      // The step is over / max(|∇s|, WALL_GRAD_MIN) along the unit gradient, so at most 4 · over.
+      const g = Math.sqrt(g2);
+      const k = over / (g * Math.max(g, WALL_GRAD_MIN));
+      pos.x -= k * r.sx;
+      pos.z -= k * r.sz;
     }
     r = lakeShoreInto(WALL, shape, pos.x, pos.z);
+  }
+  if (r.s === Number.NEGATIVE_INFINITY) {
+    // The steps left the lake's bound: the read there has no gradient. Keep
+    // the position the hull came in at and cancel its velocity as the ridge
+    // case does, along the +x fallback.
+    pos.x = x0;
+    pos.z = z0;
   }
   const gl = Math.sqrt(r.sx * r.sx + r.sz * r.sz);
   // Out of the lake is down the shore distance.
