@@ -759,6 +759,8 @@ export type FeatureMask = {
   /** 1 on a pond's shore band and the peak's crest: bare floor / rock, no clutter. */
   bare: number;
 };
+const MASK_SHORE = newLakeShore();
+
 /** The mask when no feature reaches a point — frozen so every caller shares
  * one object; a later task (the ground paint) imports it by this name. */
 export const NO_FEATURE_MASK: FeatureMask = Object.freeze({ tree: 1, clutter: 1, meadow: 0, bare: 0 });
@@ -788,11 +790,15 @@ export function featureMaskAt(features: readonly Feature[], x: number, z: number
       tree *= smoothstep(f.radius + MEADOW_RIM + MEADOW_TREE_MARGIN, reach, d);
       meadow = Math.max(meadow, 1 - smoothstep(f.radius, f.radius + MEADOW_RIM, d));
     } else if (f.kind === "pond") {
-      const reach = f.radius + POND_TREE_MARGIN + 10;
-      if (d >= reach) continue;
+      // By the shore distance, t = −s: bare to POND_SHORE outside the shore
+      // and all under the water, no trees to POND_TREE_MARGIN, the forest
+      // back over the next 10 m — round the lake's bays and points.
+      if (f.shape === undefined) continue;
+      const t = -lakeShoreInto(MASK_SHORE, f.shape, x, z).s;
+      if (!(t < POND_TREE_MARGIN + 10)) continue;
       touched = true;
-      tree *= smoothstep(f.radius + POND_TREE_MARGIN, reach, d);
-      const shore = 1 - smoothstep(f.radius + POND_SHORE, f.radius + POND_SHORE + 2, d);
+      tree *= smoothstep(POND_TREE_MARGIN, POND_TREE_MARGIN + 10, t);
+      const shore = 1 - smoothstep(POND_SHORE, POND_SHORE + 2, t);
       bare = Math.max(bare, shore);
       clutter *= 1 - shore;
     } else {

@@ -37,6 +37,7 @@ import { TRAIL_CLEAR } from "../../src/sim/trail.js";
 import type { TerrainSample } from "../../src/sim/terrain.js";
 import { bowlFor } from "../../src/sim/olympic.js";
 import { MEADOW_RIM } from "../../src/sim/features.js";
+import { rayToShore } from "../../src/sim/lakeShape.js";
 
 const SEED = 0x5eed;
 const flat = (h: number, g = 0.1): TerrainSample => ({ h, dx: g, dz: 0 });
@@ -274,9 +275,9 @@ describe("the terrain feature mask", () => {
     setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
     const { features } = bowlFor(MASK_SEED);
     const pond = features.find((f) => f.kind === "pond")!;
-    // 1 m onto the shore band (radius, radius + POND_SHORE]: well inside the
+    // 1 m onto the shore band, out along +x from the centre: well inside the
     // tree margin the mask thins to zero (POND_TREE_MARGIN = 8).
-    const x = pond.x + pond.radius + 1;
+    const x = pond.x + rayToShore(pond.shape!, pond.x, pond.z, 1, 0, -1, pond.shape!.bound);
     expect(forestDensity(MASK_SEED, x, pond.z)).toBe(0);
   });
 

@@ -888,6 +888,8 @@ describe("the terrain feature mask", () => {
   // loop feature (found by a quick scan of PROBE_SEEDS, 2026-09-11): meadow
   // centre (495.52, 84) radius 84.36, pond centre (207.33, 316) radius 25.80.
   const MASK_SEED = 12345;
+  /** The flower pin: its bearing (whole degrees) and its density, read on this world's lake. */
+  const FLOWER_PIN = { deg: 5, flower: 0.00000479247112622536 };
 
   it("carries a denser carpet inside a made meadow than 60 m outside it", () => {
     setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
@@ -905,7 +907,7 @@ describe("the terrain feature mask", () => {
     const pond = features.find((f) => f.kind === "pond")!;
     // 1 m onto the shore band: fm.clutter is 0 there regardless of the
     // underlying grass gate product (see vegetation.test.ts's matching case).
-    const x = pond.x + pond.radius + 1;
+    const x = pond.x + rayToShore(pond.shape!, pond.x, pond.z, 1, 0, -1, pond.shape!.bound);
     expect(clutterDensity(MASK_SEED, CLUTTER_GRASS, x, pond.z)).toBe(0);
   });
 
@@ -920,7 +922,7 @@ describe("the terrain feature mask", () => {
     setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
     const { features } = bowlFor(MASK_SEED);
     const pond = features.find((f) => f.kind === "pond")!;
-    const x = pond.x + pond.radius + 1, z = pond.z;
+    const x = pond.x + rayToShore(pond.shape!, pond.x, pond.z, 1, 0, -1, pond.shape!.bound), z = pond.z;
     const v = activeTerrainVariant();
     const h = v.sample(MASK_SEED, x, z).h;
     expect(v.featureMask?.(MASK_SEED, x, z, h).clutter).toBe(0); // the point really is masked
@@ -942,46 +944,45 @@ describe("the terrain feature mask", () => {
     setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
     const { features } = bowlFor(MASK_SEED);
     const pond = features.find((f) => f.kind === "pond")!;
+    const shape = pond.shape!;
     const v = activeTerrainVariant();
     let fractional = 0;
+    // Out along +x from the shore, the mask's fade by the shore distance.
     for (let d = 0; d <= 8; d += 0.25) {
-      const x = pond.x + pond.radius + d, z = pond.z;
+      const x = pond.x + rayToShore(shape, pond.x, pond.z, 1, 0, -d, shape.bound), z = pond.z;
       const h = v.sample(MASK_SEED, x, z).h;
       const fm = v.featureMask?.(MASK_SEED, x, z, h);
       if (fm === undefined) continue;
       if (fm.clutter > 0 && fm.clutter < 1) fractional++;
       const grass = clutterDensity(MASK_SEED, CLUTTER_GRASS, x, z);
       const meadow = clutterDensity(MASK_SEED, CLUTTER_MEADOW, x, z);
-      // PIN, not a guard on this fix: fm.meadow is 0 this far from the made
-      // meadow, so meadow's own "(1 + fm.meadow)" is an exact no-op here
-      // regardless of the mask fix, and this would equal grass either way.
+      // PIN, not a guard on the mask: fm.meadow is 0 this far from the made
+      // meadow, so meadow's own "(1 + fm.meadow)" is an exact no-op here,
+      // and this would equal grass either way.
       expect(meadow).toBe(grass);
-      // GUARD: this is the assertion the fix is for. Before it, `grass`
-      // (through clutterDensity's own `* fm.clutter`) and `groundCover`'s
-      // own value (which skipped the mask entirely) disagreed at every
-      // point in this fade band; only moving fm.clutter inside the shared
-      // field makes them equal everywhere, not just away from every feature.
+      // GUARD: `grass` (through clutterDensity's own `* fm.clutter`) and
+      // `groundCover`'s own value agree at every point in the fade band only
+      // because fm.clutter lives inside the shared field.
       expect(grass).toBe(groundCover(MASK_SEED, x, z).grass);
     }
     // A vacuity guard: the walk actually crossed the fade, not just its ends.
     expect(fractional).toBeGreaterThan(3);
-    // PIN, not a guard on this fix: flower's own arithmetic never changed
-    // (it keeps applying fm.clutter itself — see the CLUTTER_FLOWER case),
-    // so this constant would hold whether or not the fix above landed. It
-    // exists to catch a future change to flower's own composition, found at
-    // a flower-bearing point inside the same fade (a quick scan, 2026-09-23:
-    // its own drift happens to clear the patch gate here, so this is a
-    // genuine, non-vacuous flower value, not 0 === 0).
-    const a = (204 * Math.PI) / 180;
-    const fx = pond.x + (pond.radius + 4.25) * Math.cos(a);
-    const fz = pond.z + (pond.radius + 4.25) * Math.sin(a);
-    const fh = v.sample(MASK_SEED, fx, fz).h;
-    const ffm = v.featureMask?.(MASK_SEED, fx, fz, fh);
-    expect(ffm?.clutter).toBeGreaterThan(0);
-    expect(ffm?.clutter).toBeLessThan(1);
-    const flower = clutterDensity(MASK_SEED, CLUTTER_FLOWER, fx, fz);
-    expect(flower).toBeGreaterThan(0);
-    expect(flower).toBe(0.0004611562793366643);
+    // PIN, not a guard: flower's own arithmetic (it keeps applying
+    // fm.clutter itself — see the CLUTTER_FLOWER case) at the first whole
+    // degree from +x toward +z where, 4.25 m out from the shore inside the
+    // mask's fade, its own drift clears the patch gate: a genuine, non-vacuous
+    // flower value, not 0 === 0.
+    let found: { deg: number; flower: number } | null = null;
+    for (let deg = 0; deg < 360 && found === null; deg++) {
+      const a = (deg * Math.PI) / 180;
+      const d = rayToShore(shape, pond.x, pond.z, Math.cos(a), Math.sin(a), -4.25, shape.bound);
+      const fx = pond.x + Math.cos(a) * d, fz = pond.z + Math.sin(a) * d;
+      const ffm = v.featureMask?.(MASK_SEED, fx, fz, v.sample(MASK_SEED, fx, fz).h);
+      if (ffm === undefined || !(ffm.clutter > 0 && ffm.clutter < 1)) continue;
+      const flower = clutterDensity(MASK_SEED, CLUTTER_FLOWER, fx, fz);
+      if (flower > 0) found = { deg, flower };
+    }
+    expect(found).toEqual(FLOWER_PIN);
   });
 });
 

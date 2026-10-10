@@ -143,8 +143,9 @@ describe("the composed stage and the mask", () => {
     // the tree margin starts at R + MEADOW_RIM, not at R.
     expect(featureMaskAt(all, 1000 + meadow.radius + MEADOW_RIM + 5, 0).tree).toBe(0);
     expect(featureMaskAt(all, 1000 + meadow.radius + MEADOW_RIM + 30, 0).tree).toBe(1);
-    expect(featureMaskAt(all, 0, 1000 + pond.radius + 7).tree).toBe(0);
-    expect(featureMaskAt(all, 0, 1000 + pond.radius + 30).tree).toBe(1);
+    // The pond's flank is the line x = 30 for |z − 1000| ≤ 5: 7 m and 30 m out.
+    expect(featureMaskAt(all, 37, 1000).tree).toBe(0);
+    expect(featureMaskAt(all, 60, 1000).tree).toBe(1);
     // The peak's crest is flat.h + peak.height; the treeline is
     // TREELINE_BELOW_CREST under it.
     const crestH = flat.h + peak.height;
@@ -209,11 +210,21 @@ describe("the composed stage and the mask", () => {
     const inFade = peak.radius - PEAK_RIM_FADE - 1;
     expect(featureMaskAt([peak], inFade, 0, treeline).tree).toBeCloseTo(0, 9);
   });
+  it("follows the shore, not a circle: the same 9 m out on the flank and past the cap", () => {
+    // smoothstep(8, 18, 9) = 0.028; the cap's tip is (0, 1035).
+    expect(featureMaskAt([pond], 39, 1000).tree).toBeCloseTo(0.028, 12);
+    expect(featureMaskAt([pond], 0, 1044).tree).toBeCloseTo(0.028, 12);
+    // 3 m past the cap's tip, 38 m from the centre: still the bare shore.
+    expect(featureMaskAt([pond], 0, 1038).bare).toBe(1);
+  });
+
   it("marks the meadow interior and the pond shore, and leaves the rest alone", () => {
     expect(featureMaskAt(all, 1000, 0).meadow).toBe(1);
     expect(featureMaskAt(all, 1000, 0).clutter).toBe(1);
-    expect(featureMaskAt(all, 0, 1000 + pond.radius + 2).bare).toBe(1);
-    expect(featureMaskAt(all, 0, 1000 + pond.radius + 2).clutter).toBe(0);
+    expect(featureMaskAt(all, 32, 1000).bare).toBe(1);
+    expect(featureMaskAt(all, 32, 1000).clutter).toBe(0);
+    // Under the water too.
+    expect(featureMaskAt(all, 10, 1000).bare).toBe(1);
     expect(featureMaskAt(all, 500, 500)).toEqual({ tree: 1, clutter: 1, meadow: 0, bare: 0 });
   });
   it("declares its tunables, exhaustively", () => {
