@@ -19,6 +19,7 @@ import {
   TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER, TRAIL_BED_FLOOR,
   trailWear, trailEdgeNoise, trailPatches,
 } from "../../src/game/trailBenchParams.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const BED = TRAIL_BED_HALF;
 /** Two segments: one along x, one along z, meeting at (100, 0). */
@@ -389,4 +390,13 @@ describe("the GLSL", () => {
     for (const term of ["trailValueNoise1(", "macroValueNoise(", "terrainWet", "tPuddle", "tLip", "tWidthK", "tDarkK", "tdN"]) expect(g).toContain(term);
     expect(g.indexOf("fwidth(tdBest)")).toBeLessThan(g.indexOf("if (tdBest <"));
   });
+});
+
+describe("the far cover steps aside on the trail", () => {
+  it("writes the larger of the bank and the bench, core and margin, once the bench's weight is known", () => {
+    expect(TRAIL_FRAGMENT_PAINT).toContain(
+      "    float tGravel = tOnBench * (1.0 - tSnow);\n    terrainPaintW = max(terrainPaintW, max(tBank, tOnBench));\n",
+    );
+    expect(TRAIL_FRAGMENT_PAINT.split("terrainPaintW").length - 1).toBe(2);
+  }, timeLimit(5_000));
 });

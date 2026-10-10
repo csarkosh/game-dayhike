@@ -5,6 +5,12 @@ import groundHexHead from "../../src/game/shaders/groundHex.fragment.fx?raw";
 import groundHexFetch from "../../src/game/shaders/groundHexFetch.fragment.fx?raw";
 import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
 import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
+import {
+  terrainFarCoverDefs, TERRAIN_FRAGMENT_FAR_COVER, TERRAIN_MACRO_OCTAVES,
+  TERRAIN_FRAGMENT_FAR_LIGHT, TERRAIN_SPEC_INJECTION_POINT, TERRAIN_SPEC_INJECTION_CODE, TERRAIN_SUN_INJECTION_CODE,
+} from "../../src/game/terrainTexture.js";
+import { FOLIAGE_LIGHT_INJECTION_POINT } from "../../src/game/foliageLightPlugin.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 
@@ -48,7 +54,10 @@ const PINS: Record<string, string> = {
   // tint's one added line in `featurePaint.ts`, which begins it at the lake's
   // rim (the bed under the water paints itself); the foliage plugin for reeds
   // is the tree's text and interface.
-  "terrain.fragment": "393cbde35c652291d03850619cfdf4b67c6065aac4e84e87c4f9e865ffd71e10",
+  // Re-pinned for the far ground's cover (terrainTexture.ts,
+  // groundFarCover.fragment.fx, the road's and the trail's paint weights); the
+  // test below shows it is the whole difference.
+  "terrain.fragment": "035d1f9c4fb92c920edeedc8fed427e7bb0831e0ed52b9c4ab920eef58f6c629",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
 };
@@ -74,8 +83,9 @@ const INTERFACE_PINS: Record<string, string> = {
   "groundConform.interface": "d1318897a8b44958dc6d4ba703fe861a79590ee61c6d7cb830bc54cb33e7b75a",
   "skin.interface": "d39b98bf284499c66f8b2765d9947ff326b97a8a716bcb4f2c89cf5b9c1bc2de",
   // Re-pinned for `terrainRain` and `terrainTime`, the two floats the
-  // puddles' ripples read, declared on both uniform paths.
-  "terrain.interface": "c0528421aedd3e5f0c3030247b528331ea69f7bf78fcd8b9c59201a21ce63ad2",
+  // puddles' ripples read, declared on both uniform paths, and again for
+  // TERRAINFARLOW, the far cover's low band, false on medium and high.
+  "terrain.interface": "2218c50bb5071b9eb9de88d31c3616d8cadfd2b8a19d89e6ee5785889f675b64",
   "wing.interface": "bb03268d86b3711b1e489d0f2a62c81f60556c063d98fc835954b43a11cff985",
 };
 
@@ -89,6 +99,30 @@ function withoutRipples(text: string): string {
   expect(from).toBeGreaterThan(0);
   expect(to).toBeGreaterThan(from);
   return `${text.slice(0, from)}    normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), vec3(0.0, 1.0, 0.0), tPuddle));\n${text.slice(to)}`;
+}
+
+/** The far ground's cover (terrainTexture.ts, roadPaint.ts, trailPaint.ts)
+ * taken out of the terrain fragment: each piece it adds, removed where it
+ * stands (each must stand there once), and the macro tint's octaves put back
+ * as the one line they were. The text is the one before the far cover. */
+function withoutFarCover(text: string): string {
+  const pieces: (readonly [string, string])[] = [
+    [terrainFarCoverDefs(), ""],
+    ["float terrainSpecW = 1.0;\nfloat terrainFarW = 0.0;\nfloat terrainPaintW = 0.0;\nvec3 terrainFarN = vec3(0.0, 1.0, 0.0);\n", ""],
+    [TERRAIN_MACRO_OCTAVES, "  vec3 macroRgb = macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y);\n"],
+    [TERRAIN_FRAGMENT_FAR_COVER, ""],
+    [TERRAIN_FRAGMENT_FAR_LIGHT, ""],
+    [`${TERRAIN_SPEC_INJECTION_POINT}\n${TERRAIN_SPEC_INJECTION_CODE}\n`, ""],
+    [`${FOLIAGE_LIGHT_INJECTION_POINT}\n${TERRAIN_SUN_INJECTION_CODE}\n`, ""],
+    ["    terrainPaintW = max(terrainPaintW, rGravel);\n", ""],
+    ["    terrainPaintW = max(terrainPaintW, max(tBank, tOnBench));\n", ""],
+  ];
+  let out = text;
+  for (const [piece, was] of pieces) {
+    expect(out.split(piece).length - 1, piece.slice(0, 60)).toBe(1);
+    out = out.replace(piece, () => was);
+  }
+  return out;
 }
 
 describe("WebGL2's shader text", () => {
@@ -114,16 +148,29 @@ describe("WebGL2's shader text", () => {
     expect(text).toContain("vec3 tPuddleN = normalize(vec3(tRipple.x * terrainRain, 1.0, tRipple.y * terrainRain));");
     // With the ripples taken out and the rename undone, the base's text and
     // the shore tint's one line.
-    const base = withoutRipples(text).replaceAll("macroRgb", "macro");
+    const base = withoutFarCover(withoutRipples(text)).replaceAll("macroRgb", "macro");
     expect(base).not.toContain("tRipple");
     expect(sha(base)).toBe("fd74235171f3b423ebdc8126972fa2ca1b6aee08fba3eef1a0cca297e4d21669");
   });
+
+  it("takes the far cover out and gets the text before it", () => {
+    const text = pluginTexts()["terrain.fragment"] as string;
+    expect(sha(withoutFarCover(withoutRipples(text)))).toBe("393cbde35c652291d03850619cfdf4b67c6065aac4e84e87c4f9e865ffd71e10");
+  }, timeLimit(20_000));
 
   it("keeps every plugin's uniforms, samplers, attributes and defines what they were", () => {
     const texts = pluginInterfaces();
     expect(Object.keys(texts).sort()).toEqual(Object.keys(INTERFACE_PINS).sort());
     for (const [key, text] of Object.entries(texts)) expect(sha(text), key).toBe(INTERFACE_PINS[key]);
   });
+
+  it("changes the terrain's interface by the far cover's one define and nothing else", () => {
+    const text = pluginInterfaces()["terrain.interface"] as string;
+    expect(text.split('"TERRAINFARLOW":false,').length - 1).toBe(2);
+    expect(sha(text.replaceAll('"TERRAINFARLOW":false,', ""))).toBe(
+      "c0528421aedd3e5f0c3030247b528331ea69f7bf78fcd8b9c59201a21ce63ad2",
+    );
+  }, timeLimit(20_000));
 
   it("pins the hex include and the finish pass as files", () => {
     // The hex include is three files, joined on WebGL2 into the one it was.

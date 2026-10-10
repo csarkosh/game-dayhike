@@ -67,7 +67,7 @@ import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
-import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainRain, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
+import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
 import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
@@ -2295,6 +2295,9 @@ function buildRenderer(
   // runs exactly where they are drawn: off on the low tier. Without a forest
   // there is no clipmap, and the terrain material is not built for it.
   if (forest !== null) setTerrainSward(scene, terrainMaterialFor(scene, "terrain"), bladeMeshes !== null);
+  // The far cover's band follows the tier's clutter edges: on low, where every
+  // class is drawn at 0.6 of its radius, it comes in at 0.6 of its distance.
+  if (forest !== null) setTerrainFarBand(scene, terrainMaterialFor(scene, "terrain"), tier === "low");
   // The near field of dead leaves, twigs and small branches, on the same
   // tiers as the blades beside it: what the grass field thins out, this fills
   // in, so the ground reads full rather than bare. Low tier draws neither.

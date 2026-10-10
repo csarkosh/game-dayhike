@@ -7,11 +7,13 @@ import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
 import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors.js";
 import {
-  attachTerrainTexture, enableRoadPaint, enableFeaturePaint, setTerrainRain, TerrainTexturePlugin,
+  attachTerrainTexture, enableRoadPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, TerrainTexturePlugin,
   heightBlendWeights, HEIGHT_BLEND_DEPTH, LAYER_ROUGHNESS, LAYER_F0,
   rockParallaxOffset, ROCK_PARALLAX_DEPTH, ROCK_PARALLAX_STEPS, ROCK_PARALLAX_MIN_WEIGHT,
+  terrainFarCoverDefs, TERRAIN_FRAGMENT_FAR_COVER, TERRAIN_MACRO_OCTAVES, HEX_FETCH_MACROS, TERRAIN_UNIFORMITY_OFF,
+  TERRAIN_FRAGMENT_FAR_LIGHT, TERRAIN_SPEC_INJECTION_POINT, TERRAIN_SPEC_INJECTION_CODE, TERRAIN_SUN_INJECTION_CODE,
 } from "../../src/game/terrainTexture.js";
-import { FEATURE_PAINT_MAX } from "../../src/game/featurePaint.js";
+import { FEATURE_FRAGMENT_PAINT, FEATURE_PAINT_MAX } from "../../src/game/featurePaint.js";
 import {
   DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   HORIZON, HORIZON_MAX, TUFT_ALBEDO, swardWeight,
@@ -22,6 +24,26 @@ import { TRAIL_FRAGMENT_PAINT, TRAIL_PAINT_MAX_SEGMENTS } from "../../src/game/t
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import "../../src/sim/passes/index.js";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import type { Effect } from "@babylonjs/core/Materials/effect.js";
+import { ROAD_FRAGMENT_DEFS, ROAD_FRAGMENT_PAINT } from "../../src/game/roadPaint.js";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
+import "@babylonjs/core/Shaders/pbr.fragment.js";
+import "@babylonjs/core/Shaders/ShadersInclude/lightFragment.js";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { FOLIAGE_LIGHT_INJECTION_POINT } from "../../src/game/foliageLightPlugin.js";
+import { attachWet } from "../../src/game/wetPlugin.js";
+import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
+import { timeLimit } from "../helpers/timeLimit.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+/** The cover's factor on the sun's diffuse line, as the line carries it. */
+const FAR_SUN_FACTOR =
+  "*mix(1.0,min(clamp(dot(terrainFarN,preInfo.L),0.0,1.0)/preInfo.NdotL,2.0)*mix(0.8,1.0,clamp(dot(viewDirectionW,preInfo.L),0.0,1.0)),terrainFarW)";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -755,7 +777,7 @@ describe("the grass floor", () => {
       expect(blend).not.toContain(`hexFetch2D(${layer}`);
     }
     expect(blend).toContain("smoothstep(terrainDetail.y, terrainDetail.z, dist)");
-    expect(blend).toContain("macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y)");
+    expect(blend).toContain("vec3 macroRgb = macroTint(MACRO_WEIGHT.x * macroN18 + MACRO_WEIGHT.y * macroN6, 1.0 - terrainN.y);");
     expect(blend).toContain("horizonWeight(dist)");
     expect(blend).toContain("terrainTuft");
     expect(blend).not.toContain("discard");
@@ -1090,4 +1112,338 @@ describe("rain on the puddles", () => {
     // The ripples replace the flat puddle normal, not sit beside it.
     expect(TRAIL_FRAGMENT_PAINT).not.toContain("vec3(0.0, 1.0, 0.0), tPuddle)");
   });
+});
+
+describe("the far cover", () => {
+  let farCount = 0;
+
+  /** A NullEngine on one uniform path: plain uniforms (the default) or,
+   * forced to WebGL2, Babylon's Material block. */
+  function engineOn(ubo: boolean): NullEngine {
+    const e = new NullEngine();
+    if (ubo) (e as unknown as { _webGLVersion: number })._webGLVersion = 2;
+    return e;
+  }
+
+  /** Until the material is ready to draw the mesh's first submesh. */
+  async function whenReady(material: PBRMaterial, mesh: Mesh): Promise<void> {
+    const subMesh = mesh.subMeshes[0]!;
+    for (let tick = 0; tick < 500; tick++) {
+      if (material.isReadyForSubMesh(mesh, subMesh, false)) return;
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    }
+    throw new Error(`${material.name} never became ready`);
+  }
+
+  /** The terrain material as the game makes it (metallic 0, so its metallic
+   * workflow compiles, and roughness 1) with the plugin and whatever
+   * `prepare` adds, compiled on a box. On WebGL2 the effect's source keeps
+   * every conditional for the driver; its defines are `effect.defines`. */
+  async function compiledTerrain(
+    s: Scene,
+    prepare?: (material: PBRMaterial, plugin: TerrainTexturePlugin) => void,
+  ): Promise<{ material: PBRMaterial; plugin: TerrainTexturePlugin; mesh: Mesh; effect: Effect }> {
+    const material = new PBRMaterial(`far-${farCount++}`, s);
+    material.metallic = 0;
+    material.roughness = 1;
+    attachTerrainTexture(s, material, { groundArrays: stubArraysWithRahWidth(1024) });
+    const plugin = material.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin;
+    prepare?.(material, plugin);
+    const mesh = CreateBox(`far-box-${farCount++}`, {}, s);
+    mesh.material = material;
+    await whenReady(material, mesh);
+    return { material, plugin, mesh, effect: mesh.subMeshes[0]!.effect! };
+  }
+
+  it("splices the far-cover include after the hex include and before the paints", () => {
+    const defs = pluginFor("fc1").getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS!;
+    const far = terrainFarCoverDefs();
+    expect(defs.split(far).length - 1).toBe(1);
+    expect(defs.indexOf("float horizonWeight(")).toBeLessThan(defs.indexOf(far));
+    expect(defs.indexOf(far)).toBeLessThan(defs.indexOf(ROAD_FRAGMENT_DEFS));
+    expect(far.startsWith("\n#ifdef TERRAINTEX\n// The far ground's cover:")).toBe(true);
+    expect(far.endsWith("}\n\n#endif\n")).toBe(true);
+  }, timeLimit(5_000));
+
+  it("splices it the same way into WebGPU's definitions, after the fetch macros", () => {
+    // The material is made on WebGL2's terms (the plugin refuses a WGSL
+    // material); its code is asked for as WebGPU's.
+    const plugin = pluginFor("fc2");
+    const flagged = engine as unknown as { _isWebGPU: boolean };
+    const was = flagged._isWebGPU;
+    flagged._isWebGPU = true;
+    try {
+      const defs = plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS!;
+      const far = terrainFarCoverDefs();
+      expect(defs.startsWith(TERRAIN_UNIFORMITY_OFF)).toBe(true);
+      expect(defs.split(far).length - 1).toBe(1);
+      expect(defs.indexOf(HEX_FETCH_MACROS)).toBeGreaterThan(-1);
+      expect(defs.indexOf(HEX_FETCH_MACROS)).toBeLessThan(defs.indexOf(far));
+      expect(defs.indexOf(far)).toBeLessThan(defs.indexOf(ROAD_FRAGMENT_DEFS));
+    } finally {
+      flagged._isWebGPU = was;
+    }
+  }, timeLimit(5_000));
+
+  it("declares the six locals at main begin, whatever the defines say", () => {
+    expect(pluginFor("fc3").getCustomCode("fragment")!.CUSTOM_FRAGMENT_MAIN_BEGIN).toBe(`
+float terrainRough = 1.0;
+float terrainF0 = 1.0;
+float terrainSpecW = 1.0;
+float terrainFarW = 0.0;
+float terrainPaintW = 0.0;
+vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
+`);
+  }, timeLimit(5_000));
+
+  it("takes the macro line apart into its octaves, the same arithmetic as macroNoise", () => {
+    expect(TERRAIN_MACRO_OCTAVES).toBe(`  // Its two octaves apart, the same arithmetic as macroNoise, so the far
+  // cover below can fade each to its mean where its cells fall under two
+  // pixels.
+  float macroN18 = macroValueNoise(vPositionW.xz, MACRO_WAVE.x);
+  float macroN6 = macroValueNoise(vPositionW.xz, MACRO_WAVE.y);
+  vec3 macroRgb = macroTint(MACRO_WEIGHT.x * macroN18 + MACRO_WEIGHT.y * macroN6, 1.0 - terrainN.y);
+`);
+    expect(groundHexNoise).toContain("return MACRO_WEIGHT.x * macroValueNoise(p, MACRO_WAVE.x) + MACRO_WEIGHT.y * macroValueNoise(p, MACRO_WAVE.y);");
+    const blend = pluginFor("fc4").getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    expect(blend.split(TERRAIN_MACRO_OCTAVES).length - 1).toBe(1);
+    expect(blend).not.toContain("macroNoise(vPositionW.xz)");
+  }, timeLimit(5_000));
+
+  it("holds the far block whole and runs it after the sward pull, before the roughness", () => {
+    expect(TERRAIN_FRAGMENT_FAR_COVER).toBe(`  // Far cover: past the band where the meadow cards thin out, ground under
+  // any cover the near field draws, grass or litter, takes the colour the
+  // cover renders at, clumps darker in their troughs, and the lush and dry
+  // tint the cards carry. Its normal and reflectance are applied after the
+  // paints, in TERRAIN_FRAGMENT_FAR_LIGHT, so the road and the trail keep
+  // their own. Constants in the far-cover include.
+  vec2 fcFw = fwidth(vPositionW.xz);
+  float fcFoot = max(fcFw.x, fcFw.y);
+  terrainFarW = farCoverWeight(vTerrainCover, vTerrainW2.z, dist);
+  if (terrainFarW > 0.0) {
+    vec3 fcClump = farClump(vPositionW.xz, fcFoot);
+    float fcB18 = 1.0 - smoothstep(0.5, 1.0, fcFoot / MACRO_WAVE.x);
+    float fcB6 = 1.0 - smoothstep(0.5, 1.0, fcFoot / MACRO_WAVE.y);
+    vec3 fcMacro = macroTint(MACRO_WEIGHT.x * mix(0.5, macroN18, fcB18) + MACRO_WEIGHT.y * mix(0.5, macroN6, fcB6), 1.0 - terrainN.y);
+    vec3 fcTarget = mix(FAR_SWARD, FAR_LITTER, clamp(vTerrainW2.z, 0.0, 1.0))
+      * fcMacro
+      * (1.0 - FAR_CANOPY_SHADE * clamp(vTerrainW2.w, 0.0, 1.0))
+      * mix(FAR_CLUMP_AO, 1.0, fcClump.z);
+    surfaceAlbedo = mix(surfaceAlbedo, fcTarget, FAR_SWARD_MAX * terrainFarW);
+    terrainFarN = normalize(normalW + vec3(-fcClump.x, 0.0, -fcClump.y) * FAR_CLUMP_TILT);
+  }
+`);
+    const blend = pluginFor("fc5").getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    expect(blend).toContain(`  surfaceAlbedo = mix(surfaceAlbedo, terrainSward.rgb, swardW);\n${TERRAIN_FRAGMENT_FAR_COVER}  // Roughness: the blended per-layer base,`);
+    // The footprint is taken in uniform control flow, before the branch.
+    expect(TERRAIN_FRAGMENT_FAR_COVER.indexOf("fwidth(")).toBeLessThan(TERRAIN_FRAGMENT_FAR_COVER.indexOf("if (terrainFarW > 0.0)"));
+    expect(TERRAIN_FRAGMENT_FAR_COVER).not.toContain("texture");
+  }, timeLimit(5_000));
+
+  it("compiles the include and the block into the fragment on both uniform paths, with no define on medium and high", async () => {
+    for (const ubo of [false, true]) {
+      const e = engineOn(ubo);
+      const s = new Scene(e);
+      try {
+        const { effect } = await compiledTerrain(s);
+        const source = effect.fragmentSourceCode;
+        expect(source.indexOf("float latticeHash(")).toBeGreaterThan(-1);
+        expect(source.indexOf("float latticeHash(")).toBeLessThan(source.indexOf("vec3 farClumpOctave("));
+        expect(source).toContain("#ifdef TERRAINFARLOW\nconst vec2 FAR_COVER_BAND = vec2(14.4, 18.0);\n#else\nconst vec2 FAR_COVER_BAND = vec2(24.0, 30.0);\n#endif");
+        expect(source).toContain("terrainFarW = farCoverWeight(vTerrainCover, vTerrainW2.z, dist);");
+        expect(source).toContain("float terrainFarW = 0.0;");
+        expect(effect.defines).not.toContain("TERRAINFARLOW");
+      } finally {
+        s.dispose();
+        e.dispose();
+      }
+    }
+  }, timeLimit(20_000));
+
+  it("holds the far light whole and runs it last, after the road, feature and trail paints", () => {
+    expect(TERRAIN_FRAGMENT_FAR_LIGHT).toBe(`
+#ifdef TERRAINTEX
+{
+  // The far cover's light, after the paints: its weight steps aside wherever
+  // the road or the trail painted its own surface. The clumps' normal goes to
+  // every light, and the specular weight, which sets the grazing reflectance
+  // as well as F0, is cut by FAR_SPEC_CUT and given back as the ground wets.
+  // The sun's diffuse line reads terrainFarN and terrainFarW again for the
+  // cover's own answer to the sun.
+  terrainFarW *= 1.0 - terrainPaintW;
+  if (terrainFarW > 0.0) {
+    normalW = normalize(mix(normalW, terrainFarN, terrainFarW));
+    vec3 fcEye = vec3(viewDirectionW.x, 0.0, viewDirectionW.z);
+    fcEye /= max(length(fcEye), 1e-4);
+    terrainFarN = normalize(normalW + fcEye * FAR_COVER_TILT);
+    terrainSpecW = 1.0 - FAR_SPEC_CUT * terrainFarW * (1.0 - terrainWet);
+  }
+}
+#endif
+`);
+    const lights = pluginFor("fc6").getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    expect(lights.endsWith(TRAIL_FRAGMENT_PAINT + TERRAIN_FRAGMENT_FAR_LIGHT)).toBe(true);
+    expect(lights.indexOf(TERRAIN_FRAGMENT_FAR_COVER)).toBeLessThan(lights.indexOf(ROAD_FRAGMENT_PAINT));
+    expect(lights.indexOf(ROAD_FRAGMENT_PAINT)).toBeLessThan(lights.indexOf(FEATURE_FRAGMENT_PAINT));
+    expect(lights.indexOf(FEATURE_FRAGMENT_PAINT)).toBeLessThan(lights.indexOf(TRAIL_FRAGMENT_PAINT));
+  }, timeLimit(5_000));
+
+  it("cuts the specular weight through a rewrite that matches Babylon's PBR fragment once", () => {
+    expect(TERRAIN_SPEC_INJECTION_POINT).toBe("!vec4 metallicReflectanceFactors=vMetallicReflectanceFactors;");
+    expect(TERRAIN_SPEC_INJECTION_CODE).toBe(
+      "vec4 metallicReflectanceFactors=vec4(vMetallicReflectanceFactors.rgb,vMetallicReflectanceFactors.a*terrainSpecW);",
+    );
+    const pbr = ShaderStore.ShadersStore["pbrPixelShader"] as string;
+    expect(pbr.match(new RegExp(TERRAIN_SPEC_INJECTION_POINT.slice(1), "g"))).toHaveLength(1);
+    const frag = pluginFor("fc7").getCustomCode("fragment")!;
+    expect(frag[TERRAIN_SPEC_INJECTION_POINT]).toBe(TERRAIN_SPEC_INJECTION_CODE);
+    // The reflectivity rewrite stays the first regex key.
+    expect(Object.keys(frag).filter((k) => k.startsWith("!"))[0]).toBe("!reflectivityBlock\\(\\s*vReflectivityColor");
+  }, timeLimit(5_000));
+
+  it("adds no uniform: the plugin's UBO list is the 22 names it had", () => {
+    expect(pluginFor("fc8").getUniforms().ubo.map((u) => u.name)).toEqual([
+      "terrainTiling", "terrainRock2", "terrainFade", "terrainEye", "roadTable", "trailInfo", "terrainWet",
+      "terrainRain", "terrainTime", "featureInfo", "terrainLayerRough", "terrainLayerRough2", "terrainLayerF0",
+      "terrainLayerF02", "terrainReliefOn", "terrainDetail", "terrainDetail2", "terrainMacroOn", "terrainHorizon",
+      "terrainTuft", "terrainSward", "terrainSwardBand",
+    ]);
+  }, timeLimit(5_000));
+
+  it("compiles the specular rewrite and the far light on both uniform paths", async () => {
+    for (const ubo of [false, true]) {
+      const e = engineOn(ubo);
+      const s = new Scene(e);
+      try {
+        const { effect } = await compiledTerrain(s);
+        const source = effect.fragmentSourceCode;
+        expect(effect.defines).toContain("#define METALLICWORKFLOW\n");
+        expect(source.split(TERRAIN_SPEC_INJECTION_CODE).length - 1).toBe(1);
+        expect(source).not.toContain("vec4 metallicReflectanceFactors=vMetallicReflectanceFactors;");
+        expect(source).toContain("terrainSpecW = 1.0 - FAR_SPEC_CUT * terrainFarW * (1.0 - terrainWet);");
+        expect(source.indexOf("terrainFarW *= 1.0 - terrainPaintW;")).toBeLessThan(source.indexOf(TERRAIN_SPEC_INJECTION_CODE));
+      } finally {
+        s.dispose();
+        e.dispose();
+      }
+    }
+  }, timeLimit(20_000));
+
+  /** The renderer's lights in the renderer's order: the local headlamp, then
+   * the sun and the fill (`createLighting`), then the other hikers' lamps. */
+  function gameLights(s: Scene): void {
+    new SpotLight("lamp_local", Vector3.Zero(), new Vector3(0, 0, 1), 1, 2, s);
+    new DirectionalLight("sun", new Vector3(0, -1, 0), s);
+    new HemisphericLight("fill", new Vector3(0, 1, 0), s);
+    for (let player = 1; player < 5; player++) new SpotLight(`lamp_player_${player}`, Vector3.Zero(), new Vector3(0, 0, 1), 1, 2, s);
+  }
+
+  it("holds the sun's line whole: the factor under the light's own directional define, the plain line otherwise", () => {
+    expect(TERRAIN_SUN_INJECTION_CODE).toBe(
+      "#ifdef DIRLIGHT$2\n" +
+        `info.diffuse=computeDiffuseLighting(preInfo,$1)${FAR_SUN_FACTOR};\n` +
+        "#else\n" +
+        "info.diffuse=computeDiffuseLighting(preInfo,$1);\n" +
+        "#endif",
+    );
+    expect(pluginFor("fc9").getCustomCode("fragment")![FOLIAGE_LIGHT_INJECTION_POINT]).toBe(TERRAIN_SUN_INJECTION_CODE);
+  }, timeLimit(5_000));
+
+  it("keys on each light's plain diffuse line, once in the light include", () => {
+    const include = ShaderStore.IncludesShadersStore["lightFragment"] as string;
+    const all = [...include.matchAll(new RegExp(FOLIAGE_LIGHT_INJECTION_POINT.slice(1), "g"))];
+    expect(all).toHaveLength(1);
+    expect(all[0]![1]).toBe("diffuse{X}.rgb");
+    expect(all[0]![2]).toBe("{X}");
+  }, timeLimit(5_000));
+
+  it("puts the factor under each light's own directional define, and the game's sun is the only directional light, on both uniform paths", async () => {
+    for (const ubo of [false, true]) {
+      const e = engineOn(ubo);
+      const s = new Scene(e);
+      try {
+        gameLights(s);
+        const { effect } = await compiledTerrain(s, (material) => {
+          material.maxSimultaneousLights = 7;
+          attachWet(material);
+        });
+        const source = effect.fragmentSourceCode;
+        for (let n = 0; n < 7; n++) {
+          const block =
+            `#ifdef DIRLIGHT${n}\n` +
+            `info.diffuse=computeDiffuseLighting(preInfo,diffuse${n}.rgb)${FAR_SUN_FACTOR};\n` +
+            "#else\n" +
+            `info.diffuse=computeDiffuseLighting(preInfo,diffuse${n}.rgb);\n` +
+            "#endif";
+          expect(source.split(block).length - 1, `light ${n}`).toBe(1);
+        }
+        expect(source.split(FAR_SUN_FACTOR).length - 1).toBe(7);
+        expect(effect.defines.split("\n").filter((line) => line.startsWith("#define DIRLIGHT"))).toEqual(["#define DIRLIGHT1"]);
+        expect(effect.defines).toContain("#define SPOTLIGHT0\n");
+        expect(effect.defines).toContain("#define HEMILIGHT2\n");
+      } finally {
+        s.dispose();
+        e.dispose();
+      }
+    }
+  }, timeLimit(20_000));
+
+  it("has every paint write its weight before the far light reads it", () => {
+    const lights = pluginFor("fc10").getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    const reads = lights.indexOf("terrainFarW *= 1.0 - terrainPaintW;");
+    const writes = [...lights.matchAll(/terrainPaintW = max\(terrainPaintW, /g)].map((m) => m.index!);
+    expect(writes).toHaveLength(2);
+    for (const at of writes) expect(at).toBeLessThan(reads);
+  }, timeLimit(5_000));
+
+  it("declares TERRAINFARLOW false, and sets it from the tier", () => {
+    const mat = new PBRMaterial("fc11", scene);
+    attachTerrainTexture(scene, mat, { groundArrays: stubArrays });
+    const plugin = mat.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin;
+    const defines: Record<string, boolean> = {};
+    plugin.prepareDefines(defines as never, scene, undefined as never);
+    expect(defines.TERRAINFARLOW).toBe(false);
+    setTerrainFarBand(scene, mat, true);
+    plugin.prepareDefines(defines as never, scene, undefined as never);
+    expect(defines.TERRAINFARLOW).toBe(true);
+    setTerrainFarBand(scene, mat, false);
+    plugin.prepareDefines(defines as never, scene, undefined as never);
+    expect(defines.TERRAINFARLOW).toBe(false);
+    expect(() => setTerrainFarBand(scene, new PBRMaterial("fc12", scene), true)).not.toThrow();
+  }, timeLimit(5_000));
+
+  it("compiles the low tier's band in when the define is set after the first compile, on both uniform paths", async () => {
+    for (const ubo of [false, true]) {
+      const e = engineOn(ubo);
+      const s = new Scene(e);
+      try {
+        const { material, mesh, effect: before } = await compiledTerrain(s);
+        expect(before.defines).not.toContain("TERRAINFARLOW");
+        setTerrainFarBand(s, material, true);
+        // Readiness is cached per render id: a frame moves it on.
+        s.incrementRenderId();
+        await whenReady(material, mesh);
+        const after = mesh.subMeshes[0]!.effect!;
+        expect(after).not.toBe(before);
+        expect(after.defines).toContain("#define TERRAINFARLOW\n");
+        expect(after.fragmentSourceCode).toContain(
+          "#ifdef TERRAINFARLOW\nconst vec2 FAR_COVER_BAND = vec2(14.4, 18.0);\n#else\nconst vec2 FAR_COVER_BAND = vec2(24.0, 30.0);\n#endif",
+        );
+      } finally {
+        s.dispose();
+        e.dispose();
+      }
+    }
+  }, timeLimit(20_000));
+
+  it("is set by the renderer from the tier, beside the sward floor", () => {
+    const renderer = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
+    expect(renderer).toContain(
+      '  if (forest !== null) setTerrainSward(scene, terrainMaterialFor(scene, "terrain"), bladeMeshes !== null);\n' +
+        "  // The far cover's band follows the tier's clutter edges: on low, where every\n" +
+        "  // class is drawn at 0.6 of its radius, it comes in at 0.6 of its distance.\n" +
+        '  if (forest !== null) setTerrainFarBand(scene, terrainMaterialFor(scene, "terrain"), tier === "low");\n',
+    );
+    expect(renderer.split("setTerrainFarBand(").length - 1).toBe(1);
+  }, timeLimit(5_000));
 });

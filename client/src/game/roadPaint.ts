@@ -162,6 +162,10 @@ uniform sampler2D roadAsphalt;
  * because at |u| = 30 (the branch's own edge) both `rGravel` and `rAsphalt`
  * are exactly 0, so any undefined sample there is multiplied away before it
  * reaches `surfaceAlbedo`.
+ *
+ * It writes the gravel shoulder's weight, which holds the asphalt, to
+ * `terrainPaintW`, so the far cover's light (`terrainTexture.ts`) steps aside
+ * on the road and the asphalt keeps the normal and reflectance it sets.
  */
 export const ROAD_FRAGMENT_PAINT = `
 #ifdef ROADPAINT
@@ -199,6 +203,7 @@ export const ROAD_FRAGMENT_PAINT = `
     normalW = normalize(mix(normalW, normalize(normalW + vec3(rAsphaltN.x, 0.0, rAsphaltN.y)), rRelief));
     terrainRough = mix(terrainRough, clamp(terrainLayerRough2.y * mix(1.0, rAsphaltRAH.r / 0.5, rk), 0.0, 1.0), rAsphalt);
     terrainF0 = mix(terrainF0, terrainLayerF02.y, rAsphalt);
+    terrainPaintW = max(terrainPaintW, rGravel);
     float rPhase = mod(vPositionW.z, ${f(ROAD_DASH_PERIOD)});
     uint rh = uint(int(floor(vPositionW.z / ${f(ROAD_DASH_PERIOD)}))) * 2654435761u;
     rh ^= rh >> 15u;

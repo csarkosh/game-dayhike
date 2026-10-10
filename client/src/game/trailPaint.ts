@@ -356,6 +356,10 @@ float trailValueNoise1(float u, float wave) {
  * winner's index, for the node parameter and junction width the bands below
  * are shaped by. The bank side comes from vNormalW, the vertex normal, before
  * any detail normal has been folded into normalW.
+ *
+ * It writes the larger of the bank and the bench (core and margin) to
+ * `terrainPaintW`, so the far cover's light (`terrainTexture.ts`) steps aside
+ * on the trail and its puddles and bench normals keep what they set.
  */
 export const TRAIL_FRAGMENT_PAINT = `
 #ifdef TRAILPAINT
@@ -490,6 +494,7 @@ export const TRAIL_FRAGMENT_PAINT = `
     float tOnBench = tInMargin;
     tCol = mix(tCol, mix(mix(tMarginCol, tCoreCol, tInCore), tPacked, tSnow), tOnBench);
     float tGravel = tOnBench * (1.0 - tSnow);
+    terrainPaintW = max(terrainPaintW, max(tBank, tOnBench));
     vec3 tBenchN = normalize(normalW + vec3(tBedN.x, 0.0, tBedN.y) * mix(1.0, 0.5, tInCore) * (1.0 - tDrift) * (1.0 - tWash) + vec3(tFloorN.x, 0.0, tFloorN.y) * tDrift);
     // The lip: over the sink ramp outside the bench the normal tilts outward
     // and down by the ramp's slope, so a low sun draws the edge as a line.

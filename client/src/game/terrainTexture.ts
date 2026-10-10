@@ -101,12 +101,19 @@ import {
   DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   HORIZON, HORIZON_MAX, TUFT_ALBEDO,
   SWARD_FLOOR, SWARD_MAX, SWARD_COVER, SWARD_FADE,
+  FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX,
 } from "./groundHexParams.js";
+// The key of each light's plain diffuse line; the terrain never carries the
+// foliage light plugin, so the key is never applied twice.
+import { FOLIAGE_LIGHT_INJECTION_POINT } from "./foliageLightPlugin.js";
 // The hex include, in three files whose join is the include WebGL2 compiles:
 // the lattice, the four sampler-taking fetches, and the noise and horizon.
 import groundHexHead from "./shaders/groundHex.fragment.fx?raw";
 import groundHexFetch from "./shaders/groundHexFetch.fragment.fx?raw";
 import groundHexNoise from "./shaders/groundHexNoise.fragment.fx?raw";
+// The far ground's cover: its constants and functions, spliced after the hex
+// include, whose latticeHash its clump noise calls.
+import groundFarCover from "./shaders/groundFarCover.fragment.fx?raw";
 
 import grassUrl from "../../assets/textures/ground.grass.webp?url";
 import floorUrl from "../../assets/textures/ground.forest_floor.webp?url";
@@ -396,6 +403,19 @@ ${groundHexHead}${webgpu ? HEX_FETCH_MACROS : groundHexFetch}${groundHexNoise}
 `;
 }
 
+/**
+ * The far-cover include, gated on TERRAINTEX like the hex include it follows:
+ * its clump noise calls the hex include's `latticeHash`. The three hex files
+ * are not touched, so their pinned join holds.
+ */
+export function terrainFarCoverDefs(): string {
+  return `
+#ifdef TERRAINTEX
+${groundFarCover}
+#endif
+`;
+}
+
 const TERRAIN_VERTEX_DEFS = `
 #ifdef TERRAINTEX
 attribute vec4 terrainWeights;
@@ -428,12 +448,65 @@ vTerrainCover = terrainCover;
 #endif
 `;
 
-/** Unconditional: the reflectivity-block regex rewrite below references these
- * locals whatever the defines say, so a define-guarded declaration (which
- * would compile in only one define state) is not an option. */
+/** Unconditional: the regex rewrites below and the paints read these locals
+ * whatever the defines say, so a define-guarded declaration (which would
+ * compile in only one define state) is not an option. `terrainSpecW` is the
+ * specular weight's factor, `terrainFarW` and `terrainFarN` the far cover's
+ * weight and normal, `terrainPaintW` the share of the fragment the road or
+ * the trail painted as its own surface. */
 const TERRAIN_FRAGMENT_MAIN_BEGIN = `
 float terrainRough = 1.0;
 float terrainF0 = 1.0;
+float terrainSpecW = 1.0;
+float terrainFarW = 0.0;
+float terrainPaintW = 0.0;
+vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
+`;
+
+/** The macro tint's line taken apart into its two octaves, the same
+ * arithmetic as `macroNoise`, so the far cover can fade each to its mean
+ * by its own footprint. */
+export const TERRAIN_MACRO_OCTAVES = `  // Its two octaves apart, the same arithmetic as macroNoise, so the far
+  // cover below can fade each to its mean where its cells fall under two
+  // pixels.
+  float macroN18 = macroValueNoise(vPositionW.xz, MACRO_WAVE.x);
+  float macroN6 = macroValueNoise(vPositionW.xz, MACRO_WAVE.y);
+  vec3 macroRgb = macroTint(MACRO_WEIGHT.x * macroN18 + MACRO_WEIGHT.y * macroN6, 1.0 - terrainN.y);
+`;
+
+/**
+ * The far ground's cover, in the ground blend after the sward pull: past the
+ * band where the meadow cards thin out, ground under any cover the near field
+ * draws, grass or litter, takes the colour the cover renders at, with the
+ * clumps' trough darkening and the macro tint the cards carry, each octave
+ * faded to its mean by the pixel's footprint. The weight is kept in
+ * `terrainFarW` and the clumps' normal in `terrainFarN` for the far light,
+ * which applies them after the paints. Only fragments in the band pay: the
+ * block is branched on its weight, and the footprint is taken before the
+ * branch, in uniform control flow. Constants and functions in
+ * `shaders/groundFarCover.fragment.fx`.
+ */
+export const TERRAIN_FRAGMENT_FAR_COVER = `  // Far cover: past the band where the meadow cards thin out, ground under
+  // any cover the near field draws, grass or litter, takes the colour the
+  // cover renders at, clumps darker in their troughs, and the lush and dry
+  // tint the cards carry. Its normal and reflectance are applied after the
+  // paints, in TERRAIN_FRAGMENT_FAR_LIGHT, so the road and the trail keep
+  // their own. Constants in the far-cover include.
+  vec2 fcFw = fwidth(vPositionW.xz);
+  float fcFoot = max(fcFw.x, fcFw.y);
+  terrainFarW = farCoverWeight(vTerrainCover, vTerrainW2.z, dist);
+  if (terrainFarW > 0.0) {
+    vec3 fcClump = farClump(vPositionW.xz, fcFoot);
+    float fcB18 = 1.0 - smoothstep(0.5, 1.0, fcFoot / MACRO_WAVE.x);
+    float fcB6 = 1.0 - smoothstep(0.5, 1.0, fcFoot / MACRO_WAVE.y);
+    vec3 fcMacro = macroTint(MACRO_WEIGHT.x * mix(0.5, macroN18, fcB18) + MACRO_WEIGHT.y * mix(0.5, macroN6, fcB6), 1.0 - terrainN.y);
+    vec3 fcTarget = mix(FAR_SWARD, FAR_LITTER, clamp(vTerrainW2.z, 0.0, 1.0))
+      * fcMacro
+      * (1.0 - FAR_CANOPY_SHADE * clamp(vTerrainW2.w, 0.0, 1.0))
+      * mix(FAR_CLUMP_AO, 1.0, fcClump.z);
+    surfaceAlbedo = mix(surfaceAlbedo, fcTarget, FAR_SWARD_MAX * terrainFarW);
+    terrainFarN = normalize(normalW + vec3(-fcClump.x, 0.0, -fcClump.y) * FAR_CLUMP_TILT);
+  }
 `;
 
 const TERRAIN_FRAGMENT_BLEND = `
@@ -611,8 +684,7 @@ const TERRAIN_FRAGMENT_BLEND = `
   // Macro tint: the lush/dry variation over tens of metres, on grass only and
   // faded out with the rest of the detail. A multiplicative tint of
   // surfaceAlbedo, never a write to the material constant.
-  vec3 macroRgb = macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y);
-  surfaceAlbedo *= mix(vec3(1.0), macroRgb, w0 * terrainMacroOn * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist)));
+${TERRAIN_MACRO_OCTAVES}  surfaceAlbedo *= mix(vec3(1.0), macroRgb, w0 * terrainMacroOn * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist)));
   // Horizon tint: past HORIZON the floor reads as the vegetation the clutter
   // has thinned out of, not as bare palette.
   surfaceAlbedo = mix(surfaceAlbedo, terrainTuft, w0 * horizonWeight(dist));
@@ -621,7 +693,7 @@ const TERRAIN_FRAGMENT_BLEND = `
   // ground cover, not the grass texture weight, which is a mottle.
   float swardW = terrainSward.w * smoothstep(terrainSwardBand.x, terrainSwardBand.y, vTerrainCover) * (1.0 - smoothstep(terrainSwardBand.z, terrainSwardBand.w, dist));
   surfaceAlbedo = mix(surfaceAlbedo, terrainSward.rgb, swardW);
-  // Roughness: the blended per-layer base,
+${TERRAIN_FRAGMENT_FAR_COVER}  // Roughness: the blended per-layer base,
   // modulated near the eye by the blended map over its own 0.5 neutral (so a
   // flat 0.5 placeholder or a failed decode is the identity, not a flash of
   // gloss); F0: per layer, never faded.
@@ -632,6 +704,71 @@ const TERRAIN_FRAGMENT_BLEND = `
 }
 #endif
 `;
+
+/**
+ * The far cover's light, after the road, feature and trail paints in
+ * CUSTOM_FRAGMENT_BEFORE_LIGHTS. Its weight steps aside by `terrainPaintW`,
+ * which the road and the trail write where they paint their own surface, so
+ * the asphalt, the bench and the puddles keep the normal and reflectance they
+ * set, and at their soft edges the hand-off is continuous. The clumps' normal
+ * goes to every light and the image-based light; `terrainFarN` is then leaned
+ * toward the eye by FAR_COVER_TILT for the sun's diffuse line; the specular
+ * weight is cut by FAR_SPEC_CUT and given back as the ground wets. Where the
+ * weight is 0 nothing is written, so the ground inside the band is what it
+ * was.
+ */
+export const TERRAIN_FRAGMENT_FAR_LIGHT = `
+#ifdef TERRAINTEX
+{
+  // The far cover's light, after the paints: its weight steps aside wherever
+  // the road or the trail painted its own surface. The clumps' normal goes to
+  // every light, and the specular weight, which sets the grazing reflectance
+  // as well as F0, is cut by FAR_SPEC_CUT and given back as the ground wets.
+  // The sun's diffuse line reads terrainFarN and terrainFarW again for the
+  // cover's own answer to the sun.
+  terrainFarW *= 1.0 - terrainPaintW;
+  if (terrainFarW > 0.0) {
+    normalW = normalize(mix(normalW, terrainFarN, terrainFarW));
+    vec3 fcEye = vec3(viewDirectionW.x, 0.0, viewDirectionW.z);
+    fcEye /= max(length(fcEye), 1e-4);
+    terrainFarN = normalize(normalW + fcEye * FAR_COVER_TILT);
+    terrainSpecW = 1.0 - FAR_SPEC_CUT * terrainFarW * (1.0 - terrainWet);
+  }
+}
+#endif
+`;
+
+/**
+ * The specular weight's rewrite. Babylon 9.18's terrain stages take the
+ * legacy path, where `metallicReflectanceFactors.a` is the material's
+ * specular weight and sets the grazing reflectance F90 as well as F0, so
+ * scaling it by `terrainSpecW` lowers both; the per-layer F0 in the
+ * reflectivity rewrite does not reach F90. Matches once, inside the metallic
+ * workflow's branch of the PBR fragment, which the terrain compiles.
+ */
+export const TERRAIN_SPEC_INJECTION_POINT = "!vec4 metallicReflectanceFactors=vMetallicReflectanceFactors;";
+export const TERRAIN_SPEC_INJECTION_CODE =
+  "vec4 metallicReflectanceFactors=vec4(vMetallicReflectanceFactors.rgb,vMetallicReflectanceFactors.a*terrainSpecW);";
+
+/**
+ * The sun's diffuse line for the far cover, on `FOLIAGE_LIGHT_INJECTION_POINT`
+ * (each light's plain diffuse line once the light include is unrolled, `$1`
+ * its colour and `$2` its digit). The key runs before the preprocessor
+ * resolves each light's type, so the line carries its own conditional on the
+ * light's directional define: the factor compiles into the sun's line and no
+ * other, whatever order the lights were made in. The factor is the cover's
+ * N·L (its normal leaned toward the eye) over the ground's own, capped at
+ * FAR_SUN_GAIN_MAX, times the share of its sunlit surface the eye sees,
+ * mix(FAR_SELF_SHADOW, 1, V·L), mixed in by the far weight: exactly 1 where
+ * the weight is 0. `preInfo.NdotL` is never 0 (Babylon's saturateEps).
+ * Mirrored by `farSunFactor` in `groundHexParams.ts`.
+ */
+export const TERRAIN_SUN_INJECTION_CODE =
+  "#ifdef DIRLIGHT$2\n" +
+  `info.diffuse=computeDiffuseLighting(preInfo,$1)*mix(1.0,min(clamp(dot(terrainFarN,preInfo.L),0.0,1.0)/preInfo.NdotL,${f2(FAR_SUN_GAIN_MAX)})*mix(${f2(FAR_SELF_SHADOW)},1.0,clamp(dot(viewDirectionW,preInfo.L),0.0,1.0)),terrainFarW);\n` +
+  "#else\n" +
+  "info.diffuse=computeDiffuseLighting(preInfo,$1);\n" +
+  "#endif";
 
 export class TerrainTexturePlugin extends MaterialPluginBase {
   private readonly _scene: Scene;
@@ -655,6 +792,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   private _rain = 0;
   private _time = 0;
   private _swardOn = true;
+  private _farLow = false;
   private _featureTex: RawTexture | null = null;
   private _featureInfo: [number, number, number, number] = [0, 0, 0, 0];
 
@@ -665,7 +803,9 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     // on an UNDECLARED define compiles the whole branch out silently (the trap
     // cel.ts documents from the other side). ROADPAINT starts false the same
     // way — `enableRoad` is what flips it once a centerline hook exists.
-    super(material, "TerrainTexture", 200, { TERRAINTEX: false, ROADPAINT: false, TRAILPAINT: false, FEATUREPAINT: false });
+    // TERRAINFARLOW starts false too: a false define writes nothing into a stage,
+    // so medium and high compile exactly as without it.
+    super(material, "TerrainTexture", 200, { TERRAINTEX: false, ROADPAINT: false, TRAILPAINT: false, FEATUREPAINT: false, TERRAINFARLOW: false });
     this._scene = scene;
     this._grass = loadGroundTexture(grassUrl, "terrainGrass", scene);
     this._floor = loadGroundTexture(floorUrl, "terrainFloor", scene);
@@ -752,6 +892,16 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
    * the pull's strength as 0; the colour and bands stay bound. */
   setSward(on: boolean): void { this._swardOn = on; }
 
+  /** Whether the far cover takes the low tier's band (TERRAINFARLOW): the low
+   * tier draws every clutter class at 0.6 of its radius, so its cards dither
+   * out over [16.8, 24] m and the band comes in at 0.6 of its distance too,
+   * [14.4, 18] m. A change recompiles the material. */
+  setFarLow(low: boolean): void {
+    if (low === this._farLow) return;
+    this._farLow = low;
+    this.markAllDefinesAsDirty();
+  }
+
   /** Turn feature paint on for this world: bake the (x, z, radius, kind) +
    * treeline table once. Idempotent, same story as `enableRoad`/`enableTrail`. */
   enableFeatures(features: readonly Feature[]): void {
@@ -775,6 +925,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     defines.ROADPAINT = this._roadCenter !== null;
     defines.TRAILPAINT = this._trailSegs !== null;
     defines.FEATUREPAINT = this._featureTex !== null;
+    defines.TERRAINFARLOW = this._farLow;
   }
 
   // Same signature-vs-eslint story, same one-line rule.
@@ -1019,11 +1170,13 @@ uniform vec4 terrainSwardBand;
       return {
         // The hex include sits between this plugin's own declarations and the
         // paints: after the uniforms its functions read, before the paint code
-        // that has no use for them.
+        // that has no use for them. The far-cover include follows it, since
+        // its clump noise calls the hex include's latticeHash.
         CUSTOM_FRAGMENT_DEFINITIONS:
           (this._material.getScene().getEngine().isWebGPU ? TERRAIN_UNIFORMITY_OFF : "") +
           TERRAIN_FRAGMENT_DEFS +
           terrainHexDefs(this._material.getScene().getEngine().isWebGPU) +
+          terrainFarCoverDefs() +
           ROAD_FRAGMENT_DEFS +
           TRAIL_FRAGMENT_DEFS +
           FEATURE_FRAGMENT_DEFS,
@@ -1041,7 +1194,10 @@ uniform vec4 terrainSwardBand;
         // place a trail is built to reach — is what wins where the two
         // overlap, so a trail crossing a meadow keeps its dirt and gravel
         // rather than fading into grass tint.
-        CUSTOM_FRAGMENT_BEFORE_LIGHTS: TERRAIN_FRAGMENT_BLEND + ROAD_FRAGMENT_PAINT + FEATURE_FRAGMENT_PAINT + TRAIL_FRAGMENT_PAINT,
+        // The far cover's light comes last, after every paint has written
+        // its share to terrainPaintW.
+        CUSTOM_FRAGMENT_BEFORE_LIGHTS:
+          TERRAIN_FRAGMENT_BLEND + ROAD_FRAGMENT_PAINT + FEATURE_FRAGMENT_PAINT + TRAIL_FRAGMENT_PAINT + TERRAIN_FRAGMENT_FAR_LIGHT,
         // Plugin regex key: rewrite the reflectivity call's first argument so
         // roughness (.g) and F0 (.a) vary per fragment. Babylon
         // 9.18's vReflectivityColor is (metallic, roughness, ior, f0) in the
@@ -1050,6 +1206,11 @@ uniform vec4 terrainSwardBand;
         // in Babylon's real PBR fragment source.
         "!reflectivityBlock\\(\\s*vReflectivityColor":
           "reflectivityBlock(\nvec4(vReflectivityColor.r, vReflectivityColor.g * terrainRough, vReflectivityColor.b, vReflectivityColor.a * terrainF0)",
+        // The far cover's specular cut, on the specular weight (F0 and F90).
+        [TERRAIN_SPEC_INJECTION_POINT]: TERRAIN_SPEC_INJECTION_CODE,
+        // The far cover's answer to the sun, on the directional light's
+        // diffuse line alone.
+        [FOLIAGE_LIGHT_INJECTION_POINT]: TERRAIN_SUN_INJECTION_CODE,
       };
     }
     return null;
@@ -1151,6 +1312,16 @@ export function setTerrainRain(_scene: Scene, material: PBRMaterial, rain: numbe
 export function setTerrainSward(_scene: Scene, material: PBRMaterial, on: boolean): void {
   const plugin = material.pluginManager?.getPlugin("TerrainTexture") as TerrainTexturePlugin | undefined;
   plugin?.setSward(on);
+}
+
+/**
+ * Choose the far cover's band for the tier: [14.4, 18] m on low
+ * (TERRAINFARLOW), [24, 30] m on medium and high. Defensive on a bare
+ * material, like `setTerrainWetness`.
+ */
+export function setTerrainFarBand(_scene: Scene, material: PBRMaterial, low: boolean): void {
+  const plugin = material.pluginManager?.getPlugin("TerrainTexture") as TerrainTexturePlugin | undefined;
+  plugin?.setFarLow(low);
 }
 
 /**
