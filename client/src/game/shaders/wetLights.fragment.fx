@@ -1,5 +1,3 @@
-// On the terrain the footprint of a lake is its shore (featurePaint.ts,
-// featureWetInside), on every other material the body's disc.
 #ifdef FEATUREPAINT
 float wetIn = featureWetInside(vPositionW.xz, wetCentre, wetRadius, featureInfo.x);
 #else

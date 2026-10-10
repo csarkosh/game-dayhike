@@ -53,6 +53,10 @@ import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import fragmentDefs from "./shaders/wet.fragment.fx?raw";
+// In the lights chunk the footprint of a lake is its shore on the terrain
+// (featurePaint.ts, featureWetInside), on every other material the body's disc.
+// The note lives here, not in the chunk: a chunk's comments are part of the
+// recorded text of every shader the plugin rides on.
 import fragmentLights from "./shaders/wetLights.fragment.fx?raw";
 import fragmentWeather from "./shaders/wetWeather.fragment.fx?raw";
 import { clamp01 } from "./colour.js";
