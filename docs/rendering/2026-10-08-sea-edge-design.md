@@ -292,6 +292,81 @@ arrives (the road wall keeps players off the beach); tide; opening the beach;
 the bays' swash (they keep the static line); a simulation twin of the sheet
 in the sim (built when the beach opens, with the swell's).
 
+## 11. As built (2026-10-09)
+
+The build followed §3 to §7 with the departures below, each from what the code or the measurements showed.
+
+**The plunge is the shore break on the face (§3, §4.1).** The 1:50 bed spills: its Iribarren number is about 0.2, and big crests arrive at the toe as bores with the ocean's foam, as before. Crests that reach the toe (2 m deep, 24 m seaward of the still waterline) unbroken plunge on the 1:12 face, where the number is about 0.8 to 0.9. The strip and the shader lip live over the face, between the toe and the run-up; a crest already broken at the toe gets no lip and no plunge. Progress reads the swell sample's break ratio, which the cap already tracks from 1.0 to 1.5, not the crest's capped height.
+
+**The run-up is measured from the still waterline (§5).** Every up-face distance, the front, the sheet's thickness and the wet reach, starts at the waterline rather than the toe; measured from the toe a 9.6 m reach would end under 1.2 m of water. Every crest reaching the toe sends a sheet, broken or not, launched at the waterline a transit after the toe. Hunt's reach on the 1:12 face often exceeds the cap, so the line sits most of a metre above the level through most of a set.
+
+**No swell sample per column per frame (§5.2, §4.3).** One evaluation of the swell costs about 2.6 µs, so 512 columns a frame would cost over a millisecond. The table and the tracker take each column's time-invariant part once and sum by angle addition from the twelve phases each frame: 0.04 to 0.1 ms for the table and 0.13 to 0.18 ms for the tracker on a quiet machine, checked against the full evaluation by tests to 1e-14 s.
+
+**The wet ground reads a uniform array, not a sampler (§5.4).** The terrain's fragment stage already binds sixteen of sixteen textures, so the swash reaches the wet materials as 256 vec4s packed once a frame by two module-level setters, with the cove's centre, width, toe and grade as a second uniform. On Chrome on macOS, where uniform buffers are off, that is 256 plain uniform vectors on every wet material; the terrain still links there.
+
+**The sheet lifts the vertices (§5.3).** On the dry face the rings' depth attribute is clamped to zero, so the lift reads the coast profile's depth from the atlas: a vertex rises to the ground plus the sheet where the sheet covers it, and the sea's depth there is the sheet's thickness. Two rules follow that the spec did not state: a sea ring whose footprint holds only the dry face is no longer culled while the face is within the largest reach (1.6 m above the level), so the sheet is not cut along a ring's edge; and outside the bed-height square the sea's depth is the shallower of its own ground's and the profile's, so the film reads thin on the face and a far headland or stack keeps its own ground.
+
+**The set envelope is the sheet's share (§6.1).** Mean breaking along the break line barely moves between sets, since every crest that reaches the toe is at or past its break by then: on the murky cove it swung by 0.08. The envelope is the mean of the sheet's thickness at the waterline across the cove's columns, as a share of the thickest sheet a swell of the current significant height sends (0.1 of it), still averaged over 4 s. Over ten minutes it runs from 0.30 to 1.00 on the murky cove and from 0.39 to 0.74 on the trailhead's, so the bed breathes with the sets.
+
+**The sea rests on the pebbles between sheets (§5.3).** Lifting only the vertices a sheet covers left the next vertex up the face at the still level, under the pebbles, so the surface dived into the ground between them and the terrain's depth cut the sheet along the ring's grid: a staircase from above, triangular teeth at eye height. Within the cove's share the lift now also holds the surface to the ground wherever the swell would put it lower, the surface's height summed once for both stages, so the depth where the sea rests is exactly 0 and the fragment discards there; the sheet's edge is the table's metre columns. Along the cove the sea's bed is the shallower of its own ground and the profile's inside the bed's square as well as outside it, since the two differ by millimetres on the face and a film of that thickness would otherwise draw on the pebbles.
+
+**The sheet is a film, its reach lobed along the shore, its wetting smooth (§5.1, §5.2, §5.4).** Seen from the waterline looking seaward at noon on high, the first build's sheet read as a flat dark plane: 0.3 of the bore's height at the waterline made it a wedge up to half a metre deep over the pebbles, and with every bore at the one 12 m clamp every sheet ended on the same line. The sheet now lays 0.1 of the bore's height at the waterline, 6 to 21 cm live, and each column's reach is held to its own cap, 8.5 to 12 m along the shore from two sine waves of 23 and 61 m with fixed phases, the same on every peer, so the sheets end in lobes. The lobes exposed the wet line's rule: a column was wet again only when a sheet came within 0.1 m of its held line, so a sheet that hit one column's cap and stopped 0.2 m short of the next left the two 10 to 40 s apart in age, a soaked column beside a dry one, a straight seam along the shore normal. A sheet now caps a column's age once, from the age it found as it began to rise, by its shortfall's share of 2 m, and the nearer the column was to dry the more the sheet counts as a fresh wetting, its line sinking toward the front; every term is continuous in the front, the line and the age, which vary smoothly along the shore, and the largest age step between neighbouring columns over two minutes of swell is 1.65 s, 0.05 to 0.4 s live.
+
+**The strip's end caps (§4.3).** Where a slot goes free beside a live one, the free slot takes its neighbour's crest position at zero size, so the curl ends in a short cap on the surface instead of a sheet folding to the coastline.
+
+**One plunge a crest (§6.1).** The tracker re-arms a 20 m stretch only half a period after its last plunge; without that the along-shore phase unwrap could number one crest twice near a group node and fire two or three thuds.
+
+**The strip on the WebGPU high tier while the FFT draws (§8).** The sea's wind mode is known only after the FFT starts asynchronously, so the strip is built on the WebGPU high path and shown only while the FFT draws the wind sea; in every other state, the FFT still compiling, the loop, or the high tier under WebGL2 (Safari, Firefox), the fragment lip draws instead, so the two never draw together. The strip is not registered with the rain map: its vertex positions are indexes, not places, and the rings stand for the face there.
+
+**The recordings (§6.3).** The Park Service's Olympic ocean recording is 6.6 s, so it is cut into the five one-shots; the bed is a 30 s seamless loop from a CC0 recording of Short Sand Beach on the Oregon coast, credited beside it. The spray is thrown along the swell's travel, as the curl is.
+
+### Cost
+
+| Tier | Pose | Pair | Frame A | Frame B | B − A | Load |
+|---|---|---|---|---|---|---|
+| High, 4K, WebGPU | the waterline, noon | main → the edge | 28.9 ms | 34.9 ms | +6.0 ms | 3.5 |
+| High, 4K, WebGPU | the waterline, noon | main → the edge | 32.3 ms | 34.9 ms | +2.7 ms | 3.0 |
+| High, 4K, WebGPU | the waterline, noon | the edge → itself | 34.4 ms | 34.4 ms | -0.1 ms | 3.7 |
+| High, 4K, WebGPU | the waterline, noon | the edge off → on | 34.9 ms | 37.5 ms | +2.6 ms | 3.2 |
+| High, 4K, WebGPU | the waterline, noon | the edge off → on | 35.7 ms | 37.9 ms | +2.2 ms | 3.4 |
+| High, 4K, WebGPU | the pad, noon | main → the edge | 35.7 ms | 36.2 ms | +0.5 ms | 2.6 |
+| High, 4K, WebGPU | the pad, noon | the edge off → on | 37.4 ms | 35.5 ms | -1.9 ms | 3.1 |
+| High, 4K, WebGPU | 18 m up, noon | main → the edge | 40.4 ms | 44.5 ms | +4.1 ms | 3.4 |
+| High, 4K, WebGPU | the waterline, dawn | main → the edge | 35.6 ms | 37.5 ms | +1.9 ms | 3.8 |
+| High, 4K, WebGPU | the storm cove, noon | main → the edge | 31.6 ms | 34.1 ms | +2.6 ms | 4.0 |
+| High, 4K, WebGPU | along the shore, noon | main → the edge | 31.8 ms | 31.0 ms | -0.8 ms | 4.6 |
+| Medium, 1080p | the waterline, noon | main → the edge | 54.5 ms | 62.8 ms | +8.3 ms | 3.9 |
+| Medium, 1080p | the waterline, noon | main → the edge | 49.4 ms | 52.0 ms | +2.6 ms | 4.2 |
+| Medium, 1080p | the waterline, noon | the edge off → on | 40.6 ms | 41.7 ms | +1.1 ms | 2.5 |
+| Medium, 1080p | the waterline, noon | the edge off → on | 40.5 ms | 41.0 ms | +0.5 ms | 5.2 |
+| Medium, 1080p | the pad, noon | main → the edge | 36.9 ms | 37.7 ms | +0.8 ms | 3.3 |
+| Medium, 1080p | the pad, noon | the edge off → on | 36.4 ms | 37.1 ms | +0.7 ms | 3.8 |
+| Medium, 1080p | 18 m up, noon | main → the edge | 43.3 ms | 46.5 ms | +3.2 ms | 2.3 |
+| Medium, 1080p | the waterline, dawn | main → the edge | 40.7 ms | 44.2 ms | +3.4 ms | 4.5 |
+| Low, 720p | the waterline, noon | main → the edge | 25.4 ms | 28.3 ms | +3.0 ms | 2.9 |
+| Low, 720p | the waterline, noon | main → the edge | 25.7 ms | 28.2 ms | +2.6 ms | 3.2 |
+| Low, 720p | the waterline, noon | the edge off → on | 27.3 ms | 28.1 ms | +0.8 ms | 2.5 |
+| Low, 720p | the waterline, noon | the edge off → on | 27.6 ms | 28.4 ms | +0.7 ms | 8.4 |
+| Low, 720p | the pad, noon | main → the edge | 20.0 ms | 21.0 ms | +1.0 ms | 3.0 |
+| Low, 720p | the pad, noon | the edge off → on | 20.6 ms | 21.1 ms | +0.4 ms | 4.5 |
+| Low, 720p | 18 m up, noon | main → the edge | 28.6 ms | 32.1 ms | +3.5 ms | 3.4 |
+| Low, 720p | the waterline, dawn | main → the edge | 26.6 ms | 28.2 ms | +1.6 ms | 5.7 |
+
+### Checks
+
+- The corpus lost the sea's 15 stages and the wet ground's 523 that no page can ask for again, and gained 252 from 112 pages at the cove, the storm cove and the dawn cove on every tier, the lake's mirror pass on high and the lake's and the trailhead's poses; then, when the sea came to rest on the pebbles, its 8 stages again from 40 pages: 1,017 stages in all, the high tier's map 5.2 MB, the build's per-tier maps checking against every translation. Thirty-one old variants no single-page pose reaches (the skinned figures, a party's four to seven headlamps, a few prop variants) are retired without replacement; a first encounter translates them on the page thread, as the corpus's four light stages already did. One fresh page a tier at the cove at dawn and at noon asked for no stage the maps lack, with no console error: medium 200 and 214 stages, high 204 and 218, low 156 and 164, every page on WebGPU.
+- Ninety-four stills on the branch, every tier, from the pad, the waterline and 18 m up at dawn, noon, dusk, night, rain and mist, with the storm cove and the dawn cove on high, beside sixty-five controls from before this work. The first set found the sheet's edge following the sea mesh's grid, a staircase from 18 m up and triangular teeth at eye height, which the controls' still line did not have (§11, the sea rests on the pebbles); the set shot after shows the sheet's edge as a smooth line from above and lacy along the waterline, and the wet band climbing with the sets and drying behind them, the band's dry edge straight along the shore where every reach sat at the 12 m clamp, lobed since. From 18 m up the soaked face reads as a pale sky sheen, main's own look over its 0.3 m band spread over up to 12 m of face, and a faint seam shows where the terrain's near ring hands over to the next, a detail seam of the rings, not the swash's.
+- Looked at on the high tier from the six poses above at the waterline, along the shore, from 18 m up, at dawn, at night and in the storm cove, and at the waterline looking seaward at noon, where the first build's sheet read as a flat plane and the lobed build showed a seam along the shore normal; with the film, the lobes and the smooth wetting it passed (2026-10-09).
+
+### Left open
+
+- The soaked face's sheen: at a grazing angle under a bright sky the soaked pebbles (roughness 0.15) mirror the sky into a flat grey plane with the pebbles' relief lost, from the soaked line out past the waterline; and the ring seam in it from above. A roughness and relief change in the wet ground's stage, which every wet material carries.
+- The film's foam: the open sea's inner-surf cover paints its large blobs over the sheet on the face; a lace held to the front and backwash streaks would read as swash. The sea's two stages.
+- Near the eye the wet band's 5 cm speckle cells give the soaked line a blocky edge.
+- A one-cell row of teeth may remain at each end fade's outer edge, where the rest's step meets a sheet in the table's last metre.
+- In a flat calm with an onshore wind the sea's unfaded wind height can draw a film flush with the pebbles at the waterline.
+- The skinned figures', the party's and a few props' wet variants are not in the corpus.
+
 ## References
 
 - [The water material](2026-09-29-water-material-design.md), §6.1 and §7.
