@@ -6,8 +6,9 @@ import farFx from "../../src/game/shaders/groundFarCover.fragment.fx?raw";
 import {
   FAR_COVER_BAND, FAR_COVER_BAND_LOW, FAR_SWARD_COVER, FAR_SWARD_MAX, FAR_SWARD, FAR_LITTER, FAR_CANOPY_SHADE,
   FAR_CLUMP_CELL, FAR_CLUMP_WEIGHT, FAR_CLUMP_SALT, FAR_CLUMP_WRAP, FAR_CLUMP_AO, FAR_CLUMP_TILT,
-  FAR_COVER_TILT, FAR_SPEC_CUT,
+  FAR_COVER_TILT, FAR_SPEC_CUT, FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX,
 } from "../../src/game/groundHexParams.js";
+import { TERRAIN_SUN_INJECTION_CODE } from "../../src/game/terrainTexture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 function glslFloat(n: number): string { return Number.isInteger(n) ? `${n}.0` : `${n}`; }
@@ -148,5 +149,10 @@ vec3 farClump(vec2 p, float foot) {
     for (const out of [low, high]) {
       for (const name of ["farCoverWeight(", "farClumpOctave(", "farClump("]) expect(out, name).toContain(name);
     }
+  }, timeLimit(5_000));
+
+  it("gives the sun's line its two constants from the twin", () => {
+    expect(TERRAIN_SUN_INJECTION_CODE).toContain(`*mix(${glslFloat(FAR_SELF_SHADOW)},1.0,clamp(dot(viewDirectionW,preInfo.L),0.0,1.0))`);
+    expect(TERRAIN_SUN_INJECTION_CODE).toContain(`/preInfo.NdotL,${glslFloat(FAR_SUN_GAIN_MAX)})*`);
   }, timeLimit(5_000));
 });

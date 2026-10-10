@@ -11,7 +11,7 @@ import {
   heightBlendWeights, HEIGHT_BLEND_DEPTH, LAYER_ROUGHNESS, LAYER_F0,
   rockParallaxOffset, ROCK_PARALLAX_DEPTH, ROCK_PARALLAX_STEPS, ROCK_PARALLAX_MIN_WEIGHT,
   terrainFarCoverDefs, TERRAIN_FRAGMENT_FAR_COVER, TERRAIN_MACRO_OCTAVES, HEX_FETCH_MACROS, TERRAIN_UNIFORMITY_OFF,
-  TERRAIN_FRAGMENT_FAR_LIGHT, TERRAIN_SPEC_INJECTION_POINT, TERRAIN_SPEC_INJECTION_CODE,
+  TERRAIN_FRAGMENT_FAR_LIGHT, TERRAIN_SPEC_INJECTION_POINT, TERRAIN_SPEC_INJECTION_CODE, TERRAIN_SUN_INJECTION_CODE,
 } from "../../src/game/terrainTexture.js";
 import { FEATURE_FRAGMENT_PAINT, FEATURE_PAINT_MAX } from "../../src/game/featurePaint.js";
 import {
@@ -29,8 +29,19 @@ import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import { ROAD_FRAGMENT_DEFS, ROAD_FRAGMENT_PAINT } from "../../src/game/roadPaint.js";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import "@babylonjs/core/Shaders/pbr.fragment.js";
+import "@babylonjs/core/Shaders/ShadersInclude/lightFragment.js";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { FOLIAGE_LIGHT_INJECTION_POINT } from "../../src/game/foliageLightPlugin.js";
+import { attachWet } from "../../src/game/wetPlugin.js";
 import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
 import { timeLimit } from "../helpers/timeLimit.js";
+
+/** The cover's factor on the sun's diffuse line, as the line carries it. */
+const FAR_SUN_FACTOR =
+  "*mix(1.0,min(clamp(dot(terrainFarN,preInfo.L),0.0,1.0)/preInfo.NdotL,2.0)*mix(0.5,1.0,clamp(dot(viewDirectionW,preInfo.L),0.0,1.0)),terrainFarW)";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -1309,6 +1320,65 @@ vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
         expect(source).not.toContain("vec4 metallicReflectanceFactors=vMetallicReflectanceFactors;");
         expect(source).toContain("terrainSpecW = 1.0 - FAR_SPEC_CUT * terrainFarW * (1.0 - terrainWet);");
         expect(source.indexOf("terrainFarW *= 1.0 - terrainPaintW;")).toBeLessThan(source.indexOf(TERRAIN_SPEC_INJECTION_CODE));
+      } finally {
+        s.dispose();
+        e.dispose();
+      }
+    }
+  }, timeLimit(20_000));
+
+  /** The renderer's lights in the renderer's order: the local headlamp, then
+   * the sun and the fill (`createLighting`), then the other hikers' lamps. */
+  function gameLights(s: Scene): void {
+    new SpotLight("lamp_local", Vector3.Zero(), new Vector3(0, 0, 1), 1, 2, s);
+    new DirectionalLight("sun", new Vector3(0, -1, 0), s);
+    new HemisphericLight("fill", new Vector3(0, 1, 0), s);
+    for (let player = 1; player < 5; player++) new SpotLight(`lamp_player_${player}`, Vector3.Zero(), new Vector3(0, 0, 1), 1, 2, s);
+  }
+
+  it("holds the sun's line whole: the factor under the light's own directional define, the plain line otherwise", () => {
+    expect(TERRAIN_SUN_INJECTION_CODE).toBe(
+      "#ifdef DIRLIGHT$2\n" +
+        `info.diffuse=computeDiffuseLighting(preInfo,$1)${FAR_SUN_FACTOR};\n` +
+        "#else\n" +
+        "info.diffuse=computeDiffuseLighting(preInfo,$1);\n" +
+        "#endif",
+    );
+    expect(pluginFor("fc9").getCustomCode("fragment")![FOLIAGE_LIGHT_INJECTION_POINT]).toBe(TERRAIN_SUN_INJECTION_CODE);
+  }, timeLimit(5_000));
+
+  it("keys on each light's plain diffuse line, once in the light include", () => {
+    const include = ShaderStore.IncludesShadersStore["lightFragment"] as string;
+    const all = [...include.matchAll(new RegExp(FOLIAGE_LIGHT_INJECTION_POINT.slice(1), "g"))];
+    expect(all).toHaveLength(1);
+    expect(all[0]![1]).toBe("diffuse{X}.rgb");
+    expect(all[0]![2]).toBe("{X}");
+  }, timeLimit(5_000));
+
+  it("puts the factor under each light's own directional define, and the game's sun is the only directional light, on both uniform paths", async () => {
+    for (const ubo of [false, true]) {
+      const e = engineOn(ubo);
+      const s = new Scene(e);
+      try {
+        gameLights(s);
+        const { effect } = await compiledTerrain(s, (material) => {
+          material.maxSimultaneousLights = 7;
+          attachWet(material);
+        });
+        const source = effect.fragmentSourceCode;
+        for (let n = 0; n < 7; n++) {
+          const block =
+            `#ifdef DIRLIGHT${n}\n` +
+            `info.diffuse=computeDiffuseLighting(preInfo,diffuse${n}.rgb)${FAR_SUN_FACTOR};\n` +
+            "#else\n" +
+            `info.diffuse=computeDiffuseLighting(preInfo,diffuse${n}.rgb);\n` +
+            "#endif";
+          expect(source.split(block).length - 1, `light ${n}`).toBe(1);
+        }
+        expect(source.split(FAR_SUN_FACTOR).length - 1).toBe(7);
+        expect(effect.defines.split("\n").filter((line) => line.startsWith("#define DIRLIGHT"))).toEqual(["#define DIRLIGHT1"]);
+        expect(effect.defines).toContain("#define SPOTLIGHT0\n");
+        expect(effect.defines).toContain("#define HEMILIGHT2\n");
       } finally {
         s.dispose();
         e.dispose();

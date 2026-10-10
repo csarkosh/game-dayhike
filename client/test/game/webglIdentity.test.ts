@@ -7,8 +7,9 @@ import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?ra
 import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
 import {
   terrainFarCoverDefs, TERRAIN_FRAGMENT_FAR_COVER, TERRAIN_MACRO_OCTAVES,
-  TERRAIN_FRAGMENT_FAR_LIGHT, TERRAIN_SPEC_INJECTION_POINT, TERRAIN_SPEC_INJECTION_CODE,
+  TERRAIN_FRAGMENT_FAR_LIGHT, TERRAIN_SPEC_INJECTION_POINT, TERRAIN_SPEC_INJECTION_CODE, TERRAIN_SUN_INJECTION_CODE,
 } from "../../src/game/terrainTexture.js";
+import { FOLIAGE_LIGHT_INJECTION_POINT } from "../../src/game/foliageLightPlugin.js";
 
 const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 
@@ -109,6 +110,7 @@ function withoutFarCover(text: string): string {
     [TERRAIN_FRAGMENT_FAR_COVER, ""],
     [TERRAIN_FRAGMENT_FAR_LIGHT, ""],
     [`${TERRAIN_SPEC_INJECTION_POINT}\n${TERRAIN_SPEC_INJECTION_CODE}\n`, ""],
+    [`${FOLIAGE_LIGHT_INJECTION_POINT}\n${TERRAIN_SUN_INJECTION_CODE}\n`, ""],
   ];
   let out = text;
   for (const [piece, was] of pieces) {

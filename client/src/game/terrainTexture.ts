@@ -101,7 +101,11 @@ import {
   DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   HORIZON, HORIZON_MAX, TUFT_ALBEDO,
   SWARD_FLOOR, SWARD_MAX, SWARD_COVER, SWARD_FADE,
+  FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX,
 } from "./groundHexParams.js";
+// The key of each light's plain diffuse line; the terrain never carries the
+// foliage light plugin, so the key is never applied twice.
+import { FOLIAGE_LIGHT_INJECTION_POINT } from "./foliageLightPlugin.js";
 // The hex include, in three files whose join is the include WebGL2 compiles:
 // the lattice, the four sampler-taking fetches, and the noise and horizon.
 import groundHexHead from "./shaders/groundHex.fragment.fx?raw";
@@ -746,6 +750,26 @@ export const TERRAIN_SPEC_INJECTION_POINT = "!vec4 metallicReflectanceFactors=vM
 export const TERRAIN_SPEC_INJECTION_CODE =
   "vec4 metallicReflectanceFactors=vec4(vMetallicReflectanceFactors.rgb,vMetallicReflectanceFactors.a*terrainSpecW);";
 
+/**
+ * The sun's diffuse line for the far cover, on `FOLIAGE_LIGHT_INJECTION_POINT`
+ * (each light's plain diffuse line once the light include is unrolled, `$1`
+ * its colour and `$2` its digit). The key runs before the preprocessor
+ * resolves each light's type, so the line carries its own conditional on the
+ * light's directional define: the factor compiles into the sun's line and no
+ * other, whatever order the lights were made in. The factor is the cover's
+ * N·L (its normal leaned toward the eye) over the ground's own, capped at
+ * FAR_SUN_GAIN_MAX, times the share of its sunlit surface the eye sees,
+ * mix(FAR_SELF_SHADOW, 1, V·L), mixed in by the far weight: exactly 1 where
+ * the weight is 0. `preInfo.NdotL` is never 0 (Babylon's saturateEps).
+ * Mirrored by `farSunFactor` in `groundHexParams.ts`.
+ */
+export const TERRAIN_SUN_INJECTION_CODE =
+  "#ifdef DIRLIGHT$2\n" +
+  `info.diffuse=computeDiffuseLighting(preInfo,$1)*mix(1.0,min(clamp(dot(terrainFarN,preInfo.L),0.0,1.0)/preInfo.NdotL,${f2(FAR_SUN_GAIN_MAX)})*mix(${f2(FAR_SELF_SHADOW)},1.0,clamp(dot(viewDirectionW,preInfo.L),0.0,1.0)),terrainFarW);\n` +
+  "#else\n" +
+  "info.diffuse=computeDiffuseLighting(preInfo,$1);\n" +
+  "#endif";
+
 export class TerrainTexturePlugin extends MaterialPluginBase {
   private readonly _scene: Scene;
   private readonly _grass: Texture;
@@ -1170,6 +1194,9 @@ uniform vec4 terrainSwardBand;
           "reflectivityBlock(\nvec4(vReflectivityColor.r, vReflectivityColor.g * terrainRough, vReflectivityColor.b, vReflectivityColor.a * terrainF0)",
         // The far cover's specular cut, on the specular weight (F0 and F90).
         [TERRAIN_SPEC_INJECTION_POINT]: TERRAIN_SPEC_INJECTION_CODE,
+        // The far cover's answer to the sun, on the directional light's
+        // diffuse line alone.
+        [FOLIAGE_LIGHT_INJECTION_POINT]: TERRAIN_SUN_INJECTION_CODE,
       };
     }
     return null;

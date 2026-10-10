@@ -107,4 +107,15 @@ describe("the terrain's stages with the far cover, through glslang and twgsl", (
     expect(t.fragment).toContain("terrainSpecW = 1.0 - FAR_SPEC_CUT * terrainFarW * (1.0 - terrainWet);");
     expect(t.wgslFragment).toContain("@fragment");
   }, timeLimit(60_000));
+
+  it("gives the sun's line alone the cover's factor once the lights are resolved", async () => {
+    const t = await terrainStages(translators);
+    expect(t.defines).toContain("#define SPOTLIGHT0\n");
+    expect(t.defines).toContain("#define DIRLIGHT1\n");
+    expect(t.defines).toContain("#define HEMILIGHT2\n");
+    expect(t.fragment.split(")*mix(1.0,min(clamp(dot(terrainFarN,preInfo.L)").length - 1).toBe(1);
+    expect(t.fragment).toContain("info.diffuse=computeDiffuseLighting(preInfo,diffuse1.rgb)*mix(1.0,min(");
+    expect(t.fragment.split("info.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);").length - 1).toBe(1);
+    expect(t.wgslFragment).toContain("@fragment");
+  }, timeLimit(60_000));
 });
