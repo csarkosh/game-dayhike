@@ -26,10 +26,11 @@
  *
  * The pass runs in a frame only when `update` arms it: the lake in the
  * player's view this frame, the glass's share above 0, the eye over the
- * mirror's plane and within MIRROR_REACH_M of the lake's rim. Armed, the
- * target is on `scene.customRenderTargets` in the frames it draws (the first
- * armed frame, then every MIRROR_EVERY-th), which the scene renders before its
- * main pass; between draws, and unarmed, it is off that list and the scene
+ * mirror's plane and within MIRROR_REACH_M of the lake's bound (spec §10.2).
+ * One mirror serves the nearest lake (§10.3): `setLake` moves it to another,
+ * its plane and its reach with it. Armed, the target is on
+ * `scene.customRenderTargets` in the frames it draws (the first armed frame,
+ * then every MIRROR_EVERY-th), which the scene renders before its main pass; between draws, and unarmed, it is off that list and the scene
  * neither renders it nor waits on it for its readiness. Between draws the lake
  * reads the last image through the view-projection it was drawn with. The
  * mirror camera's field is the player's widened by MIRROR_FOV_MARGIN, so a
@@ -71,7 +72,7 @@ export const MIRROR_MOTION_STEP_MAX_M = 5;
 export const MIRROR_LIFT = 0.02;
 /** How much darker the ground draws under a full canopy in the mirror: `lakeMirrorTerrain.fragment.fx`'s LAKE_MIRROR_CANOPY_SHADE. */
 export const MIRROR_CANOPY_SHADE = 0.5;
-/** How far (m, across the ground) the eye may stand from the lake's rim
+/** How far (m, across the ground) the eye may stand past the lake's bound
  * with the pass armed: past it the lake is a sliver of the frame, and the
  * probe's sheen stands in for its image. */
 export const MIRROR_REACH_M = 200;
@@ -89,8 +90,10 @@ export type LakeMirror = {
   unregister(mesh: Mesh): void;
   /** The ground's lit base colour (linear), for the terrain's stand-in. */
   setTerrainColour(r: number, g: number, b: number): void;
-  /** Called each frame before the scene renders, with the player's camera, whether the lake is in its view this frame and the calm share: arms the pass or leaves it off (off too with the eye at or under the mirror's plane, or MIRROR_REACH_M or more from the rim). Armed, the pass draws this frame or holds the last image. Returns whether it is armed, so whether the lake may read the target. */
+  /** Called each frame before the scene renders, with the player's camera, whether the lake is in its view this frame and the calm share: arms the pass or leaves it off (off too with the eye at or under the mirror's plane, or MIRROR_REACH_M or more past the lake's bound). Armed, the pass draws this frame or holds the last image. Returns whether it is armed, so whether the lake may read the target. */
   update(camera: Camera, lakeInView: boolean, calmShare: number): boolean;
+  /** Moves the mirror to `lake`: its plane, its reach, and a fresh image on the next armed frame. Allocates nothing. */
+  setLake(lake: LakeSource): void;
   dispose(): void;
 };
 
@@ -143,7 +146,7 @@ export function mirrorMotion(motion: number, eyeStep: number): number {
 }
 
 /** The high tier's mirror for `lake`; `halfZ` is the engine's depth range (`engine.isNDCHalfZRange`). */
-export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean): LakeMirror {
+export function createLakeMirror(scene: Scene, first: LakeSource, halfZ: boolean): LakeMirror {
   const engine = scene.getEngine();
   // The screen's size, never a render target's that happens to be bound.
   let width = targetSize(engine.getRenderWidth(true), MIRROR_MAX_WIDTH);
@@ -176,9 +179,12 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
   const camera = new MirrorCamera("lake_mirror_cam", Vector3.Zero(), scene, false);
   texture.activeCamera = camera;
 
-  const level = lake.level + MIRROR_LIFT;
+  // The lake served, and its plane: `setLake` moves both.
+  let lake = first;
+  let level = lake.level + MIRROR_LIFT;
   // Made once: the reflection, and the scratch every armed frame writes into.
-  const reflection = Matrix.FromArray(reflectionMatrix(level, new Float32Array(16)));
+  const reflectionArray = new Float32Array(16);
+  const reflection = Matrix.FromArray(reflectionMatrix(level, reflectionArray));
   const projection = Matrix.Identity();
   camera.freezeProjectionMatrix(projection);
   const playerProjection = new Float32Array(16);
@@ -249,8 +255,8 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
       // An eye at or under the plane would turn the near plane over (the
       // kept half clipped, the lake bed drawn): nothing to mirror. Nor from
       // beyond the reach.
-      const rim = Math.hypot(player.position.x - lake.x, player.position.z - lake.z) - lake.radius;
-      const on = lakeInView && calmShare > 0 && player.position.y > level && rim < MIRROR_REACH_M;
+      const past = Math.hypot(player.position.x - lake.x, player.position.z - lake.z) - lake.bound;
+      const on = lakeInView && calmShare > 0 && player.position.y > level && past < MIRROR_REACH_M;
       if (!on) {
         armed = false;
         listTarget(false);
@@ -288,6 +294,14 @@ export function createLakeMirror(scene: Scene, lake: LakeSource, halfZ: boolean)
       camera.mirrorView.multiplyToRef(projection, viewProjectionMatrix);
       viewProjectionMatrix.copyToArray(viewProjection);
       return true;
+    },
+    setLake(next) {
+      lake = next;
+      level = next.level + MIRROR_LIFT;
+      Matrix.FromArrayToRef(reflectionMatrix(level, reflectionArray), 0, reflection);
+      // The image held is of the other lake: the next armed frame draws.
+      armed = false;
+      listTarget(false);
     },
     dispose() {
       if (disposed) return;
