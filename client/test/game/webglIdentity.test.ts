@@ -111,6 +111,8 @@ function withoutFarCover(text: string): string {
     [TERRAIN_FRAGMENT_FAR_LIGHT, ""],
     [`${TERRAIN_SPEC_INJECTION_POINT}\n${TERRAIN_SPEC_INJECTION_CODE}\n`, ""],
     [`${FOLIAGE_LIGHT_INJECTION_POINT}\n${TERRAIN_SUN_INJECTION_CODE}\n`, ""],
+    ["    terrainPaintW = max(terrainPaintW, rGravel);\n", ""],
+    ["    terrainPaintW = max(terrainPaintW, max(tBank, tOnBench));\n", ""],
   ];
   let out = text;
   for (const [piece, was] of pieces) {

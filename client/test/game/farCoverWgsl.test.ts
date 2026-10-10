@@ -118,4 +118,13 @@ describe("the terrain's stages with the far cover, through glslang and twgsl", (
     expect(t.fragment.split("info.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);").length - 1).toBe(1);
     expect(t.wgslFragment).toContain("@fragment");
   }, timeLimit(60_000));
+
+  it("compiles the road's and the trail's paint weights", async () => {
+    const t = await terrainStages(translators);
+    expect(t.defines).toContain("#define ROADPAINT\n");
+    expect(t.defines).toContain("#define TRAILPAINT\n");
+    expect(t.fragment).toContain("terrainPaintW = max(terrainPaintW, rGravel);");
+    expect(t.fragment).toContain("terrainPaintW = max(terrainPaintW, max(tBank, tOnBench));");
+    expect(t.wgslFragment).toContain("@fragment");
+  }, timeLimit(60_000));
 });

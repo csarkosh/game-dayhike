@@ -1385,4 +1385,12 @@ vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
       }
     }
   }, timeLimit(20_000));
+
+  it("has every paint write its weight before the far light reads it", () => {
+    const lights = pluginFor("fc10").getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    const reads = lights.indexOf("terrainFarW *= 1.0 - terrainPaintW;");
+    const writes = [...lights.matchAll(/terrainPaintW = max\(terrainPaintW, /g)].map((m) => m.index!);
+    expect(writes).toHaveLength(2);
+    for (const at of writes) expect(at).toBeLessThan(reads);
+  }, timeLimit(5_000));
 });

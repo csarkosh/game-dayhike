@@ -6,6 +6,7 @@ import {
   ROAD_TABLE_STEP, ROAD_FRAGMENT_DEFS, ROAD_FRAGMENT_PAINT,
   buildRoadTable, dashKeeps, roadAlbedo, roadBands, roadTableStale, roadTableZ0,
 } from "../../src/game/roadPaint.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("road bands — the mirror of the fragment shader", () => {
   const off = { verge: 0, gravel: 0, asphalt: 0, line: 0 };
@@ -159,4 +160,13 @@ describe("the GLSL strings", () => {
     // rather than by a mean-1 multiplier around it.
     expect(ROAD_FRAGMENT_PAINT).not.toMatch(/rAsphaltTex\s*\*=\s*mix\(\s*1\.0\s*,\s*rAsphaltRAH\.g\s*,\s*rk\s*\);/);
   });
+});
+
+describe("the far cover steps aside on the road", () => {
+  it("writes the gravel shoulder's weight, which holds the asphalt, after the asphalt's F0", () => {
+    expect(ROAD_FRAGMENT_PAINT).toContain(
+      "    terrainF0 = mix(terrainF0, terrainLayerF02.y, rAsphalt);\n    terrainPaintW = max(terrainPaintW, rGravel);\n",
+    );
+    expect(ROAD_FRAGMENT_PAINT.split("terrainPaintW").length - 1).toBe(2);
+  }, timeLimit(5_000));
 });
