@@ -15,6 +15,7 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { BOARD_TEXTURE, DISTANCE, ROUTED_PAINT, ROUTED_SHADOW, SHEETS, TITLE, boardText, type BoardText, type Sheet, type SheetName } from "./boardFace.js";
 import { boardMap, type BoardMap, type MapInput } from "./boardMap.js";
+import { lakeOutline, type LakeShape } from "../sim/lakeShape.js";
 import { sheetWear, type SheetWear } from "./boardWear.js";
 import { labelWear, nameHash } from "./labelWear.js";
 import { scrape } from "./signMeshes.js";
@@ -91,7 +92,7 @@ export type BoardSource = {
   graph: {
     nodes: readonly { x: number; z: number }[];
     edges: readonly { a: number; b: number; kind: string }[];
-    features: readonly { kind: string; x: number; z: number; radius: number }[];
+    features: readonly { kind: string; x: number; z: number; radius: number; shape?: LakeShape }[];
     shortestHome: number;
   };
   places: readonly { name: string; x: number; z: number }[];
@@ -99,6 +100,9 @@ export type BoardSource = {
   roadCenterX(seed: number, z: number): number;
   urls: { paper: string | null; portrait: string | null };
 };
+
+/** The board's lake shores: the outline marched every this many metres. */
+export const BOARD_SHORE_STEP = 2;
 
 /** What the painter draws, gathered from a world's graph, names and seed. */
 export function boardDrawingOf(source: BoardSource): BoardDrawing {
@@ -118,7 +122,12 @@ export function boardDrawingOf(source: BoardSource): BoardDrawing {
       nodes: source.graph.nodes.map((n) => ({ x: n.x, z: n.z })),
       edges: source.graph.edges.map((e) => ({ a: e.a, b: e.b, kind: e.kind })),
       road,
-      features: source.graph.features.map((f) => ({ kind: f.kind, x: f.x, z: f.z, radius: f.radius })),
+      features: source.graph.features.map((f) => {
+        const out = { kind: f.kind, x: f.x, z: f.z, radius: f.radius };
+        if (f.kind !== "pond" || f.shape === undefined) return out;
+        const o = lakeOutline(f.shape, BOARD_SHORE_STEP);
+        return { ...out, outline: o.xs.map((x, i) => ({ x, z: o.zs[i] as number })) };
+      }),
       places: source.places.map((p) => ({ name: p.name, x: p.x, z: p.z })),
       summitName: source.summitName,
     },
@@ -177,9 +186,13 @@ function drawMap(ctx: Ctx, heading: string, map: BoardMap, w: number): void {
     ctx.stroke();
   }
   ctx.fillStyle = "rgba(111, 135, 144, 0.55)";
-  for (const p of map.ponds) {
+  for (const shore of map.ponds) {
     ctx.beginPath();
-    ctx.ellipse(p.x, p.y, p.rx, p.ry * 0.8, 0, 0, 2 * Math.PI);
+    for (const [i, p] of shore.entries()) {
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
     ctx.fill();
   }
   ctx.lineCap = "round";

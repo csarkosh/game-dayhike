@@ -9,7 +9,10 @@ const world: MapInput = {
     { a: 1, b: 3, kind: "loop" }, { a: 3, b: 4, kind: "loop" }, { a: 4, b: 2, kind: "loop" },
   ],
   road: [-100, -50, 0, 50, 100, 150].map((z) => ({ x: -9, z })),
-  features: [{ kind: "peak", x: 200, z: 0, radius: 50 }, { kind: "pond", x: 150, z: 60, radius: 20 }],
+  features: [
+    { kind: "peak", x: 200, z: 0, radius: 50 },
+    { kind: "pond", x: 150, z: 60, radius: 10, outline: [{ x: 140, z: 50 }, { x: 160, z: 50 }, { x: 160, z: 70 }, { x: 140, z: 70 }] },
+  ],
   places: [{ name: "Summit", x: 200, z: 0 }, { name: "Old Lake", x: 150, z: 60 }],
   summitName: "Summit",
 };
@@ -48,10 +51,19 @@ describe("boardMap", () => {
     expect(m.side).toHaveLength(3);
   });
 
+  it("draws a pond as its shore's outline, and none without one", () => {
+    // 1.5 px a metre about (150, 60) at (367.5, 365): inland up, +z left.
+    expect(boardMap(world, inner).ponds).toEqual([
+      [{ x: 382.5, y: 380 }, { x: 382.5, y: 350 }, { x: 352.5, y: 350 }, { x: 352.5, y: 380 }],
+    ]);
+    const bare = { ...world, features: [{ kind: "pond", x: 150, z: 60, radius: 10 }] };
+    expect(boardMap(bare, inner).ponds).toEqual([]);
+  });
+
   it("draws the road where the sheet shows it, the pond, the peak's rings and every name", () => {
     const m = boardMap(world, inner);
     expect(m.road).toEqual([{ x: 532.5, y: 603.5 }, { x: 457.5, y: 603.5 }, { x: 382.5, y: 603.5 }, { x: 307.5, y: 603.5 }]);
-    expect(m.ponds).toEqual([{ x: 367.5, y: 365, rx: 30, ry: 30 }]);
+    expect(m.ponds).toHaveLength(1);
     expect(MAP_RINGS).toBe(5);
     expect(m.rings.map((r) => r.rx)).toEqual([15, 30, 45, 60, 75]);
     expect(m.labels).toEqual([{ text: "Summit", x: 457.5, y: 290 }, { text: "Old Lake", x: 367.5, y: 365 }]);
