@@ -2197,7 +2197,7 @@ function buildRenderer(
   }
   for (const mesh of waterLife?.meshes ?? []) lakeMirror?.register(mesh, null);
   if (reflected) {
-    lakePlugin.setLakeBody(firstLake.x, firstLake.level, firstLake.z, firstLake.radius);
+    lakePlugin.setLakeBody(firstLake.x, firstLake.level, firstLake.z, firstLake.shape.meanRadius);
     if (lakePanorama !== null) lakePlugin.setPanorama(lakePanorama.texture);
   }
   /** The lake's shelter (`lakeWaterRow`): how far its cat's-paws spread. */
