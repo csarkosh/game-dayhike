@@ -5,6 +5,7 @@ import groundHexHead from "../../src/game/shaders/groundHex.fragment.fx?raw";
 import groundHexFetch from "../../src/game/shaders/groundHexFetch.fragment.fx?raw";
 import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
 import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
+import { terrainFarCoverDefs, TERRAIN_FRAGMENT_FAR_COVER, TERRAIN_MACRO_OCTAVES } from "../../src/game/terrainTexture.js";
 
 const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 
@@ -48,6 +49,8 @@ const PINS: Record<string, string> = {
   // tint's one added line in `featurePaint.ts`, which begins it at the lake's
   // rim (the bed under the water paints itself); the foliage plugin for reeds
   // is the tree's text and interface.
+  // The far ground's cover is taken out before hashing (`withoutFarCover`), so
+  // the pin is still the text before it.
   "terrain.fragment": "393cbde35c652291d03850619cfdf4b67c6065aac4e84e87c4f9e865ffd71e10",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
@@ -91,12 +94,31 @@ function withoutRipples(text: string): string {
   return `${text.slice(0, from)}    normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), vec3(0.0, 1.0, 0.0), tPuddle));\n${text.slice(to)}`;
 }
 
+/** The far ground's cover (terrainTexture.ts, roadPaint.ts, trailPaint.ts)
+ * taken out of the terrain fragment: each piece it adds, removed where it
+ * stands (each must stand there once), and the macro tint's octaves put back
+ * as the one line they were. The text is the one before the far cover. */
+function withoutFarCover(text: string): string {
+  const pieces: (readonly [string, string])[] = [
+    [terrainFarCoverDefs(), ""],
+    ["float terrainSpecW = 1.0;\nfloat terrainFarW = 0.0;\nfloat terrainPaintW = 0.0;\nvec3 terrainFarN = vec3(0.0, 1.0, 0.0);\n", ""],
+    [TERRAIN_MACRO_OCTAVES, "  vec3 macroRgb = macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y);\n"],
+    [TERRAIN_FRAGMENT_FAR_COVER, ""],
+  ];
+  let out = text;
+  for (const [piece, was] of pieces) {
+    expect(out.split(piece).length - 1, piece.slice(0, 60)).toBe(1);
+    out = out.replace(piece, () => was);
+  }
+  return out;
+}
+
 describe("WebGL2's shader text", () => {
   it("is byte for byte what it was", () => {
     const texts = pluginTexts();
     expect(Object.keys(texts).sort()).toEqual(Object.keys(PINS).sort());
     for (const [key, text] of Object.entries(texts)) {
-      expect(sha(key === "terrain.fragment" ? withoutRipples(text) : text), key).toBe(PINS[key]);
+      expect(sha(key === "terrain.fragment" ? withoutFarCover(withoutRipples(text)) : text), key).toBe(PINS[key]);
     }
   });
 
@@ -114,7 +136,7 @@ describe("WebGL2's shader text", () => {
     expect(text).toContain("vec3 tPuddleN = normalize(vec3(tRipple.x * terrainRain, 1.0, tRipple.y * terrainRain));");
     // With the ripples taken out and the rename undone, the base's text and
     // the shore tint's one line.
-    const base = withoutRipples(text).replaceAll("macroRgb", "macro");
+    const base = withoutFarCover(withoutRipples(text)).replaceAll("macroRgb", "macro");
     expect(base).not.toContain("tRipple");
     expect(sha(base)).toBe("fd74235171f3b423ebdc8126972fa2ca1b6aee08fba3eef1a0cca297e4d21669");
   });

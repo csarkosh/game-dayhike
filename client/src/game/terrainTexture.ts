@@ -107,6 +107,9 @@ import {
 import groundHexHead from "./shaders/groundHex.fragment.fx?raw";
 import groundHexFetch from "./shaders/groundHexFetch.fragment.fx?raw";
 import groundHexNoise from "./shaders/groundHexNoise.fragment.fx?raw";
+// The far ground's cover: its constants and functions, spliced after the hex
+// include, whose latticeHash its clump noise calls.
+import groundFarCover from "./shaders/groundFarCover.fragment.fx?raw";
 
 import grassUrl from "../../assets/textures/ground.grass.webp?url";
 import floorUrl from "../../assets/textures/ground.forest_floor.webp?url";
@@ -396,6 +399,19 @@ ${groundHexHead}${webgpu ? HEX_FETCH_MACROS : groundHexFetch}${groundHexNoise}
 `;
 }
 
+/**
+ * The far-cover include, gated on TERRAINTEX like the hex include it follows:
+ * its clump noise calls the hex include's `latticeHash`. The three hex files
+ * are not touched, so their pinned join holds.
+ */
+export function terrainFarCoverDefs(): string {
+  return `
+#ifdef TERRAINTEX
+${groundFarCover}
+#endif
+`;
+}
+
 const TERRAIN_VERTEX_DEFS = `
 #ifdef TERRAINTEX
 attribute vec4 terrainWeights;
@@ -428,12 +444,65 @@ vTerrainCover = terrainCover;
 #endif
 `;
 
-/** Unconditional: the reflectivity-block regex rewrite below references these
- * locals whatever the defines say, so a define-guarded declaration (which
- * would compile in only one define state) is not an option. */
+/** Unconditional: the regex rewrites below and the paints read these locals
+ * whatever the defines say, so a define-guarded declaration (which would
+ * compile in only one define state) is not an option. `terrainSpecW` is the
+ * specular weight's factor, `terrainFarW` and `terrainFarN` the far cover's
+ * weight and normal, `terrainPaintW` the share of the fragment the road or
+ * the trail painted as its own surface. */
 const TERRAIN_FRAGMENT_MAIN_BEGIN = `
 float terrainRough = 1.0;
 float terrainF0 = 1.0;
+float terrainSpecW = 1.0;
+float terrainFarW = 0.0;
+float terrainPaintW = 0.0;
+vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
+`;
+
+/** The macro tint's line taken apart into its two octaves, the same
+ * arithmetic as `macroNoise`, so the far cover can fade each to its mean
+ * by its own footprint. */
+export const TERRAIN_MACRO_OCTAVES = `  // Its two octaves apart, the same arithmetic as macroNoise, so the far
+  // cover below can fade each to its mean where its cells fall under two
+  // pixels.
+  float macroN18 = macroValueNoise(vPositionW.xz, MACRO_WAVE.x);
+  float macroN6 = macroValueNoise(vPositionW.xz, MACRO_WAVE.y);
+  vec3 macroRgb = macroTint(MACRO_WEIGHT.x * macroN18 + MACRO_WEIGHT.y * macroN6, 1.0 - terrainN.y);
+`;
+
+/**
+ * The far ground's cover, in the ground blend after the sward pull: past the
+ * band where the meadow cards thin out, ground under any cover the near field
+ * draws, grass or litter, takes the colour the cover renders at, with the
+ * clumps' trough darkening and the macro tint the cards carry, each octave
+ * faded to its mean by the pixel's footprint. The weight is kept in
+ * `terrainFarW` and the clumps' normal in `terrainFarN` for the far light,
+ * which applies them after the paints. Only fragments in the band pay: the
+ * block is branched on its weight, and the footprint is taken before the
+ * branch, in uniform control flow. Constants and functions in
+ * `shaders/groundFarCover.fragment.fx`.
+ */
+export const TERRAIN_FRAGMENT_FAR_COVER = `  // Far cover: past the band where the meadow cards thin out, ground under
+  // any cover the near field draws, grass or litter, takes the colour the
+  // cover renders at, clumps darker in their troughs, and the lush and dry
+  // tint the cards carry. Its normal and reflectance are applied after the
+  // paints, in TERRAIN_FRAGMENT_FAR_LIGHT, so the road and the trail keep
+  // their own. Constants in the far-cover include.
+  vec2 fcFw = fwidth(vPositionW.xz);
+  float fcFoot = max(fcFw.x, fcFw.y);
+  terrainFarW = farCoverWeight(vTerrainCover, vTerrainW2.z, dist);
+  if (terrainFarW > 0.0) {
+    vec3 fcClump = farClump(vPositionW.xz, fcFoot);
+    float fcB18 = 1.0 - smoothstep(0.5, 1.0, fcFoot / MACRO_WAVE.x);
+    float fcB6 = 1.0 - smoothstep(0.5, 1.0, fcFoot / MACRO_WAVE.y);
+    vec3 fcMacro = macroTint(MACRO_WEIGHT.x * mix(0.5, macroN18, fcB18) + MACRO_WEIGHT.y * mix(0.5, macroN6, fcB6), 1.0 - terrainN.y);
+    vec3 fcTarget = mix(FAR_SWARD, FAR_LITTER, clamp(vTerrainW2.z, 0.0, 1.0))
+      * fcMacro
+      * (1.0 - FAR_CANOPY_SHADE * clamp(vTerrainW2.w, 0.0, 1.0))
+      * mix(FAR_CLUMP_AO, 1.0, fcClump.z);
+    surfaceAlbedo = mix(surfaceAlbedo, fcTarget, FAR_SWARD_MAX * terrainFarW);
+    terrainFarN = normalize(normalW + vec3(-fcClump.x, 0.0, -fcClump.y) * FAR_CLUMP_TILT);
+  }
 `;
 
 const TERRAIN_FRAGMENT_BLEND = `
@@ -611,8 +680,7 @@ const TERRAIN_FRAGMENT_BLEND = `
   // Macro tint: the lush/dry variation over tens of metres, on grass only and
   // faded out with the rest of the detail. A multiplicative tint of
   // surfaceAlbedo, never a write to the material constant.
-  vec3 macroRgb = macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y);
-  surfaceAlbedo *= mix(vec3(1.0), macroRgb, w0 * terrainMacroOn * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist)));
+${TERRAIN_MACRO_OCTAVES}  surfaceAlbedo *= mix(vec3(1.0), macroRgb, w0 * terrainMacroOn * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist)));
   // Horizon tint: past HORIZON the floor reads as the vegetation the clutter
   // has thinned out of, not as bare palette.
   surfaceAlbedo = mix(surfaceAlbedo, terrainTuft, w0 * horizonWeight(dist));
@@ -621,7 +689,7 @@ const TERRAIN_FRAGMENT_BLEND = `
   // ground cover, not the grass texture weight, which is a mottle.
   float swardW = terrainSward.w * smoothstep(terrainSwardBand.x, terrainSwardBand.y, vTerrainCover) * (1.0 - smoothstep(terrainSwardBand.z, terrainSwardBand.w, dist));
   surfaceAlbedo = mix(surfaceAlbedo, terrainSward.rgb, swardW);
-  // Roughness: the blended per-layer base,
+${TERRAIN_FRAGMENT_FAR_COVER}  // Roughness: the blended per-layer base,
   // modulated near the eye by the blended map over its own 0.5 neutral (so a
   // flat 0.5 placeholder or a failed decode is the identity, not a flash of
   // gloss); F0: per layer, never faded.
@@ -1019,11 +1087,13 @@ uniform vec4 terrainSwardBand;
       return {
         // The hex include sits between this plugin's own declarations and the
         // paints: after the uniforms its functions read, before the paint code
-        // that has no use for them.
+        // that has no use for them. The far-cover include follows it, since
+        // its clump noise calls the hex include's latticeHash.
         CUSTOM_FRAGMENT_DEFINITIONS:
           (this._material.getScene().getEngine().isWebGPU ? TERRAIN_UNIFORMITY_OFF : "") +
           TERRAIN_FRAGMENT_DEFS +
           terrainHexDefs(this._material.getScene().getEngine().isWebGPU) +
+          terrainFarCoverDefs() +
           ROAD_FRAGMENT_DEFS +
           TRAIL_FRAGMENT_DEFS +
           FEATURE_FRAGMENT_DEFS,
