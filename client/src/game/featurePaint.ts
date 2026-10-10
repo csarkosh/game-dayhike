@@ -10,9 +10,11 @@
  *
  * Up to `FEATURE_PAINT_MAX` features are baked into a small RGBA table —
  * two texel rows: row 0 is (x, z, radius, kindCode) per feature, kindCode 1
- * peak / 2 meadow / 3 pond, 0 empty; row 1's first texel carries the shared
- * constants (treeline height, treeline band, meadow rim, pond shore) and its
- * second the peak's rim fade, the rest zero. `terrainTexture.ts` owns the texture/sampler/uniform plumbing
+ * peak / 2 meadow / 3 lake (its centre and bound), 0 empty; row 1's first
+ * texel carries the shared constants (treeline height, treeline band, meadow
+ * rim, pond shore) and its second the peak's rim fade, the rest zero — and
+ * below them the shore atlas (`shoreAtlas.ts`), so a lake's shore tint reads
+ * its shore distance rather than a disc. `terrainTexture.ts` owns the texture/sampler/uniform plumbing
  * and injects the strings below after its ground blend and the road paint,
  * BEFORE the trail paint — so a trail bed crossing a
  * meadow or pond keeps its own dirt/gravel colour rather than being painted
@@ -32,34 +34,64 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import {
   MEADOW_RIM, POND_SHORE, TREELINE_BAND, PEAK_CREST_RADIUS, PEAK_RIM_FADE, treelineOf, type Feature,
 } from "../sim/features.js";
+import type { LakeShape } from "../sim/lakeShape.js";
+import {
+  SHORE_ATLAS_FAR, SHORE_ATLAS_SIZE, SHORE_ATLAS_TILE, bakeShoreAtlas, shoreAtlasRead, type ShoreAtlas,
+} from "./shoreAtlas.js";
 
-/** Up to four features paint the ground (one peak + three loops). */
-export const FEATURE_PAINT_MAX = 4;
+/** Up to eight features paint the ground (spec §10.3: one peak, three loops, three tarns). */
+export const FEATURE_PAINT_MAX = 8;
+/** The table texture: SHORE_ATLAS_SIZE texels wide, the table's two rows and then the shore atlas's rows. */
+export const FEATURE_TEX_WIDTH = SHORE_ATLAS_SIZE;
+export const FEATURE_TEX_ROWS = 2 + SHORE_ATLAS_SIZE;
 
-/** Two texel rows: row 0 = (x, z, radius, kind) per feature, kind 1 peak / 2
- * meadow / 3 pond, 0 = empty; row 1 texel 0 = (treeline height, treeline
- * band, meadow rim, pond shore) and row 1 TEXEL 1 = (PEAK_RIM_FADE, 0, 0, 0)
- * — a free slot in the row the shared constants already live in, read as
- * `fRim.x` by the shader (the peak's radial fade is the
- * fifth shared constant and there was no room left in texel 0). The rest of
- * row 1 is zero. The treeline height is `treelineOf(peak)` — the same
- * function `features.ts` exports for it, rather than a second copy of
- * `crestH - TREELINE_BELOW_CREST`. With NO PEAK among the first
- * `FEATURE_PAINT_MAX` entries the treeline reads
- * 0 and is never used — the rock term only runs for a `kind == peak` entry,
- * and a peak the stem cannot reach reads as no feature at all rather than a
- * height-0 one, so this is now a reachable state rather than a latent one. */
-export function featureTable(features: readonly Feature[]): Float32Array {
-  const t = new Float32Array(FEATURE_PAINT_MAX * 4 * 2);
+/** The shape a pond paints by: one whose bound is finite (a placement's shape
+ * carries an infinite one, and the atlas would bake NaN from it). */
+function paintedShape(f: Feature): LakeShape | undefined {
+  return f.kind === "pond" && f.shape !== undefined && Number.isFinite(f.shape.bound) ? f.shape : undefined;
+}
+
+/** The lakes among the first FEATURE_PAINT_MAX features, in order: the shore
+ * atlas's tiles, which the shader counts off as it walks the table. */
+export function paintedLakes(features: readonly Feature[]): LakeShape[] {
+  const out: LakeShape[] = [];
+  for (const f of features.slice(0, FEATURE_PAINT_MAX)) {
+    const shape = paintedShape(f);
+    if (shape !== undefined) out.push(shape);
+  }
+  return out;
+}
+
+/** The table texture's data: row 0 = (x, z, radius, kind) per feature, kind
+ * 1 peak / 2 meadow / 3 lake, 0 = empty, a lake's entry its shape's centre
+ * and bound (a pond with no shape, or an unbounded one, is left empty); row 1 texel 0 = (treeline
+ * height, treeline band, meadow rim, pond shore) and row 1 TEXEL 1 =
+ * (PEAK_RIM_FADE, 0, 0, 0) — a free slot in the row the shared constants
+ * already live in, read as `fRim.x` by the shader (the peak's radial fade is
+ * the fifth shared constant and there was no room left in texel 0); rows 2 on,
+ * the shore atlas (`shoreAtlas.ts`), one shore distance a texel in the red
+ * channel. The treeline height is `treelineOf(peak)` — the same function
+ * `features.ts` exports for it. With NO PEAK among the first
+ * `FEATURE_PAINT_MAX` entries the treeline reads 0 and is never used — the
+ * rock term only runs for a `kind == peak` entry. */
+export function featureTable(features: readonly Feature[], atlas: ShoreAtlas): Float32Array {
+  const t = new Float32Array(FEATURE_TEX_WIDTH * FEATURE_TEX_ROWS * 4);
   let peak: Feature | undefined;
   features.slice(0, FEATURE_PAINT_MAX).forEach((f, i) => {
+    if (f.kind === "pond") {
+      const shape = paintedShape(f);
+      if (shape === undefined) return;
+      t[i * 4] = shape.cx; t[i * 4 + 1] = shape.cz; t[i * 4 + 2] = shape.bound; t[i * 4 + 3] = 3;
+      return;
+    }
     t[i * 4] = f.x; t[i * 4 + 1] = f.z; t[i * 4 + 2] = f.radius;
-    t[i * 4 + 3] = f.kind === "peak" ? 1 : f.kind === "meadow" ? 2 : 3;
+    t[i * 4 + 3] = f.kind === "peak" ? 1 : 2;
     if (f.kind === "peak") peak = f;
   });
-  const r = FEATURE_PAINT_MAX * 4;
+  const r = FEATURE_TEX_WIDTH * 4;
   t[r] = peak === undefined ? 0 : treelineOf(peak); t[r + 1] = TREELINE_BAND; t[r + 2] = MEADOW_RIM; t[r + 3] = POND_SHORE;
   t[r + 4] = PEAK_RIM_FADE;
+  for (let k = 0; k < SHORE_ATLAS_SIZE * SHORE_ATLAS_SIZE; k++) t[(2 * FEATURE_TEX_WIDTH + k) * 4] = atlas.values[k] as number;
   return t;
 }
 
@@ -97,14 +129,15 @@ function smoothstep(e0: number, e1: number, x: number): number {
 }
 
 export function featurePaintWeights(
-  features: readonly Feature[], x: number, z: number, y: number,
+  features: readonly Feature[], atlas: ShoreAtlas, x: number, z: number, y: number,
 ): FeaturePaintWeights {
-  const t = featureTable(features);
-  const r = FEATURE_PAINT_MAX * 4;
+  const t = featureTable(features, atlas);
+  const r = FEATURE_TEX_WIDTH * 4;
   const fMeta = { x: t[r] as number, y: t[r + 1] as number, z: t[r + 2] as number, w: t[r + 3] as number };
   const fRim = { x: t[r + 4] as number };
   const count = Math.min(features.length, FEATURE_PAINT_MAX);
   let meadow = 0, shore = 0, rock = 0;
+  let fLake = 0;
   for (let fi = 0; fi < FEATURE_PAINT_MAX; fi++) {
     if (fi >= count) break;
     const f = { x: t[fi * 4] as number, y: t[fi * 4 + 1] as number, z: t[fi * 4 + 2] as number, w: t[fi * 4 + 3] as number };
@@ -113,9 +146,11 @@ export function featurePaintWeights(
       const w = 1 - smoothstep(f.z, f.z + fMeta.z, fd);
       meadow = 1 - (1 - meadow) * (1 - w);
     } else if (f.w > 2.5) {
-      let w = 1 - smoothstep(f.z + fMeta.w, f.z + fMeta.w + 2.0, fd);
-      // The bed under the water paints itself, so the shore's tint begins at the rim.
-      w *= smoothstep(f.z - 1, f.z, fd);
+      const fShore = -shoreAtlasRead(atlas.values, fLake, f.x, f.y, f.z, x, z);
+      fLake += 1;
+      let w = 1 - smoothstep(fMeta.w, fMeta.w + 2.0, fShore);
+      // The bed under the water paints itself, so the shore's tint begins at the shore.
+      w *= smoothstep(-1, 0, fShore);
       shore = 1 - (1 - shore) * (1 - w);
     } else if (f.w > 0.5) {
       const above = smoothstep(fMeta.x - fMeta.y, fMeta.x, y);
@@ -130,10 +165,11 @@ export function featurePaintWeights(
 
 export function createFeatureTexture(scene: Scene, features: readonly Feature[]): RawTexture {
   return RawTexture.CreateRGBATexture(
-    featureTable(features), FEATURE_PAINT_MAX, 2, scene,
+    featureTable(features, bakeShoreAtlas(paintedLakes(features))), FEATURE_TEX_WIDTH, FEATURE_TEX_ROWS, scene,
     false, false, Texture.NEAREST_SAMPLINGMODE, Engine.TEXTURETYPE_FLOAT,
   );
 }
+
 
 /** Declared once, both paths (a sampler cannot live in a UBO); `featureInfo`
  * (the live count) is a plain vec4 and lives beside `trailInfo` in
@@ -141,6 +177,30 @@ export function createFeatureTexture(scene: Scene, features: readonly Feature[])
 export const FEATURE_FRAGMENT_DEFS = `
 #ifdef FEATUREPAINT
 uniform sampler2D featureTex;
+// The shore atlas rides below the feature table's two rows (shoreAtlas.ts),
+// one shore distance a texel in the red channel, a 128-texel tile a lake.
+float featureShoreTexel(int u, int v) {
+  return texelFetch(featureTex, ivec2(u, v + 2), 0).r;
+}
+// The shore distance (m) at xz of the lake whose atlas tile is tile, its square
+// centred on c with half-side b: the four texels about the point blended by hand, the
+// texel coordinate held half a texel in from the tile's edges, and -1000.0
+// off the square. Its TypeScript twin is shoreAtlasRead.
+float featureShoreAt(float tile, vec2 c, float b, vec2 xz) {
+  vec2 local = (xz - (c - vec2(b))) / (2.0 * b);
+  vec2 p = clamp(local * ${SHORE_ATLAS_TILE}.0, vec2(0.5), vec2(${SHORE_ATLAS_TILE}.0 - 0.5)) - vec2(0.5)
+    + vec2(mod(tile, 2.0), floor(tile / 2.0)) * ${SHORE_ATLAS_TILE}.0;
+  vec2 i0 = floor(p);
+  vec2 f = p - i0;
+  int u0 = int(i0.x);
+  int v0 = int(i0.y);
+  int u1 = min(u0 + 1, ${SHORE_ATLAS_SIZE - 1});
+  int v1 = min(v0 + 1, ${SHORE_ATLAS_SIZE - 1});
+  float nearRow = mix(featureShoreTexel(u0, v0), featureShoreTexel(u1, v0), f.x);
+  float farRow = mix(featureShoreTexel(u0, v1), featureShoreTexel(u1, v1), f.x);
+  float inside = step(0.0, local.x) * step(0.0, local.y) * step(local.x, 1.0) * step(local.y, 1.0);
+  return mix(${SHORE_ATLAS_FAR.toFixed(1)}, mix(nearRow, farRow, f.y), inside);
+}
 #endif
 `;
 
@@ -199,19 +259,22 @@ uniform sampler2D featureTex;
 export const FEATURE_FRAGMENT_PAINT = `
 #ifdef FEATUREPAINT
 {
-  vec4 fMeta = texture2D(featureTex, vec2(0.5 / ${FEATURE_PAINT_MAX}.0, 0.75));
-  vec4 fRim = texture2D(featureTex, vec2(1.5 / ${FEATURE_PAINT_MAX}.0, 0.75));
+  vec4 fMeta = texelFetch(featureTex, ivec2(0, 1), 0);
+  vec4 fRim = texelFetch(featureTex, ivec2(1, 1), 0);
+  float fLake = 0.0;
   for (int fi = 0; fi < ${FEATURE_PAINT_MAX}; fi++) {
     if (float(fi) >= featureInfo.x) break;
-    vec4 f = texture2D(featureTex, vec2((float(fi) + 0.5) / ${FEATURE_PAINT_MAX}.0, 0.25));
+    vec4 f = texelFetch(featureTex, ivec2(fi, 0), 0);
     float fd = length(vPositionW.xz - f.xy);
     if (f.w > 1.5 && f.w < 2.5) {
       float meadow = 1.0 - smoothstep(f.z, f.z + fMeta.z, fd);
       surfaceAlbedo *= mix(vec3(1.0), vec3(0.92, 1.06, 0.82), meadow * 0.5);
     } else if (f.w > 2.5) {
-      float shore = 1.0 - smoothstep(f.z + fMeta.w, f.z + fMeta.w + 2.0, fd);
-      // The bed under the water paints itself, so the shore's tint begins at the rim.
-      shore *= smoothstep(f.z - 1.0, f.z, fd);
+      float fShore = -featureShoreAt(fLake, f.xy, f.z, vPositionW.xz);
+      fLake += 1.0;
+      float shore = 1.0 - smoothstep(fMeta.w, fMeta.w + 2.0, fShore);
+      // The bed under the water paints itself, so the shore's tint begins at the shore.
+      shore *= smoothstep(-1.0, 0.0, fShore);
       surfaceAlbedo *= mix(vec3(1.0), vec3(0.85, 0.78, 0.70), shore * 0.8);
     } else if (f.w > 0.5) {
       float above = smoothstep(fMeta.x - fMeta.y, fMeta.x, vPositionW.y);

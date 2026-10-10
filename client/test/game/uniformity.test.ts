@@ -190,9 +190,10 @@ describe("WGSL's uniformity analysis and the game's shaders", () => {
     expect(found).toEqual({
       // The finish pass's peripheral echo, under `mask > 0.0` (§6.1).
       "post.finish": ["textureSampler"],
-      // The ground blend's parallax and relief gates, and the road, trail and
-      // feature paints (`TERRAIN_UNIFORMITY_OFF`).
-      terrain: ["featureTex", "roadAsphalt", "terrainFloor", "terrainNormals", "terrainPebble", "terrainRAH", "trailSegs"],
+      // The ground blend's parallax and relief gates, and the road and trail
+      // paints (`TERRAIN_UNIFORMITY_OFF`). The feature paint reads its table
+      // and the shore atlas by `texelFetch`, which takes no derivative.
+      terrain: ["roadAsphalt", "terrainFloor", "terrainNormals", "terrainPebble", "terrainRAH", "trailSegs"],
     });
   });
 
