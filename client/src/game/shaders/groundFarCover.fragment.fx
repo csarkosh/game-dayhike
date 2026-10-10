@@ -17,10 +17,25 @@ const vec2 FAR_COVER_BAND = vec2(14.4, 18.0);
 const vec2 FAR_COVER_BAND = vec2(24.0, 30.0);
 #endif
 const vec2 FAR_SWARD_COVER = vec2(0.05, 0.5);
-const float FAR_SWARD_MAX = 0.8;
-const vec3 FAR_SWARD = vec3(0.049, 0.081, 0.032);
+// Fitted 2026-10-10: Full pull toward the far target. With the pull at 0.8 a
+// fifth of the ground's own colour stays, and at the meadow pose at noon that
+// fifth with the sky's light already matched the card band, so no colour could
+// land the far floor on its target. At 1.0 the fit lands within 1 % of the
+// band.
+const float FAR_SWARD_MAX = 1.0;
+// Fitted 2026-10-10: At the meadow pose at noon the far crops read Y 0.03845
+// against the card band's 0.03819, chroma 0.2126 against 0.2145.
+const vec3 FAR_SWARD = vec3(0.0073, 0.0258, 0.0055);
+// Fitted 2026-10-10: Kept at its start: the canopy fit reached its target
+// through the canopy shade alone, and the litter share along the far crops was
+// not read from the simulation.
 const vec3 FAR_LITTER = vec3(0.081, 0.057, 0.032);
-const float FAR_CANOPY_SHADE = 0.5;
+// Fitted 2026-10-10: At the canopy pose at noon the far crops read Y 0.02564
+// against the card band's 0.02564. At the canopy pose at 16:00 far over near
+// reached 0.77 with the cut at 0.25 and the colour at its +10 % edge, short of
+// 0.8. The canopy far crops' chroma reads 0.23 of the band's because those
+// crops carry trunks and fog.
+const float FAR_CANOPY_SHADE = 0.4615;
 const vec2 FAR_CLUMP_CELL = vec2(0.8, 3.0);
 const vec2 FAR_CLUMP_WEIGHT = vec2(0.6, 0.4);
 const vec2 FAR_CLUMP_SALT = vec2(41.0, 17.0);
@@ -28,7 +43,9 @@ const float FAR_CLUMP_WRAP = 97.0;
 const float FAR_CLUMP_AO = 0.65;
 const float FAR_CLUMP_TILT = 0.67;
 const float FAR_COVER_TILT = 0.3;
-const float FAR_SPEC_CUT = 0.5;
+// Fitted 2026-10-10: At the canopy pose at 16:00 far over near is 0.77 at a cut
+// of 0.25.
+const float FAR_SPEC_CUT = 0.25;
 
 // The far cover's weight in [0, 1]: any cover the near field draws, grass or
 // litter, ramped in over the tier's band of eye distance. Mirrors

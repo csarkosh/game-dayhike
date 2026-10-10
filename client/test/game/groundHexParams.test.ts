@@ -150,7 +150,7 @@ describe("the far cover", () => {
     expect(FAR_COVER_BAND).toEqual([24, 30]);
     expect(FAR_COVER_BAND_LOW).toEqual([14.4, 18]);
     expect(FAR_SWARD_COVER).toEqual([0.05, 0.5]);
-    expect(FAR_SWARD_MAX).toBe(0.8);
+    expect(FAR_SWARD_MAX).toBe(1);
     expect(FAR_CLUMP_CELL).toEqual([0.8, 3]);
     expect(FAR_CLUMP_WEIGHT).toEqual([0.6, 0.4]);
     expect(FAR_CLUMP_SALT).toEqual([41, 17]);
@@ -162,11 +162,11 @@ describe("the far cover", () => {
   }, timeLimit(5_000));
 
   it("carries the fitted values as literals", () => {
-    expect(FAR_SWARD).toEqual({ r: 0.049, g: 0.081, b: 0.032 });
+    expect(FAR_SWARD).toEqual({ r: 0.0073, g: 0.0258, b: 0.0055 });
     expect(FAR_LITTER).toEqual({ r: 0.081, g: 0.057, b: 0.032 });
-    expect(FAR_CANOPY_SHADE).toBe(0.5);
-    expect(FAR_SELF_SHADOW).toBe(0.5);
-    expect(FAR_SPEC_CUT).toBe(0.5);
+    expect(FAR_CANOPY_SHADE).toBe(0.4615);
+    expect(FAR_SELF_SHADOW).toBe(0.8);
+    expect(FAR_SPEC_CUT).toBe(0.25);
   }, timeLimit(5_000));
 
   it("weighs any cover, grass or litter, over the band of eye distance", () => {
@@ -284,39 +284,39 @@ describe("the far cover", () => {
   it("mixes the target from the sward and the litter, shaded by the canopy and darkened in the clumps' troughs", () => {
     const white = { r: 1, g: 1, b: 1 };
     const sward = farCoverTarget(0, 0, white, 1);
-    expect(sward.r).toBeCloseTo(0.049, 12);
-    expect(sward.g).toBeCloseTo(0.081, 12);
-    expect(sward.b).toBeCloseTo(0.032, 12);
+    expect(sward.r).toBeCloseTo(0.0073, 12);
+    expect(sward.g).toBeCloseTo(0.0258, 12);
+    expect(sward.b).toBeCloseTo(0.0055, 12);
     // FAR_LITTER × (1 − FAR_CANOPY_SHADE).
     const litter = farCoverTarget(1, 1, white, 1);
-    expect(litter.r).toBeCloseTo(0.0405, 12);
-    expect(litter.g).toBeCloseTo(0.0285, 12);
-    expect(litter.b).toBeCloseTo(0.016, 12);
+    expect(litter.r).toBeCloseTo(0.0436185, 12);
+    expect(litter.g).toBeCloseTo(0.0306945, 12);
+    expect(litter.b).toBeCloseTo(0.017232, 12);
     // FAR_SWARD × FAR_CLUMP_AO.
     const trough = farCoverTarget(0, 0, white, 0);
-    expect(trough.r).toBeCloseTo(0.03185, 12);
-    expect(trough.g).toBeCloseTo(0.05265, 12);
-    expect(trough.b).toBeCloseTo(0.0208, 12);
+    expect(trough.r).toBeCloseTo(0.004745, 12);
+    expect(trough.g).toBeCloseTo(0.01677, 12);
+    expect(trough.b).toBeCloseTo(0.003575, 12);
     // Litter and canopy beyond 1 are clamped.
     const over = farCoverTarget(2, 2, white, 1);
-    expect(over.r).toBeCloseTo(0.0405, 12);
-    expect(over.g).toBeCloseTo(0.0285, 12);
-    expect(over.b).toBeCloseTo(0.016, 12);
+    expect(over.r).toBeCloseTo(0.0436185, 12);
+    expect(over.g).toBeCloseTo(0.0306945, 12);
+    expect(over.b).toBeCloseTo(0.017232, 12);
   }, timeLimit(5_000));
 
   it("answers the sun as the cards do: brighter with the sun behind the eye, darker with it ahead, capped where it grazes", () => {
     // The 29° sun behind the eye: gain 1.476, near-full hot spot.
-    expect(farSunFactor(0.716, 0.485, 0.899, 1)).toBeCloseTo(1.4017360824742269, 9);
+    expect(farSunFactor(0.716, 0.485, 0.899, 1)).toBeCloseTo(1.4464676288659795, 9);
     // Ahead of the eye: the self-shadow alone.
-    expect(farSunFactor(0.716, 0.485, -0.848, 1)).toBeCloseTo(0.7381443298969073, 9);
+    expect(farSunFactor(0.716, 0.485, -0.848, 1)).toBeCloseTo(1.1810309278350517, 9);
     // Grazing the ground: the gain capped at FAR_SUN_GAIN_MAX.
-    expect(farSunFactor(0.37, 0.087, 0.9, 1)).toBeCloseTo(1.9, 12);
+    expect(farSunFactor(0.37, 0.087, 0.9, 1)).toBeCloseTo(1.96, 12);
   }, timeLimit(5_000));
 
   it("cuts the specular weight by FAR_SPEC_CUT on dry ground and gives it back as the ground wets", () => {
-    expect(farSpecWeight(1, 0)).toBeCloseTo(0.5, 12);
+    expect(farSpecWeight(1, 0)).toBeCloseTo(0.75, 12);
     // The mist preset's wetness, 0.5.
-    expect(farSpecWeight(1, 0.5)).toBeCloseTo(0.75, 12);
-    expect(farSpecWeight(0.5, 0.5)).toBeCloseTo(0.875, 12);
+    expect(farSpecWeight(1, 0.5)).toBeCloseTo(0.875, 12);
+    expect(farSpecWeight(0.5, 0.5)).toBeCloseTo(0.9375, 12);
   }, timeLimit(5_000));
 });

@@ -54,9 +54,10 @@ const PINS: Record<string, string> = {
   // tint's one added line in `featurePaint.ts`, which begins it at the lake's
   // rim (the bed under the water paints itself); the foliage plugin for reeds
   // is the tree's text and interface.
-  // The far ground's cover is taken out before hashing (`withoutFarCover`), so
-  // the pin is still the text before it.
-  "terrain.fragment": "393cbde35c652291d03850619cfdf4b67c6065aac4e84e87c4f9e865ffd71e10",
+  // Re-pinned for the far ground's cover (terrainTexture.ts,
+  // groundFarCover.fragment.fx, the road's and the trail's paint weights); the
+  // test below shows it is the whole difference.
+  "terrain.fragment": "30628f4c2d44dac83d4d1089653effc2828d9c4ceb358db3521603ac6471d003",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
 };
@@ -129,7 +130,7 @@ describe("WebGL2's shader text", () => {
     const texts = pluginTexts();
     expect(Object.keys(texts).sort()).toEqual(Object.keys(PINS).sort());
     for (const [key, text] of Object.entries(texts)) {
-      expect(sha(key === "terrain.fragment" ? withoutFarCover(withoutRipples(text)) : text), key).toBe(PINS[key]);
+      expect(sha(key === "terrain.fragment" ? withoutRipples(text) : text), key).toBe(PINS[key]);
     }
   });
 
@@ -151,6 +152,11 @@ describe("WebGL2's shader text", () => {
     expect(base).not.toContain("tRipple");
     expect(sha(base)).toBe("fd74235171f3b423ebdc8126972fa2ca1b6aee08fba3eef1a0cca297e4d21669");
   });
+
+  it("takes the far cover out and gets the text before it", () => {
+    const text = pluginTexts()["terrain.fragment"] as string;
+    expect(sha(withoutFarCover(withoutRipples(text)))).toBe("393cbde35c652291d03850619cfdf4b67c6065aac4e84e87c4f9e865ffd71e10");
+  }, timeLimit(20_000));
 
   it("keeps every plugin's uniforms, samplers, attributes and defines what they were", () => {
     const texts = pluginInterfaces();

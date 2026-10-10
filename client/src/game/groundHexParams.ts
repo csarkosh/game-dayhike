@@ -180,18 +180,28 @@ export const FAR_COVER_BAND: readonly [number, number] = [24, 30];
 export const FAR_COVER_BAND_LOW: readonly [number, number] = [14.4, 18];
 /** The cover key (grass plus litter, clamped) the weight ramps over. */
 export const FAR_SWARD_COVER: readonly [number, number] = [0.05, 0.5];
-/** The pull toward the far target at full weight. */
-export const FAR_SWARD_MAX = 0.8;
-/** The sward as the cards render it (linear albedo). Start: the grass palette
- * (0.09, 0.15, 0.06) × 0.54, its hue kept and its value set by the cards'
- * reading against the far floor. */
-export const FAR_SWARD: Rgb = { r: 0.049, g: 0.081, b: 0.032 };
-/** The litter as the near field renders it (linear albedo). Start: the needle
- * bed (0.15, 0.105, 0.06) × the same 0.54. */
+/** The pull toward the far target at full weight. Fitted 2026-10-10: with the
+ * pull at 0.8 a fifth of the ground's own colour stays, and at the meadow pose
+ * at noon that fifth with the sky's light already matched the card band, so no
+ * colour could land the far floor on its target. At 1.0 the fit lands within
+ * 1 % of the band. */
+export const FAR_SWARD_MAX = 1;
+/** The sward as the cards render it (linear albedo). Fitted 2026-10-10: at the
+ * meadow pose at noon the far crops read Y 0.03845 against the card band's
+ * 0.03819, chroma 0.2126 against 0.2145. */
+export const FAR_SWARD: Rgb = { r: 0.0073, g: 0.0258, b: 0.0055 };
+/** The litter as the near field renders it (linear albedo). Fitted 2026-10-10:
+ * kept at its start, the needle bed (0.15, 0.105, 0.06) × 0.54: the canopy fit
+ * reached its target through the canopy shade alone, and the litter share along
+ * the far crops was not read from the simulation. */
 export const FAR_LITTER: Rgb = { r: 0.081, g: 0.057, b: 0.032 };
-/** The target × (1 − FAR_CANOPY_SHADE × ρ), ρ the forest density. Start: the
- * cards' own 0.5. */
-export const FAR_CANOPY_SHADE = 0.5;
+/** The target × (1 − FAR_CANOPY_SHADE × ρ), ρ the forest density. Fitted
+ * 2026-10-10: at the canopy pose at noon the far crops read Y 0.02564 against
+ * the card band's 0.02564. At the canopy pose at 16:00 far over near reached
+ * 0.77 with the cut at 0.25 and the colour at its +10 % edge, short of 0.8. The
+ * canopy far crops' chroma reads 0.23 of the band's because those crops carry
+ * trunks and fog. */
+export const FAR_CANOPY_SHADE = 0.4615;
 /** The clumps' two octaves: tussocks and patches (m), their shares, and the
  * 3 m octave's lattice offset so the two are not aligned. */
 export const FAR_CLUMP_CELL: readonly [number, number] = [0.8, 3];
@@ -208,12 +218,15 @@ export const FAR_CLUMP_TILT = 0.67;
  * meadow cards' mean normal turned to the viewer, 16.7°. */
 export const FAR_COVER_TILT = 0.3;
 /** The share of the cover's sunlit surface the eye sees with the sun to the
- * side or ahead; all of it with the sun straight behind. Start: 0.5. */
-export const FAR_SELF_SHADOW = 0.5;
+ * side or ahead; all of it with the sun straight behind. Fitted 2026-10-10: at
+ * the meadow pose at 16:00 the far crops read Y 0.05649 against the card band's
+ * 0.07344, with the self-shadow at its 0.8 ceiling. */
+export const FAR_SELF_SHADOW = 0.8;
 /** The cap on the cover's gain over the ground's own N·L, where the sun grazes. */
 export const FAR_SUN_GAIN_MAX = 2;
-/** The specular weight's cut at full weight on dry ground. Start: 0.5. */
-export const FAR_SPEC_CUT = 0.5;
+/** The specular weight's cut at full weight on dry ground. Fitted 2026-10-10:
+ * at the canopy pose at 16:00 far over near is 0.77 at a cut of 0.25. */
+export const FAR_SPEC_CUT = 0.25;
 
 /** GLSL's mod: never negative for a positive divisor. */
 function glslMod(x: number, y: number): number {

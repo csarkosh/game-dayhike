@@ -43,7 +43,7 @@ import { fileURLToPath } from "node:url";
 
 /** The cover's factor on the sun's diffuse line, as the line carries it. */
 const FAR_SUN_FACTOR =
-  "*mix(1.0,min(clamp(dot(terrainFarN,preInfo.L),0.0,1.0)/preInfo.NdotL,2.0)*mix(0.5,1.0,clamp(dot(viewDirectionW,preInfo.L),0.0,1.0)),terrainFarW)";
+  "*mix(1.0,min(clamp(dot(terrainFarN,preInfo.L),0.0,1.0)/preInfo.NdotL,2.0)*mix(0.8,1.0,clamp(dot(viewDirectionW,preInfo.L),0.0,1.0)),terrainFarW)";
 
 let engine: NullEngine;
 let scene: Scene;
