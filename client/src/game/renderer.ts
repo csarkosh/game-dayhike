@@ -914,7 +914,7 @@ function frozenThrough<T extends object>(value: T): T {
 /** What a world without the lake's life sounds like, and a frame that did
  * not step it: nothing. Frozen through, as every caller is handed this one
  * object. */
-const SILENT_WATER_LIFE: WaterLifeSound = frozenThrough({
+export const SILENT_WATER_LIFE: WaterLifeSound = frozenThrough({
   hums: [], hums_n: 0, pitch: 0, rustles: [], frogCalls: [],
   bed: { level: 0, duck: [1, 1], points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
 });
@@ -2628,13 +2628,16 @@ function buildRenderer(
   const skylineShade: [number, number, number] = [0, 0, 0];
   const mirrorColour = new Color3(0, 0, 0);
   /**
-   * The lake's surface and reflection for the frame (`lakeCalm.ts`): the
+   * The lakes' surfaces and reflections for the frame (`lakeCalm.ts`): the
    * calm share at the hour under the preset (through a fade), the surface
-   * rough or not, the cat's-paws' cover and the smear at their edge; on high
-   * the mirror armed when the lake's disc is in this frame's view of an `eye`
-   * (false with no local player) and the glass shows, drawn this frame or
-   * every third, and the weight 0 in any frame it is not armed (its image is
-   * up to two frames stale); on
+   * rough or not, the cat's-paws' cover and the smear at their edge, for
+   * each lake with its own shelter; the mirror and the panorama moved to the
+   * lake served (`lakeChoice.ts`), the old lake's material letting go of
+   * both first; on high the mirror armed when the served lake's water is in
+   * this frame's view of an `eye` (`lakeView.ts`; false with no local
+   * player) and the glass shows, drawn this frame or every third, and the
+   * weight 0 in any frame it is not armed (its image is up to two frames
+   * stale) and on every other lake; on
    * medium the panorama re-armed whenever the lighting hands over a new sky
    * state (the probe re-armed with it), and whenever content lands late and
    * its target is then ready to render (at first, the forest's first fill
@@ -2643,7 +2646,8 @@ function buildRenderer(
    * skyline's forest colour from the sky, raw (the shader scales it). After
    * the camera is placed for the frame, in both branches, so a pass that
    * draws is from this frame's view and one that holds is at most two frames
-   * behind it; nothing without a lake.
+   * behind it; nothing without a lake. Each lake's skyline on its own
+   * material.
    */
   function updateLake(weather: WeatherParams, sky: SkyState | null, eye: boolean): void {
     if (lakePlugins.length === 0) return;

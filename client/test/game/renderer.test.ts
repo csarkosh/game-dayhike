@@ -258,6 +258,7 @@ import {
   lakeCalmUnder,
   lakeMirrorColourOf,
   pixelAtOneMetre,
+  SILENT_WATER_LIFE,
   skyLumaOf,
   terrainMaterialFor,
   writeListenerPose,
@@ -1891,6 +1892,7 @@ describe("the lake's reflection in a renderer", () => {
       renderer.setFreecam(shore(WEST));
       renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
       const near = renderer.waterLifeSound();
+      expect(near).not.toBe(SILENT_WATER_LIFE);
       expect(read.mock.calls).toHaveLength(1);
       // Over the second lake, 594.7 m past the first's bound: the first's
       // material lets the panorama go and the second's reads it, its eye moved there.
@@ -1902,6 +1904,7 @@ describe("the lake's reflection in a renderer", () => {
       expect(renderer.scene.getCameraByName("lake_panorama_cam")!.position.x).toBe(lake.x + 700);
       // The life heard is the second lake's own.
       expect(renderer.waterLifeSound()).not.toBe(near);
+      expect(renderer.waterLifeSound()).not.toBe(SILENT_WATER_LIFE);
     } finally {
       renderer.dispose();
     }

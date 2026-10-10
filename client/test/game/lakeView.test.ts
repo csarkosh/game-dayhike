@@ -66,10 +66,33 @@ describe("a lake in a camera's view", { timeout: timeLimit(30_000) }, () => {
     expect(look(camera, mesh, new Vector3(30, 2, -30), new Vector3(0, 0, 0))).toBe(true);
   });
 
-  it("reads the lake in view from over the water with no shore point in view", () => {
+  it("reads the lake in view from over the water with no shore point in view and its centre ray level", () => {
     const { camera, mesh } = setUp();
-    // 2 m over the spine looking at the water at its feet, away from the near shore.
-    expect(look(camera, mesh, new Vector3(0, 2, 0), new Vector3(0.5, -10, -0.5))).toBe(true);
+    camera.fov = 0.2;
+    // 2 m over the spine, looking level across the lake: its shore 8 m off lies 14 degrees
+    // down, under a 5.7-degree half-lens, and the centre ray never meets the water.
+    expect(look(camera, mesh, new Vector3(0, 2, 0), new Vector3(60, 2, -60))).toBe(true);
+  });
+
+  it("reads the lake in view down a narrow lens's centre ray on open water between its shore points, and out of view on the bank", () => {
+    const { camera, mesh } = setUp();
+    camera.fov = 0.2;
+    // Across the spine, 20 m out on the bank and 10 m up: 12 m from the near shore.
+    const out = new Vector3(1, 0, -1).normalize();
+    const from = out.scale(20).add(new Vector3(0, 10, 0));
+    // The water 6 m in from the near shore: both shores 9 to 11 degrees off a 5.7-degree half-lens.
+    expect(look(camera, mesh, from, out.scale(2))).toBe(true);
+    const planes = newLakeViewPlanes();
+    Frustum.GetPlanesToRef(camera.getTransformationMatrix(), planes);
+    const points = lakeViewPoints(DIAGONAL, 0);
+    let seen = 0;
+    for (let k = 0; k < points.length; k += 3) {
+      if (Frustum.IsPointInFrustum(new Vector3(points[k], points[k + 1], points[k + 2]), planes)) seen += 1;
+    }
+    expect(seen).toBe(0);
+    // Pitched to the bank 6 m short of the near shore.
+    expect(look(camera, mesh, from, out.scale(14))).toBe(false);
+    expect(camera.isInFrustum(mesh)).toBe(true);
   });
 
   it("reads the lake out of view without a point test once its box is out of the frustum", () => {

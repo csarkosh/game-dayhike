@@ -4,18 +4,20 @@
  * (`lakeSurface`), and the box of a bent or diagonal lake is mostly bank: a
  * camera on the bank inside that box, facing away from the water, reads the
  * box in its frustum. So the box is only a cheap first test; past it the lake
- * is in view when a point of its shore at its level lies inside all six of
- * the frustum's planes, or when the camera stands over the water.
+ * is in view when the camera stands over the water, when the view's centre
+ * ray meets the lake's level over water (a narrow lens, or a steep look at a
+ * strip of water between two shore points), or when a point of its shore at
+ * its level lies inside all six of the frustum's planes.
  *
- * The points are made once a lake at load (`lakeViewPoints`), the planes and
- * the scratch vector once (`newLakeViewPlanes`): `lakeInView` allocates
- * nothing.
+ * The points are made once a lake at load (`lakeViewPoints`), the planes once
+ * (`newLakeViewPlanes`), the scratch vector once by the caller: `lakeInView`
+ * allocates nothing.
  */
 import type { Camera } from "@babylonjs/core/Cameras/camera.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
 import { Plane } from "@babylonjs/core/Maths/math.plane.js";
-import type { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { lakeOutline, lakeShoreInto, newLakeShore, type LakeShape } from "../sim/lakeShape.js";
 
 /** The shore's march step (m); every other point is kept, so the points stand about twice this apart. */
@@ -39,20 +41,28 @@ export function newLakeViewPlanes(): Plane[] {
   return [0, 1, 2, 3, 4, 5].map(() => new Plane(0, 0, 0, 0));
 }
 
-/** The shore read at the camera's place, reused. */
+/** The shore read at the camera's place and down its centre ray, reused. */
 const SHORE = newLakeShore();
+/** The camera's forward axis in its own frame, left- and right-handed. */
+const FORWARD_LH = new Vector3(0, 0, 1);
+const FORWARD_RH = new Vector3(0, 0, -1);
 
 /**
  * Whether the lake is in `camera`'s view this frame: its mesh's box in the
  * frustum (the camera's matrices and the mesh's world matrix already current),
- * and then the camera over the water, or a shore point inside every plane.
- * `planes` and `scratch` are the caller's, refilled here.
+ * and then, in turn, the camera over the water, the view's centre ray meeting
+ * the lake's level over water, or a shore point inside every plane. `planes`
+ * and `scratch` are the caller's, refilled here.
  */
 export function lakeInView(
   camera: Camera, mesh: AbstractMesh, shape: LakeShape, points: Float32Array, planes: Plane[], scratch: Vector3,
 ): boolean {
   if (!camera.isInFrustum(mesh)) return false;
-  if (lakeShoreInto(SHORE, shape, camera.position.x, camera.position.z).s > 0) return true;
+  const eye = camera.position;
+  if (lakeShoreInto(SHORE, shape, eye.x, eye.z).s > 0) return true;
+  camera.getDirectionToRef(camera.getScene().useRightHandedSystem ? FORWARD_RH : FORWARD_LH, scratch);
+  const t = (shape.level - eye.y) / scratch.y;
+  if (Number.isFinite(t) && t > 0 && lakeShoreInto(SHORE, shape, eye.x + t * scratch.x, eye.z + t * scratch.z).s > 0) return true;
   Frustum.GetPlanesToRef(camera.getTransformationMatrix(), planes);
   for (let k = 0; k < points.length; k += 3) {
     scratch.set(points[k] as number, points[k + 1] as number, points[k + 2] as number);
