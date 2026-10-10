@@ -72,6 +72,7 @@ import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../sim/terrain.js";
+import { lakeShoreInto, newLakeShore, type LakeShape } from "../sim/lakeShape.js";
 import { fbm2 } from "../sim/field.js";
 import {
   createWaterRingSamples,
@@ -111,7 +112,7 @@ import {
   bedSquareHasWater,
   beginBake,
   createBedGrid,
-  POND_DISC_MARGIN,
+  LAKE_SURFACE_REACH,
   type BedBake,
 } from "./bedHeight.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
@@ -990,28 +991,28 @@ export function createPlayerSlots(count: number): PlayerSlots {
 export const LAKE_SURFACE_SPACING = 2;
 
 /**
- * One lake's surface: a flat polar grid over the lake at its level, rings from
- * the centre out to the rim plus `POND_DISC_MARGIN`, carrying the same
- * per-vertex `bedDepth` the ring meshes carry (`waterRingGeometry`), read from
- * the sim's own ground under each vertex, so the shelf, the drop and the marsh
- * draw as the sim has them. Where the ground stands above the water the
- * material discards, as it does on the sea's land. A disc, not a square: past
- * the rim the basin's apron blends back to the hillside, and on the downhill
- * side that ground lies below the lake's level, so a square's corners would
- * draw water hanging over the slope outside the lake. It carries the rings'
- * UVs, in world metres over `WATER_UV_SCALE`, so the ripple bump samples a
- * real tile and its pattern runs on from the rings'. Static: a lake's ground
- * does not scroll with the camera.
+ * One lake's surface: a flat grid every `LAKE_SURFACE_SPACING` metres over
+ * its box, at its level, keeping the squares whose four corners all lie
+ * within `LAKE_SURFACE_REACH` of its shore (s > −3, spec §10.2), carrying the
+ * same per-vertex `bedDepth` the ring meshes carry (`waterRingGeometry`),
+ * read from the sim's own ground under each vertex, so the shelf, the drop
+ * and the marsh draw as the sim has them. Where the ground stands above the
+ * water the material discards, as it does on the sea's land. The squares
+ * stop 3 m past the shore, where the bank already stands over the level, so
+ * no water hangs over the downhill apron outside the lake. It carries the
+ * rings' UVs, in world metres over `WATER_UV_SCALE`, so the ripple bump
+ * samples a real tile and its pattern runs on from the rings'. Static: a
+ * lake's ground does not scroll with the camera; built once.
  *
  * Exported so it is reachable from a test without a full `createWater` call.
  */
 export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, seed: number, index: number): Mesh {
-  const g = lakeSurfaceGrid(lake.radius + POND_DISC_MARGIN, lake.x, lake.z);
+  const g = lakeSurfaceGrid(lake.shape);
   const vertexCount = g.positions.length / 3;
   const depths = new Float32Array(vertexCount);
   for (let i = 0; i < vertexCount; i++) {
-    const wx = lake.x + (g.positions[i * 3] as number);
-    const wz = lake.z + (g.positions[i * 3 + 2] as number);
+    const wx = lake.shape.cx + (g.positions[i * 3] as number);
+    const wz = lake.shape.cz + (g.positions[i * 3 + 2] as number);
     depths[i] = Math.max(0, lake.level - elevationAt(seed, wx, wz));
   }
   const mesh = new Mesh(`pond_${index}`, scene);
@@ -1022,72 +1023,71 @@ export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, se
   data.indices = g.indices;
   data.applyToMesh(mesh, false);
   mesh.setVerticesData("bedDepth", depths, false, 1);
-  mesh.position.set(lake.x, lake.level + 0.02, lake.z);
+  mesh.position.set(lake.shape.cx, lake.level + 0.02, lake.shape.cz);
   mesh.material = mat;
   mesh.isPickable = false;
   mesh.receiveShadows = false;
   mesh.metadata = { waterLevel: lake.level };
   // Culled by its box, as the sea's rings are: the default sphere-only test
-  // keeps a disc in view from anywhere within its half-diagonal of its
+  // keeps a lake in view from anywhere within its half-diagonal of its
   // centre, looking away or not, and the lake's mirror runs only while it is.
   mesh.cullingStrategy = AbstractMesh.CULLINGSTRATEGY_STANDARD;
   mesh.freezeWorldMatrix();
   return mesh;
 }
 
-/** A lake surface's rings and segments for an outer radius `ext`: rings no
- * further apart than `LAKE_SURFACE_SPACING`, and enough segments that the
- * outer ring's chord is no longer than it. */
-export function lakeSurfaceShape(ext: number): { rings: number; segments: number } {
-  return {
-    rings: Math.ceil(ext / LAKE_SURFACE_SPACING),
-    segments: Math.ceil((2 * Math.PI * ext) / LAKE_SURFACE_SPACING),
-  };
-}
+const SURFACE_SHORE = newLakeShore();
 
-/** The flat polar grid of radius `ext`, centred on the origin: the centre
- * vertex, then each ring's segments outward; a fan round the centre, quads
- * between rings, wound as `CreateGround` winds its faces, to face up. Its UVs
- * are the rings' (`waterRingGeometry`): the vertex's world position, the grid
- * standing at (`cx`, `cz`), over `WATER_UV_SCALE`. */
-function lakeSurfaceGrid(
-  ext: number, cx: number, cz: number,
+/**
+ * A lake's surface grid, its positions relative to the shape's centre: the
+ * square of half-side `shoreMax + LAKE_SURFACE_REACH + LAKE_SURFACE_SPACING`
+ * about it every `LAKE_SURFACE_SPACING` metres, each grid square kept whose
+ * four corners lie within `LAKE_SURFACE_REACH` of the shore, the vertices the
+ * kept squares use and no others; wound as `CreateGround` winds its faces, to
+ * face up. Its UVs are the rings' (`waterRingGeometry`): the vertex's world
+ * position over `WATER_UV_SCALE`.
+ */
+export function lakeSurfaceGrid(
+  shape: LakeShape,
 ): { positions: Float32Array; normals: Float32Array; uvs: Float32Array; indices: Uint32Array } {
-  const { rings, segments } = lakeSurfaceShape(ext);
-  const vertexCount = rings * segments + 1;
-  const positions = new Float32Array(vertexCount * 3);
+  const half = shape.shoreMax + LAKE_SURFACE_REACH + LAKE_SURFACE_SPACING;
+  const n = Math.ceil((2 * half) / LAKE_SURFACE_SPACING) + 1;
+  const x0 = -half, z0 = -half;
+  const inside = new Uint8Array(n * n);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const s = lakeShoreInto(SURFACE_SHORE, shape, shape.cx + x0 + i * LAKE_SURFACE_SPACING, shape.cz + z0 + j * LAKE_SURFACE_SPACING).s;
+      inside[j * n + i] = s > -LAKE_SURFACE_REACH ? 1 : 0;
+    }
+  }
+  const index = new Int32Array(n * n).fill(-1);
+  const pos: number[] = [];
+  const tris: number[] = [];
+  const vertex = (i: number, j: number): number => {
+    const k = j * n + i;
+    if ((index[k] as number) < 0) {
+      index[k] = pos.length / 3;
+      pos.push(x0 + i * LAKE_SURFACE_SPACING, 0, z0 + j * LAKE_SURFACE_SPACING);
+    }
+    return index[k] as number;
+  };
+  for (let j = 0; j + 1 < n; j++) {
+    for (let i = 0; i + 1 < n; i++) {
+      if (!inside[j * n + i] || !inside[j * n + i + 1] || !inside[(j + 1) * n + i] || !inside[(j + 1) * n + i + 1]) continue;
+      const p00 = vertex(i, j), p10 = vertex(i + 1, j), p01 = vertex(i, j + 1), p11 = vertex(i + 1, j + 1);
+      tris.push(p00, p10, p01, p10, p11, p01);
+    }
+  }
+  const positions = Float32Array.from(pos);
+  const vertexCount = positions.length / 3;
   const normals = new Float32Array(vertexCount * 3);
   const uvs = new Float32Array(vertexCount * 2);
-  for (let v = 0; v < vertexCount; v++) normals[v * 3 + 1] = 1;
-  for (let r = 1; r <= rings; r++) {
-    const rad = (ext * r) / rings;
-    for (let s = 0; s < segments; s++) {
-      const a = (2 * Math.PI * s) / segments;
-      const v = 1 + (r - 1) * segments + s;
-      positions[v * 3] = rad * Math.cos(a);
-      positions[v * 3 + 2] = rad * Math.sin(a);
-    }
-  }
   for (let v = 0; v < vertexCount; v++) {
-    uvs[v * 2] = (cx + (positions[v * 3] as number)) / WATER_UV_SCALE;
-    uvs[v * 2 + 1] = (cz + (positions[v * 3 + 2] as number)) / WATER_UV_SCALE;
+    normals[v * 3 + 1] = 1;
+    uvs[v * 2] = (shape.cx + (positions[v * 3] as number)) / WATER_UV_SCALE;
+    uvs[v * 2 + 1] = (shape.cz + (positions[v * 3 + 2] as number)) / WATER_UV_SCALE;
   }
-  const indices = new Uint32Array(segments * 3 + (rings - 1) * segments * 6);
-  let k = 0;
-  const at = (r: number, s: number): number => 1 + (r - 1) * segments + (s % segments);
-  for (let s = 0; s < segments; s++) {
-    indices[k++] = 0;
-    indices[k++] = at(1, s);
-    indices[k++] = at(1, s + 1);
-  }
-  for (let r = 1; r < rings; r++) {
-    for (let s = 0; s < segments; s++) {
-      const a = at(r, s), b = at(r, s + 1), c = at(r + 1, s), d = at(r + 1, s + 1);
-      indices[k++] = a; indices[k++] = c; indices[k++] = b;
-      indices[k++] = b; indices[k++] = c; indices[k++] = d;
-    }
-  }
-  return { positions, normals, uvs, indices };
+  return { positions, normals, uvs, indices: Uint32Array.from(tris) };
 }
 
 /**
