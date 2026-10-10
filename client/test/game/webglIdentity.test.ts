@@ -5,7 +5,10 @@ import groundHexHead from "../../src/game/shaders/groundHex.fragment.fx?raw";
 import groundHexFetch from "../../src/game/shaders/groundHexFetch.fragment.fx?raw";
 import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
 import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
-import { terrainFarCoverDefs, TERRAIN_FRAGMENT_FAR_COVER, TERRAIN_MACRO_OCTAVES } from "../../src/game/terrainTexture.js";
+import {
+  terrainFarCoverDefs, TERRAIN_FRAGMENT_FAR_COVER, TERRAIN_MACRO_OCTAVES,
+  TERRAIN_FRAGMENT_FAR_LIGHT, TERRAIN_SPEC_INJECTION_POINT, TERRAIN_SPEC_INJECTION_CODE,
+} from "../../src/game/terrainTexture.js";
 
 const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 
@@ -104,6 +107,8 @@ function withoutFarCover(text: string): string {
     ["float terrainSpecW = 1.0;\nfloat terrainFarW = 0.0;\nfloat terrainPaintW = 0.0;\nvec3 terrainFarN = vec3(0.0, 1.0, 0.0);\n", ""],
     [TERRAIN_MACRO_OCTAVES, "  vec3 macroRgb = macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y);\n"],
     [TERRAIN_FRAGMENT_FAR_COVER, ""],
+    [TERRAIN_FRAGMENT_FAR_LIGHT, ""],
+    [`${TERRAIN_SPEC_INJECTION_POINT}\n${TERRAIN_SPEC_INJECTION_CODE}\n`, ""],
   ];
   let out = text;
   for (const [piece, was] of pieces) {

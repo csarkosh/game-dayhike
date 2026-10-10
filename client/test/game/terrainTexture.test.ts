@@ -11,8 +11,9 @@ import {
   heightBlendWeights, HEIGHT_BLEND_DEPTH, LAYER_ROUGHNESS, LAYER_F0,
   rockParallaxOffset, ROCK_PARALLAX_DEPTH, ROCK_PARALLAX_STEPS, ROCK_PARALLAX_MIN_WEIGHT,
   terrainFarCoverDefs, TERRAIN_FRAGMENT_FAR_COVER, TERRAIN_MACRO_OCTAVES, HEX_FETCH_MACROS, TERRAIN_UNIFORMITY_OFF,
+  TERRAIN_FRAGMENT_FAR_LIGHT, TERRAIN_SPEC_INJECTION_POINT, TERRAIN_SPEC_INJECTION_CODE,
 } from "../../src/game/terrainTexture.js";
-import { FEATURE_PAINT_MAX } from "../../src/game/featurePaint.js";
+import { FEATURE_FRAGMENT_PAINT, FEATURE_PAINT_MAX } from "../../src/game/featurePaint.js";
 import {
   DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   HORIZON, HORIZON_MAX, TUFT_ALBEDO, swardWeight,
@@ -25,7 +26,9 @@ import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import "../../src/sim/passes/index.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
-import { ROAD_FRAGMENT_DEFS } from "../../src/game/roadPaint.js";
+import { ROAD_FRAGMENT_DEFS, ROAD_FRAGMENT_PAINT } from "../../src/game/roadPaint.js";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
+import "@babylonjs/core/Shaders/pbr.fragment.js";
 import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -1237,6 +1240,75 @@ vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
         expect(source).toContain("terrainFarW = farCoverWeight(vTerrainCover, vTerrainW2.z, dist);");
         expect(source).toContain("float terrainFarW = 0.0;");
         expect(effect.defines).not.toContain("TERRAINFARLOW");
+      } finally {
+        s.dispose();
+        e.dispose();
+      }
+    }
+  }, timeLimit(20_000));
+
+  it("holds the far light whole and runs it last, after the road, feature and trail paints", () => {
+    expect(TERRAIN_FRAGMENT_FAR_LIGHT).toBe(`
+#ifdef TERRAINTEX
+{
+  // The far cover's light, after the paints: its weight steps aside wherever
+  // the road or the trail painted its own surface. The clumps' normal goes to
+  // every light, and the specular weight, which sets the grazing reflectance
+  // as well as F0, is cut by FAR_SPEC_CUT and given back as the ground wets.
+  // The sun's diffuse line reads terrainFarN and terrainFarW again for the
+  // cover's own answer to the sun.
+  terrainFarW *= 1.0 - terrainPaintW;
+  if (terrainFarW > 0.0) {
+    normalW = normalize(mix(normalW, terrainFarN, terrainFarW));
+    vec3 fcEye = vec3(viewDirectionW.x, 0.0, viewDirectionW.z);
+    fcEye /= max(length(fcEye), 1e-4);
+    terrainFarN = normalize(normalW + fcEye * FAR_COVER_TILT);
+    terrainSpecW = 1.0 - FAR_SPEC_CUT * terrainFarW * (1.0 - terrainWet);
+  }
+}
+#endif
+`);
+    const lights = pluginFor("fc6").getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    expect(lights.endsWith(TRAIL_FRAGMENT_PAINT + TERRAIN_FRAGMENT_FAR_LIGHT)).toBe(true);
+    expect(lights.indexOf(TERRAIN_FRAGMENT_FAR_COVER)).toBeLessThan(lights.indexOf(ROAD_FRAGMENT_PAINT));
+    expect(lights.indexOf(ROAD_FRAGMENT_PAINT)).toBeLessThan(lights.indexOf(FEATURE_FRAGMENT_PAINT));
+    expect(lights.indexOf(FEATURE_FRAGMENT_PAINT)).toBeLessThan(lights.indexOf(TRAIL_FRAGMENT_PAINT));
+  }, timeLimit(5_000));
+
+  it("cuts the specular weight through a rewrite that matches Babylon's PBR fragment once", () => {
+    expect(TERRAIN_SPEC_INJECTION_POINT).toBe("!vec4 metallicReflectanceFactors=vMetallicReflectanceFactors;");
+    expect(TERRAIN_SPEC_INJECTION_CODE).toBe(
+      "vec4 metallicReflectanceFactors=vec4(vMetallicReflectanceFactors.rgb,vMetallicReflectanceFactors.a*terrainSpecW);",
+    );
+    const pbr = ShaderStore.ShadersStore["pbrPixelShader"] as string;
+    expect(pbr.match(new RegExp(TERRAIN_SPEC_INJECTION_POINT.slice(1), "g"))).toHaveLength(1);
+    const frag = pluginFor("fc7").getCustomCode("fragment")!;
+    expect(frag[TERRAIN_SPEC_INJECTION_POINT]).toBe(TERRAIN_SPEC_INJECTION_CODE);
+    // The reflectivity rewrite stays the first regex key.
+    expect(Object.keys(frag).filter((k) => k.startsWith("!"))[0]).toBe("!reflectivityBlock\\(\\s*vReflectivityColor");
+  }, timeLimit(5_000));
+
+  it("adds no uniform: the plugin's UBO list is the 22 names it had", () => {
+    expect(pluginFor("fc8").getUniforms().ubo.map((u) => u.name)).toEqual([
+      "terrainTiling", "terrainRock2", "terrainFade", "terrainEye", "roadTable", "trailInfo", "terrainWet",
+      "terrainRain", "terrainTime", "featureInfo", "terrainLayerRough", "terrainLayerRough2", "terrainLayerF0",
+      "terrainLayerF02", "terrainReliefOn", "terrainDetail", "terrainDetail2", "terrainMacroOn", "terrainHorizon",
+      "terrainTuft", "terrainSward", "terrainSwardBand",
+    ]);
+  }, timeLimit(5_000));
+
+  it("compiles the specular rewrite and the far light on both uniform paths", async () => {
+    for (const ubo of [false, true]) {
+      const e = engineOn(ubo);
+      const s = new Scene(e);
+      try {
+        const { effect } = await compiledTerrain(s);
+        const source = effect.fragmentSourceCode;
+        expect(effect.defines).toContain("#define METALLICWORKFLOW\n");
+        expect(source.split(TERRAIN_SPEC_INJECTION_CODE).length - 1).toBe(1);
+        expect(source).not.toContain("vec4 metallicReflectanceFactors=vMetallicReflectanceFactors;");
+        expect(source).toContain("terrainSpecW = 1.0 - FAR_SPEC_CUT * terrainFarW * (1.0 - terrainWet);");
+        expect(source.indexOf("terrainFarW *= 1.0 - terrainPaintW;")).toBeLessThan(source.indexOf(TERRAIN_SPEC_INJECTION_CODE));
       } finally {
         s.dispose();
         e.dispose();

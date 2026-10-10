@@ -701,6 +701,51 @@ ${TERRAIN_FRAGMENT_FAR_COVER}  // Roughness: the blended per-layer base,
 #endif
 `;
 
+/**
+ * The far cover's light, after the road, feature and trail paints in
+ * CUSTOM_FRAGMENT_BEFORE_LIGHTS. Its weight steps aside by `terrainPaintW`,
+ * which the road and the trail write where they paint their own surface, so
+ * the asphalt, the bench and the puddles keep the normal and reflectance they
+ * set, and at their soft edges the hand-off is continuous. The clumps' normal
+ * goes to every light and the image-based light; `terrainFarN` is then leaned
+ * toward the eye by FAR_COVER_TILT for the sun's diffuse line; the specular
+ * weight is cut by FAR_SPEC_CUT and given back as the ground wets. Where the
+ * weight is 0 nothing is written, so the ground inside the band is what it
+ * was.
+ */
+export const TERRAIN_FRAGMENT_FAR_LIGHT = `
+#ifdef TERRAINTEX
+{
+  // The far cover's light, after the paints: its weight steps aside wherever
+  // the road or the trail painted its own surface. The clumps' normal goes to
+  // every light, and the specular weight, which sets the grazing reflectance
+  // as well as F0, is cut by FAR_SPEC_CUT and given back as the ground wets.
+  // The sun's diffuse line reads terrainFarN and terrainFarW again for the
+  // cover's own answer to the sun.
+  terrainFarW *= 1.0 - terrainPaintW;
+  if (terrainFarW > 0.0) {
+    normalW = normalize(mix(normalW, terrainFarN, terrainFarW));
+    vec3 fcEye = vec3(viewDirectionW.x, 0.0, viewDirectionW.z);
+    fcEye /= max(length(fcEye), 1e-4);
+    terrainFarN = normalize(normalW + fcEye * FAR_COVER_TILT);
+    terrainSpecW = 1.0 - FAR_SPEC_CUT * terrainFarW * (1.0 - terrainWet);
+  }
+}
+#endif
+`;
+
+/**
+ * The specular weight's rewrite. Babylon 9.18's terrain stages take the
+ * legacy path, where `metallicReflectanceFactors.a` is the material's
+ * specular weight and sets the grazing reflectance F90 as well as F0, so
+ * scaling it by `terrainSpecW` lowers both; the per-layer F0 in the
+ * reflectivity rewrite does not reach F90. Matches once, inside the metallic
+ * workflow's branch of the PBR fragment, which the terrain compiles.
+ */
+export const TERRAIN_SPEC_INJECTION_POINT = "!vec4 metallicReflectanceFactors=vMetallicReflectanceFactors;";
+export const TERRAIN_SPEC_INJECTION_CODE =
+  "vec4 metallicReflectanceFactors=vec4(vMetallicReflectanceFactors.rgb,vMetallicReflectanceFactors.a*terrainSpecW);";
+
 export class TerrainTexturePlugin extends MaterialPluginBase {
   private readonly _scene: Scene;
   private readonly _grass: Texture;
@@ -1111,7 +1156,10 @@ uniform vec4 terrainSwardBand;
         // place a trail is built to reach — is what wins where the two
         // overlap, so a trail crossing a meadow keeps its dirt and gravel
         // rather than fading into grass tint.
-        CUSTOM_FRAGMENT_BEFORE_LIGHTS: TERRAIN_FRAGMENT_BLEND + ROAD_FRAGMENT_PAINT + FEATURE_FRAGMENT_PAINT + TRAIL_FRAGMENT_PAINT,
+        // The far cover's light comes last, after every paint has written
+        // its share to terrainPaintW.
+        CUSTOM_FRAGMENT_BEFORE_LIGHTS:
+          TERRAIN_FRAGMENT_BLEND + ROAD_FRAGMENT_PAINT + FEATURE_FRAGMENT_PAINT + TRAIL_FRAGMENT_PAINT + TERRAIN_FRAGMENT_FAR_LIGHT,
         // Plugin regex key: rewrite the reflectivity call's first argument so
         // roughness (.g) and F0 (.a) vary per fragment. Babylon
         // 9.18's vReflectivityColor is (metallic, roughness, ior, f0) in the
@@ -1120,6 +1168,8 @@ uniform vec4 terrainSwardBand;
         // in Babylon's real PBR fragment source.
         "!reflectivityBlock\\(\\s*vReflectivityColor":
           "reflectivityBlock(\nvec4(vReflectivityColor.r, vReflectivityColor.g * terrainRough, vReflectivityColor.b, vReflectivityColor.a * terrainF0)",
+        // The far cover's specular cut, on the specular weight (F0 and F90).
+        [TERRAIN_SPEC_INJECTION_POINT]: TERRAIN_SPEC_INJECTION_CODE,
       };
     }
     return null;

@@ -99,4 +99,12 @@ describe("the terrain's stages with the far cover, through glslang and twgsl", (
     expect(t.wgslFragment).toMatch(/fn farClump_/);
     expect(t.wgslVertex).toContain("@vertex");
   }, timeLimit(60_000));
+
+  it("compiles the specular rewrite and the far light", async () => {
+    const t = await terrainStages(translators);
+    expect(t.fragment.split("vec4 metallicReflectanceFactors=vec4(vMetallicReflectanceFactors.rgb,vMetallicReflectanceFactors.a*terrainSpecW);").length - 1).toBe(1);
+    expect(t.fragment).toContain("terrainFarW *= 1.0 - terrainPaintW;");
+    expect(t.fragment).toContain("terrainSpecW = 1.0 - FAR_SPEC_CUT * terrainFarW * (1.0 - terrainWet);");
+    expect(t.wgslFragment).toContain("@fragment");
+  }, timeLimit(60_000));
 });
