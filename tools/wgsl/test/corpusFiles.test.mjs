@@ -331,8 +331,9 @@ describe('the committed corpus and the tests\' fixture', () => {
     // its fragment stage on low and one of its low vertex variants,
     // re-recorded with the far ground's cover, and 3 low vertex variants
     // from before the atmosphere's cloud uniforms, retired without a
-    // successor; three low plain fragment variants of the terrain and three
-    // low distance-fade vertex stages were gained; the lake's 3 vertex
+    // successor; six low stages of other materials were gained, a plain PBR
+    // pair carrying only the atmosphere and two distance-fade wet pairs,
+    // a fragment and a vertex stage each; the lake's 3 vertex
     // stages before its mirror
     // smeared by the eye's travel (2026-10-08) went that way, the 458 PBR
     // fragments of the atmosphere before the

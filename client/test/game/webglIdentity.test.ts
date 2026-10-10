@@ -57,7 +57,7 @@ const PINS: Record<string, string> = {
   // Re-pinned for the far ground's cover (terrainTexture.ts,
   // groundFarCover.fragment.fx, the road's and the trail's paint weights); the
   // test below shows it is the whole difference.
-  "terrain.fragment": "30628f4c2d44dac83d4d1089653effc2828d9c4ceb358db3521603ac6471d003",
+  "terrain.fragment": "035d1f9c4fb92c920edeedc8fed427e7bb0831e0ed52b9c4ab920eef58f6c629",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
 };

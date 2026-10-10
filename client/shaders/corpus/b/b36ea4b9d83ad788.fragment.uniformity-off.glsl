@@ -1201,19 +1201,20 @@ const vec2 FAR_COVER_BAND = vec2(14.4, 18.0);
 const vec2 FAR_SWARD_COVER = vec2(0.05, 0.5);
 // Fitted 2026-10-10: Full pull toward the far target. With the pull at 0.8 a
 // fifth of the ground's own colour stays, and at the meadow pose at noon that
-// fifth with the sky's light already matched the card band, so no colour could
-// land the far floor on its target. At 1.0 the fit lands within 1 % of the
-// band.
+// fifth with the sky's light already matched the card band's luminance, so the
+// colour at its floor met the luminance bar and missed chroma and G/R. At 1.0
+// the fit lands within 1 % of the band.
 const float FAR_SWARD_MAX = 1.0;
-// Fitted 2026-10-10: At the meadow pose at noon the far crops read Y 0.03845
-// against the card band's 0.03819, chroma 0.2126 against 0.2145.
+// Fitted 2026-10-10: solved at (0.0066, 0.0235, 0.005) and committed at its
+// +10 % edge for the low sun. At the meadow pose at noon the far crops read
+// Y 0.04177 against the card band's 0.03814, chroma 0.2103 against 0.2128.
 const vec3 FAR_SWARD = vec3(0.0073, 0.0258, 0.0055);
-// Fitted 2026-10-10: Kept at its start: the canopy fit reached its target
+// Not fitted 2026-10-10: kept at its start: the canopy fit reached its target
 // through the canopy shade alone, and the litter share along the far crops was
 // not read from the simulation.
 const vec3 FAR_LITTER = vec3(0.081, 0.057, 0.032);
-// Fitted 2026-10-10: At the canopy pose at noon the far crops read Y 0.02564
-// against the card band's 0.02564. At the canopy pose at 16:00 far over near
+// Fitted 2026-10-10: At the canopy pose at noon the far crops read Y 0.02630
+// against the card band's 0.02573. At the canopy pose at 16:00 far over near
 // reached 0.77 with the cut at 0.25 and the colour at its +10 % edge, short of
 // 0.8. The canopy far crops' chroma reads 0.23 of the band's because those
 // crops carry trunks and fog.
