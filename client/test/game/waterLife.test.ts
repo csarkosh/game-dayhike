@@ -4,6 +4,7 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
 import { marshWeightAt } from "../../src/sim/features.js";
 import { elevationAt } from "../../src/sim/terrain.js";
+import { lakeOutline, lakeShoreInto, newLakeShore, rayToShore } from "../../src/sim/lakeShape.js";
 import { WEATHER_PRESETS, type WeatherParams } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
 import { skyStateFor } from "../../src/game/skyState.js";
@@ -96,10 +97,10 @@ vi.mock("../../src/game/frogChorus.js", async (importOriginal) => {
   };
 });
 
-/** The suite's world: its lake is clear, its rim 31 m from its centre, eight frogs about it and no marsh. */
+/** The suite's world: its lake is clear (murk 0.2), 34 m in mean radius, twelve frogs about it and no marsh. */
 const SEED = 388817;
-/** A world whose murky lake has a marsh. */
-const MARSH_SEED = -1065037390;
+/** A world whose murky lake has a marsh: room-12's. */
+const MARSH_SEED = -1458473702;
 /** A row's count and presence in the swarms' table (three vec4 a row). */
 const COUNT = 5;
 const PRESENCE = 6;
@@ -168,11 +169,13 @@ function run(life: WaterLife, f: WaterLifeFrame, seconds: number, dt = 1 / 20, e
   }
 }
 
-/** A point on the shore `out` metres beyond the rim at `angle`, and its ground. */
+/** A point `out` metres past where the line from the lake's centre at `angle` meets the shore, and its ground. */
 function shore(angle: number, out = 2): { x: number; z: number; ground: number } {
-  const lake = lakeOf(SEED);
-  const x = lake.x + Math.cos(angle) * (lake.radius + out);
-  const z = lake.z + Math.sin(angle) * (lake.radius + out);
+  const shape = lakeOf(SEED).shape;
+  const dirX = Math.cos(angle), dirZ = Math.sin(angle);
+  const d = rayToShore(shape, shape.cx, shape.cz, dirX, dirZ, 0, shape.bound) + out;
+  const x = shape.cx + dirX * d;
+  const z = shape.cz + dirZ * d;
   return { x, z, ground: elevationAt(SEED, x, z) };
 }
 
@@ -181,13 +184,13 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
     expect(life.meshes).toHaveLength(4);
     expect(life.meshes[0]!.material?.name).toBe(MIDGE_NAME);
-    expect(seen.layout!.markers).toHaveLength(19);
+    expect(seen.layout!.markers).toHaveLength(25);
     expect(seen.blocks).toHaveLength(32);
     // A marker's swarm at its fullest, mist's 30 % more (the first marker's 81
-    // midges are a block of 106); the unused marker rows hold none.
+    // midges are a block of 106); the shore's 25 markers fill every marker row.
     expect(seen.blocks.slice(0, 25)).toEqual([
       106, 302, 85, 78, 491, 78, 259, 440, 206, 205, 394, 207, 489, 266, 385, 98, 240, 505, 143,
-      0, 0, 0, 0, 0, 0,
+      349, 142, 185, 115, 177, 306,
     ]);
     // One head row a player, each the largest head swarm; the last two rows unused.
     expect(seen.blocks.slice(25)).toEqual([150, 150, 150, 150, 150, 0, 0]);
@@ -278,8 +281,8 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     expect(first.presence).toBe(1);
     // 100 m out from the far shore: the first swarm is past 80 m, out of sight.
     const away = Math.atan2(m.z - lake.z, m.x - lake.x) + Math.PI;
-    f.camX = lake.x + Math.cos(away) * (lake.radius + 100);
-    f.camZ = lake.z + Math.sin(away) * (lake.radius + 100);
+    f.camX = lake.x + Math.cos(away) * (lake.shape.shoreMax + 100);
+    f.camZ = lake.z + Math.sin(away) * (lake.shape.shoreMax + 100);
     run(life, f, 0.1);
     const sound = life.sound();
     expect(sound.hums_n).toBe(30);
@@ -537,36 +540,40 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     life.dispose();
   });
 
-  it("lays the far chorus over the marsh's middle and on the rim across the lake from it, 0.3 m above the water", () => {
+  it("lays the far chorus over the marsh's middle and on the shore farthest from it, 0.3 m above the water", () => {
     const lake = lakeOf(MARSH_SEED);
     const lobe = lake.lobe!;
+    const shape = lake.shape;
     const life = createWaterLife(scene(), MARSH_SEED, lake, "low", "material");
-    const [marsh, across] = life.sound().bed.points;
-    const from = (p: { x: number; z: number }) => Math.hypot(p.x - lake.x, p.z - lake.z);
-    const along = (p: { x: number; z: number }) => ((p.x - lake.x) * lobe.dirX + (p.z - lake.z) * lobe.dirZ) / from(p);
-    // The marsh's middle: 5 m in from the rim along the marsh's own direction, its core.
-    expect(from(marsh) - lake.radius).toBeCloseTo(-5, 9);
-    expect(along(marsh)).toBeCloseTo(1, 9);
-    expect(marshWeightAt(lake.shape, lake.lobe, marsh.x, marsh.z)).toBe(1);
-    // Straight across, on the rim.
-    expect(from(across) - lake.radius).toBeCloseTo(0, 9);
-    expect(along(across)).toBeCloseTo(-1, 9);
-    expect([marsh.y - lake.level, across.y - lake.level].map((h) => h.toFixed(9))).toEqual(["0.300000000", "0.300000000"]);
+    const [marsh, far] = life.sound().bed.points;
+    const r = newLakeShore();
+    // The marsh's middle: along the marsh's own direction from the centre,
+    // where the shore distance is half the shelf (half of min(10, 0.4 · 17.93)), its core.
+    const dx = marsh.x - shape.cx, dz = marsh.z - shape.cz;
+    expect((dx * lobe.dirX + dz * lobe.dirZ) / Math.hypot(dx, dz)).toBeCloseTo(1, 9);
+    expect(lakeShoreInto(r, shape, marsh.x, marsh.z).s).toBeCloseTo(3.5855, 4);
+    expect(marshWeightAt(shape, lake.lobe, marsh.x, marsh.z)).toBe(1);
+    // The outline's point farthest from it.
+    const o = lakeOutline(shape, 2);
+    const dist = (i: number) => Math.hypot(o.xs[i]! - marsh.x, o.zs[i]! - marsh.z);
+    const farthest = Math.max(...o.xs.map((_, i) => dist(i)));
+    expect(Math.hypot(far.x - marsh.x, far.z - marsh.z)).toBe(farthest);
+    expect(o.xs.some((x, i) => x === far.x && o.zs[i] === far.z)).toBe(true);
+    expect([marsh.y - lake.level, far.y - lake.level].map((h) => h.toFixed(9))).toEqual(["0.300000000", "0.300000000"]);
     life.dispose();
   });
 
-  it("without a marsh, lays the far chorus on the rim across the lake from its first frog, and on the rim by that frog", () => {
+  it("without a marsh, lays the far chorus on the shore farthest from its first frog, and on the shore farthest from that", () => {
     const lake = lakeOf(SEED);
     expect(lake.lobe).toBeNull();
     const life = createWaterLife(scene(), SEED, lake, "low", "material");
     const v = seen.layout!.voices[0]!;
-    const [far, by] = life.sound().bed.points;
-    const from = (p: { x: number; z: number }) => Math.hypot(p.x - lake.x, p.z - lake.z);
-    const toward = (p: { x: number; z: number }) => ((p.x - lake.x) * (v.x - lake.x) + (p.z - lake.z) * (v.z - lake.z)) / (from(p) * from(v));
-    expect([from(far) - lake.radius, from(by) - lake.radius].map((d) => d.toFixed(9))).toEqual(["0.000000000", "0.000000000"]);
-    expect(toward(far)).toBeCloseTo(-1, 9);
-    expect(toward(by)).toBeCloseTo(1, 9);
-    expect([far.y - lake.level, by.y - lake.level].map((h) => h.toFixed(9))).toEqual(["0.300000000", "0.300000000"]);
+    const [far, back] = life.sound().bed.points;
+    const o = lakeOutline(lake.shape, 2);
+    const farthestFrom = (p: { x: number; z: number }) => Math.max(...o.xs.map((x, i) => Math.hypot(x - p.x, o.zs[i]! - p.z)));
+    expect(Math.hypot(far.x - v.x, far.z - v.z)).toBe(farthestFrom(v));
+    expect(Math.hypot(back.x - far.x, back.z - far.z)).toBe(farthestFrom(far));
+    expect([far.y - lake.level, back.y - lake.level].map((h) => h.toFixed(9))).toEqual(["0.300000000", "0.300000000"]);
     life.dispose();
   });
 
@@ -610,11 +617,11 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     const level = () => life.sound().bed.level;
     life.update(f);
     expect(level()).toBe(1);
-    // A player by the first of the eight frogs stops it: the chorus at 0.35 + 0.65 · 7/8.
+    // A player by the first of the twelve frogs stops it: the chorus at 0.35 + 0.65 · 11/12.
     const v = seen.layout!.voices[0]!;
     f.players = [{ x: v.x, y: v.y + 0.9, z: v.z }];
     run(life, f, 0.1);
-    expect(level()).toBeCloseTo(0.91875, 9);
+    expect(level()).toBeCloseTo(0.9458333333, 9);
     f.players = [];
     // The Hollow within 60 m: none at once, and back beyond 80 m (the stopped frog still waiting).
     f.hollowDistance = 50;
@@ -622,7 +629,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     expect(level()).toBe(0);
     f.hollowDistance = 100;
     run(life, f, 0.1);
-    expect(level()).toBeCloseTo(0.91875, 9);
+    expect(level()).toBeCloseTo(0.9458333333, 9);
     // Noon: the frogs' presence eases out over 3 s.
     f.hour = 12;
     run(life, f, 1.5);
@@ -648,6 +655,25 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     expect(level()).toBeGreaterThan(0);
     life.dispose();
     expect(level()).toBe(0);
+  });
+
+  it("rests when told to, as beyond its reach, and steps again on the next update", () => {
+    const life = createWaterLife(scene(), SEED, lakeOf(SEED), "high", "post");
+    const m = seen.layout!.markers[0]!;
+    const f = frameAt(m.x, m.y, m.z + 1, 18.5);
+    life.update(f);
+    expect(audible(life, f)).toBeGreaterThan(0);
+    const steps = [seen.dragonflySteps, seen.frogSteps, seen.midgeUpdates];
+    life.rest();
+    const sound = life.sound();
+    expect([sound.hums_n, sound.rustles.length, sound.frogCalls.length, sound.bed.level]).toEqual([0, 0, 0, 0]);
+    expect(life.meshes[0]!.isEnabled()).toBe(false);
+    expect([seen.dragonflySteps, seen.frogSteps, seen.midgeUpdates]).toEqual(steps);
+    run(life, f, 0.05);
+    expect([seen.dragonflySteps, seen.frogSteps, seen.midgeUpdates]).toEqual(steps.map((n) => n + 1));
+    expect(audible(life, f)).toBeGreaterThan(0);
+    life.dispose();
+    expect(() => life.rest()).not.toThrow();
   });
 
   it("steps, draws and voices nothing once disposed, and disposes once", () => {
