@@ -7,7 +7,7 @@ import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
 import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors.js";
 import {
-  attachTerrainTexture, enableRoadPaint, enableFeaturePaint, setTerrainRain, TerrainTexturePlugin,
+  attachTerrainTexture, enableRoadPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, TerrainTexturePlugin,
   heightBlendWeights, HEIGHT_BLEND_DEPTH, LAYER_ROUGHNESS, LAYER_F0,
   rockParallaxOffset, ROCK_PARALLAX_DEPTH, ROCK_PARALLAX_STEPS, ROCK_PARALLAX_MIN_WEIGHT,
   terrainFarCoverDefs, TERRAIN_FRAGMENT_FAR_COVER, TERRAIN_MACRO_OCTAVES, HEX_FETCH_MACROS, TERRAIN_UNIFORMITY_OFF,
@@ -38,6 +38,8 @@ import { FOLIAGE_LIGHT_INJECTION_POINT } from "../../src/game/foliageLightPlugin
 import { attachWet } from "../../src/game/wetPlugin.js";
 import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 /** The cover's factor on the sun's diffuse line, as the line carries it. */
 const FAR_SUN_FACTOR =
@@ -1392,5 +1394,56 @@ vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
     const writes = [...lights.matchAll(/terrainPaintW = max\(terrainPaintW, /g)].map((m) => m.index!);
     expect(writes).toHaveLength(2);
     for (const at of writes) expect(at).toBeLessThan(reads);
+  }, timeLimit(5_000));
+
+  it("declares TERRAINFARLOW false, and sets it from the tier", () => {
+    const mat = new PBRMaterial("fc11", scene);
+    attachTerrainTexture(scene, mat, { groundArrays: stubArrays });
+    const plugin = mat.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin;
+    const defines: Record<string, boolean> = {};
+    plugin.prepareDefines(defines as never, scene, undefined as never);
+    expect(defines.TERRAINFARLOW).toBe(false);
+    setTerrainFarBand(scene, mat, true);
+    plugin.prepareDefines(defines as never, scene, undefined as never);
+    expect(defines.TERRAINFARLOW).toBe(true);
+    setTerrainFarBand(scene, mat, false);
+    plugin.prepareDefines(defines as never, scene, undefined as never);
+    expect(defines.TERRAINFARLOW).toBe(false);
+    expect(() => setTerrainFarBand(scene, new PBRMaterial("fc12", scene), true)).not.toThrow();
+  }, timeLimit(5_000));
+
+  it("compiles the low tier's band in when the define is set after the first compile, on both uniform paths", async () => {
+    for (const ubo of [false, true]) {
+      const e = engineOn(ubo);
+      const s = new Scene(e);
+      try {
+        const { material, mesh, effect: before } = await compiledTerrain(s);
+        expect(before.defines).not.toContain("TERRAINFARLOW");
+        setTerrainFarBand(s, material, true);
+        // Readiness is cached per render id: a frame moves it on.
+        s.incrementRenderId();
+        await whenReady(material, mesh);
+        const after = mesh.subMeshes[0]!.effect!;
+        expect(after).not.toBe(before);
+        expect(after.defines).toContain("#define TERRAINFARLOW\n");
+        expect(after.fragmentSourceCode).toContain(
+          "#ifdef TERRAINFARLOW\nconst vec2 FAR_COVER_BAND = vec2(14.4, 18.0);\n#else\nconst vec2 FAR_COVER_BAND = vec2(24.0, 30.0);\n#endif",
+        );
+      } finally {
+        s.dispose();
+        e.dispose();
+      }
+    }
+  }, timeLimit(20_000));
+
+  it("is set by the renderer from the tier, beside the sward floor", () => {
+    const renderer = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
+    expect(renderer).toContain(
+      '  if (forest !== null) setTerrainSward(scene, terrainMaterialFor(scene, "terrain"), bladeMeshes !== null);\n' +
+        "  // The far cover's band follows the tier's clutter edges: on low, where every\n" +
+        "  // class is drawn at 0.6 of its radius, it comes in at 0.6 of its distance.\n" +
+        '  if (forest !== null) setTerrainFarBand(scene, terrainMaterialFor(scene, "terrain"), tier === "low");\n',
+    );
+    expect(renderer.split("setTerrainFarBand(").length - 1).toBe(1);
   }, timeLimit(5_000));
 });

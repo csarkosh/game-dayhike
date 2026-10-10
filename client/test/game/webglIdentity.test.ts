@@ -10,6 +10,7 @@ import {
   TERRAIN_FRAGMENT_FAR_LIGHT, TERRAIN_SPEC_INJECTION_POINT, TERRAIN_SPEC_INJECTION_CODE, TERRAIN_SUN_INJECTION_CODE,
 } from "../../src/game/terrainTexture.js";
 import { FOLIAGE_LIGHT_INJECTION_POINT } from "../../src/game/foliageLightPlugin.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 
@@ -81,8 +82,9 @@ const INTERFACE_PINS: Record<string, string> = {
   "groundConform.interface": "d1318897a8b44958dc6d4ba703fe861a79590ee61c6d7cb830bc54cb33e7b75a",
   "skin.interface": "d39b98bf284499c66f8b2765d9947ff326b97a8a716bcb4f2c89cf5b9c1bc2de",
   // Re-pinned for `terrainRain` and `terrainTime`, the two floats the
-  // puddles' ripples read, declared on both uniform paths.
-  "terrain.interface": "c0528421aedd3e5f0c3030247b528331ea69f7bf78fcd8b9c59201a21ce63ad2",
+  // puddles' ripples read, declared on both uniform paths, and again for
+  // TERRAINFARLOW, the far cover's low band, false on medium and high.
+  "terrain.interface": "2218c50bb5071b9eb9de88d31c3616d8cadfd2b8a19d89e6ee5785889f675b64",
   "wing.interface": "bb03268d86b3711b1e489d0f2a62c81f60556c063d98fc835954b43a11cff985",
 };
 
@@ -155,6 +157,14 @@ describe("WebGL2's shader text", () => {
     expect(Object.keys(texts).sort()).toEqual(Object.keys(INTERFACE_PINS).sort());
     for (const [key, text] of Object.entries(texts)) expect(sha(text), key).toBe(INTERFACE_PINS[key]);
   });
+
+  it("changes the terrain's interface by the far cover's one define and nothing else", () => {
+    const text = pluginInterfaces()["terrain.interface"] as string;
+    expect(text.split('"TERRAINFARLOW":false,').length - 1).toBe(2);
+    expect(sha(text.replaceAll('"TERRAINFARLOW":false,', ""))).toBe(
+      "c0528421aedd3e5f0c3030247b528331ea69f7bf78fcd8b9c59201a21ce63ad2",
+    );
+  }, timeLimit(20_000));
 
   it("pins the hex include and the finish pass as files", () => {
     // The hex include is three files, joined on WebGL2 into the one it was.

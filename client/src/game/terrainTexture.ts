@@ -792,6 +792,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   private _rain = 0;
   private _time = 0;
   private _swardOn = true;
+  private _farLow = false;
   private _featureTex: RawTexture | null = null;
   private _featureInfo: [number, number, number, number] = [0, 0, 0, 0];
 
@@ -802,7 +803,9 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     // on an UNDECLARED define compiles the whole branch out silently (the trap
     // cel.ts documents from the other side). ROADPAINT starts false the same
     // way — `enableRoad` is what flips it once a centerline hook exists.
-    super(material, "TerrainTexture", 200, { TERRAINTEX: false, ROADPAINT: false, TRAILPAINT: false, FEATUREPAINT: false });
+    // TERRAINFARLOW starts false too: a false define writes nothing into a stage,
+    // so medium and high compile exactly as without it.
+    super(material, "TerrainTexture", 200, { TERRAINTEX: false, ROADPAINT: false, TRAILPAINT: false, FEATUREPAINT: false, TERRAINFARLOW: false });
     this._scene = scene;
     this._grass = loadGroundTexture(grassUrl, "terrainGrass", scene);
     this._floor = loadGroundTexture(floorUrl, "terrainFloor", scene);
@@ -889,6 +892,16 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
    * the pull's strength as 0; the colour and bands stay bound. */
   setSward(on: boolean): void { this._swardOn = on; }
 
+  /** Whether the far cover takes the low tier's band (TERRAINFARLOW): the low
+   * tier draws every clutter class at 0.6 of its radius, so its cards dither
+   * out over [16.8, 24] m and the band comes in at 0.6 of its distance too,
+   * [14.4, 18] m. A change recompiles the material. */
+  setFarLow(low: boolean): void {
+    if (low === this._farLow) return;
+    this._farLow = low;
+    this.markAllDefinesAsDirty();
+  }
+
   /** Turn feature paint on for this world: bake the (x, z, radius, kind) +
    * treeline table once. Idempotent, same story as `enableRoad`/`enableTrail`. */
   enableFeatures(features: readonly Feature[]): void {
@@ -912,6 +925,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     defines.ROADPAINT = this._roadCenter !== null;
     defines.TRAILPAINT = this._trailSegs !== null;
     defines.FEATUREPAINT = this._featureTex !== null;
+    defines.TERRAINFARLOW = this._farLow;
   }
 
   // Same signature-vs-eslint story, same one-line rule.
@@ -1298,6 +1312,16 @@ export function setTerrainRain(_scene: Scene, material: PBRMaterial, rain: numbe
 export function setTerrainSward(_scene: Scene, material: PBRMaterial, on: boolean): void {
   const plugin = material.pluginManager?.getPlugin("TerrainTexture") as TerrainTexturePlugin | undefined;
   plugin?.setSward(on);
+}
+
+/**
+ * Choose the far cover's band for the tier: [14.4, 18] m on low
+ * (TERRAINFARLOW), [24, 30] m on medium and high. Defensive on a bare
+ * material, like `setTerrainWetness`.
+ */
+export function setTerrainFarBand(_scene: Scene, material: PBRMaterial, low: boolean): void {
+  const plugin = material.pluginManager?.getPlugin("TerrainTexture") as TerrainTexturePlugin | undefined;
+  plugin?.setFarLow(low);
 }
 
 /**

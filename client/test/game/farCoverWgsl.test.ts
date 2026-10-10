@@ -26,7 +26,8 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { createAtmosphere } from "../../src/game/atmosphere.js";
 import { createHeadlamp } from "../../src/game/headlamp.js";
-import { createClipmap } from "../../src/game/renderer.js";
+import { createClipmap, terrainMaterialFor } from "../../src/game/renderer.js";
+import { setTerrainFarBand } from "../../src/game/terrainTexture.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { FOG_DISTANCE } from "../../src/sim/forestConstants.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
@@ -126,5 +127,14 @@ describe("the terrain's stages with the far cover, through glslang and twgsl", (
     expect(t.fragment).toContain("terrainPaintW = max(terrainPaintW, rGravel);");
     expect(t.fragment).toContain("terrainPaintW = max(terrainPaintW, max(tBank, tOnBench));");
     expect(t.wgslFragment).toContain("@fragment");
+  }, timeLimit(60_000));
+
+  it("compiles the low tier's band", async () => {
+    const t = await terrainStages(translators, (scene) => setTerrainFarBand(scene, terrainMaterialFor(scene, "terrain"), true));
+    expect(t.defines).toContain("#define TERRAINFARLOW\n");
+    expect(t.fragment).toContain("const vec2 FAR_COVER_BAND = vec2(14.4, 18.0);");
+    expect(t.fragment).not.toContain("vec2(24.0, 30.0)");
+    expect(t.wgslFragment).toContain("@fragment");
+    expect(t.wgslVertex).toContain("@vertex");
   }, timeLimit(60_000));
 });
