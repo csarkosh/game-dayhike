@@ -889,7 +889,7 @@ describe("the terrain feature mask", () => {
   // centre (495.52, 84) radius 84.36, pond centre (207.33, 316) radius 25.80.
   const MASK_SEED = 12345;
   /** The flower pin: its bearing (whole degrees) and its density, read on this world's lake. */
-  const FLOWER_PIN = { deg: 5, flower: 0.00000479247112622536 };
+  const FLOWER_PIN = { deg: 6, flower: 0.003283073376236885 };
 
   it("carries a denser carpet inside a made meadow than 60 m outside it", () => {
     setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
@@ -980,8 +980,9 @@ describe("the terrain feature mask", () => {
       const ffm = v.featureMask?.(MASK_SEED, fx, fz, v.sample(MASK_SEED, fx, fz).h);
       if (ffm === undefined || !(ffm.clutter > 0 && ffm.clutter < 1)) continue;
       const flower = clutterDensity(MASK_SEED, CLUTTER_FLOWER, fx, fz);
-      if (flower > 0) found = { deg, flower };
+      if (flower > 1e-3) found = { deg, flower };
     }
+    // The floor keeps the pin above the patch threshold's foot.
     expect(found).toEqual(FLOWER_PIN);
   });
 });
