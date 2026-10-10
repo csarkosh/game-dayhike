@@ -16,7 +16,7 @@
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
 
-import { hash2 } from "./field.js";
+import { hash2, hash3 } from "./field.js";
 
 export type LakeFamily = "valley" | "tarn";
 /** A bulge: B rises by `height` · (1 − r²/ρ²)³ inside `radius` ρ about (x, z). */
@@ -30,7 +30,7 @@ export type LakeShape = {
   readonly px: readonly number[];
   readonly pz: readonly number[];
   readonly width: readonly number[];
-  /** The centroid of the spine's own region, which the harmonics turn about. */
+  /** The deepest point of the spine's own region, which the harmonics turn about. */
   readonly cx: number;
   readonly cz: number;
   /** The drawn mean radius (m): the harmonics' fade is measured in it. */
@@ -841,4 +841,205 @@ export function apronWidths(shape: LakeShape, ground: (x: number, z: number) => 
     out.push(apronWidthFor(sum / (steps * LAKE_APRON_STEP)));
   }
   return out;
+}
+
+// ---- The valley family ------------------------------------------------------------------
+/** Every draw of a lake's shape is hash3(id, i, 0, seed ^ LAKE_SHAPE_SALT);
+ * the wobble is drawn with seed ^ LAKE_NOISE_SALT. */
+export const LAKE_SHAPE_SALT = 0x1a4e;
+export const LAKE_NOISE_SALT = 0x5a1e;
+/** The spine's length to width (the stadium's, 1 + ℓ / 2w) from a quantile
+ * table: at 0, the median and 1. The joints' smooth minimum widens each joint
+ * by a quarter of the half-width and the taper widens the head by τ, so the
+ * outline's Feret L:W comes out at about two thirds of the spine's. */
+export const LAKE_VALLEY_LW_LO = 2.2;
+export const LAKE_VALLEY_LW_MID = 3.8;
+export const LAKE_VALLEY_LW_HI = 5.2;
+/** Egg and teardrop: the head end's half-width (1 + τ) w and the tail's (1 − τ) w, τ in [0, MAX]. */
+export const LAKE_TAPER_MAX = 0.3;
+/** Two segments when the draw is under this share, three otherwise. */
+export const LAKE_VALLEY_TWO_SHARE = 0.5;
+/** Each bend, as LAKE_DIRECTIONS indices: 16.875° to 45°. */
+export const LAKE_VALLEY_BEND_MIN = 3;
+export const LAKE_VALLEY_BEND_MAX = 8;
+/** A two-segment spine bends at this share of its length; a three-segment
+ * one at a third and two thirds, give or take LAKE_BEND3_JITTER. */
+export const LAKE_BEND_AT_MIN = 0.35;
+export const LAKE_BEND_AT_MAX = 0.65;
+export const LAKE_BEND3_JITTER = 0.05;
+/** One valley lake in three is two-lobed: the half-width at its first bend pinched to this share. */
+export const LAKE_VALLEY_LOBED_SHARE = 0.3333333333333333;
+export const LAKE_PINCH_MIN = 0.6;
+export const LAKE_PINCH_MAX = 0.75;
+/** The spout: its width and its length (m). */
+export const LAKE_SPOUT_WIDTH_MIN = 5;
+export const LAKE_SPOUT_WIDTH_MAX = 20;
+export const LAKE_SPOUT_LENGTH_MIN = 5;
+export const LAKE_SPOUT_LENGTH_MAX = 10;
+/** The outlet: of the shore past the spine's tail end, the point whose ground
+ * LAKE_OUTLET_PROBE metres out stands lowest. */
+export const LAKE_OUTLET_PROBE = 5;
+/** The step the base shape's deepest point is found on (m). */
+export const LAKE_CENTRE_STEP = 1;
+
+function shapeDraw(seed: number, id: number, i: number): number {
+  return hash3(id, i, 0, seed ^ LAKE_SHAPE_SALT);
+}
+
+const METRIC = { v: 0, dx: 0, dz: 0 };
+
+/**
+ * The deepest point of the base shape: the grid point of the spine's region
+ * m < 1 where (1 − m)·W is largest. A centroid can fall outside a bent,
+ * pinched shape; this point is in water by construction, with the widest
+ * margin, so the harmonics' frame and the bound's rays start inside the lake.
+ */
+function spineCentre(shape: LakeShape): [number, number] {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, wMax = 0;
+  for (let i = 0; i < shape.px.length; i++) {
+    x0 = Math.min(x0, shape.px[i] as number); x1 = Math.max(x1, shape.px[i] as number);
+    z0 = Math.min(z0, shape.pz[i] as number); z1 = Math.max(z1, shape.pz[i] as number);
+    wMax = Math.max(wMax, shape.width[i] as number);
+  }
+  let bx = (x0 + x1) / 2, bz = (z0 + z1) / 2, best = -Infinity;
+  for (let z = z0 - wMax; z <= z1 + wMax; z += LAKE_CENTRE_STEP) {
+    for (let x = x0 - wMax; x <= x1 + wMax; x += LAKE_CENTRE_STEP) {
+      const m = spineMetricInto(METRIC, shape, x, z).v;
+      if (m >= 1) continue;
+      // mW is the local half-width the metric was just made with.
+      const depth = (1 - m) * mW;
+      if (depth > best) { best = depth; bx = x; bz = z; }
+    }
+  }
+  return [bx, bz];
+}
+
+const SPOUT = newLakeShore();
+
+/**
+ * A valley lake's shape, drawn for feature `id` of world `seed`, about
+ * (x, z) with drawn mean radius `size`, on ground whose mean gradient over the
+ * candidate's disc is (gradX, gradZ), `ground` the pre-feature field: the
+ * spine laid along the contour (its uphill end the head, the uphill side
+ * `head`), the harmonics, the wobble, the spout at the shore point of lowest
+ * bank on the downhill end, the apron fitted to the ground, and the
+ * measures. Level 0 and murk ½: the builder sets both.
+ */
+export function valleyLakeShape(
+  seed: number, id: number, x: number, z: number, size: number,
+  gradX: number, gradZ: number, ground: (x: number, z: number) => number,
+): LakeShape {
+  const d = (i: number): number => shapeDraw(seed, id, i);
+  const lw = quantile3(d(0), LAKE_VALLEY_LW_LO, LAKE_VALLEY_LW_MID, LAKE_VALLEY_LW_HI);
+  const w = size * Math.sqrt(Math.PI / (4 * (lw - 1) + Math.PI));
+  const len = 2 * w * (lw - 1);
+  const tau = LAKE_TAPER_MAX * d(1);
+  const two = d(2) < LAKE_VALLEY_TWO_SHARE;
+  const lobed = d(3) < LAKE_VALLEY_LOBED_SHARE;
+  const pinch = LAKE_PINCH_MIN + (LAKE_PINCH_MAX - LAKE_PINCH_MIN) * d(4);
+  // Along the contour: perpendicular to the mean gradient, the uphill side the head.
+  const g = Math.sqrt(gradX * gradX + gradZ * gradZ);
+  let hx: number, hz: number;
+  if (g > 1e-6) {
+    hx = gradX / g; hz = gradZ / g;
+  } else {
+    const [fx, fz] = LAKE_DIRECTIONS[Math.min(63, Math.floor(d(12) * 64))] as readonly [number, number];
+    hx = fx; hz = fz;
+  }
+  let ex = -hz, ez = hx;
+  if (d(11) < 0.5) { ex = -ex; ez = -ez; }
+  // The bends, as shares of the length.
+  const at = two
+    ? [LAKE_BEND_AT_MIN + (LAKE_BEND_AT_MAX - LAKE_BEND_AT_MIN) * d(9)]
+    : [1 / 3 + LAKE_BEND3_JITTER * (2 * d(9) - 1), 2 / 3 + LAKE_BEND3_JITTER * (2 * d(10) - 1)];
+  const px = [0], pz = [0], arc = [0];
+  let cx = ex, cz = ez, prevAt = 0;
+  for (let b = 0; b <= at.length; b++) {
+    const next = b < at.length ? (at[b] as number) : 1;
+    const l = len * (next - prevAt);
+    px.push((px[b] as number) + cx * l);
+    pz.push((pz[b] as number) + cz * l);
+    arc.push(next);
+    prevAt = next;
+    if (b === at.length) break;
+    const span = LAKE_VALLEY_BEND_MAX - LAKE_VALLEY_BEND_MIN + 1;
+    const idx = LAKE_VALLEY_BEND_MIN + Math.min(span - 1, Math.floor(d(5 + 2 * b) * span));
+    const [rc, rs0] = LAKE_DIRECTIONS[idx] as readonly [number, number];
+    const rs = d(6 + 2 * b) < 0.5 ? rs0 : -rs0;
+    const ncx = cx * rc - cz * rs;
+    cz = cx * rs + cz * rc;
+    cx = ncx;
+  }
+  // The arc-length middle onto (x, z).
+  let mx = 0, mz = 0;
+  for (let i = 0; i + 1 < px.length; i++) {
+    const a0 = arc[i] as number, a1 = arc[i + 1] as number;
+    if (a0 <= 0.5 && a1 >= 0.5) {
+      const t = (0.5 - a0) / (a1 - a0);
+      mx = (px[i] as number) + t * ((px[i + 1] as number) - (px[i] as number));
+      mz = (pz[i] as number) + t * ((pz[i + 1] as number) - (pz[i] as number));
+      break;
+    }
+  }
+  for (let i = 0; i < px.length; i++) { px[i] = (px[i] as number) - mx + x; pz[i] = (pz[i] as number) - mz + z; }
+  // The head end is the uphill one.
+  const last = px.length - 1;
+  const headLast = ground(px[last] as number, pz[last] as number) > ground(px[0] as number, pz[0] as number);
+  const width = arc.map((f) => w * (headLast ? 1 - tau + 2 * tau * f : 1 + tau - 2 * tau * f));
+  if (lobed) width[1] = (width[1] as number) * pinch;
+  // The harmonics.
+  const harmA: number[] = [], harmB: number[] = [];
+  for (let j = 0; j < LAKE_HARM_TABLE.length; j++) {
+    const amp = LAKE_HARM_C_VALLEY * (LAKE_HARM_TABLE[j] as number)
+      * (LAKE_HARM_GAIN_MIN + (LAKE_HARM_GAIN_MAX - LAKE_HARM_GAIN_MIN) * d(20 + 3 * j));
+    let pu = 2 * d(21 + 3 * j) - 1, pv = 2 * d(22 + 3 * j) - 1;
+    const norm = Math.sqrt(pu * pu + pv * pv);
+    if (norm > 1e-9) { pu /= norm; pv /= norm; } else { pu = 1; pv = 0; }
+    harmA.push(amp * pu);
+    harmB.push(amp * pv);
+  }
+  const base: LakeShape = {
+    family: "valley", px, pz, width, cx: x, cz: z, size,
+    harmA: harmA.map(() => 0), harmB: harmB.map(() => 0), noiseAmp: 0, noiseSeed: seed ^ LAKE_NOISE_SALT,
+    bumps: [], spout: null, headX: hx, headZ: hz, apron: [LAKE_APRON_MAX, 0, 0, 0, 0, 0, 0],
+    level: 0, murk: 0.5, bound: Number.POSITIVE_INFINITY, sMax: w, meanRadius: size, shoreMax: len / 2 + w,
+  };
+  const [ccx, ccz] = spineCentre(base);
+  const extent0 = len + 2 * w * (1 + tau) + 10;
+  let shape: LakeShape = {
+    ...base, cx: ccx, cz: ccz, harmA, harmB,
+    noiseAmp: LAKE_NOISE_AMP_MIN + (LAKE_NOISE_AMP_MAX - LAKE_NOISE_AMP_MIN) * d(13),
+  };
+  shape = { ...shape, ...measureLake(shape, LAKE_MEASURE_STEP, extent0) };
+  // The outlet: past the tail end of the spine (the cap the end's own segment
+  // ends in), the shore point whose ground LAKE_OUTLET_PROBE out stands lowest.
+  const tx = (headLast ? px[0] : px[last]) as number, tz = (headLast ? pz[0] : pz[last]) as number;
+  const sx0 = (headLast ? px[1] : px[last - 1]) as number, sz0 = (headLast ? pz[1] : pz[last - 1]) as number;
+  const tdx = tx - sx0, tdz = tz - sz0;
+  const tl = Math.sqrt(tdx * tdx + tdz * tdz);
+  const outline = lakeOutline(shape, LAKE_MEASURE_STEP, extent0);
+  let bestI = -1, bestH = Infinity, nearI = 0, nearA = -Infinity;
+  for (let i = 0; i < outline.xs.length; i++) {
+    const ox = outline.xs[i] as number, oz = outline.zs[i] as number;
+    // How far past the tail end, along the tail segment's direction.
+    const past = ((ox - tx) * tdx + (oz - tz) * tdz) / tl;
+    if (past > nearA) { nearA = past; nearI = i; }
+    if (past < 0) continue;
+    const r = lakeShoreInto(SPOUT, shape, ox, oz);
+    const gl = Math.sqrt(r.sx * r.sx + r.sz * r.sz);
+    if (!(gl > 0)) continue;
+    const h = ground(ox - (r.sx / gl) * LAKE_OUTLET_PROBE, oz - (r.sz / gl) * LAKE_OUTLET_PROBE);
+    if (h < bestH) { bestH = h; bestI = i; }
+  }
+  const oi = bestI >= 0 ? bestI : nearI;
+  const ox = outline.xs[oi] as number, oz = outline.zs[oi] as number;
+  const r = lakeShoreInto(SPOUT, shape, ox, oz);
+  const gl = Math.sqrt(r.sx * r.sx + r.sz * r.sz);
+  const nx = gl > 0 ? -r.sx / gl : tdx / tl, nz = gl > 0 ? -r.sz / gl : tdz / tl;
+  const spLen = LAKE_SPOUT_LENGTH_MIN + (LAKE_SPOUT_LENGTH_MAX - LAKE_SPOUT_LENGTH_MIN) * d(15);
+  const spHalf = (LAKE_SPOUT_WIDTH_MIN + (LAKE_SPOUT_WIDTH_MAX - LAKE_SPOUT_WIDTH_MIN) * d(14)) / 2;
+  shape = { ...shape, spout: { ax: ox, az: oz, bx: ox + nx * spLen, bz: oz + nz * spLen, half: spHalf } };
+  shape = { ...shape, ...measureLake(shape, LAKE_MEASURE_STEP, extent0 + spLen + spHalf) };
+  shape = { ...shape, apron: fitApron(apronWidths(shape, ground)) };
+  return { ...shape, bound: lakeBound(shape) };
 }
