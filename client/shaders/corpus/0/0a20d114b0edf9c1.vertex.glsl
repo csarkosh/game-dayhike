@@ -24,10 +24,7 @@
 #define SS_TRANSLUCENCYCOLOR_TEXTUREDIRECTUV 0
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
-#define TERRAINTEX
-#define ROADPAINT
-#define TRAILPAINT
-#define FEATUREPAINT
+#define DISTANCEFADE
 #define WET
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
@@ -111,7 +108,7 @@
 #define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME vertex:pbr
-layout(set = 1, binding = 36) uniform LeftOver {
+layout(set = 1, binding = 12) uniform LeftOver {
         float exposureLinear;
     float contrast;
     vec2 vInverseScreenSize;
@@ -267,28 +264,7 @@ vec2 atmCloudWind;
 vec2 atmCloudGlow;
 vec3 atmCloudColour;
 vec4 atmCloudGroundRect;
-vec4 terrainTiling;
-vec2 terrainRock2;
-vec2 terrainFade;
-vec3 terrainEye;
-vec4 roadTable;
-vec4 trailInfo;
-float terrainWet;
-float terrainRain;
-float terrainTime;
-vec4 featureInfo;
-vec4 terrainLayerRough;
-vec2 terrainLayerRough2;
-vec4 terrainLayerF0;
-vec2 terrainLayerF02;
-float terrainReliefOn;
-vec4 terrainDetail;
-vec3 terrainDetail2;
-float terrainMacroOn;
-vec3 terrainHorizon;
-vec3 terrainTuft;
-vec4 terrainSward;
-vec4 terrainSwardBand;
+vec3 fadeEye;
 float wetLine;
 float wetLevel;
 vec2 wetCentre;
@@ -503,12 +479,9 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
-layout(location = 3) in vec4 terrainWeights;
-layout(location = 4) in vec4 terrainWeights2;
-layout(location = 5) in float terrainCover;
-layout(location = 5)  out vec4 vTerrainW;
-layout(location = 6)  out vec4 vTerrainW2;
-layout(location = 7)  out float vTerrainCover;
+layout(location = 3) in vec4 fadeBands;
+layout(location = 5)  out vec4 vFadeBands;
+layout(location = 6)  out float vFadeDist;
 #define CUSTOM_VERTEX_DEFINITIONS
 void main(void) {
 #define CUSTOM_VERTEX_MAIN_BEGIN
@@ -527,6 +500,8 @@ float NdotV=max(dot(vNormalW,viewDirectionW),0.0);
 vec3 roughNormal=mix(vNormalW,viewDirectionW,(0.5*(1.0-NdotV))*baseDiffuseRoughness);
 vec3 reflectionVector=vec3(reflectionMatrix*vec4(roughNormal,0)).xyz;
 vEnvironmentIrradiance=computeEnvironmentIrradiance(reflectionVector);
+vFadeBands = vec4(-2.0, -1.0, 1.0e8, 2.0e8);
+vFadeDist = 0.0;
 #define CUSTOM_VERTEX_UPDATE_WORLDPOS
 gl_Position=viewProjection*worldPos;
 vec2 uvUpdated=vec2(0.,0.);
@@ -534,9 +509,6 @@ vec2 uv2Updated=vec2(0.,0.);
 vFogDistance=(view*worldPos).xyz;
 vColor=vec4(1.0);
 vColor.rgb*=colorUpdated.rgb;
-vTerrainW = terrainWeights;
-vTerrainW2 = terrainWeights2;
-vTerrainCover = terrainCover;
 #define CUSTOM_VERTEX_MAIN_END
 gl_Position.y *= yFactor_;
 }

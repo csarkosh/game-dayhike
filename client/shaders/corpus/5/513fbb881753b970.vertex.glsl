@@ -16,6 +16,7 @@
 #define IRIDESCENCE_TEXTUREDIRECTUV 0
 #define IRIDESCENCE_THICKNESS_TEXTUREDIRECTUV 0
 #define ANISOTROPIC_TEXTUREDIRECTUV 0
+#define MAINUV1
 #define SHEEN_TEXTUREDIRECTUV 0
 #define SHEEN_TEXTURE_ROUGHNESSDIRECTUV 0
 #define SS_THICKNESSANDMASK_TEXTUREDIRECTUV 0
@@ -24,11 +25,9 @@
 #define SS_TRANSLUCENCYCOLOR_TEXTUREDIRECTUV 0
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
-#define TERRAINTEX
-#define ROADPAINT
-#define TRAILPAINT
-#define FEATUREPAINT
+#define DISTANCEFADE
 #define WET
+#define UV1
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -57,13 +56,15 @@
 #define EXPOSURE
 #define PBR
 #define NUM_SAMPLES 0
-#define ALBEDODIRECTUV 0
-#define VERTEXCOLOR
+#define ALBEDO
+#define ALBEDODIRECTUV 1
 #define BASE_WEIGHTDIRECTUV 0
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
-#define ALPHATESTVALUE 0.4
+#define ALPHATEST
+#define ALPHAFROMALBEDO
+#define ALPHATESTVALUE 0.5
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
 #define EMISSIVEDIRECTUV 0
@@ -76,6 +77,7 @@
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
+#define TANGENT
 #define BUMPDIRECTUV 0
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
@@ -111,7 +113,7 @@
 #define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME vertex:pbr
-layout(set = 1, binding = 36) uniform LeftOver {
+layout(set = 1, binding = 14) uniform LeftOver {
         float exposureLinear;
     float contrast;
     vec2 vInverseScreenSize;
@@ -260,33 +262,14 @@ float atmCloudRange;
 float atmCloudFalloff;
 float atmCloudSeat;
 float atmCloudGroundRange;
+float atmCloudNear;
+float atmCloudTrail;
 vec2 atmCloudNoiseScale;
 vec2 atmCloudWind;
 vec2 atmCloudGlow;
 vec3 atmCloudColour;
 vec4 atmCloudGroundRect;
-vec4 terrainTiling;
-vec2 terrainRock2;
-vec2 terrainFade;
-vec3 terrainEye;
-vec4 roadTable;
-vec4 trailInfo;
-float terrainWet;
-float terrainRain;
-float terrainTime;
-vec4 featureInfo;
-vec4 terrainLayerRough;
-vec2 terrainLayerRough2;
-vec4 terrainLayerF0;
-vec2 terrainLayerF02;
-float terrainReliefOn;
-vec4 terrainDetail;
-vec3 terrainDetail2;
-float terrainMacroOn;
-vec3 terrainHorizon;
-vec3 terrainTuft;
-vec4 terrainSward;
-vec4 terrainSwardBand;
+vec3 fadeEye;
 float wetLine;
 float wetLevel;
 vec2 wetCentre;
@@ -312,7 +295,9 @@ float visibility;
 #define CUSTOM_VERTEX_BEGIN
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
-layout(location = 2) in vec4 color;
+layout(location = 2) in vec4 tangent;
+layout(location = 3) in vec2 uv;
+layout(location = 0)  out vec2 vMainUV1;
 const float PI=3.1415926535897932384626433832795;
 const float TWO_PI=6.283185307179586;
 const float HALF_PI=1.5707963267948966;
@@ -462,9 +447,9 @@ uint2float(rstate*2447445414u));
 #define DIELECTRIC_SPECULAR_MODEL_OPENPBR 1
 #define CONDUCTOR_SPECULAR_MODEL_GLTF 0
 #define CONDUCTOR_SPECULAR_MODEL_OPENPBR 1
-layout(location = 0)  out vec3 vPositionW;
-layout(location = 1)  out vec3 vNormalW;
-layout(location = 2)  out vec3 vEnvironmentIrradiance;
+layout(location = 1)  out vec3 vPositionW;
+layout(location = 2)  out vec3 vNormalW;
+layout(location = 3)  out vec3 vEnvironmentIrradiance;
 vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
 + vSphericalL1_1*(normal.y)
 + vSphericalL10*(normal.z)
@@ -475,7 +460,6 @@ vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
 + vSphericalL21*(normal.z*normal.x)
 + vSphericalL22*(normal.x*normal.x-(normal.y*normal.y));
 }
-layout(location = 3)  out vec4 vColor;
 layout(location = 4)  out vec3 vFogDistance;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
@@ -501,18 +485,16 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
-layout(location = 3) in vec4 terrainWeights;
-layout(location = 4) in vec4 terrainWeights2;
-layout(location = 5) in float terrainCover;
-layout(location = 5)  out vec4 vTerrainW;
-layout(location = 6)  out vec4 vTerrainW2;
-layout(location = 7)  out float vTerrainCover;
+layout(location = 4) in vec4 fadeBands;
+layout(location = 5)  out vec4 vFadeBands;
+layout(location = 6)  out float vFadeDist;
 #define CUSTOM_VERTEX_DEFINITIONS
 void main(void) {
 #define CUSTOM_VERTEX_MAIN_BEGIN
 vec3 positionUpdated=position;
 vec3 normalUpdated=normal;
-vec4 colorUpdated=color;
+vec4 tangentUpdated=tangent;
+vec2 uvUpdated=uv;
 #define CUSTOM_VERTEX_UPDATE_POSITION
 #define CUSTOM_VERTEX_UPDATE_NORMAL
 mat4 finalWorld=world;
@@ -525,16 +507,13 @@ float NdotV=max(dot(vNormalW,viewDirectionW),0.0);
 vec3 roughNormal=mix(vNormalW,viewDirectionW,(0.5*(1.0-NdotV))*baseDiffuseRoughness);
 vec3 reflectionVector=vec3(reflectionMatrix*vec4(roughNormal,0)).xyz;
 vEnvironmentIrradiance=computeEnvironmentIrradiance(reflectionVector);
+vFadeBands = vec4(-2.0, -1.0, 1.0e8, 2.0e8);
+vFadeDist = 0.0;
 #define CUSTOM_VERTEX_UPDATE_WORLDPOS
 gl_Position=viewProjection*worldPos;
-vec2 uvUpdated=vec2(0.,0.);
 vec2 uv2Updated=vec2(0.,0.);
+vMainUV1=uvUpdated;
 vFogDistance=(view*worldPos).xyz;
-vColor=vec4(1.0);
-vColor.rgb*=colorUpdated.rgb;
-vTerrainW = terrainWeights;
-vTerrainW2 = terrainWeights2;
-vTerrainCover = terrainCover;
 #define CUSTOM_VERTEX_MAIN_END
 gl_Position.y *= yFactor_;
 }

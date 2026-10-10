@@ -316,29 +316,35 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1303 recorded stages, each file\'s bytes hashing to the name it has: 813 on the medium and high tiers, 416 on low, 55 on high alone, 15 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1303);
+  it('holds the 1306 recorded stages, each file\'s bytes hashing to the name it has: 813 on the medium and high tiers, 419 on low, 55 on high alone, 15 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1306);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1303);
+    expect(read.stages).toHaveLength(1306);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(374);
-    // The 813 recorded on the medium and high tiers, the low tier's 416,
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(377);
+    // The 813 recorded on the medium and high tiers, the low tier's 419,
     // recorded on it alone, the 55 the high tier alone met (the lake's
     // mirror among them), the 15 the medium tier alone met, and the sky
     // dome's 2 and the midges' 2, whose text is the same on every tier.
     // Stages whose text a shader no longer produces are
-    // retired, not kept: the lake's 3 vertex stages before its mirror
+    // retired, not kept: the terrain's fragment stage on medium and high,
+    // its fragment stage on low and one of its low vertex variants,
+    // re-recorded with the far ground's cover, and 3 low vertex variants
+    // from before the atmosphere's cloud uniforms, retired without a
+    // successor; three low plain fragment variants of the terrain and three
+    // low distance-fade vertex stages were gained; the lake's 3 vertex
+    // stages before its mirror
     // smeared by the eye's travel (2026-10-08) went that way, the 458 PBR
     // fragments of the atmosphere before the
     // ground cloud (2026-10-07), the grade's before the
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1303);
+    expect(read.tiers.size).toBe(1306);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([420, 832, 872]);
+    expect([on('low'), on('medium'), on('high')]).toEqual([423, 832, 872]);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(813);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(416);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(419);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(55);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));

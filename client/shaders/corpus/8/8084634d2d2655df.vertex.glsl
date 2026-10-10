@@ -28,6 +28,7 @@
 #define ROADPAINT
 #define TRAILPAINT
 #define FEATUREPAINT
+#define TERRAINFARLOW
 #define WET
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
@@ -253,6 +254,20 @@ float atmSunPower;
 float atmSunWeight;
 vec3 atmSunDir;
 vec3 atmSunColour;
+vec3 atmFarColour;
+float atmCloudDensity;
+float atmCloudSteps;
+float atmCloudRange;
+float atmCloudFalloff;
+float atmCloudSeat;
+float atmCloudGroundRange;
+float atmCloudNear;
+float atmCloudTrail;
+vec2 atmCloudNoiseScale;
+vec2 atmCloudWind;
+vec2 atmCloudGlow;
+vec3 atmCloudColour;
+vec4 atmCloudGroundRect;
 vec4 terrainTiling;
 vec2 terrainRock2;
 vec2 terrainFade;
