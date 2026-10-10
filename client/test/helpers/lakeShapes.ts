@@ -1,4 +1,6 @@
 import type { LakeBump, LakeFamily, LakeShape, LakeSpout } from "../../src/sim/lakeShape.js";
+import type { Lobe } from "../../src/sim/features.js";
+import type { LakeSource } from "../../src/sim/terrain.js";
 
 /**
  * Literal lakes for the tests: a straight stadium, its spine along z through
@@ -31,5 +33,14 @@ export function stadiumShape(o: StadiumOptions): LakeShape {
     level: o.level ?? 0, murk: o.murk ?? 0.5,
     bound: o.halfLen + o.w + 47,
     sMax: o.sMax ?? o.w, meanRadius: o.meanRadius ?? Math.sqrt(area / Math.PI), shoreMax: o.halfLen + o.w,
+  };
+}
+
+/** A stadium lake as the variant lists it: its drawn radius the half-width `w`. */
+export function stadiumLake(o: StadiumOptions & { lobe?: Lobe | null }): LakeSource {
+  const shape = stadiumShape(o);
+  return {
+    kind: "lake", level: shape.level, x: o.cx, z: o.cz, radius: o.w, murk: shape.murk, lobe: o.lobe ?? null,
+    shape, bound: shape.bound,
   };
 }

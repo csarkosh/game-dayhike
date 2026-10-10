@@ -876,8 +876,8 @@ export const LAKE_SPOUT_WIDTH_MIN = 5;
 export const LAKE_SPOUT_WIDTH_MAX = 20;
 export const LAKE_SPOUT_LENGTH_MIN = 5;
 export const LAKE_SPOUT_LENGTH_MAX = 10;
-/** The outlet: of the shore past the spine's tail end, the point whose ground
- * LAKE_OUTLET_REACH metres out stands lowest. */
+/** The outlet: of the shore past the spine's tail end, the point whose
+ * straight path out, read every LAKE_OUTLET_REACH metres, rises least. */
 export const LAKE_OUTLET_REACH = 5;
 /** The step the base shape's deepest point is found on (m). */
 export const LAKE_CENTRE_STEP = 1;
@@ -921,8 +921,9 @@ const SPOUT = newLakeShore();
  * (x, z) with drawn mean radius `size`, on ground whose mean gradient over the
  * candidate's disc is (gradX, gradZ), `ground` the pre-feature field: the
  * spine laid along the contour (its uphill end the head, the uphill side
- * `head`), the harmonics, the wobble, the spout at the shore point of lowest
- * bank on the downhill end, the apron fitted to the ground, and the
+ * `head`), the harmonics, the wobble, the spout at the shore point past the
+ * downhill end whose straight path out rises least, the apron fitted to the
+ * ground, and the
  * measures. Level 0 and murk ½: the builder sets both.
  */
 export function valleyLakeShape(
@@ -1012,7 +1013,7 @@ export function valleyLakeShape(
   };
   shape = { ...shape, ...measureLake(shape, LAKE_MEASURE_STEP, extent0) };
   // The outlet: past the tail end of the spine (the cap the end's own segment
-  // ends in), the shore point whose ground LAKE_OUTLET_REACH out stands lowest.
+  // ends in), the shore point whose straight path out rises least.
   const tx = (headLast ? px[0] : px[last]) as number, tz = (headLast ? pz[0] : pz[last]) as number;
   const sx0 = (headLast ? px[1] : px[last - 1]) as number, sz0 = (headLast ? pz[1] : pz[last - 1]) as number;
   const tdx = tx - sx0, tdz = tz - sz0;
@@ -1028,7 +1029,13 @@ export function valleyLakeShape(
     const r = lakeShoreInto(SPOUT, shape, ox, oz);
     const gl = Math.sqrt(r.sx * r.sx + r.sz * r.sz);
     if (!(gl > 0)) continue;
-    const h = ground(ox - (r.sx / gl) * LAKE_OUTLET_REACH, oz - (r.sz / gl) * LAKE_OUTLET_REACH);
+    // The highest ground on the straight path out, every reach step, to the
+    // steep bank, the widest apron, the bound's margin and the longest spout.
+    let h = Number.NEGATIVE_INFINITY;
+    // (`t`, not `d`: `d` is this draw's hash.)
+    for (let t = LAKE_OUTLET_REACH; t <= LAKE_BANK_WIDTH_STEEP + LAKE_APRON_MAX + LAKE_BOUND_MARGIN + LAKE_SPOUT_LENGTH_MAX; t += LAKE_OUTLET_REACH) {
+      h = Math.max(h, ground(ox - (r.sx / gl) * t, oz - (r.sz / gl) * t));
+    }
     if (h < bestH) { bestH = h; bestI = i; }
   }
   const oi = bestI >= 0 ? bestI : nearI;
@@ -1043,3 +1050,26 @@ export function valleyLakeShape(
   shape = { ...shape, apron: fitApron(apronWidths(shape, ground)) };
   return { ...shape, bound: lakeBound(shape) };
 }
+
+// ---- The level id ---------------------------------------------------------------
+/** Every constant above that steers a world, by name: `FEATURE_TUNABLES`
+ * spreads it, so a change to any moves the level id. LAKE_DIRECTIONS and
+ * LAKE_HARM_TABLE are literal tables a change to which is a change to this
+ * file's own constants as well. */
+export const LAKE_SHAPE_TUNABLES: Readonly<Record<string, number>> = {
+  LAKE_JOINT_K,
+  LAKE_HARM_C_VALLEY, LAKE_HARM_GAIN_MIN, LAKE_HARM_GAIN_MAX, LAKE_HARM_FADE_LO, LAKE_HARM_FADE_HI,
+  LAKE_NOISE_AMP_MIN, LAKE_NOISE_AMP_MAX, LAKE_NOISE_WAVE, LAKE_SPOUT_K, LAKE_SIDE_EDGE,
+  LAKE_SHELF_DEPTH, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH, LAKE_SHELF_SHARE, LAKE_DEPTH_MURKY, LAKE_DEPTH_CLEAR,
+  TARN_SHELF_HEAD, TARN_SHELF_OUTLET_SHARE, TARN_DEPTH_SHARE,
+  LAKE_RAY_STEP, LAKE_RAY_HALVINGS,
+  LAKE_BANK_GRADE_GENTLE, LAKE_BANK_GRADE_STEEP, LAKE_BANK_WIDTH_GENTLE, LAKE_BANK_WIDTH_STEEP, LAKE_BANK_EASE,
+  LAKE_APRON_RISE, LAKE_APRON_MIN, LAKE_APRON_MAX, LAKE_APRON_BAND, LAKE_APRON_STEP, LAKE_APRON_SOFT,
+  LAKE_MEASURE_STEP, LAKE_BOUND_MARGIN, LAKE_BOUND_STEP, LAKE_BOUND_REACH,
+  LAKE_SHAPE_SALT, LAKE_NOISE_SALT,
+  LAKE_VALLEY_LW_LO, LAKE_VALLEY_LW_MID, LAKE_VALLEY_LW_HI, LAKE_TAPER_MAX, LAKE_VALLEY_TWO_SHARE,
+  LAKE_VALLEY_BEND_MIN, LAKE_VALLEY_BEND_MAX, LAKE_BEND_AT_MIN, LAKE_BEND_AT_MAX, LAKE_BEND3_JITTER,
+  LAKE_VALLEY_LOBED_SHARE, LAKE_PINCH_MIN, LAKE_PINCH_MAX,
+  LAKE_SPOUT_WIDTH_MIN, LAKE_SPOUT_WIDTH_MAX, LAKE_SPOUT_LENGTH_MIN, LAKE_SPOUT_LENGTH_MAX,
+  LAKE_OUTLET_REACH, LAKE_CENTRE_STEP,
+};

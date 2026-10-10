@@ -10,6 +10,7 @@ import {
   STEM_AREA, STEMS_MAX, WATER_LIFE_SALT, inShoreBand, waterLifeLayout, type WaterLifeLayout,
 } from "../../src/game/waterLifeField.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 
 /** The first lobby world with a murky lake (`firstPondWorld`'s pick for
  * murk ≥ 0.8, the water plants' world): radius 26 m, with a marsh. */
@@ -169,7 +170,7 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
 
   it("still gives a lake whose band holds nothing open-water swarms, and no perch or stem", () => {
     // Far out to sea, 1.1 km past the coast: no shrub, reed, log or tree.
-    const lake: LakeSource = { kind: "lake", level: 0, x: -1500, z: 0, radius: 26, murk: 0.2, lobe: null };
+    const lake: LakeSource = stadiumLake({ cx: -1500, cz: 0, halfLen: 0.5, w: 26, level: 0, murk: 0.2 });
     const reach = lake.radius + 20;
     const box = [lake.x - reach, lake.z - reach, lake.x + reach, lake.z + reach] as const;
     for (const cls of [CLUTTER_SHRUB, CLUTTER_BUSH, CLUTTER_REED, CLUTTER_DRIFTLOG]) expect(clutterInRect(SEED, cls, ...box)).toEqual([]);

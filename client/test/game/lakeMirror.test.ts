@@ -23,6 +23,7 @@ import {
 } from "../../src/game/lakeMirror.js";
 import { LAKE_MOTION_SMEAR_CAP } from "../../src/game/mirrorView.js";
 import type { LakeSource } from "../../src/sim/terrain.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
 import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
 import { drawnEffect, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
@@ -31,7 +32,7 @@ import { timeLimit } from "../helpers/timeLimit.js";
 const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
 
 /** A lake at level 50: its mirror's plane is at 50.02. */
-const LAKE: LakeSource = { kind: "lake", level: 50, x: 0, z: 30, radius: 30, murk: 1, lobe: null };
+const LAKE: LakeSource = stadiumLake({ cx: 0, cz: 30, halfLen: 0.5, w: 30, level: 50, murk: 1 });
 
 let engine: NullEngine | null = null;
 afterEach(() => { engine?.dispose(); engine = null; });

@@ -11,6 +11,7 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import type { LakeSource } from "../../src/sim/terrain.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import {
   createLakePanorama, createSkylineTexture, SKYLINE_READ_MAX, panoramaProjection, PANORAMA_EYE_UP, PANORAMA_FAR, PANORAMA_HEIGHT, PANORAMA_HEIGHT_M,
   PANORAMA_NEAR, PANORAMA_SECTORS, PANORAMA_WIDTH, type LakePanorama,
@@ -26,7 +27,7 @@ function scene(): Scene {
 }
 
 /** The murky gate lake (room-3): centre (-97.4, 324), level 50.79 m, radius 26.1 m. */
-const LAKE: LakeSource = { kind: "lake", level: 50.79, x: -97.4, z: 324, radius: 26.1, murk: 0.99, lobe: null };
+const LAKE: LakeSource = stadiumLake({ cx: -97.4, cz: 324, halfLen: 0.5, w: 26.1, level: 50.79, murk: 0.99 });
 
 /** The panorama's own camera: the scene's cameras minus the player's. */
 function panoramaCamera(s: Scene): TargetCamera {

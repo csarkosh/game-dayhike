@@ -26,6 +26,7 @@ import { coastProfilesFor } from "../../src/game/oceanTables.js";
 import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
 import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
 import { POND_DISC_MARGIN, bedOriginFor } from "../../src/game/bedHeight.js";
@@ -97,9 +98,9 @@ vi.mock("../../src/game/wetPlugin.js", async (importOriginal) => {
 
 setActiveTerrainVariant("olympic");
 
-/** A lake as the variant lists it. */
-function lake(over: Partial<LakeSource> = {}): LakeSource {
-  return { kind: "lake", level: 42, x: 100, z: 50, radius: 30, murk: 1, lobe: null, ...over };
+/** A lake as the variant lists it: a stadium a metre long, near enough a disc of `radius`. */
+function lake(over: { x?: number; z?: number; radius?: number; level?: number; murk?: number } = {}): LakeSource {
+  return stadiumLake({ cx: over.x ?? 100, cz: over.z ?? 50, halfLen: 0.5, w: over.radius ?? 30, level: over.level ?? 42, murk: over.murk ?? 1 });
 }
 
 describe("createWater under NullEngine", () => {

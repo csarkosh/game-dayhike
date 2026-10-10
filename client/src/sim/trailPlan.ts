@@ -21,7 +21,7 @@ import {
   TRAIL_HARD_SLOPE_MAX, TRAIL_SIMPLIFY_TOL, TRAIL_REROUTE_MAX, TRAIL_EDGE_MIN_GAP, TRAIL_CORRIDOR_HALF,
   type TrailNode, type TrailEdge,
 } from "./trail.js";
-import { MEADOW_RIM, POND_APRON } from "./features.js";
+import { MEADOW_RIM } from "./features.js";
 
 export type BuildFrame = {
   roadCenterX(z: number): number;
@@ -150,8 +150,9 @@ export function forEachCellNear(grid: TrailGrid, x: number, z: number, r: number
 
 /**
  * The centre-to-centre distance two features must keep. `FEATURE_SPACING` is
- * the floor, but a feature's ground reaches past its own radius — a pond's
- * apron by POND_APRON, and a meadow's by MEADOW_RIM — and two STAGES
+ * the floor, but a feature's ground reaches past its own radius — a lake's to
+ * its shape's `bound` (its bank and apron past the shore), a meadow's by
+ * MEADOW_RIM — and two STAGES
  * that overlap leave ground neither of them levelled, which the bed cannot sit
  * flush on (2026-09-11; measured before this
  * rule: two meadows 180 m apart with 90 m and 78 m radii overlapped 58 m of
@@ -159,8 +160,9 @@ export function forEachCellNear(grid: TrailGrid, x: number, z: number, r: number
  * exempt and keeps its own PEAK_SHOULDER rule: a loop feature is MEANT to
  * be able to stand on the dome's outer skirt.
  */
-export function featureReach(f: { kind: string; radius: number }): number {
-  return f.radius + (f.kind === "pond" ? POND_APRON : f.kind === "meadow" ? MEADOW_RIM : 0);
+export function featureReach(f: { kind: string; radius: number; shape?: { bound: number } }): number {
+  if (f.kind === "pond") return f.shape !== undefined ? f.shape.bound : f.radius;
+  return f.radius + (f.kind === "meadow" ? MEADOW_RIM : 0);
 }
 
 /** One sampled point on the stem polyline: its position, its cumulative stem

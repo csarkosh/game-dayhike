@@ -38,6 +38,7 @@ import { FOG_DISTANCE } from "../../src/sim/forestConstants.js";
 import { pluginsInStates } from "./helpers/pluginText.js";
 import { drawnEffect, probeReady, stageBindings, webgpuProcessingEngine, type ProcessedEffect } from "./helpers/webgpuProcessing.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
 /**
@@ -570,7 +571,7 @@ describe("inter-stage variables and textures of a lake's water material on WebGP
       const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: "post", sky: skyFixture() });
       probeReady(scene);
       const water = createWater(
-        scene, seedFromToken("atmo"), 0, [{ kind: "lake", level: 42, x: 100, z: 50, radius: 30, murk: 1, lobe: null }], tier, 100, 50,
+        scene, seedFromToken("atmo"), 0, [stadiumLake({ cx: 100, cz: 50, halfLen: 0.5, w: 30, level: 42, murk: 1 })], tier, 100, 50,
       );
       lakes.set(tier, await drawnEffect(water.lakeMeshes[0] as Mesh));
       disposers.push(() => {

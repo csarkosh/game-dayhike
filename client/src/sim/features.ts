@@ -3,7 +3,12 @@ import { fbm2d, hash3 } from "./field.js";
 import {
   apronAt, lakeShoreInto, newLakeShore, stepT, stepTd,
   LAKE_BANK_EASE, LAKE_BANK_GRADE_GENTLE, LAKE_BANK_GRADE_STEEP, LAKE_BANK_WIDTH_GENTLE, LAKE_BANK_WIDTH_STEEP,
+  LAKE_SHAPE_TUNABLES, LAKE_SHELF_WIDTH,
   type LakeShape,
+} from "./lakeShape.js";
+// The bed's constants and profile live with the shore and are read from here as they were.
+export {
+  LAKE_SHELF_DEPTH, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH, LAKE_DEPTH_MURKY, LAKE_DEPTH_CLEAR, lakeMiddleDepth, lakeDepthD,
 } from "./lakeShape.js";
 
 /**
@@ -20,7 +25,7 @@ export type Feature = {
   kind: FeatureKind;
   x: number;
   z: number;
-  /** Disc radius (m): the peak's dome, the meadow's flat, the pond's rim. */
+  /** Disc radius (m): the peak's dome, the meadow's flat; a pond's drawn mean radius. */
   radius: number;
   /** peak: the dome's rise above the base ground at its centre. meadow: the
    * plateau height (absolute). pond: the rim height (absolute). */
@@ -29,11 +34,15 @@ export type Feature = {
    * dome is placed — the treeline is a height, so the mask needs it. */
   crestH?: number;
   /** pond only: 0 clear .. 1 murky, by where the lake lies on the climb
-   * (`murkFor`). Written by the builder after the whole bowl is placed. */
+   * (`murkFor`), set with its shape when the lake is placed; the shape
+   * carries the same value. */
   murk?: number;
   /** pond only: the marsh on a murky lake's shelf at one end, or null for
-   * none. Written by the builder after the whole bowl is placed. */
+   * none, chosen when the lake is placed. */
   lobe?: Lobe | null;
+  /** pond only: the lake's shape (`lakeShape.ts`), its level the feature's
+   * `height` and its murk the feature's `murk`. */
+  shape?: LakeShape;
 };
 
 /** A murky lake's marsh: its shelf at one end, silted up to the water's
@@ -170,11 +179,7 @@ export const MEADOW_SLOPE_MAX = 0.35;
 // ---- Pond --------------------------------------------------------------
 export const POND_RADIUS_MIN = 25;
 export const POND_RADIUS_MAX = 40;
-export const POND_DEPTH = 0.6;
-/** The shore ramp from the rim to the hillside; at the 0.08 candidate slope it
- * is at most a 0.3 grade. */
-export const POND_APRON = 12;
-/** Bare floor from the rim out to POND_SHORE; no trees to POND_TREE_MARGIN. */
+/** Bare floor from the shore out to POND_SHORE; no trees to POND_TREE_MARGIN. */
 export const POND_SHORE = 4;
 export const POND_TREE_MARGIN = 8;
 /** 0.08 -> 0.25: same reasoning
@@ -182,6 +187,20 @@ export const POND_TREE_MARGIN = 8;
  * own basin+apron stage does the levelling; the loop needs the LEVELLED apron
  * walkable, not the raw hillside. */
 export const POND_SLOPE_MAX = 0.25;
+/** Every trail edge keeps this far outside a lake's shore (s ≤ −LAKE_TRAIL_CLEAR):
+ * the reach of the trail corridor's blend, so the corridor never reshapes the
+ * shore (spec §6.2). */
+export const LAKE_TRAIL_CLEAR = 7;
+/** A lake is placed only where the ground straight out from its spout's tip
+ * to the edge of its box stands this far under the sill, so the water spills
+ * there and nowhere else. */
+export const LAKE_SPILL_MARGIN = 0.1;
+/** The lake's ground may move the hillside under the stem, and TRAIL_CORRIDOR_HALF either side, by at most this (m). */
+export const LAKE_STEM_SHIFT = 2;
+/** The ring's margin past LAKE_TRAIL_CLEAR: half an 8 m grid cell's diagonal, so no point of a ring cell lies inside 7 m. */
+export const LAKE_RING_MARGIN = 5.7;
+/** The most a valley lake's level is raised so its spout spills (m). */
+export const LAKE_LEVEL_RAISE_MAX = 1;
 
 // ---- Lake ----------------------------------------------------------------
 /** Murk by where the lake lies on the climb from the pad to the crest: the
@@ -194,55 +213,6 @@ export const MURK_HI = 0.75;
 export function murkFor(h: number, padH: number, crestH: number | undefined): number {
   if (crestH === undefined || !(crestH > padH)) return 0.5;
   return 1 - smoothstep(MURK_LO, MURK_HI, (h - padH) / (crestH - padH));
-}
-
-/** The shelf: from the rim the bed falls to LAKE_SHELF_DEPTH at
- * LAKE_SHELF_WIDTH in (the depth a lake survey found at a shore's shelf,
- * research §5.1), deep enough to wade to the waist and no deeper. */
-export const LAKE_SHELF_DEPTH = 0.9;
-export const LAKE_SHELF_WIDTH = 10;
-/** From the shelf's edge down to the flat middle. */
-export const LAKE_SLOPE_WIDTH = 8;
-/** The middle's depth: a murky lake's, and a clear lake's, whose bed then
- * reads to about 5 m as the research's subalpine lakes do (§5.5). */
-export const LAKE_DEPTH_MURKY = 3;
-export const LAKE_DEPTH_CLEAR = 6;
-
-export function lakeMiddleDepth(murk: number): number {
-  return LAKE_DEPTH_CLEAR + (LAKE_DEPTH_MURKY - LAKE_DEPTH_CLEAR) * murk;
-}
-
-/**
- * Depth below the rim at `s` metres in from the rim, and ∂depth/∂s: two
- * quintic steps, the shelf's and the drop's, each flat to second order at
- * both ends, so the bed is C² at the rim, at the shelf's edge and at the
- * middle's. The shelf levels out at its edge before the drop begins: the
- * ledge a real lake's shore has.
- */
-export function lakeDepthD(s: number, murk: number): { v: number; d: number } {
-  const shelf = smootherstepD(0, LAKE_SHELF_WIDTH, s);
-  const drop = smootherstepD(LAKE_SHELF_WIDTH, LAKE_SHELF_WIDTH + LAKE_SLOPE_WIDTH, s);
-  const extra = lakeMiddleDepth(murk) - LAKE_SHELF_DEPTH;
-  return { v: LAKE_SHELF_DEPTH * shelf.v + extra * drop.v, d: LAKE_SHELF_DEPTH * shelf.d + extra * drop.d };
-}
-
-/**
- * A pond's lake bed. Inside the rim it replaces the build's dish (`basinD`
- * ignores its base there, and so does this); at and outside the rim the
- * ground is returned untouched, and meets the apron with value, slope and
- * curvature all continuous. Applied to the composed field only
- * (`lakeStageD`), never while the bowl is built.
- */
-export function lakeD(f: Feature, x: number, z: number, base: TerrainSample): TerrainSample {
-  const rx = x - f.x, rz = z - f.z;
-  const q2 = rx * rx + rz * rz;
-  if (q2 >= f.radius * f.radius) return base;
-  const q = Math.sqrt(q2);
-  const depth = lakeDepthD(f.radius - q, f.murk ?? 0.5);
-  // h = height − D(R − q), so ∂h/∂q = D'(R − q). D' is zero across the flat
-  // middle, which holds the centre on every pond, so q → 0 never divides.
-  if (depth.d === 0) return { h: f.height - depth.v, dx: 0, dz: 0 };
-  return { h: f.height - depth.v, dx: (depth.d * rx) / q, dz: (depth.d * rz) / q };
 }
 
 // ---- The marsh ---------------------------------------------------------------
@@ -391,14 +361,13 @@ export function lobePoints(f: MarshLake, step: number): Array<[number, number]> 
   return out;
 }
 
-/** The water terrain's stage over the composed field: every pond's lake bed,
- * then its marsh. After `featureStageD` in the olympic variant's sample, and
- * never in the bowl's build, so nothing the build places can move. */
+/** The water terrain's stage over the composed field: every murky lake's
+ * marsh. After `featureStageD`, which holds each lake's whole ground, in the
+ * olympic variant's sample, and never in the bowl's build. */
 export function lakeStageD(seed: number, features: readonly Feature[], x: number, z: number, base: TerrainSample): TerrainSample {
   let s = base;
   for (const f of features) {
     if (f.kind !== "pond") continue;
-    s = lakeD(f, x, z, s);
     s = marshD(seed, f, x, z, s);
   }
   return s;
@@ -599,9 +568,11 @@ export const FEATURE_TUNABLES: Readonly<Record<string, number>> = {
   PEAK_INLAND_MIN, PEAK_INLAND_MAX, PEAK_SHOULDER, PEAK_LOWER_STEP, PEAK_LOWER_TRIES, PEAK_CENTRE_TRIES,
   TREELINE_BELOW_CREST, TREELINE_BAND, PEAK_RIM_FADE,
   MEADOW_RADIUS_MIN, MEADOW_RADIUS_MAX, MEADOW_RIM, MEADOW_TREE_MARGIN, MEADOW_SLOPE_MAX,
-  POND_RADIUS_MIN, POND_RADIUS_MAX, POND_DEPTH, POND_APRON, POND_SHORE, POND_TREE_MARGIN, POND_SLOPE_MAX,
+  POND_RADIUS_MIN, POND_RADIUS_MAX, POND_SHORE, POND_TREE_MARGIN, POND_SLOPE_MAX, LAKE_TRAIL_CLEAR, LAKE_SPILL_MARGIN,
+  LAKE_STEM_SHIFT, LAKE_RING_MARGIN, LAKE_LEVEL_RAISE_MAX,
   MURK_LO, MURK_HI,
-  LAKE_SHELF_DEPTH, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH, LAKE_DEPTH_MURKY, LAKE_DEPTH_CLEAR,
+  ...LAKE_SHAPE_TUNABLES,
+  LAKE_SILL, LAKE_NOTCH_RAMP, LAKE_NOTCH_FADE,
   MARSH_MURK_MIN, MARSH_WIDTH_MIN, MARSH_WIDTH_MAX, MARSH_AMP, MARSH_NOISE_WAVE, MARSH_EDGE,
   MARSH_SHORE_START, MARSH_SHORE_SCAN, MARSH_SCORE_STEP, MARSH_SALT,
   LOOP_WEIGHT_1, LOOP_WEIGHT_2, LOOP_WEIGHT_3,
@@ -714,8 +685,8 @@ export function peakD(f: Feature, x: number, z: number, base: TerrainSample): Te
 
 /**
  * The flat: the WHOLE disc `[0, R]` is levelled to `f.height`, and the ramp
- * back to the hillside lies OUTSIDE it, over the apron `[R, R + MEADOW_RIM]` —
- * the pond's own shape (`basinD`) mirrored. Outside the apron the input sample
+ * back to the hillside lies OUTSIDE it, over the apron `[R, R + MEADOW_RIM]`,
+ * as a lake's apron lies outside its shore (`lakeGroundD`). Outside the apron the input sample
  * passes through unchanged, as the same object.
  *
  * The rim used to be INSIDE the radius. A loop has to walk ground the stage
@@ -745,46 +716,12 @@ export function flatD(f: Feature, x: number, z: number, base: TerrainSample): Te
   };
 }
 
-/**
- * The basin: inside the rim (q < R) the ground IS the dish — a surface
- * `height − POND_DEPTH·(1 − (q/R)²)²`, zero slope at the centre and zero
- * slope at the rim, so it meets the flat water without a step and holds the
- * feature's `height` all the way to the rim. Over the apron
- * [R, R + POND_APRON) that rim height blends back to the hillside, so the
- * rim is the feature's `height` everywhere around the circle and not the
- * (possibly sloped) candidate ground underneath it. Outside the apron the
- * input sample passes through unchanged, as the same object.
- */
-export function basinD(f: Feature, x: number, z: number, base: TerrainSample): TerrainSample {
-  const rx = x - f.x, rz = z - f.z;
-  const R = f.radius;
-  const outer = R + POND_APRON;
-  const q2 = rx * rx + rz * rz;
-  if (q2 >= outer * outer) return base;
-  const q = Math.sqrt(q2);
-  const qx = q > 1e-9 ? rx / q : 0, qz = q > 1e-9 ? rz / q : 0;
-  if (q < R) {
-    const t = q / R;
-    const u = 1 - t * t;
-    const dhDq = (4 * POND_DEPTH * u * t) / R;
-    return { h: f.height - POND_DEPTH * u * u, dx: dhDq * qx, dz: dhDq * qz };
-  }
-  const s = smootherstepD(R, outer, q);
-  const w = 1 - s.v; // 1 at the rim, 0 at the outer edge of the apron
-  const wDx = -s.d * qx, wDz = -s.d * qz;
-  return {
-    h: (1 - w) * base.h + w * f.height,
-    dx: -wDx * base.h + (1 - w) * base.dx + wDx * f.height,
-    dz: -wDz * base.h + (1 - w) * base.dz + wDz * f.height,
-  };
-}
-
 export function featureStageD(features: readonly Feature[], x: number, z: number, base: TerrainSample): TerrainSample {
   let s = base;
   for (const f of features) {
     if (f.kind === "peak") s = peakD(f, x, z, s);
     else if (f.kind === "meadow") s = flatD(f, x, z, s);
-    else s = basinD(f, x, z, s);
+    else if (f.shape !== undefined) s = lakeGroundD(f.shape, x, z, s);
   }
   return s;
 }

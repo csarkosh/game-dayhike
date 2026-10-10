@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   FEATURE_TUNABLES, PEAK_RADIUS_MIN, PEAK_RADIUS_MAX, PEAK_RISE_MIN, PEAK_RISE_MAX, PEAK_CREST_RADIUS,
-  MEADOW_RADIUS_MIN, MEADOW_RADIUS_MAX, MEADOW_RIM, POND_RADIUS_MIN, POND_RADIUS_MAX, POND_DEPTH, POND_APRON,
+  MEADOW_RADIUS_MIN, MEADOW_RADIUS_MAX, MEADOW_RIM, POND_RADIUS_MIN, POND_RADIUS_MAX,
   LOOP_WEIGHT_1, LOOP_WEIGHT_2, LOOP_WEIGHT_3, TREELINE_BELOW_CREST, TREELINE_BAND, PEAK_RIM_FADE,
-  planFeatures, peakD, flatD, basinD, featureStageD, featureMaskAt, murkFor, MURK_LO, MURK_HI, type Feature,
-  lakeDepthD, lakeD, lakeMiddleDepth, LAKE_SHELF_DEPTH, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH, LAKE_DEPTH_MURKY, LAKE_DEPTH_CLEAR,
+  planFeatures, peakD, flatD, featureStageD, featureMaskAt, murkFor, MURK_LO, MURK_HI, type Feature,
+  lakeDepthD, lakeMiddleDepth, LAKE_SHELF_DEPTH, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH, LAKE_DEPTH_MURKY, LAKE_DEPTH_CLEAR,
   chooseLobe, marshD, marshWeightAt, marshWidth, lobePoints, MARSH_AMP, MARSH_EDGE, MARSH_MURK_MIN, MARSH_WIDTH_MIN, MARSH_WIDTH_MAX,
 } from "../../src/sim/features.js";
 import { TRAIL_GRID_CAP } from "../../src/sim/trailGrid.js";
 import type { TerrainSample } from "../../src/sim/terrain.js";
+import { stadiumShape } from "../helpers/lakeShapes.js";
 
 const flat: TerrainSample = { h: 100, dx: 0, dz: 0 };
 const tilted = (x: number, z: number): TerrainSample => ({ h: 50 + 0.1 * x - 0.05 * z, dx: 0.1, dz: -0.05 });
@@ -16,7 +17,11 @@ const tilted = (x: number, z: number): TerrainSample => ({ h: 50 + 0.1 * x - 0.0
 // (was 220/75).
 const peak: Feature = { id: 0, kind: "peak", x: 0, z: 0, radius: PEAK_RADIUS_MAX, height: 65, crestH: 165 };
 const meadow: Feature = { id: 1, kind: "meadow", x: 1000, z: 0, radius: 90, height: 60 };
-const pond: Feature = { id: 2, kind: "pond", x: 0, z: 1000, radius: 30, height: 100 };
+// A pond 30 m in half-width about a 10 m spine, murky: its bed 3 m deep in the middle.
+const pond: Feature = {
+  id: 2, kind: "pond", x: 0, z: 1000, radius: 30, height: 100, murk: 1,
+  shape: stadiumShape({ cx: 0, cz: 1000, halfLen: 5, w: 30, size: 30, level: 100, murk: 1 }),
+};
 
 function central(stage: (x: number, z: number) => TerrainSample, x: number, z: number): { dx: number; dz: number } {
   const H = 0.02;
@@ -122,39 +127,12 @@ describe("the meadow flat", () => {
   });
 });
 
-describe("the pond basin", () => {
-  it("dishes POND_DEPTH at the centre, holds the rim height at the rim, and is exact outside", () => {
-    expect(basinD(pond, 0, 1000, flat).h).toBeCloseTo(pond.height - POND_DEPTH, 9);
-    expect(basinD(pond, 0, 1000 + pond.radius - 0.01, flat).h).toBeCloseTo(pond.height, 2);
-    const edge = flat;
-    expect(basinD(pond, 0, 1000 + pond.radius + POND_APRON + 1, edge)).toBe(edge);
-  });
-  it("is wadeable: nowhere deeper than POND_DEPTH and the floor grade stays under 0.15", () => {
-    let deepest = 0, steepest = 0;
-    for (let r = 0; r < pond.radius; r += 0.5) {
-      const s = basinD(pond, r, 1000, flat);
-      deepest = Math.max(deepest, pond.height - s.h);
-      steepest = Math.max(steepest, Math.hypot(s.dx, s.dz));
-    }
-    expect(deepest).toBeLessThanOrEqual(POND_DEPTH + 1e-9);
-    expect(steepest).toBeLessThan(0.15);
-  });
-  it("returns exact analytic derivatives", () => {
-    for (const r of [0.5, 10, 20, 29, 45, 60]) {
-      const x = 3, z = 1000 + r;
-      const a = basinD(pond, x, z, tilted(x, z)), n = central((px, pz) => basinD(pond, px, pz, tilted(px, pz)), x, z);
-      expect(Math.abs(a.dx - n.dx)).toBeLessThan(0.01 * Math.max(1, Math.abs(n.dx)));
-      expect(Math.abs(a.dz - n.dz)).toBeLessThan(0.01 * Math.max(1, Math.abs(n.dz)));
-    }
-  });
-});
-
 describe("the composed stage and the mask", () => {
   const all = [peak, meadow, pond];
   it("applies every feature and returns the same object where none reaches", () => {
     expect(featureStageD(all, 0, 0, flat).h).toBeCloseTo(flat.h + peak.height, 9);
     expect(featureStageD(all, 1000, 0, flat).h).toBeCloseTo(meadow.height, 9);
-    expect(featureStageD(all, 0, 1000, flat).h).toBeCloseTo(pond.height - POND_DEPTH, 9);
+    expect(featureStageD(all, 0, 1000, flat).h).toBeCloseTo(pond.height - 3, 9);
     expect(featureStageD(all, 500, 500, flat)).toBe(flat);
     expect(featureStageD([], 0, 0, flat)).toBe(flat);
   });
@@ -262,9 +240,21 @@ describe("the composed stage and the mask", () => {
       "PEAK_INLAND_MIN", "PEAK_INLAND_MAX", "PEAK_SHOULDER", "PEAK_LOWER_STEP", "PEAK_LOWER_TRIES", "PEAK_CENTRE_TRIES",
       "TREELINE_BELOW_CREST", "TREELINE_BAND", "PEAK_RIM_FADE",
       "MEADOW_RADIUS_MIN", "MEADOW_RADIUS_MAX", "MEADOW_RIM", "MEADOW_TREE_MARGIN", "MEADOW_SLOPE_MAX",
-      "POND_RADIUS_MIN", "POND_RADIUS_MAX", "POND_DEPTH", "POND_APRON", "POND_SHORE", "POND_TREE_MARGIN", "POND_SLOPE_MAX",
+      "POND_RADIUS_MIN", "POND_RADIUS_MAX", "POND_SHORE", "POND_TREE_MARGIN", "POND_SLOPE_MAX", "LAKE_TRAIL_CLEAR", "LAKE_SPILL_MARGIN",
+      "LAKE_STEM_SHIFT", "LAKE_RING_MARGIN", "LAKE_LEVEL_RAISE_MAX",
       "MURK_LO", "MURK_HI",
       "LAKE_SHELF_DEPTH", "LAKE_SHELF_WIDTH", "LAKE_SLOPE_WIDTH", "LAKE_DEPTH_MURKY", "LAKE_DEPTH_CLEAR",
+      "LAKE_JOINT_K", "LAKE_HARM_C_VALLEY", "LAKE_HARM_GAIN_MIN", "LAKE_HARM_GAIN_MAX", "LAKE_HARM_FADE_LO", "LAKE_HARM_FADE_HI",
+      "LAKE_NOISE_AMP_MIN", "LAKE_NOISE_AMP_MAX", "LAKE_NOISE_WAVE", "LAKE_SPOUT_K", "LAKE_SIDE_EDGE", "LAKE_SHELF_SHARE",
+      "TARN_SHELF_HEAD", "TARN_SHELF_OUTLET_SHARE", "TARN_DEPTH_SHARE", "LAKE_RAY_STEP", "LAKE_RAY_HALVINGS",
+      "LAKE_BANK_GRADE_GENTLE", "LAKE_BANK_GRADE_STEEP", "LAKE_BANK_WIDTH_GENTLE", "LAKE_BANK_WIDTH_STEEP", "LAKE_BANK_EASE",
+      "LAKE_APRON_RISE", "LAKE_APRON_MIN", "LAKE_APRON_MAX", "LAKE_APRON_BAND", "LAKE_APRON_STEP", "LAKE_APRON_SOFT",
+      "LAKE_MEASURE_STEP", "LAKE_BOUND_MARGIN", "LAKE_BOUND_STEP", "LAKE_BOUND_REACH", "LAKE_SHAPE_SALT", "LAKE_NOISE_SALT",
+      "LAKE_VALLEY_LW_LO", "LAKE_VALLEY_LW_MID", "LAKE_VALLEY_LW_HI", "LAKE_TAPER_MAX", "LAKE_VALLEY_TWO_SHARE",
+      "LAKE_VALLEY_BEND_MIN", "LAKE_VALLEY_BEND_MAX", "LAKE_BEND_AT_MIN", "LAKE_BEND_AT_MAX", "LAKE_BEND3_JITTER",
+      "LAKE_VALLEY_LOBED_SHARE", "LAKE_PINCH_MIN", "LAKE_PINCH_MAX", "LAKE_SPOUT_WIDTH_MIN", "LAKE_SPOUT_WIDTH_MAX",
+      "LAKE_SPOUT_LENGTH_MIN", "LAKE_SPOUT_LENGTH_MAX", "LAKE_OUTLET_REACH", "LAKE_CENTRE_STEP",
+      "LAKE_SILL", "LAKE_NOTCH_RAMP", "LAKE_NOTCH_FADE",
       "MARSH_MURK_MIN", "MARSH_WIDTH_MIN", "MARSH_WIDTH_MAX", "MARSH_AMP", "MARSH_NOISE_WAVE", "MARSH_EDGE",
       "MARSH_SHORE_START", "MARSH_SHORE_SCAN", "MARSH_SCORE_STEP", "MARSH_SALT",
       "LOOP_WEIGHT_1", "LOOP_WEIGHT_2", "LOOP_WEIGHT_3",
@@ -276,7 +266,11 @@ describe("the composed stage and the mask", () => {
     ];
     for (const k of keys) expect(FEATURE_TUNABLES[k], k).toBeTypeOf("number");
     expect(Object.keys(FEATURE_TUNABLES).sort()).toEqual([...keys].sort());
-    expect(Object.keys(FEATURE_TUNABLES).length).toBe(70);
+    // The valley lakes' outlines: POND_DEPTH and POND_APRON went with the dish,
+    // and the shore's 58 constants (`LAKE_SHAPE_TUNABLES`), the sill and the
+    // notch's 3, the trail's clearance, the spill's margin, the stem's
+    // shift, the ring's margin and the level's raise joined — 70 keys -> 129.
+    expect(Object.keys(FEATURE_TUNABLES).length).toBe(129);
   });
   it("keeps its ranges within their working bounds", () => {
     // 220/220 and 60/90 → 300/300 and 50/80: the original numbers put the
@@ -285,7 +279,7 @@ describe("the composed stage and the mask", () => {
     expect([PEAK_RISE_MIN, PEAK_RISE_MAX]).toEqual([50, 80]);
     // 70/110 -> 50/90.
     expect([MEADOW_RADIUS_MIN, MEADOW_RADIUS_MAX]).toEqual([50, 90]);
-    expect([POND_RADIUS_MIN, POND_RADIUS_MAX, POND_DEPTH]).toEqual([25, 40, 0.6]);
+    expect([POND_RADIUS_MIN, POND_RADIUS_MAX]).toEqual([25, 40]);
     expect(LOOP_WEIGHT_1 + LOOP_WEIGHT_2 + LOOP_WEIGHT_3).toBeCloseTo(1, 12);
   });
 });
@@ -317,27 +311,31 @@ describe("murkFor", () => {
 });
 
 describe("the lake's bed", () => {
-  it("falls to the shelf's depth 10 m in from the rim", () => {
-    for (const murk of [0, 0.5, 1]) expect(lakeDepthD(LAKE_SHELF_WIDTH, murk).v).toBeCloseTo(LAKE_SHELF_DEPTH, 12);
+  it("falls to the shelf's depth at the shelf's width", () => {
+    for (const murk of [0, 0.5, 1]) {
+      expect(lakeDepthD(LAKE_SHELF_WIDTH, murk, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH).v).toBeCloseTo(LAKE_SHELF_DEPTH, 12);
+    }
     expect(LAKE_SHELF_DEPTH).toBe(0.9);
     expect(LAKE_SHELF_WIDTH).toBe(10);
   });
 
   it("has a flat middle 3 m deep when murky and 6 m when clear", () => {
     const flat = LAKE_SHELF_WIDTH + LAKE_SLOPE_WIDTH;
-    expect(lakeDepthD(flat, 1).v).toBeCloseTo(LAKE_DEPTH_MURKY, 12);
-    expect(lakeDepthD(flat, 0).v).toBeCloseTo(LAKE_DEPTH_CLEAR, 12);
-    expect(lakeDepthD(flat + 7, 0.5).v).toBeCloseTo(4.5, 12);
-    expect(lakeDepthD(flat + 7, 0.5).d).toBe(0);
+    const at = (s: number, murk: number) => lakeDepthD(s, murk, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH);
+    expect(at(flat, 1).v).toBeCloseTo(LAKE_DEPTH_MURKY, 12);
+    expect(at(flat, 0).v).toBeCloseTo(LAKE_DEPTH_CLEAR, 12);
+    expect(at(flat + 7, 0.5).v).toBeCloseTo(4.5, 12);
+    expect(at(flat + 7, 0.5).d).toBe(0);
     expect(lakeMiddleDepth(0.25)).toBeCloseTo(5.25, 12);
   });
 
-  it("is C² at the rim, the shelf's edge and the middle's", () => {
+  it("is C² at the shore, the shelf's edge and the middle's", () => {
     const e = 1e-4;
+    const at = (s: number, murk: number) => lakeDepthD(s, murk, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH);
     for (const murk of [0, 1]) {
-      expect(lakeDepthD(0, murk)).toEqual({ v: 0, d: 0 });
+      expect(at(0, murk)).toEqual({ v: 0, d: 0 });
       for (const s of [0, LAKE_SHELF_WIDTH, LAKE_SHELF_WIDTH + LAKE_SLOPE_WIDTH]) {
-        const second = (t: number): number => (lakeDepthD(t + e, murk).d - lakeDepthD(t - e, murk).d) / (2 * e);
+        const second = (t: number): number => (at(t + e, murk).d - at(t - e, murk).d) / (2 * e);
         // the second derivative is continuous: the same a little either side
         expect(Math.abs(second(s - 1e-3) - second(s + 1e-3))).toBeLessThan(0.02);
       }
@@ -346,34 +344,6 @@ describe("the lake's bed", () => {
 
   it("keeps a flat middle on the smallest pond", () => {
     expect(POND_RADIUS_MIN - LAKE_SHELF_WIDTH - LAKE_SLOPE_WIDTH).toBeGreaterThan(0);
-  });
-
-  const flat = (h: number) => ({ h, dx: 0, dz: 0 });
-  const pond = { id: 1, kind: "pond" as const, x: 0, z: 1000, radius: 30, height: 50, murk: 1 };
-
-  it("leaves the ground at and outside the rim untouched", () => {
-    const base = { h: 47, dx: 0.1, dz: -0.2 };
-    expect(lakeD(pond, 30, 1000, base)).toBe(base);
-    expect(lakeD(pond, 0, 1040, base)).toBe(base);
-  });
-
-  it("is the rim height less the depth inside, flat in the middle", () => {
-    expect(lakeD(pond, 0, 1000 + 20, flat(0)).h).toBeCloseTo(50 - lakeDepthD(10, 1).v, 12);
-    expect(lakeD(pond, 0, 1000, flat(0))).toEqual({ h: 50 - LAKE_DEPTH_MURKY, dx: 0, dz: 0 });
-  });
-
-  it("has exact derivatives", () => {
-    const e = 1e-5;
-    for (let i = 0; i < 40; i++) {
-      const a = i * 0.7853 + 0.1;
-      const q = 0.5 + (i * 29.3) % 29;
-      const x = Math.cos(a) * q, z = 1000 + Math.sin(a) * q;
-      const s = lakeD(pond, x, z, flat(0));
-      const ndx = (lakeD(pond, x + e, z, flat(0)).h - lakeD(pond, x - e, z, flat(0)).h) / (2 * e);
-      const ndz = (lakeD(pond, x, z + e, flat(0)).h - lakeD(pond, x, z - e, flat(0)).h) / (2 * e);
-      expect(Math.abs(s.dx - ndx)).toBeLessThan(1e-5);
-      expect(Math.abs(s.dz - ndz)).toBeLessThan(1e-5);
-    }
   });
 });
 
@@ -401,7 +371,7 @@ describe("the marsh", () => {
   });
 
   const withLobe = { ...pond, lobe: { dirX: 1, dirZ: 0, width: marshWidth(30, 0.9) } };
-  const baseAt = (x: number, z: number) => lakeD(withLobe, x, z, { h: 50 + 0.1 * x + 0.05 * (z - 1000), dx: 0.1, dz: 0.05 });
+  const baseAt = (x: number, z: number): TerrainSample => ({ h: 50 + 0.1 * x + 0.05 * (z - 1000), dx: 0.1, dz: 0.05 });
 
   it("lies strictly between the wall and the rim", () => {
     const pts = lobePoints(withLobe, 0.5);

@@ -4,6 +4,7 @@ import { Scene } from "@babylonjs/core/scene.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { WING_TIME_WRAP, WingPlugin } from "../../src/game/wingPlugin.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import {
   createDragonflyBehaviour, KIND_DAMSELFLY, KIND_DARNER, KIND_SKIMMER, type Dragonflies, type DragonflyPose,
 } from "../../src/game/dragonflyBehaviour.js";
@@ -211,7 +212,7 @@ describe("the dragonflies' instances", () => {
 
     // The behaviour's own output draws the same way: a count a kind.
     const d = createDragonflyBehaviour({
-      lake: { kind: "lake", level: 10, x: 0, z: 0, radius: 30, murk: 0.2, lobe: null },
+      lake: stadiumLake({ cx: 0, cz: 0, halfLen: 0.5, w: 30, level: 10, murk: 0.2 }),
       markers: [], beats: [], voices: [],
       perches: [{ x: 0, y: 10.8, z: 31, seed: 1 }, { x: 8, y: 10.8, z: 30, seed: 2 }],
       stems: [{ x: 3, y: 10.4, z: 30.5, seed: 3 }],
