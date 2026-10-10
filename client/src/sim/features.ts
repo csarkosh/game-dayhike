@@ -1,5 +1,10 @@
 import type { TerrainSample } from "./terrain.js";
 import { fbm2d, hash3 } from "./field.js";
+import {
+  apronAt, lakeShoreInto, newLakeShore, stepT, stepTd,
+  LAKE_BANK_EASE, LAKE_BANK_GRADE_GENTLE, LAKE_BANK_GRADE_STEEP, LAKE_BANK_WIDTH_GENTLE, LAKE_BANK_WIDTH_STEEP,
+  type LakeShape,
+} from "./lakeShape.js";
 
 /**
  * The made features of the trail system: one peak per
@@ -272,7 +277,7 @@ const MARSH_DIRECTIONS: readonly (readonly [number, number])[] = [
 ];
 
 /** What the marsh's functions need of a lake: a pond feature or a `LakeSource`. */
-type LakeShape = { x: number; z: number; radius: number; lobe?: Lobe | null };
+type MarshLake = { x: number; z: number; radius: number; lobe?: Lobe | null };
 
 export function marshWidth(radius: number, murk: number): number {
   const t = (murk - MARSH_MURK_MIN) / (1 - MARSH_MURK_MIN);
@@ -317,7 +322,7 @@ export function chooseLobe(f: Feature, murk: number, ground: (x: number, z: numb
  * the rim and at the shelf's edge) and the offset across the marsh's
  * direction (1 at half its width).
  */
-function marshMetricD(f: LakeShape, lobe: Lobe, x: number, z: number): { v: number; dx: number; dz: number } {
+function marshMetricD(f: MarshLake, lobe: Lobe, x: number, z: number): { v: number; dx: number; dz: number } {
   const rx = x - f.x, rz = z - f.z;
   // Only the marsh's own side of the lake. Every point it covers lies at
   // least 8 m along its direction (q > R − 10 ≥ 15, the offset across under
@@ -337,7 +342,7 @@ function marshMetricD(f: LakeShape, lobe: Lobe, x: number, z: number): { v: numb
 }
 
 /** How much of the marsh is at (x, z): 1 in its core, 0 outside it. */
-export function marshWeightAt(f: LakeShape, x: number, z: number): number {
+export function marshWeightAt(f: MarshLake, x: number, z: number): number {
   if (!f.lobe) return 0;
   const e = marshMetricD(f, f.lobe, x, z).v;
   if (e >= 1) return 0;
@@ -369,7 +374,7 @@ export function marshD(seed: number, f: Feature, x: number, z: number, base: Ter
 
 /** Points of the marsh on a `step` grid in its own coordinates, for tests and
  * scans: every one lies between the wall and the rim. */
-export function lobePoints(f: LakeShape, step: number): Array<[number, number]> {
+export function lobePoints(f: MarshLake, step: number): Array<[number, number]> {
   const out: Array<[number, number]> = [];
   const lobe = f.lobe;
   if (!lobe) return out;
@@ -397,6 +402,85 @@ export function lakeStageD(seed: number, features: readonly Feature[], x: number
     s = marshD(seed, f, x, z, s);
   }
   return s;
+}
+
+// ---- The lake's ground ---------------------------------------------------------
+/** The outlet's sill over the level (m), the notch's rise to it from the
+ * shore (m), and its fade beyond the spout's sides and behind its tip (m). */
+export const LAKE_SILL = 0.3;
+export const LAKE_NOTCH_RAMP = 2;
+export const LAKE_NOTCH_FADE = 4;
+
+const GROUND_SHORE = newLakeShore();
+
+/**
+ * One lake's whole ground (spec §5), from its shore distance s and t = −s:
+ * under the water the level less the bed's depth; outside it the bank, the
+ * line `level + g(σ) · t · S(t)` (S a smootherstep over LAKE_BANK_EASE, g
+ * 0.12 on the gentle side to 0.5 on the steep), notched where the outlet
+ * leaves to `level + LAKE_SILL · S(t / LAKE_NOTCH_RAMP)`, and from the
+ * bank's width (4 to 6 m by σ) that line blended into the hillside by a
+ * smootherstep over the apron's width A(θ). Exact derivatives through s, σ,
+ * θ and the notch's weight; past the apron, and past `bound`, the input
+ * sample comes back unchanged, as the same object.
+ */
+export function lakeGroundD(shape: LakeShape, x: number, z: number, base: TerrainSample): TerrainSample {
+  const r = lakeShoreInto(GROUND_SHORE, shape, x, z);
+  if (r.s === Number.NEGATIVE_INFINITY) return base;
+  if (r.s > 0) return { h: shape.level - r.depth, dx: -r.depthX, dz: -r.depthZ };
+  const t = -r.s, tx = -r.sx, tz = -r.sz;
+  const wb = LAKE_BANK_WIDTH_GENTLE + (LAKE_BANK_WIDTH_STEEP - LAKE_BANK_WIDTH_GENTLE) * r.sigma;
+  const wbx = (LAKE_BANK_WIDTH_STEEP - LAKE_BANK_WIDTH_GENTLE) * r.sigmaX;
+  const wbz = (LAKE_BANK_WIDTH_STEEP - LAKE_BANK_WIDTH_GENTLE) * r.sigmaZ;
+  const ap = apronAt(shape.apron, r.ux, r.uz);
+  if (t >= wb + ap.v) return base;
+  // The bank's line: level + g · t · S(t), ∂/∂t = g · (S + t S′).
+  const g = LAKE_BANK_GRADE_GENTLE + (LAKE_BANK_GRADE_STEEP - LAKE_BANK_GRADE_GENTLE) * r.sigma;
+  const gx = (LAKE_BANK_GRADE_STEEP - LAKE_BANK_GRADE_GENTLE) * r.sigmaX;
+  const gz = (LAKE_BANK_GRADE_STEEP - LAKE_BANK_GRADE_GENTLE) * r.sigmaZ;
+  const ease = smootherstepD(0, LAKE_BANK_EASE, t);
+  const lift = t * ease.v, dLift = ease.v + t * ease.d;
+  let line = shape.level + g * lift;
+  let lineX = gx * lift + g * dLift * tx;
+  let lineZ = gz * lift + g * dLift * tz;
+  const sp = shape.spout;
+  if (sp !== null) {
+    // The notch: beyond the spout's tip along its axis, within its half-width of the axis.
+    const ex = sp.bx - sp.ax, ez = sp.bz - sp.az;
+    const el = Math.sqrt(ex * ex + ez * ez);
+    const ox = ex / el, oz = ez / el;
+    const along = (x - sp.bx) * ox + (z - sp.bz) * oz;
+    const lat = -(x - sp.bx) * oz + (z - sp.bz) * ox;
+    const side = lat < 0 ? -1 : 1;
+    const fa = smootherstepD(-LAKE_NOTCH_FADE, 0, along);
+    const fl = smootherstepD(sp.half, sp.half + LAKE_NOTCH_FADE, lat * side);
+    const nu = fa.v * (1 - fl.v);
+    if (nu > 0) {
+      // ∇along = o, ∇|lat| = side · (−oz, ox).
+      const nuX = fa.d * ox * (1 - fl.v) - fa.v * fl.d * side * -oz;
+      const nuZ = fa.d * oz * (1 - fl.v) - fa.v * fl.d * side * ox;
+      const rise = smootherstepD(0, LAKE_NOTCH_RAMP, t);
+      const notch = shape.level + LAKE_SILL * rise.v;
+      const notchX = LAKE_SILL * rise.d * tx, notchZ = LAKE_SILL * rise.d * tz;
+      lineX = (1 - nu) * lineX + nu * notchX + (notch - line) * nuX;
+      lineZ = (1 - nu) * lineZ + nu * notchZ + (notch - line) * nuZ;
+      line = (1 - nu) * line + nu * notch;
+    }
+  }
+  // The apron: u = S((t − wb) / A), ∇u = S′ · (∇t − ∇wb − u′ ∇A) / A, ∇θ = (−uz, ux) / q.
+  const span = ap.v;
+  const tt = (t - wb) / span;
+  const u = stepT(tt);
+  if (u <= 0) return { h: line, dx: lineX, dz: lineZ };
+  const ud = stepTd(tt);
+  const ax = (-ap.dTheta * r.uz) / r.q, az = (ap.dTheta * r.ux) / r.q;
+  const uX = (ud * (tx - wbx - tt * ax)) / span;
+  const uZ = (ud * (tz - wbz - tt * az)) / span;
+  return {
+    h: (1 - u) * line + u * base.h,
+    dx: (1 - u) * lineX + u * base.dx + (base.h - line) * uX,
+    dz: (1 - u) * lineZ + u * base.dz + (base.h - line) * uZ,
+  };
 }
 
 // ---- The plan ----------------------------------------------------------

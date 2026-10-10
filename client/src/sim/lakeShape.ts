@@ -877,8 +877,8 @@ export const LAKE_SPOUT_WIDTH_MAX = 20;
 export const LAKE_SPOUT_LENGTH_MIN = 5;
 export const LAKE_SPOUT_LENGTH_MAX = 10;
 /** The outlet: of the shore past the spine's tail end, the point whose ground
- * LAKE_OUTLET_PROBE metres out stands lowest. */
-export const LAKE_OUTLET_PROBE = 5;
+ * LAKE_OUTLET_REACH metres out stands lowest. */
+export const LAKE_OUTLET_REACH = 5;
 /** The step the base shape's deepest point is found on (m). */
 export const LAKE_CENTRE_STEP = 1;
 
@@ -1012,7 +1012,7 @@ export function valleyLakeShape(
   };
   shape = { ...shape, ...measureLake(shape, LAKE_MEASURE_STEP, extent0) };
   // The outlet: past the tail end of the spine (the cap the end's own segment
-  // ends in), the shore point whose ground LAKE_OUTLET_PROBE out stands lowest.
+  // ends in), the shore point whose ground LAKE_OUTLET_REACH out stands lowest.
   const tx = (headLast ? px[0] : px[last]) as number, tz = (headLast ? pz[0] : pz[last]) as number;
   const sx0 = (headLast ? px[1] : px[last - 1]) as number, sz0 = (headLast ? pz[1] : pz[last - 1]) as number;
   const tdx = tx - sx0, tdz = tz - sz0;
@@ -1028,7 +1028,7 @@ export function valleyLakeShape(
     const r = lakeShoreInto(SPOUT, shape, ox, oz);
     const gl = Math.sqrt(r.sx * r.sx + r.sz * r.sz);
     if (!(gl > 0)) continue;
-    const h = ground(ox - (r.sx / gl) * LAKE_OUTLET_PROBE, oz - (r.sz / gl) * LAKE_OUTLET_PROBE);
+    const h = ground(ox - (r.sx / gl) * LAKE_OUTLET_REACH, oz - (r.sz / gl) * LAKE_OUTLET_REACH);
     if (h < bestH) { bestH = h; bestI = i; }
   }
   const oi = bestI >= 0 ? bestI : nearI;
