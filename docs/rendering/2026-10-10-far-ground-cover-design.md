@@ -945,6 +945,18 @@ the vertex colour and so stay pale through the band; and the lake's mirror,
 which draws the shore with its own cheap terrain material and keeps today's far
 colour in the reflection.
 
+## 13. As built (2026-10-10)
+
+The build followed §4 to §9 with the departures below, each from what the fit's stills showed.
+
+**The pull is whole (§5.2).** `FAR_SWARD_MAX` is 1.0, not the far sward design's 0.8. At 0.8 a fifth of the ground's own colour stays under the paint, and at the meadow pose at noon that fifth with the sky's and the fog's light already read as the card band's luminance (0.039 against 0.038), so no sward colour could put the far floor on its target: halving the colour moved the far crop by a sixth of the way. At 1.0 the fit lands within 1 % of the band.
+
+**The fitted values (§7).** Meadow, noon: `FAR_SWARD` (0.0073, 0.0258, 0.0055), the far crops at Y 0.0385 against the band's 0.0382, chroma 0.213 against 0.215, G/R 1.00 of the band's; the colour sits at the +10 % edge the low-sun ladder asked for. Meadow, 16:00: `FAR_SELF_SHADOW` at its 0.8 ceiling, the far crops at 0.77 of the band's Y with the sun ahead of the eye; the fit wanted 3.8, so the sun's term as designed cannot lift the far floor to the cards at a low sun. Canopy, noon: `FAR_CANOPY_SHADE` 0.4615, the far crops at the band's Y exactly, their chroma 0.23 of the band's and G/R 0.84: the canopy's far crops carry trunks and fog, so the chroma bar is not reachable by that crop. `FAR_LITTER` keeps its start; the litter share along the crops was not read from the simulation. Canopy, 16:00: far over near 0.72 at a cut of 0.5, 0.74 at 0.375, 0.77 at 0.25 and 0.77 with the colour at its edge, under the 0.8 bar; `FAR_SPEC_CUT` is 0.25. The stills at both poses read as the cover continuing past the cards where the control's floor was a pale plane.
+
+**The corpus (§8.4, §11.5).** Nine stages were recorded on the three tiers at the canopy and meadow poses and, on the low tier, at the sea, the dawn cove, the lake and the trailhead in four weathers: the terrain's fragment stage on medium and high and its fragment stage on low, each in its uniformity-off form, one of its low vertex variants, three low plain fragment variants of the terrain that the corpus never held, and three low distance-fade vertex stages. Six old stages are retired: the two fragment stages the far cover's text replaced, the one low vertex variant with a recorded successor, and three low vertex variants from before the atmosphere's cloud uniforms, which no page could produce any more. The corpus holds 1,306 stages, 423 on low, 832 on medium, 872 on high; §8.4 counted six changed stages, two fragment and four low vertex, but only one low vertex variant was live.
+
+**Checks.** The fit's stills at noon and 16:00 at both poses, 1920 × 1080 on the high tier; with the cards hidden the band's mean rose at both poses (meadow 0.0382 → 0.0399, canopy 0.0257 → 0.0270), so the band lies on cards. Frame-time pairs, the walks and the stills on medium and low: not yet taken.
+
 ## References
 
 - [A full far ground without drawing it](https://csarko.sh/research/a-full-far-ground-without-drawing-it),
