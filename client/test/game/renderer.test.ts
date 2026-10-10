@@ -276,7 +276,8 @@ import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { Level } from "../../src/sim/level.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
 import { createForest } from "../../src/sim/forest.js";
-import { elevationAt } from "../../src/sim/terrain.js";
+import { activeTerrainVariant, elevationAt } from "../../src/sim/terrain.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { createSkyTable } from "../../src/game/skyTable.js";
 import { skyFixture } from "./helpers/skyFixture.js";
@@ -285,6 +286,7 @@ import { skyStateFor } from "../../src/game/skyState.js";
 import { waterLifeLayout } from "../../src/game/waterLifeField.js";
 import { MIDGE_NAME } from "../../src/game/midgeSwarms.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
+import { rayToShore } from "../../src/sim/lakeShape.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
 import { SILENT_SURF_SOUND } from "../../src/game/surfSound.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
@@ -952,7 +954,7 @@ describe("world shell wiring", () => {
     expect(src).toContain('for (const mesh of clipmap?.meshes.slice(0, 2) ?? []) rainMap.register(mesh, "terrain");');
     expect(src).toContain("  const rain = createRain(scene, tier);\n  partOf(rain);\n  rain.setMap(rainMap);");
     expect(src).toContain("  const rainSplash = createRainSplash(scene, tier);\n  partOf(rainSplash);\n  rainSplash?.setMap(rainMap);");
-    expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife, spray: water?.edge.spray ?? null });");
+    expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLives, spray: water?.edge.spray ?? null });");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
     // After the rain's update, which fills the lamp the splashes read.
@@ -968,17 +970,18 @@ describe("world shell wiring", () => {
     expect(src).toContain("    canopyOver() {\n      return lensCanopy;\n    },");
   });
 
-  it("makes the lake's life at the first lake under the animals' guard, steps it after the motes in both branches, and disposes it", () => {
-    const creation = slice("const firstLake = lakes[0];", "partOf(waterLife);");
+  it("makes every lake's life under the animals' guard, steps those in reach after the motes in both branches, rests the rest, and disposes them", () => {
+    const creation = slice("const waterLives: WaterLife[] =", "for (const life of waterLives) partOf(life);");
     // A world without a lake, a hand-authored level and a scene recorded a
     // frame at a time get none.
     // Its midges toned for the frame's colour path, as the lighting's dome is.
     expect(creation).toMatch(
-      /forest !== null && firstLake !== undefined && options\.wildlife !== false\s*\?\s*createWaterLife\(scene, forest\.seed, firstLake, tier, postFeatures\.colourPath\)/,
+      /forest !== null && options\.wildlife !== false\s*\?\s*lakes\.map\(\(l\) => createWaterLife\(scene, forest\.seed, l, tier, postFeatures\.colourPath\)\)/,
     );
+    expect(src).toContain("const lakeChoice = createLakeChoice(lakes);");
     expect(src).toContain("createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });");
     // Its insects draw among the see-through effects, in the water's group on high.
-    expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife, spray: water?.edge.spray ?? null });");
+    expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLives, spray: water?.edge.spray ?? null });");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
     // After the motes, once the camera's place and lens are final for the frame.
@@ -989,24 +992,27 @@ describe("world shell wiring", () => {
     expect(playerBranch.match(/updateWaterLife\(/g)).toHaveLength(1);
     // The frame: each player in the slot they keep, the sky behind a swarm, a
     // pixel's size at a metre and the Hollow the branch looked up.
-    const fill = slice("function updateWaterLife(", "waterLife.update(f);");
+    const fill = slice("function updateWaterLife(", "waterLifeStepped = true;");
     expect(fill).toContain("f.camX = camera.position.x;");
     expect(fill).toContain("f.players = playerSlots.fill(state.players);");
     expect(fill).toContain("f.skyLuma = skyLumaOf(sky);");
     expect(fill).toContain("f.pixelAt1m = pixelAtOneMetre(camera.fov, engine.getRenderHeight());");
     expect(fill).toContain("f.hollowDistance = wildlifeMatch.hollowDistance;");
+    // Each lake's life stepped within its reach, resting beyond it; the served lake's heard.
+    expect(fill).toContain("const served = lakeChoice.choose(f.camX, f.camZ);");
+    expect(fill).toContain("if (lakeChoice.live[i] === 1) life.update(f);\n      else life.rest();");
     expect(src).toContain("const playerSlots = createPlayerSlots(MAX_PLAYERS);");
     // Published: `app.ts` builds no audio for a world without it.
-    expect(src).toContain("hasWaterLife: waterLife !== null,");
+    expect(src).toContain("hasWaterLife: waterLives.length > 0,");
     // Heard only from a frame that stepped it: the flag cleared at the top of
-    // `sync` and set where the lake's life is stepped.
+    // `sync` and set where the lakes' life is stepped.
     const sync = slice("sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {", "hasWildlife: wildlife !== null,");
     expect(sync.indexOf("waterLifeStepped = false;")).toBeGreaterThan(-1);
     expect(sync.indexOf("waterLifeStepped = false;")).toBeLessThan(sync.indexOf("const weather = lighting.weather;"));
-    expect(src).toContain("    waterLife.update(f);\n    waterLifeStepped = true;\n  }");
+    expect(src).toContain("    heardLife = served === null ? null : (waterLives[served.index] as WaterLife);\n    waterLifeStepped = true;\n  }");
     expect(src.match(/waterLifeStepped = true;/g)).toHaveLength(1);
-    expect(src).toContain("return waterLife !== null && waterLifeStepped ? waterLife.sound() : SILENT_WATER_LIFE;");
-    expect(src.match(/waterLife\?\.dispose\(\)/g)).toHaveLength(1);
+    expect(src).toContain("return heardLife !== null && waterLifeStepped ? heardLife.sound() : SILENT_WATER_LIFE;");
+    expect(src.match(/for \(const life of waterLives\) life\.dispose\(\);/g)).toHaveLength(1);
   });
 
   it("fills the surf after the lake's reflections in both camera branches, hands the cove's swash to the wet materials, and hears a frame only once", () => {
@@ -1066,7 +1072,7 @@ describe("world shell wiring", () => {
     for (const [release, part] of [
       ["setMirror(null,", "lakeMirror?.dispose()"],
       ["setPanorama(null)", "lakePanorama?.dispose()"],
-      ["setSkyline(null,", "lakeSkyline?.dispose()"],
+      ["setSkyline(null,", "for (const skyline of lakeSkylines) skyline.dispose();"],
     ] as const) {
       expect(dispose.indexOf(release), release).toBeGreaterThan(-1);
       expect(dispose.indexOf(release), release).toBeLessThan(dispose.indexOf(part));
@@ -1218,7 +1224,7 @@ describe("the lake's life in a renderer", () => {
       // At night on the shore, stepped until a frame brings frog calls (the
       // first within ten seconds).
       const lake = lakeOf(SEED);
-      const x = lake.x + lake.radius + 2;
+      const x = lake.x + rayToShore(lake.shape, lake.x, lake.z, 1, 0, 0, lake.bound) + 2;
       const at = { x, y: elevationAt(SEED, x, lake.z) + 1.6, z: lake.z, yaw: 0, pitch: 0 };
       renderer.setView(22, WEATHER_PRESETS.clear);
       renderer.setFreecam(at);
@@ -1289,10 +1295,11 @@ describe("the lake's life in a renderer", () => {
     const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "low", skyTable: skyFixture() });
     try {
       const lake = lakeOf(SEED);
-      // Three players standing 2 m out from the rim at dusk.
+      // Three players standing 2 m out from the shore at dusk.
       const players = [0, 0.6, 1.2].map((angle, i) => {
-        const x = lake.x + Math.cos(angle) * (lake.radius + 2);
-        const z = lake.z + Math.sin(angle) * (lake.radius + 2);
+        const out = rayToShore(lake.shape, lake.x, lake.z, Math.cos(angle), Math.sin(angle), 0, lake.bound) + 2;
+        const x = lake.x + Math.cos(angle) * out;
+        const z = lake.z + Math.sin(angle) * out;
         const p = windTestPlayer(i + 1);
         p.pos = { x, y: elevationAt(SEED, x, z) + 0.9, z };
         return p;
@@ -1507,10 +1514,10 @@ describe("the lake's reflection in a renderer", () => {
   const SEED = 388817;
   const LEVEL: Level = { id: "lake-mirror-test", brushes: [], playerSpawns: [], enemySpawns: [] };
   const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
-  /** 2 m out from the lake's east rim, eyes 1.6 m over the ground, looking `facing` and a little down. */
+  /** 2 m out from the lake's east shore, eyes 1.6 m over the ground, looking `facing` and a little down. */
   function shore(facing: number) {
     const lake = lakeOf(SEED);
-    const x = lake.x + lake.radius + 2;
+    const x = lake.x + rayToShore(lake.shape, lake.x, lake.z, 1, 0, 0, lake.bound) + 2;
     return { x, y: elevationAt(SEED, x, lake.z) + 1.6, z: lake.z, yaw: facing, pitch: 0.2 };
   }
   const WEST = 4.712;
@@ -1581,8 +1588,8 @@ describe("the lake's reflection in a renderer", () => {
         renderer.setView(6.25, WEATHER_PRESETS.clear);
         renderer.setFreecam(shore(WEST));
         renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
-        // The lake's centre at its level, and its radius.
-        expect(body.mock.calls).toEqual([[18.690155002200072, 154.9599750484422, -20, 31.017482357565314]]);
+        // The lake's centre at its level, and its mean radius: the cylinder its shore is read on.
+        expect(body.mock.calls).toEqual([[31.619719323244347, 153.0251604265237, -28.22147609112244, 33.85620944900402]]);
         texture = skyline.mock.lastCall?.[0] ?? null;
         made.push(
           `${tier}: ${lakeReflections.mirrors.length} mirror, ${lakeReflections.panoramas.length} panorama, ` +
@@ -1860,6 +1867,41 @@ describe("the lake's reflection in a renderer", () => {
       expect([panorama.rearms, ready.mock.calls.length]).toEqual([1, 17]);
       for (let i = 0; i < 5; i++) renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
       expect([panorama.rearms, ready.mock.calls.length]).toEqual([1, 17]);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(120_000));
+
+  it("moves the panorama and the life heard to a second lake once the camera stands 20 m nearer it", () => {
+    const lake = lakeOf(SEED);
+    // A second lake 700 m east of the first, on the variant's list for this test.
+    const second = stadiumLake({ cx: lake.x + 700, cz: lake.z, halfLen: 0.5, w: 20, level: lake.level, murk: 1 });
+    const variant = activeTerrainVariant();
+    const bodies = variant.waterBodies!;
+    vi.spyOn(variant, "waterBodies").mockImplementation((seed: number) => [...bodies(seed), second]);
+    const read = vi.spyOn(WaterPlugin.prototype, "setPanorama");
+    const body = vi.spyOn(WaterPlugin.prototype, "setLakeBody");
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "medium", skyTable: skyFixture() });
+    try {
+      // Each lake's own cylinder; the panorama on the first.
+      expect(body.mock.calls.map((c) => c[0])).toEqual([lake.x, lake.x + 700]);
+      expect(read.mock.calls).toHaveLength(1);
+      const first = read.mock.contexts[0];
+      renderer.setView(18.5, WEATHER_PRESETS.clear);
+      renderer.setFreecam(shore(WEST));
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      const near = renderer.waterLifeSound();
+      expect(read.mock.calls).toHaveLength(1);
+      // Over the second lake, 594.7 m past the first's bound: the first's
+      // material lets the panorama go and the second's reads it, its eye moved there.
+      renderer.setFreecam({ x: lake.x + 700, y: lake.level + 2, z: lake.z, yaw: 0, pitch: 0 });
+      renderer.sync(windTestState(), 1, 0, { dt: 1 / 60, sprinting: false });
+      expect(read.mock.calls.slice(1).map((c) => c[0] === null)).toEqual([true, false]);
+      expect(read.mock.contexts[1]).toBe(first);
+      expect(read.mock.contexts[2]).not.toBe(first);
+      expect(renderer.scene.getCameraByName("lake_panorama_cam")!.position.x).toBe(lake.x + 700);
+      // The life heard is the second lake's own.
+      expect(renderer.waterLifeSound()).not.toBe(near);
     } finally {
       renderer.dispose();
     }

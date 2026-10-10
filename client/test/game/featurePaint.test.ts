@@ -50,6 +50,19 @@ describe("the feature paint table", { timeout: timeLimit(30_000) }, () => {
     expect(Array.from(t.slice(12, 16))).toEqual([0, 0, 0, 0]);
     expect(Array.from({ length: 256 * 256 }, (_, k) => t[(2 * 256 + k) * 4]).some(Number.isNaN)).toBe(false);
   });
+  it("paints the first four lakes, the atlas's four tiles, and leaves a fifth out of the lakes and empty in the table", () => {
+    const five: Feature[] = [0, 1, 2, 3, 4].map((i) => ({
+      id: i, kind: "pond", x: i * 300, z: 0, radius: 30, height: 40, murk: 1,
+      shape: stadiumShape({ cx: i * 300, cz: 0, halfLen: 5, w: 30, level: 40, murk: 1 }),
+    }));
+    const painted = paintedLakes(five);
+    expect(painted).toEqual([five[0]!.shape, five[1]!.shape, five[2]!.shape, five[3]!.shape]);
+    const t = featureTable(five, bakeShoreAtlas(painted));
+    // The fourth lake's entry, and the fifth's slot as empty as an unbounded lake's.
+    expect(Array.from(t.slice(12, 16))).toEqual([900, 0, 82, 3]);
+    expect(Array.from(t.slice(16, 20))).toEqual([0, 0, 0, 0]);
+    expect(Array.from({ length: 256 * 256 }, (_, k) => t[(2 * 256 + k) * 4]).some(Number.isNaN)).toBe(false);
+  }, timeLimit(30_000));
   it("carries no hashed keyword inside a comment, and every line comment is free of semicolons", () => {
     for (const src of [FEATURE_FRAGMENT_DEFS, FEATURE_FRAGMENT_PAINT]) {
       for (const line of src.split("\n")) {

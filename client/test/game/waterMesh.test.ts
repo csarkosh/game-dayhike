@@ -745,7 +745,7 @@ describe("createWater under NullEngine", () => {
   it.each([
     [true, WATER_GROUP],
     [false, 0],
-  ])("puts rain, motes, mist and the lake's life in the water's group when its high path is on (%s: group %i)", (supported, group) => {
+  ])("puts rain, motes, mist and every lake's life in the water's group when its high path is on (%s: group %i)", (supported, group) => {
     frameSupport.supported = supported;
     engine = new NullEngine();
     const scene = new Scene(engine);
@@ -755,7 +755,11 @@ describe("createWater under NullEngine", () => {
     const motes = createMotes(scene, "high");
     const mist = createMistMeshes(scene, 7, "high");
     const waterLife = createWaterLife(scene, 388817, lakeOf(388817), "high", "post");
-    setEffectsGroup(effectsGroupFor(water), { rain, splash: null, motes, mist, waterLife });
+    // A second lake's, 600 m off.
+    const second = createWaterLife(scene, 388817, stadiumLake({ cx: 600, cz: 0, halfLen: 0.5, w: 20, level: 150, murk: 1 }), "high", "post");
+    setEffectsGroup(effectsGroupFor(water), { rain, splash: null, motes, mist, waterLives: [waterLife, second] });
+    for (const mesh of second.meshes) expect(mesh.renderingGroupId).toBe(group);
+    second.dispose();
     expect(motes).not.toBeNull();
     expect(mist.meshes.length).toBeGreaterThan(0);
     expect(rain.mesh.renderingGroupId).toBe(group);
@@ -993,9 +997,9 @@ describe("the sea's edge in createWater", () => {
     const scene = new Scene(engine);
     const water = createWater(scene, 7, 0, [], "high");
     const spray = water.edge.spray!;
-    setEffectsGroup(0, { rain: null, splash: null, motes: null, mist: null, waterLife: null, spray });
+    setEffectsGroup(0, { rain: null, splash: null, motes: null, mist: null, waterLives: [], spray });
     expect(spray.mesh.renderingGroupId).toBe(0);
-    setEffectsGroup(effectsGroupFor(water), { rain: null, splash: null, motes: null, mist: null, waterLife: null, spray });
+    setEffectsGroup(effectsGroupFor(water), { rain: null, splash: null, motes: null, mist: null, waterLives: [], spray });
     expect(spray.mesh.renderingGroupId).toBe(WATER_GROUP);
     water.dispose();
   }, timeLimit(60_000));

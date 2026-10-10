@@ -36,7 +36,7 @@ import {
 } from "../sim/features.js";
 import type { LakeShape } from "../sim/lakeShape.js";
 import {
-  SHORE_ATLAS_FAR, SHORE_ATLAS_SIZE, SHORE_ATLAS_TILE, bakeShoreAtlas, shoreAtlasRead, type ShoreAtlas,
+  SHORE_ATLAS_FAR, SHORE_ATLAS_LAKES, SHORE_ATLAS_SIZE, SHORE_ATLAS_TILE, bakeShoreAtlas, shoreAtlasRead, type ShoreAtlas,
 } from "./shoreAtlas.js";
 
 /** Up to eight features paint the ground (spec §10.3: one peak, three loops, three tarns). */
@@ -51,20 +51,22 @@ function paintedShape(f: Feature): LakeShape | undefined {
   return f.kind === "pond" && f.shape !== undefined && Number.isFinite(f.shape.bound) ? f.shape : undefined;
 }
 
-/** The lakes among the first FEATURE_PAINT_MAX features, in order: the shore
- * atlas's tiles, which the shader counts off as it walks the table. */
+/** The lakes among the first FEATURE_PAINT_MAX features, in order, up to
+ * SHORE_ATLAS_LAKES: the shore atlas's tiles, which the shader counts off as
+ * it walks the table. A lake past the atlas's last tile is not painted. */
 export function paintedLakes(features: readonly Feature[]): LakeShape[] {
   const out: LakeShape[] = [];
   for (const f of features.slice(0, FEATURE_PAINT_MAX)) {
     const shape = paintedShape(f);
-    if (shape !== undefined) out.push(shape);
+    if (shape !== undefined && out.length < SHORE_ATLAS_LAKES) out.push(shape);
   }
   return out;
 }
 
 /** The table texture's data: row 0 = (x, z, radius, kind) per feature, kind
  * 1 peak / 2 meadow / 3 lake, 0 = empty, a lake's entry its shape's centre
- * and bound (a pond with no shape, or an unbounded one, is left empty); row 1 texel 0 = (treeline
+ * and bound (a pond with no shape, an unbounded one, or one past the
+ * atlas's SHORE_ATLAS_LAKES tiles is left empty); row 1 texel 0 = (treeline
  * height, treeline band, meadow rim, pond shore) and row 1 TEXEL 1 =
  * (PEAK_RIM_FADE, 0, 0, 0) — a free slot in the row the shared constants
  * already live in, read as `fRim.x` by the shader (the peak's radial fade is
@@ -77,10 +79,12 @@ export function paintedLakes(features: readonly Feature[]): LakeShape[] {
 export function featureTable(features: readonly Feature[], atlas: ShoreAtlas): Float32Array {
   const t = new Float32Array(FEATURE_TEX_WIDTH * FEATURE_TEX_ROWS * 4);
   let peak: Feature | undefined;
+  let lakes = 0;
   features.slice(0, FEATURE_PAINT_MAX).forEach((f, i) => {
     if (f.kind === "pond") {
       const shape = paintedShape(f);
-      if (shape === undefined) return;
+      if (shape === undefined || lakes >= SHORE_ATLAS_LAKES) return;
+      lakes += 1;
       t[i * 4] = shape.cx; t[i * 4 + 1] = shape.cz; t[i * 4 + 2] = shape.bound; t[i * 4 + 3] = 3;
       return;
     }

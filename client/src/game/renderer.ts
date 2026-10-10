@@ -138,6 +138,7 @@ import { buildOrUndo } from "./rendererSwap.js";
 import { calmShare, isRough, roughShare, smearPx, SLOPE_PAW_DEG } from "./lakeCalm.js";
 import { createLakeMirror, createLakeMirrorTerrain, MIRROR_MOTION_SMEAR, mirrorMotion } from "./lakeMirror.js";
 import { createLakePanorama, createSkylineTexture } from "./lakePanorama.js";
+import { createLakeChoice } from "./lakeChoice.js";
 import { SKYLINE_SHADE, skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { NEEDLE_BED } from "./terrainSurface.js";
 
@@ -740,7 +741,8 @@ export type SeeThroughEffects = {
   splash: RainSplash | null;
   motes: Motes | null;
   mist: MistMeshes | null;
-  waterLife: WaterLife | null;
+  /** Every lake's insects. */
+  waterLives: readonly WaterLife[];
   spray?: SurfSpray | null;
 };
 
@@ -788,7 +790,7 @@ export function setEffectsGroup(group: number, effects: SeeThroughEffects): void
   if (effects.splash !== null) effects.splash.mesh.renderingGroupId = group;
   for (const system of effects.motes?.systems ?? []) system.renderingGroupId = group;
   for (const mesh of effects.mist?.meshes ?? []) mesh.renderingGroupId = group;
-  for (const mesh of effects.waterLife?.meshes ?? []) mesh.renderingGroupId = group;
+  for (const life of effects.waterLives) for (const mesh of life.meshes) mesh.renderingGroupId = group;
   if (effects.spray != null) effects.spray.mesh.renderingGroupId = group;
 }
 
@@ -2115,16 +2117,19 @@ function buildRenderer(
   // A murky lake's reeds, cattails and lilies: placed by the sim, built here.
   const waterPlants = forest !== null && lakes.length > 0 ? createWaterPlants(scene, forest.seed, lakes) : null;
   partOf(waterPlants);
-  // The midges, the dragonflies and the frogs of the world's lake: cosmetic
-  // like the animals, so under their guard too (a scene recorded a frame at a
-  // time has neither). None of their meshes casts a shadow. The midges are
-  // toned for the frame's colour path, as the lighting's dome is.
-  const firstLake = lakes[0];
-  const waterLife =
-    forest !== null && firstLake !== undefined && options.wildlife !== false
-      ? createWaterLife(scene, forest.seed, firstLake, tier, postFeatures.colourPath)
-      : null;
-  partOf(waterLife);
+  // The midges, the dragonflies and the frogs of every lake (spec §10.3):
+  // cosmetic like the animals, so under their guard too (a scene recorded a
+  // frame at a time has none). None of their meshes casts a shadow. The
+  // midges are toned for the frame's colour path, as the lighting's dome is.
+  // Each is placed at load, and stepped only while the camera is within its
+  // lake's reach (`lakeChoice.ts`), resting otherwise.
+  const waterLives: WaterLife[] =
+    forest !== null && options.wildlife !== false
+      ? lakes.map((l) => createWaterLife(scene, forest.seed, l, tier, postFeatures.colourPath))
+      : [];
+  for (const life of waterLives) partOf(life);
+  /** The lake the mirror, the panorama and the life heard serve, and each lake's life's reach. */
+  const lakeChoice = createLakeChoice(lakes);
 
   // The wet line follows the nearest body, sea or pond. No bodies, no call.
   const wetBodies: WetBody[] = [];
@@ -2164,21 +2169,25 @@ function buildRenderer(
     for (const mesh of water?.lakeMeshes ?? []) rainMap.register(mesh, "water");
     // Not the swept curl: its positions are not places, so the rings stand for the face.
   }
-  // The lake's reflection of its shore, by tier: on high a mirror drawn in
-  // each frame the glass shows (`lakeMirror.ts`), on medium a panorama of the
-  // shore captured whenever the sky's probe is (`lakePanorama.ts`) under the
-  // skyline, on low the skyline alone (`lakeSkyline.ts`). The lake's material
-  // reads whichever there is; a world without a lake makes none of them.
-  const lakeMesh = water?.lakeMeshes[0] ?? null;
-  const lakePlugin = water?.lakePlugins[0] ?? null;
-  const reflected = forest !== null && firstLake !== undefined && lakeMesh !== null && lakePlugin !== null;
+  // The lakes' reflections of their shores, by tier: on high a mirror drawn
+  // in each frame the glass shows (`lakeMirror.ts`), on medium a panorama of
+  // the shore captured whenever the sky's image is (`lakePanorama.ts`) under
+  // the skyline, on low the skyline alone (`lakeSkyline.ts`). The mirror and
+  // the panorama are one each and serve the nearest lake, following the
+  // camera from lake to lake (spec §10.3); every lake on medium and low has
+  // its own skyline. A lake's material reads whichever there is; a world
+  // without a lake makes none of them.
+  const lakeMeshes = water?.lakeMeshes ?? [];
+  const lakePlugins = water?.lakePlugins ?? [];
+  const firstLake = lakes[0];
+  const reflected = forest !== null && firstLake !== undefined && lakePlugins.length > 0;
   const lakeMirror = reflected && tier === "high" ? createLakeMirror(scene, firstLake, engine.isNDCHalfZRange) : null;
   partOf(lakeMirror);
   const lakePanorama = reflected && tier === "medium" ? createLakePanorama(scene, firstLake) : null;
   partOf(lakePanorama);
-  const lakeSkyline =
-    reflected && tier !== "high" ? createSkylineTexture(scene, skylineElevations(firstLake, forest.seed, skylineTrees(firstLake, forest.seed))) : null;
-  partOf(lakeSkyline);
+  const lakeSkylines: RawTexture[] =
+    reflected && tier !== "high" ? lakes.map((l) => createSkylineTexture(scene, skylineElevations(l, forest.seed, skylineTrees(l, forest.seed)))) : [];
+  for (const skyline of lakeSkylines) partOf(skyline);
   // The ground in either: the five inner rings (to the ridges past ring 3's
   // 512 m) through a cheap lit stand-in, never the terrain's own material.
   // The mirror owns its own; the panorama's is made here.
@@ -2195,13 +2204,17 @@ function buildRenderer(
     lakeMirror?.register(mesh, null);
     lakePanorama?.register(mesh, null);
   }
-  for (const mesh of waterLife?.meshes ?? []) lakeMirror?.register(mesh, null);
-  if (reflected) {
-    lakePlugin.setLakeBody(firstLake.x, firstLake.level, firstLake.z, firstLake.shape.meanRadius);
-    if (lakePanorama !== null) lakePlugin.setPanorama(lakePanorama.texture);
-  }
-  /** The lake's shelter (`lakeWaterRow`): how far its cat's-paws spread. */
-  const lakeShelter = firstLake !== undefined ? lakeWaterRow(firstLake.murk).shelter : 0;
+  for (const life of waterLives) for (const mesh of life.meshes) lakeMirror?.register(mesh, null);
+  // Each lake's own cylinder; the panorama on the first until the camera's first frame.
+  lakePlugins.forEach((p, i) => {
+    const l = lakes[i] as LakeSource;
+    p.setLakeBody(l.x, l.level, l.z, l.shape.meanRadius);
+  });
+  if (lakePanorama !== null) (lakePlugins[0] as WaterPlugin).setPanorama(lakePanorama.texture);
+  /** The lake the mirror and the panorama serve, by index (`lakeChoice.ts`). */
+  let servedLake = 0;
+  /** Each lake's shelter (`lakeWaterRow`): how far its cat's-paws spread. */
+  const lakeShelters = lakes.map((l) => lakeWaterRow(l.murk).shelter);
   const cover: MeshRegistry = {
     add: (mesh) => {
       rainMap?.register(mesh, "hard");
@@ -2460,7 +2473,7 @@ function buildRenderer(
   const rainLamp: RainLamp = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, intensity: 0, angle: 0, r: 1, g: 1, b: 1 };
   const motes = createMotes(scene, tier);
   partOf(motes);
-  setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife, spray: water?.edge.spray ?? null });
+  setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLives, spray: water?.edge.spray ?? null });
 
   const views = new EntityViews(scene);
   // The haunt's shades: soft figures in a pale mist on the post tiers (the
@@ -2511,20 +2524,23 @@ function buildRenderer(
     sky: null, skyLuma: 0, pixelAt1m: 0,
     hollowDistance: Infinity,
   };
-  /** Whether this frame's `sync` stepped the lake's life: the sound of a
+  /** Whether this frame's `sync` stepped the lakes' life: the sound of a
    * frame that did not is silence, never the last stepped frame's calls and
    * rustles again. */
   let waterLifeStepped = false;
+  /** The life heard: the lake the reflections serve (`lakeChoice.ts`). */
+  let heardLife: WaterLife | null = null;
   /**
-   * Steps the lake's life (`waterLife.ts`) from the camera as this frame's
+   * Steps each lake's life (`waterLife.ts`) from the camera as this frame's
    * branch has left it: its place and its lens, the players by their slots,
    * the shared seconds the swarms move on, the hour, the weather, the wind,
    * the sun, the sky behind a swarm, and the Hollow's distance from the
-   * branch's own point (`findHollow`, run before it in both branches). After
-   * the motes, in both branches; nothing without a lake.
+   * branch's own point (`findHollow`, run before it in both branches); a
+   * lake's life the camera is out of reach of rests. After the motes, in
+   * both branches; nothing without a lake.
    */
   function updateWaterLife(state: WorldState, dt: number, time: number, weather: WeatherParams, sky: SkyState | null): void {
-    if (waterLife === null) return;
+    if (waterLives.length === 0) return;
     const f = waterLifeFrame;
     f.camX = camera.position.x;
     f.camY = camera.position.y;
@@ -2540,7 +2556,13 @@ function buildRenderer(
     f.skyLuma = skyLumaOf(sky);
     f.pixelAt1m = pixelAtOneMetre(camera.fov, engine.getRenderHeight());
     f.hollowDistance = wildlifeMatch.hollowDistance;
-    waterLife.update(f);
+    const served = lakeChoice.choose(f.camX, f.camZ);
+    for (let i = 0; i < waterLives.length; i++) {
+      const life = waterLives[i] as WaterLife;
+      if (lakeChoice.live[i] === 1) life.update(f);
+      else life.rest();
+    }
+    heardLife = served === null ? null : (waterLives[served.index] as WaterLife);
     waterLifeStepped = true;
   }
 
@@ -2618,7 +2640,7 @@ function buildRenderer(
    * behind it; nothing without a lake.
    */
   function updateLake(weather: WeatherParams, sky: SkyState | null, eye: boolean): void {
-    if (lakePlugin === null || lakeMesh === null) return;
+    if (lakePlugins.length === 0) return;
     if (calmFadeS > 0) {
       calmElapsedS += engine.getDeltaTime() / 1000;
       if (calmElapsedS >= calmFadeS) {
@@ -2627,24 +2649,52 @@ function buildRenderer(
       }
     }
     const fade = calmFadeS > 0 ? calmElapsedS / calmFadeS : 1;
-    const c = lakeCalmUnder(lighting.hour, calmFrom, calmTo, fade, weather, wind.speed, lakeShelter, engine.getRenderHeight(), camera.fov, lakeCalm);
-    // This frame's frustum, the camera placed for the frame: never a frame
-    // late. Without an eye the lake is in no view.
-    let inView = false;
-    if (eye) {
-      camera.getViewMatrix();
-      camera.getProjectionMatrix();
-      lakeMesh.computeWorldMatrix();
-      inView = camera.isInFrustum(lakeMesh);
+    // The lake the mirror and the panorama serve: the nearest past its bound,
+    // held until another is 20 m nearer (`lakeChoice.ts`). On a move the old
+    // lake's material lets go of both, and they follow to the new one.
+    const served = lakeChoice.choose(camera.position.x, camera.position.z);
+    if (served !== null && served.index !== servedLake) {
+      const was = lakePlugins[servedLake] as WaterPlugin;
+      if (lakeMirror !== null) was.setMirror(null, lakeMirror.viewProjection);
+      if (lakePanorama !== null) was.setPanorama(null);
+      servedLake = served.index;
+      const lake = lakes[servedLake] as LakeSource;
+      lakeMirror?.setLake(lake);
+      if (lakePanorama !== null) {
+        lakePanorama.setLake(lake);
+        (lakePlugins[servedLake] as WaterPlugin).setPanorama(lakePanorama.texture);
+      }
     }
-    // Without a mirror the weight is 1 until the surface is rough all over,
-    // where the ramped share has already reached 0: no step in the image.
-    const armed = lakeMirror !== null ? lakeMirror.update(camera, inView, c.share) : c.roughShare < 1;
-    lakePlugin.setLakeTime(wind.time);
-    lakePlugin.setPawCover(c.cover);
-    lakePlugin.setCalm(c.share, armed ? 1 : 0, c.smearPx);
-    // The mirror is read only while armed: drawn this frame, or holding the last image.
-    if (lakeMirror !== null) lakePlugin.setMirror(armed ? lakeMirror.texture : null, lakeMirror.viewProjection);
+    let mirrorArmed = false;
+    for (let i = 0; i < lakePlugins.length; i++) {
+      const plugin = lakePlugins[i] as WaterPlugin;
+      const c = lakeCalmUnder(
+        lighting.hour, calmFrom, calmTo, fade, weather, wind.speed, lakeShelters[i] as number, engine.getRenderHeight(), camera.fov, lakeCalm,
+      );
+      // Without a mirror the weight is 1 until the surface is rough all over,
+      // where the ramped share has already reached 0: no step in the image.
+      // On high a lake the mirror does not serve keeps the sky's sheen alone.
+      let armed = lakeMirror === null && c.roughShare < 1;
+      if (lakeMirror !== null && i === servedLake) {
+        // This frame's frustum, the camera placed for the frame: never a
+        // frame late. Without an eye the lake is in no view.
+        let inView = false;
+        if (eye) {
+          const mesh = lakeMeshes[i] as Mesh;
+          camera.getViewMatrix();
+          camera.getProjectionMatrix();
+          mesh.computeWorldMatrix();
+          inView = camera.isInFrustum(mesh);
+        }
+        armed = lakeMirror.update(camera, inView, c.share);
+        mirrorArmed = armed;
+        // The mirror is read only while armed: drawn this frame, or holding the last image.
+        plugin.setMirror(armed ? lakeMirror.texture : null, lakeMirror.viewProjection);
+      }
+      plugin.setLakeTime(wind.time);
+      plugin.setPawCover(c.cover);
+      plugin.setCalm(c.share, armed ? 1 : 0, c.smearPx);
+    }
     // The held frames' lag as the eye's travel over them, smoothed, as the
     // smear's pixels times metres: none when the eye is still, none on the
     // tiers without a mirror.
@@ -2653,7 +2703,7 @@ function buildRenderer(
       lastEye.copyFrom(camera.position);
       eyeSeen = eye;
       mirrorMotionM = mirrorMotion(mirrorMotionM, eyeStep);
-      lakePlugin.setMirrorMotion(MIRROR_MOTION_SMEAR * mirrorMotionM * engine.getRenderHeight());
+      (lakePlugins[servedLake] as WaterPlugin).setMirrorMotion(MIRROR_MOTION_SMEAR * mirrorMotionM * engine.getRenderHeight());
     }
     let capturing = false;
     if (lakePanorama !== null) {
@@ -2666,13 +2716,13 @@ function buildRenderer(
       capturing = lakePanorama.update();
     }
     if (sky === null) return;
-    if (lakeSkyline !== null) {
+    if (lakeSkylines.length > 0) {
       skylineShade[0] = sky.horizonAway.r * SKYLINE_SHADE;
       skylineShade[1] = sky.horizonAway.g * SKYLINE_SHADE;
       skylineShade[2] = sky.horizonAway.b * SKYLINE_SHADE;
-      lakePlugin.setSkyline(lakeSkyline, skylineShade);
+      for (let i = 0; i < lakePlugins.length; i++) (lakePlugins[i] as WaterPlugin).setSkyline(lakeSkylines[i] as RawTexture, skylineShade);
     }
-    if (lakeMirror !== null && armed) {
+    if (lakeMirror !== null && mirrorArmed) {
       lakeMirrorColourOf(sky, weather, mirrorColour);
       lakeMirror.setTerrainColour(mirrorColour.r, mirrorColour.g, mirrorColour.b);
     }
@@ -3017,9 +3067,9 @@ function buildRenderer(
     wildlifeDirectorLog() {
       return wildlife?.directorLog() ?? [];
     },
-    hasWaterLife: waterLife !== null,
+    hasWaterLife: waterLives.length > 0,
     waterLifeSound() {
-      return waterLife !== null && waterLifeStepped ? waterLife.sound() : SILENT_WATER_LIFE;
+      return heardLife !== null && waterLifeStepped ? heardLife.sound() : SILENT_WATER_LIFE;
     },
     hasSea: water !== null,
     surfSound() {
@@ -3093,17 +3143,19 @@ function buildRenderer(
       rainMap?.dispose();
       // The lake's material lets go of each target first: it binds what it
       // holds on its next draw.
-      if (lakeMirror !== null) lakePlugin?.setMirror(null, lakeMirror.viewProjection);
-      if (lakePanorama !== null) lakePlugin?.setPanorama(null);
-      if (lakeSkyline !== null) lakePlugin?.setSkyline(null, skylineShade);
+      for (const plugin of lakePlugins) {
+        if (lakeMirror !== null) plugin.setMirror(null, lakeMirror.viewProjection);
+        if (lakePanorama !== null) plugin.setPanorama(null);
+        if (lakeSkylines.length > 0) plugin.setSkyline(null, skylineShade);
+      }
       lakeMirror?.dispose();
       lakePanorama?.dispose();
       panoramaTerrain?.dispose();
-      lakeSkyline?.dispose();
+      for (const skyline of lakeSkylines) skyline.dispose();
       clipmap?.dispose();
       water?.dispose();
       waterPlants?.dispose();
-      waterLife?.dispose();
+      for (const life of waterLives) life.dispose();
       propMeshes?.dispose();
       forestMeshes?.dispose();
       clutterMeshes?.dispose();
