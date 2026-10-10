@@ -5,11 +5,12 @@ import {
   LOOP_WEIGHT_1, LOOP_WEIGHT_2, LOOP_WEIGHT_3, TREELINE_BELOW_CREST, TREELINE_BAND, PEAK_RIM_FADE,
   planFeatures, peakD, flatD, featureStageD, featureMaskAt, murkFor, MURK_LO, MURK_HI, type Feature,
   lakeDepthD, lakeMiddleDepth, LAKE_SHELF_DEPTH, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH, LAKE_DEPTH_MURKY, LAKE_DEPTH_CLEAR,
-  chooseLobe, marshD, marshWeightAt, marshWidth, lobePoints, MARSH_AMP, MARSH_EDGE, MARSH_MURK_MIN, MARSH_WIDTH_MIN, MARSH_WIDTH_MAX,
+  chooseLobe, marshD, marshWeightAt, marshWidth, lobePoints, MARSH_AMP, MARSH_EDGE, MARSH_ONSET, MARSH_MURK_MIN, MARSH_WIDTH_MIN, MARSH_WIDTH_MAX,
 } from "../../src/sim/features.js";
 import { TRAIL_GRID_CAP } from "../../src/sim/trailGrid.js";
 import type { TerrainSample } from "../../src/sim/terrain.js";
 import { stadiumShape } from "../helpers/lakeShapes.js";
+import { lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
 
 const flat: TerrainSample = { h: 100, dx: 0, dz: 0 };
 const tilted = (x: number, z: number): TerrainSample => ({ h: 50 + 0.1 * x - 0.05 * z, dx: 0.1, dz: -0.05 });
@@ -256,7 +257,7 @@ describe("the composed stage and the mask", () => {
       "LAKE_SPOUT_LENGTH_MIN", "LAKE_SPOUT_LENGTH_MAX", "LAKE_OUTLET_REACH", "LAKE_CENTRE_STEP",
       "LAKE_SILL", "LAKE_NOTCH_RAMP", "LAKE_NOTCH_FADE",
       "MARSH_MURK_MIN", "MARSH_WIDTH_MIN", "MARSH_WIDTH_MAX", "MARSH_AMP", "MARSH_NOISE_WAVE", "MARSH_EDGE",
-      "MARSH_SHORE_START", "MARSH_SHORE_SCAN", "MARSH_SCORE_STEP", "MARSH_SALT",
+      "MARSH_SHORE_START", "MARSH_SHORE_SCAN", "MARSH_SCORE_STEP", "MARSH_SALT", "MARSH_ONSET",
       "LOOP_WEIGHT_1", "LOOP_WEIGHT_2", "LOOP_WEIGHT_3",
       "LOOP_BAND_LO_1", "LOOP_BAND_HI_1", "LOOP_BAND_LO_2", "LOOP_BAND_HI_2", "LOOP_BAND_LO_3", "LOOP_BAND_HI_3",
       "LOOP_LATERAL_MIN", "LOOP_LATERAL_MAX", "FEATURE_ROAD_CLEAR", "FEATURE_SPACING",
@@ -270,7 +271,8 @@ describe("the composed stage and the mask", () => {
     // and the shore's 58 constants (`LAKE_SHAPE_TUNABLES`), the sill and the
     // notch's 3, the trail's clearance, the spill's margin, the stem's
     // shift, the ring's margin and the level's raise joined — 70 keys -> 129.
-    expect(Object.keys(FEATURE_TUNABLES).length).toBe(129);
+    // MARSH_ONSET joined with the marsh's shore coordinates — 129 keys -> 130.
+    expect(Object.keys(FEATURE_TUNABLES).length).toBe(130);
   });
   it("keeps its ranges within their working bounds", () => {
     // 220/220 and 60/90 → 300/300 and 50/80: the original numbers put the
@@ -348,45 +350,51 @@ describe("the lake's bed", () => {
 });
 
 describe("the marsh", () => {
-  const pond = { id: 1, kind: "pond" as const, x: 0, z: 1000, radius: 30, height: 50, murk: 0.9 };
+  // A murky lake 30 m in half-width about a 20 m spine along z at (0, 1000):
+  // its shelf 10 m wide, its flank the line x = 30 for |z − 1000| ≤ 10.
+  const shape = stadiumShape({ cx: 0, cz: 1000, halfLen: 10, w: 30, size: 30, level: 50, murk: 0.9 });
+  const pond: Feature = { id: 1, kind: "pond", x: 0, z: 1000, radius: 30, height: 50, murk: 0.9, shape };
   const flatGround = (): number => 50;
 
-  it("comes only above murk 0.5, wider the murkier", () => {
-    expect(chooseLobe(pond, 0.5, flatGround)).toBeNull();
-    expect(chooseLobe(pond, 0.49, flatGround)).toBeNull();
+  it("comes only above murk 0.5, wider the murkier, and never on a tarn", () => {
+    expect(chooseLobe(shape, 30, 0.5, flatGround)).toBeNull();
+    expect(chooseLobe(shape, 30, 0.49, flatGround)).toBeNull();
     expect(marshWidth(30, 1)).toBeCloseTo(MARSH_WIDTH_MAX * 30, 12);
     expect(marshWidth(30, MARSH_MURK_MIN)).toBeCloseTo(MARSH_WIDTH_MIN * 30, 12);
-    expect(chooseLobe(pond, 0.9, flatGround)!.width).toBeCloseTo(marshWidth(30, 0.9), 12);
+    expect(chooseLobe(shape, 30, 0.9, flatGround)!.width).toBeCloseTo(marshWidth(30, 0.9), 12);
+    expect(chooseLobe({ ...shape, family: "tarn" }, 30, 0.9, flatGround)).toBeNull();
   });
 
   it("lies where the shore is nearest the level: along the contour of a slope", () => {
-    const slope = (x: number): number => 50 + 0.2 * (x - pond.x);
-    const lobe = chooseLobe(pond, 0.9, slope)!;
+    const slope = (x: number): number => 50 + 0.2 * x;
+    const lobe = chooseLobe(shape, 30, 0.9, slope)!;
     expect(lobe.dirX).toBe(0);
     expect(Math.abs(lobe.dirZ)).toBe(1);
   });
 
   it("takes the first direction on ground that ties everywhere", () => {
-    expect(chooseLobe(pond, 0.9, flatGround)).toMatchObject({ dirX: 1, dirZ: 0 });
+    expect(chooseLobe(shape, 30, 0.9, flatGround)).toMatchObject({ dirX: 1, dirZ: 0 });
   });
 
-  const withLobe = { ...pond, lobe: { dirX: 1, dirZ: 0, width: marshWidth(30, 0.9) } };
+  const lobe = { dirX: 1, dirZ: 0, width: marshWidth(30, 0.9) };
+  const withLobe: Feature = { ...pond, lobe };
   const baseAt = (x: number, z: number): TerrainSample => ({ h: 50 + 0.1 * x + 0.05 * (z - 1000), dx: 0.1, dz: 0.05 });
 
-  it("lies strictly between the wall and the rim", () => {
-    const pts = lobePoints(withLobe, 0.5);
+  it("lies strictly between the shore and the shelf's inner edge", () => {
+    const pts = lobePoints(shape, lobe, 0.5);
     expect(pts.length).toBeGreaterThan(100);
+    const r = newLakeShore();
     for (const [x, z] of pts) {
-      const q = Math.hypot(x - withLobe.x, z - withLobe.z);
-      expect(q).toBeGreaterThan(withLobe.radius - LAKE_SHELF_WIDTH);
-      expect(q).toBeLessThan(withLobe.radius);
+      const s = lakeShoreInto(r, shape, x, z).s;
+      expect(s).toBeGreaterThan(0);
+      expect(s).toBeLessThan(10);
     }
   });
 
   it("holds its core within MARSH_AMP of the level", () => {
     let core = 0;
-    for (const [x, z] of lobePoints(withLobe, 0.5)) {
-      if (marshWeightAt(withLobe, x, z) < 1) continue;
+    for (const [x, z] of lobePoints(shape, lobe, 0.5)) {
+      if (marshWeightAt(shape, lobe, x, z) < 1) continue;
       core++;
       expect(Math.abs(marshD(7, withLobe, x, z, baseAt(x, z)).h - 50)).toBeLessThanOrEqual(MARSH_AMP + 1e-12);
     }
@@ -403,9 +411,25 @@ describe("the marsh", () => {
   });
 
   it("gives way to the bed smoothly: full inside MARSH_EDGE, none at the ellipse", () => {
-    expect(marshWeightAt(withLobe, 25, 1000)).toBe(1);
-    expect(marshWeightAt(withLobe, 29.999, 1000)).toBeLessThan(1e-6);
+    expect(marshWeightAt(shape, lobe, 25, 1000)).toBe(1);
+    expect(marshWeightAt(shape, lobe, 29.999, 1000)).toBeLessThan(1e-6);
+    expect(marshWeightAt(shape, null, 25, 1000)).toBe(0);
     expect(MARSH_EDGE).toBe(0.55);
+  });
+
+  it("fades out before the line through the centre across it, MARSH_ONSET metres along", () => {
+    // A lake 8 m in half-width about a spine across the marsh's direction:
+    // its shelf (3.2 m) reaches the line x = 0 within the marsh's half-width.
+    const narrow = stadiumShape({ cx: 0, cz: 1000, halfLen: 30, w: 8, size: 20, level: 50, murk: 0.9 });
+    const across = { ...narrow, px: [-30, 30], pz: [1000, 1000] };
+    expect(MARSH_ONSET).toBe(8);
+    for (const z of [1005, 1006, 1007]) {
+      expect(marshWeightAt(across, lobe, 0.001, z), `z ${z}`).toBe(0);
+      expect(marshWeightAt(across, lobe, -0.001, z), `z ${z}`).toBe(0);
+    }
+    let past = 0;
+    for (const z of [1005, 1005.5, 1006, 1006.5]) if (marshWeightAt(across, lobe, 9, z) > 0) past++;
+    expect(past).toBeGreaterThan(0);
   });
 
   it("has exact derivatives", () => {

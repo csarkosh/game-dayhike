@@ -6,10 +6,10 @@ import { bowlFor, coveFor, olympicPreTrailSample, coveProfileD, COVE_BACK_FADE }
 import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { variantOrThrow } from "./helpers/derivatives.js";
 import {
-  lobePoints, marshWeightAt, LAKE_SHELF_WIDTH, LAKE_NOTCH_FADE, LAKE_TRAIL_CLEAR,
+  featureStageD, lakeStageD, lobePoints, marshWeightAt, LAKE_SILL, LAKE_NOTCH_FADE, LAKE_TRAIL_CLEAR,
   MARSH_MURK_MIN, POND_SHORE, type Feature,
 } from "../../src/sim/features.js";
-import { lakeOutline, lakeShoreInto, newLakeShore, type LakeShape } from "../../src/sim/lakeShape.js";
+import { lakeOutline, lakeShelfWidth, lakeShoreInto, newLakeShore, type LakeShape } from "../../src/sim/lakeShape.js";
 import { CLUTTER_LILY, clutterInRect } from "../../src/sim/clutter.js";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -92,6 +92,13 @@ function lakes(): Array<{ seed: number; f: Feature; shape: LakeShape }> {
   return out;
 }
 
+/** The world's ground with its features and lakes and without the trail: the
+ * field the lakes are designed on. */
+function untrailed(seed: number, x: number, z: number): number {
+  const fs = bowlFor(seed).features;
+  return lakeStageD(seed, fs, x, z, featureStageD(fs, x, z, olympicPreTrailSample(seed, x, z))).h;
+}
+
 /** A field read on a 2 m grid over a lake's box, with each cell's shore distance. */
 type LakeGrid = { n: number; x0: number; z0: number; h: Float64Array; s: Float64Array };
 const GRID_STEP = 2;
@@ -110,6 +117,37 @@ function lakeGrid(shape: LakeShape, field: (x: number, z: number) => number): La
   return { n, x0, z0, h, s };
 }
 
+/**
+ * The crests water rising in the lake meets on its way out: from each vertex
+ * of the 1 m outline, straight out along −∇s every quarter metre, the highest
+ * ground over the level before the ground falls under the level again (or,
+ * where it never does within the bank and the widest apron, the highest
+ * reached); none where the line crosses a spit back into the lake. The
+ * lowest of them is the lake's spill height.
+ */
+function crestsOf(shape: LakeShape, field: (x: number, z: number) => number): { crest: number[]; xs: readonly number[]; zs: readonly number[] } {
+  const o = lakeOutline(shape, 1);
+  const r = newLakeShore();
+  const crest: number[] = [];
+  for (let i = 0; i < o.xs.length; i++) {
+    lakeShoreInto(r, shape, o.xs[i]!, o.zs[i]!);
+    const gl = Math.hypot(r.sx, r.sz);
+    const nx = -r.sx / gl, nz = -r.sz / gl;
+    let top = -Infinity;
+    const p = newLakeShore();
+    for (let t = 0.25; t <= 40; t += 0.25) {
+      const x = o.xs[i]! + nx * t, z = o.zs[i]! + nz * t;
+      // A line that crosses a spit back into the lake is no way out.
+      if (lakeShoreInto(p, shape, x, z).s > 0) { top = Infinity; break; }
+      const h = field(x, z) - shape.level;
+      if (h > top) top = h;
+      if (h < 0 && top > 0) break;
+    }
+    crest.push(top);
+  }
+  return { crest, xs: o.xs, zs: o.zs };
+}
+
 describe("the water terrain over 200 worlds", { timeout: timeLimit(1_200_000) }, () => {
   it("builds every world's features, trail and road as the baseline recorded them", () => {
     const now = worlds();
@@ -123,7 +161,7 @@ describe("the water terrain over 200 worlds", { timeout: timeLimit(1_200_000) },
     for (let i = 0; i < now.length; i++) expect(now[i], `seed ${before[i]!.seed}`).toEqual(before[i]);
   });
 
-  it("keeps every trail edge LAKE_TRAIL_CLEAR outside every lake's shore, and every marsh between its wall and its rim", () => {
+  it("keeps every trail edge LAKE_TRAIL_CLEAR outside every lake's shore, and every marsh between its shore and its shelf's inner edge", () => {
     let murky = 0, marshes = 0, valley = 0;
     const r = newLakeShore();
     for (const seed of LOBBY_SEEDS) {
@@ -143,10 +181,11 @@ describe("the water terrain over 200 worlds", { timeout: timeLimit(1_200_000) },
         if ((f.murk ?? 0) > MARSH_MURK_MIN) murky++;
         if (!f.lobe) continue;
         marshes++;
-        for (const [x, z] of lobePoints(f, 2)) {
-          const q = Math.hypot(x - f.x, z - f.z);
-          expect(q, `seed ${seed}`).toBeGreaterThan(f.radius - LAKE_SHELF_WIDTH);
-          expect(q, `seed ${seed}`).toBeLessThan(f.radius);
+        const shelf = lakeShelfWidth(shape.sMax);
+        for (const [x, z] of lobePoints(shape, f.lobe, 2)) {
+          const s = lakeShoreInto(r, shape, x, z).s;
+          expect(s, `seed ${seed}`).toBeGreaterThan(0);
+          expect(s, `seed ${seed}`).toBeLessThan(shelf);
         }
       }
     }
@@ -164,7 +203,7 @@ describe("the water terrain over 200 worlds", { timeout: timeLimit(1_200_000) },
       const { n, h, s } = g;
       const below = (c: number): boolean => h[c]! < shape.level;
       // The marsh's own dips are the lake's.
-      const marsh = (c: number): boolean => marshWeightAt(f, g.x0 + (c % n) * GRID_STEP, g.z0 + Math.floor(c / n) * GRID_STEP) > 0;
+      const marsh = (c: number): boolean => marshWeightAt(shape, f.lobe, g.x0 + (c % n) * GRID_STEP, g.z0 + Math.floor(c / n) * GRID_STEP) > 0;
       const comp = new Int32Array(n * n).fill(-1);
       let comps = 0;
       const touchesEdge: boolean[] = [], holdsLake: boolean[] = [], drawn: boolean[] = [];
@@ -186,9 +225,10 @@ describe("the water terrain over 200 worlds", { timeout: timeLimit(1_200_000) },
           }
         }
       }
-      // Every cell well under the level inside the shore lies in one body.
+      // Every cell well under the level inside the shore lies in one body,
+      // but for the marsh's own dips, which are the lake's.
       const bodies = new Set<number>();
-      for (let c = 0; c < n * n; c++) if (s[c]! > 0 && h[c]! < shape.level - 0.06) bodies.add(comp[c]!);
+      for (let c = 0; c < n * n; c++) if (s[c]! > 0 && h[c]! < shape.level - 0.06 && !marsh(c)) bodies.add(comp[c]!);
       expect(bodies.size, `seed ${seed}`).toBe(1);
       // No ground under the level within the water's reach that is not the
       // lake and does not reach the box's edge: no puddle the surface would draw.
@@ -201,11 +241,24 @@ describe("the water terrain over 200 worlds", { timeout: timeLimit(1_200_000) },
     expect(checked).toBeGreaterThan(50);
   });
 
-  it("keeps the bank over the level within the water's 3 m reach under the trail's corridor", () => {
+  it("spills each lake through its outlet at the sill, to 0.1 m, and nowhere lower (spec §5.4, §13.2)", () => {
+    for (const { seed, shape } of lakes()) {
+      const { crest, xs, zs } = crestsOf(shape, (x, z) => untrailed(seed, x, z));
+      const sp = shape.spout!;
+      expect(Math.abs(Math.min(...crest) - LAKE_SILL), `seed ${seed}`).toBeLessThanOrEqual(0.1);
+      // Away from the spout's end and its notch every way out stands 0.1 m over the sill.
+      for (let i = 0; i < crest.length; i++) {
+        if (Math.hypot(xs[i]! - sp.bx, zs[i]! - sp.bz) <= sp.half + LAKE_NOTCH_FADE + 8) continue;
+        expect(crest[i]!, `seed ${seed} (${xs[i]!.toFixed(1)}, ${zs[i]!.toFixed(1)})`).toBeGreaterThanOrEqual(LAKE_SILL + 0.1);
+      }
+    }
+  });
+
+  it("keeps the bank over the level within the water's 3 m reach under the trail's corridor, and the spill at the sill", () => {
     // The corridor reaches 7 m from an edge's centreline, so an edge at
     // s = −7 still blends the bank a few metres in: the composed ground
     // 0.5 to 3 m outside the shore must still stand over the water, away
-    // from the notch.
+    // from the notch, and the water must still leave by the sill.
     const v = variantOrThrow("olympic");
     const r = newLakeShore();
     for (const { seed, f, shape } of lakes()) {
@@ -218,10 +271,12 @@ describe("the water terrain over 200 worlds", { timeout: timeLimit(1_200_000) },
         const gl = Math.hypot(r.sx, r.sz);
         for (const t of [0.5, 1, 2, 3]) {
           const x = x0 - (r.sx / gl) * t, z = z0 - (r.sz / gl) * t;
-          if (marshWeightAt(f, x, z) > 0) continue;
+          if (marshWeightAt(shape, f.lobe, x, z) > 0) continue;
           expect(v.sample(seed, x, z).h, `seed ${seed} (${x.toFixed(1)}, ${z.toFixed(1)}) t ${t}`).toBeGreaterThanOrEqual(shape.level);
         }
       }
+      const { crest } = crestsOf(shape, (x, z) => v.sample(seed, x, z).h);
+      expect(Math.min(...crest), `seed ${seed}`).toBeGreaterThanOrEqual(LAKE_SILL - 0.1);
     }
   });
 

@@ -547,7 +547,7 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     // The marsh's middle: 5 m in from the rim along the marsh's own direction, its core.
     expect(from(marsh) - lake.radius).toBeCloseTo(-5, 9);
     expect(along(marsh)).toBeCloseTo(1, 9);
-    expect(marshWeightAt(lake, marsh.x, marsh.z)).toBe(1);
+    expect(marshWeightAt(lake.shape, lake.lobe, marsh.x, marsh.z)).toBe(1);
     // Straight across, on the rim.
     expect(from(across) - lake.radius).toBeCloseTo(0, 9);
     expect(along(across)).toBeCloseTo(-1, 9);

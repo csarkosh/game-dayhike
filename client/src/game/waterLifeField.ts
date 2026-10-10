@@ -124,7 +124,7 @@ type Candidate = { x: number; z: number; ground: number; rank: number; angle: nu
  * where there is water under it, inside the rim or on the marsh, if the
  * ground is below it; anywhere else its own ground, a plant on dry land. */
 function footingOf(lake: LakeSource, x: number, z: number, ground: number): number {
-  const wet = Math.hypot(x - lake.x, z - lake.z) < lake.radius || marshWeightAt(lake, x, z) > 0;
+  const wet = Math.hypot(x - lake.x, z - lake.z) < lake.radius || marshWeightAt(lake.shape, lake.lobe, x, z) > 0;
   return wet ? Math.max(ground, lake.level) : ground;
 }
 
@@ -144,7 +144,7 @@ function stretchOf(angle: number, n: number): number {
 
 export function inShoreBand(lake: LakeSource, x: number, z: number): boolean {
   const r = Math.hypot(x - lake.x, z - lake.z);
-  return (r >= lake.radius - SHORE_BAND_IN && r <= lake.radius + SHORE_BAND_OUT) || marshWeightAt(lake, x, z) > 0;
+  return (r >= lake.radius - SHORE_BAND_IN && r <= lake.radius + SHORE_BAND_OUT) || marshWeightAt(lake.shape, lake.lobe, x, z) > 0;
 }
 
 /** Every shrub, bush, reed and drift log in the band, and every snag within SNAG_REACH of the rim. */
@@ -288,7 +288,7 @@ function stemsOf(seed: number, lake: LakeSource): Perch[] {
 /** True where the marsh's middle lies along angle `a`. */
 function marshAlong(lake: LakeSource, a: number): boolean {
   const r = lake.radius - MARSH_MID;
-  return marshWeightAt(lake, lake.x + r * Math.cos(a), lake.z + r * Math.sin(a)) > 0;
+  return marshWeightAt(lake.shape, lake.lobe, lake.x + r * Math.cos(a), lake.z + r * Math.sin(a)) > 0;
 }
 
 function voicesOf(seed: number, lake: LakeSource): FrogVoice[] {

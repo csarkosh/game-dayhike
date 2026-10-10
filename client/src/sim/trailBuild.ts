@@ -241,7 +241,7 @@ export function buildTrail(
     const shape = { ...drawn, level, murk };
     const f: Feature = { id, kind: "pond", x: shape.cx, z: shape.cz, radius, height: level, murk, shape };
     // The marsh reads the ground before any feature, as the lake's level does.
-    f.lobe = chooseLobe(f, murk, pre);
+    f.lobe = chooseLobe(shape, radius, murk, pre);
     return f;
   };
   /**

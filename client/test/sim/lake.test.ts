@@ -84,10 +84,10 @@ describe("the marsh in the composed field", { timeout: timeLimit(120_000) }, () 
     const { seed, pond } = firstPondWorld((f) => (f.murk ?? 0) > 0.7);
     expect(pond.lobe).not.toBeNull();
     const v = variantOrThrow("olympic");
-    const pts = lobePoints(pond, 1);
+    const pts = lobePoints(pond.shape!, pond.lobe, 1);
     let core = 0;
     for (const [x, z] of pts) {
-      if (marshWeightAt(pond, x, z) < 1) continue;
+      if (marshWeightAt(pond.shape!, pond.lobe, x, z) < 1) continue;
       core++;
       expect(Math.abs(v.sample(seed, x, z).h - pond.height)).toBeLessThanOrEqual(MARSH_AMP + 1e-9);
     }

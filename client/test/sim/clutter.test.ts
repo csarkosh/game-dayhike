@@ -57,6 +57,7 @@ import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
 import { centerlineX } from "./helpers/roadLine.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, type TerrainSample } from "../../src/sim/terrain.js";
 import { MEADOW_RIM } from "../../src/sim/features.js";
+import { lakeShoreInto, newLakeShore, rayToShore } from "../../src/sim/lakeShape.js";
 
 const SEED = DERIV_SEED; // 0x5eed — the roadLine/derivatives helpers are bound to it
 
@@ -1450,8 +1451,8 @@ describe("the water plants", { timeout: timeLimit(120_000) }, () => {
     const { seed, pond } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
     const lake = lakeOf(seed);
     let core = 0;
-    for (const [x, z] of lobePoints(lake, 1)) {
-      if (marshWeightAt(lake, x, z) < 1) continue;
+    for (const [x, z] of lobePoints(lake.shape, lake.lobe, 1)) {
+      if (marshWeightAt(lake.shape, lake.lobe, x, z) < 1) continue;
       core++;
       expect(clutterDensity(seed, CLUTTER_REED, x, z)).toBe(1);
     }
@@ -1463,11 +1464,11 @@ describe("the water plants", { timeout: timeLimit(120_000) }, () => {
   it("float lilies only in water 0.5 to 2 m deep, in patches", () => {
     const { seed } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
     const lake = lakeOf(seed);
+    const r = newLakeShore();
     let most = 0;
-    for (let i = 0; i < 720; i++) {
-      const a = (i / 720) * Math.PI * 2;
-      for (let s = 0.5; s < 20; s += 0.5) {
-        const x = lake.x + Math.cos(a) * (lake.radius - s), z = lake.z + Math.sin(a) * (lake.radius - s);
+    for (let x = lake.x - lake.bound; x <= lake.x + lake.bound; x += 1.3) {
+      for (let z = lake.z - lake.bound; z <= lake.z + lake.bound; z += 1.3) {
+        if (!(lakeShoreInto(r, lake.shape, x, z).s > 0)) continue;
         const depth = lake.level - elevationAt(seed, x, z);
         const d = clutterDensity(seed, CLUTTER_LILY, x, z);
         if (depth < 0.5 || depth > 2) expect(d, `depth ${depth}`).toBe(0);
@@ -1477,14 +1478,14 @@ describe("the water plants", { timeout: timeLimit(120_000) }, () => {
     expect(most).toBeGreaterThan(0.5);
   });
 
-  it("float no lily outside the rim", () => {
+  it("float no lily outside the shore", () => {
     const { seed, pond } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
     const lake = activeTerrainVariant().waterBodies!(seed)
       .find((b): b is LakeSource => b.kind === "lake" && b.x === pond.x && b.z === pond.z)!;
-    const r = lake.radius + POND_SHORE + 1;
-    const lilies = clutterInRect(seed, CLUTTER_LILY, lake.x - r, lake.z - r, lake.x + r, lake.z + r);
+    const r = newLakeShore();
+    const lilies = clutterInRect(seed, CLUTTER_LILY, lake.x - lake.bound, lake.z - lake.bound, lake.x + lake.bound, lake.z + lake.bound);
     for (const inst of lilies) {
-      expect(Math.hypot(inst.x - lake.x, inst.z - lake.z), `(${inst.x}, ${inst.z})`).toBeLessThan(lake.radius);
+      expect(lakeShoreInto(r, lake.shape, inst.x, inst.z).s, `(${inst.x}, ${inst.z})`).toBeGreaterThan(0);
     }
     expect(lilies.length).toBeGreaterThan(20);
   });
@@ -1493,7 +1494,7 @@ describe("the water plants", { timeout: timeLimit(120_000) }, () => {
     const { seed } = firstPondWorld((f) => (f.murk ?? 1) <= 0.5);
     const lake = lakeOf(seed);
     for (let s = 0; s < 20; s += 0.5) {
-      const x = lake.x + lake.radius - s;
+      const x = lake.x + rayToShore(lake.shape, lake.x, lake.z, 1, 0, s, lake.bound);
       expect(clutterDensity(seed, CLUTTER_REED, x, lake.z)).toBe(0);
       expect(clutterDensity(seed, CLUTTER_LILY, x, lake.z)).toBe(0);
     }

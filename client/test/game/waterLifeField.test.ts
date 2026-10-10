@@ -249,7 +249,7 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
       const onReed = (p: { x: number; z: number }): boolean => reeds.some((c) => c.x === p.x && c.z === p.z);
       const ground = (p: { x: number; z: number }): number => elevationAt(seed, p.x, p.z);
       // water under it: inside the rim or on the marsh
-      const wet = (p: { x: number; z: number }): boolean => Math.hypot(p.x - lake.x, p.z - lake.z) < lake.radius || marshWeightAt(lake, p.x, p.z) > 0;
+      const wet = (p: { x: number; z: number }): boolean => Math.hypot(p.x - lake.x, p.z - lake.z) < lake.radius || marshWeightAt(lake.shape, lake.lobe, p.x, p.z) > 0;
       const footing = (p: { x: number; z: number }): number => (wet(p) ? Math.max(ground(p), lake.level) : ground(p));
       const reedPerches = layout.perches.filter(onReed);
       const landPerches = layout.perches.filter((p) => !onReed(p));
@@ -287,7 +287,7 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
       if (v.marsh) {
         // in the marsh's middle, 5 m in, where it is all water's edge
         expect(r).toBeCloseTo(lake.radius - 5, 9);
-        expect(marshWeightAt(lake, v.x, v.z)).toBeGreaterThan(0);
+        expect(marshWeightAt(lake.shape, lake.lobe, v.x, v.z)).toBeGreaterThan(0);
       } else {
         expect(Math.abs(r - lake.radius)).toBeLessThanOrEqual(0.5);
       }
@@ -296,7 +296,7 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
     // the voices whose bearing crosses the marsh: half again as many with it as without
     const alongMarsh = (v: { x: number; z: number }): boolean => {
       const a = angleOf(lake, v.x, v.z);
-      return marshWeightAt(lake, lake.x + (lake.radius - 5) * Math.cos(a), lake.z + (lake.radius - 5) * Math.sin(a)) > 0;
+      return marshWeightAt(lake.shape, lake.lobe, lake.x + (lake.radius - 5) * Math.cos(a), lake.z + (lake.radius - 5) * Math.sin(a)) > 0;
     };
     expect([marshy.voices.length, marshy.voices.filter(alongMarsh).length, marshy.voices.filter((v) => v.marsh).length])
       .toEqual([11, 2, 2]);

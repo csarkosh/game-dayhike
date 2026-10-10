@@ -3,7 +3,7 @@ import { fbm2d, hash3 } from "./field.js";
 import {
   apronAt, lakeShoreInto, newLakeShore, stepT, stepTd,
   LAKE_BANK_EASE, LAKE_BANK_GRADE_GENTLE, LAKE_BANK_GRADE_STEEP, LAKE_BANK_WIDTH_GENTLE, LAKE_BANK_WIDTH_STEEP,
-  LAKE_SHAPE_TUNABLES, LAKE_SHELF_WIDTH,
+  LAKE_SHAPE_TUNABLES, lakeShelfWidth, rayToShore,
   type LakeShape,
 } from "./lakeShape.js";
 // The bed's constants and profile live with the shore and are read from here as they were.
@@ -228,13 +228,16 @@ export const MARSH_AMP = 0.05;
 export const MARSH_NOISE_WAVE = 4;
 /** The marsh's metric where it starts giving way to the bed around it. */
 export const MARSH_EDGE = 0.55;
-/** Where a direction's shore's scoring starts, outside the rim (m). */
+/** Where a direction's shore's scoring starts, outside the shore crossing (m). */
 export const MARSH_SHORE_START = 2;
-/** A direction's shore is scored out to this far outside the rim (m),
+/** A direction's shore is scored out to this far outside the shore crossing (m),
  * across the marsh's width, on a MARSH_SCORE_STEP grid. */
 export const MARSH_SHORE_SCAN = 20;
 export const MARSH_SCORE_STEP = 3;
 export const MARSH_SALT = 0x3a75;
+/** The marsh fades out over this many metres before the line through the
+ * lake's centre across its direction (`marshMetricD`). */
+export const MARSH_ONSET = 8;
 
 /** The 16 directions a marsh may take, every 22.5°, as literals: the sim
  * takes no trigonometric function. */
@@ -247,33 +250,37 @@ const MARSH_DIRECTIONS: readonly (readonly [number, number])[] = [
   [0.7071067811865476, -0.7071067811865476], [0.9238795325112867, -0.3826834323650898],
 ];
 
-/** What the marsh's functions need of a lake: a pond feature or a `LakeSource`. */
-type MarshLake = { x: number; z: number; radius: number; lobe?: Lobe | null };
-
 export function marshWidth(radius: number, murk: number): number {
   const t = (murk - MARSH_MURK_MIN) / (1 - MARSH_MURK_MIN);
   return (MARSH_WIDTH_MIN + (MARSH_WIDTH_MAX - MARSH_WIDTH_MIN) * t) * radius;
 }
 
+const MARSH_SHORE = newLakeShore();
+
 /**
- * A murky lake's marsh: on the shelf, in the direction whose shore (the
- * ground just outside the rim, before the lake) stands least far off the
- * level on average, since a marsh is flat ground the water spreads over. On a
- * tie the first of MARSH_DIRECTIONS. Null at murk MARSH_MURK_MIN and below.
- * `ground` is the pre-feature field; the builder calls this once per pond
- * after the whole bowl is placed.
+ * A murky valley lake's marsh: on the shelf, in the direction whose shore
+ * (the ground just outside where the line from the centre crosses the shore,
+ * before the lake) stands least far off the level on average, since a marsh
+ * is flat ground the water spreads over. On a tie the first of
+ * MARSH_DIRECTIONS. Null at murk MARSH_MURK_MIN and below, and on a tarn.
+ * `radius` is the lake's drawn mean radius, which the marsh's width scales
+ * with; `ground` the pre-feature field. The builder calls this as it places
+ * the lake.
  */
-export function chooseLobe(f: Feature, murk: number, ground: (x: number, z: number) => number): Lobe | null {
-  if (!(murk > MARSH_MURK_MIN)) return null;
-  const width = marshWidth(f.radius, murk);
+export function chooseLobe(
+  shape: LakeShape, radius: number, murk: number, ground: (x: number, z: number) => number,
+): Lobe | null {
+  if (!(murk > MARSH_MURK_MIN) || shape.family !== "valley") return null;
+  const width = marshWidth(radius, murk);
   let best: Lobe | null = null;
   let bestOff = Infinity;
   for (const [dirX, dirZ] of MARSH_DIRECTIONS) {
+    const c = rayToShore(shape, shape.cx, shape.cz, dirX, dirZ, 0, shape.bound);
     let sum = 0;
     let n = 0;
-    for (let t = f.radius + MARSH_SHORE_START; t <= f.radius + MARSH_SHORE_SCAN; t += MARSH_SCORE_STEP) {
+    for (let t = c + MARSH_SHORE_START; t <= c + MARSH_SHORE_SCAN; t += MARSH_SCORE_STEP) {
       for (let b = -width / 2; b <= width / 2; b += MARSH_SCORE_STEP) {
-        const off = ground(f.x + dirX * t - dirZ * b, f.z + dirZ * t + dirX * b) - f.height;
+        const off = ground(shape.cx + dirX * t - dirZ * b, shape.cz + dirZ * t + dirX * b) - shape.level;
         sum += off < 0 ? -off : off;
         n++;
       }
@@ -287,35 +294,46 @@ export function chooseLobe(f: Feature, murk: number, ground: (x: number, z: numb
   return best;
 }
 
+/** The metric where no marsh is: past every ellipse. */
+const NO_MARSH = Object.freeze({ v: Infinity, dx: 0, dz: 0 });
+
 /**
  * The marsh's metric at (x, z), below 1 inside it, and its gradient: an
- * ellipse in the shelf's own coordinates, `s = R − q` in from the rim (1 at
- * the rim and at the shelf's edge) and the offset across the marsh's
- * direction (1 at half its width).
+ * ellipse in the shelf's own coordinates, the shore distance s (1 at the
+ * shore and at the shelf's inner edge, `lakeShelfWidth` in) and the offset
+ * across the marsh's direction from the centre (1 at half its width); plus
+ * 2 · ((MARSH_ONSET − along) / MARSH_ONSET)³ while the point lies less than
+ * MARSH_ONSET along that direction, so the marsh fades out before the line
+ * through the centre across it, where the metric is already over 1 and the
+ * other side of the lake begins.
  */
-function marshMetricD(f: MarshLake, lobe: Lobe, x: number, z: number): { v: number; dx: number; dz: number } {
-  const rx = x - f.x, rz = z - f.z;
-  // Only the marsh's own side of the lake. Every point it covers lies at
-  // least 8 m along its direction (q > R − 10 ≥ 15, the offset across under
-  // R/2), so this gate sits where the metric is already ≥ 1.
-  if (rx * lobe.dirX + rz * lobe.dirZ <= 0) return { v: Infinity, dx: 0, dz: 0 };
-  const q = Math.sqrt(rx * rx + rz * rz);
-  const half = LAKE_SHELF_WIDTH / 2;
-  const a = (f.radius - q - half) / half;
+function marshMetricD(shape: LakeShape, lobe: Lobe, x: number, z: number): { v: number; dx: number; dz: number } {
+  const rx = x - shape.cx, rz = z - shape.cz;
+  const along = rx * lobe.dirX + rz * lobe.dirZ;
+  if (along <= 0) return NO_MARSH;
+  const r = lakeShoreInto(MARSH_SHORE, shape, x, z);
+  if (r.s === Number.NEGATIVE_INFINITY) return NO_MARSH;
+  const half = lakeShelfWidth(shape.sMax) / 2;
+  const a = (r.s - half) / half;
   const B = lobe.width / 2;
   const b = (-rx * lobe.dirZ + rz * lobe.dirX) / B;
-  // ∂s/∂x = −rx/q, ∂s/∂z = −rz/q; the offset across is linear.
-  return {
-    v: a * a + b * b,
-    dx: (2 * a * (-rx / q)) / half - (2 * b * lobe.dirZ) / B,
-    dz: (2 * a * (-rz / q)) / half + (2 * b * lobe.dirX) / B,
-  };
+  let v = a * a + b * b;
+  let dx = (2 * a * r.sx) / half - (2 * b * lobe.dirZ) / B;
+  let dz = (2 * a * r.sz) / half + (2 * b * lobe.dirX) / B;
+  if (along < MARSH_ONSET) {
+    const g = (MARSH_ONSET - along) / MARSH_ONSET;
+    v += 2 * g * g * g;
+    const dg = (-6 * g * g) / MARSH_ONSET;
+    dx += dg * lobe.dirX;
+    dz += dg * lobe.dirZ;
+  }
+  return { v, dx, dz };
 }
 
-/** How much of the marsh is at (x, z): 1 in its core, 0 outside it. */
-export function marshWeightAt(f: MarshLake, x: number, z: number): number {
-  if (!f.lobe) return 0;
-  const e = marshMetricD(f, f.lobe, x, z).v;
+/** How much of the marsh is at (x, z): 1 in its core, 0 outside it, and 0 with no lobe. */
+export function marshWeightAt(shape: LakeShape, lobe: Lobe | null | undefined, x: number, z: number): number {
+  if (!lobe) return 0;
+  const e = marshMetricD(shape, lobe, x, z).v;
   if (e >= 1) return 0;
   return 1 - smootherstepD(MARSH_EDGE, 1, e).v;
 }
@@ -326,9 +344,9 @@ export function marshWeightAt(f: MarshLake, x: number, z: number): number {
  * blended C² into the bed around it over the metric's MARSH_EDGE..1.
  */
 export function marshD(seed: number, f: Feature, x: number, z: number, base: TerrainSample): TerrainSample {
-  const lobe = f.lobe;
-  if (!lobe) return base;
-  const e = marshMetricD(f, lobe, x, z);
+  const lobe = f.lobe, shape = f.shape;
+  if (!lobe || shape === undefined) return base;
+  const e = marshMetricD(shape, lobe, x, z);
   if (e.v >= 1) return base;
   const s = smootherstepD(MARSH_EDGE, 1, e.v);
   const w = 1 - s.v;
@@ -343,20 +361,24 @@ export function marshD(seed: number, f: Feature, x: number, z: number, base: Ter
   };
 }
 
-/** Points of the marsh on a `step` grid in its own coordinates, for tests and
- * scans: every one lies between the wall and the rim. */
-export function lobePoints(f: MarshLake, step: number): Array<[number, number]> {
+/** Points of the marsh on a `step` grid in its own coordinates (the shore
+ * distance and the offset across), each found along its line by
+ * `rayToShore`: every one lies between the shore and the shelf's inner edge. */
+export function lobePoints(shape: LakeShape, lobe: Lobe | null | undefined, step: number): Array<[number, number]> {
   const out: Array<[number, number]> = [];
-  const lobe = f.lobe;
   if (!lobe) return out;
-  const half = LAKE_SHELF_WIDTH / 2, B = lobe.width / 2;
-  for (let s = step / 2; s < LAKE_SHELF_WIDTH; s += step) {
+  const shelf = lakeShelfWidth(shape.sMax);
+  const half = shelf / 2, B = lobe.width / 2;
+  for (let s = step / 2; s < shelf; s += step) {
     for (let lat = -B + step / 2; lat < B; lat += step) {
       const a = (s - half) / half, b = lat / B;
       if (a * a + b * b >= 1) continue;
-      const q = f.radius - s;
-      const along = Math.sqrt(q * q - lat * lat);
-      out.push([f.x + lobe.dirX * along - lobe.dirZ * lat, f.z + lobe.dirZ * along + lobe.dirX * lat]);
+      const ox = shape.cx - lobe.dirZ * lat, oz = shape.cz + lobe.dirX * lat;
+      const along = rayToShore(shape, ox, oz, lobe.dirX, lobe.dirZ, s, shape.bound);
+      if (!(along > 0) || !Number.isFinite(along)) continue;
+      const x = ox + lobe.dirX * along, z = oz + lobe.dirZ * along;
+      if (marshMetricD(shape, lobe, x, z).v >= 1) continue;
+      out.push([x, z]);
     }
   }
   return out;
@@ -575,7 +597,7 @@ export const FEATURE_TUNABLES: Readonly<Record<string, number>> = {
   ...LAKE_SHAPE_TUNABLES,
   LAKE_SILL, LAKE_NOTCH_RAMP, LAKE_NOTCH_FADE,
   MARSH_MURK_MIN, MARSH_WIDTH_MIN, MARSH_WIDTH_MAX, MARSH_AMP, MARSH_NOISE_WAVE, MARSH_EDGE,
-  MARSH_SHORE_START, MARSH_SHORE_SCAN, MARSH_SCORE_STEP, MARSH_SALT,
+  MARSH_SHORE_START, MARSH_SHORE_SCAN, MARSH_SCORE_STEP, MARSH_SALT, MARSH_ONSET,
   LOOP_WEIGHT_1, LOOP_WEIGHT_2, LOOP_WEIGHT_3,
   LOOP_BAND_LO_1, LOOP_BAND_HI_1, LOOP_BAND_LO_2, LOOP_BAND_HI_2, LOOP_BAND_LO_3, LOOP_BAND_HI_3,
   LOOP_LATERAL_MIN, LOOP_LATERAL_MAX, FEATURE_ROAD_CLEAR, FEATURE_SPACING,
