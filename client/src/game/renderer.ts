@@ -139,6 +139,7 @@ import { calmShare, isRough, roughShare, smearPx, SLOPE_PAW_DEG } from "./lakeCa
 import { createLakeMirror, createLakeMirrorTerrain, MIRROR_MOTION_SMEAR, mirrorMotion } from "./lakeMirror.js";
 import { createLakePanorama, createSkylineTexture } from "./lakePanorama.js";
 import { createLakeChoice } from "./lakeChoice.js";
+import { lakeInView, lakeViewPoints, newLakeViewPlanes } from "./lakeView.js";
 import { SKYLINE_SHADE, skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { NEEDLE_BED } from "./terrainSurface.js";
 
@@ -2213,6 +2214,11 @@ function buildRenderer(
   if (lakePanorama !== null) (lakePlugins[0] as WaterPlugin).setPanorama(lakePanorama.texture);
   /** The lake the mirror and the panorama serve, by index (`lakeChoice.ts`). */
   let servedLake = 0;
+  // Each lake's shore at its level, read for whether its water is in view
+  // (`lakeView.ts`): its mesh's box is mostly bank. Only the mirror asks.
+  const lakeViews = lakeMirror !== null ? lakes.map((l) => lakeViewPoints(l.shape, l.level)) : [];
+  const lakeViewPlanes = newLakeViewPlanes();
+  const lakeViewScratch = new Vector3();
   /** Each lake's shelter (`lakeWaterRow`): how far its cat's-paws spread. */
   const lakeShelters = lakes.map((l) => lakeWaterRow(l.murk).shelter);
   const cover: MeshRegistry = {
@@ -2677,14 +2683,16 @@ function buildRenderer(
       let armed = lakeMirror === null && c.roughShare < 1;
       if (lakeMirror !== null && i === servedLake) {
         // This frame's frustum, the camera placed for the frame: never a
-        // frame late. Without an eye the lake is in no view.
+        // frame late. Without an eye the lake is in no view. Read by its
+        // shore, not its mesh's box (`lakeView.ts`).
         let inView = false;
         if (eye) {
           const mesh = lakeMeshes[i] as Mesh;
           camera.getViewMatrix();
           camera.getProjectionMatrix();
           mesh.computeWorldMatrix();
-          inView = camera.isInFrustum(mesh);
+          const lake = lakes[i] as LakeSource;
+          inView = lakeInView(camera, mesh, lake.shape, lakeViews[i] as Float32Array, lakeViewPlanes, lakeViewScratch);
         }
         armed = lakeMirror.update(camera, inView, c.share);
         mirrorArmed = armed;
