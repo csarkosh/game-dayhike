@@ -57,7 +57,12 @@ const PINS: Record<string, string> = {
   // Re-pinned for the far ground's cover (terrainTexture.ts,
   // groundFarCover.fragment.fx, the road's and the trail's paint weights); the
   // test below shows it is the whole difference.
-  "terrain.fragment": "035d1f9c4fb92c920edeedc8fed427e7bb0831e0ed52b9c4ab920eef58f6c629",
+  // Re-pinned for the lakes' shore atlas (featurePaint.ts: the feature table
+  // read texel by texel, its eight entries, the atlas's read and the shore
+  // tint by it; the wet line's footprint by the shore on the terrain,
+  // wetLights.fragment.fx), which stays in the texts the tests below take
+  // their pieces out of.
+  "terrain.fragment": "0ae2c44f563c0515e98316d34121d4fc276d6d0f6dee6e848d0a307651862366",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
 };
@@ -134,7 +139,7 @@ describe("WebGL2's shader text", () => {
     }
   });
 
-  it("changes the terrain fragment by one renamed identifier and the puddles' ripples, and nothing else", () => {
+  it("changes the terrain fragment by one renamed identifier, the puddles' ripples and the shore atlas, and nothing else", () => {
     const text = pluginTexts()["terrain.fragment"] as string;
     // The WGSL-reserved local `macro` renamed at source on both engines. The
     // word survives only in the hex include's comments, which glslang drops.
@@ -146,16 +151,17 @@ describe("WebGL2's shader text", () => {
     expect(text.match(/vec2 tRc = floor\(tRp\);/g)).toHaveLength(4);
     expect(text).toContain("if (terrainRain > 0.0) {");
     expect(text).toContain("vec3 tPuddleN = normalize(vec3(tRipple.x * terrainRain, 1.0, tRipple.y * terrainRain));");
-    // With the ripples taken out and the rename undone, the base's text and
-    // the shore tint's one line.
+    // With the ripples taken out and the rename undone, the base's text, the
+    // shore tint's one line, and the lakes' shore atlas (2026-10-10).
     const base = withoutFarCover(withoutRipples(text)).replaceAll("macroRgb", "macro");
     expect(base).not.toContain("tRipple");
-    expect(sha(base)).toBe("fd74235171f3b423ebdc8126972fa2ca1b6aee08fba3eef1a0cca297e4d21669");
+    expect(sha(base)).toBe("cbde97ea8dd9347b5aca72f220c01f8fc24e3433207dbf05f22c583f5d157c53");
   });
 
   it("takes the far cover out and gets the text before it", () => {
     const text = pluginTexts()["terrain.fragment"] as string;
-    expect(sha(withoutFarCover(withoutRipples(text)))).toBe("393cbde35c652291d03850619cfdf4b67c6065aac4e84e87c4f9e865ffd71e10");
+    // With the lakes' shore atlas in it (2026-10-10).
+    expect(sha(withoutFarCover(withoutRipples(text)))).toBe("195b49d319db736be3b02913d90dcc23b4bd36fa4c505ed616488737dc2e4bbf");
   }, timeLimit(20_000));
 
   it("keeps every plugin's uniforms, samplers, attributes and defines what they were", () => {
