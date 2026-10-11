@@ -1126,6 +1126,19 @@ rise from 300 s to 420 s (the bed's walk and flush, the cliff field, the cliff
 pass; 251 to 296 s measured), and the water terrain's 200-world sweep's from
 900 s to 1,200 s; they are limits against a hang, not budgets.
 
+**Frame time (§12).** Paired frame times against the game before the lakes,
+fresh pages in both orders on one Apple machine, the lakes less the game
+before: on the high tier at 4K, from the east hill above room-12's lake
+−3.1 and −3.0 ms (no water drawn under the bank, the mirror's view test by
+the outline), over the water's centre with the mirror armed −0.6 and +2.1 ms,
+and 392 m from the lake with the mirror off +0.9 and +1.8 ms, the atlas's four
+texel reads a painted lake on every terrain fragment; standing in the reed
+marsh at the lake's end +13.3 and +12.1 ms, the reeds the old gather box
+missed at a long lake's ends, the cost of a reed bed wherever a player stands
+in one. On medium at 1080p: the reed marsh +14.8 ms, away −1.0 ms. A page
+against itself read −0.7 ms. The reads outside a lake's square are the first
+cost R2 removes with its re-record.
+
 Left to R2: the tarns' L:W table (1.15, 1.5, 2.5) is a spine's ratio not yet
 measured as an outline's Feret ratio, and carries the same two-thirds shortfall
 until it is; a headwall above a tarn is a wall over a lake's ground, so the
