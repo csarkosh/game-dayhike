@@ -36,11 +36,8 @@ export function stadiumShape(o: StadiumOptions): LakeShape {
   };
 }
 
-/** A stadium lake as the variant lists it: its drawn radius the half-width `w`. */
+/** A stadium lake as the variant lists it. */
 export function stadiumLake(o: StadiumOptions & { lobe?: Lobe | null }): LakeSource {
   const shape = stadiumShape(o);
-  return {
-    kind: "lake", level: shape.level, x: o.cx, z: o.cz, radius: o.w, murk: shape.murk, lobe: o.lobe ?? null,
-    shape, bound: shape.bound,
-  };
+  return { kind: "lake", level: shape.level, x: o.cx, z: o.cz, murk: shape.murk, lobe: o.lobe ?? null, shape, bound: shape.bound };
 }

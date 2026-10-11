@@ -68,7 +68,9 @@ describe("the water bodies", { timeout: timeLimit(120_000) }, () => {
     expect(bodies[0]).toEqual({ kind: "sea", level: 0 });
     const lakes = bodies.filter((b): b is LakeSource => b.kind === "lake");
     expect(lakes).toHaveLength(1);
-    expect(lakes[0]).toMatchObject({ level: pond.height, x: pond.x, z: pond.z, radius: pond.radius, murk: pond.murk, bound: pond.shape!.bound });
+    expect(lakes[0]).toMatchObject({ level: pond.height, x: pond.x, z: pond.z, murk: pond.murk, bound: pond.shape!.bound });
+    // No radius: every reader of a lake's extent asks its shape.
+    expect("radius" in lakes[0]!).toBe(false);
     expect(lakes[0]!.shape).toBe(pond.shape);
     expect(variantOrThrow("olympic").waterBodies!(seed)).toBe(bodies); // cached
   });

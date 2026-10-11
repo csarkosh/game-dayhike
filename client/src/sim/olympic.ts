@@ -761,7 +761,7 @@ function waterBodiesHook(seed: number): readonly WaterBodySource[] {
     for (const f of bowlFor(seed).features) {
       if (f.kind !== "pond" || f.shape === undefined) continue;
       list.push({
-        kind: "lake", level: f.height, x: f.x, z: f.z, radius: f.radius, murk: f.murk ?? 0.5, lobe: f.lobe ?? null,
+        kind: "lake", level: f.height, x: f.x, z: f.z, murk: f.murk ?? 0.5, lobe: f.lobe ?? null,
         shape: f.shape, bound: f.shape.bound,
       });
     }

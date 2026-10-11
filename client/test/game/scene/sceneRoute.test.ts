@@ -17,7 +17,8 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
 import "../../../src/sim/passes/index.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
-import { startSceneRoute } from "../../../src/game/scene/sceneRoute.js";
+import { startSceneRoute, titleWater } from "../../../src/game/scene/sceneRoute.js";
+import { stadiumLake, stadiumShape } from "../../helpers/lakeShapes.js";
 import { createSkyTable } from "../../../src/game/skyTable.js";
 import { skyFixture } from "../helpers/skyFixture.js";
 import { asHtml, installStandInDom } from "../helpers/standInDom.js";
@@ -35,6 +36,22 @@ async function drain(frames: ((ms: number) => void)[], p: Promise<void>): Promis
 }
 
 const nullCanvas = (): HTMLCanvasElement => ({ renderWidth: 1600, renderHeight: 900, clientWidth: 1600, clientHeight: 900 }) as unknown as HTMLCanvasElement;
+
+describe("the title's lake", () => {
+  // 15 m about a spine from z = −10 to 10: its shore 15 m out across it and 25 m out along it.
+  const lake = stadiumLake({ cx: 0, cz: 0, halfLen: 10, w: 15, level: 40 });
+
+  it("reaches as far as the shore stands toward the trail's start", () => {
+    expect(titleWater(lake, { x: 100, z: 0 })).toEqual({ x: 0, z: 0, radius: expect.closeTo(15, 9) as number, level: 40 });
+    expect(titleWater(lake, { x: 0, z: -300 }).radius).toBeCloseTo(25, 9);
+  });
+
+  it("falls back on the mean radius where its centre stands on dry ground", () => {
+    // The spine moved 50 m east of the centre the shape turns about.
+    const shape = { ...stadiumShape({ cx: 0, cz: 0, halfLen: 10, w: 15 }), px: [50, 50], meanRadius: 21 };
+    expect(titleWater({ ...lake, shape }, { x: 100, z: 0 }).radius).toBe(21);
+  });
+});
 
 describe("the scene route", () => {
   it("plays the intro on the fixed world with no local player, seeks, renders one frame on request, and leaves nothing behind", async () => {

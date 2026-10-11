@@ -13,6 +13,7 @@ import { createForest } from "../../sim/forest.js";
 import { createWorld } from "../../sim/world.js";
 import type { WorldState } from "../../sim/types.js";
 import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant, type LakeSource } from "../../sim/terrain.js";
+import { rayToShore } from "../../sim/lakeShape.js";
 import { coveFor } from "../../sim/olympic.js";
 import { trailheadPlaces } from "../../sim/trailhead.js";
 import { createCharacterPool, type CharacterPool } from "../characterModel.js";
@@ -80,6 +81,20 @@ export type SceneRouteDeps = {
 /** How dark the film car's patch is against the hike's parked car's (its alpha). */
 const FILM_PATCH_DARKNESS = 0.5;
 
+/**
+ * The lake as the title's shot of it reads it (`title.ts`): its centre, its
+ * level, and as its radius how far its shore stands from its centre toward
+ * `toward` (the trail's start, where the shot's eye stands beyond the
+ * shore), or its mean radius where the line from its centre starts on dry
+ * ground.
+ */
+export function titleWater(lake: LakeSource, toward: { x: number; z: number }): { x: number; z: number; radius: number; level: number } {
+  const dx = toward.x - lake.x, dz = toward.z - lake.z;
+  const d = Math.hypot(dx, dz);
+  const reach = rayToShore(lake.shape, lake.x, lake.z, d > 0 ? dx / d : 1, d > 0 ? dz / d : 0, 0, lake.bound);
+  return { x: lake.x, z: lake.z, radius: reach > 0 && reach < Infinity ? reach : lake.shape.meanRadius, level: lake.level };
+}
+
 const BLACK_STYLE = "position:absolute;inset:0;background:#000;pointer-events:none;z-index:29;";
 
 async function loadFilmCar(scene: BabylonScene, signal: AbortSignal): Promise<PlacedModel | null> {
@@ -130,7 +145,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       // Signed, positive inland, and one to one with x: the shoreline is where it is 0.
       coastlineX: (z) => -(variant.coastDistance?.(seed, 0, z) ?? 0),
       cove: { z0: cove.z0, halfWidth: cove.halfWidth },
-      water: lake === null ? null : { x: lake.x, z: lake.z, radius: lake.radius, level: lake.level },
+      water: lake === null ? null : titleWater(lake, places.start),
       meadow: meadow === null ? null : { x: meadow.x, z: meadow.z, radius: meadow.radius },
       peak: { x: peak.x, z: peak.z, radius: peak.radius },
       start: places.start,
