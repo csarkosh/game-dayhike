@@ -593,7 +593,7 @@ describe("the cut in the tick", SUITE, () => {
     expect(w.state.enemies.size).toBe(3);
   });
 
-  it("judges two forks reached on one tick in node order, the second on the first's residual graph", () => {
+  it("judges two forks reached on one tick in node order, the rung the first opens staying open for the second", () => {
     // Forks 60 and 61 share the rung, edge 62. p arrives at 60 from below by
     // the stem (edge 5) and q at 61 along the guide from 56 (edge 56), on the
     // same tick. Judged first, 60 opens the rung across to 61 (edge 62) and
@@ -624,7 +624,8 @@ describe("the cut in the tick", SUITE, () => {
     const { w, p } = chase();
     const g = w.trail!;
     const node = g.nodes[36]!;
-    // 8 m north-east of fork 36, inside the radius: none of its three
+    // 8 m north-east of fork 36 (west of it before the valley lakes'
+    // worlds, 2026-10-11), inside the radius: none of its three
     // branches comes within 7 m of the point — beside the fork, in the woods.
     const nx = node.x + 8 * Math.SQRT1_2, nz = node.z + 8 * Math.SQRT1_2;
     p.pos = { x: nx, y: w.ground!.heightAt(nx, nz) + 0.9, z: nz };
@@ -805,7 +806,8 @@ describe("the cut in the tick", SUITE, () => {
 
   it("a player who stops on fork 36 is touched from its mouth, 3 m away, once it hunts", () => {
     // Standing at the node, 3 m from the mouth: the hunt closes the 2.1 m to
-    // contact reach from a standstill, 39 ticks after it starts.
+    // contact reach from a standstill, 39 ticks after it starts. Re-read on
+    // the valley lakes' worlds (2026-10-11).
     const r = drive("stop");
     expect(r.cuts).toEqual([[36, 3]]);
     expect(r.hunt - r.cut).toBe(227);

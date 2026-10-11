@@ -232,7 +232,7 @@ describe("the placement", () => {
     // placement reads, and 49 more modules stand on the worlds they change.
     // 2026-10-10: 475 before the valley lakes, whose shores, banks and aprons
     // are other ground than the round ponds' dishes, and whose trails run
-    // elsewhere; 12 more modules stand on the worlds they change, and none
+    // elsewhere; net 3 more modules (475 to 478) stand on the worlds they change, and none
     // on a lake's ground (one did, on world 147's outer bank, 479 laid).
     expect(laid).toBe(478);
     // Measured: the farthest a run carried a module across these worlds,

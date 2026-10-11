@@ -30,8 +30,9 @@
  * One mirror serves the nearest lake (§10.3): `setLake` moves it to another,
  * its plane and its reach with it. Armed, the target is on
  * `scene.customRenderTargets` in the frames it draws (the first armed frame,
- * then every MIRROR_EVERY-th), which the scene renders before its main pass; between draws, and unarmed, it is off that list and the scene
- * neither renders it nor waits on it for its readiness. Between draws the lake
+ * then every MIRROR_EVERY-th), which the scene renders before its main pass;
+ * between draws, and unarmed, it is off that list and the scene neither
+ * renders it nor waits on it for its readiness. Between draws the lake
  * reads the last image through the view-projection it was drawn with. The
  * mirror camera's field is the player's widened by MIRROR_FOV_MARGIN, so a
  * turn over the frames between draws reads inside the image.

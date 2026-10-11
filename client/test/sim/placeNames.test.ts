@@ -32,8 +32,8 @@ describe("placeNames", () => {
     const other = bowlFor(12345);
     expect(other.features.map((f) => f.kind)).toEqual(["peak", "pond", "meadow"]);
     expect([...placeNames(12345, other.features, "Abel")]).toEqual([[1, "Old Lake"], [2, "Felix's Meadow"]]);
-    // Two worlds built, slower since the valley lakes (5.4 s together under a
-    // load of 7 on ten cores): past vitest's 5 s default.
+    // Two world builds, each slower since the valley lakes: together past
+    // vitest's 5 s default.
   }, timeLimit(30_000));
 
   it("never repeats a name and never gives a place the missing hiker's first name", () => {

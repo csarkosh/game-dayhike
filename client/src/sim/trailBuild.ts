@@ -855,7 +855,7 @@ export function buildTrail(
       const luT = ((grid.x[turn] as number) - fx) * lux + ((grid.z[turn] as number) - fz) * luz;
       // The rule applies within the neighbourhood the two halves actually round
       // the feature in — the ring band itself, plus a cell. Beyond that a half
-      // is free to detour either way and `enclosesPoint` below is the gate.
+      // is free to detour either way and `enclosesPoint` below is the test.
       // As a whole-map wall it cost 44 more routes than it saved rings (loops
       // built 131 → 127 over the sweep); `radius + LOOP_LATERAL_MAX`
       // was the first windowing, and once the meadow's forbidden disc grew to
@@ -938,7 +938,7 @@ export function buildTrail(
       const nA = gF.stemNodes[lo] as number, nB = gF.stemNodes[hi] as number;
       const anF = plan2.state.nodes[nA] as TrailNode, bnF = plan2.state.nodes[nB] as TrailNode;
 
-      // Overlap: a cheap regression guard, no longer the gate. Both halves are
+      // Overlap: a cheap regression guard, no longer the test. Both halves are
       // trimmed to the branch after their last tree cell, so a shared cell can
       // now only arise at the join itself; the tally reads 0 on a healthy
       // candidate and would catch a regression in the weight construction.
@@ -987,7 +987,7 @@ export function buildTrail(
       if (!seen.has(nB)) { features.pop(); resampleAround(f); continue; }
 
       // THE LOOP MUST RING ITS FEATURE — the geometric rule that replaces the
-      // shared-cell fraction as the real gate (2026-09-11). A loop is "two
+      // shared-cell fraction as the real test (2026-09-11). A loop is "two
       // half-loops round it"; this is that idea as a predicate. Close the polygon — the
       // first half out to the turn, the second half back from it, and the stem
       // between the two junctions — and ask whether the feature's centre lies
@@ -1012,8 +1012,8 @@ export function buildTrail(
       for (let i = hi - 1; i > lo; i--) ring.push(plan2.state.nodes[gF.stemNodes[i] as number] as TrailNode);
       if (!enclosesPoint(ring, fx, fz)) { features.pop(); resampleAround(f); continue; }
 
-      // The loop's own length band. The budget is 250-500 m a loop; this
-      // task's own test case takes [LOOP_LEN_MIN/2, LOOP_LEN_MAX·1.5] on a
+      // The loop's own length band. The budget is 250-500 m a loop; the
+      // test takes [LOOP_LEN_MIN/2, LOOP_LEN_MAX·1.5] on a
       // synthetic world, and that is the band enforced here. Without it a
       // junction the search chose far down the stem can produce a "loop" three
       // kilometres round (measured over the sweep: a 3181 m one).

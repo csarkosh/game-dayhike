@@ -73,8 +73,8 @@ describe("the director", () => {
     expect(w.haunt!.rest).toBe(rest);
     expect(w.state.enemies.size).toBe(0);
     expect(createForestWorld(createForest(seed), false).haunt).toBeNull();
-    // Two worlds built, slower since the valley lakes (5.8 s together under a
-    // load of 7 on ten cores): past vitest's 5 s default.
+    // Two world builds, each slower since the valley lakes: together past
+    // vitest's 5 s default.
   }, timeLimit(30_000));
 
   it("haunts once the mist is whole on the ground, after the night, by the best living climb, and through the chase, pressing harder toward the crest", () => {

@@ -184,7 +184,7 @@ describe(
       console.info(`[trailSystem] loops built/planned: ${built}/${planned} = ${(builtOverPlanned * 100).toFixed(1)}%`);
       console.info(`[trailSystem] full-plan fraction (unasserted): ${fullPlan}/${worlds.length} = ${(fullPlanFrac * 100).toFixed(1)}%`);
       console.info(`[trailSystem] hub seeds: ${hubSeeds}/${worlds.length}`);
-      // 0.75 -> 0.73: measured 73.1 % (166/227) with the valley lakes; the cause is the lake's shore ring and the braid's shore rule.
+      // 0.75 -> 0.73: measured 73.1 % (166/227) with the valley lakes; the cause is lakes lost at placement and longer loops round the shore.
       expect(withLoopFrac).toBeGreaterThanOrEqual(0.73);
       expect(builtOverPlanned).toBeGreaterThanOrEqual(0.5);
       expect(hubSeeds).toBeGreaterThanOrEqual(3);
@@ -227,7 +227,7 @@ describe(
       console.info(`[trailSystem] planned N distribution: 1=${n[1]} 2=${n[2]} 3=${n[3]} of ${worlds.length}`);
       // 0.7 -> 0.65 (2026-09-11): was 70%; measured 69.8% (185/265) at head
       // 24b1b349 — a stable number 1.3 loops under a guessed floor.
-      // 0.65 -> 0.62: measured 62.0 % (152/245) with the valley lakes; the cause is the lake's shore ring and the braid's shore rule.
+      // 0.65 -> 0.62: measured 62.0 % (152/245) with the valley lakes; the cause is lakes lost at placement and longer loops round the shore.
       expect(loopsInFrac).toBeGreaterThanOrEqual(0.62);
       // LOOSE BY DESIGN, and now written so it says so.
       // This clause exists to catch "the plan stopped being seeded" — N
@@ -275,7 +275,7 @@ describe(
         // forks, so there is room for another braid before this bites.
         expect(graph.forks.length, `seed ${seed}`).toBeLessThanOrEqual(18);
       }
-      // measured 39/227 = 17.2%
+      // measured 35/227 = 15.4 %
       expect(frac8).toBeGreaterThanOrEqual(0.15);
       // measured 209/227 = 92.1%; the 18 seeds below 2 are bare-stem worlds
       // where neither a loop nor a strand routed.

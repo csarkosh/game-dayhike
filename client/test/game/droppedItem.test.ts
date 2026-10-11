@@ -26,8 +26,8 @@ describe("the dropped cap", () => {
     const graph2 = activeTerrainVariant().trailGraph!(other);
     const cap2 = droppedCapAt(graph2, other)!;
     expect(cap2.x !== cap.x || cap2.z !== cap.z).toBe(true);
-    // Two worlds built, slower since the valley lakes (6.8 s together under a
-    // load of 7 on ten cores): past vitest's 5 s default.
+    // Two world builds, each slower since the valley lakes: together past
+    // vitest's 5 s default.
   }, timeLimit(30_000));
 
   it("builds a crown and a brim at its place, seated on the ground given", () => {

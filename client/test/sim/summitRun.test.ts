@@ -202,6 +202,7 @@ describe("one run on the seed `hollow`", SUITE, () => {
       waited++;
     }
     // 129 with the fork's 1 s stand as first built; 2.5 s (FORK_REVEAL_S) is 90 ticks more.
+    // Re-read on the valley lakes' worlds (2026-10-11).
     expect(waited).toBe(220);
     for (const e of w.state.enemies.values()) {
       expect(e.ai).toBe(AiState.Hunt);

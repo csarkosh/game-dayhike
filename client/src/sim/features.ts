@@ -462,6 +462,7 @@ export function lakeGroundD(shape: LakeShape, x: number, z: number, base: Terrai
   // The apron: u = S((t − wb) / A), ∇u = S′ · (∇t − ∇wb − u′ ∇A) / A, ∇θ = (−uz, ux) / q.
   const span = ap.v;
   const tt = (t - wb) / span;
+  if (tt >= 1) return base;
   const u = stepT(tt);
   if (u <= 0) return { h: line, dx: lineX, dz: lineZ };
   const ud = stepTd(tt);
@@ -779,9 +780,9 @@ export function featureMaskAt(features: readonly Feature[], x: number, z: number
   let tree = 1, clutter = 1, meadow = 0, bare = 0;
   let touched = false;
   for (const f of features) {
-    const dx = x - f.x, dz = z - f.z;
-    const d = Math.sqrt(dx * dx + dz * dz);
     if (f.kind === "meadow") {
+      const dx = x - f.x, dz = z - f.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
       // The meadow's flat is the WHOLE disc and its apron lies outside it,
       // so the ground class fills the disc and the tree margin starts where the apron ends.
       const reach = f.radius + MEADOW_RIM + MEADOW_TREE_MARGIN + 10;
@@ -802,6 +803,8 @@ export function featureMaskAt(features: readonly Feature[], x: number, z: number
       bare = Math.max(bare, shore);
       clutter *= 1 - shore;
     } else {
+      const dx = x - f.x, dz = z - f.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
       if (d >= f.radius) continue;
       touched = true;
       if (h !== undefined) {

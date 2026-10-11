@@ -1054,8 +1054,10 @@ export function valleyLakeShape(
 // ---- The level id ---------------------------------------------------------------
 /** Every constant above that steers a world, by name: `FEATURE_TUNABLES`
  * spreads it, so a change to any moves the level id. LAKE_DIRECTIONS and
- * LAKE_HARM_TABLE are literal tables a change to which is a change to this
- * file's own constants as well. */
+ * LAKE_HARM_TABLE are literal tables the digest does not hash: they are part
+ * of every drawn shape, and a change to either changes every world without
+ * moving the level id, so they must not change outside a release that moves
+ * it. */
 export const LAKE_SHAPE_TUNABLES: Readonly<Record<string, number>> = {
   LAKE_JOINT_K,
   LAKE_HARM_C_VALLEY, LAKE_HARM_GAIN_MIN, LAKE_HARM_GAIN_MAX, LAKE_HARM_FADE_LO, LAKE_HARM_FADE_HI,

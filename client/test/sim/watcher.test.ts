@@ -303,6 +303,7 @@ describe("the tick", SUITE, () => {
     const h = shownWatcher(w)!;
     expect(h.ai).toBe(AiState.Watch);
     expect(h.targetId).toBe(p.id);
+    // Re-read on the valley lakes' worlds (2026-10-11).
     expect(h.pos).toEqual({ x: 116.51675728051313, y: 163.18496828273481, z: -110.79248132722762 });
     expect(horizontal(p.pos, h.pos)).toBeCloseTo(25, 0);
     expect(trailDistance(w.trail!, h.pos.x, h.pos.z)).toBeGreaterThanOrEqual(6);
