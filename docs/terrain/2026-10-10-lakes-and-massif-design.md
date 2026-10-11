@@ -39,10 +39,10 @@ choice against one changes only the sections it names.
 | 5 | The crest's length and shape (§7.1) | Two arms of 180 to 350 m, 400 to 700 m in all, bent up to 40°, crest 20 m wide, the 25 m platform at the summit unchanged | "Extends further" is length, not height; a 20 m crest is walkable along its line |
 | 6 | Valley lakes keep the trail builder's placement (§6.1) | Yes, flattest ground with two half-loops round it, but only in the lower 45% of the climb's height, and always murky | The research's two families with an empty band between; the loop machinery is the part that works |
 | 7 | How the outline is made (§4) | A closed-form basin field whose level set is the shore, with the ground fitted to it | One exact shore distance for every consumer, no spill or puddle by construction; the contour of a carved basin on the real ground must be traced, baked and dammed anyway |
-| 8 | The outline's harmonics (§4.3) | Amplitude `c·(k/3)^−1.4` for k 3 to 16, c = 0.10 for tarns and 0.14 for valley lakes, each times a per-lake draw in [0.5, 1.5]; L:W from quantiles 1.15/1.5/2.5 (tarns) and 1.5/2.2/3.0 (valley); one tarn in three bent, one in five two-lobed | The proposal's c = 0.07 matches the median single harmonic but gives 6.7% and 2.9% band RMS against the measured 10% and 4%; 0.10 gives 10.0% and 4.3% |
+| 8 | The outline's harmonics (§4.3) | Amplitude `c·(k/3)^−1.4` for k 3 to 16, c = 0.10 for tarns and 0.14 for valley lakes, each times a per-lake draw in [0.5, 1.5]; L:W from quantiles 1.15/1.5/2.5 (tarns) and a valley spine's 2.2/3.8/5.2 (the outline's Feret L:W about 2.2); one tarn in three bent, one in five two-lobed (see §16) | The proposal's c = 0.07 matches the median single harmonic but gives 6.7% and 2.9% band RMS against the measured 10% and 4%; 0.10 gives 10.0% and 4.3% |
 | 9 | The water level at the notch (§5.4) | The notch's sill 0.3 m above the water; every other point of the rim at least 0.45 m above | The basin then spills only through its notch, and the flat water never spreads into the outlet channel below the sill |
 | 10 | How close the trail comes to the water (§6.2) | Every edge at least 7 m outside the shore | The corridor reshapes the ground to 7 m from its centreline; at the proposal's 4 m it bends the shore and the shore distance stops matching the ground |
-| 11 | The shape checks' tolerances (§13.2) | Medians over the 200 lobby seeds at a 1 m outline: tarn SDI 1.20 to 1.35, convexity 0.89 to 0.94, L:W 1.4 to 1.7; valley SDI 1.45 to 1.85, convexity 0.78 to 0.88, L:W 1.9 to 2.5; perched in 95% of worlds | The research's bands widened by about the spread of a 200-world sample; shape targets apply although the game's lakes are smaller than the lakes measured |
+| 11 | The shape checks' tolerances (§13.2) | Medians over the 200 lobby seeds at a 1 m outline: tarn SDI 1.20 to 1.35, convexity 0.89 to 0.94, L:W 1.4 to 1.7; valley SDI 1.30 to 1.70, convexity 0.78 to 0.88, L:W 1.9 to 2.5; perched in 95% of worlds (see §16) | The research's bands widened by about the spread of a 200-world sample; shape targets apply although the game's lakes are smaller than the lakes measured |
 | 12 | How shaders read the shore (§10.2) | A shore-distance atlas baked once at load, 128 × 128 per lake | One fetch a pixel inside a lake's square; per-pixel harmonics cost about 150 operations a pixel on the terrain on every tier |
 | 13 | Reflections and water life with several lakes (§10.3) | The mirror (high) and panorama (medium) follow the nearest lake, retargeted with 20 m of hysteresis; every lake gets a skyline; water life lives on every lake and updates within 250 m | One mirror pass a frame as today; the renderer wires only `lakes[0]` now (`renderer.ts:1929`) |
 | 14 | The grain bending round the massif (§9.2) | Ridges and gullies in the massif's own frame, added to its rise, in place of a domain warp of the base noise | A warp of the base moves `montaneSnapshot` and the bit-identity tests and feeds back into where the summit is placed |
@@ -170,18 +170,19 @@ consumer import it.
 
 - `family`: `"valley"` or `"tarn"`.
 - `spine`: two to four points; `width`: the half-width at each.
-- `centre`: the outline's centroid, which the harmonics turn about.
+- `centre`: the deepest point of the spine's own region before the harmonics,
+  which they turn about (§16).
 - `harm`: 14 pairs (a_k, b_k) for k = 3 to 16.
 - `noiseAmp`, and the salt for the position noise.
 - `bumps`: up to six (centre, radius, height) for talus and fans.
 - `spout`: the outlet's segment and half-width.
 - `head`: the unit direction of the steep side (the headwall, or the
   uphill side of a valley lake).
-- `level`, `murk`, `lobe` as today, and three numbers measured from the
-  outline at placement: `bound` (the farthest shore point from `centre` plus
-  the widest apron), `sMax` (the largest shore distance inside, the water's
-  half-width at its widest) and `meanRadius` (the radius of the circle of the
-  same area).
+- `level`, `murk`, `lobe` as today, and four numbers measured from the
+  outline at placement: `bound` (the farthest the lake's ground reaches from
+  `centre` on 64 rays, plus 10 m), `shoreMax` (the farthest shore point from
+  `centre`), `sMax` (the largest shore distance inside, the water's half-width
+  at its widest) and `meanRadius` (the radius of the circle of the same area).
 
 ### 4.2 The metric
 
@@ -250,8 +251,8 @@ and the shore is B = 1.
 
 `s = (1 − B) · w(t)`, positive inside, in metres to within the field's
 stretch, with `ds = −w·dB + (1 − B)·dw` exact. The checks hold |∇s| in 0.6 to
-1.6 wherever |s| ≤ 20 m, so every rule below that says "metres from the shore"
-means it to within that factor.
+1.6 at nine points in ten where |s| ≤ 20 m, off the spine's ridge, so every
+rule below that says "metres from the shore" means it to within that factor.
 
 The one entry point is `lakeShoreInto(out, lake, x, z)`: it writes s, its
 gradient, the depth below the level, and the side weight σ (§5.1) into the
@@ -362,12 +363,14 @@ have the trail at the rim. Now:
 - Every edge keeps at least 7 m outside the shore (s ≤ −7 at every point),
   the reach of the trail corridor's smootherstep from 0.75 to 7 m
   (`trailCorridorD`), so the corridor never reshapes the shore.
-- The ring is forbidden inside 7 m and one grid cell, and cheaper in the band
-  7 to 19 m outside the shore (`RING_BAND` 12, `RING_COST` 0.35), in place of
-  [R, R + 12] from the centre.
+- The ring is forbidden inside 12.7 m (7 m and `LAKE_RING_MARGIN` 5.7, half an
+  8 m cell's diagonal), and cheaper in the band 12.7 to 19 m outside the shore
+  (`RING_BAND` 12 past the 7 m, `RING_COST` 0.35), in place of [R, R + 12] from
+  the centre. The braid's strands and rungs keep off a lake by its shore
+  distance, at s ≤ −15, not by its `bound`.
 - `ringPassFraction` (:998) reads the cells of that band.
 
-The loop then follows the real shore at 7 to 19 m, round its bays and points,
+The loop then follows the real shore at 12.7 to 19 m, round its bays and points,
 not a circle.
 
 ## 7. The massif
@@ -713,12 +716,13 @@ On the 200 lobby seeds, outlines at 1 m:
 - Each lake one connected body at its level; no ground below the level
   anywhere in the lake's box that is not the lake and does not reach the box's
   edge (no puddles).
-- The sill is the spill point: a flood fill from the water escapes the box
-  first through the outlet, at the sill's height to 0.1 m.
-- |∇s| in 0.6 to 1.6 wherever |s| ≤ 20 m.
+- The sill is the spill point: profiles out from the 1 m outline find the lowest
+  crest at the sill, to 0.1 m.
+- |∇s| in 0.6 to 1.6 at nine points in ten where |s| ≤ 20 m, off the spine's
+  ridge.
 - Medians, tarns: SDI 1.20 to 1.35, convexity 0.89 to 0.94 (p10 0.75 to
   0.85), Feret L:W 1.4 to 1.7, mean over maximum depth 0.40 to 0.55, outlet
-  shelf a quarter to a third of the area. Valley lakes: SDI 1.45 to 1.85,
+  shelf a quarter to a third of the area. Valley lakes: SDI 1.30 to 1.70,
   convexity 0.78 to 0.88, L:W 1.9 to 2.5. Tarns not star-shaped from their
   centroid: 25 to 45%.
 - Tarns perched (ground 100 m beyond the notch below the water) in 95% of
@@ -732,7 +736,7 @@ On the 200 lobby seeds, outlines at 1 m:
 
 On the 227 trail seeds, as today and still green: no fallback, no dead end but
 the summit, one peak per world, at least 85% of peaks in the band, the
-walkable grade on every edge and the bed within 2 m of the ground, the fork
+walkable grade on every edge and the bed within 2.6 m of the ground (§16), the fork
 band (at least 88% of worlds with two or more forks, at least 15% with eight
 or more, at most 18), `bowlFor` under 1,200 ms. Added: no trail edge within
 7 m of a shore; the crest 20 m wide and walkable along each arm; the summit's
@@ -776,6 +780,358 @@ Running water in the channels, waterfalls and their sound; late snow on the
 shaded walls; islands; big trough lakes, kettles, beaver ponds and oxbows;
 ice; a trail into a cirque; flow accumulation and the erosion stage reserved
 in `montane.ts`; moving the bowl's extents; the sea and its cove.
+
+## 16. As built (R1)
+
+R1 follows §4 to §6 and §10 to §13 with the departures below, each from what
+the code or the measurements over the seeds showed. Every number is read from
+the committed world.
+
+The shape statistics below (the centre's margin, the stretch bound, the
+medians of SDI, convexity and L:W) are read from the valley draw of each of the
+200 lobby seeds on a synthetic hillside rising 0.1 toward +x
+(`client/test/sim/lakeValley.test.ts`), so each seed gives a lake whether or not
+its world places one. They are not the 200 lobby lakes: only 81 lobby worlds
+place a lake (§13.2 below).
+
+### The shore (§4)
+
+**The centre is the base shape's deepest point (§4.1).** §4.1 put `centre` at
+the outline's centroid. The outline is drawn about the centre, since the
+harmonics turn about it, so the centroid cannot be the draw's input; and the
+centroid of a bent, pinched, two-lobed spine can lie on land: on one of the
+200 draws it lands 0.87 m outside the shore. The centre is the point of a 1 m grid over
+the spine's own region (m < 1) where the shore distance before the harmonics,
+(1 − m)·w, is largest, the first found on a tie. It is in water by
+construction, with the widest margin: the least shore distance at a centre over
+the 200 draws is 12.17 m, so the harmonics' frame and every ray cast from
+the centre start inside the lake.
+
+**The bound is the apron's end on 64 rays, plus 10 m (§4.1).** §4.1's `bound`
+was the farthest shore point from `centre` plus the widest apron. The game
+marches each of the 64 table directions out from the shore crossing in 1 m
+steps to where the point lies past its own apron's end (the bank's width by σ
+plus A(θ)), takes the farthest, and adds `LAKE_BOUND_MARGIN` 10 m: between the
+rays the apron's end reaches up to 4.7 m past the farthest ray's (measured at
+2,880 directions on 200 drawn lakes), and the margin holds twice that. On the
+trail's seeds a bound runs 113 to 119 m for a lake of drawn radius 28 to 36 m.
+It is larger than §4.1's, on the safe side: outside it the ground is the
+hillside's, bit for bit. The record also keeps `size`, the drawn mean radius
+the harmonics' fade is measured in, and `shoreMax`, the farthest shore point
+from the centre, which the braid, the water's mesh, the wet disc and the loop's
+junctions read. The marsh's lobe stays on the feature and on `LakeSource`, not
+on the shape.
+
+**The spine's L:W table is 2.2, 3.8 and 5.2 (§4.2).** §4.2 drew a valley
+lake's L:W at 1.5, 2.2 and 3.0 as the spine's stadium ratio, 1 + ℓ/2w, while
+§13.2 checks the outline's Feret ratio, the Feret length over the narrowest
+caliper width. The two agree only for a straight, untapered stadium whose
+joints add nothing, and §4.2 takes all three away. The joint's smooth minimum
+with k = w/2 gives smin(d, d, k) = d − k/2 wherever two segments' distances are
+equal, so beside every joint the shore lies at 1.25 w, not w: a straight
+two-segment stadium is 2.5 w wide there. The taper widens the head to
+(1 + τ) w, and the narrowest caliper is set by the widest part, which divides
+the ratio by about 1 + τ; the harmonics round it further. At §4.2's table the
+spines' median ratio is 2.344 and the outlines' Feret median 1.562, about two
+thirds of it. The spine is drawn at 2.2, 3.8 and 5.2 at 0, the median and 1,
+and the outline's Feret median comes out at 2.209, inside §13.2's 1.9 to 2.5.
+The draw keeps its character: one valley lake in three two-lobed (pinch 0.60 to
+0.75), two segments one time in two and three the other, τ in 0 to 0.3.
+
+**Bends are table indices 3 to 8 (§4.2).** "Each bend 15 to 45°" is drawn as
+an index into the 64-direction table, 3 to 8, so a bend is 16.875 to 45° in
+steps of 5.625°.
+
+**The wobble is a third to two thirds of a percent of the half-width (§4.3).**
+§4.3 set `noiseAmp` at 0.015 to 0.03 as "1.5 to 3% of R". The two-octave
+`fbm2d` has an RMS of 0.227 (measured over 160,000 points), so the drawn wobble
+is 0.34 to 0.68 % of w. It stays as drawn: at its stated size (× 4.4) it would
+raise the median SDI by 0.05 and put 21 % of the shore band outside the stretch
+bound of §4.4.
+
+**The stretch bound holds at nine points in ten (§4.4).** §4.4 held |∇s| in
+0.6 to 1.6 wherever |s| ≤ 20 m. No draw at §4.3's amplitude can: on a circle
+|∇s| = √((1 − H)² + (∂H/∂θ)²), and at c = 0.14 the derivative ∂H/∂θ has an RMS
+of 0.80, so the harmonics alone put 12.7 % of a circle's shore above 1.6 (3.0 %
+at the tarns' c = 0.10). And s has a ridge along the spine, its medial axis,
+where ∇s vanishes by construction, as it does at the field's saddles. The
+checks hold |∇s| in 0.6 to 1.6 at nine points in ten where |s| ≤ 20 m and
+s ≤ sMax/2, off the ridge: 93.58 % over the 200 draws. "Metres from the
+shore" means metres to within that factor at those points.
+
+### The lake's ground (§5)
+
+**The outlet by its lowest path, and the level raised by at most 1 m (§5.4).**
+§5.4 put a valley lake's outlet at the shore point of lowest bank on the
+downhill end of the spine, and its level at the mean pre-feature ground over the
+8 m cells inside the outline. A low bank is not where the water leaves when a
+rise stands just beyond it. Of the shore points past the spine's tail end, the
+outlet is the one whose straight path out along −∇s, read every 5 m
+(`LAKE_OUTLET_REACH`) to 56 m (the steep bank, the widest apron, the bound's
+margin and the longest spout), has the lowest highest point. The level is the
+mean over the outline's cells, raised where needed, by at most 1 m
+(`LAKE_LEVEL_RAISE_MAX`), until the ground straight out from the spout's tip to
+the edge of the lake's box stands `LAKE_SPILL_MARGIN` 0.1 m under the sill; a
+lake that would need more is not placed. So every lake keeps its sill 0.3 m over
+the water and spills there (§13.2); the two rules are worth one lake and 0.4
+points of the eight-fork share on the trail's seeds.
+
+**The marsh fades in over 8 m from the line through the centre (§5.5).** The
+marsh is chosen from the ground 2 to 20 m outside the shore crossing in each of
+its 16 directions, and its ellipse is measured in (s, offset across the lobe's
+direction), s running from the shore to the shelf's inner edge, as §5.5 says.
+The circle's marsh was cut at the line through the centre across its direction,
+where its metric was already over 1. Measured in s on a bent or long lake the
+ellipse can still be under 1 there, and the cut would leave a step in the
+ground. The metric gains 2·((8 − a)/8)³ while a point lies less than
+`MARSH_ONSET` 8 m along the lobe's direction from the centre, a, so the marsh
+fades out before the line, C² at 8 m, with exact derivatives.
+
+**The cliff walls keep off a lake's ground (§5, §11.3).** The cliff field lays
+a module where the ground is steep, rocky and open, and could stand one on a
+lake's bank: on lobby world 147 a module stood on the apron's downhill face at
+the outlet, 12.4 m outside the shore and 8 m under the level, its uphill face
+over the basin, so it could not be buried, capped and showing 24 face reads. The
+field is shut wherever `lakeGroundD` gives back other than the sample it was
+handed, for every lake of the world: the bed, the bank, the apron and the notch.
+The test is exact and allocates nothing, since the stage returns its input, the
+same object, outside its footprint. Every module is buried again, none capped or
+exposed, and 478 are laid over the 200 worlds against §11.3's 475.
+
+### Valley lakes and the trail (§6)
+
+**The stem's clearance is read on the ground (§6.1).** §6.1 read the stem's
+clearance against `bound`. A bound of 113 to 119 m for a lake of 28 to 36 m
+(its apron reaches 30 m on a gentle hillside, and its long axis lies along the
+contour, across the uphill stem) refused 684 candidates on the 227 trail seeds.
+The stem's bed is laid before the lake, so what the stem owes the lake is
+distance from the water and the ground it stands on: every metre of a stem edge
+that passes within `bound` plus the corridor's 7 m of the centre keeps s ≤ −15
+(§6.2's 7 m and one 8 m grid cell), and the lake's ground moves the hillside by
+at most `LAKE_STEM_SHIFT` 2 m there and 7 m to either side, the scale of the
+bed's own ceiling. `featureReach` and the spacing between features still read
+`bound`.
+
+**Placement judges the outline; the disc is a first pass (§6.1).** The
+candidate scan still ranks cells by the mean gradient over the drawn disc and
+the pass fraction of a ring 7 to 19 m outside the drawn radius, cheap reads
+before any shape exists; each try then draws the lake and judges it by its
+outline, its level, its spill and its bound. A pond's 24 `LOOP_TRIES` count
+only lakes that were placed: the slope over the outline (250 refusals on the
+227 seeds) and the spill (342) route nothing, and would otherwise spend the
+tries before any loop is routed. A candidate whose upper junction falls in a
+cell off the stem's bed is dropped, since splitting the stem there would leave a
+node no edge joins.
+
+**The ring walks 12.7 to 19 m outside the shore (§6.2).** §6.2 forbade the
+ring inside 7 m and one grid cell and made it cheaper from 7 to 19 m. The
+search reads cells by their centres, and an 8 m cell's corner, or a simplified
+chord between cell centres, reaches up to 5.7 m nearer the water than its
+centre. With the ring forbidden inside 7 m, the rule that every edge stays at
+s ≤ −7 refused 167 candidates whose chords cut inside it. The ring is forbidden
+inside 12.7 m (7 m and `LAKE_RING_MARGIN` 5.7, half the cell's diagonal) and
+`RING_COST` runs from 12.7 to 19 m, so no candidate is refused for an edge
+inside 7 m on the trail's seeds, as measured at that margin. The tests assert
+the rule itself, every edge at s ≤ −7, not the margin. The loop follows the real
+shore at 12.7 to 19 m.
+
+**A loop edge's stem progress is read from the final stem (§6.2).** A loop's
+edges carry their junction's progress along the stem as the final stem has it.
+A later loop's or a strand's split re-sums the stem, which moves a junction's
+progress by a rounding from the value the loop was built with; the edge takes
+the final stem's, a one-ulp change from the old reading.
+
+**The braid keeps off a lake by its shore distance (§6.2).** The braid's
+strands and rungs forbade the whole `featureReach` about a feature, for a lake a
+disc of 120 to 130 m. A cell is forbidden to the braid where s > −15, the stem's
+own clearance, out to `shoreMax` + 7 m and two cells. Without this the share of
+worlds with eight forks or more falls to 12.3 %.
+
+### Consumers of the shore (§10)
+
+**The spawn margin and the wall's constants are not tunables; the wall's step
+has a floor (§10.1).** `SPAWN_LAKE_MARGIN` (1 m: a spawn on ground under a
+lake's level is refused at s > −1), `WALL_STEPS` (6 Newton steps) and
+`WALL_RIDGE_STEP` (1 mm off the spine's ridge, where ∇s vanishes) stay in their
+modules, outside `FEATURE_TUNABLES`: the tunables and the level id follow the
+world's shape, and none of the three shapes a world or steers a draw. The
+wall's step back along ∇s is over / max(|∇s|, `WALL_GRAD_MIN` 0.25) along the
+unit gradient, at most four times the overshoot, so a saddle's near-zero
+gradient cannot fling a hull; a step that leaves the bound puts the hull back
+where it came in and cancels its velocity into the lake. On the drawn lakes the
+bank stands over the level 1 m outside the shore, so the spawn margin acts only
+where ground under the level lies outside a shore.
+
+**The atlas rides as float rows of the feature table (§10.2).** §10.2 gave the
+shore atlas an R16F texture of its own. The terrain's fragment stage already
+binds sixteen of WebGPU's sixteen textures, so the atlas is rows 2 to 257 of
+the feature table's 32-bit float texture, which grows to 256 texels by 258
+rows: a 2 × 2 grid of 128-texel tiles, one a lake, up to four, each over its
+lake's square of side 2·`bound`, one shore distance a texel in the red channel,
+−1000 where no lake reaches. The table is read with nearest sampling, so the
+shader (`featureShoreAt`) blends the four texels about a point by hand, its
+texel coordinate held half a texel inside the tile so no neighbour's texel
+enters; `shoreAtlasRead` is its TypeScript twin, and the two are checked
+against each other. The bake is 65,536 shore reads at load. `FEATURE_PAINT_MAX`
+grows from 4 to 8, as §10.3 says; R2's row for the spine is not in the table
+yet.
+
+**Every terrain fragment reads the atlas, and the table is read with
+`texelFetch` (§10.2, §0 decision 12).** Decision 12 said one fetch a pixel
+inside a lake's square. The terrain's fragment stage reads four texels of the
+atlas for each painted lake wherever the fragment is, inside the lake's square
+or not; skipping the read for a fragment outside every lake's square is R2's,
+when the corpus is recorded again for it. The feature table is read with
+`texelFetch`, the first such read in the game, since the table is sampled
+nearest and the blend of the four texels is the shader's.
+
+**The wet line reads the atlas on the terrain only (§10.2).** The wet plugin's
+lights chunk rides on every wet material, and only the terrain carries the
+feature table. On the terrain a lake's footprint is its shore from the atlas;
+every other wet material keeps the body's disc, of the lake's farthest shore
+point (`shoreMax`). The chunk's text outside the terrain's own branch is
+unchanged, comments included, so no other material's recorded stages move.
+
+**The panorama keeps a cylinder of the mean radius; the rim by azimuth is the
+CPU's (§10.2).** §10.2 gave the panorama and the skyline a cylinder whose
+radius in each of 64 directions is the farthest shore crossing there. The
+water's shader still reads the shore against one cylinder about the centre, of
+the lake's measured mean radius, so the water material's and the mirror's text
+are unchanged (§12). The 64 directions live on the CPU: in each azimuth the
+skyline's march of the terrain and its band of trees start at the rim there,
+the farthest crossing of the 2 m outline, interpolated between directions, so a
+long lake's ends and a bay's far side are read where they stand.
+
+**The water's mesh is whole squares inside the shore's reach (§10.2).** The
+surface is a 2 m grid over the square of half-side `shoreMax` + 5 m about the
+centre, at the level, keeping each grid square whose four corners all lie at
+s > −3, and only the vertices those squares use, built once at load.
+
+**A lake is in view by its outline, not its box (§10.2).** The mirror on high
+draws while the served lake's water is in view. The axis-aligned box of a bent
+or diagonal lake's mesh is mostly bank, so a camera on the bank inside it,
+facing away from the water, would read the lake in view and draw the mirror
+regardless. The box is a first, cheap test; past it the lake is in view when
+the camera stands over the water (s > 0), when the view's centre ray meets the
+level over water (a narrow lens, or a steep look at a strip between two shore
+points), or when a point of the shore at the level, every other point of the
+2 m outline, about 4 m apart, lies inside all six sides of the view's frustum.
+The points are made once a lake at load and the frustum's sides once; nothing
+is allocated a frame, and the served lake costs about a hundred point tests a
+frame.
+
+**The mirror arms within 200 m of the bound (§10.2).** The mirror on high arms
+while the camera is within 200 m of the served lake's bound, as §10.2 says,
+which is about 315 m from the lake's centre; the pond's circle armed it at about
+230 m.
+
+**The title film's lake shot reads the shore toward the trail's start (§10).**
+The title film's lake shot (`titleWater`) takes as the lake's radius the
+distance from its centre to the shore along the line toward the trail's start,
+where the shot's eye stands beyond the shore, or the mean radius where that line
+starts on dry ground. The pond's circle had one radius for every direction.
+
+**The water life lays at most 25 swarm markers a lake (§10.2).** Markers are
+laid by arc length along the 2 m outline, one each 10 m of shore, up to 25
+(`MARKERS_MAX`), the marker rows of the midges' 32-row table; a long shore
+spaces them wider.
+
+**On high only the served lake reflects its shore, and only its life is heard
+(§10.3).** §10.3 gave every lake a skyline. On medium and low every lake has its
+own; on high the skyline is not made, and a lake the mirror does not serve keeps
+the sky's sheen alone. A world in R1 has one lake, so no lake on high goes
+unserved. Every lake's life is placed at load and stepped while the camera
+stands within 250 m past its bound, resting otherwise; the life heard is the
+served lake's.
+
+**Lakes past the fourth are left out of the paint (§10.3).** The atlas has four
+tiles. A lake past the fourth among the feature table's first eight entries, or
+one whose shape has no finite bound, is left empty in the table (kind 0), so the
+n-th painted lake is the atlas's n-th tile and no read runs past the texture.
+R1 places one lake a world and R2 at most four.
+
+### The level id (§11.2)
+
+**The level id moved once (§11.2).** `passHash` moves from 962002917 to
+−190240058; `GEN_VERSION` (8) and `fieldHash` hold. `FEATURE_TUNABLES` grows
+from 70 to 130 keys: the shore's 58 constants (`LAKE_SHAPE_TUNABLES`, the bed's
+five among them, moved from `features.ts`), the sill and the notch's three,
+`LAKE_TRAIL_CLEAR` 7, `LAKE_SPILL_MARGIN` 0.1, `MARSH_ONSET` 8, and three that
+placing the outlines needs and §11.2 did not name: `LAKE_STEM_SHIFT` 2,
+`LAKE_RING_MARGIN` 5.7 and `LAKE_LEVEL_RAISE_MAX` 1. `POND_DEPTH` and
+`POND_APRON` leave with the dish. Keeping the cliff walls off a lake's ground
+leaves the hash where it is: the chunks it reads stand on one seed's ground,
+where no module stood on a lake's.
+
+### Checks (§13.2)
+
+**The valley SDI band is 1.30 to 1.70 (§13.2, §0 decision 11).** §13.2's 1.45
+to 1.85 is out of reach of §4's own draw: every lever at its extreme at once
+(every lake at L:W 3.0, three segments, both bends 45°, two-lobed at 0.60,
+every g_k 1.5, wobble 0.03) gives a median SDI of 1.428. The band was taken from
+lakes of a hectare and more (median 1.44 at 1 to 5 ha, 1.50 at 1 ha and over),
+and SDI rises with a lake's size; the game's valley lakes are 0.2 to 0.5 ha,
+where the measured Olympic lakes of 0.1 to 0.5 ha have a median of 1.20 and the
+lowland lakes of 0.1 to 0.6 ha 1.25. A straight stadium at L:W 2.2 has SDI
+1.109. Medians over the 200 draws at a 1 m outline: SDI 1.418, convexity
+0.798, Feret L:W 2.209, each inside its band. Drawing every valley lake
+two-lobed with bends to 34° reaches §13.2's band (1.460, 0.785, 2.454), with
+SDI and convexity each within 0.01 of an edge, at the cost of the lakes'
+variety, to meet a number from another size class.
+
+**The sill is checked by profiles (§13.2).** In place of a flood fill, from each
+vertex of the 1 m outline a profile out along −∇s, every quarter metre to 40 m,
+finds the highest ground over the level before it falls under the level again;
+a profile that crosses a spit back into the lake is no way out. The lowest of
+those crests is the lake's spill height, and on every one of the 200 draws it is
+the sill, 0.3 m, to 0.1 m; every crest away from the notch (past the spout's
+half-width, the notch's 4 m fade and 8 m more from its tip) stands at least
+0.1 m over the sill. On the composed ground, with the trail's corridor, the
+bank stands over the level 0.5 to 3 m outside the shore away from the notch,
+and the spill holds at the sill to 0.1 m. The profiles cross every bank a flood
+fill would, at a fraction of its cost over 200 worlds. "One connected body"
+counts the marsh's own dips as the lake's: on one world an 11-cell pocket
+6.6 cm under the level lies inside the marsh's blend, which is built to pool.
+
+**The trail's floors as measured (§13.2).** On the 227 trail seeds the lakes
+are lost at placement, not to the 7 m rule, which refuses no candidate: the
+slope over the outline, the spill and the stem's clearance refuse lakes, and a
+loop round a longer lake with its ring 12.7 m out is longer. Worlds with a loop
+73.1 % (166 of 227; the floor 75 → 73), loops in their length band 62.0 % (152
+of 245; 65 → 62), worlds with eight forks or more 15.4 % (35 of 227; the floor
+15 holds), with two or more 91.2 % (88 holds). Every edge of every world keeps
+s ≤ −7.
+
+**Lakes in 81 of the 200 lobby worlds and 92 of the 227 trail seeds (§13.2).**
+Against the pond's 101 and 115. 81 is above the 80 of §6.1 under which R2's
+height limit rises. Lakes drawn at 0.8 of the pond's radius, 0.64 of its area,
+keep about 107 of the 115 and 94 of the 101, with the three floors as they were,
+measured with every valley lake two-lobed, not the draw shipped; the lakes keep
+the pond's full size, a lake true to its size being worth more than the count.
+
+**The bed's ceiling is 2.6 m (§13.2).** §13.2 held the bed within 2 m of the
+ground. A lake's loop crosses the apron's fill, and the bed's profile, smoothed
+to stay walkable, cuts and fills across it as a built trail does: p50 0.078 m,
+p95 0.375 m, maximum 2.520 m (seed −1725488583, loop edge 23, 21.7 m from the
+shore), the fifteen samples over 2 m all on a lake's loop, 16.5 to 22.4 m out.
+The bed reads the ground with the lake already composed, so this is the
+smoothing, not the order of the stages; a gentler apron under the ring's band
+would lower it.
+
+**Time limits (§12, §13.2).** A world's build costs about a second with the
+valley lakes: 986 ms against 791 ms on one machine under the same load (+25 %),
+above §12's 550 to 800 ms for the outlines and the massif together. The
+1,200 ms limit on `bowlFor` a seed stands. The 227- and 200-world sweeps' limits
+rise from 300 s to 420 s (the bed's walk and flush, the cliff field, the cliff
+pass; 251 to 296 s measured), and the water terrain's 200-world sweep's from
+900 s to 1,200 s; they are limits against a hang, not budgets.
+
+Left to R2: the tarns' L:W table (1.15, 1.5, 2.5) is a spine's ratio not yet
+measured as an outline's Feret ratio, and carries the same two-thirds shortfall
+until it is; a headwall above a tarn is a wall over a lake's ground, so the
+cliff field's lake rule must allow modules above the shelf and outside the
+apron; and on high a lake the mirror does not serve needs its skyline once a
+world holds more than one lake.
 
 ## References
 
