@@ -3,7 +3,9 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { boardText } from "../../src/game/boardFace.js";
-import { boardDrawingOf, boardMaterial, paperCrop, portraitCrop, whenImagesArrive, wrap } from "../../src/game/boardPaint.js";
+import { BOARD_SHORE_STEP, boardDrawingOf, boardMaterial, paperCrop, portraitCrop, whenImagesArrive, wrap } from "../../src/game/boardPaint.js";
+import { lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
+import { stadiumShape } from "../helpers/lakeShapes.js";
 
 describe("wrap", () => {
   const width = (s: string): number => s.length * 10;
@@ -120,6 +122,33 @@ describe("boardDrawingOf", () => {
     expect(d.map.road.every((r) => r.x === -9)).toBe(true);
     expect(d.map.places).toEqual([{ name: "Summit", x: 100, z: 0 }]);
     expect(d.urls).toEqual({ paper: null, portrait: null });
+  });
+
+  it("hands the map a pond's shore as its outline, every 2 m round it, and a peak none", () => {
+    expect(BOARD_SHORE_STEP).toBe(2);
+    // 5 m about a 20 m spine: 2π · 5 + 40 = 71.4 m of shore.
+    const shape = stadiumShape({ cx: 50, cz: 20, halfLen: 10, w: 5 });
+    const d = boardDrawingOf({
+      seed: 7, trailName: "Trail 14", hikerName: "Hugh Kowalski", lastSeen: "Last seen at Trail 14.",
+      graph: {
+        nodes: [{ x: 0, z: 0 }, { x: 100, z: 0 }],
+        edges: [{ a: 0, b: 1, kind: "stem" }],
+        features: [{ kind: "peak", x: 100, z: 0, radius: 50 }, { kind: "pond", x: 50, z: 20, radius: 9, shape }],
+        shortestHome: 1274,
+      },
+      places: [], summitName: "Summit", roadCenterX: () => -9, urls: { paper: null, portrait: null },
+    });
+    const [peak, pond] = d.map.features;
+    expect(peak).toEqual({ kind: "peak", x: 100, z: 0, radius: 50 });
+    const outline = pond!.outline!;
+    let length = 0;
+    const r = newLakeShore();
+    outline.forEach((p, i) => {
+      const q = outline[(i + 1) % outline.length]!;
+      length += Math.hypot(q.x - p.x, q.z - p.z);
+      expect(Math.abs(lakeShoreInto(r, shape, p.x, p.z).s)).toBeLessThan(0.05);
+    });
+    expect(length).toBeCloseTo(2 * Math.PI * 5 + 40, 0);
   });
 });
 

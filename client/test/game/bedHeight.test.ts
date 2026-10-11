@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import "../../src/sim/olympic.js";
 import { elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { BED_GRID, POND_DISC_MARGIN, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows, bedSquareHasWater, bedOutsideSquare } from "../../src/game/bedHeight.js";
+import { BED_GRID, LAKE_SURFACE_REACH, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows, bedSquareHasWater, bedOutsideSquare } from "../../src/game/bedHeight.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 0x5eed;
@@ -129,18 +130,18 @@ describe("bed height grid", () => {
       expect(bedSquareHasWater(bake, grid, [], lowest - 0.01, SEED)).toBe(false);
     });
 
-    it("a pond reaches it when its disc overlaps the square, its centre inside or out", () => {
+    it("a lake reaches it when its surface comes into the square, its centre inside or out", () => {
       const dry = lowestOfNine() - 1;
-      const r = 20;
+      const at = (cx: number, cz: number) => stadiumLake({ cx, cz, halfLen: 0.5, w: 20 });
       // centre inside
-      expect(bedSquareHasWater(bake, grid, [{ x: x0 + 100, z: z0 + 100, radius: r }], dry, SEED)).toBe(true);
-      // centre outside, west of the square, the disc reaching in
-      expect(bedSquareHasWater(bake, grid, [{ x: x0 - r, z: z0 + 50, radius: r }], dry, SEED)).toBe(true);
-      expect(bedSquareHasWater(bake, grid, [{ x: x0 - r - POND_DISC_MARGIN + 0.01, z: z0 + 50, radius: r }], dry, SEED)).toBe(true);
-      // just out of reach, past a corner on the diagonal
-      const d = (r + POND_DISC_MARGIN + 0.5) / Math.SQRT2;
-      expect(bedSquareHasWater(bake, grid, [{ x: x0 + 256 + d, z: z0 + 256 + d, radius: r }], dry, SEED)).toBe(false);
-      expect(bedSquareHasWater(bake, grid, [{ x: x0 - r - POND_DISC_MARGIN - 0.5, z: z0 + 50, radius: r }], dry, SEED)).toBe(false);
+      expect(bedSquareHasWater(bake, grid, [at(x0 + 100, z0 + 100)], dry, SEED)).toBe(true);
+      // centre outside, west of the square, its shore on the square's edge
+      expect(bedSquareHasWater(bake, grid, [at(x0 - 20, z0 + 50)], dry, SEED)).toBe(true);
+      // its shore 11.5 m west of the edge: past the surface's reach and the lattice's slack
+      expect(bedSquareHasWater(bake, grid, [at(x0 - 20 - 11.5, z0 + 50)], dry, SEED)).toBe(false);
+      // its box overlapping the square by 7.5 m past a corner on the diagonal
+      expect(bedSquareHasWater(bake, grid, [at(x0 + 256 + 60, z0 + 256 + 60)], dry, SEED)).toBe(false);
+      expect(LAKE_SURFACE_REACH).toBe(3);
     });
   });
 });

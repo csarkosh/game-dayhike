@@ -1,4 +1,8 @@
+#ifdef FEATUREPAINT
+float wetIn = featureWetInside(vPositionW.xz, wetCentre, wetRadius, featureInfo.x);
+#else
 float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);
+#endif
 float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;
 // Inside the cove the swash's table wets the face as well (wetShore): soaked
 // up to the still line or the column's reach, whichever is higher, then damp

@@ -12,8 +12,9 @@ export type MapInput = {
   edges: readonly { a: number; b: number; kind: string }[];
   /** The road's centreline, sampled along z. */
   road: readonly { x: number; z: number }[];
-  /** The made features: the peak, the ponds, the meadows. */
-  features: readonly { kind: string; x: number; z: number; radius: number }[];
+  /** The made features: the peak, the ponds, the meadows; a pond with its
+   * shore's outline, a closed run of points (spec §10.2). */
+  features: readonly { kind: string; x: number; z: number; radius: number; outline?: readonly { x: number; z: number }[] }[];
   /** The named places, the summit among them. */
   places: readonly { name: string; x: number; z: number }[];
   /** The name the summit goes by among `places`. */
@@ -27,7 +28,8 @@ export type BoardMap = {
   /** Loop, strand and rung edges: drawn dashed. */
   side: MapLine[];
   road: MapPoint[];
-  ponds: { x: number; y: number; rx: number; ry: number }[];
+  /** Each lake's shore, a closed polyline. */
+  ponds: MapPoint[][];
   /** Rings round the peak, innermost first. */
   rings: { x: number; y: number; rx: number; ry: number }[];
   summit: MapPoint | null;
@@ -74,7 +76,7 @@ export function boardMap(input: MapInput, inner: { x: number; y: number; width: 
   const ponds: BoardMap["ponds"] = [], rings: BoardMap["rings"] = [];
   for (const f of input.features) {
     const c = at(f.x, f.z);
-    if (f.kind === "pond") ponds.push({ x: c.x, y: c.y, rx: f.radius * scale, ry: f.radius * scale });
+    if (f.kind === "pond" && f.outline !== undefined) ponds.push(f.outline.map((p) => at(p.x, p.z)));
     if (f.kind === "peak") {
       for (let k = 1; k <= MAP_RINGS; k++) {
         const r = (f.radius * scale * k) / MAP_RINGS;

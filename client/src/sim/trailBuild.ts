@@ -41,6 +41,7 @@ import {
   type BuildFrame, type Heights, type Attempt, type GraphState, type StemSample,
 } from "./trailPlan.js";
 export type { BuildFrame } from "./trailPlan.js";
+import { lakeShoreInto, newLakeShore, rayToShore, valleyLakeShape, LAKE_OUTLET_REACH, type LakeShape } from "./lakeShape.js";
 import { buildStrands, buildRungs, stemPose, type Braid } from "./trailBraid.js";
 import { homeDistances, forksOf } from "./trailRoute.js";
 import {
@@ -50,12 +51,13 @@ import {
   type Landmark, type Samplers,
 } from "./landmarks.js";
 import {
-  featureDraw, featureStageD, planFeatures, loopBand, murkFor, chooseLobe,
+  featureDraw, featureStageD, lakeGroundD, planFeatures, loopBand, murkFor, chooseLobe,
   PEAK_RADIUS_MIN, PEAK_RADIUS_MAX, PEAK_RISE_MIN, PEAK_RISE_MAX,
   PEAK_INLAND_MIN, PEAK_INLAND_MAX, PEAK_SHOULDER, PEAK_LOWER_STEP, PEAK_LOWER_TRIES, PEAK_CENTRE_TRIES,
   LOOP_TRIES, TREE_PENALTY, LOOP_SCAN_STRIDE,
   MEADOW_RADIUS_MIN, MEADOW_RADIUS_MAX, MEADOW_SLOPE_MAX, MEADOW_RIM,
-  POND_RADIUS_MIN, POND_RADIUS_MAX, POND_SLOPE_MAX, POND_APRON,
+  POND_RADIUS_MIN, POND_RADIUS_MAX, POND_SLOPE_MAX, LAKE_TRAIL_CLEAR, LAKE_SPILL_MARGIN, LAKE_SILL,
+  LAKE_STEM_SHIFT, LAKE_RING_MARGIN, LAKE_LEVEL_RAISE_MAX,
   LOOP_LATERAL_MIN, LOOP_LATERAL_MAX, FEATURE_ROAD_CLEAR, FEATURE_SPACING,
   RING_BAND, RING_COST, LOOP_JUNCTION_GAP, LOOP_OVERLAP_MAX, LOOP_JOIN_REACH,
   LOOP_BAND_LO_1, LOOP_BAND_HI_3,
@@ -162,22 +164,14 @@ export function buildTrail(
    * height, it does not repair a cliff.
    */
   const resampleAround = (f: Feature): void => {
-    // A pond's own basin stage (`basinD`) blends the rim back to the
-    // hillside over an OUTER APRON, [R, R + POND_APRON] — ground out to
-    // R + POND_APRON is still the pond's, not just R + TRAIL_GRID_CELL.
-    // Missing this (the "popped-but-retried ghost" a later loop's candidate
-    // scan or slope check could read): a REJECTED pond candidate got pushed, resampled
-    // (levelling ground out to its true apron edge), then popped and
-    // resampled again with too SHORT a reach — cells in
-    // [R + TRAIL_GRID_CELL, R + POND_APRON] never got recomputed, so they
-    // kept reading the levelled-and-abandoned pond's height/gradient/
-    // passability even though `f` was no longer in `features` at all. A
-    // A meadow's flat now blends over an outer apron too, [R, R + MEADOW_RIM],
-    // so it needs the same
-    // margin. A peak's dome is remapped onto [PEAK_CREST_RADIUS, f.radius] and
-    // stops at its own radius, so it does not.
-    const apron = f.kind === "pond" ? POND_APRON : f.kind === "meadow" ? MEADOW_RIM : 0;
-    const reach = f.radius + apron + TRAIL_GRID_CELL;
+    // A feature's ground reaches `featureReach` from its centre: a lake's to
+    // its shape's bound (its bank and apron past the shore), a meadow's over
+    // its outer apron [R, R + MEADOW_RIM], the peak's dome to its radius.
+    // Ground out to there is the feature's: a REJECTED candidate pushed,
+    // resampled and popped must be resampled over the same reach again, or
+    // the cells it levelled keep reading the abandoned feature's ground (the
+    // "popped-but-retried ghost" a later loop's scan or slope check reads).
+    const reach = featureReach(f) + TRAIL_GRID_CELL;
     const keep: number[] = [];
     for (let c = 0; c < grid.pass.length; c++) {
       const dx = (grid.x[c] as number) - f.x, dz = (grid.z[c] as number) - f.z;
@@ -195,6 +189,86 @@ export function buildTrail(
     edges: [],
     nodeOfCell: new Map<number, number>([[start, 0]]),
     edgeOfCell: new Map<number, number>(),
+  };
+  /** The pad's height: a lake's murk reads where it lies between it and the crest. */
+  const padH = (state.nodes[0] as TrailNode).h;
+  /**
+   * A valley lake for loop feature `id` about the cell at (x, z), of drawn
+   * mean radius `radius` (spec §6.1): its spine along the contour of the mean
+   * pre-feature gradient over the disc, its level the mean pre-feature height
+   * over the 8 m cells inside its outline, raised by at most
+   * LAKE_LEVEL_RAISE_MAX so its spout spills (spec §5.4), its murk and marsh
+   * set with it. Null where those cells' mean gradient is over
+   * POND_SLOPE_MAX, or where the ground straight out from the spout's tip to
+   * the box's edge would need the level raised further than that to stand
+   * LAKE_SPILL_MARGIN under the sill, so the water would not leave by it.
+   */
+  const placeLake = (id: number, x: number, z: number, radius: number): Feature | null => {
+    const pre = (px: number, pz: number): number => frame.sample(px, pz).h;
+    const [gx, gz] = meanGradientVector(grid, frame, x, z, radius);
+    const drawn = valleyLakeShape(seed, id, x, z, radius, gx, gz, pre);
+    let n = 0, grad = 0, sum = 0;
+    forEachCellNear(grid, drawn.cx, drawn.cz, drawn.shoreMax, (c) => {
+      const cx = grid.x[c] as number, cz = grid.z[c] as number;
+      if (lakeShoreInto(PLACE_SHORE, drawn, cx, cz).s <= 0) return;
+      n++;
+      grad += grid.grad[c] as number;
+      sum += frame.sample(cx, cz).h;
+    });
+    if (n === 0 || grad / n > POND_SLOPE_MAX) return null;
+    let level = sum / n;
+    // The outlet must spill: straight out from the spout's tip to the edge
+    // of the lake's box, every LAKE_OUTLET_REACH metres, the ground stands
+    // LAKE_SPILL_MARGIN under the sill.
+    const sp = drawn.spout;
+    if (sp !== null) {
+      const ex = sp.bx - sp.ax, ez = sp.bz - sp.az;
+      const el = Math.sqrt(ex * ex + ez * ez);
+      const ox = ex / el, oz = ez / el;
+      let top = Number.NEGATIVE_INFINITY;
+      for (let d = LAKE_OUTLET_REACH; ; d += LAKE_OUTLET_REACH) {
+        const px = sp.bx + ox * d, pz = sp.bz + oz * d;
+        if (Math.abs(px - drawn.cx) > drawn.bound || Math.abs(pz - drawn.cz) > drawn.bound) break;
+        top = Math.max(top, pre(px, pz));
+      }
+      // The level rises, by at most LAKE_LEVEL_RAISE_MAX, until the path out stands under the sill.
+      const need = top - (LAKE_SILL - LAKE_SPILL_MARGIN);
+      if (need - level > LAKE_LEVEL_RAISE_MAX) return null;
+      if (need > level) level = need;
+    }
+    const peak = features.find((g) => g.kind === "peak");
+    const murk = murkFor(level, padH, peak?.crestH);
+    const shape = { ...drawn, level, murk };
+    const f: Feature = { id, kind: "pond", x: shape.cx, z: shape.cz, radius, height: level, murk, shape };
+    // The marsh reads the ground before any feature, as the lake's level does.
+    f.lobe = chooseLobe(shape, radius, murk, pre);
+    return f;
+  };
+  /**
+   * Whether a stem edge from (ax, az) to (bx, bz) keeps clear of a lake about
+   * to be placed (spec §6.1): every metre of it inside the lake's bound stands
+   * LAKE_TRAIL_CLEAR and a grid cell outside the shore, and the lake's ground
+   * moves the hillside by at most LAKE_STEM_SHIFT there and TRAIL_CORRIDOR_HALF
+   * to either side — the stem's bed was laid before the lake.
+   */
+  const stemClearOfLake = (ax: number, az: number, bx: number, bz: number, shape: LakeShape): boolean => {
+    const dx = bx - ax, dz = bz - az;
+    const len = Math.sqrt(dx * dx + dz * dz);
+    if (len === 0) return true;
+    const n = Math.max(1, Math.ceil(len));
+    const px = -dz / len, pz = dx / len;
+    for (let k = 0; k <= n; k++) {
+      const x = ax + (dx * k) / n, z = az + (dz * k) / n;
+      const r = lakeShoreInto(STEM_SHORE, shape, x, z);
+      if (r.s === Number.NEGATIVE_INFINITY) continue;
+      if (r.s > -(LAKE_TRAIL_CLEAR + TRAIL_GRID_CELL)) return false;
+      for (const o of STEM_OFFSETS) {
+        const qx = x + px * o, qz = z + pz * o;
+        const pre = frame.sample(qx, qz);
+        if (Math.abs(lakeGroundD(shape, qx, qz, pre).h - pre.h) > LAKE_STEM_SHIFT) return false;
+      }
+    }
+    return true;
   };
   const tree = new Uint8Array(grid.pass.length);
   tree[start] = 1;
@@ -442,7 +516,11 @@ export function buildTrail(
       if (lat < LOOP_LATERAL_MIN || lat > LOOP_LATERAL_MAX + radius) continue;
       if (x - frame.roadCenterX(z) < FEATURE_ROAD_CLEAR) continue;
       let ok = true;
-      const ownReach = featureReach({ kind, radius });
+      // A lake's shape is drawn only when a candidate is tried, so the scan
+      // judges a pond by its drawn radius alone; the try re-checks the
+      // spacing and the reach against its bound and reads the stem's
+      // clearance on the lake's ground.
+      const ownReach = kind === "pond" ? radius : featureReach({ kind, radius });
       for (const f of features) {
         const dx = x - f.x, dz = z - f.z;
         const d2 = dx * dx + dz * dz;
@@ -463,9 +541,9 @@ export function buildTrail(
       // outside its radius without this: 529 stem-edge samples in the sweep
       // read more than a metre off their own ground, worst 5.98 m, every one of
       // them a stem edge lying 20-23 m past a meadow's rim — inside the 35 m
-      // apron the meadow had just dropped on top of it. A pond's apron was
-      // always outside its radius and had the same hole, one sample wide.
-      const apronOf = kind === "meadow" ? MEADOW_RIM : POND_APRON;
+      // apron the meadow had just dropped on top of it. A lake's clearance is
+      // read on its ground when its shape is drawn.
+      const apronOf = kind === "meadow" ? MEADOW_RIM : 0;
       const clear = radius + apronOf + TRAIL_CORRIDOR_HALF;
       for (const ei of geom.stem) {
         const e = state.edges[ei] as TrailEdge;
@@ -475,16 +553,38 @@ export function buildTrail(
       if (!ok) continue;
       const g = meanGradientInDisc(grid, x, z, radius);
       if (g > slopeMax) continue;
-      const blocked = 1 - ringPassFraction(grid, x, z, radius, kind === "meadow" ? MEADOW_RIM : POND_APRON);
+      // The ring band the loop will walk: a meadow's apron and RING_BAND past
+      // it; for a lake the scan reads LAKE_TRAIL_CLEAR to LAKE_TRAIL_CLEAR +
+      // RING_BAND (7 to 19 m) outside the drawn radius, before the shape is
+      // drawn, while the ring itself starts at LAKE_TRAIL_CLEAR +
+      // LAKE_RING_MARGIN outside the shore.
+      const blocked = 1 - (kind === "meadow"
+        ? ringPassFraction(grid, x, z, radius, radius + MEADOW_RIM + RING_BAND)
+        : ringPassFraction(grid, x, z, radius + LAKE_TRAIL_CLEAR, radius + LAKE_TRAIL_CLEAR + RING_BAND));
       cands.push({ c, score: g + blocked + 1e-4 * hash3(c % grid.nu, (c - (c % grid.nu)) / grid.nu, 11 + li, salted) });
     }
     }
     cands.sort((p, q) => p.score - q.score || p.c - q.c);
 
     let built = false;
-    for (let ci = 0; ci < Math.min(cands.length, LOOP_TRIES) && !built; ci++) {
+    // A pond's tries count only candidates that were placed: drawing, levelling,
+    // spacing and the stem's clearance refuse many and route nothing.
+    let placed = 0;
+    for (let ci = 0; ci < cands.length && (kind === "pond" ? placed : ci) < LOOP_TRIES && !built; ci++) {
       const cell = cands[ci]!.c;
-      const fx = grid.x[cell] as number, fz = grid.z[cell] as number;
+      // The feature itself: a meadow's flat at the MEAN pre-feature ground
+      // height over the WHOLE disc, not the centre's own height (2026-09-11):
+      // the rim has to ramp both up and down to meet real ground all the way
+      // round, and the mean over the disc is what splits the ramp between cut
+      // and fill. A pond's valley lake is drawn about the cell (`placeLake`),
+      // its level the same mean over its own outline; its centre is its
+      // shape's, so everything below reads (fx, fz) from the feature.
+      const f: Feature | null = kind === "meadow"
+        ? { id, kind, x: grid.x[cell] as number, z: grid.z[cell] as number, radius,
+            height: meanPreFeatureHeight(grid, frame, grid.x[cell] as number, grid.z[cell] as number, radius) }
+        : placeLake(id, grid.x[cell] as number, grid.z[cell] as number, radius);
+      if (f === null) continue;
+      const fx = f.x, fz = f.z;
       // FEATURE_SPACING (and the peak's own shoulder rule) re-checked against
       // `features` AS IT STANDS RIGHT NOW, at TRY time (2026-09-11) — not
       // only at the scan above,
@@ -494,7 +594,7 @@ export function buildTrail(
       // `ci`, so this reads the array with exactly the currently-standing
       // features, never a retried-and-abandoned one.
       let spacingOk = true;
-      const tryReach = featureReach({ kind, radius });
+      const tryReach = featureReach(f);
       for (const g of features) {
         const dx = fx - g.x, dz = fz - g.z;
         const d2 = dx * dx + dz * dz;
@@ -508,17 +608,22 @@ export function buildTrail(
         }
       }
       if (!spacingOk) continue;
-      // The feature's height is the MEAN pre-feature ground height over the
-      // WHOLE disc, not the centre's own height (2026-09-11): the centre
-      // reads however the candidate
-      // happened to score, but the rim has to ramp both up and down to meet
-      // real ground all the way round — using only the centre's height
-      // routinely put the whole disc on one side of the true grade (all cut
-      // or all fill), when the mean over the disc is what actually splits
-      // the ramp between cut and fill.
-      const baseH = meanPreFeatureHeight(grid, frame, fx, fz, radius);
-      const f: Feature = { id, kind, x: fx, z: fz, radius, height: baseH };
+      // A lake's clearance of the stem (spec §6.1): the stem's bed was laid
+      // before the lake, so along every stem edge inside the lake's bound each
+      // metre keeps LAKE_TRAIL_CLEAR and a grid cell outside the shore,
+      // and the lake's ground moves the hillside by at most LAKE_STEM_SHIFT
+      // there and TRAIL_CORRIDOR_HALF to either side.
+      if (f.shape !== undefined) {
+        for (const ei of geom.stem) {
+          const e = state.edges[ei] as TrailEdge;
+          const a = state.nodes[e.a] as TrailNode, b = state.nodes[e.b] as TrailNode;
+          if (segmentDistance(a.x, a.z, b.x, b.z, fx, fz) >= f.shape.bound + TRAIL_CORRIDOR_HALF) continue;
+          if (!stemClearOfLake(a.x, a.z, b.x, b.z, f.shape)) { spacingOk = false; break; }
+        }
+        if (!spacingOk) continue;
+      }
       features.push(f);
+      placed++;
       resampleAround(f);
 
       // JUNCTIONS ARE POINTS ON THE STEM, NOT STEM VERTICES — the
@@ -547,7 +652,9 @@ export function buildTrail(
       // copy of the graph, because half two TARGETS it and `planPath` only
       // splits at a branch's start.
       const alongLen = (fx - padN.x) * ux + (fz - padN.z) * uz;
-      const lowT = alongLen - radius - RING_BAND, hiT = alongLen + radius + RING_BAND;
+      // A lake's ring stands LAKE_TRAIL_CLEAR and more outside its farthest shore.
+      const ext = f.shape !== undefined ? f.shape.shoreMax + LAKE_TRAIL_CLEAR : radius;
+      const lowT = alongLen - ext - RING_BAND, hiT = alongLen + ext + RING_BAND;
       let sA = -1;
       for (let i = 0; i < stemSample.length; i++) {
         const sp = stemSample[i] as StemSample;
@@ -576,6 +683,11 @@ export function buildTrail(
       // The candidate's own copy of the graph: B is split into it before
       // anything routes, so a rejected candidate leaves `state` untouched.
       const base = planPath(state, [], grid, frame, H).state;
+      // B's cell must be one the stem's bed covers: a stem sample's cell can
+      // lie beside the cells its edge was marked on (a long straight edge on
+      // a cell boundary), and `splitAt` would make a node there that no edge
+      // joins, left on the graph when half two ends elsewhere.
+      if (!base.nodeOfCell.has(cB) && !base.edgeOfCell.has(cB)) { features.pop(); resampleAround(f); continue; }
       const B = base.nodeOfCell.get(cB) ?? splitAt(cB, grid, frame, H, base);
       const bn = base.nodes[B] as TrailNode;
       // A's own point on the stem — the sample, not a node: `planPath` has not
@@ -583,21 +695,22 @@ export function buildTrail(
       // there is no node to read. It is what the turn's side is measured from.
       const an = { x: (stemSample[sA] as StemSample).x, z: (stemSample[sA] as StemSample).z };
 
-      // The ring weight. The disc plus ONE GRID CELL of margin is forbidden
+      // A MEADOW'S ring weight (a lake keeps off by its shore distance, below).
+      // The disc plus ONE GRID CELL of margin is forbidden
       // (weight 0 — `searchFrom` skips the cell outright), and RING_COST runs
       // across the band just outside it: cells
       // inside the feature disc are impassable; cells in the band [R, R + 12 m]
       // cost × 0.35, with the extra cell so that a chord the simplifier draws
-      // ACROSS the band still clears the disc — this task's
-      // own test cases require `segmentDistance(edge, centre) ≥ f.radius` for
-      // every edge and every non-peak feature.
+      // ACROSS the band still clears the disc — the trail sweep requires
+      // `segmentDistance(edge, centre) ≥ f.radius` for every edge and every
+      // meadow.
       //
       // This SUPERSEDES an earlier rule that put a meadow's ring on the stage's own
       // rim ramp — RING_COST on [R − MEADOW_RIM, R + RING_BAND], forbidden only
       // below R − MEADOW_RIM − TRAIL_GRID_CELL, i.e. INSIDE the radius
       // (2026-09-11). While no loop ever
       // built, that was invisible; the first meadow loop to build under it
-      // would have failed the disjointness gate. The ground just outside the
+      // would have failed the disjointness test. The ground just outside the
       // disc is not arbitrary either: the feature is levelled to the MEAN
       // pre-feature height over its own disc, so the stage's ramp meets real
       // ground at R and the band immediately outside is the gentlest ground
@@ -607,8 +720,9 @@ export function buildTrail(
       // prefers is that ramp — levelled ground, and outside the radius, which
       // is what keeps every disc disjoint from every edge.
       //
-      // BOTH KINDS FORBID THE DISC PLUS ONE CELL, and the ring starts where the
-      // forbidding stops. The meadow's forbidden radius was `R − TRAIL_GRID_CELL`
+      // A MEADOW FORBIDS ITS DISC PLUS ONE CELL, and the ring starts where the
+      // forbidding stops (a pond's disc rule, before the lakes kept off by
+      // shore distance, was the same). The meadow's forbidden radius was `R − TRAIL_GRID_CELL`
       // (2026-09-11): a cell short of
       // the true boundary on the INSIDE, where the pond's mirror-image formula is
       // a cell PAST it on the outside. The asymmetry left an ~10 m band
@@ -617,19 +731,44 @@ export function buildTrail(
       // search took it. Measured over the 227-seed sweep: 41 of 164 built meadow
       // loops had an edge inside their own feature's disc, worst penetration
       // 8.12 m ≈ one TRAIL_GRID_CELL, exactly the shortfall; 0 of 108 pond loops.
-      // Every feature disc must be disjoint from every edge, and the loop
+      // Every meadow's disc must be disjoint from every edge, and the loop
       // walks the apron beyond R anyway, so nothing legitimate is lost.
       const meadowApron = kind === "meadow";
-      const forbidR = radius + TRAIL_GRID_CELL;
-      const ringLo = forbidR;
-      const ringHi = meadowApron ? radius + MEADOW_RIM + RING_BAND : forbidR + RING_BAND;
       // Only the window the feature can reach is written; every cell outside it
-      // keeps the initialised 1.
+      // keeps the initialised 1. For a meadow ringLo and ringHi are distances
+      // from its centre; for a lake ringLo is 0 and ringHi the farthest ring
+      // cell, its band being one of shore distance.
       const weight = new Float32Array(grid.pass.length).fill(1);
-      forEachCellNear(grid, fx, fz, ringHi, (c, d2) => {
-        if (d2 < forbidR * forbidR) weight[c] = 0;
-        else if (d2 >= ringLo * ringLo) weight[c] = RING_COST;
-      });
+      let ringLo: number, ringHi: number;
+      const lake = f.shape;
+      if (lake === undefined) {
+        const forbidR = radius + TRAIL_GRID_CELL;
+        ringLo = forbidR;
+        ringHi = meadowApron ? radius + MEADOW_RIM + RING_BAND : forbidR + RING_BAND;
+        forEachCellNear(grid, fx, fz, ringHi, (c, d2) => {
+          if (d2 < forbidR * forbidR) weight[c] = 0;
+          else if (d2 >= ringLo * ringLo) weight[c] = RING_COST;
+        });
+      } else {
+        // THE RING FOLLOWS THE SHORE (spec §6.2): a cell nearer the water
+        // than LAKE_TRAIL_CLEAR and LAKE_RING_MARGIN is forbidden, so no point
+        // of a ring cell, and no chord the simplifier draws across the band,
+        // comes within LAKE_TRAIL_CLEAR; RING_COST runs out to LAKE_TRAIL_CLEAR +
+        // RING_BAND, in shore distance: the loop rounds the lake's bays and
+        // points rather than a circle.
+        const tLo = LAKE_TRAIL_CLEAR + LAKE_RING_MARGIN, tHi = LAKE_TRAIL_CLEAR + RING_BAND;
+        let reach = 0;
+        forEachCellNear(grid, fx, fz, lake.shoreMax + 2 * tHi, (c, d2) => {
+          const s = lakeShoreInto(RING_SHORE, lake, grid.x[c] as number, grid.z[c] as number).s;
+          if (s > -tLo) weight[c] = 0;
+          else if (s >= -tHi) {
+            weight[c] = RING_COST;
+            if (d2 > reach * reach) reach = Math.sqrt(d2);
+          }
+        });
+        ringLo = 0;
+        ringHi = reach;
+      }
       // The turn node: the middle of that band, on the far side of the disc
       // from the stem, along the LOCAL A→B normal — not the global pad→crest
       // axis (a deliberate deviation from an earlier version): the
@@ -644,7 +783,11 @@ export function buildTrail(
       if (luL > 1e-6) { lux /= luL; luz /= luL; } else { lux = ux; luz = uz; }
       const lnx = -luz, lnz = lux;
       const side = ((fx - an.x) * lnx + (fz - an.z) * lnz) >= 0 ? 1 : -1;
-      const turnOff = meadowApron ? radius + MEADOW_RIM / 2 : (ringLo + ringHi) / 2;
+      // A lake's turn is where the line out from its centre crosses the
+      // band's middle in shore distance.
+      const turnOff = lake !== undefined
+        ? rayToShore(lake, fx, fz, side * lnx, side * lnz, -(2 * LAKE_TRAIL_CLEAR + LAKE_RING_MARGIN + RING_BAND) / 2, lake.bound)
+        : meadowApron ? radius + MEADOW_RIM / 2 : (ringLo + ringHi) / 2;
       const tx = fx + side * lnx * turnOff, tz = fz + side * lnz * turnOff;
       // The turn is the PASSABLE ring cell nearest that ideal point, not the
       // cell the ideal point happens to land in (2026-09-11). Measured over the
@@ -658,6 +801,7 @@ export function buildTrail(
       forEachCellNear(grid, fx, fz, ringHi, (c, q2) => {
         if (q2 < ringLo * ringLo) return;
         if (grid.pass[c] === 0 || (weight[c] as number) <= 0) return;
+        if (lake !== undefined && (weight[c] as number) >= 1) return;
         const ex = (grid.x[c] as number) - tx, ez = (grid.z[c] as number) - tz;
         const d2 = ex * ex + ez * ez;
         if (d2 < turnD2 || (d2 === turnD2 && c < turn)) { turnD2 = d2; turn = c; }
@@ -711,7 +855,7 @@ export function buildTrail(
       const luT = ((grid.x[turn] as number) - fx) * lux + ((grid.z[turn] as number) - fz) * luz;
       // The rule applies within the neighbourhood the two halves actually round
       // the feature in — the ring band itself, plus a cell. Beyond that a half
-      // is free to detour either way and `enclosesPoint` below is the gate.
+      // is free to detour either way and `enclosesPoint` below is the test.
       // As a whole-map wall it cost 44 more routes than it saved rings (loops
       // built 131 → 127 over the sweep); `radius + LOOP_LATERAL_MAX`
       // was the first windowing, and once the meadow's forbidden disc grew to
@@ -794,7 +938,7 @@ export function buildTrail(
       const nA = gF.stemNodes[lo] as number, nB = gF.stemNodes[hi] as number;
       const anF = plan2.state.nodes[nA] as TrailNode, bnF = plan2.state.nodes[nB] as TrailNode;
 
-      // Overlap: a cheap regression guard, no longer the gate. Both halves are
+      // Overlap: a cheap regression guard, no longer the test. Both halves are
       // trimmed to the branch after their last tree cell, so a shared cell can
       // now only arise at the join itself; the tally reads 0 on a healthy
       // candidate and would catch a regression in the weight construction.
@@ -843,7 +987,7 @@ export function buildTrail(
       if (!seen.has(nB)) { features.pop(); resampleAround(f); continue; }
 
       // THE LOOP MUST RING ITS FEATURE — the geometric rule that replaces the
-      // shared-cell fraction as the real gate (2026-09-11). A loop is "two
+      // shared-cell fraction as the real test (2026-09-11). A loop is "two
       // half-loops round it"; this is that idea as a predicate. Close the polygon — the
       // first half out to the turn, the second half back from it, and the stem
       // between the two junctions — and ask whether the feature's centre lies
@@ -868,8 +1012,8 @@ export function buildTrail(
       for (let i = hi - 1; i > lo; i--) ring.push(plan2.state.nodes[gF.stemNodes[i] as number] as TrailNode);
       if (!enclosesPoint(ring, fx, fz)) { features.pop(); resampleAround(f); continue; }
 
-      // The loop's own length band. The budget is 250-500 m a loop; this
-      // task's own test case takes [LOOP_LEN_MIN/2, LOOP_LEN_MAX·1.5] on a
+      // The loop's own length band. The budget is 250-500 m a loop; the
+      // test takes [LOOP_LEN_MIN/2, LOOP_LEN_MAX·1.5] on a
       // synthetic world, and that is the band enforced here. Without it a
       // junction the search chose far down the stem can produce a "loop" three
       // kilometres round (measured over the sweep: a 3181 m one).
@@ -880,6 +1024,10 @@ export function buildTrail(
         loopLen += Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
       }
       if (loopLen < LOOP_LEN_MIN / 2 || loopLen > (LOOP_LEN_MAX * 3) / 2) { features.pop(); resampleAround(f); continue; }
+      // No edge of the loop comes within LAKE_TRAIL_CLEAR of any lake's
+      // shore, its own or another's (spec §6.2): the weights keep the search
+      // off the band, and this holds the simplified edges to it.
+      if (!clearOfLakes(plan2.state, allAdded, features)) { features.pop(); resampleAround(f); continue; }
 
       state = plan2.state;
       markPath(h1!.best.cells, grid, frame, tree, treeEdges);
@@ -917,6 +1065,27 @@ export function buildTrail(
       if (e.kind !== "strand" && e.kind !== "rung") continue;
       e.progress0 = progressAt(state.nodes[e.a] as TrailNode);
       e.progress1 = progressAt(state.nodes[e.b] as TrailNode);
+    }
+  }
+  // A loop's edges carry their junction's stem progress as the final stem
+  // has it: a later loop's or a strand's split re-sums the stem, which moves
+  // a junction's progress by a rounding from what the half was given as it
+  // was built.
+  for (const loop of loops) {
+    const at = (n: number): number => {
+      for (const ei of stem) {
+        const e = state.edges[ei] as TrailEdge;
+        if (e.a === n) return e.progress0;
+        if (e.b === n) return e.progress1;
+      }
+      return -1;
+    };
+    const pa = at(loop.junctionA), pb = at(loop.junctionB);
+    for (const ei of loop.edges) {
+      const e = state.edges[ei] as TrailEdge;
+      const p = Math.abs(e.progress0 - pa) <= Math.abs(e.progress0 - pb) ? pa : pb;
+      e.progress0 = p;
+      e.progress1 = p;
     }
   }
 
@@ -957,18 +1126,6 @@ export function buildTrail(
     landmarks.push({ type, x: chosen.x, z: chosen.z, carved: !chosen.cand.found, discX: disc.x, discZ: disc.z });
   }
 
-  // ---- The lakes, after everything is placed -------------------------------
-  // Written onto each pond and never read by the build: the lake's bed is the
-  // composed field's (`lakeStageD`), so nothing placed above can move.
-  const peak = features.find((g) => g.kind === "peak");
-  const padH = (state.nodes[0] as TrailNode).h;
-  for (const f of features) {
-    if (f.kind !== "pond") continue;
-    f.murk = murkFor(f.height, padH, peak?.crestH);
-    // The marsh reads the ground before any feature, as the lake's rim does.
-    f.lobe = chooseLobe(f, f.murk, (x, z) => frame.sample(x, z).h);
-  }
-
   const homeDist = homeDistances(state.nodes, state.edges);
   return {
     graph: {
@@ -995,8 +1152,7 @@ export function buildTrail(
  * alongside the mean disc gradient so the flattest
  * disc with a WALKABLE ring wins, not merely the flattest disc.
  */
-function ringPassFraction(grid: TrailGrid, x: number, z: number, radius: number, apron: number): number {
-  const lo = radius, hi = radius + apron + RING_BAND;
+function ringPassFraction(grid: TrailGrid, x: number, z: number, lo: number, hi: number): number {
   let n = 0, pass = 0;
   forEachCellNear(grid, x, z, hi, (c, d2) => {
     if (d2 < lo * lo) return;
@@ -1004,6 +1160,51 @@ function ringPassFraction(grid: TrailGrid, x: number, z: number, radius: number,
     if (grid.pass[c] === 1) pass++;
   });
   return n === 0 ? 0 : pass / n;
+}
+
+/** Scratch for the builder's own reads of a lake's shore. */
+const PLACE_SHORE = newLakeShore();
+const STEM_SHORE = newLakeShore();
+/** Where the stem's clearance of a lake reads the ground across the stem: its centreline and its corridor's edges. */
+const STEM_OFFSETS: readonly number[] = [-TRAIL_CORRIDOR_HALF, 0, TRAIL_CORRIDOR_HALF];
+const RING_SHORE = newLakeShore();
+const CLEAR_SHORE = newLakeShore();
+
+/**
+ * Whether every edge of `edges` keeps LAKE_TRAIL_CLEAR outside every lake's
+ * shore, read every metre along it and at both ends (spec §6.2).
+ */
+function clearOfLakes(state: GraphState, edges: readonly number[], features: readonly Feature[]): boolean {
+  for (const ei of edges) {
+    const e = state.edges[ei] as TrailEdge;
+    const a = state.nodes[e.a] as TrailNode, b = state.nodes[e.b] as TrailNode;
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const n = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dz * dz)));
+    for (let k = 0; k <= n; k++) {
+      const x = a.x + (dx * k) / n, z = a.z + (dz * k) / n;
+      for (const f of features) {
+        if (f.shape === undefined) continue;
+        if (lakeShoreInto(CLEAR_SHORE, f.shape, x, z).s > -LAKE_TRAIL_CLEAR) return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * The mean of the PRE-FEATURE field's gradient vector over the grid cells
+ * within `r` of (x, z): the way the ground falls under a candidate, which a
+ * valley lake's spine lies across. Same windowing as `meanGradientInDisc`.
+ */
+function meanGradientVector(grid: TrailGrid, frame: BuildFrame, x: number, z: number, r: number): [number, number] {
+  let gx = 0, gz = 0, n = 0;
+  forEachCellNear(grid, x, z, r, (c) => {
+    const s = frame.sample(grid.x[c] as number, grid.z[c] as number);
+    gx += s.dx;
+    gz += s.dz;
+    n++;
+  });
+  return n > 0 ? [gx / n, gz / n] : [0, 0];
 }
 
 /**

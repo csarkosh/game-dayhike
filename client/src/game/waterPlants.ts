@@ -243,11 +243,13 @@ export function createWaterPlants(scene: Scene, seed: number, lakes: readonly La
   const pads: ClutterInstance[] = [];
   const levelOf = new Map<ClutterInstance, number>();
   for (const lake of lakes) {
-    const r = lake.radius + POND_SHORE + 1;
-    for (const inst of clutterInRect(seed, CLUTTER_REED, lake.x - r, lake.z - r, lake.x + r, lake.z + r)) {
+    // The lake's box: its farthest shore point and the reeds' POND_SHORE past it, and a metre.
+    const shape = lake.shape;
+    const r = shape.shoreMax + POND_SHORE + 1;
+    for (const inst of clutterInRect(seed, CLUTTER_REED, shape.cx - r, shape.cz - r, shape.cx + r, shape.cz + r)) {
       (reeds[inst.variant] as ClutterInstance[]).push(inst);
     }
-    for (const inst of clutterInRect(seed, CLUTTER_LILY, lake.x - r, lake.z - r, lake.x + r, lake.z + r)) {
+    for (const inst of clutterInRect(seed, CLUTTER_LILY, shape.cx - r, shape.cz - r, shape.cx + r, shape.cz + r)) {
       pads.push(inst);
       levelOf.set(inst, lake.level);
     }

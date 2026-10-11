@@ -12,7 +12,8 @@ import "../../src/sim/olympic.js";
 import { activeTerrainVariant, setActiveTerrainVariant, type LakeSource } from "../../src/sim/terrain.js";
 import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "../../src/game/waterShading.js";
 import { seedFromToken } from "../../src/game/seed.js";
-import { LAKE_SURFACE_SPACING, WATER_UV_SCROLL, createWater, effectsGroupFor, lakeSurfaceShape, setEffectsGroup } from "../../src/game/renderer.js";
+import { LAKE_SURFACE_SPACING, WATER_UV_SCROLL, createWater, effectsGroupFor, lakeSurfaceGrid, setEffectsGroup } from "../../src/game/renderer.js";
+import { lakeOutline, lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { createRain } from "../../src/game/rain.js";
 import { createMotes } from "../../src/game/motes.js";
@@ -26,9 +27,10 @@ import { coastProfilesFor } from "../../src/game/oceanTables.js";
 import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
 import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
-import { POND_DISC_MARGIN, bedOriginFor } from "../../src/game/bedHeight.js";
+import { LAKE_SURFACE_REACH, bedOriginFor } from "../../src/game/bedHeight.js";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
@@ -97,9 +99,9 @@ vi.mock("../../src/game/wetPlugin.js", async (importOriginal) => {
 
 setActiveTerrainVariant("olympic");
 
-/** A lake as the variant lists it. */
-function lake(over: Partial<LakeSource> = {}): LakeSource {
-  return { kind: "lake", level: 42, x: 100, z: 50, radius: 30, murk: 1, lobe: null, ...over };
+/** A lake as the variant lists it: a stadium a metre long, near enough a disc of `radius`. */
+function lake(over: { x?: number; z?: number; radius?: number; level?: number; murk?: number } = {}): LakeSource {
+  return stadiumLake({ cx: over.x ?? 100, cz: over.z ?? 50, halfLen: 0.5, w: over.radius ?? 30, level: over.level ?? 42, murk: over.murk ?? 1 });
 }
 
 describe("createWater under NullEngine", () => {
@@ -206,7 +208,8 @@ describe("createWater under NullEngine", () => {
     const water = createWater(scene, 1, 0, [lake({ murk: 1 })]);
     const pond = scene.getMeshByName("pond_0")!;
     expect(pond.position.y).toBeCloseTo(42.02, 5);
-    expect(pond.getBoundingInfo().boundingBox.extendSizeWorld.x).toBeCloseTo(31, 0);
+    // the grid's squares from x = −31.5 to 32.5 about the centre, every corner within 3 m of the shore 30 m out
+    expect(pond.getBoundingInfo().boundingBox.extendSizeWorld.x).toBeCloseTo(32, 6);
     const mat = scene.getMaterialByName("mat_water_lake_0") as PBRMaterial;
     expect(pond.material).toBe(mat);
     const row = lakeWaterRow(1);
@@ -258,19 +261,32 @@ describe("createWater under NullEngine", () => {
       expect(uvs[i * 2]).toBeCloseTo((100 + positions[i * 3]!) / WATER_UV_SCALE, 6);
       expect(uvs[i * 2 + 1]).toBeCloseTo((50 + positions[i * 3 + 2]!) / WATER_UV_SCALE, 6);
     }
-    // a disc, not a square: no vertex past the rim plus the margin, where the
-    // basin's apron may lie below the level outside the lake
-    const ext = 30 + POND_DISC_MARGIN;
-    let farthest = 0;
+    // the surface stops within LAKE_SURFACE_REACH of the shore, where the
+    // bank stands over the level: every vertex lies inside that, on the 2 m
+    // grid about the shape's centre
+    const r = newLakeShore();
+    const grid = lakeSurfaceGrid(lake().shape);
+    expect(positions.length).toBe(grid.positions.length);
     for (let i = 0; i < positions.length / 3; i++) {
-      farthest = Math.max(farthest, Math.hypot(positions[i * 3]!, positions[i * 3 + 2]!));
+      const x = positions[i * 3]!, z = positions[i * 3 + 2]!;
+      expect(lakeShoreInto(r, lake().shape, 100 + x, 50 + z).s).toBeGreaterThan(-LAKE_SURFACE_REACH);
+      // the grid's corner is (−35.5, −35.5): half-side 30.5 + 3 + 2
+      expect(Math.abs((x + 35.5) / LAKE_SURFACE_SPACING - Math.round((x + 35.5) / LAKE_SURFACE_SPACING))).toBeLessThan(1e-6);
     }
-    expect(farthest).toBeLessThanOrEqual(ext + 1e-6);
-    expect(farthest).toBeGreaterThan(ext - 1e-3);
-    const { rings, segments } = lakeSurfaceShape(ext);
-    expect(rings).toBe(Math.ceil(ext / LAKE_SURFACE_SPACING));
-    expect(segments).toBe(Math.ceil((2 * Math.PI * ext) / LAKE_SURFACE_SPACING));
-    expect(positions.length / 3).toBe(rings * segments + 1);
+    // and it covers the water: every point 1 m in from the 2 m outline lies in a kept square
+    const kept = new Set<string>();
+    for (let t = 0; t < grid.indices.length; t += 6) {
+      const v = grid.indices[t]!;
+      kept.add(`${Math.round(grid.positions[v * 3]! * 1000)},${Math.round(grid.positions[v * 3 + 2]! * 1000)}`);
+    }
+    const o = lakeOutline(lake().shape, 2);
+    for (let i = 0; i < o.xs.length; i++) {
+      lakeShoreInto(r, lake().shape, o.xs[i]!, o.zs[i]!);
+      const gl = Math.hypot(r.sx, r.sz);
+      const px = o.xs[i]! + (r.sx / gl) - 100, pz = o.zs[i]! + (r.sz / gl) - 50;
+      const ci = Math.floor((px + 35.5) / 2), cj = Math.floor((pz + 35.5) / 2);
+      expect(kept.has(`${Math.round((ci * 2 - 35.5) * 1000)},${Math.round((cj * 2 - 35.5) * 1000)}`), `outline ${i}`).toBe(true);
+    }
     // wound as CreateGround winds its faces: the first triangle's cross
     // product points down in Babylon's left-handed frame
     const idx = pond.getIndices()!;
@@ -493,13 +509,15 @@ describe("createWater under NullEngine", () => {
 
   describe("rings without water are off, and a wet ring's bounds are its wet cells (seed atmo)", () => {
     // The olympic variant's sea is at level 0; on seed atmo the coast at z = 0
-    // is near x = -372, and pond_0 sits on high ground at (249.6, 84), about
-    // 620 m inland. Ring 3 is 1,024 m across, so it and the three inside it
-    // hold no sea only with the camera more than 512 m from the coast.
+    // is near x = -372, and pond_0 sits on high ground, its centre at
+    // (253.98, 72.41), about 626 m inland. Ring 3 is 1,024 m across, so it
+    // and the three inside it hold no sea only with the camera more than
+    // 512 m from the coast.
     const seed = seedFromToken("atmo");
-    const pondCam = { x: 249.6, z: 84 };
+    // 249.6 -> 254.0: atmo's lake is a drawn outline now, its centre the basin's deepest point.
+    const pondCam = { x: 254.0, z: 84 };
 
-    it("inland: rings 0 to 3 are disabled, ring 4's box ends at the coast, the pond disc stays on", () => {
+    it("inland: rings 0 to 3 are disabled, ring 4's box ends at the coast, the lake's water stays on", () => {
       engine = new NullEngine();
       const scene = new Scene(engine);
       const level = activeTerrainVariant().waterLevel!;
@@ -564,11 +582,11 @@ describe("createWater under NullEngine", () => {
       water.dispose();
     }, timeLimit(30_000));
 
-    it("culls every ring by its wet box: none is active looking inland from the pond, one is looking to the coast", () => {
+    it("culls every ring by its wet box: none is active looking inland from west of the lake, one is looking to the coast", () => {
       engine = new NullEngine();
       const scene = new Scene(engine);
       const lakes = activeTerrainVariant().waterBodies!(seed).filter((b): b is LakeSource => b.kind === "lake");
-      // pond_0's west bank, at eye height over it
+      // west of the lake, 35 m outside its shore, at eye height over the ground
       const camera = new FreeCamera("c", new Vector3(209.6, 87.5, 84), scene);
       camera.maxZ = 10_000;
       const water = createWater(scene, seed, 0, lakes, "medium", 209.6, 84);
@@ -727,7 +745,7 @@ describe("createWater under NullEngine", () => {
   it.each([
     [true, WATER_GROUP],
     [false, 0],
-  ])("puts rain, motes, mist and the lake's life in the water's group when its high path is on (%s: group %i)", (supported, group) => {
+  ])("puts rain, motes, mist and every lake's life in the water's group when its high path is on (%s: group %i)", (supported, group) => {
     frameSupport.supported = supported;
     engine = new NullEngine();
     const scene = new Scene(engine);
@@ -737,7 +755,11 @@ describe("createWater under NullEngine", () => {
     const motes = createMotes(scene, "high");
     const mist = createMistMeshes(scene, 7, "high");
     const waterLife = createWaterLife(scene, 388817, lakeOf(388817), "high", "post");
-    setEffectsGroup(effectsGroupFor(water), { rain, splash: null, motes, mist, waterLife });
+    // A second lake's, 600 m off.
+    const second = createWaterLife(scene, 388817, stadiumLake({ cx: 600, cz: 0, halfLen: 0.5, w: 20, level: 150, murk: 1 }), "high", "post");
+    setEffectsGroup(effectsGroupFor(water), { rain, splash: null, motes, mist, waterLives: [waterLife, second] });
+    for (const mesh of second.meshes) expect(mesh.renderingGroupId).toBe(group);
+    second.dispose();
     expect(motes).not.toBeNull();
     expect(mist.meshes.length).toBeGreaterThan(0);
     expect(rain.mesh.renderingGroupId).toBe(group);
@@ -975,9 +997,9 @@ describe("the sea's edge in createWater", () => {
     const scene = new Scene(engine);
     const water = createWater(scene, 7, 0, [], "high");
     const spray = water.edge.spray!;
-    setEffectsGroup(0, { rain: null, splash: null, motes: null, mist: null, waterLife: null, spray });
+    setEffectsGroup(0, { rain: null, splash: null, motes: null, mist: null, waterLives: [], spray });
     expect(spray.mesh.renderingGroupId).toBe(0);
-    setEffectsGroup(effectsGroupFor(water), { rain: null, splash: null, motes: null, mist: null, waterLife: null, spray });
+    setEffectsGroup(effectsGroupFor(water), { rain: null, splash: null, motes: null, mist: null, waterLives: [], spray });
     expect(spray.mesh.renderingGroupId).toBe(WATER_GROUP);
     water.dispose();
   }, timeLimit(60_000));

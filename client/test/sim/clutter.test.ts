@@ -57,6 +57,7 @@ import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
 import { centerlineX } from "./helpers/roadLine.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, type TerrainSample } from "../../src/sim/terrain.js";
 import { MEADOW_RIM } from "../../src/sim/features.js";
+import { lakeShoreInto, newLakeShore, rayToShore } from "../../src/sim/lakeShape.js";
 
 const SEED = DERIV_SEED; // 0x5eed — the roadLine/derivatives helpers are bound to it
 
@@ -887,6 +888,8 @@ describe("the terrain feature mask", () => {
   // loop feature (found by a quick scan of PROBE_SEEDS, 2026-09-11): meadow
   // centre (495.52, 84) radius 84.36, pond centre (207.33, 316) radius 25.80.
   const MASK_SEED = 12345;
+  /** The flower pin: its bearing (whole degrees) and its density, read on this world's lake. */
+  const FLOWER_PIN = { deg: 6, flower: 0.003283073376236885 };
 
   it("carries a denser carpet inside a made meadow than 60 m outside it", () => {
     setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
@@ -904,7 +907,7 @@ describe("the terrain feature mask", () => {
     const pond = features.find((f) => f.kind === "pond")!;
     // 1 m onto the shore band: fm.clutter is 0 there regardless of the
     // underlying grass gate product (see vegetation.test.ts's matching case).
-    const x = pond.x + pond.radius + 1;
+    const x = pond.x + rayToShore(pond.shape!, pond.x, pond.z, 1, 0, -1, pond.shape!.bound);
     expect(clutterDensity(MASK_SEED, CLUTTER_GRASS, x, pond.z)).toBe(0);
   });
 
@@ -919,7 +922,7 @@ describe("the terrain feature mask", () => {
     setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
     const { features } = bowlFor(MASK_SEED);
     const pond = features.find((f) => f.kind === "pond")!;
-    const x = pond.x + pond.radius + 1, z = pond.z;
+    const x = pond.x + rayToShore(pond.shape!, pond.x, pond.z, 1, 0, -1, pond.shape!.bound), z = pond.z;
     const v = activeTerrainVariant();
     const h = v.sample(MASK_SEED, x, z).h;
     expect(v.featureMask?.(MASK_SEED, x, z, h).clutter).toBe(0); // the point really is masked
@@ -941,46 +944,46 @@ describe("the terrain feature mask", () => {
     setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
     const { features } = bowlFor(MASK_SEED);
     const pond = features.find((f) => f.kind === "pond")!;
+    const shape = pond.shape!;
     const v = activeTerrainVariant();
     let fractional = 0;
+    // Out along +x from the shore, the mask's fade by the shore distance.
     for (let d = 0; d <= 8; d += 0.25) {
-      const x = pond.x + pond.radius + d, z = pond.z;
+      const x = pond.x + rayToShore(shape, pond.x, pond.z, 1, 0, -d, shape.bound), z = pond.z;
       const h = v.sample(MASK_SEED, x, z).h;
       const fm = v.featureMask?.(MASK_SEED, x, z, h);
       if (fm === undefined) continue;
       if (fm.clutter > 0 && fm.clutter < 1) fractional++;
       const grass = clutterDensity(MASK_SEED, CLUTTER_GRASS, x, z);
       const meadow = clutterDensity(MASK_SEED, CLUTTER_MEADOW, x, z);
-      // PIN, not a guard on this fix: fm.meadow is 0 this far from the made
-      // meadow, so meadow's own "(1 + fm.meadow)" is an exact no-op here
-      // regardless of the mask fix, and this would equal grass either way.
+      // PIN, not a guard on the mask: fm.meadow is 0 this far from the made
+      // meadow, so meadow's own "(1 + fm.meadow)" is an exact no-op here,
+      // and this would equal grass either way.
       expect(meadow).toBe(grass);
-      // GUARD: this is the assertion the fix is for. Before it, `grass`
-      // (through clutterDensity's own `* fm.clutter`) and `groundCover`'s
-      // own value (which skipped the mask entirely) disagreed at every
-      // point in this fade band; only moving fm.clutter inside the shared
-      // field makes them equal everywhere, not just away from every feature.
+      // GUARD: `grass` (through clutterDensity's own `* fm.clutter`) and
+      // `groundCover`'s own value agree at every point in the fade band only
+      // because fm.clutter lives inside the shared field.
       expect(grass).toBe(groundCover(MASK_SEED, x, z).grass);
     }
     // A vacuity guard: the walk actually crossed the fade, not just its ends.
     expect(fractional).toBeGreaterThan(3);
-    // PIN, not a guard on this fix: flower's own arithmetic never changed
-    // (it keeps applying fm.clutter itself — see the CLUTTER_FLOWER case),
-    // so this constant would hold whether or not the fix above landed. It
-    // exists to catch a future change to flower's own composition, found at
-    // a flower-bearing point inside the same fade (a quick scan, 2026-09-23:
-    // its own drift happens to clear the patch gate here, so this is a
-    // genuine, non-vacuous flower value, not 0 === 0).
-    const a = (204 * Math.PI) / 180;
-    const fx = pond.x + (pond.radius + 4.25) * Math.cos(a);
-    const fz = pond.z + (pond.radius + 4.25) * Math.sin(a);
-    const fh = v.sample(MASK_SEED, fx, fz).h;
-    const ffm = v.featureMask?.(MASK_SEED, fx, fz, fh);
-    expect(ffm?.clutter).toBeGreaterThan(0);
-    expect(ffm?.clutter).toBeLessThan(1);
-    const flower = clutterDensity(MASK_SEED, CLUTTER_FLOWER, fx, fz);
-    expect(flower).toBeGreaterThan(0);
-    expect(flower).toBe(0.0004611562793366643);
+    // PIN, not a guard: flower's own arithmetic (it keeps applying
+    // fm.clutter itself — see the CLUTTER_FLOWER case) at the first whole
+    // degree from +x toward +z where, 4.25 m out from the shore inside the
+    // mask's fade, its own drift clears the patch gate: a genuine, non-vacuous
+    // flower value, not 0 === 0.
+    let found: { deg: number; flower: number } | null = null;
+    for (let deg = 0; deg < 360 && found === null; deg++) {
+      const a = (deg * Math.PI) / 180;
+      const d = rayToShore(shape, pond.x, pond.z, Math.cos(a), Math.sin(a), -4.25, shape.bound);
+      const fx = pond.x + Math.cos(a) * d, fz = pond.z + Math.sin(a) * d;
+      const ffm = v.featureMask?.(MASK_SEED, fx, fz, v.sample(MASK_SEED, fx, fz).h);
+      if (ffm === undefined || !(ffm.clutter > 0 && ffm.clutter < 1)) continue;
+      const flower = clutterDensity(MASK_SEED, CLUTTER_FLOWER, fx, fz);
+      if (flower > 1e-3) found = { deg, flower };
+    }
+    // The floor keeps the pin above the patch threshold's foot.
+    expect(found).toEqual(FLOWER_PIN);
   });
 });
 
@@ -1024,15 +1027,19 @@ describe("groundCover", () => {
 
   it("leaves open ground to the bit whatever the canopy floor", () => {
     // Where rho <= CANOPY_LO the canopy factor is exactly 1, so the floor
-    // never enters. Seed atmo, beside a meadow trail: a point off the
+    // never enters. Seed atmo, beside its lake's loop: a point off the
     // saturated 1.5, then every open point of a 140 m square. Measured with
-    // the floor at 0.5, before it moved.
+    // the floor at 0.5, before it moved. 2026-10-10: the point was (210, 86),
+    // 1.7 m from the pond's loop, and the square held 1,232 open points,
+    // until the valley lakes: the lake stands 12 m from where the pond did,
+    // its loop runs 14 m from that point, and the canopy has closed over it.
+    // (225, 93) stands 1.7 m from the lake's loop.
     const seed = 627994160;
-    const s = elevationSampleAt(seed, 210, 86);
-    expect(forestDensity(seed, 210, 86, s)).toBeLessThanOrEqual(0.4);
-    const c = groundCover(seed, 210, 86, s);
-    expect(c.grass).toBe(0.8084537679893669);
-    expect(c.duff).toBe(0.0691546232010633);
+    const s = elevationSampleAt(seed, 225, 93);
+    expect(forestDensity(seed, 225, 93, s)).toBeLessThanOrEqual(0.4);
+    const c = groundCover(seed, 225, 93, s);
+    expect(c.grass).toBe(1.3477755204497914);
+    expect(c.duff).toBe(0.015222447955020861);
     let n = 0, grass = 0, duff = 0;
     for (let x = 188; x < 328; x += 2) for (let z = 50; z < 190; z += 2) {
       const p = elevationSampleAt(seed, x, z);
@@ -1040,9 +1047,9 @@ describe("groundCover", () => {
       const g = groundCover(seed, x, z, p);
       n++; grass += g.grass; duff += g.duff;
     }
-    expect(n).toBe(1232);
-    expect(grass).toBe(375.3656473161681);
-    expect(duff).toBe(39.97600562428079);
+    expect(n).toBe(1398);
+    expect(grass).toBe(516.5853179158912);
+    expect(duff).toBe(2.848869908810645);
   }, timeLimit(30_000));
 
   it("keeps three quarters of the sward's edge under a closed canopy, and the duff yields to it", () => {
@@ -1080,15 +1087,19 @@ describe("groundCover", () => {
     expect(c.duff).toBe(0.0748586974728327);
   });
 
-  it("stands the canopy pose's sward at 0.9375 over 0.375 of duff", () => {
+  it("thins the canopy pose's sward at the lake loop's edge, 0.0303 over 0.98 of duff", () => {
     // The near-grass canopy pose, seed atmo: canopy 1 across the view. With
     // the floor at 0.5 this point read grass 0.5 and duff 0.6666666666666667.
+    // 2026-10-10: 0.9375 over 0.375, the floor's own reading, before the
+    // valley lakes: this world's lake loop passes 0.75 m from the pose now,
+    // inside the sward's ramp from the trail, where the nearest trail was the
+    // stem, 2.5 m off. The floor is read at seed 1's closed canopy above.
     const seed = 627994160;
     const s = elevationSampleAt(seed, 123, -105.5);
     expect(forestDensity(seed, 123, -105.5, s)).toBe(1);
     const c = groundCover(seed, 123, -105.5, s);
-    expect(c.grass).toBe(0.9375);
-    expect(c.duff).toBe(0.375);
+    expect(c.grass).toBe(0.03032639382117846);
+    expect(c.duff).toBe(0.9797174074691462);
   });
 
   it("keeps the path readable: no grass inside the bed's core, and the ramp's reach varies along the trail", () => {
@@ -1450,8 +1461,8 @@ describe("the water plants", { timeout: timeLimit(120_000) }, () => {
     const { seed, pond } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
     const lake = lakeOf(seed);
     let core = 0;
-    for (const [x, z] of lobePoints(lake, 1)) {
-      if (marshWeightAt(lake, x, z) < 1) continue;
+    for (const [x, z] of lobePoints(lake.shape, lake.lobe, 1)) {
+      if (marshWeightAt(lake.shape, lake.lobe, x, z) < 1) continue;
       core++;
       expect(clutterDensity(seed, CLUTTER_REED, x, z)).toBe(1);
     }
@@ -1463,11 +1474,11 @@ describe("the water plants", { timeout: timeLimit(120_000) }, () => {
   it("float lilies only in water 0.5 to 2 m deep, in patches", () => {
     const { seed } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
     const lake = lakeOf(seed);
+    const r = newLakeShore();
     let most = 0;
-    for (let i = 0; i < 720; i++) {
-      const a = (i / 720) * Math.PI * 2;
-      for (let s = 0.5; s < 20; s += 0.5) {
-        const x = lake.x + Math.cos(a) * (lake.radius - s), z = lake.z + Math.sin(a) * (lake.radius - s);
+    for (let x = lake.x - lake.bound; x <= lake.x + lake.bound; x += 1.3) {
+      for (let z = lake.z - lake.bound; z <= lake.z + lake.bound; z += 1.3) {
+        if (!(lakeShoreInto(r, lake.shape, x, z).s > 0)) continue;
         const depth = lake.level - elevationAt(seed, x, z);
         const d = clutterDensity(seed, CLUTTER_LILY, x, z);
         if (depth < 0.5 || depth > 2) expect(d, `depth ${depth}`).toBe(0);
@@ -1477,14 +1488,14 @@ describe("the water plants", { timeout: timeLimit(120_000) }, () => {
     expect(most).toBeGreaterThan(0.5);
   });
 
-  it("float no lily outside the rim", () => {
+  it("float no lily outside the shore", () => {
     const { seed, pond } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
     const lake = activeTerrainVariant().waterBodies!(seed)
       .find((b): b is LakeSource => b.kind === "lake" && b.x === pond.x && b.z === pond.z)!;
-    const r = lake.radius + POND_SHORE + 1;
-    const lilies = clutterInRect(seed, CLUTTER_LILY, lake.x - r, lake.z - r, lake.x + r, lake.z + r);
+    const r = newLakeShore();
+    const lilies = clutterInRect(seed, CLUTTER_LILY, lake.x - lake.bound, lake.z - lake.bound, lake.x + lake.bound, lake.z + lake.bound);
     for (const inst of lilies) {
-      expect(Math.hypot(inst.x - lake.x, inst.z - lake.z), `(${inst.x}, ${inst.z})`).toBeLessThan(lake.radius);
+      expect(lakeShoreInto(r, lake.shape, inst.x, inst.z).s, `(${inst.x}, ${inst.z})`).toBeGreaterThan(0);
     }
     expect(lilies.length).toBeGreaterThan(20);
   });
@@ -1493,7 +1504,7 @@ describe("the water plants", { timeout: timeLimit(120_000) }, () => {
     const { seed } = firstPondWorld((f) => (f.murk ?? 1) <= 0.5);
     const lake = lakeOf(seed);
     for (let s = 0; s < 20; s += 0.5) {
-      const x = lake.x + lake.radius - s;
+      const x = lake.x + rayToShore(lake.shape, lake.x, lake.z, 1, 0, s, lake.bound);
       expect(clutterDensity(seed, CLUTTER_REED, x, lake.z)).toBe(0);
       expect(clutterDensity(seed, CLUTTER_LILY, x, lake.z)).toBe(0);
     }
@@ -1647,24 +1658,25 @@ describe("wet-ground plants", () => {
   it("ring a lake from its bare shore out, and stop past their reach", () => {
     const { seed } = firstPondWorld(() => true);
     const lake = lakeOf(seed);
-    const inner = lake.radius + POND_SHORE;
     let ringed = 0, ring = 0;
     for (let k = 0; k < 64; k++) {
       const a = (k / 64) * Math.PI * 2;
-      const at = (q: number): number => {
-        const x = lake.x + Math.cos(a) * q, z = lake.z + Math.sin(a) * q;
+      const ux = Math.cos(a), uz = Math.sin(a);
+      // `t` metres outside the shore along this direction from the centre.
+      const at = (t: number, h: number = lake.level + 0.5): number => {
+        const d = rayToShore(lake.shape, lake.x, lake.z, ux, uz, -t, lake.bound);
         // Level ground a little over the water, clear of what else gates it.
-        return clutterDensity(seed, CLUTTER_WETPLANT, x, z, { h: lake.level + 0.5, dx: 0.01, dz: 0.01 });
+        return clutterDensity(seed, CLUTTER_WETPLANT, lake.x + ux * d, lake.z + uz * d, { h, dx: 0.01, dz: 0.01 });
       };
-      expect(at(inner - 0.5)).toBe(0);
-      expect(at(inner + CLUTTER_WETPLANT_LAKE_REACH + CLUTTER_WETPLANT_LAKE_FADE + 30)).toBeLessThanOrEqual(1);
+      expect(at(POND_SHORE - 0.5)).toBe(0);
+      expect(at(POND_SHORE + CLUTTER_WETPLANT_LAKE_REACH + CLUTTER_WETPLANT_LAKE_FADE + 30)).toBeLessThanOrEqual(1);
       ring++;
-      if (at(inner + 3) > 0.5) ringed++;
+      if (at(POND_SHORE + 3) > 0.5) ringed++;
+      // Under the lake's level nothing grows: that is the reeds' ground.
+      expect(at(POND_SHORE + 3, lake.level - 0.2)).toBe(0);
     }
     // The road and the shore's own gates may close part of the ring; most of it stands.
     expect(ringed / ring).toBeGreaterThan(0.5);
-    // Under the lake's level nothing grows: that is the reeds' ground.
-    expect(clutterDensity(seed, CLUTTER_WETPLANT, lake.x + inner + 3, lake.z, { h: lake.level - 0.2, dx: 0.01, dz: 0.01 })).toBe(0);
   });
 
   it("stands every instance in its scale band and off the trail", () => {

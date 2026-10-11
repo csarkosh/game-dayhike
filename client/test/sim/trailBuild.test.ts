@@ -18,6 +18,7 @@ import {
   planFeatures, LOOP_JUNCTION_GAP, LOOP_LEN_MIN, LOOP_LEN_MAX, FEATURE_SPACING,
 } from "../../src/sim/features.js";
 import { TRAIL_GRID_CELL } from "../../src/sim/trailGrid.js";
+import { lakeShoreInto, newLakeShore, type LakeShape } from "../../src/sim/lakeShape.js";
 import { ROAD_X, ridgeFrame, flatFrame, narrowFrame } from "./helpers/buildFrames.js";
 
 /** The `progress0` of the stem edge whose `a === n`, or `progress1` of the one
@@ -30,6 +31,20 @@ function stemProgressOfNode(graph: TrailGraph, n: number): number {
     if (e.b === n) return e.progress1;
   }
   throw new Error(`node ${n} is not a stem node`);
+}
+
+/** The largest shore distance along an edge, read every quarter metre and at
+ * both ends: positive inside the lake's shore, negative outside it. */
+function shoreAlong(graph: TrailGraph, ei: number, shape: LakeShape): number {
+  const e = graph.edges[ei]!;
+  const a = graph.nodes[e.a]!, b = graph.nodes[e.b]!;
+  const n = Math.max(1, Math.ceil(4 * Math.hypot(b.x - a.x, b.z - a.z)));
+  const r = newLakeShore();
+  let most = Number.NEGATIVE_INFINITY;
+  for (let k = 0; k <= n; k++) {
+    most = Math.max(most, lakeShoreInto(r, shape, a.x + ((b.x - a.x) * k) / n, a.z + ((b.z - a.z) * k) / n).s);
+  }
+  return most;
 }
 
 /** An edge's own XZ length. */
@@ -245,6 +260,8 @@ describe("buildTrail on a synthetic world", () => {
     const { graph, features } = buildTrail(0x5eed, flatFrame());
     const plan = planFeatures(0x5eed).loops;
     expect(graph.loops.length).toBe(plan.length); // the flat world has room for every loop
+    // One lake and two meadows: the lake's case below is read, not skipped.
+    expect(graph.loops.map((l) => l.kind)).toEqual(["pond", "meadow", "meadow"]);
     for (const [i, loop] of graph.loops.entries()) {
       expect(loop.kind).toBe(plan[i]);
       const f = features.find((x) => x.id === loop.featureId)!;
@@ -252,10 +269,17 @@ describe("buildTrail on a synthetic world", () => {
       // Junctions are stem nodes, B above A by at least LOOP_JUNCTION_GAP of stem.
       const pa = stemProgressOfNode(graph, loop.junctionA), pb = stemProgressOfNode(graph, loop.junctionB);
       expect(pb - pa).toBeGreaterThanOrEqual(LOOP_JUNCTION_GAP / graph.stemLen - 1e-9);
-      // Every loop edge stays outside the feature disc and inside the ring band + slack.
+      // Every loop edge stays outside the feature: a meadow's disc, and a
+      // lake's shore by 7 m, read along the edge. 2026-10-10: a pond is the
+      // valley lake laid in the build, and its loop keeps off its drawn
+      // shore, not a disc round its centre.
       for (const ei of loop.edges) {
         const e = graph.edges[ei]!;
         expect(e.kind).toBe("loop");
+        if (f.shape !== undefined) {
+          expect(shoreAlong(graph, ei, f.shape), `lake ${f.id} edge ${ei}`).toBeLessThanOrEqual(-7);
+          continue;
+        }
         for (const n of [graph.nodes[e.a]!, graph.nodes[e.b]!]) {
           const d = Math.hypot(n.x - f.x, n.z - f.z);
           expect(d).toBeGreaterThanOrEqual(f.radius - 1e-9);
@@ -347,11 +371,19 @@ describe("buildTrail on a synthetic world", () => {
     }
   });
 
-  it("keeps every feature disc disjoint from every edge and every other disc", () => {
+  it("keeps every edge off every meadow's disc and 7 m outside every lake's shore, and the features apart", () => {
+    // 2026-10-10: every feature's disc until the valley lakes; a lake is kept
+    // off by its drawn shore now, which the stem, the braid and the loops
+    // each keep by their own margin, 7 m the least of them.
     const { graph, features } = buildTrail(0x5eed, flatFrame());
+    expect(features.map((f) => [f.kind, f.shape !== undefined])).toEqual([["peak", false], ["pond", true], ["meadow", false], ["meadow", false]]);
     for (const f of features) {
-      for (const e of graph.edges) {
+      for (const [ei, e] of graph.edges.entries()) {
         const a = graph.nodes[e.a]!, b = graph.nodes[e.b]!;
+        if (f.shape !== undefined) {
+          expect(shoreAlong(graph, ei, f.shape), `lake ${f.id} edge ${ei}`).toBeLessThanOrEqual(-7);
+          continue;
+        }
         expect(segmentDistance(a.x, a.z, b.x, b.z, f.x, f.z)).toBeGreaterThanOrEqual(f.kind === "peak" ? 0 : f.radius - 1e-9);
       }
       for (const g of features) if (g !== f) expect(Math.hypot(f.x - g.x, f.z - g.z)).toBeGreaterThanOrEqual(FEATURE_SPACING - 1e-9);

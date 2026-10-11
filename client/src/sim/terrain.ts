@@ -13,6 +13,7 @@
 import type { TrailGraph } from "./trail.js";
 import type { Landmark, LandmarkMask } from "./landmarks.js";
 import type { FeatureMask, Lobe } from "./features.js";
+import type { LakeShape } from "./lakeShape.js";
 
 export type TerrainSample = {
   /** Height in metres. */
@@ -24,10 +25,13 @@ export type TerrainSample = {
 };
 
 /** A lake, as the renderer, the clutter field, the ground paint and the
- * wading read it: the pond feature's rim height, place, radius, murk and
- * marsh. */
+ * wading read it: the pond feature's level, its centre (its shape's), murk
+ * and marsh, and its shape, which every reader of its shore asks through
+ * `lakeShoreInto`, with the shape's bound. It has no radius: a reader of its
+ * extent asks the shape (spec §10.1). */
 export type LakeSource = {
-  kind: "lake"; level: number; x: number; z: number; radius: number; murk: number; lobe: Lobe | null;
+  kind: "lake"; level: number; x: number; z: number; murk: number; lobe: Lobe | null;
+  shape: LakeShape; bound: number;
 };
 /** Every body of water in a world: the sea at the variant's level, then its lakes. */
 export type WaterBodySource = { kind: "sea"; level: number } | LakeSource;

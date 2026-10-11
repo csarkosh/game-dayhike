@@ -245,9 +245,16 @@ function sweep(token: string): Case[] {
  * its water inside its rim, is refused as the sea's is (`groundSpawn`). 899
  * of 924 are still shown; 74 240 are admitted, and half way up admits 17 134
  * where it admitted 17 233, no other slot moving.
+ *
+ * Re-pinned 2026-10-10 from 899 shown of 924 and 74 240 admitted: the valley
+ * lakes are other ground than the round ponds, and their trails run
+ * elsewhere, so the worlds' stems are other lines with other nodes on them:
+ * 936 stands, 913 shown and 77 593 admitted; the pad is 188 of 200 shown and
+ * 4 184 admitted, and three quarters of the way up admits 24 856 where it
+ * admitted 25 792.
  */
 describe("the watcher on fifty seeds", () => {
-  it("stands only where every rule holds, and shows within 120 ticks on 899 of 924 stands", () => {
+  it("stands only where every rule holds, and shows within 120 ticks on 913 of 936 stands", () => {
     const cases: Case[] = [];
     for (let i = 0; i < 50; i++) cases.push(...sweep(`hollow${i}`));
     const shown = cases.filter((c) => c.shownAt !== -1);
@@ -271,18 +278,18 @@ describe("the watcher on fifty seeds", () => {
       `never shown: ${never.join("; ")}`,
     ].join("\n");
     console.info(`[watcher sweep]\n${summary}`);
-    expect(cases.length, summary).toBe(924);
-    expect(shown.length, summary).toBeGreaterThanOrEqual(899);
+    expect(cases.length, summary).toBe(936);
+    expect(shown.length, summary).toBeGreaterThanOrEqual(913);
     // 74,240 until 2026-10-04: a tree that would have fallen across a trail
     // stands dead beside it instead, and a snag is in a stand's way where a
-    // log was not (74,228 admitted).
-    expect(admitted, summary).toBeGreaterThanOrEqual(74200);
+    // log was not (74,228 admitted). 77,593 from 2026-10-10.
+    expect(admitted, summary).toBeGreaterThanOrEqual(77500);
     expect(refused.flee, summary).toBe(0);
     expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
     expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
     expect(bySlot.map((b) => `${b.slot} ${b.stands}`), summary).toEqual(["climb 0 200", "climb 0.25 200", "climb 0.5 200", "climb 0.75 200", "top fork 180"]);
-    const floors = [187, 197, 191, 200, 180];
-    const admittedFloors = [3980, 12516, 17134, 25792, 22864];
+    const floors = [188, 197, 192, 200, 180];
+    const admittedFloors = [4184, 13490, 17944, 24856, 23077];
     bySlot.forEach((b, i) => {
       expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
       expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);

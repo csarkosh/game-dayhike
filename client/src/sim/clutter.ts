@@ -15,6 +15,7 @@ import { TRAIL_Z_ANCHOR, TRAILHEAD_U } from "./bowl.js";
 import { forestDensity, SLOPE_HI, SLOPE_LO } from "./vegetation.js";
 import { NO_FEATURE_MASK, marshWeightAt, POND_SHORE, type FeatureMask } from "./features.js";
 import { SEEP_OCTAVES, SEEP_SALT, SEEP_WAVELENGTH, seepOffset } from "./seep.js";
+import { lakeShoreInto, newLakeShore } from "./lakeShape.js";
 
 // ---- Class ids (not tunables) ---------------------------------------------
 export const CLUTTER_GRASS = 0;
@@ -575,8 +576,11 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** Scratch for the plants' reads of a lake's shore. */
+const PLANT_SHORE = newLakeShore();
+
 /**
- * A water plant's gate at a point: the reeds on a murky lake's wet band and
+ * Whether a water plant may stand at a point: the reeds on a murky lake's wet band and
  * shallows and throughout its marsh, the lilies on its 0.5 to 2 m water, each
  * in seeded patches; nothing on a lake at murk CLUTTER_WATER_MURK_LO or below,
  * or away from every lake.
@@ -587,10 +591,9 @@ function waterPlantDensity(
   if (bodies === undefined) return 0;
   for (const b of bodies) {
     if (b.kind !== "lake") continue;
-    const reach = b.radius + POND_SHORE;
-    const dx = x - b.x, dz = z - b.z;
-    const q2 = dx * dx + dz * dz;
-    if (q2 >= reach * reach) continue;
+    // From POND_SHORE outside the shore in (spec §10.1).
+    const s = lakeShoreInto(PLANT_SHORE, b.shape, x, z).s;
+    if (!(s > -POND_SHORE)) continue;
     const murky = smoothstep(CLUTTER_WATER_MURK_LO, CLUTTER_WATER_MURK_HI, b.murk);
     if (murky <= 0) return 0;
     const depth = b.level - h;
@@ -598,11 +601,11 @@ function waterPlantDensity(
       const band = smoothstep(CLUTTER_REED_DEPTH_LO, CLUTTER_REED_DEPTH_LO + CLUTTER_REED_DEPTH_FADE_IN, depth)
         * (1 - smoothstep(CLUTTER_REED_DEPTH_HI - CLUTTER_REED_DEPTH_FADE_OUT, CLUTTER_REED_DEPTH_HI, depth));
       const patch = smoothstep(CLUTTER_REED_PATCH_LO, CLUTTER_REED_PATCH_HI, valueNoise2(x / CLUTTER_REED_PATCH_WAVE, z / CLUTTER_REED_PATCH_WAVE, seed ^ CLUTTER_REED_SALT));
-      return murky * Math.max(band * patch, marshWeightAt(b, x, z));
+      return murky * Math.max(band * patch, marshWeightAt(b.shape, b.lobe, x, z));
     }
-    // Lilies float on the lake alone: past the rim the basin's apron can lie
+    // Lilies float on the lake alone: outside the shore the apron can lie
     // below the level on the downhill side, but no water stands there.
-    if (q2 >= b.radius * b.radius) return 0;
+    if (!(s > 0)) return 0;
     const band = smoothstep(CLUTTER_LILY_DEPTH_LO, CLUTTER_LILY_DEPTH_LO + CLUTTER_LILY_DEPTH_FADE, depth)
       * (1 - smoothstep(CLUTTER_LILY_DEPTH_HI - CLUTTER_LILY_DEPTH_FADE, CLUTTER_LILY_DEPTH_HI, depth));
     const patch = smoothstep(CLUTTER_LILY_PATCH_LO, CLUTTER_LILY_PATCH_HI, valueNoise2(x / CLUTTER_LILY_PATCH_WAVE, z / CLUTTER_LILY_PATCH_WAVE, seed ^ CLUTTER_LILY_SALT));
@@ -853,13 +856,12 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       if (bodies !== undefined) {
         for (const b of bodies) {
           if (b.kind !== "lake" || s.h < b.level) continue;
-          const dx = x - b.x, dz = z - b.z;
-          const inner = b.radius + POND_SHORE;
+          // By the shore distance, t = −s: from POND_SHORE out (spec §10.1).
+          const t = -lakeShoreInto(PLANT_SHORE, b.shape, x, z).s;
+          const inner = POND_SHORE;
           const outer = inner + CLUTTER_WETPLANT_LAKE_REACH + CLUTTER_WETPLANT_LAKE_FADE;
-          const q2 = dx * dx + dz * dz;
-          if (q2 >= outer * outer || q2 <= inner * inner) continue;
-          const q = Math.sqrt(q2);
-          lakeside = Math.max(lakeside, smoothstep(inner, inner + 1, q) * (1 - smoothstep(inner + CLUTTER_WETPLANT_LAKE_REACH, outer, q)));
+          if (!(t > inner) || !(t < outer)) continue;
+          lakeside = Math.max(lakeside, smoothstep(inner, inner + 1, t) * (1 - smoothstep(inner + CLUTTER_WETPLANT_LAKE_REACH, outer, t)));
         }
       }
       // A seep: the noise's middle band, a ribbon, under the lowland canopy on a bench.

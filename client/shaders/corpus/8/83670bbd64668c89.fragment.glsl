@@ -24,12 +24,9 @@
 #define SS_TRANSLUCENCYCOLOR_TEXTUREDIRECTUV 0
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
-#define TERRAINTEX
-#define ROADPAINT
-#define TRAILPAINT
-#define FEATUREPAINT
-#define TERRAINFARLOW
+#define GROUNDCONFORM
 #define WET
+#define UV1
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -46,20 +43,12 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define IMAGEPROCESSING
-#define VIGNETTE
-#define VIGNETTEBLENDMODEMULTIPLY
-#define TONEMAPPING 3
-#define CONTRAST
-#define COLORCURVES
-#define SAMPLER3DGREENDEPTH
-#define SAMPLER3DBGRMAP
-#define DITHER
-#define EXPOSURE
+#define TONEMAPPING 0
+#define IMAGEPROCESSINGPOSTPROCESS
 #define PBR
 #define NUM_SAMPLES 0
+#define ALBEDO
 #define ALBEDODIRECTUV 0
-#define VERTEXCOLOR
 #define BASE_WEIGHTDIRECTUV 0
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
@@ -77,6 +66,8 @@
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
+#define TANGENT
+#define BUMP
 #define BUMPDIRECTUV 0
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
@@ -85,7 +76,6 @@
 #define REFLECTIONMAP_CUBIC
 #define INVERTCUBICMAP
 #define USESPHERICALFROMREFLECTIONMAP
-#define USESPHERICALINVERTEX
 #define GAMMAREFLECTION
 #define RADIANCEOCCLUSION
 #define HORIZONOCCLUSION
@@ -94,9 +84,11 @@
 #define NUM_MORPH_INFLUENCERS 0
 #define ORDER_INDEPENDENT_TRANSPARENCY_16BITS
 #define USEPHYSICALLIGHTFALLOFF
+#define TWOSIDEDLIGHTING
 #define FOG
 #define CAMERA_PERSPECTIVE
 #define AREALIGHTSUPPORTED
+#define SPECULARAA
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
@@ -112,17 +104,8 @@
 #define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME fragment:pbr
-layout(set = 1, binding = 36) uniform LeftOver {
-        float exposureLinear;
-    float contrast;
-    vec2 vInverseScreenSize;
-    vec4 vignetteSettings1;
-    vec4 vignetteSettings2;
-    vec4 vCameraColorCurveNegative;
-    vec4 vCameraColorCurveNeutral;
-    vec4 vCameraColorCurvePositive;
-    float ditherIntensity;
-    vec4 vFogInfos;
+layout(set = 1, binding = 16) uniform LeftOver {
+        vec4 vFogInfos;
     vec3 vFogColor;
 };
 
@@ -131,10 +114,10 @@ layout(set = 1, binding = 0) uniform Internals {
 float yFactor_;
 float textureOutputHeight_;
 };
-vec4 glFragCoord_;
 
 #define PBR_FRAGMENT_SHADER
 #define CUSTOM_FRAGMENT_EXTENSION
+
 
 #define CUSTOM_FRAGMENT_BEGIN
 precision highp float;
@@ -273,28 +256,8 @@ vec2 atmCloudWind;
 vec2 atmCloudGlow;
 vec3 atmCloudColour;
 vec4 atmCloudGroundRect;
-vec4 terrainTiling;
-vec2 terrainRock2;
-vec2 terrainFade;
-vec3 terrainEye;
-vec4 roadTable;
-vec4 trailInfo;
-float terrainWet;
-float terrainRain;
-float terrainTime;
-vec4 featureInfo;
-vec4 terrainLayerRough;
-vec2 terrainLayerRough2;
-vec4 terrainLayerF0;
-vec2 terrainLayerF02;
-float terrainReliefOn;
-vec4 terrainDetail;
-vec3 terrainDetail2;
-float terrainMacroOn;
-vec3 terrainHorizon;
-vec3 terrainTuft;
-vec4 terrainSward;
-vec4 terrainSwardBand;
+float gcRamp;
+float gcOvershoot;
 float wetLine;
 float wetLevel;
 vec2 wetCentre;
@@ -319,10 +282,8 @@ layout(set = 1, binding = 2) uniform Mesh
 float visibility;
 };
 #define WORLD_UBO
-layout(location = 0)  in vec3 vPositionW;
-layout(location = 1)  in vec3 vNormalW;
-layout(location = 2)  in vec3 vEnvironmentIrradiance;
-layout(location = 3)  in vec4 vColor;
+layout(location = 2)  in vec3 vPositionW;
+layout(location = 3)  in vec3 vNormalW;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -347,23 +308,18 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
+layout(location = 0)  in vec2 vAlbedoUV;
+layout(set = 1, binding = 7) uniform sampler albedoSamplerSampler;
+                        layout(set = 1, binding = 6) uniform texture2D albedoSamplerTexture;
+                        #define albedoSampler sampler2D(albedoSamplerTexture, albedoSamplerSampler)
 #define sampleReflection(s,c) texture(s,c)
-layout(set = 1, binding = 7) uniform sampler reflectionSamplerSampler;
-                        layout(set = 1, binding = 6) uniform textureCube reflectionSamplerTexture;
+layout(set = 1, binding = 9) uniform sampler reflectionSamplerSampler;
+                        layout(set = 1, binding = 8) uniform textureCube reflectionSamplerTexture;
                         #define reflectionSampler samplerCube(reflectionSamplerTexture, reflectionSamplerSampler)
 #define sampleReflectionLod(s,c,l) textureLod(s,c,l)
-layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
-                        layout(set = 1, binding = 8) uniform texture2D environmentBrdfSamplerTexture;
+layout(set = 1, binding = 11) uniform sampler environmentBrdfSamplerSampler;
+                        layout(set = 1, binding = 10) uniform texture2D environmentBrdfSamplerTexture;
                         #define environmentBrdfSampler sampler2D(environmentBrdfSamplerTexture, environmentBrdfSamplerSampler)
-
-
-
-
-
-
-
-
-
 #define FOGMODE_NONE 0.
 #define FOGMODE_EXP 1.
 #define FOGMODE_EXP2 2.
@@ -371,7 +327,7 @@ layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
 #define E 2.71828
 
 
-layout(location = 4)  in vec3 vFogDistance;
+layout(location = 7)  in vec3 vFogDistance;
 float CalcFogFactor()
 {float fogCoeff=1.0;
 float fogStart=vFogInfos.y;
@@ -574,49 +530,19 @@ float fresnelGrazingReflectance(float reflectance0) {float reflectance90=saturat
 return reflectance90;
 }
 vec2 getAARoughnessFactors(vec3 normalVector) {
-return vec2(0.);
-}
-const float PBRNeutralStartCompression=0.8-0.04;
-const float PBRNeutralDesaturation=0.15;
-vec3 PBRNeutralToneMapping( vec3 color ) {float x=min(color.r,min(color.g,color.b));
-float offset=x<0.08 ? x-6.25*x*x : 0.04;
-color-=offset;
-float peak=max(color.r,max(color.g,color.b));
-if (peak<PBRNeutralStartCompression) return color;
-float d=1.-PBRNeutralStartCompression;
-float newPeak=1.-d*d/(peak+d-PBRNeutralStartCompression);
-color*=newPeak/peak;
-float g=1.-1./(PBRNeutralDesaturation*(peak-newPeak)+1.);
-return mix(color,newPeak*vec3(1,1,1),g);
+vec3 nDfdx=dFdx(normalVector.xyz);
+vec3 nDfdy=(-yFactor_)*dFdy(normalVector.xyz);
+float slopeSquare=max(dot(nDfdx,nDfdx),dot(nDfdy,nDfdy));
+float geometricRoughnessFactor=pow(saturate(slopeSquare),0.333);
+float geometricAlphaGFactor=sqrt(slopeSquare);
+geometricAlphaGFactor*=0.75;
+return vec2(geometricRoughnessFactor,geometricAlphaGFactor);
 }
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_DEFINITIONS
 vec4 applyImageProcessing(vec4 result) {
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATSTART
-result.rgb*=exposureLinear;
-vec2 viewportXY=glFragCoord_.xy*vInverseScreenSize;
-viewportXY=viewportXY*2.0-1.0;
-vec3 vignetteXY1=vec3(viewportXY*vignetteSettings1.xy+vignetteSettings1.zw,1.0);
-float vignetteTerm=dot(vignetteXY1,vignetteXY1);
-float vignette=pow(vignetteTerm,vignetteSettings2.w);
-vec3 vignetteColor=vignetteSettings2.rgb;
-vec3 vignetteColorMultiplier=mix(vignetteColor,vec3(1,1,1),vignette);
-result.rgb*=vignetteColorMultiplier;
-result.rgb=PBRNeutralToneMapping(result.rgb);
 result.rgb=toGammaSpace(result.rgb);
 result.rgb=saturate(result.rgb);
-vec3 resultHighContrast=result.rgb*result.rgb*(3.0-2.0*result.rgb);
-if (contrast<1.0) {result.rgb=mix(vec3(0.5,0.5,0.5),result.rgb,contrast);
-} else {result.rgb=mix(result.rgb,resultHighContrast,contrast-1.0);
-}
-result.rgb=max(result.rgb,0.);
-float luma=getLuminance(result.rgb);
-vec2 curveMix=clamp(vec2(luma*3.0-1.5,luma*-3.0+1.5),vec2(0.0),vec2(1.0));
-vec4 colorCurve=vCameraColorCurveNeutral+curveMix.x*vCameraColorCurvePositive-curveMix.y*vCameraColorCurveNegative;
-result.rgb*=colorCurve.rgb;
-result.rgb=mix(vec3(luma),result.rgb,colorCurve.a);
-float rand=getRand(glFragCoord_.xy*vInverseScreenSize);
-float dither=mix(-ditherIntensity,ditherIntensity,rand);
-result.rgb=saturate(result.rgb+vec3(dither));
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATEND
 return result;
 }
@@ -856,6 +782,34 @@ float environmentHorizonOcclusion(vec3 view,vec3 normal,vec3 geometricNormal) {v
 float temp=saturate(1.0+1.1*dot(reflection,geometricNormal));
 return square(temp);
 }
+layout(location = 4)  in mat3 vTBN;
+vec3 perturbNormalBase(mat3 cotangentFrame,vec3 normal,float scale)
+{
+normal=normalize(normal*vec3(scale,scale,1.0));
+return normalize(cotangentFrame*normal);
+}
+vec3 perturbNormal(mat3 cotangentFrame,vec3 textureSample,float scale)
+{return perturbNormalBase(cotangentFrame,textureSample*2.0-1.0,scale);
+}
+mat3 cotangent_frame(vec3 normal,vec3 p,vec2 uv,vec2 tangentSpaceParams)
+{vec3 dp1=dFdx(p);
+vec3 dp2=(-yFactor_)*dFdy(p);
+vec2 duv1=dFdx(uv);
+vec2 duv2=(-yFactor_)*dFdy(uv);
+vec3 dp2perp=cross(dp2,normal);
+vec3 dp1perp=cross(normal,dp1);
+vec3 tangent=dp2perp*duv1.x+dp1perp*duv2.x;
+vec3 bitangent=dp2perp*duv1.y+dp1perp*duv2.y;
+tangent*=tangentSpaceParams.x;
+bitangent*=tangentSpaceParams.y;
+float det=max(dot(tangent,tangent),dot(bitangent,bitangent));
+float invmax=det==0.0 ? 0.0 : inversesqrt(det);
+return mat3(tangent*invmax,bitangent*invmax,normal);
+}
+layout(location = 1)  in vec2 vBumpUV;
+layout(set = 1, binding = 13) uniform sampler bumpSamplerSampler;
+                        layout(set = 1, binding = 12) uniform texture2D bumpSamplerTexture;
+                        #define bumpSampler sampler2D(bumpSamplerTexture, bumpSamplerSampler)
 vec3 computeFixedEquirectangularCoords(vec4 worldPos,vec3 worldNormal,vec3 direction)
 {float lon=atan(direction.z,direction.x);
 float lat=acos(direction.y);
@@ -950,8 +904,8 @@ return computeCubicCoords(worldPos,worldNormal,vEyePosition.xyz,reflectionMatrix
 // cloud's map (cloudParams.ts) is one texture: tileable noise in R and G,
 // read wrapping, and the height of the ground round the player in B, read
 // with its coordinates held off the edge so the wrap never reaches it.
-layout(set = 1, binding = 11) uniform sampler atmCloudMapSampler;
-                        layout(set = 1, binding = 10) uniform texture2D atmCloudMapTexture;
+layout(set = 1, binding = 15) uniform sampler atmCloudMapSampler;
+                        layout(set = 1, binding = 14) uniform texture2D atmCloudMapTexture;
                         #define atmCloudMap sampler2D(atmCloudMapTexture, atmCloudMapSampler)
 // The distance gradient: the far colour dimmed to ATM_NEAR_DIM at the eye,
 // rising as t to the power 1 / ATM_GRADIENT_BIAS. Mirrors fogGradientUnder.
@@ -1046,248 +1000,6 @@ float cloudGlow = pow(max(dot(rd, atmSunDir), 0.0), atmCloudGlow.y) * atmCloudGl
 vec3 cloud = atmCloudColour + atmSunColour * cloudGlow;
 return mix(cloud, fogged, exp(-od));
 }
-#define DISABLE_UNIFORMITY_ANALYSIS
-layout(location = 5)  in vec4 vTerrainW;
-layout(location = 6)  in vec4 vTerrainW2;
-layout(location = 7)  in float vTerrainCover;
-layout(set = 1, binding = 13) uniform sampler terrainGrassSampler;
-                        layout(set = 1, binding = 12) uniform texture2D terrainGrassTexture;
-                        #define terrainGrass sampler2D(terrainGrassTexture, terrainGrassSampler)
-layout(set = 1, binding = 15) uniform sampler terrainFloorSampler;
-                        layout(set = 1, binding = 14) uniform texture2D terrainFloorTexture;
-                        #define terrainFloor sampler2D(terrainFloorTexture, terrainFloorSampler)
-layout(set = 1, binding = 17) uniform sampler terrainRockSampler;
-                        layout(set = 1, binding = 16) uniform texture2D terrainRockTexture;
-                        #define terrainRock sampler2D(terrainRockTexture, terrainRockSampler)
-layout(set = 1, binding = 19) uniform sampler terrainSandSampler;
-                        layout(set = 1, binding = 18) uniform texture2D terrainSandTexture;
-                        #define terrainSand sampler2D(terrainSandTexture, terrainSandSampler)
-layout(set = 1, binding = 21) uniform sampler terrainPebbleSampler;
-                        layout(set = 1, binding = 20) uniform texture2D terrainPebbleTexture;
-                        #define terrainPebble sampler2D(terrainPebbleTexture, terrainPebbleSampler)
-// highp is required, not decorative: GLSL ES 3.00 has no default fragment
-// precision for sampler2DArray, so omitting it is a compile error on real
-// WebGL2 ("'sampler2DArray' : No precision specified") that NullEngine's
-// string-only preprocessor can never see. Babylon's own array-sampler code
-// uses highp for the same reason.
-layout(set = 1, binding = 23) uniform sampler terrainNormalsSampler;
-                        layout(set = 1, binding = 22) uniform texture2DArray terrainNormalsTexture;
-                        #define terrainNormals sampler2DArray(terrainNormalsTexture, terrainNormalsSampler)
-layout(set = 1, binding = 25) uniform sampler terrainRAHSampler;
-                        layout(set = 1, binding = 24) uniform texture2DArray terrainRAHTexture;
-                        #define terrainRAH sampler2DArray(terrainRAHTexture, terrainRAHSampler)
-// The grass floor's GLSL: hex tiling (a triangular lattice over the texture
-// repeat, three samples at hashed offsets and rotations, sharpened weights),
-// the lattice hash and the two-octave macro noise the lush/dry tint rides on,
-// and the horizon tint's weight. Spliced by TerrainTexturePlugin at
-// CUSTOM_FRAGMENT_DEFINITIONS after its own uniform declarations, so the
-// functions below may read terrainHorizon. Every constant mirrors
-// groundHexParams.ts and a lockstep test asserts they agree.
-//
-// The hex offsets use a sin hash that only the GPU evaluates. The macro noise
-// uses the multiply-add-fract lattice hash the CPU mirrors exactly, because the
-// tufts sample the same tint on the CPU and must agree with the floor.
-//
-// Samples take explicit gradients of the UNROTATED uv, so a hex seam changes
-// the texel fetched but not the mip level, and no seam shows as a blur line.
-//
-// hexSample2D and hexSampleArray have no caller in the plugin: it sets the
-// lattice up once per scale with hexSetup and fetches through hexFetch2D and
-// hexFetchArray. They are kept as the one-shot spelling the lockstep tests
-// name, and as the obvious entry point for a lone sample.
-//
-// COMMENT RULES: no semicolon inside a trailing comment on a code line, no
-// hashed preprocessor keyword in comment prose.
-const float HEX_LATTICE = 1.0;
-const float HEX_SHARPNESS = 8.0;
-const mat2 HEX_SKEW = mat2(1.0, 0.0, -0.57735027, 1.15470054);
-const mat2 HEX_UNSKEW = mat2(1.0, 0.0, 0.5, 0.8660254);
-const vec2 MACRO_WAVE = vec2(18.0, 6.0);
-const vec2 MACRO_WEIGHT = vec2(0.65, 0.35);
-const float MACRO_SLOPE = 0.6;
-const vec3 MACRO_LUSH = vec3(0.82, 1.06, 0.84);
-const vec3 MACRO_DRY = vec3(1.18, 0.98, 0.7);
-const float HEX_TAU = 6.28318531;
-// GPU-only: offsets and rotations per lattice vertex. Not mirrored.
-float hexHash(vec2 v, float salt) {
-return fract(sin(dot(v + salt, vec2(127.1, 311.7))) * 43758.5453);
-}
-// The lattice triangle the uv falls in: three integer vertices in skewed
-// space and their barycentric weights. Mirrors hexTriangle in groundHexParams.ts.
-void hexTriangle(vec2 uv, out vec2 v1, out vec2 v2, out vec2 v3, out vec3 w) {
-vec2 s = HEX_SKEW * (uv * HEX_LATTICE);
-vec2 b = floor(s);
-vec2 f = s - b;
-if (f.x + f.y < 1.0) {
-v1 = b;
-v2 = b + vec2(1.0, 0.0);
-v3 = b + vec2(0.0, 1.0);
-w = vec3(1.0 - f.x - f.y, f.x, f.y);
-} else {
-v1 = b + vec2(1.0, 1.0);
-v2 = b + vec2(1.0, 0.0);
-v3 = b + vec2(0.0, 1.0);
-w = vec3(f.x + f.y - 1.0, 1.0 - f.y, 1.0 - f.x);
-}
-}
-// The uv to fetch for vertex v: rotate about the vertex, then offset, both hashed.
-vec2 hexUv(vec2 uv, vec2 v) {
-vec2 vp = (HEX_UNSKEW * v) / HEX_LATTICE;
-float a = hexHash(v, 0.0) * HEX_TAU;
-float ca = cos(a);
-float sa = sin(a);
-vec2 d = uv - vp;
-vec2 o = vec2(hexHash(v, 7.3), hexHash(v, 13.1));
-return vec2(ca * d.x - sa * d.y, sa * d.x + ca * d.y) + o;
-}
-vec3 hexWeightsSharp(vec3 w) {
-vec3 s = pow(max(w, vec3(0.0)), vec3(HEX_SHARPNESS));
-return s / max(s.x + s.y + s.z, 1.0e-9);
-}
-// Everything a hex fetch needs that depends on the uv alone: the three hashed
-// uvs and the sharpened weights. Nine sin hashes and a lattice walk, so a
-// caller sampling several maps at ONE scale calls this once and hands the
-// result to as many fetchers as it likes.
-void hexSetup(vec2 uv, out vec2 u1, out vec2 u2, out vec2 u3, out vec3 s) {
-vec2 v1;
-vec2 v2;
-vec2 v3;
-vec3 w;
-hexTriangle(uv, v1, v2, v3, w);
-u1 = hexUv(uv, v1);
-u2 = hexUv(uv, v2);
-u3 = hexUv(uv, v3);
-s = hexWeightsSharp(w);
-}
-#define hexFetch2D(tex, u1, u2, u3, s, dx, dy) (textureGrad(tex, u1, dx, dy).rgb * (s).x + textureGrad(tex, u2, dx, dy).rgb * (s).y + textureGrad(tex, u3, dx, dy).rgb * (s).z)
-#define hexFetchArray(tex, u1, u2, u3, s, layer, dx, dy) (textureGrad(tex, vec3(u1, layer), dx, dy).rgb * (s).x + textureGrad(tex, vec3(u2, layer), dx, dy).rgb * (s).y + textureGrad(tex, vec3(u3, layer), dx, dy).rgb * (s).z)
-// Mirrored exactly by latticeHash in groundHexParams.ts.
-float latticeHash(vec2 c) {
-return fract(0.618034 * c.x + 0.381966 * c.y + 0.0113 * c.x * c.y);
-}
-float macroValueNoise(vec2 p, float wave) {
-vec2 q = p / wave;
-vec2 c = floor(q);
-vec2 f = smoothstep(0.0, 1.0, q - c);
-float a = latticeHash(c);
-float b = latticeHash(c + vec2(1.0, 0.0));
-float d = latticeHash(c + vec2(0.0, 1.0));
-float e = latticeHash(c + vec2(1.0, 1.0));
-return mix(mix(a, b, f.x), mix(d, e, f.x), f.y);
-}
-float macroNoise(vec2 p) {
-return MACRO_WEIGHT.x * macroValueNoise(p, MACRO_WAVE.x) + MACRO_WEIGHT.y * macroValueNoise(p, MACRO_WAVE.y);
-}
-// slope is 1 minus the ground normal's y. Mirrors macroTint in groundHexParams.ts.
-vec3 macroTint(float noise, float slope) {
-float m = clamp(noise + MACRO_SLOPE * clamp(slope, 0.0, 1.0), 0.0, 1.0);
-return mix(MACRO_LUSH, MACRO_DRY, m);
-}
-// terrainHorizon = (start, end, max). Mirrors horizonWeight.
-float horizonWeight(float dist) {
-return terrainHorizon.z * smoothstep(terrainHorizon.x, terrainHorizon.y, dist);
-}
-// The far ground's cover: the constants and functions the terrain's far
-// cover reads, spliced by TerrainTexturePlugin at CUSTOM_FRAGMENT_DEFINITIONS
-// after the hex include, inside its TERRAINTEX guard, so latticeHash is in
-// scope. Every constant mirrors groundHexParams.ts and a lockstep test
-// asserts they agree.
-//
-// The clump noise is the macro noise's lattice hash on cells wrapped to
-// FAR_CLUMP_WRAP, so the hash's product term stays under the bound where the
-// CPU twin agrees with it, anywhere in the world.
-//
-// COMMENT RULES: no semicolon inside a trailing comment on a code line, no
-// hashed preprocessor keyword in comment prose.
-const vec2 FAR_COVER_BAND = vec2(14.4, 18.0);
-const vec2 FAR_SWARD_COVER = vec2(0.05, 0.5);
-// Fitted 2026-10-10: Full pull toward the far target. With the pull at 0.8 a
-// fifth of the ground's own colour stays, and at the meadow pose at noon that
-// fifth with the sky's light already matched the card band's luminance, so the
-// colour at its floor met the luminance bar and missed chroma and G/R. At 1.0
-// the fit lands within 1 % of the band.
-const float FAR_SWARD_MAX = 1.0;
-// Fitted 2026-10-10: solved at (0.0066, 0.0235, 0.005) and committed at its
-// +10 % edge for the low sun. At the meadow pose at noon the far crops read
-// Y 0.04177 against the card band's 0.03814, chroma 0.2103 against 0.2128.
-const vec3 FAR_SWARD = vec3(0.0073, 0.0258, 0.0055);
-// Not fitted 2026-10-10: kept at its start: the canopy fit reached its target
-// through the canopy shade alone, and the litter share along the far crops was
-// not read from the simulation.
-const vec3 FAR_LITTER = vec3(0.081, 0.057, 0.032);
-// Fitted 2026-10-10: At the canopy pose at noon the far crops read Y 0.02630
-// against the card band's 0.02573. At the canopy pose at 16:00 far over near
-// reached 0.77 with the cut at 0.25 and the colour at its +10 % edge, short of
-// 0.8. The canopy far crops' chroma reads 0.23 of the band's because those
-// crops carry trunks and fog.
-const float FAR_CANOPY_SHADE = 0.4615;
-const vec2 FAR_CLUMP_CELL = vec2(0.8, 3.0);
-const vec2 FAR_CLUMP_WEIGHT = vec2(0.6, 0.4);
-const vec2 FAR_CLUMP_SALT = vec2(41.0, 17.0);
-const float FAR_CLUMP_WRAP = 97.0;
-const float FAR_CLUMP_AO = 0.65;
-const float FAR_CLUMP_TILT = 0.67;
-const float FAR_COVER_TILT = 0.3;
-// Fitted 2026-10-10: At the canopy pose at 16:00 far over near is 0.77 at a cut
-// of 0.25.
-const float FAR_SPEC_CUT = 0.25;
-// The far cover's weight in [0, 1]: any cover the near field draws, grass or
-// litter, ramped in over the tier's band of eye distance. Mirrors
-// farCoverWeight.
-float farCoverWeight(float cover, float duff, float dist) {
-float key = clamp(cover + duff, 0.0, 1.0);
-return smoothstep(FAR_SWARD_COVER.x, FAR_SWARD_COVER.y, key) * smoothstep(FAR_COVER_BAND.x, FAR_COVER_BAND.y, dist);
-}
-// One octave of value noise and its gradient in cell units: xy the
-// gradient, z the value in [0, 1]. Mirrors farClumpOctave.
-vec3 farClumpOctave(vec2 p, float cell, vec2 salt) {
-vec2 q = p / cell;
-vec2 c = floor(q);
-vec2 f = q - c;
-vec2 u = f * f * (3.0 - 2.0 * f);
-vec2 du = 6.0 * f * (1.0 - f);
-vec2 c0 = mod(c + salt, FAR_CLUMP_WRAP);
-vec2 c1 = mod(c + salt + 1.0, FAR_CLUMP_WRAP);
-float a = latticeHash(c0);
-float b = latticeHash(vec2(c1.x, c0.y));
-float d = latticeHash(vec2(c0.x, c1.y));
-float e = latticeHash(c1);
-float k = a - b - d + e;
-float n = a + (b - a) * u.x + (d - a) * u.y + k * u.x * u.y;
-return vec3(du.x * (b - a + k * u.y), du.y * (d - a + k * u.x), n);
-}
-// The two octaves, each faded to its mean where its cell spans under two
-// pixels. foot is the pixel's footprint on the ground in metres. The fade is
-// written as 1.0 minus a rising smoothstep because GLSL leaves smoothstep
-// undefined for a first edge above the second. Mirrors farClump.
-vec3 farClump(vec2 p, float foot) {
-vec3 o1 = farClumpOctave(p, FAR_CLUMP_CELL.x, vec2(0.0));
-vec3 o2 = farClumpOctave(p, FAR_CLUMP_CELL.y, FAR_CLUMP_SALT);
-float b1 = FAR_CLUMP_WEIGHT.x * (1.0 - smoothstep(0.5, 1.0, foot / FAR_CLUMP_CELL.x));
-float b2 = FAR_CLUMP_WEIGHT.y * (1.0 - smoothstep(0.5, 1.0, foot / FAR_CLUMP_CELL.y));
-return vec3(b1 * o1.xy + b2 * o2.xy, 0.5 + b1 * (o1.z - 0.5) + b2 * (o2.z - 0.5));
-}
-layout(set = 1, binding = 27) uniform sampler roadCenterSampler;
-                        layout(set = 1, binding = 26) uniform texture2D roadCenterTexture;
-                        #define roadCenter sampler2D(roadCenterTexture, roadCenterSampler)
-layout(set = 1, binding = 29) uniform sampler roadAsphaltSampler;
-                        layout(set = 1, binding = 28) uniform texture2D roadAsphaltTexture;
-                        #define roadAsphalt sampler2D(roadAsphaltTexture, roadAsphaltSampler)
-layout(set = 1, binding = 31) uniform sampler trailIndexSampler;
-                        layout(set = 1, binding = 30) uniform texture2D trailIndexTexture;
-                        #define trailIndex sampler2D(trailIndexTexture, trailIndexSampler)
-layout(set = 1, binding = 33) uniform sampler trailSegsSampler;
-                        layout(set = 1, binding = 32) uniform texture2D trailSegsTexture;
-                        #define trailSegs sampler2D(trailSegsTexture, trailSegsSampler)
-float trailValueNoise1(float u, float wave) {
-float q = u / wave;
-float c = floor(q);
-float f = smoothstep(0.0, 1.0, q - c);
-return mix(latticeHash(vec2(c, 0.0)), latticeHash(vec2(c + 1.0, 0.0)), f);
-}
-layout(set = 1, binding = 35) uniform sampler featureTexSampler;
-                        layout(set = 1, binding = 34) uniform texture2D featureTexTexture;
-                        #define featureTex sampler2D(featureTexTexture, featureTexSampler)
 // Wet plugin, fragment definitions: what the water touches is darker and
 // glossy below the wet line, and on the medium and low tiers darkened by
 // the water above it as well (spec §6). Applied on both UBO paths at
@@ -1376,12 +1088,15 @@ float alpha;
 #define pbr_inline
 albedoOpacityOutParams albedoOpacityBlock(
 in vec4 vAlbedoColor
+,in vec4 albedoTexture
+,in vec2 albedoInfos
 ,in float baseWeight
 )
 {albedoOpacityOutParams outParams;
 vec3 surfaceAlbedo=vAlbedoColor.rgb;
 float alpha=vAlbedoColor.a;
-surfaceAlbedo*=vColor.rgb;
+surfaceAlbedo*=albedoTexture.rgb;
+surfaceAlbedo*=albedoInfos.y;
 #define CUSTOM_FRAGMENT_UPDATE_ALBEDO
 surfaceAlbedo*=baseWeight;
 outParams.surfaceAlbedo=surfaceAlbedo;
@@ -1510,609 +1225,27 @@ struct subSurfaceOutParams
 };
 layout(location = 0) out vec4 glFragColor;
 void main(void) {
-                glFragCoord_ = gl_FragCoord;
-                if (yFactor_ == 1.) {
-                    glFragCoord_.y = textureOutputHeight_ - glFragCoord_.y;
-                }
-            
-float terrainRough = 1.0;
-float terrainF0 = 1.0;
-float terrainSpecW = 1.0;
-float terrainFarW = 0.0;
-float terrainPaintW = 0.0;
-vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
 #define CUSTOM_FRAGMENT_MAIN_BEGIN
 vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
 vec3 normalW=normalize(vNormalW);
 vec3 geometricNormalW=normalW;
+geometricNormalW=gl_FrontFacing ? geometricNormalW : -geometricNormalW;
 vec2 uvOffset=vec2(0.0,0.0);
+float normalScale=1.0;
+mat3 TBN=vTBN;
+normalW=perturbNormal(TBN,TEXRD(bumpSampler,vBumpUV+uvOffset).xyz,vBumpInfos.y);
+normalW=gl_FrontFacing ? normalW : -normalW;
 albedoOpacityOutParams albedoOpacityOut;
+vec4 albedoTexture=TEXRD(albedoSampler,vAlbedoUV+uvOffset);
 albedoOpacityOut=albedoOpacityBlock(
 vAlbedoColor
+,albedoTexture
+,vAlbedoInfos
 ,baseWeight
 );
 vec3 surfaceAlbedo=albedoOpacityOut.surfaceAlbedo;
 float alpha=albedoOpacityOut.alpha;
 #define CUSTOM_FRAGMENT_UPDATE_ALPHA
-{
-vec2 uvXZ = vPositionW.xz;
-vec2 uvG = uvXZ * terrainTiling.x;
-vec2 uvF = uvXZ * terrainTiling.y;
-vec2 uvS = uvXZ * terrainTiling.z;
-vec2 uvP = uvXZ * terrainTiling.w;
-  // Gradients of the UNROTATED uv, and the lattice they index, computed once
-  // per scale: a hex seam then changes which texel is fetched but not the mip
-  // level, so no seam shows as a blur line. Both pairs are taken here, in
-  // uniform control flow, rather than inside the gates that use them —
-  // a derivative taken in non-uniform flow is undefined by the spec.
-vec2 gdx = dFdx(uvG);
-vec2 gdy = (-yFactor_)*dFdy(uvG);
-vec2 uvD = uvXZ * terrainDetail.x;
-vec2 ddx = dFdx(uvD);
-vec2 ddy = (-yFactor_)*dFdy(uvD);
-  // The 2 m hex lattice is grass-only work: gated on the raw vertex weight so
-  // non-grass ground never pays for a lattice walk and three hashed fetches.
-  // At exactly zero vertex weight the grass maps switch from the three-tap
-  // hex to one plain fetch, so wherever the height blend below still hands
-  // grass a share the pattern changes there too — same mean, different
-  // texels, bounded by that share times the map's own variance. The coast is
-  // the one ground this happens on today.
-vec2 g1 = vec2(0.0);
-vec2 g2 = vec2(0.0);
-vec2 g3 = vec2(0.0);
-vec3 gw = vec3(0.0);
-if (vTerrainW.x > 0.0) {
-hexSetup(uvG, g1, g2, g3, gw);
-}
-float rt = terrainRock2.x;
-vec3 terrainN = vec3(0.0, 1.0, 0.0);
-terrainN = normalize(vNormalW);
-vec3 an = abs(terrainN);
-vec3 bw = an / max(an.x + an.y + an.z, 1e-4);
-float dist = distance(vPositionW.xyz, terrainEye);
-float strength = vTerrainW2.y * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist));
-  // Plain weights (today's blend) — grass, floor, rock, sand, pebble.
-float w0 = vTerrainW.x;
-float w1 = vTerrainW.y;
-float w2 = vTerrainW.z;
-float w3 = vTerrainW.w;
-float w4 = vTerrainW2.x;
-vec3 rah0 = vec3(0.5, 1.0, 0.5);
-vec3 rah1 = rah0;
-vec3 rah2 = rah0;
-vec3 rah3 = rah0;
-vec3 rah4 = rah0;
-vec3 nrm = terrainN;
-  // Declared out here so the AO line below still compiles — and stays a true
-  // no-op — on fragments where the relief gate never runs.
-float detailAo = 1.0;
-  // Rock parallax: march the eye ray through the rock height on the dominant
-  // triplanar face. The three offsets start at zero and only the dominant
-  // face's moves, so the minority faces stay flat.
-vec2 rpX = vec2(0.0);
-vec2 rpY = vec2(0.0);
-vec2 rpZ = vec2(0.0);
-if (strength > 0.0 && w2 > 0.05) {
-vec3 rDir = normalize(vPositionW.xyz - terrainEye);
-float rDepth = 0.03 * rt;
-vec2 rAb;
-vec2 rUv;
-if (bw.y >= bw.x && bw.y >= bw.z) { rAb = rDir.xz;
-rUv = vPositionW.xz * rt;
-}
-else if (bw.x >= bw.z) { rAb = rDir.yz;
-rUv = vPositionW.yz * rt;
-}
-else { rAb = rDir.xy;
-rUv = vPositionW.xy * rt;
-}
-vec2 rStep = rAb * rDepth / 12.0;
-float rLayer = 1.0 / 12.0;
-vec2 rOff = vec2(0.0);
-float rD = 0.0;
-float rPrev = -(1.0 - texture(terrainRAH, vec3(rUv, 2.0)).b);
-bool rHit = rPrev >= 0.0;
-for (int ri = 0;
-ri < 12;
-ri++) {
-if (rHit) break;
-vec2 nOff = rOff + rStep;
-float nD = rD + rLayer;
-float rDiff = nD - (1.0 - texture(terrainRAH, vec3(rUv + nOff, 2.0)).b);
-if (rDiff >= 0.0) { float rT = rPrev / (rPrev - rDiff);
-rOff = rOff + rStep * rT;
-rHit = true;
-}
-else { rOff = nOff;
-rD = nD;
-rPrev = rDiff;
-}
-}
-    // Fade the offset with the detail strength so the far edge of the fade
-    // has no seam, then hand it to the dominant face.
-rOff *= strength;
-if (bw.y >= bw.x && bw.y >= bw.z) rpY = rOff;
-else if (bw.x >= bw.z) rpX = rOff;
-else rpZ = rOff;
-}
-if (strength > 0.0) {
-    // The height blend below can hand grass a nonzero share even where its
-    // vertex weight is zero: wherever the other layers split the weight and
-    // a grass texel's height tops theirs, b0 comes out positive. So every
-    // grass term needs a real value here — the hex is skipped only because a
-    // single plain fetch is enough for a share this small.
-if (vTerrainW.x > 0.0) {
-rah0 = hexFetchArray(terrainRAH, g1, g2, g3, gw, 0.0, gdx, gdy);
-} else {
-rah0 = textureGrad(terrainRAH, vec3(uvG, 0.0), gdx, gdy).rgb;
-}
-rah1 = texture(terrainRAH, vec3(uvF, 1.0)).rgb;
-rah2 = texture(terrainRAH, vec3(vPositionW.xz * rt + rpY, 2.0)).rgb;
-rah3 = texture(terrainRAH, vec3(uvS, 3.0)).rgb;
-rah4 = texture(terrainRAH, vec3(uvP, 4.0)).rgb;
-    // Height blend: the tallest layer within the depth constant
-    // below still shows through.
-float m = max(max(w0 + rah0.b, w1 + rah1.b), max(max(w2 + rah2.b, w3 + rah3.b), w4 + rah4.b)) - 0.200;
-float b0 = max(w0 + rah0.b - m, 0.0);
-float b1 = max(w1 + rah1.b - m, 0.0);
-float b2 = max(w2 + rah2.b - m, 0.0);
-float b3 = max(w3 + rah3.b - m, 0.0);
-float b4 = max(w4 + rah4.b - m, 0.0);
-float bs = max(b0 + b1 + b2 + b3 + b4, 1e-4);
-    // terrainReliefOn: 0 until the real RAH array has
-    // landed, so a flat placeholder height (equal on every layer) can never
-    // sharpen the class weights into hard edges the way the raw formula
-    // above would (0.5/0.3/0.2 -> 1/0/0). With it 0, b collapses back to w
-    // before the strength fade below ever runs.
-b0 = mix(w0, b0 / bs, terrainReliefOn);
-b1 = mix(w1, b1 / bs, terrainReliefOn);
-b2 = mix(w2, b2 / bs, terrainReliefOn);
-b3 = mix(w3, b3 / bs, terrainReliefOn);
-b4 = mix(w4, b4 / bs, terrainReliefOn);
-w0 = mix(w0, b0, strength);
-w1 = mix(w1, b1, strength);
-w2 = mix(w2, b2, strength);
-w3 = mix(w3, b3, strength);
-w4 = mix(w4, b4, strength);
-    // Normals, UDN-style: the map's xy is added to the world normal in the
-    // projection's frame. Planar layers: uv is world XZ, so x -> X, y -> Z.
-vec3 t0;
-if (vTerrainW.x > 0.0) {
-t0 = hexFetchArray(terrainNormals, g1, g2, g3, gw, 0.0, gdx, gdy) * 2.0 - 1.0;
-} else {
-t0 = textureGrad(terrainNormals, vec3(uvG, 0.0), gdx, gdy).rgb * 2.0 - 1.0;
-}
-vec3 t1 = texture(terrainNormals, vec3(uvF, 1.0)).rgb * 2.0 - 1.0;
-vec3 t3 = texture(terrainNormals, vec3(uvS, 3.0)).rgb * 2.0 - 1.0;
-vec3 t4 = texture(terrainNormals, vec3(uvP, 4.0)).rgb * 2.0 - 1.0;
-vec3 tx = texture(terrainNormals, vec3(vPositionW.yz * rt + rpX, 2.0)).rgb * 2.0 - 1.0;
-vec3 ty = texture(terrainNormals, vec3(vPositionW.xz * rt + rpY, 2.0)).rgb * 2.0 - 1.0;
-vec3 tz = texture(terrainNormals, vec3(vPositionW.xy * rt + rpZ, 2.0)).rgb * 2.0 - 1.0;
-vec2 planar = t0.xy * w0 + t1.xy * w1 + t3.xy * w3 + t4.xy * w4;
-    // The near-eye detail scale: the same grass maps at DETAIL_TILING, hex
-    // tiled again so the small repeat does not draw its own grid either. Gated
-    // on grass weight AND its own fade, inside the relief gate, so the two
-    // extra fetches land on grass within DETAIL_FADE of the eye and nowhere
-    // else — and on terrainReliefOn, since a flat placeholder normal/height
-    // would only add noise. The finer scale adds a normal and a
-    // between-blades occlusion; an albedo term was tried and could not be
-    // seen with these maps, so it is not fetched.
-float detailStrength = w0 * (1.0 - smoothstep(terrainDetail.y, terrainDetail.z, dist)) * terrainReliefOn;
-if (detailStrength > 0.0) {
-vec2 d1;
-vec2 d2;
-vec2 d3;
-vec3 dw;
-hexSetup(uvD, d1, d2, d3, dw);
-vec3 tD = hexFetchArray(terrainNormals, d1, d2, d3, dw, 0.0, ddx, ddy) * 2.0 - 1.0;
-planar += tD.xy * terrainDetail.w * detailStrength;
-float hD = hexFetchArray(terrainRAH, d1, d2, d3, dw, 0.0, ddx, ddy).b;
-detailAo = mix(1.0, smoothstep(terrainDetail2.y, terrainDetail2.z, hD), terrainDetail2.x * detailStrength);
-}
-    // Rock's X-facing projection samples vPositionW.yz, so the map's x runs
-    // along world Y and its y along world Z: x,y order,
-    // same rule as the other two faces (ty samples xz -> x,y; tz samples
-    // xy -> x,y).
-vec3 pert = vec3(planar.x, 0.0, planar.y)
-+ w2 * (vec3(0.0, tx.x, tx.y) * bw.x + vec3(ty.x, 0.0, ty.y) * bw.y + vec3(tz.x, tz.y, 0.0) * bw.z);
-nrm = normalize(terrainN + pert * strength);
-    // Written here, inside the gate, not unconditionally below: when strength
-    // is 0 this branch never runs at all, so Babylon's own normalW is left
-    // exactly as it was rather than being overwritten with terrainN, which
-    // contributes nothing new in that case.
-normalW = nrm;
-}
-  // Same story as the relief fetch above: the height blend can still hand
-  // grass a nonzero share here even at zero vertex weight, wherever the
-  // other layers split the weight and a grass texel's height tops theirs, so
-  // this needs a real value too — one plain fetch is enough for a share
-  // this small, without paying for the three-tap hex.
-vec3 grassAlbedo;
-if (vTerrainW.x > 0.0) { grassAlbedo = hexFetch2D(terrainGrass, g1, g2, g3, gw, gdx, gdy) * vec3(1.6447, 1.8904, 2.7933);
-}
-else { grassAlbedo = textureGrad(terrainGrass, uvG, gdx, gdy).rgb * vec3(1.6447, 1.8904, 2.7933);
-}
-vec3 blended =
-grassAlbedo * w0
-+ texture(terrainFloor,  uvF).rgb * vec3(1.5456, 2.0202, 2.8329) * w1
-+ texture(terrainSand,   uvS).rgb * vec3(1.7036, 1.9531, 2.5316) * w3
-+ texture(terrainPebble, uvP).rgb * vec3(1.8484, 2.0121, 2.1882) * w4
-+ w2 * vec3(1.8519, 1.9763, 2.2272) * (
-texture(terrainRock, vPositionW.yz * rt + rpX).rgb * bw.x
-+ texture(terrainRock, vPositionW.xz * rt + rpY).rgb * bw.y
-+ texture(terrainRock, vPositionW.xy * rt + rpZ).rgb * bw.z);
-float ao = rah0.g * w0 + rah1.g * w1 + rah2.g * w2 + rah3.g * w3 + rah4.g * w4;
-  // AO: the packed channel is normalised to a mean of 0.5 per
-  // layer when the texture was made, so dividing the blended
-  // value back by 0.5 turns it into a mean-1 multiplier — every layer darkens
-  // around its own occlusion variation rather than around wherever its raw
-  // source map's mean happened to land.
-surfaceAlbedo *= mix(vec3(1.0), blended, strength) * mix(1.0, ao / 0.5, strength) * detailAo;
-  // Macro tint: the lush/dry variation over tens of metres, on grass only and
-  // faded out with the rest of the detail. A multiplicative tint of
-  // surfaceAlbedo, never a write to the material constant.
-  // Its two octaves apart, the same arithmetic as macroNoise, so the far
-  // cover below can fade each to its mean where its cells fall under two
-  // pixels.
-float macroN18 = macroValueNoise(vPositionW.xz, MACRO_WAVE.x);
-float macroN6 = macroValueNoise(vPositionW.xz, MACRO_WAVE.y);
-vec3 macroRgb = macroTint(MACRO_WEIGHT.x * macroN18 + MACRO_WEIGHT.y * macroN6, 1.0 - terrainN.y);
-surfaceAlbedo *= mix(vec3(1.0), macroRgb, w0 * terrainMacroOn * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist)));
-  // Horizon tint: past HORIZON the floor reads as the vegetation the clutter
-  // has thinned out of, not as bare palette.
-surfaceAlbedo = mix(surfaceAlbedo, terrainTuft, w0 * horizonWeight(dist));
-  // Sward floor: inside the blade field's reach, ground carrying a sward reads
-  // as the shaded thatch between the blades, not bare ground. Keyed on the
-  // ground cover, not the grass texture weight, which is a mottle.
-float swardW = terrainSward.w * smoothstep(terrainSwardBand.x, terrainSwardBand.y, vTerrainCover) * (1.0 - smoothstep(terrainSwardBand.z, terrainSwardBand.w, dist));
-surfaceAlbedo = mix(surfaceAlbedo, terrainSward.rgb, swardW);
-  // Far cover: past the band where the meadow cards thin out, ground under
-  // any cover the near field draws, grass or litter, takes the colour the
-  // cover renders at, clumps darker in their troughs, and the lush and dry
-  // tint the cards carry. Its normal and reflectance are applied after the
-  // paints, in TERRAIN_FRAGMENT_FAR_LIGHT, so the road and the trail keep
-  // their own. Constants in the far-cover include.
-vec2 fcFw = fwidth(vPositionW.xz);
-float fcFoot = max(fcFw.x, fcFw.y);
-terrainFarW = farCoverWeight(vTerrainCover, vTerrainW2.z, dist);
-if (terrainFarW > 0.0) {
-vec3 fcClump = farClump(vPositionW.xz, fcFoot);
-float fcB18 = 1.0 - smoothstep(0.5, 1.0, fcFoot / MACRO_WAVE.x);
-float fcB6 = 1.0 - smoothstep(0.5, 1.0, fcFoot / MACRO_WAVE.y);
-vec3 fcMacro = macroTint(MACRO_WEIGHT.x * mix(0.5, macroN18, fcB18) + MACRO_WEIGHT.y * mix(0.5, macroN6, fcB6), 1.0 - terrainN.y);
-vec3 fcTarget = mix(FAR_SWARD, FAR_LITTER, clamp(vTerrainW2.z, 0.0, 1.0))
-* fcMacro
-* (1.0 - FAR_CANOPY_SHADE * clamp(vTerrainW2.w, 0.0, 1.0))
-* mix(FAR_CLUMP_AO, 1.0, fcClump.z);
-surfaceAlbedo = mix(surfaceAlbedo, fcTarget, FAR_SWARD_MAX * terrainFarW);
-terrainFarN = normalize(normalW + vec3(-fcClump.x, 0.0, -fcClump.y) * FAR_CLUMP_TILT);
-}
-  // Roughness: the blended per-layer base,
-  // modulated near the eye by the blended map over its own 0.5 neutral (so a
-  // flat 0.5 placeholder or a failed decode is the identity, not a flash of
-  // gloss); F0: per layer, never faded.
-float rBase = terrainLayerRough.x * w0 + terrainLayerRough.y * w1 + terrainLayerRough.z * w2 + terrainLayerRough.w * w3 + terrainLayerRough2.x * w4;
-float rMap = rah0.r * w0 + rah1.r * w1 + rah2.r * w2 + rah3.r * w3 + rah4.r * w4;
-terrainRough = clamp(rBase * mix(1.0, rMap / 0.5, strength), 0.0, 1.0);
-terrainF0 = terrainLayerF0.x * w0 + terrainLayerF0.y * w1 + terrainLayerF0.z * w2 + terrainLayerF0.w * w3 + terrainLayerF02.x * w4;
-}
-{
-float rfi = (vPositionW.z - roadTable.x) / roadTable.y;
-float rfl = clamp(floor(rfi), 0.0, roadTable.z - 2.0);
-float rft = clamp(rfi - rfl, 0.0, 1.0);
-float rx0 = texture(roadCenter, vec2((rfl + 0.5) / roadTable.z, 0.5)).r;
-float rx1 = texture(roadCenter, vec2((rfl + 1.5) / roadTable.z, 0.5)).r;
-float ru = vPositionW.x - mix(rx0, rx1, rft);
-float rau = abs(ru);
-float raa = fwidth(rau);
-if (rau < 30.0) {
-float rk = 1.0 - smoothstep(terrainFade.x, terrainFade.y, distance(vPositionW.xyz, terrainEye));
-vec3 rGravelTex = mix(vec3(1.0), texture(terrainPebble, vPositionW.xz * terrainTiling.w).rgb / terrainRock2.y, rk);
-vec3 rAsphaltTex = mix(vec3(1.0), texture(roadAsphalt, vec2(ru, vPositionW.z) * roadTable.w).rgb / terrainRock2.y, rk);
-    // Asphalt's slice of the relief arrays:
-    // the road's u axis is world X across the centreline, so it shares the
-    // ground's planar frame — the same (ru, z) * roadTable.w coordinate the
-    // asphalt albedo above was fetched with, on layer index 5.
-vec3 rAsphaltN = texture(terrainNormals, vec3(vec2(ru, vPositionW.z) * roadTable.w, 5.0)).rgb * 2.0 - 1.0;
-vec3 rAsphaltRAH = texture(terrainRAH, vec3(vec2(ru, vPositionW.z) * roadTable.w, 5.0)).rgb;
-    // AO, the same mean-1 form as the ground
-    // blend's own AO term in terrainTexture.ts: the packed channel is
-    // normalised to mean 0.5 when the texture was made, so dividing by 0.5 turns it
-    // into a multiplier centred on 1.0 rather than on asphalt's own raw mean.
-rAsphaltTex *= mix(1.0, rAsphaltRAH.g / 0.5, rk);
-float rVerge = 0.5 * (1.0 - smoothstep(5.5, 30.0, rau));
-float rGravel = 1.0 - smoothstep(3.5, 5.5, rau);
-float rE = max(0.4, raa);
-float rAsphalt = 1.0 - smoothstep(3.5 - rE, 3.5 + rE, rau);
-    // Normal/roughness/F0 blend toward the asphalt's own relief, faded by rk
-    // the same way its albedo is, then gated by the asphalt band's coverage.
-float rRelief = rAsphalt * rk;
-normalW = normalize(mix(normalW, normalize(normalW + vec3(rAsphaltN.x, 0.0, rAsphaltN.y)), rRelief));
-terrainRough = mix(terrainRough, clamp(terrainLayerRough2.y * mix(1.0, rAsphaltRAH.r / 0.5, rk), 0.0, 1.0), rAsphalt);
-terrainF0 = mix(terrainF0, terrainLayerF02.y, rAsphalt);
-terrainPaintW = max(terrainPaintW, rGravel);
-float rPhase = mod(vPositionW.z, 12.0);
-uint rh = uint(int(floor(vPositionW.z / 12.0))) * 2654435761u;
-rh ^= rh >> 15u;
-rh *= 2246822519u;
-rh ^= rh >> 13u;
-float rKeep = float(rh & 65535u) / 65536.0;
-float rOn = (rPhase < 3.0 && rKeep < 0.65) ? 1.0 : 0.0;
-float rLe = max(0.2, raa);
-float rLine = rOn * 0.55 * (1.0 - smoothstep(0.15, 0.15 + rLe, rau));
-vec3 rCol = mix(surfaceAlbedo, vec3(0.17, 0.14, 0.1) * vAlbedoColor.rgb, rVerge);
-rCol = mix(rCol, vec3(0.3, 0.28, 0.24) * rGravelTex * vAlbedoColor.rgb, rGravel);
-rCol = mix(rCol, vec3(0.14, 0.14, 0.15) * rAsphaltTex * vAlbedoColor.rgb, rAsphalt);
-rCol = mix(rCol, vec3(0.42, 0.36, 0.18) * vAlbedoColor.rgb, rLine);
-surfaceAlbedo = rCol;
-}
-}
-{
-vec4 fMeta = texture(featureTex, vec2(0.5 / 4.0, 0.75));
-vec4 fRim = texture(featureTex, vec2(1.5 / 4.0, 0.75));
-for (int fi = 0;
-fi < 4;
-fi++) {
-if (float(fi) >= featureInfo.x) break;
-vec4 f = texture(featureTex, vec2((float(fi) + 0.5) / 4.0, 0.25));
-float fd = length(vPositionW.xz - f.xy);
-if (f.w > 1.5 && f.w < 2.5) {
-float meadow = 1.0 - smoothstep(f.z, f.z + fMeta.z, fd);
-surfaceAlbedo *= mix(vec3(1.0), vec3(0.92, 1.06, 0.82), meadow * 0.5);
-} else if (f.w > 2.5) {
-float shore = 1.0 - smoothstep(f.z + fMeta.w, f.z + fMeta.w + 2.0, fd);
-      // The bed under the water paints itself, so the shore's tint begins at the rim.
-shore *= smoothstep(f.z - 1.0, f.z, fd);
-surfaceAlbedo *= mix(vec3(1.0), vec3(0.85, 0.78, 0.70), shore * 0.8);
-} else if (f.w > 0.5) {
-float above = smoothstep(fMeta.x - fMeta.y, fMeta.x, vPositionW.y);
-float near = 1.0 - smoothstep(f.z - fRim.x, f.z, fd);
-float crest = 1.0 - smoothstep(25.0, 40.0, fd);
-float rock = max(above * near, crest);
-float fLum = dot(surfaceAlbedo, vec3(0.299, 0.587, 0.114));
-surfaceAlbedo = mix(surfaceAlbedo, vec3(fLum) * 1.1, rock * 0.85);
-}
-}
-}
-{
-vec2 tb = clamp((vPositionW.xz - trailInfo.xy) * trailInfo.z, 0.0, trailInfo.w - 1.0);
-vec2 tIdx = texture(trailIndex, (floor(tb) + 0.5) / trailInfo.w).xy;
-float tdBest = 1.0e9;
-vec2 tOff = vec2(0.0);
-float tuBest = 0.0;
-float ttBest = 0.0;
-for (int ti = 0;
-ti < 32;
-ti++) {
-if (float(ti) >= tIdx.y) break;
-float tu = (tIdx.x + float(ti) + 0.5) / 512.0;
-vec4 ts = texture(trailSegs, vec2(tu, 0.25));
-vec2 te = ts.zw - ts.xy;
-vec2 tp = vPositionW.xz - ts.xy;
-float tl2 = dot(te, te);
-float tt = tl2 > 0.0 ? clamp(dot(tp, te) / tl2, 0.0, 1.0) : 0.0;
-vec2 to = tp - tt * te;
-float td = length(to);
-if (td < tdBest) { tdBest = td;
-tOff = to;
-tuBest = tu;
-ttBest = tt;
-}
-}
-float taa = fwidth(tdBest);
-  // The texture2D calls below (gravel/floor albedo, normals, RAH) run inside
-  // this branch, so their implicit-LOD derivatives are formally non-uniform
-  // control flow. Pre-existing structure carried over from the wall removal;
-  // it compiled and rendered correctly on Metal when checked in the browser.
-if (tdBest < 7.0 + taa) {
-float tk = 1.0 - smoothstep(terrainFade.x, terrainFade.y, distance(vPositionW.xyz, terrainEye));
-vec2 tAway = tdBest > 1.0e-4 ? tOff / tdBest : vec2(0.0);
-float tRise = dot(-vNormalW.xz, tAway) / max(vNormalW.y, 1.0e-3);
-    // Soil fraction: the grass + forest-floor class weights the ground blend
-    // already carries (TRAILPAINT is only ever defined alongside TERRAINTEX).
-float tSoil = clamp(vTerrainW.x + vTerrainW.y, 0.0, 1.0);
-    // Snow fraction: the ground blend's detail weight (vTerrainW2.y) is 1 on
-    // bare ground and falls to 0 through the snow band, the only thing that
-    // lowers it (terrainSurface.ts). Above the snow line a trail is packed
-    // snow, not a strip of bright dirt (seen in a captured clip): the bed
-    // blends to a slightly darker, bluer snow, keeps the snow's normal and
-    // roughness, and the bare-floor bank fades out with the soil under it.
-float tSnow = 1.0 - clamp(vTerrainW2.y, 0.0, 1.0);
-vec4 tRow = texture(trailSegs, vec2(tuBest, 0.75));
-float tU = mix(tRow.x, tRow.y, ttBest);
-float tWj = mix(tRow.z, tRow.w, ttBest);
-float tWear = 0.6 * trailValueNoise1(tU, 12.0) + 0.4 * trailValueNoise1(tU, 3.0);
-float tWidthK = mix(0.8, 1.25, tWear) * tWj;
-float tDarkK = mix(0.85, 1.1, tWear);
-float tEdgeN = 0.6 * macroValueNoise(vPositionW.xz, 1.5) + 0.4 * macroValueNoise(vPositionW.xz, 0.4);
-float tdN = tdBest + 0.25 * (2.0 * tEdgeN - 1.0);
-vec2 tuvP = vPositionW.xz * terrainTiling.w;
-vec2 tuvF = vPositionW.xz * terrainTiling.y;
-vec3 tGravelTex = mix(vec3(1.0), texture(terrainPebble, tuvP).rgb / terrainRock2.y, tk);
-vec3 tFloorTex = mix(vec3(1.0), texture(terrainFloor, tuvF).rgb / terrainRock2.y, tk);
-    // The bed is earth: the floor texture over the pebbles, so the trail
-    // wears the colour of the ground beside it with grit in it.
-vec3 tBedTex = mix(tGravelTex, tFloorTex, 0.7);
-vec3 tGravelN = texture(terrainNormals, vec3(tuvP, 4.0)).rgb * 2.0 - 1.0;
-vec3 tGravelRAH = texture(terrainRAH, vec3(tuvP, 4.0)).rgb;
-vec3 tFloorN = texture(terrainNormals, vec3(tuvF, 1.0)).rgb * 2.0 - 1.0;
-vec3 tFloorRAH = texture(terrainRAH, vec3(tuvF, 1.0)).rgb;
-    // The bed's relief is earth too: a brown tint over a cobble mosaic still
-    // shades as cobbles if the normal, the occlusion and the roughness stay
-    // the pebble texture's. The same share that mixes the colour mixes them.
-vec3 tBedN = mix(tGravelN, tFloorN, 0.7);
-vec3 tBedRAH = mix(tGravelRAH, tFloorRAH, 0.7);
-float tdB = tdN / tWidthK - 0.3 * (mix(0.5, tGravelRAH.b, tk) - 0.5);
-float tE = max(0.08, taa / tWidthK);
-float tInCore = 1.0 - smoothstep(0.45, 0.45 + tE, tdB);
-float tInMargin = 1.0 - smoothstep(0.75, 0.75 + tE, tdB);
-float tCore = tInCore * (1.0 - tSnow);
-float tTrample = (1.0 - tInMargin) * (1.0 - smoothstep(0.75, 1.35, tdB)) * tSoil * (1.0 - tSnow);
-float tBank = smoothstep(0.0, 0.15, tRise) * (1.0 - smoothstep(0.75, 7.0, tdN)) * tSoil * (1.0 - tSnow) * (1.0 - tInMargin);
-vec3 tBankBase = vColor.rgb;
-    // The bed's core carries no litter of its own (only drifted stretches
-    // carry duff), so the vertex-colour mix above never lifted the core the
-    // way the litter floor beside it rose: the bed's base mixes the same
-    // NEEDLE_BED colour in by the canopy density (the fourth weight,
-    // forestDensity at the vertex), so the bed under the trees reads as the
-    // floor continuing under it. In the open the density is zero and nothing
-    // changes. The bank keeps the raw base: it is ground beside the bed, and
-    // its vertex colour already carries the litter mix.
-vec3 tBedBase = mix(tBankBase, vec3(0.15, 0.105, 0.06), 0.75 * clamp(vTerrainW2.w, 0.0, 1.0));
-    // The bench takes TRAIL_BENCH_SHADE of the bed's base, the ground's own
-    // vertex colour with that canopy lift, rather than the material's flat
-    // white, so it wears the hue of the ground it runs through — brown under
-    // canopy, tan in the meadow — the way packed earth does.
-vec3 tBenchBase = mix(vec3(1.0), tBedBase, 0.8);
-    // The trampled band: this ground, dried and stained toward the bench.
-vec3 tCol = surfaceAlbedo * mix(vec3(1.0), vec3(0.9, 0.88, 0.8), tTrample);
-    // The bank: bare forest floor on the uphill side, under the vertex colour.
-tCol = mix(tCol, tFloorTex * mix(1.0, tFloorRAH.g / 0.5, tk) * tBankBase, tBank);
-normalW = normalize(mix(normalW, normalize(normalW + vec3(tFloorN.x, 0.0, tFloorN.y)), tBank * tk));
-terrainRough = mix(terrainRough, clamp(terrainLayerRough.y * mix(1.0, tFloorRAH.r / 0.5, tk), 0.0, 1.0), tBank);
-terrainF0 = mix(terrainF0, terrainLayerF0.y, tBank);
-    // Core and margin: the earth bed under two tints on the bench's own
-    // shaded base, the core compacted and darkened by wear, the margin loose
-    // and pale at about twice the core's brightness. Wet: the core darkens
-    // and glosses, the margin half as much; puddles sit in the low spots of
-    // the 6 m noise inside the core.
-float tAo = mix(1.0, tBedRAH.g / 0.5, tk);
-vec3 tCoreCol = vec3(0.3, 0.26, 0.21) * tDarkK * tBedTex * 0.24 * tAo * tBenchBase;
-vec3 tMarginCol = vec3(0.4, 0.36, 0.3) * tBedTex * 0.47 * tAo * tBenchBase;
-    // Neglect: leaf and needle drifts where the ground cover says litter lies
-    // (the vertex's own duff weight, so a painted drift always has pieces
-    // standing on it), and gravel washed out to bare dirt in patches of the
-    // bed's own noise. Both are smoothsteps and neither touches the band
-    // weights above: the bed's core stays traceable however much lies on it.
-float tDrift = smoothstep(0.25, 0.7, clamp(vTerrainW2.z, 0.0, 1.0));
-float tWash = smoothstep(0.55, 0.8, macroValueNoise(vPositionW.xz, 4.0));
-tDrift *= 1.0 - tWash;
-vec3 tDriftCol = tFloorTex * vec3(0.8893440413949226, 0.6225408289764459, 0.35573761655796904) * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
-    // Keyed on the canopy density, not the litter weight or the forest-floor
-    // weight: the litter weight is high beside a meadow trail too (drifts
-    // reach every bed margin there), and the forest-floor weight is the
-    // floor-to-grass mottle raised by that litter, about a half on open
-    // ground. Either would lift the meadow's wash-out toward the litter
-    // floor's darkness. The canopy density is zero in the open.
-float tWashDark = mix(0.4, 0.75, clamp(vTerrainW2.w, 0.0, 1.0));
-vec3 tWashCol = tFloorTex * tWashDark * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
-tCoreCol = mix(mix(tCoreCol, tDriftCol, tDrift), tWashCol, tWash);
-tMarginCol = mix(mix(tMarginCol, tDriftCol, tDrift), tWashCol, tWash);
-float tPuddleLow = smoothstep(0.62, 0.75, 1.0 - macroValueNoise(vPositionW.xz, 6.0));
-float tPuddle = smoothstep(0.55, 0.8, terrainWet) * tPuddleLow * tCore;
-tCoreCol *= 1.0 - 0.35 * terrainWet;
-tMarginCol *= 1.0 - 0.35 * 0.5 * terrainWet;
-tCoreCol = mix(tCoreCol, tCoreCol * 0.5, tPuddle);
-vec3 tPacked = surfaceAlbedo * vec3(0.86, 0.88, 0.94);
-float tOnBench = tInMargin;
-tCol = mix(tCol, mix(mix(tMarginCol, tCoreCol, tInCore), tPacked, tSnow), tOnBench);
-float tGravel = tOnBench * (1.0 - tSnow);
-terrainPaintW = max(terrainPaintW, max(tBank, tOnBench));
-vec3 tBenchN = normalize(normalW + vec3(tBedN.x, 0.0, tBedN.y) * mix(1.0, 0.5, tInCore) * (1.0 - tDrift) * (1.0 - tWash) + vec3(tFloorN.x, 0.0, tFloorN.y) * tDrift);
-    // The lip: over the sink ramp outside the bench the normal tilts outward
-    // and down by the ramp's slope, so a low sun draws the edge as a line.
-    // Reads the width-scaled distance, like the bands above it, so the drawn
-    // edge follows the painted bench's own wear-and-junction width; the
-    // sim's sink ramp (trailSinkD) has no such width term and always steps
-    // at the bare TRAIL_BED_HALF, so the two can disagree by up to about
-    // 0.5 m at a scuffed, widened junction — accepted rather than chased.
-float tRamp = smoothstep(0.75, 1.25, tdN / tWidthK);
-float tLip = 4.0 * tRamp * (1.0 - tRamp) * (1.0 - tSnow);
-vec3 tLipN = normalize(normalW - vec3(tAway.x, 0.0, tAway.y) * 0.12 * tLip);
-    // Rain on the puddles: the four ripple layers tilt the puddle's flat
-    // normal, by the rain, so a puddle under no rain stays a mirror. Under
-    // no rain the layers are skipped outright (a branch on a uniform, with
-    // no texture read inside), and the normal below is exactly the flat one.
-vec2 tRipple = vec2(0.0);
-if (terrainRain > 0.0) {
-{
-vec2 tRp = vPositionW.xz * 2.5 + vec2(0.0, 0.0);
-vec2 tRc = floor(tRp);
-vec2 tRh = mod(tRc, 512.0);
-vec2 tRcentre = vec2(latticeHash(tRh + vec2(37.0, 0.0)), latticeHash(tRh + vec2(0.0, 91.0))) * 0.5 + 0.25;
-vec2 tRd = tRp - tRc - tRcentre;
-float tRdist = length(tRd);
-float tRr = clamp(1.0 - tRdist / 0.25, 0.0, 1.0);
-vec2 tRdir = tRd / max(tRdist, 0.0001);
-float tRw = clamp(terrainRain * 4.0 - 0.0, 0.0, 1.0);
-float tRdrop = fract(latticeHash(tRh) + terrainTime * 1.0 + 0.0);
-float tRt = tRdrop - 1.0 + tRr;
-float tRf = clamp(0.2 + tRw * 0.8 - tRdrop, 0.0, 1.0);
-tRipple += tRdir * tRf * tRr * sin(clamp(tRt * 9.0, 0.0, 3.0) * 3.14159) * 0.35;
-}
-{
-vec2 tRp = vPositionW.xz * 3.2 + vec2(0.37, 0.61);
-vec2 tRc = floor(tRp);
-vec2 tRh = mod(tRc, 512.0);
-vec2 tRcentre = vec2(latticeHash(tRh + vec2(37.0, 0.0)), latticeHash(tRh + vec2(0.0, 91.0))) * 0.5 + 0.25;
-vec2 tRd = tRp - tRc - tRcentre;
-float tRdist = length(tRd);
-float tRr = clamp(1.0 - tRdist / 0.25, 0.0, 1.0);
-vec2 tRdir = tRd / max(tRdist, 0.0001);
-float tRw = clamp(terrainRain * 4.0 - 1.0, 0.0, 1.0);
-float tRdrop = fract(latticeHash(tRh) + terrainTime * 0.85 + 0.2);
-float tRt = tRdrop - 1.0 + tRr;
-float tRf = clamp(0.2 + tRw * 0.8 - tRdrop, 0.0, 1.0);
-tRipple += tRdir * tRf * tRr * sin(clamp(tRt * 9.0, 0.0, 3.0) * 3.14159) * 0.35;
-}
-{
-vec2 tRp = vPositionW.xz * 2.1 + vec2(0.71, 0.13);
-vec2 tRc = floor(tRp);
-vec2 tRh = mod(tRc, 512.0);
-vec2 tRcentre = vec2(latticeHash(tRh + vec2(37.0, 0.0)), latticeHash(tRh + vec2(0.0, 91.0))) * 0.5 + 0.25;
-vec2 tRd = tRp - tRc - tRcentre;
-float tRdist = length(tRd);
-float tRr = clamp(1.0 - tRdist / 0.25, 0.0, 1.0);
-vec2 tRdir = tRd / max(tRdist, 0.0001);
-float tRw = clamp(terrainRain * 4.0 - 2.0, 0.0, 1.0);
-float tRdrop = fract(latticeHash(tRh) + terrainTime * 0.93 + 0.45);
-float tRt = tRdrop - 1.0 + tRr;
-float tRf = clamp(0.2 + tRw * 0.8 - tRdrop, 0.0, 1.0);
-tRipple += tRdir * tRf * tRr * sin(clamp(tRt * 9.0, 0.0, 3.0) * 3.14159) * 0.35;
-}
-{
-vec2 tRp = vPositionW.xz * 3.8 + vec2(0.19, 0.83);
-vec2 tRc = floor(tRp);
-vec2 tRh = mod(tRc, 512.0);
-vec2 tRcentre = vec2(latticeHash(tRh + vec2(37.0, 0.0)), latticeHash(tRh + vec2(0.0, 91.0))) * 0.5 + 0.25;
-vec2 tRd = tRp - tRc - tRcentre;
-float tRdist = length(tRd);
-float tRr = clamp(1.0 - tRdist / 0.25, 0.0, 1.0);
-vec2 tRdir = tRd / max(tRdist, 0.0001);
-float tRw = clamp(terrainRain * 4.0 - 3.0, 0.0, 1.0);
-float tRdrop = fract(latticeHash(tRh) + terrainTime * 1.13 + 0.7);
-float tRt = tRdrop - 1.0 + tRr;
-float tRf = clamp(0.2 + tRw * 0.8 - tRdrop, 0.0, 1.0);
-tRipple += tRdir * tRf * tRr * sin(clamp(tRt * 9.0, 0.0, 3.0) * 3.14159) * 0.35;
-}
-}
-vec3 tPuddleN = normalize(vec3(tRipple.x * terrainRain, 1.0, tRipple.y * terrainRain));
-normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), tPuddleN, tPuddle));
-float tRoughBench = clamp(terrainLayerRough2.x * mix(1.0, tBedRAH.r / 0.5, tk), 0.0, 1.0);
-tRoughBench = mix(tRoughBench, clamp(terrainLayerRough.y * mix(1.0, tFloorRAH.r / 0.5, tk), 0.0, 1.0), tDrift);
-tRoughBench = mix(tRoughBench, clamp(tRoughBench * 1.15, 0.0, 1.0), tWash);
-tRoughBench *= 1.0 - 0.5 * terrainWet * mix(0.5, 1.0, tInCore);
-terrainRough = mix(mix(terrainRough, tRoughBench, tGravel), 0.05, tPuddle);
-terrainF0 = mix(terrainF0, terrainLayerF02.x, tGravel);
-surfaceAlbedo = tCol;
-}
-}
-{
-  // The far cover's light, after the paints: its weight steps aside wherever
-  // the road or the trail painted its own surface. The clumps' normal goes to
-  // every light, and the specular weight, which sets the grazing reflectance
-  // as well as F0, is cut by FAR_SPEC_CUT and given back as the ground wets.
-  // The sun's diffuse line reads terrainFarN and terrainFarW again for the
-  // cover's own answer to the sun.
-terrainFarW *= 1.0 - terrainPaintW;
-if (terrainFarW > 0.0) {
-normalW = normalize(mix(normalW, terrainFarN, terrainFarW));
-vec3 fcEye = vec3(viewDirectionW.x, 0.0, viewDirectionW.z);
-fcEye /= max(length(fcEye), 1e-4);
-terrainFarN = normalize(normalW + fcEye * FAR_COVER_TILT);
-terrainSpecW = 1.0 - FAR_SPEC_CUT * terrainFarW * (1.0 - terrainWet);
-}
-}
 float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);
 float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;
 // Inside the cove the swash's table wets the face as well (wetShore): soaked
@@ -2133,9 +1266,9 @@ aoOut=ambientOcclusionBlock(
 );
 vec3 baseColor=surfaceAlbedo;
 reflectivityOutParams reflectivityOut;
-vec4 metallicReflectanceFactors=vec4(vMetallicReflectanceFactors.rgb,vMetallicReflectanceFactors.a*terrainSpecW);
+vec4 metallicReflectanceFactors=vMetallicReflectanceFactors;
 reflectivityOut=reflectivityBlock(
-vec4(vReflectivityColor.r, vReflectivityColor.g * terrainRough, vReflectivityColor.b, vReflectivityColor.a * terrainF0)
+vReflectivityColor
 ,surfaceAlbedo
 ,metallicReflectanceFactors
 ,baseDiffuseRoughness
@@ -2148,9 +1281,11 @@ float NdotVUnclamped=dot(normalW,viewDirectionW);
 float NdotV=absEps(NdotVUnclamped);
 float alphaG=convertRoughnessToAverageSlope(roughness);
 vec2 AARoughnessFactors=getAARoughnessFactors(normalW.xyz);
+alphaG+=AARoughnessFactors.y;
 vec3 environmentBrdf=getBRDFLookup(NdotV,roughness);
 float ambientMonochrome=getLuminance(aoOut.ambientOcclusionColor);
 float seo=environmentRadianceOcclusion(ambientMonochrome,NdotVUnclamped);
+float eho=environmentHorizonOcclusion(-viewDirectionW,normalW,geometricNormalW);
 reflectionOutParams reflectionOut;
 reflectionOutParams reflectionBlock_0;
 {reflectionOutParams outParams;
@@ -2171,7 +1306,13 @@ environmentRadiance.rgb*=vReflectionInfos.x;
 environmentRadiance.rgb*=vReflectionColor.rgb;
 };
 vec3 environmentIrradiance=vec3(0.,0.,0.);
-environmentIrradiance=vEnvironmentIrradiance;
+vec3 irradianceVector=vec3(reflectionMatrix*vec4(normalW,0)).xyz;
+vec3 irradianceView=vec3(reflectionMatrix*vec4(viewDirectionW,0)).xyz;
+float NdotV=max(dot(normalW,viewDirectionW),0.0);
+irradianceVector=mix(irradianceVector,irradianceView,(0.5*(1.0-NdotV))*diffuseRoughness);
+irradianceVector.y*=-1.0;
+irradianceView.y*=-1.0;
+environmentIrradiance=computeEnvironmentIrradiance(irradianceVector);
 environmentIrradiance*=vReflectionColor.rgb*vReflectionInfos.x;
 outParams.environmentRadiance=vec4(mix(environmentRadiance.rgb,environmentIrradiance,alphaG),environmentRadiance.a);
 outParams.environmentIrradiance=environmentIrradiance;
@@ -2187,6 +1328,7 @@ clearcoatOut.specularEnvironmentR0=specularEnvironmentR0;
 vec3 baseSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(vec3(reflectanceF0),reflectivityOut.reflectanceF90,environmentBrdf);
 vec3 colorSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90,environmentBrdf);
 colorSpecularEnvironmentReflectance*=seo;
+colorSpecularEnvironmentReflectance*=eho;
 subSurfaceOutParams subSurfaceOut;
 subSurfaceOut.specularEnvironmentReflectance=colorSpecularEnvironmentReflectance;
 vec3 diffuseBase=vec3(0.,0.,0.);
@@ -2222,7 +1364,7 @@ preInfo.attenuation=1.0;
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light1.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=computeDiffuseLighting(preInfo,diffuse1.rgb)*mix(1.0,min(clamp(dot(terrainFarN,preInfo.L),0.0,1.0)/preInfo.NdotL,2.0)*mix(0.8,1.0,clamp(dot(viewDirectionW,preInfo.L),0.0,1.0)),terrainFarW);
+info.diffuse=computeDiffuseLighting(preInfo,diffuse1.rgb);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse1.rgb);
 shadow=1.;
@@ -2286,7 +1428,7 @@ finalColor=max(finalColor,0.0);
 float fog=CalcFogFactor();
 fog=toLinearSpace(fog);
 finalColor.rgb=atmosphereFog(finalColor.rgb,fog);
-finalColor=applyImageProcessing(finalColor);
+finalColor.rgb=clamp(finalColor.rgb,0.,30.0);
 finalColor.a*=visibility;
 #define CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR
 glFragColor=finalColor;

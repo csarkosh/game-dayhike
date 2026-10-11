@@ -7,9 +7,11 @@
  * over the water, so the trees are seen from beneath as a mirror sees them.
  * Its u is the azimuth, a whole turn across, 0 facing +z and a quarter facing
  * +x (`atan2(dx, dz)`, the skyline's and the cylinder read's u); its v is the
- * height over the level on the vertical cylinder of the lake's radius about
- * its centre, 0 at the level and 1 at PANORAMA_HEIGHT_M, so the water reads
- * it where its reflected ray meets that cylinder (`lakeMirror.fragment.fx`).
+ * height over the level on the vertical cylinder of the lake's mean radius
+ * (`shape.meanRadius`) about its centre, 0 at the level and 1 at
+ * PANORAMA_HEIGHT_M, so the water reads it where its reflected ray meets
+ * that cylinder (`lakeMirror.fragment.fx`). One panorama serves the nearest
+ * lake (spec §10.3): `setLake` moves its eye and re-captures the turn.
  * A texel nothing drew holds alpha 0: the sky between the trunks, which the
  * read leaves to the probe.
  *
@@ -71,6 +73,8 @@ export type LakePanorama = {
   rearm(): void;
   /** Advances one sector when a capture is in progress, or holds while the target is not ready; true while capturing. */
   update(): boolean;
+  /** Moves the capture to `lake`: its eye over its centre, its projection by its mean radius, and a whole turn from the sector next due. */
+  setLake(lake: LakeSource): void;
   dispose(): void;
 };
 
@@ -135,7 +139,8 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
   camera.minZ = PANORAMA_NEAR;
   camera.maxZ = PANORAMA_FAR;
   camera.viewport = new Viewport(0, 0, 1 / PANORAMA_SECTORS, 1);
-  camera.freezeProjectionMatrix(panoramaProjection(lake.radius, scene.getEngine().isNDCHalfZRange, new Matrix()));
+  const projection = new Matrix();
+  camera.freezeProjectionMatrix(panoramaProjection(lake.shape.meanRadius, scene.getEngine().isNDCHalfZRange, projection));
   texture.activeCamera = camera;
 
   // The sector the next draw is of, and how many are still to draw in the
@@ -185,6 +190,12 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
     },
     rearm() {
       if (disposed) return;
+      remaining = PANORAMA_SECTORS;
+    },
+    setLake(next) {
+      if (disposed) return;
+      camera.position.set(next.x, next.level + PANORAMA_EYE_UP, next.z);
+      camera.freezeProjectionMatrix(panoramaProjection(next.shape.meanRadius, scene.getEngine().isNDCHalfZRange, projection));
       remaining = PANORAMA_SECTORS;
     },
     update() {

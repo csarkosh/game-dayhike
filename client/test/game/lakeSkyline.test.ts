@@ -1,14 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { lakeOf } from "../sim/helpers/lakes.js";
 import {
-  SAPLING_MODEL_HEIGHT, SKYLINE_CROWN, SKYLINE_EYE_UP, SKYLINE_REACH, SKYLINE_RIM_MARGIN, SKYLINE_SHADE,
-  SKYLINE_STEP, SKYLINE_TEXELS, SNAG_MODEL_HEIGHT,
-  cylinderHit, skylineElevations, skylineTrees,
+  SAPLING_MODEL_HEIGHT, SKYLINE_CROWN, SKYLINE_EYE_UP, SKYLINE_REACH, SKYLINE_RIM_DIRECTIONS, SKYLINE_RIM_MARGIN, SKYLINE_RIM_STEP,
+  SKYLINE_SHADE, SKYLINE_STEP, SKYLINE_TEXELS, SNAG_MODEL_HEIGHT,
+  cylinderHit, lakeRimRadii, rimAt, skylineElevations, skylineTrees,
 } from "../../src/game/lakeSkyline.js";
+import { stadiumShape } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
-/** Room-3's world: the murky lake, level 50.79 at (−97.4, 324), radius 26.1. */
-const SEED = -1065037390;
+/** Room-12's world: its murky lake, level 32.26 at (−118.0, −243.1), its mean radius 34.9 m. */
+const SEED = -1458473702;
 
 describe("the skyline's constants", () => {
   it("are the design's literals", () => {
@@ -19,26 +20,62 @@ describe("the skyline's constants", () => {
     expect(SKYLINE_STEP).toBe(2);
     expect(SKYLINE_CROWN).toBe(0.25);
     expect(SKYLINE_SHADE).toBe(0.15);
+    expect(SKYLINE_RIM_DIRECTIONS).toBe(64);
+    expect(SKYLINE_RIM_STEP).toBe(2);
     expect(SAPLING_MODEL_HEIGHT).toEqual([8.86, 10.51, 4.72]);
     expect(SNAG_MODEL_HEIGHT).toBe(4.05);
   });
 });
 
+describe("the lake's rim by azimuth (lakeRimRadii)", () => {
+  it("is the stadium's own shore in each direction, to the outline's 2 m march", () => {
+    // 15 m about a spine from z = −10 to 10: 25 m along it, 15 m across, and
+    // on the diagonal the cap of 15 m about (0, 10) at t² − 10√2 t − 125 = 0, t = 20.2998.
+    const r = lakeRimRadii(stadiumShape({ cx: 0, cz: 0, halfLen: 10, w: 15 }));
+    expect(r).toHaveLength(64);
+    expect(r[0]).toBeCloseTo(25, 1);
+    expect(r[8]).toBeCloseTo(20.2998, 1);
+    expect(r[16]).toBeCloseTo(15, 9);
+    expect(r[32]).toBeCloseTo(25, 1);
+    expect(r[48]).toBeCloseTo(15, 9);
+  });
+
+  it("takes the farthest crossing on a ray, and 0 where a ray meets no shore", () => {
+    // A V of 5 m half-width, its arms from (0, 0) to (±20, 20), seen from
+    // (0, 10) between them: due +x the ray enters the east arm near x = 2.9
+    // and leaves it where 5 − smin(d₁, d₂, 2.5) = 0 with d₂ = (x − 10)/√2 and
+    // d₁ = √(x² + 100), x = 17.219; due +z it runs up between the arms.
+    const v = { ...stadiumShape({ cx: 0, cz: 10, halfLen: 0.5, w: 5 }), px: [-20, 0, 20], pz: [20, 0, 20], width: [5, 5, 5], shoreMax: 28 };
+    const r = lakeRimRadii(v);
+    expect(r[16]).toBeCloseTo(17.219, 2);
+    expect(r[48]).toBeCloseTo(17.219, 2);
+    expect(r[0]).toBe(0);
+  });
+
+  it("reads between two directions linearly, round the turn", () => {
+    const ramp = Float64Array.from({ length: 64 }, (_, k) => k);
+    expect(rimAt(ramp, (2 * Math.PI * 10.25) / 64)).toBeCloseTo(10.25, 9);
+    expect(rimAt(ramp, (2 * Math.PI * 63.5) / 64)).toBeCloseTo(31.5, 9);
+    expect(rimAt(ramp, (-2 * Math.PI * 0.5) / 64)).toBeCloseTo(31.5, 9);
+  });
+});
+
 describe("the murky lake's skyline", { timeout: timeLimit(60_000) }, () => {
-  it("collects the standing trees within the reach from the forest's placement", () => {
+  it("collects the standing trees between the rim and the reach past it from the forest's placement", () => {
     const lake = lakeOf(SEED);
     const trees = skylineTrees(lake, SEED);
-    expect(trees.length).toBe(133);
-    const reach = lake.radius + SKYLINE_RIM_MARGIN + SKYLINE_REACH;
+    expect(trees.length).toBe(85);
+    const rims = lakeRimRadii(lake.shape);
     for (const t of trees) {
       const d = Math.hypot(t.x - lake.x, t.z - lake.z);
-      expect(d).toBeLessThanOrEqual(reach);
-      // No tree stands within the lake's 8 m margin.
-      expect(d).toBeGreaterThan(lake.radius + 8);
+      const rim = rimAt(rims, Math.atan2(t.x - lake.x, t.z - lake.z));
+      expect(d).toBeLessThanOrEqual(rim + SKYLINE_RIM_MARGIN + SKYLINE_REACH);
+      // No tree stands within 8 m of the shore, so none within 8 m past the rim.
+      expect(d).toBeGreaterThan(rim + 8);
       expect(t.height).toBeGreaterThan(0);
     }
-    expect(Math.max(...trees.map((t) => t.height))).toBeCloseTo(85.27835540160879, 9);
-    expect(Math.min(...trees.map((t) => t.height))).toBeCloseTo(7.382802579194457, 9);
+    expect(Math.max(...trees.map((t) => t.height))).toBeCloseTo(86.33568609272481, 9);
+    expect(Math.min(...trees.map((t) => t.height))).toBeCloseTo(8.163505300609927, 9);
   });
 
   it("is 512 texels, every one finite and within 0..π/2", () => {
@@ -56,15 +93,15 @@ describe("the murky lake's skyline", { timeout: timeLimit(60_000) }, () => {
   it("is the terrain's alone with no trees, and the trees' over it with them, at the four quarters", () => {
     const lake = lakeOf(SEED);
     const bare = skylineElevations(lake, SEED, []);
-    expect(bare[0]!).toBe(0);
-    expect(bare[128]!).toBeCloseTo(0.21209754049777985, 6);
-    expect(bare[256]!).toBeCloseTo(0.06610701233148575, 6);
-    expect(bare[384]!).toBe(0);
+    expect(bare[0]!).toBeCloseTo(0.1316964328289032, 6);
+    expect(bare[128]!).toBeCloseTo(0.3035212755203247, 6);
+    expect(bare[256]!).toBeCloseTo(0.011715839616954327, 6);
+    expect(bare[384]!).toBeCloseTo(0.001810892135836184, 6);
     const full = skylineElevations(lake, SEED, skylineTrees(lake, SEED));
-    expect(full[0]!).toBeCloseTo(0.6732664704322815, 6);
-    expect(full[128]!).toBeCloseTo(0.7450650930404663, 6);
-    expect(full[256]!).toBeCloseTo(0.818566083908081, 6);
-    expect(full[384]!).toBeCloseTo(0.6905789971351624, 6);
+    expect(full[0]!).toBeCloseTo(0.7352286577224731, 6);
+    expect(full[128]!).toBeCloseTo(0.5406519770622253, 6);
+    expect(full[256]!).toBeCloseTo(0.4832390546798706, 6);
+    expect(full[384]!).toBeCloseTo(0.7403349280357361, 6);
     for (let i = 0; i < 512; i++) expect(full[i]!).toBeGreaterThanOrEqual(bare[i]!);
   });
 
@@ -72,15 +109,15 @@ describe("the murky lake's skyline", { timeout: timeLimit(60_000) }, () => {
     const lake = lakeOf(SEED);
     // A 40 m tree 30 m past the rim on texel 0's azimuth.
     const a0 = (2 * Math.PI * 0.5) / 512;
-    const d = lake.radius + 30;
+    const d = rimAt(lakeRimRadii(lake.shape), a0) + 30;
     const tree = { x: lake.x + Math.sin(a0) * d, z: lake.z + Math.cos(a0) * d, height: 40 };
     const bare = skylineElevations(lake, SEED, []);
     const one = skylineElevations(lake, SEED, [tree]);
-    // Its top: the ground under it (45.74) + 40 over the eye (51.19), 56.08 m out.
-    expect(one[0]!).toBeCloseTo(0.5521560907363892, 6);
-    expect(one[1]!).toBeCloseTo(0.515790581703186, 6);
-    expect(one[8]!).toBeCloseTo(0.2185620665550232, 6);
-    expect(one[511]!).toBeCloseTo(0.515790581703186, 6);
+    // Its top: the ground under it (40.62) + 40 over the eye (32.66), 69.66 m out.
+    expect(one[0]!).toBeCloseTo(0.6029474139213562, 6);
+    expect(one[1]!).toBeCloseTo(0.5688751339912415, 6);
+    expect(one[8]!).toBeCloseTo(0.2864096462726593, 6);
+    expect(one[511]!).toBeCloseTo(0.5688751339912415, 6);
     // Past its crown's half-width the terrain shows again.
     expect(one[16]!).toBe(bare[16]!);
     expect(one[490]!).toBe(bare[490]!);
@@ -89,8 +126,9 @@ describe("the murky lake's skyline", { timeout: timeLimit(60_000) }, () => {
   it("leaves out a tree inside the rim or past the reach", () => {
     const lake = lakeOf(SEED);
     const bare = skylineElevations(lake, SEED, []);
-    const inside = { x: lake.x, z: lake.z + lake.radius - 1, height: 80 };
-    const beyond = { x: lake.x, z: lake.z + lake.radius + SKYLINE_RIM_MARGIN + SKYLINE_REACH + 1, height: 80 };
+    const rim = lakeRimRadii(lake.shape)[0]!;
+    const inside = { x: lake.x, z: lake.z + rim - 1, height: 80 };
+    const beyond = { x: lake.x, z: lake.z + rim + SKYLINE_RIM_MARGIN + SKYLINE_REACH + 1, height: 80 };
     expect(Array.from(skylineElevations(lake, SEED, [inside, beyond]))).toEqual(Array.from(bare));
   });
 });

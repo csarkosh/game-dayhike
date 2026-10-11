@@ -64,7 +64,9 @@ describe("buildProbeScene", () => {
     const cam = probe.renderer.camera;
     expect(cam.position.x).toBeCloseTo(123, 6);
     expect(cam.position.z).toBeCloseTo(-105.5, 6);
-    expect(cam.position.y).toBeCloseTo(110.87, 2);
+    // 110.87 before the valley lakes: the lake loop's bed passes 0.75 m from
+    // the pose now (2026-10-10).
+    expect(cam.position.y).toBeCloseTo(110.83, 2);
     expect(cam.rotation.y).toBeCloseTo(1.571, 6);
     expect(cam.rotation.x).toBeCloseTo(0.3, 6);
     expect(probe.renderer.scene.meshes.some((mesh) => mesh.name.startsWith("blade_clumps"))).toBe(true);

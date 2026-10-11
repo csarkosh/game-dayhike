@@ -8,6 +8,7 @@ import type { Feature } from "../../src/sim/features.js";
 import { createWorld } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { seedFromToken } from "../../src/game/seed.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
@@ -20,15 +21,20 @@ describe("placeNames", () => {
     expect(MEADOW_NAMES).toHaveLength(6);
   });
 
-  it("names the ponds and meadows of the hollow world and another, and nothing else", () => {
+  it("names the ponds and meadows of a world and nothing else, and nothing on the hollow world, which has neither", () => {
     const hollow = seedFromToken("hollow");
     const h = bowlFor(hollow);
     expect(hikerNames(hollow, 1)[0]!.split(" ")[0]).toBe("Hugh");
-    expect([...placeNames(hollow, h.features, "Hugh")]).toEqual([[1, "Old Lake"]]);
+    // 2026-10-10: [[1, "Old Lake"]] before the valley lakes; no pond loop the
+    // build tried on this world passed the lake's rules.
+    expect(h.features.map((f) => f.kind)).toEqual(["peak"]);
+    expect([...placeNames(hollow, h.features, "Hugh")]).toEqual([]);
     const other = bowlFor(12345);
     expect(other.features.map((f) => f.kind)).toEqual(["peak", "pond", "meadow"]);
     expect([...placeNames(12345, other.features, "Abel")]).toEqual([[1, "Old Lake"], [2, "Felix's Meadow"]]);
-  });
+    // Two world builds, each slower since the valley lakes: together past
+    // vitest's 5 s default.
+  }, timeLimit(30_000));
 
   it("never repeats a name and never gives a place the missing hiker's first name", () => {
     const features = [

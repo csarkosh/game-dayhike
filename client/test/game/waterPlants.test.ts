@@ -10,7 +10,7 @@ import {
   REED_CHARACTERS, REED_BLADES, reedGeometry, lilyPadGeometry, lilyFlowerGeometry, lilyFlowers,
   createWaterPlants, LILY_LIFT, LILY_FLOWER_PATCHES,
 } from "../../src/game/waterPlants.js";
-import { CLUTTER_LILY_PATCH_WAVE } from "../../src/sim/clutter.js";
+import { CLUTTER_LILY, CLUTTER_LILY_PATCH_WAVE, CLUTTER_REED, clutterInRect } from "../../src/sim/clutter.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 let engine: NullEngine | null = null;
@@ -102,6 +102,21 @@ describe("a lake's plants in the scene", { timeout: timeLimit(120_000) }, () => 
     expect(2 * Math.PI - widestGap).toBeGreaterThan(Math.PI / 2);
     plants.dispose();
     expect(scene.getMeshByName("water_reeds_0")).toBeNull();
+  });
+
+  it("gathers every reed and pad the lake grows into its box", () => {
+    const { seed } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
+    const lake = lakeOf(seed);
+    engine = new NullEngine();
+    const plants = createWaterPlants(new Scene(engine), seed, [lake]);
+    // Every reed and pad within the lake's whole bound, which is far wider
+    // than the reeds reach: the box missed none.
+    const b = lake.bound;
+    const box = [lake.x - b, lake.z - b, lake.x + b, lake.z + b] as const;
+    const reeds = plants.meshes.slice(0, 3).reduce((n, m) => n + m.thinInstanceCount, 0);
+    expect(reeds).toBe(clutterInRect(seed, CLUTTER_REED, ...box).length);
+    expect(plants.meshes[3]!.thinInstanceCount).toBe(clutterInRect(seed, CLUTTER_LILY, ...box).length);
+    plants.dispose();
   });
 
   it("gives a clear lake none", () => {

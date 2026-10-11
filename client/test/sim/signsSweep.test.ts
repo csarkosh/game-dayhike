@@ -141,6 +141,12 @@ describe("sign posts on real worlds", { timeout: timeLimit(120_000) }, () => {
     // pad inland. The whole difference is world 4242, whose trail has four
     // junctions where it had eight, and 16 planks where it had 34; the other
     // four worlds hold 37, 26, 45 and 21 planks as they did.
-    expect({ most, total, fillers }).toEqual({ most: 5, total: 145, fillers: 15 });
+    // 2026-10-10: 145 planks, 15 of them fillers, before the valley lakes.
+    // The three worlds with a lake have other junctions, its loop keeping
+    // 7 m off a drawn shore: world 0x5eed holds 14 planks on four posts where
+    // it held 21 on six, 12345 holds 47 where it held 45, and 777 holds 36 on
+    // eight posts where it held 26 on six. Worlds 1 and 4242, whose loops are
+    // meadows', read as they did: 150 planks, 18 of them fillers.
+    expect({ most, total, fillers }).toEqual({ most: 5, total: 150, fillers: 18 });
   });
 });

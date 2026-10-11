@@ -12,6 +12,7 @@ import "../../src/sim/olympic.js";
 import { depenetrate } from "../../src/sim/collision.js";
 import { ENEMY_HALF, ENEMY_MIN_SPAWN_DISTANCE, PLAYER_HALF } from "../../src/sim/constants.js";
 import { firstPondWorld } from "./helpers/lakes.js";
+import { rayToShore } from "../../src/sim/lakeShape.js";
 import type { BoxProvider } from "../../src/sim/boxSource.js";
 import type { Vec3 } from "../../src/sim/types.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -135,14 +136,27 @@ describe("spawn freeboard", () => {
     expect(groundSpawn([], 0x5eed, 2000, 0.5, PLAYER_HALF)).not.toBeNull();
   });
 
-  it("rejects a lake's bed and allows its rim", () => {
+  it("rejects a lake's bed and allows its bank", () => {
     setActiveTerrainVariant("olympic");
     const { seed, pond } = firstPondWorld();
-    // the lake's flat middle, metres under its level
+    const shape = pond.shape!;
+    // the lake's middle, metres under its level
     expect(elevationSampleAt(seed, pond.x, pond.z).h).toBeLessThan(pond.height);
     expect(groundSpawn([], seed, pond.x, pond.z, ENEMY_HALF)).toBeNull();
-    // its rim, at the water's edge
-    expect(groundSpawn([], seed, pond.x + pond.radius, pond.z, ENEMY_HALF)).not.toBeNull();
+    // the shelf half a metre in from the shore, under the water
+    const shelf = rayToShore(shape, pond.x, pond.z, 1, 0, 0.5, shape.bound);
+    expect(groundSpawn([], seed, pond.x + shelf, pond.z, ENEMY_HALF)).toBeNull();
+    // the bank 1.5 m outside the shore, over the water
+    const bank = rayToShore(shape, pond.x, pond.z, 1, 0, -1.5, shape.bound);
+    expect(groundSpawn([], seed, pond.x + bank, pond.z, ENEMY_HALF)).not.toBeNull();
+  }, timeLimit(30000));
+
+  it("allows the bank exactly one metre outside the shore", () => {
+    setActiveTerrainVariant("olympic");
+    const { seed, pond } = firstPondWorld();
+    const shape = pond.shape!;
+    const bank = rayToShore(shape, pond.x, pond.z, 1, 0, -1, shape.bound);
+    expect(groundSpawn([], seed, pond.x + bank, pond.z, ENEMY_HALF)).not.toBeNull();
   }, timeLimit(30000));
 
   it("skips the check when the variant declares no water", () => {

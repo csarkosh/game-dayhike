@@ -4,6 +4,7 @@ import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import type { World } from "../../src/sim/world.js";
 import { seedFromToken } from "../../src/game/seed.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "../../src/sim/terrain.js";
 import { AiState, Phase } from "../../src/sim/types.js";
 import type { EnemyState, PlayerState, Vec3 } from "../../src/sim/types.js";
@@ -72,7 +73,9 @@ describe("the director", () => {
     expect(w.haunt!.rest).toBe(rest);
     expect(w.state.enemies.size).toBe(0);
     expect(createForestWorld(createForest(seed), false).haunt).toBeNull();
-  });
+    // Two world builds, each slower since the valley lakes: together past
+    // vitest's 5 s default.
+  }, timeLimit(30_000));
 
   it("haunts once the mist is whole on the ground, after the night, by the best living climb, and through the chase, pressing harder toward the crest", () => {
     const { w, p } = forestWorld();

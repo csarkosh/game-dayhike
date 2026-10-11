@@ -118,7 +118,7 @@ describe("the climb", SUITE, () => {
     const q = spawnPlayer(w), r = spawnPlayer(w);
     standOnStem(w, p, 0);
     standOnStem(w, q, 17);
-    standOnStem(w, r, 36);
+    standOnStem(w, r, 21);
     expect(leadOf(w)).toBe(r);
     r.health = 0;
     expect(leadOf(w)).toBe(q);
@@ -130,13 +130,16 @@ describe("the climb", SUITE, () => {
 
   it("measures the reach against the top fork's climb", () => {
     const { w, p } = forestWorld();
-    expect(w.trail!.forks).toEqual([21, 36, 53, 77, 78]);
+    expect(w.trail!.forks).toEqual([21, 36, 60, 61]);
     // 2026-09-29: 0.751 with the stem 1274 m long; it is 1297 m, and the top
-    // fork, which has not moved, is 0.755 of the way up it.
-    expect(topForkClimb(w.trail!)).toBeCloseTo(0.755, 3);
+    // fork, which has not moved, is 0.755 of the way up it. 2026-10-10: the
+    // pond's loop is gone from this world and the forks are others: the top
+    // fork is the strand's, node 21, 0.630 of the way up; 36 is the stem's
+    // fork above node 3, and 60 and 61 are the rung's ends.
+    expect(topForkClimb(w.trail!)).toBeCloseTo(0.630, 3);
     standOnStem(w, p, 0);
     expect(reachOf(w, p)).toBeCloseTo(0, 2);
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     expect(reachOf(w, p)).toBe(1);
   });
 });
@@ -207,12 +210,14 @@ describe("the placement", SUITE, () => {
 
   it("lands only where every rule holds at the top fork, 25 m out, and the count is pinned", () => {
     const { w, p } = forestWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     w.watcher = record();
     const placed = attempts(w, p, reachOf(w, p));
     let landed = 0;
     for (const at of placed) if (at !== null) { landed++; check(w, p, at, 25); }
-    expect(landed).toBe(147);
+    // 2026-10-10: 147 at fork 36, the top fork before the pond's loop went;
+    // the top fork is the strand's, node 21, and its wedge another hillside.
+    expect(landed).toBe(138);
   });
 
   it("spends two draws on every attempt, landed or not, and repeats itself from the same record", () => {
@@ -229,7 +234,7 @@ describe("the placement", SUITE, () => {
 
   it("refuses a spot within 15 m of another living player", () => {
     const { w, p } = forestWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     w.watcher = record();
     const placed = attempts(w, p, 1);
     const k = placed.findIndex((at) => at !== null);
@@ -287,7 +292,7 @@ describe("showing and hiding", SUITE, () => {
 describe("the tick", SUITE, () => {
   it("shows on the tick the rest runs out and a placement fits, at a point the placement rule admits", () => {
     const { w, p } = forestWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     // Two and a half ticks of rest: two count it down, the third runs it out and tries the placements.
     w.watcher!.rest = 2.5 * TICK_DT;
     tick(w, 2);
@@ -298,7 +303,8 @@ describe("the tick", SUITE, () => {
     const h = shownWatcher(w)!;
     expect(h.ai).toBe(AiState.Watch);
     expect(h.targetId).toBe(p.id);
-    expect(h.pos).toEqual({ x: 166.38168084443757, y: 186.96436776923537, z: -93.9021019130009 });
+    // Re-read on the valley lakes' worlds (2026-10-11).
+    expect(h.pos).toEqual({ x: 116.51675728051313, y: 163.18496828273481, z: -110.79248132722762 });
     expect(horizontal(p.pos, h.pos)).toBeCloseTo(25, 0);
     expect(trailDistance(w.trail!, h.pos.x, h.pos.z)).toBeGreaterThanOrEqual(6);
     expect(isOnCorridor(w, h.pos.x, h.pos.z)).toBe(false);
@@ -309,7 +315,7 @@ describe("the tick", SUITE, () => {
     // It stays: the lead has it in the wide view and nobody is near.
     tick(w, 30);
     expect(shownWatcher(w)).toBe(h);
-    expect(h.pos).toEqual({ x: 166.38168084443757, y: 186.96436776923537, z: -93.9021019130009 });
+    expect(h.pos).toEqual({ x: 116.51675728051313, y: 163.18496828273481, z: -110.79248132722762 });
   });
 
   it("keeps trying, a tick at a time, from the pad where most placements fail", () => {
@@ -324,7 +330,7 @@ describe("the tick", SUITE, () => {
 
   it("hides on the first tick the lead turns away, and draws a rest in the band scaled by the reach", () => {
     const { w, p } = forestWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     expect(showWatcher(w)).toBe(1);
     const h = shownWatcher(w)!;
     expect(reachOf(w, p)).toBe(1);
@@ -349,7 +355,7 @@ describe("the tick", SUITE, () => {
 
   it("hides on the first tick a player comes within 15 m", () => {
     const { w, p } = forestWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     expect(showWatcher(w)).toBe(1);
     const h = shownWatcher(w)!;
     const q = spawnPlayer(w);
@@ -366,7 +372,7 @@ describe("the tick", SUITE, () => {
 
   it("fills the stare only while the lead looks at it, and the stare is already falling on the hide tick", () => {
     const { w, p } = forestWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     expect(showWatcher(w)).toBe(1);
     const h = shownWatcher(w)!;
     // In the wide view but outside the stare's 20° cone: shown, and no stare.
@@ -418,7 +424,7 @@ describe("the tick", SUITE, () => {
     // the watcher in view: it is shown into the flip tick, and only the flip
     // can remove it. Spawned before the showing, so the ids below hold.
     const q = spawnPlayer(w);
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     expect(showWatcher(w)).toBe(1);
     const id = w.watcher!.id;
     tick(w, 10);
@@ -437,17 +443,17 @@ describe("the tick", SUITE, () => {
     expect(hollows).toHaveLength(1);
     expect(hollows[0]!.ai).toBe(AiState.Emerge);
     expect(hollows[0]!.id).toBe(id + 1);
-    expect(w.state.rngSeed).toBe(-1262203094);
-    expect(w.cut!.guide.length).toBe(55);
+    expect(w.state.rngSeed).toBe(-406737248);
+    expect(w.cut!.guide.length).toBe(44);
   });
 
   it("re-reads the lead when the lead dies: the facing and the next placement follow the survivor", () => {
     const { w, p } = forestWorld();
     const q = spawnPlayer(w);
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     // Two metres behind the lead on the stem, looking the same way: sees what the lead sees.
     const chain = stemNodes(w.trail!);
-    const here = node(w, 36), below = node(w, chain[chain.indexOf(36) - 1] as number);
+    const here = node(w, 21), below = node(w, chain[chain.indexOf(21) - 1] as number);
     const dx = below.x - here.x, dz = below.z - here.z, len = Math.sqrt(dx * dx + dz * dz);
     standAt(q, here.x + (dx / len) * 2, here.z + (dz / len) * 2);
     q.yaw = p.yaw;
@@ -474,7 +480,7 @@ describe("the tick", SUITE, () => {
 
   it("scales the rest by the reach: the same draw is 0.4 of itself at the top fork", () => {
     const { w, p } = forestWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     const stream = w.watcher!.rng.rngSeed;
     expect(showWatcher(w)).toBe(1);
     p.yaw += Math.PI;
@@ -484,7 +490,7 @@ describe("the tick", SUITE, () => {
     // The same stream and the same showing, with the lead back on the pad on
     // the hide tick: reach 0 exactly, and the watcher far out of view from there.
     w.watcher!.rng.rngSeed = stream;
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     expect(showWatcher(w)).toBe(1);
     standOnStem(w, p, 0);
     expect(reachOf(w, p)).toBe(0);
@@ -495,7 +501,7 @@ describe("the tick", SUITE, () => {
     expect(near).toBeCloseTo(0.4 * far, 12);
     // And with no lead at all: the lead dead on the hide tick reads as reach 0 too.
     w.watcher!.rng.rngSeed = stream;
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     expect(showWatcher(w)).toBe(1);
     p.health = 0;
     tick(w);
@@ -506,7 +512,7 @@ describe("the tick", SUITE, () => {
   it("is off on the climb: a forest's record is made inactive, and the tick never shows it", () => {
     const w = createForestWorld(createForest(seed));
     const p = spawnPlayer(w);
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     expect(WATCHER_ON_CLIMB).toBe(false);
     expect(w.watcher).not.toBeNull();
     expect(w.watcher!.active).toBe(false);
@@ -521,7 +527,7 @@ describe("the tick", SUITE, () => {
   it("never shows on a world that is not authoritative", () => {
     const w = createForestWorld(createForest(seed), false);
     const p = spawnPlayer(w);
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     expect(w.watcher).toBeNull();
     tick(w, 100);
     expect(w.state.enemies.size).toBe(0);
@@ -560,7 +566,7 @@ describe("the first showings, on the trail", () => {
   it("stemAhead is the point that many metres further up the stem, and null past the crest", () => {
     const { w } = boldWorld();
     const graph = w.trail!;
-    const here = node(w, 36);
+    const here = node(w, 21);
     const before = stemProgress(graph, here.x, here.z);
     const at = stemAhead(graph, here.x, here.z, 50)!;
     expect((before - stemProgress(graph, at.x, at.z)) * graph.stemLen).toBeCloseTo(50, 6);
@@ -572,7 +578,7 @@ describe("the first showings, on the trail", () => {
 
   it("stands on the trail bed ahead of the lead, in front of them and in their sight, and is the stare's to fill at once", () => {
     const { w, p } = boldWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     const ticks = showWatcher(w);
     expect(ticks).toBeGreaterThan(0);
     const h = shownWatcher(w)!;
@@ -597,7 +603,7 @@ describe("the first showings, on the trail", () => {
 
   it("hides when a player comes within WATCH_BOLD_FLEE_RADIUS", () => {
     const { w, p } = boldWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     expect(showWatcher(w)).toBeGreaterThan(0);
     const h = shownWatcher(w)!;
     lookAt(p, h.pos);
@@ -617,7 +623,7 @@ describe("the first showings, on the trail", () => {
 
   it("is not placed behind a lead who looks back down the trail; after WATCH_BOLD_PATIENCE_S one showing is made in the trees, and the trail's is still owed", () => {
     const { w, p } = boldWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     p.yaw += Math.PI;
     expect(placeWatcherAhead(w, p)).toBeNull();
     w.watcher!.rest = 0;
@@ -652,7 +658,7 @@ describe("the first showings, on the trail", () => {
 
   it("makes WATCH_BOLD_SHOWS showings on the trail, and the next is in the trees", () => {
     const { w, p } = boldWorld();
-    standOnStem(w, p, 36);
+    standOnStem(w, p, 21);
     for (let i = 0; i < WATCH_BOLD_SHOWS; i++) {
       expect(showWatcher(w), `showing ${i}`).toBeGreaterThan(0);
       expect(w.watcher!.onTrail).toBe(true);

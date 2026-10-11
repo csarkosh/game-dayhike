@@ -17,6 +17,10 @@ import { shoreStrip, STRIP_FOREST_FLOOR, STRIP_LIFT } from "./shoreStrip.js";
 import { facingDir } from "./facing.js";
 import { seepOffset } from "./seep.js";
 import { POND_TREE_MARGIN } from "./features.js";
+import { lakeShoreInto, newLakeShore } from "./lakeShape.js";
+
+/** Scratch for the alders' read of a lake's shore. */
+const ALDER_SHORE = newLakeShore();
 
 // ---- Tunables (every one of these must appear in VEGETATION_TUNABLES) ------
 /** Below this altitude (m) the treeline gate is fully open. Re-anchored for
@@ -306,13 +310,12 @@ export function alderHabitat(seed: number, x: number, z: number, sample?: Terrai
   if (bodies !== undefined) {
     for (const b of bodies) {
       if (b.kind !== "lake") continue;
-      const dx = x - b.x, dz = z - b.z;
-      const inner = b.radius + POND_TREE_MARGIN;
+      // By the shore distance, t = −s: from the tree margin out ALDER_LAKE_BAND.
+      const t = -lakeShoreInto(ALDER_SHORE, b.shape, x, z).s;
+      const inner = POND_TREE_MARGIN;
       const outer = inner + ALDER_LAKE_BAND;
-      const q2 = dx * dx + dz * dz;
-      if (q2 >= outer * outer || q2 <= inner * inner) continue;
-      const q = Math.sqrt(q2);
-      const w = smoothstep(inner, inner + ALDER_EDGE_FADE, q) * (1 - smoothstep(outer - ALDER_EDGE_FADE, outer, q));
+      if (!(t > inner) || !(t < outer)) continue;
+      const w = smoothstep(inner, inner + ALDER_EDGE_FADE, t) * (1 - smoothstep(outer - ALDER_EDGE_FADE, outer, t));
       if (w > lakeside) lakeside = w;
     }
   }

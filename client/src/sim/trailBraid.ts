@@ -25,7 +25,8 @@
 import { hash3 } from "./field.js";
 import { cellAt, TRAIL_GRID_CELL, type TrailGrid, type GroundFn } from "./trailGrid.js";
 import { segmentSegmentDistanceSq, trailCorridorD, TRAIL_EDGE_MIN_GAP, type TrailEdge, type TrailLoop, type TrailNode } from "./trail.js";
-import { type Feature } from "./features.js";
+import { LAKE_TRAIL_CLEAR, type Feature } from "./features.js";
+import { lakeShoreInto, newLakeShore } from "./lakeShape.js";
 import {
   planPath, splitAt, markPath, routeTo, forEachCellNear, featureReach, stemGeometry, sampleStem,
   type BuildFrame, type Heights, type GraphState, type StemSample,
@@ -273,14 +274,26 @@ export function clearedAround(grid: TrailGrid, tree: Uint8Array, c: number, cell
   return out;
 }
 
+/** Scratch for the braid's reads of a lake's shore. */
+const BRAID_SHORE = newLakeShore();
+
 /** The weight every braid search starts from: feature discs (plus apron and a
- * cell) forbidden, the tree forbidden except the start cell and the arrival's
- * doorway; 1 everywhere else. */
+ * cell) forbidden, a lake's ground nearer its shore than LAKE_TRAIL_CLEAR and
+ * a cell forbidden, the tree forbidden except the start cell and the
+ * arrival's doorway; 1 everywhere else. */
 export function baseWeight(ctx: BraidCtx, tree: Uint8Array, start: number, arrival: number): Float32Array {
   const { grid } = ctx;
   const w = new Float32Array(grid.pass.length).fill(1);
   for (const f of ctx.features) {
     if (f.kind === "peak") continue;
+    const lake = f.shape;
+    if (lake !== undefined) {
+      // A lake by its shore distance, as the loop's ring is (spec §6.2), not by its bound.
+      forEachCellNear(grid, f.x, f.z, lake.shoreMax + LAKE_TRAIL_CLEAR + 2 * TRAIL_GRID_CELL, (c) => {
+        if (lakeShoreInto(BRAID_SHORE, lake, grid.x[c] as number, grid.z[c] as number).s > -(LAKE_TRAIL_CLEAR + TRAIL_GRID_CELL)) w[c] = 0;
+      });
+      continue;
+    }
     forEachCellNear(grid, f.x, f.z, featureReach(f) + TRAIL_GRID_CELL, (c) => { w[c] = 0; });
   }
   for (let c = 0; c < tree.length; c++) if (tree[c] === 1) w[c] = 0;

@@ -72,6 +72,7 @@ import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../sim/terrain.js";
+import { lakeShoreInto, newLakeShore, type LakeShape } from "../sim/lakeShape.js";
 import { fbm2 } from "../sim/field.js";
 import {
   createWaterRingSamples,
@@ -111,7 +112,7 @@ import {
   bedSquareHasWater,
   beginBake,
   createBedGrid,
-  POND_DISC_MARGIN,
+  LAKE_SURFACE_REACH,
   type BedBake,
 } from "./bedHeight.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
@@ -137,6 +138,8 @@ import { buildOrUndo } from "./rendererSwap.js";
 import { calmShare, isRough, roughShare, smearPx, SLOPE_PAW_DEG } from "./lakeCalm.js";
 import { createLakeMirror, createLakeMirrorTerrain, MIRROR_MOTION_SMEAR, mirrorMotion } from "./lakeMirror.js";
 import { createLakePanorama, createSkylineTexture } from "./lakePanorama.js";
+import { createLakeChoice } from "./lakeChoice.js";
+import { lakeInView, lakeViewPoints, newLakeViewPlanes } from "./lakeView.js";
 import { SKYLINE_SHADE, skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { NEEDLE_BED } from "./terrainSurface.js";
 
@@ -739,7 +742,8 @@ export type SeeThroughEffects = {
   splash: RainSplash | null;
   motes: Motes | null;
   mist: MistMeshes | null;
-  waterLife: WaterLife | null;
+  /** Every lake's insects. */
+  waterLives: readonly WaterLife[];
   spray?: SurfSpray | null;
 };
 
@@ -787,7 +791,7 @@ export function setEffectsGroup(group: number, effects: SeeThroughEffects): void
   if (effects.splash !== null) effects.splash.mesh.renderingGroupId = group;
   for (const system of effects.motes?.systems ?? []) system.renderingGroupId = group;
   for (const mesh of effects.mist?.meshes ?? []) mesh.renderingGroupId = group;
-  for (const mesh of effects.waterLife?.meshes ?? []) mesh.renderingGroupId = group;
+  for (const life of effects.waterLives) for (const mesh of life.meshes) mesh.renderingGroupId = group;
   if (effects.spray != null) effects.spray.mesh.renderingGroupId = group;
 }
 
@@ -910,7 +914,7 @@ function frozenThrough<T extends object>(value: T): T {
 /** What a world without the lake's life sounds like, and a frame that did
  * not step it: nothing. Frozen through, as every caller is handed this one
  * object. */
-const SILENT_WATER_LIFE: WaterLifeSound = frozenThrough({
+export const SILENT_WATER_LIFE: WaterLifeSound = frozenThrough({
   hums: [], hums_n: 0, pitch: 0, rustles: [], frogCalls: [],
   bed: { level: 0, duck: [1, 1], points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
 });
@@ -990,28 +994,28 @@ export function createPlayerSlots(count: number): PlayerSlots {
 export const LAKE_SURFACE_SPACING = 2;
 
 /**
- * One lake's surface: a flat polar grid over the lake at its level, rings from
- * the centre out to the rim plus `POND_DISC_MARGIN`, carrying the same
- * per-vertex `bedDepth` the ring meshes carry (`waterRingGeometry`), read from
- * the sim's own ground under each vertex, so the shelf, the drop and the marsh
- * draw as the sim has them. Where the ground stands above the water the
- * material discards, as it does on the sea's land. A disc, not a square: past
- * the rim the basin's apron blends back to the hillside, and on the downhill
- * side that ground lies below the lake's level, so a square's corners would
- * draw water hanging over the slope outside the lake. It carries the rings'
- * UVs, in world metres over `WATER_UV_SCALE`, so the ripple bump samples a
- * real tile and its pattern runs on from the rings'. Static: a lake's ground
- * does not scroll with the camera.
+ * One lake's surface: a flat grid every `LAKE_SURFACE_SPACING` metres over
+ * its box, at its level, keeping the squares whose four corners all lie
+ * within `LAKE_SURFACE_REACH` of its shore (s > −3, spec §10.2), carrying the
+ * same per-vertex `bedDepth` the ring meshes carry (`waterRingGeometry`),
+ * read from the sim's own ground under each vertex, so the shelf, the drop
+ * and the marsh draw as the sim has them. Where the ground stands above the
+ * water the material discards, as it does on the sea's land. The squares
+ * stop 3 m past the shore, where the bank already stands over the level, so
+ * no water hangs over the downhill apron outside the lake. It carries the
+ * rings' UVs, in world metres over `WATER_UV_SCALE`, so the ripple bump
+ * samples a real tile and its pattern runs on from the rings'. Static: a
+ * lake's ground does not scroll with the camera; built once.
  *
  * Exported so it is reachable from a test without a full `createWater` call.
  */
 export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, seed: number, index: number): Mesh {
-  const g = lakeSurfaceGrid(lake.radius + POND_DISC_MARGIN, lake.x, lake.z);
+  const g = lakeSurfaceGrid(lake.shape);
   const vertexCount = g.positions.length / 3;
   const depths = new Float32Array(vertexCount);
   for (let i = 0; i < vertexCount; i++) {
-    const wx = lake.x + (g.positions[i * 3] as number);
-    const wz = lake.z + (g.positions[i * 3 + 2] as number);
+    const wx = lake.shape.cx + (g.positions[i * 3] as number);
+    const wz = lake.shape.cz + (g.positions[i * 3 + 2] as number);
     depths[i] = Math.max(0, lake.level - elevationAt(seed, wx, wz));
   }
   const mesh = new Mesh(`pond_${index}`, scene);
@@ -1022,72 +1026,71 @@ export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, se
   data.indices = g.indices;
   data.applyToMesh(mesh, false);
   mesh.setVerticesData("bedDepth", depths, false, 1);
-  mesh.position.set(lake.x, lake.level + 0.02, lake.z);
+  mesh.position.set(lake.shape.cx, lake.level + 0.02, lake.shape.cz);
   mesh.material = mat;
   mesh.isPickable = false;
   mesh.receiveShadows = false;
   mesh.metadata = { waterLevel: lake.level };
   // Culled by its box, as the sea's rings are: the default sphere-only test
-  // keeps a disc in view from anywhere within its half-diagonal of its
+  // keeps a lake in view from anywhere within its half-diagonal of its
   // centre, looking away or not, and the lake's mirror runs only while it is.
   mesh.cullingStrategy = AbstractMesh.CULLINGSTRATEGY_STANDARD;
   mesh.freezeWorldMatrix();
   return mesh;
 }
 
-/** A lake surface's rings and segments for an outer radius `ext`: rings no
- * further apart than `LAKE_SURFACE_SPACING`, and enough segments that the
- * outer ring's chord is no longer than it. */
-export function lakeSurfaceShape(ext: number): { rings: number; segments: number } {
-  return {
-    rings: Math.ceil(ext / LAKE_SURFACE_SPACING),
-    segments: Math.ceil((2 * Math.PI * ext) / LAKE_SURFACE_SPACING),
-  };
-}
+const SURFACE_SHORE = newLakeShore();
 
-/** The flat polar grid of radius `ext`, centred on the origin: the centre
- * vertex, then each ring's segments outward; a fan round the centre, quads
- * between rings, wound as `CreateGround` winds its faces, to face up. Its UVs
- * are the rings' (`waterRingGeometry`): the vertex's world position, the grid
- * standing at (`cx`, `cz`), over `WATER_UV_SCALE`. */
-function lakeSurfaceGrid(
-  ext: number, cx: number, cz: number,
+/**
+ * A lake's surface grid, its positions relative to the shape's centre: the
+ * square of half-side `shoreMax + LAKE_SURFACE_REACH + LAKE_SURFACE_SPACING`
+ * about it every `LAKE_SURFACE_SPACING` metres, each grid square kept whose
+ * four corners lie within `LAKE_SURFACE_REACH` of the shore, the vertices the
+ * kept squares use and no others; wound as `CreateGround` winds its faces, to
+ * face up. Its UVs are the rings' (`waterRingGeometry`): the vertex's world
+ * position over `WATER_UV_SCALE`.
+ */
+export function lakeSurfaceGrid(
+  shape: LakeShape,
 ): { positions: Float32Array; normals: Float32Array; uvs: Float32Array; indices: Uint32Array } {
-  const { rings, segments } = lakeSurfaceShape(ext);
-  const vertexCount = rings * segments + 1;
-  const positions = new Float32Array(vertexCount * 3);
+  const half = shape.shoreMax + LAKE_SURFACE_REACH + LAKE_SURFACE_SPACING;
+  const n = Math.ceil((2 * half) / LAKE_SURFACE_SPACING) + 1;
+  const x0 = -half, z0 = -half;
+  const inside = new Uint8Array(n * n);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const s = lakeShoreInto(SURFACE_SHORE, shape, shape.cx + x0 + i * LAKE_SURFACE_SPACING, shape.cz + z0 + j * LAKE_SURFACE_SPACING).s;
+      inside[j * n + i] = s > -LAKE_SURFACE_REACH ? 1 : 0;
+    }
+  }
+  const index = new Int32Array(n * n).fill(-1);
+  const pos: number[] = [];
+  const tris: number[] = [];
+  const vertex = (i: number, j: number): number => {
+    const k = j * n + i;
+    if ((index[k] as number) < 0) {
+      index[k] = pos.length / 3;
+      pos.push(x0 + i * LAKE_SURFACE_SPACING, 0, z0 + j * LAKE_SURFACE_SPACING);
+    }
+    return index[k] as number;
+  };
+  for (let j = 0; j + 1 < n; j++) {
+    for (let i = 0; i + 1 < n; i++) {
+      if (!inside[j * n + i] || !inside[j * n + i + 1] || !inside[(j + 1) * n + i] || !inside[(j + 1) * n + i + 1]) continue;
+      const p00 = vertex(i, j), p10 = vertex(i + 1, j), p01 = vertex(i, j + 1), p11 = vertex(i + 1, j + 1);
+      tris.push(p00, p10, p01, p10, p11, p01);
+    }
+  }
+  const positions = Float32Array.from(pos);
+  const vertexCount = positions.length / 3;
   const normals = new Float32Array(vertexCount * 3);
   const uvs = new Float32Array(vertexCount * 2);
-  for (let v = 0; v < vertexCount; v++) normals[v * 3 + 1] = 1;
-  for (let r = 1; r <= rings; r++) {
-    const rad = (ext * r) / rings;
-    for (let s = 0; s < segments; s++) {
-      const a = (2 * Math.PI * s) / segments;
-      const v = 1 + (r - 1) * segments + s;
-      positions[v * 3] = rad * Math.cos(a);
-      positions[v * 3 + 2] = rad * Math.sin(a);
-    }
-  }
   for (let v = 0; v < vertexCount; v++) {
-    uvs[v * 2] = (cx + (positions[v * 3] as number)) / WATER_UV_SCALE;
-    uvs[v * 2 + 1] = (cz + (positions[v * 3 + 2] as number)) / WATER_UV_SCALE;
+    normals[v * 3 + 1] = 1;
+    uvs[v * 2] = (shape.cx + (positions[v * 3] as number)) / WATER_UV_SCALE;
+    uvs[v * 2 + 1] = (shape.cz + (positions[v * 3 + 2] as number)) / WATER_UV_SCALE;
   }
-  const indices = new Uint32Array(segments * 3 + (rings - 1) * segments * 6);
-  let k = 0;
-  const at = (r: number, s: number): number => 1 + (r - 1) * segments + (s % segments);
-  for (let s = 0; s < segments; s++) {
-    indices[k++] = 0;
-    indices[k++] = at(1, s);
-    indices[k++] = at(1, s + 1);
-  }
-  for (let r = 1; r < rings; r++) {
-    for (let s = 0; s < segments; s++) {
-      const a = at(r, s), b = at(r, s + 1), c = at(r + 1, s), d = at(r + 1, s + 1);
-      indices[k++] = a; indices[k++] = c; indices[k++] = b;
-      indices[k++] = b; indices[k++] = c; indices[k++] = d;
-    }
-  }
-  return { positions, normals, uvs, indices };
+  return { positions, normals, uvs, indices: Uint32Array.from(tris) };
 }
 
 /**
@@ -2115,24 +2118,27 @@ function buildRenderer(
   // A murky lake's reeds, cattails and lilies: placed by the sim, built here.
   const waterPlants = forest !== null && lakes.length > 0 ? createWaterPlants(scene, forest.seed, lakes) : null;
   partOf(waterPlants);
-  // The midges, the dragonflies and the frogs of the world's lake: cosmetic
-  // like the animals, so under their guard too (a scene recorded a frame at a
-  // time has neither). None of their meshes casts a shadow. The midges are
-  // toned for the frame's colour path, as the lighting's dome is.
-  const firstLake = lakes[0];
-  const waterLife =
-    forest !== null && firstLake !== undefined && options.wildlife !== false
-      ? createWaterLife(scene, forest.seed, firstLake, tier, postFeatures.colourPath)
-      : null;
-  partOf(waterLife);
+  // The midges, the dragonflies and the frogs of every lake (spec §10.3):
+  // cosmetic like the animals, so under their guard too (a scene recorded a
+  // frame at a time has none). None of their meshes casts a shadow. The
+  // midges are toned for the frame's colour path, as the lighting's dome is.
+  // Each is placed at load, and stepped only while the camera is within its
+  // lake's reach (`lakeChoice.ts`), resting otherwise.
+  const waterLives: WaterLife[] =
+    forest !== null && options.wildlife !== false
+      ? lakes.map((l) => createWaterLife(scene, forest.seed, l, tier, postFeatures.colourPath))
+      : [];
+  for (const life of waterLives) partOf(life);
+  /** The lake the mirror, the panorama and the life heard serve, and each lake's life's reach. */
+  const lakeChoice = createLakeChoice(lakes);
 
   // The wet line follows the nearest body, sea or pond. No bodies, no call.
   const wetBodies: WetBody[] = [];
   if (forest !== null && waterLevel !== undefined) {
-    wetBodies.push({ ...WATER_ROWS.sea, level: waterLevel, x: 0, z: 0, radius: Number.POSITIVE_INFINITY });
+    wetBodies.push({ ...WATER_ROWS.sea, level: waterLevel, x: 0, z: 0, radius: Number.POSITIVE_INFINITY, bound: Number.POSITIVE_INFINITY });
   }
   for (const l of lakes) {
-    wetBodies.push({ ...lakeWaterRow(l.murk), level: l.level, x: l.x, z: l.z, radius: l.radius });
+    wetBodies.push({ ...lakeWaterRow(l.murk), level: l.level, x: l.x, z: l.z, radius: l.shape.shoreMax, bound: l.bound });
   }
   const updateWet = (x: number, z: number): void => {
     if (wetBodies.length === 0) return;
@@ -2164,21 +2170,25 @@ function buildRenderer(
     for (const mesh of water?.lakeMeshes ?? []) rainMap.register(mesh, "water");
     // Not the swept curl: its positions are not places, so the rings stand for the face.
   }
-  // The lake's reflection of its shore, by tier: on high a mirror drawn in
-  // each frame the glass shows (`lakeMirror.ts`), on medium a panorama of the
-  // shore captured whenever the sky's probe is (`lakePanorama.ts`) under the
-  // skyline, on low the skyline alone (`lakeSkyline.ts`). The lake's material
-  // reads whichever there is; a world without a lake makes none of them.
-  const lakeMesh = water?.lakeMeshes[0] ?? null;
-  const lakePlugin = water?.lakePlugins[0] ?? null;
-  const reflected = forest !== null && firstLake !== undefined && lakeMesh !== null && lakePlugin !== null;
+  // The lakes' reflections of their shores, by tier: on high a mirror drawn
+  // in each frame the glass shows (`lakeMirror.ts`), on medium a panorama of
+  // the shore captured whenever the sky's image is (`lakePanorama.ts`) under
+  // the skyline, on low the skyline alone (`lakeSkyline.ts`). The mirror and
+  // the panorama are one each and serve the nearest lake, following the
+  // camera from lake to lake (spec §10.3); every lake on medium and low has
+  // its own skyline. A lake's material reads whichever there is; a world
+  // without a lake makes none of them.
+  const lakeMeshes = water?.lakeMeshes ?? [];
+  const lakePlugins = water?.lakePlugins ?? [];
+  const firstLake = lakes[0];
+  const reflected = forest !== null && firstLake !== undefined && lakePlugins.length > 0;
   const lakeMirror = reflected && tier === "high" ? createLakeMirror(scene, firstLake, engine.isNDCHalfZRange) : null;
   partOf(lakeMirror);
   const lakePanorama = reflected && tier === "medium" ? createLakePanorama(scene, firstLake) : null;
   partOf(lakePanorama);
-  const lakeSkyline =
-    reflected && tier !== "high" ? createSkylineTexture(scene, skylineElevations(firstLake, forest.seed, skylineTrees(firstLake, forest.seed))) : null;
-  partOf(lakeSkyline);
+  const lakeSkylines: RawTexture[] =
+    reflected && tier !== "high" ? lakes.map((l) => createSkylineTexture(scene, skylineElevations(l, forest.seed, skylineTrees(l, forest.seed)))) : [];
+  for (const skyline of lakeSkylines) partOf(skyline);
   // The ground in either: the five inner rings (to the ridges past ring 3's
   // 512 m) through a cheap lit stand-in, never the terrain's own material.
   // The mirror owns its own; the panorama's is made here.
@@ -2195,13 +2205,22 @@ function buildRenderer(
     lakeMirror?.register(mesh, null);
     lakePanorama?.register(mesh, null);
   }
-  for (const mesh of waterLife?.meshes ?? []) lakeMirror?.register(mesh, null);
-  if (reflected) {
-    lakePlugin.setLakeBody(firstLake.x, firstLake.level, firstLake.z, firstLake.radius);
-    if (lakePanorama !== null) lakePlugin.setPanorama(lakePanorama.texture);
-  }
-  /** The lake's shelter (`lakeWaterRow`): how far its cat's-paws spread. */
-  const lakeShelter = firstLake !== undefined ? lakeWaterRow(firstLake.murk).shelter : 0;
+  for (const life of waterLives) for (const mesh of life.meshes) lakeMirror?.register(mesh, null);
+  // Each lake's own cylinder; the panorama on the first until the camera's first frame.
+  lakePlugins.forEach((p, i) => {
+    const l = lakes[i] as LakeSource;
+    p.setLakeBody(l.x, l.level, l.z, l.shape.meanRadius);
+  });
+  if (lakePanorama !== null) (lakePlugins[0] as WaterPlugin).setPanorama(lakePanorama.texture);
+  /** The lake the mirror and the panorama serve, by index (`lakeChoice.ts`). */
+  let servedLake = 0;
+  // Each lake's shore at its level, read for whether its water is in view
+  // (`lakeView.ts`): its mesh's box is mostly bank. Only the mirror asks.
+  const lakeViews = lakeMirror !== null ? lakes.map((l) => lakeViewPoints(l.shape, l.level)) : [];
+  const lakeViewPlanes = newLakeViewPlanes();
+  const lakeViewScratch = new Vector3();
+  /** Each lake's shelter (`lakeWaterRow`): how far its cat's-paws spread. */
+  const lakeShelters = lakes.map((l) => lakeWaterRow(l.murk).shelter);
   const cover: MeshRegistry = {
     add: (mesh) => {
       rainMap?.register(mesh, "hard");
@@ -2460,7 +2479,7 @@ function buildRenderer(
   const rainLamp: RainLamp = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, intensity: 0, angle: 0, r: 1, g: 1, b: 1 };
   const motes = createMotes(scene, tier);
   partOf(motes);
-  setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLife, spray: water?.edge.spray ?? null });
+  setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLives, spray: water?.edge.spray ?? null });
 
   const views = new EntityViews(scene);
   // The haunt's shades: soft figures in a pale mist on the post tiers (the
@@ -2511,20 +2530,23 @@ function buildRenderer(
     sky: null, skyLuma: 0, pixelAt1m: 0,
     hollowDistance: Infinity,
   };
-  /** Whether this frame's `sync` stepped the lake's life: the sound of a
+  /** Whether this frame's `sync` stepped the lakes' life: the sound of a
    * frame that did not is silence, never the last stepped frame's calls and
    * rustles again. */
   let waterLifeStepped = false;
+  /** The life heard: the lake the reflections serve (`lakeChoice.ts`). */
+  let heardLife: WaterLife | null = null;
   /**
-   * Steps the lake's life (`waterLife.ts`) from the camera as this frame's
+   * Steps each lake's life (`waterLife.ts`) from the camera as this frame's
    * branch has left it: its place and its lens, the players by their slots,
    * the shared seconds the swarms move on, the hour, the weather, the wind,
    * the sun, the sky behind a swarm, and the Hollow's distance from the
-   * branch's own point (`findHollow`, run before it in both branches). After
-   * the motes, in both branches; nothing without a lake.
+   * branch's own point (`findHollow`, run before it in both branches); a
+   * lake's life the camera is out of reach of rests. After the motes, in
+   * both branches; nothing without a lake.
    */
   function updateWaterLife(state: WorldState, dt: number, time: number, weather: WeatherParams, sky: SkyState | null): void {
-    if (waterLife === null) return;
+    if (waterLives.length === 0) return;
     const f = waterLifeFrame;
     f.camX = camera.position.x;
     f.camY = camera.position.y;
@@ -2540,7 +2562,13 @@ function buildRenderer(
     f.skyLuma = skyLumaOf(sky);
     f.pixelAt1m = pixelAtOneMetre(camera.fov, engine.getRenderHeight());
     f.hollowDistance = wildlifeMatch.hollowDistance;
-    waterLife.update(f);
+    const served = lakeChoice.choose(f.camX, f.camZ);
+    for (let i = 0; i < waterLives.length; i++) {
+      const life = waterLives[i] as WaterLife;
+      if (lakeChoice.live[i] === 1) life.update(f);
+      else life.rest();
+    }
+    heardLife = served === null ? null : (waterLives[served.index] as WaterLife);
     waterLifeStepped = true;
   }
 
@@ -2600,13 +2628,16 @@ function buildRenderer(
   const skylineShade: [number, number, number] = [0, 0, 0];
   const mirrorColour = new Color3(0, 0, 0);
   /**
-   * The lake's surface and reflection for the frame (`lakeCalm.ts`): the
+   * The lakes' surfaces and reflections for the frame (`lakeCalm.ts`): the
    * calm share at the hour under the preset (through a fade), the surface
-   * rough or not, the cat's-paws' cover and the smear at their edge; on high
-   * the mirror armed when the lake's disc is in this frame's view of an `eye`
-   * (false with no local player) and the glass shows, drawn this frame or
-   * every third, and the weight 0 in any frame it is not armed (its image is
-   * up to two frames stale); on
+   * rough or not, the cat's-paws' cover and the smear at their edge, for
+   * each lake with its own shelter; the mirror and the panorama moved to the
+   * lake served (`lakeChoice.ts`), the old lake's material letting go of
+   * both first; on high the mirror armed when the served lake's water is in
+   * this frame's view of an `eye` (`lakeView.ts`; false with no local
+   * player) and the glass shows, drawn this frame or every third, and the
+   * weight 0 in any frame it is not armed (its image is up to two frames
+   * stale) and on every other lake; on
    * medium the panorama re-armed whenever the lighting hands over a new sky
    * state (the probe re-armed with it), and whenever content lands late and
    * its target is then ready to render (at first, the forest's first fill
@@ -2615,10 +2646,11 @@ function buildRenderer(
    * skyline's forest colour from the sky, raw (the shader scales it). After
    * the camera is placed for the frame, in both branches, so a pass that
    * draws is from this frame's view and one that holds is at most two frames
-   * behind it; nothing without a lake.
+   * behind it; nothing without a lake. Each lake's skyline on its own
+   * material.
    */
   function updateLake(weather: WeatherParams, sky: SkyState | null, eye: boolean): void {
-    if (lakePlugin === null || lakeMesh === null) return;
+    if (lakePlugins.length === 0) return;
     if (calmFadeS > 0) {
       calmElapsedS += engine.getDeltaTime() / 1000;
       if (calmElapsedS >= calmFadeS) {
@@ -2627,24 +2659,54 @@ function buildRenderer(
       }
     }
     const fade = calmFadeS > 0 ? calmElapsedS / calmFadeS : 1;
-    const c = lakeCalmUnder(lighting.hour, calmFrom, calmTo, fade, weather, wind.speed, lakeShelter, engine.getRenderHeight(), camera.fov, lakeCalm);
-    // This frame's frustum, the camera placed for the frame: never a frame
-    // late. Without an eye the lake is in no view.
-    let inView = false;
-    if (eye) {
-      camera.getViewMatrix();
-      camera.getProjectionMatrix();
-      lakeMesh.computeWorldMatrix();
-      inView = camera.isInFrustum(lakeMesh);
+    // The lake the mirror and the panorama serve: the nearest past its bound,
+    // held until another is 20 m nearer (`lakeChoice.ts`). On a move the old
+    // lake's material lets go of both, and they follow to the new one.
+    const served = lakeChoice.choose(camera.position.x, camera.position.z);
+    if (served !== null && served.index !== servedLake) {
+      const was = lakePlugins[servedLake] as WaterPlugin;
+      if (lakeMirror !== null) was.setMirror(null, lakeMirror.viewProjection);
+      if (lakePanorama !== null) was.setPanorama(null);
+      servedLake = served.index;
+      const lake = lakes[servedLake] as LakeSource;
+      lakeMirror?.setLake(lake);
+      if (lakePanorama !== null) {
+        lakePanorama.setLake(lake);
+        (lakePlugins[servedLake] as WaterPlugin).setPanorama(lakePanorama.texture);
+      }
     }
-    // Without a mirror the weight is 1 until the surface is rough all over,
-    // where the ramped share has already reached 0: no step in the image.
-    const armed = lakeMirror !== null ? lakeMirror.update(camera, inView, c.share) : c.roughShare < 1;
-    lakePlugin.setLakeTime(wind.time);
-    lakePlugin.setPawCover(c.cover);
-    lakePlugin.setCalm(c.share, armed ? 1 : 0, c.smearPx);
-    // The mirror is read only while armed: drawn this frame, or holding the last image.
-    if (lakeMirror !== null) lakePlugin.setMirror(armed ? lakeMirror.texture : null, lakeMirror.viewProjection);
+    let mirrorArmed = false;
+    for (let i = 0; i < lakePlugins.length; i++) {
+      const plugin = lakePlugins[i] as WaterPlugin;
+      const c = lakeCalmUnder(
+        lighting.hour, calmFrom, calmTo, fade, weather, wind.speed, lakeShelters[i] as number, engine.getRenderHeight(), camera.fov, lakeCalm,
+      );
+      // Without a mirror the weight is 1 until the surface is rough all over,
+      // where the ramped share has already reached 0: no step in the image.
+      // On high a lake the mirror does not serve keeps the sky's sheen alone.
+      let armed = lakeMirror === null && c.roughShare < 1;
+      if (lakeMirror !== null && i === servedLake) {
+        // This frame's frustum, the camera placed for the frame: never a
+        // frame late. Without an eye the lake is in no view. Read by its
+        // shore, not its mesh's box (`lakeView.ts`).
+        let inView = false;
+        if (eye) {
+          const mesh = lakeMeshes[i] as Mesh;
+          camera.getViewMatrix();
+          camera.getProjectionMatrix();
+          mesh.computeWorldMatrix();
+          const lake = lakes[i] as LakeSource;
+          inView = lakeInView(camera, mesh, lake.shape, lakeViews[i] as Float32Array, lakeViewPlanes, lakeViewScratch);
+        }
+        armed = lakeMirror.update(camera, inView, c.share);
+        mirrorArmed = armed;
+        // The mirror is read only while armed: drawn this frame, or holding the last image.
+        plugin.setMirror(armed ? lakeMirror.texture : null, lakeMirror.viewProjection);
+      }
+      plugin.setLakeTime(wind.time);
+      plugin.setPawCover(c.cover);
+      plugin.setCalm(c.share, armed ? 1 : 0, c.smearPx);
+    }
     // The held frames' lag as the eye's travel over them, smoothed, as the
     // smear's pixels times metres: none when the eye is still, none on the
     // tiers without a mirror.
@@ -2653,7 +2715,7 @@ function buildRenderer(
       lastEye.copyFrom(camera.position);
       eyeSeen = eye;
       mirrorMotionM = mirrorMotion(mirrorMotionM, eyeStep);
-      lakePlugin.setMirrorMotion(MIRROR_MOTION_SMEAR * mirrorMotionM * engine.getRenderHeight());
+      (lakePlugins[servedLake] as WaterPlugin).setMirrorMotion(MIRROR_MOTION_SMEAR * mirrorMotionM * engine.getRenderHeight());
     }
     let capturing = false;
     if (lakePanorama !== null) {
@@ -2666,13 +2728,13 @@ function buildRenderer(
       capturing = lakePanorama.update();
     }
     if (sky === null) return;
-    if (lakeSkyline !== null) {
+    if (lakeSkylines.length > 0) {
       skylineShade[0] = sky.horizonAway.r * SKYLINE_SHADE;
       skylineShade[1] = sky.horizonAway.g * SKYLINE_SHADE;
       skylineShade[2] = sky.horizonAway.b * SKYLINE_SHADE;
-      lakePlugin.setSkyline(lakeSkyline, skylineShade);
+      for (let i = 0; i < lakePlugins.length; i++) (lakePlugins[i] as WaterPlugin).setSkyline(lakeSkylines[i] as RawTexture, skylineShade);
     }
-    if (lakeMirror !== null && armed) {
+    if (lakeMirror !== null && mirrorArmed) {
       lakeMirrorColourOf(sky, weather, mirrorColour);
       lakeMirror.setTerrainColour(mirrorColour.r, mirrorColour.g, mirrorColour.b);
     }
@@ -3017,9 +3079,9 @@ function buildRenderer(
     wildlifeDirectorLog() {
       return wildlife?.directorLog() ?? [];
     },
-    hasWaterLife: waterLife !== null,
+    hasWaterLife: waterLives.length > 0,
     waterLifeSound() {
-      return waterLife !== null && waterLifeStepped ? waterLife.sound() : SILENT_WATER_LIFE;
+      return heardLife !== null && waterLifeStepped ? heardLife.sound() : SILENT_WATER_LIFE;
     },
     hasSea: water !== null,
     surfSound() {
@@ -3093,17 +3155,19 @@ function buildRenderer(
       rainMap?.dispose();
       // The lake's material lets go of each target first: it binds what it
       // holds on its next draw.
-      if (lakeMirror !== null) lakePlugin?.setMirror(null, lakeMirror.viewProjection);
-      if (lakePanorama !== null) lakePlugin?.setPanorama(null);
-      if (lakeSkyline !== null) lakePlugin?.setSkyline(null, skylineShade);
+      for (const plugin of lakePlugins) {
+        if (lakeMirror !== null) plugin.setMirror(null, lakeMirror.viewProjection);
+        if (lakePanorama !== null) plugin.setPanorama(null);
+        if (lakeSkylines.length > 0) plugin.setSkyline(null, skylineShade);
+      }
       lakeMirror?.dispose();
       lakePanorama?.dispose();
       panoramaTerrain?.dispose();
-      lakeSkyline?.dispose();
+      for (const skyline of lakeSkylines) skyline.dispose();
       clipmap?.dispose();
       water?.dispose();
       waterPlants?.dispose();
-      waterLife?.dispose();
+      for (const life of waterLives) life.dispose();
       propMeshes?.dispose();
       forestMeshes?.dispose();
       clutterMeshes?.dispose();

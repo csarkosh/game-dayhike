@@ -11,6 +11,7 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import type { LakeSource } from "../../src/sim/terrain.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import {
   createLakePanorama, createSkylineTexture, SKYLINE_READ_MAX, panoramaProjection, PANORAMA_EYE_UP, PANORAMA_FAR, PANORAMA_HEIGHT, PANORAMA_HEIGHT_M,
   PANORAMA_NEAR, PANORAMA_SECTORS, PANORAMA_WIDTH, type LakePanorama,
@@ -25,8 +26,8 @@ function scene(): Scene {
   return s;
 }
 
-/** The murky gate lake (room-3): centre (-97.4, 324), level 50.79 m, radius 26.1 m. */
-const LAKE: LakeSource = { kind: "lake", level: 50.79, x: -97.4, z: 324, radius: 26.1, murk: 0.99, lobe: null };
+/** A murky lake: centre (-97.4, 324), level 50.79 m, its mean radius 26.1 m, the cylinder the capture is made on. */
+const LAKE: LakeSource = stadiumLake({ cx: -97.4, cz: 324, halfLen: 0.5, w: 26.1, level: 50.79, murk: 0.99, meanRadius: 26.1 });
 
 /** The panorama's own camera: the scene's cameras minus the player's. */
 function panoramaCamera(s: Scene): TargetCamera {
@@ -40,9 +41,10 @@ function ndc(camera: Camera, p: Vector3): Vector3 {
   return Vector3.TransformCoordinates(p, camera.getViewMatrix(true).multiply(camera.getProjectionMatrix()));
 }
 
-/** The point on the cylinder of the lake's radius at azimuth `azimuth` (0 facing +z) and `height` over the level. */
+/** The point on the cylinder of the lake's mean radius at azimuth `azimuth` (0 facing +z) and `height` over the level. */
 function onCylinder(azimuth: number, height: number): Vector3 {
-  return new Vector3(LAKE.x + LAKE.radius * Math.sin(azimuth), LAKE.level + height, LAKE.z + LAKE.radius * Math.cos(azimuth));
+  const r = LAKE.shape.meanRadius;
+  return new Vector3(LAKE.x + r * Math.sin(azimuth), LAKE.level + height, LAKE.z + r * Math.cos(azimuth));
 }
 
 describe("createLakePanorama", () => {
@@ -110,6 +112,26 @@ describe("createLakePanorama", () => {
     for (let k = 0; k < 16; k++) expect(pano.update(), `again ${k}`).toBe(true);
     expect(pano.update()).toBe(false);
     pano.dispose();
+  });
+
+  it("moves to another lake: its eye, its cylinder, and a whole turn from the sector next due", () => {
+    const s = scene();
+    const pano = createLakePanorama(s, LAKE);
+    const cam = panoramaCamera(s);
+    pano.rearm();
+    for (let k = 0; k < 5; k++) pano.update();
+    // A lake at level 60 500 m east, its mean radius 40 m.
+    pano.setLake(stadiumLake({ cx: 402.6, cz: 324, halfLen: 10, w: 30, level: 60, meanRadius: 40 }));
+    expect([cam.position.x, cam.position.y, cam.position.z]).toEqual([402.6, 60.4, 324]);
+    // The frustum from the level to 64 m over it on the cylinder of 40 m: up 2 / (64 / 40).
+    expect(cam.getProjectionMatrix().m[5]).toBeCloseTo(1.25, 9);
+    // Sixteen sectors from sector 5, then none.
+    for (let k = 0; k < 16; k++) expect(pano.update(), `sector ${k}`).toBe(true);
+    expect(cam.viewport.x).toBe(4 / 16);
+    expect(pano.update()).toBe(false);
+    pano.dispose();
+    pano.setLake(LAKE);
+    expect(pano.update()).toBe(false);
   });
 
   it("yaws to each sector's middle and draws it through its own column of the target", () => {

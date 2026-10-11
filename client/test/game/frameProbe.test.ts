@@ -184,7 +184,9 @@ describe("probePose", () => {
     const p = probePose();
     expect(p.x).toBe(123);
     expect(p.z).toBe(-105.5);
-    expect(p.y).toBeCloseTo(110.87, 2);
+    // 110.87 before the valley lakes: the lake loop's bed passes 0.75 m from
+    // the pose now (2026-10-10).
+    expect(p.y).toBeCloseTo(110.83, 2);
     expect(p.yaw).toBe(1.571);
     expect(p.pitch).toBe(0.3);
   });

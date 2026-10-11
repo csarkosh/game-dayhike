@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LakeSource } from "../../src/sim/terrain.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import { WEATHER_PRESETS, type WeatherParams } from "../../src/game/weather.js";
 import { waterLifePresenceUnder, type DragonflyShare, type WaterLifePresence } from "../../src/game/waterLifeParams.js";
 import type { DarnerBeat, Perch, WaterLifeLayout } from "../../src/game/waterLifeField.js";
@@ -12,7 +13,7 @@ const SEED = 388817;
 /** One frame at 60 Hz. */
 const DT = 1 / 60;
 /** A lake 30 m across its rim's radius at the origin, its water at 10 m. */
-const LAKE: LakeSource = { kind: "lake", level: 10, x: 0, z: 0, radius: 30, murk: 0.2, lobe: null };
+const LAKE: LakeSource = stadiumLake({ cx: 0, cz: 0, halfLen: 0.5, w: 30, level: 10, murk: 0.2 });
 /** The camera over the lake's middle: within range of everything on its shore, 28 m from every beat. */
 const MIDDLE = { x: 0, y: 11, z: 0 };
 /** The angle a 20 m beat spans on the circle 2 m in from the rim. */

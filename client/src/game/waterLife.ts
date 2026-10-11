@@ -13,7 +13,7 @@
  *
  * Under the frogs' voices lies a far chorus, the frogs farther out: two
  * places over the water, fixed once a world (the marsh's middle, or without
- * a marsh the rim across the lake from its first frog, and the rim across
+ * a marsh the shore farthest from its first frog, and the shore farthest
  * from that), and a level that follows the frogs' presence, is gone while
  * the Hollow holds them silent, and thins to `BED_FLOOR` as players' nearness
  * stops the voices. Each loop also falls quiet around the player nearest
@@ -31,6 +31,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 
 import { MAX_PLAYERS } from "../sim/constants.js";
 import type { LakeSource } from "../sim/terrain.js";
+import { rayToShore } from "../sim/lakeShape.js";
 import { nextRandom } from "../sim/types.js";
 import type { QualityTier } from "./quality.js";
 import type { SkyState } from "./skyState.js";
@@ -43,7 +44,7 @@ import {
   type DragonflyShare,
   type WaterLifePresence,
 } from "./waterLifeParams.js";
-import { MARSH_MID, inShoreBand, waterLifeLayout, type FrogVoice } from "./waterLifeField.js";
+import { farthestOnWalk, inShoreBand, marshMid, shoreWalk, waterLifeLayout, type FrogVoice, type ShoreWalk } from "./waterLifeField.js";
 import {
   HEAD_MIDGES,
   HEAD_ROW0,
@@ -88,26 +89,26 @@ const BED_FLOOR = 0.35;
 type Place = { x: number; y: number; z: number };
 
 /**
- * The far chorus's two places: the marsh's middle where the lake has one,
- * else the rim across the lake from its first frog; then the rim across the
- * lake from the first place. `BED_HEIGHT` over the water.
+ * The far chorus's two places (spec §10.2): the marsh's middle where the
+ * lake has one, along the marsh's direction from the centre where the shore
+ * distance is half the shelf; else the point of the shore farthest from its
+ * first frog. Then the point of the shore farthest from the first place.
+ * `BED_HEIGHT` over the water.
  */
-function bedPlaces(lake: LakeSource, voices: readonly FrogVoice[]): readonly [Place, Place] {
-  let dirX = 1, dirZ = 0, from = lake.radius;
+function bedPlaces(lake: LakeSource, walk: ShoreWalk, voices: readonly FrogVoice[]): readonly [Place, Place] {
+  const shape = lake.shape;
+  let first: { x: number; z: number };
   if (lake.lobe !== null) {
-    dirX = lake.lobe.dirX;
-    dirZ = lake.lobe.dirZ;
-    from = lake.radius - MARSH_MID;
+    const d = rayToShore(shape, shape.cx, shape.cz, lake.lobe.dirX, lake.lobe.dirZ, marshMid(shape), shape.bound);
+    first = { x: shape.cx + lake.lobe.dirX * d, z: shape.cz + lake.lobe.dirZ * d };
   } else if (voices.length > 0) {
-    const away = Math.atan2(voices[0]!.z - lake.z, voices[0]!.x - lake.x) + Math.PI;
-    dirX = Math.cos(away);
-    dirZ = Math.sin(away);
+    first = farthestOnWalk(walk, voices[0]!.x, voices[0]!.z);
+  } else {
+    first = { x: walk.xs[0] as number, z: walk.zs[0] as number };
   }
+  const second = farthestOnWalk(walk, first.x, first.z);
   const y = lake.level + BED_HEIGHT;
-  return [
-    { x: lake.x + dirX * from, y, z: lake.z + dirZ * from },
-    { x: lake.x - dirX * lake.radius, y, z: lake.z - dirZ * lake.radius },
-  ];
+  return [{ x: first.x, y, z: first.z }, { x: second.x, y, z: second.z }];
 }
 
 /** A head swarm is a ball sized as a marker of its count is
@@ -181,6 +182,11 @@ export type WaterLife = {
   /** The midges' and the dragonflies', for the see-through group. */
   readonly meshes: readonly Mesh[];
   update(f: WaterLifeFrame): void;
+  /** In place of `update` for a lake the renderer leaves out this frame
+   * (spec §10.3): nothing drawn, nothing heard, nothing stepped, as beyond
+   * its own reach; the next `update` starts the presence again from the
+   * weather's own. */
+  rest(): void;
   /** This frame's sound: one object, reused, refilled by each `update`;
    * `hums[r]` is the swarm of the table's row r. */
   sound(): WaterLifeSound;
@@ -215,7 +221,7 @@ export function createWaterLife(
   const frogs = createFrogChorus(layout.voices, seed, () => nextRandom(rng));
 
   // Beyond this from the lake's centre, the camera is out of reach of all of it.
-  let extent = lake.radius;
+  let extent = lake.shape.shoreMax;
   const reachTo = (p: { x: number; z: number }): void => {
     extent = Math.max(extent, Math.hypot(p.x - lake.x, p.z - lake.z));
   };
@@ -276,7 +282,7 @@ export function createWaterLife(
 
   const sound: WaterLifeSound = {
     hums: [], hums_n: 0, pitch: 0, rustles: NO_RUSTLES, frogCalls: NO_CALLS,
-    bed: { level: 0, duck: [1, 1], points: bedPlaces(lake, layout.voices) },
+    bed: { level: 0, duck: [1, 1], points: bedPlaces(lake, shoreWalk(lake.shape), layout.voices) },
   };
   for (let r = 0; r < ROWS; r++) sound.hums.push({ x: 0, y: 0, z: 0, midges: 0, presence: 0 });
   let resting = false;
@@ -508,6 +514,10 @@ export function createWaterLife(
       sound.frogCalls = frogs.calls;
       sound.bed.level = frogs.stopped ? 0 : presence.frog * (BED_FLOOR + (1 - BED_FLOOR) * (1 - frogs.hushedShare));
       duckBed();
+    },
+    rest() {
+      if (disposed) return;
+      rest();
     },
     sound() {
       return sound;

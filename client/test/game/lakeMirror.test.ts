@@ -23,6 +23,7 @@ import {
 } from "../../src/game/lakeMirror.js";
 import { LAKE_MOTION_SMEAR_CAP } from "../../src/game/mirrorView.js";
 import type { LakeSource } from "../../src/sim/terrain.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
 import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
 import { drawnEffect, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
@@ -31,7 +32,7 @@ import { timeLimit } from "../helpers/timeLimit.js";
 const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
 
 /** A lake at level 50: its mirror's plane is at 50.02. */
-const LAKE: LakeSource = { kind: "lake", level: 50, x: 0, z: 30, radius: 30, murk: 1, lobe: null };
+const LAKE: LakeSource = stadiumLake({ cx: 0, cz: 30, halfLen: 0.5, w: 30, level: 50, murk: 1 });
 
 let engine: NullEngine | null = null;
 afterEach(() => { engine?.dispose(); engine = null; });
@@ -295,24 +296,43 @@ describe("createLakeMirror", () => {
     mirror.dispose();
   });
 
-  it("stays off with the eye 200 m or more from the lake's rim, measured across the ground", () => {
+  it("stays off with the eye 200 m or more past the lake's bound, measured across the ground", () => {
     expect(MIRROR_REACH_M).toBe(200);
     const { s, player } = scene();
     const mirror = createLakeMirror(s, LAKE, false);
     const listed = () => s.customRenderTargets.filter((x) => x === mirror.texture).length;
-    // Due south of the centre (0, 30), the rim 30 m out: 199 m from it.
-    player.position.set(0, 51.72, -199);
+    // Due south of the centre (0, 30), the bound 77.5 m out: 199.5 m past it, then 200.
+    expect(LAKE.bound).toBe(77.5);
+    player.position.set(0, 51.72, -247);
     expect(mirror.update(player, true, 1)).toBe(true);
     expect(listed()).toBe(1);
-    player.position.set(0, 51.72, -200);
+    player.position.set(0, 51.72, -247.5);
     expect(mirror.update(player, true, 1)).toBe(false);
     expect(listed()).toBe(0);
     // High over the lake's level counts for nothing: a ridge 1 km off.
     player.position.set(0, 400, -1000);
     expect(mirror.update(player, true, 1)).toBe(false);
-    // Over the water itself, the rim behind: in reach.
+    // Over the water itself: in reach.
     player.position.set(0, 51.72, 30);
     expect(mirror.update(player, true, 1)).toBe(true);
+    mirror.dispose();
+  });
+
+  it("moves to another lake: its plane, its reach, and a fresh draw on the next armed frame", () => {
+    const { s, player } = scene();
+    const mirror = createLakeMirror(s, LAKE, false);
+    expect(mirror.update(player, true, 1)).toBe(true);
+    // A lake at level 60 1 km east: the plane at 60.02, the eye (51.72) under it.
+    const east = stadiumLake({ cx: 1000, cz: 30, halfLen: 0.5, w: 30, level: 60, murk: 1 });
+    mirror.setLake(east);
+    expect(s.customRenderTargets.includes(mirror.texture)).toBe(false);
+    expect(mirror.update(player, true, 1)).toBe(false);
+    // Over it at 61.72: armed, and the reflection takes y to 120.04 - y.
+    player.position.set(1000, 61.72, 30);
+    expect(mirror.update(player, true, 1)).toBe(true);
+    expect(s.customRenderTargets.includes(mirror.texture)).toBe(true);
+    const view = Array.from(mirrorCamera(s).getViewMatrix().m);
+    expect(view[13]).toBeCloseTo(120.04 - 61.72, 4);
     mirror.dispose();
   });
 

@@ -40,7 +40,8 @@
 import { CLUTTER_ROCK, rockSlopeBand, type ClutterInstance } from "./clutter.js";
 import { GROUND_NORMAL_Y } from "./constants.js";
 import { hash3 } from "./field.js";
-import { elevationSampleAt, type TerrainSample } from "./terrain.js";
+import { lakeGroundD } from "./features.js";
+import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
 
 /** Lattice cell (m). One run at most per cell. */
 export const CLIFF_CELL = 12;
@@ -253,11 +254,31 @@ export function cliffGround(dx: number, dz: number): { rock: number; open: boole
 }
 
 /** The gate at one spot: the terrain sample there, and `cliffGround` of its
- * gradient. */
+ * gradient, shut on any lake's ground — its bed, bank, apron and outlet
+ * notch, wherever `lakeGroundD` gives back other than the sample it was
+ * handed. The anchor, its neighbours, every step of a run and every point a
+ * solid is checked at read it, so no module stands on, or reaches over, a
+ * lake's ground. */
 export function cliffGate(seed: number, x: number, z: number): { s: TerrainSample; rock: number; open: boolean } {
   const s = elevationSampleAt(seed, x, z);
   const { rock, open } = cliffGround(s.dx, s.dz);
+  if (open && onLakeGround(seed, x, z, s)) return { s, rock, open: false };
   return { s, rock, open };
+}
+
+/**
+ * Whether (x, z) lies on a lake's ground. A wall whose uphill face is a
+ * lake's bed cannot be buried: the lake's ground is the lake's. Exact and
+ * allocation-free outside every footprint: `lakeGroundD` returns its input,
+ * the same object, past the apron and past the bound.
+ */
+function onLakeGround(seed: number, x: number, z: number, s: TerrainSample): boolean {
+  const bodies = activeTerrainVariant().waterBodies?.(seed);
+  if (bodies === undefined) return false;
+  for (const b of bodies) {
+    if (b.kind === "lake" && lakeGroundD(b.shape, x, z, s) !== s) return true;
+  }
+  return false;
 }
 
 /** A direction in the ground plane: the scene's own (x, z), unit length. */

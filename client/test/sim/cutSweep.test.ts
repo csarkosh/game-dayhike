@@ -146,19 +146,22 @@ describe("the cut on fifty seeds", () => {
     const largest = packs[49]!;
     const corridor = runs.map((r, i) => (r.corridorForks.length > 0 ? `hollow${i}` : null)).filter((t) => t !== null);
     console.info(`[cut sweep] guide in band on ${inBand} of 50; pack at the pad: ${packs.join(" ")}; a fork on the corridor on ${corridor.join(", ") || "no seed"}`);
-    // The guide lands in its band on 28 of the 50; the rest walk the longest
+    // The guide lands in its band on 24 of the 50; the rest walk the longest
     // route found under the cap, as the summit design's §3.5 allows.
     // 2026-09-29: 29 before the trail left the pad inland, through the
     // doorway (`closeShore`, trailGrid.ts). The trail is another one below
-    // its first forks on most worlds, and the way home with it.
-    expect(inBand, `guide in band on ${inBand} of 50`).toBeGreaterThanOrEqual(28);
+    // its first forks on most worlds, and the way home with it. 2026-10-10:
+    // 28 before the valley lakes, whose loops are fewer (the pond's loop
+    // keeps 7 m off a real shore), so fewer guides have a long way round.
+    expect(inBand, `guide in band on ${inBand} of 50`).toBeGreaterThanOrEqual(24);
     // The pack at the pad, the summit Hollow counted: the median world sends
-    // five, the busiest eleven. 2026-09-29: no seed stands a fork on the
+    // five, the busiest twelve (2026-10-10: eleven before the valley lakes,
+    // whose worlds have other forks). 2026-09-29: no seed stands a fork on the
     // corridor, where `hollow29` stood one: the shore is closed to the
     // trail's search. `cut.test.ts` tries the rule for such a fork on one
     // hung there by hand.
     expect(median, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(5);
-    expect(largest, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(11);
+    expect(largest, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(12);
     expect(corridor, `a fork on the corridor on ${corridor.join(", ") || "no seed"}`).toEqual([]);
   }, timeLimit(300_000));
 });

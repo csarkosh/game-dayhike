@@ -316,18 +316,21 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1017 recorded stages, each file\'s bytes hashing to the name it has: 641 on the medium and high tiers, 300 on low, 58 on high alone, 14 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1017);
+  it('holds the 1021 recorded stages, each file\'s bytes hashing to the name it has: 645 on the medium and high tiers, 300 on low, 58 on high alone, 14 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1021);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1017);
+    expect(read.stages).toHaveLength(1021);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(312);
-    // The 641 recorded on the medium and high tiers, the low tier's 300,
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(314);
+    // The 645 recorded on the medium and high tiers (four stages of two wet
+    // materials first met at a lake under three lights among them
+    // (2026-10-11)), the low tier's 300,
     // recorded on it alone, the 58 the high tier alone met (the lake's
     // mirror and the sea's curl among them), the 14 the medium tier alone met, and the sky
     // dome's 2 and the midges' 2, whose text is the same on every tier.
     // Stages whose text a shader no longer produces are
-    // retired, not kept: the terrain's 3 stages before the far ground's
+    // retired, not kept: the terrain's 2 stages before the lakes' shore reads
+    // (2026-10-11), its 3 stages before the far ground's
     // cover (2026-10-10), the sea's 8 stages before it rested on the pebbles
     // between sheets (2026-10-09), its 15 and the wet ground's 523 before
     // the swash climbed the beach (2026-10-09), the lake's 3 vertex stages before its mirror
@@ -337,10 +340,10 @@ describe('the committed corpus and the tests\' fixture', () => {
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1017);
+    expect(read.tiers.size).toBe(1021);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([304, 659, 703]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(641);
+    expect([on('low'), on('medium'), on('high')]).toEqual([304, 663, 707]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(645);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(300);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(58);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);

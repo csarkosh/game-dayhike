@@ -16,7 +16,7 @@ import {
   CLIFF_ALT_LO, CLIFF_ROAD_FAR, CLIFF_OUT_ALT_LO, cliffD, cliffMaskD,
 } from "../../src/sim/cliffs.js";
 import { SPAWN_FREEBOARD } from "../../src/sim/spawn.js";
-import { POND_APRON, MEADOW_RIM } from "../../src/sim/features.js";
+import { featureReach } from "../../src/sim/trailPlan.js";
 import {
   inBowl, TRAILHEAD_U, TRAILHEAD_RADIUS, TRAILHEAD_FADE, TRAIL_Z_ANCHOR, apronKeepD,
 } from "../../src/sim/bowl.js";
@@ -947,13 +947,11 @@ describe("the bowl", () => {
         // feature sits FEATURE_ROAD_CLEAR (150 m) from the road, so a pond or a
         // meadow can stand squarely inside this band — measured on SEED:
         // u = 275.9, z = -42 reads 0.23 m of pond APRON, 45.7 m from a 35.4 m
-        // rim whose apron reaches POND_APRON beyond it. The reach excluded is
-        // each kind's own outer edge: a meadow's and a peak's stop at `radius`,
-        // a pond's apron runs POND_APRON past it (`basinD`) and a meadow's
-        // MEADOW_RIM past it (`flatD`, since a later fix moved the ramp
-        // outside the radius).
-        const apronOf = (k: string) => (k === "pond" ? POND_APRON : k === "meadow" ? MEADOW_RIM : 0);
-        if (features.some((f) => Math.hypot(x - f.x, z - f.z) < f.radius + apronOf(f.kind) + 2)) continue;
+        // rim whose apron reached 12 m beyond it. The reach excluded is
+        // each kind's own outer edge (`featureReach`): a peak's stops at
+        // `radius`, a meadow's runs MEADOW_RIM past it (`flatD`), a lake's to
+        // its shape's bound (`lakeGroundD`'s bank and apron).
+        if (features.some((f) => Math.hypot(x - f.x, z - f.z) < featureReach(f) + 2)) continue;
         const pre = olympicPreTrailSample(SEED, x, z);
         const post = v().sample(SEED, x, z);
         expect(post.h, `u=${u} z=${z}`).toBe(pre.h);

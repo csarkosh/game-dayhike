@@ -15,6 +15,7 @@
  * true, then uses it as the spare for the next bake.
  */
 import { elevationAt } from "../sim/terrain.js";
+import { lakeShoreInto, newLakeShore, type LakeShape } from "../sim/lakeShape.js";
 import type { QualityTier } from "./quality.js";
 
 export type BedGrid = {
@@ -120,19 +121,26 @@ export function bakeBed(grid: BedGrid, seed: number, camX: number, camZ: number)
   return true;
 }
 
-/** A pond's disc as the bed needs it: centre and basin radius, metres. */
-export type BedPond = { x: number; z: number; radius: number };
+/** A lake as the bed needs it: its centre, its shape and how far its ground reaches. */
+export type BedPond = { x: number; z: number; bound: number; shape: LakeShape };
 
-/** How far a lake's surface reaches past its basin radius (renderer.ts `lakeSurface`). */
-export const POND_DISC_MARGIN = 1;
+/** How far past a lake's shore its surface reaches, metres (renderer.ts `lakeSurface`). */
+export const LAKE_SURFACE_REACH = 3;
+/** The lattice a lake's part of a square is read on (m), and the shore distance past the surface's reach a lattice point may stand and still answer for the square about it (m): 2√2 m to the nearest lattice point at a stretch of up to 1.6. */
+const BED_LAKE_STEP = 4;
+const BED_LAKE_SLACK = 5;
+
+const BED_SHORE = newLakeShore();
 
 /**
  * Whether any body can reach `bake`'s square: the sea where the terrain at one
  * of nine points (corners, edge midpoints, centre) is below `waterLevel`, or a
- * lake whose surface overlaps the square. Nine points are 128 m apart on a 256 m
- * square, so a strip of sea between them can be missed; the caller then keeps
- * its current square, and the ring's per-vertex depth stands in outside it, so
- * a miss draws the water coarser, never not at all.
+ * lake whose box overlaps the square and whose shore distance, on a
+ * BED_LAKE_STEP lattice over the overlap, comes within LAKE_SURFACE_REACH and
+ * BED_LAKE_SLACK of the shore. Nine points are 128 m apart on a 256 m square,
+ * so a strip of sea between them can be missed; the caller then keeps its
+ * current square, and the ring's per-vertex depth stands in outside it, so a
+ * miss draws the water coarser, never not at all.
  */
 export function bedSquareHasWater(
   bake: BedBake,
@@ -145,9 +153,14 @@ export function bedSquareHasWater(
   const x0 = bake.originX;
   const z0 = bake.originZ;
   for (const p of ponds) {
-    const nx = Math.min(Math.max(p.x, x0), x0 + extent);
-    const nz = Math.min(Math.max(p.z, z0), z0 + extent);
-    if (Math.hypot(p.x - nx, p.z - nz) <= p.radius + POND_DISC_MARGIN) return true;
+    const ax = Math.max(x0, p.x - p.bound), bx = Math.min(x0 + extent, p.x + p.bound);
+    const az = Math.max(z0, p.z - p.bound), bz = Math.min(z0 + extent, p.z + p.bound);
+    if (ax > bx || az > bz) continue;
+    for (let z = az; z <= bz; z += BED_LAKE_STEP) {
+      for (let x = ax; x <= bx; x += BED_LAKE_STEP) {
+        if (lakeShoreInto(BED_SHORE, p.shape, x, z).s > -(LAKE_SURFACE_REACH + BED_LAKE_SLACK)) return true;
+      }
+    }
   }
   for (let j = 0; j <= 2; j++) {
     for (let i = 0; i <= 2; i++) {

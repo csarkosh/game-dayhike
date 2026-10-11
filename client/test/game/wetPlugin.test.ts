@@ -68,7 +68,13 @@ describe("wet plugin", () => {
     // the wet look below the line and inside the footprint, 1..3 m past the rim
     expect(d).toContain("return 1.0 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, y);");
     expect(d).toContain("return 1.0 - smoothstep(radius + 1.0, radius + 3.0, length(xz - centre));");
-    expect(fx("wetLights.fragment.fx")).toContain("float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);");
+    expect(fx("wetLights.fragment.fx")).toContain(
+      "#ifdef FEATUREPAINT\n" +
+        "float wetIn = featureWetInside(vPositionW.xz, wetCentre, wetRadius, featureInfo.x);\n" +
+        "#else\n" +
+        "float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);\n" +
+        "#endif\n",
+    );
     expect(fx("wetLights.fragment.fx")).toContain("float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;");
     expect(fx("wetLights.fragment.fx")).toContain("surfaceAlbedo *= mix(1.0, WET_ALBEDO, wetW) * mix(1.0, WET_DAMP_ALBEDO, wetDamp);");
     // the darkening below the level, per channel, held to the footprint, gated on wetAttenuate
@@ -83,14 +89,17 @@ describe("wet plugin", () => {
 
   it("wetLineFor picks the nearest body's level plus the still band, and its kd", () => {
     const bodies = [
-      { level: 0, kd: WATER_ROWS.sea.kd, lInf: WATER_ROWS.sea.lInf, shelter: 1, x: 0, z: 0, radius: Number.POSITIVE_INFINITY },
-      { level: 42, kd: WATER_ROWS.lowlandLake.kd, lInf: WATER_ROWS.lowlandLake.lInf, shelter: 0.1, x: 100, z: 50, radius: 30 },
+      { level: 0, kd: WATER_ROWS.sea.kd, lInf: WATER_ROWS.sea.lInf, shelter: 1, x: 0, z: 0, radius: Number.POSITIVE_INFINITY, bound: Number.POSITIVE_INFINITY },
+      { level: 42, kd: WATER_ROWS.lowlandLake.kd, lInf: WATER_ROWS.lowlandLake.lInf, shelter: 0.1, x: 100, z: 50, radius: 30, bound: 30 },
     ];
     expect(wetLineFor(bodies, 100, 50)).toEqual({ line: 42 + WET_LINE_ABOVE, level: 42, kd: WATER_ROWS.lowlandLake.kd, centre: [100, 50], radius: 30 });
     expect(wetLineFor(bodies, 500, 500)).toEqual({ line: 0 + WET_LINE_ABOVE, level: 0, kd: WATER_ROWS.sea.kd, centre: [0, 0], radius: WET_RADIUS_MAX });
     expect(wetLineFor([bodies[0]!], 5, 5).radius).toBe(WET_RADIUS_MAX);
     expect(wetLineFor(bodies, 160, 50).level).toBe(42); // 30 m from the rim
     expect(wetLineFor(bodies, 180, 50).level).toBe(0); // 50 m from the rim
+    // The reach runs from the lake's bound, not its disc: 35 m past a bound of 60, 75 m past a disc of 20.
+    const far = [bodies[0]!, { ...bodies[1]!, radius: 20, bound: 60 }];
+    expect(wetLineFor(far, 195, 50)).toEqual({ line: 42 + WET_LINE_ABOVE, level: 42, kd: WATER_ROWS.lowlandLake.kd, centre: [100, 50], radius: 20 });
   });
 
   it("setWetLine reaches every attached plugin", () => {

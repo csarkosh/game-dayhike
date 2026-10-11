@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { ROAD_WALL_U, containAtLake, containAtRoad, waterLevelAt } from "../../src/sim/containment.js";
+import { ROAD_WALL_U, containAtLake, containAtRoad, lakeWallS, waterLevelAt } from "../../src/sim/containment.js";
 import { ROAD_BED_HALF } from "../../src/sim/road.js";
 import { ENEMY_HALF, PLAYER_HALF } from "../../src/sim/constants.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
 import { createForest, GEN_VERSION } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../../src/sim/terrain.js";
-import { LAKE_SHELF_WIDTH } from "../../src/sim/features.js";
+import { lakeShelfWidth, lakeShoreInto, newLakeShore, rayToShore } from "../../src/sim/lakeShape.js";
+import { stadiumShape } from "../helpers/lakeShapes.js";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { CAR_HALF, CAR_ROAD_U } from "../../src/sim/trailhead.js";
 import type { InputCommand } from "../../src/sim/types.js";
@@ -74,26 +75,67 @@ describe("the wall in a forest world", { timeout: timeLimit(120_000) }, () => {
 });
 
 describe("containAtLake", () => {
+  // A valley lake 25 m in half-width about a 20 m spine along z at (100, 50):
+  // its shelf min(10, 0.4 · 25) = 10 m wide, so its wall is the line 15 m
+  // either side of the spine along the flanks.
+  const lake = stadiumShape({ cx: 100, cz: 50, halfLen: 10, w: 25, size: 30 });
+
   it("puts a hull inside the wall back on it and cancels the velocity into the lake", () => {
     const pos = { x: 100 + 5, y: 1, z: 50 };
     const vel = { x: -3, y: 0, z: 2 };
-    expect(containAtLake(pos, vel, 100, 50, 12)).toBe(true);
-    expect(pos.x).toBeCloseTo(112, 9);
+    expect(containAtLake(pos, vel, lake)).toBe(true);
+    expect(pos.x).toBeCloseTo(115, 9);
     expect(pos.z).toBeCloseTo(50, 9);
     expect(vel).toEqual({ x: 0, y: 0, z: 2 });
   });
 
-  it("puts a hull at the very centre out along +x", () => {
+  it("puts a hull on the spine's ridge out along +x", () => {
     const pos = { x: 100, y: 1, z: 50 };
     const vel = { x: 0, y: 0, z: 0 };
-    expect(containAtLake(pos, vel, 100, 50, 12)).toBe(true);
-    expect(pos).toEqual({ x: 112, y: 1, z: 50 });
+    expect(containAtLake(pos, vel, lake)).toBe(true);
+    expect(pos.x).toBeCloseTo(115, 9);
+    expect(pos.z).toBeCloseTo(50, 9);
   });
 
+  it("follows the shore round the cap, not a circle", () => {
+    // Past the spine's end the wall is 15 m from the end point (100, 60).
+    const pos = { x: 103, y: 1, z: 64 };
+    const vel = { x: 0, y: 0, z: -1 };
+    expect(containAtLake(pos, vel, lake)).toBe(true);
+    expect(Math.hypot(pos.x - 100, pos.z - 60)).toBeCloseTo(15, 9);
+    expect(vel.x * (pos.x - 100) + vel.z * (pos.z - 60)).toBeGreaterThanOrEqual(-1e-9);
+  });
+
+  it("walls a tarn at 2 m under its headwall and 0.35 sMax on its outlet side", () => {
+    const tarn = stadiumShape({ cx: 0, cz: 0, halfLen: 5, w: 20, size: 25, family: "tarn", sMax: 20, meanRadius: 25 });
+    expect(lakeWallS(tarn, 1)).toBe(2);
+    expect(lakeWallS(tarn, 0)).toBeCloseTo(7, 12);
+    const head = { x: 5, y: 0, z: 0 }, out = { x: -5, y: 0, z: 0 };
+    containAtLake(head, { x: 0, y: 0, z: 0 }, tarn);
+    containAtLake(out, { x: 0, y: 0, z: 0 }, tarn);
+    expect(head.x).toBeCloseTo(18, 6);
+    expect(out.x).toBeCloseTo(-13, 6);
+  });
+
+  it("moves a hull far inside the water by a bounded step and onto the wall", () => {
+    // A lake 40 m in half-width: its shelf is 10 m wide and the hull stands at
+    // s = 30, over the wall by 20 m. Six steps of at most 4 · 20 m each bound
+    // the hull's travel by 480 m.
+    const deep = stadiumShape({ cx: 100, cz: 50, halfLen: 10, w: 40, size: 45 });
+    const start = { x: 110, y: 1, z: 50 };
+    const pos = { ...start };
+    const sOf = (x: number, z: number): number => lakeShoreInto(newLakeShore(), deep, x, z).s;
+    expect(sOf(pos.x, pos.z)).toBeCloseTo(30, 9);
+    expect(containAtLake(pos, { x: 0, y: 0, z: 0 }, deep)).toBe(true);
+    expect(Math.hypot(pos.x - start.x, pos.z - start.z)).toBeLessThanOrEqual(480);
+    expect(Math.abs(sOf(pos.x, pos.z) - lakeWallS(deep, 0.5))).toBeLessThan(1e-6);
+    expect(lakeWallS(deep, 0.5)).toBe(10);
+  }, timeLimit(10_000));
+
   it("leaves a hull on the shelf alone, velocity included", () => {
-    const pos = { x: 100 + 12.01, y: 1, z: 50 };
+    const pos = { x: 115.01, y: 1, z: 50 };
     const vel = { x: -3, y: 0, z: 0 };
-    expect(containAtLake(pos, vel, 100, 50, 12)).toBe(false);
+    expect(containAtLake(pos, vel, lake)).toBe(false);
     expect(vel.x).toBe(-3);
   });
 });
@@ -101,43 +143,46 @@ describe("containAtLake", () => {
 describe("the lake in a forest world", { timeout: timeLimit(240_000) }, () => {
   /** The first lobby world with a lake: found inside a test, never while the
    * file is collected (each world is a bowl build). */
-  function lakeWorld(): { seed: number; lake: LakeSource; wallQ: number } {
+  function lakeWorld(): { seed: number; lake: LakeSource; wallS: number; sOf: (x: number, z: number) => number } {
     const v = activeTerrainVariant();
     for (const seed of LOBBY_SEEDS) {
       const lake = v.waterBodies!(seed).find((b): b is LakeSource => b.kind === "lake");
-      if (lake !== undefined) return { seed, lake, wallQ: lake.radius - LAKE_SHELF_WIDTH };
+      if (lake !== undefined) {
+        const r = newLakeShore();
+        return { seed, lake, wallS: lakeShelfWidth(lake.shape.sMax), sOf: (x, z) => lakeShoreInto(r, lake.shape, x, z).s };
+      }
     }
     throw new Error("no lake in the lobby worlds");
   }
 
   it("never lets a player past the shelf's edge, whichever way they walk in", () => {
-    const { seed, lake, wallQ } = lakeWorld();
+    const { seed, lake, wallS, sOf } = lakeWorld();
     const world = createForestWorld(createForest(seed));
-    let nearest = Infinity;
+    let deepest = -Infinity;
+    const x = lake.x + rayToShore(lake.shape, lake.x, lake.z, 1, 0, 0, lake.bound), z = lake.z;
     for (let k = 0; k < 16; k++) {
       const yaw = (k / 16) * Math.PI * 2;
       const p = spawnPlayer(world);
-      const x = lake.x + lake.radius, z = lake.z;
       p.pos = { x, y: elevationAt(seed, x, z) + PLAYER_HALF.y, z };
       for (let t = 0; t < 600; t++) {
         tickWorld(world, new Map([[p.id, input({ seq: t + 1, moveZ: 1, yaw })]]));
-        const q = Math.hypot(p.pos.x - lake.x, p.pos.z - lake.z);
-        nearest = Math.min(nearest, q);
-        expect(q, `heading ${k} tick ${t}`).toBeGreaterThanOrEqual(wallQ - 1e-6);
+        const s = sOf(p.pos.x, p.pos.z);
+        deepest = Math.max(deepest, s);
+        expect(s, `heading ${k} tick ${t}`).toBeLessThanOrEqual(wallS + 1e-6);
       }
       world.state.players.delete(p.id);
     }
     // the mechanism fired: some heading walked all the way to the wall
-    expect(nearest).toBeLessThan(wallQ + 0.5);
+    expect(deepest).toBeGreaterThan(wallS - 0.5);
   });
 
   it("puts a player placed at the lake's centre on the wall after one tick", () => {
-    const { seed, lake, wallQ } = lakeWorld();
+    const { seed, lake, wallS, sOf } = lakeWorld();
     const world = createForestWorld(createForest(seed));
     const p = spawnPlayer(world);
     p.pos = { x: lake.x, y: elevationAt(seed, lake.x, lake.z) + PLAYER_HALF.y, z: lake.z };
     tickWorld(world, new Map([[p.id, input({ seq: 1 })]]));
-    expect(Math.hypot(p.pos.x - lake.x, p.pos.z - lake.z)).toBeCloseTo(wallQ, 6);
+    expect(sOf(p.pos.x, p.pos.z)).toBeCloseTo(wallS, 6);
   });
 
   it("lifts a player the wall moves out onto the ground there", () => {
@@ -150,11 +195,11 @@ describe("the lake in a forest world", { timeout: timeLimit(240_000) }, () => {
   });
 
   it("holds a Hollow at the wall as it holds a player, chasing across the lake included", () => {
-    const { seed, lake, wallQ } = lakeWorld();
+    const { seed, lake, wallS, sOf } = lakeWorld();
     const world = createForestWorld(createForest(seed));
     const p = spawnPlayer(world);
     // the prey stands at the wall on the far side, so the chase is straight across
-    const px = lake.x - wallQ, pz = lake.z;
+    const px = lake.x - rayToShore(lake.shape, lake.x, lake.z, -1, 0, wallS, lake.bound), pz = lake.z;
     p.pos = { x: px, y: elevationAt(seed, px, pz) + PLAYER_HALF.y, z: pz };
     const h = spawnHollow(world, { x: lake.x + 0.5, y: elevationAt(seed, lake.x + 0.5, lake.z) + ENEMY_HALF.y, z: lake.z }, p.id, 0);
     // A Hollow decides on its approach in one tick and takes its first step
@@ -166,18 +211,21 @@ describe("the lake in a forest world", { timeout: timeLimit(240_000) }, () => {
       tickWorld(world, new Map([[p.id, input({ seq: t })]]));
     }
     expect(t).toBeLessThanOrEqual(2);
-    expect(Math.hypot(h.pos.x - lake.x, h.pos.z - lake.z)).toBeCloseTo(wallQ, 6);
+    expect(sOf(h.pos.x, h.pos.z)).toBeCloseTo(wallS, 6);
     expect(h.pos.y).toBeGreaterThanOrEqual(world.ground!.heightAt(h.pos.x, h.pos.z) + ENEMY_HALF.y - 1e-9);
     for (; t < 600 && world.state.enemies.has(h.id); t++) {
       tickWorld(world, new Map([[p.id, input({ seq: t + 1 })]]));
-      expect(Math.hypot(h.pos.x - lake.x, h.pos.z - lake.z), `tick ${t}`).toBeGreaterThanOrEqual(wallQ - 1e-6);
+      expect(sOf(h.pos.x, h.pos.z), `tick ${t}`).toBeLessThanOrEqual(wallS + 1e-6);
     }
   });
 
-  it("wades by the lake's level within its rim and by the sea's elsewhere", () => {
+  it("wades by the lake's level inside its shore and by the sea's elsewhere", () => {
     const { seed, lake } = lakeWorld();
     const world = createForestWorld(createForest(seed));
-    expect(waterLevelAt(world, lake.x + lake.radius - 3, lake.z)).toBe(lake.level);
-    expect(waterLevelAt(world, lake.x + lake.radius + 200, lake.z)).toBe(world.waterLevel);
+    const inside = rayToShore(lake.shape, lake.x, lake.z, 1, 0, 3, lake.bound);
+    const outside = rayToShore(lake.shape, lake.x, lake.z, 1, 0, -1, lake.bound);
+    expect(waterLevelAt(world, lake.x + inside, lake.z)).toBe(lake.level);
+    expect(waterLevelAt(world, lake.x + outside, lake.z)).toBe(world.waterLevel);
+    expect(waterLevelAt(world, lake.x + lake.bound + 200, lake.z)).toBe(world.waterLevel);
   });
 });

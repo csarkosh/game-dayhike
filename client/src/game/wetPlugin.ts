@@ -53,6 +53,10 @@ import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import fragmentDefs from "./shaders/wet.fragment.fx?raw";
+// In the lights chunk the footprint of a lake is its shore on the terrain
+// (featurePaint.ts, featureWetInside), on every other material the body's disc.
+// The note lives here, not in the chunk: a chunk's comments are part of the
+// recorded text of every shader the plugin rides on.
 import fragmentLights from "./shaders/wetLights.fragment.fx?raw";
 import fragmentWeather from "./shaders/wetWeather.fragment.fx?raw";
 import { clamp01 } from "./colour.js";
@@ -150,7 +154,10 @@ export function setWetSwash(data: Float32Array): void {
   }
 }
 
-export type WetBody = WaterBody & { x: number; z: number; radius: number };
+/** A body as the wet line reads it: its centre, the disc every material
+ * but the terrain is held to (a lake's farthest shore point), and how far
+ * its ground reaches (a lake's bound; the sea's infinite). */
+export type WetBody = WaterBody & { x: number; z: number; radius: number; bound: number };
 
 const attached = new Set<WetPlugin>();
 
@@ -343,13 +350,13 @@ export function wetRoughnessOf(r: number, look: WetLook): number {
   return mix(mix(r, Math.min(r, WET_DAMP_ROUGHNESS), look.damp), WET_ROUGHNESS, look.wet);
 }
 
-/** How far past its rim a pond still claims the wet line over the sea, metres. */
+/** How far past its bound a lake still claims the wet line over the sea, metres. */
 const POND_REACH = 40;
 
 /**
  * The nearest body's wet line and kd for a point. The sea (infinite radius) is
- * everywhere at distance zero, so it is the fallback: a finite body wins only
- * within POND_REACH of its rim, the nearest such body.
+ * everywhere at distance zero, so it is the fallback: a lake wins only
+ * within POND_REACH of its bound (spec §10.2), the nearest such lake.
  */
 export type WetState = {
   line: number;
@@ -365,7 +372,7 @@ export function wetLineFor(bodies: readonly WetBody[], x: number, z: number): We
   let fallback: WetBody | null = null;
   for (const b of bodies) {
     if (!Number.isFinite(b.radius)) { fallback ??= b; continue; }
-    const d = Math.max(0, Math.hypot(x - b.x, z - b.z) - b.radius);
+    const d = Math.max(0, Math.hypot(x - b.x, z - b.z) - b.bound);
     if (d <= bestD) { bestD = d; best = b; }
   }
   const pick = best ?? fallback;
