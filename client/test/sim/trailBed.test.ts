@@ -94,7 +94,8 @@ describe("every trail bed is walkable on the composed field", () => {
     // each at <= 1 m. Same reasoning as
     // clutter.test.ts's own explicit timeout: give the slow scans room instead
     // of letting the machine's load decide whether the gate runs.
-  }, timeLimit(300000));
+    // 227 worlds built, about a second each with the valley lakes: 296 s.
+  }, timeLimit(420000));
 
   it("is FLUSH: the bed the player stands on is the ground, to half a metre at p95", () => {
     // |composed − pre-trail-with-domes| along every centreline at <= 1 m. The
@@ -117,6 +118,13 @@ describe("every trail bed is walkable on the composed field", () => {
     // The residual at a node is no longer zero by construction (a node's height
     // is the de-clodded ground, not the raw ground), which is what a p95 of a
     // few centimetres is measuring.
+    //
+    // Re-pinned 2026-10-10 from 2 to 2.6, with the valley lakes: a third
+    // place, (3) a lake loop's bed is smoothed across the apron's fill at 13
+    // to 22 m from the shore, as a built trail cuts and fills. Measured: p50
+    // 0.078, p95 0.375, max 2.520 (seed -1725488583, loop edge 23, 21.7 m
+    // out from the shore); the fifteen samples over 2 m are all on a lake's
+    // loop, 16.5 to 22.4 m out.
     const resid: number[] = [];
     for (const seed of SEEDS) {
       const { graph, features } = bowlFor(seed);
@@ -136,8 +144,9 @@ describe("every trail bed is walkable on the composed field", () => {
     const q = (f: number) => resid[Math.min(resid.length - 1, Math.floor(f * resid.length))]!;
     const stats = { p50: q(0.5), p95: q(0.95), max: resid[resid.length - 1]! };
     expect(stats.p95, JSON.stringify(stats)).toBeLessThanOrEqual(0.5);
-    expect(stats.max, JSON.stringify(stats)).toBeLessThanOrEqual(2);
-  }, timeLimit(300000));
+    expect(stats.max, JSON.stringify(stats)).toBeLessThanOrEqual(2.6);
+    // 227 worlds built, about a second each with the valley lakes, and read along every edge: 296 s.
+  }, timeLimit(420000));
 
   it("fits every world's segments in the paint's buckets", () => {
     let worstBucket = 0, worstCount = 0;

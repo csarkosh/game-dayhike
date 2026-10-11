@@ -87,11 +87,15 @@ describe("one run on the seed `hollow`", SUITE, () => {
     // Up the stem, node by node: the world input rises and nothing hunts.
     // The only enemy the climb ever has is the watcher, and it is seen twice
     // on the way: a quarter of the way up at node 5, where its reach puts it
-    // 67 m out, and at the top fork, node 36, 25 m out. Every showing spends
+    // 62 m out, and at the top fork, node 21, 25 m out. Every showing spends
     // an entity id, which nothing below pins. 2026-09-29: the stem below
     // u = 308 m is a new line from the pad (the trail leaves the pad inland
-    // now), so the stand a quarter of the way up is node 5, climb 0.27, and
-    // the top fork, where it was, is one id lower.
+    // now), so the stand a quarter of the way up is node 5, climb 0.27.
+    // 2026-10-10: the pond and its loop are gone from this world (no pond
+    // loop the build tried here passed the valley lake's rules), so the top
+    // fork is the strand's, node 21, at climb 0.63 where fork 36 was
+    // at 0.755; 36 is now the stem's fork above node 3. Node 5's reach is
+    // 0.27 / 0.63 and its range 62.16 m, where it was 66.77.
     let first = -1;
     let last = -1;
     for (const n of climb) {
@@ -104,8 +108,8 @@ describe("one run on the seed `hollow`", SUITE, () => {
       expect(w.state.phase).toBe(Phase.Climb);
       expect(w.state.enemies.size).toBeLessThanOrEqual(1);
       for (const e of w.state.enemies.values()) expect(e.ai).toBe(AiState.Watch);
-      if (n === 5) sighting(n, 66.77);
-      if (n === 36) sighting(n, 25);
+      if (n === 5) sighting(n, 62.16);
+      if (n === 21) sighting(n, 25);
     }
     expect(w.watcher!.rng.rngSeed).not.toBe((seed ^ WATCH_SALT) | 0);
     // Rose, not merely never fell: the pad reads nothing, the last node short
@@ -145,8 +149,8 @@ describe("one run on the seed `hollow`", SUITE, () => {
     // is prey the whole way down, and no Hollow ever stands on the corridor.
     const guide = w.cut!.guide;
     expect(guide[0]).toBe(chain[chain.length - 1]);
-    expect(guide.length).toBe(55);
-    expect(guide[53]).toBe(1);
+    expect(guide.length).toBe(44);
+    expect(guide[42]).toBe(1);
     const place = (x: number, z: number) => { p.pos = { x, y: elevationAt(seed, x, z) + 0.9, z }; };
     /** Each fork's cut, with where the player stood when it fired. */
     const fired: Array<[number, string]> = [];
@@ -180,22 +184,18 @@ describe("one run on the seed `hollow`", SUITE, () => {
       step(`at ${guide[i]}`);
     }
     // Every fork on the guide, cut as the guide reaches it, opening the
-    // guide's next node; five branches closed, a Hollow in each. 2026-09-29:
+    // guide's next node; four branches closed, a Hollow in each. 2026-09-29:
     // four forks cut where there were five, and five branches closed where
-    // there were six. The graph has the five forks it had, but at the
-    // strand's fork, 78, the guide keeps to the strand down to the stem at
-    // fork 53 where it took the rung to the stem before, so it never comes
-    // to the rung's other end, fork 77.
-    expect(fired).toEqual([[36, "on the way to 36"], [21, "on the way to 21"], [78, "on the way to 78"], [53, "on the way to 53"]]);
-    expect([...w.cut!.cuts]).toEqual([[36, 42], [21, 54], [78, 74], [53, 3]]);
-    expect([...w.cut!.closed]).toEqual([27, 20, 21, 80, 53]);
-    expect(w.state.enemies.size).toBe(6);
-    // The walk is far faster than any Hollow, so fork 53's is still stepping
+    // there were six. 2026-10-10: the graph has four forks, and the guide
+    // meets every one: down the stem to the strand's fork 21, along the
+    // strand to 61, over the rung to 60 on the stem, and down the stem to 36.
+    expect(fired).toEqual([[21, "on the way to 21"], [61, "on the way to 61"], [60, "on the way to 60"], [36, "on the way to 36"]]);
+    expect([...w.cut!.cuts]).toEqual([[21, 37], [61, 60], [60, 5], [36, 3]]);
+    expect([...w.cut!.closed]).toEqual([20, 61, 60, 59]);
+    expect(w.state.enemies.size).toBe(5);
+    // The walk is far faster than any Hollow, so fork 36's is still stepping
     // out: the player waits at node 1, off the corridor, until the whole pack
-    // hunts them. The wait is measured on the terrain, not derived: that Hollow
-    // walked 76 ticks to its mouth on real ground (a flat 9 m at 6.3 m/s to
-    // the 1.5 m waypoint radius would be 71), stood 60, and seven of those
-    // ticks had already gone by on the walk down.
+    // hunts them. The wait is measured on the terrain, not derived.
     let waited = 0;
     while (waited < Math.round((FORK_EMERGE_MAX_S + FORK_REVEAL_S) / TICK_DT) && [...w.state.enemies.values()].some((e) => e.ai === AiState.Emerge)) {
       step("waiting at 1");
@@ -213,7 +213,7 @@ describe("one run on the seed `hollow`", SUITE, () => {
     expect(p.safe).toBe(true);
     expect(w.state.outcome).toBe(Outcome.Won);
     expect(p.health).toBeGreaterThan(0);
-    expect(w.state.enemies.size).toBe(6);
+    expect(w.state.enemies.size).toBe(5);
     for (const e of w.state.enemies.values()) expect(isOnCorridor(w, e.pos.x, e.pos.z)).toBe(false);
   });
 });

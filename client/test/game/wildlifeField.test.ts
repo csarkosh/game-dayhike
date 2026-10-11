@@ -112,9 +112,12 @@ describe("the rabbits and the canopy", () => {
   // 2026-09-30: seed 1 reads 697 open where it read 693 and seed -1117907922
   // 553 where it read 552: the ground the lakes and the cove change is read
   // by the grass and the canopy, so a few rabbits stand in the open now.
+  // 2026-10-10: seed 388817 reads 607 open and 933 partial where it read 627
+  // and 934: its valley lake, 15 m from where its pond stood, with its bank
+  // and apron, and its meadow's loop gone, change the grass and the canopy.
   const want: Record<number, [number, number, number]> = {
     1: [697, 957, 0],
-    388817: [627, 934, 0],
+    388817: [607, 933, 0],
     [-1117907922]: [553, 790, 0],
   };
   for (const seed of SEEDS) {

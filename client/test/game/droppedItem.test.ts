@@ -7,6 +7,7 @@ import { trailDistance } from "../../src/sim/trail.js";
 import { activeTerrainVariant } from "../../src/sim/terrain.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import "../../src/sim/passes/index.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("the dropped cap", () => {
   it("lies a stride off the stem a fifth of the way up, on the seed's side, the same every time for a seed", () => {
@@ -25,7 +26,9 @@ describe("the dropped cap", () => {
     const graph2 = activeTerrainVariant().trailGraph!(other);
     const cap2 = droppedCapAt(graph2, other)!;
     expect(cap2.x !== cap.x || cap2.z !== cap.z).toBe(true);
-  });
+    // Two worlds built, slower since the valley lakes (6.8 s together under a
+    // load of 7 on ten cores): past vitest's 5 s default.
+  }, timeLimit(30_000));
 
   it("builds a crown and a brim at its place, seated on the ground given", () => {
     const engine = new NullEngine();

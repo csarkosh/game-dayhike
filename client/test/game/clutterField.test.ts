@@ -180,8 +180,11 @@ describe("clutter bands", () => {
     // inland. This world's trail is another line: the 97 and 250 more all
     // stand within 2.6 m of the old line, the nearest of them 17.5 m from
     // the canopy pose, and none went.
+    // 2026-10-10: 2,771 and 8,969 before the valley lakes: this world's lake loop
+    // passes 0.75 m from the canopy pose now, where the nearest trail was the
+    // stem, 2.5 m off.
     const canopy = collectClutter(627994160, 123, -105.5)[CLUTTER_MEADOW]!;
-    expect([canopy.near.length, canopy.far.length]).toEqual([2771, 8969]);
+    expect([canopy.near.length, canopy.far.length]).toEqual([2639, 8861]);
     const meadow = collectClutter(627994160, 369, -855)[CLUTTER_MEADOW]!;
     expect([meadow.near.length, meadow.far.length]).toEqual([3168, 10166]);
   }, timeLimit(30_000));

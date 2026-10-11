@@ -400,9 +400,14 @@ describe("the blade field culled to the frustum", () => {
     // within 0.9 m of the old line, none went, and none of the 57 is in the
     // view, which holds 1,614 as it did. The meadow pose, 574 m from the
     // trail, reads as it did.
-    expect(counts).toEqual([1614, 6188, 1752, 6587]);
-    // Blade draws, culled and whole: the profile counted 20 live buckets at the canopy pose.
-    expect(draws).toEqual([20, 20, 12, 12]);
+    // 2026-10-10: 1,614 and 6,188 before the valley lakes: this world's lake loop
+    // passes 0.75 m from the canopy pose now, where the nearest trail was the
+    // stem, 2.5 m off. The meadow
+    // pose reads as it did.
+    expect(counts).toEqual([1482, 5934, 1752, 6587]);
+    // Blade draws, culled and whole: the profile counted 20 live buckets at
+    // the canopy pose; 21 since the valley lakes (2026-10-10).
+    expect(draws).toEqual([21, 21, 12, 12]);
   }, timeLimit(60_000));
 
   it("never leaves out a cell any part of which the camera can see, on threshold walks at both gate fields", () => {

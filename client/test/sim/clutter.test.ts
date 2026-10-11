@@ -1027,15 +1027,19 @@ describe("groundCover", () => {
 
   it("leaves open ground to the bit whatever the canopy floor", () => {
     // Where rho <= CANOPY_LO the canopy factor is exactly 1, so the floor
-    // never enters. Seed atmo, beside a meadow trail: a point off the
+    // never enters. Seed atmo, beside its lake's loop: a point off the
     // saturated 1.5, then every open point of a 140 m square. Measured with
-    // the floor at 0.5, before it moved.
+    // the floor at 0.5, before it moved. 2026-10-10: the point was (210, 86),
+    // 1.7 m from the pond's loop, and the square held 1,232 open points,
+    // until the valley lakes: the lake stands 12 m from where the pond did,
+    // its loop runs 14 m from that point, and the canopy has closed over it.
+    // (225, 93) stands 1.7 m from the lake's loop.
     const seed = 627994160;
-    const s = elevationSampleAt(seed, 210, 86);
-    expect(forestDensity(seed, 210, 86, s)).toBeLessThanOrEqual(0.4);
-    const c = groundCover(seed, 210, 86, s);
-    expect(c.grass).toBe(0.8084537679893669);
-    expect(c.duff).toBe(0.0691546232010633);
+    const s = elevationSampleAt(seed, 225, 93);
+    expect(forestDensity(seed, 225, 93, s)).toBeLessThanOrEqual(0.4);
+    const c = groundCover(seed, 225, 93, s);
+    expect(c.grass).toBe(1.3477755204497914);
+    expect(c.duff).toBe(0.015222447955020861);
     let n = 0, grass = 0, duff = 0;
     for (let x = 188; x < 328; x += 2) for (let z = 50; z < 190; z += 2) {
       const p = elevationSampleAt(seed, x, z);
@@ -1043,9 +1047,9 @@ describe("groundCover", () => {
       const g = groundCover(seed, x, z, p);
       n++; grass += g.grass; duff += g.duff;
     }
-    expect(n).toBe(1232);
-    expect(grass).toBe(375.3656473161681);
-    expect(duff).toBe(39.97600562428079);
+    expect(n).toBe(1398);
+    expect(grass).toBe(516.5853179158912);
+    expect(duff).toBe(2.848869908810645);
   }, timeLimit(30_000));
 
   it("keeps three quarters of the sward's edge under a closed canopy, and the duff yields to it", () => {
@@ -1083,15 +1087,19 @@ describe("groundCover", () => {
     expect(c.duff).toBe(0.0748586974728327);
   });
 
-  it("stands the canopy pose's sward at 0.9375 over 0.375 of duff", () => {
+  it("thins the canopy pose's sward at the lake loop's edge, 0.0303 over 0.98 of duff", () => {
     // The near-grass canopy pose, seed atmo: canopy 1 across the view. With
     // the floor at 0.5 this point read grass 0.5 and duff 0.6666666666666667.
+    // 2026-10-10: 0.9375 over 0.375, the floor's own reading, before the
+    // valley lakes: this world's lake loop passes 0.75 m from the pose now,
+    // inside the sward's ramp from the trail, where the nearest trail was the
+    // stem, 2.5 m off. The floor is read at seed 1's closed canopy above.
     const seed = 627994160;
     const s = elevationSampleAt(seed, 123, -105.5);
     expect(forestDensity(seed, 123, -105.5, s)).toBe(1);
     const c = groundCover(seed, 123, -105.5, s);
-    expect(c.grass).toBe(0.9375);
-    expect(c.duff).toBe(0.375);
+    expect(c.grass).toBe(0.03032639382117846);
+    expect(c.duff).toBe(0.9797174074691462);
   });
 
   it("keeps the path readable: no grass inside the bed's core, and the ramp's reach varies along the trail", () => {

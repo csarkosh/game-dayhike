@@ -899,7 +899,11 @@ describe("the grass class culled to the frustum", () => {
     // of the old line, 19.8 m and further from the pose, and 31 fewer within
     // 2.3 m of the new one, 81.4 m and further from it. The view holds 870
     // as it did, and the meadow pose, 574 m from the trail, reads as it did.
-    expect(counts).toEqual([870, 4570, 891, 4731]);
+    // 2026-10-10: 870 and 4,570 before the valley lakes: this world's lake loop
+    // passes 0.75 m from the canopy pose now, where the nearest trail was the
+    // stem, 2.5 m off. The meadow
+    // pose reads as it did.
+    expect(counts).toEqual([859, 4550, 891, 4731]);
   }, timeLimit(60_000));
 
   it("never leaves out a card any part of which the camera can see, on threshold walks at both gate fields out to 110 m", () => {

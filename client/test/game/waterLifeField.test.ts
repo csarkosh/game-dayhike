@@ -319,7 +319,7 @@ describe("the water life's layout", { timeout: timeLimit(60_000) }, () => {
       expect(v.y).toBe(lake.level);
       // Set off the walk's straight 2 m pieces along the shore's normal: the
       // shore's bend moves the distance by up to 0.07 m at the edge, and up
-      // to 0.64 m at the marsh's middle, 5 m in.
+      // to 0.64 m at the marsh's middle, 3.59 m in.
       if (v.marsh) {
         // in the marsh's middle, where it is all water's edge
         expect(Math.abs(sAt(lake, v.x, v.z) - mid)).toBeLessThanOrEqual(0.7);

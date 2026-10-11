@@ -205,11 +205,15 @@ describe("the placement", () => {
     // one line or the other. The farthest carry reads as it did.
     // 2026-09-30: 426 before the lakes and the cove. They are ground the
     // placement reads, and 49 more modules stand on the worlds they change.
-    expect(laid).toBe(475);
+    // 2026-10-10: 475 before the valley lakes, whose shores, banks and aprons
+    // are other ground than the round ponds' dishes, and whose trails run
+    // elsewhere; 13 more modules stand on the worlds they change.
+    expect(laid).toBe(479);
     // Measured: the farthest a run carried a module across these worlds,
     // 50.59 m of the 63.84 the constants allow.
     expect(farthest).toBeCloseTo(50.594476156076325, 9);
-  }, timeLimit(300_000));
+    // 200 worlds built, about a second each with the valley lakes, and read cell by cell: 251 s.
+  }, timeLimit(420_000));
 
   it("pins the run's reach to the arithmetic of its constants", () => {
     // Every step along a run is CLIFF_RUN_SPACING of the mean of its two

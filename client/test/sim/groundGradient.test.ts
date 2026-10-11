@@ -277,8 +277,14 @@ describe("the scatter censuses are untouched", () => {
     // Re-baselined 2026-10-05 from (731, -612707025): the alders. Eight cells
     // the forest's own density left empty hold one, on alder ground, and 68 of
     // the 739 trees under this rect are alders.
-    expect(list.length).toBe(739);
-    expect(h | 0).toBe(-845926807);
+    // Re-baselined 2026-10-10 from (739, -845926807): the trail's pond is the
+    // valley lake laid in the build, with its bank, its apron and the 7 m
+    // its trails keep from its shore. This world's lake stands 15 m from where
+    // its pond did and its meadow's loop is gone, so the ground under this
+    // rect and the trees that clear its corridors move: 846 stand here. A
+    // deliberate elevation-field change; the level id moves with it.
+    expect(list.length).toBe(846);
+    expect(h | 0).toBe(1060334318);
   });
 
   it("keeps every clutter field bit-identical, class by class", () => {
@@ -795,6 +801,10 @@ describe("the level id does not move", () => {
     // Re-baselined 2026-10-05 from 622505373: the alder's habitat and scale
     // and its trunk's box are declared (registryDigest moves), and its boxes
     // stand in the probe's chunks (probeDigest moves).
-    expect(passHash()).toBe(962002917);
+    // Re-baselined 2026-10-10 from 962002917: the valley lake's shape, its
+    // ground and the trail's 7 m from its shore are declared (registryDigest
+    // moves), and the ground the passes' boxes stand on moves with them
+    // (probeDigest moves).
+    expect(passHash()).toBe(-190240058);
   });
 });

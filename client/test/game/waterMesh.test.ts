@@ -517,7 +517,7 @@ describe("createWater under NullEngine", () => {
     // 249.6 -> 254.0: atmo's lake is a drawn outline now, its centre the basin's deepest point.
     const pondCam = { x: 254.0, z: 84 };
 
-    it("inland: rings 0 to 3 are disabled, ring 4's box ends at the coast, the pond disc stays on", () => {
+    it("inland: rings 0 to 3 are disabled, ring 4's box ends at the coast, the lake's water stays on", () => {
       engine = new NullEngine();
       const scene = new Scene(engine);
       const level = activeTerrainVariant().waterLevel!;
@@ -582,11 +582,11 @@ describe("createWater under NullEngine", () => {
       water.dispose();
     }, timeLimit(30_000));
 
-    it("culls every ring by its wet box: none is active looking inland from the pond, one is looking to the coast", () => {
+    it("culls every ring by its wet box: none is active looking inland from west of the lake, one is looking to the coast", () => {
       engine = new NullEngine();
       const scene = new Scene(engine);
       const lakes = activeTerrainVariant().waterBodies!(seed).filter((b): b is LakeSource => b.kind === "lake");
-      // pond_0's west bank, at eye height over it
+      // west of the lake, 35 m outside its shore, at eye height over the ground
       const camera = new FreeCamera("c", new Vector3(209.6, 87.5, 84), scene);
       camera.maxZ = 10_000;
       const water = createWater(scene, seed, 0, lakes, "medium", 209.6, 84);

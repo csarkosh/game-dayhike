@@ -488,10 +488,14 @@ describe("terrain weight attributes", () => {
     // open, and the partial value at a forest edge.
     expect(WEIGHTS2_STRIDE).toBe(4);
     const ring = createRingSamples(SEED, 0, 0, 0);
+    // 2026-10-10: the forest's edge was at vertex 77,3 (0.6708885941871319),
+    // 4.9 m from a rung of the braid, before the valley lakes; this world's
+    // braid has no rung there now and that vertex is under full canopy. The
+    // edge passes vertex 96,7, 5 m from the stem.
     const cases: [number, number, number][] = [
       [40, 61, 1],
       [102, 4, 0],
-      [77, 3, 0.6708885941871319],
+      [96, 7, 0.6237253916521234],
     ];
     for (const [ix, iz, want] of cases) {
       const at = iz * SIDE + ix;

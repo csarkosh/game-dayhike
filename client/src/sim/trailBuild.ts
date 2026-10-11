@@ -1067,6 +1067,27 @@ export function buildTrail(
       e.progress1 = progressAt(state.nodes[e.b] as TrailNode);
     }
   }
+  // A loop's edges carry their junction's stem progress as the final stem
+  // has it: a later loop's or a strand's split re-sums the stem, which moves
+  // a junction's progress by a rounding from what the half was given as it
+  // was built.
+  for (const loop of loops) {
+    const at = (n: number): number => {
+      for (const ei of stem) {
+        const e = state.edges[ei] as TrailEdge;
+        if (e.a === n) return e.progress0;
+        if (e.b === n) return e.progress1;
+      }
+      return -1;
+    };
+    const pa = at(loop.junctionA), pb = at(loop.junctionB);
+    for (const ei of loop.edges) {
+      const e = state.edges[ei] as TrailEdge;
+      const p = Math.abs(e.progress0 - pa) <= Math.abs(e.progress0 - pb) ? pa : pb;
+      e.progress0 = p;
+      e.progress1 = p;
+    }
+  }
 
   // ---- Scenery: a stand and a talus, clear of the stem ---------------------
   /**
