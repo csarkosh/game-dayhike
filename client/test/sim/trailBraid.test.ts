@@ -37,22 +37,27 @@ const THREE = 32;
  * unreached). Crossing that bed is exactly what the braid forbids, so the pair
  * gets none and 32 can only ever show one rung chain.
  *
- * 485 is the first seed over 1..500 that builds three strands, keeps the gap
- * invariant the tests below assert AND builds a rung on each pair. A probe, not
- * a guarantee: measured over the 227-seed sweep, 101 of the 227 seeds build a
- * rung at all, against the 162 that build a strand — so a seed with a rung on
- * every pair is the exception this fixture has to be chosen for.
+ * 39 is the first seed over 1..500 that builds three strands and builds a rung
+ * on each pair (16 of the 55 three-strand seeds do), with the dead-end and fork
+ * counts the tests below read. None of the 16 keeps the gap invariant above;
+ * no test reads that of this world, which is only read for its rungs. Seed 485,
+ * which the flat frame's disc pond left the first of them, is sealed in by the
+ * lake loop's bed on the valley lakes' worlds, as 32 is: the pond is a drawn lake
+ * there, long, lying across the stem. A sample, not a guarantee: measured over
+ * the 227-seed sweep, 101 of the 227 seeds build a rung at all, against the 162
+ * that build a strand — so a seed with a rung on every pair is the exception
+ * this fixture has to be chosen for.
  */
-const THREE_RUNGS = 485;
+const THREE_RUNGS = 39;
 /**
- * The two-strand world the rung gates below need: the first seed over 1..500
- * that builds TWO rung chains on its single strand pair, which is what the
- * BRAID_RUNG_GAP spacing gate has to read (seed 2 builds one, so that gate was
- * measuring nothing). It is also, as it happens, the first seed over 1..120
- * whose rung ends on a LOOP's bed rather than on its pair's strand — the
+ * The two-strand world the rung gates below need: a seed that builds TWO rung
+ * chains on its single strand pair, which is what the BRAID_RUNG_GAP spacing
+ * gate has to read (seed 2 builds one, so that gate was measuring nothing). It
+ * is the first of those (51 is the very first, and both its rungs end on the
+ * strand) whose rung ends on a LOOP's bed rather than on its pair's strand — the
  * arrival of last resort — so the loop gate reads the same world.
  *
- * Measured by scanning seeds 1..500 on the flat frame: only 14 of the 390
+ * Measured by scanning seeds 1..500 on the flat frame: only 14 of the 380
  * two-strand seeds build two chains, and NONE of the 14 keeps the flat frame's
  * gap invariant (the loop stage breaks it there, as the seed comment above
  * says), which is why this world is read by the rung gates and not by the
