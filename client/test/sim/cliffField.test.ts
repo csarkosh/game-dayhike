@@ -4,7 +4,10 @@ import { registeredPasses } from "../../src/sim/chunk.js";
 import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
 import { CLUTTER_ROCK, rockSlopeBand, type ClutterInstance } from "../../src/sim/clutter.js";
 import { hash3 } from "../../src/sim/field.js";
-import { elevationSampleAt } from "../../src/sim/terrain.js";
+import {
+  DEFAULT_TERRAIN_VARIANT, elevationSampleAt, registerTerrainVariant, setActiveTerrainVariant, type WaterBodySource,
+} from "../../src/sim/terrain.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import * as cliffField from "../../src/sim/cliffField.js";
 import { boxShell, seat } from "./helpers/cliffSolid.js";
 import {
@@ -97,6 +100,28 @@ describe("the gate", () => {
     expect(rockSlopeBand(steepest)).toBe(1);
     expect(CLIFF_ROCK_MIN).toBe(0.8);
   });
+
+  it("shuts on a lake's ground and opens on the same hillside without the lake", () => {
+    // A hillside rising 1.5 m a metre to the east, steep rock everywhere, and
+    // a stadium lake on it: its spine along z through the origin, 20 m either
+    // side, 8 m in half-width, an apron 20 m wide. At z = 0 the shore is at
+    // x = 8, the bank 4 to 6 m past it, and the apron to 24 to 26 m.
+    const hill = (): { h: number; dx: number; dz: number } => ({ h: 0, dx: 1.5, dz: 0 });
+    const lake: readonly WaterBodySource[] = [{ kind: "sea", level: -100 }, stadiumLake({ cx: 0, cz: 0, halfLen: 20, w: 8, apron: 20 })];
+    registerTerrainVariant({ name: "cliff-hill-lake", tunables: {}, sample: hill, waterBodies: () => lake });
+    registerTerrainVariant({ name: "cliff-hill", tunables: {}, sample: hill });
+    try {
+      setActiveTerrainVariant("cliff-hill-lake");
+      // In the water, on the bank, and on the apron 15 m out: shut.
+      expect([cliffGate(9, 0, 0).open, cliffGate(9, 11, 0).open, cliffGate(9, 23, 0).open]).toEqual([false, false, false]);
+      // Past the apron, 40 m out and still inside the lake's bound: open.
+      expect(cliffGate(9, 48, 0).open).toBe(true);
+      setActiveTerrainVariant("cliff-hill");
+      expect([cliffGate(9, 0, 0).open, cliffGate(9, 11, 0).open, cliffGate(9, 23, 0).open]).toEqual([true, true, true]);
+    } finally {
+      setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    }
+  }, timeLimit(30_000));
 });
 
 describe("the lean and the facing, without trig", () => {
@@ -207,8 +232,9 @@ describe("the placement", () => {
     // placement reads, and 49 more modules stand on the worlds they change.
     // 2026-10-10: 475 before the valley lakes, whose shores, banks and aprons
     // are other ground than the round ponds' dishes, and whose trails run
-    // elsewhere; 13 more modules stand on the worlds they change.
-    expect(laid).toBe(479);
+    // elsewhere; 12 more modules stand on the worlds they change, and none
+    // on a lake's ground (one did, on world 147's outer bank, 479 laid).
+    expect(laid).toBe(478);
     // Measured: the farthest a run carried a module across these worlds,
     // 50.59 m of the 63.84 the constants allow.
     expect(farthest).toBeCloseTo(50.594476156076325, 9);

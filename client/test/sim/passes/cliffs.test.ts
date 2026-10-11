@@ -214,14 +214,17 @@ describe("the colliders", () => {
     // the placement reads: 231 modules, 119158 points, 934 boxes and 24476
     // face reads. Nothing is capped or exposed, as before.
     // 2026-10-10: 231 modules before the valley lakes, other ground the
-    // placement reads (`cliffField.test.ts` has the count): 235 modules,
-    // 120804 points, 949 boxes and 24880 face reads.
-    expect(modules).toBe(235);
-    expect(points).toBe(120804);
-    expect(boxes).toBe(949);
+    // placement reads (`cliffField.test.ts` has the count), and no module
+    // stands on a lake's ground: 234 modules, 120636 points, 947 boxes and
+    // 24832 face reads. Nothing is capped or exposed, as before: the one
+    // module the valley lakes first stood on world 147's outer bank, its
+    // uphill face over the lake's basin, capped and exposed 24 face reads.
+    expect(modules).toBe(234);
+    expect(points).toBe(120636);
+    expect(boxes).toBe(947);
     expect(capped).toBe(0);
     expect(exposed).toBe(0);
-    expect(faceReads).toBe(24880);
+    expect(faceReads).toBe(24832);
     // 200 worlds built, about a second each with the valley lakes, and read cell by cell: 252 to 261 s.
   }, timeLimit(420_000));
 
