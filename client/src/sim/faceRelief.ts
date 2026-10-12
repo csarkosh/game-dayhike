@@ -2,7 +2,9 @@
  * The rock relief of the steep ground: a unitless field in [−1, 1] with
  * exact derivatives, in two forms. Columns are a jittered cellular field
  * whose cells, on a steep face, stand as prisms taller than they are wide;
- * blocks are a near-square lattice with rounded joints, two octaves. A slow
+ * blocks are a near-square lattice with rounded joints, two octaves. Each
+ * cell is a plane tilted its own way, so neighbouring cells meet the light
+ * at different angles, not only at their joints. A slow
  * noise over the world chooses the form, so one face carries one of them.
  *
  * The field is a function of the world position and seed alone. The stage
@@ -22,7 +24,7 @@ export const FACE_SLOPE_LO = 1.0;
 /** The ground's gradient from which the relief is whole. */
 export const FACE_SLOPE_HI = 1.4;
 /** How far, in metres along the face's normal, the surface moves either way. */
-export const FACE_HALF_DEPTH = 0.6;
+export const FACE_HALF_DEPTH = 1.0;
 /** The forward-difference step, in metres, for the ground's second derivatives.
  * Finer than any crease of the ground beneath: a ridge's crest can turn its
  * gradient through 0.7 in 4 cm, and a step of a few centimetres misses that
@@ -44,6 +46,11 @@ export const FACE_BLOCK_FINE_BORDER = 0.45;
 export const FACE_BLOCK_FINE_WEIGHT = 0.5;
 /** Brings the two octaves' sum, at most 1.5, back within [−1, 1]. */
 export const FACE_BLOCK_NORM = 2 / 3;
+/** A cell's value at its site, as a share of the unit range. */
+export const FACE_VALUE_SPAN = 0.6;
+/** How far a cell's plane rises, as a share of the unit range, per cell
+ * crossed along its steepest tilt (per axis, before the tilt's own [−1, 1]). */
+export const FACE_TILT = 0.35;
 
 /** The wavelength (m) of the noise that chooses the form. */
 export const FACE_KIND_WAVE = 150;
@@ -61,7 +68,7 @@ export const FACE_RELIEF_TUNABLES: Readonly<Record<string, number>> = {
   FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER,
   FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER,
   FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER,
-  FACE_BLOCK_FINE_WEIGHT, FACE_BLOCK_NORM,
+  FACE_BLOCK_FINE_WEIGHT, FACE_BLOCK_NORM, FACE_VALUE_SPAN, FACE_TILT,
   FACE_KIND_WAVE, FACE_KIND_LO, FACE_KIND_HI,
   FACE_COLUMN_SALT, FACE_BLOCK_SALT, FACE_BLOCK_FINE_SALT, FACE_KIND_SALT,
 };
@@ -75,16 +82,19 @@ const ON_SITE = 1e-9;
 
 /**
  * The site of lattice cell (i, j): its position, displaced from the cell's
- * centre by up to jitter · cell / 2 in each axis, and its value in [−1, 1].
- * `salt` is already mixed with the world seed.
+ * centre by up to jitter · cell / 2 in each axis, its value o in [−1, 1] and
+ * its plane's tilt (a, b), each in [−1, 1]. `salt` is already mixed with the
+ * world seed.
  */
 export function cellularSite(
   i: number, j: number, cell: number, jitter: number, salt: number,
-): { x: number; z: number; o: number } {
+): { x: number; z: number; o: number; a: number; b: number } {
   return {
     x: (i + 0.5 + jitter * (hash3(i, j, 0, salt) - 0.5)) * cell,
     z: (j + 0.5 + jitter * (hash3(i, j, 1, salt) - 0.5)) * cell,
     o: 2 * hash3(i, j, 2, salt) - 1,
+    a: 2 * hash3(i, j, 3, salt) - 1,
+    b: 2 * hash3(i, j, 4, salt) - 1,
   };
 }
 
@@ -154,9 +164,15 @@ function cellular(
   const f1 = siteF[nearK] as number;
   const g1x = f1 < ON_SITE ? 0 : (siteEx[nearK] as number) / f1;
   const g1z = f1 < ON_SITE ? 0 : (siteEz[nearK] as number) / f1;
+  // A tilt of 1 rises FACE_TILT across one cell.
+  const tc = FACE_TILT / cell;
   let weighted = 0;
   let sw = 0;
-  let swo = 0;
+  let swu = 0;
+  // Σ w · ∂u, the planes' own slopes weighted.
+  let px = 0;
+  let pz = 0;
+  // Σ w′ · u and Σ w′.
   let ax = 0;
   let az = 0;
   let bx = 0;
@@ -166,43 +182,67 @@ function cellular(
     const t = (f - f1) / border;
     if (t >= 1) continue;
     const w = 1 - stepT(t);
-    const o = 2 * hash3(siteI[k] as number, siteJ[k] as number, 2, salt) - 1;
+    const i = siteI[k] as number;
+    const j = siteJ[k] as number;
+    const ex = siteEx[k] as number;
+    const ez = siteEz[k] as number;
+    const o = 2 * hash3(i, j, 2, salt) - 1;
+    const sa = tc * (2 * hash3(i, j, 3, salt) - 1);
+    const sb = tc * (2 * hash3(i, j, 4, salt) - 1);
+    // The site's plane: its value at the site, tilted through it.
+    const u = o * FACE_VALUE_SPAN + (sa * ex + sb * ez);
     weighted++;
     sw += w;
-    swo += w * o;
+    swu += w * u;
+    px += w * sa;
+    pz += w * sb;
     if (t > 0) {
       // w′ = −S′(t) · (∇F − ∇F1) / border, with ∇F = (p − c) / F.
       const d = -stepTd(t) / border;
-      const gx = (f < ON_SITE ? 0 : (siteEx[k] as number) / f) - g1x;
-      const gz = (f < ON_SITE ? 0 : (siteEz[k] as number) / f) - g1z;
-      ax += d * gx * o;
-      az += d * gz * o;
+      const gx = (f < ON_SITE ? 0 : ex / f) - g1x;
+      const gz = (f < ON_SITE ? 0 : ez / f) - g1z;
+      ax += d * gx * u;
+      az += d * gz * u;
       bx += d * gx;
       bz += d * gz;
     }
   }
+  let v: number;
   if (weighted === 1) {
-    // Well inside a cell: the cell's own value, flat.
-    cv = swo;
+    // Well inside a cell: the cell's own plane.
+    v = swu;
+    cdx = px;
+    cdz = pz;
+  } else {
+    v = swu / sw;
+    cdx = (ax + px - v * bx) / sw;
+    cdz = (az + pz - v * bz) / sw;
+  }
+  // A plane reaches past the unit range only far up its tilt; there the
+  // field holds at the bound, flat.
+  if (v > 1 || v < -1) {
+    v = v > 1 ? 1 : -1;
     cdx = 0;
     cdz = 0;
-    return;
   }
-  const v = swo / sw;
   cv = v;
-  cdx = (ax - v * bx) / sw;
-  cdz = (az - v * bz) / sw;
 }
 
 /**
- * The cellular field: the sites' values weighted by how near each is to the
- * nearest, w = 1 − smootherstep((F − F1) / border), so the nearest site's
- * value inside a cell, the mean of two sites' values on the border between
- * them and a quintic blend across a joint `border` metres wide. A convex mix,
- * so within the values' [−1, 1]; continuous everywhere, smooth across a joint
- * of two cells, with a kink only at a junction of three or more. Of the nine
- * cells around the sample, or the twenty-five when a site with weight could
- * lie outside the nine (only on the most jittered forms, and rarely).
+ * The cellular field: each site's plane, u = o · FACE_VALUE_SPAN + FACE_TILT ·
+ * (a · (x − sx) + b · (z − sz)) / cell, weighted by how near the site is to
+ * the nearest, w = 1 − smootherstep((F − F1) / border), so the nearest site's
+ * plane inside a cell, the mean of two sites' planes on the border between
+ * them and a quintic blend across a joint `border` metres wide. Continuous
+ * everywhere, smooth across a joint of two cells, with a kink only at a
+ * junction of three or more. Of the nine cells around the sample, or the
+ * twenty-five when a site with weight could lie outside the nine (only on the
+ * most jittered forms, and rarely).
+ *
+ * A site with weight is within F1 + border ≤ 1.42 · cell + border of the
+ * sample, so its tilt term is at most FACE_TILT · 2 · (1.42 + border / cell)
+ * and a plane can pass ±1 far up its tilt. The field is clamped to [−1, 1],
+ * flat past the clamp, so the range holds for every sample.
  */
 export function cellularD(
   x: number, z: number, cell: number, jitter: number, border: number, salt: number,

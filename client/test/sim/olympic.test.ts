@@ -97,7 +97,7 @@ describe("variant olympic", () => {
     expect(steepest).toBeGreaterThan(0.3);
     expect(worst / steepest).toBeLessThan(TOL_RATIO);
     // The scarp of world 627994160, where nearly every point carries the
-    // steep ground's relief. Measured worst / steepest: 5.4e-5.
+    // steep ground's relief. Measured worst / steepest: 7.4e-5.
     const scarp = checkDerivatives("olympic", scarpSweep(), 627994160);
     expect(scarp.steepest).toBeGreaterThan(10);
     expect(scarp.worst / scarp.steepest).toBeLessThan(TOL_RATIO);
