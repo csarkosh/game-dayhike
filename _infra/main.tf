@@ -64,6 +64,16 @@ provider "google" {
   user_project_override = true
 }
 
+# The same, on the beta provider, for the Firebase web app's configuration:
+# read through the Identity Toolkit API, which makes the same demand.
+provider "google-beta" {
+  alias                 = "quota"
+  project               = var.gcp_project_id
+  region                = var.gcp_region
+  billing_project       = var.gcp_project_id
+  user_project_override = true
+}
+
 module "gcp_signaling" {
   source = "./modules/gcp-signaling"
 
@@ -107,8 +117,10 @@ module "gcp_auth" {
   authorized_domains = [var.domain_name]
 
   providers = {
-    google      = google
-    google-beta = google-beta
+    google            = google
+    google.quota      = google.billing
+    google-beta       = google-beta
+    google-beta.quota = google-beta.quota
   }
 
   depends_on = [module.gcp_hosting]
