@@ -7,7 +7,7 @@
  * at different angles, not only at their joints. A slow
  * noise over the world chooses the form, so one face carries one of them.
  * Both stand on the large forms, a coarse cellular octave of tilted slabs
- * fourteen metres across: the buttresses and gullies of a face.
+ * twenty metres across: the buttresses and gullies of a face.
  *
  * The field is a function of the world position and seed alone. It is not a
  * stage of the height chain by itself: the stage that masks it to the steep
@@ -28,25 +28,25 @@ export const FACE_SLOPE_HI = 1.4;
 export const FACE_HALF_DEPTH = 2.0;
 
 /** Columns: lattice spacing (m), jitter (share of the cell), joint width (m). */
-export const FACE_COLUMN_CELL = 2.8;
+export const FACE_COLUMN_CELL = 5.0;
 export const FACE_COLUMN_JITTER = 0.8;
-export const FACE_COLUMN_BORDER = 0.3;
+export const FACE_COLUMN_BORDER = 0.5;
 /** Blocks, the coarse octave. */
-export const FACE_BLOCK_CELL = 3.6;
+export const FACE_BLOCK_CELL = 6.0;
 export const FACE_BLOCK_JITTER = 0.25;
-export const FACE_BLOCK_BORDER = 0.9;
+export const FACE_BLOCK_BORDER = 1.4;
 /** Blocks, the fine octave, added at FACE_BLOCK_FINE_WEIGHT. */
-export const FACE_BLOCK_FINE_CELL = 1.8;
+export const FACE_BLOCK_FINE_CELL = 3.0;
 export const FACE_BLOCK_FINE_JITTER = 0.25;
-export const FACE_BLOCK_FINE_BORDER = 0.45;
+export const FACE_BLOCK_FINE_BORDER = 0.7;
 export const FACE_BLOCK_FINE_WEIGHT = 0.5;
 /** Brings the two octaves' sum, at most 1.5, back within [−1, 1]. */
 export const FACE_BLOCK_NORM = 2 / 3;
 /** The large forms, under columns and blocks alike: lattice spacing (m),
  * jitter (share of the cell), joint width (m). */
-export const FACE_FORM_CELL = 14;
+export const FACE_FORM_CELL = 20;
 export const FACE_FORM_JITTER = 0.6;
-export const FACE_FORM_BORDER = 2.5;
+export const FACE_FORM_BORDER = 3.5;
 /** The large forms' weight beside the fine relief's 1; the sum is divided by
  * 1 + FACE_FORM_WEIGHT, a weighted mean within [−1, 1], before the gain. */
 export const FACE_FORM_WEIGHT = 1.5;

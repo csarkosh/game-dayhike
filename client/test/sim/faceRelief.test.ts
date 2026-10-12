@@ -23,12 +23,18 @@ const COLUMN_SALT = SEED ^ FACE_COLUMN_SALT;
 const FORM_SALT = SEED ^ FACE_FORM_SALT;
 const OTHER_SEED = 0x2b7e1516;
 
+// 2026-10-12: before the cells grew, the five were
+// { v: -0.12037865902238515, dx: 0.04777240972266101, dz: -0.0953495767388083 },
+// { v: -0.10498793659924666, dx: -0.13370372839279204, dz: 0.10937997344723992 },
+// { v: 0.20755520608187866, dx: 0.006429429777199409, dz: -0.05001600740943104 },
+// { v: 0.7838926004062614, dx: 0.35650137342660326, dz: 0.6833581444538253 },
+// { v: 0.35525572845396025, dx: 0.23628379485076956, dz: 0.1145750618920356 }.
 const LITERALS: ReliefSample[] = [
-  { v: -0.12037865902238515, dx: 0.04777240972266101, dz: -0.0953495767388083 },
-  { v: -0.10498793659924666, dx: -0.13370372839279204, dz: 0.10937997344723992 },
-  { v: 0.20755520608187866, dx: 0.006429429777199409, dz: -0.05001600740943104 },
-  { v: 0.7838926004062614, dx: 0.35650137342660326, dz: 0.6833581444538253 },
-  { v: 0.35525572845396025, dx: 0.23628379485076956, dz: 0.1145750618920356 },
+  { v: -0.07751539147952732, dx: -0.029081705600085897, dz: -0.31256940893685803 },
+  { v: -1, dx: 0, dz: 0 },
+  { v: 1, dx: 0, dz: 0 },
+  { v: 0.9369929206143341, dx: 0.06305075270789248, dz: 0.0708063536146969 },
+  { v: -0.5974911820313454, dx: 0.10290644415487171, dz: 0.23077708088406573 },
 ];
 
 /** The fine relief, weighted 1, over the large forms, weighted 1.5, their sum
@@ -299,6 +305,16 @@ describe("the cellular field", () => {
     const columns = worst(FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, 1000);
     expect(columns).toBeLessThan(1e-12);
     expect(worst(1, 1, 0.5, 300)).toBeLessThan(1e-12);
+    // The 5 × 5 holds every site with weight for a joint under (2 − √2)
+    // cells; every lattice of the relief keeps under a quarter of a cell.
+    const shares = [
+      FACE_COLUMN_BORDER / FACE_COLUMN_CELL,
+      FACE_BLOCK_BORDER / FACE_BLOCK_CELL,
+      FACE_BLOCK_FINE_BORDER / FACE_BLOCK_FINE_CELL,
+      FACE_FORM_BORDER / FACE_FORM_CELL,
+    ];
+    expect(shares).toEqual([0.1, 1.4 / 6, 0.7 / 3, 0.175]);
+    for (const share of shares) expect(share).toBeLessThan(2 - Math.SQRT2);
   });
 
   it("tilts its planes both ways, within the bound, and never needs the clamp here", () => {
@@ -330,11 +346,16 @@ describe("the cellular field", () => {
       expect(Math.max(tiltMax, -tiltMin)).toBeLessThanOrEqual(bound);
       return { tiltMax, tiltMin, clamped };
     });
+    // 2026-10-12: before the cells grew, the four were
+    // { tiltMax: 0.4402055220495723, tiltMin: -0.44214625627634785, clamped: 0 },
+    // { tiltMax: 0.3982215901929238, tiltMin: -0.4015684322765919, clamped: 0 },
+    // { tiltMax: 0.39425022331276444, tiltMin: -0.4112739089875262, clamped: 0 },
+    // { tiltMax: 0.4076679714111451, tiltMin: -0.4116286666803809, clamped: 0 }.
     expect(seen).toEqual([
-      { tiltMax: 0.4402055220495723, tiltMin: -0.44214625627634785, clamped: 0 },
-      { tiltMax: 0.3982215901929238, tiltMin: -0.4015684322765919, clamped: 0 },
-      { tiltMax: 0.39425022331276444, tiltMin: -0.4112739089875262, clamped: 0 },
-      { tiltMax: 0.4076679714111451, tiltMin: -0.4116286666803809, clamped: 0 },
+      { tiltMax: 0.3985676269496804, tiltMin: -0.40469138901851087, clamped: 0 },
+      { tiltMax: 0.42615377839517143, tiltMin: -0.3970554417188491, clamped: 0 },
+      { tiltMax: 0.3865835664243227, tiltMin: -0.38951547203652126, clamped: 0 },
+      { tiltMax: 0.40425740988901027, tiltMin: -0.41973243931740706, clamped: 0 },
     ]);
   });
 
@@ -346,7 +367,8 @@ describe("the cellular field", () => {
       ),
       r2Points(2000, 1000),
     );
-    // Measured worst / steepest: 2.6e-6, with no point left out needing it.
+    // Measured worst / steepest: 9.3e-7, with no point left out needing it.
+    // 2026-10-12: 2.6e-6 before the cells grew.
     expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
     expect(r.skipped).toBe(1);
   });
@@ -355,9 +377,10 @@ describe("the cellular field", () => {
 describe("the relief", () => {
   it("carries exact derivatives through the forms and the mix (a 2,000-point sweep)", () => {
     const r = checkField((x, z) => faceReliefD(SEED, x, z), reliefGap, r2Points(2000, 1000));
-    // Measured worst / steepest: 2.2e-6, with no point left out needing it.
+    // Measured worst / steepest: 9.3e-7, with no point left out needing it.
+    // 2026-10-12: 2.2e-6, and 1 left out, before the cells grew.
     expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
-    expect(r.skipped).toBe(1);
+    expect(r.skipped).toBe(2);
   });
 
   it("carries the mix's own derivative inside the forms' cells", () => {
@@ -382,12 +405,16 @@ describe("the relief", () => {
       });
     };
     const pts = r2Points(20000, 1000).filter(([x, z]) => inside(x, z));
-    expect(pts.length).toBe(1253);
+    // 2026-10-12: 1253 before the cells grew.
+    expect(pts.length).toBe(1325);
     const r = checkField((x, z) => faceReliefD(SEED, x, z), () => Infinity, pts);
     expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
-    // Measured worst / steepest: 2.9e-8; steepest 0.15, the gain lifting the
-    // mix's slopes 2.5 times.
-    expect(r.steepest).toBeGreaterThan(0.125);
+    // Measured worst / steepest: 5.1e-10; steepest 0.10, the gain lifting the
+    // mix's slopes 2.5 times. A plane's slope is its tilt over its cell, so
+    // larger cells lean less per metre.
+    // 2026-10-12: 2.9e-8 and steepest 0.15, held above 0.125, before the
+    // cells grew.
+    expect(Math.round(r.steepest * 1e4) / 1e4).toBe(0.1021);
   });
 
   it("stays within [−1, 1] and finite over 20,000 points, far ones included", () => {
@@ -466,11 +493,12 @@ describe("the relief", () => {
       if (pts.length === 0) first = r;
       pts.push([x, z]);
     }
-    expect(pts.length).toBe(4411);
-    expect(pts[0]).toEqual([78.04265994708359, -882.5553440311485]);
-    expect(first).toEqual({
-      v: -0.65061572282477, dx: -0.039864086006828406, dz: -0.0030732853251888813,
-    });
+    // 2026-10-12: 4411 points, the first at (78.04265994708359,
+    // -882.5553440311485) with { v: -0.65061572282477, dx: -0.039864086006828406,
+    // dz: -0.0030732853251888813 }, before the cells grew.
+    expect(pts.length).toBe(4671);
+    expect(pts[0]).toEqual([568.2873274536977, -22.235926027255104]);
+    expect(first).toEqual({ v: -1, dx: 0, dz: 0 });
   });
 
   it("is one form where the share is 0 or 1, the forms read through cellularD", () => {
@@ -513,8 +541,9 @@ describe("the relief", () => {
 
   it("is continuous: no step along 100 lines of 100 m at 1 cm", () => {
     // Every sample, junctions included. The largest step the lines meet is
-    // 0.086, a slope of 8.6: the steepest joint's 3.4 times the gain of 2.5.
-    // A step over 0.25 in 1 cm, three times that, is no slope but a break.
+    // 0.054, a slope of 5.4: the steepest joint's 2.1 times the gain of 2.5.
+    // A step over 0.25 in 1 cm, more than four times that, is no slope but a
+    // break. 2026-10-12: 0.086 before the cells grew.
     const dirs = [[1, 0], [0, 1], [0.6, 0.8], [0.8, -0.6]] as const;
     const starts = r2Points(100, 1000);
     let largest = 0;
@@ -544,10 +573,12 @@ describe("the relief", () => {
       if (v === 1 || v === -1) clamped[s === 0 ? "columns" : s === 1 ? "blocks" : "band"]++;
     }
     const mean = sum / 20000;
-    expect(Math.round(mean * 1e4) / 1e4).toBe(0.4583);
+    // 2026-10-12: 0.4583 and { columns: 616, blocks: 371, band: 471 } before
+    // the cells grew.
+    expect(Math.round(mean * 1e4) / 1e4).toBe(0.46);
     expect(mean).toBeGreaterThanOrEqual(0.45);
     expect(mean).toBeLessThanOrEqual(0.75);
-    expect(clamped).toEqual({ columns: 616, blocks: 371, band: 471 });
+    expect(clamped).toEqual({ columns: 612, blocks: 380, band: 468 });
   });
 
   it("differs between two worlds", () => {

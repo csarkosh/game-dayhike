@@ -495,7 +495,7 @@ describe("facePatchCells and facePatchStitch", () => {
 
   it("at the scarp, turns no triangle over", () => {
     // The worst, at 0.5 m on the scarp's steepest columns, still faces
-    // within 78° of the ground's.
+    // within 80° of the ground's.
     let folds = 0;
     let least = Infinity;
     for (const { cell, patch: p } of scarpPatches()) {
@@ -507,8 +507,9 @@ describe("facePatchCells and facePatchStitch", () => {
     expect(folds).toBe(0);
     // 2026-10-12: 0.390 before the relief's tilted planes and the doubled
     // depth; 0.349 at 2 m before the large forms, the 4 m depth and the cap
-    // by the ground's bend; 0.303 before the relief's gain.
-    expect(least).toBeGreaterThan(0.215);
+    // by the ground's bend; 0.303 before the relief's gain; above 0.215
+    // before the relief's cells grew.
+    expect(least).toBeCloseTo(0.1853, 4);
   }, timeLimit(60_000));
 
   it("turns no triangle over on a sharp ridge of another world", () => {
@@ -520,7 +521,8 @@ describe("facePatchCells and facePatchStitch", () => {
     if (p === null) throw new Error("no patch at (25, 34)");
     const f = foldsOf(42, cell, p);
     expect(f.folds).toBe(0);
-    // 2026-10-12: 0.3487 before the relief's gain.
-    expect(f.least).toBeCloseTo(0.2664, 4);
+    // 2026-10-12: 0.3487 before the relief's gain; 0.2664 before the
+    // relief's cells grew.
+    expect(f.least).toBeCloseTo(0.2634, 4);
   }, timeLimit(20_000));
 });

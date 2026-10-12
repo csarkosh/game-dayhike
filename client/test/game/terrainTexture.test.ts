@@ -676,8 +676,10 @@ describe("rock parallax (the TypeScript mirror of the shader's march)", () => {
     }
   });
   it("keeps the relief shallow against the stones it lifts", () => {
-    // ground.rock.webp tiles at 1.8 m with ~8-12 stones a side, so a stone is
-    // 0.15-0.25 m across; parallax deeper than about a fifth of that swims.
+    // ground.rock.webp has ~8-12 stones a side and repeats every 5.4 m, so a
+    // stone is 0.45-0.75 m across; parallax deeper than about a fifth of that
+    // swims. 2026-10-12: 1.8 m and 0.15-0.25 m stones before the rock grew.
+    // The depth is in metres, scaled to the repeat in the shader.
     expect(ROCK_PARALLAX_DEPTH).toBeLessThanOrEqual(0.04);
   });
   it("finds a ramp's intersection within one step of the exact answer", () => {
@@ -827,6 +829,11 @@ describe("the grass floor", () => {
     expect(writes.terrainHorizon).toEqual([HORIZON[0], HORIZON[1], HORIZON_MAX]);
     expect(writes.terrainTuft).toEqual([TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b]);
     expect(writes.terrainMacroOn).toEqual([1]);
+  });
+
+  it("binds the rock layer's repeat, one every 5.4 m, and the textures' mean", () => {
+    // 2026-10-12: [1 / 1.8, 0.5] before the rock grew.
+    expect(makeBoundPlugin().writes.terrainRock2).toEqual([1 / 5.4, 0.5]);
   });
 
   it("pulls the sward floor toward the thatch colour after the horizon tint", () => {
