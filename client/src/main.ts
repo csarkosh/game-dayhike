@@ -38,6 +38,8 @@ import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
+import { releaseEngine } from "./game/renderer.js";
+import { adoptEngine, dropEngine, keepEngine, takeEngine } from "./game/keptEngine.js";
 import { recordEngineFailure, recordStartFailure, startOnEngine } from "./game/engineFailure.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { browserEnv, browserMajor, hostOs, isChromeOrEdge, readSignals, type GpuSignals } from "./game/gpuSignals.js";
@@ -720,6 +722,18 @@ function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean, 
 }
 
 /**
+ * A hike's engine: the one the last hike on the page left (`keptEngine.ts`),
+ * on its canvas, where it is the engine the WebGPU rule gives `tier` now, the
+ * adapter's verdict the one read at load; else a fresh one (`engineFor`), the
+ * kept one let go.
+ */
+function hikeEngineFor(tier: QualityTier, read: GpuSignals, current: () => boolean): Promise<EngineOnCanvas> {
+  const rule = chooseEngine({ ...engineInput(tier, read), fits: signalsFit(read) });
+  const kept = rule === "probe" ? (dropEngine(releaseEngine), null) : takeEngine(rule === "webgpu", tier, releaseEngine);
+  return kept !== null ? Promise.resolve(kept) : engineFor(tier, read, current);
+}
+
+/**
  * A failure of a running WebGPU engine, or a renderer that could not be built
  * on one (`"pipeline"`): remembered, and `engine=webgl2` pinned in this tab's
  * URL where the rule would otherwise give WebGPU again
@@ -993,9 +1007,13 @@ function render(container: HTMLDivElement): void {
     paint: () => new Promise((resolve) => afterNextPaint(resolve)),
     engine: (decided, read) => {
       hikeSignals = read;
-      return engineFor(decided.tier, read, () => !cancelled());
+      return hikeEngineFor(decided.tier, read, () => !cancelled());
     },
-    discard: (onCanvas) => onCanvas.engine?.dispose(),
+    // A kept WebGL2 engine is left on its canvas for the renderer: let go too.
+    discard: (onCanvas) => {
+      const engine = onCanvas.engine ?? adoptEngine(onCanvas.canvas);
+      if (engine !== null) releaseEngine(engine);
+    },
     build: (decided, onCanvas) => {
       container.appendChild(onCanvas.canvas);
       const read = hikeSignals;
@@ -1053,6 +1071,7 @@ function launch(
         deferClipmap: intro !== null,
         engine: engine ?? undefined,
         watchers: watchers ?? undefined,
+        keepEngine: (kept) => keepEngine(kept, releaseEngine),
         engineFor: engineForGame,
         engineFailed: record,
         tier: decided.tier,

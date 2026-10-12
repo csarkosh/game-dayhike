@@ -95,6 +95,7 @@ import {
   type EngineWatchers,
   type SwapBindings,
 } from "./game/rendererSwap.js";
+import { pinShaders, type KeptEngine } from "./game/keptEngine.js";
 import { releaseAtmosphere } from "./game/atmosphere.js";
 import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
@@ -186,6 +187,9 @@ export type GameOptions = {
   engine?: AbstractEngine;
   /** The WebGPU module's watchers, given with a WebGPU engine. */
   watchers?: EngineWatchers;
+  /** At the hike's end, the engine standing, its scene gone, for the next
+   * hike on the page (`keptEngine.ts`); absent, the engine is disposed. */
+  keepEngine?(kept: KeptEngine): void;
   /** The engine the WebGPU rule gives `tier` now, made on a fresh canvas
    * (`main.ts`'s `engineFor`): what a switch of tier, and a rebuild after a
    * failure, builds on. */
@@ -417,6 +421,22 @@ function buildGame(
   }
   tellCompiles(renderer);
   made(() => untellCompiles?.());
+  /** Holds each shader as it compiles, on an engine that will outlive the
+   * hike (`keepEngine`): a material let go mid-hike (a billboard bake's
+   * clone, say) would otherwise take its program with it, and the next hike
+   * would compile it again. Swept on the compile observable, which both
+   * engines fire; `pinShaders` takes only what is ready and clean, so an
+   * effect still compiling is picked up by a later sweep or at the retire. */
+  let unpinCompiles: (() => void) | null = null;
+  function pinCompiles(r: Renderer): void {
+    unpinCompiles?.();
+    unpinCompiles = null;
+    if (options.keepEngine === undefined) return;
+    const pinned = r.engine.onAfterShaderCompilationObservable.add(() => pinShaders(r.engine));
+    unpinCompiles = () => r.engine.onAfterShaderCompilationObservable.remove(pinned);
+  }
+  pinCompiles(renderer);
+  made(() => unpinCompiles?.());
   if (first.fellBack) options.onTierFallback({ attempted: options.tier, built: tier, source: options.tierSource });
   /** What the last switch of tier said, until the next choice: a fallback's line. */
   let swapError: string | null = null;
@@ -1790,6 +1810,7 @@ function buildGame(
     cameraOnPlayer = false;
     watchCompiles(r);
     tellCompiles(r);
+    pinCompiles(r);
   }
 
   const swapBindings: SwapBindings = {
@@ -2108,7 +2129,14 @@ function buildGame(
       touchLayer.dispose();
       prompt.dispose();
       input.dispose();
-      if (!broken) renderer.dispose();
+      if (!broken) {
+        // Off an engine that may outlive the hike.
+        unwatchCompiles?.();
+        untellCompiles?.();
+        unpinCompiles?.();
+        if (options.keepEngine === undefined) renderer.dispose();
+        else options.keepEngine({ canvas, engine: renderer.retire(), watchers, tier });
+      }
       skySource.dispose();
       wildlifeAudio?.dispose();
       waterLifeAudio?.dispose();

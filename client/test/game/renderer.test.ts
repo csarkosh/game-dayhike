@@ -855,9 +855,9 @@ describe("world shell wiring", () => {
     expect(drain).toContain("wildlifeEventDrain.length = n;");
   });
 
-  it("draws on an engine it is given, and makes WebGL2's own otherwise", () => {
+  it("draws on an engine it is given, takes up a kept WebGL2 one, and makes WebGL2's own otherwise", () => {
     expect(src).toContain(
-      "const engine = options.engine ?? new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);",
+      "const engine = options.engine ?? adoptEngine(canvas) ?? new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);",
     );
     expect(src).toMatch(/engine: AbstractEngine;/);
     expect(src).not.toContain("function detectTier(");

@@ -25,14 +25,14 @@ describe("the loading hooks", () => {
     reportCall("start", "call.elk_bark");
     reportCall("done", "call.elk_bark");
     expect(reportProgress()).toBe(p);
-    expect(p.view().line).toBe("ground and sound 2 of 24");
+    expect(p.view().lines).toContain("ground and sound 2 of 24");
     setLoadProgress(null);
   });
 
   it("report pipelines landed of asked", () => {
     const p = afterModels();
     reportPipelines({ asked: 60, landed: 40 });
-    expect(p.view().line).toBe("pipelines 40 of 60");
+    expect(p.view().lines).toContain("pipelines 40 of 60");
     setLoadProgress(null);
   });
 

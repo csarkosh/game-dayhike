@@ -1,6 +1,7 @@
 /**
  * The loading bar's model: what the game has fetched and built so far, as
- * one bar value and one line. Pure: the overlay draws it, the hooks feed it.
+ * one bar value and a line per thing under way. Pure: the overlay draws it,
+ * the hooks feed it.
  *
  * Stages are weighed by bytes where bytes are known (the downloads, the
  * only part that scales with the connection) and by count where they are
@@ -9,10 +10,16 @@
  * so the bar never shows a percentage it made up. The bar never moves
  * backward: a stage whose total grows keeps the value it had until the
  * new work catches up.
+ *
+ * `lines` has one line for each stage begun and not yet finished, in the
+ * stages' order, so work running at once stacks and each line goes as its
+ * work ends. The models stage can show two: the download, and, once a
+ * model's bytes are all in but its parse (the glTF, the texture transcode)
+ * has not settled, the decode, which is the gap between the two counts.
  */
 export type Stage = "models" | "ground" | "shaders" | "pipelines" | "world";
 
-export type ProgressView = { bar: number; line: string; ready: boolean };
+export type ProgressView = { bar: number; lines: string[]; ready: boolean };
 
 export type LoadProgress = {
   /** The stage will have `n` items; may be told again as more are found. */
@@ -71,7 +78,15 @@ export function createLoadProgress(): LoadProgress {
     return Math.min(1, doneCount(s) / s.total);
   };
 
-  const line = (): string => {
+  /** Models with every byte in (or done): the download's count. */
+  const landed = (s: StageState): number => {
+    let n = 0;
+    for (const it of s.items.values()) if (it.done || (it.total !== null && it.loaded >= it.total)) n++;
+    return n;
+  };
+
+  const lines = (): string[] => {
+    const out: string[] = [];
     for (const stage of ORDER) {
       const s = of(stage);
       const done = doneCount(s);
@@ -79,38 +94,47 @@ export function createLoadProgress(): LoadProgress {
       if (s.total === null && s.items.size === 0) continue;
       switch (stage) {
         case "models": {
-          let loaded = 0, known = 0;
-          for (const it of s.items.values()) {
-            if (it.total !== null) {
-              known += it.total;
-              loaded += Math.min(it.loaded, it.total);
+          const down = landed(s);
+          if (s.total === null || down < s.total) {
+            let loaded = 0, known = 0;
+            for (const it of s.items.values()) {
+              if (it.total !== null) {
+                known += it.total;
+                loaded += Math.min(it.loaded, it.total);
+              }
             }
+            const mb = known > 0 ? `, ${(loaded / 1048576).toFixed(1)} of ${(known / 1048576).toFixed(1)} MB` : "";
+            out.push(`downloading models ${down} of ${s.total ?? "?"}${mb}`);
           }
-          const mb = known > 0 ? `, ${(loaded / 1048576).toFixed(1)} of ${(known / 1048576).toFixed(1)} MB` : "";
-          return `downloading models ${done} of ${s.total ?? "?"}${mb}`;
+          if (done < down) out.push(`decoding models ${done} of ${down}`);
+          break;
         }
         case "ground":
-          return `ground and sound ${done} of ${s.total ?? "?"}`;
+          out.push(`ground and sound ${done} of ${s.total ?? "?"}`);
+          break;
         case "shaders":
-          return s.total === null ? `compiling shaders ${done}` : `shaders ${done} of ${s.total}`;
+          out.push(s.total === null ? `compiling shaders ${done}` : `shaders ${done} of ${s.total}`);
+          break;
         case "pipelines":
-          return `pipelines ${done} of ${s.total ?? s.items.size}`;
+          out.push(`pipelines ${done} of ${s.total ?? s.items.size}`);
+          break;
         case "world":
-          return `building the world ${done} of ${s.total ?? "?"}`;
+          out.push(`building the world ${done} of ${s.total ?? "?"}`);
+          break;
       }
     }
-    return "";
+    return out;
   };
 
   const view = (): ProgressView => {
-    if (gated) return { bar: 1, line: "ready", ready: true };
+    if (gated) return { bar: 1, lines: ["ready"], ready: true };
     let bar = 0;
     for (const stage of ORDER) {
       const f = fraction(stage);
       if (f !== null) bar += WEIGHT[stage] * f;
     }
     highest = Math.max(highest, bar);
-    return { bar: highest, line: line(), ready: false };
+    return { bar: highest, lines: lines(), ready: false };
   };
 
   return {
