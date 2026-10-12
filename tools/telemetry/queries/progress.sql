@@ -1,7 +1,7 @@
 -- Each match: how far the party got (p: 0 at the trailhead, 1 at the crest),
 -- which acts they reached, whether the chase came, and how it ended. One
 -- line a session and game, newest first.
-WITH rows AS (
+WITH events AS (
   SELECT
     JSON_VALUE(json_payload.sid) AS sid,
     JSON_VALUE(json_payload.game) AS game,
@@ -42,6 +42,6 @@ SELECT
   MAX(IF(n = 'session_end' OR n = 'exit' OR n = 'host_session_end', n, NULL)) AS left_by,
   (MAX(t) - MIN(IF(n = 'match_start', t, NULL))) / 60000 AS minutes,
   MIN(timestamp) AS started_at
-FROM rows
+FROM events
 GROUP BY sid, game, build, world
 ORDER BY started_at DESC;

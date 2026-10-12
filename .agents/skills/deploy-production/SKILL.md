@@ -16,8 +16,10 @@ The game is live at **https://games.csarko.sh/dayhike**. Two independent things 
 
 `npm run deploy` runs the server then the client. `npm run deploy:verify` checks the
 result from outside — the live site, every deployed model and ground texture, the
-signaling server's WebSocket handshake, the telemetry service taking a batch, and the
-desktop release manifest — against the real public URLs.
+signaling server's WebSocket handshake, the telemetry service taking a batch, every saved
+telemetry query dry-run on BigQuery, and the desktop release manifest — against the real
+public URLs. `node tools/telemetry/check-queries.mjs` is that dry run alone, for a change to
+a query before it ships: Log Analytics' editor accepts names BigQuery's parser refuses.
 
 Deploys are local scripts by choice. There is no CI, so **the gates below are the only
 thing standing between a mistake and production.**
