@@ -342,7 +342,7 @@ walk is one job. Its first slice works out the new set: the cells, their
 spacings, stitches and open neighbours, and which of them the set drawn
 does not hold as wanted. Then each cell to build, nearest the camera's
 cell's centre first, has a slice of its own, which the slice before says
-it will take (5 ms near, 2 ms far, 0.5 ms wide, `FACE_PATCH_SLICE_MS`), so
+it will take (5 ms near and 2 ms far, `FACE_PATCH_SLICE_MS`, 0.5 ms wide), so
 a near cell starts only as a frame's share begins; the cell is made into
 its mesh and uploaded, hidden and in no registry. The last slice applies
 the set: the new meshes shown and entered into the shadow map, the
@@ -355,7 +355,8 @@ the share they leave, and never runs to its end at once, as it does a job
 six frames or 100 ms old. A crossing builds about 140 cells, about 120 ms
 of work, far more than six frames' share, and waiting costs only detail,
 never a hole: the set drawn is whole, and the clipmap leaves out only the
-ground it covers.
+ground it covers. Idle work, every shell's, runs while only patient jobs
+are pending, with what they leave.
 
 **Which crossings wait.** As the clipmap's (`crossingAt`): a one-cell step
 at a walk or a run is a job; a jump of more than a cell and a view moving
@@ -376,12 +377,14 @@ the next crossing will want: the cell the camera reaches next on its
 heading (`nextCrossing`), its set worked out against the set drawn, and
 its cells to build, nearest first, a slice each, hidden. An idle slice
 says what it will take, as a job's does, and one that would not fit in
-what is left of the frame's share waits for the next frame. When the
-camera turns, the work is aimed at the new cell, and what was built for
-the old one and is not wanted is let go; when a set is applied, whatever
-is built and not in it is let go. At a walk a crossing finds every cell
-built, and its job only works out the set and applies it, in the
-crossing's own frame.
+what is left of the frame's share waits to be first in the next, while
+the idle work behind it goes on. A crossing stops the idle work, and its
+job builds what is not yet built. When the camera turns, the work is aimed
+at the new cell, and what was built for the old one is kept, each cell by
+its band and stitch, so a camera that turns back builds nothing twice;
+when a set is applied, whatever is built and not in it is let go. At a
+walk a crossing finds every cell built, and its job only works out the
+set and applies it, in the crossing's own frame.
 
 **The cover follows what is drawn.** The clipmap asks the patches for the
 ground they cover (`FacePatches.cover`) as each of its rebuilds begins:
@@ -391,10 +394,13 @@ patch is still building. Before any patch is drawn it is null; while the
 first update's job is pending it is the near band's, its reach the near
 reach less a cell's diagonal and `fine` the near reach. The patches are
 updated before the clipmap each frame, so a set built at once is the one
-the rings' rebuild in that frame reads. A ring is drawn again when the
-cover's centre, reach or `fine` changes, at its next rebuild; until then
-it leaves out what it did, which the set drawn since, a cell on at most,
-still covers.
+the rings' rebuild in that frame reads. The clipmap asks every frame as
+well, and when the patches have drawn a set since its rings were built,
+the camera standing or not, it begins a rebuild of its own, which draws
+again only the rings whose cover's centre, reach or `fine` changed. A set
+drawn by the patches' job is followed a frame or two later, under the
+scheduler's share; in those frames the rings leave out what the set
+before covered, which a set one cell on still patches.
 
 ### 4.3 Cost
 
@@ -447,8 +453,8 @@ patch draws over (`CoveredGround`, given by `facePatchCover`):
   set drawn was walked from (section 4.2). Every neighbour of such a
   square, corners too, is in the patched set, so its patch has no open
   side, no taper and the whole relief over it; and the set drawn for a
-  camera one cell on still patches the square, so the rings may leave it
-  out until their next rebuild;
+  camera one cell on still patches the square, in the frames until the
+  rings are drawn again for that set;
 - on a ring whose cells each lie within one square, a spacing that divides
   16 m: rings 0 to 4;
 - on a ring finer than 2 m, ring 0, in a square whose centre lies within
@@ -471,9 +477,8 @@ point of its own, and so no patch. On high and medium every square of ring
 0 lies within the far reach, and the bound leaves out what was left out
 before; on low, at the reference pose, it keeps 361 triangles that were
 left out under 2 m patches, 16,181 of 16,542 left out still.
-A ring is drawn again at its next rebuild after the cover changes, which
-a ring that can leave triangles out has as the camera walks on, its own
-move or its finer ring's. The
+A ring is drawn again when the cover changes, in a rebuild the clipmap
+begins for it whether the camera moves or not (section 4.2). The
 first build, at the origin before the camera's first frame, leaves nothing
 out: no patch stands yet, and the camera is elsewhere. The first update
 builds at once and draws again every ring that can leave ground out, under
@@ -566,12 +571,15 @@ rock and the splashes land on the faces.
 - `client/test/game/renderer.test.ts`: the clipmap's first build leaves
   nothing out, and its first update leaves out what its cover names; on
   one scheduler with the patches, the rings' rebuild at a crossing reads
-  the cover of the set drawn while the crossing's patches build, and the
-  new set's at its next rebuild after they are drawn; the patches have the
-  scheduler and are updated before the clipmap in both branches.
+  the cover of the set drawn while the crossing's patches build, and rings
+  0 to 4 are drawn again for the whole first set and for the crossing's
+  set two frames after each is drawn, the camera standing; the patches
+  have the scheduler and are updated before the clipmap in both branches.
 - `client/test/game/syncJobs.test.ts`: a patient job is never late, runs
-  behind the others and keeps its place when begun again; an idle slice
-  said to be long waits for a frame where it fits or is first.
+  behind the others and keeps its place when begun again, and one begun
+  again as ordinary moves ahead and can be late; idle work runs beside
+  patient jobs only; an idle slice said to be long waits for a frame where
+  it fits or is first, and the idle work behind it goes on.
 - `client/test/game/facePatchMeshes.test.ts`: the attribute names match
   the terrain plugin's; the material carries the plugins and the depth
   offset, the atmosphere's plugin and a view of the ground's arrays that
@@ -584,8 +592,10 @@ rock and the splashes land on the faces.
   nothing built in it, the registries swapped there and the old patches
   drawn until then; a crossing nothing was built ahead for, begun again at
   a second, keeps what it built and draws what a set built at once draws;
-  a jump and the boost build at once. A `wall-clock` test keeps the first
-  update under 200 ms and a frame on the patches under 20 ms.
+  a jump and the boost build at once; a turn and a turn back near a corner
+  build nothing twice; nothing is built or left after `dispose`. A
+  `wall-clock` test keeps the first update under 200 ms and a frame on the
+  patches under 20 ms.
 - `client/test/game/cliffMeshes.test.ts`: at the shipped density no model
   is fetched.
 - `architecture.test.ts` holds: no trig, no `**`, no new `Math.hypot` in
