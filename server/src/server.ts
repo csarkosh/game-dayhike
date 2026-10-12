@@ -192,6 +192,8 @@ export type SignalingServerOptions = {
    * not found.
    */
   admin?: { auth: AdminAuth; data: AdminData };
+  /** Told of a sweep that failed; by default it is logged. For tests. */
+  onSweepError?: (error: unknown) => void;
 };
 
 /**
@@ -218,8 +220,11 @@ export function createSignalingServer(
     hostGraceMs: options.hostGraceMs ?? 60_000,
     onEnded: (room: RoomInfo, reason: "host_left" | "host_gone" | "empty") => roomRow("room_end", room, { reason, lifeMs: now() - room.createdAt }),
   };
+  // A telemetry-only process holds no rooms: whatever registry it was
+  // offered, it gets the memory one, which touches nothing outside it.
   const registry: Registry =
-    options.registry?.(registryOptions) ?? new MemoryRegistry(MAX_PEERS, now, registryOptions.hostGraceMs, { onEnded: registryOptions.onEnded });
+    (role === "telemetry" ? undefined : options.registry?.(registryOptions)) ??
+    new MemoryRegistry(MAX_PEERS, now, registryOptions.hostGraceMs, { onEnded: registryOptions.onEnded });
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
   const allowedOrigins = options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
   const limiter = new ConnectionLimiter({ now: options.now, ...options.limits });
@@ -237,8 +242,10 @@ export function createSignalingServer(
   // again. It also prunes the limiter, which is the only thing that returns
   // that table's memory. `unref` so this alone never keeps the process — or a
   // test runner — alive.
+  // A sweep that fails (the store refused it, the network dropped) is logged
+  // and tried again next time; it must never be the process's end.
   const sweeper = setInterval(() => {
-    void registry.sweep();
+    registry.sweep().catch((error: unknown) => options.onSweepError?.(error) ?? console.error("sweep failed", error));
     limiter.prune();
     postLimiter.prune();
   }, options.sweepIntervalMs ?? 10_000);

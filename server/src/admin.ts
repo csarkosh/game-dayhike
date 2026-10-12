@@ -88,6 +88,9 @@ export function adminRoute(options: AdminRouteOptions): (req: IncomingMessage, r
         if (body === null) answer(res, 404, cors, "not found");
         else answer(res, 200, cors, JSON.stringify(body), "application/json");
       } catch (error) {
+        // The cause goes to the log, where it can be read later; the page
+        // gets the message.
+        console.error(`admin: ${path} failed`, error);
         answer(res, 500, cors, error instanceof Error ? error.message : String(error));
       }
     })();

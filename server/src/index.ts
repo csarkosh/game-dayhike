@@ -47,12 +47,23 @@ const ALLOWED_ORIGINS =
 const allowedOrigins =
   ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ALLOWED_ORIGINS;
 
+// A failed promise nobody awaited is logged, not fatal: the rooms are in the
+// store, so a restart buys nothing a log line does not, and a service that
+// scales from zero should not be made to start again for one refused call.
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandled rejection", reason);
+});
+
 const store = REGISTRY === "firestore" ? new FirestoreStore() : null;
+// The shared registry is the signaling role's: it writes the store (its
+// seats, its liveness) and the telemetry role's account may only read, so a
+// telemetry process gets no registry and sweeps nothing. The store itself is
+// still the admin page's live view.
 const server = createSignalingServer(PORT, {
   allowedOrigins,
   role: ROLE,
   serverBuild: BUILD_SHA,
-  ...(store !== null ? { registry: (o) => new SharedRegistry(store, { ...o, instance: INSTANCE }) } : {}),
+  ...(store !== null && ROLE !== "telemetry" ? { registry: (o) => new SharedRegistry(store, { ...o, instance: INSTANCE }) } : {}),
   ...(ADMIN_EMAILS.length > 0 && PROJECT !== ""
     ? {
         admin: {
