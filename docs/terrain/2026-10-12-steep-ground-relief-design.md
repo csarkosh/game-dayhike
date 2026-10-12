@@ -28,8 +28,8 @@ asking the first to do both.
 | --- | --- |
 | Where the relief lives | In the simulation's height function (`client/src/sim/`), as a stage of the olympic chain, with exact derivatives like every stage before it |
 | What it is masked by | The ground's own gradient: nothing under 1.0, the whole relief from 1.4 up (`FACE_SLOPE_LO`, `FACE_SLOPE_HI`); the standing limit is 1.02 |
-| The forms | Two, chosen by a slow noise over the world: columns (a jittered cellular field, the cells read as tall prisms on a steep face) and blocks (a near-square lattice with rounded joints, two octaves) |
-| The size of the relief | A half-depth of 1.0 m measured along the face's normal: the surface moves in and out of the smooth face by up to 1.0 m |
+| The forms | Two, chosen by a slow noise over the world: columns (a jittered cellular field, the cells read as tall prisms on a steep face) and blocks (a near-square lattice with rounded joints, two octaves); both stand on the large forms, a coarse cellular octave of tilted slabs 14 m across |
+| The size of the relief | A half-depth of 2.0 m measured along the face's normal: the surface moves in and out of the smooth face by up to 2.0 m, about 0.8 m of it the fine joints and 1.2 m the large forms |
 | The mesh | Unchanged: the clipmap samples the field as before. Ring 0's 1 m spacing is the finest the relief is drawn at; the cell sizes (2.8 m and 3.6 m) are chosen to survive it |
 | Collision | Follows: the player stands, slides and is raycast on the same surface that is drawn |
 | The level id | Moves once (the new stage's constants join the variant's tunables) |
@@ -96,8 +96,8 @@ reads soft. Each cell is therefore a plane, tilted its own way by up to
 neighbouring cells meet the light at different angles across their whole
 width. A point with weight lies within `F1 + border ≤ 1.42 · cell + border`
 of the sample, so its tilt term is at most
-`FACE_TILT · 2 · (1.42 + border / cell)`, about 1.07 for the columns and
-1.17 for the blocks; with `o · FACE_VALUE_SPAN` beside it a plane can pass
+`FACE_TILT · 2 · (1.42 + border / cell)`, about 1.07 for the columns,
+1.17 for the blocks and 1.12 for the large forms; with `o · FACE_VALUE_SPAN` beside it a plane can pass
 ±1 far up its tilt. The field is clamped to `[−1, 1]`, its derivative zero
 where the clamp holds, so the range is kept for every sample. Over 20,000
 points the largest tilt term with weight is about 0.44 and no blend reaches
@@ -118,7 +118,7 @@ every point with weight for any `border` under `(2 − √2) · cell`; at the
 forms' numbers below that is rare, and the field is the whole blend for
 every sample.
 
-### 3.2 The two forms
+### 3.2 The forms
 
 Columns: `cellularD(x, z, 2.8, 0.8, 0.3, COLUMN_SALT)`. On a face with
 gradient `g`, a cell `c` metres across in plan runs `c · g` metres up the
@@ -136,6 +136,18 @@ two constants, each octave with its own cell size beneath the tilt:
 at its site, and `FACE_TILT = 0.35`, the share a tilt of 1 rises across one
 cell. The span leaves room for the tilt within `[−1, 1]`.
 
+The large forms: `cellularD(x, z, 14, 0.6, 2.5, FORM_SALT)`
+(`FACE_FORM_CELL`, `FACE_FORM_JITTER`, `FACE_FORM_BORDER`). Seen from the
+road, 80 m off, a 140 m face whose only relief is joints three metres
+apart reads as a faint corrugation; a real face carries buttresses and
+gullies ten to twenty metres across as well as its joints. This octave
+gives it them: its sites take their planes from the same `FACE_VALUE_SPAN`
+and `FACE_TILT`, the tilt per cell crossed, so each 14 m cell is a slab
+tilted its own way, and its 2.5 m border rounds the slabs into one another.
+It is independent of the noise that chooses the form, so columns and blocks
+stand on the same large forms, and it is evaluated everywhere the relief
+is.
+
 ### 3.3 Which form where
 
 `k = gradientNoise2(x / FACE_KIND_WAVE, z / FACE_KIND_WAVE, KIND_SALT).v`
@@ -146,9 +158,18 @@ both forms are weak, never a face with both.
 
 ### 3.4 The function
 
-`faceReliefD(seed, x, z): { v, dx, dz }` with `v ∈ [−1, 1]`, unitless, the
-mix of the two forms by `s`, derivatives through both the forms and the
-mix. Every constant above is exported in `FACE_RELIEF_TUNABLES`.
+`faceReliefD(seed, x, z): { v, dx, dz }` with `v ∈ [−1, 1]`, unitless.
+The fine relief `v_fine` is the mix of the two forms by `s`; the large
+forms `v_form` lie under it at `FACE_FORM_WEIGHT = 1.5`:
+
+```
+v = clamp((v_fine + FACE_FORM_WEIGHT · v_form) / (1 + FACE_FORM_WEIGHT), −1, 1)
+```
+
+Both terms are within `[−1, 1]`, so the mix is too; the clamp, applied
+last with a zero derivative where it holds, keeps the range against
+rounding. Derivatives run through the forms and both mixes. Every constant
+above is exported in `FACE_RELIEF_TUNABLES`.
 
 ## 4. The stage (`faceStageD`, in `faceRelief.ts`, called from `olympic.ts`)
 
@@ -168,12 +189,12 @@ faceStageD(seed, x, z, s: TerrainSample, pre: (x, z) => TerrainSample): TerrainS
    h′ = h + m · FACE_HALF_DEPTH · r.v · sqrt(1 + g²)
    ```
 
-   On the scarp (`g` ≈ 2 to 3) the vertical change is up to about 3 m;
-   measured along the face, it is the 1.0 m the player sees.
+   On the scarp (`g` ≈ 2 to 3) the vertical change is up to about 6 m;
+   measured along the face, it is the 2.0 m the player sees.
 5. The derivative. `h′` depends on `g`, and `g`'s derivative is the base's
    second derivative, which the chain does not carry. The stage takes it by
    forward differences of the chain before it: `pre(x + e, z)` and
-   `pre(x, z + e)` with `e = FACE_DIFF_STEP = 0.25` m give
+   `pre(x, z + e)` with `e = FACE_DIFF_STEP = 0.0001` m give
    `h_xx ≈ (pre(x+e).dx − s.dx) / e`, `h_xz ≈ (pre(x, z+e).dx − s.dx) / e`
    and `h_zz` likewise, and `∂g/∂x = (dx · h_xx + dz · h_xz) / g`. With
    `A = FACE_HALF_DEPTH · sqrt(1 + g²)` and `∂A/∂g = FACE_HALF_DEPTH · g / sqrt(1 + g²)`:
