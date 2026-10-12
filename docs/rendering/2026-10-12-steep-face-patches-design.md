@@ -29,12 +29,12 @@ enough to show its joints.
 | --- | --- |
 | Where the relief lives | In the game layer, on separate patch meshes; the simulation's height function is untouched |
 | What it is masked by | The ground's own gradient: nothing under 1.0, the whole relief from 1.4 up (`FACE_SLOPE_LO`, `FACE_SLOPE_HI`); the standing limit is 1.02 |
-| The forms | Two, chosen by a slow noise over the world: columns (a jittered cellular field, the cells read as tall prisms on a steep face) and blocks (a near-square lattice with rounded joints, two octaves) |
-| The size of the relief | Outward only, up to `PATCH_DEPTH = 2.0` m along the face's normal, the relief's half-depth (`FACE_HALF_DEPTH = 1.0`) doubled: the smooth face is the deepest joint, and no patch vertex is ever under the ground |
+| The forms | Two, chosen by a slow noise over the world: columns (a jittered cellular field, the cells read as tall prisms on a steep face) and blocks (a near-square lattice with rounded joints, two octaves), both standing on large forms, a coarse octave of tilted slabs 14 m across |
+| The size of the relief | Outward only, up to `PATCH_DEPTH = 4.0` m along the face's normal, the relief's half-depth (`FACE_HALF_DEPTH = 2.0`) doubled: the smooth face is the deepest joint, and no patch vertex is ever under the ground. Where the ground bends sharply the depth is cut, so the push stays under half the bend's radius |
 | The patch grid | 16 m cells on the world's lattice; 0.5 m vertices within 48 m of the camera, 1 m within 160 m, none beyond (high tier; 36/120 m on medium, 24/80 m on low) |
 | Normals | The displaced surface's, from the ground's and the relief's derivatives at each vertex, not from the grid: a column's flat face shades flat and its joint steep at either spacing, and a point has one normal in every patch that holds it |
 | The ground under a patch | Stays drawn; the patch's material carries a depth offset so the two never fight where the relief is zero. Beyond ring 0 the clipmap draws a lifted envelope that can stand above the joints where the push is near zero, so joints are judged within 64 m until the ground under covered cells is dropped. Dropping the clipmap's triangles under a fully covered cell is a later lever |
-| Collision | On the heightfield, as today: a player at the foot of a face can stand up to 2 m inside the drawn rock |
+| Collision | On the heightfield, as today: a player at the foot of a face can stand up to 4 m inside the drawn rock |
 | The level id | Does not move |
 | The shipped cliff modules | Unchanged on this branch |
 
@@ -49,6 +49,9 @@ Goals:
   face.
 - No crack between patches, between a fine patch and a coarse one, or
   between a patch and the ground at its edge.
+- No triangle turned over by the push: the depth is cut where the ground
+  bends sharply, so a hollow does not gather its points past its centre
+  and a sharp crest is not notched.
 - Nothing in `client/src/sim/` changes but one new pure module, and the
   level id stays where it is.
 
@@ -99,12 +102,12 @@ reads soft. Each cell is therefore a plane, tilted its own way by up to
 neighbouring cells meet the light at different angles across their whole
 width. A point with weight lies within `F1 + border ≤ 1.42 · cell + border`
 of the sample, so its tilt term is at most
-`FACE_TILT · 2 · (1.42 + border / cell)`, about 1.07 for the columns and
-1.17 for the blocks; with `o · FACE_VALUE_SPAN` beside it a plane can pass
-±1 far up its tilt. The field is clamped to `[−1, 1]`, its derivative zero
-where the clamp holds, so the range is kept for every sample. Over 20,000
-points the largest tilt term with weight is about 0.44 and no blend reaches
-the clamp.
+`FACE_TILT · 2 · (1.42 + border / cell)`, about 1.07 for the columns,
+1.17 for the blocks and 1.12 for the large forms; with
+`o · FACE_VALUE_SPAN` beside it a plane can pass ±1 far up its tilt. The
+field is clamped to `[−1, 1]`, its derivative zero where the clamp holds,
+so the range is kept for every sample. Over 20,000 points the largest tilt
+term with weight is about 0.44 and no blend reaches the clamp.
 
 With `W = Σ w_k`, the derivative is
 `(Σ w_k′ · u_k + Σ w_k · ∂u_k) / W − v · (Σ w_k′) / W`, where
@@ -121,10 +124,10 @@ every point with weight for any `border` under `(2 − √2) · cell`; at the
 forms' numbers below that is rare, and the field is the whole blend for
 every sample.
 
-### 3.2 The two forms
+### 3.2 The forms
 
 Columns: `cellularD(x, z, 2.8, 0.8, 0.3, COLUMN_SALT)`. On a face with
-gradient `g`, a cell `c` metres across in plan runs `c · g` metres up the
+gradient `g`, a cell `c` metres across on the map runs `c · g` metres up the
 face, so the cells of a steep face stand as prisms two to three times taller
 than they are wide, and on a gentler one as blocks.
 
@@ -139,6 +142,18 @@ two constants, each octave with its own cell size beneath the tilt:
 at its site, and `FACE_TILT = 0.35`, the share a tilt of 1 rises across one
 cell. The span leaves room for the tilt within `[−1, 1]`.
 
+The large forms: `cellularD(x, z, 14, 0.6, 2.5, FORM_SALT)`
+(`FACE_FORM_CELL`, `FACE_FORM_JITTER`, `FACE_FORM_BORDER`). From the road,
+80 m off, a face a hundred metres tall whose only relief is joints three
+metres apart reads as a faint ribbing; real rock carries buttresses and
+gullies ten to twenty metres across under its joints. This octave gives a
+face those: its cells take their planes from the same `FACE_VALUE_SPAN` and
+`FACE_TILT`, the tilt counted per cell crossed, so each 14 m cell is a slab
+leaning its own way, and the 2.5 m border rounds neighbouring slabs into
+one another. It does not depend on the noise that chooses the form, so
+columns and blocks stand on the same large forms, and it is evaluated
+wherever the relief is.
+
 ### 3.3 Which form where
 
 `k = gradientNoise2(x / FACE_KIND_WAVE, z / FACE_KIND_WAVE, KIND_SALT).v`
@@ -149,10 +164,21 @@ both forms are weak, never a face with both.
 
 ### 3.4 The function
 
-`faceReliefD(seed, x, z): { v, dx, dz }` with `v ∈ [−1, 1]`, unitless, the
-mix of the two forms by `s`, derivatives through both the forms and the
-mix. Every constant above is exported in `FACE_RELIEF_TUNABLES`, with
-`FACE_SLOPE_LO = 1.0` and `FACE_SLOPE_HI = 1.4` beside them.
+`faceReliefD(seed, x, z): { v, dx, dz }` with `v ∈ [−1, 1]`, unitless.
+The fine relief `v_fine` is the mix of columns and blocks by `s`; the large
+forms `v_form` lie beneath it at `FACE_FORM_WEIGHT = 1.5` to its 1:
+
+```
+v = clamp((v_fine + FACE_FORM_WEIGHT · v_form) / (1 + FACE_FORM_WEIGHT), −1, 1)
+```
+
+Both terms are within `[−1, 1]`, so their weighted mean is; the clamp,
+taken last with a zero derivative where it holds, keeps the range against
+rounding. At a half-depth of 2 m that is about ±0.8 m of fine joints on
+±1.2 m of large forms. The derivatives run through the forms and both
+mixes. Every constant above is exported in `FACE_RELIEF_TUNABLES`, with
+`FACE_SLOPE_LO = 1.0`, `FACE_SLOPE_HI = 1.4` and `FACE_HALF_DEPTH = 2.0`
+beside them.
 
 ## 4. The patches
 
@@ -167,7 +193,8 @@ s = elevationSampleAt(seed, x, z)
 g = sqrt(s.dx² + s.dz²)
 m = smootherstep(FACE_SLOPE_LO, FACE_SLOPE_HI, g) · taper
 r = faceReliefD(seed, x, z)
-d = m · PATCH_DEPTH · (r.v + 1) / 2
+D = PATCH_DEPTH / (1 + PATCH_DEPTH · κ / PATCH_BEND_SHARE)
+d = m · D · (r.v + 1) / 2
 k = d / sqrt(1 + g²)
 position = (x, s.h, z) + (−s.dx, 1, −s.dz) · k
 ```
@@ -175,24 +202,55 @@ position = (x, s.h, z) + (−s.dx, 1, −s.dz) · k
 `d` is zero wherever the ground is not steep, so a patch's edge lies on
 the ground exactly, and never under it.
 
+`D` is the depth the ground's bend leaves: `PATCH_DEPTH = 4` m on even
+ground, and where the ground bends by `κ` per metre, always under
+`PATCH_BEND_SHARE = 0.5` of the bend's radius `1 / κ`. Pushed out along
+its normal by its radius, a hollow's points meet at its centre and the
+surface turns over; and the ground has sharp crests whose gradient turns
+through two or three in half a metre, where the mask is nothing on the
+crest and whole a step down either flank, so a full push notches the crest
+and turns the triangles across it over. `κ` is therefore the sharper
+principal curvature of the ground, concave or convex: the larger magnitude
+of `λ / sqrt(1 + g²)` over the roots of `det(H − λ (I + ∇h ∇hᵀ)) = 0`, with
+the Hessian `H` from differences of the ground's gradient
+`PATCH_CURVE_STEP = 0.5` m on in x and in z, and again 0.5 m back, the
+larger of the two. A one-sided difference sees a crease on either side of
+the point, where a central one can step over a crease narrower than its
+step. The step is a fixed world distance, not the grid's, so a point has
+one depth in every patch that holds it; at 0.5 m the grid's own samples
+and a ring one step outside the cell give the differences, at 1 m four
+samples of the ground a point. The cap is smooth in `κ`, so the depth has
+no step of its own.
+
 The vertex normal is the displaced surface's, from the field's own
 derivatives rather than from the grid. With `n = (−s.dx, 1, −s.dz)`, the
 surface's tangents are
 
 ```
-∂P/∂x ≈ (1, s.dx, 0) + n · (m · PATCH_DEPTH / 2 · r.dx) / sqrt(1 + g²)
-∂P/∂z ≈ (0, s.dz, 1) + n · (m · PATCH_DEPTH / 2 · r.dz) / sqrt(1 + g²)
+∂P/∂x ≈ (1, s.dx, 0) + n · (m · D / 2 · r.dx + m_g · D · (r.v + 1) / 2 · τ_x) / sqrt(1 + g²)
+∂P/∂z ≈ (0, s.dz, 1) + n · (m · D / 2 · r.dz + m_g · D · (r.v + 1) / 2 · τ_z) / sqrt(1 + g²)
 ```
 
-leaving out the slowly varying terms (the mask's derivative, the ground
-normal's and `sqrt(1 + g²)`'s), and the normal is `∂P/∂z × ∂P/∂x`,
-normalised: `n` itself where the relief is nothing, up on flat ground as
-the clipmap's. A column's flat face shades flat and its joint steep
-whatever the grid's spacing, and the normal is a function of the world
-point, so a point shared by two patches has one normal in both. Over the
-reference pose's patches no triangle turns over against the same three
-grid points on the ground; the least agreement of the two facets is a
-cosine of about 0.35, on the steepest columns at 0.5 m.
+with `m = m_g · τ`, the mask times the taper, and `τ_x`, `τ_z` the taper's
+derivatives (below), which are not slow: across its 3 m ramp the taper
+lifts the relief by up to 4 m. The slowly varying terms (the mask's
+derivative, the depth's, the ground normal's and `sqrt(1 + g²)`'s) are left
+out, and the normal is `∂P/∂z × ∂P/∂x`, normalised: `n` itself where the
+relief is nothing, up on flat ground as the clipmap's. A column's flat face
+shades flat and its joint steep whatever the grid's spacing, and the normal
+is a function of the world point, so a point shared by two patches has one
+normal in both. Over the taper's ramp the vertex normals are within 12° on
+average of those the grid's differences give, against 32° without the
+taper's term.
+
+The cut is measured, not proven: a triangle is taken to turn over when its
+facet faces away from the same three grid points' facet on the ground. Over
+the reference pose's patches none does, and the least agreement of the two
+facets is a cosine of about 0.30, on the steepest columns at 0.5 m; over
+250 steep cells at 0.5 m on each of worlds 1, 42 and 123456 it is 0.27,
+0.14 and 0.11, with none turned over. Without the cut, at the full 4 m,
+those cells turned 64, 179 and 164 triangles over, the worst facing
+straight back.
 
 The vertex colour is `classifySurface(...).albedo` at the point, and the
 attributes `terrainWeights`, `terrainWeights2` and `terrainCover` are the
@@ -207,7 +265,8 @@ reach a patch never ends with its relief in the air. At the far reach's
 edge the neighbour is not drawn: there `taper` fades the relief to nothing
 over `PATCH_TAPER = 3` m, a quintic step of the distance from the point to
 the nearest square of a neighbour outside the set, 0 on its edge and 1
-from 3 m in. A cell's eight neighbours, sides and corners, are flagged
+from 3 m in, whose derivative is the step's slope along the way out of
+that square. A cell's eight neighbours, sides and corners, are flagged
 open or not, so where the edge steps in, the cell open at a corner fades
 toward the same square as its neighbour open at a side, and the two still
 meet bit for bit.
@@ -253,25 +312,34 @@ A fully steep 16 m cell at 0.5 m is 1,089 vertices and 2,048 triangles; at
 316 cells, 29 near and 287 far, of which 20 near and 121 far have steep
 ground: 56,749 vertices and 102,912 triangles, and 140 draws from the
 shell's walk. The patches are built at once, on the frame the camera
-crosses a cell line: about 320 ms at the first update and about 90 ms at a
-crossing, which rebuilds some sixty cells. Spreading the builds over frames
-is the first follow-up; the draw calls are the next lever, the cells of one
-band merged into one mesh at each change.
+crosses a cell line: about 350 ms at the first update, which builds 317
+cells, and about 115 ms at the crossing one cell east, which builds 66 (21
+that entered the reach and 45 whose band, stitch or open neighbours
+changed). The ground's bend costs a quarter of that: the same crossing
+builds in about 90 ms at the full depth, without the differences. Spreading
+the builds over frames is the first follow-up; the draw calls are the next
+lever, the cells of one band merged into one mesh at each change.
 
 ## 5. Tests
 
 - `client/test/sim/faceRelief.test.ts`: `cellularD` returns `o1` inside a
   cell and the mean on a border; its derivatives match numeric ones;
   `faceReliefD` is within `[−1, 1]` on a 20,000-point sweep and
-  deterministic; the forms' share over the world is pinned (a literal
-  count of columns, blocks and band points on a lattice).
+  deterministic; inside a cell of every lattice with weight it is the fine
+  cells' planes over the large form's, built from `cellularSite`, and where
+  the share is 0 or 1 the mix of `cellularD`'s forms; the forms' share over
+  the world is pinned (a literal count of columns, blocks and band points
+  on a lattice).
 - `client/test/game/facePatches.test.ts`: every vertex with `m = 0` lies
-  on the field's height; `d ≤ PATCH_DEPTH`; every normal is unit; two
+  on the field's height; `d` is within the depth the ground's bend leaves,
+  and that depth under half the bend's radius; every normal is unit, and
+  over the taper's ramp near the grid's own; two
   neighbouring patches share their boundary positions and normals bit for
   bit, at a step of the reach's edge too; a fine patch's stitched
   midpoints lie on the coarse edge, east–west and north–south, with the
   coarse paint; the relief fades to the ground at an open edge and is whole
-  3 m in; no triangle at the scarp turns over; a cell with no steep
+  3 m in; no triangle turns over at the scarp, nor across a sharp crest of
+  world 42 where the full depth turned 12 over; a cell with no steep
   point has no patch; the cell set, the vertex and triangle counts and the
   near and far cell counts at the scarp are pinned as literals; a cell's
   patch is the same whatever the camera's path to it.
