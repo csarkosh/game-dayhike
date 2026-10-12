@@ -822,6 +822,12 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     return "TerrainTexturePlugin";
   }
 
+  /** The normal and RAH arrays this plugin binds: its own, or a view of
+   * another plugin's (`sharedGroundArrays`). */
+  get groundArrays(): GroundArrays {
+    return this._arrays;
+  }
+
   /** Whether the road branch is compiled in. */
   get roadEnabled(): boolean {
     return this._roadCenter !== null;
@@ -1253,6 +1259,33 @@ export function attachTerrainTexture(
 ): void {
   if (material.pluginManager?.getPlugin("TerrainTexture")) return;
   new TerrainTexturePlugin(material, scene, options);
+}
+
+/**
+ * The ground arrays of `source`'s plugin, for a second terrain material to
+ * bind rather than load again: the twelve decodes and the two 512² arrays
+ * are made once. A view, not a copy: the placeholders the source's arrays
+ * start as are swapped for the real arrays when they land, and the view reads
+ * whichever is there. Disposing the view disposes nothing; the source's
+ * plugin owns the arrays. A source with no plugin yet gets one attached.
+ */
+export function sharedGroundArrays(scene: Scene, source: PBRMaterial): GroundArraysFactory {
+  return () => {
+    attachTerrainTexture(scene, source);
+    const arrays = (source.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin).groundArrays;
+    return {
+      get normals() {
+        return arrays.normals;
+      },
+      get rah() {
+        return arrays.rah;
+      },
+      get ready() {
+        return arrays.ready;
+      },
+      dispose() {},
+    };
+  };
 }
 
 /**

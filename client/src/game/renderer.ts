@@ -68,7 +68,8 @@ import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
-import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
+import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, setTerrainSward, setTerrainWetness, sharedGroundArrays } from "./terrainTexture.js";
+import { FACE_PATCH_MATERIAL, FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS, createFacePatches } from "./facePatchMeshes.js";
 import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
@@ -168,6 +169,7 @@ const MATERIAL_COLORS: Record<string, [number, number, number]> = {
  */
 const MATERIAL_ROUGHNESS: Record<string, number> = {
   terrain: 0.95,
+  [FACE_PATCH_MATERIAL]: 0.95,
   default: 0.9,
 };
 
@@ -201,8 +203,16 @@ export function terrainMaterialFor(scene: Scene, name: string): PBRMaterial {
   const mat = new PBRMaterial(`mat_${name}`, scene);
   if (name === "terrain") {
     mat.albedoColor = new Color3(1, 1, 1);
-    // Ground textures ride the terrain material only.
+    // Ground textures ride the terrain materials only.
     attachTerrainTexture(scene, mat);
+  } else if (name === FACE_PATCH_MATERIAL) {
+    // The steep ground's patches (`facePatchMeshes.ts`): the ground's
+    // material again, binding the ground's own normal and RAH arrays rather
+    // than loading them twice, a depth offset ahead of the ground it covers.
+    mat.albedoColor = new Color3(1, 1, 1);
+    attachTerrainTexture(scene, mat, { groundArrays: sharedGroundArrays(scene, terrainMaterialFor(scene, "terrain")) });
+    mat.zOffset = FACE_PATCH_Z_OFFSET;
+    mat.zOffsetUnits = FACE_PATCH_Z_UNITS;
   } else {
     const rgb = MATERIAL_COLORS[name] ?? (MATERIAL_COLORS.default as [number, number, number]);
     mat.albedoColor = new Color3(rgb[0], rgb[1], rgb[2]);
@@ -2128,6 +2138,15 @@ function buildRenderer(
   if (clipmap !== null) {
     for (const mesh of clipmap.meshes) lighting.addShadowMesh(mesh);
   }
+  // Finer rock over the steep ground in the camera's reach, on the ground's
+  // own material with a depth offset; they cast and receive with the rings.
+  const facePatchMaterial = forest === null ? null : terrainMaterialFor(scene, FACE_PATCH_MATERIAL);
+  const facePatches = forest === null || facePatchMaterial === null
+    ? null
+    : createFacePatches(scene, forest.seed, tier, facePatchMaterial, {
+      shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
+    });
+  partOf(facePatches);
 
   // Water rides the same guard as the clipmap: hand-authored (brush) levels
   // have no forest, so they get no water either. A forest world gets
@@ -2341,6 +2360,7 @@ function buildRenderer(
   // The terrain's sward floor is the shaded ground between those blades, so it
   // runs exactly where they are drawn: off on the low tier. Without a forest
   // there is no clipmap, and the terrain material is not built for it.
+  if (facePatchMaterial !== null) setTerrainSward(scene, facePatchMaterial, bladeMeshes !== null);
   if (forest !== null) setTerrainSward(scene, terrainMaterialFor(scene, "terrain"), bladeMeshes !== null);
   // The far cover's band follows the tier's clutter edges: on low, where every
   // class is drawn at 0.6 of its radius, it comes in at 0.6 of its distance.
@@ -2890,6 +2910,10 @@ function buildRenderer(
       }
 
       applyWetness(scene, weather);
+      if (facePatchMaterial !== null) {
+        setTerrainWetness(scene, facePatchMaterial, weather.wetness);
+        setTerrainRain(scene, facePatchMaterial, weather.rain, seconds);
+      }
       setTerrainWetness(scene, terrainMaterialFor(scene, "terrain"), weather.wetness);
       setTerrainRain(scene, terrainMaterialFor(scene, "terrain"), weather.rain, seconds);
       water?.setRain(weather.rain);
@@ -2938,6 +2962,7 @@ function buildRenderer(
         // The clipmap follows the *camera* here, not the player. Anchored to
         // the player, flying 500 m away shows void with no error.
         clipmap?.update(freecam.x, freecam.z);
+        facePatches?.update(freecam.x, freecam.z);
         water?.update(freecam.x, freecam.z, oceanSeconds, lighting.hour);
         updateWet(freecam.x, freecam.z);
         propMeshes?.update(freecam.x, freecam.z);
@@ -2984,6 +3009,7 @@ function buildRenderer(
       const local = state.players.get(localId);
       if (local) {
         clipmap?.update(local.pos.x, local.pos.z);
+        facePatches?.update(local.pos.x, local.pos.z);
         water?.update(local.pos.x, local.pos.z, oceanSeconds, lighting.hour);
         updateWet(local.pos.x, local.pos.z);
         propMeshes?.update(local.pos.x, local.pos.z);
@@ -3195,6 +3221,7 @@ function buildRenderer(
       panoramaTerrain?.dispose();
       for (const skyline of lakeSkylines) skyline.dispose();
       clipmap?.dispose();
+      facePatches?.dispose();
       water?.dispose();
       waterPlants?.dispose();
       for (const life of waterLives) life.dispose();

@@ -1,0 +1,131 @@
+import { describe, it, expect, afterEach } from "vitest";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import "../../src/sim/passes/index.js";
+import { terrainMaterialFor } from "../../src/game/renderer.js";
+import { FACE_PATCH_MATERIAL, createFacePatches } from "../../src/game/facePatchMeshes.js";
+import { TerrainTexturePlugin } from "../../src/game/terrainTexture.js";
+import { timeLimit } from "../helpers/timeLimit.js";
+
+/** The scarp by the road, and the reference pose's camera over it. */
+const SEED = 627994160;
+const CAM = { x: -370, z: -900 };
+
+let engine: NullEngine | null = null;
+
+afterEach(() => {
+  engine?.dispose();
+  engine = null;
+});
+
+function scene(): Scene {
+  engine = new NullEngine();
+  return new Scene(engine);
+}
+
+function terrainPlugin(scene: Scene, name: string): TerrainTexturePlugin {
+  return terrainMaterialFor(scene, name).pluginManager?.getPlugin("TerrainTexture") as TerrainTexturePlugin;
+}
+
+function patchMeshes(s: Scene): Mesh[] {
+  return s.meshes.filter((m) => m.name.startsWith("facePatch_")) as Mesh[];
+}
+
+describe("the face patches' material", () => {
+  it("is the ground's material, with its plugins, sharing its arrays, a depth offset ahead", () => {
+    const s = scene();
+    const mat = terrainMaterialFor(s, FACE_PATCH_MATERIAL);
+    const plugin = terrainPlugin(s, FACE_PATCH_MATERIAL);
+    expect(plugin).toBeInstanceOf(TerrainTexturePlugin);
+    expect(mat.pluginManager?.getPlugin("Wet")).toBeTruthy();
+    expect(mat.albedoColor.r).toBe(1);
+    expect(mat.albedoColor.g).toBe(1);
+    expect(mat.albedoColor.b).toBe(1);
+    expect(mat.metallic).toBe(0);
+    expect(mat.roughness).toBe(terrainMaterialFor(s, "terrain").roughness);
+    expect(mat.zOffset).toBe(-1);
+    expect(mat.zOffsetUnits).toBe(-120);
+    // The ground's own material is left where it was.
+    expect(terrainMaterialFor(s, "terrain").zOffset).toBe(0);
+    expect(terrainMaterialFor(s, "terrain").zOffsetUnits).toBe(0);
+    // One set of normal and RAH arrays between the two.
+    const ground = terrainPlugin(s, "terrain");
+    expect(plugin.groundArrays.normals).toBe(ground.groundArrays.normals);
+    expect(plugin.groundArrays.rah).toBe(ground.groundArrays.rah);
+  });
+
+  it("is given the world's paint by the patches, as the ground's is by the clipmap", () => {
+    const s = scene();
+    const mat = terrainMaterialFor(s, FACE_PATCH_MATERIAL);
+    expect(terrainPlugin(s, FACE_PATCH_MATERIAL).roadEnabled).toBe(false);
+    const patches = createFacePatches(s, SEED, "high", mat);
+    expect(terrainPlugin(s, FACE_PATCH_MATERIAL).roadEnabled).toBe(true);
+    patches.dispose();
+  });
+});
+
+describe("createFacePatches", () => {
+  it("uploads the terrain plugin's attributes, with the clipmap's strides, on each patch", () => {
+    const s = scene();
+    const patches = createFacePatches(s, SEED, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL));
+    patches.update(CAM.x, CAM.z);
+    const mesh = patchMeshes(s)[0] as Mesh;
+    const wanted: string[] = [];
+    terrainPlugin(s, FACE_PATCH_MATERIAL).getAttributes(wanted, s, mesh);
+    expect(wanted).toEqual(["terrainWeights", "terrainWeights2", "terrainCover"]);
+    const kinds = mesh.getVerticesDataKinds();
+    for (const kind of [VertexBuffer.PositionKind, VertexBuffer.NormalKind, VertexBuffer.ColorKind, ...wanted]) {
+      expect(kinds).toContain(kind);
+    }
+    expect(mesh.getVertexBuffer("terrainWeights")?.getSize()).toBe(4);
+    expect(mesh.getVertexBuffer("terrainWeights2")?.getSize()).toBe(4);
+    expect(mesh.getVertexBuffer("terrainCover")?.getSize()).toBe(1);
+    expect(mesh.getVertexBuffer(VertexBuffer.ColorKind)?.getSize()).toBe(4);
+    expect(mesh.useVertexColors).toBe(true);
+    expect(mesh.material).toBe(terrainMaterialFor(s, FACE_PATCH_MATERIAL));
+    expect(mesh.receiveShadows).toBe(true);
+    expect(mesh.isPickable).toBe(false);
+    expect(mesh.isWorldMatrixFrozen).toBe(true);
+    patches.dispose();
+  }, timeLimit(60_000));
+
+  it("builds the reach at the scarp, then only what a cell's crossing changes", () => {
+    const s = scene();
+    const casting = new Set<AbstractMesh>();
+    const patches = createFacePatches(s, SEED, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), {
+      shadows: { add: (m) => casting.add(m), remove: (m) => casting.delete(m) },
+    });
+    // The camera's cell (−24, −57), walked from its centre: 317 cells in
+    // reach, 140 of them with steep ground.
+    patches.update(CAM.x, CAM.z);
+    expect(patches.builds()).toBe(317);
+    expect(patches.meshCount()).toBe(140);
+    expect(patchMeshes(s).length).toBe(140);
+    expect(casting.size).toBe(140);
+
+    // A metre on, in the same cell: nothing.
+    const before = new Set(patchMeshes(s));
+    patches.update(CAM.x + 1, CAM.z);
+    expect(patches.builds()).toBe(317);
+    expect(new Set(patchMeshes(s))).toEqual(before);
+
+    // A cell east: the cells that entered, left or changed band or stitch.
+    patches.update(CAM.x + 16, CAM.z);
+    expect(patches.builds()).toBe(366);
+    expect(patches.meshCount()).toBe(147);
+    expect(patchMeshes(s).length).toBe(147);
+    expect(casting.size).toBe(147);
+    const after = new Set(patchMeshes(s));
+    let kept = 0;
+    for (const m of before) if (after.has(m)) kept++;
+    expect(kept).toBe(119);
+
+    patches.dispose();
+    expect(patches.meshCount()).toBe(0);
+    expect(patchMeshes(s).length).toBe(0);
+    expect(casting.size).toBe(0);
+  }, timeLimit(120_000));
+});
