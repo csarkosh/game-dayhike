@@ -30,7 +30,7 @@ enough to show its joints.
 | --- | --- |
 | Where the relief lives | In the game layer, on separate patch meshes; the simulation's height function is untouched |
 | What it is masked by | The ground's own gradient: nothing under 1.0, the whole relief from 1.4 up (`FACE_SLOPE_LO`, `FACE_SLOPE_HI`); the standing limit is 1.02 |
-| The forms | Two, chosen by a slow noise over the world: columns (a jittered cellular field, the cells read as tall prisms on a steep face) and blocks (a near-square lattice with rounded joints, two octaves), both standing on large forms, a coarse octave of tilted slabs 14 m across |
+| The forms | Two, chosen by a slow noise over the world: columns (a jittered cellular field, the cells read as tall prisms on a steep face) and blocks (a near-square lattice with rounded joints, two octaves), both standing on large forms, a coarse octave of tilted slabs 20 m across |
 | The size of the relief | Outward only, up to `PATCH_DEPTH = 4.0` m along the face's normal, the relief's half-depth (`FACE_HALF_DEPTH = 2.0`) doubled: the smooth face is the deepest joint, and no patch vertex is ever under the ground. Where the ground bends sharply the depth is cut, so the push stays under half the bend's radius |
 | The patch grid | 16 m cells on the world's lattice; 0.5 m vertices within 48 m of the camera, 1 m within 160 m, 2 m within 400 m, none beyond (high tier; 36/120/300 m on medium, 24/80/200 m on low) |
 | Normals | The displaced surface's, from the ground's and the relief's derivatives at each vertex, not from the grid: a column's flat face shades flat and its joint steep at either spacing, and a point has one normal in every patch that holds it |
@@ -38,6 +38,8 @@ enough to show its joints.
 | Collision | On the heightfield, as today: a player at the foot of a face can stand up to 4 m inside the drawn rock |
 | The level id | Does not move |
 | The shipped cliff modules | Unchanged on this branch |
+| The rock texture | Repeats every 5.4 m, three times its source's 1.8 m, on the rock layer wherever it is drawn (§4.5) |
+| Shadows | The sun's shadow keeps at least 0.17 of its light, for every receiver (§4.5) |
 
 ## 2. Goals and non-goals
 
@@ -61,7 +63,8 @@ Non-goals:
 - Overhangs. The patch is pushed out along the normal, not folded.
 - Collision on the relief.
 - The terrace stage (`cliffs.ts`) and its ledges, which stay as they are.
-- The paint (`terrainSurface.ts`, the rock texture and its palette).
+- The paint (`terrainSurface.ts`, the rock texture's maps and its
+  palette); only the rock layer's repeat changes (§4.5).
 
 ## 3. The relief function (`client/src/sim/faceRelief.ts`)
 
@@ -97,18 +100,18 @@ between two cells where no third point is within a joint's width; it is
 continuous everywhere, since `F1` is.
 
 A level cell differs from its neighbours only across the joint between
-them, and a joint is a few tenths of a metre wide, so a face of level cells
-reads soft. Each cell is therefore a plane, tilted its own way by up to
+them, and a joint is half a metre to a metre and a half wide, so a face of
+level cells reads soft. Each cell is therefore a plane, tilted its own way by up to
 `FACE_TILT` of the unit range per cell crossed in each axis, and
 neighbouring cells meet the light at different angles across their whole
 width. A point with weight lies within `F1 + border ≤ 1.42 · cell + border`
 of the sample, so its tilt term is at most
-`FACE_TILT · 2 · (1.42 + border / cell)`, about 1.07 for the columns,
-1.17 for the blocks and 1.12 for the large forms; with
+`FACE_TILT · 2 · (1.42 + border / cell)`, about 1.06 for the columns,
+1.16 for the blocks and 1.12 for the large forms; with
 `o · FACE_VALUE_SPAN` beside it a plane can pass ±1 far up its tilt. The
 field is clamped to `[−1, 1]`, its derivative zero where the clamp holds,
 so the range is kept for every sample. Over 20,000 points the largest tilt
-term with weight is about 0.44 and no blend reaches the clamp.
+term with weight is about 0.43 and no blend reaches the clamp.
 
 With `W = Σ w_k`, the derivative is
 `(Σ w_k′ · u_k + Σ w_k · ∂u_k) / W − v · (Σ w_k′) / W`, where
@@ -121,21 +124,29 @@ junctions of three or more cells, where the nearest point changes while a
 third has weight, as a joint does. When a point with weight could lie
 outside the nine cells (`F1 + border` past the nearest any point outside
 can be), the search widens to the twenty-five around the sample, which holds
-every point with weight for any `border` under `(2 − √2) · cell`; at the
-forms' numbers below that is rare, and the field is the whole blend for
-every sample.
+every point with weight for any `border` under `(2 − √2) · cell`, about
+0.59 of a cell; the forms below keep their joints under a quarter of a cell
+(0.10 for the columns, 0.23 for both octaves of the blocks, 0.175 for the
+large forms), where that is rare, and the field is the whole blend for every
+sample.
 
 ### 3.2 The forms
 
-Columns: `cellularD(x, z, 2.8, 0.8, 0.3, COLUMN_SALT)`. On a face with
+Columns: `cellularD(x, z, 5.0, 0.8, 0.5, COLUMN_SALT)`. On a face with
 gradient `g`, a cell `c` metres across on the map runs `c · g` metres up the
 face, so the cells of a steep face stand as prisms two to three times taller
 than they are wide, and on a gentler one as blocks.
 
-Blocks: `cellularD(x, z, 3.6, 0.25, 0.9, BLOCK_SALT)` plus half of
-`cellularD(x, z, 1.8, 0.25, 0.45, BLOCK_SALT_2)`, the sum scaled by 2/3 to
+Blocks: `cellularD(x, z, 6.0, 0.25, 1.4, BLOCK_SALT)` plus half of
+`cellularD(x, z, 3.0, 0.25, 0.7, BLOCK_SALT_2)`, the sum scaled by 2/3 to
 stay within `[−1, 1]`. The low jitter keeps the joints near two directions,
 and the wide border rounds the blocks' edges.
+
+The cells are sized for fewer, larger rocks on a face. They were first
+2.8 m for the columns and 3.6 m and 1.8 m for the blocks, with joints of
+0.3, 0.9 and 0.45 m, and under the rock texture's small stones a face read
+as busy; each grew by two thirds to four fifths, its joint with it, so the share of
+a cell its joint takes is about what it was.
 
 Both forms, and both octaves of the blocks, take their planes from the same
 two constants, each octave with its own cell size beneath the tilt:
@@ -143,15 +154,16 @@ two constants, each octave with its own cell size beneath the tilt:
 at its site, and `FACE_TILT = 0.35`, the share a tilt of 1 rises across one
 cell. The span leaves room for the tilt within `[−1, 1]`.
 
-The large forms: `cellularD(x, z, 14, 0.6, 2.5, FORM_SALT)`
+The large forms: `cellularD(x, z, 20, 0.6, 3.5, FORM_SALT)`
 (`FACE_FORM_CELL`, `FACE_FORM_JITTER`, `FACE_FORM_BORDER`). From the road,
 80 m off, a face a hundred metres tall whose only relief is joints three
 metres apart reads as a faint ribbing; real rock carries buttresses and
 gullies ten to twenty metres across under its joints. This octave gives a
 face those: its cells take their planes from the same `FACE_VALUE_SPAN` and
-`FACE_TILT`, the tilt counted per cell crossed, so each 14 m cell is a slab
-leaning its own way, and the 2.5 m border rounds neighbouring slabs into
-one another. It does not depend on the noise that chooses the form, so
+`FACE_TILT`, the tilt counted per cell crossed, so each 20 m cell is a slab
+leaning its own way, and the 3.5 m border rounds neighbouring slabs into
+one another (14 m and 2.5 m before the fine cells grew, which they grew
+with). It does not depend on the noise that chooses the form, so
 columns and blocks stand on the same large forms, and it is evaluated
 wherever the relief is.
 
@@ -250,9 +262,10 @@ taper's term.
 The cut is measured, not proven: a triangle is taken to turn over when its
 facet faces away from the same three grid points' facet on the ground. Over
 the reference pose's patches none does, and the least agreement of the two
-facets is a cosine of about 0.30, on the steepest columns at 0.5 m; over
-250 steep cells at 0.5 m on each of worlds 1, 42 and 123456 it is 0.27,
-0.14 and 0.11, with none turned over. Without the cut, at the full 4 m,
+facets is a cosine of about 0.19, on the steepest columns at 0.5 m; on world
+42's sharp ridge, cell (25, 34) at 0.5 m, it is 0.26. With the first, finer
+cells (§3.2), over 250 steep cells at 0.5 m on each of worlds 1, 42 and
+123456 it was 0.27, 0.14 and 0.11, with none turned over. Without the cut, at the full 4 m,
 those cells turned 64, 179 and 164 triangles over, the worst facing
 straight back.
 
@@ -305,7 +318,7 @@ does not make it steep.
 | low | 24 m | 80 m | 200 m |
 
 Past 160 m a face 2 m across a vertex still shows its large forms, slabs
-14 m across, where the clipmap's 4 m and 8 m rings show none of them.
+20 m across, where the clipmap's 4 m and 8 m rings show none of them.
 
 The patches use a terrain material of their own, made by the same factory
 as the ground's (`terrainMaterialFor(scene, "facePatch")`: the same PBR
@@ -369,6 +382,34 @@ can leave triangles out does anyway, its own move or its finer ring's.
 
 The clipmap's rings are the shadow casters; the patches cast too, so a
 triangle left out casts its shadow through the patch over it.
+
+### 4.5 The look: the rock texture and the shadows
+
+The relief's cells give a face its rocks, and the rock texture painted over
+them must not break them back into cobbles. Its source covers 1.8 m, about
+ten stones a side, so at its own size a face showed stones of 0.15 to
+0.25 m in their hundreds across every slab. The rock layer
+(`TILING_METRES.rock` in `client/src/game/terrainTexture.ts`) repeats every
+5.4 m instead, three times its footprint, so a stone is 0.45 to 0.75 m
+across. The repeat is the layer's, not the patches': the steep ground, the
+scree and every other fragment that carries rock weight take it. The rock's
+parallax keeps its depth of 3 cm in metres, scaled to the repeat in the
+shader, so the stones are as deep as before, now a fifteenth of their
+width or less. Only a uniform changes; the shader text does not.
+
+The shadows of the joints and slabs added to the noise: under a clear sky
+the shadow generator's darkness was 0, so a face in shadow had only the
+sky's light. The darkness is now never under `SHADOW_FLOOR = 0.17`
+(`client/src/game/lighting.ts`). By the sky state's light, the image-based
+light taken as the dome's irradiance over π and the sun as the PBR diffuse,
+a face leaning 55° toward the sun keeps, shadowed, 45 %, 47 % and 43 % of
+its lit value at 08:00, noon and 15:00, where it kept 34 %, 36 % and 32 %;
+level ground keeps 46 %, 38 % and 41 %, where it kept 35 %, 25 % and 29 %.
+There is one shadow generator for the scene and Babylon has no darkness per
+receiver, so the floor holds for every receiver: the patches, the ground,
+the trees and the props. Weather whose cloud already lightens the shadows
+past it, bright weather's 0.45 and every cloudier one, keeps its own
+darkness.
 
 ## 5. Tests
 
