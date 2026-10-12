@@ -41,6 +41,18 @@ Mid-hike pinning is what catches the programs whose materials are let go
 before the end (a billboard bake's clone, a split LOD material): without it a
 reused hike still compiled about 30 shaders.
 
+A pinned effect must hold nothing of the hike that compiled it. Babylon
+hands every compile a `processCodeAfterIncludes` callback whose closure is
+the material plugin manager, and the manager's material has the scene: left
+in place, one pinned effect kept an entire retired world alive — about
+100 MB a hike, found by walking a heap snapshot's retainer paths. The pin
+drops that hook and the compile's `onCompiled`/`onError` with it; they are
+the compile's alone, spent by the time an effect pins (the processed source
+is stored on the effect, so a context restore rebuilds without them).
+Measured over five hikes, the page's heap after a forced collection now
+stays flat (363–380 MB) where it climbed ~100 MB a hike before, and each
+retired hike's world is collected whole.
+
 ## As measured
 
 Three hikes in one page, headless Chrome on an Apple-silicon Mac, high tier,

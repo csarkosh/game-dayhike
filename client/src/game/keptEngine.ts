@@ -42,11 +42,22 @@ const onCanvas = new WeakMap<HTMLCanvasElement, AbstractEngine>();
 /** The effects held here, per engine, each once however many hikes keep it. */
 const pinned = new WeakMap<AbstractEngine, WeakSet<Effect>>();
 
+/** What a pinned effect holds that was only for its compile. */
+type CompileTime = { _processCodeAfterIncludes?: unknown; onCompiled?: unknown; onError?: unknown };
+
 /**
  * Holds once more each effect of `engine` that is ready and compiled without
  * an error (above), so a scene's dispose leaves it in the engine's cache.
  * Babylon has no public count for this: the effect's own `_refCount`, which
  * `createEffect` raises on a cache hit and `Effect.dispose` lowers.
+ *
+ * A pinned effect must hold nothing of the hike that compiled it, or it
+ * holds the whole hike: the material plugin manager hands every compile a
+ * `processCodeAfterIncludes` whose closure is the manager, and the manager's
+ * material has the scene — one pinned effect kept an entire retired world
+ * alive. Those hooks are the compile's alone (the effect is ready, its
+ * source processed and stored; `onCompiled` has fired), so they are dropped
+ * as the effect is pinned.
  */
 export function pinShaders(engine: AbstractEngine): void {
   const held = pinned.get(engine) ?? new WeakSet<Effect>();
@@ -55,6 +66,10 @@ export function pinShaders(engine: AbstractEngine): void {
   for (const effect of Object.values(cache)) {
     if (held.has(effect) || !effect.isReady() || effect.getCompilationError() !== "") continue;
     effect._refCount++;
+    const compile = effect as unknown as CompileTime;
+    compile._processCodeAfterIncludes = undefined;
+    compile.onCompiled = null;
+    compile.onError = null;
     held.add(effect);
   }
 }
