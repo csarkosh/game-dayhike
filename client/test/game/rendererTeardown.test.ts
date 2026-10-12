@@ -184,10 +184,11 @@ describe("a renderer disposed while its models load", () => {
     expect(meshesAfter).toBe(0);
   }, timeLimit(120_000));
 
-  it("aborts each of its six loading shells, and every load they had running ends through the abort", async () => {
-    // The forest, the clutter, the cliff modules, the birds, the creature pool
-    // and the character pool each start a load at once and hold it here, the
-    // gate never opening: only an abort can end these loads.
+  it("aborts each of its five loading shells, and every load they had running ends through the abort", async () => {
+    // The forest, the clutter, the birds, the creature pool and the character
+    // pool each start a load at once and hold it here, never let through: only
+    // an abort can end these loads. The cliff modules, at the shipped density,
+    // lay none and fetch no model.
     loads.reset();
     const forest = createForest(SEED);
     const r = createRenderer(nullCanvas(), LEVEL, forest, { tier: "high" });
@@ -197,14 +198,20 @@ describe("a renderer disposed while its models load", () => {
 
     expect(loads.calls.filter((c) => c.unguarded).map((c) => c.url)).toEqual([]);
     const signals = signalsOf(loads.guarded);
-    expect(signals.length).toBe(6);
+    // 2026-10-12: six before the cliff modules left the faces
+    expect(signals.length).toBe(5);
     expect(signals.filter((s) => !s.aborted).length).toBe(0);
     expect(loads.guarded.filter((g) => g.outcome !== "aborted").length).toBe(0);
   }, timeLimit(120_000));
 
-  it("still reports a load that fails for any other reason", async () => {
+  it("tells a load that fails for any other reason from the abort, and it costs only its shell", async () => {
+    // The forest's first model fails at once. The forest shell degrades without
+    // a word (`forestMeshes.ts`) and fetches nothing more; every other shell's
+    // loads land. The cliff modules' line is the renderer's one report of a
+    // failed load, and at the shipped density they fetch no model.
+    // 2026-10-12: cliff.wall_a.glb, logged, before the cliff modules left the faces
     loads.reset();
-    loads.failing = "cliff.wall_a.glb";
+    loads.failing = "tree.giant_fir.glb";
     loads.open();
     const forest = createForest(SEED);
     const { errors, unhandled } = await heard(async () => {
@@ -212,8 +219,10 @@ describe("a renderer disposed while its models load", () => {
       await settled();
       r.dispose();
     });
-    expect(errors).toEqual(["cliff modules: keeping whatever loaded — Error: HTTP 404"]);
+    expect(errors).toEqual([]);
     expect(unhandled.length).toBe(0);
+    expect(loads.guarded.map((g) => g.outcome).filter((o) => o !== "resolved")).toEqual(["failed"]);
+    expect(loads.calls.filter((c) => c.url.startsWith("tree.")).map((c) => c.url)).toEqual(["tree.giant_fir.glb"]);
   }, timeLimit(120_000));
 });
 
@@ -232,10 +241,11 @@ describe("a renderer whose build throws after its loading shells exist", () => {
     expect(errors).toEqual([]);
     expect(unhandled.length).toBe(0);
     expect(loads.calls.filter((c) => c.afterDispose).map((c) => c.url)).toEqual([]);
-    // The forest, the clutter, the cliff modules, the birds and the creature
-    // pool existed when the mist threw; the character pool comes later.
+    // The forest, the clutter, the birds and the creature pool existed when
+    // the mist threw; the character pool comes later.
     const signals = signalsOf(loads.guarded);
-    expect(signals.length).toBe(5);
+    // 2026-10-12: five before the cliff modules left the faces
+    expect(signals.length).toBe(4);
     expect(signals.filter((s) => !s.aborted).length).toBe(0);
   }, timeLimit(120_000));
 });

@@ -37,6 +37,7 @@ import { seedFromToken } from "../../src/game/seed.js";
 import { FOG_DISTANCE } from "../../src/sim/forestConstants.js";
 import { pluginsInStates } from "./helpers/pluginText.js";
 import { drawnEffect, probeReady, stageBindings, webgpuProcessingEngine, type ProcessedEffect } from "./helpers/webgpuProcessing.js";
+import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { stadiumLake } from "../helpers/lakeShapes.js";
 import { skyFixture } from "./helpers/skyFixture.js";
@@ -637,7 +638,8 @@ describe("inter-stage variables of the cliffs' LOD1 material on WebGPU, which th
     scene.activeCamera = new UniversalCamera("player", new Vector3(-340, 60, -897), scene);
     createHeadlamp(scene, "lamp_local");
     const lighting = createLighting(scene, { tier: "high", viewDistance: FOG_DISTANCE, colourPath: "post", sky: skyFixture() });
-    const cliffs = createCliffMeshes(scene, 627994160, { quality: "high" });
+    // The shipped density lays no module; the material is read at a density of its own.
+    const cliffs = createCliffMeshes(scene, 627994160, { quality: "high", density: CLIFF_LAID });
     await cliffs.ready;
     cliffs.update(-340, -897);
     for (const mesh of cliffs.casterMeshes) lighting.addShadowMesh(mesh);
