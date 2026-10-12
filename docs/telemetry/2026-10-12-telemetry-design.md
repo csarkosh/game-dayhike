@@ -1,7 +1,7 @@
 # Telemetry
 
 **Date:** 2026-10-12
-**Status:** Built 2026-10-12.
+**Status:** Built 2026-10-12. Amended the same day: a stored error is traceable to its cause (§8).
 
 ## 0. What this is
 
@@ -181,9 +181,36 @@ An instance costs about nine cents a busy hour; a batch is about 2 KB of rows.
 
 ## 7. Not built
 
-- **The admin page.** A static page under the site with Google sign-in, calling a route
-  on the server that checks the token's email against an allowlist and runs the saved SQL
-  against the dataset, and `/admin/live` reading the rooms in the signaling server's
-  memory. Looker Studio over the dataset, shared with one account, stands in until then.
+- **The admin page.** Built the same day, after this:
+  [`../admin/2026-10-12-admin-page-design.md`](../admin/2026-10-12-admin-page-design.md).
 - **Signaling on more than one instance.** Built the same day, after this:
   [`../signaling/2026-10-12-shared-rooms-design.md`](../signaling/2026-10-12-shared-rooms-design.md).
+
+## 8. Reading an error back to its cause
+
+*Amended 2026-10-12, with the admin page.* An error row named the session, the build, the
+world, the platform and the GPU from the first day; four things were missing for a cause.
+
+- **Source maps.** The build writes hidden maps (`sourcemap: "hidden"` in
+  `client/vite.config.ts`): beside the chunks, unreferenced by them. The client deploy keeps
+  them out of the site and stores them in the downloads bucket under `sourcemaps/<build
+  sha>/assets/`, public as the repository is. `node tools/telemetry/symbolicate.mjs <build>
+  [stack.txt]` rewrites every frame a map knows to `<source>:<line>:<column> (<name>) ←
+  <chunk>:<line>:<column>` and leaves the rest.
+- **The stack and the breadcrumb.** `MAX_STACK_LENGTH` is 2,000 characters, a dozen or more
+  minified frames; the server's string cap matches. `where` names the step of the start
+  (`start:decide`, `start:engine`, `start:build`) and, through `markedProgress`
+  (`game/loadProgress.ts`), the loading stage whose first item has begun (`load:models`,
+  `load:ground`, `load:shaders`, `load:pipelines`, `load:world`), whether or not an intro's
+  bar is showing.
+- **The early catch.** An inline script at the top of `client/index.html` listens for
+  `error` and `unhandledrejection` from the first byte, queuing what it hears on
+  `window.__dh` until the bundle's telemetry takes the queue and the listeners over
+  (`EarlyCatch`). If nothing takes them over within fifteen seconds and something was heard,
+  the script beacons the queue itself under a `boot-` session id with `kind: boot:<kind>` and
+  the user agent: the page that never started still says so. Vite substitutes the telemetry
+  URL and the build sha into the script; in development they stay as written and nothing is
+  sent.
+- **The session timeline.** `tools/telemetry/queries/session.sql`, every row a session sent
+  and its lobby's signaling rows in order; the admin page opens it as a drawer from any
+  session id.

@@ -13,6 +13,7 @@ SELECT
   CAST(JSON_VALUE(json_payload.hp) AS FLOAT64) AS hp
 FROM `fps-csarko.global.dayhike-telemetry._AllLogs`
 WHERE JSON_VALUE(json_payload.svc) = 'telemetry'
+  AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY) -- range
   AND JSON_VALUE(json_payload.n) = 'pos'
   AND JSON_VALUE(json_payload.build) != 'verify'
 ORDER BY world, seed, sid, tick;

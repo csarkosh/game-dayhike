@@ -47,4 +47,8 @@ export interface Store {
   instancesSeenSince(since: number): Promise<string[]>;
   /** This instance is going. */
   forgetInstance(inst: string): Promise<void>;
+  /** Every open room, for the admin page's live view. */
+  listRooms(): Promise<{ id: string; doc: RoomDoc }[]>;
+  /** Every instance that has said it is alive, and when. */
+  listInstances(): Promise<{ id: string; seenAt: number }[]>;
 }

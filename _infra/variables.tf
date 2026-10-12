@@ -87,6 +87,16 @@ variable "monthly_budget_usd" {
   default     = 10
 }
 
+variable "admin_emails" {
+  description = <<-EOT
+    The Google accounts that may read the admin page, as addresses. Set in
+    the git-ignored terraform.tfvars, not here. Empty (the default) serves
+    no admin routes at all.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "signaling_registry" {
   description = "Where the signaling rooms live: `firestore` (shared, lets the service scale) or `memory` (one instance only)."
   type        = string

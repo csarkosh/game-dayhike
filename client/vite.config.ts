@@ -47,6 +47,18 @@ export default defineConfig({
     },
   },
   build: {
+    // Source maps, written beside the chunks but not referenced by them: the
+    // deploy keeps them out of the site and stores them by build sha, so a
+    // telemetry stack can be read back (`tools/telemetry/symbolicate.mjs`).
+    sourcemap: "hidden",
+    // Two pages: the game, and the admin page beside it at /dayhike/admin/,
+    // which shares nothing with the game's bundle (`src/admin/main.ts`).
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("index.html", import.meta.url)),
+        admin: fileURLToPath(new URL("admin/index.html", import.meta.url)),
+      },
+    },
     // Never inline a model, and never inline a ground texture. `game/assetUrls.ts`
     // imports every shipped .glb with `?url`, and `groundMaps.ts`/`terrainTexture.ts`
     // import every `client/assets/textures/ground.*.webp` the same way, so Vite

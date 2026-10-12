@@ -13,6 +13,18 @@ variable "image" {
   type        = string
 }
 
+variable "admin_emails" {
+  description = "The accounts that may read the admin page's routes. Empty serves no admin routes."
+  type        = list(string)
+  default     = []
+}
+
+variable "registry" {
+  description = "Where the signaling rooms live, for the admin page's live view: `firestore` or `memory` (then the view is empty)."
+  type        = string
+  default     = "firestore"
+}
+
 variable "max_instances" {
   description = "The most instances the service scales to: the ceiling on what a flood can bill."
   type        = number

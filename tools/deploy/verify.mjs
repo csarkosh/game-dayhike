@@ -496,6 +496,14 @@ async function verify() {
   const refused = await reach(telemetryRoute, { method: 'POST', body: '{', headers: { 'content-type': 'text/plain' } });
   check(refused.status === 400, 'telemetry refuses a malformed batch', `got ${refused.status}`);
 
+  // 6c. The admin page is served beside the game, and its routes refuse a
+  // request with no account: the allowlist is the whole of the guard.
+  const admin = await reach(`${siteUrl}/admin/`);
+  const adminHtml = admin.status === 200 ? await admin.text() : '';
+  check(admin.status === 200 && adminHtml.includes('<script'), 'the admin page is served at /admin/', `status ${admin.status}`);
+  const refusedAdmin = await reach(`${telemetryUrl}/admin/live`, { headers: { origin: siteOrigin } });
+  check(refusedAdmin.status === 401, 'the admin routes refuse a request with no account', `got ${refusedAdmin.status}`);
+
   // 7. The desktop release the landing page will advertise exists and is
   // whole: latest.json parses, names the version the repo believes is
   // current, and every build it points at — the dmg and the Windows

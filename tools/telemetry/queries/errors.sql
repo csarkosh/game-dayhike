@@ -15,6 +15,7 @@ WITH rows AS (
     timestamp
   FROM `fps-csarko.global.dayhike-telemetry._AllLogs`
   WHERE JSON_VALUE(json_payload.svc) = 'telemetry'
+    AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY) -- range
     AND JSON_VALUE(json_payload.n) IN ('error', 'warn', 'start_fail', 'connect_fail', 'engine_failed', 'webgpu_start_failed', 'tier_fallback')
     AND JSON_VALUE(json_payload.build) != 'verify'
 )
@@ -26,6 +27,7 @@ SELECT
   build,
   COUNT(*) AS times,
   COUNT(DISTINCT sid) AS sessions,
+  ANY_VALUE(sid) AS a_session,
   ANY_VALUE(CONCAT(os, ' ', browser, ' ', gpu)) AS a_machine,
   MAX(timestamp) AS last_seen
 FROM rows

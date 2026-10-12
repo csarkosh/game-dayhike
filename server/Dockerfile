@@ -29,6 +29,8 @@ COPY client/package.json client/package.json
 COPY server/package.json server/package.json
 RUN npm ci --omit=dev --workspace server --include-workspace-root
 COPY --from=build /app/server/dist ./server/dist
+# The saved telemetry queries the admin routes run (`server/src/adminQueries.ts`).
+COPY tools/telemetry/queries ./tools/telemetry/queries
 USER node
 # Cloud Run injects PORT; 8080 is the default the server already falls back to.
 ENV PORT=8080

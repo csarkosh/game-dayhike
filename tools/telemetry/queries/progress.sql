@@ -19,6 +19,7 @@ WITH rows AS (
     timestamp
   FROM `fps-csarko.global.dayhike-telemetry._AllLogs`
   WHERE JSON_VALUE(json_payload.svc) = 'telemetry'
+    AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY) -- range
     AND JSON_VALUE(json_payload.build) != 'verify'
     AND JSON_VALUE(json_payload.game) IS NOT NULL
 )

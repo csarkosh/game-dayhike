@@ -40,8 +40,8 @@ export const MAX_BATCH_BYTES = 64 * 1024;
 export const MAX_EVENTS_PER_BATCH = 200;
 /** Fields an event or the envelope may carry, beyond which the rest are dropped. */
 export const MAX_FIELDS = 40;
-/** A string field is cut here. A stack trace is the longest the page sends, at 600. */
-export const MAX_STRING_LENGTH = 1000;
+/** A string field is cut here. A stack trace is the longest the page sends, at 2,000. */
+export const MAX_STRING_LENGTH = 2000;
 /** Entries an array field may hold. The page's longest is a path sample. */
 export const MAX_ARRAY_LENGTH = 256;
 /** The batch format this route reads. */

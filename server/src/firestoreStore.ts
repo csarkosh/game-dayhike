@@ -100,4 +100,14 @@ export class FirestoreStore implements Store {
   async forgetInstance(inst: string): Promise<void> {
     await this.db.collection(INSTANCES).doc(inst).delete();
   }
+
+  async listRooms(): Promise<{ id: string; doc: RoomDoc }[]> {
+    const snap = await this.db.collection(ROOMS).get();
+    return snap.docs.map((doc) => ({ id: doc.id, doc: doc.data() as RoomDoc }));
+  }
+
+  async listInstances(): Promise<{ id: string; seenAt: number }[]> {
+    const snap = await this.db.collection(INSTANCES).get();
+    return snap.docs.map((doc) => ({ id: doc.id, seenAt: Number((doc.data() as { seenAt?: unknown }).seenAt ?? 0) }));
+  }
 }

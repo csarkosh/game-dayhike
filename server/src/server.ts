@@ -6,6 +6,8 @@ import { MemoryRegistry } from "./memoryRegistry.js";
 import type { Registry, RoomInfo } from "./registry.js";
 import { row, stdoutSink, type LogSink } from "./log.js";
 import { PostLimiter, telemetryRoute, type PostLimiterOptions } from "./telemetry.js";
+import { adminRoute, type AdminData } from "./admin.js";
+import type { AdminAuth } from "./adminAuth.js";
 import { parseClientMessage, type ServerMessage } from "./protocol.js";
 import { TokenBucket } from "./tokenBucket.js";
 import {
@@ -184,6 +186,12 @@ export type SignalingServerOptions = {
    * reaches it.
    */
   registry?: (options: { maxPeers: number; now: () => number; hostGraceMs: number; onEnded: (room: RoomInfo, reason: "host_left" | "host_gone" | "empty") => void }) => Registry;
+  /**
+   * The admin routes (`admin.ts`), served by the telemetry role when both
+   * are given: who may read them, and what they read. Absent, `/admin/*` is
+   * not found.
+   */
+  admin?: { auth: AdminAuth; data: AdminData };
 };
 
 /**
@@ -217,6 +225,10 @@ export function createSignalingServer(
   const limiter = new ConnectionLimiter({ now: options.now, ...options.limits });
   const postLimiter = new PostLimiter({ now: options.now, ...options.postLimits });
   const telemetry = role === "signaling" ? null : telemetryRoute({ allowedOrigins, limiter: postLimiter, log, serverBuild, now });
+  const admin =
+    role === "signaling" || options.admin === undefined
+      ? null
+      : adminRoute({ auth: options.admin.auth, data: options.admin.data, allowedOrigins, limiter: postLimiter, now });
   const maxBufferedBytes = options.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
   const bufferedAmountOf = options.bufferedAmountOf ?? ((s: WebSocket) => s.bufferedAmount);
 
@@ -262,13 +274,15 @@ export function createSignalingServer(
     // probe still worked (it hits the container directly, bypassing the public
     // edge), which is what made this so easy to ship and so confusing to debug
     // afterward. Every other path, including this one, reaches the container.
-    const path = pathOf(req);
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const path = url.pathname;
     if (req.method === "GET" && path === "/healthcheck") {
       res.writeHead(200, { "content-type": "text/plain" });
       res.end("ok");
       return;
     }
     if (telemetry !== null && telemetry(req, res, path)) return;
+    if (admin !== null && admin(req, res, path, url.searchParams)) return;
     res.writeHead(404, { "content-type": "text/plain" });
     res.end("not found");
   });

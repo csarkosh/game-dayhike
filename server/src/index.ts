@@ -4,6 +4,8 @@ import { DEFAULT_ALLOWED_ORIGINS } from "./admission.js";
 import { TELEMETRY_PATH } from "./telemetry.js";
 import { FirestoreStore } from "./firestoreStore.js";
 import { SharedRegistry } from "./sharedRegistry.js";
+import { createAdminAuth, parseAllowlist } from "./adminAuth.js";
+import { createAdminData } from "./adminData.js";
 
 const PORT = Number(process.env.PORT ?? 8080);
 
@@ -26,6 +28,14 @@ const BUILD_SHA = process.env.BUILD_SHA || "dev";
 const REGISTRY = process.env.REGISTRY === "firestore" ? "firestore" : "memory";
 const INSTANCE = `${process.env.K_REVISION ?? "local"}-${randomUUID().slice(0, 8)}`;
 
+// The admin page's readers (`adminAuth.ts`): the accounts on the list, and the
+// Firebase project their tokens name, which is this project. With no list
+// the admin routes are not served. The dataset is the telemetry bucket's
+// linked one (`_infra/modules/gcp-telemetry`).
+const ADMIN_EMAILS = parseAllowlist(process.env.ADMIN_EMAILS);
+const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || "";
+const TELEMETRY_DATASET = process.env.TELEMETRY_DATASET || "dayhike_telemetry";
+
 // Comma-separated, so a new domain is an environment change rather than a
 // deploy of new code. An unset or empty variable keeps the built-in list —
 // setting it to something meaningless should not silently open the server up.
@@ -37,19 +47,26 @@ const ALLOWED_ORIGINS =
 const allowedOrigins =
   ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ALLOWED_ORIGINS;
 
+const store = REGISTRY === "firestore" ? new FirestoreStore() : null;
 const server = createSignalingServer(PORT, {
   allowedOrigins,
   role: ROLE,
   serverBuild: BUILD_SHA,
-  ...(REGISTRY === "firestore"
-    ? { registry: (o) => new SharedRegistry(new FirestoreStore(), { ...o, instance: INSTANCE }) }
+  ...(store !== null ? { registry: (o) => new SharedRegistry(store, { ...o, instance: INSTANCE }) } : {}),
+  ...(ADMIN_EMAILS.length > 0 && PROJECT !== ""
+    ? {
+        admin: {
+          auth: createAdminAuth({ projectId: PROJECT, allowed: ADMIN_EMAILS }),
+          data: createAdminData({ projectId: PROJECT, dataset: TELEMETRY_DATASET, store }),
+        },
+      }
     : {}),
 });
 console.log(`allowing origins: ${allowedOrigins.join(", ")}`);
 const serving = [ROLE !== "telemetry" ? `signaling on ${SIGNALING_PATH}` : null, ROLE !== "signaling" ? `telemetry on ${TELEMETRY_PATH}` : null]
   .filter((line) => line !== null)
   .join(", ");
-console.log(`${ROLE} server (build ${BUILD_SHA}, ${REGISTRY} rooms, instance ${INSTANCE}) listening on :${PORT}: ${serving}`);
+console.log(`${ROLE} server (build ${BUILD_SHA}, ${REGISTRY} rooms, instance ${INSTANCE}, admin for ${ADMIN_EMAILS.length} account(s)) listening on :${PORT}: ${serving}`);
 
 // Cloud Run sends SIGTERM on scale-down and on every deploy. Shutting down
 // deliberately means peers learn about it immediately instead of discovering it

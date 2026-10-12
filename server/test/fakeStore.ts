@@ -121,4 +121,12 @@ export class FakeStore implements Store {
     this.instances.delete(inst);
     return Promise.resolve();
   }
+
+  listRooms(): Promise<{ id: string; doc: RoomDoc }[]> {
+    return Promise.resolve([...this.rooms].map(([id, doc]) => ({ id, doc: structuredClone(doc) })));
+  }
+
+  listInstances(): Promise<{ id: string; seenAt: number }[]> {
+    return Promise.resolve([...this.instances].map(([id, seenAt]) => ({ id, seenAt })));
+  }
 }

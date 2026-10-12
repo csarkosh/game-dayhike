@@ -13,6 +13,7 @@ WITH rooms AS (
     timestamp
   FROM `fps-csarko.global.dayhike-telemetry._AllLogs`
   WHERE JSON_VALUE(json_payload.svc) = 'signaling'
+    AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY) -- range
 )
 SELECT
   DATE(timestamp) AS day,

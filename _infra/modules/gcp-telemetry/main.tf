@@ -27,12 +27,26 @@ terraform {
   }
 }
 
-# Its own identity, as signaling has, with no roles: writing to stdout needs
-# none, and this service does nothing else.
+# Its own identity, as signaling has. Writing rows to stdout needs no role;
+# the admin routes (`server/src/admin.ts`) need three, each read-only: to run
+# the saved queries as BigQuery jobs, to read the log bucket's view those
+# queries go through, and to read the open rooms from Firestore.
 resource "google_service_account" "telemetry" {
   project      = var.project_id
   account_id   = "fps-telemetry"
   display_name = "Day Hike telemetry ingest"
+}
+
+resource "google_project_iam_member" "admin_reads" {
+  for_each = toset([
+    "roles/bigquery.jobUser",
+    "roles/logging.viewAccessor",
+    "roles/datastore.viewer",
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.telemetry.email}"
 }
 
 resource "google_cloud_run_v2_service" "telemetry" {
@@ -71,6 +85,29 @@ resource "google_cloud_run_v2_service" "telemetry" {
       env {
         name  = "ROLE"
         value = "telemetry"
+      }
+
+      # The admin routes' readers, the project their tokens name, the dataset
+      # the queries read, and where the open rooms are (`server/src/index.ts`).
+      # No readers, no admin routes.
+      env {
+        name  = "ADMIN_EMAILS"
+        value = join(",", var.admin_emails)
+      }
+
+      env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.project_id
+      }
+
+      env {
+        name  = "TELEMETRY_DATASET"
+        value = google_logging_linked_dataset.telemetry.link_id
+      }
+
+      env {
+        name  = "REGISTRY"
+        value = var.registry
       }
 
       resources {

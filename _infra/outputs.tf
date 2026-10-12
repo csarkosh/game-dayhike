@@ -33,6 +33,11 @@ output "telemetry_dataset" {
   value       = module.gcp_telemetry.dataset
 }
 
+output "web_api_key" {
+  description = "The Firebase web API key the admin page signs in with; it names the project and is not a secret"
+  value       = module.gcp_auth.web_api_key
+}
+
 output "hosting_site_id" {
   description = "Firebase Hosting site id, for `firebase deploy`"
   value       = module.gcp_hosting.site_id
