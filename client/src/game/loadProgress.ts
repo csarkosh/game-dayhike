@@ -35,6 +35,30 @@ export type LoadProgress = {
   view(): ProgressView;
 };
 
+/**
+ * A progress model that names each stage as its first item starts — the
+ * telemetry's breadcrumb — and forwards everything to `inner` where there is
+ * one (the intro's bar). With no inner, the loads still report here, and the
+ * view is empty.
+ */
+export function markedProgress(inner: LoadProgress | null, mark: (stage: Stage) => void): LoadProgress {
+  const marked = new Set<Stage>();
+  return {
+    total: (stage, n) => inner?.total(stage, n),
+    start(stage, id, bytes) {
+      if (!marked.has(stage)) {
+        marked.add(stage);
+        mark(stage);
+      }
+      inner?.start(stage, id, bytes);
+    },
+    bytes: (stage, id, loaded, total) => inner?.bytes(stage, id, loaded, total),
+    done: (stage, id) => inner?.done(stage, id),
+    gate: () => inner?.gate(),
+    view: () => inner?.view() ?? { bar: 0, lines: [], ready: false },
+  };
+}
+
 /** The bar's share of each stage. They sum to 1. */
 const WEIGHT: Record<Stage, number> = { models: 0.6, ground: 0.1, shaders: 0.1, pipelines: 0.1, world: 0.1 };
 const ORDER: Stage[] = ["models", "ground", "shaders", "pipelines", "world"];

@@ -8,7 +8,9 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@google-cloud/bigquery": "9.2.0",
     "@google-cloud/firestore": "9.3.1",
+    "jose": "6.2.12",
     "ws": "8.21.1"
   },
   "devDependencies": {

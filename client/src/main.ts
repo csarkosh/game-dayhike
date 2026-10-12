@@ -21,6 +21,7 @@ import { afterNextPaint } from "./game/paint.js";
 import { createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
 import { INTRO_CAPTIONS } from "./game/scene/intro.js";
 import { setLoadProgress } from "./game/modelLoad.js";
+import { markedProgress } from "./game/loadProgress.js";
 import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
@@ -36,7 +37,7 @@ import { parseLatest, type DesktopRelease } from "./net/desktopRelease.js";
 import { createSignalingClient, type SignalingClient } from "./net/signaling.js";
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
-import { browserDeps, createTelemetry, installErrorCapture, telemetryUrl, visitorId, type Telemetry } from "./net/telemetry.js";
+import { browserDeps, createTelemetry, installErrorCapture, telemetryUrl, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
 import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
@@ -159,7 +160,7 @@ const telemetry: Telemetry = createTelemetry(
   },
   browserDeps(),
 );
-installErrorCapture(telemetry, window, console);
+installErrorCapture(telemetry, window, console, (window as unknown as { __dh?: EarlyCatch }).__dh);
 // On the way out, everything held goes by beacon with the session's counts;
 // a tab put in the background flushes too, since it may never come back.
 document.addEventListener("visibilitychange", () => {
@@ -1033,10 +1034,11 @@ function render(container: HTMLDivElement): void {
     if (src !== null) intro = startIntro(src, true);
   }
   activeIntro = intro;
-  if (intro !== null) {
-    intro.overlay.mount(container);
-    setLoadProgress(intro.overlay.progress);
-  }
+  if (intro !== null) intro.overlay.mount(container);
+  // The loads report to the intro's bar when there is one, and in every case
+  // name their stage as telemetry's breadcrumb, so an error mid-load says
+  // which stage was in progress.
+  setLoadProgress(markedProgress(intro?.overlay.progress ?? null, (stage) => telemetry.mark(`load:${stage}`)));
   // Each probe step draws on the engine the WebGPU rule gives its tier, on
   // its own canvas, and a WebGPU step that fails is the rule's start failure
   // (`measureOnRuleEngine`); the game's failure handling never hears of it.
@@ -1068,7 +1070,7 @@ function render(container: HTMLDivElement): void {
     laps[`${name}Ms`] = Math.round(now - lapStart);
     lapStart = now;
   };
-  telemetry.mark("start");
+  telemetry.mark("start:decide");
   void startHike<EngineOnCanvas>({
     signals: signalsReady,
     current: () => !cancelled(),
@@ -1088,6 +1090,7 @@ function render(container: HTMLDivElement): void {
         }),
       ).then((decided) => {
         lap("decide");
+        telemetry.mark("start:engine");
         return decided;
       }),
     before:
@@ -1110,6 +1113,7 @@ function render(container: HTMLDivElement): void {
       if (read === null) throw new Error("the GPU's signals were not read");
       // The engine's lap ends here, a paint after it was made.
       lap("engine");
+      telemetry.mark("start:build");
       launch(container, onCanvas, route.token, decided, (tier, wanted) => engineFor(tier, read, () => !cancelled(), wanted), intro);
       lap("build");
       telemetry.event("load", { ...laps, tier: decided.tier, source: decided.source, engine: game?.graphics().engine ?? "none" });

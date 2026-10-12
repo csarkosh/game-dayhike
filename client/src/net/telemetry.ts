@@ -32,9 +32,11 @@ export const MAX_BATCH_EVENTS = 200;
 export const MAX_QUEUE = 500;
 /** Errors and warnings one session reports in full; the rest are counted. */
 export const MAX_TROUBLE = 20;
-/** An error's text and stack are cut here. */
+/** An error's text and stack are cut here. Two thousand characters of stack
+ * is a dozen or more minified frames, which `tools/telemetry/symbolicate.mjs`
+ * reads back against the build's source maps. */
 export const MAX_MESSAGE_LENGTH = 300;
-export const MAX_STACK_LENGTH = 600;
+export const MAX_STACK_LENGTH = 2000;
 /** The batch format the server reads (`BATCH_VERSION`). */
 export const BATCH_VERSION = 1;
 /** The route on the telemetry service (`TELEMETRY_PATH`). */
@@ -357,6 +359,17 @@ export type ConsoleLike = {
   warn(...args: unknown[]): void;
 };
 
+/** An error the page's HTML caught before this module ran (`client/index.html`). */
+export type EarlyError = { kind: string; msg: string; stack?: string; at?: number };
+
+/**
+ * The page's early catch: a queue the HTML's own listeners fill until the
+ * bundle is up, then a handler they call instead. `window.__dh`, made by the
+ * inline script in `client/index.html`, which also beacons the queue itself
+ * if nothing ever takes it over — the "it never loaded" case.
+ */
+export type EarlyCatch = { q: EarlyError[]; on: ((error: EarlyError) => void) | null };
+
 /**
  * Hears what the page would otherwise only print: uncaught throws, rejected
  * promises nobody awaited, and the game's own `console.error` and
@@ -364,8 +377,38 @@ export type ConsoleLike = {
  * The console keeps printing; the wrap only listens. Nothing here runs unless
  * something is wrong, so a clean session pays for a few closures and no more.
  */
-export function installErrorCapture(telemetry: Telemetry, target: ErrorTarget, con: ConsoleLike): () => void {
+export function installErrorCapture(telemetry: Telemetry, target: ErrorTarget, con: ConsoleLike, early?: EarlyCatch): () => void {
   if (!telemetry.enabled) return () => undefined;
+  // What the HTML caught before this ran, then everything it catches after:
+  // its listeners stay the page's listeners, so nothing is heard twice.
+  if (early !== undefined) {
+    for (const e of early.q) telemetry.error(e.kind, e.msg, e.stack);
+    early.q.length = 0;
+    early.on = (e) => telemetry.error(e.kind, e.msg, e.stack);
+    const restore = con.error;
+    const restoreWarn = con.warn;
+    con.error = (...args: unknown[]) => {
+      restore.apply(con, args);
+      try {
+        telemetry.error("console", textOf(args), stackOf(args));
+      } catch {
+        // A listener must never be the page's next error.
+      }
+    };
+    con.warn = (...args: unknown[]) => {
+      restoreWarn.apply(con, args);
+      try {
+        telemetry.warn("console", textOf(args), stackOf(args));
+      } catch {
+        // As above.
+      }
+    };
+    return () => {
+      early.on = null;
+      con.error = restore;
+      con.warn = restoreWarn;
+    };
+  }
   target.addEventListener("error", (event) => {
     const error = event.error;
     const stack = error instanceof Error ? error.stack : undefined;

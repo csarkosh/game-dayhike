@@ -152,7 +152,7 @@ describe("createTelemetry", () => {
     const f = fakeDeps({ ok: true });
     const t = createTelemetry("u", ENVELOPE, f.deps);
     t.mark("loading:models");
-    t.error("console", "WebGPU: boom", "Error: boom\n" + "    at x\n".repeat(200));
+    t.error("console", "WebGPU: boom", "Error: boom\n" + "    at x\n".repeat(400));
     t.error("console", "WebGPU: boom", "a different stack");
     t.warn("console", "quality: slow");
     for (let i = 0; i < MAX_TROUBLE + 5; i++) t.error("uncaught", `distinct ${i}`);
@@ -161,7 +161,7 @@ describe("createTelemetry", () => {
     const trouble = events.filter((e) => e.n === "error" || e.n === "warn");
     expect(trouble).toHaveLength(MAX_TROUBLE);
     expect(trouble[0]).toMatchObject({ n: "error", kind: "console", msg: "WebGPU: boom", where: "loading:models" });
-    expect((trouble[0]!.stack as string).length).toBe(600);
+    expect((trouble[0]!.stack as string).length).toBe(2000);
     expect(trouble[1]).toMatchObject({ n: "warn", msg: "quality: slow" });
     const end = events[events.length - 1]!;
     expect(end).toMatchObject({ n: "end", trouble: MAX_TROUBLE, suppressed: 1 + 5 + 2 });
@@ -296,8 +296,8 @@ describe("installErrorCapture", () => {
       ["error", "console", "WebGPU: the renderer could not be built Error: boom"],
       ["warn", "console", 'quality: {"tier":"low"}'],
     ]);
-    expect(events[0]!.stack).toBe(boom.stack?.slice(0, 600));
-    expect(events[2]!.stack).toBe(boom.stack?.slice(0, 600));
+    expect(events[0]!.stack).toBe(boom.stack?.slice(0, 2000));
+    expect(events[2]!.stack).toBe(boom.stack?.slice(0, 2000));
     expect(printed).toEqual(["E WebGPU: the renderer could not be built Error: boom", 'W quality: {"tier":"low"}']);
     uninstall();
     con.error("after");

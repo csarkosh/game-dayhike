@@ -11,7 +11,8 @@ The game is live at **https://games.csarko.sh/dayhike**. Two independent things 
 | --- | --- | --- |
 | Client (`client/dist`) | Firebase Hosting, free CDN | `npm run deploy:client` |
 | Signaling server (`server/`) | Cloud Run `fps-signaling`, `us-west1`, scales from zero; rooms in Firestore | `npm run deploy:server` |
-| Telemetry service (the same image, `ROLE=telemetry`) | Cloud Run `fps-telemetry`, `us-west1`, scales from zero | `npm run deploy:server` (both services, one image) |
+| Telemetry service (the same image, `ROLE=telemetry`), with the admin routes | Cloud Run `fps-telemetry`, `us-west1`, scales from zero | `npm run deploy:server` (both services, one image) |
+| The admin page (`client/admin/`) | Firebase Hosting, at `/dayhike/admin/`, built with the client | `npm run deploy:client` |
 
 `npm run deploy` runs the server then the client. `npm run deploy:verify` checks the
 result from outside — the live site, every deployed model and ground texture, the
@@ -52,7 +53,9 @@ Every step earns its place:
 
 **1. Commit first.** The image is tagged with the current commit so a Cloud Run revision
 traces back to a source state, and the same tag is baked into the image and the client
-build, so every telemetry row names the build on each side. A dirty tree tags
+build, so every telemetry row names the build on each side; the client's source maps are
+stored under that tag in the downloads bucket (`sourcemaps/<sha>/`), which is what
+`tools/telemetry/symbolicate.mjs` reads a stack against. A dirty tree tags
 `<sha>-dirty`, which is how an untested local change announces itself. Never deploy a
 dirty tree to production — commit, or stash.
 
@@ -70,9 +73,10 @@ a signaling server that answers HTTP but refuses a real WebSocket join.
 
 ## What the scripts need, and what they no longer need
 
-The scripts read eleven values describing production: project, the two Cloud Run
+The scripts read twelve values describing production: project, the two Cloud Run
 services and their URLs, Artifact Registry path, Firebase site, public site URL,
-`legacy_domain_name`, and the downloads bucket and its URL.
+`legacy_domain_name`, the downloads bucket and its URL, and the Firebase web API key the
+admin page signs in with (`web_api_key`, not a secret).
 
 They come from `tools/deploy/production.json`, which is **committed**, with Terraform
 outputs taking precedence when its state is reachable. This matters for concurrent
@@ -125,6 +129,12 @@ container. The Cloud Run startup probe still passes, because it hits the contain
 and bypasses the public edge — so the revision goes healthy and serves traffic while every
 external check reads a response the container never wrote. Renaming it back looks like
 tidying and costs a debugging session.
+
+**The admin page's sign-in has one step by hand.** Terraform creates Firebase Auth and the
+web app, but the Google sign-in provider needs an OAuth client that only the Firebase console
+creates: Authentication → Sign-in method → Google → Enable → Save, once. The accounts that
+may read the page are `admin_emails` in the git-ignored `terraform.tfvars`; an empty list
+serves no admin routes.
 
 **Terraform owns the service's shape; the deploy script owns only the image tag.** Never
 change Cloud Run settings with `gcloud`. If you do touch Terraform, a container-field

@@ -23,6 +23,12 @@ export function productionEnv() {
     // and the commit this build is of, which every row the page sends names.
     VITE_TELEMETRY_URL: `${tfOutput('telemetry_url')}/t`,
     VITE_BUILD_SHA: buildTag(),
+    // The admin page's sign-in (`client/src/admin/main.ts`): the web app's
+    // key, the site's own host as the handler's domain (Firebase Hosting
+    // serves /__/auth/ on it), and the project.
+    VITE_FIREBASE_API_KEY: tfOutput('web_api_key'),
+    VITE_FIREBASE_AUTH_DOMAIN: new URL(siteUrl).host,
+    VITE_FIREBASE_PROJECT_ID: tfOutput('gcp_project_id'),
     // Vite's `base`: the site URL's path with a trailing slash. The desktop
     // shell loads the site itself, so there is one build and one base.
     DAYHIKE_BASE: `${new URL(siteUrl).pathname.replace(/\/+$/, '')}/`,

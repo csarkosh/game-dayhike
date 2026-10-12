@@ -32,4 +32,11 @@ interface ImportMetaEnv {
    * was, set by the deploy's build (`tools/deploy/lib/buildClient.mjs`);
    * unset in development. Every telemetry row names it. */
   readonly VITE_BUILD_SHA?: string;
+  /** The admin page's sign-in (`src/admin/main.ts`): the Firebase web API
+   * key, which names the project and is not a secret; the domain the
+   * sign-in handler is served from, the site's own; and the project. Unset
+   * in development, where the page shows its sample with `?preview`. */
+  readonly VITE_FIREBASE_API_KEY?: string;
+  readonly VITE_FIREBASE_AUTH_DOMAIN?: string;
+  readonly VITE_FIREBASE_PROJECT_ID?: string;
 }

@@ -86,6 +86,8 @@ module "gcp_telemetry" {
   image              = var.telemetry_image
   billing_account_id = var.billing_account_id
   monthly_budget_usd = var.monthly_budget_usd
+  admin_emails       = var.admin_emails
+  registry           = var.signaling_registry
 
   providers = {
     google         = google
@@ -96,6 +98,20 @@ module "gcp_telemetry" {
   # no service of its own, so a second resource for the same API cannot
   # fight the first.
   depends_on = [module.gcp_signaling]
+}
+
+module "gcp_auth" {
+  source = "./modules/gcp-auth"
+
+  project_id         = var.gcp_project_id
+  authorized_domains = [var.domain_name]
+
+  providers = {
+    google      = google
+    google-beta = google-beta
+  }
+
+  depends_on = [module.gcp_hosting]
 }
 
 module "gcp_hosting" {
