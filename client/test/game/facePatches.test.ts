@@ -275,19 +275,23 @@ describe("facePatchGeometry", () => {
         n++;
       }
     }
-    // Measured: 12.2°.
+    // Measured: 14.7°.
+    // 2026-10-12: 12.2° (bar 13°) before the relief's gain.
     expect(n).toBe(186);
-    expect(sum / n).toBeLessThan(13);
+    expect(sum / n).toBeLessThan(15.5);
   }, timeLimit(20_000));
 
   it("meets its neighbour bit for bit where one fades at a side and the other at a corner", () => {
-    // At a step of the far reach's edge: (−17, −50) has its north, east and
-    // north-east neighbours outside the set, (−18, −50), west of it, only its
-    // north-east, which is the other's north. Their shared edge, x = −272,
+    // At a step of the far reach's edge: (−16, −51) has its north, east and
+    // north-east neighbours outside the set, (−17, −51), west of it, only its
+    // north-east, which is the other's north. Their shared edge, x = −256,
     // fades toward that square in both.
-    const west = patch(-18, -50, 1, { ...NONE, open: OPEN_NORTH_EAST });
-    const east = patch(-17, -50, 1, { ...NONE, open: OPEN_NORTH | OPEN_EAST | OPEN_NORTH_EAST });
-    const whole = patch(-18, -50, 1);
+    // 2026-10-12: (−18, −50) and (−17, −50) before the relief's gain, which
+    // holds the three points there at the clamp's −1, a push of nothing with
+    // the fade or without it.
+    const west = patch(-17, -51, 1, { ...NONE, open: OPEN_NORTH_EAST });
+    const east = patch(-16, -51, 1, { ...NONE, open: OPEN_NORTH | OPEN_EAST | OPEN_NORTH_EAST });
+    const whole = patch(-17, -51, 1);
     let faded = 0;
     for (let iz = 0; iz <= 16; iz++) {
       const a = (iz * 17 + 16) * 3;
@@ -449,7 +453,7 @@ describe("facePatchCells and facePatchStitch", () => {
 
   it("at the scarp, turns no triangle over", () => {
     // The worst, at 0.5 m on the scarp's steepest columns, still faces
-    // within 73° of the ground's.
+    // within 78° of the ground's.
     let folds = 0;
     let least = Infinity;
     for (const { cell, patch: p } of scarpPatches()) {
@@ -461,8 +465,8 @@ describe("facePatchCells and facePatchStitch", () => {
     expect(folds).toBe(0);
     // 2026-10-12: 0.390 before the relief's tilted planes and the doubled
     // depth; 0.349 at 2 m before the large forms, the 4 m depth and the cap
-    // by the ground's bend.
-    expect(least).toBeGreaterThan(0.303);
+    // by the ground's bend; 0.303 before the relief's gain.
+    expect(least).toBeGreaterThan(0.215);
   }, timeLimit(60_000));
 
   it("turns no triangle over on a sharp ridge of another world", () => {
@@ -474,6 +478,7 @@ describe("facePatchCells and facePatchStitch", () => {
     if (p === null) throw new Error("no patch at (25, 34)");
     const f = foldsOf(42, cell, p);
     expect(f.folds).toBe(0);
-    expect(f.least).toBeCloseTo(0.3487, 4);
+    // 2026-10-12: 0.3487 before the relief's gain.
+    expect(f.least).toBeCloseTo(0.2664, 4);
   }, timeLimit(20_000));
 });

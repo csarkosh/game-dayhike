@@ -24,12 +24,22 @@ const FORM_SALT = SEED ^ FACE_FORM_SALT;
 const OTHER_SEED = 0x2b7e1516;
 
 const LITERALS: ReliefSample[] = [
-  { v: -0.04815146360895406, dx: 0.019108963889064405, dz: -0.03813983069552332 },
-  { v: -0.041995174639698665, dx: -0.053481491357116814, dz: 0.04375198937889597 },
-  { v: 0.08302208243275147, dx: 0.0025717719108797636, dz: -0.020006402963772416 },
-  { v: 0.3135570401625046, dx: 0.14260054937064132, dz: 0.2733432577815301 },
-  { v: 0.1421022913815841, dx: 0.09451351794030782, dz: 0.04583002475681424 },
+  { v: -0.12037865902238515, dx: 0.04777240972266101, dz: -0.0953495767388083 },
+  { v: -0.10498793659924666, dx: -0.13370372839279204, dz: 0.10937997344723992 },
+  { v: 0.20755520608187866, dx: 0.006429429777199409, dz: -0.05001600740943104 },
+  { v: 0.7838926004062614, dx: 0.35650137342660326, dz: 0.6833581444538253 },
+  { v: 0.35525572845396025, dx: 0.23628379485076956, dz: 0.1145750618920356 },
 ];
+
+/** The fine relief, weighted 1, over the large forms, weighted 1.5, their sum
+ * times the gain over the weights' sum (2.5 / 2.5, exactly 1) and clamped to
+ * [−1, 1], flat where the clamp holds: the relief's own expression. */
+function gained(fine: ReliefSample, form: ReliefSample): ReliefSample {
+  const n = 2.5 / 2.5;
+  const v = n * (fine.v + 1.5 * form.v);
+  if (v > 1 || v < -1) return { v: v > 1 ? 1 : -1, dx: 0, dz: 0 };
+  return { v, dx: n * (fine.dx + 1.5 * form.dx), dz: n * (fine.dz + 1.5 * form.dz) };
+}
 
 /** The R2 low-discrepancy sequence over a square of half-width `half` about
  * the origin: an even, deterministic spread with no lattice to alias. */
@@ -375,8 +385,9 @@ describe("the relief", () => {
     expect(pts.length).toBe(1253);
     const r = checkField((x, z) => faceReliefD(SEED, x, z), () => Infinity, pts);
     expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
-    // Measured worst / steepest: 2.7e-8; steepest 0.067.
-    expect(r.steepest).toBeGreaterThan(0.05);
+    // Measured worst / steepest: 2.9e-8; steepest 0.15, the gain lifting the
+    // mix's slopes 2.5 times.
+    expect(r.steepest).toBeGreaterThan(0.125);
   });
 
   it("stays within [−1, 1] and finite over 20,000 points, far ones included", () => {
@@ -417,7 +428,7 @@ describe("the relief", () => {
     // lattice with weight, each lattice is its nearest site's plane, built
     // here from cellularSite: the columns' alone, or the blocks' two octaves
     // at 1 and 0.5 times 2/3, and under either the large form's at 1.5, the
-    // sum divided by 2.5.
+    // sum divided by 2.5, multiplied by the gain of 2.5 and clamped.
     const pts: Array<[number, number]> = [];
     let first: ReliefSample | undefined;
     for (const [x, z] of r2Points(20000, 1000)) {
@@ -451,18 +462,14 @@ describe("the relief", () => {
       }
       const f = plane(x, z, form.p, FACE_FORM_CELL);
       const r = faceReliefD(SEED, x, z);
-      expect(r).toEqual({
-        v: (fine.v + 1.5 * f.v) / 2.5,
-        dx: (fine.dx + 1.5 * f.dx) / 2.5,
-        dz: (fine.dz + 1.5 * f.dz) / 2.5,
-      });
+      expect(r).toEqual(gained(fine, f));
       if (pts.length === 0) first = r;
       pts.push([x, z]);
     }
     expect(pts.length).toBe(4411);
     expect(pts[0]).toEqual([78.04265994708359, -882.5553440311485]);
     expect(first).toEqual({
-      v: -0.260246289129908, dx: -0.015945634402731362, dz: -0.0012293141300755526,
+      v: -0.65061572282477, dx: -0.039864086006828406, dz: -0.0030732853251888813,
     });
   });
 
@@ -470,12 +477,7 @@ describe("the relief", () => {
     let columns = 0;
     let blocks = 0;
     let band = 0;
-    // The fine relief, weighted 1, over the large forms, weighted 1.5.
-    const mix = (fine: ReliefSample, form: ReliefSample): ReliefSample => ({
-      v: (fine.v + 1.5 * form.v) / 2.5,
-      dx: (fine.dx + 1.5 * form.dx) / 2.5,
-      dz: (fine.dz + 1.5 * form.dz) / 2.5,
-    });
+    const mix = gained;
     for (const [x, z] of r2Points(2000, 1000)) {
       const s = faceKindD(SEED, x, z).v;
       const r = faceReliefD(SEED, x, z);
@@ -511,8 +513,8 @@ describe("the relief", () => {
 
   it("is continuous: no step along 100 lines of 100 m at 1 cm", () => {
     // Every sample, junctions included. The largest step the lines meet is
-    // 0.034, a slope of 3.4; the large forms' slopes are gentle, and a step
-    // over 0.1 in 1 cm is no slope but a break.
+    // 0.086, a slope of 8.6: the steepest joint's 3.4 times the gain of 2.5.
+    // A step over 0.25 in 1 cm, three times that, is no slope but a break.
     const dirs = [[1, 0], [0, 1], [0.6, 0.8], [0.8, -0.6]] as const;
     const starts = r2Points(100, 1000);
     let largest = 0;
@@ -526,18 +528,43 @@ describe("the relief", () => {
         prev = v;
       }
     }
-    expect(largest).toBeLessThan(0.1);
+    expect(largest).toBeLessThan(0.25);
+  });
+
+  it("uses its range: a mean |v| about half the range, the clamp holding a few percent", () => {
+    // Without the gain the mean of the two blends clusters near zero, a mean
+    // |v| of 0.19; the gain spreads it, and the clamp holds the points it
+    // carries past ±1, flat there. Counted by form over 20,000 points.
+    let sum = 0;
+    const clamped = { columns: 0, blocks: 0, band: 0 };
+    for (const [x, z] of r2Points(20000, 1000)) {
+      const s = faceKindD(SEED, x, z).v;
+      const v = faceReliefD(SEED, x, z).v;
+      sum += Math.abs(v);
+      if (v === 1 || v === -1) clamped[s === 0 ? "columns" : s === 1 ? "blocks" : "band"]++;
+    }
+    const mean = sum / 20000;
+    expect(Math.round(mean * 1e4) / 1e4).toBe(0.4583);
+    expect(mean).toBeGreaterThanOrEqual(0.45);
+    expect(mean).toBeLessThanOrEqual(0.75);
+    expect(clamped).toEqual({ columns: 616, blocks: 371, band: 471 });
   });
 
   it("differs between two worlds", () => {
     // The lattice hash takes the seed and the first index through one XOR, so
     // two seeds a few units apart share values between neighbouring cells;
-    // the second world here is an unrelated seed.
+    // the second world here is an unrelated seed. Where both worlds hold at
+    // the same bound of the clamp they agree there, and only there.
     let same = 0;
+    let held = 0;
     for (const [x, z] of r2Points(500, 1000)) {
-      if (faceReliefD(SEED, x, z).v === faceReliefD(OTHER_SEED, x, z).v) same++;
+      const a = faceReliefD(SEED, x, z).v;
+      const b = faceReliefD(OTHER_SEED, x, z).v;
+      if (a === b && (a === 1 || a === -1)) held++;
+      else if (a === b) same++;
     }
     expect(same).toBe(0);
+    expect(held).toBe(1);
   });
 
   it("splits a square kilometre between columns, blocks and the band between", () => {
@@ -565,7 +592,7 @@ describe("the tunables", () => {
       "FACE_BLOCK_CELL", "FACE_BLOCK_JITTER", "FACE_BLOCK_BORDER",
       "FACE_BLOCK_FINE_CELL", "FACE_BLOCK_FINE_JITTER", "FACE_BLOCK_FINE_BORDER",
       "FACE_BLOCK_FINE_WEIGHT", "FACE_BLOCK_NORM", "FACE_VALUE_SPAN", "FACE_TILT",
-      "FACE_FORM_CELL", "FACE_FORM_JITTER", "FACE_FORM_BORDER", "FACE_FORM_WEIGHT",
+      "FACE_FORM_CELL", "FACE_FORM_JITTER", "FACE_FORM_BORDER", "FACE_FORM_WEIGHT", "FACE_GAIN",
       "FACE_KIND_WAVE", "FACE_KIND_LO", "FACE_KIND_HI",
       "FACE_COLUMN_SALT", "FACE_BLOCK_SALT", "FACE_BLOCK_FINE_SALT", "FACE_KIND_SALT",
       "FACE_FORM_SALT",
