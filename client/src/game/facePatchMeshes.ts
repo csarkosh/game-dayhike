@@ -6,8 +6,9 @@
  * The cell set is a function of the camera's cell alone (it is walked from
  * that cell's centre), so it changes only when the camera crosses a cell
  * line; each crossing builds the cells that entered or whose spacing or
- * stitch changed, drops the ones that left, and leaves the rest as they are.
- * A cell with no steep ground is remembered empty on the same terms.
+ * stitch (its stitched edges and its neighbours outside the set) changed,
+ * drops the ones that left, and leaves the rest as they are. A cell with no
+ * steep ground is remembered empty until it leaves or its spacing changes.
  */
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
@@ -53,8 +54,10 @@ export type FacePatches = {
 
 type Entry = { spacing: number; stitch: number; mesh: Mesh | null };
 
+/** A stitch as one number for the rebuild key: the four stitched edges in the
+ * low bits, the eight open neighbours above them. */
 function stitchBits(s: PatchStitch): number {
-  return (s.west ? 1 : 0) | (s.east ? 2 : 0) | (s.south ? 4 : 0) | (s.north ? 8 : 0);
+  return (s.west ? 1 : 0) | (s.east ? 2 : 0) | (s.south ? 4 : 0) | (s.north ? 8 : 0) | (s.open << 4);
 }
 
 /**
@@ -139,7 +142,9 @@ export function createFacePatches(
         const had = cells.get(key);
         if (had !== undefined) {
           cells.delete(key);
-          if (had.spacing === c.spacing && had.stitch === bits) {
+          // An empty cell is empty whatever its stitch: only its grid decides.
+          if (had.spacing === c.spacing && (had.stitch === bits || had.mesh === null)) {
+            had.stitch = bits;
             next.set(key, had);
             return;
           }

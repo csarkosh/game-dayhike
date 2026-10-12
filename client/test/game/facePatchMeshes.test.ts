@@ -4,9 +4,12 @@ import { Scene } from "@babylonjs/core/scene.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import "../../src/sim/passes/index.js";
+import { createAtmosphere } from "../../src/game/atmosphere.js";
 import { terrainMaterialFor } from "../../src/game/renderer.js";
 import { FACE_PATCH_MATERIAL, createFacePatches } from "../../src/game/facePatchMeshes.js";
+import { PATCH_REACH, facePatchCells, facePatchStitch, type PatchCell } from "../../src/game/facePatches.js";
 import { TerrainTexturePlugin } from "../../src/game/terrainTexture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -37,10 +40,15 @@ function patchMeshes(s: Scene): Mesh[] {
 describe("the face patches' material", () => {
   it("is the ground's material, with its plugins, sharing its arrays, a depth offset ahead", () => {
     const s = scene();
+    // The atmosphere registers its plugin before any material is made, as
+    // the renderer does, and it reaches this material as the ground's.
+    const atmosphere = createAtmosphere(s, 4000);
     const mat = terrainMaterialFor(s, FACE_PATCH_MATERIAL);
     const plugin = terrainPlugin(s, FACE_PATCH_MATERIAL);
     expect(plugin).toBeInstanceOf(TerrainTexturePlugin);
     expect(mat.pluginManager?.getPlugin("Wet")).toBeTruthy();
+    expect(mat.pluginManager?.getPlugin("Atmosphere")).toBeTruthy();
+    expect(terrainMaterialFor(s, "terrain").pluginManager?.getPlugin("Atmosphere")).toBeTruthy();
     expect(mat.albedoColor.r).toBe(1);
     expect(mat.albedoColor.g).toBe(1);
     expect(mat.albedoColor.b).toBe(1);
@@ -55,6 +63,27 @@ describe("the face patches' material", () => {
     const ground = terrainPlugin(s, "terrain");
     expect(plugin.groundArrays.normals).toBe(ground.groundArrays.normals);
     expect(plugin.groundArrays.rah).toBe(ground.groundArrays.rah);
+    atmosphere.dispose();
+  });
+
+  it("binds the ground's arrays as they are swapped for the real ones", () => {
+    const s = scene();
+    terrainMaterialFor(s, FACE_PATCH_MATERIAL);
+    const plugin = terrainPlugin(s, FACE_PATCH_MATERIAL);
+    const ground = terrainPlugin(s, "terrain");
+    const placeholder = { normals: ground.groundArrays.normals, rah: ground.groundArrays.rah };
+    // The ground's arrays swap their fields in place when the decodes land.
+    const normals = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, s);
+    const rah = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, s);
+    ground.groundArrays.normals = normals;
+    ground.groundArrays.rah = rah;
+    expect(plugin.groundArrays.normals).toBe(normals);
+    expect(plugin.groundArrays.rah).toBe(rah);
+    expect(plugin.groundArrays.normals).not.toBe(placeholder.normals);
+    // The view owns nothing: disposing it leaves the ground's arrays alone.
+    plugin.groundArrays.dispose();
+    expect(ground.groundArrays.normals).toBe(normals);
+    expect(normals.getInternalTexture()).not.toBeNull();
   });
 
   it("is given the world's paint by the patches, as the ground's is by the clipmap", () => {
@@ -112,16 +141,41 @@ describe("createFacePatches", () => {
     expect(patches.builds()).toBe(317);
     expect(new Set(patchMeshes(s))).toEqual(before);
 
-    // A cell east: the cells that entered, left or changed band or stitch.
+    // A cell east: the cells that entered, and those that changed band, or
+    // stitch or open neighbours with a patch to rebuild; an empty cell whose
+    // stitch changed is still empty and is kept.
+    const crossing = { entered: 0, rebuilt: 0, keptEmpty: 0 };
+    const was = new Map<number, { spacing: number; stitch: string; empty: boolean }>();
+    const named = new Set(patchMeshes(s).map((m) => m.name));
+    const from = facePatchCells(-24 * 16 + 8, -57 * 16 + 8, PATCH_REACH.high);
+    facePatchStitch(from).forEach((st, i) => {
+      const c = from[i] as PatchCell;
+      was.set(c.ci * 65536 + c.cj, { spacing: c.spacing, stitch: JSON.stringify(st), empty: !named.has(`facePatch_${c.ci}_${c.cj}`) });
+    });
+    const to = facePatchCells(-23 * 16 + 8, -57 * 16 + 8, PATCH_REACH.high);
+    facePatchStitch(to).forEach((st, i) => {
+      const c = to[i] as PatchCell;
+      const w = was.get(c.ci * 65536 + c.cj);
+      if (w === undefined) crossing.entered++;
+      else if (w.spacing !== c.spacing) crossing.rebuilt++;
+      else if (w.stitch !== JSON.stringify(st)) {
+        if (w.empty) crossing.keptEmpty++;
+        else crossing.rebuilt++;
+      }
+    });
+    // 2026-10-12: 49 builds (366), 119 kept, before the open neighbours
+    // joined the stitch and empty cells were kept across a stitch's change.
+    expect(crossing).toEqual({ entered: 21, rebuilt: 45, keptEmpty: 51 });
     patches.update(CAM.x + 16, CAM.z);
-    expect(patches.builds()).toBe(366);
+    expect(patches.builds()).toBe(317 + crossing.entered + crossing.rebuilt);
+    expect(patches.builds()).toBe(383);
     expect(patches.meshCount()).toBe(147);
     expect(patchMeshes(s).length).toBe(147);
     expect(casting.size).toBe(147);
     const after = new Set(patchMeshes(s));
     let kept = 0;
     for (const m of before) if (after.has(m)) kept++;
-    expect(kept).toBe(119);
+    expect(kept).toBe(99);
 
     patches.dispose();
     expect(patches.meshCount()).toBe(0);

@@ -4,8 +4,9 @@
  * reach gets a patch: a finer grid of the same ground, each vertex pushed out
  * along the ground's normal by the rock relief (`sim/faceRelief.ts`), masked
  * by the ground's gradient so the push is nothing where the ground is not
- * steep. The patch is painted as the clipmap paints the ground under it, so
- * it is the same rock in the same light; the ground itself is not changed.
+ * steep, and faded out toward the cells outside the patched set. The patch
+ * is painted as the clipmap paints the ground under it, so it is the same
+ * rock in the same light; the ground itself is not changed.
  *
  * Pure and Babylon-free; `facePatchMeshes.ts` is the shell that uploads it.
  *
@@ -24,12 +25,16 @@ import { waterGroundAt } from "./waterGround.js";
 
 /** A patch cell's side, metres, on the world's lattice. */
 export const PATCH_CELL = 16;
-/** The most a patch vertex moves out along the ground's normal, metres. */
-export const PATCH_DEPTH = 1.2;
+/** The most a patch vertex moves out along the ground's normal, metres: the
+ * relief's half-depth doubled, its whole range from the smooth face out. */
+export const PATCH_DEPTH = 2.0;
 /** Vertex spacing (m) of the cells within the near reach. */
 export const PATCH_NEAR_SPACING = 0.5;
 /** Vertex spacing (m) of the cells beyond it, within the far reach. */
 export const PATCH_FAR_SPACING = 1;
+/** The distance (m) over which the relief fades to nothing toward a cell
+ * outside the patched set, so a patch never ends with its relief in the air. */
+export const PATCH_TAPER = 3;
 
 export type PatchReach = { readonly near: number; readonly far: number };
 
@@ -43,11 +48,34 @@ export const PATCH_REACH: Readonly<Record<QualityTier, PatchReach>> = {
 
 export type PatchCell = { ci: number; cj: number; spacing: number };
 
-/** Which edges of a fine cell meet a coarse cell, whose midpoints are then
- * laid on the coarse edge. */
-export type PatchStitch = { readonly west: boolean; readonly east: boolean; readonly north: boolean; readonly south: boolean };
+/** A cell's eight neighbours as (di, dj): the four sides, then the four
+ * corners. Bit k of a stitch's `open` is neighbour k. */
+export const PATCH_NEIGHBOURS: ReadonlyArray<readonly [number, number]> = [
+  [-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1],
+];
 
-export const NO_STITCH: PatchStitch = { west: false, east: false, north: false, south: false };
+/** The bits of `PatchStitch.open`, one a neighbour, in `PATCH_NEIGHBOURS`' order. */
+export const OPEN_WEST = 1;
+export const OPEN_EAST = 2;
+export const OPEN_SOUTH = 4;
+export const OPEN_NORTH = 8;
+export const OPEN_SOUTH_WEST = 16;
+export const OPEN_SOUTH_EAST = 32;
+export const OPEN_NORTH_WEST = 64;
+export const OPEN_NORTH_EAST = 128;
+
+/** Which edges of a fine cell meet a coarse cell, whose midpoints are then
+ * laid on the coarse edge; and `open`, which of the cell's eight neighbours
+ * are outside the patched set, toward which the relief fades out. */
+export type PatchStitch = {
+  readonly west: boolean;
+  readonly east: boolean;
+  readonly north: boolean;
+  readonly south: boolean;
+  readonly open: number;
+};
+
+export const NO_STITCH: PatchStitch = { west: false, east: false, north: false, south: false, open: 0 };
 
 export type FacePatch = {
   /** World-space positions, three a vertex. */
@@ -80,106 +108,115 @@ export function faceMask(g: number): number {
 }
 
 /**
- * The patch surface at (x, z) into `out` at `at`: the ground pushed out along
- * its normal by the masked relief. Returns the mask. Every position a patch
- * holds comes from here, so a world point is the same doubles in every patch
- * that holds it.
+ * The relief's share at (x, z), a point of cell (ci, cj), toward the
+ * neighbours `open` flags: a quintic step of the distance from the point to
+ * the nearest of their squares, 0 on it and 1 from PATCH_TAPER in. Every
+ * square outside the set within PATCH_TAPER of a point of the cell is one of
+ * its eight neighbours, so two patches that share a point find the same
+ * squares and taper it alike, bit for bit.
  */
-function displacedInto(seed: number, s: TerrainSample, x: number, z: number, out: Float64Array, at: number): number {
-  const g2 = s.dx * s.dx + s.dz * s.dz;
-  const m = faceMask(Math.sqrt(g2));
-  if (m === 0) {
-    out[at] = x;
-    out[at + 1] = s.h;
-    out[at + 2] = z;
-    return 0;
+export function patchTaper(ci: number, cj: number, open: number, x: number, z: number): number {
+  if (open === 0) return 1;
+  let near = PATCH_TAPER;
+  for (let k = 0; k < PATCH_NEIGHBOURS.length; k++) {
+    if ((open & (1 << k)) === 0) continue;
+    const [di, dj] = PATCH_NEIGHBOURS[k] as readonly [number, number];
+    const lx = (ci + di) * PATCH_CELL;
+    const lz = (cj + dj) * PATCH_CELL;
+    const ex = x < lx ? lx - x : x > lx + PATCH_CELL ? x - (lx + PATCH_CELL) : 0;
+    const ez = z < lz ? lz - z : z > lz + PATCH_CELL ? z - (lz + PATCH_CELL) : 0;
+    const d = Math.sqrt(ex * ex + ez * ez);
+    if (d < near) near = d;
   }
-  const d = (m * PATCH_DEPTH * (faceReliefD(seed, x, z).v + 1)) / 2;
-  const k = d / Math.sqrt(1 + g2);
-  out[at] = x - s.dx * k;
-  out[at + 1] = s.h + k;
-  out[at + 2] = z - s.dz * k;
-  return m;
+  return near >= PATCH_TAPER ? 1 : stepT(near / PATCH_TAPER);
 }
 
 /**
- * The unit normal from the central differences of the displaced surface:
- * (xp − xm) along x, (zp − zm) along z, their cross product z × x, which is
- * (−∂h/∂x, 1, −∂h/∂z) on flat displacement. Into `out` at `at`.
+ * The patch surface at (x, z) into `pos`, and its unit normal into `nrm`,
+ * both at `at`: the ground pushed out along its normal by the masked relief,
+ * `taper` times. Every position and normal a patch holds comes from here,
+ * from the world point and the squares outside the set alone, so a point is
+ * the same doubles in every patch that holds it, whatever its spacing.
+ *
+ * The push is k = d / sqrt(1 + g²) along n = (−h_x, 1, −h_z), with
+ * d = m · PATCH_DEPTH · (v + 1) / 2. The normal is the displaced surface's,
+ * from the field's own derivatives: ∂P/∂x ≈ (1, h_x, 0) + n · ∂k/∂x with
+ * ∂k/∂x = (m · PATCH_DEPTH / 2 · v_x) / sqrt(1 + g²), likewise in z, the
+ * slowly varying terms (the mask's, the ground normal's, sqrt(1 + g²)'s)
+ * left out; then ∂P/∂z × ∂P/∂x, which is (−h_x, 1, −h_z) where the relief
+ * is nothing, up on flat ground as the clipmap's. A column's flat face
+ * shades flat and its joint steep whatever the grid's spacing.
  */
-function normalInto(
-  p: Float64Array, xp: number, xm: number, zp: number, zm: number, out: Float64Array, at: number,
+function surfaceInto(
+  seed: number, s: TerrainSample, x: number, z: number, taper: number,
+  pos: Float64Array, nrm: Float64Array, at: number,
 ): void {
-  const ax = (p[xp] as number) - (p[xm] as number);
-  const ay = (p[xp + 1] as number) - (p[xm + 1] as number);
-  const az = (p[xp + 2] as number) - (p[xm + 2] as number);
-  const bx = (p[zp] as number) - (p[zm] as number);
-  const by = (p[zp + 1] as number) - (p[zm + 1] as number);
-  const bz = (p[zp + 2] as number) - (p[zm + 2] as number);
+  const g2 = s.dx * s.dx + s.dz * s.dz;
+  const m = faceMask(Math.sqrt(g2)) * taper;
+  let kx = 0;
+  let kz = 0;
+  if (m === 0) {
+    pos[at] = x;
+    pos[at + 1] = s.h;
+    pos[at + 2] = z;
+  } else {
+    const r = faceReliefD(seed, x, z);
+    const q = Math.sqrt(1 + g2);
+    const d = (m * PATCH_DEPTH * (r.v + 1)) / 2;
+    const k = d / q;
+    pos[at] = x - s.dx * k;
+    pos[at + 1] = s.h + k;
+    pos[at + 2] = z - s.dz * k;
+    const half = (m * PATCH_DEPTH) / 2;
+    kx = (half * r.dx) / q;
+    kz = (half * r.dz) / q;
+  }
+  const ax = 1 - s.dx * kx;
+  const ay = s.dx + kx;
+  const az = -s.dz * kx;
+  const bx = -s.dx * kz;
+  const by = s.dz + kz;
+  const bz = 1 - s.dz * kz;
   const nx = by * az - bz * ay;
   const ny = bz * ax - bx * az;
   const nz = bx * ay - by * ax;
   const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
-  out[at] = nx / len;
-  out[at + 1] = ny / len;
-  out[at + 2] = nz / len;
-}
-
-/** The normal a coarse patch gives the point (x, z): from its neighbours a
- * coarse spacing away, sampled here exactly as its grid samples them. */
-function coarseNormalInto(seed: number, x: number, z: number, out: Float64Array, at: number): void {
-  const step = PATCH_FAR_SPACING;
-  const q = new Float64Array(12);
-  displacedInto(seed, elevationSampleAt(seed, x + step, z), x + step, z, q, 0);
-  displacedInto(seed, elevationSampleAt(seed, x - step, z), x - step, z, q, 3);
-  displacedInto(seed, elevationSampleAt(seed, x, z + step), x, z + step, q, 6);
-  displacedInto(seed, elevationSampleAt(seed, x, z - step), x, z - step, q, 9);
-  normalInto(q, 0, 3, 6, 9, out, at);
+  nrm[at] = nx / len;
+  nrm[at + 1] = ny / len;
+  nrm[at + 2] = nz / len;
 }
 
 /**
  * The patch of cell (ci, cj) at `spacing` (0.5 or 1 m), or null when no point
  * of its grid, boundary included, has steep ground. The grid is the cell's
- * own (16/spacing + 1)² points; one ring of apron points around it is
- * sampled for the normals and not drawn. On each edge `stitch` flags, the
- * odd points are laid on the line between their two even neighbours, as the
- * coarse patch beside draws that edge, and the even points take the coarse
- * patch's normals.
+ * own (16/spacing + 1)² points. The relief fades out toward the neighbours
+ * `stitch.open` flags (`patchTaper`). On each edge `stitch` flags, the odd
+ * points are laid on the line between their two even neighbours, as the
+ * coarse patch beside draws that edge, and painted as the coarse patch's
+ * interpolation paints them; the even points are the coarse patch's own,
+ * position and normal, since both come from the world point alone.
  */
 export function facePatchGeometry(
   seed: number, ci: number, cj: number, spacing: number, stitch: PatchStitch,
 ): FacePatch | null {
   const n = Math.round(PATCH_CELL / spacing);
   const side = n + 1;
-  const aside = n + 3;
+  const count = side * side;
   const x0 = ci * PATCH_CELL;
   const z0 = cj * PATCH_CELL;
-  // The apron grid: point (ax, az) is at x0 + (ax − 1)·spacing.
-  const samples: TerrainSample[] = new Array<TerrainSample>(aside * aside);
+  const samples: TerrainSample[] = new Array<TerrainSample>(count);
   let steep = false;
-  for (let az = 0; az < aside; az++) {
-    const z = z0 + (az - 1) * spacing;
-    for (let ax = 0; ax < aside; ax++) {
-      const x = x0 + (ax - 1) * spacing;
-      const s = elevationSampleAt(seed, x, z);
-      samples[az * aside + ax] = s;
-      if (!steep && ax >= 1 && ax <= side && az >= 1 && az <= side && faceMask(Math.sqrt(s.dx * s.dx + s.dz * s.dz)) > 0) {
-        steep = true;
-      }
+  for (let iz = 0; iz < side; iz++) {
+    const z = z0 + iz * spacing;
+    for (let ix = 0; ix < side; ix++) {
+      const s = elevationSampleAt(seed, x0 + ix * spacing, z);
+      samples[iz * side + ix] = s;
+      if (!steep && faceMask(Math.sqrt(s.dx * s.dx + s.dz * s.dz)) > 0) steep = true;
     }
   }
   if (!steep) return null;
 
-  const p = new Float64Array(aside * aside * 3);
-  for (let az = 0; az < aside; az++) {
-    const z = z0 + (az - 1) * spacing;
-    for (let ax = 0; ax < aside; ax++) {
-      const at = az * aside + ax;
-      displacedInto(seed, samples[at] as TerrainSample, x0 + (ax - 1) * spacing, z, p, at * 3);
-    }
-  }
-
-  const count = side * side;
+  const pos = new Float64Array(count * 3);
   const nrm = new Float64Array(count * 3);
   const positions = new Float32Array(count * 3);
   const normals = new Float32Array(count * 3);
@@ -192,23 +229,15 @@ export function facePatchGeometry(
     for (let ix = 0; ix < side; ix++) {
       const x = x0 + ix * spacing;
       const at = iz * side + ix;
-      const a = (iz + 1) * aside + (ix + 1);
-      positions[at * 3] = p[a * 3] as number;
-      positions[at * 3 + 1] = p[a * 3 + 1] as number;
-      positions[at * 3 + 2] = p[a * 3 + 2] as number;
-      // Even points of a stitched edge take the coarse patch's normal, so the
-      // two sides of the edge light alike; every other point its own.
-      const onStitch = (ix & 1) === 0 && (iz & 1) === 0 && spacing < PATCH_FAR_SPACING &&
-        ((stitch.west && ix === 0) || (stitch.east && ix === n) || (stitch.south && iz === 0) || (stitch.north && iz === n));
-      if (onStitch) coarseNormalInto(seed, x, z, nrm, at * 3);
-      else normalInto(p, (a + 1) * 3, (a - 1) * 3, (a + aside) * 3, (a - aside) * 3, nrm, at * 3);
-      normals[at * 3] = nrm[at * 3] as number;
-      normals[at * 3 + 1] = nrm[at * 3 + 1] as number;
-      normals[at * 3 + 2] = nrm[at * 3 + 2] as number;
+      const s = samples[at] as TerrainSample;
+      surfaceInto(seed, s, x, z, patchTaper(ci, cj, stitch.open, x, z), pos, nrm, at * 3);
+      for (let c = 0; c < 3; c++) {
+        positions[at * 3 + c] = pos[at * 3 + c] as number;
+        normals[at * 3 + c] = nrm[at * 3 + c] as number;
+      }
 
       // Painted as the clipmap paints the ground at this point: the same
       // calls with the same inputs (`clipmap.ts`, `sampleInto`).
-      const s = samples[a] as TerrainSample;
       const gc = groundCover(seed, x, z, s);
       const duff = gc.duff;
       const canopy = forestDensity(seed, x, z, s);
@@ -234,10 +263,11 @@ export function facePatchGeometry(
   }
 
   if (spacing < PATCH_FAR_SPACING) {
-    if (stitch.west) stitchEdge(positions, normals, 0, side);
-    if (stitch.east) stitchEdge(positions, normals, n, side);
-    if (stitch.south) stitchEdge(positions, normals, 0, 1);
-    if (stitch.north) stitchEdge(positions, normals, n * side, 1);
+    const attrs = { positions, normals, colors, weights, weights2, cover };
+    if (stitch.west) stitchEdge(attrs, 0, side, n);
+    if (stitch.east) stitchEdge(attrs, n, side, n);
+    if (stitch.south) stitchEdge(attrs, 0, 1, n);
+    if (stitch.north) stitchEdge(attrs, n * side, 1, n);
   }
 
   const indices = new Uint16Array(n * n * 6);
@@ -261,27 +291,39 @@ export function facePatchGeometry(
   return { positions, normals, colors, weights, weights2, cover, indices, vertexCount: count, triangleCount: n * n * 2 };
 }
 
+type PatchAttributes = Pick<FacePatch, "positions" | "normals" | "colors" | "weights" | "weights2" | "cover">;
+
+/** The mean of `width` values at vertices `lo` and `hi` into vertex `at`. */
+function meanInto(a: Float32Array, width: number, at: number, lo: number, hi: number): void {
+  for (let c = 0; c < width; c++) {
+    a[at * width + c] = ((a[lo * width + c] as number) + (a[hi * width + c] as number)) / 2;
+  }
+}
+
 /**
  * One edge of a fine patch laid on the coarse patch's edge: each odd point
- * the mean of its two even neighbours, position and normal (the normal made
- * unit again). The edge runs from vertex `start` in steps of `stride`.
+ * the mean of its two even neighbours, as the coarse patch interpolates its
+ * edge between them: position, normal (made unit again), colour, weights and
+ * cover. The edge's `n + 1` points run from vertex `start` in steps of `stride`.
  */
-function stitchEdge(positions: Float32Array, normals: Float32Array, start: number, stride: number): void {
-  const n = Math.round(PATCH_CELL / PATCH_NEAR_SPACING);
+function stitchEdge(p: PatchAttributes, start: number, stride: number, n: number): void {
   for (let i = 1; i < n; i += 2) {
-    const at = (start + i * stride) * 3;
-    const lo = (start + (i - 1) * stride) * 3;
-    const hi = (start + (i + 1) * stride) * 3;
-    for (let c = 0; c < 3; c++) {
-      positions[at + c] = ((positions[lo + c] as number) + (positions[hi + c] as number)) / 2;
-    }
-    const nx = ((normals[lo] as number) + (normals[hi] as number)) / 2;
-    const ny = ((normals[lo + 1] as number) + (normals[hi + 1] as number)) / 2;
-    const nz = ((normals[lo + 2] as number) + (normals[hi + 2] as number)) / 2;
+    const at = start + i * stride;
+    const lo = at - stride;
+    const hi = at + stride;
+    meanInto(p.positions, 3, at, lo, hi);
+    meanInto(p.normals, 3, at, lo, hi);
+    meanInto(p.colors, 4, at, lo, hi);
+    meanInto(p.weights, 4, at, lo, hi);
+    meanInto(p.weights2, WEIGHTS2_STRIDE, at, lo, hi);
+    meanInto(p.cover, 1, at, lo, hi);
+    const nx = p.normals[at * 3] as number;
+    const ny = p.normals[at * 3 + 1] as number;
+    const nz = p.normals[at * 3 + 2] as number;
     const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
-    normals[at] = nx / len;
-    normals[at + 1] = ny / len;
-    normals[at + 2] = nz / len;
+    p.normals[at * 3] = nx / len;
+    p.normals[at * 3 + 1] = ny / len;
+    p.normals[at * 3 + 2] = nz / len;
   }
 }
 
@@ -312,22 +354,26 @@ export function facePatchCells(camX: number, camZ: number, reach: PatchReach): P
 
 /**
  * For each cell of `cells`, in order, which of its edges a fine patch lays on
- * a coarse neighbour's: an edge whose neighbour is in the set at the far
- * spacing. A neighbour outside the set is not drawn, so it is no stitch, and
- * a coarse cell stitches nothing.
+ * a coarse neighbour's (an edge whose neighbour is in the set at the far
+ * spacing; a coarse cell stitches nothing), and which of its eight
+ * neighbours are outside the set, not drawn, toward which its relief fades.
  */
 export function facePatchStitch(cells: readonly PatchCell[]): PatchStitch[] {
   const spacingOf = new Map<number, number>();
   for (const c of cells) spacingOf.set(patchKey(c.ci, c.cj), c.spacing);
   const coarse = (ci: number, cj: number): boolean => spacingOf.get(patchKey(ci, cj)) === PATCH_FAR_SPACING;
-  return cells.map((c) =>
-    c.spacing === PATCH_FAR_SPACING
-      ? NO_STITCH
-      : {
-        west: coarse(c.ci - 1, c.cj),
-        east: coarse(c.ci + 1, c.cj),
-        south: coarse(c.ci, c.cj - 1),
-        north: coarse(c.ci, c.cj + 1),
-      },
-  );
+  return cells.map((c) => {
+    let open = 0;
+    PATCH_NEIGHBOURS.forEach(([di, dj], k) => {
+      if (!spacingOf.has(patchKey(c.ci + di, c.cj + dj))) open |= 1 << k;
+    });
+    const fine = c.spacing !== PATCH_FAR_SPACING;
+    return {
+      west: fine && coarse(c.ci - 1, c.cj),
+      east: fine && coarse(c.ci + 1, c.cj),
+      south: fine && coarse(c.ci, c.cj - 1),
+      north: fine && coarse(c.ci, c.cj + 1),
+      open,
+    };
+  });
 }
