@@ -6,6 +6,8 @@
  * cell is a plane tilted its own way, so neighbouring cells meet the light
  * at different angles, not only at their joints. A slow
  * noise over the world chooses the form, so one face carries one of them.
+ * Both stand on the large forms, a coarse cellular octave of tilted slabs
+ * fourteen metres across: the buttresses and gullies of a face.
  *
  * The field is a function of the world position and seed alone. The stage
  * of the height chain, `faceStageD` at the end of this file, masks it to the
@@ -24,7 +26,7 @@ export const FACE_SLOPE_LO = 1.0;
 /** The ground's gradient from which the relief is whole. */
 export const FACE_SLOPE_HI = 1.4;
 /** How far, in metres along the face's normal, the surface moves either way. */
-export const FACE_HALF_DEPTH = 1.0;
+export const FACE_HALF_DEPTH = 2.0;
 /** The forward-difference step, in metres, for the ground's second derivatives.
  * Finer than any crease of the ground beneath: a ridge's crest can turn its
  * gradient through 0.7 in 4 cm, and a step of a few centimetres misses that
@@ -46,6 +48,14 @@ export const FACE_BLOCK_FINE_BORDER = 0.45;
 export const FACE_BLOCK_FINE_WEIGHT = 0.5;
 /** Brings the two octaves' sum, at most 1.5, back within [−1, 1]. */
 export const FACE_BLOCK_NORM = 2 / 3;
+/** The large forms, under columns and blocks alike: lattice spacing (m),
+ * jitter (share of the cell), joint width (m). */
+export const FACE_FORM_CELL = 14;
+export const FACE_FORM_JITTER = 0.6;
+export const FACE_FORM_BORDER = 2.5;
+/** The large forms' weight beside the fine relief's 1; the sum is divided by
+ * 1 + FACE_FORM_WEIGHT to stay within [−1, 1]. */
+export const FACE_FORM_WEIGHT = 1.5;
 /** A cell's value at its site, as a share of the unit range. */
 export const FACE_VALUE_SPAN = 0.6;
 /** How far a cell's plane rises, as a share of the unit range, per cell
@@ -62,6 +72,7 @@ export const FACE_COLUMN_SALT = 0xc01a;
 export const FACE_BLOCK_SALT = 0xb10c;
 export const FACE_BLOCK_FINE_SALT = 0xb1c2;
 export const FACE_KIND_SALT = 0x41d5;
+export const FACE_FORM_SALT = 0xf0a3;
 
 export const FACE_RELIEF_TUNABLES: Readonly<Record<string, number>> = {
   FACE_SLOPE_LO, FACE_SLOPE_HI, FACE_HALF_DEPTH, FACE_DIFF_STEP,
@@ -69,8 +80,9 @@ export const FACE_RELIEF_TUNABLES: Readonly<Record<string, number>> = {
   FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER,
   FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER,
   FACE_BLOCK_FINE_WEIGHT, FACE_BLOCK_NORM, FACE_VALUE_SPAN, FACE_TILT,
+  FACE_FORM_CELL, FACE_FORM_JITTER, FACE_FORM_BORDER, FACE_FORM_WEIGHT,
   FACE_KIND_WAVE, FACE_KIND_LO, FACE_KIND_HI,
-  FACE_COLUMN_SALT, FACE_BLOCK_SALT, FACE_BLOCK_FINE_SALT, FACE_KIND_SALT,
+  FACE_COLUMN_SALT, FACE_BLOCK_SALT, FACE_BLOCK_FINE_SALT, FACE_KIND_SALT, FACE_FORM_SALT,
 };
 
 /** A value and its exact partial derivatives in x and z. */
@@ -299,8 +311,9 @@ let rv = 0;
 let rdx = 0;
 let rdz = 0;
 
-/** The relief into rv/rdx/rdz. */
-function relief(seed: number, x: number, z: number): void {
+/** The fine relief, columns, blocks or their mix by the form share, into
+ * rv/rdx/rdz. */
+function fine(seed: number, x: number, z: number): void {
   kind(seed, x, z);
   if (ks === 0 || ks === 1) {
     if (ks === 0) columns(seed, x, z);
@@ -324,10 +337,30 @@ function relief(seed: number, x: number, z: number): void {
   rdz = colDz + s * (cdz - colDz) + sz * diff;
 }
 
+/** The relief into rv/rdx/rdz: the fine relief on the large forms. */
+function relief(seed: number, x: number, z: number): void {
+  fine(seed, x, z);
+  cellular(x, z, FACE_FORM_CELL, FACE_FORM_JITTER, FACE_FORM_BORDER, seed ^ FACE_FORM_SALT);
+  const n = 1 + FACE_FORM_WEIGHT;
+  let v = (rv + FACE_FORM_WEIGHT * cv) / n;
+  rdx = (rdx + FACE_FORM_WEIGHT * cdx) / n;
+  rdz = (rdz + FACE_FORM_WEIGHT * cdz) / n;
+  // Each term is within [−1, 1] and the mix is their weighted mean; the clamp
+  // keeps the range against rounding, flat where it holds.
+  if (v > 1 || v < -1) {
+    v = v > 1 ? 1 : -1;
+    rdx = 0;
+    rdz = 0;
+  }
+  rv = v;
+}
+
 /**
- * The relief at (x, z): columns, blocks, or their mix by the form share, in
- * [−1, 1], with exact derivatives through the forms and the mix. Only the
- * forms with weight are evaluated.
+ * The relief at (x, z): the fine relief (columns, blocks, or their mix by
+ * the form share) and the large forms beneath it, weighted 1 to
+ * FACE_FORM_WEIGHT and divided by their sum, in [−1, 1], with exact
+ * derivatives through the forms and both mixes. Only the fine forms with
+ * weight are evaluated; the large forms are everywhere.
  */
 export function faceReliefD(seed: number, x: number, z: number): ReliefSample {
   relief(seed, x, z);
