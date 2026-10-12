@@ -90,61 +90,115 @@ let cv = 0;
 let cdx = 0;
 let cdz = 0;
 
+// The sites around the sample: their offsets from it, distances and cells.
+// Room for the 5 × 5 window `cellular` widens to when the 3 × 3 cannot hold
+// every site with weight.
+const SITES_MAX = 25;
+const siteEx = new Float64Array(SITES_MAX);
+const siteEz = new Float64Array(SITES_MAX);
+const siteF = new Float64Array(SITES_MAX);
+const siteI = new Int32Array(SITES_MAX);
+const siteJ = new Int32Array(SITES_MAX);
+// The window's nearest site, written by `gather`.
+let nearK = 0;
+
+/** The sites of the (2r + 1)² cells about (i0, j0) into the scratch; returns
+ * their count and leaves the nearest one's index in nearK. */
+function gather(
+  x: number, z: number, cell: number, jitter: number, salt: number,
+  i0: number, j0: number, r: number,
+): number {
+  let n = 0;
+  let best = Infinity;
+  for (let i = i0 - r; i <= i0 + r; i++) {
+    for (let j = j0 - r; j <= j0 + r; j++) {
+      const ex = x - (i + 0.5 + jitter * (hash3(i, j, 0, salt) - 0.5)) * cell;
+      const ez = z - (j + 0.5 + jitter * (hash3(i, j, 1, salt) - 0.5)) * cell;
+      const f = Math.sqrt(ex * ex + ez * ez);
+      siteEx[n] = ex;
+      siteEz[n] = ez;
+      siteF[n] = f;
+      siteI[n] = i;
+      siteJ[n] = j;
+      if (f < best) {
+        best = f;
+        nearK = n;
+      }
+      n++;
+    }
+  }
+  return n;
+}
+
 /** The cellular field into cv/cdx/cdz. */
 function cellular(
   x: number, z: number, cell: number, jitter: number, border: number, salt: number,
 ): void {
   const i0 = Math.floor(x / cell);
   const j0 = Math.floor(z / cell);
-  let q1 = Infinity;
-  let q2 = Infinity;
-  let i1 = 0, j1 = 0, i2 = 0, j2 = 0;
-  let e1x = 0, e1z = 0, e2x = 0, e2z = 0;
-  for (let di = -1; di <= 1; di++) {
-    const i = i0 + di;
-    for (let dj = -1; dj <= 1; dj++) {
-      const j = j0 + dj;
-      const ex = x - (i + 0.5 + jitter * (hash3(i, j, 0, salt) - 0.5)) * cell;
-      const ez = z - (j + 0.5 + jitter * (hash3(i, j, 1, salt) - 0.5)) * cell;
-      const q = ex * ex + ez * ez;
-      if (q < q1) {
-        q2 = q1; i2 = i1; j2 = j1; e2x = e1x; e2z = e1z;
-        q1 = q; i1 = i; j1 = j; e1x = ex; e1z = ez;
-      } else if (q < q2) {
-        q2 = q; i2 = i; j2 = j; e2x = ex; e2z = ez;
-      }
+  let n = gather(x, z, cell, jitter, salt, i0, j0, 1);
+  // A site outside the 3 × 3 window is at least this far from the sample: a
+  // window's width, the gap jitter leaves at a cell's edge, and the sample's
+  // own distance to the edge of its cell. Inside that reach the window holds
+  // every site with weight; past it the 5 × 5 does, for any border under
+  // (2 − √2) cells, which every form keeps.
+  const fx = x / cell - i0;
+  const fz = z / cell - j0;
+  const reach = (1 + (1 - jitter) / 2 + Math.min(fx, 1 - fx, fz, 1 - fz)) * cell;
+  if ((siteF[nearK] as number) + border >= reach) n = gather(x, z, cell, jitter, salt, i0, j0, 2);
+
+  const f1 = siteF[nearK] as number;
+  const g1x = f1 < ON_SITE ? 0 : (siteEx[nearK] as number) / f1;
+  const g1z = f1 < ON_SITE ? 0 : (siteEz[nearK] as number) / f1;
+  let weighted = 0;
+  let sw = 0;
+  let swo = 0;
+  let ax = 0;
+  let az = 0;
+  let bx = 0;
+  let bz = 0;
+  for (let k = 0; k < n; k++) {
+    const f = siteF[k] as number;
+    const t = (f - f1) / border;
+    if (t >= 1) continue;
+    const w = 1 - stepT(t);
+    const o = 2 * hash3(siteI[k] as number, siteJ[k] as number, 2, salt) - 1;
+    weighted++;
+    sw += w;
+    swo += w * o;
+    if (t > 0) {
+      // w′ = −S′(t) · (∇F − ∇F1) / border, with ∇F = (p − c) / F.
+      const d = -stepTd(t) / border;
+      const gx = (f < ON_SITE ? 0 : (siteEx[k] as number) / f) - g1x;
+      const gz = (f < ON_SITE ? 0 : (siteEz[k] as number) / f) - g1z;
+      ax += d * gx * o;
+      az += d * gz * o;
+      bx += d * gx;
+      bz += d * gz;
     }
   }
-  const f1 = Math.sqrt(q1);
-  const f2 = Math.sqrt(q2);
-  const o1 = 2 * hash3(i1, j1, 2, salt) - 1;
-  const t = (f2 - f1) / border;
-  if (t >= 1) {
+  if (weighted === 1) {
     // Well inside a cell: the cell's own value, flat.
-    cv = o1;
+    cv = swo;
     cdx = 0;
     cdz = 0;
     return;
   }
-  const o2 = 2 * hash3(i2, j2, 2, salt) - 1;
-  const half = (o1 - o2) / 2;
-  cv = (o1 + o2) / 2 + half * stepT(t);
-  // ∇F = (p − c) / F for each site; on a site the gradient is taken as zero.
-  const g1x = f1 < ON_SITE ? 0 : e1x / f1;
-  const g1z = f1 < ON_SITE ? 0 : e1z / f1;
-  const g2x = f2 < ON_SITE ? 0 : e2x / f2;
-  const g2z = f2 < ON_SITE ? 0 : e2z / f2;
-  const k = (half * stepTd(t)) / border;
-  cdx = k * (g2x - g1x);
-  cdz = k * (g2z - g1z);
+  const v = swo / sw;
+  cv = v;
+  cdx = (ax - v * bx) / sw;
+  cdz = (az - v * bz) / sw;
 }
 
 /**
- * The cellular field: the nearest site's value inside a cell, the mean of the
- * two nearest sites' values on the border between them, a quintic blend
- * across a joint `border` metres wide. Of the nine cells around the sample.
- * Where the second nearest site changes, near a junction of three cells, the
- * field has a kink, as a joint does.
+ * The cellular field: the sites' values weighted by how near each is to the
+ * nearest, w = 1 − smootherstep((F − F1) / border), so the nearest site's
+ * value inside a cell, the mean of two sites' values on the border between
+ * them and a quintic blend across a joint `border` metres wide. A convex mix,
+ * so within the values' [−1, 1]; continuous everywhere, smooth across a joint
+ * of two cells, with a kink only at a junction of three or more. Of the nine
+ * cells around the sample, or the twenty-five when a site with weight could
+ * lie outside the nine (only on the most jittered forms, and rarely).
  */
 export function cellularD(
   x: number, z: number, cell: number, jitter: number, border: number, salt: number,

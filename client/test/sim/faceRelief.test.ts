@@ -12,12 +12,21 @@ import { DERIV_SEED as SEED, TOL_RATIO } from "./helpers/derivatives.js";
 /** Central-difference arm. The relief's joints are a few tenths of a metre
  * wide, so the arm is far finer than the olympic harness's. */
 const STEP = 1e-4;
-/** A point this close to a junction of three cells (F3 − F2, in metres) may
- * sit on the kink the field has there, which no derivative matches. */
+/** A point this close to a junction of three cells (`junctionGap`, in metres)
+ * may sit on the kink the field has there, which no derivative matches. The
+ * 2,000-point sweeps pass without leaving any out; denser ones meet kinks. */
 const JUNCTION_GAP = 1e-3;
 
 const COLUMN_SALT = SEED ^ FACE_COLUMN_SALT;
 const OTHER_SEED = 0x2b7e1516;
+
+const LITERALS: ReliefSample[] = [
+  { v: -0.255054656435144, dx: 0.01242232974021108, dz: -0.04521580781442783 },
+  { v: -0.641117458228481, dx: -0.02593568427113229, dz: 0.016330546971062593 },
+  { v: 0.6808243365958333, dx: 0, dz: 0 },
+  { v: -0.04838613330646532, dx: 0.7350120827756929, dz: 1.2471781921775384 },
+  { v: -0.5118525647114797, dx: 0.29837845129074664, dz: 0.2101162746605993 },
+];
 
 /** The R2 low-discrepancy sequence over a square of half-width `half` about
  * the origin: an even, deterministic spread with no lattice to alias. */
@@ -33,19 +42,31 @@ function r2Points(n: number, half: number): Array<[number, number]> {
   return pts;
 }
 
-/** F3 − F2 of the cellular field at (x, z), over the same nine cells it reads. */
-function junctionGap(x: number, z: number, cell: number, jitter: number, salt: number): number {
+/** The sites' distances from (x, z), nearest first, over the 5 × 5 cells
+ * about it (wider than the field ever needs). */
+function siteDistances(
+  x: number, z: number, cell: number, jitter: number, salt: number,
+): number[] {
   const i0 = Math.floor(x / cell);
   const j0 = Math.floor(z / cell);
   const d: number[] = [];
-  for (let i = i0 - 1; i <= i0 + 1; i++) {
-    for (let j = j0 - 1; j <= j0 + 1; j++) {
+  for (let i = i0 - 2; i <= i0 + 2; i++) {
+    for (let j = j0 - 2; j <= j0 + 2; j++) {
       const p = cellularSite(i, j, cell, jitter, salt);
       d.push(Math.sqrt((x - p.x) * (x - p.x) + (z - p.z) * (z - p.z)));
     }
   }
-  d.sort((a, b) => a - b);
-  return (d[2] as number) - (d[1] as number);
+  return d.sort((a, b) => a - b);
+}
+
+/** How near (x, z) is to a kink of the cellular field: F2 − F1 where a third
+ * site has weight (F3 − F1 < border), the nearest site changing there while
+ * the third's weight reads it; Infinity elsewhere, where the field is smooth. */
+function junctionGap(
+  x: number, z: number, cell: number, jitter: number, border: number, salt: number,
+): number {
+  const [f1, f2, f3] = siteDistances(x, z, cell, jitter, salt) as [number, number, number];
+  return f3 - f1 < border ? f2 - f1 : Infinity;
 }
 
 /**
@@ -81,28 +102,35 @@ function reliefGap(x: number, z: number): number {
   const s = faceKindD(SEED, x, z).v;
   let g = Infinity;
   if (s < 1) {
-    g = Math.min(g, junctionGap(x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, COLUMN_SALT));
+    g = Math.min(g, junctionGap(
+      x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, COLUMN_SALT,
+    ));
   }
   if (s > 0) {
     g = Math.min(
       g,
-      junctionGap(x, z, FACE_BLOCK_CELL, FACE_BLOCK_JITTER, SEED ^ FACE_BLOCK_SALT),
-      junctionGap(x, z, FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, SEED ^ FACE_BLOCK_FINE_SALT),
+      junctionGap(
+        x, z, FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, SEED ^ FACE_BLOCK_SALT,
+      ),
+      junctionGap(
+        x, z, FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER,
+        SEED ^ FACE_BLOCK_FINE_SALT,
+      ),
     );
   }
   return g;
 }
 
-/** The distance from (x, z) to the nearest site other than a and b, over the
- * nine cells the field reads. */
+/** The distance from (x, z) to the nearest column site other than a and b,
+ * over the 5 × 5 cells about it. */
 function nearestOther(
   x: number, z: number, a: { x: number; z: number }, b: { x: number; z: number },
 ): number {
   const i0 = Math.floor(x / FACE_COLUMN_CELL);
   const j0 = Math.floor(z / FACE_COLUMN_CELL);
   let best = Infinity;
-  for (let i = i0 - 1; i <= i0 + 1; i++) {
-    for (let j = j0 - 1; j <= j0 + 1; j++) {
+  for (let i = i0 - 2; i <= i0 + 2; i++) {
+    for (let j = j0 - 2; j <= j0 + 2; j++) {
       const p = cellularSite(i, j, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, COLUMN_SALT);
       if ((p.x === a.x && p.z === a.z) || (p.x === b.x && p.z === b.z)) continue;
       best = Math.min(best, Math.sqrt((x - p.x) * (x - p.x) + (z - p.z) * (z - p.z)));
@@ -136,35 +164,79 @@ describe("the cellular field", () => {
       const a = cellularSite(i, -3, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, COLUMN_SALT);
       const b = cellularSite(i + 1, -3, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, COLUMN_SALT);
       // The midpoint of two neighbouring sites is equidistant from both; it is
-      // on their border when no third site is as near.
+      // on their border, with no third value in the mix, when every other
+      // site is a joint's width farther.
       const mx = (a.x + b.x) / 2;
       const mz = (a.z + b.z) / 2;
       const half = Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z)) / 2;
-      if (nearestOther(mx, mz, a, b) <= half + 0.01) continue;
+      if (nearestOther(mx, mz, a, b) <= half + FACE_COLUMN_BORDER) continue;
       expect(column(mx, mz).v).toBe((a.o + b.o) / 2);
       checked++;
     }
-    expect(checked).toBe(35);
+    expect(checked).toBe(32);
+  });
+
+  it("is the blend over every site with weight, the window widened when one is outside", () => {
+    // The 5 × 5 reference holds every site with weight for any sample; the
+    // field reads nine sites unless one with weight could lie outside them.
+    // That is rare at the columns' numbers (none in 20,000 points here), so a
+    // full jitter and a joint half a cell wide stand in for the case.
+    const reference = (
+      x: number, z: number, cell: number, jitter: number, border: number,
+    ): number => {
+      const i0 = Math.floor(x / cell);
+      const j0 = Math.floor(z / cell);
+      const sites: Array<{ f: number; o: number }> = [];
+      for (let i = i0 - 2; i <= i0 + 2; i++) {
+        for (let j = j0 - 2; j <= j0 + 2; j++) {
+          const p = cellularSite(i, j, cell, jitter, COLUMN_SALT);
+          sites.push({ f: Math.sqrt((x - p.x) * (x - p.x) + (z - p.z) * (z - p.z)), o: p.o });
+        }
+      }
+      const f1 = Math.min(...sites.map((q) => q.f));
+      let sw = 0;
+      let swo = 0;
+      for (const q of sites) {
+        const t = Math.min(1, (q.f - f1) / border);
+        const w = 1 - t * t * t * (t * (t * 6 - 15) + 10);
+        sw += w;
+        swo += w * q.o;
+      }
+      return swo / sw;
+    };
+    const worst = (cell: number, jitter: number, border: number, half: number): number => {
+      let e = 0;
+      for (const [x, z] of r2Points(20000, half)) {
+        const v = cellularD(x, z, cell, jitter, border, COLUMN_SALT).v;
+        e = Math.max(e, Math.abs(v - reference(x, z, cell, jitter, border)));
+      }
+      return e;
+    };
+    const columns = worst(FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, 1000);
+    expect(columns).toBeLessThan(1e-12);
+    expect(worst(1, 1, 0.5, 300)).toBeLessThan(1e-12);
   });
 
   it("carries exact derivatives (a 2,000-point sweep)", () => {
     const r = checkField(
       column,
-      (x, z) => junctionGap(x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, COLUMN_SALT),
+      (x, z) => junctionGap(
+        x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, COLUMN_SALT,
+      ),
       r2Points(2000, 1000),
     );
-    // Measured worst / steepest: 1.4e-6, with no point left out needing it.
+    // Measured worst / steepest: 2.1e-6, with no point left out needing it.
     expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
-    expect(r.skipped).toBe(2);
+    expect(r.skipped).toBe(1);
   });
 });
 
 describe("the relief", () => {
   it("carries exact derivatives through the forms and the mix (a 2,000-point sweep)", () => {
     const r = checkField((x, z) => faceReliefD(SEED, x, z), reliefGap, r2Points(2000, 1000));
-    // Measured worst / steepest: 9.7e-7, with no point left out needing it.
+    // Measured worst / steepest: 1.7e-6, with no point left out needing it.
     expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
-    expect(r.skipped).toBe(4);
+    expect(r.skipped).toBe(1);
   });
 
   it("carries the mix's own derivative where the forms are flat", () => {
@@ -213,6 +285,70 @@ describe("the relief", () => {
       const b = faceReliefD(SEED, x, z);
       expect(Object.is(a.v, b.v) && Object.is(a.dx, b.dx) && Object.is(a.dz, b.dz)).toBe(true);
     }
+  });
+
+  it("pins its value at five points", () => {
+    // Exact: + − × ÷, Math.floor and Math.sqrt are correctly rounded in every
+    // engine, and so is every value here.
+    const at = (x: number, z: number): ReliefSample => faceReliefD(SEED, x, z);
+    expect(at(0.5, 0.25)).toEqual(LITERALS[0]);
+    expect(at(123.456, -789.012)).toEqual(LITERALS[1]);
+    expect(at(-90000.5, -88888.25)).toEqual(LITERALS[2]);
+    expect(at(-1234.5, 4321.75)).toEqual(LITERALS[3]);
+    expect(at(77777.7, -66666.6)).toEqual(LITERALS[4]);
+  });
+
+  it("is one form where the share is 0 or 1, the forms read through cellularD", () => {
+    let columns = 0;
+    let blocks = 0;
+    let band = 0;
+    for (const [x, z] of r2Points(2000, 1000)) {
+      const s = faceKindD(SEED, x, z).v;
+      const r = faceReliefD(SEED, x, z);
+      if (s === 0) {
+        columns++;
+        const c = cellularD(
+          x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, COLUMN_SALT,
+        );
+        expect(r).toEqual(c);
+      } else if (s === 1) {
+        blocks++;
+        const a = cellularD(
+          x, z, FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, SEED ^ FACE_BLOCK_SALT,
+        );
+        const b = cellularD(
+          x, z, FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER,
+          SEED ^ FACE_BLOCK_FINE_SALT,
+        );
+        expect(r).toEqual({
+          v: (a.v + 0.5 * b.v) * (2 / 3),
+          dx: (a.dx + 0.5 * b.dx) * (2 / 3),
+          dz: (a.dz + 0.5 * b.dz) * (2 / 3),
+        });
+      } else {
+        band++;
+      }
+    }
+    expect({ columns, blocks, band }).toEqual({ columns: 645, blocks: 634, band: 721 });
+  });
+
+  it("is continuous: no step along 100 lines of 100 m at 1 cm", () => {
+    // Every sample, junctions included. The largest slope the sweeps meet is
+    // 12.7, so a step over 0.15 in 1 cm is no slope but a break.
+    const dirs = [[1, 0], [0, 1], [0.6, 0.8], [0.8, -0.6]] as const;
+    const starts = r2Points(100, 1000);
+    let largest = 0;
+    for (let line = 0; line < 100; line++) {
+      const [ox, oz] = starts[line] as [number, number];
+      const [ux, uz] = dirs[line % 4] as readonly [number, number];
+      let prev = faceReliefD(SEED, ox, oz).v;
+      for (let k = 1; k <= 10000; k++) {
+        const v = faceReliefD(SEED, ox + ux * k * 0.01, oz + uz * k * 0.01).v;
+        largest = Math.max(largest, Math.abs(v - prev));
+        prev = v;
+      }
+    }
+    expect(largest).toBeLessThan(0.15);
   });
 
   it("differs between two worlds", () => {
