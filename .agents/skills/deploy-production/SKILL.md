@@ -10,7 +10,7 @@ The game is live at **https://games.csarko.sh/dayhike**. Two independent things 
 | Piece | Where | What ships it |
 | --- | --- | --- |
 | Client (`client/dist`) | Firebase Hosting, free CDN | `npm run deploy:client` |
-| Signaling server (`server/`) | Cloud Run `fps-signaling`, `us-west1`, scaled to zero | `npm run deploy:server` |
+| Signaling server (`server/`) | Cloud Run `fps-signaling`, `us-west1`, scales from zero; rooms in Firestore | `npm run deploy:server` |
 | Telemetry service (the same image, `ROLE=telemetry`) | Cloud Run `fps-telemetry`, `us-west1`, scales from zero | `npm run deploy:server` (both services, one image) |
 
 `npm run deploy` runs the server then the client. `npm run deploy:verify` checks the
@@ -105,12 +105,13 @@ You still need, locally:
 
 **A deploy deletes every revision it supersedes, on purpose.** Cloud Run *drains*
 WebSockets across a revision swap rather than closing them, so an old revision keeps
-serving its established sockets — and with them a second, disjoint in-memory room registry,
-because `max_instance_count = 1` holds per revision and not across a swap. Two rooms could
-then share one id, and the invite link for a match already in progress would break for up
-to an hour. So `tools/deploy/lib/revisions.mjs` deletes the superseded revisions once the
-new one is healthy: their instances end, their sockets close, every peer reconnects onto
-the one revision serving traffic, and the host recreates the room there.
+serving its established sockets. When the rooms lived in process memory that meant a
+second, disjoint room registry per revision, and two rooms could share one id for up to an
+hour. The rooms are in Firestore now, shared across revisions, so a drained revision is
+only untidy; `tools/deploy/lib/revisions.mjs` still deletes the superseded revisions once
+the new one is healthy: their instances seat their peers out on SIGTERM, every peer
+reconnects onto the one revision serving traffic, and a returning host reclaims its room
+from the store.
 
 This means **a deploy briefly interrupts signaling for anyone connected**. That is
 deliberate and it is safe: the match itself runs peer-to-peer over WebRTC data channels, so
@@ -131,7 +132,9 @@ change is validated against the *currently live* image, so `terraform apply` mus
 followed immediately by `npm run deploy:server` — the failed intermediate revision is
 expected, not a rollback signal.
 
-**`max_instance_count = 1` is correctness, not cost.** Rooms live in process memory.
+**`max_instance_count` is a cost ceiling** (`signaling_max_instances`, 3 by default), now
+that rooms live in Firestore. It must be 1 only under `REGISTRY=memory`, which production
+does not run.
 
 ## Rolling back
 

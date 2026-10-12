@@ -1,21 +1,20 @@
 // Retiring Cloud Run revisions that a deploy has superseded.
 //
-// This exists to close the deploy split-brain. Cloud Run does not drop
+// This existed to close the deploy split-brain. Cloud Run does not drop
 // established WebSockets on a revision swap — it *drains* them, and the old
 // revision keeps serving its own sockets until they end, up to the 60-minute
-// request cap. For the length of that drain two revisions are live with
-// disjoint in-memory room registries: `max_instance_count = 1` holds per
-// revision, not across a swap, so two different rooms can hold the same UUID.
-//
-// The match itself is unaffected, being peer-to-peer. What breaks is that
-// room's invite link: a new joiner is routed to the new revision, does not find
-// the room, and becomes host of a parallel world under the same id. Observed in
+// request cap. While the rooms lived in process memory, two revisions were
+// then live with disjoint room registries, so two different rooms could hold
+// the same UUID: a new joiner was routed to the new revision, did not find the
+// room, and became host of a parallel world under the same id. Observed in
 // production, not theorised.
 //
-// Deleting the superseded revisions ends their instances, which closes those
-// sockets. Every peer then reconnects onto the one revision serving traffic and
-// the host recreates the room there. The window shrinks from up to an hour to
-// the client's reconnect backoff.
+// The rooms live in Firestore now, shared across revisions
+// (`server/src/sharedRegistry.ts`), so a drained revision is only untidy.
+// Deleting the superseded revisions still ends their instances: each seats its
+// peers out on SIGTERM, every peer reconnects onto the one revision serving
+// traffic, and a returning host reclaims its room from the store. The window
+// is the client's reconnect backoff.
 
 import { run } from './preconditions.mjs';
 

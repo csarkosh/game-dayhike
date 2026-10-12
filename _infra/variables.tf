@@ -86,3 +86,15 @@ variable "monthly_budget_usd" {
   type        = number
   default     = 10
 }
+
+variable "signaling_registry" {
+  description = "Where the signaling rooms live: `firestore` (shared, lets the service scale) or `memory` (one instance only)."
+  type        = string
+  default     = "firestore"
+}
+
+variable "signaling_max_instances" {
+  description = "The most signaling instances to run. A cost ceiling with the Firestore registry; must be 1 with the memory one."
+  type        = number
+  default     = 3
+}

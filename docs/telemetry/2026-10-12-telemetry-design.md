@@ -185,7 +185,5 @@ An instance costs about nine cents a busy hour; a batch is about 2 KB of rows.
   on the server that checks the token's email against an allowlist and runs the saved SQL
   against the dataset, and `/admin/live` reading the rooms in the signaling server's
   memory. Looker Studio over the dataset, shared with one account, stands in until then.
-- **Signaling on more than one instance.** Rooms live in the signaling process's memory,
-  which is why it is pinned to one. A shared registry on Firestore's free tier would let
-  it scale while staying free when idle; raising its concurrency to Cloud Run's 1000 is the
-  cheaper first step. Telemetry does not depend on either.
+- **Signaling on more than one instance.** Built the same day, after this:
+  [`../signaling/2026-10-12-shared-rooms-design.md`](../signaling/2026-10-12-shared-rooms-design.md).
