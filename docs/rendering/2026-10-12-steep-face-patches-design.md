@@ -166,17 +166,20 @@ both forms are weak, never a face with both.
 
 `faceReliefD(seed, x, z): { v, dx, dz }` with `v ∈ [−1, 1]`, unitless.
 The fine relief `v_fine` is the mix of columns and blocks by `s`; the large
-forms `v_form` lie beneath it at `FACE_FORM_WEIGHT = 1.5` to its 1:
+forms `v_form` lie beneath it at `FACE_FORM_WEIGHT = 1.5` to its 1, and
+their weighted mean is multiplied by `FACE_GAIN = 2.5`:
 
 ```
-v = clamp((v_fine + FACE_FORM_WEIGHT · v_form) / (1 + FACE_FORM_WEIGHT), −1, 1)
+v = clamp(FACE_GAIN · (v_fine + FACE_FORM_WEIGHT · v_form) / (1 + FACE_FORM_WEIGHT), −1, 1)
 ```
 
-Both terms are within `[−1, 1]`, so their weighted mean is; the clamp,
-taken last with a zero derivative where it holds, keeps the range against
-rounding. At a half-depth of 2 m that is about ±0.8 m of fine joints on
-±1.2 m of large forms. The derivatives run through the forms and both
-mixes. Every constant above is exported in `FACE_RELIEF_TUNABLES`, with
+Both terms are within `[−1, 1]`, so their weighted mean is, but it
+clusters near zero, a mean `|v|` of 0.19 over 20,000 points; the gain
+spreads it over the range, a mean `|v|` of 0.46, and the clamp, taken last
+with a zero derivative where it holds, is a working bound that holds 7.3 %
+of those points at ±1. At a half-depth of 2 m that is fine joints of up to
+±2 m on large forms of up to ±3 m, held to ±2 m together. The derivatives
+run through the forms and both mixes, times the gain. Every constant above is exported in `FACE_RELIEF_TUNABLES`, with
 `FACE_SLOPE_LO = 1.0`, `FACE_SLOPE_HI = 1.4` and `FACE_HALF_DEPTH = 2.0`
 beside them.
 
