@@ -12,7 +12,8 @@ cell within reach, a patch: a finer grid of the same ground, each vertex
 pushed out along the face's normal by a rock relief — columns on some faces,
 jointed blocks on others. The patch is drawn with the terrain's own material,
 so it is the same rock, the same paint and the same light as the ground it
-covers; the ground under it is covered, not changed. The patches are the
+covers; the ground's height is not changed, and where a patch covers fully
+steep ground the clipmap leaves its own triangles there out. The patches are the
 game's, not the simulation's: the collision surface, the placements and the
 level id do not move.
 
@@ -31,9 +32,9 @@ enough to show its joints.
 | What it is masked by | The ground's own gradient: nothing under 1.0, the whole relief from 1.4 up (`FACE_SLOPE_LO`, `FACE_SLOPE_HI`); the standing limit is 1.02 |
 | The forms | Two, chosen by a slow noise over the world: columns (a jittered cellular field, the cells read as tall prisms on a steep face) and blocks (a near-square lattice with rounded joints, two octaves), both standing on large forms, a coarse octave of tilted slabs 14 m across |
 | The size of the relief | Outward only, up to `PATCH_DEPTH = 4.0` m along the face's normal, the relief's half-depth (`FACE_HALF_DEPTH = 2.0`) doubled: the smooth face is the deepest joint, and no patch vertex is ever under the ground. Where the ground bends sharply the depth is cut, so the push stays under half the bend's radius |
-| The patch grid | 16 m cells on the world's lattice; 0.5 m vertices within 48 m of the camera, 1 m within 160 m, none beyond (high tier; 36/120 m on medium, 24/80 m on low) |
+| The patch grid | 16 m cells on the world's lattice; 0.5 m vertices within 48 m of the camera, 1 m within 160 m, 2 m within 400 m, none beyond (high tier; 36/120/300 m on medium, 24/80/200 m on low) |
 | Normals | The displaced surface's, from the ground's and the relief's derivatives at each vertex, not from the grid: a column's flat face shades flat and its joint steep at either spacing, and a point has one normal in every patch that holds it |
-| The ground under a patch | Stays drawn; the patch's material carries a depth offset so the two never fight where the relief is zero. Beyond ring 0 the clipmap draws a lifted envelope that can stand above the joints where the push is near zero, so joints are judged within 64 m until the ground under covered cells is dropped. Dropping the clipmap's triangles under a fully covered cell is a later lever |
+| The ground under a patch | Dropped where it is fully steep: the clipmap leaves out each triangle whose three vertices have the whole mask (a gradient of 1.4 or more) in a 16 m square well inside the reach, so the lifted envelope no longer stands over the joints there. Kept everywhere else — at the reach's edge, on each ring's border row and the row around its hole, and wherever a vertex is less steep — under the patch, whose material carries a depth offset so the two never fight where the relief is zero (§4.4) |
 | Collision | On the heightfield, as today: a player at the foot of a face can stand up to 4 m inside the drawn rock |
 | The level id | Does not move |
 | The shipped cliff modules | Unchanged on this branch |
@@ -188,7 +189,7 @@ beside them.
 ### 4.1 The grid (`client/src/game/facePatches.ts`, pure)
 
 The world is divided into `PATCH_CELL = 16` m cells. For a cell and a
-spacing `p` (0.5 or 1 m) the patch is the `(16 / p + 1)²` lattice of the
+spacing `p` (0.5, 1 or 2 m) the patch is the `(16 / p + 1)²` lattice of the
 cell's own grid points, boundary included. At each point:
 
 ```
@@ -264,7 +265,7 @@ A cell has a patch when any of its grid points, boundary included, has
 steep ground. Two patched neighbours share their boundary points bit for
 bit, so they meet without a crack. A cell whose steep ground reaches its
 boundary pulls its neighbour in through the shared points, so inside the
-reach a patch never ends with its relief in the air. At the far reach's
+reach a patch never ends with its relief in the air. At the wide reach's
 edge the neighbour is not drawn: there `taper` fades the relief to nothing
 over `PATCH_TAPER = 3` m, a quintic step of the distance from the point to
 the nearest square of a neighbour outside the set, 0 on its edge and 1
@@ -274,7 +275,8 @@ open or not, so where the edge steps in, the cell open at a corner fades
 toward the same square as its neighbour open at a side, and the two still
 meet bit for bit.
 
-Where a 0.5 m patch meets a 1 m one, the fine patch's midpoints on the
+Where a patch meets a coarser one, 0.5 m on 1 m or 1 m on 2 m (neighbouring
+cells are never more than a band apart), the finer patch's midpoints on the
 shared edge are set to the mean of the two coarse endpoints, position and
 paint (colour, weights and cover), as the coarse patch interpolates its
 edge, so the edge has one shape and one paint on both sides; the normal is
@@ -284,10 +286,10 @@ normal included, with no special case.
 ### 4.2 The bands and rebuilds (`client/src/game/facePatchMeshes.ts`, shell)
 
 Each frame the camera's cell is read; when it changes, the set of cells
-within the far reach is walked from the centre of the camera's cell, so
+within the wide reach is walked from the centre of the camera's cell, so
 the set is a function of that cell alone, each cell's spacing chosen by
 the distance from that centre to the cell's centre (0.5 m within
-`PATCH_NEAR`, 1 m within `PATCH_FAR`), and every cell that entered or
+`near`, 1 m within `far`, 2 m within `wide`, `PATCH_REACH`), and every cell that entered or
 left the set, or whose spacing, stitched edges or open neighbours changed,
 is rebuilt or dropped. A cell's
 patch is one mesh; the pure module gives it as a `VertexData`-shaped
@@ -296,11 +298,14 @@ indices), and the shell uploads it. A cell without steep ground is
 remembered as empty while it stays in the set at its spacing: its stitch
 does not make it steep.
 
-| tier | `PATCH_NEAR` | `PATCH_FAR` |
-| --- | --- | --- |
-| high | 48 m | 160 m |
-| medium | 36 m | 120 m |
-| low | 24 m | 80 m |
+| tier | `near` (0.5 m) | `far` (1 m) | `wide` (2 m) |
+| --- | --- | --- | --- |
+| high | 48 m | 160 m | 400 m |
+| medium | 36 m | 120 m | 300 m |
+| low | 24 m | 80 m | 200 m |
+
+Past 160 m a face 2 m across a vertex still shows its large forms, slabs
+14 m across, where the clipmap's 4 m and 8 m rings show none of them.
 
 The patches use a terrain material of their own, made by the same factory
 as the ground's (`terrainMaterialFor(scene, "facePatch")`: the same PBR
@@ -311,17 +316,59 @@ coincide. The patches cast and receive shadows with the clipmap.
 ### 4.3 Cost
 
 A fully steep 16 m cell at 0.5 m is 1,089 vertices and 2,048 triangles; at
-1 m, 289 and 512. At the reference pose on the high tier the reach holds
-316 cells, 29 near and 287 far, of which 20 near and 121 far have steep
-ground: 56,749 vertices and 102,912 triangles, and 140 draws from the
-shell's walk. The patches are built at once, on the frame the camera
-crosses a cell line: about 350 ms at the first update, which builds 317
-cells, and about 115 ms at the crossing one cell east, which builds 66 (21
-that entered the reach and 45 whose band, stitch or open neighbours
-changed). The ground's bend costs a quarter of that: the same crossing
-builds in about 90 ms at the full depth, without the differences. Spreading
-the builds over frames is the first follow-up; the draw calls are the next
-lever, the cells of one band merged into one mesh at each change.
+1 m, 289 and 512; at 2 m, 81 and 128. At the reference pose on the high
+tier the reach holds 1,963 cells, 29 near, 287 far and 1,647 wide, of which
+20 near, 121 far and 221 wide have steep ground: 74,650 vertices and
+131,200 triangles. The shell's walk, from the camera's cell's centre,
+holds 1,961 cells and draws 362. The patches are built at once, on the
+frame the camera crosses a cell line: about 580 ms at the first update
+(620 ms cold), which builds 1,961 cells, and about 120 ms at the crossing
+one cell east, which builds 142 (51 that entered the reach and 91 whose
+band, stitch or open neighbours changed), leaving 368 drawn. At the 160 m
+reach the same two took about 350 ms and 115 ms. Spreading the builds over
+frames is the first follow-up; the draw calls are the next lever, the
+cells of one band merged into one mesh at each change.
+
+The clipmap leaves out, at the same pose, 11,582 of ring 0's 32,768
+triangles, 4,559, 1,933 and 199 of the 24,576 of rings 1, 2 and 3, and
+none of ring 4's, which begins about 500 m out: 18,273 in all, under 217
+of the 362 patched squares.
+
+### 4.4 The ground under the patches (`client/src/game/clipmap.ts`)
+
+The clipmap draws an upper envelope of the ground, each vertex lifted by
+the most the field rises above its drawn edges, and past ring 0 that
+envelope can stand above the patch's joints where the push is near zero,
+filling them. So each ring leaves out of its index buffer the triangles a
+patch draws over (`CoveredGround`, given by `facePatchCover`):
+
+- a triangle whose three vertices are fully steep, a gradient of
+  `FACE_SLOPE_HI` or more as the ring stores it, where the patches' mask
+  is whole;
+- in a 16 m square whose centre lies within the wide reach, less a cell's
+  diagonal (about 377 m on the high tier), of the camera's cell's centre.
+  Every neighbour of such a square, corners too, is in the patched set, so
+  its patch has no open side, no taper and the whole relief over it; and
+  where the rings' rebuild lands a frame or two after the patches', at a
+  camera one cell on, the square is still patched;
+- on a ring whose cells each lie within one square, a spacing that divides
+  16 m: rings 0 to 4.
+
+A ring's border row, where it meets the coarser ring, and the row around
+its hole, where it meets the finer one, are always kept, so the seams stay
+closed. The vertices stay: only the indices change, so the buffers'
+layout, the blend toward the coarser ring and the positions are as they
+were, and with nothing covered the index buffers are the same bytes as
+before. Every triangle left out has three steep vertices, which are grid
+points of its square's patch on the high and medium tiers, so the square
+has a patch (on low, ring 0 reaches past the 80 m far reach into the 2 m
+band, whose patches are found by their own points a metre off); where a
+patch's edge is tapered, at the reach's edge, the ground is not left out.
+A ring is drawn again when the camera's cell changes, which every ring that
+can leave triangles out does anyway, its own move or its finer ring's.
+
+The clipmap's rings are the shadow casters; the patches cast too, so a
+triangle left out casts its shadow through the patch over it.
 
 ## 5. Tests
 
@@ -340,12 +387,16 @@ lever, the cells of one band merged into one mesh at each change.
   neighbouring patches share their boundary positions and normals bit for
   bit, at a step of the reach's edge too; a fine patch's stitched
   midpoints lie on the coarse edge, east–west and north–south, with the
-  coarse paint; the relief fades to the ground at an open edge and is whole
+  coarse paint, 0.5 m on 1 m and 1 m on 2 m; the relief fades to the ground at an open edge and is whole
   3 m in; no triangle turns over at the scarp, nor across a sharp crest of
   world 42 where the full depth turned 12 over; a cell with no steep
   point has no patch; the cell set, the vertex and triangle counts and the
   near and far cell counts at the scarp are pinned as literals; a cell's
   patch is the same whatever the camera's path to it.
+- `client/test/game/clipmap.test.ts`: with no cover the index buffers are
+  every triangle, byte for byte; the triangles left out per ring at the
+  reference pose are pinned; none on a border row or beside a hole; each
+  is fully steep, over a square with a patch and no open neighbour.
 - `client/test/game/facePatchMeshes.test.ts`: the attribute names match
   the terrain plugin's; the material carries the plugins and the depth
   offset, the atmosphere's plugin and a view of the ground's arrays that
@@ -369,8 +420,8 @@ pairs against `main` at the same poses are recorded beside them.
 ## 7. Follow-ups
 
 - Building the patches over several frames, not on the one the camera
-  crosses a cell line.
-- Dropping the clipmap's triangles under fully covered cells (overdraw).
+  crosses a cell line: with the wide band the first update takes over
+  half a second.
 - Merging a band's patches into one mesh (draw calls).
 - Collision on the relief, if standing inside the drawn rock at a face's
   foot shows.
