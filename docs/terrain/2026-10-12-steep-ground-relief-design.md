@@ -29,7 +29,7 @@ asking the first to do both.
 | Where the relief lives | In the simulation's height function (`client/src/sim/`), as a stage of the olympic chain, with exact derivatives like every stage before it |
 | What it is masked by | The ground's own gradient: nothing under 1.0, the whole relief from 1.4 up (`FACE_SLOPE_LO`, `FACE_SLOPE_HI`); the standing limit is 1.02 |
 | The forms | Two, chosen by a slow noise over the world: columns (a jittered cellular field, the cells read as tall prisms on a steep face) and blocks (a near-square lattice with rounded joints, two octaves) |
-| The size of the relief | A half-depth of 0.6 m measured along the face's normal: the surface moves in and out of the smooth face by up to 0.6 m |
+| The size of the relief | A half-depth of 1.0 m measured along the face's normal: the surface moves in and out of the smooth face by up to 1.0 m |
 | The mesh | Unchanged: the clipmap samples the field as before. Ring 0's 1 m spacing is the finest the relief is drawn at; the cell sizes (2.8 m and 3.6 m) are chosen to survive it |
 | Collision | Follows: the player stands, slides and is raycast on the same surface that is drawn |
 | The level id | Moves once (the new stage's constants join the variant's tunables) |
@@ -69,23 +69,43 @@ function of the world position alone, so it is the same whoever samples it.
 
 A lattice of `cell` metres. Each lattice cell `(i, j)` holds one point,
 displaced from the cell's centre by up to `jitter · cell / 2` in each axis
-(from `hash3(i, j, 0, salt)` and `hash3(i, j, 1, salt)`), and one value
-`o ∈ [−1, 1]` (from `hash3(i, j, 2, salt)`). For the sample's position, the
-nine cells around it give nine points `c_k` at distances `F_k`, the nearest
-at `F1`. Each point weighs by how much farther it is than the nearest, and
-the field is the weighted mean of the values:
+(from `hash3(i, j, 0, salt)` and `hash3(i, j, 1, salt)`), one value
+`o ∈ [−1, 1]` (from `hash3(i, j, 2, salt)`) and one tilt `(a, b)`, each in
+`[−1, 1]` (from `hash3(i, j, 3, salt)` and `hash3(i, j, 4, salt)`). For the
+sample's position, the nine cells around it give nine points `c_k = (sx_k, sz_k)`
+at distances `F_k`, the nearest at `F1`. Each point carries a plane `u_k`
+through it, weighs by how much farther it is than the nearest, and the field
+is the weighted mean of the planes:
 
 ```
+u_k = o_k · FACE_VALUE_SPAN + FACE_TILT · (a_k · (x − sx_k) + b_k · (z − sz_k)) / cell
 w_k = 1 − smootherstep(0, border, F_k − F1)
-v   = Σ w_k · o_k / Σ w_k
+v   = clamp(Σ w_k · u_k / Σ w_k, −1, 1)
 ```
 
 `border` is the width, in metres, of the blend across a joint. The field is
-`o1` inside a cell, where every other point is a joint's width farther, and
-exactly the mean of two values on the border between two cells where no
-third point is within a joint's width; it is a convex mix, so within `[−1, 1]`, and continuous everywhere, since `F1` is.
+the nearest point's plane inside a cell, where every other point is a
+joint's width farther, and exactly the mean of two planes on the border
+between two cells where no third point is within a joint's width; it is
+continuous everywhere, since `F1` is.
+
+A level cell differs from its neighbours only across the joint between
+them, and a joint is a few tenths of a metre wide, so a face of level cells
+reads soft. Each cell is therefore a plane, tilted its own way by up to
+`FACE_TILT` of the unit range per cell crossed in each axis, and
+neighbouring cells meet the light at different angles across their whole
+width. A point with weight lies within `F1 + border ≤ 1.42 · cell + border`
+of the sample, so its tilt term is at most
+`FACE_TILT · 2 · (1.42 + border / cell)`, about 1.07 for the columns and
+1.17 for the blocks; with `o · FACE_VALUE_SPAN` beside it a plane can pass
+±1 far up its tilt. The field is clamped to `[−1, 1]`, its derivative zero
+where the clamp holds, so the range is kept for every sample. Over 20,000
+points the largest tilt term with weight is about 0.44 and no blend reaches
+the clamp.
+
 With `W = Σ w_k`, the derivative is
-`(Σ w_k′ · o_k) / W − v · (Σ w_k′) / W` with
+`(Σ w_k′ · u_k + Σ w_k · ∂u_k) / W − v · (Σ w_k′) / W`, where
+`∂u_k = FACE_TILT · (a_k, b_k) / cell`, with
 `w_k′ = −smootherstep′(0, border, F_k − F1) · (∇F_k − ∇F1)`, the step's
 derivative in its argument, and `∇F = (p − c) / F` for each point `c`; a
 point exactly on a lattice point (`F < 1e−9`) takes `∇F = 0`.
@@ -109,6 +129,12 @@ Blocks: `cellularD(x, z, 3.6, 0.25, 0.9, BLOCK_SALT)` plus half of
 `cellularD(x, z, 1.8, 0.25, 0.45, BLOCK_SALT_2)`, the sum scaled by 2/3 to
 stay within `[−1, 1]`. The low jitter keeps the joints near two directions,
 and the wide border rounds the blocks' edges.
+
+Both forms, and both octaves of the blocks, take their planes from the same
+two constants, each octave with its own cell size beneath the tilt:
+`FACE_VALUE_SPAN = 0.6`, the share of the unit range a cell's value spans
+at its site, and `FACE_TILT = 0.35`, the share a tilt of 1 rises across one
+cell. The span leaves room for the tilt within `[−1, 1]`.
 
 ### 3.3 Which form where
 
@@ -142,8 +168,8 @@ faceStageD(seed, x, z, s: TerrainSample, pre: (x, z) => TerrainSample): TerrainS
    h′ = h + m · FACE_HALF_DEPTH · r.v · sqrt(1 + g²)
    ```
 
-   On the scarp (`g` ≈ 2 to 3) the vertical change is up to about 2 m;
-   measured along the face, it is the 0.6 m the player sees.
+   On the scarp (`g` ≈ 2 to 3) the vertical change is up to about 3 m;
+   measured along the face, it is the 1.0 m the player sees.
 5. The derivative. `h′` depends on `g`, and `g`'s derivative is the base's
    second derivative, which the chain does not carry. The stage takes it by
    forward differences of the chain before it: `pre(x + e, z)` and
@@ -183,8 +209,8 @@ the joints need to be crisper near the camera; it is not taken here.
 
 ## 6. Tests
 
-- `client/test/sim/faceRelief.test.ts`: `cellularD` returns `o1` inside a
-  cell and the mean on a border; its derivatives match numeric ones to the
+- `client/test/sim/faceRelief.test.ts`: `cellularD` returns the nearest
+  point's plane inside a cell and the mean of two planes on a border; its derivatives match numeric ones to the
   olympic test's ratio; `faceReliefD` is within `[−1, 1]` on a 20,000-point
   sweep and deterministic; the forms' share over the world is pinned (a
   literal count of columns, blocks and band points on a lattice).
