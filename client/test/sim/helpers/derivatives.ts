@@ -8,9 +8,11 @@ import { terrainVariant, type TerrainVariant } from "../../../src/sim/terrain.js
 
 export const DERIV_SEED = 0x5eed;
 /** Differencing arm: small enough that truncation error sits well under
- * TOL_RATIO even inside ridge creases (softened by RIDGE_EPSILON), large
- * enough that float cancellation on ~100 m heights is negligible. */
-export const H = 0.02;
+ * TOL_RATIO even inside ridge creases (softened by RIDGE_EPSILON) and across
+ * the steep ground's relief, whose joints are a few tenths of a metre wide
+ * and up to 2 m deep; large enough that float cancellation on ~100 m heights
+ * is negligible. 2026-10-12: 0.02 before the steep ground's relief. */
+export const H = 0.0001;
 /**
  * The bound is a FRACTION of the sweep's steepest measured slope, not an
  * absolute gradient. Central-difference truncation error is O(H²·h''), which

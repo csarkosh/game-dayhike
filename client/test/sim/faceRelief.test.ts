@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import * as relief from "../../src/sim/faceRelief.js";
+import { olympicPreFaceSample } from "../../src/sim/olympic.js";
+import type { TerrainSample } from "../../src/sim/terrain.js";
 import {
-  cellularD, cellularSite, faceKindD, faceReliefD, FACE_RELIEF_TUNABLES,
+  cellularD, cellularSite, faceKindD, faceReliefD, faceStageD, FACE_RELIEF_TUNABLES,
+  FACE_SLOPE_LO, FACE_HALF_DEPTH,
   FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, FACE_COLUMN_SALT,
   FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, FACE_BLOCK_SALT,
   FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER, FACE_BLOCK_FINE_SALT,
@@ -98,23 +101,23 @@ function checkField(
 }
 
 /** The smallest junction gap among the forms with weight at (x, z). */
-function reliefGap(x: number, z: number): number {
-  const s = faceKindD(SEED, x, z).v;
+function reliefGap(x: number, z: number, seed = SEED): number {
+  const s = faceKindD(seed, x, z).v;
   let g = Infinity;
   if (s < 1) {
     g = Math.min(g, junctionGap(
-      x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, COLUMN_SALT,
+      x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, seed ^ FACE_COLUMN_SALT,
     ));
   }
   if (s > 0) {
     g = Math.min(
       g,
       junctionGap(
-        x, z, FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, SEED ^ FACE_BLOCK_SALT,
+        x, z, FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, seed ^ FACE_BLOCK_SALT,
       ),
       junctionGap(
         x, z, FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER,
-        SEED ^ FACE_BLOCK_FINE_SALT,
+        seed ^ FACE_BLOCK_FINE_SALT,
       ),
     );
   }
@@ -376,6 +379,80 @@ describe("the relief", () => {
       }
     }
     expect({ columns, blocks, band }).toEqual({ columns: 550, blocks: 540, band: 591 });
+  });
+});
+
+describe("faceStageD", () => {
+  /** The world whose scarp the sweep below crosses. */
+  const SCARP_SEED = 627994160;
+  const pre = (x: number, z: number): TerrainSample => olympicPreFaceSample(SCARP_SEED, x, z);
+  const stage = (x: number, z: number): TerrainSample =>
+    faceStageD(SCARP_SEED, x, z, pre(x, z), pre);
+
+  /** The scarp's face and its foot and crest: 79 × 31 points. */
+  function scarp(): Array<[number, number]> {
+    const pts: Array<[number, number]> = [];
+    for (let x = -358; x <= -280; x += 1) {
+      for (let z = -960; z <= -840; z += 4) pts.push([x, z]);
+    }
+    return pts;
+  }
+  const steep = (x: number, z: number): boolean => {
+    const s = pre(x, z);
+    return s.dx * s.dx + s.dz * s.dz > FACE_SLOPE_LO * FACE_SLOPE_LO;
+  };
+
+  it("returns the sample itself where the gradient is at most FACE_SLOPE_LO", () => {
+    const never = (): TerrainSample => {
+      throw new Error("sampled the chain below the slope");
+    };
+    for (const s of [
+      { h: 12, dx: 0, dz: 0 },
+      { h: 12, dx: 0.6, dz: -0.7 },
+      { h: 12, dx: -1, dz: 0 },
+      { h: 12, dx: 0, dz: 1 },
+    ]) {
+      expect(faceStageD(SCARP_SEED, 3.5, -7.25, s, never)).toBe(s);
+    }
+    let flat = 0;
+    for (const [x, z] of scarp()) {
+      if (steep(x, z)) continue;
+      const s = pre(x, z);
+      expect(faceStageD(SCARP_SEED, x, z, s, pre)).toBe(s);
+      flat++;
+    }
+    expect(flat).toBe(88);
+  });
+
+  it("moves the steep ground by at most FACE_HALF_DEPTH along its normal", () => {
+    let n = 0;
+    let moved = 0;
+    for (const [x, z] of scarp()) {
+      if (!steep(x, z)) continue;
+      const s = pre(x, z);
+      const g2 = s.dx * s.dx + s.dz * s.dz;
+      const d = Math.abs(stage(x, z).h - s.h);
+      expect(d).toBeLessThanOrEqual(FACE_HALF_DEPTH * Math.sqrt(1 + g2));
+      n++;
+      if (d > 0.3) moved++; // more than half the half-depth, measured upright
+    }
+    expect(n).toBe(2361);
+    expect(moved).toBe(1310);
+  });
+
+  it("carries exact derivatives over the scarp's steep ground", () => {
+    const pts = scarp().filter(([x, z]) => steep(x, z));
+    const r = checkField(
+      (x, z) => {
+        const s = stage(x, z);
+        return { v: s.h, dx: s.dx, dz: s.dz };
+      },
+      (x, z) => reliefGap(x, z, SCARP_SEED),
+      pts,
+    );
+    // Measured worst / steepest: 5.4e-5, with no point left out needing it.
+    expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
+    expect(r.skipped).toBe(1);
   });
 });
 

@@ -5,15 +5,16 @@
  * blocks are a near-square lattice with rounded joints, two octaves. A slow
  * noise over the world chooses the form, so one face carries one of them.
  *
- * The field is a function of the world position and seed alone. It is not a
- * stage of the height chain by itself: the stage that masks it to the steep
- * ground and scales it to metres reads `faceReliefD` and the constants here.
+ * The field is a function of the world position and seed alone. The stage
+ * of the height chain, `faceStageD` at the end of this file, masks it to the
+ * steep ground and scales it to metres.
  *
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  */
 
 import { gradientNoise2, hash3 } from "./field.js";
 import { stepT, stepTd } from "./lakeShape.js";
+import type { TerrainSample } from "./terrain.js";
 
 // ---- Tunables (every one appears in FACE_RELIEF_TUNABLES) -------------------
 /** The ground's gradient under which the relief is absent. */
@@ -22,8 +23,11 @@ export const FACE_SLOPE_LO = 1.0;
 export const FACE_SLOPE_HI = 1.4;
 /** How far, in metres along the face's normal, the surface moves either way. */
 export const FACE_HALF_DEPTH = 0.6;
-/** The forward-difference step, in metres, for the ground's second derivatives. */
-export const FACE_DIFF_STEP = 0.25;
+/** The forward-difference step, in metres, for the ground's second derivatives.
+ * Finer than any crease of the ground beneath: a ridge's crest can turn its
+ * gradient through 0.7 in 4 cm, and a step of a few centimetres misses that
+ * turn by enough to put the stage's gradient off by a tenth of the slope. */
+export const FACE_DIFF_STEP = 0.0001;
 
 /** Columns: lattice spacing (m), jitter (share of the cell), joint width (m). */
 export const FACE_COLUMN_CELL = 2.8;
@@ -250,20 +254,21 @@ function blocks(seed: number, x: number, z: number): void {
   cdz = (adz + FACE_BLOCK_FINE_WEIGHT * cdz) * FACE_BLOCK_NORM;
 }
 
-/**
- * The relief at (x, z): columns, blocks, or their mix by the form share, in
- * [−1, 1], with exact derivatives through the forms and the mix. Only the
- * forms with weight are evaluated.
- */
-export function faceReliefD(seed: number, x: number, z: number): ReliefSample {
+// The relief's result, written by `relief`.
+let rv = 0;
+let rdx = 0;
+let rdz = 0;
+
+/** The relief into rv/rdx/rdz. */
+function relief(seed: number, x: number, z: number): void {
   kind(seed, x, z);
-  if (ks === 0) {
-    columns(seed, x, z);
-    return { v: cv, dx: cdx, dz: cdz };
-  }
-  if (ks === 1) {
-    blocks(seed, x, z);
-    return { v: cv, dx: cdx, dz: cdz };
+  if (ks === 0 || ks === 1) {
+    if (ks === 0) columns(seed, x, z);
+    else blocks(seed, x, z);
+    rv = cv;
+    rdx = cdx;
+    rdz = cdz;
+    return;
   }
   const s = ks;
   const sx = ksx;
@@ -274,9 +279,58 @@ export function faceReliefD(seed: number, x: number, z: number): ReliefSample {
   const colDz = cdz;
   blocks(seed, x, z);
   const diff = cv - colV;
-  return {
-    v: colV + s * diff,
-    dx: colDx + s * (cdx - colDx) + sx * diff,
-    dz: colDz + s * (cdz - colDz) + sz * diff,
-  };
+  rv = colV + s * diff;
+  rdx = colDx + s * (cdx - colDx) + sx * diff;
+  rdz = colDz + s * (cdz - colDz) + sz * diff;
+}
+
+/**
+ * The relief at (x, z): columns, blocks, or their mix by the form share, in
+ * [−1, 1], with exact derivatives through the forms and the mix. Only the
+ * forms with weight are evaluated.
+ */
+export function faceReliefD(seed: number, x: number, z: number): ReliefSample {
+  relief(seed, x, z);
+  return { v: rv, dx: rdx, dz: rdz };
+}
+
+/**
+ * The relief as a stage of the height chain. Where the ground's gradient g is
+ * at most FACE_SLOPE_LO the stage returns `s` itself. Above it the surface
+ * moves by up to FACE_HALF_DEPTH metres either way along the face's normal,
+ * a vertical move of FACE_HALF_DEPTH · sqrt(1 + g²), faded in by a quintic
+ * step m(g) from FACE_SLOPE_LO to FACE_SLOPE_HI:
+ *
+ *   h′ = h + m(g) · A(g) · r,   A(g) = FACE_HALF_DEPTH · sqrt(1 + g²)
+ *
+ * h′ depends on g, and g's derivative is the ground's second derivative,
+ * which the chain does not carry: the stage takes it from forward differences
+ * of `pre`, the chain that made `s`, FACE_DIFF_STEP on in x and in z. Those
+ * two samples are taken only past the early-out.
+ */
+export function faceStageD(
+  seed: number, x: number, z: number, s: TerrainSample,
+  pre: (x: number, z: number) => TerrainSample,
+): TerrainSample {
+  const g2 = s.dx * s.dx + s.dz * s.dz;
+  if (g2 <= FACE_SLOPE_LO * FACE_SLOPE_LO) return s;
+  const g = Math.sqrt(g2);
+  const span = FACE_SLOPE_HI - FACE_SLOPE_LO;
+  const t = (g - FACE_SLOPE_LO) / span;
+  const m = stepT(t);
+  const mg = stepTd(t) / span;
+  const q = Math.sqrt(1 + g2);
+  const a = FACE_HALF_DEPTH * q;
+  const ag = (FACE_HALF_DEPTH * g) / q;
+  // ∂g/∂x = (h_x · h_xx + h_z · h_zx) / g, the second derivatives from the
+  // gradient one step on in x; ∂g/∂z likewise from one step on in z.
+  const e = FACE_DIFF_STEP;
+  const px = pre(x + e, z);
+  const gx = (s.dx * (px.dx - s.dx) + s.dz * (px.dz - s.dz)) / (e * g);
+  const pz = pre(x, z + e);
+  const gz = (s.dx * (pz.dx - s.dx) + s.dz * (pz.dz - s.dz)) / (e * g);
+  relief(seed, x, z);
+  const ma = m * a;
+  const k = (mg * a + m * ag) * rv;
+  return { h: s.h + ma * rv, dx: s.dx + ma * rdx + k * gx, dz: s.dz + ma * rdz + k * gz };
 }

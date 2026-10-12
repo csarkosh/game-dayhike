@@ -51,6 +51,7 @@ import {
 } from "./landmarks.js";
 import { FEATURE_TUNABLES, featureStageD, lakeStageD, featureMaskAt, type Feature, type FeatureMask } from "./features.js";
 import { BRAID_TUNABLES } from "./trailBraid.js";
+import { FACE_RELIEF_TUNABLES, faceStageD } from "./faceRelief.js";
 import { forestDensityUnmasked } from "./vegetation.js";
 import { boulderDensityUnmasked, CLUTTER_BOULDER_SLOPE_LO } from "./clutter.js";
 
@@ -676,23 +677,19 @@ function padHeightFor(seed: number): number {
 
 /**
  * The field the graph builder and landmark placement sample for heights:
- * base → cliffs → dunes → trailhead pad → road corridor. The road corridor
- * joins this field so the builder's own field matches
+ * base → cliffs → dunes → cove → steep ground's relief → trailhead pad →
+ * road corridor. The road corridor joins this field so the builder's own field matches
  * the composed one inside |u| < ROAD_CORRIDOR_HALF — the pad sits on the
  * road's shoulder now, so the ground the builder routes from must already be
  * cut to the road grade there. No trail, no landmarks — it must not read
  * the graph.
  */
 export function olympicPreTrailSample(seed: number, x: number, z: number): TerrainSample {
-  const f = coastFrame(seed, z);
-  const d = x - f.coastlineX;
-  const road = roadOffsetD(seed, z, BLEND_START, f.roadBlendEnd, f.roadBlendEndDz);
-  const u = d - road.dr;
-  const uDz = f.dDz - road.drDz;
-  const base = olympicBaseFrom(seed, x, z, d, f.dDz, f.blendEnd, f.blendEndDz);
-  const duned = duneD(seed, x, z, u, uDz, cliffD(seed, x, z, u, uDz, base, apronKeepD(u, uDz, z)));
-  const coved = coveD(seed, x, z, d, f.dDz, u, uDz, duned);
-  const padded = inBowl(u, z) ? padD(u, uDz, z, padHeightFor(seed), coved) : coved;
+  const coved = olympicPreFaceSample(seed, x, z);
+  const u = preFaceU;
+  const uDz = preFaceUDz;
+  const faced = faceStageD(seed, x, z, coved, preFaceFor(seed));
+  const padded = inBowl(u, z) ? padD(u, uDz, z, padHeightFor(seed), faced) : faced;
   if (Math.abs(u) >= ROAD_CORRIDOR_HALF) return padded;
   return corridorD(u, uDz, roadGradeAt(seed, z), padded);
 }
@@ -775,7 +772,17 @@ function featureMaskHook(seed: number, x: number, z: number, h?: number): Featur
   return featureMaskAt(bowlFor(seed).features, x, z, h ?? olympicSample(seed, x, z).h);
 }
 
-function olympicSample(seed: number, x: number, z: number): TerrainSample {
+// The road frame (u, ∂u/∂z) of the last `olympicPreFaceSample`. Its callers
+// read it at once, before anything samples the chain again.
+let preFaceU = 0;
+let preFaceUDz = 0;
+
+/**
+ * The chain up to the steep ground's relief: base → cliffs → dunes → cove.
+ * `faceStageD` reads it at two more points for the ground's second
+ * derivatives, so the sample and those two run this one function.
+ */
+export function olympicPreFaceSample(seed: number, x: number, z: number): TerrainSample {
   const f = coastFrame(seed, z);
   const d = x - f.coastlineX;
   const road = roadOffsetD(seed, z, BLEND_START, f.roadBlendEnd, f.roadBlendEndDz);
@@ -805,12 +812,36 @@ function olympicSample(seed: number, x: number, z: number): TerrainSample {
   // sweep numerically unchanged.
   const duned = duneD(seed, x, z, u, uDz, cliffed);
   const coved = coveD(seed, x, z, d, f.dDz, u, uDz, duned);
-  let staged = coved;
+  preFaceU = u;
+  preFaceUDz = uDz;
+  return coved;
+}
+
+// `olympicPreFaceSample` bound to the last seed asked, so a sample of the
+// chain makes no closure of its own.
+let preFaceSeed = Number.NaN;
+let preFaceAt: (x: number, z: number) => TerrainSample = (x, z) => olympicPreFaceSample(0, x, z);
+function preFaceFor(seed: number): (x: number, z: number) => TerrainSample {
+  if (seed !== preFaceSeed) {
+    preFaceSeed = seed;
+    preFaceAt = (x, z) => olympicPreFaceSample(seed, x, z);
+  }
+  return preFaceAt;
+}
+
+function olympicSample(seed: number, x: number, z: number): TerrainSample {
+  const coved = olympicPreFaceSample(seed, x, z);
+  const u = preFaceU;
+  const uDz = preFaceUDz;
+  // The steep ground's relief after the cove, so the scarp, the stacks and the
+  // headlands carry it, and before the pad, the features, the lakes, the trail
+  // and the road, so they still carve through it.
+  let staged = faceStageD(seed, x, z, coved, preFaceFor(seed));
   if (inBowl(u, z)) {
     // The trailhead pad — bit-identity outside its own small window.
     // Cheaply gated by `inBowl` like every bowl
     // stage: the pad's own disc + fade never reaches the bowl's edge.
-    staged = padD(u, uDz, z, padHeightFor(seed), coved);
+    staged = padD(u, uDz, z, padHeightFor(seed), staged);
   }
   // The made features: applied for EVERY point,
   // not only inside `inBowl` — the peak's 300 m dome is centred up to
@@ -927,6 +958,7 @@ registerTerrainVariant({
     CLIFF_OUT_SALT,
     CLIFF_ROAD_NEAR,
     CLIFF_ROAD_FAR,
+    ...FACE_RELIEF_TUNABLES,
     ...BOWL_TUNABLES,
     ...TRAIL_TUNABLES,
     ...LANDMARK_TUNABLES,

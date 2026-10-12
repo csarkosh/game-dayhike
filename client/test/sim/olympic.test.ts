@@ -22,6 +22,7 @@ import {
 } from "../../src/sim/bowl.js";
 import { roadFrameAt, olympicPreTrailSample, bowlFor, coveFor, COVE_END_BLEND } from "../../src/sim/olympic.js";
 import { TRAIL_CORRIDOR_HALF } from "../../src/sim/trail.js";
+import { FACE_SLOPE_LO } from "../../src/sim/faceRelief.js";
 
 // Floors set to roughly half the measured counts (generous margin), per
 // SEED = 0x5eed against the sweeps below.
@@ -43,6 +44,15 @@ const FLOOR_DUNE_ANNULUS = 150;
  * inland offsets, filtered to points outside the road corridor whose
  * pre-dune height is below CLIFF_OUT_ALT_LO): 2545. */
 const FLOOR_DUNE_DELTA = 1200;
+
+/** A scarp's face, foot and crest in world 627994160: 79 × 31 points. */
+function scarpSweep(): Array<[number, number]> {
+  const pts: Array<[number, number]> = [];
+  for (let x = -358; x <= -280; x += 1) {
+    for (let z = -960; z <= -840; z += 4) pts.push([x, z]);
+  }
+  return pts;
+}
 
 /** Dense points across the shore, surf and (later) stack bands. */
 function coastalSweep(): Array<[number, number]> {
@@ -86,6 +96,11 @@ describe("variant olympic", () => {
     const { worst, steepest } = checkDerivatives("olympic", [...sweepPoints(), ...coastalSweep()]);
     expect(steepest).toBeGreaterThan(0.3);
     expect(worst / steepest).toBeLessThan(TOL_RATIO);
+    // The scarp of world 627994160, where nearly every point carries the
+    // steep ground's relief. Measured worst / steepest: 5.4e-5.
+    const scarp = checkDerivatives("olympic", scarpSweep(), 627994160);
+    expect(scarp.steepest).toBeGreaterThan(10);
+    expect(scarp.worst / scarp.steepest).toBeLessThan(TOL_RATIO);
   });
 
   it("is deterministic and finite over large and negative coordinates", () => {
@@ -337,6 +352,7 @@ describe("the endless highway", () => {
   it("outside the corridor AND the bowl is exactly the cliff stage over the pre-road field", () => {
     let cold = 0;
     let checked = 0;
+    let steep = 0;
     for (const [x, z] of sweepPoints()) {
       if (Math.abs(z - coveFor(SEED).z0) < coveFor(SEED).halfWidth + COVE_END_BLEND) continue; // the cove's stage owns that ground
       const dist = roadDist(x, z);
@@ -351,6 +367,10 @@ describe("the endless highway", () => {
       // CLIFF_ROAD_FAR and the mask depends on u² alone; the signed frame is
       // what olympicSample actually passes.
       const c = cliffD(SEED, x, z, u, uDz, b, apronKeepD(u, uDz, z));
+      if (c.dx * c.dx + c.dz * c.dz > FACE_SLOPE_LO * FACE_SLOPE_LO) {
+        steep++;
+        continue; // the steep ground's relief owns this ground
+      }
       const a = v().sample(SEED, x, z);
       expect(a.h).toBe(c.h);
       expect(a.dx).toBe(c.dx);
@@ -359,7 +379,11 @@ describe("the endless highway", () => {
       if (c === b) cold++;
     }
     // Measured at SEED = 0x5eed against sweepPoints() with the bowl excluded:
-    // checked 233, cold 185. Floor set to roughly half the measured checked.
+    // checked 208, cold 168, and 5 steep. Floor set to roughly half the
+    // measured checked.
+    // 2026-10-12: the 5 steep points were checked too before the steep
+    // ground's relief.
+    expect(steep).toBe(5);
     expect(checked).toBeGreaterThanOrEqual(116);
     expect(cold).toBeGreaterThanOrEqual(3);
   });
