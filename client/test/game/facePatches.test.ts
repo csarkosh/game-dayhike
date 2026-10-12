@@ -6,6 +6,8 @@ import {
   facePatchCells,
   facePatchGeometry,
   facePatchStitch,
+  groundBend,
+  patchDepth,
   type FacePatch,
   type PatchCell,
   type PatchStitch,
@@ -16,6 +18,8 @@ import {
   OPEN_SOUTH_EAST,
   OPEN_SOUTH_WEST,
   OPEN_WEST,
+  PATCH_BEND_SHARE,
+  PATCH_DEPTH,
   PATCH_REACH,
 } from "../../src/game/facePatches.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -61,7 +65,8 @@ describe("facePatchGeometry", () => {
     expect(steep).toBe(318);
   }, timeLimit(20_000));
 
-  it("moves no vertex further than the relief's depth, and none into the ground", () => {
+  it("moves no vertex further than the depth its ground's bend leaves, and none into the ground", () => {
+    let largest = 0;
     for (const [ci, cj, spacing] of [[-23, -57, 0.5], [-22, -57, 0.5], [-20, -57, 1]] as const) {
       const p = patch(ci, cj, spacing);
       const side = 16 / spacing + 1;
@@ -75,14 +80,44 @@ describe("facePatchGeometry", () => {
           const oy = (p.positions[at + 1] as number) - s.h;
           const oz = (p.positions[at + 2] as number) - z;
           // Float32 positions a few hundred metres out round within 1e-4 m.
-          // 2026-10-12: 1.2001 before the depth was doubled to 2 m.
-          expect(Math.sqrt(ox * ox + oy * oy + oz * oz)).toBeLessThanOrEqual(2.0001);
+          const push = Math.sqrt(ox * ox + oy * oy + oz * oz);
+          if (faceMask(Math.hypot(s.dx, s.dz)) > 0) {
+            expect(push).toBeLessThanOrEqual(patchDepth(groundBend(SEED, x, z, s)) + 0.0001);
+          }
+          largest = Math.max(largest, push);
           // Outward: along the ground's normal (−dx, 1, −dz), never against it.
           expect(-s.dx * ox + oy - s.dz * oz).toBeGreaterThanOrEqual(-0.0001);
         }
       }
     }
+    // 2026-10-12: at most 2.0001 before the large forms and the 4 m depth.
+    // Measured: 2.93, the bend's cap and the relief's range short of 4 here.
+    expect(largest).toBeLessThanOrEqual(4.0001);
+    expect(largest).toBeGreaterThan(2.93);
   }, timeLimit(20_000));
+
+  it("keeps the push under half the radius of the ground's bend", () => {
+    expect(PATCH_DEPTH).toBe(4);
+    expect(PATCH_BEND_SHARE).toBe(0.5);
+    expect(patchDepth(0)).toBe(4);
+    // A bend of 1 per metre, a radius of 1 m: 4 / (1 + 8).
+    expect(patchDepth(1)).toBe(4 / 9);
+    for (const bend of [0.01, 0.1, 0.25, 1, 4, 100]) {
+      expect(patchDepth(bend)).toBeLessThan(PATCH_DEPTH);
+      expect(patchDepth(bend) * bend).toBeLessThan(PATCH_BEND_SHARE);
+    }
+    // The road's flat at the reference pose barely bends. A sharp ridge on
+    // world 42, whose gradient turns from (−2.29, 1.01) to (1.17, −1.40) in
+    // half a metre across its crest, bends on the crest and on both flanks,
+    // which see it a step away: convex, but the mask that drops to nothing
+    // on the crest would notch it.
+    const at = (seed: number, x: number, z: number): number =>
+      groundBend(seed, x, z, elevationSampleAt(seed, x, z));
+    expect(at(SEED, -370, -900)).toBeLessThan(0.001);
+    expect(at(42, 401.5, 555)).toBeGreaterThan(3);
+    expect(at(42, 401.5, 554.5)).toBeGreaterThan(0.37);
+    expect(at(42, 401, 555)).toBeGreaterThan(0.93);
+  });
 
   it("gives every vertex a unit normal, stitched or not", () => {
     for (const p of [patch(-23, -57, 0.5), patch(-21, -57, 0.5, EAST), patch(-20, -57, 1)]) {
@@ -215,6 +250,36 @@ describe("facePatchGeometry", () => {
     }
   }, timeLimit(20_000));
 
+  it("leans its normals with the taper's ramp", () => {
+    // The same cell at 0.5 m: over the ramp's rows 1 to 6, each vertex's
+    // normal against the one its grid neighbours' differences give. The
+    // grid cannot resolve a joint, so a few points stay far off; the mean
+    // is the ramp's lean. Without the taper's derivative in the normal the
+    // mean was 31.6°.
+    const p = patch(-22, -66, 0.5, { ...NONE, open: OPEN_SOUTH | OPEN_SOUTH_WEST | OPEN_SOUTH_EAST });
+    const q = p.positions;
+    const d = (a: number, b: number): number[] => [0, 1, 2].map((k) => (q[a * 3 + k] as number) - (q[b * 3 + k] as number));
+    let sum = 0;
+    let n = 0;
+    for (let iz = 1; iz <= 6; iz++) {
+      for (let ix = 1; ix < 32; ix++) {
+        const v = iz * 33 + ix;
+        const [ux, uy, uz] = d(v + 1, v - 1) as [number, number, number];
+        const [wx, wy, wz] = d(v + 33, v - 33) as [number, number, number];
+        const nx = wy * uz - wz * uy;
+        const ny = wz * ux - wx * uz;
+        const nz = wx * uy - wy * ux;
+        const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        const dot = (nx * (p.normals[v * 3] as number) + ny * (p.normals[v * 3 + 1] as number) + nz * (p.normals[v * 3 + 2] as number)) / len;
+        sum += (Math.acos(Math.min(1, dot)) * 180) / Math.PI;
+        n++;
+      }
+    }
+    // Measured: 12.2°.
+    expect(n).toBe(186);
+    expect(sum / n).toBeLessThan(13);
+  }, timeLimit(20_000));
+
   it("meets its neighbour bit for bit where one fades at a side and the other at a corner", () => {
     // At a step of the far reach's edge: (−17, −50) has its north, east and
     // north-east neighbours outside the set, (−18, −50), west of it, only its
@@ -297,6 +362,39 @@ function facet(p: ArrayLike<number>, a: number, b: number, c: number): [number, 
   return [nx / len, ny / len, nz / len];
 }
 
+/**
+ * Each triangle of patch `p` of `cell` against the same three grid points'
+ * facet on the ground of world `seed`: a fold faces the other way. Returns
+ * the folds and the least cosine between the two facets.
+ */
+function foldsOf(seed: number, cell: PatchCell, p: FacePatch): { folds: number; least: number } {
+  const side = 16 / cell.spacing + 1;
+  const ground = new Float64Array(p.vertexCount * 3);
+  for (let iz = 0; iz < side; iz++) {
+    for (let ix = 0; ix < side; ix++) {
+      const x = cell.ci * 16 + ix * cell.spacing;
+      const z = cell.cj * 16 + iz * cell.spacing;
+      const at = (iz * side + ix) * 3;
+      ground[at] = x;
+      ground[at + 1] = elevationSampleAt(seed, x, z).h;
+      ground[at + 2] = z;
+    }
+  }
+  let folds = 0;
+  let least = Infinity;
+  for (let t = 0; t < p.indices.length; t += 3) {
+    const a = p.indices[t] as number;
+    const b = p.indices[t + 1] as number;
+    const c = p.indices[t + 2] as number;
+    const d = facet(p.positions, a, b, c);
+    const u = facet(ground, a, b, c);
+    const dot = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];
+    if (dot <= 0) folds++;
+    least = Math.min(least, dot);
+  }
+  return { folds, least };
+}
+
 describe("facePatchCells and facePatchStitch", () => {
   it("picks the cells within reach, fine near the camera, and stitches fine to coarse", () => {
     const cells = facePatchCells(-370, -900, PATCH_REACH.high);
@@ -350,38 +448,32 @@ describe("facePatchCells and facePatchStitch", () => {
   }, timeLimit(60_000));
 
   it("at the scarp, turns no triangle over", () => {
-    // Each triangle's facet against the same three grid points' facet on the
-    // ground: a fold faces the other way. The worst, at 0.5 m on the scarp's
-    // steepest columns, still faces within 70° of the ground's.
+    // The worst, at 0.5 m on the scarp's steepest columns, still faces
+    // within 73° of the ground's.
     let folds = 0;
     let least = Infinity;
     for (const { cell, patch: p } of scarpPatches()) {
       if (p === null) continue;
-      const side = 16 / cell.spacing + 1;
-      const ground = new Float64Array(p.vertexCount * 3);
-      for (let iz = 0; iz < side; iz++) {
-        for (let ix = 0; ix < side; ix++) {
-          const x = cell.ci * 16 + ix * cell.spacing;
-          const z = cell.cj * 16 + iz * cell.spacing;
-          const at = (iz * side + ix) * 3;
-          ground[at] = x;
-          ground[at + 1] = elevationSampleAt(SEED, x, z).h;
-          ground[at + 2] = z;
-        }
-      }
-      for (let t = 0; t < p.indices.length; t += 3) {
-        const a = p.indices[t] as number;
-        const b = p.indices[t + 1] as number;
-        const c = p.indices[t + 2] as number;
-        const d = facet(p.positions, a, b, c);
-        const u = facet(ground, a, b, c);
-        const dot = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];
-        if (dot <= 0) folds++;
-        least = Math.min(least, dot);
-      }
+      const f = foldsOf(SEED, cell, p);
+      folds += f.folds;
+      least = Math.min(least, f.least);
     }
     expect(folds).toBe(0);
-    // 2026-10-12: 0.390 before the relief's tilted planes and the doubled depth.
-    expect(least).toBeGreaterThan(0.349);
+    // 2026-10-12: 0.390 before the relief's tilted planes and the doubled
+    // depth; 0.349 at 2 m before the large forms, the 4 m depth and the cap
+    // by the ground's bend.
+    expect(least).toBeGreaterThan(0.303);
   }, timeLimit(60_000));
+
+  it("turns no triangle over on a sharp ridge of another world", () => {
+    // World 42's cell (25, 34) at 0.5 m, across the ridge whose crest the
+    // mask leaves bare: without the cap by the ground's bend, 12 triangles
+    // there turned over at the 4 m depth, the worst to −0.74.
+    const cell: PatchCell = { ci: 25, cj: 34, spacing: 0.5 };
+    const p = facePatchGeometry(42, cell.ci, cell.cj, cell.spacing, NONE);
+    if (p === null) throw new Error("no patch at (25, 34)");
+    const f = foldsOf(42, cell, p);
+    expect(f.folds).toBe(0);
+    expect(f.least).toBeCloseTo(0.3487, 4);
+  }, timeLimit(20_000));
 });

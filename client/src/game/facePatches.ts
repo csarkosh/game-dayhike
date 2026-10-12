@@ -14,8 +14,8 @@
  * covers [ci·16, (ci+1)·16] × [cj·16, (cj+1)·16].
  */
 import { groundCover } from "../sim/clutter.js";
-import { FACE_SLOPE_HI, FACE_SLOPE_LO, faceReliefD } from "../sim/faceRelief.js";
-import { stepT } from "../sim/lakeShape.js";
+import { FACE_HALF_DEPTH, FACE_SLOPE_HI, FACE_SLOPE_LO, faceReliefD } from "../sim/faceRelief.js";
+import { stepT, stepTd } from "../sim/lakeShape.js";
 import { elevationSampleAt, type TerrainSample } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { WEIGHTS2_STRIDE } from "./clipmap.js";
@@ -27,7 +27,7 @@ import { waterGroundAt } from "./waterGround.js";
 export const PATCH_CELL = 16;
 /** The most a patch vertex moves out along the ground's normal, metres: the
  * relief's half-depth doubled, its whole range from the smooth face out. */
-export const PATCH_DEPTH = 2.0;
+export const PATCH_DEPTH = 2 * FACE_HALF_DEPTH;
 /** Vertex spacing (m) of the cells within the near reach. */
 export const PATCH_NEAR_SPACING = 0.5;
 /** Vertex spacing (m) of the cells beyond it, within the far reach. */
@@ -35,6 +35,11 @@ export const PATCH_FAR_SPACING = 1;
 /** The distance (m) over which the relief fades to nothing toward a cell
  * outside the patched set, so a patch never ends with its relief in the air. */
 export const PATCH_TAPER = 3;
+/** The world step (m) of the differences that give the ground's curvature:
+ * the finest grid's spacing. */
+export const PATCH_CURVE_STEP = 0.5;
+/** The most of the ground's radius of curvature the push may reach. */
+export const PATCH_BEND_SHARE = 0.5;
 
 export type PatchReach = { readonly near: number; readonly far: number };
 
@@ -107,6 +112,45 @@ export function faceMask(g: number): number {
   return stepT((g - FACE_SLOPE_LO) / (FACE_SLOPE_HI - FACE_SLOPE_LO));
 }
 
+// The taper's gradient, written by `taperInto` beside the share it returns.
+let taperDx = 0;
+let taperDz = 0;
+
+/** The taper at (x, z) as `patchTaper` gives it, its gradient into
+ * taperDx/taperDz: the step's slope along the way out of the nearest open
+ * square, nothing where the share is whole or on the square itself. */
+function taperInto(ci: number, cj: number, open: number, x: number, z: number): number {
+  taperDx = 0;
+  taperDz = 0;
+  if (open === 0) return 1;
+  let near = PATCH_TAPER;
+  let nearX = 0;
+  let nearZ = 0;
+  for (let k = 0; k < PATCH_NEIGHBOURS.length; k++) {
+    if ((open & (1 << k)) === 0) continue;
+    const [di, dj] = PATCH_NEIGHBOURS[k] as readonly [number, number];
+    const lx = (ci + di) * PATCH_CELL;
+    const lz = (cj + dj) * PATCH_CELL;
+    // The offset from the square's nearest point to (x, z), signed.
+    const ex = x < lx ? x - lx : x > lx + PATCH_CELL ? x - (lx + PATCH_CELL) : 0;
+    const ez = z < lz ? z - lz : z > lz + PATCH_CELL ? z - (lz + PATCH_CELL) : 0;
+    const d = Math.sqrt(ex * ex + ez * ez);
+    if (d < near) {
+      near = d;
+      nearX = ex;
+      nearZ = ez;
+    }
+  }
+  if (near >= PATCH_TAPER) return 1;
+  if (near > 0) {
+    // ∂near/∂(x, z) is the unit offset away from the square.
+    const slope = stepTd(near / PATCH_TAPER) / (PATCH_TAPER * near);
+    taperDx = slope * nearX;
+    taperDz = slope * nearZ;
+  }
+  return stepT(near / PATCH_TAPER);
+}
+
 /**
  * The relief's share at (x, z), a point of cell (ci, cj), toward the
  * neighbours `open` flags: a quintic step of the distance from the point to
@@ -116,43 +160,99 @@ export function faceMask(g: number): number {
  * squares and taper it alike, bit for bit.
  */
 export function patchTaper(ci: number, cj: number, open: number, x: number, z: number): number {
-  if (open === 0) return 1;
-  let near = PATCH_TAPER;
-  for (let k = 0; k < PATCH_NEIGHBOURS.length; k++) {
-    if ((open & (1 << k)) === 0) continue;
-    const [di, dj] = PATCH_NEIGHBOURS[k] as readonly [number, number];
-    const lx = (ci + di) * PATCH_CELL;
-    const lz = (cj + dj) * PATCH_CELL;
-    const ex = x < lx ? lx - x : x > lx + PATCH_CELL ? x - (lx + PATCH_CELL) : 0;
-    const ez = z < lz ? lz - z : z > lz + PATCH_CELL ? z - (lz + PATCH_CELL) : 0;
-    const d = Math.sqrt(ex * ex + ez * ez);
-    if (d < near) near = d;
-  }
-  return near >= PATCH_TAPER ? 1 : stepT(near / PATCH_TAPER);
+  return taperInto(ci, cj, open, x, z);
+}
+
+/** The ground's sharper principal curvature at (x, z), per metre, from its
+ * second derivatives (h_xx, h_zz, h_xz) and gradient: the larger magnitude of
+ * λ / sqrt(1 + g²) over the roots λ of det(H − λ A) = 0, A = I + ∇h ∇hᵀ. */
+function bendOf(s: TerrainSample, hxx: number, hzz: number, hxz: number): number {
+  const a = 1 + s.dx * s.dx + s.dz * s.dz;
+  // det(H − λA) = a λ² − b λ + c, with det(A) = 1 + g².
+  const b = hxx * (1 + s.dz * s.dz) + hzz * (1 + s.dx * s.dx) - 2 * hxz * s.dx * s.dz;
+  const c = hxx * hzz - hxz * hxz;
+  const disc = b * b - 4 * a * c;
+  const root = Math.sqrt(disc > 0 ? disc : 0);
+  return (Math.abs(b) + root) / (2 * a * Math.sqrt(a));
+}
+
+/**
+ * How sharply the ground bends at (x, z), per metre: the larger principal
+ * curvature in magnitude, concave or convex, of the ground's Hessian taken
+ * by one-sided differences of its gradient PATCH_CURVE_STEP on in x and z,
+ * and again PATCH_CURVE_STEP back, the larger of the two. The ground has
+ * creases narrower than a grid step; a one-sided difference sees a crease
+ * that lies on either side of the point, where a central one can step over
+ * it. A fixed world step, not the grid's, so a point bends alike in every
+ * patch that holds it.
+ */
+export function groundBend(seed: number, x: number, z: number, s: TerrainSample): number {
+  const e = PATCH_CURVE_STEP;
+  return bendFrom(
+    s,
+    elevationSampleAt(seed, x + e, z),
+    elevationSampleAt(seed, x - e, z),
+    elevationSampleAt(seed, x, z + e),
+    elevationSampleAt(seed, x, z - e),
+  );
+}
+
+/** `groundBend` from the ground at the point and PATCH_CURVE_STEP on and
+ * back in x and in z, sampled already. */
+function bendFrom(
+  s: TerrainSample, xp: TerrainSample, xm: TerrainSample, zp: TerrainSample, zm: TerrainSample,
+): number {
+  const e = PATCH_CURVE_STEP;
+  const on = bendOf(
+    s, (xp.dx - s.dx) / e, (zp.dz - s.dz) / e, (xp.dz - s.dz + (zp.dx - s.dx)) / (2 * e),
+  );
+  const back = bendOf(
+    s, (s.dx - xm.dx) / e, (s.dz - zm.dz) / e, (s.dz - xm.dz + (s.dx - zm.dx)) / (2 * e),
+  );
+  return on > back ? on : back;
+}
+
+/**
+ * The relief's whole range at a point whose ground bends by `bend` per
+ * metre: PATCH_DEPTH / (1 + PATCH_DEPTH · bend / PATCH_BEND_SHARE), the full
+ * depth on even ground and, where it bends, always under PATCH_BEND_SHARE of
+ * the bend's radius. Pushed out to the radius of a hollow, neighbouring
+ * points would meet at its centre and the surface fold over; on a sharp
+ * crest the mask, nothing on the crest and whole a step down its flanks,
+ * would notch it. Smooth in the bend, so the depth has no step of its own.
+ */
+export function patchDepth(bend: number): number {
+  return PATCH_DEPTH / (1 + (PATCH_DEPTH * bend) / PATCH_BEND_SHARE);
 }
 
 /**
  * The patch surface at (x, z) into `pos`, and its unit normal into `nrm`,
  * both at `at`: the ground pushed out along its normal by the masked relief,
- * `taper` times. Every position and normal a patch holds comes from here,
- * from the world point and the squares outside the set alone, so a point is
- * the same doubles in every patch that holds it, whatever its spacing.
+ * tapered toward the squares outside the set. Every position and normal a
+ * patch holds comes from here, from the world point and the squares outside
+ * the set alone, so a point is the same doubles in every patch that holds
+ * it, whatever its spacing.
  *
  * The push is k = d / sqrt(1 + g²) along n = (−h_x, 1, −h_z), with
- * d = m · PATCH_DEPTH · (v + 1) / 2. The normal is the displaced surface's,
- * from the field's own derivatives: ∂P/∂x ≈ (1, h_x, 0) + n · ∂k/∂x with
- * ∂k/∂x = (m · PATCH_DEPTH / 2 · v_x) / sqrt(1 + g²), likewise in z, the
- * slowly varying terms (the mask's, the ground normal's, sqrt(1 + g²)'s)
- * left out; then ∂P/∂z × ∂P/∂x, which is (−h_x, 1, −h_z) where the relief
- * is nothing, up on flat ground as the clipmap's. A column's flat face
- * shades flat and its joint steep whatever the grid's spacing.
+ * d = m · τ · D · (v + 1) / 2: m the mask, τ the taper and D the depth the
+ * ground's bend leaves (`patchDepth`). The normal is the displaced
+ * surface's, from the field's own derivatives: ∂P/∂x ≈ (1, h_x, 0) + n · ∂k/∂x
+ * with ∂k/∂x = (m · τ · D / 2 · v_x + m · D · (v + 1) / 2 · τ_x) / sqrt(1 + g²),
+ * likewise in z, the slowly varying terms (the mask's, the depth's, the
+ * ground normal's, sqrt(1 + g²)'s) left out; then ∂P/∂z × ∂P/∂x, which is
+ * (−h_x, 1, −h_z) where the relief is nothing, up on flat ground as the
+ * clipmap's. A column's flat face shades flat and its joint steep whatever
+ * the grid's spacing, and the taper's ramp leans as it rises.
  */
 function surfaceInto(
-  seed: number, s: TerrainSample, x: number, z: number, taper: number,
+  seed: number, s: TerrainSample, x: number, z: number, ci: number, cj: number, open: number,
+  ring: readonly TerrainSample[] | null, ri: number, rside: number,
   pos: Float64Array, nrm: Float64Array, at: number,
 ): void {
   const g2 = s.dx * s.dx + s.dz * s.dz;
-  const m = faceMask(Math.sqrt(g2)) * taper;
+  const mask = faceMask(Math.sqrt(g2));
+  const taper = mask === 0 ? 0 : taperInto(ci, cj, open, x, z);
+  const m = mask * taper;
   let kx = 0;
   let kz = 0;
   if (m === 0) {
@@ -162,14 +262,25 @@ function surfaceInto(
   } else {
     const r = faceReliefD(seed, x, z);
     const q = Math.sqrt(1 + g2);
-    const d = (m * PATCH_DEPTH * (r.v + 1)) / 2;
+    const bend = ring === null
+      ? groundBend(seed, x, z, s)
+      : bendFrom(
+        s,
+        ring[ri + 1] as TerrainSample,
+        ring[ri - 1] as TerrainSample,
+        ring[ri + rside] as TerrainSample,
+        ring[ri - rside] as TerrainSample,
+      );
+    const depth = patchDepth(bend);
+    const d = (m * depth * (r.v + 1)) / 2;
     const k = d / q;
     pos[at] = x - s.dx * k;
     pos[at + 1] = s.h + k;
     pos[at + 2] = z - s.dz * k;
-    const half = (m * PATCH_DEPTH) / 2;
-    kx = (half * r.dx) / q;
-    kz = (half * r.dz) / q;
+    const half = (m * depth) / 2;
+    const whole = (mask * depth * (r.v + 1)) / 2;
+    kx = (half * r.dx + whole * taperDx) / q;
+    kz = (half * r.dz + whole * taperDz) / q;
   }
   const ax = 1 - s.dx * kx;
   const ay = s.dx + kx;
@@ -216,6 +327,23 @@ export function facePatchGeometry(
   }
   if (!steep) return null;
 
+  // At the curvature's own step the grid holds each point's neighbours for
+  // its bend: the samples again, with a ring one step outside the cell.
+  // The same world points as `groundBend` samples, so the same bend.
+  const rside = side + 2;
+  let ring: TerrainSample[] | null = null;
+  if (spacing === PATCH_CURVE_STEP) {
+    ring = new Array<TerrainSample>(rside * rside);
+    for (let iz = -1; iz <= side; iz++) {
+      for (let ix = -1; ix <= side; ix++) {
+        const inside = iz >= 0 && iz < side && ix >= 0 && ix < side;
+        ring[(iz + 1) * rside + ix + 1] = inside
+          ? samples[iz * side + ix] as TerrainSample
+          : elevationSampleAt(seed, x0 + ix * spacing, z0 + iz * spacing);
+      }
+    }
+  }
+
   const pos = new Float64Array(count * 3);
   const nrm = new Float64Array(count * 3);
   const positions = new Float32Array(count * 3);
@@ -230,7 +358,9 @@ export function facePatchGeometry(
       const x = x0 + ix * spacing;
       const at = iz * side + ix;
       const s = samples[at] as TerrainSample;
-      surfaceInto(seed, s, x, z, patchTaper(ci, cj, stitch.open, x, z), pos, nrm, at * 3);
+      surfaceInto(
+        seed, s, x, z, ci, cj, stitch.open, ring, (iz + 1) * rside + ix + 1, rside, pos, nrm, at * 3,
+      );
       for (let c = 0; c < 3; c++) {
         positions[at * 3 + c] = pos[at * 3 + c] as number;
         normals[at * 3 + c] = nrm[at * 3 + c] as number;
