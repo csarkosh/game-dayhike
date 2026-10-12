@@ -9,7 +9,9 @@ import "../../src/sim/passes/index.js";
 import { createAtmosphere } from "../../src/game/atmosphere.js";
 import { terrainMaterialFor } from "../../src/game/renderer.js";
 import { FACE_PATCH_MATERIAL, createFacePatches } from "../../src/game/facePatchMeshes.js";
-import { PATCH_REACH, facePatchCells, facePatchCover, facePatchStitch, type PatchCell } from "../../src/game/facePatches.js";
+import {
+  NO_STITCH, PATCH_REACH, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch, type PatchCell,
+} from "../../src/game/facePatches.js";
 import { createSyncJobs, type SyncJobs } from "../../src/game/syncJobs.js";
 import { TerrainTexturePlugin } from "../../src/game/terrainTexture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -444,4 +446,74 @@ describe("createFacePatches, as jobs", () => {
     expect(casting).toEqual(new Set(patchMeshes(s)));
     patches.dispose();
   }, timeLimit(120_000));
+});
+
+describe("createFacePatches, as jobs, on this machine's clock", () => {
+  /** Frame times (ms) as max and mean, to a tenth. */
+  function spread(ms: number[]): { max: number; mean: number } {
+    const round = (v: number): number => Math.round(v * 10) / 10;
+    return { max: round(Math.max(...ms)), mean: round(ms.reduce((a, b) => a + b, 0) / ms.length) };
+  }
+
+  it("keeps the first update to the near band, and a crossing's frames to the share and a slice", { tags: ["wall-clock"], timeout: timeLimit(120_000) }, () => {
+    const s = scene();
+    const jobs = createSyncJobs(() => performance.now());
+    const patches = createFacePatches(s, SEED, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), jobs);
+    // The ground's tables are made on their first sample, which in the game
+    // the terrain's first build pays.
+    facePatchGeometry(SEED, 0, 0, 2, NO_STITCH);
+    /** One frame of `update` at (x, z) and the share: its time (ms). */
+    const frame = (x: number, z: number): number => {
+      const t0 = performance.now();
+      patches.update(x, z);
+      jobs.run();
+      return performance.now() - t0;
+    };
+    // The first update, from the west edge of the reference pose's cell.
+    const at = { x: -383, z: CAM.z };
+    const t0 = performance.now();
+    patches.update(at.x, at.z);
+    const first = performance.now() - t0;
+    const filling: number[] = [];
+    while (patches.meshCount() === 20 && filling.length < 10_000) filling.push(frame(at.x, at.z));
+    // The work's time: the frames run back to back.
+    const filled = performance.now() - t0;
+    // A walk east to the cell's east line, 172 frames, and 30 on: the idle
+    // work builds the crossing ahead, and the crossing's frame draws it.
+    const walking: number[] = [];
+    let crossed = -1;
+    for (let f = 0; f < 202; f++) {
+      const was = patches.cover()?.x;
+      at.x += WALKING / 60;
+      walking.push(frame(at.x, at.z));
+      if (crossed < 0 && patches.cover()?.x !== was) crossed = f;
+    }
+    // Facing west, the idle work building the cell west, then a step east
+    // over the next line: nothing built ahead for it, the job's frames until
+    // it is drawn.
+    at.x = -352.2;
+    frame(at.x, at.z);
+    at.x -= 0.01;
+    for (let f = 0; f < 600 && (jobs.last.idle > 0 || f < 2); f++) frame(at.x, at.z);
+    at.x += 0.41;
+    const unforeseen: number[] = [];
+    while (patches.cover()?.x !== -344 && unforeseen.length < 10_000) unforeseen.push(frame(at.x, at.z));
+    // On the development machine: the first update 99 to 101 ms, where it
+    // built every cell at once in about 600; the far and wide bands 605 to
+    // 636 ms over 159 to 166 frames, a frame 3.2 ms on average and 4.5 to
+    // 5.2 at most; the walk 1.1 ms a frame on average, 4.3 at most, and the
+    // crossing's frame 2.6 to 3.2 ms, where it took about 120; the crossing
+    // not built ahead 34 to 36 frames, 3.2 to 3.4 ms a frame on average and
+    // 4.1 to 6.3 at most. The bars leave room for a busier machine and still
+    // catch a crossing built in one frame again.
+    expect(crossed).toBe(171);
+    expect(first).toBeLessThan(200);
+    expect(walking[crossed]).toBeLessThan(10);
+    for (const ms of [filling, walking, unforeseen]) {
+      expect(spread(ms).mean).toBeLessThan(8);
+      expect(spread(ms).max).toBeLessThan(20);
+    }
+    expect(filled).toBeLessThan(1500);
+    patches.dispose();
+  });
 });

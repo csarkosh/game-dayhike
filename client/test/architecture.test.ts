@@ -702,6 +702,7 @@ describe("wall-clock tests", () => {
       [...report.tagged].sort(),
       "the wall-clock tests changed: if that is meant, update this list and the files test:wall-clock names; if not, remove the tag",
     ).toEqual([
+      "game/facePatchMeshes.test.ts > keeps the first update to the near band, and a crossing's frames to the share and a slice",
       "game/forestField.test.ts > keeps a warm one-cell-move collect fast — the 25-33 ms rescan must not return",
       "game/oceanBreaker.test.ts > costs under 0.3 ms an update on average over 600 updates of the widest cove",
       "game/swashTable.test.ts > costs under 0.2 ms an update on average over 600 updates of the widest cove",
