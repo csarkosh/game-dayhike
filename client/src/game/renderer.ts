@@ -72,7 +72,6 @@ import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
 import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, setTerrainSward, setTerrainWetness, sharedGroundArrays } from "./terrainTexture.js";
 import { FACE_PATCH_MATERIAL, FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS, createFacePatches } from "./facePatchMeshes.js";
-import { PATCH_REACH, facePatchCover } from "./facePatches.js";
 import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
@@ -377,20 +376,23 @@ const CLIPMAP_UPLOAD_MS = 1;
  * move would make; a guess the camera does not follow is dropped.
  *
  * Given `cover`, each rebuild asks it for the ground another surface covers
- * for the camera it builds for (the face patches', `facePatchCover`), and
- * the rings it reaches leave their triangles there out (`CoveredGround`).
+ * as the rebuild begins (the face patches' drawn now, `FacePatches.cover`),
+ * and the rings it reaches leave their triangles there out (`CoveredGround`);
+ * null leaves none out.
  */
 export function createClipmap(
   scene: Scene,
   seed: number,
   jobs?: SyncJobs,
-  options: { deferred?: boolean; cover?: (camX: number, camZ: number) => CoveredGround } = {},
+  options: { deferred?: boolean; cover?: (camX: number, camZ: number) => CoveredGround | null } = {},
 ): Clipmap {
   const rings: RingSamples[] = [];
   const meshes: Mesh[] = [];
   /** The origins each ring's buffers were built from: its own, the finer
    * ring's (its hole) and the coarser ring's (its border blend). */
-  const drawn: { x: number; z: number; fx: number; fz: number; cx: number; cz: number; kx: number; kz: number }[] = [];
+  const drawn: {
+    x: number; z: number; fx: number; fz: number; cx: number; cz: number; kx: number; kz: number; kr: number; kf: number;
+  }[] = [];
   const crossing = createCrossing();
   const view = { x: 0, z: 0 };
   /** The covered ground of the rebuild in progress, or of the last. */
@@ -401,13 +403,20 @@ export function createClipmap(
     covered !== null && coversRing(covered, (rings[level] as RingSamples).spacing) ? covered.x : NaN;
   const coverZ = (level: number): number =>
     covered !== null && coversRing(covered, (rings[level] as RingSamples).spacing) ? covered.z : NaN;
+  /** How far ring `level`'s covered ground reaches, and its fine bound: NaN
+   * where none of it can be left out. */
+  const coverReach = (level: number): number =>
+    covered !== null && coversRing(covered, (rings[level] as RingSamples).spacing) ? covered.reach : NaN;
+  const coverFine = (level: number): number =>
+    covered !== null && coversRing(covered, (rings[level] as RingSamples).spacing) ? covered.fine : NaN;
 
   /**
    * Whether ring `level`'s buffers are stale: it moved, the finer ring inside
    * it moved (the hole in its index buffer follows the finer ring's
    * footprint), the coarser ring outside it moved (its border blends to the
    * coarser ring's samples, `coarseHeight`), or the ground it leaves out
-   * under the covering surface is measured from somewhere else.
+   * under the covering surface is measured from somewhere else or reaches
+   * elsewhere.
    *
    * The coarser ring's clause never adds an emit the first two do not already make:
    * `snapOrigin` puts ring L on a lattice of 2^(L+1), and any camera crossing
@@ -420,7 +429,8 @@ export function createClipmap(
    * the camera's 16 m cell, and every ring that can leave any out (spacing
    * up to 16 m) moves, or has the ring inside it move, when the camera
    * crosses a cell line; the coarser rings measure it from nowhere (NaN) and
-   * never re-emit for it.
+   * never re-emit for it. Its reach changes where the face patches' first
+   * update draws its near band and then the rest, from the same cell.
    */
   function stale(level: number): boolean {
     const ring = rings[level] as RingSamples;
@@ -430,7 +440,8 @@ export function createClipmap(
     return d === undefined || d.x !== ring.originX || d.z !== ring.originZ ||
       (finer !== null && (d.fx !== finer.originX || d.fz !== finer.originZ)) ||
       (coarser !== null && (d.cx !== coarser.originX || d.cz !== coarser.originZ)) ||
-      !Object.is(d.kx, coverX(level)) || !Object.is(d.kz, coverZ(level));
+      !Object.is(d.kx, coverX(level)) || !Object.is(d.kz, coverZ(level)) ||
+      !Object.is(d.kr, coverReach(level)) || !Object.is(d.kf, coverFine(level));
   }
 
   /** Ring `level`'s buffers made again into `out`, in slices. */
@@ -456,7 +467,7 @@ export function createClipmap(
       x: ring.originX, z: ring.originZ,
       fx: finer?.originX ?? NaN, fz: finer?.originZ ?? NaN,
       cx: coarser?.originX ?? NaN, cz: coarser?.originZ ?? NaN,
-      kx: coverX(level), kz: coverZ(level),
+      kx: coverX(level), kz: coverZ(level), kr: coverReach(level), kf: coverFine(level),
     };
   }
 
@@ -2177,7 +2188,9 @@ function buildRenderer(
     ? null
     : createClipmap(scene, forest.seed, jobs, {
       deferred: options.deferClipmap,
-      cover: (x, z) => facePatchCover(x, z, PATCH_REACH[tier]),
+      // The ground the patches drawn now cover, not the camera's: theirs
+      // may still be building. They are made below, and updated before it.
+      cover: () => facePatches?.cover() ?? null,
     });
   partOf(clipmap);
   if (clipmap !== null) {
@@ -2292,7 +2305,7 @@ function buildRenderer(
   // in the reflections, through the same stand-in, and in the rain's map.
   const facePatches = forest === null || facePatchMaterial === null
     ? null
-    : createFacePatches(scene, forest.seed, tier, facePatchMaterial, {
+    : createFacePatches(scene, forest.seed, tier, facePatchMaterial, jobs, {
       shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
       reflections: {
         add: (mesh) => {
@@ -3025,9 +3038,10 @@ function buildRenderer(
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
-        // the player, flying 500 m away shows void with no error.
-        clipmap?.update(freecam.x, freecam.z);
+        // the player, flying 500 m away shows void with no error. The patches
+        // go first: the clipmap leaves out the ground they draw over now.
         facePatches?.update(freecam.x, freecam.z);
+        clipmap?.update(freecam.x, freecam.z);
         water?.update(freecam.x, freecam.z, oceanSeconds, lighting.hour);
         updateWet(freecam.x, freecam.z);
         propMeshes?.update(freecam.x, freecam.z);
@@ -3073,8 +3087,9 @@ function buildRenderer(
 
       const local = state.players.get(localId);
       if (local) {
-        clipmap?.update(local.pos.x, local.pos.z);
+        // The patches first, as above.
         facePatches?.update(local.pos.x, local.pos.z);
+        clipmap?.update(local.pos.x, local.pos.z);
         water?.update(local.pos.x, local.pos.z, oceanSeconds, lighting.hour);
         updateWet(local.pos.x, local.pos.z);
         propMeshes?.update(local.pos.x, local.pos.z);

@@ -209,6 +209,64 @@ describe("the scheduler", () => {
     expect([light.at, heavy.at]).toEqual([0, 1]);
   });
 
+  it("never runs a patient job to its end at once, and gives it what the other jobs leave", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const slow = { at: null as number | null }, quick = { at: null as number | null };
+    const patches = {}, rings = {};
+    // 100 slices of 1 ms begun first, as patient; then 12 of 1 ms.
+    jobs.begin(patches, job(t, 100, 1, slow, () => jobs.frame), true);
+    jobs.begin(rings, job(t, 12, 1, quick, () => jobs.frame));
+    const late: number[] = [];
+    for (let f = 0; f < 30; f++) {
+      jobs.run();
+      late.push(jobs.last.late);
+    }
+    // The other first, four slices a frame, though begun after; then the
+    // patient one at four a frame, never late: 25 frames from frame 3.
+    expect(late.every((n) => n === 0)).toBe(true);
+    expect([quick.at, slow.at]).toEqual([2, 27]);
+    expect(jobs.pending(patches)).toBe(false);
+  });
+
+  it("keeps a patient job patient when it is begun again, and its place behind the others", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const first = { at: null as number | null }, second = { at: null as number | null }, other = { at: null as number | null };
+    const patches = {}, rings = {};
+    jobs.begin(patches, job(t, 40, 1, first, () => jobs.frame), true);
+    jobs.run();
+    jobs.begin(rings, job(t, 8, 1, other, () => jobs.frame));
+    jobs.begin(patches, job(t, 40, 1, second, () => jobs.frame), true);
+    for (let f = 1; f < 14; f++) {
+      jobs.run();
+      expect(jobs.last.late).toBe(0);
+    }
+    expect([first.at, other.at, second.at]).toEqual([null, 2, 12]);
+  });
+
+  it("starts an idle slice said to be long only where it fits, or first in a frame", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const ran: number[] = [];
+    // A slice of 1.5 ms, then two it says take 3 ms each.
+    jobs.idle({}, (function* () {
+      t.advance(1.5);
+      ran.push(jobs.frame);
+      yield 3;
+      t.advance(3);
+      ran.push(jobs.frame);
+      yield 3;
+      t.advance(3);
+      ran.push(jobs.frame);
+    })());
+    for (let f = 0; f < 4; f++) jobs.run();
+    // Frame 0: the first; the next would end at 4.5 ms, so it waits for
+    // frame 1, where it is first, and the third, which would end at 6 ms,
+    // for frame 2.
+    expect(ran).toEqual([0, 1, 2]);
+  });
+
   it("gives idle work only the budget left while no job is pending, and ends work it drops with return", () => {
     const t = testClock();
     const jobs = createSyncJobs(t.clock);

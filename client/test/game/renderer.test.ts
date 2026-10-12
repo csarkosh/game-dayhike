@@ -273,7 +273,9 @@ import {
   RING_COUNT,
   type RingSamples,
 } from "../../src/game/clipmap.js";
-import { PATCH_REACH, facePatchCover } from "../../src/game/facePatches.js";
+import { PATCH_REACH, facePatchCells, facePatchCover, patchKey } from "../../src/game/facePatches.js";
+import { FACE_PATCH_MATERIAL, createFacePatches } from "../../src/game/facePatchMeshes.js";
+import { createSyncJobs } from "../../src/game/syncJobs.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { Level } from "../../src/sim/level.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
@@ -542,6 +544,71 @@ describe("createClipmap", () => {
     expect(asked).toBe(1);
     expect(clipmap.meshes.map((m) => m.getTotalIndices() / 3)).toEqual(atOrigin);
     clipmap.dispose();
+  }, timeLimit(120_000));
+
+  it("leaves out only the ground the patches drawn cover, while the patches of a crossing still build", () => {
+    // The scarp, the patches and the rings on one scheduler, wired as the
+    // renderer wires them: the patches updated first, the rings asking them.
+    const scarp = 627994160;
+    const s = scene();
+    let now = 0;
+    let frames = 0;
+    const jobs = createSyncJobs(() => (now += 0.1));
+    const frame = (x: number, z: number): void => {
+      patches.update(x, z);
+      clipmap.update(x, z);
+      jobs.run();
+      expect(jobs.last.late).toBe(0);
+      now = Math.max(now, ++frames * (1000 / 60));
+    };
+    const patches = createFacePatches(s, scarp, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), jobs);
+    const asked: { x: number; reach: number }[] = [];
+    const clipmap = createClipmap(s, scarp, jobs, {
+      cover: () => {
+        const c = patches.cover();
+        if (c !== null) asked.push({ x: c.x, reach: c.reach });
+        return c;
+      },
+    });
+    // Standing in cell (−24, −57), 0.2 m from its east line: the first
+    // frame draws the near band and the rings leave out what it covers.
+    const at = { x: -368.2, z: -900 };
+    frame(at.x, at.z);
+    expect(asked).toEqual([{ x: -376, reach: 48 - 16 * Math.SQRT2 }]);
+    while (patches.cover()?.reach !== 400 - 16 * Math.SQRT2 && frames < 1000) frame(at.x, at.z);
+    expect(frames).toBe(63);
+    // A step east, over the patches' line and ring 0's: the rings' job runs
+    // first and asks while the patches of cell (−23, −57) still build, and is
+    // told the cover of the set drawn, cell (−24, −57)'s.
+    at.x += 0.4;
+    frame(at.x, at.z);
+    expect(asked.slice(1)).toEqual([{ x: -376, reach: 400 - 16 * Math.SQRT2 }]);
+    expect(patches.cover()?.x).toBe(-376);
+    let pending = 0;
+    while (patches.cover()?.x === -376 && pending < 1000) {
+      frame(at.x, at.z);
+      pending++;
+    }
+    // The patches' 142 cells, nothing built ahead from a standstill, drawn
+    // 25 frames on; the rings, not moved since, leave out what they did.
+    expect(pending).toBe(25);
+    expect(asked.length).toBe(2);
+    // Every square that cover leaves ground out of is in the set now drawn.
+    const drawn = new Set(facePatchCells(-360, -904, PATCH_REACH.high).map((c) => patchKey(c.ci, c.cj)));
+    const old = facePatchCover(-376, -904, PATCH_REACH.high);
+    for (const c of facePatchCells(-376, -904, PATCH_REACH.high)) {
+      if (Math.hypot((c.ci + 0.5) * 16 - old.x, (c.cj + 0.5) * 16 - old.z) > old.reach) continue;
+      expect(drawn.has(patchKey(c.ci, c.cj)), `square ${c.ci}, ${c.cj}`).toBe(true);
+    }
+    // On to ring 0's next line, 2 m east: the rings ask again, and are told
+    // the new set's.
+    while (at.x < -365.8) {
+      at.x += 0.4;
+      frame(at.x, at.z);
+    }
+    expect(asked.slice(2)).toEqual([{ x: -360, reach: 400 - 16 * Math.SQRT2 }]);
+    clipmap.dispose();
+    patches.dispose();
   }, timeLimit(120_000));
 
   it("builds one named mesh per ring and disposes them all", () => {
@@ -932,11 +999,17 @@ describe("world shell wiring", () => {
     // bound and run at once.
     expect(src).toContain("const jobs = createSyncJobs(() => performance.now());");
     expect(src).toContain("createClipmap(scene, forest.seed, jobs, {\n      deferred: options.deferClipmap,");
-    // The rings leave out the ground the face patches draw over, at the tier's reach.
-    expect(src).toContain("cover: (x, z) => facePatchCover(x, z, PATCH_REACH[tier]),");
+    // The rings leave out the ground the face patches drawn now cover, and
+    // the patches build on the same scheduler.
+    expect(src).toContain("cover: () => facePatches?.cover() ?? null,");
+    expect(src).toContain("createFacePatches(scene, forest.seed, tier, facePatchMaterial, jobs, {");
     expect(slice("const clutterMeshes =", "const bladeMeshes =")).toContain("jobs,");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "hasWildlife:");
+    // The patches before the clipmap in each, so a set built at once is the
+    // one the rings' rebuild in the same frame reads.
+    expect(freecamBranch).toContain("facePatches?.update(freecam.x, freecam.z);\n        clipmap?.update(freecam.x, freecam.z);");
+    expect(playerBranch).toContain("facePatches?.update(local.pos.x, local.pos.z);\n        clipmap?.update(local.pos.x, local.pos.z);");
     expect(freecamBranch.match(/jobs\.run\(\)/g)).toHaveLength(1);
     expect(playerBranch.match(/jobs\.run\(\)/g)).toHaveLength(1);
     // After every shell's update in each branch.

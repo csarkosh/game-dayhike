@@ -38,6 +38,13 @@
  * drawn, and the picture is still never more than six frames or 100 ms
  * behind the first crossing it has not yet shown.
  *
+ * A patient job (`begin`'s `patient`) is never late: it is the rebuild of a
+ * shell whose meshes draw the last set it applied, whole and correct, until
+ * the next set is applied, so waiting costs detail and never shows a hole —
+ * the face patches', whose crossing builds far more than six frames' share.
+ * It runs after every other job, with the share they leave, and is never run
+ * to its end at once; while it is pending no idle work runs.
+ *
  * Pure and Babylon-free: time is the clock handed in, so a test drives it.
  */
 
@@ -72,7 +79,9 @@ export const SYNC_LATE_MS_MAX = 100;
 
 /** A rebuild in slices: each `next()` runs one slice, and the call that
  * returns `done` has applied the result. A slice may yield what it expects
- * the next to take (ms); nothing yielded means a small one. */
+ * the next to take (ms); nothing yielded means a small one. Idle work's
+ * slices may say so too, and one that would not fit in what is left of a
+ * frame's share waits for the next, unless nothing has run yet this frame. */
 export type Slices<T = void> = Generator<number | void, T, void>;
 
 /** Elements a slice of `sortSlices` moves before it yields. */
@@ -145,8 +154,9 @@ export async function stepSlices<T>(slices: Slices<T>, yieldEvery: number, stopp
 export type SyncJobs = {
   /** Queues `slices` as `owner`'s job, begun this frame. An owner has at most
    * one job: one it already has is dropped unfinished, and the new one takes
-   * its place in the queue and its deadline. */
-  begin(owner: object, slices: Slices): void;
+   * its place in the queue and its deadline. A `patient` job is never late:
+   * it queues behind every other and is never run to its end at once. */
+  begin(owner: object, slices: Slices, patient?: boolean): void;
   /** Drops `owner`'s pending job unfinished; its meshes keep what they drew.
    * A job dropped here or by `begin` is ended with `return`, so its `finally`
    * blocks run. */
@@ -168,8 +178,9 @@ export type SyncJobs = {
 };
 
 /** A queued job: its slices, the frame whose crossing began it and the
- * clock then, and what its next slice is expected to take (ms). */
-type Job = { owner: object; slices: Slices; begun: number; begunAt: number; next: number };
+ * clock then, what its next slice is expected to take (ms), and whether it
+ * is never late. */
+type Job = { owner: object; slices: Slices; begun: number; begunAt: number; next: number; patient: boolean };
 
 /**
  * The scheduler. `clock` is read as a job begins, once as `run` starts and
@@ -178,7 +189,7 @@ type Job = { owner: object; slices: Slices; begun: number; begunAt: number; next
 export function createSyncJobs(clock: () => number): SyncJobs {
   const queue: Job[] = [];
   /** Idle work, one per owner, and whose turn it is. */
-  const idle: { owner: object; slices: Slices }[] = [];
+  const idle: { owner: object; slices: Slices; next: number }[] = [];
   let idleTurn = 0;
   let frame = 0;
   const last = { slices: 0, late: 0, completed: 0, idle: 0 };
@@ -186,6 +197,14 @@ export function createSyncJobs(clock: () => number): SyncJobs {
   function remove(job: Job): void {
     const at = queue.indexOf(job);
     if (at >= 0) queue.splice(at, 1);
+  }
+
+  /** Queues `job`: a patient one last, any other ahead of every patient one,
+   * so the slices go to the jobs that can be late first. */
+  function enqueue(job: Job): void {
+    const at = job.patient ? -1 : queue.findIndex((j) => j.patient);
+    if (at < 0) queue.push(job);
+    else queue.splice(at, 0, job);
   }
 
   /** One slice of `job`; true when it has applied. A slice that throws takes
@@ -205,10 +224,10 @@ export function createSyncJobs(clock: () => number): SyncJobs {
   }
 
   return {
-    begin(owner, slices) {
+    begin(owner, slices, patient = false) {
       const held = queue.find((job) => job.owner === owner);
       if (held === undefined) {
-        queue.push({ owner, slices, begun: frame, begunAt: clock(), next: 0 });
+        enqueue({ owner, slices, begun: frame, begunAt: clock(), next: 0, patient });
         return;
       }
       // Dropped with `return`, so whatever it holds is handed back. The
@@ -216,6 +235,11 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       held.slices.return(undefined);
       held.slices = slices;
       held.next = 0;
+      if (held.patient !== patient) {
+        remove(held);
+        held.patient = patient;
+        enqueue(held);
+      }
     },
     cancel(owner) {
       const held = queue.find((job) => job.owner === owner);
@@ -229,7 +253,7 @@ export function createSyncJobs(clock: () => number): SyncJobs {
     idle(owner, slices) {
       const at = idle.findIndex((work) => work.owner === owner);
       if (at >= 0) idle.splice(at, 1)[0]?.slices.return(undefined);
-      if (slices !== null) idle.push({ owner, slices });
+      if (slices !== null) idle.push({ owner, slices, next: 0 });
     },
     run() {
       last.slices = 0;
@@ -243,14 +267,15 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       // every frame, and allocates nothing.
       for (let i = 0; i < queue.length;) {
         const job = queue[i] as Job;
-        if (frame - job.begun < SYNC_LATE_FRAMES_MAX && start - job.begunAt < SYNC_LATE_MS_MAX) {
+        if (job.patient || (frame - job.begun < SYNC_LATE_FRAMES_MAX && start - job.begunAt < SYNC_LATE_MS_MAX)) {
           i++;
           continue;
         }
         while (!slice(job)) last.late++;
         last.late++;
       }
-      // Then slices, oldest job first, while the budget lasts. A job whose
+      // Then slices, oldest job first and the patient ones last, while the
+      // frame's share lasts. A job whose
       // next slice would not fit in what is left waits for the next frame
       // (unless nothing has run yet this frame), and the jobs behind it go on.
       for (let i = 0, ran = last.slices; i < queue.length;) {
@@ -266,12 +291,19 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       }
       // Then idle work, with what is left, while nothing is pending: a slice
       // of each owner's in turn, so none waits on another's.
-      while (queue.length === 0 && idle.length > 0 && clock() - start < SYNC_BUDGET_MS) {
+      // A slice said to be longer than what is left waits for the next
+      // frame, where it is first.
+      while (queue.length === 0 && idle.length > 0) {
+        const spent = clock() - start;
+        if (spent >= SYNC_BUDGET_MS) break;
         idleTurn %= idle.length;
-        const work = idle[idleTurn] as { owner: object; slices: Slices };
+        const work = idle[idleTurn] as { owner: object; slices: Slices; next: number };
+        if (last.slices + last.idle > 0 && spent + work.next > SYNC_BUDGET_MS) break;
         let done = true;
         try {
-          done = work.slices.next().done === true;
+          const step = work.slices.next();
+          done = step.done === true;
+          work.next = !done && typeof step.value === "number" ? step.value : 0;
         } finally {
           if (done) idle.splice(idleTurn, 1);
           else idleTurn++;
