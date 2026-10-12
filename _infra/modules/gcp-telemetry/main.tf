@@ -49,6 +49,17 @@ resource "google_project_iam_member" "admin_reads" {
   member  = "serviceAccount:${google_service_account.telemetry.email}"
 }
 
+# The linked dataset is a BigQuery dataset of its own, and a query of its
+# view is refused without read access on it, whatever the log view grants:
+# "User does not have permission to query table", as found on the first
+# sign-in. Read-only, on this dataset alone.
+resource "google_bigquery_dataset_iam_member" "admin_reads_dataset" {
+  project    = var.project_id
+  dataset_id = google_logging_linked_dataset.telemetry.link_id
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.telemetry.email}"
+}
+
 resource "google_cloud_run_v2_service" "telemetry" {
   project  = var.project_id
   location = var.region

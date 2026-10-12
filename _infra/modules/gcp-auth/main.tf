@@ -48,6 +48,12 @@ resource "google_identity_platform_config" "this" {
     var.authorized_domains,
   )
 
+  lifecycle {
+    # The API reports an empty multi-tenant block the configuration never
+    # declares; without this every plan would want to remove it.
+    ignore_changes = [multi_tenant]
+  }
+
   depends_on = [google_project_service.identitytoolkit]
 }
 
