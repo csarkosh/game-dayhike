@@ -18,6 +18,41 @@ resource "google_project_service" "artifactregistry" {
   disable_on_destroy = false
 }
 
+# ---- the rooms ------------------------------------------------------------------
+# Rooms used to live in the signaling process's memory, which pinned the
+# service to one instance. They live in Firestore now (`server/src/
+# sharedRegistry.ts`, `firestoreStore.ts`): the project's default database,
+# which is the one the free quota applies to — 20,000 writes, 50,000 reads and
+# 20,000 deletes a day, which is hundreds of parties — in the service's own
+# region. Nothing is stored but the open rooms, the mail between instances
+# while a room spans them, and each instance's last word, so the database
+# holds a few kilobytes and costs nothing idle.
+
+resource "google_project_service" "firestore" {
+  project            = var.project_id
+  service            = "firestore.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_firestore_database" "rooms" {
+  project     = var.project_id
+  name        = "(default)"
+  location_id = var.region
+  type        = "FIRESTORE_NATIVE"
+
+  # Nothing here outlives a match; a lost database is an empty one.
+  deletion_policy = "DELETE"
+
+  depends_on = [google_project_service.firestore]
+}
+
+# The service's one permission: read and write its own documents.
+resource "google_project_iam_member" "signaling_datastore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.signaling.email}"
+}
+
 resource "google_artifact_registry_repository" "signaling" {
   project       = var.project_id
   location      = var.region
@@ -74,7 +109,7 @@ resource "google_artifact_registry_repository" "signaling" {
 }
 
 # Its own identity rather than the default compute service account, which
-# carries project-wide editor. This service needs no GCP permissions at all.
+# carries project-wide editor. Its one permission is on Firestore, above.
 resource "google_service_account" "signaling" {
   project      = var.project_id
   account_id   = "fps-signaling"
@@ -95,11 +130,13 @@ resource "google_cloud_run_v2_service" "signaling" {
     scaling {
       min_instance_count = 0
 
-      # LOAD-BEARING, and not a cost control. RoomRegistry holds rooms in
-      # process memory, so a second instance would split a room across two
-      # processes and its peers would never discover each other. Raising this
-      # breaks multiplayer in a way no test here would catch.
-      max_instance_count = 1
+      # The rooms are in Firestore, shared by every instance, so this is a
+      # cost ceiling and nothing more: a second instance comes only when the
+      # first holds its full count of sockets, and a room split across the
+      # two is carried between them by the store. With the rooms in memory
+      # (`REGISTRY=memory`) this must be 1, or a room's peers never find each
+      # other.
+      max_instance_count = var.max_instances
     }
 
     # A signaling socket lives as long as the match, so the request timeout is
@@ -110,8 +147,13 @@ resource "google_cloud_run_v2_service" "signaling" {
     # window without the other players seeing anything.
     timeout = "3600s"
 
-    # One instance must therefore hold every concurrent socket: 250 is 50 full
-    # games, far past what this needs.
+    # A party's sockets on one instance cost the store nothing: every relay
+    # between them is in memory. Best effort only — Cloud Run makes no
+    # promise — so a party split across instances must work too, and does.
+    session_affinity = true
+
+    # The sockets one instance holds: 250 is 50 full games before a second
+    # instance is started.
     max_instance_request_concurrency = 250
 
     containers {
@@ -128,6 +170,13 @@ resource "google_cloud_run_v2_service" "signaling" {
       env {
         name  = "ROLE"
         value = "signaling"
+      }
+
+      # Where the rooms live (`server/src/index.ts`): the store every instance
+      # shares, which is what `max_instances` above relies on.
+      env {
+        name  = "REGISTRY"
+        value = var.registry
       }
 
       resources {
@@ -185,7 +234,7 @@ resource "google_cloud_run_v2_service" "signaling" {
     # silently rolls back the last deploy.
     #
     # `scaling` is the service-level block (distinct from template.scaling, which
-    # carries the load-bearing max_instance_count = 1). The API reports it with
+    # carries max_instance_count). The API reports it with
     # zeroed fields even though the config never declares it, so without this the
     # plan is permanently dirty and real drift becomes impossible to spot.
     #

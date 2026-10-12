@@ -67,9 +67,11 @@ provider "google" {
 module "gcp_signaling" {
   source = "./modules/gcp-signaling"
 
-  project_id = var.gcp_project_id
-  region     = var.gcp_region
-  image      = var.signaling_image
+  project_id    = var.gcp_project_id
+  region        = var.gcp_region
+  image         = var.signaling_image
+  registry      = var.signaling_registry
+  max_instances = var.signaling_max_instances
 
   providers = {
     google = google
