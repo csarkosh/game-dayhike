@@ -9,6 +9,7 @@ import {
   BASE_SPACING,
   blendWeight,
   coarseHeight,
+  COVER_FINE_SPACING,
   coversRing,
   createRingSamples,
   HALF_SIDE,
@@ -29,7 +30,7 @@ import {
   type RingArrays,
   type RingSamples,
 } from "../../src/game/clipmap.js";
-import { PATCH_CELL, PATCH_REACH, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch } from "../../src/game/facePatches.js";
+import { PATCH_CELL, PATCH_REACH, PATCH_WIDE_SPACING, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch } from "../../src/game/facePatches.js";
 import { finish as finishSlices } from "../../src/game/syncJobs.js";
 import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { groundCover } from "../../src/sim/clutter.js";
@@ -788,7 +789,7 @@ describe("covered ground", () => {
   it("writes every triangle, as before, where nothing is covered", () => {
     const ring0 = createRingSamples(SEED, 0, 0, 0);
     const ring1 = createRingSamples(SEED, 1, 0, 0);
-    const far: CoveredGround = { x: 100_000, z: 100_000, reach: 400, cell: PATCH_CELL };
+    const far: CoveredGround = { x: 100_000, z: 100_000, reach: 400, fine: 160, cell: PATCH_CELL };
     for (const [ring, hole, count] of [
       [ring0, null, 98304],
       [ring1, holeCellsFor(ring1, ring0), 73728],
@@ -839,8 +840,9 @@ describe("covered ground", () => {
   it("at the reference pose, leaves out the ground under fully steep patched squares: the counts", () => {
     const covered = facePatchCover(CAM.x, CAM.z, PATCH_REACH.high);
     // The camera's cell (−24, −57), its centre; the wide reach less a
-    // cell's diagonal.
-    expect(covered).toEqual({ x: -376, z: -904, reach: 400 - 16 * Math.SQRT2, cell: 16 });
+    // cell's diagonal, and the far reach for ring 0's 1 m vertices.
+    expect(covered).toEqual({ x: -376, z: -904, reach: 400 - 16 * Math.SQRT2, fine: 160, cell: 16 });
+    expect(COVER_FINE_SPACING).toBe(PATCH_WIDE_SPACING);
     const counts = scarpRings().map(({ ring, hole }) => leftOut(ring, hole, covered).length);
     // Of 32,768 triangles in ring 0 and 24,576 in each ring beyond; ring 4
     // begins about 500 m out, past the reach.
@@ -866,11 +868,43 @@ describe("covered ground", () => {
     }
   }, timeLimit(120_000));
 
-  it("leaves out only fully steep triangles over a patch with the whole relief", () => {
-    const covered = facePatchCover(CAM.x, CAM.z, PATCH_REACH.high);
+  it("finds ring 0's squares within medium's far reach wherever the camera stands in its cell, not low's", () => {
+    // The square of every ring 0 vertex, by its centre's distance from the
+    // camera's cell's centre, the camera swept over a cell a quarter metre
+    // at a time: a ring 0 vertex lies in a square whose centre is up to
+    // 64 m off in each axis, 90.5 m on the diagonal.
+    const c = PATCH_CELL / 2;
+    let farthest = 0;
+    for (let ox = -c; ox < c; ox += 0.25) {
+      for (let oz = -c; oz < c; oz += 0.25) {
+        const x0 = snapOrigin(c + ox, BASE_SPACING);
+        const z0 = snapOrigin(c + oz, BASE_SPACING);
+        for (const vx of [x0, x0 + RING_CELLS * BASE_SPACING]) {
+          for (const vz of [z0, z0 + RING_CELLS * BASE_SPACING]) {
+            const sx = (Math.floor(vx / PATCH_CELL) + 0.5) * PATCH_CELL - c;
+            const sz = (Math.floor(vz / PATCH_CELL) + 0.5) * PATCH_CELL - c;
+            farthest = Math.max(farthest, Math.hypot(sx, sz));
+          }
+        }
+      }
+    }
+    expect(farthest).toBe(64 * Math.SQRT2);
+    expect(farthest).toBeLessThan(PATCH_REACH.medium.far);
+    expect(farthest).toBeGreaterThan(PATCH_REACH.low.far);
+  });
+
+  // Every tier: on low, ring 0's 1 m vertices reach past the 80 m far reach
+  // into the 2 m band; on medium they stop inside its 120 m.
+  it.each([
+    ["high", 18273, 217],
+    ["medium", 17741, 167],
+    ["low", 16181, 105],
+  ] as const)("leaves out only fully steep triangles over a patch with the whole relief, on %s", (tier, wantTotal, wantSquares) => {
+    const covered = facePatchCover(CAM.x, CAM.z, PATCH_REACH[tier]);
+    expect(covered.fine).toBe(PATCH_REACH[tier].far);
     // The patched set as the patches' shell walks it, from the camera's
     // cell's centre.
-    const cells = facePatchCells(covered.x, covered.z, PATCH_REACH.high);
+    const cells = facePatchCells(covered.x, covered.z, PATCH_REACH[tier]);
     const stitch = facePatchStitch(cells);
     const inSet = new Map(cells.map((c, i) => [`${c.ci},${c.cj}`, { c, open: (stitch[i] as { open: number }).open }]));
     const patched = new Map<string, boolean>();
@@ -894,14 +928,19 @@ describe("covered ground", () => {
         // neighbour outside it: its patch has no taper.
         expect(entry, key).toBeDefined();
         expect(entry?.open).toBe(0);
+        // And its three vertices are grid points of that patch: the patch's
+        // spacing divides the ring's, so a triangle of steep points between
+        // the 2 m band's grid points is never left out.
+        expect((ring.spacing % (entry?.c.spacing ?? Number.NaN)) === 0, `${key} at ${ring.spacing} m`).toBe(true);
         if (entry !== undefined && !patched.has(key)) {
           patched.set(key, facePatchGeometry(SCARP, entry.c.ci, entry.c.cj, entry.c.spacing, { west: false, east: false, north: false, south: false, open: 0 }) !== null);
         }
         expect(patched.get(key), key).toBe(true);
       }
     }
-    expect(total).toBe(18273);
-    // Of the 362 squares with a patch.
-    expect(patched.size).toBe(217);
+    // 2026-10-12: 16,542 on low before ring 0 was bound by the far reach;
+    // high and medium as they were.
+    expect(total).toBe(wantTotal);
+    expect(patched.size).toBe(wantSquares);
   }, timeLimit(120_000));
 });

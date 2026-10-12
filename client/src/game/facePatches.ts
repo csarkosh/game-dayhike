@@ -525,17 +525,19 @@ export function facePatchStitch(cells: readonly PatchCell[]): PatchStitch[] {
  * patch has no open side, no taper, and the whole relief over it; and a
  * camera one cell on, whose patches are built before the rings' next
  * emit lands, still patches it. A triangle the clipmap leaves out has three
- * fully steep vertices; on the high and medium tiers every ring vertex in
- * the reach is a grid point of its square's patch, so the square has steep
- * ground at its grid and a patch. On low, ring 0's 1 m vertices reach past
- * the 80 m far reach into the 2 m band, where a square is patched by its own
- * 2 m points, a metre from the steep ones.
+ * fully steep vertices, each a grid point of its square's patch, so the
+ * square has steep ground at its grid and a patch: ring 1's 2 m vertices and
+ * the coarser rings' lie on every band's grid, and ring 0's 1 m vertices,
+ * in squares up to 90.5 m from the camera's cell's centre, are left out only
+ * within `fine`, the far reach (80 m on low), where the patches are 1 m or
+ * finer.
  */
 export function facePatchCover(camX: number, camZ: number, reach: PatchReach): CoveredGround {
   return {
     x: (Math.floor(camX / PATCH_CELL) + 0.5) * PATCH_CELL,
     z: (Math.floor(camZ / PATCH_CELL) + 0.5) * PATCH_CELL,
     reach: reach.wide - PATCH_CELL * Math.SQRT2,
+    fine: reach.far,
     cell: PATCH_CELL,
   };
 }

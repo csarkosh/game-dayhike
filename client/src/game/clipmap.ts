@@ -643,9 +643,23 @@ export function ringGeometry(
  * out of the ring's index buffer when each of its three vertices is fully
  * steep, a gradient of at least FACE_SLOPE_HI, where the face patches'
  * mask is whole. Only a ring whose cells each lie within one square (its
- * spacing divides `cell`) leaves any out.
+ * spacing divides `cell`) leaves any out. A ring finer than
+ * `COVER_FINE_SPACING` leaves out only squares whose centres lie within
+ * `fine` metres as well: past it the covering surface's points are
+ * `COVER_FINE_SPACING` apart, and a triangle of steep points between them
+ * can lie in a square the surface finds no steep ground in.
  */
-export type CoveredGround = { readonly x: number; readonly z: number; readonly reach: number; readonly cell: number };
+export type CoveredGround = {
+  readonly x: number;
+  readonly z: number;
+  readonly reach: number;
+  readonly fine: number;
+  readonly cell: number;
+};
+
+/** The spacing (m) of the covering surface's points past `CoveredGround.fine`:
+ * the face patches' widest (`PATCH_WIDE_SPACING`). */
+export const COVER_FINE_SPACING = 2;
 
 /** Whether `covered` can leave any triangle of a ring at `spacing` out: its
  * cells must each lie within one square. */
@@ -669,7 +683,9 @@ function writeRingIndices(
 ): number {
   const leave = coversRing(covered, ring.spacing);
   const cell = covered?.cell ?? 1;
-  const reach2 = covered === null ? 0 : covered.reach * covered.reach;
+  // A ring finer than the covering surface's widest points is bound by `fine` too.
+  const bound = covered === null ? 0 : ring.spacing < COVER_FINE_SPACING ? Math.min(covered.reach, covered.fine) : covered.reach;
+  const bound2 = bound * bound;
   const steep2 = FACE_SLOPE_HI * FACE_SLOPE_HI;
   const { dx, dz } = ring;
   const steep = (at: number): boolean => {
@@ -691,7 +707,7 @@ function writeRingIndices(
       let keepBdc = true;
       if (leave && covered !== null && !seamRow(hole, ix, iz)) {
         const sx = (Math.floor((ring.originX + ix * ring.spacing) / cell) + 0.5) * cell - covered.x;
-        if (sx * sx + sz * sz <= reach2) {
+        if (sx * sx + sz * sz <= bound2) {
           const sb = steep(b);
           const sc = steep(c);
           if (sb && sc) {

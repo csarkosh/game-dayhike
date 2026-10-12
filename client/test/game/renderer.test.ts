@@ -523,7 +523,7 @@ describe("createClipmap", () => {
     // rings at the origin hold fully steep ground within it (the scarp, a
     // kilometre off, in rings 3 and 4).
     const scarp = 627994160;
-    const wide: ReturnType<typeof facePatchCover> = { x: 8, z: 8, reach: 4096, cell: 16 };
+    const wide: ReturnType<typeof facePatchCover> = { x: 8, z: 8, reach: 4096, fine: 4096, cell: 16 };
     const origin: RingSamples[] = [];
     for (let level = 0; level < RING_COUNT; level++) origin.push(createRingSamples(scarp, level, 0, 0));
     const atOrigin = origin.map((ring, level) =>
