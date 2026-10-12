@@ -29,7 +29,7 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.j
 import { modelUrl } from "./assetUrls.js";
 import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, createCliffCollector } from "./cliffField.js";
-import { CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFacing } from "../sim/cliffField.js";
+import { CLIFF_DENSITY, CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFacing } from "../sim/cliffField.js";
 import { attachCliffTint } from "./cliffTintPlugin.js";
 import { prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { attachDistanceFade, fadeBands, type FadeBands } from "./distanceFadePlugin.js";
@@ -66,7 +66,8 @@ export type CliffMeshes = {
    * same contract `ForestMeshes.casterMeshes` carries: the renderer registers
    * new entries as they appear. */
   readonly casterMeshes: readonly Mesh[];
-  /** Resolves once every model has loaded. */
+  /** Resolves once every model has loaded, or at once where the field lays
+   * none (a density of 0), with nothing fetched. */
   readonly ready: Promise<void>;
   dispose(): void;
 };
@@ -289,6 +290,9 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
   }
 
   async function loadAssets(): Promise<void> {
+    // A field that lays no module needs no model: nothing is fetched, no
+    // bucket is made, and `update` finds no mesh to fill.
+    if ((options.density ?? CLIFF_DENSITY) === 0) return;
     if (options.loader === undefined) registerBuiltInLoaders();
     for (const [model, output] of CLIFF_MODELS.entries()) {
       let container: AssetContainer;

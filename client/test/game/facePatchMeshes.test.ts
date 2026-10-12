@@ -124,8 +124,21 @@ describe("createFacePatches", () => {
   it("builds the reach at the scarp, then only what a cell's crossing changes", () => {
     const s = scene();
     const casting = new Set<AbstractMesh>();
+    // The reflections and the rain's map: each sees every patch built and
+    // every one dropped, as the shadow map does.
+    const reflected = new Set<AbstractMesh>();
+    const rained = new Set<AbstractMesh>();
+    const calls = { reflectionsAdded: 0, reflectionsRemoved: 0, rainAdded: 0, rainRemoved: 0 };
     const patches = createFacePatches(s, SEED, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), {
       shadows: { add: (m) => casting.add(m), remove: (m) => casting.delete(m) },
+      reflections: {
+        add: (m) => { calls.reflectionsAdded++; reflected.add(m); },
+        remove: (m) => { calls.reflectionsRemoved++; reflected.delete(m); },
+      },
+      rain: {
+        add: (m) => { calls.rainAdded++; rained.add(m); },
+        remove: (m) => { calls.rainRemoved++; rained.delete(m); },
+      },
     });
     // The camera's cell (−24, −57), walked from its centre: 1,961 cells in
     // reach, 362 of them with steep ground.
@@ -135,6 +148,9 @@ describe("createFacePatches", () => {
     expect(patches.meshCount()).toBe(362);
     expect(patchMeshes(s).length).toBe(362);
     expect(casting.size).toBe(362);
+    expect(calls).toEqual({ reflectionsAdded: 362, reflectionsRemoved: 0, rainAdded: 362, rainRemoved: 0 });
+    expect(reflected).toEqual(new Set(patchMeshes(s)));
+    expect(rained).toEqual(new Set(patchMeshes(s)));
 
     // A metre on, in the same cell: nothing.
     const before = new Set(patchMeshes(s));
@@ -179,10 +195,17 @@ describe("createFacePatches", () => {
     let kept = 0;
     for (const m of before) if (after.has(m)) kept++;
     expect(kept).toBe(310);
+    // 58 patches built at the crossing, 52 dropped.
+    expect(calls).toEqual({ reflectionsAdded: 420, reflectionsRemoved: 52, rainAdded: 420, rainRemoved: 52 });
+    expect(reflected).toEqual(after);
+    expect(rained).toEqual(after);
 
     patches.dispose();
     expect(patches.meshCount()).toBe(0);
     expect(patchMeshes(s).length).toBe(0);
     expect(casting.size).toBe(0);
+    expect(calls).toEqual({ reflectionsAdded: 420, reflectionsRemoved: 420, rainAdded: 420, rainRemoved: 420 });
+    expect(reflected.size).toBe(0);
+    expect(rained.size).toBe(0);
   }, timeLimit(120_000));
 });

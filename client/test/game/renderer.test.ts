@@ -518,6 +518,32 @@ describe("createClipmap", () => {
     clipmap.dispose();
   }, timeLimit(120_000));
 
+  it("leaves no ground out in its first build, at the origin, and the covered ground at the camera's first", () => {
+    // The scarp's world, under a cover wider than any tier's, so that the
+    // rings at the origin hold fully steep ground within it (the scarp, a
+    // kilometre off, in rings 3 and 4).
+    const scarp = 627994160;
+    const wide: ReturnType<typeof facePatchCover> = { x: 8, z: 8, reach: 4096, cell: 16 };
+    const origin: RingSamples[] = [];
+    for (let level = 0; level < RING_COUNT; level++) origin.push(createRingSamples(scarp, level, 0, 0));
+    const atOrigin = origin.map((ring, level) =>
+      ringGeometry(ring, level === 0 ? null : holeCellsFor(ring, origin[level - 1]!), null, wide).indexCount / 3);
+    // 1 triangle of ring 3 and 205 of ring 4.
+    expect(atOrigin).toEqual([32768, 24576, 24576, 24575, 24371, 24576, 24576]);
+    const s = scene();
+    let asked = 0;
+    const clipmap = createClipmap(s, scarp, undefined, { cover: () => { asked++; return wide; } });
+    // Every triangle of every ring: 32,768 in ring 0 and 24,576 beyond.
+    expect(asked).toBe(0);
+    expect(clipmap.meshes.map((m) => m.getTotalIndices() / 3)).toEqual([32768, 24576, 24576, 24576, 24576, 24576, 24576]);
+    // The camera's first frame, at the origin: the rings stay, and every one
+    // that can leave ground out is drawn again for the camera's cover.
+    clipmap.update(0, 0);
+    expect(asked).toBe(1);
+    expect(clipmap.meshes.map((m) => m.getTotalIndices() / 3)).toEqual(atOrigin);
+    clipmap.dispose();
+  }, timeLimit(120_000));
+
   it("builds one named mesh per ring and disposes them all", () => {
     const s = scene();
     const clipmap = createClipmap(s, SEED);
@@ -981,6 +1007,8 @@ describe("world shell wiring", () => {
   it("lists the two inner clipmap rings in the rain map, makes the splashes after the rain over the same map, updates them in both camera branches and disposes them", () => {
     // Ring 0 alone covers the map's 96 m square; the outer rings would be clipped whole and still cost their draws.
     expect(src).toContain('for (const mesh of clipmap?.meshes.slice(0, 2) ?? []) rainMap.register(mesh, "terrain");');
+    // The steep ground's patches as terrain too, as they come and go.
+    expect(src).toContain('rain: {\n        add: (mesh) => rainMap?.register(mesh, "terrain"),\n        remove: (mesh) => rainMap?.unregister(mesh),\n      },');
     expect(src).toContain("  const rain = createRain(scene, tier);\n  partOf(rain);\n  rain.setMap(rainMap);");
     expect(src).toContain("  const rainSplash = createRainSplash(scene, tier);\n  partOf(rainSplash);\n  rainSplash?.setMap(rainMap);");
     expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLives, spray: water?.edge.spray ?? null });");
@@ -1086,6 +1114,10 @@ describe("world shell wiring", () => {
     expect(playerBranch.indexOf("updateLake(")).toBeGreaterThan(playerBranch.indexOf("camera.fov = GAME_FOV;"));
     // The five inner rings through the terrain's stand-in, in either capture.
     expect(src).toContain("for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {\n    lakeMirror?.register(mesh, mirrorTerrain);\n    lakePanorama?.register(mesh, mirrorTerrain);");
+    // The steep ground's patches stand where those rings leave the ground
+    // out: they enter either capture through the same stand-in as they are
+    // built, and leave it as they are dropped.
+    expect(src).toContain("reflections: {\n        add: (mesh) => {\n          lakeMirror?.register(mesh, mirrorTerrain);\n          lakePanorama?.register(mesh, mirrorTerrain);\n        },\n        remove: (mesh) => {\n          lakeMirror?.unregister(mesh);\n          lakePanorama?.unregister(mesh);\n        },");
     // The trees at LOD2 on their own material, in the mirror alone; the
     // LOD1 buckets are in neither.
     expect(src).toContain("lakeMirror?.register(forestMeshes.lod2Meshes[forestLod2Reflected] as Mesh, null);");

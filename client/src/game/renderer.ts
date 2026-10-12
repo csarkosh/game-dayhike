@@ -547,11 +547,12 @@ export function createClipmap(
 
   /** The rebuild for a camera at (camX, camZ): every ring's samples moved,
    * then each stale ring's buffers made, each in slices of its own, then all
-   * of them uploaded in the last slice. */
-  function* build(camX: number, camZ: number): Slices {
+   * of them uploaded in the last slice. Without `uncovered` the rings leave
+   * out the ground `cover` names for that camera. */
+  function* build(camX: number, camZ: number, uncovered = false): Slices {
     let computed = 0;
     let used = 0;
-    covered = options.cover?.(camX, camZ) ?? null;
+    covered = uncovered ? null : options.cover?.(camX, camZ) ?? null;
     for (let level = 0; level < RING_COUNT; level++) {
       const ring = rings[level] as RingSamples;
       const ox = snapOrigin(camX, ring.spacing);
@@ -607,7 +608,10 @@ export function createClipmap(
 
   /** The rings sampled at the origin, one a slice, then built as `build`
    * builds them: the first build's sampling is the one `build` skips, since
-   * a ring made at the origin already stands there. */
+   * a ring made at the origin already stands there. It leaves no ground
+   * out: no patch stands at the origin yet, and the camera is not there.
+   * The first update, a build at once, measures the covered ground from the
+   * camera, and every ring that can leave any out is stale for it. */
   function* firstBuild(onRing?: (level: number) => void): Slices {
     if (rings.length === RING_COUNT) return;
     for (let level = 0; level < RING_COUNT; level++) {
@@ -615,7 +619,7 @@ export function createClipmap(
       onRing?.(level);
       yield;
     }
-    yield* build(0, 0);
+    yield* build(0, 0, true);
   }
   if (options.deferred !== true) finish(firstBuild());
 
@@ -2180,14 +2184,9 @@ function buildRenderer(
     for (const mesh of clipmap.meshes) lighting.addShadowMesh(mesh);
   }
   // Finer rock over the steep ground in the camera's reach, on the ground's
-  // own material with a depth offset; they cast and receive with the rings.
+  // own material with a depth offset; the patches themselves are made below,
+  // once the rain's map and the lakes' reflections they enter stand.
   const facePatchMaterial = forest === null ? null : terrainMaterialFor(scene, FACE_PATCH_MATERIAL);
-  const facePatches = forest === null || facePatchMaterial === null
-    ? null
-    : createFacePatches(scene, forest.seed, tier, facePatchMaterial, {
-      shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
-    });
-  partOf(facePatches);
 
   // Water rides the same guard as the clipmap: hand-authored (brush) levels
   // have no forest, so they get no water either. A forest world gets
@@ -2245,9 +2244,10 @@ function buildRenderer(
   };
 
   // The rain's cover map, on the tiers that draw one, over the terrain the
-  // clipmap draws: the rings and the water are in it from here, the props
-  // below and the scenery placed outside the renderer through `cover`, the
-  // cliffs' near buckets once their GLBs land (the loop in `sync`).
+  // clipmap draws: the rings and the water are in it from here, the steep
+  // ground's patches as they are built, the props below and the scenery
+  // placed outside the renderer through `cover`, the cliffs' near buckets
+  // once their GLBs land (the loop in `sync`).
   const rainMap = forest !== null ? createRainMap(scene, tier) : null;
   partOf(rainMap);
   if (rainMap !== null) {
@@ -2287,6 +2287,29 @@ function buildRenderer(
     lakeMirror?.register(mesh, mirrorTerrain);
     lakePanorama?.register(mesh, mirrorTerrain);
   }
+  // The steep ground's patches: they cast and receive with the rings, and
+  // stand where the rings leave the ground out, so they take the rings' place
+  // in the reflections, through the same stand-in, and in the rain's map.
+  const facePatches = forest === null || facePatchMaterial === null
+    ? null
+    : createFacePatches(scene, forest.seed, tier, facePatchMaterial, {
+      shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
+      reflections: {
+        add: (mesh) => {
+          lakeMirror?.register(mesh, mirrorTerrain);
+          lakePanorama?.register(mesh, mirrorTerrain);
+        },
+        remove: (mesh) => {
+          lakeMirror?.unregister(mesh);
+          lakePanorama?.unregister(mesh);
+        },
+      },
+      rain: {
+        add: (mesh) => rainMap?.register(mesh, "terrain"),
+        remove: (mesh) => rainMap?.unregister(mesh),
+      },
+    });
+  partOf(facePatches);
   // The reeds and the lilies on their own materials; the midges and the
   // dragonflies move, so only the mirror drawn each frame holds them.
   for (const mesh of waterPlants?.meshes ?? []) {
@@ -2413,7 +2436,8 @@ function buildRenderer(
   partOf(duffMeshes);
   // Rock-wall modules on the faces too steep to stand on, on every tier —
   // the field carries a ring set per tier. Renderer-only: it reads the
-  // simulation and touches nothing in it.
+  // simulation and touches nothing in it. At the shipped density of 0 it
+  // lays none and fetches no model; the faces carry the patches above.
   const cliffMeshes = forest !== null ? createCliffMeshes(scene, forest.seed, { quality: tier }) : null;
   partOf(cliffMeshes);
   // A failed GLB fetch rejects `ready`; log it once here so it is not an

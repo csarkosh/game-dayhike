@@ -12,7 +12,6 @@
  */
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
-import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { WEIGHTS2_STRIDE } from "./clipmap.js";
@@ -37,9 +36,22 @@ export const FACE_PATCH_MATERIAL = "facePatch";
 export const FACE_PATCH_Z_OFFSET = -1;
 export const FACE_PATCH_Z_UNITS = -120;
 
-/** The shadow registry, satisfied by `lighting.addShadowMesh` /
- * `removeShadowMesh`: patches come and go with the camera, so both halves. */
-export type FacePatchShadows = { add(mesh: AbstractMesh): void; remove(mesh: AbstractMesh): void };
+/** A registry the patches enter as they are built and leave as they are
+ * dropped: patches come and go with the camera, so both halves. */
+export type FacePatchRegistry = { add(mesh: Mesh): void; remove(mesh: Mesh): void };
+
+export type FacePatchRegistries = {
+  /** The shadow map's casters, `lighting.addShadowMesh` / `removeShadowMesh`. */
+  shadows?: FacePatchRegistry;
+  /** The lakes' reflections, the mirror's and the panorama's, each drawing a
+   * patch with the stand-in the clipmap's rings are drawn with there: the
+   * rings leave out the ground under fully steep squares, so without the
+   * patches a steep face would reflect as sky. */
+  reflections?: FacePatchRegistry;
+  /** The rain's cover map, as terrain beside the clipmap's inner rings: the
+   * streaks stop on the rock and the splashes land on the faces. */
+  rain?: FacePatchRegistry;
+};
 
 export type FacePatches = {
   /** Follows the camera: rebuilds only when its cell changes. */
@@ -82,10 +94,12 @@ export function createFacePatches(
   seed: number,
   tier: QualityTier,
   material: PBRMaterial,
-  options: { shadows?: FacePatchShadows } = {},
+  options: FacePatchRegistries = {},
 ): FacePatches {
   const reach = PATCH_REACH[tier];
-  const shadows = options.shadows;
+  const registries = [options.shadows, options.reflections, options.rain].filter(
+    (r): r is FacePatchRegistry => r !== undefined,
+  );
   // The patches' material is the ground's in every switch the ground's has:
   // the clipmap turns on the paint for its world, and the far band follows
   // the tier, so both are turned on here for this one.
@@ -102,7 +116,7 @@ export function createFacePatches(
 
   function drop(entry: Entry): void {
     if (entry.mesh === null) return;
-    shadows?.remove(entry.mesh);
+    for (const r of registries) r.remove(entry.mesh);
     entry.mesh.dispose();
     entry.mesh = null;
     live--;
@@ -120,7 +134,7 @@ export function createFacePatches(
     mesh.isPickable = false;
     // Positions are world space: the world matrix is the identity for good.
     mesh.freezeWorldMatrix();
-    shadows?.add(mesh);
+    for (const r of registries) r.add(mesh);
     live++;
     return mesh;
   }

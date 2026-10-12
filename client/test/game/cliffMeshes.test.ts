@@ -79,7 +79,7 @@ describe("createCliffMeshes", () => {
   it("builds three buckets per model from the GLBs' LOD roots, tinted, shadowed, the far one dithering", async () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
-    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene) });
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene), density: CLIFF_LAID });
     expect(cliffs.meshes.length).toBe(0);
     await cliffs.ready;
     expect(cliffs.meshes.length).toBe(CLIFF_MODELS.length * 3);
@@ -114,10 +114,37 @@ describe("createCliffMeshes", () => {
     engine.dispose();
   });
 
+  it("fetches no model and makes no bucket where the field lays none", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const requested: string[] = [];
+    const read = loader(scene);
+    const counting = (output: string): Promise<AssetContainer> => {
+      requested.push(output);
+      return read(output);
+    };
+    // The shipped density, 0: nothing is fetched at start-up.
+    const shipped = createCliffMeshes(scene, SEED, { quality: "high", loader: counting });
+    await shipped.ready;
+    shipped.update(CAM.x, CAM.z);
+    expect(requested).toEqual([]);
+    expect(shipped.meshes.length).toBe(0);
+    expect(shipped.casterMeshes.length).toBe(0);
+    expect(scene.meshes.length).toBe(0);
+    shipped.dispose();
+    // At a density of its own, both models.
+    const laid = createCliffMeshes(scene, SEED, { quality: "high", loader: counting, density: CLIFF_LAID });
+    await laid.ready;
+    expect(requested).toEqual(["models/cliff.wall_a.glb", "models/cliff.wall_b.glb"]);
+    expect(laid.meshes.length).toBe(6);
+    laid.dispose();
+    engine.dispose();
+  });
+
   it("pins the model tables against the loaded LOD0 meshes", async () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
-    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene) });
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene), density: CLIFF_LAID });
     await cliffs.ready;
     for (const [model] of CLIFF_MODELS.entries()) {
       const mesh = scene.getMeshByName(cliffMeshName(model, 0)) as Mesh;
@@ -275,7 +302,7 @@ describe("createCliffMeshes", () => {
       container.removeAllFromScene();
       return Promise.resolve(container);
     };
-    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: twoMeshLod });
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: twoMeshLod, density: CLIFF_LAID });
     await expect(cliffs.ready).rejects.toThrow(/LOD0/);
     cliffs.dispose();
     engine.dispose();
