@@ -46,11 +46,13 @@ import {
   ringGeometrySlices,
   ringSampleSlices,
   commitRingMove,
+  coversRing,
   prepareRingMove,
   snapOrigin,
   BASE_SPACING,
   RING_COUNT,
   WEIGHTS2_STRIDE,
+  type CoveredGround,
   type RingArrays,
   type RingGeometry,
   type RingMove,
@@ -68,7 +70,8 @@ import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
-import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
+import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, setTerrainSward, setTerrainWetness, sharedGroundArrays } from "./terrainTexture.js";
+import { FACE_PATCH_MATERIAL, FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS, createFacePatches } from "./facePatchMeshes.js";
 import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
@@ -168,6 +171,7 @@ const MATERIAL_COLORS: Record<string, [number, number, number]> = {
  */
 const MATERIAL_ROUGHNESS: Record<string, number> = {
   terrain: 0.95,
+  [FACE_PATCH_MATERIAL]: 0.95,
   default: 0.9,
 };
 
@@ -201,8 +205,16 @@ export function terrainMaterialFor(scene: Scene, name: string): PBRMaterial {
   const mat = new PBRMaterial(`mat_${name}`, scene);
   if (name === "terrain") {
     mat.albedoColor = new Color3(1, 1, 1);
-    // Ground textures ride the terrain material only.
+    // Ground textures ride the terrain materials only.
     attachTerrainTexture(scene, mat);
+  } else if (name === FACE_PATCH_MATERIAL) {
+    // The steep ground's patches (`facePatchMeshes.ts`): the ground's
+    // material again, binding the ground's own normal and RAH arrays rather
+    // than loading them twice, a depth offset ahead of the ground it covers.
+    mat.albedoColor = new Color3(1, 1, 1);
+    attachTerrainTexture(scene, mat, { groundArrays: sharedGroundArrays(scene, terrainMaterialFor(scene, "terrain")) });
+    mat.zOffset = FACE_PATCH_Z_OFFSET;
+    mat.zOffsetUnits = FACE_PATCH_Z_UNITS;
   } else {
     const rgb = MATERIAL_COLORS[name] ?? (MATERIAL_COLORS.default as [number, number, number]);
     mat.albedoColor = new Color3(rgb[0], rgb[1], rgb[2]);
@@ -280,11 +292,15 @@ export function applyRingGeometry(mesh: Mesh, geometry: RingGeometry): void {
   // (`geometry.js:185-188`). Going through Array.from would copy ~264k elements
   // per ring twice, once into boxed doubles, on the frame-sync path.
   data.positions = geometry.positions;
-  data.indices = geometry.indices;
   // Smooth normals from the elevation field's analytic gradient, not Babylon's
   // per-face pass: `clipmap.ts` evaluates the same pure function on both sides
   // of every ring boundary, so shared edges match to the bit.
   data.normals = geometry.normals;
+  // The drawn indices alone: a ring under covered ground leaves some out,
+  // and its buffers are sized for all of them.
+  data.indices = geometry.indexCount === geometry.indices.length
+    ? geometry.indices
+    : geometry.indices.subarray(0, geometry.indexCount);
   data.colors = geometry.colors;
   // `updatable` is a DYNAMIC_DRAW hint, nothing more — it does NOT make this
   // rewrite in place. `setVerticesData` builds a new VertexBuffer and disposes
@@ -358,30 +374,65 @@ const CLIPMAP_UPLOAD_MS = 1;
  * a rebuild that finds its move prepared from the ring as it stands commits
  * it in one step instead of sampling. What it commits is exactly what the
  * move would make; a guess the camera does not follow is dropped.
+ *
+ * Given `cover`, each rebuild asks it for the ground another surface covers
+ * as the rebuild begins (the face patches' drawn now, `FacePatches.cover`),
+ * and the rings it reaches leave their triangles there out (`CoveredGround`);
+ * null leaves none out. It is asked every frame too, and a cover other than
+ * the one the rings were built for (the surface drew a new set) is a
+ * rebuild of its own, which draws again only the rings it changes.
  */
-export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, options: { deferred?: boolean } = {}): Clipmap {
+export function createClipmap(
+  scene: Scene,
+  seed: number,
+  jobs?: SyncJobs,
+  options: { deferred?: boolean; cover?: (camX: number, camZ: number) => CoveredGround | null } = {},
+): Clipmap {
   const rings: RingSamples[] = [];
   const meshes: Mesh[] = [];
   /** The origins each ring's buffers were built from: its own, the finer
    * ring's (its hole) and the coarser ring's (its border blend). */
-  const drawn: { x: number; z: number; fx: number; fz: number; cx: number; cz: number }[] = [];
+  const drawn: {
+    x: number; z: number; fx: number; fz: number; cx: number; cz: number; kx: number; kz: number; kr: number; kf: number;
+  }[] = [];
   const crossing = createCrossing();
   const view = { x: 0, z: 0 };
+  /** The covered ground of the rebuild in progress, or of the last. */
+  let covered: CoveredGround | null = null;
+  /** Where ring `level`'s covered ground is measured from: NaN where none
+   * of it can be left out. */
+  const coverX = (level: number): number =>
+    covered !== null && coversRing(covered, (rings[level] as RingSamples).spacing) ? covered.x : NaN;
+  const coverZ = (level: number): number =>
+    covered !== null && coversRing(covered, (rings[level] as RingSamples).spacing) ? covered.z : NaN;
+  /** How far ring `level`'s covered ground reaches, and its fine bound: NaN
+   * where none of it can be left out. */
+  const coverReach = (level: number): number =>
+    covered !== null && coversRing(covered, (rings[level] as RingSamples).spacing) ? covered.reach : NaN;
+  const coverFine = (level: number): number =>
+    covered !== null && coversRing(covered, (rings[level] as RingSamples).spacing) ? covered.fine : NaN;
 
   /**
    * Whether ring `level`'s buffers are stale: it moved, the finer ring inside
    * it moved (the hole in its index buffer follows the finer ring's
-   * footprint), or the coarser ring outside it moved (its border blends to the
-   * coarser ring's samples, `coarseHeight`).
+   * footprint), the coarser ring outside it moved (its border blends to the
+   * coarser ring's samples, `coarseHeight`), or the ground it leaves out
+   * under the covering surface is measured from somewhere else or reaches
+   * elsewhere.
    *
-   * The last clause never adds an emit the first two do not already make:
+   * The coarser ring's clause never adds an emit the first two do not already make:
    * `snapOrigin` puts ring L on a lattice of 2^(L+1), and any camera crossing
    * of a multiple of 2^(L+1) is also a crossing of 2^L, so a ring moving
    * always implies the ring inside it moved. It is kept so the rule reads off
    * what the buffers depend on rather than off that lattice fact: a job
    * dropped half done leaves some rings moved and none re-emitted, and the
    * next rebuild must still find every ring whose inputs changed since it
-   * was last drawn.
+   * was last drawn. The covered ground's clause likewise: it is measured from
+   * the camera's 16 m cell, and every ring that can leave any out (spacing
+   * up to 16 m) moves, or has the ring inside it move, when the camera
+   * crosses a cell line; the coarser rings measure it from nowhere (NaN) and
+   * never re-emit for it. Its reach changes where the face patches' first
+   * update draws its near band and then the rest, from the same cell.
    */
   function stale(level: number): boolean {
     const ring = rings[level] as RingSamples;
@@ -390,7 +441,9 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
     const d = drawn[level];
     return d === undefined || d.x !== ring.originX || d.z !== ring.originZ ||
       (finer !== null && (d.fx !== finer.originX || d.fz !== finer.originZ)) ||
-      (coarser !== null && (d.cx !== coarser.originX || d.cz !== coarser.originZ));
+      (coarser !== null && (d.cx !== coarser.originX || d.cz !== coarser.originZ)) ||
+      !Object.is(d.kx, coverX(level)) || !Object.is(d.kz, coverZ(level)) ||
+      !Object.is(d.kr, coverReach(level)) || !Object.is(d.kf, coverFine(level));
   }
 
   /** Ring `level`'s buffers made again into `out`, in slices. */
@@ -402,7 +455,10 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
     // passes null. Ring 0 draws solid; every coarser ring cuts a hole where
     // the finer ring covers it.
     const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
-    return ringGeometrySlices(ring, finer === null ? null : holeCellsFor(ring, finer), coarser, out);
+    return ringGeometrySlices(
+      ring, finer === null ? null : holeCellsFor(ring, finer), coarser, out,
+      coversRing(covered, ring.spacing) ? covered : null,
+    );
   }
 
   function markDrawn(level: number): void {
@@ -413,6 +469,7 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
       x: ring.originX, z: ring.originZ,
       fx: finer?.originX ?? NaN, fz: finer?.originZ ?? NaN,
       cx: coarser?.originX ?? NaN, cz: coarser?.originZ ?? NaN,
+      kx: coverX(level), kz: coverZ(level), kr: coverReach(level), kf: coverFine(level),
     };
   }
 
@@ -503,10 +560,12 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
 
   /** The rebuild for a camera at (camX, camZ): every ring's samples moved,
    * then each stale ring's buffers made, each in slices of its own, then all
-   * of them uploaded in the last slice. */
-  function* build(camX: number, camZ: number): Slices {
+   * of them uploaded in the last slice. Without `uncovered` the rings leave
+   * out the ground `cover` names for that camera. */
+  function* build(camX: number, camZ: number, uncovered = false): Slices {
     let computed = 0;
     let used = 0;
+    covered = uncovered ? null : options.cover?.(camX, camZ) ?? null;
     for (let level = 0; level < RING_COUNT; level++) {
       const ring = rings[level] as RingSamples;
       const ox = snapOrigin(camX, ring.spacing);
@@ -562,7 +621,10 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
 
   /** The rings sampled at the origin, one a slice, then built as `build`
    * builds them: the first build's sampling is the one `build` skips, since
-   * a ring made at the origin already stands there. */
+   * a ring made at the origin already stands there. It leaves no ground
+   * out: no patch stands at the origin yet, and the camera is not there.
+   * The first update, a build at once, measures the covered ground from the
+   * camera, and every ring that can leave any out is stale for it. */
   function* firstBuild(onRing?: (level: number) => void): Slices {
     if (rings.length === RING_COUNT) return;
     for (let level = 0; level < RING_COUNT; level++) {
@@ -570,7 +632,7 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
       onRing?.(level);
       yield;
     }
-    yield* build(0, 0);
+    yield* build(0, 0, true);
   }
   if (options.deferred !== true) finish(firstBuild());
 
@@ -596,6 +658,16 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
         jobs !== undefined,
       );
       if (kind === "none") {
+        // The covering surface drew a new set since the rings last asked
+        // (the patches' job applied after the rings' rebuild read the set
+        // before it): the rings that leave ground out are drawn again for
+        // it, though the camera has not moved, so none waits on a further
+        // crossing to stop leaving out ground the new set no longer covers.
+        if (!(jobs?.pending(owner) ?? false) && (options.cover?.(camX, camZ) ?? null) !== covered) {
+          if (jobs !== undefined) jobs.begin(owner, build(camX, camZ));
+          else finish(build(camX, camZ));
+          return;
+        }
         aim(camX, camZ, false);
         return;
       }
@@ -2123,11 +2195,23 @@ function buildRenderer(
   // Collision chunks still follow the player through world.boxes, untouched.
   // Ring meshes are also the complete shadow-caster set: seven meshes,
   // bounded, which closes the old grows-without-bound caster list.
-  const clipmap = forest === null ? null : createClipmap(scene, forest.seed, jobs, { deferred: options.deferClipmap });
+  // The rings leave out the steep ground the face patches below draw over.
+  const clipmap = forest === null
+    ? null
+    : createClipmap(scene, forest.seed, jobs, {
+      deferred: options.deferClipmap,
+      // The ground the patches drawn now cover, not the camera's: theirs
+      // may still be building. They are made below, and updated before it.
+      cover: () => facePatches?.cover() ?? null,
+    });
   partOf(clipmap);
   if (clipmap !== null) {
     for (const mesh of clipmap.meshes) lighting.addShadowMesh(mesh);
   }
+  // Finer rock over the steep ground in the camera's reach, on the ground's
+  // own material with a depth offset; the patches themselves are made below,
+  // once the rain's map and the lakes' reflections they enter stand.
+  const facePatchMaterial = forest === null ? null : terrainMaterialFor(scene, FACE_PATCH_MATERIAL);
 
   // Water rides the same guard as the clipmap: hand-authored (brush) levels
   // have no forest, so they get no water either. A forest world gets
@@ -2185,9 +2269,10 @@ function buildRenderer(
   };
 
   // The rain's cover map, on the tiers that draw one, over the terrain the
-  // clipmap draws: the rings and the water are in it from here, the props
-  // below and the scenery placed outside the renderer through `cover`, the
-  // cliffs' near buckets once their GLBs land (the loop in `sync`).
+  // clipmap draws: the rings and the water are in it from here, the steep
+  // ground's patches as they are built, the props below and the scenery
+  // placed outside the renderer through `cover`, the cliffs' near buckets
+  // once their GLBs land (the loop in `sync`).
   const rainMap = forest !== null ? createRainMap(scene, tier) : null;
   partOf(rainMap);
   if (rainMap !== null) {
@@ -2227,6 +2312,29 @@ function buildRenderer(
     lakeMirror?.register(mesh, mirrorTerrain);
     lakePanorama?.register(mesh, mirrorTerrain);
   }
+  // The steep ground's patches: they cast and receive with the rings, and
+  // stand where the rings leave the ground out, so they take the rings' place
+  // in the reflections, through the same stand-in, and in the rain's map.
+  const facePatches = forest === null || facePatchMaterial === null
+    ? null
+    : createFacePatches(scene, forest.seed, tier, facePatchMaterial, jobs, {
+      shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
+      reflections: {
+        add: (mesh) => {
+          lakeMirror?.register(mesh, mirrorTerrain);
+          lakePanorama?.register(mesh, mirrorTerrain);
+        },
+        remove: (mesh) => {
+          lakeMirror?.unregister(mesh);
+          lakePanorama?.unregister(mesh);
+        },
+      },
+      rain: {
+        add: (mesh) => rainMap?.register(mesh, "terrain"),
+        remove: (mesh) => rainMap?.unregister(mesh),
+      },
+    });
+  partOf(facePatches);
   // The reeds and the lilies on their own materials; the midges and the
   // dragonflies move, so only the mirror drawn each frame holds them.
   for (const mesh of waterPlants?.meshes ?? []) {
@@ -2341,6 +2449,7 @@ function buildRenderer(
   // The terrain's sward floor is the shaded ground between those blades, so it
   // runs exactly where they are drawn: off on the low tier. Without a forest
   // there is no clipmap, and the terrain material is not built for it.
+  if (facePatchMaterial !== null) setTerrainSward(scene, facePatchMaterial, bladeMeshes !== null);
   if (forest !== null) setTerrainSward(scene, terrainMaterialFor(scene, "terrain"), bladeMeshes !== null);
   // The far cover's band follows the tier's clutter edges: on low, where every
   // class is drawn at 0.6 of its radius, it comes in at 0.6 of its distance.
@@ -2352,7 +2461,8 @@ function buildRenderer(
   partOf(duffMeshes);
   // Rock-wall modules on the faces too steep to stand on, on every tier —
   // the field carries a ring set per tier. Renderer-only: it reads the
-  // simulation and touches nothing in it.
+  // simulation and touches nothing in it. At the shipped density of 0 it
+  // lays none and fetches no model; the faces carry the patches above.
   const cliffMeshes = forest !== null ? createCliffMeshes(scene, forest.seed, { quality: tier }) : null;
   partOf(cliffMeshes);
   // A failed GLB fetch rejects `ready`; log it once here so it is not an
@@ -2890,6 +3000,10 @@ function buildRenderer(
       }
 
       applyWetness(scene, weather);
+      if (facePatchMaterial !== null) {
+        setTerrainWetness(scene, facePatchMaterial, weather.wetness);
+        setTerrainRain(scene, facePatchMaterial, weather.rain, seconds);
+      }
       setTerrainWetness(scene, terrainMaterialFor(scene, "terrain"), weather.wetness);
       setTerrainRain(scene, terrainMaterialFor(scene, "terrain"), weather.rain, seconds);
       water?.setRain(weather.rain);
@@ -2936,7 +3050,9 @@ function buildRenderer(
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
-        // the player, flying 500 m away shows void with no error.
+        // the player, flying 500 m away shows void with no error. The patches
+        // go first: the clipmap leaves out the ground they draw over now.
+        facePatches?.update(freecam.x, freecam.z);
         clipmap?.update(freecam.x, freecam.z);
         water?.update(freecam.x, freecam.z, oceanSeconds, lighting.hour);
         updateWet(freecam.x, freecam.z);
@@ -2983,6 +3099,8 @@ function buildRenderer(
 
       const local = state.players.get(localId);
       if (local) {
+        // The patches first, as above.
+        facePatches?.update(local.pos.x, local.pos.z);
         clipmap?.update(local.pos.x, local.pos.z);
         water?.update(local.pos.x, local.pos.z, oceanSeconds, lighting.hour);
         updateWet(local.pos.x, local.pos.z);
@@ -3195,6 +3313,7 @@ function buildRenderer(
       panoramaTerrain?.dispose();
       for (const skyline of lakeSkylines) skyline.dispose();
       clipmap?.dispose();
+      facePatches?.dispose();
       water?.dispose();
       waterPlants?.dispose();
       for (const life of waterLives) life.dispose();

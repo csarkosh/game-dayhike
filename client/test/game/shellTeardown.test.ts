@@ -57,6 +57,7 @@ import { createBodyMesh } from "../../src/game/bodyMesh.js";
 import { createSignMeshes } from "../../src/game/signMeshes.js";
 import { createTrailheadMeshes } from "../../src/game/trailheadMeshes.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
+import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 // The seam loaders below call Babylon's loader directly, past the shells'
@@ -114,7 +115,9 @@ describe("a container that lands after its shell was disposed", () => {
   it("is not adopted by the cliff modules", async () => {
     held.reset();
     const scene = freshScene();
-    const cliff = createCliffMeshes(scene, 12345, { quality: "high", loader: heldLoader(scene) });
+    // The shipped density lays no module and fetches nothing; at a density of
+    // its own the shell has a container in flight to land late.
+    const cliff = createCliffMeshes(scene, 12345, { quality: "high", loader: heldLoader(scene), density: CLIFF_LAID });
     await untilParsed(1);
     cliff.dispose();
     held.release();

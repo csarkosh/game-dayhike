@@ -114,6 +114,28 @@ export function whenSkyHeld(table: SkyTable, hour: () => number, options: { sign
  */
 const SHADOW_DISTANCE = 300;
 
+/**
+ * The least of the sun's light a cast shadow keeps: the shadow generator's
+ * darkness (0 a black shadow, 1 none) never falls under this. With the
+ * weather's own darkness at 0 under a clear sky, a shadowed face had only the
+ * sky's light, and on the steep faces the shadows of the relief's joints
+ * and slabs read as noise. Measured from the sky state, the image-based light
+ * as the dome's irradiance over π and the sun as PBR's diffuse, a face
+ * leaning 55° toward the sun, shadowed, kept 34 %, 36 % and 32 % of its lit
+ * value at 08:00, noon and 15:00, and level ground 35 %, 25 % and 29 %; at
+ * 0.17 the face keeps 45 %, 47 % and 43 %, the ground 46 %, 38 % and 41 %.
+ * It is the generator's, so it holds for every receiver, not the faces
+ * alone. Cloud lightens the shadows already: bright weather's 0.45 is above
+ * it and keeps its own, as does every weather past it.
+ */
+export const SHADOW_FLOOR = 0.17;
+
+/** The shadow generator's darkness under `w`: the weather's, held at
+ * SHADOW_FLOOR or above. */
+export function sunShadowDarkness(w: WeatherParams): number {
+  return Math.max(SHADOW_FLOOR, shadowDarknessUnder(w));
+}
+
 export type LightingOptions = {
   tier: QualityTier;
   /** Distance at which fog has all but hidden the world, in metres. */
@@ -416,8 +438,9 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // plateau reads as the light going, not the fill alone dimming.
     scene.environmentIntensity = collapse * SKY_IBL_SCALE;
 
-    // Overcast has no directional shadows: fade them rather than reconfigure the CSM.
-    shadows?.setDarkness(shadowDarknessUnder(weather));
+    // Overcast has no directional shadows: fade them rather than reconfigure
+    // the CSM. A clear sky's shadows keep SHADOW_FLOOR of the sun.
+    shadows?.setDarkness(sunShadowDarkness(weather));
 
     dome.update(s, image.exposure);
     // One more capture of the dome as it now stands, then idle again.

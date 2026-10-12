@@ -163,15 +163,23 @@ function meanInv(layer: keyof typeof LAYER_MEAN_RGB): string {
 /**
  * Metres of world per texture repeat, per layer. These are each source
  * texture's own recorded real-world footprint (grass 2.00 m,
- * forest floor 2.07 m, rock 1.80 m, sand 1.80 m, pebble 2.00 m): tiled at its
+ * forest floor 2.07 m, sand 1.80 m, pebble 2.00 m): tiled at its
  * own size, each texture renders at that real-world size. Measured,
  * not guessed — the original 2/2/3/3/4 values were pre-survey estimates. Retuned by eye
  * in the running game.
  *
+ * Rock is the exception: its source covers 1.80 m, but at that size the
+ * steep faces read as a field of small cobbles over the relief's joints. It
+ * repeats every 5.40 m, three times its footprint, so a stone is three times
+ * larger: fewer, larger rocks on every face, the scree and the steep ground
+ * alike, since the layer is one wherever it is drawn. The parallax keeps its
+ * depth in metres (`ROCK_PARALLAX_DEPTH` is scaled to the repeat in the
+ * shader), so the stones are as deep as before.
+ *
  * `asphalt` is its own 3.00 m footprint. It tiles in the road's own (u, z) frame — signed u across the
  * centerline, world z along it — not world XZ like the five layers above.
  */
-const TILING_METRES = { grass: 2.0, floor: 2.07, rock: 1.8, sand: 1.8, pebble: 2.0, asphalt: 3.0 };
+const TILING_METRES = { grass: 2.0, floor: 2.07, rock: 5.4, sand: 1.8, pebble: 2.0, asphalt: 3.0 };
 
 /** Distance band (m) over which the detail fades to the flat palette colour.
  * Design values ("faded to the flat palette beyond ~80 m"), tuned
@@ -822,6 +830,12 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     return "TerrainTexturePlugin";
   }
 
+  /** The normal and RAH arrays this plugin binds: its own, or a view of
+   * another plugin's (`sharedGroundArrays`). */
+  get groundArrays(): GroundArrays {
+    return this._arrays;
+  }
+
   /** Whether the road branch is compiled in. */
   get roadEnabled(): boolean {
     return this._roadCenter !== null;
@@ -1253,6 +1267,33 @@ export function attachTerrainTexture(
 ): void {
   if (material.pluginManager?.getPlugin("TerrainTexture")) return;
   new TerrainTexturePlugin(material, scene, options);
+}
+
+/**
+ * The ground arrays of `source`'s plugin, for a second terrain material to
+ * bind rather than load again: the twelve decodes and the two 512² arrays
+ * are made once. A view, not a copy: the placeholders the source's arrays
+ * start as are swapped for the real arrays when they land, and the view reads
+ * whichever is there. Disposing the view disposes nothing; the source's
+ * plugin owns the arrays. A source with no plugin yet gets one attached.
+ */
+export function sharedGroundArrays(scene: Scene, source: PBRMaterial): GroundArraysFactory {
+  return () => {
+    attachTerrainTexture(scene, source);
+    const arrays = (source.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin).groundArrays;
+    return {
+      get normals() {
+        return arrays.normals;
+      },
+      get rah() {
+        return arrays.rah;
+      },
+      get ready() {
+        return arrays.ready;
+      },
+      dispose() {},
+    };
+  };
 }
 
 /**

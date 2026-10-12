@@ -60,12 +60,17 @@ export const CLIFF_STAND_MARGIN = 0.03;
  * two ever moves toward the other. It is kept, and read, for that. */
 export const CLIFF_ROCK_MIN = 0.8;
 /** Share of the cells that start a run. Drawn first, before a terrain
- * sample, so the cheap rejection comes first. Rare on purpose: a run reaches
- * up to `CLIFF_RUN_REACH` either side of its cell, so with every other 12 m
- * cell along a face starting one, runs laid the same stretch of wall two and
- * three deep; at one cell in ten a stretch is laid about once, and faces
- * keep real gaps between runs. */
-export const CLIFF_DENSITY = 0.1;
+ * sample, so the cheap rejection comes first.
+ *
+ * 0: no cell starts a run, so no module stands on any face and the cliff
+ * pass makes no collider; the steep ground is the terrain's own rock. The
+ * field is kept whole, and its tests lay it at 0.1 (`cliffCellRuns`'s
+ * `density`), the share the modules stood at and would stand at again. That
+ * share is rare on purpose: a run reaches up to `CLIFF_RUN_REACH` either side
+ * of its cell, so with every other 12 m cell along a face starting one, runs
+ * laid the same stretch of wall two and three deep; at one cell in ten a
+ * stretch is laid about once, and faces keep real gaps between runs. */
+export const CLIFF_DENSITY = 0;
 /** Scale band a module draws — a multiplier on the model's own size, not a
  * length. Every module in a run draws its own, so a wall is not a row of
  * copies. */
@@ -522,13 +527,17 @@ function cliffRunSide(
  *
  * Pure in (seed, ci, cj) and independent of any neighbour cell's OUTCOME: the
  * variant reads four neighbouring gates, which is terrain, not placement. Two
- * cells' runs can therefore cross the same stretch of face; `CLIFF_DENSITY`
- * keeps that rare, so a stretch is laid about once, and modules overlap only
- * within a run, where the spacing puts them a third of a width into each
- * other.
+ * cells' runs can therefore cross the same stretch of face; a density of
+ * one cell in ten keeps that rare, so a stretch is laid about once, and
+ * modules overlap only within a run, where the spacing puts them a third of a
+ * width into each other.
+ *
+ * `density` is the share of cells that start a run, `CLIFF_DENSITY` unless
+ * given; a cell starts one where its density draw falls below it, so at 0 no
+ * cell does.
  */
-export function cliffCellRuns(seed: number, ci: number, cj: number): ClutterInstance[] {
-  if (cellDraw(seed, ci, cj, CLIFF_DRAW_DENSITY) >= CLIFF_DENSITY) return [];
+export function cliffCellRuns(seed: number, ci: number, cj: number, density = CLIFF_DENSITY): ClutterInstance[] {
+  if (cellDraw(seed, ci, cj, CLIFF_DRAW_DENSITY) >= density) return [];
   const { x, z } = cliffCellPoint(seed, ci, cj);
   const gate = cliffGate(seed, x, z);
   if (!gate.open) return [];

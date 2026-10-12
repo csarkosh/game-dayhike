@@ -45,7 +45,8 @@ vi.mock("../../src/game/skyDome.js", async (importOriginal) => {
 });
 
 import {
-  createLighting, DEFAULT_HOUR, SKY_WAIT_WARN_MS, sunAltitudeDeg, whenSkyHeld, type Lighting, type LightingOptions,
+  createLighting, DEFAULT_HOUR, SHADOW_FLOOR, SKY_WAIT_WARN_MS, sunAltitudeDeg, sunShadowDarkness, whenSkyHeld,
+  type Lighting, type LightingOptions,
 } from "../../src/game/lighting.js";
 import { SKY_DOME_NAME } from "../../src/game/skyDome.js";
 import { createSkyTable } from "../../src/game/skyTable.js";
@@ -583,6 +584,18 @@ describe("the wait for the sky", () => {
 });
 
 describe("weather in lighting", () => {
+  it("keeps a clear sky's shadows at 0.17 of the sun, and every cloudier weather's own darkness", () => {
+    // 2026-10-12: 0 under a clear sky, black but for the sky's light, before
+    // the floor.
+    expect(SHADOW_FLOOR).toBe(0.17);
+    expect(sunShadowDarkness(CLEAR)).toBe(0.17);
+    expect(sunShadowDarkness({ ...CLEAR, cloudCover: 0.1 })).toBe(0.17);
+    expect(sunShadowDarkness({ ...CLEAR, cloudCover: 0.3 })).toBe(0.3);
+    expect(sunShadowDarkness(WEATHER_PRESETS.bright)).toBe(0.45);
+    expect(sunShadowDarkness(WEATHER_PRESETS.overcast)).toBe(0.8);
+    expect(sunShadowDarkness(WEATHER_PRESETS.rain)).toBe(1);
+  });
+
   it("defaults to the bright preset — fog, sun and exposure all shifted", () => {
     const s = scene();
     const lighting = light(s, { hour: 12 });

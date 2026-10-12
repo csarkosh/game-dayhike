@@ -805,6 +805,9 @@ describe("the level id does not move", () => {
     // ground and the trail's 7 m from its shore are declared (registryDigest
     // moves), and the ground the passes' boxes stand on moves with them
     // (probeDigest moves).
-    expect(passHash()).toBe(-190240058);
+    // 2026-10-12: -190240058 before the cliff modules left the faces.
+    // CLIFF_DENSITY 0.1 -> 0 is a CLIFF_TUNABLES value (registryDigest
+    // moves) that leaves no cliff collider in the digested chunks.
+    expect(passHash()).toBe(-1570667467);
   });
 });

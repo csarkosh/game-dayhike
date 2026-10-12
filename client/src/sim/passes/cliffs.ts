@@ -1,10 +1,10 @@
-import { registerPass } from "../chunk.js";
+import { registerPass, type Chunk } from "../chunk.js";
 import { CHUNK_SIZE } from "../forestConstants.js";
 import type { Aabb } from "../level.js";
 import type { ClutterInstance } from "../clutter.js";
 import { activeTerrainVariantName, elevationSampleAt } from "../terrain.js";
 import {
-  CLIFF_CELL, CLIFF_MODEL_BASE, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH,
+  CLIFF_CELL, CLIFF_DENSITY, CLIFF_MODEL_BASE, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH,
   CLIFF_RUN_REACH, CLIFF_SCALE, CLIFF_TUNABLES, cliffCellRuns, cliffFacing, leanPoint,
   type CliffPoint,
 } from "../cliffField.js";
@@ -229,9 +229,12 @@ export function cliffModuleBoxes(seed: number, m: ClutterInstance): CliffModuleB
   return { m, boxes, capped };
 }
 
-/** One cell's modules with their colliders, read cold. */
-export function cliffCellBoxes(seed: number, ci: number, cj: number): readonly CliffModuleBoxes[] {
-  return cliffCellRuns(seed, ci, cj).map((m) => cliffModuleBoxes(seed, m));
+/** One cell's modules with their colliders, read cold, at `density`
+ * (`cliffCellRuns`). */
+export function cliffCellBoxes(
+  seed: number, ci: number, cj: number, density = CLIFF_DENSITY,
+): readonly CliffModuleBoxes[] {
+  return cliffCellRuns(seed, ci, cj, density).map((m) => cliffModuleBoxes(seed, m));
 }
 
 /** A cell's modules with their colliders, for `cliffBoxesInRect`: the
@@ -246,7 +249,8 @@ export type CliffCellSource = (seed: number, ci: number, cj: number) => readonly
  * holds the neighbourhood of a long walk. */
 export const CLIFF_BOX_CACHE_MAX = 32768;
 
-/** Cells already read, by world and terrain variant, then by cell. */
+/** Cells already read, by world, terrain variant and density, then by
+ * cell. */
 const cellCache = new Map<string, Map<number, readonly CliffModuleBoxes[]>>();
 let cellCacheSize = 0;
 // Numeric cell key, exact for |cell index| < 2^20 — the collector's packing.
@@ -259,14 +263,17 @@ const KEY_SPAN = 1 << 21;
  * and building the level id's probe alone reads hundreds of cells at
  * start-up; burying a box reads the terrain along its face several times
  * over. The cell's modules and boxes are a pure function of the world seed,
- * the active terrain variant and the cell, so remembering them changes no
- * output: a chunk's boxes are the same whether its cells were read cold or
- * come from here (`passes/cliffs.test.ts`). The variant is part of the key
- * because `/terrain` can swap it at runtime. Nothing here is mutated after it
- * is stored; readers only read.
+ * the active terrain variant, the density and the cell, so remembering them
+ * changes no output: a chunk's boxes are the same whether its cells were read
+ * cold or come from here (`passes/cliffs.test.ts`). The variant is part of
+ * the key because `/terrain` can swap it at runtime, and the density because
+ * the field's tests lay it at a share of their own. Nothing here is mutated
+ * after it is stored; readers only read.
  */
-export function cachedCliffCellBoxes(seed: number, ci: number, cj: number): readonly CliffModuleBoxes[] {
-  const world = `${activeTerrainVariantName()}|${seed}`;
+export function cachedCliffCellBoxes(
+  seed: number, ci: number, cj: number, density = CLIFF_DENSITY,
+): readonly CliffModuleBoxes[] {
+  const world = `${activeTerrainVariantName()}|${seed}|${density}`;
   let cells = cellCache.get(world);
   if (cells === undefined) {
     cells = new Map();
@@ -275,7 +282,7 @@ export function cachedCliffCellBoxes(seed: number, ci: number, cj: number): read
   const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);
   let cell = cells.get(key);
   if (cell === undefined) {
-    cell = cliffCellBoxes(seed, ci, cj);
+    cell = cliffCellBoxes(seed, ci, cj, density);
     if (cellCacheSize >= CLIFF_BOX_CACHE_MAX) {
       cellCache.clear();
       cellCacheSize = 0;
@@ -326,6 +333,32 @@ export function cliffBoxesInRect(
 }
 
 /**
+ * What pass 10 emits into `chunk`: every box of every module `cells` lays
+ * that reaches into the chunk, clipped to its footprint, in
+ * `cliffBoxesInRect`'s order. The pass reads the remembered cells at
+ * `CLIFF_DENSITY`; the field's tests read them at a density of their own.
+ */
+export function cliffChunkProps(
+  chunk: Chunk, worldSeed: number, cells: CliffCellSource = cachedCliffCellBoxes,
+): void {
+  const minX = chunk.cx * CHUNK_SIZE;
+  const minZ = chunk.cz * CHUNK_SIZE;
+  const maxX = minX + CHUNK_SIZE;
+  const maxZ = minZ + CHUNK_SIZE;
+  for (const { boxes } of cliffBoxesInRect(worldSeed, minX, minZ, maxX, maxZ, cells)) {
+    for (const b of boxes) {
+      const lx = Math.max(minX, b.min.x), hx = Math.min(maxX, b.max.x);
+      const lz = Math.max(minZ, b.min.z), hz = Math.min(maxZ, b.max.z);
+      if (lx >= hx || lz >= hz) continue;
+      chunk.props.push({
+        material: CLIFF_MATERIAL,
+        box: { min: { x: lx, y: b.min.y, z: lz }, max: { x: hx, y: b.max.y, z: hz } },
+      });
+    }
+  }
+}
+
+/**
  * Pass 10: the cliff modules' colliders, and the level-id home of every
  * constant that steers where a module stands (`CLIFF_TUNABLES`) — a wall one
  * peer sees and another does not is a different world, so an old client
@@ -365,20 +398,6 @@ registerPass({
     };
   },
   run(chunk, worldSeed) {
-    const minX = chunk.cx * CHUNK_SIZE;
-    const minZ = chunk.cz * CHUNK_SIZE;
-    const maxX = minX + CHUNK_SIZE;
-    const maxZ = minZ + CHUNK_SIZE;
-    for (const { boxes } of cliffBoxesInRect(worldSeed, minX, minZ, maxX, maxZ)) {
-      for (const b of boxes) {
-        const lx = Math.max(minX, b.min.x), hx = Math.min(maxX, b.max.x);
-        const lz = Math.max(minZ, b.min.z), hz = Math.min(maxZ, b.max.z);
-        if (lx >= hx || lz >= hz) continue;
-        chunk.props.push({
-          material: CLIFF_MATERIAL,
-          box: { min: { x: lx, y: b.min.y, z: lz }, max: { x: hx, y: b.max.y, z: hz } },
-        });
-      }
-    }
+    cliffChunkProps(chunk, worldSeed);
   },
 });

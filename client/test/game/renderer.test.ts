@@ -273,6 +273,9 @@ import {
   RING_COUNT,
   type RingSamples,
 } from "../../src/game/clipmap.js";
+import { PATCH_REACH, facePatchCover } from "../../src/game/facePatches.js";
+import { FACE_PATCH_MATERIAL, createFacePatches } from "../../src/game/facePatchMeshes.js";
+import { createSyncJobs } from "../../src/game/syncJobs.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { Level } from "../../src/sim/level.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
@@ -491,6 +494,147 @@ describe("createClipmap", () => {
       }
     }
   }, timeLimit(30000));
+
+  it("leaves out the ground its cover names, as ringGeometry does, and draws only the indices kept", () => {
+    // The reference pose's world, the scarp by the road: the face patches'
+    // cover on the high tier, as the renderer wires it.
+    const scarp = 627994160;
+    const cover = (x: number, z: number): ReturnType<typeof facePatchCover> => facePatchCover(x, z, PATCH_REACH.high);
+    const s = scene();
+    const clipmap = createClipmap(s, scarp, undefined, { cover });
+    clipmap.update(-370, -900);
+    const fresh: RingSamples[] = [];
+    for (let level = 0; level < RING_COUNT; level++) fresh.push(createRingSamples(scarp, level, -370, -900));
+    const kept: number[] = [];
+    for (let level = 0; level < RING_COUNT; level++) {
+      const ring = fresh[level]!;
+      const want = ringGeometry(ring, level === 0 ? null : holeCellsFor(ring, fresh[level - 1]!), null, cover(-370, -900));
+      const mesh = clipmap.meshes[level]!;
+      expect(Array.from(mesh.getIndices()!), `indices, ring ${level}`).toEqual(Array.from(want.indices));
+      expect(mesh.getTotalIndices()).toBe(want.indexCount);
+      kept.push(want.indexCount / 3);
+    }
+    // 32,768 triangles in ring 0 and 24,576 in each ring beyond, less those
+    // under the patches (clipmap.test.ts).
+    expect(kept).toEqual([32768 - 11582, 24576 - 4559, 24576 - 1933, 24576 - 199, 24576, 24576, 24576]);
+    clipmap.dispose();
+  }, timeLimit(120_000));
+
+  it("leaves no ground out in its first build, at the origin, and the covered ground at the camera's first", () => {
+    // The scarp's world, under a cover wider than any tier's, so that the
+    // rings at the origin hold fully steep ground within it (the scarp, a
+    // kilometre off, in rings 3 and 4).
+    const scarp = 627994160;
+    const wide: ReturnType<typeof facePatchCover> = { x: 8, z: 8, reach: 4096, fine: 4096, cell: 16 };
+    const origin: RingSamples[] = [];
+    for (let level = 0; level < RING_COUNT; level++) origin.push(createRingSamples(scarp, level, 0, 0));
+    const atOrigin = origin.map((ring, level) =>
+      ringGeometry(ring, level === 0 ? null : holeCellsFor(ring, origin[level - 1]!), null, wide).indexCount / 3);
+    // 1 triangle of ring 3 and 205 of ring 4.
+    expect(atOrigin).toEqual([32768, 24576, 24576, 24575, 24371, 24576, 24576]);
+    const s = scene();
+    let asked = 0;
+    const clipmap = createClipmap(s, scarp, undefined, { cover: () => { asked++; return wide; } });
+    // Every triangle of every ring: 32,768 in ring 0 and 24,576 beyond.
+    expect(asked).toBe(0);
+    expect(clipmap.meshes.map((m) => m.getTotalIndices() / 3)).toEqual([32768, 24576, 24576, 24576, 24576, 24576, 24576]);
+    // The camera's first frame, at the origin: the rings stay, and every one
+    // that can leave ground out is drawn again for the camera's cover.
+    clipmap.update(0, 0);
+    expect(asked).toBe(1);
+    expect(clipmap.meshes.map((m) => m.getTotalIndices() / 3)).toEqual(atOrigin);
+    clipmap.dispose();
+  }, timeLimit(120_000));
+
+  it("leaves out only the ground the patches drawn cover, while the patches of a crossing still build, and follows a set drawn while it stands", () => {
+    // The scarp, the patches and the rings on one scheduler, wired as the
+    // renderer wires them: the patches updated first, the rings asking them.
+    const scarp = 627994160;
+    const s = scene();
+    let now = 0;
+    let frames = 0;
+    const jobs = createSyncJobs(() => (now += 0.1));
+    const frame = (x: number, z: number): void => {
+      patches.update(x, z);
+      clipmap.update(x, z);
+      jobs.run();
+      expect(jobs.last.late).toBe(0);
+      now = Math.max(now, ++frames * (1000 / 60));
+    };
+    const patches = createFacePatches(s, scarp, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), jobs);
+    /** Every cover the rings were handed, each once, in order. */
+    const handed: { x: number; reach: number }[] = [];
+    let last: unknown = null;
+    const clipmap = createClipmap(s, scarp, jobs, {
+      cover: () => {
+        const c = patches.cover();
+        if (c !== null && c !== last) handed.push({ x: c.x, reach: c.reach });
+        last = c;
+        return c;
+      },
+    });
+    const near = 48 - 16 * Math.SQRT2;
+    const wide = 400 - 16 * Math.SQRT2;
+    /** The triangles each ring that can leave ground out draws, rings 0 to
+     * 4, and those it draws for the camera at (x, z) leaving out what the
+     * cover of cell (ci, −57) at `reach` names. */
+    const drawnRings = (): number[] => clipmap.meshes.slice(0, 5).map((m) => m.getTotalIndices() / 3);
+    const ringsFor = (x: number, z: number, ci: number, reach: { near: number; far: number; wide: number }): number[] => {
+      const rings: RingSamples[] = [];
+      for (let level = 0; level < 5; level++) rings.push(createRingSamples(scarp, level, x, z));
+      const cover = facePatchCover(ci * 16 + 8, -904, reach);
+      return rings.map((ring, level) =>
+        ringGeometry(ring, level === 0 ? null : holeCellsFor(ring, rings[level - 1]!), null, cover).indexCount / 3);
+    };
+    // Standing in cell (−24, −57), 0.2 m from its east line: the first
+    // frame draws the near band and the rings leave out what it covers.
+    const at = { x: -368.2, z: -900 };
+    frame(at.x, at.z);
+    expect(handed).toEqual([{ x: -376, reach: near }]);
+    expect(drawnRings()).toEqual(ringsFor(at.x, at.z, -24, { near: 48, far: 48, wide: 48 }));
+    while (patches.cover()?.reach !== wide && frames < 1000) frame(at.x, at.z);
+    expect(frames).toBe(63);
+    // The whole set drawn: the rings, standing, are drawn again for it, two
+    // frames on.
+    const full = ringsFor(at.x, at.z, -24, PATCH_REACH.high);
+    let redraw = 0;
+    while (JSON.stringify(drawnRings()) !== JSON.stringify(full) && redraw < 100) {
+      frame(at.x, at.z);
+      redraw++;
+    }
+    expect(redraw).toBe(2);
+    expect(handed.slice(1)).toEqual([{ x: -376, reach: wide }]);
+    // A step east, over the patches' line and ring 0's: the rings' job runs
+    // first and asks while the patches of cell (−23, −57) still build, and is
+    // told the cover of the set drawn, cell (−24, −57)'s.
+    at.x += 0.4;
+    frame(at.x, at.z);
+    expect(patches.cover()?.x).toBe(-376);
+    let pending = 0;
+    while (patches.cover()?.x === -376 && pending < 1000) {
+      frame(at.x, at.z);
+      pending++;
+    }
+    // The patches' 142 cells, nothing built ahead from a standstill, drawn
+    // 25 frames on; the rings, moved with the camera, leave out what the set
+    // drawn until then covers.
+    expect(pending).toBe(25);
+    expect(handed.length).toBe(2);
+    expect(drawnRings()).toEqual(ringsFor(at.x, at.z, -24, PATCH_REACH.high));
+    // Standing still, the rings are drawn again for the new set, with no
+    // further crossing, two frames on.
+    const moved = ringsFor(at.x, at.z, -23, PATCH_REACH.high);
+    expect(moved).not.toEqual(drawnRings());
+    let follow = 0;
+    while (JSON.stringify(drawnRings()) !== JSON.stringify(moved) && follow < 100) {
+      frame(at.x, at.z);
+      follow++;
+    }
+    expect(follow).toBe(2);
+    expect(handed.slice(2)).toEqual([{ x: -360, reach: wide }]);
+    clipmap.dispose();
+    patches.dispose();
+  }, timeLimit(120_000));
 
   it("builds one named mesh per ring and disposes them all", () => {
     const s = scene();
@@ -879,10 +1023,18 @@ describe("world shell wiring", () => {
     // branch that never runs it leaves every job to wait out its lateness
     // bound and run at once.
     expect(src).toContain("const jobs = createSyncJobs(() => performance.now());");
-    expect(src).toContain("createClipmap(scene, forest.seed, jobs, { deferred: options.deferClipmap })");
+    expect(src).toContain("createClipmap(scene, forest.seed, jobs, {\n      deferred: options.deferClipmap,");
+    // The rings leave out the ground the face patches drawn now cover, and
+    // the patches build on the same scheduler.
+    expect(src).toContain("cover: () => facePatches?.cover() ?? null,");
+    expect(src).toContain("createFacePatches(scene, forest.seed, tier, facePatchMaterial, jobs, {");
     expect(slice("const clutterMeshes =", "const bladeMeshes =")).toContain("jobs,");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "hasWildlife:");
+    // The patches before the clipmap in each, so a set built at once is the
+    // one the rings' rebuild in the same frame reads.
+    expect(freecamBranch).toContain("facePatches?.update(freecam.x, freecam.z);\n        clipmap?.update(freecam.x, freecam.z);");
+    expect(playerBranch).toContain("facePatches?.update(local.pos.x, local.pos.z);\n        clipmap?.update(local.pos.x, local.pos.z);");
     expect(freecamBranch.match(/jobs\.run\(\)/g)).toHaveLength(1);
     expect(playerBranch.match(/jobs\.run\(\)/g)).toHaveLength(1);
     // After every shell's update in each branch.
@@ -953,6 +1105,8 @@ describe("world shell wiring", () => {
   it("lists the two inner clipmap rings in the rain map, makes the splashes after the rain over the same map, updates them in both camera branches and disposes them", () => {
     // Ring 0 alone covers the map's 96 m square; the outer rings would be clipped whole and still cost their draws.
     expect(src).toContain('for (const mesh of clipmap?.meshes.slice(0, 2) ?? []) rainMap.register(mesh, "terrain");');
+    // The steep ground's patches as terrain too, as they come and go.
+    expect(src).toContain('rain: {\n        add: (mesh) => rainMap?.register(mesh, "terrain"),\n        remove: (mesh) => rainMap?.unregister(mesh),\n      },');
     expect(src).toContain("  const rain = createRain(scene, tier);\n  partOf(rain);\n  rain.setMap(rainMap);");
     expect(src).toContain("  const rainSplash = createRainSplash(scene, tier);\n  partOf(rainSplash);\n  rainSplash?.setMap(rainMap);");
     expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLives, spray: water?.edge.spray ?? null });");
@@ -1058,6 +1212,10 @@ describe("world shell wiring", () => {
     expect(playerBranch.indexOf("updateLake(")).toBeGreaterThan(playerBranch.indexOf("camera.fov = GAME_FOV;"));
     // The five inner rings through the terrain's stand-in, in either capture.
     expect(src).toContain("for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {\n    lakeMirror?.register(mesh, mirrorTerrain);\n    lakePanorama?.register(mesh, mirrorTerrain);");
+    // The steep ground's patches stand where those rings leave the ground
+    // out: they enter either capture through the same stand-in as they are
+    // built, and leave it as they are dropped.
+    expect(src).toContain("reflections: {\n        add: (mesh) => {\n          lakeMirror?.register(mesh, mirrorTerrain);\n          lakePanorama?.register(mesh, mirrorTerrain);\n        },\n        remove: (mesh) => {\n          lakeMirror?.unregister(mesh);\n          lakePanorama?.unregister(mesh);\n        },");
     // The trees at LOD2 on their own material, in the mirror alone; the
     // LOD1 buckets are in neither.
     expect(src).toContain("lakeMirror?.register(forestMeshes.lod2Meshes[forestLod2Reflected] as Mesh, null);");
@@ -2156,6 +2314,6 @@ describe("a part the renderer disposes is also torn down when a build fails", ()
     const registered = new Set([...src.matchAll(/partOf\((\w+)\);/g)].map((m) => m[1]!));
     if (/made\(\(\) => \{\s*for \(const m of brushMeshes\) m\.dispose\(\);/.test(src)) registered.add("brushMeshes");
     expect([...registered].sort()).toEqual([...disposed].sort());
-    expect(disposed.size).toBe(29);
+    expect(disposed.size).toBe(30);
   });
 });

@@ -5,6 +5,8 @@ import {
   DUFF_FLOOR_MAX,
   GRASS_SLOPE,
   NEEDLE_BED,
+  ROCK,
+  SCREE,
   SCREE_SLOPE,
   SNOW_LINE,
   SNOW_LINE_VARIATION,
@@ -79,7 +81,9 @@ describe("surfaceAlbedo", () => {
     for (let x = 0; x < 400; x += 7) {
       const steep = surfaceAlbedo(SEED, x, 0, 5, SCREE_SLOPE);
       expect(Math.abs(steep.g - steep.r)).toBeLessThan(0.02);
-      expect(steep.r).toBeGreaterThan(0.12);
+      // 2026-10-12: 0.12 before the steep rock went dark grey (scree 0.24 to
+      // 0.115).
+      expect(steep.r).toBeGreaterThan(0.1);
     }
   });
 
@@ -137,8 +141,8 @@ describe("surfaceAlbedo", () => {
     // same fixed-altitude traverse, this time reading the returned colour and
     // classifying it as snowy from brightness. 0.5 is picked from the palette,
     // not measured: SNOW's channels sit around 0.78-0.84, while every other
-    // palette entry (scree, the brightest of the rest) tops out near 0.24, so
-    // 0.5 falls cleanly between them regardless of the noise mottling.
+    // palette entry inland stays below 0.24, so 0.5 falls cleanly between
+    // them regardless of the noise mottling.
     const altitude = SNOW_LINE;
     const lowSlope = GRASS_SLOPE * 0.5; // Gentle ground, no rock/scree confound.
     let crossings = 0;
@@ -203,7 +207,9 @@ describe("canopy tint", () => {
   // returns the untouched endpoint at t = 0, so no float drift is tolerable.
   const references: Array<[[number, number, number, number], Rgb]> = [
     [[32, -18, 20, 0.05], { r: 0.09321664097284825, g: 0.14035007708145525, b: 0.06 }],
-    [[250, -130, 120, 1.1], { r: 0.24, g: 0.23, b: 0.21 }],
+    // 2026-10-12: { r: 0.24, g: 0.23, b: 0.21 } before the steep rock went
+    // dark grey.
+    [[250, -130, 120, 1.1], { r: 0.115, g: 0.115, b: 0.115 }],
     [[40, 40, 460, 0.05], { r: 0.78, g: 0.8, b: 0.84 }],
   ];
 
@@ -227,6 +233,26 @@ describe("canopy tint", () => {
       expect(luminance(closed)).toBeLessThan(0.1); // dark
       expect(luminance(closed)).toBeLessThan(luminance(open)); // darker than bare
     }
+  });
+
+  it("paints steep rock and scree a dark grey that stays neutral on screen", () => {
+    // The shader divides the rock texture by its own mean colour
+    // (`groundMeans.test.ts`), so a face shows these colours themselves:
+    // their channels must agree for the grey to hold no hue.
+    for (const c of [ROCK, SCREE]) {
+      const spread = Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
+      expect(spread).toBeLessThanOrEqual(0.003);
+    }
+    // Dark: half the luminance of the light grey-tan they replace.
+    const luminance = (c: Rgb) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    expect(luminance(ROCK)).toBeGreaterThan(0.075);
+    expect(luminance(ROCK)).toBeLessThan(0.085);
+    expect(luminance(SCREE)).toBeGreaterThan(0.11);
+    expect(luminance(SCREE)).toBeLessThan(0.12);
+    // And they are what the steep ground paints: rock at the top of the rock
+    // band, scree past the scree slope.
+    expect(surfaceAlbedo(SEED, 250, -130, 120, SLOPE_HI)).toEqual(ROCK);
+    expect(surfaceAlbedo(SEED, 250, -130, 120, SCREE_SLOPE)).toEqual(SCREE);
   });
 
   it("still turns to rock on steep ground at full canopy", () => {
