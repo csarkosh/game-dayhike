@@ -9,7 +9,7 @@
  * splits what it gathered by distance.
  */
 import type { ClutterInstance } from "../sim/clutter.js";
-import { CLIFF_CELL, CLIFF_JITTER, CLIFF_RUN_REACH, cliffCellRuns } from "../sim/cliffField.js";
+import { CLIFF_CELL, CLIFF_DENSITY, CLIFF_JITTER, CLIFF_RUN_REACH, cliffCellRuns } from "../sim/cliffField.js";
 import type { QualityTier } from "./quality.js";
 
 /** The worst offset (m) between the eye and the origin the distances are
@@ -80,14 +80,17 @@ function collectWith(
 }
 
 /** Every module within `reach` (plus the pad) of the snapped origin,
- * nearest first, from every cell whose run can reach that far. Pure; the
- * collector below is its memoising twin. */
-export function collectCliffs(seed: number, camX: number, camZ: number, reach: number): ClutterInstance[] {
-  return collectWith(camX, camZ, reach, (ci, cj) => cliffCellRuns(seed, ci, cj));
+ * nearest first, from every cell whose run can reach that far, the field
+ * laid at `density` (`cliffCellRuns`). Pure; the collector below is its
+ * memoising twin. */
+export function collectCliffs(
+  seed: number, camX: number, camZ: number, reach: number, density = CLIFF_DENSITY,
+): ClutterInstance[] {
+  return collectWith(camX, camZ, reach, (ci, cj) => cliffCellRuns(seed, ci, cj, density));
 }
 
 export type CliffCollector = {
-  /** Identical output to `collectCliffs(seed, camX, camZ, reach)`. */
+  /** Identical output to `collectCliffs(seed, camX, camZ, reach, density)`. */
   collect(camX: number, camZ: number, reach: number): ClutterInstance[];
   /** Cached cell count — exposed so tests can pin the growth per crossing. */
   readonly size: number;
@@ -108,8 +111,9 @@ const COLLECTOR_SWEEP_SIZE = 16384;
  * density draw; the rest cost a terrain sample, and the ones that qualify
  * four neighbour samples, a dozen-odd probes over each module's solid, and
  * a gate and the probes again for every further spot along the run.
+ * That is at a density of 0.1; at 0 every cell stops at the density draw.
  */
-export function createCliffCollector(seed: number): CliffCollector {
+export function createCliffCollector(seed: number, density = CLIFF_DENSITY): CliffCollector {
   const cache = new Map<number, readonly ClutterInstance[]>();
   return {
     collect(camX, camZ, reach) {
@@ -117,7 +121,7 @@ export function createCliffCollector(seed: number): CliffCollector {
         const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);
         let run = cache.get(key);
         if (run === undefined) {
-          run = cliffCellRuns(seed, ci, cj);
+          run = cliffCellRuns(seed, ci, cj, density);
           cache.set(key, run);
         }
         return run;

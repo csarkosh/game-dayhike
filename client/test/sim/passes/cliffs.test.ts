@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { generateChunk, registeredPasses } from "../../../src/sim/chunk.js";
-import { createChunkGrid } from "../../../src/sim/chunkGrid.js";
 import { CHUNK_SIZE } from "../../../src/sim/forestConstants.js";
 import type { Aabb } from "../../../src/sim/level.js";
 import { depenetrate, sweepBox } from "../../../src/sim/collision.js";
@@ -11,13 +10,14 @@ import { elevationSampleAt } from "../../../src/sim/terrain.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../../src/sim/world.js";
 import { Button } from "../../../src/sim/types.js";
 import {
-  CLIFF_CELL, CLIFF_RUN_REACH, CLIFF_TUNABLES, cliffCellRuns, type CliffPoint,
+  CLIFF_CELL, CLIFF_DENSITY, CLIFF_RUN_REACH, CLIFF_TUNABLES, cliffCellRuns, type CliffPoint,
 } from "../../../src/sim/cliffField.js";
 import {
   CLIFF_BOX_STEP, CLIFF_BURY_MAX, CLIFF_BURY_SAMPLE, CLIFF_BURY_STEP, CLIFF_GATHER_REACH, CLIFF_MATERIAL,
   CLIFF_SOLID_REACH, cliffBoxesInRect, cliffBuryFace, cliffCellBoxes, cliffModuleBoxes, clearCliffCellBoxCache,
 } from "../../../src/sim/passes/cliffs.js";
 import { drawnShell, seat } from "../helpers/cliffSolid.js";
+import { CLIFF_LAID, laidCells, laidChunk, laidGrid } from "../helpers/cliffLaid.js";
 import { timeLimit } from "../../helpers/timeLimit.js";
 
 /** The atmo scarp the gates are shot at, and the chunk holding it. */
@@ -49,8 +49,11 @@ function clip(b: Aabb, cx: number, cz: number): Aabb | null {
   return lo.x < hi.x && lo.z < hi.z ? { min: lo, max: hi } : null;
 }
 
+/** The cliff boxes chunk (cx, cz) holds with the field laid at
+ * `CLIFF_LAID`: what the pass emits there when the modules stand on the
+ * faces. */
 function cliffProps(seed: number, cx: number, cz: number): Aabb[] {
-  return generateChunk(seed, cx, cz).props.filter((p) => p.material === CLIFF_MATERIAL).map((p) => p.box);
+  return laidChunk(seed, cx, cz).props.filter((p) => p.material === CLIFF_MATERIAL).map((p) => p.box);
 }
 
 /** How far below a box's top the terrain along its uphill face may read
@@ -75,7 +78,8 @@ const TRAPS: readonly (readonly [number, number, number])[] = [
   [-305.224, 77.727, -823.56],
 ];
 
-/** The host's own tick on the atmo world with one hiker: `run` puts the
+/** The host's own tick on the atmo world with one hiker, among the props
+ * the passes lay with the cliff field at `CLIFF_LAID`: `run` puts the
  * hull at a point (on the ground there when no height is given), gives it
  * one input for `ticks` ticks, and returns the hull centre and whether it is
  * grounded after each. */
@@ -83,6 +87,7 @@ function hikerOn(seed: number): (
   start: readonly [number, number | null, number], yaw: number, moveZ: number, ticks: number, buttons?: number,
 ) => [number, number, number, boolean][] {
   const world = createForestWorld(createForest(seed), true);
+  world.boxes = laidGrid(seed);
   const p = spawnPlayer(world);
   return (start, yaw, moveZ, ticks, buttons = 0) => {
     const [x, y, z] = start;
@@ -128,10 +133,14 @@ describe("the cliff pass", () => {
 
   it("emits under its own material, told apart from trunks and boulders", () => {
     expect(CLIFF_MATERIAL).toBe("cliff");
-    const props = generateChunk(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz).props;
+    const props = laidChunk(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz).props;
     const cliff = props.filter((p) => p.material === CLIFF_MATERIAL);
     expect(cliff.length).toBeGreaterThan(0);
     for (const p of cliff) expect(["trunk", "rock"]).not.toContain(p.material);
+    // At the shipped density no module stands on a face, so the pass emits
+    // nothing, here on the scarp or anywhere.
+    expect(CLIFF_DENSITY).toBe(0);
+    expect(generateChunk(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz).props.filter((p) => p.material === CLIFF_MATERIAL)).toEqual([]);
   });
 
   it("gathers from as far as a run carries a module plus the farthest its solid reaches", () => {
@@ -174,7 +183,7 @@ describe("the colliders", () => {
     for (let seed = 1; seed <= WORLDS; seed++) {
       for (let cj = Math.floor(-w / CLIFF_CELL); cj <= Math.floor(w / CLIFF_CELL); cj++) {
         for (let ci = Math.floor(-w / CLIFF_CELL); ci <= Math.floor(w / CLIFF_CELL); ci++) {
-          for (const m of cliffCellRuns(seed, ci, cj)) {
+          for (const m of cliffCellRuns(seed, ci, cj, CLIFF_LAID)) {
             if (Math.hypot(m.x, m.z) >= r) continue;
             modules++;
             const built = cliffModuleBoxes(seed, m);
@@ -219,17 +228,20 @@ describe("the colliders", () => {
     // 24832 face reads. Nothing is capped or exposed, as before: the one
     // module the valley lakes first stood on world 147's outer bank, its
     // uphill face over the lake's basin, capped and exposed 24 face reads.
-    expect(modules).toBe(234);
-    expect(points).toBe(120636);
-    expect(boxes).toBe(947);
+    // 2026-10-12: 234 modules, 120636 points, 947 boxes and 24832 face
+    // reads before the steep ground's relief, whose rougher faces leave
+    // fewer spots where a module's whole solid stands on steep rock.
+    expect(modules).toBe(80);
+    expect(points).toBe(40036);
+    expect(boxes).toBe(315);
     expect(capped).toBe(0);
     expect(exposed).toBe(0);
-    expect(faceReads).toBe(24832);
+    expect(faceReads).toBe(8239);
     // 200 worlds built, about a second each with the valley lakes, and read cell by cell: 252 to 261 s.
   }, timeLimit(420_000));
 
   it("lays a wall straddling a chunk border into both chunks, each its own clipped share", () => {
-    const m = cliffCellRuns(ATMO, STRADDLE.ci, STRADDLE.cj)[STRADDLE.k]!;
+    const m = cliffCellRuns(ATMO, STRADDLE.ci, STRADDLE.cj, CLIFF_LAID)[STRADDLE.k]!;
     const own = cliffModuleBoxes(ATMO, m).boxes;
     expect(own.length).toBe(7);
     const shares: Aabb[][] = [];
@@ -258,10 +270,10 @@ describe("the colliders", () => {
   }, timeLimit(60_000));
 
   it("finds the same boxes for a module from whichever chunk finds it, and builds a chunk the same way twice", () => {
-    const m = cliffCellRuns(ATMO, STRADDLE.ci, STRADDLE.cj)[STRADDLE.k]!;
+    const m = cliffCellRuns(ATMO, STRADDLE.ci, STRADDLE.cj, CLIFF_LAID)[STRADDLE.k]!;
     const from = [STRADDLE.a, STRADDLE.b].map((c) => {
       const minX = c.cx * CHUNK_SIZE, minZ = c.cz * CHUNK_SIZE;
-      const found = cliffBoxesInRect(ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE)
+      const found = cliffBoxesInRect(ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE, laidCells)
         .find((e) => e.m.x === m.x && e.m.z === m.z);
       expect(found).toBeDefined();
       return found!.boxes;
@@ -271,7 +283,7 @@ describe("the colliders", () => {
     // Two builds of the chunk, the second on a grid that has walked other
     // chunks first: the same boxes, in the same order.
     const first = cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz);
-    const grid = createChunkGrid(ATMO);
+    const grid = laidGrid(ATMO);
     for (let i = -2; i <= 2; i++) grid.chunkAt(SCARP_CHUNK.cx + i, SCARP_CHUNK.cz - 3);
     const second = grid.chunkAt(SCARP_CHUNK.cx, SCARP_CHUNK.cz).props
       .filter((p) => p.material === CLIFF_MATERIAL).map((p) => p.box);
@@ -293,10 +305,13 @@ describe("the remembered runs", () => {
     expect(cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz)).toEqual(cold);
     // And the same modules as reading every cell afresh.
     const minX = SCARP_CHUNK.cx * CHUNK_SIZE, minZ = SCARP_CHUNK.cz * CHUNK_SIZE;
-    const fresh = cliffBoxesInRect(ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE, cliffCellBoxes);
-    const cached = cliffBoxesInRect(ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE);
+    const fresh = cliffBoxesInRect(
+      ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE, (s, ci, cj) => cliffCellBoxes(s, ci, cj, CLIFF_LAID),
+    );
+    const cached = cliffBoxesInRect(ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE, laidCells);
     expect(cached).toEqual(fresh);
-    expect(cold.length).toBe(65);
+    // 2026-10-12: 65 before the steep ground's relief.
+    expect(cold.length).toBe(29);
   }, timeLimit(60_000));
 });
 
@@ -305,13 +320,13 @@ describe("a wall stops a hiker", () => {
   // the downhill face the wall looks out of — which stands clear of the
   // wall's other boxes and of every other prop.
   function target(): Aabb {
-    const m = cliffCellRuns(ATMO, STRADDLE.ci, STRADDLE.cj)[STRADDLE.k]!;
+    const m = cliffCellRuns(ATMO, STRADDLE.ci, STRADDLE.cj, CLIFF_LAID)[STRADDLE.k]!;
     return cliffModuleBoxes(ATMO, m).boxes[2]!;
   }
 
   it("sweepBox of a hiker's half-extents into the wall stops at the box", () => {
     const b = target();
-    const grid = createChunkGrid(ATMO);
+    const grid = laidGrid(ATMO);
     // One metre off the face, at mid-height, moving three metres into it.
     const start = { x: b.min.x - PLAYER_HALF.x - 1, y: (b.min.y + b.max.y) / 2, z: (b.min.z + b.max.z) / 2 };
     expect(depenetrate(start, PLAYER_HALF, grid)).toEqual(start);
@@ -325,7 +340,7 @@ describe("a wall stops a hiker", () => {
 
   it("depenetrate pushes a hiker out of the wall", () => {
     const b = target();
-    const grid = createChunkGrid(ATMO);
+    const grid = laidGrid(ATMO);
     // Three centimetres into the face.
     const inside = { x: b.min.x - PLAYER_HALF.x + 0.03, y: (b.min.y + b.max.y) / 2, z: (b.min.z + b.max.z) / 2 };
     const out = depenetrate(inside, PLAYER_HALF, grid);
@@ -347,7 +362,7 @@ describe("a hiker behind a wall", () => {
   // top, so the slide lands on the top instead.
   it("is not trapped at the seven points: the hull lands on a box top, and walks off it", () => {
     const run = hikerOn(ATMO);
-    const boxes = cliffBoxesInRect(ATMO, -400, -1050, -220, -780).flatMap((e) => e.boxes);
+    const boxes = cliffBoxesInRect(ATMO, -400, -1050, -220, -780, laidCells).flatMap((e) => e.boxes);
     const results: string[] = [];
     for (const t of TRAPS) {
       const idle = run([t[0], t[1], t[2]], 0, 0, 300);
@@ -379,7 +394,7 @@ describe("a hiker behind a wall", () => {
     // top, 12 at rest elsewhere, 2 sliding, and 6 of the 12 could not leave.
     const run = hikerOn(ATMO);
     const cx = -336, cz = -900, R = 90;
-    const found = cliffBoxesInRect(ATMO, cx - R - 30, cz - R - 30, cx + R + 30, cz + R + 30);
+    const found = cliffBoxesInRect(ATMO, cx - R - 30, cz - R - 30, cx + R + 30, cz + R + 30, laidCells);
     const all = found.flatMap((e) => e.boxes);
     const dist = (x: number, z: number, b: Aabb): number =>
       Math.hypot(Math.max(b.min.x - x, 0, x - b.max.x), Math.max(b.min.z - z, 0, z - b.max.z));
@@ -414,7 +429,9 @@ describe("a hiker behind a wall", () => {
       }
       if (best < 1) trapped++;
     }
-    expect({ starts, top, still, sliding, trapped }).toEqual({ starts: 119, top: 115, still: 4, sliding: 0, trapped: 0 });
+    // 2026-10-12: 119 starts, 115 on a top and 4 at rest elsewhere before
+    // the steep ground's relief.
+    expect({ starts, top, still, sliding, trapped }).toEqual({ starts: 78, top: 41, still: 37, sliding: 0, trapped: 0 });
   }, timeLimit(300_000));
 });
 
@@ -439,7 +456,7 @@ describe("a hiker along a wall's top", () => {
   // seconds within 5 cm. So it is counted apart, and bounded, not zeroed.
   it("walks along a crest run's top without sinking into a box, and dithers only where it is blocked", () => {
     const run = hikerOn(ATMO);
-    const boxes = cliffBoxesInRect(ATMO, -500, -1100, -200, -700).flatMap((e) => e.boxes);
+    const boxes = cliffBoxesInRect(ATMO, -500, -1100, -200, -700, laidCells).flatMap((e) => e.boxes);
     const g = [1.54, -0.577] as const;
     const gl = Math.hypot(g[0], g[1]);
     const ux = g[0] / gl, uz = g[1] / gl;
@@ -502,7 +519,7 @@ describe("what the colliders claim", () => {
     for (let seed = 1; seed <= 40; seed++) {
       for (let cj = Math.floor(-w / CLIFF_CELL); cj <= Math.floor(w / CLIFF_CELL); cj++) {
         for (let ci = Math.floor(-w / CLIFF_CELL); ci <= Math.floor(w / CLIFF_CELL); ci++) {
-          for (const m of cliffCellRuns(seed, ci, cj)) {
+          for (const m of cliffCellRuns(seed, ci, cj, CLIFF_LAID)) {
             if (Math.hypot(m.x, m.z) >= r) continue;
             modules++;
             const { boxes } = cliffModuleBoxes(seed, m);
@@ -528,13 +545,16 @@ describe("what the colliders claim", () => {
         }
       }
     }
-    expect({ modules, walkable, standing, modulesStanding }).toEqual({ modules: 84, walkable: 305, standing: 40, modulesStanding: 9 });
+    // 2026-10-12: 84 modules, 305 walkable cells, 40 standing and 9 modules
+    // standing before the steep ground's relief.
+    expect({ modules, walkable, standing, modulesStanding }).toEqual({ modules: 23, walkable: 193, standing: 44, modulesStanding: 8 });
   }, timeLimit(300_000));
 });
 
 describe("what the colliders cost", () => {
   it("pins the boxes per chunk on the scarp and at the census worlds' worst chunks", () => {
-    expect(cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz).length).toBe(65);
+    // 2026-10-12: 65 before the steep ground's relief.
+    expect(cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz).length).toBe(29);
     // The chunk with the most boxes on each census world's worst 400 m disc,
     // counted as the pass counts them (a box reaching into two chunks counts
     // in each).
@@ -545,7 +565,7 @@ describe("what the colliders cost", () => {
         for (let cx = Math.floor((x - 400) / CHUNK_SIZE); cx <= Math.floor((x + 400) / CHUNK_SIZE); cx++) {
           const minX = cx * CHUNK_SIZE, minZ = cz * CHUNK_SIZE;
           let n = 0;
-          for (const { boxes } of cliffBoxesInRect(seed, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE)) {
+          for (const { boxes } of cliffBoxesInRect(seed, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE, laidCells)) {
             for (const b of boxes) if (clip(b, cx, cz) !== null) n++;
           }
           if (n > most) { most = n; at = `${cx},${cz}`; }
@@ -553,6 +573,8 @@ describe("what the colliders cost", () => {
       }
       worst.push([most, at]);
     }
-    expect(worst).toEqual([[88, "-10,-27"], [36, "-6,-21"], [68, "39,-40"]]);
+    // 2026-10-12: [[88, "-10,-27"], [36, "-6,-21"], [68, "39,-40"]] before
+    // the steep ground's relief.
+    expect(worst).toEqual([[53, "-11,-28"], [16, "-5,-21"], [16, "40,-41"]]);
   }, timeLimit(300_000));
 });

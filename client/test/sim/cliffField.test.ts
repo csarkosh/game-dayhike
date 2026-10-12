@@ -10,6 +10,7 @@ import {
 import { stadiumLake } from "../helpers/lakeShapes.js";
 import * as cliffField from "../../src/sim/cliffField.js";
 import { boxShell, seat } from "./helpers/cliffSolid.js";
+import { CLIFF_LAID } from "./helpers/cliffLaid.js";
 import {
   CLIFF_CELL, CLIFF_DENSITY, CLIFF_LONG_NEIGHBOURS, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT,
   CLIFF_MODEL_BASE, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_PROBE_SPAN, CLIFF_ROCK_MIN, CLIFF_RUN_MAX, CLIFF_RUN_REACH,
@@ -39,7 +40,7 @@ function modulesIn(seed: number, x: number, z: number, r: number): Placed[] {
   const w = r + CLIFF_RUN_REACH;
   for (let cj = Math.floor((z - w) / CLIFF_CELL); cj <= Math.floor((z + w) / CLIFF_CELL); cj++) {
     for (let ci = Math.floor((x - w) / CLIFF_CELL); ci <= Math.floor((x + w) / CLIFF_CELL); ci++) {
-      for (const m of cliffCellRuns(seed, ci, cj)) {
+      for (const m of cliffCellRuns(seed, ci, cj, CLIFF_LAID)) {
         if (Math.hypot(m.x - x, m.z - z) < r) out.push({ m, ci, cj });
       }
     }
@@ -210,7 +211,7 @@ describe("the placement", () => {
     for (let seed = 1; seed <= WORLDS; seed++) {
       for (let cj = Math.floor(-w / CLIFF_CELL); cj <= Math.floor(w / CLIFF_CELL); cj++) {
         for (let ci = Math.floor(-w / CLIFF_CELL); ci <= Math.floor(w / CLIFF_CELL); ci++) {
-          const run = cliffCellRuns(seed, ci, cj);
+          const run = cliffCellRuns(seed, ci, cj, CLIFF_LAID);
           if (run.length === 0) continue;
           const home = cliffCellPoint(seed, ci, cj);
           for (const m of run) {
@@ -234,10 +235,14 @@ describe("the placement", () => {
     // are other ground than the round ponds' dishes, and whose trails run
     // elsewhere; net 3 more modules (475 to 478) stand on the worlds they change, and none
     // on a lake's ground (one did, on world 147's outer bank, 479 laid).
-    expect(laid).toBe(478);
+    // 2026-10-12: 478 before the steep ground's relief, whose rougher faces
+    // leave fewer spots where a module's whole solid stands on steep rock,
+    // so fewer runs stand and the ones that do are shorter.
+    expect(laid).toBe(93);
     // Measured: the farthest a run carried a module across these worlds,
-    // 50.59 m of the 63.84 the constants allow.
-    expect(farthest).toBeCloseTo(50.594476156076325, 9);
+    // 47.66 m of the 63.84 the constants allow (2026-10-12: 50.59 m
+    // before the steep ground's relief).
+    expect(farthest).toBeCloseTo(47.65979980402468, 9);
     // 200 worlds built, about a second each with the valley lakes, and read cell by cell: 251 s.
   }, timeLimit(420_000));
 
@@ -271,8 +276,9 @@ describe("the placement", () => {
       }
     }
     // 12 probes for the long model, 18 for the short one.
-    expect(modules).toBe(84);
-    expect(probes).toBe(1284);
+    // 2026-10-12: 84 and 1284 before the steep ground's relief.
+    expect(modules).toBe(23);
+    expect(probes).toBe(360);
   }, timeLimit(300_000));
 
   it("the base probes alone would hang a top edge over walkable ground", () => {
@@ -311,8 +317,9 @@ describe("the placement", () => {
         }
       }
     }
-    expect(placedByOldRule).toBe(410);
-    expect(overWalkable).toBe(10);
+    // 2026-10-12: 410 and 10 before the steep ground's relief.
+    expect(placedByOldRule).toBe(243);
+    expect(overWalkable).toBe(22);
   }, timeLimit(300_000));
 
   it("is a pure function of (seed, cell), whatever order the cells are read in, and differs by world", () => {
@@ -323,8 +330,8 @@ describe("the placement", () => {
         cells.push([ci, cj]);
       }
     }
-    const forward = cells.map(([ci, cj]) => cliffCellRuns(WORST.seed, ci, cj));
-    const backward = [...cells].reverse().map(([ci, cj]) => cliffCellRuns(WORST.seed, ci, cj)).reverse();
+    const forward = cells.map(([ci, cj]) => cliffCellRuns(WORST.seed, ci, cj, CLIFF_LAID));
+    const backward = [...cells].reverse().map(([ci, cj]) => cliffCellRuns(WORST.seed, ci, cj, CLIFF_LAID)).reverse();
     expect(backward).toEqual(forward);
     let runs = 0, multi = 0, differ = 0;
     for (const [i, run] of forward.entries()) {
@@ -332,13 +339,14 @@ describe("the placement", () => {
       runs++;
       if (run.length > 1) multi++;
       const [ci, cj] = cells[i]!;
-      const other = cliffCellRuns(WORST.seed + 1, ci, cj);
+      const other = cliffCellRuns(WORST.seed + 1, ci, cj, CLIFF_LAID);
       const first = run[0]!;
       if (!other.some((m) => m.x === first.x && m.z === first.z && m.hash === first.hash)) differ++;
     }
     // Measured on this disc; runs longer than one module are among them.
-    expect(runs).toBe(14);
-    expect(multi).toBe(12);
+    // 2026-10-12: 14 and 12 before the steep ground's relief.
+    expect(runs).toBe(6);
+    expect(multi).toBe(2);
     expect(differ).toBe(runs);
   }, timeLimit(300_000));
 
@@ -384,7 +392,8 @@ describe("the placement", () => {
       }
     }
     // Both models start runs on this disc. Measured.
-    expect(long).toBe(10);
+    // 2026-10-12: 10 and 3 before the steep ground's relief.
+    expect(long).toBe(3);
     expect(short).toBe(3);
   }, timeLimit(300_000));
 
@@ -393,7 +402,7 @@ describe("the placement", () => {
     let cells = 0, multi = 0, pairs = 0, longest = 0, gaps = 0;
     for (let cj = Math.floor((SCARP.z - r) / CLIFF_CELL); cj <= Math.floor((SCARP.z + r) / CLIFF_CELL); cj++) {
       for (let ci = Math.floor((SCARP.x - r) / CLIFF_CELL); ci <= Math.floor((SCARP.x + r) / CLIFF_CELL); ci++) {
-        const run = cliffCellRuns(SCARP.seed, ci, cj);
+        const run = cliffCellRuns(SCARP.seed, ci, cj, CLIFF_LAID);
         if (run.length === 0) continue;
         cells++;
         longest = Math.max(longest, run.length);
@@ -426,17 +435,18 @@ describe("the placement", () => {
         }
       }
     }
-    expect(cells).toBe(17);
-    expect(multi).toBe(16);
-    expect(pairs).toBe(111);
-    expect(longest).toBe(9);
+    // 2026-10-12: 17, 16, 111 and 9 before the steep ground's relief.
+    expect(cells).toBe(11);
+    expect(multi).toBe(10);
+    expect(pairs).toBe(34);
+    expect(longest).toBe(8);
     // Stepping by the previous module's width alone left 133 of 541 pairs
     // here with a gap, where a long module stepped to a short one.
     expect(gaps).toBe(0);
   }, timeLimit(300_000));
 
-  it("starts a run on about one qualifying cell in ten, before any terrain sample", () => {
-    let qualifying = 0, placed = 0, modules = 0;
+  it("starts a run on about one qualifying cell in ten at the laid density, and on none at the shipped one", () => {
+    let qualifying = 0, placed = 0, modules = 0, shipped = 0;
     const r = 400;
     for (let cj = Math.floor((WORST.z - r) / CLIFF_CELL); cj <= Math.floor((WORST.z + r) / CLIFF_CELL); cj++) {
       for (let ci = Math.floor((WORST.x - r) / CLIFF_CELL); ci <= Math.floor((WORST.x + r) / CLIFF_CELL); ci++) {
@@ -444,9 +454,10 @@ describe("the placement", () => {
         if (Math.hypot(p.x - WORST.x, p.z - WORST.z) >= r) continue;
         if (!cliffGate(WORST.seed, p.x, p.z).open) continue;
         qualifying++;
-        const run = cliffCellRuns(WORST.seed, ci, cj);
+        const run = cliffCellRuns(WORST.seed, ci, cj, CLIFF_LAID);
         if (run.length > 0) placed++;
         modules += run.length;
+        shipped += cliffCellRuns(WORST.seed, ci, cj).length;
       }
     }
     // The density draw alone keeps one in ten: a run reaches up to
@@ -454,10 +465,15 @@ describe("the placement", () => {
     // same stretch of wall several times over. The probes over the solid
     // then drop more, because much of this disc's steep-rock area is narrow
     // ridges rather than one broad face.
-    expect(CLIFF_DENSITY).toBe(0.1);
-    expect(qualifying).toBe(542);
-    expect(placed).toBe(13);
-    expect(modules).toBe(78);
+    // The shipped density is 0, so no module stands on any face; every test
+    // here lays the field at CLIFF_LAID, the share the modules stood at.
+    expect(CLIFF_DENSITY).toBe(0);
+    expect(CLIFF_LAID).toBe(0.1);
+    expect(shipped).toBe(0);
+    // 2026-10-12: 542, 13 and 78 before the steep ground's relief.
+    expect(qualifying).toBe(497);
+    expect(placed).toBe(6);
+    expect(modules).toBe(10);
   }, timeLimit(300_000));
 });
 

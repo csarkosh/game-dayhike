@@ -16,6 +16,7 @@ import {
 import { cliffSeat } from "../../src/game/cliffMeshes.js";
 import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
 import { classifySurface } from "../../src/game/terrainSurface.js";
+import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Seed 1's worst 400 m disc for steep rock (5,549 four-metre cells), from
@@ -23,7 +24,9 @@ import { timeLimit } from "../helpers/timeLimit.js";
 const WORST = { seed: 1, x: 1100, z: -1200 };
 /** A disc with modules inside it that a run carried in from a cell outside
  * it: the fixture for the collector's collar. */
-const COLLAR = { seed: 627994160, x: -200, z: -1000 };
+// 2026-10-12: (-200, -1000) before the steep ground's relief, under which
+// no run carries a module into that disc from beyond it.
+const COLLAR = { seed: 627994160, x: 100, z: -1000 };
 
 type Placed = { m: ClutterInstance; ci: number; cj: number };
 
@@ -35,7 +38,7 @@ function modulesIn(seed: number, x: number, z: number, r: number): Placed[] {
   const w = r + CLIFF_RUN_REACH + 100;
   for (let cj = Math.floor((z - w) / CLIFF_CELL); cj <= Math.floor((z + w) / CLIFF_CELL); cj++) {
     for (let ci = Math.floor((x - w) / CLIFF_CELL); ci <= Math.floor((x + w) / CLIFF_CELL); ci++) {
-      for (const m of cliffCellRuns(seed, ci, cj)) {
+      for (const m of cliffCellRuns(seed, ci, cj, CLIFF_LAID)) {
         if (Math.hypot(m.x - x, m.z - z) < r) out.push({ m, ci, cj });
       }
     }
@@ -47,7 +50,7 @@ describe("collectCliffs and the collector", () => {
   it("returns every module within reach plus the pad of the snapped origin, nearest first", () => {
     const reach = CLIFF_RINGS.high[2];
     const o = cliffOrigin(WORST.x, WORST.z);
-    const got = collectCliffs(WORST.seed, WORST.x, WORST.z, reach);
+    const got = collectCliffs(WORST.seed, WORST.x, WORST.z, reach, CLIFF_LAID);
     const want = modulesIn(WORST.seed, o.x, o.z, reach + CLIFF_PAD);
     expect(new Set(got)).toEqual(new Set(want.map((p) => p.m)));
     expect(got.length).toBe(want.length);
@@ -55,7 +58,9 @@ describe("collectCliffs and the collector", () => {
       const a = got[i - 1]!, b = got[i]!;
       expect(Math.hypot(a.x - o.x, a.z - o.z)).toBeLessThanOrEqual(Math.hypot(b.x - o.x, b.z - o.z) + 1e-9);
     }
-    expect(got.length).toBe(78);
+    // 2026-10-12: 78 before the steep ground's relief, whose rougher faces
+    // leave fewer spots where a module's whole solid stands on steep rock.
+    expect(got.length).toBe(10);
     expect(got.length).toBeLessThanOrEqual(CLIFF_BUDGET);
   }, timeLimit(300_000));
 
@@ -67,24 +72,25 @@ describe("collectCliffs and the collector", () => {
     const reach = CLIFF_RINGS.high[2];
     const o = cliffOrigin(COLLAR.x, COLLAR.z);
     const key = (m: ClutterInstance): string => `${m.x},${m.z},${m.variant},${m.scale}`;
-    const got = new Set(collectCliffs(COLLAR.seed, COLLAR.x, COLLAR.z, reach).map(key));
+    const got = new Set(collectCliffs(COLLAR.seed, COLLAR.x, COLLAR.z, reach, CLIFF_LAID).map(key));
     const fromOutside = modulesIn(COLLAR.seed, o.x, o.z, reach + CLIFF_PAD).filter(({ ci, cj }) => {
       const home = cliffCellPoint(COLLAR.seed, ci, cj);
       return Math.hypot(home.x - o.x, home.z - o.z) >= reach + CLIFF_PAD;
     });
-    expect(fromOutside.length).toBe(4);
+    // 2026-10-12: 4, on the old disc, before the steep ground's relief.
+    expect(fromOutside.length).toBe(11);
     for (const { m } of fromOutside) expect(got.has(key(m))).toBe(true);
   }, timeLimit(300_000));
 
   it("memoises cells across rebuilds and matches the pure walk", () => {
     const reach = CLIFF_RINGS.high[2];
-    const c = createCliffCollector(WORST.seed);
+    const c = createCliffCollector(WORST.seed, CLIFF_LAID);
     const first = c.collect(WORST.x, WORST.z, reach);
-    expect(first).toEqual(collectCliffs(WORST.seed, WORST.x, WORST.z, reach));
+    expect(first).toEqual(collectCliffs(WORST.seed, WORST.x, WORST.z, reach, CLIFF_LAID));
     const size = c.size;
     // One cell over: the walk's leading edge is new, the rest is cached.
     const second = c.collect(WORST.x + CLIFF_CELL, WORST.z, reach);
-    expect(second).toEqual(collectCliffs(WORST.seed, WORST.x + CLIFF_CELL, WORST.z, reach));
+    expect(second).toEqual(collectCliffs(WORST.seed, WORST.x + CLIFF_CELL, WORST.z, reach, CLIFF_LAID));
     const cells = Math.ceil((2 * (reach + CLIFF_PAD + CLIFF_RUN_REACH)) / CLIFF_CELL) + 1;
     expect(c.size - size).toBeLessThanOrEqual(cells + 2);
     // Measured: the walk's leading chord, 2 · 485.05 / 12 ≈ 80.8 cells.
@@ -94,14 +100,15 @@ describe("collectCliffs and the collector", () => {
   it("partitions the modules across the three LOD buckets by distance, exactly once each", () => {
     const rings = CLIFF_RINGS.high;
     const o = cliffOrigin(WORST.x, WORST.z);
-    const all = collectCliffs(WORST.seed, WORST.x, WORST.z, rings[2]);
+    const all = collectCliffs(WORST.seed, WORST.x, WORST.z, rings[2], CLIFF_LAID);
     const bands = cliffBands(all, o.x, o.z, rings);
     // collectCliffs's own pad (CLIFF_PAD) reaches past rings[2] so the cache
     // is warm before a module needs a band; cliffBands drops anything at or
     // past rings[2] instead of putting it in the far bucket early.
     const inReach = all.filter((m) => Math.hypot(m.x - o.x, m.z - o.z) < rings[2]);
-    expect(all.length).toBe(78);
-    expect(inReach.length).toBe(78);
+    // 2026-10-12: 78 and 78 before the steep ground's relief.
+    expect(all.length).toBe(10);
+    expect(inReach.length).toBe(10);
     expect(bands[0].length + bands[1].length + bands[2].length).toBe(inReach.length);
     const seen = new Set<ClutterInstance>();
     for (const [lod, band] of bands.entries()) {
@@ -119,11 +126,17 @@ describe("collectCliffs and the collector", () => {
 
   it("stays under the budget on the three census worlds' worst discs", () => {
     const counts: number[] = [];
+    const shipped: number[] = [];
     for (const [seed, x, z] of [[627994160, -200, -1000], [388817, -100, -500], [1, 1100, -1200]] as const) {
-      counts.push(collectCliffs(seed, x, z, CLIFF_RINGS.high[2]).length);
+      counts.push(collectCliffs(seed, x, z, CLIFF_RINGS.high[2], CLIFF_LAID).length);
+      shipped.push(collectCliffs(seed, x, z, CLIFF_RINGS.high[2]).length);
     }
     expect(CLIFF_BUDGET).toBe(700);
-    expect(counts).toEqual([333, 29, 78]);
+    // 2026-10-12: [333, 29, 78] before the steep ground's relief.
+    expect(counts).toEqual([96, 8, 10]);
+    // At the shipped density no module stands on any face, so the collector
+    // gathers none; the counts above are the field laid at CLIFF_LAID.
+    expect(shipped).toEqual([0, 0, 0]);
     for (const n of counts) expect(n).toBeLessThanOrEqual(CLIFF_BUDGET);
   }, timeLimit(300_000));
 
@@ -136,7 +149,7 @@ describe("collectCliffs and the collector", () => {
     const reach = CLIFF_RINGS.high[2];
     const z = -1200;
     const xs = [1100, 700, 300, -100, -500, -900, -1300];
-    const c = createCliffCollector(seed);
+    const c = createCliffCollector(seed, CLIFF_LAID);
     const sizes: number[] = [];
     for (const x of xs) {
       c.collect(x, z, reach);
@@ -163,8 +176,9 @@ describe("collectCliffs and the collector", () => {
     const beforeFar = c.size;
     const got = c.collect(1100, z, reach);
     expect(c.size - beforeFar).toBe(sizes[0]!);
-    expect(got).toEqual(collectCliffs(seed, 1100, z, reach));
-    expect(got.length).toBe(78);
+    expect(got).toEqual(collectCliffs(seed, 1100, z, reach, CLIFF_LAID));
+    // 2026-10-12: 78 before the steep ground's relief.
+    expect(got.length).toBe(10);
   }, timeLimit(300_000));
 
   it("exercises the near LOD ring at a scarp with steep rock close to the eye", () => {
@@ -174,10 +188,12 @@ describe("collectCliffs and the collector", () => {
     const rings = CLIFF_RINGS.high;
     const seed = 627994160, x = -340, z = -897;
     const o = cliffOrigin(x, z);
-    const all = collectCliffs(seed, x, z, rings[2]);
+    const all = collectCliffs(seed, x, z, rings[2], CLIFF_LAID);
     const bands = cliffBands(all, o.x, o.z, rings);
-    expect(all.length).toBe(308);
-    expect(bands.map((b) => b.length)).toEqual([59, 70, 173]);
+    // 2026-10-12: 308 before the steep ground's relief.
+    expect(all.length).toBe(95);
+    // 2026-10-12: [59, 70, 173] before the steep ground's relief.
+    expect(bands.map((b) => b.length)).toEqual([34, 10, 51]);
     // A stretch of wall is laid about once: for each module in the near ring,
     // the other modules whose origins stand within a quarter of its own
     // width. At a density of 0.5 per cell this averaged 2.1 — runs from
@@ -187,7 +203,8 @@ describe("collectCliffs and the collector", () => {
       const lim = 0.25 * (CLIFF_MODEL_WIDTH[m.variant] as number) * m.scale;
       for (const n of all) if (n !== m && Math.hypot(n.x - m.x, n.z - m.z) < lim) crowd++;
     }
-    expect(crowd).toBe(49);
+    // 2026-10-12: 49 before the steep ground's relief.
+    expect(crowd).toBe(16);
     expect(crowd / bands[0].length).toBeLessThanOrEqual(1);
   }, timeLimit(300_000));
 });

@@ -22,6 +22,7 @@ import { trampleFrame, writeFoliage } from "../../src/game/clutterMeshes.js";
 import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
 import { CliffTintPlugin } from "../../src/game/cliffTintPlugin.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
+import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Counts the shell's tint writes, so the per-instance memo is observable:
@@ -141,18 +142,20 @@ describe("createCliffMeshes", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
-    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene) });
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene), density: CLIFF_LAID });
     await cliffs.ready;
     cliffs.update(CAM.x, CAM.z);
     const rings = CLIFF_RINGS.high;
     const o = cliffOrigin(CAM.x, CAM.z);
-    const bands = cliffBands(collectCliffs(SEED, CAM.x, CAM.z, rings[2]), o.x, o.z, rings);
+    const bands = cliffBands(collectCliffs(SEED, CAM.x, CAM.z, rings[2], CLIFF_LAID), o.x, o.z, rings);
     // Measured at this scarp, and the same split cliffField.test.ts pins for
     // this origin.
-    expect(bands.map((b) => b.length)).toEqual([59, 70, 173]);
+    // 2026-10-12: [59, 70, 173] before the steep ground's relief.
+    expect(bands.map((b) => b.length)).toEqual([34, 10, 51]);
     // Measured here too, by [model][lod]. Runs alternate the two models, so
     // both stand in every ring the face reaches.
-    const COUNTS: readonly (readonly [number, number, number])[] = [[27, 32, 79], [32, 38, 94]];
+    // 2026-10-12: [[27, 32, 79], [32, 38, 94]] before the steep ground's relief.
+    const COUNTS: readonly (readonly [number, number, number])[] = [[17, 5, 27], [17, 5, 24]];
     // Teeth: each of the three rings is exercised by at least one model.
     for (let lod = 0; lod < 3; lod++) expect(COUNTS.some((row) => (row[lod] as number) > 0)).toBe(true);
     const mat = new Float32Array(16);
@@ -207,7 +210,7 @@ describe("createCliffMeshes", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
-    const cliffs = createCliffMeshes(scene, SEED, { quality: "medium", loader: loader(scene) });
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "medium", loader: loader(scene), density: CLIFF_LAID });
     cliffs.update(CAM.x, CAM.z);
     expect(spy).not.toHaveBeenCalled();
     await cliffs.ready;
@@ -225,20 +228,21 @@ describe("createCliffMeshes", () => {
   it("tints an instance once and re-uses it when the next rebuild meets it again", async () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
-    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene) });
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene), density: CLIFF_LAID });
     await cliffs.ready;
     const rings = CLIFF_RINGS.high;
     const inReach = (x: number, z: number): Set<string> => {
       const o = cliffOrigin(x, z);
-      const bands = cliffBands(collectCliffs(SEED, x, z, rings[2]), o.x, o.z, rings);
+      const bands = cliffBands(collectCliffs(SEED, x, z, rings[2], CLIFF_LAID), o.x, o.z, rings);
       return new Set(bands.flat().map((m) => `${m.x},${m.z}`));
     };
     spied.foliage = 0;
     cliffs.update(CAM.x, CAM.z);
     const first = inReach(CAM.x, CAM.z);
     // Measured at this scarp: the modules across the three rings.
-    expect(first.size).toBe(302);
-    expect(spied.foliage).toBe(302);
+    // 2026-10-12: 302 before the steep ground's relief.
+    expect(first.size).toBe(95);
+    expect(spied.foliage).toBe(95);
     // Four cells north: the collector hands back the very same instance
     // objects for every cell it already holds, so only what the move brought
     // into the rings is tinted — measured here.
@@ -246,9 +250,10 @@ describe("createCliffMeshes", () => {
     cliffs.update(CAM.x, CAM.z - 4 * CLIFF_CELL);
     const second = inReach(CAM.x, CAM.z - 4 * CLIFF_CELL);
     const fresh = [...second].filter((k) => !first.has(k));
-    expect(second.size).toBe(316);
-    expect(fresh.length).toBe(17);
-    expect(spied.foliage).toBe(17);
+    // 2026-10-12: 316 and 17 before the steep ground's relief.
+    expect(second.size).toBe(96);
+    expect(fresh.length).toBe(1);
+    expect(spied.foliage).toBe(1);
     cliffs.dispose();
     engine.dispose();
   }, timeLimit(300_000));

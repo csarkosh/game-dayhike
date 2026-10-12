@@ -9,6 +9,8 @@ import {
   registryDigest,
 } from "../../src/sim/forest.js";
 import { registerPass, registeredPasses, type Pass } from "../../src/sim/chunk.js";
+import { CLIFF_DENSITY } from "../../src/sim/cliffField.js";
+import { laidPasses } from "./helpers/cliffLaid.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const PRE_BENCH_LEVEL_ID_1234 = "forest/5/olympic/1234/1586030448/-1513056523";
@@ -112,14 +114,29 @@ describe("passHash", () => {
   // The load-bearing assertion. If the probe stopped containing a pass's output,
   // that pass could be changed without changing any levelId, which is the exact
   // failure this hash exists to prevent.
-  it.each(registeredPasses().map((p) => [p.name, p] as const))(
+  //
+  // The cliff pass is asked at the density its modules stood at
+  // (`helpers/cliffLaid.ts`): at the shipped CLIFF_DENSITY of 0 it emits
+  // nothing anywhere, so chunk [-1, -15] is kept among the digested chunks
+  // for when the modules return, and this asks that it still holds their
+  // colliders.
+  it.each(registeredPasses().map((p) => [p.name, p.id] as const))(
     "would change if pass %s emitted something different",
-    (_name, pass) => {
-      const all = registeredPasses();
-      const without = all.filter((p) => p !== pass);
+    (_name, id) => {
+      const all = laidPasses();
+      const without = all.filter((p) => p.id !== id);
       expect(probeDigest(without)).not.toBe(probeDigest(all));
     },
   );
+
+  it("holds no cliff collider while no module stands on a face", () => {
+    // CLIFF_DENSITY is a tunable, so the level id still moves with it
+    // (registryDigest); what the passes emit into the digested chunks does
+    // not.
+    expect(CLIFF_DENSITY).toBe(0);
+    const all = registeredPasses();
+    expect(probeDigest(all.filter((p) => p.name !== "cliffs"))).toBe(probeDigest(all));
+  });
 
   // The wiring guard. `it.each` above is built from `registeredPasses()` at
   // collection time, so a pass whose `passes/index.ts` import was dropped
