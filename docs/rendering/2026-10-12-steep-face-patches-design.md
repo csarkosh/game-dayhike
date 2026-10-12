@@ -623,3 +623,50 @@ pairs against `main` at the same poses are recorded beside them.
 - The cliff modules, if they return: as hero pieces on a face, not cover,
   at a density and a seat of their own.
 - A lip at a column's top for a real overhang.
+
+## 8. As built
+
+The steep faces carry patches: over every 16 m cell with a steep grid point, a finer grid of
+the same ground at 0.5 m within 48 m of the camera, 1 m within 160 m and 2 m within 400 m on
+the high tier (36 / 120 / 300 m on medium, 24 / 80 / 200 m on low), each vertex pushed out
+along the face's normal by up to 4 m of the relief, capped where the ground bends tighter than
+the push, and drawn with the terrain's own material so the paint, the wet layer, the rain, the
+reflections and the shadows are the ground's. The height field, the collision and the placements
+are the ones the game had; the level id moved once, when the cliff modules' density went to
+zero.
+
+**The relief** (`client/src/sim/faceRelief.ts`) is a weighted blend over the nine sites around a
+point, each site a tilted plane (`FACE_VALUE_SPAN` 0.6, `FACE_TILT` 0.35), at three scales:
+columns of 5 m cells with 0.5 m joints or blocks of 6 m with 1.4 m joints over a 3 m octave,
+chosen by a 150 m noise, under forms of 20 m with 3.5 m borders at one and a half times the
+fine weight; a gain of 2.5 before the clamp to [-1, 1] fills the range (mean |v| 0.46, 7.3 %
+clamped). The search widens to twenty-five sites when a nearer site could lie outside the nine,
+exact while `border < (2 - sqrt 2) * cell` for every lattice. The slope mask runs from a gradient
+of 1.0 to 1.4; the standing limit is 1.02.
+
+**The patches** (`client/src/game/facePatches.ts`, pure; `facePatchMeshes.ts`, the shell) take
+their normals from the relief's own derivatives, stitch a finer edge to a coarser neighbour's
+(0.5 to 1 m and 1 to 2 m), fade over 3 m toward any side or corner whose neighbour is outside the
+reach, and are built as one patient job per 16 m crossing on the renderer's job system: the near
+band at once at the first update (about 100 ms at the scarp), the rest at about 3 ms a frame
+over about 2.7 s, the next crossing's cells built ahead on idle frames along the heading, so a
+crossing at a walk costs about 3 ms. The clipmap leaves out the ground under fully steep squares
+of the set the patches last drew (rings 0 to 4; 18,273 of 98,304 triangles under 217 squares at
+the road under the scarp) and redraws for each new set on the frame after it lands.
+
+**The look.** The rock texture repeats every 5.4 m on the rock layer; `ROCK` is (0.081, 0.081,
+0.081) and `SCREE` (0.115, 0.115, 0.115), a neutral grey at half the old luminance; in clear
+weather the sun's shadow keeps 0.17 of its light (`SHADOW_FLOOR`), every receiver alike; no cliff
+module stands on a face (`CLIFF_DENSITY` 0; the field and its tests keep a density of 0.1 of
+their own). No shader text changed, so the shader corpus and its maps are the ones before.
+
+**At the road under the scarp, high tier** (seed `atmo`, camera (-370, 25, -900)): 1,963 cells
+walked, 362 patches (20 at 0.5 m, 121 at 1 m, 221 at 2 m), 74,650 vertices, 131,200 triangles,
+no triangle folded (least facet agreement 0.185); on world 42's ridge cell (25, 34) none either.
+
+**Checks.** With the current main merged in, typecheck and lint pass, and the suite passes: 5,241 tests in 357 files, the twenty files that time out under the suite's own load green one at a time. The production build carries the three WGSL maps as it should. Verify pages on WebGPU, one fresh page a tier at noon and at 16:00: every stage the pages ask for is in the maps (166 to 234 a page), no misses, no differences, no console errors. Frame pairs at 3840 x 2160 on the high tier on WebGPU against the main of the day, two rounds of A B B A each, the branch less main: the stand on the face -9.3 and -10.3 ms (48.9 to 39.6 ms), the pose on the scarp -6.5 and -6.1 ms (30.7 to 24.2 ms), the road with the whole face in view +2.2 and +2.9 ms (52.4 to 54.6 ms), beside a same-build pair at -3.9 ms, so the road's change is within the noise and the other two are the cliff models' cost gone.
+
+**Not done, listed for later.** A player at the foot of a face can stand up to a few metres
+inside the drawn rock, since collision stays on the height field; the far and wide bands can
+still be filling when the intro's cover lifts; the rock texture at 5.4 m is about 95 texels a
+metre at a face's foot; the shadow lift is global to clear weather.
