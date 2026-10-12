@@ -55,22 +55,32 @@ type CompileTime = { _processCodeAfterIncludes?: unknown; onCompiled?: unknown; 
  * holds the whole hike: the material plugin manager hands every compile a
  * `processCodeAfterIncludes` whose closure is the manager, and the manager's
  * material has the scene — one pinned effect kept an entire retired world
- * alive. Those hooks are the compile's alone (the effect is ready, its
- * source processed and stored; `onCompiled` has fired), so they are dropped
- * as the effect is pinned.
+ * alive. Those hooks are dropped — but only with `strip`, which the one
+ * retire's sweep passes, never a mid-hike one. A ready effect's hooks are
+ * not spent while its hike runs: a mesh's first draw with a vertex buffer
+ * that is not of floats makes Babylon process the effect's source again
+ * (`checkNonFloatVertexBuffers`), through `processCodeAfterIncludes`, and an
+ * effect stripped of it before that draw came out of the reprocess with no
+ * plugin code at all — bindings shifted, the pipeline refused, the hike
+ * swapped to WebGL2. At the retire the scene is going and no more of its
+ * draws come, so there the hooks are the compile's leavings and dropping
+ * them frees the world.
  */
-export function pinShaders(engine: AbstractEngine): void {
+export function pinShaders(engine: AbstractEngine, strip = false): void {
   const held = pinned.get(engine) ?? new WeakSet<Effect>();
   pinned.set(engine, held);
   const cache = (engine as unknown as { _compiledEffects: Record<string, Effect & { _refCount: number }> })._compiledEffects;
   for (const effect of Object.values(cache)) {
-    if (held.has(effect) || !effect.isReady() || effect.getCompilationError() !== "") continue;
-    effect._refCount++;
+    if (!effect.isReady() || effect.getCompilationError() !== "") continue;
+    if (!held.has(effect)) {
+      effect._refCount++;
+      held.add(effect);
+    }
+    if (!strip) continue;
     const compile = effect as unknown as CompileTime;
     compile._processCodeAfterIncludes = undefined;
     compile.onCompiled = null;
     compile.onError = null;
-    held.add(effect);
   }
 }
 

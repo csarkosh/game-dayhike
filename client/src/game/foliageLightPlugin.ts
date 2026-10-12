@@ -30,11 +30,26 @@ export const FOLIAGE_WRAP = 0.35;
  * captures both the light colour expression and its index. Hemispheric
  * lights and the translucency variants have different tails and are left
  * alone.
+ *
+ * The call reads `vFoliageH`, which the Foliage plugin declares under
+ * `#ifdef FOLIAGE`, so the injected code carries the same guard and falls
+ * back to Babylon's own line without it. The guard is not decoration: Babylon
+ * processes an effect's source again on a mesh's first draw with a vertex
+ * buffer not of floats (`checkNonFloatVertexBuffers`), and that late pass
+ * reads the plugin manager's plugins of that moment, not of the effect's
+ * compile. An effect compiled before this plugin attached — its defines
+ * without `FOLIAGE` — reprocessed after, took the call without the
+ * declaration, and the whole engine fell to WebGL2 over one transient
+ * shader. Guarded, that pass compiles to the line Babylon would have made.
  */
 export const FOLIAGE_LIGHT_INJECTION_POINT =
   "!info\\.diffuse=computeDiffuseLighting\\(preInfo,(diffuse(\\d+|\\{X\\})\\.rgb)\\);";
 const FOLIAGE_LIGHT_INJECTION_CODE =
-  "info.diffuse=foliageDiffuseLighting(preInfo,$1,float($2),vFoliageH,viewDirectionW);";
+  "#ifdef FOLIAGE\n" +
+  "info.diffuse=foliageDiffuseLighting(preInfo,$1,float($2),vFoliageH,viewDirectionW);\n" +
+  "#else\n" +
+  "info.diffuse=computeDiffuseLighting(preInfo,$1);\n" +
+  "#endif";
 
 class FoliageLightPlugin extends MaterialPluginBase {
   constructor(material: Material) {

@@ -316,16 +316,18 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1021 recorded stages, each file\'s bytes hashing to the name it has: 645 on the medium and high tiers, 300 on low, 58 on high alone, 14 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1021);
+  it('holds the 1025 recorded stages, each file\'s bytes hashing to the name it has: 647 on the medium and high tiers, 302 on low, 58 on high alone, 14 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1025);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1021);
+    expect(read.stages).toHaveLength(1025);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(314);
-    // The 645 recorded on the medium and high tiers (four stages of two wet
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(318);
+    // The 647 recorded on the medium and high tiers (four stages of two wet
     // materials first met at a lake under three lights among them
-    // (2026-10-11)), the low tier's 300,
-    // recorded on it alone, the 58 the high tier alone met (the lake's
+    // (2026-10-11), a foliage material's pbr pair first met when the foliage
+    // light injection took its FOLIAGE guard (2026-10-12)), the low tier's
+    // 302, recorded on it alone (a foliage pbr pair of the same recording
+    // among them), the 58 the high tier alone met (the lake's
     // mirror and the sea's curl among them), the 14 the medium tier alone met, and the sky
     // dome's 2 and the midges' 2, whose text is the same on every tier.
     // Stages whose text a shader no longer produces are
@@ -340,11 +342,11 @@ describe('the committed corpus and the tests\' fixture', () => {
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1021);
+    expect(read.tiers.size).toBe(1025);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([304, 663, 707]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(645);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(300);
+    expect([on('low'), on('medium'), on('high')]).toEqual([306, 665, 709]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(647);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(302);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(58);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));

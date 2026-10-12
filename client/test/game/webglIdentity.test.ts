@@ -41,7 +41,11 @@ const PINS: Record<string, string> = {
   "foliage.TREE.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
   "foliage.UNDERSTORY.fragment": "b0130d6ef6b87a30998655a0ea50ebbd6d2eba1de66e4fe720fe50b4bdf6cea9",
   "foliage.UNDERSTORY.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliageLight.fragment": "ae5b873be2cb7e2c35baaa379a229a37cdf5df08f9ccc3cab48060d173dbe14c",
+  // Re-pinned for the `#ifdef FOLIAGE` guard on the injected per-light call
+  // (foliageLightPlugin.ts): compiled with FOLIAGE, the guard resolves to the
+  // call it always made; without it — a late reprocess of an effect compiled
+  // before the plugins attached — to Babylon's own line.
+  "foliageLight.fragment": "ee487d83f5f1a2b3cc9351958e148cfe51c25f28907227a230e2797da2777042",
   "groundConform.vertex": "a9f54562519ab094b2883463cec48050737f16a4f17e4a18852cfb414e227cea",
   "post.finish": "4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5",
   "post.grade": "74e331711356b6afe2ce371d749cfff39c64bc02473988dd2ba26bc9653ecd3a",
