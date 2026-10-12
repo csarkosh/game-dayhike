@@ -63,6 +63,7 @@ import { luma } from "./colour.js";
 import type { SkyTable } from "./skyTable.js";
 import { startSkySource, type SkySource } from "./skyWorker.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
+import { adoptEngine, pinShaders } from "./keptEngine.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
@@ -1667,6 +1668,13 @@ export type Renderer = {
   project(pos: Vec3): { x: number; y: number; depth: number } | null;
   resize(): void;
   dispose(): void;
+  /**
+   * Everything `dispose` does but let the engine go: the scene alone goes,
+   * once its BRDF texture is settled (`releaseScene`), and the engine,
+   * its render loop stopped, is handed back for the next hike on the page
+   * (`keptEngine.ts`), with the shaders it compiled (`pinShaders`).
+   */
+  retire(): AbstractEngine;
   setFreecam(view: FreecamView | null): void;
   setWireframe(on: boolean): void;
   setSkinShading(on: boolean): void;
@@ -1723,8 +1731,9 @@ export type Renderer = {
 export type RendererOptions = {
   tier?: QualityTier;
   /** An engine already made for `canvas`: WebGPU on the tiers where it fits
-   * (`engineChoice.ts`, `gpuEngine.ts`). Absent, the WebGL2 engine is made
-   * here as always. Either way the renderer owns it and disposes it. */
+   * (`engineChoice.ts`, `gpuEngine.ts`). Absent, the WebGL2 engine a past
+   * hike left on `canvas` (`adoptEngine`), else one made here. Either way the
+   * renderer owns it, and disposes it or retires it. */
   engine?: AbstractEngine;
   /** The pipelines that WebGPU engine makes asynchronously
    * (`asyncPipelines.ts`): its scene's rendering groups are their scope
@@ -1832,14 +1841,36 @@ export const BRDF_SETTLE_POLLS = 125;
 /** The wait between two of those polls. */
 const BRDF_POLL_MS = 16;
 
-/** Whether some scene of `engine` has a BRDF lookup texture still being
- * expanded: loading, or decoding from RGBD into half float. */
-function brdfExpanding(engine: AbstractEngine): boolean {
-  return engine.scenes.some((scene) =>
+/** Whether one of `scenes` has a BRDF lookup texture still being expanded:
+ * loading, or decoding from RGBD into half float. */
+function brdfExpanding(scenes: readonly Scene[]): boolean {
+  return scenes.some((scene) =>
     [scene.environmentBRDFTexture, scene.environmentFuzzBRDFTexture].some(
       (texture) => texture !== null && texture !== undefined && texture.getInternalTexture()?.isReady === false,
     ),
   );
+}
+
+/** Runs `release` at once, or once none of `scenes()` has its BRDF texture
+ * still expanding, polled every 16 ms for at most `polls` polls; nothing once
+ * `gone()` reads true. */
+function onceBrdfSettled(scenes: () => readonly Scene[], gone: () => boolean, release: () => void, polls: number): void {
+  if (gone()) return;
+  if (!brdfExpanding(scenes())) {
+    release();
+    return;
+  }
+  let left = polls;
+  const poll = (): void => {
+    if (gone()) return;
+    left--;
+    if (brdfExpanding(scenes()) && left > 0) {
+      setTimeout(poll, BRDF_POLL_MS);
+      return;
+    }
+    release();
+  };
+  setTimeout(poll, BRDF_POLL_MS);
 }
 
 /**
@@ -1874,22 +1905,17 @@ function brdfExpanding(engine: AbstractEngine): boolean {
  * not hidden. An engine something else has already disposed is left alone.
  */
 export function releaseEngine(engine: AbstractEngine, polls = BRDF_SETTLE_POLLS): void {
-  if (engine.isDisposed) return;
-  if (!brdfExpanding(engine)) {
-    engine.dispose();
-    return;
-  }
-  let left = polls;
-  const poll = (): void => {
-    if (engine.isDisposed) return;
-    left--;
-    if (brdfExpanding(engine) && left > 0) {
-      setTimeout(poll, BRDF_POLL_MS);
-      return;
-    }
-    engine.dispose();
-  };
-  setTimeout(poll, BRDF_POLL_MS);
+  onceBrdfSettled(() => engine.scenes, () => engine.isDisposed, () => engine.dispose(), polls);
+}
+
+/**
+ * Disposes `scene` and leaves its engine standing, on `releaseEngine`'s terms:
+ * at once, or once its BRDF texture has finished expanding. The engine
+ * disposed meanwhile takes the scene with it.
+ */
+export function releaseScene(scene: Scene, polls = BRDF_SETTLE_POLLS): void {
+  const engine = scene.getEngine();
+  onceBrdfSettled(() => [scene], () => scene.isDisposed || engine.isDisposed, () => scene.dispose(), polls);
 }
 
 /**
@@ -1909,8 +1935,10 @@ export function createRenderer(
   // replaced (a live tier change, the landing's backdrop giving way to the
   // game) frees every GPU object of its scene at once, including any the
   // scene failed to delete. An engine handed in (WebGPU) is owned the same
-  // way: disposed with the renderer, or here when the build throws.
-  const engine = options.engine ?? new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);
+  // way: disposed with the renderer, or here when the build throws. A WebGL2
+  // engine a past hike left on this canvas is taken up again, with the
+  // shaders it compiled (`keptEngine.ts`).
+  const engine = options.engine ?? adoptEngine(canvas) ?? new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);
   try {
     // Every part the build has made is disposed, newest first, when a later
     // part throws: the same teardown `dispose` gives a whole renderer, so the
@@ -2743,7 +2771,9 @@ function buildRenderer(
     }
   }
 
-  return {
+  /** `retire` rather than `dispose`: the engine is kept. */
+  let retiring = false;
+  const renderer: Renderer = {
     scene,
     engine,
     camera,
@@ -3191,8 +3221,18 @@ function buildRenderer(
       // renderer that has gone asks for a pipeline, and nothing it asked for
       // is started or stored (a swap's new engine compiles alone).
       releasePipelines();
-      // The scene goes with its engine, once its BRDF texture is settled.
-      releaseEngine(engine);
+      // The scene goes with its engine, once its BRDF texture is settled;
+      // retired, the scene alone, and the engine stands for the next hike.
+      if (retiring) releaseScene(scene);
+      else releaseEngine(engine);
+    },
+    retire() {
+      retiring = true;
+      engine.stopRenderLoop();
+      // Before any material goes: what compiled stays for the next hike.
+      pinShaders(engine);
+      renderer.dispose();
+      return engine;
     },
     setFreecam(view) {
       freecam = view;
@@ -3259,4 +3299,5 @@ function buildRenderer(
       windOverride = level === null ? null : Math.min(1, Math.max(0, level));
     },
   };
+  return renderer;
 }

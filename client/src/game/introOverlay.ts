@@ -64,7 +64,7 @@ const STYLE = `
   .intro-caption.radio::before { content: "Dispatch (radio): "; font-style: normal; opacity: 0.7; }
   .intro-bar { grid-column: 1; grid-row: 3; align-self: end; margin: 0 16px 10px; height: 2px; background: rgba(255,255,255,0.15); }
   .intro-bar-fill { height: 100%; width: 0%; background: rgba(255,255,255,0.7); transition: width 300ms linear; }
-  .intro-line { position: absolute; right: 16px; bottom: 16px; color: rgba(255,255,255,0.55); font: 12px/1.4 system-ui, sans-serif; }
+  .intro-line { position: absolute; right: 16px; bottom: 16px; color: rgba(255,255,255,0.55); font: 12px/1.4 system-ui, sans-serif; white-space: pre-line; text-align: right; }
   .intro-skip, .intro-stepout { position: absolute; left: 16px; bottom: 16px; color: rgba(255,255,255,0.7); font: 12px/1.4 system-ui, sans-serif; opacity: 0; transition: opacity 400ms; }
   .intro-skip.shown, .intro-stepout.shown { opacity: 1; }
   .intro-ring { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.35); margin-right: 8px; vertical-align: -2px; }
@@ -224,7 +224,7 @@ export function createIntroOverlay(
       caption.classList.toggle("radio", c?.radio ?? false);
       const g = progress.view();
       fill.style.width = `${Math.round(g.bar * 100)}%`;
-      line.textContent = g.line;
+      line.textContent = g.lines.join("\n");
       skip.classList.toggle("shown", pv.showSkip);
       ring.style.background = `conic-gradient(rgba(255,255,255,0.9) ${Math.round(pv.holdFraction * 360)}deg, transparent 0)`;
       stepOut.classList.toggle("shown", pv.showStepOut);

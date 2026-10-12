@@ -203,7 +203,8 @@ describe("layer boundaries", () => {
     // the older rule, and the engine from the tier decided.
     expect(main).not.toContain("detectTier");
     expect([...main.matchAll(/\bstartHike</g)].length).toBe(1);
-    expect(main).toContain("      return engineFor(decided.tier, read, () => !cancelled());");
+    // The engine the last hike kept, where it is the one the rule gives.
+    expect(main).toContain("      return hikeEngineFor(decided.tier, read, () => !cancelled());");
     // Nothing of the start hangs off a promise outside the chain's catch.
     expect(main).not.toMatch(/makeWebGpu\([^)]*\)\.then\(/);
   });

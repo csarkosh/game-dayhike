@@ -4,7 +4,7 @@ import { createLoadProgress } from "../../src/game/loadProgress.js";
 describe("the loading bar's model", () => {
   it("starts empty and reads nothing", () => {
     const p = createLoadProgress();
-    expect(p.view()).toEqual({ bar: 0, line: "", ready: false });
+    expect(p.view()).toEqual({ bar: 0, lines: [], ready: false });
   });
 
   it("counts models of a total, and weighs the bar by bytes when it knows them", () => {
@@ -14,7 +14,7 @@ describe("the loading bar's model", () => {
     p.start("models", "b", 3000);
     p.bytes("models", "a", 1000, 1000);
     p.done("models", "a");
-    expect(p.view().line).toBe("downloading models 1 of 4, 0.0 of 0.0 MB");
+    expect(p.view().lines).toEqual(["downloading models 1 of 4, 0.0 of 0.0 MB"]);
     p.bytes("models", "b", 1500, 3000);
     // 2500 of the 4000 bytes of the two models started, and two of the four
     // started: the stage is 0.625 · 0.5 through, and it is 0.6 of the bar.
@@ -27,22 +27,48 @@ describe("the loading bar's model", () => {
     p.done("shaders", "x");
     p.start("shaders", "y");
     p.done("shaders", "y");
-    expect(p.view().line).toBe("compiling shaders 2");
-    expect(p.view().line).not.toContain("%");
+    expect(p.view().lines).toEqual(["compiling shaders 2"]);
+    expect(p.view().lines.join(" ")).not.toContain("%");
     // A stage with no total contributes nothing to the bar until the gate.
     expect(p.view().bar).toBe(0);
   });
 
-  it("names one stage at a time, the first that is not finished", () => {
+  it("stacks a line per stage under way, each gone as its work ends", () => {
     const p = createLoadProgress();
     p.total("models", 1);
     p.total("ground", 2);
     p.start("models", "a");
     p.start("ground", "g1");
     p.done("ground", "g1");
-    expect(p.view().line).toBe("downloading models 0 of 1");
+    expect(p.view().lines).toEqual(["downloading models 0 of 1", "ground and sound 1 of 2"]);
     p.done("models", "a");
-    expect(p.view().line).toBe("ground and sound 1 of 2");
+    expect(p.view().lines).toEqual(["ground and sound 1 of 2"]);
+    p.start("ground", "g2");
+    p.done("ground", "g2");
+    expect(p.view().lines).toEqual([]);
+  });
+
+  it("shows the decode: a model with its bytes in but its parse not settled", () => {
+    const p = createLoadProgress();
+    p.total("models", 4);
+    p.start("models", "a", 1000);
+    p.bytes("models", "a", 1000, 1000);
+    p.done("models", "a");
+    p.start("models", "b", 3000);
+    p.bytes("models", "b", 3000, 3000);
+    // b is downloaded, decoding; c and d have not started.
+    expect(p.view().lines).toEqual(["downloading models 2 of 4, 0.0 of 0.0 MB", "decoding models 1 of 2"]);
+    p.done("models", "b");
+    expect(p.view().lines).toEqual(["downloading models 2 of 4, 0.0 of 0.0 MB"]);
+    p.start("models", "c", 500);
+    p.start("models", "d", 500);
+    p.bytes("models", "c", 500, 500);
+    p.bytes("models", "d", 500, 500);
+    // Everything is down; only the decode is left.
+    expect(p.view().lines).toEqual(["decoding models 2 of 4"]);
+    p.done("models", "c");
+    p.done("models", "d");
+    expect(p.view().lines).toEqual([]);
   });
 
   it("never moves the bar backward", () => {
@@ -62,6 +88,6 @@ describe("the loading bar's model", () => {
     p.done("models", "a");
     expect(p.view().ready).toBe(false);
     p.gate();
-    expect(p.view()).toEqual({ bar: 1, line: "ready", ready: true });
+    expect(p.view()).toEqual({ bar: 1, lines: ["ready"], ready: true });
   });
 });

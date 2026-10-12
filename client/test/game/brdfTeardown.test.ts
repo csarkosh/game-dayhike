@@ -36,6 +36,8 @@ import "../../src/sim/passes/index.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { RGBDTextureTools } from "@babylonjs/core/Misc/rgbdTextureTools.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { Engine } from "@babylonjs/core/Engines/engine.js";
@@ -226,3 +228,53 @@ describe("the BRDF texture on an engine the renderer is given, as the WebGPU eng
   });
 });
 
+
+describe("a renderer retired for the next hike", () => {
+  const cache = (e: AbstractEngine): Record<string, Effect> => (e as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
+
+  it("lets its scene go once the expansion has finished and leaves its engine standing", async () => {
+    const seen = await unhandledDuring(async () => {
+      const r = createRenderer(nullCanvas(), LEVEL, null, { tier: "medium" });
+      expect(expanding(r.scene.environmentBRDFTexture)).toBe(true);
+      const brdf = r.scene.environmentBRDFTexture;
+      let readyAtDispose: boolean | null = null;
+      const dispose = r.scene.dispose.bind(r.scene);
+      vi.spyOn(r.scene, "dispose").mockImplementation(() => {
+        readyAtDispose = brdf?.getInternalTexture()?.isReady === true;
+        dispose();
+      });
+      const engine = r.retire();
+      expect(engine).toBe(r.engine);
+      await new Promise((res) => setTimeout(res, 300));
+      expect(readyAtDispose).toBe(true);
+      expect(r.scene.isDisposed).toBe(true);
+      expect(engine.isDisposed).toBe(false);
+      expect(engine.scenes).toEqual([]);
+      engine.dispose();
+    });
+    expect(seen).toEqual([]);
+    expect(EngineStore.Instances.length).toBe(0);
+  }, timeLimit(60_000));
+
+  it("keeps every shader that had compiled cleanly in its engine for the next renderer, which builds on it", async () => {
+    const r = createRenderer(nullCanvas(), LEVEL, null, { tier: "medium" });
+    const clean = (): string[] => Object.entries(cache(r.engine)).filter(([, e]) => e.isReady() && e.getCompilationError() === "").map(([key]) => key);
+    for (let frame = 0; frame < 20 && clean().length === 0; frame++) {
+      r.scene.render();
+      await new Promise((res) => setTimeout(res, 10));
+    }
+    const effects = clean();
+    expect(effects.length).toBeGreaterThan(0);
+    const engine = r.retire();
+    await new Promise((res) => setTimeout(res, 300));
+    expect(r.scene.isDisposed).toBe(true);
+    // A frame past the dispose, when Babylon lets go of what it deferred.
+    engine.onEndFrameObservable.notifyObservers(engine);
+    expect(Object.keys(cache(engine))).toEqual(expect.arrayContaining(effects));
+    const next = createRenderer(nullCanvas(), LEVEL, null, { tier: "medium", engine });
+    expect(next.engine).toBe(engine);
+    next.dispose();
+    await new Promise((res) => setTimeout(res, 300));
+    expect(EngineStore.Instances.length).toBe(0);
+  }, timeLimit(60_000));
+});

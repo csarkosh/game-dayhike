@@ -126,14 +126,14 @@ describe("the one loader every model passes through", () => {
     const container = await loadContainer("/assets/tree-abc.glb", {} as never, fake);
     expect(container).toBeDefined();
     expect(calls).toHaveLength(1);
-    expect(p.view().line).toBe("downloading models 1 of 42, 0.0 of 0.0 MB");
+    expect(p.view().lines).toContain("downloading models 1 of 42, 0.0 of 0.0 MB");
     setLoadProgress(null);
   });
 
   it("tells the model the models stage's total, the catalog's count, when it is set", () => {
     const p = createLoadProgress();
     setLoadProgress(p);
-    expect(p.view().line).toBe("downloading models 0 of 42");
+    expect(p.view().lines).toContain("downloading models 0 of 42");
     expect(MODEL_TOTAL).toBe(42);
     setLoadProgress(null);
   });
