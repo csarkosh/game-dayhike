@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as relief from "../../src/sim/faceRelief.js";
 import {
   cellularD, cellularSite, faceKindD, faceReliefD, FACE_RELIEF_TUNABLES,
+  FACE_VALUE_SPAN, FACE_TILT,
   FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, FACE_COLUMN_SALT,
   FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, FACE_BLOCK_SALT,
   FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER, FACE_BLOCK_FINE_SALT,
@@ -21,11 +22,11 @@ const COLUMN_SALT = SEED ^ FACE_COLUMN_SALT;
 const OTHER_SEED = 0x2b7e1516;
 
 const LITERALS: ReliefSample[] = [
-  { v: -0.255054656435144, dx: 0.01242232974021108, dz: -0.04521580781442783 },
-  { v: -0.641117458228481, dx: -0.02593568427113229, dz: 0.016330546971062593 },
-  { v: 0.6808243365958333, dx: 0, dz: 0 },
-  { v: -0.04838613330646532, dx: 0.7350120827756929, dz: 1.2471781921775384 },
-  { v: -0.5118525647114797, dx: 0.29837845129074664, dz: 0.2101162746605993 },
+  { v: -0.1660214892254735, dx: 0.0541525891532862, dz: -0.10220811629993089 },
+  { v: -0.45107989225061984, dx: -0.10646252674057811, dz: 0.10043140671757139 },
+  { v: 0.47174687246621977, dx: 0.03840611403575167, dz: -0.06028362037613988 },
+  { v: 0.008316332872866497, dx: 0.36542843889825616, dz: 0.6974030146746485 },
+  { v: -0.3672477207670021, dx: 0.26929808349476414, dz: 0.10002319699280468 },
 ];
 
 /** The R2 low-discrepancy sequence over a square of half-width `half` about
@@ -57,6 +58,53 @@ function siteDistances(
     }
   }
   return d.sort((a, b) => a - b);
+}
+
+/** A site's tilt term at (x, z): FACE_TILT · (a · (x − sx) + b · (z − sz)) / cell,
+ * in the order the field sums it. */
+function tiltTerm(
+  x: number, z: number, p: { x: number; z: number; a: number; b: number }, cell: number,
+): number {
+  const tc = FACE_TILT / cell;
+  return tc * p.a * (x - p.x) + tc * p.b * (z - p.z);
+}
+
+/** The blend written out over the 5 × 5 cells about (x, z), wider than the
+ * field ever needs: its value before the clamp, and the largest and smallest
+ * tilt term among the sites with weight. */
+function blendSites(
+  x: number, z: number, cell: number, jitter: number, border: number, salt: number,
+): { v: number; tiltMax: number; tiltMin: number } {
+  const i0 = Math.floor(x / cell);
+  const j0 = Math.floor(z / cell);
+  const sites: Array<{ f: number; u: number; tilt: number }> = [];
+  for (let i = i0 - 2; i <= i0 + 2; i++) {
+    for (let j = j0 - 2; j <= j0 + 2; j++) {
+      const p = cellularSite(i, j, cell, jitter, salt);
+      const tilt = tiltTerm(x, z, p, cell);
+      sites.push({
+        f: Math.sqrt((x - p.x) * (x - p.x) + (z - p.z) * (z - p.z)),
+        u: p.o * FACE_VALUE_SPAN + tilt,
+        tilt,
+      });
+    }
+  }
+  const f1 = Math.min(...sites.map((q) => q.f));
+  let sw = 0;
+  let swu = 0;
+  let tiltMax = -Infinity;
+  let tiltMin = Infinity;
+  for (const q of sites) {
+    const t = Math.min(1, (q.f - f1) / border);
+    const w = 1 - t * t * t * (t * (t * 6 - 15) + 10);
+    if (w > 0) {
+      tiltMax = Math.max(tiltMax, q.tilt);
+      tiltMin = Math.min(tiltMin, q.tilt);
+    }
+    sw += w;
+    swu += w * q.u;
+  }
+  return { v: swu / sw, tiltMax, tiltMin };
 }
 
 /** How near (x, z) is to a kink of the cellular field: F2 − F1 where a third
@@ -98,23 +146,23 @@ function checkField(
 }
 
 /** The smallest junction gap among the forms with weight at (x, z). */
-function reliefGap(x: number, z: number): number {
-  const s = faceKindD(SEED, x, z).v;
+function reliefGap(x: number, z: number, seed = SEED): number {
+  const s = faceKindD(seed, x, z).v;
   let g = Infinity;
   if (s < 1) {
     g = Math.min(g, junctionGap(
-      x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, COLUMN_SALT,
+      x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, seed ^ FACE_COLUMN_SALT,
     ));
   }
   if (s > 0) {
     g = Math.min(
       g,
       junctionGap(
-        x, z, FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, SEED ^ FACE_BLOCK_SALT,
+        x, z, FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, seed ^ FACE_BLOCK_SALT,
       ),
       junctionGap(
         x, z, FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER,
-        SEED ^ FACE_BLOCK_FINE_SALT,
+        seed ^ FACE_BLOCK_FINE_SALT,
       ),
     );
   }
@@ -143,22 +191,27 @@ describe("the cellular field", () => {
   const column = (x: number, z: number): ReliefSample =>
     cellularD(x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, COLUMN_SALT);
 
-  it("is the nearest site's value, flat, well inside a cell", () => {
+  it("is the nearest site's plane well inside a cell", () => {
+    const tc = FACE_TILT / FACE_COLUMN_CELL;
     let checked = 0;
     for (let i = -20; i < 20; i++) {
       const p = cellularSite(i, 7, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, COLUMN_SALT);
-      // On the site itself F1 = 0, and F2 is far past the joint's width.
-      expect(nearestOther(p.x, p.z, p, p)).toBeGreaterThan(FACE_COLUMN_BORDER);
-      const s = column(p.x, p.z);
-      expect(s.v).toBe(p.o);
-      expect(s.dx).toBe(0);
-      expect(s.dz).toBe(0);
+      // A tenth of a metre off the site, F1 ≈ 0.11, and F2 is far past
+      // F1 and the joint's width.
+      const x = p.x + 0.1;
+      const z = p.z - 0.05;
+      const f1 = Math.sqrt((x - p.x) * (x - p.x) + (z - p.z) * (z - p.z));
+      expect(nearestOther(x, z, p, p)).toBeGreaterThan(f1 + FACE_COLUMN_BORDER);
+      const s = column(x, z);
+      expect(s.v).toBe(p.o * FACE_VALUE_SPAN + tiltTerm(x, z, p, FACE_COLUMN_CELL));
+      expect(s.dx).toBe(tc * p.a);
+      expect(s.dz).toBe(tc * p.b);
       checked++;
     }
     expect(checked).toBe(40);
   });
 
-  it("is the mean of the two sites' values on the border between them", () => {
+  it("is the mean of the two sites' planes on the border between them", () => {
     let checked = 0;
     for (let i = -20; i < 20; i++) {
       const a = cellularSite(i, -3, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, COLUMN_SALT);
@@ -170,7 +223,9 @@ describe("the cellular field", () => {
       const mz = (a.z + b.z) / 2;
       const half = Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z)) / 2;
       if (nearestOther(mx, mz, a, b) <= half + FACE_COLUMN_BORDER) continue;
-      expect(column(mx, mz).v).toBe((a.o + b.o) / 2);
+      const ua = a.o * FACE_VALUE_SPAN + tiltTerm(mx, mz, a, FACE_COLUMN_CELL);
+      const ub = b.o * FACE_VALUE_SPAN + tiltTerm(mx, mz, b, FACE_COLUMN_CELL);
+      expect(column(mx, mz).v).toBe((ua + ub) / 2);
       checked++;
     }
     expect(checked).toBe(32);
@@ -183,27 +238,7 @@ describe("the cellular field", () => {
     // full jitter and a joint half a cell wide stand in for the case.
     const reference = (
       x: number, z: number, cell: number, jitter: number, border: number,
-    ): number => {
-      const i0 = Math.floor(x / cell);
-      const j0 = Math.floor(z / cell);
-      const sites: Array<{ f: number; o: number }> = [];
-      for (let i = i0 - 2; i <= i0 + 2; i++) {
-        for (let j = j0 - 2; j <= j0 + 2; j++) {
-          const p = cellularSite(i, j, cell, jitter, COLUMN_SALT);
-          sites.push({ f: Math.sqrt((x - p.x) * (x - p.x) + (z - p.z) * (z - p.z)), o: p.o });
-        }
-      }
-      const f1 = Math.min(...sites.map((q) => q.f));
-      let sw = 0;
-      let swo = 0;
-      for (const q of sites) {
-        const t = Math.min(1, (q.f - f1) / border);
-        const w = 1 - t * t * t * (t * (t * 6 - 15) + 10);
-        sw += w;
-        swo += w * q.o;
-      }
-      return swo / sw;
-    };
+    ): number => Math.max(-1, Math.min(1, blendSites(x, z, cell, jitter, border, COLUMN_SALT).v));
     const worst = (cell: number, jitter: number, border: number, half: number): number => {
       let e = 0;
       for (const [x, z] of r2Points(20000, half)) {
@@ -217,6 +252,41 @@ describe("the cellular field", () => {
     expect(worst(1, 1, 0.5, 300)).toBeLessThan(1e-12);
   });
 
+  it("tilts its planes both ways, within the bound, and never needs the clamp here", () => {
+    // A site with weight is within F1 + border ≤ 1.42 · cell + border of the
+    // sample, and |a|, |b| ≤ 1, so its tilt term is at most
+    // FACE_TILT · 2 · (1.42 + border / cell). Over 20,000 points each form's
+    // tilt reaches both signs, at under half that bound, and no blend passes
+    // ±1: the clamp holds the range for every sample but engages on none here.
+    const forms = [
+      [FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, COLUMN_SALT],
+      [FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, SEED ^ FACE_BLOCK_SALT],
+      [
+        FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER,
+        SEED ^ FACE_BLOCK_FINE_SALT,
+      ],
+    ] as const;
+    const seen = forms.map(([cell, jitter, border, salt]) => {
+      let tiltMax = -Infinity;
+      let tiltMin = Infinity;
+      let clamped = 0;
+      for (const [x, z] of r2Points(20000, 1000)) {
+        const b = blendSites(x, z, cell, jitter, border, salt);
+        tiltMax = Math.max(tiltMax, b.tiltMax);
+        tiltMin = Math.min(tiltMin, b.tiltMin);
+        if (b.v > 1 || b.v < -1) clamped++;
+      }
+      const bound = FACE_TILT * 2 * (1.42 + border / cell);
+      expect(Math.max(tiltMax, -tiltMin)).toBeLessThanOrEqual(bound);
+      return { tiltMax, tiltMin, clamped };
+    });
+    expect(seen).toEqual([
+      { tiltMax: 0.4402055220495723, tiltMin: -0.44214625627634785, clamped: 0 },
+      { tiltMax: 0.3982215901929238, tiltMin: -0.4015684322765919, clamped: 0 },
+      { tiltMax: 0.39425022331276444, tiltMin: -0.4112739089875262, clamped: 0 },
+    ]);
+  });
+
   it("carries exact derivatives (a 2,000-point sweep)", () => {
     const r = checkField(
       column,
@@ -225,7 +295,7 @@ describe("the cellular field", () => {
       ),
       r2Points(2000, 1000),
     );
-    // Measured worst / steepest: 2.1e-6, with no point left out needing it.
+    // Measured worst / steepest: 2.6e-6, with no point left out needing it.
     expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
     expect(r.skipped).toBe(1);
   });
@@ -234,34 +304,36 @@ describe("the cellular field", () => {
 describe("the relief", () => {
   it("carries exact derivatives through the forms and the mix (a 2,000-point sweep)", () => {
     const r = checkField((x, z) => faceReliefD(SEED, x, z), reliefGap, r2Points(2000, 1000));
-    // Measured worst / steepest: 1.7e-6, with no point left out needing it.
+    // Measured worst / steepest: 2.2e-6, with no point left out needing it.
     expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
     expect(r.skipped).toBe(1);
   });
 
-  it("carries the mix's own derivative where the forms are flat", () => {
-    // In the band, inside a cell of every form, the slope is the mix's alone:
-    // a tenth at most, too small for the sweep above to see beside a joint.
-    const flat = (x: number, z: number): boolean => {
+  it("carries the mix's own derivative inside the forms' cells", () => {
+    // In the band, inside a cell of every form, the slope is the planes' and
+    // the mix's alone: under two tenths, too small for the sweep above to see
+    // beside a joint.
+    const inside = (x: number, z: number): boolean => {
       const s = faceKindD(SEED, x, z).v;
       if (s === 0 || s === 1) return false;
       const forms = [
-        cellularD(x, z, FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, COLUMN_SALT),
-        cellularD(
-          x, z, FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, SEED ^ FACE_BLOCK_SALT,
-        ),
-        cellularD(
-          x, z, FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER,
+        [FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, COLUMN_SALT],
+        [FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, SEED ^ FACE_BLOCK_SALT],
+        [
+          FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER,
           SEED ^ FACE_BLOCK_FINE_SALT,
-        ),
-      ];
-      return forms.every((f) => f.dx === 0 && f.dz === 0);
+        ],
+      ] as const;
+      return forms.every(([cell, jitter, border, salt]) => {
+        const [f1, f2] = siteDistances(x, z, cell, jitter, salt) as [number, number];
+        return f2 - f1 >= border;
+      });
     };
-    const pts = r2Points(20000, 1000).filter(([x, z]) => flat(x, z));
+    const pts = r2Points(20000, 1000).filter(([x, z]) => inside(x, z));
     expect(pts.length).toBe(1956);
     const r = checkField((x, z) => faceReliefD(SEED, x, z), () => Infinity, pts);
     expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
-    // Measured worst / steepest: 3.4e-8.
+    // Measured worst / steepest: 3.2e-8; steepest 0.14.
     expect(r.steepest).toBeGreaterThan(0.1);
   });
 
@@ -333,8 +405,8 @@ describe("the relief", () => {
   });
 
   it("is continuous: no step along 100 lines of 100 m at 1 cm", () => {
-    // Every sample, junctions included. The largest slope the sweeps meet is
-    // 12.7, so a step over 0.15 in 1 cm is no slope but a break.
+    // Every sample, junctions included. The largest step the lines meet is
+    // 0.086, a slope of 8.6, so a step over 0.1 in 1 cm is no slope but a break.
     const dirs = [[1, 0], [0, 1], [0.6, 0.8], [0.8, -0.6]] as const;
     const starts = r2Points(100, 1000);
     let largest = 0;
@@ -348,7 +420,7 @@ describe("the relief", () => {
         prev = v;
       }
     }
-    expect(largest).toBeLessThan(0.15);
+    expect(largest).toBeLessThan(0.1);
   });
 
   it("differs between two worlds", () => {
@@ -382,11 +454,11 @@ describe("the relief", () => {
 describe("the tunables", () => {
   it("holds every constant by name", () => {
     const keys = [
-      "FACE_SLOPE_LO", "FACE_SLOPE_HI", "FACE_HALF_DEPTH", "FACE_DIFF_STEP",
+      "FACE_SLOPE_LO", "FACE_SLOPE_HI", "FACE_HALF_DEPTH",
       "FACE_COLUMN_CELL", "FACE_COLUMN_JITTER", "FACE_COLUMN_BORDER",
       "FACE_BLOCK_CELL", "FACE_BLOCK_JITTER", "FACE_BLOCK_BORDER",
       "FACE_BLOCK_FINE_CELL", "FACE_BLOCK_FINE_JITTER", "FACE_BLOCK_FINE_BORDER",
-      "FACE_BLOCK_FINE_WEIGHT", "FACE_BLOCK_NORM",
+      "FACE_BLOCK_FINE_WEIGHT", "FACE_BLOCK_NORM", "FACE_VALUE_SPAN", "FACE_TILT",
       "FACE_KIND_WAVE", "FACE_KIND_LO", "FACE_KIND_HI",
       "FACE_COLUMN_SALT", "FACE_BLOCK_SALT", "FACE_BLOCK_FINE_SALT", "FACE_KIND_SALT",
     ];
