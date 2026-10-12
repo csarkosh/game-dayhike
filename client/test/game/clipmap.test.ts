@@ -336,7 +336,8 @@ describe("ringGeometry", () => {
     expect(ring.colors[at * 4 + 2]).toBeCloseTo(0.06, 5);
     // Teeth, so this cannot pass by the palette going flat: the swapped call is
     // what the assertion above must be able to reject.
-    expect(surfaceAlbedo(SEED, x, z, slope, altitude).b).toBeCloseTo(0.21, 5);
+    // 2026-10-12: 0.21 before the steep rock went dark grey (scree's blue).
+    expect(surfaceAlbedo(SEED, x, z, slope, altitude).b).toBeCloseTo(0.115, 5);
   });
 
   it("bakes the canopy tint into forest-zone vertex colours", () => {

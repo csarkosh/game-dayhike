@@ -83,8 +83,19 @@ const GRASS: Rgb = { r: 0.09, g: 0.15, b: 0.06 };
 const CANOPY: Rgb = { r: 0.045, g: 0.085, b: 0.05 };
 /** Blend cap at full density — full forest keeps a floor-litter remnant. */
 const CANOPY_MAX = 0.85;
-const ROCK: Rgb = { r: 0.17, g: 0.16, b: 0.15 };
-const SCREE: Rgb = { r: 0.24, g: 0.23, b: 0.21 };
+/**
+ * Steep rock and the scree past it: dark, neutral grey. The ground shader
+ * divides the rock texture by its own mean colour (`LAYER_MEAN_RGB.rock` in
+ * `terrainTexture.ts`, which `groundMeans.test.ts` measures off the texture),
+ * so the texture adds variation and no hue, and what a face shows on average
+ * is this colour itself; past the texture's fade it is this colour alone. A
+ * neutral grey here is therefore a neutral grey on screen, and the warm rock
+ * texture cannot tint it tan. Each is half the luminance the faces carried
+ * at (0.17, 0.16, 0.15) and (0.24, 0.23, 0.21), which read as light grey-tan:
+ * 0.081 and 0.115.
+ */
+export const ROCK: Rgb = { r: 0.081, g: 0.081, b: 0.081 };
+export const SCREE: Rgb = { r: 0.115, g: 0.115, b: 0.115 };
 const SNOW: Rgb = { r: 0.78, g: 0.8, b: 0.84 };
 
 /** Where dead leaves and twigs take over from grass, the floor colour leans
