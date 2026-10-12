@@ -45,13 +45,30 @@ A pinned effect must hold nothing of the hike that compiled it. Babylon
 hands every compile a `processCodeAfterIncludes` callback whose closure is
 the material plugin manager, and the manager's material has the scene: left
 in place, one pinned effect kept an entire retired world alive — about
-100 MB a hike, found by walking a heap snapshot's retainer paths. The pin
-drops that hook and the compile's `onCompiled`/`onError` with it; they are
-the compile's alone, spent by the time an effect pins (the processed source
-is stored on the effect, so a context restore rebuilds without them).
-Measured over five hikes, the page's heap after a forced collection now
-stays flat (363–380 MB) where it climbed ~100 MB a hike before, and each
-retired hike's world is collected whole.
+100 MB a hike, found by walking a heap snapshot's retainer paths. The
+retire's sweep, and only that one, drops the hook and the compile's
+`onCompiled`/`onError` with it. A mid-hike sweep must leave them: the hook
+is not spent while the hike runs, because Babylon processes an effect's
+source again on a mesh's first draw with a vertex buffer that is not of
+floats — every skinned glTF model has one — reading that hook
+(`checkNonFloatVertexBuffers`); an effect stripped before that draw came out
+of the reprocess with no plugin code and shifted bindings, the pipeline was
+refused, and the engine failure sent the hike to WebGL2 with the fallback
+remembered — on about half of first visits, measured twelve runs headless.
+At the retire the scene is going and no more of its draws come, so there the
+hooks are the compile's leavings (the processed source is stored on the
+effect, so a context restore rebuilds without them). Measured over five
+hikes, the page's heap after a forced collection stays flat (363–380 MB)
+where it climbed ~100 MB a hike before, and each retired hike's world is
+collected whole.
+
+The same late pass is why the foliage light plugin's injected per-light call
+carries its own `#ifdef FOLIAGE` guard: the pass reads the plugin manager's
+plugins of that moment, not of the effect's compile, so an effect compiled
+before the foliage plugins attached — its defines without `FOLIAGE` — takes
+the injection too. Unguarded, that read the undeclared `vFoliageH` and the
+one transient shader felled the whole engine; guarded, it compiles to the
+line Babylon's own shader carries.
 
 ## As measured
 

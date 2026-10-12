@@ -59,6 +59,24 @@ describe("foliage light plugin", () => {
     );
   });
 
+  it("the injected call is guarded: compiled without FOLIAGE it is Babylon's own line", () => {
+    const include = ShaderStore.IncludesShadersStore["lightFragment"] as string;
+    const mat = new PBRMaterial("guard", scene);
+    attachFoliage(mat, FOLIAGE_PROFILES.GRASS, 1);
+    attachFoliageLight(mat);
+    const code = mat.pluginManager!.getPlugin("FoliageLight")!.getCustomCode("fragment")![FOLIAGE_LIGHT_INJECTION_POINT]!;
+    // Babylon processes an effect's source again on a draw whose vertex
+    // buffers are not of floats, reading the plugins of that moment: an
+    // effect compiled before the plugins attached (no FOLIAGE define) takes
+    // this injection too, so without FOLIAGE it must compile to the line the
+    // pattern matched, not read the undeclared vFoliageH.
+    expect(code).toContain("#ifdef FOLIAGE\n");
+    expect(code).toContain("#else\ninfo.diffuse=computeDiffuseLighting(preInfo,$1);\n#endif");
+    const injected = include.replace(new RegExp(FOLIAGE_LIGHT_INJECTION_POINT.slice(1), "g"), code);
+    expect(injected).toContain("\ninfo.diffuse=foliageDiffuseLighting(preInfo,diffuse{X}.rgb,float({X}),vFoliageH,viewDirectionW);");
+    expect(injected).toContain("\ninfo.diffuse=computeDiffuseLighting(preInfo,diffuse{X}.rgb);");
+  });
+
   it("the wrap term never exceeds Lambert at full light and returns the stock result off the sun", () => {
     expect(diffuseFx).toContain("if (lightIndex > 0.5) {");
     expect(diffuseFx).toContain(`const float FOLIAGE_WRAP = ${FOLIAGE_WRAP};`);

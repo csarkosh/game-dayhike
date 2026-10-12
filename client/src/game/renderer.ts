@@ -3229,8 +3229,10 @@ function buildRenderer(
     retire() {
       retiring = true;
       engine.stopRenderLoop();
-      // Before any material goes: what compiled stays for the next hike.
-      pinShaders(engine);
+      // Before any material goes: what compiled stays for the next hike,
+      // and only here, where no more of this scene's draws come, are the
+      // effects' compile-time hooks dropped (`pinShaders`).
+      pinShaders(engine, true);
       renderer.dispose();
       return engine;
     },
