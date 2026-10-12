@@ -32,6 +32,8 @@ export const PATCH_DEPTH = 2 * FACE_HALF_DEPTH;
 export const PATCH_NEAR_SPACING = 0.5;
 /** Vertex spacing (m) of the cells beyond it, within the far reach. */
 export const PATCH_FAR_SPACING = 1;
+/** Vertex spacing (m) of the cells beyond that, within the wide reach. */
+export const PATCH_WIDE_SPACING = 2;
 /** The distance (m) over which the relief fades to nothing toward a cell
  * outside the patched set, so a patch never ends with its relief in the air. */
 export const PATCH_TAPER = 3;
@@ -41,14 +43,15 @@ export const PATCH_CURVE_STEP = 0.5;
 /** The most of the ground's radius of curvature the push may reach. */
 export const PATCH_BEND_SHARE = 0.5;
 
-export type PatchReach = { readonly near: number; readonly far: number };
+export type PatchReach = { readonly near: number; readonly far: number; readonly wide: number };
 
 /** Per tier: the camera's distance (m) to a cell's centre within which the
- * cell is fine (`near`) and within which it is patched at all (`far`). */
+ * cell is at the near spacing (`near`), at the far spacing (`far`), and
+ * patched at all, at the wide spacing beyond `far` (`wide`). */
 export const PATCH_REACH: Readonly<Record<QualityTier, PatchReach>> = {
-  high: { near: 48, far: 160 },
-  medium: { near: 36, far: 120 },
-  low: { near: 24, far: 80 },
+  high: { near: 48, far: 160, wide: 400 },
+  medium: { near: 36, far: 120, wide: 300 },
+  low: { near: 24, far: 80, wide: 200 },
 };
 
 export type PatchCell = { ci: number; cj: number; spacing: number };
@@ -95,7 +98,7 @@ export type FacePatch = {
   weights2: Float32Array;
   /** min(1, grass cover) a vertex, as the clipmap's `cover`. */
   cover: Float32Array;
-  /** 16-bit: a fine patch has 33² = 1089 vertices. */
+  /** 16-bit: the finest patch has 33² = 1089 vertices. */
   indices: Uint16Array;
   vertexCount: number;
   triangleCount: number;
@@ -298,14 +301,15 @@ function surfaceInto(
 }
 
 /**
- * The patch of cell (ci, cj) at `spacing` (0.5 or 1 m), or null when no point
- * of its grid, boundary included, has steep ground. The grid is the cell's
- * own (16/spacing + 1)² points. The relief fades out toward the neighbours
- * `stitch.open` flags (`patchTaper`). On each edge `stitch` flags, the odd
- * points are laid on the line between their two even neighbours, as the
- * coarse patch beside draws that edge, and painted as the coarse patch's
- * interpolation paints them; the even points are the coarse patch's own,
- * position and normal, since both come from the world point alone.
+ * The patch of cell (ci, cj) at `spacing` (0.5, 1 or 2 m), or null when no
+ * point of its grid, boundary included, has steep ground. The grid is the
+ * cell's own (16/spacing + 1)² points. The relief fades out toward the
+ * neighbours `stitch.open` flags (`patchTaper`). On each edge `stitch` flags,
+ * whose neighbour is at twice this spacing, the odd points are laid on the
+ * line between their two even neighbours, as the coarser patch beside draws
+ * that edge, and painted as the coarser patch's interpolation paints them;
+ * the even points are the coarser patch's own, position and normal, since
+ * both come from the world point alone.
  */
 export function facePatchGeometry(
   seed: number, ci: number, cj: number, spacing: number, stitch: PatchStitch,
@@ -392,13 +396,11 @@ export function facePatchGeometry(
     }
   }
 
-  if (spacing < PATCH_FAR_SPACING) {
-    const attrs = { positions, normals, colors, weights, weights2, cover };
-    if (stitch.west) stitchEdge(attrs, 0, side, n);
-    if (stitch.east) stitchEdge(attrs, n, side, n);
-    if (stitch.south) stitchEdge(attrs, 0, 1, n);
-    if (stitch.north) stitchEdge(attrs, n * side, 1, n);
-  }
+  const attrs = { positions, normals, colors, weights, weights2, cover };
+  if (stitch.west) stitchEdge(attrs, 0, side, n);
+  if (stitch.east) stitchEdge(attrs, n, side, n);
+  if (stitch.south) stitchEdge(attrs, 0, 1, n);
+  if (stitch.north) stitchEdge(attrs, n * side, 1, n);
 
   const indices = new Uint16Array(n * n * 6);
   let k = 0;
@@ -431,7 +433,8 @@ function meanInto(a: Float32Array, width: number, at: number, lo: number, hi: nu
 }
 
 /**
- * One edge of a fine patch laid on the coarse patch's edge: each odd point
+ * One edge of a patch laid on the edge of the coarser patch beside it, at
+ * twice its spacing: each odd point
  * the mean of its two even neighbours, as the coarse patch interpolates its
  * edge between them: position, normal (made unit again), colour, weights and
  * cover. The edge's `n + 1` points run from vertex `start` in steps of `stride`.
@@ -458,51 +461,55 @@ function stitchEdge(p: PatchAttributes, start: number, stride: number, n: number
 }
 
 /**
- * The cells within `reach.far` of the camera, by the distance from the camera
- * to each cell's centre, each at the near spacing within `reach.near` and the
- * far spacing beyond. Ordered by row (cj), then column (ci).
+ * The cells within `reach.wide` of the camera, by the distance from the
+ * camera to each cell's centre, each at the near spacing within `reach.near`,
+ * the far spacing within `reach.far` and the wide spacing beyond. Ordered by
+ * row (cj), then column (ci).
  */
 export function facePatchCells(camX: number, camZ: number, reach: PatchReach): PatchCell[] {
+  const wide2 = reach.wide * reach.wide;
   const far2 = reach.far * reach.far;
   const near2 = reach.near * reach.near;
-  const i0 = Math.floor((camX - reach.far) / PATCH_CELL);
-  const i1 = Math.floor((camX + reach.far) / PATCH_CELL);
-  const j0 = Math.floor((camZ - reach.far) / PATCH_CELL);
-  const j1 = Math.floor((camZ + reach.far) / PATCH_CELL);
+  const i0 = Math.floor((camX - reach.wide) / PATCH_CELL);
+  const i1 = Math.floor((camX + reach.wide) / PATCH_CELL);
+  const j0 = Math.floor((camZ - reach.wide) / PATCH_CELL);
+  const j1 = Math.floor((camZ + reach.wide) / PATCH_CELL);
   const cells: PatchCell[] = [];
   for (let cj = j0; cj <= j1; cj++) {
     const dz = (cj + 0.5) * PATCH_CELL - camZ;
     for (let ci = i0; ci <= i1; ci++) {
       const dx = (ci + 0.5) * PATCH_CELL - camX;
       const d2 = dx * dx + dz * dz;
-      if (d2 > far2) continue;
-      cells.push({ ci, cj, spacing: d2 <= near2 ? PATCH_NEAR_SPACING : PATCH_FAR_SPACING });
+      if (d2 > wide2) continue;
+      const spacing = d2 <= near2 ? PATCH_NEAR_SPACING : d2 <= far2 ? PATCH_FAR_SPACING : PATCH_WIDE_SPACING;
+      cells.push({ ci, cj, spacing });
     }
   }
   return cells;
 }
 
 /**
- * For each cell of `cells`, in order, which of its edges a fine patch lays on
- * a coarse neighbour's (an edge whose neighbour is in the set at the far
- * spacing; a coarse cell stitches nothing), and which of its eight
+ * For each cell of `cells`, in order, which of its edges it lays on a coarser
+ * neighbour's (an edge whose neighbour is in the set at a coarser spacing:
+ * 0.5 m on 1 m, 1 m on 2 m; neighbouring cells are never more than a band
+ * apart, the bands being wider than a cell), and which of its eight
  * neighbours are outside the set, not drawn, toward which its relief fades.
  */
 export function facePatchStitch(cells: readonly PatchCell[]): PatchStitch[] {
   const spacingOf = new Map<number, number>();
   for (const c of cells) spacingOf.set(patchKey(c.ci, c.cj), c.spacing);
-  const coarse = (ci: number, cj: number): boolean => spacingOf.get(patchKey(ci, cj)) === PATCH_FAR_SPACING;
+  const coarser = (ci: number, cj: number, spacing: number): boolean =>
+    (spacingOf.get(patchKey(ci, cj)) ?? 0) > spacing;
   return cells.map((c) => {
     let open = 0;
     PATCH_NEIGHBOURS.forEach(([di, dj], k) => {
       if (!spacingOf.has(patchKey(c.ci + di, c.cj + dj))) open |= 1 << k;
     });
-    const fine = c.spacing !== PATCH_FAR_SPACING;
     return {
-      west: fine && coarse(c.ci - 1, c.cj),
-      east: fine && coarse(c.ci + 1, c.cj),
-      south: fine && coarse(c.ci, c.cj - 1),
-      north: fine && coarse(c.ci, c.cj + 1),
+      west: coarser(c.ci - 1, c.cj, c.spacing),
+      east: coarser(c.ci + 1, c.cj, c.spacing),
+      south: coarser(c.ci, c.cj - 1, c.spacing),
+      north: coarser(c.ci, c.cj + 1, c.spacing),
       open,
     };
   });

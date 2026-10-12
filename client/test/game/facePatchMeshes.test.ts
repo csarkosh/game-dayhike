@@ -127,18 +127,19 @@ describe("createFacePatches", () => {
     const patches = createFacePatches(s, SEED, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), {
       shadows: { add: (m) => casting.add(m), remove: (m) => casting.delete(m) },
     });
-    // The camera's cell (−24, −57), walked from its centre: 317 cells in
-    // reach, 140 of them with steep ground.
+    // The camera's cell (−24, −57), walked from its centre: 1,961 cells in
+    // reach, 362 of them with steep ground.
+    // 2026-10-12: 317 cells and 140 with steep ground before the wide band.
     patches.update(CAM.x, CAM.z);
-    expect(patches.builds()).toBe(317);
-    expect(patches.meshCount()).toBe(140);
-    expect(patchMeshes(s).length).toBe(140);
-    expect(casting.size).toBe(140);
+    expect(patches.builds()).toBe(1961);
+    expect(patches.meshCount()).toBe(362);
+    expect(patchMeshes(s).length).toBe(362);
+    expect(casting.size).toBe(362);
 
     // A metre on, in the same cell: nothing.
     const before = new Set(patchMeshes(s));
     patches.update(CAM.x + 1, CAM.z);
-    expect(patches.builds()).toBe(317);
+    expect(patches.builds()).toBe(1961);
     expect(new Set(patchMeshes(s))).toEqual(before);
 
     // A cell east: the cells that entered, and those that changed band, or
@@ -164,18 +165,20 @@ describe("createFacePatches", () => {
       }
     });
     // 2026-10-12: 49 builds (366), 119 kept, before the open neighbours
-    // joined the stitch and empty cells were kept across a stitch's change.
-    expect(crossing).toEqual({ entered: 21, rebuilt: 45, keptEmpty: 51 });
+    // joined the stitch and empty cells were kept across a stitch's change;
+    // then 21 entered, 45 rebuilt and 51 kept empty before the wide band.
+    expect(crossing).toEqual({ entered: 51, rebuilt: 91, keptEmpty: 201 });
     patches.update(CAM.x + 16, CAM.z);
-    expect(patches.builds()).toBe(317 + crossing.entered + crossing.rebuilt);
-    expect(patches.builds()).toBe(383);
-    expect(patches.meshCount()).toBe(147);
-    expect(patchMeshes(s).length).toBe(147);
-    expect(casting.size).toBe(147);
+    expect(patches.builds()).toBe(1961 + crossing.entered + crossing.rebuilt);
+    // 2026-10-12: 383 builds, 147 meshes, 99 kept before the wide band.
+    expect(patches.builds()).toBe(2103);
+    expect(patches.meshCount()).toBe(368);
+    expect(patchMeshes(s).length).toBe(368);
+    expect(casting.size).toBe(368);
     const after = new Set(patchMeshes(s));
     let kept = 0;
     for (const m of before) if (after.has(m)) kept++;
-    expect(kept).toBe(99);
+    expect(kept).toBe(310);
 
     patches.dispose();
     expect(patches.meshCount()).toBe(0);

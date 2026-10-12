@@ -117,7 +117,7 @@ describe("facePatchGeometry", () => {
     expect(at(42, 401.5, 555)).toBeGreaterThan(3);
     expect(at(42, 401.5, 554.5)).toBeGreaterThan(0.37);
     expect(at(42, 401, 555)).toBeGreaterThan(0.93);
-  });
+  }, timeLimit(20_000));
 
   it("gives every vertex a unit normal, stitched or not", () => {
     for (const p of [patch(-23, -57, 0.5), patch(-21, -57, 0.5, EAST), patch(-20, -57, 1)]) {
@@ -155,17 +155,17 @@ describe("facePatchGeometry", () => {
   }
 
   /**
-   * A fine patch's edge stitched to a coarse one's: the edge's 33 fine
+   * A fine patch's edge stitched to a coarse one's: the edge's n + 1 fine
    * vertices from `fineStart` in steps of `fineStride`, and the coarse
-   * patch's 17 from `coarseStart` in steps of `coarseStride`. Returns how
-   * many midpoints the stitch moved off the relief.
+   * patch's n / 2 + 1 from `coarseStart` in steps of `coarseStride`. Returns
+   * how many midpoints the stitch moved off the relief.
    */
   function checkStitch(
     fine: FacePatch, loose: FacePatch, coarse: FacePatch,
-    fineStart: number, fineStride: number, coarseStart: number, coarseStride: number,
+    fineStart: number, fineStride: number, coarseStart: number, coarseStride: number, n = 32,
   ): number {
     let moved = 0;
-    for (let i = 0; i <= 32; i++) {
+    for (let i = 0; i <= n; i++) {
       const v = fineStart + i * fineStride;
       const f = v * 3;
       if (i % 2 === 0) {
@@ -224,9 +224,37 @@ describe("facePatchGeometry", () => {
     }
   }, timeLimit(20_000));
 
+  it("lays a 1 m patch's stitched edge on a 2 m patch's, east and west", () => {
+    // (−20, −66) is at 1 m on the 160 m reach's edge; (−19, −66), east of
+    // it, is at 2 m: the 1 m patch's column 16 is the 2 m patch's column 0.
+    const fine = patch(-20, -66, 1, EAST);
+    const loose = patch(-20, -66, 1);
+    const coarse = patch(-19, -66, 2);
+    // Of the eight midpoints, the relief had lifted every one off the chord.
+    expect(checkStitch(fine, loose, coarse, 16, 17, 0, 9, 16)).toBe(8);
+    for (let iz = 0; iz <= 16; iz++) {
+      for (let ix = 0; ix < 16; ix++) {
+        const at = (iz * 17 + ix) * 3;
+        for (let k = 0; k < 3; k++) expect(fine.positions[at + k]).toBe(loose.positions[at + k]);
+      }
+    }
+  }, timeLimit(20_000));
+
+  it("lays a 1 m patch's stitched edge on a 2 m patch's, north and south", () => {
+    // (−22, −66) is at 1 m; (−22, −67), south of it, is at 2 m: the 1 m
+    // patch's row 0 is the 2 m patch's row 8.
+    const fine = patch(-22, -66, 1, { ...NONE, south: true });
+    const loose = patch(-22, -66, 1);
+    const coarse = patch(-22, -67, 2);
+    expect(checkStitch(fine, loose, coarse, 0, 1, 8 * 9, 1, 16)).toBe(8);
+    for (let at = 17 * 3; at < fine.positions.length; at++) {
+      expect(fine.positions[at]).toBe(loose.positions[at]);
+    }
+  }, timeLimit(20_000));
+
   it("fades the relief out toward a cell outside the set", () => {
-    // (−22, −66) is on the far reach's southern edge: its south, south-west
-    // and south-east neighbours are not drawn.
+    // (−22, −66) with its south, south-west and south-east neighbours not
+    // drawn, as on a straight run of a reach's southern edge.
     const open = OPEN_SOUTH | OPEN_SOUTH_WEST | OPEN_SOUTH_EAST;
     const edge = patch(-22, -66, 1, { ...NONE, open });
     const whole = patch(-22, -66, 1);
@@ -282,10 +310,10 @@ describe("facePatchGeometry", () => {
   }, timeLimit(20_000));
 
   it("meets its neighbour bit for bit where one fades at a side and the other at a corner", () => {
-    // At a step of the far reach's edge: (−16, −51) has its north, east and
-    // north-east neighbours outside the set, (−17, −51), west of it, only its
-    // north-east, which is the other's north. Their shared edge, x = −256,
-    // fades toward that square in both.
+    // At a step of a reach's edge: (−16, −51) with its north, east and
+    // north-east neighbours outside the set, (−17, −51), west of it, with
+    // only its north-east, which is the other's north. Their shared edge,
+    // x = −256, fades toward that square in both.
     // 2026-10-12: (−18, −50) and (−17, −50) before the relief's gain, which
     // holds the three points there at the clamp's −1, a push of nothing with
     // the fade or without it.
@@ -400,56 +428,70 @@ function foldsOf(seed: number, cell: PatchCell, p: FacePatch): { folds: number; 
 }
 
 describe("facePatchCells and facePatchStitch", () => {
-  it("picks the cells within reach, fine near the camera, and stitches fine to coarse", () => {
+  it("picks the cells within reach, fine near the camera, and stitches each to a coarser one", () => {
     const cells = facePatchCells(-370, -900, PATCH_REACH.high);
-    expect(cells.length).toBe(316);
+    // 2026-10-12: 316 cells, 29 and 287, before the wide band to 400 m.
+    expect(cells.length).toBe(1963);
     expect(cells.filter((c) => c.spacing === 0.5).length).toBe(29);
     expect(cells.filter((c) => c.spacing === 1).length).toBe(287);
+    expect(cells.filter((c) => c.spacing === 2).length).toBe(1647);
     const stitch = facePatchStitch(cells);
     const at = (ci: number, cj: number): PatchStitch => stitch[cells.findIndex((c) => c.ci === ci && c.cj === cj)] as PatchStitch;
     expect(at(-21, -57)).toEqual({ west: false, east: true, north: false, south: false, open: 0 });
     expect(at(-25, -59)).toEqual({ west: true, east: false, north: false, south: true, open: 0 });
     expect(at(-24, -57)).toEqual(NONE);
-    // A coarse cell stitches nothing.
+    // A 1 m cell among 1 m cells stitches nothing; one beside the 2 m band
+    // stitches to it.
     expect(at(-20, -57)).toEqual(NONE);
-    expect(stitch.filter((s) => s.west || s.east || s.north || s.south).length).toBe(15);
+    expect(at(-20, -66)).toEqual({ west: false, east: true, north: false, south: true, open: 0 });
+    // The coarsest band stitches nothing.
+    expect(at(-19, -66)).toEqual(NONE);
+    // 2026-10-12: 15, the 0.5 m cells alone, before the wide band.
+    expect(stitch.filter((s) => s.west || s.east || s.north || s.south).length).toBe(70);
+    expect(stitch.filter((s, i) => (cells[i] as PatchCell).spacing === 1 && (s.west || s.east || s.north || s.south)).length).toBe(55);
   });
 
   it("flags the neighbours outside the set, sides and corners", () => {
     const cells = facePatchCells(-370, -900, PATCH_REACH.high);
     const stitch = facePatchStitch(cells);
     const at = (ci: number, cj: number): PatchStitch => stitch[cells.findIndex((c) => c.ci === ci && c.cj === cj)] as PatchStitch;
-    // The far reach's southern edge, a straight run of it.
-    expect(at(-22, -66).open).toBe(OPEN_SOUTH | OPEN_SOUTH_WEST | OPEN_SOUTH_EAST);
-    // A step of the edge: north and east open, and the corner between.
-    expect(at(-17, -50).open).toBe(OPEN_EAST | OPEN_NORTH | OPEN_NORTH_EAST);
-    // Inside the set, nothing.
+    // The wide reach's southern edge, a straight run of it.
+    expect(at(-22, -81).open).toBe(OPEN_SOUTH | OPEN_SOUTH_WEST | OPEN_SOUTH_EAST);
+    // A step of the edge: south and east open, and the corners beside.
+    expect(at(-18, -81).open).toBe(OPEN_EAST | OPEN_SOUTH | OPEN_SOUTH_WEST | OPEN_SOUTH_EAST);
+    // Inside the set, nothing, on the 160 m reach's old edge too.
     expect(at(-24, -57).open).toBe(0);
-    // The cells on the set's edge: 55 with a side open, and 21 more open only
-    // at a corner, where the edge steps in, whose relief fades there too.
+    expect(at(-22, -66).open).toBe(0);
+    // The cells on the set's edge: 139 with a side open, and 57 more open
+    // only at a corner, where the edge steps in, whose relief fades there too.
+    // 2026-10-12: 55 and 21 more, at the 160 m reach, before the wide band.
     const sides = OPEN_WEST | OPEN_EAST | OPEN_SOUTH | OPEN_NORTH;
-    expect(stitch.filter((s) => s.open !== 0).length).toBe(76);
-    expect(stitch.filter((s) => (s.open & sides) !== 0).length).toBe(55);
-    expect(at(-18, -50).open).toBe(OPEN_NORTH_EAST);
+    expect(stitch.filter((s) => s.open !== 0).length).toBe(196);
+    expect(stitch.filter((s) => (s.open & sides) !== 0).length).toBe(139);
+    expect(at(-18, -80).open).toBe(OPEN_SOUTH_EAST);
   });
 
   it("at the scarp, patches the cells with steep ground: the counts", () => {
     let near = 0;
     let far = 0;
+    let wide = 0;
     let vertices = 0;
     let triangles = 0;
     for (const { cell, patch: p } of scarpPatches()) {
       if (p === null) continue;
       if (cell.spacing === 0.5) near++;
-      else far++;
+      else if (cell.spacing === 1) far++;
+      else wide++;
       vertices += p.vertexCount;
       triangles += p.triangleCount;
     }
     expect(near).toBe(20);
     expect(far).toBe(121);
-    expect(vertices).toBe(56749);
-    expect(triangles).toBe(102912);
-  }, timeLimit(60_000));
+    expect(wide).toBe(221);
+    // 2026-10-12: 56,749 vertices and 102,912 triangles before the wide band.
+    expect(vertices).toBe(74650);
+    expect(triangles).toBe(131200);
+  }, timeLimit(120_000));
 
   it("at the scarp, turns no triangle over", () => {
     // The worst, at 0.5 m on the scarp's steepest columns, still faces
