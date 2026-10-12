@@ -9,6 +9,7 @@ import {
   BASE_SPACING,
   blendWeight,
   coarseHeight,
+  coversRing,
   createRingSamples,
   HALF_SIDE,
   HOLE_CELLS,
@@ -24,8 +25,11 @@ import {
   ringSampleSlices,
   updateRingSamples,
   WEIGHTS2_STRIDE,
+  type CoveredGround,
   type RingArrays,
+  type RingSamples,
 } from "../../src/game/clipmap.js";
+import { PATCH_CELL, PATCH_REACH, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch } from "../../src/game/facePatches.js";
 import { finish as finishSlices } from "../../src/game/syncJobs.js";
 import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { groundCover } from "../../src/sim/clutter.js";
@@ -755,4 +759,148 @@ describe("chord-excess ridge lift", () => {
       expect(exact / inside, `ring ${level} exact`).toBeGreaterThan(0.008);
     }
   }, timeLimit(60000));
+});
+
+describe("covered ground", () => {
+  /** The reference pose's world, the scarp by the road, and the camera over it. */
+  const SCARP = 627994160;
+  const CAM = { x: -370, z: -900 };
+
+  /** Every triangle of a ring, (a, b, c) then (b, d, c) a cell outside the
+   * hole, as the index buffer was written before any ground was covered. */
+  function allIndices(hole: { x0: number; z0: number } | null): Uint16Array {
+    const out: number[] = [];
+    for (let iz = 0; iz < RING_CELLS; iz++) {
+      for (let ix = 0; ix < RING_CELLS; ix++) {
+        if (hole !== null && ix >= hole.x0 && ix < hole.x0 + HOLE_CELLS && iz >= hole.z0 && iz < hole.z0 + HOLE_CELLS) continue;
+        const a = iz * SIDE + ix;
+        out.push(a, a + 1, a + SIDE, a + 1, a + SIDE + 1, a + SIDE);
+      }
+    }
+    return Uint16Array.from(out);
+  }
+
+  function bytes(a: Uint16Array): Uint8Array {
+    return new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+  }
+
+  it("writes every triangle, as before, where nothing is covered", () => {
+    const ring0 = createRingSamples(SEED, 0, 0, 0);
+    const ring1 = createRingSamples(SEED, 1, 0, 0);
+    const far: CoveredGround = { x: 100_000, z: 100_000, reach: 400, cell: PATCH_CELL };
+    for (const [ring, hole, count] of [
+      [ring0, null, 98304],
+      [ring1, holeCellsFor(ring1, ring0), 73728],
+    ] as const) {
+      const want = bytes(allIndices(hole));
+      for (const covered of [undefined, null, far]) {
+        const g = ringGeometry(ring, hole, null, covered);
+        expect(g.indices.length).toBe(count);
+        expect(g.indexCount).toBe(count);
+        expect(bytes(g.indices)).toEqual(want);
+      }
+    }
+  }, timeLimit(30_000));
+
+  /** The reference pose's rings 0 to 4, each with its hole, built once. */
+  let scarp: Array<{ ring: RingSamples; hole: { x0: number; z0: number } | null }> | null = null;
+  function scarpRings(): Array<{ ring: RingSamples; hole: { x0: number; z0: number } | null }> {
+    if (scarp !== null) return scarp;
+    const rings: RingSamples[] = [];
+    for (let level = 0; level <= 4; level++) rings.push(createRingSamples(SCARP, level, CAM.x, CAM.z));
+    scarp = rings.map((ring, level) => ({
+      ring,
+      hole: level === 0 ? null : holeCellsFor(ring, rings[level - 1] as RingSamples),
+    }));
+    return scarp;
+  }
+
+  /** The triangles `covered` leaves out of a ring, by merging its index
+   * buffer against every triangle's: the ones kept keep their order. */
+  function leftOut(ring: RingSamples, hole: { x0: number; z0: number } | null, covered: CoveredGround): number[][] {
+    const g = ringGeometry(ring, hole, null, covered);
+    const all = allIndices(hole);
+    const out: number[][] = [];
+    let k = 0;
+    for (let t = 0; t < all.length; t += 3) {
+      const tri = [all[t] as number, all[t + 1] as number, all[t + 2] as number];
+      if (k < g.indexCount && g.indices[k] === tri[0] && g.indices[k + 1] === tri[1] && g.indices[k + 2] === tri[2]) {
+        k += 3;
+      } else {
+        out.push(tri);
+      }
+    }
+    expect(k).toBe(g.indexCount);
+    expect(g.indices.length).toBe(g.indexCount);
+    return out;
+  }
+
+  it("at the reference pose, leaves out the ground under fully steep patched squares: the counts", () => {
+    const covered = facePatchCover(CAM.x, CAM.z, PATCH_REACH.high);
+    // The camera's cell (−24, −57), its centre; the wide reach less a
+    // cell's diagonal.
+    expect(covered).toEqual({ x: -376, z: -904, reach: 400 - 16 * Math.SQRT2, cell: 16 });
+    const counts = scarpRings().map(({ ring, hole }) => leftOut(ring, hole, covered).length);
+    // Of 32,768 triangles in ring 0 and 24,576 in each ring beyond; ring 4
+    // begins about 500 m out, past the reach.
+    expect(counts).toEqual([11582, 4559, 1933, 199, 0]);
+    // Rings 5 and 6, at 32 m and 64 m, have cells across several squares.
+    expect(coversRing(covered, 16)).toBe(true);
+    expect(coversRing(covered, 32)).toBe(false);
+    expect(coversRing(covered, 64)).toBe(false);
+  }, timeLimit(120_000));
+
+  it("keeps every triangle on a ring's border row and on the row around its hole", () => {
+    const covered = facePatchCover(CAM.x, CAM.z, PATCH_REACH.high);
+    for (const { ring, hole } of scarpRings()) {
+      for (const tri of leftOut(ring, hole, covered)) {
+        const ix = Math.min(...tri.map((v) => v % SIDE));
+        const iz = Math.min(...tri.map((v) => Math.floor(v / SIDE)));
+        expect(ix > 0 && iz > 0 && ix < RING_CELLS - 1 && iz < RING_CELLS - 1).toBe(true);
+        if (hole !== null) {
+          const beside = ix >= hole.x0 - 1 && ix <= hole.x0 + HOLE_CELLS && iz >= hole.z0 - 1 && iz <= hole.z0 + HOLE_CELLS;
+          expect(beside).toBe(false);
+        }
+      }
+    }
+  }, timeLimit(120_000));
+
+  it("leaves out only fully steep triangles over a patch with the whole relief", () => {
+    const covered = facePatchCover(CAM.x, CAM.z, PATCH_REACH.high);
+    // The patched set as the patches' shell walks it, from the camera's
+    // cell's centre.
+    const cells = facePatchCells(covered.x, covered.z, PATCH_REACH.high);
+    const stitch = facePatchStitch(cells);
+    const inSet = new Map(cells.map((c, i) => [`${c.ci},${c.cj}`, { c, open: (stitch[i] as { open: number }).open }]));
+    const patched = new Map<string, boolean>();
+    let total = 0;
+    for (const { ring, hole } of scarpRings()) {
+      for (const tri of leftOut(ring, hole, covered)) {
+        total++;
+        let cx = 0;
+        let cz = 0;
+        for (const v of tri) {
+          // Each vertex fully steep, by the gradient the ring stores.
+          const gx = ring.dx[v] as number;
+          const gz = ring.dz[v] as number;
+          expect(Math.sqrt(gx * gx + gz * gz)).toBeGreaterThanOrEqual(1.4);
+          cx += (ring.originX + (v % SIDE) * ring.spacing) / 3;
+          cz += (ring.originZ + Math.floor(v / SIDE) * ring.spacing) / 3;
+        }
+        const key = `${Math.floor(cx / 16)},${Math.floor(cz / 16)}`;
+        const entry = inSet.get(key);
+        // The square of the triangle's centroid is in the set, with no
+        // neighbour outside it: its patch has no taper.
+        expect(entry, key).toBeDefined();
+        expect(entry?.open).toBe(0);
+        if (entry !== undefined && !patched.has(key)) {
+          patched.set(key, facePatchGeometry(SCARP, entry.c.ci, entry.c.cj, entry.c.spacing, { west: false, east: false, north: false, south: false, open: 0 }) !== null);
+        }
+        expect(patched.get(key), key).toBe(true);
+      }
+    }
+    expect(total).toBe(18273);
+    // Of the 362 squares with a patch.
+    expect(patched.size).toBe(217);
+  }, timeLimit(120_000));
 });

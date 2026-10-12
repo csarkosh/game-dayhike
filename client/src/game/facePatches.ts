@@ -6,7 +6,9 @@
  * by the ground's gradient so the push is nothing where the ground is not
  * steep, and faded out toward the cells outside the patched set. The patch
  * is painted as the clipmap paints the ground under it, so it is the same
- * rock in the same light; the ground itself is not changed.
+ * rock in the same light. The ground's height is not changed; the clipmap
+ * leaves out its triangles under fully steep ground well inside the reach
+ * (`facePatchCover`), where a patch is drawn over them.
  *
  * Pure and Babylon-free; `facePatchMeshes.ts` is the shell that uploads it.
  *
@@ -18,7 +20,7 @@ import { FACE_HALF_DEPTH, FACE_SLOPE_HI, FACE_SLOPE_LO, faceReliefD } from "../s
 import { stepT, stepTd } from "../sim/lakeShape.js";
 import { elevationSampleAt, type TerrainSample } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
-import { WEIGHTS2_STRIDE } from "./clipmap.js";
+import { WEIGHTS2_STRIDE, type CoveredGround } from "./clipmap.js";
 import type { QualityTier } from "./quality.js";
 import { classifySurface } from "./terrainSurface.js";
 import { waterGroundAt } from "./waterGround.js";
@@ -513,4 +515,27 @@ export function facePatchStitch(cells: readonly PatchCell[]): PatchStitch[] {
       open,
     };
   });
+}
+
+/**
+ * The ground the patches cover for a camera at (camX, camZ), as the clipmap
+ * leaves it out (`CoveredGround`): the squares whose centres lie within the
+ * wide reach of the camera's cell's centre, less a cell's diagonal. Every
+ * neighbour of such a square, corners too, is in the patched set, so its
+ * patch has no open side, no taper, and the whole relief over it; and a
+ * camera one cell on, whose patches are built before the rings' next
+ * emit lands, still patches it. A triangle the clipmap leaves out has three
+ * fully steep vertices; on the high and medium tiers every ring vertex in
+ * the reach is a grid point of its square's patch, so the square has steep
+ * ground at its grid and a patch. On low, ring 0's 1 m vertices reach past
+ * the 80 m far reach into the 2 m band, where a square is patched by its own
+ * 2 m points, a metre from the steep ones.
+ */
+export function facePatchCover(camX: number, camZ: number, reach: PatchReach): CoveredGround {
+  return {
+    x: (Math.floor(camX / PATCH_CELL) + 0.5) * PATCH_CELL,
+    z: (Math.floor(camZ / PATCH_CELL) + 0.5) * PATCH_CELL,
+    reach: reach.wide - PATCH_CELL * Math.SQRT2,
+    cell: PATCH_CELL,
+  };
 }

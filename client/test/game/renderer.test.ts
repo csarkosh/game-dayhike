@@ -273,6 +273,7 @@ import {
   RING_COUNT,
   type RingSamples,
 } from "../../src/game/clipmap.js";
+import { PATCH_REACH, facePatchCover } from "../../src/game/facePatches.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { Level } from "../../src/sim/level.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
@@ -491,6 +492,31 @@ describe("createClipmap", () => {
       }
     }
   }, timeLimit(30000));
+
+  it("leaves out the ground its cover names, as ringGeometry does, and draws only the indices kept", () => {
+    // The reference pose's world, the scarp by the road: the face patches'
+    // cover on the high tier, as the renderer wires it.
+    const scarp = 627994160;
+    const cover = (x: number, z: number): ReturnType<typeof facePatchCover> => facePatchCover(x, z, PATCH_REACH.high);
+    const s = scene();
+    const clipmap = createClipmap(s, scarp, undefined, { cover });
+    clipmap.update(-370, -900);
+    const fresh: RingSamples[] = [];
+    for (let level = 0; level < RING_COUNT; level++) fresh.push(createRingSamples(scarp, level, -370, -900));
+    const kept: number[] = [];
+    for (let level = 0; level < RING_COUNT; level++) {
+      const ring = fresh[level]!;
+      const want = ringGeometry(ring, level === 0 ? null : holeCellsFor(ring, fresh[level - 1]!), null, cover(-370, -900));
+      const mesh = clipmap.meshes[level]!;
+      expect(Array.from(mesh.getIndices()!), `indices, ring ${level}`).toEqual(Array.from(want.indices));
+      expect(mesh.getTotalIndices()).toBe(want.indexCount);
+      kept.push(want.indexCount / 3);
+    }
+    // 32,768 triangles in ring 0 and 24,576 in each ring beyond, less those
+    // under the patches (clipmap.test.ts).
+    expect(kept).toEqual([32768 - 11582, 24576 - 4559, 24576 - 1933, 24576 - 199, 24576, 24576, 24576]);
+    clipmap.dispose();
+  }, timeLimit(120_000));
 
   it("builds one named mesh per ring and disposes them all", () => {
     const s = scene();
@@ -879,7 +905,9 @@ describe("world shell wiring", () => {
     // branch that never runs it leaves every job to wait out its lateness
     // bound and run at once.
     expect(src).toContain("const jobs = createSyncJobs(() => performance.now());");
-    expect(src).toContain("createClipmap(scene, forest.seed, jobs, { deferred: options.deferClipmap })");
+    expect(src).toContain("createClipmap(scene, forest.seed, jobs, {\n      deferred: options.deferClipmap,");
+    // The rings leave out the ground the face patches draw over, at the tier's reach.
+    expect(src).toContain("cover: (x, z) => facePatchCover(x, z, PATCH_REACH[tier]),");
     expect(slice("const clutterMeshes =", "const bladeMeshes =")).toContain("jobs,");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "hasWildlife:");

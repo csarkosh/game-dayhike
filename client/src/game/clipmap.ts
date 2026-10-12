@@ -6,11 +6,14 @@
  * spacing it wants, and the whole ~8 km view is 7 draw calls. The drawn
  * surface is an upper envelope of the field, not the exact sample: each
  * vertex carries a chord-excess lift, blended toward the next coarser ring
- * at its border so seams stay watertight.
+ * at its border so seams stay watertight. Where another surface covers the
+ * steep ground (`CoveredGround`, the face patches), a ring leaves the
+ * triangles under it out of its index buffer.
  *
  * Pure and Babylon-free; `renderer.ts` is the shell that uploads the output.
  */
 import { groundCover } from "../sim/clutter.js";
+import { FACE_SLOPE_HI } from "../sim/faceRelief.js";
 import { elevationSampleAt } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { classifySurface } from "./terrainSurface.js";
@@ -99,8 +102,12 @@ function ringArrays(): RingArrays {
 
 export type RingGeometry = {
   positions: Float32Array;
-  /** 16-bit: the largest index is SIDE² − 1 = 16640, well inside 65535. */
+  /** 16-bit: the largest index is SIDE² − 1 = 16640, well inside 65535.
+   * Sized for every triangle of the ring; the first `indexCount` are drawn. */
   indices: Uint16Array;
+  /** The indices drawn: all of them, less three a triangle left out under
+   * covered ground. */
+  indexCount: number;
   normals: Float32Array;
   colors: Float32Array;
   /** (grass, forestFloor, rock, sand) per vertex — see RingSamples.weights. */
@@ -546,12 +553,16 @@ export function blendWeight(hole: { x0: number; z0: number } | null, ix: number,
  * blended toward what the coarser ring draws so the
  * two agree exactly at the border — the old odd-vertex crack fix is
  * now the t = 1 case. Normals stay the exact analytic gradient and colours
- * and weights are untouched; only the drawn height moves.
+ * and weights are untouched; only the drawn height moves. Under `covered`
+ * ground the triangles another surface draws over are left out of the
+ * indices (`CoveredGround`); the vertices stay, so the buffers' layout and
+ * the blend toward the coarser ring do not change.
  */
 export function ringGeometry(
   ring: RingSamples,
   hole: { x0: number; z0: number } | null,
   coarser: RingSamples | null,
+  covered: CoveredGround | null = null,
 ): RingGeometry {
   const positions = new Float32Array(SIDE * SIDE * 3);
   const normals = new Float32Array(SIDE * SIDE * 3);
@@ -617,29 +628,103 @@ export function ringGeometry(
   // (~2.16 MB → ~1.08 MB over seven rings) and halves the upload on the ring-0
   // re-emit path, which at a 144 m/s boost against ring 0's 2 m snap step can
   // run on essentially every frame.
-  const indices = new Uint16Array(quadCount * 6);
+  const all = new Uint16Array(quadCount * 6);
+  const indexCount = writeRingIndices(ring, hole, covered, all);
+  // A fresh build allocates anyway: the drawn indices alone.
+  const indices = indexCount === all.length ? all : all.slice(0, indexCount);
+
+  return { positions, indices, indexCount, normals, colors, weights, weights2, cover };
+}
+
+/**
+ * The steep ground another surface draws over, which a ring leaves out:
+ * within `reach` metres of (x, z), measured to the centre of the `cell`-metre
+ * square of the world's lattice a triangle lies in. A triangle there is left
+ * out of the ring's index buffer when each of its three vertices is fully
+ * steep, a gradient of at least FACE_SLOPE_HI, where the face patches'
+ * mask is whole. Only a ring whose cells each lie within one square (its
+ * spacing divides `cell`) leaves any out.
+ */
+export type CoveredGround = { readonly x: number; readonly z: number; readonly reach: number; readonly cell: number };
+
+/** Whether `covered` can leave any triangle of a ring at `spacing` out: its
+ * cells must each lie within one square. */
+export function coversRing(covered: CoveredGround | null, spacing: number): boolean {
+  return covered !== null && covered.cell % spacing === 0;
+}
+
+/**
+ * The ring's triangles into `indices`, from the start; returns how many
+ * indices it wrote. Every cell outside the hole is two triangles, a = (ix, iz),
+ * b = (ix+1, iz), c = (ix, iz+1), d = (ix+1, iz+1), as (a, b, c), (b, d, c);
+ * under `covered` ground a triangle whose three vertices are fully steep is
+ * left out, but never on the ring's border row, where it meets the coarser
+ * ring, nor on the row around its hole, where it meets the finer one.
+ */
+function writeRingIndices(
+  ring: RingSamples,
+  hole: { x0: number; z0: number } | null,
+  covered: CoveredGround | null,
+  indices: Uint16Array,
+): number {
+  const leave = coversRing(covered, ring.spacing);
+  const cell = covered?.cell ?? 1;
+  const reach2 = covered === null ? 0 : covered.reach * covered.reach;
+  const steep2 = FACE_SLOPE_HI * FACE_SLOPE_HI;
+  const { dx, dz } = ring;
+  const steep = (at: number): boolean => {
+    const gx = dx[at] as number;
+    const gz = dz[at] as number;
+    return gx * gx + gz * gz >= steep2;
+  };
   let k = 0;
   for (let iz = 0; iz < RING_CELLS; iz++) {
+    // The square this row of cells lies in, and its centre's distance in z.
+    const sz = covered === null ? 0 : (Math.floor((ring.originZ + iz * ring.spacing) / cell) + 0.5) * cell - covered.z;
     for (let ix = 0; ix < RING_CELLS; ix++) {
       if (insideHole(hole, ix, iz)) continue;
       const a = iz * SIDE + ix;
       const b = a + 1;
       const c = a + SIDE;
       const d = c + 1;
+      let keepAbc = true;
+      let keepBdc = true;
+      if (leave && covered !== null && !seamRow(hole, ix, iz)) {
+        const sx = (Math.floor((ring.originX + ix * ring.spacing) / cell) + 0.5) * cell - covered.x;
+        if (sx * sx + sz * sz <= reach2) {
+          const sb = steep(b);
+          const sc = steep(c);
+          if (sb && sc) {
+            keepAbc = !steep(a);
+            keepBdc = !steep(d);
+          }
+        }
+      }
       // Winding matters and is easy to get backwards. Babylon uses a
       // LEFT-handed system; the reverse of this order yields normals of
       // (0, -1, 0) and the terrain back-face culls into nothing while every
       // other mesh still draws. Guarded by the winding test.
-      indices[k++] = a;
-      indices[k++] = b;
-      indices[k++] = c;
-      indices[k++] = b;
-      indices[k++] = d;
-      indices[k++] = c;
+      if (keepAbc) {
+        indices[k++] = a;
+        indices[k++] = b;
+        indices[k++] = c;
+      }
+      if (keepBdc) {
+        indices[k++] = b;
+        indices[k++] = d;
+        indices[k++] = c;
+      }
     }
   }
+  return k;
+}
 
-  return { positions, indices, normals, colors, weights, weights2, cover };
+/** Whether cell (ix, iz) is on the ring's border row or on the row around its
+ * hole: where it meets another ring, kept whatever covers it. */
+function seamRow(hole: { x0: number; z0: number } | null, ix: number, iz: number): boolean {
+  if (ix === 0 || iz === 0 || ix === RING_CELLS - 1 || iz === RING_CELLS - 1) return true;
+  if (hole === null) return false;
+  return ix >= hole.x0 - 1 && ix <= hole.x0 + HOLE_CELLS && iz >= hole.z0 - 1 && iz <= hole.z0 + HOLE_CELLS;
 }
 
 /** Buffers a re-emit writes into, sized for a ring with or without a hole. */
@@ -648,6 +733,7 @@ export function ringGeometryBuffers(hole: boolean): RingGeometry {
   return {
     positions: new Float32Array(SIDE * SIDE * 3),
     indices: new Uint16Array(quadCount * 6),
+    indexCount: quadCount * 6,
     normals: new Float32Array(SIDE * SIDE * 3),
     colors: new Float32Array(SIDE * SIDE * 4),
     weights: new Float32Array(SIDE * SIDE * 4),
@@ -680,13 +766,15 @@ function coarseLift(lift: Float64Array, x0: number, z0: number, ix: number, iz: 
  * weights and cover are the ring's own arrays, copied whole; each vertex's
  * height is its kept lift, blended toward the coarser ring's kept lifts
  * exactly as `ringGeometry` blends the ones `liftedHeight` returns; the
- * indices are written again, since the hole moves with the finer ring.
+ * indices are written again, since the hole moves with the finer ring and
+ * the covered ground with the camera, and `out.indexCount` says how many.
  */
 export function* ringGeometrySlices(
   ring: RingSamples,
   hole: { x0: number; z0: number } | null,
   coarser: RingSamples | null,
   out: RingGeometry,
+  covered: CoveredGround | null = null,
 ): Generator<void, void, void> {
   out.normals.set(ring.normals);
   out.colors.set(ring.colors);
@@ -711,22 +799,6 @@ export function* ringGeometrySlices(
     }
     if ((iz + 1) % EMIT_SLICE_ROWS === 0) yield;
   }
-  const { indices } = out;
-  let k = 0;
-  for (let iz = 0; iz < RING_CELLS; iz++) {
-    for (let ix = 0; ix < RING_CELLS; ix++) {
-      if (insideHole(hole, ix, iz)) continue;
-      const a = iz * SIDE + ix;
-      const b = a + 1;
-      const c = a + SIDE;
-      const d = c + 1;
-      // `ringGeometry`'s winding, which the winding test there guards.
-      indices[k++] = a;
-      indices[k++] = b;
-      indices[k++] = c;
-      indices[k++] = b;
-      indices[k++] = d;
-      indices[k++] = c;
-    }
-  }
+  // `ringGeometry`'s indices, which the winding test there guards.
+  out.indexCount = writeRingIndices(ring, hole, covered, out.indices);
 }

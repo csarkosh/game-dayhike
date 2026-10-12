@@ -46,11 +46,13 @@ import {
   ringGeometrySlices,
   ringSampleSlices,
   commitRingMove,
+  coversRing,
   prepareRingMove,
   snapOrigin,
   BASE_SPACING,
   RING_COUNT,
   WEIGHTS2_STRIDE,
+  type CoveredGround,
   type RingArrays,
   type RingGeometry,
   type RingMove,
@@ -70,6 +72,7 @@ import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
 import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, setTerrainSward, setTerrainWetness, sharedGroundArrays } from "./terrainTexture.js";
 import { FACE_PATCH_MATERIAL, FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS, createFacePatches } from "./facePatchMeshes.js";
+import { PATCH_REACH, facePatchCover } from "./facePatches.js";
 import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
@@ -290,11 +293,15 @@ export function applyRingGeometry(mesh: Mesh, geometry: RingGeometry): void {
   // (`geometry.js:185-188`). Going through Array.from would copy ~264k elements
   // per ring twice, once into boxed doubles, on the frame-sync path.
   data.positions = geometry.positions;
-  data.indices = geometry.indices;
   // Smooth normals from the elevation field's analytic gradient, not Babylon's
   // per-face pass: `clipmap.ts` evaluates the same pure function on both sides
   // of every ring boundary, so shared edges match to the bit.
   data.normals = geometry.normals;
+  // The drawn indices alone: a ring under covered ground leaves some out,
+  // and its buffers are sized for all of them.
+  data.indices = geometry.indexCount === geometry.indices.length
+    ? geometry.indices
+    : geometry.indices.subarray(0, geometry.indexCount);
   data.colors = geometry.colors;
   // `updatable` is a DYNAMIC_DRAW hint, nothing more — it does NOT make this
   // rewrite in place. `setVerticesData` builds a new VertexBuffer and disposes
@@ -368,30 +375,52 @@ const CLIPMAP_UPLOAD_MS = 1;
  * a rebuild that finds its move prepared from the ring as it stands commits
  * it in one step instead of sampling. What it commits is exactly what the
  * move would make; a guess the camera does not follow is dropped.
+ *
+ * Given `cover`, each rebuild asks it for the ground another surface covers
+ * for the camera it builds for (the face patches', `facePatchCover`), and
+ * the rings it reaches leave their triangles there out (`CoveredGround`).
  */
-export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, options: { deferred?: boolean } = {}): Clipmap {
+export function createClipmap(
+  scene: Scene,
+  seed: number,
+  jobs?: SyncJobs,
+  options: { deferred?: boolean; cover?: (camX: number, camZ: number) => CoveredGround } = {},
+): Clipmap {
   const rings: RingSamples[] = [];
   const meshes: Mesh[] = [];
   /** The origins each ring's buffers were built from: its own, the finer
    * ring's (its hole) and the coarser ring's (its border blend). */
-  const drawn: { x: number; z: number; fx: number; fz: number; cx: number; cz: number }[] = [];
+  const drawn: { x: number; z: number; fx: number; fz: number; cx: number; cz: number; kx: number; kz: number }[] = [];
   const crossing = createCrossing();
   const view = { x: 0, z: 0 };
+  /** The covered ground of the rebuild in progress, or of the last. */
+  let covered: CoveredGround | null = null;
+  /** Where ring `level`'s covered ground is measured from: NaN where none
+   * of it can be left out. */
+  const coverX = (level: number): number =>
+    covered !== null && coversRing(covered, (rings[level] as RingSamples).spacing) ? covered.x : NaN;
+  const coverZ = (level: number): number =>
+    covered !== null && coversRing(covered, (rings[level] as RingSamples).spacing) ? covered.z : NaN;
 
   /**
    * Whether ring `level`'s buffers are stale: it moved, the finer ring inside
    * it moved (the hole in its index buffer follows the finer ring's
-   * footprint), or the coarser ring outside it moved (its border blends to the
-   * coarser ring's samples, `coarseHeight`).
+   * footprint), the coarser ring outside it moved (its border blends to the
+   * coarser ring's samples, `coarseHeight`), or the ground it leaves out
+   * under the covering surface is measured from somewhere else.
    *
-   * The last clause never adds an emit the first two do not already make:
+   * The coarser ring's clause never adds an emit the first two do not already make:
    * `snapOrigin` puts ring L on a lattice of 2^(L+1), and any camera crossing
    * of a multiple of 2^(L+1) is also a crossing of 2^L, so a ring moving
    * always implies the ring inside it moved. It is kept so the rule reads off
    * what the buffers depend on rather than off that lattice fact: a job
    * dropped half done leaves some rings moved and none re-emitted, and the
    * next rebuild must still find every ring whose inputs changed since it
-   * was last drawn.
+   * was last drawn. The covered ground's clause likewise: it is measured from
+   * the camera's 16 m cell, and every ring that can leave any out (spacing
+   * up to 16 m) moves, or has the ring inside it move, when the camera
+   * crosses a cell line; the coarser rings measure it from nowhere (NaN) and
+   * never re-emit for it.
    */
   function stale(level: number): boolean {
     const ring = rings[level] as RingSamples;
@@ -400,7 +429,8 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
     const d = drawn[level];
     return d === undefined || d.x !== ring.originX || d.z !== ring.originZ ||
       (finer !== null && (d.fx !== finer.originX || d.fz !== finer.originZ)) ||
-      (coarser !== null && (d.cx !== coarser.originX || d.cz !== coarser.originZ));
+      (coarser !== null && (d.cx !== coarser.originX || d.cz !== coarser.originZ)) ||
+      !Object.is(d.kx, coverX(level)) || !Object.is(d.kz, coverZ(level));
   }
 
   /** Ring `level`'s buffers made again into `out`, in slices. */
@@ -412,7 +442,10 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
     // passes null. Ring 0 draws solid; every coarser ring cuts a hole where
     // the finer ring covers it.
     const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
-    return ringGeometrySlices(ring, finer === null ? null : holeCellsFor(ring, finer), coarser, out);
+    return ringGeometrySlices(
+      ring, finer === null ? null : holeCellsFor(ring, finer), coarser, out,
+      coversRing(covered, ring.spacing) ? covered : null,
+    );
   }
 
   function markDrawn(level: number): void {
@@ -423,6 +456,7 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
       x: ring.originX, z: ring.originZ,
       fx: finer?.originX ?? NaN, fz: finer?.originZ ?? NaN,
       cx: coarser?.originX ?? NaN, cz: coarser?.originZ ?? NaN,
+      kx: coverX(level), kz: coverZ(level),
     };
   }
 
@@ -517,6 +551,7 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
   function* build(camX: number, camZ: number): Slices {
     let computed = 0;
     let used = 0;
+    covered = options.cover?.(camX, camZ) ?? null;
     for (let level = 0; level < RING_COUNT; level++) {
       const ring = rings[level] as RingSamples;
       const ox = snapOrigin(camX, ring.spacing);
@@ -2133,7 +2168,13 @@ function buildRenderer(
   // Collision chunks still follow the player through world.boxes, untouched.
   // Ring meshes are also the complete shadow-caster set: seven meshes,
   // bounded, which closes the old grows-without-bound caster list.
-  const clipmap = forest === null ? null : createClipmap(scene, forest.seed, jobs, { deferred: options.deferClipmap });
+  // The rings leave out the steep ground the face patches below draw over.
+  const clipmap = forest === null
+    ? null
+    : createClipmap(scene, forest.seed, jobs, {
+      deferred: options.deferClipmap,
+      cover: (x, z) => facePatchCover(x, z, PATCH_REACH[tier]),
+    });
   partOf(clipmap);
   if (clipmap !== null) {
     for (const mesh of clipmap.meshes) lighting.addShadowMesh(mesh);
