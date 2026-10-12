@@ -14,8 +14,9 @@ jointed blocks on others. The patch is drawn with the terrain's own material,
 so it is the same rock, the same paint and the same light as the ground it
 covers; the ground's height is not changed, and where a patch covers fully
 steep ground the clipmap leaves its own triangles there out. The patches are the
-game's, not the simulation's: the collision surface, the placements and the
-level id do not move.
+game's, not the simulation's: the collision surface does not move, and the
+level id moves only because the rock models no longer stand on the faces
+(§1).
 
 The world's ground is one height function, built for the whole world from
 one family of noise. That family makes hills and valleys well and cliffs
@@ -35,11 +36,14 @@ enough to show its joints.
 | The patch grid | 16 m cells on the world's lattice; 0.5 m vertices within 48 m of the camera, 1 m within 160 m, 2 m within 400 m, none beyond (high tier; 36/120/300 m on medium, 24/80/200 m on low) |
 | Normals | The displaced surface's, from the ground's and the relief's derivatives at each vertex, not from the grid: a column's flat face shades flat and its joint steep at either spacing, and a point has one normal in every patch that holds it |
 | The ground under a patch | Dropped where it is fully steep: the clipmap leaves out each triangle whose three vertices have the whole mask (a gradient of 1.4 or more) in a 16 m square well inside the reach, so the lifted envelope no longer stands over the joints there. Kept everywhere else — at the reach's edge, on each ring's border row and the row around its hole, and wherever a vertex is less steep — under the patch, whose material carries a depth offset so the two never fight where the relief is zero (§4.4) |
-| Collision | On the heightfield, as today: a player at the foot of a face can stand up to 4 m inside the drawn rock |
-| The level id | Does not move |
-| The shipped cliff modules | Unchanged on this branch |
-| The rock texture | Repeats every 5.4 m, three times its source's 1.8 m, on the rock layer wherever it is drawn (§4.5) |
+| Collision | On the heightfield, as before: a player at the foot of a face can stand up to 4 m inside the drawn rock |
+| The level id | Moves once, by the cliff modules' density, which is a tunable of the cliffs pass; the relief, the patches and the paint do not move it |
+| The cliff modules | No module stands on a face: `CLIFF_DENSITY` is 0, so no cell starts a run, the cliff pass makes no collider and the shell fetches no model. The field and its tests remain, the tests laying it at a density of their own (0.1) |
+| The grey rock | The steep rock and the scree paint a dark neutral grey: `ROCK` 0.081 and `SCREE` 0.115 on every channel (`terrainSurface.ts`), where they were a light grey-tan (§4.5) |
+| The rock repeat | 5.4 m, three times its source's 1.8 m, for the whole rock layer wherever it is drawn: the faces, the scree and every fragment with rock weight (§4.5) |
 | Shadows | The sun's shadow keeps at least 0.17 of its light, for every receiver (§4.5) |
+| The lakes' reflections | The patches are drawn in the mirror (high) and the panorama (medium) through the stand-in the clipmap's rings are drawn with there, entering as each is built and leaving as each is dropped (§4.6) |
+| The rain's cover map | The patches are in it as terrain, beside the clipmap's two inner rings, entering and leaving as they come and go (§4.6) |
 
 ## 2. Goals and non-goals
 
@@ -55,16 +59,22 @@ Goals:
 - No triangle turned over by the push: the depth is cut where the ground
   bends sharply, so a hollow does not gather its points past its centre
   and a sharp crest is not notched.
-- Nothing in `client/src/sim/` changes but one new pure module, and the
-  level id stays where it is.
+- In `client/src/sim/`, one new pure module (`faceRelief.ts`) and one
+  value: the cliff modules' density, 0. With the face its own rock, the
+  models were cover the relief no longer needs, standing over it rather
+  than being it; the density is a tunable, so the level id moves by it
+  alone.
 
 Non-goals:
 
 - Overhangs. The patch is pushed out along the normal, not folded.
 - Collision on the relief.
 - The terrace stage (`cliffs.ts`) and its ledges, which stay as they are.
-- The paint (`terrainSurface.ts`, the rock texture's maps and its
-  palette); only the rock layer's repeat changes (§4.5).
+- The rock texture's maps. The paint changes in three values only: the
+  rock and scree colours, made a dark neutral grey where a face read a
+  light grey-tan, and the rock layer's repeat, made three times larger so
+  the texture's stones do not break the relief's rocks back into cobbles
+  (§4.5).
 
 ## 3. The relief function (`client/src/sim/faceRelief.ts`)
 
@@ -365,7 +375,10 @@ patch draws over (`CoveredGround`, given by `facePatchCover`):
   where the rings' rebuild lands a frame or two after the patches', at a
   camera one cell on, the square is still patched;
 - on a ring whose cells each lie within one square, a spacing that divides
-  16 m: rings 0 to 4.
+  16 m: rings 0 to 4;
+- on a ring finer than 2 m, ring 0, in a square whose centre lies within
+  `fine` as well, the far reach (`CoveredGround.fine`, 160, 120 and 80 m by
+  tier), where the patches are 1 m apart or finer.
 
 A ring's border row, where it meets the coarser ring, and the row around
 its hole, where it meets the finer one, are always kept, so the seams stay
@@ -373,12 +386,21 @@ closed. The vertices stay: only the indices change, so the buffers'
 layout, the blend toward the coarser ring and the positions are as they
 were, and with nothing covered the index buffers are the same bytes as
 before. Every triangle left out has three steep vertices, which are grid
-points of its square's patch on the high and medium tiers, so the square
-has a patch (on low, ring 0 reaches past the 80 m far reach into the 2 m
-band, whose patches are found by their own points a metre off); where a
-patch's edge is tapered, at the reach's edge, the ground is not left out.
+points of its square's patch, so the square has a patch; where a patch's
+edge is tapered, at the reach's edge, the ground is not left out. The
+`fine` bound is what holds this on low: ring 0's 1 m vertices lie in
+squares up to 90.5 m from the camera's cell's centre (64 m in each axis),
+past low's 80 m far reach and into its 2 m band, where three fully steep
+vertices a metre off the patch's points can lie in a square with no steep
+point of its own, and so no patch. On high and medium every square of ring
+0 lies within the far reach, and the bound leaves out what was left out
+before; on low, at the reference pose, it keeps 361 triangles that were
+left out under 2 m patches, 16,181 of 16,542 left out still.
 A ring is drawn again when the camera's cell changes, which every ring that
-can leave triangles out does anyway, its own move or its finer ring's.
+can leave triangles out does anyway, its own move or its finer ring's. The
+first build, at the origin before the camera's first frame, leaves nothing
+out: no patch stands yet, and the camera is elsewhere. The first update
+builds at once and draws again every ring that can leave ground out.
 
 The clipmap's rings are the shadow casters; the patches cast too, so a
 triangle left out casts its shadow through the patch over it.
@@ -395,7 +417,17 @@ across. The repeat is the layer's, not the patches': the steep ground, the
 scree and every other fragment that carries rock weight take it. The rock's
 parallax keeps its depth of 3 cm in metres, scaled to the repeat in the
 shader, so the stones are as deep as before, now a fifteenth of their
-width or less. Only a uniform changes; the shader text does not.
+width or less. Only a uniform changes; the shader text does not. At a
+face's foot, the nearest any rock is seen, the texture's 512² texels over
+5.4 m are about 95 to the metre.
+
+The ground shader divides each layer's texture by its own mean colour, so a
+face shows the vertex colour the paint gives it, the texture adding
+variation and no hue of its own. The rock and the scree were a light
+grey-tan, (0.17, 0.16, 0.15) and (0.24, 0.23, 0.21), and a face read light
+and warm; `ROCK` and `SCREE` (`client/src/game/terrainSurface.ts`) are now
+neutral at half that luminance, 0.081 and 0.115 on every channel, and the
+faces read a dark grey.
 
 The shadows of the joints and slabs added to the noise: under a clear sky
 the shadow generator's darkness was 0, so a face in shadow had only the
@@ -410,6 +442,19 @@ receiver, so the floor holds for every receiver: the patches, the ground,
 the trees and the props. Weather whose cloud already lightens the shadows
 past it, bright weather's 0.45 and every cloudier one, keeps its own
 darkness.
+
+### 4.6 The reflections and the rain
+
+The lakes' reflections draw the clipmap's rings 0 to 4 with a lit
+stand-in, the mirror on high and the panorama on medium, and the rain's
+cover map draws rings 0 and 1 as terrain. Since the rings leave out the
+ground under fully steep squares, a steep face missing from either would
+reflect as sky and let the rain through the rock. The patches therefore
+enter both as they are built and leave both as they are dropped, beside
+the shadow map's casters (`createFacePatches`'s `reflections` and `rain`
+registries): in the reflections through the same stand-in the rings are
+drawn with there, in the rain's map as terrain, so the streaks stop on the
+rock and the splashes land on the faces.
 
 ## 5. Tests
 
@@ -436,13 +481,22 @@ darkness.
   patch is the same whatever the camera's path to it.
 - `client/test/game/clipmap.test.ts`: with no cover the index buffers are
   every triangle, byte for byte; the triangles left out per ring at the
-  reference pose are pinned; none on a border row or beside a hole; each
-  is fully steep, over a square with a patch and no open neighbour.
+  reference pose are pinned; none on a border row or beside a hole; on
+  every tier each is fully steep, its vertices grid points of its square's
+  patch, over a square with a patch and no open neighbour; ring 0's
+  squares lie within medium's far reach and past low's wherever the camera
+  stands in its cell.
+- `client/test/game/renderer.test.ts`: the clipmap's first build leaves
+  nothing out, and its first update leaves out what its cover names.
 - `client/test/game/facePatchMeshes.test.ts`: the attribute names match
   the terrain plugin's; the material carries the plugins and the depth
   offset, the atmosphere's plugin and a view of the ground's arrays that
   follows their swap; a cell is rebuilt when its band, stitch or open
-  neighbours change and not otherwise, and an empty cell not at all.
+  neighbours change and not otherwise, and an empty cell not at all; the
+  shadow map, the reflections and the rain's map see every patch built and
+  every one dropped.
+- `client/test/game/cliffMeshes.test.ts`: at the shipped density no model
+  is fetched.
 - `architecture.test.ts` holds: no trig, no `**`, no new `Math.hypot` in
   `sim/`; `facePatches.ts` is Babylon-free.
 - The level id, the 200-world sweeps and the water baseline are untouched.
@@ -466,6 +520,6 @@ pairs against `main` at the same poses are recorded beside them.
 - Merging a band's patches into one mesh (draw calls).
 - Collision on the relief, if standing inside the drawn rock at a face's
   foot shows.
-- The cliff modules: with the face its own rock, the modules are hero
-  pieces, not cover; their density and their seat are a separate change.
+- The cliff modules, if they return: as hero pieces on a face, not cover,
+  at a density and a seat of their own.
 - A lip at a column's top for a real overhang.

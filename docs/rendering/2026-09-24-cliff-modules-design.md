@@ -1,5 +1,7 @@
 # Cliff modules: rock-wall models on the steep faces
 
+> **Amended (2026-10-12).** The shipped density is 0 (`CLIFF_DENSITY`): no module stands on a face, and the faces carry the steep ground's patches instead (`2026-10-12-steep-face-patches-design.md`). The field and its tests keep a density of their own, 0.1.
+
 > **As built (2026-09-25).**
 > - **Placement** runs in the simulation (`sim/cliffField.ts`) on ground that is too steep to stand on by a margin and is rock. The stand test is `ny < GROUND_NORMAL_Y − CLIFF_STAND_MARGIN` = 0.7 − 0.03. The rock test is the rock class's slope band (`CLUTTER_ROCK_SLOPE_LO/HI` = 0.15 / 0.6) at `CLIFF_ROCK_MIN` 0.8.
 > - **Runs:** on a `CLIFF_CELL` 12 m lattice (jitter 0.5), one cell in ten (`CLIFF_DENSITY` 0.1) lays a run along the contour.
