@@ -10,6 +10,7 @@ import {
 import { stadiumLake } from "../helpers/lakeShapes.js";
 import * as cliffField from "../../src/sim/cliffField.js";
 import { boxShell, seat } from "./helpers/cliffSolid.js";
+import { CLIFF_LAID } from "./helpers/cliffLaid.js";
 import {
   CLIFF_CELL, CLIFF_DENSITY, CLIFF_LONG_NEIGHBOURS, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT,
   CLIFF_MODEL_BASE, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_PROBE_SPAN, CLIFF_ROCK_MIN, CLIFF_RUN_MAX, CLIFF_RUN_REACH,
@@ -39,7 +40,7 @@ function modulesIn(seed: number, x: number, z: number, r: number): Placed[] {
   const w = r + CLIFF_RUN_REACH;
   for (let cj = Math.floor((z - w) / CLIFF_CELL); cj <= Math.floor((z + w) / CLIFF_CELL); cj++) {
     for (let ci = Math.floor((x - w) / CLIFF_CELL); ci <= Math.floor((x + w) / CLIFF_CELL); ci++) {
-      for (const m of cliffCellRuns(seed, ci, cj)) {
+      for (const m of cliffCellRuns(seed, ci, cj, CLIFF_LAID)) {
         if (Math.hypot(m.x - x, m.z - z) < r) out.push({ m, ci, cj });
       }
     }
@@ -210,7 +211,7 @@ describe("the placement", () => {
     for (let seed = 1; seed <= WORLDS; seed++) {
       for (let cj = Math.floor(-w / CLIFF_CELL); cj <= Math.floor(w / CLIFF_CELL); cj++) {
         for (let ci = Math.floor(-w / CLIFF_CELL); ci <= Math.floor(w / CLIFF_CELL); ci++) {
-          const run = cliffCellRuns(seed, ci, cj);
+          const run = cliffCellRuns(seed, ci, cj, CLIFF_LAID);
           if (run.length === 0) continue;
           const home = cliffCellPoint(seed, ci, cj);
           for (const m of run) {
@@ -323,8 +324,8 @@ describe("the placement", () => {
         cells.push([ci, cj]);
       }
     }
-    const forward = cells.map(([ci, cj]) => cliffCellRuns(WORST.seed, ci, cj));
-    const backward = [...cells].reverse().map(([ci, cj]) => cliffCellRuns(WORST.seed, ci, cj)).reverse();
+    const forward = cells.map(([ci, cj]) => cliffCellRuns(WORST.seed, ci, cj, CLIFF_LAID));
+    const backward = [...cells].reverse().map(([ci, cj]) => cliffCellRuns(WORST.seed, ci, cj, CLIFF_LAID)).reverse();
     expect(backward).toEqual(forward);
     let runs = 0, multi = 0, differ = 0;
     for (const [i, run] of forward.entries()) {
@@ -332,7 +333,7 @@ describe("the placement", () => {
       runs++;
       if (run.length > 1) multi++;
       const [ci, cj] = cells[i]!;
-      const other = cliffCellRuns(WORST.seed + 1, ci, cj);
+      const other = cliffCellRuns(WORST.seed + 1, ci, cj, CLIFF_LAID);
       const first = run[0]!;
       if (!other.some((m) => m.x === first.x && m.z === first.z && m.hash === first.hash)) differ++;
     }
@@ -393,7 +394,7 @@ describe("the placement", () => {
     let cells = 0, multi = 0, pairs = 0, longest = 0, gaps = 0;
     for (let cj = Math.floor((SCARP.z - r) / CLIFF_CELL); cj <= Math.floor((SCARP.z + r) / CLIFF_CELL); cj++) {
       for (let ci = Math.floor((SCARP.x - r) / CLIFF_CELL); ci <= Math.floor((SCARP.x + r) / CLIFF_CELL); ci++) {
-        const run = cliffCellRuns(SCARP.seed, ci, cj);
+        const run = cliffCellRuns(SCARP.seed, ci, cj, CLIFF_LAID);
         if (run.length === 0) continue;
         cells++;
         longest = Math.max(longest, run.length);
@@ -435,8 +436,8 @@ describe("the placement", () => {
     expect(gaps).toBe(0);
   }, timeLimit(300_000));
 
-  it("starts a run on about one qualifying cell in ten, before any terrain sample", () => {
-    let qualifying = 0, placed = 0, modules = 0;
+  it("starts a run on about one qualifying cell in ten at the laid density, and on none at the shipped one", () => {
+    let qualifying = 0, placed = 0, modules = 0, shipped = 0;
     const r = 400;
     for (let cj = Math.floor((WORST.z - r) / CLIFF_CELL); cj <= Math.floor((WORST.z + r) / CLIFF_CELL); cj++) {
       for (let ci = Math.floor((WORST.x - r) / CLIFF_CELL); ci <= Math.floor((WORST.x + r) / CLIFF_CELL); ci++) {
@@ -444,9 +445,10 @@ describe("the placement", () => {
         if (Math.hypot(p.x - WORST.x, p.z - WORST.z) >= r) continue;
         if (!cliffGate(WORST.seed, p.x, p.z).open) continue;
         qualifying++;
-        const run = cliffCellRuns(WORST.seed, ci, cj);
+        const run = cliffCellRuns(WORST.seed, ci, cj, CLIFF_LAID);
         if (run.length > 0) placed++;
         modules += run.length;
+        shipped += cliffCellRuns(WORST.seed, ci, cj).length;
       }
     }
     // The density draw alone keeps one in ten: a run reaches up to
@@ -454,7 +456,11 @@ describe("the placement", () => {
     // same stretch of wall several times over. The probes over the solid
     // then drop more, because much of this disc's steep-rock area is narrow
     // ridges rather than one broad face.
-    expect(CLIFF_DENSITY).toBe(0.1);
+    // The shipped density is 0, so no module stands on any face; every test
+    // here lays the field at CLIFF_LAID, the share the modules stood at.
+    expect(CLIFF_DENSITY).toBe(0);
+    expect(CLIFF_LAID).toBe(0.1);
+    expect(shipped).toBe(0);
     expect(qualifying).toBe(542);
     expect(placed).toBe(13);
     expect(modules).toBe(78);

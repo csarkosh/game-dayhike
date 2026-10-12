@@ -53,6 +53,9 @@ export type CliffMeshesOptions = {
   /** How a model's GLB is fetched; the default loads it by URL. A test hands
    * in a reader of the file on disk. */
   loader?: (output: string) => Promise<AssetContainer>;
+  /** The share of cells that start a run (`cliffCellRuns`); the default is
+   * `CLIFF_DENSITY`. A test lays the field at a share of its own. */
+  density?: number;
 };
 
 export type CliffMeshes = {
@@ -183,7 +186,7 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
   // `CLIFF_CELL` crossing, and a qualifying cell costs dozens of terrain
   // samples (its gate, four neighbours, and the probes of every module along
   // its run).
-  const collector = createCliffCollector(seed);
+  const collector = createCliffCollector(seed, options.density);
   /**
    * The ground tint per instance, kept for as long as the collector keeps the
    * instance. The tint costs a terrain sample, a surface classification and a

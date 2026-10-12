@@ -22,6 +22,7 @@ import { trampleFrame, writeFoliage } from "../../src/game/clutterMeshes.js";
 import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
 import { CliffTintPlugin } from "../../src/game/cliffTintPlugin.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
+import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Counts the shell's tint writes, so the per-instance memo is observable:
@@ -141,12 +142,12 @@ describe("createCliffMeshes", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
-    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene) });
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene), density: CLIFF_LAID });
     await cliffs.ready;
     cliffs.update(CAM.x, CAM.z);
     const rings = CLIFF_RINGS.high;
     const o = cliffOrigin(CAM.x, CAM.z);
-    const bands = cliffBands(collectCliffs(SEED, CAM.x, CAM.z, rings[2]), o.x, o.z, rings);
+    const bands = cliffBands(collectCliffs(SEED, CAM.x, CAM.z, rings[2], CLIFF_LAID), o.x, o.z, rings);
     // Measured at this scarp, and the same split cliffField.test.ts pins for
     // this origin.
     expect(bands.map((b) => b.length)).toEqual([59, 70, 173]);
@@ -207,7 +208,7 @@ describe("createCliffMeshes", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
-    const cliffs = createCliffMeshes(scene, SEED, { quality: "medium", loader: loader(scene) });
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "medium", loader: loader(scene), density: CLIFF_LAID });
     cliffs.update(CAM.x, CAM.z);
     expect(spy).not.toHaveBeenCalled();
     await cliffs.ready;
@@ -225,12 +226,12 @@ describe("createCliffMeshes", () => {
   it("tints an instance once and re-uses it when the next rebuild meets it again", async () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
-    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene) });
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene), density: CLIFF_LAID });
     await cliffs.ready;
     const rings = CLIFF_RINGS.high;
     const inReach = (x: number, z: number): Set<string> => {
       const o = cliffOrigin(x, z);
-      const bands = cliffBands(collectCliffs(SEED, x, z, rings[2]), o.x, o.z, rings);
+      const bands = cliffBands(collectCliffs(SEED, x, z, rings[2], CLIFF_LAID), o.x, o.z, rings);
       return new Set(bands.flat().map((m) => `${m.x},${m.z}`));
     };
     spied.foliage = 0;

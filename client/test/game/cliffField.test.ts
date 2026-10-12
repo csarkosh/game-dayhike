@@ -16,6 +16,7 @@ import {
 import { cliffSeat } from "../../src/game/cliffMeshes.js";
 import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
 import { classifySurface } from "../../src/game/terrainSurface.js";
+import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Seed 1's worst 400 m disc for steep rock (5,549 four-metre cells), from
@@ -35,7 +36,7 @@ function modulesIn(seed: number, x: number, z: number, r: number): Placed[] {
   const w = r + CLIFF_RUN_REACH + 100;
   for (let cj = Math.floor((z - w) / CLIFF_CELL); cj <= Math.floor((z + w) / CLIFF_CELL); cj++) {
     for (let ci = Math.floor((x - w) / CLIFF_CELL); ci <= Math.floor((x + w) / CLIFF_CELL); ci++) {
-      for (const m of cliffCellRuns(seed, ci, cj)) {
+      for (const m of cliffCellRuns(seed, ci, cj, CLIFF_LAID)) {
         if (Math.hypot(m.x - x, m.z - z) < r) out.push({ m, ci, cj });
       }
     }
@@ -47,7 +48,7 @@ describe("collectCliffs and the collector", () => {
   it("returns every module within reach plus the pad of the snapped origin, nearest first", () => {
     const reach = CLIFF_RINGS.high[2];
     const o = cliffOrigin(WORST.x, WORST.z);
-    const got = collectCliffs(WORST.seed, WORST.x, WORST.z, reach);
+    const got = collectCliffs(WORST.seed, WORST.x, WORST.z, reach, CLIFF_LAID);
     const want = modulesIn(WORST.seed, o.x, o.z, reach + CLIFF_PAD);
     expect(new Set(got)).toEqual(new Set(want.map((p) => p.m)));
     expect(got.length).toBe(want.length);
@@ -67,7 +68,7 @@ describe("collectCliffs and the collector", () => {
     const reach = CLIFF_RINGS.high[2];
     const o = cliffOrigin(COLLAR.x, COLLAR.z);
     const key = (m: ClutterInstance): string => `${m.x},${m.z},${m.variant},${m.scale}`;
-    const got = new Set(collectCliffs(COLLAR.seed, COLLAR.x, COLLAR.z, reach).map(key));
+    const got = new Set(collectCliffs(COLLAR.seed, COLLAR.x, COLLAR.z, reach, CLIFF_LAID).map(key));
     const fromOutside = modulesIn(COLLAR.seed, o.x, o.z, reach + CLIFF_PAD).filter(({ ci, cj }) => {
       const home = cliffCellPoint(COLLAR.seed, ci, cj);
       return Math.hypot(home.x - o.x, home.z - o.z) >= reach + CLIFF_PAD;
@@ -78,13 +79,13 @@ describe("collectCliffs and the collector", () => {
 
   it("memoises cells across rebuilds and matches the pure walk", () => {
     const reach = CLIFF_RINGS.high[2];
-    const c = createCliffCollector(WORST.seed);
+    const c = createCliffCollector(WORST.seed, CLIFF_LAID);
     const first = c.collect(WORST.x, WORST.z, reach);
-    expect(first).toEqual(collectCliffs(WORST.seed, WORST.x, WORST.z, reach));
+    expect(first).toEqual(collectCliffs(WORST.seed, WORST.x, WORST.z, reach, CLIFF_LAID));
     const size = c.size;
     // One cell over: the walk's leading edge is new, the rest is cached.
     const second = c.collect(WORST.x + CLIFF_CELL, WORST.z, reach);
-    expect(second).toEqual(collectCliffs(WORST.seed, WORST.x + CLIFF_CELL, WORST.z, reach));
+    expect(second).toEqual(collectCliffs(WORST.seed, WORST.x + CLIFF_CELL, WORST.z, reach, CLIFF_LAID));
     const cells = Math.ceil((2 * (reach + CLIFF_PAD + CLIFF_RUN_REACH)) / CLIFF_CELL) + 1;
     expect(c.size - size).toBeLessThanOrEqual(cells + 2);
     // Measured: the walk's leading chord, 2 · 485.05 / 12 ≈ 80.8 cells.
@@ -94,7 +95,7 @@ describe("collectCliffs and the collector", () => {
   it("partitions the modules across the three LOD buckets by distance, exactly once each", () => {
     const rings = CLIFF_RINGS.high;
     const o = cliffOrigin(WORST.x, WORST.z);
-    const all = collectCliffs(WORST.seed, WORST.x, WORST.z, rings[2]);
+    const all = collectCliffs(WORST.seed, WORST.x, WORST.z, rings[2], CLIFF_LAID);
     const bands = cliffBands(all, o.x, o.z, rings);
     // collectCliffs's own pad (CLIFF_PAD) reaches past rings[2] so the cache
     // is warm before a module needs a band; cliffBands drops anything at or
@@ -119,11 +120,16 @@ describe("collectCliffs and the collector", () => {
 
   it("stays under the budget on the three census worlds' worst discs", () => {
     const counts: number[] = [];
+    const shipped: number[] = [];
     for (const [seed, x, z] of [[627994160, -200, -1000], [388817, -100, -500], [1, 1100, -1200]] as const) {
-      counts.push(collectCliffs(seed, x, z, CLIFF_RINGS.high[2]).length);
+      counts.push(collectCliffs(seed, x, z, CLIFF_RINGS.high[2], CLIFF_LAID).length);
+      shipped.push(collectCliffs(seed, x, z, CLIFF_RINGS.high[2]).length);
     }
     expect(CLIFF_BUDGET).toBe(700);
     expect(counts).toEqual([333, 29, 78]);
+    // At the shipped density no module stands on any face, so the collector
+    // gathers none; the counts above are the field laid at CLIFF_LAID.
+    expect(shipped).toEqual([0, 0, 0]);
     for (const n of counts) expect(n).toBeLessThanOrEqual(CLIFF_BUDGET);
   }, timeLimit(300_000));
 
@@ -136,7 +142,7 @@ describe("collectCliffs and the collector", () => {
     const reach = CLIFF_RINGS.high[2];
     const z = -1200;
     const xs = [1100, 700, 300, -100, -500, -900, -1300];
-    const c = createCliffCollector(seed);
+    const c = createCliffCollector(seed, CLIFF_LAID);
     const sizes: number[] = [];
     for (const x of xs) {
       c.collect(x, z, reach);
@@ -163,7 +169,7 @@ describe("collectCliffs and the collector", () => {
     const beforeFar = c.size;
     const got = c.collect(1100, z, reach);
     expect(c.size - beforeFar).toBe(sizes[0]!);
-    expect(got).toEqual(collectCliffs(seed, 1100, z, reach));
+    expect(got).toEqual(collectCliffs(seed, 1100, z, reach, CLIFF_LAID));
     expect(got.length).toBe(78);
   }, timeLimit(300_000));
 
@@ -174,7 +180,7 @@ describe("collectCliffs and the collector", () => {
     const rings = CLIFF_RINGS.high;
     const seed = 627994160, x = -340, z = -897;
     const o = cliffOrigin(x, z);
-    const all = collectCliffs(seed, x, z, rings[2]);
+    const all = collectCliffs(seed, x, z, rings[2], CLIFF_LAID);
     const bands = cliffBands(all, o.x, o.z, rings);
     expect(all.length).toBe(308);
     expect(bands.map((b) => b.length)).toEqual([59, 70, 173]);
