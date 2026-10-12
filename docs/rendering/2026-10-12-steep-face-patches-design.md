@@ -336,6 +336,66 @@ material, the terrain texture, the wet layer and the atmosphere attached),
 with `zOffset = −1` so the patch wins over the ground where the two
 coincide. The patches cast and receive shadows with the clipmap.
 
+**The rebuild as a job.** The patches build on the renderer's scheduler
+(`syncJobs.ts`), as the clipmap and the ground cover do. A crossing at a
+walk is one job. Its first slice works out the new set: the cells, their
+spacings, stitches and open neighbours, and which of them the set drawn
+does not hold as wanted. Then each cell to build, nearest the camera's
+cell's centre first, has a slice of its own, which the slice before says
+it will take (5 ms near, 2 ms far, 0.5 ms wide, `FACE_PATCH_SLICE_MS`), so
+a near cell starts only as a frame's share begins; the cell is made into
+its mesh and uploaded, hidden and in no registry. The last slice applies
+the set: the new meshes shown and entered into the shadow map, the
+reflections and the rain's map, and the patches of the cells that changed
+or left dropped, together. No frame draws half a set, and a changed cell's
+old patch is drawn until its replacement is.
+
+The job is patient, a kind the scheduler runs after every other job, with
+the share they leave, and never runs to its end at once, as it does a job
+six frames or 100 ms old. A crossing builds about 140 cells, about 120 ms
+of work, far more than six frames' share, and waiting costs only detail,
+never a hole: the set drawn is whole, and the clipmap leaves out only the
+ground it covers.
+
+**Which crossings wait.** As the clipmap's (`crossingAt`): a one-cell step
+at a walk or a run is a job; a jump of more than a cell and a view moving
+more than a metre a frame (the free camera's boost) build at once, and a
+pending job is dropped. The first update builds the near band at once, the
+0.5 m cells within `near` (29 at the reference pose, 20 of them with a
+patch), applies it, and begins a job for the rest of the set: the first
+frame has the face in front of the camera, and the distance fills in over
+the frames after it. A crossing while a job is pending begins the job
+again for the new cell, in the old one's place; the cells built so far are
+kept, and the new job builds only those the new set wants and does not
+find built as it wants them. Finishing the old job first would build at
+once what is left of it, the stall the job is there to avoid, for a set
+already behind the camera.
+
+**Building ahead.** While no job is pending, idle work builds the cells
+the next crossing will want: the cell the camera reaches next on its
+heading (`nextCrossing`), its set worked out against the set drawn, and
+its cells to build, nearest first, a slice each, hidden. An idle slice
+says what it will take, as a job's does, and one that would not fit in
+what is left of the frame's share waits for the next frame. When the
+camera turns, the work is aimed at the new cell, and what was built for
+the old one and is not wanted is let go; when a set is applied, whatever
+is built and not in it is let go. At a walk a crossing finds every cell
+built, and its job only works out the set and applies it, in the
+crossing's own frame.
+
+**The cover follows what is drawn.** The clipmap asks the patches for the
+ground they cover (`FacePatches.cover`) as each of its rebuilds begins:
+the cover of the camera's cell the set drawn was walked from, not of the
+camera's cell, so a ring never leaves ground out under a square whose
+patch is still building. Before any patch is drawn it is null; while the
+first update's job is pending it is the near band's, its reach the near
+reach less a cell's diagonal and `fine` the near reach. The patches are
+updated before the clipmap each frame, so a set built at once is the one
+the rings' rebuild in that frame reads. A ring is drawn again when the
+cover's centre, reach or `fine` changes, at its next rebuild; until then
+it leaves out what it did, which the set drawn since, a cell on at most,
+still covers.
+
 ### 4.3 Cost
 
 A fully steep 16 m cell at 0.5 m is 1,089 vertices and 2,048 triangles; at
@@ -343,14 +403,28 @@ A fully steep 16 m cell at 0.5 m is 1,089 vertices and 2,048 triangles; at
 tier the reach holds 1,963 cells, 29 near, 287 far and 1,647 wide, of which
 20 near, 121 far and 221 wide have steep ground: 74,650 vertices and
 131,200 triangles. The shell's walk, from the camera's cell's centre,
-holds 1,961 cells and draws 362. The patches are built at once, on the
-frame the camera crosses a cell line: about 580 ms at the first update
+holds 1,961 cells and draws 362. Built at once, on the frame the camera
+crossed a cell line, the patches took about 580 ms at the first update
 (620 ms cold), which builds 1,961 cells, and about 120 ms at the crossing
 one cell east, which builds 142 (51 that entered the reach and 91 whose
 band, stitch or open neighbours changed), leaving 368 drawn. At the 160 m
-reach the same two took about 350 ms and 115 ms. Spreading the builds over
-frames is the first follow-up; the draw calls are the next lever, the
-cells of one band merged into one mesh at each change.
+reach the same two took about 350 ms and 115 ms.
+
+As jobs, measured on the development machine under Node, on the null
+engine, with the frames run back to back (`facePatchMeshes.test.ts`'s
+`wall-clock` test, three runs):
+
+| | as jobs | built at once |
+| --- | --- | --- |
+| the first update, on its frame | 99 to 101 ms, the near band's 29 cells | about 580 ms |
+| the far and wide bands after it | 605 to 636 ms of work over 159 to 166 frames, 3.2 ms a frame on average, 4.5 to 5.2 at most: about 2.7 s at 60 frames a second | in the first update |
+| a walk to the cell's east line, 172 frames, and 30 on | 1.1 ms a frame on average, 4.3 at most, the cells of the crossing built ahead | nothing until the line |
+| the crossing's frame at a walk | 2.6 to 3.2 ms | about 120 ms |
+| a crossing nothing was built ahead for | 34 to 36 frames, 3.2 to 3.4 ms a frame on average, 4.1 to 6.3 at most | about 120 ms in one frame |
+
+The near band's 100 ms on the first frame is the one stall left. The draw
+calls are the next lever, the cells of one band merged into one mesh at
+each change.
 
 The clipmap leaves out, at the same pose, 11,582 of ring 0's 32,768
 triangles, 4,559, 1,933 and 199 of the 24,576 of rings 1, 2 and 3, and
@@ -369,11 +443,12 @@ patch draws over (`CoveredGround`, given by `facePatchCover`):
   `FACE_SLOPE_HI` or more as the ring stores it, where the patches' mask
   is whole;
 - in a 16 m square whose centre lies within the wide reach, less a cell's
-  diagonal (about 377 m on the high tier), of the camera's cell's centre.
-  Every neighbour of such a square, corners too, is in the patched set, so
-  its patch has no open side, no taper and the whole relief over it; and
-  where the rings' rebuild lands a frame or two after the patches', at a
-  camera one cell on, the square is still patched;
+  diagonal (about 377 m on the high tier), of the centre of the cell the
+  set drawn was walked from (section 4.2). Every neighbour of such a
+  square, corners too, is in the patched set, so its patch has no open
+  side, no taper and the whole relief over it; and the set drawn for a
+  camera one cell on still patches the square, so the rings may leave it
+  out until their next rebuild;
 - on a ring whose cells each lie within one square, a spacing that divides
   16 m: rings 0 to 4;
 - on a ring finer than 2 m, ring 0, in a square whose centre lies within
@@ -396,11 +471,13 @@ point of its own, and so no patch. On high and medium every square of ring
 0 lies within the far reach, and the bound leaves out what was left out
 before; on low, at the reference pose, it keeps 361 triangles that were
 left out under 2 m patches, 16,181 of 16,542 left out still.
-A ring is drawn again when the camera's cell changes, which every ring that
-can leave triangles out does anyway, its own move or its finer ring's. The
+A ring is drawn again at its next rebuild after the cover changes, which
+a ring that can leave triangles out has as the camera walks on, its own
+move or its finer ring's. The
 first build, at the origin before the camera's first frame, leaves nothing
 out: no patch stands yet, and the camera is elsewhere. The first update
-builds at once and draws again every ring that can leave ground out.
+builds at once and draws again every ring that can leave ground out, under
+the near band's cover, which the patches' first update, before it, drew.
 
 The clipmap's rings are the shadow casters; the patches cast too, so a
 triangle left out casts its shadow through the patch over it.
@@ -487,14 +564,28 @@ rock and the splashes land on the faces.
   squares lie within medium's far reach and past low's wherever the camera
   stands in its cell.
 - `client/test/game/renderer.test.ts`: the clipmap's first build leaves
-  nothing out, and its first update leaves out what its cover names.
+  nothing out, and its first update leaves out what its cover names; on
+  one scheduler with the patches, the rings' rebuild at a crossing reads
+  the cover of the set drawn while the crossing's patches build, and the
+  new set's at its next rebuild after they are drawn; the patches have the
+  scheduler and are updated before the clipmap in both branches.
+- `client/test/game/syncJobs.test.ts`: a patient job is never late, runs
+  behind the others and keeps its place when begun again; an idle slice
+  said to be long waits for a frame where it fits or is first.
 - `client/test/game/facePatchMeshes.test.ts`: the attribute names match
   the terrain plugin's; the material carries the plugins and the depth
   offset, the atmosphere's plugin and a view of the ground's arrays that
   follows their swap; a cell is rebuilt when its band, stitch or open
   neighbours change and not otherwise, and an empty cell not at all; the
   shadow map, the reflections and the rain's map see every patch built and
-  every one dropped.
+  every one dropped. On a stepped clock: the first update builds the near
+  band, 29 cells, and the rest is drawn whole 63 frames on, never late; at
+  a walk the crossing's cells are built ahead and drawn in its own frame,
+  nothing built in it, the registries swapped there and the old patches
+  drawn until then; a crossing nothing was built ahead for, begun again at
+  a second, keeps what it built and draws what a set built at once draws;
+  a jump and the boost build at once. A `wall-clock` test keeps the first
+  update under 200 ms and a frame on the patches under 20 ms.
 - `client/test/game/cliffMeshes.test.ts`: at the shipped density no model
   is fetched.
 - `architecture.test.ts` holds: no trig, no `**`, no new `Math.hypot` in
@@ -514,9 +605,8 @@ pairs against `main` at the same poses are recorded beside them.
 
 ## 7. Follow-ups
 
-- Building the patches over several frames, not on the one the camera
-  crosses a cell line: with the wide band the first update takes over
-  half a second.
+- The near band's 100 ms on the first frame: built over the loading
+  screen's last frames, where the camera's first position is known.
 - Merging a band's patches into one mesh (draw calls).
 - Collision on the relief, if standing inside the drawn rock at a face's
   foot shows.
