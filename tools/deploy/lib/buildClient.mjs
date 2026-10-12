@@ -1,6 +1,6 @@
 // The production client build, shared by the web deploy and the desktop
 // release so the two can never be built against different addresses.
-import { runLoud, tfOutput, requireLfsMaterialized } from './preconditions.mjs';
+import { buildTag, runLoud, tfOutput, requireLfsMaterialized } from './preconditions.mjs';
 
 // Checked before the build, not after: vite build would happily emit pointer
 // files into dist under a content hash and report success.
@@ -19,6 +19,10 @@ export function productionEnv() {
     VITE_SIGNALING_URL: `${signalingUrl.replace(/^https:/, 'wss:')}/ws`,
     VITE_WEB_BASE: siteUrl,
     VITE_DOWNLOADS_URL: `${tfOutput('downloads_url')}/desktop/latest.json`,
+    // The telemetry route on its own service (`server/src/telemetry.ts`),
+    // and the commit this build is of, which every row the page sends names.
+    VITE_TELEMETRY_URL: `${tfOutput('telemetry_url')}/t`,
+    VITE_BUILD_SHA: buildTag(),
     // Vite's `base`: the site URL's path with a trailing slash. The desktop
     // shell loads the site itself, so there is one build and one base.
     DAYHIKE_BASE: `${new URL(siteUrl).pathname.replace(/\/+$/, '')}/`,

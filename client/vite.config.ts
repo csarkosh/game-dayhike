@@ -41,6 +41,9 @@ export default defineConfig({
       // passed through rather than rewritten, so development and production
       // both use `/ws`.
       "/ws": { target: "ws://localhost:8080", ws: true },
+      // The telemetry route, for a dev page started with `?telemetry=on`: the
+      // dev server process serves both roles (`server/src/index.ts`).
+      "/t": { target: "http://localhost:8080" },
     },
   },
   build: {

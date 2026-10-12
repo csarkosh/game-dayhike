@@ -121,6 +121,15 @@ resource "google_cloud_run_v2_service" "signaling" {
         container_port = 8080
       }
 
+      # This process is the signaling half only: the telemetry route lives on
+      # its own service (`_infra/modules/gcp-telemetry`), so a flood of
+      # batches can never take a slot from the one instance holding every
+      # room. The same image serves both; the role is each service's own.
+      env {
+        name  = "ROLE"
+        value = "signaling"
+      }
+
       resources {
         limits = {
           cpu    = "1"

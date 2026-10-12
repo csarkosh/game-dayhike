@@ -13,6 +13,20 @@ export type Room = {
    * comes back.
    */
   hostDroppedAt: number | null;
+  /** When the lobby was opened, by the registry's clock: a room's end names its lifetime. */
+  createdAt: number;
+};
+
+/**
+ * Why a room ended, for the listener: its host said goodbye (`host_left`),
+ * its host's grace window ran out (`host_gone`), or its last peer went
+ * (`empty`).
+ */
+export type RoomEndReason = "host_left" | "host_gone" | "empty";
+
+/** What the registry tells of its rooms as they come and go, for the server's log. */
+export type RoomListener = {
+  ended(room: Room, reason: RoomEndReason): void;
 };
 
 export type JoinResult =
@@ -33,6 +47,9 @@ export class RoomRegistry {
      */
     private readonly now: () => number = () => Date.now(),
     private readonly hostGraceMs = 60_000,
+    /** Told of every end, whichever path ends the room, so the log's record
+     * of a lobby's lifetime does not depend on which method noticed. */
+    private readonly listener: RoomListener | null = null,
   ) {}
 
   get size(): number {
@@ -64,15 +81,16 @@ export class RoomRegistry {
     for (const [id, room] of this.rooms) {
       if (room.hostDroppedAt === null) continue;
       if (this.now() - room.hostDroppedAt < this.hostGraceMs) continue;
-      this.endRoom(id, room);
+      this.endRoom(id, room, "host_gone");
     }
   }
 
-  private endRoom(roomId: string, room: Room): void {
+  private endRoom(roomId: string, room: Room, reason: "host_left" | "host_gone"): void {
     for (const other of room.peers.values()) {
       other.send({ t: "error", code: "host_gone" });
     }
     this.rooms.delete(roomId);
+    this.listener?.ended(room, reason);
   }
 
   /**
@@ -83,7 +101,10 @@ export class RoomRegistry {
     for (const other of room.peers.values()) {
       other.send({ t: "peer-left", peerId });
     }
-    if (room.peers.size === 0) this.rooms.delete(roomId);
+    if (room.peers.size === 0) {
+      this.rooms.delete(roomId);
+      this.listener?.ended(room, "empty");
+    }
   }
 
   /**
@@ -104,6 +125,7 @@ export class RoomRegistry {
         hostId: peer.id,
         peers: new Map([[peer.id, peer]]),
         hostDroppedAt: null,
+        createdAt: this.now(),
       });
       return { ok: true, role: "host", hostId: peer.id, peers: [] };
     }
@@ -174,7 +196,7 @@ export class RoomRegistry {
 
     if (peer.id === room.hostId) {
       // No host migration in this milestone: the session ends for everyone.
-      this.endRoom(roomId, room);
+      this.endRoom(roomId, room, "host_left");
       return;
     }
 
@@ -208,6 +230,7 @@ export class RoomRegistry {
     // Nobody left to preserve the room for.
     if (room.peers.size === 0) {
       this.rooms.delete(roomId);
+      this.listener?.ended(room, "empty");
       return;
     }
 

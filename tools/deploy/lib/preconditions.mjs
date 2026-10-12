@@ -102,6 +102,29 @@ export function tfOutput(name) {
   return fromTerraform;
 }
 
+/**
+ * The commit the working tree is at, as a tag: the short sha, with `-dirty`
+ * when the tree has uncommitted changes, so an untested local change is never
+ * mistaken for a committed one. The server image is tagged with it and the
+ * client build bakes it in (`VITE_BUILD_SHA`), so a telemetry row names the
+ * build on each side.
+ */
+export function buildTag() {
+  let sha;
+  try {
+    sha = run('git', ['rev-parse', '--short', 'HEAD']).trim();
+  } catch {
+    fail('could not read the current commit. Run this from inside the git repository, with at least one commit.');
+  }
+  let dirty;
+  try {
+    dirty = run('git', ['status', '--porcelain']).trim() !== '';
+  } catch {
+    fail('could not read git status. Run this from inside the git repository.');
+  }
+  return dirty ? `${sha}-dirty` : sha;
+}
+
 export function requireGcloudAuth() {
   requireCommand('gcloud', 'Install the Google Cloud CLI.');
   const accounts = run('gcloud', [
