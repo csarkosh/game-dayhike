@@ -71,23 +71,35 @@ the height function later without a change to its form.
 `cellularD(x, z, cell, jitter, border, salt): { v, dx, dz }`
 
 A lattice of `cell` metres. Each lattice cell `(i, j)` holds one point,
-displaced from the cell's centre by `jitter · cell / 2` in each axis (from
-`hash3(i, j, 0, salt)` and `hash3(i, j, 1, salt)`), and one value
+displaced from the cell's centre by up to `jitter · cell / 2` in each axis
+(from `hash3(i, j, 0, salt)` and `hash3(i, j, 1, salt)`), and one value
 `o ∈ [−1, 1]` (from `hash3(i, j, 2, salt)`). For the sample's position, the
-nine cells around it give the nearest point (distance `F1`, value `o1`) and
-the second nearest (`F2`, `o2`). The field is `o1` inside a cell and the
-mean of the two values on the border between them:
+nine cells around it give nine points `c_k` at distances `F_k`, the nearest
+at `F1`. Each point weighs by how much farther it is than the nearest, and
+the field is the weighted mean of the values:
 
 ```
-w = smootherstep(0, border, F2 − F1)
-v = (o1 + o2) / 2 + (o1 − o2) / 2 · w
+w_k = 1 − smootherstep(0, border, F_k − F1)
+v   = Σ w_k · o_k / Σ w_k
 ```
 
-`border` is the width, in metres, of the blend across a joint. The
-derivative is `(o1 − o2) / 2 · w′ · (∇F2 − ∇F1)` with
-`∇F = (p − c) / F` for each point `c`; a point exactly on a lattice point
-(`F1 < 1e−9`) takes `∇F1 = 0`. Where the second nearest point changes
-(near a junction of three cells) the field has a kink, as a joint does.
+`border` is the width, in metres, of the blend across a joint. The field is
+`o1` inside a cell, where every other point is a joint's width farther, and
+exactly the mean of two values on the border between two cells where no
+third point is within a joint's width; it is a convex mix, so within `[−1, 1]`, and continuous everywhere, since `F1` is.
+With `W = Σ w_k`, the derivative is
+`(Σ w_k′ · o_k) / W − v · (Σ w_k′) / W` with
+`w_k′ = −smootherstep′(0, border, F_k − F1) · (∇F_k − ∇F1)`, the step's
+derivative in its argument, and `∇F = (p − c) / F` for each point `c`; a
+point exactly on a lattice point (`F < 1e−9`) takes `∇F = 0`.
+The field is smooth across a joint of two cells and has kinks only at the
+junctions of three or more cells, where the nearest point changes while a
+third has weight, as a joint does. When a point with weight could lie
+outside the nine cells (`F1 + border` past the nearest any point outside
+can be), the search widens to the twenty-five around the sample, which holds
+every point with weight for any `border` under `(2 − √2) · cell`; at the
+forms' numbers below that is rare, and the field is the whole blend for
+every sample.
 
 ### 3.2 The two forms
 
