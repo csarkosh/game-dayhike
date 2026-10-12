@@ -68,7 +68,7 @@ share, so it is right across instances.
 | How far parties got | tiles, a histogram of each match's farthest climb, the latest matches | `progress` |
 | What went wrong | a table, grouped, with a representative machine and a session to open | `errors` |
 | Load times and frame rates | tiles and the table by build, tier and engine | `health` |
-| Where parties went | a density drawing of position samples for one world | `paths` |
+| Where parties went | the trail rebuilt from the seed, each session's path over it, marks and a scrubber (telemetry doc §9) | `paths` |
 
 A range row above scopes every query to today, 7, 30 or 90 days. Any session id on the page
 opens the session drawer: every row the page sent and its lobby's signaling rows, in order,

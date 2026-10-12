@@ -22,5 +22,5 @@ from the range chosen there (`server/src/admin.ts`).
 | `progress.sql` | How far each party got, which acts they reached, and how each match ended. |
 | `errors.sql` | What threw, where, on which build, and how many sessions it touched. |
 | `health.sql` | Load times by tier and engine, frame rates, and sessions that ended without saying so. |
-| `paths.sql` | Every position sample, for a heat map. |
+| `paths.sql` | Every position sample and the route's events, one world at a time: what the admin page draws over the trail. |
 | `session.sql` | One session's timeline: every row the page sent, and its lobby's signaling rows, in order. Replace `SID`. |

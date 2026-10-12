@@ -152,8 +152,12 @@ details.table summary { color: var(--muted); font-size: 12px; cursor: pointer; }
 .empty { color: var(--muted); padding: 16px 0; }
 
 .paths { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
-.paths canvas { background: var(--page); border: 1px solid var(--ring); border-radius: 8px; width: 100%; max-width: 560px; aspect-ratio: 1; }
-.paths .side { min-width: 220px; flex: 1; }
+.paths .drawing { flex: 1 1 420px; max-width: 640px; min-width: 0; }
+.paths canvas { background: var(--page); border: 1px solid var(--ring); border-radius: 8px; width: 100%; aspect-ratio: 1; display: block; }
+.paths .scrub { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.paths .side { flex: 1 1 320px; min-width: 0; }
+.paths .side .tiles { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+.paths .side .tile .value { font-size: 20px; }
 select { font: inherit; background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 8px; }
 
 .gate { max-width: 420px; margin: 20vh auto 0; text-align: center; }

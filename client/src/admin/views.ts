@@ -197,49 +197,6 @@ export function healthView(rows: Row[]): HTMLElement {
   return card("Load times and frame rates", "By build, tier and engine; the start is the tier's decision, the engine and the build, the ready is the world's first whole frame", "", tiles, table(cols, rows));
 }
 
-/** The position samples of one world, drawn on a canvas: every sample a faint dot, so where parties went reads as density. */
-export function pathsView(rows: Row[]): HTMLElement {
-  const worlds = [...new Set(rows.map((r) => `${str(r.world)} · seed ${str(r.seed)}`))];
-  const select = el("select", {}, ...worlds.map((w) => el("option", { value: w }, w)));
-  const canvas = el("canvas", { width: "560", height: "560" });
-  const side = el("div", { class: "side" });
-  const draw = (): void => {
-    const chosen = select.value;
-    const points = rows.filter((r) => `${str(r.world)} · seed ${str(r.seed)}` === chosen);
-    const ctx = canvas.getContext("2d");
-    if (ctx === null) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (points.length === 0) return;
-    const xs = points.map((p) => num(p.x));
-    const zs = points.map((p) => num(p.z));
-    const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
-    const span = Math.max(maxX - minX, maxZ - minZ, 1);
-    const pad = 24;
-    const scale = (canvas.width - pad * 2) / span;
-    const series = getComputedStyle(document.documentElement).getPropertyValue("--series").trim() || "#2a78d6";
-    const critical = getComputedStyle(document.documentElement).getPropertyValue("--critical").trim() || "#d03b3b";
-    ctx.globalAlpha = 0.22;
-    for (const p of points) {
-      const x = pad + (num(p.x) - minX) * scale;
-      const y = pad + (num(p.z) - minZ) * scale;
-      ctx.fillStyle = num(p.hp) <= 0 ? critical : series;
-      ctx.beginPath();
-      ctx.arc(x, y, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    const sessions = new Set(points.map((p) => str(p.sid))).size;
-    const deaths = points.filter((p) => num(p.hp) <= 0).length;
-    side.replaceChildren(
-      el("div", { class: "tiles" }, tile("Sessions", String(sessions)), tile("Samples", compact(points.length)), tile("Deaths", String(deaths))),
-      el("p", { class: "sub" }, "Each dot is one player's position, sampled every five seconds; a red dot is a death. Darker means more parties passed there. North is up; the crest is at the top."),
-    );
-  };
-  select.addEventListener("change", draw);
-  queueMicrotask(draw);
-  return card("Where parties went", "One world at a time, since positions are the world's own frame", "", el("div", { class: "paths" }, canvas, el("div", { class: "side" }, el("p", {}, select), side)));
-}
-
 /**
  * One session's timeline, as a drawer over the page: every row in order with
  * its time from the page's load, the signaling rows of its lobby among them,
