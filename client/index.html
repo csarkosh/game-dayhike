@@ -10,6 +10,39 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon-96x96.png" type="image/png" sizes="96x96" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- The early catch (net/telemetry.ts `EarlyCatch`): errors before the bundle
+         is up are queued here, and the bundle's telemetry takes them over. If it
+         never does — the bundle did not load or did not run — the queue goes to
+         the telemetry service from here, fifteen seconds in, so a page that
+         never started still says so. Vite substitutes the two build variables;
+         in development they stay as written and nothing is sent. -->
+    <script>
+      (function () {
+        var dh = { q: [], on: null };
+        window.__dh = dh;
+        var hear = function (e) { if (dh.on) dh.on(e); else dh.q.push(e); };
+        addEventListener("error", function (e) {
+          hear({ kind: "uncaught", msg: String(e.message || e), stack: e.error && e.error.stack, at: Date.now() });
+        });
+        addEventListener("unhandledrejection", function (e) {
+          var r = e.reason;
+          hear({ kind: "unhandled", msg: String((r && r.message) || r), stack: r && r.stack, at: Date.now() });
+        });
+        var url = "%VITE_TELEMETRY_URL%";
+        var build = "%VITE_BUILD_SHA%";
+        if (url.indexOf("http") !== 0) return;
+        setTimeout(function () {
+          if (dh.on !== null || dh.q.length === 0 || !navigator.sendBeacon) return;
+          var t0 = performance.timeOrigin || Date.now();
+          var sid = "boot-" + Math.random().toString(36).slice(2, 10);
+          var events = dh.q.slice(0, 20).map(function (e) {
+            return { n: "error", t: Math.round((e.at || Date.now()) - t0), kind: "boot:" + e.kind, msg: String(e.msg).slice(0, 300), stack: String(e.stack || "").slice(0, 2000), where: "boot" };
+          });
+          var ua = navigator.userAgent;
+          navigator.sendBeacon(url, new Blob([JSON.stringify({ v: 1, sid: sid, build: build, boot: true, ua: ua.slice(0, 200), events: events })], { type: "text/plain" }));
+        }, 15000);
+      })();
+    </script>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #101014; }
       #app { width: 100%; height: 100%; position: relative; }

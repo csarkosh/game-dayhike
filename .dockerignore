@@ -8,3 +8,5 @@ server/dist
 .claude
 tools
 _infra
+# The saved telemetry queries the image carries for the admin routes (server/Dockerfile).
+!tools/telemetry/queries

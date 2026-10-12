@@ -21,6 +21,7 @@ import { afterNextPaint } from "./game/paint.js";
 import { createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
 import { INTRO_CAPTIONS } from "./game/scene/intro.js";
 import { setLoadProgress } from "./game/modelLoad.js";
+import { markedProgress } from "./game/loadProgress.js";
 import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
@@ -36,6 +37,9 @@ import { parseLatest, type DesktopRelease } from "./net/desktopRelease.js";
 import { createSignalingClient, type SignalingClient } from "./net/signaling.js";
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
+import { browserDeps, createTelemetry, installErrorCapture, telemetryUrl, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
+import { PROTOCOL_VERSION } from "./net/protocol.js";
+import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
 import { releaseEngine } from "./game/renderer.js";
@@ -134,6 +138,35 @@ const latestReady: Promise<void> = latestUrl
       })
   : Promise.resolve();
 
+// ---- telemetry -----------------------------------------------------------------
+// What this page tells of itself (net/telemetry.ts): a session id for the
+// visit, a visitor id for the browser, the build and the versions that decide
+// whether two pages can play together, and the platform. Made before anything
+// else runs, so the start's own failures are heard; off without a URL, which
+// development has none of unless asked (`telemetryUrl`).
+const telemetry: Telemetry = createTelemetry(
+  telemetryUrl(import.meta.env, location, pageStorage()),
+  {
+    sid: createLobbyId(),
+    vid: visitorId(pageStorage(), createLobbyId) ?? "",
+    build: import.meta.env.VITE_BUILD_SHA || "dev",
+    proto: PROTOCOL_VERSION,
+    gen: GEN_VERSION,
+    desktop,
+    shell: appVersion ?? "",
+    os: host,
+    browser: browserMajor(navigator.userAgent),
+    touch,
+  },
+  browserDeps(),
+);
+installErrorCapture(telemetry, window, console, (window as unknown as { __dh?: EarlyCatch }).__dh);
+// On the way out, everything held goes by beacon with the session's counts;
+// a tab put in the background flushes too, since it may never come back.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") telemetry.flush({ beacon: true });
+});
+
 // ---- the lobby ---------------------------------------------------------------
 // One per page visit, above routes: navigating never closes it. `selfId` is the
 // peer id on the signaling server for the whole visit; a reload is a new peer.
@@ -151,6 +184,7 @@ let signals: GpuSignals | null = null;
 // The Settings panel's Auto line waits on them.
 void signalsReady.then((read) => {
   signals = read;
+  telemetry.set({ gpu: (read.renderer ?? "").slice(0, 120), adapter: read.adapterStatus, cores: read.cores ?? 0, mem: read.memoryGb ?? 0, mobile: read.mobile });
   repaintLanding();
 });
 
@@ -189,12 +223,14 @@ function onTierFallback(fallback: { attempted: QualityTier; built: QualityTier |
     if (out.choice !== null) saveChoice(out.choice);
     if (out.notice !== null) choiceNotice = out.notice;
   }
+  telemetry.event("tier_fallback", { attempted: fallback.attempted, built: fallback.built ?? "none", source: fallback.source });
   if (fallback.built === null) leaveNotice(pageSessionStorage(), "The last hike ended because the graphics could not be restarted.", Date.now());
 }
 
 /** The governor lowered Auto's tier: remembered for this GPU, browser and
  * class, so the next hike starts one step down too (`withGovernorDrop`). */
 function onGovernorDrop(running: QualityTier): void {
+  telemetry.event("governor_drop", { running });
   if (signals === null) return;
   const pixels = app === null ? 0 : containerPixels(app);
   const record = readAutoRecord(pageStorage());
@@ -379,6 +415,8 @@ function newSignaling() {
  * overrun row appears.
  */
 function beginAttempt(kind: "invite" | "join", restart: () => void): number {
+  attemptStartedAt = performance.now();
+  telemetry.event(kind);
   clock = startAttemptClock({
     kind,
     onRepaint: paintRoster,
@@ -414,6 +452,16 @@ function abandonAttempt(): void {
   joining = false;
 }
 
+/** When the attempt in flight began, for its row's duration. */
+let attemptStartedAt = 0;
+const attemptMs = (): number => Math.round(performance.now() - attemptStartedAt);
+
+/** A lobby joined or made: its row, and the envelope names it from here. */
+function lobbyEntered(kind: "invite" | "join", joined: Lobby): void {
+  telemetry.set({ lobby: joined.state.id });
+  telemetry.event("lobby_joined", { kind, ms: attemptMs(), members: joined.state.members.length, role: joined.state.role });
+}
+
 function retryAttempt(): void {
   const restart = attemptRestart;
   abandonAttempt();
@@ -429,11 +477,17 @@ function attachLobby(next: Lobby): void {
   // roster shows never connects: their offer reaches a host with no handler
   // for it, and they time out with the wrong explanation.
   game?.attachLobby(next);
+  let members = next.state.members.length;
   const offChange = next.onChange(() => {
+    if (next.state.members.length !== members) {
+      members = next.state.members.length;
+      telemetry.event("lobby_change", { members });
+    }
     paintRoster();
     follow(next);
   });
   const offEnd = next.onEnd((reason) => {
+    telemetry.event("lobby_end", { reason, members: next.state.members.length });
     detach();
     if (reason === "host_gone") lobbyError = "The host left.";
     paintRoster();
@@ -512,12 +566,15 @@ async function openLobby(): Promise<void> {
       return;
     }
     endAttempt();
+    lobbyEntered("invite", created);
     attachLobby(created);
   } catch (err) {
     if (epoch !== attemptEpoch) return;
     signaling.close();
     endAttempt();
-    lobbyError = lobbyErrorMessage(err instanceof Error ? err.message : String(err));
+    const code = err instanceof Error ? err.message : String(err);
+    telemetry.event("lobby_error", { kind: "invite", code, ms: attemptMs() });
+    lobbyError = lobbyErrorMessage(code);
     paintRoster();
   } finally {
     offOpen();
@@ -550,12 +607,15 @@ async function enterLobby(lobbyId: string): Promise<void> {
       return;
     }
     endAttempt();
+    lobbyEntered("join", joined);
     attachLobby(joined);
   } catch (err) {
     if (epoch !== attemptEpoch) return;
     signaling.close();
     endAttempt();
-    lobbyError = lobbyErrorMessage(err instanceof Error ? err.message : String(err));
+    const code = err instanceof Error ? err.message : String(err);
+    telemetry.event("lobby_error", { kind: "join", code, ms: attemptMs() });
+    lobbyError = lobbyErrorMessage(code);
     paintRoster();
     repaintLanding();
   } finally {
@@ -567,6 +627,7 @@ async function enterLobby(lobbyId: string): Promise<void> {
 /** Leaving a game: a follower leaves the lobby too; a host stays
  * and carries everyone home through render()'s announce. */
 function exitGame(): void {
+  telemetry.event("exit");
   if (lobby !== null && lobby.state.role === "client") {
     lobby.leave();
     detach();
@@ -577,6 +638,7 @@ function exitGame(): void {
 /** A follower whose connection to the host failed plays on alone: leave the
  * party and start a fresh world, as if the invite had never been opened. */
 function continueOffline(): void {
+  telemetry.event("continue_offline");
   if (lobby !== null && lobby.state.role === "client") {
     lobby.leave();
     detach();
@@ -587,7 +649,10 @@ function continueOffline(): void {
 // Say goodbye on the way out so departures are immediate rather than waiting
 // on the server's grace window. `pagehide` fires on close, reload, and
 // navigation away — every case a socket close would otherwise have to imply.
-window.addEventListener("pagehide", () => lobby?.leave());
+window.addEventListener("pagehide", () => {
+  lobby?.leave();
+  telemetry.end("pagehide");
+});
 
 // ---- rendering ---------------------------------------------------------------
 
@@ -646,6 +711,7 @@ function onPlay(): void {
   // that changed nothing reads as a tap that missed.
   if (launching) return;
   launching = true;
+  telemetry.event("play", { party: lobby === null ? 1 : lobby.state.members.length });
   // The game's load gets the bandwidth: the loop's download stops here.
   titleLoop?.stop();
   const src = introSource();
@@ -741,6 +807,7 @@ function hikeEngineFor(tier: QualityTier, read: GpuSignals, current: () => boole
  * failure asks for. The HUD's line for that engine.
  */
 function engineFailed(reason: "pipeline" | "lost"): string {
+  telemetry.event("engine_failed", { reason });
   return recordEngineFailure(reason, {
     storage: pageStorage(),
     env: engineEnv(),
@@ -759,6 +826,7 @@ function engineFailed(reason: "pipeline" | "lost"): string {
  * still wants the engine; where it does not, the URL is left as it is.
  */
 function rememberFailure(reason: "init" | "timeout", current = true): { stored: boolean; holds: boolean } {
+  telemetry.event("webgpu_start_failed", { reason });
   return recordStartFailure(reason, {
     storage: pageStorage(),
     env: engineEnv(),
@@ -837,6 +905,9 @@ function render(container: HTMLDivElement): void {
   shownPage = page;
   if (switched && veil.down) setTimeout(() => veil.lift(), VEIL_SETTLE_MS);
   const token = ++renderToken;
+  // One row a navigation: which page, and which of the landing's panels.
+  telemetry.event("page", { kind: route.kind });
+  telemetry.mark(route.kind);
 
   // An invite: consume it (so back/forward never re-join), show the landing
   // page, and join in the background. The roster reports how that went.
@@ -963,10 +1034,11 @@ function render(container: HTMLDivElement): void {
     if (src !== null) intro = startIntro(src, true);
   }
   activeIntro = intro;
-  if (intro !== null) {
-    intro.overlay.mount(container);
-    setLoadProgress(intro.overlay.progress);
-  }
+  if (intro !== null) intro.overlay.mount(container);
+  // The loads report to the intro's bar when there is one, and in every case
+  // name their stage as telemetry's breadcrumb, so an error mid-load says
+  // which stage was in progress.
+  setLoadProgress(markedProgress(intro?.overlay.progress ?? null, (stage) => telemetry.mark(`load:${stage}`)));
   // Each probe step draws on the engine the WebGPU rule gives its tier, on
   // its own canvas, and a WebGPU step that fails is the rule's start failure
   // (`measureOnRuleEngine`); the game's failure handling never hears of it.
@@ -987,6 +1059,18 @@ function render(container: HTMLDivElement): void {
   running = { dispose: () => probe.abort() };
   /** The GPU's signals this start read, for the engines made later. */
   let hikeSignals: GpuSignals | null = null;
+  // How long each step of the start took, for its `load` row: the tier's
+  // decision (with its probe, where one ran), the intro's buffer, the engine,
+  // and the build. Each lap is measured from the end of the one before, and
+  // named `<step>Ms` so none shadows the row's `build` or `engine`.
+  const laps: Record<string, number> = {};
+  let lapStart = performance.now();
+  const lap = (name: "decide" | "intro" | "engine" | "build"): void => {
+    const now = performance.now();
+    laps[`${name}Ms`] = Math.round(now - lapStart);
+    lapStart = now;
+  };
+  telemetry.mark("start:decide");
   void startHike<EngineOnCanvas>({
     signals: signalsReady,
     current: () => !cancelled(),
@@ -996,14 +1080,23 @@ function render(container: HTMLDivElement): void {
       return line;
     },
     decide: (read, hideLoading) =>
-      startupTier(read, { search: location.search, choice: currentChoice(), cancelled, engine: verdictEngineNow(read) }, {
-        ...probe,
-        showScreen: () => {
-          hideLoading();
-          return probe.showScreen();
-        },
+      Promise.resolve(
+        startupTier(read, { search: location.search, choice: currentChoice(), cancelled, engine: verdictEngineNow(read) }, {
+          ...probe,
+          showScreen: () => {
+            hideLoading();
+            return probe.showScreen();
+          },
+        }),
+      ).then((decided) => {
+        lap("decide");
+        telemetry.mark("start:engine");
+        return decided;
       }),
-    before: intro === null ? undefined : () => waitForBuffer(intro.overlay, INTRO_BUFFER_S, INTRO_BUFFER_MAX_MS),
+    before:
+      intro === null
+        ? undefined
+        : () => waitForBuffer(intro.overlay, INTRO_BUFFER_S, INTRO_BUFFER_MAX_MS).then(() => lap("intro")),
     paint: () => new Promise((resolve) => afterNextPaint(resolve)),
     engine: (decided, read) => {
       hikeSignals = read;
@@ -1018,9 +1111,16 @@ function render(container: HTMLDivElement): void {
       container.appendChild(onCanvas.canvas);
       const read = hikeSignals;
       if (read === null) throw new Error("the GPU's signals were not read");
+      // The engine's lap ends here, a paint after it was made.
+      lap("engine");
+      telemetry.mark("start:build");
       launch(container, onCanvas, route.token, decided, (tier, wanted) => engineFor(tier, read, () => !cancelled(), wanted), intro);
+      lap("build");
+      telemetry.event("load", { ...laps, tier: decided.tier, source: decided.source, engine: game?.graphics().engine ?? "none" });
+      telemetry.mark("game");
     },
     fail: (error) => {
+      telemetry.event("start_fail", { ...laps, msg: error instanceof Error ? error.message : String(error) });
       console.error("The game could not start.", error);
       endIntro(intro);
       // Whichever canvas the start left: a renderer that fell back builds on
@@ -1079,6 +1179,7 @@ function launch(
         fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),
         onTierFallback,
         onGovernorDrop,
+        telemetry,
         quality: {
           choice: currentChoice,
           stored: choiceStored,
@@ -1100,6 +1201,11 @@ function launch(
   game = handle;
   console.info(launchLine(decided, handle.graphics()));
   running = handle;
+  const launchedAt = performance.now();
+  handle.ready.then(
+    () => telemetry.event("ready", { ms: Math.round(performance.now() - launchedAt) }),
+    () => undefined,
+  );
   // Under the intro the hike is covered until the cut, which takes the
   // pointer on the gesture it was made with and lifts the cover once it has
   // it, so no pause menu shows between; a video that failed lets the hike

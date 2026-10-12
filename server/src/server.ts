@@ -1,7 +1,13 @@
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
-import { RoomRegistry, type Peer } from "./rooms.js";
+import type { Peer } from "./rooms.js";
+import { MemoryRegistry } from "./memoryRegistry.js";
+import type { Registry, RoomInfo } from "./registry.js";
+import { row, stdoutSink, type LogSink } from "./log.js";
+import { PostLimiter, telemetryRoute, type PostLimiterOptions } from "./telemetry.js";
+import { adminRoute, type AdminData } from "./admin.js";
+import type { AdminAuth } from "./adminAuth.js";
 import { parseClientMessage, type ServerMessage } from "./protocol.js";
 import { TokenBucket } from "./tokenBucket.js";
 import {
@@ -13,6 +19,20 @@ import {
 } from "./admission.js";
 
 export const MAX_PEERS = 5;
+
+/**
+ * What one process of this server does. The same image runs as two Cloud Run
+ * services: `signaling`, whose rooms live in a store its instances share
+ * (`sharedRegistry.ts`), and `telemetry`, which holds nothing and scales with
+ * the traffic (`_infra/modules/gcp-telemetry`). Development runs `all` in one
+ * process, so a page on the dev server reaches both at the one port it
+ * proxies to.
+ */
+export type Role = "signaling" | "telemetry" | "all";
+
+export function parseRole(raw: string | undefined): Role {
+  return raw === "signaling" || raw === "telemetry" ? raw : "all";
+}
 
 /**
  * The one path that carries signaling. Development used to reach the server at
@@ -58,9 +78,9 @@ export const HEARTBEAT_INTERVAL_MS = 30_000;
  * `REFILL_PER_SECOND`.
  *
  * `MAX_PAYLOAD_BYTES` bounds how big one frame is; this bounds how many of them
- * arrive. Without it an admitted peer could hold the only process busy parsing
- * — `max_instance_count = 1` means every live room shares it — and could bury
- * one other peer in relayed frames.
+ * arrive. Without it an admitted peer could hold its process busy parsing —
+ * every live room on the instance shares it — and could bury one other peer
+ * in relayed frames, or, across instances, in the store's mail.
  *
  * The numbers are deliberately far above real signaling, which is a join, an
  * offer or answer, and a short flurry of ICE candidates, then silence for the
@@ -149,6 +169,29 @@ export type SignalingServerOptions = {
    * flaky rather than thorough.
    */
   bufferedAmountOf?: (socket: WebSocket) => number;
+  /** Which routes this process serves. Defaults to `all`. */
+  role?: Role;
+  /** Where telemetry rows go. Defaults to stdout, one JSON line a row (`log.ts`). */
+  log?: LogSink;
+  /** This server's build, stamped on every row it writes. */
+  serverBuild?: string;
+  /** Per-address batch budget for the telemetry route. See `PostLimiter`. */
+  postLimits?: PostLimiterOptions;
+  /**
+   * Where the rooms live. Defaults to this process's memory
+   * (`MemoryRegistry`), which is right for one instance; the shared one
+   * (`SharedRegistry`) is what lets the service run on several. Made by the
+   * server from the options the registry needs — the room size, the clock,
+   * the grace window and the log's ending hook — so a test's injected clock
+   * reaches it.
+   */
+  registry?: (options: { maxPeers: number; now: () => number; hostGraceMs: number; onEnded: (room: RoomInfo, reason: "host_left" | "host_gone" | "empty") => void }) => Registry;
+  /**
+   * The admin routes (`admin.ts`), served by the telemetry role when both
+   * are given: who may read them, and what they read. Absent, `/admin/*` is
+   * not found.
+   */
+  admin?: { auth: AdminAuth; data: AdminData };
 };
 
 /**
@@ -159,10 +202,33 @@ export function createSignalingServer(
   port: number,
   options: SignalingServerOptions = {},
 ): SignalingServer {
-  const registry = new RoomRegistry(MAX_PEERS, options.now, options.hostGraceMs);
+  const role = options.role ?? "all";
+  const log = options.log ?? stdoutSink;
+  const serverBuild = options.serverBuild ?? "dev";
+  const now = options.now ?? (() => Date.now());
+  // What the signaling service itself sees of its rooms, one row an event:
+  // the ground truth of how many parties formed and how big they were, which
+  // no page has to report and no blocker can keep from arriving. A match's
+  // own events come from the pages, over the telemetry route.
+  const roomRow = (name: string, room: RoomInfo, fields: Record<string, unknown> = {}): void =>
+    log(row("INFO", name, { room: room.id, peers: room.peerCount, ...fields, at: now(), sbuild: serverBuild, svc: "signaling" }));
+  const registryOptions = {
+    maxPeers: MAX_PEERS,
+    now,
+    hostGraceMs: options.hostGraceMs ?? 60_000,
+    onEnded: (room: RoomInfo, reason: "host_left" | "host_gone" | "empty") => roomRow("room_end", room, { reason, lifeMs: now() - room.createdAt }),
+  };
+  const registry: Registry =
+    options.registry?.(registryOptions) ?? new MemoryRegistry(MAX_PEERS, now, registryOptions.hostGraceMs, { onEnded: registryOptions.onEnded });
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
   const allowedOrigins = options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
   const limiter = new ConnectionLimiter({ now: options.now, ...options.limits });
+  const postLimiter = new PostLimiter({ now: options.now, ...options.postLimits });
+  const telemetry = role === "signaling" ? null : telemetryRoute({ allowedOrigins, limiter: postLimiter, log, serverBuild, now });
+  const admin =
+    role === "signaling" || options.admin === undefined
+      ? null
+      : adminRoute({ auth: options.admin.auth, data: options.admin.data, allowedOrigins, limiter: postLimiter, now });
   const maxBufferedBytes = options.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
   const bufferedAmountOf = options.bufferedAmountOf ?? ((s: WebSocket) => s.bufferedAmount);
 
@@ -172,8 +238,9 @@ export function createSignalingServer(
   // that table's memory. `unref` so this alone never keeps the process — or a
   // test runner — alive.
   const sweeper = setInterval(() => {
-    registry.sweepExpired();
+    void registry.sweep();
     limiter.prune();
+    postLimiter.prune();
   }, options.sweepIntervalMs ?? 10_000);
   sweeper.unref();
 
@@ -207,17 +274,23 @@ export function createSignalingServer(
     // probe still worked (it hits the container directly, bypassing the public
     // edge), which is what made this so easy to ship and so confusing to debug
     // afterward. Every other path, including this one, reaches the container.
-    if (req.method === "GET" && pathOf(req) === "/healthcheck") {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const path = url.pathname;
+    if (req.method === "GET" && path === "/healthcheck") {
       res.writeHead(200, { "content-type": "text/plain" });
       res.end("ok");
       return;
     }
+    if (telemetry !== null && telemetry(req, res, path)) return;
+    if (admin !== null && admin(req, res, path, url.searchParams)) return;
     res.writeHead(404, { "content-type": "text/plain" });
     res.end("not found");
   });
 
   http.on("upgrade", (req, socket, head) => {
-    if (pathOf(req) !== SIGNALING_PATH) {
+    // A telemetry-only process has no rooms: an upgrade reaching it is a
+    // misrouted client, told so rather than admitted to nothing.
+    if (pathOf(req) !== SIGNALING_PATH || role === "telemetry") {
       refuseUpgrade(socket, 404, "Not Found");
       return;
     }
@@ -267,6 +340,20 @@ export function createSignalingServer(
       socket.send(JSON.stringify(msg));
     };
 
+    // The registry answers asynchronously (a shared one asks its store), so
+    // a socket's messages are handled one after another, in order: a `signal`
+    // sent on the heels of a `join` waits for the join to be answered, and a
+    // `leave` for every relay before it. A handler that throws closes the
+    // socket rather than the process.
+    let chain: Promise<void> = Promise.resolve();
+    const inOrder = (handler: () => Promise<void>): void => {
+      chain = chain.then(handler).catch(() => socket.close());
+    };
+
+    // Whether this socket's `create`/`join` has been sent, so a second one
+    // is ignored even while the first is still being answered.
+    let admitting = false;
+
     socket.on("message", (raw) => {
       // Before `toString` and `JSON.parse`, so a flood costs the parse it was
       // trying to spend. Closing rather than replying is deliberate too: an
@@ -285,33 +372,54 @@ export function createSignalingServer(
       }
 
       if (msg.t === "create" || msg.t === "join") {
-        if (session !== null) return; // already in a lobby; ignore duplicates
+        if (admitting) return; // already in a lobby; ignore duplicates
+        admitting = true;
         const peer: Peer = { id: msg.peerId, send };
-        const result = msg.t === "create" ? registry.create(msg.room, peer) : registry.join(msg.room, peer);
-        if (!result.ok) {
-          send({ t: "error", code: result.code });
-          socket.close();
-          return;
-        }
-        session = { roomId: msg.room, peer };
-        send({ t: "joined", role: result.role, hostId: result.hostId, peers: result.peers });
+        inOrder(async () => {
+          const result = msg.t === "create" ? await registry.create(msg.room, peer) : await registry.join(msg.room, peer);
+          if (!result.ok) {
+            log(row("INFO", "room_refused", { room: msg.room, verb: msg.t, code: result.code, at: now(), sbuild: serverBuild, svc: "signaling" }));
+            send({ t: "error", code: result.code });
+            socket.close();
+            return;
+          }
+          // The socket may have closed while the registry answered: its
+          // close ran with no session to seat out, so this seats it out now.
+          if (socket.readyState !== socket.OPEN) {
+            await registry.disconnect(msg.room, peer);
+            return;
+          }
+          session = { roomId: msg.room, peer };
+          roomRow(msg.t === "create" ? "room_create" : "room_join", result.room, { role: result.role });
+          send({ t: "joined", role: result.role, hostId: result.hostId, peers: result.peers });
+        });
         return;
       }
 
-      if (session === null) {
+      if (!admitting) {
         send({ t: "error", code: "bad_message" });
         return;
       }
 
       if (msg.t === "signal") {
-        registry.relay(session.roomId, session.peer.id, msg.to, msg.payload);
+        inOrder(async () => {
+          if (session !== null) await registry.relay(session.roomId, session.peer.id, msg.to, msg.payload);
+        });
         return;
       }
 
       if (msg.t === "leave") {
-        registry.leave(session.roomId, session.peer);
-        session = null;
-        socket.close();
+        inOrder(async () => {
+          if (session === null) return;
+          // Before the registry acts, so the row comes before the room's end
+          // where this is the host's goodbye; the count is what remains.
+          const room = registry.info(session.roomId);
+          if (room !== undefined) roomRow("room_leave", room, { host: session.peer.id === room.hostId, peers: room.peerCount - 1 });
+          const leaving = session;
+          session = null;
+          await registry.leave(leaving.roomId, leaving.peer);
+          socket.close();
+        });
       }
     });
 
@@ -321,12 +429,16 @@ export function createSignalingServer(
 
     socket.on("close", () => {
       awaitingPong.delete(socket);
-      if (session !== null) {
+      inOrder(async () => {
+        if (session === null) return;
         // Not `leave`: the socket dying is not the peer choosing to go, and for
         // a host the difference is a live match versus a dead one.
-        registry.disconnect(session.roomId, session.peer);
+        const room = registry.info(session.roomId);
+        if (room !== undefined) roomRow("room_drop", room, { host: session.peer.id === room.hostId, peers: room.peerCount - 1 });
+        const dropped = session;
         session = null;
-      }
+        await registry.disconnect(dropped.roomId, dropped.peer);
+      });
     });
 
     socket.on("error", () => {
@@ -345,7 +457,9 @@ export function createSignalingServer(
         // Terminate rather than close: a half-open socket would otherwise hold
         // http.close() open until its own timeout, hanging test teardown.
         for (const client of wss.clients) client.terminate();
-        wss.close(() => http.close(() => resolve()));
+        // The registry last, once every socket's close has seated it out: a
+        // shared registry then tells its store this instance is gone.
+        wss.close(() => http.close(() => void registry.close().then(resolve, resolve)));
       }),
   };
 }

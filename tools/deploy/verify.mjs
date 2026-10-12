@@ -21,6 +21,7 @@ import { GAMES_INDEX } from './lib/redirectPage.mjs';
 
 const siteUrl = tfOutput('site_url');
 const signalingUrl = tfOutput('signaling_url');
+const telemetryUrl = tfOutput('telemetry_url');
 const siteOrigin = new URL(siteUrl).origin;
 const legacyHost = tfOutput('legacy_domain_name');
 
@@ -37,6 +38,8 @@ const check = (ok, what, detail) => (ok ? pass(what) : failures.push(`${what} �
 // the same way `tools/deploy/client.mjs` derives what it bakes into the build,
 // from the same Terraform output, so the two cannot drift.
 const wsUrl = `${signalingUrl.replace(/^https:/, 'wss:')}/ws`;
+// The telemetry route, the same way (`tools/deploy/lib/buildClient.mjs`).
+const telemetryRoute = `${telemetryUrl}/t`;
 
 async function verify() {
   console.log(`\nVerifying ${siteUrl}\n`);
@@ -106,6 +109,13 @@ async function verify() {
       bundleSource.includes(wsUrl),
       'the bundle was built against the real signaling URL',
       `${wsUrl} does not appear in ${bundle} — was it built by \`npm run deploy:client\`?`,
+    );
+    // The same mistake, quieter: a bundle built without the telemetry URL
+    // plays fine and reports nothing, so no session would ever show up.
+    check(
+      bundleSource.includes(telemetryRoute),
+      'the bundle was built against the real telemetry URL',
+      `${telemetryRoute} does not appear in ${bundle} — was it built by \`npm run deploy:client\`?`,
     );
   }
 
@@ -465,6 +475,34 @@ async function verify() {
     );
   });
   check(joined.ok, 'a real WebSocket create succeeds over wss', joined.why);
+
+  // 6b. Telemetry is up, takes a batch from the site's origin and says so in
+  // a way the page can read (the CORS header), and refuses what is not a
+  // batch. The probe's rows are real rows, named `verify` so a query can
+  // leave them out.
+  const telemetryHealth = await reach(`${telemetryUrl}/healthcheck`);
+  check(telemetryHealth.status === 200, 'telemetry /healthcheck returns 200', `got ${telemetryHealth.status}`);
+  const probe = JSON.stringify({ v: 1, sid: `verify-${Date.now()}`, build: 'verify', events: [{ n: 'verify', t: 0 }] });
+  const took = await reach(telemetryRoute, {
+    method: 'POST',
+    body: probe,
+    headers: { 'content-type': 'text/plain', origin: siteOrigin },
+  });
+  check(
+    took.status === 204 && took.headers.get('access-control-allow-origin') === siteOrigin,
+    'telemetry takes a batch from the site and answers it with CORS',
+    `status ${took.status}, access-control-allow-origin ${took.headers.get('access-control-allow-origin')}`,
+  );
+  const refused = await reach(telemetryRoute, { method: 'POST', body: '{', headers: { 'content-type': 'text/plain' } });
+  check(refused.status === 400, 'telemetry refuses a malformed batch', `got ${refused.status}`);
+
+  // 6c. The admin page is served beside the game, and its routes refuse a
+  // request with no account: the allowlist is the whole of the guard.
+  const admin = await reach(`${siteUrl}/admin/`);
+  const adminHtml = admin.status === 200 ? await admin.text() : '';
+  check(admin.status === 200 && adminHtml.includes('<script'), 'the admin page is served at /admin/', `status ${admin.status}`);
+  const refusedAdmin = await reach(`${telemetryUrl}/admin/live`, { headers: { origin: siteOrigin } });
+  check(refusedAdmin.status === 401, 'the admin routes refuse a request with no account', `got ${refusedAdmin.status}`);
 
   // 7. The desktop release the landing page will advertise exists and is
   // whole: latest.json parses, names the version the repo believes is

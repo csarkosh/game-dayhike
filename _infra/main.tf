@@ -53,16 +53,77 @@ provider "google-beta" {
   region  = var.gcp_region
 }
 
+# The billing budget API refuses a user's own credentials unless the call names
+# a project to bill it to. Scoped to its own alias so that header is sent for
+# the budget only, not for every other call the modules make.
+provider "google" {
+  alias                 = "billing"
+  project               = var.gcp_project_id
+  region                = var.gcp_region
+  billing_project       = var.gcp_project_id
+  user_project_override = true
+}
+
+# The same, on the beta provider, for the Firebase web app's configuration:
+# read through the Identity Toolkit API, which makes the same demand.
+provider "google-beta" {
+  alias                 = "quota"
+  project               = var.gcp_project_id
+  region                = var.gcp_region
+  billing_project       = var.gcp_project_id
+  user_project_override = true
+}
+
 module "gcp_signaling" {
   source = "./modules/gcp-signaling"
 
-  project_id = var.gcp_project_id
-  region     = var.gcp_region
-  image      = var.signaling_image
+  project_id    = var.gcp_project_id
+  region        = var.gcp_region
+  image         = var.signaling_image
+  registry      = var.signaling_registry
+  max_instances = var.signaling_max_instances
 
   providers = {
     google = google
   }
+}
+
+module "gcp_telemetry" {
+  source = "./modules/gcp-telemetry"
+
+  project_id         = var.gcp_project_id
+  region             = var.gcp_region
+  image              = var.telemetry_image
+  billing_account_id = var.billing_account_id
+  monthly_budget_usd = var.monthly_budget_usd
+  admin_emails       = var.admin_emails
+  registry           = var.signaling_registry
+
+  providers = {
+    google         = google
+    google.billing = google.billing
+  }
+
+  # The Cloud Run API is enabled by the signaling module; this one declares
+  # no service of its own, so a second resource for the same API cannot
+  # fight the first.
+  depends_on = [module.gcp_signaling]
+}
+
+module "gcp_auth" {
+  source = "./modules/gcp-auth"
+
+  project_id         = var.gcp_project_id
+  authorized_domains = [var.domain_name]
+
+  providers = {
+    google            = google
+    google.quota      = google.billing
+    google-beta       = google-beta
+    google-beta.quota = google-beta.quota
+  }
+
+  depends_on = [module.gcp_hosting]
 }
 
 module "gcp_hosting" {

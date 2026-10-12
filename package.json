@@ -33,6 +33,7 @@
     "deploy:verify": "node tools/deploy/verify.mjs"
   },
   "devDependencies": {
+    "@jridgewell/trace-mapping": "0.3.31",
     "concurrently": "10.0.4",
     "esbuild": "0.28.1",
     "eslint": "10.8.0",

@@ -24,4 +24,19 @@ interface ImportMetaEnv {
   readonly VITE_WEB_BASE?: string;
   /** Where latest.json lives; unset in development, so no link and no banner. */
   readonly VITE_DOWNLOADS_URL?: string;
+  /** The telemetry route on its Cloud Run service, e.g.
+   * https://fps-telemetry-…-uw.a.run.app/t; unset in development, so a dev
+   * page sends nothing unless `?telemetry=on` (`net/telemetry.ts`). */
+  readonly VITE_TELEMETRY_URL?: string;
+  /** The git short sha the client was built from, `-dirty` where the tree
+   * was, set by the deploy's build (`tools/deploy/lib/buildClient.mjs`);
+   * unset in development. Every telemetry row names it. */
+  readonly VITE_BUILD_SHA?: string;
+  /** The admin page's sign-in (`src/admin/main.ts`): the Firebase web API
+   * key, which names the project and is not a secret; the domain the
+   * sign-in handler is served from, the site's own; and the project. Unset
+   * in development, where the page shows its sample with `?preview`. */
+  readonly VITE_FIREBASE_API_KEY?: string;
+  readonly VITE_FIREBASE_AUTH_DOMAIN?: string;
+  readonly VITE_FIREBASE_PROJECT_ID?: string;
 }

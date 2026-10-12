@@ -74,11 +74,14 @@ npm run typecheck
 ```
 games.csarko.sh/dayhike   Firebase Hosting — free global CDN, free managed cert
 wss://…run.app/ws         Cloud Run — scales to zero, 60-minute request cap
+https://…run.app/t        Cloud Run — the same image as telemetry, scales with the traffic
 ```
 
 `game.csarko.sh` redirects there, path and all, so old links still work.
 
-The signaling server is pinned to **one instance**. That is correctness, not thrift: rooms live in the signaling process's memory, so a second instance would split a room in half and its peers would never find each other. One instance holds 250 sockets — 50 full games — and the match itself is peer-to-peer anyway, so the ceiling that matters is not this one.
+The signaling server's rooms live in Firestore, shared by every instance, so the service scales from zero to a few instances when a spike needs them and back to none — within Firestore's free quota, since a party costs the store a dozen operations and nothing accrues while nobody plays. One instance holds 250 sockets — 50 full games — before a second is started, and the match itself is peer-to-peer anyway. See [`docs/signaling/`](docs/signaling/).
+
+Telemetry is the same server in a second role on a second service, which holds nothing and so scales from zero to whatever a spike needs. Pages send a batch of events every half minute; the service writes one log row an event, and the rows land in a Cloud Logging bucket with Log Analytics on, every one naming the build and the world version it came from — free at the volumes a game this size makes. See [`docs/telemetry/`](docs/telemetry/). The admin page at `/dayhike/admin/`, behind a Google sign-in and an allowlist, shows who is playing right now and what the rows say; see [`docs/admin/`](docs/admin/).
 
 Cloud Run closes every socket it holds after 60 minutes, on every scale-down, and on every deploy. A match survives all three: the data channels are untouched, the client reconnects signaling in the background, and a host that comes back within a minute reclaims its room without the other players seeing anything.
 
@@ -87,7 +90,7 @@ npm run deploy         # server image, then client built against its live URL
 npm run deploy:verify  # independent proof against production, not against the deploy's exit code
 ```
 
-Infrastructure is Terraform in [`_infra/`](_infra/) — Artifact Registry and Cloud Run, the Firebase Hosting site and its custom domain, and the Route53 CNAME. State is local and gitignored; `npm run infra:check` formats and validates it.
+Infrastructure is Terraform in [`_infra/`](_infra/) — Artifact Registry and both Cloud Run services, the Firestore database the rooms live in, the telemetry log bucket and its dataset, the Firebase Hosting site and its custom domain, and the Route53 CNAME. State is local and gitignored; `npm run infra:check` formats and validates it.
 
 A desktop build for macOS and Windows lives in [`desktop/`](desktop/): a thin launcher that loads the site.
 

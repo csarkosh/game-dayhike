@@ -18,6 +18,26 @@ output "signaling_image_repository" {
   value       = module.gcp_signaling.image_repository
 }
 
+output "telemetry_url" {
+  description = "Base HTTPS URL of the Cloud Run telemetry service"
+  value       = module.gcp_telemetry.service_url
+}
+
+output "telemetry_service_name" {
+  description = "Cloud Run telemetry service name, for `gcloud run deploy`"
+  value       = module.gcp_telemetry.service_name
+}
+
+output "telemetry_dataset" {
+  description = "The linked BigQuery dataset of telemetry rows"
+  value       = module.gcp_telemetry.dataset
+}
+
+output "web_api_key" {
+  description = "The Firebase web API key the admin page signs in with; it names the project and is not a secret"
+  value       = module.gcp_auth.web_api_key
+}
+
 output "hosting_site_id" {
   description = "Firebase Hosting site id, for `firebase deploy`"
   value       = module.gcp_hosting.site_id

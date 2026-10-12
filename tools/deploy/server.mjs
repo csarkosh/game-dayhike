@@ -1,18 +1,19 @@
 #!/usr/bin/env node
-// Build the signaling image, push it, roll out a Cloud Run revision, and prove
-// the result answers before reporting success.
+// Build the server image, push it, roll out a Cloud Run revision of each
+// service that runs it — signaling, and telemetry in its own role — and prove
+// each answers before reporting success.
 //
-// Terraform owns the service's shape; this script owns only the image tag.
-// That split is why the Cloud Run resource ignores changes to its image.
+// Terraform owns the services' shapes; this script owns only the image tag.
+// That split is why the Cloud Run resources ignore changes to their image.
 //
 // Usage: npm run deploy:server
 
 import {
+  buildTag,
   fail,
   requireCommand,
   requireGcloudAuth,
   requireProjectMatchesTerraform,
-  run,
   runLoud,
   tfOutput,
 } from './lib/preconditions.mjs';
@@ -23,24 +24,18 @@ requireGcloudAuth();
 const project = requireProjectMatchesTerraform();
 
 const repository = tfOutput('signaling_image_repository');
-const service = tfOutput('signaling_service_name');
 const region = repository.split('-docker.pkg.dev')[0];
+// Both services run this one image; the role is each service's environment
+// (`_infra/modules/gcp-signaling`, `_infra/modules/gcp-telemetry`).
+const services = [
+  { name: tfOutput('signaling_service_name'), url: tfOutput('signaling_url') },
+  { name: tfOutput('telemetry_service_name'), url: tfOutput('telemetry_url') },
+];
 
 // Tag by commit so a revision is traceable to a source state. Dirty trees get a
 // suffix, so an untested local change is never mistaken for a committed one.
-let sha;
-try {
-  sha = run('git', ['rev-parse', '--short', 'HEAD']).trim();
-} catch {
-  fail('could not read the current commit. Run this from inside the git repository, with at least one commit.');
-}
-let dirty;
-try {
-  dirty = run('git', ['status', '--porcelain']).trim() !== '';
-} catch {
-  fail('could not read git status. Run this from inside the git repository.');
-}
-const tag = dirty ? `${sha}-dirty` : sha;
+// The same tag is baked into the image, so the rows it writes name it.
+const tag = buildTag();
 const image = `${repository}/signaling:${tag}`;
 
 console.log(`→ project ${project}`);
@@ -55,6 +50,8 @@ runLoud('docker', [
   'build',
   '--platform',
   'linux/amd64',
+  '--build-arg',
+  `BUILD_SHA=${tag}`,
   '-f',
   'server/Dockerfile',
   '-t',
@@ -68,43 +65,47 @@ runLoud('docker', ['push', image]);
 // probe — expected, not a rollback signal. See the comment on `startup_probe`
 // in `_infra/modules/gcp-signaling/main.tf` for why, and why this deploy is
 // the fix rather than something to retry away from.
-runLoud('gcloud', [
-  'run',
-  'deploy',
-  service,
-  '--image',
-  image,
-  '--region',
-  region,
-  '--quiet',
-]);
-
-const url = tfOutput('signaling_url');
-// Not /healthz: Google's frontend on *.run.app intercepts that exact literal
-// path and answers it itself, so a real deploy's poll would never see the
-// container. /healthcheck is the path the server, the Terraform startup
-// probe, and this poll all agree on instead.
-const health = `${url}/healthcheck`;
-process.stdout.write(`→ polling ${health} `);
-
-let ok = false;
-for (let attempt = 0; attempt < 30; attempt++) {
-  try {
-    const res = await fetch(health);
-    if (res.ok && (await res.text()).trim() === 'ok') {
-      ok = true;
-      break;
-    }
-  } catch {
-    // Cold start or rollout still in progress.
-  }
-  process.stdout.write('.');
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+for (const service of services) {
+  runLoud('gcloud', [
+    'run',
+    'deploy',
+    service.name,
+    '--image',
+    image,
+    '--region',
+    region,
+    '--quiet',
+  ]);
 }
-process.stdout.write('\n');
 
-if (!ok) fail(`deployed revision never answered ${health}. Check \`gcloud run services logs read ${service} --region ${region}\`.`);
+for (const service of services) {
+  // Not /healthz: Google's frontend on *.run.app intercepts that exact literal
+  // path and answers it itself, so a real deploy's poll would never see the
+  // container. /healthcheck is the path the server, the Terraform startup
+  // probe, and this poll all agree on instead.
+  const health = `${service.url}/healthcheck`;
+  process.stdout.write(`→ polling ${health} `);
 
-retireSupersededRevisions(service, region, project);
+  let ok = false;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try {
+      const res = await fetch(health);
+      if (res.ok && (await res.text()).trim() === 'ok') {
+        ok = true;
+        break;
+      }
+    } catch {
+      // Cold start or rollout still in progress.
+    }
+    process.stdout.write('.');
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  process.stdout.write('\n');
 
-console.log(`\n✓ signaling live at ${url}`);
+  if (!ok) fail(`deployed revision never answered ${health}. Check \`gcloud run services logs read ${service.name} --region ${region}\`.`);
+
+  retireSupersededRevisions(service.name, region, project);
+}
+
+console.log(`\n✓ signaling live at ${services[0].url}`);
+console.log(`✓ telemetry live at ${services[1].url}`);
