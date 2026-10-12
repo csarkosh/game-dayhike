@@ -11,11 +11,12 @@ The game is live at **https://games.csarko.sh/dayhike**. Two independent things 
 | --- | --- | --- |
 | Client (`client/dist`) | Firebase Hosting, free CDN | `npm run deploy:client` |
 | Signaling server (`server/`) | Cloud Run `fps-signaling`, `us-west1`, scaled to zero | `npm run deploy:server` |
+| Telemetry service (the same image, `ROLE=telemetry`) | Cloud Run `fps-telemetry`, `us-west1`, scales from zero | `npm run deploy:server` (both services, one image) |
 
 `npm run deploy` runs the server then the client. `npm run deploy:verify` checks the
 result from outside — the live site, every deployed model and ground texture, the
-signaling server's WebSocket handshake, and the desktop release manifest — against the
-real public URLs.
+signaling server's WebSocket handshake, the telemetry service taking a batch, and the
+desktop release manifest — against the real public URLs.
 
 Deploys are local scripts by choice. There is no CI, so **the gates below are the only
 thing standing between a mistake and production.**
@@ -50,8 +51,10 @@ npm run deploy:verify                 # 3. prove it from outside
 Every step earns its place:
 
 **1. Commit first.** The image is tagged with the current commit so a Cloud Run revision
-traces back to a source state. A dirty tree tags `<sha>-dirty`, which is how an untested
-local change announces itself. Never deploy a dirty tree to production — commit, or stash.
+traces back to a source state, and the same tag is baked into the image and the client
+build, so every telemetry row names the build on each side. A dirty tree tags
+`<sha>-dirty`, which is how an untested local change announces itself. Never deploy a
+dirty tree to production — commit, or stash.
 
 Rebasing after building an image orphans that tag. If you rebase between deploying and
 pushing, the revision points at a SHA no longer in history; redeploy or say so.
@@ -67,9 +70,9 @@ a signaling server that answers HTTP but refuses a real WebSocket join.
 
 ## What the scripts need, and what they no longer need
 
-The scripts read nine values describing production: project, Cloud Run service and URL,
-Artifact Registry path, Firebase site, public site URL, `legacy_domain_name`, and the
-downloads bucket and its URL.
+The scripts read eleven values describing production: project, the two Cloud Run
+services and their URLs, Artifact Registry path, Firebase site, public site URL,
+`legacy_domain_name`, and the downloads bucket and its URL.
 
 They come from `tools/deploy/production.json`, which is **committed**, with Terraform
 outputs taking precedence when its state is reachable. This matters for concurrent

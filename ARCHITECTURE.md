@@ -8,7 +8,7 @@
 - **`net/`** — the versioned binary protocol, the WebRTC transport, and the host and client sessions. The host is authoritative; clients predict their own input and reconcile against host snapshots.
 - **`game/`** — Babylon.js: the scene, meshes, materials and shaders, camera, HUD, audio and input sampling. It reads `sim/` state and never writes it except through input commands. Ambient wildlife placement lives here rather than in `sim/`: it is cosmetic, so peers need not agree on it byte-for-byte.
 
-`server/` is the signaling server (Node, `ws`): it introduces peers in a room and steps out. `desktop/` is an Electron launcher that loads the hosted site.
+`server/` is the signaling server (Node, `ws`): it introduces peers in a room and steps out. The same process in its `telemetry` role takes the batches of events pages send (`net/telemetry.ts`) and writes them out as log rows; see `docs/telemetry/`. `desktop/` is an Electron launcher that loads the hosted site.
 
 ## Determinism
 
@@ -61,7 +61,7 @@ What the game assumes of every model file:
 
 ## Hosting
 
-The site is on Firebase Hosting at `games.csarko.sh/dayhike`; the signaling server is a single Cloud Run instance, because rooms live in its memory. Terraform in `_infra/` owns both, plus DNS. `tools/deploy/` builds and ships them and verifies production independently.
+The site is on Firebase Hosting at `games.csarko.sh/dayhike`; the signaling server is a single Cloud Run instance, because rooms live in its memory. The telemetry service is the same image in its other role on a second Cloud Run service that scales from zero, writing rows to a Cloud Logging bucket of their own with Log Analytics on. Terraform in `_infra/` owns all of it, plus DNS. `tools/deploy/` builds and ships them and verifies production independently.
 
 ## Testing
 

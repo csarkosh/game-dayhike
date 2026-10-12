@@ -6,3 +6,8 @@ gcp_region     = "us-west1"
 domain_name        = "games.csarko.sh"
 legacy_domain_name = "game.csarko.sh"
 dns_zone_name      = "csarko.sh"
+
+# Optional: a monthly budget alert for Cloud Run and Cloud Logging, the two
+# services telemetry bills. Empty creates none.
+# billing_account_id = "XXXXXX-XXXXXX-XXXXXX"
+# monthly_budget_usd = 10

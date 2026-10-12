@@ -4,6 +4,8 @@
   "signaling_url": "https://fps-signaling-5pogqa5sqq-uw.a.run.app",
   "signaling_service_name": "fps-signaling",
   "signaling_image_repository": "us-west1-docker.pkg.dev/fps-csarko/signaling",
+  "telemetry_url": "https://fps-telemetry-5pogqa5sqq-uw.a.run.app",
+  "telemetry_service_name": "fps-telemetry",
   "hosting_site_id": "fps-csarko",
   "site_url": "https://games.csarko.sh/dayhike",
   "legacy_domain_name": "game.csarko.sh",

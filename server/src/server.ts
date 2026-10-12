@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
-import { RoomRegistry, type Peer } from "./rooms.js";
+import { RoomRegistry, type Peer, type Room } from "./rooms.js";
+import { row, stdoutSink, type LogSink } from "./log.js";
+import { PostLimiter, telemetryRoute, type PostLimiterOptions } from "./telemetry.js";
 import { parseClientMessage, type ServerMessage } from "./protocol.js";
 import { TokenBucket } from "./tokenBucket.js";
 import {
@@ -13,6 +15,19 @@ import {
 } from "./admission.js";
 
 export const MAX_PEERS = 5;
+
+/**
+ * What one process of this server does. The same image runs as two Cloud Run
+ * services: `signaling`, pinned to one instance because rooms live in its
+ * memory, and `telemetry`, which holds nothing and scales with the traffic
+ * (`_infra/modules/gcp-telemetry`). Development runs `all` in one process, so
+ * a page on the dev server reaches both at the one port it proxies to.
+ */
+export type Role = "signaling" | "telemetry" | "all";
+
+export function parseRole(raw: string | undefined): Role {
+  return raw === "signaling" || raw === "telemetry" ? raw : "all";
+}
 
 /**
  * The one path that carries signaling. Development used to reach the server at
@@ -149,6 +164,14 @@ export type SignalingServerOptions = {
    * flaky rather than thorough.
    */
   bufferedAmountOf?: (socket: WebSocket) => number;
+  /** Which routes this process serves. Defaults to `all`. */
+  role?: Role;
+  /** Where telemetry rows go. Defaults to stdout, one JSON line a row (`log.ts`). */
+  log?: LogSink;
+  /** This server's build, stamped on every row it writes. */
+  serverBuild?: string;
+  /** Per-address batch budget for the telemetry route. See `PostLimiter`. */
+  postLimits?: PostLimiterOptions;
 };
 
 /**
@@ -159,10 +182,24 @@ export function createSignalingServer(
   port: number,
   options: SignalingServerOptions = {},
 ): SignalingServer {
-  const registry = new RoomRegistry(MAX_PEERS, options.now, options.hostGraceMs);
+  const role = options.role ?? "all";
+  const log = options.log ?? stdoutSink;
+  const serverBuild = options.serverBuild ?? "dev";
+  const now = options.now ?? (() => Date.now());
+  // What the signaling service itself sees of its rooms, one row an event:
+  // the ground truth of how many parties formed and how big they were, which
+  // no page has to report and no blocker can keep from arriving. A match's
+  // own events come from the pages, over the telemetry route.
+  const roomRow = (name: string, room: Room, fields: Record<string, unknown> = {}): void =>
+    log(row("INFO", name, { room: room.id, peers: room.peers.size, ...fields, at: now(), sbuild: serverBuild, svc: "signaling" }));
+  const registry = new RoomRegistry(MAX_PEERS, options.now, options.hostGraceMs, {
+    ended: (room, reason) => roomRow("room_end", room, { reason, lifeMs: now() - room.createdAt }),
+  });
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
   const allowedOrigins = options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
   const limiter = new ConnectionLimiter({ now: options.now, ...options.limits });
+  const postLimiter = new PostLimiter({ now: options.now, ...options.postLimits });
+  const telemetry = role === "signaling" ? null : telemetryRoute({ allowedOrigins, limiter: postLimiter, log, serverBuild, now });
   const maxBufferedBytes = options.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
   const bufferedAmountOf = options.bufferedAmountOf ?? ((s: WebSocket) => s.bufferedAmount);
 
@@ -174,6 +211,7 @@ export function createSignalingServer(
   const sweeper = setInterval(() => {
     registry.sweepExpired();
     limiter.prune();
+    postLimiter.prune();
   }, options.sweepIntervalMs ?? 10_000);
   sweeper.unref();
 
@@ -207,17 +245,21 @@ export function createSignalingServer(
     // probe still worked (it hits the container directly, bypassing the public
     // edge), which is what made this so easy to ship and so confusing to debug
     // afterward. Every other path, including this one, reaches the container.
-    if (req.method === "GET" && pathOf(req) === "/healthcheck") {
+    const path = pathOf(req);
+    if (req.method === "GET" && path === "/healthcheck") {
       res.writeHead(200, { "content-type": "text/plain" });
       res.end("ok");
       return;
     }
+    if (telemetry !== null && telemetry(req, res, path)) return;
     res.writeHead(404, { "content-type": "text/plain" });
     res.end("not found");
   });
 
   http.on("upgrade", (req, socket, head) => {
-    if (pathOf(req) !== SIGNALING_PATH) {
+    // A telemetry-only process has no rooms: an upgrade reaching it is a
+    // misrouted client, told so rather than admitted to nothing.
+    if (pathOf(req) !== SIGNALING_PATH || role === "telemetry") {
       refuseUpgrade(socket, 404, "Not Found");
       return;
     }
@@ -289,11 +331,14 @@ export function createSignalingServer(
         const peer: Peer = { id: msg.peerId, send };
         const result = msg.t === "create" ? registry.create(msg.room, peer) : registry.join(msg.room, peer);
         if (!result.ok) {
+          log(row("INFO", "room_refused", { room: msg.room, verb: msg.t, code: result.code, at: now(), sbuild: serverBuild, svc: "signaling" }));
           send({ t: "error", code: result.code });
           socket.close();
           return;
         }
         session = { roomId: msg.room, peer };
+        const room = registry.get(msg.room);
+        if (room !== undefined) roomRow(msg.t === "create" ? "room_create" : "room_join", room, { role: result.role });
         send({ t: "joined", role: result.role, hostId: result.hostId, peers: result.peers });
         return;
       }
@@ -309,6 +354,10 @@ export function createSignalingServer(
       }
 
       if (msg.t === "leave") {
+        // Before the registry acts, so the row comes before the room's end
+        // where this is the host's goodbye; the count is what remains.
+        const room = registry.get(session.roomId);
+        if (room !== undefined) roomRow("room_leave", room, { host: session.peer.id === room.hostId, peers: room.peers.size - 1 });
         registry.leave(session.roomId, session.peer);
         session = null;
         socket.close();
@@ -324,6 +373,8 @@ export function createSignalingServer(
       if (session !== null) {
         // Not `leave`: the socket dying is not the peer choosing to go, and for
         // a host the difference is a live match versus a dead one.
+        const room = registry.get(session.roomId);
+        if (room !== undefined) roomRow("room_drop", room, { host: session.peer.id === room.hostId, peers: room.peers.size - 1 });
         registry.disconnect(session.roomId, session.peer);
         session = null;
       }

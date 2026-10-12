@@ -53,6 +53,17 @@ provider "google-beta" {
   region  = var.gcp_region
 }
 
+# The billing budget API refuses a user's own credentials unless the call names
+# a project to bill it to. Scoped to its own alias so that header is sent for
+# the budget only, not for every other call the modules make.
+provider "google" {
+  alias                 = "billing"
+  project               = var.gcp_project_id
+  region                = var.gcp_region
+  billing_project       = var.gcp_project_id
+  user_project_override = true
+}
+
 module "gcp_signaling" {
   source = "./modules/gcp-signaling"
 
@@ -63,6 +74,26 @@ module "gcp_signaling" {
   providers = {
     google = google
   }
+}
+
+module "gcp_telemetry" {
+  source = "./modules/gcp-telemetry"
+
+  project_id         = var.gcp_project_id
+  region             = var.gcp_region
+  image              = var.telemetry_image
+  billing_account_id = var.billing_account_id
+  monthly_budget_usd = var.monthly_budget_usd
+
+  providers = {
+    google         = google
+    google.billing = google.billing
+  }
+
+  # The Cloud Run API is enabled by the signaling module; this one declares
+  # no service of its own, so a second resource for the same API cannot
+  # fight the first.
+  depends_on = [module.gcp_signaling]
 }
 
 module "gcp_hosting" {
