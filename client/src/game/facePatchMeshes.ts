@@ -155,7 +155,9 @@ export function createFacePatches(
   /** The cells drawn: the set last applied. */
   let cells = new Map<number, Entry>();
   /** Cells built and not yet drawn, their meshes hidden and in no registry:
-   * a job's, or the idle work's ahead of a crossing, until one applies. */
+   * a job's, or the idle work's ahead of a crossing, until a set is applied.
+   * One a cell, spacing and stitch (`readyKey`), so the sets of two headings
+   * keep their own builds of a cell. */
   const ready = new Map<number, Entry>();
   let covered: CoveredGround | null = null;
   let builds = 0;
@@ -170,6 +172,7 @@ export function createFacePatches(
   const ahead = new Float64Array(2);
   /** The patches' place in the jobs' queue. */
   const slot = {};
+  let disposed = false;
 
   /** Whether `entry` is the cell as wanted at `spacing` with `bits`: an
    * empty cell is empty whatever its stitch, only its grid decides. */
@@ -227,27 +230,45 @@ export function createFacePatches(
     return { ci, cj, cells: list, stitches, bits, changed };
   }
 
-  /** Whether cell `i` of `w` is built as wanted and not yet drawn. */
-  function isReady(w: Wanted, i: number): boolean {
+  /** `ready`'s key for cell `i` of `w` built as wanted with a patch, or,
+   * with `empty`, built empty: an empty cell is empty whatever its stitch. */
+  function readyKey(w: Wanted, i: number, empty: boolean): number {
     const c = w.cells[i] as PatchCell;
-    return holds(ready.get(patchKey(c.ci, c.cj)), c.spacing, w.bits[i] as number);
+    const band = c.spacing === PATCH_NEAR_SPACING ? 0 : c.spacing === PATCH_FAR_SPACING ? 1 : 2;
+    // The stitch's twelve bits, or a thirteenth for an empty cell.
+    return (patchKey(c.ci, c.cj) * 4 + band) * 8192 + (empty ? 4096 : (w.bits[i] as number));
   }
 
-  /** Cell `i` of `w`, built as wanted and not yet drawn: built now unless it
-   * is already. */
-  function make(w: Wanted, i: number): Entry {
-    const c = w.cells[i] as PatchCell;
-    const key = patchKey(c.ci, c.cj);
-    const bits = w.bits[i] as number;
-    const had = ready.get(key);
-    if (holds(had, c.spacing, bits)) {
-      had.stitch = bits;
-      return had;
-    }
-    if (had !== undefined) discard(had);
-    const entry = { spacing: c.spacing, stitch: bits, mesh: build(c.ci, c.cj, c.spacing, w.stitches[i] as PatchStitch) };
-    ready.set(key, entry);
+  /** `ready`'s key for cell `i` of `w` if it is built as wanted, else NaN. */
+  function readyAt(w: Wanted, i: number): number {
+    const full = readyKey(w, i, false);
+    if (ready.has(full)) return full;
+    const empty = readyKey(w, i, true);
+    return ready.has(empty) ? empty : Number.NaN;
+  }
+
+  /** Whether cell `i` of `w` is built as wanted and not yet drawn. */
+  function isReady(w: Wanted, i: number): boolean {
+    return !Number.isNaN(readyAt(w, i));
+  }
+
+  /** Cell `i` of `w`, built as wanted and taken out of `ready`, to be drawn:
+   * built now unless it is already. */
+  function take(w: Wanted, i: number): Entry {
+    make(w, i);
+    const at = readyAt(w, i);
+    const entry = ready.get(at) as Entry;
+    ready.delete(at);
+    entry.stitch = w.bits[i] as number;
     return entry;
+  }
+
+  /** Cell `i` of `w` built as wanted and not yet drawn, unless it is. */
+  function make(w: Wanted, i: number): void {
+    if (isReady(w, i)) return;
+    const c = w.cells[i] as PatchCell;
+    const mesh = build(c.ci, c.cj, c.spacing, w.stitches[i] as PatchStitch);
+    ready.set(readyKey(w, i, mesh === null), { spacing: c.spacing, stitch: w.bits[i] as number, mesh });
   }
 
   /** What cell `i` of `w`'s slice is expected to take (ms). */
@@ -276,8 +297,7 @@ export function createFacePatches(
         return;
       }
       // Built by now; one that is not (a set drawn at once) is built here.
-      const entry = make(w, i);
-      ready.delete(key);
+      const entry = take(w, i);
       if (had !== undefined) {
         drop(had);
         cells.delete(key);
@@ -296,9 +316,7 @@ export function createFacePatches(
       ready.clear();
       // The idle work built for this crossing: the next update aims it at
       // the next.
-      jobs?.idle(slot, null);
-      aheadCi = Number.NaN;
-      aheadCj = Number.NaN;
+      stopAhead();
     }
     cells = next;
     const cx = (w.ci + 0.5) * PATCH_CELL;
@@ -320,24 +338,22 @@ export function createFacePatches(
   }
 
   /** Idle work: the cells the set for cell (ci, cj) will want built, nearest
-   * first, after what was built for any other let go. */
+   * first. What was built for another cell is kept, for a camera that turns
+   * back, until a set is applied. */
   function* buildAhead(ci: number, cj: number): Slices {
     const w = want(ci, cj);
-    const keep = new Set<number>();
-    for (const i of w.changed) {
-      const c = w.cells[i] as PatchCell;
-      if (isReady(w, i)) keep.add(patchKey(c.ci, c.cj));
-    }
-    for (const [key, entry] of ready) {
-      if (keep.has(key)) continue;
-      discard(entry);
-      ready.delete(key);
-    }
     for (const i of w.changed) {
       if (isReady(w, i)) continue;
       yield sliceMs(w, i);
       make(w, i);
     }
+  }
+
+  /** The idle work stopped: the next `aim` sets it again. */
+  function stopAhead(): void {
+    jobs?.idle(slot, null);
+    aheadCi = Number.NaN;
+    aheadCj = Number.NaN;
   }
 
   /** Aims the idle work at the cell the camera at (camX, camZ) enters next
@@ -358,6 +374,7 @@ export function createFacePatches(
 
   return {
     update(camX, camZ) {
+      if (disposed) return;
       const hx = camX - crossing.lastX;
       const hz = camZ - crossing.lastZ;
       if ((hx !== 0 || hz !== 0) && !Number.isNaN(hx) && !Number.isNaN(hz)) {
@@ -372,6 +389,9 @@ export function createFacePatches(
         aim(camX, camZ);
         return;
       }
+      // Idle work runs beside a patient job: the job builds what it needs,
+      // and the idle work starts again once it is drawn.
+      stopAhead();
       if (kind === "later") {
         (jobs as SyncJobs).begin(slot, rebuild(ci, cj), true);
         return;
@@ -396,6 +416,7 @@ export function createFacePatches(
       return covered;
     },
     dispose() {
+      disposed = true;
       jobs?.cancel(slot);
       jobs?.idle(slot, null);
       for (const entry of cells.values()) drop(entry);

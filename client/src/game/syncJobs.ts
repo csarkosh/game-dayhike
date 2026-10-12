@@ -43,7 +43,8 @@
  * the next set is applied, so waiting costs detail and never shows a hole —
  * the face patches', whose crossing builds far more than six frames' share.
  * It runs after every other job, with the share they leave, and is never run
- * to its end at once; while it is pending no idle work runs.
+ * to its end at once; idle work runs while only patient jobs are pending,
+ * with what they leave.
  *
  * Pure and Babylon-free: time is the clock handed in, so a test drives it.
  */
@@ -291,14 +292,24 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       }
       // Then idle work, with what is left, while nothing is pending: a slice
       // of each owner's in turn, so none waits on another's.
+      // Patient jobs pending do not stop it: they have had their slices.
       // A slice said to be longer than what is left waits for the next
-      // frame, where it is first.
-      while (queue.length === 0 && idle.length > 0) {
+      // frame, where it is first, and the work behind it goes on; the frame's
+      // idle work ends when every one left waits.
+      let waiting: Slices | null = null;
+      let skipped = 0;
+      while ((queue.length === 0 || (queue[0] as Job).patient) && idle.length > 0) {
         const spent = clock() - start;
         if (spent >= SYNC_BUDGET_MS) break;
         idleTurn %= idle.length;
         const work = idle[idleTurn] as { owner: object; slices: Slices; next: number };
-        if (last.slices + last.idle > 0 && spent + work.next > SYNC_BUDGET_MS) break;
+        if (last.slices + last.idle > 0 && spent + work.next > SYNC_BUDGET_MS) {
+          waiting ??= work.slices;
+          if (++skipped >= idle.length) break;
+          idleTurn++;
+          continue;
+        }
+        skipped = 0;
         let done = true;
         try {
           const step = work.slices.next();
@@ -309,6 +320,10 @@ export function createSyncJobs(clock: () => number): SyncJobs {
           else idleTurn++;
         }
         last.idle++;
+      }
+      // The first that waited is first next frame.
+      for (let i = 0; waiting !== null && i < idle.length; i++) {
+        if ((idle[i] as { slices: Slices }).slices === waiting) idleTurn = i;
       }
       frame++;
     },

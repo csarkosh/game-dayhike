@@ -273,7 +273,7 @@ import {
   RING_COUNT,
   type RingSamples,
 } from "../../src/game/clipmap.js";
-import { PATCH_REACH, facePatchCells, facePatchCover, patchKey } from "../../src/game/facePatches.js";
+import { PATCH_REACH, facePatchCover } from "../../src/game/facePatches.js";
 import { FACE_PATCH_MATERIAL, createFacePatches } from "../../src/game/facePatchMeshes.js";
 import { createSyncJobs } from "../../src/game/syncJobs.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
@@ -546,7 +546,7 @@ describe("createClipmap", () => {
     clipmap.dispose();
   }, timeLimit(120_000));
 
-  it("leaves out only the ground the patches drawn cover, while the patches of a crossing still build", () => {
+  it("leaves out only the ground the patches drawn cover, while the patches of a crossing still build, and follows a set drawn while it stands", () => {
     // The scarp, the patches and the rings on one scheduler, wired as the
     // renderer wires them: the patches updated first, the rings asking them.
     const scarp = 627994160;
@@ -562,27 +562,53 @@ describe("createClipmap", () => {
       now = Math.max(now, ++frames * (1000 / 60));
     };
     const patches = createFacePatches(s, scarp, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), jobs);
-    const asked: { x: number; reach: number }[] = [];
+    /** Every cover the rings were handed, each once, in order. */
+    const handed: { x: number; reach: number }[] = [];
+    let last: unknown = null;
     const clipmap = createClipmap(s, scarp, jobs, {
       cover: () => {
         const c = patches.cover();
-        if (c !== null) asked.push({ x: c.x, reach: c.reach });
+        if (c !== null && c !== last) handed.push({ x: c.x, reach: c.reach });
+        last = c;
         return c;
       },
     });
+    const near = 48 - 16 * Math.SQRT2;
+    const wide = 400 - 16 * Math.SQRT2;
+    /** The triangles each ring that can leave ground out draws, rings 0 to
+     * 4, and those it draws for the camera at (x, z) leaving out what the
+     * cover of cell (ci, −57) at `reach` names. */
+    const drawnRings = (): number[] => clipmap.meshes.slice(0, 5).map((m) => m.getTotalIndices() / 3);
+    const ringsFor = (x: number, z: number, ci: number, reach: { near: number; far: number; wide: number }): number[] => {
+      const rings: RingSamples[] = [];
+      for (let level = 0; level < 5; level++) rings.push(createRingSamples(scarp, level, x, z));
+      const cover = facePatchCover(ci * 16 + 8, -904, reach);
+      return rings.map((ring, level) =>
+        ringGeometry(ring, level === 0 ? null : holeCellsFor(ring, rings[level - 1]!), null, cover).indexCount / 3);
+    };
     // Standing in cell (−24, −57), 0.2 m from its east line: the first
     // frame draws the near band and the rings leave out what it covers.
     const at = { x: -368.2, z: -900 };
     frame(at.x, at.z);
-    expect(asked).toEqual([{ x: -376, reach: 48 - 16 * Math.SQRT2 }]);
-    while (patches.cover()?.reach !== 400 - 16 * Math.SQRT2 && frames < 1000) frame(at.x, at.z);
+    expect(handed).toEqual([{ x: -376, reach: near }]);
+    expect(drawnRings()).toEqual(ringsFor(at.x, at.z, -24, { near: 48, far: 48, wide: 48 }));
+    while (patches.cover()?.reach !== wide && frames < 1000) frame(at.x, at.z);
     expect(frames).toBe(63);
+    // The whole set drawn: the rings, standing, are drawn again for it, two
+    // frames on.
+    const full = ringsFor(at.x, at.z, -24, PATCH_REACH.high);
+    let redraw = 0;
+    while (JSON.stringify(drawnRings()) !== JSON.stringify(full) && redraw < 100) {
+      frame(at.x, at.z);
+      redraw++;
+    }
+    expect(redraw).toBe(2);
+    expect(handed.slice(1)).toEqual([{ x: -376, reach: wide }]);
     // A step east, over the patches' line and ring 0's: the rings' job runs
     // first and asks while the patches of cell (−23, −57) still build, and is
     // told the cover of the set drawn, cell (−24, −57)'s.
     at.x += 0.4;
     frame(at.x, at.z);
-    expect(asked.slice(1)).toEqual([{ x: -376, reach: 400 - 16 * Math.SQRT2 }]);
     expect(patches.cover()?.x).toBe(-376);
     let pending = 0;
     while (patches.cover()?.x === -376 && pending < 1000) {
@@ -590,23 +616,22 @@ describe("createClipmap", () => {
       pending++;
     }
     // The patches' 142 cells, nothing built ahead from a standstill, drawn
-    // 25 frames on; the rings, not moved since, leave out what they did.
+    // 25 frames on; the rings, moved with the camera, leave out what the set
+    // drawn until then covers.
     expect(pending).toBe(25);
-    expect(asked.length).toBe(2);
-    // Every square that cover leaves ground out of is in the set now drawn.
-    const drawn = new Set(facePatchCells(-360, -904, PATCH_REACH.high).map((c) => patchKey(c.ci, c.cj)));
-    const old = facePatchCover(-376, -904, PATCH_REACH.high);
-    for (const c of facePatchCells(-376, -904, PATCH_REACH.high)) {
-      if (Math.hypot((c.ci + 0.5) * 16 - old.x, (c.cj + 0.5) * 16 - old.z) > old.reach) continue;
-      expect(drawn.has(patchKey(c.ci, c.cj)), `square ${c.ci}, ${c.cj}`).toBe(true);
-    }
-    // On to ring 0's next line, 2 m east: the rings ask again, and are told
-    // the new set's.
-    while (at.x < -365.8) {
-      at.x += 0.4;
+    expect(handed.length).toBe(2);
+    expect(drawnRings()).toEqual(ringsFor(at.x, at.z, -24, PATCH_REACH.high));
+    // Standing still, the rings are drawn again for the new set, with no
+    // further crossing, two frames on.
+    const moved = ringsFor(at.x, at.z, -23, PATCH_REACH.high);
+    expect(moved).not.toEqual(drawnRings());
+    let follow = 0;
+    while (JSON.stringify(drawnRings()) !== JSON.stringify(moved) && follow < 100) {
       frame(at.x, at.z);
+      follow++;
     }
-    expect(asked.slice(2)).toEqual([{ x: -360, reach: 400 - 16 * Math.SQRT2 }]);
+    expect(follow).toBe(2);
+    expect(handed.slice(2)).toEqual([{ x: -360, reach: wide }]);
     clipmap.dispose();
     patches.dispose();
   }, timeLimit(120_000));

@@ -378,7 +378,9 @@ const CLIPMAP_UPLOAD_MS = 1;
  * Given `cover`, each rebuild asks it for the ground another surface covers
  * as the rebuild begins (the face patches' drawn now, `FacePatches.cover`),
  * and the rings it reaches leave their triangles there out (`CoveredGround`);
- * null leaves none out.
+ * null leaves none out. It is asked every frame too, and a cover other than
+ * the one the rings were built for (the surface drew a new set) is a
+ * rebuild of its own, which draws again only the rings it changes.
  */
 export function createClipmap(
   scene: Scene,
@@ -656,6 +658,16 @@ export function createClipmap(
         jobs !== undefined,
       );
       if (kind === "none") {
+        // The covering surface drew a new set since the rings last asked
+        // (the patches' job applied after the rings' rebuild read the set
+        // before it): the rings that leave ground out are drawn again for
+        // it, though the camera has not moved, so none waits on a further
+        // crossing to stop leaving out ground the new set no longer covers.
+        if (!(jobs?.pending(owner) ?? false) && (options.cover?.(camX, camZ) ?? null) !== covered) {
+          if (jobs !== undefined) jobs.begin(owner, build(camX, camZ));
+          else finish(build(camX, camZ));
+          return;
+        }
         aim(camX, camZ, false);
         return;
       }

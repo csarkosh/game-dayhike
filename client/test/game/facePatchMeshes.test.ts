@@ -418,6 +418,66 @@ describe("createFacePatches, as jobs", () => {
     patches.dispose();
   }, timeLimit(120_000));
 
+  it("keeps what it built ahead for one heading when the camera turns, until a set is drawn", () => {
+    const s = scene();
+    const t = steppedJobs();
+    const { patches } = made(s, t.jobs);
+    // By the north-east corner of cell (−24, −57).
+    const at = { x: -368.3, z: -896.3 };
+    patches.update(at.x, at.z);
+    framesUntil(t, () => patches.update(at.x, at.z), () => patches.meshCount() === 362, 1000);
+    /** Frames at (x, z) until the idle work has nothing left, at most 300. */
+    const settle = (): void => {
+      let quiet = 0;
+      for (let f = 0; f < 300 && quiet < 3; f++) {
+        patches.update(at.x, at.z);
+        t.frame();
+        quiet = t.jobs.last.idle === 0 ? quiet + 1 : 0;
+      }
+    };
+    const hidden = (): number => s.meshes.filter((m) => m.name.startsWith("facePatch_") && !m.isEnabled(false)).length;
+    // Facing east: the 142 cells of cell (−23, −57)'s set built ahead.
+    at.x += 0.01;
+    settle();
+    expect([patches.builds(), hidden()]).toEqual([2103, 58]);
+    // Facing north: the 106 cells of cell (−24, −56)'s set not built as it
+    // wants them, 47 with a patch, and the east's kept.
+    at.z += 0.01;
+    settle();
+    expect([patches.builds(), hidden()]).toEqual([2209, 105]);
+    // Facing east again: nothing built again, nothing let go.
+    at.x += 0.01;
+    settle();
+    expect([patches.builds(), hidden()]).toEqual([2209, 105]);
+    // Over the east line: drawn in its frame, and what was built for the
+    // north let go.
+    at.x += 0.3;
+    patches.update(at.x, at.z);
+    t.frame();
+    expect(patches.meshCount()).toBe(368);
+    expect(hidden()).toBe(0);
+    patches.dispose();
+  }, timeLimit(120_000));
+
+  it("does nothing once disposed, and leaves no mesh behind", () => {
+    const s = scene();
+    const t = steppedJobs();
+    const { patches } = made(s, t.jobs);
+    patches.update(CAM.x, CAM.z);
+    t.frame();
+    patches.dispose();
+    // A walk on after it: nothing built, nothing aimed, nothing drawn.
+    for (let f = 0; f < 20; f++) {
+      patches.update(CAM.x + f * 0.5, CAM.z);
+      t.frame();
+    }
+    // The near band's 29 and the job's first frame's 19, no more.
+    expect(patches.builds()).toBe(48);
+    expect(patches.meshCount()).toBe(0);
+    expect(patches.cover()).toBeNull();
+    expect(s.meshes.filter((m) => m.name.startsWith("facePatch_")).length).toBe(0);
+  }, timeLimit(120_000));
+
   it("builds a jump of more than a cell and the free camera's boost at once, whatever is pending", () => {
     const s = scene();
     const t = steppedJobs();

@@ -522,10 +522,12 @@ export function facePatchStitch(cells: readonly PatchCell[]): PatchStitch[] {
  * leaves it out (`CoveredGround`): the squares whose centres lie within the
  * wide reach of the camera's cell's centre, less a cell's diagonal. Every
  * neighbour of such a square, corners too, is in the patched set, so its
- * patch has no open side, no taper, and the whole relief over it; and the
- * set for a camera one cell on, drawn before the rings next ask, still
- * patches it. The rings ask for the cover of the set drawn
- * (`FacePatches.cover`), never of one still building. A triangle the clipmap leaves out has three
+ * patch has no open side, no taper, and the whole relief over it. The
+ * rings ask for the cover of the set drawn (`FacePatches.cover`), never of
+ * one still building, and are drawn again for each set the frame after it is
+ * drawn, whether the camera moves or not; until that rebuild lands, a frame
+ * or two, they leave out what the set before covered, which a set one cell
+ * on still patches. A triangle the clipmap leaves out has three
  * fully steep vertices, each a grid point of its square's patch, so the
  * square has steep ground at its grid and a patch: ring 1's 2 m vertices and
  * the coarser rings' lie on every band's grid, and ring 0's 1 m vertices,
