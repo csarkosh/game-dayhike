@@ -160,16 +160,22 @@ both forms are weak, never a face with both.
 
 `faceReliefD(seed, x, z): { v, dx, dz }` with `v ∈ [−1, 1]`, unitless.
 The fine relief `v_fine` is the mix of the two forms by `s`; the large
-forms `v_form` lie under it at `FACE_FORM_WEIGHT = 1.5`:
+forms `v_form` lie under it at `FACE_FORM_WEIGHT = 1.5`, and the mix is
+multiplied by `FACE_GAIN = 2.5`:
 
 ```
-v = clamp((v_fine + FACE_FORM_WEIGHT · v_form) / (1 + FACE_FORM_WEIGHT), −1, 1)
+v = clamp(FACE_GAIN · (v_fine + FACE_FORM_WEIGHT · v_form) / (1 + FACE_FORM_WEIGHT), −1, 1)
 ```
 
-Both terms are within `[−1, 1]`, so the mix is too; the clamp, applied
-last with a zero derivative where it holds, keeps the range against
-rounding. Derivatives run through the forms and both mixes. Every constant
-above is exported in `FACE_RELIEF_TUNABLES`.
+Both terms are within `[−1, 1]`, so their weighted mean is too, but it
+clusters near zero: the mean of two blends of planes has a mean `|v|` of
+0.19 over 20,000 points, and would move the surface by a fifth of its
+half-depth. The gain spreads it over the range, a mean `|v|` of 0.46, and
+the clamp, applied last with a zero derivative where it holds, is a working
+bound: it holds 7.3 % of those points at ±1 (1,458 of 20,000; 616 on
+columns, 371 on blocks, 471 in the band), each a flat at the full
+half-depth. Derivatives run through the forms and both mixes, gained. Every
+constant above is exported in `FACE_RELIEF_TUNABLES`.
 
 ## 4. The stage (`faceStageD`, in `faceRelief.ts`, called from `olympic.ts`)
 
@@ -190,7 +196,12 @@ faceStageD(seed, x, z, s: TerrainSample, pre: (x, z) => TerrainSample): TerrainS
    ```
 
    On the scarp (`g` ≈ 2 to 3) the vertical change is up to about 6 m;
-   measured along the face, it is the 2.0 m the player sees.
+   measured along the face, it is the 2.0 m the player sees. The field
+   reaches it: across the scarp of world 627994160 at `z = −900`, from
+   `x = −356` to `−330` (`g` from 1.3 to 1.9, a bound of 3.3 to 4.2 m), the
+   relieved height differs from the smooth one by 2.7 m typically (the
+   median `|difference|` at 1 cm steps) and by 3.9 m at most, where the
+   clamp holds.
 5. The derivative. `h′` depends on `g`, and `g`'s derivative is the base's
    second derivative, which the chain does not carry. The stage takes it by
    forward differences of the chain before it: `pre(x + e, z)` and
