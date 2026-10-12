@@ -7,11 +7,13 @@
 # (`server/src/adminAuth.ts`). Nothing here costs anything: Firebase Auth's
 # Google sign-in is free at any number of accounts, and the allowlist is one.
 #
-# ONE STEP IS BY HAND. The Google sign-in provider needs an OAuth client, which
-# the Firebase console creates when the provider is switched on and which no
-# API or Terraform resource creates. After the first apply: Firebase console →
-# Authentication → Sign-in method → Google → Enable → Save. Until then the
-# page's sign-in button answers with Firebase's "operation not allowed".
+# TWO STEPS ARE BY HAND. The Google sign-in provider needs an OAuth client,
+# which the Firebase console creates when the provider is switched on and
+# which no API or Terraform resource creates or edits. After the first apply:
+# Firebase console → Authentication → Sign-in method → Google → Enable → Save;
+# then Google Cloud console → APIs & Services → Credentials → that client →
+# add https://<site host>/__/auth/handler to its redirect URIs, since the page
+# signs in on the site's own host. docs/admin/ §4 has both.
 
 terraform {
   required_providers {

@@ -94,12 +94,21 @@ Four things, built with this page, make a stored error traceable
   beacons the queue itself fifteen seconds in, under a `boot-` session id.
 - **The session timeline**, the seventh saved query and the drawer.
 
-## 4. The one step by hand
+## 4. The two steps by hand
 
-The Google sign-in provider needs an OAuth client, which the Firebase console creates when
-the provider is switched on and which no API or Terraform resource creates. After the first
-apply: Firebase console → Authentication → Sign-in method → Google → Enable → Save. Until
-then the sign-in button answers with Firebase's "operation not allowed".
+*Amended 2026-10-12, after the first sign-in.* The Google sign-in provider needs an OAuth
+client, which the Firebase console creates when the provider is switched on and which no API
+or Terraform resource creates or edits. After the first apply:
+
+1. Firebase console → Authentication → Sign-in method → Google → Enable → Save. Until then
+   the sign-in button answers with Firebase's "operation not allowed".
+2. The client that step made lists only Firebase's own hostname as a redirect, and the page
+   sends the sign-in to the handler on the site's host. Google Cloud console → APIs &
+   Services → Credentials → the OAuth 2.0 client "Web client (auto created by Google
+   Service)" → add `https://games.csarko.sh/__/auth/handler` to the authorised redirect
+   URIs and `https://games.csarko.sh` to the authorised JavaScript origins → Save. Until
+   then Google answers the sign-in with "Error 400: redirect_uri_mismatch". The change can
+   take a few minutes to apply.
 
 ## 5. Cost
 

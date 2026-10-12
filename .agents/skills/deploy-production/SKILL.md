@@ -130,11 +130,15 @@ and bypasses the public edge — so the revision goes healthy and serves traffic
 external check reads a response the container never wrote. Renaming it back looks like
 tidying and costs a debugging session.
 
-**The admin page's sign-in has one step by hand.** Terraform creates Firebase Auth and the
-web app, but the Google sign-in provider needs an OAuth client that only the Firebase console
-creates: Authentication → Sign-in method → Google → Enable → Save, once. The accounts that
-may read the page are `admin_emails` in the git-ignored `terraform.tfvars`; an empty list
-serves no admin routes.
+**The admin page's sign-in has two steps by hand, once.** Terraform creates Firebase Auth and
+the web app, but the Google sign-in provider needs an OAuth client that only the Firebase
+console creates: Authentication → Sign-in method → Google → Enable → Save. That client then
+needs the site's handler as a redirect, which only the Google Cloud console edits: APIs &
+Services → Credentials → "Web client (auto created by Google Service)" → add
+`https://games.csarko.sh/__/auth/handler` to the redirect URIs and `https://games.csarko.sh`
+to the JavaScript origins → Save; without it Google answers "redirect_uri_mismatch". The
+accounts that may read the page are `admin_emails` in the git-ignored `terraform.tfvars`; an
+empty list serves no admin routes. Both steps are done (2026-10-12).
 
 **Terraform owns the service's shape; the deploy script owns only the image tag.** Never
 change Cloud Run settings with `gcloud`. If you do touch Terraform, a container-field
