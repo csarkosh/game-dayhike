@@ -54,8 +54,13 @@ export const FACE_FORM_CELL = 14;
 export const FACE_FORM_JITTER = 0.6;
 export const FACE_FORM_BORDER = 2.5;
 /** The large forms' weight beside the fine relief's 1; the sum is divided by
- * 1 + FACE_FORM_WEIGHT to stay within [−1, 1]. */
+ * 1 + FACE_FORM_WEIGHT, a weighted mean within [−1, 1], before the gain. */
 export const FACE_FORM_WEIGHT = 1.5;
+/** The gain on the weighted mean of the fine relief and the large forms.
+ * The mean of two blends of planes clusters near zero, a mean |v| of 0.19;
+ * the gain spreads it over the range, a mean |v| of 0.46, and the clamp holds
+ * the 7 % it carries past ±1 at the bound. */
+export const FACE_GAIN = 2.5;
 /** A cell's value at its site, as a share of the unit range. */
 export const FACE_VALUE_SPAN = 0.6;
 /** How far a cell's plane rises, as a share of the unit range, per cell
@@ -80,7 +85,7 @@ export const FACE_RELIEF_TUNABLES: Readonly<Record<string, number>> = {
   FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER,
   FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER,
   FACE_BLOCK_FINE_WEIGHT, FACE_BLOCK_NORM, FACE_VALUE_SPAN, FACE_TILT,
-  FACE_FORM_CELL, FACE_FORM_JITTER, FACE_FORM_BORDER, FACE_FORM_WEIGHT,
+  FACE_FORM_CELL, FACE_FORM_JITTER, FACE_FORM_BORDER, FACE_FORM_WEIGHT, FACE_GAIN,
   FACE_KIND_WAVE, FACE_KIND_LO, FACE_KIND_HI,
   FACE_COLUMN_SALT, FACE_BLOCK_SALT, FACE_BLOCK_FINE_SALT, FACE_KIND_SALT, FACE_FORM_SALT,
 };
@@ -341,12 +346,12 @@ function fine(seed: number, x: number, z: number): void {
 function relief(seed: number, x: number, z: number): void {
   fine(seed, x, z);
   cellular(x, z, FACE_FORM_CELL, FACE_FORM_JITTER, FACE_FORM_BORDER, seed ^ FACE_FORM_SALT);
-  const n = 1 + FACE_FORM_WEIGHT;
-  let v = (rv + FACE_FORM_WEIGHT * cv) / n;
-  rdx = (rdx + FACE_FORM_WEIGHT * cdx) / n;
-  rdz = (rdz + FACE_FORM_WEIGHT * cdz) / n;
-  // Each term is within [−1, 1] and the mix is their weighted mean; the clamp
-  // keeps the range against rounding, flat where it holds.
+  const n = FACE_GAIN / (1 + FACE_FORM_WEIGHT);
+  let v = n * (rv + FACE_FORM_WEIGHT * cv);
+  rdx = n * (rdx + FACE_FORM_WEIGHT * cdx);
+  rdz = n * (rdz + FACE_FORM_WEIGHT * cdz);
+  // Each term is within [−1, 1] and the mix is their weighted mean, gained;
+  // the clamp holds the gained mix to the range, flat where it holds.
   if (v > 1 || v < -1) {
     v = v > 1 ? 1 : -1;
     rdx = 0;
@@ -358,9 +363,10 @@ function relief(seed: number, x: number, z: number): void {
 /**
  * The relief at (x, z): the fine relief (columns, blocks, or their mix by
  * the form share) and the large forms beneath it, weighted 1 to
- * FACE_FORM_WEIGHT and divided by their sum, in [−1, 1], with exact
- * derivatives through the forms and both mixes. Only the fine forms with
- * weight are evaluated; the large forms are everywhere.
+ * FACE_FORM_WEIGHT, divided by their sum and multiplied by FACE_GAIN, then
+ * clamped to [−1, 1], with exact derivatives through the forms and both
+ * mixes, zero where the clamp holds. Only the fine forms with weight are
+ * evaluated; the large forms are everywhere.
  */
 export function faceReliefD(seed: number, x: number, z: number): ReliefSample {
   relief(seed, x, z);
