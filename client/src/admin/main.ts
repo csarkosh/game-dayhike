@@ -14,7 +14,8 @@ import { el } from "./charts.js";
 import { sampleSource } from "./sample.js";
 import { remoteSource, type Range, type Source } from "./source.js";
 import { authConfig, createSession, type Session } from "./auth.js";
-import { errorsView, funnelView, healthView, liveView, lobbiesView, pathsView, progressView, sessionDrawer } from "./views.js";
+import { errorsView, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer } from "./views.js";
+import { pathsCard, trailBuilder } from "./paths.js";
 
 const RANGES: { days: Range; label: string }[] = [
   { days: 1, label: "Today" },
@@ -55,6 +56,8 @@ function adminBase(): string | null {
 
 function dashboard(source: Source, account: { email: string; signOut(): Promise<void> } | null): void {
   let range: Range = 7;
+  // The trail builder, one worker for the page's life, its answers kept.
+  const trailFor = trailBuilder();
   const who = el("div", { class: "who" }, el("span", { class: `badge${source.kind === "sample" ? " sample" : ""}` }, source.kind === "sample" ? "Sample data" : "Live"));
   if (account !== null) {
     const out = el("button", { class: "ghost", type: "button" }, "Sign out");
@@ -109,7 +112,7 @@ function dashboard(source: Source, account: { email: string; signOut(): Promise<
         source.query("paths", range),
       ]);
       if (token !== loading) return;
-      grid.replaceChildren(funnelView(funnel), lobbiesView(lobbies), progressView(progress), errorsView(errors), healthView(health), pathsView(paths));
+      grid.replaceChildren(funnelView(funnel), lobbiesView(lobbies), progressView(progress), errorsView(errors), healthView(health), pathsCard(paths, trailFor));
     } catch (error) {
       if (token !== loading) return;
       grid.replaceChildren(el("section", { class: "card" }, el("h2", {}, "The numbers could not be read"), el("p", { class: "sub" }, error instanceof Error ? error.message : String(error))));

@@ -5,12 +5,16 @@
  */
 
 import type { Live, QueryName, Range, Row, Source } from "./source.js";
+import { buildTrailFor } from "./trail.js";
+import { GEN_VERSION } from "../sim/forest.js";
+import { DEFAULT_TERRAIN_VARIANT } from "../sim/terrain.js";
 
 const DAY = 86_400_000;
 /** The sample's "now": the page's, to the minute, so the rows read as recent whenever it is looked at. */
 const NOW = Math.floor(Date.now() / 60_000) * 60_000;
 const BUILDS = ["5759b340", "9557492d"];
-const WORLD = "forest/8/peninsula/-1771299565/88812";
+const WORLD = `forest/${GEN_VERSION}/${DEFAULT_TERRAIN_VARIANT}/-1771299565/88812`;
+const SEED = 123456;
 
 /** A small deterministic generator (mulberry32). */
 function rng(seed: number): () => number {
@@ -109,25 +113,108 @@ function health(): Row[] {
   ];
 }
 
-/** Twelve sessions walking a winding stem up the peninsula, a sample every five seconds, some straying and some dying. */
+/**
+ * Fourteen sessions on the real trail of the sample's seed, built as the
+ * page builds it: up the stem a node at a time with a little wander, some
+ * round a loop, some straying off the trail, some dying in the night, with
+ * the route's events as the game would send them.
+ */
 function paths(): Row[] {
   const r = rng(23);
+  const trail = buildTrailFor(WORLD, SEED);
   const rows: Row[] = [];
-  const stem = (p: number): [number, number] => [Math.sin(p * 9) * 60 + p * 40, -p * 520 + 20];
-  for (let s = 0; s < 12; s++) {
-    const farthest = Math.min(1, 0.25 + Math.pow(r(), 0.7) * 0.8);
-    const wander = 6 + r() * 14;
+  if (trail === null) return rows;
+  // The stem as a node chain, pad to crest: each stem edge in order, taken
+  // from whichever end the chain is at, since an edge's ends are in no
+  // particular order.
+  const chain: number[] = [0];
+  for (const i of trail.stem) {
+    const e = trail.edges[i]!;
+    const at = chain[chain.length - 1]!;
+    chain.push(e.a === at ? e.b : e.a);
+  }
+  const loop = trail.edges.map((e, i) => ({ e, i })).filter(({ e }) => e.kind !== "stem");
+  const row = (sid: string, n: string, tick: number, fields: Row): Row => ({ world: WORLD, seed: SEED, sid, n, tick, build: "9557492d", timestamp: iso(NOW - 3_600_000 + tick * (1000 / 60)), ...fields });
+  for (let s = 0; s < 14; s++) {
+    const sid = `s${(0x3f8a + s * 0x53).toString(16)}`;
+    const farthest = Math.min(1, 0.2 + Math.pow(r(), 0.6) * 0.85);
+    const takesLoop = loop.length > 0 && r() < 0.5;
+    const wander = 2 + r() * 6;
+    const strays = r() < 0.3;
     let hp = 100;
-    for (let t = 0; t <= 240; t++) {
-      const p = Math.min(farthest, t / 220);
-      const [sx, sz] = stem(p);
-      const x = sx + (r() - 0.5) * wander;
-      const z = sz + (r() - 0.5) * wander;
-      if (p > 0.6 && r() < 0.03) hp = Math.max(0, hp - 40);
-      rows.push({ world: WORLD, seed: 123456, sid: `s${s}`, tick: t * 300, x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, p: Math.round(p * 1000) / 1000, hp });
-      if (p >= farthest && t > 200) break;
-      if (hp === 0) break;
+    let tick = 0;
+    let lamp = false;
+    let lastEdge = -1;
+    let off = false;
+    const places = new Set<number>();
+    rows.push(row(sid, "match_start", 0, { role: s % 3 === 0 ? "client" : "host" }));
+    // Walk the chain node to node at about 1.4 m/s, a sample every 120 ticks.
+    const walk: { x: number; z: number }[] = [];
+    for (let i = 0; i + 1 < chain.length; i++) {
+      const a = trail.nodes[chain[i]!]!;
+      const b = trail.nodes[chain[i + 1]!]!;
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const steps = Math.max(1, Math.round(len / 2.8));
+      for (let k = 0; k < steps; k++) {
+        const t = k / steps;
+        walk.push({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+      }
     }
+    const limit = Math.floor(walk.length * farthest);
+    for (let k = 0; k < limit; k++) {
+      const p = k / Math.max(1, walk.length - 1);
+      let { x, z } = walk[k]!;
+      x += (r() - 0.5) * wander;
+      z += (r() - 0.5) * wander;
+      const straying = strays && p > 0.5 && p < 0.6;
+      if (straying) x += 25;
+      tick += 120;
+      if (p > 0.35 && !lamp) {
+        lamp = true;
+        rows.push(row(sid, "lamp", tick, { lamp_on: true, p }));
+      }
+      if (p > 0.6 && r() < 0.02) hp = Math.max(0, hp - 50);
+      const sample = { x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, yaw: Math.round(r() * 6.28 * 100) / 100, p: Math.round(p * 1000) / 1000, hp, lamp, sprint: r() < 0.2, off: straying ? 0.7 : 0, lens: Math.round(Math.max(0, p - 0.3) * 100) / 100, near: p > 0.95 ? 0.6 : 0, stare: 0 };
+      rows.push(row(sid, "pos", tick, sample));
+      // The nearest edge, as the trace reports it.
+      let best = -1;
+      let bestD = Infinity;
+      for (let i = 0; i < trail.edges.length; i++) {
+        const e = trail.edges[i]!;
+        const a = trail.nodes[e.a]!;
+        const b = trail.nodes[e.b]!;
+        const abx = b.x - a.x, abz = b.z - a.z;
+        const l2 = abx * abx + abz * abz || 1;
+        let tt = ((x - a.x) * abx + (z - a.z) * abz) / l2;
+        tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
+        const d = Math.hypot(x - (a.x + abx * tt), z - (a.z + abz * tt));
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+      if (best !== lastEdge) {
+        lastEdge = best;
+        rows.push(row(sid, "edge", tick, { edge: best, kind: trail.edges[best]?.kind ?? "", p }));
+      }
+      for (const f of trail.features) {
+        if (Math.hypot(x - f.x, z - f.z) <= f.radius && !places.has(f.id)) {
+          places.add(f.id);
+          rows.push(row(sid, "place", tick, { id: f.id, kind: f.kind, name: f.name, in_place: true }));
+        }
+      }
+      if (straying !== off) {
+        off = straying;
+        rows.push(row(sid, off ? "offtrail" : "ontrail", tick, { x: sample.x, z: sample.z, p }));
+      }
+      if (p > 0.7 && r() < 0.01) rows.push(row(sid, "hollow_seen", tick, { p }));
+      if (hp === 0) {
+        rows.push(row(sid, "death", tick, { x: sample.x, z: sample.z, p, near: 0.9 }));
+        break;
+      }
+    }
+    if (takesLoop) for (const [k, { i, e }] of loop.slice(0, 2).entries()) rows.push(row(sid, "edge", tick + 120 * (k + 1), { edge: i, kind: e.kind, p: farthest }));
+    if (hp > 0 && farthest >= 0.98) rows.push(row(sid, "outcome", tick + 240, { result: r() < 0.5 ? "won" : "lost" }));
   }
   return rows;
 }

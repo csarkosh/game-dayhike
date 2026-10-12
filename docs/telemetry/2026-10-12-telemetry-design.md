@@ -1,7 +1,7 @@
 # Telemetry
 
 **Date:** 2026-10-12
-**Status:** Built 2026-10-12. Amended the same day: a stored error is traceable to its cause (§8).
+**Status:** Built 2026-10-12. Amended the same day: a stored error is traceable to its cause (§8), and the trace of where a player went and what they chose (§9).
 
 ## 0. What this is
 
@@ -107,8 +107,10 @@ The events, in the order a session makes them:
 | `match_start` | `role`, `party`, `lobby` | the host session, or a follower's once connected |
 | `act` | `act`: wet, dusk, mist; `p`; `tick` | the climb's ratchet passed the mark (`sim/acts.ts`) |
 | `phase` | `phase`: scene, chase; `p`; `tick` | the host's phase flipped |
-| `pos` | `tick`, `x`, `z`, `p`, `hp` | every 300 ticks: a coarse trace of the path |
-| `death` | `p`, `phase` | this player died |
+| `pos` | `tick`, `x`, `z`, `yaw`, `p`, `hp`, `lamp`, `sprint`, `off`, `lens`, `near`, `stare` | every 120 ticks while the player moved (§9) |
+| `edge`, `fork`, `place`, `offtrail`, `ontrail`, `lamp`, `cut` | the route's transitions (§9) | on the sample, when the value changed |
+| `hollow_seen`, `poster`, `pause`, `resume`, `tier_change`, `intro`, `cmd` | what happened and what was chosen (§9) | once each, as it happens |
+| `death` | `tick`, `p`, `phase`, `cause`, `near`, `x`, `z` | this player died: the Hollow's reach is the one cause |
 | `outcome` | `result`, `self`, `alive`, `players`, `tick`, `p` | the match ended |
 | `hb` | `fps`, `worst`, `stalls`, `rtt`, `pe`, `p`, `dropped`, `failed` | every flush while a match runs |
 | `session_end`, `host_session_end` | `msg` or `kind` | the session ended short of an outcome |
@@ -214,3 +216,40 @@ world, the platform and the GPU from the first day; four things were missing for
 - **The session timeline.** `tools/telemetry/queries/session.sql`, every row a session sent
   and its lobby's signaling rows in order; the admin page opens it as a drawer from any
   session id.
+
+## 9. The trace: where a player went and what they chose
+
+*Amended 2026-10-12, for an unwatched playtest.* The first day's `pos` every five seconds
+gave a heat map and "how far"; it could not say which branch a party took at a fork, when
+they left the trail, whether they used the lamp, or what they read. `game/trace.ts` gives
+each match a trace, made at its start from the world's trail graph and the names of its
+places, and stepped from both loops after the outcome:
+
+- **One integer compare a frame**, until `TRACE_EVERY_TICKS` (120, two seconds) have
+  passed. Then, if the player has moved `TRACE_MIN_MOVE` (a metre) since the last sample, a
+  `pos` row: position, yaw, the party's climb, health, the lamp, sprinting, how far off the
+  trail (the escalation's own reading), the dread lens, the nearest Hollow's closeness, and
+  the stare. A player standing still sends nothing.
+- **On that sample, the route's transitions, each once when the value changes:** `edge`,
+  the nearest trail edge by point-to-segment distance over the graph's few dozen edges,
+  with its kind (stem, loop, strand, rung), which is the branch taken; `fork`, a junction
+  node within six metres; `place`, a feature's disc entered or left, by its sign-post name;
+  `offtrail` and `ontrail`; `lamp`, on or off, movement or not; and on the host, `cut`,
+  each fork the chase has cut, from the sim's own record.
+- **As they happen:** `hollow_seen`, the first frame a Hollow is in the state; `poster`,
+  the trailhead board read; `pause` and `resume`; `tier_change` with the tiers and the
+  source; `intro` with how it ended (watched, cut early, failed); `cmd`, the names of any
+  `?cmd=` overrides the session started with, so a debug session is told apart; and
+  `death` with the tick, the cause, the Hollow's closeness and the place.
+
+Nothing is computed per frame beyond the compare: the geometry runs on the sample, the
+escalation's readings are the ones it already makes for the lens and the sky, and the sim
+is read and never written. A player-hour of walking is about 1,800 samples, some 100 KB.
+
+**The drawing.** The admin page's "Where parties went" card rebuilds the trail from the
+world's seed in a worker (`client/src/admin/trail.ts`, the same generator the game runs,
+about half a second) and draws each session's samples as a line over it, with the forks
+numbered, the named places as discs, a × at a death, a ◇ at the Hollow's first showing, a
+□ at the poster, a scrubber over sim time, a hover readout on any moment, and a session
+list of who walked a loop, left the trail, used the lamp, or died. A world of another
+generation of the generator is drawn with a note, since its trail may have differed.

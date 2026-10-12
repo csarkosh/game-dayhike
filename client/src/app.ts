@@ -49,6 +49,7 @@ import { actsUnder,
   atmosphereUnder,
   escalationTargets,
   stepEscalation,
+  type EscalationTargets,
   type AtmosphereBase,
   type EscalationState,
 } from "./game/escalation.js";
@@ -78,7 +79,8 @@ import { trailheadPlaces } from "./sim/trailhead.js";
 import { BOARD_IMAGE_URLS } from "./game/boardImages.js";
 import { boardDrawingOf } from "./game/boardPaint.js";
 import { createTrailheadMeshes } from "./game/trailheadMeshes.js";
-import { signSites } from "./sim/placeNames.js";
+import { placeNames, signSites } from "./sim/placeNames.js";
+import { createTrace, type Trace } from "./game/trace.js";
 import { afterNextPaint } from "./game/paint.js";
 import type { QualityTier } from "./game/quality.js";
 import { settingsModel, type AutoSummary } from "./game/settings.js";
@@ -136,8 +138,6 @@ const ACT_MARKS: readonly (readonly [string, number])[] = [
   ["dusk", DUSK_AT],
   ["mist", MIST_AT],
 ];
-/** How often a player's position is sampled for telemetry: every five seconds of sim time, a coarse trace of the path. */
-const POS_EVERY_TICKS = 300;
 /** A frame longer than this counts as a stall in the heartbeat. */
 const STALL_MS = 250;
 /** A phase's name for a row; the enum is const, so it has no runtime table. */
@@ -334,6 +334,8 @@ function buildGame(
   if (telemetry !== null) {
     const version = worldVersionOf(forest.levelId);
     telemetry.set({ world: version.world, seed: version.seed ?? seed, game: token });
+    // A session started with overrides is not an ordinary one: say which.
+    if (entries.length > 0) telemetry.event("cmd", { names: entries.map((e) => e.name).join(",") });
   }
   // The sky's slices, made off the main thread once for the whole hike and
   // handed to every renderer it builds, a swap of tier's included, so no
@@ -519,9 +521,13 @@ function buildGame(
   // heartbeat's sampler reads and clears.
   let actsReported = 0;
   let lastPhase: Phase = Phase.Climb;
-  let lastPosTick = -POS_EVERY_TICKS;
   let worstFrameMs = 0;
   let stalls = 0;
+  /** The trace of where this player goes (`game/trace.ts`), made at the match's start. */
+  let trace: Trace | null = null;
+  /** The escalation's last reading of the frame, for the trace and a death's row. */
+  let lastTargets: EscalationTargets | null = null;
+  let hollowSeen = false;
   /** Which scene `sceneUntil` is: the voice's lines are gated by it (innerVoice.ts VoiceScene). */
   let sceneKind: VoiceScene = "none";
   /** The cry: a line waits until every howl has ended (cryQuietAt), then answers once. */
@@ -899,6 +905,7 @@ function buildGame(
     if (world.search === null || world.trail === null) return;
     const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground);
     escalation = stepEscalation(escalation, targets, dt);
+    lastTargets = targets;
     if (telemetry !== null) {
       // The acts, as the ratchet passes each mark; the phase, as the host's
       // truth flips it. Both are one comparison a frame.
@@ -923,6 +930,10 @@ function buildGame(
     // direction: z is mirrored into Web Audio's frame, as a listener's is.
     let hollow = false;
     for (const e of state.enemies.values()) if (isHollowState(e.ai)) { hollow = true; break; }
+    if (hollow && !hollowSeen) {
+      hollowSeen = true;
+      telemetry?.event("hollow_seen", { tick: state.tick, p: progressRounded() });
+    }
     const ear = renderer.listener();
     const crest = world.search.body.pos;
     const acts = actsUnder(escalation.world);
@@ -1131,6 +1142,7 @@ function buildGame(
     if ((edges & Button.Interact) === 0) return;
     const target = resolveInteract(world, self);
     if (target === null || target.kind !== InteractKind.Poster) return;
+    telemetry?.event("poster", { p: progressRounded() });
     posterPanel.show(posterModel(world.search));
   }
 
@@ -1157,10 +1169,19 @@ function buildGame(
    * their view angles keep tracking under the fade, and Escape keeps opening
    * the pause menu on every platform.
    */
-  function syncDeath(self: PlayerState | undefined): void {
+  function syncDeath(self: PlayerState | undefined, state: WorldState): void {
     if (dead || self === undefined || self.health > 0) return;
     dead = true;
-    telemetry?.event("death", { p: progressRounded(), phase: phaseName(lastPhase) });
+    // The Hollow's reach is the one thing that kills (`sim/hollow.ts`).
+    telemetry?.event("death", {
+      tick: state.tick,
+      p: progressRounded(),
+      phase: phaseName(lastPhase),
+      cause: "hollow",
+      near: Math.round((lastTargets?.near ?? 0) * 100) / 100,
+      x: Math.round(self.pos.x * 10) / 10,
+      z: Math.round(self.pos.z * 10) / 10,
+    });
     posterPanel.hide();
     // The body goes down and the dark closes (ending.ts); the HUD's own fade
     // finishes the black after it, and the line sits on top.
@@ -1278,7 +1299,10 @@ function buildGame(
     showMenu: () => menu.show(),
     hideMenu: () => menu.hide(),
     setSuppressed: (on) => input.setSuppressed(on),
-    paused: (on) => options.onPauseChange(on),
+    paused: (on) => {
+      telemetry?.event(on ? "pause" : "resume", { p: progressRounded() });
+      options.onPauseChange(on);
+    },
   });
   const bar = createCommandBar(container, {
     // Not while a new tier is being applied: opening the bar hides the pause
@@ -1472,13 +1496,19 @@ function buildGame(
    * counters the loop already keeps and clears the two it owns; it runs once
    * a flush, never a frame.
    */
-  function matchStarted(role: "host" | "client", stats: () => { rtt: number; pe: number }): void {
+  function matchStarted(role: "host" | "client", world: World, stats: () => { rtt: number; pe: number }): void {
     if (telemetry === null) return;
     actsReported = 0;
     lastPhase = Phase.Climb;
-    lastPosTick = -POS_EVERY_TICKS;
     worstFrameMs = 0;
     stalls = 0;
+    hollowSeen = false;
+    lastTargets = null;
+    // The trace names places as the sign posts do, never under the missing
+    // hiker's own first name (`placeNames`).
+    const graph = world.trail;
+    const hikerFirst = world.search?.hiker.name.split(" ")[0] ?? "";
+    trace = createTrace(graph, graph === null ? new Map() : placeNames(seed, graph.features, hikerFirst));
     telemetry.event("match_start", { role, party: lobby?.state.members.length ?? 1, lobby: lobby?.state.id ?? "" });
     telemetry.sample(() => {
       const s = stats();
@@ -1497,20 +1527,23 @@ function buildGame(
   }
 
   /**
-   * A coarse trace of where this player went: a position every
-   * `POS_EVERY_TICKS` of sim time, a tenth of a metre, with the climb and the
-   * health. Both loops, after the outcome; a copy of three numbers a sample.
+   * The trace of where this player goes (`game/trace.ts`): a sample every
+   * two seconds of sim time when they have moved, and a row at each
+   * transition of the route. Both loops, after the outcome; one integer
+   * compare a frame until a sample is due.
    */
-  function syncTelemetry(state: WorldState, self: PlayerState | undefined): void {
-    if (telemetry === null || self === undefined || state.tick - lastPosTick < POS_EVERY_TICKS) return;
-    lastPosTick = state.tick;
-    telemetry.event("pos", {
+  function syncTelemetry(world: World, state: WorldState, self: PlayerState | undefined, sprinting: boolean): void {
+    if (telemetry === null || trace === null) return;
+    const frame = {
       tick: state.tick,
-      x: Math.round(self.pos.x * 10) / 10,
-      z: Math.round(self.pos.z * 10) / 10,
-      p: progressRounded(),
-      hp: self.health,
-    });
+      offTrail: lastTargets?.offTrail ?? 0,
+      lens: escalation.lens,
+      near: lastTargets?.near ?? 0,
+      sprinting,
+      progress: escalation.progressMax,
+      cuts: world.cut?.cuts ?? null,
+    };
+    for (const e of trace.step(self, frame)) telemetry.event(e.n, e.fields);
   }
 
   // Kept so dispose() can cancel it. Without that, a session ending seconds
@@ -1562,7 +1595,7 @@ function buildGame(
       me.yaw = Math.atan2(body.x - me.pos.x, body.z - me.pos.z);
     };
     session = host;
-    matchStarted("host", () => ({ rtt: 0, pe: 0 }));
+    matchStarted("host", host.world, () => ({ rtt: 0, pe: 0 }));
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     woods = WOODS_REST;
@@ -1613,9 +1646,9 @@ function buildGame(
       syncPrompt(host.world, self);
       if (cmd !== null) syncPoster(host.world, self, cmd);
       syncRoadLine(self, state);
-      syncDeath(self);
+      syncDeath(self, state);
       syncOutcome(state);
-      syncTelemetry(state, self);
+      syncTelemetry(host.world, state, self, input.sprinting);
       // True exactly when `sync` took its player-following branch, which is
       // the only case in which `renderer.camera.position` is an eye position
       // a pending freecam can adopt.
@@ -1679,7 +1712,7 @@ function buildGame(
       forest,
     });
     session = client;
-    matchStarted("client", () => ({ rtt: client.stats.rttMs, pe: client.stats.lastPredictionError }));
+    matchStarted("client", client.world, () => ({ rtt: client.stats.rttMs, pe: client.stats.lastPredictionError }));
     governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     woods = WOODS_REST;
@@ -1764,9 +1797,9 @@ function buildGame(
       syncPrompt(client.world, self);
       if (cmd !== null) syncPoster(client.world, self, cmd);
       syncRoadLine(self, state);
-      syncDeath(self);
+      syncDeath(self, state);
       syncOutcome(state);
-      syncTelemetry(state, self);
+      syncTelemetry(client.world, state, self, input.sprinting);
       // See the host loop: a pending freecam waits for this.
       cameraOnPlayer = self !== undefined && freecam === null;
       renderer.scene.render();
@@ -2069,6 +2102,7 @@ function buildGame(
       for (const tell of swapListeners) tell();
       swapListeners.clear();
       canvas = got.canvas;
+      if (got.tier !== tier) telemetry?.event("tier_change", { from: tier, to: got.tier, source, fellBack: got.fellBack });
       tier = got.tier;
       const outcome = switchOutcome(save ?? "auto", got);
       if (save !== null && outcome.save !== null) options.quality.save(outcome.save);
@@ -2239,6 +2273,7 @@ function buildGame(
         telemetry.sample(null);
         telemetry.event("match_end", { p: progressRounded(), ended, dead });
       }
+      trace = null;
       options.onPauseChange(false);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onDebugKey);

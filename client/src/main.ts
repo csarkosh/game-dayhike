@@ -1219,6 +1219,8 @@ function launch(
       () => undefined,
     );
     intro.launched = (reason) => {
+      // Watched to its end, cut early, or failed: which, for the timeline.
+      telemetry.event("intro", { reason });
       if (reason === "error") release();
       else void handle.engage().then(release);
     };
