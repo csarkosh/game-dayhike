@@ -17,9 +17,14 @@ terraform {
   required_providers {
     google = {
       source = "hashicorp/google"
+      # google.quota: the Identity Toolkit API refuses a user's own credentials
+      # unless the call names a project to count its quota against; this alias
+      # does (the root's main.tf says how).
+      configuration_aliases = [google.quota]
     }
     google-beta = {
-      source = "hashicorp/google-beta"
+      source                = "hashicorp/google-beta"
+      configuration_aliases = [google-beta.quota]
     }
   }
 }
@@ -33,7 +38,8 @@ resource "google_project_service" "identitytoolkit" {
 # Firebase Auth, initialised, with the domains a sign-in may come from: the
 # site, Firebase's own hostnames, and the dev server.
 resource "google_identity_platform_config" "this" {
-  project = var.project_id
+  provider = google.quota
+  project  = var.project_id
 
   authorized_domains = concat(
     ["localhost", "${var.project_id}.firebaseapp.com", "${var.project_id}.web.app"],
@@ -55,7 +61,7 @@ resource "google_firebase_web_app" "admin" {
 }
 
 data "google_firebase_web_app_config" "admin" {
-  provider   = google-beta
+  provider   = google-beta.quota
   project    = var.project_id
   web_app_id = google_firebase_web_app.admin.app_id
 }
