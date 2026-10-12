@@ -1,6 +1,6 @@
 -- The funnel: sessions that landed, pressed Play, started a match, reached an
 -- outcome; one line a build and world version, newest first.
-WITH rows AS (
+WITH events AS (
   SELECT
     JSON_VALUE(json_payload.sid) AS sid,
     JSON_VALUE(json_payload.build) AS build,
@@ -22,6 +22,6 @@ SELECT
   COUNT(DISTINCT sid) AS sessions,
   MIN(timestamp) AS first_seen,
   MAX(timestamp) AS last_seen
-FROM rows
+FROM events
 GROUP BY build
 ORDER BY last_seen DESC;

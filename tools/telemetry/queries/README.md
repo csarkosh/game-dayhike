@@ -5,6 +5,11 @@ Saved Log Analytics queries over the telemetry bucket
 console (Logging → Log Analytics, project `fps-csarko`), or run it from BigQuery against
 the linked dataset by replacing the table with `` `fps-csarko.dayhike_telemetry._AllLogs` ``.
 
+Before changing a query, know that the admin page runs these on BigQuery, whose parser is
+stricter than the Log Analytics editor: `rows` is a reserved word there, for one.
+`node tools/telemetry/check-queries.mjs` dry-runs every file as the page's routes run it, and
+`npm run deploy:verify` does the same.
+
 Every query groups by `build` and `world`, so a number is always a number for one version,
 and leaves out the deploy's verification rows (`build = 'verify'`). Each reads the last seven
 days: the line marked `-- range` is the one to change, and the admin page's server sets it

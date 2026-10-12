@@ -1,7 +1,7 @@
 -- What threw: errors and warnings by their text, where the page was, and on
 -- which build; how many sessions each touched. The text is cut to its first
 -- hundred characters so a message with a variable tail groups as one.
-WITH rows AS (
+WITH events AS (
   SELECT
     JSON_VALUE(json_payload.sid) AS sid,
     JSON_VALUE(json_payload.build) AS build,
@@ -30,6 +30,6 @@ SELECT
   ANY_VALUE(sid) AS a_session,
   ANY_VALUE(CONCAT(os, ' ', browser, ' ', gpu)) AS a_machine,
   MAX(timestamp) AS last_seen
-FROM rows
+FROM events
 GROUP BY n, kind, at_page, msg, build
 ORDER BY sessions DESC, last_seen DESC;

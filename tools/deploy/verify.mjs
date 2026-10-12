@@ -17,6 +17,7 @@ import { validateLatest } from './lib/desktopRelease.mjs';
 import { filmUrls, findChunkName, findChunkNames, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
 import { bundleMapProblems } from './lib/bundle.mjs';
 import { reach } from './lib/reach.mjs';
+import { checkQueries, dryRunQuery, QUERIES_DIR, savedQueries } from '../telemetry/lib/checkQueries.mjs';
 import { GAMES_INDEX } from './lib/redirectPage.mjs';
 
 const siteUrl = tfOutput('site_url');
@@ -495,6 +496,18 @@ async function verify() {
   );
   const refused = await reach(telemetryRoute, { method: 'POST', body: '{', headers: { 'content-type': 'text/plain' } });
   check(refused.status === 400, 'telemetry refuses a malformed batch', `got ${refused.status}`);
+
+  // 6b2. Every saved query runs on BigQuery as the admin routes run it: a
+  // dry run, planned and not executed, as the deployer. Log Analytics'
+  // editor accepts names BigQuery's parser refuses (`rows`, once), and the
+  // routes answered 500 for it while every other check passed.
+  const queryProblems = await checkQueries(
+    savedQueries(QUERIES_DIR),
+    tfOutput('gcp_project_id'),
+    tfOutput('telemetry_dataset'),
+    (sql, params) => dryRunQuery(tfOutput('gcp_project_id'), sql, params),
+  );
+  check(queryProblems.length === 0, 'every saved telemetry query runs on BigQuery', queryProblems.join('; '));
 
   // 6c. The admin page is served beside the game, and its routes refuse a
   // request with no account: the allowlist is the whole of the guard.

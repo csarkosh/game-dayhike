@@ -2,7 +2,7 @@
 -- heartbeat's frame rate and worst frame, and how sessions ended — with an
 -- `end` row (the page said goodbye) or without one (it died, or the beacon
 -- never left).
-WITH rows AS (
+WITH events AS (
   SELECT
     JSON_VALUE(json_payload.sid) AS sid,
     JSON_VALUE(json_payload.build) AS build,
@@ -40,7 +40,7 @@ per_session AS (
     LOGICAL_OR(n = 'end') AS said_goodbye,
     MAX(IF(n = 'end', trouble, NULL)) AS trouble,
     LOGICAL_OR(n = 'match_start') AS played
-  FROM rows
+  FROM events
   GROUP BY sid
 )
 SELECT
