@@ -38,6 +38,14 @@ export function signOut(): Promise<void>;
  */
 export function requireSession(root: HTMLElement, onReady: (user: User) => void): void;
 
+/**
+ * The nav's account, rendered into `host` (the chrome's `#account`): a round
+ * profile button that toggles a menu with the Live or Sample badge, the
+ * signed-in email and Sign out. With `preview` and no account the menu says
+ * nobody is signed in and has no Sign out. The shell clears it on sign-out.
+ */
+export function accountMenu(host: HTMLElement, options: { account: User | null; preview: boolean }): void;
+
 // The shell also still exports the names of the gate it had for a day
 // (2026-10-13), so the bundle built against them keeps loading until this one
 // replaces it. They are not declared here: nothing in this page may use them.

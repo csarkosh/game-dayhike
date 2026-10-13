@@ -14,9 +14,9 @@
 
 import { el } from "./charts.js";
 import { sampleSource } from "./sample.js";
-import { remoteSource, type Range, type Source } from "./source.js";
-import { requireSession, signOut, UNAUTHORIZED, type User } from "./auth.js";
-import { errorsView, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer } from "./views.js";
+import { remoteSource, type QueryName, type Range, type Row, type Source } from "./source.js";
+import { accountMenu, requireSession, UNAUTHORIZED, type User } from "./auth.js";
+import { errorsView, failedCard, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer, waitingCard } from "./views.js";
 import { pathsCard, trailBuilder } from "./paths.js";
 
 const RANGES: { days: Range; label: string }[] = [
@@ -59,18 +59,14 @@ function dashboard(source: Source, account: User | null): () => void {
   let range: Range = 7;
   // The trail builder, one worker for the page's life, its answers kept.
   const trailFor = trailBuilder();
-  const who = el("div", { class: "who" }, el("span", { class: `badge${source.kind === "sample" ? " sample" : ""}` }, source.kind === "sample" ? "Sample data" : "Live"));
-  if (account !== null) {
-    // The session is the host's, shared by every app's page: signing out here
-    // signs out of all of them, and the shell's gate comes back on its own.
-    const out = el("button", { class: "ghost", type: "button" }, "Sign out");
-    out.addEventListener("click", () => {
-      stop();
-      void signOut();
-    });
-    who.append(el("span", {}, account.email), out);
-  }
-  const top = el("div", { class: "top" }, el("h1", {}, "Day Hike admin"), el("span", { class: "badge" }, "games.csarko.sh/dayhike"), who);
+  // The chrome is the host's markup (`client/admin/index.html`, the same as
+  // csarko.sh's own dashboard), and the nav's account menu (the Live or Sample
+  // badge, the email, Sign out) is the shell's: `accountMenu` renders it. The
+  // session is the host's, shared by every app's page: signing out there signs
+  // out of all of them, and the shell's gate comes back on its own; the live
+  // refresh stops through the UNAUTHORIZED listener and the auth state change.
+  const accountHost = document.querySelector<HTMLElement>("#account");
+  if (accountHost !== null) accountMenu(accountHost, { account, preview: source.kind === "sample" });
   const buttons = RANGES.map((r) => {
     const b = el("button", { type: "button", "aria-pressed": String(r.days === range) }, r.label);
     b.addEventListener("click", () => {
@@ -83,7 +79,7 @@ function dashboard(source: Source, account: User | null): () => void {
   const filters = el("div", { class: "filters" }, el("span", { class: "label" }, "Range"), ...buttons);
   const liveSlot = el("div", { class: "grid" });
   const grid = el("div", { class: "grid" });
-  root!.replaceChildren(top, filters, liveSlot, el("div", { style: "height:16px" }), grid);
+  root!.replaceChildren(filters, liveSlot, el("div", { style: "height:16px" }), grid);
   // A session id anywhere on the page opens its timeline in a drawer.
   root!.addEventListener("click", (event) => {
     const target = event.target;
@@ -104,25 +100,44 @@ function dashboard(source: Source, account: User | null): () => void {
     }
   }
 
+  // The six cards, one a query: each is on the page at once as a skeleton the
+  // shape of what it waits for, fills on its own as its query answers, and
+  // shows its own error, so a slow or failed query holds only its card. The
+  // title and copy here are the waiting card's; the rendered card brings its
+  // own, with what the rows say.
+  const CARDS: { name: QueryName; title: string; sub: string; cls: string; shape: { tiles?: number; chart?: boolean; lines?: number }; render(rows: Row[]): HTMLElement }[] = [
+    { name: "funnel", title: "From landing to the end", sub: "Sessions by what they reached", cls: "half", shape: { chart: true, lines: 3 }, render: funnelView },
+    { name: "lobbies", title: "Lobbies a day", sub: "From signaling's own rows", cls: "half", shape: { chart: true, lines: 1 }, render: lobbiesView },
+    { name: "progress", title: "How far parties got", sub: "Each match's farthest climb, 0 at the trailhead and 1 at the crest; the night falls from 30%", cls: "", shape: { chart: true, lines: 4 }, render: progressView },
+    { name: "errors", title: "What went wrong", sub: "Problems in this range, grouped by their first hundred characters", cls: "", shape: { lines: 4 }, render: errorsView },
+    { name: "health", title: "Load times and frame rates", sub: "By build, tier and engine; the start is the tier's decision, the engine and the build, the ready is the world's first whole frame", cls: "", shape: { tiles: 4, lines: 3 }, render: healthView },
+    { name: "paths", title: "Where parties went", sub: "One world at a time: the trail rebuilt from its seed, each session's path over it", cls: "", shape: { chart: true, lines: 2 }, render: (rows) => pathsCard(rows, trailFor) },
+  ];
+  const slots = CARDS.map((c) => waitingCard(c.title, c.sub, c.cls, c.shape));
+  grid.replaceChildren(...slots);
+
   let loading = 0;
   async function load(): Promise<void> {
     const token = ++loading;
-    for (const card of grid.children) card.classList.add("loading");
-    try {
-      const [funnel, lobbies, progress, errors, health, paths] = await Promise.all([
-        source.query("funnel", range),
-        source.query("lobbies", range),
-        source.query("progress", range),
-        source.query("errors", range),
-        source.query("health", range),
-        source.query("paths", range),
-      ]);
-      if (token !== loading) return;
-      grid.replaceChildren(funnelView(funnel), lobbiesView(lobbies), progressView(progress), errorsView(errors), healthView(health), pathsCard(paths, trailFor));
-    } catch (error) {
-      if (token !== loading) return;
-      grid.replaceChildren(el("section", { class: "card" }, el("h2", {}, "The numbers could not be read"), el("p", { class: "sub" }, error instanceof Error ? error.message : String(error))));
-    }
+    await Promise.all(
+      CARDS.map(async (c, i) => {
+        const slot = slots[i];
+        if (slot === undefined) return;
+        // A skeleton is already the loading state; a rendered card dims while it reloads.
+        if (slot.querySelector(".skeleton") === null) slot.classList.add("loading");
+        let next: HTMLElement;
+        try {
+          const rows = await source.query(c.name, range);
+          if (token !== loading) return;
+          next = c.render(rows);
+        } catch (error) {
+          if (token !== loading) return;
+          next = failedCard(c.title, c.sub, c.cls, error instanceof Error ? error.message : String(error));
+        }
+        slot.replaceWith(next);
+        slots[i] = next;
+      }),
+    );
   }
 
   void refreshLive();

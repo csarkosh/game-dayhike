@@ -20,4 +20,4 @@
  * (`vite.config.ts`).
  */
 
-export { fetchWithAuth, requireSession, signOut, user, UNAUTHORIZED, type User } from "/auth.js";
+export { accountMenu, fetchWithAuth, requireSession, signOut, user, UNAUTHORIZED, type User } from "/auth.js";
