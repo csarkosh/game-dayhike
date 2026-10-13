@@ -42,6 +42,7 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `.github/` | CI workflows: `test.yml` runs typecheck, lint and the three test suites, and builds the client as the deploy does and checks the built WGSL maps (`tools/wgsl/check-build.mjs`), on every push to `main` and to `worktree-**`/`ci/**` branches and on pull requests, with the client suite's test time limits scaled by `TEST_TIME_SCALE` and the `wall-clock` tests left out (a local `npm test` runs them; `npm run test:wall-clock` runs only them); the Windows desktop smoke test is started by hand. |
 | `AGENTS.md` | This file. `CLAUDE.md` points here. |
 | `README.md` | Human-facing overview of the game. |
+| `LICENSE` | GPL-3.0, since 2026-10-13 (the repo had no licence before). `package.json` says `GPL-3.0-only`. |
 | `ARCHITECTURE.md` | The layering, determinism, rendering, asset and hosting details. |
 | `CREDITS.md` | Credits for third-party assets, rendered by the in-game Credits screen. |
 | `package.json`, `package-lock.json` | npm workspaces root (`client`, `server`); scripts for dev, build, test, lint, typecheck and deploy. |

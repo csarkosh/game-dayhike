@@ -97,3 +97,7 @@ A desktop build for macOS and Windows lives in [`desktop/`](desktop/): a thin la
 ## Out of scope
 
 Host migration, TURN relay, navmesh pathfinding, anti-cheat, PvP, lobby browser, persistence, mobile input, physics props.
+
+## License
+
+[GPL-3.0](./LICENSE). The game's code, its server and its tooling are free software under the GNU General Public License, version 3: use it, study it, change it and share it, and share your changes under the same terms.
