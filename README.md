@@ -28,23 +28,23 @@ sake and your own.
 
 <table>
 <tr>
-<td width="420" valign="top"><img src="branding/previews/forest.png" alt="Old growth: trunks and ferns on a mossy slope in the morning mist" width="400"></td>
-<td valign="top"><b>The old wood.</b> From the trailhead the trail climbs through old-growth forest: fir and pine on a floor of fern and moss, the morning mist in the trees until the sun burns it off. Elk browse at the edges; a raven may follow you a while.</td>
+<td width="420" valign="top"><img src="branding/previews/forest.png" alt="Old growth: trunks and ferns on a mossy slope under the canopy" width="400"></td>
+<td valign="top"><b>The old wood.</b> From the trailhead the trail climbs through old-growth forest: fir and pine on a floor of fern and moss, the light coming down green through the canopy. Elk browse at the edges; a raven may follow you a while.</td>
 </tr>
 <tr>
-<td width="420" valign="top"><img src="branding/previews/tarn.png" alt="A tarn with lily pads, rocks and ferns on its shore, trees in the mist beyond" width="400"></td>
+<td width="420" valign="top"><img src="branding/previews/tarn.png" alt="A tarn with lily pads, rocks and ferns on its shore, the forest round it" width="400"></td>
 <td valign="top"><b>The tarn.</b> Halfway up, a still lake in a hollow of the hill, lilies on the water and rock at its shore. A good place to stop. The loop around it rejoins the trail; the far shore is the quieter one.</td>
 </tr>
 <tr>
-<td width="420" valign="top"><img src="branding/previews/meadow.png" alt="A mountain meadow in flower, the forest's edge in the mist" width="400"></td>
+<td width="420" valign="top"><img src="branding/previews/meadow.png" alt="A mountain meadow, the forest's edge beyond it" width="400"></td>
 <td valign="top"><b>The meadow.</b> Above the lake the trees open on a meadow: grass to the knee, lupine and beargrass in their season, the first long view back down to the sea. Rabbits in the grass, if you are quiet.</td>
 </tr>
 <tr>
-<td width="420" valign="top"><img src="branding/previews/crest.png" alt="The trail over bare rock at the crest, the trees below it in cloud" width="400"></td>
-<td valign="top"><b>The crest.</b> Past the treeline the trail finds bare rock and the top. On a clear day the whole coast lies below; most mornings the crest is in cloud, and the cloud is its own reward. Turn back here.</td>
+<td width="420" valign="top"><img src="branding/previews/crest.png" alt="The trail over bare ground at the crest, the last trees below it" width="400"></td>
+<td valign="top"><b>The crest.</b> Past the treeline the trail finds bare rock and the top. On a clear day the whole coast lies below; on most, the cloud comes and goes, and the cloud is its own reward. Turn back here.</td>
 </tr>
 <tr>
-<td width="420" valign="top"><img src="branding/previews/beach.png" alt="Wet sand and pebbles at low tide, a sea stack and birds in the mist" width="400"></td>
+<td width="420" valign="top"><img src="branding/previews/beach.png" alt="Wet sand and pebbles at low tide, a sea stack standing off the shore" width="400"></td>
 <td valign="top"><b>The beach.</b> Below the road the forest ends on a shore of sand, pebbles and driftwood, a stack standing off it, the sea birds working the tide line. Walk it before you set out, or after, when the light comes back.</td>
 </tr>
 </table>
