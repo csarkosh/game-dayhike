@@ -5,7 +5,7 @@
 // scene to settle, and writes the frame at 1200x675 with nothing but the image in it.
 //
 //   npm run previews                       every still, from the dev server (http://localhost:5173)
-//   npm run previews -- --base https://games.csarko.sh    from the live site
+//   npm run previews -- --base https://games.csarko.sh/dayhike    from the live site
 //   npm run previews -- tarn crest         only these
 //   npm run previews -- --settle 80        wait longer for the scene (seconds; 55 by default)
 //
