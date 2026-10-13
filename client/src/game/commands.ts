@@ -251,6 +251,23 @@ const SPECS: readonly CommandSpec[] = [
     },
   },
   {
+    name: "escalation",
+    kind: "view",
+    // `escalation <world>` holds the world's escalation (escalation.ts: the
+    // hour's fall to night and the weather's turn with the party's climb)
+    // at a value in [0, 1] for a look, so a player stood far up the trail
+    // (`stand`) can see the ground by day; bare `escalation` lets the climb
+    // set it again. The lens, the chase and the telemetry's acts keep the
+    // climb's truth. Not persisted: no `scriptValue` (2026-10-13).
+    validate(args) {
+      if (args.length === 0) return null;
+      if (args.length > 1) return "escalation takes no argument, or a value in [0, 1]";
+      const v = Number(args[0]);
+      if (!Number.isFinite(v) || v < 0 || v > 1) return `"${args[0]}" is not a value in [0, 1]`;
+      return null;
+    },
+  },
+  {
     name: "mist",
     kind: "view",
     // `mist <density>` holds the near mist (nearMist.ts) at a density in

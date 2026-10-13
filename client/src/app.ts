@@ -517,6 +517,8 @@ function buildGame(
   let base: AtmosphereBase = { weather: WEATHER_PRESETS[DEFAULT_WEATHER], hour: DEFAULT_HOUR };
   /** The escalation's eased state, reset when a match starts. */
   let escalation: EscalationState = ESCALATION_REST;
+  /** The `escalation` command's hold on the world's escalation for a look, or null for the climb's own. */
+  let escalationHold: number | null = null;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
   let woods: WoodsState = WOODS_REST;
   // The summit scene (cutscene.ts): from the flip, the controls are stilled and the camera is the scene's for SUMMIT_REVEAL_S.
@@ -764,6 +766,10 @@ function buildGame(
     } else if (name === "skin") {
       skin = value !== false;
       renderer.setSkinShading(skin);
+    } else if (name === "escalation") {
+      // The world's escalation, held at a value or let go (escalation.ts).
+      escalationHold = args.length === 0 ? null : Number(args[0]);
+      hud.setStatus(escalationHold === null ? "escalation: the climb's" : `escalation held at ${escalationHold.toFixed(2)}`);
     } else if (name === "mist") {
       // The ground cloud's density, held or let go (cloudParams.ts); the status says what is drawn.
       const held = args.length === 0 ? null : Number(args[0]);
@@ -984,8 +990,11 @@ function buildGame(
         telemetry.event("phase", { phase: phaseName(state.phase), p: progressRounded(), tick: state.tick });
       }
     }
+    // The `escalation` command's hold, for a look: the atmosphere and the acts
+    // read it; the lens, the chase and the telemetry keep the climb's truth.
+    const shown = escalationHold === null ? escalation : { ...escalation, world: escalationHold };
     // The end scene's road shot draws the mist back, so the car can be followed down the highway.
-    const settled = atmosphereUnder(base, escalation);
+    const settled = atmosphereUnder(base, shown);
     const mist = endMistNow();
     const a = mist === 1 ? settled : { ...settled, weather: { ...settled.weather, mist: settled.weather.mist * mist } };
     // The chase's cast and its pulse, every frame: neither waits on the weather's gate below.
@@ -1005,7 +1014,7 @@ function buildGame(
     }
     const ear = renderer.listener();
     const crest = world.search.body.pos;
-    const acts = actsUnder(escalation.world);
+    const acts = actsUnder(shown.world);
     renderer.setMistIn(acts.mist * mist);
     const voiced = stepWoods(woods, {
       climb: escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase !== Phase.Climb, hollow, rain: a.weather.rain,
@@ -1535,7 +1544,7 @@ function buildGame(
       // Nor /mist and /end, which are for looking at the night's effects on the spot,
       // nor /summit and /escape, which are for looking at a scene (`isLook`).
       // Applied below via applyView; never written back to `?cmd=`.
-      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "end" && !isLook(parsed.name)) persist(parsed.name, args);
+      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "escalation" && parsed.name !== "end" && !isLook(parsed.name)) persist(parsed.name, args);
       if (findCommand(parsed.name)?.kind === "world") {
         // Re-initialise through the path `main.ts` already listens on.
         window.dispatchEvent(new PopStateEvent("popstate"));
