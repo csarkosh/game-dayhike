@@ -18,8 +18,8 @@ for one.
 | --- | --- |
 | Where the relief lives | In the game layer, on the face patches (`client/src/game/facePatches.ts`); the simulation's height function, collision and placements are untouched, and the level id does not move |
 | What it is masked by | The rock weight the surface paints at the vertex (`classifySurface`, the slope's rule less the water's and the snow's say), times `1 − faceMask`, so a face carries the faces' relief alone and the two never add; times the cell's loudness; times the patches' taper toward cells outside the set |
-| The depth | Outward only, along the ground's normal, up to `GROUND_DEPTH` = 0.4 m at full loudness, cut by the ground's bend as the faces' depth is but to the whole radius of curvature, not half (`GROUND_BEND_SHARE`): 0.4 m cannot gather a hollow past its centre as 4 m can, and the lowland outcrops are tight humps that half the radius halved. A foot stands at most 0.4 m inside the drawn rock and 0.2 m on average, with collision on the height field as before |
-| The forms | Three octaves of the cellular field, each site a dome: slabs (3 m cells, 0.6 m joints, a dome of 3 and a tilt of 1), rubble (1.2 m, 0.3 m, a dome of 3, at 0.5) and outcrops (9 m, 2 m joints, a tilt of 2 and a dome of 0.5, at 0.8), gained 1.5 and clamped: a mean |v| of 0.57, 15 percent on the clamps (at a gain of 2, 35 percent, and the tops and hollows sat flat). A shallow relief reads by its curvature, not its depth: the faces' planes tilt a degree at 0.4 m and shade as the ground does |
+| The depth | Outward only, along the ground's normal, up to `GROUND_DEPTH` = 0.5 m at full loudness (0.4 as first built), cut by the ground's bend as the faces' depth is but to the whole radius of curvature, not half (`GROUND_BEND_SHARE`): 0.4 m cannot gather a hollow past its centre as 4 m can, and the lowland outcrops are tight humps that half the radius halved. A foot stands at most 0.5 m inside the drawn rock, and far less on average: the field is a floor at the ground with spikes standing out of it, so most of a patch lies on the ground. Collision on the height field as before |
+| The forms | Three octaves of the cellular field, the two fine ones cones, each site a point and a V where two cones meet: spires (2.4 m cells, 0.5 m joints, a cone of 3 and a tilt of 0.8), shards (0.9 m, 0.25 m, a cone of 3, at 0.6) and outcrops (9 m, 2 m joints, a tilt of 2 and a dome of 0.5, at 0.8), gained 2.5, gathered into patches by a 14 m noise (the calm ground keeps 0.35 of the relief) and clamped: a mean |v| of 0.83, 48 percent on the clamp at −1, the floor the spikes stand out of. Jagged rock pointing out of a broken ground, as asked; the domed cobbles first built (a dome of 3 on 3 m and 1.2 m cells, gained 1.5) read as a cobbled ground, not rock |
 | The loudness | By the rock's extent about the cell: the mean rock-of-slope at a cell's corner and at eight points 6 m out (`rockExtent`), 0 to 1, read at the cell's four corners, which its neighbours share, and interpolated across the cell; the loudness is 0.75 at an extent of 0.1 and under, 1 from 0.5, a quintic step between (`groundLoudness`). A lone outcrop in grass shows three quarters of the depth and the rest as it widens; a rocky hillside is whole. As first built the floor was 0.25, the stencil 10 m and the ramp 0.15 to 0.85, and the lowland outcrops by the trailhead, humps of the height field three metres wide painted rock by their own slope, moved under 3 cm, which read as nothing: the first place a player looks at rock. At 0.75 they move up to 9 cm, their creases capping the rest (§4) |
 | Which cells | A cell is patched when a point of its grid is steep (as before) or has a rock-of-slope of 0.1 or more (`GROUND_ROCK_MIN`); under that the push is a few centimetres |
 | The ground under a patch | Kept: the clipmap leaves out its triangles under fully steep squares as before and nowhere else; the push is outward, so the patch is never under the ground, and the patch material's depth offset keeps the two apart where the relief is nothing |
@@ -49,20 +49,25 @@ Non-goals:
 
 The cellular field of the faces (§3.1 of the faces' design) blends, over the
 sites with weight about a point, each site's plane: its value at the site
-and a tilt through it. The walkable rock adds a dome to the plane, a fall of
-`dome · F² / cell²` from the site, so a cell is a cap rounded off toward
-its joints, and takes a tilt of its own instead of FACE_TILT. Both are
-parameters of `cellular` with the faces' values as defaults; the derivative
-of the dome term is `−2 · dome · (p − s) / cell²`, added to the plane's own
-slope inside the blend, so the field keeps exact derivatives and the normals
-the patches take from them.
+and a tilt through it. The walkable rock adds two terms to the plane, a
+dome, a fall of `dome · F² / cell²` from the site (a cap rounded off toward
+its joints), and a cone, a fall of `cone · F / cell` (a point at the site,
+straight sides, a V where two meet), and takes a tilt of its own instead of
+FACE_TILT. All three are parameters of `cellular` with the faces' values as
+defaults; the derivatives, `−2 · dome · (p − s) / cell²` and
+`−cone · (p − s) / (F · cell)`, are added to the plane's own slope inside
+the blend, so the field keeps exact derivatives and the normals the patches
+take from them. A cone's point is a kink, as a junction of three cells is.
 
-`groundReliefD` is the slabs plus the rubble at `GROUND_RUBBLE_WEIGHT` plus
-the outcrops at `GROUND_MASS_WEIGHT`, divided by the weights' sum and
-multiplied by `GROUND_GAIN`, clamped to [−1, 1] and flat where the clamp
-holds. The clamp's floor is the hollow between cobbles. The three lattices
-have salts of their own, so they share nothing with the faces' lattices and
-a face and the rock at its foot show no common seam.
+`groundReliefD` is the spires plus the shards at `GROUND_SHARD_WEIGHT` plus
+the outcrops at `GROUND_MASS_WEIGHT`, divided by the weights' sum,
+multiplied by `GROUND_GAIN` and by the patches' share (`groundPatchD`: a
+gradient noise of `GROUND_PATCH_WAVE`, `GROUND_PATCH_LO` on the calm ground
+and 1 in a patch, a quintic step between), clamped to [−1, 1] and flat where
+the clamp holds. The clamp's floor, nearly half the ground, is the ground
+itself between the spikes. The lattices have salts of their own, so they
+share nothing with the faces' lattices and a face and the rock at its foot
+show no common seam.
 
 ## 4. The patches (`client/src/game/facePatches.ts`)
 
@@ -87,9 +92,11 @@ Where no point is rocky, no extent is read.
 ## 5. Tests
 
 - `client/test/sim/faceRelief.test.ts`: the walkable rock's relief is its
-  three octaves' weighted mean gained and clamped (300 points against
-  `cellularD` with the tilts and domes); exact derivatives over a 2,000-point
-  sweep, the junctions of the three lattices left out; within [−1, 1] and
+  three octaves' weighted mean gained, in the patches' share, clamped (300
+  points against `cellularD` with the tilts, cones and dome, and
+  `groundPatchD`); the patches' share runs from the calm ground's to 1;
+  exact derivatives over a 2,000-point sweep, the junctions of the three
+  lattices, the cones' points and the octaves' clamps left out; within [−1, 1] and
   finite over 20,000 points; deterministic, and another field than the
   faces' and than another world's; continuous along 100 lines of 100 m at 1
   cm; uses its range. The faces' pinned literals and sweeps are unchanged.
@@ -117,8 +124,10 @@ under 20) hold on the development machine.
 Stills at the rocky hillside above the trail (seed `atmo`, (−168, 69, −1740),
 rock-of-slope 1 over its window, high tier, 14:00): with planes alone at 0.35
 m the slope read as the dune it was; with the domes at 0.4 m the level view
-shows rounded cobbles and hummocks under the paint and the across view a
-bumpy near slope. The faces' five pinned literals and their sweeps are
+showed rounded cobbles and hummocks under the paint, a cobbled ground, not
+rock; with the cones at 0.5 m the level view is broken, jagged rock and the
+across view a rugged near slope with facets in the light, which is what was
+asked for. The faces' five pinned literals and their sweeps are
 unchanged.
 
 **The lowland outcrops.** The first rock a player meets is a hump of the

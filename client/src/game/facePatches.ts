@@ -38,7 +38,7 @@ export const PATCH_DEPTH = 2 * FACE_HALF_DEPTH;
  * normal, metres, at full loudness: shallow, since the ground is walked on
  * with collision on the smooth height field, so a foot is never further
  * inside the drawn rock than this, and on average half of it. */
-export const GROUND_DEPTH = 0.4;
+export const GROUND_DEPTH = 0.5;
 /** The radius (m) of the eight points about a corner whose rock-of-slope,
  * with the corner's own, is the rock's extent there (`rockExtent`). */
 export const GROUND_EXTENT_RADIUS = 6;

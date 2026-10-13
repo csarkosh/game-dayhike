@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import * as relief from "../../src/sim/faceRelief.js";
 import {
-  cellularD, cellularSite, faceKindD, faceReliefD, groundReliefD, FACE_RELIEF_TUNABLES,
+  cellularD, cellularSite, faceKindD, faceReliefD, groundReliefD, groundPatchD, FACE_RELIEF_TUNABLES,
   FACE_VALUE_SPAN, FACE_TILT,
-  GROUND_SLAB_CELL, GROUND_SLAB_JITTER, GROUND_SLAB_BORDER, GROUND_SLAB_SALT, GROUND_SLAB_TILT, GROUND_SLAB_DOME,
-  GROUND_RUBBLE_CELL, GROUND_RUBBLE_JITTER, GROUND_RUBBLE_BORDER, GROUND_RUBBLE_SALT, GROUND_RUBBLE_WEIGHT,
-  GROUND_RUBBLE_TILT, GROUND_RUBBLE_DOME,
+  GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, GROUND_SPIRE_BORDER, GROUND_SPIRE_SALT, GROUND_SPIRE_TILT, GROUND_SPIRE_CONE,
+  GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, GROUND_SHARD_SALT, GROUND_SHARD_WEIGHT,
+  GROUND_SHARD_TILT, GROUND_SHARD_CONE,
   GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, GROUND_MASS_SALT, GROUND_MASS_WEIGHT,
-  GROUND_MASS_TILT, GROUND_MASS_DOME, GROUND_GAIN,
+  GROUND_MASS_TILT, GROUND_MASS_DOME, GROUND_GAIN, GROUND_PATCH_LO,
   FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, FACE_COLUMN_SALT,
   FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, FACE_BLOCK_SALT,
   FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER, FACE_BLOCK_FINE_SALT,
@@ -630,40 +630,63 @@ describe("the walkable rock's relief", () => {
   const CLAMP_GAP = 2e-3;
   function groundGap(x: number, z: number): number {
     const octaves = [
-      cellularD(x, z, GROUND_SLAB_CELL, GROUND_SLAB_JITTER, GROUND_SLAB_BORDER, SEED ^ GROUND_SLAB_SALT, GROUND_SLAB_TILT, GROUND_SLAB_DOME),
-      cellularD(x, z, GROUND_RUBBLE_CELL, GROUND_RUBBLE_JITTER, GROUND_RUBBLE_BORDER, SEED ^ GROUND_RUBBLE_SALT, GROUND_RUBBLE_TILT, GROUND_RUBBLE_DOME),
+      cellularD(x, z, GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, GROUND_SPIRE_BORDER, SEED ^ GROUND_SPIRE_SALT, GROUND_SPIRE_TILT, 0, GROUND_SPIRE_CONE),
+      cellularD(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, SEED ^ GROUND_SHARD_SALT, GROUND_SHARD_TILT, 0, GROUND_SHARD_CONE),
       cellularD(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT, GROUND_MASS_TILT, GROUND_MASS_DOME),
     ];
     if (octaves.some((o) => Math.abs(o.v) > 1 - CLAMP_GAP)) return 0;
+    // A cone's point is a kink too: within the gap of a spire's or shard's site.
+    const [s1] = siteDistances(x, z, GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, SEED ^ GROUND_SPIRE_SALT);
+    const [h1] = siteDistances(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, SEED ^ GROUND_SHARD_SALT);
     return Math.min(
-      junctionGap(x, z, GROUND_SLAB_CELL, GROUND_SLAB_JITTER, GROUND_SLAB_BORDER, SEED ^ GROUND_SLAB_SALT),
-      junctionGap(x, z, GROUND_RUBBLE_CELL, GROUND_RUBBLE_JITTER, GROUND_RUBBLE_BORDER, SEED ^ GROUND_RUBBLE_SALT),
+      s1 as number,
+      h1 as number,
+      junctionGap(x, z, GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, GROUND_SPIRE_BORDER, SEED ^ GROUND_SPIRE_SALT),
+      junctionGap(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, SEED ^ GROUND_SHARD_SALT),
       junctionGap(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT),
     );
   }
 
-  it("is the slabs, the rubble and the outcrops at their weights, gained and clamped", () => {
-    const n = GROUND_GAIN / (1 + GROUND_RUBBLE_WEIGHT + GROUND_MASS_WEIGHT);
+  it("is the spires, the shards and the outcrops at their weights, gained, in the patches' share, clamped", () => {
+    const n = GROUND_GAIN / (1 + GROUND_SHARD_WEIGHT + GROUND_MASS_WEIGHT);
     for (const [x, z] of r2Points(300, 1000)) {
-      const slab = cellularD(x, z, GROUND_SLAB_CELL, GROUND_SLAB_JITTER, GROUND_SLAB_BORDER, SEED ^ GROUND_SLAB_SALT, GROUND_SLAB_TILT, GROUND_SLAB_DOME);
-      const rubble = cellularD(x, z, GROUND_RUBBLE_CELL, GROUND_RUBBLE_JITTER, GROUND_RUBBLE_BORDER, SEED ^ GROUND_RUBBLE_SALT, GROUND_RUBBLE_TILT, GROUND_RUBBLE_DOME);
+      const spire = cellularD(x, z, GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, GROUND_SPIRE_BORDER, SEED ^ GROUND_SPIRE_SALT, GROUND_SPIRE_TILT, 0, GROUND_SPIRE_CONE);
+      const shard = cellularD(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, SEED ^ GROUND_SHARD_SALT, GROUND_SHARD_TILT, 0, GROUND_SHARD_CONE);
       const mass = cellularD(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT, GROUND_MASS_TILT, GROUND_MASS_DOME);
-      const v = n * (slab.v + GROUND_RUBBLE_WEIGHT * rubble.v + GROUND_MASS_WEIGHT * mass.v);
+      const p = groundPatchD(SEED, x, z);
+      const g = n * (spire.v + GROUND_SHARD_WEIGHT * shard.v + GROUND_MASS_WEIGHT * mass.v);
+      const gx = n * (spire.dx + GROUND_SHARD_WEIGHT * shard.dx + GROUND_MASS_WEIGHT * mass.dx);
+      const gz = n * (spire.dz + GROUND_SHARD_WEIGHT * shard.dz + GROUND_MASS_WEIGHT * mass.dz);
+      const v = p.v * g;
       const want = v > 1 || v < -1
         ? { v: v > 1 ? 1 : -1, dx: 0, dz: 0 }
-        : { v, dx: n * (slab.dx + GROUND_RUBBLE_WEIGHT * rubble.dx + GROUND_MASS_WEIGHT * mass.dx), dz: n * (slab.dz + GROUND_RUBBLE_WEIGHT * rubble.dz + GROUND_MASS_WEIGHT * mass.dz) };
+        : { v, dx: p.v * gx + p.dx * g, dz: p.v * gz + p.dz * g };
       expect(groundReliefD(SEED, x, z)).toEqual(want);
     }
+  });
+
+  it("gathers the relief into patches: the share runs from the calm ground's to 1 with the noise", () => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const [x, z] of r2Points(2000, 1000)) {
+      const p = groundPatchD(SEED, x, z);
+      lo = Math.min(lo, p.v);
+      hi = Math.max(hi, p.v);
+    }
+    expect(lo).toBeGreaterThanOrEqual(GROUND_PATCH_LO);
+    expect(lo).toBeLessThan(GROUND_PATCH_LO + 0.05);
+    expect(hi).toBeLessThanOrEqual(1);
+    expect(hi).toBeGreaterThan(0.95);
   });
 
   it("carries exact derivatives through its three octaves (a 2,000-point sweep)", () => {
     const r = checkField((x, z) => groundReliefD(SEED, x, z), groundGap, r2Points(2000, 1000));
     expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
-    // The points on an octave's clamp or a junction, left out: about half
-    // of the 2,000 (957), since the rubble's domes fall past −1 over about
-    // half the ground, the floor between its cobbles, flat there; the rest
-    // match to the ratio.
-    expect(r.skipped).toBeLessThan(1200);
+    // The points on an octave's clamp, a cone's point or a junction, left
+    // out: most of the 2,000, since the cones fall past −1 over about half
+    // the ground, the floor between the spikes, flat there; the rest match
+    // to the ratio.
+    expect(r.skipped).toBeLessThan(1800);
     expect(r.skipped).toBeGreaterThan(500);
   });
 
@@ -692,9 +715,11 @@ describe("the walkable rock's relief", () => {
       if (a.v === groundReliefD(OTHER_SEED, x, z).v) sameAsOther++;
     }
     expect(same).toBe(500);
-    // The clamp's ±1 can agree by chance; the rest never.
-    expect(sameAsFace).toBeLessThan(100);
-    expect(sameAsOther).toBeLessThan(100);
+    // The clamp's ±1 can agree by chance, and the ground's field lies on
+    // its floor over about half the ground (106 of 500 agreed with the
+    // faces' at the cones); the rest never.
+    expect(sameAsFace).toBeLessThan(250);
+    expect(sameAsOther).toBeLessThan(250);
   });
 
   it("is continuous: no step along 100 lines of 100 m at 1 cm", () => {
@@ -711,12 +736,12 @@ describe("the walkable rock's relief", () => {
         prev = v;
       }
     }
-    // The rubble's 0.3 m joints are the steepest: a unit range over 0.3 m at
-    // the gain is a step of about 0.04 in 1 cm.
+    // The shards' 0.25 m joints are the steepest: a unit range over 0.25 m
+    // at the gain is a step of about 0.05 in 1 cm.
     expect(largest).toBeLessThan(0.25);
   });
 
-  it("uses its range: a mean |v| about half the range, the clamp holding some", () => {
+  it("uses its range: spikes over a floor, the clamp holding about half of the ground at the floor", () => {
     let sum = 0;
     let clamped = 0;
     const pts = r2Points(5000, 1000);
@@ -725,14 +750,15 @@ describe("the walkable rock's relief", () => {
       sum += Math.abs(v);
       if (v === 1 || v === -1) clamped++;
     }
-    // Measured at the gain of 1.5 and the domes of 3: a mean of 0.57, 15 %
-    // clamped (0.68 and 35 % at a gain of 2, where the tops and hollows sat
-    // flat; 0.43 and 5 % at domes of 1.5).
+    // Measured at the gain of 2.5 and the cones of 3: a mean |v| of 0.83
+    // and 48 % clamped, nearly all of it at −1, the floor the spikes stand
+    // out of; under 1 % of the ground is above the midline. (The domed
+    // cobbles before, 2026-10-13: 0.57 and 15 %.)
     const mean = sum / pts.length;
-    expect(mean).toBeGreaterThan(0.45);
-    expect(mean).toBeLessThan(0.65);
-    expect(clamped / pts.length).toBeGreaterThan(0.05);
-    expect(clamped / pts.length).toBeLessThan(0.25);
+    expect(mean).toBeGreaterThan(0.7);
+    expect(mean).toBeLessThan(0.95);
+    expect(clamped / pts.length).toBeGreaterThan(0.3);
+    expect(clamped / pts.length).toBeLessThan(0.7);
   });
 });
 
@@ -748,12 +774,13 @@ describe("the tunables", () => {
       "FACE_KIND_WAVE", "FACE_KIND_LO", "FACE_KIND_HI",
       "FACE_COLUMN_SALT", "FACE_BLOCK_SALT", "FACE_BLOCK_FINE_SALT", "FACE_KIND_SALT",
       "FACE_FORM_SALT",
-      "GROUND_SLAB_CELL", "GROUND_SLAB_JITTER", "GROUND_SLAB_BORDER", "GROUND_SLAB_TILT", "GROUND_SLAB_DOME",
-      "GROUND_RUBBLE_CELL", "GROUND_RUBBLE_JITTER", "GROUND_RUBBLE_BORDER", "GROUND_RUBBLE_WEIGHT",
-      "GROUND_RUBBLE_TILT", "GROUND_RUBBLE_DOME",
+      "GROUND_SPIRE_CELL", "GROUND_SPIRE_JITTER", "GROUND_SPIRE_BORDER", "GROUND_SPIRE_TILT", "GROUND_SPIRE_CONE",
+      "GROUND_SHARD_CELL", "GROUND_SHARD_JITTER", "GROUND_SHARD_BORDER", "GROUND_SHARD_WEIGHT",
+      "GROUND_SHARD_TILT", "GROUND_SHARD_CONE",
       "GROUND_MASS_CELL", "GROUND_MASS_JITTER", "GROUND_MASS_BORDER", "GROUND_MASS_WEIGHT",
       "GROUND_MASS_TILT", "GROUND_MASS_DOME",
-      "GROUND_GAIN", "GROUND_SLAB_SALT", "GROUND_RUBBLE_SALT", "GROUND_MASS_SALT",
+      "GROUND_GAIN", "GROUND_PATCH_WAVE", "GROUND_PATCH_LO",
+      "GROUND_SPIRE_SALT", "GROUND_SHARD_SALT", "GROUND_MASS_SALT", "GROUND_PATCH_SALT",
     ];
     expect(Object.keys(FACE_RELIEF_TUNABLES).sort()).toEqual([...keys].sort());
     for (const [k, v] of Object.entries(relief)) {
