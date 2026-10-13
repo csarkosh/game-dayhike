@@ -1779,6 +1779,8 @@ function buildGame(
       // at the crest's (night, mist and the chase's cast whole) at once; the win waits on the car
       // (`escapeStep`), so the scene opens on a car already drawn, as a match's does.
       if (escapeFrom !== null || endSceneSetup() === null) return;
+      // Not into a scene playing or a match decided: the acts and the car would jump mid-scene.
+      if (endRunDoor !== null || host.world.state.outcome !== Outcome.Playing) return;
       requestFilmCar();
       escalation = escalationAt(1, true);
       escapeFrom = performance.now();

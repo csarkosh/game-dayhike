@@ -78,7 +78,7 @@ export type TrailheadCar = { root: TransformNode; model: CarModel | null; leave(
 
 /**
  * The film's car is drawn wherever it stands once swapped in, each mesh
- * until its material is ready for it after a frame drawn, and none past
+ * until its material has been ready for it on two passes running, and none past
  * this many frames: the effects prepared, the shader modules made and the
  * pipelines requested at the swap, while the car stands unseen a kilometre
  * off in the dark of the chase, so the scene's first frames draw the car
