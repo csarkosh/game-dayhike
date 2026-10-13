@@ -841,10 +841,10 @@
     {
       "id": "title",
       "output": "video/title.mp4",
-      "bytes": 16852302,
+      "bytes": 16933695,
       "still": {
         "output": "images/title.still.webp",
-        "bytes": 95652
+        "bytes": 87214
       }
     }
   ]
