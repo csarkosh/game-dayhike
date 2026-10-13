@@ -1,19 +1,21 @@
 /**
  * The admin page: who is playing right now, and what the telemetry says of
- * the last day, week, month or quarter. A page of its own under the site
- * (`/dayhike/admin/`), built beside the game and sharing nothing with it but
- * the favicon: the game's bundle carries none of this.
+ * the last day, week, month or quarter. A page of its own on the shared admin
+ * host (admin.csarko.sh/game-dayhike/, the csarko.sh repository's `admin/`),
+ * built apart from the game (`vite.admin.config.ts`) and sharing nothing with
+ * it: the game's bundle carries none of this.
  *
- * Behind a sign-in. With `?preview` the page shows the sample data set
- * (`sample.ts`) with no sign-in, for looking at the page itself; otherwise it
- * asks for a Google account and shows the real numbers to an account on the
- * allowlist (the server's admin routes decide, not this page).
+ * Behind the host's sign-in (`auth.ts`). With `?preview` the page shows the
+ * sample data set (`sample.ts`) with no sign-in, for looking at the page
+ * itself; otherwise it asks for a Google account, once for every app on the
+ * host, and shows the real numbers to an account on the allowlist (the
+ * server's admin routes decide, not this page).
  */
 
 import { el } from "./charts.js";
 import { sampleSource } from "./sample.js";
 import { remoteSource, type Range, type Source } from "./source.js";
-import { authConfig, createSession, type Session } from "./auth.js";
+import { requireSession, signOut, UNAUTHORIZED, type User } from "./auth.js";
 import { errorsView, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer } from "./views.js";
 import { pathsCard, trailBuilder } from "./paths.js";
 
@@ -30,21 +32,14 @@ if (root === null) throw new Error("#admin not found");
 
 const params = new URLSearchParams(location.search);
 const preview = params.has("preview");
-// `?theme=light|dark` overrides the OS scheme, for looking at both.
+// `?theme=light|dark` overrides the OS scheme, for looking at both; the
+// host's stylesheet reads the attribute.
 const theme = params.get("theme");
 if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
 
-/** The gate: a sign-in button, or why there is none; a line for a refused account. */
-function gate(session: Session | null, note: string | null): void {
-  const button = el("button", { type: "button", ...(session === null ? { disabled: "" } : {}) }, "Sign in with Google");
-  const line = el("p", { class: "note" }, note ?? (session === null ? "This build has no sign-in. Add ?preview to the address to see the page with sample data." : "An account on the list."));
-  button.addEventListener("click", () => {
-    if (session === null) return;
-    void session.signIn().catch((error: unknown) => {
-      line.textContent = `Could not sign in: ${error instanceof Error ? error.message : String(error)}`;
-    });
-  });
-  root!.replaceChildren(el("div", { class: "gate" }, el("h1", {}, "Day Hike admin"), el("p", {}, "Who is playing, and how it went."), button, line));
+/** Why there is nothing to show: a build without the routes' address, or an answer they refused. */
+function notice(title: string, line: string): void {
+  root!.replaceChildren(el("div", { class: "gate" }, el("h1", {}, title), el("p", { class: "note" }, line)));
 }
 
 /** The admin routes' base: the telemetry service, whose `/t` is the batches' route. */
@@ -54,14 +49,25 @@ function adminBase(): string | null {
   return url.replace(/\/t$/, "");
 }
 
-function dashboard(source: Source, account: { email: string; signOut(): Promise<void> } | null): void {
+/**
+ * The page itself, for the account given (null for the sample). Returns what
+ * stops its live refresh, for when the account signs out or is refused: the
+ * shell hides the page behind its gate then, and the refresh would otherwise
+ * keep asking, and keep being refused, every ten seconds.
+ */
+function dashboard(source: Source, account: User | null): () => void {
   let range: Range = 7;
   // The trail builder, one worker for the page's life, its answers kept.
   const trailFor = trailBuilder();
   const who = el("div", { class: "who" }, el("span", { class: `badge${source.kind === "sample" ? " sample" : ""}` }, source.kind === "sample" ? "Sample data" : "Live"));
   if (account !== null) {
+    // The session is the host's, shared by every app's page: signing out here
+    // signs out of all of them, and the shell's gate comes back on its own.
     const out = el("button", { class: "ghost", type: "button" }, "Sign out");
-    out.addEventListener("click", () => void account.signOut());
+    out.addEventListener("click", () => {
+      stop();
+      void signOut();
+    });
     who.append(el("span", {}, account.email), out);
   }
   const top = el("div", { class: "top" }, el("h1", {}, "Day Hike admin"), el("span", { class: "badge" }, "games.csarko.sh/dayhike"), who);
@@ -122,7 +128,9 @@ function dashboard(source: Source, account: { email: string; signOut(): Promise<
   void refreshLive();
   void load();
   const timer = setInterval(() => void refreshLive(), LIVE_EVERY_MS);
-  window.addEventListener("pagehide", () => clearInterval(timer));
+  const stop = (): void => clearInterval(timer);
+  window.addEventListener("pagehide", stop);
+  return stop;
 }
 
 if (preview) {
@@ -132,32 +140,36 @@ if (preview) {
   const open = params.get("session");
   if (open !== null) document.body.append(sessionDrawer(open, sample.session(open)));
 } else {
-  const config = authConfig(import.meta.env);
   const base = adminBase();
-  if (config === null || base === null) {
-    gate(null, null);
+  if (base === null) {
+    notice("Day Hike admin", "This build has no admin routes. Add ?preview to the address to see the page with sample data.");
   } else {
-    const session = createSession(config);
-    let shown: string | null = null;
-    session.watch((user) => {
-      if (user === null) {
-        shown = null;
-        gate(session, null);
-        return;
-      }
-      if (shown === user.email) return;
-      shown = user.email;
-      // The server decides whether the account is on the list: a 401 on
-      // the first request sends the page back to the gate with the reason.
-      const source = remoteSource(base, user.token);
+    const source = remoteSource(base);
+    // What stops the page shown last, if one is; nothing until then.
+    let stop: (() => void) | null = null;
+    // The gate, then the page; the first request proves the account is on the
+    // list, and a refusal (a 401) is the shell's to show: its gate comes back
+    // with "<email> is not on the list." and a Sign out, so another account
+    // can be tried. Anything else is this page's to say.
+    const start = (account: User): void => {
       source
         .live()
-        .then(() => dashboard(source, { email: user.email, signOut: () => session.signOut() }))
+        .then(() => {
+          stop?.();
+          stop = dashboard(source, account);
+        })
         .catch((error: unknown) => {
-          shown = null;
           const message = error instanceof Error ? error.message : String(error);
-          gate(session, message.endsWith(": 401") ? `${user.email} is not on the list. Sign out and try another account.` : `Could not reach the admin routes: ${message}`);
+          if (!message.endsWith(": 401")) notice("Day Hike admin", `Could not reach the admin routes: ${message}`);
         });
+    };
+    // A request refused after the page was shown: the shell has put its gate
+    // over the page, and the live refresh stops asking for an account that was
+    // turned away. The shell's listener does the rest.
+    window.addEventListener(UNAUTHORIZED, () => {
+      stop?.();
+      stop = null;
     });
+    requireSession(root, start);
   }
 }

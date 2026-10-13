@@ -7,10 +7,17 @@ import { createAdminAuth, parseAllowlist } from "../src/adminAuth.js";
 import { forBigQuery, QUERY_NAMES, readQuery } from "../src/adminQueries.js";
 import type { AdminData, LiveView } from "../src/admin.js";
 import { plain } from "../src/adminData.js";
+import { shapeKpis } from "../src/adminKpis.js";
 import { createSignalingServer, type SignalingServer } from "../src/server.js";
 
-const PROJECT = "fps-test";
-const ORIGIN = "https://games.csarko.sh";
+/**
+ * The project the tokens come from: the admin host's (`csarko-sh`), where the
+ * page signs in, not the project this service runs in. The check trusts that
+ * issuer alone.
+ */
+const AUTH_PROJECT = "csarko-sh";
+/** The admin host's origin, which the routes answer; the game's own is not a caller any more but stays listed. */
+const ORIGIN = "https://admin.csarko.sh";
 const QUERIES = fileURLToPath(new URL("../../tools/telemetry/queries/", import.meta.url));
 
 let privateKey: CryptoKey;
@@ -21,13 +28,13 @@ beforeAll(async () => {
   jwk = { ...(await exportJWK(pair.publicKey)), kid: "k1", alg: "RS256", use: "sig" };
 });
 
-/** A Firebase Auth ID token as Google would sign it, with the claims given. */
+/** A Firebase Auth ID token as Google would sign it for the admin host's project, with the claims given. */
 async function token(claims: Record<string, unknown>, options: { iss?: string; aud?: string; expired?: boolean } = {}): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   return new SignJWT({ email_verified: true, ...claims })
     .setProtectedHeader({ alg: "RS256", kid: "k1" })
-    .setIssuer(options.iss ?? `https://securetoken.google.com/${PROJECT}`)
-    .setAudience(options.aud ?? PROJECT)
+    .setIssuer(options.iss ?? `https://securetoken.google.com/${AUTH_PROJECT}`)
+    .setAudience(options.aud ?? AUTH_PROJECT)
     .setSubject("uid1")
     .setIssuedAt(now - 60)
     .setExpirationTime(options.expired ? now - 10 : now + 3600)
@@ -42,7 +49,7 @@ describe("parseAllowlist", () => {
 });
 
 describe("createAdminAuth", () => {
-  const auth = () => createAdminAuth({ projectId: PROJECT, allowed: ["me@example.com"], keys: createLocalJWKSet({ keys: [jwk] }) });
+  const auth = () => createAdminAuth({ projectId: AUTH_PROJECT, allowed: ["me@example.com"], keys: createLocalJWKSet({ keys: [jwk] }) });
 
   it("admits a verified account on the list", async () => {
     expect(await auth().verify(`Bearer ${await token({ email: "Me@Example.com" })}`)).toEqual({ email: "me@example.com" });
@@ -54,6 +61,9 @@ describe("createAdminAuth", () => {
     expect(await a.verify(`Bearer ${await token({ email: "me@example.com", email_verified: false })}`)).toBeNull();
     expect(await a.verify(`Bearer ${await token({ email: "me@example.com" }, { aud: "another" })}`)).toBeNull();
     expect(await a.verify(`Bearer ${await token({ email: "me@example.com" }, { iss: "https://securetoken.google.com/another" })}`)).toBeNull();
+    // A token this service's own project issued is not the admin host's: the
+    // sign-in moved, and only the host's issuer is trusted.
+    expect(await a.verify(`Bearer ${await token({ email: "me@example.com" }, { iss: "https://securetoken.google.com/fps-csarko", aud: "fps-csarko" })}`)).toBeNull();
     expect(await a.verify(`Bearer ${await token({ email: "me@example.com" }, { expired: true })}`)).toBeNull();
     expect(await a.verify("Bearer not.a.token")).toBeNull();
     expect(await a.verify("Basic abc")).toBeNull();
@@ -68,12 +78,23 @@ describe("the saved queries for BigQuery", () => {
       expect(out.sql).toContain("`fps-csarko.dayhike_telemetry._AllLogs`");
       expect(out.sql).not.toContain("global.dayhike-telemetry");
       expect(out.sql).toContain("INTERVAL @days DAY");
+      expect(out.sql).not.toContain("-- range");
       expect(out.params).toEqual(["days"]);
     }
     const session = forBigQuery(readQuery("session", QUERIES), "fps-csarko", "dayhike_telemetry");
     expect(session.sql).toContain("= @sid");
     expect(session.sql).not.toContain("'SID'");
     expect(session.params).toEqual(["sid"]);
+  });
+
+  it("take the range line's days whatever the file reads when pasted", () => {
+    const seven = forBigQuery("INTERVAL 7 DAY) -- range", "p", "d");
+    const twelveWeeks = forBigQuery("INTERVAL 84 DAY) -- range", "p", "d");
+    expect(seven.sql).toBe("INTERVAL @days DAY)");
+    expect(twelveWeeks.sql).toBe("INTERVAL @days DAY)");
+    expect(twelveWeeks.params).toEqual(["days"]);
+    // The kpis query reads twelve weeks when pasted, the length of its trends.
+    expect(readQuery("kpis", QUERIES)).toContain("INTERVAL 84 DAY) -- range");
   });
 });
 
@@ -92,6 +113,7 @@ describe("the admin routes", () => {
   let base: string;
   const live: LiveView = { at: 1, instances: [{ id: "i1", seenAt: 1 }], rooms: [{ id: "r1", hostId: "h", createdAt: 0, hostDroppedAt: null, peers: 2 }] };
   const asked: string[] = [];
+  const kpis = shapeKpis([{ kind: "window", period: "current", week_start: null, sessions: 3, matches: 2, ended: 2, clean: 2, erred: 0 }], 1, Date.UTC(2026, 9, 12));
   const data: AdminData = {
     live: () => Promise.resolve(live),
     query: (name, days) => {
@@ -102,13 +124,17 @@ describe("the admin routes", () => {
       asked.push(`session:${sid}`);
       return Promise.resolve([{ n: "page", t: 0 }]);
     },
+    kpis: () => {
+      asked.push("kpis");
+      return Promise.resolve(kpis);
+    },
   };
 
   beforeAll(async () => {
     server = createSignalingServer(0, {
       role: "all",
       log: () => undefined,
-      admin: { auth: createAdminAuth({ projectId: PROJECT, allowed: ["me@example.com"], keys: createLocalJWKSet({ keys: [jwk] }) }), data },
+      admin: { auth: createAdminAuth({ projectId: AUTH_PROJECT, allowed: ["me@example.com"], keys: createLocalJWKSet({ keys: [jwk] }) }), data },
       postLimits: { capacity: 100, refillPerSecond: 100 },
     });
     await new Promise<void>((resolve) => server.http.once("listening", () => resolve()));
@@ -118,10 +144,10 @@ describe("the admin routes", () => {
     await server.close();
   });
 
-  const get = async (path: string, auth?: string) =>
-    fetch(`${base}${path}`, { headers: { origin: ORIGIN, ...(auth === undefined ? {} : { authorization: auth }) } });
+  const get = async (path: string, auth?: string, origin = ORIGIN) =>
+    fetch(`${base}${path}`, { headers: { origin, ...(auth === undefined ? {} : { authorization: auth }) } });
 
-  it("answers the signed-in account with JSON and CORS", async () => {
+  it("answers the signed-in account with JSON and CORS for the admin host", async () => {
     const bearer = `Bearer ${await token({ email: "me@example.com" })}`;
     const liveRes = await get("/admin/live", bearer);
     expect(liveRes.status).toBe(200);
@@ -133,11 +159,21 @@ describe("the admin routes", () => {
     expect(bad.status).toBe(200);
     const s = await get("/admin/session/s-1", bearer);
     expect(await s.json()).toEqual({ rows: [{ n: "page", t: 0 }] });
-    expect(asked).toEqual(["funnel:30", "errors:7", "session:s-1"]);
+    const k = await get("/admin/kpis", bearer);
+    expect(k.status).toBe(200);
+    expect(await k.json()).toEqual(kpis);
+    expect(asked).toEqual(["funnel:30", "errors:7", "session:s-1", "kpis"]);
+  });
+
+  it("answers the shell's local preview too, with its own origin echoed", async () => {
+    const res = await get("/admin/live", `Bearer ${await token({ email: "me@example.com" })}`, "http://localhost:8788");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:8788");
   });
 
   it("refuses without a token, with a stranger's, from another origin, and names what does not exist", async () => {
     expect((await get("/admin/live")).status).toBe(401);
+    expect((await get("/admin/kpis")).status).toBe(401);
     expect((await get("/admin/live", `Bearer ${await token({ email: "x@example.com" })}`)).status).toBe(401);
     const stranger = await fetch(`${base}/admin/live`, { headers: { origin: "https://evil.example" } });
     expect(stranger.status).toBe(403);
@@ -151,6 +187,7 @@ describe("the admin routes", () => {
     const res = await fetch(`${base}/admin/live`, { method: "OPTIONS", headers: { origin: ORIGIN } });
     expect(res.status).toBe(204);
     expect(res.headers.get("access-control-allow-headers")).toBe("authorization");
+    expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN);
   });
 
   it("is not served without the option", async () => {

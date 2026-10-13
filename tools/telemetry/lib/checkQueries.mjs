@@ -8,12 +8,17 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** The server's rewrites, in one place for the check: the dataset's view, and the two parameters. */
+/**
+ * The server's rewrites, in one place for the check: the dataset's view, and
+ * the two parameters. The range line's days are whatever the file reads when
+ * pasted (seven for most, twelve weeks for `kpis.sql`), as the server takes them.
+ */
 export function forBigQuery(sql, projectId, dataset) {
   const params = {};
   let out = sql.replace(/`([a-z0-9-]+)\.global\.dayhike-telemetry\._AllLogs`/g, `\`${projectId}.${dataset}._AllLogs\``);
-  if (out.includes('INTERVAL 7 DAY) -- range')) {
-    out = out.replaceAll('INTERVAL 7 DAY) -- range', 'INTERVAL @days DAY)');
+  const ranged = out.replace(/INTERVAL \d+ DAY\) -- range/g, 'INTERVAL @days DAY)');
+  if (ranged !== out) {
+    out = ranged;
     params.days = 7;
   }
   if (out.includes("'SID' -- session")) {

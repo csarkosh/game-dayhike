@@ -64,16 +64,6 @@ provider "google" {
   user_project_override = true
 }
 
-# The same, on the beta provider, for the Firebase web app's configuration:
-# read through the Identity Toolkit API, which makes the same demand.
-provider "google-beta" {
-  alias                 = "quota"
-  project               = var.gcp_project_id
-  region                = var.gcp_region
-  billing_project       = var.gcp_project_id
-  user_project_override = true
-}
-
 module "gcp_signaling" {
   source = "./modules/gcp-signaling"
 
@@ -97,6 +87,7 @@ module "gcp_telemetry" {
   billing_account_id = var.billing_account_id
   monthly_budget_usd = var.monthly_budget_usd
   admin_emails       = var.admin_emails
+  admin_auth_project = var.admin_auth_project
   registry           = var.signaling_registry
 
   providers = {
@@ -110,21 +101,14 @@ module "gcp_telemetry" {
   depends_on = [module.gcp_signaling]
 }
 
-module "gcp_auth" {
-  source = "./modules/gcp-auth"
-
-  project_id         = var.gcp_project_id
-  authorized_domains = [var.domain_name]
-
-  providers = {
-    google            = google
-    google.quota      = google.billing
-    google-beta       = google-beta
-    google-beta.quota = google-beta.quota
-  }
-
-  depends_on = [module.gcp_hosting]
-}
+# There is no sign-in module any more: the admin page moved to the shared admin
+# host (csarko.sh's `admin/`), and the Google sign-in it uses is that
+# repository's Firebase Auth, on its project `csarko-sh`. The telemetry service
+# verifies the ID tokens that sign-in issues against its own allowlist
+# (`admin_emails` and `admin_auth_project`, in `gcp-telemetry`). The Firebase
+# Auth config and web app the page signed in with here (`modules/gcp-auth`,
+# 2026-10-12) were removed the same day; the Firebase project itself is
+# `gcp-hosting`'s.
 
 module "gcp_hosting" {
   source = "./modules/gcp-hosting"

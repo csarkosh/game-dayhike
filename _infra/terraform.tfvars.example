@@ -7,9 +7,12 @@ domain_name        = "games.csarko.sh"
 legacy_domain_name = "game.csarko.sh"
 dns_zone_name      = "csarko.sh"
 
-# The Google accounts that may read the admin page at /dayhike/admin/. Empty
-# serves no admin routes.
+# The Google accounts that may read the admin page at
+# admin.csarko.sh/game-dayhike/. Empty serves no admin routes. The sign-in is
+# the admin host's, on the Firebase project csarko-sh; the default
+# admin_auth_project names it and is fine.
 # admin_emails = ["you@example.com"]
+# admin_auth_project = "csarko-sh"
 
 # Optional: a monthly budget alert for Cloud Run and Cloud Logging, the two
 # services telemetry bills. Empty creates none.

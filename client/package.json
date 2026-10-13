@@ -5,12 +5,12 @@
   "scripts": {
     "dev": "vite",
     "build": "node ../tools/wgsl/build-map.mjs && vite build",
+    "build:admin": "vite build --config vite.admin.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {
     "@babylonjs/core": "9.18.0",
-    "@babylonjs/loaders": "9.18.0",
-    "firebase": "13.0.0"
+    "@babylonjs/loaders": "9.18.0"
   },
   "devDependencies": {
     "@babylonjs/ktx2decoder": "9.18.0",

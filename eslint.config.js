@@ -12,7 +12,8 @@ export default tseslint.config(
   // preload must be CommonJS, which the repo's no-require-imports rule forbids.
   // desktop/** is the standalone desktop shell package: Electron's main is
   // CommonJS, same as above, and the shell has its own node --test suite.
-  { ignores: ["**/dist/**", "**/node_modules/**", "site/**", ".claude/worktrees/**", "client/public/libs/**", "tools/electron-spike/**", "desktop/**"] },
+  // client/dist-admin/** is the admin page's build (client/vite.admin.config.ts), as dist/ is the game's.
+  { ignores: ["**/dist/**", "client/dist-admin/**", "**/node_modules/**", "site/**", ".claude/worktrees/**", "client/public/libs/**", "tools/electron-spike/**", "desktop/**"] },
   ...tseslint.configs.recommended,
   {
     files: ["client/src/sim/**/*.ts"],

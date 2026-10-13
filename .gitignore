@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# The admin page's own build, for the shared admin host (client/vite.admin.config.ts).
+client/dist-admin/
 # The WGSL map the build makes from the shader corpus (tools/wgsl/build-map.mjs).
 client/shaders/map/
 site/

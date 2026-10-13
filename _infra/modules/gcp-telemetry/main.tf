@@ -30,7 +30,9 @@ terraform {
 # Its own identity, as signaling has. Writing rows to stdout needs no role;
 # the admin routes (`server/src/admin.ts`) need three, each read-only: to run
 # the saved queries as BigQuery jobs, to read the log bucket's view those
-# queries go through, and to read the open rooms from Firestore.
+# queries go through, and to read the open rooms from Firestore. Who may
+# call the routes is not a role: it is the allowlist in the service's
+# environment, below.
 resource "google_service_account" "telemetry" {
   project      = var.project_id
   account_id   = "fps-telemetry"
@@ -59,6 +61,14 @@ resource "google_bigquery_dataset_iam_member" "admin_reads_dataset" {
   role       = "roles/bigquery.dataViewer"
   member     = "serviceAccount:${google_service_account.telemetry.email}"
 }
+
+# There is nothing here for the admin routes' sign-in. The admin page lives on
+# the shared admin host (admin.csarko.sh, csarko.sh's `admin/`), and the
+# account signs in there, with Google through that project's Firebase Auth;
+# this service only verifies the ID token it is sent against Google's public
+# keys and the allowlist (`server/src/adminAuth.ts`). Both are the service's
+# environment, below: plain values, so nothing in this module needs Secret
+# Manager or any other store.
 
 resource "google_cloud_run_v2_service" "telemetry" {
   project  = var.project_id
@@ -98,12 +108,20 @@ resource "google_cloud_run_v2_service" "telemetry" {
         value = "telemetry"
       }
 
-      # The admin routes' readers, the project their tokens name, the dataset
-      # the queries read, and where the open rooms are (`server/src/index.ts`).
-      # No readers, no admin routes.
+      # The admin routes' readers, the project their ID tokens come from, the
+      # project the dataset lives in, the dataset the queries read, and where
+      # the open rooms are (`server/src/index.ts`). No readers, no admin routes.
       env {
         name  = "ADMIN_EMAILS"
         value = join(",", var.admin_emails)
+      }
+
+      # Another project than this one: the sign-in is the admin host's, so the
+      # tokens name its Firebase project, and the service trusts that issuer
+      # rather than its own (`variables.tf` says more).
+      env {
+        name  = "ADMIN_AUTH_PROJECT"
+        value = var.admin_auth_project
       }
 
       env {

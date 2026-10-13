@@ -14,9 +14,23 @@ variable "image" {
 }
 
 variable "admin_emails" {
-  description = "The accounts that may read the admin page's routes. Empty serves no admin routes."
+  description = "The accounts that may read the admin page's routes (`ADMIN_EMAILS`). Empty serves no admin routes."
   type        = list(string)
   default     = []
+}
+
+variable "admin_auth_project" {
+  description = <<-EOT
+    The Firebase project whose Auth signs the admin page's accounts in, and so
+    the issuer the admin routes trust an ID token from (`ADMIN_AUTH_PROJECT`).
+    It is another project than this one on purpose: the page lives on the
+    shared admin host, admin.csarko.sh, which is the csarko.sh repository's
+    and signs every app's visitor in once, on its own project; a token this
+    project issued would be refused. Which accounts get in is still this
+    module's `admin_emails`.
+  EOT
+  type        = string
+  default     = "csarko-sh"
 }
 
 variable "registry" {
