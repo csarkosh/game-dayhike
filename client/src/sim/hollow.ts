@@ -233,9 +233,10 @@ function speedOf(h: EnemyState): number {
  *   timer never runs, and no strafe begins (`hollowWalk.test.ts` has the
  *   trace, on `hollow18` against the car). Nothing puts a Hollow there today.
  *
- * A shade of the end (haunt.ts, `AiState.Pursue`) is the one walker the
+ * The shade of the end (haunt.ts, `AiState.Pursue`) is the one walker the
  * rule does not hold: it is meant to cross the pad after the party, so it
- * passes `woods` false, and its own stop short of the road's bed stands in.
+ * passes `woods` false; on foot its own stop short of the road's bed stands
+ * in, and once the car has pulled away it takes the road with no stop.
  *
  * Returns whether it moved (or had nowhere to move to): false is a step
  * refused at the treeline, which `followRoute` reads.

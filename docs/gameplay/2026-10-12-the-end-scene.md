@@ -46,8 +46,8 @@ car's own, so every shot frames its subject against the sky or in a lamp's beam.
 | --- | --- | --- | --- | --- |
 | 1. The run | 0 to `RUN_CUT_S` (2.5), or `A` if sooner | 24 mm | Carried by the runner: `RUN_CAM_BACK` (2.2 m) behind, `RUN_CAM_UP` (0.5 m) over their eye, `RUN_CAM_SIDE` (0.6 m) to their right, aimed past their shoulder at the door, so the car grows in the frame; the lamp on the body lights the way | the person, running |
 | 2. The pursuit | `RUN_CUT_S` to `A` | 32 mm | Locked off at the car's rear corner on the runner's side, `PURSUIT_CAM_UP` (0.7 m) up and `PURSUIT_CAM_OUT` (1.0 m) out from the corner, aimed at the runner's chest (`CHEST_M` 1.3 m over their feet) as they come at the lens, the pad, the treeline and the shade behind them in the mist; the cut on the arrival, the runner by the lens | the shadows, still coming |
-| 3. The door and the engine | `A` to `A` + `ENGINE_SHOT_S` (5.5) | 32 mm | Locked off low on the road's far shoulder, `ENGINE_CAM_UP` (0.6 m) up, `ENGINE_CAM_AHEAD` (7 m) ahead of the car along its heading, aimed at the car's nose and turning to keep it centred as it passes (the stand fixed, the aim on the nose's place each frame): the door shuts, the crank, the catch, the lamps come on, the revs, the pull-away, the car passing the lens close; beyond it the shade reaches the car's door as the engine catches, and takes the road after the car at the pull-away | the threshold, crossed back |
-| 4. The road | `A` + 5.5 to `A` + `END_SCENE_AFTER_ARRIVAL_S` (17.5) | 24 mm | Overhead: `ROAD_CAM_UP` (14 m) over the car looking straight down (`ROAD_LOOK_DOWN`, 1.55 rad, a hair short of it so the look keeps a heading) with the car's heading as its yaw, carried by the car for `ROAD_CARRY_S` (2 s), then left in the air as the car runs on from under it: over `ROAD_RELEASE_S` (1 s) the camera slows along the car's own path from the car's speed to nothing (over the car's pose at `u − u²/2` of the release, `u` the release's share run, `releaseAt`), so it comes to rest, never moving back, over where the car was half the release on (`roadRelease`), and tilting up over the shot's whole 12 s from straight down to the road ahead (`ROAD_TILT_TO` 0.06 rad down), the car's lamps small on the highway into the mist, which the shot draws back from its start (over `END_MIST_EASE_S`, 4 s, the ground cloud and the weather's mist eased to `END_MIST_FLOOR`, 0.2, of what they were, and held: `endMistShare`) so the car is not lost in it within a second of the release, the night, the rain and the cast as they were and the wind heard from the weather as it is; YOU LIVED and the line from `TITLE_AT_S` (2 s) into the shot; the dark from `END_FADE_AT_S` (10 s); the landing at `END_LANDING_AT_S` (15 s); behind the car the shade runs down the road after it, a figure in the lamps' wake | the place: the opening's wide, answered |
+| 3. The door and the engine | `A` to `A` + `ENGINE_SHOT_S` (5.5) | 32 mm | Locked off low on the road's far shoulder, `ENGINE_CAM_UP` (0.6 m) up, `ENGINE_CAM_AHEAD` (7 m) ahead of the car along its heading, aimed at the car's nose and turning to keep it centred as it passes (the stand fixed, the aim on the nose's place each frame): the door shuts, the crank, the catch, the lamps come on, the revs, the pull-away, the car passing the lens close; beyond it the shade reaches the door's side as the engine catches, and from the pull-away runs down the verge on the car's inland side, angling in, the car drawing away beside it | the threshold, crossed back |
+| 4. The road | `A` + 5.5 to `A` + `END_SCENE_AFTER_ARRIVAL_S` (17.5) | 24 mm | Overhead: `ROAD_CAM_UP` (14 m) over the car looking straight down (`ROAD_LOOK_DOWN`, 1.55 rad, a hair short of it so the look keeps a heading) with the car's heading as its yaw, carried by the car for `ROAD_CARRY_S` (2 s), then left in the air as the car runs on from under it: over `ROAD_RELEASE_S` (1 s) the camera slows along the car's own path from the car's speed to nothing (over the car's pose at `u − u²/2` of the release, `u` the release's share run, `releaseAt`), so it comes to rest, never moving back, over where the car was half the release on (`roadRelease`), and tilting up over the shot's whole 12 s from straight down to the road ahead (`ROAD_TILT_TO` 0.06 rad down), the car's lamps small on the highway into the mist, which the shot draws back from its start (over `END_MIST_EASE_S`, 4 s, the ground cloud and the weather's mist eased to `END_MIST_FLOOR`, 0.2, of what they were, and held: `endMistShare`) so the car is not lost in it within a second of the release, the night, the rain and the cast as they were and the wind heard from the weather as it is; YOU LIVED and the line from `TITLE_AT_S` (2 s) into the shot; the dark from `END_FADE_AT_S` (10 s); the landing at `END_LANDING_AT_S` (15 s); at the shot's first frame the shade is level with the car on the verge, 2 m off its inland side, the car's tail passes it 0.6 s in, and it runs on down the verge behind the car, onto the road 4.4 s in with the car 35 m ahead of it | the place: the opening's wide, answered |
 
 Every camera is in world units from the live state: the runner's body each frame (shots 1 and 2),
 the car's site and heading (shots 2 and 3) and the car's own pose as it drives (shot 4), so the same
@@ -126,9 +126,12 @@ added; the parked car, swapped for nothing, has none. With no car drawn to drive
 below), the headlamps stay at the parked car's front.
 
 **The shade** (§2) comes out of the woods and across the pad behind the runner, straight at them,
-through shots 1 and 2; during shot 3 it reaches the car's door beyond the lens as the engine
-catches, in the mist beyond the car from the far shoulder, and at the pull-away it takes the road
-after the car; in shot 4 it runs down the road behind the car, a figure in the lamps' wake. The
+through shots 1 and 2. During shot 3 it reaches the door's side beyond the lens as the engine
+catches, in the mist beyond the car from the far shoulder, and at the pull-away it runs down the
+verge on the car's inland side, angling in toward the road by one in ten, never across the car's
+nose; the car pulls away beside it. At shot 4's first frame it is level with the car, on the verge
+2 m off its inland side; the car draws away, its tail past the shade 0.6 s into the shot, and the
+shade runs on down the verge behind it and onto the road 4.4 s in, the car by then 35 m ahead. The
 line says the rest.
 
 ## 2. The pursuit (`sim/haunt.ts`, `sim/summit.ts`)
@@ -160,20 +163,33 @@ It keeps the end's timeline with the scene: `DOOR_REACH_M` (0.9 m), `RUN_MAX_S` 
 re-exports them. Its clock (`attackCooldown`, a shade's spare field) runs from the tick its player
 is in the car: within 0.9 m of the door spot, or 10 s after it rose regardless, as the scene's own
 arrival is judged. Until 2.6 s of that clock it is on foot as above, and reaches the door's side as
-the engine cranks and catches. From 2.6 s the car has pulled away: the shade takes the road and
-runs down it the way the car went (`carDirection`), at the same 5.5 m/s, with no pavement rule and
-no stop. Its aim each tick is the road's centreline `PURSUIT_AHEAD_M` (10 m) ahead of it, at that
-z (`roadOffset`), so it follows the road where it bends, and it faces the way it runs.
+the engine cranks and catches. From 2.6 s the car has pulled away: the shade runs down the road
+the way the car went (`carDirection`), at the same 5.5 m/s, with no pavement rule and no stop,
+facing the way it runs. Its aim each tick (`pursuitAim`) is `PURSUIT_AHEAD_M` (10 m) ahead of it
+along the road and `PURSUIT_IN_M` (1 m) nearer the centreline than it is, measured at the aim's z
+(`roadOffset`), never past the centreline and never further out than `PURSUIT_VERGE_U` (8.4 m, the
+door spot's offset where the road is straight, clear of the car's inland side by more than the
+shade's half-width). So from the door it runs down the verge, angling in by one in ten, and comes
+onto the road's bed behind the car rather than across its nose, following the road where it
+bends; from far out in the woods it makes for the verge first.
 
-On the test world, in a win made at the corridor's edge on the stem, the shade rises 3 m behind
-the winner; a player sprinting from there is within reach of the door 177 ticks (2.95 s) after the
-win, and the shade, never nearer the centreline than 9.39 m on foot, is within a metre of them at
-the door at 260 ticks (4.33 s). With its player at the door from its first tick, it stands at
-them until the 156th tick, takes the road at the 157th (the clock's sum a hair short of 2.6 s at
-the 156th), is on the pavement at the 206th, and runs 5.49 m down the road a second (the rest of
-its pace across, as the road bends), 120 m down it and 4 cm off the centreline when it goes. A
-player who never reaches the door is stood beside until the run's 10 s are up, and the shade takes
-the road at the 757th tick (12.6 s). It goes `PURSUIT_DWELL_S` (25 s) after it stood up.
+On the test world, in a win made at the corridor's edge on the stem, the shade rises 3 m behind the
+winner; a player sprinting from there is within reach of the door 177 ticks (2.95 s) after the win,
+and the shade, never nearer the centreline than 9.39 m on foot, is within a metre of them at the
+door at 260 ticks (4.33 s). With its player at the door from its first tick, it stands at them,
+9.36 m from the centreline, until the 156th tick, and takes the road at the 157th (the clock's sum
+a hair short of 2.6 s at the 156th). Beside the car as the scene drives it, it is never nearer its
+inland side than 0.9 m (its stand by the door, as the car begins to roll); at the road shot's first
+frame, 5.5 s after the arrival, it is 15.9 m down the road and 7.84 m from the centreline, level
+with the car (1.2 m ahead of its centre) and 2.1 m off its side, and the car's tail is past it at
+6.1 s. It is 8.37 m from the centreline 10 m down the road, 6.40 m at 30 m, past the stop's 7.9 m
+at the 324th tick, on the road's 5.5 m bed at the 595th (39 m down it, the car 35 m ahead), 0.4 m
+off the centreline at 95 m, and runs 5.44 m down the road a second as it comes in; 122 m down it
+and 6 cm off the centreline when it goes. A player who never reaches the door is stood beside until
+the run's 10 s are up, and the shade takes the road at the 757th tick (12.6 s): from 30 m out in
+the woods it makes for the verge and is past the stop's 7.9 m at the 1351st. A player who leaves
+the match leaves it standing, and it takes the road all the same when the run's time is up. It goes
+`PURSUIT_DWELL_S` (25 s) after it stood up.
 
 It is the haunt's shade in every other way: harmless (a shade kills nothing, since the Hollows'
 contact is for Hollows alone; the stare it fills is capped at `SHADE_STARE_CAP`), drawn through the
@@ -283,9 +299,9 @@ the door) becomes `stageCar(pose, model)`, which the scene route and the rendere
   `RUN_MAX_S` and `PULL_AWAY_AT_S`, so they share one clock.
 - `game/entityViews.ts`: `Pursue` drawn as a shade; `hideNear`, the bodies in the car hidden;
   `localLampAt`, the local lamp as the car's left headlamp.
-- `sim/types.ts`: `AiState.Pursue` (13). `sim/haunt.ts`: `startPursuit(world)`, the pursuit's
-  step (`stepPursuit`: on foot at its player, the stop at the pavement, the road after the car),
-  `isShadeState` including it. `sim/hollow.ts`: `walkToward`'s
+- `sim/types.ts`: `AiState.Pursue` (13). `sim/haunt.ts`: `startPursuit(world)`, the pursuit's step
+  (`stepPursuit`: on foot at its player, the stop at the pavement, the road after the car), its aim
+  down the road (`pursuitAim`), `isShadeState` including it. `sim/hollow.ts`: `walkToward`'s
   `woods` flag, and the stare's shade cap counting `Pursue`. `sim/summit.ts`: the call on the
   winning tick.
 - `game/hud.ts`: unchanged (the bars, the title, the fade). `game/passages.ts`: the win's timings
@@ -333,9 +349,12 @@ start, so a link opens on the scene; typed, neither is written back to the URL.
 - `test/sim/haunt.test.ts`, `test/sim/summitRun.test.ts`: one `Pursue` shade on the winning tick
   and none on a loss; its place at the entrance and up the stem; its walk at its player at 5.5 m/s,
   never onto the pavement, and its stand within a metre of them; the stop at the pavement; the road
-  after the pull-away, from its player at the door and from the run's cap, its pace down the road
-  and its aim; nothing killed through the scene; gone after the dwell; the state's fingerprint and
-  the snapshot carry it; the woods' Hollows counted apart from it.
+  after the pull-away, from its player at the door, from the run's cap and with its player gone:
+  down the verge, its distance from the car beside it and the tick the car's tail passes it, where
+  it is at the road shot's first frame, its offset 10, 30 and 35 m down the road, its pace and its
+  aim; `pursuitAim` on both headings and both sides of the road; nothing killed through the scene;
+  gone after the dwell; the state's fingerprint and the snapshot carry it; the woods' Hollows
+  counted apart from it.
 - `test/game/entityViews.test.ts`: `Pursue` drawn as a shade; a body within `DOOR_IN_M` of the door
   spot hidden in the scene; the local lamp kept a light, dark, from the run through the arrival
   to the catch, and the car's headlamp there.
@@ -381,11 +400,12 @@ weather's mist draw back to a fifth over four seconds (`endMistShare`), the nigh
 the cast kept, so the car's lamps carry down the highway.
 
 **The pursuit** is one shade. It rises behind the rearmost living player (3 m back up the stem
-through `groundSpawn`), walks straight at its player at 5.5 m/s, never onto the road's bed on
-foot, and stands within a metre of them; from 2.6 s after its player is in the car (or the run's
-10 s are up) it runs down the road after the car along its centreline, until it goes 25 s after it
-rose. On the test world a win at the corridor's edge has the runner 21.4 m from the door and in
-reach of it 2.95 s after the win, and the shade at them by the door at 4.33 s.
+through `groundSpawn`), walks straight at its player at 5.5 m/s, never onto the road's bed on foot,
+and stands within a metre of them; from 2.6 s after its player is in the car (or the run's 10 s are
+up) it runs down the verge after the car, angling in by one in ten, onto the road behind it and
+down its centreline, until it goes 25 s after it rose. On the test world a win at the corridor's
+edge has the runner 21.4 m from the door and in reach of it 2.95 s after the win, and the shade at
+them by the door at 4.33 s.
 
 **The car** is the film's (`intro.car`), fetched at the flip to the chase and placed over the
 parked model out of sight, its moving patch the parked patch's material. For its first frames

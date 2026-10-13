@@ -69,7 +69,8 @@ function descend(token: string): Descent {
     tickWorld(w, new Map());
     // The forks cut this tick: each newcomer stepped out of one of them, the nearest.
     const cutNow = [...w.cut!.cuts.keys()].slice(judgedBefore).map((f) => g.nodes[f]!);
-    // 2026-10-12: the winning tick stands four shades of the end up; they are not the cut's.
+    // 2026-10-12: the winning tick stands the shade of the end up; it is not the cut's.
+    // 2026-10-13: four shades before one.
     const newcomers = [...w.state.enemies.values()].slice(before).filter((e) => e.ai !== AiState.Pursue);
     for (const h of newcomers) {
       expect(h.ai, label).toBe(AiState.Emerge);
@@ -128,7 +129,8 @@ function descend(token: string): Descent {
     if (!g.forks.includes(node) || corridorForks.includes(node)) continue;
     expect(w.cut!.cuts.has(node), `seed ${token}: guide fork ${node} never cut`).toBe(true);
   }
-  // 2026-10-12: the pack is the woods'; the win's four shades of the end are not in it.
+  // 2026-10-12: the pack is the woods'; the win's shade of the end is not in it.
+  // 2026-10-13: four shades before one.
   const pack = [...w.state.enemies.values()].filter((e) => e.ai !== AiState.Pursue).length;
   return { inBand, corridorForks, pack };
 }

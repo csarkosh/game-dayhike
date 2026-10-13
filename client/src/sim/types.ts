@@ -25,10 +25,11 @@ export const enum AiState {
   /** A lunge at its player: the strike, which kills within its reach, and then it is gone. */
   Strike = 12,
   /**
-   * A shade of the end (haunt.ts `startPursuit`): stood up at the trail's
-   * entrance on the winning tick, it walks after the party to the car's door,
-   * stops short of the road's bed, faces the car, and is gone after its dwell.
-   * Harmless, as a shade is.
+   * The shade of the end (haunt.ts `startPursuit`): stood up behind the party
+   * on the winning tick, it walks straight at its player, never onto the
+   * pavement on foot; once its player is in the car and the car has gone, it
+   * runs down the road after it; gone after its dwell. Harmless, as a shade
+   * is.
    */
   Pursue = 13,
 }
