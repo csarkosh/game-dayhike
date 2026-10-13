@@ -50,7 +50,8 @@ export function table(columns: Column[], rows: Record<string, unknown>[], empty 
       }),
     ),
   );
-  return el("table", {}, el("thead", {}, head), el("tbody", {}, ...body));
+  // In a wrapper that scrolls sideways on its own, so a wide table never widens the page.
+  return el("div", { class: "table-wrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, ...body)));
 }
 
 /** The table view behind a chart, folded. */

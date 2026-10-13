@@ -57,7 +57,9 @@ button { font: inherit; }
 .filters button[aria-pressed="true"] { border-color: var(--series); background: var(--series-soft); font-weight: 600; }
 .filters button:hover { background: var(--series-soft); }
 
-.grid { display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
+/* minmax(0, 1fr), not 1fr: a bare 1fr track cannot shrink below its content, so a wide
+   table in a half-width card pushed the page past the viewport (seen 2026-10-13). */
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(12, minmax(0, 1fr)); }
 .card { grid-column: span 12; background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 16px 18px 14px; min-width: 0; }
 .card.half { grid-column: span 6; }
 .card.third { grid-column: span 4; }
@@ -99,10 +101,13 @@ button { font: inherit; }
 .funnel .fill { height: 20px; border-radius: 0 4px 4px 0; }
 .funnel .n { text-align: right; }
 
+/* A table never widens the page: its cells wrap, and what still does not fit scrolls
+   inside its own wrapper (`charts.ts`, table()). */
+.table-wrap { max-width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
-th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; overflow-wrap: anywhere; }
 th { color: var(--faint); font-weight: 500; font-size: 12px; }
-td.num, th.num { text-align: right; }
+td.num, th.num { text-align: right; white-space: nowrap; }
 td.when { white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
 td .mono { font-family: var(--mono); font-size: 12px; }
