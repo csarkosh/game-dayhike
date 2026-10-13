@@ -334,7 +334,8 @@ export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: b
  * Where a shade of the end rises near (x, z): standing on the ground there
  * (`groundSpawn`), or failing that 1 or 2 m to either side across the way
  * (ax, az), so none starts in a trunk or a boulder's box; where none of those
- * stands clear, on the ground's height at (x, z) all the same.
+ * stands clear, on the ground's height at (x, z) all the same, which can
+ * still, rarely, start one in a box (the movement step pushes it out).
  */
 function pursuitPlace(world: World, ground: NonNullable<World["ground"]>, x: number, z: number, ax: number, az: number): Vec3 {
   if (world.forest !== null) {
@@ -352,17 +353,20 @@ const PURSUIT_SIDESTEPS: readonly number[] = [0, 1, -1, 2, -2];
  * (summit.ts): PURSUIT_SHADES shades of the end stand up behind the party, on
  * the stem up from the living player furthest up it (the rearmost, who was
  * last to reach the corridor), PURSUIT_BEHIND_M behind them and
- * PURSUIT_APART_M apart from there, so every shade starts further from the
- * car than any winner. With every living player on the pad itself, short of
- * the trail's entrance, they stand up at the entrance and back along the
- * stem's first edge, PURSUIT_APART_M apart. Each faces the living player
- * nearest it (ties to the lower id), which is all its `targetId` is for.
- * Each walks to its own stop (kept in `emergeTo`): the car's door spot
- * (`doorSpot`) moved PURSUIT_SPREAD_M along the road the way the car's tail
- * points for the first, and as much again for each after it, so the door
- * itself stays the runner's and they stand in a file along the car's inland
- * flank and behind it. Nothing without a trail, a ground, the car or a
- * living player.
+ * PURSUIT_APART_M apart from there, so every shade starts further up the
+ * stem than any winner (a winner who reached the corridor away from the stem
+ * is placed by their nearest point on it). Where every living player's
+ * nearest point on the stem is at or below the trail's entrance, they stand
+ * up at the entrance and back along the stem's first edge, PURSUIT_APART_M
+ * apart. Each faces the living player nearest it (ties to the lower id),
+ * which is all its `targetId` is for. Each walks to its own stop (kept in
+ * `emergeTo`): the car's door spot (`doorSpot`, 1.5 m from the car's centre,
+ * 0.6 m past its side) moved PURSUIT_SPREAD_M along the road the way the
+ * car's tail points for the first, and as much again for each after it, each
+ * as far from the road's centreline at its own z as the door is at the
+ * door's, so the door itself stays the runner's and they stand in a file
+ * along the car's inland flank and behind it, bend or no bend. Nothing
+ * without a trail, a ground, the car or a living player.
  */
 export function startPursuit(world: World): void {
   const graph = world.trail;
@@ -372,6 +376,7 @@ export function startPursuit(world: World): void {
   const car = search.car;
   const direction = carDirection(car, graph.trailhead);
   const door = doorSpot(car, direction);
+  const doorU = roadOffset(world, door.x, door.z);
   const e = trailEntrance(graph);
   // The rearmost living player: least stem progress (1 at the pad, 0 at the crest), ties to the lower id.
   let rear: PlayerState | null = null;
@@ -406,7 +411,11 @@ export function startPursuit(world: World): void {
       if (sq < bestSq || (sq === bestSq && target !== null && p.id < target.id)) { bestSq = sq; target = p; }
     }
     if (target === null) return;
-    const stop: Vec3 = { x: door.x, y: 0, z: door.z - direction * PURSUIT_SPREAD_M * (k + 1) };
+    // At the door's own distance from the centreline, measured at the stop's z: the road may bend.
+    const sz = door.z - direction * PURSUIT_SPREAD_M * (k + 1);
+    const here = roadOffset(world, door.x, sz);
+    const sx = here === null || doorU === null ? door.x : door.x - (here - doorU);
+    const stop: Vec3 = { x: sx, y: 0, z: sz };
     addShade(world, pursuitPlace(world, ground, x, z, ax, az), target, AiState.Pursue, PURSUIT_DWELL_S, stop);
   }
 }

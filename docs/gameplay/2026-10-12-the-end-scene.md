@@ -115,28 +115,33 @@ the rest.
 On the tick the outcome becomes `Won`, the host stands up `PURSUIT_SHADES` (4) shades of a new
 kind, `AiState.Pursue`, behind the party: on the stem up from the living player furthest up it
 (the rearmost, last to reach the corridor), `PURSUIT_BEHIND_M` (3 m) behind them and
-`PURSUIT_APART_M` (4 m) apart from there, so every shade starts further from the car than any
-winner. Where every living player stands on the pad itself, short of the trail's entrance, they
-stand up at the entrance and back along the stem's first edge, 4 m apart. Each place is one a hull
-stands clear on (`groundSpawn`), or 1 or 2 m to a side of it, so none starts in a trunk or a
-boulder's box. Each faces the living player nearest it as it rises; nothing else reads that.
+`PURSUIT_APART_M` (4 m) apart from there, so every shade starts further up the stem than any
+winner (a winner who reached the corridor away from the stem is placed by their nearest point on
+it). Where every living player's nearest point on the stem is at or below the trail's entrance,
+they stand up at the entrance and back along the stem's first edge, 4 m apart. Each place is one a
+hull stands clear on (`groundSpawn`), or 1 or 2 m to a side of it, so none starts in a trunk or a
+boulder's box; where none of those is clear, the bare ground's height there, which can still,
+rarely, start one in a box. Each faces the living player nearest it as it rises; nothing else
+reads that.
 
-They walk after the party (the party is at the car or on its way there), each to a stop of its
-own: the car's door spot (`doorSpot`, §1) moved `PURSUIT_SPREAD_M` (1.8 m) along the road the way
-the car's tail points for the first, and as much again for each after it, so the door itself stays
-the runner's. They walk at `PURSUIT_SPEED` (5.5 m/s, under a sprint's 7), on the ground. The
-Hollow's treeline does not hold them (`walkToward` with `woods` false): they cross the pad. Within
-`PURSUIT_ARRIVE_M` (1 m) of its stop a shade stands, so it does not tread back and forth over it;
-and a step toward the road that would end nearer the centreline than `PURSUIT_STOP_U`
+They walk after the party (the party is at the car or on its way there), each to a stop of its own:
+the car's door spot (`doorSpot`, §1) moved `PURSUIT_SPREAD_M` (1.8 m) along the road the way the
+car's tail points for the first, and as much again for each after it, each as far from the road's
+centreline at its own z as the door is at the door's, so the door itself stays the runner's and the
+file follows the road where it bends. They walk at `PURSUIT_SPEED` (5.5 m/s, under a sprint's 7), on
+the ground. The Hollow's treeline does not hold them (`walkToward` with `woods` false): they cross
+the pad. Within `PURSUIT_ARRIVE_M` (1 m) of its stop a shade stands, so it does not tread back and
+forth over it; and a step toward the road that would end nearer the centreline than `PURSUIT_STOP_U`
 (`ROAD_WALL_U` + 1.5 m, 7.9 m) is not taken, the pavement being the one ground they never cross (a
 step away from the road is always taken). Stopped either way, the sim turns them to the car; every
-screen draws a shade turned to its own eye, as it draws every shade. At the car the stops are 1.5 m
-inland of its side, 8.4 m from the centreline on a road straight there, inland of the stop at the
-pavement, so the shades stand in a loose file along the car's inland flank and back past its tail
-(on the test world 1.7 to 1.8 m apart at rest, about 9.4 m from the centreline); the stop at the
-pavement holds wherever the way to a stop would cross it. In a win made at the corridor's edge on
-the stem, the first shade is at its stop 4.4 s after the win on the test world, where a runner from
-the winner's place is at the door in 3.1 s. They go `PURSUIT_DWELL_S` (25 s) after they stood up.
+screen draws a shade turned to its own eye, as it draws every shade. The door spot is 1.5 m from the
+car's centre (0.6 m past its side), 8.4 m from the centreline where the road is straight at the car
+(8.44 m on the test world, where it bends), inland of the stop at the pavement, so the shades stand
+in a loose file along the car's inland flank and back past its tail (on the test world 1.7 to 1.8 m
+apart at rest, 9.37 to 9.40 m from the centreline); the stop at the pavement holds wherever the way
+to a stop would cross it. In a win made at the corridor's edge on the stem, the first shade is at
+its stop 4.35 s after the win on the test world, where a runner from the winner's place is at the
+door in 3.06 s. They go `PURSUIT_DWELL_S` (25 s) after they stood up.
 
 They are the haunt's shades in every other way: harmless (a shade kills nothing, since the Hollows'
 contact is for Hollows alone; the stare they fill is capped at `SHADE_STARE_CAP`), drawn through the
