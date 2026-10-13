@@ -4,8 +4,8 @@ import {
 } from "../../src/game/lensParams.js";
 
 describe("the lens's numbers", () => {
-  it("is a 128-texel map of 40 drops of 2 to 5 percent, tiled twice, refracting by 0.012, smoothed over a second, floored at 0.02", () => {
-    expect(LENS).toEqual({ size: 128, drops: 40, radius: [0.02, 0.05], tiles: 2, offset: 0.012, columns: 8, jitter: 0.05, smoothS: 1, floor: 0.02 });
+  it("is a 128-texel map of 40 drops of 2 to 5 percent, tiled twice, refracting by 0.012, smoothed over a second, floored at 0.02, 60 percent looking ahead", () => {
+    expect(LENS).toEqual({ size: 128, drops: 40, radius: [0.02, 0.05], tiles: 2, offset: 0.012, columns: 8, jitter: 0.05, smoothS: 1, floor: 0.02, ahead: 0.6, ramp: [0.2, -0.3] });
   });
 });
 
@@ -101,25 +101,23 @@ describe("smoothstep", () => {
 
 describe("lensStrengthUnder", () => {
   it("is nothing without rain", () => {
-    expect(lensStrengthUnder(0, -1, 0)).toBe(0);
-    expect(lensStrengthUnder(0, 0, 0)).toBe(0);
+    expect(lensStrengthUnder(0, -1)).toBe(0);
+    expect(lensStrengthUnder(0, 0)).toBe(0);
   });
 
-  it("is full looking up into the rain, a quarter looking down, and 11/36 looking ahead", () => {
-    expect(lensStrengthUnder(1, -0.5, 0)).toBe(1);
-    expect(lensStrengthUnder(1, -1.5, 0)).toBe(1);
-    expect(lensStrengthUnder(1, 0.1, 0)).toBe(0.25);
-    expect(lensStrengthUnder(1, 1.5, 0)).toBe(0.25);
-    expect(lensStrengthUnder(1, 0, 0)).toBeCloseTo(0.3055555555555556, 12);
+  it("is full looking up into the rain by 0.3 rad, 60 percent looking down past 0.2 rad, and 74 percent looking ahead", () => {
+    expect(lensStrengthUnder(1, -0.3)).toBe(1);
+    expect(lensStrengthUnder(1, -1.5)).toBe(1);
+    expect(lensStrengthUnder(1, 0.2)).toBeCloseTo(0.6, 12);
+    expect(lensStrengthUnder(1, 1.5)).toBeCloseTo(0.6, 12);
+    expect(lensStrengthUnder(1, 0.1)).toBeCloseTo(0.6416, 12);
+    expect(lensStrengthUnder(1, 0)).toBeCloseTo(0.7408, 12);
   });
 
-  it("scales with the rain, clamped, and the canopy keeps 65 percent off the glass", () => {
-    expect(lensStrengthUnder(0.5, -0.5, 0)).toBe(0.5);
-    expect(lensStrengthUnder(2, -0.5, 0)).toBe(1);
-    expect(lensStrengthUnder(1, -0.5, 1)).toBeCloseTo(0.35, 12);
-    expect(lensStrengthUnder(1, -0.5, 2)).toBeCloseTo(0.35, 12);
-    expect(lensStrengthUnder(1, -0.5, 0.5)).toBeCloseTo(0.675, 12);
-    expect(lensStrengthUnder(1, 0, 1)).toBeCloseTo(0.10694444444444445, 12);
+  it("scales with the rain, clamped, and takes no canopy: the rain falls whole under the trees", () => {
+    expect(lensStrengthUnder(0.5, -0.5)).toBe(0.5);
+    expect(lensStrengthUnder(2, -0.5)).toBe(1);
+    expect(lensStrengthUnder.length).toBe(2);
   });
 });
 

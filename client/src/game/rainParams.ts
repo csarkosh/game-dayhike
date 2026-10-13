@@ -73,10 +73,16 @@ export const RAIN_SLANT = 3;
  * the alpha a drop on the lamp's axis gains at `1 / (1 + d²)`: 1 at 1 m,
  * 0.2 at 3 m. Higher, and the drops nearest the eye are solid bars. */
 export const RAIN_LAMP_GAIN = 0.005;
-/** The frame duration the streak length reads is smoothed over this many
- * frames and clamped to this range, seconds. */
+/** The frame duration the streak length reads is smoothed over this many frames. */
 export const RAIN_DT_FRAMES = 10;
-export const RAIN_DT: readonly [number, number] = [1 / 120, 1 / 30];
+/** And clamped to this range, seconds.
+ * The floor is the eye's own persistence, not the frame's: a streak is what
+ * the eye holds of a falling drop over about a fortieth of a second, so a
+ * faster frame rate makes no shorter streak (as first built the floor was a
+ * 120th, and at 120 Hz every class sat on the length's 8 cm floor, which
+ * read as a sparse drizzle on a fast machine and as rain on a slow one;
+ * amended 2026-10-13). The cap is where a stall stops stretching a streak. */
+export const RAIN_DT: readonly [number, number] = [1 / 40, 1 / 30];
 
 /** Positive modulo. */
 function fract(v: number): number {

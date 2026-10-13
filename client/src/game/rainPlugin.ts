@@ -27,7 +27,10 @@
  * Under `RAIN_OCCLUSION` (set while a cover map is bound, `occlusion`), the
  * vertex stage reads the map (`rainMap.ts`) once at the drop's xz: a drop
  * below the texel's height plus its lift is under cover, and the alpha is
- * multiplied by the texel's transmission. The read is a plain `texture2D` in
+ * multiplied by the texel's transmission where the cover is hard (a prop, a
+ * cliff: no lift); under the canopy (the lift marks it) the streaks fall
+ * whole, since the rain is meant to read as heavy under the trees as in the
+ * open (amended 2026-10-13). The read is a plain `texture2D` in
  * the vertex stage, as Babylon's own bone texture is read: no derivatives, so
  * the base level, and Babylon's migration turns it into `texture()`. A drop
  * outside the map is uncovered.
@@ -130,7 +133,7 @@ const RAIN_VERTEX_POSITION = `
 #ifdef RAIN_DRIP
   rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;
 #else
-  rCover = mix(1.0, rMap.g, rCovered);
+  rCover = mix(1.0, max(rMap.g, step(0.5, rMap.b)), rCovered);
 #endif
 #else
 #ifdef RAIN_DRIP
