@@ -29,9 +29,10 @@ import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./sta
 import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import {
   DOOR_IN_M, HEADLAMP_CONE, HEADLAMP_RANGE, TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_COLOUR, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W,
-  PULL_AWAY_AT_S, arrived, carSpeed, endCar, endShot, endShotIndex, headlampAt, roadRelease, type EndShotContext, type LampAim,
+  arrived, carDistance, carSpeed, endCar, endShot, endShotIndex, headlampAt, roadRelease, type EndShotContext, type LampAim,
 } from "./endScene.js";
 import { CATCH_AT_S } from "./carAudio.js";
+import { CAR_HALF } from "../sim/trailhead.js";
 import type { CarPose } from "./scene/timeline.js";
 import type { Road } from "./scene/roadPath.js";
 import { stageCar } from "./scene/sceneStage.js";
@@ -2196,7 +2197,7 @@ function buildRenderer(
     tails: { meshes: Mesh[]; material: StandardMaterial } | null;
     /** The car standing parked, where its lamps stay when there is no model to drive. */
     parked: CarPose;
-    /** The car last taken out of the rain's cover, at the pull-away. */
+    /** The car last taken out of the rain's cover, once clear of its footprint. */
     left: TrailheadCar | null;
   } | null = null;
   /** The summit scene, while it plays: when it began, the eye it began from, and the body it looks at. */
@@ -2239,8 +2240,10 @@ function buildRenderer(
         handle.root.position.set(car.x, car.y, car.z);
         handle.root.rotation.y = car.yaw;
       }
-      if (after >= PULL_AWAY_AT_S && e.left !== handle) {
+      // Clear of its own footprint, it is no roof over the pad: out of the cover, and the map drawn again.
+      if (carDistance(after) >= 2 * CAR_HALF.z && e.left !== handle) {
         handle.leave();
+        rainMap?.redraw();
         e.left = handle;
       }
     }

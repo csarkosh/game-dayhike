@@ -994,9 +994,11 @@ function buildGame(
     if (cryOver) cryPending = false;
     // The find: the frame the phase flips, the scene begins on this screen.
     const chaseNow = state.phase !== Phase.Climb;
-    if (chaseNow && !wasChase) {
-      // The film's car for the end, fetched while the car is far off and out of sight.
-      requestFilmCar();
+    // The film's car for the end, fetched while the car is far off and out of sight.
+    if (chaseNow && !wasChase) requestFilmCar();
+    // A flip first read with the match already decided (a follower's snapshot that carries the
+    // phase and the win together, a tab back from hidden) has no find to show: the end scene's.
+    if (chaseNow && !wasChase && state.outcome === Outcome.Playing) {
       sceneUntil = performance.now() + SUMMIT_SCENE_S * 1000;
       sceneKind = "summit";
       // The scene's sound takes the frame: a line still up or on its way is cut.
@@ -2388,7 +2390,8 @@ function buildGame(
   async function lowerTier(): Promise<void> {
     if (governor === null) return;
     const decision = governorDecision(governor.verdict, tier, tierSource);
-    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null) return;
+    // Nor under the end scene, the console's look at it too: a renderer built anew would have no scene.
+    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null || endRunDoor !== null) return;
     lowering = true;
     let done: () => void = () => undefined;
     void serial.track(new Promise<void>((resolve) => (done = resolve)));

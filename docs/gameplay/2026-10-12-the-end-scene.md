@@ -50,19 +50,18 @@ car's own, so every shot frames its subject against the sky or in a lamp's beam.
 | 4. The road | `A` + 5.5 to `A` + `END_SCENE_AFTER_ARRIVAL_S` (17.5) | 24 mm | Overhead: `ROAD_CAM_UP` (14 m) over the car looking straight down (`ROAD_LOOK_DOWN`, 1.55 rad, a hair short of it so the look keeps a heading) with the car's heading as its yaw, carried by the car for `ROAD_CARRY_S` (2 s), then left in the air (eased over `ROAD_RELEASE_S` 1 s from the carried place to where the car was at the release) as the car runs on from under it, and tilting up over the shot's whole 12 s from straight down to the road ahead (`ROAD_TILT_TO` 0.06 rad down), the car's lamps small on the highway into the mist; YOU LIVED and the line from `TITLE_AT_S` (2 s) into the shot; the dark from `END_FADE_AT_S` (10 s); the landing at `END_LANDING_AT_S` (15 s) | the place: the opening's wide, answered |
 
 Every camera is in world units from the live state: the runner's body each frame (shots 1 and 2),
-the car's site and heading (shots 2 and 3) and the car's own pose as it drives (shot 4), so the
-same function serves a test with a straight road and a hike with a bend in it. The conventions
-are the free camera's: yaw 0 faces +z, positive pitch looks down. `endShot(t, ctx)` gives the
-camera, its lens and which shot (0 to 3, the run to the road); `endBeats(t, arrival)` the beats
-below as a record a test can read. Shot 1 is aimed at the door spot at the runner's eye height;
-shot 2's standpoint is out from the corner toward where the runner was on the pursuit's first
-frame, held from there (`pursuitFrom`, which the renderer fills at the cut), kept to the quarter
-away from the car, inland and back the way it faces, so it never stands in the car's box (on the
-diagonal out of the corner where that quarter has nothing toward the runner, as for one who came
-along the road from ahead); shot 3 stands on the
-far shoulder at the road's centreline less `CAR_ROAD_U`, the car's own offset mirrored, and aims
-at the car's nose `ENGINE_AIM_UP` (0.5 m) over its ground. Past the scene's end the last pose
-holds.
+the car's site and heading (shots 2 and 3) and the car's own pose as it drives (shot 4), so the same
+function serves a test with a straight road and a hike with a bend in it. The conventions are the
+free camera's: yaw 0 faces +z, positive pitch looks down. `endShot(t, ctx)` gives the camera, its
+lens and which shot (0 to 3, the run to the road); `endBeats(t, arrival)` the beats below as a
+record a test can read. Shot 1 is aimed at the door spot at the runner's eye height; shot 2's
+standpoint is out from the corner toward where the runner was on the pursuit's first frame, held
+from there (`pursuitFrom`, which the renderer fills at the cut), kept to the quarter away from the
+car, inland and back the way it faces, so it never stands in the car's box (on the diagonal out of
+the corner where that quarter has nothing toward the runner, as for one who came along the road from
+ahead); shot 3 stands on the far shoulder at the road's centreline less `CAR_ROAD_U`, the car's own
+offset mirrored, and aims at the car's nose `ENGINE_AIM_UP` (0.5 m) over its ground. Past the
+scene's end the last pose holds.
 
 **The run.** From the win's first frame on this screen, the controls are the scene's (`app.ts`, as
 the summit's threshold drives them): the command is a sprint toward the door spot, the yaw to it,
@@ -95,28 +94,29 @@ ground's own height, its wheels spinning with the distance and its front wheels 
 road. Its heading is the parked car's square yaw until it moves; over the lane change it turns
 onto the road's own heading and is angled across by the change itself (the arctangent of the
 lane's slope, 0 at either end of it), so it pulls out of the shoulder rather than sliding off it.
-The soft dark patch rides under it. At the pull-away it leaves the rain's cover (`leave()`), and
-through the scene the cover map follows the camera, not the player in the car, so the map is
-drawn again as the camera goes and the rain falls once more on the pad the car left.
+The soft dark patch rides under it. Once clear of its own footprint (`2 · CAR_HALF.z`, 4.6 m on,
+1.6 s past the pull-away) it leaves the rain's cover (`leave()`) and the cover map is drawn again
+where it stands (`redraw()`), so the rain falls once more on the pad the car left, in the engine
+shot as after it; through the scene the map follows the camera, not the player in the car.
 
 **The lamps.** At the catch two lamps come on at the car's front, the bodies' own kind
 (`lampParams.ts`) at a wider cone and a longer reach (`HEADLAMP_CONE` 1.9 rad, `HEADLAMP_RANGE`
 60 m), `HEADLAMP_APART` (1.2 m) apart at its nose and `HEADLAMP_UP` (0.7 m) up, aimed ahead and
 `HEADLAMP_DOWN` (0.1 rad) down, at the tuned lamp's level and colour with no dread in it, so the
-road ahead is lit and the wet ground reflects them. They are no new lights: every material binds
-two lights and one a player at most, so the car's are the two this screen already has, the lamp on
-the lens (freed from the camera, its right lamp) and the local body's (`views.localLampAt`, its
-left), which the scene has no other use for once the runner is in. In a party of five the local
-body's lamp, made again at the catch and last of the scene's lights, is the eighth light against
-a cap of seven, and lights nothing: the car has one lamp there, as the summit's shots have the
-same count. And two tail lamps, small red
-quads at the rear (`TAIL_LAMP_W` 0.25 by `TAIL_LAMP_H` 0.1 m, `TAIL_LAMP_COLOUR` (1, 0.08, 0.04),
-unlit, emissive alone, casting nothing), `TAIL_LAMP_UP` (0.75 m) up, `TAIL_LAMP_APART` (1.4 m)
-apart and `TAIL_LAMP_BACK` (2.2 m) behind the car's centre, children of its root, so the car can be
-followed down the highway in the last shot; made as the scene begins and hidden to the catch, so
-their shader is compiled on the scene's first frame and not in the engine shot. The film's car has
-no lamp meshes of its own (its meshes are not named by part), so the quads are added. With no car
-drawn to drive (its box alone, below), the lamps stay at the parked car's front.
+road ahead is lit and the wet ground reflects them. They are no new lights: every material binds two
+lights and one a player at most, so the car's are the two this screen already has, the lamp on the
+lens (freed from the camera, its right lamp) and the local body's (`views.localLampAt`, its left),
+which the scene has no other use for once the runner is in. In a party of five the local body's
+lamp, made again at the catch and last of the scene's lights, is the eighth light against a cap of
+seven, and lights nothing: the car has one lamp there, as the summit's shots have the same count.
+And two tail lamps, small red quads at the rear (`TAIL_LAMP_W` 0.25 by `TAIL_LAMP_H` 0.1 m,
+`TAIL_LAMP_COLOUR` (1, 0.08, 0.04), unlit, emissive alone, casting nothing), `TAIL_LAMP_UP` (0.75 m)
+up, `TAIL_LAMP_APART` (1.4 m) apart and `TAIL_LAMP_BACK` (2.2 m) behind the car's centre, children
+of its root, so the car can be followed down the highway in the last shot; made as the scene begins
+and hidden to the catch, so their shader is compiled on the scene's first frame and not in the
+engine shot. The film's car has no lamp meshes of its own (its meshes are not named by part), so the
+quads are added. With no car drawn to drive (its box alone, below), the lamps stay at the parked
+car's front.
 
 **The shades** (§2) come down the trail and across the pad behind the runner through shots 1 and
 2, reach the car during shot 3 and stand in a file along its inland flank and back past its tail,
@@ -299,8 +299,9 @@ no pursuit (the sim is not touched), and leaves the screen dark at its end, with
   spot hidden in the scene; the local lamp as the car's headlamp.
 - `test/game/rendererEndScene.test.ts`: the scene's first frame (the camera, the lens, the body
   drawn, the lens's lamp off), the arrival (the body hidden, the engine shot), the car driven, the
-  rain's cover left at the pull-away, the headlamps and the tail lamps at the catch, the rain lit
-  from the headlamp where it stands; the lamps held at the parked car with its box alone.
+  rain's cover left once the car is clear of its footprint, the headlamps and the tail lamps at the
+  catch, the rain lit from the headlamp where it stands; the lamps held at the parked car with its
+  box alone.
 - `test/game/scene/sceneStage.test.ts`: `stageCar` called on its own.
 - `test/game/trailheadMeshes.test.ts`: `swapCar` over the parked model and before it, the patch
   riding the new root, a second car refused, `leave()`, and the disposal.

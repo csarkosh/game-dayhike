@@ -77,6 +77,12 @@ describe("the renderer's end scene", () => {
     expect(r.views.hideNear).toEqual({ x: 8.4, z: 0.5, radius: 1.2 });
     expect(left).toBe(0);
 
+    // Pulled away, 1.75 m on, still over its own footprint: still the rain's cover.
+    now = 9600;
+    r.sync(world.state, 1, 0, { dt: 0.016, sprinting: false });
+    expect(r.endScene()!.car.z).toBeCloseTo(1.75, 9);
+    expect(left).toBe(0);
+
     // Past the catch, 4.6 s after the arrival: the car 7 m down the road, the lens's lamp its right headlamp.
     now = 10600;
     r.sync(world.state, 1, 0, { dt: 0.016, sprinting: false });
@@ -93,7 +99,7 @@ describe("the renderer's end scene", () => {
     expect([rainLamp.dx, rainLamp.dy, rainLamp.dz]).toEqual([lens.direction.x, lens.direction.y, lens.direction.z]);
     expect(rainLamp.angle).toBe(1.9);
     expect(r.views.localLampAt?.angle).toBe(1.9);
-    // Gone from the rain's cover from the pull-away, once.
+    // Gone from the rain's cover once clear of its footprint, once.
     expect(left).toBe(1);
     expect(tails.map((m) => m.parent)).toEqual([root, root]);
     expect(tails.map((m) => m.isEnabled())).toEqual([true, true]);

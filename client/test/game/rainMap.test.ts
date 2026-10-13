@@ -114,6 +114,23 @@ describe("createRainMap", () => {
     map.dispose();
   });
 
+  it("draws again where it stands on the update after a redraw, once, though it has not moved", () => {
+    const s = scene();
+    const map = createRainMap(s, "high") as RainMap;
+    const t = map.texture;
+    map.update({ x: 10, y: 5, z: -20 });
+    expect(t._shouldRender()).toBe(true);
+    expect(t._shouldRender()).toBe(false);
+    map.redraw();
+    expect(map.update({ x: 12, y: 5, z: -20 })).toBe(true);
+    expect(map.centre).toEqual({ x: 10, y: 5, z: -20 });
+    expect(t._shouldRender()).toBe(true);
+    expect(t._shouldRender()).toBe(false);
+    expect(map.update({ x: 12, y: 5, z: -20 })).toBe(false);
+    expect(t._shouldRender()).toBe(false);
+    map.dispose();
+  });
+
   it("registers a mesh into the render list with its kind's material for the map's pass, and takes it out again", () => {
     const s = scene();
     const map = createRainMap(s, "high") as RainMap;
