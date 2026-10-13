@@ -34,9 +34,30 @@ describe("the title scene", () => {
     expect(Math.sin(c.yaw)).toBeGreaterThan(0);
   });
 
-  it("glides over the forest, well above the ground", () => {
+  it("drifts across the meadow from its rim at eye height, toward the peak", () => {
+    const from = camAt(world, 7);
+    const to = camAt(world, 13.999);
+    // The rim on the side away from the peak: 40 m from the centre, back along the start-to-peak line.
+    expect(Math.hypot(from.x - 400, from.z - 200)).toBeCloseTo(40, 6);
+    expect(from.x).toBeCloseTo(364.54, 2);
+    expect(from.z).toBeCloseTo(181.49, 2);
+    // Looking along that line, at the far rim.
+    expect(from.yaw).toBeCloseTo(1.0896, 4);
+    expect(to.yaw).toBeCloseTo(1.0896, 4);
+    expect(from.y - world.ground(from.x, from.z)).toBeCloseTo(2.5, 6);
+    // The drift holds its height while the test world's ground rises 0.1 m a metre under it.
     for (let t = 7; t < 14; t += 0.5) {
       const c = camAt(world, t);
+      expect(c.y - world.ground(c.x, c.z)).toBeGreaterThan(1);
+      expect(c.y - world.ground(c.x, c.z)).toBeLessThan(3);
+    }
+    expect(Math.hypot(to.x - from.x, to.z - from.z)).toBeCloseTo(11.998, 3);
+    expect(Math.hypot(to.x - 400, to.z - 200)).toBeLessThan(Math.hypot(from.x - 400, from.z - 200));
+  });
+
+  it("glides over the forest, well above the ground, where the world has no meadow", () => {
+    for (let t = 7; t < 14; t += 0.5) {
+      const c = camAt({ ...world, meadow: null }, t);
       expect(c.y - world.ground(c.x, c.z)).toBeGreaterThan(30);
     }
   });

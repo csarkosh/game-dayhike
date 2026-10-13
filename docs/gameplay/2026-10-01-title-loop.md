@@ -38,9 +38,11 @@ takes the bandwidth back the moment it is pressed.
 A second scene beside the intro on the scene route: `/dayhike/scene/title`, with the same
 `window.dayhikeScene` (`seek`, `frame`, `time`, `ready`, `engine`) the intro has.
 
-**Setting.** The intro's world (`hollow`), so the place in the title, the film and the hike is one
-place; the `overcast` weather (cloud 0.8, mist 0.25), so the coast, the hills and the summit stand
-in a soft grey light with distant haze; one afternoon hour, held, so the light never changes across
+**Setting.** The world `ash` (amended 2026-10-13: the intro's world `hollow`, the first title's,
+has had no lake and no meadow since the valley lakes took their true outlines, so the tour moved to
+a world with every feature it shows, a cove between its headlands, a meadow and a lake with its
+marsh on the trail's way up, and a bare rock summit); the `overcast` weather (cloud 0.8, mist
+0.25), so the coast, the hills and the summit stand in a soft grey light with distant haze; one afternoon hour, held, so the light never changes across
 the loop (the hour is set at the look). No people, no moving car, no captions, no wildlife: the
 trailhead is drawn as a hike finds it, its car parked out of every shot.
 
@@ -51,7 +53,7 @@ intro finds the trailhead, so it lands on every world the scene is built from:
 | # | What | The camera |
 | --- | --- | --- |
 | 1 | The coast | Low over the sea, drifting toward the pebble cove between its headlands, the road and the forest's edge above it. The loop's first frame and the title still: open sea and sky where the page sets its title and buttons. |
-| 2 | Over the forest | A slow glide just above the canopy, toward the hills. |
+| 2 | The meadow | A slow drift across the meadow from its rim at a walker's eye height, the grass and the flowers in front and the forest's edge beyond, toward the peak (amended 2026-10-13; a world with no meadow keeps the glide just above the canopy toward the hills). |
 | 3 | The lake | A slow pan across the trail's lake, its water and its shore; its marsh end in view where the lake lies low. |
 | 4 | The trailhead | A slow rise from the trail's mouth and the board up to the forest it leads into. |
 | 5 | The summit | A slow push toward the peak rising out of the haze. |

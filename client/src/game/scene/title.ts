@@ -1,10 +1,9 @@
 /**
- * The title loop's scene: five slow shots of the film's world in overcast haze, end to end, recorded
- * and joined by dissolves into the title page's 30 s loop (`docs/gameplay/2026-10-01-title-loop.md`
+ * The title loop's scene: five slow shots of a world in overcast haze, end to end, recorded and
+ * joined by dissolves into the title page's 30 s loop (`docs/gameplay/2026-10-01-title-loop.md`
  * §2). A pure function of the world's places; no people, no car, no captions.
  */
 import { WEATHER_PRESETS } from "../weather.js";
-import { INTRO_SEED_TOKEN } from "./intro.js";
 import { cutList, drift, holdLookingAt, type Cut, type Look } from "./shots.js";
 import type { Scene } from "./timeline.js";
 
@@ -15,8 +14,10 @@ export const TITLE_SHOTS: readonly { from: number; to: number }[] = [
 /** One afternoon hour, held: the light never changes across the loop. */
 export const TITLE_HOUR = 15;
 export const TITLE_WEATHER = WEATHER_PRESETS.overcast;
-/** The film's world: the place in the title, the film and the hike is one place. */
-export const TITLE_SEED_TOKEN = INTRO_SEED_TOKEN;
+/** The title's world: one with every feature the tour shows, a cove between its headlands, a
+ * meadow and a lake with its marsh on the trail's way up, and a bare rock summit. The intro's own
+ * world has no lake and no meadow. */
+export const TITLE_SEED_TOKEN = "ash";
 
 export type TitleWorld = {
   ground(x: number, z: number): number;
@@ -45,6 +46,12 @@ const COVE_IN_M = 10;
 /** The forest: from this share of the way from the trail's start to the peak, this high over the ground. */
 const CANOPY_ALONG = 0.25;
 const CANOPY_UP_M = 90;
+/** The meadow: the camera at its rim on the side away from the peak, at a walker's eye height, so
+ * the grass and the flowers read in front and the forest's edge beyond, looking at a point this
+ * high over the ground, this share of the radius out on the far side. */
+const MEADOW_UP_M = 2.5;
+const MEADOW_LOOK = 0.9;
+const MEADOW_LOOK_UP_M = 1.5;
 /** The lake: the camera this far beyond its rim on the trail's side, this high over the water or
  * the bank, panning this far across it. */
 const SHORE_OUT_M = 55;
@@ -82,8 +89,14 @@ export function titleScene(w: TitleWorld): Scene {
   const lookZ = w.cove.z0 + COVE_LOOK * w.cove.halfWidth;
   const coveLook: Look = { x: w.coastlineX(lookZ) + COVE_IN_M, y: w.seaLevel + 3, z: lookZ };
 
-  // 2. Over the forest: from a quarter of the way to the peak, gliding toward it.
-  const glideFrom = onGround(w.start.x + toPeak.x * CANOPY_ALONG, w.start.z + toPeak.z * CANOPY_ALONG, CANOPY_UP_M);
+  // 2. The meadow where there is one: from its rim on the side away from the peak, drifting across it;
+  //    over the forest where there is none: from a quarter of the way to the peak, gliding toward it.
+  const glideFrom = w.meadow === null
+    ? onGround(w.start.x + toPeak.x * CANOPY_ALONG, w.start.z + toPeak.z * CANOPY_ALONG, CANOPY_UP_M)
+    : onGround(w.meadow.x - dir.x * w.meadow.radius, w.meadow.z - dir.z * w.meadow.radius, MEADOW_UP_M);
+  const glideLook = w.meadow === null
+    ? peakLook
+    : onGround(w.meadow.x + dir.x * w.meadow.radius * MEADOW_LOOK, w.meadow.z + dir.z * w.meadow.radius * MEADOW_LOOK, MEADOW_LOOK_UP_M);
 
   // 3. The lake (a meadow where there is none, the hills where neither): from beyond its rim on the
   // trail's side, panning across it.
@@ -112,7 +125,7 @@ export function titleScene(w: TitleWorld): Scene {
   const s = TITLE_SHOTS;
   const cuts: Cut[] = [
     { ...s[0]!, shot: drift(coastFrom, coastTo, SHOT_S, coveLook) },
-    { ...s[1]!, shot: drift(glideFrom, ahead(glideFrom), SHOT_S, peakLook) },
+    { ...s[1]!, shot: drift(glideFrom, ahead(glideFrom), SHOT_S, glideLook) },
     { ...s[2]!, shot: third() },
     { ...s[3]!, shot: drift(onGround(riseX, riseZ, RISE_FROM_M), onGround(riseX, riseZ, RISE_TO_M), SHOT_S, trailLook) },
     { ...s[4]!, shot: drift(summitFrom, ahead(summitFrom), SHOT_S, peakLook) },
