@@ -11,9 +11,8 @@ import { createHud } from "./game/hud.js";
 import { LOADING_LINE } from "./game/frameProbe.js";
 import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
 import { RING_COUNT } from "./game/clipmap.js";
-import { loadContainer, loadUntilAborted, reportCompile, reportProgress } from "./game/modelLoad.js";
-import { modelUrl } from "./game/assetUrls.js";
-import { placeStaticModel } from "./game/staticModel.js";
+import { loadUntilAborted, reportCompile, reportProgress } from "./game/modelLoad.js";
+import { defaultModelLoader, placeStaticModel } from "./game/staticModel.js";
 import {
   END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
 } from "./game/endScene.js";
@@ -565,8 +564,9 @@ function buildGame(
    */
   function ranToCar(cmd: InputCommand, me: PlayerState | undefined): InputCommand {
     if (endRunDoor === null) return cmd;
+    // A renderer with no scene (one built anew under it) runs nobody anywhere.
     const scene = renderer.endScene();
-    if (me !== undefined && (scene === null || scene.arrival === null)) {
+    if (me !== undefined && scene !== null && scene.arrival === null) {
       endRunYaw = Math.atan2(endRunDoor.x - me.pos.x, endRunDoor.z - me.pos.z);
       input.setLook(endRunYaw, 0);
       return { ...cmd, moveX: 0, moveZ: 1, buttons: Button.Sprint, yaw: endRunYaw, pitch: 0 };
@@ -994,10 +994,9 @@ function buildGame(
     if (cryOver) cryPending = false;
     // The find: the frame the phase flips, the scene begins on this screen.
     const chaseNow = state.phase !== Phase.Climb;
-    // The film's car for the end, fetched while the car is far off and out of sight.
-    if (chaseNow && !wasChase) requestFilmCar();
-    // A match already decided (the console's `escape`) has no find to show.
-    if (chaseNow && !wasChase && state.outcome === Outcome.Playing) {
+    if (chaseNow && !wasChase) {
+      // The film's car for the end, fetched while the car is far off and out of sight.
+      requestFilmCar();
       sceneUntil = performance.now() + SUMMIT_SCENE_S * 1000;
       sceneKind = "summit";
       // The scene's sound takes the frame: a line still up or on its way is cut.
@@ -1167,7 +1166,7 @@ function buildGame(
     const trailhead = signs.trailhead;
     const loads = new AbortController();
     filmCarLoad = loads;
-    loadUntilAborted(() => loadContainer(modelUrl(FILM_CAR_OUTPUT), r.scene), loads.signal).then(
+    loadUntilAborted(() => defaultModelLoader(r.scene)(FILM_CAR_OUTPUT), loads.signal).then(
       (container) => {
         if (loads.signal.aborted) {
           container.dispose();
@@ -1768,6 +1767,9 @@ function buildGame(
       me.vel = { x: 0, y: 0, z: 0 };
       me.yaw = Math.atan2(setup.site.x - x, setup.site.z - z);
       input.setLook(me.yaw, 0);
+      // The chase's flip is seen as already past, so the find's scene never starts for a look,
+      // whatever frame the flip is first read on; a match's own flip comes only through the find.
+      wasChase = true;
       if (world.state.phase === Phase.Climb) world.state.phase = Phase.Chase;
     };
     session = host;
@@ -2184,6 +2186,8 @@ function buildGame(
     // One switch at a time: the governor's, or a rebuild after a failure, may
     // be under way.
     if (disposed || broken || !serial.idle) return;
+    // Not under the end: a renderer built anew would have no scene to play.
+    if (ended || endRunDoor !== null) return;
     if (target === tier) {
       options.quality.save(choice);
       return;

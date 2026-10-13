@@ -68,6 +68,7 @@ const DRAWING: BoardDrawing = {
 function setup(scene: Scene, loader: (output: string) => Promise<AssetContainer>, fails = false) {
   const painted: { name: string; drawing: BoardDrawing; material: Material }[] = [];
   const shadowed = new Set<AbstractMesh>();
+  const covered = new Set<AbstractMesh>();
   const boxMaterials: string[] = [];
   const meshes = createTrailheadMeshes(scene, SITES, groundH, {
     materialFor: (name) => {
@@ -84,9 +85,10 @@ function setup(scene: Scene, loader: (output: string) => Promise<AssetContainer>
       return material;
     },
     shadows: { add: (m) => shadowed.add(m), remove: (m) => shadowed.delete(m) },
+    cover: { add: (m) => covered.add(m), remove: (m) => covered.delete(m) },
     loader,
   });
-  return { meshes, painted, shadowed, boxMaterials };
+  return { meshes, painted, shadowed, covered, boxMaterials };
 }
 
 function descendantNamed(root: Node, name: string): Node {
@@ -402,7 +404,7 @@ describe("createTrailheadMeshes", () => {
 describe("the film's car swapped in for the end", () => {
   it("hides the parked car, stands the film's on its site, ground and yaw with its parts, a patch riding it, and disposes all", async () => {
     const scene = freshScene();
-    const { meshes, shadowed } = setup(scene, diskLoader(scene));
+    const { meshes, shadowed, covered } = setup(scene, diskLoader(scene));
     expect(meshes.car()).toBeNull();
     await meshes.ready;
     const parked = meshes.car()!;
@@ -426,11 +428,18 @@ describe("the film's car swapped in for the end", () => {
     expect(film.model!.wheels).toHaveLength(4);
     expect(film.model!.door).not.toBeNull();
     expect(shadowed.size).toBe(before + placed.meshes.length);
+    expect(placed.meshes.every((m) => covered.has(m))).toBe(true);
+    // Driving off, it is no longer the rain's cover; the shadows keep it.
+    film.leave();
+    film.leave();
+    expect(placed.meshes.some((m) => covered.has(m))).toBe(false);
+    expect(shadowed.size).toBe(before + placed.meshes.length);
     expect(fixed.isDisposed()).toBe(true);
     const riding = scene.getMeshByName("trailhead_film_car_shadow")!;
     expect(riding.parent).toBe(placed.node);
     expect(riding.isWorldMatrixFrozen).toBe(false);
-    expect(riding.material).toBeInstanceOf(PBRMaterial);
+    // The parked patch's own material, so the swap draws it by the shader the hike already has.
+    expect(riding.material).toBeInstanceOf(StandardMaterial);
     expect(riding.material!.alpha).toBe(1);
 
     // A second car is not taken.
@@ -448,12 +457,12 @@ describe("the film's car swapped in for the end", () => {
 
   it("drops the box when the film's car comes before the parked model, and hides that model when it lands", async () => {
     const scene = freshScene();
-    const gate = gatedLoader(scene);
-    const { meshes } = setup(scene, gate.loader);
+    const held = gatedLoader(scene);
+    const { meshes } = setup(scene, held.loader);
     const placed = placeStaticModel(await diskLoader(scene)("models/intro.car.glb"), "intro.car", 0, 0, 0, 0);
     meshes.swapCar(placed);
     expect(scene.getMeshByName("trailhead_car_box")).toBeNull();
-    gate.release();
+    held.release();
     await meshes.ready;
     expect(scene.getTransformNodeByName("trailhead_car")!.isEnabled()).toBe(false);
     expect(meshes.car()!.root).toBe(placed.node);

@@ -55,7 +55,7 @@ export const DOOR_IN_M = 1.2;
 export const PULL_AWAY_AT_S = 2.6;
 export const PULL_AWAY_ACCEL = 3.5;
 export const CRUISE_MPS = 14;
-/** The lane it drives in, metres right of the centreline, and the metres it takes to reach it from the shoulder. */
+/** The lane it drives in, metres from the centreline on the parked car's side of it, and the metres it takes to reach it from the shoulder. */
 export const LANE_M = 1.8;
 export const LANE_CHANGE_M = 30;
 /** The game's sound fading from the pull-away, and the master's from the dark. */
@@ -103,7 +103,29 @@ export type EndShotContext = {
   arrival: number | null;
   /** Where the runner was at the cut to the pursuit, held from its first frame; null before it. */
   pursuitFrom: Ground | null;
+  /** The car where the road shot leaves the camera (`endCar` at `END_ROAD_AT_S + ROAD_CARRY_S`), made once for the scene; absent, made each frame. */
+  held?: CarPose;
 };
+
+/** The car where the road shot leaves the camera: the same for the whole scene. */
+export function roadRelease(road: Road, site: Ground, direction: 1 | -1): CarPose {
+  return endCar(END_ROAD_AT_S + ROAD_CARRY_S, road, site, direction);
+}
+
+/**
+ * The unit from the car's inland rear corner out to where shot 2 stands:
+ * toward `from`, kept to the quarter away from the car (inland, and behind
+ * it the way it faces) so the camera never stands in its box, or on the
+ * diagonal out of the corner where nothing of that quarter is toward `from`.
+ */
+export function pursuitOut(corner: Ground, from: Ground, direction: 1 | -1): Ground {
+  let x = from.x - corner.x, z = from.z - corner.z;
+  if (x < 0) x = 0;
+  if (z * direction > 0) z = 0;
+  const len = Math.hypot(x, z);
+  if (len > 1e-6) return { x: x / len, z: z / len };
+  return { x: Math.SQRT1_2, z: -direction * Math.SQRT1_2 };
+}
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
@@ -214,8 +236,7 @@ export function endShot(t: number, ctx: EndShotContext): ShotPose {
   }
   if (shot === 1) {
     const corner = { x: site.x + CAR_HALF.x, z: site.z - direction * CAR_HALF.z };
-    const from = ctx.pursuitFrom ?? runner;
-    const out = unit(from.x - corner.x, from.z - corner.z);
+    const out = pursuitOut(corner, ctx.pursuitFrom ?? runner, direction);
     const at = { x: corner.x + out.x * PURSUIT_CAM_OUT, y: ctx.groundY + PURSUIT_CAM_UP, z: corner.z + out.z * PURSUIT_CAM_OUT };
     return lookAt(at, { x: runner.x, y: runner.y + CHEST_M, z: runner.z }, LENS_32, 1);
   }
@@ -230,7 +251,7 @@ export function endShot(t: number, ctx: EndShotContext): ShotPose {
     return lookAt(at, nose, LENS_32, 2);
   }
   const into = after - ENGINE_SHOT_S;
-  const held = endCar(ENGINE_SHOT_S + ROAD_CARRY_S, road, site, direction);
+  const held = ctx.held ?? roadRelease(road, site, direction);
   const w = into <= ROAD_CARRY_S ? 0 : easeInOut((into - ROAD_CARRY_S) / ROAD_RELEASE_S);
   return {
     x: car.x + (held.x - car.x) * w,

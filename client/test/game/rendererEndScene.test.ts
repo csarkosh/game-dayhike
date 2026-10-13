@@ -20,7 +20,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { createWorld } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import type { PlayerState } from "../../src/sim/types.js";
-import { createRenderer } from "../../src/game/renderer.js";
+import { createRenderer, lampForRain } from "../../src/game/renderer.js";
 import { LAMP_INTENSITY } from "../../src/game/headlamp.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
@@ -40,11 +40,14 @@ describe("the renderer's end scene", () => {
     let now = 5000;
     const r = createRenderer(nullCanvas(), level, null, { tier: "low", clock: () => now });
     const root = new TransformNode("car", r.scene);
+    let left = 0;
+    const car = { root, model: null, leave: () => void (left += 1) };
     // A straight road along z on flat ground; the car on its shoulder at the pad, its nose to +z.
     r.setEnding("won", {
       site: { x: 6.9, z: 0 }, direction: 1, road: { centerX: () => 0, groundY: () => 0 }, door: { x: 8.4, z: 0.5 },
-      car: () => ({ root, model: null }),
+      car: () => car,
     });
+    const tails = r.scene.meshes.filter((m) => m.name.startsWith("car_tail_lamp_"));
     const lens = r.scene.lights.find((l) => l.name === "lamp_local") as SpotLight;
 
     world.state.players.set(1, player(20, 10));
@@ -58,6 +61,8 @@ describe("the renderer's end scene", () => {
     expect(r.views.showLocal).toBe(true);
     expect(lens.intensity).toBe(0);
     expect(r.endScene()).toEqual({ t: 0, arrival: null, shot: 0, car: { x: 6.9, y: 0, z: 0, yaw: 0, speed: 0 } });
+    // The tail lamps are made with the scene, hidden to the catch.
+    expect(tails.map((m) => m.isEnabled())).toEqual([false, false]);
 
     // At the door a second later: in the car, the engine shot from the far shoulder.
     now = 6000;
@@ -70,6 +75,7 @@ describe("the renderer's end scene", () => {
     expect(r.camera.fov).toBe(0.43);
     expect(lens.intensity).toBe(0);
     expect(r.views.hideNear).toEqual({ x: 8.4, z: 0.5, radius: 1.2 });
+    expect(left).toBe(0);
 
     // Past the catch, 4.6 s after the arrival: the car 7 m down the road, the lens's lamp its right headlamp.
     now = 10600;
@@ -81,11 +87,38 @@ describe("the renderer's end scene", () => {
     expect(lens.intensity).toBe(LAMP_INTENSITY);
     expect([lens.angle, lens.range]).toEqual([1.9, 60]);
     expect(lens.parent).toBeNull();
+    // The rain is lit from the headlamp where it stands, not from the camera it left.
+    const rainLamp = lampForRain(lens, { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0, intensity: 0, angle: 0, r: 0, g: 0, b: 0 });
+    expect([rainLamp.x, rainLamp.y, rainLamp.z]).toEqual([lens.position.x, lens.position.y, lens.position.z]);
+    expect([rainLamp.dx, rainLamp.dy, rainLamp.dz]).toEqual([lens.direction.x, lens.direction.y, lens.direction.z]);
+    expect(rainLamp.angle).toBe(1.9);
     expect(r.views.localLampAt?.angle).toBe(1.9);
-    const tails = r.scene.meshes.filter((m) => m.name.startsWith("car_tail_lamp_"));
+    // Gone from the rain's cover from the pull-away, once.
+    expect(left).toBe(1);
     expect(tails.map((m) => m.parent)).toEqual([root, root]);
+    expect(tails.map((m) => m.isEnabled())).toEqual([true, true]);
     expect(tails.map((m) => m.position.asArray())).toEqual([[-0.7, 0.75, -2.2], [0.7, 0.75, -2.2]]);
     r.dispose();
     expect(tails.every((m) => m.isDisposed())).toBe(true);
+  });
+
+  it("keeps the lamps at the parked car when there is no car drawn to drive, its box alone", () => {
+    const level = parseLevel(sandbox01);
+    const world = createWorld(level, 4242, false);
+    let now = 5000;
+    const r = createRenderer(nullCanvas(), level, null, { tier: "low", clock: () => now });
+    r.setEnding("won", {
+      site: { x: 6.9, z: 0 }, direction: 1, road: { centerX: () => 0, groundY: () => 0 }, door: { x: 8.4, z: 0.5 }, car: () => null,
+    });
+    world.state.players.set(1, player(8.4, 0.5));
+    r.sync(world.state, 1, 0, { dt: 0.016, sprinting: true });
+    now = 9600;
+    r.sync(world.state, 1, 0, { dt: 0.016, sprinting: false });
+    const lens = r.scene.lights.find((l) => l.name === "lamp_local") as SpotLight;
+    // The sound's car is 7 m down the road; the lamps stand at the parked car's right front.
+    expect(r.endScene()!.car.z).toBeCloseTo(7, 9);
+    expect([lens.position.x, lens.position.y, lens.position.z]).toEqual([7.5, 0.7, 2.3]);
+    expect(r.views.localLampAt).toEqual(expect.objectContaining({ x: expect.closeTo(6.3, 9), y: 0.7, z: 2.3 }));
+    r.dispose();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  arrived, carDistance, carHeard, carSpeed, endBeats, endCar, endShot, endShotIndex, headlampAt, laneAt,
+  arrived, carDistance, carHeard, carSpeed, endBeats, endCar, endShot, endShotIndex, headlampAt, laneAt, roadRelease,
   type EndShotContext, type LampAim,
 } from "../../src/game/endScene.js";
 import { doorSpot } from "../../src/sim/trailhead.js";
@@ -42,12 +42,29 @@ describe("the end scene's shots", () => {
   });
 
   it("locks shot 2 off at the car's inland rear corner, out toward where the runner was at the cut, aimed at their chest", () => {
-    const s = endShot(3, ctx({ runner: { x: 12, y: 0, z: 4, yaw: 0 }, pursuitFrom: { x: 16, z: 7 } }));
-    expect(s.x).toBeCloseTo(8.461354843955473, 9);
+    const runner = { x: 12, y: 0, z: 4, yaw: 0 };
+    const s = endShot(3, ctx({ runner, pursuitFrom: { x: 20, z: -9 } }));
+    expect(s.x).toBeCloseTo(8.676519114754443, 9);
     expect(s.y).toBeCloseTo(0.7, 9);
-    expect(s.z).toBeCloseTo(-1.5499268233187946, 9);
-    expect(s.yaw).toBeCloseTo(0.5676102381268574, 9);
-    expect(s.pitch).toBeCloseTo(-0.0909054402681634, 9);
+    expect(s.z).toBeCloseTo(-2.781367054824161, 9);
+    expect(s.yaw).toBeCloseTo(0.45568830929096177, 9);
+    expect(s.pitch).toBeCloseTo(-0.07928278323704707, 9);
+    // Ahead of the corner, out to the inland side alone: never forward along the car's flank.
+    const ahead = endShot(3, ctx({ runner, pursuitFrom: { x: 16, z: 7 } }));
+    // 2026-10-12: 8.461354843955473, -1.5499268233187946 before shot 2 kept to the quarter
+    // away from the car.
+    expect([ahead.x, ahead.y, ahead.z]).toEqual([expect.closeTo(8.8, 9), expect.closeTo(0.7, 9), expect.closeTo(-2.3, 9)]);
+    expect(ahead.yaw).toBeCloseTo(0.4699766384170079, 9);
+  });
+
+  it("stands shot 2 out on the diagonal from the corner when the runner was ahead on the road, never in the car", () => {
+    const runner = { x: 12, y: 0, z: 4, yaw: 0 };
+    const s = endShot(3, ctx({ runner, pursuitFrom: { x: 3, z: 10 } }));
+    expect([s.x, s.y, s.z]).toEqual([expect.closeTo(8.507106781186549, 9), expect.closeTo(0.7, 9), expect.closeTo(-3.0071067811865473, 9)]);
+    // Facing −z, the rear is toward +z.
+    const back = endShot(3, ctx({ runner, direction: -1, pursuitFrom: { x: 3, z: -10 } }));
+    expect([back.x, back.y, back.z]).toEqual([expect.closeTo(8.507106781186549, 9), expect.closeTo(0.7, 9), expect.closeTo(3.0071067811865473, 9)]);
+    expect(back.yaw).toBeCloseTo(1.293840813354631, 9);
   });
 
   it("locks shot 3 off low on the far shoulder 7 m ahead, turning to keep the car's nose as it comes past", () => {
@@ -81,6 +98,9 @@ describe("the end scene's shots", () => {
     const end = endShot(18.5, a);
     expect(end.pitch).toBeCloseTo(0.06, 9);
     expect(end.z).toBeCloseTo(40.6, 9);
+    // The release made once for the scene is the one made each frame.
+    const once = endShot(9.5, { ...a, held: roadRelease(road, site, 1) });
+    expect([once.x, once.y, once.z, once.yaw]).toEqual([released.x, released.y, released.z, released.yaw]);
     // Past the end the last pose holds.
     const after = endShot(40, a);
     expect([after.x, after.y, after.z, after.yaw, after.pitch]).toEqual([end.x, end.y, end.z, end.yaw, end.pitch]);

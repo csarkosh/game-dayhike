@@ -29,9 +29,10 @@ import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./sta
 import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import {
   DOOR_IN_M, HEADLAMP_CONE, HEADLAMP_RANGE, TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_COLOUR, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W,
-  arrived, carSpeed, endCar, endShot, endShotIndex, headlampAt, type EndShotContext, type LampAim,
+  PULL_AWAY_AT_S, arrived, carSpeed, endCar, endShot, endShotIndex, headlampAt, roadRelease, type EndShotContext, type LampAim,
 } from "./endScene.js";
 import { CATCH_AT_S } from "./carAudio.js";
+import type { CarPose } from "./scene/timeline.js";
 import type { Road } from "./scene/roadPath.js";
 import { stageCar } from "./scene/sceneStage.js";
 import type { TrailheadCar } from "./trailheadMeshes.js";
@@ -849,9 +850,12 @@ export function effectsGroupFor(water: Water | null): number {
  * when off), its cone angle and its colour.
  */
 export function lampForRain(lamp: SpotLight, out: RainLamp): RainLamp {
-  lamp.computeTransformedInformation();
-  const pos = lamp.getAbsolutePosition();
-  const dir = lamp.transformedDirection ?? lamp.direction;
+  // The transformed pair is refreshed only while the lamp has a parent; a
+  // lamp freed from the camera (the end scene's headlamp) is in the world as
+  // it stands, and its transformed pair is the last frame it was a child.
+  const transformed = lamp.computeTransformedInformation();
+  const pos = transformed ? lamp.transformedPosition : lamp.position;
+  const dir = transformed ? lamp.transformedDirection : lamp.direction;
   out.x = pos.x;
   out.y = pos.y;
   out.z = pos.z;
@@ -2190,6 +2194,10 @@ function buildRenderer(
     lens: LampAim;
     body: LampAim & { angle: number; range: number };
     tails: { meshes: Mesh[]; material: StandardMaterial } | null;
+    /** The car standing parked, where its lamps stay when there is no model to drive. */
+    parked: CarPose;
+    /** The car last taken out of the rain's cover, at the pull-away. */
+    left: TrailheadCar | null;
   } | null = null;
   /** The summit scene, while it plays: when it began, the eye it began from, and the body it looks at. */
   let summitScene: { kind: "summit" | "cap"; since: number; base: SceneBase | null; body: { x: number; y: number; z: number }; more: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } } | null } | null = null;
@@ -2231,6 +2239,10 @@ function buildRenderer(
         handle.root.position.set(car.x, car.y, car.z);
         handle.root.rotation.y = car.yaw;
       }
+      if (after >= PULL_AWAY_AT_S && e.left !== handle) {
+        handle.leave();
+        e.left = handle;
+      }
     }
     const now = e.now;
     now.t = t;
@@ -2245,12 +2257,16 @@ function buildRenderer(
       views.localLampAt = null;
       return;
     }
-    headlampAt(car, -1, e.body);
+    // With no car drawn to drive (its box alone), the lamps stay where it stands.
+    const lit = handle === null ? e.parked : car;
+    headlampAt(lit, -1, e.body);
     views.localLampAt = e.body;
-    headlampAt(car, 1, e.lens);
-    if (handle === null) return;
-    e.tails ??= makeTails();
-    for (const mesh of e.tails.meshes) if (mesh.parent !== handle.root) mesh.parent = handle.root;
+    headlampAt(lit, 1, e.lens);
+    if (handle === null || e.tails === null) return;
+    for (const mesh of e.tails.meshes) {
+      if (mesh.parent !== handle.root) mesh.parent = handle.root;
+      if (!mesh.isEnabled()) mesh.setEnabled(true);
+    }
   }
 
   /** The lens's lamp in the end scene: off, or from the catch the car's right headlamp, freed from the camera. */
@@ -2269,7 +2285,12 @@ function buildRenderer(
     setLamp(localLamp, true);
   }
 
-  /** The car's tail lamps: two small red quads, lit by nothing and lighting nothing, at its rear corners, facing back. */
+  /**
+   * The car's tail lamps: two small red quads, lit by nothing and lighting
+   * nothing, at its rear corners, facing back. Made as the scene begins and
+   * hidden to the catch, their shader compiled then (`forceCompilation`),
+   * not on the frame they first show.
+   */
   function makeTails(): { meshes: Mesh[]; material: StandardMaterial } {
     const material = new StandardMaterial("mat_car_tail_lamp", scene);
     material.disableLighting = true;
@@ -2281,14 +2302,17 @@ function buildRenderer(
       mesh.material = material;
       mesh.isPickable = false;
       mesh.receiveShadows = false;
+      mesh.setEnabled(false);
       return mesh;
     });
+    material.forceCompilation(meshes[0]!);
     return { meshes, material };
   }
 
   function disposeTails(): void {
     if (endRun === null || endRun.tails === null) return;
-    for (const mesh of endRun.tails.meshes) mesh.dispose();
+    // Children of the trailhead's car, they may have gone with it already.
+    for (const mesh of endRun.tails.meshes) if (!mesh.isDisposed()) mesh.dispose();
     endRun.tails.material.dispose();
     endRun.tails = null;
   }
@@ -3349,7 +3373,8 @@ function buildRenderer(
         setLamp(localLamp, local.lamp.on && !views.showLocal, lampState);
         // In the end scene it is off too, the camera not being the eye, until the catch makes it a headlamp.
         if (endRun !== null) endLensLamp(endRun);
-        rainMap?.update(local.pos);
+        // The end scene's camera goes down the road from the player: the rain's cover goes with it.
+        rainMap?.update(endRun !== null ? camera.position : local.pos);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
         if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
@@ -3420,8 +3445,11 @@ function buildRenderer(
           hide: { x: scene.door.x, z: scene.door.z, radius: DOOR_IN_M },
           lens: { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1 },
           body: { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, angle: HEADLAMP_CONE, range: HEADLAMP_RANGE },
-          tails: null,
+          tails: makeTails(),
+          parked: endCar(0, scene.road, scene.site, scene.direction),
+          left: null,
         };
+        endRun.ctx.held = roadRelease(scene.road, scene.site, scene.direction);
         return;
       }
       if (ending.since >= 0) return;

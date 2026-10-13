@@ -64,8 +64,14 @@ export type TrailheadDeps = {
   loader?: ModelLoader;
 };
 
-/** The car the end scene drives: the node it moves by, and its parts where it has them. */
-export type TrailheadCar = { root: TransformNode; model: CarModel | null };
+/**
+ * The car the end scene drives: the node it moves by, its parts where it
+ * has them, and `leave()`, which takes it out of the rain's cover as it
+ * drives off (the cover map is drawn once for a place, and a car that has
+ * gone would keep the rain off the pad it left). Once is enough; again is
+ * nothing.
+ */
+export type TrailheadCar = { root: TransformNode; model: CarModel | null; leave(): void };
 
 export type TrailheadMeshes = {
   /** Resolves once both models have settled, loaded or failed. */
@@ -222,6 +228,16 @@ export function createTrailheadMeshes(
   /** The parked model once it has arrived, and the film's car once swapped in; each with the handle `car()` gives. */
   let parked: { placed: PlacedModel; handle: TrailheadCar } | null = null;
   let film: { placed: PlacedModel; handle: TrailheadCar; patch: CarShadowPatch } | null = null;
+  /** The handle for a placed car: its root, its parts, and its leaving the cover. */
+  function handleFor(placed: PlacedModel, model: CarModel | null): TrailheadCar {
+    return {
+      root: placed.node,
+      model,
+      leave() {
+        for (const m of placed.meshes) deps.cover?.remove(m);
+      },
+    };
+  }
   const kioskBoxes = boardBoxes(sites.board).map((b, k) => fallbackBox(`trailhead_kiosk_box_${k}`, KIOSK_MATERIAL, b, BOARD_BOX_HALF));
 
   async function place(
@@ -285,7 +301,7 @@ export function createTrailheadMeshes(
 
   const ready = Promise.all([
     car === null || carBox === null ? Promise.resolve() : place(TRAILHEAD_CAR_OUTPUT, "trailhead_car", car.site, carYaw(car.site, car.trailhead), [carBox], (model) => {
-      parked = { placed: model, handle: { root: model.node, model: null } };
+      parked = { placed: model, handle: handleFor(model, null) };
       // The film's car came first: the parked one arrives hidden under it.
       if (film !== null) model.node.setEnabled(false);
     }),
@@ -318,13 +334,14 @@ export function createTrailheadMeshes(
       parked?.placed.node.setEnabled(false);
       if (carBox !== null) dropBox(carBox);
       // The parked car's patch is fixed to the ground; this one rides the car.
-      // As dark as the parked car's, so the swap is not seen in it.
+      // Drawn as the parked car's is, by the same shader and as dark, so the
+      // swap is not seen in it and asks for no shader the hike has not made.
       patch?.dispose();
       patch = null;
-      const moving = createCarShadowPatch(scene, { x: 0, z: 0 }, () => 0, { moving: true, atmosphere: true, darkness: 1 });
+      const moving = createCarShadowPatch(scene, { x: 0, z: 0 }, () => 0, { moving: true });
       moving.mesh.name = "trailhead_film_car_shadow";
       moving.mesh.parent = placed.node;
-      film = { placed, handle: { root: placed.node, model }, patch: moving };
+      film = { placed, handle: handleFor(placed, model), patch: moving };
     },
     dispose() {
       if (disposed) return;
