@@ -113,7 +113,7 @@ side, so the car always crosses the frame the same way. Deep focus throughout bu
 
 | # | Seconds | Shot | Sound |
 | --- | --- | --- | --- |
-| 1 | 0:00 to 0:09 | Black, then a fade in. Wide over the sea stacks and mist, the car small on the coast road, a long lens from high up; the trailhead is not in frame. | surf, then the engine, then a radio squelch |
+| 1 | 0:00 to 0:09 | Black, then a fade in. Wide over the sea stacks and mist, the car small on the coast road, a long lens from high up; the trailhead is not in frame. Amended 2026-10-13: the camera stands 110 m to the sea side of the road and 50 m up, just out over the water past the beach and its drift line, which the coast's profile laid between the road and the sea after the first record. | surf, then the engine, then a radio squelch |
 | 2 | 0:09 to 0:15 | Along the road from the sea side, the forest to the tarmac, the camera a beat behind the car and then level with it. | dispatch keys up before the cut |
 | 3 | 0:15 to 0:30.625 | The cab from the back seat: gloved hands on the wheel, the handset in its cradle, the empty passenger seat, the road and the forest through the windscreen. The ranger's face is never framed closer than this. | the call, lines 1 to 5 |
 | 4 | 0:30.625 to 0:38.4 | The handset and the hand that holds it. | lines 6 and 7, line 8 begins |

@@ -189,7 +189,7 @@ describe("the intro's data", () => {
         expect(fov).toBeLessThanOrEqual(FOV_MAX);
       }
     }
-    // The coastal wide within the mist's reach: 0.25 rad from 70 m out.
+    // The coastal wide within the mist's reach: 0.25 rad from 110 m to the sea side of the road.
     expect(evaluate(scene, 4).camera.fov).toBe(0.25);
     expect(evaluate(scene, 34).camera.dof).toBe(true);
     expect(evaluate(scene, 12).camera.dof).toBe(false);

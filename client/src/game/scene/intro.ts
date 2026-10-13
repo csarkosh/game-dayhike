@@ -108,11 +108,13 @@ const BACK_SEAT = { x: -0.3, y: 1.05, z: -0.9 };
 /** The one wide lens, the cab; the coastal wide's lens; the insert's; the trail's. */
 const CAB_FOV = 0.9;
 /** The mist of the film's world hides everything past about 100 m, so the
- * coastal wide is shot from 80 m out over the water with a 0.25 rad lens
- * rather than the 0.12 rad long lens from far off, which would see fog alone. */
+ * coastal wide is shot with a 0.25 rad lens from just out over the water, 110 m
+ * to the sea side of the road past the beach and its drift line and 50 m up,
+ * so the car, the road and the trees beyond read with the logs mid-frame,
+ * rather than with the 0.12 rad long lens from far off, which would see fog alone. */
 const COAST_FOV = 0.25;
-const COAST_OUT_M = 70;
-const COAST_UP_M = 38;
+const COAST_OUT_M = 110;
+const COAST_UP_M = 50;
 const COAST_AHEAD_M = 45;
 const INSERT_FOV = 0.3;
 const TRAIL_FOV = 0.5;
