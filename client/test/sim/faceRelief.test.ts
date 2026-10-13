@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import * as relief from "../../src/sim/faceRelief.js";
 import {
-  cellularD, cellularSite, faceKindD, faceReliefD, FACE_RELIEF_TUNABLES,
+  cellularD, cellularSite, faceKindD, faceReliefD, groundReliefD, FACE_RELIEF_TUNABLES,
   FACE_VALUE_SPAN, FACE_TILT,
+  GROUND_SLAB_CELL, GROUND_SLAB_JITTER, GROUND_SLAB_BORDER, GROUND_SLAB_SALT, GROUND_SLAB_TILT, GROUND_SLAB_DOME,
+  GROUND_RUBBLE_CELL, GROUND_RUBBLE_JITTER, GROUND_RUBBLE_BORDER, GROUND_RUBBLE_SALT, GROUND_RUBBLE_WEIGHT,
+  GROUND_RUBBLE_TILT, GROUND_RUBBLE_DOME,
+  GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, GROUND_MASS_SALT, GROUND_MASS_WEIGHT,
+  GROUND_MASS_TILT, GROUND_MASS_DOME, GROUND_GAIN,
   FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, FACE_COLUMN_SALT,
   FACE_BLOCK_CELL, FACE_BLOCK_JITTER, FACE_BLOCK_BORDER, FACE_BLOCK_SALT,
   FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER, FACE_BLOCK_FINE_SALT,
@@ -615,6 +620,122 @@ describe("the relief", () => {
   });
 });
 
+describe("the walkable rock's relief", () => {
+  /** The smallest junction gap among the three lattices: within JUNCTION_GAP
+   * of a junction of three cells of any, the field has a kink no derivative
+   * matches. And 0 where an octave's own value is within CLAMP_GAP of its
+   * clamp: a dome crosses −1 in the hollow between two cobbles, and the
+   * octave is flat past it, a crease the junction gap does not see (the
+   * faces' planes clamp rarely, and far from a sweep's points). */
+  const CLAMP_GAP = 2e-3;
+  function groundGap(x: number, z: number): number {
+    const octaves = [
+      cellularD(x, z, GROUND_SLAB_CELL, GROUND_SLAB_JITTER, GROUND_SLAB_BORDER, SEED ^ GROUND_SLAB_SALT, GROUND_SLAB_TILT, GROUND_SLAB_DOME),
+      cellularD(x, z, GROUND_RUBBLE_CELL, GROUND_RUBBLE_JITTER, GROUND_RUBBLE_BORDER, SEED ^ GROUND_RUBBLE_SALT, GROUND_RUBBLE_TILT, GROUND_RUBBLE_DOME),
+      cellularD(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT, GROUND_MASS_TILT, GROUND_MASS_DOME),
+    ];
+    if (octaves.some((o) => Math.abs(o.v) > 1 - CLAMP_GAP)) return 0;
+    return Math.min(
+      junctionGap(x, z, GROUND_SLAB_CELL, GROUND_SLAB_JITTER, GROUND_SLAB_BORDER, SEED ^ GROUND_SLAB_SALT),
+      junctionGap(x, z, GROUND_RUBBLE_CELL, GROUND_RUBBLE_JITTER, GROUND_RUBBLE_BORDER, SEED ^ GROUND_RUBBLE_SALT),
+      junctionGap(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT),
+    );
+  }
+
+  it("is the slabs, the rubble and the outcrops at their weights, gained and clamped", () => {
+    const n = GROUND_GAIN / (1 + GROUND_RUBBLE_WEIGHT + GROUND_MASS_WEIGHT);
+    for (const [x, z] of r2Points(300, 1000)) {
+      const slab = cellularD(x, z, GROUND_SLAB_CELL, GROUND_SLAB_JITTER, GROUND_SLAB_BORDER, SEED ^ GROUND_SLAB_SALT, GROUND_SLAB_TILT, GROUND_SLAB_DOME);
+      const rubble = cellularD(x, z, GROUND_RUBBLE_CELL, GROUND_RUBBLE_JITTER, GROUND_RUBBLE_BORDER, SEED ^ GROUND_RUBBLE_SALT, GROUND_RUBBLE_TILT, GROUND_RUBBLE_DOME);
+      const mass = cellularD(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT, GROUND_MASS_TILT, GROUND_MASS_DOME);
+      const v = n * (slab.v + GROUND_RUBBLE_WEIGHT * rubble.v + GROUND_MASS_WEIGHT * mass.v);
+      const want = v > 1 || v < -1
+        ? { v: v > 1 ? 1 : -1, dx: 0, dz: 0 }
+        : { v, dx: n * (slab.dx + GROUND_RUBBLE_WEIGHT * rubble.dx + GROUND_MASS_WEIGHT * mass.dx), dz: n * (slab.dz + GROUND_RUBBLE_WEIGHT * rubble.dz + GROUND_MASS_WEIGHT * mass.dz) };
+      expect(groundReliefD(SEED, x, z)).toEqual(want);
+    }
+  });
+
+  it("carries exact derivatives through its three octaves (a 2,000-point sweep)", () => {
+    const r = checkField((x, z) => groundReliefD(SEED, x, z), groundGap, r2Points(2000, 1000));
+    expect(r.worst / r.steepest).toBeLessThan(TOL_RATIO);
+    // The points on an octave's clamp or a junction, left out: about half
+    // of the 2,000 (957), since the rubble's domes fall past −1 over about
+    // half the ground, the floor between its cobbles, flat there; the rest
+    // match to the ratio.
+    expect(r.skipped).toBeLessThan(1200);
+    expect(r.skipped).toBeGreaterThan(500);
+  });
+
+  it("stays within [−1, 1] and finite over 20,000 points, far ones included", () => {
+    const pts = [
+      ...r2Points(10000, 90000),
+      ...r2Points(9996, 1000),
+      [90000, 90000], [-90000, 90000], [90000, -90000], [-90000, -90000],
+    ] as Array<[number, number]>;
+    for (const [x, z] of pts) {
+      const s = groundReliefD(SEED, x, z);
+      expect(Number.isFinite(s.v) && Number.isFinite(s.dx) && Number.isFinite(s.dz)).toBe(true);
+      expect(Math.abs(s.v)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("is deterministic, and another field than the faces' and another world's", () => {
+    let same = 0;
+    let sameAsFace = 0;
+    let sameAsOther = 0;
+    for (const [x, z] of r2Points(500, 90000)) {
+      const a = groundReliefD(SEED, x, z);
+      const b = groundReliefD(SEED, x, z);
+      if (Object.is(a.v, b.v) && Object.is(a.dx, b.dx) && Object.is(a.dz, b.dz)) same++;
+      if (a.v === faceReliefD(SEED, x, z).v) sameAsFace++;
+      if (a.v === groundReliefD(OTHER_SEED, x, z).v) sameAsOther++;
+    }
+    expect(same).toBe(500);
+    // The clamp's ±1 can agree by chance; the rest never.
+    expect(sameAsFace).toBeLessThan(100);
+    expect(sameAsOther).toBeLessThan(100);
+  });
+
+  it("is continuous: no step along 100 lines of 100 m at 1 cm", () => {
+    const dirs = [[1, 0], [0, 1], [0.6, 0.8], [0.8, -0.6]] as const;
+    const starts = r2Points(100, 1000);
+    let largest = 0;
+    for (let line = 0; line < 100; line++) {
+      const [ox, oz] = starts[line] as [number, number];
+      const [ux, uz] = dirs[line % 4] as readonly [number, number];
+      let prev = groundReliefD(SEED, ox, oz).v;
+      for (let k = 1; k <= 10000; k++) {
+        const v = groundReliefD(SEED, ox + ux * k * 0.01, oz + uz * k * 0.01).v;
+        largest = Math.max(largest, Math.abs(v - prev));
+        prev = v;
+      }
+    }
+    // The rubble's 0.3 m joints are the steepest: a unit range over 0.3 m at
+    // the gain is a step of about 0.04 in 1 cm.
+    expect(largest).toBeLessThan(0.25);
+  });
+
+  it("uses its range: a mean |v| about half the range, the clamp holding some", () => {
+    let sum = 0;
+    let clamped = 0;
+    const pts = r2Points(5000, 1000);
+    for (const [x, z] of pts) {
+      const v = groundReliefD(SEED, x, z).v;
+      sum += Math.abs(v);
+      if (v === 1 || v === -1) clamped++;
+    }
+    // Measured at the gain of 1.5 and the domes of 3: a mean of 0.57, 15 %
+    // clamped (0.68 and 35 % at a gain of 2, where the tops and hollows sat
+    // flat; 0.43 and 5 % at domes of 1.5).
+    const mean = sum / pts.length;
+    expect(mean).toBeGreaterThan(0.45);
+    expect(mean).toBeLessThan(0.65);
+    expect(clamped / pts.length).toBeGreaterThan(0.05);
+    expect(clamped / pts.length).toBeLessThan(0.25);
+  });
+});
+
 describe("the tunables", () => {
   it("holds every constant by name", () => {
     const keys = [
@@ -627,6 +748,12 @@ describe("the tunables", () => {
       "FACE_KIND_WAVE", "FACE_KIND_LO", "FACE_KIND_HI",
       "FACE_COLUMN_SALT", "FACE_BLOCK_SALT", "FACE_BLOCK_FINE_SALT", "FACE_KIND_SALT",
       "FACE_FORM_SALT",
+      "GROUND_SLAB_CELL", "GROUND_SLAB_JITTER", "GROUND_SLAB_BORDER", "GROUND_SLAB_TILT", "GROUND_SLAB_DOME",
+      "GROUND_RUBBLE_CELL", "GROUND_RUBBLE_JITTER", "GROUND_RUBBLE_BORDER", "GROUND_RUBBLE_WEIGHT",
+      "GROUND_RUBBLE_TILT", "GROUND_RUBBLE_DOME",
+      "GROUND_MASS_CELL", "GROUND_MASS_JITTER", "GROUND_MASS_BORDER", "GROUND_MASS_WEIGHT",
+      "GROUND_MASS_TILT", "GROUND_MASS_DOME",
+      "GROUND_GAIN", "GROUND_SLAB_SALT", "GROUND_RUBBLE_SALT", "GROUND_MASS_SALT",
     ];
     expect(Object.keys(FACE_RELIEF_TUNABLES).sort()).toEqual([...keys].sort());
     for (const [k, v] of Object.entries(relief)) {

@@ -3,6 +3,9 @@ import "../../src/sim/passes/index.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 import {
   faceMask,
+  rockOfSlope,
+  rockExtent,
+  groundLoudness,
   facePatchCells,
   facePatchGeometry,
   facePatchStitch,
@@ -21,6 +24,10 @@ import {
   PATCH_BEND_SHARE,
   PATCH_DEPTH,
   PATCH_REACH,
+  GROUND_DEPTH,
+  GROUND_LOUD_FLOOR,
+  GROUND_LOUD_LO,
+  GROUND_LOUD_HI,
 } from "../../src/game/facePatches.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -40,10 +47,13 @@ function bytes(a: Float32Array | Uint16Array): Uint8Array {
 }
 
 describe("facePatchGeometry", () => {
-  it("lays every vertex the relief leaves alone on the field's height", () => {
-    // Cell (−23, −57) is the scarp's foot: part flat, part steep.
+  it("lays every vertex the reliefs leave alone on the field's height", () => {
+    // Cell (−23, −57) is the scarp's foot: part flat, part steep, and the
+    // ground between painted rock by its slope (2026-10-13), which the
+    // walkable rock's relief moves too.
     const p = patch(-23, -57, 0.5);
     let flat = 0;
+    let rock = 0;
     let steep = 0;
     for (let iz = 0; iz <= 32; iz++) {
       for (let ix = 0; ix <= 32; ix++) {
@@ -51,8 +61,13 @@ describe("facePatchGeometry", () => {
         const z = -57 * 16 + iz * 0.5;
         const s = elevationSampleAt(SEED, x, z);
         const at = (iz * 33 + ix) * 3;
-        if (faceMask(Math.hypot(s.dx, s.dz)) > 0) {
+        const g = Math.hypot(s.dx, s.dz);
+        if (faceMask(g) > 0) {
           steep++;
+          continue;
+        }
+        if (rockOfSlope(g) > 0) {
+          rock++;
           continue;
         }
         flat++;
@@ -61,7 +76,8 @@ describe("facePatchGeometry", () => {
         expect(p.positions[at + 2]).toBe(Math.fround(z));
       }
     }
-    expect(flat).toBe(771);
+    expect(flat + rock).toBe(771);
+    expect(rock).toBeGreaterThan(0);
     expect(steep).toBe(318);
   }, timeLimit(20_000));
 
@@ -334,10 +350,60 @@ describe("facePatchGeometry", () => {
     expect(faded).toBe(3);
   }, timeLimit(20_000));
 
-  it("has no patch where no point of the cell is steep", () => {
-    // The camera's own cell at the reference pose: the road's flat.
-    expect(facePatchGeometry(SEED, -24, -57, 0.5, NONE)).toBeNull();
-    expect(facePatchGeometry(SEED, -24, -57, 1, NONE)).toBeNull();
+  it("has no patch where no point of the cell is steep or painted rock", () => {
+    // A cell of the flat south of the scarp, no point of it over a gradient
+    // of 0.3. The camera's own cell at the reference pose, the road's flat,
+    // had none before the walkable rock; its banks are painted rock.
+    expect(facePatchGeometry(SEED, -29, -81, 0.5, NONE)).toBeNull();
+    expect(facePatchGeometry(SEED, -29, -81, 1, NONE)).toBeNull();
+    expect(facePatchGeometry(SEED, -24, -57, 1, NONE)).not.toBeNull();
+  }, timeLimit(20_000));
+
+  it("patches the walkable rock: the rocky slope above the trail, no point of it steep", () => {
+    // The hillside at (−168, −1740): rock-of-slope 1 over its 48 m window,
+    // no face. Every vertex is pushed out along the normal by at most
+    // GROUND_DEPTH at full loudness, and none into the ground.
+    const ci = Math.floor(-168 / 16);
+    const cj = Math.floor(-1740 / 16);
+    const p = patch(ci, cj, 1);
+    let moved = 0;
+    let most = 0;
+    for (let iz = 0; iz <= 16; iz++) {
+      for (let ix = 0; ix <= 16; ix++) {
+        const x = ci * 16 + ix;
+        const z = cj * 16 + iz;
+        const s = elevationSampleAt(SEED, x, z);
+        expect(faceMask(Math.hypot(s.dx, s.dz))).toBe(0);
+        const at = (iz * 17 + ix) * 3;
+        const dx = (p.positions[at] as number) - x;
+        const dy = (p.positions[at + 1] as number) - s.h;
+        const dz = (p.positions[at + 2] as number) - z;
+        const d = Math.hypot(dx, dy, dz);
+        if (d > 0) moved++;
+        most = Math.max(most, d);
+        // Out along the normal (−h_x, 1, −h_z): never down into the ground
+        // (the positions are float32, at 70 m a step of 8e-6).
+        expect(dy).toBeGreaterThanOrEqual(-1e-4);
+      }
+    }
+    expect(moved).toBeGreaterThan(200);
+    expect(most).toBeLessThanOrEqual(GROUND_DEPTH + 1e-6);
+    expect(most).toBeGreaterThan(GROUND_DEPTH * 0.5);
+  }, timeLimit(20_000));
+
+  it("is louder the wider the rock: the extent and its loudness", () => {
+    expect(rockExtent(SEED, -168, -1740)).toBe(1);
+    expect(groundLoudness(1)).toBe(1);
+    // The road under the scarp: no rock-of-slope at the pose or 10 m about it.
+    expect(rockExtent(SEED, -370, -900)).toBe(0);
+    expect(groundLoudness(0)).toBe(GROUND_LOUD_FLOOR);
+    expect(groundLoudness(GROUND_LOUD_LO)).toBe(GROUND_LOUD_FLOOR);
+    expect(groundLoudness(GROUND_LOUD_HI)).toBe(1);
+    expect(groundLoudness((GROUND_LOUD_LO + GROUND_LOUD_HI) / 2)).toBeCloseTo((1 + GROUND_LOUD_FLOOR) / 2, 12);
+    // A corner of the road's cell: part way, between the two.
+    const e = rockExtent(SEED, -24 * 16, -57 * 16);
+    expect(e).toBeGreaterThan(0);
+    expect(e).toBeLessThan(1);
   }, timeLimit(20_000));
 
   it("is the same patch whatever was built before it", () => {
@@ -471,7 +537,7 @@ describe("facePatchCells and facePatchStitch", () => {
     expect(at(-18, -80).open).toBe(OPEN_SOUTH_EAST);
   });
 
-  it("at the scarp, patches the cells with steep ground: the counts", () => {
+  it("at the scarp, patches the cells with steep or rock-painted ground: the counts", () => {
     let near = 0;
     let far = 0;
     let wide = 0;
@@ -485,12 +551,14 @@ describe("facePatchCells and facePatchStitch", () => {
       vertices += p.vertexCount;
       triangles += p.triangleCount;
     }
-    expect(near).toBe(20);
-    expect(far).toBe(121);
-    expect(wide).toBe(221);
+    // 2026-10-13: 20, 121 and 221, 74,650 vertices and 131,200 triangles,
+    // before the walkable rock patched the cells painted rock.
+    expect(near).toBe(22);
+    expect(far).toBe(161);
+    expect(wide).toBe(577);
     // 2026-10-12: 56,749 vertices and 102,912 triangles before the wide band.
-    expect(vertices).toBe(74650);
-    expect(triangles).toBe(131200);
+    expect(vertices).toBe(117224);
+    expect(triangles).toBe(201344);
   }, timeLimit(120_000));
 
   it("at the scarp, turns no triangle over", () => {
@@ -521,8 +589,9 @@ describe("facePatchCells and facePatchStitch", () => {
     if (p === null) throw new Error("no patch at (25, 34)");
     const f = foldsOf(42, cell, p);
     expect(f.folds).toBe(0);
-    // 2026-10-12: 0.3487 before the relief's gain; 0.2664 before the
+    // 2026-10-13: 0.2634 before the walkable rock's push on the ridge's
+    // flanks. 2026-10-12: 0.3487 before the relief's gain; 0.2664 before the
     // relief's cells grew.
-    expect(f.least).toBeCloseTo(0.2634, 4);
+    expect(f.least).toBeCloseTo(0.2641, 4);
   }, timeLimit(20_000));
 });

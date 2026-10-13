@@ -615,10 +615,11 @@ describe("createClipmap", () => {
       frame(at.x, at.z);
       pending++;
     }
-    // The patches' 142 cells, nothing built ahead from a standstill, drawn
-    // 25 frames on; the rings, moved with the camera, leave out what the set
-    // drawn until then covers.
-    expect(pending).toBe(25);
+    // The patches' 190 cells (142 before the walkable rock, 2026-10-13),
+    // nothing built ahead from a standstill, drawn 26 frames on (25); the
+    // rings, moved with the camera, leave out what the set drawn until then
+    // covers.
+    expect(pending).toBe(26);
     expect(handed.length).toBe(2);
     expect(drawnRings()).toEqual(ringsFor(at.x, at.z, -24, PATCH_REACH.high));
     // Standing still, the rings are drawn again for the new set, with no
