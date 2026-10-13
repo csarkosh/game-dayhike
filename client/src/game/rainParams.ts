@@ -25,7 +25,7 @@ import type { QualityTier } from "./quality.js";
 import type { WindRecord } from "./windParams.js";
 
 /** Streaks in the box, by quality tier. */
-export const RAIN_TIERS: Record<QualityTier, number> = { low: 3000, medium: 10000, high: 24000 };
+export const RAIN_TIERS: Record<QualityTier, number> = { low: 6000, medium: 20000, high: 48000 };
 
 /** The box, metres: its size, how far its centre sits ahead of the eye along
  * the horizontal view direction, and how far below the eye. */
@@ -45,10 +45,10 @@ export type RainClass = {
 
 /** Four fall-speed classes; a seed's class is `k` in {0, 1/3, 2/3, 1}. */
 export const RAIN_CLASSES: readonly RainClass[] = [
-  { speed: 4.5, width: 0.012, alpha: 0.35 },
-  { speed: 6, width: 0.018, alpha: 0.43 },
-  { speed: 7.5, width: 0.024, alpha: 0.52 },
-  { speed: 9, width: 0.03, alpha: 0.6 },
+  { speed: 4.5, width: 0.012, alpha: 0.45 },
+  { speed: 6, width: 0.018, alpha: 0.55 },
+  { speed: 7.5, width: 0.024, alpha: 0.65 },
+  { speed: 9, width: 0.03, alpha: 0.75 },
 ];
 
 /** The streak's length is the class speed times the frame's duration times
@@ -61,9 +61,12 @@ export const RAIN_FADE_NEAR: readonly [number, number] = [0.6, 1.5];
 /** And out across this, before the box's far face at 12 m. */
 export const RAIN_FADE_FAR: readonly [number, number] = [9, 12];
 /** How much of a streak's alpha the bright sky takes, looking straight up. */
-export const RAIN_SKY_FADE = 0.6;
+export const RAIN_SKY_FADE = 0.35;
+/** The fade reaches its full share at this upward component of the view
+ * direction (0.5 is 30 degrees above level). */
+export const RAIN_SKY_RAMP = 0.5;
 /** The streak colour is the fog colour times `gain` plus `lift`. */
-export const RAIN_MILK = { gain: 1.15, lift: 0.05 } as const;
+export const RAIN_MILK = { gain: 1.25, lift: 0.08 } as const;
 /** Downwind drift, m/s, at wind speed 1. */
 export const RAIN_SLANT = 3;
 /** The headlamp's intensity (Babylon light units, 400 when on) times this is

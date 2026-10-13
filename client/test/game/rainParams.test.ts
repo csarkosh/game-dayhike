@@ -14,8 +14,8 @@ function wind(speed: number, axis: "x" | "z") {
 }
 
 describe("the rain's numbers", () => {
-  it("draws 3,000, 10,000 and 24,000 streaks by tier in a 24 by 20 by 24 m box", () => {
-    expect(RAIN_TIERS).toEqual({ low: 3000, medium: 10000, high: 24000 });
+  it("draws 6,000, 20,000 and 48,000 streaks by tier in a 24 by 20 by 24 m box", () => {
+    expect(RAIN_TIERS).toEqual({ low: 6000, medium: 20000, high: 48000 });
     expect(RAIN_BOX).toEqual({ x: 24, y: 20, z: 24, forward: 6, down: 2 });
     expect(RAIN_FOLD_S).toBe(40);
   });
@@ -28,7 +28,7 @@ describe("the rain's numbers", () => {
 
   it("widens and brightens the classes with their speed", () => {
     expect(RAIN_CLASSES.map((c) => c.width)).toEqual([0.012, 0.018, 0.024, 0.03]);
-    expect(RAIN_CLASSES.map((c) => c.alpha)).toEqual([0.35, 0.43, 0.52, 0.6]);
+    expect(RAIN_CLASSES.map((c) => c.alpha)).toEqual([0.45, 0.55, 0.65, 0.75]);
     expect(rainClassOf(0).speed).toBe(4.5);
     expect(rainClassOf(1 / 3).speed).toBe(6);
     expect(rainClassOf(2 / 3).speed).toBe(7.5);
@@ -186,10 +186,10 @@ describe("rainDropAt — the vertex stage's placement, mirrored", () => {
 
 describe("rainCountUnder", () => {
   it("is the rain value's share of the tier's streaks, rounded and clamped", () => {
-    expect(rainCountUnder(1, "high")).toBe(24000);
-    expect(rainCountUnder(0.5, "low")).toBe(1500);
+    expect(rainCountUnder(1, "high")).toBe(48000);
+    expect(rainCountUnder(0.5, "low")).toBe(3000);
     expect(rainCountUnder(0, "medium")).toBe(0);
-    expect(rainCountUnder(2, "medium")).toBe(10000);
+    expect(rainCountUnder(2, "medium")).toBe(20000);
     expect(rainCountUnder(0.00001, "low")).toBe(0);
   });
 });

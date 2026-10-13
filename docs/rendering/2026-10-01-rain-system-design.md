@@ -49,7 +49,7 @@ the lens droplets) is generated in code, as the streak sprite is today.
 | question | decision |
 | --- | --- |
 | The bar | On the reference machine (Apple M4, Chrome, ANGLE over Metal), at the canopy-trail pose and the meadow pose, the **whole rain stack's cost** (the frame under `weather rain` minus the frame under the same preset with every rain layer off, same build, pair method of §8) is at most **2.7 ms on high, 1.8 ms on medium and 0.8 ms on low** at native pixels, with the 4× figure and the WebGPU figure reported beside it. The branch's frame under `weather clear` is within the noise floor of the control's. No streak leading edge, no catch-up and no dry start at 7 m/s. Rain under the trailhead's car roof and kiosk is zero |
-| The air | A **camera-locked wrapped volume**: one thin-instanced quad mesh, a static per-drop seed buffer, and a vertex-stage material plugin that places each drop by `fract` inside a box of 24 by 20 by 24 m biased 6 m along the view, stretched along its own fall vector to the frame's streak length (§2). 3,000 streaks on low, 10,000 on medium, 24,000 on high, four fall-speed classes. Replaces the particle system entirely |
+| The air | A **camera-locked wrapped volume**: one thin-instanced quad mesh, a static per-drop seed buffer, and a vertex-stage material plugin that places each drop by `fract` inside a box of 24 by 20 by 24 m biased 6 m along the view, stretched along its own fall vector to the frame's streak length (§2). 6,000 streaks on low, 20,000 on medium, 48,000 on high (as amended, §2.6; 3,000, 10,000 and 24,000 as first built), four fall-speed classes. Replaces the particle system entirely |
 | The far field | Fog density gains `1 + FOG_RAIN_GAIN × rain` and the fog colour pulls toward neutral grey by rain; `clear` is unchanged by construction (§3) |
 | Lighting | Streak alpha fades toward the sky (view elevation) and brightens near the headlamp by an inverse-square term inside its cone; the streak colour is the fog colour lifted whiter (§3) |
 | Occlusion | On medium and high, a **top-down height map**: a 512-texel render target over 96 m around the player, re-rendered when the player has moved 8 m, drawing the terrain rings, the props, the cliffs and the water with a cheap height material. The terrain writes its canopy density as transmission; props and cliffs write hard cover. Streaks under cover fade by the transmission; splashes and drip read the same map. Low runs without it (§4) |
@@ -120,18 +120,21 @@ Per vertex, carried to the fragment as one varying:
 - **distance**: in from 0.6 m to 1.5 m, so no quad grows to fill the screen,
   and out from 9 m to 12 m, the box's half-width, so the far face is never
   seen;
-- **the sky**: times `1 - 0.6 × smoothstep(0, 0.25, viewY)`, the view
+- **the sky**: times `1 - 0.35 × smoothstep(0, 0.5, viewY)` (as amended, §2.6;
+  `1 - 0.6 × smoothstep(0, 0.25, viewY)` as first built), the view
   direction's upward component at the drop, because a drop against the bright
   overcast that lit it is invisible and the same drop against trunks is not
   (survey §1.4);
-- **the class**: 0.35 for the smallest to 0.6 for the largest, since visibility
+- **the class**: 0.45 for the smallest to 0.75 for the largest (as amended, §2.6;
+  0.35 to 0.6 as first built), since visibility
   rises with drop size;
 - **the headlamp**: plus `lampIntensity × cone / (1 + d²)`, where `d` is the
   drop's distance from the lamp and `cone` its falloff inside the lamp's angle,
   which is the night look every system gets from a point light near the eye;
 - **cover** (§4): times the map's transmission where the drop is under it.
 
-The streak colour is the scene's fog colour lifted by 15 percent and 0.05,
+The streak colour is the scene's fog colour lifted by 25 percent and 0.08 (as
+amended, §2.6; 15 percent and 0.05 as first built),
 the "milk" every production rain adds (survey §1.4); the material is unlit,
 alpha-blended, depth-tested, not depth-written, not culled, and fogged by the
 scene's exponential fog, which the atmosphere sets each frame for non-PBR
@@ -142,9 +145,9 @@ receiver, and its bounding info is not synced.
 
 | tier | streaks | box | expected fill at 1080p |
 | --- | --- | --- | --- |
-| low | 3,000 | 24 × 20 × 24 m | 0.2 to 0.3 ms at scaling 1.5 |
-| medium | 10,000 | same | 0.4 to 0.5 ms |
-| high | 24,000 | same | under 1 ms |
+| low | 6,000 (3,000 as first built) | 24 × 20 × 24 m | 0.2 to 0.3 ms at scaling 1.5 |
+| medium | 20,000 (10,000 as first built) | same | 0.4 to 0.5 ms |
+| high | 48,000 (24,000 as first built) | same | under 1 ms |
 
 The expectations are the survey's (§7.1, §6.4): an Intel UHD 620 sustains
 about 2.5 million textured blended pixels at 60 Hz in WebGL, and 24,000
@@ -160,6 +163,38 @@ wind)`, `dispose()`), so `renderer.ts` changes one line. The streak profile
 map and its tests stay. `RAIN_CAPACITY` becomes the streak count per tier.
 `rain.test.ts` is rewritten against the new shape. The emit-rate function and
 the particle-system latch go.
+
+### 2.6 Amended 2026-10-12: the rain made visible
+
+Played, the rain at the full preset read as sparse: a light drizzle against the
+ground and nothing against the trunks or the sky. Four numbers were moved, and
+the stills at the canopy and meadow poses (§8) were taken before and after on
+the high tier.
+
+- **The count**, doubled on every tier: 6,000, 20,000, 48,000. The box is
+  11,520 m³ and the eye, with the game's 1.4 rad field of view, sees about a
+  tenth of it inside the far fade at 9 m, so 24,000 streaks were about 2,300
+  on screen at once, one in every 30 by 30 px of a 1080p frame. The cost
+  the count adds is vertex work (four vertices a streak, a few dozen
+  operations each), not fill: a streak off screen or faded out rasterises to
+  nothing. Tripled, the frame read as a monsoon; doubled, as rain.
+- **The sky fade**, from `0.6 × smoothstep(0, 0.25, viewY)` to
+  `0.35 × smoothstep(0, 0.5, viewY)`. The old fade took 60 percent of a
+  streak's alpha within 14 degrees above level, which with the wide field of
+  view is the upper third of a level frame and all of one looking up at the
+  trees, where the background is trunks and crowns, not the bright overcast
+  the fade was written for. The new fade takes 35 percent, and only by 30
+  degrees up.
+- **The class alpha**, 0.45 to 0.75 from 0.35 to 0.6, and **the milk**,
+  the fog colour times 1.25 plus 0.08 from 1.15 plus 0.05: a streak against
+  the fog-coloured far field is invisible by construction (it is fogged to
+  that colour), so the contrast it has is against the near ground and the
+  trunks, and both terms lift it there.
+
+The counts and alphas are uniforms and the milk is set on the CPU, so only the
+sky fade changed the streak stage's text; the three rain vertex stages were
+re-recorded into the corpus (§9) on every tier. Nothing under cover, in the
+splashes, the drips, the lens or the wet rule moved.
 
 ## 3. The far field and the light
 
