@@ -9,6 +9,8 @@ import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+// Non-.pure path, load-bearing (Babylon 9 split — see lighting.ts).
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
@@ -25,6 +27,14 @@ import type { Forest } from "../sim/forest.js";
 import { isHollow } from "../sim/hollow.js";
 import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
 import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
+import {
+  DOOR_IN_M, HEADLAMP_CONE, HEADLAMP_RANGE, TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_COLOUR, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W,
+  arrived, carSpeed, endCar, endShot, endShotIndex, headlampAt, type EndShotContext, type LampAim,
+} from "./endScene.js";
+import { CATCH_AT_S } from "./carAudio.js";
+import type { Road } from "./scene/roadPath.js";
+import { stageCar } from "./scene/sceneStage.js";
+import type { TrailheadCar } from "./trailheadMeshes.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
@@ -1601,6 +1611,23 @@ export type FreecamView = { x: number; y: number; z: number; yaw: number; pitch:
 /** The game's own lens (rad, vertical). */
 export const GAME_FOV = 1.4;
 
+/** What the end scene (endScene.ts) is played over: the car's site and the way it faces, the road, the door spot, and the car as it stands each frame. */
+export type EndSceneSetup = {
+  site: { x: number; z: number };
+  direction: 1 | -1;
+  road: Road;
+  door: { x: number; z: number };
+  car: () => TrailheadCar | null;
+};
+
+/** The end scene this frame, for app.ts: seconds since it began, the arrival (or none yet), the shot, and the car's pose and speed. */
+export type EndSceneNow = {
+  t: number;
+  arrival: number | null;
+  shot: number;
+  car: { x: number; y: number; z: number; yaw: number; speed: number };
+};
+
 /** This frame's view inputs that come from neither the world nor the clock. */
 export type FrameView = { dt: number; sprinting: boolean };
 
@@ -1729,8 +1756,16 @@ export type Renderer = {
   setMist(density: number | null): number;
   /** How far the mist has come in, 0 to 1 (acts.ts): the ground cloud rises by it, after the night. */
   setMistIn(level: number): void;
-  /** The end for this player (ending.ts): the camera is the ending's from now, won or died. Once; a second call changes nothing. */
-  setEnding(kind: EndingKind): void;
+  /**
+   * The end for this player, once; a second call changes nothing. Died: the
+   * camera is the death's from now (ending.ts). Won: the end scene plays
+   * over the player's camera from now (endScene.ts): the run, the car, the
+   * road, the arrival judged each frame from the local body.
+   */
+  setEnding(kind: "died"): void;
+  setEnding(kind: "won", scene: EndSceneSetup): void;
+  /** The end scene as the last `sync` stepped it; null when none plays. One reused object. */
+  endScene(): EndSceneNow | null;
   /** A scene (cutscene.ts): the camera is the scene's from now; the summit's five shots for SUMMIT_SCENE_S (`at` the body, with the Hollow's feet and the party's eye); the cap's for CAP_SCENE_S, turned to it. */
   setScene(kind: "summit" | "cap", at: { x: number; y: number; z: number }, more?: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } }): void;
   /**
@@ -2138,13 +2173,125 @@ function buildRenderer(
   /** What the ending asks of the pass: the picture's softness and the dark's closing, 0 to 1, posed after the pass reads them, so a frame late. */
   let endBlur = 0;
   let endClose = 0;
-  /** The ending, once begun: its kind, when it began, and the pose it began from, taken on its first frame. */
-  let ending: { kind: EndingKind; since: number; base: EndingBase | null } = { kind: "won", since: -1, base: null };
+  /** The death's ending, once begun: when it began, and the pose it began from, taken on its first frame. */
+  let ending: { kind: "died"; since: number; base: EndingBase | null } = { kind: "died", since: -1, base: null };
+  /**
+   * The end scene, once begun: when, what it is played over, the shots'
+   * context (filled in place each frame), what app.ts reads of it, where the
+   * other bodies are hidden, the two headlamps the lamps become at the catch,
+   * and the tail lamps, made then.
+   */
+  let endRun: {
+    since: number;
+    setup: EndSceneSetup;
+    ctx: EndShotContext;
+    now: EndSceneNow;
+    hide: { x: number; z: number; radius: number };
+    lens: LampAim;
+    body: LampAim & { angle: number; range: number };
+    tails: { meshes: Mesh[]; material: StandardMaterial } | null;
+  } | null = null;
   /** The summit scene, while it plays: when it began, the eye it began from, and the body it looks at. */
   let summitScene: { kind: "summit" | "cap"; since: number; base: SceneBase | null; body: { x: number; y: number; z: number }; more: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } } | null } | null = null;
   /** The scene's lens this frame, or null for the game's; and the summit's shot, -1 outside one. */
   let sceneFov: number | null = null;
   let sceneShot = -1;
+
+  /**
+   * One frame of the end scene: the arrival judged from the local body, the
+   * pursuit's standpoint held from its first frame, the shot's camera and
+   * lens, the local body drawn through the run and in the car from the
+   * arrival, the other bodies at the door hidden, the car staged at its pose
+   * (its parts where it has them, else moved whole), and from the catch the
+   * body's lamp aimed as the car's left headlamp and the tail lamps lit.
+   */
+  function stepEndScene(e: NonNullable<typeof endRun>, local: { pos: Vec3; yaw: number }, seconds: number): void {
+    const t = seconds - e.since;
+    const ctx = e.ctx;
+    ctx.runner.x = local.pos.x;
+    ctx.runner.y = local.pos.y - PLAYER_HALF.y;
+    ctx.runner.z = local.pos.z;
+    ctx.runner.yaw = local.yaw;
+    ctx.eyeY = local.pos.y + PLAYER_EYE_OFFSET;
+    if (ctx.arrival === null && arrived(local.pos, ctx.door, t)) ctx.arrival = t;
+    const shot = endShotIndex(t, ctx.arrival);
+    if (shot === 1 && ctx.pursuitFrom === null) ctx.pursuitFrom = { x: local.pos.x, z: local.pos.z };
+    const pose = endShot(t, ctx);
+    camera.position.set(pose.x, pose.y, pose.z);
+    camera.rotation.set(pose.pitch, pose.yaw, 0);
+    sceneFov = pose.fov;
+    views.showLocal = ctx.arrival === null;
+    views.hideNear = e.hide;
+    const after = ctx.arrival === null ? 0 : t - ctx.arrival;
+    const car = endCar(after, ctx.road, ctx.site, ctx.direction);
+    const handle = e.setup.car();
+    if (handle !== null) {
+      if (handle.model !== null) stageCar(car, handle.model);
+      else {
+        handle.root.position.set(car.x, car.y, car.z);
+        handle.root.rotation.y = car.yaw;
+      }
+    }
+    const now = e.now;
+    now.t = t;
+    now.arrival = ctx.arrival;
+    now.shot = shot;
+    now.car.x = car.x;
+    now.car.y = car.y;
+    now.car.z = car.z;
+    now.car.yaw = car.yaw;
+    now.car.speed = carSpeed(after);
+    if (ctx.arrival === null || after < CATCH_AT_S) {
+      views.localLampAt = null;
+      return;
+    }
+    headlampAt(car, -1, e.body);
+    views.localLampAt = e.body;
+    headlampAt(car, 1, e.lens);
+    if (handle === null) return;
+    e.tails ??= makeTails();
+    for (const mesh of e.tails.meshes) if (mesh.parent !== handle.root) mesh.parent = handle.root;
+  }
+
+  /** The lens's lamp in the end scene: off, or from the catch the car's right headlamp, freed from the camera. */
+  function endLensLamp(e: NonNullable<typeof endRun>): void {
+    if (e.ctx.arrival === null || e.now.t - e.ctx.arrival < CATCH_AT_S) {
+      setLamp(localLamp, false);
+      return;
+    }
+    if (localLamp.parent !== null) {
+      localLamp.parent = null;
+      localLamp.angle = HEADLAMP_CONE;
+      localLamp.range = HEADLAMP_RANGE;
+    }
+    localLamp.position.set(e.lens.x, e.lens.y, e.lens.z);
+    localLamp.direction.set(e.lens.dx, e.lens.dy, e.lens.dz);
+    setLamp(localLamp, true);
+  }
+
+  /** The car's tail lamps: two small red quads, lit by nothing and lighting nothing, at its rear corners, facing back. */
+  function makeTails(): { meshes: Mesh[]; material: StandardMaterial } {
+    const material = new StandardMaterial("mat_car_tail_lamp", scene);
+    material.disableLighting = true;
+    material.emissiveColor = new Color3(...TAIL_LAMP_COLOUR);
+    const meshes = [-1, 1].map((side) => {
+      // A plane faces -z as it is made: out of the car's tail.
+      const mesh = MeshBuilder.CreatePlane(`car_tail_lamp_${side < 0 ? "l" : "r"}`, { width: TAIL_LAMP_W, height: TAIL_LAMP_H }, scene);
+      mesh.position.set(side * TAIL_LAMP_APART / 2, TAIL_LAMP_UP, -TAIL_LAMP_BACK);
+      mesh.material = material;
+      mesh.isPickable = false;
+      mesh.receiveShadows = false;
+      return mesh;
+    });
+    return { meshes, material };
+  }
+
+  function disposeTails(): void {
+    if (endRun === null || endRun.tails === null) return;
+    for (const mesh of endRun.tails.meshes) mesh.dispose();
+    endRun.tails.material.dispose();
+    endRun.tails = null;
+  }
   const stareAt = new Vector3();
   // The forest's density over the camera, a full terrain sample: taken
   // again only once the camera has moved a metre from where it was taken.
@@ -3160,7 +3307,7 @@ function buildRenderer(
         // from the eye the player had then, for the reveal's seconds.
         sceneFov = null;
         sceneShot = -1;
-        if (summitScene !== null && ending.since < 0) {
+        if (summitScene !== null && ending.since < 0 && endRun === null) {
           const t = seconds - summitScene.since;
           if (t >= (summitScene.kind === "summit" ? SUMMIT_SCENE_S : CAP_SCENE_S)) summitScene = null;
           else {
@@ -3184,6 +3331,8 @@ function buildRenderer(
         }
         // The local body stands in the summit's shots, until the last returns to its eye.
         views.showLocal = sceneShot >= 0 && sceneShot < SHOTS.length - 1;
+        // The end scene: its camera and lens, the body through the run, the car.
+        if (endRun !== null) stepEndScene(endRun, local, seconds);
         // The end: from its first frame the camera is the ending's, from the
         // pose the player had then, and the pass takes its blur and its dark.
         if (ending.since >= 0) {
@@ -3198,6 +3347,8 @@ function buildRenderer(
         camera.fov = sceneFov ?? GAME_FOV;
         // In the summit's shots the lamp on the lens is off: the body's own lights them (entityViews.ts).
         setLamp(localLamp, local.lamp.on && !views.showLocal, lampState);
+        // In the end scene it is off too, the camera not being the eye, until the catch makes it a headlamp.
+        if (endRun !== null) endLensLamp(endRun);
         rainMap?.update(local.pos);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
@@ -3254,9 +3405,30 @@ function buildRenderer(
     setScene(kind, at, more) {
       summitScene = { kind, since: clock() / 1000, base: null, body: { x: at.x, y: at.y, z: at.z }, more: more ?? null };
     },
-    setEnding(kind) {
+    setEnding(kind: EndingKind, scene?: EndSceneSetup) {
+      if (kind === "won") {
+        if (endRun !== null || scene === undefined) return;
+        const groundY = scene.road.groundY(scene.site.x, scene.site.z);
+        endRun = {
+          since: clock() / 1000,
+          setup: scene,
+          ctx: {
+            runner: { x: 0, y: 0, z: 0, yaw: 0 }, eyeY: 0, site: scene.site, groundY, direction: scene.direction,
+            road: scene.road, door: scene.door, arrival: null, pursuitFrom: null,
+          },
+          now: { t: 0, arrival: null, shot: 0, car: { x: scene.site.x, y: groundY, z: scene.site.z, yaw: scene.direction === 1 ? 0 : Math.PI, speed: 0 } },
+          hide: { x: scene.door.x, z: scene.door.z, radius: DOOR_IN_M },
+          lens: { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1 },
+          body: { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, angle: HEADLAMP_CONE, range: HEADLAMP_RANGE },
+          tails: null,
+        };
+        return;
+      }
       if (ending.since >= 0) return;
       ending = { kind, since: clock() / 1000, base: null };
+    },
+    endScene() {
+      return endRun === null ? null : endRun.now;
     },
     listener() {
       // `camera.rotation` rather than the sim's yaw/pitch: it is set on both of
@@ -3294,6 +3466,8 @@ function buildRenderer(
     },
     dispose() {
       views.dispose();
+      // The end scene's tail lamps, made at its catch, if it got that far.
+      disposeTails();
       silhouette?.dispose();
       droppedCap?.dispose();
       localLamp.dispose();

@@ -15,7 +15,7 @@ import { aimDirection } from "../sim/view.js";
 import { HOLLOW_HEIGHT } from "../sim/hollow.js";
 import { isShadeState } from "../sim/haunt.js";
 import { createCharacterPool, variantForId, type CharacterInstance, type CharacterPool } from "./characterModel.js";
-import { createHeadlamp, setLamp } from "./headlamp.js";
+import { LAMP_ANGLE, LAMP_RANGE, createHeadlamp, setLamp } from "./headlamp.js";
 import { LAMP_DEFAULT, type LampState } from "./lampParams.js";
 import {
   HOLLOW_ALBEDO, HOLLOW_EMISSIVE, HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_MATERIAL, HOLLOW_ROUGHNESS,
@@ -155,6 +155,14 @@ export class EntityViews {
   /** Each enemy's fade, 0 to 1 (`visibility`), and the state it was last seen in: a shade, a lunge or a Hollow stepping out comes in from nothing, and a shade or a lunge goes out to nothing after it is gone. */
   /** Whether the local player's own body is drawn: a scene's camera stands elsewhere (renderer.ts). */
   showLocal = false;
+  /** In the end scene, every other body within `radius` of this point (the car's door) is hidden: it is in the car. */
+  hideNear: { x: number; z: number; radius: number } | null = null;
+  /**
+   * In the end scene from the engine's catch, the local player's lamp is one
+   * of the car's headlamps: here, pointed so, at this cone and reach, lit
+   * whatever the body shows. Null, it is the body's own.
+   */
+  localLampAt: { x: number; y: number; z: number; dx: number; dy: number; dz: number; angle: number; range: number } | null = null;
   private readonly fades = new Map<number, { level: number; ai: number; rise: number; settle: number; quick: boolean; delay: number }>();
   /** Each enemy's reach, 0 to 1: how far its arms are turned out at the local player (REACH_S). */
   private readonly reaches = new Map<number, number>();
@@ -245,6 +253,14 @@ export class EntityViews {
         this.playerModels.get(id)?.view.node.setEnabled(false);
         continue;
       }
+      const near = this.hideNear;
+      if (near !== null && id !== localId && Math.hypot(player.pos.x - near.x, player.pos.z - near.z) <= near.radius) {
+        this.players.get(id)?.node.setEnabled(false);
+        this.playerModels.get(id)?.view.node.setEnabled(false);
+        const lamp = this.lamps.get(id);
+        if (lamp !== undefined) setLamp(lamp, false);
+        continue;
+      }
 
       // The model's origin is at its feet (ARCHITECTURE.md, Model
       // conventions), the sim's position at the centre of the hull.
@@ -285,13 +301,29 @@ export class EntityViews {
       lamp.position.set(node.position.x, feetY + PLAYER_HALF.y + PLAYER_EYE_OFFSET, node.position.z);
       const d = aimDirection(player.yaw, player.pitch);
       lamp.direction.set(d.x, d.y, d.z);
+      if (lamp.angle !== LAMP_ANGLE) lamp.angle = LAMP_ANGLE;
+      if (lamp.range !== LAMP_RANGE) lamp.range = LAMP_RANGE;
       // The scene's light is the local player's own headlamp, worn on the body it shows, on for its length.
       setLamp(lamp, player.lamp.on || (id === localId && this.showLocal), lampState);
+    }
+    // The car's headlamp the local lamp has become, after the body's own use of it.
+    const at = this.localLampAt;
+    if (at !== null && state.players.has(localId)) {
+      let lamp = this.lamps.get(localId);
+      if (lamp === undefined) {
+        lamp = createHeadlamp(this.scene, `lamp_player_${localId}`);
+        this.lamps.set(localId, lamp);
+      }
+      lamp.position.set(at.x, at.y, at.z);
+      lamp.direction.set(at.dx, at.dy, at.dz);
+      if (lamp.angle !== at.angle) lamp.angle = at.angle;
+      if (lamp.range !== at.range) lamp.range = at.range;
+      setLamp(lamp, true);
     }
     this.pruneModels(this.playerModels, state.players);
     this.prune(this.players, state.players);
     for (const [id, lamp] of this.lamps) {
-      if (!state.players.has(id) || (id === localId && !this.showLocal)) {
+      if (!state.players.has(id) || (id === localId && !this.showLocal && this.localLampAt === null)) {
         lamp.dispose();
         this.lamps.delete(id);
       }

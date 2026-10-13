@@ -124,6 +124,41 @@ describe("EntityViews lamps", () => {
   });
 });
 
+describe("EntityViews in the end scene", () => {
+  it("hides another body within 1.2 m of the door, and its lamp, and draws one 1.3 m off", () => {
+    const views = new EntityViews(scene);
+    const at = (id: number, x: number) => ({ ...player(id, true), pos: { x, y: 0.9, z: 4 } });
+    views.hideNear = { x: 10, z: 4, radius: 1.2 };
+    views.sync(state(player(1, true), at(2, 11.2), at(3, 11.3)), 1, 1);
+    expect(scene.getMeshByName("player_2")?.isEnabled() ?? false).toBe(false);
+    expect(scene.getMeshByName("player_3")!.isEnabled()).toBe(true);
+    // In before the door was watched: drawn, then hidden, its lamp out.
+    views.hideNear = null;
+    views.sync(state(player(1, true), at(2, 11.2)), 1, 1);
+    expect(scene.getMeshByName("player_2")!.isEnabled()).toBe(true);
+    views.hideNear = { x: 10, z: 4, radius: 1.2 };
+    views.sync(state(player(1, true), at(2, 11.2)), 1, 1);
+    expect(scene.getMeshByName("player_2")!.isEnabled()).toBe(false);
+    expect((scene.lights.find((l) => l.name === "lamp_player_2") as SpotLight).intensity).toBe(0);
+    views.dispose();
+  });
+
+  it("stands the local lamp where the car's headlamp is, at its cone and reach, with the body hidden", () => {
+    const views = new EntityViews(scene);
+    views.localLampAt = { x: 7.5, y: 0.7, z: 2.3, dx: 0, dy: -0.1, dz: 1, angle: 1.9, range: 60 };
+    views.sync(state(player(1, false)), 1, 1);
+    const lamp = scene.lights.find((l) => l.name === "lamp_player_1") as SpotLight;
+    expect(lamp.position.asArray()).toEqual([7.5, 0.7, 2.3]);
+    expect(lamp.direction.asArray()).toEqual([0, -0.1, 1]);
+    expect([lamp.angle, lamp.range, lamp.intensity]).toEqual([1.9, 60, LAMP_INTENSITY]);
+    expect(scene.getMeshByName("player_1")?.isEnabled() ?? false).toBe(false);
+    views.localLampAt = null;
+    views.sync(state(player(1, false)), 1, 1);
+    expect(scene.lights.filter((l) => l.name === "lamp_player_1")).toHaveLength(0);
+    views.dispose();
+  });
+});
+
 describe("EntityViews placement", () => {
   it("draws a player where they stand from their first frame, before they ever move", () => {
     const views = new EntityViews(scene);
