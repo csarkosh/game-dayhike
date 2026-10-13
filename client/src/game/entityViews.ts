@@ -163,6 +163,13 @@ export class EntityViews {
    * whatever the body shows. Null, it is the body's own.
    */
   localLampAt: { x: number; y: number; z: number; dx: number; dy: number; dz: number; angle: number; range: number } | null = null;
+  /**
+   * Keep the local player's lamp a light, dark while their body is not drawn,
+   * rather than dispose it: from the chase's flip to the end, so the lights
+   * every material binds stay the same from the film's car's first frames
+   * through the end scene, and nothing is asked of the pipelines anew in it.
+   */
+  keepLocalLamp = false;
   private readonly fades = new Map<number, { level: number; ai: number; rise: number; settle: number; quick: boolean; delay: number }>();
   /** Each enemy's reach, 0 to 1: how far its arms are turned out at the local player (REACH_S). */
   private readonly reaches = new Map<number, number>();
@@ -307,23 +314,14 @@ export class EntityViews {
       setLamp(lamp, player.lamp.on || (id === localId && this.showLocal), lampState);
     }
     // The car's headlamp the local lamp has become, after the body's own use of it.
-    const at = this.localLampAt;
-    if (at !== null && state.players.has(localId)) {
-      let lamp = this.lamps.get(localId);
-      if (lamp === undefined) {
-        lamp = createHeadlamp(this.scene, `lamp_player_${localId}`);
-        this.lamps.set(localId, lamp);
-      }
-      lamp.position.set(at.x, at.y, at.z);
-      lamp.direction.set(at.dx, at.dy, at.dz);
-      if (lamp.angle !== at.angle) lamp.angle = at.angle;
-      if (lamp.range !== at.range) lamp.range = at.range;
-      setLamp(lamp, true);
+    if (state.players.has(localId)) {
+      if (this.localLampAt !== null) this.aimLocalLamp(localId);
+      else if (this.keepLocalLamp && !this.showLocal) setLamp(this.localLamp(localId), false);
     }
     this.pruneModels(this.playerModels, state.players);
     this.prune(this.players, state.players);
     for (const [id, lamp] of this.lamps) {
-      if (!state.players.has(id) || (id === localId && !this.showLocal && this.localLampAt === null)) {
+      if (!state.players.has(id) || (id === localId && !this.showLocal && this.localLampAt === null && !this.keepLocalLamp)) {
         lamp.dispose();
         this.lamps.delete(id);
       }
@@ -477,6 +475,32 @@ export class EntityViews {
   /** How many enemies are fading out, for the tests. */
   fadingOut(): number {
     return this.fading.size;
+  }
+
+  /** The local player's lamp, made if it is not there. */
+  private localLamp(localId: number): SpotLight {
+    let lamp = this.lamps.get(localId);
+    if (lamp === undefined) {
+      lamp = createHeadlamp(this.scene, `lamp_player_${localId}`);
+      this.lamps.set(localId, lamp);
+    }
+    return lamp;
+  }
+
+  /**
+   * The local lamp as the car's headlamp, where `localLampAt` says, lit:
+   * nothing without it. `sync` does it; the renderer does it again once the
+   * car is posed later in the frame, so the lamp is where the car is.
+   */
+  aimLocalLamp(localId: number): void {
+    const at = this.localLampAt;
+    if (at === null) return;
+    const lamp = this.localLamp(localId);
+    lamp.position.set(at.x, at.y, at.z);
+    lamp.direction.set(at.dx, at.dy, at.dz);
+    if (lamp.angle !== at.angle) lamp.angle = at.angle;
+    if (lamp.range !== at.range) lamp.range = at.range;
+    setLamp(lamp, true);
   }
 
   /** This frame's shades for the silhouette mask, when `softShades`. */

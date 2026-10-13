@@ -11,6 +11,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import type { Observer } from "@babylonjs/core/Misc/observable.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 
 import { BOARD_BOX_HALF, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes, carDirection, type Board } from "../sim/trailhead.js";
@@ -20,6 +21,7 @@ import { paintedBoard, type BoardDrawing, type BoardPainter } from "./boardPaint
 import { CAR_SHADOW_BIAS, CAR_SHADOW_TEX, carShadowAlphaMap, carShadowGrid } from "./carShadow.js";
 import type { MeshRegistry, PropShadows } from "./propMeshes.js";
 import { carModelOf, dimCabParts, type CarModel } from "./scene/sceneStage.js";
+import { TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_COLOUR, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W } from "./endScene.js";
 import { armYaw } from "./signMeshes.js";
 import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
@@ -66,12 +68,53 @@ export type TrailheadDeps = {
 
 /**
  * The car the end scene drives: the node it moves by, its parts where it
- * has them, and `leave()`, which takes it out of the rain's cover as it
- * drives off (the cover map is drawn once for a place, and a car that has
- * gone would keep the rain off the pad it left). Once is enough; again is
- * nothing.
+ * has them, `leave()`, which takes it out of the rain's cover as it drives
+ * off (the cover map is drawn once for a place, and a car that has gone
+ * would keep the rain off the pad it left; once is enough, again is
+ * nothing), and `tailLamps(on)`, which lights and shows the film's car's tail lamps, or hides them
+ * (the parked car has none).
  */
-export type TrailheadCar = { root: TransformNode; model: CarModel | null; leave(): void };
+export type TrailheadCar = { root: TransformNode; model: CarModel | null; leave(): void; tailLamps(on: boolean): void };
+
+/**
+ * The film's car is drawn wherever it stands once swapped in, each mesh
+ * until its material is ready for it after a frame drawn, and none past
+ * this many frames: the effects prepared, the shader modules made and the
+ * pipelines requested at the swap, while the car stands unseen a kilometre
+ * off in the dark of the chase, so the scene's first frames draw the car
+ * whole instead of leaving it out or holding the page.
+ */
+export const PIPELINE_WARM_FRAMES_MAX = 30;
+
+/** The film's car's tail lamps: two quads at its rear corners, children of its root, unlit and not fogged; drawn only while lit, after their first frames. */
+type TailLamps = { meshes: Mesh[]; material: StandardMaterial; on: boolean };
+
+/** Whether a mesh's material is ready for every part of it. */
+function readyToDraw(mesh: Mesh): boolean {
+  const material = mesh.material;
+  if (material === null) return true;
+  for (const sub of mesh.subMeshes ?? []) if (!material.isReadyForSubMesh(mesh, sub)) return false;
+  return true;
+}
+
+function createTailLamps(scene: Scene, root: TransformNode): TailLamps {
+  const material = new StandardMaterial("mat_car_tail_lamp", scene);
+  material.disableLighting = true;
+  material.emissiveColor = new Color3(0, 0, 0);
+  // Two red points down the highway into the mist: the fog would take them first.
+  material.fogEnabled = false;
+  const meshes = [-1, 1].map((side) => {
+    // A plane faces -z as it is made: out of the car's tail.
+    const mesh = MeshBuilder.CreatePlane(`car_tail_lamp_${side < 0 ? "l" : "r"}`, { width: TAIL_LAMP_W, height: TAIL_LAMP_H }, scene);
+    mesh.parent = root;
+    mesh.position.set(side * TAIL_LAMP_APART / 2, TAIL_LAMP_UP, -TAIL_LAMP_BACK);
+    mesh.material = material;
+    mesh.isPickable = false;
+    mesh.receiveShadows = false;
+    return mesh;
+  });
+  return { meshes, material, on: false };
+}
 
 export type TrailheadMeshes = {
   /** Resolves once both models have settled, loaded or failed. */
@@ -82,6 +125,8 @@ export type TrailheadMeshes = {
    * the box stands, or with no car at all. The same object each call.
    */
   car(): TrailheadCar | null;
+  /** Whether the film's car is still in its first frames, drawn wherever it stands (`PIPELINE_WARM_FRAMES_MAX`). */
+  warm(): boolean;
   /**
    * The film's car (`intro.car`, which has wheels and a door) in the parked
    * car's place: on the same site, ground and yaw, soaked, shadowed and
@@ -227,14 +272,49 @@ export function createTrailheadMeshes(
   let patch: CarShadowPatch | null = car === null ? null : createCarShadowPatch(scene, car.site, groundH);
   /** The parked model once it has arrived, and the film's car once swapped in; each with the handle `car()` gives. */
   let parked: { placed: PlacedModel; handle: TrailheadCar } | null = null;
-  let film: { placed: PlacedModel; handle: TrailheadCar; patch: CarShadowPatch } | null = null;
-  /** The handle for a placed car: its root, its parts, and its leaving the cover. */
-  function handleFor(placed: PlacedModel, model: CarModel | null): TrailheadCar {
+  let film: { placed: PlacedModel; handle: TrailheadCar; patch: CarShadowPatch; tails: TailLamps } | null = null;
+  /** The film's car's first frames: the meshes still drawn wherever they stand, and the frames so far; null once none is left. */
+  let warming: { left: Set<Mesh>; frames: number; observer: Observer<Scene> } | null = null;
+  /** A mesh's first frames over: culled as ever again, and a tail lamp not lit hidden. */
+  function warmedOne(mesh: Mesh): void {
+    mesh.alwaysSelectAsActiveMesh = false;
+    if (film !== null && film.tails.meshes.includes(mesh) && !film.tails.on) mesh.setEnabled(false);
+  }
+  function warmed(): void {
+    if (warming === null) return;
+    for (const m of warming.left) warmedOne(m);
+    scene.onAfterRenderObservable.remove(warming.observer);
+    warming = null;
+  }
+  /** After each frame: each mesh still warming that is now ready leaves; at the cap, all do. */
+  function warmStep(): void {
+    if (warming === null) return;
+    warming.frames += 1;
+    if (warming.frames >= PIPELINE_WARM_FRAMES_MAX) {
+      warmed();
+      return;
+    }
+    for (const m of warming.left) {
+      if (!readyToDraw(m)) continue;
+      warming.left.delete(m);
+      warmedOne(m);
+    }
+    if (warming.left.size === 0) warmed();
+  }
+  /** The handle for a placed car: its root, its parts, its leaving the cover, and its tail lamps if it has them. */
+  function handleFor(placed: PlacedModel, model: CarModel | null, tails: TailLamps | null): TrailheadCar {
     return {
       root: placed.node,
       model,
       leave() {
         for (const m of placed.meshes) deps.cover?.remove(m);
+      },
+      tailLamps(on) {
+        if (tails === null) return;
+        tails.on = on;
+        if (on) tails.material.emissiveColor.set(...TAIL_LAMP_COLOUR);
+        else tails.material.emissiveColor.set(0, 0, 0);
+        for (const m of tails.meshes) m.setEnabled(on);
       },
     };
   }
@@ -301,7 +381,7 @@ export function createTrailheadMeshes(
 
   const ready = Promise.all([
     car === null || carBox === null ? Promise.resolve() : place(TRAILHEAD_CAR_OUTPUT, "trailhead_car", car.site, carYaw(car.site, car.trailhead), [carBox], (model) => {
-      parked = { placed: model, handle: handleFor(model, null) };
+      parked = { placed: model, handle: handleFor(model, null, null) };
       // The film's car came first: the parked one arrives hidden under it.
       if (film !== null) model.node.setEnabled(false);
     }),
@@ -314,6 +394,9 @@ export function createTrailheadMeshes(
 
   return {
     ready,
+    warm() {
+      return warming !== null;
+    },
     car() {
       return film?.handle ?? parked?.handle ?? null;
     },
@@ -341,7 +424,12 @@ export function createTrailheadMeshes(
       const moving = createCarShadowPatch(scene, { x: 0, z: 0 }, () => 0, { moving: true });
       moving.mesh.name = "trailhead_film_car_shadow";
       moving.mesh.parent = placed.node;
-      film = { placed, handle: handleFor(placed, model), patch: moving };
+      const tails = createTailLamps(scene, placed.node);
+      film = { placed, handle: handleFor(placed, model, tails), patch: moving, tails };
+      // Drawn for its first frames wherever it stands, so it is ready when the scene opens.
+      const warm = [...placed.meshes, moving.mesh, ...tails.meshes];
+      for (const m of warm) m.alwaysSelectAsActiveMesh = true;
+      warming = { left: new Set(warm), frames: 0, observer: scene.onAfterRenderObservable.add(warmStep) };
     },
     dispose() {
       if (disposed) return;
@@ -350,8 +438,11 @@ export function createTrailheadMeshes(
       if (carBox !== null) dropBox(carBox);
       patch?.dispose();
       patch = null;
+      warmed();
       if (film !== null) {
         film.patch.dispose();
+        for (const m of film.tails.meshes) m.dispose();
+        film.tails.material.dispose();
         for (const m of film.placed.meshes) {
           deps.shadows?.remove(m);
           deps.cover?.remove(m);

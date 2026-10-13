@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  arrived, carDistance, carHeard, carSpeed, endBeats, endCar, endShot, endShotIndex, headlampAt, laneAt, roadRelease,
+  arrived, carDistance, carHeard, carSpeed, endBeats, endCar, endShot, endShotIndex, endMistShare, headlampAt, laneAt, releaseAt, roadRelease,
   type EndShotContext, type LampAim,
 } from "../../src/game/endScene.js";
 import { doorSpot } from "../../src/sim/trailhead.js";
@@ -78,7 +78,7 @@ describe("the end scene's shots", () => {
     expect(passing.pitch).toBeCloseTo(0.0077614352476271875, 9);
   });
 
-  it("starts shot 4 14 m over the car looking down, carries it 2 s, leaves it in the air and tilts up to the road ahead", () => {
+  it("starts shot 4 14 m over the car looking down, carries it 2 s, slows it to rest along the road and tilts up", () => {
     const a = ctx({ arrival: 1 });
     const start = endShot(6.5, a);
     expect(start.x).toBeCloseTo(4.422028982899653, 9);
@@ -90,15 +90,28 @@ describe("the end scene's shots", () => {
     const carried = endShot(8.5, a);
     expect([carried.x, carried.y, carried.z, carried.yaw]).toEqual([expect.closeTo(1.8, 9), expect.closeTo(14, 9), expect.closeTo(40.6, 9), 0]);
     expect(carried.pitch).toBeCloseTo(1.4396296296296296, 9);
-    // Released: held where the car was at the release, the car 54.6 m along beneath it.
+    // Half through the release: over the car's pose 0.375 s after the release's, 45.85 m along.
+    expect(releaseAt(0.5)).toBeCloseTo(7.875, 9);
+    const slowing = endShot(9, a);
+    expect([slowing.x, slowing.y, slowing.z]).toEqual([expect.closeTo(1.8, 9), expect.closeTo(14, 9), expect.closeTo(45.85, 9)]);
+    // At rest over the car's pose half the release on, 47.6 m along, never back; the car 54.6 m along.
     const released = endShot(9.5, a);
-    expect([released.x, released.y, released.z, released.yaw]).toEqual([expect.closeTo(1.8, 9), expect.closeTo(14, 9), expect.closeTo(40.6, 9), 0]);
+    // 2026-10-13: 40.6 before the release slowed along the car's own path.
+    expect([released.x, released.y, released.z, released.yaw]).toEqual([expect.closeTo(1.8, 9), expect.closeTo(14, 9), expect.closeTo(47.6, 9), 0]);
     expect(endCar(8.5, road, site, 1).z).toBeCloseTo(54.6, 9);
     expect(released.pitch).toBeCloseTo(1.3171875, 9);
     const end = endShot(18.5, a);
     expect(end.pitch).toBeCloseTo(0.06, 9);
-    expect(end.z).toBeCloseTo(40.6, 9);
-    // The release made once for the scene is the one made each frame.
+    // 2026-10-13: 40.6 before the release slowed along the car's path.
+    expect(end.z).toBeCloseTo(47.6, 9);
+    // Forward all the way: each frame at or past the last.
+    let last = -Infinity;
+    for (let t = 8.5; t <= 9.6; t += 0.05) {
+      const z = endShot(t, a).z;
+      expect(z).toBeGreaterThanOrEqual(last);
+      last = z;
+    }
+    // The rest made once for the scene is the one made each frame.
     const once = endShot(9.5, { ...a, held: roadRelease(road, site, 1) });
     expect([once.x, once.y, once.z, once.yaw]).toEqual([released.x, released.y, released.z, released.yaw]);
     // Past the end the last pose holds.
@@ -166,6 +179,14 @@ describe("the car", () => {
     expect(down.y).toBeCloseTo(9.706710052650276, 9);
     expect(down.z).toBeCloseTo(14.204920976681922, 9);
     expect(Math.hypot(down.x, down.y, down.z)).toBeCloseTo(17.204650534085253, 9);
+  });
+});
+
+describe("the mist in the road shot", () => {
+  it("leaves all of it before the road, eases to a fifth over 4 s from the road's start, and holds", () => {
+    expect([-5, 0, 1, 2, 3, 4, 12].map((s) => endMistShare(s))).toEqual([
+      1, 1, expect.closeTo(0.875, 9), expect.closeTo(0.6, 9), expect.closeTo(0.325, 9), expect.closeTo(0.2, 9), expect.closeTo(0.2, 9),
+    ]);
   });
 });
 

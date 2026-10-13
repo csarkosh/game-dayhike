@@ -14,7 +14,8 @@ import { RING_COUNT } from "./game/clipmap.js";
 import { loadUntilAborted, reportCompile, reportProgress } from "./game/modelLoad.js";
 import { defaultModelLoader, placeStaticModel } from "./game/staticModel.js";
 import {
-  END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
+  END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, ESCAPE_SETTLE_S, ESCAPE_WAIT_S, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
+  endMistShare,
 } from "./game/endScene.js";
 import { READY_MAX_MS, startReady } from "./game/startReady.js";
 import { ENGAGE_MAX_MS, whenEngaged } from "./game/engageWait.js";
@@ -50,6 +51,7 @@ import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
 import { actsUnder,
   ESCALATION_REST,
+  escalationAt,
   atmosphereUnder,
   escalationTargets,
   stepEscalation,
@@ -542,6 +544,8 @@ function buildGame(
   let summitPreview: (() => void) | null = null;
   /** The `escape` command's hand on the host's own player, installed when this screen hosts; null on a client. */
   let escapeLook: (() => void) | null = null;
+  /** Each host frame before its ticks: the `escape` look's step, which puts the player by the car once the film's car is in. */
+  let escapeStep: (() => void) | null = null;
   let lastLook = { yaw: 0, pitch: 0 };
   const sceneOn = (): boolean => performance.now() < sceneUntil;
   /** The command with the player stilled: no move, no press, the look held where it was. */
@@ -959,7 +963,10 @@ function buildGame(
         telemetry.event("phase", { phase: phaseName(state.phase), p: progressRounded(), tick: state.tick });
       }
     }
-    const a = atmosphereUnder(base, escalation);
+    // The end scene's road shot draws the mist back, so the car can be followed down the highway.
+    const settled = atmosphereUnder(base, escalation);
+    const mist = endMistNow();
+    const a = mist === 1 ? settled : { ...settled, weather: { ...settled.weather, mist: settled.weather.mist * mist } };
     // The chase's cast and its pulse, every frame: neither waits on the weather's gate below.
     renderer.setChase(escalation.chase);
     renderer.setHaunt(escalation.haunt);
@@ -978,7 +985,7 @@ function buildGame(
     const ear = renderer.listener();
     const crest = world.search.body.pos;
     const acts = actsUnder(escalation.world);
-    renderer.setMistIn(acts.mist);
+    renderer.setMistIn(acts.mist * mist);
     const voiced = stepWoods(woods, {
       climb: escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase !== Phase.Climb, hollow, rain: a.weather.rain,
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
@@ -1164,7 +1171,11 @@ function buildGame(
     fetchFilmCar(renderer);
   }
   function fetchFilmCar(r: Renderer): void {
-    if (!filmCarWanted || filmCarLoad !== null || signs === null) return;
+    if (!filmCarWanted) return;
+    // From the flip to the end the body's lamp stays a light, so the lights every material binds
+    // are the same from the film's car's first frames through the end scene (entityViews.ts).
+    r.views.keepLocalLamp = true;
+    if (filmCarLoad !== null || signs === null) return;
     const trailhead = signs.trailhead;
     const loads = new AbortController();
     filmCarLoad = loads;
@@ -1398,6 +1409,13 @@ function buildGame(
       }
     }
     ambient.setCar(scene.car.speed, heard);
+  }
+
+  /** The share of the mist the end scene leaves this frame (`endMistShare`): 1 outside its road shot. */
+  function endMistNow(): number {
+    const scene = endRunDoor === null ? null : renderer.endScene();
+    if (scene === null || scene.arrival === null) return 1;
+    return endMistShare(scene.t - scene.arrival - END_ROAD_AT_S);
   }
 
   /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
@@ -1752,10 +1770,38 @@ function buildGame(
       me.vel = { x: 0, y: 0, z: 0 };
       me.yaw = Math.atan2(body.x - me.pos.x, body.z - me.pos.z);
     };
+    /** When the `escape` look was called, and when the film's car's first frames were over; null while not. */
+    let escapeFrom: number | null = null;
+    let escapeWarmed: number | null = null;
     escapeLook = () => {
-      // The end scene for a look: the host's player on the pad, ESCAPE_FROM_M from the car toward
-      // the trail's entrance, facing the car, and the chase on if it is still the climb (host
-      // truth, a look only), so the next tick's end rule wins the match and the scene plays.
+      // The end scene for a look, as the real end plays: the film's car fetched now and the acts
+      // at the crest's (night, mist and the chase's cast whole) at once; the win waits on the car
+      // (`escapeStep`), so the scene opens on a car already drawn, as a match's does.
+      if (escapeFrom !== null || endSceneSetup() === null) return;
+      requestFilmCar();
+      escalation = escalationAt(1, true);
+      escapeFrom = performance.now();
+      escapeWarmed = null;
+    };
+    escapeStep = () => {
+      if (escapeFrom === null) return;
+      const now = performance.now();
+      const carIn = (signs?.trailhead.car()?.model ?? null) !== null;
+      // A car that never lands: the scene on the parked one after ESCAPE_WAIT_S.
+      if (!carIn && now - escapeFrom < ESCAPE_WAIT_S * 1000) return;
+      if (carIn) {
+        // Past its first frames, then its pipelines in flight landed (or, with none counted,
+        // ESCAPE_SETTLE_S), at most ESCAPE_WAIT_S after those frames.
+        if (signs?.trailhead.warm() ?? false) return;
+        escapeWarmed ??= now;
+        const pipelines = pipelinesFor(renderer.engine);
+        const settled = pipelines !== undefined ? pipelines.pending() === 0 : now - escapeWarmed >= ESCAPE_SETTLE_S * 1000;
+        if (!settled && now - escapeWarmed < ESCAPE_WAIT_S * 1000) return;
+      }
+      escapeFrom = null;
+      // The host's player on the pad, ESCAPE_FROM_M from the car toward the trail's entrance,
+      // facing the car, and the chase on if it is still the climb (host truth, a look only), so
+      // the next tick's end rule wins the match and the scene plays.
       const world = host.world;
       const me = world.state.players.get(host.localEntityId);
       const setup = endSceneSetup();
@@ -1807,6 +1853,7 @@ function buildGame(
       feedGovernor(dt);
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
+      escapeStep?.();
       for (let i = 0; i < ticks; i++) {
         cmd = ranToCar(stilled(input.sample(++seq)), host.world.state.players.get(host.localEntityId));
         host.tick(cmd);

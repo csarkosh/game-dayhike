@@ -61,8 +61,18 @@ export const LANE_CHANGE_M = 30;
 /** The game's sound fading from the pull-away, and the master's from the dark. */
 export const WORLD_FADE_S = 8;
 export const MASTER_FADE_S = 2;
-/** The console's `escape`: how far from the car, toward the trail, the host's player is put. */
+/** The console's `escape`: how far from the car, toward the trail, the host's player is put, and the longest it waits on the film's car first. */
 export const ESCAPE_FROM_M = 14;
+export const ESCAPE_WAIT_S = 10;
+/** The `escape` look's settle after the film's car's first frames, where no count of the pipelines in flight is kept. */
+export const ESCAPE_SETTLE_S = 2;
+/**
+ * The road shot draws the mist back so the car can be followed down the
+ * highway: over its first `END_MIST_EASE_S` the ground cloud and the
+ * weather's mist ease to `END_MIST_FLOOR` of what they were, and hold.
+ */
+export const END_MIST_EASE_S = 4;
+export const END_MIST_FLOOR = 0.2;
 /**
  * The car's headlamps: the bodies' own lamps (lampParams.ts) moved to its
  * nose, this far apart and up, aimed this far down, at a wider cone and a
@@ -75,8 +85,8 @@ export const HEADLAMP_CONE = 1.9;
 export const HEADLAMP_RANGE = 60;
 /** The tail lamps: small red quads at the car's rear corners, this size, this far up, apart and back from its centre. */
 export const TAIL_LAMP_COLOUR: readonly [number, number, number] = [1, 0.08, 0.04];
-export const TAIL_LAMP_W = 0.25;
-export const TAIL_LAMP_H = 0.1;
+export const TAIL_LAMP_W = 0.32;
+export const TAIL_LAMP_H = 0.12;
 export const TAIL_LAMP_UP = 0.75;
 export const TAIL_LAMP_APART = 1.4;
 export const TAIL_LAMP_BACK = 2.2;
@@ -103,13 +113,24 @@ export type EndShotContext = {
   arrival: number | null;
   /** Where the runner was at the cut to the pursuit, held from its first frame; null before it. */
   pursuitFrom: Ground | null;
-  /** The car where the road shot leaves the camera (`endCar` at `END_ROAD_AT_S + ROAD_CARRY_S`), made once for the scene; absent, made each frame. */
+  /** The car's pose the road shot comes to rest over (`roadRelease`), made once for the scene; absent, made each frame. */
   held?: CarPose;
 };
 
-/** The car where the road shot leaves the camera: the same for the whole scene. */
+/**
+ * The road shot's release: `u` of the way through it (0 to 1), the seconds
+ * after the arrival of the car's pose the camera stands over. The camera
+ * slows along the car's own path from the car's speed to nothing, so it
+ * comes to rest over where the car was half the release later.
+ */
+export function releaseAt(u: number): number {
+  const v = Math.max(0, Math.min(1, u));
+  return END_ROAD_AT_S + ROAD_CARRY_S + (v - v * v / 2) * ROAD_RELEASE_S;
+}
+
+/** The car's pose the road shot comes to rest over: the same for the whole scene. */
 export function roadRelease(road: Road, site: Ground, direction: 1 | -1): CarPose {
-  return endCar(END_ROAD_AT_S + ROAD_CARRY_S, road, site, direction);
+  return endCar(releaseAt(1), road, site, direction);
 }
 
 /**
@@ -216,8 +237,9 @@ export function endShotIndex(t: number, arrival: number | null): number {
  * 3. The door and the engine: locked off low on the road's far shoulder,
  *    `ENGINE_CAM_AHEAD` ahead of the car, turning to keep its nose centred.
  * 4. The road: `ROAD_CAM_UP` over the car looking down, carried for
- *    `ROAD_CARRY_S`, eased to a stop over `ROAD_RELEASE_S`, and tilting from
- *    straight down to `ROAD_TILT_TO` over the shot's whole length.
+ *    `ROAD_CARRY_S`, slowed to a stop along the car's path over
+ *    `ROAD_RELEASE_S` (`releaseAt`), and tilting from straight down to
+ *    `ROAD_TILT_TO` over the shot's whole length.
  * Past the scene's end the last pose holds.
  */
 export function endShot(t: number, ctx: EndShotContext): ShotPose {
@@ -242,8 +264,8 @@ export function endShot(t: number, ctx: EndShotContext): ShotPose {
   }
   const a = ctx.arrival ?? RUN_MAX_S;
   const after = Math.min(t - a, END_SCENE_AFTER_ARRIVAL_S);
-  const car = endCar(after, road, site, direction);
   if (shot === 2) {
+    const car = endCar(after, road, site, direction);
     const z = site.z + direction * ENGINE_CAM_AHEAD;
     const x = road.centerX(z) - CAR_ROAD_U;
     const at = { x, y: road.groundY(x, z) + ENGINE_CAM_UP, z };
@@ -251,18 +273,28 @@ export function endShot(t: number, ctx: EndShotContext): ShotPose {
     return lookAt(at, nose, LENS_32, 2);
   }
   const into = after - ENGINE_SHOT_S;
-  const held = ctx.held ?? roadRelease(road, site, direction);
-  const w = into <= ROAD_CARRY_S ? 0 : easeInOut((into - ROAD_CARRY_S) / ROAD_RELEASE_S);
+  // Carried over the car, then slowed along its path, then held over where it came to rest.
+  const over = into <= ROAD_CARRY_S
+    ? endCar(after, road, site, direction)
+    : into >= ROAD_CARRY_S + ROAD_RELEASE_S
+      ? ctx.held ?? roadRelease(road, site, direction)
+      : endCar(releaseAt((into - ROAD_CARRY_S) / ROAD_RELEASE_S), road, site, direction);
   return {
-    x: car.x + (held.x - car.x) * w,
-    y: car.y + ROAD_CAM_UP + (held.y - car.y) * w,
-    z: car.z + (held.z - car.z) * w,
-    yaw: car.yaw + turn(car.yaw, held.yaw) * w,
+    x: over.x,
+    y: over.y + ROAD_CAM_UP,
+    z: over.z,
+    yaw: over.yaw,
     pitch: ROAD_LOOK_DOWN + (ROAD_TILT_TO - ROAD_LOOK_DOWN) * easeInOut(into / ROAD_SHOT_S),
     fov: LENS_24,
     shot: 3,
     live: false,
   };
+}
+
+/** The share of the mist the scene leaves, `s` seconds into the road shot: 1 before it, eased to `END_MIST_FLOOR` over `END_MIST_EASE_S`. */
+export function endMistShare(s: number): number {
+  if (s <= 0) return 1;
+  return 1 + (END_MIST_FLOOR - 1) * easeInOut(s / END_MIST_EASE_S);
 }
 
 /** The scene's beats `t` seconds after the win: each true from its second on, none before the arrival. */

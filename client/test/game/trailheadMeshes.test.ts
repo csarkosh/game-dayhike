@@ -16,6 +16,10 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import { carYaw, createCarShadowPatch, createTrailheadMeshes, type TrailheadSites } from "../../src/game/trailheadMeshes.js";
 import type { BoardDrawing } from "../../src/game/boardPaint.js";
 import { placeStaticModel } from "../../src/game/staticModel.js";
+import { stageCar } from "../../src/game/scene/sceneStage.js";
+import { endCar } from "../../src/game/endScene.js";
+import { WHEEL_RADIUS } from "../../src/game/scene/roadPath.js";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { boardText } from "../../src/game/boardFace.js";
 
 registerBuiltInLoaders();
@@ -442,6 +446,38 @@ describe("the film's car swapped in for the end", () => {
     expect(riding.material).toBeInstanceOf(StandardMaterial);
     expect(riding.material!.alpha).toBe(1);
 
+    // Drawn wherever it stands, each mesh until its material is ready for it after a frame, its
+    // tail lamps with it; the tail lamps never ready here, so they go at the cap.
+    const tails = scene.meshes.filter((m) => m.name.startsWith("car_tail_lamp_"));
+    expect(tails.map((m) => m.parent)).toEqual([placed.node, placed.node]);
+    expect(tails.every((m) => m.isEnabled())).toBe(true);
+    const lamp = tails[0]!.material as StandardMaterial;
+    lamp.isReadyForSubMesh = () => false;
+    const rest = [...placed.meshes, riding].filter((m) => m.material !== null);
+    for (const m of rest) m.material!.isReadyForSubMesh = () => true;
+    const warm = [...placed.meshes, riding, ...tails];
+    expect(warm.every((m) => m.alwaysSelectAsActiveMesh)).toBe(true);
+    expect(meshes.warm()).toBe(true);
+    scene.onAfterRenderObservable.notifyObservers(scene);
+    expect([...placed.meshes, riding].some((m) => m.alwaysSelectAsActiveMesh)).toBe(false);
+    expect(tails.every((m) => m.alwaysSelectAsActiveMesh)).toBe(true);
+    for (let frame = 2; frame < 30; frame++) scene.onAfterRenderObservable.notifyObservers(scene);
+    expect(meshes.warm()).toBe(true);
+    scene.onAfterRenderObservable.notifyObservers(scene);
+    expect(meshes.warm()).toBe(false);
+    expect(warm.some((m) => m.alwaysSelectAsActiveMesh)).toBe(false);
+    // The tail lamps dark and not drawn until lit, unlit, out of the fog, sized to read at 100 m.
+    expect([lamp.disableLighting, lamp.fogEnabled, lamp.emissiveColor.asArray()]).toEqual([true, false, [0, 0, 0]]);
+    expect(tails.some((m) => m.isEnabled())).toBe(false);
+    expect(tails.map((m) => m.position.asArray())).toEqual([[-0.7, 0.75, -2.2], [0.7, 0.75, -2.2]]);
+    film.tailLamps(true);
+    expect(lamp.emissiveColor.asArray()).toEqual([1, 0.08, 0.04]);
+    expect(tails.every((m) => m.isEnabled())).toBe(true);
+    film.tailLamps(false);
+    expect(tails.some((m) => m.isEnabled())).toBe(false);
+    film.tailLamps(true);
+    parked.tailLamps(true);
+
     // A second car is not taken.
     const again = placeStaticModel(await diskLoader(scene)("models/intro.car.glb"), "intro.car", 0, 0, 0, 0);
     meshes.swapCar(again);
@@ -451,6 +487,8 @@ describe("the film's car swapped in for the end", () => {
     meshes.dispose();
     expect(placed.node.isDisposed()).toBe(true);
     expect(riding.isDisposed()).toBe(true);
+    expect(tails.every((m) => m.isDisposed())).toBe(true);
+    expect(scene.materials.includes(lamp)).toBe(false);
     expect(shadowed.size).toBe(0);
     expect(scene.meshes.filter((m) => m.getTotalVertices() > 0)).toHaveLength(0);
   });
@@ -466,6 +504,34 @@ describe("the film's car swapped in for the end", () => {
     await meshes.ready;
     expect(scene.getTransformNodeByName("trailhead_car")!.isEnabled()).toBe(false);
     expect(meshes.car()!.root).toBe(placed.node);
+    meshes.dispose();
+  });
+});
+
+describe("the film's car's wheels, staged at the trailhead", () => {
+  it("stands each wheel a tyre's radius over the ground and inside the body, parked and 7 m on", async () => {
+    const scene = freshScene();
+    const { meshes } = setup(scene, diskLoader(scene));
+    await meshes.ready;
+    meshes.swapCar(placeStaticModel(await diskLoader(scene)("models/intro.car.glb"), "intro.car", 0, 0, 0, 0));
+    const car = meshes.car()!;
+    const road = { centerX: () => 3.1, groundY: (x: number, z: number) => groundH(x, z) };
+    const site = SITES.car!.site;
+    for (const t of [0, 4.6]) {
+      const pose = endCar(t, road, site, 1);
+      stageCar(pose, car.model!);
+      for (const wheel of car.model!.wheels) {
+        (wheel.node as TransformNode).computeWorldMatrix(true);
+        const at = wheel.node.getAbsolutePosition();
+        expect(Math.abs(at.y - groundH(at.x, at.z) - WHEEL_RADIUS)).toBeLessThan(0.05);
+        // In the car's own frame: within its half-width and half-length.
+        const dx = at.x - pose.x, dz = at.z - pose.z;
+        const across = dx * Math.cos(pose.yaw) - dz * Math.sin(pose.yaw);
+        const along = dx * Math.sin(pose.yaw) + dz * Math.cos(pose.yaw);
+        expect(Math.abs(across)).toBeLessThan(0.9);
+        expect(Math.abs(along)).toBeLessThan(2.3);
+      }
+    }
     meshes.dispose();
   });
 });

@@ -143,6 +143,32 @@ describe("EntityViews in the end scene", () => {
     views.dispose();
   });
 
+  it("keeps the local lamp a light from the run through the arrival to the catch, dark between", () => {
+    const views = new EntityViews(scene);
+    views.keepLocalLamp = true;
+    // The chase, the body not drawn: the lamp is there, dark.
+    views.sync(state(player(1, true), player(2, true)), 1, 1);
+    const count = scene.lights.length;
+    const lamp = scene.lights.find((l) => l.name === "lamp_player_1") as SpotLight;
+    expect(lamp.intensity).toBe(0);
+    // The run: the body drawn, its lamp lit.
+    views.showLocal = true;
+    views.sync(state(player(1, true), player(2, true)), 1, 1);
+    expect(lamp.intensity).toBe(LAMP_INTENSITY);
+    // The arrival: the body hidden, the lamp kept and dark, no light gone.
+    views.showLocal = false;
+    views.sync(state(player(1, true), player(2, true)), 1, 1);
+    expect(scene.lights.length).toBe(count);
+    expect(scene.lights.find((l) => l.name === "lamp_player_1")).toBe(lamp);
+    expect(lamp.intensity).toBe(0);
+    // The catch: the same light, the car's headlamp.
+    views.localLampAt = { x: 7.5, y: 0.7, z: 2.3, dx: 0, dy: -0.1, dz: 1, angle: 1.9, range: 60 };
+    views.sync(state(player(1, true), player(2, true)), 1, 1);
+    expect(scene.lights.length).toBe(count);
+    expect([lamp.intensity, lamp.angle]).toEqual([LAMP_INTENSITY, 1.9]);
+    views.dispose();
+  });
+
   it("stands the local lamp where the car's headlamp is, at its cone and reach, with the body hidden", () => {
     const views = new EntityViews(scene);
     views.localLampAt = { x: 7.5, y: 0.7, z: 2.3, dx: 0, dy: -0.1, dz: 1, angle: 1.9, range: 60 };

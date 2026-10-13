@@ -9,8 +9,6 @@ import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
-// Non-.pure path, load-bearing (Babylon 9 split — see lighting.ts).
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
@@ -28,7 +26,7 @@ import { isHollow } from "../sim/hollow.js";
 import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
 import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import {
-  DOOR_IN_M, HEADLAMP_CONE, HEADLAMP_RANGE, TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_COLOUR, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W,
+  DOOR_IN_M, HEADLAMP_CONE, HEADLAMP_RANGE,
   arrived, carDistance, carSpeed, endCar, endShot, endShotIndex, headlampAt, roadRelease, type EndShotContext, type LampAim,
 } from "./endScene.js";
 import { CATCH_AT_S } from "./carAudio.js";
@@ -2194,7 +2192,8 @@ function buildRenderer(
     hide: { x: number; z: number; radius: number };
     lens: LampAim;
     body: LampAim & { angle: number; range: number };
-    tails: { meshes: Mesh[]; material: StandardMaterial } | null;
+    /** The car whose tail lamps were last lit, at the catch. */
+    tailsLit: TrailheadCar | null;
     /** The car standing parked, where its lamps stay when there is no model to drive. */
     parked: CarPose;
     /** The car last taken out of the rain's cover, once clear of its footprint. */
@@ -2214,7 +2213,7 @@ function buildRenderer(
    * (its parts where it has them, else moved whole), and from the catch the
    * body's lamp aimed as the car's left headlamp and the tail lamps lit.
    */
-  function stepEndScene(e: NonNullable<typeof endRun>, local: { pos: Vec3; yaw: number }, seconds: number): void {
+  function stepEndScene(e: NonNullable<typeof endRun>, localId: number, local: { pos: Vec3; yaw: number }, seconds: number): void {
     const t = seconds - e.since;
     const ctx = e.ctx;
     ctx.runner.x = local.pos.x;
@@ -2264,11 +2263,12 @@ function buildRenderer(
     const lit = handle === null ? e.parked : car;
     headlampAt(lit, -1, e.body);
     views.localLampAt = e.body;
+    // The views placed it before the car was posed: placed again, so it is where the car is now.
+    views.aimLocalLamp(localId);
     headlampAt(lit, 1, e.lens);
-    if (handle === null || e.tails === null) return;
-    for (const mesh of e.tails.meshes) {
-      if (mesh.parent !== handle.root) mesh.parent = handle.root;
-      if (!mesh.isEnabled()) mesh.setEnabled(true);
+    if (handle !== null && e.tailsLit !== handle) {
+      handle.tailLamps(true);
+      e.tailsLit = handle;
     }
   }
 
@@ -2288,37 +2288,6 @@ function buildRenderer(
     setLamp(localLamp, true);
   }
 
-  /**
-   * The car's tail lamps: two small red quads, lit by nothing and lighting
-   * nothing, at its rear corners, facing back. Made as the scene begins and
-   * hidden to the catch, their shader compiled then (`forceCompilation`),
-   * not on the frame they first show.
-   */
-  function makeTails(): { meshes: Mesh[]; material: StandardMaterial } {
-    const material = new StandardMaterial("mat_car_tail_lamp", scene);
-    material.disableLighting = true;
-    material.emissiveColor = new Color3(...TAIL_LAMP_COLOUR);
-    const meshes = [-1, 1].map((side) => {
-      // A plane faces -z as it is made: out of the car's tail.
-      const mesh = MeshBuilder.CreatePlane(`car_tail_lamp_${side < 0 ? "l" : "r"}`, { width: TAIL_LAMP_W, height: TAIL_LAMP_H }, scene);
-      mesh.position.set(side * TAIL_LAMP_APART / 2, TAIL_LAMP_UP, -TAIL_LAMP_BACK);
-      mesh.material = material;
-      mesh.isPickable = false;
-      mesh.receiveShadows = false;
-      mesh.setEnabled(false);
-      return mesh;
-    });
-    material.forceCompilation(meshes[0]!);
-    return { meshes, material };
-  }
-
-  function disposeTails(): void {
-    if (endRun === null || endRun.tails === null) return;
-    // Children of the trailhead's car, they may have gone with it already.
-    for (const mesh of endRun.tails.meshes) if (!mesh.isDisposed()) mesh.dispose();
-    endRun.tails.material.dispose();
-    endRun.tails = null;
-  }
   const stareAt = new Vector3();
   // The forest's density over the camera, a full terrain sample: taken
   // again only once the camera has moved a metre from where it was taken.
@@ -3359,7 +3328,7 @@ function buildRenderer(
         // The local body stands in the summit's shots, until the last returns to its eye.
         views.showLocal = sceneShot >= 0 && sceneShot < SHOTS.length - 1;
         // The end scene: its camera and lens, the body through the run, the car.
-        if (endRun !== null) stepEndScene(endRun, local, seconds);
+        if (endRun !== null) stepEndScene(endRun, localId, local, seconds);
         // The end: from its first frame the camera is the ending's, from the
         // pose the player had then, and the pass takes its blur and its dark.
         if (ending.since >= 0) {
@@ -3448,11 +3417,13 @@ function buildRenderer(
           hide: { x: scene.door.x, z: scene.door.z, radius: DOOR_IN_M },
           lens: { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1 },
           body: { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, angle: HEADLAMP_CONE, range: HEADLAMP_RANGE },
-          tails: makeTails(),
+          tailsLit: null,
           parked: endCar(0, scene.road, scene.site, scene.direction),
           left: null,
         };
         endRun.ctx.held = roadRelease(scene.road, scene.site, scene.direction);
+        // The body's lamp stays a light to the end, dark between the arrival and the catch.
+        views.keepLocalLamp = true;
         return;
       }
       if (ending.since >= 0) return;
@@ -3497,8 +3468,6 @@ function buildRenderer(
     },
     dispose() {
       views.dispose();
-      // The end scene's tail lamps, made at its catch, if it got that far.
-      disposeTails();
       silhouette?.dispose();
       droppedCap?.dispose();
       localLamp.dispose();

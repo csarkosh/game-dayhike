@@ -41,13 +41,13 @@ describe("the renderer's end scene", () => {
     const r = createRenderer(nullCanvas(), level, null, { tier: "low", clock: () => now });
     const root = new TransformNode("car", r.scene);
     let left = 0;
-    const car = { root, model: null, leave: () => void (left += 1) };
+    const lit: boolean[] = [];
+    const car = { root, model: null, leave: () => void (left += 1), tailLamps: (on: boolean) => void lit.push(on) };
     // A straight road along z on flat ground; the car on its shoulder at the pad, its nose to +z.
     r.setEnding("won", {
       site: { x: 6.9, z: 0 }, direction: 1, road: { centerX: () => 0, groundY: () => 0 }, door: { x: 8.4, z: 0.5 },
       car: () => car,
     });
-    const tails = r.scene.meshes.filter((m) => m.name.startsWith("car_tail_lamp_"));
     const lens = r.scene.lights.find((l) => l.name === "lamp_local") as SpotLight;
 
     world.state.players.set(1, player(20, 10));
@@ -61,8 +61,8 @@ describe("the renderer's end scene", () => {
     expect(r.views.showLocal).toBe(true);
     expect(lens.intensity).toBe(0);
     expect(r.endScene()).toEqual({ t: 0, arrival: null, shot: 0, car: { x: 6.9, y: 0, z: 0, yaw: 0, speed: 0 } });
-    // The tail lamps are made with the scene, hidden to the catch.
-    expect(tails.map((m) => m.isEnabled())).toEqual([false, false]);
+    expect(lit).toEqual([]);
+    const lights = r.scene.lights.length;
 
     // At the door a second later: in the car, the engine shot from the far shoulder.
     now = 6000;
@@ -75,6 +75,10 @@ describe("the renderer's end scene", () => {
     expect(r.camera.fov).toBe(0.43);
     expect(lens.intensity).toBe(0);
     expect(r.views.hideNear).toEqual({ x: 8.4, z: 0.5, radius: 1.2 });
+    // The body's lamp kept, dark, through the arrival: the same lights from the run on.
+    r.sync(world.state, 1, 0, { dt: 0.016, sprinting: true });
+    expect(r.scene.lights.length).toBe(lights);
+    expect((r.scene.lights.find((l) => l.name === "lamp_player_1") as SpotLight).intensity).toBe(0);
     expect(left).toBe(0);
 
     // Pulled away, 1.75 m on, still over its own footprint: still the rain's cover.
@@ -101,11 +105,17 @@ describe("the renderer's end scene", () => {
     expect(r.views.localLampAt?.angle).toBe(1.9);
     // Gone from the rain's cover once clear of its footprint, once.
     expect(left).toBe(1);
-    expect(tails.map((m) => m.parent)).toEqual([root, root]);
-    expect(tails.map((m) => m.isEnabled())).toEqual([true, true]);
-    expect(tails.map((m) => m.position.asArray())).toEqual([[-0.7, 0.75, -2.2], [0.7, 0.75, -2.2]]);
+    // The tail lamps lit at the catch, once.
+    expect(lit).toEqual([true]);
+    // The body's lamp is the left headlamp of the car as posed this frame, not the last.
+    const body = r.scene.lights.find((l) => l.name === "lamp_player_1") as SpotLight;
+    expect(body.position.x).toBeCloseTo(5.193466553022607, 9);
+    expect(body.position.z).toBeCloseTo(9.154940340420161, 9);
+    expect([body.angle, body.range]).toEqual([1.9, 60]);
+    r.sync(world.state, 1, 0, { dt: 0.016, sprinting: false });
+    expect(lit).toEqual([true]);
+    expect(r.scene.lights.length).toBe(lights);
     r.dispose();
-    expect(tails.every((m) => m.isDisposed())).toBe(true);
   });
 
   it("keeps the lamps at the parked car when there is no car drawn to drive, its box alone", () => {
