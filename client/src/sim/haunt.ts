@@ -125,11 +125,12 @@ export const GUIDE_SIDE_M = 3;
  * PURSUIT_SPEED (under a sprint's 7), on foot never nearer the road's
  * centreline than PURSUIT_STOP_U and standing within PURSUIT_ARRIVE_M of its
  * player; once the car has pulled away it runs down the road after it, at
- * once where the road runs inland at the car and from PURSUIT_ROAD_AT_S,
- * standing and looking after the car till then, where it does not; its aim
- * PURSUIT_AHEAD_M ahead and PURSUIT_IN_M nearer the centreline than it is
- * (`pursuitAim`), so it comes in down the verge behind the car and never
- * gets ahead of its nose; gone PURSUIT_DWELL_S after it stood up.
+ * once where the road runs inland at the car (`roadRunsInland`) and from
+ * PURSUIT_ROAD_AT_S, standing and looking after the car till then, where it
+ * does not; its aim PURSUIT_AHEAD_M ahead and PURSUIT_IN_M nearer the
+ * centreline than it is (`pursuitAim`), so it comes in down the verge behind
+ * the car and never gets ahead of its nose; gone PURSUIT_DWELL_S after it
+ * stood up.
  */
 export const PURSUIT_BEHIND_M = 3;
 export const PURSUIT_SPEED = 5.5;
@@ -147,7 +148,7 @@ export const PURSUIT_IN_M = 1;
 export const PURSUIT_VERGE_U = CAR_ROAD_U + CAR_HALF.x + DOOR_OUT_M;
 /**
  * Seconds after its player is in the car that the shade takes the road where
- * the road at the car is straight or runs outward (`roadRunsInland` false):
+ * the road at the car is near straight or runs outward (`roadRunsInland` false):
  * two after the pull-away, so the car's tail is past it before it moves,
  * wherever it stood by the car. Where the road runs inland it takes the road
  * at the pull-away itself.
@@ -157,6 +158,13 @@ export const PURSUIT_ROAD_AT_S = PULL_AWAY_AT_S + 2;
 const PURSUIT_AFTER_YAW_PLUS = 0;
 const PURSUIT_AFTER_YAW_MINUS = Math.PI;
 export const PURSUIT_DWELL_S = 25;
+/**
+ * Metres further toward +x over PURSUIT_AHEAD_M that the road must run for
+ * `roadRunsInland` (about 1.4°): a road within that of straight hardly moves
+ * the car sideways as it goes, and its nose crosses the verge, so the shade
+ * waits for the tail as on an outward road.
+ */
+export const PURSUIT_INLAND_M = 0.25;
 /**
  * Whether the road at the car runs inland, toward +x, the door's side, the
  * way the car goes: its centreline PURSUIT_AHEAD_M on from the car's z more
@@ -168,13 +176,6 @@ export const PURSUIT_DWELL_S = 25;
  * road the car's nose crosses the verge the shade would run on, so it waits
  * for the car's tail (PURSUIT_ROAD_AT_S). False with no road.
  */
-/**
- * Metres further toward +x over PURSUIT_AHEAD_M that the road must run for
- * `roadRunsInland` (about 1.4°): a road within that of straight hardly moves
- * the car sideways as it goes, and its nose crosses the verge, so the shade
- * waits for the tail as on an outward road.
- */
-export const PURSUIT_INLAND_M = 0.25;
 export function roadRunsInland(world: World, car: { x: number; z: number }, direction: 1 | -1): boolean {
   const roadCenterX = activeTerrainVariant().roadCenterX;
   if (roadCenterX === undefined || world.forest === null) return false;
@@ -531,7 +532,7 @@ function stepPursuit(h: EnemyState, world: World, dt: number, target: PlayerStat
     return false;
   }
   if (h.attackCooldown >= PULL_AWAY_AT_S) {
-    // The car gone, on a straight or outward road: it stands where it is and looks after it,
+    // The car gone, on a near straight or outward road: it stands where it is and looks after it,
     // down the road, until the car's tail is past it.
     h.vel.x = 0;
     h.vel.y = 0;
