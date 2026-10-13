@@ -544,6 +544,8 @@ function buildGame(
   let summitPreview: (() => void) | null = null;
   /** The `escape` command's hand on the host's own player, installed when this screen hosts; null on a client. */
   let escapeLook: (() => void) | null = null;
+  /** The `stand` command's hand on the host's own player, installed with the host session; null on a client. */
+  let standAt: ((x: number, z: number, yaw: number) => void) | null = null;
   /** Each host frame before its ticks: the `escape` look's step, which puts the player by the car once the film's car is in. */
   let escapeStep: (() => void) | null = null;
   let lastLook = { yaw: 0, pitch: 0 };
@@ -682,9 +684,9 @@ function buildGame(
   let windOverride: number | null = null;
   let lastFreecamView: FreecamView | null = null;
 
-  /** The commands that play a scene for a look (`summit`, `escape`): never written back to the URL, and from the URL called once the world is in. */
+  /** The commands that play a scene for a look (`summit`, `escape`), and `stand`, which puts the host's player at a place: never written back to the URL, and from the URL called once the world is in. */
   function isLook(name: string): boolean {
-    return name === "summit" || name === "escape";
+    return name === "summit" || name === "escape" || name === "stand";
   }
 
   function currentScript(): ScriptEntry[] {
@@ -775,6 +777,11 @@ function buildGame(
       // The end scene for a look (endScene.ts): the host's own player stands on the pad short of the car, and the next tick is the win.
       if (escapeLook === null) hud.setStatus("escape: the host's to call");
       else escapeLook();
+    } else if (name === "stand") {
+      // The host's own player at a place, to play from there.
+      const [x, z, yaw = 0] = args.map(Number) as [number, number, number?];
+      if (standAt === null) hud.setStatus("stand: the host's to call");
+      else standAt(x, z, yaw);
     } else if (name === "end") {
       // The ending, on the spot, nothing of the match: won, the end scene from where the player
       // stands, with the trailhead's car, and no landing after it (endScene.ts);
@@ -1786,6 +1793,16 @@ function buildGame(
       me.pos = { x: body.x - 3, y: (host.world.ground?.heightAt(body.x - 3, body.z - 2) ?? me.pos.y - 0.9) + 0.9, z: body.z - 2 };
       me.vel = { x: 0, y: 0, z: 0 };
       me.yaw = Math.atan2(body.x - me.pos.x, body.z - me.pos.z);
+    };
+    standAt = (x, z, yaw) => {
+      // The host's player on the ground at (x, z), still, facing the yaw (host truth, as
+      // the summit's look stands them at the body); the look follows, so the frame does.
+      const me = host.world.state.players.get(host.localEntityId);
+      if (me === undefined) return;
+      me.pos = { x, y: (host.world.ground?.heightAt(x, z) ?? me.pos.y - PLAYER_HALF.y) + PLAYER_HALF.y, z };
+      me.vel = { x: 0, y: 0, z: 0 };
+      me.yaw = yaw;
+      input.setLook(yaw, 0);
     };
     /** When the `escape` look was called, and when the film's car's first frames were over; null while not. */
     let escapeFrom: number | null = null;

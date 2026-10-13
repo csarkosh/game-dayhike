@@ -210,6 +210,20 @@ describe("/escape", () => {
   });
 });
 
+describe("/stand", () => {
+  it("takes a place, x z or x z yaw, numbers, and is never URL-representable", () => {
+    expect(validateCommand({ name: "stand", args: ["-168", "-1740"] })).toBeNull();
+    expect(validateCommand({ name: "stand", args: ["-168", "-1740", "1.32"] })).toBeNull();
+    expect(validateCommand({ name: "stand", args: [] })).not.toBeNull();
+    expect(validateCommand({ name: "stand", args: ["-168"] })).not.toBeNull();
+    expect(validateCommand({ name: "stand", args: ["-168", "there"] })).not.toBeNull();
+    expect(validateCommand({ name: "stand", args: ["1", "2", "3", "4"] })).not.toBeNull();
+    const spec = findCommand("stand");
+    expect(spec?.kind).toBe("view");
+    expect(spec?.scriptValue).toBeUndefined();
+  });
+});
+
 describe("/mist", () => {
   it("accepts no argument or a density in [0, 1], rejects everything else, and is never URL-representable", () => {
     expect(validateCommand({ name: "mist", args: [] })).toBeNull();

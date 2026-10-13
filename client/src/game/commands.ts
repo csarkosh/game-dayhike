@@ -236,6 +236,21 @@ const SPECS: readonly CommandSpec[] = [
     },
   },
   {
+    name: "stand",
+    kind: "view",
+    // `stand x z` or `stand x z yaw`: the host's own player stands on the
+    // ground at (x, z) in world metres, facing `yaw` radians (0 north, +Z;
+    // π/2 east, +X), to play from there: a link to a place, as `freecam`'s
+    // place is for a look. Host truth, so a client is told whose it is to
+    // call. Not persisted: no `scriptValue`; from the URL it is called once
+    // the world is in, as the looks are (2026-10-13).
+    validate(args) {
+      if (args.length !== 2 && args.length !== 3) return "stand takes a place: x z, or x z yaw";
+      for (const a of args) if (!Number.isFinite(Number(a))) return `"${a}" is not a number`;
+      return null;
+    },
+  },
+  {
     name: "mist",
     kind: "view",
     // `mist <density>` holds the near mist (nearMist.ts) at a density in
