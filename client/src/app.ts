@@ -682,6 +682,11 @@ function buildGame(
   let windOverride: number | null = null;
   let lastFreecamView: FreecamView | null = null;
 
+  /** The commands that play a scene for a look (`summit`, `escape`): never written back to the URL, and from the URL called once the world is in. */
+  function isLook(name: string): boolean {
+    return name === "summit" || name === "escape";
+  }
+
   function currentScript(): ScriptEntry[] {
     return parseScript(new URLSearchParams(location.search).get("cmd") ?? "").entries;
   }
@@ -1512,9 +1517,9 @@ function buildGame(
       // /volume is not persisted — the URL feeds the invite link, and
       // a volume level is a listener preference, not part of the shared scene.
       // Nor /mist and /end, which are for looking at the night's effects on the spot,
-      // nor /summit and /escape, which are for looking at a scene.
+      // nor /summit and /escape, which are for looking at a scene (`isLook`).
       // Applied below via applyView; never written back to `?cmd=`.
-      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "end" && parsed.name !== "summit" && parsed.name !== "escape") persist(parsed.name, args);
+      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "end" && !isLook(parsed.name)) persist(parsed.name, args);
       if (findCommand(parsed.name)?.kind === "world") {
         // Re-initialise through the path `main.ts` already listens on.
         window.dispatchEvent(new PopStateEvent("popstate"));
@@ -1595,7 +1600,9 @@ function buildGame(
 
   // Restoring from the URL on load, not a live edit: every view command
   // applies instantly, weather included — see `applyView`'s `instant` doc.
-  for (const entry of view) applyView(entry.name, entry.args, { instant: true });
+  // A look named there (`summit`, `escape`) waits for the world (`ready`, below): its hand is the
+  // host's, installed with the host session, and its scene is for a world already in.
+  for (const entry of view) if (!isLook(entry.name)) applyView(entry.name, entry.args, { instant: true });
   if (errors.length > 0) bar.showError(errors.join("  •  "));
 
   const degradation = parseNetConditions(location.search);
@@ -2175,6 +2182,12 @@ function buildGame(
   const ready = firstBuild.then(() =>
     startReady({ scene: renderer.scene, forestReady: renderer.forestReady, reveal: firstWholeFrame, progress, maxMs: READY_MAX_MS }),
   );
+  // A look named in the URL (`?cmd=seed hollow;time 22;escape`) is called once the world is in,
+  // so a link opens on its scene; on a client it says whose it is to call, as the typed one does.
+  void ready.then(() => {
+    if (disposed || broken) return;
+    for (const entry of view) if (isLook(entry.name)) applyView(entry.name, entry.args);
+  });
 
   const onResize = () => {
     if (broken) return;

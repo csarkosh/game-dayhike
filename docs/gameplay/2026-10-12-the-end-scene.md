@@ -297,6 +297,9 @@ tick is the win, so the scene plays as it will, pursuit and all, on the film's c
 with the match already decided shows no find.
 The `end won` command plays the scene from wherever the player stands, with the trailhead's car and
 no pursuit (the sim is not touched), and leaves the screen dark at its end, with no landing.
+Named in a page's script (`?cmd=seed hollow;time 22;weather eerie;escape`), `escape` (and `summit`)
+is called once the world is in (`ready`, app.ts) rather than with the view commands restored at the
+start, so a link opens on the scene; typed, neither is written back to the URL.
 
 ## 6. Tests
 
