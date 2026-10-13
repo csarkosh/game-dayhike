@@ -123,17 +123,21 @@ pass tunable changes.
 
 **The car.** Made on the ambient context, as the chase's pulse is, on a bus of its own off the
 master (`car`), placed at the car's position and heard from the camera, which is the listener
-through the scene. The beats, seconds after the arrival (`CAR_CUES`): the door at `DOOR_AT_S`
+through the scene: the car's place relative to the listener each frame (`ambient.setCar`), its
+direction through a panner as the woods' odd sounds are placed, its distance through the level and
+the low-pass below. The beats, seconds after the arrival (`CAR_CUES`): the door at `DOOR_AT_S`
 (0.3): a short dull thud; the crank at `CRANK_AT_S` (0.8): `CRANK_PULSES` (4) pulses at 8 Hz of a
 damped 60 Hz tone; the catch at `CATCH_AT_S` (1.4): the engine's bed comes in over 0.2 s, a tone of
-`ENGINE_HARMONICS` (6) harmonics over a fundamental `IDLE_HZ` (31 Hz) that wanders ±0.6 Hz over
-3 s, under band noise 60 to 400 Hz; the revs at `REV_AT_S` (2.2): two blips, the fundamental to
-`REV_HZ` (72 Hz) over 0.25 s and back over 0.5 s; the pull-away at `PULL_AWAY_AT_S` (2.6): the
-fundamental follows the car's speed at `HZ_PER_MPS` (4.5 Hz per m/s) within a gear, with gear
-changes at `GEAR_MPS` (6 and 11 m/s) each dropping it by `GEAR_DROP` (0.35), and tyre noise (2 to
-6 kHz) rising with the speed. The level falls with the distance from the listener as
-`1 / (1 + d / CAR_LEVEL_M)` (8 m) and a low-pass closes with it from 4 kHz to 800 Hz over
-`CAR_MUFFLE_M` (120 m); the pass in shot 3 is loud because the car is close, nothing more. These
+`ENGINE_HARMONICS` (6) harmonics at 1/k over a fundamental `IDLE_HZ` (31 Hz) that wanders ±0.6 Hz
+over `IDLE_WANDER_S` (3.1 s), under band noise 60 to 400 Hz at 0.4 of the tone; the revs at
+`REV_AT_S` (2.2): two blips `REV_GAP_S` (0.8 s) apart, the fundamental to `REV_HZ` (72 Hz) over
+0.25 s and back over 0.5 s, raised over whatever the speed has made of it, so the second, after
+the pull-away, rides on the moving car's note; the pull-away at `PULL_AWAY_AT_S` (2.6): from the
+first frame the car moves, the fundamental follows the car's speed at `HZ_PER_MPS` (4.5 Hz per
+m/s) within a gear, with gear changes at `GEAR_MPS` (6 and 11 m/s) each dropping it by `GEAR_DROP`
+(0.35), and tyre noise (2 to 6 kHz) rising with the speed. The level falls with the distance from
+the listener as `1 / (1 + d / CAR_LEVEL_M)` (8 m) and a low-pass closes with it from 4 kHz to
+800 Hz over `CAR_MUFFLE_M` (120 m); the pass in shot 3 is loud because the car is close, nothing more. These
 are the same synthesis the intro's own engine bed is made from, so the two films' cars sound
 alike.
 

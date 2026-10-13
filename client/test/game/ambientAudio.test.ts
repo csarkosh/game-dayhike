@@ -963,6 +963,56 @@ describe("the end's fades", () => {
   });
 });
 
+describe("the car", () => {
+  it("is inert before unlock, then builds on the car's bus off the master, placed from the listener, and is torn down by stopCar", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.startCar({ x: 0, y: 0, z: 20 });
+    audio.setCar(8, { x: 0, y: 0, z: 20 });
+    audio.stopCar();
+    expect(created.gains).toHaveLength(0);
+    audio.unlock();
+    const [master, car] = [created.gains[0]!, created.gains[11]!];
+    expect(car.connections).toEqual([master]);
+    expect(created.oscillators).toBe(0);
+    audio.setListener(10, 2, -30, 0, 0, -1, 0, 1, 0);
+    clock.currentTime = 4;
+    audio.startCar({ x: 0, y: 0, z: 20 });
+    // The door, four crank pulses, six harmonics and the wander.
+    expect(created.oscillators).toBe(12);
+    expect(created.panners).toHaveLength(1);
+    const panner = created.panners[0]!;
+    expect(panner.connections).toEqual([car]);
+    expect([panner.positionX.value, panner.positionY.value, panner.positionZ.value]).toEqual([10, 2, -50]);
+    audio.setCar(8, { x: 3, y: 0, z: 0 });
+    expect([panner.positionX.value, panner.positionY.value, panner.positionZ.value]).toEqual([13, 2, -30]);
+    // A fade of the world leaves the car's bus.
+    audio.fadeWorld(8);
+    expect(car.gain.ramps).toEqual([]);
+    audio.stopCar();
+    expect(panner.disconnected).toBe(true);
+    expect(created.oscillatorNodes.every((o) => o.stopped)).toBe(true);
+    // Stopped, a frame is nothing.
+    audio.setCar(8, { x: 0, y: 0, z: 1 });
+    expect([panner.positionX.value, panner.positionZ.value]).toEqual([13, -30]);
+    audio.dispose();
+  });
+
+  it("stops the car playing before starting another", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    audio.startCar({ x: 0, y: 0, z: 5 });
+    const first = created.panners[0]!;
+    audio.startCar({ x: 0, y: 0, z: 5 });
+    expect(first.disconnected).toBe(true);
+    expect(created.panners).toHaveLength(2);
+    expect(created.panners[1]!.disconnected).toBe(false);
+    audio.dispose();
+    expect(created.panners[1]!.disconnected).toBe(true);
+  });
+});
+
 describe("the hush", () => {
   it("cuts the world's bus within a breath, on top of what a stare takes, and leaves the stare's own buses alone", () => {
     const { ctx, created } = fakeCtx();
