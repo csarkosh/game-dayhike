@@ -38,6 +38,8 @@ export const WON_FADE_AFTER_MS = 11000;
 export const WON_LANDING_MS = 15000;
 /** Died: the HUD's own fade finishes the black this long after the fall begins, once the dark has closed (ending.ts). */
 export const DEATH_FADE_AFTER_MS = 6000;
+/** Died: the master's fade from the dark's closing (ending.ts DIED_CLOSE_FROM_S), so the sound is gone as the HUD's black finishes at 6 s. */
+export const DEATH_SOUND_FADE_S = 5;
 
 /**
  * What a player at road offset `u` is told at the wall, or null: on the

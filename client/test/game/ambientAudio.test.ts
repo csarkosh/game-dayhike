@@ -14,124 +14,7 @@ import { gustAt, windRecordUnder } from "../../src/game/windParams.js";
 import { ODD_KINDS } from "../../src/game/woodsSounds.js";
 import { ODD_LEVEL } from "../../src/game/oddSounds.js";
 import { CHASE_BPM_FAR, CHASE_BPM_NEAR, CHASE_DRONE_FAR_HZ, CHASE_DRONE_NEAR_HZ } from "../../src/game/chaseAudio.js";
-
-/** The smallest AudioContext fake that can carry the graph. Every node records
- * its connections and whether it was disconnected; every AudioParam records
- * setTargetAtTime calls and, for the drips' and the voices' envelopes, the
- * value-at and ramp-to calls in order. */
-type FakeParam = {
-  value: number;
-  targets: { value: number; time: number; tc: number }[];
-  ramps: { kind: "set" | "linear" | "exponential"; value: number; time: number }[];
-};
-function param(value = 0): FakeParam {
-  const p: FakeParam = { value, targets: [], ramps: [] };
-  const methods = p as unknown as Record<string, unknown>;
-  methods.setTargetAtTime = (v: number, time: number, tc: number) => p.targets.push({ value: v, time, tc });
-  methods.setValueAtTime = (v: number, time: number) => p.ramps.push({ kind: "set", value: v, time });
-  methods.linearRampToValueAtTime = (v: number, time: number) => p.ramps.push({ kind: "linear", value: v, time });
-  methods.exponentialRampToValueAtTime = (v: number, time: number) =>
-    p.ramps.push({ kind: "exponential", value: v, time });
-  return p;
-}
-function fakeCtx() {
-  const created = {
-    gains: [] as ReturnType<typeof gainNode>[],
-    panners: [] as ReturnType<typeof pannerNode>[],
-    stereo: [] as { pan: FakeParam; connections: unknown[] }[],
-    sources: [] as ReturnType<typeof sourceNode>[],
-    filterNodes: [] as ReturnType<typeof filterNode>[],
-    oscillatorNodes: [] as ReturnType<typeof oscillatorNode>[],
-    compressors: [] as ReturnType<typeof compressorNode>[],
-    buffers: [] as ReturnType<typeof bufferOf>[],
-    oscillators: 0,
-    filters: 0,
-  };
-  /** Records `disconnect()` too: a loop emitter stopped but left wired into
-   * the bus is the leak its `stop` exists to prevent. */
-  function node() {
-    return {
-      connections: [] as unknown[],
-      disconnected: false,
-      connect(t: unknown) { this.connections.push(t); },
-      disconnect() { this.disconnected = true; },
-      start() {},
-    };
-  }
-  function gainNode() { return { ...node(), gain: param(1) }; }
-  function filterNode() { return { ...node(), frequency: param(350), Q: param(1), type: "lowpass" }; }
-  /** Web Audio's own defaults, so a value left unset shows. */
-  function compressorNode() {
-    return { ...node(), threshold: param(-24), knee: param(30), ratio: param(12), attack: param(0.003), release: param(0.25) };
-  }
-  /** Records `stop()` rather than ignoring it: a one-shot that is never stopped is
-   * the emitter bug that leaks a source node per call. The scheduled times are
-   * kept too, for the drips. */
-  function sourceNode() {
-    return {
-      ...node(),
-      buffer: null as unknown, loop: false, stopped: false, playbackRate: param(1),
-      startedAt: undefined as number | undefined, offset: undefined as number | undefined,
-      stoppedAt: undefined as number | undefined,
-      start(when?: number, offset?: number) { this.startedAt = when; this.offset = offset; },
-      stop(when?: number) { this.stopped = true; this.stoppedAt = when; },
-    };
-  }
-  /** Records its start and its scheduled stop, as a buffer source does: a
-   * voice that ends itself schedules its own stop when it is built. */
-  function oscillatorNode() {
-    return {
-      ...node(),
-      frequency: param(440), type: "sine", started: false, stopped: false,
-      startedAt: undefined as number | undefined, stoppedAt: undefined as number | undefined,
-      start(when?: number) { this.started = true; this.startedAt = when; },
-      stop(when?: number) { this.stopped = true; this.stoppedAt = when; },
-    };
-  }
-  /** One array a channel, kept: a reversed recording is written into it and read back. */
-  function bufferOf(ch: number, len: number, rate: number) {
-    const channels = Array.from({ length: ch }, () => new Float32Array(len));
-    return { getChannelData: (c: number) => channels[c] as Float32Array, length: len, sampleRate: rate, numberOfChannels: ch, duration: len / rate };
-  }
-  function pannerNode() {
-    return {
-      ...node(),
-      panningModel: "", distanceModel: "", refDistance: 0, maxDistance: 0, rolloffFactor: 0,
-      positionX: param(0), positionY: param(0), positionZ: param(0),
-    };
-  }
-  const listener = {
-    positionX: param(0), positionY: param(0), positionZ: param(0),
-    forwardX: param(0), forwardY: param(0), forwardZ: param(0),
-    upX: param(0), upY: param(0), upZ: param(0),
-  };
-  const ctx = {
-    currentTime: 0,
-    destination: node(),
-    sampleRate: 48000,
-    listener,
-    createGain() { const g = gainNode(); created.gains.push(g); return g; },
-    createOscillator() {
-      created.oscillators++;
-      const o = oscillatorNode();
-      created.oscillatorNodes.push(o);
-      return o;
-    },
-    createBufferSource() { const s = sourceNode(); created.sources.push(s); return s; },
-    createPanner() { const p = pannerNode(); created.panners.push(p); return p; },
-    createStereoPanner() { const p = { ...node(), pan: param(0) }; created.stereo.push(p); return p; },
-    createBiquadFilter() { created.filters++; const f = filterNode(); created.filterNodes.push(f); return f; },
-    createDynamicsCompressor() { const c = compressorNode(); created.compressors.push(c); return c; },
-    createBuffer(ch: number, len: number, rate: number) {
-      const b = bufferOf(ch, len, rate);
-      created.buffers.push(b);
-      return b;
-    },
-    decodeAudioData(bytes: ArrayBuffer) { return Promise.resolve({ token: bytes } as unknown as AudioBuffer); },
-    close() {},
-  };
-  return { ctx: ctx as unknown as AudioContext, created, listener, clock: ctx };
-}
+import { fakeCtx } from "./helpers/fakeAudio.js";
 
 describe("createAmbientAudio", () => {
   it("is inert before unlock and builds the full graph on unlock", () => {
@@ -142,15 +25,15 @@ describe("createAmbientAudio", () => {
     audio.unlock();
     // 2 noise sources (rain, wind), no oscillators, 3 filters (rain, wind,
     // the world's), the world's limiter, and gains: master + world + rain +
-    // wind + wildlife + drip + birdsong + the stare's heart and whispers +
-    // the chase's pulse = 10. The drips' own sources, filters and gains are
+    // wind + wildlife + drip + birdsong + the scene's + the stare's heart and
+    // whispers + the chase's pulse + the car's bus = 12. The drips' own sources, filters and gains are
     // made as they fire, not here, and the whispers' voices on the first
     // stare.
     expect(created.sources.length).toBe(2);
     expect(created.oscillators).toBe(0);
     expect(created.filters).toBe(3);
     expect(created.compressors.length).toBe(1);
-    expect(created.gains.length).toBe(10);
+    expect(created.gains.length).toBe(12);
     audio.dispose();
   });
 
@@ -215,7 +98,7 @@ describe("createAmbientAudio", () => {
     audio.dispose();
   });
 
-  it("wires the master gain to destination, every layer gain to the world's bus, and that through its low-pass and its limiter to the master", () => {
+  it("wires the master gain to destination, every layer gain to the world's bus, and that through its low-pass, its limiter and the scene's gain to the master", () => {
     const { ctx, created } = fakeCtx();
     const audio = createAmbientAudio(() => ctx);
     audio.unlock();
@@ -226,14 +109,16 @@ describe("createAmbientAudio", () => {
     // No gain feeds an AudioParam any more (the LFO depth gain is gone —
     // `setWind` drives the wind filter's frequency directly); every
     // layer gain (rain/wind/wildlife/drip/birdsong) reaches the world's bus, which
-    // reaches the master through the low-pass the stare shuts and then a
-    // brick-wall limiter; the stare's own two buses and the chase's reach
-    // the master directly, unmuffled.
+    // reaches the master through the low-pass the stare shuts, a brick-wall
+    // limiter and the scene's gain; the stare's own two buses and the
+    // chase's reach the scene's gain beside it, unmuffled; the car's bus
+    // hangs off the master.
     const isParam = (t: unknown): boolean =>
       Array.isArray((t as { targets?: unknown[] }).targets);
     const world = created.gains[1]!;
     const layerGains = created.gains.slice(2, 7);
-    const stareGains = created.gains.slice(7);
+    const scene = created.gains[7]!;
+    const stareGains = created.gains.slice(8, 11);
 
     expect(created.gains.slice(1).some((g) => g.connections.some(isParam))).toBe(false);
     expect(layerGains.length).toBe(5);
@@ -244,13 +129,18 @@ describe("createAmbientAudio", () => {
     expect(world.connections).toEqual([muffle]);
     const limiter = created.compressors[0]!;
     expect(muffle.connections).toEqual([limiter]);
-    expect(limiter.connections).toEqual([master]);
+    expect(limiter.connections).toEqual([scene]);
+    expect(scene.connections).toEqual([master]);
+    expect(scene.gain.value).toBe(1);
     // A limiter: from 3 dB under full scale, no knee, 20 to 1, on within 3 ms
     // and off within 100 ms.
     expect([limiter.threshold.value, limiter.knee.value, limiter.ratio.value, limiter.attack.value, limiter.release.value])
       .toEqual([-3, 0, 20, 0.003, 0.1]);
     expect(stareGains.length).toBe(3);
-    for (const g of stareGains) expect(g.connections).toEqual([master]);
+    for (const g of stareGains) expect(g.connections).toEqual([scene]);
+    const car = created.gains[11]!;
+    expect(car.connections).toEqual([master]);
+    expect(car.gain.value).toBe(1);
 
     audio.dispose();
   });
@@ -918,7 +808,7 @@ describe("the stare", () => {
     audio.setStare(lens(1, 0));
     expect(created.filterNodes[2]!.frequency.targets.at(-1)!.value).toBeCloseTo(MUFFLE_SHUT_HZ, 6);
     expect(created.gains[1]!.gain.targets.at(-1)!.value).toBeCloseTo(MUFFLE_GAIN, 12);
-    expect(created.gains[8]!.gain.targets.at(-1)!.value).toBeCloseTo(WHISPER_LEVEL, 12);
+    expect(created.gains[9]!.gain.targets.at(-1)!.value).toBeCloseTo(WHISPER_LEVEL, 12);
     audio.dispose();
   });
 
@@ -937,12 +827,12 @@ describe("the stare", () => {
     expect(created.oscillatorNodes.map((o) => o.startedAt)).toEqual([4, 4, 4 + HEART_DUB_AT * 0.8, 4 + HEART_DUB_AT * 0.8]);
     for (const o of created.oscillatorNodes) expect(o.stoppedAt).toBeGreaterThan(o.startedAt!);
     // The first sound swells to the heart's level, and every one ends near silence.
-    const sounds = created.gains.filter((g) => g.connections.includes(created.gains[7]));
+    const sounds = created.gains.filter((g) => g.connections.includes(created.gains[8]));
     expect(sounds.length).toBe(4);
     const first = sounds[0]!;
     expect(first.gain.ramps.map((r) => r.kind)).toEqual(["set", "linear", "exponential"]);
     expect(first.gain.ramps[1]!.value).toBeCloseTo(HEART_LEVEL, 12);
-    expect(first.connections).toEqual([created.gains[7]]);
+    expect(first.connections).toEqual([created.gains[8]]);
     // A beat at rest is not heard.
     audio.setStare(lens(0, 9));
     expect(created.oscillators).toBe(4);
@@ -968,7 +858,7 @@ describe("the stare", () => {
       expect(d).toBeGreaterThan(0.4);
       expect(d).toBeLessThan(0.95);
       expect(Math.abs(p.positionY.value - 2)).toBeLessThan(0.3);
-      expect(p.connections).toEqual([created.gains[8]]);
+      expect(p.connections).toEqual([created.gains[9]]);
     }
     // A minute of frames: every syllable's envelope opens from nothing and
     // shuts to nothing, in time order, never further ahead than the look-ahead.
@@ -976,7 +866,7 @@ describe("the stare", () => {
       clock.currentTime = 2 + f / 60;
       audio.setStare(lens(0.9, 0));
     }
-    const voiceGains = created.gains.slice(9).filter((g) => g.gain.ramps.length > 0);
+    const voiceGains = created.gains.slice(12).filter((g) => g.gain.ramps.length > 0);
     expect(voiceGains.length).toBeGreaterThanOrEqual(WHISPER_VOICES);
     let syllables = 0;
     for (const g of voiceGains) {
@@ -1008,7 +898,67 @@ describe("the stare", () => {
       audio.setStare(STARE_LENS_REST);
     }
     expect(ramps()).toBe(settled);
-    expect(created.gains[8]!.gain.targets.at(-1)!.value).toBe(0);
+    expect(created.gains[9]!.gain.targets.at(-1)!.value).toBe(0);
+    audio.dispose();
+  });
+});
+
+describe("the end's fades", () => {
+  it("are inert before unlock", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.fadeWorld(8);
+    audio.fadeMaster(2);
+    audio.unlock();
+    const [master, scene] = [created.gains[0]!, created.gains[7]!];
+    expect(master.gain.ramps).toEqual([]);
+    expect(master.gain.cancels).toEqual([]);
+    expect(scene.gain.ramps).toEqual([]);
+    expect(scene.gain.cancels).toEqual([]);
+    expect(master.gain.value).toBe(0.5);
+    expect(scene.gain.value).toBe(1);
+    audio.dispose();
+  });
+
+  it("fadeWorld ramps the scene's gain from where it is to silence on the context's clock, and leaves the master, the voice's bus and the car's", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    audio.speak({ length: 1 } as unknown as AudioBuffer, 0.9);
+    const [master, scene, car] = [created.gains[0]!, created.gains[7]!, created.gains[11]!];
+    const voiceBus = created.gains[12]!;
+    expect(voiceBus.connections).toEqual([master]);
+    clock.currentTime = 3;
+    audio.fadeWorld(8);
+    expect(scene.gain.cancels).toEqual([3]);
+    expect(scene.gain.ramps).toEqual([
+      { kind: "set", value: 1, time: 3 },
+      { kind: "linear", value: 0, time: 11 },
+    ]);
+    for (const g of [master, car, voiceBus]) {
+      expect(g.gain.ramps).toEqual([]);
+      expect(g.gain.cancels).toEqual([]);
+      expect(g.gain.targets).toEqual([]);
+    }
+    audio.dispose();
+  });
+
+  it("fadeMaster ramps the master from where it is to silence, and a volume set after it lands as it always does", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    const [master, scene] = [created.gains[0]!, created.gains[7]!];
+    clock.currentTime = 5;
+    audio.fadeMaster(2);
+    expect(master.gain.cancels).toEqual([5]);
+    expect(master.gain.ramps).toEqual([
+      { kind: "set", value: 0.5, time: 5 },
+      { kind: "linear", value: 0, time: 7 },
+    ]);
+    expect(scene.gain.ramps).toEqual([]);
+    clock.currentTime = 6;
+    audio.setVolume(0.8);
+    expect(master.gain.targets.at(-1)).toEqual({ value: 0.8, time: 6, tc: 0.1 });
     audio.dispose();
   });
 });
@@ -1027,9 +977,9 @@ describe("the hush", () => {
     audio.setStare({ ...STARE_LENS_REST, level: 1 });
     audio.setHush(0.5);
     expect(world.gain.targets.at(-1)!.value).toBeCloseTo(MUFFLE_GAIN * 0.5, 12);
-    // The heart's bus and the whispers' are not the world's.
-    expect(created.gains[7]!.connections).toEqual([created.gains[0]]);
-    expect(created.gains[8]!.connections).toEqual([created.gains[0]]);
+    // The heart's bus and the whispers' are not the world's: they reach the master through the scene's gain.
+    expect(created.gains[8]!.connections).toEqual([created.gains[7]]);
+    expect(created.gains[9]!.connections).toEqual([created.gains[7]]);
     audio.dispose();
   });
 });
@@ -1191,9 +1141,9 @@ describe("the chase's pulse", () => {
     const audio = createAmbientAudio(() => ctx);
     audio.setChase(1, 0); // pre-unlock: inert, not a throw
     audio.unlock();
-    const bus = created.gains[9]!;
+    const bus = created.gains[10]!;
     expect(bus.gain.value).toBe(0);
-    expect(bus.connections).toEqual([created.gains[0]]);
+    expect(bus.connections).toEqual([created.gains[7]]);
     const oscillators = created.oscillators;
     audio.setChase(0, 0);
     expect(created.oscillators).toBe(oscillators);

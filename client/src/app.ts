@@ -70,7 +70,7 @@ import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
-import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, END_LANDING_MS, WON_LINE, WON_TITLE, WON_FADE_AFTER_MS, WON_LANDING_MS, roadLine } from "./game/passages.js";
+import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_LANDING_MS, WON_LINE, WON_TITLE, WON_FADE_AFTER_MS, WON_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
@@ -112,6 +112,7 @@ import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState, type VoiceSc
 import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
 import { createVoiceClips } from "./game/voiceClips.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt } from "./game/cutscene.js";
+import { DIED_CLOSE_FROM_S } from "./game/ending.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET } from "./sim/constants.js";
 import { stemAhead } from "./sim/trailRoute.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
@@ -1161,6 +1162,7 @@ function buildGame(
 
   let dead = false;
   let deathFadeTimer: ReturnType<typeof setTimeout> | null = null;
+  let deathSoundTimer: ReturnType<typeof setTimeout> | null = null;
   let endFadeTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Death, once: the poster closed, the view faded onto the passage. Input
@@ -1188,6 +1190,9 @@ function buildGame(
     renderer.setEnding("died");
     if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
     deathFadeTimer = setTimeout(() => hud.fade(true), DEATH_FADE_AFTER_MS);
+    // The sound goes with the dark: from its closing, gone as the black finishes.
+    if (deathSoundTimer !== null) clearTimeout(deathSoundTimer);
+    deathSoundTimer = setTimeout(() => ambient.fadeMaster(DEATH_SOUND_FADE_S), DIED_CLOSE_FROM_S * 1000);
     hud.setEnding({ title: DEATH_TITLE, line: DEATH_LINE });
   }
 
@@ -2295,6 +2300,7 @@ function buildGame(
       connectPanel.dispose();
       posterPanel.dispose();
       if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
+      if (deathSoundTimer !== null) clearTimeout(deathSoundTimer);
       if (endFadeTimer !== null) clearTimeout(endFadeTimer);
       disposeExtras();
       touchLayer.dispose();

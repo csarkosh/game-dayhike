@@ -259,6 +259,20 @@ export type AmbientAudio = {
   setStare(lens: StareLens, haunt?: number): void;
   setVolume(v: number): void;
   /**
+   * The game's sound going (the end scene): the `scene` gain, which the
+   * world's beds and calls, the stare's sounds and the chase's pulse reach
+   * the master through, ramped on the context's clock from where it is to
+   * silence over `seconds`. The inner voice's bus and the car's are not in
+   * it. Nothing brings it back. Inert before `unlock()`.
+   */
+  fadeWorld(seconds: number): void;
+  /**
+   * Everything going: the master ramped on the context's clock from where
+   * it is to silence over `seconds`. A `setVolume` after it sets the master
+   * as it always does; nothing else restores it. Inert before `unlock()`.
+   */
+  fadeMaster(seconds: number): void;
+  /**
    * The inner voice's clip (voiceClips.ts): one unpositioned one-shot on the
    * voice bus, which hangs off the master, not the world, so the stare's
    * muffle and the world's level never touch it. Inert before `unlock()`.
@@ -340,6 +354,10 @@ export function createAmbientAudio(
   let hush = 0;
   let stareLevel = 0;
   let chase: ChaseAudio | null = null;
+  /** What the world's limiter, the stare and the chase reach the master through: `fadeWorld` takes it to silence. */
+  let scene: GainNode | null = null;
+  /** The car's bus (carAudio.ts), off the master beside the voice's, so the world's fade leaves it. */
+  let carBus: GainNode | null = null;
   /** Each call recording's reverse, made once. */
   const reversed = new Map<AudioBuffer, AudioBuffer>();
   function reversedOf(buffer: AudioBuffer): AudioBuffer {
@@ -421,6 +439,14 @@ export function createAmbientAudio(
     src.stop(t + DRIP_STOP_S);
   }
 
+  /** A param from wherever it is now to silence, linearly, over `seconds` from `now`. */
+  function fadeOut(p: AudioParam, now: number, seconds: number): void {
+    const from = p.value;
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(from, now);
+    p.linearRampToValueAtTime(0, now + Math.max(0, seconds));
+  }
+
   /**
    * The panner every positioned voice goes through. equalpower, not HRTF:
    * HRTF convolves per source and this can have a dozen calls alive at once.
@@ -450,8 +476,8 @@ export function createAmbientAudio(
       master.gain.value = volume;
       master.connect(ctx.destination);
       // The world's bus: every bed and call below is mixed into it, and it
-      // reaches the master through a low-pass the stare shuts and a limiter
-      // (wired last).
+      // reaches the master through a low-pass the stare shuts, a limiter and
+      // the scene's gain (wired last).
       world = ctx.createGain();
       world.gain.value = 1;
 
@@ -529,10 +555,18 @@ export function createAmbientAudio(
       limiter.attack.value = WORLD_LIMIT.attackS;
       limiter.release.value = WORLD_LIMIT.releaseS;
       worldFilter.connect(limiter);
-      limiter.connect(master);
+      // The world, the stare and the chase reach the master through one gain
+      // the end fades; the voice's bus and the car's do not.
+      scene = ctx.createGain();
+      scene.gain.value = 1;
+      scene.connect(master);
+      limiter.connect(scene);
       // The stare's own sounds sit beside the world, not in it: they are not muffled.
-      stare = createStareAudio(ctx, master, noise, random);
-      chase = createChaseAudio(ctx, master, noise);
+      stare = createStareAudio(ctx, scene, noise, random);
+      chase = createChaseAudio(ctx, scene, noise);
+      carBus = ctx.createGain();
+      carBus.gain.value = 1;
+      carBus.connect(master);
 
       applyGains(pending);
 
@@ -702,6 +736,14 @@ export function createAmbientAudio(
       volume = clamp01(v);
       if (ctx && master) master.gain.setTargetAtTime(volume, ctx.currentTime, 0.1);
     },
+    fadeWorld(seconds) {
+      if (!ctx || !scene) return;
+      fadeOut(scene.gain, ctx.currentTime, seconds);
+    },
+    fadeMaster(seconds) {
+      if (!ctx || !master) return;
+      fadeOut(master.gain, ctx.currentTime, seconds);
+    },
     speak(buffer, level) {
       if (!ctx || !master) return;
       // Made on the first line, after every other bus: the graph's order is pinned by its tests.
@@ -838,7 +880,7 @@ export function createAmbientAudio(
       for (const loop of loops) loop.stop();
       void ctx?.close();
       ctx = null;
-      master = world = rainGain = windGain = wildlifeGain = dripGain = birdGain = null;
+      master = world = rainGain = windGain = wildlifeGain = dripGain = birdGain = scene = carBus = null;
       birdBed = null;
       birdSides = [];
       rainFilter = windFilter = worldFilter = null;
