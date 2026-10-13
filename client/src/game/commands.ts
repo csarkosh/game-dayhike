@@ -236,6 +236,38 @@ const SPECS: readonly CommandSpec[] = [
     },
   },
   {
+    name: "stand",
+    kind: "view",
+    // `stand x z` or `stand x z yaw`: the host's own player stands on the
+    // ground at (x, z) in world metres, facing `yaw` radians (0 north, +Z;
+    // π/2 east, +X), to play from there: a link to a place, as `freecam`'s
+    // place is for a look. Host truth, so a client is told whose it is to
+    // call. Not persisted: no `scriptValue`; from the URL it is called once
+    // the world is in, as the looks are (2026-10-13).
+    validate(args) {
+      if (args.length !== 2 && args.length !== 3) return "stand takes a place: x z, or x z yaw";
+      for (const a of args) if (!Number.isFinite(Number(a))) return `"${a}" is not a number`;
+      return null;
+    },
+  },
+  {
+    name: "escalation",
+    kind: "view",
+    // `escalation <world>` holds the world's escalation (escalation.ts: the
+    // hour's fall to night and the weather's turn with the party's climb)
+    // at a value in [0, 1] for a look, so a player stood far up the trail
+    // (`stand`) can see the ground by day; bare `escalation` lets the climb
+    // set it again. The lens, the chase and the telemetry's acts keep the
+    // climb's truth. Not persisted: no `scriptValue` (2026-10-13).
+    validate(args) {
+      if (args.length === 0) return null;
+      if (args.length > 1) return "escalation takes no argument, or a value in [0, 1]";
+      const v = Number(args[0]);
+      if (!Number.isFinite(v) || v < 0 || v > 1) return `"${args[0]}" is not a value in [0, 1]`;
+      return null;
+    },
+  },
+  {
     name: "mist",
     kind: "view",
     // `mist <density>` holds the near mist (nearMist.ts) at a density in
