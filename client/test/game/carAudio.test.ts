@@ -219,19 +219,35 @@ describe("createCarAudio", () => {
 
   it("is inert before start, and stop stops every source and disconnects every node", () => {
     const fake = fakeCtx();
-    const car = createCarAudio(fake.ctx, fake.ctx.createGain(), fake.ctx.createBuffer(1, 48000, 48000));
+    const out = fake.ctx.createGain();
+    const bus = fake.created.gains[0]!;
+    const car = createCarAudio(fake.ctx, out, fake.ctx.createBuffer(1, 48000, 48000));
     car.set(8, { x: 0, y: 0, z: 8 });
     car.stop();
     expect(fake.created.gains).toHaveLength(1);
+    const { created, clock } = fake;
+    clock.currentTime = 10;
     car.start();
-    const { created } = fake;
+    // The revs' source starts at the catch, with the harmonics.
+    expect(created.constants).toHaveLength(1);
+    expect(created.constants[0]!.startedAt).toBeCloseTo(11.4, 9);
+    const harmonics = created.oscillatorNodes.filter((o) => o.frequency.value > 1 && o.frequency.value % 31 === 0);
+    expect(harmonics.map((o) => o.frequency.value)).toEqual([31, 62, 93, 124, 155, 186]);
+    for (const o of harmonics) expect(o.stoppedAt).toBeUndefined();
+    clock.currentTime = 20;
     car.stop();
+    for (const o of harmonics) expect(o.stoppedAt).toBe(20);
     for (const o of created.oscillatorNodes) expect(o.stopped).toBe(true);
     for (const s of created.sources) expect(s.stopped).toBe(true);
     for (const c of created.constants) expect(c.stopped).toBe(true);
-    for (const g of created.gains.slice(1)) expect(g.disconnected).toBe(true);
-    for (const f of created.filterNodes) expect(f.disconnected).toBe(true);
-    for (const p of created.panners) expect(p.disconnected).toBe(true);
+    // Every node the car made is disconnected; only the bus it played into is left.
+    const made = [
+      ...created.gains, ...created.filterNodes, ...created.oscillatorNodes,
+      ...created.sources, ...created.constants, ...created.panners,
+    ].filter((n) => n !== bus);
+    expect(made.length).toBeGreaterThan(30);
+    for (const n of made) expect(n.disconnected).toBe(true);
+    expect(bus.disconnected).toBe(false);
     const targets = created.gains.reduce((n, g) => n + g.gain.targets.length, 0);
     car.set(8, { x: 0, y: 0, z: 8 });
     expect(created.gains.reduce((n, g) => n + g.gain.targets.length, 0)).toBe(targets);

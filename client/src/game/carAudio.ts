@@ -88,7 +88,11 @@ export function engineHz(speedMps: number): number {
   return hz + HZ_PER_MPS * (v - from);
 }
 
-/** The fundamental `secondsIntoRev` into a rev: up to `REV_HZ`, back to the idle, the idle either side. */
+/**
+ * The fundamental `secondsIntoRev` into a rev from the idle: up to `REV_HZ`,
+ * back to the idle, the idle either side. The graph plays a rev as this less
+ * the idle, a fixed offset over whatever note the speed has set.
+ */
 export function revHz(secondsIntoRev: number): number {
   const s = secondsIntoRev;
   if (!(s > 0)) return IDLE_HZ;
@@ -332,7 +336,7 @@ export function createCarAudio(ctx: AudioContext, out: AudioNode, noise: AudioBu
       if (!playing) return;
       playing = false;
       for (const src of sources) {
-        try { src.stop(); } catch { /* already ended */ }
+        try { src.stop(ctx.currentTime); } catch { /* already ended */ }
       }
       for (const node of nodes) node.disconnect();
       sources.length = 0;

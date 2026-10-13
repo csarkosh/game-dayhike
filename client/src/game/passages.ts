@@ -36,7 +36,7 @@ export const WON_LINE = "The night, outlasted; the car, at last; and in the mirr
 export const END_LANDING_MS = 12000;
 /** Died: the HUD's own fade finishes the black this long after the fall begins, once the dark has closed (ending.ts). */
 export const DEATH_FADE_AFTER_MS = 6000;
-/** Died: the master's fade from the dark's closing (ending.ts DIED_CLOSE_FROM_S), so the sound is gone as the HUD's black finishes at 6 s. */
+/** Died: the master's fade from the dark's closing (ending.ts DIED_CLOSE_FROM_S), so the sound is gone at 6 s, as the HUD's black begins. */
 export const DEATH_SOUND_FADE_S = 5;
 
 /**

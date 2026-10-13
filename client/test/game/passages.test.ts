@@ -25,7 +25,7 @@ describe("the passages", () => {
 });
 
 describe("the death's sound", () => {
-  it("fades over five seconds from the dark's closing, gone at six as the HUD's black finishes", () => {
+  it("fades over five seconds from the dark's closing, gone at six as the HUD's black begins", () => {
     expect(DEATH_SOUND_FADE_S).toBe(5);
     expect(DIED_CLOSE_FROM_S + DEATH_SOUND_FADE_S).toBe(6);
     expect(DEATH_FADE_AFTER_MS).toBe(6000);

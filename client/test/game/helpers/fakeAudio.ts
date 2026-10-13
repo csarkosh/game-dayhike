@@ -82,7 +82,8 @@ export function fakeCtx() {
     return {
       ...node(),
       offset: param(1), started: false, stopped: false,
-      start() { this.started = true; },
+      startedAt: undefined as number | undefined,
+      start(when?: number) { this.started = true; this.startedAt = when; },
       stop() { this.stopped = true; },
     };
   }

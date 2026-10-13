@@ -166,11 +166,14 @@ over `IDLE_WANDER_S` (3.1 s), under band noise 60 to 400 Hz at 0.4 of the tone; 
 the pull-away, rides on the moving car's note; the pull-away at `PULL_AWAY_AT_S` (2.6): from the
 first frame the car moves, the fundamental follows the car's speed at `HZ_PER_MPS` (4.5 Hz per
 m/s) within a gear, with gear changes at `GEAR_MPS` (6 and 11 m/s) each dropping it by `GEAR_DROP`
-(0.35), and tyre noise (2 to 6 kHz) rising with the speed. The level falls with the distance from
-the listener as `1 / (1 + d / CAR_LEVEL_M)` (8 m) and a low-pass closes with it from 4 kHz to
-800 Hz over `CAR_MUFFLE_M` (120 m); the pass in shot 3 is loud because the car is close, nothing more. These
-are the same synthesis the intro's own engine bed is made from, so the two films' cars sound
-alike.
+(0.35), and tyre noise (2 to 6 kHz) rising with the speed. The car's level at the ear is
+`CAR_LEVEL` (0.6), the engine's bed sitting at `ENGINE_LEVEL` (0.4) within it, and it falls with
+the distance from the listener as `CAR_LEVEL / (1 + d / CAR_LEVEL_M)` (8 m) while a low-pass
+closes with it from 4 kHz to 800 Hz over `CAR_MUFFLE_M` (120 m); the pass in shot 3 is loud
+because the car is close, nothing more. These are the same synthesis the intro's own engine bed is
+made from, so the two films' cars sound alike. The cues run on the audio context's clock from
+`ambient.startCar`, the picture on the renderer's, so a suspended context would put the door, the
+crank and the revs out of step with what is seen; the speed, set each frame, still follows.
 
 **The game's sound goes.** From the pull-away the world's beds, the chase's pulse and the stare's
 sounds fade together over `WORLD_FADE_S` (8 s): one gain (`scene`) between those three and the
@@ -181,7 +184,7 @@ title page is reached in silence, where today the sound stops under the veil whe
 torn down.
 
 **The death's sound.** The same master fade from `DIED_CLOSE_FROM_S` (1 s) over
-`DEATH_SOUND_FADE_S` (5 s), so the sound is gone as the HUD's black finishes at
+`DEATH_SOUND_FADE_S` (5 s), so the sound is gone as the HUD's black begins at
 `DEATH_FADE_AFTER_MS` (6 s) and the return to the title page, six seconds later, is from silence
 to silence; today the pulse and the rain play on under the black and stop dead under the veil.
 
