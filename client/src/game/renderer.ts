@@ -3029,15 +3029,16 @@ function buildRenderer(
         }
       }
       stareLens = stepStareLens(stareLens, stare, side, engine.getDeltaTime() / 1000);
-      // Rain on the lens: strongest looking up, cleared under the canopy,
-      // smoothed over a second. The camera's pose is last frame's (it is set
-      // below), one frame behind, which the smoothing hides.
+      // Rain on the lens: strongest looking up, smoothed over a second; the
+      // canopy over the camera (still read for the drips' sound) no longer
+      // clears it. The camera's pose is last frame's (it is set below), one
+      // frame behind, which the smoothing hides.
       if (forest !== null && !(Math.hypot(camera.position.x - lensCanopyX, camera.position.z - lensCanopyZ) <= 1)) {
         lensCanopyX = camera.position.x;
         lensCanopyZ = camera.position.z;
         lensCanopy = forestDensity(forest.seed, lensCanopyX, lensCanopyZ);
       }
-      lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x, lensCanopy), engine.getDeltaTime() / 1000);
+      lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x), engine.getDeltaTime() / 1000);
       // The stare dims the frame's exposure: the lighting's on the material
       // path, so a weather fade's applies keep it; the grade's on the post path.
       lighting.setStare(stareLens.level);

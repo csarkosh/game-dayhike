@@ -12,7 +12,6 @@
  * shifted inside that margin without cutting a drop at the seam.
  */
 import { clamp01 } from "./colour.js";
-import { RAIN_MAP } from "./rainParams.js";
 
 export const LENS = {
   /** The droplet map's side, texels. */
@@ -33,6 +32,10 @@ export const LENS = {
   smoothS: 1,
   /** Below this strength the pass draws nothing worth its cost and is skipped. */
   floor: 0.02,
+  /** The strength's share looking ahead or down; the rest comes in looking up. */
+  ahead: 0.6,
+  /** The pitch (rad, positive looking down) the rest ramps over: none below the first, all above the second. */
+  ramp: [0.2, -0.3] as readonly [number, number],
 } as const;
 
 /** A trail is this many radii long, straight down from the drop's centre. */
@@ -140,13 +143,14 @@ export function smoothstep(e0: number, e1: number, x: number): number {
 }
 
 /**
- * The strength the lens heads for: the rain, scaled by the camera's pitch
- * (positive looking down: full strength looking up into the rain, a quarter
- * looking ahead) and by what the canopy over the camera keeps off the glass
- * (`RAIN_MAP.canopyBlock`, the share the map's own canopy keeps off the ground).
+ * The lens's target strength: the rain value, scaled by the pitch (positive
+ * looking down: `LENS.ahead` of it looking ahead or down, the rest ramping in
+ * over `LENS.ramp` to full looking up into the rain). The canopy over the
+ * camera took 65 percent off the glass as first built; since 2026-10-13 the
+ * rain falls whole under the trees, so the glass takes it there too.
  */
-export function lensStrengthUnder(rain: number, pitch: number, canopy: number): number {
-  return clamp01(rain) * (0.25 + 0.75 * smoothstep(0.1, -0.5, pitch)) * (1 - RAIN_MAP.canopyBlock * clamp01(canopy));
+export function lensStrengthUnder(rain: number, pitch: number): number {
+  return clamp01(rain) * (LENS.ahead + (1 - LENS.ahead) * smoothstep(LENS.ramp[0], LENS.ramp[1], pitch));
 }
 
 /** One frame's exponential approach to the target, time constant LENS.smoothS. */

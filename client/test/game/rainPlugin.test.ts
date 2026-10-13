@@ -133,7 +133,7 @@ describe("the rain plugin", () => {
     expect(vertex).toContain("#ifdef RAIN_DRIP\n  vec3 rAlong = vec3(0.0, -1.0, 0.0);\n#else");
     expect(vertex).toContain("#ifdef RAIN_DRIP\n  float rLen = 0.12;\n#else");
     // Under the map: covered, by the transmission's complement, by the water. Without one: nothing.
-    expect(vertex).toContain("#ifdef RAIN_DRIP\n  rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;\n#else\n  rCover = mix(1.0, rMap.g, rCovered);\n#endif");
+    expect(vertex).toContain("#ifdef RAIN_DRIP\n  rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;\n#else\n  rCover = mix(1.0, max(rMap.g, step(0.5, rMap.b)), rCovered);\n#endif");
     expect(vertex).toContain("#else\n#ifdef RAIN_DRIP\n  rCover = 0.0;\n#endif\n#endif");
     expect(plugin.getUniforms().vertex).toContain("#ifdef RAIN_DRIP\nuniform float rainCanopyWater;\n#endif");
     // The 40 s fold is exact for the drips too: 6 m/s over a 12 m box is 20 heights.
@@ -184,7 +184,7 @@ describe("the rain plugin", () => {
     // Outside the map, or above the texel's height plus its lift: uncovered.
     expect(vertex).toContain("float rInMap = step(0.0, rMu.x) * step(rMu.x, 1.0) * step(0.0, rMu.y) * step(rMu.y, 1.0);");
     expect(vertex).toContain("float rCovered = rInMap * step(rp.y, rMap.r + rMap.b);");
-    expect(vertex).toContain("rCover = mix(1.0, rMap.g, rCovered);");
+    expect(vertex).toContain("rCover = mix(1.0, max(rMap.g, step(0.5, rMap.b)), rCovered);");
     expect(vertex).toContain("vRainAlpha = min(rFade * rCover * (rSky * rClassAlpha + rLampT), 1.0)");
     // The map is bound only while on and set.
     const map = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene);

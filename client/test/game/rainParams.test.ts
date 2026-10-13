@@ -103,16 +103,18 @@ describe("the streak's length", () => {
     expect(streakLength(9, 0.1)).toBe(0.5);
   });
 
-  it("smoothedDt eases a tenth of the way to the clamped frame each frame", () => {
-    expect(RAIN_DT).toEqual([1 / 120, 1 / 30]);
-    expect(smoothedDt(1 / 60, 1 / 60)).toBeCloseTo(1 / 60, 12);
+  it("smoothedDt eases a tenth of the way to the clamped frame each frame, never under a fortieth", () => {
+    expect(RAIN_DT).toEqual([1 / 40, 1 / 30]);
+    // A fast frame rate reads as a fortieth: the eye's persistence, not the frame's.
+    expect(smoothedDt(1 / 60, 1 / 60)).toBeCloseTo(1 / 40, 12);
+    expect(smoothedDt(1 / 120, 1 / 120)).toBe(1 / 40);
+    expect(smoothedDt(1 / 40, 1 / 40)).toBe(1 / 40);
     // A one-second stall counts as a thirtieth, and a tenth of the gap is taken.
-    expect(smoothedDt(1 / 60, 1)).toBeCloseTo(11 / 600, 12);
-    expect(smoothedDt(1 / 30, 0)).toBeCloseTo(1 / 30 - 1 / 400, 12);
-    let dt = 1 / 60;
+    expect(smoothedDt(1 / 40, 1)).toBeCloseTo(1 / 40 + 1 / 1200, 12);
+    expect(smoothedDt(1 / 30, 0)).toBeCloseTo(1 / 30 - 1 / 1200, 12);
+    let dt = 1 / 40;
     for (let i = 0; i < 200; i++) dt = smoothedDt(dt, 1 / 30);
     expect(dt).toBeCloseTo(1 / 30, 9);
-    expect(smoothedDt(1 / 120, 1 / 120)).toBe(1 / 120);
   });
 });
 
