@@ -49,13 +49,13 @@ the lens droplets) is generated in code, as the streak sprite is today.
 | question | decision |
 | --- | --- |
 | The bar | On the reference machine (Apple M4, Chrome, ANGLE over Metal), at the canopy-trail pose and the meadow pose, the **whole rain stack's cost** (the frame under `weather rain` minus the frame under the same preset with every rain layer off, same build, pair method of §8) is at most **2.7 ms on high, 1.8 ms on medium and 0.8 ms on low** at native pixels, with the 4× figure and the WebGPU figure reported beside it. The branch's frame under `weather clear` is within the noise floor of the control's. No streak leading edge, no catch-up and no dry start at 7 m/s. Rain under the trailhead's car roof and kiosk is zero |
-| The air | A **camera-locked wrapped volume**: one thin-instanced quad mesh, a static per-drop seed buffer, and a vertex-stage material plugin that places each drop by `fract` inside a box of 24 by 20 by 24 m biased 6 m along the view, stretched along its own fall vector to the frame's streak length (§2). 3,000 streaks on low, 10,000 on medium, 24,000 on high, four fall-speed classes. Replaces the particle system entirely |
+| The air | A **camera-locked wrapped volume**: one thin-instanced quad mesh, a static per-drop seed buffer, and a vertex-stage material plugin that places each drop by `fract` inside a box of 24 by 20 by 24 m biased 6 m along the view, stretched along its own fall vector to the frame's streak length (§2). 6,000 streaks on low, 20,000 on medium, 48,000 on high (as amended, §2.6; 3,000, 10,000 and 24,000 as first built), four fall-speed classes. Replaces the particle system entirely |
 | The far field | Fog density gains `1 + FOG_RAIN_GAIN × rain` and the fog colour pulls toward neutral grey by rain; `clear` is unchanged by construction (§3) |
 | Lighting | Streak alpha fades toward the sky (view elevation) and brightens near the headlamp by an inverse-square term inside its cone; the streak colour is the fog colour lifted whiter (§3) |
-| Occlusion | On medium and high, a **top-down height map**: a 512-texel render target over 96 m around the player, re-rendered when the player has moved 8 m, drawing the terrain rings, the props, the cliffs and the water with a cheap height material. The terrain writes its canopy density as transmission; props and cliffs write hard cover. Streaks under cover fade by the transmission; splashes and drip read the same map. Low runs without it (§4) |
+| Occlusion | On medium and high, a **top-down height map**: a 512-texel render target over 96 m around the player, re-rendered when the player has moved 8 m, drawing the terrain rings, the props, the cliffs and the water with a cheap height material. The terrain writes its canopy density as transmission; props and cliffs write hard cover. Streaks under hard cover stop, and under the canopy fall whole (as amended, §2.7; as first built they faded by the transmission); the drip reads the transmission, the splashes the height. Low runs without it (§4) |
 | Splashes and drip | On medium and high: a thin-instanced sprite mesh of 600 or 1,200 short-lived crown rings placed on the map's height around the player, and a second wrapped volume of 600 or 1,000 large, slow, vertical drops drawn only under canopy and driven by a canopy-water scalar that fills about a minute after rain starts and drains over ten minutes after it stops (§5) |
 | Wet materials | A `WetPlugin` on the forest, understory, clutter, cliff and prop PBR materials: Lagarde's porosity rule from the material's own roughness, with a per-material porosity cap. The terrain keeps its own wetness. Four-layer ring-texture ripples on the trail's puddles, scaled by rain (§6) |
-| The lens | On medium and high: one post-process pass between FXAA and the finish pass, a code-generated droplet normal-and-mask texture that refracts the scene, a few procedural sliding drops, and a lerp toward a small blur of the scene itself for the foggy glass (as designed, the halation blur on high; as built, the scene's own blur on every tier, §7.1). Gated by rain, by pitch (strongest looking up) and by the canopy at the camera, smoothed over a second (§7) |
+| The lens | On medium and high: one post-process pass between FXAA and the finish pass, a code-generated droplet normal-and-mask texture that refracts the scene, a few procedural sliding drops, and a lerp toward a small blur of the scene itself for the foggy glass (as designed, the halation blur on high; as built, the scene's own blur on every tier, §7.1). Gated by rain and by pitch (strongest looking up, 60 percent ahead as amended, §2.7; a quarter, and cleared by the canopy at the camera, as first built), smoothed over a second (§7) |
 | Sound | The hiss's band centre falls with rain intensity and wind dulls it; a drip layer of sparse synthesised plops under canopy follows the canopy-water scalar (§7.3) |
 | Order | Air and fog first (they remove the chasing emitter and the missing far field with no new render target), then wet materials and ripples, then the height map with splashes and drip, then the lens, then sound. Each behind a check; a layer that misses its share of the budget ships smaller or not at all, and the note says which |
 | WebGPU | Nothing WebGPU-specific. Every new plugin, define combination and post-process is recorded into the WGSL corpus before the branch is offered (§9) |
@@ -120,18 +120,21 @@ Per vertex, carried to the fragment as one varying:
 - **distance**: in from 0.6 m to 1.5 m, so no quad grows to fill the screen,
   and out from 9 m to 12 m, the box's half-width, so the far face is never
   seen;
-- **the sky**: times `1 - 0.6 × smoothstep(0, 0.25, viewY)`, the view
+- **the sky**: times `1 - 0.35 × smoothstep(0, 0.5, viewY)` (as amended, §2.6;
+  `1 - 0.6 × smoothstep(0, 0.25, viewY)` as first built), the view
   direction's upward component at the drop, because a drop against the bright
   overcast that lit it is invisible and the same drop against trunks is not
   (survey §1.4);
-- **the class**: 0.35 for the smallest to 0.6 for the largest, since visibility
+- **the class**: 0.45 for the smallest to 0.75 for the largest (as amended, §2.6;
+  0.35 to 0.6 as first built), since visibility
   rises with drop size;
 - **the headlamp**: plus `lampIntensity × cone / (1 + d²)`, where `d` is the
   drop's distance from the lamp and `cone` its falloff inside the lamp's angle,
   which is the night look every system gets from a point light near the eye;
-- **cover** (§4): times the map's transmission where the drop is under it.
+- **cover** (§4): nothing where the drop is under hard cover; the whole rain under the canopy (as amended, §2.7; as first built, the map's transmission).
 
-The streak colour is the scene's fog colour lifted by 15 percent and 0.05,
+The streak colour is the scene's fog colour lifted by 25 percent and 0.08 (as
+amended, §2.6; 15 percent and 0.05 as first built),
 the "milk" every production rain adds (survey §1.4); the material is unlit,
 alpha-blended, depth-tested, not depth-written, not culled, and fogged by the
 scene's exponential fog, which the atmosphere sets each frame for non-PBR
@@ -142,9 +145,9 @@ receiver, and its bounding info is not synced.
 
 | tier | streaks | box | expected fill at 1080p |
 | --- | --- | --- | --- |
-| low | 3,000 | 24 × 20 × 24 m | 0.2 to 0.3 ms at scaling 1.5 |
-| medium | 10,000 | same | 0.4 to 0.5 ms |
-| high | 24,000 | same | under 1 ms |
+| low | 6,000 (3,000 as first built) | 24 × 20 × 24 m | 0.2 to 0.3 ms at scaling 1.5 |
+| medium | 20,000 (10,000 as first built) | same | 0.4 to 0.5 ms |
+| high | 48,000 (24,000 as first built) | same | under 1 ms |
 
 The expectations are the survey's (§7.1, §6.4): an Intel UHD 620 sustains
 about 2.5 million textured blended pixels at 60 Hz in WebGL, and 24,000
@@ -160,6 +163,74 @@ wind)`, `dispose()`), so `renderer.ts` changes one line. The streak profile
 map and its tests stay. `RAIN_CAPACITY` becomes the streak count per tier.
 `rain.test.ts` is rewritten against the new shape. The emit-rate function and
 the particle-system latch go.
+
+### 2.6 Amended 2026-10-12: the rain made visible
+
+Played, the rain at the full preset read as sparse: a light drizzle against the
+ground and nothing against the trunks or the sky. Four numbers were moved, and
+the stills at the canopy and meadow poses (§8) were taken before and after on
+the high tier.
+
+- **The count**, doubled on every tier: 6,000, 20,000, 48,000. The box is
+  11,520 m³ and the eye, with the game's 1.4 rad field of view, sees about a
+  tenth of it inside the far fade at 9 m, so 24,000 streaks were about 2,300
+  on screen at once, one in every 30 by 30 px of a 1080p frame. The cost
+  the count adds is vertex work (four vertices a streak, a few dozen
+  operations each), not fill: a streak off screen or faded out rasterises to
+  nothing. Tripled, the frame read as a monsoon; doubled, as rain.
+- **The sky fade**, from `0.6 × smoothstep(0, 0.25, viewY)` to
+  `0.35 × smoothstep(0, 0.5, viewY)`. The old fade took 60 percent of a
+  streak's alpha within 14 degrees above level, which with the wide field of
+  view is the upper third of a level frame and all of one looking up at the
+  trees, where the background is trunks and crowns, not the bright overcast
+  the fade was written for. The new fade takes 35 percent, and only by 30
+  degrees up.
+- **The class alpha**, 0.45 to 0.75 from 0.35 to 0.6, and **the milk**,
+  the fog colour times 1.25 plus 0.08 from 1.15 plus 0.05: a streak against
+  the fog-coloured far field is invisible by construction (it is fogged to
+  that colour), so the contrast it has is against the near ground and the
+  trunks, and both terms lift it there.
+
+The counts and alphas are uniforms and the milk is set on the CPU, so only the
+sky fade changed the streak stage's text; the three rain vertex stages were
+re-recorded into the corpus (§9) on every tier. Nothing under cover, in the
+splashes, the drips, the lens or the wet rule moved.
+
+### 2.7 Amended 2026-10-13: the whole rain under the canopy, and the lens brought forward
+
+Played after §2.6, the rain thinned to a third under the trees, where most of
+the hike is, and the lens had never been noticed in a game. Two rules moved.
+
+- **The canopy no longer lightens the rain.** The streak stage reads a canopy
+  texel (the map's lift channel marks one) as open air:
+  `mix(1, max(G, step(0.5, B)), covered)`, so only hard cover (a car roof, a
+  cliff, which write no lift) stops a streak, and under the canopy the rain
+  reads as heavy as in a meadow. The splashes drop their cover term for the
+  same reason: the top surface takes the whole rain everywhere. The map is
+  unchanged, and the drips still read its transmission, so the trees drip as
+  before, on top of the full rain. The survey's throughfall figure (§4) is
+  no longer what the picture shows; the look was chosen over it.
+- **The lens.** Its strength was `rain × (0.25 + 0.75 × smoothstep(0.1, -0.5,
+  pitch)) × (1 - 0.65 × canopy)`: a quarter looking ahead, a twelfth looking
+  ahead under old growth, so on the trail it sat near its floor. Now
+  `rain × (0.6 + 0.4 × smoothstep(0.2, -0.3, pitch))` with no canopy term:
+  60 percent looking ahead or down, full by 17 degrees up, and the glass as
+  wet under the trees as in the open, which is what the rain now does. The
+  pass's shader is untouched; the two numbers are `LENS.ahead` and
+  `LENS.ramp` (`lensParams.ts`).
+
+- **The length's floor.** The streak's length is the class speed times a
+  smoothed frame duration times 1.5, and that duration was clamped to a
+  120th of a second at the shortest, so on a machine holding 120 Hz every
+  class sat on the 8 cm floor and the same rain read as a sparse drizzle
+  that read as rain at 30 Hz (the stills of §2.6 were taken on a loaded
+  machine, at a low frame rate). The floor is now a fortieth
+  (`RAIN_DT`): the eye's persistence, which is what a streak is in life, so
+  the fastest class is 34 cm and the slowest 17 cm on any machine, against
+  45 and 22 at 30 Hz. The uniform is unchanged.
+
+The streak and splash vertex stages were re-recorded into the corpus (§9) on
+the tiers that draw the map.
 
 ## 3. The far field and the light
 
@@ -200,10 +271,12 @@ forest meshes are not in it. Every listed mesh is drawn through
 The depth test leaves the topmost surface in each texel, so a car roof over
 the road writes its own height and hard cover. The streak plugin reads the map
 at the drop's world position (one vertex-stage fetch): a drop below
-`R + B` is under cover and its alpha is multiplied by `G`. The 0.65 is the
+`R + B` is under cover and its alpha is multiplied by `G` (as first built; as
+amended, §2.7, by `max(G, step(0.5, B))`, so the canopy's `G` reaches only
+the drips). The 0.65 is the
 share of rain an old-growth canopy intercepts or delays (survey §1.7: direct
 throughfall 0.36), so under the trees a third of the streaks still fall
-through, and the "canopy" is the terrain's density rather than the drawn
+through (as first built), and the "canopy" is the terrain's density rather than the drawn
 crowns, as Alan Wake 2 leaves trees out of its collision for the same reason
 (survey §3.5). The props' tops are splash surfaces; water is a splash surface
 with no streak occlusion, so it writes transmission 1 and no lift. Where the
@@ -228,9 +301,10 @@ the camera, on the height the map gives at that point, facing the camera, 6 to
 centre and fades it over a life of 120 ms. The fragment draws the ring from
 the phase and a radial coordinate, no texture. Its alpha is the rain
 value, a backlight term when the sun or the lamp is behind it (survey §4.5), and
-under canopy the map's transmission at the point; on open ground, a roof or the
+as first built under canopy the map's transmission at the point; on open ground, a roof or the
 water the top surface takes the whole rain, since the transmission is what
-falls below it, and the map's lift channel tells the two apart. The instance count drawn is
+falls below it, and the map's lift channel tells the two apart (as amended,
+§2.7, the whole rain everywhere). The instance count drawn is
 `round(rain × capacity)`. A splash that is not raining is a disabled mesh.
 
 **Drip** (medium 600, high 1,000): the streak mesh's plugin with a `RAIN_DRIP`
@@ -320,7 +394,9 @@ its floor for a second, so a dry hike never pays for it.
 
 ### 7.2 Gating
 
-`strength` is a CPU scalar smoothed with a 1 s time constant toward
+`strength` is a CPU scalar smoothed with a 1 s time constant toward (as
+first built; as amended, §2.7, `rain × (0.6 + 0.4 × smoothstep(0.2, -0.3,
+pitch))` with no canopy term)
 `rain × (0.25 + 0.75 × smoothstep(0.1, -0.5, pitch)) × transmission`, with
 pitch positive looking down (so the drops are strongest looking up and a
 quarter strength looking ahead) and transmission `1 - 0.65 × canopy` at the

@@ -3,14 +3,63 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Day Hike admin</title>
-    <meta name="robots" content="noindex" />
+    <title>Day Hike · Admin</title>
+    <meta name="description" content="The Day Hike dashboard: who is playing now, and what the telemetry says of the last day, week, month or quarter." />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0a0b0e" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- generated:head -->
+    <!-- /generated:head -->
+    <!-- The admin host's shared stylesheet (csarko.sh's theme tokens, fonts and
+         primitives), served at the host's root and left alone by the build
+         (vite-ignore), first; the page's own styles map onto its tokens. The
+         favicons are the host's too, and so is the chrome below: the nav bar
+         with its account menu, the trail and the page head are the host's
+         markup, the same as its own dashboard's, and the host's build fills the
+         generated block (the font preload) when it publishes this page beside
+         its own. -->
+    <link rel="stylesheet" href="/theme.css" vite-ignore />
     <link rel="stylesheet" href="/src/admin/admin.css" />
   </head>
   <body>
-    <div id="admin"></div>
+    <a class="skip-link" href="#top">Skip to content</a>
+    <nav class="nav" aria-label="Primary">
+      <div class="wrap">
+        <a class="wordmark" href="/">csarko<span>.sh</span><small>admin</small></a>
+        <div class="account" id="account"></div>
+      </div>
+    </nav>
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <div class="wrap">
+        <ol>
+          <li><a href="/">Admin</a></li>
+          <li><span aria-current="page">Day Hike</span></li>
+        </ol>
+      </div>
+    </nav>
+
+    <main id="top" class="wrap" tabindex="-1">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Dashboard</p>
+          <h1>Day Hike</h1>
+          <p class="lead">Who is playing right now, and what the telemetry says of the last day, week, month or quarter.</p>
+        </div>
+      </header>
+      <div id="admin">
+        <noscript><p class="note">The dashboard needs JavaScript: it reads the game's admin routes from this page.</p></noscript>
+      </div>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>© 2026 Cyrus Sarkosh</span>
+        <span class="mono">admin.csarko.sh</span>
+      </div>
+    </footer>
     <script type="module" src="/src/admin/main.ts"></script>
   </body>
 </html>

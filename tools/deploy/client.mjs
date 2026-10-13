@@ -22,7 +22,10 @@ const env = buildClient();
 
 // The public directory Firebase publishes: the client build under the site
 // path, and the redirect page at the root. Assembled fresh on every deploy so
-// a stale file can never ride along.
+// a stale file can never ride along. The admin page is not in it: it is
+// served from the shared admin host and shipped by `npm run deploy:admin`
+// (`tools/deploy/admin.mjs`); its old address under the site 301s there
+// (`firebase.json`).
 const siteUrl = tfOutput('site_url');
 const legacyHost = tfOutput('legacy_domain_name');
 const sitePath = new URL(siteUrl).pathname.replace(/\/+$/, '');

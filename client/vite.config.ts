@@ -16,6 +16,19 @@ export default defineConfig({
       mapDir: fileURLToPath(new URL("shaders/map/", import.meta.url)),
       tool: fileURLToPath(new URL("../tools/wgsl/build-map.mjs", import.meta.url)),
     }),
+    {
+      // The admin host's token module (`src/admin/auth.ts` imports `/auth.js`)
+      // is no file of this package: in the build it is external
+      // (`vite.admin.config.ts`), and on the dev server it is left to the
+      // browser the same way, which asks for it by that path and reaches the
+      // shell's local preview through the proxy below. Without this the dev
+      // server refuses to serve the admin page's module graph at all.
+      name: "dayhike-admin-shell-external",
+      apply: "serve",
+      resolveId(id) {
+        return id === "/auth.js" ? { id, external: true } : null;
+      },
+    },
   ],
   define: {
     // The SHA-256 of each shader translator as Babylon ships it, its
@@ -44,6 +57,14 @@ export default defineConfig({
       // The telemetry route, for a dev page started with `?telemetry=on`: the
       // dev server process serves both roles (`server/src/index.ts`).
       "/t": { target: "http://localhost:8080" },
+      // The admin host's shell, for the admin page in development
+      // (http://localhost:5173/dayhike/admin/?preview): its token module and
+      // its stylesheet live at the host's root (`src/admin/auth.ts`,
+      // `admin/index.html`), so they come from the shell's local preview,
+      // csarko.sh's `admin/` served on 8788. Without it running the page
+      // still loads its own styles and fails only at the import.
+      "/auth.js": { target: "http://localhost:8788" },
+      "/theme.css": { target: "http://localhost:8788" },
     },
   },
   build: {
@@ -51,13 +72,12 @@ export default defineConfig({
     // deploy keeps them out of the site and stores them by build sha, so a
     // telemetry stack can be read back (`tools/telemetry/symbolicate.mjs`).
     sourcemap: "hidden",
-    // Two pages: the game, and the admin page beside it at /dayhike/admin/,
-    // which shares nothing with the game's bundle (`src/admin/main.ts`).
+    // One page, the game. The admin page (`admin/index.html`) is served from
+    // the shared admin host under its own base, so it has a build of its own
+    // (`vite.admin.config.ts`) and is not an input here; the dev server still
+    // serves it, at /dayhike/admin/.
     rollupOptions: {
-      input: {
-        main: fileURLToPath(new URL("index.html", import.meta.url)),
-        admin: fileURLToPath(new URL("admin/index.html", import.meta.url)),
-      },
+      input: fileURLToPath(new URL("index.html", import.meta.url)),
     },
     // Never inline a model, and never inline a ground texture. `game/assetUrls.ts`
     // imports every shipped .glb with `?url`, and `groundMaps.ts`/`terrainTexture.ts`

@@ -1,6 +1,7 @@
 {
   "name": "game-dayhike",
   "private": true,
+  "license": "GPL-3.0-only",
   "type": "module",
   "workspaces": [
     "client",
@@ -14,6 +15,7 @@
     "dev:server": "npm run dev -w server",
     "dev:client": "npm run dev -w client",
     "build": "npm run build -w client",
+    "build:admin": "npm run build:admin -w client",
     "test": "vitest run --root client && vitest run --root server && vitest run --root tools",
     "test:client": "vitest run --root client",
     "test:server": "vitest run --root server",
@@ -27,6 +29,7 @@
     "deploy": "node tools/deploy/server.mjs && node tools/deploy/client.mjs",
     "deploy:server": "node tools/deploy/server.mjs",
     "deploy:client": "node tools/deploy/client.mjs",
+    "deploy:admin": "node tools/deploy/admin.mjs",
     "deploy:desktop": "node tools/deploy/desktop.mjs",
     "desktop:smoke": "node desktop/test/smoke.mjs",
     "desktop:outdated": "node tools/deploy/desktopOutdated.mjs",

@@ -44,12 +44,42 @@ export function worldsOf(rows: Row[]): World[] {
   return [...by.values()].sort((a, b) => b.startedAt - a.startedAt || a.key.localeCompare(b.key));
 }
 
-const whenFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+const dateFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
+const timeFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+const fullWhenFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
-/** A world's list entry: when its party set out, in New York time, then the world and its seed. */
-export function worldLabel(w: World): string {
-  const when = Number.isFinite(w.startedAt) ? whenFormat.format(w.startedAt) : "undated";
-  return `${when} · ${w.world} · seed ${w.seed}`;
+/** A world's line in the list: when its party set out (New York time), how many hikers, the farthest climb among them, and how it ended. */
+export type WorldLine = { key: string; date: string; time: string; hikers: string; farthest: string; end: "won" | "died" | "lost" | "unfinished" };
+
+/**
+ * The list's lines, one a world, newest first (Cyrus, 2026-10-13: every world
+ * is the same variant, so its name told parties apart no better than the seed
+ * did, and a native dropdown cannot line its parts up). Each is the date and
+ * the time the party set out, the number of hikers, the farthest climb among
+ * them and how it ended, in columns. The full world string and seed stay in
+ * the note under the drawing (`worldDetail`).
+ */
+export function worldLines(rows: Row[], worlds: World[]): WorldLine[] {
+  return worlds.map((w) => {
+    const sessions = sessionsOf(rows.filter((r) => str(r.world) === w.world && str(r.seed) === w.seed));
+    const farthest = Math.max(0, ...sessions.map((s) => s.farthest));
+    const end = sessions.some((s) => s.result === "won") ? "won" : sessions.some((s) => s.died) ? "died" : sessions.some((s) => s.result === "lost") ? "lost" : "unfinished";
+    const dated = Number.isFinite(w.startedAt);
+    return {
+      key: w.key,
+      date: dated ? dateFormat.format(w.startedAt) : "Undated",
+      time: dated ? timeFormat.format(w.startedAt) : "",
+      hikers: `${sessions.length} ${sessions.length === 1 ? "hiker" : "hikers"}`,
+      farthest: `${Math.round(farthest * 100)}%`,
+      end,
+    };
+  });
+}
+
+/** The note's first sentence: the world as the rows name it, its seed, and when the party set out in full. */
+export function worldDetail(w: World): string {
+  const when = Number.isFinite(w.startedAt) ? `set out ${fullWhenFormat.format(w.startedAt)}` : "undated";
+  return `World ${w.world}, seed ${w.seed}, ${when}.`;
 }
 
 /** The rows of one world, grouped into sessions with their samples and marks in tick order. */
@@ -256,7 +286,22 @@ const mmss = (tick: number): string => {
 export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) => Promise<DrawableTrail | null>): HTMLElement {
   // Newest party first, so the list opens on the latest walk.
   const worlds = worldsOf(rows);
-  const select = el("select", {}, ...worlds.map((w) => el("option", { value: w.key }, worldLabel(w))));
+  // The list of worlds: one radio a line, its parts in columns, the newest checked.
+  const lines = worldLines(rows, worlds);
+  const group = `world-${Math.random().toString(36).slice(2, 8)}`;
+  const inputs = lines.map((l, i) => {
+    const input = el("input", { type: "radio", name: group, value: l.key });
+    if (i === 0) input.checked = true;
+    return input;
+  });
+  const list = el(
+    "div",
+    { class: "worlds", role: "radiogroup", "aria-label": "World" },
+    ...lines.map((l, i) =>
+      el("label", { class: "world" }, inputs[i]!, el("span", { class: "date" }, l.date), el("span", { class: "time" }, l.time), el("span", { class: "hikers" }, l.hikers), el("span", { class: "far" }, l.farthest), el("span", { class: `end ${l.end}` }, l.end)),
+    ),
+  );
+  const picked = (): string => inputs.find((input) => input.checked)?.value ?? "";
   const canvas = el("canvas", { width: String(CANVAS), height: String(CANVAS) });
   const scrub = el("input", { type: "range", min: "0", max: "1", value: "1", step: "1", style: "width:100%" });
   const clock = el("span", { class: "sub" }, "");
@@ -315,7 +360,7 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
   };
 
   const choose = (): void => {
-    const [world = "", seed = ""] = (select.value || "|").split("|");
+    const [world = "", seed = ""] = (picked() || "|").split("|");
     const own = rows.filter((r) => str(r.world) === world && str(r.seed) === seed);
     sessions = sessionsOf(own);
     ticks = Math.max(1, ...sessions.map((s) => s.ticks));
@@ -323,12 +368,14 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
     scrub.value = String(ticks);
     selected = null;
     trail = null;
-    note.textContent = world === "" ? "" : sameGeneration(world) ? "The trail is rebuilt from the seed by this build's generator." : "This session's world was made by another generation of the generator; the trail drawn here may differ from the one they walked.";
+    const chosen = worlds.find((w) => w.key === picked());
+    const detail = chosen === undefined ? "" : `${worldDetail(chosen)} `;
+    note.textContent = world === "" ? "" : `${detail}${sameGeneration(world) ? "The trail is rebuilt from the seed by this build's generator." : "This session's world was made by another generation of the generator; the trail drawn here may differ from the one they walked."}`;
     sidePanel();
     draw();
     if (world !== "") {
       void trailFor(world, Number(seed)).then((built) => {
-        if (select.value !== `${world}|${seed}`) return;
+        if (picked() !== `${world}|${seed}`) return;
         trail = built;
         if (built === null) note.textContent = `${note.textContent} The trail could not be rebuilt for this world.`.trim();
         draw();
@@ -336,7 +383,7 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
     }
   };
 
-  select.addEventListener("change", choose);
+  list.addEventListener("change", choose);
   scrub.addEventListener("input", draw);
   side.addEventListener("click", (event) => {
     const target = event.target;
@@ -383,7 +430,7 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
     { class: "card" },
     el("h2", {}, "Where parties went"),
     el("p", { class: "sub" }, "One world at a time: the trail rebuilt from its seed, each session's path over it, a × where they died, a ◇ where they first saw the Hollow, a □ where they read the poster. Hover a path for its moment."),
-    el("div", { class: "paths" }, el("div", { class: "drawing" }, el("p", {}, select), wrap, el("div", { class: "scrub" }, scrub, clock), note), side),
+    el("div", { class: "paths" }, el("div", { class: "drawing" }, lines.length === 0 ? el("p", { class: "empty" }, "No parties in this range.") : list, wrap, el("div", { class: "scrub" }, scrub, clock), note), side),
   );
   if (worlds.length === 0) {
     side.replaceChildren(el("div", { class: "empty" }, "No position samples in this range."));

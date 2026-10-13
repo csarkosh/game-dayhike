@@ -120,9 +120,9 @@ describe("createRainSplash", () => {
     expect(p.lampCosHalf).toBeCloseTo(Math.cos(0.75), 9);
     expect([p.mapCentreX, p.mapCentreZ]).toEqual([30, -20]);
     const mat = splash.mesh.material as StandardMaterial;
-    expect(mat.emissiveColor.r).toBeCloseTo(0.625, 9);
-    expect(mat.emissiveColor.g).toBeCloseTo(0.625, 9);
-    expect(mat.emissiveColor.b).toBeCloseTo(0.625, 9);
+    expect(mat.emissiveColor.r).toBeCloseTo(0.705, 9);
+    expect(mat.emissiveColor.g).toBeCloseTo(0.705, 9);
+    expect(mat.emissiveColor.b).toBeCloseTo(0.705, 9);
     // At night the sun's backlight is gone; the light at 0.05 down is half way in.
     splash.update(CAM, WEATHER_PRESETS.rain, LAMP_OFF, SUN_DOWN, 0);
     expect([p.sunX, p.sunY, p.sunZ].map((v) => v + 0)).toEqual([0, 0, 0]);
@@ -246,9 +246,9 @@ describe("the splash plugin", () => {
     expect(vertex).toContain("float sSunT = max(dot(sView, splashSun), 0.0);");
     expect(vertex).toContain("float sLampT = splashLamp.x * sCone / (1.0 + sLampD2);");
     expect(vertex).toContain("float sBack = min(sSunT + sLampT, 1.0);");
-    // Under canopy (the map's lift marks it) the canopy's transmission; on a roof or the water, all.
-    expect(vertex).toContain("float sCover = mix(1.0, sMap.g, step(0.5, sMap.b));");
-    expect(vertex).toContain("vSplashAlpha = (1.0 - sPhase) * sCover * splashRain * (0.5 + 0.5 * sBack) * sIn;");
+    // The whole rain everywhere the map holds: under the canopy as on a roof or the water (2026-10-13).
+    expect(vertex).not.toContain("sCover");
+    expect(vertex).toContain("vSplashAlpha = (1.0 - sPhase) * splashRain * (0.5 + 0.5 * sBack) * sIn;");
     expect(vertex).toContain("vSplashPhase = sPhase;");
     expect(vertex).toContain("vSplashUv = position.xy + 0.5;");
     const fragment = plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR!;

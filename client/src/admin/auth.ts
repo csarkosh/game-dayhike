@@ -1,44 +1,23 @@
 /**
- * The admin page's sign-in: a Google account through Firebase Auth, whose ID
- * token the server's admin routes check against the allowlist
- * (`server/src/adminAuth.ts`). Only this page loads the Firebase library;
- * the game's bundle carries none of it.
+ * The admin page's gate: the shared admin host's sign-in module, re-exported.
  *
- * The sign-in handler is served on the site's own host by Firebase Hosting
- * (`/__/auth/`), so the popup stays on games.csarko.sh and needs no
- * third-party cookie. Development has no key, so the page shows its gate
- * with the sample behind `?preview`.
+ * The page is served from admin.csarko.sh (the csarko.sh repository's
+ * `admin/`), whose shell serves `/auth.js` at the host's root: a Google
+ * sign-in through Firebase Auth on that repository's project, `csarko-sh`, a
+ * `fetch` that sends the account's ID token as a bearer, and the gate that
+ * asks for the sign-in. Every app's page imports that one module, so one
+ * sign-in opens every app, and this bundle carries no sign-in code of its own:
+ * the import is left external by the build (`vite.admin.config.ts`) and
+ * resolved by the browser against the host.
+ *
+ * The server's admin routes verify the ID token against that project's issuer
+ * and their own allowlist (`server/src/adminAuth.ts`, `ADMIN_EMAILS`): the
+ * sign-in proves who the account is, the server decides whether it may read.
+ * A 401 is the shell's to notice (`admin:unauthorized`) and to answer with
+ * the gate again, saying which account was refused; this page's part is to
+ * stop asking (`main.ts`). The module's shape is declared in `auth-shell.d.ts`;
+ * in development the dev server proxies the path to the shell's local preview
+ * (`vite.config.ts`).
  */
 
-import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
-
-export type AuthConfig = { apiKey: string; authDomain: string; projectId: string };
-
-export type Session = {
-  /** The signed-in account, or null. Reported now and on every change. */
-  watch(onChange: (user: { email: string; token(): Promise<string> } | null) => void): () => void;
-  signIn(): Promise<void>;
-  signOut(): Promise<void>;
-};
-
-/** The build's sign-in configuration, or null in development. */
-export function authConfig(env: { VITE_FIREBASE_API_KEY?: string; VITE_FIREBASE_AUTH_DOMAIN?: string; VITE_FIREBASE_PROJECT_ID?: string }): AuthConfig | null {
-  if (!env.VITE_FIREBASE_API_KEY || !env.VITE_FIREBASE_AUTH_DOMAIN || !env.VITE_FIREBASE_PROJECT_ID) return null;
-  return { apiKey: env.VITE_FIREBASE_API_KEY, authDomain: env.VITE_FIREBASE_AUTH_DOMAIN, projectId: env.VITE_FIREBASE_PROJECT_ID };
-}
-
-export function createSession(config: AuthConfig): Session {
-  const app = initializeApp(config);
-  const auth = getAuth(app);
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: "select_account" });
-  const account = (user: User) => ({ email: user.email ?? "", token: () => user.getIdToken() });
-  return {
-    watch: (onChange) => onAuthStateChanged(auth, (user) => onChange(user === null ? null : account(user))),
-    async signIn() {
-      await signInWithPopup(auth, provider);
-    },
-    signOut: () => signOut(auth),
-  };
-}
+export { accountMenu, fetchWithAuth, requireSession, signOut, user, UNAUTHORIZED, type User } from "/auth.js";

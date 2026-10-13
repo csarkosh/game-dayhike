@@ -37,7 +37,7 @@ describe("createRain", () => {
     const s = scene();
     const rain = createRain(s, "medium");
     expect(rain.mesh.name).toBe("rain_streaks");
-    expect(rain.mesh.thinInstanceCount).toBe(10000);
+    expect(rain.mesh.thinInstanceCount).toBe(20000);
     expect(rain.mesh.isEnabled()).toBe(false);
     expect(rain.mesh.isPickable).toBe(false);
     expect(rain.mesh.receiveShadows).toBe(false);
@@ -76,15 +76,15 @@ describe("createRain", () => {
     expect(rain.mesh.isEnabled()).toBe(false);
     rain.update(CAM, 0, WEATHER_PRESETS.rain, STILL, DT, LAMP_OFF);
     expect(rain.mesh.isEnabled()).toBe(true);
-    expect(rain.mesh.thinInstanceCount).toBe(24000);
+    expect(rain.mesh.thinInstanceCount).toBe(48000);
     rain.update(CAM, 0, { ...WEATHER_PRESETS.rain, rain: 0.25 }, STILL, DT, LAMP_OFF);
     expect(rain.mesh.isEnabled()).toBe(true);
-    expect(rain.mesh.thinInstanceCount).toBe(6000);
+    expect(rain.mesh.thinInstanceCount).toBe(12000);
     rain.update(CAM, 0, WEATHER_PRESETS.clear, STILL, DT, LAMP_OFF);
     expect(rain.mesh.isEnabled()).toBe(false);
     rain.update(CAM, 0, WEATHER_PRESETS.rain, STILL, DT, LAMP_OFF);
     expect(rain.mesh.isEnabled()).toBe(true);
-    expect(rain.mesh.thinInstanceCount).toBe(24000);
+    expect(rain.mesh.thinInstanceCount).toBe(48000);
     rain.dispose();
   });
 
@@ -107,9 +107,9 @@ describe("createRain", () => {
     expect(p.lampCosHalf).toBeCloseTo(Math.cos(0.75), 9);
     expect([p.lampR, p.lampG, p.lampB]).toEqual([1, 0.9, 0.8]);
     const mat = rain.mesh.material as StandardMaterial;
-    expect(mat.emissiveColor.r).toBeCloseTo(0.625, 9);
-    expect(mat.emissiveColor.g).toBeCloseTo(0.625, 9);
-    expect(mat.emissiveColor.b).toBeCloseTo(0.625, 9);
+    expect(mat.emissiveColor.r).toBeCloseTo(0.705, 9);
+    expect(mat.emissiveColor.g).toBeCloseTo(0.705, 9);
+    expect(mat.emissiveColor.b).toBeCloseTo(0.705, 9);
     rain.update(CAM, 0, WEATHER_PRESETS.rain, wind, DT, LAMP_OFF);
     expect(p.lampIntensity).toBe(0);
     rain.dispose();
@@ -282,7 +282,7 @@ describe("the drips", () => {
     expect([p.mapCentreX, p.mapCentreZ]).toEqual([30, -20]);
     expect(p.fold).toBe(rain.plugin.fold);
     const mat = drips.material as StandardMaterial;
-    expect(mat.emissiveColor.r).toBeCloseTo(0.625, 9);
+    expect(mat.emissiveColor.r).toBeCloseTo(0.705, 9);
     rain.setMap(null);
     expect(p.map).toBeNull();
     expect(p.occlusion).toBe(false);

@@ -1,10 +1,31 @@
 #version 450
-#define MATERIALPLUGIN_20
+#define MATERIALPLUGIN_18
+#define BRDF_V_HEIGHT_CORRELATED
+#define MS_BRDF_ENERGY_CONSERVATION
+#define SPHERICAL_HARMONICS
+#define SPECULAR_GLOSSINESS_ENERGY_CONSERVATION
+#define MIX_IBL_RADIANCE_WITH_IRRADIANCE
+#define LEGACY_SPECULAR_ENERGY_CONSERVATION
+#define BASE_DIFFUSE_MODEL 0
+#define DIELECTRIC_SPECULAR_MODEL 0
+#define CONDUCTOR_SPECULAR_MODEL 0
+#define CLEARCOAT_TEXTUREDIRECTUV 0
+#define CLEARCOAT_TEXTURE_ROUGHNESSDIRECTUV 0
+#define CLEARCOAT_BUMPDIRECTUV 0
+#define CLEARCOAT_TINT_TEXTUREDIRECTUV 0
+#define IRIDESCENCE_TEXTUREDIRECTUV 0
+#define IRIDESCENCE_THICKNESS_TEXTUREDIRECTUV 0
+#define ANISOTROPIC_TEXTUREDIRECTUV 0
+#define SHEEN_TEXTUREDIRECTUV 0
+#define SHEEN_TEXTURE_ROUGHNESSDIRECTUV 0
+#define SS_THICKNESSANDMASK_TEXTUREDIRECTUV 0
+#define SS_REFRACTIONINTENSITY_TEXTUREDIRECTUV 0
+#define SS_TRANSLUCENCYINTENSITY_TEXTUREDIRECTUV 0
+#define SS_TRANSLUCENCYCOLOR_TEXTUREDIRECTUV 0
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
-#define RAIN
-#define MAINUV1
-#define UV1
+#define DISTANCEFADE
+#define WET
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -21,124 +42,222 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define IMAGEPROCESSING
-#define VIGNETTE
-#define VIGNETTEBLENDMODEMULTIPLY
-#define TONEMAPPING 3
-#define CONTRAST
-#define COLORCURVES
-#define SAMPLER3DGREENDEPTH
-#define SAMPLER3DBGRMAP
-#define DITHER
-#define EXPOSURE
-#define DIFFUSE
-#define DIFFUSEDIRECTUV 1
+#define TONEMAPPING 0
+#define IMAGEPROCESSINGPOSTPROCESS
+#define PBR
+#define NUM_SAMPLES 0
+#define ALBEDODIRECTUV 0
+#define VERTEXCOLOR
+#define BASE_WEIGHTDIRECTUV 0
+#define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
+#define ALPHATESTVALUE 0.4
+#define SPECULAROVERALPHA
+#define RADIANCEOVERALPHA
 #define EMISSIVEDIRECTUV 0
-#define SPECULARDIRECTUV 0
+#define REFLECTIVITYDIRECTUV 0
+#define SPECULARTERM
+#define LODBASEDMICROSFURACE
+#define MICROSURFACEMAPDIRECTUV 0
+#define METALLICWORKFLOW
+#define METALLIC_REFLECTANCEDIRECTUV 0
+#define REFLECTANCEDIRECTUV 0
+#define ENVIRONMENTBRDF
+#define NORMAL
 #define BUMPDIRECTUV 0
-#define ALPHAFROMDIFFUSE
-#define FOG
+#define NORMALXYSCALE
+#define LIGHTMAPDIRECTUV 0
+#define REFLECTION
+#define REFLECTIONMAP_3D
+#define REFLECTIONMAP_CUBIC
+#define INVERTCUBICMAP
+#define USESPHERICALFROMREFLECTIONMAP
+#define USESPHERICALINVERTEX
+#define GAMMAREFLECTION
+#define RADIANCEOCCLUSION
+#define HORIZONOCCLUSION
 #define NUM_BONE_INFLUENCERS 0
 #define BonesPerMesh 0
-#define INSTANCES
-#define THIN_INSTANCES
-#define LIGHTMAPDIRECTUV 0
 #define NUM_MORPH_INFLUENCERS 0
-#define ALPHATEST_AFTERALLALPHACOMPUTATIONS
-#define ALPHABLEND
 #define ORDER_INDEPENDENT_TRANSPARENCY_16BITS
+#define USEPHYSICALLIGHTFALLOFF
+#define FOG
 #define CAMERA_PERSPECTIVE
 #define AREALIGHTSUPPORTED
+#define TEXTURE_REPETITION_MODE 0
+#define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
 #define CLUSTLIGHT_SLICES 0
 #define CLUSTLIGHT_BATCH 0
-#define TEXTURE_REPETITION_MODE 0
+#define LIGHT0
+#define SPOTLIGHT0
+#define LIGHT1
+#define DIRLIGHT1
+#define LIGHT2
+#define HEMILIGHT2
+#define LIGHTCOUNT 3
+#define MAXLIGHTCOUNT 7
 
-#define SHADER_NAME vertex:default
-layout(set = 1, binding = 5) uniform LeftOver {
-        float exposureLinear;
-    float contrast;
-    vec2 vInverseScreenSize;
-    vec4 vignetteSettings1;
-    vec4 vignetteSettings2;
-    vec4 vCameraColorCurveNegative;
-    vec4 vCameraColorCurveNeutral;
-    vec4 vCameraColorCurvePositive;
-    float ditherIntensity;
-    vec4 vFogInfos;
+#define SHADER_NAME vertex:pbr
+layout(set = 1, binding = 12) uniform LeftOver {
+        vec4 vFogInfos;
     vec3 vFogColor;
 };
 
-precision highp float;
 // Internals UBO
 layout(set = 1, binding = 0) uniform Internals {
 float yFactor_;
 float textureOutputHeight_;
 };
+#define PBR_VERTEX_SHADER
 #define CUSTOM_VERTEX_EXTENSION
+precision highp float;
 layout(std140,column_major) uniform;
-layout(set = 1, binding = 1) uniform Material
-{vec4 diffuseLeftColor;
-vec4 diffuseRightColor;
-vec4 opacityParts;
-vec4 reflectionLeftColor;
-vec4 reflectionRightColor;
-vec4 refractionLeftColor;
-vec4 refractionRightColor;
-vec4 emissiveLeftColor;
-vec4 emissiveRightColor;
-vec2 vDiffuseInfos;
-vec2 vAmbientInfos;
+layout(set = 1, binding = 1) uniform Material {vec2 vAlbedoInfos;
+vec2 vBaseWeightInfos;
+vec2 vBaseDiffuseRoughnessInfos;
+vec4 vAmbientInfos;
 vec2 vOpacityInfos;
 vec2 vEmissiveInfos;
 vec2 vLightmapInfos;
-vec2 vSpecularInfos;
+vec3 vReflectivityInfos;
+vec2 vMicroSurfaceSamplerInfos;
 vec3 vBumpInfos;
-mat4 diffuseMatrix;
+mat4 albedoMatrix;
+mat4 baseWeightMatrix;
+mat4 baseDiffuseRoughnessMatrix;
 mat4 ambientMatrix;
 mat4 opacityMatrix;
 mat4 emissiveMatrix;
 mat4 lightmapMatrix;
-mat4 specularMatrix;
+mat4 reflectivityMatrix;
+mat4 microSurfaceSamplerMatrix;
 mat4 bumpMatrix;
 vec2 vTangentSpaceParams;
+vec4 vAlbedoColor;
+float baseWeight;
+float baseDiffuseRoughness;
+vec4 vLightingIntensity;
 float pointSize;
-float alphaCutOff;
-mat4 refractionMatrix;
-vec4 vRefractionInfos;
-vec3 vRefractionPosition;
-vec3 vRefractionSize;
-vec4 vSpecularColor;
+vec4 vReflectivityColor;
 vec3 vEmissiveColor;
-vec4 vDiffuseColor;
 vec3 vAmbientColor;
+vec2 vDebugMode;
+vec4 vMetallicReflectanceFactors;
+vec2 vMetallicReflectanceInfos;
+mat4 metallicReflectanceMatrix;
+vec2 vReflectanceInfos;
+mat4 reflectanceMatrix;
 vec4 cameraInfo;
 vec4 vTextureRepetitionHexTilingParams;
 vec2 vReflectionInfos;
 mat4 reflectionMatrix;
+vec3 vReflectionMicrosurfaceInfos;
 vec3 vReflectionPosition;
 vec3 vReflectionSize;
+vec2 vReflectionFilteringInfo;
+vec3 vReflectionDominantDirection;
+vec3 vReflectionColor;
+vec3 vSphericalL00;
+vec3 vSphericalL1_1;
+vec3 vSphericalL10;
+vec3 vSphericalL11;
+vec3 vSphericalL2_2;
+vec3 vSphericalL2_1;
+vec3 vSphericalL20;
+vec3 vSphericalL21;
+vec3 vSphericalL22;
+vec3 vSphericalX;
+vec3 vSphericalY;
+vec3 vSphericalZ;
+vec3 vSphericalXX_ZZ;
+vec3 vSphericalYY_ZZ;
+vec3 vSphericalZZ;
+vec3 vSphericalXY;
+vec3 vSphericalYZ;
+vec3 vSphericalZX;
+vec2 vClearCoatParams;
+vec4 vClearCoatRefractionParams;
+vec4 vClearCoatInfos;
+mat4 clearCoatMatrix;
+mat4 clearCoatRoughnessMatrix;
+vec2 vClearCoatBumpInfos;
+vec2 vClearCoatTangentSpaceParams;
+mat4 clearCoatBumpMatrix;
+vec4 vClearCoatTintParams;
+float clearCoatColorAtDistance;
+vec2 vClearCoatTintInfos;
+mat4 clearCoatTintMatrix;
+vec4 vIridescenceParams;
+vec4 vIridescenceInfos;
+mat4 iridescenceMatrix;
+mat4 iridescenceThicknessMatrix;
+vec3 vAnisotropy;
+vec2 vAnisotropyInfos;
+mat4 anisotropyMatrix;
+vec4 vSheenColor;
+float vSheenRoughness;
+vec4 vSheenInfos;
+mat4 sheenMatrix;
+mat4 sheenRoughnessMatrix;
+vec4 vRefractionMicrosurfaceInfos;
+vec2 vRefractionFilteringInfo;
+vec2 vTranslucencyIntensityInfos;
+vec4 vRefractionInfos;
+mat4 refractionMatrix;
+vec2 vThicknessInfos;
+vec2 vRefractionIntensityInfos;
+mat4 thicknessMatrix;
+mat4 refractionIntensityMatrix;
+mat4 translucencyIntensityMatrix;
+vec2 vThicknessParam;
+vec3 vDiffusionDistance;
+vec4 vTintColor;
+vec3 vSubSurfaceIntensity;
+vec3 vRefractionPosition;
+vec3 vRefractionSize;
+float scatteringDiffusionProfile;
+float dispersion;
+vec4 vTranslucencyColor;
+vec2 vTranslucencyColorInfos;
+mat4 translucencyColorMatrix;
 vec4 vDetailInfos;
 mat4 detailMatrix;
-vec3 rainBoxMin;
-vec3 rainBoxSize;
-vec2 rainDrift;
-float rainFold;
-float rainDt;
-vec2 rainWind;
-vec3 rainCam;
-vec3 rainLampPos;
-vec3 rainLampDir;
-vec2 rainLamp;
-vec4 rainSpeeds;
-vec4 rainWidths;
-vec4 rainAlphas;
-vec2 rainMapCentre;
-float rainMapExtent;
-float rainCanopyWater;
-vec3 rainLampColour;
+float atmOn;
+float atmHeightDensity;
+float atmHeightFalloff;
+float atmReferenceLevel;
+float atmGradientScale;
+float atmSunPower;
+float atmSunWeight;
+vec3 atmSunDir;
+vec3 atmSunColour;
+vec3 atmFarColour;
+float atmCloudDensity;
+float atmCloudSteps;
+float atmCloudRange;
+float atmCloudFalloff;
+float atmCloudSeat;
+float atmCloudGroundRange;
+float atmCloudNear;
+float atmCloudTrail;
+vec2 atmCloudNoiseScale;
+vec2 atmCloudWind;
+vec2 atmCloudGlow;
+vec3 atmCloudColour;
+vec4 atmCloudGroundRect;
+vec3 fadeEye;
+float wetLine;
+float wetLevel;
+vec2 wetCentre;
+float wetRadius;
+vec3 wetKd;
+float wetAttenuate;
+float wetWeather;
+float wetCap;
+vec4 wetCove;
+vec4 wetSwash[256];
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -155,7 +274,8 @@ float visibility;
 #define WORLD_UBO
 #define CUSTOM_VERTEX_BEGIN
 layout(location = 0) in vec3 position;
-layout(location = 1) in vec2 uv;
+layout(location = 1) in vec3 normal;
+layout(location = 2) in vec4 color;
 const float PI=3.1415926535897932384626433832795;
 const float TWO_PI=6.283185307179586;
 const float HALF_PI=1.5707963267948966;
@@ -296,60 +416,84 @@ float uint2float(uint i) {return uintBitsToFloat(0x3F800000u | (i>>9u))-1.0;
 vec2 plasticSequence(const uint rstate) {return vec2(uint2float(rstate*3242174889u),
 uint2float(rstate*2447445414u));
 }
-layout(location = 2) in vec4 world0;
-layout(location = 3) in vec4 world1;
-layout(location = 4) in vec4 world2;
-layout(location = 5) in vec4 world3;
-layout(location = 0)  out vec2 vMainUV1;
-layout(location = 1)  out vec3 vPositionW;
-layout(location = 2)  out vec3 vFogDistance;
-layout(location = 6) in vec4 rainSeed;
-layout(location = 3)  out float vRainAlpha;
-layout(location = 4)  out float vRainLamp;
+#define FRESNEL_MAXIMUM_ON_ROUGH 0.25
+#define BRDF_DIFFUSE_MODEL_EON 0
+#define BRDF_DIFFUSE_MODEL_BURLEY 1
+#define BRDF_DIFFUSE_MODEL_LAMBERT 2
+#define BRDF_DIFFUSE_MODEL_LEGACY 3
+#define DIELECTRIC_SPECULAR_MODEL_GLTF 0
+#define DIELECTRIC_SPECULAR_MODEL_OPENPBR 1
+#define CONDUCTOR_SPECULAR_MODEL_GLTF 0
+#define CONDUCTOR_SPECULAR_MODEL_OPENPBR 1
+layout(location = 0)  out vec3 vPositionW;
+layout(location = 1)  out vec3 vNormalW;
+layout(location = 2)  out vec3 vEnvironmentIrradiance;
+vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
++ vSphericalL1_1*(normal.y)
++ vSphericalL10*(normal.z)
++ vSphericalL11*(normal.x)
++ vSphericalL2_2*(normal.y*normal.x)
++ vSphericalL2_1*(normal.y*normal.z)
++ vSphericalL20*((3.0*normal.z*normal.z)-1.0)
++ vSphericalL21*(normal.z*normal.x)
++ vSphericalL22*(normal.x*normal.x-(normal.y*normal.y));
+}
+layout(location = 3)  out vec4 vColor;
+layout(location = 4)  out vec3 vFogDistance;
+layout(set = 1, binding = 3) uniform Light0
+{vec4 vLightData;
+vec4 vLightDiffuse;
+vec4 vLightSpecular;
+vec4 vLightDirection;
+vec4 vLightFalloff;
+vec4 shadowsInfo;
+vec2 depthValues;
+} light0;
+layout(set = 1, binding = 4) uniform Light1
+{vec4 vLightData;
+vec4 vLightDiffuse;
+vec4 vLightSpecular;
+vec4 shadowsInfo;
+vec2 depthValues;
+} light1;
+layout(set = 1, binding = 5) uniform Light2
+{vec4 vLightData;
+vec4 vLightDiffuse;
+vec4 vLightSpecular;
+vec3 vLightGround;
+vec4 shadowsInfo;
+vec2 depthValues;
+} light2;
+layout(location = 3) in vec4 fadeBands;
+layout(location = 5)  out vec4 vFadeBands;
+layout(location = 6)  out float vFadeDist;
 #define CUSTOM_VERTEX_DEFINITIONS
 void main(void) {
 #define CUSTOM_VERTEX_MAIN_BEGIN
 vec3 positionUpdated=position;
-vec2 uvUpdated=uv;
-{
-float rkI = floor(rainSeed.w * 3.0 + 0.5);
-vec4 rkSel = vec4(equal(vec4(rkI), vec4(0.0, 1.0, 2.0, 3.0)));
-float rSpeed = dot(rainSpeeds, rkSel);
-float rWidth = dot(rainWidths, rkSel);
-float rClassAlpha = dot(rainAlphas, rkSel);
-vec3 rDrift = vec3(rainDrift.x, -rSpeed * rainFold / rainBoxSize.y, rainDrift.y);
-vec3 rq = fract(rainSeed.xyz + rDrift - rainBoxMin / rainBoxSize);
-vec3 rp = rainBoxMin + rq * rainBoxSize;
-vec3 rAlong = normalize(vec3(rainWind.x, -rSpeed, rainWind.y));
-vec3 rToCam = rainCam - rp;
-float rDist = max(length(rToCam), 0.001);
-vec3 rView = rToCam / rDist;
-vec3 rSide = cross(rAlong, rView);
-vec3 rRight = rSide / max(length(rSide), 0.001);
-float rLen = clamp(rSpeed * rainDt * 1.5, 0.08, 0.5);
-positionUpdated = rp + rRight * (position.x * rWidth) + rAlong * (position.y * rLen);
-float rFade = smoothstep(0.6, 1.5, rDist) * (1.0 - smoothstep(9.0, 12.0, rDist));
-float rSky = 1.0 - 0.6 * smoothstep(0.0, 0.25, -rView.y);
-vec3 rToLamp = rp - rainLampPos;
-float rLampD2 = dot(rToLamp, rToLamp);
-float rCos = dot(rToLamp, rainLampDir) / sqrt(max(rLampD2, 0.0001));
-float rCone = smoothstep(rainLamp.y, 0.5 + 0.5 * rainLamp.y, rCos);
-float rLampT = rainLamp.x * rCone / (1.0 + rLampD2);
-float rCover = 1.0;
-vRainAlpha = min(rFade * rCover * (rSky * rClassAlpha + rLampT), 1.0);
-vRainLamp = min(rLampT, 1.0);
-}
+vec3 normalUpdated=normal;
+vec4 colorUpdated=color;
 #define CUSTOM_VERTEX_UPDATE_POSITION
 #define CUSTOM_VERTEX_UPDATE_NORMAL
-mat4 finalWorld=mat4(world0,world1,world2,world3);
-finalWorld=world*finalWorld;
+mat4 finalWorld=world;
 vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);
+vPositionW=vec3(worldPos);
+mat3 normalWorld=mat3(finalWorld);
+vNormalW=normalize(normalWorld*normalUpdated);
+vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
+float NdotV=max(dot(vNormalW,viewDirectionW),0.0);
+vec3 roughNormal=mix(vNormalW,viewDirectionW,(0.5*(1.0-NdotV))*baseDiffuseRoughness);
+vec3 reflectionVector=vec3(reflectionMatrix*vec4(roughNormal,0)).xyz;
+vEnvironmentIrradiance=computeEnvironmentIrradiance(reflectionVector);
+vFadeBands = vec4(-2.0, -1.0, 1.0e8, 2.0e8);
+vFadeDist = 0.0;
 #define CUSTOM_VERTEX_UPDATE_WORLDPOS
 gl_Position=viewProjection*worldPos;
-vPositionW=vec3(worldPos);
+vec2 uvUpdated=vec2(0.,0.);
 vec2 uv2Updated=vec2(0.,0.);
-vMainUV1=uvUpdated;
 vFogDistance=(view*worldPos).xyz;
+vColor=vec4(1.0);
+vColor.rgb*=colorUpdated.rgb;
 #define CUSTOM_VERTEX_MAIN_END
 gl_Position.y *= yFactor_;
 }

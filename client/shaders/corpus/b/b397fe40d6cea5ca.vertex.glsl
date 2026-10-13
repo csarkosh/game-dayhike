@@ -1,8 +1,12 @@
 #version 450
-#define MATERIALPLUGIN_21
+#define MATERIALPLUGIN_20
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
-#define SPLASH
+#define RAIN
+#define RAIN_DRIP
+#define RAIN_OCCLUSION
+#define MAINUV1
+#define UV1
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -21,12 +25,14 @@
 #define SCENE_MRT_COUNT 0
 #define TONEMAPPING 0
 #define IMAGEPROCESSINGPOSTPROCESS
-#define DIFFUSEDIRECTUV 0
+#define DIFFUSE
+#define DIFFUSEDIRECTUV 1
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
 #define EMISSIVEDIRECTUV 0
 #define SPECULARDIRECTUV 0
 #define BUMPDIRECTUV 0
+#define ALPHAFROMDIFFUSE
 #define FOG
 #define NUM_BONE_INFLUENCERS 0
 #define BonesPerMesh 0
@@ -45,7 +51,7 @@
 #define TEXTURE_REPETITION_MODE 0
 
 #define SHADER_NAME vertex:default
-layout(set = 1, binding = 5) uniform LeftOver {
+layout(set = 1, binding = 7) uniform LeftOver {
         vec4 vFogInfos;
     vec3 vFogColor;
 };
@@ -101,15 +107,23 @@ vec3 vReflectionPosition;
 vec3 vReflectionSize;
 vec4 vDetailInfos;
 mat4 detailMatrix;
-float splashTime;
-vec3 splashCam;
-float splashRain;
-vec3 splashSun;
-vec3 splashLampPos;
-vec3 splashLampDir;
-vec2 splashLamp;
-vec2 splashMapCentre;
-float splashMapExtent;
+vec3 rainBoxMin;
+vec3 rainBoxSize;
+vec2 rainDrift;
+float rainFold;
+float rainDt;
+vec2 rainWind;
+vec3 rainCam;
+vec3 rainLampPos;
+vec3 rainLampDir;
+vec2 rainLamp;
+vec4 rainSpeeds;
+vec4 rainWidths;
+vec4 rainAlphas;
+vec2 rainMapCentre;
+float rainMapExtent;
+float rainCanopyWater;
+vec3 rainLampColour;
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -126,6 +140,7 @@ float visibility;
 #define WORLD_UBO
 #define CUSTOM_VERTEX_BEGIN
 layout(location = 0) in vec3 position;
+layout(location = 1) in vec2 uv;
 const float PI=3.1415926535897932384626433832795;
 const float TWO_PI=6.283185307179586;
 const float HALF_PI=1.5707963267948966;
@@ -266,59 +281,54 @@ float uint2float(uint i) {return uintBitsToFloat(0x3F800000u | (i>>9u))-1.0;
 vec2 plasticSequence(const uint rstate) {return vec2(uint2float(rstate*3242174889u),
 uint2float(rstate*2447445414u));
 }
-layout(location = 1) in vec4 world0;
-layout(location = 2) in vec4 world1;
-layout(location = 3) in vec4 world2;
-layout(location = 4) in vec4 world3;
-layout(location = 0)  out vec3 vPositionW;
-layout(location = 1)  out vec3 vFogDistance;
-layout(location = 5) in vec4 splashSeed;
-layout(location = 2)  out float vSplashAlpha;
-layout(location = 3)  out float vSplashPhase;
-layout(location = 4)  out vec2 vSplashUv;
-layout(set = 1, binding = 4) uniform sampler splashMapSamplerSampler;
-                        layout(set = 1, binding = 3) uniform texture2D splashMapSamplerTexture;
-                        #define splashMapSampler sampler2D(splashMapSamplerTexture, splashMapSamplerSampler)
-vec2 splashHash(vec2 p) {
-vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
-p3 += dot(p3, p3.yzx + 33.33);
-return fract((p3.xx + p3.yz) * p3.zy);
-}
+layout(location = 2) in vec4 world0;
+layout(location = 3) in vec4 world1;
+layout(location = 4) in vec4 world2;
+layout(location = 5) in vec4 world3;
+layout(location = 0)  out vec2 vMainUV1;
+layout(location = 1)  out vec3 vPositionW;
+layout(location = 2)  out vec3 vFogDistance;
+layout(location = 6) in vec4 rainSeed;
+layout(location = 3)  out float vRainAlpha;
+layout(location = 4)  out float vRainLamp;
+layout(set = 1, binding = 4) uniform sampler rainMapSamplerSampler;
+                        layout(set = 1, binding = 3) uniform texture2D rainMapSamplerTexture;
+                        #define rainMapSampler sampler2D(rainMapSamplerTexture, rainMapSamplerSampler)
 #define CUSTOM_VERTEX_DEFINITIONS
 void main(void) {
 #define CUSTOM_VERTEX_MAIN_BEGIN
 vec3 positionUpdated=position;
+vec2 uvUpdated=uv;
 {
-float sT = splashTime / 0.12 + splashSeed.x;
-float sCycle = mod(floor(sT), 300.0);
-float sPhase = fract(sT);
-vec2 sH = splashHash(splashSeed.yz + sCycle);
-float sR = 10.0 * sqrt(sH.x);
-float sA = 6.2831853 * sH.y;
-vec2 sXZ = splashCam.xz + vec2(cos(sA), sin(sA)) * sR;
-vec2 sMu = (sXZ - splashMapCentre) / splashMapExtent + 0.5;
-vec4 sMap = texture(splashMapSampler, sMu);
-float sIn = step(0.0, sMu.x) * step(sMu.x, 1.0) * step(0.0, sMu.y) * step(sMu.y, 1.0);
-vec3 sp = vec3(sXZ.x, sMap.r, sXZ.y);
-vec3 sToCam = splashCam - sp;
-float sDist = max(length(sToCam), 0.001);
-vec3 sView = sToCam / sDist;
-vec3 sSide = cross(vec3(0.0, 1.0, 0.0), sView);
-vec3 sRight = sSide / max(length(sSide), 0.001);
-vec3 sUp = cross(sView, sRight);
-float sSize = mix(0.06, 0.1, splashSeed.w) * (0.5 + sPhase) * sIn;
-positionUpdated = sp + (sRight * position.x + sUp * position.y) * sSize;
-float sSunT = max(dot(sView, splashSun), 0.0);
-vec3 sToLamp = sp - splashLampPos;
-float sLampD2 = dot(sToLamp, sToLamp);
-float sCos = dot(sToLamp, splashLampDir) / sqrt(max(sLampD2, 0.0001));
-float sCone = smoothstep(splashLamp.y, 0.5 + 0.5 * splashLamp.y, sCos);
-float sLampT = splashLamp.x * sCone / (1.0 + sLampD2);
-float sBack = min(sSunT + sLampT, 1.0);
-float sCover = mix(1.0, sMap.g, step(0.5, sMap.b));
-vSplashAlpha = (1.0 - sPhase) * sCover * splashRain * (0.5 + 0.5 * sBack) * sIn;
-vSplashPhase = sPhase;
-vSplashUv = position.xy + 0.5;
+float rSpeed = 6.0;
+float rWidth = 0.04;
+float rClassAlpha = 1.0;
+vec3 rDrift = vec3(0.0, -rSpeed * rainFold / rainBoxSize.y, 0.0);
+vec3 rq = fract(rainSeed.xyz + rDrift - rainBoxMin / rainBoxSize);
+vec3 rp = rainBoxMin + rq * rainBoxSize;
+vec3 rAlong = vec3(0.0, -1.0, 0.0);
+vec3 rToCam = rainCam - rp;
+float rDist = max(length(rToCam), 0.001);
+vec3 rView = rToCam / rDist;
+vec3 rSide = cross(rAlong, rView);
+vec3 rRight = rSide / max(length(rSide), 0.001);
+float rLen = 0.12;
+positionUpdated = rp + rRight * (position.x * rWidth) + rAlong * (position.y * rLen);
+float rFade = smoothstep(0.6, 1.5, rDist) * (1.0 - smoothstep(9.0, 12.0, rDist));
+float rSky = 1.0 - 0.35 * smoothstep(0.0, 0.5, -rView.y);
+vec3 rToLamp = rp - rainLampPos;
+float rLampD2 = dot(rToLamp, rToLamp);
+float rCos = dot(rToLamp, rainLampDir) / sqrt(max(rLampD2, 0.0001));
+float rCone = smoothstep(rainLamp.y, 0.5 + 0.5 * rainLamp.y, rCos);
+float rLampT = rainLamp.x * rCone / (1.0 + rLampD2);
+float rCover = 1.0;
+vec2 rMu = (rp.xz - rainMapCentre) / rainMapExtent + 0.5;
+vec4 rMap = texture(rainMapSampler, rMu);
+float rInMap = step(0.0, rMu.x) * step(rMu.x, 1.0) * step(0.0, rMu.y) * step(rMu.y, 1.0);
+float rCovered = rInMap * step(rp.y, rMap.r + rMap.b);
+rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;
+vRainAlpha = min(rFade * rCover * (rSky * rClassAlpha + rLampT), 1.0);
+vRainLamp = min(rLampT, 1.0);
 }
 #define CUSTOM_VERTEX_UPDATE_POSITION
 #define CUSTOM_VERTEX_UPDATE_NORMAL
@@ -328,8 +338,8 @@ vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);
 #define CUSTOM_VERTEX_UPDATE_WORLDPOS
 gl_Position=viewProjection*worldPos;
 vPositionW=vec3(worldPos);
-vec2 uvUpdated=vec2(0.,0.);
 vec2 uv2Updated=vec2(0.,0.);
+vMainUV1=uvUpdated;
 vFogDistance=(view*worldPos).xyz;
 #define CUSTOM_VERTEX_MAIN_END
 gl_Position.y *= yFactor_;

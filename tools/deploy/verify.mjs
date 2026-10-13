@@ -26,6 +26,10 @@ const telemetryUrl = tfOutput('telemetry_url');
 const siteOrigin = new URL(siteUrl).origin;
 const legacyHost = tfOutput('legacy_domain_name');
 
+/** The admin page's address on the shared admin host, where the old one under the site redirects (firebase.json). */
+const ADMIN_HOST_PAGE = 'https://admin.csarko.sh/game-dayhike/';
+const ADMIN_HOST_ORIGIN = new URL(ADMIN_HOST_PAGE).origin;
+
 /** The title page's first load: the page, its scripts and styles, the still. */
 const TITLE_PAGE_MAX_BYTES = 1_500_000;
 /** The title still's weight, the loop's first frame as WebP. */
@@ -509,13 +513,29 @@ async function verify() {
   );
   check(queryProblems.length === 0, 'every saved telemetry query runs on BigQuery', queryProblems.join('; '));
 
-  // 6c. The admin page is served beside the game, and its routes refuse a
-  // request with no account: the allowlist is the whole of the guard.
-  const admin = await reach(`${siteUrl}/admin/`);
-  const adminHtml = admin.status === 200 ? await admin.text() : '';
-  check(admin.status === 200 && adminHtml.includes('<script'), 'the admin page is served at /admin/', `status ${admin.status}`);
-  const refusedAdmin = await reach(`${telemetryUrl}/admin/live`, { headers: { origin: siteOrigin } });
-  check(refusedAdmin.status === 401, 'the admin routes refuse a request with no account', `got ${refusedAdmin.status}`);
+  // 6c. The admin page moved to the shared admin host: its old address under
+  // the site 301s there (firebase.json), with and without the trailing slash,
+  // and the admin routes refuse a request with no token, the token being the
+  // whole of the guard, for the index card's route as for the page's. The
+  // host itself is the csarko.sh repository's to publish and verify
+  // (`admin/deploy.sh`); it is read here as a note, not a check, since on the
+  // first deploy of this it may not have been published yet.
+  for (const old of [`${siteUrl}/admin/`, `${siteUrl}/admin`]) {
+    const moved = await reach(old, { redirect: 'manual' });
+    check(
+      moved.status === 301 && moved.headers.get('location') === ADMIN_HOST_PAGE,
+      `${old} redirects to ${ADMIN_HOST_PAGE}`,
+      `status ${moved.status}, location ${moved.headers.get('location')}`,
+    );
+  }
+  for (const path of ['/admin/live', '/admin/kpis']) {
+    const refusedAdmin = await reach(`${telemetryUrl}${path}`, { headers: { origin: ADMIN_HOST_ORIGIN } });
+    check(refusedAdmin.status === 401, `${path} refuses a request with no token`, `got ${refusedAdmin.status}`);
+  }
+  const hosted = await reach(ADMIN_HOST_PAGE);
+  const hostedHtml = hosted.status === 200 ? await hosted.text() : '';
+  if (hosted.status === 200 && hostedHtml.includes('<script')) pass(`the admin page is up at ${ADMIN_HOST_PAGE}`);
+  else console.log(`  · ${ADMIN_HOST_PAGE} answered ${hosted.status}: the host is published from the csarko.sh repository (admin/deploy.sh)`);
 
   // 7. The desktop release the landing page will advertise exists and is
   // whole: latest.json parses, names the version the repo believes is

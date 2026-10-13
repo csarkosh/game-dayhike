@@ -104,7 +104,7 @@ describe("the rain plugin", () => {
       rainLamp: [3, 0.7],
       rainSpeeds: [4.5, 6, 7.5, 9],
       rainWidths: [0.012, 0.018, 0.024, 0.03],
-      rainAlphas: [0.35, 0.43, 0.52, 0.6],
+      rainAlphas: [0.45, 0.55, 0.65, 0.75],
       rainMapCentre: [12, -4],
       rainMapExtent: [96],
       rainCanopyWater: [0.5],
@@ -133,7 +133,7 @@ describe("the rain plugin", () => {
     expect(vertex).toContain("#ifdef RAIN_DRIP\n  vec3 rAlong = vec3(0.0, -1.0, 0.0);\n#else");
     expect(vertex).toContain("#ifdef RAIN_DRIP\n  float rLen = 0.12;\n#else");
     // Under the map: covered, by the transmission's complement, by the water. Without one: nothing.
-    expect(vertex).toContain("#ifdef RAIN_DRIP\n  rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;\n#else\n  rCover = mix(1.0, rMap.g, rCovered);\n#endif");
+    expect(vertex).toContain("#ifdef RAIN_DRIP\n  rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;\n#else\n  rCover = mix(1.0, max(rMap.g, step(0.5, rMap.b)), rCovered);\n#endif");
     expect(vertex).toContain("#else\n#ifdef RAIN_DRIP\n  rCover = 0.0;\n#endif\n#endif");
     expect(plugin.getUniforms().vertex).toContain("#ifdef RAIN_DRIP\nuniform float rainCanopyWater;\n#endif");
     // The 40 s fold is exact for the drips too: 6 m/s over a 12 m box is 20 heights.
@@ -184,7 +184,7 @@ describe("the rain plugin", () => {
     // Outside the map, or above the texel's height plus its lift: uncovered.
     expect(vertex).toContain("float rInMap = step(0.0, rMu.x) * step(rMu.x, 1.0) * step(0.0, rMu.y) * step(rMu.y, 1.0);");
     expect(vertex).toContain("float rCovered = rInMap * step(rp.y, rMap.r + rMap.b);");
-    expect(vertex).toContain("rCover = mix(1.0, rMap.g, rCovered);");
+    expect(vertex).toContain("rCover = mix(1.0, max(rMap.g, step(0.5, rMap.b)), rCovered);");
     expect(vertex).toContain("vRainAlpha = min(rFade * rCover * (rSky * rClassAlpha + rLampT), 1.0)");
     // The map is bound only while on and set.
     const map = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene);
@@ -218,7 +218,7 @@ describe("the rain plugin", () => {
     // The literals rainParams.ts carries, written into the GLSL from it.
     expect(vertex).toContain("clamp(rSpeed * rainDt * 1.5, 0.08, 0.5)");
     expect(vertex).toContain("float rFade = smoothstep(0.6, 1.5, rDist) * (1.0 - smoothstep(9.0, 12.0, rDist))");
-    expect(vertex).toContain("float rSky = 1.0 - 0.6 * smoothstep(0.0, 0.25, -rView.y)");
+    expect(vertex).toContain("float rSky = 1.0 - 0.35 * smoothstep(0.0, 0.5, -rView.y)");
     expect(vertex).toContain("float rLampT = rainLamp.x * rCone / (1.0 + rLampD2)");
     // The fades and the cover gate the lamp term too: a drop at the eye never
     // becomes an opaque slab, and a lit drop under a roof is no drop.

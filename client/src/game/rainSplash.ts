@@ -18,10 +18,9 @@
  * the map gives the point's height and transmission; a point the map does not
  * hold is collapsed to nothing. The quad faces the camera, SPLASH.size wide
  * by the seed, growing with the phase. Its alpha is the phase's remainder,
- * the cover at the point (under canopy, which the map marks by its lift, the
- * canopy's transmission, a third; on open ground, a roof or the water, all:
- * the map's transmission is what falls BELOW the top surface, and the top
- * itself is rained on whole), the rain value, and a backlight: half always, half when the sun or the headlamp is
+ * the rain value (the whole of it under the canopy as in the open, since the
+ * streaks fall whole there too, amended 2026-10-13; as first built, the
+ * canopy's transmission), and a backlight: half always, half when the sun or the headlamp is
  * behind the ring (the sun's share is the view's agreement with the light's
  * travel, zero once the sun is down; the lamp's the inverse-square cone term
  * the streaks use, the sum bounded at 1). The fragment draws the ring from
@@ -123,8 +122,7 @@ const SPLASH_VERTEX_POSITION = `
   float sCone = smoothstep(splashLamp.y, 0.5 + 0.5 * splashLamp.y, sCos);
   float sLampT = splashLamp.x * sCone / (1.0 + sLampD2);
   float sBack = min(sSunT + sLampT, 1.0);
-  float sCover = mix(1.0, sMap.g, step(0.5, sMap.b));
-  vSplashAlpha = (1.0 - sPhase) * sCover * splashRain * (0.5 + 0.5 * sBack) * sIn;
+  vSplashAlpha = (1.0 - sPhase) * splashRain * (0.5 + 0.5 * sBack) * sIn;
   vSplashPhase = sPhase;
   vSplashUv = position.xy + 0.5;
 }

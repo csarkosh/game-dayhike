@@ -10,21 +10,21 @@ name: test
 # out here; a local `npm test` runs them, and `npm run test:wall-clock` runs
 # only them. The workflow answers pass or fail, and no time measured here means
 # anything about the game's performance.
+#
+# Started by hand only (Cyrus, 2026-10-13: runner minutes cost time and money,
+# so nothing runs that nobody asked for). No push, no pull request starts it;
+# an agent runs it on purpose, `gh workflow run test.yml --ref <branch>`, when
+# the local gates could not run in full (the development machine busy with the
+# client suite's frame-time work, say) or before a large change lands on main.
+# The github-push skill says when.
 
 on:
-  push:
-    branches: [main, "worktree-**", "ci/**"]
-  pull_request:
   workflow_dispatch:
 
-# One run per ref: a newer push to a branch or pull request cancels the older
-# run, whose result nobody will read. On main every commit gets its own group
-# (keyed by sha), so no run there is ever cancelled or left pending behind a
-# newer one; a shared group would still drop a queued run when a third arrives.
-# The event name is in main's group too, so a run started by hand on main never
-# cancels the push run of the same commit, or the other way round.
+# One run per ref: a second dispatch on the same branch cancels the first, whose
+# result nobody will read.
 concurrency:
-  group: test-${{ github.ref == 'refs/heads/main' && format('{0}-{1}', github.event_name, github.sha) || github.ref }}
+  group: test-${{ github.ref }}
   cancel-in-progress: true
 
 # Read the repository and nothing else: no job writes to it, and none needs a

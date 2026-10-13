@@ -2,7 +2,13 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      // The admin host's token module, which the admin page imports by the
+      // root-absolute path the browser resolves and the build leaves external
+      // (`src/admin/auth.ts`); its types are declared here in the repository.
+      "/auth.js": ["./src/admin/auth-shell.d.ts"]
+    }
   },
-  "include": ["src", "test", "vite.config.ts"]
+  "include": ["src", "test", "vite.config.ts", "vite.admin.config.ts"]
 }

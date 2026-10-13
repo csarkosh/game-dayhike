@@ -1,82 +1,53 @@
-/* The admin page's chrome and chart tokens. Light and dark are each selected,
-   not flipped: the dark steps are the palette's own for the dark surface. */
+/* The admin page's chrome and chart tokens, mapped onto the shared admin
+   host's theme (`/theme.css`, loaded before this file: csarko.sh's tokens,
+   --bg --surface --surface-2 --text --muted --faint --accent --accent-hover
+   --on-accent --warning, dark by default and light by the visitor's system
+   setting or `data-theme` on the root). Nothing here names a colour of its
+   own: every value is one of those tokens or a color-mix() of them, so the
+   page follows the site in both schemes and a change there is a change here.
+   The chart's one hue is the accent; the ordinal ramp mixes it toward the
+   surface; the states are the accent (good) and the warning (warning,
+   serious, critical, each a step toward the text), since the palette has no
+   red and the word beside each mark says which. */
 
 :root {
-  color-scheme: light;
-  --page: #f9f9f7;
-  --surface: #fcfcfb;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --ring: rgba(11, 11, 11, 0.1);
-  --series: #2a78d6;
-  --series-soft: rgba(42, 120, 214, 0.12);
-  --ord-1: #86b6ef;
-  --ord-2: #5598e7;
-  --ord-3: #2a78d6;
-  --ord-4: #1c5cab;
-  --good: #0ca30c;
-  --good-text: #006300;
-  --warning: #fab219;
-  --serious: #ec835a;
-  --critical: #d03b3b;
-  --de: #c3c2b7;
+  --page: var(--bg);
+  --ink: var(--text);
+  --ink-2: var(--muted);
+  --grid: color-mix(in srgb, var(--text) 10%, transparent);
+  --axis: color-mix(in srgb, var(--text) 22%, transparent);
+  --ring: color-mix(in srgb, var(--text) 12%, transparent);
+  --shadow: color-mix(in srgb, var(--text) 14%, transparent);
+  --shade: color-mix(in srgb, var(--bg) 65%, transparent);
+  --series: var(--accent);
+  --series-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --ord-1: color-mix(in srgb, var(--accent) 40%, var(--surface));
+  --ord-2: color-mix(in srgb, var(--accent) 65%, var(--surface));
+  --ord-3: var(--accent);
+  --ord-4: var(--accent-hover);
+  --good: var(--accent);
+  --good-text: var(--accent);
+  --serious: color-mix(in srgb, var(--warning) 80%, var(--text));
+  --critical: color-mix(in srgb, var(--warning) 55%, var(--text));
+  --de: color-mix(in srgb, var(--text) 25%, var(--bg));
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --ink: #f0efec;
-    --ink-2: #c3c2b7;
-    --muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --ring: rgba(255, 255, 255, 0.1);
-    --series: #3987e5;
-    --series-soft: rgba(57, 135, 229, 0.16);
-    --ord-1: #6da7ec;
-    --ord-2: #3987e5;
-    --ord-3: #256abf;
-    --ord-4: #184f95;
-    --good-text: #0ca30c;
-    --de: #383835;
-  }
+/* The form controls follow the scheme the host chose. */
+:root { color-scheme: dark; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { color-scheme: light; }
 }
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --page: #0d0d0d;
-  --surface: #1a1a19;
-  --ink: #f0efec;
-  --ink-2: #c3c2b7;
-  --muted: #898781;
-  --grid: #2c2c2a;
-  --axis: #383835;
-  --ring: rgba(255, 255, 255, 0.1);
-  --series: #3987e5;
-  --series-soft: rgba(57, 135, 229, 0.16);
-  --ord-1: #6da7ec;
-  --ord-2: #3987e5;
-  --ord-3: #256abf;
-  --ord-4: #184f95;
-  --good-text: #0ca30c;
-  --de: #383835;
-}
+:root[data-theme="light"] { color-scheme: light; }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+html, body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
 a { color: inherit; }
 button { font: inherit; }
 
-#admin { max-width: 1180px; margin: 0 auto; padding: 16px 16px 48px; }
+/* The page sits inside the host's main.wrap (its width and gutters), under the host's
+   page head; the badge, the account and the Sign out up there are the host's classes. */
+#admin { padding: 0 0 32px; }
 
-.top { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; padding: 8px 0 16px; }
-.top h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
-.top .who { color: var(--ink-2); margin-left: auto; display: flex; gap: 12px; align-items: baseline; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--ring); color: var(--ink-2); font-size: 12px; }
-.badge.sample { border-color: var(--warning); color: var(--ink); }
 .ghost { background: none; border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; color: var(--ink); cursor: pointer; }
 .ghost:hover { background: var(--series-soft); }
 
@@ -86,20 +57,22 @@ button { font: inherit; }
 .filters button[aria-pressed="true"] { border-color: var(--series); background: var(--series-soft); font-weight: 600; }
 .filters button:hover { background: var(--series-soft); }
 
-.grid { display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
+/* minmax(0, 1fr), not 1fr: a bare 1fr track cannot shrink below its content, so a wide
+   table in a half-width card pushed the page past the viewport (seen 2026-10-13). */
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(12, minmax(0, 1fr)); }
 .card { grid-column: span 12; background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 16px 18px 14px; min-width: 0; }
 .card.half { grid-column: span 6; }
 .card.third { grid-column: span 4; }
 @media (max-width: 900px) { .card.half, .card.third { grid-column: span 12; } }
 .card h2 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
-.card .sub { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+.card .sub { color: var(--faint); font-size: 12px; margin: 0 0 12px; }
 .card.loading > :not(h2):not(.sub) { opacity: 0.5; }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
 .tile { padding: 10px 12px; border: 1px solid var(--ring); border-radius: 8px; }
 .tile .label { color: var(--ink-2); font-size: 12px; }
 .tile .value { font-size: 26px; font-weight: 600; line-height: 1.2; margin-top: 2px; }
-.tile .delta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.tile .delta { font-size: 12px; color: var(--faint); margin-top: 2px; }
 .tile .delta.good { color: var(--good-text); }
 .tile .delta.bad { color: var(--critical); }
 .hero .value { font-size: 48px; }
@@ -108,7 +81,7 @@ button { font: inherit; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
 .chart .grid-line { stroke: var(--grid); stroke-width: 1; }
 .chart .axis-line { stroke: var(--axis); stroke-width: 1; }
-.chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .tick { fill: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
 .chart .bar { fill: var(--series); }
 .chart .bar.hover { filter: brightness(1.15); }
 .chart .hit { fill: transparent; cursor: default; }
@@ -116,7 +89,7 @@ button { font: inherit; }
 .chart .line { fill: none; stroke: var(--series); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .area { fill: var(--series-soft); }
 .chart .dot { fill: var(--series); stroke: var(--surface); stroke-width: 2; }
-.tooltip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); white-space: nowrap; z-index: 2; display: none; }
+.tooltip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px var(--shadow); white-space: nowrap; z-index: 2; display: none; }
 .tooltip .v { font-weight: 600; font-size: 13px; }
 .tooltip .k { color: var(--ink-2); }
 .tooltip .key { display: inline-block; width: 10px; height: 2px; background: var(--series); vertical-align: middle; margin-right: 6px; }
@@ -128,17 +101,20 @@ button { font: inherit; }
 .funnel .fill { height: 20px; border-radius: 0 4px 4px 0; }
 .funnel .n { text-align: right; }
 
+/* A table never widens the page: its cells wrap, and what still does not fit scrolls
+   inside its own wrapper (`charts.ts`, table()). */
+.table-wrap { max-width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
-th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
-th { color: var(--muted); font-weight: 500; font-size: 12px; }
-td.num, th.num { text-align: right; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; overflow-wrap: anywhere; }
+th { color: var(--faint); font-weight: 500; font-size: 12px; }
+td.num, th.num { text-align: right; white-space: nowrap; }
 td.when { white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
-td .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-.chip { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--ring); color: var(--ink-2); margin-right: 3px; }
+td .mono { font-family: var(--mono); font-size: 12px; }
+.chip { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--ring); color: var(--ink-2); margin-right: 3px; font-family: var(--mono); }
 .chip.on { border-color: var(--series); color: var(--ink); background: var(--series-soft); }
 .status { display: inline-flex; align-items: center; gap: 5px; }
-.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .status.won::before { background: var(--good); }
 .status.lost::before { background: var(--critical); }
 .status.playing::before { background: var(--warning); }
@@ -148,8 +124,8 @@ td .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-siz
 .status.away::before { background: var(--serious); }
 
 details.table { margin-top: 10px; }
-details.table summary { color: var(--muted); font-size: 12px; cursor: pointer; }
-.empty { color: var(--muted); padding: 16px 0; }
+details.table summary { color: var(--faint); font-size: 12px; cursor: pointer; }
+.empty { color: var(--faint); padding: 16px 0; }
 
 .paths { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .paths .drawing { flex: 1 1 420px; max-width: 640px; min-width: 0; }
@@ -158,18 +134,28 @@ details.table summary { color: var(--muted); font-size: 12px; cursor: pointer; }
 .paths .side { flex: 1 1 320px; min-width: 0; }
 .paths .side .tiles { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
 .paths .side .tile .value { font-size: 20px; }
-select { font: inherit; background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 8px; }
+/* The worlds, one radio a line, its parts in columns that line up: date, time, hikers,
+   farthest climb, end. Scrolls past seven or so; the checked line is tinted. */
+.worlds { display: grid; gap: 2px; max-height: 236px; overflow: auto; margin: 0 0 10px; padding: 4px; border: 1px solid var(--ring); border-radius: 8px; background: var(--surface); }
+.worlds .world { display: grid; grid-template-columns: 16px 4.5em 7em minmax(0, 1fr) 3.5em 5.5em; gap: 10px; align-items: center; padding: 5px 8px; border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.worlds .world:hover { background: var(--series-soft); }
+.worlds .world:has(input:checked) { background: var(--series-soft); color: var(--ink); }
+.worlds .world input { margin: 0; accent-color: var(--series); }
+.worlds .time, .worlds .far { text-align: right; }
+.worlds .end { text-align: right; }
+.worlds .end.won { color: var(--series); }
+.worlds .end.died, .worlds .end.lost { color: var(--warning); }
 
 .gate { max-width: 420px; margin: 20vh auto 0; text-align: center; }
 .gate h1 { font-size: 20px; font-weight: 600; }
 .gate p { color: var(--ink-2); }
 .gate button { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--ring); background: var(--surface); color: var(--ink); cursor: pointer; font-weight: 600; }
-.gate .note { font-size: 12px; color: var(--muted); margin-top: 24px; }
+.gate .note { font-size: 12px; color: var(--faint); margin-top: 24px; }
 
-.backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); z-index: 10; display: flex; justify-content: flex-end; }
-.drawer { width: min(820px, 100%); height: 100%; background: var(--surface); border-left: 1px solid var(--ring); overflow: auto; padding: 16px 18px; box-shadow: -4px 0 24px rgba(0, 0, 0, 0.2); }
+.backdrop { position: fixed; inset: 0; background: var(--shade); z-index: 10; display: flex; justify-content: flex-end; }
+.drawer { width: min(820px, 100%); height: 100%; background: var(--surface); border-left: 1px solid var(--ring); overflow: auto; padding: 16px 18px; box-shadow: -4px 0 24px var(--shadow); }
 .drawer-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .drawer-top h2 { font-size: 14px; font-weight: 600; margin: 0; }
-.drawer pre.stack { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--ink-2); margin: 6px 0 0; }
+.drawer pre.stack { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--ink-2); margin: 6px 0 0; }
 .drawer details summary { cursor: pointer; }
 a[data-sid] { text-decoration: underline dotted; }

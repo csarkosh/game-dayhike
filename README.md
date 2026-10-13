@@ -81,7 +81,7 @@ https://…run.app/t        Cloud Run — the same image as telemetry, scales wi
 
 The signaling server's rooms live in Firestore, shared by every instance, so the service scales from zero to a few instances when a spike needs them and back to none — within Firestore's free quota, since a party costs the store a dozen operations and nothing accrues while nobody plays. One instance holds 250 sockets — 50 full games — before a second is started, and the match itself is peer-to-peer anyway. See [`docs/signaling/`](docs/signaling/).
 
-Telemetry is the same server in a second role on a second service, which holds nothing and so scales from zero to whatever a spike needs. Pages send a batch of events every half minute; the service writes one log row an event, and the rows land in a Cloud Logging bucket with Log Analytics on, every one naming the build and the world version it came from — free at the volumes a game this size makes. See [`docs/telemetry/`](docs/telemetry/). The admin page at `/dayhike/admin/`, behind a Google sign-in and an allowlist, shows who is playing right now and what the rows say; see [`docs/admin/`](docs/admin/).
+Telemetry is the same server in a second role on a second service, which holds nothing and so scales from zero to whatever a spike needs. Pages send a batch of events every half minute; the service writes one log row an event, and the rows land in a Cloud Logging bucket with Log Analytics on, every one naming the build and the world version it came from — free at the volumes a game this size makes. See [`docs/telemetry/`](docs/telemetry/). The admin page, at [admin.csarko.sh/game-dayhike](https://admin.csarko.sh/game-dayhike/) behind the admin host's Google sign-in and an allowlist, shows who is playing right now and what the rows say; see [`docs/admin/`](docs/admin/).
 
 Cloud Run closes every socket it holds after 60 minutes, on every scale-down, and on every deploy. A match survives all three: the data channels are untouched, the client reconnects signaling in the background, and a host that comes back within a minute reclaims its room without the other players seeing anything.
 
@@ -97,3 +97,7 @@ A desktop build for macOS and Windows lives in [`desktop/`](desktop/): a thin la
 ## Out of scope
 
 Host migration, TURN relay, navmesh pathfinding, anti-cheat, PvP, lobby browser, persistence, mobile input, physics props.
+
+## License
+
+[GPL-3.0](./LICENSE). The game's code, its server and its tooling are free software under the GNU General Public License, version 3: use it, study it, change it and share it, and share your changes under the same terms.

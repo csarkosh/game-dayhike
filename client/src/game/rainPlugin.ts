@@ -27,7 +27,10 @@
  * Under `RAIN_OCCLUSION` (set while a cover map is bound, `occlusion`), the
  * vertex stage reads the map (`rainMap.ts`) once at the drop's xz: a drop
  * below the texel's height plus its lift is under cover, and the alpha is
- * multiplied by the texel's transmission. The read is a plain `texture2D` in
+ * multiplied by the texel's transmission where the cover is hard (a prop, a
+ * cliff: no lift); under the canopy (the lift marks it) the streaks fall
+ * whole, since the rain is meant to read as heavy under the trees as in the
+ * open (amended 2026-10-13). The read is a plain `texture2D` in
  * the vertex stage, as Babylon's own bone texture is read: no derivatives, so
  * the base level, and Babylon's migration turns it into `texture()`. A drop
  * outside the map is uncovered.
@@ -56,7 +59,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import {
-  DRIP, RAIN_BOX, RAIN_CLASSES, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_MAP, RAIN_SKY_FADE, RAIN_STRETCH,
+  DRIP, RAIN_BOX, RAIN_CLASSES, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_MAP, RAIN_SKY_FADE, RAIN_SKY_RAMP, RAIN_STRETCH,
 } from "./rainParams.js";
 
 /** A GLSL float literal: always with a decimal point, so `1` is `1.0`. */
@@ -115,7 +118,7 @@ const RAIN_VERTEX_POSITION = `
 #endif
   positionUpdated = rp + rRight * (position.x * rWidth) + rAlong * (position.y * rLen);
   float rFade = smoothstep(${lit(RAIN_FADE_NEAR[0])}, ${lit(RAIN_FADE_NEAR[1])}, rDist) * (1.0 - smoothstep(${lit(RAIN_FADE_FAR[0])}, ${lit(RAIN_FADE_FAR[1])}, rDist));
-  float rSky = 1.0 - ${lit(RAIN_SKY_FADE)} * smoothstep(0.0, 0.25, -rView.y);
+  float rSky = 1.0 - ${lit(RAIN_SKY_FADE)} * smoothstep(0.0, ${lit(RAIN_SKY_RAMP)}, -rView.y);
   vec3 rToLamp = rp - rainLampPos;
   float rLampD2 = dot(rToLamp, rToLamp);
   float rCos = dot(rToLamp, rainLampDir) / sqrt(max(rLampD2, 0.0001));
@@ -130,7 +133,7 @@ const RAIN_VERTEX_POSITION = `
 #ifdef RAIN_DRIP
   rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;
 #else
-  rCover = mix(1.0, rMap.g, rCovered);
+  rCover = mix(1.0, max(rMap.g, step(0.5, rMap.b)), rCovered);
 #endif
 #else
 #ifdef RAIN_DRIP

@@ -2,13 +2,20 @@
  * Who may read the admin routes: an account on the allowlist, proven by a
  * Firebase Auth ID token.
  *
- * The page signs the account in with Google through Firebase Auth and sends
- * the ID token it gets as a bearer token. The token is a JWT signed by
- * Google's `securetoken` keys, with the project as issuer and audience and
- * the account's verified email as a claim; verifying it needs the public
- * keys and nothing else, so no Firebase library runs here. The allowlist is
- * the service's environment (`ADMIN_EMAILS`, comma-separated), so a
- * collaborator is an environment change, not a deploy of new code.
+ * The admin page lives on the shared admin host (admin.csarko.sh, the
+ * csarko.sh repository's `admin/`), whose shell signs the account in with
+ * Google through that host's Firebase Auth, on the project `csarko-sh`: one
+ * sign-in for every app's page there. The shell sends the ID token it gets as
+ * a bearer on every request. The token is a JWT signed by Google's
+ * `securetoken` keys, with the issuing project as issuer and audience and the
+ * account's verified email as a claim; verifying it needs the public keys and
+ * nothing else, so no Firebase library runs here. This service trusts that
+ * issuer and no other: `projectId` is the admin host's project, not the one
+ * this service runs in (`ADMIN_AUTH_PROJECT`, `index.ts`). Who is let in is
+ * still this service's call: the allowlist is its environment
+ * (`ADMIN_EMAILS`, comma-separated), so a collaborator is an environment
+ * change, not a deploy of new code, and the host's sign-in admits nobody by
+ * itself.
  *
  * Pure over the key set and the clock, so the check is tested with a key
  * made in the test.
@@ -22,7 +29,11 @@ export const SECURETOKEN_JWKS = "https://www.googleapis.com/service_accounts/v1/
 export type AdminIdentity = { email: string };
 
 export type AdminAuthOptions = {
-  /** The Firebase project: the token's issuer is `https://securetoken.google.com/<project>` and its audience the project. */
+  /**
+   * The Firebase project that issues the tokens: the admin host's, not this
+   * service's. The token's issuer is `https://securetoken.google.com/<project>`
+   * and its audience the project.
+   */
   projectId: string;
   /** The accounts allowed, lower-cased. */
   allowed: readonly string[];

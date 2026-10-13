@@ -11,6 +11,7 @@
 
 import { BigQuery } from "@google-cloud/bigquery";
 import type { AdminData, Json, LiveView, Row } from "./admin.js";
+import { KPI_WEEKS, shapeKpis } from "./adminKpis.js";
 import { forBigQuery, readQuery, type QueryName } from "./adminQueries.js";
 import type { Store } from "./store.js";
 
@@ -54,18 +55,25 @@ export function createAdminData(options: AdminDataOptions): AdminData {
       return out;
     });
   };
+  const live = async (): Promise<LiveView> => {
+    const at = now();
+    if (options.store === null) return { at, instances: [], rooms: [] };
+    const [rooms, instances] = await Promise.all([options.store.listRooms(), options.store.listInstances()]);
+    return {
+      at,
+      instances,
+      rooms: rooms.map(({ id, doc }) => ({ id, hostId: doc.hostId, createdAt: doc.createdAt, hostDroppedAt: doc.hostDroppedAt, peers: Object.keys(doc.peers).length })),
+    };
+  };
   return {
     query: (name, days) => run(name, { days }),
     session: (sid) => run("session", { sid }),
-    async live(): Promise<LiveView> {
-      const at = now();
-      if (options.store === null) return { at, instances: [], rooms: [] };
-      const [rooms, instances] = await Promise.all([options.store.listRooms(), options.store.listInstances()]);
-      return {
-        at,
-        instances,
-        rooms: rooms.map(({ id, doc }) => ({ id, hostId: doc.hostId, createdAt: doc.createdAt, hostDroppedAt: doc.hostDroppedAt, peers: Object.keys(doc.peers).length })),
-      };
+    live,
+    // The index card: the `kpis` query over the weeks its trends span, and the
+    // lobbies open now from the same store the live view reads.
+    async kpis() {
+      const [rows, view] = await Promise.all([run("kpis", { days: KPI_WEEKS * 7 }), live()]);
+      return shapeKpis(rows, view.rooms.length, now());
     },
   };
 }

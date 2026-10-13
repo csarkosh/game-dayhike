@@ -17,8 +17,28 @@ const shortId = (id: string): string => id.slice(0, 8);
 const sidLink = (sid: string): Node => el("a", { href: "#", class: "mono", "data-sid": sid, title: "Open this session's timeline" }, shortId(sid));
 const when = (v: unknown): string => (typeof v === "string" && v !== "" ? ago(Date.parse(v)) : "");
 
-function card(title: string, sub: string, cls = "", ...body: Node[]): HTMLElement {
+export function card(title: string, sub: string, cls = "", ...body: Node[]): HTMLElement {
   return el("section", { class: `card ${cls}`.trim() }, el("h2", {}, title), el("p", { class: "sub" }, sub), ...body);
+}
+
+/**
+ * The card as it waits for its query: the same title and copy over a skeleton the shape
+ * of what is coming (`tiles` stat tiles, a `chart`, `lines` of a table), the host's
+ * classes (`/theme.css`). Busy for a screen reader, which hears "Loading"; the shapes
+ * are hidden from it.
+ */
+export function waitingCard(title: string, sub: string, cls: string, shape: { tiles?: number; chart?: boolean; lines?: number }): HTMLElement {
+  const parts: HTMLElement[] = [];
+  if (shape.tiles) parts.push(el("div", { class: "skel-tiles" }, ...Array.from({ length: shape.tiles }, () => el("div", { class: "skel tile" }))));
+  if (shape.chart) parts.push(el("div", { class: "skel chart" }));
+  for (let i = 0; i < (shape.lines ?? 0); i += 1) parts.push(el("div", { class: `skel line${i % 3 === 2 ? " short" : ""}` }));
+  const body = el("div", { class: "body", "aria-busy": "true" }, el("p", { class: "sr-only" }, "Loading"), el("div", { class: "skeleton", "aria-hidden": "true" }, ...parts));
+  return card(title, sub, cls, body);
+}
+
+/** The card when its query failed: the same title and copy over the error, so the rest of the page stands. */
+export function failedCard(title: string, sub: string, cls: string, message: string): HTMLElement {
+  return card(title, sub, cls, el("p", { class: "error", role: "status" }, `Could not be read. ${message}`));
 }
 
 export function liveView(live: Live): HTMLElement {
