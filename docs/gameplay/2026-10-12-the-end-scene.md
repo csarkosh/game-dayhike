@@ -379,10 +379,11 @@ camera, and the local body's lamp, aimed after the car's pose each frame.
 harmonic so the speed's note and the scheduled ramps never share a parameter, and the wind's
 sound fed the weather before the mist is drawn back.
 
-**The shader corpus** gained 132 stages recorded through the scene on the high and medium tiers
-(the film car under the hike's lights, fog, shadows and wet layer; the tail lamps outside the
-fog; the light set kept), so no stage is translated on the page's thread through the scene; low
-asked for none it lacked.
+**The shader corpus** gained 230 stages recorded through the scene on every tier (the film car
+under the hike's lights, fog, shadows and wet layer; the tail lamps outside the fog; the light
+set kept), so no stage is translated on the page's thread through the scene: a verify page on
+each tier at night in the eerie weather, from the win to the title page, found every stage it
+asked for in its map and none differing.
 
 **Seen in the browser** (seed `hollow`, the crest's escalation, high tier on WebGPU, the frame
 read from inside the page four times a second): the bars at the win, the title 10.7 s after, the
