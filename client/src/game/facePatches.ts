@@ -41,13 +41,13 @@ export const PATCH_DEPTH = 2 * FACE_HALF_DEPTH;
 export const GROUND_DEPTH = 0.4;
 /** The radius (m) of the eight points about a corner whose rock-of-slope,
  * with the corner's own, is the rock's extent there (`rockExtent`). */
-export const GROUND_EXTENT_RADIUS = 10;
+export const GROUND_EXTENT_RADIUS = 6;
 /** The extent across which the walkable rock's loudness rises from its floor
  * to full: a lone outcrop in grass stays low, a rocky hillside is whole. */
-export const GROUND_LOUD_LO = 0.15;
-export const GROUND_LOUD_HI = 0.85;
+export const GROUND_LOUD_LO = 0.1;
+export const GROUND_LOUD_HI = 0.5;
 /** The loudness at no extent: the share of GROUND_DEPTH the smallest rock shows. */
-export const GROUND_LOUD_FLOOR = 0.25;
+export const GROUND_LOUD_FLOOR = 0.75;
 /** The rock-of-slope some point of a cell must reach for the cell to be
  * patched for its rock: under it the push is a few centimetres at most. */
 export const GROUND_ROCK_MIN = 0.1;
@@ -65,6 +65,11 @@ export const PATCH_TAPER = 3;
 export const PATCH_CURVE_STEP = 0.5;
 /** The most of the ground's radius of curvature the push may reach. */
 export const PATCH_BEND_SHARE = 0.5;
+/** And the walkable rock's: the whole radius, since its 0.4 m cannot gather
+ * a hollow's points past its centre as the faces' 4 m can, and the lowland
+ * outcrops it has to show are humps a few metres wide, tight enough that
+ * half the radius took half their relief. */
+export const GROUND_BEND_SHARE = 1.0;
 
 export type PatchReach = { readonly near: number; readonly far: number; readonly wide: number };
 
@@ -286,8 +291,8 @@ function bendFrom(
  * crest the mask, nothing on the crest and whole a step down its flanks,
  * would notch it. Smooth in the bend, so the depth has no step of its own.
  */
-export function patchDepth(bend: number, depth = PATCH_DEPTH): number {
-  return depth / (1 + (depth * bend) / PATCH_BEND_SHARE);
+export function patchDepth(bend: number, depth = PATCH_DEPTH, share = PATCH_BEND_SHARE): number {
+  return depth / (1 + (depth * bend) / share);
 }
 
 /**
@@ -355,7 +360,7 @@ function surfaceInto(
     }
     if (mg > 0) {
       const r = groundReliefD(seed, x, z);
-      const depth = patchDepth(bend, GROUND_DEPTH);
+      const depth = patchDepth(bend, GROUND_DEPTH, GROUND_BEND_SHARE);
       d += (mg * depth * (r.v + 1)) / 2;
       const half = (mg * depth) / 2;
       const whole = (rockMask * depth * (r.v + 1)) / 2;

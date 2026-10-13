@@ -18,9 +18,9 @@ for one.
 | --- | --- |
 | Where the relief lives | In the game layer, on the face patches (`client/src/game/facePatches.ts`); the simulation's height function, collision and placements are untouched, and the level id does not move |
 | What it is masked by | The rock weight the surface paints at the vertex (`classifySurface`, the slope's rule less the water's and the snow's say), times `1 − faceMask`, so a face carries the faces' relief alone and the two never add; times the cell's loudness; times the patches' taper toward cells outside the set |
-| The depth | Outward only, along the ground's normal, up to `GROUND_DEPTH` = 0.4 m at full loudness, cut by the ground's bend as the faces' depth is: a foot stands at most 0.4 m inside the drawn rock and 0.2 m on average, with collision on the height field as before |
+| The depth | Outward only, along the ground's normal, up to `GROUND_DEPTH` = 0.4 m at full loudness, cut by the ground's bend as the faces' depth is but to the whole radius of curvature, not half (`GROUND_BEND_SHARE`): 0.4 m cannot gather a hollow past its centre as 4 m can, and the lowland outcrops are tight humps that half the radius halved. A foot stands at most 0.4 m inside the drawn rock and 0.2 m on average, with collision on the height field as before |
 | The forms | Three octaves of the cellular field, each site a dome: slabs (3 m cells, 0.6 m joints, a dome of 3 and a tilt of 1), rubble (1.2 m, 0.3 m, a dome of 3, at 0.5) and outcrops (9 m, 2 m joints, a tilt of 2 and a dome of 0.5, at 0.8), gained 1.5 and clamped: a mean |v| of 0.57, 15 percent on the clamps (at a gain of 2, 35 percent, and the tops and hollows sat flat). A shallow relief reads by its curvature, not its depth: the faces' planes tilt a degree at 0.4 m and shade as the ground does |
-| The loudness | By the rock's extent about the cell: the mean rock-of-slope at a cell's corner and at eight points 10 m out (`rockExtent`), 0 to 1, read at the cell's four corners, which its neighbours share, and interpolated across the cell; the loudness is 0.25 at an extent of 0.15 and under, 1 from 0.85, a quintic step between (`groundLoudness`). A lone outcrop in grass stays low; a rocky hillside is whole |
+| The loudness | By the rock's extent about the cell: the mean rock-of-slope at a cell's corner and at eight points 6 m out (`rockExtent`), 0 to 1, read at the cell's four corners, which its neighbours share, and interpolated across the cell; the loudness is 0.75 at an extent of 0.1 and under, 1 from 0.5, a quintic step between (`groundLoudness`). A lone outcrop in grass shows three quarters of the depth and the rest as it widens; a rocky hillside is whole. As first built the floor was 0.25, the stencil 10 m and the ramp 0.15 to 0.85, and the lowland outcrops by the trailhead, humps of the height field three metres wide painted rock by their own slope, moved under 3 cm, which read as nothing: the first place a player looks at rock. At 0.75 they move up to 9 cm, their creases capping the rest (§4) |
 | Which cells | A cell is patched when a point of its grid is steep (as before) or has a rock-of-slope of 0.1 or more (`GROUND_ROCK_MIN`); under that the push is a few centimetres |
 | The ground under a patch | Kept: the clipmap leaves out its triangles under fully steep squares as before and nowhere else; the push is outward, so the patch is never under the ground, and the patch material's depth offset keeps the two apart where the relief is nothing |
 | The faces' forms | Unchanged: `cellular` takes a tilt and a dome, the faces' calls leave both at their defaults (FACE_TILT, 0), and a dome of 0 adds nothing, so every face value is the one before, bit for bit (the relief tests' pinned literals) |
@@ -69,8 +69,8 @@ a face and the rock at its foot show no common seam.
 `surfaceInto` pushes a vertex by `d / sqrt(1 + g²)` along the ground's
 normal with, now, two terms in `d`: the faces' `m · τ · D · (v + 1) / 2` as
 before and the walkable rock's `rock · (1 − mask) · loud · τ · D_g · (v_g +
-1) / 2`, `D_g` GROUND_DEPTH cut by the bend by the faces' rule
-(`patchDepth(bend, GROUND_DEPTH)`). The normal takes both reliefs'
+1) / 2`, `D_g` GROUND_DEPTH cut by the bend by the faces' rule at the walkable rock's
+share (`patchDepth(bend, GROUND_DEPTH, GROUND_BEND_SHARE)`). The normal takes both reliefs'
 derivatives and the taper's, the slowly varying terms left out as before.
 
 The rock weight is the surface's at the vertex, so the paint is classified
@@ -120,3 +120,13 @@ m the slope read as the dune it was; with the domes at 0.4 m the level view
 shows rounded cobbles and hummocks under the paint and the across view a
 bumpy near slope. The faces' five pinned literals and their sweeps are
 unchanged.
+
+**The lowland outcrops.** The first rock a player meets is a hump of the
+height field by the trailhead, three metres wide and a metre tall, painted
+rock by its own slope (`sim/cliffs.ts`, the outcrop component). Its rock
+weight covers a strip two metres by eight, its creases cap the depth, and
+the relief it takes is under 9 cm at the eased rule: a more rugged top edge
+in a still from 5 m, not a crag. A walkable depth cannot make a one-metre
+hump craggy; what would is a deeper relief on small outcrops (drawn rock
+the player's feet pass into) or collision on the relief (a simulation change
+and the level id), neither of which this design takes.

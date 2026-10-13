@@ -592,6 +592,6 @@ describe("facePatchCells and facePatchStitch", () => {
     // 2026-10-13: 0.2634 before the walkable rock's push on the ridge's
     // flanks. 2026-10-12: 0.3487 before the relief's gain; 0.2664 before the
     // relief's cells grew.
-    expect(f.least).toBeCloseTo(0.2641, 4);
+    expect(f.least).toBeCloseTo(0.2649, 4);
   }, timeLimit(20_000));
 });
