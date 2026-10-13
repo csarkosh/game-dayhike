@@ -36,7 +36,7 @@ import { signSites } from "../../sim/placeNames.js";
 import { terrainMaterialFor, type FreecamView } from "../renderer.js";
 import { whenSceneReady } from "../rendererSwap.js";
 import { READY_MAX_MS } from "../startReady.js";
-import { SETTLE_MAX_MS, WARM_FRAMES, cameraJumped } from "./cameraJump.js";
+import { SETTLE_FRAMES, SETTLE_MAX_MS, WARM_FRAMES, cameraJumped } from "./cameraJump.js";
 import { createCaptionPanel } from "./captions.js";
 import { createCordTube } from "./cordTube.js";
 import { INTRO_CAR, INTRO_HOUR, INTRO_RANGER, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
@@ -293,6 +293,10 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       if (lastView !== null && cameraJumped(before, lastView)) {
         for (let i = 0; i < WARM_FRAMES; i += 1) drawOneFrame();
         await worldIn(SETTLE_MAX_MS);
+        for (let i = 0; i < SETTLE_FRAMES; i += 1) {
+          drawOneFrame();
+          await new Promise<void>((resolve) => raf(() => resolve()));
+        }
         drawOneFrame();
       }
       await new Promise<void>((resolve) => raf(() => resolve()));
