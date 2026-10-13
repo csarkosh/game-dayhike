@@ -1,5 +1,5 @@
 /**
- * The car at the end (docs/gameplay/2026-10-12-the-end-scene.md §3): the door
+ * The car at the end (docs/gameplay/2026-10-12-the-end-scene.md §2): the door
  * shut, the engine cranked and caught, two revs, and from the pull-away the
  * engine and the tyres following the car down the road. Synthesized on the
  * ambient context, as the chase's pulse is, into the `car` bus off the master
