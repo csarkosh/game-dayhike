@@ -21,6 +21,37 @@ type Session = { sid: string; role: string; samples: Sample[]; marks: Mark[]; fa
 const CANVAS = 640;
 const PAD = 28;
 
+/** A world the rows hold: its version and seed, and when its first row was sent. */
+export type World = { key: string; world: string; seed: string; startedAt: number };
+
+/**
+ * The worlds the rows hold, newest first: each world's version and seed, and
+ * the moment its earliest row was sent (the server's clock), which is when its
+ * party set out. Two parties on one seed share one entry, dated by the first.
+ */
+export function worldsOf(rows: Row[]): World[] {
+  const by = new Map<string, World>();
+  for (const r of rows) {
+    const world = str(r.world);
+    const seed = str(r.seed);
+    if (world === "" && seed === "") continue;
+    const key = `${world}|${seed}`;
+    const at = Date.parse(str(r.timestamp));
+    const w = by.get(key);
+    if (w === undefined) by.set(key, { key, world, seed, startedAt: Number.isNaN(at) ? Infinity : at });
+    else if (!Number.isNaN(at) && at < w.startedAt) w.startedAt = at;
+  }
+  return [...by.values()].sort((a, b) => b.startedAt - a.startedAt || a.key.localeCompare(b.key));
+}
+
+const whenFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+
+/** A world's list entry: when its party set out, in New York time, then the world and its seed. */
+export function worldLabel(w: World): string {
+  const when = Number.isFinite(w.startedAt) ? whenFormat.format(w.startedAt) : "undated";
+  return `${when} · ${w.world} · seed ${w.seed}`;
+}
+
 /** The rows of one world, grouped into sessions with their samples and marks in tick order. */
 export function sessionsOf(rows: Row[]): Session[] {
   const by = new Map<string, Session>();
@@ -223,8 +254,9 @@ const mmss = (tick: number): string => {
 
 /** The paths card: the world selector, the drawing with its scrubber, and the sessions beside it. */
 export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) => Promise<DrawableTrail | null>): HTMLElement {
-  const worlds = [...new Set(rows.map((r) => `${str(r.world)}|${str(r.seed)}`))].filter((w) => w !== "|");
-  const select = el("select", {}, ...worlds.map((w) => el("option", { value: w }, w.replace("|", " · seed "))));
+  // Newest party first, so the list opens on the latest walk.
+  const worlds = worldsOf(rows);
+  const select = el("select", {}, ...worlds.map((w) => el("option", { value: w.key }, worldLabel(w))));
   const canvas = el("canvas", { width: String(CANVAS), height: String(CANVAS) });
   const scrub = el("input", { type: "range", min: "0", max: "1", value: "1", step: "1", style: "width:100%" });
   const clock = el("span", { class: "sub" }, "");
