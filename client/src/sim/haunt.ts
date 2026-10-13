@@ -159,20 +159,27 @@ const PURSUIT_AFTER_YAW_MINUS = Math.PI;
 export const PURSUIT_DWELL_S = 25;
 /**
  * Whether the road at the car runs inland, toward +x, the door's side, the
- * way the car goes: its centreline PURSUIT_AHEAD_M on from the car's z
- * further toward +x than at it. The car follows the road's path from its
- * first metre while its heading only eases off the parked one, so on an
- * inland road its flank comes across to the door's side as it goes: the
- * shade by the door keeps ahead of that by taking the verge at the pull-away,
- * moving inland with the road. On a straight or outward road the car's nose
- * crosses the verge the shade would run on, so it waits for the car's tail
- * (PURSUIT_ROAD_AT_S). False with no road.
+ * way the car goes: its centreline PURSUIT_AHEAD_M on from the car's z more
+ * than PURSUIT_INLAND_M further toward +x than at it. The car follows the
+ * road's path from its first metre while its heading only eases off the
+ * parked one, so on an inland road its flank comes across to the door's side
+ * as it goes: the shade by the door keeps ahead of that by taking the verge
+ * at the pull-away, moving inland with the road. On a straight or outward
+ * road the car's nose crosses the verge the shade would run on, so it waits
+ * for the car's tail (PURSUIT_ROAD_AT_S). False with no road.
  */
+/**
+ * Metres further toward +x over PURSUIT_AHEAD_M that the road must run for
+ * `roadRunsInland` (about 1.4°): a road within that of straight hardly moves
+ * the car sideways as it goes, and its nose crosses the verge, so the shade
+ * waits for the tail as on an outward road.
+ */
+export const PURSUIT_INLAND_M = 0.25;
 export function roadRunsInland(world: World, car: { x: number; z: number }, direction: 1 | -1): boolean {
   const roadCenterX = activeTerrainVariant().roadCenterX;
   if (roadCenterX === undefined || world.forest === null) return false;
   const seed = world.forest.seed;
-  return roadCenterX(seed, car.z + direction * PURSUIT_AHEAD_M) > roadCenterX(seed, car.z);
+  return roadCenterX(seed, car.z + direction * PURSUIT_AHEAD_M) - roadCenterX(seed, car.z) > PURSUIT_INLAND_M;
 }
 
 /** Placements tried for a shade before the director waits a tick. */
