@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sessionsOf, worldDetail, worldLabel, worldLabels, worldName, worldsOf, type World } from "../../src/admin/paths.js";
+import { sessionsOf, worldDetail, worldLines, worldsOf } from "../../src/admin/paths.js";
 import type { Row } from "../../src/admin/source.js";
 import { buildTrailFor, parseWorld, sameGeneration } from "../../src/admin/trail.js";
 import { GEN_VERSION } from "../../src/sim/forest.js";
@@ -74,22 +74,22 @@ describe("worldsOf", () => {
     const worlds = worldsOf(rows);
     expect(worlds.map((w) => w.key)).toEqual(["forest/8/olympic/1/2|22", "forest/8/olympic/1/2|11", "forest/7/olympic/1/2|33"]);
     expect(worlds[1]!.startedAt).toBe(Date.parse("2026-10-12T20:00:00Z"));
-    expect(worldLabel(worlds[0]!)).toBe("Oct 12, 9:15 PM · Olympic");
-    expect(worldLabel(worlds[1]!)).toBe("Oct 12, 4:00 PM · Olympic");
-    expect(worldLabel({ key: "w|1", world: "w", seed: "1", startedAt: Infinity })).toBe("Undated · W");
     expect(worldDetail(worlds[0]!)).toBe("World forest/8/olympic/1/2, seed 22, set out Oct 12, 2026, 9:15 PM EDT.");
   });
 
-  it("names a world by its terrain variant, and adds the seed only where two labels would read the same", () => {
-    expect(worldName("forest/8/olympic/1/2")).toBe("Olympic");
-    expect(worldName("forest/9/cascades/3/4")).toBe("Cascades");
-    expect(worldName("")).toBe("Unnamed world");
-    const at = Date.parse("2026-10-13T01:15:00Z");
-    const twins: World[] = [
-      { key: "forest/8/olympic/1/2|22", world: "forest/8/olympic/1/2", seed: "22", startedAt: at },
-      { key: "forest/8/olympic/1/2|23", world: "forest/8/olympic/1/2", seed: "23", startedAt: at },
-      { key: "forest/8/olympic/1/2|11", world: "forest/8/olympic/1/2", seed: "11", startedAt: at - 3_600_000 },
+  it("lines each world up as date, time, hikers, farthest climb and end", () => {
+    const rows: Row[] = [
+      { world: "forest/8/olympic/1/2", seed: 11, sid: "a", n: "match_start", timestamp: "2026-10-12T20:00:00Z" },
+      { world: "forest/8/olympic/1/2", seed: 11, sid: "a", n: "pos", tick: 60, p: 0.4, timestamp: "2026-10-12T20:05:00Z" },
+      { world: "forest/8/olympic/1/2", seed: 11, sid: "d", n: "match_start", timestamp: "2026-10-12T21:00:00Z" },
+      { world: "forest/8/olympic/1/2", seed: 11, sid: "d", n: "outcome", result: "won", timestamp: "2026-10-12T21:30:00Z" },
+      { world: "forest/8/olympic/1/2", seed: 22, sid: "b", n: "match_start", timestamp: "2026-10-13T01:15:00Z" },
     ];
-    expect(worldLabels(twins)).toEqual(["Oct 12, 9:15 PM · Olympic · seed 22", "Oct 12, 9:15 PM · Olympic · seed 23", "Oct 12, 8:15 PM · Olympic"]);
+    const lines = worldLines(rows, worldsOf(rows));
+    expect(lines.map((l) => [l.date, l.time, l.hikers, l.farthest, l.end])).toEqual([
+      ["Oct 12", "9:15 PM", "1 hiker", "0%", "unfinished"],
+      ["Oct 12", "4:00 PM", "2 hikers", "40%", "won"],
+    ]);
+    expect(worldLines([], [{ key: "w|1", world: "w", seed: "1", startedAt: Infinity }])[0]).toMatchObject({ date: "Undated", time: "", hikers: "0 hikers" });
   });
 });

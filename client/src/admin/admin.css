@@ -129,7 +129,17 @@ details.table summary { color: var(--faint); font-size: 12px; cursor: pointer; }
 .paths .side { flex: 1 1 320px; min-width: 0; }
 .paths .side .tiles { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
 .paths .side .tile .value { font-size: 20px; }
-select { font: inherit; background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 8px; }
+/* The worlds, one radio a line, its parts in columns that line up: date, time, hikers,
+   farthest climb, end. Scrolls past seven or so; the checked line is tinted. */
+.worlds { display: grid; gap: 2px; max-height: 236px; overflow: auto; margin: 0 0 10px; padding: 4px; border: 1px solid var(--ring); border-radius: 8px; background: var(--surface); }
+.worlds .world { display: grid; grid-template-columns: 16px 4.5em 7em minmax(0, 1fr) 3.5em 5.5em; gap: 10px; align-items: center; padding: 5px 8px; border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.worlds .world:hover { background: var(--series-soft); }
+.worlds .world:has(input:checked) { background: var(--series-soft); color: var(--ink); }
+.worlds .world input { margin: 0; accent-color: var(--series); }
+.worlds .time, .worlds .far { text-align: right; }
+.worlds .end { text-align: right; }
+.worlds .end.won { color: var(--series); }
+.worlds .end.died, .worlds .end.lost { color: var(--warning); }
 
 .gate { max-width: 420px; margin: 20vh auto 0; text-align: center; }
 .gate h1 { font-size: 20px; font-weight: 600; }
