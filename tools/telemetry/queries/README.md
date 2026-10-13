@@ -12,8 +12,9 @@ stricter than the Log Analytics editor: `rows` is a reserved word there, for one
 
 Every query groups by `build` and `world`, so a number is always a number for one version,
 and leaves out the deploy's verification rows (`build = 'verify'`). Each reads the last seven
-days: the line marked `-- range` is the one to change, and the admin page's server sets it
-from the range chosen there (`server/src/admin.ts`).
+days (`kpis.sql` the last twelve weeks, the length of the trends it feeds): the line marked
+`-- range` is the one to change, and the admin page's server sets it from the range chosen
+there (`server/src/admin.ts`), or to the twelve weeks for the index card.
 
 | File | Answers |
 |---|---|
@@ -23,4 +24,5 @@ from the range chosen there (`server/src/admin.ts`).
 | `errors.sql` | What threw, where, on which build, and how many sessions it touched. |
 | `health.sql` | Load times by tier and engine, frame rates, and sessions that ended without saying so. |
 | `paths.sql` | Every position sample and the route's events, one world at a time: what the admin page draws over the trail. |
+| `kpis.sql` | The index card on the shared admin host (`GET /admin/kpis`): sessions, matches started, clean sessions and sessions with an error, by ISO week and for the last seven days against the seven before. |
 | `session.sql` | One session's timeline: every row the page sent, and its lobby's signaling rows, in order. Replace `SID`. |

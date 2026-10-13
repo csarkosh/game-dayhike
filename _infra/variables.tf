@@ -97,6 +97,18 @@ variable "admin_emails" {
   default     = []
 }
 
+variable "admin_auth_project" {
+  description = <<-EOT
+    The Firebase project the admin page signs in on, whose ID tokens the
+    telemetry service's admin routes trust (`ADMIN_AUTH_PROJECT`). The page
+    lives on the shared admin host at admin.csarko.sh, the csarko.sh
+    repository's, which signs in on its own project; so this is `csarko-sh`,
+    not `gcp_project_id`. Change it only if that host moves projects.
+  EOT
+  type        = string
+  default     = "csarko-sh"
+}
+
 variable "signaling_registry" {
   description = "Where the signaling rooms live: `firestore` (shared, lets the service scale) or `memory` (one instance only)."
   type        = string

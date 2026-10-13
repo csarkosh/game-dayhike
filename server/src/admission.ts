@@ -27,6 +27,14 @@ export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
   "https://fps-csarko.firebaseapp.com",
   "http://localhost:5173",
   "https://localhost:5173",
+  // The admin page (`client/src/admin/`) is served from the shared admin host
+  // (csarko.sh's `admin/`) and reads this server's `/admin/*` routes
+  // cross-origin, so its origin has to be here for the routes' CORS check
+  // (`admin.ts` reads this same list); the bearer token it sends makes the
+  // browser preflight each request. The second is that shell's local preview,
+  // so the page can be worked on against production. Neither opens a socket.
+  "https://admin.csarko.sh",
+  "http://localhost:8788",
 ];
 
 /**

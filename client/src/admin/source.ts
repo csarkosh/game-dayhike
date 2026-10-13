@@ -1,10 +1,13 @@
 /**
  * Where the admin page's numbers come from: the telemetry queries
  * (`tools/telemetry/queries/`) run over the dataset, and the open rooms. Two
- * sources: the server's admin routes, with the signed-in account's token on
- * every request; and the sample, a fixed data set in the page's own shape
- * (`sample.ts`), for the preview and for working on the page offline.
+ * sources: the server's admin routes, with the account's ID token on every
+ * request (the shell's `fetchWithAuth`, `auth.ts`); and the sample, a fixed data set
+ * in the page's own shape (`sample.ts`), for the preview and for working on
+ * the page offline.
  */
+
+import { fetchWithAuth } from "./auth.js";
 
 /** A date range the queries are scoped to, in days back from now; 0 is today. */
 export type Range = 1 | 7 | 30 | 90;
@@ -28,10 +31,10 @@ export interface Source {
   session(sid: string): Promise<Row[]>;
 }
 
-/** The admin routes on the telemetry service, with the account's token. */
-export function remoteSource(base: string, token: () => Promise<string>): Source {
+/** The admin routes on the telemetry service, with the signed-in account's ID token on every request. */
+export function remoteSource(base: string): Source {
   const get = async <T>(path: string): Promise<T> => {
-    const res = await fetch(`${base}${path}`, { headers: { authorization: `Bearer ${await token()}` } });
+    const res = await fetchWithAuth(`${base}${path}`);
     if (!res.ok) throw new Error(`${path}: ${res.status}`);
     return (await res.json()) as T;
   };

@@ -12,13 +12,15 @@ The game is live at **https://games.csarko.sh/dayhike**. Two independent things 
 | Client (`client/dist`) | Firebase Hosting, free CDN | `npm run deploy:client` |
 | Signaling server (`server/`) | Cloud Run `fps-signaling`, `us-west1`, scales from zero; rooms in Firestore | `npm run deploy:server` |
 | Telemetry service (the same image, `ROLE=telemetry`), with the admin routes | Cloud Run `fps-telemetry`, `us-west1`, scales from zero | `npm run deploy:server` (both services, one image) |
-| The admin page (`client/admin/`) | Firebase Hosting, at `/dayhike/admin/`, built with the client | `npm run deploy:client` |
+| The admin page (`client/admin/`, `client/src/admin/`) | The shared admin host, `https://admin.csarko.sh/game-dayhike/`, published by the csarko.sh repository's `admin/deploy.sh` from the bundle this repo uploads to `gs://fps-csarko-downloads/admin/latest/` | `npm run deploy:admin` (builds `client/dist-admin/` with `vite.admin.config.ts`, uploads it, then runs `~/Projects/csarko.sh/admin/deploy.sh` when it is there, or names it) |
 
-`npm run deploy` runs the server then the client. `npm run deploy:verify` checks the
-result from outside — the live site, every deployed model and ground texture, the
-signaling server's WebSocket handshake, the telemetry service taking a batch, every saved
-telemetry query dry-run on BigQuery, and the desktop release manifest — against the real
-public URLs. `node tools/telemetry/check-queries.mjs` is that dry run alone, for a change to
+`npm run deploy` runs the server then the client; the admin page is its own step, since it
+ships to another host and changes less often. `npm run deploy:verify` checks the
+result from outside, against the real public URLs: the live site, every deployed model and
+ground texture, the signaling server's WebSocket handshake, the telemetry service taking a
+batch, every saved telemetry query dry-run on BigQuery, the admin page's old address
+redirecting to the host and its routes refusing a request with no token, and the desktop
+release manifest. `node tools/telemetry/check-queries.mjs` is that dry run alone, for a change to
 a query before it ships: Log Analytics' editor accepts names BigQuery's parser refuses.
 
 Deploys are local scripts by choice. There is no CI, so **the gates below are the only
@@ -75,10 +77,9 @@ a signaling server that answers HTTP but refuses a real WebSocket join.
 
 ## What the scripts need, and what they no longer need
 
-The scripts read twelve values describing production: project, the two Cloud Run
-services and their URLs, Artifact Registry path, Firebase site, public site URL,
-`legacy_domain_name`, the downloads bucket and its URL, and the Firebase web API key the
-admin page signs in with (`web_api_key`, not a secret).
+The scripts read eleven values describing production: project, the two Cloud Run
+services and their URLs, the telemetry dataset, Artifact Registry path, Firebase site,
+public site URL, `legacy_domain_name`, and the downloads bucket and its URL.
 
 They come from `tools/deploy/production.json`, which is **committed**, with Terraform
 outputs taking precedence when its state is reachable. This matters for concurrent
@@ -132,15 +133,18 @@ and bypasses the public edge — so the revision goes healthy and serves traffic
 external check reads a response the container never wrote. Renaming it back looks like
 tidying and costs a debugging session.
 
-**The admin page's sign-in has two steps by hand, once.** Terraform creates Firebase Auth and
-the web app, but the Google sign-in provider needs an OAuth client that only the Firebase
-console creates: Authentication → Sign-in method → Google → Enable → Save. That client then
-needs the site's handler as a redirect, which only the Google Cloud console edits: APIs &
-Services → Credentials → "Web client (auto created by Google Service)" → add
-`https://games.csarko.sh/__/auth/handler` to the redirect URIs and `https://games.csarko.sh`
-to the JavaScript origins → Save; without it Google answers "redirect_uri_mismatch". The
-accounts that may read the page are `admin_emails` in the git-ignored `terraform.tfvars`; an
-empty list serves no admin routes. Both steps are done (2026-10-12).
+**The admin routes are behind the admin host's Google sign-in and this repo's allowlist.**
+The page at https://admin.csarko.sh/game-dayhike/ signs in through the csarko.sh
+repository's Firebase Auth, on its project `csarko-sh`; the telemetry service verifies the
+ID token against that issuer (`ADMIN_AUTH_PROJECT`, default `csarko-sh`) and admits only
+the accounts in `ADMIN_EMAILS` (`server/src/adminAuth.ts`). Both are the service's
+environment, set by Terraform (`_infra/modules/gcp-telemetry`): the accounts are
+`admin_emails` in the git-ignored `terraform.tfvars`, so adding or removing a reader is
+`terraform apply` followed at once by `npm run deploy:server` (the apply makes a revision
+against the live image; see the next paragraph). An empty list serves no admin routes at all
+(`server/src/index.ts` logs `admin routes off`). Nothing here holds a secret: the Google
+provider, its OAuth client and the sign-in's redirect URIs are the csarko.sh repository's
+to set up, not this one's. `docs/admin/` §6 has the history of the sign-in's move.
 
 **Terraform owns the service's shape; the deploy script owns only the image tag.** Never
 change Cloud Run settings with `gcloud`. If you do touch Terraform, a container-field

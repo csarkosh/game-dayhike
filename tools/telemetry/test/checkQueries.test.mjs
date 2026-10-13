@@ -29,4 +29,10 @@ describe('checkQueries', () => {
   it('keeps the session placeholder as a parameter', () => {
     expect(forBigQuery("WHERE x = 'SID' -- session", 'p', 'd')).toEqual({ sql: 'WHERE x = @sid', params: { sid: 'x' } });
   });
+
+  it('takes the range line whatever days the file reads when pasted', () => {
+    expect(forBigQuery('INTERVAL 7 DAY) -- range', 'p', 'd')).toEqual({ sql: 'INTERVAL @days DAY)', params: { days: 7 } });
+    expect(forBigQuery('INTERVAL 84 DAY) -- range', 'p', 'd')).toEqual({ sql: 'INTERVAL @days DAY)', params: { days: 7 } });
+    expect(savedQueries(QUERIES_DIR).map((q) => q.name)).toContain('kpis');
+  });
 });

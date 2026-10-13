@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Day Hike admin</title>
     <meta name="robots" content="noindex" />
-    <link rel="icon" href="/favicon.ico" sizes="48x48" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- The admin host's shared stylesheet (csarko.sh's theme tokens, fonts and
+         primitives), served at the host's root and left alone by the build
+         (vite-ignore), first; the page's own styles map onto its tokens. The
+         favicons are the host's too. -->
+    <link rel="stylesheet" href="/theme.css" vite-ignore />
     <link rel="stylesheet" href="/src/admin/admin.css" />
   </head>
   <body>

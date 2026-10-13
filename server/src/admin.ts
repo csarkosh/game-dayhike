@@ -1,20 +1,27 @@
 /**
  * The admin routes, on the telemetry service: what the admin page
- * (`client/src/admin/`) reads, behind the allowlist (`adminAuth.ts`).
+ * (`client/src/admin/`, served from the shared admin host) reads, and what
+ * that host's index reads of this app, behind the allowlist (`adminAuth.ts`).
  *
  *   GET /admin/live                  the open rooms and the instances up
  *   GET /admin/query/<name>?days=N   one of the saved queries, over N days
  *   GET /admin/session/<sid>         one session's timeline
+ *   GET /admin/kpis                  the index card: four numbers with their
+ *                                    trends, and a health reading (`adminKpis.ts`)
  *
- * Each answers JSON, or 401 to an account that is not on the list, 404 to a
- * query that does not exist, and 429 past the per-address budget. The data
- * behind the routes is an interface (`AdminData`), so the routes are tested
- * with a fake and the BigQuery and Firestore readers are thin.
+ * Each answers JSON, or 401 to an account that is not on the list, 404 to a query
+ * that does not exist, and 429 past the per-address budget. The origins the
+ * page may call from are the server's one list (`admission.ts`
+ * `DEFAULT_ALLOWED_ORIGINS`, or `ALLOWED_ORIGINS`), the same one the socket
+ * and the batch route check, so the admin host is listed once. The data behind
+ * the routes is an interface (`AdminData`), so the routes are tested with a
+ * fake and the BigQuery and Firestore readers are thin.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { clientIpOf, isAllowedOrigin } from "./admission.js";
 import type { AdminAuth } from "./adminAuth.js";
+import type { Kpis } from "./adminKpis.js";
 import { isQueryName, type QueryName } from "./adminQueries.js";
 import type { PostLimiter } from "./telemetry.js";
 
@@ -31,6 +38,8 @@ export interface AdminData {
   live(): Promise<LiveView>;
   query(name: QueryName, days: number): Promise<Row[]>;
   session(sid: string): Promise<Row[]>;
+  /** The index card's numbers: the `kpis` query shaped, and the open lobbies from the live view. */
+  kpis(): Promise<Kpis>;
 }
 
 export type AdminRouteOptions = {
@@ -100,6 +109,7 @@ export function adminRoute(options: AdminRouteOptions): (req: IncomingMessage, r
 
 async function handle(data: AdminData, path: string, search: URLSearchParams): Promise<Json | null> {
   if (path === "/admin/live") return data.live();
+  if (path === "/admin/kpis") return data.kpis();
   const query = /^\/admin\/query\/([a-z]+)$/.exec(path);
   if (query !== null) {
     const name = query[1] ?? "";
