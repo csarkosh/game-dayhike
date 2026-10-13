@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sessionsOf } from "../../src/admin/paths.js";
+import { sessionsOf, worldLabel, worldsOf } from "../../src/admin/paths.js";
 import type { Row } from "../../src/admin/source.js";
 import { buildTrailFor, parseWorld, sameGeneration } from "../../src/admin/trail.js";
 import { GEN_VERSION } from "../../src/sim/forest.js";
@@ -58,5 +58,24 @@ describe("sessionsOf", () => {
       ["death", 6, -50],
     ]);
     expect(sessions[0]).toMatchObject({ result: "won", died: false, farthest: 0.05 });
+  });
+});
+
+describe("worldsOf", () => {
+  it("lists each world once, newest party first, dated by its earliest row in New York time", () => {
+    const rows: Row[] = [
+      { world: "forest/8/olympic/1/2", seed: 11, sid: "a", n: "pos", timestamp: "2026-10-12T20:30:00Z" },
+      { world: "forest/8/olympic/1/2", seed: 11, sid: "a", n: "match_start", timestamp: "2026-10-12T20:00:00Z" },
+      { world: "forest/8/olympic/1/2", seed: 22, sid: "b", n: "match_start", timestamp: "2026-10-13T01:15:00Z" },
+      { world: "forest/7/olympic/1/2", seed: 33, sid: "c", n: "match_start", timestamp: "2026-10-01T12:00:00Z" },
+      { world: "forest/8/olympic/1/2", seed: 11, sid: "d", n: "match_start", timestamp: "2026-10-12T21:00:00Z" },
+      { world: null, seed: null, sid: "e", n: "match_start", timestamp: "2026-10-13T02:00:00Z" },
+    ];
+    const worlds = worldsOf(rows);
+    expect(worlds.map((w) => w.key)).toEqual(["forest/8/olympic/1/2|22", "forest/8/olympic/1/2|11", "forest/7/olympic/1/2|33"]);
+    expect(worlds[1]!.startedAt).toBe(Date.parse("2026-10-12T20:00:00Z"));
+    expect(worldLabel(worlds[0]!)).toBe("Oct 12, 2026, 9:15 PM EDT · forest/8/olympic/1/2 · seed 22");
+    expect(worldLabel(worlds[1]!)).toBe("Oct 12, 2026, 4:00 PM EDT · forest/8/olympic/1/2 · seed 11");
+    expect(worldLabel({ key: "w|1", world: "w", seed: "1", startedAt: Infinity })).toBe("undated · w · seed 1");
   });
 });
