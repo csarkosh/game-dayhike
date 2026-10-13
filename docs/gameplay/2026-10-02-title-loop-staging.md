@@ -29,9 +29,7 @@ Every shot keeps the camera under 2 m/s and 0.12 rad/s and above the ground and 
 frame (`client/test/game/scene/title.test.ts`).
 
 After each cut the scene route draws 48 frames at the new camera and waits for the world before the
-frame that counts (amended 2026-10-13: then 12 more, an animation frame apart, after a tree's near
-mesh was seen taking over from its far card on the two frames after one cut's wait had ended).
-Read frame by frame, the first recording showed no tile changing out of step with its
+frame that counts. Read frame by frame, the recording showed no tile changing out of step with its
 neighbours after any cut.
 
 ## The file

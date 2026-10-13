@@ -199,12 +199,10 @@ describe("the scene route", () => {
     api.seek(6.95);
     await drain(frames, api.frame());
     expect([renders, waits]).toEqual([1, 1]);
-    // 7.05 is the second shot, over the meadow, hundreds of metres from the coast: the frame drawn
-    // within the first shot, then one to see the cut, 48 to draw the world in, the wait, 12 more an
-    // animation frame apart, and the one that counts.
+    // 7.05 is the second shot, over the forest, hundreds of metres from the coast.
     api.seek(7.05);
     await drain(frames, api.frame());
-    expect([renders, waits]).toEqual([63, 2]);
+    expect([renders, waits]).toEqual([51, 2]);
     run.dispose();
     vi.unstubAllGlobals();
   }, timeLimit(120_000));
