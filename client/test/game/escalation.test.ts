@@ -10,6 +10,7 @@ import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
 import { HAUNT_DREAD, HAUNT_IN_S, HAUNT_OUT_S, NIGHT_SPAN, CHASE_EASE_S, ACT_WET, DUSK_AT, WET_AT, WET_SPAN, actsUnder,
   ESCALATION_REST, LENS_EASE_S, NEAR_BLIND, NEAR_FULL, NEAR_START, NIGHT_HOUR, OFF_TRAIL_FULL, OFF_TRAIL_START,
   SPIKE_DECAY_S, SPIKE_RISE_S, WORLD_EASE_S, atmosphereUnder, escalationTargets, stepEscalation,
+  escalationAt,
   type EscalationTargets,
 } from "../../src/game/escalation.js";
 import { graph } from "../sim/helpers/stemGraph.js";
@@ -239,5 +240,16 @@ describe("atmosphereUnder", () => {
       { progressMax: 1, spike: 1, world: 1, lens: 1.4, chase: 0, haunt: 0 },
     );
     expect(a.weather.dread).toBe(1);
+  });
+});
+
+describe("the escalation at a place", () => {
+  it("stands eased whole at the climb it is given, the cast in with the chase, nothing of the lens", () => {
+    expect(escalationAt(1, true)).toEqual({ ...ESCALATION_REST, progressMax: 1, world: 1, chase: 1 });
+    expect(escalationAt(0.4, false)).toEqual({ ...ESCALATION_REST, progressMax: 0.4, world: 0.4 });
+    expect(escalationAt(2, false).world).toBe(1);
+    // A step from it at the same climb moves nothing of the world or the cast.
+    const after = stepEscalation(escalationAt(1, true), { world: 1, offTrail: 0, near: 0, dead: false, chase: true, haunt: 0 }, 0.5);
+    expect([after.world, after.chase, after.progressMax]).toEqual([1, 1, 1]);
   });
 });

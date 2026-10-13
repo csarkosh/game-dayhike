@@ -65,6 +65,9 @@ export type RainMap = {
   /** Moves the map to `player` by the step rule; true when it did, which is
    * the frame it is drawn again. */
   update(player: Vec3): boolean;
+  /** The next `update` draws the map again where it stands, moved or not:
+   * for cover that has gone (the end scene's car driving off its place). */
+  redraw(): void;
   dispose(): void;
 };
 
@@ -194,6 +197,8 @@ export function createRainMap(scene: Scene, tier: QualityTier): RainMap | null {
 
   const centre: Vec3 = { x: Number.NaN, y: Number.NaN, z: Number.NaN };
   const next: Vec3 = { x: 0, y: 0, z: 0 };
+  /** Set by `redraw`: the next `update` draws the map though it has not moved. */
+  let stale = false;
 
   return {
     texture,
@@ -205,6 +210,9 @@ export function createRainMap(scene: Scene, tier: QualityTier): RainMap | null {
       if (list === null) return;
       if (!list.includes(mesh)) list.push(mesh);
       texture.setMaterialForRendering(mesh, materials[kind]);
+    },
+    redraw() {
+      stale = true;
     },
     unregister(mesh) {
       const list = texture.renderList;
@@ -220,8 +228,9 @@ export function createRainMap(scene: Scene, tier: QualityTier): RainMap | null {
         next.z = player.z;
       } else {
         mapCentre(centre, player, next);
-        if (next.x === centre.x && next.z === centre.z) return false;
+        if (next.x === centre.x && next.z === centre.z && !stale) return false;
       }
+      stale = false;
       centre.x = next.x;
       centre.y = next.y;
       centre.z = next.z;

@@ -16,8 +16,9 @@ export const ROAD_LINE_U = ROAD_WALL_U + 0.5;
  */
 export const DEATH_LINE = "The light guttering; their name, unanswered; and the help, cold beneath the leaves, sought nevermore.";
 /**
- * The match won, as the camera lifts to the sky: the same shape, and the
- * turn, ten words like the title's, lets them out but not alone.
+ * The match won, over the car going down the road (endScene.ts): the same
+ * shape, and the turn, ten words like the title's, lets them out but not
+ * alone. Its timings are the end scene's own.
  */
 /** The end's titles, in the title screen's voice (hud.ts draws them uppercase). */
 export const WON_TITLE = "You lived";
@@ -33,11 +34,10 @@ export const WON_LINE = "The night, outlasted; the car, at last; and in the mirr
 
 /** After a loss, the return to the landing comes this long after the end. */
 export const END_LANDING_MS = 12000;
-/** Won: the camera's lift under the line runs this long before the view goes dark (ending.ts WON_LIFT_S and the blur after it), and the landing comes at WON_LANDING_MS. */
-export const WON_FADE_AFTER_MS = 11000;
-export const WON_LANDING_MS = 15000;
 /** Died: the HUD's own fade finishes the black this long after the fall begins, once the dark has closed (ending.ts). */
 export const DEATH_FADE_AFTER_MS = 6000;
+/** Died: the master's fade from the dark's closing (ending.ts DIED_CLOSE_FROM_S), so the sound is gone at 6 s, as the HUD's black begins. */
+export const DEATH_SOUND_FADE_S = 5;
 
 /**
  * What a player at road offset `u` is told at the wall, or null: on the

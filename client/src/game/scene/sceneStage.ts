@@ -14,7 +14,7 @@ import type { FreecamView } from "../renderer.js";
 import type { PlacedModel } from "../staticModel.js";
 import type { CaptionPanel } from "./captions.js";
 import { coiledCord } from "./cord.js";
-import type { ActorPose, Frame } from "./timeline.js";
+import type { ActorPose, CarPose, Frame } from "./timeline.js";
 
 /** The car: the node the whole model moves by, and its named parts where the
  * model has them. The parts keep the model's own frame (the car drives +x in
@@ -162,6 +162,27 @@ function placeByJoint(instance: CharacterInstance, id: string, anchor: NonNullab
   instance.root.position.addInPlaceFromFloats(anchor.x - at.x, anchor.y - at.y, anchor.z - at.z);
 }
 
+/**
+ * The car at a pose: the whole model to its place and heading, the wheels
+ * spun and the front ones turned, the steering wheel turned with them and
+ * the driver's door open as far as the pose says. The handset is
+ * `stageFrame`'s. Writes in place, so a car staged every frame makes nothing.
+ */
+export function stageCar(pose: CarPose, car: CarModel): void {
+  car.root.position.set(pose.x, pose.y, pose.z);
+  car.root.rotation.y = pose.yaw;
+  for (const wheel of car.wheels) {
+    wheel.node.rotation.z = -pose.wheelSpin;
+    // The part's own frame, under the loader's mirrored root, reverses a turn about y.
+    wheel.node.rotation.y = wheel.front ? -pose.wheelTurn : 0;
+  }
+  if (car.steering !== null) {
+    car.steering.rotationQuaternion ??= new Quaternion();
+    Quaternion.RotationAxisToRef(STEERING_COLUMN, pose.steer, car.steering.rotationQuaternion);
+  }
+  if (car.door !== null) car.door.rotation.y = -pose.doorOpen * DOOR_SWING;
+}
+
 export function stageFrame(frame: Frame, deps: StageDeps): void {
   const c = frame.camera;
   deps.setFreecam({ x: c.x, y: c.y, z: c.z, yaw: c.yaw, pitch: c.pitch, fov: c.fov, roll: c.roll });
@@ -186,15 +207,7 @@ export function stageFrame(frame: Frame, deps: StageDeps): void {
   }
   if (frame.car !== null && deps.car !== null) {
     const car = frame.car;
-    deps.car.root.position.set(car.x, car.y, car.z);
-    deps.car.root.rotation.y = car.yaw;
-    for (const wheel of deps.car.wheels) {
-      wheel.node.rotation.z = -car.wheelSpin;
-      // The part's own frame, under the loader's mirrored root, reverses a turn about y.
-      wheel.node.rotation.y = wheel.front ? -car.wheelTurn : 0;
-    }
-    if (deps.car.steering !== null) deps.car.steering.rotationQuaternion = Quaternion.RotationAxis(STEERING_COLUMN, car.steer);
-    if (deps.car.door !== null) deps.car.door.rotation.y = -car.doorOpen * DOOR_SWING;
+    stageCar(car, deps.car);
     const hand = car.handset === "hand" && deps.hand !== undefined ? deps.hand() : null;
     if (car.handset === "hand" && deps.hand !== undefined && hand === null && !warnedHand.has(deps)) {
       warnedHand.add(deps);

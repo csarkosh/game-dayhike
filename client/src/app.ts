@@ -1,6 +1,6 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
-import { createRenderer, terrainMaterialFor, type FreecamView, type Renderer } from "./game/renderer.js";
+import { createRenderer, terrainMaterialFor, type EndSceneSetup, type FreecamView, type Renderer } from "./game/renderer.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AsyncPipelines } from "./game/asyncPipelines.js";
 import { FALLBACK_NOTICE_MS } from "./game/engineChoice.js";
@@ -11,7 +11,12 @@ import { createHud } from "./game/hud.js";
 import { LOADING_LINE } from "./game/frameProbe.js";
 import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
 import { RING_COUNT } from "./game/clipmap.js";
-import { reportCompile, reportProgress } from "./game/modelLoad.js";
+import { loadUntilAborted, reportCompile, reportProgress } from "./game/modelLoad.js";
+import { defaultModelLoader, placeStaticModel } from "./game/staticModel.js";
+import {
+  END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, ESCAPE_SETTLE_S, ESCAPE_WAIT_S, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
+  endMistShare,
+} from "./game/endScene.js";
 import { READY_MAX_MS, startReady } from "./game/startReady.js";
 import { ENGAGE_MAX_MS, whenEngaged } from "./game/engageWait.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
@@ -46,6 +51,7 @@ import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
 import { actsUnder,
   ESCALATION_REST,
+  escalationAt,
   atmosphereUnder,
   escalationTargets,
   stepEscalation,
@@ -70,15 +76,15 @@ import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
-import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, END_LANDING_MS, WON_LINE, WON_TITLE, WON_FADE_AFTER_MS, WON_LANDING_MS, roadLine } from "./game/passages.js";
+import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_LANDING_MS, WON_LINE, WON_TITLE, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
-import { trailheadPlaces } from "./sim/trailhead.js";
+import { carDirection, doorSpot, trailEntrance, trailheadPlaces } from "./sim/trailhead.js";
 import { BOARD_IMAGE_URLS } from "./game/boardImages.js";
 import { boardDrawingOf } from "./game/boardPaint.js";
-import { createTrailheadMeshes } from "./game/trailheadMeshes.js";
+import { FILM_CAR_NAME, FILM_CAR_OUTPUT, createTrailheadMeshes, type TrailheadMeshes } from "./game/trailheadMeshes.js";
 import { placeNames, signSites } from "./sim/placeNames.js";
 import { createTrace, type Trace } from "./game/trace.js";
 import { afterNextPaint } from "./game/paint.js";
@@ -112,6 +118,7 @@ import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState, type VoiceSc
 import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
 import { createVoiceClips } from "./game/voiceClips.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt } from "./game/cutscene.js";
+import { DIED_CLOSE_FROM_S } from "./game/ending.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_HALF } from "./sim/constants.js";
 import { stemAhead } from "./sim/trailRoute.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
@@ -535,6 +542,10 @@ function buildGame(
   let cryQuietAt = -1;
   /** The `summit` command's hand on the host's own player, installed with the host session; null on a client. */
   let summitPreview: (() => void) | null = null;
+  /** The `escape` command's hand on the host's own player, installed when this screen hosts; null on a client. */
+  let escapeLook: (() => void) | null = null;
+  /** Each host frame before its ticks: the `escape` look's step, which puts the player by the car once the film's car is in. */
+  let escapeStep: (() => void) | null = null;
   let lastLook = { yaw: 0, pitch: 0 };
   const sceneOn = (): boolean => performance.now() < sceneUntil;
   /** The command with the player stilled: no move, no press, the look held where it was. */
@@ -542,6 +553,30 @@ function buildGame(
   const DOWN_TRAIL_M = 10;
   /** The summit scene's threshold: the way down the trail from where the player stood at the flip, as a look (the yaw to the stem's point that far down, the pitch to its ground, so the trail is the centre of the frame, not the sky over it); null outside the summit's scene. */
   let downLook: { yaw: number; pitch: number } | null = null;
+  /**
+   * The end scene's run (endScene.ts): from the win on this screen the legs
+   * are the scene's, a sprint at the car's door with the yaw to it and the
+   * look level, until the renderer has the runner at the door; then still.
+   * `endRunDoor` is null outside the scene.
+   */
+  let endRunDoor: { x: number; z: number } | null = null;
+  let endRunYaw = 0;
+  /**
+   * The command with the run in it, for both loops after `stilled`, which
+   * it overrides. A suppressed sample (the match ended) still comes here as
+   * a command with no move in it, so the run is the scene's alone.
+   */
+  function ranToCar(cmd: InputCommand, me: PlayerState | undefined): InputCommand {
+    if (endRunDoor === null) return cmd;
+    // A renderer with no scene (one built anew under it) runs nobody anywhere.
+    const scene = renderer.endScene();
+    if (me !== undefined && scene !== null && scene.arrival === null) {
+      endRunYaw = Math.atan2(endRunDoor.x - me.pos.x, endRunDoor.z - me.pos.z);
+      input.setLook(endRunYaw, 0);
+      return { ...cmd, moveX: 0, moveZ: 1, buttons: Button.Sprint, yaw: endRunYaw, pitch: 0 };
+    }
+    return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: endRunYaw, pitch: 0 };
+  }
   function stilled(cmd: InputCommand): InputCommand {
     if (!sceneOn()) {
       lastLook = { yaw: cmd.yaw, pitch: cmd.pitch };
@@ -647,6 +682,11 @@ function buildGame(
   let windOverride: number | null = null;
   let lastFreecamView: FreecamView | null = null;
 
+  /** The commands that play a scene for a look (`summit`, `escape`): never written back to the URL, and from the URL called once the world is in. */
+  function isLook(name: string): boolean {
+    return name === "summit" || name === "escape";
+  }
+
   function currentScript(): ScriptEntry[] {
     return parseScript(new URLSearchParams(location.search).get("cmd") ?? "").entries;
   }
@@ -731,11 +771,20 @@ function buildGame(
       // The summit scene for a look (cutscene.ts): the host's own player stands at the body, and the next tick is the find.
       if (summitPreview === null) hud.setStatus("summit: the host's to call");
       else summitPreview();
+    } else if (name === "escape") {
+      // The end scene for a look (endScene.ts): the host's own player stands on the pad short of the car, and the next tick is the win.
+      if (escapeLook === null) hud.setStatus("escape: the host's to call");
+      else escapeLook();
     } else if (name === "end") {
-      // The ending, on the spot (ending.ts): the camera and the line, nothing of the match.
-      const kind = args[0] === "won" ? "won" : "died";
-      renderer.setEnding(kind);
-      hud.setEnding(kind === "won" ? { title: WON_TITLE, line: WON_LINE } : { title: DEATH_TITLE, line: DEATH_LINE });
+      // The ending, on the spot, nothing of the match: won, the end scene from where the player
+      // stands, with the trailhead's car, and no landing after it (endScene.ts);
+      // died, the death's camera and line (ending.ts).
+      if (args[0] === "won") {
+        if (!startEndScene(false)) hud.setStatus("end won: this world has no road to leave by");
+      } else {
+        renderer.setEnding("died");
+        hud.setEnding({ title: DEATH_TITLE, line: DEATH_LINE });
+      }
     } else if (name === "time") {
       // Instant, like every other view command: the sun moves, the world is not
       // rebuilt. Validation has already bounded this to [0, 24), so the fallback
@@ -891,7 +940,8 @@ function buildGame(
 
   /** Resolves and paints the prompt. Both loops, after `renderer.sync`. */
   function syncPrompt(world: World, self: PlayerState | undefined): void {
-    if (self === undefined || self.health <= 0 || freecam !== null || !input.engaged) {
+    // Nothing to press in the end scene: the run is its own.
+    if (self === undefined || self.health <= 0 || freecam !== null || !input.engaged || endRunDoor !== null) {
       prompt.sync(null);
       return;
     }
@@ -927,7 +977,10 @@ function buildGame(
         telemetry.event("phase", { phase: phaseName(state.phase), p: progressRounded(), tick: state.tick });
       }
     }
-    const a = atmosphereUnder(base, escalation);
+    // The end scene's road shot draws the mist back, so the car can be followed down the highway.
+    const settled = atmosphereUnder(base, escalation);
+    const mist = endMistNow();
+    const a = mist === 1 ? settled : { ...settled, weather: { ...settled.weather, mist: settled.weather.mist * mist } };
     // The chase's cast and its pulse, every frame: neither waits on the weather's gate below.
     renderer.setChase(escalation.chase);
     renderer.setHaunt(escalation.haunt);
@@ -946,7 +999,7 @@ function buildGame(
     const ear = renderer.listener();
     const crest = world.search.body.pos;
     const acts = actsUnder(escalation.world);
-    renderer.setMistIn(acts.mist);
+    renderer.setMistIn(acts.mist * mist);
     const voiced = stepWoods(woods, {
       climb: escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase !== Phase.Climb, hollow, rain: a.weather.rain,
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
@@ -962,7 +1015,11 @@ function buildGame(
     if (cryOver) cryPending = false;
     // The find: the frame the phase flips, the scene begins on this screen.
     const chaseNow = state.phase !== Phase.Climb;
-    if (chaseNow && !wasChase) {
+    // The film's car for the end, fetched while the car is far off and out of sight.
+    if (chaseNow && !wasChase) requestFilmCar();
+    // A flip first read with the match already decided (a follower's snapshot that carries the
+    // phase and the win together, a tab back from hidden) has no find to show: the end scene's.
+    if (chaseNow && !wasChase && state.outcome === Outcome.Playing) {
       sceneUntil = performance.now() + SUMMIT_SCENE_S * 1000;
       sceneKind = "summit";
       // The scene's sound takes the frame: a line still up or on its way is cut.
@@ -1050,11 +1107,12 @@ function buildGame(
     if (!hourMoved && !weatherMoved) return;
     appliedHour = a.hour;
     appliedWeather = a.weather;
+    // The wind is heard from the weather as it is: the mist the road shot draws back is the view's.
     renderer.setView(a.hour, a.weather);
-    ambient.setWeather(a.weather);
+    ambient.setWeather(settled.weather);
   }
 
-  let signs: { dispose(): void } | null = null;
+  let signs: { trailhead: TrailheadMeshes; dispose(): void } | null = null;
   /**
    * The crucified hiker at the crest, or null without a summit site. Lives and
    * dies with the signs: both are seeded scenery placed once and never moved.
@@ -1066,7 +1124,7 @@ function buildGame(
    * scene: the renderer being built, which during a live tier change is not
    * yet `renderer`.
    */
-  function createSigns(world: World, r: Renderer): { dispose(): void } | null {
+  function createSigns(world: World, r: Renderer): { trailhead: TrailheadMeshes; dispose(): void } | null {
     const search = world.search;
     const variant = activeTerrainVariant();
     const graph = variant.trailGraph?.(seed);
@@ -1106,10 +1164,68 @@ function buildGame(
       },
     );
     return {
+      trailhead,
       dispose() {
         posts.dispose();
         trailhead.dispose();
       },
+    };
+  }
+
+  /**
+   * The film's car (`trailheadMeshes.ts` `swapCar`), the parked car's double
+   * with wheels and a door, for the end scene: wanted from the flip to the
+   * chase, fetched into the trailhead as it stands, and again into one built
+   * anew with the extras. Never counted by a loading screen, which is gone
+   * by then. A fetch that fails says so once and leaves the parked car.
+   */
+  let filmCarWanted = false;
+  let filmCarLoad: AbortController | null = null;
+  function requestFilmCar(): void {
+    filmCarWanted = true;
+    fetchFilmCar(renderer);
+  }
+  function fetchFilmCar(r: Renderer): void {
+    if (!filmCarWanted) return;
+    // From the flip to the end the body's lamp stays a light, so the lights every material binds
+    // are the same from the film's car's first frames through the end scene (entityViews.ts).
+    r.views.keepLocalLamp = true;
+    if (filmCarLoad !== null || signs === null) return;
+    const trailhead = signs.trailhead;
+    const loads = new AbortController();
+    filmCarLoad = loads;
+    loadUntilAborted(() => defaultModelLoader(r.scene)(FILM_CAR_OUTPUT), loads.signal).then(
+      (container) => {
+        if (loads.signal.aborted) {
+          container.dispose();
+          return;
+        }
+        try {
+          trailhead.swapCar(placeStaticModel(container, FILM_CAR_NAME, 0, 0, 0, 0));
+        } catch (error) {
+          console.warn(`end: the film's car could not be placed (${error instanceof Error ? error.message : String(error)}); the parked car stays`);
+        }
+      },
+      (error: unknown) => {
+        if (!loads.signal.aborted) console.warn(`end: the film's car did not load (${error instanceof Error ? error.message : String(error)}); the parked car stays`);
+      },
+    );
+  }
+
+  /** What the end scene is played over: the car's site and heading, the road, the door, and the trailhead's car as it stands; null on a world with no road. */
+  function endSceneSetup(): EndSceneSetup | null {
+    const variant = activeTerrainVariant();
+    const graph = variant.trailGraph?.(seed);
+    const roadCenterX = variant.roadCenterX;
+    if (graph === undefined || roadCenterX === undefined) return null;
+    const site = trailheadPlaces(graph, roadCenterX, seed).car;
+    const direction = carDirection(site, graph.trailhead);
+    return {
+      site,
+      direction,
+      road: { centerX: (z) => roadCenterX(seed, z), groundY: (x, z) => elevationAt(seed, x, z) },
+      door: doorSpot(site, direction),
+      car: () => signs?.trailhead.car() ?? null,
     };
   }
 
@@ -1121,10 +1237,13 @@ function buildGame(
   function buildExtras(r: Renderer): void {
     if (activeWorld === null) return;
     signs = createSigns(activeWorld, r);
+    fetchFilmCar(r);
     body = activeWorld.search === null ? null : createBodyMesh(r.scene, activeWorld.search.body, { shadows: r.shadows });
   }
 
   function disposeExtras(): void {
+    filmCarLoad?.abort();
+    filmCarLoad = null;
     signs?.dispose();
     body?.dispose();
     signs = null;
@@ -1170,6 +1289,7 @@ function buildGame(
 
   let dead = false;
   let deathFadeTimer: ReturnType<typeof setTimeout> | null = null;
+  let deathSoundTimer: ReturnType<typeof setTimeout> | null = null;
   let endFadeTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Death, once: the poster closed, the view faded onto the passage. Input
@@ -1197,6 +1317,9 @@ function buildGame(
     renderer.setEnding("died");
     if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
     deathFadeTimer = setTimeout(() => hud.fade(true), DEATH_FADE_AFTER_MS);
+    // The sound goes with the dark: from its closing, gone as the black finishes.
+    if (deathSoundTimer !== null) clearTimeout(deathSoundTimer);
+    deathSoundTimer = setTimeout(() => ambient.fadeMaster(DEATH_SOUND_FADE_S), DIED_CLOSE_FROM_S * 1000);
     hud.setEnding({ title: DEATH_TITLE, line: DEATH_LINE });
   }
 
@@ -1237,19 +1360,77 @@ function buildGame(
         p: progressRounded(),
       });
     }
-    // Won, and alive to see it: the camera lifts to the sky under the line
-    // (ending.ts), and the view goes dark under it before the landing. A
-    // dead player is already under their own last word, which stays. There
-    // is no panel of names: the line is the end.
-    if (won) {
-      renderer.setEnding("won");
+    // Won, and alive to see it: the end scene (endScene.ts), the run to the
+    // car and the car down the road, its beats from the arrival
+    // (`syncEndScene`). A dead player is already under their own last word,
+    // which stays. There is no panel of names: the line is the end.
+    const scene = won && startEndScene(true);
+    if (won && !scene) {
       hud.setEnding({ title: WON_TITLE, line: WON_LINE });
-      if (endFadeTimer !== null) clearTimeout(endFadeTimer);
-      endFadeTimer = setTimeout(() => hud.fade(true), WON_FADE_AFTER_MS);
-    } else if (!dead) hud.fade(true);
+      hud.fade(true);
+    } else if (!won && !dead) hud.fade(true);
     if (landingTimer !== null) clearTimeout(landingTimer);
-    landingTimer = setTimeout(navigateToLanding, won ? WON_LANDING_MS : END_LANDING_MS);
+    // In the scene, the latest its landing can come: the arrival sets the true one.
+    landingTimer = setTimeout(navigateToLanding, scene ? (RUN_MAX_S + END_ROAD_AT_S + END_LANDING_AT_S) * 1000 : END_LANDING_MS);
     sessionOver();
+  }
+
+  /** The end scene's world fade and title, set from the arrival; the dark is `endFadeTimer`, the landing `landingTimer`. */
+  const endBeatTimers: ReturnType<typeof setTimeout>[] = [];
+  let endArrived = false;
+  /** Whether the scene ends at the title page: the match's does, the console's `end won` does not. */
+  let endLands = false;
+  /** The car as the ear hears it this frame (`carHeard`), one reused place. */
+  const endHeard = { x: 0, y: 0, z: 0 };
+
+  /** The end scene on this screen: the bars, the renderer's scene, the run; false on a world with no road. */
+  function startEndScene(lands: boolean): boolean {
+    const setup = endSceneSetup();
+    if (setup === null) return false;
+    hud.setBars(true);
+    renderer.setEnding("won", setup);
+    endRunDoor = setup.door;
+    endLands = lands;
+    requestFilmCar();
+    return true;
+  }
+
+  /**
+   * The end scene's beats, from the frame the renderer has the runner at the
+   * door: the car's sound started on that frame, its cues on the audio's
+   * clock from there; the world's sound going from the pull-away; the title
+   * and its line; the dark and the master's fade; the landing. Every frame
+   * from the arrival, the car placed for the ear the last `setListener` (in
+   * `syncWind`, earlier in the frame) left. Both loops, after `renderer.sync`.
+   */
+  function syncEndScene(): void {
+    if (endRunDoor === null) return;
+    const scene = renderer.endScene();
+    if (scene === null || scene.arrival === null) return;
+    const heard = carHeard(renderer.listener(), scene.car, endHeard);
+    if (!endArrived) {
+      endArrived = true;
+      ambient.startCar(heard);
+      endBeatTimers.push(setTimeout(() => ambient.fadeWorld(WORLD_FADE_S), PULL_AWAY_AT_S * 1000));
+      endBeatTimers.push(setTimeout(() => hud.setEnding({ title: WON_TITLE, line: WON_LINE }), (END_ROAD_AT_S + TITLE_AT_S) * 1000));
+      if (endFadeTimer !== null) clearTimeout(endFadeTimer);
+      endFadeTimer = setTimeout(() => {
+        hud.fade(true);
+        ambient.fadeMaster(MASTER_FADE_S);
+      }, (END_ROAD_AT_S + END_FADE_AT_S) * 1000);
+      if (endLands) {
+        if (landingTimer !== null) clearTimeout(landingTimer);
+        landingTimer = setTimeout(navigateToLanding, (END_ROAD_AT_S + END_LANDING_AT_S) * 1000);
+      }
+    }
+    ambient.setCar(scene.car.speed, heard);
+  }
+
+  /** The share of the mist the end scene leaves this frame (`endMistShare`): 1 outside its road shot. */
+  function endMistNow(): number {
+    const scene = endRunDoor === null ? null : renderer.endScene();
+    if (scene === null || scene.arrival === null) return 1;
+    return endMistShare(scene.t - scene.arrival - END_ROAD_AT_S);
   }
 
   /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
@@ -1344,9 +1525,10 @@ function buildGame(
       const args = resolveTypedArgs(parsed.name, parsed.args, isToggleOn(parsed.name));
       // /volume is not persisted — the URL feeds the invite link, and
       // a volume level is a listener preference, not part of the shared scene.
-      // Nor /mist and /end, which are for looking at the night's effects on the spot.
+      // Nor /mist and /end, which are for looking at the night's effects on the spot,
+      // nor /summit and /escape, which are for looking at a scene (`isLook`).
       // Applied below via applyView; never written back to `?cmd=`.
-      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "end" && parsed.name !== "summit") persist(parsed.name, args);
+      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "end" && !isLook(parsed.name)) persist(parsed.name, args);
       if (findCommand(parsed.name)?.kind === "world") {
         // Re-initialise through the path `main.ts` already listens on.
         window.dispatchEvent(new PopStateEvent("popstate"));
@@ -1427,7 +1609,9 @@ function buildGame(
 
   // Restoring from the URL on load, not a live edit: every view command
   // applies instantly, weather included — see `applyView`'s `instant` doc.
-  for (const entry of view) applyView(entry.name, entry.args, { instant: true });
+  // A look named there (`summit`, `escape`) waits for the world (`ready`, below): its hand is the
+  // host's, installed with the host session, and its scene is for a world already in.
+  for (const entry of view) if (!isLook(entry.name)) applyView(entry.name, entry.args, { instant: true });
   if (errors.length > 0) bar.showError(errors.join("  •  "));
 
   const degradation = parseNetConditions(location.search);
@@ -1603,6 +1787,63 @@ function buildGame(
       me.vel = { x: 0, y: 0, z: 0 };
       me.yaw = Math.atan2(body.x - me.pos.x, body.z - me.pos.z);
     };
+    /** When the `escape` look was called, and when the film's car's first frames were over; null while not. */
+    let escapeFrom: number | null = null;
+    let escapeWarmed: number | null = null;
+    escapeLook = () => {
+      // The end scene for a look, as the real end plays: the film's car fetched now and the acts
+      // at the crest's (night, mist and the chase's cast whole) at once; the win waits on the car
+      // (`escapeStep`), so the scene opens on a car already drawn, as a match's does.
+      if (escapeFrom !== null || endSceneSetup() === null) return;
+      // Not into a scene playing or a match decided: the acts and the car would jump mid-scene.
+      if (endRunDoor !== null || host.world.state.outcome !== Outcome.Playing) return;
+      requestFilmCar();
+      escalation = escalationAt(1, true);
+      escapeFrom = performance.now();
+      escapeWarmed = null;
+    };
+    escapeStep = () => {
+      if (escapeFrom === null) return;
+      // A scene already playing (the match won, or `end won`, while the look waited) is left to play.
+      if (endRunDoor !== null || host.world.state.outcome !== Outcome.Playing) {
+        escapeFrom = null;
+        return;
+      }
+      const now = performance.now();
+      const carIn = (signs?.trailhead.car()?.model ?? null) !== null;
+      // A car that never lands: the scene on the parked one after ESCAPE_WAIT_S.
+      if (!carIn && now - escapeFrom < ESCAPE_WAIT_S * 1000) return;
+      if (carIn) {
+        // Past its first frames, then its pipelines in flight landed (or, with none counted,
+        // ESCAPE_SETTLE_S), at most ESCAPE_WAIT_S after those frames.
+        if (signs?.trailhead.warm() ?? false) return;
+        escapeWarmed ??= now;
+        const pipelines = pipelinesFor(renderer.engine);
+        const settled = pipelines !== undefined ? pipelines.pending() === 0 : now - escapeWarmed >= ESCAPE_SETTLE_S * 1000;
+        if (!settled && now - escapeWarmed < ESCAPE_WAIT_S * 1000) return;
+      }
+      escapeFrom = null;
+      // The host's player on the pad, ESCAPE_FROM_M from the car toward the trail's entrance,
+      // facing the car, and the chase on if it is still the climb (host truth, a look only), so
+      // the next tick's end rule wins the match and the scene plays.
+      const world = host.world;
+      const me = world.state.players.get(host.localEntityId);
+      const setup = endSceneSetup();
+      if (me === undefined || world.trail === null || setup === null) return;
+      const e = trailEntrance(world.trail);
+      const dx = e.x - setup.site.x, dz = e.z - setup.site.z;
+      const len = Math.hypot(dx, dz);
+      const ux = len > 1e-6 ? dx / len : 1, uz = len > 1e-6 ? dz / len : 0;
+      const x = setup.site.x + ux * ESCAPE_FROM_M, z = setup.site.z + uz * ESCAPE_FROM_M;
+      me.pos = { x, y: (world.ground?.heightAt(x, z) ?? me.pos.y - PLAYER_HALF.y) + PLAYER_HALF.y, z };
+      me.vel = { x: 0, y: 0, z: 0 };
+      me.yaw = Math.atan2(setup.site.x - x, setup.site.z - z);
+      input.setLook(me.yaw, 0);
+      // The chase's flip is seen as already past, so the find's scene never starts for a look,
+      // whatever frame the flip is first read on; a match's own flip comes only through the find.
+      wasChase = true;
+      if (world.state.phase === Phase.Climb) world.state.phase = Phase.Chase;
+    };
     session = host;
     matchStarted("host", host.world, () => ({ rtt: 0, pe: 0 }));
     governor?.restart(performance.now());
@@ -1636,8 +1877,9 @@ function buildGame(
       feedGovernor(dt);
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
+      escapeStep?.();
       for (let i = 0; i < ticks; i++) {
-        cmd = stilled(input.sample(++seq));
+        cmd = ranToCar(stilled(input.sample(++seq)), host.world.state.players.get(host.localEntityId));
         host.tick(cmd);
       }
       stepFreecamView(dt);
@@ -1657,6 +1899,7 @@ function buildGame(
       syncRoadLine(self, state);
       syncDeath(self, state);
       syncOutcome(state);
+      syncEndScene();
       syncTelemetry(host.world, state, self, input.sprinting);
       // True exactly when `sync` took its player-following branch, which is
       // the only case in which `renderer.camera.position` is an eye position
@@ -1788,7 +2031,7 @@ function buildGame(
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
-        cmd = stilled(input.sample(++seq));
+        cmd = ranToCar(stilled(input.sample(++seq)), client.world.state.players.get(client.localEntityId));
         client.tick(cmd);
       }
       stepFreecamView(dt);
@@ -1808,6 +2051,7 @@ function buildGame(
       syncRoadLine(self, state);
       syncDeath(self, state);
       syncOutcome(state);
+      syncEndScene();
       syncTelemetry(client.world, state, self, input.sprinting);
       // See the host loop: a pending freecam waits for this.
       cameraOnPlayer = self !== undefined && freecam === null;
@@ -1947,6 +2191,12 @@ function buildGame(
   const ready = firstBuild.then(() =>
     startReady({ scene: renderer.scene, forestReady: renderer.forestReady, reveal: firstWholeFrame, progress, maxMs: READY_MAX_MS }),
   );
+  // A look named in the URL (`?cmd=seed hollow;time 22;escape`) is called once the world is in,
+  // so a link opens on its scene; on a client it says whose it is to call, as the typed one does.
+  void ready.then(() => {
+    if (disposed || broken) return;
+    for (const entry of view) if (isLook(entry.name)) applyView(entry.name, entry.args);
+  });
 
   const onResize = () => {
     if (broken) return;
@@ -2015,6 +2265,8 @@ function buildGame(
     // One switch at a time: the governor's, or a rebuild after a failure, may
     // be under way.
     if (disposed || broken || !serial.idle) return;
+    // Not under the end: a renderer built anew would have no scene to play.
+    if (ended || endRunDoor !== null) return;
     if (target === tier) {
       options.quality.save(choice);
       return;
@@ -2215,7 +2467,8 @@ function buildGame(
   async function lowerTier(): Promise<void> {
     if (governor === null) return;
     const decision = governorDecision(governor.verdict, tier, tierSource);
-    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null) return;
+    // Nor under the end scene, the console's look at it too: a renderer built anew would have no scene.
+    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null || endRunDoor !== null) return;
     lowering = true;
     let done: () => void = () => undefined;
     void serial.track(new Promise<void>((resolve) => (done = resolve)));
@@ -2304,7 +2557,9 @@ function buildGame(
       connectPanel.dispose();
       posterPanel.dispose();
       if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
+      if (deathSoundTimer !== null) clearTimeout(deathSoundTimer);
       if (endFadeTimer !== null) clearTimeout(endFadeTimer);
+      for (const timer of endBeatTimers) clearTimeout(timer);
       disposeExtras();
       touchLayer.dispose();
       prompt.dispose();

@@ -15,6 +15,11 @@ import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js"
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import { carYaw, createCarShadowPatch, createTrailheadMeshes, type TrailheadSites } from "../../src/game/trailheadMeshes.js";
 import type { BoardDrawing } from "../../src/game/boardPaint.js";
+import { placeStaticModel } from "../../src/game/staticModel.js";
+import { stageCar } from "../../src/game/scene/sceneStage.js";
+import { endCar } from "../../src/game/endScene.js";
+import { WHEEL_RADIUS } from "../../src/game/scene/roadPath.js";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { boardText } from "../../src/game/boardFace.js";
 
 registerBuiltInLoaders();
@@ -67,6 +72,7 @@ const DRAWING: BoardDrawing = {
 function setup(scene: Scene, loader: (output: string) => Promise<AssetContainer>, fails = false) {
   const painted: { name: string; drawing: BoardDrawing; material: Material }[] = [];
   const shadowed = new Set<AbstractMesh>();
+  const covered = new Set<AbstractMesh>();
   const boxMaterials: string[] = [];
   const meshes = createTrailheadMeshes(scene, SITES, groundH, {
     materialFor: (name) => {
@@ -83,9 +89,10 @@ function setup(scene: Scene, loader: (output: string) => Promise<AssetContainer>
       return material;
     },
     shadows: { add: (m) => shadowed.add(m), remove: (m) => shadowed.delete(m) },
+    cover: { add: (m) => covered.add(m), remove: (m) => covered.delete(m) },
     loader,
   });
-  return { meshes, painted, shadowed, boxMaterials };
+  return { meshes, painted, shadowed, covered, boxMaterials };
 }
 
 function descendantNamed(root: Node, name: string): Node {
@@ -395,6 +402,164 @@ describe("createTrailheadMeshes", () => {
     expect(scene.meshes.filter((m) => m.getTotalVertices() > 0)).toHaveLength(0);
     expect(painted).toHaveLength(0);
     expect(shadowed.size).toBe(0);
+  });
+});
+
+describe("the film's car swapped in for the end", () => {
+  it("hides the parked car, stands the film's on its site, ground and yaw with its parts, a patch riding it, and disposes all", async () => {
+    const scene = freshScene();
+    const { meshes, shadowed, covered } = setup(scene, diskLoader(scene));
+    expect(meshes.car()).toBeNull();
+    await meshes.ready;
+    const parked = meshes.car()!;
+    expect(parked.root).toBe(scene.getTransformNodeByName("trailhead_car"));
+    expect(parked.model).toBeNull();
+    expect(meshes.car()).toBe(parked);
+    const fixed = scene.getMeshByName("trailhead_car_shadow")!;
+    const before = shadowed.size;
+
+    const container = await diskLoader(scene)("models/intro.car.glb");
+    const placed = placeStaticModel(container, "intro.car", 0, 0, 0, 0);
+    meshes.swapCar(placed);
+    expect(parked.root.isEnabled()).toBe(false);
+    const film = meshes.car()!;
+    expect(film.root).toBe(placed.node);
+    // On the ground at the site: 3 + 0.01 x 10 - 0.02 x 20; the nose toward the trailhead.
+    expect(placed.node.position.x).toBe(10);
+    expect(placed.node.position.y).toBeCloseTo(2.7, 9);
+    expect(placed.node.position.z).toBe(20);
+    expect(placed.node.rotation.y).toBe(0);
+    expect(film.model!.wheels).toHaveLength(4);
+    expect(film.model!.door).not.toBeNull();
+    expect(shadowed.size).toBe(before + placed.meshes.length);
+    expect(placed.meshes.every((m) => covered.has(m))).toBe(true);
+    // Driving off, it is no longer the rain's cover; the shadows keep it.
+    film.leave();
+    film.leave();
+    expect(placed.meshes.some((m) => covered.has(m))).toBe(false);
+    expect(shadowed.size).toBe(before + placed.meshes.length);
+    expect(fixed.isDisposed()).toBe(true);
+    const riding = scene.getMeshByName("trailhead_film_car_shadow")!;
+    expect(riding.parent).toBe(placed.node);
+    expect(riding.isWorldMatrixFrozen).toBe(false);
+    // The parked patch's own material, so the swap draws it by the shader the hike already has.
+    expect(riding.material).toBeInstanceOf(StandardMaterial);
+    expect(riding.material!.alpha).toBe(1);
+
+    // Drawn wherever it stands, each mesh until it has been ready on two passes, its tail lamps
+    // with it, inside the body; the tail lamps never ready here, so they go at the cap.
+    const tails = scene.meshes.filter((m) => m.name.startsWith("car_tail_lamp_"));
+    expect(tails.map((m) => m.parent)).toEqual([placed.node, placed.node]);
+    expect(tails.every((m) => m.isEnabled())).toBe(true);
+    expect(tails.map((m) => m.position.asArray())).toEqual([[-0.7, 0.75, 0], [0.7, 0.75, 0]]);
+    const lamp = tails[0]!.material as StandardMaterial;
+    lamp.isReadyForSubMesh = () => false;
+    const rest = [...placed.meshes, riding].filter((m) => m.material !== null);
+    for (const m of rest) m.material!.isReadyForSubMesh = () => true;
+    const warm = [...placed.meshes, riding, ...tails];
+    expect(warm.every((m) => m.alwaysSelectAsActiveMesh)).toBe(true);
+    expect(meshes.warm()).toBe(true);
+    scene.onAfterRenderObservable.notifyObservers(scene);
+    expect([...placed.meshes, riding].every((m) => m.alwaysSelectAsActiveMesh)).toBe(true);
+    scene.onAfterRenderObservable.notifyObservers(scene);
+    expect([...placed.meshes, riding].some((m) => m.alwaysSelectAsActiveMesh)).toBe(false);
+    expect(tails.every((m) => m.alwaysSelectAsActiveMesh)).toBe(true);
+    for (let frame = 3; frame < 30; frame++) scene.onAfterRenderObservable.notifyObservers(scene);
+    expect(meshes.warm()).toBe(true);
+    scene.onAfterRenderObservable.notifyObservers(scene);
+    expect(meshes.warm()).toBe(false);
+    expect(warm.some((m) => m.alwaysSelectAsActiveMesh)).toBe(false);
+    // The tail lamps dark and not drawn until lit, unlit, out of the fog, sized to read at 100 m.
+    expect([lamp.disableLighting, lamp.fogEnabled, lamp.emissiveColor.asArray()]).toEqual([true, false, [0, 0, 0]]);
+    expect(tails.some((m) => m.isEnabled())).toBe(false);
+    film.tailLamps(true);
+    expect(lamp.emissiveColor.asArray()).toEqual([1, 0.08, 0.04]);
+    expect(tails.every((m) => m.isEnabled())).toBe(true);
+    // Lit, at the rear corners.
+    expect(tails.map((m) => m.position.asArray())).toEqual([[-0.7, 0.75, -2.2], [0.7, 0.75, -2.2]]);
+    film.tailLamps(false);
+    expect(tails.some((m) => m.isEnabled())).toBe(false);
+    film.tailLamps(true);
+    // The parked car has none: lighting them makes nothing and changes nothing.
+    const drawn = scene.meshes.length;
+    parked.tailLamps(true);
+    expect(scene.meshes.length).toBe(drawn);
+    expect(parked.root.isEnabled()).toBe(false);
+    expect(tails.every((m) => m.isEnabled())).toBe(true);
+
+    // A second car is not taken.
+    const again = placeStaticModel(await diskLoader(scene)("models/intro.car.glb"), "intro.car", 0, 0, 0, 0);
+    meshes.swapCar(again);
+    expect(again.node.isDisposed()).toBe(true);
+    expect(meshes.car()).toBe(film);
+
+    meshes.dispose();
+    expect(placed.node.isDisposed()).toBe(true);
+    expect(riding.isDisposed()).toBe(true);
+    expect(tails.every((m) => m.isDisposed())).toBe(true);
+    expect(scene.materials.includes(lamp)).toBe(false);
+    expect(shadowed.size).toBe(0);
+    expect(scene.meshes.filter((m) => m.getTotalVertices() > 0)).toHaveLength(0);
+  });
+
+  it("lights the tail lamps at a catch that comes in their first frames, and keeps them lit past the cap", async () => {
+    const scene = freshScene();
+    const { meshes } = setup(scene, diskLoader(scene));
+    await meshes.ready;
+    meshes.swapCar(placeStaticModel(await diskLoader(scene)("models/intro.car.glb"), "intro.car", 0, 0, 0, 0));
+    const tails = scene.meshes.filter((m) => m.name.startsWith("car_tail_lamp_"));
+    const lamp = tails[0]!.material as StandardMaterial;
+    lamp.isReadyForSubMesh = () => false;
+    scene.onAfterRenderObservable.notifyObservers(scene);
+    meshes.car()!.tailLamps(true);
+    for (let frame = 1; frame < 30; frame++) scene.onAfterRenderObservable.notifyObservers(scene);
+    expect(meshes.warm()).toBe(false);
+    expect(tails.every((m) => m.isEnabled())).toBe(true);
+    expect(lamp.emissiveColor.asArray()).toEqual([1, 0.08, 0.04]);
+    expect(tails.map((m) => m.position.z)).toEqual([-2.2, -2.2]);
+    meshes.dispose();
+  });
+
+  it("drops the box when the film's car comes before the parked model, and hides that model when it lands", async () => {
+    const scene = freshScene();
+    const held = gatedLoader(scene);
+    const { meshes } = setup(scene, held.loader);
+    const placed = placeStaticModel(await diskLoader(scene)("models/intro.car.glb"), "intro.car", 0, 0, 0, 0);
+    meshes.swapCar(placed);
+    expect(scene.getMeshByName("trailhead_car_box")).toBeNull();
+    held.release();
+    await meshes.ready;
+    expect(scene.getTransformNodeByName("trailhead_car")!.isEnabled()).toBe(false);
+    expect(meshes.car()!.root).toBe(placed.node);
+    meshes.dispose();
+  });
+});
+
+describe("the film's car's wheels, staged at the trailhead", () => {
+  it("stands each wheel a tyre's radius over the ground and inside the body, parked and 7 m on", async () => {
+    const scene = freshScene();
+    const { meshes } = setup(scene, diskLoader(scene));
+    await meshes.ready;
+    meshes.swapCar(placeStaticModel(await diskLoader(scene)("models/intro.car.glb"), "intro.car", 0, 0, 0, 0));
+    const car = meshes.car()!;
+    const road = { centerX: () => 3.1, groundY: (x: number, z: number) => groundH(x, z) };
+    const site = SITES.car!.site;
+    for (const t of [0, 4.6]) {
+      const pose = endCar(t, road, site, 1);
+      stageCar(pose, car.model!);
+      for (const wheel of car.model!.wheels) {
+        (wheel.node as TransformNode).computeWorldMatrix(true);
+        const at = wheel.node.getAbsolutePosition();
+        expect(Math.abs(at.y - groundH(at.x, at.z) - WHEEL_RADIUS)).toBeLessThan(0.05);
+        // In the car's own frame: within its half-width and half-length.
+        const dx = at.x - pose.x, dz = at.z - pose.z;
+        const across = dx * Math.cos(pose.yaw) - dz * Math.sin(pose.yaw);
+        const along = dx * Math.sin(pose.yaw) + dz * Math.cos(pose.yaw);
+        expect(Math.abs(across)).toBeLessThan(0.9);
+        expect(Math.abs(along)).toBeLessThan(2.3);
+      }
+    }
+    meshes.dispose();
   });
 });
 

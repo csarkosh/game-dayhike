@@ -4,6 +4,7 @@ import { createStareAudio, MUFFLE_OPEN_HZ, muffleGain, muffleHz, type StareAudio
 import type { StareLens } from "./stareLens.js";
 import { makeOddSound, ODD_LEVEL } from "./oddSounds.js";
 import { createChaseAudio, type ChaseAudio } from "./chaseAudio.js";
+import { createCarAudio, type CarAudio, type CarPlace, type EarFrame } from "./carAudio.js";
 import type { OddCue } from "./woodsSounds.js";
 import {
   DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut, type WeatherParams,
@@ -259,6 +260,35 @@ export type AmbientAudio = {
   setStare(lens: StareLens, haunt?: number): void;
   setVolume(v: number): void;
   /**
+   * The game's sound going (the end scene): the `scene` gain, which the
+   * world's beds and calls, the stare's sounds and the chase's pulse reach
+   * the master through, ramped on the context's clock from where it is to
+   * silence over `seconds`. The inner voice's bus and the car's are not in
+   * it. Nothing brings it back. Inert before `unlock()`.
+   */
+  fadeWorld(seconds: number): void;
+  /**
+   * Everything going: the master ramped on the context's clock from where
+   * it is to silence over `seconds`. A `setVolume` after it sets the master
+   * as it always does; nothing else restores it. Inert before `unlock()`.
+   */
+  fadeMaster(seconds: number): void;
+  /**
+   * The car at the end (carAudio.ts) on the `car` bus: its schedule starts
+   * now (the door, the crank, the catch, the revs), placed at `at`, relative
+   * to the listener as `setCar`'s place is. A car already playing is
+   * stopped first. Inert before `unlock()`.
+   */
+  startCar(at: CarPlace): void;
+  /**
+   * The car, every frame: its speed (m/s) and its place relative to the
+   * listener in Web Audio's frame, as `playOdd`'s cues are (x right, y up,
+   * z ahead, metres). Inert before `unlock()` and with no car started.
+   */
+  setCar(speed: number, listenerRelative: CarPlace): void;
+  /** The car's sources stopped and its nodes disconnected. */
+  stopCar(): void;
+  /**
    * The inner voice's clip (voiceClips.ts): one unpositioned one-shot on the
    * voice bus, which hangs off the master, not the world, so the stare's
    * muffle and the world's level never touch it. Inert before `unlock()`.
@@ -340,6 +370,11 @@ export function createAmbientAudio(
   let hush = 0;
   let stareLevel = 0;
   let chase: ChaseAudio | null = null;
+  /** What the world's limiter, the stare and the chase reach the master through: `fadeWorld` takes it to silence. */
+  let scene: GainNode | null = null;
+  /** The car's bus (carAudio.ts), off the master beside the voice's, so the world's fade leaves it. */
+  let carBus: GainNode | null = null;
+  let car: CarAudio | null = null;
   /** Each call recording's reverse, made once. */
   const reversed = new Map<AudioBuffer, AudioBuffer>();
   function reversedOf(buffer: AudioBuffer): AudioBuffer {
@@ -358,9 +393,8 @@ export function createAmbientAudio(
   let birdBed: AudioBuffer | null = null;
   /** Each ear's pan node, and when its next pass of the bed starts on the context's clock. */
   let birdSides: { pan: StereoPannerNode; next: number }[] = [];
-  /** The listener, in Web Audio's frame, for the whispers' circles, and its forward and up for the odd sounds' places. */
-  let earX = 0, earY = 0, earZ = 0;
-  let earFx = 0, earFy = 0, earFz = -1, earUx = 0, earUy = 1, earUz = 0;
+  /** The listener, in Web Audio's frame, for the whispers' circles, and its forward and up for the odd sounds' places and the car's. */
+  const ear: EarFrame = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: -1, ux: 0, uy: 1, uz: 0 };
   let rainGain: GainNode | null = null;
   let rainFilter: BiquadFilterNode | null = null;
   let windGain: GainNode | null = null;
@@ -421,6 +455,14 @@ export function createAmbientAudio(
     src.stop(t + DRIP_STOP_S);
   }
 
+  /** A param from wherever it is now to silence, linearly, over `seconds` from `now`. */
+  function fadeOut(p: AudioParam, now: number, seconds: number): void {
+    const from = p.value;
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(from, now);
+    p.linearRampToValueAtTime(0, now + Math.max(0, seconds));
+  }
+
   /**
    * The panner every positioned voice goes through. equalpower, not HRTF:
    * HRTF convolves per source and this can have a dozen calls alive at once.
@@ -450,8 +492,8 @@ export function createAmbientAudio(
       master.gain.value = volume;
       master.connect(ctx.destination);
       // The world's bus: every bed and call below is mixed into it, and it
-      // reaches the master through a low-pass the stare shuts and a limiter
-      // (wired last).
+      // reaches the master through a low-pass the stare shuts, a limiter and
+      // the scene's gain (wired last).
       world = ctx.createGain();
       world.gain.value = 1;
 
@@ -529,10 +571,18 @@ export function createAmbientAudio(
       limiter.attack.value = WORLD_LIMIT.attackS;
       limiter.release.value = WORLD_LIMIT.releaseS;
       worldFilter.connect(limiter);
-      limiter.connect(master);
+      // The world, the stare and the chase reach the master through one gain
+      // the end fades; the voice's bus and the car's do not.
+      scene = ctx.createGain();
+      scene.gain.value = 1;
+      scene.connect(master);
+      limiter.connect(scene);
       // The stare's own sounds sit beside the world, not in it: they are not muffled.
-      stare = createStareAudio(ctx, master, noise, random);
-      chase = createChaseAudio(ctx, master, noise);
+      stare = createStareAudio(ctx, scene, noise, random);
+      chase = createChaseAudio(ctx, scene, noise);
+      carBus = ctx.createGain();
+      carBus.gain.value = 1;
+      carBus.connect(master);
 
       applyGains(pending);
 
@@ -631,9 +681,9 @@ export function createAmbientAudio(
       panner.panningModel = "HRTF";
       panner.distanceModel = "inverse";
       panner.rolloffFactor = 0;
-      panner.positionX.value = earX + (dx / length) * HOLLOW_CALL_STANDOFF_M;
-      panner.positionY.value = earY + (dy / length) * HOLLOW_CALL_STANDOFF_M;
-      panner.positionZ.value = earZ + (dz / length) * HOLLOW_CALL_STANDOFF_M;
+      panner.positionX.value = ear.x + (dx / length) * HOLLOW_CALL_STANDOFF_M;
+      panner.positionY.value = ear.y + (dy / length) * HOLLOW_CALL_STANDOFF_M;
+      panner.positionZ.value = ear.z + (dz / length) * HOLLOW_CALL_STANDOFF_M;
       filter.connect(panner);
       panner.connect(world);
       // No two cries alike: the variant picks the first voice's pitch, the
@@ -660,12 +710,12 @@ export function createAmbientAudio(
         return;
       }
       // The cue's frame to the world's: right is forward across up.
-      const rx = earFy * earUz - earFz * earUy;
-      const ry = earFz * earUx - earFx * earUz;
-      const rz = earFx * earUy - earFy * earUx;
-      const px = earX + rx * cue.x + earUx * cue.y + earFx * cue.z;
-      const py = earY + ry * cue.x + earUy * cue.y + earFy * cue.z;
-      const pz = earZ + rz * cue.x + earUz * cue.y + earFz * cue.z;
+      const rx = ear.fy * ear.uz - ear.fz * ear.uy;
+      const ry = ear.fz * ear.ux - ear.fx * ear.uz;
+      const rz = ear.fx * ear.uy - ear.fy * ear.ux;
+      const px = ear.x + rx * cue.x + ear.ux * cue.y + ear.fx * cue.z;
+      const py = ear.y + ry * cue.x + ear.uy * cue.y + ear.fy * cue.z;
+      const pz = ear.z + rz * cue.x + ear.uz * cue.y + ear.fz * cue.z;
       const panner = ctx.createPanner();
       panner.panningModel = "HRTF";
       panner.distanceModel = "inverse";
@@ -676,9 +726,9 @@ export function createAmbientAudio(
       if (cue.kind === "fly") {
         // Across the head and out the other side.
         panner.positionX.setValueAtTime(px, at);
-        panner.positionX.linearRampToValueAtTime(earX - rx * cue.x - earFx * cue.z, at + FLY_PASS_S);
+        panner.positionX.linearRampToValueAtTime(ear.x - rx * cue.x - ear.fx * cue.z, at + FLY_PASS_S);
         panner.positionZ.setValueAtTime(pz, at);
-        panner.positionZ.linearRampToValueAtTime(earZ - rz * cue.x - earFz * cue.z, at + FLY_PASS_S);
+        panner.positionZ.linearRampToValueAtTime(ear.z - rz * cue.x - ear.fz * cue.z, at + FLY_PASS_S);
       }
       panner.connect(world);
       makeOddSound({ ctx, noise, into: panner }, cue.kind, at, level);
@@ -696,11 +746,33 @@ export function createAmbientAudio(
       worldFilter.frequency.setTargetAtTime(muffleHz(lens.level), ctx.currentTime, 0.15);
       stareLevel = lens.level;
       world.gain.setTargetAtTime(muffleGain(stareLevel) * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
-      stare.set(lens, earX, earY, earZ, haunt);
+      stare.set(lens, ear.x, ear.y, ear.z, haunt);
     },
     setVolume(v) {
       volume = clamp01(v);
       if (ctx && master) master.gain.setTargetAtTime(volume, ctx.currentTime, 0.1);
+    },
+    fadeWorld(seconds) {
+      if (!ctx || !scene) return;
+      fadeOut(scene.gain, ctx.currentTime, seconds);
+    },
+    fadeMaster(seconds) {
+      if (!ctx || !master) return;
+      fadeOut(master.gain, ctx.currentTime, seconds);
+    },
+    startCar(at) {
+      if (!ctx || !carBus || !noise) return;
+      car?.stop();
+      car = createCarAudio(ctx, carBus, noise, ear);
+      car.start();
+      car.set(0, at);
+    },
+    setCar(speed, listenerRelative) {
+      car?.set(speed, listenerRelative);
+    },
+    stopCar() {
+      car?.stop();
+      car = null;
     },
     speak(buffer, level) {
       if (!ctx || !master) return;
@@ -816,11 +888,11 @@ export function createAmbientAudio(
       // that mirror so `gustAt` samples the gust in the world it was built for.
       listenerX = x;
       listenerZ = -z;
-      earX = x;
-      earY = y;
-      earZ = z;
-      earFx = fx; earFy = fy; earFz = fz;
-      earUx = ux; earUy = uy; earUz = uz;
+      ear.x = x;
+      ear.y = y;
+      ear.z = z;
+      ear.fx = fx; ear.fy = fy; ear.fz = fz;
+      ear.ux = ux; ear.uy = uy; ear.uz = uz;
       const l = ctx.listener;
       l.positionX.value = x;
       l.positionY.value = y;
@@ -836,9 +908,11 @@ export function createAmbientAudio(
       // Before the context goes: a loop's sources would otherwise play on
       // until the close lands. `stop` takes each out of the set as it goes.
       for (const loop of loops) loop.stop();
+      car?.stop();
+      car = null;
       void ctx?.close();
       ctx = null;
-      master = world = rainGain = windGain = wildlifeGain = dripGain = birdGain = null;
+      master = world = rainGain = windGain = wildlifeGain = dripGain = birdGain = scene = carBus = null;
       birdBed = null;
       birdSides = [];
       rainFilter = windFilter = worldFilter = null;

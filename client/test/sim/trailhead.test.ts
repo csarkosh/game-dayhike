@@ -8,7 +8,7 @@ import {
 } from "../../src/sim/terrain.js";
 import type { Brush } from "../../src/sim/level.js";
 import {
-  BOARD_BOX_HALF, CAR_HALF, bedGap, boardBoxes, boardSite, carSite, trailEntrance, trailheadPlaces,
+  BOARD_BOX_HALF, CAR_HALF, bedGap, boardBoxes, boardSite, carDirection, carSite, doorSpot, trailEntrance, trailheadPlaces,
 } from "../../src/sim/trailhead.js";
 import { trailheadSpawn, type Start } from "../../src/sim/spawn.js";
 import { facingYaw } from "../../src/sim/facing.js";
@@ -189,6 +189,22 @@ describe("the car's place", () => {
     expect(car.z).toBe(8);
   });
 
+  it("faces +z at the pad and back toward the pad where it slid past it, with its door on the inland side, half a metre ahead", () => {
+    // At the pad, level with the trailhead: nose to +z.
+    const g = padGraph([[0, 0], [100, 0]], [[0, 1, "stem"]]);
+    const car = carSite(g, straightRoad, 1);
+    expect(carDirection(car, g.trailhead)).toBe(1);
+    const door = doorSpot(car, 1);
+    expect(door.x).toBeCloseTo(-0.6, 9);
+    expect(door.z).toBeCloseTo(0.5, 9);
+    // Slid to 2 m toward -z: the trailhead is ahead, still +z.
+    expect(carDirection({ x: -2.1, z: -2 }, g.trailhead)).toBe(1);
+    // Slid to 8 m toward +z: nose back toward the pad, the door half a metre toward it.
+    expect(carDirection({ x: -2.1, z: 8 }, g.trailhead)).toBe(-1);
+    const back = doorSpot({ x: -2.1, z: 8 }, -1);
+    expect(back.x).toBeCloseTo(-0.6, 9);
+    expect(back.z).toBeCloseTo(7.5, 9);
+  });
 });
 
 describe("the player's place", () => {
