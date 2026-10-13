@@ -34,64 +34,57 @@ describe("the title scene", () => {
     expect(Math.sin(c.yaw)).toBeGreaterThan(0);
   });
 
-  it("drifts over the meadow from 20 m above its rim, toward the peak", () => {
+  it("drifts along the forest floor beside the trail, off its bed, looking ahead", () => {
+    // 52 m along the start's heading (yaw 1.4) and 10 m to its right, 1.4 m over the higher end of
+    // the drift (the test world's ground rises with x).
     const from = camAt(world, 7);
+    expect(from.x).toBeCloseTo(-177.057, 3);
+    expect(from.z).toBeCloseTo(8.984, 3);
+    expect(from.y).toBeCloseTo(14.877, 3);
     const to = camAt(world, 13.999);
-    // The rim on the side away from the peak: 40 m from the centre, back along the start-to-peak line.
-    expect(Math.hypot(from.x - 400, from.z - 200)).toBeCloseTo(40, 6);
-    expect(from.x).toBeCloseTo(364.54, 2);
-    expect(from.z).toBeCloseTo(181.49, 2);
-    // Looking along that line, at the far rim.
-    expect(from.yaw).toBeCloseTo(1.0896, 4);
-    expect(to.yaw).toBeCloseTo(1.0896, 4);
-    expect(from.y - world.ground(from.x, from.z)).toBeCloseTo(20, 6);
-    // The drift holds its height while the test world's ground rises 0.1 m a metre under it.
-    for (let t = 7; t < 14; t += 0.5) {
-      const c = camAt(world, t);
-      expect(c.y - world.ground(c.x, c.z)).toBeGreaterThan(18.5);
-      expect(c.y - world.ground(c.x, c.z)).toBeLessThanOrEqual(20);
-    }
-    expect(Math.hypot(to.x - from.x, to.z - from.z)).toBeCloseTo(11.998, 3);
-    expect(Math.hypot(to.x - 400, to.z - 200)).toBeLessThan(Math.hypot(from.x - 400, from.z - 200));
-  });
-
-  it("glides over the forest, well above the ground, where the world has no meadow", () => {
-    for (let t = 7; t < 14; t += 0.5) {
-      const c = camAt({ ...world, meadow: null }, t);
-      expect(c.y - world.ground(c.x, c.z)).toBeGreaterThan(30);
-    }
-  });
-
-  it("looks across the lake's narrow axis from its lower shore, 5 m up, drifting along the shore", () => {
-    // A round lake's long axis is the start-to-peak line, so its narrow axis lies across it; the test
-    // world's ground rises with x, so the lower shore is the one at the smaller x.
-    const mid = camAt(world, 17.5);
-    expect(Math.hypot(mid.x - 200, mid.z - 400)).toBeCloseTo(55, 6);
-    expect(mid.x).toBeLessThan(200);
-    expect(mid.y - Math.max(50, world.ground(mid.x, mid.z))).toBeCloseTo(5, 6);
-    // Looking at the higher shore, across the start-to-peak line: along (0.4628, -0.8864).
-    expect(Math.sin(mid.yaw)).toBeCloseTo(0.4628, 3);
-    expect(Math.cos(mid.yaw)).toBeCloseTo(-0.8864, 3);
-    const [from, to] = [camAt(world, 14), camAt(world, 20.999)];
-    expect(Math.hypot(to.x - from.x, to.z - from.z)).toBeCloseTo(11.998, 3);
+    expect(to.x).toBeCloseTo(-165.232, 2);
+    expect(to.z).toBeCloseTo(11.023, 2);
     expect(to.y).toBe(from.y);
+    // Looking along the trail's line: yaw 1.4, at a point 20 m ahead 1.2 m over the ground.
+    expect(from.yaw).toBeCloseTo(1.4, 4);
+    expect(to.yaw).toBeCloseTo(1.4, 4);
+    expect(from.pitch).toBeCloseTo(-0.0294, 4);
   });
 
-  it("finds a long lake's long axis and stands on its lower narrow side", () => {
-    // 50 m from the centre along z, 10 m across in x; the ground rises with x, so the lower side is -x.
-    const c = camAt({ ...world, water: { ...world.water!, rim: (a) => 30 + 20 * Math.cos(2 * a) } }, 17.5);
-    expect(c.x).toBeCloseTo(165, 6);
+  it("looks across the lake's narrow axis from its higher shore, 6 m up, drifting along the shore", () => {
+    // A round lake's long axis is the start-to-peak line, so its narrow axis lies across it; the test
+    // world's ground rises with x, so the higher shore is the one at the larger x. The drift starts at
+    // the stand, 18 m beyond the rim, and runs 12 m along the long axis; 6 m over the higher end.
+    const from = camAt(world, 14);
+    expect(from.x).toBeCloseTo(222.216, 3);
+    expect(from.z).toBeCloseTo(357.451, 3);
+    expect(from.y).toBeCloseTo(59.285, 3);
+    const to = camAt(world, 20.999);
+    expect(to.x).toBeCloseTo(232.853, 2);
+    expect(to.z).toBeCloseTo(363.005, 2);
+    expect(to.y).toBe(from.y);
+    // Looking at the lower shore's water's edge 5 m past its rim, across the start-to-peak line:
+    // along (-0.4628, 0.8864), and down to the level.
+    expect(Math.sin(from.yaw)).toBeCloseTo(-0.4628, 3);
+    expect(Math.cos(from.yaw)).toBeCloseTo(0.8864, 3);
+    expect(from.pitch).toBeCloseTo(0.0995, 4);
+  });
+
+  it("finds a long lake's long axis and stands on its higher narrow side", () => {
+    // 50 m from the centre along z, 10 m across in x; the ground rises with x, so the higher side is +x.
+    const c = camAt({ ...world, water: { ...world.water!, rim: (a) => 30 + 20 * Math.cos(2 * a) } }, 14);
+    expect(c.x).toBeCloseTo(228, 6);
     expect(c.z).toBeCloseTo(400, 6);
-    expect(c.y).toBeCloseTo(55, 6);
-    expect(Math.sin(c.yaw)).toBeCloseTo(1, 6);
+    expect(c.y).toBeCloseTo(58.8, 6);
+    expect(Math.sin(c.yaw)).toBeCloseTo(-1, 6);
   });
 
   it("frames a meadow where the world has no lake, and the hills where it has neither", () => {
     const meadow = camAt({ ...world, water: null }, 17);
     expect(Math.hypot(meadow.x - 400, meadow.z - 200)).toBeLessThan(100);
     const m0 = camAt({ ...world, water: null }, 14);
-    expect(Math.hypot(m0.x - 400, m0.z - 200)).toBeCloseTo(65, 6);
-    expect(m0.y - world.ground(m0.x, m0.z)).toBeCloseTo(5, 6);
+    expect(Math.hypot(m0.x - 400, m0.z - 200)).toBeCloseTo(58, 6);
+    expect(m0.y - world.ground(m0.x, m0.z)).toBeCloseTo(6, 6);
     const hills = camAt({ ...world, water: null, meadow: null }, 17);
     expect(Math.hypot(hills.x + 230, hills.z - 10)).toBeLessThan(15);
   });

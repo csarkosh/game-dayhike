@@ -40,8 +40,8 @@ A second scene beside the intro on the scene route: `/dayhike/scene/title`, with
 
 **Setting.** The world `ash` (amended 2026-10-13: the intro's world `hollow`, the first title's,
 has had no lake and no meadow since the valley lakes took their true outlines, so the tour moved to
-a world with every feature it shows, a cove between its headlands, a meadow and a lake with its
-marsh on the trail's way up, and a bare rock summit); the `overcast` weather (cloud 0.8, mist
+a world with every feature it shows, a cove between its headlands, a lake with its marsh on the
+trail's way up, and a bare rock summit); the `overcast` weather (cloud 0.8, mist
 0.25), so the coast, the hills and the summit stand in a soft grey light with distant haze; one afternoon hour, held, so the light never changes across
 the loop (the hour is set at the look). No people, no moving car, no captions, no wildlife: the
 trailhead is drawn as a hike finds it, its car parked out of every shot.
@@ -53,8 +53,8 @@ intro finds the trailhead, so it lands on every world the scene is built from:
 | # | What | The camera |
 | --- | --- | --- |
 | 1 | The coast | Low over the sea, drifting toward the pebble cove between its headlands, the road and the forest's edge above it. The loop's first frame and the title still: open sea and sky where the page sets its title and buttons. |
-| 2 | The meadow | A slow drift over the meadow from 20 m above its rim, the clearing and the forest's edge beyond it, toward the peak (amended 2026-10-13; a world with no meadow keeps the glide just above the canopy toward the hills). |
-| 3 | The lake | A slow drift along the lake's lower shore, looking across its narrow axis at the water, its marsh and the forest standing on the higher shore behind it (amended 2026-10-13: the first staging looked along the lake's length from above, where the valley lake's bare apron filled the frame). |
+| 2 | The forest floor | A slow drift at a walker's height through the old growth beside the trail a little way in, off its bed: the ferns, the logs and the trunks, the giants above (amended 2026-10-13: the glide over the canopy, then a drift over the meadow, both read as bare ground). |
+| 3 | The lake | A slow drift along the lake's higher shore among its first trees, looking across its narrow axis at the water and its marsh, the trunks framing them and the forest beyond (amended 2026-10-13: the first staging looked along the lake's length from above, where the valley lake's bare apron filled the frame, and a second from the bare lower shore). |
 | 4 | The trailhead | A slow rise from the trail's mouth and the board up to the forest it leads into. |
 | 5 | The summit | A slow push toward the peak's crest against the sky, from 100 m short of it (amended 2026-10-13: from 300 m the rock's distance bands met in frame). |
 

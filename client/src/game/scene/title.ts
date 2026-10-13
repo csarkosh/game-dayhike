@@ -14,9 +14,8 @@ export const TITLE_SHOTS: readonly { from: number; to: number }[] = [
 /** One afternoon hour, held: the light never changes across the loop. */
 export const TITLE_HOUR = 15;
 export const TITLE_WEATHER = WEATHER_PRESETS.overcast;
-/** The title's world: one with every feature the tour shows, a cove between its headlands, a
- * meadow and a lake with its marsh on the trail's way up, and a bare rock summit. The intro's own
- * world has no lake and no meadow. */
+/** The title's world: one with every feature the tour shows, a cove between its headlands, a lake
+ * with its marsh on the trail's way up, and a bare rock summit. The intro's own world has no lake. */
 export const TITLE_SEED_TOKEN = "ash";
 
 export type TitleWorld = {
@@ -45,21 +44,21 @@ const COAST_UP_M = 6;
 const COAST_FROM = -0.6;
 const COVE_LOOK = 0.7;
 const COVE_IN_M = 10;
-/** The forest: from this share of the way from the trail's start to the peak, this high over the ground. */
-const CANOPY_ALONG = 0.25;
-const CANOPY_UP_M = 90;
-/** The meadow: the camera over its rim on the side away from the peak, this high, so the meadow
- * reads as a clearing in the forest, looking at a point this high over the ground, this share of
- * the radius out on the far side. */
-const MEADOW_UP_M = 20;
-const MEADOW_LOOK = 0.9;
-const MEADOW_LOOK_UP_M = 2;
-/** The lake: seen across its narrow axis from the lower shore, so the forest on the higher shore
- * stands behind the water: the camera this far beyond the rim, this high over the water or the
- * bank, drifting along the shore and looking at the far shore this far past the water's edge. */
-const SHORE_OUT_M = 25;
-const SHORE_UP_M = 5;
-const SHORE_LOOK_IN_M = 15;
+/** The forest floor: this far along the trail's first heading from its start and this far to its
+ * right, off the trail's bed and among the trees, at this height, drifting along that heading and
+ * looking this far ahead at this height: the ferns, the logs and the trunks, the giants above. */
+const FLOOR_ALONG_M = 52;
+const FLOOR_ASIDE_M = 10;
+const FLOOR_UP_M = 1.4;
+const FLOOR_LOOK_M = 20;
+const FLOOR_LOOK_UP_M = 1.2;
+/** The lake: seen across its narrow axis from the higher shore, among the first trees, so the
+ * trunks and the floor frame the water and the forest beyond it: the camera this far beyond the
+ * rim, this high over the ground, drifting along the shore and looking at the lower shore's water's
+ * edge, this far past its rim. */
+const SHORE_OUT_M = 18;
+const SHORE_UP_M = 6;
+const SHORE_LOOK_IN_M = 5;
 /** The lake and meadow shots look at a point this high over the water's level or the ground. */
 const SHORE_LOOK_UP_M = 1;
 /** Directions the rim is read in to find the lake's long axis. */
@@ -98,17 +97,18 @@ export function titleScene(w: TitleWorld): Scene {
   const lookZ = w.cove.z0 + COVE_LOOK * w.cove.halfWidth;
   const coveLook: Look = { x: w.coastlineX(lookZ) + COVE_IN_M, y: w.seaLevel + 3, z: lookZ };
 
-  // 2. The meadow where there is one: from its rim on the side away from the peak, drifting across it;
-  //    over the forest where there is none: from a quarter of the way to the peak, gliding toward it.
-  const glideFrom = w.meadow === null
-    ? onGround(w.start.x + toPeak.x * CANOPY_ALONG, w.start.z + toPeak.z * CANOPY_ALONG, CANOPY_UP_M)
-    : onGround(w.meadow.x - dir.x * w.meadow.radius, w.meadow.z - dir.z * w.meadow.radius, MEADOW_UP_M);
-  const glideLook = w.meadow === null
-    ? peakLook
-    : onGround(w.meadow.x + dir.x * w.meadow.radius * MEADOW_LOOK, w.meadow.z + dir.z * w.meadow.radius * MEADOW_LOOK, MEADOW_LOOK_UP_M);
+  // 2. The forest floor: beside the trail a little way in, off its bed and among the trees, drifting
+  //    along the trail's first heading and looking ahead through the understory.
+  const sy = Math.sin(w.start.yaw), cy = Math.cos(w.start.yaw);
+  const floorX = w.start.x + sy * FLOOR_ALONG_M + cy * FLOOR_ASIDE_M, floorZ = w.start.z + cy * FLOOR_ALONG_M - sy * FLOOR_ASIDE_M;
+  // One height for the drift, over the higher of its two ends.
+  const floorY = Math.max(w.ground(floorX, floorZ), w.ground(floorX + sy * DRIFT_M, floorZ + cy * DRIFT_M)) + FLOOR_UP_M;
+  const floorFrom: Look = { x: floorX, y: floorY, z: floorZ };
+  const floorTo: Look = { x: floorX + sy * DRIFT_M, y: floorY, z: floorZ + cy * DRIFT_M };
+  const floorLook = (t: number): Look => onGround(floorX + sy * (DRIFT_M * Math.min(1, t / SHOT_S) + FLOOR_LOOK_M), floorZ + cy * (DRIFT_M * Math.min(1, t / SHOT_S) + FLOOR_LOOK_M), FLOOR_LOOK_UP_M);
 
   // 3. The lake (a meadow where there is none, the hills where neither): across its narrow axis
-  // from the lower shore, drifting along it, the forest of the higher shore behind the water.
+  // from the higher shore among its first trees, drifting along it, looking at the lower shore's water.
   const third = (): Cut["shot"] => {
     const lake = w.water;
     if (lake === null) {
@@ -127,7 +127,7 @@ export function titleScene(w: TitleWorld): Scene {
       const r = lake.rim(a) + lake.rim(a + Math.PI);
       if (r > far + 1e-9) { far = r; axis = a; }
     }
-    // The narrow axis's two shores; the camera on the lower, looking at the higher.
+    // The narrow axis's two shores; the camera on the higher, among its trees, looking at the lower.
     const sideAt = (a: number): Look => {
       const out = lake.rim(a) + SHORE_OUT_M;
       const x = lake.x + Math.sin(a) * out, z = lake.z + Math.cos(a) * out;
@@ -135,19 +135,18 @@ export function titleScene(w: TitleWorld): Scene {
     };
     const s0 = axis + Math.PI / 2, s1 = axis - Math.PI / 2;
     const low = sideAt(s0).y <= sideAt(s1).y ? s0 : s1, high = low === s0 ? s1 : s0;
-    const stand = sideAt(low);
+    const stand = sideAt(high);
     const alongX = Math.sin(axis), alongZ = Math.cos(axis);
-    const fromX = stand.x - alongX * (DRIFT_M / 2), fromZ = stand.z - alongZ * (DRIFT_M / 2);
-    const toX = stand.x + alongX * (DRIFT_M / 2), toZ = stand.z + alongZ * (DRIFT_M / 2);
+    const fromX = stand.x, fromZ = stand.z;
+    const toX = stand.x + alongX * DRIFT_M, toZ = stand.z + alongZ * DRIFT_M;
     // One height for the whole drift, clear of the water and of the bank at either end.
-    const y = Math.max(lake.level, stand.y, w.ground(fromX, fromZ), w.ground(toX, toZ)) + SHORE_UP_M;
-    const lookOut = lake.rim(high) + SHORE_LOOK_IN_M;
-    const lx = lake.x + Math.sin(high) * lookOut, lz = lake.z + Math.cos(high) * lookOut;
+    const y = Math.max(lake.level, stand.y, w.ground(toX, toZ)) + SHORE_UP_M;
+    const lookOut = lake.rim(low) + SHORE_LOOK_IN_M;
+    const lx = lake.x + Math.sin(low) * lookOut, lz = lake.z + Math.cos(low) * lookOut;
     return drift({ x: fromX, y, z: fromZ }, { x: toX, y, z: toZ }, SHOT_S, { x: lx, y: Math.max(lake.level, w.ground(lx, lz)) + SHORE_LOOK_UP_M, z: lz });
   };
 
   // 4. The trailhead: behind the start, rising, looking up the trail.
-  const sy = Math.sin(w.start.yaw), cy = Math.cos(w.start.yaw);
   const riseX = w.start.x - sy * START_BACK_M, riseZ = w.start.z - cy * START_BACK_M;
   const trailLook = onGround(w.start.x + sy * TRAIL_LOOK_M, w.start.z + cy * TRAIL_LOOK_M, 3);
 
@@ -157,7 +156,7 @@ export function titleScene(w: TitleWorld): Scene {
   const s = TITLE_SHOTS;
   const cuts: Cut[] = [
     { ...s[0]!, shot: drift(coastFrom, coastTo, SHOT_S, coveLook) },
-    { ...s[1]!, shot: drift(glideFrom, ahead(glideFrom), SHOT_S, glideLook) },
+    { ...s[1]!, shot: drift(floorFrom, floorTo, SHOT_S, floorLook) },
     { ...s[2]!, shot: third() },
     { ...s[3]!, shot: drift(onGround(riseX, riseZ, RISE_FROM_M), onGround(riseX, riseZ, RISE_TO_M), SHOT_S, trailLook) },
     { ...s[4]!, shot: drift(summitFrom, ahead(summitFrom), SHOT_S, peakLook) },
