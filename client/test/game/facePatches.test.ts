@@ -590,10 +590,10 @@ describe("facePatchCells and facePatchStitch", () => {
     const f = foldsOf(42, cell, p);
     expect(f.folds).toBe(0);
     // 2026-10-13: 0.2634 before the walkable rock's push on the ridge's
-    // flanks, 0.2641 to 0.2649 with its domes, and 0.2634 again with its
-    // cones, whose floor leaves the flanks' worst triangle alone.
-    // 2026-10-12: 0.3487 before the relief's gain; 0.2664 before the
-    // relief's cells grew.
-    expect(f.least).toBeCloseTo(0.2634, 4);
+    // flanks, 0.2641 to 0.2649 with its domes, 0.2634 again with its cones,
+    // and 0.2697 with its plates at a metre, which lift the flanks' worst
+    // triangle. 2026-10-12: 0.3487 before the relief's gain; 0.2664 before
+    // the relief's cells grew.
+    expect(f.least).toBeCloseTo(0.2697, 4);
   }, timeLimit(20_000));
 });

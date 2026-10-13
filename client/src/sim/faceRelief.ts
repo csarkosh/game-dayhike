@@ -75,30 +75,33 @@ export const FACE_FORM_SALT = 0xf0a3;
 
 // ---- The walkable rock (amended 2026-10-13) ---------------------------------
 // The ground's rock between the forest's slope gate and the steep faces is
-// walked on, so its relief is shallow; and it is meant to read as jagged
-// rock pointing out of a broken, uneven ground, so its forms are not a
-// face's planes but cones: each site a point, the field falling straight
-// from it to a V where two cones meet, in two sizes, spires and shards,
-// over the outcrops, broad bedding planes tilted against each other; and
-// the whole gathered into patches by a slow noise, so one stretch is a
-// jumble of points and the next lies calm. Nothing here touches the faces'
-// columns and blocks or their tunables; the field is read by the same
-// patches (`game/facePatches.ts`), masked by the ground's rock paint.
+// meant to read as fractured bedrock: flat plates leaning every way, each
+// stepping up or down to the next at a sharp joint, a few shards standing
+// up out of them, the whole a broken, uneven mass. So its fine forms are
+// plates, a cellular field of tilted planes with joints too narrow to
+// round them (the faces' blocks, leaning harder and broken sharper), and
+// shards, cones, each site a point with straight sides, over the outcrops,
+// broad bedding planes tilted against each other; and the whole gathered
+// into patches by a slow noise, so one stretch is a jumble of plates and
+// the next lies calm. Nothing here touches the faces' columns and blocks or
+// their tunables; the field is read by the same patches
+// (`game/facePatches.ts`), masked by the ground's rock paint.
 
-/** Spires: lattice spacing (m), jitter (share of the cell), joint width
- * (m), the plane's tilt a cell and the cone's fall a cell out. */
-export const GROUND_SPIRE_CELL = 2.4;
-export const GROUND_SPIRE_JITTER = 0.9;
-export const GROUND_SPIRE_BORDER = 0.5;
-export const GROUND_SPIRE_TILT = 0.8;
-export const GROUND_SPIRE_CONE = 3.0;
-/** Shards, the fine octave, added at GROUND_SHARD_WEIGHT. */
+/** Plates: lattice spacing (m), jitter (share of the cell), joint width (m)
+ * and the plane's tilt a cell: a joint of 0.15 m is a step, not a slope,
+ * at every spacing the patches draw. */
+export const GROUND_PLATE_CELL = 2.0;
+export const GROUND_PLATE_JITTER = 0.8;
+export const GROUND_PLATE_BORDER = 0.15;
+export const GROUND_PLATE_TILT = 1.5;
+/** Shards, the fine octave, cones added at GROUND_SHARD_WEIGHT: the points
+ * standing up out of the plates. */
 export const GROUND_SHARD_CELL = 0.9;
 export const GROUND_SHARD_JITTER = 0.9;
 export const GROUND_SHARD_BORDER = 0.25;
 export const GROUND_SHARD_TILT = 0.5;
 export const GROUND_SHARD_CONE = 3.0;
-export const GROUND_SHARD_WEIGHT = 0.6;
+export const GROUND_SHARD_WEIGHT = 0.5;
 /** Outcrops, the coarse octave, added at GROUND_MASS_WEIGHT: bedding, broad
  * planes tilted against each other, barely domed. */
 export const GROUND_MASS_CELL = 9.0;
@@ -109,13 +112,13 @@ export const GROUND_MASS_DOME = 0.5;
 export const GROUND_MASS_WEIGHT = 0.8;
 /** The gain on the three octaves' weighted mean, before the patches' share
  * and the clamp to [−1, 1]. */
-export const GROUND_GAIN = 2.5;
+export const GROUND_GAIN = 2.0;
 /** The patches: the wavelength (m) of the noise that gathers the relief,
  * and the share of it the calm ground between patches keeps. */
 export const GROUND_PATCH_WAVE = 14;
 export const GROUND_PATCH_LO = 0.35;
 
-export const GROUND_SPIRE_SALT = 0x5b1e;
+export const GROUND_PLATE_SALT = 0x5b1e;
 export const GROUND_SHARD_SALT = 0x54a2;
 export const GROUND_MASS_SALT = 0x3a55;
 export const GROUND_PATCH_SALT = 0x9a7c;
@@ -130,13 +133,13 @@ export const FACE_RELIEF_TUNABLES: Readonly<Record<string, number>> = {
   FACE_KIND_WAVE, FACE_KIND_LO, FACE_KIND_HI,
   FACE_COLUMN_SALT, FACE_BLOCK_SALT, FACE_BLOCK_FINE_SALT, FACE_KIND_SALT, FACE_FORM_SALT,
   // The walkable rock's (above).
-  GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, GROUND_SPIRE_BORDER, GROUND_SPIRE_TILT, GROUND_SPIRE_CONE,
+  GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, GROUND_PLATE_TILT,
   GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, GROUND_SHARD_TILT, GROUND_SHARD_CONE,
   GROUND_SHARD_WEIGHT,
   GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, GROUND_MASS_TILT, GROUND_MASS_DOME,
   GROUND_MASS_WEIGHT,
   GROUND_GAIN, GROUND_PATCH_WAVE, GROUND_PATCH_LO,
-  GROUND_SPIRE_SALT, GROUND_SHARD_SALT, GROUND_MASS_SALT, GROUND_PATCH_SALT,
+  GROUND_PLATE_SALT, GROUND_SHARD_SALT, GROUND_MASS_SALT, GROUND_PATCH_SALT,
 };
 
 /** A value and its exact partial derivatives in x and z. */
@@ -460,7 +463,7 @@ export function groundPatchD(seed: number, x: number, z: number): ReliefSample {
 }
 
 /**
- * The walkable rock's relief at (x, z): the spires, the shards at their
+ * The walkable rock's relief at (x, z): the plates, the shards at their
  * weight and the outcrops at theirs, their sum over the weights' sum times
  * GROUND_GAIN, times the patches' share, clamped to [−1, 1] with exact
  * derivatives, zero where the clamp holds. Each octave is the cellular
@@ -468,7 +471,7 @@ export function groundPatchD(seed: number, x: number, z: number): ReliefSample {
  * joints and none of their lattices.
  */
 export function groundReliefD(seed: number, x: number, z: number): ReliefSample {
-  cellular(x, z, GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, GROUND_SPIRE_BORDER, seed ^ GROUND_SPIRE_SALT, GROUND_SPIRE_TILT, 0, GROUND_SPIRE_CONE);
+  cellular(x, z, GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, seed ^ GROUND_PLATE_SALT, GROUND_PLATE_TILT);
   let v = cv;
   let dx = cdx;
   let dz = cdz;

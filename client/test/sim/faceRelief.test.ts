@@ -3,7 +3,7 @@ import * as relief from "../../src/sim/faceRelief.js";
 import {
   cellularD, cellularSite, faceKindD, faceReliefD, groundReliefD, groundPatchD, FACE_RELIEF_TUNABLES,
   FACE_VALUE_SPAN, FACE_TILT,
-  GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, GROUND_SPIRE_BORDER, GROUND_SPIRE_SALT, GROUND_SPIRE_TILT, GROUND_SPIRE_CONE,
+  GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, GROUND_PLATE_SALT, GROUND_PLATE_TILT,
   GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, GROUND_SHARD_SALT, GROUND_SHARD_WEIGHT,
   GROUND_SHARD_TILT, GROUND_SHARD_CONE,
   GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, GROUND_MASS_SALT, GROUND_MASS_WEIGHT,
@@ -630,33 +630,33 @@ describe("the walkable rock's relief", () => {
   const CLAMP_GAP = 2e-3;
   function groundGap(x: number, z: number): number {
     const octaves = [
-      cellularD(x, z, GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, GROUND_SPIRE_BORDER, SEED ^ GROUND_SPIRE_SALT, GROUND_SPIRE_TILT, 0, GROUND_SPIRE_CONE),
+      cellularD(x, z, GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, SEED ^ GROUND_PLATE_SALT, GROUND_PLATE_TILT),
       cellularD(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, SEED ^ GROUND_SHARD_SALT, GROUND_SHARD_TILT, 0, GROUND_SHARD_CONE),
       cellularD(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT, GROUND_MASS_TILT, GROUND_MASS_DOME),
     ];
     if (octaves.some((o) => Math.abs(o.v) > 1 - CLAMP_GAP)) return 0;
-    // A cone's point is a kink too: within the gap of a spire's or shard's site.
-    const [s1] = siteDistances(x, z, GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, SEED ^ GROUND_SPIRE_SALT);
+    // A cone's point is a kink too: within the gap of a plate's or shard's site.
+    const [s1] = siteDistances(x, z, GROUND_PLATE_CELL, GROUND_PLATE_JITTER, SEED ^ GROUND_PLATE_SALT);
     const [h1] = siteDistances(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, SEED ^ GROUND_SHARD_SALT);
     return Math.min(
       s1 as number,
       h1 as number,
-      junctionGap(x, z, GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, GROUND_SPIRE_BORDER, SEED ^ GROUND_SPIRE_SALT),
+      junctionGap(x, z, GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, SEED ^ GROUND_PLATE_SALT),
       junctionGap(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, SEED ^ GROUND_SHARD_SALT),
       junctionGap(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT),
     );
   }
 
-  it("is the spires, the shards and the outcrops at their weights, gained, in the patches' share, clamped", () => {
+  it("is the plates, the shards and the outcrops at their weights, gained, in the patches' share, clamped", () => {
     const n = GROUND_GAIN / (1 + GROUND_SHARD_WEIGHT + GROUND_MASS_WEIGHT);
     for (const [x, z] of r2Points(300, 1000)) {
-      const spire = cellularD(x, z, GROUND_SPIRE_CELL, GROUND_SPIRE_JITTER, GROUND_SPIRE_BORDER, SEED ^ GROUND_SPIRE_SALT, GROUND_SPIRE_TILT, 0, GROUND_SPIRE_CONE);
+      const plate = cellularD(x, z, GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, SEED ^ GROUND_PLATE_SALT, GROUND_PLATE_TILT);
       const shard = cellularD(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, SEED ^ GROUND_SHARD_SALT, GROUND_SHARD_TILT, 0, GROUND_SHARD_CONE);
       const mass = cellularD(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT, GROUND_MASS_TILT, GROUND_MASS_DOME);
       const p = groundPatchD(SEED, x, z);
-      const g = n * (spire.v + GROUND_SHARD_WEIGHT * shard.v + GROUND_MASS_WEIGHT * mass.v);
-      const gx = n * (spire.dx + GROUND_SHARD_WEIGHT * shard.dx + GROUND_MASS_WEIGHT * mass.dx);
-      const gz = n * (spire.dz + GROUND_SHARD_WEIGHT * shard.dz + GROUND_MASS_WEIGHT * mass.dz);
+      const g = n * (plate.v + GROUND_SHARD_WEIGHT * shard.v + GROUND_MASS_WEIGHT * mass.v);
+      const gx = n * (plate.dx + GROUND_SHARD_WEIGHT * shard.dx + GROUND_MASS_WEIGHT * mass.dx);
+      const gz = n * (plate.dz + GROUND_SHARD_WEIGHT * shard.dz + GROUND_MASS_WEIGHT * mass.dz);
       const v = p.v * g;
       const want = v > 1 || v < -1
         ? { v: v > 1 ? 1 : -1, dx: 0, dz: 0 }
@@ -736,12 +736,14 @@ describe("the walkable rock's relief", () => {
         prev = v;
       }
     }
-    // The shards' 0.25 m joints are the steepest: a unit range over 0.25 m
-    // at the gain is a step of about 0.05 in 1 cm.
-    expect(largest).toBeLessThan(0.25);
+    // The plates' 0.15 m joints are the steepest: two plates a range apart
+    // meet over 0.15 m, a step of about 0.26 in 1 cm at the gain (measured
+    // 0.263). A step over 0.6 in 1 cm, more than twice that, is no joint
+    // but a break.
+    expect(largest).toBeLessThan(0.6);
   });
 
-  it("uses its range: spikes over a floor, the clamp holding about half of the ground at the floor", () => {
+  it("uses its range: plates spread over it, the clamp holding a few percent", () => {
     let sum = 0;
     let clamped = 0;
     const pts = r2Points(5000, 1000);
@@ -750,15 +752,15 @@ describe("the walkable rock's relief", () => {
       sum += Math.abs(v);
       if (v === 1 || v === -1) clamped++;
     }
-    // Measured at the gain of 2.5 and the cones of 3: a mean |v| of 0.83
-    // and 48 % clamped, nearly all of it at −1, the floor the spikes stand
-    // out of; under 1 % of the ground is above the midline. (The domed
-    // cobbles before, 2026-10-13: 0.57 and 15 %.)
+    // Measured at the gain of 2 with the plates: a mean |v| of 0.39 and
+    // 4.5 % clamped, 23 % of the ground above the midline. (The cones
+    // before, 2026-10-13: 0.83 and 48 %, a floor with spikes; the domed
+    // cobbles: 0.57 and 15 %.)
     const mean = sum / pts.length;
-    expect(mean).toBeGreaterThan(0.7);
-    expect(mean).toBeLessThan(0.95);
-    expect(clamped / pts.length).toBeGreaterThan(0.3);
-    expect(clamped / pts.length).toBeLessThan(0.7);
+    expect(mean).toBeGreaterThan(0.3);
+    expect(mean).toBeLessThan(0.5);
+    expect(clamped / pts.length).toBeGreaterThan(0.01);
+    expect(clamped / pts.length).toBeLessThan(0.15);
   });
 });
 
@@ -774,13 +776,13 @@ describe("the tunables", () => {
       "FACE_KIND_WAVE", "FACE_KIND_LO", "FACE_KIND_HI",
       "FACE_COLUMN_SALT", "FACE_BLOCK_SALT", "FACE_BLOCK_FINE_SALT", "FACE_KIND_SALT",
       "FACE_FORM_SALT",
-      "GROUND_SPIRE_CELL", "GROUND_SPIRE_JITTER", "GROUND_SPIRE_BORDER", "GROUND_SPIRE_TILT", "GROUND_SPIRE_CONE",
+      "GROUND_PLATE_CELL", "GROUND_PLATE_JITTER", "GROUND_PLATE_BORDER", "GROUND_PLATE_TILT",
       "GROUND_SHARD_CELL", "GROUND_SHARD_JITTER", "GROUND_SHARD_BORDER", "GROUND_SHARD_WEIGHT",
       "GROUND_SHARD_TILT", "GROUND_SHARD_CONE",
       "GROUND_MASS_CELL", "GROUND_MASS_JITTER", "GROUND_MASS_BORDER", "GROUND_MASS_WEIGHT",
       "GROUND_MASS_TILT", "GROUND_MASS_DOME",
       "GROUND_GAIN", "GROUND_PATCH_WAVE", "GROUND_PATCH_LO",
-      "GROUND_SPIRE_SALT", "GROUND_SHARD_SALT", "GROUND_MASS_SALT", "GROUND_PATCH_SALT",
+      "GROUND_PLATE_SALT", "GROUND_SHARD_SALT", "GROUND_MASS_SALT", "GROUND_PATCH_SALT",
     ];
     expect(Object.keys(FACE_RELIEF_TUNABLES).sort()).toEqual([...keys].sort());
     for (const [k, v] of Object.entries(relief)) {

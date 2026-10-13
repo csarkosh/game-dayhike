@@ -35,10 +35,12 @@ export const PATCH_CELL = 16;
  * relief's half-depth doubled, its whole range from the smooth face out. */
 export const PATCH_DEPTH = 2 * FACE_HALF_DEPTH;
 /** The most a vertex of the walkable rock moves out along the ground's
- * normal, metres, at full loudness: shallow, since the ground is walked on
- * with collision on the smooth height field, so a foot is never further
- * inside the drawn rock than this, and on average half of it. */
-export const GROUND_DEPTH = 0.5;
+ * normal, metres, at full loudness. The ground is walked on with collision
+ * on the smooth height field, so a foot can be this far inside a drawn
+ * plate; a metre was chosen over the look of less (0.4 and 0.5 as first
+ * built read as a cobbled ground, not the fractured bedrock asked for),
+ * and the field's floor, about half the ground, is the ground itself. */
+export const GROUND_DEPTH = 1.0;
 /** The radius (m) of the eight points about a corner whose rock-of-slope,
  * with the corner's own, is the rock's extent there (`rockExtent`). */
 export const GROUND_EXTENT_RADIUS = 6;
