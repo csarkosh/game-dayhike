@@ -44,12 +44,40 @@ export function worldsOf(rows: Row[]): World[] {
   return [...by.values()].sort((a, b) => b.startedAt - a.startedAt || a.key.localeCompare(b.key));
 }
 
-const whenFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+const whenFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const fullWhenFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
-/** A world's list entry: when its party set out, in New York time, then the world and its seed. */
-export function worldLabel(w: World): string {
-  const when = Number.isFinite(w.startedAt) ? whenFormat.format(w.startedAt) : "undated";
-  return `${when} · ${w.world} · seed ${w.seed}`;
+/** "Olympic" from "forest/8/olympic/1/2": the terrain variant, capitalised; a world string with no such part as it is. */
+export function worldName(world: string): string {
+  const parts = world.split("/");
+  const name = parts.length >= 3 ? parts[2]! : world;
+  return name === "" ? "Unnamed world" : name[0]!.toUpperCase() + name.slice(1);
+}
+
+/**
+ * A world's list entry, short and plain (Cyrus, 2026-10-13): when its party set
+ * out, in New York time without the year or the zone, and the world's name.
+ * `withSeed` adds the seed, for two parties the label would otherwise not tell
+ * apart; the drawing's note carries the full world string and seed for whoever
+ * needs them.
+ */
+export function worldLabel(w: World, withSeed = false): string {
+  const when = Number.isFinite(w.startedAt) ? whenFormat.format(w.startedAt) : "Undated";
+  return `${when} · ${worldName(w.world)}${withSeed ? ` · seed ${w.seed}` : ""}`;
+}
+
+/** The labels of a list of worlds, the seed added only where two would read the same. */
+export function worldLabels(worlds: World[]): string[] {
+  const plain = worlds.map((w) => worldLabel(w));
+  const count = new Map<string, number>();
+  for (const label of plain) count.set(label, (count.get(label) ?? 0) + 1);
+  return worlds.map((w, i) => ((count.get(plain[i]!) ?? 0) > 1 ? worldLabel(w, true) : plain[i]!));
+}
+
+/** The note's first sentence: the world as the rows name it, its seed, and when the party set out in full. */
+export function worldDetail(w: World): string {
+  const when = Number.isFinite(w.startedAt) ? `set out ${fullWhenFormat.format(w.startedAt)}` : "undated";
+  return `World ${w.world}, seed ${w.seed}, ${when}.`;
 }
 
 /** The rows of one world, grouped into sessions with their samples and marks in tick order. */
@@ -256,7 +284,8 @@ const mmss = (tick: number): string => {
 export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) => Promise<DrawableTrail | null>): HTMLElement {
   // Newest party first, so the list opens on the latest walk.
   const worlds = worldsOf(rows);
-  const select = el("select", {}, ...worlds.map((w) => el("option", { value: w.key }, worldLabel(w))));
+  const labels = worldLabels(worlds);
+  const select = el("select", { "aria-label": "World" }, ...worlds.map((w, i) => el("option", { value: w.key }, labels[i]!)));
   const canvas = el("canvas", { width: String(CANVAS), height: String(CANVAS) });
   const scrub = el("input", { type: "range", min: "0", max: "1", value: "1", step: "1", style: "width:100%" });
   const clock = el("span", { class: "sub" }, "");
@@ -323,7 +352,9 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
     scrub.value = String(ticks);
     selected = null;
     trail = null;
-    note.textContent = world === "" ? "" : sameGeneration(world) ? "The trail is rebuilt from the seed by this build's generator." : "This session's world was made by another generation of the generator; the trail drawn here may differ from the one they walked.";
+    const chosen = worlds.find((w) => w.key === select.value);
+    const detail = chosen === undefined ? "" : `${worldDetail(chosen)} `;
+    note.textContent = world === "" ? "" : `${detail}${sameGeneration(world) ? "The trail is rebuilt from the seed by this build's generator." : "This session's world was made by another generation of the generator; the trail drawn here may differ from the one they walked."}`;
     sidePanel();
     draw();
     if (world !== "") {

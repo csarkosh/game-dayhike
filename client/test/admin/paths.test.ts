@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sessionsOf, worldLabel, worldsOf } from "../../src/admin/paths.js";
+import { sessionsOf, worldDetail, worldLabel, worldLabels, worldName, worldsOf, type World } from "../../src/admin/paths.js";
 import type { Row } from "../../src/admin/source.js";
 import { buildTrailFor, parseWorld, sameGeneration } from "../../src/admin/trail.js";
 import { GEN_VERSION } from "../../src/sim/forest.js";
@@ -74,8 +74,22 @@ describe("worldsOf", () => {
     const worlds = worldsOf(rows);
     expect(worlds.map((w) => w.key)).toEqual(["forest/8/olympic/1/2|22", "forest/8/olympic/1/2|11", "forest/7/olympic/1/2|33"]);
     expect(worlds[1]!.startedAt).toBe(Date.parse("2026-10-12T20:00:00Z"));
-    expect(worldLabel(worlds[0]!)).toBe("Oct 12, 2026, 9:15 PM EDT · forest/8/olympic/1/2 · seed 22");
-    expect(worldLabel(worlds[1]!)).toBe("Oct 12, 2026, 4:00 PM EDT · forest/8/olympic/1/2 · seed 11");
-    expect(worldLabel({ key: "w|1", world: "w", seed: "1", startedAt: Infinity })).toBe("undated · w · seed 1");
+    expect(worldLabel(worlds[0]!)).toBe("Oct 12, 9:15 PM · Olympic");
+    expect(worldLabel(worlds[1]!)).toBe("Oct 12, 4:00 PM · Olympic");
+    expect(worldLabel({ key: "w|1", world: "w", seed: "1", startedAt: Infinity })).toBe("Undated · W");
+    expect(worldDetail(worlds[0]!)).toBe("World forest/8/olympic/1/2, seed 22, set out Oct 12, 2026, 9:15 PM EDT.");
+  });
+
+  it("names a world by its terrain variant, and adds the seed only where two labels would read the same", () => {
+    expect(worldName("forest/8/olympic/1/2")).toBe("Olympic");
+    expect(worldName("forest/9/cascades/3/4")).toBe("Cascades");
+    expect(worldName("")).toBe("Unnamed world");
+    const at = Date.parse("2026-10-13T01:15:00Z");
+    const twins: World[] = [
+      { key: "forest/8/olympic/1/2|22", world: "forest/8/olympic/1/2", seed: "22", startedAt: at },
+      { key: "forest/8/olympic/1/2|23", world: "forest/8/olympic/1/2", seed: "23", startedAt: at },
+      { key: "forest/8/olympic/1/2|11", world: "forest/8/olympic/1/2", seed: "11", startedAt: at - 3_600_000 },
+    ];
+    expect(worldLabels(twins)).toEqual(["Oct 12, 9:15 PM · Olympic · seed 22", "Oct 12, 9:15 PM · Olympic · seed 23", "Oct 12, 8:15 PM · Olympic"]);
   });
 });
