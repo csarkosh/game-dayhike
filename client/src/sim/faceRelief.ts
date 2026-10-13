@@ -73,6 +73,56 @@ export const FACE_BLOCK_FINE_SALT = 0xb1c2;
 export const FACE_KIND_SALT = 0x41d5;
 export const FACE_FORM_SALT = 0xf0a3;
 
+// ---- The walkable rock (amended 2026-10-13) ---------------------------------
+// The ground's rock between the forest's slope gate and the steep faces is
+// meant to read as fractured bedrock: flat plates leaning every way, each
+// stepping up or down to the next at a sharp joint, a few shards standing
+// up out of them, the whole a broken, uneven mass. So its fine forms are
+// plates, a cellular field of tilted planes with joints too narrow to
+// round them (the faces' blocks, leaning harder and broken sharper), and
+// shards, cones, each site a point with straight sides, over the outcrops,
+// broad bedding planes tilted against each other; and the whole gathered
+// into patches by a slow noise, so one stretch is a jumble of plates and
+// the next lies calm. Nothing here touches the faces' columns and blocks or
+// their tunables; the field is read by the same patches
+// (`game/facePatches.ts`), masked by the ground's rock paint.
+
+/** Plates: lattice spacing (m), jitter (share of the cell), joint width (m)
+ * and the plane's tilt a cell: a joint of 0.15 m is a step, not a slope,
+ * at every spacing the patches draw. */
+export const GROUND_PLATE_CELL = 2.0;
+export const GROUND_PLATE_JITTER = 0.8;
+export const GROUND_PLATE_BORDER = 0.15;
+export const GROUND_PLATE_TILT = 1.5;
+/** Shards, the fine octave, cones added at GROUND_SHARD_WEIGHT: the points
+ * standing up out of the plates. */
+export const GROUND_SHARD_CELL = 0.9;
+export const GROUND_SHARD_JITTER = 0.9;
+export const GROUND_SHARD_BORDER = 0.25;
+export const GROUND_SHARD_TILT = 0.5;
+export const GROUND_SHARD_CONE = 3.0;
+export const GROUND_SHARD_WEIGHT = 0.5;
+/** Outcrops, the coarse octave, added at GROUND_MASS_WEIGHT: bedding, broad
+ * planes tilted against each other, barely domed. */
+export const GROUND_MASS_CELL = 9.0;
+export const GROUND_MASS_JITTER = 0.6;
+export const GROUND_MASS_BORDER = 2.0;
+export const GROUND_MASS_TILT = 2.0;
+export const GROUND_MASS_DOME = 0.5;
+export const GROUND_MASS_WEIGHT = 0.8;
+/** The gain on the three octaves' weighted mean, before the patches' share
+ * and the clamp to [−1, 1]. */
+export const GROUND_GAIN = 2.0;
+/** The patches: the wavelength (m) of the noise that gathers the relief,
+ * and the share of it the calm ground between patches keeps. */
+export const GROUND_PATCH_WAVE = 14;
+export const GROUND_PATCH_LO = 0.35;
+
+export const GROUND_PLATE_SALT = 0x5b1e;
+export const GROUND_SHARD_SALT = 0x54a2;
+export const GROUND_MASS_SALT = 0x3a55;
+export const GROUND_PATCH_SALT = 0x9a7c;
+
 export const FACE_RELIEF_TUNABLES: Readonly<Record<string, number>> = {
   FACE_SLOPE_LO, FACE_SLOPE_HI, FACE_HALF_DEPTH,
   FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER,
@@ -82,6 +132,14 @@ export const FACE_RELIEF_TUNABLES: Readonly<Record<string, number>> = {
   FACE_FORM_CELL, FACE_FORM_JITTER, FACE_FORM_BORDER, FACE_FORM_WEIGHT, FACE_GAIN,
   FACE_KIND_WAVE, FACE_KIND_LO, FACE_KIND_HI,
   FACE_COLUMN_SALT, FACE_BLOCK_SALT, FACE_BLOCK_FINE_SALT, FACE_KIND_SALT, FACE_FORM_SALT,
+  // The walkable rock's (above).
+  GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, GROUND_PLATE_TILT,
+  GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, GROUND_SHARD_TILT, GROUND_SHARD_CONE,
+  GROUND_SHARD_WEIGHT,
+  GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, GROUND_MASS_TILT, GROUND_MASS_DOME,
+  GROUND_MASS_WEIGHT,
+  GROUND_GAIN, GROUND_PATCH_WAVE, GROUND_PATCH_LO,
+  GROUND_PLATE_SALT, GROUND_SHARD_SALT, GROUND_MASS_SALT, GROUND_PATCH_SALT,
 };
 
 /** A value and its exact partial derivatives in x and z. */
@@ -158,6 +216,7 @@ function gather(
 /** The cellular field into cv/cdx/cdz. */
 function cellular(
   x: number, z: number, cell: number, jitter: number, border: number, salt: number,
+  tilt = FACE_TILT, dome = 0, cone = 0,
 ): void {
   const i0 = Math.floor(x / cell);
   const j0 = Math.floor(z / cell);
@@ -175,8 +234,12 @@ function cellular(
   const f1 = siteF[nearK] as number;
   const g1x = f1 < ON_SITE ? 0 : (siteEx[nearK] as number) / f1;
   const g1z = f1 < ON_SITE ? 0 : (siteEz[nearK] as number) / f1;
-  // A tilt of 1 rises FACE_TILT across one cell.
-  const tc = FACE_TILT / cell;
+  // A tilt of 1 rises `tilt` across one cell; a dome falls `dome` a cell
+  // out, as the square of the distance; a cone falls `cone` a cell out,
+  // straight, a point at the site.
+  const tc = tilt / cell;
+  const dc = dome / (cell * cell);
+  const cc = cone / cell;
   let weighted = 0;
   let sw = 0;
   let swu = 0;
@@ -200,13 +263,28 @@ function cellular(
     const o = 2 * hash3(i, j, 2, salt) - 1;
     const sa = tc * (2 * hash3(i, j, 3, salt) - 1);
     const sb = tc * (2 * hash3(i, j, 4, salt) - 1);
-    // The site's plane: its value at the site, tilted through it.
-    const u = o * FACE_VALUE_SPAN + (sa * ex + sb * ez);
+    // The site's plane: its value at the site, tilted through it; and, with
+    // a dome, falling as the square of the distance from the site, a cap.
+    let u = o * FACE_VALUE_SPAN + (sa * ex + sb * ez);
+    let ux = sa;
+    let uz = sb;
+    if (dome !== 0) {
+      u -= dc * (ex * ex + ez * ez);
+      ux -= 2 * dc * ex;
+      uz -= 2 * dc * ez;
+    }
+    if (cone !== 0) {
+      u -= cc * f;
+      if (f >= ON_SITE) {
+        ux -= (cc * ex) / f;
+        uz -= (cc * ez) / f;
+      }
+    }
     weighted++;
     sw += w;
     swu += w * u;
-    px += w * sa;
-    pz += w * sb;
+    px += w * ux;
+    pz += w * uz;
     if (t > 0) {
       // w′ = −S′(t) · (∇F − ∇F1) / border, with ∇F = (p − c) / F.
       const d = -stepTd(t) / border;
@@ -240,8 +318,12 @@ function cellular(
 }
 
 /**
- * The cellular field: each site's plane, u = o · FACE_VALUE_SPAN + FACE_TILT ·
- * (a · (x − sx) + b · (z − sz)) / cell, weighted by how near the site is to
+ * The cellular field: each site's plane, u = o · FACE_VALUE_SPAN + tilt ·
+ * (a · (x − sx) + b · (z − sz)) / cell − dome · F² / cell² − cone · F / cell
+ * (`tilt` the faces' FACE_TILT and `dome` and `cone` 0 unless given: the
+ * walkable rock's forms give them, and a dome or cone of 0 adds nothing, so
+ * the faces' field is the one before them),
+ * weighted by how near the site is to
  * the nearest, w = 1 − smootherstep((F − F1) / border), so the nearest site's
  * plane inside a cell, the mean of two sites' planes on the border between
  * them and a quintic blend across a joint `border` metres wide. Continuous
@@ -257,8 +339,9 @@ function cellular(
  */
 export function cellularD(
   x: number, z: number, cell: number, jitter: number, border: number, salt: number,
+  tilt = FACE_TILT, dome = 0, cone = 0,
 ): ReliefSample {
-  cellular(x, z, cell, jitter, border, salt);
+  cellular(x, z, cell, jitter, border, salt, tilt, dome, cone);
   return { v: cv, dx: cdx, dz: cdz };
 }
 
@@ -365,4 +448,49 @@ function relief(seed: number, x: number, z: number): void {
 export function faceReliefD(seed: number, x: number, z: number): ReliefSample {
   relief(seed, x, z);
   return { v: rv, dx: rdx, dz: rdz };
+}
+
+/**
+ * The share of the relief the patches leave at (x, z), and its gradient:
+ * GROUND_PATCH_LO on the calm ground, 1 in a patch, a quintic step of a
+ * gradient noise of GROUND_PATCH_WAVE between.
+ */
+export function groundPatchD(seed: number, x: number, z: number): ReliefSample {
+  const n = gradientNoise2(x / GROUND_PATCH_WAVE, z / GROUND_PATCH_WAVE, seed ^ GROUND_PATCH_SALT);
+  const t = (n.v + 1) / 2;
+  const d = (stepTd(t) * (1 - GROUND_PATCH_LO)) / (2 * GROUND_PATCH_WAVE);
+  return { v: GROUND_PATCH_LO + (1 - GROUND_PATCH_LO) * stepT(t), dx: d * n.dx, dz: d * n.dz };
+}
+
+/**
+ * The walkable rock's relief at (x, z): the plates, the shards at their
+ * weight and the outcrops at theirs, their sum over the weights' sum times
+ * GROUND_GAIN, times the patches' share, clamped to [−1, 1] with exact
+ * derivatives, zero where the clamp holds. Each octave is the cellular
+ * field (`cellularD`) at its own lattice and salt, so it shares the faces'
+ * joints and none of their lattices.
+ */
+export function groundReliefD(seed: number, x: number, z: number): ReliefSample {
+  cellular(x, z, GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, seed ^ GROUND_PLATE_SALT, GROUND_PLATE_TILT);
+  let v = cv;
+  let dx = cdx;
+  let dz = cdz;
+  cellular(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, seed ^ GROUND_SHARD_SALT, GROUND_SHARD_TILT, 0, GROUND_SHARD_CONE);
+  v += GROUND_SHARD_WEIGHT * cv;
+  dx += GROUND_SHARD_WEIGHT * cdx;
+  dz += GROUND_SHARD_WEIGHT * cdz;
+  cellular(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, seed ^ GROUND_MASS_SALT, GROUND_MASS_TILT, GROUND_MASS_DOME);
+  v += GROUND_MASS_WEIGHT * cv;
+  dx += GROUND_MASS_WEIGHT * cdx;
+  dz += GROUND_MASS_WEIGHT * cdz;
+  const n = GROUND_GAIN / (1 + GROUND_SHARD_WEIGHT + GROUND_MASS_WEIGHT);
+  const p = groundPatchD(seed, x, z);
+  const g = n * v;
+  const gx = n * dx;
+  const gz = n * dz;
+  v = p.v * g;
+  dx = p.v * gx + p.dx * g;
+  dz = p.v * gz + p.dz * g;
+  if (v > 1 || v < -1) return { v: v > 1 ? 1 : -1, dx: 0, dz: 0 };
+  return { v, dx, dz };
 }

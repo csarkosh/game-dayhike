@@ -737,7 +737,16 @@ function buildGame(
   function applyView(name: string, args: readonly string[], options: { instant?: boolean } = {}): void {
     const value = findCommand(name)?.scriptValue?.(args);
     if (name === "freecam") {
-      if (value === true) {
+      if (typeof value === "string") {
+        // A place: the camera stands on the ground there at the player's eye
+        // height, facing the yaw given (or north), flying from this frame.
+        const [px, pz, yaw = 0] = value.split(" ").map(Number) as [number, number, number?];
+        freecam = { x: px, y: elevationAt(seed, px, pz) + PLAYER_HALF.y + PLAYER_EYE_OFFSET, z: pz };
+        freecamPending = false;
+        input.setLook(yaw, 0);
+        lastFreecamView = { ...freecam, yaw, pitch: 0 };
+        renderer.setFreecam(lastFreecamView);
+      } else if (value === true) {
         // Enabling an already-flying camera must not move it, so a re-applied
         // script leaves the view where it is.
         if (freecam === null) freecamPending = true;

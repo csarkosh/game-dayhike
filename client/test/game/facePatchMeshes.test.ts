@@ -145,14 +145,15 @@ describe("createFacePatches", () => {
       },
     });
     // The camera's cell (−24, −57), walked from its centre: 1,961 cells in
-    // reach, 362 of them with steep ground.
+    // reach, 753 of them with steep or rock-painted ground (362 with steep
+    // ground alone, before the walkable rock, 2026-10-13).
     // 2026-10-12: 317 cells and 140 with steep ground before the wide band.
     patches.update(CAM.x, CAM.z);
     expect(patches.builds()).toBe(1961);
-    expect(patches.meshCount()).toBe(362);
-    expect(patchMeshes(s).length).toBe(362);
-    expect(casting.size).toBe(362);
-    expect(calls).toEqual({ reflectionsAdded: 362, reflectionsRemoved: 0, rainAdded: 362, rainRemoved: 0 });
+    expect(patches.meshCount()).toBe(753);
+    expect(patchMeshes(s).length).toBe(753);
+    expect(casting.size).toBe(753);
+    expect(calls).toEqual({ reflectionsAdded: 753, reflectionsRemoved: 0, rainAdded: 753, rainRemoved: 0 });
     expect(reflected).toEqual(new Set(patchMeshes(s)));
     expect(rained).toEqual(new Set(patchMeshes(s)));
 
@@ -187,20 +188,20 @@ describe("createFacePatches", () => {
     // 2026-10-12: 49 builds (366), 119 kept, before the open neighbours
     // joined the stitch and empty cells were kept across a stitch's change;
     // then 21 entered, 45 rebuilt and 51 kept empty before the wide band.
-    expect(crossing).toEqual({ entered: 51, rebuilt: 91, keptEmpty: 201 });
+    expect(crossing).toEqual({ entered: 51, rebuilt: 145, keptEmpty: 147 });
     patches.update(CAM.x + 16, CAM.z);
     expect(patches.builds()).toBe(1961 + crossing.entered + crossing.rebuilt);
     // 2026-10-12: 383 builds, 147 meshes, 99 kept before the wide band.
-    expect(patches.builds()).toBe(2103);
-    expect(patches.meshCount()).toBe(368);
-    expect(patchMeshes(s).length).toBe(368);
-    expect(casting.size).toBe(368);
+    expect(patches.builds()).toBe(2157);
+    expect(patches.meshCount()).toBe(784);
+    expect(patchMeshes(s).length).toBe(784);
+    expect(casting.size).toBe(784);
     const after = new Set(patchMeshes(s));
     let kept = 0;
     for (const m of before) if (after.has(m)) kept++;
-    expect(kept).toBe(310);
-    // 58 patches built at the crossing, 52 dropped.
-    expect(calls).toEqual({ reflectionsAdded: 420, reflectionsRemoved: 52, rainAdded: 420, rainRemoved: 52 });
+    expect(kept).toBe(636);
+    // 148 patches built at the crossing, 117 dropped (58 and 52 before the walkable rock, 2026-10-13).
+    expect(calls).toEqual({ reflectionsAdded: 901, reflectionsRemoved: 117, rainAdded: 901, rainRemoved: 117 });
     expect(reflected).toEqual(after);
     expect(rained).toEqual(after);
 
@@ -208,7 +209,7 @@ describe("createFacePatches", () => {
     expect(patches.meshCount()).toBe(0);
     expect(patchMeshes(s).length).toBe(0);
     expect(casting.size).toBe(0);
-    expect(calls).toEqual({ reflectionsAdded: 420, reflectionsRemoved: 420, rainAdded: 420, rainRemoved: 420 });
+    expect(calls).toEqual({ reflectionsAdded: 901, reflectionsRemoved: 901, rainAdded: 901, rainRemoved: 901 });
     expect(reflected.size).toBe(0);
     expect(rained.size).toBe(0);
   }, timeLimit(120_000));
@@ -262,12 +263,12 @@ describe("createFacePatches, as jobs", () => {
     // The 29 cells within 48 m of the camera's cell's centre, 20 of them
     // with steep ground; the cover names what they cover.
     expect(patches.builds()).toBe(29);
-    expect(patches.meshCount()).toBe(20);
-    expect(casting.size).toBe(20);
+    expect(patches.meshCount()).toBe(22);
+    expect(casting.size).toBe(22);
     expect(patches.cover()).toEqual({ x: -376, z: -904, reach: 48 - 16 * Math.SQRT2, fine: 48, cell: 16 });
     const counts: number[] = [];
     let frames = 0;
-    while (patches.meshCount() === 20 && frames < 1000) {
+    while (patches.meshCount() === 22 && frames < 1000) {
       patches.update(CAM.x, CAM.z);
       t.frame();
       frames++;
@@ -280,10 +281,10 @@ describe("createFacePatches, as jobs", () => {
     // drawn in the 63rd frame after the first.
     expect(frames).toBe(63);
     expect(patches.builds()).toBe(1961);
-    expect(patches.meshCount()).toBe(362);
+    expect(patches.meshCount()).toBe(753);
     expect(casting).toEqual(new Set(patchMeshes(s)));
     // Drawn in the last slice, whole: 20 in every frame before it.
-    expect(counts.filter((n) => n !== 20)).toEqual([362]);
+    expect(counts.filter((n) => n !== 22)).toEqual([753]);
     expect(counts.length).toBe(63);
     expect(patches.cover()).toEqual(facePatchCover(CAM.x, CAM.z, PATCH_REACH.high));
     patches.dispose();
@@ -309,7 +310,7 @@ describe("createFacePatches, as jobs", () => {
     // its east line, 172 frames at a walk.
     const at = { x: -383, z: CAM.z };
     patches.update(at.x, at.z);
-    framesUntil(t, () => patches.update(at.x, at.z), () => patches.meshCount() === 362, 1000);
+    framesUntil(t, () => patches.update(at.x, at.z), () => patches.meshCount() === 753, 1000);
     const before = new Set(patchMeshes(s));
     const step = WALKING / 60;
     /** Per frame from the first step: builds, meshes drawn, and whether the
@@ -323,7 +324,7 @@ describe("createFacePatches, as jobs", () => {
       // An update builds nothing and draws nothing new, the crossing's too.
       expect(patches.builds()).toBe(was.builds);
       expect(patches.meshCount()).toBe(was.drawn);
-      if (patches.meshCount() === 362) expect(new Set(patchMeshes(s))).toEqual(before);
+      if (patches.meshCount() === 753) expect(new Set(patchMeshes(s))).toEqual(before);
       t.frame();
       expect(t.jobs.last.late).toBe(0);
       log.push({ builds: patches.builds(), drawn: patches.meshCount(), crossed });
@@ -333,21 +334,22 @@ describe("createFacePatches, as jobs", () => {
     expect(crossing).toBe(171);
     // The 142 cells the crossing builds (51 entered, 91 changed) all built
     // ahead, in the frames before it, by the 1,961 of the first set.
-    expect(log[crossing - 1]).toEqual({ builds: 2103, drawn: 362, crossed: false });
+    expect(log[crossing - 1]).toEqual({ builds: 2157, drawn: 753, crossed: false });
     // Drawn in the crossing's own frame, its share, well inside the six
     // frames a job may take: nothing built in it.
-    expect(log.findIndex((l) => l.drawn !== 362)).toBe(crossing);
-    expect(log[crossing]).toEqual({ builds: 2103, drawn: 368, crossed: true });
-    // Then the idle work builds ahead for the next line, x = −352: 140 cells
-    // over the 23 frames after it, none of them drawn.
-    expect(log.slice(crossing).filter((l) => l.drawn !== 368)).toEqual([]);
-    expect(log.findIndex((l) => l.builds === 2243) - crossing).toBe(23);
-    expect(log[log.length - 1]?.builds).toBe(2243);
+    expect(log.findIndex((l) => l.drawn !== 753)).toBe(crossing);
+    expect(log[crossing]).toEqual({ builds: 2157, drawn: 784, crossed: true });
+    // Then the idle work builds ahead for the next line, x = −352: 190 cells
+    // over the 24 frames after it, none of them drawn (140 over 23 before
+    // the walkable rock, 2026-10-13).
+    expect(log.slice(crossing).filter((l) => l.drawn !== 784)).toEqual([]);
+    expect(log.findIndex((l) => l.builds === 2347) - crossing).toBe(24);
+    expect(log[log.length - 1]?.builds).toBe(2347);
     const after = new Set(patchMeshes(s));
-    expect(after.size).toBe(368);
+    expect(after.size).toBe(784);
     let kept = 0;
     for (const m of before) if (after.has(m)) kept++;
-    expect(kept).toBe(310);
+    expect(kept).toBe(636);
     // Every registry swapped in that slice.
     expect(casting).toEqual(after);
     expect(reflected).toEqual(after);
@@ -356,7 +358,7 @@ describe("createFacePatches, as jobs", () => {
     // What is built ahead is hidden until its crossing applies it: 56 of
     // the 140 have steep ground.
     const hidden = s.meshes.filter((m) => m.name.startsWith("facePatch_") && !m.isEnabled(false));
-    expect(hidden.length).toBe(56);
+    expect(hidden.length).toBe(139);
     expect(hidden.some((m) => casting.has(m) || reflected.has(m) || rained.has(m))).toBe(false);
     patches.dispose();
     expect(s.meshes.filter((m) => m.name.startsWith("facePatch_")).length).toBe(0);
@@ -371,7 +373,7 @@ describe("createFacePatches, as jobs", () => {
     // nothing is built ahead.
     const at = { x: -368.2, z: -896.2 };
     patches.update(at.x, at.z);
-    framesUntil(t, () => patches.update(at.x, at.z), () => patches.meshCount() === 362, 1000);
+    framesUntil(t, () => patches.update(at.x, at.z), () => patches.meshCount() === 753, 1000);
     const before = new Set(patchMeshes(s));
     expect(patches.builds()).toBe(1961);
     // A step east into cell (−23, −57): a job, nothing built by the update.
@@ -388,7 +390,7 @@ describe("createFacePatches, as jobs", () => {
     // Three frames on, the old set still drawn, two of the new one's cells
     // built: the set worked out in the first, then a near cell a frame, its
     // slice longer than a frame's share.
-    expect(drawn).toEqual([362, 362, 362]);
+    expect(drawn).toEqual([753, 753, 753]);
     expect(new Set(patchMeshes(s))).toEqual(before);
     expect(patches.builds()).toBe(1963);
     expect(patches.cover()).toEqual(facePatchCover(-376, -904, PATCH_REACH.high));
@@ -404,8 +406,8 @@ describe("createFacePatches, as jobs", () => {
     expect(t.jobs.last.late).toBe(0);
     // The new set wants 190 cells built, one of them as the first job built
     // it: 189 more, over 23 frames.
-    expect(frames).toBe(23);
-    expect(patches.builds()).toBe(1963 + 189);
+    expect(frames).toBe(25);
+    expect(patches.builds()).toBe(1963 + 236);
     expect(patches.cover()).toEqual(facePatchCover(at.x, at.z, PATCH_REACH.high));
     // What a set built at once for that cell draws.
     const s2 = new Scene(engine as NullEngine);
@@ -425,7 +427,7 @@ describe("createFacePatches, as jobs", () => {
     // By the north-east corner of cell (−24, −57).
     const at = { x: -368.3, z: -896.3 };
     patches.update(at.x, at.z);
-    framesUntil(t, () => patches.update(at.x, at.z), () => patches.meshCount() === 362, 1000);
+    framesUntil(t, () => patches.update(at.x, at.z), () => patches.meshCount() === 753, 1000);
     /** Frames at (x, z) until the idle work has nothing left, at most 300. */
     const settle = (): void => {
       let quiet = 0;
@@ -439,22 +441,22 @@ describe("createFacePatches, as jobs", () => {
     // Facing east: the 142 cells of cell (−23, −57)'s set built ahead.
     at.x += 0.01;
     settle();
-    expect([patches.builds(), hidden()]).toEqual([2103, 58]);
+    expect([patches.builds(), hidden()]).toEqual([2157, 148]);
     // Facing north: the 106 cells of cell (−24, −56)'s set not built as it
     // wants them, 47 with a patch, and the east's kept.
     at.z += 0.01;
     settle();
-    expect([patches.builds(), hidden()]).toEqual([2209, 105]);
+    expect([patches.builds(), hidden()]).toEqual([2314, 253]);
     // Facing east again: nothing built again, nothing let go.
     at.x += 0.01;
     settle();
-    expect([patches.builds(), hidden()]).toEqual([2209, 105]);
+    expect([patches.builds(), hidden()]).toEqual([2314, 253]);
     // Over the east line: drawn in its frame, and what was built for the
     // north let go.
     at.x += 0.3;
     patches.update(at.x, at.z);
     t.frame();
-    expect(patches.meshCount()).toBe(368);
+    expect(patches.meshCount()).toBe(784);
     expect(hidden()).toBe(0);
     patches.dispose();
   }, timeLimit(120_000));
@@ -490,14 +492,14 @@ describe("createFacePatches, as jobs", () => {
     // 29 near cells, then 19 in the job's first frame; at the jump, 1,940
     // of the new set's 1,961, the other 21 drawn or built as it wants them.
     expect([was, patches.builds() - was]).toEqual([48, 1940]);
-    expect(patches.meshCount()).toBe(373);
+    expect(patches.meshCount()).toBe(806);
     expect(casting).toEqual(new Set(patchMeshes(s)));
     expect(patches.cover()).toEqual(facePatchCover(CAM.x + 32, CAM.z, PATCH_REACH.high));
     // Nothing left to draw.
     for (let f = 0; f < 10; f++) {
       patches.update(CAM.x + 32, CAM.z);
       t.frame();
-      expect(patches.meshCount()).toBe(373);
+      expect(patches.meshCount()).toBe(806);
     }
     // The free camera's boost, 2.4 m a frame, across the next line east: at
     // once too.
@@ -535,7 +537,7 @@ describe("createFacePatches, as jobs, on this machine's clock", () => {
     patches.update(at.x, at.z);
     const first = performance.now() - t0;
     const filling: number[] = [];
-    while (patches.meshCount() === 20 && filling.length < 10_000) filling.push(frame(at.x, at.z));
+    while (patches.meshCount() === 22 && filling.length < 10_000) filling.push(frame(at.x, at.z));
     // The work's time: the frames run back to back.
     const filled = performance.now() - t0;
     // A walk east to the cell's east line, 172 frames, and 30 on: the idle

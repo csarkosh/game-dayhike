@@ -52,7 +52,7 @@ const SNOW_BLEND = 25;
  * grew straight out of, and flat, because the slope was gentle enough to walk.
  */
 export const GRASS_SLOPE = SLOPE_LO;
-const ROCK_SLOPE = SLOPE_HI;
+export const ROCK_SLOPE = SLOPE_HI;
 /** Gradient by which loose scree has replaced solid rock. */
 export const SCREE_SLOPE = 0.95;
 /** Gradient by which snow no longer clings at all. */

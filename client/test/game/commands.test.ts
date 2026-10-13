@@ -69,6 +69,11 @@ describe("validateCommand", () => {
     expect(validateCommand({ name: "freecam", args: ["on"] })).toBeNull();
     expect(validateCommand({ name: "freecam", args: ["off"] })).toBeNull();
     expect(validateCommand({ name: "freecam", args: ["yes"] })).not.toBeNull();
+    // A place: x z, or x z yaw, numbers.
+    expect(validateCommand({ name: "freecam", args: ["-168", "-1740"] })).toBeNull();
+    expect(validateCommand({ name: "freecam", args: ["-168", "-1740", "1.32"] })).toBeNull();
+    expect(validateCommand({ name: "freecam", args: ["-168", "there"] })).not.toBeNull();
+    expect(validateCommand({ name: "freecam", args: ["1", "2", "3", "4"] })).not.toBeNull();
   });
 
   it("rejects any terrain variant while none are registered, and lists them once they are", () => {
@@ -102,6 +107,9 @@ describe("script values", () => {
     // The rule that makes a shared link describe a state rather than invert it.
     expect(findCommand("freecam")?.scriptValue?.([])).toBe(true);
     expect(findCommand("freecam")?.scriptValue?.(["off"])).toBe(false);
+    // A place is its text, for the app to parse.
+    expect(findCommand("freecam")?.scriptValue?.(["-168", "-1740", "1.32"])).toBe("-168 -1740 1.32");
+    expect(findCommand("freecam")?.scriptValue?.(["-168", "-1740"])).toBe("-168 -1740");
   });
 
   it("reports the default at which an entry is dropped from the URL", () => {
