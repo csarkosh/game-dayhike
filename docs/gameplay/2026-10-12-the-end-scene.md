@@ -47,7 +47,7 @@ car's own, so every shot frames its subject against the sky or in a lamp's beam.
 | 1. The run | 0 to `RUN_CUT_S` (2.5), or `A` if sooner | 24 mm | Carried by the runner: `RUN_CAM_BACK` (2.2 m) behind, `RUN_CAM_UP` (0.5 m) over their eye, `RUN_CAM_SIDE` (0.6 m) to their right, aimed past their shoulder at the door, so the car grows in the frame; the lamp on the body lights the way | the person, running |
 | 2. The pursuit | `RUN_CUT_S` to `A` | 32 mm | Locked off at the car's rear corner on the runner's side, `PURSUIT_CAM_UP` (0.7 m) up and `PURSUIT_CAM_OUT` (1.0 m) out from the corner, aimed at the runner's chest (`CHEST_M` 1.3 m over their feet) as they come at the lens, the pad, the treeline and the shades behind them in the mist; the cut on the arrival, the runner by the lens | the shadows, still coming |
 | 3. The door and the engine | `A` to `A` + `ENGINE_SHOT_S` (5.5) | 32 mm | Locked off low on the road's far shoulder, `ENGINE_CAM_UP` (0.6 m) up, `ENGINE_CAM_AHEAD` (7 m) ahead of the car along its heading, aimed at the car's nose and turning to keep it centred as it passes (the stand fixed, the aim on the nose's place each frame): the door shuts, the crank, the catch, the lamps come on, the revs, the pull-away, the car passing the lens close; the shades come to the car's inland flank beyond it and stand in a file there | the threshold, crossed back |
-| 4. The road | `A` + 5.5 to `A` + `END_SCENE_AFTER_ARRIVAL_S` (17.5) | 24 mm | Overhead: `ROAD_CAM_UP` (14 m) over the car looking straight down (`ROAD_LOOK_DOWN`, 1.55 rad, a hair short of it so the look keeps a heading) with the car's heading as its yaw, carried by the car for `ROAD_CARRY_S` (2 s), then left in the air (eased over `ROAD_RELEASE_S` 1 s from the carried place to where the car was at the release) as the car runs on from under it, and tilting up over the shot's whole 12 s from straight down to the road ahead (`ROAD_TILT_TO` 0.06 rad down), the car's lamps small on the highway into the mist; YOU LIVED and the line from `TITLE_AT_S` (2 s) into the shot; the dark from `END_FADE_AT_S` (10 s); the landing at `END_LANDING_AT_S` (15 s) | the place: the opening's wide, answered |
+| 4. The road | `A` + 5.5 to `A` + `END_SCENE_AFTER_ARRIVAL_S` (17.5) | 24 mm | Overhead: `ROAD_CAM_UP` (14 m) over the car looking straight down (`ROAD_LOOK_DOWN`, 1.55 rad, a hair short of it so the look keeps a heading) with the car's heading as its yaw, carried by the car for `ROAD_CARRY_S` (2 s), then left in the air as the car runs on from under it: over `ROAD_RELEASE_S` (1 s) the camera slows along the car's own path from the car's speed to nothing (over the car's pose at `u − u²/2` of the release, `u` the release's share run, `releaseAt`), so it comes to rest, never moving back, over where the car was half the release on (`roadRelease`), and tilting up over the shot's whole 12 s from straight down to the road ahead (`ROAD_TILT_TO` 0.06 rad down), the car's lamps small on the highway into the mist, which the shot draws back from its start (over `END_MIST_EASE_S`, 4 s, the ground cloud and the weather's mist eased to `END_MIST_FLOOR`, 0.2, of what they were, and held: `endMistShare`) so the car is not lost in it within a second of the release, the night, the rain and the cast as they were; YOU LIVED and the line from `TITLE_AT_S` (2 s) into the shot; the dark from `END_FADE_AT_S` (10 s); the landing at `END_LANDING_AT_S` (15 s) | the place: the opening's wide, answered |
 
 Every camera is in world units from the live state: the runner's body each frame (shots 1 and 2),
 the car's site and heading (shots 2 and 3) and the car's own pose as it drives (shot 4), so the same
@@ -106,17 +106,23 @@ shot as after it; through the scene the map follows the camera, not the player i
 road ahead is lit and the wet ground reflects them. They are no new lights: every material binds two
 lights and one a player at most, so the car's are the two this screen already has, the lamp on the
 lens (freed from the camera, its right lamp) and the local body's (`views.localLampAt`, its left),
-which the scene has no other use for once the runner is in. In a party of five the local body's
-lamp, made again at the catch and last of the scene's lights, is the eighth light against a cap of
-seven, and lights nothing: the car has one lamp there, as the summit's shots have the same count.
-And two tail lamps, small red quads at the rear (`TAIL_LAMP_W` 0.25 by `TAIL_LAMP_H` 0.1 m,
-`TAIL_LAMP_COLOUR` (1, 0.08, 0.04), unlit, emissive alone, casting nothing), `TAIL_LAMP_UP` (0.75 m)
-up, `TAIL_LAMP_APART` (1.4 m) apart and `TAIL_LAMP_BACK` (2.2 m) behind the car's centre, children
-of its root, so the car can be followed down the highway in the last shot; made as the scene begins
-and hidden to the catch, so their shader is compiled on the scene's first frame and not in the
-engine shot. The film's car has no lamp meshes of its own (its meshes are not named by part), so the
-quads are added. With no car drawn to drive (its box alone, below), the lamps stay at the parked
-car's front.
+which the scene has no other use for once the runner is in. The body's lamp is kept a light from the
+chase's flip to the end (`views.keepLocalLamp`), dark whenever the body is not drawn, so the lights
+every material binds are the same from the film's car's first frames through the scene and no
+pipeline is first asked for in it. In a party of five the local body's lamp, last of the scene's
+lights, is the eighth light against a cap of seven, and lights nothing: the car has one lamp there,
+as the summit's shots have the same count. The body's lamp is aimed after the car is posed in the
+same frame, so it is at the car's nose and not a frame behind it. And two tail lamps, small red
+quads at the rear (`TAIL_LAMP_W` 0.32 by `TAIL_LAMP_H` 0.12 m, the size that reads at 100 m,
+`TAIL_LAMP_COLOUR` (1, 0.08, 0.04), unlit, emissive alone, casting nothing, and out of the fog, so
+the two red points stay in the frame down the highway into the mist where the car itself is lost),
+`TAIL_LAMP_UP` (0.75 m) up, `TAIL_LAMP_APART` (1.4 m) apart and `TAIL_LAMP_BACK` (2.2 m) behind the
+car's centre, children of the film's car's root, so the car can be followed down the highway in the
+last shot. They are made with the film's car when it is swapped in, drawn in its first frames with
+it and then hidden, so nothing of them shows on the car through the chase, and shown and lit at the
+catch (`tailLamps(true)`). The film's car has no lamp meshes of its own (its meshes are not named by
+part), so the quads are added; the parked car, swapped for nothing, has none. With no car drawn to
+drive (its box alone, below), the headlamps stay at the parked car's front.
 
 **The shades** (§2) come down the trail and across the pad behind the runner through shots 1 and
 2, reach the car during shot 3 and stand in a file along its inland flank and back past its tail,
@@ -211,17 +217,24 @@ to silence; today the pulse and the rain play on under the black and stop dead u
 **The film's car at the trailhead.** The hike's parked car (`trailhead.car`) has no parts: no wheels
 to spin, no door. The intro's car (`intro.car`) has them, and the catalog marks it the scene's so a
 hike neither loads nor counts it. The end scene needs it, so a hike fetches `intro.car` once the
-phase flips to the chase, when the car is a kilometre away and out of sight, and places it over
-the parked car on the same site at the same yaw with the parked model (or its box) hidden
+phase flips to the chase, when the car is a kilometre away and out of sight, and places it over the
+parked car on the same site at the same yaw with the parked model (or its box) hidden
 (`trailhead.swapCar`); the parked car's fixed patch gives way to one that rides the new car's root,
-drawn as the parked car's is, by the same shader and as dark, so the swap is not seen in it and
-asks for no shader the hike has not made. A tier change that builds the trailhead
-anew fetches it again. The catalog entry stays `scene`, and the loading screen, gone by then, never
-counts it. A fetch that fails leaves the parked car in place, and the scene moves it whole, wheels
-still, its fixed patch left on the pad; with only the box standing (its model never came) the car
-stays where it is and only its sound drives off. (Loading it from the start would be simpler and
-cost 1.9 MB on every first visit before Play, for a thing seen in the last twenty seconds; after
-the flip the download has twenty-one seconds of scene and the whole chase to land in.)
+drawn as the parked car's is, by the same shader and as dark, so the swap is not seen in it and asks
+for no shader the hike has not made. Once swapped in, the film's car, its patch and its tail lamps
+are drawn wherever they stand (`alwaysSelectAsActiveMesh`), unseen a kilometre off in the dark of
+the chase, each until its material is ready for it after a frame drawn and none past
+`PIPELINE_WARM_FRAMES_MAX` (30) frames: the effects prepared, the shader modules made and the
+pipelines requested at the swap, so the scene's first frames draw the car whole instead of leaving
+it out or holding the page. A tier change that builds the trailhead anew fetches it again; while the
+scene plays (from the win, or the console's look at it) no tier change is taken, neither the
+player's from the settings nor the governor's drop, since a renderer built anew would have no scene
+to play. The catalog entry stays `scene`, and the loading screen, gone by then, never counts it. A
+fetch that fails leaves the parked car in place, and the scene moves it whole, wheels still, its
+fixed patch left on the pad; with only the box standing (its model never came) the car stays where
+it is and only its sound drives off. (Loading it from the start would be simpler and cost 1.9 MB on
+every first visit before Play, for a thing seen in the last twenty seconds; after the flip the
+download has twenty-one seconds of scene and the whole chase to land in.)
 
 The stage's car block (`scene/sceneStage.ts`: the root, the wheels' spin and turn, the steering,
 the door) becomes `stageCar(pose, model)`, which the scene route and the renderer both call.
@@ -230,11 +243,11 @@ the door) becomes `stageCar(pose, model)`, which the scene route and the rendere
 
 - `game/endScene.ts`: `END_SHOTS`, `endShot(t, ctx)`, `endShotIndex(t, arrival)`,
   `endCar(t, road, site, direction)` with `carDistance`, `carSpeed` and `laneAt`,
-  `endBeats(t, arrival)`, `arrived`, `pursuitOut` (shot 2's quarter), `roadRelease` (shot 4's
-  held place, made once a scene), `headlampAt`, `carHeard` (the car in the ear's own frame, for
-  `ambient.setCar`) and the constants above; Babylon-free, as `cutscene.ts` is. `ctx` is the
-  runner's body and eye this frame, the car's site, its ground and direction, the road, the door,
-  the arrival second (or none yet) and the pursuit's standpoint.
+  `endBeats(t, arrival)`, `arrived`, `pursuitOut` (shot 2's quarter), `releaseAt` and
+  `roadRelease` (shot 4's slowing and its rest, made once a scene), `headlampAt`, `carHeard` (the
+  car in the ear's own frame, for `ambient.setCar`) and the constants above; Babylon-free, as
+  `cutscene.ts` is. `ctx` is the runner's body and eye this frame, the car's site, its ground and
+  direction, the road, the door, the arrival second (or none yet) and the pursuit's standpoint.
 - `game/carAudio.ts`: the schedule as data (`CAR_CUES`, the fundamental and the levels at a
   second, pure) and the Web Audio graph that plays it on the `car` bus.
 - `game/ambientAudio.ts`: the `scene` gain, `fadeWorld`, `fadeMaster`, the `car` bus and
@@ -267,14 +280,20 @@ the door) becomes `stageCar(pose, model)`, which the scene route and the rendere
   master's at the dark, the landing), each set from the frame the arrival lands, the car's sound
   started on that frame and placed every frame after the frame's listener; a landing set at the
   win for the latest it can come (`RUN_MAX_S` and 20.5 s), which the arrival replaces; the film
-  car's fetch at the flip; the death's sound fade; the `escape` command.
+  car's fetch at the flip; the road shot's mist drawn back where the frame's weather and acts are
+  settled (`syncAtmosphere`); the death's sound fade; the `escape` command.
 
 ## 5. A look at it
 
-The console's `escape` (host only; not persisted): the host's own player is put on the pad
-`ESCAPE_FROM_M` (14 m) from the car toward the trail's entrance, on the ground and facing the car,
-the phase set to the chase if it is still the climb, and the next tick is the win, so the scene
-plays as it will, pursuit and all; a phase flipped with the match already decided shows no find.
+The console's `escape` (host only; not persisted) plays the end as the real one opens: the film's
+car is fetched at once and the acts are set at the crest's (`escalationAt(1, true)`: the night, the
+mist and the chase's cast whole). The win waits on the car: once it is in and past its first frames,
+and the pipelines in flight have landed (or, where none are counted, `ESCAPE_SETTLE_S`, 2 s, later;
+at most `ESCAPE_WAIT_S` after those frames), or after `ESCAPE_WAIT_S` (10 s) with no car at all, the
+host's own player is put on the pad `ESCAPE_FROM_M` (14 m) from the car toward the trail's entrance,
+on the ground and facing the car, the phase set to the chase if it is still the climb, and the next
+tick is the win, so the scene plays as it will, pursuit and all, on the film's car; a phase flipped
+with the match already decided shows no find.
 The `end won` command plays the scene from wherever the player stands, with the trailhead's car and
 no pursuit (the sim is not touched), and leaves the screen dark at its end, with no landing.
 
@@ -286,7 +305,7 @@ no pursuit (the sim is not touched), and leaves the screen dark at its end, with
   shoulder and its turn as the car passes; shot 4 over the car, carried then released, its pitch
   from straight down to `ROAD_TILT_TO` by its end; the car's distance at literal seconds (0 at 2.6 s,
   7 m at 4.6 s, 28 m at 6.6 s, 14 m/s after), its lane change, its direction on both headings; the
-  door spot on both headings; the beats' seconds.
+  door spot on both headings; the beats' seconds; the mist's share through the road shot.
 - `test/game/carAudio.test.ts`: the cues' seconds; the fundamental at idle, in a rev's peak, at
   5, 8 and 12 m/s with the gear drops; the level and the cutoff at 0, 8 and 120 m.
 - `test/game/ambientAudio.test.ts`: `fadeWorld` ramps the scene gain and leaves the voice and car
@@ -296,15 +315,21 @@ no pursuit (the sim is not touched), and leaves the screen dark at its end, with
   pavement, and that none ever stands on it; nothing killed through the scene; gone after the dwell;
   the state's fingerprint and the snapshot carry them.
 - `test/game/entityViews.test.ts`: `Pursue` drawn as a shade; a body within `DOOR_IN_M` of the door
-  spot hidden in the scene; the local lamp as the car's headlamp.
+  spot hidden in the scene; the local lamp kept a light, dark, from the run through the arrival
+  to the catch, and the car's headlamp there.
 - `test/game/rendererEndScene.test.ts`: the scene's first frame (the camera, the lens, the body
   drawn, the lens's lamp off), the arrival (the body hidden, the engine shot), the car driven, the
   rain's cover left once the car is clear of its footprint, the headlamps and the tail lamps at the
-  catch, the rain lit from the headlamp where it stands; the lamps held at the parked car with its
-  box alone.
+  catch, the body's lamp at the car as posed in the same frame, the rain lit from the headlamp where
+  it stands; the same lights from the run to the end; the lamps held at the parked car with its box
+  alone.
 - `test/game/scene/sceneStage.test.ts`: `stageCar` called on its own.
 - `test/game/trailheadMeshes.test.ts`: `swapCar` over the parked model and before it, the patch
-  riding the new root, a second car refused, `leave()`, and the disposal.
+  riding the new root, its first frames over for each mesh once its material is ready and for all at
+  the cap, the tail lamps hidden after them and shown when lit, a second car refused, `leave()`, and
+  the disposal; the real model's wheels a tyre's radius over the ground and inside the body, parked
+  and 7 m on.
+- `test/game/escalation.test.ts`: `escalationAt` eased whole at the climb it is given.
 - `test/game/commands.test.ts`: `escape` takes no argument and is never in the URL.
 - `test/game/ending.test.ts`: the death as before; the win's cases removed.
 - The browser pass: the scene on `escape`, every shot seen, the car on the road's height on a bend,
