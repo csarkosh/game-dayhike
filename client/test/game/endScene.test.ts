@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   arrived, carDistance, carHeard, carSpeed, endBeats, endCar, endShot, endShotIndex, endMistShare, headlampAt, laneAt, releaseAt, roadRelease,
-  type EndShotContext, type LampAim,
+  DOOR_REACH_M, PULL_AWAY_AT_S, RUN_MAX_S, type EndShotContext, type LampAim,
 } from "../../src/game/endScene.js";
+import * as trailhead from "../../src/sim/trailhead.js";
 import { doorSpot } from "../../src/sim/trailhead.js";
 
 /** A straight road along z, its centreline at x 0, on flat ground at 0; the car on its shoulder at the pad, nose to +z. */
@@ -209,5 +210,12 @@ describe("the arrival and the beats", () => {
     expect(endBeats(16.5, 1)).toEqual({ title: true, fade: true, landing: false, pullAway: true });
     expect(endBeats(21.5, 1)).toEqual({ title: true, fade: true, landing: true, pullAway: true });
     expect(endBeats(21.4, 1)).toEqual({ title: true, fade: true, landing: false, pullAway: true });
+  });
+
+  it("keeps its timeline with the sim's shade of the end: the door's reach, the run's cap, the pull-away", () => {
+    expect(PULL_AWAY_AT_S).toBe(trailhead.PULL_AWAY_AT_S);
+    expect(DOOR_REACH_M).toBe(trailhead.DOOR_REACH_M);
+    expect(RUN_MAX_S).toBe(trailhead.RUN_MAX_S);
+    expect([DOOR_REACH_M, RUN_MAX_S, PULL_AWAY_AT_S]).toEqual([0.9, 10, 2.6]);
   });
 });
