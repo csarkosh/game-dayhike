@@ -97,17 +97,17 @@ way. The line says the rest.
 On the tick the outcome becomes `Won`, the host stands up `PURSUIT_SHADES` (4) shades of a new
 kind, `AiState.Pursue`, on the ground at the trail's entrance and up the stem behind it,
 `PURSUIT_APART_M` (4 m) apart along the stem's first edge, each bound to the living player nearest
-it, and they walk after the party: each tick toward the door spot of the car (`doorSpot`, §1; the
-party is there or on its way there) at `PURSUIT_SPEED` (5.5 m/s, under a sprint's 7), on the
-ground. The Hollow's treeline does not hold them (`walkToward` with `woods` false): they cross the
-pad. They stop where the road's bed begins: a step that would end nearer the centreline than
+it, and they walk after the party (the party is at the car or on its way there), each to a stop of
+its own: the first to the car's door spot (`doorSpot`, §1), each after it `PURSUIT_SPREAD_M` (1.8 m)
+further along the road the way the car's tail points, at `PURSUIT_SPEED` (5.5 m/s, under a
+sprint's 7), on the ground. The Hollow's treeline does not hold them (`walkToward` with `woods`
+false): they cross the pad. Within `PURSUIT_ARRIVE_M` (1 m) of its stop a shade stands, so it does
+not tread back and forth over it; and a step that would end nearer the centreline than
 `PURSUIT_STOP_U` (`ROAD_WALL_U` + 1.5 m, 7.9 m) is not taken, the pavement being the one ground they
-never cross; and within `PURSUIT_ARRIVE_M` (1 m) of the door spot they stand, so a shade at the door
-does not tread back and forth over it. Stopped either way, they face the car. The door spot is 8.4 m
-from the centreline, inland of the stop, so on a world whose trail leaves the pad inland, which is
-every world of the sweep, they come to the door and stand there against the car's flank; the stop
-holds wherever the way to the door would cross the pavement. They go `PURSUIT_DWELL_S` (25 s) after
-they stood up. They are the haunt's shades in every other way: harmless (a shade kills nothing,
+never cross. Stopped either way, they face the car. The stops are 8.4 m from the centreline, inland
+of the pavement, so they stand in a loose file along the car's inland flank from the door back past
+its tail, more than 1.5 m apart; the stop at the pavement holds wherever the way to a stop would
+cross it. They go `PURSUIT_DWELL_S` (25 s) after they stood up. They are the haunt's shades in every other way: harmless (a shade kills nothing,
 since the Hollows' contact is for Hollows alone; the stare they fill is capped at
 `SHADE_STARE_CAP`), drawn through the silhouette mask, coming in from nothing and going out to it
 (`isShadeState` counts them), and no player's nearness or look sends them away (the haunt's flee

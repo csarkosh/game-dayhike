@@ -350,9 +350,10 @@ describe("the pursuit", () => {
       expect(e.pos.z).toBeCloseTo(z, 6);
       expect(e.targetId).toBe(p.id);
       expect(e.stateTimer).toBe(25);
-      // Bound for the car's door: inland of the car, half a metre ahead of its centre.
+      // Bound for its own stop: the first at the car's door, inland of the car and half a metre ahead of
+      // its centre (the car faces +z here), each after it 1.8 m further back along the road.
       expect(e.emergeTo!.x).toBeCloseTo(-314.32677397683483, 6);
-      expect(e.emergeTo!.z).toBe(0.5);
+      expect(e.emergeTo!.z).toBeCloseTo([0.5, -1.3, -3.1, -4.9][k] as number, 9);
       expect(isShadeState(e.ai)).toBe(true);
       expect(isHollow(e)).toBe(false);
     }
@@ -375,7 +376,7 @@ describe("the pursuit", () => {
     expect(pursuers(w)).toHaveLength(0);
   });
 
-  it("walks to the car at 5.5 m/s, stands within a metre of its door facing the car, never nearer the road than 7.9 m, and is gone after 25 s", () => {
+  it("walks to the car at 5.5 m/s, stands in a file along the car's flank within a metre of its own stop, facing the car, never nearer the road than 7.9 m, and is gone after 25 s", () => {
     const { w } = won();
     const four = pursuers(w);
     const last = four[3]!;
@@ -385,7 +386,6 @@ describe("the pursuit", () => {
     tick(w, 60);
     expect(dist(last.pos, from)).toBeCloseTo(5.5, 6);
     const car = w.search!.car;
-    const door = four[0]!.emergeTo!;
     let nearest = Infinity;
     for (let t = 75; t < 1499; t++) {
       tick(w);
@@ -396,9 +396,24 @@ describe("the pursuit", () => {
     }
     // Never on the pavement (5.5 m), never past the stop at 7.9 m from the centreline.
     expect(nearest).toBeGreaterThanOrEqual(7.9);
+    // At rest: a loose file from the door back past the car's tail (the car is 4.6 m long, its tail at z −2.3).
+    const rest = [
+      [-313.40701828305635, 0.5448433433629293],
+      [-313.3974892968285, -1.101458838833046],
+      [-313.40385430632665, -2.8239590009255546],
+      [-313.43046086449056, -4.5850671104286045],
+    ];
+    for (const [k, e] of four.entries()) {
+      const [x, z] = rest[k] as [number, number];
+      expect(e.pos.x).toBeCloseTo(x, 6);
+      expect(e.pos.z).toBeCloseTo(z, 6);
+    }
+    for (let i = 0; i < four.length; i++) {
+      for (let j = i + 1; j < four.length; j++) expect(dist(four[i]!.pos, four[j]!.pos)).toBeGreaterThanOrEqual(1.5);
+    }
     for (const e of four) {
       expect(w.state.enemies.has(e.id)).toBe(true);
-      expect(dist(e.pos, door)).toBeLessThanOrEqual(1);
+      expect(dist(e.pos, e.emergeTo!)).toBeLessThanOrEqual(1);
       expect(e.vel).toEqual({ x: 0, y: 0, z: 0 });
       expect(e.yaw).toBeCloseTo(Math.atan2(car.x - e.pos.x, car.z - e.pos.z), 9);
     }

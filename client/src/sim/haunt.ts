@@ -119,13 +119,15 @@ export const GUIDE_SIDE_M = 3;
  * entrance and up the stem behind it, PURSUIT_APART_M apart, walking to the
  * car's door at PURSUIT_SPEED (under a sprint's 7), stopping short of the
  * road's bed at PURSUIT_STOP_U from its centreline, or within PURSUIT_ARRIVE_M
- * of the door, and gone PURSUIT_DWELL_S after they stood up.
+ * of its own stop by the door, and gone PURSUIT_DWELL_S after they stood up.
  */
 export const PURSUIT_SHADES = 4;
 export const PURSUIT_APART_M = 4;
 export const PURSUIT_SPEED = 5.5;
 export const PURSUIT_STOP_U = ROAD_WALL_U + 1.5;
 export const PURSUIT_ARRIVE_M = 1;
+/** Metres along the road between one shade's stop and the next: a loose file from the door back past the car's tail. */
+export const PURSUIT_SPREAD_M = 1.8;
 export const PURSUIT_DWELL_S = 25;
 /** Placements tried for a shade before the director waits a tick. */
 export const HAUNT_PLACE_TRIES = 6;
@@ -330,7 +332,10 @@ export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: b
  * (summit.ts): PURSUIT_SHADES shades of the end stand up on the ground at the
  * trail's entrance and back up the stem from it, PURSUIT_APART_M apart along
  * its first edge, each for the living player nearest it (ties to the lower
- * id), and walk to the car's door spot (`doorSpot`, kept in `emergeTo`).
+ * id), and walk each to its own stop (kept in `emergeTo`): the first to the
+ * car's door spot (`doorSpot`), each after it PURSUIT_SPREAD_M further along
+ * the road the way the car's tail points, so they stand in a file along the
+ * car's inland flank and behind it.
  * Nothing without a trail, a ground, the car or a living player.
  */
 export function startPursuit(world: World): void {
@@ -339,7 +344,8 @@ export function startPursuit(world: World): void {
   const search = world.search;
   if (graph === null || ground === null || search === null) return;
   const car = search.car;
-  const door = doorSpot(car, carDirection(car, graph.trailhead));
+  const direction = carDirection(car, graph.trailhead);
+  const door = doorSpot(car, direction);
   const e = trailEntrance(graph);
   for (let k = 0; k < PURSUIT_SHADES; k++) {
     const x = e.x + e.dx * PURSUIT_APART_M * k;
@@ -353,7 +359,7 @@ export function startPursuit(world: World): void {
       if (sq < bestSq || (sq === bestSq && target !== null && p.id < target.id)) { bestSq = sq; target = p; }
     }
     if (target === null) return;
-    addShade(world, { x, y: ground.heightAt(x, z) + ENEMY_HALF.y, z }, target, AiState.Pursue, PURSUIT_DWELL_S, { x: door.x, y: 0, z: door.z });
+    addShade(world, { x, y: ground.heightAt(x, z) + ENEMY_HALF.y, z }, target, AiState.Pursue, PURSUIT_DWELL_S, { x: door.x, y: 0, z: door.z - direction * PURSUIT_SPREAD_M * k });
   }
 }
 
@@ -362,9 +368,9 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
   const target = world.state.players.get(h.targetId);
   h.stateTimer -= dt;
   if (h.ai === AiState.Pursue) {
-    // It walks to the car's door, the pavement the one ground it never
-    // crosses: a step that would end nearer the road's centreline than
-    // PURSUIT_STOP_U is not taken, and at the door it stands. Either way it
+    // It walks to its stop by the car's door, the pavement the one ground it
+    // never crosses: a step that would end nearer the road's centreline than
+    // PURSUIT_STOP_U is not taken, and at its stop it stands. Either way it
     // faces the car. No one's nearness sends it away, and no look.
     if (h.stateTimer <= 0) return true;
     const door = h.emergeTo;
