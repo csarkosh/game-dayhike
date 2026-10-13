@@ -1,0 +1,12 @@
+{
+  "game": "0f1c2a3b-4d5e-4f60-8a9b-0c1d2e3f4a5b",
+  "tier": "high",
+  "stills": [
+    { "name": "trailhead", "seed": "atmo", "x": -275, "z": -1, "yaw": 1.571, "what": "the trailhead: the path into the forest, the kiosk on the right" },
+    { "name": "forest", "seed": "atmo", "x": 250, "z": -500, "yaw": 1.09, "what": "the old wood: a fern slope under big trunks" },
+    { "name": "tarn", "seed": "atmo", "x": 228, "z": 72, "yaw": 1.571, "what": "the tarn from its west shore, lilies on the water" },
+    { "name": "meadow", "seed": "pine", "x": 90, "z": -316, "yaw": 0.8, "what": "the meadow above the trees (the pine world has one; atmo does not)" },
+    { "name": "crest", "seed": "pine", "x": 602, "z": -116, "yaw": 2.5, "what": "the trail over bare ground at the crest" },
+    { "name": "beach", "seed": "atmo", "x": -432, "z": -200, "yaw": 3.14, "what": "the beach below the road, the stack off it" }
+  ]
+}

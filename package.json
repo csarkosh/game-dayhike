@@ -33,7 +33,8 @@
     "deploy:desktop": "node tools/deploy/desktop.mjs",
     "desktop:smoke": "node desktop/test/smoke.mjs",
     "desktop:outdated": "node tools/deploy/desktopOutdated.mjs",
-    "deploy:verify": "node tools/deploy/verify.mjs"
+    "deploy:verify": "node tools/deploy/verify.mjs",
+    "previews": "node tools/previews/shoot.mjs"
   },
   "devDependencies": {
     "@jridgewell/trace-mapping": "0.3.31",

@@ -1,12 +1,8 @@
-<p align="center">
-  <img src="./branding/dayhike.svg" alt="Day Hike" width="128" />
-</p>
+<p align="center"><a href="https://games.csarko.sh/dayhike"><img src="branding/previews/trailhead.png" alt="The trailhead: the path leaving the road into a forest in full leaf" width="900"></a></p>
 
 <h1 align="center">Day Hike</h1>
 
 <p align="center"><em>A mild morning; an easy trail; and the peculiar conviction that the woods were counting us.</em></p>
-
-<p align="center"><a href="https://games.csarko.sh/dayhike"><img src="branding/previews/hillside.png" alt="A bare rock slope above the coast road, the forest along its crest, the sea beyond" width="900"></a></p>
 
 <p align="center">
 <b>Play now</b> at <a href="https://games.csarko.sh/dayhike">games.csarko.sh/dayhike</a> · <b>1 to 5</b> players · <b>in the browser</b>, no account, no install · <b>free</b>
@@ -22,20 +18,34 @@ anywhere. Walk with **WASD**, look with the mouse, run with **Shift**, jump with
 **F** for the headlamp, and **click** to search. Alone works too: the woods count one as readily
 as five.
 
-## A day on the trail
+## Trail 14
+
+*From the park's leaflet, as you'd find it in the box at the trailhead.*
+
+A day hike of moderate difficulty from the coast road to the crest and back. Allow the day.
+Carry water and a light. The trail is marked at every fork; please keep to it, for the ground's
+sake and your own.
 
 <table>
 <tr>
-<td width="420" valign="top"><img src="branding/previews/trailhead.png" alt="The trailhead: a kiosk with a poster beside the path into the forest" width="400"></td>
-<td valign="top"><b>Morning.</b> A gravel pad, a car, a board with a poster and a map. The trail leaves the road and climbs into the trees. Birds, wind, your party's footsteps.</td>
+<td width="420" valign="top"><img src="branding/previews/forest.png" alt="Old growth: trunks and ferns on a mossy slope under the canopy" width="400"></td>
+<td valign="top"><b>The old wood.</b> From the trailhead the trail climbs through old-growth forest: fir and pine on a floor of fern and moss, the light coming down green through the canopy. Elk browse at the edges; a raven may follow you a while.</td>
 </tr>
 <tr>
-<td width="420" valign="top"><img src="branding/previews/rain.png" alt="Rain falling through the forest onto the undergrowth" width="400"></td>
-<td valign="top"><b>Rain.</b> A quarter of the way up the cloud closes. The rain comes through the canopy, the trail turns to mud, the drops run down the lens. Then the light goes, and the birds with it.</td>
+<td width="420" valign="top"><img src="branding/previews/tarn.png" alt="A tarn with lily pads, rocks and ferns on its shore, the forest round it" width="400"></td>
+<td valign="top"><b>The tarn.</b> Halfway up, a still lake in a hollow of the hill, lilies on the water and rock at its shore. A good place to stop. The loop around it rejoins the trail; the far shore is the quieter one.</td>
 </tr>
 <tr>
-<td width="420" valign="top"><img src="branding/previews/night.png" alt="Night and rain, a dark shape in the mist ahead" width="400"></td>
-<td valign="top"><b>Night.</b> A pale mist rides at your sides and there are figures in it, gone when you look too long. Most are nothing. One is not. Looking costs you. On the way down it follows, faster than you walk, slower than you can run, and the road is the only ground it will not cross.</td>
+<td width="420" valign="top"><img src="branding/previews/meadow.png" alt="A mountain meadow, the forest's edge beyond it" width="400"></td>
+<td valign="top"><b>The meadow.</b> Above the lake the trees open on a meadow: grass to the knee, lupine and beargrass in their season, the first long view back down to the sea. Rabbits in the grass, if you are quiet.</td>
+</tr>
+<tr>
+<td width="420" valign="top"><img src="branding/previews/crest.png" alt="The trail over bare ground at the crest, the last trees below it" width="400"></td>
+<td valign="top"><b>The crest.</b> Past the treeline the trail finds bare rock and the top. On a clear day the whole coast lies below; on most, the cloud comes and goes, and the cloud is its own reward. Turn back here.</td>
+</tr>
+<tr>
+<td width="420" valign="top"><img src="branding/previews/beach.png" alt="Wet sand and pebbles at low tide, a sea stack standing off the shore" width="400"></td>
+<td valign="top"><b>The beach.</b> Below the road the forest ends on a shore of sand, pebbles and driftwood, a stack standing off it, the sea birds working the tide line. Walk it before you set out, or after, when the light comes back.</td>
 </tr>
 </table>
 
