@@ -19,13 +19,13 @@ import {
   GUIDE_REACH, HAUNT_MIST_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_CHASE, HAUNT_REAL_CLIMB, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
   LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_RANGE, SHADE_WATCHED_S, OFF_TRAIL_FROM_M, OFF_TRAIL_SPAN_M, OFF_TRAIL_REAL_EACH, offTrailOf,
   bestClimb, isHaunting, isShadeState, placeShadeOnGuide, pressureOf, spawnShade, startPursuit, PURSUIT_STOP_U,
-  PURSUIT_AHEAD_M, PURSUIT_IN_M, PURSUIT_VERGE_U, pursuitAim,
+  PURSUIT_AHEAD_M, PURSUIT_IN_M, PURSUIT_ROAD_AT_S, PURSUIT_VERGE_U, pursuitAim,
 } from "../../src/sim/haunt.js";
 import { isHollow, SHADE_STARE_CAP, SUMMIT_REVEAL_S, spawnHollow } from "../../src/sim/hollow.js";
 import { trailDistance } from "../../src/sim/trail.js";
 import { stepSummit, updateSafety } from "../../src/sim/summit.js";
-import { CAR_HALF, carDirection, doorSpot } from "../../src/sim/trailhead.js";
-import { carDistance, laneAt } from "../../src/game/endScene.js";
+import { CAR_HALF, carDirection, doorSpot, PULL_AWAY_AT_S } from "../../src/sim/trailhead.js";
+import { endCar } from "../../src/game/endScene.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -443,7 +443,7 @@ describe("the pursuit", () => {
     expect(h.yaw).toBeCloseTo(facing(h, p.pos), 9);
   });
 
-  it("once its player is in the car and the car has pulled away, runs down the verge after it at 5.5 m/s, in behind it by one in ten and never across its nose, until it is gone after 25 s", () => {
+  it("once its player is in the car, stands by the door through the pull-away, looks after the car, and 2 s after it has gone runs down the verge at 5.5 m/s, in by one in ten, until it is gone after 25 s", () => {
     const { w, p } = won();
     const h = pursuers(w)[0]!;
     const car = w.search!.car;
@@ -453,65 +453,65 @@ describe("the pursuit", () => {
     // the pull-away (156 ticks is 2.6 s; the clock's sum is a hair short of it at the 156th).
     tick(w, 156);
     expect(h.attackCooldown).toBeCloseTo(2.6, 9);
-    expect(h.pos.x).toBeCloseTo(-313.40701828305635, 6);
-    expect(h.pos.z).toBeCloseTo(0.5448433433629293, 6);
+    const stood = { ...h.pos };
+    expect(stood.x).toBeCloseTo(-313.40701828305635, 6);
+    expect(stood.z).toBeCloseTo(0.5448433433629293, 6);
     expect(dist(h.pos, p.pos)).toBeLessThanOrEqual(1);
     expect(h.vel).toEqual({ x: 0, y: 0, z: 0 });
     expect(h.yaw).toBeCloseTo(facing(h, p.pos), 9);
-    // The car gone, it takes the road: at the 157th tick it moves, the way the car went (+z here).
+    // The car gone from under its eyes: from the 157th it stands where it is and looks after it,
+    // down the road (+z here, yaw 0), to the 276th (4.6 s, the sum a hair short of it there).
+    tick(w);
+    expect(h.pos).toEqual(stood);
+    expect(h.yaw).toBe(0);
+    tick(w, 119);
+    expect(h.attackCooldown).toBeCloseTo(PURSUIT_ROAD_AT_S, 9);
+    expect(h.pos).toEqual(stood);
+    expect(h.vel).toEqual({ x: 0, y: 0, z: 0 });
+    expect(h.yaw).toBe(0);
+    // At the 277th it takes the road, the way the car went.
+    // 2026-10-13: the 157th before the hold.
     tick(w);
     expect(h.vel.z).toBeGreaterThan(0);
-    expect(u(w, h)).toBeCloseTo(9.36230979486487, 6);
-    // 2026-10-13: z 0.5555553361622887 before the verge, its aim then the centreline itself.
     expect(h.pos.z).toBeCloseTo(0.5598780505450305, 6);
-    // The car as the scene drives it (game/endScene.ts), on the shade's own clock: its centre
-    // carDistance along the road, its lane eased from the shoulder's 6.9 m in to 1.8 m. Beside it
-    // the shade is never within 0.9 m of its inland side (its stand by the door, the car just
-    // rolling), and the car's tail is past it at the 367th tick (6.1 s after the arrival).
-    const parked = roadOffset(w, car.x, car.z) as number;
-    let nearest = Infinity;
-    let passed = -1;
+    const road = { centerX: (z: number) => car.x - (roadOffset(w, car.x, z) as number), groundY: () => 0 };
     const at: Record<number, number> = {};
     let stop = -1;
     let bed = -1;
-    for (let t = 158; t <= 900; t++) {
+    for (let t = 278; t <= 900; t++) {
       tick(w);
-      const along = carDistance(h.attackCooldown);
-      const carZ = car.z + along;
-      if (h.pos.z + ENEMY_HALF.z > carZ - CAR_HALF.z && h.pos.z - ENEMY_HALF.z < carZ + CAR_HALF.z) {
-        const gap = u(w, h) - ENEMY_HALF.x - (laneAt(along, parked) + CAR_HALF.x);
-        if (gap < nearest) nearest = gap;
-      }
-      if (passed < 0 && carZ - CAR_HALF.z > h.pos.z) passed = t;
       if (t === 330) {
-        // The road shot's first frame, 5.5 s after the arrival: level with the car (1.19 m
-        // ahead of its centre), on the verge 2.1 m off its inland side.
-        expect(h.pos.z).toBeCloseTo(15.91115869217794, 6);
-        expect(u(w, h)).toBeCloseTo(7.839095320843853, 6);
-        expect(h.pos.z - carZ).toBeCloseTo(1.1936586921780847, 6);
+        // The road shot's first frame, 5.5 s after the arrival, 0.9 s into its run: 4.6 m down
+        // the verge, 8.91 m from the centreline, the car's centre 14.7 m down the road from its
+        // site and 9.6 m ahead of it.
+        // 2026-10-13: z 15.91115869217794, u 7.839095320843853, level with the car, before
+        // the hold.
+        const pose = endCar(h.attackCooldown, road, car, 1);
+        expect(h.pos.z).toBeCloseTo(5.083230153973236, 6);
+        expect(u(w, h)).toBeCloseTo(8.91190292164174, 6);
+        expect(pose.z).toBeCloseTo(14.717499999999855, 6);
+        expect(pose.z - h.pos.z).toBeCloseTo(9.63426984602662, 6);
       }
       for (const m of [10, 30, 35]) if (at[m] === undefined && h.pos.z - door.z >= m) at[m] = u(w, h);
       if (stop < 0 && u(w, h) < PURSUIT_STOP_U) stop = t;
       if (bed < 0 && u(w, h) < 5.5) bed = t;
     }
-    expect(nearest).toBeCloseTo(0.9050965299867553, 6);
-    expect(passed).toBe(367);
     // Down the verge at one in ten: 8.37 m from the centreline 10 m down the road, 6.40 m at
-    // 30 m, 5.91 m at 35 m; past the stop's 7.9 m at the 324th tick, on the road's 5.5 m bed at
-    // the 595th (39 m down it, the car 35 m ahead of it).
-    // 2026-10-13: past the stop at the 206th before the verge.
+    // 30 m, 5.91 m at 35 m; past the stop's 7.9 m at the 444th tick, on the road's 5.5 m bed at
+    // the 715th (39 m down it).
+    // 2026-10-13: the 324th and the 595th before the hold.
     expect(at[10]).toBeCloseTo(8.365686914658568, 6);
     expect(at[10]).toBeGreaterThanOrEqual(7.4);
     expect(at[30]).toBeCloseTo(6.40078991700608, 6);
     expect(at[35]).toBeCloseTo(5.914671154833911, 6);
-    expect(stop).toBe(324);
-    expect(bed).toBe(595);
+    expect(stop).toBe(444);
+    expect(bed).toBe(715);
     // Down the road, its z 5.44 m a second (the rest of its 5.5 across, as it comes in).
-    // 2026-10-13: 5.4929031092147085 before the verge.
+    // 2026-10-13: 5.443069320023525 and u 2.2889036141081647 before the hold.
     const from = { ...h.pos };
     tick(w, 60);
-    expect(h.pos.z - from.z).toBeCloseTo(5.443069320023525, 6);
-    expect(u(w, h)).toBeCloseTo(2.2889036141081647, 6);
+    expect(h.pos.z - from.z).toBeCloseTo(5.436205502603336, 6);
+    expect(u(w, h)).toBeCloseTo(3.3389349236629755, 6);
     // It faces its aim.
     const was = { ...h.pos };
     const aim = pursuitAim(u(w, h), was.z, 1, (_, z) => was.x - (roadOffset(w, was.x, z) as number), 0, { x: 0, z: 0 });
@@ -519,15 +519,98 @@ describe("the pursuit", () => {
     expect(h.yaw).toBe(Math.atan2(aim.x - was.x, aim.z - was.z));
     tick(w, 1499 - 961);
     expect(w.state.enemies.has(h.id)).toBe(true);
-    // 122 m down the road, 6 cm off its centreline.
-    // 2026-10-13: z 120.21336590619525 and 0.042643650708669156 before the verge.
-    expect(h.pos.z).toBeCloseTo(122.1346459428561, 6);
-    expect(u(w, h)).toBeCloseTo(0.0634097650714125, 6);
+    // 111 m down the road, 11 cm off its centreline.
+    // 2026-10-13: z 122.1346459428561 and 0.0634097650714125 before the hold.
+    expect(h.pos.z).toBeCloseTo(111.13533390299338, 6);
+    expect(u(w, h)).toBeCloseTo(0.10905709465941982, 6);
     tick(w, 2);
     expect(pursuers(w)).toHaveLength(0);
   }, timeLimit(30_000));
 
-  it("with its player never at the door, takes the road 10 s and 2.6 s after it rose, the run's time up regardless, making for the verge first", () => {
+  it("never gets ahead of the car's nose as the scene drives it, on the test world, on seven seeds and from a stand at the door spot itself: the car's tail is past it before it moves", () => {
+    /**
+     * A won match on `worldSeed`, its player at the door from the shade's first tick; or, with
+     * `stand`, the shade put `stand.u` from the road's centreline and `stand.dz` along it from the
+     * car's centre once its clock runs, its player 0.3 m further out so it stands. Then to the
+     * 700th tick, against the car as the scene drives it (`endCar`) on the shade's own clock, in
+     * the car's own frame: the closest its hull comes to the car's box, whether it is ever ahead
+     * of the nose within the car's width, the tick the car's tail is past it and the tick it moves.
+     */
+    function againstTheCar(worldSeed: number, stand?: { u: number; dz: number }) {
+      const w = createForestWorld(createForest(worldSeed));
+      w.watcher!.active = false;
+      const p = spawnPlayer(w);
+      w.state.phase = Phase.Chase;
+      const put = (x: number, z: number) => ({ x, y: elevationAt(worldSeed, x, z) + 0.9, z });
+      const th = w.trail!.trailhead;
+      p.pos = put(th.x, th.z);
+      tick(w);
+      const h = pursuers(w)[0]!;
+      const car = w.search!.car;
+      const direction = carDirection(car, th);
+      const door = doorSpot(car, direction);
+      p.pos = put(door.x, door.z);
+      const road = { centerX: (z: number) => car.x - (roadOffset(w, car.x, z) as number), groundY: () => 0 };
+      let first = 1;
+      if (stand !== undefined) {
+        tick(w);
+        first = 2;
+        const z = car.z + direction * stand.dz;
+        const x = road.centerX(z) + stand.u;
+        h.pos = put(x, z);
+        p.pos = put(x + 0.3, z);
+      }
+      let nearest = Infinity;
+      let ahead = false;
+      let tail = -1;
+      let moved = -1;
+      let last = { ...h.pos };
+      for (let t = first; t <= 700; t++) {
+        tick(w);
+        const pose = endCar(h.attackCooldown, road, car, direction);
+        const dx = h.pos.x - pose.x, dz = h.pos.z - pose.z;
+        const c = Math.cos(pose.yaw), s = Math.sin(pose.yaw);
+        const across = dx * c - dz * s, along = dx * s + dz * c;
+        const gap = Math.hypot(
+          Math.max(0, Math.abs(across) - CAR_HALF.x - ENEMY_HALF.x), Math.max(0, Math.abs(along) - CAR_HALF.z - ENEMY_HALF.z),
+        );
+        if (gap < nearest) nearest = gap;
+        if (along > CAR_HALF.z && Math.abs(across) < CAR_HALF.x + ENEMY_HALF.x) ahead = true;
+        if (tail < 0 && h.attackCooldown > PULL_AWAY_AT_S && along < -CAR_HALF.z - ENEMY_HALF.z) tail = t;
+        if (moved < 0 && t > 157 && (h.pos.x !== last.x || h.pos.z !== last.z)) moved = t;
+        last = { ...h.pos };
+      }
+      return { nearest, ahead, tail, moved };
+    }
+    const cases: [string, number, { u: number; dz: number } | undefined, number, number][] = [
+      // The test world: closest by the door at its stand before the pull-away.
+      ["hollow", seed, undefined, 1.119755693778484, 235],
+      // A stand at the door spot itself, its hull 0.2 m off the car's side, at the door's 0.5 m
+      // along and 1.5 m along: closest where it was put.
+      ["door 0.5", seed, { u: 8.4, dz: 0.5 }, 0.15957280392599382, 236],
+      ["door 1.5", seed, { u: 8.4, dz: 1.5 }, 0.07872583366504382, 247],
+      // Seeds whose road runs at an angle to the car's heading, where a shade taking the road at
+      // the pull-away gets ahead of the nose, 0.13 to 0.24 m off it.
+      ["221", 221, undefined, 1.1544434924578129, 233],
+      ["-1048259771", -1048259771, undefined, 1.1873731314449971, 234],
+      ["-1148925485", -1148925485, undefined, 1.1486572396622252, 233],
+      ["-964371676", -964371676, undefined, 1.1385749628843316, 233],
+      ["336187078", 336187078, undefined, 1.1180718305655661, 234],
+      ["285707126", 285707126, undefined, 1.1608655914843213, 233],
+      ["604776077", 604776077, undefined, 1.1181317480104669, 234],
+    ];
+    for (const [label, worldSeed, stand, nearest, tail] of cases) {
+      const r = againstTheCar(worldSeed, stand);
+      expect(r.ahead, label).toBe(false);
+      expect(r.nearest, label).toBeCloseTo(nearest, 6);
+      expect(r.tail, label).toBe(tail);
+      // It moves at the 277th, PURSUIT_ROAD_AT_S on its clock, the tail long past it.
+      expect(r.moved, label).toBe(277);
+      expect(r.tail, label).toBeLessThan(r.moved);
+    }
+  }, timeLimit(120_000));
+
+  it("with its player never at the door, takes the road 10 s and 4.6 s after it rose, the run's time up regardless, making for the verge first", () => {
     const { w, p } = stemWin();
     const h = pursuers(w)[0]!;
     let reached = -1;
@@ -545,22 +628,27 @@ describe("the pursuit", () => {
     expect(h.pos.z).toBeCloseTo(2.504398065357618, 6);
     expect(h.vel).toEqual({ x: 0, y: 0, z: 0 });
     expect(h.yaw).toBeCloseTo(facing(h, p.pos), 9);
-    // At the 757th it takes the road, though its player is 30 m from it: its aim no further out
+    // From the pull-away it stands looking down the road, to the 876th.
+    const stood = { ...h.pos };
+    tick(w, 120);
+    expect(h.pos).toEqual(stood);
+    expect(h.yaw).toBe(0);
+    // At the 877th it takes the road, though its player is 30 m from it: its aim no further out
     // than the verge's 8.4 m, so it makes for the verge before it comes in.
-    // 2026-10-13: (-292.03024977187624, 2.508992049287656), and 19.29 m at the 900th,
-    // before the verge.
+    // 2026-10-13: the 757th, and 19.29 m at the 900th and the stop at the 1063rd, before the verge
+    // and the hold.
     tick(w);
     expect(h.pos.x).toBeCloseTo(-292.02972001696884, 6);
     expect(h.pos.z).toBeCloseTo(2.5104198479989988, 6);
     tick(w, 143);
     expect(u(w, h)).toBeCloseTo(20.21707477863896, 6);
     let road = -1;
-    for (let t = 901; t < 1499 && road < 0; t++) {
+    for (let t = 1021; t < 1499 && road < 0; t++) {
       tick(w);
       if (u(w, h) < PURSUIT_STOP_U) road = t;
     }
-    // 2026-10-13: 1063 before the verge.
-    expect(road).toBe(1351);
+    // 2026-10-13: 1351 before the hold.
+    expect(road).toBe(1471);
   }, timeLimit(30_000));
 
   it("with its player gone from the match, stands, and still takes the road when the run's time is up", () => {
@@ -574,10 +662,15 @@ describe("the pursuit", () => {
     expect(h.pos).toEqual(stood);
     expect(h.vel).toEqual({ x: 0, y: 0, z: 0 });
     expect(h.attackCooldown).toBeCloseTo(0.5, 9);
-    // Past the pull-away at the 757th, on its way to the verge.
-    tick(w, 200);
-    expect(h.pos.z).toBeCloseTo(5.286828560095377, 6);
-    expect(u(w, h)).toBeCloseTo(25.327465204959367, 6);
+    // Still stood through the hold, to the 876th, looking down the road.
+    tick(w, 246);
+    expect(h.pos).toEqual(stood);
+    expect(h.yaw).toBe(0);
+    // Past the road's tick at the 877th, on its way to the verge.
+    // 2026-10-13: z 5.286828560095377 and u 25.327465204959367 at the 830th before the hold.
+    tick(w, 54);
+    expect(h.pos.z).toBeCloseTo(4.433990519990746, 6);
+    expect(u(w, h)).toBeCloseTo(26.88158831850518, 6);
   }, timeLimit(30_000));
 
   it("aims down the road PURSUIT_AHEAD_M ahead the way the car went, PURSUIT_IN_M in from its own offset, never past the centreline nor further out than the verge", () => {

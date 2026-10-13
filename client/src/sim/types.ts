@@ -144,8 +144,9 @@ export type EnemyState = {
   /**
    * Where an emerging Hollow walks before its reveal — a fork Hollow's mouth
    * (cut.ts) — or null for one that stands where it spawned, as the summit's
-   * does. Host-only, like `route`: absent from the snapshot and the
-   * fingerprint. Null on every enemy that is not a Hollow.
+   * does. A lunge of the haunt keeps its line's far point here, and the shade
+   * of the end the car's door spot (haunt.ts). Host-only, like `route`: absent
+   * from the snapshot and the fingerprint. Null on every other enemy.
    */
   emergeTo: Vec3 | null;
 };

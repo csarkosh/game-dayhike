@@ -124,10 +124,11 @@ export const GUIDE_SIDE_M = 3;
  * behind the party's rearmost, walking straight at its player at
  * PURSUIT_SPEED (under a sprint's 7), on foot never nearer the road's
  * centreline than PURSUIT_STOP_U and standing within PURSUIT_ARRIVE_M of its
- * player; once the car has pulled away it runs down the road after it, its
- * aim PURSUIT_AHEAD_M ahead and PURSUIT_IN_M nearer the centreline than it
- * is (`pursuitAim`), so it comes in down the verge behind the car and never
- * cuts across its nose; gone PURSUIT_DWELL_S after it stood up.
+ * player; once the car has pulled away it stands and looks after it, and
+ * from PURSUIT_ROAD_AT_S runs down the road after it, its aim
+ * PURSUIT_AHEAD_M ahead and PURSUIT_IN_M nearer the centreline than it is
+ * (`pursuitAim`), so it comes in down the verge behind the car and never
+ * gets ahead of its nose; gone PURSUIT_DWELL_S after it stood up.
  */
 export const PURSUIT_BEHIND_M = 3;
 export const PURSUIT_SPEED = 5.5;
@@ -143,6 +144,15 @@ export const PURSUIT_IN_M = 1;
  * in from there.
  */
 export const PURSUIT_VERGE_U = CAR_ROAD_U + CAR_HALF.x + DOOR_OUT_M;
+/**
+ * Seconds after its player is in the car that the shade takes the road: two
+ * after the pull-away, so the car's tail is past it before it moves, wherever
+ * it stood by the car.
+ */
+export const PURSUIT_ROAD_AT_S = PULL_AWAY_AT_S + 2;
+/** Its yaw as it looks after the car, for the car's two headings (`carDirection`). */
+const PURSUIT_AFTER_YAW_PLUS = 0;
+const PURSUIT_AFTER_YAW_MINUS = Math.PI;
 export const PURSUIT_DWELL_S = 25;
 /** Placements tried for a shade before the director waits a tick. */
 export const HAUNT_PLACE_TRIES = 6;
@@ -448,9 +458,10 @@ const PURSUIT_AIM = { x: 0, z: 0 };
  * sim: every screen turns a shade to its own eye). Its `attackCooldown`
  * counts the seconds since its player was in the car (within DOOR_REACH_M of
  * the door spot kept in its `emergeTo`, or RUN_MAX_S after it rose
- * regardless: the end scene's own rule, game/endScene.ts); from
- * PULL_AWAY_AT_S of that the car has gone, and it runs down the road after
- * it the way the car went, down the verge and in behind the car
+ * regardless: the end scene's own rule, game/endScene.ts). From
+ * PULL_AWAY_AT_S of that the car has gone from under its eyes: it stands
+ * where it is and faces the way the car went. From PURSUIT_ROAD_AT_S it runs
+ * down the road after it, down the verge and in behind the car
  * (`pursuitAim`), with no pavement rule and no stop. Its player gone from the
  * match, its clock still runs to the run's end and it still takes the road;
  * on foot with no player it stands. No one's nearness sends it away, and no
@@ -475,7 +486,7 @@ function stepPursuit(h: EnemyState, world: World, dt: number, target: PlayerStat
     const dz = target.pos.z - door.z;
     if (dx * dx + dz * dz <= DOOR_REACH_M * DOOR_REACH_M) h.attackCooldown = dt;
   }
-  if (h.attackCooldown >= PULL_AWAY_AT_S) {
+  if (h.attackCooldown >= PURSUIT_ROAD_AT_S) {
     // The road, after the car: down the verge, angling in behind it (`pursuitAim`).
     const roadCenterX = activeTerrainVariant().roadCenterX;
     const u = roadOffset(world, h.pos.x, h.pos.z);
@@ -486,6 +497,14 @@ function stepPursuit(h: EnemyState, world: World, dt: number, target: PlayerStat
       const aim = pursuitAim(u, h.pos.z, direction, roadCenterX, world.forest.seed, PURSUIT_AIM);
       walkToward(h, world, dt, aim.x, aim.z, PURSUIT_SPEED, false);
     }
+    return false;
+  }
+  if (h.attackCooldown >= PULL_AWAY_AT_S) {
+    // The car gone: it stands where it is and looks after it, down the road.
+    h.vel.x = 0;
+    h.vel.y = 0;
+    h.vel.z = 0;
+    h.yaw = direction === 1 ? PURSUIT_AFTER_YAW_PLUS : PURSUIT_AFTER_YAW_MINUS;
     return false;
   }
   if (target !== undefined && horizontalDistSq(h.pos, target.pos) > PURSUIT_ARRIVE_M * PURSUIT_ARRIVE_M) {
