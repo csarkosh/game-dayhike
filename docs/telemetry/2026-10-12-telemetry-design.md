@@ -251,5 +251,8 @@ world's seed in a worker (`client/src/admin/trail.ts`, the same generator the ga
 about half a second) and draws each session's samples as a line over it, with the forks
 numbered, the named places as discs, a × at a death, a ◇ at the Hollow's first showing, a
 □ at the poster, a scrubber over sim time, a hover readout on any moment, and a session
-list of who walked a loop, left the trail, used the lamp, or died. A world of another
-generation of the generator is drawn with a note, since its trail may have differed.
+list of who walked a loop, left the trail, used the lamp, or died. The card shows one
+world at a time, chosen from a list of every world in the range, newest party first, each
+entry dated in New York time by its earliest row (when the party set out) and naming the
+world and its seed. A world of another generation of the generator is drawn with a note,
+since its trail may have differed.
