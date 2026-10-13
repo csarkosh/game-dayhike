@@ -5,9 +5,10 @@ description: Use when pushing work to the game-dayhike GitHub repository at gith
 
 # Pushing to GitHub
 
-`github.com/csarkosh/game-dayhike` is a public, open-source repository with no reviewers. CI
-runs the tests on a push to `main`, a `worktree-**` or `ci/**` branch, or a pull request, which
-says whether a change works but never why it was made, so the commit message is the only record
+`github.com/csarkosh/game-dayhike` is a public, open-source repository with no reviewers. Nothing
+runs on a push or a pull request: the `test` workflow is started by hand, and only when the
+section below says so (Cyrus, 2026-10-13: runner minutes cost time and money). A test run says
+whether a change works but never why it was made, so the commit message is the only record
 of why a change exists. It is written for the person reading `git log` months later with no
 memory of this session — usually the author — and anyone on the internet can read it too, so it
 describes the change and never anything private about how the work was done.
@@ -104,14 +105,14 @@ npm run typecheck && npm run lint && npm test
 Run them and read the output. A failing gate is reported to the user before pushing, not
 after.
 
-The `test` workflow (`.github/workflows/test.yml`) runs the same commands on GitHub's runners
-for every push to `main`, to a `worktree-**` or `ci/**` branch, and for every pull request:
-typecheck and lint in one job, the server and tools suites in another, the client suite split
-across shards, and a final `gates` job that fails unless every other job passed. `gates` is the
-one result to read. What the workflow adds is a clean Linux checkout, and the long client suite
-run somewhere other than this machine, which then stays quiet for frame-time measurements.
-It is a pass-or-fail check; nothing it times means anything, because the runners are shared
-machines. Two things differ from a local run for that reason:
+The `test` workflow (`.github/workflows/test.yml`) runs the same commands on GitHub's runners,
+**only when started by hand** (`workflow_dispatch`; no push or pull request triggers it, Cyrus,
+2026-10-13): typecheck and lint in one job, the server and tools suites in another, the client
+suite split across shards, and a final `gates` job that fails unless every other job passed.
+`gates` is the one result to read. What the workflow adds is a clean Linux checkout, and the
+long client suite run somewhere other than this machine, which then stays quiet for frame-time
+measurements. It is a pass-or-fail check; nothing it times means anything, because the runners
+are shared machines. Two things differ from a local run for that reason:
 
 - **Time limits are scaled, in the client suite.** A test's time limit guards against a hang,
   not a bar on speed. Every explicit limit in the client suite — on a test, suite or hook, and
@@ -128,10 +129,16 @@ machines. Two things differ from a local run for that reason:
   (unless it is listed as printing a timing without asserting on it), on the tag on a test that
   reads no clock, and when the number of tagged tests is not the one it states (2).
 
-A work branch may be pushed to run the gates remotely before it is finished. Then:
+**When to start it.** The local gates are the rule; the runners are the exception, for when
+the local run could not be trusted or could not be had: the client suite timed out or was
+skipped because the machine was busy, the change touches the build itself (`vite.config.ts`,
+the WGSL maps, `package.json` dependencies) and a clean checkout is the point, or Cyrus asks
+for it. Not for a docs or copy change, and not as a habit after every push: every run costs
+minutes he pays for. Push the branch (a work branch is fine), then:
 
 ```bash
-gh run list --branch <branch> --workflow test.yml --limit 3   # the run for the pushed commit
+gh workflow run test.yml --ref <branch>                      # start it; prints nothing
+gh run list --branch <branch> --workflow test.yml --limit 1   # the run just started
 gh run watch <run-id> --exit-status                          # follow it; exits non-zero on failure
 gh run view <run-id> --log-failed                            # only the failing steps' output
 ```
