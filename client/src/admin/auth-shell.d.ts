@@ -8,8 +8,8 @@
  * "Auth"): a change there is a change here.
  */
 
-/** The signed-in account, as the shell knows it. */
-export type User = { email: string };
+/** The signed-in account, as the shell knows it: the email, and the Google account's display name or null. */
+export type User = { email: string; name: string | null };
 
 /** The name of the event the shell dispatches on `window` when a request was answered 401. */
 export const UNAUTHORIZED: "admin:unauthorized";
