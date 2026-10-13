@@ -64,8 +64,32 @@ function toggleSpec(name: string, defaultValue = false): CommandSpec {
   };
 }
 
+/**
+ * `freecam`: a toggle, or a place. Bare or `on` frees the camera where the
+ * player stands; `off` returns it; `x z` or `x z yaw` frees it standing on
+ * the ground at (x, z) in world metres, facing `yaw` radians (0 north, +Z;
+ * π/2 east, +X), so a `?cmd=` link can land a visit anywhere (2026-10-13).
+ * The place is the script value as text, "x z yaw", which the app parses.
+ */
+const freecamSpec: CommandSpec = {
+  name: "freecam",
+  kind: "view",
+  validate(args) {
+    if (args.length === 0) return null;
+    if (args.length === 1 && (args[0] === "on" || args[0] === "off")) return null;
+    if (args.length === 2 || args.length === 3) {
+      for (const a of args) if (!Number.isFinite(Number(a))) return `"${a}" is not a number`;
+      return null;
+    }
+    return 'freecam takes no argument, "on" or "off", or a place: x z [yaw]';
+  },
+  // Bare means *enable*, not flip, as every toggle; a place is its text.
+  scriptValue: (args) => (args.length >= 2 ? args.join(" ") : args[0] !== "off"),
+  defaultValue: false,
+};
+
 const SPECS: readonly CommandSpec[] = [
-  toggleSpec("freecam"),
+  freecamSpec,
   toggleSpec("wireframe"),
   // On by default: the URL records only `skin off`.
   toggleSpec("skin", true),

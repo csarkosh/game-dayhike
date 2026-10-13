@@ -112,7 +112,7 @@ import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState, type VoiceSc
 import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
 import { createVoiceClips } from "./game/voiceClips.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt } from "./game/cutscene.js";
-import { ENEMY_HALF, PLAYER_EYE_OFFSET } from "./sim/constants.js";
+import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_HALF } from "./sim/constants.js";
 import { stemAhead } from "./sim/trailRoute.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
 
@@ -697,7 +697,16 @@ function buildGame(
   function applyView(name: string, args: readonly string[], options: { instant?: boolean } = {}): void {
     const value = findCommand(name)?.scriptValue?.(args);
     if (name === "freecam") {
-      if (value === true) {
+      if (typeof value === "string") {
+        // A place: the camera stands on the ground there at the player's eye
+        // height, facing the yaw given (or north), flying from this frame.
+        const [px, pz, yaw = 0] = value.split(" ").map(Number) as [number, number, number?];
+        freecam = { x: px, y: elevationAt(seed, px, pz) + PLAYER_HALF.y + PLAYER_EYE_OFFSET, z: pz };
+        freecamPending = false;
+        input.setLook(yaw, 0);
+        lastFreecamView = { ...freecam, yaw, pitch: 0 };
+        renderer.setFreecam(lastFreecamView);
+      } else if (value === true) {
         // Enabling an already-flying camera must not move it, so a re-applied
         // script leaves the view where it is.
         if (freecam === null) freecamPending = true;
