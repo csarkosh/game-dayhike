@@ -325,8 +325,8 @@ each tier at night in the eerie weather, from the win to the title page, found e
 asked for in its map and none differing.
 
 **Seen in the browser** (seed `hollow`, the crest's escalation, high tier on WebGPU, the frame read
-from inside the page four times a second): the bars at the win, the title 10.7 s after, the dark at
-18.7 s, the title page at 23.7 s; no main-thread block over 0.5 s through the scene; the lamps
+from inside the page four times a second): the bars at the win, the title 10.3 s after, the dark at
+18.3 s, the title page at 23.3 s; no main-thread block over 0.5 s through the scene; the lamps
 within 0.2 m of the car's nose each frame; the camera's z never decreasing through the release. The
 run over the ranger's shoulder with the car ahead, the car passing the lens, the overhead under the
 headlights, and from about seven seconds into the road shot the road running off between the trees

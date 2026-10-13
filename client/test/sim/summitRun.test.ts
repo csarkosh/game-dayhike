@@ -214,7 +214,6 @@ describe("one run on the seed `hollow`", SUITE, () => {
     expect(p.safe).toBe(true);
     expect(w.state.outcome).toBe(Outcome.Won);
     expect(p.health).toBeGreaterThan(0);
-    // 2026-10-13: 6 with the end's shade before it went.
     expect(w.state.enemies.size).toBe(5);
     for (const e of w.state.enemies.values()) expect(isOnCorridor(w, e.pos.x, e.pos.z)).toBe(false);
   });
