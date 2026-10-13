@@ -206,7 +206,7 @@ const SPECS: readonly CommandSpec[] = [
     kind: "view",
     // Bare: the host's player stands on the pad short of the car and the
     // next tick is the win, so the end scene (endScene.ts) plays for a
-    // look, the shades and all. Not persisted: no `scriptValue`.
+    // look as a real win plays it. Not persisted: no `scriptValue`.
     validate(args) {
       return args.length === 0 ? null : "escape takes no argument";
     },

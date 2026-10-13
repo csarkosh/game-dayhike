@@ -1,26 +1,22 @@
 /**
  * The end scene (docs/gameplay/2026-10-12-the-end-scene.md §1): the match
- * won, the ranger runs the last of the way to the car with a shade after
- * them, the engine catches and the car goes down the highway with the
- * camera left in the air over it. Four shots, hard cuts between them, a film
+ * won, the ranger runs the last of the way to the car, the engine catches
+ * and the car goes down the highway with the camera left in the air over
+ * it. Four shots, hard cuts between them, a film
  * lens on all: the run (carried by the runner), the pursuit (locked off at
  * the car's tail), the door and the engine (locked off on the road's far
  * shoulder), the road (over the car, then left behind it). A pure function
  * of the seconds since the win, the runner's body, the car's site and the
  * road, as the summit's shots are (cutscene.ts). Babylon-free.
  */
-import { CAR_HALF, CAR_ROAD_U, DOOR_REACH_M, PULL_AWAY_AT_S, RUN_MAX_S } from "../sim/trailhead.js";
+import { CAR_HALF, CAR_ROAD_U } from "../sim/trailhead.js";
 import { LENS_24, LENS_32, easeInOut, type ShotPose } from "./cutscene.js";
 import { carAlong, type Road } from "./scene/roadPath.js";
 import type { CarPose } from "./scene/timeline.js";
 
-/**
- * The run: the cut to the pursuit, and (`RUN_MAX_S`, the end's timeline the
- * sim's pursuit shares, sim/trailhead.ts) the most it lasts before the
- * runner is in the car regardless.
- */
+/** The run: the cut to the pursuit, and the most it lasts before the runner is in the car regardless. */
 export const RUN_CUT_S = 2.5;
-export { DOOR_REACH_M, PULL_AWAY_AT_S, RUN_MAX_S };
+export const RUN_MAX_S = 10;
 /** Shot 1, carried by the runner: metres behind, over their eye and to their right. */
 export const RUN_CAM_BACK = 2.2;
 export const RUN_CAM_UP = 0.5;
@@ -52,9 +48,11 @@ export const END_ROAD_AT_S = ENGINE_SHOT_S;
 export const TITLE_AT_S = 2;
 export const END_FADE_AT_S = 10;
 export const END_LANDING_AT_S = 15;
-/** Bodies within this of the door spot are hidden; the runner is in within `DOOR_REACH_M`. */
+/** The runner is in: within this of the door spot. Bodies within `DOOR_IN_M` of it are hidden. */
+export const DOOR_REACH_M = 0.9;
 export const DOOR_IN_M = 1.2;
-/** The car: how hard it pulls away (from `PULL_AWAY_AT_S` after the arrival) and what it holds. */
+/** The car: when it moves, after the arrival; how hard it pulls away; what it holds. */
+export const PULL_AWAY_AT_S = 2.6;
 export const PULL_AWAY_ACCEL = 3.5;
 export const CRUISE_MPS = 14;
 /** The lane it drives in, metres from the centreline on the parked car's side of it, and the metres it takes to reach it from the shoulder. */

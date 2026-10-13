@@ -17,7 +17,7 @@ import { isOnCorridor } from "./containment.js";
 import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
 import { drawGuide, stepCuts } from "./cut.js";
 import { hideWatcher } from "./watcher.js";
-import { isShadeState, startPursuit } from "./haunt.js";
+import { isShadeState } from "./haunt.js";
 import { ENEMY_HALF, PLAYER_HALF } from "./constants.js";
 import { stemAhead } from "./trailRoute.js";
 
@@ -112,8 +112,7 @@ export function updateSafety(world: World): void {
  * The tick that finds the body removes the climb's watcher for good
  * (watcher.ts), steps the summit Hollow out and draws the guide (cut.ts), the
  * one draw the chase makes from the world's stream; every Chase tick after it
- * runs the cut, then the end rule, whose winning tick stands up the pursuit
- * (haunt.ts `startPursuit`). A player on the corridor is safe and
+ * runs the cut, then the end rule. A player on the corridor is safe and
  * triggers nothing, so once the end rule can fire there is nothing left for
  * the cut to do: its Hollows only ever step out into a match still on.
  */
@@ -158,6 +157,4 @@ export function stepSummit(world: World): void {
   }
   if (out > 0) return;
   state.outcome = safe > 0 ? Outcome.Won : Outcome.Lost;
-  // The woods come after the party: on the winning tick only, never on a loss.
-  if (state.outcome === Outcome.Won) startPursuit(world);
 }

@@ -24,14 +24,6 @@ export const enum AiState {
   Lunge = 11,
   /** A lunge at its player: the strike, which kills within its reach, and then it is gone. */
   Strike = 12,
-  /**
-   * The shade of the end (haunt.ts `startPursuit`): stood up behind the party
-   * on the winning tick, it walks straight at its player, never onto the
-   * pavement on foot; once its player is in the car and the car has gone, it
-   * runs down the road after it; gone after its dwell. Harmless, as a shade
-   * is.
-   */
-  Pursue = 13,
 }
 
 export const enum Button {
@@ -144,9 +136,8 @@ export type EnemyState = {
   /**
    * Where an emerging Hollow walks before its reveal — a fork Hollow's mouth
    * (cut.ts) — or null for one that stands where it spawned, as the summit's
-   * does. A lunge of the haunt keeps its line's far point here, and the shade
-   * of the end the car's door spot (haunt.ts). Host-only, like `route`: absent
-   * from the snapshot and the fingerprint. Null on every other enemy.
+   * does. Host-only, like `route`: absent from the snapshot and the
+   * fingerprint. Null on every enemy that is not a Hollow.
    */
   emergeTo: Vec3 | null;
 };

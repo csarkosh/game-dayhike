@@ -122,16 +122,6 @@ export function doorSpot(site: Ground, direction: 1 | -1): Ground {
   return { x: site.x + CAR_HALF.x + DOOR_OUT_M, z: site.z + direction * DOOR_ALONG_M };
 }
 
-/**
- * The end's timeline, which the end scene (game/endScene.ts) and the shade of
- * the end (haunt.ts `stepShade`) share: a body is in the car within
- * DOOR_REACH_M of the door spot, or RUN_MAX_S after the win regardless; the
- * car pulls away PULL_AWAY_AT_S after that.
- */
-export const DOOR_REACH_M = 0.9;
-export const RUN_MAX_S = 10;
-export const PULL_AWAY_AT_S = 2.6;
-
 /** Where a player arrives, and the yaw they face. */
 export type Start = { x: number; z: number; yaw: number };
 

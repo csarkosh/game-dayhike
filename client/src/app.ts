@@ -768,7 +768,7 @@ function buildGame(
       else escapeLook();
     } else if (name === "end") {
       // The ending, on the spot, nothing of the match: won, the end scene from where the player
-      // stands, with the trailhead's car and no shades, and no landing after it (endScene.ts);
+      // stands, with the trailhead's car, and no landing after it (endScene.ts);
       // died, the death's camera and line (ending.ts).
       if (args[0] === "won") {
         if (!startEndScene(false)) hud.setStatus("end won: this world has no road to leave by");
@@ -1041,7 +1041,7 @@ function buildGame(
         capAt = at === null ? null : { ...at, y: world.ground?.heightAt(at.x, at.z) ?? self.pos.y };
       }
       let shadeSeen = false;
-      for (const e of state.enemies.values()) if ((e.ai === AiState.Shade || e.ai === AiState.Pursue) && playerSees(self, e, world)) { shadeSeen = true; break; }
+      for (const e of state.enemies.values()) if (e.ai === AiState.Shade && playerSees(self, e, world)) { shadeSeen = true; break; }
       const body = world.search.body.pos;
       const spoke = stepInnerVoice(voice, {
         climb: escalation.progressMax, wet: acts.wet, night: acts.night, mist: acts.mist,

@@ -214,11 +214,8 @@ describe("one run on the seed `hollow`", SUITE, () => {
     expect(p.safe).toBe(true);
     expect(w.state.outcome).toBe(Outcome.Won);
     expect(p.health).toBeGreaterThan(0);
-    // 2026-10-12: the woods' five Hollows; the win's one shade of the end is not among them.
-    const pack = [...w.state.enemies.values()].filter((e) => e.ai !== AiState.Pursue);
-    expect(pack).toHaveLength(5);
-    // 2026-10-13: 9 before one shade.
-    expect(w.state.enemies.size).toBe(6);
-    for (const e of pack) expect(isOnCorridor(w, e.pos.x, e.pos.z)).toBe(false);
+    // 2026-10-13: 6 with the end's shade before it went.
+    expect(w.state.enemies.size).toBe(5);
+    for (const e of w.state.enemies.values()) expect(isOnCorridor(w, e.pos.x, e.pos.z)).toBe(false);
   });
 });
