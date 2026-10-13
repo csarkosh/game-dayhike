@@ -53,10 +53,10 @@ intro finds the trailhead, so it lands on every world the scene is built from:
 | # | What | The camera |
 | --- | --- | --- |
 | 1 | The coast | Low over the sea, drifting toward the pebble cove between its headlands, the road and the forest's edge above it. The loop's first frame and the title still: open sea and sky where the page sets its title and buttons. |
-| 2 | The meadow | A slow drift across the meadow from its rim at a walker's eye height, the grass and the flowers in front and the forest's edge beyond, toward the peak (amended 2026-10-13; a world with no meadow keeps the glide just above the canopy toward the hills). |
-| 3 | The lake | A slow pan across the trail's lake, its water and its shore; its marsh end in view where the lake lies low. |
+| 2 | The meadow | A slow drift over the meadow from 20 m above its rim, the clearing and the forest's edge beyond it, toward the peak (amended 2026-10-13; a world with no meadow keeps the glide just above the canopy toward the hills). |
+| 3 | The lake | A slow drift along the lake's lower shore, looking across its narrow axis at the water, its marsh and the forest standing on the higher shore behind it (amended 2026-10-13: the first staging looked along the lake's length from above, where the valley lake's bare apron filled the frame). |
 | 4 | The trailhead | A slow rise from the trail's mouth and the board up to the forest it leads into. |
-| 5 | The summit | A slow push toward the peak rising out of the haze. |
+| 5 | The summit | A slow push toward the peak's crest against the sky, from 100 m short of it (amended 2026-10-13: from 300 m the rock's distance bands met in frame). |
 
 The camera is slow everywhere: under 2 m/s and under 0.12 rad/s (about 7° a second) in every shot,
 a test. Framing (heights, lenses, where a drift starts and stops) is set by looking at frames.

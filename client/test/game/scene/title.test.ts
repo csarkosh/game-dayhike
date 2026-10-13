@@ -4,13 +4,13 @@ import { evaluate } from "../../../src/game/scene/timeline.js";
 import { FOV_MAX, FOV_MIN } from "../../../src/game/scene/shots.js";
 
 /** A test world: the sea west of x = -300 at level 0, the ground rising 0.1 m a metre inland, a lake
- * at (200, 400) whose water is at 50 m, a meadow at (400, 200), the peak at (900, 600). */
+ * at (200, 400) whose water is at 50 m with a round 30 m rim, a meadow at (400, 200), the peak at (900, 600). */
 const world: TitleWorld = {
   ground: (x) => Math.max(0, (x + 300) * 0.1),
   seaLevel: 0,
   coastlineX: () => -300,
   cove: { z0: 0, halfWidth: 150 },
-  water: { x: 200, z: 400, radius: 30, level: 50 },
+  water: { x: 200, z: 400, level: 50, rim: () => 30 },
   meadow: { x: 400, z: 200, radius: 40 },
   peak: { x: 900, z: 600, radius: 60 },
   start: { x: -230, z: 10, yaw: 1.4 },
@@ -34,7 +34,7 @@ describe("the title scene", () => {
     expect(Math.sin(c.yaw)).toBeGreaterThan(0);
   });
 
-  it("drifts across the meadow from its rim at eye height, toward the peak", () => {
+  it("drifts over the meadow from 20 m above its rim, toward the peak", () => {
     const from = camAt(world, 7);
     const to = camAt(world, 13.999);
     // The rim on the side away from the peak: 40 m from the centre, back along the start-to-peak line.
@@ -44,12 +44,12 @@ describe("the title scene", () => {
     // Looking along that line, at the far rim.
     expect(from.yaw).toBeCloseTo(1.0896, 4);
     expect(to.yaw).toBeCloseTo(1.0896, 4);
-    expect(from.y - world.ground(from.x, from.z)).toBeCloseTo(2.5, 6);
+    expect(from.y - world.ground(from.x, from.z)).toBeCloseTo(20, 6);
     // The drift holds its height while the test world's ground rises 0.1 m a metre under it.
     for (let t = 7; t < 14; t += 0.5) {
       const c = camAt(world, t);
-      expect(c.y - world.ground(c.x, c.z)).toBeGreaterThan(1);
-      expect(c.y - world.ground(c.x, c.z)).toBeLessThan(3);
+      expect(c.y - world.ground(c.x, c.z)).toBeGreaterThan(18.5);
+      expect(c.y - world.ground(c.x, c.z)).toBeLessThanOrEqual(20);
     }
     expect(Math.hypot(to.x - from.x, to.z - from.z)).toBeCloseTo(11.998, 3);
     expect(Math.hypot(to.x - 400, to.z - 200)).toBeLessThan(Math.hypot(from.x - 400, from.z - 200));
@@ -62,15 +62,36 @@ describe("the title scene", () => {
     }
   });
 
-  it("looks across the lake from beyond its shore", () => {
-    const c = camAt(world, 17);
-    expect(Math.hypot(c.x - 200, c.z - 400)).toBeLessThan(90);
-    expect(Math.hypot(c.x - 200, c.z - 400)).toBeGreaterThan(30);
+  it("looks across the lake's narrow axis from its lower shore, 5 m up, drifting along the shore", () => {
+    // A round lake's long axis is the start-to-peak line, so its narrow axis lies across it; the test
+    // world's ground rises with x, so the lower shore is the one at the smaller x.
+    const mid = camAt(world, 17.5);
+    expect(Math.hypot(mid.x - 200, mid.z - 400)).toBeCloseTo(55, 6);
+    expect(mid.x).toBeLessThan(200);
+    expect(mid.y - Math.max(50, world.ground(mid.x, mid.z))).toBeCloseTo(5, 6);
+    // Looking at the higher shore, across the start-to-peak line: along (0.4628, -0.8864).
+    expect(Math.sin(mid.yaw)).toBeCloseTo(0.4628, 3);
+    expect(Math.cos(mid.yaw)).toBeCloseTo(-0.8864, 3);
+    const [from, to] = [camAt(world, 14), camAt(world, 20.999)];
+    expect(Math.hypot(to.x - from.x, to.z - from.z)).toBeCloseTo(11.998, 3);
+    expect(to.y).toBe(from.y);
+  });
+
+  it("finds a long lake's long axis and stands on its lower narrow side", () => {
+    // 50 m from the centre along z, 10 m across in x; the ground rises with x, so the lower side is -x.
+    const c = camAt({ ...world, water: { ...world.water!, rim: (a) => 30 + 20 * Math.cos(2 * a) } }, 17.5);
+    expect(c.x).toBeCloseTo(165, 6);
+    expect(c.z).toBeCloseTo(400, 6);
+    expect(c.y).toBeCloseTo(55, 6);
+    expect(Math.sin(c.yaw)).toBeCloseTo(1, 6);
   });
 
   it("frames a meadow where the world has no lake, and the hills where it has neither", () => {
     const meadow = camAt({ ...world, water: null }, 17);
     expect(Math.hypot(meadow.x - 400, meadow.z - 200)).toBeLessThan(100);
+    const m0 = camAt({ ...world, water: null }, 14);
+    expect(Math.hypot(m0.x - 400, m0.z - 200)).toBeCloseTo(65, 6);
+    expect(m0.y - world.ground(m0.x, m0.z)).toBeCloseTo(5, 6);
     const hills = camAt({ ...world, water: null, meadow: null }, 17);
     expect(Math.hypot(hills.x + 230, hills.z - 10)).toBeLessThan(15);
   });
@@ -81,7 +102,10 @@ describe("the title scene", () => {
     expect(b.y).toBeGreaterThan(a.y);
   });
 
-  it("pushes toward the summit", () => {
+  it("pushes toward the summit from 100 m short of it, 45 m up", () => {
+    const start = camAt(world, 28);
+    expect(Math.hypot(start.x - 900, start.z - 600)).toBeCloseTo(100, 6);
+    expect(start.y - world.ground(start.x, start.z)).toBeCloseTo(45, 6);
     const [a, b] = [camAt(world, 29), camAt(world, 34)];
     expect(Math.hypot(b.x - 900, b.z - 600)).toBeLessThan(Math.hypot(a.x - 900, a.z - 600));
   });

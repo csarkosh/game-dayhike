@@ -41,15 +41,19 @@ describe("the title's lake", () => {
   // 15 m about a spine from z = −10 to 10: its shore 15 m out across it and 25 m out along it.
   const lake = stadiumLake({ cx: 0, cz: 0, halfLen: 10, w: 15, level: 40 });
 
-  it("reaches as far as the shore stands toward the trail's start", () => {
-    expect(titleWater(lake, { x: 100, z: 0 })).toEqual({ x: 0, z: 0, radius: expect.closeTo(15, 9) as number, level: 40 });
-    expect(titleWater(lake, { x: 0, z: -300 }).radius).toBeCloseTo(25, 9);
+  it("gives the rim's distance by azimuth: along the spine and across it", () => {
+    const water = titleWater(lake);
+    expect([water.x, water.z, water.level]).toEqual([0, 0, 40]);
+    // The outline is marched in 2 m chords, which cut inside the 15 m end by at most 0.034 m.
+    expect(water.rim(0)).toBeCloseTo(25, 1);
+    expect(water.rim(Math.PI / 2)).toBeCloseTo(15, 1);
+    expect(water.rim(Math.PI)).toBeCloseTo(25, 1);
   });
 
   it("falls back on the mean radius where its centre stands on dry ground", () => {
     // The spine moved 50 m east of the centre the shape turns about.
     const shape = { ...stadiumShape({ cx: 0, cz: 0, halfLen: 10, w: 15 }), px: [50, 50], meanRadius: 21 };
-    expect(titleWater({ ...lake, shape }, { x: 100, z: 0 }).radius).toBe(21);
+    expect(titleWater({ ...lake, shape }).rim(0)).toBe(21);
   });
 });
 
