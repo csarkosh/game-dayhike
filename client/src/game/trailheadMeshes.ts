@@ -26,6 +26,9 @@ import { attachWet, WET_CAP } from "./wetPlugin.js";
 
 export const TRAILHEAD_CAR_OUTPUT = "models/trailhead.car.glb";
 export const TRAILHEAD_KIOSK_OUTPUT = "models/trailhead.kiosk.glb";
+/** The film's car (the intro's, with wheels and a door), which the end scene swaps in for the parked one (`swapCar`). */
+export const FILM_CAR_NAME = "intro.car";
+export const FILM_CAR_OUTPUT = "models/intro.car.glb";
 /**
  * How far in front of the model's own face the painted plane stands. With
  * the view's near plane at 5 cm, a vertex lands in depth to within about

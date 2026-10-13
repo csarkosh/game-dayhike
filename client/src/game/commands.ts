@@ -183,9 +183,10 @@ const SPECS: readonly CommandSpec[] = [
   {
     name: "end",
     kind: "view",
-    // `end won` or `end died`: plays this player's ending (ending.ts) on
-    // the spot, for looking at it and for recording its shader stages. Not
-    // persisted: no `scriptValue`, so it never rides the URL into a match.
+    // `end won` or `end died`: plays this player's ending on the spot (the
+    // end scene, endScene.ts, from where they stand; the death, ending.ts),
+    // for looking at it and for recording its shader stages. Not persisted:
+    // no `scriptValue`, so it never rides the URL into a match.
     validate(args) {
       return args.length === 1 && (args[0] === "won" || args[0] === "died") ? null : "end takes won or died";
     },
@@ -198,6 +199,16 @@ const SPECS: readonly CommandSpec[] = [
     // persisted: no `scriptValue`.
     validate(args) {
       return args.length === 0 ? null : "summit takes no argument";
+    },
+  },
+  {
+    name: "escape",
+    kind: "view",
+    // Bare: the host's player stands on the pad short of the car and the
+    // next tick is the win, so the end scene (endScene.ts) plays for a
+    // look, the shades and all. Not persisted: no `scriptValue`.
+    validate(args) {
+      return args.length === 0 ? null : "escape takes no argument";
     },
   },
   {
