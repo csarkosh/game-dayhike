@@ -194,6 +194,14 @@ describe("snapshot codec", () => {
     expect(back.enemies[9]!.ai).toBe(9);
   });
 
+  it("carries a shade of the end's ai byte, 13, as it carries every other", () => {
+    const snap = sampleSnapshot();
+    snap.enemies[0]!.ai = AiState.Pursue;
+    const back = decodeSnapshot(encodeSnapshot(snap));
+    expect(back.enemies[0]!.ai).toBe(13);
+    expect(back.enemies[0]!.id).toBe(100);
+  });
+
   it("stays within the bandwidth budget", () => {
     // 695 bytes at 20 Hz is about 14 KB/s down per client, and 56 KB/s up for
     // a host serving four of them. Smaller than protocol 4's 774: the items

@@ -1,24 +1,24 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
-import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
+import { createForestWorld, serializeWorldState, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import type { World } from "../../src/sim/world.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "../../src/sim/terrain.js";
-import { AiState, Phase } from "../../src/sim/types.js";
+import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import type { EnemyState, PlayerState, Vec3 } from "../../src/sim/types.js";
 import { PLAYER_EYE_OFFSET, TICK_DT } from "../../src/sim/constants.js";
 import type { TrailNode } from "../../src/sim/trail.js";
 import { stemNodes } from "../../src/sim/trailRoute.js";
-import { isOnCorridor } from "../../src/sim/containment.js";
+import { isOnCorridor, roadOffset } from "../../src/sim/containment.js";
 import { hasLineOfSight } from "../../src/sim/ai.js";
 import { climbOf } from "../../src/sim/watcher.js";
 import { MIST_AT, MIST_SPAN, actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
 import {
   GUIDE_REACH, HAUNT_MIST_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_CHASE, HAUNT_REAL_CLIMB, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
   LUNGE_RANGE, SHADE_BEARING_MAX_COS, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_RANGE, SHADE_WATCHED_S, OFF_TRAIL_FROM_M, OFF_TRAIL_SPAN_M, OFF_TRAIL_REAL_EACH, offTrailOf,
-  bestClimb, isHaunting, isShadeState, placeShadeOnGuide, pressureOf, spawnShade,
+  bestClimb, isHaunting, isShadeState, placeShadeOnGuide, pressureOf, spawnShade, startPursuit,
 } from "../../src/sim/haunt.js";
 import { isHollow, SHADE_STARE_CAP, SUMMIT_REVEAL_S, spawnHollow } from "../../src/sim/hollow.js";
 import { trailDistance } from "../../src/sim/trail.js";
@@ -316,5 +316,150 @@ describe("the director", () => {
     // Looking back up the stem, no guide node is ahead: null, and the band placement stands in.
     p.yaw += Math.PI;
     expect(placeShadeOnGuide(w, p, rng)).toBeNull();
+  });
+});
+
+describe("the pursuit", () => {
+  /** A won match: the chase on, the one player on the pad, one tick. */
+  function won() {
+    const { w, p } = forestWorld();
+    w.state.phase = Phase.Chase;
+    const th = w.trail!.trailhead;
+    standAt(p, th.x, th.z);
+    tick(w);
+    return { w, p };
+  }
+  const pursuers = (w: World): EnemyState[] => [...w.state.enemies.values()].filter((e) => e.ai === AiState.Pursue);
+  const u = (w: World, e: EnemyState) => roadOffset(w, e.pos.x, e.pos.z) as number;
+
+  it("stands four shades of the end up on the winning tick, on the ground at the trail's entrance and 4, 8 and 12 m back up the stem, once", () => {
+    const { w, p } = won();
+    expect(w.state.outcome).toBe(Outcome.Won);
+    const four = pursuers(w);
+    expect(four.map((e) => e.id)).toEqual([2, 3, 4, 5]);
+    const places = [
+      [-305.7794721388503, 4.058108456105842, 0.9167297835065525],
+      [-301.80582121985805, 4.67193263960374, 1.3750946752598288],
+      [-297.83217030086576, 5.6656172401254645, 1.833459567013105],
+      [-293.8585193818735, 6.470820654537182, 2.2918244587663814],
+    ];
+    for (const [k, e] of four.entries()) {
+      const [x, y, z] = places[k] as [number, number, number];
+      expect(e.pos.x).toBeCloseTo(x, 6);
+      expect(e.pos.y).toBeCloseTo(y, 6);
+      expect(e.pos.z).toBeCloseTo(z, 6);
+      expect(e.targetId).toBe(p.id);
+      expect(e.stateTimer).toBe(25);
+      // Bound for the car's door: inland of the car, half a metre ahead of its centre.
+      expect(e.emergeTo!.x).toBeCloseTo(-314.32677397683483, 6);
+      expect(e.emergeTo!.z).toBe(0.5);
+      expect(isShadeState(e.ai)).toBe(true);
+      expect(isHollow(e)).toBe(false);
+    }
+    // 4 m apart along the stem's first edge.
+    expect(dist(four[0]!.pos, four[1]!.pos)).toBeCloseTo(4, 9);
+    expect(dist(four[0]!.pos, four[3]!.pos)).toBeCloseTo(12, 9);
+    // Never a second time: the match is over and the end rule judges nothing more.
+    tick(w, 120);
+    expect(pursuers(w).map((e) => e.id)).toEqual([2, 3, 4, 5]);
+    expect(w.state.nextEntityId).toBe(6);
+  });
+
+  it("stands none up on a loss", () => {
+    const { w, p } = forestWorld();
+    w.state.phase = Phase.Chase;
+    p.health = 0;
+    tick(w);
+    expect(w.state.outcome).toBe(Outcome.Lost);
+    tick(w, 60);
+    expect(pursuers(w)).toHaveLength(0);
+  });
+
+  it("walks to the car at 5.5 m/s, stands within a metre of its door facing the car, never nearer the road than 7.9 m, and is gone after 25 s", () => {
+    const { w } = won();
+    const four = pursuers(w);
+    const last = four[3]!;
+    // Settled past its first steps from a standstill, a second's walk is 5.5 m.
+    tick(w, 15);
+    const from = { ...last.pos };
+    tick(w, 60);
+    expect(dist(last.pos, from)).toBeCloseTo(5.5, 6);
+    const car = w.search!.car;
+    const door = four[0]!.emergeTo!;
+    let nearest = Infinity;
+    for (let t = 75; t < 1499; t++) {
+      tick(w);
+      for (const e of four) {
+        const off = u(w, e);
+        if (off < nearest) nearest = off;
+      }
+    }
+    // Never on the pavement (5.5 m), never past the stop at 7.9 m from the centreline.
+    expect(nearest).toBeGreaterThanOrEqual(7.9);
+    for (const e of four) {
+      expect(w.state.enemies.has(e.id)).toBe(true);
+      expect(dist(e.pos, door)).toBeLessThanOrEqual(1);
+      expect(e.vel).toEqual({ x: 0, y: 0, z: 0 });
+      expect(e.yaw).toBeCloseTo(Math.atan2(car.x - e.pos.x, car.z - e.pos.z), 9);
+    }
+    tick(w, 2);
+    expect(pursuers(w)).toHaveLength(0);
+  }, timeLimit(30_000));
+
+  it("stops short of the road's bed when its way runs onto it, and stands there facing the car", () => {
+    const { w } = won();
+    const h = pursuers(w)[0]!;
+    // Its way to the door laid across the road's centreline, at its own z: it must stop at the line.
+    const roadX = h.pos.x - u(w, h);
+    h.emergeTo = { x: roadX, y: 0, z: h.pos.z };
+    let nearest = Infinity;
+    for (let t = 0; t < 300; t++) {
+      tick(w);
+      if (u(w, h) < nearest) nearest = u(w, h);
+    }
+    expect(nearest).toBeGreaterThanOrEqual(7.9);
+    expect(u(w, h)).toBeLessThan(8);
+    expect(h.vel).toEqual({ x: 0, y: 0, z: 0 });
+    const car = w.search!.car;
+    expect(h.yaw).toBeCloseTo(Math.atan2(car.x - h.pos.x, car.z - h.pos.z), 9);
+  });
+
+  it("kills no one beside it, and in the stare's cone closes the dark only to SHADE_STARE_CAP", () => {
+    const { w, p } = won();
+    const h = pursuers(w)[0]!;
+    // Out in the woods, 40 m from the road, the player unsafe and a hand's breadth from it, looking at it.
+    const roadX = h.pos.x - u(w, h);
+    const at = { x: roadX + 40, y: elevationAt(seed, roadX + 40, h.pos.z) + 0.9, z: h.pos.z };
+    for (const e of pursuers(w)) if (e !== h) w.state.enemies.delete(e.id);
+    h.pos = { ...at };
+    h.emergeTo = { ...at };
+    standAt(p, at.x - 0.6, at.z);
+    lookAt(p, h.pos);
+    for (let t = 0; t < 600; t++) tick(w);
+    expect(p.safe).toBe(false);
+    expect(p.health).toBe(100);
+    expect(w.state.enemies.has(h.id)).toBe(true);
+    expect(p.stare).toBeCloseTo(0.45, 6);
+    expect(SHADE_STARE_CAP).toBe(0.45);
+  });
+
+  it("is in the state's fingerprint, its ai byte 13", () => {
+    const { w } = won();
+    const print = serializeWorldState(w.state).split("|");
+    for (const e of pursuers(w)) {
+      const entry = print.find((part) => part.startsWith(`E${e.id}:`));
+      expect(entry).toBeDefined();
+      const fields = entry!.slice(`E${e.id}:`.length).split(",");
+      expect(fields[8]).toBe("13");
+      expect(fields[10]).toBe("25");
+    }
+    expect(AiState.Pursue).toBe(13);
+  });
+
+  it("stands nothing up on a world without a trail's search", () => {
+    const { w } = forestWorld();
+    w.search = null;
+    startPursuit(w);
+    expect(pursuers(w)).toHaveLength(0);
   });
 });

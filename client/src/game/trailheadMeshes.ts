@@ -12,7 +12,7 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 
-import { BOARD_BOX_HALF, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes, type Board } from "../sim/trailhead.js";
+import { BOARD_BOX_HALF, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes, carDirection, type Board } from "../sim/trailhead.js";
 import type { Vec3 } from "../sim/types.js";
 import { BOARD_FACE } from "./boardFace.js";
 import { paintedBoard, type BoardDrawing, type BoardPainter } from "./boardPaint.js";
@@ -70,9 +70,10 @@ export type TrailheadMeshes = {
  * collides with. It stands at the pad's own place along the road on most
  * worlds, and there its nose points toward +z (yaw 0); where it has slid
  * along the road to clear the trail, its nose points back toward the pad.
+ * The rule is the sim's (`carDirection`), so the door spot agrees with it.
  */
 export function carYaw(site: Site, trailhead: Site): number {
-  return trailhead.z >= site.z ? 0 : Math.PI;
+  return carDirection(site, trailhead) === 1 ? 0 : Math.PI;
 }
 
 /**

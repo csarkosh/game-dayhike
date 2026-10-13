@@ -96,6 +96,32 @@ export function carSite(
   return site;
 }
 
+/**
+ * The way the car faces along the road: 1 with its nose toward +z, −1
+ * toward −z. It stands at the pad's own place along the road on most worlds,
+ * and there its nose points toward +z; where it has slid along the road to
+ * clear the trail, its nose points back toward the pad. The drawn car's yaw
+ * (`carYaw`, game/trailheadMeshes.ts) is 0 for 1 and π for −1.
+ */
+export function carDirection(site: Ground, trailhead: Ground): 1 | -1 {
+  return trailhead.z >= site.z ? 1 : -1;
+}
+
+/** Metres out from the car's inland side, and ahead of its centre along its heading, that the door spot stands. */
+export const DOOR_OUT_M = 0.6;
+export const DOOR_ALONG_M = 0.5;
+
+/**
+ * Where a body stands to get into the car: on its inland side, the side the
+ * trail is on (+x of the road), DOOR_OUT_M out from its side and
+ * DOOR_ALONG_M ahead of its centre the way it faces (`carDirection`). The
+ * car stands square to the road's axis, so its side is CAR_HALF.x from its
+ * centre in x.
+ */
+export function doorSpot(site: Ground, direction: 1 | -1): Ground {
+  return { x: site.x + CAR_HALF.x + DOOR_OUT_M, z: site.z + direction * DOOR_ALONG_M };
+}
+
 /** Where a player arrives, and the yaw they face. */
 export type Start = { x: number; z: number; yaw: number };
 

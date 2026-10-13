@@ -11,7 +11,9 @@
  * haunt begins once the mist is whole on the ground, lightly, and presses
  * harder the nearer the party is to the crest. In the chase a shade stands where the open way home
  * runs, beside the path: the thing that hunts the party also shows them the
- * way.
+ * way. And when the match is won, the woods come after the party: the
+ * pursuit (`startPursuit`) stands shades up at the trail's entrance that walk
+ * to the car's door and stand at the road (docs/gameplay/2026-10-12-the-end-scene.md §2).
  *
  * Host only, off the wire and outside the fingerprint, like the watcher's
  * record; the shades themselves are enemies in the snapshot, drawn as the
@@ -31,7 +33,8 @@ import { nearestTrailNode } from "./trail.js";
 import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";
-import { isOnCorridor } from "./containment.js";
+import { isOnCorridor, roadOffset, ROAD_WALL_U } from "./containment.js";
+import { carDirection, doorSpot, trailEntrance } from "./trailhead.js";
 import { faceToward, horizontalDistSq, playerSees, revealing, walkToward } from "./hollow.js";
 import { climbOf, WATCH_SLOPE_NY, WATCH_VIEW_COS } from "./watcher.js";
 import { actsUnder, MIST_AT, MIST_SPAN, smootherstep } from "./acts.js";
@@ -111,6 +114,19 @@ export const LUNGE_LINE_M = 60;
 export const GUIDE_REACH: readonly [number, number] = [15, 60];
 export const GUIDE_ALONG: readonly [number, number] = [0.55, 0.8];
 export const GUIDE_SIDE_M = 3;
+/**
+ * The pursuit, on the winning tick: PURSUIT_SHADES shades at the trail's
+ * entrance and up the stem behind it, PURSUIT_APART_M apart, walking to the
+ * car's door at PURSUIT_SPEED (under a sprint's 7), stopping short of the
+ * road's bed at PURSUIT_STOP_U from its centreline, or within PURSUIT_ARRIVE_M
+ * of the door, and gone PURSUIT_DWELL_S after they stood up.
+ */
+export const PURSUIT_SHADES = 4;
+export const PURSUIT_APART_M = 4;
+export const PURSUIT_SPEED = 5.5;
+export const PURSUIT_STOP_U = ROAD_WALL_U + 1.5;
+export const PURSUIT_ARRIVE_M = 1;
+export const PURSUIT_DWELL_S = 25;
 /** Placements tried for a shade before the director waits a tick. */
 export const HAUNT_PLACE_TRIES = 6;
 /** Mixed into the world seed for the haunt's own stream. */
@@ -135,8 +151,9 @@ export function createHauntRecord(seed: number): HauntRecord {
   return { rng, active: true, rest: between(rng, HAUNT_REST_EARLY), episode: null };
 }
 
+/** A shade of the haunt or of the end: a lunge and its strike, a shade standing, a shade in pursuit. */
 export function isShadeState(ai: AiState): boolean {
-  return ai === AiState.Shade || ai === AiState.Lunge || ai === AiState.Strike;
+  return ai === AiState.Shade || ai === AiState.Lunge || ai === AiState.Strike || ai === AiState.Pursue;
 }
 
 /** How far off the trail the chase's targets are, 0 on it to 1 from OFF_TRAIL_FROM_M + OFF_TRAIL_SPAN_M off: the farthest of them. */
@@ -272,21 +289,17 @@ export function placeShadeOnGuide(world: World, target: PlayerState, rng: { rngS
   return admits(world, x, z, eye);
 }
 
-/** Spawns a shade or a lunge at `at` for `target`: a shade stands `dwell` seconds, a lunge runs its line LUNGE_LINE_M past the target. */
-export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: boolean, dwell: number): EnemyState {
-  const dx = target.pos.x - at.x;
-  const dz = target.pos.z - at.z;
-  const len = Math.sqrt(dx * dx + dz * dz);
-  const line: Vec3 | null = lunge && len > 0 ? { x: target.pos.x + (dx / len) * LUNGE_LINE_M, y: target.pos.y, z: target.pos.z + (dz / len) * LUNGE_LINE_M } : null;
+/** Adds a shade of `ai` at `at` for `target`, its timer at `timer` and its walk's end at `to`, facing its player. */
+function addShade(world: World, at: Vec3, target: PlayerState, ai: AiState, timer: number, to: Vec3 | null): EnemyState {
   const shade: EnemyState = {
     id: world.state.nextEntityId++,
     pos: cloneVec3(at),
     vel: { x: 0, y: 0, z: 0 },
     yaw: 0,
     health: ENEMY_MAX_HEALTH,
-    ai: lunge ? AiState.Lunge : AiState.Shade,
+    ai,
     targetId: target.id,
-    stateTimer: lunge ? LUNGE_MAX_S : dwell,
+    stateTimer: timer,
     // For a shade, the seconds a player has had it in the stare's cone (SHADE_WATCHED_S): a cooldown nothing else here reads.
     attackCooldown: 0,
     lastDistSq: Infinity,
@@ -296,17 +309,82 @@ export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: b
     routeAt: 0,
     approach: false,
     seen: false,
-    emergeTo: line,
+    emergeTo: to,
   };
   faceToward(shade, target.pos.x, target.pos.z);
   world.state.enemies.set(shade.id, shade);
   return shade;
 }
 
-/** One tick of a shade or a lunge; true when it is gone. */
+/** Spawns a shade or a lunge at `at` for `target`: a shade stands `dwell` seconds, a lunge runs its line LUNGE_LINE_M past the target. */
+export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: boolean, dwell: number): EnemyState {
+  const dx = target.pos.x - at.x;
+  const dz = target.pos.z - at.z;
+  const len = Math.sqrt(dx * dx + dz * dz);
+  const line: Vec3 | null = lunge && len > 0 ? { x: target.pos.x + (dx / len) * LUNGE_LINE_M, y: target.pos.y, z: target.pos.z + (dz / len) * LUNGE_LINE_M } : null;
+  return addShade(world, at, target, lunge ? AiState.Lunge : AiState.Shade, lunge ? LUNGE_MAX_S : dwell, line);
+}
+
+/**
+ * The pursuit, host only, from the end rule on the tick the match is won
+ * (summit.ts): PURSUIT_SHADES shades of the end stand up on the ground at the
+ * trail's entrance and back up the stem from it, PURSUIT_APART_M apart along
+ * its first edge, each for the living player nearest it (ties to the lower
+ * id), and walk to the car's door spot (`doorSpot`, kept in `emergeTo`).
+ * Nothing without a trail, a ground, the car or a living player.
+ */
+export function startPursuit(world: World): void {
+  const graph = world.trail;
+  const ground = world.ground;
+  const search = world.search;
+  if (graph === null || ground === null || search === null) return;
+  const car = search.car;
+  const door = doorSpot(car, carDirection(car, graph.trailhead));
+  const e = trailEntrance(graph);
+  for (let k = 0; k < PURSUIT_SHADES; k++) {
+    const x = e.x + e.dx * PURSUIT_APART_M * k;
+    const z = e.z + e.dz * PURSUIT_APART_M * k;
+    let target: PlayerState | null = null;
+    let bestSq = Infinity;
+    for (const p of world.state.players.values()) {
+      if (p.health <= 0) continue;
+      const dx = p.pos.x - x, dz = p.pos.z - z;
+      const sq = dx * dx + dz * dz;
+      if (sq < bestSq || (sq === bestSq && target !== null && p.id < target.id)) { bestSq = sq; target = p; }
+    }
+    if (target === null) return;
+    addShade(world, { x, y: ground.heightAt(x, z) + ENEMY_HALF.y, z }, target, AiState.Pursue, PURSUIT_DWELL_S, { x: door.x, y: 0, z: door.z });
+  }
+}
+
+/** One tick of a shade, a lunge or a shade of the end; true when it is gone. */
 export function stepShade(h: EnemyState, world: World, dt: number): boolean {
   const target = world.state.players.get(h.targetId);
   h.stateTimer -= dt;
+  if (h.ai === AiState.Pursue) {
+    // It walks to the car's door, the pavement the one ground it never
+    // crosses: a step that would end nearer the road's centreline than
+    // PURSUIT_STOP_U is not taken, and at the door it stands. Either way it
+    // faces the car. No one's nearness sends it away, and no look.
+    if (h.stateTimer <= 0) return true;
+    const door = h.emergeTo;
+    const car = world.search?.car;
+    if (door === null || car === undefined) return false;
+    if (horizontalDistSq(h.pos, door) > PURSUIT_ARRIVE_M * PURSUIT_ARRIVE_M) {
+      const pos = h.pos;
+      const vel = h.vel;
+      walkToward(h, world, dt, door.x, door.z, PURSUIT_SPEED, false);
+      const u = roadOffset(world, h.pos.x, h.pos.z);
+      if (u === null || u >= PURSUIT_STOP_U) return false;
+      h.pos = pos;
+      h.vel = vel;
+    }
+    h.vel.x = 0;
+    h.vel.y = 0;
+    h.vel.z = 0;
+    faceToward(h, car.x, car.z);
+    return false;
+  }
   if (h.ai === AiState.Shade) {
     // It stands where it rose and stares: its face to its player, never a step.
     if (target !== undefined && target.health > 0) faceToward(h, target.pos.x, target.pos.z);
@@ -369,8 +447,8 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
 }
 
 /**
- * The haunt's tick, host only: steps every shade and lunge, and, while the
- * match plays, runs the director. No haunting (day, or the night not yet in)
+ * The haunt's tick, host only: steps every shade and lunge, and the shades of
+ * the end past the match's end, and, while the match plays, runs the director. No haunting (day, or the night not yet in)
  * ends an episode at once and leaves the rest where it is.
  */
 export function stepHaunt(world: World, dt: number): void {

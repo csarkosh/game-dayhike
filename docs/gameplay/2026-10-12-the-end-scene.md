@@ -59,8 +59,9 @@ camera, its lens and which shot; `endBeats(t)` the beats below as a record a tes
 as the summit's threshold drives them): the command is a sprint toward the door spot, the yaw to
 it, the look level, until the body is within `DOOR_REACH_M` (0.9 m) of the spot or `RUN_MAX_S` is
 up; then still. The door spot is on the car's inland side, the side the trail is on, so no part of
-the run crosses the car's box: `DOOR_SPOT` in the car's frame is `CAR_HALF.x + DOOR_OUT_M`
-(0.6 m) out from its side and `DOOR_ALONG_M` (0.5 m) ahead of its centre. The run is on the sim,
+the run crosses the car's box: `doorSpot(site, direction)` (`sim/trailhead.ts`, so the pursuit,
+§2, walks to the same place) is `CAR_HALF.x + DOOR_OUT_M` (0.6 m) out from the car's centre and
+`DOOR_ALONG_M` (0.5 m) ahead of it the way it faces. The run is on the sim,
 so every peer sees the body cross the pad, and a player who had been standing thirty metres down
 the road runs thirty metres. A player further than a sprint covers in `RUN_MAX_S` (70 m) is in
 the car at the cap regardless, which is the one thing the scene cannot show well.
@@ -94,15 +95,23 @@ way. The line says the rest.
 ## 2. The pursuit (`sim/haunt.ts`, `sim/summit.ts`)
 
 On the tick the outcome becomes `Won`, the host stands up `PURSUIT_SHADES` (4) shades of a new
-kind, `AiState.Pursue`, at the trail's entrance and up the stem behind it, `PURSUIT_APART_M` (4 m)
-apart, and they walk after the party: each tick toward the door spot of the car (the party is
-there or on its way there) at `PURSUIT_SPEED` (5.5 m/s, under a sprint's 7), on the ground, and
-they stop where the road's bed begins, `PURSUIT_STOP_U` (`ROAD_WALL_U` + 1.5 m) from the
-centreline, the pavement being the one ground they never cross, and stand facing the car. They
-dwell `PURSUIT_DWELL_S` (25 s) and go. They are the haunt's shades in every other way: harmless
-(a shade kills nothing; the stare they fill is capped at `SHADE_STARE_CAP`), drawn through the
-silhouette mask, coming in from nothing and going out to it, and no player's nearness sends them
-away (the haunt's flee radius is for shades that must not be reached; these are meant to be).
+kind, `AiState.Pursue`, on the ground at the trail's entrance and up the stem behind it,
+`PURSUIT_APART_M` (4 m) apart along the stem's first edge, each bound to the living player nearest
+it, and they walk after the party: each tick toward the door spot of the car (`doorSpot`, §1; the
+party is there or on its way there) at `PURSUIT_SPEED` (5.5 m/s, under a sprint's 7), on the
+ground. The Hollow's treeline does not hold them (`walkToward` with `woods` false): they cross the
+pad. They stop where the road's bed begins: a step that would end nearer the centreline than
+`PURSUIT_STOP_U` (`ROAD_WALL_U` + 1.5 m, 7.9 m) is not taken, the pavement being the one ground they
+never cross; and within `PURSUIT_ARRIVE_M` (1 m) of the door spot they stand, so a shade at the door
+does not tread back and forth over it. Stopped either way, they face the car. The door spot is 8.4 m
+from the centreline, inland of the stop, so on a world whose trail leaves the pad inland, which is
+every world of the sweep, they come to the door and stand there against the car's flank; the stop
+holds wherever the way to the door would cross the pavement. They go `PURSUIT_DWELL_S` (25 s) after
+they stood up. They are the haunt's shades in every other way: harmless (a shade kills nothing,
+since the Hollows' contact is for Hollows alone; the stare they fill is capped at
+`SHADE_STARE_CAP`), drawn through the silhouette mask, coming in from nothing and going out to it
+(`isShadeState` counts them), and no player's nearness or look sends them away (the haunt's flee
+radius is for shades that must not be reached; these are meant to be).
 
 The director is otherwise unchanged: at the outcome its episode ends, as before, and the pursuit
 is a single call from the end rule (`stepSummit`) on the winning tick, so a match lost stands
@@ -160,8 +169,7 @@ the door) becomes `stageCar(pose, model)`, which the scene route and the rendere
 **Where it lives.**
 
 - `game/endScene.ts`: `END_SHOTS`, `endShot(t, ctx)`, `endCar(t, road, site, direction)`,
-  `endBeats(t)`, `doorSpot(site, direction)` and the constants above; Babylon-free, as `cutscene.ts`
-  is. `ctx` is the runner's body this frame, the car's site and direction, the road, and the
+  `endBeats(t)` and the constants above; Babylon-free, as `cutscene.ts` is. `ctx` is the runner's body this frame, the car's site and direction, the road, and the
   arrival second (or none yet).
 - `game/carAudio.ts`: the schedule as data (`CAR_CUES`, the fundamental and the levels at a
   second, pure) and the Web Audio graph that plays it on the `car` bus.
@@ -173,11 +181,15 @@ the door) becomes `stageCar(pose, model)`, which the scene route and the rendere
   lens's lamp off); the film car's swap when it lands; `stageCar` each frame of the scene; the
   lamps.
 - `game/trailheadMeshes.ts`: the parked model hidden and the film car placed over it; the car's
-  root and parts exposed to the renderer.
+  root and parts exposed to the renderer. `carYaw` reads the sim's `carDirection`.
+- `sim/trailhead.ts`: `carDirection(site, trailhead)` (1 with the nose toward +z, −1 toward −z:
+  the rule `carYaw` turns into 0 or π) and `doorSpot(site, direction)` with `DOOR_OUT_M` and
+  `DOOR_ALONG_M`, so the run and the pursuit share one door.
 - `game/entityViews.ts`: `Pursue` drawn as a shade.
-- `sim/types.ts`: `AiState.Pursue`. `sim/haunt.ts`: `startPursuit(world)`, the pursuit's step and
-  its stop at the pavement, `isShadeState` including it. `sim/summit.ts`: the call on the winning
-  tick.
+- `sim/types.ts`: `AiState.Pursue` (13). `sim/haunt.ts`: `startPursuit(world)`, the pursuit's
+  step and its stop at the pavement, `isShadeState` including it. `sim/hollow.ts`: `walkToward`'s
+  `woods` flag, and the stare's shade cap counting `Pursue`. `sim/summit.ts`: the call on the
+  winning tick.
 - `game/hud.ts`: unchanged (the bars, the title, the fade). `game/passages.ts`: the win's timings
   are the scene's (`WON_FADE_AFTER_MS` and `WON_LANDING_MS` go; the scene's own constants stand in
   their place).

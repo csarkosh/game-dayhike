@@ -24,6 +24,13 @@ export const enum AiState {
   Lunge = 11,
   /** A lunge at its player: the strike, which kills within its reach, and then it is gone. */
   Strike = 12,
+  /**
+   * A shade of the end (haunt.ts `startPursuit`): stood up at the trail's
+   * entrance on the winning tick, it walks after the party to the car's door,
+   * stops short of the road's bed, faces the car, and is gone after its dwell.
+   * Harmless, as a shade is.
+   */
+  Pursue = 13,
 }
 
 export const enum Button {

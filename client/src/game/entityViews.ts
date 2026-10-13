@@ -13,6 +13,7 @@ import type { Vec3, WorldState } from "../sim/types.js";
 import { ENEMY_HALF, PLAYER_HALF, PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { aimDirection } from "../sim/view.js";
 import { HOLLOW_HEIGHT } from "../sim/hollow.js";
+import { isShadeState } from "../sim/haunt.js";
 import { createCharacterPool, variantForId, type CharacterInstance, type CharacterPool } from "./characterModel.js";
 import { createHeadlamp, setLamp } from "./headlamp.js";
 import { LAMP_DEFAULT, type LampState } from "./lampParams.js";
@@ -298,7 +299,8 @@ export class EntityViews {
 
     // Every enemy the game spawns is a Hollow, so every enemy is drawn as one:
     // there is no other shape to give an entity that can still collide. A
-    // shade, a lunge or a Hollow stepping out comes in from nothing over
+    // shade (of the haunt or of the end, haunt.ts `isShadeState`), a lunge
+    // or a Hollow stepping out comes in from nothing over
     // SHADE_FADE_IN_S (the shadow's look, haunt.ts); the rest stand at once.
     this.shadeList.length = 0;
     {
@@ -309,9 +311,9 @@ export class EntityViews {
       const feet = enemy.pos.y - ENEMY_HALF.y;
       let fade = this.fades.get(id);
       if (fade === undefined) {
-        const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
-        // A shade, and the Hollow stepping out at the crest, come up out of the ground; a lunge quick; the rest stand at once.
-        const shade = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
+        const comesIn = isShadeState(enemy.ai) || enemy.ai === AiState.Emerge;
+        // A shade, of the haunt or of the end, and the Hollow stepping out at the crest, come up out of the ground; a lunge quick; the rest stand at once.
+        const shade = isShadeState(enemy.ai) || enemy.ai === AiState.Emerge;
         const quick = enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike;
         // The Hollow stepping out at the crest, in the summit scene, waits SUMMIT_RISE_DELAY_S before it
         // rises: the scene's arrival and find come first. A fork's Hollow steps out in the same state in
@@ -338,7 +340,7 @@ export class EntityViews {
       // A lunge resolves from the mist as it closes on the local eye; a shade
       // never does; a Hollow out in the open is the resolved form from the
       // start, the same black figure with the dulled eyes.
-      if (enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) {
+      if (isShadeState(enemy.ai)) {
         const me = state.players.get(localId);
         const d = me === undefined ? Infinity : Math.hypot(enemy.pos.x - me.pos.x, enemy.pos.z - me.pos.z);
         const want = (enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) && d < SHADE_RESOLVE_M ? 0 : 1;
@@ -405,12 +407,12 @@ export class EntityViews {
       view.node.rotation.y = this.facingOf(state, localId, enemy.pos.x, enemy.pos.z, enemy.yaw);
       setVisibility(view.node, fade.level);
     }
-    // A shade or a lunge gone from the state goes out to nothing over
+    // A shade, a lunge or a shade of the end gone from the state goes out to nothing over
     // SHADE_FADE_OUT_S: its model is held back from the prune until then.
     for (const [id, fade] of this.fades) {
       if (state.enemies.has(id)) continue;
       const entry = this.enemyModels.get(id);
-      if (entry !== undefined && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge || fade.ai === AiState.Strike)) {
+      if (entry !== undefined && isShadeState(fade.ai)) {
         this.enemyModels.delete(id);
         this.fading.set(id, { entry, level: fade.level, rise: fade.rise, soft: this.soft.get(id) ?? 1, near: this.near.get(id) ?? 1 });
       }

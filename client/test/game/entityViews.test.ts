@@ -354,6 +354,46 @@ describe("EntityViews the Hollow", () => {
     views.dispose();
   });
 
+  it("draws a shade of the end exactly as a shade: risen from the ground, soft in the mask, and held while it goes out", async () => {
+    const views = new EntityViews(scene, await loadedPool());
+    views.softShades = true;
+    const me = player(1, false);
+    const world = state(me);
+    const shade = hollow(7, 1, 6);
+    shade.ai = AiState.Shade;
+    const pursuer = hollow(8, 1, -6);
+    pursuer.ai = AiState.Pursue;
+    world.enemies.set(7, shade);
+    world.enemies.set(8, pursuer);
+    views.sync(world, 1, 1, undefined, 0);
+    // Half its rise (2.4 s): half its height, a quarter of its opacity, whole in the mask.
+    views.sync(world, 1, 1, undefined, 1.2);
+    for (const id of [7, 8]) {
+      const root = scene.getTransformNodeByName(`character_${id}_orientation`) as TransformNode;
+      expect(root.scaling.y).toBeCloseTo(1.5, 9);
+    }
+    const drawn = views.shades();
+    expect(drawn).toHaveLength(2);
+    for (const entry of drawn) {
+      expect(entry.fade).toBeCloseTo(0.25, 9);
+      expect(entry.soft).toBe(1);
+      expect(entry.near).toBe(1);
+      expect(entry.gone).toBe(0);
+    }
+    // Gone from the state: both held while they go out over 2.6 s.
+    world.enemies.clear();
+    views.sync(world, 1, 1, undefined, 0.26);
+    expect(views.fadingOut()).toBe(2);
+    for (const entry of views.shades()) {
+      expect(entry.fade).toBeCloseTo(0.15, 9);
+      expect(entry.gone).toBeCloseTo(0.85, 9);
+    }
+    // The rest of the going, 0.39 s, and they are released.
+    views.sync(world, 1, 1, undefined, 0.4);
+    expect(views.fadingOut()).toBe(0);
+    views.dispose();
+  });
+
   it("draws the capsule until the model loads, then hides it", async () => {
     const pool = createCharacterPool(catalog, fromDisk);
     const views = new EntityViews(scene, pool);

@@ -233,11 +233,15 @@ function speedOf(h: EnemyState): number {
  *   timer never runs, and no strafe begins (`hollowWalk.test.ts` has the
  *   trace, on `hollow18` against the car). Nothing puts a Hollow there today.
  *
+ * A shade of the end (haunt.ts, `AiState.Pursue`) is the one walker the
+ * rule does not hold: it is meant to cross the pad after the party, so it
+ * passes `woods` false, and its own stop short of the road's bed stands in.
+ *
  * Returns whether it moved (or had nowhere to move to): false is a step
  * refused at the treeline, which `followRoute` reads.
  */
-export function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: number, speed: number): boolean {
-  const u = roadOffset(world, h.pos.x, h.pos.z);
+export function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: number, speed: number, woods = true): boolean {
+  const u = woods ? roadOffset(world, h.pos.x, h.pos.z) : null;
   const inside = u !== null && (u < 0 ? -u : u) < ROAD_CORRIDOR_HALF;
   if (inside) {
     // The edge on its own side; on the centreline itself, the forest's (+x).
@@ -288,7 +292,7 @@ export function walkToward(h: EnemyState, world: World, dt: number, tx: number, 
   containInLakes(world, result.pos, result.vel, ENEMY_HALF);
   // The treeline: from outside, a step onto the corridor is refused. Safety is
   // the corridor, not the car.
-  if (!inside && isOnCorridor(world, result.pos.x, result.pos.z)) {
+  if (woods && !inside && isOnCorridor(world, result.pos.x, result.pos.z)) {
     h.vel = { x: 0, y: 0, z: 0 };
     const th = world.trail?.trailhead;
     if (th !== undefined) faceToward(h, th.x, th.z);
@@ -532,12 +536,12 @@ export function updateHollows(world: World): void {
     // In the scene the dark closes a little, slowly, and no further: a minor vignette, a slowed pulse.
     if (held) p.stare = sees ? Math.min(REVEAL_STARE_CAP, p.stare + fill * 0.5) : Math.max(0, p.stare - empty);
     else p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
-    // A shade of the haunt (not a Hollow: harmless) in the cone fills the
-    // stare too, but only to SHADE_STARE_CAP: the dark closes a little on
-    // it, never all the way, as it does on the thing itself.
+    // A shade of the haunt (not a Hollow: harmless), or of the end, in the
+    // cone fills the stare too, but only to SHADE_STARE_CAP: the dark closes
+    // a little on it, never all the way, as it does on the thing itself.
     if (!sees && p.stare < SHADE_STARE_CAP) {
       for (const e of state.enemies.values()) {
-        if (e.ai !== AiState.Shade || !playerSees(p, e, world)) continue;
+        if ((e.ai !== AiState.Shade && e.ai !== AiState.Pursue) || !playerSees(p, e, world)) continue;
         p.stare = Math.min(SHADE_STARE_CAP, p.stare + fill + empty);
         break;
       }

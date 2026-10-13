@@ -984,7 +984,7 @@ function buildGame(
         capAt = at === null ? null : { ...at, y: world.ground?.heightAt(at.x, at.z) ?? self.pos.y };
       }
       let shadeSeen = false;
-      for (const e of state.enemies.values()) if (e.ai === AiState.Shade && playerSees(self, e, world)) { shadeSeen = true; break; }
+      for (const e of state.enemies.values()) if ((e.ai === AiState.Shade || e.ai === AiState.Pursue) && playerSees(self, e, world)) { shadeSeen = true; break; }
       const body = world.search.body.pos;
       const spoke = stepInnerVoice(voice, {
         climb: escalation.progressMax, wet: acts.wet, night: acts.night, mist: acts.mist,
