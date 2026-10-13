@@ -53,6 +53,11 @@ export const AIR_ACCEL = 1.2;
 export const FRICTION = 8;
 export const STEP_HEIGHT = 0.5;
 export const GROUND_NORMAL_Y = 0.7;
+/** The least upward normal the player can stand on where the walkable rock's
+ * layer stands (`rockSurface.ts`): a scramble, up to a gradient of about 2
+ * (63 degrees), since a plate's ramp on a hillside is steeper than a walk
+ * and the player climbs over it rather than sliding off (2026-10-13). */
+export const ROCK_STAND_NORMAL_Y = 0.45;
 /**
  * Slack on the ground-stick test, on top of what the local slope already
  * explains. Absorbs the float error in one tick of "descend, then clamp back to

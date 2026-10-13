@@ -808,6 +808,8 @@ describe("the level id does not move", () => {
     // 2026-10-12: -190240058 before the cliff modules left the faces.
     // CLIFF_DENSITY 0.1 -> 0 is a CLIFF_TUNABLES value (registryDigest
     // moves) that leaves no cliff collider in the digested chunks.
-    expect(passHash()).toBe(-1570667467);
+    // 2026-10-13: -1570667467 before the walkable rock's layer joined the
+    // elevation pass's tunables (the player stands on it, `sim/rockSurface.ts`).
+    expect(passHash()).toBe(1527270963);
   });
 });

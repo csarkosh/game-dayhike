@@ -95,12 +95,17 @@ export const GROUND_PLATE_JITTER = 0.8;
 export const GROUND_PLATE_BORDER = 0.15;
 export const GROUND_PLATE_TILT = 1.5;
 /** Shards, the fine octave, cones added at GROUND_SHARD_WEIGHT: the points
- * standing up out of the plates. */
+ * standing up out of the plates. Lift only: the cone field, lifted by
+ * GROUND_SHARD_LIFT, counts where it is above zero and nothing elsewhere,
+ * so a shard is a tip added on a plate and the plates between the tips are
+ * the plates alone, which is what lets the walking twin leave the shards
+ * out and still stand the player on the drawn rock. */
 export const GROUND_SHARD_CELL = 0.9;
 export const GROUND_SHARD_JITTER = 0.9;
 export const GROUND_SHARD_BORDER = 0.25;
 export const GROUND_SHARD_TILT = 0.5;
 export const GROUND_SHARD_CONE = 3.0;
+export const GROUND_SHARD_LIFT = 0.9;
 export const GROUND_SHARD_WEIGHT = 0.5;
 /** Outcrops, the coarse octave, added at GROUND_MASS_WEIGHT: bedding, broad
  * planes tilted against each other, barely domed. */
@@ -117,6 +122,13 @@ export const GROUND_GAIN = 2.0;
  * and the share of it the calm ground between patches keeps. */
 export const GROUND_PATCH_WAVE = 14;
 export const GROUND_PATCH_LO = 0.35;
+
+/** The walking twin (`groundWalkD`): the plates' joints widened to this
+ * (m), so the surface the player stands on ramps from plate to plate where
+ * the drawn one steps, and the shards left out. On a plate's top the two
+ * are one surface; within half a joint of a fracture they part by up to
+ * the step; a shard's tip passes through the player. */
+export const GROUND_WALK_BORDER = 1.5;
 
 export const GROUND_PLATE_SALT = 0x5b1e;
 export const GROUND_SHARD_SALT = 0x54a2;
@@ -135,10 +147,10 @@ export const FACE_RELIEF_TUNABLES: Readonly<Record<string, number>> = {
   // The walkable rock's (above).
   GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, GROUND_PLATE_TILT,
   GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, GROUND_SHARD_TILT, GROUND_SHARD_CONE,
-  GROUND_SHARD_WEIGHT,
+  GROUND_SHARD_LIFT, GROUND_SHARD_WEIGHT,
   GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, GROUND_MASS_TILT, GROUND_MASS_DOME,
   GROUND_MASS_WEIGHT,
-  GROUND_GAIN, GROUND_PATCH_WAVE, GROUND_PATCH_LO,
+  GROUND_GAIN, GROUND_PATCH_WAVE, GROUND_PATCH_LO, GROUND_WALK_BORDER,
   GROUND_PLATE_SALT, GROUND_SHARD_SALT, GROUND_MASS_SALT, GROUND_PATCH_SALT,
 };
 
@@ -462,27 +474,29 @@ export function groundPatchD(seed: number, x: number, z: number): ReliefSample {
   return { v: GROUND_PATCH_LO + (1 - GROUND_PATCH_LO) * stepT(t), dx: d * n.dx, dz: d * n.dz };
 }
 
-/**
- * The walkable rock's relief at (x, z): the plates, the shards at their
- * weight and the outcrops at theirs, their sum over the weights' sum times
- * GROUND_GAIN, times the patches' share, clamped to [−1, 1] with exact
- * derivatives, zero where the clamp holds. Each octave is the cellular
- * field (`cellularD`) at its own lattice and salt, so it shares the faces'
- * joints and none of their lattices.
- */
-export function groundReliefD(seed: number, x: number, z: number): ReliefSample {
-  cellular(x, z, GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, seed ^ GROUND_PLATE_SALT, GROUND_PLATE_TILT);
+/** The plates (at a joint width), the shards at a weight and the outcrops,
+ * gained, in the patches' share, clamped: the ground relief's composition,
+ * for the drawn field and its walking twin alike. */
+function groundField(seed: number, x: number, z: number, plateBorder: number, shardWeight: number): ReliefSample {
+  cellular(x, z, GROUND_PLATE_CELL, GROUND_PLATE_JITTER, plateBorder, seed ^ GROUND_PLATE_SALT, GROUND_PLATE_TILT);
   let v = cv;
   let dx = cdx;
   let dz = cdz;
-  cellular(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, seed ^ GROUND_SHARD_SALT, GROUND_SHARD_TILT, 0, GROUND_SHARD_CONE);
-  v += GROUND_SHARD_WEIGHT * cv;
-  dx += GROUND_SHARD_WEIGHT * cdx;
-  dz += GROUND_SHARD_WEIGHT * cdz;
+  if (shardWeight !== 0) {
+    cellular(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, seed ^ GROUND_SHARD_SALT, GROUND_SHARD_TILT, 0, GROUND_SHARD_CONE);
+    const tip = cv + GROUND_SHARD_LIFT;
+    if (tip > 0) {
+      v += shardWeight * tip;
+      dx += shardWeight * cdx;
+      dz += shardWeight * cdz;
+    }
+  }
   cellular(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, seed ^ GROUND_MASS_SALT, GROUND_MASS_TILT, GROUND_MASS_DOME);
   v += GROUND_MASS_WEIGHT * cv;
   dx += GROUND_MASS_WEIGHT * cdx;
   dz += GROUND_MASS_WEIGHT * cdz;
+  // The weights' sum is the drawn field's whatever the twin leaves out, so
+  // the two share one scale and a plate's top is the same height in both.
   const n = GROUND_GAIN / (1 + GROUND_SHARD_WEIGHT + GROUND_MASS_WEIGHT);
   const p = groundPatchD(seed, x, z);
   const g = n * v;
@@ -493,4 +507,27 @@ export function groundReliefD(seed: number, x: number, z: number): ReliefSample 
   dz = p.v * gz + p.dz * g;
   if (v > 1 || v < -1) return { v: v > 1 ? 1 : -1, dx: 0, dz: 0 };
   return { v, dx, dz };
+}
+
+/**
+ * The walkable rock's relief at (x, z), as drawn: the plates, the shards at
+ * their weight and the outcrops at theirs, their sum over the weights' sum
+ * times GROUND_GAIN, times the patches' share, clamped to [−1, 1] with
+ * exact derivatives, zero where the clamp holds. Each octave is the
+ * cellular field (`cellularD`) at its own lattice and salt, so it shares
+ * the faces' joints and none of their lattices.
+ */
+export function groundReliefD(seed: number, x: number, z: number): ReliefSample {
+  return groundField(seed, x, z, GROUND_PLATE_BORDER, GROUND_SHARD_WEIGHT);
+}
+
+/**
+ * The walking twin of `groundReliefD`: the same plates at the same heights
+ * with their joints GROUND_WALK_BORDER wide, no shards (which only add, as
+ * tips), the same outcrops, gain, patches and clamp. What the simulation stands the player on
+ * (`rockSurface.ts`): smooth to walk, one surface with the drawn rock on a
+ * plate's top.
+ */
+export function groundWalkD(seed: number, x: number, z: number): ReliefSample {
+  return groundField(seed, x, z, GROUND_WALK_BORDER, 0);
 }

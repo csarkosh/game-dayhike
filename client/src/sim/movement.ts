@@ -1,7 +1,7 @@
 import type { Vec3, InputCommand } from "./types.js";
 import { Button } from "./types.js";
 import { boxesNear, type BoxProvider } from "./boxSource.js";
-import { MAX_WALKABLE_GRADIENT, type GroundField } from "./ground.js";
+import { MAX_WALKABLE_GRADIENT, walkableGradientFor, type GroundField } from "./ground.js";
 import { depenetrate, sweepBox } from "./collision.js";
 import {
   EPSILON,
@@ -191,6 +191,10 @@ function resolveGround(
 ): boolean {
   const h = ground.heightAt(pos.x, pos.z);
   const feet = pos.y - half.y;
+  // The least normal a foot holds here, and its gradient: the ground's, or the
+  // walkable rock's where its layer stands, a scramble over the plates (ground.ts).
+  const standY = ground.standNormalY?.(pos.x, pos.z) ?? GROUND_NORMAL_Y;
+  const standGradient = standY === GROUND_NORMAL_Y ? MAX_WALKABLE_GRADIENT : walkableGradientFor(standY);
 
   if (feet > h) {
     // Above the surface. Ordinarily that is flight — but a walking player
@@ -200,7 +204,7 @@ function resolveGround(
     // dropped over the ground actually covered this tick, so ledges and cliffs
     // are still falls and a jump is still a jump.
     if (!wasGrounded || jumped || vel.y > 0) return false;
-    if (feet - h > horizontalDistance * MAX_WALKABLE_GRADIENT + GROUND_SNAP_MARGIN) return false;
+    if (feet - h > horizontalDistance * standGradient + GROUND_SNAP_MARGIN) return false;
     // The stick pulls the hull down to the ground, but a box's top can stand
     // between the two — where a hillside passes a few centimetres under a
     // cliff box's top, inside its footprint. Snapping to the ground there
@@ -219,7 +223,7 @@ function resolveGround(
   ground.normalAt(pos.x, pos.z, normal);
   pos.y = h + half.y;
 
-  if (normal.y >= GROUND_NORMAL_Y) {
+  if (normal.y >= standY) {
     if (vel.y < 0) vel.y = 0;
     return true;
   }
