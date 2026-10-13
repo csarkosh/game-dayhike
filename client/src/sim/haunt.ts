@@ -29,6 +29,7 @@ import type { EnemyState, PlayerState, Vec3 } from "./types.js";
 import { AiState, Outcome, Phase, cloneVec3, nextRandom } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailNode } from "./trail.js";
+import { stemAhead, stemProgress } from "./trailRoute.js";
 import { nearestTrailNode } from "./trail.js";
 import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
@@ -115,18 +116,20 @@ export const GUIDE_REACH: readonly [number, number] = [15, 60];
 export const GUIDE_ALONG: readonly [number, number] = [0.55, 0.8];
 export const GUIDE_SIDE_M = 3;
 /**
- * The pursuit, on the winning tick: PURSUIT_SHADES shades at the trail's
- * entrance and up the stem behind it, PURSUIT_APART_M apart, walking to the
- * car's door at PURSUIT_SPEED (under a sprint's 7), stopping short of the
- * road's bed at PURSUIT_STOP_U from its centreline, or within PURSUIT_ARRIVE_M
- * of its own stop by the door, and gone PURSUIT_DWELL_S after they stood up.
+ * The pursuit, on the winning tick: PURSUIT_SHADES shades up the stem
+ * behind the party, PURSUIT_BEHIND_M behind its rearmost and PURSUIT_APART_M
+ * apart, walking to stops by the car's door at PURSUIT_SPEED (under a
+ * sprint's 7), stopping short of the road's bed at PURSUIT_STOP_U from its
+ * centreline, or within PURSUIT_ARRIVE_M of their own stop, and gone
+ * PURSUIT_DWELL_S after they stood up.
  */
 export const PURSUIT_SHADES = 4;
+export const PURSUIT_BEHIND_M = 3;
 export const PURSUIT_APART_M = 4;
 export const PURSUIT_SPEED = 5.5;
 export const PURSUIT_STOP_U = ROAD_WALL_U + 1.5;
 export const PURSUIT_ARRIVE_M = 1;
-/** Metres along the road between one shade's stop and the next: a loose file from the door back past the car's tail. */
+/** Metres along the road from the door to the first shade's stop, and between one stop and the next: a loose file back past the car's tail. */
 export const PURSUIT_SPREAD_M = 1.8;
 export const PURSUIT_DWELL_S = 25;
 /** Placements tried for a shade before the director waits a tick. */
@@ -328,15 +331,38 @@ export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: b
 }
 
 /**
+ * Where a shade of the end rises near (x, z): standing on the ground there
+ * (`groundSpawn`), or failing that 1 or 2 m to either side across the way
+ * (ax, az), so none starts in a trunk or a boulder's box; where none of those
+ * stands clear, on the ground's height at (x, z) all the same.
+ */
+function pursuitPlace(world: World, ground: NonNullable<World["ground"]>, x: number, z: number, ax: number, az: number): Vec3 {
+  if (world.forest !== null) {
+    for (const side of PURSUIT_SIDESTEPS) {
+      const at = groundSpawn(world.boxes, world.forest.seed, x - az * side, z + ax * side, ENEMY_HALF);
+      if (at !== null) return at;
+    }
+  }
+  return { x, y: ground.heightAt(x, z) + ENEMY_HALF.y, z };
+}
+const PURSUIT_SIDESTEPS: readonly number[] = [0, 1, -1, 2, -2];
+
+/**
  * The pursuit, host only, from the end rule on the tick the match is won
- * (summit.ts): PURSUIT_SHADES shades of the end stand up on the ground at the
- * trail's entrance and back up the stem from it, PURSUIT_APART_M apart along
- * its first edge, each for the living player nearest it (ties to the lower
- * id), and walk each to its own stop (kept in `emergeTo`): the first to the
- * car's door spot (`doorSpot`), each after it PURSUIT_SPREAD_M further along
- * the road the way the car's tail points, so they stand in a file along the
- * car's inland flank and behind it.
- * Nothing without a trail, a ground, the car or a living player.
+ * (summit.ts): PURSUIT_SHADES shades of the end stand up behind the party, on
+ * the stem up from the living player furthest up it (the rearmost, who was
+ * last to reach the corridor), PURSUIT_BEHIND_M behind them and
+ * PURSUIT_APART_M apart from there, so every shade starts further from the
+ * car than any winner. With every living player on the pad itself, short of
+ * the trail's entrance, they stand up at the entrance and back along the
+ * stem's first edge, PURSUIT_APART_M apart. Each faces the living player
+ * nearest it (ties to the lower id), which is all its `targetId` is for.
+ * Each walks to its own stop (kept in `emergeTo`): the car's door spot
+ * (`doorSpot`) moved PURSUIT_SPREAD_M along the road the way the car's tail
+ * points for the first, and as much again for each after it, so the door
+ * itself stays the runner's and they stand in a file along the car's inland
+ * flank and behind it. Nothing without a trail, a ground, the car or a
+ * living player.
  */
 export function startPursuit(world: World): void {
   const graph = world.trail;
@@ -347,9 +373,30 @@ export function startPursuit(world: World): void {
   const direction = carDirection(car, graph.trailhead);
   const door = doorSpot(car, direction);
   const e = trailEntrance(graph);
+  // The rearmost living player: least stem progress (1 at the pad, 0 at the crest), ties to the lower id.
+  let rear: PlayerState | null = null;
+  let rearProgress = stemProgress(graph, e.x, e.z);
+  for (const p of world.state.players.values()) {
+    if (p.health <= 0) continue;
+    const progress = stemProgress(graph, p.pos.x, p.pos.z);
+    if (progress < rearProgress || (progress === rearProgress && rear !== null && p.id < rear.id)) { rearProgress = progress; rear = p; }
+  }
   for (let k = 0; k < PURSUIT_SHADES; k++) {
-    const x = e.x + e.dx * PURSUIT_APART_M * k;
-    const z = e.z + e.dz * PURSUIT_APART_M * k;
+    let x = e.x + e.dx * PURSUIT_APART_M * k;
+    let z = e.z + e.dz * PURSUIT_APART_M * k;
+    let ax = e.dx, az = e.dz;
+    if (rear !== null) {
+      // Up the stem from them: positive metres run from the pad toward the crest.
+      const back = PURSUIT_BEHIND_M + PURSUIT_APART_M * k;
+      const at = stemAhead(graph, rear.pos.x, rear.pos.z, back) ?? (graph.nodes[graph.summit] as TrailNode);
+      const on = stemAhead(graph, rear.pos.x, rear.pos.z, back + 1);
+      x = at.x;
+      z = at.z;
+      if (on !== null) {
+        const len = Math.sqrt((on.x - x) * (on.x - x) + (on.z - z) * (on.z - z));
+        if (len > 0) { ax = (on.x - x) / len; az = (on.z - z) / len; }
+      }
+    }
     let target: PlayerState | null = null;
     let bestSq = Infinity;
     for (const p of world.state.players.values()) {
@@ -359,7 +406,8 @@ export function startPursuit(world: World): void {
       if (sq < bestSq || (sq === bestSq && target !== null && p.id < target.id)) { bestSq = sq; target = p; }
     }
     if (target === null) return;
-    addShade(world, { x, y: ground.heightAt(x, z) + ENEMY_HALF.y, z }, target, AiState.Pursue, PURSUIT_DWELL_S, { x: door.x, y: 0, z: door.z - direction * PURSUIT_SPREAD_M * k });
+    const stop: Vec3 = { x: door.x, y: 0, z: door.z - direction * PURSUIT_SPREAD_M * (k + 1) };
+    addShade(world, pursuitPlace(world, ground, x, z, ax, az), target, AiState.Pursue, PURSUIT_DWELL_S, stop);
   }
 }
 
@@ -369,9 +417,10 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
   h.stateTimer -= dt;
   if (h.ai === AiState.Pursue) {
     // It walks to its stop by the car's door, the pavement the one ground it
-    // never crosses: a step that would end nearer the road's centreline than
-    // PURSUIT_STOP_U is not taken, and at its stop it stands. Either way it
-    // faces the car. No one's nearness sends it away, and no look.
+    // never crosses: a step toward the road that would end nearer its
+    // centreline than PURSUIT_STOP_U is not taken, and at its stop it stands.
+    // Either way it faces the car (in the sim: every screen turns a shade to
+    // its own eye). No one's nearness sends it away, and no look.
     if (h.stateTimer <= 0) return true;
     const door = h.emergeTo;
     const car = world.search?.car;
@@ -379,9 +428,11 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
     if (horizontalDistSq(h.pos, door) > PURSUIT_ARRIVE_M * PURSUIT_ARRIVE_M) {
       const pos = h.pos;
       const vel = h.vel;
+      const was = roadOffset(world, pos.x, pos.z);
       walkToward(h, world, dt, door.x, door.z, PURSUIT_SPEED, false);
       const u = roadOffset(world, h.pos.x, h.pos.z);
-      if (u === null || u >= PURSUIT_STOP_U) return false;
+      // Refused only toward the road: one already nearer than the stop may still step away from it.
+      if (u === null || was === null || u >= PURSUIT_STOP_U || u >= was) return false;
       h.pos = pos;
       h.vel = vel;
     }

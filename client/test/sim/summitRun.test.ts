@@ -214,7 +214,7 @@ describe("one run on the seed `hollow`", SUITE, () => {
     expect(p.safe).toBe(true);
     expect(w.state.outcome).toBe(Outcome.Won);
     expect(p.health).toBeGreaterThan(0);
-    // The five Hollows in the woods, and the win's four shades of the end at the trail's entrance.
+    // 2026-10-12: 5 before the win stood four shades of the end up behind the party.
     const pack = [...w.state.enemies.values()].filter((e) => e.ai !== AiState.Pursue);
     expect(pack).toHaveLength(5);
     expect(w.state.enemies.size).toBe(9);

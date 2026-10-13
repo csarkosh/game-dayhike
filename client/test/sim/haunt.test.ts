@@ -10,7 +10,7 @@ import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import type { EnemyState, PlayerState, Vec3 } from "../../src/sim/types.js";
 import { PLAYER_EYE_OFFSET, TICK_DT } from "../../src/sim/constants.js";
 import type { TrailNode } from "../../src/sim/trail.js";
-import { stemNodes } from "../../src/sim/trailRoute.js";
+import { stemAhead, stemNodes } from "../../src/sim/trailRoute.js";
 import { isOnCorridor, roadOffset } from "../../src/sim/containment.js";
 import { hasLineOfSight } from "../../src/sim/ai.js";
 import { climbOf } from "../../src/sim/watcher.js";
@@ -22,6 +22,8 @@ import {
 } from "../../src/sim/haunt.js";
 import { isHollow, SHADE_STARE_CAP, SUMMIT_REVEAL_S, spawnHollow } from "../../src/sim/hollow.js";
 import { trailDistance } from "../../src/sim/trail.js";
+import { stepSummit, updateSafety } from "../../src/sim/summit.js";
+import { carDirection, doorSpot } from "../../src/sim/trailhead.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -332,7 +334,7 @@ describe("the pursuit", () => {
   const pursuers = (w: World): EnemyState[] => [...w.state.enemies.values()].filter((e) => e.ai === AiState.Pursue);
   const u = (w: World, e: EnemyState) => roadOffset(w, e.pos.x, e.pos.z) as number;
 
-  it("stands four shades of the end up on the winning tick, on the ground at the trail's entrance and 4, 8 and 12 m back up the stem, once", () => {
+  it("with every winner on the pad, stands four shades of the end up on the winning tick at the trail's entrance and 4, 8 and 12 m back up the stem, once", () => {
     const { w, p } = won();
     expect(w.state.outcome).toBe(Outcome.Won);
     const four = pursuers(w);
@@ -350,10 +352,11 @@ describe("the pursuit", () => {
       expect(e.pos.z).toBeCloseTo(z, 6);
       expect(e.targetId).toBe(p.id);
       expect(e.stateTimer).toBe(25);
-      // Bound for its own stop: the first at the car's door, inland of the car and half a metre ahead of
-      // its centre (the car faces +z here), each after it 1.8 m further back along the road.
+      // Bound for its own stop: the door spot is inland of the car and half a metre ahead of its
+      // centre (the car faces +z here, the door at z 0.5); the first stop 1.8 m back along the road
+      // from it, each after that 1.8 m further, so the door is the runner's.
       expect(e.emergeTo!.x).toBeCloseTo(-314.32677397683483, 6);
-      expect(e.emergeTo!.z).toBeCloseTo([0.5, -1.3, -3.1, -4.9][k] as number, 9);
+      expect(e.emergeTo!.z).toBeCloseTo([-1.3, -3.1, -4.9, -6.7][k] as number, 9);
       expect(isShadeState(e.ai)).toBe(true);
       expect(isHollow(e)).toBe(false);
     }
@@ -366,7 +369,69 @@ describe("the pursuit", () => {
     expect(w.state.nextEntityId).toBe(6);
   });
 
-  it("stands none up on a loss", () => {
+  it("in a win made on the stem, at the corridor's edge, rises behind the winner and reaches its stop after a runner would reach the door", () => {
+    const { w, p } = forestWorld();
+    w.state.phase = Phase.Chase;
+    const graph = w.trail!;
+    const roadU = (x: number, z: number) => roadOffset(w, x, z) as number;
+    // Up the stem until outside the corridor, then down it a tenth of a metre a tick until the win.
+    let at = { x: graph.trailhead.x, z: graph.trailhead.z };
+    while (roadU(at.x, at.z) < 31) at = stemAhead(graph, at.x, at.z, 1)!;
+    standAt(p, at.x, at.z);
+    let steps = 0;
+    while (w.state.outcome === Outcome.Playing && steps < 400) {
+      at = stemAhead(graph, p.pos.x, p.pos.z, -0.1)!;
+      standAt(p, at.x, at.z);
+      tick(w);
+      steps++;
+    }
+    expect(w.state.outcome).toBe(Outcome.Won);
+    const car = w.search!.car;
+    const door = doorSpot(car, carDirection(car, graph.trailhead));
+    // The win, a hand's breadth inside the corridor's 30 m, 22.99 m from the car and 21.45 m from its door.
+    expect(roadU(p.pos.x, p.pos.z)).toBeCloseTo(29.955935177077265, 6);
+    expect(dist(p.pos, car)).toBeCloseTo(22.987426333046642, 6);
+    expect(dist(p.pos, { x: door.x, y: 0, z: door.z })).toBeCloseTo(21.446207932933838, 6);
+    // Each rises up the stem behind them, 3, 7, 11 and 15 m back, further from the car than they are.
+    const four = pursuers(w);
+    const places = [
+      [-289.98420973585695, 6.98788189907859, 2.7387302282257253, 25.987280923791662],
+      [-286.01055881686466, 7.497313999465884, 3.1970951199790014, 29.987132301569424],
+      [-282.0369078978724, 8.132149257253978, 3.655460011732278, 33.98701866200665],
+      [-278.32104826013057, 8.540789300678323, 3.3252698014535405, 37.652846914796626],
+    ];
+    for (const [k, e] of four.entries()) {
+      const [x, y, z, fromCar] = places[k] as [number, number, number, number];
+      expect(e.pos.x).toBeCloseTo(x, 6);
+      expect(e.pos.y).toBeCloseTo(y, 6);
+      expect(e.pos.z).toBeCloseTo(z, 6);
+      expect(dist(e.pos, car)).toBeCloseTo(fromCar, 6);
+      expect(fromCar).toBeGreaterThan(22.987426333046642);
+    }
+    // A runner at 7 m/s from the winner's spot is at the door in 21.446 / 7 = 3.064 s; the first shade
+    // is within a metre of its stop 262 ticks (4.367 s) after the win.
+    let reached = -1;
+    for (let t = 1; t < 900 && reached < 0; t++) {
+      tick(w);
+      if (dist(four[0]!.pos, four[0]!.emergeTo!) <= 1) reached = t;
+    }
+    expect(reached).toBe(262);
+    expect(reached * TICK_DT).toBeGreaterThan(3.064);
+  });
+
+  it("one that starts nearer the road than the stop may still step away from it", () => {
+    const { w } = won();
+    const h = pursuers(w)[0]!;
+    // 7 m from the centreline, 10 m along the road from the car, bound inland.
+    const roadX = h.pos.x - u(w, h);
+    h.pos = { x: roadX + 7, y: elevationAt(seed, roadX + 7, 10) + 0.9, z: 10 };
+    h.emergeTo = { x: roadX + 20, y: 0, z: 10 };
+    tick(w, 60);
+    expect(u(w, h)).toBeGreaterThan(12);
+  });
+
+  it("stands none up when the party dies, and only on the win the end rule itself sets", () => {
+    // Everyone dead: the loss is judged before the end rule, which then judges nothing.
     const { w, p } = forestWorld();
     w.state.phase = Phase.Chase;
     p.health = 0;
@@ -374,6 +439,25 @@ describe("the pursuit", () => {
     expect(w.state.outcome).toBe(Outcome.Lost);
     tick(w, 60);
     expect(pursuers(w)).toHaveLength(0);
+    // A match already over, lost or won, stands nothing up through the end rule.
+    const lost = forestWorld();
+    lost.w.state.phase = Phase.Chase;
+    lost.w.state.outcome = Outcome.Lost;
+    stepSummit(lost.w);
+    expect(pursuers(lost.w)).toHaveLength(0);
+    const over = forestWorld();
+    over.w.state.phase = Phase.Chase;
+    over.w.state.outcome = Outcome.Won;
+    stepSummit(over.w);
+    expect(pursuers(over.w)).toHaveLength(0);
+    // The rule's own win: the one player safe on the pad.
+    const win = forestWorld();
+    win.w.state.phase = Phase.Chase;
+    standAt(win.p, win.w.trail!.trailhead.x, win.w.trail!.trailhead.z);
+    updateSafety(win.w);
+    stepSummit(win.w);
+    expect(win.w.state.outcome).toBe(Outcome.Won);
+    expect(pursuers(win.w)).toHaveLength(4);
   });
 
   it("walks to the car at 5.5 m/s, stands in a file along the car's flank within a metre of its own stop, facing the car, never nearer the road than 7.9 m, and is gone after 25 s", () => {
@@ -398,10 +482,10 @@ describe("the pursuit", () => {
     expect(nearest).toBeGreaterThanOrEqual(7.9);
     // At rest: a loose file from the door back past the car's tail (the car is 4.6 m long, its tail at z −2.3).
     const rest = [
-      [-313.40701828305635, 0.5448433433629293],
-      [-313.3974892968285, -1.101458838833046],
-      [-313.40385430632665, -2.8239590009255546],
-      [-313.43046086449056, -4.5850671104286045],
+      [-313.43771672102775, -1.0694243475255991],
+      [-313.3992014004798, -2.7684776967114146],
+      [-313.4739893100284, -4.551874565396182],
+      [-313.4390087571927, -6.309999524943129],
     ];
     for (const [k, e] of four.entries()) {
       const [x, z] = rest[k] as [number, number];

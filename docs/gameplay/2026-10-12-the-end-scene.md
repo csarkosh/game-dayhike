@@ -46,7 +46,7 @@ car's own, so every shot frames its subject against the sky or in a lamp's beam.
 | --- | --- | --- | --- | --- |
 | 1. The run | 0 to `RUN_CUT_S` (2.5), or `A` if sooner | 24 mm | Carried by the runner: `RUN_CAM_BACK` (2.2 m) behind, `RUN_CAM_UP` (0.5 m) over their eye, `RUN_CAM_SIDE` (0.6 m) to their right, aimed past their shoulder at the door, so the car grows in the frame; the lamp on the body lights the way | the person, running |
 | 2. The pursuit | `RUN_CUT_S` to `A` | 32 mm | Locked off at the car's rear corner on the runner's side, `PURSUIT_CAM_UP` (0.7 m) up and `PURSUIT_CAM_OUT` (1.0 m) out from the corner, aimed at the runner's chest (`CHEST_M` 1.3 m over their feet) as they come at the lens, the pad, the treeline and the shades behind them in the mist; the cut on the arrival, the runner by the lens | the shadows, still coming |
-| 3. The door and the engine | `A` to `A` + `ENGINE_SHOT_S` (5.5) | 32 mm | Locked off low on the road's far shoulder, `ENGINE_CAM_UP` (0.6 m) up, `ENGINE_CAM_AHEAD` (7 m) ahead of the car along its heading, aimed at the car's nose and turning to keep it centred as it passes (`holdLookingAt`): the door shuts, the crank, the catch, the lamps come on, the revs, the pull-away, the car passing the lens close; the shades reach the pavement's edge beyond and stand | the threshold, crossed back |
+| 3. The door and the engine | `A` to `A` + `ENGINE_SHOT_S` (5.5) | 32 mm | Locked off low on the road's far shoulder, `ENGINE_CAM_UP` (0.6 m) up, `ENGINE_CAM_AHEAD` (7 m) ahead of the car along its heading, aimed at the car's nose and turning to keep it centred as it passes (`holdLookingAt`): the door shuts, the crank, the catch, the lamps come on, the revs, the pull-away, the car passing the lens close; the shades come to the car's inland flank beyond it and stand in a file there | the threshold, crossed back |
 | 4. The road | `A` + 5.5 to `A` + `END_SCENE_AFTER_ARRIVAL_S` (17.5) | 24 mm | Overhead: `ROAD_CAM_UP` (14 m) over the car looking straight down the road's heading, carried by the car for `ROAD_CARRY_S` (2 s), then left in the air (eased over `ROAD_RELEASE_S` 1 s) as the car runs on from under it, and tilting up over the shot's rest from straight down to the road ahead (`ROAD_TILT_TO` 0.06 rad down), the car's lamps small on the highway into the mist; YOU LIVED and the line from `TITLE_AT_S` (2 s) into the shot; the dark from `END_FADE_AT_S` (10 s); the landing at `END_LANDING_AT_S` (15 s) | the place: the opening's wide, answered |
 
 Every camera is in world units from the live state: the runner's body each frame (shots 1 and 2),
@@ -60,10 +60,10 @@ as the summit's threshold drives them): the command is a sprint toward the door 
 it, the look level, until the body is within `DOOR_REACH_M` (0.9 m) of the spot or `RUN_MAX_S` is
 up; then still. The door spot is on the car's inland side, the side the trail is on, so no part of
 the run crosses the car's box: `doorSpot(site, direction)` (`sim/trailhead.ts`, so the pursuit,
-§2, walks to the same place) is `CAR_HALF.x + DOOR_OUT_M` (0.6 m) out from the car's centre and
-`DOOR_ALONG_M` (0.5 m) ahead of it the way it faces. The run is on the sim,
-so every peer sees the body cross the pad, and a player who had been standing thirty metres down
-the road runs thirty metres. A player further than a sprint covers in `RUN_MAX_S` (70 m) is in
+§2, files back from the same place) is `CAR_HALF.x + DOOR_OUT_M`, 1.5 m, out from the car's centre
+(0.6 m past its side) and `DOOR_ALONG_M` (0.5 m) ahead of it the way it faces. The run is on the
+sim, so every peer sees the body cross the pad, and a player who had been standing thirty metres
+down the road runs thirty metres. A player further than a sprint covers in `RUN_MAX_S` (70 m) is in
 the car at the cap regardless, which is the one thing the scene cannot show well.
 
 **In the car.** From the arrival the local body is hidden (`views.showLocal` false, the lamp on
@@ -88,30 +88,44 @@ road ahead is lit and the wet ground reflects them; and two tail lamps, small re
 the rear, so the car can be followed down the highway in the last shot. If the car model has lamp
 meshes of its own, those are made emissive instead of quads added.
 
-**The shades** (§2) come across the pad behind the runner through shots 1 and 2, reach the
-pavement's edge during shot 3 and stand there in the mist beyond the car; shot 4 looks the other
-way. The line says the rest.
+**The shades** (§2) come down the trail and across the pad behind the runner through shots 1 and
+2, reach the car during shot 3 and stand in a file along its inland flank and back past its tail,
+in the mist beyond it from the lens on the far shoulder; shot 4 looks the other way. The line says
+the rest.
 
 ## 2. The pursuit (`sim/haunt.ts`, `sim/summit.ts`)
 
 On the tick the outcome becomes `Won`, the host stands up `PURSUIT_SHADES` (4) shades of a new
-kind, `AiState.Pursue`, on the ground at the trail's entrance and up the stem behind it,
-`PURSUIT_APART_M` (4 m) apart along the stem's first edge, each bound to the living player nearest
-it, and they walk after the party (the party is at the car or on its way there), each to a stop of
-its own: the first to the car's door spot (`doorSpot`, §1), each after it `PURSUIT_SPREAD_M` (1.8 m)
-further along the road the way the car's tail points, at `PURSUIT_SPEED` (5.5 m/s, under a
-sprint's 7), on the ground. The Hollow's treeline does not hold them (`walkToward` with `woods`
-false): they cross the pad. Within `PURSUIT_ARRIVE_M` (1 m) of its stop a shade stands, so it does
-not tread back and forth over it; and a step that would end nearer the centreline than
-`PURSUIT_STOP_U` (`ROAD_WALL_U` + 1.5 m, 7.9 m) is not taken, the pavement being the one ground they
-never cross. Stopped either way, they face the car. The stops are 8.4 m from the centreline, inland
-of the pavement, so they stand in a loose file along the car's inland flank from the door back past
-its tail, more than 1.5 m apart; the stop at the pavement holds wherever the way to a stop would
-cross it. They go `PURSUIT_DWELL_S` (25 s) after they stood up. They are the haunt's shades in every other way: harmless (a shade kills nothing,
-since the Hollows' contact is for Hollows alone; the stare they fill is capped at
-`SHADE_STARE_CAP`), drawn through the silhouette mask, coming in from nothing and going out to it
-(`isShadeState` counts them), and no player's nearness or look sends them away (the haunt's flee
-radius is for shades that must not be reached; these are meant to be).
+kind, `AiState.Pursue`, behind the party: on the stem up from the living player furthest up it
+(the rearmost, last to reach the corridor), `PURSUIT_BEHIND_M` (3 m) behind them and
+`PURSUIT_APART_M` (4 m) apart from there, so every shade starts further from the car than any
+winner. Where every living player stands on the pad itself, short of the trail's entrance, they
+stand up at the entrance and back along the stem's first edge, 4 m apart. Each place is one a hull
+stands clear on (`groundSpawn`), or 1 or 2 m to a side of it, so none starts in a trunk or a
+boulder's box. Each faces the living player nearest it as it rises; nothing else reads that.
+
+They walk after the party (the party is at the car or on its way there), each to a stop of its
+own: the car's door spot (`doorSpot`, §1) moved `PURSUIT_SPREAD_M` (1.8 m) along the road the way
+the car's tail points for the first, and as much again for each after it, so the door itself stays
+the runner's. They walk at `PURSUIT_SPEED` (5.5 m/s, under a sprint's 7), on the ground. The
+Hollow's treeline does not hold them (`walkToward` with `woods` false): they cross the pad. Within
+`PURSUIT_ARRIVE_M` (1 m) of its stop a shade stands, so it does not tread back and forth over it;
+and a step toward the road that would end nearer the centreline than `PURSUIT_STOP_U`
+(`ROAD_WALL_U` + 1.5 m, 7.9 m) is not taken, the pavement being the one ground they never cross (a
+step away from the road is always taken). Stopped either way, the sim turns them to the car; every
+screen draws a shade turned to its own eye, as it draws every shade. At the car the stops are 1.5 m
+inland of its side, 8.4 m from the centreline on a road straight there, inland of the stop at the
+pavement, so the shades stand in a loose file along the car's inland flank and back past its tail
+(on the test world 1.7 to 1.8 m apart at rest, about 9.4 m from the centreline); the stop at the
+pavement holds wherever the way to a stop would cross it. In a win made at the corridor's edge on
+the stem, the first shade is at its stop 4.4 s after the win on the test world, where a runner from
+the winner's place is at the door in 3.1 s. They go `PURSUIT_DWELL_S` (25 s) after they stood up.
+
+They are the haunt's shades in every other way: harmless (a shade kills nothing, since the Hollows'
+contact is for Hollows alone; the stare they fill is capped at `SHADE_STARE_CAP`), drawn through the
+silhouette mask, coming in from nothing and going out to it (`isShadeState` counts them), and no
+player's nearness or look sends them away (the haunt's flee radius is for shades that must not be
+reached; these are meant to be).
 
 The director is otherwise unchanged: at the outcome its episode ends, as before, and the pursuit
 is a single call from the end rule (`stepSummit`) on the winning tick, so a match lost stands
@@ -173,8 +187,8 @@ the door) becomes `stageCar(pose, model)`, which the scene route and the rendere
 **Where it lives.**
 
 - `game/endScene.ts`: `END_SHOTS`, `endShot(t, ctx)`, `endCar(t, road, site, direction)`,
-  `endBeats(t)` and the constants above; Babylon-free, as `cutscene.ts` is. `ctx` is the runner's body this frame, the car's site and direction, the road, and the
-  arrival second (or none yet).
+  `endBeats(t)` and the constants above; Babylon-free, as `cutscene.ts` is. `ctx` is the runner's
+  body this frame, the car's site and direction, the road, and the arrival second (or none yet).
 - `game/carAudio.ts`: the schedule as data (`CAR_CUES`, the fundamental and the levels at a
   second, pure) and the Web Audio graph that plays it on the `car` bus.
 - `game/ambientAudio.ts`: the `scene` gain, `fadeWorld`, `fadeMaster`, the `car` bus and
