@@ -9,7 +9,7 @@ import type { Observer } from "@babylonjs/core/Misc/observable.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 
-import type { Vec3, WorldState } from "../sim/types.js";
+import type { EnemyState, Vec3, WorldState } from "../sim/types.js";
 import { ENEMY_HALF, PLAYER_HALF, PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { aimDirection } from "../sim/view.js";
 import { HOLLOW_HEIGHT } from "../sim/hollow.js";
@@ -388,8 +388,9 @@ export class EntityViews {
         this.advance(entry.view, enemy.pos.x, feet, enemy.pos.z, clamped);
         // Every Hollow and shade is drawn facing the local player, whatever
         // way the sim has it going: the figure, and its head with it, is
-        // always turned to whoever is looking at it.
-        entry.view.node.rotation.y = this.facingOf(state, localId, enemy.pos.x, enemy.pos.z, enemy.yaw);
+        // always turned to whoever is looking at it. The shade of the end
+        // alone is drawn as the sim turns it (`facingOf`).
+        entry.view.node.rotation.y = this.facingOf(state, localId, enemy);
         entry.instance.root.scaling.y = HOLLOW_SCALE * risen(fade.rise);
         if (this.softShades && this.soft.has(id)) {
           const soft = this.soft.get(id) as number;
@@ -434,7 +435,7 @@ export class EntityViews {
       );
       view.node.setEnabled(true);
       this.advance(view, enemy.pos.x, hollowY, enemy.pos.z, clamped);
-      view.node.rotation.y = this.facingOf(state, localId, enemy.pos.x, enemy.pos.z, enemy.yaw);
+      view.node.rotation.y = this.facingOf(state, localId, enemy);
       setVisibility(view.node, fade.level);
     }
     // A shade, a lunge or a shade of the end gone from the state goes out to nothing over
@@ -564,11 +565,16 @@ export class EntityViews {
     }
   }
 
-  /** The yaw that turns a figure at (x, z) to the local player's position, or the sim's yaw when there is no local player. */
-  private facingOf(state: WorldState, localId: number, x: number, z: number, fallback: number): number {
+  /**
+   * The yaw that turns a figure to the local player's position, or the sim's
+   * yaw when there is no local player. The shade of the end keeps the sim's
+   * yaw on every screen: it walks at one player, looks after the car and runs
+   * down the road the car's way, the same figure going the same way for all.
+   */
+  private facingOf(state: WorldState, localId: number, enemy: EnemyState): number {
     const me = state.players.get(localId);
-    if (me === undefined) return fallback;
-    return Math.atan2(me.pos.x - x, me.pos.z - z);
+    if (me === undefined || enemy.ai === AiState.Pursue) return enemy.yaw;
+    return Math.atan2(me.pos.x - enemy.pos.x, me.pos.z - enemy.pos.z);
   }
 
   private ensureHollowModel(

@@ -124,8 +124,9 @@ export const GUIDE_SIDE_M = 3;
  * behind the party's rearmost, walking straight at its player at
  * PURSUIT_SPEED (under a sprint's 7), on foot never nearer the road's
  * centreline than PURSUIT_STOP_U and standing within PURSUIT_ARRIVE_M of its
- * player; once the car has pulled away it stands and looks after it, and
- * from PURSUIT_ROAD_AT_S runs down the road after it, its aim
+ * player; once the car has pulled away it runs down the road after it, at
+ * once where the road runs inland at the car and from PURSUIT_ROAD_AT_S,
+ * standing and looking after the car till then, where it does not; its aim
  * PURSUIT_AHEAD_M ahead and PURSUIT_IN_M nearer the centreline than it is
  * (`pursuitAim`), so it comes in down the verge behind the car and never
  * gets ahead of its nose; gone PURSUIT_DWELL_S after it stood up.
@@ -145,15 +146,35 @@ export const PURSUIT_IN_M = 1;
  */
 export const PURSUIT_VERGE_U = CAR_ROAD_U + CAR_HALF.x + DOOR_OUT_M;
 /**
- * Seconds after its player is in the car that the shade takes the road: two
- * after the pull-away, so the car's tail is past it before it moves, wherever
- * it stood by the car.
+ * Seconds after its player is in the car that the shade takes the road where
+ * the road at the car is straight or runs outward (`roadRunsInland` false):
+ * two after the pull-away, so the car's tail is past it before it moves,
+ * wherever it stood by the car. Where the road runs inland it takes the road
+ * at the pull-away itself.
  */
 export const PURSUIT_ROAD_AT_S = PULL_AWAY_AT_S + 2;
 /** Its yaw as it looks after the car, for the car's two headings (`carDirection`). */
 const PURSUIT_AFTER_YAW_PLUS = 0;
 const PURSUIT_AFTER_YAW_MINUS = Math.PI;
 export const PURSUIT_DWELL_S = 25;
+/**
+ * Whether the road at the car runs inland, toward +x, the door's side, the
+ * way the car goes: its centreline PURSUIT_AHEAD_M on from the car's z
+ * further toward +x than at it. The car follows the road's path from its
+ * first metre while its heading only eases off the parked one, so on an
+ * inland road its flank comes across to the door's side as it goes: the
+ * shade by the door keeps ahead of that by taking the verge at the pull-away,
+ * moving inland with the road. On a straight or outward road the car's nose
+ * crosses the verge the shade would run on, so it waits for the car's tail
+ * (PURSUIT_ROAD_AT_S). False with no road.
+ */
+export function roadRunsInland(world: World, car: { x: number; z: number }, direction: 1 | -1): boolean {
+  const roadCenterX = activeTerrainVariant().roadCenterX;
+  if (roadCenterX === undefined || world.forest === null) return false;
+  const seed = world.forest.seed;
+  return roadCenterX(seed, car.z + direction * PURSUIT_AHEAD_M) > roadCenterX(seed, car.z);
+}
+
 /** Placements tried for a shade before the director waits a tick. */
 export const HAUNT_PLACE_TRIES = 6;
 /** Mixed into the world seed for the haunt's own stream. */
@@ -454,14 +475,16 @@ const PURSUIT_AIM = { x: 0, z: 0 };
  * after it rose. On foot it walks straight at its player, the pavement the
  * one ground it never crosses: a step toward the road that would end nearer
  * its centreline than PURSUIT_STOP_U is not taken, and within
- * PURSUIT_ARRIVE_M of its player it stands; stopped, it faces them (in the
- * sim: every screen turns a shade to its own eye). Its `attackCooldown`
+ * PURSUIT_ARRIVE_M of its player it stands; stopped, it faces them (every
+ * screen draws it as the sim turns it, game/entityViews.ts `facingOf`, not
+ * turned to its own eye as the haunt's other shades are). Its `attackCooldown`
  * counts the seconds since its player was in the car (within DOOR_REACH_M of
  * the door spot kept in its `emergeTo`, or RUN_MAX_S after it rose
  * regardless: the end scene's own rule, game/endScene.ts). From
- * PULL_AWAY_AT_S of that the car has gone from under its eyes: it stands
- * where it is and faces the way the car went. From PURSUIT_ROAD_AT_S it runs
- * down the road after it, down the verge and in behind the car
+ * PULL_AWAY_AT_S of that the car has gone from under its eyes. Where the road
+ * runs inland at the car (`roadRunsInland`) it runs down the road after it at
+ * once; elsewhere it stands where it is, facing the way the car went, until
+ * PURSUIT_ROAD_AT_S, and runs then: down the verge and in behind the car
  * (`pursuitAim`), with no pavement rule and no stop. Its player gone from the
  * match, its clock still runs to the run's end and it still takes the road;
  * on foot with no player it stands. No one's nearness sends it away, and no
@@ -486,7 +509,8 @@ function stepPursuit(h: EnemyState, world: World, dt: number, target: PlayerStat
     const dz = target.pos.z - door.z;
     if (dx * dx + dz * dz <= DOOR_REACH_M * DOOR_REACH_M) h.attackCooldown = dt;
   }
-  if (h.attackCooldown >= PURSUIT_ROAD_AT_S) {
+  const car = search.car;
+  if (h.attackCooldown >= PURSUIT_ROAD_AT_S || (h.attackCooldown >= PULL_AWAY_AT_S && roadRunsInland(world, car, direction))) {
     // The road, after the car: down the verge, angling in behind it (`pursuitAim`).
     const roadCenterX = activeTerrainVariant().roadCenterX;
     const u = roadOffset(world, h.pos.x, h.pos.z);
@@ -500,7 +524,8 @@ function stepPursuit(h: EnemyState, world: World, dt: number, target: PlayerStat
     return false;
   }
   if (h.attackCooldown >= PULL_AWAY_AT_S) {
-    // The car gone: it stands where it is and looks after it, down the road.
+    // The car gone, on a straight or outward road: it stands where it is and looks after it,
+    // down the road, until the car's tail is past it.
     h.vel.x = 0;
     h.vel.y = 0;
     h.vel.z = 0;

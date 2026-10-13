@@ -455,6 +455,26 @@ describe("EntityViews the Hollow", () => {
     views.dispose();
   });
 
+  it("turns a shade to the local player and draws a shade of the end as the sim turns it", async () => {
+    const views = new EntityViews(scene, await loadedPool());
+    const me = player(1, false);
+    const world = state(me);
+    const shade = hollow(7, 1, 6, 0.3);
+    shade.ai = AiState.Shade;
+    const pursuer = hollow(8, 1, -6, 0.3);
+    pursuer.ai = AiState.Pursue;
+    world.enemies.set(7, shade);
+    world.enemies.set(8, pursuer);
+    views.sync(world, 1, 1, undefined, 0);
+    // The shade, 6 m up z from the player, turned back down z to them; the shade of the end at the
+    // sim's 0.3, the way it walks or looks, on every screen alike.
+    const turned = scene.getTransformNodeByName("character_7_orientation") as TransformNode;
+    const own = scene.getTransformNodeByName("character_8_orientation") as TransformNode;
+    expect(turned.rotation.y).toBeCloseTo(Math.PI, 9);
+    expect(own.rotation.y).toBe(0.3);
+    views.dispose();
+  });
+
   it("draws the capsule until the model loads, then hides it", async () => {
     const pool = createCharacterPool(catalog, fromDisk);
     const views = new EntityViews(scene, pool);
