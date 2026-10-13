@@ -1,7 +1,7 @@
 # The end scene
 
 **Date:** 2026-10-12
-**Status:** Designed, being built.
+**Status:** Built 2026-10-13 (§8).
 **Parent:** [`2026-10-06-the-end-screens.md`](2026-10-06-the-end-screens.md) (the win's lift to the sky,
 which this replaces; the death stands, with its sound now going with its dark),
 [`2026-10-08-the-summit-scene.md`](2026-10-08-the-summit-scene.md) (the game's own camera over the
@@ -344,3 +344,59 @@ no pursuit (the sim is not touched), and leaves the screen dark at its end, with
   sound.
 - The car's sounds are synthesized; recorded ones may replace them later through the catalog as
   the calls are.
+
+## 8. As built
+
+The win plays the four shots over the player's own camera, letterboxed, from the frame the
+outcome lands on their screen: the run carried behind the runner, the pursuit from the car's
+rear corner, the engine from the far shoulder, and the road from overhead. The run is the sim's
+(`ranToCar` on both loops), the arrival the renderer's, the car's drive `carAlong`'s on the
+road's own height with the lane change and a heading that eases from the parked yaw onto the
+road's; the release decelerates along the car's path (`releaseAt`) and holds over its pose at
+8.0 s; the beats come from the arrival (`syncEndScene`): the car's sound at once, the world's
+fade at the pull-away, the title at 7.5 s, the dark with the master's fade at 15.5 s, the landing
+at 20.5 s, a backstop at 30.5 s from the win. Through the road shot the ground cloud and the
+weather's mist draw back to a fifth over four seconds (`endMistShare`), the night, the rain and
+the cast kept, so the car's lamps carry down the highway.
+
+**The pursuit** rises behind the rearmost living player (3, 7, 11 and 15 m back up the stem
+through `groundSpawn`), walks after the party at 5.5 m/s, never onto the road's bed, and stands
+in a file 1.8 m apart along the car's inland flank, each stop the door's distance from the
+centreline at its own z, for 25 s. On the test world a win at the corridor's edge has the runner
+21.4 m from the door and the first shade at its stop 1.3 s after a sprinter would reach it.
+
+**The car** is the film's (`intro.car`), fetched at the flip to the chase and placed over the
+parked model out of sight, its moving patch the parked patch's material. For its first frames
+after the swap its meshes, the patch and the tail lamps are drawn whether in view or not, each
+until its material has reported ready on a pass and been drawn once more, thirty frames at most,
+so the effects, the shader modules and the pipelines exist before the scene; the local body's
+lamp is kept a light from the flip (`keepLocalLamp`) so the car's materials keep one light set.
+The tail lamps are the trailhead's, made at the swap inside the body and dark, moved to the rear,
+lit and shown at the catch, outside the fog. The headlamps are the lens's lamp, freed from the
+camera, and the local body's lamp, aimed after the car's pose each frame.
+
+**The sound** is as §3 says, with the engine's revs and idle wander an offset summed into each
+harmonic so the speed's note and the scheduled ramps never share a parameter, and the wind's
+sound fed the weather before the mist is drawn back.
+
+**The shader corpus** gained 132 stages recorded through the scene on the high and medium tiers
+(the film car under the hike's lights, fog, shadows and wet layer; the tail lamps outside the
+fog; the light set kept), so no stage is translated on the page's thread through the scene; low
+asked for none it lacked.
+
+**Seen in the browser** (seed `hollow`, the crest's escalation, high tier on WebGPU, the frame
+read from inside the page four times a second): the bars at the win, the title 10.7 s after, the
+dark at 18.7 s, the title page at 23.7 s; no main-thread block over 0.5 s through the scene; the
+four shades through to the landing; the lamps within 0.2 m of the car's nose each frame; the
+camera's z never decreasing through the release. The run over the ranger's shoulder with the car
+ahead, the shades' eyes in pairs coming through the mist, the car passing the lens with the eyes
+beyond it, the overhead under the headlights, and from about seven seconds into the road shot the
+road running off between the trees with the car's lamps a point on it.
+
+**Not done, listed for later.** The look's run from 14 m is shorter than the first cut, so the
+pursuit shot is skipped there (a real win's run is longer); the first seconds of the road shot are
+the ground cloud seen from above until the tilt reaches the horizon and the mist has drawn back;
+the car's shadow-map pass first runs when it enters the cascades, in the scene; a runner coming
+along the road from behind the car sticks on its rear corner until the run's cap; a five-player
+party's fifth lamp lights nothing, as in the summit scene; the car's sounds are synthesized and
+not yet heard beside the mix; the intro's film still ends with the parked car's model.
