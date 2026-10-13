@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createGroundField, MAX_WALKABLE_GRADIENT, type GroundField } from "../../src/sim/ground.js";
+import { rockLayerAt } from "../../src/sim/rockSurface.js";
 import { raycastGround, raycastScene } from "../../src/sim/collision.js";
 import { stepMovement, type MoveState } from "../../src/sim/movement.js";
 import {
@@ -58,18 +59,30 @@ describe("createGroundField", () => {
   setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
   const ground = createGroundField(SEED);
 
-  it("is the same surface the renderer samples", () => {
+  it("is the same surface the renderer samples, with the walkable rock's layer where the surface paints rock", () => {
+    // The clipmap samples the elevation field; where the surface paints
+    // rock the patches draw the rock layer over it, and the ground stands
+    // the player on that layer's walking twin (`sim/rockSurface.ts`). Where
+    // the paint is not rock the layer is nothing, exactly.
+    let bare = 0;
     for (const [x, z] of [
       [0, 0],
       [13.7, -41.2],
       [-500, 250],
     ]) {
       const s = elevationSampleAt(SEED, x as number, z as number);
-      expect(ground.heightAt(x as number, z as number)).toBe(s.h);
+      const layer = rockLayerAt(SEED, x as number, z as number, s);
+      if (layer.rise === 0) {
+        bare++;
+        expect(ground.heightAt(x as number, z as number)).toBe(s.h);
+      } else {
+        expect(ground.heightAt(x as number, z as number)).toBe(s.h + layer.rise);
+      }
     }
+    expect(bare).toBeGreaterThan(0);
   });
 
-  it("reports a unit normal built from the variant's exact gradient", () => {
+  it("reports a unit normal built from the variant's exact gradient, and the rock layer's where it stands", () => {
     const out: Vec3 = { x: 0, y: 0, z: 0 };
     for (const [x, z] of [
       [0, 0],
@@ -81,10 +94,12 @@ describe("createGroundField", () => {
       expect(Math.abs(length - 1)).toBeLessThan(1e-12);
       expect(out.y).toBeGreaterThan(0); // a height field never overhangs
 
-      // The normal of y = h(x, z) is (-h_x, 1, -h_z) normalized.
+      // The normal of y = h(x, z) is (-h_x, 1, -h_z) normalized; the rock
+      // layer's gradient joins the field's where the layer stands.
       const s = elevationSampleAt(SEED, x as number, z as number);
-      expect(Math.abs(out.x / out.y - -s.dx)).toBeLessThan(1e-12);
-      expect(Math.abs(out.z / out.y - -s.dz)).toBeLessThan(1e-12);
+      const layer = rockLayerAt(SEED, x as number, z as number, s);
+      expect(Math.abs(out.x / out.y - -(s.dx + layer.dx))).toBeLessThan(1e-12);
+      expect(Math.abs(out.z / out.y - -(s.dz + layer.dz))).toBeLessThan(1e-12);
     }
   });
 

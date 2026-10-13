@@ -2461,6 +2461,8 @@ function buildRenderer(
   const facePatches = forest === null || facePatchMaterial === null
     ? null
     : createFacePatches(scene, forest.seed, tier, facePatchMaterial, jobs, {
+      // The world's trail, which the walkable rock keeps off, as the ground the player stands on does.
+      trail: activeTerrainVariant().trailGraph?.(forest.seed) ?? null,
       shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
       reflections: {
         add: (mesh) => {

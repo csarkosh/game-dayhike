@@ -64,8 +64,32 @@ function toggleSpec(name: string, defaultValue = false): CommandSpec {
   };
 }
 
+/**
+ * `freecam`: a toggle, or a place. Bare or `on` frees the camera where the
+ * player stands; `off` returns it; `x z` or `x z yaw` frees it standing on
+ * the ground at (x, z) in world metres, facing `yaw` radians (0 north, +Z;
+ * π/2 east, +X), so a `?cmd=` link can land a visit anywhere (2026-10-13).
+ * The place is the script value as text, "x z yaw", which the app parses.
+ */
+const freecamSpec: CommandSpec = {
+  name: "freecam",
+  kind: "view",
+  validate(args) {
+    if (args.length === 0) return null;
+    if (args.length === 1 && (args[0] === "on" || args[0] === "off")) return null;
+    if (args.length === 2 || args.length === 3) {
+      for (const a of args) if (!Number.isFinite(Number(a))) return `"${a}" is not a number`;
+      return null;
+    }
+    return 'freecam takes no argument, "on" or "off", or a place: x z [yaw]';
+  },
+  // Bare means *enable*, not flip, as every toggle; a place is its text.
+  scriptValue: (args) => (args.length >= 2 ? args.join(" ") : args[0] !== "off"),
+  defaultValue: false,
+};
+
 const SPECS: readonly CommandSpec[] = [
-  toggleSpec("freecam"),
+  freecamSpec,
   toggleSpec("wireframe"),
   // On by default: the URL records only `skin off`.
   toggleSpec("skin", true),
@@ -209,6 +233,38 @@ const SPECS: readonly CommandSpec[] = [
     // look as a real win plays it. Not persisted: no `scriptValue`.
     validate(args) {
       return args.length === 0 ? null : "escape takes no argument";
+    },
+  },
+  {
+    name: "stand",
+    kind: "view",
+    // `stand x z` or `stand x z yaw`: the host's own player stands on the
+    // ground at (x, z) in world metres, facing `yaw` radians (0 north, +Z;
+    // π/2 east, +X), to play from there: a link to a place, as `freecam`'s
+    // place is for a look. Host truth, so a client is told whose it is to
+    // call. Not persisted: no `scriptValue`; from the URL it is called once
+    // the world is in, as the looks are (2026-10-13).
+    validate(args) {
+      if (args.length !== 2 && args.length !== 3) return "stand takes a place: x z, or x z yaw";
+      for (const a of args) if (!Number.isFinite(Number(a))) return `"${a}" is not a number`;
+      return null;
+    },
+  },
+  {
+    name: "escalation",
+    kind: "view",
+    // `escalation <world>` holds the world's escalation (escalation.ts: the
+    // hour's fall to night and the weather's turn with the party's climb)
+    // at a value in [0, 1] for a look, so a player stood far up the trail
+    // (`stand`) can see the ground by day; bare `escalation` lets the climb
+    // set it again. The lens, the chase and the telemetry's acts keep the
+    // climb's truth. Not persisted: no `scriptValue` (2026-10-13).
+    validate(args) {
+      if (args.length === 0) return null;
+      if (args.length > 1) return "escalation takes no argument, or a value in [0, 1]";
+      const v = Number(args[0]);
+      if (!Number.isFinite(v) || v < 0 || v > 1) return `"${args[0]}" is not a value in [0, 1]`;
+      return null;
     },
   },
   {

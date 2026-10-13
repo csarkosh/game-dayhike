@@ -1,3 +1,4 @@
+import { ROCK_SURFACE_TUNABLES } from "../rockSurface.js";
 import { CELLS_PER_CHUNK, cellCenter, quantize, registerPass } from "../chunk.js";
 import { activeTerrainVariant } from "../terrain.js";
 import { HEIGHT_QUANTUM, TERRAIN_CELL } from "../forestConstants.js";
@@ -18,7 +19,9 @@ registerPass({
   id: 1,
   name: "elevation",
   get tunables() {
-    return { ...activeTerrainVariant().tunables, HEIGHT_QUANTUM, TERRAIN_CELL };
+    // The walkable rock's layer is the ground the player stands on (`rockSurface.ts`), so its
+    // numbers, and the ground relief's, are the elevation's for the level id (2026-10-13).
+    return { ...activeTerrainVariant().tunables, HEIGHT_QUANTUM, TERRAIN_CELL, ...ROCK_SURFACE_TUNABLES };
   },
   run(chunk, worldSeed) {
     const variant = activeTerrainVariant();

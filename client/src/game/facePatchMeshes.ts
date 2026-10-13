@@ -24,6 +24,7 @@
  * camera's heading will want, so at a walk the job mostly shows what is
  * built.
  */
+import type { TrailGraph } from "../sim/trail.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -71,6 +72,9 @@ export type FacePatchRegistries = {
   /** The rain's cover map, as terrain beside the clipmap's inner rings: the
    * streaks stop on the rock and the splashes land on the faces. */
   rain?: FacePatchRegistry;
+  /** The world's trail, which the walkable rock keeps off (`sim/rockSurface.ts`,
+   * `trailClearAt`), as the ground the player stands on does; null or absent, none. */
+  trail?: TrailGraph | null;
 };
 
 /** What a cell's slice is expected to take (ms) by its spacing, near, far
@@ -196,7 +200,7 @@ export function createFacePatches(
   /** Cell (ci, cj)'s patch made into a mesh, hidden and in no registry. */
   function build(ci: number, cj: number, spacing: number, stitch: PatchStitch): Mesh | null {
     builds++;
-    const patch = facePatchGeometry(seed, ci, cj, spacing, stitch);
+    const patch = facePatchGeometry(seed, ci, cj, spacing, stitch, options.trail ?? null);
     if (patch === null) return null;
     const mesh = new Mesh(`facePatch_${ci}_${cj}`, scene);
     applyFacePatch(mesh, patch);

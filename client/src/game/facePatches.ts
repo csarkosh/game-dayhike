@@ -1,12 +1,16 @@
 /**
- * Patches of finer rock over the steep ground. The world is divided into
- * `PATCH_CELL` metre cells on its own lattice; a cell with steep ground in
- * reach gets a patch: a finer grid of the same ground, each vertex pushed out
- * along the ground's normal by the rock relief (`sim/faceRelief.ts`), masked
- * by the ground's gradient so the push is nothing where the ground is not
- * steep, and faded out toward the cells outside the patched set. The patch
- * is painted as the clipmap paints the ground under it, so it is the same
- * rock in the same light. The ground's height is not changed; the clipmap
+ * Patches of finer rock over the steep ground and the walkable rock. The
+ * world is divided into `PATCH_CELL` metre cells on its own lattice; a cell
+ * with steep or rock-painted ground in reach gets a patch: a finer grid of
+ * the same ground, each vertex pushed out along the ground's normal by the
+ * rock relief (`sim/faceRelief.ts`): the faces' relief, masked by the
+ * ground's gradient so the push is nothing where the ground is not steep,
+ * and (since 2026-10-13) the walkable rock's relief, masked by the ground's
+ * rock paint where the faces' mask leaves off, shallow enough to walk over
+ * with collision on the smooth ground, and louder the wider the rock about
+ * the cell (`rockExtent`, `groundLoudness`); both faded out toward the cells
+ * outside the patched set. The patch is painted as the clipmap paints the
+ * ground under it, so it is the same rock in the same light. The ground's height is not changed; the clipmap
  * leaves out its triangles under fully steep ground well inside the reach
  * (`facePatchCover`), where a patch is drawn over them.
  *
@@ -16,9 +20,19 @@
  * covers [ci·16, (ci+1)·16] × [cj·16, (cj+1)·16].
  */
 import { groundCover } from "../sim/clutter.js";
-import { FACE_HALF_DEPTH, FACE_SLOPE_HI, FACE_SLOPE_LO, faceReliefD } from "../sim/faceRelief.js";
+import { FACE_HALF_DEPTH, faceReliefD, groundReliefD } from "../sim/faceRelief.js";
+import {
+  GROUND_BEND_SHARE, GROUND_CURVE_STEP, GROUND_DEPTH, GROUND_MASK_STEP, GROUND_ROCK_MIN, bendFrom, depthUnderBend,
+  faceMask, groundBend, loudnessAt, maskSlopeAt, rockOfSlope, trailClearAt,
+} from "../sim/rockSurface.js";
+// The rules the patches share with the ground the player stands on (`sim/rockSurface.ts`), for their tests and callers.
+export {
+  GROUND_BEND_SHARE, GROUND_DEPTH, GROUND_EXTENT_RADIUS, GROUND_LOUD_FLOOR, GROUND_LOUD_HI, GROUND_LOUD_LO,
+  GROUND_ROCK_MIN, faceMask, groundBend, groundLoudness, maskSlopeAt, rockExtent, rockOfSlope,
+} from "../sim/rockSurface.js";
 import { stepT, stepTd } from "../sim/lakeShape.js";
 import { elevationSampleAt, type TerrainSample } from "../sim/terrain.js";
+import type { TrailGraph } from "../sim/trail.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { WEIGHTS2_STRIDE, type CoveredGround } from "./clipmap.js";
 import type { QualityTier } from "./quality.js";
@@ -40,9 +54,10 @@ export const PATCH_WIDE_SPACING = 2;
  * outside the patched set, so a patch never ends with its relief in the air. */
 export const PATCH_TAPER = 3;
 /** The world step (m) of the differences that give the ground's curvature:
- * the finest grid's spacing. */
-export const PATCH_CURVE_STEP = 0.5;
-/** The most of the ground's radius of curvature the push may reach. */
+ * the finest grid's spacing, and the rock layer's own (`sim/rockSurface.ts`). */
+export const PATCH_CURVE_STEP = GROUND_CURVE_STEP;
+/** The most of the ground's radius of curvature the faces' push may reach;
+ * the walkable rock's is GROUND_BEND_SHARE. */
 export const PATCH_BEND_SHARE = 0.5;
 
 export type PatchReach = { readonly near: number; readonly far: number; readonly wide: number };
@@ -111,12 +126,6 @@ export function patchKey(ci: number, cj: number): number {
   return ci * 65536 + cj;
 }
 
-/** The share of the relief at a ground gradient `g`: 0 below FACE_SLOPE_LO,
- * 1 from FACE_SLOPE_HI, a quintic step between. */
-export function faceMask(g: number): number {
-  return stepT((g - FACE_SLOPE_LO) / (FACE_SLOPE_HI - FACE_SLOPE_LO));
-}
-
 // The taper's gradient, written by `taperInto` beside the share it returns.
 let taperDx = 0;
 let taperDz = 0;
@@ -168,55 +177,6 @@ export function patchTaper(ci: number, cj: number, open: number, x: number, z: n
   return taperInto(ci, cj, open, x, z);
 }
 
-/** The ground's sharper principal curvature at (x, z), per metre, from its
- * second derivatives (h_xx, h_zz, h_xz) and gradient: the larger magnitude of
- * λ / sqrt(1 + g²) over the roots λ of det(H − λ A) = 0, A = I + ∇h ∇hᵀ. */
-function bendOf(s: TerrainSample, hxx: number, hzz: number, hxz: number): number {
-  const a = 1 + s.dx * s.dx + s.dz * s.dz;
-  // det(H − λA) = a λ² − b λ + c, with det(A) = 1 + g².
-  const b = hxx * (1 + s.dz * s.dz) + hzz * (1 + s.dx * s.dx) - 2 * hxz * s.dx * s.dz;
-  const c = hxx * hzz - hxz * hxz;
-  const disc = b * b - 4 * a * c;
-  const root = Math.sqrt(disc > 0 ? disc : 0);
-  return (Math.abs(b) + root) / (2 * a * Math.sqrt(a));
-}
-
-/**
- * How sharply the ground bends at (x, z), per metre: the larger principal
- * curvature in magnitude, concave or convex, of the ground's Hessian taken
- * by one-sided differences of its gradient PATCH_CURVE_STEP on in x and z,
- * and again PATCH_CURVE_STEP back, the larger of the two. The ground has
- * creases narrower than a grid step; a one-sided difference sees a crease
- * that lies on either side of the point, where a central one can step over
- * it. A fixed world step, not the grid's, so a point bends alike in every
- * patch that holds it.
- */
-export function groundBend(seed: number, x: number, z: number, s: TerrainSample): number {
-  const e = PATCH_CURVE_STEP;
-  return bendFrom(
-    s,
-    elevationSampleAt(seed, x + e, z),
-    elevationSampleAt(seed, x - e, z),
-    elevationSampleAt(seed, x, z + e),
-    elevationSampleAt(seed, x, z - e),
-  );
-}
-
-/** `groundBend` from the ground at the point and PATCH_CURVE_STEP on and
- * back in x and in z, sampled already. */
-function bendFrom(
-  s: TerrainSample, xp: TerrainSample, xm: TerrainSample, zp: TerrainSample, zm: TerrainSample,
-): number {
-  const e = PATCH_CURVE_STEP;
-  const on = bendOf(
-    s, (xp.dx - s.dx) / e, (zp.dz - s.dz) / e, (xp.dz - s.dz + (zp.dx - s.dx)) / (2 * e),
-  );
-  const back = bendOf(
-    s, (s.dx - xm.dx) / e, (s.dz - zm.dz) / e, (s.dz - xm.dz + (s.dx - zm.dx)) / (2 * e),
-  );
-  return on > back ? on : back;
-}
-
 /**
  * The relief's whole range at a point whose ground bends by `bend` per
  * metre: PATCH_DEPTH / (1 + PATCH_DEPTH · bend / PATCH_BEND_SHARE), the full
@@ -226,8 +186,8 @@ function bendFrom(
  * crest the mask, nothing on the crest and whole a step down its flanks,
  * would notch it. Smooth in the bend, so the depth has no step of its own.
  */
-export function patchDepth(bend: number): number {
-  return PATCH_DEPTH / (1 + (PATCH_DEPTH * bend) / PATCH_BEND_SHARE);
+export function patchDepth(bend: number, depth = PATCH_DEPTH, share = PATCH_BEND_SHARE): number {
+  return depthUnderBend(depth, bend, share);
 }
 
 /**
@@ -240,7 +200,10 @@ export function patchDepth(bend: number): number {
  *
  * The push is k = d / sqrt(1 + g²) along n = (−h_x, 1, −h_z), with
  * d = m · τ · D · (v + 1) / 2: m the mask, τ the taper and D the depth the
- * ground's bend leaves (`patchDepth`). The normal is the displaced
+ * ground's bend leaves (`patchDepth`); and, where the ground is painted
+ * rock and the faces' mask leaves off, the walkable rock's push on top, the
+ * same form with its own relief, its mask `rock · (1 − m) · loud` and its
+ * depth GROUND_DEPTH cut by the bend alike. The normal is the displaced
  * surface's, from the field's own derivatives: ∂P/∂x ≈ (1, h_x, 0) + n · ∂k/∂x
  * with ∂k/∂x = (m · τ · D / 2 · v_x + m · D · (v + 1) / 2 · τ_x) / sqrt(1 + g²),
  * likewise in z, the slowly varying terms (the mask's, the depth's, the
@@ -252,20 +215,26 @@ export function patchDepth(bend: number): number {
 function surfaceInto(
   seed: number, s: TerrainSample, x: number, z: number, ci: number, cj: number, open: number,
   ring: readonly TerrainSample[] | null, ri: number, rside: number,
+  rock: number, loud: number, rockGm: number,
   pos: Float64Array, nrm: Float64Array, at: number,
 ): void {
   const g2 = s.dx * s.dx + s.dz * s.dz;
   const mask = faceMask(Math.sqrt(g2));
-  const taper = mask === 0 ? 0 : taperInto(ci, cj, open, x, z);
+  // The walkable rock's mask before the taper: the rock paint where the
+  // faces' mask (by the same smoothed slope) leaves off, at the cell's
+  // loudness: the ground the player stands on reads the same
+  // (`sim/rockSurface.ts`, `rockRiseAt`).
+  const rockMask = rock * (1 - faceMask(rockGm)) * loud;
+  const taper = mask === 0 && rockMask === 0 ? 0 : taperInto(ci, cj, open, x, z);
   const m = mask * taper;
+  const mg = rockMask * taper;
   let kx = 0;
   let kz = 0;
-  if (m === 0) {
+  if (m === 0 && mg === 0) {
     pos[at] = x;
     pos[at + 1] = s.h;
     pos[at + 2] = z;
   } else {
-    const r = faceReliefD(seed, x, z);
     const q = Math.sqrt(1 + g2);
     const bend = ring === null
       ? groundBend(seed, x, z, s)
@@ -276,16 +245,31 @@ function surfaceInto(
         ring[ri + rside] as TerrainSample,
         ring[ri - rside] as TerrainSample,
       );
-    const depth = patchDepth(bend);
-    const d = (m * depth * (r.v + 1)) / 2;
+    let d = 0;
+    if (m > 0) {
+      const r = faceReliefD(seed, x, z);
+      const depth = patchDepth(bend);
+      d += (m * depth * (r.v + 1)) / 2;
+      const half = (m * depth) / 2;
+      const whole = (mask * depth * (r.v + 1)) / 2;
+      kx += half * r.dx + whole * taperDx;
+      kz += half * r.dz + whole * taperDz;
+    }
+    if (mg > 0) {
+      const r = groundReliefD(seed, x, z);
+      const depth = depthUnderBend(GROUND_DEPTH, bend, GROUND_BEND_SHARE);
+      d += (mg * depth * (r.v + 1)) / 2;
+      const half = (mg * depth) / 2;
+      const whole = (rockMask * depth * (r.v + 1)) / 2;
+      kx += half * r.dx + whole * taperDx;
+      kz += half * r.dz + whole * taperDz;
+    }
     const k = d / q;
     pos[at] = x - s.dx * k;
     pos[at + 1] = s.h + k;
     pos[at + 2] = z - s.dz * k;
-    const half = (m * depth) / 2;
-    const whole = (mask * depth * (r.v + 1)) / 2;
-    kx = (half * r.dx + whole * taperDx) / q;
-    kz = (half * r.dz + whole * taperDz) / q;
+    kx /= q;
+    kz /= q;
   }
   const ax = 1 - s.dx * kx;
   const ay = s.dx + kx;
@@ -304,7 +288,10 @@ function surfaceInto(
 
 /**
  * The patch of cell (ci, cj) at `spacing` (0.5, 1 or 2 m), or null when no
- * point of its grid, boundary included, has steep ground. The grid is the
+ * point of its grid, boundary included, has steep ground or ground the
+ * slope paints at least GROUND_ROCK_MIN rock (the slope is the only way the
+ * rock paint comes). The rock keeps off the trail's bed by the graph given
+ * (`trailClearAt`), as the ground the player stands on does. The grid is the
  * cell's own (16/spacing + 1)² points. The relief fades out toward the
  * neighbours `stitch.open` flags (`patchTaper`). On each edge `stitch` flags,
  * whose neighbour is at twice this spacing, the odd points are laid on the
@@ -314,7 +301,7 @@ function surfaceInto(
  * both come from the world point alone.
  */
 export function facePatchGeometry(
-  seed: number, ci: number, cj: number, spacing: number, stitch: PatchStitch,
+  seed: number, ci: number, cj: number, spacing: number, stitch: PatchStitch, trail: TrailGraph | null = null,
 ): FacePatch | null {
   const n = Math.round(PATCH_CELL / spacing);
   const side = n + 1;
@@ -323,15 +310,19 @@ export function facePatchGeometry(
   const z0 = cj * PATCH_CELL;
   const samples: TerrainSample[] = new Array<TerrainSample>(count);
   let steep = false;
+  let rocky = false;
   for (let iz = 0; iz < side; iz++) {
     const z = z0 + iz * spacing;
     for (let ix = 0; ix < side; ix++) {
       const s = elevationSampleAt(seed, x0 + ix * spacing, z);
       samples[iz * side + ix] = s;
-      if (!steep && faceMask(Math.sqrt(s.dx * s.dx + s.dz * s.dz)) > 0) steep = true;
+      const g = Math.sqrt(s.dx * s.dx + s.dz * s.dz);
+      if (!steep && faceMask(g) > 0) steep = true;
+      if (!rocky && rockOfSlope(g) >= GROUND_ROCK_MIN) rocky = true;
     }
   }
-  if (!steep) return null;
+  if (!steep && !rocky) return null;
+
 
   // At the curvature's own step the grid holds each point's neighbours for
   // its bend: the samples again, with a ring one step outside the cell.
@@ -364,22 +355,30 @@ export function facePatchGeometry(
       const x = x0 + ix * spacing;
       const at = iz * side + ix;
       const s = samples[at] as TerrainSample;
-      surfaceInto(
-        seed, s, x, z, ci, cj, stitch.open, ring, (iz + 1) * rside + ix + 1, rside, pos, nrm, at * 3,
-      );
-      for (let c = 0; c < 3; c++) {
-        positions[at * 3 + c] = pos[at * 3 + c] as number;
-        normals[at * 3 + c] = nrm[at * 3 + c] as number;
-      }
-
       // Painted as the clipmap paints the ground at this point: the same
-      // calls with the same inputs (`clipmap.ts`, `sampleInto`).
+      // calls with the same inputs (`clipmap.ts`, `sampleInto`). The rock
+      // weight is the walkable rock's mask, so the paint comes first.
       const gc = groundCover(seed, x, z, s);
       const duff = gc.duff;
       const canopy = forestDensity(seed, x, z, s);
       const { albedo, weights: w } = classifySurface(
         seed, x, z, s.h, Math.hypot(s.dx, s.dz), canopy, duff, waterGroundAt(seed, x, z, s.h),
       );
+      // The walkable rock's mask and loudness are the ground's own
+      // (`sim/rockSurface.ts`): the paint by the slope smoothed over three
+      // metres, so a plate's top is where the player stands and the rock's
+      // edge a ramp.
+      const rockGm = rocky ? maskSlope(seed, samples, side, spacing, x0, z0, ix, iz) : 0;
+      const rock = rocky ? rockOfSlope(rockGm) * trailClearAt(trail, x, z) : 0;
+      const loud = rock > 0 ? loudnessAt(seed, x, z) : 0;
+      surfaceInto(
+        seed, s, x, z, ci, cj, stitch.open, ring, (iz + 1) * rside + ix + 1, rside, rock, loud, rockGm,
+        pos, nrm, at * 3,
+      );
+      for (let c = 0; c < 3; c++) {
+        positions[at * 3 + c] = pos[at * 3 + c] as number;
+        normals[at * 3 + c] = nrm[at * 3 + c] as number;
+      }
       const c = at * 4;
       colors[c] = albedo.r;
       colors[c + 1] = albedo.g;
@@ -423,6 +422,25 @@ export function facePatchGeometry(
     }
   }
   return { positions, normals, colors, weights, weights2, cover, indices, vertexCount: count, triangleCount: n * n * 2 };
+}
+
+/** `maskSlopeAt` at grid point (ix, iz) of a patch whose samples are
+ * `samples`: the same elevation samples, read from the grid where its
+ * spacing lands them on the smoothed slope's arms (the 0.5 m band, three
+ * steps either way, inside the grid) and sampled otherwise, the same
+ * doubles either way. */
+function maskSlope(
+  seed: number, samples: readonly TerrainSample[], side: number, spacing: number, x0: number, z0: number,
+  ix: number, iz: number,
+): number {
+  const steps = GROUND_MASK_STEP / spacing;
+  if (!Number.isInteger(steps) || ix < steps || ix + steps >= side || iz < steps || iz + steps >= side) {
+    return maskSlopeAt(seed, x0 + ix * spacing, z0 + iz * spacing);
+  }
+  const e = GROUND_MASK_STEP;
+  const gx = ((samples[iz * side + ix + steps] as TerrainSample).h - (samples[iz * side + ix - steps] as TerrainSample).h) / (2 * e);
+  const gz = ((samples[(iz + steps) * side + ix] as TerrainSample).h - (samples[(iz - steps) * side + ix] as TerrainSample).h) / (2 * e);
+  return Math.sqrt(gx * gx + gz * gz);
 }
 
 type PatchAttributes = Pick<FacePatch, "positions" | "normals" | "colors" | "weights" | "weights2" | "cover">;

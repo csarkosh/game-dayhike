@@ -4,100 +4,68 @@
 
 <h1 align="center">Day Hike</h1>
 
+<p align="center"><em>A mild morning; an easy trail; and the peculiar conviction that the woods were counting us.</em></p>
+
+<p align="center"><a href="https://games.csarko.sh/dayhike"><img src="branding/previews/hillside.png" alt="A bare rock slope above the coast road, the forest along its crest, the sea beyond" width="900"></a></p>
+
 <p align="center">
-  <em>A mild morning; an easy trail;
-  <br>and the peculiar conviction that the woods were counting us.</em>
+<b>Play now</b> at <a href="https://games.csarko.sh/dayhike">games.csarko.sh/dayhike</a> · <b>1 to 5</b> players · <b>in the browser</b>, no account, no install · <b>free</b>
 </p>
 
-<br>
+One hiker is missing, last seen at Trail 14, and the poster at the trailhead is the whole
+briefing. You are the park ranger sent to find them. Lead a search party of up to five up the
+trail to the crest, where the hiker is waiting, and so is whatever left them there. Then get
+everyone back down to the road.
 
-One hiker is missing, last seen at Trail 14, and the poster at the trailhead is the whole briefing.
+Open the link, press Play, and send the invite link to friends; they join your party from
+anywhere. Walk with **WASD**, look with the mouse, run with **Shift**, jump with **Space**,
+**F** for the headlamp, and **click** to search. Alone works too: the woods count one as readily
+as five.
 
-Play as a park ranger sent to find them. Lead a search party of up to five up the trail to the crest, where the hiker is waiting — and so is whatever left them there. Then get everyone back down to the road.
+## A day on the trail
 
-The day goes first: a quarter of the way up the cloud closes and the rain comes. Then the light goes, and the birds with it, and what you hear in the dark is not animals. Then a pale mist rides at your sides, and there are figures in it, dark blurs the shape of someone, gone when you look too long; most of them are nothing. One is not, and it comes out of the mist as what it is. There, looking costs you: the dark closes in from its side of your sight, your own heart drowns the woods, and something starts to whisper. The descent is not a feeling: something comes down off the crest behind you, faster than you walk and slower than you can run, and it does not lose the trail. The road is the only ground it will not cross.
+<table>
+<tr>
+<td width="420" valign="top"><img src="branding/previews/trailhead.png" alt="The trailhead: a kiosk with a poster beside the path into the forest" width="400"></td>
+<td valign="top"><b>Morning.</b> A gravel pad, a car, a board with a poster and a map. The trail leaves the road and climbs into the trees. Birds, wind, your party's footsteps.</td>
+</tr>
+<tr>
+<td width="420" valign="top"><img src="branding/previews/rain.png" alt="Rain falling through the forest onto the undergrowth" width="400"></td>
+<td valign="top"><b>Rain.</b> A quarter of the way up the cloud closes. The rain comes through the canopy, the trail turns to mud, the drops run down the lens. Then the light goes, and the birds with it.</td>
+</tr>
+<tr>
+<td width="420" valign="top"><img src="branding/previews/night.png" alt="Night and rain, a dark shape in the mist ahead" width="400"></td>
+<td valign="top"><b>Night.</b> A pale mist rides at your sides and there are figures in it, gone when you look too long. Most are nothing. One is not. Looking costs you. On the way down it follows, faster than you walk, slower than you can run, and the road is the only ground it will not cross.</td>
+</tr>
+</table>
 
-**Play it: [games.csarko.sh/dayhike](https://games.csarko.sh/dayhike)**
-
----
+Every hike is its own forest: the world is built from a seed, so a party that sets out together
+walks one world, and a new seed is a new one.
 
 ## Under the hood
 
-Three layers, one direction of dependency: `game/ → net/ → sim/`.
+Three layers, one direction of dependency: `game/ → net/ → sim/`. The simulation is pure
+TypeScript with zero dependencies, steps at a fixed 60 Hz from a seed, and never imports the
+renderer, which is what makes the netcode testable headless and a replay bit-identical. A match
+runs peer to peer over WebRTC; a small signaling server introduces the party and steps out, so
+the game costs nothing to keep online. Solo play is a host with no peers, the same code path.
 
-```
-game/   Babylon.js — scene, meshes, camera, HUD, input sampling
-net/    Binary protocol, WebRTC transport, host & client sessions
-sim/    Movement, collision, interact, AI, and the seeded world — pure functions, zero dependencies
-```
+Built with TypeScript, Babylon.js 9, Vite, Vitest and WebRTC. The details, from the world's
+generation to the rendering to the hosting, are in [`ARCHITECTURE.md`](ARCHITECTURE.md) and
+[`docs/`](docs/).
 
-The load-bearing rule is that **`sim/` never imports Babylon** — enforced by both ESLint and a test that names the offending file. That one constraint buys headless netcode tests, deterministic replay, and a future Node-hosted authority for free.
-
-Everything else follows from it: a fixed 60 Hz simulation with a seeded RNG and no wall-clock reads, so replaying identical inputs yields bit-identical results. Prediction only works if that's true, so a test serializes two runs of the world and asserts they match.
-
-**Solo play is a host with zero peers.** No offline mode, no second code path.
-
-More in [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
-## Assets
-
-Models, ground textures and wildlife calls live under `client/assets/` and are committed through Git LFS. `client/assets/catalog.json` lists every one of them, and [`CREDITS.md`](CREDITS.md) credits the third-party work, which the in-game Credits screen renders. If a model is missing the game draws a stand-in and still runs: a capsule for a hiker or the Hollow, a plain box for the car, the kiosk and a sign post, a timber cross for the body at the crest.
-
-## Stack
-
-TypeScript (strict) · Babylon.js 9 · Vite 8 · Vitest 4 · WebRTC · `ws`
-
-## Run it
+## Run it yourself
 
 ```bash
-npm install     # Node >= 22.13
-git lfs install # required: models are LFS objects
-npm run dev     # signaling server + Vite, together
+npm install      # Node >= 22.13
+git lfs install  # the models and textures are LFS objects
+npm run dev      # signaling server and Vite together, then open http://localhost:5173
+npm test         # headless: determinism, movement, collision, the protocol, the world
 ```
 
-Then open http://localhost:5173. Press **F3** or **`** in game for the netgraph — frame rate, RTT, snapshot rate, bandwidth, unacknowledged inputs, and a prediction-error meter that turns red when reconciliation starts correcting more than the eye can miss.
-
-Add `?net=lat:200,jitter:50,loss:10` to a URL to play that tab over a deliberately bad connection.
-
-```bash
-npm test          # headless — determinism, movement, collision, codecs, netcode, models
-npm run lint
-npm run typecheck
-```
-
-> **Without `git-lfs`** the model files clone as text pointers, and every model silently falls back to its stand-in: capsules for the hikers and the Hollow, plain boxes at the trailhead and the sign posts.
-
-## Where it lives
-
-[games.csarko.sh/dayhike](https://games.csarko.sh/dayhike), at no fixed monthly cost — which is the same promise as *no server bill*, kept. Two origins, because putting both behind one would mean a load balancer, and GCP bills ~$18/month per project for a forwarding rule whether traffic flows through it or not:
-
-```
-games.csarko.sh/dayhike   Firebase Hosting — free global CDN, free managed cert
-wss://…run.app/ws         Cloud Run — scales to zero, 60-minute request cap
-https://…run.app/t        Cloud Run — the same image as telemetry, scales with the traffic
-```
-
-`game.csarko.sh` redirects there, path and all, so old links still work.
-
-The signaling server's rooms live in Firestore, shared by every instance, so the service scales from zero to a few instances when a spike needs them and back to none — within Firestore's free quota, since a party costs the store a dozen operations and nothing accrues while nobody plays. One instance holds 250 sockets — 50 full games — before a second is started, and the match itself is peer-to-peer anyway. See [`docs/signaling/`](docs/signaling/).
-
-Telemetry is the same server in a second role on a second service, which holds nothing and so scales from zero to whatever a spike needs. Pages send a batch of events every half minute; the service writes one log row an event, and the rows land in a Cloud Logging bucket with Log Analytics on, every one naming the build and the world version it came from — free at the volumes a game this size makes. See [`docs/telemetry/`](docs/telemetry/). The admin page, at [admin.csarko.sh/game-dayhike](https://admin.csarko.sh/game-dayhike/) behind the admin host's Google sign-in and an allowlist, shows who is playing right now and what the rows say; see [`docs/admin/`](docs/admin/).
-
-Cloud Run closes every socket it holds after 60 minutes, on every scale-down, and on every deploy. A match survives all three: the data channels are untouched, the client reconnects signaling in the background, and a host that comes back within a minute reclaims its room without the other players seeing anything.
-
-```bash
-npm run deploy         # server image, then client built against its live URL
-npm run deploy:verify  # independent proof against production, not against the deploy's exit code
-```
-
-Infrastructure is Terraform in [`_infra/`](_infra/) — Artifact Registry and both Cloud Run services, the Firestore database the rooms live in, the telemetry log bucket and its dataset, the Firebase Hosting site and its custom domain, and the Route53 CNAME. State is local and gitignored; `npm run infra:check` formats and validates it.
-
-A desktop build for macOS and Windows lives in [`desktop/`](desktop/): a thin launcher that loads the site.
-
-## Out of scope
-
-Host migration, TURN relay, navmesh pathfinding, anti-cheat, PvP, lobby browser, persistence, mobile input, physics props.
+A desktop launcher for macOS and Windows that loads the site lives in [`desktop/`](desktop/).
 
 ## License
 
-[GPL-3.0](./LICENSE). The game's code, its server and its tooling are free software under the GNU General Public License, version 3: use it, study it, change it and share it, and share your changes under the same terms.
+[GPL-3.0](./LICENSE). Use it, study it, change it and share it, and share your changes under the
+same terms. Third-party models and sounds are credited in [`CREDITS.md`](CREDITS.md).
