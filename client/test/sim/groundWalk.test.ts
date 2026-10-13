@@ -2,10 +2,9 @@ import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
-import { elevationAt, elevationSampleAt } from "../../src/sim/terrain.js";
 import { PLAYER_HALF } from "../../src/sim/constants.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { Button, type InputCommand } from "../../src/sim/types.js";
+import { Button, type InputCommand, type Vec3 } from "../../src/sim/types.js";
 import { spiralSpawn } from "../../src/sim/spawn.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -98,6 +97,7 @@ function walk(
 
   const feet: number[] = [];
   const drawn: number[] = [];
+  const normal: Vec3 = { x: 0, y: 0, z: 0 };
   const grounded: boolean[] = [];
   const positions: Vec2[] = [];
   const gradient: number[] = [];
@@ -114,11 +114,15 @@ function walk(
     const s = world.state.players.get(player.id);
     if (s === undefined) throw new Error("player vanished");
     feet.push(s.pos.y - PLAYER_HALF.y);
-    drawn.push(elevationAt(seed, s.pos.x, s.pos.z));
+    // The ground the player stands on: the elevation field the clipmap
+    // draws, with the walkable rock's layer where the surface paints rock
+    // (`sim/rockSurface.ts`), on which the patches draw the rock.
+    if (world.ground === null) throw new Error("no ground");
+    drawn.push(world.ground.heightAt(s.pos.x, s.pos.z));
     grounded.push(s.grounded);
     positions.push({ x: s.pos.x, z: s.pos.z });
-    const e = elevationSampleAt(seed, s.pos.x, s.pos.z);
-    gradient.push(Math.sqrt(e.dx * e.dx + e.dz * e.dz));
+    world.ground.normalAt(s.pos.x, s.pos.z, normal);
+    gradient.push(Math.sqrt(1 / (normal.y * normal.y) - 1));
   }
   return { feet, drawn, grounded, positions, gradient };
 }
@@ -137,7 +141,9 @@ describe("walking the generated ground", () => {
   }, timeLimit(300_000));
 
   it("stands on exactly the surface the renderer draws", () => {
-    // The clipmap samples `elevationAt` directly, so any gap here is a gap
+    // The clipmap samples the elevation field, and the patches draw the
+    // walkable rock's layer over it where the surface paints rock, the ground
+    // the player stands on (`sim/rockSurface.ts`): any gap here is a gap
     // between where you are and where you can see you are.
     for (const seed of SEEDS) {
       for (const yaw of YAWS) {

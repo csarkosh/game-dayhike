@@ -144,7 +144,7 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
   const world: World = {
     level: { id: forest.levelId, brushes: [], playerSpawns: [], enemySpawns: [] },
     boxes: forest.grid,
-    ground: createGroundField(forest.seed),
+    ground: createGroundField(forest.seed, graph ?? null),
     forest,
     authoritative,
     maxEnemies: 0,

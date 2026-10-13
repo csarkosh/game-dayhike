@@ -5,7 +5,7 @@ import {
   FACE_VALUE_SPAN, FACE_TILT,
   GROUND_PLATE_CELL, GROUND_PLATE_JITTER, GROUND_PLATE_BORDER, GROUND_PLATE_SALT, GROUND_PLATE_TILT,
   GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, GROUND_SHARD_SALT, GROUND_SHARD_WEIGHT,
-  GROUND_SHARD_TILT, GROUND_SHARD_CONE,
+  GROUND_SHARD_TILT, GROUND_SHARD_CONE, GROUND_SHARD_LIFT, GROUND_WALK_BORDER, groundWalkD,
   GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, GROUND_MASS_SALT, GROUND_MASS_WEIGHT,
   GROUND_MASS_TILT, GROUND_MASS_DOME, GROUND_GAIN, GROUND_PATCH_LO,
   FACE_COLUMN_CELL, FACE_COLUMN_JITTER, FACE_COLUMN_BORDER, FACE_COLUMN_SALT,
@@ -635,6 +635,8 @@ describe("the walkable rock's relief", () => {
       cellularD(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT, GROUND_MASS_TILT, GROUND_MASS_DOME),
     ];
     if (octaves.some((o) => Math.abs(o.v) > 1 - CLAMP_GAP)) return 0;
+    // The shards' lift: a crease where the lifted cone field crosses zero.
+    if (Math.abs((octaves[1] as ReliefSample).v + GROUND_SHARD_LIFT) < CLAMP_GAP) return 0;
     // A cone's point is a kink too: within the gap of a plate's or shard's site.
     const [s1] = siteDistances(x, z, GROUND_PLATE_CELL, GROUND_PLATE_JITTER, SEED ^ GROUND_PLATE_SALT);
     const [h1] = siteDistances(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, SEED ^ GROUND_SHARD_SALT);
@@ -654,15 +656,45 @@ describe("the walkable rock's relief", () => {
       const shard = cellularD(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, SEED ^ GROUND_SHARD_SALT, GROUND_SHARD_TILT, 0, GROUND_SHARD_CONE);
       const mass = cellularD(x, z, GROUND_MASS_CELL, GROUND_MASS_JITTER, GROUND_MASS_BORDER, SEED ^ GROUND_MASS_SALT, GROUND_MASS_TILT, GROUND_MASS_DOME);
       const p = groundPatchD(SEED, x, z);
-      const g = n * (plate.v + GROUND_SHARD_WEIGHT * shard.v + GROUND_MASS_WEIGHT * mass.v);
-      const gx = n * (plate.dx + GROUND_SHARD_WEIGHT * shard.dx + GROUND_MASS_WEIGHT * mass.dx);
-      const gz = n * (plate.dz + GROUND_SHARD_WEIGHT * shard.dz + GROUND_MASS_WEIGHT * mass.dz);
+      // The shards lift only: the lifted cone field where it is above zero.
+      const tip = shard.v + GROUND_SHARD_LIFT;
+      const sv = tip > 0 ? tip : 0;
+      const sdx = tip > 0 ? shard.dx : 0;
+      const sdz = tip > 0 ? shard.dz : 0;
+      const g = n * (plate.v + GROUND_SHARD_WEIGHT * sv + GROUND_MASS_WEIGHT * mass.v);
+      const gx = n * (plate.dx + GROUND_SHARD_WEIGHT * sdx + GROUND_MASS_WEIGHT * mass.dx);
+      const gz = n * (plate.dz + GROUND_SHARD_WEIGHT * sdz + GROUND_MASS_WEIGHT * mass.dz);
       const v = p.v * g;
       const want = v > 1 || v < -1
         ? { v: v > 1 ? 1 : -1, dx: 0, dz: 0 }
         : { v, dx: p.v * gx + p.dx * g, dz: p.v * gz + p.dz * g };
       expect(groundReliefD(SEED, x, z)).toEqual(want);
     }
+  });
+
+  it("has a walking twin: the plates with wide joints and no shards, one surface with the drawn rock on a plate's top", () => {
+    // Where no shard lifts and the point is well inside a plate (further from
+    // a junction than half the walking joint), the two fields are the same
+    // doubles; the twin is never above the drawn rock by more than a shard's
+    // lift, nor below it by more than a joint's step.
+    let same = 0;
+    let checked = 0;
+    let most = 0;
+    for (const [x, z] of r2Points(3000, 1000)) {
+      const drawn = groundReliefD(SEED, x, z);
+      const twin = groundWalkD(SEED, x, z);
+      most = Math.max(most, Math.abs(drawn.v - twin.v));
+      const shard = cellularD(x, z, GROUND_SHARD_CELL, GROUND_SHARD_JITTER, GROUND_SHARD_BORDER, SEED ^ GROUND_SHARD_SALT, GROUND_SHARD_TILT, 0, GROUND_SHARD_CONE);
+      const [f1, f2] = siteDistances(x, z, GROUND_PLATE_CELL, GROUND_PLATE_JITTER, SEED ^ GROUND_PLATE_SALT) as [number, number];
+      if (shard.v + GROUND_SHARD_LIFT > 0 || f2 - f1 < GROUND_WALK_BORDER) continue;
+      checked++;
+      if (Object.is(drawn.v, twin.v) && Object.is(drawn.dx, twin.dx) && Object.is(drawn.dz, twin.dz)) same++;
+    }
+    // Few points lie further than 1.5 m from a joint of 2 m cells: 44 of
+    // the 3,000, every one the same doubles in both fields.
+    expect(checked).toBeGreaterThan(20);
+    expect(same).toBe(checked);
+    expect(most).toBeLessThanOrEqual(2);
   });
 
   it("gathers the relief into patches: the share runs from the calm ground's to 1 with the noise", () => {
@@ -778,7 +810,7 @@ describe("the tunables", () => {
       "FACE_FORM_SALT",
       "GROUND_PLATE_CELL", "GROUND_PLATE_JITTER", "GROUND_PLATE_BORDER", "GROUND_PLATE_TILT",
       "GROUND_SHARD_CELL", "GROUND_SHARD_JITTER", "GROUND_SHARD_BORDER", "GROUND_SHARD_WEIGHT",
-      "GROUND_SHARD_TILT", "GROUND_SHARD_CONE",
+      "GROUND_SHARD_TILT", "GROUND_SHARD_CONE", "GROUND_SHARD_LIFT", "GROUND_WALK_BORDER",
       "GROUND_MASS_CELL", "GROUND_MASS_JITTER", "GROUND_MASS_BORDER", "GROUND_MASS_WEIGHT",
       "GROUND_MASS_TILT", "GROUND_MASS_DOME",
       "GROUND_GAIN", "GROUND_PATCH_WAVE", "GROUND_PATCH_LO",

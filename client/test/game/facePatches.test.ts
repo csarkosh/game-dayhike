@@ -6,6 +6,7 @@ import {
   rockOfSlope,
   rockExtent,
   groundLoudness,
+  maskSlopeAt,
   facePatchCells,
   facePatchGeometry,
   facePatchStitch,
@@ -66,7 +67,8 @@ describe("facePatchGeometry", () => {
           steep++;
           continue;
         }
-        if (rockOfSlope(g) > 0) {
+        // The rock's mask reads the slope smoothed over three metres.
+        if (rockOfSlope(maskSlopeAt(SEED, x, z)) > 0) {
           rock++;
           continue;
         }
@@ -594,6 +596,8 @@ describe("facePatchCells and facePatchStitch", () => {
     // and 0.2697 with its plates at a metre, which lift the flanks' worst
     // triangle. 2026-10-12: 0.3487 before the relief's gain; 0.2664 before
     // the relief's cells grew.
-    expect(f.least).toBeCloseTo(0.2697, 4);
+    // 0.2518 once the player stood on the rock (2026-10-13): the shards lift
+    // only and the mask is the smoothed slope's rock.
+    expect(f.least).toBeCloseTo(0.2518, 4);
   }, timeLimit(20_000));
 });

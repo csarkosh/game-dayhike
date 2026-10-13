@@ -282,14 +282,19 @@ describe("the watcher on fifty seeds", () => {
     expect(shown.length, summary).toBeGreaterThanOrEqual(913);
     // 74,240 until 2026-10-04: a tree that would have fallen across a trail
     // stands dead beside it instead, and a snag is in a stand's way where a
-    // log was not (74,228 admitted). 77,593 from 2026-10-10.
-    expect(admitted, summary).toBeGreaterThanOrEqual(77500);
+    // log was not (74,228 admitted). 77,593 from 2026-10-10. 75,494 from
+    // 2026-10-13: the walkable rock's layer is the ground the watcher
+    // stands on (`sim/rockSurface.ts`), steeper under the plates, so the
+    // ground and slope rules refuse more tries; every stand still shows.
+    expect(admitted, summary).toBeGreaterThanOrEqual(75400);
     expect(refused.flee, summary).toBe(0);
     expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
     expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
     expect(bySlot.map((b) => `${b.slot} ${b.stands}`), summary).toEqual(["climb 0 200", "climb 0.25 200", "climb 0.5 200", "climb 0.75 200", "top fork 180"]);
     const floors = [188, 197, 192, 200, 180];
-    const admittedFloors = [4184, 13490, 17944, 24856, 23077];
+    // 2026-10-13: [4184, 13490, 17944, 24856, 23077] before the walkable
+    // rock's layer; measured [4184, 13122, 17374, 23424, 22926] with it.
+    const admittedFloors = [4184, 13100, 17300, 23400, 22900];
     bySlot.forEach((b, i) => {
       expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
       expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);

@@ -1,3 +1,4 @@
+import { createGroundField } from "../../../src/sim/ground.js";
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { generateChunk, registeredPasses } from "../../../src/sim/chunk.js";
@@ -88,6 +89,10 @@ function hikerOn(seed: number): (
 ) => [number, number, number, boolean][] {
   const world = createForestWorld(createForest(seed), true);
   world.boxes = laidGrid(seed);
+  // The gate was written for modules on the elevation field alone; no module
+  // stands in the game, and the walkable rock's layer (`sim/rockSurface.ts`)
+  // would stand the hull at a wall's foot where the gate slid it to the top.
+  world.ground = createGroundField(seed, null, false);
   const p = spawnPlayer(world);
   return (start, yaw, moveZ, ticks, buttons = 0) => {
     const [x, y, z] = start;
