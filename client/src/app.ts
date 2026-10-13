@@ -1093,8 +1093,9 @@ function buildGame(
     if (!hourMoved && !weatherMoved) return;
     appliedHour = a.hour;
     appliedWeather = a.weather;
+    // The wind is heard from the weather as it is: the mist the road shot draws back is the view's.
     renderer.setView(a.hour, a.weather);
-    ambient.setWeather(a.weather);
+    ambient.setWeather(settled.weather);
   }
 
   let signs: { trailhead: TrailheadMeshes; dispose(): void } | null = null;
@@ -1785,6 +1786,11 @@ function buildGame(
     };
     escapeStep = () => {
       if (escapeFrom === null) return;
+      // A scene already playing (the match won, or `end won`, while the look waited) is left to play.
+      if (endRunDoor !== null || host.world.state.outcome !== Outcome.Playing) {
+        escapeFrom = null;
+        return;
+      }
       const now = performance.now();
       const carIn = (signs?.trailhead.car()?.model ?? null) !== null;
       // A car that never lands: the scene on the parked one after ESCAPE_WAIT_S.

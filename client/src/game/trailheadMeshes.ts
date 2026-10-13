@@ -71,8 +71,8 @@ export type TrailheadDeps = {
  * has them, `leave()`, which takes it out of the rain's cover as it drives
  * off (the cover map is drawn once for a place, and a car that has gone
  * would keep the rain off the pad it left; once is enough, again is
- * nothing), and `tailLamps(on)`, which lights and shows the film's car's tail lamps, or hides them
- * (the parked car has none).
+ * nothing), and `tailLamps(on)`, which lights and shows the film's car's
+ * tail lamps at its rear, or hides them (the parked car has none).
  */
 export type TrailheadCar = { root: TransformNode; model: CarModel | null; leave(): void; tailLamps(on: boolean): void };
 
@@ -107,7 +107,8 @@ function createTailLamps(scene: Scene, root: TransformNode): TailLamps {
     // A plane faces -z as it is made: out of the car's tail.
     const mesh = MeshBuilder.CreatePlane(`car_tail_lamp_${side < 0 ? "l" : "r"}`, { width: TAIL_LAMP_W, height: TAIL_LAMP_H }, scene);
     mesh.parent = root;
-    mesh.position.set(side * TAIL_LAMP_APART / 2, TAIL_LAMP_UP, -TAIL_LAMP_BACK);
+    // Inside the body while their first frames are drawn; at the rear once lit (`tailLamps`).
+    mesh.position.set(side * TAIL_LAMP_APART / 2, TAIL_LAMP_UP, 0);
     mesh.material = material;
     mesh.isPickable = false;
     mesh.receiveShadows = false;
@@ -274,7 +275,7 @@ export function createTrailheadMeshes(
   let parked: { placed: PlacedModel; handle: TrailheadCar } | null = null;
   let film: { placed: PlacedModel; handle: TrailheadCar; patch: CarShadowPatch; tails: TailLamps } | null = null;
   /** The film's car's first frames: the meshes still drawn wherever they stand, and the frames so far; null once none is left. */
-  let warming: { left: Set<Mesh>; frames: number; observer: Observer<Scene> } | null = null;
+  let warming: { left: Set<Mesh>; ready: Set<Mesh>; frames: number; observer: Observer<Scene> } | null = null;
   /** A mesh's first frames over: culled as ever again, and a tail lamp not lit hidden. */
   function warmedOne(mesh: Mesh): void {
     mesh.alwaysSelectAsActiveMesh = false;
@@ -294,8 +295,16 @@ export function createTrailheadMeshes(
       warmed();
       return;
     }
+    // Ready on one pass, then drawn ready once more before it leaves.
     for (const m of warming.left) {
-      if (!readyToDraw(m)) continue;
+      if (!readyToDraw(m)) {
+        warming.ready.delete(m);
+        continue;
+      }
+      if (!warming.ready.has(m)) {
+        warming.ready.add(m);
+        continue;
+      }
       warming.left.delete(m);
       warmedOne(m);
     }
@@ -314,7 +323,10 @@ export function createTrailheadMeshes(
         tails.on = on;
         if (on) tails.material.emissiveColor.set(...TAIL_LAMP_COLOUR);
         else tails.material.emissiveColor.set(0, 0, 0);
-        for (const m of tails.meshes) m.setEnabled(on);
+        for (const m of tails.meshes) {
+          if (on) m.position.z = -TAIL_LAMP_BACK;
+          m.setEnabled(on);
+        }
       },
     };
   }
@@ -429,7 +441,7 @@ export function createTrailheadMeshes(
       // Drawn for its first frames wherever it stands, so it is ready when the scene opens.
       const warm = [...placed.meshes, moving.mesh, ...tails.meshes];
       for (const m of warm) m.alwaysSelectAsActiveMesh = true;
-      warming = { left: new Set(warm), frames: 0, observer: scene.onAfterRenderObservable.add(warmStep) };
+      warming = { left: new Set(warm), ready: new Set(), frames: 0, observer: scene.onAfterRenderObservable.add(warmStep) };
     },
     dispose() {
       if (disposed) return;

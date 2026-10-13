@@ -34,8 +34,9 @@ describe("the hike's sky", () => {
   });
 
   it("moves the hour and the weather in one apply, in the escalation's sync and in a swap's restore", () => {
-    const sync = src.slice(src.indexOf("  function syncAtmosphere("), src.indexOf("  let signs: { dispose(): void } | null = null;"));
-    expect(sync).toContain("    renderer.setView(a.hour, a.weather);\n    ambient.setWeather(a.weather);");
+    const sync = src.slice(src.indexOf("  function syncAtmosphere("), src.indexOf("  let signs: {"));
+    // The audio hears the settled weather; the view, the mist the end scene's road shot draws back.
+    expect(sync).toContain("    renderer.setView(a.hour, a.weather);\n    ambient.setWeather(settled.weather);");
     expect(sync).not.toMatch(/renderer\.set(?:Hour|Weather)\(/);
     const restore = src.slice(src.indexOf("  function restoreView(r: Renderer): void {"), src.indexOf("  const swapBindings: SwapBindings = {"));
     expect(restore).toContain("    r.setView(appliedHour, appliedWeather);");

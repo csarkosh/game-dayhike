@@ -89,9 +89,9 @@ export const ESCALATION_REST: EscalationState = Object.freeze({ progressMax: 0, 
 /**
  * The state as if eased all the way to a climb of `progress` (0 to 1) and,
  * with `chase`, the chase's cast come in whole: the world and its ratchet at
- * the climb, nothing of the lens or the haunt. For a console look that jumps to a
- * place in the match (the `escape` command's end), whose acts must be the
- * real ones there.
+ * the climb, nothing of the lens or the haunt. For a console look that
+ * jumps to a place in the match (the `escape` command's end), whose acts
+ * must be the real ones there.
  */
 export function escalationAt(progress: number, chase: boolean): EscalationState {
   const p = clamp01(progress);

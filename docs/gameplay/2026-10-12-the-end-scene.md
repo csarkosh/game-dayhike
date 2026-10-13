@@ -47,7 +47,7 @@ car's own, so every shot frames its subject against the sky or in a lamp's beam.
 | 1. The run | 0 to `RUN_CUT_S` (2.5), or `A` if sooner | 24 mm | Carried by the runner: `RUN_CAM_BACK` (2.2 m) behind, `RUN_CAM_UP` (0.5 m) over their eye, `RUN_CAM_SIDE` (0.6 m) to their right, aimed past their shoulder at the door, so the car grows in the frame; the lamp on the body lights the way | the person, running |
 | 2. The pursuit | `RUN_CUT_S` to `A` | 32 mm | Locked off at the car's rear corner on the runner's side, `PURSUIT_CAM_UP` (0.7 m) up and `PURSUIT_CAM_OUT` (1.0 m) out from the corner, aimed at the runner's chest (`CHEST_M` 1.3 m over their feet) as they come at the lens, the pad, the treeline and the shades behind them in the mist; the cut on the arrival, the runner by the lens | the shadows, still coming |
 | 3. The door and the engine | `A` to `A` + `ENGINE_SHOT_S` (5.5) | 32 mm | Locked off low on the road's far shoulder, `ENGINE_CAM_UP` (0.6 m) up, `ENGINE_CAM_AHEAD` (7 m) ahead of the car along its heading, aimed at the car's nose and turning to keep it centred as it passes (the stand fixed, the aim on the nose's place each frame): the door shuts, the crank, the catch, the lamps come on, the revs, the pull-away, the car passing the lens close; the shades come to the car's inland flank beyond it and stand in a file there | the threshold, crossed back |
-| 4. The road | `A` + 5.5 to `A` + `END_SCENE_AFTER_ARRIVAL_S` (17.5) | 24 mm | Overhead: `ROAD_CAM_UP` (14 m) over the car looking straight down (`ROAD_LOOK_DOWN`, 1.55 rad, a hair short of it so the look keeps a heading) with the car's heading as its yaw, carried by the car for `ROAD_CARRY_S` (2 s), then left in the air as the car runs on from under it: over `ROAD_RELEASE_S` (1 s) the camera slows along the car's own path from the car's speed to nothing (over the car's pose at `u − u²/2` of the release, `u` the release's share run, `releaseAt`), so it comes to rest, never moving back, over where the car was half the release on (`roadRelease`), and tilting up over the shot's whole 12 s from straight down to the road ahead (`ROAD_TILT_TO` 0.06 rad down), the car's lamps small on the highway into the mist, which the shot draws back from its start (over `END_MIST_EASE_S`, 4 s, the ground cloud and the weather's mist eased to `END_MIST_FLOOR`, 0.2, of what they were, and held: `endMistShare`) so the car is not lost in it within a second of the release, the night, the rain and the cast as they were; YOU LIVED and the line from `TITLE_AT_S` (2 s) into the shot; the dark from `END_FADE_AT_S` (10 s); the landing at `END_LANDING_AT_S` (15 s) | the place: the opening's wide, answered |
+| 4. The road | `A` + 5.5 to `A` + `END_SCENE_AFTER_ARRIVAL_S` (17.5) | 24 mm | Overhead: `ROAD_CAM_UP` (14 m) over the car looking straight down (`ROAD_LOOK_DOWN`, 1.55 rad, a hair short of it so the look keeps a heading) with the car's heading as its yaw, carried by the car for `ROAD_CARRY_S` (2 s), then left in the air as the car runs on from under it: over `ROAD_RELEASE_S` (1 s) the camera slows along the car's own path from the car's speed to nothing (over the car's pose at `u − u²/2` of the release, `u` the release's share run, `releaseAt`), so it comes to rest, never moving back, over where the car was half the release on (`roadRelease`), and tilting up over the shot's whole 12 s from straight down to the road ahead (`ROAD_TILT_TO` 0.06 rad down), the car's lamps small on the highway into the mist, which the shot draws back from its start (over `END_MIST_EASE_S`, 4 s, the ground cloud and the weather's mist eased to `END_MIST_FLOOR`, 0.2, of what they were, and held: `endMistShare`) so the car is not lost in it within a second of the release, the night, the rain and the cast as they were and the wind heard from the weather as it is; YOU LIVED and the line from `TITLE_AT_S` (2 s) into the shot; the dark from `END_FADE_AT_S` (10 s); the landing at `END_LANDING_AT_S` (15 s) | the place: the opening's wide, answered |
 
 Every camera is in world units from the live state: the runner's body each frame (shots 1 and 2),
 the car's site and heading (shots 2 and 3) and the car's own pose as it drives (shot 4), so the same
@@ -119,10 +119,11 @@ the two red points stay in the frame down the highway into the mist where the ca
 `TAIL_LAMP_UP` (0.75 m) up, `TAIL_LAMP_APART` (1.4 m) apart and `TAIL_LAMP_BACK` (2.2 m) behind the
 car's centre, children of the film's car's root, so the car can be followed down the highway in the
 last shot. They are made with the film's car when it is swapped in, drawn in its first frames with
-it and then hidden, so nothing of them shows on the car through the chase, and shown and lit at the
-catch (`tailLamps(true)`). The film's car has no lamp meshes of its own (its meshes are not named by
-part), so the quads are added; the parked car, swapped for nothing, has none. With no car drawn to
-drive (its box alone, below), the headlamps stay at the parked car's front.
+it inside its body and then hidden, so nothing of them shows on the car through the chase, and shown
+and lit at the catch at its rear (`tailLamps(true)`), a catch that comes in those frames included.
+The film's car has no lamp meshes of its own (its meshes are not named by part), so the quads are
+added; the parked car, swapped for nothing, has none. With no car drawn to drive (its box alone,
+below), the headlamps stay at the parked car's front.
 
 **The shades** (§2) come down the trail and across the pad behind the runner through shots 1 and
 2, reach the car during shot 3 and stand in a file along its inland flank and back past its tail,
@@ -223,7 +224,7 @@ parked car on the same site at the same yaw with the parked model (or its box) h
 drawn as the parked car's is, by the same shader and as dark, so the swap is not seen in it and asks
 for no shader the hike has not made. Once swapped in, the film's car, its patch and its tail lamps
 are drawn wherever they stand (`alwaysSelectAsActiveMesh`), unseen a kilometre off in the dark of
-the chase, each until its material is ready for it after a frame drawn and none past
+the chase, each until its material has been ready for it on two passes and none past
 `PIPELINE_WARM_FRAMES_MAX` (30) frames: the effects prepared, the shader modules made and the
 pipelines requested at the swap, so the scene's first frames draw the car whole instead of leaving
 it out or holding the page. A tier change that builds the trailhead anew fetches it again; while the
