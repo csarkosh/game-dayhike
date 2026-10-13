@@ -56,7 +56,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import {
-  DRIP, RAIN_BOX, RAIN_CLASSES, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_MAP, RAIN_SKY_FADE, RAIN_STRETCH,
+  DRIP, RAIN_BOX, RAIN_CLASSES, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_MAP, RAIN_SKY_FADE, RAIN_SKY_RAMP, RAIN_STRETCH,
 } from "./rainParams.js";
 
 /** A GLSL float literal: always with a decimal point, so `1` is `1.0`. */
@@ -115,7 +115,7 @@ const RAIN_VERTEX_POSITION = `
 #endif
   positionUpdated = rp + rRight * (position.x * rWidth) + rAlong * (position.y * rLen);
   float rFade = smoothstep(${lit(RAIN_FADE_NEAR[0])}, ${lit(RAIN_FADE_NEAR[1])}, rDist) * (1.0 - smoothstep(${lit(RAIN_FADE_FAR[0])}, ${lit(RAIN_FADE_FAR[1])}, rDist));
-  float rSky = 1.0 - ${lit(RAIN_SKY_FADE)} * smoothstep(0.0, 0.25, -rView.y);
+  float rSky = 1.0 - ${lit(RAIN_SKY_FADE)} * smoothstep(0.0, ${lit(RAIN_SKY_RAMP)}, -rView.y);
   vec3 rToLamp = rp - rainLampPos;
   float rLampD2 = dot(rToLamp, rToLamp);
   float rCos = dot(rToLamp, rainLampDir) / sqrt(max(rLampD2, 0.0001));

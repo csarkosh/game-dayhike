@@ -104,7 +104,7 @@ describe("the rain plugin", () => {
       rainLamp: [3, 0.7],
       rainSpeeds: [4.5, 6, 7.5, 9],
       rainWidths: [0.012, 0.018, 0.024, 0.03],
-      rainAlphas: [0.35, 0.43, 0.52, 0.6],
+      rainAlphas: [0.45, 0.55, 0.65, 0.75],
       rainMapCentre: [12, -4],
       rainMapExtent: [96],
       rainCanopyWater: [0.5],
@@ -218,7 +218,7 @@ describe("the rain plugin", () => {
     // The literals rainParams.ts carries, written into the GLSL from it.
     expect(vertex).toContain("clamp(rSpeed * rainDt * 1.5, 0.08, 0.5)");
     expect(vertex).toContain("float rFade = smoothstep(0.6, 1.5, rDist) * (1.0 - smoothstep(9.0, 12.0, rDist))");
-    expect(vertex).toContain("float rSky = 1.0 - 0.6 * smoothstep(0.0, 0.25, -rView.y)");
+    expect(vertex).toContain("float rSky = 1.0 - 0.35 * smoothstep(0.0, 0.5, -rView.y)");
     expect(vertex).toContain("float rLampT = rainLamp.x * rCone / (1.0 + rLampD2)");
     // The fades and the cover gate the lamp term too: a drop at the eye never
     // becomes an opaque slab, and a lit drop under a roof is no drop.
