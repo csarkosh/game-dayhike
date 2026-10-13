@@ -15,6 +15,7 @@ import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js"
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import { carYaw, createCarShadowPatch, createTrailheadMeshes, type TrailheadSites } from "../../src/game/trailheadMeshes.js";
 import type { BoardDrawing } from "../../src/game/boardPaint.js";
+import { placeStaticModel } from "../../src/game/staticModel.js";
 import { boardText } from "../../src/game/boardFace.js";
 
 registerBuiltInLoaders();
@@ -395,6 +396,68 @@ describe("createTrailheadMeshes", () => {
     expect(scene.meshes.filter((m) => m.getTotalVertices() > 0)).toHaveLength(0);
     expect(painted).toHaveLength(0);
     expect(shadowed.size).toBe(0);
+  });
+});
+
+describe("the film's car swapped in for the end", () => {
+  it("hides the parked car, stands the film's on its site, ground and yaw with its parts, a patch riding it, and disposes all", async () => {
+    const scene = freshScene();
+    const { meshes, shadowed } = setup(scene, diskLoader(scene));
+    expect(meshes.car()).toBeNull();
+    await meshes.ready;
+    const parked = meshes.car()!;
+    expect(parked.root).toBe(scene.getTransformNodeByName("trailhead_car"));
+    expect(parked.model).toBeNull();
+    expect(meshes.car()).toBe(parked);
+    const fixed = scene.getMeshByName("trailhead_car_shadow")!;
+    const before = shadowed.size;
+
+    const container = await diskLoader(scene)("models/intro.car.glb");
+    const placed = placeStaticModel(container, "intro.car", 0, 0, 0, 0);
+    meshes.swapCar(placed);
+    expect(parked.root.isEnabled()).toBe(false);
+    const film = meshes.car()!;
+    expect(film.root).toBe(placed.node);
+    // On the ground at the site: 3 + 0.01 x 10 - 0.02 x 20; the nose toward the trailhead.
+    expect(placed.node.position.x).toBe(10);
+    expect(placed.node.position.y).toBeCloseTo(2.7, 9);
+    expect(placed.node.position.z).toBe(20);
+    expect(placed.node.rotation.y).toBe(0);
+    expect(film.model!.wheels).toHaveLength(4);
+    expect(film.model!.door).not.toBeNull();
+    expect(shadowed.size).toBe(before + placed.meshes.length);
+    expect(fixed.isDisposed()).toBe(true);
+    const riding = scene.getMeshByName("trailhead_film_car_shadow")!;
+    expect(riding.parent).toBe(placed.node);
+    expect(riding.isWorldMatrixFrozen).toBe(false);
+    expect(riding.material).toBeInstanceOf(PBRMaterial);
+    expect(riding.material!.alpha).toBe(1);
+
+    // A second car is not taken.
+    const again = placeStaticModel(await diskLoader(scene)("models/intro.car.glb"), "intro.car", 0, 0, 0, 0);
+    meshes.swapCar(again);
+    expect(again.node.isDisposed()).toBe(true);
+    expect(meshes.car()).toBe(film);
+
+    meshes.dispose();
+    expect(placed.node.isDisposed()).toBe(true);
+    expect(riding.isDisposed()).toBe(true);
+    expect(shadowed.size).toBe(0);
+    expect(scene.meshes.filter((m) => m.getTotalVertices() > 0)).toHaveLength(0);
+  });
+
+  it("drops the box when the film's car comes before the parked model, and hides that model when it lands", async () => {
+    const scene = freshScene();
+    const gate = gatedLoader(scene);
+    const { meshes } = setup(scene, gate.loader);
+    const placed = placeStaticModel(await diskLoader(scene)("models/intro.car.glb"), "intro.car", 0, 0, 0, 0);
+    meshes.swapCar(placed);
+    expect(scene.getMeshByName("trailhead_car_box")).toBeNull();
+    gate.release();
+    await meshes.ready;
+    expect(scene.getTransformNodeByName("trailhead_car")!.isEnabled()).toBe(false);
+    expect(meshes.car()!.root).toBe(placed.node);
+    meshes.dispose();
   });
 });
 

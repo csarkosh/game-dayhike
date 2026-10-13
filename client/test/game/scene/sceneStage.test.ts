@@ -5,7 +5,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { carModelOf, dimCabParts, stageFrame, type StageDeps } from "../../../src/game/scene/sceneStage.js";
+import { carModelOf, dimCabParts, stageCar, stageFrame, type StageDeps } from "../../../src/game/scene/sceneStage.js";
 import type { PlacedModel } from "../../../src/game/staticModel.js";
 import type { Frame } from "../../../src/game/scene/timeline.js";
 import type { CharacterInstance } from "../../../src/game/characterModel.js";
@@ -219,6 +219,22 @@ describe("the film car's parts", () => {
     const want = Quaternion.RotationAxis(new Vector3(0.871, -0.491, 0).normalize(), 1.5);
     for (const k of ["x", "y", "z", "w"] as const) expect(q[k]).toBeCloseTo(want[k], 9);
     expect(model.door!.rotation.y).toBeCloseTo(-0.5 * (Math.PI / 1.5), 9);
+    engine.dispose();
+  });
+
+  it("stages the car at a pose on its own, as the end scene does, turning the same steering wheel each frame", () => {
+    const engine = new NullEngine();
+    const model = car(new Scene(engine));
+    stageCar({ x: 4, y: 0.5, z: -6, yaw: Math.PI, wheelSpin: 3, doorOpen: 0, wheelTurn: 0.2, steer: 0.5, handset: "cradle" }, model);
+    const turned = model.steering!.rotationQuaternion!;
+    stageCar({ x: 4, y: 0.5, z: -9, yaw: Math.PI, wheelSpin: 4, doorOpen: 0, wheelTurn: 0, steer: 1.5, handset: "cradle" }, model);
+    expect([model.root.position.x, model.root.position.y, model.root.position.z, model.root.rotation.y]).toEqual([4, 0.5, -9, Math.PI]);
+    const [fl, rr] = model.wheels;
+    expect([fl!.node.rotation.z, fl!.node.rotation.y, rr!.node.rotation.z, rr!.node.rotation.y]).toEqual([-4, -0, -4, 0]);
+    expect(model.steering!.rotationQuaternion).toBe(turned);
+    const want = Quaternion.RotationAxis(new Vector3(0.871, -0.491, 0).normalize(), 1.5);
+    for (const k of ["x", "y", "z", "w"] as const) expect(turned[k]).toBeCloseTo(want[k], 9);
+    expect(model.door!.rotation.y).toBe(-0);
     engine.dispose();
   });
 

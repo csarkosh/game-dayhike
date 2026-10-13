@@ -10,6 +10,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 
 import { BOARD_BOX_HALF, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes, carDirection, type Board } from "../sim/trailhead.js";
@@ -18,6 +19,7 @@ import { BOARD_FACE } from "./boardFace.js";
 import { paintedBoard, type BoardDrawing, type BoardPainter } from "./boardPaint.js";
 import { CAR_SHADOW_BIAS, CAR_SHADOW_TEX, carShadowAlphaMap, carShadowGrid } from "./carShadow.js";
 import type { MeshRegistry, PropShadows } from "./propMeshes.js";
+import { carModelOf, dimCabParts, type CarModel } from "./scene/sceneStage.js";
 import { armYaw } from "./signMeshes.js";
 import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
@@ -59,9 +61,26 @@ export type TrailheadDeps = {
   loader?: ModelLoader;
 };
 
+/** The car the end scene drives: the node it moves by, and its parts where it has them. */
+export type TrailheadCar = { root: TransformNode; model: CarModel | null };
+
 export type TrailheadMeshes = {
   /** Resolves once both models have settled, loaded or failed. */
   readonly ready: Promise<void>;
+  /**
+   * The car as it stands: the film's car once `swapCar` has placed it, with
+   * its parts; else the parked model, whole (`model` null); null while only
+   * the box stands, or with no car at all. The same object each call.
+   */
+  car(): TrailheadCar | null;
+  /**
+   * The film's car (`intro.car`, which has wheels and a door) in the parked
+   * car's place: on the same site, ground and yaw, soaked, shadowed and
+   * cover as the parked model is, the parked model and its box hidden and
+   * its fixed patch replaced by one that rides the new car's root. Once;
+   * a second car, or one after `dispose`, is disposed at once.
+   */
+  swapCar(placed: PlacedModel): void;
   dispose(): void;
 };
 
@@ -196,7 +215,10 @@ export function createTrailheadMeshes(
 
   const car = sites.car ?? null;
   const carBox = car === null ? null : fallbackBox("trailhead_car_box", CAR_MATERIAL, car.site, CAR_HALF);
-  const patch = car === null ? null : createCarShadowPatch(scene, car.site, groundH);
+  let patch: CarShadowPatch | null = car === null ? null : createCarShadowPatch(scene, car.site, groundH);
+  /** The parked model once it has arrived, and the film's car once swapped in; each with the handle `car()` gives. */
+  let parked: { placed: PlacedModel; handle: TrailheadCar } | null = null;
+  let film: { placed: PlacedModel; handle: TrailheadCar; patch: CarShadowPatch } | null = null;
   const kioskBoxes = boardBoxes(sites.board).map((b, k) => fallbackBox(`trailhead_kiosk_box_${k}`, KIOSK_MATERIAL, b, BOARD_BOX_HALF));
 
   async function place(
@@ -259,7 +281,11 @@ export function createTrailheadMeshes(
   }
 
   const ready = Promise.all([
-    car === null || carBox === null ? Promise.resolve() : place(TRAILHEAD_CAR_OUTPUT, "trailhead_car", car.site, carYaw(car.site, car.trailhead), [carBox]),
+    car === null || carBox === null ? Promise.resolve() : place(TRAILHEAD_CAR_OUTPUT, "trailhead_car", car.site, carYaw(car.site, car.trailhead), [carBox], (model) => {
+      parked = { placed: model, handle: { root: model.node, model: null } };
+      // The film's car came first: the parked one arrives hidden under it.
+      if (film !== null) model.node.setEnabled(false);
+    }),
     place(
       TRAILHEAD_KIOSK_OUTPUT, "trailhead_kiosk", sites.board,
       // The model's face looks toward +Z; turn +Z onto the board's facing.
@@ -269,16 +295,51 @@ export function createTrailheadMeshes(
 
   return {
     ready,
+    car() {
+      return film?.handle ?? parked?.handle ?? null;
+    },
+    swapCar(placed) {
+      if (disposed || car === null || film !== null) {
+        placed.dispose();
+        return;
+      }
+      placed.node.position.set(car.site.x, groundH(car.site.x, car.site.z), car.site.z);
+      placed.node.rotation.y = carYaw(car.site, car.trailhead);
+      for (const m of placed.meshes) {
+        deps.shadows?.add(m);
+        deps.cover?.add(m);
+        if (m.material) attachWet(m.material, WET_CAP.prop);
+      }
+      const model = carModelOf(placed, (line) => console.warn(line));
+      dimCabParts(model);
+      parked?.placed.node.setEnabled(false);
+      if (carBox !== null) dropBox(carBox);
+      // The parked car's patch is fixed to the ground; this one rides the car.
+      // As dark as the parked car's, so the swap is not seen in it.
+      patch?.dispose();
+      patch = null;
+      const moving = createCarShadowPatch(scene, { x: 0, z: 0 }, () => 0, { moving: true, atmosphere: true, darkness: 1 });
+      moving.mesh.name = "trailhead_film_car_shadow";
+      moving.mesh.parent = placed.node;
+      film = { placed, handle: { root: placed.node, model }, patch: moving };
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
       loads.abort();
       if (carBox !== null) dropBox(carBox);
-      if (patch !== null) {
-        patch.mesh.dispose();
-        patch.material.dispose();
-        patch.texture.dispose();
+      patch?.dispose();
+      patch = null;
+      if (film !== null) {
+        film.patch.dispose();
+        for (const m of film.placed.meshes) {
+          deps.shadows?.remove(m);
+          deps.cover?.remove(m);
+        }
+        film.placed.dispose();
+        film = null;
       }
+      parked = null;
       for (const box of kioskBoxes) dropBox(box);
       face?.dispose();
       face = null;
