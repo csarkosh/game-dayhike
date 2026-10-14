@@ -80,7 +80,8 @@ describe("moss plugin", () => {
     expect(vertexDefs).not.toContain("sin(");
     // Every line under the plugin's define.
     for (const text of [vertexDefs, vertexFoot, fragmentDefs]) {
-      expect(text.trimStart().startsWith("//") || text.trimStart().startsWith("#ifdef MOSS")).toBe(true);
+      const code = text.split("\n").filter((line) => !line.startsWith("//")).join("\n").trimStart();
+      expect(code.startsWith("#ifdef MOSS")).toBe(true);
       expect(text.trimEnd().endsWith("#endif")).toBe(true);
     }
   });
@@ -170,7 +171,7 @@ describe("moss plugin", () => {
     ]);
     // The weight is declared under the define and outside the braces, so the
     // roughness reads it later, and the bumped normal is not read.
-    expect(fragmentLights).toContain("#ifdef MOSS\nfloat mossW = 0.0;\n{\n");
+    expect(fragmentLights).toContain("#if defined(MOSS) && defined(ALBEDO)\nfloat mossW = 0.0;\n{\n");
     expect(block).not.toMatch(/[^v]normalW/);
     expect(block).not.toContain("vMainUV1");
   });

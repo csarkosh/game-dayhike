@@ -13,8 +13,10 @@
 // one case the albedo's own gamma define marks. mossW is declared outside
 // the braces: the roughness line reads it later (mossPlugin.ts).
 //
-// COMMENT RULES as in moss.vertex.fx.
-#ifdef MOSS
+// COMMENT RULES as in moss.vertex.fx. The block needs the albedo's
+// coordinates, which exist only on a material with an albedo map, so it
+// is keyed on both: a bark material always has one.
+#if defined(MOSS) && defined(ALBEDO)
 float mossW = 0.0;
 {
   float mossBand = 1.0 - smoothstep(MOSS_BAND.x, MOSS_BAND.y, vMoss.x);

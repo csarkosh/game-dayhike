@@ -137,7 +137,9 @@ export class MossPlugin extends MaterialPluginBase {
 }
 
 /** Attach once per material with the forest's moss map; later calls are
- * no-ops (LOD buckets share materials). */
+ * no-ops (LOD buckets share materials). The material must carry an albedo
+ * map: the moss samples at the albedo's coordinates, and the fragment block
+ * compiles only where Babylon declares them. */
 export function attachMoss(material: Material, texture: BaseTexture): void {
   if (material.pluginManager?.getPlugin("Moss")) return;
   new MossPlugin(material, texture);

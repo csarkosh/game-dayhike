@@ -190,8 +190,9 @@ A billboard keeps what its bake saw for the life of the page, so every
 set's bake waits on the moss map as it waits on the set's bark maps:
 `loadMoss` settles a promise once the map has loaded or failed to, and
 `dressSpecies` joins it to each set's `BakeOptions.textures`. A map that
-fails to load settles the wait, so a missing file costs the trunks' moss,
-never the far forest.
+fails to load settles the wait, so a missing file never costs the far
+forest; the trunks then sample an empty map, which darkens the mask's area
+by half toward black, the same outcome as a failed bark colour map.
 
 ## 6. What it costs
 
