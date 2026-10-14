@@ -203,18 +203,29 @@ export const FAR_LITTER: Rgb = { r: 0.081, g: 0.057, b: 0.032 };
  * 0.8. The canopy far crops' chroma reads 0.23 of the band's because those
  * crops carry trunks and fog.
  *
- * Derived 2026-10-14, to be confirmed against stills: the cards that fit was
- * made against carried the canopy as `1 − 0.5·ρ` on their albedo and the root
- * darkening at `rootAO` 0.55 (UNDERSTORY) and 0.6 (DUFF); they now take the
- * canopy as `FOLIAGE_CANOPY_SKY` 0.4 of the sky and `FOLIAGE_CANOPY_SUN` 0.4 of
- * the sun, so at ρ = 0.9 each share gains (1 − 0.4·0.9) / (1 − 0.5·0.9) =
- * 0.64 / 0.55 = 1.1636, and their root term's mean over height,
- * mean(mix(rootAO, 1, h)) = (rootAO + 1) / 2, gains (0.85 + 0.875) / 2 over
- * (0.775 + 0.8) / 2 = 0.8625 / 0.7875 = 1.0952 at `rootAO` 0.7 and 0.75. The
- * far target rises by the product, 1.2745: 1 − 0.4615·0.9 = 0.5847 becomes
- * 0.7451, so FAR_CANOPY_SHADE = (1 − 0.7451) / 0.9 = 0.2832. In the open
- * (ρ → 0) the cards gain only the root term (BLADES 0.75 → 0.825 in mean,
- * +10 %), inside the fit's ±10 % on Y, so `FAR_SWARD` keeps its fit. */
+ * Derived 2026-10-14 for the understory, the ground cover that receives no
+ * cast shadow; the literal stands on stills, not on this arithmetic, and is
+ * to be confirmed against the canopy-pose crops of §7
+ * (docs/rendering/2026-10-10-far-ground-cover-design.md, §14). The cards that
+ * fit was made against carried the canopy as `1 − 0.5·ρ` on their albedo (so
+ * on the sun and the sky alike) and the root darkening at `rootAO` 0.55
+ * (UNDERSTORY) and 0.6 (DUFF). The understory now takes the canopy as
+ * `FOLIAGE_CANOPY_SKY` 0.4 of the sky and `FOLIAGE_CANOPY_SUN` 0.4 of the
+ * sun, both constants 0.4, so one factor serves both shares: at ρ = 0.9 each
+ * gains (1 − 0.4·0.9) / (1 − 0.5·0.9) = 0.64 / 0.55 = 1.1636. The root term's
+ * mean over height, mean(mix(rootAO, 1, h)) = (rootAO + 1) / 2, gains
+ * (0.85 + 0.875) / 2 over (0.775 + 0.8) / 2 = 0.8625 / 0.7875 = 1.0952 at
+ * `rootAO` 0.7 and 0.75. The far target rises by the product, 1.2745:
+ * 1 − 0.4615·0.9 = 0.5847 becomes 0.7451, so FAR_CANOPY_SHADE =
+ * (1 − 0.7451) / 0.9 = 0.2832. Where the floor is duff the cards gain more
+ * than that: the duff's clumps receive the cast shadow and bind
+ * `foliageCanopySun` 0, so their sun share's canopy factor went from 0.55 to
+ * 1, a gain of 1.818 with the cast shadow cutting it as before, and only
+ * their sky share gains 1.1636; the value is so a floor on the lightening.
+ * The wrap also exceeds Lambert below N·L = 1 (0.63 against 0.5 at
+ * N·L = 0.5), which the fit never saw: its premise holds at N·L = 1 only. In
+ * the open (ρ → 0) the cards gain only the root term (BLADES 0.75 → 0.825 in
+ * mean, +10 %), inside the fit's ±10 % on Y, so `FAR_SWARD` keeps its fit. */
 export const FAR_CANOPY_SHADE = 0.2832;
 /** The clumps' two octaves: tussocks and patches (m), their shares, and the
  * 3 m octave's lattice offset so the two are not aligned. */

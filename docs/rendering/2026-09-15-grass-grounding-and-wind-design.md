@@ -405,8 +405,8 @@ gone. In its place:
   gaps, so it keeps 0.6. `foliageCanopySun` is a new float in the plugin's
   uniform buffer, decided where `attachFoliage` is called
   (`{ sunShadowed: true }`): 0 for a material whose meshes receive cast
-  shadows, which cut the sun already (the blade clumps and the duff, both
-  `receiveShadows = true`), the constant for the clutter cards and the
+  shadows, which cut the sun already (the blade clumps, the duff and the
+  reeds, all `receiveShadows = true`), the constant for the clutter cards and the
   understory, which receive none. The understory's materials are not among
   the trees' (`shadeTreeMaterial` runs on the LOD ladder alone), so they take
   the sky at full share and the canopy cuts them once, per instance.

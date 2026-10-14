@@ -18,8 +18,9 @@
  * final colour composition, shaders/foliageSky.fragment.fx) and the sun's
  * (`FOLIAGE_CANOPY_SUN`, on the sun's diffuse in foliageLightPlugin.ts's
  * shader, through the `foliageCanopySun` uniform, which is the constant for a
- * material whose meshes receive no cast shadow and 0 for one whose meshes do:
- * the cast shadow cuts those already). The hemispheric fill is untouched.
+ * material whose meshes receive no cast shadow and 0 for one whose meshes do,
+ * the blade clumps, the duff and the reeds: the cast shadow cuts those
+ * already). The hemispheric fill is untouched.
  *
  * Injection points: CUSTOM_VERTEX_DEFINITIONS + CUSTOM_VERTEX_UPDATE_WORLDPOS
  * (after the thin-instance matrix, so finalWorld[3] is the instance origin)
@@ -29,7 +30,7 @@
  *
  * `edges` lives on the plugin instance, so it is per MATERIAL, not per LOD
  * bucket: a card GLB whose two LOD buckets share one material gets ONE edge
- * pair. Task 3 sets the far bucket's edges — the near bucket's sink then
+ * pair. The shell sets the far bucket's edges — the near bucket's sink then
  * starts at the same disc edge too, which is past its own seam and therefore
  * harmless.
  */

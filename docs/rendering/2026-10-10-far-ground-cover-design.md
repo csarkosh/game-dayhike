@@ -990,10 +990,13 @@ Lambert at full light (`2026-09-15-grass-grounding-and-wind-design.md`, §12).
 `FAR_CANOPY_SHADE` keeps its structure, one shade on the whole colour with
 the terrain receiving the trees' cast shadows inside 42 m and the far shade
 standing in for the rest, and is recomputed so the far target moves by the
-factor the near cards' mean moves under a closed canopy:
+factor the near cards' mean moves under a closed canopy. The derivation is
+the understory's, the ground cover that receives no cast shadow, whose two
+canopy constants are both 0.4, so one factor serves its sun share and its sky
+share alike:
 
-- at ρ = 0.9 the cards' sun share gains `(1 − 0.4·0.9) / (1 − 0.5·0.9)` =
-  0.64 / 0.55 = 1.1636 from the canopy, and the sky share likewise;
+- at ρ = 0.9 each of the understory's shares gains
+  `(1 − 0.4·0.9) / (1 − 0.5·0.9)` = 0.64 / 0.55 = 1.1636 from the canopy;
 - both gain the root term's mean over height, `mean(mix(rootAO, 1, h))` =
   `(rootAO + 1) / 2`, for the cover under a canopy: (0.85 + 0.875) / 2 over
   (0.775 + 0.8) / 2 = 0.8625 / 0.7875 = 1.0952;
@@ -1001,13 +1004,21 @@ factor the near cards' mean moves under a closed canopy:
   `FAR_CANOPY_SHADE` = (1 − 0.7451) / 0.9 = **0.2832**, in the twin and the
   include.
 
-The value is derived, not fitted: §7's targets at the canopy pose (far crop Y
-within ±10 % of the card band's, far over near at 16:00) are to be re-checked
-on stills, and the fit repeated from this value if they miss. In the open
-(ρ → 0) the cards gain only the root term (BLADES 0.75 → 0.825 in mean,
-+10 %), inside the fit's ±10 % on Y, so `FAR_SWARD` keeps its fit. §1's
-amendment of 2026-10-13 on the wrap stands, with the wrap now Lambert at full
-light: the premise the fit was made under.
+Where the floor is duff the cards gain more than that. The duff's clumps
+receive the cast shadow and bind `foliageCanopySun` 0, so their sun share's
+canopy factor went from 0.55 to 1, a gain of 1.818 with the cast shadow
+cutting it as before, and only their sky share gains 1.1636; the one-factor
+simplification holds for the understory alone. The value is so a floor on
+the lightening, and the literal stands on stills, not on the arithmetic:
+§7's targets at the canopy pose (far crop Y within ±10 % of the card band's,
+far over near at 16:00) are to be confirmed against the canopy-pose crops,
+and the fit repeated from this value if they miss. In the open (ρ → 0) the
+cards gain only the root term (BLADES 0.75 → 0.825 in mean, +10 %), inside
+the fit's ±10 % on Y, so `FAR_SWARD` keeps its fit. §1's amendment of
+2026-10-13 on the wrap stands, with the wrap now Lambert at N·L = 1, the
+premise the fit was made under, at N·L = 1 only: below it the new wrap
+exceeds Lambert (0.63 against 0.5 at N·L = 0.5), which the fit of 2026-10-10
+never saw.
 
 ## References
 

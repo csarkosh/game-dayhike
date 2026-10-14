@@ -41,6 +41,9 @@ tune them and the tests pin the shapes.
 - The near field costs at most +2 ms native at the meadow on high.
 - One wind, the trample band, the canopy shade and the sun-only translucency carry over
   unchanged.
+  Amended 2026-10-14: the fourth float of the `foliage` attribute now carries the openness
+  of the sky, `1 − forestDensity`, and the canopy's shade is applied by the shading, on the
+  sky's light and the sun's apart, not on the albedo (`2026-09-15-grass-grounding-and-wind-design.md`, §12).
 
 **Non-goals.** Blades on the low tier; any change to the card models or their textures;
 any sim or level-id change; GPU-driven placement; trampling memory; flowers as a new sim class
@@ -185,6 +188,10 @@ changes.
   root darkening, ground tint from the `foliage` attribute the field writes exactly as the
   cards' rebuild does, canopy shade, tilt, the five-player bend, one wind) and the
   foliage-light plugin. The fragment stage is untouched.
+  Amended 2026-10-14: the fourth float carries the openness of the sky and the canopy shade
+  is applied by the shading, on the sky's light and the sun's apart; the blade clumps receive
+  cast shadows, so their sun share takes the shadow and no canopy
+  (`2026-09-15-grass-grounding-and-wind-design.md`, §12).
 - The height also follows the canopy: `heightScale *= mix(1, 0.6, canopy)`, so forest-floor
   grass is short as well as thin.
 - **Trample:** the field's `rt` feeds `trampleAt(rt)`; the matrix writer applies the height

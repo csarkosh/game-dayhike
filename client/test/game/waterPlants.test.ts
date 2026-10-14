@@ -11,6 +11,7 @@ import {
   createWaterPlants, LILY_LIFT, LILY_FLOWER_PATCHES,
 } from "../../src/game/waterPlants.js";
 import { CLUTTER_LILY, CLUTTER_LILY_PATCH_WAVE, CLUTTER_REED, clutterInRect } from "../../src/sim/clutter.js";
+import type { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 let engine: NullEngine | null = null;
@@ -81,6 +82,13 @@ describe("a lake's plants in the scene", { timeout: timeLimit(120_000) }, () => 
     expect(plants.meshes.map((m) => m.name)).toEqual(["water_reeds_0", "water_reeds_1", "water_reeds_2", "water_lily_pads", "water_lily_flowers"]);
     const reeds = plants.meshes.slice(0, 3).reduce((n, m) => n + m.thinInstanceCount, 0);
     expect(reeds).toBeGreaterThan(100);
+    // The reeds receive cast shadows, so the canopy's cut of the sun is the
+    // shadow's: the foliage plugin binds foliageCanopySun 0 on every reed material.
+    for (const m of plants.meshes.slice(0, 3)) {
+      expect(m.receiveShadows).toBe(true);
+      const plugin = m.material!.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+      expect(plugin.canopySun).toBe(0);
+    }
     const t = new Vector3();
     for (const m of plants.meshes[0]!.thinInstanceGetWorldMatrices().slice(0, 20)) {
       m.getTranslationToRef(t);

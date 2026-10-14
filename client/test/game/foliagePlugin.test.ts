@@ -125,12 +125,15 @@ describe("foliage plugin", () => {
     expect(fragmentSky).toContain("float fSky = 1.0 - FOLIAGE_CANOPY_SKY * (1.0 - vFoliage.a);");
     expect(fragmentSky).toContain("finalIrradiance *= fSky;");
     expect(fragmentSky).toContain("finalRadianceScaled *= fSky;");
-    // Both terms exist only with a reflection probe, and the varying only
-    // under the plugin's define: the block sits inside both gates.
+    // Both terms exist only on a lit material with a reflection probe (the
+    // reflection define is set for an unlit material too), and the varying
+    // only under the plugin's define: the block sits inside all three gates,
+    // in the composition's own order.
     const sky = fragmentSky.indexOf("float fSky");
     const before = fragmentSky.slice(0, sky);
     expect(before.lastIndexOf("#ifdef FOLIAGE\n")).toBeGreaterThan(-1);
-    expect(before.lastIndexOf("#ifdef REFLECTION")).toBeGreaterThan(before.lastIndexOf("#ifdef FOLIAGE\n"));
+    expect(before.lastIndexOf("#ifndef UNLIT")).toBeGreaterThan(before.lastIndexOf("#ifdef FOLIAGE\n"));
+    expect(before.lastIndexOf("#ifdef REFLECTION")).toBeGreaterThan(before.lastIndexOf("#ifndef UNLIT"));
     expect(before.slice(before.lastIndexOf("#ifdef FOLIAGE\n"))).not.toContain("#endif");
     expect(fragmentSky).not.toContain("surfaceAlbedo");
     expect(fragmentSky).not.toContain("discard");

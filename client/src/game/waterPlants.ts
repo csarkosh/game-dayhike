@@ -259,7 +259,9 @@ export function createWaterPlants(scene: Scene, seed: number, lakes: readonly La
   for (let variant = 0; variant < REED_CHARACTERS.length; variant++) {
     const mesh = meshFrom(scene, `water_reeds_${variant}`, reedGeometry(variant));
     const mat = material(scene, `water_reeds_${variant}_mat`, { r: 1, g: 1, b: 1 }, 0.8);
-    attachFoliage(mat, FOLIAGE_PROFILES.REEDS, mesh.getBoundingInfo().boundingBox.maximum.y);
+    // The reeds receive cast shadows (below), so the canopy's cut of the sun
+    // is the shadow's and the uniform binds 0.
+    attachFoliage(mat, FOLIAGE_PROFILES.REEDS, mesh.getBoundingInfo().boundingBox.maximum.y, { sunShadowed: true });
     attachFoliageLight(mat);
     setFoliageEdges(mat, REED_WIND_EDGES);
     mesh.material = mat;
