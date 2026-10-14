@@ -107,6 +107,7 @@ import {
   type FadeBands,
 } from "./distanceFadePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
+import { BARK_SKY, CROWN_SKY, IMPOSTOR_SKY, TREE_SPECULAR_WEIGHT } from "./forestLookParams.js";
 import { modelUrl } from "./assetUrls.js";
 import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
@@ -332,6 +333,26 @@ function prepBucketMesh(mesh: Mesh): void {
   mesh.doNotSyncBoundingInfo = true;
   // Nothing to draw until the first update fills a buffer.
   mesh.setEnabled(false);
+}
+
+/** A tree's, a sapling's or a snag's material under its share of the sky
+ * (`forestLookParams.ts`): the probe of the open sky lights every material as
+ * if nothing stood over it, and the canopy hides most of that sky from a
+ * trunk, less of it from a crown up among it. Bark and crown are told apart
+ * as the wet cap tells them (`needAlphaTesting()`: the crown's cards
+ * alpha-test, the bark is opaque). The bark's specular weight goes to
+ * `TREE_SPECULAR_WEIGHT` too, so a bark that ships without one does not rim
+ * its silhouette with the sky; a crown keeps the weight its file carries.
+ * Plain values, which a material clone copies, so a clone made after this
+ * call (the bake's, LOD2's) carries them. */
+function shadeTreeMaterial(material: Material): void {
+  if (!(material instanceof PBRMaterial)) return;
+  if (material.needAlphaTesting()) {
+    material.environmentIntensity = CROWN_SKY;
+  } else {
+    material.environmentIntensity = BARK_SKY;
+    material.metallicF0Factor = TREE_SPECULAR_WEIGHT;
+  }
 }
 
 /** `count` copies of one band quad — every bucket but the impostor planes,
@@ -1138,6 +1159,12 @@ export function createForestMeshes(
     mat.backFaceCulling = false;
     mat.metallic = 0;
     mat.roughness = 1;
+    // Its share of the live sky, over a bake that already carries the near
+    // trees' shares (`adoptSpecies`), and the bark's specular weight: a plane
+    // made in code takes Babylon's weight of 1, whose grazing reflection would
+    // rim every billboard with the sky.
+    mat.environmentIntensity = IMPOSTOR_SKY;
+    mat.metallicF0Factor = TREE_SPECULAR_WEIGHT;
     attachDistanceFade(mat);
     // The bake is mostly crown: the weather glazes it as a leaf.
     attachWet(mat, WET_CAP.leaf);
@@ -1189,6 +1216,19 @@ export function createForestMeshes(
     // default bake clones the LOD1 hierarchy synchronously, so it must see
     // the meshes as loaded — enabled and free of thin instances. Impostor
     // texture from LOD1 — detailed enough for a 256² bake, cheaper than LOD0.
+    //
+    // The sky's share and the bark's specular weight are set on every LOD's
+    // material FIRST, before the bake clones LOD1's materials, so the bake
+    // carries them: the billboard's colour is then LOD1 lit as the near trees
+    // are, the canopy's cut and the bark's weaker rim already in it, and the
+    // billboard's own `IMPOSTOR_SKY` governs only how the live sky relights
+    // that colour. A bake taken at the full open sky would hand the near trees
+    // over at the seam to paler, cooler, sky-rimmed billboards. The LOD2 split
+    // below clones after this too, so the lake's mirror, which draws LOD2 on
+    // its own material, sees the same trees.
+    for (const mesh of lods.flat()) {
+      if (mesh.material) shadeTreeMaterial(mesh.material);
+    }
     const lod1First = lods[1][0];
     const bake = lod1First === undefined ? null : bakeImpostor(lod1First, scene, bakeOptions);
 
@@ -1239,7 +1279,8 @@ export function createForestMeshes(
         // apart here, as `attachDistanceFade` reads them. A crown shipped as
         // BLEND or a bark shipped as MASK would take the other's cap, so the
         // shipped tree files must keep those modes (`forestMeshes.test.ts`
-        // pins the choice on its stub pair).
+        // pins the choice on its stub pair). The sky's share was set by the
+        // same rule before the bake (`shadeTreeMaterial`, above).
         attachWet(mesh.material, mesh.material.needAlphaTesting() ? WET_CAP.leaf : WET_CAP.bark);
       }
     }
@@ -1380,7 +1421,11 @@ export function createForestMeshes(
     // Moss on the trunk's upper side, as vertex colours over the bark
     // (`nurseLog.ts`): set before the bake, so the snag's billboard carries
     // it too. A snag stands the trunk on end, and its moss is down one side.
+    // The snag is bark, opaque: a trunk's share of the sky and the bark's
+    // specular weight, set before its bake for the reason `adoptSpecies`
+    // gives, so its billboard carries them too.
     for (const mesh of loaded.deadwood) {
+      if (mesh.material) shadeTreeMaterial(mesh.material);
       const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
       const normals = mesh.getVerticesData(VertexBuffer.NormalKind);
       if (positions === null || normals === null) continue;

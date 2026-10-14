@@ -63,6 +63,9 @@ import { createSkyTable } from "../../src/game/skyTable.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { wetCapOf } from "../../src/game/wetPlugin.js";
+import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
+import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant("olympic");
 
@@ -842,6 +845,142 @@ describe("createForestMeshes under NullEngine", () => {
     expect(withMaterial.filter((m) => m.name.startsWith("forest_impostor_")).map((m) => wetCapOf(m.material!))).toEqual([0.3, 0.3, 0.3, 0.3, 0.3]);
   });
 
+  it("gives bark, crown and billboard their share of the sky, and bark and billboards the specular weight, crowns keeping theirs", () => {
+    const { scene, forest } = build();
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    // Swept like the wet caps above, by what alpha-tests: the stub pair's
+    // canopy is MASK, its bark opaque, as the shipped tree files are. Every
+    // stub material starts at Babylon's defaults (a share of 1, a weight of 1),
+    // as a bark shipped without a specular weight does.
+    const withMaterial = scene.meshes.filter((m) => m.material !== null);
+    let barks = 0;
+    let crowns = 0;
+    let billboards = 0;
+    for (const mesh of withMaterial) {
+      const mat = mesh.material as PBRMaterial;
+      if (mesh.name.startsWith("forest_impostor_")) {
+        billboards++;
+        expect(mat.environmentIntensity, mesh.name).toBe(0.6);
+        expect(mat.metallicF0Factor, mesh.name).toBe(0.04);
+      } else if (mesh.name === "deadwood") {
+        // The snag and the logs: bark.
+        expect(mat.environmentIntensity, mesh.name).toBe(0.35);
+        expect(mat.metallicF0Factor, mesh.name).toBe(0.04);
+      } else if (mesh.name === "nurse_seedling" || mesh.name.endsWith("_under")) {
+        // Not trees: left as they were.
+        expect(mat.environmentIntensity, mesh.name).toBe(1);
+      } else if (mat.needAlphaTesting()) {
+        crowns++;
+        expect(mat.environmentIntensity, mesh.name).toBe(0.6);
+        expect(mat.metallicF0Factor, mesh.name).toBe(1);
+      } else {
+        barks++;
+        expect(mat.environmentIntensity, mesh.name).toBe(0.35);
+        expect(mat.metallicF0Factor, mesh.name).toBe(0.04);
+      }
+    }
+    // Two giants and two saplings, three LODs each, one bark and one crown a LOD.
+    expect(barks).toBe(12);
+    expect(crowns).toBe(12);
+    expect(billboards).toBe(5);
+  });
+
+  it("sets the trees' share before the bake clones them, so the billboards bake the trees as they stand near", () => {
+    // What each bake's source hierarchy carries at the moment the bake is
+    // kicked: `defaultBakeImpostor` clones those materials then (the clone
+    // carrying the values is pinned in the readiness-gate describe).
+    const seen: { name: string; sky: number; weight: number }[] = [];
+    build(undefined, (mesh) => {
+      for (const m of [mesh, ...(mesh.getChildMeshes(false) as Mesh[])]) {
+        const mat = m.material as PBRMaterial;
+        seen.push({ name: m.name, sky: mat.environmentIntensity, weight: mat.metallicF0Factor });
+      }
+      return null;
+    });
+    expect(seen).toEqual([
+      { name: "s0_lod1_bark", sky: 0.35, weight: 0.04 },
+      { name: "s0_lod1_canopy", sky: 0.6, weight: 1 },
+      { name: "s1_lod1_bark", sky: 0.35, weight: 0.04 },
+      { name: "s1_lod1_canopy", sky: 0.6, weight: 1 },
+      { name: "sap0_lod1_bark", sky: 0.35, weight: 0.04 },
+      { name: "sap0_lod1_canopy", sky: 0.6, weight: 1 },
+      { name: "sap1_lod1_bark", sky: 0.35, weight: 0.04 },
+      { name: "sap1_lod1_canopy", sky: 0.6, weight: 1 },
+      { name: "deadwood", sky: 0.35, weight: 0.04 },
+    ]);
+  });
+
+  it("carries the trees' share onto LOD2's split material, which the lake's mirror draws", () => {
+    // The shipped files share one material per primitive across the LODs
+    // (see the split test below); LOD2's clone is made after the share is set.
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const crown = new PBRMaterial("shared_crown", scene);
+    crown.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
+    const bark = new PBRMaterial("shared_bark", scene);
+    const lod = (i: number): Mesh => {
+      const b = MeshBuilder.CreateBox(`shared_lod${i}_bark`, { size: 1 }, scene);
+      b.material = bark;
+      const c = MeshBuilder.CreateBox(`shared_lod${i}_canopy`, { size: 1 }, scene);
+      c.material = crown;
+      c.parent = b;
+      return b;
+    };
+    const lods = [lod(0), lod(1), lod(2)] as [Mesh, Mesh, Mesh];
+    const deadwood = MeshBuilder.CreateBox("deadwood", { size: 1 }, scene);
+    deadwood.material = new PBRMaterial("deadwood_mat", scene);
+    const forest = createForestMeshes(scene, SEED, {
+      assets: { giants: [{ lods }], saplings: [], deadwood },
+      bakeImpostor: () => null,
+    });
+    const lod2 = forest.lod2Meshes.map((m) => m.material as PBRMaterial);
+    expect(lod2.map((m) => m.name)).toEqual(["shared_bark_lod2", "shared_crown_lod2"]);
+    expect(lod2.map((m) => m.environmentIntensity)).toEqual([0.35, 0.6]);
+    expect(lod2.map((m) => m.metallicF0Factor)).toEqual([0.04, 1]);
+  });
+
+  it("brings the alder's bark, which ships no specular weight, to the bark's, and leaves its crown's alone", async () => {
+    // The shipped model through the glTF loader, as production loads it: its
+    // bark (opaque) carries no specular extension, so it loads at Babylon's
+    // weight of 1.
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    registerBuiltInLoaders();
+    const bytes = readFileSync(new URL("../../assets/models/tree.alder.glb", import.meta.url));
+    const container = await loadAssetContainerAsync(new Uint8Array(bytes), scene, { pluginExtension: ".glb" });
+    container.addAllToScene();
+    const nodes = [...container.transformNodes, ...container.meshes];
+    // `lodMeshes`' gathering: the LOD's geometry meshes under its first one.
+    const lodRoot = (name: string): Mesh => {
+      const root = nodes.find((n) => n.name === name);
+      expect(root, name).toBeDefined();
+      const meshes = root!.getChildMeshes(false).filter((m): m is Mesh => m instanceof Mesh && m.getTotalVertices() > 0);
+      for (const m of meshes) m.parent = null;
+      for (const m of meshes.slice(1)) m.parent = meshes[0]!;
+      return meshes[0]!;
+    };
+    const lods = [lodRoot("LOD0"), lodRoot("LOD1"), lodRoot("LOD2")] as [Mesh, Mesh, Mesh];
+    const barkMat = container.materials.find((m) => m.name === "tree.alder.material1") as PBRMaterial;
+    const crownMat = container.materials.find((m) => m.name === "tree.alder.material0") as PBRMaterial;
+    expect(barkMat.needAlphaTesting()).toBe(false);
+    expect(crownMat.needAlphaTesting()).toBe(true);
+    expect(barkMat.metallicF0Factor).toBe(1);
+    expect(crownMat.metallicF0Factor).toBe(1);
+
+    const deadwood = MeshBuilder.CreateBox("deadwood", { size: 1 }, scene);
+    deadwood.material = new PBRMaterial("deadwood_mat", scene);
+    createForestMeshes(scene, SEED, {
+      assets: { giants: [], saplings: [{ lods }], deadwood },
+      bakeImpostor: () => null,
+    });
+    expect(barkMat.environmentIntensity).toBe(0.35);
+    expect(barkMat.metallicF0Factor).toBe(0.04);
+    expect(crownMat.environmentIntensity).toBe(0.6);
+    expect(crownMat.metallicF0Factor).toBe(1);
+  }, timeLimit(60000));
+
   it("attaches the foliage plugin to LOD0 and LOD1 of giants and saplings, never LOD2 or the impostor", () => {
     const { scene, assets } = build();
     // Each stub LOD root is a bark+canopy sibling pair (`pairedBoxes`); the
@@ -1482,6 +1621,28 @@ describe("defaultBakeImpostor readiness gate", () => {
     for (const m of renderListAtRender) {
       expect(m.material!.pluginManager?.getPlugin("Foliage") ?? null, m.name).toBeNull();
     }
+  });
+
+  it("hands the bake clones the source material's share of the sky and specular weight", async () => {
+    // `adoptSpecies` sets both before it kicks the bake, so the billboard
+    // bakes the tree under the near trees' values: the clone must copy them.
+    const { scene, mesh } = bakeScene();
+    const srcMat = new PBRMaterial("src_mat", scene);
+    srcMat.environmentIntensity = 0.35;
+    srcMat.metallicF0Factor = 0.04;
+    mesh.material = srcMat;
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    let rendered: { sky: number; weight: number }[] = [];
+    vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
+      rendered = (this.renderList ?? []).map((m) => {
+        const mat = m.material as PBRMaterial;
+        expect(mat).not.toBe(srcMat);
+        return { sky: mat.environmentIntensity, weight: mat.metallicF0Factor };
+      });
+    });
+
+    expect(await defaultBakeImpostor(mesh, scene)).not.toBeNull();
+    expect(rendered).toEqual([{ sky: 0.35, weight: 0.04 }]);
   });
 
   it("waits past the old five seconds, warns once at thirty, and bakes when the gate opens", async () => {
