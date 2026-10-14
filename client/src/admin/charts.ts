@@ -102,10 +102,30 @@ export type Bar = { label: string; value: number; detail?: string };
  */
 export function columns(bars: Bar[], options: { height?: number; width?: number; unit?: string } = {}): HTMLElement {
   const host = el("div", { class: "chart" });
-  const H = options.height ?? 180;
-  // The drawing's width in its own units: the card's width, so the text
-  // renders at its size and never scales with the card.
-  const W = options.width ?? 640;
+  const tip = tooltip(host);
+  // The drawing's width in its own units is the width it is shown at, so the
+  // text renders at its size at every width: a fixed width scaled down to a
+  // phone's card drew 11px ticks at 3px (seen 2026-10-13). `width` is the
+  // first guess, before the card is on the page; the observer redraws at the
+  // real width, and again whenever the card changes size.
+  let drawn = 0;
+  const draw = (W: number): void => {
+    drawn = W;
+    host.querySelector("svg")?.remove();
+    host.append(drawColumns(bars, W, options.height ?? 180, options.unit, tip, host));
+  };
+  draw(options.width ?? 640);
+  new ResizeObserver(() => {
+    const W = Math.round(host.clientWidth);
+    if (W > 0 && W !== drawn) draw(W);
+  }).observe(host);
+  return host;
+}
+
+/** About how wide a tick label runs: 11px JetBrains Mono is 0.6em a character, plus a gap. */
+const tickWidth = (label: string): number => label.length * 6.6 + 8;
+
+function drawColumns(bars: Bar[], W: number, H: number, unit: string | undefined, tip: Tip, host: HTMLElement): SVGSVGElement {
   const pad = { l: 36, r: 8, t: 14, b: 26 };
   const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
   const innerW = W - pad.l - pad.r;
@@ -122,7 +142,10 @@ export function columns(bars: Bar[], options: { height?: number; width?: number;
   }
   const slot = innerW / Math.max(1, bars.length);
   const thick = Math.min(24, Math.max(4, slot - 2));
-  const tip = tooltip(host);
+  // Every label when they fit, else every second, third…: as many as the
+  // width holds without two touching, and never more than seven past fourteen bars.
+  const widest = Math.max(0, ...bars.map((b) => tickWidth(b.label)));
+  const every = Math.max(1, Math.ceil(widest / slot), bars.length > 14 ? Math.ceil(bars.length / 7) : 1);
   const best = bars.reduce((m, b, i) => (b.value > (bars[m]?.value ?? -1) ? i : m), 0);
   bars.forEach((bar, i) => {
     const x = pad.l + slot * i + (slot - thick) / 2;
@@ -138,7 +161,7 @@ export function columns(bars: Bar[], options: { height?: number; width?: number;
       label.textContent = compact(bar.value);
       root.append(label);
     }
-    if (bars.length <= 14 || i % Math.ceil(bars.length / 7) === 0) {
+    if (i % every === 0) {
       const tick = svg("text", { x: x + thick / 2, y: H - 8, "text-anchor": "middle", class: "tick" });
       tick.textContent = bar.label;
       root.append(tick);
@@ -147,7 +170,7 @@ export function columns(bars: Bar[], options: { height?: number; width?: number;
     const show = (): void => {
       rect.classList.add("hover");
       const scale = host.clientWidth / W;
-      tip.show((x + thick / 2) * scale, top * scale, [{ v: `${bar.value.toLocaleString()}${options.unit ?? ""}`, k: bar.detail ?? bar.label }]);
+      tip.show((x + thick / 2) * scale, top * scale, [{ v: `${bar.value.toLocaleString()}${unit ?? ""}`, k: bar.detail ?? bar.label }]);
     };
     const hide = (): void => {
       rect.classList.remove("hover");
@@ -159,8 +182,7 @@ export function columns(bars: Bar[], options: { height?: number; width?: number;
     hit.addEventListener("blur", hide);
     root.append(hit);
   });
-  host.append(root);
-  return host;
+  return root;
 }
 
 export type Stage = { name: string; value: number };

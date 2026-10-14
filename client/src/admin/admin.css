@@ -68,7 +68,9 @@ button { font: inherit; }
 .card .sub { color: var(--faint); font-size: 12px; margin: 0 0 12px; }
 .card.loading > :not(h2):not(.sub) { opacity: 0.5; }
 
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+/* The tiles' grid is the host's (`/theme.css`), whose narrower minimum on a phone keeps
+   two a row; a 150px minimum here stacked them one a row under 400px (seen 2026-10-13). */
+.tiles { gap: 12px; margin-bottom: 12px; }
 .tile { padding: 10px 12px; border: 1px solid var(--ring); border-radius: 8px; }
 .tile .label { color: var(--ink-2); font-size: 12px; }
 .tile .value { font-size: 26px; font-weight: 600; line-height: 1.2; margin-top: 2px; }
@@ -136,7 +138,7 @@ details.table summary { color: var(--faint); font-size: 12px; cursor: pointer; }
 .paths .side .tile .value { font-size: 20px; }
 /* The worlds, one radio a line, its parts in columns that line up: date, time, hikers,
    farthest climb, end. Scrolls past seven or so; the checked line is tinted. */
-.worlds { display: grid; gap: 2px; max-height: 236px; overflow: auto; margin: 0 0 10px; padding: 4px; border: 1px solid var(--ring); border-radius: 8px; background: var(--surface); }
+.worlds { display: grid; gap: 2px; max-height: 236px; overflow: auto; margin: 0 0 10px; padding: 4px; border: 1px solid var(--ring); border-radius: 8px; background: var(--surface); container-type: inline-size; }
 .worlds .world { display: grid; grid-template-columns: 16px 4.5em 7em minmax(0, 1fr) 3.5em 5.5em; gap: 10px; align-items: center; padding: 5px 8px; border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
 .worlds .world:hover { background: var(--series-soft); }
 .worlds .world:has(input:checked) { background: var(--series-soft); color: var(--ink); }
@@ -145,6 +147,17 @@ details.table summary { color: var(--faint); font-size: 12px; cursor: pointer; }
 .worlds .end { text-align: right; }
 .worlds .end.won { color: var(--series); }
 .worlds .end.died, .worlds .end.lost { color: var(--warning); }
+/* Too narrow for the five columns in a line (a phone's card): two lines a world, when it
+   set out and how it ended over who went and how far, so the list never scrolls sideways. */
+@container (max-width: 420px) {
+  .worlds .world { grid-template-columns: 16px 4.5em minmax(0, 1fr) auto; grid-template-areas: "pick date time end" ". who who far"; gap: 0 10px; }
+  .worlds .world input { grid-area: pick; }
+  .worlds .date { grid-area: date; }
+  .worlds .time { grid-area: time; text-align: left; }
+  .worlds .end { grid-area: end; }
+  .worlds .hikers { grid-area: who; }
+  .worlds .far { grid-area: far; }
+}
 
 .gate { max-width: 420px; margin: 20vh auto 0; text-align: center; }
 .gate h1 { font-size: 20px; font-weight: 600; }
