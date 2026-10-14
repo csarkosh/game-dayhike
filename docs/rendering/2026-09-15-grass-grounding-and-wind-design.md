@@ -565,7 +565,11 @@ under a profile of its own, `NURSE` (no wind, no tilt or bend, no ground
 tint, no root darkening, the card's own normals to the root), with the cards'
 contrast and no light plugin, and the plain material's other terms as they
 were. The sun's cut is the constant's, as on the floor's cards: the log's
-fern receives no cast shadow.
+fern receives no cast shadow. Wearing the plugin, the fern also takes the two
+terms no profile turns off, the normal forced to face the viewer and the
+per-clump luminance nudge, both benign on a card on a log; the retired
+one-a-tree understory path, under its own profile, takes neither the cards'
+tint nor their contrast.
 
 What the change was made for, on the stills: no black at the blades' tips or
 in the cards' interiors, and the ferns in the grass's green, not their

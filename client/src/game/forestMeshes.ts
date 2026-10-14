@@ -36,9 +36,9 @@
  * draw calls, not "2 submeshes of 1 mesh". 3 giant bucket sets (the fir,
  * and the pine twice, once a bark it wears, `barkParams.ts`) × 3 LODs × 2
  * sibling meshes = 18, + 2 sapling species × 3 LODs × 2 sibling meshes =
- * 12, + 6 impostor planes (3 giant sets, 2 saplings, 1 snag) = 6, + 2 understory
- * (single-material, 1 mesh each) = 2, + 1 deadwood bucket (single-material)
- * = 1. Total 39, and 39 is the budget: raised from 30
+ * 12, + 6 impostor planes (3 giant sets, 2 saplings, 1 snag) = 6, + the nurse
+ * logs' fern and seedling (single-material, 1 mesh each) = 2, + 1 deadwood
+ * bucket (single-material) = 1. Total 39, and 39 is the budget: raised from 30
  * because saplings and snags now
  * exist beyond the near radius, and from 32 for the pine's second bark
  * (+7), each immaterial against a
@@ -55,7 +55,8 @@
  * footprint and the trunk's measured size, with the set's own occlusion
  * and roughness in an ARM map the files never carried. The billboards bake
  * once the set has loaded (`BakeOptions.textures`), so the far forest wears
- * the near forest's bark.
+ * the near forest's bark; a set that never lands by the bake's bound is
+ * baked without, with the file's own bark, and said so.
  */
 // Side-effect import, and it is load-bearing: `thinInstanceSetBuffer` and
 // friends are patched onto `Mesh.prototype` by this module. Without it the
@@ -206,7 +207,11 @@ export type BakeOptions = {
   /** Resolves once the species' bark set has loaded, or failed to
    * (`dressBark`): the bake renders nothing before, so a billboard never
    * keeps the file's own bark, or no bark, for the life of the page. Waited
-   * on with `sky`; its bounds count from whichever arrives last. */
+   * on with `sky`; its bounds count from whichever arrives last. Waited on
+   * for `failMs` at most: an upload that neither loads nor errors (a decoder
+   * whose worker died settles nothing) would otherwise hold the bake for the
+   * life of the page, so at the bound the bake goes on with the file's own
+   * bark, warning once. */
   textures?: Promise<void>;
 };
 
@@ -312,7 +317,8 @@ export function defaultLoadBarkTexture(url: string, scene: Scene, colour: boolea
  * Dresses one bark material in a set (`barkParams.ts`): its three maps at
  * `size`, tiled by the dressing's repeats, in place of the file's own
  * colour and normal JPEGs, which are disposed once the maps are assigned
- * (the GPU keeps nothing of them). The material's own `invertNormalMapX`
+ * (the GPU keeps nothing of them); on a clone of a dressed material, in
+ * place of the clone's copies of all three. The material's own `invertNormalMapX`
  * and `invertNormalMapY` stay as the glTF loader set them, since the set's
  * normal map is in the glTF convention the file's was. The ARM map goes on
  * as the metallic texture with its three channels named; the occlusion in
@@ -355,7 +361,9 @@ function dressBark(
     keep.push(texture);
     return texture;
   };
-  const old = [material.albedoTexture, material.bumpTexture];
+  // The file's colour and normal, and, on a clone of a dressed material
+  // (the pine's second set), the clone's own copies of all three maps.
+  const old = [material.albedoTexture, material.bumpTexture, material.metallicTexture];
   material.albedoTexture = map(outputs.colour, true);
   const normal = map(outputs.normal, false);
   normal.level = 1;
@@ -981,7 +989,12 @@ const IMPOSTOR_BAKE_LAYER = 0x10000000;
  * from then: before the renderer's sky is held the lights are Babylon's
  * defaults, which the billboard would keep for the life of the page. Given
  * `options.textures`, the species' bark set, it waits on that too, and the
- * bounds count from the later of the two. Aborted
+ * bounds count from the later of the two; but on the set for `options.failMs`
+ * at most, since a map whose upload never settles (a dead decoder worker:
+ * the upload neither loads nor errors) would hold every bake for the life
+ * of the page with no word, so at the bound it logs one `console.warn` and
+ * bakes with the file's own bark, which is a far forest, if not the near
+ * one's. Aborted
  * while it waits, it disposes its target and resolves null without a word.
  *
  * `pose` rotates the bake clone before anything is measured, for a model
@@ -1065,12 +1078,37 @@ export async function defaultBakeImpostor(
     camera.setTarget(centre);
     rtt.activeCamera = camera;
 
+    const warnMs = options.warnMs ?? IMPOSTOR_BAKE_WARN_MS;
+    const failMs = options.failMs ?? IMPOSTOR_BAKE_FAIL_MS;
+
     // Nothing is rendered before the renderer's sky is held: the lights are
     // Babylon's defaults until then, and the billboard would keep them. Nor
     // before the species' bark set has landed (`options.textures`): the
-    // billboard would keep the file's bark, or none.
-    const held = [options.sky, options.textures].filter((p): p is Promise<void> => p !== undefined);
-    if (held.length > 0 && !(await heldUnlessAborted(Promise.all(held).then(() => undefined), options.signal))) {
+    // billboard would keep the file's bark, or none. The set is waited on
+    // for `failMs` at most: a map whose upload neither loads nor errors (a
+    // decoder whose worker died settles nothing, and says nothing) would
+    // otherwise hold the bake for the life of the page, so at the bound the
+    // bake says so once and goes on with the file's own bark.
+    let setTimer: ReturnType<typeof setTimeout> | undefined;
+    const set = options.textures;
+    const textures =
+      set === undefined
+        ? undefined
+        : new Promise<void>((resolve) => {
+            setTimer = setTimeout(() => {
+              if (options.signal?.aborted) return;
+              console.warn(`forest impostor bake waited ${Math.round(failMs / 1000)} s for the bark set, and bakes the file's own: ${mesh.name}`);
+              resolve();
+            }, failMs);
+            void set.then(() => {
+              clearTimeout(setTimer);
+              resolve();
+            });
+          });
+    const held = [options.sky, textures].filter((p): p is Promise<void> => p !== undefined);
+    const opened = held.length === 0 || (await heldUnlessAborted(Promise.all(held).then(() => undefined), options.signal));
+    clearTimeout(setTimer);
+    if (!opened) {
       camera.dispose();
       rtt.dispose();
       return null;
@@ -1081,8 +1119,6 @@ export async function defaultBakeImpostor(
     // normally settles in a few frames' worth of 16 ms hops. It ends aborted,
     // ready, failed or given up (see the function comment).
     const started = performance.now();
-    const warnMs = options.warnMs ?? IMPOSTOR_BAKE_WARN_MS;
-    const failMs = options.failMs ?? IMPOSTOR_BAKE_FAIL_MS;
     let warned = false;
     const stop = (): null => {
       camera.dispose();
@@ -1230,7 +1266,16 @@ export function createForestMeshes(
   const lod2Meshes: Mesh[] = [];
   const impostorMeshes: Mesh[] = [];
   const containers: AssetContainer[] = [];
+  /** Materials made here whose textures are shared or none: the billboards'
+   * (their bake is in `textures`), the nurse fern's (it takes its file's own
+   * map) and the seedling's. Disposed without their textures. */
   const materials: Material[] = [];
+  /** Clones of a file's materials made here (`Material.clone` clones the
+   * textures too): the pine's second set's bark materials (`dressSpecies`)
+   * and the LOD2 split's (`adoptSpecies`). Disposed with their textures,
+   * which are theirs alone, or the bark maps' GPU copies would outlive the
+   * forest. */
+  const clonedMaterials: Material[] = [];
   const textures: Texture[] = [];
   /** Every billboard, in the order made, for `impostorBakes`. */
   const impostors: Impostor[] = [];
@@ -1390,16 +1435,19 @@ export function createForestMeshes(
   /**
    * Dresses one species' bark in its barks (`barkParams.ts`), one bucket set
    * a bark. The first bark goes on the loaded meshes' own bark material; each
-   * further one on clones of the LOD meshes, which share the geometry and
-   * the crown's material and wear a clone of the bark material, made here
+   * further one on clones of the LOD meshes, with a copy of the geometry
+   * each (a set must own its geometry: Babylon keeps a mesh's thin-instance
+   * buffers on it, so two sets on one geometry would each install their
+   * matrices over the other's and draw them), which share the crown's
+   * material and wear a clone of the bark material, made here
    * before anything attaches to the original (a material clone can only
    * reconstruct a plugin Babylon's own class registry knows). The bark is
    * what alpha-tests not (`shadeTreeMaterial`'s rule): every opaque
    * material of the ladder. Its meshes lose their vertex tangents: the
    * set's normal map is read in the frame of the map's own coordinates,
    * which follows the quarter turn some barks take (`barkTransform`), where
-   * a file's tangents follow the file's UVs. The geometry is shared by the
-   * clones, so this is done once, before them.
+   * a file's tangents follow the file's UVs. The geometry is copied for the
+   * clones, so this is done once, before them, and the copies carry none.
    */
   function dressSpecies(lods: [Mesh[], Mesh[], Mesh[]], barks: readonly BarkDressing[]): DressedSet[] {
     const barkMaterials = new Set<PBRMaterial>();
@@ -1421,7 +1469,7 @@ export function createForestMeshes(
         const clones = new Map<PBRMaterial, PBRMaterial>();
         for (const material of barkMaterials) {
           const clone = material.clone(`${material.name}_${bark.set}`) as PBRMaterial;
-          materials.push(clone);
+          clonedMaterials.push(clone);
           clones.set(material, clone);
         }
         setLods = lods.map((lod) => {
@@ -1429,6 +1477,13 @@ export function createForestMeshes(
           if (root === undefined) return [];
           const meshes = geometryMeshes(root.clone(`${root.name}_${bark.set}`, null, false));
           for (const mesh of meshes) {
+            // A mesh clone shares its source's geometry, and Babylon keeps a
+            // mesh's thin-instance buffers (the matrices, `fadeBands`,
+            // `groundGrad`) on the geometry, replacing the buffer of a kind
+            // already there: a set must own its geometry, or each rebuild of
+            // this set would dispose the first set's buffers under it and
+            // both sets would draw this set's matrices.
+            mesh.makeGeometryUnique();
             const clone = mesh.material instanceof PBRMaterial ? clones.get(mesh.material) : undefined;
             if (clone !== undefined) mesh.material = clone;
           }
@@ -1508,9 +1563,9 @@ export function createForestMeshes(
       if (!clone) {
         clone = material.clone(`${material.name}_lod2`) ?? material;
         // Owned exclusively by this split, never by LOD0/1 (which keep the
-        // shared original) — `dispose()` must walk it too, or it leaks with
-        // the species.
-        if (clone !== material) materials.push(clone);
+        // shared original) — `dispose()` must walk it too, with the maps
+        // the clone copied, or it leaks with the species.
+        if (clone !== material) clonedMaterials.push(clone);
         lod2Clones.set(material, clone);
       }
       mesh.material = clone;
@@ -2239,6 +2294,12 @@ export function createForestMeshes(
         for (const mesh of bucket.meshes) mesh.dispose();
       }
       for (const mat of materials) mat.dispose();
+      // The forest's own clones of a file's materials (the pine's second
+      // set's bark, the LOD2 split) carry copies of its textures that are
+      // theirs alone: disposed with them. Never a file's own material, whose
+      // textures its container shares, nor the materials above, whose
+      // textures are the bakes (in `textures`) or a file's own map.
+      for (const mat of clonedMaterials) mat.dispose(false, true);
       for (const tex of textures) tex.dispose();
       // Containers own whatever the buckets did not adopt (materials,
       // source textures, wrapper nodes); mesh.dispose is idempotent, so the

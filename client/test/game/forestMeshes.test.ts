@@ -44,6 +44,7 @@ import {
   COHORT_LOG,
   COHORT_SNAG,
   forestDensity,
+  TREE_CELL,
   type TreeInstance,
 } from "../../src/sim/vegetation.js";
 import { DistanceFadePlugin, fadeBands, fadeVisibility } from "../../src/game/distanceFadePlugin.js";
@@ -1682,7 +1683,7 @@ describe("the trees' bark", () => {
     expect(crownMat.albedoTexture).toBeNull();
   });
 
-  it("gives the pine its two barks: the metasequoia on its own material, the cedar on a clone over clones of its meshes that share the crown", () => {
+  it("gives the pine its two barks: the metasequoia on its own material, the cedar on a clone over clones of its meshes, geometry of their own, that share the crown", () => {
     const { scene, assets } = barkScene();
     const { loads, load } = recordingLoader();
     createForestMeshes(scene, SEED, { assets, bakeImpostor: () => null, loadTexture: load, tier: "high" });
@@ -1695,14 +1696,17 @@ describe("the trees' bark", () => {
     expect(urlOf(pineMat.metallicTexture)).toBe(textureUrl("textures/bark.metasequoia.2k.arm.ktx2"));
     // The pine runs `u` up the trunk: the set is turned a quarter.
     const colour = pineMat.albedoTexture as Texture;
-    expect([colour.uScale, colour.vScale, colour.wAng]).toEqual([1.6, 1.0, Math.PI / 2]);
+    expect([colour.uScale, colour.vScale, colour.wAng]).toEqual([1.6, 1.0, 1.5707963267948966]);
 
     const cedarBark = scene.getMeshByName("s1_lod0_bark_cedar") as Mesh;
     const cedarCrown = scene.getMeshByName("s1_lod0_bark_cedar.s1_lod0_canopy") as Mesh;
     expect(cedarBark).not.toBeNull();
     expect(cedarCrown).not.toBeNull();
-    // The clone shares the geometry and the crown's material, and wears its own bark material.
-    expect(cedarBark.geometry).toBe(pineLod0.geometry);
+    // The clone has geometry of its own (Babylon keeps thin-instance buffers
+    // on the geometry), shares the crown's material, and wears its own bark
+    // material.
+    expect(cedarBark.geometry).not.toBe(pineLod0.geometry);
+    expect(cedarCrown.geometry).not.toBe(pineCrown.geometry);
     expect(cedarCrown.material).toBe(pineCrown.material);
     const cedarMat = cedarBark.material as PBRMaterial;
     expect(cedarMat).not.toBe(pineMat);
@@ -1711,7 +1715,7 @@ describe("the trees' bark", () => {
     expect(urlOf(cedarMat.bumpTexture)).toBe(textureUrl("textures/bark.cedar.2k.normal.ktx2"));
     expect(urlOf(cedarMat.metallicTexture)).toBe(textureUrl("textures/bark.cedar.2k.arm.ktx2"));
     const cedarColour = cedarMat.albedoTexture as Texture;
-    expect([cedarColour.uScale, cedarColour.vScale, cedarColour.wAng]).toEqual([1.5, 1.9, Math.PI / 2]);
+    expect([cedarColour.uScale, cedarColour.vScale, cedarColour.wAng]).toEqual([1.5, 1.9, 1.5707963267948966]);
     // The saplings: 1k on every tier, the conifers in their giants' sets.
     const sap = (s: number): PBRMaterial => assets.saplings[s]!.lods[0].material as PBRMaterial;
     expect(urlOf(sap(0).albedoTexture)).toBe(textureUrl("textures/bark.pine.1k.ktx2"));
@@ -1723,6 +1727,107 @@ describe("the trees' bark", () => {
       expect(m.albedoTexture, m.name).not.toBeNull();
       expect(m.bumpTexture, m.name).not.toBeNull();
     }
+    // The cedar's clone was made of the dressed metasequoia material, with
+    // copies of its three maps: all three copies are disposed with the file's
+    // own, the ARM map's too. The scene holds the loader's 45 maps and, of
+    // its own, PBR's BRDF lookup alone (named with a counter of the process's).
+    const own = scene.textures.filter((t) => !t.name.startsWith("data:EnvironmentBRDFTexture"));
+    expect(own.filter((t) => !loads.some((l) => l.texture === t)).map((t) => t.name)).toEqual([]);
+    expect(own.length).toBe(45);
+  });
+
+  it("gives the pine's second set geometry of its own, so a rebuild of one set never takes the other's instance buffers", () => {
+    const { scene, assets } = barkScene();
+    const { load } = recordingLoader();
+    const forest = createForestMeshes(scene, SEED, { assets, bakeImpostor: () => null, loadTexture: load });
+    // The two sets' LOD meshes, bark and crown: six each.
+    const first: Mesh[] = [];
+    const second: Mesh[] = [];
+    for (const lod of [0, 1, 2] as const) {
+      const bark = assets.giants[1]!.lods[lod];
+      first.push(bark, bark.getChildMeshes(false)[0] as Mesh);
+      second.push(
+        scene.getMeshByName(`s1_lod${lod}_bark_cedar`) as Mesh,
+        scene.getMeshByName(`s1_lod${lod}_bark_cedar.s1_lod${lod}_canopy`) as Mesh,
+      );
+    }
+    expect(first.length).toBe(6);
+    expect(second.length).toBe(6);
+    for (const mesh of [...first, ...second]) expect(mesh.geometry, mesh.name).not.toBeNull();
+    // Twelve geometries for twelve meshes: none shared across the sets.
+    expect(new Set(first.map((m) => m.geometry)).size).toBe(6);
+    expect(new Set(second.map((m) => m.geometry)).size).toBe(6);
+    expect(new Set([...first, ...second].map((m) => m.geometry)).size).toBe(12);
+
+    // Two rebuilds, a cell apart: the first set's count and matrix buffer
+    // are its own after the second, not the second set's. Babylon binds the
+    // geometry's `world0` buffer when it draws, so that buffer must be the
+    // one the first set's last upload made.
+    const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    const counts = (): number[][] => [first, second].map((set) => set.filter((_m, k) => k % 2 === 0).map((m) => m.thinInstanceCount));
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    expect(counts()).toEqual([[27, 48, 58], [19, 52, 67]]);
+    // One cell over: both barks stand there too, at counts of their own, so
+    // a count left from the first camera would show.
+    const moved = { x: FOREST_CAM.x + TREE_CELL, z: FOREST_CAM.z };
+    forest.update(moved.x, moved.z);
+    expect(counts()).toEqual([[26, 52, 58], [18, 52, 68]]);
+    const bands = collectBands(SEED, moved.x, moved.z);
+    const count = (list: readonly TreeInstance[], variant: number): number =>
+      list.filter((t) => t.cohort === COHORT_GIANT && t.species === 1 && t.variant === variant).length;
+    const lastMatrix = (mesh: Mesh): Float32Array | null => {
+      let found: Float32Array | null = null;
+      for (let k = 0; k < spy.mock.calls.length; k++) {
+        if (spy.mock.instances[k] === mesh && spy.mock.calls[k]![0] === "matrix") found = spy.mock.calls[k]![1] as Float32Array;
+      }
+      return found;
+    };
+    let metasequoia = 0;
+    for (const lod of [0, 1, 2] as const) {
+      const bark = assets.giants[1]!.lods[lod];
+      const clone = scene.getMeshByName(`s1_lod${lod}_bark_cedar`) as Mesh;
+      expect(bark.thinInstanceCount, `pine LOD${lod}`).toBe(count(bands.near[lod] as TreeInstance[], 0));
+      expect(clone.thinInstanceCount, `cedar LOD${lod}`).toBe(count(bands.near[lod] as TreeInstance[], 1));
+      for (const mesh of [bark, clone]) {
+        const uploaded = lastMatrix(mesh);
+        expect(uploaded, mesh.name).not.toBeNull();
+        expect(uploaded!.length).toBe(mesh.thinInstanceCount * 16);
+        const world0 = mesh.geometry!.getVertexBuffer("world0");
+        expect(world0, mesh.name).not.toBeNull();
+        expect(world0!.isDisposed, mesh.name).toBe(false);
+        expect(world0!.getWrapperBuffer().getData(), mesh.name).toBe(uploaded);
+      }
+      metasequoia += bark.thinInstanceCount;
+    }
+    expect(metasequoia).toBeGreaterThan(0);
+  });
+
+  it("disposes the LOD2 split's copies of the bark maps with the forest", () => {
+    // A shipped file's LOD ladder shares one bark material, so LOD2 is
+    // split onto a clone of the dressed material, which copies the three
+    // maps: those copies are the forest's to dispose, with the clone.
+    const { scene } = barkScene();
+    const { loads, load } = recordingLoader();
+    const sharedMat = new PBRMaterial("shared_mat", scene);
+    const lods = [0, 1, 2].map((lod) => {
+      const mesh = MeshBuilder.CreateBox(`shared_lod${lod}`, { size: 1 }, scene);
+      mesh.material = sharedMat;
+      return mesh;
+    }) as [Mesh, Mesh, Mesh];
+    const deadwood = MeshBuilder.CreateBox("deadwood", { size: 1 }, scene);
+    deadwood.material = new PBRMaterial("deadwood_mat", scene);
+    const before = scene.textures.length;
+    const forest = createForestMeshes(scene, SEED, {
+      assets: { giants: [{ lods }], saplings: [], deadwood },
+      bakeImpostor: () => null,
+      loadTexture: load,
+    });
+    expect(loads.length).toBe(3);
+    expect(lods[2].material).not.toBe(sharedMat);
+    // The loader's three maps and the split's three copies.
+    expect(scene.textures.length - before).toBe(6);
+    forest.dispose();
+    expect(scene.textures.length - before).toBe(0);
   });
 
   it("wears 1k everywhere on the medium and low tiers", () => {
@@ -2117,6 +2222,28 @@ describe("defaultBakeImpostor readiness gate", () => {
     abort.abort();
     await vi.advanceTimersByTimeAsync(100);
     expect(await pending).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("waits on the bark set for its bound at most, then warns once and bakes with the file's own bark", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
+    const { scene, mesh } = bakeScene();
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    const render = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // A map whose upload never settles: the set's promise never does.
+    const pending = defaultBakeImpostor(mesh, scene, { textures: new Promise<void>(() => undefined) });
+    await vi.advanceTimersByTimeAsync(119_900);
+    expect(render).not.toHaveBeenCalled();
+    expect(warnings).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await pending).not.toBeNull();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(warnings.mock.calls.map((c) => String(c[0]))).toEqual([
+      "forest impostor bake waited 120 s for the bark set, and bakes the file's own: s0_lod1",
+    ]);
+    expect(errors).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
