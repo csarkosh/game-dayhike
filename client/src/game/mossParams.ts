@@ -55,7 +55,7 @@ export const MOSS_TILE = 3.0;
 /** What the moss map's colour is multiplied by, linear: a little toward
  * green and away from the scan's warmth, so the moss sits under the canopy
  * with the toned bark (`BARK_TONE`). */
-export const MOSS_TINT: Rgb = { r: 0.85, g: 1.0, b: 0.75 };
+export const MOSS_TINT: Rgb = { r: 0.4, g: 0.47, b: 0.35 };
 
 /** The moss's roughness, a constant: a mat surface, mixed over the bark's
  * own roughness by the mask's weight. */

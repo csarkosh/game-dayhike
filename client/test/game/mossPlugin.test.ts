@@ -131,7 +131,7 @@ describe("moss plugin", () => {
     expect(MOSS_AMOUNT).toEqual([0.25, 1.0]);
     expect(MOSS_EDGE).toEqual([0.35, 0.65]);
     expect(MOSS_TILE).toBe(3.0);
-    expect(MOSS_TINT).toEqual({ r: 0.85, g: 1.0, b: 0.75 });
+    expect(MOSS_TINT).toEqual({ r: 0.4, g: 0.47, b: 0.35 });
     expect(MOSS_ROUGHNESS).toBe(0.95);
     expect(MOSS_LUMA).toEqual({ r: 0.2126, g: 0.7152, b: 0.0722 });
     expect(fragmentDefs).toContain(`const vec3 MOSS_SIDE = vec3(${MOSS_SIDE.x}, ${MOSS_SIDE.y}, ${MOSS_SIDE.z});`);
@@ -146,7 +146,7 @@ describe("moss plugin", () => {
     expect(fragmentDefs).toContain(`const float MOSS_TILE = ${glslFloat(MOSS_TILE)};`);
     expect(fragmentDefs).toContain("const float MOSS_TILE = 3.0;");
     expect(fragmentDefs).toContain(`const vec3 MOSS_TINT = vec3(${glslFloat(MOSS_TINT.r)}, ${glslFloat(MOSS_TINT.g)}, ${glslFloat(MOSS_TINT.b)});`);
-    expect(fragmentDefs).toContain("const vec3 MOSS_TINT = vec3(0.85, 1.0, 0.75);");
+    expect(fragmentDefs).toContain("const vec3 MOSS_TINT = vec3(0.4, 0.47, 0.35);");
     expect(fragmentDefs).toContain(`const float MOSS_ROUGHNESS = ${glslFloat(MOSS_ROUGHNESS)};`);
     expect(fragmentDefs).toContain("const float MOSS_ROUGHNESS = 0.95;");
     expect(fragmentDefs).toContain(`const vec3 MOSS_LUMA = vec3(${MOSS_LUMA.r}, ${MOSS_LUMA.g}, ${MOSS_LUMA.b});`);

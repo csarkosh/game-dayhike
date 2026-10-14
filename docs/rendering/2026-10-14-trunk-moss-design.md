@@ -219,7 +219,7 @@ pinned by the lockstep test:
 | `MOSS_AMOUNT` | (0.25, 1.0) | The least and the most a tree carries, by its draw |
 | `MOSS_EDGE` | (0.35, 0.65) | The edge the mask is blended over |
 | `MOSS_TILE` | 3.0 | Moss plates per bark plate |
-| `MOSS_TINT` | (0.85, 1.0, 0.75) | On the map's colour, linear |
+| `MOSS_TINT` | (0.40, 0.47, 0.35) | On the map's colour, linear: under half the map's own light, so the moss reads as damp growth, darker than the toned bark |
 | `MOSS_ROUGHNESS` | 0.95 | The moss's roughness |
 
 ## 8. What the browser should settle

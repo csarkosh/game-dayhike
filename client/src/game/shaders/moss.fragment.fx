@@ -15,7 +15,7 @@ const vec2 MOSS_BAND = vec2(1.0, 2.5);
 const vec2 MOSS_AMOUNT = vec2(0.25, 1.0);
 const vec2 MOSS_EDGE = vec2(0.35, 0.65);
 const float MOSS_TILE = 3.0;
-const vec3 MOSS_TINT = vec3(0.85, 1.0, 0.75);
+const vec3 MOSS_TINT = vec3(0.4, 0.47, 0.35);
 const float MOSS_ROUGHNESS = 0.95;
 const vec3 MOSS_LUMA = vec3(0.2126, 0.7152, 0.0722);
 #endif
