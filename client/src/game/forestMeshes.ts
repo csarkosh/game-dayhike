@@ -56,7 +56,10 @@
  * and roughness in an ARM map the files never carried. The billboards bake
  * once the set has loaded (`BakeOptions.textures`), so the far forest wears
  * the near forest's bark; a set that never lands by the bake's bound is
- * baked without, with the file's own bark, and said so.
+ * baked without, with the file's own bark, and said so. Over the bark, the
+ * trunks' moss (`mossPlugin.ts`): one colour map for the forest, loaded
+ * before any tree, on every dressed bark material's plugin and on the
+ * bakes' clones (`BakeOptions.dress`), and waited on with the bark.
  */
 // Side-effect import, and it is load-bearing: `thinInstanceSetBuffer` and
 // friends are patched onto `Mesh.prototype` by this module. Without it the
@@ -118,6 +121,8 @@ import {
   type FadeBands,
 } from "./distanceFadePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
+import { attachMoss } from "./mossPlugin.js";
+import { MOSS_OUTPUT } from "./mossParams.js";
 import { BARK_SKY, CROWN_SKY, IMPOSTOR_SKY, TREE_SPECULAR_WEIGHT } from "./forestLookParams.js";
 import { coverAlbedoTint, FOLIAGE_CARD_CONTRAST } from "./coverAlbedoParams.js";
 import {
@@ -214,6 +219,14 @@ export type BakeOptions = {
    * life of the page, so at the bound the bake goes on with the file's own
    * bark, warning once. */
   textures?: Promise<void>;
+  /** Runs on each bake mesh's own material clone once it is made: what the
+   * billboard should wear that the clone cannot carry over from its source.
+   * A material clone rebuilds only the plugins Babylon's own class registry
+   * knows and drops the rest, and the bake clones before the forest's own
+   * plugins attach in any case (`defaultBakeImpostor`), so the trunks' moss
+   * (`mossPlugin.ts`) reaches the far trees through this alone. The sway is
+   * left off on purpose, as the bake records. */
+  dress?: (material: Material) => void;
 };
 
 /** One billboard's bake, as the forest last saw it: still baking, landed
@@ -388,6 +401,25 @@ function dressBark(
     texture.dispose();
   }
   return Promise.all(landed).then(() => undefined);
+}
+
+/**
+ * The moss colour map the trunks' plugins share (`mossPlugin.ts`,
+ * `MOSS_OUTPUT`), loaded once for the forest through the bark's own loader
+ * as a colour map (sRGB, decoded as the bark's is), tiling, and kept in
+ * `keep` so it goes with the forest and its bark maps. `landed` settles once
+ * the map has loaded or failed to, as a bark map's does: every set's bake
+ * waits on it with its bark (`dressSpecies`), so no billboard keeps bare
+ * trunks for the life of the page.
+ */
+function loadMoss(scene: Scene, load: BarkTextureLoader, keep: Texture[]): { texture: Texture; landed: Promise<void> } {
+  let settle: () => void = () => undefined;
+  const landed = new Promise<void>((resolve) => { settle = resolve; });
+  const texture = load(textureUrl(MOSS_OUTPUT), scene, true, () => settle(), () => settle());
+  texture.wrapU = Texture.WRAP_ADDRESSMODE;
+  texture.wrapV = Texture.WRAP_ADDRESSMODE;
+  keep.push(texture);
+  return { texture, landed };
 }
 
 export type ForestMeshes = {
@@ -1039,7 +1071,11 @@ export async function defaultBakeImpostor(
   // any of its own plugins attach), so cloning here, ahead of the unsafe
   // ones, is what keeps it from ever throwing.
   for (const m of bakeMeshes) {
-    if (m.material) m.material = m.material.clone(`${m.material.name}_bake`) ?? m.material;
+    if (m.material) {
+      m.material = m.material.clone(`${m.material.name}_bake`) ?? m.material;
+      // What the far trees wear that the clone dropped (`BakeOptions.dress`).
+      options.dress?.(m.material);
+    }
     m.layerMask = IMPOSTOR_BAKE_LAYER;
     m.isPickable = false;
   }
@@ -1282,6 +1318,10 @@ export function createForestMeshes(
    * forest. */
   const clonedMaterials: Material[] = [];
   const textures: Texture[] = [];
+  /** The trunks' moss map, one for the forest, loaded before any tree
+   * (`loadMoss`): every dressed bark material's plugin samples it, and the
+   * billboards' bake clones wear it through `BakeOptions.dress`. */
+  const moss = loadMoss(scene, loadTexture, textures);
   /** Every billboard, in the order made, for `impostorBakes`. */
   const impostors: Impostor[] = [];
   /** The giants' buckets, one a bucket set (`giantSets`, index-aligned). */
@@ -1323,6 +1363,13 @@ export function createForestMeshes(
   // The bakes share the signal: a bake still waiting on its shaders stops
   // polling and lets its target go.
   const bakeOptions: BakeOptions = { signal: loads.signal, pipelines: options.pipelines, sky: options.sky };
+  // A tree bake's clones wear the moss the near trunks do, on the bark alone
+  // (the rule `shadeTreeMaterial` tells bark from crown by), so the far
+  // trees are mossed as the near ones. The trees' bakes alone: the snag
+  // keeps its file's bark and its own moss (`nurseLog.ts`), near and far.
+  const dressBake = (material: Material): void => {
+    if (!material.needAlphaTesting()) attachMoss(material, moss.texture);
+  };
   const loadModel = (url: string): Promise<AssetContainer> =>
     loadUntilAborted(() => loadContainer(url, scene), loads.signal);
 
@@ -1498,7 +1545,8 @@ export function createForestMeshes(
       }
       const size = barkSize(tier, bark);
       const landed = setMaterials.map((material) => dressBark(material, bark, size, scene, loadTexture, textures));
-      sets.push({ lods: setLods, textures: Promise.all(landed).then(() => undefined) });
+      // The set's bake waits on the moss map with the set's bark maps.
+      sets.push({ lods: setLods, textures: Promise.all([...landed, moss.landed]).then(() => undefined) });
     });
     return sets;
   }
@@ -1532,13 +1580,14 @@ export function createForestMeshes(
     // trees over at the seam to paler, cooler, sky-rimmed billboards. The LOD2
     // split below clones after this too, so the lake's mirror, which draws
     // LOD2 on its own material, sees the same trees. Each set's bake waits
-    // on its bark set (`BakeOptions.textures`) as well as the sky.
+    // on its bark set and the moss map (`BakeOptions.textures`) as well as
+    // the sky, and its clones wear the moss (`BakeOptions.dress`).
     for (const mesh of allLods) {
       if (mesh.material) shadeTreeMaterial(mesh.material);
     }
     const bakes = sets.map((set) => {
       const lod1First = set.lods[1][0];
-      return lod1First === undefined ? null : bakeImpostor(lod1First, scene, { ...bakeOptions, textures: set.textures });
+      return lod1First === undefined ? null : bakeImpostor(lod1First, scene, { ...bakeOptions, textures: set.textures, dress: dressBake });
     });
 
     for (const mesh of [...allLods, ...(understory ?? [])]) prepBucketMesh(mesh);
@@ -1593,6 +1642,17 @@ export function createForestMeshes(
         // pins the choice on its stub pair). The sky's share was set by the
         // same rule before the bake (`shadeTreeMaterial`, above).
         attachWet(mesh.material, mesh.material.needAlphaTesting() ? WET_CAP.leaf : WET_CAP.bark);
+        // The trunks' moss (`mossPlugin.ts`), on the bark alone by the same
+        // rule, with the forest's one moss map. Attached here with the other
+        // plugins and not in `dressSpecies`, where the bark is dressed: the
+        // LOD2 split above clones the bark material before any plugin is on
+        // it (a clone rebuilds only the plugins Babylon's own registry knows,
+        // and drops the forest's), so a plugin attached before the split
+        // would be missing from LOD2's clone, which the lake's mirror draws.
+        // Here every LOD's material takes it, the pine's second set's clones
+        // and the LOD2 clones among them. The bakes' clones, made before this
+        // loop for the reason above, take theirs through `BakeOptions.dress`.
+        if (!mesh.material.needAlphaTesting()) attachMoss(mesh.material, moss.texture);
       }
     }
 

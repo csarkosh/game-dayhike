@@ -253,6 +253,8 @@ describe("inter-stage variables on WebGPU", () => {
       "foliage.UNDERSTORY": 4,
       foliageLight: 0,
       groundConform: 0,
+      // The trunks' moss: one vec2, the model height and the tree's draw.
+      moss: 1,
       skin: 0,
       terrain: 3,
       wing: 0,
@@ -325,10 +327,11 @@ describe("inter-stage variables on WebGPU", () => {
       textures: ["albedoTexture", "bumpTexture", "metallicTexture"],
     });
     expect(features, WEIGH).toEqual({
-      // The wet plugin adds uniforms and no varying.
-      "tree.giant_fir.material0": bark(["Atmosphere", "Foliage", "GroundConform", "Wet"]),
+      // The wet plugin adds uniforms and no varying; the moss, on the bark
+      // alone, its one varying (`vMoss`) and one sampler.
+      "tree.giant_fir.material0": bark(["Atmosphere", "Foliage", "GroundConform", "Moss", "Wet"]),
       "tree.giant_fir.material1": giant(["Atmosphere", "Foliage", "DistanceFade", "GroundConform", "Wet"]),
-      "tree.giant_pine.material0": bark(["Atmosphere", "Foliage", "GroundConform", "Wet"]),
+      "tree.giant_pine.material0": bark(["Atmosphere", "Foliage", "GroundConform", "Moss", "Wet"]),
       "tree.giant_pine.material1": giant(["Atmosphere", "Foliage", "DistanceFade", "GroundConform", "Wet"]),
     });
   });
@@ -350,10 +353,11 @@ describe("inter-stage variables on WebGPU", () => {
   it("counts what the browser read for the giants on both tiers", () => {
     // The browser's sweep (the verification note, §4): 17 vertex outputs on
     // the giants' `material0` effects and 18 on `material1`'s, on both tiers.
-    // The bark's 15 since it wears a bark set: the sweep's 17, less the
-    // normal map's basis (three locations, gone with the vertex tangents)
-    // and plus the occlusion-roughness-metalness map's UV, as Babylon's
-    // processing here counts them; not read again in a browser.
+    // The bark's 16 since it wears a bark set and its moss: the sweep's 17,
+    // less the normal map's basis (three locations, gone with the vertex
+    // tangents), plus the occlusion-roughness-metalness map's UV, plus the
+    // moss's varying (one location, `vMoss`), as Babylon's processing here
+    // counts them; not read again in a browser.
     const count = (tier: QualityTier) =>
       Object.fromEntries(
         GIANTS.map((name) => {
@@ -362,9 +366,9 @@ describe("inter-stage variables on WebGPU", () => {
         }),
       );
     const measured = {
-      "tree.giant_fir.material0": 15,
+      "tree.giant_fir.material0": 16,
       "tree.giant_fir.material1": 18,
-      "tree.giant_pine.material0": 15,
+      "tree.giant_pine.material0": 16,
       "tree.giant_pine.material1": 18,
     };
     expect({ high: count("high"), medium: count("medium") }, WEIGH).toEqual({ high: measured, medium: measured });

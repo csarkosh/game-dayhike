@@ -61,6 +61,11 @@ const PINS: Record<string, string> = {
   // on foliage (`FOLIAGE_SHADOW_INJECTION_POINT`).
   "foliageLight.fragment": "6e962f27fa3343fdaa8453c12d1fd7f8935a428ad8d7ba9b1ad2d13df6f0af65",
   "groundConform.vertex": "a9f54562519ab094b2883463cec48050737f16a4f17e4a18852cfb414e227cea",
+  // The trunks' moss (mossPlugin.ts, moss*.fx), pinned at its first text:
+  // the varying and the hash, the mask and the albedo, and the roughness
+  // written into the reflectivity block's output before Babylon's own line.
+  "moss.fragment": "4d957cd76a720e2058e50433785198c39c9ff5e29b7b332225c5d11158f4fcaa",
+  "moss.vertex": "c27e94af368ce3ae552266d9c14d9ae34bada23df9a3150d7c9018e101e68816",
   "post.finish": "4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5",
   "post.grade": "74e331711356b6afe2ce371d749cfff39c64bc02473988dd2ba26bc9653ecd3a",
   "post.halationExtract": "1ee9b9ed30d66fd1e10e4a327104c3e9016a91a2b4ed6aa2cec64cb09df5d3fd",
@@ -112,6 +117,8 @@ const INTERFACE_PINS: Record<string, string> = {
   "foliage.UNDERSTORY.interface": "b1faa0bc44bcbc09407bf26fb83348dd31f85227f88c89440e5aa267edd9bb30",
   "foliageLight.interface": "a86a666d70d9ecddd600f74e67b8028f7795551c775a05e786e4ee73bea725e8",
   "groundConform.interface": "d1318897a8b44958dc6d4ba703fe861a79590ee61c6d7cb830bc54cb33e7b75a",
+  // The trunks' moss: one sampler, no uniform, one define, no attribute.
+  "moss.interface": "1d4bc4eabead2dd9a9ff3444a09e3be683f72b7e15a000f5e4fd37c6019f7bd3",
   "skin.interface": "d39b98bf284499c66f8b2765d9947ff326b97a8a716bcb4f2c89cf5b9c1bc2de",
   // Re-pinned for `terrainRain` and `terrainTime`, the two floats the
   // puddles' ripples read, declared on both uniform paths, and again for

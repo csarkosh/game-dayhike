@@ -108,8 +108,11 @@ describe("audioUrl", () => {
 import { assetBytes, textureUrl } from "../../src/game/assetUrls.js";
 
 describe("textureUrl", () => {
-  /** The bark sets the catalog declares: four sets, two sizes, three maps. */
-  const BARK = catalog.textures.map((t) => t.output).filter((output) => output.endsWith(".ktx2"));
+  /** The KTX2 maps the catalog declares: the bark sets (four sets, two
+   * sizes, three maps) and the trunks' moss set (one size, three maps). */
+  const KTX2 = catalog.textures.map((t) => t.output).filter((output) => output.endsWith(".ktx2"));
+  const BARK = KTX2.filter((output) => output.startsWith("textures/bark."));
+  const MOSS = KTX2.filter((output) => output.startsWith("textures/moss."));
 
   it("resolves every bark map the shipped catalog declares, each to its own url with the file's own name", () => {
     expect(BARK.length).toBe(24);
@@ -122,10 +125,23 @@ describe("textureUrl", () => {
     }
   });
 
+  it("resolves the moss set's three maps through the same glob, the colour map the trunks read among them", () => {
+    expect(MOSS).toEqual(["textures/moss.wood.1k.ktx2", "textures/moss.wood.1k.normal.ktx2", "textures/moss.wood.1k.arm.ktx2"]);
+    expect(KTX2.length).toBe(27);
+    expect(new Set(KTX2.map(textureUrl)).size).toBe(27);
+    for (const output of MOSS) {
+      const name = output.slice("textures/".length, -".ktx2".length).replace(/\./g, "\\.");
+      expect(textureUrl(output)).toMatch(new RegExp(`^/assets/(textures/)?${name}[^/]*\\.ktx2$`));
+      expect(textureUrl(output).startsWith("data:")).toBe(false);
+    }
+  });
+
   it("throws on a map it does not ship, the ground textures' among them, naming both places it must exist", () => {
     expect(() => textureUrl("textures/bark.oak.2k.ktx2")).toThrow(/unknown texture "textures\/bark\.oak\.2k\.ktx2"/);
     expect(() => textureUrl("textures/bark.oak.2k.ktx2")).toThrow(/client\/assets\//);
     expect(() => textureUrl("textures/bark.oak.2k.ktx2")).toThrow(/catalog\.json/);
+    // The moss ships at 1k alone.
+    expect(() => textureUrl("textures/moss.wood.2k.ktx2")).toThrow(/unknown texture "textures\/moss\.wood\.2k\.ktx2"/);
     // The ground layers go through their own imports, not this map.
     expect(() => textureUrl("textures/ground.grass.webp")).toThrow(/unknown texture/);
     for (const key of ["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__"]) {
