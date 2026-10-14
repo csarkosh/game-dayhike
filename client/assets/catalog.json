@@ -841,7 +841,7 @@
     {
       "id": "title",
       "output": "video/title.mp4",
-      "bytes": 16933695,
+      "bytes": 16923075,
       "still": {
         "output": "images/title.still.webp",
         "bytes": 87214
