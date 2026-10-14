@@ -8,7 +8,10 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_BOULDER, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTWOOD, CLUTTER_FERN, CLUTTER_FUNGUS, CLUTTER_GRASS, CLUTTER_LITTER, CLUTTER_MEADOW, CLUTTER_ROCK } from "../../src/sim/clutter.js";
+import {
+  CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTWOOD, CLUTTER_FERN, CLUTTER_FLOWER, CLUTTER_FUNGUS, CLUTTER_GRASS,
+  CLUTTER_HIGHPLANT, CLUTTER_LITTER, CLUTTER_MEADOW, CLUTTER_ROCK, CLUTTER_SHRUB, CLUTTER_WETPLANT,
+} from "../../src/sim/clutter.js";
 import { clutterFadeEdges, clutterSeamEdges, collectClutter } from "../../src/game/clutterField.js";
 import {
   CLUTTER_CULLED,
@@ -199,28 +202,63 @@ describe("foliage attribute and plugin", () => {
     engine.dispose();
   });
 
-  it("brings every card model's albedo to the cover's target, once per material, and leaves the rocks' alone", () => {
+  it("brings every card model's albedo to the cover's green, once per material, and leaves the rocks' alone", () => {
     const { meshes, assets, engine } = buildWithAssets();
     const albedo = (cls: number, variant: number, lod: number): [number, number, number] => {
       const mat = assets[cls]![variant]![lod]![0]!.material as PBRMaterial;
       return [mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b];
     };
-    // The main tuft, 0.18 / 0.0942, and the pale one, 0.18 / 0.2909: the
-    // material a model's two LOD groups share is gained once, so both
-    // groups read the gain itself, not its square.
+    const near = (got: [number, number, number], want: [number, number, number], what: string): void => {
+      for (let i = 0; i < 3; i++) expect(got[i], what).toBeCloseTo(want[i]!, 5);
+    };
+    // The main tuft, (0.1237, 0.2061, 0.0824) / (0.1001, 0.0989, 0.0297),
+    // and the pale one, / (0.3108, 0.3001, 0.1415): the material a model's
+    // two LOD groups share is tinted once, so both groups read the tint
+    // itself, not its square.
     for (const lod of [0, 1]) {
-      for (const c of albedo(CLUTTER_GRASS, 0, lod)) expect(c).toBeCloseTo(1.91083, 5);
-      for (const c of albedo(CLUTTER_GRASS, 1, lod)) expect(c).toBeCloseTo(0.61877, 5);
+      near(albedo(CLUTTER_GRASS, 0, lod), [1.23576, 2.08392, 2.77441], `grass_a lod ${lod}`);
+      near(albedo(CLUTTER_GRASS, 1, lod), [0.39801, 0.68677, 0.58233], `grass_b lod ${lod}`);
     }
     // The meadow ships the main tuft's texture; the sword fern is the
-    // understory's, 0.18 / 0.0901.
-    for (const c of albedo(CLUTTER_MEADOW, 0, 0)) expect(c).toBeCloseTo(1.91083, 5);
-    for (const c of albedo(CLUTTER_FERN, 0, 0)) expect(c).toBeCloseTo(1.99778, 5);
+    // understory's, / (0.0700, 0.1035, 0.0165), its blue at the cap of 3.
+    near(albedo(CLUTTER_MEADOW, 0, 0), [1.23576, 2.08392, 2.77441], "meadow");
+    near(albedo(CLUTTER_FERN, 0, 0), [1.76714, 1.9913, 3], "fern");
+    // The flowers keep their colour: the grey gain, 0.18 / 0.1796 and
+    // 0.18 / 0.184. The bushes, / (0.1802, 0.1530, 0.0899).
+    near(albedo(CLUTTER_FLOWER, 0, 0), [1.00223, 1.00223, 1.00223], "flower_a");
+    near(albedo(CLUTTER_FLOWER, 1, 0), [0.97826, 0.97826, 0.97826], "flower_b");
+    near(albedo(CLUTTER_BUSH, 0, 0), [0.68646, 1.34706, 0.91657], "bush_a");
+    near(albedo(CLUTTER_BUSH, 1, 0), [0.68646, 1.34706, 0.91657], "bush_b");
     // Not cards: white as loaded. The litter draws the rock and driftwood
     // models and is white too.
     for (const cls of [CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_LITTER]) {
       expect(albedo(cls, 0, 0), `class ${cls}`).toEqual([1, 1, 1]);
     }
+    meshes.dispose();
+    engine.dispose();
+  });
+
+  it("gives the card models' materials the cards' contrast, and the classes built in code none", () => {
+    const { meshes, assets, engine } = buildWithAssets();
+    const contrastOf = (cls: number, variant: number, lod: number): number | null => {
+      const plugin = (assets[cls]![variant]![lod]![0]!.material!.pluginManager?.getPlugin("Foliage") ?? null) as FoliagePlugin | null;
+      return plugin === null ? null : plugin.contrast;
+    };
+    // The cards: 0.6 of the texture over 0.4 of the green, on both LOD
+    // groups' meshes, which share the material.
+    for (const lod of [0, 1]) {
+      for (const cls of [CLUTTER_GRASS, CLUTTER_MEADOW, CLUTTER_FLOWER, CLUTTER_BUSH, CLUTTER_FERN]) {
+        expect(contrastOf(cls, 0, lod), `class ${cls} lod ${lod}`).toBe(0.6);
+      }
+    }
+    expect(contrastOf(CLUTTER_GRASS, 1, 0)).toBe(0.6);
+    expect(contrastOf(CLUTTER_FLOWER, 1, 0)).toBe(0.6);
+    // Built in code, under the understory's profile: their colours whole.
+    for (const cls of [CLUTTER_SHRUB, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT]) {
+      expect(contrastOf(cls, 0, 0), `class ${cls}`).toBe(1);
+    }
+    // No plugin on a rock.
+    expect(contrastOf(CLUTTER_ROCK, 0, 0)).toBeNull();
     meshes.dispose();
     engine.dispose();
   });

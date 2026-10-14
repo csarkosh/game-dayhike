@@ -1,4 +1,5 @@
 import { clamp01, type Rgb } from "./colour.js";
+import { COVER_GREEN } from "./coverAlbedoParams.js";
 import { latticeHash } from "./groundHexParams.js";
 import { BLADE_CHARACTER_COUNT } from "./bladeField.js";
 
@@ -33,16 +34,16 @@ export const BLADE_TRIS = (BLADE_RINGS - 1) * 2 + 1;
 export const BLADE_CLUMP_RADIUS = 0.35;
 /** The face normal is rolled this far (rad) about the blade's axis, one way per side. */
 export const BLADE_ROUND = 0.3;
-/** The material's base albedo, linear: a meadow green. The blades sit near
- * the top of the tone curve, so this value is far below what the colour
- * looks like on screen — halving it moves the rendered colour only about
- * 12%. Tuned by comparing the near field's mean colour against the far
- * field's in the same frame, not by eye against a swatch, and with the sun
- * pinned: the world clock keeps running, so two stills minutes apart are lit
- * differently and cannot be compared. Driving this lower does keep closing
- * the near/far gap, but only because the blades darken until the ground
- * between them is what the frame measures. */
-export const BLADE_ALBEDO: Rgb = { r: 0.03, g: 0.04, b: 0.013 };
+/** The material's base albedo, linear: the ground cover's own green
+ * (`coverAlbedoParams.ts` `COVER_GREEN`, the floor's grass colour at the
+ * cards' brightness), which every green card is brought to as well. The
+ * blades are the grass's green up to their tips; the ground tint shapes the
+ * root alone, where its weight is (1 − h)². The far sward is fitted to the
+ * near field, never the near field darkened to meet it: a blade albedo
+ * driven down closes the near/far gap only by darkening the blades until
+ * the ground between them is what the frame measures, and shows black at
+ * every tip the tint has faded out of. */
+export const BLADE_ALBEDO: Rgb = COVER_GREEN;
 /** Vertex colour at the tip, from white at the root. */
 export const BLADE_TIP_TINT: Rgb = { r: 0.95, g: 0.95, b: 0.75 };
 /** Per-blade luminance spread: `1 + BLADE_LUMA · (random − 0.5)`. */

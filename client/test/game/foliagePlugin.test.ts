@@ -5,6 +5,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import vertexDefs from "../../src/game/shaders/foliage.vertex.fx?raw";
 import vertexWorldPos from "../../src/game/shaders/foliageWorldPos.vertex.fx?raw";
+import fragmentDefs from "../../src/game/shaders/foliage.fragment.fx?raw";
 import fragmentLights from "../../src/game/shaders/foliageLights.fragment.fx?raw";
 import fragmentSky from "../../src/game/shaders/foliageSky.fragment.fx?raw";
 import {
@@ -19,6 +20,7 @@ import {
 } from "../../src/game/windParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { BLADE_SOFT, bladeAlive, bladeSecondRandom } from "../../src/game/bladeClump.js";
+import { COVER_GREEN } from "../../src/game/coverAlbedoParams.js";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -39,7 +41,61 @@ describe("foliage plugin", () => {
       BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.65, normalRoot: 0, tilt: true, bend: true, blades: true, normalUp: 1.0 },
       REEDS: { amp: 0.5, groundTint: 0, rootAO: 0.75, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 1.0 },
       DUFF: { amp: 0, groundTint: 0.5, rootAO: 0.75, normalRoot: 0, tilt: false, bend: false, blades: true, normalUp: 0.5 },
+      NURSE: { amp: 0, groundTint: 0, rootAO: 1, normalRoot: 1, tilt: false, bend: false, blades: false, normalUp: 0 },
     });
+  });
+
+  it("binds the texture's contrast: 1 by default, the cards' share when given", () => {
+    const writesOf = (plugin: FoliagePlugin): Record<string, number[]> => {
+      const writes: Record<string, number[]> = {};
+      const ub = {
+        updateFloat: (n: string, v: number) => { writes[n] = [v]; },
+        updateFloat2: (n: string, a: number, b: number) => { writes[n] = [a, b]; },
+        updateFloat3: (n: string, a: number, b: number, c: number) => { writes[n] = [a, b, c]; },
+        updateFloat4: (n: string, a: number, b: number, c: number, d: number) => { writes[n] = [a, b, c, d]; },
+        updateFloatArray: (n: string, v: Float32Array) => { writes[n] = Array.from(v); },
+      };
+      plugin.bindForSubMesh(ub as never, scene, undefined as never, undefined as never);
+      return writes;
+    };
+    // The blade clumps, the duff, the reeds and the trees: their colours whole.
+    const whole = new PBRMaterial("m-contrast-whole", scene);
+    attachFoliage(whole, FOLIAGE_PROFILES.BLADES, 0.5, { sunShadowed: true });
+    const wholePlugin = whole.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    expect(wholePlugin.contrast).toBe(1);
+    expect(writesOf(wholePlugin).foliageContrast).toEqual([1]);
+    // A card: 0.6 of its texture over 0.4 of the green.
+    const card = new PBRMaterial("m-contrast-card", scene);
+    attachFoliage(card, FOLIAGE_PROFILES.GRASS, 0.4, { contrast: 0.6 });
+    const cardPlugin = card.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    expect(cardPlugin.contrast).toBe(0.6);
+    expect(writesOf(cardPlugin).foliageContrast).toEqual([0.6]);
+    // The nurse fern: the inert profile, the cards' contrast, the sun's cut
+    // at the constant since the log's fern receives no cast shadow.
+    const nurse = new PBRMaterial("m-contrast-nurse", scene);
+    attachFoliage(nurse, FOLIAGE_PROFILES.NURSE, 0.6, { contrast: 0.6 });
+    const nursePlugin = nurse.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    expect(writesOf(nursePlugin).foliageContrast).toEqual([0.6]);
+    expect(writesOf(nursePlugin).foliageCanopySun).toEqual([0.4]);
+    expect(writesOf(nursePlugin).foliageAmp).toEqual([0]);
+    expect(writesOf(nursePlugin).foliageTint).toEqual([0]);
+    expect(writesOf(nursePlugin).foliageRootAO).toEqual([1]);
+    expect(writesOf(nursePlugin).foliageNormalRoot).toEqual([1]);
+    expect(writesOf(nursePlugin).foliageFlags).toEqual([0, 0]);
+  });
+
+  it("compresses the texture toward the cover's green first, at the uniform, with the green pinned to the params", () => {
+    expect(COVER_GREEN).toEqual({ r: 0.1237, g: 0.2061, b: 0.0824 });
+    expect(fragmentDefs).toContain(
+      `const vec3 FOLIAGE_CARD_GREEN = vec3(${COVER_GREEN.r.toFixed(4)}, ${COVER_GREEN.g.toFixed(4)}, ${COVER_GREEN.b.toFixed(4)});`,
+    );
+    expect(fragmentDefs).toContain("const vec3 FOLIAGE_CARD_GREEN = vec3(0.1237, 0.2061, 0.0824);");
+    expect(fragmentLights).toContain("surfaceAlbedo = mix(FOLIAGE_CARD_GREEN, surfaceAlbedo, foliageContrast);");
+    // The first line of the block: the root darkening and the tint shape the
+    // root on top of the texture the mix leaves.
+    const block = fragmentLights.slice(fragmentLights.indexOf("{"));
+    expect(block.indexOf("mix(FOLIAGE_CARD_GREEN, surfaceAlbedo, foliageContrast)")).toBeLessThan(block.indexOf("foliageRootAO"));
+    expect(block.indexOf("mix(FOLIAGE_CARD_GREEN, surfaceAlbedo, foliageContrast)")).toBeLessThan(block.indexOf("foliageTint"));
   });
 
   it("binds the sun's canopy factor: the constant by default, 0 for a material whose meshes receive shadows", () => {
@@ -219,7 +275,7 @@ describe("foliage plugin", () => {
     const names = u.ubo!.map((x: { name: string }) => x.name);
     expect(names).toEqual(expect.arrayContaining([
       "windDir", "windLean", "windGust", "windFlutter", "windTime", "windPlayers", "windEye",
-      "foliageAmp", "foliageHeight", "foliageTint", "foliageRootAO", "foliageCanopySun", "foliageNormalRoot", "foliageNormalUp", "foliageFlags", "foliageEdges",
+      "foliageAmp", "foliageHeight", "foliageTint", "foliageRootAO", "foliageCanopySun", "foliageContrast", "foliageNormalRoot", "foliageNormalUp", "foliageFlags", "foliageEdges",
       "foliageBladeEdges",
     ]));
     const players = u.ubo!.find((x: { name: string }) => x.name === "windPlayers") as { arraySize?: number };
@@ -228,6 +284,7 @@ describe("foliage plugin", () => {
     expect(u.vertex).toContain("uniform float foliageNormalUp;");
     expect(u.vertex).toContain("uniform vec4 foliageBladeEdges;");
     expect(u.fragment).toContain("uniform float foliageCanopySun;");
+    expect(u.fragment).toContain("uniform float foliageContrast;");
   });
 
   it("binds the blade edges a shell sets, four numbers, and a no-op pair by default", () => {
@@ -388,10 +445,10 @@ describe("compiles on both shader paths (the sampler/UBO trap, pinned even with 
       try {
         const grass = await compiledSources(s, "GRASS");
         for (const name of ["windDir", "windLean", "windGust", "windTime", "windPlayers", "foliageEdges", "foliageNormalUp"]) expect(grass.vertex).toContain(name);
-        for (const name of ["foliageTint", "foliageRootAO", "foliageCanopySun", "foliageNormalRoot", "vFoliageH", "fSky"]) expect(grass.fragment).toContain(name);
+        for (const name of ["foliageTint", "foliageRootAO", "foliageCanopySun", "foliageContrast", "FOLIAGE_CARD_GREEN", "foliageNormalRoot", "vFoliageH", "fSky"]) expect(grass.fragment).toContain(name);
         const tree = await compiledSources(s, "TREE");
         for (const name of ["windDir", "windLean", "windGust", "windTime", "windPlayers", "foliageEdges"]) expect(tree.vertex).toContain(name);
-        for (const name of ["foliageTint", "foliageRootAO", "foliageCanopySun", "foliageNormalRoot", "vFoliageH", "fSky"]) expect(tree.fragment).toContain(name);
+        for (const name of ["foliageTint", "foliageRootAO", "foliageCanopySun", "foliageContrast", "FOLIAGE_CARD_GREEN", "foliageNormalRoot", "vFoliageH", "fSky"]) expect(tree.fragment).toContain(name);
         const blades = await compiledSources(s, "BLADES");
         expect(blades.vertex).toContain("bAlive");
         expect(blades.vertex).toContain("blade");

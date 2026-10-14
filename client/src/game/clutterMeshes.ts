@@ -95,7 +95,7 @@ import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from ".
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
-import { coverAlbedoGain } from "./coverAlbedoParams.js";
+import { coverAlbedoTint, FOLIAGE_CARD_CONTRAST } from "./coverAlbedoParams.js";
 import { SHRUB_CHARACTERS, shrubGeometry } from "./shrubClump.js";
 import { WET_PLANT_COUNT, wetPlantGeometry } from "./wetPlantClump.js";
 import { HIGH_PLANT_COUNT, highPlantGeometry } from "./highPlantClump.js";
@@ -1245,30 +1245,34 @@ export function createClutterMeshes(
     for (const mesh of driftLogs) {
       if (mesh.material instanceof PBRMaterial) mesh.material.albedoColor.copyFromFloats(...DRIFTLOG_BLEACH);
     }
-    // The cards at one albedo (`coverAlbedoParams.ts`): each card model's
-    // gain, multiplied into the material its meshes share, once per material
-    // (a GLB's two LOD groups carry one, as does every mesh of a group).
-    // Here, before the LOD copies and the cut copies below, which share the
+    // The cards in the cover's green (`coverAlbedoParams.ts`): each card
+    // model's tint, a gain per channel that puts its texture's mean colour
+    // on the green (the flowers' a grey one, their petals their own colour),
+    // multiplied into the material its meshes share, once per material (a
+    // GLB's two LOD groups carry one, as does every mesh of a group). Here,
+    // before the LOD copies and the cut copies below, which share the
     // material by reference, so nothing applies it twice or misses it. The
-    // shipped materials are white, so the product is the gain itself; one
+    // shipped materials are white, so the product is the tint itself; one
     // that was not would keep its own colour under it. The classes that wear
     // the foliage profile alone: a rock, boulder, driftwood or fungus is not
     // a card and takes none, nor does the litter, which draws their models;
     // the classes built in code have no id and are white under their own
-    // vertex colours.
-    const gained = new Set<PBRMaterial>();
+    // vertex colours. The same materials take the cards' contrast in the
+    // foliage plugin below, which lifts the shade their textures bake into
+    // their dark texels, which a gain cannot.
+    const tinted = new Set<PBRMaterial>();
     loaded.forEach((variants, cls) => {
       if (!FOLIAGE_BY_CLASS.has(cls)) return;
       variants.forEach((perLod, variant) => {
         const id = CLUTTER_MODEL_IDS[cls]?.[variant];
         if (id === undefined) return;
-        const gain = coverAlbedoGain(id);
+        const tint = coverAlbedoTint(id);
         for (const mesh of perLod.flat()) {
           const mat = mesh.material;
-          if (!(mat instanceof PBRMaterial) || gained.has(mat)) continue;
-          gained.add(mat);
+          if (!(mat instanceof PBRMaterial) || tinted.has(mat)) continue;
+          tinted.add(mat);
           const c = mat.albedoColor;
-          c.copyFromFloats(c.r * gain, c.g * gain, c.b * gain);
+          c.copyFromFloats(c.r * tint.r, c.g * tint.g, c.b * tint.b);
         }
       });
     });
@@ -1293,7 +1297,11 @@ export function createClutterMeshes(
                 // Bake ran already, so the bound box is the placed geometry;
                 // models put the origin at the footprint base, so max.y IS the height.
                 mesh.refreshBoundingInfo();
-                attachFoliage(mesh.material, profile, mesh.getBoundingInfo().boundingBox.maximum.y);
+                // The classes that draw the card models take the cards'
+                // contrast with their tint above; a class built in code has
+                // no texture with shade baked in and keeps its colours whole.
+                const contrast = (CLUTTER_MODEL_IDS[cls]?.length ?? 0) > 0 ? FOLIAGE_CARD_CONTRAST : 1;
+                attachFoliage(mesh.material, profile, mesh.getBoundingInfo().boundingBox.maximum.y, { contrast });
                 attachFoliageLight(mesh.material);
                 // `edges` lives on the plugin instance, so it is per MATERIAL:
                 // a card GLB's two LOD buckets share one material, so setting

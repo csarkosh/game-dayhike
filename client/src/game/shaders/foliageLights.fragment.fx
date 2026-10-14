@@ -1,17 +1,23 @@
 // The foliage colour and normal block, spliced at CUSTOM_FRAGMENT_BEFORE_LIGHTS,
 // where surfaceAlbedo, normalW and viewDirectionW are established and no
-// light has run: root darkening, the ground tint (strongest at the root,
-// more with distance), a per-clump luminance nudge, then the normal blended
-// toward the ground's up at the root and forced to face the viewer so a card
-// never lights as its back. The canopy's cut is not on the albedo: the sky's
-// share is taken at the final colour composition (foliageSky.fragment.fx) and
-// the sun's in the sun's own diffuse (foliageDiffuse.fragment.fx), each from
-// the openness in vFoliage.a. The fragment is never dropped.
+// light has run: the texture's contrast compressed toward the cover's green
+// (foliageContrast is the share of the texture kept, 1 the texture as it
+// is: a card's texture bakes shade into its dark texels, which the gain on
+// its albedo puts at the green's mean but cannot lift, so the mix lifts a
+// black texel to the rest of the green), then root darkening, the ground
+// tint (strongest at the root, more with distance), a per-clump luminance
+// nudge, then the normal blended toward the ground's up at the root and
+// forced to face the viewer so a card never lights as its back. The canopy's
+// cut is not on the albedo: the sky's share is taken at the final colour
+// composition (foliageSky.fragment.fx) and the sun's in the sun's own
+// diffuse (foliageDiffuse.fragment.fx), each from the openness in
+// vFoliage.a. The fragment is never dropped.
 //
 // COMMENT RULES as in foliage.vertex.fx.
 #ifdef FOLIAGE
 {
   const float FOLIAGE_CLUMP_LUMA = 0.16;
+  surfaceAlbedo = mix(FOLIAGE_CARD_GREEN, surfaceAlbedo, foliageContrast);
   surfaceAlbedo *= mix(foliageRootAO, 1.0, vFoliageH);
   float fRoot = (1.0 - vFoliageH) * (1.0 - vFoliageH);
   // Whether this draw actually carries tint data. Babylon leaves an undeclared

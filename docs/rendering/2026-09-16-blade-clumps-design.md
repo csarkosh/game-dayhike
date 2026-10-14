@@ -299,3 +299,5 @@ on some platforms caps `deviceMemory` at 8 and lands on `medium` instead.
 
 **§11, the fallback ladder.** Re-based on the retuned `BLADE_COUNT`: `BLADE_COUNT` 40 → 28, then
 `BLADE_RADIUS` 12 → 10, then `MSAA_SAMPLES` 4 → 2.
+
+**§5, the material (2026-10-14).** `BLADE_ALBEDO` is the ground cover's one green, `COVER_GREEN` = (0.1237, 0.2061, 0.0824) (`coverAlbedoParams.ts`, the floor's grass colour at the cards' brightness), which every green card is brought to as well; the blades are that green to their tips and the ground tint shapes the root alone. See `2026-09-15-grass-grounding-and-wind-design.md` §13.1.

@@ -229,7 +229,7 @@ describe("createForestMeshes under NullEngine", () => {
     return { scene, assets, forest };
   }
 
-  it("gives the nurse log's fern the cover's albedo gain, on the plain material it wears there", () => {
+  it("gives the nurse log's fern the cover's tint and contrast, on the plain material it wears there", () => {
     const engine = new NullEngine();
     engines.push(engine);
     const scene = new Scene(engine);
@@ -239,13 +239,24 @@ describe("createForestMeshes under NullEngine", () => {
     fern.material = loaded;
     const forest = createForestMeshes(scene, SEED, { assets: { ...stubAssets(scene), nurseFern: fern }, bakeImpostor: () => null });
     // The copy made for the log takes the texture and sets its own colour:
-    // the understory fern's gain, 0.18 / 0.0901, at the nurse shade of 1.
-    // The material as loaded is left white and never draws.
+    // the understory fern's tint, (0.1237, 0.2061, 0.0824) / (0.0700,
+    // 0.1035, 0.0165) with the blue at the cap of 3, at the nurse shade of
+    // 1. The material as loaded is left white and never draws.
     const worn = fern.material as PBRMaterial;
     expect(worn).not.toBe(loaded);
     expect(worn.name).toBe("understory.fern.material0_nurse");
-    for (const c of [worn.albedoColor.r, worn.albedoColor.g, worn.albedoColor.b]) expect(c).toBeCloseTo(1.99778, 5);
+    expect(worn.albedoColor.r).toBeCloseTo(1.76714, 5);
+    expect(worn.albedoColor.g).toBeCloseTo(1.9913, 5);
+    expect(worn.albedoColor.b).toBe(3);
     expect([loaded.albedoColor.r, loaded.albedoColor.g, loaded.albedoColor.b]).toEqual([1, 1, 1]);
+    // The cards' contrast rides the foliage plugin, under the nurse profile
+    // (no wind, no tint, no root darkening, the card's own normals), with
+    // the sun's cut at the constant: the log's fern receives no cast shadow.
+    const plugin = worn.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    expect(plugin).toBeInstanceOf(FoliagePlugin);
+    expect(plugin.contrast).toBe(0.6);
+    expect(plugin.canopySun).toBe(0.4);
+    expect(loaded.pluginManager?.getPlugin("Foliage") ?? null).toBeNull();
     forest.dispose();
   });
 

@@ -118,7 +118,7 @@ import {
 } from "./distanceFadePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { BARK_SKY, CROWN_SKY, IMPOSTOR_SKY, TREE_SPECULAR_WEIGHT } from "./forestLookParams.js";
-import { coverAlbedoGain } from "./coverAlbedoParams.js";
+import { coverAlbedoTint, FOLIAGE_CARD_CONTRAST } from "./coverAlbedoParams.js";
 import {
   barkOutputs,
   barkSize,
@@ -773,10 +773,10 @@ function deadwoodMatrixBuffer(
 
 /** What grows on a log is drawn to this distance and dithers out over the band (m). */
 const NURSE_BANDS: FadeBands = fadeBands(null, [60, 75]);
-/** Its albedo, of its texture's at the cards' gain (`coverAlbedoGain`,
+/** Its albedo, of its texture's in the cover's green (`coverAlbedoTint`,
  * which the floor's own ferns carry too). The floor's ferns are shaded by
  * the canopy's density and tinted to the ground; a plant on a log is left at
- * the gained colour, a little brighter than they are, so that it stands out
+ * the tinted colour, a little brighter than they are, so that it stands out
  * from the ferns behind the log and is not lost among them. */
 const NURSE_SHADE = 1;
 
@@ -1738,19 +1738,19 @@ export function createForestMeshes(
     deadwoodLogTop = trunkTop(deadwoodPositions);
     // What grows on a nurse log (`nurseLog.ts`): the fern and a seedling.
     // The fern wears a plain material made here from its model's textures,
-    // with the dither and nothing else: a plant on a log
-    // stands a metre off the ground, so it takes no ground tint and no base
-    // conform, and it is too small to need the wind.
+    // with the dither, the cards' tint and contrast, and nothing else: a
+    // plant on a log stands a metre off the ground, so it takes no ground
+    // tint and no base conform, and it is too small to need the wind.
     const plain = (mesh: Mesh): void => {
       const source = mesh.material;
       if (!(source instanceof PBRMaterial)) return;
       const mat = new PBRMaterial(`${source.name}_nurse`, scene);
       mat.albedoTexture = source.albedoTexture;
       // The copy takes the texture and sets its own colour, so the cards'
-      // gain goes in here, under the shade; the loaded material is left as
+      // tint goes in here, under the shade; the loaded material is left as
       // it came and never draws.
-      const shade = NURSE_SHADE * coverAlbedoGain(NURSE_FERN_ID);
-      mat.albedoColor.copyFromFloats(shade, shade, shade);
+      const tint = coverAlbedoTint(NURSE_FERN_ID);
+      mat.albedoColor.copyFromFloats(NURSE_SHADE * tint.r, NURSE_SHADE * tint.g, NURSE_SHADE * tint.b);
       mat.metallic = 0;
       mat.roughness = 1;
       mat.metallicF0Factor = 0;
@@ -1758,6 +1758,12 @@ export function createForestMeshes(
       mat.alphaCutOff = source.alphaCutOff;
       mat.useAlphaFromAlbedoTexture = source.useAlphaFromAlbedoTexture;
       mat.backFaceCulling = source.backFaceCulling;
+      // The cards' contrast lifts the shade the texture bakes into its dark
+      // texels, which the tint cannot: the foliage plugin carries it, so the
+      // fern wears the plugin under its own profile, which moves nothing,
+      // tints nothing and keeps the card's normals, and no light plugin.
+      mesh.refreshBoundingInfo();
+      attachFoliage(mat, FOLIAGE_PROFILES.NURSE, mesh.getBoundingInfo().boundingBox.maximum.y, { contrast: FOLIAGE_CARD_CONTRAST });
       attachDistanceFade(mat, { force: true });
       attachWet(mat, WET_CAP.leaf);
       materials.push(mat);

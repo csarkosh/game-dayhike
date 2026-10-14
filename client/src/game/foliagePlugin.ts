@@ -3,8 +3,9 @@
  * (lean, gust, flutter, camera tilt, player bend, far sink — or, for the blade
  * clumps, a per-blade collapse to the root across the band in place of the
  * sink) and everything
- * the fragment stage does to ground it (root darkening, ground tint, clump
- * variation, a rounded normal, and the canopy's cut of the sky). Replaces
+ * the fragment stage does to ground it (the cards' contrast compressed
+ * toward the cover's green, root darkening, ground tint, clump variation, a
+ * rounded normal, and the canopy's cut of the sky). Replaces
  * windPlugin.ts. The wind arrives as one WindRecord per frame through
  * `setFoliageWind`, computed by windParams.ts; the ground colour and the
  * openness of the sky above the instance arrive as the per-instance `foliage`
@@ -124,6 +125,12 @@ export const FOLIAGE_PROFILES = {
    * tint at half, not 0.7: on the mid-brown floor (NEEDLE_BED) half seats the
    * pieces into it, where 0.7 pulled them fully into the ground colour. */
   DUFF: { amp: 0, groundTint: 0.5, rootAO: 0.75, normalRoot: 0, tilt: false, bend: false, blades: true, normalUp: 0.5 },
+  /** The fern on a nurse log: a card a metre off the ground, which takes no
+   * ground tint, no root darkening (rootAO 1) and keeps its own normals to
+   * the root (normalRoot 1), and is too small to need the wind (amp 0, no
+   * tilt, no bend). It wears the plugin for the cards' contrast
+   * (`attachFoliage`'s `contrast`), which lives in the fragment block. */
+  NURSE: { amp: 0, groundTint: 0, rootAO: 1, normalRoot: 1, tilt: false, bend: false, blades: false, normalUp: 0 },
 } as const satisfies Record<string, FoliageProfile>;
 
 // Module-level like skin.ts: every material's plugin instance reads one truth,
@@ -147,12 +154,21 @@ export function setFoliageWind(record: WindRecord, positions: Float32Array): voi
   players.set(positions.subarray(0, FOLIAGE_PLAYERS * 3));
 }
 
-/** How `attachFoliage` decides the material's cut of the sun by the canopy. */
+/** How `attachFoliage` decides the material's cut of the sun by the canopy,
+ * and how much of its texture's contrast it keeps. */
 export type FoliageOptions = {
   /** The material's meshes receive cast shadows (`receiveShadows`), so the
    * canopy's cut of the sun is theirs already and the uniform binds 0. Off,
    * the uniform binds `FOLIAGE_CANOPY_SUN`. */
   sunShadowed?: boolean;
+  /** The share of the texture's own colour kept, the rest the ground cover's
+   * green (`FOLIAGE_CARD_GREEN` in foliage.fragment.fx): 1, the default, is
+   * the texture as it is. The card models pass `FOLIAGE_CARD_CONTRAST`
+   * (`coverAlbedoParams.ts`), whose tint puts each texture's mean at the
+   * green, so the mix compresses the texture's contrast around its mean and
+   * lifts the shade baked into its dark texels, which a gain cannot. Bound
+   * as the `foliageContrast` uniform. */
+  contrast?: number;
 };
 
 export class FoliagePlugin extends MaterialPluginBase {
@@ -161,6 +177,9 @@ export class FoliagePlugin extends MaterialPluginBase {
   /** The `foliageCanopySun` uniform's value: `FOLIAGE_CANOPY_SUN`, or 0 for
    * a material whose meshes receive cast shadows. */
   readonly canopySun: number;
+  /** The `foliageContrast` uniform's value: the share of the texture kept
+   * over the cover's green, 1 for a material whose texture is left as it is. */
+  readonly contrast: number;
   /** Outer fade of the bucket, set by the shell; motion reaches zero at .y. */
   edges: readonly [number, number] = FADE_NONE_OUT;
   /** The blades profile's hand-off: (grow-in start, grow-in end, collapse
@@ -168,11 +187,12 @@ export class FoliagePlugin extends MaterialPluginBase {
    * and collapses nowhere: every blade whole. */
   bladeEdges: BladeEdges = [FADE_NONE_IN[0], FADE_NONE_IN[1], FADE_NONE_OUT[0], FADE_NONE_OUT[1]];
 
-  constructor(material: Material, profile: FoliageProfile, meshHeight: number, canopySun: number) {
+  constructor(material: Material, profile: FoliageProfile, meshHeight: number, canopySun: number, contrast: number) {
     super(material, "Foliage", 200, { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false });
     this._profile = profile;
     this._meshHeight = meshHeight;
     this.canopySun = canopySun;
+    this.contrast = contrast;
     this._enable(true);
   }
 
@@ -209,6 +229,7 @@ export class FoliagePlugin extends MaterialPluginBase {
         { name: "foliageTint", size: 1, type: "float" },
         { name: "foliageRootAO", size: 1, type: "float" },
         { name: "foliageCanopySun", size: 1, type: "float" },
+        { name: "foliageContrast", size: 1, type: "float" },
         { name: "foliageNormalRoot", size: 1, type: "float" },
         { name: "foliageNormalUp", size: 1, type: "float" },
         { name: "foliageFlags", size: 2, type: "vec2" },
@@ -237,6 +258,7 @@ uniform vec4 foliageBladeEdges;
 uniform float foliageTint;
 uniform float foliageRootAO;
 uniform float foliageCanopySun;
+uniform float foliageContrast;
 uniform float foliageNormalRoot;
 #endif
 `,
@@ -259,6 +281,7 @@ uniform float foliageNormalRoot;
     uniformBuffer.updateFloat("foliageTint", p.groundTint);
     uniformBuffer.updateFloat("foliageRootAO", p.rootAO);
     uniformBuffer.updateFloat("foliageCanopySun", this.canopySun);
+    uniformBuffer.updateFloat("foliageContrast", this.contrast);
     uniformBuffer.updateFloat("foliageNormalRoot", p.normalRoot);
     uniformBuffer.updateFloat("foliageNormalUp", p.normalUp);
     uniformBuffer.updateFloat2("foliageFlags", p.tilt ? 1 : 0, p.bend ? 1 : 0);
@@ -284,10 +307,12 @@ uniform float foliageNormalRoot;
 /** Attach once per material; later calls are no-ops (LOD buckets share
  * materials). The caller says whether the material's meshes receive cast
  * shadows (`sunShadowed`): the canopy's cut of the sun is then the shadow's
- * and the uniform binds 0, otherwise `FOLIAGE_CANOPY_SUN`. */
+ * and the uniform binds 0, otherwise `FOLIAGE_CANOPY_SUN`. It says too how
+ * much of the texture's contrast the material keeps (`contrast`, 1 unless
+ * given). */
 export function attachFoliage(material: Material, profile: FoliageProfile, meshHeight: number, options: FoliageOptions = {}): void {
   if (material.pluginManager?.getPlugin("Foliage")) return;
-  new FoliagePlugin(material, profile, meshHeight, options.sunShadowed === true ? 0 : FOLIAGE_CANOPY_SUN);
+  new FoliagePlugin(material, profile, meshHeight, options.sunShadowed === true ? 0 : FOLIAGE_CANOPY_SUN, options.contrast ?? 1);
 }
 
 /** The bucket's outer fade: motion weight reaches zero at `edges[1]`, and tinting
