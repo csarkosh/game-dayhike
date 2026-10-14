@@ -354,8 +354,8 @@ const BABYLON_SPECULAR_WEIGHT = 1;
  * "Gives it none" is read from the loaded value: Babylon's glTF loader
  * writes `metallicF0Factor` only from `KHR_materials_specular` and otherwise
  * leaves the material's default of 1, and it records no extension list on
- * the material (its metadata holds only JSON pointers, and extras when the
- * extras extension is on), so a weight of exactly 1 here is a crown shipped
+ * the material (its `metadata` holds only the extras, when the extras
+ * extension is on, and `_internalMetadata` only JSON pointers), so a weight of exactly 1 here is a crown shipped
  * without one. A file that wrote a weight of 1 on purpose would read the
  * same; no tree file does, and 1 is the rim this avoids. The rule holds when
  * a call repeats on one material, as it does across the LODs that share it:

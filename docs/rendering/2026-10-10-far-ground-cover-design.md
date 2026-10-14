@@ -83,7 +83,9 @@ whatever order the lights were made in. `FoliageLightPlugin` keys its call on
 the light's directional define, `#if defined(FOLIAGE) && defined(DIRLIGHT$2)`,
 as the far ground's sun line does (§8.2), so the call compiles into the sun's
 line, the scene's only directional light, and every other light, the headlamps
-included, keeps Babylon's own diffuse. Near the terminator a card takes the
+included, keeps Babylon's own diffuse. The test that pinned the old order is now titled
+"adds no light for the dome: the lighting makes only the sun and the fill"
+(`lighting.test.ts`). Near the terminator a card takes the
 wrap of `FOLIAGE_WRAP` 0.35 on N·L, which reaches 0 at N·L = −0.35; past that,
 with the sun behind the card and the eye in front of it, only the backlight
 lifts it, toward that sun. The measurements below, the fit of §7 and the
