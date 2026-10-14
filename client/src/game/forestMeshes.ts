@@ -118,6 +118,7 @@ import {
 } from "./distanceFadePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { BARK_SKY, CROWN_SKY, IMPOSTOR_SKY, TREE_SPECULAR_WEIGHT } from "./forestLookParams.js";
+import { coverAlbedoGain } from "./coverAlbedoParams.js";
 import {
   barkOutputs,
   barkSize,
@@ -152,8 +153,11 @@ const SAPLING_URLS = [
 /** Deadwood is species-agnostic: one asset, one bucket, both roles (see
  * `deadwoodMatrixBuffer`). */
 const DEADWOOD_URL = modelUrl("models/deadwood.snag.glb");
-/** Understory follows the tree species split: ferns under a, shrubs under b. */
-const NURSE_FERN_URL = modelUrl("models/understory.fern.glb");
+/** The fern on the nurse logs, by catalog id: the understory's fern, the
+ * clutter's sword fern too, and so under the cards' albedo gain
+ * (`coverAlbedoParams.ts`, `NURSE_SHADE` below). */
+const NURSE_FERN_ID = "understory.fern";
+const NURSE_FERN_URL = modelUrl(`models/${NURSE_FERN_ID}.glb`);
 
 /** Impostor bake resolution — a quad this far away needs no more. */
 const IMPOSTOR_BAKE_SIZE = 256;
@@ -236,6 +240,9 @@ export type ForestMeshesOptions = {
     /** Deadwood: one mesh (or multi-primitive root) standing in for
      * `deadwood.snag`'s LOD2, the single bucket both roles ride. */
     deadwood: Mesh;
+    /** The fern on the nurse logs, standing in for `understory.fern`'s LOD0;
+     * none when absent, as the shipped forest has none until its file lands. */
+    nurseFern?: Mesh;
   } | null;
   /** NullEngine escape hatch: render targets lie under NullEngine, so tests
    * inject a stub. A null bake (sync or resolved) DISABLES that billboard's
@@ -766,10 +773,11 @@ function deadwoodMatrixBuffer(
 
 /** What grows on a log is drawn to this distance and dithers out over the band (m). */
 const NURSE_BANDS: FadeBands = fadeBands(null, [60, 75]);
-/** Its albedo, of its texture's. The floor's own ferns are shaded by the
- * canopy's density and tinted to the ground; a plant on a log is left at its
- * texture's own colour, a little brighter than they are, so that it stands
- * out from the ferns behind the log and is not lost among them. */
+/** Its albedo, of its texture's at the cards' gain (`coverAlbedoGain`,
+ * which the floor's own ferns carry too). The floor's ferns are shaded by
+ * the canopy's density and tinted to the ground; a plant on a log is left at
+ * the gained colour, a little brighter than they are, so that it stands out
+ * from the ferns behind the log and is not lost among them. */
 const NURSE_SHADE = 1;
 
 const scratchLog = new Matrix();
@@ -1738,7 +1746,11 @@ export function createForestMeshes(
       if (!(source instanceof PBRMaterial)) return;
       const mat = new PBRMaterial(`${source.name}_nurse`, scene);
       mat.albedoTexture = source.albedoTexture;
-      mat.albedoColor.copyFromFloats(NURSE_SHADE, NURSE_SHADE, NURSE_SHADE);
+      // The copy takes the texture and sets its own colour, so the cards'
+      // gain goes in here, under the shade; the loaded material is left as
+      // it came and never draws.
+      const shade = NURSE_SHADE * coverAlbedoGain(NURSE_FERN_ID);
+      mat.albedoColor.copyFromFloats(shade, shade, shade);
       mat.metallic = 0;
       mat.roughness = 1;
       mat.metallicF0Factor = 0;
@@ -2173,6 +2185,7 @@ export function createForestMeshes(
           ],
       ),
       deadwood: geometryMeshes(stub.deadwood),
+      ...(stub.nurseFern === undefined ? {} : { nurseFern: geometryMeshes(stub.nurseFern) }),
     });
   } else {
     // Fire and forget, like `views.models.load`: the forest pops in when the

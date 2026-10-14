@@ -421,3 +421,66 @@ The far ground's canopy shade follows by the same arithmetic
 made for: ferns about 55–60, open tufts about 90–95, the trail unchanged at
 98, to be read on the stills; the weather is as it was, the light comes from
 the shading.
+
+## 13. Amendment (2026-10-14): the cards at one albedo
+
+With §12 the cards are lit alike: the sun's share scales them exactly as it
+scales the trail, and the cast shadows and the sky barely move them. They
+still read dark against the ground, and unevenly, because each card's colour
+is its texture's own and the textures' exposures are unrelated. Measured on
+the shipped models' base colour textures, over the texels the alpha mask
+keeps (alpha ≥ 0.5), the mean linear luminance (Y = 0.2126 R + 0.7152 G +
+0.0722 B):
+
+| model | material | linear Y |
+| --- | --- | --- |
+| `clutter.grass_a` | the main tuft | 0.0942 |
+| `clutter.meadow` | the same texture | 0.0942 |
+| `clutter.grass_b` | the pale tuft | 0.2909 |
+| `clutter.flower_a` | | 0.1796 |
+| `clutter.flower_b` | | 0.1840 |
+| `clutter.bush_a`, `clutter.bush_b` | the same texture | 0.1543 |
+| `understory.fern` | | 0.0901 |
+
+The floor's own grass colour (`terrainSurface.ts` `GRASS`, (0.09, 0.15,
+0.06)) has Y 0.131: the main tuft and the fern stood at 0.7 of the floor they
+stand on and the pale tuft at 2.2 times it, which is why one tuft in three
+glowed and the rest sank, however they were lit. The ground textures follow
+one rule for this already (the terrain divides each by its own mean,
+`terrainTexture.ts` `LAYER_MEAN_RGB`, and multiplies it over the palette);
+the cards had none.
+
+**One rule, the ground textures'.** Every card material is brought to one
+target luminance by a gain on its albedo. `coverAlbedoParams.ts`
+(Babylon-free) holds the table above by catalog id (`COVER_ALBEDO_Y`), the
+target `COVER_ALBEDO_TARGET` 0.18, and `coverAlbedoGain(id)` =
+clamp(0.18 / Y, 0.4, 2.0), 1 for a model not in the table. The target is a
+little over the floor's grass: a sunlit clump of blades is brighter than the
+turf's mean, because the eye sees its lit and backlit faces, not the shaded
+ground under them; and a little over the pale flowers' own. The gains: the
+main tuft and the meadow 1.911, the pale tuft 0.619, the flowers 1.002 and
+0.978, the bushes 1.167, the fern 1.998. Neither end of the clamp is
+reached; a texture that reached one would be a texture to replace, not to
+push through the factor. The values are measurements and stay as literals;
+a model whose texture changes is measured again the same way (its base
+colour texture as shipped, the texels at alpha ≥ 0.5, linear Y averaged) and
+its row replaced.
+
+**Where it is applied.** `clutterMeshes.ts` multiplies the gain into the
+`albedoColor` of each card model's material as the models land, once per
+material (a GLB's two LOD groups share one, and the LOD copies and the cut
+copies made after share it by reference), on the classes that wear the
+foliage profile alone: grass, meadow, flower, bush and the sword fern. Rock,
+boulder, driftwood and fungus are not cards and take none, nor does the
+litter, which draws the rock and driftwood models; the classes built in code
+(shrub, wet plant, high plant) have no texture to measure and stay white
+under their own vertex colours. `forestMeshes.ts` gives the nurse log's fern
+the same gain, under its `NURSE_SHADE`, on the plain material it makes for
+it: that copy takes the texture and sets its own colour, so the gain goes in
+there. The shipped materials are white, so the product is the gain itself.
+`albedoColor` is a uniform: the shader text is unchanged and no define moves.
+
+The target the change was made for, on the stills at the game's opening
+conditions: the main tuft, the fern and the pale tuft at one brightness
+against the ground, the open tufts and the ferns of §12's targets reached
+by the albedo rather than by the light.

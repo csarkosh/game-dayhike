@@ -229,6 +229,26 @@ describe("createForestMeshes under NullEngine", () => {
     return { scene, assets, forest };
   }
 
+  it("gives the nurse log's fern the cover's albedo gain, on the plain material it wears there", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const fern = MeshBuilder.CreateBox("nurse_fern", { size: 1 }, scene);
+    const loaded = new PBRMaterial("understory.fern.material0", scene);
+    loaded.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
+    fern.material = loaded;
+    const forest = createForestMeshes(scene, SEED, { assets: { ...stubAssets(scene), nurseFern: fern }, bakeImpostor: () => null });
+    // The copy made for the log takes the texture and sets its own colour:
+    // the understory fern's gain, 0.18 / 0.0901, at the nurse shade of 1.
+    // The material as loaded is left white and never draws.
+    const worn = fern.material as PBRMaterial;
+    expect(worn).not.toBe(loaded);
+    expect(worn.name).toBe("understory.fern.material0_nurse");
+    for (const c of [worn.albedoColor.r, worn.albedoColor.g, worn.albedoColor.b]) expect(c).toBeCloseTo(1.99778, 5);
+    expect([loaded.albedoColor.r, loaded.albedoColor.g, loaded.albedoColor.b]).toEqual([1, 1, 1]);
+    forest.dispose();
+  });
+
   /** A 1×1 stand-in for a successful bake. */
   function stubBakeTexture(scene: Scene): Texture {
     return RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);

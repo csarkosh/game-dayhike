@@ -95,6 +95,7 @@ import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from ".
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
+import { coverAlbedoGain } from "./coverAlbedoParams.js";
 import { SHRUB_CHARACTERS, shrubGeometry } from "./shrubClump.js";
 import { WET_PLANT_COUNT, wetPlantGeometry } from "./wetPlantClump.js";
 import { HIGH_PLANT_COUNT, highPlantGeometry } from "./highPlantClump.js";
@@ -125,34 +126,38 @@ import { createCrossing, crossingAt, finish, turn, type Heading, type Slices, ty
 import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../sim/passes/clutter.js";
 
 /**
- * Model per class per variant, indexed by the class ids of `sim/clutter.ts`
- * (grass 0, rock 1, boulder 2, driftwood 3, fungus 4, bush 5, meadow 6,
- * flower 7, litter 8, fern 9, shrub 10, drift log 11, wet plant 12, high plant 13) and then by the instance's own `variant` draw. Driftwood and
- * meadow ship ONE model each, which is why the sim gives those classes
- * `variants: 1` and their instances always draw variant 0. Litter reuses the
- * rock and driftwood models at its own (small) scale range rather than
- * shipping dedicated pebble/twig geometry. Sword fern draws the forest's
- * understory fern, placed by its own habitat. The shrub class has no model:
- * its mounds are built in code (`shrubClump.ts`, `built` below), as the
- * wet-ground plants (`wetPlantClump.ts`) and the high ground's
- * (`highPlantClump.ts`) are.
+ * Model per class per variant, by catalog id (`client/assets/catalog.json`,
+ * whose output for an id is `models/<id>.glb`), indexed by the class ids of
+ * `sim/clutter.ts` (grass 0, rock 1, boulder 2, driftwood 3, fungus 4,
+ * bush 5, meadow 6, flower 7, litter 8, fern 9, shrub 10, drift log 11, wet
+ * plant 12, high plant 13) and then by the instance's own `variant` draw.
+ * Driftwood and meadow ship ONE model each, which is why the sim gives those
+ * classes `variants: 1` and their instances always draw variant 0. Litter
+ * reuses the rock and driftwood models at its own (small) scale range rather
+ * than shipping dedicated pebble/twig geometry. Sword fern draws the
+ * forest's understory fern, placed by its own habitat. The shrub class has
+ * no model: its mounds are built in code (`shrubClump.ts`, `built` below),
+ * as the wet-ground plants (`wetPlantClump.ts`) and the high ground's
+ * (`highPlantClump.ts`) are. The ids also key the cards' albedo gain
+ * (`coverAlbedoParams.ts`, applied in `adopt`).
  */
-const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
-  [modelUrl("models/clutter.grass_a.glb"), modelUrl("models/clutter.grass_b.glb")],
-  [modelUrl("models/clutter.rock_a.glb"), modelUrl("models/clutter.rock_b.glb")],
-  [modelUrl("models/clutter.boulder_a.glb"), modelUrl("models/clutter.boulder_b.glb")],
-  [modelUrl("models/clutter.driftwood.glb")],
-  [modelUrl("models/clutter.fungus_a.glb"), modelUrl("models/clutter.fungus_b.glb")],
-  [modelUrl("models/clutter.bush_a.glb"), modelUrl("models/clutter.bush_b.glb")],
-  [modelUrl("models/clutter.meadow.glb")],
-  [modelUrl("models/clutter.flower_a.glb"), modelUrl("models/clutter.flower_b.glb")],
-  [modelUrl("models/clutter.rock_a.glb"), modelUrl("models/clutter.rock_b.glb"), modelUrl("models/clutter.driftwood.glb")],
-  [modelUrl("models/understory.fern.glb")],
+const CLUTTER_MODEL_IDS: readonly (readonly string[])[] = [
+  ["clutter.grass_a", "clutter.grass_b"],
+  ["clutter.rock_a", "clutter.rock_b"],
+  ["clutter.boulder_a", "clutter.boulder_b"],
+  ["clutter.driftwood"],
+  ["clutter.fungus_a", "clutter.fungus_b"],
+  ["clutter.bush_a", "clutter.bush_b"],
+  ["clutter.meadow"],
+  ["clutter.flower_a", "clutter.flower_b"],
+  ["clutter.rock_a", "clutter.rock_b", "clutter.driftwood"],
+  ["understory.fern"],
   [],
-  [modelUrl("models/deadwood.snag.glb")],
+  ["deadwood.snag"],
   [],
   [],
 ];
+const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = CLUTTER_MODEL_IDS.map((ids) => ids.map((id) => modelUrl(`models/${id}.glb`)));
 
 /** A shrub leaf's roughness, and its reflectance at normal incidence as a
  * share of a dielectric's. Salal's leaf is leathery and a little glossy, but
@@ -1240,6 +1245,33 @@ export function createClutterMeshes(
     for (const mesh of driftLogs) {
       if (mesh.material instanceof PBRMaterial) mesh.material.albedoColor.copyFromFloats(...DRIFTLOG_BLEACH);
     }
+    // The cards at one albedo (`coverAlbedoParams.ts`): each card model's
+    // gain, multiplied into the material its meshes share, once per material
+    // (a GLB's two LOD groups carry one, as does every mesh of a group).
+    // Here, before the LOD copies and the cut copies below, which share the
+    // material by reference, so nothing applies it twice or misses it. The
+    // shipped materials are white, so the product is the gain itself; one
+    // that was not would keep its own colour under it. The classes that wear
+    // the foliage profile alone: a rock, boulder, driftwood or fungus is not
+    // a card and takes none, nor does the litter, which draws their models;
+    // the classes built in code have no id and are white under their own
+    // vertex colours.
+    const gained = new Set<PBRMaterial>();
+    loaded.forEach((variants, cls) => {
+      if (!FOLIAGE_BY_CLASS.has(cls)) return;
+      variants.forEach((perLod, variant) => {
+        const id = CLUTTER_MODEL_IDS[cls]?.[variant];
+        if (id === undefined) return;
+        const gain = coverAlbedoGain(id);
+        for (const mesh of perLod.flat()) {
+          const mat = mesh.material;
+          if (!(mat instanceof PBRMaterial) || gained.has(mat)) continue;
+          gained.add(mat);
+          const c = mat.albedoColor;
+          c.copyFromFloats(c.r * gain, c.g * gain, c.b * gain);
+        }
+      });
+    });
     buckets = loaded.map((variants, cls) =>
       expandCutVariants(cls, nearLodVariants(cls, variants)).map((perLod) =>
         perLod.map((meshes, lod) => {

@@ -8,7 +8,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_BOULDER, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_GRASS, CLUTTER_LITTER, CLUTTER_MEADOW, CLUTTER_ROCK } from "../../src/sim/clutter.js";
+import { CLUTTER_BOULDER, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTWOOD, CLUTTER_FERN, CLUTTER_FUNGUS, CLUTTER_GRASS, CLUTTER_LITTER, CLUTTER_MEADOW, CLUTTER_ROCK } from "../../src/sim/clutter.js";
 import { clutterFadeEdges, clutterSeamEdges, collectClutter } from "../../src/game/clutterField.js";
 import {
   CLUTTER_CULLED,
@@ -195,6 +195,32 @@ describe("foliage attribute and plugin", () => {
     expect(rockNear.material!.pluginManager?.getPlugin("Foliage") ?? null).toBeNull();
     const edge = clutterFadeEdges(CLUTTER_GRASS, RADIUS_SCALE);
     expect(plugin.edges).toEqual([edge.start, edge.end]);
+    meshes.dispose();
+    engine.dispose();
+  });
+
+  it("brings every card model's albedo to the cover's target, once per material, and leaves the rocks' alone", () => {
+    const { meshes, assets, engine } = buildWithAssets();
+    const albedo = (cls: number, variant: number, lod: number): [number, number, number] => {
+      const mat = assets[cls]![variant]![lod]![0]!.material as PBRMaterial;
+      return [mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b];
+    };
+    // The main tuft, 0.18 / 0.0942, and the pale one, 0.18 / 0.2909: the
+    // material a model's two LOD groups share is gained once, so both
+    // groups read the gain itself, not its square.
+    for (const lod of [0, 1]) {
+      for (const c of albedo(CLUTTER_GRASS, 0, lod)) expect(c).toBeCloseTo(1.91083, 5);
+      for (const c of albedo(CLUTTER_GRASS, 1, lod)) expect(c).toBeCloseTo(0.61877, 5);
+    }
+    // The meadow ships the main tuft's texture; the sword fern is the
+    // understory's, 0.18 / 0.0901.
+    for (const c of albedo(CLUTTER_MEADOW, 0, 0)) expect(c).toBeCloseTo(1.91083, 5);
+    for (const c of albedo(CLUTTER_FERN, 0, 0)) expect(c).toBeCloseTo(1.99778, 5);
+    // Not cards: white as loaded. The litter draws the rock and driftwood
+    // models and is white too.
+    for (const cls of [CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_LITTER]) {
+      expect(albedo(cls, 0, 0), `class ${cls}`).toEqual([1, 1, 1]);
+    }
     meshes.dispose();
     engine.dispose();
   });
