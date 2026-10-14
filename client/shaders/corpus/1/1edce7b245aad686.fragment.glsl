@@ -1247,14 +1247,15 @@ return waterRainLayer(xz, t, 0.0, 2.5, vec2(0.0, 0.0), 1.0, 0.0)
 + waterRainLayer(xz, t, 3.0, 3.8, vec2(0.19, 0.83), 1.13, 0.7);
 }
 // The lake's ripples as two states, spliced into the water plugin's fragment
-// definitions after water.fragment.fx: the cat's-paw mask that switches the
-// surface between glass and the rippled octaves, and the rain's rings near
-// the eye, then the lake's second octave. Every function but the octave,
+// definitions after water.fragment.fx: the cat's-paw mask that lifts the
+// rippled octaves from a faint floor, silent on a lake all glass, to their
+// whole amplitude, and the rain's rings near the eye, then the lake's second
+// octave. Every function but the octave,
 // which samples PBR's bump, is a pure function of its arguments with a twin
 // of the same name in lakeRipples.ts, and every constant mirrors
 // lakeRipples.ts or windParams.ts, which a lockstep test holds equal.
-// Branches are chosen by step, mix, clamp and smoothstep, never by a test on
-// a varying.
+// Branches are chosen by step, mix, clamp, max and smoothstep, never by a
+// test on a varying.
 //
 // COMMENT RULES: never put a semicolon inside a trailing comment on a code
 // line, and never spell a hashed preprocessor keyword in comment prose. The
@@ -1264,6 +1265,8 @@ const float PAW_SPEED = 1.5;
 const float PAW_EDGE_M = 0.5;
 const float PAW_LIFE_S = 6.0;
 const float PAW_GUST_FLOOR = 0.5;
+// The octaves' amplitude outside the paws on a lake with no glass.
+const float OCTAVE_FLOOR = 0.25;
 // The paws' threshold at cover 0, 1/8, 2/8 and on to 1, measured so the
 // paws cover about the cover under the real gusts (PAW_COVER_TABLE).
 const float PAW_COVER_0 = 1.0;
@@ -1377,9 +1380,11 @@ f *= g;
 float slope = max(length(f.yz), 1.0e-4);
 return clamp((f.x - lakePawThreshold(cover)) / (slope * PAW_EDGE_M), 0.0, 1.0);
 }
-// The octaves' amplitude under the mask: 1 in a paw, 0 on glass, smooth over the edge.
-float octaveAmplitude(float paw) {
-return smoothstep(0.0, 1.0, paw);
+// The octaves' amplitude under the mask at the lake's glass share calm: 1 in
+// a paw, smooth over its edge, and outside the paws OCTAVE_FLOOR times
+// (1 - calm), 0 on a lake all glass.
+float octaveAmplitude(float paw, float calm) {
+return max(smoothstep(0.0, 1.0, paw), OCTAVE_FLOOR * (1.0 - calm));
 }
 // Live rings a square metre at the weather's rain, LAKE_RAIN_MM_H mm/h at 1:
 // LAKE_RINGS_0 at 0.5 mm/h, LAKE_RINGS_1 at 1 and LAKE_RINGS_2 from 2, linear between.
@@ -1699,8 +1704,10 @@ float wDepth = waterBedDepth(vPositionW.xz);
 if (wDepth <= 0.0) discard;
 float wKdMean = (waterKd.r + waterKd.g + waterKd.b) / 3.0;
 // The lake's two states (lakeRipples.fragment.fx): the cat's-paw mask at this
-// pixel, from the gust that crosses it, and the two octaves at its amplitude,
-// so the surface is glass where the mask is 0. The field is skipped where the
+// pixel, from the gust that crosses it, and the two octaves at its amplitude.
+// Outside the paws the octaves run at a faint floor wherever the lake is not
+// glass, fading to silent as the glass share waterCalmShare reaches 1, so the
+// surface is glass only when the glass share is 1. The field is skipped where the
 // cover is 0 (glass all over), where its threshold of 1 is no lower than any
 // value the field takes, so the mask is 0 there either way. PBR's bump, the first
 // octave, is scaled about the up it was built on.
@@ -1708,7 +1715,7 @@ float wPaw = 0.0;
 if (waterPawCover > 0.0) {
 wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));
 }
-float wOctave = octaveAmplitude(wPaw);
+float wOctave = octaveAmplitude(wPaw, waterCalmShare);
 normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));
 if (waterOctaves > 1.5) {
 vec2 wSlope = lakeRipple2(vPositionW.xz);

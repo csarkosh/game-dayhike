@@ -1,5 +1,5 @@
 #version 450
-#define MATERIALPLUGIN_19
+#define MATERIALPLUGIN_7
 #define BRDF_V_HEIGHT_CORRELATED
 #define MS_BRDF_ENERGY_CONSERVATION
 #define SPHERICAL_HARMONICS
@@ -16,7 +16,6 @@
 #define IRIDESCENCE_TEXTUREDIRECTUV 0
 #define IRIDESCENCE_THICKNESS_TEXTUREDIRECTUV 0
 #define ANISOTROPIC_TEXTUREDIRECTUV 0
-#define MAINUV1
 #define SHEEN_TEXTUREDIRECTUV 0
 #define SHEEN_TEXTURE_ROUGHNESSDIRECTUV 0
 #define SS_THICKNESSANDMASK_TEXTUREDIRECTUV 0
@@ -25,8 +24,6 @@
 #define SS_TRANSLUCENCYCOLOR_TEXTUREDIRECTUV 0
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
-#define WATER
-#define UV1
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -43,16 +40,24 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define TONEMAPPING 0
-#define IMAGEPROCESSINGPOSTPROCESS
+#define IMAGEPROCESSING
+#define VIGNETTE
+#define VIGNETTEBLENDMODEMULTIPLY
+#define TONEMAPPING 3
+#define CONTRAST
+#define COLORCURVES
+#define SAMPLER3DGREENDEPTH
+#define SAMPLER3DBGRMAP
+#define DITHER
+#define EXPOSURE
 #define PBR
 #define NUM_SAMPLES 0
 #define ALBEDODIRECTUV 0
+#define VERTEXCOLOR
 #define BASE_WEIGHTDIRECTUV 0
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
-#define ALPHABLEND
 #define ALPHATESTVALUE 0.4
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
@@ -66,8 +71,7 @@
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
-#define BUMP
-#define BUMPDIRECTUV 1
+#define BUMPDIRECTUV 0
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
 #define REFLECTION
@@ -90,7 +94,6 @@
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
-#define VERTEX_PULLING_INDEX_BUFFER_32BITS
 #define CLUSTLIGHT_SLICES 0
 #define CLUSTLIGHT_BATCH 0
 #define LIGHT0
@@ -103,8 +106,17 @@
 #define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME fragment:pbr
-layout(set = 1, binding = 26) uniform LeftOver {
-        vec4 vFogInfos;
+layout(set = 1, binding = 12) uniform LeftOver {
+        float exposureLinear;
+    float contrast;
+    vec2 vInverseScreenSize;
+    vec4 vignetteSettings1;
+    vec4 vignetteSettings2;
+    vec4 vCameraColorCurveNegative;
+    vec4 vCameraColorCurveNeutral;
+    vec4 vCameraColorCurvePositive;
+    float ditherIntensity;
+    vec4 vFogInfos;
     vec3 vFogColor;
 };
 
@@ -117,7 +129,6 @@ vec4 glFragCoord_;
 
 #define PBR_FRAGMENT_SHADER
 #define CUSTOM_FRAGMENT_EXTENSION
-
 
 #define CUSTOM_FRAGMENT_BEGIN
 precision highp float;
@@ -256,44 +267,32 @@ vec2 atmCloudWind;
 vec2 atmCloudGlow;
 vec3 atmCloudColour;
 vec4 atmCloudGroundRect;
-float waterLevel;
-vec3 waterKd;
-vec4 waterBed;
-float waterBedTexels;
-float waterTime;
-vec2 waterWind;
-vec2 waterWindTime;
-vec2 waterScreen;
-float waterHigh;
-float waterOctaves;
-vec2 waterNearFar;
-vec2 waterSkin;
-float waterRain;
-float waterLakeTime;
-float waterPawCover;
-vec4 waterMirrorVP[4];
-float waterMirrorOn;
-float waterMirrorK;
-float waterMirrorWeight;
-float waterMirrorSmearPx;
-float waterCalmShare;
-float waterMirrorMotion;
-vec3 waterLakeCentre;
-float waterLakeRadius;
-vec3 waterShadeColour;
-float waterPanoramaOn;
-float waterSkylineOn;
-vec4 oceanPhase0;
-vec4 oceanPhase1;
-vec4 oceanPhase2;
-vec4 oceanSwell;
-vec4 oceanTips;
-vec4 oceanCoast;
-vec4 oceanWind;
-vec4 oceanWindDir;
-vec4 oceanWindStats;
-vec4 oceanWindPivot;
-vec4 oceanK[12];
+vec2 windDir;
+float windLean;
+float windGust;
+float windFlutter;
+float windTime;
+vec3 windEye;
+vec3 windPlayers[5];
+float foliageAmp;
+float foliageHeight;
+float foliageTint;
+float foliageRootAO;
+float foliageNormalRoot;
+float foliageNormalUp;
+vec2 foliageFlags;
+vec2 foliageEdges;
+vec4 foliageBladeEdges;
+float wetLine;
+float wetLevel;
+vec2 wetCentre;
+float wetRadius;
+vec3 wetKd;
+float wetAttenuate;
+float wetWeather;
+float wetCap;
+vec4 wetCove;
+vec4 wetSwash[256];
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -308,10 +307,10 @@ layout(set = 1, binding = 2) uniform Mesh
 float visibility;
 };
 #define WORLD_UBO
-layout(location = 1)  in vec3 vPositionW;
-layout(location = 0)  in vec2 vMainUV1;
-layout(location = 2)  in vec3 vNormalW;
-layout(location = 3)  in vec3 vEnvironmentIrradiance;
+layout(location = 0)  in vec3 vPositionW;
+layout(location = 1)  in vec3 vNormalW;
+layout(location = 2)  in vec3 vEnvironmentIrradiance;
+layout(location = 3)  in vec4 vColor;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -344,6 +343,15 @@ layout(set = 1, binding = 7) uniform sampler reflectionSamplerSampler;
 layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
                         layout(set = 1, binding = 8) uniform texture2D environmentBrdfSamplerTexture;
                         #define environmentBrdfSampler sampler2D(environmentBrdfSamplerTexture, environmentBrdfSamplerSampler)
+
+
+
+
+
+
+
+
+
 #define FOGMODE_NONE 0.
 #define FOGMODE_EXP 1.
 #define FOGMODE_EXP2 2.
@@ -556,11 +564,47 @@ return reflectance90;
 vec2 getAARoughnessFactors(vec3 normalVector) {
 return vec2(0.);
 }
+const float PBRNeutralStartCompression=0.8-0.04;
+const float PBRNeutralDesaturation=0.15;
+vec3 PBRNeutralToneMapping( vec3 color ) {float x=min(color.r,min(color.g,color.b));
+float offset=x<0.08 ? x-6.25*x*x : 0.04;
+color-=offset;
+float peak=max(color.r,max(color.g,color.b));
+if (peak<PBRNeutralStartCompression) return color;
+float d=1.-PBRNeutralStartCompression;
+float newPeak=1.-d*d/(peak+d-PBRNeutralStartCompression);
+color*=newPeak/peak;
+float g=1.-1./(PBRNeutralDesaturation*(peak-newPeak)+1.);
+return mix(color,newPeak*vec3(1,1,1),g);
+}
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_DEFINITIONS
 vec4 applyImageProcessing(vec4 result) {
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATSTART
+result.rgb*=exposureLinear;
+vec2 viewportXY=glFragCoord_.xy*vInverseScreenSize;
+viewportXY=viewportXY*2.0-1.0;
+vec3 vignetteXY1=vec3(viewportXY*vignetteSettings1.xy+vignetteSettings1.zw,1.0);
+float vignetteTerm=dot(vignetteXY1,vignetteXY1);
+float vignette=pow(vignetteTerm,vignetteSettings2.w);
+vec3 vignetteColor=vignetteSettings2.rgb;
+vec3 vignetteColorMultiplier=mix(vignetteColor,vec3(1,1,1),vignette);
+result.rgb*=vignetteColorMultiplier;
+result.rgb=PBRNeutralToneMapping(result.rgb);
 result.rgb=toGammaSpace(result.rgb);
 result.rgb=saturate(result.rgb);
+vec3 resultHighContrast=result.rgb*result.rgb*(3.0-2.0*result.rgb);
+if (contrast<1.0) {result.rgb=mix(vec3(0.5,0.5,0.5),result.rgb,contrast);
+} else {result.rgb=mix(result.rgb,resultHighContrast,contrast-1.0);
+}
+result.rgb=max(result.rgb,0.);
+float luma=getLuminance(result.rgb);
+vec2 curveMix=clamp(vec2(luma*3.0-1.5,luma*-3.0+1.5),vec2(0.0),vec2(1.0));
+vec4 colorCurve=vCameraColorCurveNeutral+curveMix.x*vCameraColorCurvePositive-curveMix.y*vCameraColorCurveNegative;
+result.rgb*=colorCurve.rgb;
+result.rgb=mix(vec3(luma),result.rgb,colorCurve.a);
+float rand=getRand(glFragCoord_.xy*vInverseScreenSize);
+float dither=mix(-ditherIntensity,ditherIntensity,rand);
+result.rgb=saturate(result.rgb+vec3(dither));
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATEND
 return result;
 }
@@ -800,33 +844,6 @@ float environmentHorizonOcclusion(vec3 view,vec3 normal,vec3 geometricNormal) {v
 float temp=saturate(1.0+1.1*dot(reflection,geometricNormal));
 return square(temp);
 }
-vec3 perturbNormalBase(mat3 cotangentFrame,vec3 normal,float scale)
-{
-normal=normalize(normal*vec3(scale,scale,1.0));
-return normalize(cotangentFrame*normal);
-}
-vec3 perturbNormal(mat3 cotangentFrame,vec3 textureSample,float scale)
-{return perturbNormalBase(cotangentFrame,textureSample*2.0-1.0,scale);
-}
-mat3 cotangent_frame(vec3 normal,vec3 p,vec2 uv,vec2 tangentSpaceParams)
-{vec3 dp1=dFdx(p);
-vec3 dp2=(-yFactor_)*dFdy(p);
-vec2 duv1=dFdx(uv);
-vec2 duv2=(-yFactor_)*dFdy(uv);
-vec3 dp2perp=cross(dp2,normal);
-vec3 dp1perp=cross(normal,dp1);
-vec3 tangent=dp2perp*duv1.x+dp1perp*duv2.x;
-vec3 bitangent=dp2perp*duv1.y+dp1perp*duv2.y;
-tangent*=tangentSpaceParams.x;
-bitangent*=tangentSpaceParams.y;
-float det=max(dot(tangent,tangent),dot(bitangent,bitangent));
-float invmax=det==0.0 ? 0.0 : inversesqrt(det);
-return mat3(tangent*invmax,bitangent*invmax,normal);
-}
-#define vBumpUV vMainUV1
-layout(set = 1, binding = 11) uniform sampler bumpSamplerSampler;
-                        layout(set = 1, binding = 10) uniform texture2D bumpSamplerTexture;
-                        #define bumpSampler sampler2D(bumpSamplerTexture, bumpSamplerSampler)
 vec3 computeFixedEquirectangularCoords(vec4 worldPos,vec3 worldNormal,vec3 direction)
 {float lon=atan(direction.z,direction.x);
 float lat=acos(direction.y);
@@ -921,8 +938,8 @@ return computeCubicCoords(worldPos,worldNormal,vEyePosition.xyz,reflectionMatrix
 // cloud's map (cloudParams.ts) is one texture: tileable noise in R and G,
 // read wrapping, and the height of the ground round the player in B, read
 // with its coordinates held off the edge so the wrap never reaches it.
-layout(set = 1, binding = 13) uniform sampler atmCloudMapSampler;
-                        layout(set = 1, binding = 12) uniform texture2D atmCloudMapTexture;
+layout(set = 1, binding = 11) uniform sampler atmCloudMapSampler;
+                        layout(set = 1, binding = 10) uniform texture2D atmCloudMapTexture;
                         #define atmCloudMap sampler2D(atmCloudMapTexture, atmCloudMapSampler)
 // The distance gradient: the far colour dimmed to ATM_NEAR_DIM at the eye,
 // rising as t to the power 1 / ATM_GRADIENT_BIAS. Mirrors fogGradientUnder.
@@ -1017,475 +1034,116 @@ float cloudGlow = pow(max(dot(rd, atmSunDir), 0.0), atmCloudGlow.y) * atmCloudGl
 vec3 cloud = atmCloudColour + atmSunColour * cloudGlow;
 return mix(cloud, fogged, exp(-od));
 }
-// Water plugin, fragment definitions. Spliced at CUSTOM_FRAGMENT_DEFINITIONS
-// on both the UBO and non-UBO paths, which is why the samplers are declared
-// here and not in getUniforms().fragment (the atmosphere.ts precedent).
+// Foliage fragment definitions, spliced at CUSTOM_FRAGMENT_DEFINITIONS: the
+// varyings the vertex block wrote. No sampler, no function.
+//
+// COMMENT RULES as in foliage.vertex.fx.
+// Foliage diffuse, spliced into the PBR fragment by FoliageLightPlugin at
+// CUSTOM_FRAGMENT_DEFINITIONS and called from every per-light diffuse line
+// with that light's index. Only the sun (index 0) is changed: an energy-
+// conserving wrap Lambert plus a backlight term that glows when the light is
+// behind the card and the viewer in front, thicker at the root. Other lights
+// return Babylon's own result untouched. The plugin is only attached to
+// materials that also carry the foliage plugin, which declares vFoliageH.
+//
+// COMMENT RULES: no semicolon inside a trailing comment on a code line, no
+// hashed preprocessor keyword in comment prose.
+const float FOLIAGE_WRAP = 0.35;
+const float FOLIAGE_BACK = 0.6;
+const float FOLIAGE_BACK_POWER = 4.0;
+const float FOLIAGE_PI = 3.14159265;
+float foliageWrapLambert(float ndotl, float wrap) {
+return clamp((ndotl + wrap) / ((1.0 + wrap) * (1.0 + wrap)), 0.0, 1.0);
+}
+vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float lightIndex, float h, vec3 viewDir) {
+if (lightIndex > 0.5) {
+return computeDiffuseLighting(info, lightColor);
+}
+vec3 unit = info.attenuation * lightColor / FOLIAGE_PI;
+vec3 wrapped = unit * foliageWrapLambert(info.NdotLUnclamped, FOLIAGE_WRAP);
+float back = pow(clamp(-dot(viewDir, info.L), 0.0, 1.0), FOLIAGE_BACK_POWER);
+float thickness = 1.0 - 0.7 * h;
+return wrapped + unit * FOLIAGE_BACK * back * thickness;
+}
+// Wet plugin, fragment definitions: what the water touches is darker and
+// glossy below the wet line, and on the medium and low tiers darkened by
+// the water above it as well (spec §6). Applied on both UBO paths at
+// CUSTOM_FRAGMENT_DEFINITIONS.
 //
 // COMMENT RULES: never put a semicolon inside a trailing comment on a code
 // line, and never spell a hashed preprocessor keyword in comment prose. The
 // shaderHygiene test enforces both.
 //
-// The literals mirror waterShading.ts and a lockstep test asserts they agree.
-layout(set = 1, binding = 15) uniform sampler waterBedHeightSampler;
-                        layout(set = 1, binding = 14) uniform texture2D waterBedHeightTexture;
-                        #define waterBedHeight sampler2D(waterBedHeightTexture, waterBedHeightSampler)
-layout(set = 1, binding = 17) uniform sampler waterSceneSampler;
-                        layout(set = 1, binding = 16) uniform texture2D waterSceneTexture;
-                        #define waterScene sampler2D(waterSceneTexture, waterSceneSampler)
-layout(set = 1, binding = 19) uniform sampler waterDepthSampler;
-                        layout(set = 1, binding = 18) uniform texture2D waterDepthTexture;
-                        #define waterDepth sampler2D(waterDepthTexture, waterDepthSampler)
-// The lake's mirror (lakeMirror.fragment.fx), declared on a lake alone: the
-// sea binds a placeholder to a name its stages never declare.
-layout(set = 1, binding = 21) uniform sampler waterMirrorSampler;
-                        layout(set = 1, binding = 20) uniform texture2D waterMirrorTexture;
-                        #define waterMirror sampler2D(waterMirrorTexture, waterMirrorSampler)
-// The lake's shore on medium and low (lakeMirror.fragment.fx), on a lake
-// alone too: the panorama, half float, and the skyline, a 32-bit float a
-// texel.
-layout(set = 1, binding = 23) uniform sampler waterPanoramaSampler;
-                        layout(set = 1, binding = 22) uniform texture2D waterPanoramaTexture;
-                        #define waterPanorama sampler2D(waterPanoramaTexture, waterPanoramaSampler)
-layout(set = 1, binding = 25) uniform sampler waterSkylineSampler;
-                        layout(set = 1, binding = 24) uniform texture2D waterSkylineTexture;
-                        #define waterSkyline sampler2D(waterSkylineTexture, waterSkylineSampler)
-layout(location = 5)  in float vBedDepth;
-// The surface's view depth in metres, from the vertex stage.
-layout(location = 6)  in float vWaterViewDepth;
-const float WATER_F0 = 0.02;
-const float WATER_HORIZON = 0.02;
-const float WATER_REFRACT = 0.02;
-const float WATER_REFRACT_DEPTH = 1.0;
-// The second ripple octave: metres a tile, its share of the first's slope,
-// and its drift in tiles per second along the wind (spec §5.3).
-const float WATER_OCTAVE2_TILE = 3.0;
-const float WATER_OCTAVE2_WEIGHT = 0.333;
-const float WATER_OCTAVE2_DRIFT = 0.04;
-// The skin's drift in metres per second along the wind. It is carried by the wind's integral over the run,
-// so a day's run offsets the pattern by a few thousand metres, the order of the world coordinates the hash takes
-const float WATER_SKIN_DRIFT = 0.04;
-// The rain's rings, the puddles' own: a ring's radius as a share of its cell,
-// and how far in from the cell's edges its centre sits at least. These and
-// the four layers' numbers in waterRainSlope mirror RIPPLE_RADIUS,
-// RIPPLE_INSET and RIPPLE_LAYERS in rainParams.ts, and a test holds them equal.
-const float WATER_RAIN_RADIUS = 0.25;
-const float WATER_RAIN_INSET = 0.25;
-// The second octave's slope from the same bump texture at a finer tile,
-// drifting with the wind. The first octave is PBR's own bump (24 m a tile,
-// scrolled by the shell). Returns an xz slope to add to the normal.
-vec2 waterRipple2(vec2 xz) {
-vec2 uv = xz / WATER_OCTAVE2_TILE + waterWindTime * WATER_OCTAVE2_DRIFT;
-vec3 n = texture(bumpSampler, uv).xyz * 2.0 - 1.0;
-return n.xy * WATER_OCTAVE2_WEIGHT;
+// The literals mirror wetPlugin.ts and a lockstep test asserts they agree.
+const float WET_ALBEDO = 0.4;
+const float WET_ROUGHNESS = 0.15;
+const float WET_BAND = 0.1;
+// 1 below the line, 0 above it, blended over WET_BAND.
+float wetBelow(float y, float line) {
+return 1.0 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, y);
 }
-// Bed height under world xz from the R32F square, bilinear by hand: r32float
-// is not filterable on WebGPU and OES_texture_float_linear is not a given on
-// WebGL2, so the texture is sampled nearest and blended here. Outside the
-// square the ring vertex's depth stands in (it is coarse but it is deep).
-float waterBedDepth(vec2 xz) {
-vec2 local = (xz - waterBed.xy) * waterBed.z;
-  // Every read happens on every path: a texture read inside a branch on a
-  // varying is non-uniform control flow, which the WebGPU compiler refuses.
-vec2 t = clamp(local, 0.0, 1.0) * waterBedTexels - 0.5;
-vec2 i = floor(t);
-vec2 f = t - i;
-vec2 texel = vec2(1.0 / waterBedTexels);
-vec2 uv0 = (i + 0.5) * texel;
-float h00 = texture(waterBedHeight, uv0).r;
-float h10 = texture(waterBedHeight, uv0 + vec2(texel.x, 0.0)).r;
-float h01 = texture(waterBedHeight, uv0 + vec2(0.0, texel.y)).r;
-float h11 = texture(waterBedHeight, uv0 + texel).r;
-float h = mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
-bool outside = local.x <= 0.0 || local.y <= 0.0 || local.x >= 1.0 || local.y >= 1.0;
-return outside ? vBedDepth : waterLevel - h;
+// 1 inside the body's footprint, 0 from 3 m past its rim, blended from 1 m.
+// Both the wet look and the darkening by the water above are held to it.
+float wetInside(vec2 xz, vec2 centre, float radius) {
+return 1.0 - smoothstep(radius + 1.0, radius + 3.0, length(xz - centre));
 }
-// Tilts a ripple normal so the reflected ray clears the horizon: the
-// reflection is lifted to y = WATER_HORIZON with its xz shortened to keep it
-// unit, and the normal that reflects the view exactly onto that ray is the
-// half-vector. One step, no loop. Mirrors horizonSafeNormal in
-// waterShading.ts exactly.
-vec3 waterHorizonNormal(vec3 n, vec3 view) {
-vec3 r = reflect(-view, n);
-if (r.y >= WATER_HORIZON) return n;
-float xz = length(r.xz);
-if (xz < 1.0e-4) {
-r = vec3(0.0, 1.0, 0.0);
-} else {
-r.xz *= sqrt(1.0 - WATER_HORIZON * WATER_HORIZON) / xz;
-r.y = WATER_HORIZON;
+// The cove's swash (wetPlugin.ts, swashTable.ts): inside the cove the ground
+// is wet up to the line each column's sheet last climbed to, and dries after
+// it. wetCove is (z0, halfWidth, toeD, faceGrade), wetSwash the table's
+// (reach, age) two columns a vec4: the reach in metres up the face from the
+// still waterline, the age in seconds since a sheet last covered the column.
+// The literals mirror wetPlugin.ts and a lockstep test asserts they agree.
+const float WET_DAMP_ALBEDO = 0.7;
+const float WET_DAMP_ROUGHNESS = 0.5;
+const float WET_DRY_S = 60.0;
+const float WET_SOAKED_S = 0.5;
+const float WET_SPECKLE = 0.2;
+const float WET_SPECKLE_S = 10.0;
+const float WET_SPECKLE_CELL = 0.05;
+const float WET_SPECKLE_COVER = 0.25;
+const float WET_SPECKLE_NEAR = 10.0;
+const float WET_SPECKLE_FAR = 25.0;
+const float WET_COVE_END = 30.0;
+const float WET_SWASH_COLUMNS = 512.0;
+const float WET_SWASH_HALF = 256.0;
+// The cove's share at world z: 1 across it, 0 past WET_COVE_END beyond
+// either end, blended over the ends as the ground is, so the bays keep the
+// still line alone and no seam shows where the pebbles meet the sand.
+float wetCoveShare(float z) {
+return 1.0 - smoothstep(wetCove.y - WET_COVE_END, wetCove.y + WET_COVE_END, abs(z - wetCove.x));
 }
-return normalize(view + r);
+// The table's column nearest world z, as the sea reads its own (oceanSwash.fx):
+// its reach and its age, from the pair of columns its vec4 holds, the half
+// picked by the column's parity.
+vec2 wetSwashAt(float z) {
+float c = floor(clamp(z - wetCove.x + WET_SWASH_HALF, 0.0, WET_SWASH_COLUMNS - 1.0) + 0.5);
+vec4 pair = wetSwash[int(c * 0.5)];
+return mix(pair.xy, pair.zw, mod(c, 2.0));
 }
-// The skin: duckweed and algae mats on a murky lake. A value noise on the unit
-// lattice (a hash without sine, which loses precision at world coordinates),
-// the lake's seed offsetting it.
-float waterSkinHash(vec2 p) {
-vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+// The cove's wetting at a point: how soaked, how damp, and the speckle's
+// weight. Below the face's height at the column's reach (wetLevel plus the
+// reach times the grade), soaked for WET_SOAKED_S after a sheet, damp by a
+// third of WET_DRY_S, dry by WET_DRY_S, and above the still sea a speckle of
+// foam fading over WET_SPECKLE_S. All 0 outside the cove.
+vec3 wetShore(vec2 xz, float y) {
+vec2 col = wetSwashAt(xz.y);
+float band = wetBelow(y, wetLevel + col.x * wetCove.w) * wetCoveShare(xz.y);
+float soaked = 1.0 - smoothstep(WET_SOAKED_S, WET_DRY_S / 3.0, col.y);
+float damp = smoothstep(WET_SOAKED_S, WET_DRY_S / 3.0, col.y) - smoothstep(WET_DRY_S / 3.0, WET_DRY_S, col.y);
+float fresh = clamp(1.0 - col.y / WET_SPECKLE_S, 0.0, 1.0);
+float above = 1.0 - wetBelow(y, wetLevel);
+return vec3(soaked, damp, WET_SPECKLE * fresh * above) * band;
+}
+// The speckle's foam: WET_SPECKLE_COVER of the WET_SPECKLE_CELL cells carry
+// it, faded to that share as the point's distance from the eye (far) runs
+// from WET_SPECKLE_NEAR to WET_SPECKLE_FAR metres, where the cells fall under
+// a pixel. The hash is the water's skin's, without sine, which loses
+// precision at world coordinates.
+float wetSpeckle(vec2 xz, float far) {
+vec3 p3 = fract(vec3(floor(xz / WET_SPECKLE_CELL).xyx) * 0.1031);
 p3 += dot(p3, p3.yzx + 33.33);
-return fract((p3.x + p3.y) * p3.z);
-}
-float waterSkinNoise(vec2 p) {
-vec2 i = floor(p);
-vec2 f = p - i;
-vec2 u = f * f * (3.0 - 2.0 * f);
-float a = waterSkinHash(i);
-float b = waterSkinHash(i + vec2(1.0, 0.0));
-float c = waterSkinHash(i + vec2(0.0, 1.0));
-float d = waterSkinHash(i + vec2(1.0, 1.0));
-return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-// Where the skin lies, 0 to 1: duckweed in drifts on the sheltered shallows,
-// under 1.5 m, and algae in clumped mats along the margin, under 0.4 m.
-float waterSkinMask(vec2 xz, float depth) {
-if (waterSkin.x <= 0.0) return 0.0;
-vec2 p = xz + waterSkin.y - waterWindTime * WATER_SKIN_DRIFT;
-float drift = waterSkinNoise(p / 9.0) * 0.65 + waterSkinNoise(p / 3.0) * 0.35;
-float duckweed = smoothstep(0.55, 0.62, drift) * (1.0 - smoothstep(0.9, 1.5, depth));
-float algae = smoothstep(0.5, 0.58, waterSkinNoise(p / 1.6)) * (1.0 - smoothstep(0.15, 0.4, depth));
-return waterSkin.x * max(duckweed, algae);
-}
-// The skin's colour: duckweed's bright fronds, finely speckled near the eye
-// and evened out with distance so the speckle never shimmers, and the
-// yellower algae where the mats clump.
-vec3 waterSkinColour(vec2 xz, float viewDepth) {
-vec2 p = xz + waterSkin.y - waterWindTime * WATER_SKIN_DRIFT;
-float frond = mix(waterSkinNoise(p * 7.0), 0.5, smoothstep(10.0, 40.0, viewDepth));
-vec3 duckweed = mix(vec3(0.16, 0.26, 0.05), vec3(0.24, 0.34, 0.07), frond);
-vec3 algae = vec3(0.30, 0.32, 0.10);
-return mix(duckweed, algae, 0.5 * smoothstep(0.4, 0.6, waterSkinNoise(p / 1.6)));
-}
-// One layer of the rain's rings, line for line the puddles' layer in
-// trailPaint.ts on the water's own hash: the plane cut into cells at scale a
-// metre, one ring a cell, its centre and its phase hashed from the cell
-// folded to 512, the phase run at timeMul cycles a second from timeAdd. The
-// layer blends in over its quarter of the rain. Returns its xz slope.
-vec2 waterRainLayer(vec2 xz, float t, float layer, float scale, vec2 offset, float timeMul, float timeAdd) {
-vec2 p = xz * scale + offset;
-vec2 c = floor(p);
-vec2 h = mod(c, 512.0);
-vec2 centre = vec2(waterSkinHash(h + vec2(37.0, 0.0)), waterSkinHash(h + vec2(0.0, 91.0))) * (1.0 - 2.0 * WATER_RAIN_INSET) + WATER_RAIN_INSET;
-vec2 d = p - c - centre;
-float dist = length(d);
-float r = clamp(1.0 - dist / WATER_RAIN_RADIUS, 0.0, 1.0);
-vec2 dir = d / max(dist, 0.0001);
-float w = clamp(waterRain * 4.0 - layer, 0.0, 1.0);
-float drop = fract(waterSkinHash(h) + t * timeMul + timeAdd);
-float rt = drop - 1.0 + r;
-float f = clamp(0.2 + w * 0.8 - drop, 0.0, 1.0);
-return dir * f * r * sin(clamp(rt * 9.0, 0.0, 3.0) * 3.14159) * 0.35;
-}
-// The rain's rings at world xz, their xz slope: four layers, as on the
-// puddles. None without rain, a branch on the uniform. The time folds by the
-// hour as rippleTime does on the CPU, every layer's rate a whole number of
-// cycles in it, so the fold keeps the t times timeMul product precise and no ring jumps.
-vec2 waterRainSlope(vec2 xz) {
-if (waterRain <= 0.0) return vec2(0.0);
-float t = mod(waterTime, 3600.0);
-return waterRainLayer(xz, t, 0.0, 2.5, vec2(0.0, 0.0), 1.0, 0.0)
-+ waterRainLayer(xz, t, 1.0, 3.2, vec2(0.37, 0.61), 0.85, 0.2)
-+ waterRainLayer(xz, t, 2.0, 2.1, vec2(0.71, 0.13), 0.93, 0.45)
-+ waterRainLayer(xz, t, 3.0, 3.8, vec2(0.19, 0.83), 1.13, 0.7);
-}
-// The lake's ripples as two states, spliced into the water plugin's fragment
-// definitions after water.fragment.fx: the cat's-paw mask that switches the
-// surface between glass and the rippled octaves, and the rain's rings near
-// the eye, then the lake's second octave. Every function but the octave,
-// which samples PBR's bump, is a pure function of its arguments with a twin
-// of the same name in lakeRipples.ts, and every constant mirrors
-// lakeRipples.ts or windParams.ts, which a lockstep test holds equal.
-// Branches are chosen by step, mix, clamp and smoothstep, never by a test on
-// a varying.
-//
-// COMMENT RULES: never put a semicolon inside a trailing comment on a code
-// line, and never spell a hashed preprocessor keyword in comment prose. The
-// shaderHygiene test enforces both.
-const float PAW_FEATURE_M = 10.0;
-const float PAW_SPEED = 1.5;
-const float PAW_EDGE_M = 0.5;
-const float PAW_LIFE_S = 6.0;
-const float PAW_GUST_FLOOR = 0.5;
-// The paws' threshold at cover 0, 1/8, 2/8 and on to 1, measured so the
-// paws cover about the cover under the real gusts (PAW_COVER_TABLE).
-const float PAW_COVER_0 = 1.0;
-const float PAW_COVER_1 = 0.521;
-const float PAW_COVER_2 = 0.404;
-const float PAW_COVER_3 = 0.343;
-const float PAW_COVER_4 = 0.294;
-const float PAW_COVER_5 = 0.246;
-const float PAW_COVER_6 = 0.198;
-const float PAW_COVER_7 = 0.144;
-const float PAW_COVER_8 = 0.0;
-const float LAKE_RING_REACH = 8.0;
-const float LAKE_RING_FADE_M = 2.0;
-const float LAKE_RING_CELL = 0.18;
-const float LAKE_RING_SPEED = 0.18;
-const float LAKE_RING_LAMBDA = 0.03;
-const float LAKE_RING_TAU = 0.3;
-const float LAKE_RING_AMP = 0.004;
-const float LAKE_RINGS_0 = 35.0;
-const float LAKE_RINGS_1 = 77.0;
-const float LAKE_RINGS_2 = 150.0;
-const float LAKE_RAIN_MM_H = 4.0;
-const float LAKE_RING_FOLD = 512.0;
-const float LAKE_WIND_TURN = 0.005235987755982988;
-// The wind's, from windParams.ts: the time's wrap and the gust's two waves.
-const float LAKE_TIME_WRAP = 300.0;
-const float LAKE_WIND_K1 = 0.25132741228718347;
-const float LAKE_WIND_K2 = 0.6981317007977318;
-const float LAKE_WIND_OMEGA1 = 0.3769911184;
-const float LAKE_WIND_OMEGA2 = 0.879645943;
-const float LAKE_WIND_RAGGED = 1.2;
-const float LAKE_WIND_RAGGED_CELL = 6.0;
-// The wind's gust at p at the wind's time t, the wind blowing along dir:
-// foliageGust's closed form (foliage.vertex.fx), the trees' own gusts.
-float lakeGust(vec2 p, float t, vec2 dir) {
-float u = dir.x * p.x + dir.y * p.y;
-vec2 c = floor(p / LAKE_WIND_RAGGED_CELL);
-float ragged = LAKE_WIND_RAGGED * (fract(c.x * 0.618034 + c.y * 0.381966) - 0.5);
-return sin(LAKE_WIND_K1 * u - LAKE_WIND_OMEGA1 * t + ragged) + 0.5 * sin(LAKE_WIND_K2 * u - LAKE_WIND_OMEGA2 * t + 1.7 * ragged);
-}
-// Hoskins' hash without sine of (i, s, i + s), 0 to 1: midgeHash's.
-float lakeHash(float i, float s) {
-vec3 p = fract(vec3(i, s, i + s) * 0.1031);
-p += dot(p, p.yzx + 33.33);
-return fract((p.x + p.y) * p.z);
-}
-// How far the paws have drifted over the last span seconds (negative: the
-// next), at PAW_SPEED along a wind that turns at LAKE_WIND_TURN and blows
-// along dir now: the drift's integral in closed form.
-vec2 lakePawDrift(vec2 dir, float span) {
-float c = cos(LAKE_WIND_TURN * span);
-float s = sin(LAKE_WIND_TURN * span);
-float k = PAW_SPEED / LAKE_WIND_TURN;
-return k * vec2(dir.y * (1.0 - c) + dir.x * s, dir.x * (c - 1.0) + dir.y * s);
-}
-// A lattice node's value at time t: it rises and falls over PAW_LIFE_S from
-// a phase its hash sets.
-float lakePawNode(vec2 c, float t) {
-return 0.5 - 0.5 * cos(6.283185307179586 * (t / PAW_LIFE_S + lakeHash(c.x, c.y)));
-}
-// Value noise of the living nodes at p, in lattice units: the value, then its
-// gradient per lattice unit.
-vec3 lakePawNoise(vec2 p, float t) {
-vec2 i = floor(p);
-vec2 f = p - i;
-vec2 u = f * f * (3.0 - 2.0 * f);
-vec2 du = 6.0 * f * (1.0 - f);
-float a = lakePawNode(i, t);
-float b = lakePawNode(i + vec2(1.0, 0.0), t);
-float c = lakePawNode(i + vec2(0.0, 1.0), t);
-float d = lakePawNode(i + vec2(1.0, 1.0), t);
-float k = a - b - c + d;
-return vec3(a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y, du.x * (b - a + k * u.y), du.y * (c - a + k * u.x));
-}
-// The paws' field, 0 to 1, then its gradient per metre, drifted by span seconds.
-vec3 lakePawField(vec2 xz, float t, vec2 dir, float span) {
-vec2 p = (xz - lakePawDrift(dir, span)) / PAW_FEATURE_M;
-vec3 a = lakePawNoise(p, t);
-vec3 b = lakePawNoise(2.0 * p + vec2(37.0, 17.0), t);
-return vec3(a.x * 2.0 / 3.0 + b.x / 3.0, (a.yz * 2.0 / 3.0 + b.yz * 2.0 / 3.0) / PAW_FEATURE_M);
-}
-// The paws' threshold at a cover, 0 to 1: the table's knots, linear between,
-// summed as ramps so no knot is chosen by a test.
-float lakePawThreshold(float cover) {
-float c = 8.0 * clamp(cover, 0.0, 1.0);
-return PAW_COVER_0
-+ (PAW_COVER_1 - PAW_COVER_0) * clamp(c, 0.0, 1.0)
-+ (PAW_COVER_2 - PAW_COVER_1) * clamp(c - 1.0, 0.0, 1.0)
-+ (PAW_COVER_3 - PAW_COVER_2) * clamp(c - 2.0, 0.0, 1.0)
-+ (PAW_COVER_4 - PAW_COVER_3) * clamp(c - 3.0, 0.0, 1.0)
-+ (PAW_COVER_5 - PAW_COVER_4) * clamp(c - 4.0, 0.0, 1.0)
-+ (PAW_COVER_6 - PAW_COVER_5) * clamp(c - 5.0, 0.0, 1.0)
-+ (PAW_COVER_7 - PAW_COVER_6) * clamp(c - 6.0, 0.0, 1.0)
-+ (PAW_COVER_8 - PAW_COVER_7) * clamp(c - 7.0, 0.0, 1.0);
-}
-// The cat's-paw mask at xz, 0 on glass to 1 in a paw: the field raised where
-// the gust blows, thresholded at lakePawThreshold(cover), so the paws cover
-// about the cover, with an edge PAW_EDGE_M metres wide along the field's own
-// gradient. Over the wrap's last life the drift crosses to the next wrap's,
-// so the pattern runs on through it. The next wrap's field is read only in
-// those last six seconds, the one span where its blend is above 0: t is the
-// lake's time, a uniform, so the branch is the same for every pixel.
-float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust) {
-vec3 f = lakePawField(xz, t, windDir, t);
-if (t > LAKE_TIME_WRAP - PAW_LIFE_S) {
-vec3 b = lakePawField(xz, t, windDir, t - LAKE_TIME_WRAP);
-f = mix(f, b, smoothstep(LAKE_TIME_WRAP - PAW_LIFE_S, LAKE_TIME_WRAP, t));
-}
-float g = PAW_GUST_FLOOR + (1.0 - PAW_GUST_FLOOR) * clamp(gust, 0.0, 1.0);
-f *= g;
-float slope = max(length(f.yz), 1.0e-4);
-return clamp((f.x - lakePawThreshold(cover)) / (slope * PAW_EDGE_M), 0.0, 1.0);
-}
-// The octaves' amplitude under the mask: 1 in a paw, 0 on glass, smooth over the edge.
-float octaveAmplitude(float paw) {
-return smoothstep(0.0, 1.0, paw);
-}
-// Live rings a square metre at the weather's rain, LAKE_RAIN_MM_H mm/h at 1:
-// LAKE_RINGS_0 at 0.5 mm/h, LAKE_RINGS_1 at 1 and LAKE_RINGS_2 from 2, linear between.
-float lakeLiveRings(float rate) {
-float mmh = LAKE_RAIN_MM_H * rate;
-return LAKE_RINGS_0 * clamp(mmh / 0.5, 0.0, 1.0) + (LAKE_RINGS_1 - LAKE_RINGS_0) * clamp((mmh - 0.5) / 0.5, 0.0, 1.0) + (LAKE_RINGS_2 - LAKE_RINGS_1) * clamp(mmh - 1.0, 0.0, 1.0);
-}
-// One ring's height's derivative along r, r metres from its drop and age
-// seconds after it: a train behind a front at LAKE_RING_SPEED times age.
-float lakeRingDh(float r, float age) {
-float k = 6.283185307179586 / LAKE_RING_LAMBDA;
-float phase = k * (r - LAKE_RING_SPEED * age);
-float s = clamp((LAKE_RING_SPEED * age - r) / LAKE_RING_LAMBDA, 0.0, 1.0);
-float window = s * s * (3.0 - 2.0 * s);
-float windowDr = -6.0 * s * (1.0 - s) / LAKE_RING_LAMBDA;
-return LAKE_RING_AMP * exp(-age / LAKE_RING_TAU) * (k * cos(phase) * window + sin(phase) * windowDr);
-}
-// splashHash's (rainSplash.ts), Hoskins' sine-free hash22: two values in 0 to 1.
-vec2 lakeRingHash(vec2 p) {
-vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
-p3 += dot(p3, p3.yzx + 33.33);
-return fract((p3.xx + p3.yz) * p3.zy);
-}
-// The rain's rings at xz at the lake's time t, dist metres from the eye: the
-// tilt they give the normal, minus the height's gradient. One drop a cell a
-// second at the cell's own phase, its point in the cell hashed anew each
-// second, the three by three cells about the point summed (a ring dies before
-// it leaves them), scaled by the live rings the rain gives and faded out over
-// the last LAKE_RING_FADE_M before LAKE_RING_REACH.
-vec2 lakeRainSlope(vec2 xz, float t, float rate, float dist) {
-vec2 base = floor(xz / LAKE_RING_CELL);
-vec2 sum = vec2(0.0);
-for (int j = -1;
-j <= 1;
-j++) {
-for (int i = -1;
-i <= 1;
-i++) {
-vec2 cell = base + vec2(float(i), float(j));
-vec2 h = mod(cell, LAKE_RING_FOLD);
-float s = t + lakeRingHash(h).x;
-float age = fract(s);
-float cycle = mod(floor(s), LAKE_TIME_WRAP);
-vec2 d = xz - (cell + lakeRingHash(h + cycle)) * LAKE_RING_CELL;
-float r = length(d);
-sum -= d * (lakeRingDh(r, age) / max(r, 1.0e-5));
-}
-}
-float scale = min(lakeLiveRings(rate) / LAKE_RINGS_1, 1.0) * (1.0 - smoothstep(LAKE_RING_REACH - LAKE_RING_FADE_M, LAKE_RING_REACH, dist));
-return sum * scale;
-}
-// The lake's second octave: the bump's slope at a finer tile, its constants
-// water.fragment.fx's (WATER_OCTAVE2_TILE, _WEIGHT and _DRIFT). The sample
-// runs upwind of the pixel, so the pattern travels downwind with the paws,
-// at the tile times the drift, metres a second, at full wind. The sea never
-// draws it. Returns an xz slope to add to the normal.
-vec2 lakeRipple2(vec2 xz) {
-vec2 uv = xz / WATER_OCTAVE2_TILE - waterWindTime * WATER_OCTAVE2_DRIFT;
-vec3 n = texture(bumpSampler, uv).xyz * 2.0 - 1.0;
-return n.xy * WATER_OCTAVE2_WEIGHT;
-}
-// The lake's mirror, read (spec §5.3). The high tier's target (lakeMirror.ts)
-// holds the shore as the mirrored camera saw it this frame, cleared to
-// alpha 0 where nothing was drawn. Spliced at CUSTOM_FRAGMENT_DEFINITIONS on
-// a lake's material alone (waterPlugin.ts), after water.fragment.fx, which
-// declares the sampler, and called from waterCompose.fragment.fx.
-//
-// COMMENT RULES: never put a semicolon inside a trailing comment on a code
-// line, and never spell a hashed preprocessor keyword in comment prose. The
-// shaderHygiene test enforces both.
-//
-// The literal below mirrors MIRROR_DEPTH_FULL in mirrorView.ts, and
-// waterMirrorUv is mirrorUv there, line for line. A lockstep test holds them
-// equal.
-// The water depth (m) at which a ripple moves the read by its whole offset.
-const float WATER_MIRROR_DEPTH = 0.5;
-// The held frames' smear is capped at this share of the frame's height (mirrorView.ts's LAKE_MOTION_SMEAR_CAP).
-const float LAKE_MOTION_SMEAR_CAP = 0.05;
-// The mirror target's texel under a point of the surface: its clip position
-// in the mirrored camera (waterMirrorVP, the four columns of its
-// view-projection), which for a point on the plane is the point's own place
-// on the screen, mapped to 0..1 as Babylon samples a target, v up the
-// screen. The ripple's slope moves it by waterMirrorK over the view depth,
-// scaled by the water's depth so that it is none at the contact line, where
-// the bank meets its image, and never up the screen: v stays at or below the
-// unmoved texel's, so no sky from past a bank's reflected top is read.
-vec2 waterMirrorUv(vec3 worldPos, vec2 slope, float depth, float viewDepth) {
-mat4 vp = mat4(waterMirrorVP[0], waterMirrorVP[1], waterMirrorVP[2], waterMirrorVP[3]);
-vec4 clip = vp * vec4(worldPos, 1.0);
-vec2 uv0 = clip.xy / clip.w * 0.5 + 0.5;
-vec2 uv = uv0 + slope * waterMirrorK * min(depth / WATER_MIRROR_DEPTH, 1.0) / max(viewDepth, 1.0);
-uv.y = min(uv.y, uv0.y);
-return uv;
-}
-// One read of the target: nothing drawn outside it. A level-zero read, so it
-// is never a derivative's business where it sits.
-vec4 waterMirrorTap(vec2 uv) {
-vec2 inside = step(vec2(0.0), uv) * step(uv, vec2(1.0));
-return textureLod(waterMirror, clamp(uv, 0.0, 1.0), 0.0) * inside.x * inside.y;
-}
-// The mirror at uv smeared down the screen over smearPx pixels of the frame
-// (waterScreen holds the frame's 1/size): four reads from the texel down.
-// Returns the mean colour of the reads that met something drawn, and in
-// alpha the share of the four that did, 0 where the target drew nothing.
-vec4 waterMirrorSample(vec2 uv, float smearPx) {
-float stride = smearPx * waterScreen.y / 3.0;
-vec4 sum = waterMirrorTap(uv)
-+ waterMirrorTap(uv - vec2(0.0, stride))
-+ waterMirrorTap(uv - vec2(0.0, 2.0 * stride))
-+ waterMirrorTap(uv - vec2(0.0, 3.0 * stride));
-return vec4(sum.rgb / max(sum.a, 1.0e-4), sum.a * 0.25);
-}
-// The medium and low tiers' shore (spec §6): no mirror pass, the reflected
-// ray read against the shore instead. The panorama (lakePanorama.ts) holds
-// the shore seen from the lake's centre PANORAMA_EYE_UP over the level, u the
-// azimuth and v the height over the level on the cylinder of the lake's
-// radius, 0 to PANORAMA_HEIGHT_M. The skyline (lakeSkyline.ts) holds, by
-// the same azimuth, the treeline's elevation from that eye in radians. The
-// two literals mirror lakePanorama.ts and a test holds them equal.
-const float PANORAMA_HEIGHT_M = 64.0;
-const float PANORAMA_EYE_UP = 0.4;
-// A horizontal direction's azimuth, 0 to 1 of a turn: 0 facing +z and a
-// quarter facing +x, as the panorama and the skyline lay their u. The nudge
-// keeps the arctangent from being asked for the angle of nothing.
-float waterAzimuth(vec2 d) {
-return fract(atan(d.x, d.y + 1.0e-20) * RECIPROCAL_PI2 + 1.0);
-}
-// The reflected ray from origin against the vertical cylinder of the lake's
-// radius about its centre, where it leaves it (the far shore): x the hit's
-// azimuth, y its height over the level, z 1 where the ray meets the cylinder
-// ahead and 0 where it never does. Mirrors cylinderHit in lakeSkyline.ts.
-// Every term stays finite for any input, a radius of 0 or an upright ray
-// among them, so the mix that drops it never meets a NaN.
-vec3 waterCylinderHit(vec3 origin, vec3 dir) {
-vec2 o = origin.xz - waterLakeCentre.xz;
-float a = max(dot(dir.xz, dir.xz), 1.0e-8);
-float b = dot(o, dir.xz);
-float c = dot(o, o) - waterLakeRadius * waterLakeRadius;
-float disc = b * b - a * c;
-float t = (sqrt(max(disc, 0.0)) - b) / a;
-return vec3(waterAzimuth(o + dir.xz * t), origin.y + dir.y * t - waterLakeCentre.y, step(0.0, disc) * step(0.0, t));
-}
-// Medium: the panorama where the reflected ray meets the shore's cylinder
-// below the skyline and the capture drew something there, the fallback
-// elsewhere: the skyline's read (waterSkylineRadiance), so a texel the
-// capture left empty shows the forest's shade below the treeline and the
-// probe only above it. Seen from the centre's eye, the hit is below the
-// skyline when its rise over the eye is under the radius times the
-// skyline's tangent. The ripples are already in dir, and the cylinder keeps
-// the contact line: the ray's tilt moves the hit by the tilt times the ray's
-// run to the shore, which is nothing at the bank.
-vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 fallback) {
-vec3 hit = waterCylinderHit(origin, dir);
-vec4 shore = texture(waterPanorama, vec2(hit.x, clamp(hit.y / PANORAMA_HEIGHT_M, 0.0, 1.0)));
-float skyline = texture(waterSkyline, vec2(hit.x, 0.5)).r;
-float below = step(hit.y - PANORAMA_EYE_UP, waterLakeRadius * tan(skyline));
-return mix(fallback, shore.rgb, hit.z * below * shore.a);
-}
-// Low: the forest's shade below the skyline at the reflected ray's own
-// azimuth and elevation, the probe's radiance above it. One read, one compare.
-// The shade is the probe's horizon times SKYLINE_SHADE, raw: scaled here by
-// the environment's intensity, as the probe's radiance passed in already is.
-vec3 waterSkylineRadiance(vec3 dir, vec3 probeRadiance) {
-float skyline = texture(waterSkyline, vec2(waterAzimuth(dir.xz), 0.5)).r;
-float below = step(dir.y, length(dir.xz) * tan(skyline));
-return mix(probeRadiance, waterShadeColour * vLightingIntensity.z, below);
+float on = step(1.0 - WET_SPECKLE_COVER, fract((p3.x + p3.y) * p3.z));
+return mix(on, WET_SPECKLE_COVER, smoothstep(WET_SPECKLE_NEAR, WET_SPECKLE_FAR, far));
 }
 #define CUSTOM_FRAGMENT_DEFINITIONS
 struct albedoOpacityOutParams
@@ -1500,6 +1158,7 @@ in vec4 vAlbedoColor
 {albedoOpacityOutParams outParams;
 vec3 surfaceAlbedo=vAlbedoColor.rgb;
 float alpha=vAlbedoColor.a;
+surfaceAlbedo*=vColor.rgb;
 #define CUSTOM_FRAGMENT_UPDATE_ALBEDO
 surfaceAlbedo*=baseWeight;
 outParams.surfaceAlbedo=surfaceAlbedo;
@@ -1531,6 +1190,26 @@ float microSurface=reflectivityColor.a;
 vec3 surfaceReflectivityColor=reflectivityColor.rgb;
 vec2 metallicRoughness=surfaceReflectivityColor.rg;
 float ior=surfaceReflectivityColor.b;
+// Wet plugin, the weather's wetting: Lagarde's porosity rule, applied at
+// CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS, inside the metallic workflow's
+// reflectivity block, where metallicRoughness.g is the material's final
+// roughness (its map, detail and microsurface map applied) and
+// surfaceAlbedo is the base colour the block copies out next. A porous
+// surface (rough, above 0.5) darkens to a fifth and glosses by half of
+// that at full wetness, a polished one does not change, and each material
+// caps its porosity: bark soaks, a leaf glazes. wetWeather is the weather's
+// wetness, bound once a frame for every material.
+//
+// COMMENT RULES: never put a semicolon inside a trailing comment on a code
+// line, and never spell a hashed preprocessor keyword in comment prose. The
+// shaderHygiene test enforces both.
+{
+float wetPorosity = min(wetCap, clamp((metallicRoughness.g - 0.5) / 0.4, 0.0, 1.0));
+float wetFactor = mix(1.0, 0.2, wetPorosity);
+surfaceAlbedo *= mix(1.0, wetFactor, wetWeather);
+float wetGloss = mix(1.0, 1.0 - metallicRoughness.g, mix(1.0, wetFactor, 0.5 * wetWeather));
+metallicRoughness.g = 1.0 - wetGloss;
+}
 #define CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS
 microSurface=1.0-metallicRoughness.g;
 vec3 baseColor=surfaceAlbedo;
@@ -1618,10 +1297,6 @@ vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
 vec3 normalW=normalize(vNormalW);
 vec3 geometricNormalW=normalW;
 vec2 uvOffset=vec2(0.0,0.0);
-float normalScale=1.0;
-vec2 TBNUV=gl_FrontFacing ? vBumpUV : -vBumpUV;
-mat3 TBN=cotangent_frame(normalW*normalScale,vPositionW,TBNUV,vTangentSpaceParams);
-normalW=perturbNormal(TBN,TEXRD(bumpSampler,vBumpUV+uvOffset).xyz,vBumpInfos.y);
 albedoOpacityOutParams albedoOpacityOut;
 albedoOpacityOut=albedoOpacityBlock(
 vAlbedoColor
@@ -1630,78 +1305,28 @@ vAlbedoColor
 vec3 surfaceAlbedo=albedoOpacityOut.surfaceAlbedo;
 float alpha=albedoOpacityOut.alpha;
 #define CUSTOM_FRAGMENT_UPDATE_ALPHA
-// Water plugin, before lights: per-pixel depth, the waterline, the medium
-// and low tiers' alpha, and the horizon-safe normal. On the high tier the
-// transmitted colour is read from the scene copy instead and the surface
-// writes unblended (waterHigh is the gate, a uniform, since plugin code is
-// applied before conditional evaluation).
-float wDepth = waterBedDepth(vPositionW.xz);
-if (wDepth <= 0.0) discard;
-float wKdMean = (waterKd.r + waterKd.g + waterKd.b) / 3.0;
-// The lake's two states (lakeRipples.fragment.fx): the cat's-paw mask at this
-// pixel, from the gust that crosses it, and the two octaves at its amplitude,
-// so the surface is glass where the mask is 0. The field is skipped where the
-// cover is 0 (glass all over), where its threshold of 1 is no lower than any
-// value the field takes, so the mask is 0 there either way. PBR's bump, the first
-// octave, is scaled about the up it was built on.
-float wPaw = 0.0;
-if (waterPawCover > 0.0) {
-wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));
-}
-float wOctave = octaveAmplitude(wPaw);
-normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));
-if (waterOctaves > 1.5) {
-vec2 wSlope = lakeRipple2(vPositionW.xz);
-normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y) * wOctave);
-}
-// The rain's rings near the eye, every tier: beyond their reach the rain is
-// the roughness it lifts. The skin's flatten below damps them where it lies.
-if (waterRain > 0.0) {
-vec2 wRs = lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain, length(vPositionW - vEyePosition.xyz));
-normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y));
-}
-normalW = waterHorizonNormal(normalW, viewDirectionW);
-// Fresnel on N.V, Schlick with water's F0: the reflected share, which the
-// transmitted light never gets.
-float wNdV = clamp(dot(normalW, viewDirectionW), 0.0, 1.0);
-float wF = WATER_F0 + (1.0 - WATER_F0) * pow(1.0 - wNdV, 5.0);
-// The bed's light through the surface on the high tier, added after lighting
-// (waterCompose.fragment.fx): it is already lit, so it is radiance, never an
-// albedo for PBR to light again.
-vec3 wTransmit = vec3(0.0);
-if (waterHigh < 0.5) {
-  // The blend scales the reflection too, so the reflected share is kept out
-  // of the transmission: alpha = 1 - (1 - F) * T.
-alpha = 1.0 - (1.0 - wF) * exp(-2.0 * wKdMean * wDepth);
-} else {
-vec2 wUv = glFragCoord_.xy * waterScreen;
-  // The opaque pass's device depth behind this pixel, linearised with the
-  // camera's near and far into view metres.
-float wRaw = texture(waterDepth, wUv).r;
-float wSceneDepth = waterNearFar.x * waterNearFar.y / (waterNearFar.y - wRaw * (waterNearFar.y - waterNearFar.x));
-  // How far below the surface the scene point on this eye ray lies: the ray
-  // runs on past the surface by wSceneDepth / vWaterViewDepth - 1 of the
-  // eye-to-surface leg, whose drop is the eye's height over the surface.
-float wRayOn = wSceneDepth / max(vWaterViewDepth, 1.0e-3) - 1.0;
-float wBehind = max(0.0, min(wDepth, (vEyePosition.y - vPositionW.y) * wRayOn));
-vec2 wOff = normalW.xz * WATER_REFRACT * min(wBehind, WATER_REFRACT_DEPTH);
-vec3 wBed = texture(waterScene, wUv + wOff).rgb;
-vec3 wT = exp(-2.0 * waterKd * wBehind);
-  // The water's own colour where the bed is not seen: L-infinity times 1 - T.
-surfaceAlbedo *= 1.0 - wT;
-wTransmit = wBed * wT * (1.0 - wF);
-alpha = 1.0;
-}
-// The skin, where a murky lake carries it: a matte film of fronds over the
-// water, the bed, the depth and the ripples hidden under it.
-float wSkin = waterSkinMask(vPositionW.xz, wDepth);
-// The sea and a clear lake skip the film.
-if (waterSkin.x > 0.0) {
-surfaceAlbedo = mix(surfaceAlbedo, waterSkinColour(vPositionW.xz, vWaterViewDepth), wSkin);
-wTransmit *= 1.0 - wSkin;
-alpha = mix(alpha, 1.0, wSkin);
-normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wSkin));
-}
+// The foliage colour and normal block, spliced at CUSTOM_FRAGMENT_BEFORE_LIGHTS,
+// where surfaceAlbedo, normalW and viewDirectionW are established and no
+// light has run: root darkening, the ground tint (strongest at the root,
+// more with distance), the canopy shade, a per-clump luminance nudge, then
+// the normal blended toward the ground's up at the root and forced to face
+// the viewer so a card never lights as its back. The fragment is never dropped.
+//
+// COMMENT RULES as in foliage.vertex.fx.
+float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);
+float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;
+// Inside the cove the swash's table wets the face as well (wetShore): soaked
+// up to the still line or the column's reach, whichever is higher, then damp
+// where the still line leaves the ground dry, and speckled. Outside it the
+// three are 0 and the still line's look is as it was, to the bit.
+vec3 wetCoveW = wetShore(vPositionW.xz, vPositionW.y) * wetIn;
+float wetW = max(wetStill, wetCoveW.x);
+float wetDamp = wetCoveW.y * (1.0 - wetStill);
+surfaceAlbedo *= mix(1.0, WET_ALBEDO, wetW) * mix(1.0, WET_DAMP_ALBEDO, wetDamp);
+surfaceAlbedo = mix(surfaceAlbedo, vec3(1.0), wetCoveW.z * wetSpeckle(vPositionW.xz, length(vPositionW - vEyePosition.xyz)));
+float wetKdMean = (wetKd.r + wetKd.g + wetKd.b) / 3.0;
+vec3 wetResidual = min(vec3(1.0), exp(-2.0 * (wetKd - vec3(wetKdMean)) * max(0.0, wetLevel - vPositionW.y) * wetIn));
+surfaceAlbedo *= mix(vec3(1.0), wetResidual, wetAttenuate);
 #define CUSTOM_FRAGMENT_BEFORE_LIGHTS
 ambientOcclusionOutParams aoOut;
 aoOut=ambientOcclusionBlock(
@@ -1716,7 +1341,7 @@ vReflectivityColor
 ,baseDiffuseRoughness
 );
 float microSurface=reflectivityOut.microSurface;
-float roughness=reflectivityOut.roughness;
+float roughness=mix(mix(reflectivityOut.roughness, min(reflectivityOut.roughness, WET_DAMP_ROUGHNESS), wetDamp), WET_ROUGHNESS, wetW);
 float diffuseRoughness=reflectivityOut.diffuseRoughness;
 surfaceAlbedo=reflectivityOut.surfaceAlbedo;
 float NdotVUnclamped=dot(normalW,viewDirectionW);
@@ -1726,7 +1351,6 @@ vec2 AARoughnessFactors=getAARoughnessFactors(normalW.xyz);
 vec3 environmentBrdf=getBRDFLookup(NdotV,roughness);
 float ambientMonochrome=getLuminance(aoOut.ambientOcclusionColor);
 float seo=environmentRadianceOcclusion(ambientMonochrome,NdotVUnclamped);
-float eho=environmentHorizonOcclusion(-viewDirectionW,normalW,geometricNormalW);
 reflectionOutParams reflectionOut;
 reflectionOutParams reflectionBlock_0;
 {reflectionOutParams outParams;
@@ -1763,7 +1387,6 @@ clearcoatOut.specularEnvironmentR0=specularEnvironmentR0;
 vec3 baseSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(vec3(reflectanceF0),reflectivityOut.reflectanceF90,environmentBrdf);
 vec3 colorSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90,environmentBrdf);
 colorSpecularEnvironmentReflectance*=seo;
-colorSpecularEnvironmentReflectance*=eho;
 subSurfaceOutParams subSurfaceOut;
 subSurfaceOut.specularEnvironmentReflectance=colorSpecularEnvironmentReflectance;
 vec3 diffuseBase=vec3(0.,0.,0.);
@@ -1838,10 +1461,6 @@ vec3 finalRadiance=reflectionOut.environmentRadiance.rgb;
 finalRadiance*=colorSpecularEnvironmentReflectance;
 vec3 finalRadianceScaled=finalRadiance*vLightingIntensity.z;
 finalRadianceScaled*=coloredEnergyConservationFactor;
-float luminanceOverAlpha=0.0;
-luminanceOverAlpha+=getLuminance(finalRadianceScaled);
-luminanceOverAlpha+=getLuminance(finalSpecularScaled);
-alpha=saturate(alpha+luminanceOverAlpha*luminanceOverAlpha);
 vec3 finalDiffuse=diffuseBase;
 finalDiffuse*=surfaceAlbedo;
 finalDiffuse=max(finalDiffuse,0.0);
@@ -1853,49 +1472,6 @@ finalEmissive*=vLightingIntensity.y;
 vec3 ambientOcclusionForDirectDiffuse=aoOut.ambientOcclusionColor;
 finalAmbient*=aoOut.ambientOcclusionColor;
 finalDiffuse*=ambientOcclusionForDirectDiffuse;
-// Water plugin, before the final colour composition: the bed's light through
-// the surface on the high tier (zero elsewhere), added as emissive so fog and
-// the colour path apply to it as to the rest of the surface.
-//
-// COMMENT RULES: never put a semicolon inside a trailing comment on a code
-// line, and never spell a hashed preprocessor keyword in comment prose. The
-// shaderHygiene test enforces both.
-// The lake's shore (lakeMirror.fragment.fx) takes the place of the sky
-// probe's radiance, through PBR's own Fresnel, by the state's weight, the
-// glass's share of the lake and the cat's-paws. Which shore is the tier's:
-// the mirror's image where its target drew something (high), else the
-// panorama (medium), else the skyline's shade (low, and medium where the
-// panorama drew nothing), else the probe's own.
-// The probe's radiance and the shade are scaled by the environment's
-// intensity, as PBR scales the probe's own term (the eerie plateau dims
-// it), while the mirror and the panorama are renders of the scene already
-// lit as it is. Each flag is 0 or 1, so each mix picks one of its two, and
-// within the branch every read runs. The reads run only while the weight can be above
-// 0: where the state's weight or the glass's share is 0 the weight is 0 and
-// the mix keeps PBR's own, so skipping them changes nothing. Both are
-// uniforms, so the branch is the same for every pixel. Before the skin, which
-// then holds it off the fronds as it holds the probe. The mirror's smear is a
-// full paw's scaled by the paw mask, none on glass, plus the eye's motion's: the
-// pass draws every third frame, and on every frame the mirror is read it is
-// smeared down the screen by the parallax the eye's travel over the two frames
-// between draws gives a reflected point at the water's distance, capped at a
-// twentieth of the frame, so the lag reads as motion blur and a still eye reads
-// the image sharp to the pixel.
-// No energy-conservation factor or environment intensity on the mirror or the panorama: they are already-lit renders.
-if (waterMirrorWeight * waterCalmShare > 0.0) {
-vec4 wMirror = waterMirrorSample(waterMirrorUv(vPositionW, normalW.xz, wDepth, vWaterViewDepth), waterMirrorSmearPx * wPaw + min(waterMirrorMotion / max(vWaterViewDepth, 1.0), LAKE_MOTION_SMEAR_CAP / waterScreen.y));
-vec3 wProbeRadiance = reflectionOut.environmentRadiance.rgb * vLightingIntensity.z;
-vec3 wShoreRay = reflect(-viewDirectionW, normalW);
-vec3 wShore = mix(wProbeRadiance, waterSkylineRadiance(wShoreRay, wProbeRadiance), step(0.5, waterSkylineOn));
-wShore = mix(wShore, waterPanoramaRadiance(vPositionW, wShoreRay, wShore), step(0.5, waterPanoramaOn));
-wShore = mix(wShore, wMirror.rgb, step(0.5, waterMirrorOn) * wMirror.a);
-float wMirrorW = waterMirrorWeight * (1.0 - wPaw) * waterCalmShare;
-finalRadianceScaled = mix(finalRadianceScaled, wShore * colorSpecularEnvironmentReflectance, wMirrorW);
-}
-// The skin is matte: the sky's reflection and the sun's glint are held off it.
-finalRadianceScaled *= 1.0 - wSkin;
-finalSpecularScaled *= 1.0 - wSkin;
-finalEmissive += wTransmit;
 #define CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION
 vec4 finalColor=vec4(
 finalIrradiance +
@@ -1910,7 +1486,7 @@ finalColor=max(finalColor,0.0);
 float fog=CalcFogFactor();
 fog=toLinearSpace(fog);
 finalColor.rgb=atmosphereFog(finalColor.rgb,fog);
-finalColor.rgb=clamp(finalColor.rgb,0.,30.0);
+finalColor=applyImageProcessing(finalColor);
 finalColor.a*=visibility;
 #define CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR
 glFragColor=finalColor;
