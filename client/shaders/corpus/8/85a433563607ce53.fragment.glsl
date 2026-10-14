@@ -1098,12 +1098,13 @@ float dfNoise(vec2 p) {
 return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
 }
 // Foliage diffuse, spliced into the PBR fragment by FoliageLightPlugin at
-// CUSTOM_FRAGMENT_DEFINITIONS and called from every per-light diffuse line
-// with that light's index. Only the sun (index 0) is changed: an energy-
-// conserving wrap Lambert plus a backlight term that glows when the light is
-// behind the card and the viewer in front, thicker at the root. Other lights
-// return Babylon's own result untouched. The plugin is only attached to
-// materials that also carry the foliage plugin, which declares vFoliageH.
+// CUSTOM_FRAGMENT_DEFINITIONS and called only from the sun's diffuse line: the
+// plugin's injected line selects it by the light's directional define, not by
+// its index, and the sun is the scene's only directional light. An energy-
+// conserving wrap Lambert plus a backlight term that glows when the sun is
+// behind the card and the viewer in front, thicker at the root. Every other
+// light keeps Babylon's own line. The plugin is only attached to materials
+// that also carry the foliage plugin, which declares vFoliageH.
 //
 // COMMENT RULES: no semicolon inside a trailing comment on a code line, no
 // hashed preprocessor keyword in comment prose.
@@ -1114,10 +1115,7 @@ const float FOLIAGE_PI = 3.14159265;
 float foliageWrapLambert(float ndotl, float wrap) {
 return clamp((ndotl + wrap) / ((1.0 + wrap) * (1.0 + wrap)), 0.0, 1.0);
 }
-vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float lightIndex, float h, vec3 viewDir) {
-if (lightIndex > 0.5) {
-return computeDiffuseLighting(info, lightColor);
-}
+vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float h, vec3 viewDir) {
 vec3 unit = info.attenuation * lightColor / FOLIAGE_PI;
 vec3 wrapped = unit * foliageWrapLambert(info.NdotLUnclamped, FOLIAGE_WRAP);
 float back = pow(clamp(-dot(viewDir, info.L), 0.0, 1.0), FOLIAGE_BACK_POWER);
@@ -1510,7 +1508,7 @@ preInfo.attenuation*=computeDirectionalLightFalloff(light0.vLightDirection.xyz,p
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light0.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse0.rgb,float(0),vFoliageH,viewDirectionW);
+info.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse0.rgb);
 shadow=1.;
@@ -1526,7 +1524,7 @@ preInfo.attenuation=1.0;
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light1.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,float(1),vFoliageH,viewDirectionW);
+info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,vFoliageH,viewDirectionW);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse1.rgb);
 shadow=1.;

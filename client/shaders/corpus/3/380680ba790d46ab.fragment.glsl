@@ -99,13 +99,11 @@
 #define DIRLIGHT1
 #define LIGHT2
 #define HEMILIGHT2
-#define LIGHTCOUNT 4
+#define LIGHTCOUNT 3
 #define MAXLIGHTCOUNT 7
-#define LIGHT3
-#define SPOTLIGHT3
 
 #define SHADER_NAME fragment:pbr
-layout(set = 1, binding = 13) uniform LeftOver {
+layout(set = 1, binding = 12) uniform LeftOver {
         vec4 vFogInfos;
     vec3 vFogColor;
 };
@@ -324,22 +322,13 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
-layout(set = 1, binding = 6) uniform Light3
-{vec4 vLightData;
-vec4 vLightDiffuse;
-vec4 vLightSpecular;
-vec4 vLightDirection;
-vec4 vLightFalloff;
-vec4 shadowsInfo;
-vec2 depthValues;
-} light3;
 #define sampleReflection(s,c) texture(s,c)
-layout(set = 1, binding = 8) uniform sampler reflectionSamplerSampler;
-                        layout(set = 1, binding = 7) uniform textureCube reflectionSamplerTexture;
+layout(set = 1, binding = 7) uniform sampler reflectionSamplerSampler;
+                        layout(set = 1, binding = 6) uniform textureCube reflectionSamplerTexture;
                         #define reflectionSampler samplerCube(reflectionSamplerTexture, reflectionSamplerSampler)
 #define sampleReflectionLod(s,c,l) textureLod(s,c,l)
-layout(set = 1, binding = 10) uniform sampler environmentBrdfSamplerSampler;
-                        layout(set = 1, binding = 9) uniform texture2D environmentBrdfSamplerTexture;
+layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
+                        layout(set = 1, binding = 8) uniform texture2D environmentBrdfSamplerTexture;
                         #define environmentBrdfSampler sampler2D(environmentBrdfSamplerTexture, environmentBrdfSamplerSampler)
 #define FOGMODE_NONE 0.
 #define FOGMODE_EXP 1.
@@ -891,8 +880,8 @@ return computeCubicCoords(worldPos,worldNormal,vEyePosition.xyz,reflectionMatrix
 // cloud's map (cloudParams.ts) is one texture: tileable noise in R and G,
 // read wrapping, and the height of the ground round the player in B, read
 // with its coordinates held off the edge so the wrap never reaches it.
-layout(set = 1, binding = 12) uniform sampler atmCloudMapSampler;
-                        layout(set = 1, binding = 11) uniform texture2D atmCloudMapTexture;
+layout(set = 1, binding = 11) uniform sampler atmCloudMapSampler;
+                        layout(set = 1, binding = 10) uniform texture2D atmCloudMapTexture;
                         #define atmCloudMap sampler2D(atmCloudMapTexture, atmCloudMapSampler)
 // The distance gradient: the far colour dimmed to ATM_NEAR_DIM at the eye,
 // rising as t to the power 1 / ATM_GRADIENT_BIAS. Mirrors fogGradientUnder.
@@ -996,12 +985,13 @@ layout(location = 6)  in float vFoliageH;
 layout(location = 7)  in float vFoliageClump;
 layout(location = 8)  in float vFoliageDist;
 // Foliage diffuse, spliced into the PBR fragment by FoliageLightPlugin at
-// CUSTOM_FRAGMENT_DEFINITIONS and called from every per-light diffuse line
-// with that light's index. Only the sun (index 0) is changed: an energy-
-// conserving wrap Lambert plus a backlight term that glows when the light is
-// behind the card and the viewer in front, thicker at the root. Other lights
-// return Babylon's own result untouched. The plugin is only attached to
-// materials that also carry the foliage plugin, which declares vFoliageH.
+// CUSTOM_FRAGMENT_DEFINITIONS and called only from the sun's diffuse line: the
+// plugin's injected line selects it by the light's directional define, not by
+// its index, and the sun is the scene's only directional light. An energy-
+// conserving wrap Lambert plus a backlight term that glows when the sun is
+// behind the card and the viewer in front, thicker at the root. Every other
+// light keeps Babylon's own line. The plugin is only attached to materials
+// that also carry the foliage plugin, which declares vFoliageH.
 //
 // COMMENT RULES: no semicolon inside a trailing comment on a code line, no
 // hashed preprocessor keyword in comment prose.
@@ -1012,10 +1002,7 @@ const float FOLIAGE_PI = 3.14159265;
 float foliageWrapLambert(float ndotl, float wrap) {
 return clamp((ndotl + wrap) / ((1.0 + wrap) * (1.0 + wrap)), 0.0, 1.0);
 }
-vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float lightIndex, float h, vec3 viewDir) {
-if (lightIndex > 0.5) {
-return computeDiffuseLighting(info, lightColor);
-}
+vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float h, vec3 viewDir) {
 vec3 unit = info.attenuation * lightColor / FOLIAGE_PI;
 vec3 wrapped = unit * foliageWrapLambert(info.NdotLUnclamped, FOLIAGE_WRAP);
 float back = pow(clamp(-dot(viewDir, info.L), 0.0, 1.0), FOLIAGE_BACK_POWER);
@@ -1373,7 +1360,7 @@ preInfo.attenuation*=computeDirectionalLightFalloff(light0.vLightDirection.xyz,p
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light0.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse0.rgb,float(0),vFoliageH,viewDirectionW);
+info.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse0.rgb);
 shadow=1.;
@@ -1389,7 +1376,7 @@ preInfo.attenuation=1.0;
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light1.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,float(1),vFoliageH,viewDirectionW);
+info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,vFoliageH,viewDirectionW);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse1.rgb);
 shadow=1.;
@@ -1408,23 +1395,6 @@ preInfo.surfaceAlbedo=surfaceAlbedo;
 info.diffuse=computeHemisphericDiffuseLighting(preInfo,diffuse2.rgb,light2.vLightGround);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse2.rgb);
-shadow=1.;
-aggShadow+=shadow;
-numLights+=1.0;
-diffuseBase+=info.diffuse*shadow;
-specularBase+=info.specular*shadow;
-vec4 diffuse3=light3.vLightDiffuse;
-#define CUSTOM_LIGHT3_COLOR 
-preInfo=computePointAndSpotPreLightingInfo(light3.vLightData,viewDirectionW,normalW,vPositionW);
-preInfo.NdotV=NdotV;
-preInfo.attenuation=computeDistanceLightFalloff(preInfo.lightOffset,preInfo.lightDistanceSquared,light3.vLightFalloff.x,light3.vLightFalloff.y);
-preInfo.attenuation*=computeDirectionalLightFalloff(light3.vLightDirection.xyz,preInfo.L,light3.vLightDirection.w,light3.vLightData.w,light3.vLightFalloff.z,light3.vLightFalloff.w);
-preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light3.vLightSpecular.a,preInfo.lightDistance);
-preInfo.diffuseRoughness=diffuseRoughness;
-preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse3.rgb,float(3),vFoliageH,viewDirectionW);
-coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
-info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse3.rgb);
 shadow=1.;
 aggShadow+=shadow;
 numLights+=1.0;

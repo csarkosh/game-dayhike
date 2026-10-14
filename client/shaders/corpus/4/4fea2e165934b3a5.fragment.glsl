@@ -1,5 +1,5 @@
 #version 450
-#define MATERIALPLUGIN_12
+#define MATERIALPLUGIN_18
 #define BRDF_V_HEIGHT_CORRELATED
 #define MS_BRDF_ENERGY_CONSERVATION
 #define SPHERICAL_HARMONICS
@@ -26,7 +26,7 @@
 #define DETAIL_NORMALBLENDMETHOD 0
 #define FOLIAGE
 #define FOLIAGE_TINT
-#define FOLIAGE_BLADES
+#define WET
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -43,8 +43,16 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define TONEMAPPING 0
-#define IMAGEPROCESSINGPOSTPROCESS
+#define IMAGEPROCESSING
+#define VIGNETTE
+#define VIGNETTEBLENDMODEMULTIPLY
+#define TONEMAPPING 3
+#define CONTRAST
+#define COLORCURVES
+#define SAMPLER3DGREENDEPTH
+#define SAMPLER3DBGRMAP
+#define DITHER
+#define EXPOSURE
 #define PBR
 #define NUM_SAMPLES 0
 #define ALBEDODIRECTUV 0
@@ -78,14 +86,11 @@
 #define GAMMAREFLECTION
 #define RADIANCEOCCLUSION
 #define HORIZONOCCLUSION
-#define INSTANCES
-#define THIN_INSTANCES
 #define NUM_BONE_INFLUENCERS 0
 #define BonesPerMesh 0
 #define NUM_MORPH_INFLUENCERS 0
 #define ORDER_INDEPENDENT_TRANSPARENCY_16BITS
 #define USEPHYSICALLIGHTFALLOFF
-#define SHADOWFLOAT
 #define FOG
 #define CAMERA_PERSPECTIVE
 #define AREALIGHTSUPPORTED
@@ -98,25 +103,22 @@
 #define SPOTLIGHT0
 #define LIGHT1
 #define DIRLIGHT1
-#define SHADOW1
-#define SHADOWCSM1
-#define SHADOWCSMNUM_CASCADES1 2
-#define SHADOWCSMUSESHADOWMAXZ1
-#define SHADOWPCF1
 #define LIGHT2
 #define HEMILIGHT2
-#define SHADOWS
-#define LIGHTCOUNT 4
+#define LIGHTCOUNT 3
 #define MAXLIGHTCOUNT 7
-#define LIGHT3
-#define SPOTLIGHT3
 
 #define SHADER_NAME fragment:pbr
-layout(set = 1, binding = 15) uniform LeftOver {
-        mat4 lightMatrix1[2];
-    float viewFrustumZ1[2];
-    float frustumLengths1[2];
-    float cascadeBlendFactor1;
+layout(set = 1, binding = 12) uniform LeftOver {
+        float exposureLinear;
+    float contrast;
+    vec2 vInverseScreenSize;
+    vec4 vignetteSettings1;
+    vec4 vignetteSettings2;
+    vec4 vCameraColorCurveNegative;
+    vec4 vCameraColorCurveNeutral;
+    vec4 vCameraColorCurvePositive;
+    float ditherIntensity;
     vec4 vFogInfos;
     vec3 vFogColor;
 };
@@ -126,6 +128,7 @@ layout(set = 1, binding = 0) uniform Internals {
 float yFactor_;
 float textureOutputHeight_;
 };
+vec4 glFragCoord_;
 
 #define PBR_FRAGMENT_SHADER
 #define CUSTOM_FRAGMENT_EXTENSION
@@ -283,6 +286,16 @@ float foliageNormalUp;
 vec2 foliageFlags;
 vec2 foliageEdges;
 vec4 foliageBladeEdges;
+float wetLine;
+float wetLevel;
+vec2 wetCentre;
+float wetRadius;
+vec3 wetKd;
+float wetAttenuate;
+float wetWeather;
+float wetCap;
+vec4 wetCove;
+vec4 wetSwash[256];
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -317,18 +330,6 @@ vec4 vLightSpecular;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light1;
-
-
-
-
-layout(location = 5)  in vec4 vPositionFromLight1[SHADOWCSMNUM_CASCADES1];
-layout(location = 7)  in float vDepthMetric1[SHADOWCSMNUM_CASCADES1];
-layout(location = 9)  in vec4 vPositionFromCamera1;
-layout(set = 1, binding = 8) uniform samplerShadow shadowTexture1Sampler;
-                        layout(set = 1, binding = 7) uniform texture2DArray shadowTexture1Texture;
-                        #define shadowTexture1 sampler2DArrayShadow(shadowTexture1Texture, shadowTexture1Sampler)
-int index1=-1;
-float diff1=0.;
 layout(set = 1, binding = 5) uniform Light2
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -337,23 +338,23 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
-layout(set = 1, binding = 6) uniform Light3
-{vec4 vLightData;
-vec4 vLightDiffuse;
-vec4 vLightSpecular;
-vec4 vLightDirection;
-vec4 vLightFalloff;
-vec4 shadowsInfo;
-vec2 depthValues;
-} light3;
 #define sampleReflection(s,c) texture(s,c)
-layout(set = 1, binding = 10) uniform sampler reflectionSamplerSampler;
-                        layout(set = 1, binding = 9) uniform textureCube reflectionSamplerTexture;
+layout(set = 1, binding = 7) uniform sampler reflectionSamplerSampler;
+                        layout(set = 1, binding = 6) uniform textureCube reflectionSamplerTexture;
                         #define reflectionSampler samplerCube(reflectionSamplerTexture, reflectionSamplerSampler)
 #define sampleReflectionLod(s,c,l) textureLod(s,c,l)
-layout(set = 1, binding = 12) uniform sampler environmentBrdfSamplerSampler;
-                        layout(set = 1, binding = 11) uniform texture2D environmentBrdfSamplerTexture;
+layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
+                        layout(set = 1, binding = 8) uniform texture2D environmentBrdfSamplerTexture;
                         #define environmentBrdfSampler sampler2D(environmentBrdfSamplerTexture, environmentBrdfSamplerSampler)
+
+
+
+
+
+
+
+
+
 #define FOGMODE_NONE 0.
 #define FOGMODE_EXP 1.
 #define FOGMODE_EXP2 2.
@@ -566,178 +567,50 @@ return reflectance90;
 vec2 getAARoughnessFactors(vec3 normalVector) {
 return vec2(0.);
 }
+const float PBRNeutralStartCompression=0.8-0.04;
+const float PBRNeutralDesaturation=0.15;
+vec3 PBRNeutralToneMapping( vec3 color ) {float x=min(color.r,min(color.g,color.b));
+float offset=x<0.08 ? x-6.25*x*x : 0.04;
+color-=offset;
+float peak=max(color.r,max(color.g,color.b));
+if (peak<PBRNeutralStartCompression) return color;
+float d=1.-PBRNeutralStartCompression;
+float newPeak=1.-d*d/(peak+d-PBRNeutralStartCompression);
+color*=newPeak/peak;
+float g=1.-1./(PBRNeutralDesaturation*(peak-newPeak)+1.);
+return mix(color,newPeak*vec3(1,1,1),g);
+}
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_DEFINITIONS
 vec4 applyImageProcessing(vec4 result) {
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATSTART
+result.rgb*=exposureLinear;
+vec2 viewportXY=glFragCoord_.xy*vInverseScreenSize;
+viewportXY=viewportXY*2.0-1.0;
+vec3 vignetteXY1=vec3(viewportXY*vignetteSettings1.xy+vignetteSettings1.zw,1.0);
+float vignetteTerm=dot(vignetteXY1,vignetteXY1);
+float vignette=pow(vignetteTerm,vignetteSettings2.w);
+vec3 vignetteColor=vignetteSettings2.rgb;
+vec3 vignetteColorMultiplier=mix(vignetteColor,vec3(1,1,1),vignette);
+result.rgb*=vignetteColorMultiplier;
+result.rgb=PBRNeutralToneMapping(result.rgb);
 result.rgb=toGammaSpace(result.rgb);
 result.rgb=saturate(result.rgb);
+vec3 resultHighContrast=result.rgb*result.rgb*(3.0-2.0*result.rgb);
+if (contrast<1.0) {result.rgb=mix(vec3(0.5,0.5,0.5),result.rgb,contrast);
+} else {result.rgb=mix(result.rgb,resultHighContrast,contrast-1.0);
+}
+result.rgb=max(result.rgb,0.);
+float luma=getLuminance(result.rgb);
+vec2 curveMix=clamp(vec2(luma*3.0-1.5,luma*-3.0+1.5),vec2(0.0),vec2(1.0));
+vec4 colorCurve=vCameraColorCurveNeutral+curveMix.x*vCameraColorCurvePositive-curveMix.y*vCameraColorCurveNegative;
+result.rgb*=colorCurve.rgb;
+result.rgb=mix(vec3(luma),result.rgb,colorCurve.a);
+float rand=getRand(glFragCoord_.xy*vInverseScreenSize);
+float dither=mix(-ditherIntensity,ditherIntensity,rand);
+result.rgb=saturate(result.rgb+vec3(dither));
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATEND
 return result;
 }
-#define TEXTUREFUNC(s,c,l) textureLod(s,c,l)
-float computeFallOff(float value,vec2 clipSpace,float frustumEdgeFalloff)
-{float mask=smoothstep(1.0-frustumEdgeFalloff,1.00000012,clamp(dot(clipSpace,clipSpace),0.,1.));
-return mix(value,1.0,mask);
-}
-
-
-
-
-
-
-
-
-
-#define ZINCLIP clipSpace.z
-#define SMALLEST_ABOVE_ZERO 1.1754943508e-38
-#define GREATEST_LESS_THAN_ONE 0.99999994
-#define DISABLE_UNIFORMITY_ANALYSIS
-
-
-
-
-
-
-const vec3 PoissonSamplers32[64]=vec3[64](
-vec3(0.06407013,0.05409927,0.),
-vec3(0.7366577,0.5789394,0.),
-vec3(-0.6270542,-0.5320278,0.),
-vec3(-0.4096107,0.8411095,0.),
-vec3(0.6849564,-0.4990818,0.),
-vec3(-0.874181,-0.04579735,0.),
-vec3(0.9989998,0.0009880066,0.),
-vec3(-0.004920578,-0.9151649,0.),
-vec3(0.1805763,0.9747483,0.),
-vec3(-0.2138451,0.2635818,0.),
-vec3(0.109845,0.3884785,0.),
-vec3(0.06876755,-0.3581074,0.),
-vec3(0.374073,-0.7661266,0.),
-vec3(0.3079132,-0.1216763,0.),
-vec3(-0.3794335,-0.8271583,0.),
-vec3(-0.203878,-0.07715034,0.),
-vec3(0.5912697,0.1469799,0.),
-vec3(-0.88069,0.3031784,0.),
-vec3(0.5040108,0.8283722,0.),
-vec3(-0.5844124,0.5494877,0.),
-vec3(0.6017799,-0.1726654,0.),
-vec3(-0.5554981,0.1559997,0.),
-vec3(-0.3016369,-0.3900928,0.),
-vec3(-0.5550632,-0.1723762,0.),
-vec3(0.925029,0.2995041,0.),
-vec3(-0.2473137,0.5538505,0.),
-vec3(0.9183037,-0.2862392,0.),
-vec3(0.2469421,0.6718712,0.),
-vec3(0.3916397,-0.4328209,0.),
-vec3(-0.03576927,-0.6220032,0.),
-vec3(-0.04661255,0.7995201,0.),
-vec3(0.4402924,0.3640312,0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.)
-);
-const vec3 PoissonSamplers64[64]=vec3[64](
-vec3(-0.613392,0.617481,0.),
-vec3(0.170019,-0.040254,0.),
-vec3(-0.299417,0.791925,0.),
-vec3(0.645680,0.493210,0.),
-vec3(-0.651784,0.717887,0.),
-vec3(0.421003,0.027070,0.),
-vec3(-0.817194,-0.271096,0.),
-vec3(-0.705374,-0.668203,0.),
-vec3(0.977050,-0.108615,0.),
-vec3(0.063326,0.142369,0.),
-vec3(0.203528,0.214331,0.),
-vec3(-0.667531,0.326090,0.),
-vec3(-0.098422,-0.295755,0.),
-vec3(-0.885922,0.215369,0.),
-vec3(0.566637,0.605213,0.),
-vec3(0.039766,-0.396100,0.),
-vec3(0.751946,0.453352,0.),
-vec3(0.078707,-0.715323,0.),
-vec3(-0.075838,-0.529344,0.),
-vec3(0.724479,-0.580798,0.),
-vec3(0.222999,-0.215125,0.),
-vec3(-0.467574,-0.405438,0.),
-vec3(-0.248268,-0.814753,0.),
-vec3(0.354411,-0.887570,0.),
-vec3(0.175817,0.382366,0.),
-vec3(0.487472,-0.063082,0.),
-vec3(-0.084078,0.898312,0.),
-vec3(0.488876,-0.783441,0.),
-vec3(0.470016,0.217933,0.),
-vec3(-0.696890,-0.549791,0.),
-vec3(-0.149693,0.605762,0.),
-vec3(0.034211,0.979980,0.),
-vec3(0.503098,-0.308878,0.),
-vec3(-0.016205,-0.872921,0.),
-vec3(0.385784,-0.393902,0.),
-vec3(-0.146886,-0.859249,0.),
-vec3(0.643361,0.164098,0.),
-vec3(0.634388,-0.049471,0.),
-vec3(-0.688894,0.007843,0.),
-vec3(0.464034,-0.188818,0.),
-vec3(-0.440840,0.137486,0.),
-vec3(0.364483,0.511704,0.),
-vec3(0.034028,0.325968,0.),
-vec3(0.099094,-0.308023,0.),
-vec3(0.693960,-0.366253,0.),
-vec3(0.678884,-0.204688,0.),
-vec3(0.001801,0.780328,0.),
-vec3(0.145177,-0.898984,0.),
-vec3(0.062655,-0.611866,0.),
-vec3(0.315226,-0.604297,0.),
-vec3(-0.780145,0.486251,0.),
-vec3(-0.371868,0.882138,0.),
-vec3(0.200476,0.494430,0.),
-vec3(-0.494552,-0.711051,0.),
-vec3(0.612476,0.705252,0.),
-vec3(-0.578845,-0.768792,0.),
-vec3(-0.772454,-0.090976,0.),
-vec3(0.504440,0.372295,0.),
-vec3(0.155736,0.065157,0.),
-vec3(0.391522,0.849605,0.),
-vec3(-0.620106,-0.328104,0.),
-vec3(0.789239,-0.419965,0.),
-vec3(-0.545396,0.538133,0.),
-vec3(-0.178564,-0.596057,0.)
-);
-
-
-
-
-
-
-
-
 vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
 + vSphericalL1_1*(normal.y)
 + vSphericalL10*(normal.z)
@@ -1068,8 +941,8 @@ return computeCubicCoords(worldPos,worldNormal,vEyePosition.xyz,reflectionMatrix
 // cloud's map (cloudParams.ts) is one texture: tileable noise in R and G,
 // read wrapping, and the height of the ground round the player in B, read
 // with its coordinates held off the edge so the wrap never reaches it.
-layout(set = 1, binding = 14) uniform sampler atmCloudMapSampler;
-                        layout(set = 1, binding = 13) uniform texture2D atmCloudMapTexture;
+layout(set = 1, binding = 11) uniform sampler atmCloudMapSampler;
+                        layout(set = 1, binding = 10) uniform texture2D atmCloudMapTexture;
                         #define atmCloudMap sampler2D(atmCloudMapTexture, atmCloudMapSampler)
 // The distance gradient: the far colour dimmed to ATM_NEAR_DIM at the eye,
 // rising as t to the power 1 / ATM_GRADIENT_BIAS. Mirrors fogGradientUnder.
@@ -1168,17 +1041,18 @@ return mix(cloud, fogged, exp(-od));
 // varyings the vertex block wrote. No sampler, no function.
 //
 // COMMENT RULES as in foliage.vertex.fx.
-layout(location = 10)  in vec4 vFoliage;
-layout(location = 11)  in float vFoliageH;
-layout(location = 12)  in float vFoliageClump;
-layout(location = 13)  in float vFoliageDist;
+layout(location = 5)  in vec4 vFoliage;
+layout(location = 6)  in float vFoliageH;
+layout(location = 7)  in float vFoliageClump;
+layout(location = 8)  in float vFoliageDist;
 // Foliage diffuse, spliced into the PBR fragment by FoliageLightPlugin at
-// CUSTOM_FRAGMENT_DEFINITIONS and called from every per-light diffuse line
-// with that light's index. Only the sun (index 0) is changed: an energy-
-// conserving wrap Lambert plus a backlight term that glows when the light is
-// behind the card and the viewer in front, thicker at the root. Other lights
-// return Babylon's own result untouched. The plugin is only attached to
-// materials that also carry the foliage plugin, which declares vFoliageH.
+// CUSTOM_FRAGMENT_DEFINITIONS and called only from the sun's diffuse line: the
+// plugin's injected line selects it by the light's directional define, not by
+// its index, and the sun is the scene's only directional light. An energy-
+// conserving wrap Lambert plus a backlight term that glows when the sun is
+// behind the card and the viewer in front, thicker at the root. Every other
+// light keeps Babylon's own line. The plugin is only attached to materials
+// that also carry the foliage plugin, which declares vFoliageH.
 //
 // COMMENT RULES: no semicolon inside a trailing comment on a code line, no
 // hashed preprocessor keyword in comment prose.
@@ -1189,15 +1063,92 @@ const float FOLIAGE_PI = 3.14159265;
 float foliageWrapLambert(float ndotl, float wrap) {
 return clamp((ndotl + wrap) / ((1.0 + wrap) * (1.0 + wrap)), 0.0, 1.0);
 }
-vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float lightIndex, float h, vec3 viewDir) {
-if (lightIndex > 0.5) {
-return computeDiffuseLighting(info, lightColor);
-}
+vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float h, vec3 viewDir) {
 vec3 unit = info.attenuation * lightColor / FOLIAGE_PI;
 vec3 wrapped = unit * foliageWrapLambert(info.NdotLUnclamped, FOLIAGE_WRAP);
 float back = pow(clamp(-dot(viewDir, info.L), 0.0, 1.0), FOLIAGE_BACK_POWER);
 float thickness = 1.0 - 0.7 * h;
 return wrapped + unit * FOLIAGE_BACK * back * thickness;
+}
+// Wet plugin, fragment definitions: what the water touches is darker and
+// glossy below the wet line, and on the medium and low tiers darkened by
+// the water above it as well (spec §6). Applied on both UBO paths at
+// CUSTOM_FRAGMENT_DEFINITIONS.
+//
+// COMMENT RULES: never put a semicolon inside a trailing comment on a code
+// line, and never spell a hashed preprocessor keyword in comment prose. The
+// shaderHygiene test enforces both.
+//
+// The literals mirror wetPlugin.ts and a lockstep test asserts they agree.
+const float WET_ALBEDO = 0.4;
+const float WET_ROUGHNESS = 0.15;
+const float WET_BAND = 0.1;
+// 1 below the line, 0 above it, blended over WET_BAND.
+float wetBelow(float y, float line) {
+return 1.0 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, y);
+}
+// 1 inside the body's footprint, 0 from 3 m past its rim, blended from 1 m.
+// Both the wet look and the darkening by the water above are held to it.
+float wetInside(vec2 xz, vec2 centre, float radius) {
+return 1.0 - smoothstep(radius + 1.0, radius + 3.0, length(xz - centre));
+}
+// The cove's swash (wetPlugin.ts, swashTable.ts): inside the cove the ground
+// is wet up to the line each column's sheet last climbed to, and dries after
+// it. wetCove is (z0, halfWidth, toeD, faceGrade), wetSwash the table's
+// (reach, age) two columns a vec4: the reach in metres up the face from the
+// still waterline, the age in seconds since a sheet last covered the column.
+// The literals mirror wetPlugin.ts and a lockstep test asserts they agree.
+const float WET_DAMP_ALBEDO = 0.7;
+const float WET_DAMP_ROUGHNESS = 0.5;
+const float WET_DRY_S = 60.0;
+const float WET_SOAKED_S = 0.5;
+const float WET_SPECKLE = 0.2;
+const float WET_SPECKLE_S = 10.0;
+const float WET_SPECKLE_CELL = 0.05;
+const float WET_SPECKLE_COVER = 0.25;
+const float WET_SPECKLE_NEAR = 10.0;
+const float WET_SPECKLE_FAR = 25.0;
+const float WET_COVE_END = 30.0;
+const float WET_SWASH_COLUMNS = 512.0;
+const float WET_SWASH_HALF = 256.0;
+// The cove's share at world z: 1 across it, 0 past WET_COVE_END beyond
+// either end, blended over the ends as the ground is, so the bays keep the
+// still line alone and no seam shows where the pebbles meet the sand.
+float wetCoveShare(float z) {
+return 1.0 - smoothstep(wetCove.y - WET_COVE_END, wetCove.y + WET_COVE_END, abs(z - wetCove.x));
+}
+// The table's column nearest world z, as the sea reads its own (oceanSwash.fx):
+// its reach and its age, from the pair of columns its vec4 holds, the half
+// picked by the column's parity.
+vec2 wetSwashAt(float z) {
+float c = floor(clamp(z - wetCove.x + WET_SWASH_HALF, 0.0, WET_SWASH_COLUMNS - 1.0) + 0.5);
+vec4 pair = wetSwash[int(c * 0.5)];
+return mix(pair.xy, pair.zw, mod(c, 2.0));
+}
+// The cove's wetting at a point: how soaked, how damp, and the speckle's
+// weight. Below the face's height at the column's reach (wetLevel plus the
+// reach times the grade), soaked for WET_SOAKED_S after a sheet, damp by a
+// third of WET_DRY_S, dry by WET_DRY_S, and above the still sea a speckle of
+// foam fading over WET_SPECKLE_S. All 0 outside the cove.
+vec3 wetShore(vec2 xz, float y) {
+vec2 col = wetSwashAt(xz.y);
+float band = wetBelow(y, wetLevel + col.x * wetCove.w) * wetCoveShare(xz.y);
+float soaked = 1.0 - smoothstep(WET_SOAKED_S, WET_DRY_S / 3.0, col.y);
+float damp = smoothstep(WET_SOAKED_S, WET_DRY_S / 3.0, col.y) - smoothstep(WET_DRY_S / 3.0, WET_DRY_S, col.y);
+float fresh = clamp(1.0 - col.y / WET_SPECKLE_S, 0.0, 1.0);
+float above = 1.0 - wetBelow(y, wetLevel);
+return vec3(soaked, damp, WET_SPECKLE * fresh * above) * band;
+}
+// The speckle's foam: WET_SPECKLE_COVER of the WET_SPECKLE_CELL cells carry
+// it, faded to that share as the point's distance from the eye (far) runs
+// from WET_SPECKLE_NEAR to WET_SPECKLE_FAR metres, where the cells fall under
+// a pixel. The hash is the water's skin's, without sine, which loses
+// precision at world coordinates.
+float wetSpeckle(vec2 xz, float far) {
+vec3 p3 = fract(vec3(floor(xz / WET_SPECKLE_CELL).xyx) * 0.1031);
+p3 += dot(p3, p3.yzx + 33.33);
+float on = step(1.0 - WET_SPECKLE_COVER, fract((p3.x + p3.y) * p3.z));
+return mix(on, WET_SPECKLE_COVER, smoothstep(WET_SPECKLE_NEAR, WET_SPECKLE_FAR, far));
 }
 #define CUSTOM_FRAGMENT_DEFINITIONS
 struct albedoOpacityOutParams
@@ -1244,6 +1195,26 @@ float microSurface=reflectivityColor.a;
 vec3 surfaceReflectivityColor=reflectivityColor.rgb;
 vec2 metallicRoughness=surfaceReflectivityColor.rg;
 float ior=surfaceReflectivityColor.b;
+// Wet plugin, the weather's wetting: Lagarde's porosity rule, applied at
+// CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS, inside the metallic workflow's
+// reflectivity block, where metallicRoughness.g is the material's final
+// roughness (its map, detail and microsurface map applied) and
+// surfaceAlbedo is the base colour the block copies out next. A porous
+// surface (rough, above 0.5) darkens to a fifth and glosses by half of
+// that at full wetness, a polished one does not change, and each material
+// caps its porosity: bark soaks, a leaf glazes. wetWeather is the weather's
+// wetness, bound once a frame for every material.
+//
+// COMMENT RULES: never put a semicolon inside a trailing comment on a code
+// line, and never spell a hashed preprocessor keyword in comment prose. The
+// shaderHygiene test enforces both.
+{
+float wetPorosity = min(wetCap, clamp((metallicRoughness.g - 0.5) / 0.4, 0.0, 1.0));
+float wetFactor = mix(1.0, 0.2, wetPorosity);
+surfaceAlbedo *= mix(1.0, wetFactor, wetWeather);
+float wetGloss = mix(1.0, 1.0 - metallicRoughness.g, mix(1.0, wetFactor, 0.5 * wetWeather));
+metallicRoughness.g = 1.0 - wetGloss;
+}
 #define CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS
 microSurface=1.0-metallicRoughness.g;
 vec3 baseColor=surfaceAlbedo;
@@ -1321,6 +1292,11 @@ struct subSurfaceOutParams
 };
 layout(location = 0) out vec4 glFragColor;
 void main(void) {
+                glFragCoord_ = gl_FragCoord;
+                if (yFactor_ == 1.) {
+                    glFragCoord_.y = textureOutputHeight_ - glFragCoord_.y;
+                }
+            
 #define CUSTOM_FRAGMENT_MAIN_BEGIN
 vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
 vec3 normalW=normalize(vNormalW);
@@ -1357,6 +1333,20 @@ surfaceAlbedo *= 1.0 + FOLIAGE_CLUMP_LUMA * (vFoliageClump - 0.5);
 normalW = normalize(mix(vec3(0.0, 1.0, 0.0), normalW, mix(foliageNormalRoot, 1.0, vFoliageH)));
 normalW = faceforward(normalW, -viewDirectionW, normalW);
 }
+float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);
+float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;
+// Inside the cove the swash's table wets the face as well (wetShore): soaked
+// up to the still line or the column's reach, whichever is higher, then damp
+// where the still line leaves the ground dry, and speckled. Outside it the
+// three are 0 and the still line's look is as it was, to the bit.
+vec3 wetCoveW = wetShore(vPositionW.xz, vPositionW.y) * wetIn;
+float wetW = max(wetStill, wetCoveW.x);
+float wetDamp = wetCoveW.y * (1.0 - wetStill);
+surfaceAlbedo *= mix(1.0, WET_ALBEDO, wetW) * mix(1.0, WET_DAMP_ALBEDO, wetDamp);
+surfaceAlbedo = mix(surfaceAlbedo, vec3(1.0), wetCoveW.z * wetSpeckle(vPositionW.xz, length(vPositionW - vEyePosition.xyz)));
+float wetKdMean = (wetKd.r + wetKd.g + wetKd.b) / 3.0;
+vec3 wetResidual = min(vec3(1.0), exp(-2.0 * (wetKd - vec3(wetKdMean)) * max(0.0, wetLevel - vPositionW.y) * wetIn));
+surfaceAlbedo *= mix(vec3(1.0), wetResidual, wetAttenuate);
 #define CUSTOM_FRAGMENT_BEFORE_LIGHTS
 ambientOcclusionOutParams aoOut;
 aoOut=ambientOcclusionBlock(
@@ -1371,7 +1361,7 @@ vReflectivityColor
 ,baseDiffuseRoughness
 );
 float microSurface=reflectivityOut.microSurface;
-float roughness=reflectivityOut.roughness;
+float roughness=mix(mix(reflectivityOut.roughness, min(reflectivityOut.roughness, WET_DAMP_ROUGHNESS), wetDamp), WET_ROUGHNESS, wetW);
 float diffuseRoughness=reflectivityOut.diffuseRoughness;
 surfaceAlbedo=reflectivityOut.surfaceAlbedo;
 float NdotVUnclamped=dot(normalW,viewDirectionW);
@@ -1436,7 +1426,7 @@ preInfo.attenuation*=computeDirectionalLightFalloff(light0.vLightDirection.xyz,p
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light0.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse0.rgb,float(0),vFoliageH,viewDirectionW);
+info.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse0.rgb);
 shadow=1.;
@@ -1452,85 +1442,10 @@ preInfo.attenuation=1.0;
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light1.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,float(1),vFoliageH,viewDirectionW);
+info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,vFoliageH,viewDirectionW);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse1.rgb);
-for (int i=0;
-i<SHADOWCSMNUM_CASCADES1;
-i++)
-{
-diff1=viewFrustumZ1[i]-vPositionFromCamera1.z;
-if (diff1>=0.) {index1=i;
-break;
-}}
-if (index1>=0)
-{
-float computeShadowWithCSMPCF5_0;
-{vec3 clipSpace=vPositionFromLight1[index1].xyz/vPositionFromLight1[index1].w;
-vec3 uvDepth=vec3(0.5*clipSpace.xyz+vec3(0.5));
-uvDepth.z=clamp(ZINCLIP,0.,GREATEST_LESS_THAN_ONE);
-vec2 uv=uvDepth.xy*light1.shadowsInfo.yz.x;
-uv+=0.5;
-vec2 st=fract(uv);
-vec2 base_uv=floor(uv)-0.5;
-base_uv*=light1.shadowsInfo.yz.y;
-vec2 uvw0=4.-3.*st;
-vec2 uvw1=vec2(7.);
-vec2 uvw2=1.+3.*st;
-vec3 u=vec3((3.-2.*st.x)/uvw0.x-2.,(3.+st.x)/uvw1.x,st.x/uvw2.x+2.)*light1.shadowsInfo.yz.y;
-vec3 v=vec3((3.-2.*st.y)/uvw0.y-2.,(3.+st.y)/uvw1.y,st.y/uvw2.y+2.)*light1.shadowsInfo.yz.y;
-float shadow=0.;
-shadow+=uvw0.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[0]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[0]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[0]),float(index1),uvDepth.z));
-shadow+=uvw0.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[1]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[1]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[1]),float(index1),uvDepth.z));
-shadow+=uvw0.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[2]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[2]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[2]),float(index1),uvDepth.z));
-shadow=shadow/144.;
-shadow=mix(light1.shadowsInfo.x,1.,shadow);
-computeShadowWithCSMPCF5_0 = computeFallOff(shadow,clipSpace.xy,light1.shadowsInfo.w);
-}
-shadow=computeShadowWithCSMPCF5_0;
-float frustumLength=frustumLengths1[index1];
-float diffRatio=clamp(diff1/frustumLength,0.,1.)*cascadeBlendFactor1;
-if (index1<(SHADOWCSMNUM_CASCADES1-1) && diffRatio<1.)
-{index1+=1;
-float nextShadow=0.;
-float computeShadowWithCSMPCF5_1;
-{vec3 clipSpace=vPositionFromLight1[index1].xyz/vPositionFromLight1[index1].w;
-vec3 uvDepth=vec3(0.5*clipSpace.xyz+vec3(0.5));
-uvDepth.z=clamp(ZINCLIP,0.,GREATEST_LESS_THAN_ONE);
-vec2 uv=uvDepth.xy*light1.shadowsInfo.yz.x;
-uv+=0.5;
-vec2 st=fract(uv);
-vec2 base_uv=floor(uv)-0.5;
-base_uv*=light1.shadowsInfo.yz.y;
-vec2 uvw0=4.-3.*st;
-vec2 uvw1=vec2(7.);
-vec2 uvw2=1.+3.*st;
-vec3 u=vec3((3.-2.*st.x)/uvw0.x-2.,(3.+st.x)/uvw1.x,st.x/uvw2.x+2.)*light1.shadowsInfo.yz.y;
-vec3 v=vec3((3.-2.*st.y)/uvw0.y-2.,(3.+st.y)/uvw1.y,st.y/uvw2.y+2.)*light1.shadowsInfo.yz.y;
-float shadow=0.;
-shadow+=uvw0.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[0]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[0]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[0]),float(index1),uvDepth.z));
-shadow+=uvw0.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[1]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[1]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[1]),float(index1),uvDepth.z));
-shadow+=uvw0.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[2]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[2]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[2]),float(index1),uvDepth.z));
-shadow=shadow/144.;
-shadow=mix(light1.shadowsInfo.x,1.,shadow);
-computeShadowWithCSMPCF5_1 = computeFallOff(shadow,clipSpace.xy,light1.shadowsInfo.w);
-}
-nextShadow=computeShadowWithCSMPCF5_1;
-shadow=mix(nextShadow,shadow,diffRatio);
-}
-}
+shadow=1.;
 aggShadow+=shadow;
 numLights+=1.0;
 diffuseBase+=info.diffuse*shadow;
@@ -1546,23 +1461,6 @@ preInfo.surfaceAlbedo=surfaceAlbedo;
 info.diffuse=computeHemisphericDiffuseLighting(preInfo,diffuse2.rgb,light2.vLightGround);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse2.rgb);
-shadow=1.;
-aggShadow+=shadow;
-numLights+=1.0;
-diffuseBase+=info.diffuse*shadow;
-specularBase+=info.specular*shadow;
-vec4 diffuse3=light3.vLightDiffuse;
-#define CUSTOM_LIGHT3_COLOR 
-preInfo=computePointAndSpotPreLightingInfo(light3.vLightData,viewDirectionW,normalW,vPositionW);
-preInfo.NdotV=NdotV;
-preInfo.attenuation=computeDistanceLightFalloff(preInfo.lightOffset,preInfo.lightDistanceSquared,light3.vLightFalloff.x,light3.vLightFalloff.y);
-preInfo.attenuation*=computeDirectionalLightFalloff(light3.vLightDirection.xyz,preInfo.L,light3.vLightDirection.w,light3.vLightData.w,light3.vLightFalloff.z,light3.vLightFalloff.w);
-preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light3.vLightSpecular.a,preInfo.lightDistance);
-preInfo.diffuseRoughness=diffuseRoughness;
-preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse3.rgb,float(3),vFoliageH,viewDirectionW);
-coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
-info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse3.rgb);
 shadow=1.;
 aggShadow+=shadow;
 numLights+=1.0;
@@ -1608,7 +1506,7 @@ finalColor=max(finalColor,0.0);
 float fog=CalcFogFactor();
 fog=toLinearSpace(fog);
 finalColor.rgb=atmosphereFog(finalColor.rgb,fog);
-finalColor.rgb=clamp(finalColor.rgb,0.,30.0);
+finalColor=applyImageProcessing(finalColor);
 finalColor.a*=visibility;
 #define CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR
 glFragColor=finalColor;

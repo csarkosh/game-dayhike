@@ -16,6 +16,7 @@
 #define IRIDESCENCE_TEXTUREDIRECTUV 0
 #define IRIDESCENCE_THICKNESS_TEXTUREDIRECTUV 0
 #define ANISOTROPIC_TEXTUREDIRECTUV 0
+#define MAINUV1
 #define SHEEN_TEXTUREDIRECTUV 0
 #define SHEEN_TEXTURE_ROUGHNESSDIRECTUV 0
 #define SS_THICKNESSANDMASK_TEXTUREDIRECTUV 0
@@ -26,8 +27,9 @@
 #define DETAIL_NORMALBLENDMETHOD 0
 #define FOLIAGE
 #define FOLIAGE_TINT
-#define FOLIAGE_BLADES
+#define DISTANCEFADE
 #define WET
+#define UV1
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -44,17 +46,27 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define TONEMAPPING 0
-#define IMAGEPROCESSINGPOSTPROCESS
+#define IMAGEPROCESSING
+#define VIGNETTE
+#define VIGNETTEBLENDMODEMULTIPLY
+#define TONEMAPPING 3
+#define CONTRAST
+#define COLORCURVES
+#define SAMPLER3DGREENDEPTH
+#define SAMPLER3DBGRMAP
+#define DITHER
+#define EXPOSURE
 #define PBR
 #define NUM_SAMPLES 0
-#define ALBEDODIRECTUV 0
-#define VERTEXCOLOR
+#define ALBEDO
+#define ALBEDODIRECTUV 1
 #define BASE_WEIGHTDIRECTUV 0
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
-#define ALPHATESTVALUE 0.4
+#define ALPHATEST
+#define ALPHAFROMALBEDO
+#define ALPHATESTVALUE 0.5
 #define SPECULAROVERALPHA
 #define RADIANCEOVERALPHA
 #define EMISSIVEDIRECTUV 0
@@ -67,7 +79,9 @@
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
-#define BUMPDIRECTUV 0
+#define TANGENT
+#define BUMP
+#define BUMPDIRECTUV 1
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
 #define REFLECTION
@@ -75,19 +89,21 @@
 #define REFLECTIONMAP_CUBIC
 #define INVERTCUBICMAP
 #define USESPHERICALFROMREFLECTIONMAP
-#define USESPHERICALINVERTEX
 #define GAMMAREFLECTION
 #define RADIANCEOCCLUSION
 #define HORIZONOCCLUSION
+#define INSTANCES
+#define THIN_INSTANCES
 #define NUM_BONE_INFLUENCERS 0
 #define BonesPerMesh 0
 #define NUM_MORPH_INFLUENCERS 0
 #define ORDER_INDEPENDENT_TRANSPARENCY_16BITS
 #define USEPHYSICALLIGHTFALLOFF
-#define SHADOWFLOAT
+#define TWOSIDEDLIGHTING
 #define FOG
 #define CAMERA_PERSPECTIVE
 #define AREALIGHTSUPPORTED
+#define SPECULARAA
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
@@ -97,23 +113,22 @@
 #define SPOTLIGHT0
 #define LIGHT1
 #define DIRLIGHT1
-#define SHADOW1
-#define SHADOWCSM1
-#define SHADOWCSMNUM_CASCADES1 2
-#define SHADOWCSMUSESHADOWMAXZ1
-#define SHADOWPCF1
 #define LIGHT2
 #define HEMILIGHT2
-#define SHADOWS
 #define LIGHTCOUNT 3
 #define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME fragment:pbr
-layout(set = 1, binding = 14) uniform LeftOver {
-        mat4 lightMatrix1[2];
-    float viewFrustumZ1[2];
-    float frustumLengths1[2];
-    float cascadeBlendFactor1;
+layout(set = 1, binding = 16) uniform LeftOver {
+        float exposureLinear;
+    float contrast;
+    vec2 vInverseScreenSize;
+    vec4 vignetteSettings1;
+    vec4 vignetteSettings2;
+    vec4 vCameraColorCurveNegative;
+    vec4 vCameraColorCurveNeutral;
+    vec4 vCameraColorCurvePositive;
+    float ditherIntensity;
     vec4 vFogInfos;
     vec3 vFogColor;
 };
@@ -123,9 +138,11 @@ layout(set = 1, binding = 0) uniform Internals {
 float yFactor_;
 float textureOutputHeight_;
 };
+vec4 glFragCoord_;
 
 #define PBR_FRAGMENT_SHADER
 #define CUSTOM_FRAGMENT_EXTENSION
+
 
 #define CUSTOM_FRAGMENT_BEGIN
 precision highp float;
@@ -280,6 +297,7 @@ float foliageNormalUp;
 vec2 foliageFlags;
 vec2 foliageEdges;
 vec4 foliageBladeEdges;
+vec3 fadeEye;
 float wetLine;
 float wetLevel;
 vec2 wetCentre;
@@ -304,10 +322,9 @@ layout(set = 1, binding = 2) uniform Mesh
 float visibility;
 };
 #define WORLD_UBO
-layout(location = 0)  in vec3 vPositionW;
-layout(location = 1)  in vec3 vNormalW;
-layout(location = 2)  in vec3 vEnvironmentIrradiance;
-layout(location = 3)  in vec4 vColor;
+layout(location = 1)  in vec3 vPositionW;
+layout(location = 0)  in vec2 vMainUV1;
+layout(location = 2)  in vec3 vNormalW;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -324,18 +341,6 @@ vec4 vLightSpecular;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light1;
-
-
-
-
-layout(location = 5)  in vec4 vPositionFromLight1[SHADOWCSMNUM_CASCADES1];
-layout(location = 7)  in float vDepthMetric1[SHADOWCSMNUM_CASCADES1];
-layout(location = 9)  in vec4 vPositionFromCamera1;
-layout(set = 1, binding = 7) uniform samplerShadow shadowTexture1Sampler;
-                        layout(set = 1, binding = 6) uniform texture2DArray shadowTexture1Texture;
-                        #define shadowTexture1 sampler2DArrayShadow(shadowTexture1Texture, shadowTexture1Sampler)
-int index1=-1;
-float diff1=0.;
 layout(set = 1, binding = 5) uniform Light2
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -344,6 +349,10 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
+#define vAlbedoUV vMainUV1
+layout(set = 1, binding = 7) uniform sampler albedoSamplerSampler;
+                        layout(set = 1, binding = 6) uniform texture2D albedoSamplerTexture;
+                        #define albedoSampler sampler2D(albedoSamplerTexture, albedoSamplerSampler)
 #define sampleReflection(s,c) texture(s,c)
 layout(set = 1, binding = 9) uniform sampler reflectionSamplerSampler;
                         layout(set = 1, binding = 8) uniform textureCube reflectionSamplerTexture;
@@ -352,6 +361,15 @@ layout(set = 1, binding = 9) uniform sampler reflectionSamplerSampler;
 layout(set = 1, binding = 11) uniform sampler environmentBrdfSamplerSampler;
                         layout(set = 1, binding = 10) uniform texture2D environmentBrdfSamplerTexture;
                         #define environmentBrdfSampler sampler2D(environmentBrdfSamplerTexture, environmentBrdfSamplerSampler)
+
+
+
+
+
+
+
+
+
 #define FOGMODE_NONE 0.
 #define FOGMODE_EXP 1.
 #define FOGMODE_EXP2 2.
@@ -359,7 +377,7 @@ layout(set = 1, binding = 11) uniform sampler environmentBrdfSamplerSampler;
 #define E 2.71828
 
 
-layout(location = 4)  in vec3 vFogDistance;
+layout(location = 6)  in vec3 vFogDistance;
 float CalcFogFactor()
 {float fogCoeff=1.0;
 float fogStart=vFogInfos.y;
@@ -562,180 +580,58 @@ float fresnelGrazingReflectance(float reflectance0) {float reflectance90=saturat
 return reflectance90;
 }
 vec2 getAARoughnessFactors(vec3 normalVector) {
-return vec2(0.);
+vec3 nDfdx=dFdx(normalVector.xyz);
+vec3 nDfdy=(-yFactor_)*dFdy(normalVector.xyz);
+float slopeSquare=max(dot(nDfdx,nDfdx),dot(nDfdy,nDfdy));
+float geometricRoughnessFactor=pow(saturate(slopeSquare),0.333);
+float geometricAlphaGFactor=sqrt(slopeSquare);
+geometricAlphaGFactor*=0.75;
+return vec2(geometricRoughnessFactor,geometricAlphaGFactor);
+}
+const float PBRNeutralStartCompression=0.8-0.04;
+const float PBRNeutralDesaturation=0.15;
+vec3 PBRNeutralToneMapping( vec3 color ) {float x=min(color.r,min(color.g,color.b));
+float offset=x<0.08 ? x-6.25*x*x : 0.04;
+color-=offset;
+float peak=max(color.r,max(color.g,color.b));
+if (peak<PBRNeutralStartCompression) return color;
+float d=1.-PBRNeutralStartCompression;
+float newPeak=1.-d*d/(peak+d-PBRNeutralStartCompression);
+color*=newPeak/peak;
+float g=1.-1./(PBRNeutralDesaturation*(peak-newPeak)+1.);
+return mix(color,newPeak*vec3(1,1,1),g);
 }
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_DEFINITIONS
 vec4 applyImageProcessing(vec4 result) {
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATSTART
+result.rgb*=exposureLinear;
+vec2 viewportXY=glFragCoord_.xy*vInverseScreenSize;
+viewportXY=viewportXY*2.0-1.0;
+vec3 vignetteXY1=vec3(viewportXY*vignetteSettings1.xy+vignetteSettings1.zw,1.0);
+float vignetteTerm=dot(vignetteXY1,vignetteXY1);
+float vignette=pow(vignetteTerm,vignetteSettings2.w);
+vec3 vignetteColor=vignetteSettings2.rgb;
+vec3 vignetteColorMultiplier=mix(vignetteColor,vec3(1,1,1),vignette);
+result.rgb*=vignetteColorMultiplier;
+result.rgb=PBRNeutralToneMapping(result.rgb);
 result.rgb=toGammaSpace(result.rgb);
 result.rgb=saturate(result.rgb);
+vec3 resultHighContrast=result.rgb*result.rgb*(3.0-2.0*result.rgb);
+if (contrast<1.0) {result.rgb=mix(vec3(0.5,0.5,0.5),result.rgb,contrast);
+} else {result.rgb=mix(result.rgb,resultHighContrast,contrast-1.0);
+}
+result.rgb=max(result.rgb,0.);
+float luma=getLuminance(result.rgb);
+vec2 curveMix=clamp(vec2(luma*3.0-1.5,luma*-3.0+1.5),vec2(0.0),vec2(1.0));
+vec4 colorCurve=vCameraColorCurveNeutral+curveMix.x*vCameraColorCurvePositive-curveMix.y*vCameraColorCurveNegative;
+result.rgb*=colorCurve.rgb;
+result.rgb=mix(vec3(luma),result.rgb,colorCurve.a);
+float rand=getRand(glFragCoord_.xy*vInverseScreenSize);
+float dither=mix(-ditherIntensity,ditherIntensity,rand);
+result.rgb=saturate(result.rgb+vec3(dither));
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATEND
 return result;
 }
-#define TEXTUREFUNC(s,c,l) textureLod(s,c,l)
-float computeFallOff(float value,vec2 clipSpace,float frustumEdgeFalloff)
-{float mask=smoothstep(1.0-frustumEdgeFalloff,1.00000012,clamp(dot(clipSpace,clipSpace),0.,1.));
-return mix(value,1.0,mask);
-}
-
-
-
-
-
-
-
-
-
-#define ZINCLIP clipSpace.z
-#define SMALLEST_ABOVE_ZERO 1.1754943508e-38
-#define GREATEST_LESS_THAN_ONE 0.99999994
-#define DISABLE_UNIFORMITY_ANALYSIS
-
-
-
-
-
-
-const vec3 PoissonSamplers32[64]=vec3[64](
-vec3(0.06407013,0.05409927,0.),
-vec3(0.7366577,0.5789394,0.),
-vec3(-0.6270542,-0.5320278,0.),
-vec3(-0.4096107,0.8411095,0.),
-vec3(0.6849564,-0.4990818,0.),
-vec3(-0.874181,-0.04579735,0.),
-vec3(0.9989998,0.0009880066,0.),
-vec3(-0.004920578,-0.9151649,0.),
-vec3(0.1805763,0.9747483,0.),
-vec3(-0.2138451,0.2635818,0.),
-vec3(0.109845,0.3884785,0.),
-vec3(0.06876755,-0.3581074,0.),
-vec3(0.374073,-0.7661266,0.),
-vec3(0.3079132,-0.1216763,0.),
-vec3(-0.3794335,-0.8271583,0.),
-vec3(-0.203878,-0.07715034,0.),
-vec3(0.5912697,0.1469799,0.),
-vec3(-0.88069,0.3031784,0.),
-vec3(0.5040108,0.8283722,0.),
-vec3(-0.5844124,0.5494877,0.),
-vec3(0.6017799,-0.1726654,0.),
-vec3(-0.5554981,0.1559997,0.),
-vec3(-0.3016369,-0.3900928,0.),
-vec3(-0.5550632,-0.1723762,0.),
-vec3(0.925029,0.2995041,0.),
-vec3(-0.2473137,0.5538505,0.),
-vec3(0.9183037,-0.2862392,0.),
-vec3(0.2469421,0.6718712,0.),
-vec3(0.3916397,-0.4328209,0.),
-vec3(-0.03576927,-0.6220032,0.),
-vec3(-0.04661255,0.7995201,0.),
-vec3(0.4402924,0.3640312,0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.),
-vec3(0.)
-);
-const vec3 PoissonSamplers64[64]=vec3[64](
-vec3(-0.613392,0.617481,0.),
-vec3(0.170019,-0.040254,0.),
-vec3(-0.299417,0.791925,0.),
-vec3(0.645680,0.493210,0.),
-vec3(-0.651784,0.717887,0.),
-vec3(0.421003,0.027070,0.),
-vec3(-0.817194,-0.271096,0.),
-vec3(-0.705374,-0.668203,0.),
-vec3(0.977050,-0.108615,0.),
-vec3(0.063326,0.142369,0.),
-vec3(0.203528,0.214331,0.),
-vec3(-0.667531,0.326090,0.),
-vec3(-0.098422,-0.295755,0.),
-vec3(-0.885922,0.215369,0.),
-vec3(0.566637,0.605213,0.),
-vec3(0.039766,-0.396100,0.),
-vec3(0.751946,0.453352,0.),
-vec3(0.078707,-0.715323,0.),
-vec3(-0.075838,-0.529344,0.),
-vec3(0.724479,-0.580798,0.),
-vec3(0.222999,-0.215125,0.),
-vec3(-0.467574,-0.405438,0.),
-vec3(-0.248268,-0.814753,0.),
-vec3(0.354411,-0.887570,0.),
-vec3(0.175817,0.382366,0.),
-vec3(0.487472,-0.063082,0.),
-vec3(-0.084078,0.898312,0.),
-vec3(0.488876,-0.783441,0.),
-vec3(0.470016,0.217933,0.),
-vec3(-0.696890,-0.549791,0.),
-vec3(-0.149693,0.605762,0.),
-vec3(0.034211,0.979980,0.),
-vec3(0.503098,-0.308878,0.),
-vec3(-0.016205,-0.872921,0.),
-vec3(0.385784,-0.393902,0.),
-vec3(-0.146886,-0.859249,0.),
-vec3(0.643361,0.164098,0.),
-vec3(0.634388,-0.049471,0.),
-vec3(-0.688894,0.007843,0.),
-vec3(0.464034,-0.188818,0.),
-vec3(-0.440840,0.137486,0.),
-vec3(0.364483,0.511704,0.),
-vec3(0.034028,0.325968,0.),
-vec3(0.099094,-0.308023,0.),
-vec3(0.693960,-0.366253,0.),
-vec3(0.678884,-0.204688,0.),
-vec3(0.001801,0.780328,0.),
-vec3(0.145177,-0.898984,0.),
-vec3(0.062655,-0.611866,0.),
-vec3(0.315226,-0.604297,0.),
-vec3(-0.780145,0.486251,0.),
-vec3(-0.371868,0.882138,0.),
-vec3(0.200476,0.494430,0.),
-vec3(-0.494552,-0.711051,0.),
-vec3(0.612476,0.705252,0.),
-vec3(-0.578845,-0.768792,0.),
-vec3(-0.772454,-0.090976,0.),
-vec3(0.504440,0.372295,0.),
-vec3(0.155736,0.065157,0.),
-vec3(0.391522,0.849605,0.),
-vec3(-0.620106,-0.328104,0.),
-vec3(0.789239,-0.419965,0.),
-vec3(-0.545396,0.538133,0.),
-vec3(-0.178564,-0.596057,0.)
-);
-
-
-
-
-
-
-
-
 vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
 + vSphericalL1_1*(normal.y)
 + vSphericalL10*(normal.z)
@@ -972,6 +868,34 @@ float environmentHorizonOcclusion(vec3 view,vec3 normal,vec3 geometricNormal) {v
 float temp=saturate(1.0+1.1*dot(reflection,geometricNormal));
 return square(temp);
 }
+layout(location = 3)  in mat3 vTBN;
+vec3 perturbNormalBase(mat3 cotangentFrame,vec3 normal,float scale)
+{
+normal=normalize(normal*vec3(scale,scale,1.0));
+return normalize(cotangentFrame*normal);
+}
+vec3 perturbNormal(mat3 cotangentFrame,vec3 textureSample,float scale)
+{return perturbNormalBase(cotangentFrame,textureSample*2.0-1.0,scale);
+}
+mat3 cotangent_frame(vec3 normal,vec3 p,vec2 uv,vec2 tangentSpaceParams)
+{vec3 dp1=dFdx(p);
+vec3 dp2=(-yFactor_)*dFdy(p);
+vec2 duv1=dFdx(uv);
+vec2 duv2=(-yFactor_)*dFdy(uv);
+vec3 dp2perp=cross(dp2,normal);
+vec3 dp1perp=cross(normal,dp1);
+vec3 tangent=dp2perp*duv1.x+dp1perp*duv2.x;
+vec3 bitangent=dp2perp*duv1.y+dp1perp*duv2.y;
+tangent*=tangentSpaceParams.x;
+bitangent*=tangentSpaceParams.y;
+float det=max(dot(tangent,tangent),dot(bitangent,bitangent));
+float invmax=det==0.0 ? 0.0 : inversesqrt(det);
+return mat3(tangent*invmax,bitangent*invmax,normal);
+}
+#define vBumpUV vMainUV1
+layout(set = 1, binding = 13) uniform sampler bumpSamplerSampler;
+                        layout(set = 1, binding = 12) uniform texture2D bumpSamplerTexture;
+                        #define bumpSampler sampler2D(bumpSamplerTexture, bumpSamplerSampler)
 vec3 computeFixedEquirectangularCoords(vec4 worldPos,vec3 worldNormal,vec3 direction)
 {float lon=atan(direction.z,direction.x);
 float lat=acos(direction.y);
@@ -1066,8 +990,8 @@ return computeCubicCoords(worldPos,worldNormal,vEyePosition.xyz,reflectionMatrix
 // cloud's map (cloudParams.ts) is one texture: tileable noise in R and G,
 // read wrapping, and the height of the ground round the player in B, read
 // with its coordinates held off the edge so the wrap never reaches it.
-layout(set = 1, binding = 13) uniform sampler atmCloudMapSampler;
-                        layout(set = 1, binding = 12) uniform texture2D atmCloudMapTexture;
+layout(set = 1, binding = 15) uniform sampler atmCloudMapSampler;
+                        layout(set = 1, binding = 14) uniform texture2D atmCloudMapTexture;
                         #define atmCloudMap sampler2D(atmCloudMapTexture, atmCloudMapSampler)
 // The distance gradient: the far colour dimmed to ATM_NEAR_DIM at the eye,
 // rising as t to the power 1 / ATM_GRADIENT_BIAS. Mirrors fogGradientUnder.
@@ -1166,17 +1090,23 @@ return mix(cloud, fogged, exp(-od));
 // varyings the vertex block wrote. No sampler, no function.
 //
 // COMMENT RULES as in foliage.vertex.fx.
-layout(location = 10)  in vec4 vFoliage;
-layout(location = 11)  in float vFoliageH;
-layout(location = 12)  in float vFoliageClump;
-layout(location = 13)  in float vFoliageDist;
+layout(location = 7)  in vec4 vFoliage;
+layout(location = 8)  in float vFoliageH;
+layout(location = 9)  in float vFoliageClump;
+layout(location = 10)  in float vFoliageDist;
+layout(location = 11)  in vec4 vFadeBands;
+layout(location = 12)  in float vFadeDist;
+float dfNoise(vec2 p) {
+return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
 // Foliage diffuse, spliced into the PBR fragment by FoliageLightPlugin at
-// CUSTOM_FRAGMENT_DEFINITIONS and called from every per-light diffuse line
-// with that light's index. Only the sun (index 0) is changed: an energy-
-// conserving wrap Lambert plus a backlight term that glows when the light is
-// behind the card and the viewer in front, thicker at the root. Other lights
-// return Babylon's own result untouched. The plugin is only attached to
-// materials that also carry the foliage plugin, which declares vFoliageH.
+// CUSTOM_FRAGMENT_DEFINITIONS and called only from the sun's diffuse line: the
+// plugin's injected line selects it by the light's directional define, not by
+// its index, and the sun is the scene's only directional light. An energy-
+// conserving wrap Lambert plus a backlight term that glows when the sun is
+// behind the card and the viewer in front, thicker at the root. Every other
+// light keeps Babylon's own line. The plugin is only attached to materials
+// that also carry the foliage plugin, which declares vFoliageH.
 //
 // COMMENT RULES: no semicolon inside a trailing comment on a code line, no
 // hashed preprocessor keyword in comment prose.
@@ -1187,10 +1117,7 @@ const float FOLIAGE_PI = 3.14159265;
 float foliageWrapLambert(float ndotl, float wrap) {
 return clamp((ndotl + wrap) / ((1.0 + wrap) * (1.0 + wrap)), 0.0, 1.0);
 }
-vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float lightIndex, float h, vec3 viewDir) {
-if (lightIndex > 0.5) {
-return computeDiffuseLighting(info, lightColor);
-}
+vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float h, vec3 viewDir) {
 vec3 unit = info.attenuation * lightColor / FOLIAGE_PI;
 vec3 wrapped = unit * foliageWrapLambert(info.NdotLUnclamped, FOLIAGE_WRAP);
 float back = pow(clamp(-dot(viewDir, info.L), 0.0, 1.0), FOLIAGE_BACK_POWER);
@@ -1285,14 +1212,21 @@ float alpha;
 #define pbr_inline
 albedoOpacityOutParams albedoOpacityBlock(
 in vec4 vAlbedoColor
+,in vec4 albedoTexture
+,in vec2 albedoInfos
 ,in float baseWeight
 )
 {albedoOpacityOutParams outParams;
 vec3 surfaceAlbedo=vAlbedoColor.rgb;
 float alpha=vAlbedoColor.a;
-surfaceAlbedo*=vColor.rgb;
+alpha*=albedoTexture.a;
+surfaceAlbedo*=albedoTexture.rgb;
+surfaceAlbedo*=albedoInfos.y;
 #define CUSTOM_FRAGMENT_UPDATE_ALBEDO
 surfaceAlbedo*=baseWeight;
+if (alpha<ALPHATESTVALUE)
+discard;
+alpha=1.0;
 outParams.surfaceAlbedo=surfaceAlbedo;
 outParams.alpha=alpha;
 return outParams;
@@ -1419,14 +1353,33 @@ struct subSurfaceOutParams
 };
 layout(location = 0) out vec4 glFragColor;
 void main(void) {
+                glFragCoord_ = gl_FragCoord;
+                if (yFactor_ == 1.) {
+                    glFragCoord_.y = textureOutputHeight_ - glFragCoord_.y;
+                }
+            
+{
+float dfN = dfNoise(glFragCoord_.xy);
+float dfIn = smoothstep(vFadeBands.x, vFadeBands.y, vFadeDist);
+float dfOut = 1.0 - smoothstep(vFadeBands.z, vFadeBands.w, vFadeDist);
+if (dfIn < 1.0 - dfN || dfOut < dfN) discard;
+}
 #define CUSTOM_FRAGMENT_MAIN_BEGIN
 vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
 vec3 normalW=normalize(vNormalW);
 vec3 geometricNormalW=normalW;
+geometricNormalW=gl_FrontFacing ? geometricNormalW : -geometricNormalW;
 vec2 uvOffset=vec2(0.0,0.0);
+float normalScale=1.0;
+mat3 TBN=vTBN;
+normalW=perturbNormal(TBN,TEXRD(bumpSampler,vBumpUV+uvOffset).xyz,vBumpInfos.y);
+normalW=gl_FrontFacing ? normalW : -normalW;
 albedoOpacityOutParams albedoOpacityOut;
+vec4 albedoTexture=TEXRD(albedoSampler,vAlbedoUV+uvOffset);
 albedoOpacityOut=albedoOpacityBlock(
 vAlbedoColor
+,albedoTexture
+,vAlbedoInfos
 ,baseWeight
 );
 vec3 surfaceAlbedo=albedoOpacityOut.surfaceAlbedo;
@@ -1490,9 +1443,11 @@ float NdotVUnclamped=dot(normalW,viewDirectionW);
 float NdotV=absEps(NdotVUnclamped);
 float alphaG=convertRoughnessToAverageSlope(roughness);
 vec2 AARoughnessFactors=getAARoughnessFactors(normalW.xyz);
+alphaG+=AARoughnessFactors.y;
 vec3 environmentBrdf=getBRDFLookup(NdotV,roughness);
 float ambientMonochrome=getLuminance(aoOut.ambientOcclusionColor);
 float seo=environmentRadianceOcclusion(ambientMonochrome,NdotVUnclamped);
+float eho=environmentHorizonOcclusion(-viewDirectionW,normalW,geometricNormalW);
 reflectionOutParams reflectionOut;
 reflectionOutParams reflectionBlock_0;
 {reflectionOutParams outParams;
@@ -1513,7 +1468,13 @@ environmentRadiance.rgb*=vReflectionInfos.x;
 environmentRadiance.rgb*=vReflectionColor.rgb;
 };
 vec3 environmentIrradiance=vec3(0.,0.,0.);
-environmentIrradiance=vEnvironmentIrradiance;
+vec3 irradianceVector=vec3(reflectionMatrix*vec4(normalW,0)).xyz;
+vec3 irradianceView=vec3(reflectionMatrix*vec4(viewDirectionW,0)).xyz;
+float NdotV=max(dot(normalW,viewDirectionW),0.0);
+irradianceVector=mix(irradianceVector,irradianceView,(0.5*(1.0-NdotV))*diffuseRoughness);
+irradianceVector.y*=-1.0;
+irradianceView.y*=-1.0;
+environmentIrradiance=computeEnvironmentIrradiance(irradianceVector);
 environmentIrradiance*=vReflectionColor.rgb*vReflectionInfos.x;
 outParams.environmentRadiance=vec4(mix(environmentRadiance.rgb,environmentIrradiance,alphaG),environmentRadiance.a);
 outParams.environmentIrradiance=environmentIrradiance;
@@ -1529,6 +1490,7 @@ clearcoatOut.specularEnvironmentR0=specularEnvironmentR0;
 vec3 baseSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(vec3(reflectanceF0),reflectivityOut.reflectanceF90,environmentBrdf);
 vec3 colorSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90,environmentBrdf);
 colorSpecularEnvironmentReflectance*=seo;
+colorSpecularEnvironmentReflectance*=eho;
 subSurfaceOutParams subSurfaceOut;
 subSurfaceOut.specularEnvironmentReflectance=colorSpecularEnvironmentReflectance;
 vec3 diffuseBase=vec3(0.,0.,0.);
@@ -1548,7 +1510,7 @@ preInfo.attenuation*=computeDirectionalLightFalloff(light0.vLightDirection.xyz,p
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light0.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse0.rgb,float(0),vFoliageH,viewDirectionW);
+info.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse0.rgb);
 shadow=1.;
@@ -1564,85 +1526,10 @@ preInfo.attenuation=1.0;
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light1.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,float(1),vFoliageH,viewDirectionW);
+info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,vFoliageH,viewDirectionW);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse1.rgb);
-for (int i=0;
-i<SHADOWCSMNUM_CASCADES1;
-i++)
-{
-diff1=viewFrustumZ1[i]-vPositionFromCamera1.z;
-if (diff1>=0.) {index1=i;
-break;
-}}
-if (index1>=0)
-{
-float computeShadowWithCSMPCF5_0;
-{vec3 clipSpace=vPositionFromLight1[index1].xyz/vPositionFromLight1[index1].w;
-vec3 uvDepth=vec3(0.5*clipSpace.xyz+vec3(0.5));
-uvDepth.z=clamp(ZINCLIP,0.,GREATEST_LESS_THAN_ONE);
-vec2 uv=uvDepth.xy*light1.shadowsInfo.yz.x;
-uv+=0.5;
-vec2 st=fract(uv);
-vec2 base_uv=floor(uv)-0.5;
-base_uv*=light1.shadowsInfo.yz.y;
-vec2 uvw0=4.-3.*st;
-vec2 uvw1=vec2(7.);
-vec2 uvw2=1.+3.*st;
-vec3 u=vec3((3.-2.*st.x)/uvw0.x-2.,(3.+st.x)/uvw1.x,st.x/uvw2.x+2.)*light1.shadowsInfo.yz.y;
-vec3 v=vec3((3.-2.*st.y)/uvw0.y-2.,(3.+st.y)/uvw1.y,st.y/uvw2.y+2.)*light1.shadowsInfo.yz.y;
-float shadow=0.;
-shadow+=uvw0.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[0]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[0]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[0]),float(index1),uvDepth.z));
-shadow+=uvw0.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[1]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[1]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[1]),float(index1),uvDepth.z));
-shadow+=uvw0.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[2]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[2]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[2]),float(index1),uvDepth.z));
-shadow=shadow/144.;
-shadow=mix(light1.shadowsInfo.x,1.,shadow);
-computeShadowWithCSMPCF5_0 = computeFallOff(shadow,clipSpace.xy,light1.shadowsInfo.w);
-}
-shadow=computeShadowWithCSMPCF5_0;
-float frustumLength=frustumLengths1[index1];
-float diffRatio=clamp(diff1/frustumLength,0.,1.)*cascadeBlendFactor1;
-if (index1<(SHADOWCSMNUM_CASCADES1-1) && diffRatio<1.)
-{index1+=1;
-float nextShadow=0.;
-float computeShadowWithCSMPCF5_1;
-{vec3 clipSpace=vPositionFromLight1[index1].xyz/vPositionFromLight1[index1].w;
-vec3 uvDepth=vec3(0.5*clipSpace.xyz+vec3(0.5));
-uvDepth.z=clamp(ZINCLIP,0.,GREATEST_LESS_THAN_ONE);
-vec2 uv=uvDepth.xy*light1.shadowsInfo.yz.x;
-uv+=0.5;
-vec2 st=fract(uv);
-vec2 base_uv=floor(uv)-0.5;
-base_uv*=light1.shadowsInfo.yz.y;
-vec2 uvw0=4.-3.*st;
-vec2 uvw1=vec2(7.);
-vec2 uvw2=1.+3.*st;
-vec3 u=vec3((3.-2.*st.x)/uvw0.x-2.,(3.+st.x)/uvw1.x,st.x/uvw2.x+2.)*light1.shadowsInfo.yz.y;
-vec3 v=vec3((3.-2.*st.y)/uvw0.y-2.,(3.+st.y)/uvw1.y,st.y/uvw2.y+2.)*light1.shadowsInfo.yz.y;
-float shadow=0.;
-shadow+=uvw0.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[0]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[0]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[0]),float(index1),uvDepth.z));
-shadow+=uvw0.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[1]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[1]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[1]),float(index1),uvDepth.z));
-shadow+=uvw0.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[2]),float(index1),uvDepth.z));
-shadow+=uvw1.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[2]),float(index1),uvDepth.z));
-shadow+=uvw2.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[2]),float(index1),uvDepth.z));
-shadow=shadow/144.;
-shadow=mix(light1.shadowsInfo.x,1.,shadow);
-computeShadowWithCSMPCF5_1 = computeFallOff(shadow,clipSpace.xy,light1.shadowsInfo.w);
-}
-nextShadow=computeShadowWithCSMPCF5_1;
-shadow=mix(nextShadow,shadow,diffRatio);
-}
-}
+shadow=1.;
 aggShadow+=shadow;
 numLights+=1.0;
 diffuseBase+=info.diffuse*shadow;
@@ -1703,7 +1590,7 @@ finalColor=max(finalColor,0.0);
 float fog=CalcFogFactor();
 fog=toLinearSpace(fog);
 finalColor.rgb=atmosphereFog(finalColor.rgb,fog);
-finalColor.rgb=clamp(finalColor.rgb,0.,30.0);
+finalColor=applyImageProcessing(finalColor);
 finalColor.a*=visibility;
 #define CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR
 glFragColor=finalColor;

@@ -316,13 +316,16 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1279 recorded stages, each file\'s bytes hashing to the name it has: 775 on the medium and high tiers, 403 on low, 77 on high alone, 20 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1279);
+  it('holds the 1270 recorded stages, each file\'s bytes hashing to the name it has: 769 on the medium and high tiers, 402 on low, 76 on high alone, 19 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1270);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1279);
+    expect(read.stages).toHaveLength(1270);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(453);
-    // The 775 recorded on the medium and high tiers (the lake's water with the faint bump outside
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(442);
+    // The 769 recorded on the medium and high tiers (the foliage's fragment stages with the
+    // sun's wrap and backlight keyed on the light's directional define, met on the forest floor,
+    // at the trailhead, in the meadow and at the tarn, dry and under rain, 13 here and 13 on low,
+    // and one stage the medium tier held alone that the high tier met too (2026-10-13); the lake's water with the faint bump outside
     // its cat's-paws, met at a lake from the title's tour and from its shore under a lamp and under
     // rain (2026-10-13); the end scene's stages, first
     // met at night in the eerie weather from the win to the title page (2026-10-13):
@@ -334,16 +337,19 @@ describe('the committed corpus and the tests\' fixture', () => {
     // materials first met at a lake under three lights among them
     // (2026-10-11), a foliage material's pbr pair first met when the foliage
     // light injection took its FOLIAGE guard (2026-10-12)), the low tier's
-    // 403, recorded on it alone (the end scene's 98, which the tier's earlier
+    // 402, recorded on it alone (the end scene's 98, which the tier's earlier
     // recording, ended before the win, had not met (2026-10-13), a foliage pbr
     // pair of the same recording
-    // among them, and the rain's streak vertex stage with the sky fade softened), the 77 the high tier alone met (the lake's
+    // among them, and the rain's streak vertex stage with the sky fade softened), the 76 the high tier alone met (the lake's
     // mirror, the sea's curl and fourteen PBR stages the canopy trail under rain
-    // first met on 2026-10-12 among them), the 20 the medium tier alone met (a PBR pair
+    // first met on 2026-10-12 among them), the 19 the medium tier alone met (a PBR pair
     // the canopy trail under rain first met on 2026-10-13 among them), and the sky
     // dome's 2 and the midges' 2, whose text is the same on every tier.
     // Stages whose text a shader no longer produces are
-    // retired, not kept: the lake's water before the faint bump outside its paws, with its twin
+    // retired, not kept: the foliage's 35 fragment stages before the wrap was keyed on the sun's
+    // define, 13 of which the pages did not meet again (a second player's lamp under rain, the
+    // lake's mirror, and the blades under rain) (2026-10-13),
+    // the lake's water before the faint bump outside its paws, with its twin
     // reading the bump straight off the mesh's UV, a first frame's compile the pages recorded
     // did not meet again (2026-10-13),
     // the rain's streak and splash vertex stages before the
@@ -359,12 +365,12 @@ describe('the committed corpus and the tests\' fixture', () => {
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1279);
+    expect(read.tiers.size).toBe(1270);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([407, 799, 856]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(775);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(403);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(77);
+    expect([on('low'), on('medium'), on('high')]).toEqual([406, 792, 849]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(769);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(402);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(76);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));

@@ -1,5 +1,5 @@
 #version 450
-#define MATERIALPLUGIN_18
+#define MATERIALPLUGIN_12
 #define BRDF_V_HEIGHT_CORRELATED
 #define MS_BRDF_ENERGY_CONSERVATION
 #define SPHERICAL_HARMONICS
@@ -25,8 +25,6 @@
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
 #define FOLIAGE
-#define FOLIAGE_TINT
-#define WET
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -86,6 +84,8 @@
 #define GAMMAREFLECTION
 #define RADIANCEOCCLUSION
 #define HORIZONOCCLUSION
+#define INSTANCES
+#define THIN_INSTANCES
 #define NUM_BONE_INFLUENCERS 0
 #define BonesPerMesh 0
 #define NUM_MORPH_INFLUENCERS 0
@@ -106,7 +106,7 @@
 #define LIGHT2
 #define HEMILIGHT2
 #define LIGHTCOUNT 3
-#define MAXLIGHTCOUNT 4
+#define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME fragment:pbr
 layout(set = 1, binding = 12) uniform LeftOver {
@@ -286,16 +286,6 @@ float foliageNormalUp;
 vec2 foliageFlags;
 vec2 foliageEdges;
 vec4 foliageBladeEdges;
-float wetLine;
-float wetLevel;
-vec2 wetCentre;
-float wetRadius;
-vec3 wetKd;
-float wetAttenuate;
-float wetWeather;
-float wetCap;
-vec4 wetCove;
-vec4 wetSwash[256];
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -1046,12 +1036,13 @@ layout(location = 6)  in float vFoliageH;
 layout(location = 7)  in float vFoliageClump;
 layout(location = 8)  in float vFoliageDist;
 // Foliage diffuse, spliced into the PBR fragment by FoliageLightPlugin at
-// CUSTOM_FRAGMENT_DEFINITIONS and called from every per-light diffuse line
-// with that light's index. Only the sun (index 0) is changed: an energy-
-// conserving wrap Lambert plus a backlight term that glows when the light is
-// behind the card and the viewer in front, thicker at the root. Other lights
-// return Babylon's own result untouched. The plugin is only attached to
-// materials that also carry the foliage plugin, which declares vFoliageH.
+// CUSTOM_FRAGMENT_DEFINITIONS and called only from the sun's diffuse line: the
+// plugin's injected line selects it by the light's directional define, not by
+// its index, and the sun is the scene's only directional light. An energy-
+// conserving wrap Lambert plus a backlight term that glows when the sun is
+// behind the card and the viewer in front, thicker at the root. Every other
+// light keeps Babylon's own line. The plugin is only attached to materials
+// that also carry the foliage plugin, which declares vFoliageH.
 //
 // COMMENT RULES: no semicolon inside a trailing comment on a code line, no
 // hashed preprocessor keyword in comment prose.
@@ -1062,95 +1053,12 @@ const float FOLIAGE_PI = 3.14159265;
 float foliageWrapLambert(float ndotl, float wrap) {
 return clamp((ndotl + wrap) / ((1.0 + wrap) * (1.0 + wrap)), 0.0, 1.0);
 }
-vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float lightIndex, float h, vec3 viewDir) {
-if (lightIndex > 0.5) {
-return computeDiffuseLighting(info, lightColor);
-}
+vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float h, vec3 viewDir) {
 vec3 unit = info.attenuation * lightColor / FOLIAGE_PI;
 vec3 wrapped = unit * foliageWrapLambert(info.NdotLUnclamped, FOLIAGE_WRAP);
 float back = pow(clamp(-dot(viewDir, info.L), 0.0, 1.0), FOLIAGE_BACK_POWER);
 float thickness = 1.0 - 0.7 * h;
 return wrapped + unit * FOLIAGE_BACK * back * thickness;
-}
-// Wet plugin, fragment definitions: what the water touches is darker and
-// glossy below the wet line, and on the medium and low tiers darkened by
-// the water above it as well (spec §6). Applied on both UBO paths at
-// CUSTOM_FRAGMENT_DEFINITIONS.
-//
-// COMMENT RULES: never put a semicolon inside a trailing comment on a code
-// line, and never spell a hashed preprocessor keyword in comment prose. The
-// shaderHygiene test enforces both.
-//
-// The literals mirror wetPlugin.ts and a lockstep test asserts they agree.
-const float WET_ALBEDO = 0.4;
-const float WET_ROUGHNESS = 0.15;
-const float WET_BAND = 0.1;
-// 1 below the line, 0 above it, blended over WET_BAND.
-float wetBelow(float y, float line) {
-return 1.0 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, y);
-}
-// 1 inside the body's footprint, 0 from 3 m past its rim, blended from 1 m.
-// Both the wet look and the darkening by the water above are held to it.
-float wetInside(vec2 xz, vec2 centre, float radius) {
-return 1.0 - smoothstep(radius + 1.0, radius + 3.0, length(xz - centre));
-}
-// The cove's swash (wetPlugin.ts, swashTable.ts): inside the cove the ground
-// is wet up to the line each column's sheet last climbed to, and dries after
-// it. wetCove is (z0, halfWidth, toeD, faceGrade), wetSwash the table's
-// (reach, age) two columns a vec4: the reach in metres up the face from the
-// still waterline, the age in seconds since a sheet last covered the column.
-// The literals mirror wetPlugin.ts and a lockstep test asserts they agree.
-const float WET_DAMP_ALBEDO = 0.7;
-const float WET_DAMP_ROUGHNESS = 0.5;
-const float WET_DRY_S = 60.0;
-const float WET_SOAKED_S = 0.5;
-const float WET_SPECKLE = 0.2;
-const float WET_SPECKLE_S = 10.0;
-const float WET_SPECKLE_CELL = 0.05;
-const float WET_SPECKLE_COVER = 0.25;
-const float WET_SPECKLE_NEAR = 10.0;
-const float WET_SPECKLE_FAR = 25.0;
-const float WET_COVE_END = 30.0;
-const float WET_SWASH_COLUMNS = 512.0;
-const float WET_SWASH_HALF = 256.0;
-// The cove's share at world z: 1 across it, 0 past WET_COVE_END beyond
-// either end, blended over the ends as the ground is, so the bays keep the
-// still line alone and no seam shows where the pebbles meet the sand.
-float wetCoveShare(float z) {
-return 1.0 - smoothstep(wetCove.y - WET_COVE_END, wetCove.y + WET_COVE_END, abs(z - wetCove.x));
-}
-// The table's column nearest world z, as the sea reads its own (oceanSwash.fx):
-// its reach and its age, from the pair of columns its vec4 holds, the half
-// picked by the column's parity.
-vec2 wetSwashAt(float z) {
-float c = floor(clamp(z - wetCove.x + WET_SWASH_HALF, 0.0, WET_SWASH_COLUMNS - 1.0) + 0.5);
-vec4 pair = wetSwash[int(c * 0.5)];
-return mix(pair.xy, pair.zw, mod(c, 2.0));
-}
-// The cove's wetting at a point: how soaked, how damp, and the speckle's
-// weight. Below the face's height at the column's reach (wetLevel plus the
-// reach times the grade), soaked for WET_SOAKED_S after a sheet, damp by a
-// third of WET_DRY_S, dry by WET_DRY_S, and above the still sea a speckle of
-// foam fading over WET_SPECKLE_S. All 0 outside the cove.
-vec3 wetShore(vec2 xz, float y) {
-vec2 col = wetSwashAt(xz.y);
-float band = wetBelow(y, wetLevel + col.x * wetCove.w) * wetCoveShare(xz.y);
-float soaked = 1.0 - smoothstep(WET_SOAKED_S, WET_DRY_S / 3.0, col.y);
-float damp = smoothstep(WET_SOAKED_S, WET_DRY_S / 3.0, col.y) - smoothstep(WET_DRY_S / 3.0, WET_DRY_S, col.y);
-float fresh = clamp(1.0 - col.y / WET_SPECKLE_S, 0.0, 1.0);
-float above = 1.0 - wetBelow(y, wetLevel);
-return vec3(soaked, damp, WET_SPECKLE * fresh * above) * band;
-}
-// The speckle's foam: WET_SPECKLE_COVER of the WET_SPECKLE_CELL cells carry
-// it, faded to that share as the point's distance from the eye (far) runs
-// from WET_SPECKLE_NEAR to WET_SPECKLE_FAR metres, where the cells fall under
-// a pixel. The hash is the water's skin's, without sine, which loses
-// precision at world coordinates.
-float wetSpeckle(vec2 xz, float far) {
-vec3 p3 = fract(vec3(floor(xz / WET_SPECKLE_CELL).xyx) * 0.1031);
-p3 += dot(p3, p3.yzx + 33.33);
-float on = step(1.0 - WET_SPECKLE_COVER, fract((p3.x + p3.y) * p3.z));
-return mix(on, WET_SPECKLE_COVER, smoothstep(WET_SPECKLE_NEAR, WET_SPECKLE_FAR, far));
 }
 #define CUSTOM_FRAGMENT_DEFINITIONS
 struct albedoOpacityOutParams
@@ -1197,26 +1105,6 @@ float microSurface=reflectivityColor.a;
 vec3 surfaceReflectivityColor=reflectivityColor.rgb;
 vec2 metallicRoughness=surfaceReflectivityColor.rg;
 float ior=surfaceReflectivityColor.b;
-// Wet plugin, the weather's wetting: Lagarde's porosity rule, applied at
-// CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS, inside the metallic workflow's
-// reflectivity block, where metallicRoughness.g is the material's final
-// roughness (its map, detail and microsurface map applied) and
-// surfaceAlbedo is the base colour the block copies out next. A porous
-// surface (rough, above 0.5) darkens to a fifth and glosses by half of
-// that at full wetness, a polished one does not change, and each material
-// caps its porosity: bark soaks, a leaf glazes. wetWeather is the weather's
-// wetness, bound once a frame for every material.
-//
-// COMMENT RULES: never put a semicolon inside a trailing comment on a code
-// line, and never spell a hashed preprocessor keyword in comment prose. The
-// shaderHygiene test enforces both.
-{
-float wetPorosity = min(wetCap, clamp((metallicRoughness.g - 0.5) / 0.4, 0.0, 1.0));
-float wetFactor = mix(1.0, 0.2, wetPorosity);
-surfaceAlbedo *= mix(1.0, wetFactor, wetWeather);
-float wetGloss = mix(1.0, 1.0 - metallicRoughness.g, mix(1.0, wetFactor, 0.5 * wetWeather));
-metallicRoughness.g = 1.0 - wetGloss;
-}
 #define CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS
 microSurface=1.0-metallicRoughness.g;
 vec3 baseColor=surfaceAlbedo;
@@ -1335,20 +1223,6 @@ surfaceAlbedo *= 1.0 + FOLIAGE_CLUMP_LUMA * (vFoliageClump - 0.5);
 normalW = normalize(mix(vec3(0.0, 1.0, 0.0), normalW, mix(foliageNormalRoot, 1.0, vFoliageH)));
 normalW = faceforward(normalW, -viewDirectionW, normalW);
 }
-float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);
-float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;
-// Inside the cove the swash's table wets the face as well (wetShore): soaked
-// up to the still line or the column's reach, whichever is higher, then damp
-// where the still line leaves the ground dry, and speckled. Outside it the
-// three are 0 and the still line's look is as it was, to the bit.
-vec3 wetCoveW = wetShore(vPositionW.xz, vPositionW.y) * wetIn;
-float wetW = max(wetStill, wetCoveW.x);
-float wetDamp = wetCoveW.y * (1.0 - wetStill);
-surfaceAlbedo *= mix(1.0, WET_ALBEDO, wetW) * mix(1.0, WET_DAMP_ALBEDO, wetDamp);
-surfaceAlbedo = mix(surfaceAlbedo, vec3(1.0), wetCoveW.z * wetSpeckle(vPositionW.xz, length(vPositionW - vEyePosition.xyz)));
-float wetKdMean = (wetKd.r + wetKd.g + wetKd.b) / 3.0;
-vec3 wetResidual = min(vec3(1.0), exp(-2.0 * (wetKd - vec3(wetKdMean)) * max(0.0, wetLevel - vPositionW.y) * wetIn));
-surfaceAlbedo *= mix(vec3(1.0), wetResidual, wetAttenuate);
 #define CUSTOM_FRAGMENT_BEFORE_LIGHTS
 ambientOcclusionOutParams aoOut;
 aoOut=ambientOcclusionBlock(
@@ -1363,7 +1237,7 @@ vReflectivityColor
 ,baseDiffuseRoughness
 );
 float microSurface=reflectivityOut.microSurface;
-float roughness=mix(mix(reflectivityOut.roughness, min(reflectivityOut.roughness, WET_DAMP_ROUGHNESS), wetDamp), WET_ROUGHNESS, wetW);
+float roughness=reflectivityOut.roughness;
 float diffuseRoughness=reflectivityOut.diffuseRoughness;
 surfaceAlbedo=reflectivityOut.surfaceAlbedo;
 float NdotVUnclamped=dot(normalW,viewDirectionW);
@@ -1428,7 +1302,7 @@ preInfo.attenuation*=computeDirectionalLightFalloff(light0.vLightDirection.xyz,p
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light0.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse0.rgb,float(0),vFoliageH,viewDirectionW);
+info.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse0.rgb);
 shadow=1.;
@@ -1444,7 +1318,7 @@ preInfo.attenuation=1.0;
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light1.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,float(1),vFoliageH,viewDirectionW);
+info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,vFoliageH,viewDirectionW);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse1.rgb);
 shadow=1.;

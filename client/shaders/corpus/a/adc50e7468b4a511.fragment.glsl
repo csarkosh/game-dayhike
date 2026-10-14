@@ -43,8 +43,16 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define TONEMAPPING 0
-#define IMAGEPROCESSINGPOSTPROCESS
+#define IMAGEPROCESSING
+#define VIGNETTE
+#define VIGNETTEBLENDMODEMULTIPLY
+#define TONEMAPPING 3
+#define CONTRAST
+#define COLORCURVES
+#define SAMPLER3DGREENDEPTH
+#define SAMPLER3DBGRMAP
+#define DITHER
+#define EXPOSURE
 #define PBR
 #define NUM_SAMPLES 0
 #define ALBEDODIRECTUV 0
@@ -78,6 +86,8 @@
 #define GAMMAREFLECTION
 #define RADIANCEOCCLUSION
 #define HORIZONOCCLUSION
+#define INSTANCES
+#define THIN_INSTANCES
 #define NUM_BONE_INFLUENCERS 0
 #define BonesPerMesh 0
 #define NUM_MORPH_INFLUENCERS 0
@@ -102,7 +112,16 @@
 
 #define SHADER_NAME fragment:pbr
 layout(set = 1, binding = 12) uniform LeftOver {
-        vec4 vFogInfos;
+        float exposureLinear;
+    float contrast;
+    vec2 vInverseScreenSize;
+    vec4 vignetteSettings1;
+    vec4 vignetteSettings2;
+    vec4 vCameraColorCurveNegative;
+    vec4 vCameraColorCurveNeutral;
+    vec4 vCameraColorCurvePositive;
+    float ditherIntensity;
+    vec4 vFogInfos;
     vec3 vFogColor;
 };
 
@@ -111,6 +130,7 @@ layout(set = 1, binding = 0) uniform Internals {
 float yFactor_;
 float textureOutputHeight_;
 };
+vec4 glFragCoord_;
 
 #define PBR_FRAGMENT_SHADER
 #define CUSTOM_FRAGMENT_EXTENSION
@@ -328,6 +348,15 @@ layout(set = 1, binding = 7) uniform sampler reflectionSamplerSampler;
 layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
                         layout(set = 1, binding = 8) uniform texture2D environmentBrdfSamplerTexture;
                         #define environmentBrdfSampler sampler2D(environmentBrdfSamplerTexture, environmentBrdfSamplerSampler)
+
+
+
+
+
+
+
+
+
 #define FOGMODE_NONE 0.
 #define FOGMODE_EXP 1.
 #define FOGMODE_EXP2 2.
@@ -540,11 +569,47 @@ return reflectance90;
 vec2 getAARoughnessFactors(vec3 normalVector) {
 return vec2(0.);
 }
+const float PBRNeutralStartCompression=0.8-0.04;
+const float PBRNeutralDesaturation=0.15;
+vec3 PBRNeutralToneMapping( vec3 color ) {float x=min(color.r,min(color.g,color.b));
+float offset=x<0.08 ? x-6.25*x*x : 0.04;
+color-=offset;
+float peak=max(color.r,max(color.g,color.b));
+if (peak<PBRNeutralStartCompression) return color;
+float d=1.-PBRNeutralStartCompression;
+float newPeak=1.-d*d/(peak+d-PBRNeutralStartCompression);
+color*=newPeak/peak;
+float g=1.-1./(PBRNeutralDesaturation*(peak-newPeak)+1.);
+return mix(color,newPeak*vec3(1,1,1),g);
+}
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_DEFINITIONS
 vec4 applyImageProcessing(vec4 result) {
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATSTART
+result.rgb*=exposureLinear;
+vec2 viewportXY=glFragCoord_.xy*vInverseScreenSize;
+viewportXY=viewportXY*2.0-1.0;
+vec3 vignetteXY1=vec3(viewportXY*vignetteSettings1.xy+vignetteSettings1.zw,1.0);
+float vignetteTerm=dot(vignetteXY1,vignetteXY1);
+float vignette=pow(vignetteTerm,vignetteSettings2.w);
+vec3 vignetteColor=vignetteSettings2.rgb;
+vec3 vignetteColorMultiplier=mix(vignetteColor,vec3(1,1,1),vignette);
+result.rgb*=vignetteColorMultiplier;
+result.rgb=PBRNeutralToneMapping(result.rgb);
 result.rgb=toGammaSpace(result.rgb);
 result.rgb=saturate(result.rgb);
+vec3 resultHighContrast=result.rgb*result.rgb*(3.0-2.0*result.rgb);
+if (contrast<1.0) {result.rgb=mix(vec3(0.5,0.5,0.5),result.rgb,contrast);
+} else {result.rgb=mix(result.rgb,resultHighContrast,contrast-1.0);
+}
+result.rgb=max(result.rgb,0.);
+float luma=getLuminance(result.rgb);
+vec2 curveMix=clamp(vec2(luma*3.0-1.5,luma*-3.0+1.5),vec2(0.0),vec2(1.0));
+vec4 colorCurve=vCameraColorCurveNeutral+curveMix.x*vCameraColorCurvePositive-curveMix.y*vCameraColorCurveNegative;
+result.rgb*=colorCurve.rgb;
+result.rgb=mix(vec3(luma),result.rgb,colorCurve.a);
+float rand=getRand(glFragCoord_.xy*vInverseScreenSize);
+float dither=mix(-ditherIntensity,ditherIntensity,rand);
+result.rgb=saturate(result.rgb+vec3(dither));
 #define CUSTOM_IMAGEPROCESSINGFUNCTIONS_UPDATERESULT_ATEND
 return result;
 }
@@ -983,12 +1048,13 @@ layout(location = 6)  in float vFoliageH;
 layout(location = 7)  in float vFoliageClump;
 layout(location = 8)  in float vFoliageDist;
 // Foliage diffuse, spliced into the PBR fragment by FoliageLightPlugin at
-// CUSTOM_FRAGMENT_DEFINITIONS and called from every per-light diffuse line
-// with that light's index. Only the sun (index 0) is changed: an energy-
-// conserving wrap Lambert plus a backlight term that glows when the light is
-// behind the card and the viewer in front, thicker at the root. Other lights
-// return Babylon's own result untouched. The plugin is only attached to
-// materials that also carry the foliage plugin, which declares vFoliageH.
+// CUSTOM_FRAGMENT_DEFINITIONS and called only from the sun's diffuse line: the
+// plugin's injected line selects it by the light's directional define, not by
+// its index, and the sun is the scene's only directional light. An energy-
+// conserving wrap Lambert plus a backlight term that glows when the sun is
+// behind the card and the viewer in front, thicker at the root. Every other
+// light keeps Babylon's own line. The plugin is only attached to materials
+// that also carry the foliage plugin, which declares vFoliageH.
 //
 // COMMENT RULES: no semicolon inside a trailing comment on a code line, no
 // hashed preprocessor keyword in comment prose.
@@ -999,10 +1065,7 @@ const float FOLIAGE_PI = 3.14159265;
 float foliageWrapLambert(float ndotl, float wrap) {
 return clamp((ndotl + wrap) / ((1.0 + wrap) * (1.0 + wrap)), 0.0, 1.0);
 }
-vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float lightIndex, float h, vec3 viewDir) {
-if (lightIndex > 0.5) {
-return computeDiffuseLighting(info, lightColor);
-}
+vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float h, vec3 viewDir) {
 vec3 unit = info.attenuation * lightColor / FOLIAGE_PI;
 vec3 wrapped = unit * foliageWrapLambert(info.NdotLUnclamped, FOLIAGE_WRAP);
 float back = pow(clamp(-dot(viewDir, info.L), 0.0, 1.0), FOLIAGE_BACK_POWER);
@@ -1231,6 +1294,11 @@ struct subSurfaceOutParams
 };
 layout(location = 0) out vec4 glFragColor;
 void main(void) {
+                glFragCoord_ = gl_FragCoord;
+                if (yFactor_ == 1.) {
+                    glFragCoord_.y = textureOutputHeight_ - glFragCoord_.y;
+                }
+            
 #define CUSTOM_FRAGMENT_MAIN_BEGIN
 vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
 vec3 normalW=normalize(vNormalW);
@@ -1360,7 +1428,7 @@ preInfo.attenuation*=computeDirectionalLightFalloff(light0.vLightDirection.xyz,p
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light0.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse0.rgb,float(0),vFoliageH,viewDirectionW);
+info.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse0.rgb);
 shadow=1.;
@@ -1376,7 +1444,7 @@ preInfo.attenuation=1.0;
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light1.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,float(1),vFoliageH,viewDirectionW);
+info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,vFoliageH,viewDirectionW);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse1.rgb);
 shadow=1.;
@@ -1440,7 +1508,7 @@ finalColor=max(finalColor,0.0);
 float fog=CalcFogFactor();
 fog=toLinearSpace(fog);
 finalColor.rgb=atmosphereFog(finalColor.rgb,fog);
-finalColor.rgb=clamp(finalColor.rgb,0.,30.0);
+finalColor=applyImageProcessing(finalColor);
 finalColor.a*=visibility;
 #define CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR
 glFragColor=finalColor;

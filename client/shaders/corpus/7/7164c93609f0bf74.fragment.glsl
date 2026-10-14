@@ -16,6 +16,7 @@
 #define IRIDESCENCE_TEXTUREDIRECTUV 0
 #define IRIDESCENCE_THICKNESS_TEXTUREDIRECTUV 0
 #define ANISOTROPIC_TEXTUREDIRECTUV 0
+#define MAINUV1
 #define SHEEN_TEXTUREDIRECTUV 0
 #define SHEEN_TEXTURE_ROUGHNESSDIRECTUV 0
 #define SS_THICKNESSANDMASK_TEXTUREDIRECTUV 0
@@ -24,9 +25,9 @@
 #define SS_TRANSLUCENCYCOLOR_TEXTUREDIRECTUV 0
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
-#define FOLIAGE
-#define FOLIAGE_TINT
+#define GROUNDCONFORM
 #define WET
+#define UV1
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
 #define PREPASS_IRRADIANCE_INDEX -1
@@ -55,8 +56,8 @@
 #define EXPOSURE
 #define PBR
 #define NUM_SAMPLES 0
-#define ALBEDODIRECTUV 0
-#define VERTEXCOLOR
+#define ALBEDO
+#define ALBEDODIRECTUV 1
 #define BASE_WEIGHTDIRECTUV 0
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
@@ -74,7 +75,9 @@
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
-#define BUMPDIRECTUV 0
+#define TANGENT
+#define BUMP
+#define BUMPDIRECTUV 1
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
 #define REFLECTION
@@ -82,20 +85,19 @@
 #define REFLECTIONMAP_CUBIC
 #define INVERTCUBICMAP
 #define USESPHERICALFROMREFLECTIONMAP
-#define USESPHERICALINVERTEX
 #define GAMMAREFLECTION
 #define RADIANCEOCCLUSION
 #define HORIZONOCCLUSION
-#define INSTANCES
-#define THIN_INSTANCES
 #define NUM_BONE_INFLUENCERS 0
 #define BonesPerMesh 0
 #define NUM_MORPH_INFLUENCERS 0
 #define ORDER_INDEPENDENT_TRANSPARENCY_16BITS
 #define USEPHYSICALLIGHTFALLOFF
+#define TWOSIDEDLIGHTING
 #define FOG
 #define CAMERA_PERSPECTIVE
 #define AREALIGHTSUPPORTED
+#define SPECULARAA
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
@@ -111,7 +113,7 @@
 #define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME fragment:pbr
-layout(set = 1, binding = 12) uniform LeftOver {
+layout(set = 1, binding = 16) uniform LeftOver {
         float exposureLinear;
     float contrast;
     vec2 vInverseScreenSize;
@@ -134,6 +136,7 @@ vec4 glFragCoord_;
 
 #define PBR_FRAGMENT_SHADER
 #define CUSTOM_FRAGMENT_EXTENSION
+
 
 #define CUSTOM_FRAGMENT_BEGIN
 precision highp float;
@@ -272,22 +275,8 @@ vec2 atmCloudWind;
 vec2 atmCloudGlow;
 vec3 atmCloudColour;
 vec4 atmCloudGroundRect;
-vec2 windDir;
-float windLean;
-float windGust;
-float windFlutter;
-float windTime;
-vec3 windEye;
-vec3 windPlayers[5];
-float foliageAmp;
-float foliageHeight;
-float foliageTint;
-float foliageRootAO;
-float foliageNormalRoot;
-float foliageNormalUp;
-vec2 foliageFlags;
-vec2 foliageEdges;
-vec4 foliageBladeEdges;
+float gcRamp;
+float gcOvershoot;
 float wetLine;
 float wetLevel;
 vec2 wetCentre;
@@ -312,10 +301,9 @@ layout(set = 1, binding = 2) uniform Mesh
 float visibility;
 };
 #define WORLD_UBO
-layout(location = 0)  in vec3 vPositionW;
-layout(location = 1)  in vec3 vNormalW;
-layout(location = 2)  in vec3 vEnvironmentIrradiance;
-layout(location = 3)  in vec4 vColor;
+layout(location = 1)  in vec3 vPositionW;
+layout(location = 0)  in vec2 vMainUV1;
+layout(location = 2)  in vec3 vNormalW;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -340,13 +328,17 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
+#define vAlbedoUV vMainUV1
+layout(set = 1, binding = 7) uniform sampler albedoSamplerSampler;
+                        layout(set = 1, binding = 6) uniform texture2D albedoSamplerTexture;
+                        #define albedoSampler sampler2D(albedoSamplerTexture, albedoSamplerSampler)
 #define sampleReflection(s,c) texture(s,c)
-layout(set = 1, binding = 7) uniform sampler reflectionSamplerSampler;
-                        layout(set = 1, binding = 6) uniform textureCube reflectionSamplerTexture;
+layout(set = 1, binding = 9) uniform sampler reflectionSamplerSampler;
+                        layout(set = 1, binding = 8) uniform textureCube reflectionSamplerTexture;
                         #define reflectionSampler samplerCube(reflectionSamplerTexture, reflectionSamplerSampler)
 #define sampleReflectionLod(s,c,l) textureLod(s,c,l)
-layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
-                        layout(set = 1, binding = 8) uniform texture2D environmentBrdfSamplerTexture;
+layout(set = 1, binding = 11) uniform sampler environmentBrdfSamplerSampler;
+                        layout(set = 1, binding = 10) uniform texture2D environmentBrdfSamplerTexture;
                         #define environmentBrdfSampler sampler2D(environmentBrdfSamplerTexture, environmentBrdfSamplerSampler)
 
 
@@ -364,7 +356,7 @@ layout(set = 1, binding = 9) uniform sampler environmentBrdfSamplerSampler;
 #define E 2.71828
 
 
-layout(location = 4)  in vec3 vFogDistance;
+layout(location = 6)  in vec3 vFogDistance;
 float CalcFogFactor()
 {float fogCoeff=1.0;
 float fogStart=vFogInfos.y;
@@ -567,7 +559,13 @@ float fresnelGrazingReflectance(float reflectance0) {float reflectance90=saturat
 return reflectance90;
 }
 vec2 getAARoughnessFactors(vec3 normalVector) {
-return vec2(0.);
+vec3 nDfdx=dFdx(normalVector.xyz);
+vec3 nDfdy=(-yFactor_)*dFdy(normalVector.xyz);
+float slopeSquare=max(dot(nDfdx,nDfdx),dot(nDfdy,nDfdy));
+float geometricRoughnessFactor=pow(saturate(slopeSquare),0.333);
+float geometricAlphaGFactor=sqrt(slopeSquare);
+geometricAlphaGFactor*=0.75;
+return vec2(geometricRoughnessFactor,geometricAlphaGFactor);
 }
 const float PBRNeutralStartCompression=0.8-0.04;
 const float PBRNeutralDesaturation=0.15;
@@ -849,6 +847,34 @@ float environmentHorizonOcclusion(vec3 view,vec3 normal,vec3 geometricNormal) {v
 float temp=saturate(1.0+1.1*dot(reflection,geometricNormal));
 return square(temp);
 }
+layout(location = 3)  in mat3 vTBN;
+vec3 perturbNormalBase(mat3 cotangentFrame,vec3 normal,float scale)
+{
+normal=normalize(normal*vec3(scale,scale,1.0));
+return normalize(cotangentFrame*normal);
+}
+vec3 perturbNormal(mat3 cotangentFrame,vec3 textureSample,float scale)
+{return perturbNormalBase(cotangentFrame,textureSample*2.0-1.0,scale);
+}
+mat3 cotangent_frame(vec3 normal,vec3 p,vec2 uv,vec2 tangentSpaceParams)
+{vec3 dp1=dFdx(p);
+vec3 dp2=(-yFactor_)*dFdy(p);
+vec2 duv1=dFdx(uv);
+vec2 duv2=(-yFactor_)*dFdy(uv);
+vec3 dp2perp=cross(dp2,normal);
+vec3 dp1perp=cross(normal,dp1);
+vec3 tangent=dp2perp*duv1.x+dp1perp*duv2.x;
+vec3 bitangent=dp2perp*duv1.y+dp1perp*duv2.y;
+tangent*=tangentSpaceParams.x;
+bitangent*=tangentSpaceParams.y;
+float det=max(dot(tangent,tangent),dot(bitangent,bitangent));
+float invmax=det==0.0 ? 0.0 : inversesqrt(det);
+return mat3(tangent*invmax,bitangent*invmax,normal);
+}
+#define vBumpUV vMainUV1
+layout(set = 1, binding = 13) uniform sampler bumpSamplerSampler;
+                        layout(set = 1, binding = 12) uniform texture2D bumpSamplerTexture;
+                        #define bumpSampler sampler2D(bumpSamplerTexture, bumpSamplerSampler)
 vec3 computeFixedEquirectangularCoords(vec4 worldPos,vec3 worldNormal,vec3 direction)
 {float lon=atan(direction.z,direction.x);
 float lat=acos(direction.y);
@@ -943,8 +969,8 @@ return computeCubicCoords(worldPos,worldNormal,vEyePosition.xyz,reflectionMatrix
 // cloud's map (cloudParams.ts) is one texture: tileable noise in R and G,
 // read wrapping, and the height of the ground round the player in B, read
 // with its coordinates held off the edge so the wrap never reaches it.
-layout(set = 1, binding = 11) uniform sampler atmCloudMapSampler;
-                        layout(set = 1, binding = 10) uniform texture2D atmCloudMapTexture;
+layout(set = 1, binding = 15) uniform sampler atmCloudMapSampler;
+                        layout(set = 1, binding = 14) uniform texture2D atmCloudMapTexture;
                         #define atmCloudMap sampler2D(atmCloudMapTexture, atmCloudMapSampler)
 // The distance gradient: the far colour dimmed to ATM_NEAR_DIM at the eye,
 // rising as t to the power 1 / ATM_GRADIENT_BIAS. Mirrors fogGradientUnder.
@@ -1039,41 +1065,6 @@ float cloudGlow = pow(max(dot(rd, atmSunDir), 0.0), atmCloudGlow.y) * atmCloudGl
 vec3 cloud = atmCloudColour + atmSunColour * cloudGlow;
 return mix(cloud, fogged, exp(-od));
 }
-// Foliage fragment definitions, spliced at CUSTOM_FRAGMENT_DEFINITIONS: the
-// varyings the vertex block wrote. No sampler, no function.
-//
-// COMMENT RULES as in foliage.vertex.fx.
-layout(location = 5)  in vec4 vFoliage;
-layout(location = 6)  in float vFoliageH;
-layout(location = 7)  in float vFoliageClump;
-layout(location = 8)  in float vFoliageDist;
-// Foliage diffuse, spliced into the PBR fragment by FoliageLightPlugin at
-// CUSTOM_FRAGMENT_DEFINITIONS and called from every per-light diffuse line
-// with that light's index. Only the sun (index 0) is changed: an energy-
-// conserving wrap Lambert plus a backlight term that glows when the light is
-// behind the card and the viewer in front, thicker at the root. Other lights
-// return Babylon's own result untouched. The plugin is only attached to
-// materials that also carry the foliage plugin, which declares vFoliageH.
-//
-// COMMENT RULES: no semicolon inside a trailing comment on a code line, no
-// hashed preprocessor keyword in comment prose.
-const float FOLIAGE_WRAP = 0.35;
-const float FOLIAGE_BACK = 0.6;
-const float FOLIAGE_BACK_POWER = 4.0;
-const float FOLIAGE_PI = 3.14159265;
-float foliageWrapLambert(float ndotl, float wrap) {
-return clamp((ndotl + wrap) / ((1.0 + wrap) * (1.0 + wrap)), 0.0, 1.0);
-}
-vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float lightIndex, float h, vec3 viewDir) {
-if (lightIndex > 0.5) {
-return computeDiffuseLighting(info, lightColor);
-}
-vec3 unit = info.attenuation * lightColor / FOLIAGE_PI;
-vec3 wrapped = unit * foliageWrapLambert(info.NdotLUnclamped, FOLIAGE_WRAP);
-float back = pow(clamp(-dot(viewDir, info.L), 0.0, 1.0), FOLIAGE_BACK_POWER);
-float thickness = 1.0 - 0.7 * h;
-return wrapped + unit * FOLIAGE_BACK * back * thickness;
-}
 // Wet plugin, fragment definitions: what the water touches is darker and
 // glossy below the wet line, and on the medium and low tiers darkened by
 // the water above it as well (spec §6). Applied on both UBO paths at
@@ -1162,12 +1153,15 @@ float alpha;
 #define pbr_inline
 albedoOpacityOutParams albedoOpacityBlock(
 in vec4 vAlbedoColor
+,in vec4 albedoTexture
+,in vec2 albedoInfos
 ,in float baseWeight
 )
 {albedoOpacityOutParams outParams;
 vec3 surfaceAlbedo=vAlbedoColor.rgb;
 float alpha=vAlbedoColor.a;
-surfaceAlbedo*=vColor.rgb;
+surfaceAlbedo*=albedoTexture.rgb;
+surfaceAlbedo*=albedoInfos.y;
 #define CUSTOM_FRAGMENT_UPDATE_ALBEDO
 surfaceAlbedo*=baseWeight;
 outParams.surfaceAlbedo=surfaceAlbedo;
@@ -1305,38 +1299,23 @@ void main(void) {
 vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
 vec3 normalW=normalize(vNormalW);
 vec3 geometricNormalW=normalW;
+geometricNormalW=gl_FrontFacing ? geometricNormalW : -geometricNormalW;
 vec2 uvOffset=vec2(0.0,0.0);
+float normalScale=1.0;
+mat3 TBN=vTBN;
+normalW=perturbNormal(TBN,TEXRD(bumpSampler,vBumpUV+uvOffset).xyz,vBumpInfos.y);
+normalW=gl_FrontFacing ? normalW : -normalW;
 albedoOpacityOutParams albedoOpacityOut;
+vec4 albedoTexture=TEXRD(albedoSampler,vAlbedoUV+uvOffset);
 albedoOpacityOut=albedoOpacityBlock(
 vAlbedoColor
+,albedoTexture
+,vAlbedoInfos
 ,baseWeight
 );
 vec3 surfaceAlbedo=albedoOpacityOut.surfaceAlbedo;
 float alpha=albedoOpacityOut.alpha;
 #define CUSTOM_FRAGMENT_UPDATE_ALPHA
-// The foliage colour and normal block, spliced at CUSTOM_FRAGMENT_BEFORE_LIGHTS,
-// where surfaceAlbedo, normalW and viewDirectionW are established and no
-// light has run: root darkening, the ground tint (strongest at the root,
-// more with distance), the canopy shade, a per-clump luminance nudge, then
-// the normal blended toward the ground's up at the root and forced to face
-// the viewer so a card never lights as its back. The fragment is never dropped.
-//
-// COMMENT RULES as in foliage.vertex.fx.
-{
-const float FOLIAGE_CLUMP_LUMA = 0.16;
-surfaceAlbedo *= mix(foliageRootAO, 1.0, vFoliageH);
-float fRoot = (1.0 - vFoliageH) * (1.0 - vFoliageH);
-  // Whether this draw actually carries tint data. Babylon leaves an undeclared
-  // or unfilled instance attribute at the generic (0, 0, 0, 1), which would
-  // otherwise read as "the ground here is black" and mix the root toward it.
-float fHas = step(1.0 / 255.0, max(vFoliage.r, max(vFoliage.g, vFoliage.b)));
-float fTintW = foliageTint * fRoot * (1.0 + 0.5 * smoothstep(20.0, 80.0, vFoliageDist)) * fHas;
-surfaceAlbedo = mix(surfaceAlbedo, vFoliage.rgb, clamp(fTintW, 0.0, 0.85));
-surfaceAlbedo *= vFoliage.a;
-surfaceAlbedo *= 1.0 + FOLIAGE_CLUMP_LUMA * (vFoliageClump - 0.5);
-normalW = normalize(mix(vec3(0.0, 1.0, 0.0), normalW, mix(foliageNormalRoot, 1.0, vFoliageH)));
-normalW = faceforward(normalW, -viewDirectionW, normalW);
-}
 float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);
 float wetStill = wetBelow(vPositionW.y, wetLine) * wetIn;
 // Inside the cove the swash's table wets the face as well (wetShore): soaked
@@ -1372,9 +1351,11 @@ float NdotVUnclamped=dot(normalW,viewDirectionW);
 float NdotV=absEps(NdotVUnclamped);
 float alphaG=convertRoughnessToAverageSlope(roughness);
 vec2 AARoughnessFactors=getAARoughnessFactors(normalW.xyz);
+alphaG+=AARoughnessFactors.y;
 vec3 environmentBrdf=getBRDFLookup(NdotV,roughness);
 float ambientMonochrome=getLuminance(aoOut.ambientOcclusionColor);
 float seo=environmentRadianceOcclusion(ambientMonochrome,NdotVUnclamped);
+float eho=environmentHorizonOcclusion(-viewDirectionW,normalW,geometricNormalW);
 reflectionOutParams reflectionOut;
 reflectionOutParams reflectionBlock_0;
 {reflectionOutParams outParams;
@@ -1395,7 +1376,13 @@ environmentRadiance.rgb*=vReflectionInfos.x;
 environmentRadiance.rgb*=vReflectionColor.rgb;
 };
 vec3 environmentIrradiance=vec3(0.,0.,0.);
-environmentIrradiance=vEnvironmentIrradiance;
+vec3 irradianceVector=vec3(reflectionMatrix*vec4(normalW,0)).xyz;
+vec3 irradianceView=vec3(reflectionMatrix*vec4(viewDirectionW,0)).xyz;
+float NdotV=max(dot(normalW,viewDirectionW),0.0);
+irradianceVector=mix(irradianceVector,irradianceView,(0.5*(1.0-NdotV))*diffuseRoughness);
+irradianceVector.y*=-1.0;
+irradianceView.y*=-1.0;
+environmentIrradiance=computeEnvironmentIrradiance(irradianceVector);
 environmentIrradiance*=vReflectionColor.rgb*vReflectionInfos.x;
 outParams.environmentRadiance=vec4(mix(environmentRadiance.rgb,environmentIrradiance,alphaG),environmentRadiance.a);
 outParams.environmentIrradiance=environmentIrradiance;
@@ -1411,6 +1398,7 @@ clearcoatOut.specularEnvironmentR0=specularEnvironmentR0;
 vec3 baseSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(vec3(reflectanceF0),reflectivityOut.reflectanceF90,environmentBrdf);
 vec3 colorSpecularEnvironmentReflectance=getReflectanceFromBRDFLookup(clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90,environmentBrdf);
 colorSpecularEnvironmentReflectance*=seo;
+colorSpecularEnvironmentReflectance*=eho;
 subSurfaceOutParams subSurfaceOut;
 subSurfaceOut.specularEnvironmentReflectance=colorSpecularEnvironmentReflectance;
 vec3 diffuseBase=vec3(0.,0.,0.);
@@ -1430,7 +1418,7 @@ preInfo.attenuation*=computeDirectionalLightFalloff(light0.vLightDirection.xyz,p
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light0.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse0.rgb,float(0),vFoliageH,viewDirectionW);
+info.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse0.rgb);
 shadow=1.;
@@ -1446,7 +1434,7 @@ preInfo.attenuation=1.0;
 preInfo.roughness=adjustRoughnessFromLightProperties(roughness,light1.vLightSpecular.a,preInfo.lightDistance);
 preInfo.diffuseRoughness=diffuseRoughness;
 preInfo.surfaceAlbedo=surfaceAlbedo;
-info.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,float(1),vFoliageH,viewDirectionW);
+info.diffuse=computeDiffuseLighting(preInfo,diffuse1.rgb);
 coloredFresnel=fresnelSchlickGGX(preInfo.VdotH,clearcoatOut.specularEnvironmentR0,reflectivityOut.colorReflectanceF90);
 info.specular=computeSpecularLighting(preInfo,normalW,clearcoatOut.specularEnvironmentR0,coloredFresnel,AARoughnessFactors.x,diffuse1.rgb);
 shadow=1.;
