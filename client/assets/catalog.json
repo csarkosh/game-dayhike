@@ -558,6 +558,21 @@
       "id": "bark.alder.1k.arm",
       "output": "textures/bark.alder.1k.arm.ktx2",
       "bytes": 937231
+    },
+    {
+      "id": "moss.wood.1k",
+      "output": "textures/moss.wood.1k.ktx2",
+      "bytes": 1342592
+    },
+    {
+      "id": "moss.wood.1k.normal",
+      "output": "textures/moss.wood.1k.normal.ktx2",
+      "bytes": 1267123
+    },
+    {
+      "id": "moss.wood.1k.arm",
+      "output": "textures/moss.wood.1k.arm.ktx2",
+      "bytes": 1002950
     }
   ],
   "audio": [

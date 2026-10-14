@@ -576,6 +576,27 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC0-1.0
 - **URL:** https://kaylousberg.itch.io/kaykit-character-animations
 
+## moss.wood.1k
+
+- **Source:** Poly Haven: Moss Wood
+- **Author:** Rob Tuytel
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/moss_wood
+
+## moss.wood.1k.arm
+
+- **Source:** Poly Haven: Moss Wood
+- **Author:** Rob Tuytel
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/moss_wood
+
+## moss.wood.1k.normal
+
+- **Source:** Poly Haven: Moss Wood
+- **Author:** Rob Tuytel
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/moss_wood
+
 ## ranger.carla
 
 - **Source:** Sketchfab: Carla Rigged 001 - Rigged 3D Business Women
