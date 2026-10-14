@@ -10,7 +10,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 // the impostor planes this file asserts about are built inside
 // `createForestMeshes`, so there is no instance to spy on beforehand.
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
-import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 // Type augmentation for `thinInstanceCount` etc.; forestMeshes.ts carries the
@@ -54,8 +54,11 @@ import {
   IMPOSTOR_BAKE_FAIL_MS,
   IMPOSTOR_BAKE_WARN_MS,
   type BakeOptions,
+  type BarkTextureLoader,
   type SpeciesMeshes,
 } from "../../src/game/forestMeshes.js";
+import { textureUrl } from "../../src/game/assetUrls.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { LOG_SINK } from "../../src/game/logSeat.js";
 import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
 import { whenSkyHeld } from "../../src/game/lighting.js";
@@ -251,18 +254,19 @@ describe("createForestMeshes under NullEngine", () => {
     let ready = false;
     void forest.ready.then(() => { ready = true; });
     await new Promise((r) => setTimeout(r, 20));
-    // Two giant species, two sapling species and the snag: five billboards.
-    expect(bakes.length).toBe(5);
+    // Three giant bucket sets (the pine wears two barks), two sapling
+    // species and the snag: six billboards.
+    expect(bakes.length).toBe(6);
     expect(ready).toBe(false);
-    for (const settle of bakes.slice(0, 4)) settle(null);
+    for (const settle of bakes.slice(0, 5)) settle(null);
     await new Promise((r) => setTimeout(r, 20));
     expect(ready).toBe(false);
-    bakes[4]!(null);
+    bakes[5]!(null);
     await new Promise((r) => setTimeout(r, 20));
     expect(ready).toBe(true);
   });
 
-  it("stays inside the 33-draw-call vegetation budget", () => {
+  it("stays inside the 40-draw-call vegetation budget", () => {
     const { scene, forest } = build();
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
     // FOREST_CAM fills every bucket kind at once — near, understory,
@@ -275,23 +279,25 @@ describe("createForestMeshes under NullEngine", () => {
     // camera. This is the number no camera can exceed. A multi-primitive glTF
     // mesh (bark + canopy) loads as separate SIBLING `Mesh` objects, one
     // `SubMesh` each — never one mesh with two submeshes — so each pair is 2
-    // draw calls: 2 giant species × 3 LODs × 2 siblings (12) + 2 sapling
-    // species × 3 LODs × 2 siblings (12) + 2 understory (2) + 5 impostor
-    // planes, 2 giants + 2 saplings + 1 snag (5) + 1 deadwood bucket (1) = 32,
-    // and the nurse logs' seedling (1) = 33. The stubs still carry the
+    // draw calls: 3 giant bucket sets (the fir, the pine in each of its two
+    // barks) × 3 LODs × 2 siblings (18) + 2 sapling
+    // species × 3 LODs × 2 siblings (12) + 2 understory (2) + 6 impostor
+    // planes, 3 giant sets + 2 saplings + 1 snag (6) + 1 deadwood bucket (1) = 39,
+    // and the nurse logs' seedling (1) = 40. The stubs still carry the
     // one-a-tree understory the shipped forest has retired, and no nurse
-    // fern: the shipped forest draws 12 + 12 + 5 + 1 + the nurse logs' fern
-    // and seedling (2) = 32.
+    // fern: the shipped forest draws 18 + 12 + 6 + 1 + the nurse logs' fern
+    // and seedling (2) = 39.
     // The budget was raised 30 → 32 at one point when saplings and snags
     // gained billboards: three planes, immaterial against the 250-call frame
-    // ceiling.
+    // ceiling; and 33 → 40 for the pine's second bark: its three LOD pairs
+    // and its billboard.
     const bucketMeshes = new Set<Mesh>();
     for (let k = 0; k < spy.mock.calls.length; k++) {
       if (spy.mock.calls[k]![0] === "matrix") bucketMeshes.add(spy.mock.instances[k] as Mesh);
     }
     const inventory = [...bucketMeshes].reduce((n, m) => n + m.subMeshes.length, 0);
-    expect(inventory).toBe(33);
-    expect(inventory).toBeLessThanOrEqual(33);
+    expect(inventory).toBe(40);
+    expect(inventory).toBeLessThanOrEqual(40);
 
     // AND what this camera actually reaches: buckets whose instance buffer is
     // non-empty. Note the filter is `thinInstanceCount > 0`, NOT "enabled" —
@@ -341,7 +347,10 @@ describe("createForestMeshes under NullEngine", () => {
     // camera. The INVENTORY above is unchanged at 32.
     // Re-anchored 2026-10-04 from 22: a nurse log in reach, and its seedlings'
     // bucket with it. The INVENTORY above is 33.
-    expect(calls).toBe(23);
+    // Re-anchored 2026-10-14 from 23: the pine's instances at this camera
+    // are split between its two barks, each bucket set with its own three
+    // LOD pairs and billboard. The INVENTORY above is 40.
+    expect(calls).toBe(30);
     expect(calls).toBeLessThanOrEqual(inventory);
   });
 
@@ -466,10 +475,10 @@ describe("createForestMeshes under NullEngine", () => {
     );
     expect(underCount).toBeGreaterThan(0);
 
-    // Five billboards now: one per giant species, one per sapling
-    // species, one for the snag cohort — see `impostorPlanes`.
+    // Six billboards: one per giant bucket set (the pine's two barks), one
+    // per sapling species, one for the snag cohort — see `impostorPlanes`.
     const impostors = scene.meshes.filter((m) => m.name.startsWith("forest_impostor"));
-    expect(impostors.length).toBe(5);
+    expect(impostors.length).toBe(6);
     expect(impostors.reduce((sum, m) => sum + (m as Mesh).thinInstanceCount, 0)).toBeGreaterThan(0);
 
     const sapCount = assets.saplings.reduce(
@@ -540,7 +549,7 @@ describe("createForestMeshes under NullEngine", () => {
     // cascade re-render, and its shadows read as unreadable in closed-canopy
     // interiors), so only LOD0 remains — see the comment at
     // `casterMeshes.push` in `adoptSpecies`.
-    const { assets, forest } = build();
+    const { scene, assets, forest } = build();
     const expected = new Set<Mesh>();
     for (const species of assets.giants) {
       // Each LOD stub is a bark+canopy sibling pair (`pairedBoxes`); the
@@ -550,11 +559,18 @@ describe("createForestMeshes under NullEngine", () => {
       expected.add(lodRoot);
       for (const child of lodRoot.getChildMeshes(false)) expected.add(child as Mesh);
     }
+    // And the pine's second bark's LOD0 pair, cloned from its first.
+    for (const name of ["s1_lod0_bark_cedar", "s1_lod0_bark_cedar.s1_lod0_canopy"]) {
+      const clone = scene.getMeshByName(name) as Mesh | null;
+      expect(clone, name).not.toBeNull();
+      expected.add(clone!);
+    }
+    expect(expected.size).toBe(6);
     expect(new Set(forest.casterMeshes)).toEqual(expected);
   });
 
-  it("lists the giants' and the saplings' LOD1 and LOD2 buckets and the five billboards for the lake's reflections, and empties them on dispose", () => {
-    const { assets, forest } = build();
+  it("lists the giants' and the saplings' LOD1 and LOD2 buckets and the six billboards for the lake's reflections, and empties them on dispose", () => {
+    const { scene, assets, forest } = build();
     const bucketsAt = (lod: number): Set<Mesh> => {
       const expected = new Set<Mesh>();
       for (const species of [...assets.giants, ...assets.saplings]) {
@@ -563,13 +579,18 @@ describe("createForestMeshes under NullEngine", () => {
         expected.add(lodRoot);
         for (const child of lodRoot.getChildMeshes(false)) expected.add(child as Mesh);
       }
+      // And the pine's second bark's pair, cloned from its first.
+      for (const name of [`s1_lod${lod}_bark_cedar`, `s1_lod${lod}_bark_cedar.s1_lod${lod}_canopy`]) {
+        expected.add(scene.getMeshByName(name) as Mesh);
+      }
       return expected;
     };
     expect(new Set(forest.lod2Meshes)).toEqual(bucketsAt(2));
-    expect(forest.lod2Meshes).toHaveLength(8);
+    expect(forest.lod2Meshes).toHaveLength(10);
     expect(forest.impostorMeshes.map((m) => m.name)).toEqual([
       "forest_impostor_giant_0",
       "forest_impostor_giant_1",
+      "forest_impostor_giant_2",
       "forest_impostor_sapling_0",
       "forest_impostor_sapling_1",
       "forest_impostor_snag",
@@ -603,7 +624,7 @@ describe("createForestMeshes under NullEngine", () => {
     const { scene, forest } = build(); // default bake stub returns null
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
     const planes = impostorPlanes(scene);
-    expect(planes.length).toBe(5);
+    expect(planes.length).toBe(6);
     for (const plane of planes) {
       // The buffer is still built (counts stay observable) but the bucket
       // must never draw: untextured alpha-test material = opaque grey quads.
@@ -616,7 +637,7 @@ describe("createForestMeshes under NullEngine", () => {
     const { scene, forest } = build(undefined, (_mesh, s) => stubBakeTexture(s));
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
     const planes = impostorPlanes(scene);
-    expect(planes.length).toBe(5);
+    expect(planes.length).toBe(6);
     for (const plane of planes) {
       expect(plane.thinInstanceCount).toBeGreaterThan(0);
       expect(plane.isEnabled()).toBe(true);
@@ -660,6 +681,7 @@ describe("createForestMeshes under NullEngine", () => {
     expect(forest.impostorBakes().map((b) => [b.name, b.state])).toEqual([
       ["forest_impostor_giant_0", "failed"],
       ["forest_impostor_giant_1", "ready"],
+      ["forest_impostor_giant_2", "ready"],
       ["forest_impostor_sapling_0", "ready"],
       ["forest_impostor_sapling_1", "ready"],
       ["forest_impostor_snag", "ready"],
@@ -683,11 +705,11 @@ describe("createForestMeshes under NullEngine", () => {
       }),
     );
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
-    expect(forest.impostorBakes().map((b) => b.state)).toEqual(["baking", "baking", "baking", "baking", "baking"]);
+    expect(forest.impostorBakes().map((b) => b.state)).toEqual(["baking", "baking", "baking", "baking", "baking", "baking"]);
     for (const plane of impostorPlanes(scene)) expect(plane.isEnabled()).toBe(false);
     land!();
     await Promise.resolve();
-    expect(forest.impostorBakes().map((b) => b.state)).toEqual(["ready", "ready", "ready", "ready", "ready"]);
+    expect(forest.impostorBakes().map((b) => b.state)).toEqual(["ready", "ready", "ready", "ready", "ready", "ready"]);
     for (const plane of impostorPlanes(scene)) expect(plane.isEnabled()).toBe(true);
     expect(errors).not.toHaveBeenCalled();
   });
@@ -702,7 +724,7 @@ describe("createForestMeshes under NullEngine", () => {
       return new Promise<Texture | null>((resolve) => resolvers.push(resolve));
     });
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
-    expect(signals.length).toBe(5);
+    expect(signals.length).toBe(6);
     expect(signals.every((sg) => sg !== undefined && !sg.aborted)).toBe(true);
     forest.dispose();
     expect(signals.every((sg) => sg!.aborted)).toBe(true);
@@ -732,7 +754,7 @@ describe("createForestMeshes under NullEngine", () => {
       },
     });
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
-    expect(given.length).toBe(5);
+    expect(given.length).toBe(6);
     expect(given.every((p) => p === pipelines)).toBe(true);
     forest.dispose();
   });
@@ -752,7 +774,7 @@ describe("createForestMeshes under NullEngine", () => {
       },
     });
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
-    expect(given.length).toBe(5);
+    expect(given.length).toBe(6);
     expect(given.every((held) => held === sky)).toBe(true);
     forest.dispose();
   });
@@ -842,7 +864,7 @@ describe("createForestMeshes under NullEngine", () => {
     }
     expect(barks).toBeGreaterThan(0);
     expect(leaves).toBeGreaterThan(0);
-    expect(withMaterial.filter((m) => m.name.startsWith("forest_impostor_")).map((m) => wetCapOf(m.material!))).toEqual([0.3, 0.3, 0.3, 0.3, 0.3]);
+    expect(withMaterial.filter((m) => m.name.startsWith("forest_impostor_")).map((m) => wetCapOf(m.material!))).toEqual([0.3, 0.3, 0.3, 0.3, 0.3, 0.3]);
   });
 
   it("gives bark, crown and billboard their share of the sky, and the specular weight to bark, billboards and crowns that ship none", () => {
@@ -883,10 +905,12 @@ describe("createForestMeshes under NullEngine", () => {
         expect(mat.metallicF0Factor, mesh.name).toBe(0.04);
       }
     }
-    // Two giants and two saplings, three LODs each, one bark and one crown a LOD.
-    expect(barks).toBe(12);
-    expect(crowns).toBe(12);
-    expect(billboards).toBe(5);
+    // Two giants and two saplings, three LODs each, one bark and one crown a
+    // LOD, and the pine's second bark's three LODs again (its bark clone
+    // shaded as a bark, its crown the shared one).
+    expect(barks).toBe(15);
+    expect(crowns).toBe(15);
+    expect(billboards).toBe(6);
   });
 
   it("sets the trees' share before the bake clones them, so the billboards bake the trees as they stand near", () => {
@@ -906,6 +930,9 @@ describe("createForestMeshes under NullEngine", () => {
       { name: "s0_lod1_canopy", sky: 0.6, weight: 0.04 },
       { name: "s1_lod1_bark", sky: 0.35, weight: 0.04 },
       { name: "s1_lod1_canopy", sky: 0.6, weight: 0.04 },
+      // The pine's second bark, on clones of its LOD1 pair.
+      { name: "s1_lod1_bark_cedar", sky: 0.35, weight: 0.04 },
+      { name: "s1_lod1_bark_cedar.s1_lod1_canopy", sky: 0.6, weight: 0.04 },
       { name: "sap0_lod1_bark", sky: 0.35, weight: 0.04 },
       { name: "sap0_lod1_canopy", sky: 0.6, weight: 0.04 },
       { name: "sap1_lod1_bark", sky: 0.35, weight: 0.04 },
@@ -1204,6 +1231,7 @@ describe("createForestMeshes under NullEngine", () => {
     expect(planes.map((m) => m.name).sort()).toEqual([
       "forest_impostor_giant_0",
       "forest_impostor_giant_1",
+      "forest_impostor_giant_2",
       "forest_impostor_sapling_0",
       "forest_impostor_sapling_1",
       "forest_impostor_snag",
@@ -1212,7 +1240,7 @@ describe("createForestMeshes under NullEngine", () => {
     // The impostor plane is the one bucket whose bands are NOT constant, and
     // the reason `fadeBands` is per-instance at all: the on-lattice list and
     // the off-lattice fill list share one plane, one material and one bake
-    // (five more meshes would break the draw-call budget), and they end at
+    // (six more meshes would break the draw-call budget), and they end at
     // different ranges. On-lattice entries come first.
     const bands = collectBands(SEED, FOREST_CAM.x, FOREST_CAM.z);
     const isGiant0 = (t: TreeInstance) => t.cohort === COHORT_GIANT && t.species === 0;
@@ -1291,8 +1319,8 @@ describe("createForestMeshes under NullEngine", () => {
       return stubBakeTexture(s);
     });
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
-    // Five bakes: 2 giant species, 2 sapling species, 1 snag.
-    expect(poses.length).toBe(5);
+    // Six bakes: 3 giant bucket sets, 2 sapling species, 1 snag.
+    expect(poses.length).toBe(6);
     const posed = poses.filter((p): p is Quaternion => p !== null);
     expect(posed.length).toBe(1);
     // The snag alone is posed, by the same +90° roll `deadwoodMatrixBuffer`
@@ -1303,7 +1331,7 @@ describe("createForestMeshes under NullEngine", () => {
     );
 
     const named = (prefix: string) => scene.meshes.filter((m) => m.name.startsWith(prefix)).length;
-    expect(named("forest_impostor_giant_")).toBe(2);
+    expect(named("forest_impostor_giant_")).toBe(3);
     expect(named("forest_impostor_sapling_")).toBe(2);
     expect(named("forest_impostor_snag")).toBe(1);
   });
@@ -1520,6 +1548,238 @@ describe("createForestMeshes under NullEngine", () => {
  * readiness under the bake camera and the RTT's render pass id) — so these
  * spy on the RenderTargetTexture prototype and script the gate.
  */
+describe("the trees' bark", () => {
+  const engines: NullEngine[] = [];
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const e of engines.splice(0)) e.dispose();
+  });
+
+  function barkScene() {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    return { scene, assets: stubAssets(scene) };
+  }
+
+  /** A bark map loader that records every load, a 1×1 texture each, and
+   * keeps its callbacks: a test lands or fails a map when it chooses. */
+  function recordingLoader() {
+    const loads: { url: string; colour: boolean; texture: Texture; onLoad: () => void; onError: () => void }[] = [];
+    const load: BarkTextureLoader = (url, s, colour, onLoad, onError) => {
+      const texture = RawTexture.CreateRGBATexture(new Uint8Array([128, 128, 128, 255]), 1, 1, s);
+      loads.push({ url, colour, texture, onLoad, onError });
+      return texture;
+    };
+    return { loads, load };
+  }
+
+  /** A 1×1 stand-in for a map a tree's file carried. */
+  function fileMap(scene: Scene): Texture {
+    return RawTexture.CreateRGBATexture(new Uint8Array([200, 150, 100, 255]), 1, 1, scene);
+  }
+
+  it("dresses every bark material in its set: the three maps on, the file's transform and maps off, the crown and the loader's flags untouched", () => {
+    const { scene, assets } = barkScene();
+    const { loads, load } = recordingLoader();
+    // The fir's LOD0 bark as its file ships it: a colour and a normal JPEG
+    // read through the conifers' transform (a tenth of the atlas), the glTF
+    // loader's normal flags, and vertex tangents.
+    const firBark = assets.giants[0]!.lods[0];
+    const firMat = firBark.material as PBRMaterial;
+    const fileColour = fileMap(scene);
+    const fileNormal = fileMap(scene);
+    for (const map of [fileColour, fileNormal]) {
+      map.vOffset = 0.9;
+      map.uScale = 1.2;
+      map.vScale = 0.1;
+    }
+    firMat.albedoTexture = fileColour;
+    firMat.bumpTexture = fileNormal;
+    firMat.invertNormalMapX = true;
+    firMat.invertNormalMapY = false;
+    const firCrown = firBark.getChildMeshes(false)[0] as Mesh;
+    for (const mesh of [firBark, firCrown]) {
+      mesh.setVerticesData(VertexBuffer.TangentKind, new Float32Array(mesh.getTotalVertices() * 4), false, 4);
+    }
+    const crownMat = firCrown.material as PBRMaterial;
+
+    createForestMeshes(scene, SEED, { assets, bakeImpostor: () => null, loadTexture: load, tier: "high" });
+
+    // Three maps a bark material: the fir's three LODs, the pine's three in
+    // each of its two barks, the two saplings' three each: 15 materials, 45 maps.
+    expect(loads.length).toBe(45);
+    // The fir wears the pine set at 2k on the high tier.
+    expect(firMat.albedoTexture).toBe(loads[0]!.texture);
+    expect(loads[0]).toMatchObject({ url: textureUrl("textures/bark.pine.2k.ktx2"), colour: true });
+    expect(firMat.bumpTexture).toBe(loads[1]!.texture);
+    expect(loads[1]).toMatchObject({ url: textureUrl("textures/bark.pine.2k.normal.ktx2"), colour: false });
+    expect(firMat.bumpTexture!.level).toBe(1);
+    expect(firMat.metallicTexture).toBe(loads[2]!.texture);
+    expect(loads[2]).toMatchObject({ url: textureUrl("textures/bark.pine.2k.arm.ktx2"), colour: false });
+    // The ARM map's channels named, the multipliers at 1 so the map is the surface.
+    expect(firMat.useAmbientOcclusionFromMetallicTextureRed).toBe(true);
+    expect(firMat.useRoughnessFromMetallicTextureGreen).toBe(true);
+    expect(firMat.useRoughnessFromMetallicTextureAlpha).toBe(false);
+    expect(firMat.useMetallnessFromMetallicTextureBlue).toBe(true);
+    expect(firMat.metallic).toBe(1);
+    expect(firMat.roughness).toBe(1);
+    expect(firMat.ambientTexture).toBeNull();
+    expect(firMat.ambientTextureStrength).toBe(1);
+    // The loader's normal flags stay: the set's normal map is in the file's convention.
+    expect([firMat.invertNormalMapX, firMat.invertNormalMapY]).toEqual([true, false]);
+    // The set tiles from the primitive's UVs at the dressing's repeats: the
+    // fir runs `v` up the trunk, so no turn.
+    for (const map of [firMat.albedoTexture, firMat.bumpTexture, firMat.metallicTexture] as Texture[]) {
+      expect([map.uOffset, map.vOffset, map.uScale, map.vScale, map.wAng]).toEqual([0, 0, 1.7, 6.3, 0]);
+      expect([map.wrapU, map.wrapV]).toEqual([Texture.WRAP_ADDRESSMODE, Texture.WRAP_ADDRESSMODE]);
+    }
+    // The file's maps are gone from the scene and the GPU.
+    for (const map of [fileColour, fileNormal]) {
+      expect(scene.textures).not.toContain(map);
+      expect(map.getInternalTexture()).toBeNull();
+    }
+    // The bark's tangents are gone, so the normal map's frame follows its
+    // own coordinates; the crown keeps its own, and its material is as it was.
+    expect(firBark.isVerticesDataPresent(VertexBuffer.TangentKind)).toBe(false);
+    expect(firCrown.isVerticesDataPresent(VertexBuffer.TangentKind)).toBe(true);
+    expect(firCrown.material).toBe(crownMat);
+    expect(crownMat.metallicTexture).toBeNull();
+    expect(crownMat.albedoTexture).toBeNull();
+  });
+
+  it("gives the pine its two barks: the metasequoia on its own material, the cedar on a clone over clones of its meshes that share the crown", () => {
+    const { scene, assets } = barkScene();
+    const { loads, load } = recordingLoader();
+    createForestMeshes(scene, SEED, { assets, bakeImpostor: () => null, loadTexture: load, tier: "high" });
+    const pineLod0 = assets.giants[1]!.lods[0];
+    const pineMat = pineLod0.material as PBRMaterial;
+    const pineCrown = pineLod0.getChildMeshes(false)[0] as Mesh;
+    const urlOf = (map: { uniqueId: number } | null): string => loads.find((l) => l.texture === map)!.url;
+    expect(urlOf(pineMat.albedoTexture)).toBe(textureUrl("textures/bark.metasequoia.2k.ktx2"));
+    expect(urlOf(pineMat.bumpTexture)).toBe(textureUrl("textures/bark.metasequoia.2k.normal.ktx2"));
+    expect(urlOf(pineMat.metallicTexture)).toBe(textureUrl("textures/bark.metasequoia.2k.arm.ktx2"));
+    // The pine runs `u` up the trunk: the set is turned a quarter.
+    const colour = pineMat.albedoTexture as Texture;
+    expect([colour.uScale, colour.vScale, colour.wAng]).toEqual([1.6, 1.0, Math.PI / 2]);
+
+    const cedarBark = scene.getMeshByName("s1_lod0_bark_cedar") as Mesh;
+    const cedarCrown = scene.getMeshByName("s1_lod0_bark_cedar.s1_lod0_canopy") as Mesh;
+    expect(cedarBark).not.toBeNull();
+    expect(cedarCrown).not.toBeNull();
+    // The clone shares the geometry and the crown's material, and wears its own bark material.
+    expect(cedarBark.geometry).toBe(pineLod0.geometry);
+    expect(cedarCrown.material).toBe(pineCrown.material);
+    const cedarMat = cedarBark.material as PBRMaterial;
+    expect(cedarMat).not.toBe(pineMat);
+    expect(cedarMat.name).toBe("s1_lod0_bark_mat_cedar");
+    expect(urlOf(cedarMat.albedoTexture)).toBe(textureUrl("textures/bark.cedar.2k.ktx2"));
+    expect(urlOf(cedarMat.bumpTexture)).toBe(textureUrl("textures/bark.cedar.2k.normal.ktx2"));
+    expect(urlOf(cedarMat.metallicTexture)).toBe(textureUrl("textures/bark.cedar.2k.arm.ktx2"));
+    const cedarColour = cedarMat.albedoTexture as Texture;
+    expect([cedarColour.uScale, cedarColour.vScale, cedarColour.wAng]).toEqual([1.5, 1.9, Math.PI / 2]);
+    // The saplings: 1k on every tier, the conifers in their giants' sets.
+    const sap = (s: number): PBRMaterial => assets.saplings[s]!.lods[0].material as PBRMaterial;
+    expect(urlOf(sap(0).albedoTexture)).toBe(textureUrl("textures/bark.pine.1k.ktx2"));
+    expect(urlOf(sap(1).albedoTexture)).toBe(textureUrl("textures/bark.metasequoia.1k.ktx2"));
+    // Every bark material of the scene has its three maps.
+    const dressed = scene.materials.filter((m): m is PBRMaterial => m instanceof PBRMaterial && m.metallicTexture !== null);
+    expect(dressed.length).toBe(15);
+    for (const m of dressed) {
+      expect(m.albedoTexture, m.name).not.toBeNull();
+      expect(m.bumpTexture, m.name).not.toBeNull();
+    }
+  });
+
+  it("wears 1k everywhere on the medium and low tiers", () => {
+    for (const tier of ["medium", "low"] as const) {
+      const { scene, assets } = barkScene();
+      const { loads, load } = recordingLoader();
+      createForestMeshes(scene, SEED, { assets, bakeImpostor: () => null, loadTexture: load, tier });
+      expect(loads.length).toBe(45);
+      expect(loads.filter((l) => l.url.includes(".1k.")).length).toBe(45);
+      expect(loads.filter((l) => l.url.includes(".2k.")).length).toBe(0);
+    }
+  });
+
+  it("hands each tree's bake the promise of its bark set, which settles once every map has loaded or failed; the snag's bake gets none", async () => {
+    const { scene, assets } = barkScene();
+    const { loads, load } = recordingLoader();
+    const given: (Promise<void> | undefined)[] = [];
+    createForestMeshes(scene, SEED, {
+      assets,
+      loadTexture: load,
+      bakeImpostor: (_mesh, _s, options) => {
+        given.push(options?.textures);
+        return null;
+      },
+    });
+    // Three giant sets, two saplings, the snag.
+    expect(given.length).toBe(6);
+    for (const held of given.slice(0, 5)) expect(held).toBeInstanceOf(Promise);
+    expect(given[5]).toBeUndefined();
+    // The fir's set is its first three LODs' nine maps, the first nine loads.
+    let landed = false;
+    void given[0]!.then(() => { landed = true; });
+    for (const l of loads.slice(0, 8)) l.onLoad();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(landed).toBe(false);
+    // A map that fails to load settles the set too: a missing file never blocks the forest.
+    loads[8]!.onError();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(landed).toBe(true);
+  });
+
+  it("splits the pine's trees between its two barks by their variant, and keeps the fir's whole", () => {
+    const { scene, assets } = barkScene();
+    const { load } = recordingLoader();
+    const forest = createForestMeshes(scene, SEED, { assets, bakeImpostor: () => null, loadTexture: load });
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    const bands = collectBands(SEED, FOREST_CAM.x, FOREST_CAM.z);
+    const count = (list: readonly TreeInstance[], species: number, variant: number | null): number =>
+      list.filter((t) => t.cohort === COHORT_GIANT && t.species === species && (variant === null || t.variant === variant)).length;
+    let cedar = 0;
+    let metasequoia = 0;
+    for (const lod of [0, 1, 2] as const) {
+      const near = bands.near[lod] as TreeInstance[];
+      expect(assets.giants[0]!.lods[lod].thinInstanceCount, `fir LOD${lod}`).toBe(count(near, 0, null));
+      const pine = assets.giants[1]!.lods[lod].thinInstanceCount;
+      const clone = (scene.getMeshByName(`s1_lod${lod}_bark_cedar`) as Mesh).thinInstanceCount;
+      expect(pine, `pine LOD${lod}`).toBe(count(near, 1, 0));
+      expect(clone, `cedar LOD${lod}`).toBe(count(near, 1, 1));
+      expect(pine + clone).toBe(count(near, 1, null));
+      metasequoia += pine;
+      cedar += clone;
+    }
+    // Both barks stand at this camera.
+    expect(metasequoia).toBeGreaterThan(0);
+    expect(cedar).toBeGreaterThan(0);
+    // And the billboards beyond the near band split the same way.
+    const far = [...bands.impostors, ...bands.impostorsFill];
+    const plane = (name: string): number => (scene.getMeshByName(name) as Mesh).thinInstanceCount;
+    expect(plane("forest_impostor_giant_0")).toBe(count(far, 0, null));
+    expect(plane("forest_impostor_giant_1")).toBe(count(far, 1, 0));
+    expect(plane("forest_impostor_giant_2")).toBe(count(far, 1, 1));
+    expect(plane("forest_impostor_giant_2")).toBeGreaterThan(0);
+  });
+
+  it("disposes the bark maps with the forest", () => {
+    const { scene, assets } = barkScene();
+    const { loads, load } = recordingLoader();
+    const forest = createForestMeshes(scene, SEED, { assets, bakeImpostor: () => null, loadTexture: load });
+    expect(loads.length).toBe(45);
+    for (const l of loads) expect(scene.textures).toContain(l.texture);
+    forest.dispose();
+    for (const l of loads) {
+      expect(scene.textures).not.toContain(l.texture);
+      expect(l.texture.getInternalTexture()).toBeNull();
+    }
+  });
+});
+
 describe("defaultBakeImpostor readiness gate", () => {
   const engines: NullEngine[] = [];
   afterEach(() => {
@@ -1754,6 +2014,42 @@ describe("defaultBakeImpostor readiness gate", () => {
     table.add(fixture.blendAt(76));
     expect(await pending).not.toBeNull();
     expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders nothing until the species' bark set has landed, and bakes then", async () => {
+    const { scene, mesh } = bakeScene();
+    const gate = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    const render = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
+    let land = (): void => undefined;
+    const textures = new Promise<void>((resolve) => {
+      land = resolve;
+    });
+    const pending = defaultBakeImpostor(mesh, scene, { textures });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(render).not.toHaveBeenCalled();
+    expect(gate).not.toHaveBeenCalled();
+    land();
+    expect(await pending).not.toBeNull();
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the sky and the bark set both, and stops waiting for the bark when aborted", async () => {
+    const { scene, mesh } = bakeScene();
+    const render = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const abort = new AbortController();
+    const pending = defaultBakeImpostor(mesh, scene, {
+      signal: abort.signal,
+      sky: Promise.resolve(),
+      textures: new Promise<void>(() => undefined),
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(render).not.toHaveBeenCalled();
+    abort.abort();
+    expect(await pending).toBeNull();
+    expect(render).not.toHaveBeenCalled();
+    expect(errors).not.toHaveBeenCalled();
+    expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
   });
 
   it("stops waiting for the sky when aborted, disposes the target, and logs nothing", async () => {

@@ -10,7 +10,7 @@ describe("modelUrl", () => {
     // The whole point of the indirection: the catalog is the list of models,
     // and each entry's `output` is the key. A catalog entry that `modelUrl`
     // cannot resolve is a model that will not load in the game.
-    expect(OUTPUTS.length).toBe(44);
+    expect(OUTPUTS.length).toBe(45);
     for (const output of OUTPUTS) {
       expect(typeof modelUrl(output)).toBe("string");
       expect(modelUrl(output).length).toBeGreaterThan(0);
@@ -20,7 +20,7 @@ describe("modelUrl", () => {
   it("counts toward a hike only the models a hike loads: the film's own are left out", () => {
     const filmOnly = (catalog.assets as Array<{ id: string; scene?: string }>).filter((a) => a.scene !== undefined).map((a) => a.id);
     expect(filmOnly).toEqual(["intro.car", "intro.ranger"]);
-    expect(MODEL_COUNT).toBe(42);
+    expect(MODEL_COUNT).toBe(43);
   });
 
   it("gives every model its own URL", () => {
@@ -105,7 +105,34 @@ describe("audioUrl", () => {
   });
 });
 
-import { assetBytes } from "../../src/game/assetUrls.js";
+import { assetBytes, textureUrl } from "../../src/game/assetUrls.js";
+
+describe("textureUrl", () => {
+  /** The bark sets the catalog declares: four sets, two sizes, three maps. */
+  const BARK = catalog.textures.map((t) => t.output).filter((output) => output.endsWith(".ktx2"));
+
+  it("resolves every bark map the shipped catalog declares, each to its own url with the file's own name", () => {
+    expect(BARK.length).toBe(24);
+    expect(BARK).toContain("textures/bark.pine.2k.ktx2");
+    expect(new Set(BARK.map(textureUrl)).size).toBe(24);
+    for (const output of BARK) {
+      const name = output.slice("textures/".length, -".ktx2".length).replace(/\./g, "\\.");
+      expect(textureUrl(output)).toMatch(new RegExp(`^/assets/(textures/)?${name}[^/]*\\.ktx2$`));
+      expect(textureUrl(output).startsWith("data:")).toBe(false);
+    }
+  });
+
+  it("throws on a map it does not ship, the ground textures' among them, naming both places it must exist", () => {
+    expect(() => textureUrl("textures/bark.oak.2k.ktx2")).toThrow(/unknown texture "textures\/bark\.oak\.2k\.ktx2"/);
+    expect(() => textureUrl("textures/bark.oak.2k.ktx2")).toThrow(/client\/assets\//);
+    expect(() => textureUrl("textures/bark.oak.2k.ktx2")).toThrow(/catalog\.json/);
+    // The ground layers go through their own imports, not this map.
+    expect(() => textureUrl("textures/ground.grass.webp")).toThrow(/unknown texture/);
+    for (const key of ["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__"]) {
+      expect(() => textureUrl(key)).toThrow(/unknown texture/);
+    }
+  });
+});
 
 describe("assetBytes", () => {
   it("reads the catalog's bytes where the export wrote them, and nothing where it did not", () => {

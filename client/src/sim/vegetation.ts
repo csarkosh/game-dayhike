@@ -251,7 +251,14 @@ export type TreeInstance = {
   scale: number;
   cohort: number;
   hash: number;
+  /** A plain draw of 0 or 1, half and half, for the renderer to vary a
+   * species' dressing tree by tree (the giant pine wears one of two barks
+   * by it). Nothing in the world's shape reads it. */
+  variant: number;
 };
+
+/** How many variants `TreeInstance.variant` is drawn from. */
+export const TREE_VARIANTS = 2;
 
 /** The unit direction a log lies along, from its `hash`: the renderer turns
  * the model's +X by the yaw `hash · 2π` about the vertical, which lands it on
@@ -371,6 +378,9 @@ export function treeInCell(seed: number, cellX: number, cellZ: number): TreeInst
   const valley = 1 + (VALLEY_SCALE_BOOST - 1) * (1 - Math.min(1, groundH / TREELINE_HI));
   const size = hash3(cellX, cellZ, 4, salted);
   const hash = hash3(cellX, cellZ, 5, salted);
+  // Slot 9 is the alder's; 10 is the dressing variant's, its own slot so
+  // that it is independent of every other draw.
+  const variant = (hash3(cellX, cellZ, 10, salted) * TREE_VARIANTS) | 0;
   if (cohort === COHORT_LOG && logCrossesPath(seed, x, z, hash, (LOG_SCALE_MIN + size * (LOG_SCALE_MAX - LOG_SCALE_MIN)) * valley)) {
     cohort = COHORT_SNAG;
   }
@@ -400,6 +410,7 @@ export function treeInCell(seed: number, cellX: number, cellZ: number): TreeInst
       scale: ALDER_SCALE_MIN + size * (ALDER_SCALE_MAX - ALDER_SCALE_MIN),
       cohort: COHORT_SAPLING,
       hash,
+      variant,
     };
   }
   const scale = (scaleMin + size * (scaleMax - scaleMin)) * valley;
@@ -409,6 +420,7 @@ export function treeInCell(seed: number, cellX: number, cellZ: number): TreeInst
     groundDz: ground.dz,
     species, scale, cohort,
     hash,
+    variant,
   };
 }
 

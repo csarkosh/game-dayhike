@@ -2555,6 +2555,8 @@ function buildRenderer(
     forest !== null
       ? createForestMeshes(scene, forest.seed, {
         nearRadius: tier === "low" ? lowTierNearRadius : undefined,
+        // The size of bark the trees wear (`barkParams.ts`).
+        tier,
         pipelines: bakePipelines(pipelines, scope),
         // The billboards bake under the sky's light, never Babylon's defaults.
         sky: skyReady(),

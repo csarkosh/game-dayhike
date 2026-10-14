@@ -25,6 +25,7 @@ import {
   ROAD_CLEAR_FADE,
   LOG_SCALE_MIN, LOG_HALF_LENGTH, LOG_SPAN_STATIONS, LOG_TRAIL_CLEAR, LOG_ROAD_CLEAR, logAxis,
   SPECIES_ALDER, SPECIES_COUNT, ALDER_SCALE_MIN, ALDER_SCALE_MAX, ALDER_ALT_HI, ALDER_ALT_HI_FADE, ALDER_ROAD_BAND, alderHabitat,
+  TREE_VARIANTS,
 } from "../../src/sim/vegetation.js";
 import {
   DEFAULT_TERRAIN_VARIANT,
@@ -165,6 +166,25 @@ describe("cohorts", () => {
       const of = trees.filter((t) => t.cohort === c && t.species !== SPECIES_ALDER);
       expect(new Set(of.map((t) => t.species)).size).toBe(2);
     }
+  });
+
+  it("draws each tree a dressing variant of 0 or 1, half and half, from a slot of its own", () => {
+    const trees = sweep();
+    expect(TREE_VARIANTS).toBe(2);
+    for (const t of trees) expect(t.variant === 0 || t.variant === 1).toBe(true);
+    const share = (list: ReturnType<typeof sweep>) => list.filter((t) => t.variant === 1).length / list.length;
+    expect(share(trees)).toBeGreaterThan(0.47);
+    expect(share(trees)).toBeLessThan(0.53);
+    // Independent of the species and the cohort: the giant pines, whose two
+    // barks it picks between, split near half too.
+    const pines = trees.filter((t) => t.cohort === COHORT_GIANT && t.species === 1);
+    expect(pines.length).toBeGreaterThan(200);
+    expect(share(pines)).toBeGreaterThan(0.45);
+    expect(share(pines)).toBeLessThan(0.55);
+    // Pinned draws: slot 10 of the cell's hash, so a reslotting of any other
+    // draw leaves these as they are.
+    const cells: [number, number][] = [[173, -91], [250, 250], [251, 250], [252, 251], [253, 252], [254, 253]];
+    expect(cells.map(([cx, cz]) => treeInCell(SEED, cx, cz)?.variant ?? null)).toEqual([1, null, 0, 1, 0, 0]);
   });
 
   it("declares every new tunable in the level-id record", () => {

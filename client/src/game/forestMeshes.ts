@@ -30,22 +30,32 @@
  * a plane, a material and a bake, and end at different ranges — which is the
  * whole reason `fadeBands` is a per-INSTANCE attribute rather than a uniform.
  *
- * Draw-call budget (≤ 32): a multi-primitive glTF mesh (bark +
+ * Draw-call budget (≤ 39): a multi-primitive glTF mesh (bark +
  * canopy) loads as separate SIBLING `Mesh` objects, one `SubMesh` each —
  * never one mesh with two submeshes — so each bark/canopy pair below is 2
- * draw calls, not "2 submeshes of 1 mesh". 2 giant species × 3 LODs × 2
- * sibling meshes = 12, + 2 sapling species × 3 LODs × 2 sibling meshes =
- * 12, + 5 impostor planes (2 giants, 2 saplings, 1 snag) = 5, + 2 understory
+ * draw calls, not "2 submeshes of 1 mesh". 3 giant bucket sets (the fir,
+ * and the pine twice, once a bark it wears, `barkParams.ts`) × 3 LODs × 2
+ * sibling meshes = 18, + 2 sapling species × 3 LODs × 2 sibling meshes =
+ * 12, + 6 impostor planes (3 giant sets, 2 saplings, 1 snag) = 6, + 2 understory
  * (single-material, 1 mesh each) = 2, + 1 deadwood bucket (single-material)
- * = 1. Total 32, and 32 is the budget: raised from 30
+ * = 1. Total 39, and 39 is the budget: raised from 30
  * because saplings and snags now
- * exist beyond the near radius, and +2 is immaterial against a
+ * exist beyond the near radius, and from 32 for the pine's second bark
+ * (+7), each immaterial against a
  * 250-call frame ceiling. An empty bucket is disabled and costs nothing
  * (`applyBucketBuffer`), and the sapling rings are the sparse ones, so a
- * real camera draws fewer — 30 at the deep-forest camera the budget test
- * measures. The fill list rides the SAME plane as the on-lattice list under
- * per-instance bands rather than taking five planes of its own: on this
- * full-inventory basis those five would have made it 37.
+ * real camera draws fewer. The fill list rides the SAME plane as the
+ * on-lattice list under
+ * per-instance bands rather than taking six planes of its own: on this
+ * full-inventory basis those six would have made it 45.
+ *
+ * Every tree's bark is dressed as its model lands (`dressBark`): the
+ * file's own colour and normal JPEGs are replaced by one of the four bark
+ * sets (`barkParams.ts`, KTX2), tiled in metres from the set's scan
+ * footprint and the trunk's measured size, with the set's own occlusion
+ * and roughness in an ARM map the files never carried. The billboards bake
+ * once the set has loaded (`BakeOptions.textures`), so the far forest wears
+ * the near forest's bark.
  */
 // Side-effect import, and it is load-bearing: `thinInstanceSetBuffer` and
 // friends are patched onto `Mesh.prototype` by this module. Without it the
@@ -61,7 +71,7 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.j
 import { Color4 } from "@babylonjs/core/Maths/math.color.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
-import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
 import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera.js";
 import { Camera } from "@babylonjs/core/Cameras/camera.js";
@@ -108,8 +118,22 @@ import {
 } from "./distanceFadePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { BARK_SKY, CROWN_SKY, IMPOSTOR_SKY, TREE_SPECULAR_WEIGHT } from "./forestLookParams.js";
-import { modelUrl } from "./assetUrls.js";
+import {
+  barkOutputs,
+  barkSize,
+  barkTransform,
+  GIANT_SETS,
+  inGiantSet,
+  SAPLING_BARKS,
+  type BarkDressing,
+  type BarkSize,
+} from "./barkParams.js";
+import type { QualityTier } from "./quality.js";
+import { modelUrl, textureUrl } from "./assetUrls.js";
 import { loadContainer, loadUntilAborted } from "./modelLoad.js";
+// The KTX2 decoder's URLs (`ktx2.ts`): the bark sets are KTX2 files, read by
+// the same decoder the characters' textures are, wherever this loads first.
+import "./ktx2.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
 import { createCrossing, crossingAt, finish, nextCrossing, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 
@@ -175,6 +199,11 @@ export type BakeOptions = {
    * life of the page. Its bounds (`warnMs`, `failMs`) count from then.
    * Absent, it renders as soon as it is ready. */
   sky?: Promise<void>;
+  /** Resolves once the species' bark set has loaded, or failed to
+   * (`dressBark`): the bake renders nothing before, so a billboard never
+   * keeps the file's own bark, or no bark, for the life of the page. Waited
+   * on with `sky`; its bounds count from whichever arrives last. */
+  textures?: Promise<void>;
 };
 
 /** One billboard's bake, as the forest last saw it: still baking, landed
@@ -232,7 +261,114 @@ export type ForestMeshesOptions = {
   /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
    * over the frames that follow rather than in the frame of the crossing. */
   jobs?: SyncJobs;
+  /** The quality tier the forest is built for: the size of bark each tree
+   * wears (`barkSize`). "medium" if unset. */
+  tier?: QualityTier;
+  /** NullEngine escape hatch: how a bark map is loaded; `defaultLoadBarkTexture`
+   * (the KTX2 file at its url) if unset. */
+  loadTexture?: BarkTextureLoader;
 };
+
+/** Loads one bark map: `colour` for the colour map (sRGB), false for the
+ * normal and ARM maps (linear). `onLoad` once it is on the GPU; `onError`
+ * if it never will be. */
+export type BarkTextureLoader = (
+  url: string,
+  scene: Scene,
+  colour: boolean,
+  onLoad: () => void,
+  onError: () => void,
+) => Texture;
+
+/**
+ * A bark map from its KTX2 file. The decoder reads the file's own transfer
+ * function: the colour map's sRGB and the other two maps' linear land on the
+ * texture as `_gammaSpace` (`khronosTextureContainer2.js`, `_createTexture`),
+ * so nothing here says which is which. The colour map asks for an sRGB
+ * buffer as the glTF loader's own colour textures do, so the GPU decodes
+ * it before filtering; the other two read raw. `invertY` false, the glTF
+ * loader's own: a compressed file cannot be flipped on upload and these
+ * files' origin is their top-left corner, as the files' JPEGs were read.
+ */
+export function defaultLoadBarkTexture(url: string, scene: Scene, colour: boolean, onLoad: () => void, onError: () => void): Texture {
+  return new Texture(url, scene, {
+    noMipmap: false,
+    invertY: false,
+    samplingMode: Texture.TRILINEAR_SAMPLINGMODE,
+    useSRGBBuffer: colour,
+    onLoad,
+    onError,
+  });
+}
+
+/**
+ * Dresses one bark material in a set (`barkParams.ts`): its three maps at
+ * `size`, tiled by the dressing's repeats, in place of the file's own
+ * colour and normal JPEGs, which are disposed once the maps are assigned
+ * (the GPU keeps nothing of them). The material's own `invertNormalMapX`
+ * and `invertNormalMapY` stay as the glTF loader set them, since the set's
+ * normal map is in the glTF convention the file's was. The ARM map goes on
+ * as the metallic texture with its three channels named; the occlusion in
+ * its red channel is applied by `AOSTOREINMETALMAPRED` alone, at
+ * `ambientTextureStrength` (Babylon's 1), with no ambient texture: the
+ * shader mixes the red channel into the occlusion by that strength
+ * (`pbrBlockReflectivity`). The metallic and roughness multipliers go to 1
+ * so the map's values are the surface's; the files had no map and a flat
+ * roughness of 1.
+ *
+ * Returns a promise that resolves once all three maps have loaded, or
+ * failed to: `BakeOptions.textures`, so a bake waits for the set and a
+ * missing file never blocks the forest. `keep` takes the maps for
+ * `dispose`.
+ */
+function dressBark(
+  material: PBRMaterial,
+  dressing: BarkDressing,
+  size: BarkSize,
+  scene: Scene,
+  load: BarkTextureLoader,
+  keep: Texture[],
+): Promise<void> {
+  const outputs = barkOutputs(dressing.set, size);
+  const transform = barkTransform(dressing);
+  const landed: Promise<void>[] = [];
+  const map = (output: string, colour: boolean): Texture => {
+    let settle: () => void = () => undefined;
+    landed.push(new Promise<void>((resolve) => { settle = resolve; }));
+    const texture = load(textureUrl(output), scene, colour, () => settle(), () => settle());
+    // The set tiles from the primitive's own UVs: the file's transform (the
+    // conifers read a tenth of their atlas through it) is dropped.
+    texture.uOffset = 0;
+    texture.vOffset = 0;
+    texture.uScale = transform.uScale;
+    texture.vScale = transform.vScale;
+    texture.wAng = transform.wAng;
+    texture.wrapU = Texture.WRAP_ADDRESSMODE;
+    texture.wrapV = Texture.WRAP_ADDRESSMODE;
+    keep.push(texture);
+    return texture;
+  };
+  const old = [material.albedoTexture, material.bumpTexture];
+  material.albedoTexture = map(outputs.colour, true);
+  const normal = map(outputs.normal, false);
+  normal.level = 1;
+  material.bumpTexture = normal;
+  material.metallicTexture = map(outputs.arm, false);
+  material.useAmbientOcclusionFromMetallicTextureRed = true;
+  material.useRoughnessFromMetallicTextureGreen = true;
+  material.useRoughnessFromMetallicTextureAlpha = false;
+  material.useMetallnessFromMetallicTextureBlue = true;
+  material.metallic = 1;
+  material.roughness = 1;
+  for (const texture of old) {
+    if (texture === null) continue;
+    // A map another material of the scene still reads (none of the tree
+    // files shares one between its bark and its crown) is left to it.
+    if (scene.materials.some((m) => m !== material && m.getActiveTextures().includes(texture))) continue;
+    texture.dispose();
+  }
+  return Promise.all(landed).then(() => undefined);
+}
 
 export type ForestMeshes = {
   update(camX: number, camZ: number): void;
@@ -249,7 +385,7 @@ export type ForestMeshes = {
    * GLBs land, as `casterMeshes` is: the trees the lake's mirror draws on
    * their own material, 85 to 120 m out. */
   readonly lod2Meshes: readonly Mesh[];
-  /** The five billboard planes, in the order made: the far forest the lake's
+  /** The six billboard planes, in the order made: the far forest the lake's
    * reflections draw. */
   readonly impostorMeshes: readonly Mesh[];
   /** Every billboard's bake as it stands, in the order the billboards were
@@ -726,7 +862,7 @@ const IMPOSTOR_SLICE = 512;
 
 /**
  * The impostor lists in ONE pass each, split into the buckets that will draw
- * them: giant species 0..n, then sapling species 0..n, then the one snag
+ * them: giant bucket sets 0..n, then sapling species 0..n, then the one snag
  * slot. `bands.impostors`/`impostorsFill` interleave every cohort, and a
  * filter per plane meant ten passes over up to ~46k instances on every
  * tree-cell crossing — the rebuild this file already guards for cost.
@@ -735,6 +871,7 @@ const IMPOSTOR_SLICE = 512;
  */
 function partitionImpostors(
   list: readonly TreeInstance[],
+  giantSlot: (t: TreeInstance) => number,
   giantCount: number,
   saplingCount: number,
 ): TreeInstance[][] {
@@ -743,7 +880,11 @@ function partitionImpostors(
   const snagSlot = giantCount + saplingCount;
   for (const t of list) {
     if (t.cohort === COHORT_GIANT) {
-      if (t.species < giantCount) (slots[t.species] as TreeInstance[]).push(t);
+      // The giants' slots are their bucket sets (`GIANT_SETS`): a species
+      // with two barks has two, by the tree's variant; −1 is a species
+      // whose model has not loaded.
+      const slot = giantSlot(t);
+      if (slot >= 0) (slots[slot] as TreeInstance[]).push(t);
     } else if (t.cohort === COHORT_SAPLING) {
       if (t.species < saplingCount) (slots[giantCount + t.species] as TreeInstance[]).push(t);
     } else if (t.cohort === COHORT_SNAG) {
@@ -830,7 +971,9 @@ const IMPOSTOR_BAKE_LAYER = 0x10000000;
  *
  * Given `options.sky`, no poll starts until it resolves, and the bounds count
  * from then: before the renderer's sky is held the lights are Babylon's
- * defaults, which the billboard would keep for the life of the page. Aborted
+ * defaults, which the billboard would keep for the life of the page. Given
+ * `options.textures`, the species' bark set, it waits on that too, and the
+ * bounds count from the later of the two. Aborted
  * while it waits, it disposes its target and resolves null without a word.
  *
  * `pose` rotates the bake clone before anything is measured, for a model
@@ -915,8 +1058,11 @@ export async function defaultBakeImpostor(
     rtt.activeCamera = camera;
 
     // Nothing is rendered before the renderer's sky is held: the lights are
-    // Babylon's defaults until then, and the billboard would keep them.
-    if (options.sky !== undefined && !(await heldUnlessAborted(options.sky, options.signal))) {
+    // Babylon's defaults until then, and the billboard would keep them. Nor
+    // before the species' bark set has landed (`options.textures`): the
+    // billboard would keep the file's bark, or none.
+    const held = [options.sky, options.textures].filter((p): p is Promise<void> => p !== undefined);
+    if (held.length > 0 && !(await heldUnlessAborted(Promise.all(held).then(() => undefined), options.signal))) {
       camera.dispose();
       rtt.dispose();
       return null;
@@ -1048,6 +1194,8 @@ export function createForestMeshes(
   options: ForestMeshesOptions = {},
 ): ForestMeshes {
   const nearRadius = options.nearRadius ?? NEAR_RADIUS;
+  const tier = options.tier ?? "medium";
+  const loadTexture = options.loadTexture ?? defaultLoadBarkTexture;
   // The near/impostor seam, tier-scaled — every LOD ring's own out-band gets
   // clipped to it below. At the default
   // NEAR_RADIUS every fixed seam (SEAM_LOD0, SEAM_LOD1) already ends inside
@@ -1078,8 +1226,12 @@ export function createForestMeshes(
   const textures: Texture[] = [];
   /** Every billboard, in the order made, for `impostorBakes`. */
   const impostors: Impostor[] = [];
+  /** The giants' buckets, one a bucket set (`giantSets`, index-aligned). */
   let species: SpeciesBuckets[] | null = null;
-  // Regeneration saplings, per species (index-aligned with `species`): the
+  /** The giants' bucket sets that have loaded: `GIANT_SETS`' prefix for the
+   * species that landed, one a bark the species wears. */
+  let giantSets: readonly (typeof GIANT_SETS)[number][] = [];
+  // Regeneration saplings, per species: the
   // same shape the giants get, once they got their own billboard.
   // The single deadwood bucket both dead-tree roles ride inside the near
   // radius, and the SNAG half's billboard beyond it — species-agnostic, one
@@ -1153,8 +1305,8 @@ export function createForestMeshes(
 
   /**
    * One billboard: the quad, its alpha-tested material and the bake that will
-   * (or will not) land on it. `name` distinguishes the five — two giant
-   * species, two sapling species, one snag cohort — and `bake` is already in
+   * (or will not) land on it. `name` distinguishes the six — three giant
+   * bucket sets, two sapling species, one snag cohort — and `bake` is already in
    * flight when this is called, because framing the bake needs the source
    * mesh before `prepBucketMesh` disables it.
    */
@@ -1223,16 +1375,80 @@ export function createForestMeshes(
     return impostor;
   }
 
-  /** Builds one species' buckets and billboard from its bucket meshes.
-   * `kind` names the impostor plane ("giant" or "sapling") and decides the
+  /** One bucket set's meshes as dressed: its LOD ladder, and the promise of
+   * its bark set (`dressBark`), which its bake waits on. */
+  type DressedSet = { lods: [Mesh[], Mesh[], Mesh[]]; textures: Promise<void> };
+
+  /**
+   * Dresses one species' bark in its barks (`barkParams.ts`), one bucket set
+   * a bark. The first bark goes on the loaded meshes' own bark material; each
+   * further one on clones of the LOD meshes, which share the geometry and
+   * the crown's material and wear a clone of the bark material, made here
+   * before anything attaches to the original (a material clone can only
+   * reconstruct a plugin Babylon's own class registry knows). The bark is
+   * what alpha-tests not (`shadeTreeMaterial`'s rule): every opaque
+   * material of the ladder. Its meshes lose their vertex tangents: the
+   * set's normal map is read in the frame of the map's own coordinates,
+   * which follows the quarter turn some barks take (`barkTransform`), where
+   * a file's tangents follow the file's UVs. The geometry is shared by the
+   * clones, so this is done once, before them.
+   */
+  function dressSpecies(lods: [Mesh[], Mesh[], Mesh[]], barks: readonly BarkDressing[]): DressedSet[] {
+    const barkMaterials = new Set<PBRMaterial>();
+    for (const mesh of lods.flat()) {
+      const material = mesh.material;
+      if (material instanceof PBRMaterial && !material.needAlphaTesting()) barkMaterials.add(material);
+    }
+    for (const mesh of lods.flat()) {
+      if (mesh.material instanceof PBRMaterial && barkMaterials.has(mesh.material) && mesh.isVerticesDataPresent(VertexBuffer.TangentKind)) {
+        mesh.removeVerticesData(VertexBuffer.TangentKind);
+      }
+    }
+    const sets: DressedSet[] = [];
+    barks.forEach((bark, k) => {
+      let setLods = lods;
+      let setMaterials = [...barkMaterials];
+      if (k > 0) {
+        // Named by the set they wear: `tree.giant_pine.material0_cedar`.
+        const clones = new Map<PBRMaterial, PBRMaterial>();
+        for (const material of barkMaterials) {
+          const clone = material.clone(`${material.name}_${bark.set}`) as PBRMaterial;
+          materials.push(clone);
+          clones.set(material, clone);
+        }
+        setLods = lods.map((lod) => {
+          const root = lod[0];
+          if (root === undefined) return [];
+          const meshes = geometryMeshes(root.clone(`${root.name}_${bark.set}`, null, false));
+          for (const mesh of meshes) {
+            const clone = mesh.material instanceof PBRMaterial ? clones.get(mesh.material) : undefined;
+            if (clone !== undefined) mesh.material = clone;
+          }
+          return meshes;
+        }) as [Mesh[], Mesh[], Mesh[]];
+        setMaterials = [...clones.values()];
+      }
+      const size = barkSize(tier, bark);
+      const landed = setMaterials.map((material) => dressBark(material, bark, size, scene, loadTexture, textures));
+      sets.push({ lods: setLods, textures: Promise.all(landed).then(() => undefined) });
+    });
+    return sets;
+  }
+
+  /** Builds one species' buckets and billboards from its bucket sets, one
+   * set a bark the species wears (`dressSpecies`), named from `index` on.
+   * `kind` names the impostor planes ("giant" or "sapling") and decides the
    * shadow-caster question below — the two cohorts are otherwise identical
-   * from here on: the same three rings, the same seams, the same bake. */
+   * from here on: the same three rings, the same seams, the same bake. The
+   * sets are taken together because they share the crown's material: every
+   * bake is kicked before any plugin attaches to it. */
   function adoptSpecies(
     index: number,
-    lods: [Mesh[], Mesh[], Mesh[]],
+    sets: readonly DressedSet[],
     understory: Mesh[] | null,
     kind: "giant" | "sapling",
-  ): SpeciesBuckets {
+  ): SpeciesBuckets[] {
+    const allLods = sets.flatMap((set) => set.lods.flat());
     // Kick the bake off BEFORE prepBucketMesh touches the buckets: the
     // default bake clones the LOD1 hierarchy synchronously, so it must see
     // the meshes as loaded — enabled and free of thin instances. Impostor
@@ -1247,14 +1463,17 @@ export function createForestMeshes(
     // not applied twice. A bake taken at the full open sky would hand the near
     // trees over at the seam to paler, cooler, sky-rimmed billboards. The LOD2
     // split below clones after this too, so the lake's mirror, which draws
-    // LOD2 on its own material, sees the same trees.
-    for (const mesh of lods.flat()) {
+    // LOD2 on its own material, sees the same trees. Each set's bake waits
+    // on its bark set (`BakeOptions.textures`) as well as the sky.
+    for (const mesh of allLods) {
       if (mesh.material) shadeTreeMaterial(mesh.material);
     }
-    const lod1First = lods[1][0];
-    const bake = lod1First === undefined ? null : bakeImpostor(lod1First, scene, bakeOptions);
+    const bakes = sets.map((set) => {
+      const lod1First = set.lods[1][0];
+      return lod1First === undefined ? null : bakeImpostor(lod1First, scene, { ...bakeOptions, textures: set.textures });
+    });
 
-    for (const mesh of [...lods.flat(), ...(understory ?? [])]) prepBucketMesh(mesh);
+    for (const mesh of [...allLods, ...(understory ?? [])]) prepBucketMesh(mesh);
 
     // Every shipped tree GLB reuses ONE material per primitive across its
     // whole LOD ladder (verified directly against the four tree.*.glb
@@ -1268,11 +1487,13 @@ export function createForestMeshes(
     // class registry to reconstruct each existing plugin, which throws for a
     // plugin outside that registry (ours all are), so cloning has to happen
     // while the material is still plugin-free.
+    // The sets share the crown's material, so the split is made once across
+    // them: each set's LOD2 crown takes the one clone.
     const lod01Materials = new Set(
-      [...lods[0], ...lods[1]].map((m) => m.material).filter((m): m is Material => m != null),
+      sets.flatMap((set) => [...set.lods[0], ...set.lods[1]]).map((m) => m.material).filter((m): m is Material => m != null),
     );
     const lod2Clones = new Map<Material, Material>();
-    for (const mesh of lods[2]) {
+    for (const mesh of sets.flatMap((set) => set.lods[2])) {
       const material = mesh.material;
       if (material === null || !lod01Materials.has(material)) continue;
       let clone = lod2Clones.get(material);
@@ -1292,7 +1513,7 @@ export function createForestMeshes(
     // foliage plugin), and the impostor plane's own material is built in
     // `createImpostor`,
     // which attaches the dither itself.
-    for (const mesh of lods.flat()) {
+    for (const mesh of allLods) {
       if (mesh.material) {
         attachGroundConform(mesh.material);
         attachDistanceFade(mesh.material);
@@ -1326,7 +1547,7 @@ export function createForestMeshes(
     // checks that crown/shadow decoupling directly, but the decision to skip
     // a ShadowDepthWrapper here stands per spec regardless.
     for (const lod of [0, 1] as const) {
-      for (const mesh of lods[lod]) {
+      for (const mesh of sets.flatMap((set) => set.lods[lod])) {
         if (mesh.material) {
           mesh.refreshBoundingInfo();
           attachFoliage(mesh.material, FOLIAGE_PROFILES.TREE, mesh.getBoundingInfo().boundingBox.maximum.y);
@@ -1358,13 +1579,6 @@ export function createForestMeshes(
       }
     }
 
-    // The quad is framed AND sized from the SAME LOD as the bake (LOD1, with
-    // an LOD0 fallback for stub assets that ship no LOD1 geometry): sizing
-    // from a different LOD would stretch the bake across mismatched extents.
-    const bounds = unionBounds(lods[1].length > 0 ? lods[1] : lods[0]);
-    const width = Math.max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z, 0.01);
-    const height = Math.max(bounds.max.y - bounds.min.y, 0.01);
-
     // Only the GIANTS' LOD0 (≤42 m, LOD_RING_0) casts shadows — LOD1 was
     // dropped from the caster set in a performance check:
     // LOD1 casting measured ~2 ms of cascade re-render there, and its
@@ -1375,38 +1589,49 @@ export function createForestMeshes(
     // (adoptBucket, below) are deliberately excluded too, for the same
     // reason: they are small, numerous, and sit under the giants'
     // own shadows, so the shadow-map cost is not worth paying.
-    if (kind === "giant") casterMeshes.push(...lods[0]);
+    if (kind === "giant") casterMeshes.push(...sets.flatMap((set) => set.lods[0]));
     // The lake's mirror draws the LOD2 buckets on their own material.
-    lod2Meshes.push(...lods[2]);
+    lod2Meshes.push(...sets.flatMap((set) => set.lods[2]));
 
-    return {
-      // Each ring fades in where the previous one fades out, and the last
-      // hands over to the billboard at the near seam.
-      // Each ring's OUT-band is clipped to the near seam (`ringOutBand`)
-      // when its own fixed edge would otherwise sit past `nearRadius` —
-      // shared by saplings below, the same code path.
-      lods: [
-        { meshes: lods[0], fade: fadeBands(null, ringOutBand(SEAM_LOD0)) },
-        { meshes: lods[1], fade: fadeBands(SEAM_LOD0, ringOutBand(SEAM_LOD1)) },
-        { meshes: lods[2], fade: fadeBands(SEAM_LOD1, nearSeamBand) },
-      ],
-      understory:
-        understory === null
-          ? null
-          : {
-              meshes: understory,
-              // Nothing takes over from ground cover at its disc edge, so it
-              // thins out over the last fifth of the radius.
-              fade: fadeBands(null, [UNDERSTORY_RADIUS * 0.8, UNDERSTORY_RADIUS]),
-            },
-      impostor: createImpostor(
-        `${kind}_${index}`,
-        bake,
-        width,
-        height,
-        (bounds.min.y + bounds.max.y) / 2,
-      ),
-    };
+    return sets.map((set, k) => {
+      const { lods } = set;
+      // The quad is framed AND sized from the SAME LOD as the bake (LOD1, with
+      // an LOD0 fallback for stub assets that ship no LOD1 geometry): sizing
+      // from a different LOD would stretch the bake across mismatched extents.
+      const bounds = unionBounds(lods[1].length > 0 ? lods[1] : lods[0]);
+      const width = Math.max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z, 0.01);
+      const height = Math.max(bounds.max.y - bounds.min.y, 0.01);
+      return {
+        // Each ring fades in where the previous one fades out, and the last
+        // hands over to the billboard at the near seam.
+        // Each ring's OUT-band is clipped to the near seam (`ringOutBand`)
+        // when its own fixed edge would otherwise sit past `nearRadius` —
+        // shared by saplings below, the same code path.
+        lods: [
+          { meshes: lods[0], fade: fadeBands(null, ringOutBand(SEAM_LOD0)) },
+          { meshes: lods[1], fade: fadeBands(SEAM_LOD0, ringOutBand(SEAM_LOD1)) },
+          { meshes: lods[2], fade: fadeBands(SEAM_LOD1, nearSeamBand) },
+        ],
+        // The understory pairs off the species, so the species' first set
+        // takes it (the production forest has none).
+        understory:
+          understory === null || k > 0
+            ? null
+            : {
+                meshes: understory,
+                // Nothing takes over from ground cover at its disc edge, so it
+                // thins out over the last fifth of the radius.
+                fade: fadeBands(null, [UNDERSTORY_RADIUS * 0.8, UNDERSTORY_RADIUS]),
+              },
+        impostor: createImpostor(
+          `${kind}_${index + k}`,
+          bakes[k] as Texture | null | Promise<Texture | null>,
+          width,
+          height,
+          (bounds.min.y + bounds.max.y) / 2,
+        ),
+      };
+    });
   }
 
   /** The one single-role bucket left: deadwood, both dead-tree roles in one
@@ -1437,10 +1662,26 @@ export function createForestMeshes(
     /** The fern on the nurse logs; none under the stubs. */
     nurseFern?: Mesh[];
   }): void {
-    species = loaded.giants.map((s, i) => adoptSpecies(i, s.lods, s.understory, "giant"));
+    // Each giant species' bucket sets, one a bark it wears: `GIANT_SETS`'
+    // prefix for the species that loaded, in its order.
+    const sets: SpeciesBuckets[] = [];
+    const loadedSets: (typeof GIANT_SETS)[number][] = [];
+    loaded.giants.forEach((s, i) => {
+      const barks = GIANT_SETS.filter((set) => set.species === i);
+      loadedSets.push(...barks);
+      sets.push(...adoptSpecies(sets.length, dressSpecies(s.lods, barks.map((set) => set.bark)), s.understory, "giant"));
+    });
+    giantSets = loadedSets;
+    species = sets;
     // Saplings are a species like the giants now, understory aside: their own
-    // GLBs, their own LOD ladder, their own billboard and bake.
-    saplingSpecies = loaded.saplings.map((lods, i) => adoptSpecies(i, lods, null, "sapling"));
+    // GLBs, their own LOD ladder, their own billboard and bake. Each wears
+    // one bark; a sapling species the barks do not name (none today) keeps
+    // its file's.
+    saplingSpecies = loaded.saplings.flatMap((lods, i) => {
+      const bark = SAPLING_BARKS[i];
+      const dressed: DressedSet[] = bark === undefined ? [{ lods, textures: Promise.resolve() }] : dressSpecies(lods, [bark]);
+      return adoptSpecies(i, dressed, null, "sapling");
+    });
 
     // The snag's bake, kicked BEFORE `adoptBucket` disables the deadwood
     // meshes — the same rule `adoptSpecies` records for the tree bakes — and
@@ -1800,10 +2041,13 @@ export function createForestMeshes(
     yield;
     const giants = species as SpeciesBuckets[];
     const saps = saplingSpecies as SpeciesBuckets[];
-    // ONE pass over each impostor list, not one per plane: the five buckets
+    const sets = giantSets;
+    /** The giant bucket set a tree goes to, or −1 where its species has not loaded. */
+    const giantSlot = (t: TreeInstance): number => sets.findIndex((set) => inGiantSet(set, t.species, t.variant));
+    // ONE pass over each impostor list, not one per plane: the six buckets
     // that draw them are disjoint, so they can be split in a single walk.
-    const lattice = partitionImpostors(bands.impostors, giants.length, saps.length);
-    const fill = partitionImpostors(bands.impostorsFill, giants.length, saps.length);
+    const lattice = partitionImpostors(bands.impostors, giantSlot, giants.length, saps.length);
+    const fill = partitionImpostors(bands.impostorsFill, giantSlot, giants.length, saps.length);
     const applies: (() => void)[] = [];
     yield;
 
@@ -1825,12 +2069,14 @@ export function createForestMeshes(
 
     // Giants and saplings run the identical shape, off different near lists
     // (`near` is GIANT-only, `saplings` SAPLING-only) and different slots of
-    // the split impostor lists.
-    const cohorts: [SpeciesBuckets[], TreeInstance[][], number][] = [
-      [giants, bands.near, 0],
-      [saps, bands.saplings, giants.length],
+    // the split impostor lists. A giant bucket set takes the trees of its
+    // species and, where the species has two barks, of its variant; a
+    // sapling species takes its species.
+    const cohorts: [SpeciesBuckets[], TreeInstance[][], number, (t: TreeInstance, s: number) => boolean, (s: number) => number][] = [
+      [giants, bands.near, 0, (t, s) => inGiantSet(sets[s] as (typeof GIANT_SETS)[number], t.species, t.variant), (s) => (sets[s] as (typeof GIANT_SETS)[number]).species],
+      [saps, bands.saplings, giants.length, (t, s) => t.species === s, (s) => s],
     ];
-    for (const [all, nearLists, slotBase] of cohorts) {
+    for (const [all, nearLists, slotBase, member, speciesOf] of cohorts) {
       for (let s = 0; s < all.length; s++) {
         const sp = all[s] as SpeciesBuckets;
         for (let lod = 0; lod < 3; lod++) {
@@ -1838,12 +2084,13 @@ export function createForestMeshes(
           // `understory` and `near[0]`, and between the seam-padded rings —
           // buffers are derived from them here and the objects themselves
           // stay read-only.
-          const list = (nearLists[lod] as TreeInstance[]).filter((t) => t.species === s);
+          const list = (nearLists[lod] as TreeInstance[]).filter((t) => member(t, s));
           applies.push(bucketApply(sp.lods[lod] as Bucket, treeMatrixBuffer(list, false), groundGradBuffer(list)));
           yield;
         }
         if (sp.understory !== null) {
-          const list = bands.understory.filter((t) => t.species === s);
+          // Understory pairs off the SPECIES, whatever bark the tree wears.
+          const list = bands.understory.filter((t) => t.species === speciesOf(s));
           // The understory profile tints its root toward the ground, so its
           // material declares the `foliage` attribute and the bucket has to
           // fill it — see `applyBucketBuffer`.
@@ -1982,6 +2229,7 @@ export function createForestMeshes(
       lod2Meshes.length = 0;
       impostorMeshes.length = 0;
       species = null;
+      giantSets = [];
       saplingSpecies = null;
       deadwoodBucket = null;
       snagImpostor = null;

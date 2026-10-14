@@ -46,8 +46,9 @@ Rain is a camera-locked wrapped volume, not a particle emitter (`client/src/game
 
 ## Assets
 
-- `client/assets/models/*.glb`, `client/assets/textures/*.webp` and `client/assets/audio/*.mp3` are committed through Git LFS.
-- `client/assets/catalog.json` has three lists: `assets` (models — `id`, `kind` of `character`, `creature`, `environment` or `prop`, `output`, and for animated models an `animations` map from the role the game asks for (`idle`, `walk`, `attack`, `death`, `graze`, `run`, `alert`) to the clip name in the file), `textures` (ground layers — `id`, `output`), and `audio` (wildlife calls — `id`, `output`).
+- `client/assets/models/*.glb`, `client/assets/textures/*.webp`, `client/assets/textures/*.ktx2` and `client/assets/audio/*.mp3` are committed through Git LFS.
+- `client/assets/catalog.json` has three lists: `assets` (models — `id`, `kind` of `character`, `creature`, `environment` or `prop`, `output`, and for animated models an `animations` map from the role the game asks for (`idle`, `walk`, `attack`, `death`, `graze`, `run`, `alert`) to the clip name in the file), `textures` (the ground layers, and the trees' bark sets as KTX2 — `id`, `output`, `bytes`), and `audio` (wildlife calls — `id`, `output`).
+- The trees' bark is not their files': each tree's bark material is dressed as its model lands in one of four scanned bark sets (`client/src/game/barkParams.ts`, `docs/rendering/2026-10-14-tree-bark-textures.md`), tiled in metres, the giant pine in two mixed tree by tree.
 - Assets are imported with Vite `?url` globs (`client/src/game/assetUrls.ts`), so production URLs are content-hashed and cached as immutable. A catalog `output` with no file behind it throws at startup rather than 404ing into a missing mesh.
 - `CREDITS.md` credits third-party work; `client/src/game/credits.ts` parses it for the in-game Credits screen.
 

@@ -67,6 +67,18 @@ const IMAGE_GLOB_URLS = import.meta.glob("../../assets/images/*.webp", {
   eager: true,
 }) as Record<string, string>;
 
+/**
+ * The trees' bark sets (`barkParams.ts`), KTX2 files through the same
+ * mechanism: `?url` imports any file as its served URL, so `vite.config.ts`
+ * needs nothing for the extension, and at over 900 KB each none is near the
+ * inline limit. The catalog's `textures` section lists them with their bytes.
+ */
+const BARK_GLOB_URLS = import.meta.glob("../../assets/textures/bark.*.ktx2", {
+  query: "?url",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
 /** The globs' own key prefix, stripped so the lookup key is the catalog's
  * `output` verbatim ("models/<id>.glb", "audio/<id>.mp3") rather than a path
  * relative to this file. Both globs sit under it, which is why one constant and
@@ -109,6 +121,7 @@ const MODEL_URLS = urlMap(GLOB_URLS);
 const AUDIO_URLS = urlMap(AUDIO_GLOB_URLS);
 const VIDEO_URLS = urlMap(VIDEO_GLOB_URLS);
 const IMAGE_URLS = urlMap(IMAGE_GLOB_URLS);
+const BARK_URLS = urlMap(BARK_GLOB_URLS);
 
 /** The film's own models (the catalog's `scene`): the scene route loads them, a hike never does. */
 const SCENE_ONLY = new Set(
@@ -160,6 +173,23 @@ export function modelUrl(output: string): string {
     throw new Error(
       `unknown model "${output}". It must exist both as a shipped file at ` +
         `client/assets/${output} and as an \`output\` in client/assets/catalog.json.`,
+    );
+  }
+  return url;
+}
+
+/**
+ * The same resolution for a bark texture ("textures/bark.<set>.<size>.ktx2",
+ * `barkOutputs` in `barkParams.ts`), with the same throw: a set the build
+ * does not ship is a startup error, not a trunk left in its file's bark with
+ * a 404 in the console.
+ */
+export function textureUrl(output: string): string {
+  const url = Object.hasOwn(BARK_URLS, output) ? BARK_URLS[output] : undefined;
+  if (url === undefined) {
+    throw new Error(
+      `unknown texture "${output}". It must exist both as a shipped file at ` +
+        `client/assets/${output} and as a \`textures\` entry in client/assets/catalog.json.`,
     );
   }
   return url;
