@@ -310,13 +310,6 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** Public domain
 - **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
 
-## cliff.slab
-
-- **Source:** Poly Haven: Mountainside
-- **Author:** Dario Barresi, Rico Cilliers
-- **Licence:** CC0-1.0
-- **URL:** https://polyhaven.com/a/mountainside
-
 ## cliff.wall_a
 
 - **Source:** Poly Haven: Namaqualand Cliff 01

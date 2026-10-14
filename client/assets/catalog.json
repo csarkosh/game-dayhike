@@ -195,12 +195,6 @@
       "bytes": 2480400
     },
     {
-      "id": "cliff.slab",
-      "kind": "environment",
-      "output": "models/cliff.slab.glb",
-      "bytes": 2505212
-    },
-    {
       "id": "clutter.rock_a",
       "kind": "prop",
       "output": "models/clutter.rock_a.glb",
