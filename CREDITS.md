@@ -9,6 +9,13 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC0-1.0
 - **URL:** https://freesound.org/people/tallfunnyjew/sounds/625455/
 
+## ambience.surf_cove
+
+- **Source:** Freesound: Short Sand Beach: Waves 3
+- **Author:** ghosttropic
+- **Licence:** CC0-1.0
+- **URL:** https://freesound.org/people/ghosttropic/sounds/717146/
+
 ## bark.alder.1k
 
 - **Source:** ambientCG: Bark 011
@@ -212,6 +219,41 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC0-1.0
 - **URL:** https://freesound.org/people/lwdickens/sounds/263489/
 
+## call.frog_chorus_far
+
+- **Source:** Freesound: Pacific Treefrogs in Mating Season
+- **Author:** superfreq
+- **Licence:** CC0-1.0
+- **URL:** https://freesound.org/people/superfreq/sounds/429590/
+
+## call.frog_chorus_near
+
+- **Source:** Freesound: frogs 3-4-2020.flac
+- **Author:** enlightened_greg
+- **Licence:** CC0-1.0
+- **URL:** https://freesound.org/people/enlightened_greg/sounds/507737/
+
+## call.frog_single_a
+
+- **Source:** Freesound: 200703101950PacificChorusFrogsSoloNR.wav
+- **Author:** daveincamas
+- **Licence:** CC-BY-4.0
+- **URL:** https://freesound.org/people/daveincamas/sounds/32807/
+
+## call.frog_single_b
+
+- **Source:** Freesound: 200703101950PacificChorusFrogsSoloNR.wav
+- **Author:** daveincamas
+- **Licence:** CC-BY-4.0
+- **URL:** https://freesound.org/people/daveincamas/sounds/32807/
+
+## call.frog_single_c
+
+- **Source:** Freesound: 200703101950PacificChorusFrogsSoloNR.wav
+- **Author:** daveincamas
+- **Licence:** CC-BY-4.0
+- **URL:** https://freesound.org/people/daveincamas/sounds/32807/
+
 ## call.gull_cry
 
 - **Source:** Freesound: Gull.wav
@@ -232,6 +274,41 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Author:** philberts
 - **Licence:** CC0-1.0
 - **URL:** https://freesound.org/people/philberts/sounds/111393/
+
+## call.surf_backwash_a
+
+- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
+- **Author:** National Park Service
+- **Licence:** Public domain
+- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
+
+## call.surf_backwash_b
+
+- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
+- **Author:** National Park Service
+- **Licence:** Public domain
+- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
+
+## call.surf_plunge_a
+
+- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
+- **Author:** National Park Service
+- **Licence:** Public domain
+- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
+
+## call.surf_plunge_b
+
+- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
+- **Author:** National Park Service
+- **Licence:** Public domain
+- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
+
+## call.surf_plunge_c
+
+- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
+- **Author:** National Park Service
+- **Licence:** Public domain
+- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
 
 ## cliff.slab
 
