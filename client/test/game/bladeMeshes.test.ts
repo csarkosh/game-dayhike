@@ -77,6 +77,9 @@ describe("createBladeMeshes", () => {
           const foliage = mat.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
           expect(foliage).toBeInstanceOf(FoliagePlugin);
           expect(foliage.bladeEdges).toEqual(bands[t]);
+          // The clumps receive cast shadows, so the canopy's cut of the sun is
+          // the shadow's and the plugin's own factor is off.
+          expect(foliage.canopySun).toBe(0);
           expect(mat.pluginManager!.getPlugin("FoliageLight")).not.toBeNull();
           expect(mat.pluginManager!.getPlugin("DistanceFade") ?? null).toBeNull();
         }
@@ -125,7 +128,7 @@ describe("createBladeMeshes", () => {
             const heightScale = bladeHeightScale(c.strength, c.canopy);
             instanceMatrixFor(c, { height: frame.height * heightScale, lean: frame.lean, ax: frame.ax, az: frame.az, tint: frame.tint }, buf);
             for (let k = 0; k < 16; k++) expect(matrices[i * 16 + k]).toBeCloseTo(buf[k]!, 5);
-            expect(tints[i * 4 + 3]).toBeCloseTo(1 - 0.5 * c.canopy, 5);
+            expect(tints[i * 4 + 3]).toBeCloseTo(1 - c.canopy, 5);
             checked++;
           }
         }
@@ -279,7 +282,7 @@ describe("the blade field culled to the frustum", () => {
       const foliage = bufferFor(set, mesh, "foliage")!;
       want.forEach((cell, i) => {
         expect(strengths[i]).toBe(Math.fround(cell.strength));
-        expect(foliage[i * 4 + 3]).toBeCloseTo(1 - 0.5 * cell.canopy, 5);
+        expect(foliage[i * 4 + 3]).toBeCloseTo(1 - cell.canopy, 5);
       });
     }
     // The prefix is a fraction of what was collected: about a fifth at this pose.

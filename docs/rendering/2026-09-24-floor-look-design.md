@@ -164,6 +164,14 @@ against the photographs — is a lighting and density matter (the canopy shade
 on the ground, the litter's 15 % coverage) outside this design; it is
 recorded for the next one.
 
+Amended 2026-10-14: the canopy shade the ground cover carried on its albedo,
+`shade = 1 − 0.5·forestDensity` in `foliage.a`, is gone. The fourth float now
+carries the openness, `1 − forestDensity`, and the foliage plugin's shaders
+take the canopy's share of the sky (`FOLIAGE_CANOPY_SKY` 0.4, at the final
+colour composition) and of the sun (`FOLIAGE_CANOPY_SUN` 0.4, in the sun's
+diffuse, 0 for a material whose meshes receive cast shadows) from it, each
+its own term (`2026-09-15-grass-grounding-and-wind-design.md`, §12).
+
 ## 8. Amendment (2026-09-24, after the second check)
 
 The second check (`2026-09-24-floor-look-verification.md` §7) closed the

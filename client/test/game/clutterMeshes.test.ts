@@ -188,6 +188,10 @@ describe("foliage attribute and plugin", () => {
     const rockNear = assets[CLUTTER_ROCK]![0]![0]![0]!;
     const plugin = grassNear.material!.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
     expect(plugin).toBeInstanceOf(FoliagePlugin);
+    // The cards receive no cast shadows (`prepBucketMesh`), so the canopy's
+    // cut of the sun is the plugin's, at its constant.
+    expect(grassNear.receiveShadows).toBe(false);
+    expect(plugin.canopySun).toBe(0.4);
     expect(rockNear.material!.pluginManager?.getPlugin("Foliage") ?? null).toBeNull();
     const edge = clutterFadeEdges(CLUTTER_GRASS, RADIUS_SCALE);
     expect(plugin.edges).toEqual([edge.start, edge.end]);
@@ -195,7 +199,7 @@ describe("foliage attribute and plugin", () => {
     engine.dispose();
   });
 
-  it("writes the ground colour and the canopy shade per grass instance", () => {
+  it("writes the ground colour and the sky's openness per grass instance", () => {
     const { meshes, assets, seed, engine } = buildWithAssets();
     const grassNear = assets[CLUTTER_GRASS]![0]![0]![0]!;
     // Reads back the buffer of `kind` most recently pushed to `mesh` through
@@ -223,8 +227,8 @@ describe("foliage attribute and plugin", () => {
     for (let i = 0; i < Math.min(count, 8); i++) {
       const x = matrices[i * 16 + 12]!;
       const z = matrices[i * 16 + 14]!;
-      const shade = foliage[i * 4 + 3]!;
-      expect(shade).toBeCloseTo(1 - 0.5 * forestDensity(seed, x, z), 5);
+      const openness = foliage[i * 4 + 3]!;
+      expect(openness).toBeCloseTo(1 - forestDensity(seed, x, z), 5);
       // RGB is the palette colour surfaceAlbedo returns for that spot,
       // multiplied by the floor's macro tint so a tuft and the ground under it agree.
       const sample = elevationSampleAt(seed, x, z);

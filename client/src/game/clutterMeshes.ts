@@ -301,8 +301,8 @@ export function reliefMesh(source: Mesh, model: number, cut: number, planes: Roc
 export const CLUTTER_SINK = 0.02;
 
 /** Ground-layer classes that sway and carry the foliage plugin's ground
- * tint, mapped to the profile that governs their amplitude, root darkening
- * and canopy shade. Rock, boulder, driftwood, and fungus stay static. */
+ * tint, mapped to the profile that governs their amplitude and root
+ * darkening. Rock, boulder, driftwood, and fungus stay static. */
 const FOLIAGE_BY_CLASS = new Map<number, FoliageProfile>([
   [CLUTTER_GRASS, FOLIAGE_PROFILES.GRASS],
   [CLUTTER_MEADOW, FOLIAGE_PROFILES.MEADOW],
@@ -432,7 +432,8 @@ type Bucket = {
   buf: Float32Array;
   /** Four floats per instance, `fadeBands` attribute; capacity tracks `buf`. */
   bands: Float32Array;
-  /** Four floats per instance (ground colour rgb + canopy shade), the
+  /** Four floats per instance (ground colour rgb + the sky's openness,
+   * `1 − canopy`), the
    * `foliage` attribute; capacity tracks `buf`. Only written and uploaded
    * when `tints` is set — the classes without the foliage plugin never read
    * this buffer, so it stays at `EMPTY_BUFFER`. */
@@ -806,8 +807,12 @@ function driftLogMatrix(inst: ClutterInstance, out: Float32Array): void {
 }
 
 /** Ground colour at the instance (the palette the clipmap bakes into vertex
- * colour, so grass and ground can never disagree) and the canopy shade the
- * bush palette used to carry by hand. slope = |∇h|; canopy = forestDensity. */
+ * colour, so grass and ground can never disagree) and the openness of the sky
+ * above it, `1 − canopy` (1 in the open, the generic value of a draw that
+ * writes none), from which the foliage plugin's shaders take the canopy's
+ * share of the sky and of the sun (`FOLIAGE_CANOPY_SKY`, `FOLIAGE_CANOPY_SUN`),
+ * in place of the shade the bush palette used to carry by hand.
+ * slope = |∇h|; canopy = forestDensity. */
 export function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Array, offset: number, frame: ReturnType<typeof trampleFrame>): void {
   const slope = Math.hypot(inst.groundDx, inst.groundDz);
   const canopy = forestDensity(seed, inst.x, inst.z);
@@ -821,7 +826,7 @@ export function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Ar
   buf[offset] = c.r * tint.r * frame.tint.r;
   buf[offset + 1] = c.g * tint.g * frame.tint.g;
   buf[offset + 2] = c.b * tint.b * frame.tint.b;
-  buf[offset + 3] = 1 - 0.5 * canopy;
+  buf[offset + 3] = 1 - canopy;
 }
 
 /** Floats kept per instance: the matrix (16), then the tint (4), which only

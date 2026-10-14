@@ -52,6 +52,9 @@ describe("createDuffMeshes", () => {
         const foliage = mat.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
         expect(foliage).toBeInstanceOf(FoliagePlugin);
         expect(foliage.bladeEdges).toEqual(bands[t]);
+        // The clumps receive cast shadows, so the canopy's cut of the sun is
+        // the shadow's and the plugin's own factor is off.
+        expect(foliage.canopySun).toBe(0);
         expect(mat.pluginManager!.getPlugin("FoliageLight")).not.toBeNull();
         expect(mat.pluginManager!.getPlugin("DistanceFade") ?? null).toBeNull();
       }
@@ -108,7 +111,7 @@ describe("createDuffMeshes", () => {
           expect(matrices[i * 16 + 14]).toBeCloseTo(c.z, 4);
           const groundH = variant.sample(SEED, c.x, c.z).h;
           expect(matrices[i * 16 + 13]).toBeCloseTo(groundH, 4);
-          expect(tints[i * 4 + 3]).toBeCloseTo(1 - 0.5 * c.canopy, 5);
+          expect(tints[i * 4 + 3]).toBeCloseTo(1 - c.canopy, 5);
           checked++;
         }
       }

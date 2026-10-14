@@ -462,7 +462,8 @@ function groundGradBuffer(list: readonly TreeInstance[]): Float32Array {
   return buf;
 }
 
-/** Per-instance ground colour and canopy shade for the understory's `foliage`
+/** Per-instance ground colour and the sky's openness (`1 − canopy`) for the
+ * understory's `foliage`
  * attribute — the four floats `writeFoliage` in clutterMeshes.ts writes for
  * ground cover, from the same palette, so a fern's base and the ground it
  * stands in can never disagree. Only the tinting profiles need it, which among
@@ -485,7 +486,7 @@ function treeFoliageBuffer(seed: number, list: readonly TreeInstance[]): Float32
     buf[i * 4] = c.r * tint.r;
     buf[i * 4 + 1] = c.g * tint.g;
     buf[i * 4 + 2] = c.b * tint.b;
-    buf[i * 4 + 3] = 1 - 0.5 * canopy;
+    buf[i * 4 + 3] = 1 - canopy;
   }
   return buf;
 }
@@ -1343,6 +1344,12 @@ export function createForestMeshes(
           // Bake ran already, so the bound box is the placed geometry;
           // models put the origin at the footprint base, so max.y IS the height.
           mesh.refreshBoundingInfo();
+          // The understory receives no cast shadows (`prepBucketMesh` leaves
+          // the flag off and nothing here turns it on), so the canopy's cut of
+          // the sun is the plugin's, per instance. Its material is not among
+          // the trees' (`shadeTreeMaterial` runs on the LOD ladder alone), so
+          // it takes the sky at full share and the canopy's cut of the sky is
+          // per instance too, once.
           attachFoliage(mesh.material, FOLIAGE_PROFILES.UNDERSTORY, mesh.getBoundingInfo().boundingBox.maximum.y);
           attachFoliageLight(mesh.material);
           attachDistanceFade(mesh.material);

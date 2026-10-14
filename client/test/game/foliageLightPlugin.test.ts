@@ -199,13 +199,35 @@ describe("foliage light plugin", () => {
     expect(injected.split(block("{X}")).length - 1).toBe(1);
   });
 
-  it("the wrap term never exceeds Lambert at full light, and the function is the sun's alone", () => {
+  it("the wrap term equals Lambert at full light and lifts the terminator, and the function is the sun's alone", () => {
     // No light index to branch on: the injected line chooses the sun.
     expect(diffuseFx).toContain("vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float h, vec3 viewDir) {");
     expect(diffuseFx).not.toContain("lightIndex");
     expect(diffuseFx).not.toContain("computeDiffuseLighting(");
     expect(diffuseFx).toContain(`const float FOLIAGE_WRAP = ${FOLIAGE_WRAP};`);
-    // (ndotl + w) / ((1 + w)^2) <= ndotl for ndotl = 1: 1/(1+w) <= 1.
-    expect((1 + FOLIAGE_WRAP) / ((1 + FOLIAGE_WRAP) * (1 + FOLIAGE_WRAP))).toBeLessThanOrEqual(1);
+    expect(diffuseFx).toContain("return clamp((ndotl + wrap) / (1.0 + wrap), 0.0, 1.0);");
+    // (ndotl + w) / (1 + w) at ndotl = 1 is exactly 1, Lambert's own.
+    expect((1 + FOLIAGE_WRAP) / (1 + FOLIAGE_WRAP)).toBe(1);
+    // At the terminator the lift is w / (1 + w), and the term reaches zero at ndotl = -w.
+    expect((0 + FOLIAGE_WRAP) / (1 + FOLIAGE_WRAP)).toBeCloseTo(0.25925925925925924, 12);
+    expect(Math.max(0, (-FOLIAGE_WRAP + FOLIAGE_WRAP) / (1 + FOLIAGE_WRAP))).toBe(0);
+  });
+
+  it("takes the canopy's share of the sun from the material's uniform and the instance's openness, under the foliage define", () => {
+    // The wrapped term and the backlight together, by the material's share
+    // (0 where the meshes receive cast shadows) of the canopy over the
+    // instance, read from the openness the foliage plugin writes in vFoliage.a.
+    expect(diffuseFx).toContain("fSun = 1.0 - foliageCanopySun * (1.0 - vFoliage.a);");
+    expect(diffuseFx).toContain("return (wrapped + unit * FOLIAGE_BACK * back * thickness) * fSun;");
+    // The varying and the uniform exist only under the foliage plugin's
+    // define, and the function's text does not: processed without the define,
+    // the reads are stripped and the factor stays 1.
+    const read = diffuseFx.indexOf("fSun = 1.0 - foliageCanopySun");
+    const before = diffuseFx.slice(0, read);
+    expect(before).toContain("float fSun = 1.0;");
+    expect(before.lastIndexOf("#ifdef FOLIAGE")).toBeGreaterThan(before.lastIndexOf("float fSun = 1.0;"));
+    expect(before.slice(before.lastIndexOf("#ifdef FOLIAGE"))).not.toContain("#endif");
+    expect(diffuseFx.slice(read).indexOf("#endif")).toBeGreaterThan(-1);
+    expect(diffuseFx.slice(read, read + diffuseFx.slice(read).indexOf("#endif"))).not.toContain("vec3 unit");
   });
 });

@@ -869,7 +869,9 @@ describe("createForestMeshes under NullEngine", () => {
         expect(mat.environmentIntensity, mesh.name).toBe(0.35);
         expect(mat.metallicF0Factor, mesh.name).toBe(0.04);
       } else if (mesh.name === "nurse_seedling" || mesh.name.endsWith("_under")) {
-        // Not trees: left as they were.
+        // Not trees: left as they were. The understory takes the canopy's cut
+        // of the sky per instance, in its foliage plugin's shader, so its
+        // material keeps the full share or the cut would land twice.
         expect(mat.environmentIntensity, mesh.name).toBe(1);
       } else if (mat.needAlphaTesting()) {
         crowns++;
@@ -1020,7 +1022,7 @@ describe("createForestMeshes under NullEngine", () => {
     }
   });
 
-  it("writes the ground colour and the canopy shade per understory instance", () => {
+  it("writes the ground colour and the sky's openness per understory instance", () => {
     const { assets, forest } = build();
     const under = assets.giants[0]!.understory!;
     const spy = vi.spyOn(under, "thinInstanceSetBuffer");
@@ -1040,7 +1042,7 @@ describe("createForestMeshes under NullEngine", () => {
     for (let i = 0; i < Math.min(count, 8); i++) {
       const x = matrices[i * 16 + 12] as number;
       const z = matrices[i * 16 + 14] as number;
-      expect(foliage[i * 4 + 3]!).toBeCloseTo(1 - 0.5 * forestDensity(SEED, x, z), 5);
+      expect(foliage[i * 4 + 3]!).toBeCloseTo(1 - forestDensity(SEED, x, z), 5);
       // RGB is the palette colour for that spot, multiplied by the floor's
       // macro tint so a tuft and the ground under it agree.
       const sample = elevationSampleAt(SEED, x, z);
@@ -1089,6 +1091,10 @@ describe("createForestMeshes under NullEngine", () => {
       if (!attributes.includes("foliage")) continue;
       checked++;
       expect(kinds.has("foliage"), mesh.name).toBe(true);
+      // The understory receives no cast shadows, so the canopy's cut of the
+      // sun is the plugin's, at its constant.
+      expect(mesh.receiveShadows, mesh.name).toBe(false);
+      expect(plugin.canopySun, mesh.name).toBe(0.4);
     }
     expect(checked).toBeGreaterThan(0);
   });

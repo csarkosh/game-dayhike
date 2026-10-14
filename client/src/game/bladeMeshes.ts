@@ -116,7 +116,8 @@ type Bucket = {
   mesh: Mesh;
   /** Collected matrix data; capacity is `buf.length / 16`. */
   buf: Float32Array;
-  /** Four floats per instance (ground colour rgb + canopy shade), the
+  /** Four floats per instance (ground colour rgb + the sky's openness,
+   * `1 − canopy`), the
    * collected `foliage` attribute; capacity tracks `buf`. Every bucket wears the
    * tinting BLADES profile, so unlike the clutter shell there is no bucket
    * that leaves this one empty. */
@@ -316,7 +317,9 @@ function createTierMaterial(scene: Scene, tier: number, meshHeight: number): PBR
   mat.metallic = 0;
   mat.roughness = BLADE_ROUGHNESS;
   mat.backFaceCulling = false;
-  attachFoliage(mat, FOLIAGE_PROFILES.BLADES, meshHeight);
+  // The clumps receive cast shadows (`createClumpMesh`), so the canopy's cut
+  // of the sun is the shadow's: the plugin's sun factor binds 0 here.
+  attachFoliage(mat, FOLIAGE_PROFILES.BLADES, meshHeight, { sunShadowed: true });
   attachFoliageLight(mat);
   setFoliageBladeEdges(mat, bladeTierBands()[tier]!);
   return mat;

@@ -66,7 +66,8 @@ type Bucket = {
   mesh: Mesh;
   /** Matrix data; capacity is `buf.length / 16`. */
   buf: Float32Array;
-  /** Four floats per instance (ground colour rgb + canopy shade), the
+  /** Four floats per instance (ground colour rgb + the sky's openness,
+   * `1 − canopy`), the
    * `foliage` attribute; capacity tracks `buf`. Every bucket wears the DUFF
    * profile's tinting, so unlike the clutter shell there is no bucket that
    * leaves this one empty. */
@@ -167,7 +168,9 @@ function createTierMaterial(scene: Scene, tier: number, meshHeight: number, reac
   mat.metallic = 0;
   mat.roughness = DUFF_ROUGHNESS;
   mat.backFaceCulling = false;
-  attachFoliage(mat, FOLIAGE_PROFILES.DUFF, meshHeight);
+  // The clumps receive cast shadows (`createClumpMesh`), so the canopy's cut
+  // of the sun is the shadow's: the plugin's sun factor binds 0 here.
+  attachFoliage(mat, FOLIAGE_PROFILES.DUFF, meshHeight, { sunShadowed: true });
   attachFoliageLight(mat);
   attachWet(mat, WET_CAP.duff);
   setFoliageBladeEdges(mat, duffTierBands(reach)[tier]!);

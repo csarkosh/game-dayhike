@@ -357,3 +357,67 @@ frame to confirm everything stands still and the sound is a steady low bed.
 - Trampling memory (a camera-following flatten map).
 - The sound-dread lever, issue #15.
 - Moving shadow casters via a `ShadowDepthWrapper`, if the static-caster mismatch is ever seen.
+
+## 12. Amendment (2026-10-14): the canopy on the sky and on the sun, the root eased, the wrap a lift
+
+The ground cover read too dark under the canopy, its shadows hard and heavy:
+on the README stills at the game's opening conditions the forest's fern slope
+read a mean of 38 (sRGB, 0–255), the trailhead's tufts 61 and 68 against the
+trail at 98. Four things stacked on a card, all on the sun's light and the
+sky's alike: the wrap (§6) at three quarters of Lambert on a card facing the
+sun, the root darkening, the canopy shade on the albedo (§5, the fragment
+stage's third item), and for the blade clumps the cast shadow as well. Three of
+them change; the cast shadow does not.
+
+**The wrap is a lift.** `foliageWrapLambert` is now `clamp((N·L + wrap) /
+(1 + wrap), 0, 1)`: exactly Lambert at N·L = 1, 0.26 at N·L = 0 with
+`FOLIAGE_WRAP` 0.35, zero below −0.35. The lift stands in for the light that
+comes through a thin leaf; a card facing the sun is lit as Lambert would light
+it. §6's "energy-conserving" form, `/ (1 + wrap)²`, gave such a card 0.76 of
+the sun. `FOLIAGE_WRAP`, `FOLIAGE_BACK` and `FOLIAGE_BACK_POWER` are unchanged.
+
+**The fourth float is the openness.** `foliage.a` carries `1 − forestDensity`,
+the share of the sky open above the instance (1 in the open, and the generic
+value of a draw that writes no foliage data, which so takes no cut), not the
+shade `1 − 0.5·forestDensity`. The four writers (`clutterMeshes.ts`
+`writeFoliage`, `bladeMeshes.ts`, `duffMeshes.ts`, `forestMeshes.ts` for the
+understory) write it; nothing else about the attribute changes.
+
+**The canopy's cut is two terms, each its own constant, and none on the
+albedo.** The fragment stage's third item (`surfaceAlbedo *= vFoliage.a`) is
+gone. In its place:
+
+- The sky's: `FOLIAGE_CANOPY_SKY` 0.4, the share of the sky's light the canopy
+  takes from a card under full density, in a third injection point,
+  `CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION`
+  (`shaders/foliageSky.fragment.fx`), where the probe's diffuse
+  (`finalIrradiance`) and its reflection (`finalRadianceScaled`) are made and
+  not yet summed: both × `1 − 0.4·(1 − foliage.a)`. The trees' bark takes 0.65
+  of the sky and their crowns 0.4 (`forestLookParams.ts`); the ground under a
+  canopy sees the sky through the trunks' gaps, less than a crown does, so a
+  little under the crown's cut. The hemispheric fill is untouched.
+- The sun's: `FOLIAGE_CANOPY_SUN` 0.4, the share of the sun's light the canopy
+  takes, under full density, from a card that receives no cast shadow, in the
+  sun's own diffuse (§6's `foliageDiffuseLighting`): the wrapped term and the
+  backlight × `1 − foliageCanopySun·(1 − foliage.a)`. It stands in for the
+  shadow the trees would cast: a shadowed receiver keeps 0.45 of the sun under
+  the "bright" weather, and a card is taller than the floor and catches the
+  gaps, so it keeps 0.6. `foliageCanopySun` is a new float in the plugin's
+  uniform buffer, decided where `attachFoliage` is called
+  (`{ sunShadowed: true }`): 0 for a material whose meshes receive cast
+  shadows, which cut the sun already (the blade clumps and the duff, both
+  `receiveShadows = true`), the constant for the clutter cards and the
+  understory, which receive none. The understory's materials are not among
+  the trees' (`shadeTreeMaterial` runs on the LOD ladder alone), so they take
+  the sky at full share and the canopy cuts them once, per instance.
+
+**The root darkening eased.** `rootAO` rises by 0.15 on every ground-cover
+profile: GRASS 0.6, MEADOW 0.65, FLOWER 0.65, BUSH 0.75, UNDERSTORY 0.7,
+BLADES 0.65, REEDS 0.75, DUFF 0.75; TREE stays 1 (§5's table and the
+blade-clumps and blade-field docs' tables carry the old values).
+
+The far ground's canopy shade follows by the same arithmetic
+(`2026-10-10-far-ground-cover-design.md`, §14). The target the change was
+made for: ferns about 55–60, open tufts about 90–95, the trail unchanged at
+98, to be read on the stills; the weather is as it was, the light comes from
+the shading.

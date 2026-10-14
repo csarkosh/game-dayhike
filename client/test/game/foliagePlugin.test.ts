@@ -6,11 +6,12 @@ import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import vertexDefs from "../../src/game/shaders/foliage.vertex.fx?raw";
 import vertexWorldPos from "../../src/game/shaders/foliageWorldPos.vertex.fx?raw";
 import fragmentLights from "../../src/game/shaders/foliageLights.fragment.fx?raw";
+import fragmentSky from "../../src/game/shaders/foliageSky.fragment.fx?raw";
 import {
   attachFoliage, setFoliageWind, setFoliageEdges, setFoliageBladeEdges, FoliagePlugin, FOLIAGE_PROFILES,
   FOLIAGE_PLAYERS,
   FOLIAGE_TILT, FOLIAGE_BEND, FOLIAGE_BEND_R, FOLIAGE_SINK, FOLIAGE_CLUMP_LUMA, FOLIAGE_CLUMP_CELL,
-  FOLIAGE_PLAYER_PARKED, FOLIAGE_BLADE_SOFT,
+  FOLIAGE_PLAYER_PARKED, FOLIAGE_BLADE_SOFT, FOLIAGE_CANOPY_SKY, FOLIAGE_CANOPY_SUN,
 } from "../../src/game/foliagePlugin.js";
 import {
   WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_OMEGA_FLUTTER, WIND_K1, WIND_K2, WIND_RAGGED, WIND_RAGGED_CELL,
@@ -29,16 +30,44 @@ function glslFloat(n: number): string { return Number.isInteger(n) ? `${n}.0` : 
 describe("foliage plugin", () => {
   it("FOLIAGE_PROFILES matches the spec's table exactly", () => {
     expect(FOLIAGE_PROFILES).toEqual({
-      GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
-      MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
-      FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
-      BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
-      UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
+      GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.6, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
+      MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.65, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
+      FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.65, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
+      BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.75, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
+      UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.7, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
       TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false, normalUp: 0 },
-      BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: true, normalUp: 1.0 },
-      REEDS: { amp: 0.5, groundTint: 0, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 1.0 },
-      DUFF: { amp: 0, groundTint: 0.5, rootAO: 0.6, normalRoot: 0, tilt: false, bend: false, blades: true, normalUp: 0.5 },
+      BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.65, normalRoot: 0, tilt: true, bend: true, blades: true, normalUp: 1.0 },
+      REEDS: { amp: 0.5, groundTint: 0, rootAO: 0.75, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 1.0 },
+      DUFF: { amp: 0, groundTint: 0.5, rootAO: 0.75, normalRoot: 0, tilt: false, bend: false, blades: true, normalUp: 0.5 },
     });
+  });
+
+  it("binds the sun's canopy factor: the constant by default, 0 for a material whose meshes receive shadows", () => {
+    expect(FOLIAGE_CANOPY_SUN).toBe(0.4);
+    const writesOf = (plugin: FoliagePlugin): Record<string, number[]> => {
+      const writes: Record<string, number[]> = {};
+      const ub = {
+        updateFloat: (n: string, v: number) => { writes[n] = [v]; },
+        updateFloat2: (n: string, a: number, b: number) => { writes[n] = [a, b]; },
+        updateFloat3: (n: string, a: number, b: number, c: number) => { writes[n] = [a, b, c]; },
+        updateFloat4: (n: string, a: number, b: number, c: number, d: number) => { writes[n] = [a, b, c, d]; },
+        updateFloatArray: (n: string, v: Float32Array) => { writes[n] = Array.from(v); },
+      };
+      plugin.bindForSubMesh(ub as never, scene, undefined as never, undefined as never);
+      return writes;
+    };
+    const open = new PBRMaterial("m-canopy-open", scene);
+    attachFoliage(open, FOLIAGE_PROFILES.UNDERSTORY, 0.8);
+    const openPlugin = open.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    expect(openPlugin.canopySun).toBe(0.4);
+    expect(writesOf(openPlugin).foliageCanopySun).toEqual([0.4]);
+    const shadowed = new PBRMaterial("m-canopy-shadowed", scene);
+    attachFoliage(shadowed, FOLIAGE_PROFILES.BLADES, 0.5, { sunShadowed: true });
+    const shadowedPlugin = shadowed.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    expect(shadowedPlugin.canopySun).toBe(0);
+    expect(writesOf(shadowedPlugin).foliageCanopySun).toEqual([0]);
+    // The root darkening rides the same bind, at the profile's eased value.
+    expect(writesOf(shadowedPlugin).foliageRootAO).toEqual([0.65]);
   });
 
   it("binds the DUFF profile's amp as a zero wind uniform, not merely a zero constant", () => {
@@ -76,15 +105,40 @@ describe("foliage plugin", () => {
     expect(active).toContain(plugin);
   });
 
-  it("injects at the world-position and before-lights hooks only", () => {
+  it("injects at the world-position, before-lights and final-composition hooks only", () => {
     const mat = new PBRMaterial("m2", scene);
     attachFoliage(mat, FOLIAGE_PROFILES.GRASS, 0.4);
     const plugin = mat.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
     const v = plugin.getCustomCode("vertex")!;
     expect(Object.keys(v).sort()).toEqual(["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_WORLDPOS"]);
     const f = plugin.getCustomCode("fragment")!;
-    expect(Object.keys(f).sort()).toEqual(["CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_DEFINITIONS"]);
+    expect(Object.keys(f).sort()).toEqual([
+      "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_DEFINITIONS",
+    ]);
+    expect(f.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION).toBe(fragmentSky);
     expect(v.CUSTOM_VERTEX_UPDATE_POSITION).toBeUndefined();
+  });
+
+  it("takes the canopy's share of the sky at the composition hook, from the openness, and none on the albedo", () => {
+    expect(FOLIAGE_CANOPY_SKY).toBe(0.4);
+    expect(fragmentSky).toContain(`const float FOLIAGE_CANOPY_SKY = ${glslFloat(FOLIAGE_CANOPY_SKY)};`);
+    expect(fragmentSky).toContain("float fSky = 1.0 - FOLIAGE_CANOPY_SKY * (1.0 - vFoliage.a);");
+    expect(fragmentSky).toContain("finalIrradiance *= fSky;");
+    expect(fragmentSky).toContain("finalRadianceScaled *= fSky;");
+    // Both terms exist only with a reflection probe, and the varying only
+    // under the plugin's define: the block sits inside both gates.
+    const sky = fragmentSky.indexOf("float fSky");
+    const before = fragmentSky.slice(0, sky);
+    expect(before.lastIndexOf("#ifdef FOLIAGE\n")).toBeGreaterThan(-1);
+    expect(before.lastIndexOf("#ifdef REFLECTION")).toBeGreaterThan(before.lastIndexOf("#ifdef FOLIAGE\n"));
+    expect(before.slice(before.lastIndexOf("#ifdef FOLIAGE\n"))).not.toContain("#endif");
+    expect(fragmentSky).not.toContain("surfaceAlbedo");
+    expect(fragmentSky).not.toContain("discard");
+    // The albedo no longer carries the canopy: the before-lights block keeps
+    // the root darkening and the tint and reads the fourth float nowhere
+    // outside a comment.
+    expect(fragmentLights.replace(/\/\/.*$/gm, "")).not.toContain("vFoliage.a");
+    expect(fragmentLights).toContain("surfaceAlbedo *= mix(foliageRootAO, 1.0, vFoliageH);");
   });
 
   it("sets FOLIAGE always and FOLIAGE_TINT only for a tinting profile", () => {
@@ -162,7 +216,7 @@ describe("foliage plugin", () => {
     const names = u.ubo!.map((x: { name: string }) => x.name);
     expect(names).toEqual(expect.arrayContaining([
       "windDir", "windLean", "windGust", "windFlutter", "windTime", "windPlayers", "windEye",
-      "foliageAmp", "foliageHeight", "foliageTint", "foliageRootAO", "foliageNormalRoot", "foliageNormalUp", "foliageFlags", "foliageEdges",
+      "foliageAmp", "foliageHeight", "foliageTint", "foliageRootAO", "foliageCanopySun", "foliageNormalRoot", "foliageNormalUp", "foliageFlags", "foliageEdges",
       "foliageBladeEdges",
     ]));
     const players = u.ubo!.find((x: { name: string }) => x.name === "windPlayers") as { arraySize?: number };
@@ -170,6 +224,7 @@ describe("foliage plugin", () => {
     expect(u.vertex).toContain("uniform vec3 windPlayers[5];");
     expect(u.vertex).toContain("uniform float foliageNormalUp;");
     expect(u.vertex).toContain("uniform vec4 foliageBladeEdges;");
+    expect(u.fragment).toContain("uniform float foliageCanopySun;");
   });
 
   it("binds the blade edges a shell sets, four numbers, and a no-op pair by default", () => {
@@ -330,10 +385,10 @@ describe("compiles on both shader paths (the sampler/UBO trap, pinned even with 
       try {
         const grass = await compiledSources(s, "GRASS");
         for (const name of ["windDir", "windLean", "windGust", "windTime", "windPlayers", "foliageEdges", "foliageNormalUp"]) expect(grass.vertex).toContain(name);
-        for (const name of ["foliageTint", "foliageRootAO", "foliageNormalRoot", "vFoliageH"]) expect(grass.fragment).toContain(name);
+        for (const name of ["foliageTint", "foliageRootAO", "foliageCanopySun", "foliageNormalRoot", "vFoliageH", "fSky"]) expect(grass.fragment).toContain(name);
         const tree = await compiledSources(s, "TREE");
         for (const name of ["windDir", "windLean", "windGust", "windTime", "windPlayers", "foliageEdges"]) expect(tree.vertex).toContain(name);
-        for (const name of ["foliageTint", "foliageRootAO", "foliageNormalRoot", "vFoliageH"]) expect(tree.fragment).toContain(name);
+        for (const name of ["foliageTint", "foliageRootAO", "foliageCanopySun", "foliageNormalRoot", "vFoliageH", "fSky"]) expect(tree.fragment).toContain(name);
         const blades = await compiledSources(s, "BLADES");
         expect(blades.vertex).toContain("bAlive");
         expect(blades.vertex).toContain("blade");
