@@ -83,9 +83,10 @@ whatever order the lights were made in. `FoliageLightPlugin` keys its call on
 the light's directional define, `#if defined(FOLIAGE) && defined(DIRLIGHT$2)`,
 as the far ground's sun line does (§8.2), so the call compiles into the sun's
 line, the scene's only directional light, and every other light, the headlamps
-included, keeps Babylon's own diffuse. A card with the sun behind it takes the
-wrap of `FOLIAGE_WRAP` 0.35 on N·L instead of going near black, and the
-backlight toward that sun. The measurements below, the fit of §7 and the
+included, keeps Babylon's own diffuse. Near the terminator a card takes the
+wrap of `FOLIAGE_WRAP` 0.35 on N·L, which reaches 0 at N·L = −0.35; past that,
+with the sun behind the card and the eye in front of it, only the backlight
+lifts it, toward that sun. The measurements below, the fit of §7 and the
 statements of §3.3 and §6.2 that point here were made against the cards as
 they were lit before, with the sun through Babylon's own diffuse; the far
 ground's sun factor and colour were fitted to those cards, so the hand-off

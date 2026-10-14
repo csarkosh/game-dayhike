@@ -116,7 +116,7 @@ describe("createLighting", () => {
     lighting.dispose();
   });
 
-  it("keeps the sun light 0 and the fill light 1: the dome adds no light", () => {
+  it("adds no light for the dome: the lighting makes only the sun and the fill", () => {
     const s = scene();
     const lighting = light(s);
     expect(s.lights.map((l) => l.name)).toEqual(["sun", "fill"]);

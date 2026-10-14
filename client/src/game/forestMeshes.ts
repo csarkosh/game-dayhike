@@ -335,6 +335,10 @@ function prepBucketMesh(mesh: Mesh): void {
   mesh.setEnabled(false);
 }
 
+/** `PBRMaterial`'s own `metallicF0Factor`, which a glTF material keeps when
+ * its file carries no `KHR_materials_specular` (`shadeTreeMaterial`). */
+const BABYLON_SPECULAR_WEIGHT = 1;
+
 /** A tree's, a sapling's or a snag's material under its share of the sky
  * (`forestLookParams.ts`): the probe of the open sky lights every material as
  * if nothing stood over it, and the canopy hides most of that sky from a
@@ -342,13 +346,28 @@ function prepBucketMesh(mesh: Mesh): void {
  * as the wet cap tells them (`needAlphaTesting()`: the crown's cards
  * alpha-test, the bark is opaque). The bark's specular weight goes to
  * `TREE_SPECULAR_WEIGHT` too, so a bark that ships without one does not rim
- * its silhouette with the sky; a crown keeps the weight its file carries.
+ * its silhouette with the sky. A crown keeps the weight its file carries,
+ * unless the file gives it none, when it takes `TREE_SPECULAR_WEIGHT` as well
+ * (the alder's crown ships none, and at Babylon's 1 its cards and their bake
+ * rimmed with the sky).
+ *
+ * "Gives it none" is read from the loaded value: Babylon's glTF loader
+ * writes `metallicF0Factor` only from `KHR_materials_specular` and otherwise
+ * leaves the material's default of 1, and it records no extension list on
+ * the material (its metadata holds only JSON pointers, and extras when the
+ * extras extension is on), so a weight of exactly 1 here is a crown shipped
+ * without one. A file that wrote a weight of 1 on purpose would read the
+ * same; no tree file does, and 1 is the rim this avoids. The rule holds when
+ * a call repeats on one material, as it does across the LODs that share it:
+ * the second call sees `TREE_SPECULAR_WEIGHT`, not 1.
+ *
  * Plain values, which a material clone copies, so a clone made after this
  * call (the bake's, LOD2's) carries them. */
 function shadeTreeMaterial(material: Material): void {
   if (!(material instanceof PBRMaterial)) return;
   if (material.needAlphaTesting()) {
     material.environmentIntensity = CROWN_SKY;
+    if (material.metallicF0Factor === BABYLON_SPECULAR_WEIGHT) material.metallicF0Factor = TREE_SPECULAR_WEIGHT;
   } else {
     material.environmentIntensity = BARK_SKY;
     material.metallicF0Factor = TREE_SPECULAR_WEIGHT;
@@ -1159,8 +1178,9 @@ export function createForestMeshes(
     mat.backFaceCulling = false;
     mat.metallic = 0;
     mat.roughness = 1;
-    // Its share of the live sky, over a bake that already carries the near
-    // trees' shares (`adoptSpecies`), and the bark's specular weight: a plane
+    // The live sky at full share (`IMPOSTOR_SKY`): the canopy's cut is in
+    // the baked colour already (`adoptSpecies`), and a share below 1 here
+    // would cut the far trees twice. And the bark's specular weight: a plane
     // made in code takes Babylon's weight of 1, whose grazing reflection would
     // rim every billboard with the sky.
     mat.environmentIntensity = IMPOSTOR_SKY;
@@ -1217,15 +1237,16 @@ export function createForestMeshes(
     // the meshes as loaded — enabled and free of thin instances. Impostor
     // texture from LOD1 — detailed enough for a 256² bake, cheaper than LOD0.
     //
-    // The sky's share and the bark's specular weight are set on every LOD's
+    // The sky's share and the specular weights are set on every LOD's
     // material FIRST, before the bake clones LOD1's materials, so the bake
-    // carries them: the billboard's colour is then LOD1 lit as the near trees
-    // are, the canopy's cut and the bark's weaker rim already in it, and the
-    // billboard's own `IMPOSTOR_SKY` governs only how the live sky relights
-    // that colour. A bake taken at the full open sky would hand the near trees
-    // over at the seam to paler, cooler, sky-rimmed billboards. The LOD2 split
-    // below clones after this too, so the lake's mirror, which draws LOD2 on
-    // its own material, sees the same trees.
+    // carries them: the billboard's colour is then LOD1 lit under the bark's
+    // and the crown's shares, the canopy's cut and the weaker rim already in
+    // the baked colour. The billboard lights that colour again with the live
+    // sky, so it takes the sky at full share (`IMPOSTOR_SKY`) and the cut is
+    // not applied twice. A bake taken at the full open sky would hand the near
+    // trees over at the seam to paler, cooler, sky-rimmed billboards. The LOD2
+    // split below clones after this too, so the lake's mirror, which draws
+    // LOD2 on its own material, sees the same trees.
     for (const mesh of lods.flat()) {
       if (mesh.material) shadeTreeMaterial(mesh.material);
     }

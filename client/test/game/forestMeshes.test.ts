@@ -845,13 +845,14 @@ describe("createForestMeshes under NullEngine", () => {
     expect(withMaterial.filter((m) => m.name.startsWith("forest_impostor_")).map((m) => wetCapOf(m.material!))).toEqual([0.3, 0.3, 0.3, 0.3, 0.3]);
   });
 
-  it("gives bark, crown and billboard their share of the sky, and bark and billboards the specular weight, crowns keeping theirs", () => {
+  it("gives bark, crown and billboard their share of the sky, and the specular weight to bark, billboards and crowns that ship none", () => {
     const { scene, forest } = build();
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
     // Swept like the wet caps above, by what alpha-tests: the stub pair's
     // canopy is MASK, its bark opaque, as the shipped tree files are. Every
     // stub material starts at Babylon's defaults (a share of 1, a weight of 1),
-    // as a bark shipped without a specular weight does.
+    // as a material shipped without a specular weight does, so the crowns take
+    // the bark's weight too.
     const withMaterial = scene.meshes.filter((m) => m.material !== null);
     let barks = 0;
     let crowns = 0;
@@ -860,7 +861,8 @@ describe("createForestMeshes under NullEngine", () => {
       const mat = mesh.material as PBRMaterial;
       if (mesh.name.startsWith("forest_impostor_")) {
         billboards++;
-        expect(mat.environmentIntensity, mesh.name).toBe(0.6);
+        // The full share: the canopy's cut is in the baked colour.
+        expect(mat.environmentIntensity, mesh.name).toBe(1);
         expect(mat.metallicF0Factor, mesh.name).toBe(0.04);
       } else if (mesh.name === "deadwood") {
         // The snag and the logs: bark.
@@ -872,7 +874,7 @@ describe("createForestMeshes under NullEngine", () => {
       } else if (mat.needAlphaTesting()) {
         crowns++;
         expect(mat.environmentIntensity, mesh.name).toBe(0.6);
-        expect(mat.metallicF0Factor, mesh.name).toBe(1);
+        expect(mat.metallicF0Factor, mesh.name).toBe(0.04);
       } else {
         barks++;
         expect(mat.environmentIntensity, mesh.name).toBe(0.35);
@@ -899,25 +901,27 @@ describe("createForestMeshes under NullEngine", () => {
     });
     expect(seen).toEqual([
       { name: "s0_lod1_bark", sky: 0.35, weight: 0.04 },
-      { name: "s0_lod1_canopy", sky: 0.6, weight: 1 },
+      { name: "s0_lod1_canopy", sky: 0.6, weight: 0.04 },
       { name: "s1_lod1_bark", sky: 0.35, weight: 0.04 },
-      { name: "s1_lod1_canopy", sky: 0.6, weight: 1 },
+      { name: "s1_lod1_canopy", sky: 0.6, weight: 0.04 },
       { name: "sap0_lod1_bark", sky: 0.35, weight: 0.04 },
-      { name: "sap0_lod1_canopy", sky: 0.6, weight: 1 },
+      { name: "sap0_lod1_canopy", sky: 0.6, weight: 0.04 },
       { name: "sap1_lod1_bark", sky: 0.35, weight: 0.04 },
-      { name: "sap1_lod1_canopy", sky: 0.6, weight: 1 },
+      { name: "sap1_lod1_canopy", sky: 0.6, weight: 0.04 },
       { name: "deadwood", sky: 0.35, weight: 0.04 },
     ]);
   });
 
-  it("carries the trees' share onto LOD2's split material, which the lake's mirror draws", () => {
+  it("carries the trees' share onto LOD2's split material, which the lake's mirror draws, a crown's shipped weight kept", () => {
     // The shipped files share one material per primitive across the LODs
     // (see the split test below); LOD2's clone is made after the share is set.
+    // The crown ships a weight, as the conifers' crowns do, so it keeps it.
     const engine = new NullEngine();
     engines.push(engine);
     const scene = new Scene(engine);
     const crown = new PBRMaterial("shared_crown", scene);
     crown.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
+    crown.metallicF0Factor = 0.02;
     const bark = new PBRMaterial("shared_bark", scene);
     const lod = (i: number): Mesh => {
       const b = MeshBuilder.CreateBox(`shared_lod${i}_bark`, { size: 1 }, scene);
@@ -937,13 +941,14 @@ describe("createForestMeshes under NullEngine", () => {
     const lod2 = forest.lod2Meshes.map((m) => m.material as PBRMaterial);
     expect(lod2.map((m) => m.name)).toEqual(["shared_bark_lod2", "shared_crown_lod2"]);
     expect(lod2.map((m) => m.environmentIntensity)).toEqual([0.35, 0.6]);
-    expect(lod2.map((m) => m.metallicF0Factor)).toEqual([0.04, 1]);
+    expect(lod2.map((m) => m.metallicF0Factor)).toEqual([0.04, 0.02]);
+    expect(crown.metallicF0Factor).toBe(0.02);
   });
 
-  it("brings the alder's bark, which ships no specular weight, to the bark's, and leaves its crown's alone", async () => {
+  it("brings the alder's bark and crown, which ship no specular weight, to the bark's", async () => {
     // The shipped model through the glTF loader, as production loads it: its
-    // bark (opaque) carries no specular extension, so it loads at Babylon's
-    // weight of 1.
+    // bark (opaque) and its crown (MASK) carry no specular extension, so both
+    // load at Babylon's weight of 1.
     const engine = new NullEngine();
     engines.push(engine);
     const scene = new Scene(engine);
@@ -978,7 +983,7 @@ describe("createForestMeshes under NullEngine", () => {
     expect(barkMat.environmentIntensity).toBe(0.35);
     expect(barkMat.metallicF0Factor).toBe(0.04);
     expect(crownMat.environmentIntensity).toBe(0.6);
-    expect(crownMat.metallicF0Factor).toBe(1);
+    expect(crownMat.metallicF0Factor).toBe(0.04);
   }, timeLimit(60000));
 
   it("attaches the foliage plugin to LOD0 and LOD1 of giants and saplings, never LOD2 or the impostor", () => {

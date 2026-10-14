@@ -56,7 +56,7 @@ describe("foliage light plugin", () => {
     `info.diffuse=computeDiffuseLighting(preInfo,diffuse${n}.rgb);\n` +
     "#endif";
 
-  it("in the game's light order the sun is light 1, the only directional light, and the injection keys on that", () => {
+  it("in the game's light order the sun is light 1, the only directional light, and each line's block keys on its own light", () => {
     const s = new Scene(new NullEngine());
     try {
       gameLights(s);
@@ -69,9 +69,10 @@ describe("foliage light plugin", () => {
       const defines: Record<string, boolean> = {};
       s.lights.forEach((light, n) => light.prepareLightSpecificDefines(defines, n));
       expect(Object.keys(defines).filter((name) => defines[name]).sort()).toEqual(["DIRLIGHT1", "HEMILIGHT2", "SPOTLIGHT0"]);
-      // The light include unrolled for lights 0 and 1, then injected, as
-      // Babylon orders the two: the same block on each line, keyed on that
-      // light's own directional define, so the call is the sun's alone.
+      // The light include unrolled for lights 0 and 1 in one source, then
+      // injected, as Babylon orders the two: each line's block keys on its
+      // own light's digit, never the other's, so the call compiles into the
+      // sun's line alone (the compiled tests below resolve it).
       const include = ShaderStore.IncludesShadersStore["lightFragment"] as string;
       const code = (() => {
         const mat = new PBRMaterial("order", s);
@@ -79,12 +80,11 @@ describe("foliage light plugin", () => {
         attachFoliageLight(mat);
         return mat.pluginManager!.getPlugin("FoliageLight")!.getCustomCode("fragment")![FOLIAGE_LIGHT_INJECTION_POINT]!;
       })();
-      for (const [n, sun] of [[0, false], [1, true]] as const) {
-        const injected = include.replaceAll("{X}", String(n)).replace(new RegExp(FOLIAGE_LIGHT_INJECTION_POINT.slice(1), "g"), code);
-        expect(injected.split(block(n)).length - 1, `light ${n}`).toBe(1);
-        expect(injected.split("foliageDiffuseLighting(").length - 1, `light ${n}`).toBe(1);
-        expect(defines[`DIRLIGHT${n}`] === true, `light ${n}`).toBe(sun);
-      }
+      const unrolled = include.replaceAll("{X}", "0") + include.replaceAll("{X}", "1");
+      const injected = unrolled.replace(new RegExp(FOLIAGE_LIGHT_INJECTION_POINT.slice(1), "g"), code);
+      expect(injected.split(block(0)).length - 1).toBe(1);
+      expect(injected.split(block(1)).length - 1).toBe(1);
+      expect(injected.split("#if defined(FOLIAGE) && defined(DIRLIGHT").length - 1).toBe(2);
     } finally {
       s.getEngine().dispose();
     }
@@ -112,6 +112,50 @@ describe("foliage light plugin", () => {
       expect(source).toContain("\ninfo.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);");
       expect(source).toContain("\ninfo.diffuse=foliageDiffuseLighting(preInfo,diffuse1.rgb,vFoliageH,viewDirectionW);");
       expect(source.split("=foliageDiffuseLighting(").length - 1).toBe(1);
+    } finally {
+      s.dispose();
+      e.dispose();
+    }
+  }, timeLimit(10_000));
+
+  it("compiled without the FOLIAGE define but with the injection present, every light keeps Babylon's own diffuse", async () => {
+    // The late reprocess the guard is for (`foliageLightPlugin.ts`): an
+    // effect whose defines lack FOLIAGE, processed while the FoliageLight
+    // injection is on the material. A real compile cannot reach it with the
+    // Foliage plugin as shipped, which always sets FOLIAGE, so this material's
+    // Foliage plugin is made to leave its defines off: the effect then goes
+    // through Babylon's WebGPU processing with the injection and without the
+    // define, as the reprocessed effect does.
+    const e = webgpuProcessingEngine();
+    const s = new Scene(e);
+    try {
+      gameLights(s);
+      const mat = new PBRMaterial("unguarded", s);
+      attachFoliage(mat, FOLIAGE_PROFILES.GRASS, 1);
+      attachFoliageLight(mat);
+      const foliage = mat.pluginManager!.getPlugin("Foliage")!;
+      foliage.prepareDefines = (defines) => {
+        defines.FOLIAGE = false;
+        defines.FOLIAGE_TINT = false;
+        defines.FOLIAGE_BLADES = false;
+      };
+      const box = CreateBox("unguarded-box", {}, s);
+      box.material = mat;
+      probeReady(s);
+      const effect = await drawnEffect(box);
+      const source = effect._fragmentSourceCode;
+      const defines = (effect as unknown as { defines: string }).defines;
+      expect(defines).not.toContain("#define FOLIAGE\n");
+      expect(defines).toContain("#define SPOTLIGHT0\n");
+      expect(defines).toContain("#define DIRLIGHT1\n");
+      // The injection reached this effect: its definitions are in the source.
+      expect(source).toContain("vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float h, vec3 viewDir) {");
+      expect(source).toContain("\ninfo.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);");
+      expect(source).toContain("\ninfo.diffuse=computeDiffuseLighting(preInfo,diffuse1.rgb);");
+      expect(source.split("=foliageDiffuseLighting(").length - 1).toBe(0);
+      // Neither declared nor read outside a comment: the Foliage plugin's
+      // own lines are off with its define, and nothing else asks for it.
+      expect(source.replace(/\/\/.*$/gm, "")).not.toContain("vFoliageH");
     } finally {
       s.dispose();
       e.dispose();
