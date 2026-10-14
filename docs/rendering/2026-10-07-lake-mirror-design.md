@@ -304,6 +304,15 @@ Where `paw > 0` the two octaves run at full amplitude and σ is 4°; where it is
 wind's 0..1 speed (the first at 0.45 m/s and the second at 0.12 m/s at a
 wind of 1), not only along its direction; each keeps its tile.
 
+Amended 2026-10-13: silenced outside the paws, the surface between them read
+frozen beside the drifting patches. The octaves now run outside the paws at a
+quarter of their amplitude (`OCTAVE_FLOOR`) scaled by `1 − calmShare`, so the
+amplitude is `max(smoothstep(0, 1, paw), 0.25 · (1 − calmShare))`: whole in a
+paw, faint between the paws by the share of the lake that is not glass, and 0
+only when the lake is all glass. The floor is the lake's, not the pixel's: in
+a preset whose daytime share is 0.3 the glass carries 0.175 of the octaves and
+its shore image softens by that much, a faint life on it rather than a sheet.
+
 ### 7.2 Rain rings
 
 Within 8 m of the eye, an analytic ring a cell of an 18 cm hashed grid, one
@@ -428,7 +437,8 @@ cost showed.
   0.3) may be paws wherever it is not glass, a murky lowland one (0.1) over
   a third of that.
 - **§7.1: the octaves and the skin.** The paw mask scales both octaves, 0 on
-  glass. Both travel downwind at a rate in proportion to the wind's 0..1
+  glass (amended 2026-10-13: over a floor of `OCTAVE_FLOOR · (1 − share)`,
+  §7.1). Both travel downwind at a rate in proportion to the wind's 0..1
   speed, the first (its 24 m tile) at 0.45 m/s and the second (its 3 m
   tile) at 0.12 m/s at a wind of 1, not at U10. The duckweed skin drifts
   with the wind's speed too, 0.04 m/s at a wind of 1. The lakes' integral of

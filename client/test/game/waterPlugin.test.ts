@@ -510,7 +510,7 @@ describe("the lake's ripples in the water plugin", () => {
     }
   });
 
-  it("assembles the lake's normal from the paws: the octaves at the mask's amplitude, glass where it is 0, then the rings", () => {
+  it("assembles the lake's normal from the paws: the octaves at the mask's amplitude over the floor the glass share leaves, then the rings", () => {
     const l = fx("waterLights.fragment.fx");
     // the normal's gate: the sea's branch, then the lake's
     const branch = l.indexOf("#else", l.indexOf("float wOceanVar ="));
@@ -519,7 +519,7 @@ describe("the lake's ripples in the water plugin", () => {
       "float wPaw = 0.0;",
       "if (waterPawCover > 0.0) {",
       "  wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));",
-      "}\nfloat wOctave = octaveAmplitude(wPaw);",
+      "}\nfloat wOctave = octaveAmplitude(wPaw, waterCalmShare);",
       "normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));",
       "if (waterOctaves > 1.5) {",
       "normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y) * wOctave);",

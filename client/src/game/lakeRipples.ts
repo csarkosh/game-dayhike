@@ -25,6 +25,9 @@ export const PAW_LIFE_S = 6;
 /** The share of the paws' field left where no gust blows: a paw is likelier
  * where a gust crosses, and a lake rough all over (cover 1) is rough whatever the gust. */
 export const PAW_GUST_FLOOR = 0.5;
+/** The octaves' amplitude outside the paws where the lake is not glass: a faint
+ * bump of its own, so the surface between the paws never reads frozen. */
+export const OCTAVE_FLOOR = 0.25;
 /**
  * The paws' threshold on the gust-raised field at cover 0, 1/8, 2/8 … 1: the
  * field's values crowd about the middle and the floor halves it where no gust
@@ -174,9 +177,10 @@ export function lakePawThreshold(cover: number): number {
   return theta;
 }
 
-/** The octaves' amplitude under the mask: 1 in a paw, 0 on glass, smooth over the edge. */
-export function octaveAmplitude(paw: number): number {
-  return smoothstep(0, 1, paw);
+/** The octaves' amplitude under the mask at the lake's glass share `calm` (0 to 1): 1 in a paw,
+ * smooth over its edge, and outside the paws OCTAVE_FLOOR · (1 − calm), so 0 on a lake all glass. */
+export function octaveAmplitude(paw: number, calm: number): number {
+  return Math.max(smoothstep(0, 1, paw), OCTAVE_FLOOR * (1 - calm));
 }
 
 /** Live rings a square metre at the weather's rain (0 to 1, LAKE_RAIN_MM_H mm/h at 1): LAKE_RINGS_PER_M2, linear between. */

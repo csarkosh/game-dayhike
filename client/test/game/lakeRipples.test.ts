@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR, PAW_COVER_TABLE,
+  PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR, PAW_COVER_TABLE, OCTAVE_FLOOR,
   LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,
   LAKE_RINGS_PER_M2, LAKE_RAIN_MM_H, LAKE_RING_FOLD, LAKE_WIND_TURN,
   lakeGust, lakePawDrift, lakePaw, lakePawThreshold, octaveAmplitude, lakeLiveRings, lakeRingHeight, lakeRingDh, lakeRingHash, lakeRainSlope,
@@ -74,6 +74,7 @@ function singleFieldPaw(x: number, z: number, t: number, dirX: number, dirZ: num
 describe("the lake's ripples' constants", () => {
   it("are the design's", () => {
     expect([PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR]).toEqual([10, 1.5, 0.5, 6, 0.5]);
+    expect(OCTAVE_FLOOR).toBe(0.25);
     expect(PAW_COVER_TABLE).toEqual([1, 0.521, 0.404, 0.343, 0.294, 0.246, 0.198, 0.144, 0]);
     expect([LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP])
       .toEqual([8, 2, 0.18, 0.18, 0.03, 0.3, 0.004]);
@@ -86,7 +87,7 @@ describe("the lake's ripples' constants", () => {
 
   it("are every const float of the GLSL, in lockstep with lakeRipples.ts and windParams.ts", () => {
     const mirrored: Record<string, number> = {
-      PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR,
+      PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR, OCTAVE_FLOOR,
       ...Object.fromEntries(PAW_COVER_TABLE.map((knot, i) => [`PAW_COVER_${i}`, knot])),
       LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,
       LAKE_RINGS_0: LAKE_RINGS_PER_M2[0], LAKE_RINGS_1: LAKE_RINGS_PER_M2[1], LAKE_RINGS_2: LAKE_RINGS_PER_M2[2],
@@ -107,7 +108,7 @@ describe("the lake's ripples' constants", () => {
       "vec2 lakePawDrift(vec2 dir, float span)",
       "float lakePawThreshold(float cover)",
       "float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust)",
-      "float octaveAmplitude(float paw)",
+      "float octaveAmplitude(float paw, float calm)",
       "float lakeLiveRings(float rate)",
       "float lakeRingDh(float r, float age)",
       "vec2 lakeRingHash(vec2 p)",
@@ -295,11 +296,20 @@ describe("the cat's-paws", () => {
     expect(singleFieldPaw(-18, 96, 299, DX, DZ, 0.5, 1)).toBeLessThan(1 - 1e-6);
   });
 
-  it("silence the octaves on glass and run them whole in a paw", () => {
-    expect(octaveAmplitude(0)).toBe(0);
-    expect(octaveAmplitude(0.25)).toBe(0.15625);
-    expect(octaveAmplitude(0.5)).toBe(0.5);
-    expect(octaveAmplitude(1)).toBe(1);
+  it("run the octaves whole in a paw, at the floor outside one where the lake is not glass, and silence them on glass", () => {
+    // in a paw: whole, whatever the calm
+    expect(octaveAmplitude(1, 0)).toBe(1);
+    expect(octaveAmplitude(1, 0.5)).toBe(1);
+    expect(octaveAmplitude(1, 1)).toBe(1);
+    // outside a paw on glass: silent
+    expect(octaveAmplitude(0, 1)).toBe(0);
+    // outside a paw on a lake with no glass: the floor
+    expect(octaveAmplitude(0, 0)).toBe(0.25);
+    // between: the paw's edge above the floor, which the glass halves
+    expect(octaveAmplitude(0.5, 0.5)).toBe(0.5);
+    expect(octaveAmplitude(0, 0.5)).toBe(0.125);
+    expect(octaveAmplitude(0.25, 1)).toBe(0.15625);
+    expect(octaveAmplitude(0.25, 0)).toBe(0.25);
   });
 });
 

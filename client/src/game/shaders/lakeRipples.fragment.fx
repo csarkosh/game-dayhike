@@ -1,12 +1,13 @@
 // The lake's ripples as two states, spliced into the water plugin's fragment
-// definitions after water.fragment.fx: the cat's-paw mask that switches the
-// surface between glass and the rippled octaves, and the rain's rings near
-// the eye, then the lake's second octave. Every function but the octave,
+// definitions after water.fragment.fx: the cat's-paw mask that lifts the
+// rippled octaves from a faint floor, silent on a lake all glass, to their
+// whole amplitude, and the rain's rings near the eye, then the lake's second
+// octave. Every function but the octave,
 // which samples PBR's bump, is a pure function of its arguments with a twin
 // of the same name in lakeRipples.ts, and every constant mirrors
 // lakeRipples.ts or windParams.ts, which a lockstep test holds equal.
-// Branches are chosen by step, mix, clamp and smoothstep, never by a test on
-// a varying.
+// Branches are chosen by step, mix, clamp, max and smoothstep, never by a
+// test on a varying.
 //
 // COMMENT RULES: never put a semicolon inside a trailing comment on a code
 // line, and never spell a hashed preprocessor keyword in comment prose. The
@@ -16,6 +17,8 @@ const float PAW_SPEED = 1.5;
 const float PAW_EDGE_M = 0.5;
 const float PAW_LIFE_S = 6.0;
 const float PAW_GUST_FLOOR = 0.5;
+// The octaves' amplitude outside the paws on a lake with no glass.
+const float OCTAVE_FLOOR = 0.25;
 // The paws' threshold at cover 0, 1/8, 2/8 and on to 1, measured so the
 // paws cover about the cover under the real gusts (PAW_COVER_TABLE).
 const float PAW_COVER_0 = 1.0;
@@ -138,9 +141,11 @@ float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust) {
   return clamp((f.x - lakePawThreshold(cover)) / (slope * PAW_EDGE_M), 0.0, 1.0);
 }
 
-// The octaves' amplitude under the mask: 1 in a paw, 0 on glass, smooth over the edge.
-float octaveAmplitude(float paw) {
-  return smoothstep(0.0, 1.0, paw);
+// The octaves' amplitude under the mask at the lake's glass share calm: 1 in
+// a paw, smooth over its edge, and outside the paws OCTAVE_FLOOR times
+// (1 - calm), 0 on a lake all glass.
+float octaveAmplitude(float paw, float calm) {
+  return max(smoothstep(0.0, 1.0, paw), OCTAVE_FLOOR * (1.0 - calm));
 }
 
 // Live rings a square metre at the weather's rain, LAKE_RAIN_MM_H mm/h at 1:
