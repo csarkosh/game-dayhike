@@ -35,8 +35,10 @@ export const COVER_ALBEDO_TARGET = 0.0801;
 /** The ground cover's one green, linear: the main tuft's own colour (its
  * texture's mean, `COVER_ALBEDO_RGB` `clutter.grass_a`, (0.1001, 0.0989,
  * 0.0297), Y 0.0942) at 0.85 of its luminance, so the tufts and the meadow
- * keep their colour, a little darker, and the ferns, the bushes and the pale
- * tuft take it. The green every green card's mean is brought to, and the
+ * keep their colour, a little darker, the ferns take it, the bushes take it
+ * but for their blue, held at `COVER_TINT_MIN` a little over it, and the
+ * pale tuft lands near it, not on it: its gain is clamped at `COVER_TINT_MIN`
+ * on every channel. The green every green card's mean is brought to, and the
  * colour the cards' contrast compresses toward (`FOLIAGE_CARD_GREEN` in
  * `shaders/foliage.fragment.fx`, pinned to this at four decimals). */
 export const COVER_GREEN: Rgb = { r: 0.0851, g: 0.0841, b: 0.0252 };
@@ -52,7 +54,13 @@ export const FOLIAGE_ALBEDO_FLOOR: Rgb = { r: 0.0532, g: 0.0525, b: 0.0158 };
  * shadow, 0 to 1: the shadow generator's darkness applies to every receiver,
  * and on the cover the blades' and cards' own shade stacks on top of it, so
  * the cover's shadows are held above this where the floor's keep the
- * weather's darkness (`foliageLightPlugin.ts`). */
+ * weather's darkness (`foliageLightPlugin.ts`). It applies to every material
+ * the foliage light plugin is on. The ones that receive cast shadows (the
+ * blade clumps, the duff, the reeds) bind `foliageCanopySun` 0, because the
+ * cast shadow carries the canopy's cut of the sun for them, so the floor
+ * holds that cut at three quarters too: under a closed canopy they keep at
+ * least 0.75 of the sun, more than the cards, which keep
+ * 1 − `FOLIAGE_CANOPY_SUN` · ρ (0.64 at ρ 0.9). That is the look as built. */
 export const FOLIAGE_SHADOW_FLOOR = 0.75;
 
 /** Mean linear luminance of each card model's base colour texture over the
@@ -112,7 +120,7 @@ export function coverAlbedoGain(id: string): number {
 /** The factors a card model's albedo is multiplied by, per channel: for a
  * green card, `COVER_GREEN` over its texture's mean colour, each channel
  * clamped to [`COVER_TINT_MIN`, `COVER_TINT_MAX`], so its mean lands on the
- * green; for a card with a luminance alone (the flowers), the grey gain
+ * green on every channel the clamp leaves free; for a card with a luminance alone (the flowers), the grey gain
  * `coverAlbedoGain` on all three; 1 for a model in neither table. */
 export function coverAlbedoTint(id: string): Rgb {
   const mean = COVER_ALBEDO_RGB[id];

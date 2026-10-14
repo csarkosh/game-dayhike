@@ -68,8 +68,14 @@ const FOLIAGE_LIGHT_INJECTION_CODE =
  * light after the shadow is read. On foliage the shadow is held at
  * `FOLIAGE_SHADOW_FLOOR` or above: the cover's own shade (its root
  * darkening, its cards' dark pixels, the canopy's cut) stacks on the
- * generator's darkness, and the stack went to black. The line has no light
- * index, so the floor is every light's; only the sun casts shadows. The
+ * generator's darkness, and the stack went to black. The floor is every
+ * foliage material's this plugin is on. On the ones that receive cast
+ * shadows (the blade clumps, the duff, the reeds), whose `foliageCanopySun`
+ * is 0 because the cast shadow carries the canopy's cut of the sun, it holds
+ * that cut at three quarters too: under a closed canopy they keep at least
+ * 0.75 of the sun, more than the cards (0.64 at ρ 0.9). That is the look as
+ * built. The line has no light index, so the floor is every light's; only
+ * the sun casts shadows. The
  * lines after it in the include (the specular's among them) read the held
  * value too. Under `FOLIAGE` for the reason the diffuse call is: an effect
  * processed without the define keeps Babylon's line alone.

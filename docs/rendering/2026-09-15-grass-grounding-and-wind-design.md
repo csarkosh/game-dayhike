@@ -511,7 +511,13 @@ that recomputes the green from those numbers.
 **The blades.** `BLADE_ALBEDO` is the blades' own dark green, (0.03, 0.04,
 0.013), under the floor of the albedo below on every channel, so the floor
 sets the blades' colour wherever the ground tint does not, and no tip goes to
-black. The far sward is fitted to the near field
+black. The blades' other colour constants stay under it too: the albedo
+times the vertex colour (`BLADE_TIP_TINT`, `BLADE_LUMA`'s spread, the
+characters' tints, `SEED_HEAD_TINT`, `FLOWER_PALETTE`), the root darkening
+and the brightest clump variation come to at most nine tenths of the floor
+on any channel. Above the ground tint's reach the floor sets every blade's
+colour: those constants shape the root alone, and the flower heads read as
+the floor's olive. The far sward is fitted to the near field
 (`2026-10-10-far-ground-cover-design.md`, §16), never the near field darkened
 to meet it.
 
@@ -577,8 +583,11 @@ eighths of the green, declared in `foliage.fragment.fx` beside the green and
 pinned to `coverAlbedoParams.ts` at four decimals by the lockstep test. Per
 channel, so nothing the foliage plugin draws goes to black: not a blade's
 tip, a card's baked-dark texel nor a root the darkening and the tint have
-taken down. The block is every foliage material's, the trees' crowns, the
-duff and the reeds too; above the floor the albedo is as it was.
+taken down. The block is every foliage material's, the duff and the reeds
+too; above the floor the albedo is as it was. The near trees (LOD0 and LOD1,
+which wear the foliage plugin at the tree profile, their crowns and their
+bark alike) take the floor, and their LOD2 and billboards, which do not wear
+the plugin, do not; no seam was seen on the forest stills.
 
 **The shadow's floor.** `FOLIAGE_SHADOW_FLOOR` 0.75 (`coverAlbedoParams.ts`),
 the least of the sun's light the cover keeps in a cast shadow. The shadow
@@ -602,7 +611,11 @@ The line carries no light index, so the floor is every light's; only the sun
 casts shadows. The lines after it in the include, the specular's among them,
 read the held value too. It moves the ground cover that receives cast
 shadows, the blade clumps, the duff and the reeds (§12); the cards receive
-none. Under `FOLIAGE` for the reason the sun's diffuse call is
+none. Those three bind `foliageCanopySun` 0, because the cast shadow carries
+the canopy's cut of the sun for them, so the floor holds that cut at three
+quarters too: under a closed canopy they keep at least 0.75 of the sun, more
+than the cards, which keep 1 − 0.4·ρ of it (0.64 at ρ 0.9). That is the look
+as built. Under `FOLIAGE` for the reason the sun's diffuse call is
 (`foliageLightPlugin.ts`): an effect processed without the define keeps
 Babylon's line alone.
 

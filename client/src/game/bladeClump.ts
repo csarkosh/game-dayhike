@@ -40,7 +40,15 @@ export const BLADE_ROUND = 0.3;
  * cover's green), so a tip the tint has faded out of keeps the floor's
  * colour, not black; a blade edge-on to the sun keeps half the light of one
  * facing it (`FOLIAGE_WRAP`, `foliageLightPlugin.ts`). The far sward is
- * fitted to the near field, never the near field darkened to meet it. */
+ * fitted to the near field, never the near field darkened to meet it.
+ *
+ * The blades' colours sit under that floor: this albedo times the vertex
+ * colour (`BLADE_TIP_TINT`, `BLADE_LUMA`'s spread, the characters' tints,
+ * `SEED_HEAD_TINT`, `FLOWER_PALETTE`), the root darkening and the clump
+ * variation's brightest comes to at most nine tenths of the floor on any
+ * channel. So above the ground tint's reach the floor sets every blade's
+ * colour: these constants shape the root alone, where the tint mixes in,
+ * and the flower heads read as the floor's olive. */
 export const BLADE_ALBEDO: Rgb = { r: 0.03, g: 0.04, b: 0.013 };
 /** Vertex colour at the tip, from white at the root. */
 export const BLADE_TIP_TINT: Rgb = { r: 0.95, g: 0.95, b: 0.75 };

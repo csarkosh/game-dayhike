@@ -23,6 +23,11 @@ const PINS: Record<string, string> = {
   "cliffTint.vertex": "3fcb23ae5aab79e441e6d140e71ad0c149a0702f72c48fa093fc0b9fd3076de1",
   "distanceFade.fragment": "e9fd42d78c56e2f364ac16691996386de60dd9717060cc3822bd296c9c09281f",
   "distanceFade.vertex": "230ec584603269b72bb5be0710463bb2cf58096cb6cdabaf513941807db4112b",
+  // The foliage plugin's fragment re-pinned for the canopy's share of the sky
+  // (foliageSky.fragment.fx), the cards' contrast toward the cover's green
+  // and the albedo floor (foliage.fragment.fx, foliageLights.fragment.fx).
+  // The nurse log's fern wears the plugin under a profile of its own
+  // (`foliage.NURSE.*`), with every other profile's text.
   "foliage.BLADES.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
   "foliage.BLADES.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
   "foliage.BUSH.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
@@ -50,13 +55,10 @@ const PINS: Record<string, string> = {
   // the call keyed on the light's directional define (`DIRLIGHT$2`) rather
   // than its index: it compiles into the sun's line alone, whatever order the
   // lights were made in, and the function lost its index parameter.
-  // Re-pinned for the canopy's share of the sky and of the sun taken apart
-  // (foliageSky.fragment.fx, the `foliageCanopySun` uniform), the cards'
-  // contrast toward the cover's green, the albedo floor and the half-Lambert
-  // wrap (foliage.fragment.fx, foliageLights.fragment.fx,
-  // foliageDiffuse.fragment.fx), and the cast shadow held at three quarters
-  // on foliage (`FOLIAGE_SHADOW_INJECTION_POINT`). The nurse logs' fern wears
-  // the foliage plugin under its own profile, the tree's text and interface.
+  // Re-pinned for the canopy's share of the sun, read from the
+  // `foliageCanopySun` uniform, and the half-Lambert wrap
+  // (foliageDiffuse.fragment.fx), and the cast shadow held at three quarters
+  // on foliage (`FOLIAGE_SHADOW_INJECTION_POINT`).
   "foliageLight.fragment": "6e962f27fa3343fdaa8453c12d1fd7f8935a428ad8d7ba9b1ad2d13df6f0af65",
   "groundConform.vertex": "a9f54562519ab094b2883463cec48050737f16a4f17e4a18852cfb414e227cea",
   "post.finish": "4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5",
@@ -79,8 +81,9 @@ const PINS: Record<string, string> = {
   // wetLights.fragment.fx), which stays in the texts the tests below take
   // their pieces out of.
   // Re-pinned for the far ground's olive sward and its metre-scale clumps
-  // (groundFarCover.fragment.fx: the constants alone; the test below takes
-  // the far cover out and finds the text before it unchanged).
+  // (groundFarCover.fragment.fx: its constants and its comments); the test
+  // below takes the far cover out and finds the text before it unchanged, so
+  // the far cover is the whole difference.
   "terrain.fragment": "5fb3c4fd6567b40894379375b452825f46529edbec261bb76c01409458f326d7",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
@@ -95,7 +98,8 @@ const INTERFACE_PINS: Record<string, string> = {
   "cliffTint.interface": "17f58097180ad484779cd5302189b01c65ae910a947d6d347ac9eff595479115",
   "distanceFade.interface": "c59e5c6bd9a213d90f127332528ef16d234392159113be81a6cc47b38d2709cb",
   // Re-pinned for the foliage plugin's two floats, `foliageCanopySun` and
-  // `foliageContrast`, declared on both uniform paths.
+  // `foliageContrast`, declared on both uniform paths. `foliage.NURSE`, the
+  // nurse log's fern's profile, has the tree's and the reeds' interface.
   "foliage.BLADES.interface": "2c10d1964d220469c9c552364c77fbe140297f8202506e978cea936400a44a6f",
   "foliage.BUSH.interface": "b1faa0bc44bcbc09407bf26fb83348dd31f85227f88c89440e5aa267edd9bb30",
   "foliage.DUFF.interface": "2c10d1964d220469c9c552364c77fbe140297f8202506e978cea936400a44a6f",

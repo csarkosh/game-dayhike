@@ -229,13 +229,15 @@ export const FAR_LITTER: Rgb = { r: 0.081, g: 0.057, b: 0.032 };
  * (1 − 0.7451) / 0.9 = 0.2832. Where the floor is duff the cards gain more
  * than that: the duff's clumps receive the cast shadow and bind
  * `foliageCanopySun` 0, so their sun share's canopy factor went from 0.55 to
- * 1, a gain of 1.818 with the cast shadow cutting it as before, and only
- * their sky share gains 1.1636; the value is so a floor on the lightening.
- * The wrap also exceeds Lambert below N·L = 1 (the half-Lambert's 0.75
- * against 0.5 at N·L = 0.5), which the fit never saw: its premise holds at
- * N·L = 1 only. In
- * the open (ρ → 0) the cards gain only the root term (BLADES 0.75 → 0.825 in
- * mean, +10 %), inside the fit's ±10 % on Y, so `FAR_SWARD` keeps its fit. */
+ * 1, a gain of 1.818, and only their sky share gains 1.1636; the value is so
+ * a floor on the lightening. Nor does the cast shadow cut their sun as it
+ * did: the cover's shadow floor (`FOLIAGE_SHADOW_FLOOR`) holds it at 0.75 or
+ * above. This derivation predates that floor; the literal stands on the
+ * stills. The wrap also exceeds Lambert below N·L = 1 (the half-Lambert's
+ * 0.75 against 0.5 at N·L = 0.5), which the fit never saw: its premise holds
+ * at N·L = 1 only. In the open (ρ → 0) the cards gain only the root term
+ * (BLADES 0.75 → 0.825 in mean, +10 %), inside the fit's ±10 % on Y, so
+ * `FAR_SWARD` keeps its fit. */
 export const FAR_CANOPY_SHADE = 0.2832;
 /** The clumps' two octaves: tussocks and patches (m), their shares, and the
  * 3 m octave's lattice offset so the two are not aligned. The tussocks at a

@@ -24,7 +24,7 @@ move. No shader text changes: textures, uniforms and defines only (§7).
 | Which tree wears which | The giant fir the pine set (a mature fir's plated bark; the tree's crown says fir); the giant pine the metasequoia set and the cedar set, mixed tree by tree; the alder the alder set; the fir sapling its giant's pine set, the pine sapling the metasequoia set (§3) |
 | The snag | Left in its file's bark (§3.3) |
 | The size by tier | High: 2k for the giants and the alder, which stand near, 1k for the saplings; medium and low: 1k everywhere (§5) |
-| The repeat | In metres: so many plates up the trunk as it is tall over the plate's height, so many round it as it is wide over the plate's width, divided by the UV range the trunk spans; one literal a value, a starting value the look pass corrects (§4) |
+| The repeat | In metres: so many plates up the trunk as it is tall over the plate's height, so many round it as it is wide over the plate's width, divided by the UV range the trunk spans; one literal a value, a starting value to be read again in the browser (§4, §10) |
 | Where the plate stands | Up the trunk. The fir and the alder run `v` up the trunk and take the set as it is; the pine family runs `u` up the trunk and takes the set turned a quarter (§4.2) |
 | The normal map's frame | The bark primitives lose their vertex tangents; the frame is built from the map's own coordinates, so it follows the turn (§4.3) |
 | The occlusion | From the ARM map's red channel through `AOSTOREINMETALMAPRED`, at strength 1, with no ambient texture (§6) |
@@ -247,7 +247,7 @@ two sapling species, 6 billboards, the deadwood bucket, the nurse logs'
 fern and seedling), where it was 32. At the deep-forest camera the tests
 measure, the buckets reached go from 23 to 30.
 
-## 10. What the look pass should correct
+## 10. What the browser should settle
 
 The repeats are starting values, each one literal in `barkParams.ts`. In
 the browser, first:
@@ -276,7 +276,7 @@ the browser, first:
    specular weight (`TREE_SPECULAR_WEIGHT`) and its share of the sky
    (`BARK_SKY`) were set for a bark with none, and may want a look.
 
-## 11. As built (2026-10-14): the look pass
+## 11. As built (2026-10-14): the trunks under the canopy
 
 **The near trunks drew nothing until each set owned its geometry.** §9's
 clones first shared the pine's geometry, as a mesh clone does, and Babylon
