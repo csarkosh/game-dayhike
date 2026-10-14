@@ -2,8 +2,8 @@
 // definitions after water.fragment.fx: the cat's-paw mask that lifts the
 // rippled octaves from a faint floor, silent on a lake all glass, to their
 // whole amplitude, and the rain's rings near the eye, then the lake's second
-// octave. Every function but the octave,
-// which samples PBR's bump, is a pure function of its arguments with a twin
+// octave and the lens its slopes make. Every function but the octave and the
+// lens, which sample PBR's bump, is a pure function of its arguments with a twin
 // of the same name in lakeRipples.ts, and every constant mirrors
 // lakeRipples.ts or windParams.ts, which a lockstep test holds equal.
 // Branches are chosen by step, mix, clamp, max and smoothstep, never by a
@@ -51,6 +51,15 @@ const float LAKE_WIND_OMEGA1 = 0.3769911184;
 const float LAKE_WIND_OMEGA2 = 0.879645943;
 const float LAKE_WIND_RAGGED = 1.2;
 const float LAKE_WIND_RAGGED_CELL = 6.0;
+// The light the second octave focuses on a shallow bed, high tier alone: the
+// lens's step either side of the pixel in metres, a quarter of one of the
+// bump's cells so the ripples' own curvature is read, the bed's gain a unit of
+// the lens, the most the gain lifts the bed by, and the depth over the bed it
+// fades out by.
+const float LENS_STEP_M = 0.0625;
+const float CAUSTIC_GAIN = 0.15;
+const float CAUSTIC_MAX = 0.6;
+const float CAUSTIC_DEPTH_M = 1.5;
 
 // The wind's gust at p at the wind's time t, the wind blowing along dir:
 // foliageGust's closed form (foliage.vertex.fx), the trees' own gusts.
@@ -210,5 +219,27 @@ vec2 lakeRipple2(vec2 xz) {
   return n.xy * WATER_OCTAVE2_WEIGHT;
 #else
   return vec2(0.0);
+#endif
+}
+
+// The lens the second octave makes of the surface at xz: its tilt's
+// divergence per metre, the tilt read as lakeRipple2 reads it LENS_STEP_M
+// either side along x and along z. The bump holds the tilt, the height's
+// gradient negated, so this is the height's curvature negated: positive where
+// the surface is convex and its tilts spread, which focuses the light on the
+// bed below, so the caustics move exactly as the surface does. Like lakeRipple2 it samples the bump, so it has no twin in
+// lakeRipples.ts, and without the bump it is 0.
+float lakeLens(vec2 xz) {
+#ifdef BUMP
+  vec2 uv = xz / WATER_OCTAVE2_TILE - waterWindTime * WATER_OCTAVE2_DRIFT;
+  vec2 dx = vec2(LENS_STEP_M / WATER_OCTAVE2_TILE, 0.0);
+  vec2 dz = vec2(0.0, LENS_STEP_M / WATER_OCTAVE2_TILE);
+  float sxE = (texture2D(bumpSampler, uv + dx).x * 2.0 - 1.0) * WATER_OCTAVE2_WEIGHT;
+  float sxW = (texture2D(bumpSampler, uv - dx).x * 2.0 - 1.0) * WATER_OCTAVE2_WEIGHT;
+  float szN = (texture2D(bumpSampler, uv + dz).y * 2.0 - 1.0) * WATER_OCTAVE2_WEIGHT;
+  float szS = (texture2D(bumpSampler, uv - dz).y * 2.0 - 1.0) * WATER_OCTAVE2_WEIGHT;
+  return (sxE - sxW + szN - szS) / (2.0 * LENS_STEP_M);
+#else
+  return 0.0;
 #endif
 }

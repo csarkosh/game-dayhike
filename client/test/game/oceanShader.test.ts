@@ -1263,12 +1263,13 @@ describe("a lake's shaders", () => {
     // lights' and the composition hashed again once the paws' field and the shore's reads went
     // under their uniform branches; the composition once more as the mirror's read gained the eye's
     // motion's smear; the lights' once more as the lake's octaves took their floor outside the
-    // paws, scaled by the lake's glass share (`octaveAmplitude(wPaw, waterCalmShare)`).
+    // paws, scaled by the lake's glass share (`octaveAmplitude(wPaw, waterCalmShare)`); the water's
+    // definitions and the lights' as the bed's refraction took its floor and the lake's bed its caustics.
     const before: Record<string, string> = {
       "water.vertex.fx": "3732482554b89e357fec2298edc8724ad085cc9defe35017b243df6b7782d50b",
       "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
-      "water.fragment.fx": "64d0992cb60dc15186b2dc2e90f3e62ebecca81a74fe09aac825c88328089fb2",
-      "waterLights.fragment.fx": "bdd7a55f8d58e59019687ab89bd72ecdba385d0531a94953c9769c265267bdfa",
+      "water.fragment.fx": "edf8a9b7d58b253c354940eff9387ad7f2d05de11a13eed90dc838280b5a0ccf",
+      "waterLights.fragment.fx": "b2dd2a416daf8fc605252fba190047ca4959515a3f8e4cc55fbcc4cb13dae590",
       "waterCompose.fragment.fx": "404a808f1764a431f855083b4ae12d03c20ed2c3226848fdd6aea4bcf9f4eee0",
     };
     for (const [name, hash] of Object.entries(before)) {
@@ -1300,10 +1301,11 @@ describe("the sea's shaders", () => {
     // again as the sea came to rest on the face between the swash's sheets and the cove's bed took the
     // shallower of the read and the profile's depth inside the bed's square as well, and as the depth where
     // the sea rests was held to 0 within a hundredth of a millimetre, and once more as the bed on the dry side
-    // of the cove's end fades took the shallower whole.
+    // of the cove's end fades took the shallower whole; the water's definitions and the lights' again as the
+    // bed's refraction took its floor.
     const before: Record<string, string> = {
-      "water.fragment.fx": "6c7a3933162a07f97a51c848e5f7cf34bd5095aa3c3778f2df0f1a0020808964",
-      "waterLights.fragment.fx": "ae18c96f6e5aabb65fe6ab8b95eac3a4025e45db1dd1aaa6ec68fbf877f76e6b",
+      "water.fragment.fx": "8995ea59d7db8304141414bd8dd53daaf6525aaf5c9c263cff3d6d1baac21665",
+      "waterLights.fragment.fx": "5b19742ba42df88edf7f961aa974c1e3314f3e58210f0452b98eacbf6d6bff45",
       "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
     };
     for (const [name, hash] of Object.entries(before)) {

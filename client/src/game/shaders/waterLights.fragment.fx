@@ -126,7 +126,14 @@ float wNdV = clamp(dot(normalW, viewDirectionW), 0.0, 1.0);
 float wF = WATER_F0 + (1.0 - WATER_F0) * pow(1.0 - wNdV, 5.0);
 // The bed's light through the surface on the high tier, added after lighting
 // (waterCompose.fragment.fx): it is already lit, so it is radiance, never an
-// albedo for PBR to light again.
+// albedo for PBR to light again. The bed is read from the scene copy bent by
+// the ripples' slope, over at least WATER_REFRACT_MIN metres of water so a
+// shallow shelf still wobbles under them. The bend fades in over the first
+// 2 cm of water rather than starting at once, so the bed does not jump a few
+// pixels at the waterline. On a lake the bed is brightened where the second
+// octave's surface is convex (lakeLens), scaled by the octaves' amplitude, at
+// most by CAUSTIC_MAX, and fading out over CAUSTIC_DEPTH_M of water: caustics
+// that move as the surface does, none on glass. The sea skips them.
 vec3 wTransmit = vec3(0.0);
 if (waterHigh < 0.5) {
   // The blend scales the reflection too, so the reflected share is kept out
@@ -143,8 +150,13 @@ if (waterHigh < 0.5) {
   // eye-to-surface leg, whose drop is the eye's height over the surface.
   float wRayOn = wSceneDepth / max(vWaterViewDepth, 1.0e-3) - 1.0;
   float wBehind = max(0.0, min(wDepth, (vEyePosition.y - vPositionW.y) * wRayOn));
-  vec2 wOff = normalW.xz * WATER_REFRACT * min(wBehind, WATER_REFRACT_DEPTH);
+  vec2 wOff = normalW.xz * WATER_REFRACT * min(max(wBehind, WATER_REFRACT_MIN), WATER_REFRACT_DEPTH) * smoothstep(0.0, 0.02, wBehind);
   vec3 wBed = texture2D(waterScene, wUv + wOff).rgb;
+#ifndef OCEAN
+  float wLens = max(0.0, lakeLens(vPositionW.xz));
+  float wShallow = 1.0 - smoothstep(0.0, CAUSTIC_DEPTH_M, wBehind);
+  wBed *= 1.0 + min(CAUSTIC_GAIN * wOctave * wShallow * wLens, CAUSTIC_MAX);
+#endif
   vec3 wT = exp(-2.0 * waterKd * wBehind);
   // The water's own colour where the bed is not seen: L-infinity times 1 - T.
   surfaceAlbedo *= 1.0 - wT;

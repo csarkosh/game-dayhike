@@ -332,6 +332,11 @@ ever break the probe's sheen.
 The horizon clamp, the transmission's refracted offset, the Fresnel and the
 skin's flattening follow unchanged, on the assembled normal.
 
+Amended 2026-10-13: the high tier's refracted offset takes a floor of 0.3 m of
+depth, and the bed seen through the surface is brightened where the second
+octave's surface is convex, at the octaves' amplitude, fading out over 1.5 m of
+water (the water material design, §5.2).
+
 ## 8. Tiers, costs and shaders
 
 - **Cost.** Measured against `main` at 4K and 1080p, pairs in both orders on

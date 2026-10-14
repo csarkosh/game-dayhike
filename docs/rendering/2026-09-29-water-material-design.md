@@ -247,6 +247,20 @@ material then writes without a framebuffer blend, still drawn after the
 opaque pass (a later rendering group, depth write on) since the copy it reads
 is of that pass.
 
+Amended 2026-10-13: over a shelf a few decimetres deep min(d, 1 m) bent the
+bed by a pixel or two, so the ripples' highlights slid over a still bed. The
+offset is now scaled by min(max(d, 0.3 m), 1 m) (`WATER_REFRACT_MIN`), faded in
+over the first 2 cm of water so the bed does not jump at the waterline, so
+shallow water still wobbles the bed under the ripples. On a lake the bed read
+is also brightened where the second octave's surface is convex: the
+divergence of its tilts, read 6.25 cm either side of the pixel along x and
+along z (`lakeLens`, a quarter of one of the bump's cells), positive where the
+tilts spread and focus the light, scales the bed by
+1 + min(0.15 · amplitude · shallow · lens, 0.6), the amplitude the octaves' own
+(0 on glass) and the shallow share fading from 1 at the surface to 0 at 1.5 m
+of water. The caustics so move exactly as the surface does. The sea takes the
+floor but not the caustics.
+
 On **medium and low** the surface stays alpha-blended and the blend does the
 transmission: the shader outputs colour L∞ and alpha = 1 − (1 − F)·T̄ with T̄ = e^(−2 K̄ d), K̄
 the mean of the three channels, and F Schlick on N·V, because plain alpha
@@ -396,6 +410,9 @@ moving the camera already costs.
 A tier over its budget cuts in this order: the second ripple octave, the
 refracted offset (sample unrefracted), the height texture to the next size
 down, and on high the copy itself (high drawing medium's blended path).
+
+The lake's high path reads the bump four more times a pixel for the caustics'
+lens (2026-10-13, §5.2); that cost has not been measured.
 
 ## 9. Tests and checks
 

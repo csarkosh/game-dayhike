@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR, PAW_COVER_TABLE, OCTAVE_FLOOR,
   LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,
-  LAKE_RINGS_PER_M2, LAKE_RAIN_MM_H, LAKE_RING_FOLD, LAKE_WIND_TURN,
+  LAKE_RINGS_PER_M2, LAKE_RAIN_MM_H, LAKE_RING_FOLD, LAKE_WIND_TURN, LENS_STEP_M, CAUSTIC_GAIN, CAUSTIC_MAX, CAUSTIC_DEPTH_M,
   lakeGust, lakePawDrift, lakePaw, lakePawThreshold, octaveAmplitude, lakeLiveRings, lakeRingHeight, lakeRingDh, lakeRingHash, lakeRainSlope,
 } from "../../src/game/lakeRipples.js";
 import {
@@ -81,6 +81,7 @@ describe("the lake's ripples' constants", () => {
     expect(LAKE_RINGS_PER_M2).toEqual([35, 77, 150]);
     expect([LAKE_RAIN_MM_H, LAKE_RING_FOLD]).toEqual([4, 512]);
     expect(LAKE_WIND_TURN).toBeCloseTo(0.005235987755982988, 15);
+    expect([LENS_STEP_M, CAUSTIC_GAIN, CAUSTIC_MAX, CAUSTIC_DEPTH_M]).toEqual([0.0625, 0.15, 0.6, 1.5]);
     // every rate a whole number of cycles in the wind's wrap, so the wrap moves no paw and no ring
     expect(WIND_TIME_WRAP / PAW_LIFE_S).toBe(50);
   });
@@ -91,7 +92,7 @@ describe("the lake's ripples' constants", () => {
       ...Object.fromEntries(PAW_COVER_TABLE.map((knot, i) => [`PAW_COVER_${i}`, knot])),
       LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,
       LAKE_RINGS_0: LAKE_RINGS_PER_M2[0], LAKE_RINGS_1: LAKE_RINGS_PER_M2[1], LAKE_RINGS_2: LAKE_RINGS_PER_M2[2],
-      LAKE_RAIN_MM_H, LAKE_RING_FOLD, LAKE_WIND_TURN,
+      LAKE_RAIN_MM_H, LAKE_RING_FOLD, LAKE_WIND_TURN, LENS_STEP_M, CAUSTIC_GAIN, CAUSTIC_MAX, CAUSTIC_DEPTH_M,
       LAKE_TIME_WRAP: WIND_TIME_WRAP, LAKE_WIND_K1: WIND_K1, LAKE_WIND_K2: WIND_K2,
       LAKE_WIND_OMEGA1: WIND_OMEGA_GUST, LAKE_WIND_OMEGA2: WIND_OMEGA_GUST2,
       LAKE_WIND_RAGGED: WIND_RAGGED, LAKE_WIND_RAGGED_CELL: WIND_RAGGED_CELL,
@@ -138,6 +139,19 @@ describe("the lake's ripples' constants", () => {
     expect(source("../../src/game/shaders/waterLights.fragment.fx")).toContain("lakePaw(vPositionW.xz, waterLakeTime, ");
     expect(glsl).not.toContain("?");
     expect(glsl.endsWith("}\n")).toBe(true);
+  });
+
+  it("take the lens from the second octave's slope at four points, its divergence over 2 LENS_STEP_M", () => {
+    const lens = body(glsl, "float lakeLens(vec2 xz)");
+    // the octave's own uv rule, read only where the bump is drawn, 0 without it
+    expect(lens).toContain("vec2 uv = xz / WATER_OCTAVE2_TILE - waterWindTime * WATER_OCTAVE2_DRIFT;");
+    expect(lens).toContain("#ifdef BUMP");
+    expect(lens).toContain("#else\n  return 0.0;\n#endif");
+    expect(lens.match(/texture2D\(bumpSampler, /g)).toHaveLength(4);
+    for (const at of ["uv + dx", "uv - dx", "uv + dz", "uv - dz"]) expect(lens).toContain(`texture2D(bumpSampler, ${at})`);
+    expect(lens).toContain("vec2 dx = vec2(LENS_STEP_M / WATER_OCTAVE2_TILE, 0.0);");
+    expect(lens).toContain("vec2 dz = vec2(0.0, LENS_STEP_M / WATER_OCTAVE2_TILE);");
+    expect(lens).toContain("return (sxE - sxW + szN - szS) / (2.0 * LENS_STEP_M);");
   });
 });
 

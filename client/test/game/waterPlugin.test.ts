@@ -26,7 +26,7 @@ import { cylinderHit } from "../../src/game/lakeSkyline.js";
 import { helperFunctions } from "@babylonjs/core/Shaders/ShadersInclude/helperFunctions.js";
 import { drawnEffect, probeReady, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
 import { timeLimit } from "../helpers/timeLimit.js";
-import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH, WATER_SKIN_DRIFT } from "../../src/game/waterShading.js";
+import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH, WATER_REFRACT_MIN, WATER_SKIN_DRIFT } from "../../src/game/waterShading.js";
 import { RIPPLE_INSET, RIPPLE_LAYERS, RIPPLE_RADIUS, RIPPLE_TIME_WRAP } from "../../src/game/rainParams.js";
 
 const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
@@ -103,6 +103,7 @@ describe("water plugin", () => {
     expect(d).toContain(`const float WATER_HORIZON = ${glslFloat(WATER_HORIZON)};`);
     expect(d).toContain(`const float WATER_REFRACT = ${glslFloat(WATER_REFRACT)};`);
     expect(d).toContain(`const float WATER_REFRACT_DEPTH = ${glslFloat(WATER_REFRACT_DEPTH)};`);
+    expect(d).toContain(`const float WATER_REFRACT_MIN = ${glslFloat(WATER_REFRACT_MIN)};`);
     expect(d).toContain("const float WATER_OCTAVE2_TILE = 3.0;");
     expect(fx("water.fragment.fx")).toContain("#ifdef BUMP");
     expect(d).toContain("vec3 n = texture2D(bumpSampler, uv).xyz * 2.0 - 1.0;");
@@ -196,6 +197,29 @@ describe("water plugin", () => {
     expect(l).toContain("surfaceAlbedo *= 1.0 - wT;");
     expect(l).toContain("wTransmit = wBed * wT * (1.0 - wF);");
     expect(fx("waterCompose.fragment.fx")).toContain("finalEmissive += wTransmit;");
+  });
+
+  it("bends a shallow bed by the ripples and focuses the lake's octave on it, on the high path alone", () => {
+    const l = fx("waterLights.fragment.fx");
+    const high = l.slice(l.indexOf("if (waterHigh < 0.5) {"), l.indexOf("float wSkin ="));
+    // the offset's depth held to at least WATER_REFRACT_MIN, faded in over the first 2 cm so the bed does not jump at the waterline
+    expect(high).toContain(
+      "vec2 wOff = normalW.xz * WATER_REFRACT * min(max(wBehind, WATER_REFRACT_MIN), WATER_REFRACT_DEPTH) * smoothstep(0.0, 0.02, wBehind);",
+    );
+    // the caustics after the bed is read and before it is transmitted, on a lake alone, at the octaves' amplitude,
+    // where the surface is convex (the lens positive), held to CAUSTIC_MAX
+    const read = high.indexOf("vec3 wBed = texture2D(waterScene, wUv + wOff).rgb;");
+    const lens = high.indexOf("float wLens = max(0.0, lakeLens(vPositionW.xz));");
+    const gain = high.indexOf("wBed *= 1.0 + min(CAUSTIC_GAIN * wOctave * wShallow * wLens, CAUSTIC_MAX);");
+    expect(high).toContain("float wShallow = 1.0 - smoothstep(0.0, CAUSTIC_DEPTH_M, wBehind);");
+    expect(read).toBeGreaterThan(-1);
+    expect(lens).toBeGreaterThan(read);
+    expect(gain).toBeGreaterThan(lens);
+    expect(gain).toBeLessThan(high.indexOf("wTransmit = wBed * wT * (1.0 - wF);"));
+    expect(high.slice(read, lens)).toContain("#ifndef OCEAN\n");
+    expect(high.slice(gain)).toContain("#endif\n");
+    expect(high.slice(lens, gain)).not.toContain("#");
+    expect(l.split("lakeLens(")).toHaveLength(2);
   });
 
   it("is ready on the high tier as soon as the bed is, whatever the frame's scene and depth report", () => {
@@ -924,16 +948,20 @@ describe("the sea's waves in the water plugin", () => {
     expect(sea.fragment).toContain("vOceanXZ");
     expect(sea.vertex).toContain("positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ), oceanVertexDisplace.y);");
     expect(sea.fragment).toContain("swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight);");
+    // the bed's refraction floor reaches the sea, the lake's caustics never
+    expect(sea.fragment).toContain("min(max(wBehind, WATER_REFRACT_MIN), WATER_REFRACT_DEPTH)");
+    for (const code of ["lakeLens(", "CAUSTIC_GAIN *", "float wLens"]) expect(sea.fragment, code).not.toContain(code);
+    expect(lake.fragment).toContain("wBed *= 1.0 + min(CAUSTIC_GAIN * wOctave * wShallow * wLens, CAUSTIC_MAX);");
     // The sea's whole stages, byte for byte, as the swash's sheet, the bed's fallback, the lip, the sea's rest
     // on the face between sheets, held to it within a hundredth of a millimetre, and the cove's bed in the bed's
     // square and on the dry side of its end fades left them: neither the lake's ripples' definitions nor their
     // uniforms reach the sea.
     const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
-    expect(sha(sea.fragment)).toBe("863f1132f224cec7433a25cf7af19caa31a4fe3bedd88d95b3814575f7eeb943");
+    expect(sha(sea.fragment)).toBe("f6bf7a409683da04e5b3b91b4fa8c6952956ba5b980c3d35ff7497f022d50355");
     expect(sha(sea.vertex)).toBe("8567a97912ecb053b293c7ede51379d96a50adabe74c140480a481aebee7e4b7");
     // and a material drawn as a lake, then given its ocean, rebuilds its uniforms to the sea's
     const turned = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true, true);
-    expect(sha(turned.fragment)).toBe("863f1132f224cec7433a25cf7af19caa31a4fe3bedd88d95b3814575f7eeb943");
+    expect(sha(turned.fragment)).toBe("f6bf7a409683da04e5b3b91b4fa8c6952956ba5b980c3d35ff7497f022d50355");
     expect(sha(turned.vertex)).toBe("8567a97912ecb053b293c7ede51379d96a50adabe74c140480a481aebee7e4b7");
     // and one drawn as a sea, then taken off its ocean, rebuilds them to the lake's
     const back = await compiled((m) => new WaterPlugin(m, WATER_ROWS.lowlandLake), false, true);
@@ -943,7 +971,7 @@ describe("the sea's waves in the water plugin", () => {
     // hold, and the cove's bed in the bed's square and its fades' dry side left it, reads none of the lake's
     // ripples.
     const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
-    expect(sha(main(sea.fragment))).toBe("f0e601d81c48adf158a3dadbc7d0029f77eea3d97d07ca932f4187f71dd94906");
+    expect(sha(main(sea.fragment))).toBe("3e7a46ed47957ac30176a88cb01e9cedb2beff75faa2b3dbcbf4a38e9be21414");
     for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover", "waterMirror", "waterCalmShare", "wMirror"]) {
       expect(main(sea.fragment), name).not.toContain(name);
     }

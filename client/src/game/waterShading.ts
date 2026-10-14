@@ -89,6 +89,8 @@ export const WATER_SKIN_DRIFT = 0.04;
 export const WATER_REFRACT = 0.02;
 /** Depth at which the refraction offset stops growing (spec §5.2). Mirrored in shaders/water.fragment.fx. */
 export const WATER_REFRACT_DEPTH = 1;
+/** The least depth the refraction offset is scaled by on the high tier, so the ripples still bend the bed under a shallow shelf (0 where the surface meets the bed). Mirrored in shaders/water.fragment.fx. */
+export const WATER_REFRACT_MIN = 0.3;
 
 /** Schlick's approximation to Fresnel reflectance; stays within 6 % absolute of the exact unpolarised curve for n = 1.33 (the worst is 0.058 at 85°). */
 export function fresnelSchlick(cosTheta: number): number {

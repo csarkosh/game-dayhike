@@ -4,8 +4,8 @@
  * near the eye. The GLSL lives in `shaders/lakeRipples.fragment.fx`: every
  * function here but `lakeRingHeight` (the height whose derivative
  * `lakeRingDh` is, kept for its tests) has a GLSL twin of the same name and
- * arguments, and the GLSL's `lakeRipple2`, which samples the bump, has none
- * here. Every `const float` there is one of the constants here or in
+ * arguments, and the GLSL's `lakeRipple2` and `lakeLens`, which sample the
+ * bump, have none here. Every `const float` there is one of the constants here or in
  * `windParams.ts`, a lockstep test holding them equal. Babylon-free and on
  * BABYLON_FREE_FILES.
  *
@@ -58,6 +58,19 @@ export const LAKE_RAIN_MM_H = 4;
 export const LAKE_RING_FOLD = 512;
 /** The wind's turn, rad/s: one turn a WIND_DIR_PERIOD (`directionAt`). */
 export const LAKE_WIND_TURN = (2 * Math.PI) / WIND_DIR_PERIOD;
+/**
+ * The light the ripples focus on a shallow bed, on the high tier: the second
+ * octave's tilts are read LENS_STEP_M either side of the pixel along x and
+ * along z for their divergence (`lakeLens`, GLSL alone), a quarter of one of
+ * the bump's cells (its 3 m tile over 12) so the ripples' own curvature is
+ * read. Where the surface is convex and its tilts spread, the bed seen through
+ * it is brightened by CAUSTIC_GAIN times that, times the octaves' amplitude,
+ * by at most CAUSTIC_MAX, fading out over CAUSTIC_DEPTH_M of water above the bed.
+ */
+export const LENS_STEP_M = 0.0625;
+export const CAUSTIC_GAIN = 0.15;
+export const CAUSTIC_MAX = 0.6;
+export const CAUSTIC_DEPTH_M = 1.5;
 
 const TAU = 2 * Math.PI;
 

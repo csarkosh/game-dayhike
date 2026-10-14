@@ -29,6 +29,9 @@ const float WATER_F0 = 0.02;
 const float WATER_HORIZON = 0.02;
 const float WATER_REFRACT = 0.02;
 const float WATER_REFRACT_DEPTH = 1.0;
+// The least depth the high tier's refracted offset is scaled by, so the
+// ripples still bend the bed under a shelf a few decimetres deep.
+const float WATER_REFRACT_MIN = 0.3;
 // The second ripple octave: metres a tile, its share of the first's slope,
 // and its drift in tiles per second along the wind (spec §5.3).
 const float WATER_OCTAVE2_TILE = 3.0;
