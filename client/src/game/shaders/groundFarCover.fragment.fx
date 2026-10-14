@@ -24,9 +24,20 @@ const vec2 FAR_SWARD_COVER = vec2(0.05, 0.5);
 // the fit lands within 1 % of the band.
 const float FAR_SWARD_MAX = 1.0;
 // Fitted 2026-10-10: solved at (0.0066, 0.0235, 0.005) and committed at its
-// +10 % edge for the low sun. At the meadow pose at noon the far crops read
-// Y 0.04177 against the card band's 0.03814, chroma 0.2103 against 0.2128.
-const vec3 FAR_SWARD = vec3(0.0073, 0.0258, 0.0055);
+// +10 % edge for the low sun, where at the meadow pose at noon the far crops
+// read Y 0.04177 against the card band's 0.03814, chroma 0.2103 against 0.2128.
+// That fit stood against cards that have since taken the grass's own green at
+// one luminance, and the far ground fell to 0.43 of them in luminance and
+// greyer. Refitted 2026-10-14 by ratio on the meadow still (1200 x 675, high
+// tier, the game's opening conditions, sRGB decoded to linear, the mean per
+// channel): the near card band (rows 420-600, columns 100-1100) read R 0.0848
+// G 0.1076 B 0.0717 (Y 0.1001, G/R 1.268), the far band beyond the cards (rows
+// 295-340, columns 150-1050) R 0.0398 G 0.0440 B 0.0476 (Y 0.0433, G/R 1.104).
+// Everything that lights the far cover multiplies its target, so each channel
+// scales by the inverse of its ratio, R 1/0.470 = 2.128, G 1/0.409 = 2.445,
+// B 1/0.663 = 1.508: (0.0073, 0.0258, 0.0055) becomes (0.0155, 0.0631, 0.0083).
+// The three targets of the fit are to be re-checked on the next stills.
+const vec3 FAR_SWARD = vec3(0.0155, 0.0631, 0.0083);
 // Not fitted 2026-10-10: kept at its start: the canopy fit reached its target
 // through the canopy shade alone, and the litter share along the far crops was
 // not read from the simulation.

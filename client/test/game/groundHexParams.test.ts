@@ -162,7 +162,11 @@ describe("the far cover", () => {
   }, timeLimit(5_000));
 
   it("carries the fitted values as literals", () => {
-    expect(FAR_SWARD).toEqual({ r: 0.0073, g: 0.0258, b: 0.0055 });
+    // The 2026-10-10 fit (0.0073, 0.0258, 0.0055) scaled per channel by the
+    // inverse of the far band's ratio to the near card band on the meadow
+    // still of 2026-10-14 (R 0.470, G 0.409, B 0.663): 0.0073 × 2.128,
+    // 0.0258 × 2.445, 0.0055 × 1.508, four decimals.
+    expect(FAR_SWARD).toEqual({ r: 0.0155, g: 0.0631, b: 0.0083 });
     expect(FAR_LITTER).toEqual({ r: 0.081, g: 0.057, b: 0.032 });
     // Derived from the cards' canopy terms and root darkening, not fitted:
     // the fit's 0.4615 at a closed canopy (rho 0.9) times the cards' gain of
@@ -287,20 +291,21 @@ describe("the far cover", () => {
 
   it("mixes the target from the sward and the litter, shaded by the canopy and darkened in the clumps' troughs", () => {
     const white = { r: 1, g: 1, b: 1 };
+    // FAR_SWARD itself, the 2026-10-14 refit: × 1 (macro) × 1 (no canopy) × 1 (crest).
     const sward = farCoverTarget(0, 0, white, 1);
-    expect(sward.r).toBeCloseTo(0.0073, 12);
-    expect(sward.g).toBeCloseTo(0.0258, 12);
-    expect(sward.b).toBeCloseTo(0.0055, 12);
+    expect(sward.r).toBeCloseTo(0.0155, 12);
+    expect(sward.g).toBeCloseTo(0.0631, 12);
+    expect(sward.b).toBeCloseTo(0.0083, 12);
     // FAR_LITTER × (1 − FAR_CANOPY_SHADE).
     const litter = farCoverTarget(1, 1, white, 1);
     expect(litter.r).toBeCloseTo(0.0580608, 12);
     expect(litter.g).toBeCloseTo(0.0408576, 12);
     expect(litter.b).toBeCloseTo(0.0229376, 12);
-    // FAR_SWARD × FAR_CLUMP_AO.
+    // FAR_SWARD × FAR_CLUMP_AO: 0.0155 × 0.65, 0.0631 × 0.65, 0.0083 × 0.65.
     const trough = farCoverTarget(0, 0, white, 0);
-    expect(trough.r).toBeCloseTo(0.004745, 12);
-    expect(trough.g).toBeCloseTo(0.01677, 12);
-    expect(trough.b).toBeCloseTo(0.003575, 12);
+    expect(trough.r).toBeCloseTo(0.010075, 12);
+    expect(trough.g).toBeCloseTo(0.041015, 12);
+    expect(trough.b).toBeCloseTo(0.005395, 12);
     // Litter and canopy beyond 1 are clamped.
     const over = farCoverTarget(2, 2, white, 1);
     expect(over.r).toBeCloseTo(0.0580608, 12);

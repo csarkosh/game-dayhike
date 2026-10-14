@@ -1020,6 +1020,41 @@ premise the fit was made under, at N·L = 1 only: below it the new wrap
 exceeds Lambert (0.63 against 0.5 at N·L = 0.5), which the fit of 2026-10-10
 never saw.
 
+## 15. Amendment (2026-10-14): the sward refitted to the cards' green
+
+§14 kept `FAR_SWARD` at its fit on the arithmetic of the root term alone. The
+cards have since taken the grass's own green at one luminance, with the blades
+in the same green, and on the meadow still the far ground reads darker and
+greyer than the near grass: the fit of §7 stood against cards that no longer
+render so.
+
+**The measurement.** The meadow still, 1200 × 675 on the high tier at the
+game's opening conditions, each pixel decoded from sRGB to linear and the mean
+taken per channel:
+
+| Band | Rows, columns | R | G | B | Y | G/R |
+| --- | --- | --- | --- | --- | --- | --- |
+| near card band | 420–600, 100–1100 | 0.0848 | 0.1076 | 0.0717 | 0.1001 | 1.268 |
+| far band beyond the cards | 295–340, 150–1050 | 0.0398 | 0.0440 | 0.0476 | 0.0433 | 1.104 |
+
+The far ground is 0.43 of the near in luminance, and greyer: far over near per
+channel is R 0.470, G 0.409, B 0.663.
+
+**The ratio.** Everything that lights the far cover (the macro tint, the canopy
+shade, the clumps' darkening, the sun's factor and the sky's light) multiplies
+its target colour, so the target scales per channel by the inverse of that
+ratio: R × 1/0.470 = 2.128, G × 1/0.409 = 2.445, B × 1/0.663 = 1.508.
+
+**The literal.** `FAR_SWARD` (0.0073, 0.0258, 0.0055) becomes
+**(0.0155, 0.0631, 0.0083)**, four decimals as before, in the twin and the
+include; its Y rises from 0.0204 to 0.0490. `FAR_LITTER` keeps its value: the
+meadow's far band is sward, and the litter's fit under the canopy is §14's,
+confirmed on stills of its own. `FAR_CANOPY_SHADE` keeps §14's value.
+
+§7's three targets (far crop Y within ±10 % of the card band's, chroma at
+least 0.75 of the band's, G/R within ±10 %) are to be re-checked on the next
+stills, and the fit repeated from this value if they miss.
+
 ## References
 
 - [A full far ground without drawing it](https://csarko.sh/research/a-full-far-ground-without-drawing-it),
