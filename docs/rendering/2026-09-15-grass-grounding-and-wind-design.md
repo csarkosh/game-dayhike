@@ -238,6 +238,20 @@ diffuse  += FOLIAGE_BACK (0.6) · back · thickness · lightColour
 
 About six ALU per fragment for one light.
 
+Amended 2026-10-13: the sun is not the first light in the game. The local
+headlamp is made before it (`renderer.ts`: `createHeadlamp`, then
+`createLighting`), so light 0 is the headlamp and the sun is light 1, and the
+cards took the wrap and the backlight from the headlamp while the sun reached
+them through Babylon's own diffuse. The call no longer carries the index. The
+replacement is `foliageDiffuseLighting(preInfo, $1, vFoliageH, viewDirectionW)`
+under `#if defined(FOLIAGE) && defined(DIRLIGHT$2)`, with Babylon's own line
+as the other branch: the plugin's key runs after the light include is unrolled
+and before the preprocessor resolves each light's type, so `DIRLIGHT$2`
+compiles the call into the directional light's line and no other. The sun is
+the scene's only directional light, so the cards take the wrap and the
+backlight from the sun whatever order the lights were made in, and every
+other light, the headlamps included, keeps Babylon's own diffuse.
+
 ## 7. Consumers
 
 - **Clutter.** `clutterMeshes.ts` attaches `attachFoliage` with the class profile in place of
@@ -298,7 +312,9 @@ The plugin is GLSL-only and silently dropped on WebGPU, as every plugin in the r
   array binds five slots; the motion weight is zero past `foliageEdges.y`.
 - `foliageLightPlugin.test.ts`: the regex anchor matches the installed `lightFragment` include;
   the wrap term is energy-conserving (integrates to ≤ Lambert over the hemisphere on a grid);
-  only light 0 is modified.
+  only light 0 is modified (amended 2026-10-13: only the directional light's line takes the
+  call, shown in the game's light order, headlamp first, both on the include unrolled per light
+  and on a material compiled through Babylon's WebGPU processing).
 - `clutterMeshes.test.ts`: the `foliage` buffer is written for a known cell with the colour
   `surfaceAlbedo` returns there and a shade of `1 − 0.5·forestDensity`; its capacity tracks the
   matrix buffer; far buckets get `foliageEdges` from `clutterFadeEdges` and near buckets the

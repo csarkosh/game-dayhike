@@ -277,10 +277,13 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   scene.getEngine().setHardwareScalingLevel(settings.hardwareScaling);
 
   // The dome: the sky's table drawn on a box that rides with the camera. It
-  // adds no light, so the sun below stays light 0 and the fill light 1, the
-  // order the foliage light plugin reads them in.
+  // adds no light.
   const dome = createSkyDome(scene, options.colourPath);
 
+  // The scene's only DirectionalLight. The foliage light plugin's and the
+  // terrain's far-cover sun lines find it by its directional define
+  // (`DIRLIGHT<n>`), not by its order: in the game the local headlamp is made
+  // first, so the sun is light 1.
   const sun = new DirectionalLight("sun", new Vector3(0, -1, 0), scene);
   // Hemispheric fill stays for ambient. Its intensity and colour are the sky
   // state's, set by `apply()` once the table holds its slices; until then the

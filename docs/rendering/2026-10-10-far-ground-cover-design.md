@@ -78,6 +78,20 @@ average 0.63 in y; turned toward the viewer and blended from the root, the
 cards' mean normal leans about 17° from up toward the eye. The headlamp's range
 is 25 m, so past the hand-off the wrap acts on nothing.
 
+Amended 2026-10-13: the cards now take the wrap and the backlight from the sun,
+whatever order the lights were made in. `FoliageLightPlugin` keys its call on
+the light's directional define, `#if defined(FOLIAGE) && defined(DIRLIGHT$2)`,
+as the far ground's sun line does (§8.2), so the call compiles into the sun's
+line, the scene's only directional light, and every other light, the headlamps
+included, keeps Babylon's own diffuse. A card with the sun behind it takes the
+wrap of `FOLIAGE_WRAP` 0.35 on N·L instead of going near black, and the
+backlight toward that sun. The measurements below, the fit of §7 and the
+statements of §3.3 and §6.2 that point here were made against the cards as
+they were lit before, with the sun through Babylon's own diffuse; the far
+ground's sun factor and colour were fitted to those cards, so the hand-off
+between the cards and the far ground reads against cards that are now lighter
+toward a low or backlighting sun.
+
 **The measurement.** 2026-10-09, seed `room-3`, free camera at
 (140, 69.58, 400), yaw 4.712 (facing −x), pitch 0.15; forest interior, canopy
 0.86 at the eye and 0.99 along 70 m ahead; high tier, WebGPU, 1920 × 1080 at
@@ -938,6 +952,10 @@ conditional this design uses would change the 23 recorded fragment stages that
 carry it and the `foliageLight.fragment` pin, and would change how every card
 and blade is lit at every distance; the far ground's sun factor would then be
 fitted again to match.
+
+Amended 2026-10-13: the cards choose the sun by `DIRLIGHT$2` (§1, How the cards
+are lit), which changes those stages and that pin; the far ground's sun factor
+was fitted before, to the cards as they were lit through Babylon's own diffuse.
 
 Also left: a backlit glow on the far ground toward a low sun (the cards have
 none on the sun); a wind shimmer on the paint; the trail's banks, which take
