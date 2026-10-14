@@ -99,12 +99,18 @@ const vec3 FAR_SWARD = vec3(0.0073, 0.0258, 0.0055);
 // through the canopy shade alone, and the litter share along the far crops was
 // not read from the simulation.
 const vec3 FAR_LITTER = vec3(0.081, 0.057, 0.032);
-// Fitted 2026-10-10: At the canopy pose at noon the far crops read Y 0.02630
-// against the card band's 0.02573. At the canopy pose at 16:00 far over near
-// reached 0.77 with the cut at 0.25 and the colour at its +10 % edge, short of
-// 0.8. The canopy far crops' chroma reads 0.23 of the band's because those
-// crops carry trunks and fog.
-const float FAR_CANOPY_SHADE = 0.4615;
+// Fitted 2026-10-10 at 0.4615: At the canopy pose at noon the far crops read
+// Y 0.02630 against the card band's 0.02573. At the canopy pose at 16:00 far
+// over near reached 0.77 with the cut at 0.25 and the colour at its +10 % edge,
+// short of 0.8. The canopy far crops' chroma reads 0.23 of the band's because
+// those crops carry trunks and fog.
+// Derived 2026-10-14, to be confirmed against stills: the cards now take the
+// canopy as 0.4 of the sky and 0.4 of the sun in place of 1 - 0.5 rho on their
+// albedo, and their root darkening eased to 0.7 and 0.75 from 0.55 and 0.6, so
+// at rho = 0.9 the cards gain 0.64 / 0.55 = 1.1636 on each share and
+// 0.8625 / 0.7875 = 1.0952 on the root term's mean over height, 1.2745 in all:
+// 1 - 0.4615 * 0.9 = 0.5847 becomes 0.7451, and (1 - 0.7451) / 0.9 = 0.2832.
+const float FAR_CANOPY_SHADE = 0.2832;
 const vec2 FAR_CLUMP_CELL = vec2(0.8, 3.0);
 const vec2 FAR_CLUMP_WEIGHT = vec2(0.6, 0.4);
 const vec2 FAR_CLUMP_SALT = vec2(41.0, 17.0);

@@ -197,12 +197,25 @@ export const FAR_SWARD: Rgb = { r: 0.0073, g: 0.0258, b: 0.0055 };
  * the far crops was not read from the simulation. */
 export const FAR_LITTER: Rgb = { r: 0.081, g: 0.057, b: 0.032 };
 /** The target × (1 − FAR_CANOPY_SHADE × ρ), ρ the forest density. Fitted
- * 2026-10-10: at the canopy pose at noon the far crops read Y 0.02630 against
- * the card band's 0.02573. At the canopy pose at 16:00 far over near reached
- * 0.77 with the cut at 0.25 and the colour at its +10 % edge, short of 0.8. The
- * canopy far crops' chroma reads 0.23 of the band's because those crops carry
- * trunks and fog. */
-export const FAR_CANOPY_SHADE = 0.4615;
+ * 2026-10-10 at 0.4615: at the canopy pose at noon the far crops read Y 0.02630
+ * against the card band's 0.02573. At the canopy pose at 16:00 far over near
+ * reached 0.77 with the cut at 0.25 and the colour at its +10 % edge, short of
+ * 0.8. The canopy far crops' chroma reads 0.23 of the band's because those
+ * crops carry trunks and fog.
+ *
+ * Derived 2026-10-14, to be confirmed against stills: the cards that fit was
+ * made against carried the canopy as `1 − 0.5·ρ` on their albedo and the root
+ * darkening at `rootAO` 0.55 (UNDERSTORY) and 0.6 (DUFF); they now take the
+ * canopy as `FOLIAGE_CANOPY_SKY` 0.4 of the sky and `FOLIAGE_CANOPY_SUN` 0.4 of
+ * the sun, so at ρ = 0.9 each share gains (1 − 0.4·0.9) / (1 − 0.5·0.9) =
+ * 0.64 / 0.55 = 1.1636, and their root term's mean over height,
+ * mean(mix(rootAO, 1, h)) = (rootAO + 1) / 2, gains (0.85 + 0.875) / 2 over
+ * (0.775 + 0.8) / 2 = 0.8625 / 0.7875 = 1.0952 at `rootAO` 0.7 and 0.75. The
+ * far target rises by the product, 1.2745: 1 − 0.4615·0.9 = 0.5847 becomes
+ * 0.7451, so FAR_CANOPY_SHADE = (1 − 0.7451) / 0.9 = 0.2832. In the open
+ * (ρ → 0) the cards gain only the root term (BLADES 0.75 → 0.825 in mean,
+ * +10 %), inside the fit's ±10 % on Y, so `FAR_SWARD` keeps its fit. */
+export const FAR_CANOPY_SHADE = 0.2832;
 /** The clumps' two octaves: tussocks and patches (m), their shares, and the
  * 3 m octave's lattice offset so the two are not aligned. */
 export const FAR_CLUMP_CELL: readonly [number, number] = [0.8, 3];

@@ -164,7 +164,11 @@ describe("the far cover", () => {
   it("carries the fitted values as literals", () => {
     expect(FAR_SWARD).toEqual({ r: 0.0073, g: 0.0258, b: 0.0055 });
     expect(FAR_LITTER).toEqual({ r: 0.081, g: 0.057, b: 0.032 });
-    expect(FAR_CANOPY_SHADE).toBe(0.4615);
+    // Derived from the cards' canopy terms and root darkening, not fitted:
+    // the fit's 0.4615 at a closed canopy (rho 0.9) times the cards' gain of
+    // 1.2745 there gives the shade the new value makes.
+    expect(FAR_CANOPY_SHADE).toBe(0.2832);
+    expect((1 - 0.4615 * 0.9) * 1.2745).toBeCloseTo(1 - FAR_CANOPY_SHADE * 0.9, 3);
     expect(FAR_SELF_SHADOW).toBe(0.8);
     expect(FAR_SPEC_CUT).toBe(0.25);
   }, timeLimit(5_000));
@@ -289,9 +293,9 @@ describe("the far cover", () => {
     expect(sward.b).toBeCloseTo(0.0055, 12);
     // FAR_LITTER × (1 − FAR_CANOPY_SHADE).
     const litter = farCoverTarget(1, 1, white, 1);
-    expect(litter.r).toBeCloseTo(0.0436185, 12);
-    expect(litter.g).toBeCloseTo(0.0306945, 12);
-    expect(litter.b).toBeCloseTo(0.017232, 12);
+    expect(litter.r).toBeCloseTo(0.0580608, 12);
+    expect(litter.g).toBeCloseTo(0.0408576, 12);
+    expect(litter.b).toBeCloseTo(0.0229376, 12);
     // FAR_SWARD × FAR_CLUMP_AO.
     const trough = farCoverTarget(0, 0, white, 0);
     expect(trough.r).toBeCloseTo(0.004745, 12);
@@ -299,9 +303,9 @@ describe("the far cover", () => {
     expect(trough.b).toBeCloseTo(0.003575, 12);
     // Litter and canopy beyond 1 are clamped.
     const over = farCoverTarget(2, 2, white, 1);
-    expect(over.r).toBeCloseTo(0.0436185, 12);
-    expect(over.g).toBeCloseTo(0.0306945, 12);
-    expect(over.b).toBeCloseTo(0.017232, 12);
+    expect(over.r).toBeCloseTo(0.0580608, 12);
+    expect(over.g).toBeCloseTo(0.0408576, 12);
+    expect(over.b).toBeCloseTo(0.0229376, 12);
   }, timeLimit(5_000));
 
   it("answers the sun as the cards do: brighter with the sun behind the eye, darker with it ahead, capped where it grazes", () => {

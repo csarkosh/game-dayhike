@@ -978,6 +978,37 @@ The build followed §4 to §9 with the departures below, each from what the fit'
 
 **Checks.** The fit's stills at noon and 16:00 at both poses, 1920 × 1080 on the high tier; with the cards hidden the band's mean rose at both poses (meadow 0.0382 → 0.0399, canopy 0.0257 → 0.0270), so the band lies on cards. §11.5: a fresh page a tier at each fit pose, on WebGPU with the shipped maps, asked for no stage the maps lack (0 misses of the 176 to 232 stages each page met). Still owed before the merge: §11.2's walks, turn and mist stills, §11.3's September bars and the mid crop, §11.4's frame-time pairs, and the stills on medium and low.
 
+## 14. Amendment (2026-10-14): the canopy shade derived from the cards' new shading
+
+The fit of §7 was made against cards lit by Lambert that carried the canopy
+as `1 − 0.5·ρ` on their albedo (so on the sun and the sky alike) and the root
+darkening at `rootAO` 0.55 (UNDERSTORY) and 0.6 (DUFF). The cards now take
+the canopy as two terms, `FOLIAGE_CANOPY_SKY` 0.4 of the sky and
+`FOLIAGE_CANOPY_SUN` 0.4 of the sun (0 where the meshes receive cast
+shadows), their root darkening eased to 0.7 and 0.75, and their wrap back to
+Lambert at full light (`2026-09-15-grass-grounding-and-wind-design.md`, §12).
+`FAR_CANOPY_SHADE` keeps its structure, one shade on the whole colour with
+the terrain receiving the trees' cast shadows inside 42 m and the far shade
+standing in for the rest, and is recomputed so the far target moves by the
+factor the near cards' mean moves under a closed canopy:
+
+- at ρ = 0.9 the cards' sun share gains `(1 − 0.4·0.9) / (1 − 0.5·0.9)` =
+  0.64 / 0.55 = 1.1636 from the canopy, and the sky share likewise;
+- both gain the root term's mean over height, `mean(mix(rootAO, 1, h))` =
+  `(rootAO + 1) / 2`, for the cover under a canopy: (0.85 + 0.875) / 2 over
+  (0.775 + 0.8) / 2 = 0.8625 / 0.7875 = 1.0952;
+- the product is 1.2745, so `1 − 0.4615·0.9` = 0.5847 becomes 0.7451, and
+  `FAR_CANOPY_SHADE` = (1 − 0.7451) / 0.9 = **0.2832**, in the twin and the
+  include.
+
+The value is derived, not fitted: §7's targets at the canopy pose (far crop Y
+within ±10 % of the card band's, far over near at 16:00) are to be re-checked
+on stills, and the fit repeated from this value if they miss. In the open
+(ρ → 0) the cards gain only the root term (BLADES 0.75 → 0.825 in mean,
++10 %), inside the fit's ±10 % on Y, so `FAR_SWARD` keeps its fit. §1's
+amendment of 2026-10-13 on the wrap stands, with the wrap now Lambert at full
+light: the premise the fit was made under.
+
 ## References
 
 - [A full far ground without drawing it](https://csarko.sh/research/a-full-far-ground-without-drawing-it),
