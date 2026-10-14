@@ -1,10 +1,19 @@
-// KTX2/Basis transcoder wiring. Character GLBs carry KHR_texture_basisu
-// textures; Babylon decodes them in a worker whose decoder JS + transcoder
-// wasm must be fetched by URL. Point every URL at the vendored copies under
-// /libs/ktx2 (committed by tools/vendor-ktx2.mjs) so nothing reaches for a CDN.
+// KTX2/Basis transcoder wiring. The bark sets are loose KTX2 files and
+// character GLBs may carry KHR_texture_basisu textures; Babylon decodes
+// them in a worker whose decoder JS + transcoder wasm must be fetched by
+// URL. Point every URL at the vendored copies under libs/ktx2 (committed by
+// tools/vendor-ktx2.mjs) so nothing reaches for a CDN.
+//
+// Under the page's own base: the site lives at `/dayhike/`, so a root
+// `/libs/ktx2` is a 404 there (the host answers it with the index page), and
+// the decoder's workers die before any KTX2 texture can be read. The URL is
+// absolute, as the workers need, built from the base the router already
+// knows.
 import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2.js";
 
-export const KTX2_DECODER_BASE_URL = "/libs/ktx2";
+import { BASE } from "./router.js";
+
+export const KTX2_DECODER_BASE_URL = `${BASE}libs/ktx2`;
 
 // KhronosTextureContainer2.URLConfig defaults every field to null except
 // jsDecoderModule (which defaults to a CDN URL). Both the main-thread and
