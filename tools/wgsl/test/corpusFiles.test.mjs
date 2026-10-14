@@ -316,15 +316,16 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1567 recorded stages, each file\'s bytes hashing to the name it has: 901 on the medium and high tiers, 544 on low, 85 on high alone, 33 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1567);
+  it('holds the 1497 recorded stages, each file\'s bytes hashing to the name it has: 860 on the medium and high tiers, 522 on low, 79 on high alone, 32 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1497);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1567);
+    expect(read.stages).toHaveLength(1497);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(583);
-    // The 901 recorded on the medium and high tiers (the foliage's stages with the canopy's
-    // share of the sky and of the sun apart, the cards' contrast toward the grass's green and
-    // the wrap that reaches Lambert, met on the forest floor, at the trailhead, in the meadow,
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(508);
+    // The 860 recorded on the medium and high tiers (the foliage's stages with the canopy's
+    // share of the sky and of the sun apart, the cards' contrast toward the main tuft's colour,
+    // the albedo floor, the half-Lambert wrap and the cast shadow held at three quarters on
+    // the cover, and the far ground's olive sward with its metre-scale clumps, met on the forest floor, at the trailhead, in the meadow,
     // at the tarn, dry and under rain, from the win to the title page, and on the title's and
     // the intro's pages (2026-10-14); the trees' bark with its occlusion, roughness and
     // metalness map and no vertex tangent, the giant pine in both its barks, met at the same
@@ -353,8 +354,9 @@ describe('the committed corpus and the tests\' fixture', () => {
     // dome's 2 and the midges' 2, whose text is the same on every tier.
     // Stages whose text a shader no longer produces are
     // retired, not kept: the foliage's stages before the canopy's share of the sky and of the
-    // sun were apart and before the cards' contrast, 235 of them over the two recordings of
-    // 2026-10-14, 74 of which the pages did not meet again (the lamps of three and more
+    // sun were apart, before the cards' contrast and before the floors and the half-Lambert
+    // wrap, and the far ground's before its olive sward, 391 of them over the three
+    // recordings of 2026-10-14, 73 of which the pages did not meet again (the lamps of three and more
     // players, the lamps under rain, the lake's mirror, and the blades under rain)
     // (2026-10-14), the foliage's 35 fragment stages before the wrap was keyed on the sun's
     // define, 13 of which the pages did not meet again (a second player's lamp under rain, the
@@ -375,13 +377,13 @@ describe('the committed corpus and the tests\' fixture', () => {
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1567);
+    expect(read.tiers.size).toBe(1497);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([548, 938, 990]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(901);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(544);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(85);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(33);
+    expect([on('low'), on('medium'), on('high')]).toEqual([526, 896, 943]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(860);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(522);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(79);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(32);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
