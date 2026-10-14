@@ -195,6 +195,12 @@
       "bytes": 2480400
     },
     {
+      "id": "cliff.slab",
+      "kind": "environment",
+      "output": "models/cliff.slab.glb",
+      "bytes": 2505212
+    },
+    {
       "id": "clutter.rock_a",
       "kind": "prop",
       "output": "models/clutter.rock_a.glb",
@@ -438,6 +444,126 @@
       "id": "board.portrait",
       "output": "textures/board.portrait.webp",
       "bytes": 16298
+    },
+    {
+      "id": "bark.pine.2k",
+      "output": "textures/bark.pine.2k.ktx2",
+      "bytes": 4576877
+    },
+    {
+      "id": "bark.pine.2k.normal",
+      "output": "textures/bark.pine.2k.normal.ktx2",
+      "bytes": 4986307
+    },
+    {
+      "id": "bark.pine.2k.arm",
+      "output": "textures/bark.pine.2k.arm.ktx2",
+      "bytes": 3504449
+    },
+    {
+      "id": "bark.pine.1k",
+      "output": "textures/bark.pine.1k.ktx2",
+      "bytes": 1202236
+    },
+    {
+      "id": "bark.pine.1k.normal",
+      "output": "textures/bark.pine.1k.normal.ktx2",
+      "bytes": 1280663
+    },
+    {
+      "id": "bark.pine.1k.arm",
+      "output": "textures/bark.pine.1k.arm.ktx2",
+      "bytes": 947303
+    },
+    {
+      "id": "bark.metasequoia.2k",
+      "output": "textures/bark.metasequoia.2k.ktx2",
+      "bytes": 4643472
+    },
+    {
+      "id": "bark.metasequoia.2k.normal",
+      "output": "textures/bark.metasequoia.2k.normal.ktx2",
+      "bytes": 4793865
+    },
+    {
+      "id": "bark.metasequoia.2k.arm",
+      "output": "textures/bark.metasequoia.2k.arm.ktx2",
+      "bytes": 3012668
+    },
+    {
+      "id": "bark.metasequoia.1k",
+      "output": "textures/bark.metasequoia.1k.ktx2",
+      "bytes": 1205194
+    },
+    {
+      "id": "bark.metasequoia.1k.normal",
+      "output": "textures/bark.metasequoia.1k.normal.ktx2",
+      "bytes": 1230699
+    },
+    {
+      "id": "bark.metasequoia.1k.arm",
+      "output": "textures/bark.metasequoia.1k.arm.ktx2",
+      "bytes": 815431
+    },
+    {
+      "id": "bark.cedar.2k",
+      "output": "textures/bark.cedar.2k.ktx2",
+      "bytes": 4160791
+    },
+    {
+      "id": "bark.cedar.2k.normal",
+      "output": "textures/bark.cedar.2k.normal.ktx2",
+      "bytes": 4372666
+    },
+    {
+      "id": "bark.cedar.2k.arm",
+      "output": "textures/bark.cedar.2k.arm.ktx2",
+      "bytes": 2771279
+    },
+    {
+      "id": "bark.cedar.1k",
+      "output": "textures/bark.cedar.1k.ktx2",
+      "bytes": 1053855
+    },
+    {
+      "id": "bark.cedar.1k.normal",
+      "output": "textures/bark.cedar.1k.normal.ktx2",
+      "bytes": 1176669
+    },
+    {
+      "id": "bark.cedar.1k.arm",
+      "output": "textures/bark.cedar.1k.arm.ktx2",
+      "bytes": 786869
+    },
+    {
+      "id": "bark.alder.2k",
+      "output": "textures/bark.alder.2k.ktx2",
+      "bytes": 5063126
+    },
+    {
+      "id": "bark.alder.2k.normal",
+      "output": "textures/bark.alder.2k.normal.ktx2",
+      "bytes": 4991559
+    },
+    {
+      "id": "bark.alder.2k.arm",
+      "output": "textures/bark.alder.2k.arm.ktx2",
+      "bytes": 3337806
+    },
+    {
+      "id": "bark.alder.1k",
+      "output": "textures/bark.alder.1k.ktx2",
+      "bytes": 1279669
+    },
+    {
+      "id": "bark.alder.1k.normal",
+      "output": "textures/bark.alder.1k.normal.ktx2",
+      "bytes": 1309394
+    },
+    {
+      "id": "bark.alder.1k.arm",
+      "output": "textures/bark.alder.1k.arm.ktx2",
+      "bytes": 937231
     }
   ],
   "audio": [

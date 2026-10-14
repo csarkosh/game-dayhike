@@ -9,6 +9,6 @@ const lfs = (ext) => new RegExp(`^\\*\\.${ext}\\s+filter=lfs diff=lfs merge=lfs 
 
 describe('.gitattributes', () => {
   it('tracks every shipped asset kind through LFS: models, images, calls and the film', () => {
-    for (const ext of ['glb', 'webp', 'mp3', 'mp4']) expect(ATTRIBUTES, ext).toMatch(lfs(ext));
+    for (const ext of ['glb', 'webp', 'ktx2', 'mp3', 'mp4']) expect(ATTRIBUTES, ext).toMatch(lfs(ext));
   });
 });

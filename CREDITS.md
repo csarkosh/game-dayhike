@@ -9,12 +9,173 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC0-1.0
 - **URL:** https://freesound.org/people/tallfunnyjew/sounds/625455/
 
-## ambience.surf_cove
+## bark.alder.1k
 
-- **Source:** Freesound: Short Sand Beach: Waves 3
-- **Author:** ghosttropic
+- **Source:** ambientCG: Bark 011
+- **Author:** ambientCG (Lennart Demes)
 - **Licence:** CC0-1.0
-- **URL:** https://freesound.org/people/ghosttropic/sounds/717146/
+- **URL:** https://ambientcg.com/a/Bark011
+
+## bark.alder.1k.arm
+
+- **Source:** ambientCG: Bark 011
+- **Author:** ambientCG (Lennart Demes)
+- **Licence:** CC0-1.0
+- **URL:** https://ambientcg.com/a/Bark011
+
+## bark.alder.1k.normal
+
+- **Source:** ambientCG: Bark 011
+- **Author:** ambientCG (Lennart Demes)
+- **Licence:** CC0-1.0
+- **URL:** https://ambientcg.com/a/Bark011
+
+## bark.alder.2k
+
+- **Source:** ambientCG: Bark 011
+- **Author:** ambientCG (Lennart Demes)
+- **Licence:** CC0-1.0
+- **URL:** https://ambientcg.com/a/Bark011
+
+## bark.alder.2k.arm
+
+- **Source:** ambientCG: Bark 011
+- **Author:** ambientCG (Lennart Demes)
+- **Licence:** CC0-1.0
+- **URL:** https://ambientcg.com/a/Bark011
+
+## bark.alder.2k.normal
+
+- **Source:** ambientCG: Bark 011
+- **Author:** ambientCG (Lennart Demes)
+- **Licence:** CC0-1.0
+- **URL:** https://ambientcg.com/a/Bark011
+
+## bark.cedar.1k
+
+- **Source:** Poly Haven: Japanese Cedar Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/japanese_cedar_bark
+
+## bark.cedar.1k.arm
+
+- **Source:** Poly Haven: Japanese Cedar Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/japanese_cedar_bark
+
+## bark.cedar.1k.normal
+
+- **Source:** Poly Haven: Japanese Cedar Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/japanese_cedar_bark
+
+## bark.cedar.2k
+
+- **Source:** Poly Haven: Japanese Cedar Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/japanese_cedar_bark
+
+## bark.cedar.2k.arm
+
+- **Source:** Poly Haven: Japanese Cedar Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/japanese_cedar_bark
+
+## bark.cedar.2k.normal
+
+- **Source:** Poly Haven: Japanese Cedar Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/japanese_cedar_bark
+
+## bark.metasequoia.1k
+
+- **Source:** Poly Haven: Metasequoia Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/metasequoia_bark
+
+## bark.metasequoia.1k.arm
+
+- **Source:** Poly Haven: Metasequoia Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/metasequoia_bark
+
+## bark.metasequoia.1k.normal
+
+- **Source:** Poly Haven: Metasequoia Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/metasequoia_bark
+
+## bark.metasequoia.2k
+
+- **Source:** Poly Haven: Metasequoia Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/metasequoia_bark
+
+## bark.metasequoia.2k.arm
+
+- **Source:** Poly Haven: Metasequoia Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/metasequoia_bark
+
+## bark.metasequoia.2k.normal
+
+- **Source:** Poly Haven: Metasequoia Bark
+- **Author:** Charlotte Baglioni
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/metasequoia_bark
+
+## bark.pine.1k
+
+- **Source:** Poly Haven: Pine Bark
+- **Author:** Dimitrios Savva
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/pine_bark
+
+## bark.pine.1k.arm
+
+- **Source:** Poly Haven: Pine Bark
+- **Author:** Dimitrios Savva
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/pine_bark
+
+## bark.pine.1k.normal
+
+- **Source:** Poly Haven: Pine Bark
+- **Author:** Dimitrios Savva
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/pine_bark
+
+## bark.pine.2k
+
+- **Source:** Poly Haven: Pine Bark
+- **Author:** Dimitrios Savva
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/pine_bark
+
+## bark.pine.2k.arm
+
+- **Source:** Poly Haven: Pine Bark
+- **Author:** Dimitrios Savva
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/pine_bark
+
+## bark.pine.2k.normal
+
+- **Source:** Poly Haven: Pine Bark
+- **Author:** Dimitrios Savva
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/pine_bark
 
 ## board.paper
 
@@ -51,41 +212,6 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC0-1.0
 - **URL:** https://freesound.org/people/lwdickens/sounds/263489/
 
-## call.frog_chorus_far
-
-- **Source:** Freesound: Pacific Treefrogs in Mating Season
-- **Author:** superfreq
-- **Licence:** CC0-1.0
-- **URL:** https://freesound.org/people/superfreq/sounds/429590/
-
-## call.frog_chorus_near
-
-- **Source:** Freesound: frogs 3-4-2020.flac
-- **Author:** enlightened_greg
-- **Licence:** CC0-1.0
-- **URL:** https://freesound.org/people/enlightened_greg/sounds/507737/
-
-## call.frog_single_a
-
-- **Source:** Freesound: 200703101950PacificChorusFrogsSoloNR.wav
-- **Author:** daveincamas
-- **Licence:** CC-BY-4.0
-- **URL:** https://freesound.org/people/daveincamas/sounds/32807/
-
-## call.frog_single_b
-
-- **Source:** Freesound: 200703101950PacificChorusFrogsSoloNR.wav
-- **Author:** daveincamas
-- **Licence:** CC-BY-4.0
-- **URL:** https://freesound.org/people/daveincamas/sounds/32807/
-
-## call.frog_single_c
-
-- **Source:** Freesound: 200703101950PacificChorusFrogsSoloNR.wav
-- **Author:** daveincamas
-- **Licence:** CC-BY-4.0
-- **URL:** https://freesound.org/people/daveincamas/sounds/32807/
-
 ## call.gull_cry
 
 - **Source:** Freesound: Gull.wav
@@ -107,40 +233,12 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC0-1.0
 - **URL:** https://freesound.org/people/philberts/sounds/111393/
 
-## call.surf_backwash_a
+## cliff.slab
 
-- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
-- **Author:** National Park Service
-- **Licence:** Public domain
-- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
-
-## call.surf_backwash_b
-
-- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
-- **Author:** National Park Service
-- **Licence:** Public domain
-- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
-
-## call.surf_plunge_a
-
-- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
-- **Author:** National Park Service
-- **Licence:** Public domain
-- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
-
-## call.surf_plunge_b
-
-- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
-- **Author:** National Park Service
-- **Licence:** Public domain
-- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
-
-## call.surf_plunge_c
-
-- **Source:** NPS Sound Gallery: Ocean, Olympic National Park
-- **Author:** National Park Service
-- **Licence:** Public domain
-- **URL:** https://www.nps.gov/subjects/sound/sounds-ocean.htm
+- **Source:** Poly Haven: Mountainside
+- **Author:** Dario Barresi, Rico Cilliers
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/mountainside
 
 ## cliff.wall_a
 
