@@ -45,7 +45,8 @@ vi.mock("../../src/game/skyDome.js", async (importOriginal) => {
 });
 
 import {
-  createLighting, DEFAULT_HOUR, SHADOW_FLOOR, SKY_WAIT_WARN_MS, sunAltitudeDeg, sunShadowDarkness, whenSkyHeld,
+  createLighting, DEFAULT_HOUR, SHADOW_FLOOR, SKY_WAIT_WARN_MS, SUN_LIGHT_SIZE_UV, shadowFilterFor, sunAltitudeDeg,
+  sunShadowDarkness, whenSkyHeld,
   type Lighting, type LightingOptions,
 } from "../../src/game/lighting.js";
 import { SKY_DOME_NAME } from "../../src/game/skyDome.js";
@@ -99,6 +100,21 @@ describe("createLighting", () => {
     const lighting = light(scene(), { tier: "low" });
     expect(lighting.shadows).toBeNull();
     lighting.dispose();
+  });
+
+  it("softens the high tier's shadow edges with the sun's size, and keeps the plain filter on the others", () => {
+    // The generator cannot be built under NullEngine (`IsSupported` is
+    // false), so the filter it is given is read from the pure rule the
+    // lighting applies. The soft shadow takes Babylon's medium quality,
+    // sixteen search taps and thirty-two filter taps on the cascaded path,
+    // at the sun's size in the first cascade's UV: 0.1, a penumbra 28 mm
+    // wide under a branch 3 m up at noon in a 16:9 window.
+    expect(SUN_LIGHT_SIZE_UV).toBe(0.1);
+    expect(shadowFilterFor(QUALITY.high)).toEqual({ filter: "pcss", quality: 1, lightSizeUV: 0.1 });
+    expect(shadowFilterFor(QUALITY.medium)).toEqual({ filter: "pcf" });
+    expect(shadowFilterFor(QUALITY.low)).toEqual({ filter: "pcf" });
+    expect(shadowFilterFor({ shadowSoftEdges: true })).toEqual({ filter: "pcss", quality: 1, lightSizeUV: 0.1 });
+    expect(shadowFilterFor({ shadowSoftEdges: false })).toEqual({ filter: "pcf" });
   });
 
   it("points the sun light along the direction light travels", () => {

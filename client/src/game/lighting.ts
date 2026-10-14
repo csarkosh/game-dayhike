@@ -14,9 +14,10 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 // instead and there is no error and no shadows — the same failure mode that cost
 // hours on thin instances in `renderer.ts`.
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
 import { ReflectionProbe } from "@babylonjs/core/Probes/reflectionProbe.js";
 
-import { QUALITY, type QualityTier } from "./quality.js";
+import { QUALITY, type QualitySettings, type QualityTier } from "./quality.js";
 import { sunPositionAt } from "./sky.js";
 import { NOON_ALTITUDE_DEG, type SkyTable } from "./skyTable.js";
 import { SKY_IBL_SCALE, skyStateFor, type SkyState } from "./skyState.js";
@@ -113,6 +114,67 @@ export function whenSkyHeld(table: SkyTable, hour: () => number, options: { sign
  * ridge.
  */
 const SHADOW_DISTANCE = 300;
+
+/**
+ * The sun's size for the soft-edged shadows, in the shadow map's UV units:
+ * Babylon's `contactHardeningLightSizeUVRatio`, the light's width over the
+ * first cascade's world extent.
+ *
+ * The sun subtends about 0.53°, so a caster `d` metres above the ground
+ * throws a penumbra `d × tan(0.53°)` ≈ 0.0093 d metres wide: 28 mm under a
+ * branch 3 m up, 19 cm under a canopy 20 m up. Babylon's percentage-closer
+ * soft shadow sizes its filter as a radius over a unit disc of taps,
+ * `(Δdepth + 10 texels) × ratio` of the map's extent, where Δdepth is the
+ * receiver's depth less the average blocker's, over the first cascade's depth
+ * range in the light's view (the other cascades are scaled to it). So the
+ * penumbra's radius in metres is `Δz × ratio × X / Z`, with `X` the first
+ * cascade's width and `Z` its depth range, and the sun's is
+ * `ratio = tan(0.265°) × Z / X` ≈ 0.00463 Z / X.
+ *
+ * `X` follows `SHADOW_DISTANCE`: two cascades at lambda 0.9 split 300 m at
+ * 18.5 m of camera depth, and the stabilised first cascade is the sphere
+ * round that slice of the 1.4 rad frustum, 66 m across in a 16:9 window
+ * (41 m in a window twice as tall as wide), 32 mm a texel at 2048. `Z` is not
+ * the slice's: without depth clamping, which the soft shadow turns off to
+ * keep true distances, the light's near plane is pushed back to hold every
+ * caster, and the clipmap's outer rings reach 4 km from the camera, so `Z`
+ * is their reach up-sun: about 1.4 km at noon, with the sun 76° up, 4.5 km
+ * at 08:00 and 16:00 at 29°. At noon in a 16:9 window the sun is
+ * 0.00463 × 1400 / 66 ≈ 0.1 (Babylon's default, by coincidence): a penumbra
+ * of 14 mm radius, 28 mm wide, at 3 m, over a floor of one texel at the
+ * contact. The same ratio is a third of the sun's at 08:00, and 1.6× it in
+ * the tall window; a value set once cannot follow both. The blocker search
+ * runs over the same ratio of the map, 6.6 m round the sample at noon with
+ * sixteen fixed taps, the nearest 0.55 m out, so a caster narrower than the
+ * taps' spacing can go unfound, and a receiver that finds no blocker is lit:
+ * what to look at in the browser is the shadows of trunks, rocks and fronds
+ * at the contact, not only the softness under the canopy.
+ */
+export const SUN_LIGHT_SIZE_UV = 0.1;
+
+/** What the shadow generator filters with, by tier: the plain
+ * percentage-closer filter at Babylon's default quality (a 5×5 texel
+ * kernel, nine hardware-compared taps), or the percentage-closer soft shadow
+ * with the sun's size at the quality given. */
+export type ShadowFilter =
+  | { readonly filter: "pcf" }
+  | { readonly filter: "pcss"; readonly quality: number; readonly lightSizeUV: number };
+
+/**
+ * The shadow filter a tier's settings ask for. The soft shadow takes
+ * `ShadowGenerator.QUALITY_MEDIUM`: on Babylon's cascaded path that is
+ * sixteen search taps and thirty-two filter taps a sample. The low quality
+ * is sixteen and sixteen, which leaves the filter under a canopy, six texels
+ * across, speckled; the high quality's thirty-two and sixty-four is twice
+ * the reads for a filter whose radius at the contact is one texel. Pure, so
+ * a test can read it where the generator itself cannot be built
+ * (`CascadedShadowGenerator.IsSupported` is false under NullEngine).
+ */
+export function shadowFilterFor(settings: Pick<QualitySettings, "shadowSoftEdges">): ShadowFilter {
+  return settings.shadowSoftEdges
+    ? { filter: "pcss", quality: ShadowGenerator.QUALITY_MEDIUM, lightSizeUV: SUN_LIGHT_SIZE_UV }
+    : { filter: "pcf" };
+}
 
 /**
  * The least of the sun's light a cast shadow keeps: the shadow generator's
@@ -296,9 +358,20 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   // NullEngine does not have and weak hardware may not either. Constructing it
   // regardless throws, so the check is not optional — and the low tier wants no
   // shadows anyway.
+  //
+  // The soft-edged tier asks for a full-float map first (half float, Babylon's
+  // first choice, where the engine renders no float): the soft shadow's
+  // blocker search reads its depth back as a texture, and that depth spans the
+  // light's whole range, kilometres here (see `SUN_LIGHT_SIZE_UV`). Half
+  // float resolves about 1 part in 2,000 of it, a metre and more, so a caster
+  // nearer the ground than that could read as no caster and lose its shadow;
+  // full float resolves a millimetre. The hard-edged tiers compare against
+  // the depth-stencil texture and never read the map's own depth, so they
+  // keep the half.
+  const filter = shadowFilterFor(settings);
   const shadows =
     settings.shadowMapSize > 0 && CascadedShadowGenerator.IsSupported
-      ? new CascadedShadowGenerator(settings.shadowMapSize, sun)
+      ? new CascadedShadowGenerator(settings.shadowMapSize, sun, filter.filter === "pcss")
       : null;
   if (shadows !== null) {
     shadows.numCascades = settings.shadowCascades;
@@ -317,10 +390,24 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     shadows.stabilizeCascades = true;
     shadows.lambda = 0.9;
     shadows.shadowMaxZ = SHADOW_DISTANCE;
-    // Already the constructor default; pinned explicitly so it reads as a
-    // deliberate choice rather than an oversight among the settings above that
-    // are load-bearing.
-    shadows.usePercentageCloserFiltering = true;
+    if (filter.filter === "pcss") {
+      // The percentage-closer soft shadow: the filter's radius grows with the
+      // distance between the caster and the receiver, found by a search of
+      // the map's depth round the sample. Setting it turns depth clamping off
+      // for the map, so the light's near plane moves back to hold every
+      // caster (`SUN_LIGHT_SIZE_UV` says what that costs the depth range).
+      // The penumbra's darkness stays at Babylon's default of 1: the edge
+      // fades to the shadow's own darkness, the floor below, and nothing
+      // lighter.
+      shadows.useContactHardeningShadow = true;
+      shadows.filteringQuality = filter.quality;
+      shadows.contactHardeningLightSizeUVRatio = filter.lightSizeUV;
+    } else {
+      // Already the constructor default; pinned explicitly so it reads as a
+      // deliberate choice rather than an oversight among the settings above
+      // that are load-bearing.
+      shadows.usePercentageCloserFiltering = true;
+    }
     // Terrain registers itself as its own shadow caster (see `renderer.ts`), and
     // at the default normalBias of 0 that produced textbook self-shadow acne: a
     // concentric moiré ripple across the whole ground, confirmed in the browser
@@ -342,6 +429,13 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // contact-shadow offset. The large-scale light-and-dark modelling of the
     // hills is pixel-for-pixel unchanged between 0.05 and 0.3 — only the ripple
     // goes — so nothing real was traded away for it.
+    //
+    // The soft shadow keeps it. The bias moves the casters as the map is
+    // drawn, and the filter's taps compare against that same map; a wider
+    // kernel under a canopy reads texels farther out, where a slope's depth
+    // differs more, but the contact, where acne shows, is filtered over a
+    // texel as before. Whether 0.3 still clears the montane field's ripple
+    // under the soft shadow is a thing to look at, not to derive.
     shadows.normalBias = 0.3;
   }
 

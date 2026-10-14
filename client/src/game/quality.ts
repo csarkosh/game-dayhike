@@ -27,6 +27,19 @@ export type QualitySettings = {
    * single cascade; `high` uses Babylon's default cascade count as a
    * tuning value. */
   shadowCascades: number;
+  /**
+   * Whether the sun's shadows soften with the caster's height above the
+   * receiver, as a real sun's do: sharp where a trunk meets the ground, wider
+   * under a branch three metres up. What it buys is that widening; what it
+   * costs is the percentage-closer soft shadow's work for every shadowed
+   * fragment: sixteen reads of the shadow map's depth around the sample to
+   * find how far above the receiver the casters are, then a filter of
+   * thirty-two taps sized by that distance, against the nine of the plain
+   * percentage-closer filter the other tiers keep, and a full-float shadow
+   * map, twice the half-float one's bytes. For the tier whose machine can
+   * pay; meaningless when `shadowMapSize` is zero.
+   */
+  shadowSoftEdges: boolean;
   /** Levels coarser to bias mesh LOD selection by. */
   lodBias: number;
   /** Largest mip dimension to keep. Zero means no cap. */
@@ -46,6 +59,7 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     hardwareScaling: 1.5,
     shadowMapSize: 0,
     shadowCascades: 0,
+    shadowSoftEdges: false,
     lodBias: 1,
     textureMipCap: 512,
   },
@@ -53,6 +67,7 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     hardwareScaling: 1,
     shadowMapSize: 1024,
     shadowCascades: 1,
+    shadowSoftEdges: false,
     lodBias: 0,
     textureMipCap: 1024,
   },
@@ -60,6 +75,7 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     hardwareScaling: 1,
     shadowMapSize: 2048,
     shadowCascades: 2,
+    shadowSoftEdges: true,
     lodBias: 0,
     textureMipCap: 0,
   },

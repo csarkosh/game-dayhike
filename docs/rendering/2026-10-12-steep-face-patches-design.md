@@ -670,3 +670,56 @@ no triangle folded (least facet agreement 0.185); on world 42's ridge cell (25, 
 inside the drawn rock, since collision stays on the height field; the far and wide bands can
 still be filling when the intro's cover lifts; the rock texture at 5.4 m is about 95 texels a
 metre at a face's foot; the shadow lift is global to clear weather.
+
+## 9. As built (2026-10-14): the sun's shadow edges soften on the high tier
+
+The sun's cast shadows had one edge everywhere: the cascaded shadow generator's
+percentage-closer filter at Babylon's default quality, a 5 × 5 texel kernel, blurs a trunk's
+contact and a canopy's shadow alike, 16 cm across in the first cascade. On the high tier the
+generator now takes Babylon's percentage-closer soft shadow (`shadowSoftEdges` in
+`client/src/game/quality.ts`, true on high alone; `shadowFilterFor` and `SUN_LIGHT_SIZE_UV` in
+`client/src/game/lighting.ts`): for each shadowed fragment it searches the shadow map's depth
+round the sample, sixteen taps, for the casters above the receiver, and sizes a filter of
+thirty-two taps by their average height above it, so a shadow is a texel wide at the contact and
+widens with the caster's height. Medium and low keep the plain filter; low has no shadows.
+
+**The sun's size.** The sun subtends about 0.53°, so a caster `d` metres above the ground
+throws a penumbra 0.0093 d metres wide: 28 mm under a branch 3 m up, 19 cm under a canopy
+20 m up. Babylon takes the light's size as a ratio of the first cascade's width, and sizes the
+filter by the receiver's depth less the blockers' over the first cascade's depth range in the
+light's view, so the penumbra's radius is `Δz × ratio × X / Z`, `X` the cascade's width and
+`Z` that range, and the sun's ratio is `0.00463 Z / X`. Two cascades at lambda 0.9 over 300 m
+split at 18.5 m of camera depth; the stabilised first cascade is the sphere round that slice
+of the 1.4 rad frustum, 66 m across in a 16:9 window (41 m in a window twice as tall as wide),
+32 mm a texel at 2048². The depth range is not the slice's: the soft shadow turns depth
+clamping off to keep true distances, so the light's near plane moves back to hold every
+caster, and the clipmap's outer rings reach 4 km from the camera: the range is their reach
+up-sun, about 1.4 km at noon (the sun 76° up), 4.5 km at 08:00 and 16:00 (29°). The ratio is
+0.1 (`SUN_LIGHT_SIZE_UV`), the sun's at noon in a 16:9 window: a penumbra 28 mm wide at 3 m,
+over a floor of one texel at the contact; the same value is a third of the sun's at 08:00 and
+1.6 times it in the tall window. The penumbra's darkness stays at Babylon's default; the
+normal bias of 0.3 stays.
+
+**The map.** The soft shadow's search reads the map's own depth back as a texture, over the
+whole range, so the high tier's map is full float where the engine renders it (half float,
+Babylon's first choice, resolves about 1 part in 2,000 of the range, a metre and more, and a
+caster nearer the ground than that could read as none): 2048² × 2 cascades × 4 bytes, twice
+the half-float map's bytes. The hard-edged tiers compare against the depth-stencil texture and
+keep the half.
+
+**Shaders.** No shader text of the game's changes. Babylon's defines on every material that
+receives the sun's shadow on the high tier change: `SHADOWPCF<n>` gives way to `SHADOWPCSS<n>`
+with `SHADOWMEDIUMQUALITY<n>`, which selects `computeShadowWithCSMPCSS32`, and the fragment
+takes the `depthTexture<n>` sampler and the `lightSizeUVCorrection<n>`, `depthCorrection<n>`
+and `penumbraDarkness<n>` uniforms; the shadow map's own stages take `SM_DEPTHCLAMP 0` where
+they took 1. The corpus and the maps are recorded again for them.
+
+**To look at in the browser, and to measure.** The frame's cost on the high tier at the
+canopy pose and on the face, against the build before, with the map's extra bytes in it. The
+shadows at the contact: a trunk's foot, a rock on the ground, a fern's lower fronds. The search
+runs over the light's ratio of the map, 6.6 m round the sample at noon, with sixteen fixed taps,
+the nearest 0.55 m out, and a receiver whose taps find no blocker is lit, so a caster narrower
+than the taps' spacing can lose its shadow; whether the trunks', rocks' and fronds' shadows
+hold is the first thing to see. Then the softness under a canopy against the contact, at noon
+and at 16:00; the montane field's ripple under the soft shadow at the normal bias kept; and
+the edge where the two cascades blend.

@@ -36,6 +36,7 @@ describe("QUALITY", () => {
       hardwareScaling: 1.5,
       shadowMapSize: 0,
       shadowCascades: 0,
+      shadowSoftEdges: false,
       lodBias: 1,
       textureMipCap: 512,
     });
@@ -43,6 +44,7 @@ describe("QUALITY", () => {
       hardwareScaling: 1,
       shadowMapSize: 1024,
       shadowCascades: 1,
+      shadowSoftEdges: false,
       lodBias: 0,
       textureMipCap: 1024,
     });
@@ -50,9 +52,18 @@ describe("QUALITY", () => {
       hardwareScaling: 1,
       shadowMapSize: 2048,
       shadowCascades: 2,
+      shadowSoftEdges: true,
       lodBias: 0,
       textureMipCap: 0,
     });
+  });
+
+  it("softens the sun's shadow edges on high alone", () => {
+    // The soft shadow's search and filter are paid per shadowed fragment, on
+    // the tier whose machine can pay; low has no shadows to soften.
+    expect(QUALITY.low.shadowSoftEdges).toBe(false);
+    expect(QUALITY.medium.shadowSoftEdges).toBe(false);
+    expect(QUALITY.high.shadowSoftEdges).toBe(true);
   });
 
   it("turns shadows off only at low", () => {
