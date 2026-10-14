@@ -245,6 +245,9 @@ describe("inter-stage variables on WebGPU", () => {
       "foliage.FLOWER": 4,
       "foliage.GRASS": 4,
       "foliage.MEADOW": 4,
+      // The nurse log's fern, a profile of its own: the same four as every
+      // other profile.
+      "foliage.NURSE": 4,
       "foliage.REEDS": 4,
       "foliage.TREE": 4,
       "foliage.UNDERSTORY": 4,
@@ -260,10 +263,15 @@ describe("inter-stage variables on WebGPU", () => {
     const babylon = Object.fromEntries(
       GIANTS.map((name) => [name, forest.drawn.get(name)?.varyings.filter((v) => !plugins.names.has(v.split(" ")[0] as string))]),
     );
+    // The bark (`material0`) wears a bark set (`dressBark`): its
+    // occlusion-roughness-metalness map is sampled on a UV of its own
+    // (`vReflectivityUV`), and its meshes lost their vertex tangents
+    // (`dressSpecies`), so the normal map's basis is made in the fragment
+    // stage from derivatives and `vTBN` is no longer a varying.
     expect(babylon, WEIGH).toEqual({
-      "tree.giant_fir.material0": ["vAlbedoUV", "vBumpUV", "vPositionW", "vNormalW", "vTBN (3)", "vFogDistance"],
+      "tree.giant_fir.material0": ["vAlbedoUV", "vReflectivityUV", "vBumpUV", "vPositionW", "vNormalW", "vFogDistance"],
       "tree.giant_fir.material1": ["vMainUV1", "vPositionW", "vNormalW", "vTBN (3)", "vFogDistance"],
-      "tree.giant_pine.material0": ["vAlbedoUV", "vBumpUV", "vPositionW", "vNormalW", "vTBN (3)", "vFogDistance"],
+      "tree.giant_pine.material0": ["vAlbedoUV", "vReflectivityUV", "vBumpUV", "vPositionW", "vNormalW", "vFogDistance"],
       "tree.giant_pine.material1": ["vMainUV1", "vPositionW", "vNormalW", "vTBN (3)", "vFogDistance"],
     });
   });
@@ -308,11 +316,19 @@ describe("inter-stage variables on WebGPU", () => {
       receivesShadows: true,
       plugins: [...babylon, ...ours],
     });
+    // The bark wears its set's three maps, the metallic slot holding the
+    // occlusion-roughness-metalness map, and draws without vertex tangents
+    // (`dressSpecies`); the crown keeps the file's.
+    const bark = (ours: string[]) => ({
+      ...giant(ours),
+      vertexData: ["position", "normal", "uv", "fadeBands", "groundGrad"],
+      textures: ["albedoTexture", "bumpTexture", "metallicTexture"],
+    });
     expect(features, WEIGH).toEqual({
       // The wet plugin adds uniforms and no varying.
-      "tree.giant_fir.material0": giant(["Atmosphere", "Foliage", "GroundConform", "Wet"]),
+      "tree.giant_fir.material0": bark(["Atmosphere", "Foliage", "GroundConform", "Wet"]),
       "tree.giant_fir.material1": giant(["Atmosphere", "Foliage", "DistanceFade", "GroundConform", "Wet"]),
-      "tree.giant_pine.material0": giant(["Atmosphere", "Foliage", "GroundConform", "Wet"]),
+      "tree.giant_pine.material0": bark(["Atmosphere", "Foliage", "GroundConform", "Wet"]),
       "tree.giant_pine.material1": giant(["Atmosphere", "Foliage", "DistanceFade", "GroundConform", "Wet"]),
     });
   });
@@ -334,6 +350,10 @@ describe("inter-stage variables on WebGPU", () => {
   it("counts what the browser read for the giants on both tiers", () => {
     // The browser's sweep (the verification note, §4): 17 vertex outputs on
     // the giants' `material0` effects and 18 on `material1`'s, on both tiers.
+    // The bark's 15 since it wears a bark set: the sweep's 17, less the
+    // normal map's basis (three locations, gone with the vertex tangents)
+    // and plus the occlusion-roughness-metalness map's UV, as Babylon's
+    // processing here counts them; not read again in a browser.
     const count = (tier: QualityTier) =>
       Object.fromEntries(
         GIANTS.map((name) => {
@@ -342,9 +362,9 @@ describe("inter-stage variables on WebGPU", () => {
         }),
       );
     const measured = {
-      "tree.giant_fir.material0": 17,
+      "tree.giant_fir.material0": 15,
       "tree.giant_fir.material1": 18,
-      "tree.giant_pine.material0": 17,
+      "tree.giant_pine.material0": 15,
       "tree.giant_pine.material1": 18,
     };
     expect({ high: count("high"), medium: count("medium") }, WEIGH).toEqual({ high: measured, medium: measured });
@@ -375,6 +395,10 @@ describe("inter-stage variables on WebGPU", () => {
       "tree.giant_fir.material1",
       "tree.giant_fir.material1_lod2",
       "tree.giant_pine.material0",
+      // The pine's second bark set wears a clone of the bark material
+      // (`dressSpecies`), its crown the first set's.
+      "tree.giant_pine.material0_cedar",
+      "tree.giant_pine.material0_cedar_lod2",
       "tree.giant_pine.material0_lod2",
       "tree.giant_pine.material1",
       "tree.giant_pine.material1_lod2",

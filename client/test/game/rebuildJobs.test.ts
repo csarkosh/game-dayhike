@@ -406,8 +406,10 @@ function keeper(): SyncJobs & { held: Slices | null } {
 /** Slices of each shell's rebuild at the first crossing of a walk from its
  * start, with nothing prepared ahead: each loop of a rebuild yields by the
  * work it has done, so a rebuild that stops slicing, in any of its loops,
- * changes these. */
-const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 106, blades: 18, duff: 5, forest: 139 };
+ * changes these. The forest's 143 since the pine's second bark set: a
+ * giant bucket set more to slice through, its three LOD buckets and its
+ * billboard (the understory stays with the species' first set). */
+const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 106, blades: 18, duff: 5, forest: 143 };
 
 /** How a walk that turns meets each shell's grid: its rebuild cell (m), and
  * where its lines lie. The clipmap's step is ring 0's snap, whose lines lie

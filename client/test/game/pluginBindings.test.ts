@@ -38,8 +38,9 @@ describe("the plugins' samplers", () => {
       // and with its road, trail and features on.
       expect(byName.get("atmosphere")).toBe(2);
       expect(byName.get("terrain")).toBe(2);
-      // Nine plugins; the foliage once per profile (nine).
-      expect(built.cases.length).toBe(17);
+      // Nine plugins; the foliage once per profile (ten, the nurse log's
+      // fern among them).
+      expect(built.cases.length).toBe(18);
     } finally {
       built.dispose();
     }
