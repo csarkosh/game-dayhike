@@ -29,7 +29,8 @@ move. No shader text changes: textures, uniforms and defines only (§7).
 | The normal map's frame | The bark primitives lose their vertex tangents; the frame is built from the map's own coordinates, so it follows the turn (§4.3) |
 | The occlusion | From the ARM map's red channel through `AOSTOREINMETALMAPRED`, at strength 1, with no ambient texture (§6) |
 | The billboards | Each species' bake waits on its bark set as it waits on the sky; a map that fails to load settles the wait, so a missing file never blocks the forest (§8) |
-| The pine's two barks | A second bucket set: clones of the pine's LOD meshes sharing the geometry and the crown's material, a clone of the bark material, its own billboard; trees go to a set by their variant. Seven more draw calls (§9) |
+| The pine's two barks | A second bucket set: clones of the pine's LOD meshes, each with geometry of its own, sharing the crown's material, a clone of the bark material, its own billboard; trees go to a set by their variant. Seven more draw calls (§9, §11) |
+| The tone | One multiplier on every set's colour map, `BARK_TONE` (0.68, 0.68, 0.70) linear, so the scans sit under the canopy (§11) |
 
 ## 2. The sets
 
@@ -230,9 +231,9 @@ on the other half, by `TreeInstance.variant`: a draw of 0 or 1 from hash slot
 every other draw. The renderer's giants are bucket sets rather than species
 (`GIANT_SETS` in `barkParams.ts`): the fir's one set takes every fir, the
 pine's two take the pines of their variant. The second set is built from
-clones of the pine's LOD meshes (`dressSpecies`), which share the geometry
-and the crown's material and wear a clone of the bark material, made before
-anything attaches to the original; the sets are adopted together, every bake
+clones of the pine's LOD meshes (`dressSpecies`), each with a copy of the
+geometry of its own (§11), which share the crown's material and wear a clone
+of the bark material, made before anything attaches to the original; the sets are adopted together, every bake
 kicked before any plugin attaches to the shared crown, and the LOD2 split
 made once across them, so the second set's LOD2 crown takes the one clone.
 The second set has its own three LOD buckets, its own billboard (baked from
@@ -274,3 +275,29 @@ the browser, first:
 7. **The sheen.** The ARM map's roughness replaces a flat 1; the bark's
    specular weight (`TREE_SPECULAR_WEIGHT`) and its share of the sky
    (`BARK_SKY`) were set for a bark with none, and may want a look.
+
+## 11. As built (2026-10-14): the look pass
+
+**The near trunks drew nothing until each set owned its geometry.** §9's
+clones first shared the pine's geometry, as a mesh clone does, and Babylon
+keeps a mesh's thin-instance buffers (the matrices, `fadeBands`,
+`groundGrad`) on its geometry, replacing a buffer of a kind already there.
+Each rebuild of the second set disposed the first set's matrices under it,
+both sets drew the second's, and the frame's draws on the dead buffers took
+the near ring of every giant with them: the nearest trunks were not there.
+Every mesh of a further set now takes its own copy of the geometry
+(`makeGeometryUnique`, after the tangents are stripped, so the copy carries
+none), and the two sets' twelve LOD meshes hold twelve geometries.
+
+**The pine family's grain.** With §4.2's quarter turn the metasequoia's and
+the cedar's grain runs up the pine's trunk and the saplings'. The turn and
+§3.2's repeats stand as they are.
+
+**The tone.** The scans read warmer and brighter than the trunks around them
+under the canopy. Every set's colour map is multiplied by one tone,
+`BARK_TONE` in `barkParams.ts`, (0.68, 0.68, 0.70) linear: about two thirds
+of the light (Y 0.681), the red and the green held under the blue, which
+takes the scans' warmth down. `dressBark` writes it into each bark
+material's `albedoColor`, the cedar's clone too, so the four sets sit
+together; the crowns and the snag keep theirs. `albedoColor` is a uniform:
+no shader text and no define moves (§7).

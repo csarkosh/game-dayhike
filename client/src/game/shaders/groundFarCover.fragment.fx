@@ -26,18 +26,15 @@ const float FAR_SWARD_MAX = 1.0;
 // Fitted 2026-10-10: solved at (0.0066, 0.0235, 0.005) and committed at its
 // +10 % edge for the low sun, where at the meadow pose at noon the far crops
 // read Y 0.04177 against the card band's 0.03814, chroma 0.2103 against 0.2128.
-// That fit stood against cards that have since taken the grass's own green at
-// one luminance, and the far ground fell to 0.43 of them in luminance and
-// greyer. Refitted 2026-10-14 by ratio on the meadow still (1200 x 675, high
-// tier, the game's opening conditions, sRGB decoded to linear, the mean per
-// channel): the near card band (rows 420-600, columns 100-1100) read R 0.0848
-// G 0.1076 B 0.0717 (Y 0.1001, G/R 1.268), the far band beyond the cards (rows
-// 295-340, columns 150-1050) R 0.0398 G 0.0440 B 0.0476 (Y 0.0433, G/R 1.104).
-// Everything that lights the far cover multiplies its target, so each channel
-// scales by the inverse of its ratio, R 1/0.470 = 2.128, G 1/0.409 = 2.445,
-// B 1/0.663 = 1.508: (0.0073, 0.0258, 0.0055) becomes (0.0155, 0.0631, 0.0083).
-// The three targets of the fit are to be re-checked on the next stills.
-const vec3 FAR_SWARD = vec3(0.0155, 0.0631, 0.0083);
+// That fit stood against cards that have since taken the cover's one green.
+// Refitted 2026-10-14 to the cards' olive, by ratio on the meadow still
+// against the near card band as the first refit to the earlier green was
+// (1200 x 675, high tier, the game's opening conditions, sRGB decoded to
+// linear, the mean per channel): the hue is the main tuft's own (its mean
+// colour (0.1001, 0.0989, 0.0297) x 1.327), and at this value the far
+// band beyond the cards reads Y 0.0570 against the near band's 0.0605, R and
+// G within 3 and 9 % of the near's, B 1.25 of it from the mist.
+const vec3 FAR_SWARD = vec3(0.1328, 0.1312, 0.0394);
 // Not fitted 2026-10-10: kept at its start: the canopy fit reached its target
 // through the canopy shade alone, and the litter share along the far crops was
 // not read from the simulation.
@@ -59,15 +56,19 @@ const vec3 FAR_LITTER = vec3(0.081, 0.057, 0.032);
 // duff's clumps receive the cast shadow and take no canopy on the sun, so that
 // share's factor went from 0.55 to 1 (1.818, the cast shadow cutting it as
 // before) and only the sky share gains 1.1636. The value is so a floor on the
-// lightening. The wrap also exceeds Lambert below N.L = 1 (0.63 against 0.5 at
-// N.L = 0.5), which the fit never saw: its premise holds at N.L = 1 only.
+// lightening. The wrap also exceeds Lambert below N.L = 1 (the half-Lambert's
+// 0.75 against 0.5 at N.L = 0.5), which the fit never saw: its premise holds
+// at N.L = 1 only.
 const float FAR_CANOPY_SHADE = 0.2832;
-const vec2 FAR_CLUMP_CELL = vec2(0.8, 3.0);
-const vec2 FAR_CLUMP_WEIGHT = vec2(0.6, 0.4);
+// The clumps at a metre and three, in equal shares, with deep troughs and the
+// full tilt: an octave fades where its cell spans under two pixels, so a
+// metre is the finest grain the far ground carries at a grazing footprint.
+const vec2 FAR_CLUMP_CELL = vec2(1.0, 3.0);
+const vec2 FAR_CLUMP_WEIGHT = vec2(0.5, 0.5);
 const vec2 FAR_CLUMP_SALT = vec2(41.0, 17.0);
 const float FAR_CLUMP_WRAP = 97.0;
-const float FAR_CLUMP_AO = 0.65;
-const float FAR_CLUMP_TILT = 0.67;
+const float FAR_CLUMP_AO = 0.2;
+const float FAR_CLUMP_TILT = 1.0;
 const float FAR_COVER_TILT = 0.3;
 // Fitted 2026-10-10: At the canopy pose at 16:00 far over near is 0.77 at a cut
 // of 0.25.

@@ -1,9 +1,10 @@
 /**
  * The ground cover in one green. Babylon-free and on the architecture
  * test's BABYLON_FREE_FILES list; `clutterMeshes.ts` and `forestMeshes.ts`
- * apply it as the models land, `bladeClump.ts` takes the green as the
- * blades' own albedo, and the foliage plugin's shader holds the green and
- * the contrast (`foliagePlugin.ts`, `shaders/foliage.fragment.fx`).
+ * apply it as the models land, and the foliage plugin's shader holds the
+ * green, the contrast and the albedo's floor (`foliagePlugin.ts`,
+ * `shaders/foliage.fragment.fx`); the light plugin holds the cover's shadow
+ * floor (`foliageLightPlugin.ts`).
  *
  * The cards (the clutter tufts, meadow, flowers and bushes, and the
  * understory fern) are lit alike, yet their textures' exposures are
@@ -27,20 +28,32 @@
  */
 import type { Rgb } from "./colour.js";
 
-/** The luminance (linear Y) every card is brought to. A sunlit clump of
- * blades is brighter than the floor's mean grass colour (0.131), because the
- * eye sees its lit and backlit faces, not the shaded turf under them; a
- * little over the pale flowers' own. */
-export const COVER_ALBEDO_TARGET = 0.18;
+/** The luminance (linear Y) every card is brought to: the green's own,
+ * 0.85 of the main tuft's texture (`COVER_ALBEDO_Y`, 0.0942). */
+export const COVER_ALBEDO_TARGET = 0.0801;
 
-/** The ground cover's one green, linear: the floor's own grass colour
- * (`terrainSurface.ts` `GRASS`, (0.09, 0.15, 0.06), Y 0.131) scaled to
- * `COVER_ALBEDO_TARGET`, 0.18 / 0.131 = 1.374 on each channel, so the cover
- * is the turf's hue at the cards' brightness. The blades' albedo, the green
- * every green card's mean is brought to, and the colour the cards' contrast
- * compresses toward (`FOLIAGE_CARD_GREEN` in `shaders/foliage.fragment.fx`,
- * pinned to this at four decimals). */
-export const COVER_GREEN: Rgb = { r: 0.1237, g: 0.2061, b: 0.0824 };
+/** The ground cover's one green, linear: the main tuft's own colour (its
+ * texture's mean, `COVER_ALBEDO_RGB` `clutter.grass_a`, (0.1001, 0.0989,
+ * 0.0297), Y 0.0942) at 0.85 of its luminance, so the tufts and the meadow
+ * keep their colour, a little darker, and the ferns, the bushes and the pale
+ * tuft take it. The green every green card's mean is brought to, and the
+ * colour the cards' contrast compresses toward (`FOLIAGE_CARD_GREEN` in
+ * `shaders/foliage.fragment.fx`, pinned to this at four decimals). */
+export const COVER_GREEN: Rgb = { r: 0.0851, g: 0.0841, b: 0.0252 };
+
+/** The darkest a ground-cover fragment's albedo may be, linear: five
+ * eighths of the green, applied after the root darkening and the tint, so a
+ * blade's tip, a card's baked-dark pixel or a root in the turf never goes to
+ * black (`FOLIAGE_ALBEDO_FLOOR` in `shaders/foliage.fragment.fx`, pinned to
+ * this at four decimals). */
+export const FOLIAGE_ALBEDO_FLOOR: Rgb = { r: 0.0532, g: 0.0525, b: 0.0158 };
+
+/** The least of the sun's light a ground-cover fragment keeps in a cast
+ * shadow, 0 to 1: the shadow generator's darkness applies to every receiver,
+ * and on the cover the blades' and cards' own shade stacks on top of it, so
+ * the cover's shadows are held above this where the floor's keep the
+ * weather's darkness (`foliageLightPlugin.ts`). */
+export const FOLIAGE_SHADOW_FLOOR = 0.75;
 
 /** Mean linear luminance of each card model's base colour texture over the
  * texels its alpha mask keeps, by catalog id (`client/assets/catalog.json`).
@@ -75,7 +88,8 @@ export const COVER_ALBEDO_GAIN_MIN = 0.4;
 export const COVER_ALBEDO_GAIN_MAX = 2.0;
 
 /** A channel's gain is held within this range, wider than the grey gain's:
- * a texture's blue is small and noisy, and the fern's reaches the cap. */
+ * a texture's blue is small and noisy. The pale tuft reaches the floor on
+ * every channel and the bushes' blue reaches it; the cap is not reached. */
 export const COVER_TINT_MIN = 0.3;
 export const COVER_TINT_MAX = 3.0;
 

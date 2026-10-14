@@ -151,22 +151,24 @@ describe("the far cover", () => {
     expect(FAR_COVER_BAND_LOW).toEqual([14.4, 18]);
     expect(FAR_SWARD_COVER).toEqual([0.05, 0.5]);
     expect(FAR_SWARD_MAX).toBe(1);
-    expect(FAR_CLUMP_CELL).toEqual([0.8, 3]);
-    expect(FAR_CLUMP_WEIGHT).toEqual([0.6, 0.4]);
+    expect(FAR_CLUMP_CELL).toEqual([1, 3]);
+    expect(FAR_CLUMP_WEIGHT).toEqual([0.5, 0.5]);
     expect(FAR_CLUMP_SALT).toEqual([41, 17]);
     expect(FAR_CLUMP_WRAP).toBe(97);
-    expect(FAR_CLUMP_AO).toBe(0.65);
-    expect(FAR_CLUMP_TILT).toBe(0.67);
+    expect(FAR_CLUMP_AO).toBe(0.2);
+    expect(FAR_CLUMP_TILT).toBe(1);
     expect(FAR_COVER_TILT).toBe(0.3);
     expect(FAR_SUN_GAIN_MAX).toBe(2);
   }, timeLimit(5_000));
 
   it("carries the fitted values as literals", () => {
-    // The 2026-10-10 fit (0.0073, 0.0258, 0.0055) scaled per channel by the
-    // inverse of the far band's ratio to the near card band on the meadow
-    // still of 2026-10-14 (R 0.470, G 0.409, B 0.663): 0.0073 × 2.128,
-    // 0.0258 × 2.445, 0.0055 × 1.508, four decimals.
-    expect(FAR_SWARD).toEqual({ r: 0.0155, g: 0.0631, b: 0.0083 });
+    // The cards' olive, fitted by ratio on the meadow still of 2026-10-14
+    // against the near card band: the main tuft's texture mean (0.1001,
+    // 0.0989, 0.0297) × 1.327, four decimals.
+    expect(FAR_SWARD).toEqual({ r: 0.1328, g: 0.1312, b: 0.0394 });
+    expect(FAR_SWARD.r).toBeCloseTo(0.1001 * 1.327, 4);
+    expect(FAR_SWARD.g).toBeCloseTo(0.0989 * 1.327, 4);
+    expect(FAR_SWARD.b).toBeCloseTo(0.0297 * 1.327, 4);
     expect(FAR_LITTER).toEqual({ r: 0.081, g: 0.057, b: 0.032 });
     // Derived from the cards' canopy terms and root darkening, not fitted:
     // the fit's 0.4615 at a closed canopy (rho 0.9) times the cards' gain of
@@ -259,8 +261,8 @@ describe("the far cover", () => {
     let unwrapped = 0;
     for (let i = 900; i < 1000; i++) for (let j = 900; j < 1000; j++) unwrapped = Math.max(unwrapped, apart(i, j));
     expect(unwrapped).toBeGreaterThan(1e-3);
-    // GLSL's mod on negative cells: the 0.8 m octave repeats every 77.6 m and
-    // the 3 m octave every 291 m, on either side of the origin.
+    // GLSL's mod on negative cells: an octave of 0.8 m repeats every 77.6 m
+    // and the 3 m octave every 291 m, on either side of the origin.
     const a = farClumpOctave(-1234.5, 2345.6, 0.8, [0, 0]);
     const b = farClumpOctave(-1234.5 + 20 * 97 * 0.8, 2345.6 - 30 * 97 * 0.8, 0.8, [0, 0]);
     expect(a.n).toBeCloseTo(0.20868857031249888, 9);
@@ -284,28 +286,28 @@ describe("the far cover", () => {
     }
     // At a 0.4 m footprint both cells span two pixels or more: the full weighted sum.
     const whole = farClump(1.0, 0.3, 0.4);
-    expect(whole.n).toBeCloseTo(0.5120010921405388, 12);
-    expect(whole.gx).toBeCloseTo(-0.14293256257812612, 12);
-    expect(whole.gz).toBeCloseTo(-0.41139587290625057, 12);
+    expect(whole.n).toBeCloseTo(0.5712102075555563, 12);
+    expect(whole.gx).toBeCloseTo(-0.1263664000000013, 12);
+    expect(whole.gz).toBeCloseTo(-0.42322960000000076, 12);
   }, timeLimit(5_000));
 
   it("mixes the target from the sward and the litter, shaded by the canopy and darkened in the clumps' troughs", () => {
     const white = { r: 1, g: 1, b: 1 };
-    // FAR_SWARD itself, the 2026-10-14 refit: × 1 (macro) × 1 (no canopy) × 1 (crest).
+    // FAR_SWARD itself, the cards' olive: × 1 (macro) × 1 (no canopy) × 1 (crest).
     const sward = farCoverTarget(0, 0, white, 1);
-    expect(sward.r).toBeCloseTo(0.0155, 12);
-    expect(sward.g).toBeCloseTo(0.0631, 12);
-    expect(sward.b).toBeCloseTo(0.0083, 12);
+    expect(sward.r).toBeCloseTo(0.1328, 12);
+    expect(sward.g).toBeCloseTo(0.1312, 12);
+    expect(sward.b).toBeCloseTo(0.0394, 12);
     // FAR_LITTER × (1 − FAR_CANOPY_SHADE).
     const litter = farCoverTarget(1, 1, white, 1);
     expect(litter.r).toBeCloseTo(0.0580608, 12);
     expect(litter.g).toBeCloseTo(0.0408576, 12);
     expect(litter.b).toBeCloseTo(0.0229376, 12);
-    // FAR_SWARD × FAR_CLUMP_AO: 0.0155 × 0.65, 0.0631 × 0.65, 0.0083 × 0.65.
+    // FAR_SWARD × FAR_CLUMP_AO: 0.1328 × 0.2, 0.1312 × 0.2, 0.0394 × 0.2.
     const trough = farCoverTarget(0, 0, white, 0);
-    expect(trough.r).toBeCloseTo(0.010075, 12);
-    expect(trough.g).toBeCloseTo(0.041015, 12);
-    expect(trough.b).toBeCloseTo(0.005395, 12);
+    expect(trough.r).toBeCloseTo(0.02656, 12);
+    expect(trough.g).toBeCloseTo(0.02624, 12);
+    expect(trough.b).toBeCloseTo(0.00788, 12);
     // Litter and canopy beyond 1 are clamped.
     const over = farCoverTarget(2, 2, white, 1);
     expect(over.r).toBeCloseTo(0.0580608, 12);

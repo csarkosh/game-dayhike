@@ -29,6 +29,13 @@ export type BarkSet = "pine" | "metasequoia" | "cedar" | "alder";
 /** The two sizes a set ships at: 2048² and 1024². */
 export type BarkSize = "2k" | "1k";
 
+/** What every bark set's colour map is multiplied by, linear: the scans are
+ * warmer and brighter than the trunks read under the canopy, so the whole is
+ * taken to about two thirds (Y 0.681) with the red and the green held under
+ * the blue, which takes the scans' warmth down. One tone for the four sets,
+ * so they sit together. */
+export const BARK_TONE: { readonly r: number; readonly g: number; readonly b: number } = { r: 0.68, g: 0.68, b: 0.7 };
+
 /** A set's scan footprint (m): `width` round the trunk, `height` up it. The
  * cedar's and the alder's plates are 1 : 2 (twice as tall as wide) squashed
  * into a square file, which is why their heights are twice their widths

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ALDER_BARK,
   BARK_FOOTPRINT,
+  BARK_TONE,
   barkOutputs,
   barkSize,
   barkTransform,
@@ -24,6 +25,13 @@ describe("the bark sets", () => {
       cedar: { width: 1.0, height: 2.0 },
       alder: { width: 0.5, height: 1.0 },
     });
+  });
+
+  it("share one tone, the colour maps taken down and away from their warmth", () => {
+    expect(BARK_TONE).toEqual({ r: 0.68, g: 0.68, b: 0.7 });
+    // About two thirds of the light, the blue held over the red and the green.
+    expect(0.2126 * BARK_TONE.r + 0.7152 * BARK_TONE.g + 0.0722 * BARK_TONE.b).toBeCloseTo(0.6814, 4);
+    expect(BARK_TONE.b).toBeGreaterThan(BARK_TONE.r);
   });
 
   it("name the three maps of a set at a size by the catalog's outputs", () => {

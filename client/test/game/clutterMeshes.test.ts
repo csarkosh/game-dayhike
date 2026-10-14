@@ -211,24 +211,25 @@ describe("foliage attribute and plugin", () => {
     const near = (got: [number, number, number], want: [number, number, number], what: string): void => {
       for (let i = 0; i < 3; i++) expect(got[i], what).toBeCloseTo(want[i]!, 5);
     };
-    // The main tuft, (0.1237, 0.2061, 0.0824) / (0.1001, 0.0989, 0.0297),
-    // and the pale one, / (0.3108, 0.3001, 0.1415): the material a model's
-    // two LOD groups share is tinted once, so both groups read the tint
-    // itself, not its square.
+    // The main tuft, (0.0851, 0.0841, 0.0252) / (0.1001, 0.0989, 0.0297),
+    // and the pale one, / (0.3108, 0.3001, 0.1415), each channel held at the
+    // floor of 0.3: the material a model's two LOD groups share is tinted
+    // once, so both groups read the tint itself, not its square.
     for (const lod of [0, 1]) {
-      near(albedo(CLUTTER_GRASS, 0, lod), [1.23576, 2.08392, 2.77441], `grass_a lod ${lod}`);
-      near(albedo(CLUTTER_GRASS, 1, lod), [0.39801, 0.68677, 0.58233], `grass_b lod ${lod}`);
+      near(albedo(CLUTTER_GRASS, 0, lod), [0.85015, 0.85035, 0.84848], `grass_a lod ${lod}`);
+      near(albedo(CLUTTER_GRASS, 1, lod), [0.3, 0.3, 0.3], `grass_b lod ${lod}`);
     }
     // The meadow ships the main tuft's texture; the sword fern is the
-    // understory's, / (0.0700, 0.1035, 0.0165), its blue at the cap of 3.
-    near(albedo(CLUTTER_MEADOW, 0, 0), [1.23576, 2.08392, 2.77441], "meadow");
-    near(albedo(CLUTTER_FERN, 0, 0), [1.76714, 1.9913, 3], "fern");
-    // The flowers keep their colour: the grey gain, 0.18 / 0.1796 and
-    // 0.18 / 0.184. The bushes, / (0.1802, 0.1530, 0.0899).
-    near(albedo(CLUTTER_FLOWER, 0, 0), [1.00223, 1.00223, 1.00223], "flower_a");
-    near(albedo(CLUTTER_FLOWER, 1, 0), [0.97826, 0.97826, 0.97826], "flower_b");
-    near(albedo(CLUTTER_BUSH, 0, 0), [0.68646, 1.34706, 0.91657], "bush_a");
-    near(albedo(CLUTTER_BUSH, 1, 0), [0.68646, 1.34706, 0.91657], "bush_b");
+    // understory's, / (0.0700, 0.1035, 0.0165), under the cap of 3.
+    near(albedo(CLUTTER_MEADOW, 0, 0), [0.85015, 0.85035, 0.84848], "meadow");
+    near(albedo(CLUTTER_FERN, 0, 0), [1.21571, 0.81256, 1.52727], "fern");
+    // The flowers keep their colour: the grey gain, 0.0801 / 0.1796 and
+    // 0.0801 / 0.184. The bushes, / (0.1802, 0.1530, 0.0899), the blue held
+    // at the floor of 0.3.
+    near(albedo(CLUTTER_FLOWER, 0, 0), [0.44599, 0.44599, 0.44599], "flower_a");
+    near(albedo(CLUTTER_FLOWER, 1, 0), [0.43533, 0.43533, 0.43533], "flower_b");
+    near(albedo(CLUTTER_BUSH, 0, 0), [0.47225, 0.54967, 0.3], "bush_a");
+    near(albedo(CLUTTER_BUSH, 1, 0), [0.47225, 0.54967, 0.3], "bush_b");
     // Not cards: white as loaded. The litter draws the rock and driftwood
     // models and is white too.
     for (const cls of [CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_LITTER]) {

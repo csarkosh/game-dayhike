@@ -11,7 +11,9 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import "@babylonjs/core/Shaders/ShadersInclude/lightFragment.js";
 import diffuseFx from "../../src/game/shaders/foliageDiffuse.fragment.fx?raw";
-import { attachFoliageLight, FOLIAGE_LIGHT_INJECTION_POINT, FOLIAGE_WRAP } from "../../src/game/foliageLightPlugin.js";
+import {
+  attachFoliageLight, FOLIAGE_LIGHT_INJECTION_POINT, FOLIAGE_SHADOW_INJECTION_POINT, FOLIAGE_WRAP,
+} from "../../src/game/foliageLightPlugin.js";
 import { attachFoliage, FOLIAGE_PROFILES } from "../../src/game/foliagePlugin.js";
 import { createLighting } from "../../src/game/lighting.js";
 import { createHeadlamp } from "../../src/game/headlamp.js";
@@ -38,6 +40,28 @@ describe("foliage light plugin", () => {
     expect(m).not.toBeNull();
     expect(m![1]).toBe("diffuse{X}.rgb");
     expect(m![2]).toBe("{X}");
+  });
+
+  it("anchors the shadow's floor on Babylon's own line that applies a light's shadow to its diffuse, and re-emits it after the floor", () => {
+    const include = ShaderStore.IncludesShadersStore["lightFragment"] as string;
+    expect(FOLIAGE_SHADOW_INJECTION_POINT).toBe("!diffuseBase\\+=info\\.diffuse\\*shadow;");
+    // The pattern matches Babylon's line, once in the include, and none of
+    // the include's other diffuse lines (the debug cascade's, the lightmap's,
+    // the custom lighting's).
+    const re = new RegExp(FOLIAGE_SHADOW_INJECTION_POINT.slice(1), "g");
+    expect(include.match(re)).toEqual(["diffuseBase+=info.diffuse*shadow;"]);
+    expect(include.split("diffuseBase+=info.diffuse*shadow;").length - 1).toBe(1);
+    const mat = new PBRMaterial("shadow-floor", scene);
+    attachFoliage(mat, FOLIAGE_PROFILES.GRASS, 1);
+    attachFoliageLight(mat);
+    const code = mat.pluginManager!.getPlugin("FoliageLight")!.getCustomCode("fragment")![FOLIAGE_SHADOW_INJECTION_POINT]!;
+    // The floor under the foliage define, then Babylon's own line, so an
+    // effect processed without the define keeps the line alone.
+    expect(code).toBe("#ifdef FOLIAGE\nshadow=max(shadow,0.75);\n#endif\ndiffuseBase+=info.diffuse*shadow;");
+    const injected = include.replace(re, code);
+    expect(injected.split("shadow=max(shadow,0.75);").length - 1).toBe(1);
+    expect(injected.split("diffuseBase+=info.diffuse*shadow;").length - 1).toBe(1);
+    expect(injected.indexOf("shadow=max(shadow,0.75);")).toBeLessThan(injected.indexOf("diffuseBase+=info.diffuse*shadow;"));
   });
 
   /** The game's lights in the game's order: the local headlamp first
@@ -118,6 +142,32 @@ describe("foliage light plugin", () => {
     }
   }, timeLimit(10_000));
 
+  it("compiled in the game's light order, every light's shadow on a FOLIAGE material is held at the floor before its diffuse", async () => {
+    const e = webgpuProcessingEngine();
+    const s = new Scene(e);
+    try {
+      gameLights(s);
+      const mat = new PBRMaterial("compiled-shadow", s);
+      attachFoliage(mat, FOLIAGE_PROFILES.GRASS, 1);
+      attachFoliageLight(mat);
+      const box = CreateBox("compiled-shadow-box", {}, s);
+      box.material = mat;
+      probeReady(s);
+      const effect = await drawnEffect(box);
+      const source = effect._fragmentSourceCode;
+      expect((effect as unknown as { defines: string }).defines).toContain("#define FOLIAGE\n");
+      // Three lights (the headlamp, the sun, the fill), each with its floor
+      // and its line, the floor first.
+      expect(s.lights).toHaveLength(3);
+      expect(source.split("\nshadow=max(shadow,0.75);\ndiffuseBase+=info.diffuse*shadow;").length - 1).toBe(3);
+      expect(source.split("shadow=max(shadow,0.75);").length - 1).toBe(3);
+      expect(source.split("diffuseBase+=info.diffuse*shadow;").length - 1).toBe(3);
+    } finally {
+      s.dispose();
+      e.dispose();
+    }
+  }, timeLimit(10_000));
+
   it("compiled without the FOLIAGE define but with the injection present, every light keeps Babylon's own diffuse", async () => {
     // The late reprocess the guard is for (`foliageLightPlugin.ts`): an
     // effect whose defines lack FOLIAGE, processed while the FoliageLight
@@ -153,6 +203,9 @@ describe("foliage light plugin", () => {
       expect(source).toContain("\ninfo.diffuse=computeDiffuseLighting(preInfo,diffuse0.rgb);");
       expect(source).toContain("\ninfo.diffuse=computeDiffuseLighting(preInfo,diffuse1.rgb);");
       expect(source.split("=foliageDiffuseLighting(").length - 1).toBe(0);
+      // The shadow keeps Babylon's line on every light, with no floor.
+      expect(source).not.toContain("shadow=max(shadow,");
+      expect(source.split("diffuseBase+=info.diffuse*shadow;").length - 1).toBe(3);
       // Neither declared nor read outside a comment: the Foliage plugin's
       // own lines are off with its define, and nothing else asks for it.
       expect(source.replace(/\/\/.*$/gm, "")).not.toContain("vFoliageH");
@@ -199,17 +252,19 @@ describe("foliage light plugin", () => {
     expect(injected.split(block("{X}")).length - 1).toBe(1);
   });
 
-  it("the wrap term equals Lambert at full light and lifts the terminator, and the function is the sun's alone", () => {
+  it("the wrap term is a half-Lambert: Lambert at full light, half at the terminator, and the function is the sun's alone", () => {
     // No light index to branch on: the injected line chooses the sun.
     expect(diffuseFx).toContain("vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float h, vec3 viewDir) {");
     expect(diffuseFx).not.toContain("lightIndex");
     expect(diffuseFx).not.toContain("computeDiffuseLighting(");
-    expect(diffuseFx).toContain(`const float FOLIAGE_WRAP = ${FOLIAGE_WRAP};`);
+    expect(FOLIAGE_WRAP).toBe(1);
+    expect(diffuseFx).toContain("const float FOLIAGE_WRAP = 1.0;");
     expect(diffuseFx).toContain("return clamp((ndotl + wrap) / (1.0 + wrap), 0.0, 1.0);");
     // (ndotl + w) / (1 + w) at ndotl = 1 is exactly 1, Lambert's own.
     expect((1 + FOLIAGE_WRAP) / (1 + FOLIAGE_WRAP)).toBe(1);
-    // At the terminator the lift is w / (1 + w), and the term reaches zero at ndotl = -w.
-    expect((0 + FOLIAGE_WRAP) / (1 + FOLIAGE_WRAP)).toBeCloseTo(0.25925925925925924, 12);
+    // At the terminator the lift is w / (1 + w), a half, and the term reaches
+    // zero at ndotl = -w, a face turned fully from the sun.
+    expect((0 + FOLIAGE_WRAP) / (1 + FOLIAGE_WRAP)).toBe(0.5);
     expect(Math.max(0, (-FOLIAGE_WRAP + FOLIAGE_WRAP) / (1 + FOLIAGE_WRAP))).toBe(0);
   });
 

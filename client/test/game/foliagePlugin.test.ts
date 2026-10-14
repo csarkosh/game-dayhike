@@ -20,7 +20,7 @@ import {
 } from "../../src/game/windParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { BLADE_SOFT, bladeAlive, bladeSecondRandom } from "../../src/game/bladeClump.js";
-import { COVER_GREEN } from "../../src/game/coverAlbedoParams.js";
+import { COVER_GREEN, FOLIAGE_ALBEDO_FLOOR } from "../../src/game/coverAlbedoParams.js";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -85,17 +85,43 @@ describe("foliage plugin", () => {
   });
 
   it("compresses the texture toward the cover's green first, at the uniform, with the green pinned to the params", () => {
-    expect(COVER_GREEN).toEqual({ r: 0.1237, g: 0.2061, b: 0.0824 });
+    expect(COVER_GREEN).toEqual({ r: 0.0851, g: 0.0841, b: 0.0252 });
     expect(fragmentDefs).toContain(
       `const vec3 FOLIAGE_CARD_GREEN = vec3(${COVER_GREEN.r.toFixed(4)}, ${COVER_GREEN.g.toFixed(4)}, ${COVER_GREEN.b.toFixed(4)});`,
     );
-    expect(fragmentDefs).toContain("const vec3 FOLIAGE_CARD_GREEN = vec3(0.1237, 0.2061, 0.0824);");
+    expect(fragmentDefs).toContain("const vec3 FOLIAGE_CARD_GREEN = vec3(0.0851, 0.0841, 0.0252);");
     expect(fragmentLights).toContain("surfaceAlbedo = mix(FOLIAGE_CARD_GREEN, surfaceAlbedo, foliageContrast);");
     // The first line of the block: the root darkening and the tint shape the
     // root on top of the texture the mix leaves.
     const block = fragmentLights.slice(fragmentLights.indexOf("{"));
     expect(block.indexOf("mix(FOLIAGE_CARD_GREEN, surfaceAlbedo, foliageContrast)")).toBeLessThan(block.indexOf("foliageRootAO"));
     expect(block.indexOf("mix(FOLIAGE_CARD_GREEN, surfaceAlbedo, foliageContrast)")).toBeLessThan(block.indexOf("foliageTint"));
+  });
+
+  it("floors the albedo last, after the root darkening, the tint and the clump nudge, with the floor pinned to the params", () => {
+    expect(FOLIAGE_ALBEDO_FLOOR).toEqual({ r: 0.0532, g: 0.0525, b: 0.0158 });
+    expect(fragmentDefs).toContain(
+      `const vec3 FOLIAGE_ALBEDO_FLOOR = vec3(${FOLIAGE_ALBEDO_FLOOR.r.toFixed(4)}, ${FOLIAGE_ALBEDO_FLOOR.g.toFixed(4)}, ${FOLIAGE_ALBEDO_FLOOR.b.toFixed(4)});`,
+    );
+    expect(fragmentDefs).toContain("const vec3 FOLIAGE_ALBEDO_FLOOR = vec3(0.0532, 0.0525, 0.0158);");
+    // Declared under the plugin's define with the green, before its end.
+    const declared = fragmentDefs.indexOf("const vec3 FOLIAGE_ALBEDO_FLOOR");
+    expect(declared).toBeGreaterThan(fragmentDefs.indexOf("#ifdef FOLIAGE"));
+    expect(declared).toBeLessThan(fragmentDefs.indexOf("#endif"));
+    // The block's albedo lines, in order: the floor is the last of them, so
+    // nothing after it can take the albedo under it.
+    const block = fragmentLights.slice(fragmentLights.indexOf("{"), fragmentLights.lastIndexOf("}"));
+    const albedoLines = block.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("surfaceAlbedo"));
+    expect(albedoLines).toEqual([
+      "surfaceAlbedo = mix(FOLIAGE_CARD_GREEN, surfaceAlbedo, foliageContrast);",
+      "surfaceAlbedo *= mix(foliageRootAO, 1.0, vFoliageH);",
+      "surfaceAlbedo = mix(surfaceAlbedo, vFoliage.rgb, clamp(fTintW, 0.0, 0.85));",
+      "surfaceAlbedo *= 1.0 + FOLIAGE_CLUMP_LUMA * (vFoliageClump - 0.5);",
+      "surfaceAlbedo = max(surfaceAlbedo, FOLIAGE_ALBEDO_FLOOR);",
+    ]);
+    expect(block.split("FOLIAGE_ALBEDO_FLOOR").length - 1).toBe(1);
+    const floorLine = "surfaceAlbedo = max(surfaceAlbedo, FOLIAGE_ALBEDO_FLOOR);";
+    expect(block.slice(block.indexOf(floorLine) + floorLine.length)).not.toContain("surfaceAlbedo");
   });
 
   it("binds the sun's canopy factor: the constant by default, 0 for a material whose meshes receive shadows", () => {
@@ -445,10 +471,10 @@ describe("compiles on both shader paths (the sampler/UBO trap, pinned even with 
       try {
         const grass = await compiledSources(s, "GRASS");
         for (const name of ["windDir", "windLean", "windGust", "windTime", "windPlayers", "foliageEdges", "foliageNormalUp"]) expect(grass.vertex).toContain(name);
-        for (const name of ["foliageTint", "foliageRootAO", "foliageCanopySun", "foliageContrast", "FOLIAGE_CARD_GREEN", "foliageNormalRoot", "vFoliageH", "fSky"]) expect(grass.fragment).toContain(name);
+        for (const name of ["foliageTint", "foliageRootAO", "foliageCanopySun", "foliageContrast", "FOLIAGE_CARD_GREEN", "FOLIAGE_ALBEDO_FLOOR", "foliageNormalRoot", "vFoliageH", "fSky"]) expect(grass.fragment).toContain(name);
         const tree = await compiledSources(s, "TREE");
         for (const name of ["windDir", "windLean", "windGust", "windTime", "windPlayers", "foliageEdges"]) expect(tree.vertex).toContain(name);
-        for (const name of ["foliageTint", "foliageRootAO", "foliageCanopySun", "foliageContrast", "FOLIAGE_CARD_GREEN", "foliageNormalRoot", "vFoliageH", "fSky"]) expect(tree.fragment).toContain(name);
+        for (const name of ["foliageTint", "foliageRootAO", "foliageCanopySun", "foliageContrast", "FOLIAGE_CARD_GREEN", "FOLIAGE_ALBEDO_FLOOR", "foliageNormalRoot", "vFoliageH", "fSky"]) expect(tree.fragment).toContain(name);
         const blades = await compiledSources(s, "BLADES");
         expect(blades.vertex).toContain("bAlive");
         expect(blades.vertex).toContain("blade");

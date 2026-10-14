@@ -17,9 +17,9 @@ describe("the character and tier tables", () => {
     expect(BLADE_VERTS).toBe(7);
     expect(BLADE_TRIS).toBe(5);
     expect(BLADE_CLUMP_RADIUS).toBe(0.35);
-    // The cover's green (`coverAlbedoParams.ts` COVER_GREEN): the blades are
-    // the grass's own green to their tips.
-    expect(BLADE_ALBEDO).toEqual({ r: 0.1237, g: 0.2061, b: 0.0824 });
+    // The blades' own dark green, which the foliage shader floors
+    // (`coverAlbedoParams.ts` FOLIAGE_ALBEDO_FLOOR).
+    expect(BLADE_ALBEDO).toEqual({ r: 0.03, g: 0.04, b: 0.013 });
     expect(BLADE_TIP_TINT).toEqual({ r: 0.95, g: 0.95, b: 0.75 });
     expect(BLADE_LUMA).toBe(0.3);
     expect(BLADE_SOFT).toBe(0.15);

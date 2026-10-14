@@ -240,15 +240,15 @@ describe("createForestMeshes under NullEngine", () => {
     fern.material = loaded;
     const forest = createForestMeshes(scene, SEED, { assets: { ...stubAssets(scene), nurseFern: fern }, bakeImpostor: () => null });
     // The copy made for the log takes the texture and sets its own colour:
-    // the understory fern's tint, (0.1237, 0.2061, 0.0824) / (0.0700,
-    // 0.1035, 0.0165) with the blue at the cap of 3, at the nurse shade of
-    // 1. The material as loaded is left white and never draws.
+    // the understory fern's tint, (0.0851, 0.0841, 0.0252) / (0.0700,
+    // 0.1035, 0.0165), none of it at the cap, at the nurse shade of 1. The
+    // material as loaded is left white and never draws.
     const worn = fern.material as PBRMaterial;
     expect(worn).not.toBe(loaded);
     expect(worn.name).toBe("understory.fern.material0_nurse");
-    expect(worn.albedoColor.r).toBeCloseTo(1.76714, 5);
-    expect(worn.albedoColor.g).toBeCloseTo(1.9913, 5);
-    expect(worn.albedoColor.b).toBe(3);
+    expect(worn.albedoColor.r).toBeCloseTo(1.21571, 5);
+    expect(worn.albedoColor.g).toBeCloseTo(0.81256, 5);
+    expect(worn.albedoColor.b).toBeCloseTo(1.52727, 5);
     expect([loaded.albedoColor.r, loaded.albedoColor.g, loaded.albedoColor.b]).toEqual([1, 1, 1]);
     // The cards' contrast rides the foliage plugin, under the nurse profile
     // (no wind, no tint, no root darkening, the card's own normals), with
@@ -1659,6 +1659,8 @@ describe("the trees' bark", () => {
     expect(firMat.useMetallnessFromMetallicTextureBlue).toBe(true);
     expect(firMat.metallic).toBe(1);
     expect(firMat.roughness).toBe(1);
+    // The colour map under the sets' one tone (`BARK_TONE`).
+    expect([firMat.albedoColor.r, firMat.albedoColor.g, firMat.albedoColor.b]).toEqual([0.68, 0.68, 0.7]);
     expect(firMat.ambientTexture).toBeNull();
     expect(firMat.ambientTextureStrength).toBe(1);
     // The loader's normal flags stay: the set's normal map is in the file's convention.
@@ -1681,6 +1683,7 @@ describe("the trees' bark", () => {
     expect(firCrown.material).toBe(crownMat);
     expect(crownMat.metallicTexture).toBeNull();
     expect(crownMat.albedoTexture).toBeNull();
+    expect([crownMat.albedoColor.r, crownMat.albedoColor.g, crownMat.albedoColor.b]).toEqual([1, 1, 1]);
   });
 
   it("gives the pine its two barks: the metasequoia on its own material, the cedar on a clone over clones of its meshes, geometry of their own, that share the crown", () => {
@@ -1716,6 +1719,9 @@ describe("the trees' bark", () => {
     expect(urlOf(cedarMat.metallicTexture)).toBe(textureUrl("textures/bark.cedar.2k.arm.ktx2"));
     const cedarColour = cedarMat.albedoTexture as Texture;
     expect([cedarColour.uScale, cedarColour.vScale, cedarColour.wAng]).toEqual([1.5, 1.9, 1.5707963267948966]);
+    // The clone wears the sets' one tone, as its source does.
+    expect([cedarMat.albedoColor.r, cedarMat.albedoColor.g, cedarMat.albedoColor.b]).toEqual([0.68, 0.68, 0.7]);
+    expect([pineMat.albedoColor.r, pineMat.albedoColor.g, pineMat.albedoColor.b]).toEqual([0.68, 0.68, 0.7]);
     // The saplings: 1k on every tier, the conifers in their giants' sets.
     const sap = (s: number): PBRMaterial => assets.saplings[s]!.lods[0].material as PBRMaterial;
     expect(urlOf(sap(0).albedoTexture)).toBe(textureUrl("textures/bark.pine.1k.ktx2"));
@@ -1726,6 +1732,7 @@ describe("the trees' bark", () => {
     for (const m of dressed) {
       expect(m.albedoTexture, m.name).not.toBeNull();
       expect(m.bumpTexture, m.name).not.toBeNull();
+      expect([m.albedoColor.r, m.albedoColor.g, m.albedoColor.b], m.name).toEqual([0.68, 0.68, 0.7]);
     }
     // The cedar's clone was made of the dressed metasequoia material, with
     // copies of its three maps: all three copies are disposed with the file's

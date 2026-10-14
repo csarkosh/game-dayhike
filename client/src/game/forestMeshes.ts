@@ -121,6 +121,7 @@ import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { BARK_SKY, CROWN_SKY, IMPOSTOR_SKY, TREE_SPECULAR_WEIGHT } from "./forestLookParams.js";
 import { coverAlbedoTint, FOLIAGE_CARD_CONTRAST } from "./coverAlbedoParams.js";
 import {
+  BARK_TONE,
   barkOutputs,
   barkSize,
   barkTransform,
@@ -375,6 +376,10 @@ function dressBark(
   material.useMetallnessFromMetallicTextureBlue = true;
   material.metallic = 1;
   material.roughness = 1;
+  // The set's tone (`BARK_TONE`): the colour map, multiplied down and away
+  // from its warmth, so the bark reads as a trunk under the canopy rather
+  // than the scan's own light.
+  material.albedoColor.copyFromFloats(BARK_TONE.r, BARK_TONE.g, BARK_TONE.b);
   for (const texture of old) {
     if (texture === null) continue;
     // A map another material of the scene still reads (none of the tree

@@ -190,19 +190,16 @@ export const FAR_SWARD_MAX = 1;
  * at (0.0066, 0.0235, 0.005) and committed at its +10 % edge for the low sun;
  * at the meadow pose at noon the far crops read Y 0.04177 against the card
  * band's 0.03814, chroma 0.2103 against 0.2128. That fit stood against cards
- * that have since taken the grass's own green at one luminance, and the far
- * ground fell to 0.43 of them in luminance and greyer. Refitted 2026-10-14 by
- * ratio on the meadow still (1200 × 675, high tier, the game's opening
- * conditions, sRGB decoded to linear, the mean per channel): the near card
- * band (rows 420–600, columns 100–1100) read R 0.0848 G 0.1076 B 0.0717
- * (Y 0.1001, G/R 1.268), the far band beyond the cards (rows 295–340, columns
- * 150–1050) R 0.0398 G 0.0440 B 0.0476 (Y 0.0433, G/R 1.104). Everything that
- * lights the far cover multiplies its target, so each channel scales by the
- * inverse of its ratio, R 1/0.470 = 2.128, G 1/0.409 = 2.445, B 1/0.663 =
- * 1.508: (0.0073, 0.0258, 0.0055) becomes (0.0155, 0.0631, 0.0083). The three
- * targets of the fit (docs/rendering/2026-10-10-far-ground-cover-design.md,
- * §7, the refit §15) are to be re-checked on the next stills. */
-export const FAR_SWARD: Rgb = { r: 0.0155, g: 0.0631, b: 0.0083 };
+ * that have since taken the cover's one green. Refitted 2026-10-14 to the
+ * cards' olive, by ratio on the meadow still against the near card band as
+ * the first refit to the earlier green was (1200 × 675, high tier, the game's
+ * opening conditions, sRGB decoded to linear, the mean per channel): the hue
+ * is the main tuft's own (its texture's mean (0.1001, 0.0989, 0.0297) × 1.327,
+ * the colour the cover's green is 0.85 of), and at this value the far band
+ * beyond the cards reads Y 0.0570 against the near band's 0.0605, R and G
+ * within 3 and 9 % of the near's, B 1.25 of it from the mist
+ * (docs/rendering/2026-10-10-far-ground-cover-design.md, §15 and §16). */
+export const FAR_SWARD: Rgb = { r: 0.1328, g: 0.1312, b: 0.0394 };
 /** The litter as the near field renders it (linear albedo). Not fitted 2026-10-10:
  * kept at its start, the needle bed (0.15, 0.105, 0.06) × 0.54: the canopy fit
  * reached its target through the canopy shade alone, and the litter share along
@@ -234,23 +231,30 @@ export const FAR_LITTER: Rgb = { r: 0.081, g: 0.057, b: 0.032 };
  * `foliageCanopySun` 0, so their sun share's canopy factor went from 0.55 to
  * 1, a gain of 1.818 with the cast shadow cutting it as before, and only
  * their sky share gains 1.1636; the value is so a floor on the lightening.
- * The wrap also exceeds Lambert below N·L = 1 (0.63 against 0.5 at
- * N·L = 0.5), which the fit never saw: its premise holds at N·L = 1 only. In
+ * The wrap also exceeds Lambert below N·L = 1 (the half-Lambert's 0.75
+ * against 0.5 at N·L = 0.5), which the fit never saw: its premise holds at
+ * N·L = 1 only. In
  * the open (ρ → 0) the cards gain only the root term (BLADES 0.75 → 0.825 in
  * mean, +10 %), inside the fit's ±10 % on Y, so `FAR_SWARD` keeps its fit. */
 export const FAR_CANOPY_SHADE = 0.2832;
 /** The clumps' two octaves: tussocks and patches (m), their shares, and the
- * 3 m octave's lattice offset so the two are not aligned. */
-export const FAR_CLUMP_CELL: readonly [number, number] = [0.8, 3];
-export const FAR_CLUMP_WEIGHT: readonly [number, number] = [0.6, 0.4];
+ * 3 m octave's lattice offset so the two are not aligned. The tussocks at a
+ * metre and the two in equal shares: an octave fades where its cell spans
+ * under two pixels (`farClump`), and at the grazing footprint the far cover
+ * is seen at, a cell much under a metre is gone before the cover's band has
+ * ramped in on medium; a metre is the finest grain the far ground carries. */
+export const FAR_CLUMP_CELL: readonly [number, number] = [1, 3];
+export const FAR_CLUMP_WEIGHT: readonly [number, number] = [0.5, 0.5];
 export const FAR_CLUMP_SALT: readonly [number, number] = [41, 17];
 /** Cells per repeat: keeps latticeHash's 0.0113·ci·cj term under 96² = 9,216,
  * inside the 10⁴ where float32 and float64 agree, anywhere in the world. */
 export const FAR_CLUMP_WRAP = 97;
-/** The clumps' troughs at this share of the target, their crowns at 1. */
-export const FAR_CLUMP_AO = 0.65;
-/** The clumps' slope per unit of gradient (in cell units). */
-export const FAR_CLUMP_TILT = 0.67;
+/** The clumps' troughs at this share of the target, their crowns at 1: deep,
+ * so the grain the footprint leaves reads (mean 0.60 over the world). */
+export const FAR_CLUMP_AO = 0.2;
+/** The clumps' slope per unit of gradient (in cell units): the full
+ * gradient, so the clumps take the sun as the slope they are. */
+export const FAR_CLUMP_TILT = 1;
 /** How far the cover's normal leans toward the eye, of its horizontal: the
  * meadow cards' mean normal turned to the viewer, 16.7°. */
 export const FAR_COVER_TILT = 0.3;

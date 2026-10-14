@@ -1,11 +1,12 @@
 // Foliage diffuse, spliced into the PBR fragment by FoliageLightPlugin at
 // CUSTOM_FRAGMENT_DEFINITIONS and called only from the sun's diffuse line: the
 // plugin's injected line selects it by the light's directional define, not by
-// its index, and the sun is the scene's only directional light. A wrapped
-// Lambert that is exactly Lambert at full light and lifted at the terminator
-// (the lift stands in for the light that comes through a thin leaf, so a
-// card facing the sun is lit as Lambert would light it and a card edge-on
-// still takes a share), plus a backlight term that glows when the sun is
+// its index, and the sun is the scene's only directional light. A
+// half-Lambert, (N.L + 1) / 2 at a wrap of 1: exactly Lambert at full light,
+// half of it for a blade or card edge-on to the sun, and zero only for one
+// turned fully away (the wrap stands in for the light that comes through a
+// thin leaf and round a clump, so a blade edge-on to the sun never reads as
+// a black stroke), plus a backlight term that glows when the sun is
 // behind the card and the viewer in front, thicker at the root. Both take
 // the canopy's cut of the sun: foliageCanopySun's share by the canopy over
 // the instance, which the foliage plugin carries as the openness in
@@ -20,7 +21,7 @@
 // COMMENT RULES: no semicolon inside a trailing comment on a code line, no
 // hashed preprocessor keyword in comment prose.
 
-const float FOLIAGE_WRAP = 0.35;
+const float FOLIAGE_WRAP = 1.0;
 const float FOLIAGE_BACK = 0.6;
 const float FOLIAGE_BACK_POWER = 4.0;
 const float FOLIAGE_PI = 3.14159265;

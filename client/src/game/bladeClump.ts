@@ -1,5 +1,4 @@
 import { clamp01, type Rgb } from "./colour.js";
-import { COVER_GREEN } from "./coverAlbedoParams.js";
 import { latticeHash } from "./groundHexParams.js";
 import { BLADE_CHARACTER_COUNT } from "./bladeField.js";
 
@@ -34,16 +33,15 @@ export const BLADE_TRIS = (BLADE_RINGS - 1) * 2 + 1;
 export const BLADE_CLUMP_RADIUS = 0.35;
 /** The face normal is rolled this far (rad) about the blade's axis, one way per side. */
 export const BLADE_ROUND = 0.3;
-/** The material's base albedo, linear: the ground cover's own green
- * (`coverAlbedoParams.ts` `COVER_GREEN`, the floor's grass colour at the
- * cards' brightness), which every green card is brought to as well. The
- * blades are the grass's green up to their tips; the ground tint shapes the
- * root alone, where its weight is (1 − h)². The far sward is fitted to the
- * near field, never the near field darkened to meet it: a blade albedo
- * driven down closes the near/far gap only by darkening the blades until
- * the ground between them is what the frame measures, and shows black at
- * every tip the tint has faded out of. */
-export const BLADE_ALBEDO: Rgb = COVER_GREEN;
+/** The material's base albedo, linear: the blades' own dark green, under
+ * the ground cover's (`coverAlbedoParams.ts` `COVER_GREEN`). The ground tint
+ * shapes the root, where its weight is (1 − h)², and the foliage shader
+ * floors the albedo after it (`FOLIAGE_ALBEDO_FLOOR`, five eighths of the
+ * cover's green), so a tip the tint has faded out of keeps the floor's
+ * colour, not black; a blade edge-on to the sun keeps half the light of one
+ * facing it (`FOLIAGE_WRAP`, `foliageLightPlugin.ts`). The far sward is
+ * fitted to the near field, never the near field darkened to meet it. */
+export const BLADE_ALBEDO: Rgb = { r: 0.03, g: 0.04, b: 0.013 };
 /** Vertex colour at the tip, from white at the root. */
 export const BLADE_TIP_TINT: Rgb = { r: 0.95, g: 0.95, b: 0.75 };
 /** Per-blade luminance spread: `1 + BLADE_LUMA · (random − 0.5)`. */

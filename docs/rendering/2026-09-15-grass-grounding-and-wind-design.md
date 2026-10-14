@@ -485,31 +485,35 @@ conditions: the main tuft, the fern and the pale tuft at one brightness
 against the ground, the open tufts and the ferns of §12's targets reached
 by the albedo rather than by the light.
 
-### 13.1. As built, 2026-10-14: the cover in the grass's own green, its blacks lifted
+### 13.1. As built, 2026-10-14: the cover in the main tuft's own green, its blacks lifted
 
 The gain above brought every card to one luminance and left two things on the
-stills. Black streaks through the near grass at the trailhead and in the
+stills. Black strokes through the near grass at the trailhead and in the
 meadow, and black blades and card interiors under the ferns in the old wood:
-not cast shadows (the cast shadows and the sky barely move the cards) but the
-blade clumps' own colour, `BLADE_ALBEDO` (0.03, 0.04, 0.013), which showed at
-the blades' tips where the ground tint has faded out (its weight is
-(1 − h)²), and the card textures' own dark interiors, which a gain scales but
-never lifts. And the ferns, at the cards' luminance, read brighter and more
-saturated than the grass and stood out: the tuft's texture is a yellow green
-where the fern's is a blue one, and one luminance does not make them one
-colour. The grass's dreary green is the one to keep, and every ground plant is
-matched to it.
+not the shadows' darkness alone but three things of the cover's own. Blades
+edge-on to the sun, which §12's wrap left at a quarter of the light; the
+blade clumps' own colour, `BLADE_ALBEDO` (0.03, 0.04, 0.013), at the blades'
+tips, where the ground tint has faded out (its weight is (1 − h)²); and the
+card textures' own dark interiors, which a gain scales but never lifts. And
+the ferns, at the cards' luminance, read brighter and more saturated than the
+grass and stood out: the tuft's texture is a yellow green where the fern's is
+a blue one, and one luminance does not make them one colour. The main tuft's
+dreary olive is the one to keep, and every ground plant is matched to it.
 
-**One green.** `COVER_GREEN` (`coverAlbedoParams.ts`) = the floor's grass
-colour (`terrainSurface.ts` `GRASS`, (0.09, 0.15, 0.06), Y 0.131) scaled to
-`COVER_ALBEDO_TARGET` 0.18, so (0.1237, 0.2061, 0.0824) linear, the turf's
-hue at the cards' brightness. A literal, with a test that recomputes it from
-those numbers.
+**One green.** `COVER_GREEN` (`coverAlbedoParams.ts`) is the main tuft's own
+colour, its texture's mean (`clutter.grass_a`, (0.1001, 0.0989, 0.0297), Y
+0.0942, the table below), at 0.85 of its luminance: (0.0851, 0.0841, 0.0252)
+linear, Y 0.0801. `COVER_ALBEDO_TARGET`, §13's 0.18, is now that luminance,
+0.0801. The tufts and the meadow keep their own colour, a little darker; the
+ferns, the bushes and the pale tuft take it. Both are literals, with a test
+that recomputes the green from those numbers.
 
-**The blades.** `BLADE_ALBEDO` ← `COVER_GREEN`: the blades are the grass's
-own green to their tips, the ground tint shapes the root alone, and the far
-sward is fitted to the near field (its refit, from stills, follows this),
-never the near field darkened to meet it.
+**The blades.** `BLADE_ALBEDO` is the blades' own dark green, (0.03, 0.04,
+0.013), under the floor of the albedo below on every channel, so the floor
+sets the blades' colour wherever the ground tint does not, and no tip goes to
+black. The far sward is fitted to the near field
+(`2026-10-10-far-ground-cover-design.md`, §16), never the near field darkened
+to meet it.
 
 **Per-channel normalisation for the green cards.** `COVER_ALBEDO_RGB` holds
 the measured mean linear colour of each green card's base colour texture
@@ -524,14 +528,16 @@ over the texels its alpha mask keeps (alpha ≥ 0.5):
 
 `coverAlbedoTint(id)` is, for a model in that table, `COVER_GREEN` over its
 mean, each channel clamped to [0.3, 3.0] (`COVER_TINT_MIN`, `COVER_TINT_MAX`),
-so its mean lands on the green: the fern (1.767, 1.991, 3.0, its blue at the
-cap: the texture's blue is small and noisy, and the cap is the tint's, not
-the grey gain's [0.4, 2]), the main tuft and the meadow (1.236, 2.084,
-2.774), the pale tuft (0.398, 0.687, 0.582), the bushes (0.686, 1.347,
-0.917). **The flowers' exception:** a model with a luminance row alone
-(`clutter.flower_a`, `clutter.flower_b`) takes the grey gain
-`coverAlbedoGain(id)` on all three channels (1.002, 0.978), so the petals
-keep their colour; a model in neither table takes (1, 1, 1). The tint
+so its mean lands on the green: the main tuft and the meadow (0.850, 0.850,
+0.848), the fern (1.216, 0.813, 1.527, its blue under the cap), the bushes
+(0.472, 0.550, 0.3, the blue at the clamp's floor, 0.280 unclamped), the pale
+tuft (0.3, 0.3, 0.3, every channel at the floor, 0.274, 0.280 and 0.178
+unclamped, so its mean lands at (0.0932, 0.0900, 0.0425), Y 0.087, a little
+over the green). The clamp is wider than the grey gain's [0.4, 2] because a
+texture's blue is small and noisy. **The flowers' exception:** a model with a
+luminance row alone (`clutter.flower_a`, `clutter.flower_b`) takes the grey
+gain `coverAlbedoGain(id)` on all three channels (0.446, 0.435), so the
+petals keep their colour; a model in neither table takes (1, 1, 1). The tint
 replaces the gain at both places it was applied, multiplied into
 `albedoColor` per channel: `clutterMeshes.ts` on the card models' materials
 and `forestMeshes.ts` on the nurse log's fern.
@@ -547,7 +553,7 @@ and the tint that shape the root on top of the texture:
 surfaceAlbedo = mix(FOLIAGE_CARD_GREEN, surfaceAlbedo, foliageContrast);
 ```
 
-with `FOLIAGE_CARD_GREEN` = (0.1237, 0.2061, 0.0824) declared in
+with `FOLIAGE_CARD_GREEN` = (0.0851, 0.0841, 0.0252) declared in
 `foliage.fragment.fx` and pinned to `COVER_GREEN` at four decimals by the
 lockstep test. The card models' materials pass `FOLIAGE_CARD_CONTRAST` 0.6
 (`coverAlbedoParams.ts`): since the tint puts every green card's mean at the
@@ -559,19 +565,73 @@ reeds and the trees bind 1, as do the clutter classes built in code (shrub,
 wet plant, high plant), which have no texture with shade baked in. No
 define moves: a material's contrast is a uniform.
 
+**The albedo's floor.** The colour block's last albedo line, after the root
+darkening, the tint and the per-clump nudge:
+
+```glsl
+surfaceAlbedo = max(surfaceAlbedo, FOLIAGE_ALBEDO_FLOOR);
+```
+
+with `FOLIAGE_ALBEDO_FLOOR` = (0.0532, 0.0525, 0.0158), Y 0.050, about five
+eighths of the green, declared in `foliage.fragment.fx` beside the green and
+pinned to `coverAlbedoParams.ts` at four decimals by the lockstep test. Per
+channel, so nothing the foliage plugin draws goes to black: not a blade's
+tip, a card's baked-dark texel nor a root the darkening and the tint have
+taken down. The block is every foliage material's, the trees' crowns, the
+duff and the reeds too; above the floor the albedo is as it was.
+
+**The shadow's floor.** `FOLIAGE_SHADOW_FLOOR` 0.75 (`coverAlbedoParams.ts`),
+the least of the sun's light the cover keeps in a cast shadow. The shadow
+generator's darkness applies to every receiver, and on the cover the blades'
+and the cards' own shade (the root darkening, the baked-dark texels, the
+canopy's cut) stacks on top of it, so the cover's shadows went to black where
+the floor's keep the weather's darkness. The light plugin
+(`foliageLightPlugin.ts`) takes a second injection point,
+`FOLIAGE_SHADOW_INJECTION_POINT`, on Babylon's own line that applies a light's
+shadow to its diffuse, once per light in the `lightFragment` include, and
+writes the line back after the floor:
+
+```glsl
+#ifdef FOLIAGE
+shadow=max(shadow,0.75);
+#endif
+diffuseBase+=info.diffuse*shadow;
+```
+
+The line carries no light index, so the floor is every light's; only the sun
+casts shadows. The lines after it in the include, the specular's among them,
+read the held value too. It moves the ground cover that receives cast
+shadows, the blade clumps, the duff and the reeds (§12); the cards receive
+none. Under `FOLIAGE` for the reason the sun's diffuse call is
+(`foliageLightPlugin.ts`): an effect processed without the define keeps
+Babylon's line alone.
+
+**The half-Lambert.** `FOLIAGE_WRAP` is 1.0, not §12's 0.35: §12's lift,
+`clamp((N·L + wrap) / (1 + wrap), 0, 1)`, at a wrap of 1 is `(N·L + 1) / 2`,
+exactly Lambert at N·L = 1, half the light at the terminator (0.26 at 0.35),
+and zero only for a face turned fully from the sun. A blade edge-on to the
+sun keeps half the light of one facing it and no longer reads as a black
+stroke. Below N·L = 1 it exceeds Lambert by more than §12's did: 0.75 against
+Lambert's 0.5 at N·L = 0.5, where §12's gave 0.63
+(`2026-10-10-far-ground-cover-design.md`, §14, on the far ground's fit).
+`foliageDiffuse.fragment.fx` mirrors the constant and the lockstep test
+asserts it.
+
 **The nurse fern.** The fern on a nurse log wore a plain material with no
 foliage plugin, so the contrast could not reach it; it now wears the plugin
 under a profile of its own, `NURSE` (no wind, no tilt or bend, no ground
 tint, no root darkening, the card's own normals to the root), with the cards'
 contrast and no light plugin, and the plain material's other terms as they
 were. The sun's cut is the constant's, as on the floor's cards: the log's
-fern receives no cast shadow. Wearing the plugin, the fern also takes the two
-terms no profile turns off, the normal forced to face the viewer and the
-per-clump luminance nudge, both benign on a card on a log; the retired
-one-a-tree understory path, under its own profile, takes neither the cards'
-tint nor their contrast.
+fern receives no cast shadow. Wearing the plugin, the fern also takes the
+terms no profile turns off, the normal forced to face the viewer, the
+per-clump luminance nudge and the albedo's floor, all benign on a card on a
+log; the retired one-a-tree understory path, under its own profile, takes
+neither the cards' tint nor their contrast.
 
-What the change was made for, on the stills: no black at the blades' tips or
-in the cards' interiors, and the ferns in the grass's green, not their
-texture's. Out of this change: the far sward's refit, measured on stills
-after this lands; the cast shadows; the trees.
+What the change was made for, on the stills: no black strokes in the grass,
+neither the blades edge-on to the sun nor the blades' own colour at the tips,
+no black in the cards' interiors, and the ferns in the main tuft's olive,
+not their texture's. The far sward is refitted to these cards
+(`2026-10-10-far-ground-cover-design.md`, §16) and the trees' bark toned to
+sit with them (`2026-10-14-tree-bark-textures.md`, §11).

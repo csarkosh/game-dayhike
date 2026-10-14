@@ -74,7 +74,7 @@ describe("createBladeMeshes", () => {
           expect(mat.needAlphaBlending()).toBe(false);
           expect(mat.backFaceCulling).toBe(false);
           expect([mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b]).toEqual([BLADE_ALBEDO.r, BLADE_ALBEDO.g, BLADE_ALBEDO.b]);
-          expect([mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b]).toEqual([0.1237, 0.2061, 0.0824]);
+          expect([mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b]).toEqual([0.03, 0.04, 0.013]);
           const foliage = mat.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
           expect(foliage).toBeInstanceOf(FoliagePlugin);
           expect(foliage.bladeEdges).toEqual(bands[t]);

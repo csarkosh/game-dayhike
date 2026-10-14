@@ -1055,6 +1055,68 @@ confirmed on stills of its own. `FAR_CANOPY_SHADE` keeps §14's value.
 least 0.75 of the band's, G/R within ±10 %) are to be re-checked on the next
 stills, and the fit repeated from this value if they miss.
 
+## 16. Amendment (2026-10-14): the sward in the cards' olive, the clumps at their grain
+
+§15's literal stood against cards in the floor's grass hue. The cards have
+since taken the main tuft's own colour at 0.85 of its luminance, an olive,
+with the blades floored toward it
+(`2026-09-15-grass-grounding-and-wind-design.md`, §13.1), and the far ground
+is refitted to them the same way, and its clumps given the most grain the
+far ground can carry.
+
+**The sward.** `FAR_SWARD` (0.0155, 0.0631, 0.0083) becomes
+**(0.1328, 0.1312, 0.0394)**, four decimals as before, in the twin and the
+include: the hue of the main tuft's own texture mean (0.1001, 0.0989,
+0.0297) × 1.327, the colour the cover's green is 0.85 of, its scale fitted by
+ratio on the meadow still against the near card band as §15's was (1200 × 675
+on the high tier at the game's opening conditions, each pixel decoded from
+sRGB to linear, the mean per channel). Its Y rises from 0.0490 to 0.1249,
+part of it taken back by the clumps' deeper troughs below (0.596 / 0.823 =
+0.72 on the mean). With it the far
+band beyond the cards reads Y 0.0570 against the near band's 0.0605 (0.94,
+inside §7's ±10 %), R and G within 3 and 9 % of the near band's, and B 1.25
+of it: the blue the mist lays over the far ground. `FAR_LITTER` and
+`FAR_CANOPY_SHADE` keep their values.
+
+**The clumps.**
+
+| Constant | §5.3 | Now | Meaning |
+| --- | --- | --- | --- |
+| `FAR_CLUMP_CELL` | (0.8, 3.0) m | (1.0, 3.0) m | tussocks and patches; the 1 m octave repeats every 97 m |
+| `FAR_CLUMP_WEIGHT` | (0.6, 0.4) | (0.5, 0.5) | the octaves' shares |
+| `FAR_CLUMP_AO` | 0.65 | 0.2 | the troughs at this share of the target, the crowns at 1 |
+| `FAR_CLUMP_TILT` | 0.67 | 1.0 | the clumps' slope per unit of gradient (in cell units) |
+
+Over 200,000 points the combined value has mean 0.495, 5th and 95th
+percentiles 0.249 and 0.745; its gradient's root mean square is 0.380 and its
+99th percentile 0.810 (cell units), so at `FAR_CLUMP_TILT` 1 the normal leans
+21° on average and 39° at the 99th percentile (15° and 30° in §5.3). The
+troughs' darkening, `mix(FAR_CLUMP_AO, 1, n)`, averages 0.596 over the same
+points, against 0.823 at 0.65.
+
+**Why a metre is the limit.** §5.3's band-limiting fades an octave to its
+mean by `1 − smoothstep(0.5, 1.0, foot / cell)`: whole while a cell spans two
+pixels, gone at one. The far ground is seen at a grazing angle, where the
+footprint grows with the square of the distance: from a 1.6 m eye with the
+1.4 rad vertical field of view, `foot ≈ d² · (1.4 / rows) / 1.6`, which gives
+§5.3's table back. By rendered rows, whole / gone:
+
+| Rendered rows | 0.5 m | 0.8 m (§5.3) | 1 m | 3 m |
+| --- | --- | --- | --- | --- |
+| 2,160 (high, 4K) | 25 / 35 m | 31 / 44 m | 35 / 50 m | 61 / 86 m |
+| 1,080 (medium) | 18 / 25 m | 22 / 31 m | 25 / 35 m | 43 / 61 m |
+| 480 (low) | 12 / 17 m | 15 / 21 m | 17 / 23 m | 29 / 41 m |
+
+The far cover ramps in over 24 to 30 m on high and medium and over 14.4 to
+18 m on low (§4). On medium an octave of half a metre is gone by 25 m, as the
+cover begins, and §5.3's 0.8 m one by 31 m, a metre past the ramp's end; the
+1 m octave is whole as the cover begins and holds to 35 m, to 50 m on high
+and past the ramp's end on low. A finer cell would draw nothing where the far
+cover is, so a metre is the finest grain it carries, and the 3 m patches
+beyond. What the footprint leaves is made to read: the two octaves in equal
+shares, so the patches that hold to 61 and 86 m carry half, the troughs at
+0.2 and the tilt whole.
+
 ## References
 
 - [A full far ground without drawing it](https://csarko.sh/research/a-full-far-ground-without-drawing-it),

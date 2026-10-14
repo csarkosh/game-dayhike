@@ -11,8 +11,10 @@ import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase
 import "@babylonjs/core/Materials/materialPluginManager.js";
 import diffuseFragment from "./shaders/foliageDiffuse.fragment.fx?raw";
 
+import { FOLIAGE_SHADOW_FLOOR } from "./coverAlbedoParams.js";
+
 /** Mirrored in foliageDiffuse.fragment.fx; the lockstep test asserts it. */
-export const FOLIAGE_WRAP = 0.35;
+export const FOLIAGE_WRAP = 1.0;
 
 /**
  * Per-light injection. `shaderProcessor.js`'s `ProcessIncludes` expands the
@@ -61,6 +63,24 @@ const FOLIAGE_LIGHT_INJECTION_CODE =
   "info.diffuse=computeDiffuseLighting(preInfo,$1);\n" +
   "#endif";
 
+/**
+ * The line that applies a light's cast shadow to its diffuse, once per
+ * light after the shadow is read. On foliage the shadow is held at
+ * `FOLIAGE_SHADOW_FLOOR` or above: the cover's own shade (its root
+ * darkening, its cards' dark pixels, the canopy's cut) stacks on the
+ * generator's darkness, and the stack went to black. The line has no light
+ * index, so the floor is every light's; only the sun casts shadows. The
+ * lines after it in the include (the specular's among them) read the held
+ * value too. Under `FOLIAGE` for the reason the diffuse call is: an effect
+ * processed without the define keeps Babylon's line alone.
+ */
+export const FOLIAGE_SHADOW_INJECTION_POINT = "!diffuseBase\\+=info\\.diffuse\\*shadow;";
+const FOLIAGE_SHADOW_INJECTION_CODE =
+  "#ifdef FOLIAGE\n" +
+  `shadow=max(shadow,${FOLIAGE_SHADOW_FLOOR.toFixed(2)});\n` +
+  "#endif\n" +
+  "diffuseBase+=info.diffuse*shadow;";
+
 class FoliageLightPlugin extends MaterialPluginBase {
   constructor(material: Material) {
     super(material, "FoliageLight", 210, undefined, true, true);
@@ -75,6 +95,7 @@ class FoliageLightPlugin extends MaterialPluginBase {
     return {
       CUSTOM_FRAGMENT_DEFINITIONS: diffuseFragment,
       [FOLIAGE_LIGHT_INJECTION_POINT]: FOLIAGE_LIGHT_INJECTION_CODE,
+      [FOLIAGE_SHADOW_INJECTION_POINT]: FOLIAGE_SHADOW_INJECTION_CODE,
     };
   }
 }

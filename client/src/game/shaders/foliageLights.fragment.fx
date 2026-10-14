@@ -6,10 +6,13 @@
 // its albedo puts at the green's mean but cannot lift, so the mix lifts a
 // black texel to the rest of the green), then root darkening, the ground
 // tint (strongest at the root, more with distance), a per-clump luminance
-// nudge, then the normal blended toward the ground's up at the root and
-// forced to face the viewer so a card never lights as its back. The canopy's
-// cut is not on the albedo: the sky's share is taken at the final colour
-// composition (foliageSky.fragment.fx) and the sun's in the sun's own
+// nudge, then the albedo floored (FOLIAGE_ALBEDO_FLOOR, five eighths of the
+// green, after the root darkening and the tint, so nothing on the cover goes
+// to black: not a blade's tip the tint has faded out of, nor a texture's
+// darkest texel), then the normal blended toward the ground's up at the root
+// and forced to face the viewer so a card never lights as its back. The
+// canopy's cut is not on the albedo: the sky's share is taken at the final
+// colour composition (foliageSky.fragment.fx) and the sun's in the sun's own
 // diffuse (foliageDiffuse.fragment.fx), each from the openness in
 // vFoliage.a. The fragment is never dropped.
 //
@@ -27,6 +30,7 @@
   float fTintW = foliageTint * fRoot * (1.0 + 0.5 * smoothstep(20.0, 80.0, vFoliageDist)) * fHas;
   surfaceAlbedo = mix(surfaceAlbedo, vFoliage.rgb, clamp(fTintW, 0.0, 0.85));
   surfaceAlbedo *= 1.0 + FOLIAGE_CLUMP_LUMA * (vFoliageClump - 0.5);
+  surfaceAlbedo = max(surfaceAlbedo, FOLIAGE_ALBEDO_FLOOR);
   normalW = normalize(mix(vec3(0.0, 1.0, 0.0), normalW, mix(foliageNormalRoot, 1.0, vFoliageH)));
   normalW = faceforward(normalW, -viewDirectionW, normalW);
 }
