@@ -77,7 +77,8 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high"];
  *   grass).
  * - Sampled textures and samplers per stage, 16 each, and uniform buffers per
  *   stage, 12: WebGPU's defaults, at which the scene sits with no margin. The
- *   terrain's fragment stage takes all 16 textures and 16 samplers, and every
+ *   terrain's fragment stage takes all 16 textures and 16 samplers on the
+ *   high tier, whose soft-edged shadows read the map's depth too, and every
  *   lit PBR material with a full party's seven lights all 12 uniform buffers
  *   (`stageBindings.test.ts` holds the counts). They are named so that this
  *   is the scene's whole need; every adapter offers the defaults, so naming

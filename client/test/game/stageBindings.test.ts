@@ -54,13 +54,14 @@ import { skyFixture } from "./helpers/skyFixture.js";
 /**
  * Three of WebGPU's per-stage limits sit at their defaults in the browser's
  * sweep (the verification note, §4): sampled textures and samplers per stage,
- * 16 each, which the terrain's fragment stage once filled exactly and now sits
- * one below (the trail's segment list and bucket grid in one texture, the
- * unit it freed for the soft-edged shadows' depth read), and uniform buffers
- * per stage, 12, set by every lit PBR material with the seven lights the game
- * binds at most. The device asks for exactly the default of these
- * (`WEBGPU_REQUIRED_LIMITS`), so two more textures or samplers on the terrain,
- * or an eighth light, fail the pipeline on every adapter.
+ * 16 each, which the terrain's fragment stage fills exactly on the high tier
+ * (the trail's segment list and bucket grid in one texture, the unit that
+ * freed taken by the soft-edged shadows' depth read) and sits one below on
+ * the others, and uniform buffers per stage, 12, set by every lit PBR
+ * material with the seven lights the game binds at most. The device asks for
+ * exactly the default of these (`WEBGPU_REQUIRED_LIMITS`), so one more
+ * texture or sampler on the terrain on the high tier, two on the others, or
+ * an eighth light, fail the pipeline on every adapter.
  *
  * What the suite can see of them: the terrain's clipmap and the forest, built
  * as the renderer builds them with every lamp of a full party lit, on a
@@ -137,9 +138,12 @@ async function buildWorld(): Promise<{ drawn: Map<string, Drawn>; lights: number
   };
 }
 
-/** A stage's bindings on a tier, the shadow map's added where it is drawn. */
+/** A stage's bindings on a tier, the shadow map's added where it is drawn:
+ * one texture and one sampler for the plain percentage-closer filter, two
+ * where the tier softens the edges, whose filter reads the map's depth
+ * beside the comparison (`SHADOWPCSS`, the canary below). */
 function onTier(drawn: Drawn, tier: QualityTier): { vertex: StageBindings; fragment: StageBindings } {
-  const shadowed = drawn.receivesShadows && QUALITY[tier].shadowMapSize > 0 ? 1 : 0;
+  const shadowed = drawn.receivesShadows && QUALITY[tier].shadowMapSize > 0 ? (QUALITY[tier].shadowSoftEdges ? 2 : 1) : 0;
   return {
     vertex: drawn.vertex,
     fragment: {
@@ -195,17 +199,19 @@ describe("WebGPU's per-stage bindings, at the defaults the device keeps", () => 
     ]);
   });
 
-  it("counts the terrain's bindings on both tiers: 15 textures, 15 samplers, 12 uniform buffers", () => {
+  it("counts the terrain's bindings: 16 textures and 16 samplers on high, 15 and 15 on medium, 12 uniform buffers on both", () => {
     // The browser read 16 textures and 16 samplers when the trail bound its
-    // segment list and its bucket grid as two textures; they are one table
-    // now (trailPaint.ts), so the terrain sits one below the device's default
-    // and the soft-edged shadows' depth read on the high tier has its unit.
+    // segment list and its bucket grid as two textures under the plain
+    // shadow filter; they are one table now (trailPaint.ts), and the unit
+    // that freed goes to the soft-edged shadows' depth read on the high tier,
+    // so the terrain fills the device's default there and sits one below it
+    // on medium.
     const terrain = world.drawn.get("mat_terrain") as Drawn;
-    const measured = {
-      vertex: { textures: 0, samplers: 0, uniformBuffers: 12 },
-      fragment: { textures: 15, samplers: 15, uniformBuffers: 12 },
-    };
-    expect({ high: onTier(terrain, "high"), medium: onTier(terrain, "medium") }, CEILING).toEqual({ high: measured, medium: measured });
+    const vertex = { textures: 0, samplers: 0, uniformBuffers: 12 };
+    expect({ high: onTier(terrain, "high"), medium: onTier(terrain, "medium") }, CEILING).toEqual({
+      high: { vertex, fragment: { textures: 16, samplers: 16, uniformBuffers: 12 } },
+      medium: { vertex, fragment: { textures: 15, samplers: 15, uniformBuffers: 12 } },
+    });
   });
 
   it("holds every material the terrain and the forest draw within the device's limits on every tier", () => {
@@ -230,8 +236,11 @@ describe("WebGPU's per-stage bindings, at the defaults the device keeps", () => 
   it("reads Babylon's rules the count rests on (canaries on the installed engine and the lighting)", () => {
     const read = (spec: string): string => readFileSync(createRequire(import.meta.url).resolve(spec), "utf8");
     // A cascaded shadow map filtered by comparison is one texture and one
-    // sampler per shadowed light, and the sun's is filtered so.
+    // sampler per shadowed light; the soft-edged filter reads the map's depth
+    // beside the comparison, two of each. The sun's is filtered the first way
+    // on the tiers that keep hard edges, the second on the high tier.
     const lightFragment = read("@babylonjs/core/Shaders/ShadersInclude/lightUboDeclaration.js");
+    expect(lightFragment).toContain("#if defined(SHADOWPCSS{X})\nuniform highp sampler2DArrayShadow shadowTexture{X};uniform highp sampler2DArray depthTexture{X};");
     expect(lightFragment).toContain("#elif defined(SHADOWPCF{X})\nuniform highp sampler2DArrayShadow shadowTexture{X};\n");
     // And every texture a light's fragment declarations can bind, so one
     // added anywhere in the include, for shadows or otherwise, is seen.
@@ -252,7 +261,8 @@ describe("WebGPU's per-stage bindings, at the defaults the device keeps", () => 
       "uniform sampler2D shadowTexture{X};",
     ]);
     const lighting = readFileSync(new URL("../../src/game/lighting.ts", import.meta.url), "utf8");
-    expect(lighting).toContain("    shadows.usePercentageCloserFiltering = true;");
-    expect(lighting).not.toMatch(/usePercentageCloserFilteringSoft|useContactHardeningShadow/);
+    expect(lighting).toContain("      shadows.useContactHardeningShadow = true;");
+    expect(lighting).toContain("      shadows.usePercentageCloserFiltering = true;");
+    expect(lighting).not.toMatch(/usePercentageCloserFilteringSoft/);
   });
 });

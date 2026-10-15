@@ -26,10 +26,13 @@
  * above and gated on its own ROADPAINT define: a 1-D centerline table
  * (`roadCenter`) and an asphalt texture (`roadAsphalt`) sampled in the road's
  * own (u, z) frame, painted per fragment at exact resolution regardless of
- * distance, including its own slice of the normal/RAH arrays. Twelve samplers
- * total on the material (five ground layers, the two relief arrays, asphalt,
- * the centerline table, plus the PBR environment, BRDF and shadow samplers) —
- * inside WebGL2's sixteen. Road-less variants (no `roadCenterX` hook) leave
+ * distance, including its own slice of the normal/RAH arrays. Fifteen
+ * samplers on the material with the trail and the features painted (five
+ * ground layers, the two relief arrays, asphalt, the centerline table, the
+ * trail's table, the features' table, the atmosphere's cloud map, plus the
+ * PBR environment, BRDF and shadow samplers), sixteen on the high tier whose
+ * soft-edged shadows read the map's depth too: WebGL2's sixteen, exactly
+ * (`stageBindings.test.ts`). Road-less variants (no `roadCenterX` hook) leave
  * ROADPAINT false and never register the two road-only samplers, so they
  * compile today's shader unchanged.
  *
@@ -978,7 +981,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
         { name: "terrainWet", size: 1, type: "float" },
         // The weather's rain [0, 1] and the folded running time the puddles'
         // ripples read (rainParams.ts: the rings are hashed in the fragment,
-        // the terrain's sixteen samplers being all WebGPU's default allows) —
+        // the terrain's samplers on the high tier being all WebGPU's default allows) —
         // declared unconditionally like terrainWet; only the trail paint
         // (TRAILPAINT) reads them.
         { name: "terrainRain", size: 1, type: "float" },

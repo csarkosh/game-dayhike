@@ -237,9 +237,9 @@ export function dripCountUnder(water: number, tier: QualityTier): number {
  * `scale`, and each cell holds one ring, its centre, its radius' share and
  * its phase hashed from the cell (the hex include's `latticeHash`, in the
  * shader). The rings are made in the fragment rather than read from a
- * texture: the terrain's fragment stage already samples the sixteen
- * textures WebGPU's default per-stage limit allows, which the engine keeps
- * at the default on purpose (`stageBindings.test.ts`). `RIPPLE_RADIUS` is a
+ * texture: on the high tier the terrain's fragment stage already samples the
+ * sixteen textures WebGPU's default per-stage limit allows, which the engine
+ * keeps at the default on purpose (`stageBindings.test.ts`). `RIPPLE_RADIUS` is a
  * ring's radius as a share of its cell, and `RIPPLE_INSET` how far from the
  * cell's edges, in cells, its centre sits at least: the ring never leaves
  * its cell.
