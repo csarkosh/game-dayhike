@@ -11,9 +11,9 @@ describe("stillScript", () => {
 });
 
 describe("stillUrl", () => {
-  it("opens the game on the base with the script and the tier, semicolons kept readable", () => {
+  it("opens the game on the base with the script and the tier, semicolons kept readable, telemetry off", () => {
     expect(stillUrl("http://localhost:5173/dayhike/", config, tarn)).toBe(
-      "http://localhost:5173/dayhike/game/0f1c2a3b-4d5e-4f60-8a9b-0c1d2e3f4a5b?cmd=seed%20atmo;freecam%20228%2072%201.571;escalation%200;unsettle%200&tier=high",
+      "http://localhost:5173/dayhike/game/0f1c2a3b-4d5e-4f60-8a9b-0c1d2e3f4a5b?cmd=seed%20atmo;freecam%20228%2072%201.571;escalation%200;unsettle%200&tier=high&telemetry=off",
     );
   });
 });

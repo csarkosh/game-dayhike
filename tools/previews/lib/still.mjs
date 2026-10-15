@@ -9,11 +9,12 @@ export function stillScript(still) {
 }
 
 /** The URL that opens a still's view on `base` (the dev server or the live site, with the game's
- * path under it), on `tier` so every still is the same quality. */
+ * path under it), on `tier` so every still is the same quality, with `telemetry=off` so a shoot
+ * never reaches the admin page's matches as a party that never said goodbye. */
 export function stillUrl(base, config, still) {
   const root = base.replace(/\/+$/, "");
   const cmd = encodeURIComponent(stillScript(still)).replace(/%3B/g, ";");
-  return `${root}/game/${config.game}?cmd=${cmd}&tier=${config.tier}`;
+  return `${root}/game/${config.game}?cmd=${cmd}&tier=${config.tier}&telemetry=off`;
 }
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
