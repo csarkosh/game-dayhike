@@ -12,7 +12,8 @@
 //
 // Beside each still its postcard (`<name>.card.png`, lib/postcard.mjs): the frame on a paper
 // border, tilted by its name, shadowed, on a transparent ground, which the README lays out; the
-// one `stills.json` names under `postmark` is postmarked with the title, the author and the year.
+// one `stills.json` names under `stamp` carries a postage stamp with the icon, the title, the author
+// and the year.
 //
 // Needs Google Chrome (`CHROME` names another binary). Chrome opens as a window, not headless:
 // the stills are shot on the WebGPU path at the high tier, which headless Chrome does not give.
@@ -150,7 +151,7 @@ async function shoot(page, url, settle) {
   return stripPng(Buffer.from(shot.data, "base64"));
 }
 
-/** The still's postcard beside it, postmarked where `stills.json` says (`postmark.still`). */
+/** The still's postcard beside it, with the postage stamp where `stills.json` says (`stamp.still`). */
 async function writeCard(name, png, mark) {
   const card = await postcard(png, name, mark);
   const out = join(OUT, `${name}.card.png`);
@@ -164,7 +165,8 @@ async function main() {
   const known = new Set(config.stills.map((s) => s.name));
   for (const name of options.names) if (!known.has(name)) throw new Error(`no still named ${name}; stills.json has ${[...known].join(", ")}`);
   const chosen = options.names.length === 0 ? config.stills : config.stills.filter((s) => options.names.includes(s.name));
-  const markFor = (still) => (config.postmark?.still === still.name ? config.postmark : undefined);
+  const markFor = (still) =>
+    config.stamp?.still === still.name ? { ...config.stamp, icon: readFileSync(join(HERE, "../..", config.stamp.icon)) } : undefined;
   if (options.cards) {
     for (const still of chosen) await writeCard(still.name, readFileSync(join(OUT, `${still.name}.png`)), markFor(still));
     return;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { MARGIN_PX, TILT_MAX_DEG, TILT_MIN_DEG, postcard, postmarkSvg, tiltFor } from "../lib/postcard.mjs";
+import { MARGIN_PX, STAMP_ASPECT, TILT_MAX_DEG, TILT_MIN_DEG, postcard, stampPicture, stampSvg, tiltFor } from "../lib/postcard.mjs";
 
 const NAMES = ["trailhead", "forest", "tarn", "meadow", "crest", "beach"];
 
@@ -51,27 +51,47 @@ describe("postcard", () => {
   });
 });
 
-describe("postmarkSvg", () => {
-  const mark = { title: "Day Hike", author: "Cyrus Sarkosh", site: "games.csarko.sh", year: "2026", line: "1 to 5 players" };
-  it("rings the title and the site a letter at a time, the author over the year and the line in the middle, five bars to the left, in upper case", () => {
-    const svg = postmarkSvg(mark, 300);
-    for (const word of ["CYRUS SARKOSH", "2026", "1 TO 5 PLAYERS"]) expect(svg).toContain(`>${word}</text>`);
-    for (const ch of [..."DAY HIKE", ..."GAMES.CSARKO.SH"]) expect(svg).toContain(`>${ch}</text>`);
-    expect(svg.match(/<path d="M /g)).toHaveLength(10);
-    expect(svg).not.toContain("textPath");
+describe("stampSvg", () => {
+  const mark = { title: "Day Hike", author: "Cyrus Sarkosh", year: "2026", line: "1 to 5 players" };
+  it("carries the title, the author, the line and the year in upper case on a perforated, double-framed stamp", () => {
+    const svg = stampSvg(mark, 250);
+    for (const word of ["DAY HIKE", "CYRUS SARKOSH", "1 TO 5 PLAYERS", "2026"]) expect(svg).toContain(`>${word}</text>`);
+    // the outline twice, the shadow under the paper, its edges bitten by arcs; the frame twice
+    expect(svg.match(/<path d="M /g)).toHaveLength(2);
+    expect(svg.match(/ A /g).length).toBeGreaterThan(40);
+    expect(svg.match(/<rect /g)).toHaveLength(2);
     expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
   });
-  it("escapes the mark's text, so a title is never markup", () => {
-    expect(postmarkSvg({ ...mark, title: "<b>&", line: undefined }, 300)).toContain(">&lt;</text>");
-    expect(postmarkSvg({ ...mark, line: undefined }, 300)).not.toContain("PLAYERS");
+  it("escapes the mark's text, so a title is never markup, and leaves the line out when there is none", () => {
+    expect(stampSvg({ ...mark, title: "<b>&" }, 250)).toContain(">&lt;B&gt;&amp;</text>");
+    expect(stampSvg({ ...mark, line: undefined }, 250)).not.toContain("PLAYERS");
   });
-  it("marks the card it is asked for, and the same still and mark give the same bytes", async () => {
-    const still = await sharp({ create: { width: 320, height: 180, channels: 3, background: "#406080" } }).png().toBuffer();
+  it("puts the picture between the title and the author, inside the stamp", () => {
+    const { side, left, top } = stampPicture(250);
+    expect(side).toBe(150);
+    expect(left).toBeGreaterThan(8);
+    expect(left + side).toBeLessThan(258);
+    expect(top).toBeGreaterThan(8 + 11 + 27);
+    expect(top + side).toBeLessThan(8 + Math.round(250 * STAMP_ASPECT) - 11 - 40);
+  });
+  it("sticks the stamp and its picture on the card it is asked for, and the same still and mark give the same bytes", async () => {
+    const still = await sharp({ create: { width: 480, height: 270, channels: 3, background: "#406080" } }).png().toBuffer();
+    const icon = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="30" y="30" width="40" height="40" fill="#e03030"/></svg>');
     const plain = await postcard(still, "trailhead");
-    const marked = await postcard(still, "trailhead", mark);
+    const marked = await postcard(still, "trailhead", { ...mark, icon });
     expect(marked.equals(plain)).toBe(false);
-    expect((await postcard(still, "trailhead", mark)).equals(marked)).toBe(true);
-    const meta = await sharp(marked).metadata();
-    expect([meta.width, meta.height]).toEqual([(await sharp(plain).metadata()).width, (await sharp(plain).metadata()).height]);
+    expect((await postcard(still, "trailhead", { ...mark, icon })).equals(marked)).toBe(true);
+    expect([(await sharp(marked).metadata()).width, (await sharp(marked).metadata()).height]).toEqual([
+      (await sharp(plain).metadata()).width,
+      (await sharp(plain).metadata()).height,
+    ]);
+    // the icon's red square is on the card: somewhere in the top right quarter a pixel is red
+    const { data, info } = await sharp(marked).raw().toBuffer({ resolveWithObject: true });
+    let red = 0;
+    for (let y = 0; y < info.height / 2; y++) for (let x = Math.floor(info.width / 2); x < info.width; x++) {
+      const at = (y * info.width + x) * 4;
+      if (data[at] > 0xc0 && data[at + 1] < 0x60 && data[at + 2] < 0x60 && data[at + 3] === 255) red++;
+    }
+    expect(red).toBeGreaterThan(100);
   });
 });
