@@ -316,13 +316,20 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1497 recorded stages, each file\'s bytes hashing to the name it has: 860 on the medium and high tiers, 522 on low, 79 on high alone, 32 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1497);
+  it('holds the 1613 recorded stages, each file\'s bytes hashing to the name it has: 926 on the medium and high tiers, 583 on low, 75 on high alone, 25 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1613);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1497);
+    expect(read.stages).toHaveLength(1613);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(508);
-    // The 860 recorded on the medium and high tiers (the foliage's stages with the canopy's
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(602);
+    // The 926 recorded on the medium and high tiers (the trunks' bark under its moss, on the wet
+    // side, low on the trunk and more on some trees than others, 26 stages here and 20 on low, met
+    // on the forest floor, at the trailhead, in the meadow, at the tarn, dry and under rain, from
+    // the win to the title page, and on the title's and the intro's pages (2026-10-14); the
+    // foliage's vertex stages, 36 here and 26 on low, and its fragment stages and the far
+    // ground's in the wording the floors and the olive sward kept, 38 here and 28 on low
+    // (2026-10-14); 16 PBR stages the intro's page met on the low tier and 3 the win met there
+    // (2026-10-14); the foliage's stages with the canopy's
     // share of the sky and of the sun apart, the cards' contrast toward the main tuft's colour,
     // the albedo floor, the half-Lambert wrap and the cast shadow held at three quarters on
     // the cover, and the far ground's olive sward with its metre-scale clumps, met on the forest floor, at the trailhead, in the meadow,
@@ -344,16 +351,20 @@ describe('the committed corpus and the tests\' fixture', () => {
     // materials first met at a lake under three lights among them
     // (2026-10-11), a foliage material's pbr pair first met when the foliage
     // light injection took its FOLIAGE guard (2026-10-12)), the low tier's
-    // 402, recorded on it alone (the end scene's 98, which the tier's earlier
+    // 583, recorded on it alone (the end scene's 98, which the tier's earlier
     // recording, ended before the win, had not met (2026-10-13), a foliage pbr
     // pair of the same recording
-    // among them, and the rain's streak vertex stage with the sky fade softened), the 76 the high tier alone met (the lake's
+    // among them, and the rain's streak vertex stage with the sky fade softened), the 75 the high tier alone met (the lake's
     // mirror, the sea's curl and fourteen PBR stages the canopy trail under rain
-    // first met on 2026-10-12 among them), the 19 the medium tier alone met (a PBR pair
+    // first met on 2026-10-12 among them), the 25 the medium tier alone met (a PBR pair
     // the canopy trail under rain first met on 2026-10-13 among them), and the sky
     // dome's 2 and the midges' 2, whose text is the same on every tier.
     // Stages whose text a shader no longer produces are
-    // retired, not kept: the foliage's stages before the canopy's share of the sky and of the
+    // retired, not kept: the trees' bark's 11 fragment stages before the moss, and the foliage's
+    // 61 fragment stages and the far ground's 4 recorded before the floors' and the olive sward's
+    // last wording, every one met again in the wording that stands (2026-10-14); the foliage's
+    // vertex stages, retired with the stages before the floors though the pages still met them,
+    // are back (2026-10-14); the foliage's stages before the canopy's share of the sky and of the
     // sun were apart, before the cards' contrast and before the floors and the half-Lambert
     // wrap, and the far ground's before its olive sward, 391 of them over the three
     // recordings of 2026-10-14, 73 of which the pages did not meet again (the lamps of three and more
@@ -377,13 +388,13 @@ describe('the committed corpus and the tests\' fixture', () => {
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1497);
+    expect(read.tiers.size).toBe(1613);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([526, 896, 943]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(860);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(522);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(79);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(32);
+    expect([on('low'), on('medium'), on('high')]).toEqual([587, 955, 1005]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(926);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(583);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(75);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(25);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
