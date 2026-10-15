@@ -149,6 +149,8 @@ export function createRoster(handlers: {
   onInvite(): void;
   onRetry(): void;
   onRename(name: string): void;
+  /** The invite link reached the clipboard. */
+  onInviteCopied?(): void;
 }): Roster {
   const style = document.createElement("style");
   style.textContent = STYLE;
@@ -239,6 +241,7 @@ export function createRoster(handlers: {
         const url = field.value;
         const done = () => {
           copy.textContent = "Copied";
+          handlers.onInviteCopied?.();
           clearTimeout(copyReset);
           copyReset = setTimeout(() => {
             copy.textContent = "Copy";

@@ -7,9 +7,13 @@
  * has in one batch to the telemetry service (`server/src/telemetry.ts`), which
  * writes the events out as rows. Each batch carries an envelope naming the
  * page: its session, the build it runs, the protocol and generator versions,
- * and, once a world is built, which world (`worldVersionOf`). The server
- * flattens the envelope onto every row, so a row never needs a join to say
- * which version of the game produced it.
+ * the page's own facts (where it came from, its viewport, its zone). The
+ * server flattens the envelope onto every row, so a row never needs a join to
+ * say which version of the game produced it. What changes within a page, the
+ * match and the lobby (`context`), is copied onto each event as it is queued,
+ * so a row names a match only while one was running. Each batch also says
+ * the page's clock as it was serialised (`st`), from which the server works
+ * out when each event happened with no trust in the page's wall clock.
  *
  * Nothing here runs a frame. An event is one small object pushed on an array
  * at a transition the game already branches on; the serialisation and the
@@ -41,12 +45,17 @@ export const MAX_STACK_LENGTH = 2000;
 export const BATCH_VERSION = 1;
 /** The route on the telemetry service (`TELEMETRY_PATH`). */
 export const TELEMETRY_PATH = "/t";
-/** The localStorage keys: the switch, and the visitor id. */
+/** The localStorage keys: the switch, the tester mark, and the visitor id. */
 export const SWITCH_KEY = "dayhike.telemetry";
+export const TESTER_KEY = "dayhike.tester";
 export const VISITOR_KEY = "dayhike.visitor";
+/** The referrer is kept to its origin and path, and this many characters. */
+export const MAX_REFERRER_LENGTH = 200;
 
 export type FieldValue = string | number | boolean | readonly number[];
 export type Fields = Record<string, FieldValue>;
+/** What `context` takes: a field, or null to clear one. */
+export type ContextFields = Record<string, FieldValue | null>;
 
 export type TelemetryDeps = {
   /** A monotonic clock in milliseconds (`performance.now`). */
@@ -68,8 +77,14 @@ export type Telemetry = {
   error(kind: string, message: string, stack?: string): void;
   /** As `error`, at warning severity. */
   warn(kind: string, message: string, stack?: string): void;
-  /** Adds to the envelope every later batch carries: the world, the lobby. */
+  /** Adds to the envelope every later batch carries: the GPU's signals, once read. */
   set(fields: Fields): void;
+  /**
+   * What every event queued from here carries until it changes: the match
+   * (`game`, `world`, `seed`) and the lobby. A null clears a key, so a row
+   * names a match or a lobby only while one is running.
+   */
+  context(fields: ContextFields): void;
   /** Where the page is, attached to every error after: a breadcrumb. */
   mark(where: string): void;
   /** The heartbeat's sampler while a match runs, or null between matches. */
@@ -89,6 +104,7 @@ const DISABLED: Telemetry = {
   error: () => undefined,
   warn: () => undefined,
   set: () => undefined,
+  context: () => undefined,
   mark: () => undefined,
   sample: () => undefined,
   flush: () => undefined,
@@ -107,6 +123,7 @@ export function createTelemetry(url: string | null, envelope: Fields, deps: Tele
   const start = deps.now();
   const queue: Queued[] = [];
   let fixed: Fields = { ...envelope };
+  let context: Fields = {};
   let where = "";
   let sampler: (() => Fields) | null = null;
   let timer: unknown = null;
@@ -122,17 +139,19 @@ export function createTelemetry(url: string | null, envelope: Fields, deps: Tele
 
   const t = (): number => Math.round(deps.now() - start);
 
+  /** Queues an entry under the context of the moment; the entry's own fields win. */
   function push(entry: Queued): void {
     if (queue.length >= MAX_QUEUE) {
       queue.shift();
       dropped += 1;
     }
-    queue.push(entry);
+    queue.push({ ...context, ...entry });
     if (queue.length >= FLUSH_AT_EVENTS) flushNow(false);
   }
 
+  /** `st` is the page's clock as the batch is serialised: the server dates each event by `st - t`. */
   function body(events: readonly Queued[]): string {
-    return JSON.stringify({ v: BATCH_VERSION, ...fixed, events });
+    return JSON.stringify({ v: BATCH_VERSION, ...fixed, st: t(), events });
   }
 
   /**
@@ -225,6 +244,14 @@ export function createTelemetry(url: string | null, envelope: Fields, deps: Tele
     set(fields) {
       fixed = { ...fixed, ...fields };
     },
+    context(fields) {
+      const next: Fields = { ...context };
+      for (const [key, value] of Object.entries(fields)) {
+        if (value === null) delete next[key];
+        else next[key] = value;
+      }
+      context = next;
+    },
     mark(next) {
       where = next;
     },
@@ -256,7 +283,10 @@ export function createTelemetry(url: string | null, envelope: Fields, deps: Tele
  * server's own origin, where Vite proxies `/t` to the local server.
  * `?telemetry=off` turns a production page silent and is remembered in
  * storage, so a developer's own machine stays out of the numbers; `on`
- * forgets it. Storage that refuses reads as never switched.
+ * forgets it. `?telemetry=tester` marks the browser as a tester's, which the
+ * envelope then says (`testerMark`) so the queries can leave its sessions
+ * out; the page sends as usual, and `on` forgets that mark too. Storage that
+ * refuses reads as never switched and never marked.
  */
 export function telemetryUrl(
   env: { VITE_TELEMETRY_URL?: string | undefined },
@@ -275,10 +305,18 @@ export function telemetryUrl(
   if (wanted === "on") {
     try {
       storage?.removeItem(SWITCH_KEY);
+      storage?.removeItem(TESTER_KEY);
     } catch {
       // The page is on either way.
     }
   } else {
+    if (wanted === "tester") {
+      try {
+        storage?.setItem(TESTER_KEY, "1");
+      } catch {
+        // Marked for nothing, then: the session reads as anyone's.
+      }
+    }
     let off = false;
     try {
       off = storage?.getItem(SWITCH_KEY) === "off";
@@ -289,6 +327,30 @@ export function telemetryUrl(
   }
   if (env.VITE_TELEMETRY_URL) return env.VITE_TELEMETRY_URL;
   return wanted === "on" ? `${loc.protocol}//${loc.host}${TELEMETRY_PATH}` : null;
+}
+
+/** Whether this browser was ever marked a tester's (`?telemetry=tester`). */
+export function testerMark(storage: Storage | null): boolean {
+  try {
+    return storage?.getItem(TESTER_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The referrer as the envelope says it: its origin and path, no query or
+ * fragment (a referrer may carry a token), cut to `MAX_REFERRER_LENGTH`; ""
+ * for none, or for one that is not a URL.
+ */
+export function referrerOf(referrer: string): string {
+  if (referrer === "") return "";
+  try {
+    const url = new URL(referrer);
+    return `${url.origin}${url.pathname}`.slice(0, MAX_REFERRER_LENGTH);
+  } catch {
+    return "";
+  }
 }
 
 /**

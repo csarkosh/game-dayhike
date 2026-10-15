@@ -334,13 +334,13 @@ function buildGame(
   );
 
   const forest = createForest(seed);
-  // The match's world goes on every telemetry row from here: the version of
-  // the generator that built it, by its level id without the seed, and the
-  // seed and the game token on their own (`worldVersionOf`).
+  // The match's world goes on every telemetry row from here to dispose(): the
+  // version of the generator that built it, by its level id without the seed,
+  // and the seed and the game token on their own (`worldVersionOf`).
   const telemetry = options.telemetry ?? null;
   if (telemetry !== null) {
     const version = worldVersionOf(forest.levelId);
-    telemetry.set({ world: version.world, seed: version.seed ?? seed, game: token });
+    telemetry.context({ world: version.world, seed: version.seed ?? seed, game: token });
     // A session started with overrides is not an ordinary one: say which.
     if (entries.length > 0) telemetry.event("cmd", { names: entries.map((e) => e.name).join(",") });
   }
@@ -2560,6 +2560,8 @@ function buildGame(
       if (telemetry !== null) {
         telemetry.sample(null);
         telemetry.event("match_end", { p: progressRounded(), ended, dead });
+        // The match is over: the rows after this one name no game.
+        telemetry.context({ game: null, world: null, seed: null });
       }
       trace = null;
       options.onPauseChange(false);

@@ -323,6 +323,8 @@ export function renderLanding(
     onChooseTier(choice: TierChoice): void;
     onCredits(): void;
     onBack(): void;
+    /** A download link followed: the browser carries the file off, the page stays. */
+    onDownload?(platform: Platform): void;
   },
   panel: LandingPanel = "home",
 ): LandingHandle {
@@ -537,6 +539,7 @@ export function renderLanding(
           link.target = "_blank";
           link.rel = "noreferrer";
           link.textContent = d.label;
+          link.addEventListener("click", () => handlers.onDownload?.(d.platform));
           const caption = document.createElement("p");
           caption.className = "caption";
           caption.textContent = d.caption;

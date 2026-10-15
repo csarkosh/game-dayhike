@@ -1,7 +1,7 @@
 # Telemetry
 
 **Date:** 2026-10-12
-**Status:** Built 2026-10-12. Amended the same day: a stored error is traceable to its cause (§8), and the trace of where a player went and what they chose (§9).
+**Status:** Built 2026-10-12. Amended the same day: a stored error is traceable to its cause (§8), and the trace of where a player went and what they chose (§9). Amended 2026-10-15 so a session reads back as a timeline (`2026-10-15-timeline-design.md`): each batch says the page's clock (`st`), the match and the lobby ride on each event rather than the envelope, the envelope says the page's facts from the start, and four events were added (§2).
 
 ## 0. What this is
 
@@ -81,12 +81,27 @@ Every row carries the envelope the page sent:
 | `vid` | The visitor: one a browser, kept in localStorage, so a returning player counts once. Empty where storage refuses. |
 | `build` | The client's git short sha, `-dirty` where the tree was, baked in by the deploy's build (`VITE_BUILD_SHA`); `dev` in development. |
 | `proto`, `gen` | `PROTOCOL_VERSION` and `GEN_VERSION`, the two constants that decide whether two pages can play together. |
-| `world`, `seed`, `game` | Once a world is built: the level id with its seed taken out, the seed, and the game token. The level id reads `forest/<gen>/<variant>/<seed>/<fieldHash>/<passHash>`; the field hash and the pass hash digest the generator's code and tunables, so `world` moves whenever the world would, whether or not `GEN_VERSION` was bumped (`worldVersionOf`). |
-| `lobby` | The lobby id, from the moment one is joined or made, which is the room id in the signaling rows. |
 | `desktop`, `shell`, `os`, `browser`, `touch` | The platform, from `game/platform.ts`. |
+| `ref` | The referrer's origin and path, 200 characters at most; "" for none (`referrerOf`). |
+| `path` | `location.pathname` as the page loaded. |
+| `lang`, `tz` | `navigator.language` and the IANA zone the browser keeps time in. |
+| `vw`, `vh` | The viewport, in CSS pixels, as the page loaded. |
+| `ua` | The user agent's first 120 characters. |
+| `wd` | True when `navigator.webdriver` is: a robot drives the page. |
+| `tester` | True when `?telemetry=tester` was ever given to this browser (§5), so the queries can leave a tester's sessions out. |
 | `gpu`, `adapter`, `cores`, `mem`, `mobile` | The GPU's signals, once read. |
 
+the context the page copies onto each event as it is queued (`telemetry.context`), so a
+row names a match or a lobby only while one was running:
+
+| Field | What |
+|---|---|
+| `world`, `seed`, `game` | From the world's build to `match_end`: the level id with its seed taken out, the seed, and the game token. The level id reads `forest/<gen>/<variant>/<seed>/<fieldHash>/<passHash>`; the field hash and the pass hash digest the generator's code and tunables, so `world` moves whenever the world would, whether or not `GEN_VERSION` was bumped (`worldVersionOf`). |
+| `lobby` | The lobby id, from the moment one is joined or made to `lobby_end`, which is the room id in the signaling rows. |
+
 and what the server adds: `t` (ms since the page loaded), `at` (epoch ms received),
+`timestamp` (when the event happened, from `at` and the page's clock as the batch was
+made, `st`, which the page sends on every batch and the server keeps off the rows),
 `sbuild` (the server's own sha, from the image), `svc` (`telemetry` or `signaling`),
 `severity` (`ERROR` and `WARNING` for `error` and `warn` rows) and `message`.
 
@@ -95,11 +110,15 @@ The events, in the order a session makes them:
 | Event | Fields | Fired from |
 |---|---|---|
 | `page` | `kind`: landing, downloads, credits, settings, party, game, scene | every render of a route |
+| `visibility` | `state`: hidden, visible | every `visibilitychange`; the last `hidden` is "last seen" for a page that never sends `end` |
+| `settings` | `choice` | a graphics choice saved |
+| `download` | `platform` | a download link on the landing page followed |
 | `play` | `party` | Play pressed |
 | `invite`, `join` | | an attempt to make or join a lobby begins |
 | `lobby_joined` | `kind`, `ms`, `members`, `role` | the lobby answered |
 | `lobby_error` | `kind`, `code`, `ms` | it did not: `no_such_lobby`, `room_full`, `host_away`, `lobby_taken`, or the socket's own error |
-| `lobby_change` | `members` | the roster changed size |
+| `invite_copied` | | the invite link reached the clipboard |
+| `lobby_change` | `members`, `joined`, `left` | the roster changed: who came and who went, by count |
 | `lobby_end` | `reason`, `members` | `host_gone` or `left` |
 | `load` | `decideMs`, `introMs`, `engineMs`, `buildMs`, `tier`, `source`, `engine` | the start chain finished (`startHike`) |
 | `start_fail` | the laps so far, `msg` | it did not |
@@ -161,6 +180,9 @@ for charts without code. The first TiB of queries a month is free.
 - `?telemetry=off` on the site turns a page silent and is remembered in localStorage, so a
   developer's own machine stays out of the numbers; `?telemetry=on` forgets it. Development
   sends nothing unless `?telemetry=on`, which goes to the dev server's own origin.
+- `?telemetry=tester` marks the browser a tester's, also in localStorage: its pages send as
+  usual with `tester: true` in the envelope, and the queries leave them out. `?telemetry=on`
+  forgets that mark too.
 - The telemetry service scales to five instances at most, a thousand batches in flight
   each. That is a cost ceiling: one instance handles a forum-sized spike.
 - Rows from the deploy's verification carry `build: verify` and the event `verify`; a

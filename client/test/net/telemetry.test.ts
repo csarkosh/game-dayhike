@@ -5,9 +5,13 @@ import {
   FLUSH_MS,
   installErrorCapture,
   MAX_QUEUE,
+  MAX_REFERRER_LENGTH,
   MAX_TROUBLE,
+  referrerOf,
   SWITCH_KEY,
   telemetryUrl,
+  TESTER_KEY,
+  testerMark,
   textOf,
   VISITOR_KEY,
   visitorId,
@@ -16,7 +20,7 @@ import {
   type TelemetryDeps,
 } from "../../src/net/telemetry.js";
 
-type Batch = { v: number; events: ({ n: string; t: number } & Fields)[] } & Fields;
+type Batch = { v: number; st: number; events: ({ n: string; t: number } & Fields)[] } & Fields;
 
 /** Deterministic deps: a clock to step, timers to fire by hand, and every send recorded. */
 function fakeDeps(options: { ok?: boolean | (() => boolean) } = {}) {
@@ -82,7 +86,7 @@ describe("createTelemetry", () => {
     const t = createTelemetry("https://t.example/t", ENVELOPE, f.deps);
     f.advance(250);
     t.event("page", { kind: "landing" });
-    t.set({ world: "forest/8/a/1/2", seed: 42 });
+    t.set({ gpu: "Apple M1", cores: 8 });
     f.advance(100);
     t.event("play");
     expect(f.sent).toHaveLength(0);
@@ -91,7 +95,9 @@ describe("createTelemetry", () => {
     const { url, batch, beacon } = f.sent[0]!;
     expect(url).toBe("https://t.example/t");
     expect(beacon).toBe(false);
-    expect(batch).toMatchObject({ v: 1, sid: "s1", build: "abc1234", proto: 5, gen: 8, world: "forest/8/a/1/2", seed: 42 });
+    expect(batch).toMatchObject({ v: 1, sid: "s1", build: "abc1234", proto: 5, gen: 8, gpu: "Apple M1", cores: 8 });
+    // The page's clock as the batch was made: the timer fired FLUSH_MS after the last step.
+    expect(batch.st).toBe(350 + FLUSH_MS);
     expect(batch.events).toEqual([
       { n: "page", t: 250, kind: "landing" },
       { n: "play", t: 350 },
@@ -181,6 +187,86 @@ describe("createTelemetry", () => {
     expect(f.sent).toHaveLength(1);
   });
 
+  it("says its clock on every batch, by the sender and by beacon", async () => {
+    const f = fakeDeps({ ok: true });
+    const t = createTelemetry("u", ENVELOPE, f.deps);
+    t.event("a");
+    f.advance(1200);
+    t.flush();
+    await f.settle(true);
+    t.event("b");
+    f.advance(300);
+    t.flush({ beacon: true });
+    for (let i = 0; i < FLUSH_AT_EVENTS; i++) t.event("pos", { x: i });
+    expect(f.sent.map((s) => [s.beacon, s.batch.st])).toEqual([
+      [false, 1200],
+      [true, 1500],
+      [false, 1500],
+    ]);
+    // The batch's own events are dated before it, never after.
+    for (const s of f.sent) for (const e of s.batch.events) expect(e.t).toBeLessThanOrEqual(s.batch.st);
+  });
+
+  it("copies the context onto each event as it is queued, and a null clears a key", async () => {
+    const f = fakeDeps({ ok: true });
+    const t = createTelemetry("u", ENVELOPE, f.deps);
+    t.event("page", { kind: "landing" });
+    t.context({ lobby: "L1" });
+    t.event("lobby_joined", { members: 2 });
+    t.context({ game: "G1", world: "forest/8/a/1/2", seed: 42 });
+    t.event("match_start", { role: "host" });
+    t.sample(() => ({ fps: 60 }));
+    t.mark("game");
+    t.error("console", "boom");
+    f.fire();
+    await f.settle(true);
+    t.sample(null);
+    t.event("match_end");
+    t.context({ game: null, world: null, seed: null });
+    t.event("page", { kind: "landing" });
+    t.context({ lobby: null });
+    t.event("exit");
+    t.flush();
+    const events = f.sent.flatMap((s) => s.batch.events);
+    expect(events.map((e) => [e.n, e.lobby, e.game, e.world, e.seed])).toEqual([
+      ["page", undefined, undefined, undefined, undefined],
+      ["lobby_joined", "L1", undefined, undefined, undefined],
+      ["match_start", "L1", "G1", "forest/8/a/1/2", 42],
+      ["error", "L1", "G1", "forest/8/a/1/2", 42],
+      ["hb", "L1", "G1", "forest/8/a/1/2", 42],
+      ["match_end", "L1", "G1", "forest/8/a/1/2", 42],
+      ["page", "L1", undefined, undefined, undefined],
+      ["exit", undefined, undefined, undefined, undefined],
+    ]);
+    // The context never reaches the envelope.
+    for (const s of f.sent) expect(s.batch).not.toHaveProperty("game");
+  });
+
+  it("lets an event's own field win over the context's", () => {
+    const f = fakeDeps({ ok: true });
+    const t = createTelemetry("u", ENVELOPE, f.deps);
+    t.context({ lobby: "L1" });
+    t.event("match_start", { lobby: "" });
+    t.flush();
+    expect(f.sent[0]!.batch.events[0]).toMatchObject({ n: "match_start", lobby: "" });
+  });
+
+  it("gives the end row the context of its moment", async () => {
+    const f = fakeDeps({ ok: true });
+    const t = createTelemetry("u", ENVELOPE, f.deps);
+    t.context({ lobby: "L1", game: "G1" });
+    t.event("match_start");
+    t.flush();
+    await f.settle(true);
+    t.context({ game: null });
+    f.advance(900);
+    t.end("pagehide");
+    const beacons = f.sent.filter((s) => s.beacon);
+    expect(beacons).toHaveLength(1);
+    expect(beacons[0]!.batch.st).toBe(900);
+    expect(beacons[0]!.batch.events).toEqual([{ n: "end", t: 900, reason: "pagehide", lobby: "L1", dropped: 0, trouble: 0, suppressed: 0, sent: 1, failed: 0, dur: 900 }]);
+  });
+
   it("sends by beacon on request, and nothing after dispose", () => {
     const f = fakeDeps();
     const t = createTelemetry("u", ENVELOPE, f.deps);
@@ -242,6 +328,39 @@ describe("telemetryUrl", () => {
     expect(telemetryUrl(PROD_ENV, { ...DEV, search: "?telemetry=off" }, memoryStorage({}, true))).toBeNull();
     expect(telemetryUrl(PROD_ENV, DEV, memoryStorage({}, true))).toBe(PROD_ENV.VITE_TELEMETRY_URL);
     expect(telemetryUrl(PROD_ENV, DEV, null)).toBe(PROD_ENV.VITE_TELEMETRY_URL);
+    expect(telemetryUrl(PROD_ENV, { ...DEV, search: "?telemetry=tester" }, memoryStorage({}, true))).toBe(PROD_ENV.VITE_TELEMETRY_URL);
+    expect(testerMark(memoryStorage({}, true))).toBe(false);
+    expect(testerMark(null)).toBe(false);
+  });
+
+  it("?telemetry=tester marks the browser, still sends, and ?telemetry=on forgets the mark", () => {
+    const storage = memoryStorage();
+    expect(testerMark(storage)).toBe(false);
+    expect(telemetryUrl(PROD_ENV, { ...DEV, search: "?telemetry=tester" }, storage)).toBe(PROD_ENV.VITE_TELEMETRY_URL);
+    expect(storage.getItem(TESTER_KEY)).toBe("1");
+    expect(testerMark(storage)).toBe(true);
+    // A later visit without the parameter is still the tester's.
+    expect(telemetryUrl(PROD_ENV, DEV, storage)).toBe(PROD_ENV.VITE_TELEMETRY_URL);
+    expect(testerMark(storage)).toBe(true);
+    // Off is a switch, tester a mark: off still silences a marked browser.
+    expect(telemetryUrl(PROD_ENV, { ...DEV, search: "?telemetry=off" }, storage)).toBeNull();
+    expect(testerMark(storage)).toBe(true);
+    expect(telemetryUrl(PROD_ENV, { ...DEV, search: "?telemetry=on" }, storage)).toBe(PROD_ENV.VITE_TELEMETRY_URL);
+    expect(storage.getItem(TESTER_KEY)).toBeNull();
+    expect(storage.getItem(SWITCH_KEY)).toBeNull();
+    expect(testerMark(storage)).toBe(false);
+  });
+});
+
+describe("referrerOf", () => {
+  it("keeps the origin and the path, drops the query and the fragment, and cuts long ones", () => {
+    expect(referrerOf("")).toBe("");
+    expect(referrerOf("https://news.ycombinator.com/item?id=123#c4")).toBe("https://news.ycombinator.com/item");
+    expect(referrerOf("https://games.csarko.sh/")).toBe("https://games.csarko.sh/");
+    expect(referrerOf("not a url")).toBe("");
+    const long = referrerOf(`https://x.example/${"a".repeat(400)}`);
+    expect(long.length).toBe(MAX_REFERRER_LENGTH);
+    expect(long.startsWith("https://x.example/aaa")).toBe(true);
   });
 });
 

@@ -37,7 +37,7 @@ import { parseLatest, type DesktopRelease } from "./net/desktopRelease.js";
 import { createSignalingClient, type SignalingClient } from "./net/signaling.js";
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
-import { browserDeps, createTelemetry, installErrorCapture, telemetryUrl, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
+import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
 import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
@@ -141,9 +141,12 @@ const latestReady: Promise<void> = latestUrl
 // ---- telemetry -----------------------------------------------------------------
 // What this page tells of itself (net/telemetry.ts): a session id for the
 // visit, a visitor id for the browser, the build and the versions that decide
-// whether two pages can play together, and the platform. Made before anything
-// else runs, so the start's own failures are heard; off without a URL, which
-// development has none of unless asked (`telemetryUrl`).
+// whether two pages can play together, the platform, and the page's own facts
+// (where it came from, which path, the language, the zone, the viewport, the
+// user agent, whether a robot drives it, whether a tester's browser). Made
+// before anything else runs, so the start's own failures are heard; off
+// without a URL, which development has none of unless asked (`telemetryUrl`,
+// which also takes the tester mark, so it is read after).
 const telemetry: Telemetry = createTelemetry(
   telemetryUrl(import.meta.env, location, pageStorage()),
   {
@@ -157,15 +160,36 @@ const telemetry: Telemetry = createTelemetry(
     os: host,
     browser: browserMajor(navigator.userAgent),
     touch,
+    ref: referrerOf(document.referrer),
+    path: location.pathname,
+    lang: navigator.language,
+    tz: timeZone(),
+    vw: window.innerWidth,
+    vh: window.innerHeight,
+    ua: navigator.userAgent.slice(0, 120),
+    wd: navigator.webdriver === true,
+    tester: testerMark(pageStorage()),
   },
   browserDeps(),
 );
 installErrorCapture(telemetry, window, console, (window as unknown as { __dh?: EarlyCatch }).__dh);
-// On the way out, everything held goes by beacon with the session's counts;
-// a tab put in the background flushes too, since it may never come back.
+// Every change of visibility is a row: the last `hidden` is "last seen" for a
+// page that never says goodbye. On the way out, everything held goes by
+// beacon with the session's counts; a tab put in the background flushes too,
+// since it may never come back.
 document.addEventListener("visibilitychange", () => {
+  telemetry.event("visibility", { state: document.visibilityState });
   if (document.visibilityState === "hidden") telemetry.flush({ beacon: true });
 });
+
+/** The IANA zone the browser keeps time in, or "" where it will not say. */
+function timeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "";
+  }
+}
 
 // ---- the lobby ---------------------------------------------------------------
 // One per page visit, above routes: navigating never closes it. `selfId` is the
@@ -202,6 +226,7 @@ let choiceNotice: string | null = null;
 const saveChoice = (choice: TierChoice): void => {
   tierChoice.save(choice);
   choiceNotice = null;
+  telemetry.event("settings", { choice });
 };
 
 /**
@@ -377,6 +402,7 @@ let attemptEpoch = 0;
 const roster = createRoster({
   onInvite: () => void openLobby(),
   onRetry: retryAttempt,
+  onInviteCopied: () => telemetry.event("invite_copied"),
   onRename: (raw) => {
     selfName = saveName(raw);
     lobby?.setName(selfName);
@@ -456,9 +482,9 @@ function abandonAttempt(): void {
 let attemptStartedAt = 0;
 const attemptMs = (): number => Math.round(performance.now() - attemptStartedAt);
 
-/** A lobby joined or made: its row, and the envelope names it from here. */
+/** A lobby joined or made: its row, and every row names it from here to `lobby_end`. */
 function lobbyEntered(kind: "invite" | "join", joined: Lobby): void {
-  telemetry.set({ lobby: joined.state.id });
+  telemetry.context({ lobby: joined.state.id });
   telemetry.event("lobby_joined", { kind, ms: attemptMs(), members: joined.state.members.length, role: joined.state.role });
 }
 
@@ -477,17 +503,26 @@ function attachLobby(next: Lobby): void {
   // roster shows never connects: their offer reaches a host with no handler
   // for it, and they time out with the wrong explanation.
   game?.attachLobby(next);
-  let members = next.state.members.length;
+  // The roster's ids, so a change says who came and who went, not only the
+  // new size: a swap of one for one is two moves at the same count.
+  let members = new Set(next.state.members.map((m) => m.id));
   const offChange = next.onChange(() => {
-    if (next.state.members.length !== members) {
-      members = next.state.members.length;
-      telemetry.event("lobby_change", { members });
+    const now = new Set(next.state.members.map((m) => m.id));
+    let joined = 0;
+    let left = 0;
+    for (const id of now) if (!members.has(id)) joined += 1;
+    for (const id of members) if (!now.has(id)) left += 1;
+    if (joined > 0 || left > 0) {
+      members = now;
+      telemetry.event("lobby_change", { members: now.size, joined, left });
     }
     paintRoster();
     follow(next);
   });
   const offEnd = next.onEnd((reason) => {
     telemetry.event("lobby_end", { reason, members: next.state.members.length });
+    // The row above still names the lobby; none after it does.
+    telemetry.context({ lobby: null });
     detach();
     if (reason === "host_gone") lobbyError = "The host left.";
     paintRoster();
@@ -980,6 +1015,7 @@ function render(container: HTMLDivElement): void {
           void enterLobby(lobbyId);
         },
         onDownloads: () => navigateToPanel("downloads"),
+        onDownload: (platform) => telemetry.event("download", { platform }),
         onSettings: () => navigateToPanel("settings"),
         onChooseTier: (choice) => {
           saveChoice(choice);
