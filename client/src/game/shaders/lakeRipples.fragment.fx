@@ -19,6 +19,14 @@ const float PAW_LIFE_S = 6.0;
 const float PAW_GUST_FLOOR = 0.5;
 // The octaves' amplitude outside the paws on a lake with no glass.
 const float OCTAVE_FLOOR = 0.25;
+// The breeze over the whole lake: the paws' field, soft and never
+// thresholded, sets the ripples' amplitude from LAKE_BREEZE_FLOOR of the
+// cover where it is lowest to the cover where highest, all scaled by
+// LAKE_BREEZE_GAIN, and shifts the second octave across the wind by up to
+// LAKE_WARP_M metres, so its ripples keep no one phase over the lake.
+const float LAKE_BREEZE_GAIN = 0.7;
+const float LAKE_BREEZE_FLOOR = 0.4;
+const float LAKE_WARP_M = 1.5;
 // The paws' threshold at cover 0, 1/8, 2/8 and on to 1, measured so the
 // paws cover about the cover under the real gusts (PAW_COVER_TABLE).
 const float PAW_COVER_0 = 1.0;
@@ -131,21 +139,28 @@ float lakePawThreshold(float cover) {
     + (PAW_COVER_8 - PAW_COVER_7) * clamp(c - 7.0, 0.0, 1.0);
 }
 
-// The cat's-paw mask at xz, 0 on glass to 1 in a paw: the field raised where
-// the gust blows, thresholded at lakePawThreshold(cover), so the paws cover
-// about the cover, with an edge PAW_EDGE_M metres wide along the field's own
-// gradient. Over the wrap's last life the drift crosses to the next wrap's,
-// so the pattern runs on through it. The next wrap's field is read only in
-// those last six seconds, the one span where its blend is above 0: t is the
-// lake's time, a uniform, so the branch is the same for every pixel.
-float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust) {
+// The breeze's field at xz, the paws' field raised where the gust blows: its
+// value, 0 to about 1, then its gradient per metre. Over the wrap's last life
+// the drift crosses to the next wrap's, so the pattern runs on through it.
+// The next wrap's field is read only in those last six seconds, the one span
+// where its blend is above 0: t is the lake's time, a uniform, so the branch
+// is the same for every pixel. The lights take it whole for the ripples'
+// amplitude and the second octave's shift; lakePaw thresholds it.
+vec3 lakeBreeze(vec2 xz, float t, vec2 windDir, float gust) {
   vec3 f = lakePawField(xz, t, windDir, t);
   if (t > LAKE_TIME_WRAP - PAW_LIFE_S) {
     vec3 b = lakePawField(xz, t, windDir, t - LAKE_TIME_WRAP);
     f = mix(f, b, smoothstep(LAKE_TIME_WRAP - PAW_LIFE_S, LAKE_TIME_WRAP, t));
   }
   float g = PAW_GUST_FLOOR + (1.0 - PAW_GUST_FLOOR) * clamp(gust, 0.0, 1.0);
-  f *= g;
+  return f * g;
+}
+
+// The cat's-paw mask at xz, 0 on glass to 1 in a paw: the breeze's field
+// thresholded at lakePawThreshold(cover), so the paws cover about the cover,
+// with an edge PAW_EDGE_M metres wide along the field's own gradient.
+float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust) {
+  vec3 f = lakeBreeze(xz, t, windDir, gust);
   float slope = max(length(f.yz), 1.0e-4);
   return clamp((f.x - lakePawThreshold(cover)) / (slope * PAW_EDGE_M), 0.0, 1.0);
 }

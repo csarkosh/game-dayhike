@@ -5,7 +5,9 @@ import {
   PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR, PAW_COVER_TABLE, OCTAVE_FLOOR,
   LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,
   LAKE_RINGS_PER_M2, LAKE_RAIN_MM_H, LAKE_RING_FOLD, LAKE_WIND_TURN, LENS_STEP_M, CAUSTIC_GAIN, CAUSTIC_MAX, CAUSTIC_DEPTH_M,
+  LAKE_BREEZE_GAIN, LAKE_BREEZE_FLOOR, LAKE_WARP_M, lakeBreeze,
   lakeGust, lakePawDrift, lakePaw, lakePawThreshold, octaveAmplitude, lakeLiveRings, lakeRingHeight, lakeRingDh, lakeRingHash, lakeRainSlope,
+  lakeSunShare,
 } from "../../src/game/lakeRipples.js";
 import {
   WIND_TIME_WRAP, WIND_K1, WIND_K2, WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_RAGGED, WIND_RAGGED_CELL,
@@ -82,6 +84,7 @@ describe("the lake's ripples' constants", () => {
     expect([LAKE_RAIN_MM_H, LAKE_RING_FOLD]).toEqual([4, 512]);
     expect(LAKE_WIND_TURN).toBeCloseTo(0.005235987755982988, 15);
     expect([LENS_STEP_M, CAUSTIC_GAIN, CAUSTIC_MAX, CAUSTIC_DEPTH_M]).toEqual([0.0625, 0.15, 0.6, 1.5]);
+    expect([LAKE_BREEZE_GAIN, LAKE_BREEZE_FLOOR, LAKE_WARP_M]).toEqual([0.7, 0.4, 1.5]);
     // every rate a whole number of cycles in the wind's wrap, so the wrap moves no paw and no ring
     expect(WIND_TIME_WRAP / PAW_LIFE_S).toBe(50);
   });
@@ -93,6 +96,7 @@ describe("the lake's ripples' constants", () => {
       LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,
       LAKE_RINGS_0: LAKE_RINGS_PER_M2[0], LAKE_RINGS_1: LAKE_RINGS_PER_M2[1], LAKE_RINGS_2: LAKE_RINGS_PER_M2[2],
       LAKE_RAIN_MM_H, LAKE_RING_FOLD, LAKE_WIND_TURN, LENS_STEP_M, CAUSTIC_GAIN, CAUSTIC_MAX, CAUSTIC_DEPTH_M,
+      LAKE_BREEZE_GAIN, LAKE_BREEZE_FLOOR, LAKE_WARP_M,
       LAKE_TIME_WRAP: WIND_TIME_WRAP, LAKE_WIND_K1: WIND_K1, LAKE_WIND_K2: WIND_K2,
       LAKE_WIND_OMEGA1: WIND_OMEGA_GUST, LAKE_WIND_OMEGA2: WIND_OMEGA_GUST2,
       LAKE_WIND_RAGGED: WIND_RAGGED, LAKE_WIND_RAGGED_CELL: WIND_RAGGED_CELL,
@@ -108,6 +112,7 @@ describe("the lake's ripples' constants", () => {
       "float lakeHash(float i, float s)",
       "vec2 lakePawDrift(vec2 dir, float span)",
       "float lakePawThreshold(float cover)",
+      "vec3 lakeBreeze(vec2 xz, float t, vec2 windDir, float gust)",
       "float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust)",
       "float octaveAmplitude(float paw, float calm)",
       "float lakeLiveRings(float rate)",
@@ -127,18 +132,33 @@ describe("the lake's ripples' constants", () => {
     // (waterLights.fragment.fx passes waterLakeTime): the next wrap's field is
     // read only over the wrap's last life.
     expect(glsl.match(/\bif\s*\(/g)).toHaveLength(1);
-    expect(body(glsl, "float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust)")).toContain(
+    expect(body(glsl, "vec3 lakeBreeze(vec2 xz, float t, vec2 windDir, float gust)")).toContain(
       "  vec3 f = lakePawField(xz, t, windDir, t);\n" +
         "  if (t > LAKE_TIME_WRAP - PAW_LIFE_S) {\n" +
         "    vec3 b = lakePawField(xz, t, windDir, t - LAKE_TIME_WRAP);\n" +
         "    f = mix(f, b, smoothstep(LAKE_TIME_WRAP - PAW_LIFE_S, LAKE_TIME_WRAP, t));\n" +
         "  }\n" +
         "  float g = PAW_GUST_FLOOR + (1.0 - PAW_GUST_FLOOR) * clamp(gust, 0.0, 1.0);\n" +
-        "  f *= g;\n",
+        "  return f * g;",
     );
-    expect(source("../../src/game/shaders/waterLights.fragment.fx")).toContain("lakePaw(vPositionW.xz, waterLakeTime, ");
+    expect(body(glsl, "float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust)")).toContain("  vec3 f = lakeBreeze(xz, t, windDir, gust);\n");
+    // the field is defined and its twin tested, but the lights no longer read it: the cover is the whole lake's amplitude
+    expect(source("../../src/game/shaders/waterLights.fragment.fx")).not.toContain("lakePaw(");
+    expect(source("../../src/game/shaders/waterLights.fragment.fx")).toContain(
+      "vec3 wBreeze = lakeBreeze(vPositionW.xz, waterLakeTime, waterWind, lakeGust(vPositionW.xz, waterLakeTime, waterWind));",
+    );
+    expect(source("../../src/game/shaders/waterLights.fragment.fx")).toContain("float wPaw = waterPawCover * LAKE_BREEZE_GAIN * mix(LAKE_BREEZE_FLOOR, 1.0, wBreezeAt);");
     expect(glsl).not.toContain("?");
     expect(glsl.endsWith("}\n")).toBe(true);
+  });
+
+  it("scale the caustics by the sun over its peak: 1 at a clear noon, a tenth of the way through heavy cloud, 0 with the sun down", () => {
+    expect(lakeSunShare(4, 1, 4)).toBe(1);
+    expect(lakeSunShare(4 * (1 - 0.9 * 0.8), 1, 4)).toBeCloseTo(0.28, 12);
+    expect(lakeSunShare(4, 0.25, 4)).toBe(0.25);
+    expect(lakeSunShare(4, -0.1, 4)).toBe(0);
+    expect(lakeSunShare(8, 1, 4)).toBe(1);
+    expect(lakeSunShare(0, 1, 4)).toBe(0);
   });
 
   it("take the lens from the second octave's slope at four points, its divergence over 2 LENS_STEP_M", () => {

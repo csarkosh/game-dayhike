@@ -66,6 +66,7 @@ describe("water plugin", () => {
     expect(Object.keys(f).sort()).toEqual([
       OCEAN_ROUGHNESS_ANCHOR,
       "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION",
+      "CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR",
       "CUSTOM_FRAGMENT_BEFORE_LIGHTS",
       "CUSTOM_FRAGMENT_DEFINITIONS",
     ]);
@@ -89,6 +90,7 @@ describe("water plugin", () => {
     );
     expect(f.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toBe(fx("waterLights.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION).toBe(fx("waterCompose.fragment.fx"));
+    expect(f.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR).toBe(fx("waterFinal.fragment.fx"));
     const v = p.getCustomCode("vertex")!;
     expect(v.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx") + fx("ocean.vertex.fx") + fx("oceanSurface.fx") + fx("oceanSwash.fx"));
     expect(v.CUSTOM_VERTEX_UPDATE_POSITION).toBe(fx("oceanDisplace.vertex.fx"));
@@ -196,7 +198,10 @@ describe("water plugin", () => {
     expect(l).not.toContain("surfaceAlbedo = mix(surfaceAlbedo, wBed, wT);");
     expect(l).toContain("surfaceAlbedo *= 1.0 - wT;");
     expect(l).toContain("wTransmit = wBed * wT * (1.0 - wF);");
-    expect(fx("waterCompose.fragment.fx")).toContain("finalEmissive += wTransmit;");
+    // added after the fog, not through the emissive before it: the copy the bed is read from is hazed already
+    expect(fx("waterFinal.fragment.fx")).toContain("finalColor.rgb += wTransmit;");
+    expect(fx("waterFinal.fragment.fx").split("\n").filter((line) => !line.startsWith("//") && line !== "")).toEqual(["finalColor.rgb += wTransmit;"]);
+    expect(fx("waterCompose.fragment.fx")).not.toContain("wTransmit");
   });
 
   it("bends a shallow bed by the ripples and focuses the lake's octave on it, on the high path alone", () => {
@@ -206,11 +211,11 @@ describe("water plugin", () => {
     expect(high).toContain(
       "vec2 wOff = normalW.xz * WATER_REFRACT * min(max(wBehind, WATER_REFRACT_MIN), WATER_REFRACT_DEPTH) * smoothstep(0.0, 0.02, wBehind);",
     );
-    // the caustics after the bed is read and before it is transmitted, on a lake alone, at the octaves' amplitude,
-    // where the surface is convex (the lens positive), held to CAUSTIC_MAX
+    // the caustics after the bed is read and before it is transmitted, on a lake alone, at the octaves' amplitude
+    // and the sun's share, signed with the lens (brighter where convex, darker where concave) within CAUSTIC_MAX
     const read = high.indexOf("vec3 wBed = texture2D(waterScene, wUv + wOff).rgb;");
-    const lens = high.indexOf("float wLens = max(0.0, lakeLens(vPositionW.xz));");
-    const gain = high.indexOf("wBed *= 1.0 + min(CAUSTIC_GAIN * wOctave * wShallow * wLens, CAUSTIC_MAX);");
+    const lens = high.indexOf("float wLens = lakeLens(wRippleXz);");
+    const gain = high.indexOf("wBed *= 1.0 + clamp(CAUSTIC_GAIN * wOctave * wShallow * waterSun * wLens, -CAUSTIC_MAX, CAUSTIC_MAX);");
     expect(high).toContain("float wShallow = 1.0 - smoothstep(0.0, CAUSTIC_DEPTH_M, wBehind);");
     expect(read).toBeGreaterThan(-1);
     expect(lens).toBeGreaterThan(read);
@@ -305,7 +310,7 @@ describe("water plugin", () => {
     const c = fx("waterCompose.fragment.fx");
     expect(c).toContain("finalRadianceScaled *= 1.0 - wSkin;");
     expect(c).toContain("finalSpecularScaled *= 1.0 - wSkin;");
-    expect(c.indexOf("finalRadianceScaled")).toBeLessThan(c.indexOf("finalEmissive += wTransmit;"));
+    expect(c).not.toContain("finalEmissive += wTransmit;");
     const d = fx("water.fragment.fx");
     expect(d).toContain("float waterSkinMask(vec2 xz, float depth)");
     expect(d).toContain("vec3 waterSkinColour(vec2 xz, float viewDepth)");
@@ -322,7 +327,7 @@ describe("water plugin", () => {
     const lake = fx("lakeRipples.fragment.fx");
     const ripple = lake.slice(lake.indexOf("vec2 lakeRipple2("));
     expect(ripple).toContain("vec2 uv = xz / WATER_OCTAVE2_TILE - waterWindTime * WATER_OCTAVE2_DRIFT;");
-    expect(fx("waterLights.fragment.fx")).toContain("vec2 wSlope = lakeRipple2(vPositionW.xz);");
+    expect(fx("waterLights.fragment.fx")).toContain("vec2 wSlope = lakeRipple2(wRippleXz);");
     expect(fx("waterLights.fragment.fx")).not.toContain("waterRipple2(");
     // A texel at uv0 is drawn where xz = TILE * (uv0 + waterWindTime * DRIFT), and waterWindTime runs along
     // the wind's direction times its speed: the octave's pattern travels downwind at TILE * DRIFT m/s at full wind.
@@ -365,7 +370,7 @@ describe("the rain's rings on the water", () => {
     const lake = l.indexOf("vec2 wRs = lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain, length(vPositionW - vEyePosition.xyz));");
     const sea = l.indexOf("vec2 wRs = waterRainSlope(vPositionW.xz);");
     // the lake's in the gate's lake branch, after its octaves; the sea's in a gate of its own after it
-    expect(lake).toBeGreaterThan(l.indexOf("lakeRipple2(vPositionW.xz)"));
+    expect(lake).toBeGreaterThan(l.indexOf("lakeRipple2(wRippleXz)"));
     // the normal's gate: the sea's branch, then the lake's
     const lakeBranch = l.indexOf("#else", l.indexOf("float wOceanVar ="));
     expect(lakeBranch).toBeGreaterThan(-1);
@@ -475,6 +480,8 @@ describe("the lake's ripples in the water plugin", () => {
     expect(u.ubo).toContainEqual({ name: "waterPawCover", size: 1, type: "float" });
     expect(u.fragment).toContain("uniform float waterLakeTime;");
     expect(u.fragment).toContain("uniform float waterPawCover;");
+    expect(u.ubo).toContainEqual({ name: "waterSun", size: 1, type: "float" });
+    expect(u.fragment).toContain("uniform float waterSun;");
     expect(u.vertex).not.toContain("waterLakeTime");
     expect(lake.lakeTime).toBe(0);
     // rough until the renderer first sets it
@@ -488,6 +495,7 @@ describe("the lake's ripples in the water plugin", () => {
     expect(seaNames.slice(seaNames.indexOf("waterRain"), seaNames.indexOf("waterRain") + 2)).toEqual(["waterRain", "oceanPhase0"]);
     expect(seaU.fragment).not.toContain("waterLakeTime");
     expect(seaU.fragment).not.toContain("waterPawCover");
+    expect(seaU.fragment).not.toContain("waterSun");
     for (const [p, time, cover, bound] of [[lake, 12.5, 0.25, true], [sea, 7, 0.5, false]] as const) {
       p.setLakeTime(time);
       p.setPawCover(cover);
@@ -505,7 +513,7 @@ describe("the lake's ripples in the water plugin", () => {
     }
     // taken off its ocean, a material is a lake's again, and declares them
     sea.ocean = null;
-    expect(sea.getUniforms().ubo).toHaveLength(38);
+    expect(sea.getUniforms().ubo).toHaveLength(39);
   });
 
   it("wraps the lake's time as the wind's and clamps the paws' cover to 0..1, either 0 when it is not finite", () => {
@@ -540,10 +548,9 @@ describe("the lake's ripples in the water plugin", () => {
     const branch = l.indexOf("#else", l.indexOf("float wOceanVar ="));
     const lake = l.slice(branch, l.indexOf("#endif", branch));
     const order = [
-      "float wPaw = 0.0;",
-      "if (waterPawCover > 0.0) {",
-      "  wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));",
-      "}\nfloat wOctave = octaveAmplitude(wPaw, waterCalmShare);",
+      "vec3 wBreeze = lakeBreeze(vPositionW.xz, waterLakeTime, waterWind, lakeGust(vPositionW.xz, waterLakeTime, waterWind));",
+      "float wPaw = waterPawCover * LAKE_BREEZE_GAIN * mix(LAKE_BREEZE_FLOOR, 1.0, wBreezeAt);",
+      "float wOctave = octaveAmplitude(wPaw, waterCalmShare);",
       "normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));",
       "if (waterOctaves > 1.5) {",
       "normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y) * wOctave);",
@@ -600,7 +607,7 @@ describe("the sea's waves in the water plugin", () => {
     expect(u.ubo[u.ubo.length - 1]).toEqual({ name: "oceanK", size: 4, type: "vec4", arraySize: 12 });
     expect(u.fragment).toContain("uniform vec4 oceanK[12];");
     expect(u.vertex).toContain("uniform vec4 oceanK[12];");
-    expect(u.ubo).toHaveLength(38);
+    expect(u.ubo).toHaveLength(39);
   });
 
   it("declares its samplers in the .fx and never in getUniforms, and gates every line of its GLSL on OCEAN", () => {
@@ -783,7 +790,7 @@ describe("the sea's waves in the water plugin", () => {
     // a lake's uniforms are as they were: no cove on either path
     const lake = attachWater(new PBRMaterial("wS1", scene), WATER_ROWS.lowlandLake).getUniforms();
     expect(lake.ubo.map((e) => e.name)).not.toContain("oceanCove");
-    expect(lake.ubo).toHaveLength(38);
+    expect(lake.ubo).toHaveLength(39);
     expect(lake.fragment).not.toContain("oceanCove");
     expect(lake.vertex).not.toContain("oceanCove");
     const p = attachWater(new PBRMaterial("wS2", scene), WATER_ROWS.sea);
@@ -951,17 +958,17 @@ describe("the sea's waves in the water plugin", () => {
     // the bed's refraction floor reaches the sea, the lake's caustics never
     expect(sea.fragment).toContain("min(max(wBehind, WATER_REFRACT_MIN), WATER_REFRACT_DEPTH)");
     for (const code of ["lakeLens(", "CAUSTIC_GAIN *", "float wLens"]) expect(sea.fragment, code).not.toContain(code);
-    expect(lake.fragment).toContain("wBed *= 1.0 + min(CAUSTIC_GAIN * wOctave * wShallow * wLens, CAUSTIC_MAX);");
+    expect(lake.fragment).toContain("wBed *= 1.0 + clamp(CAUSTIC_GAIN * wOctave * wShallow * waterSun * wLens, -CAUSTIC_MAX, CAUSTIC_MAX);");
     // The sea's whole stages, byte for byte, as the swash's sheet, the bed's fallback, the lip, the sea's rest
     // on the face between sheets, held to it within a hundredth of a millimetre, and the cove's bed in the bed's
-    // square and on the dry side of its end fades left them: neither the lake's ripples' definitions nor their
-    // uniforms reach the sea.
+    // square and on the dry side of its end fades left them, and as the caustics' comment over the sea's gate
+    // took their sign and the sun's share: neither the lake's ripples' definitions nor their uniforms reach the sea.
     const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
-    expect(sha(sea.fragment)).toBe("f6bf7a409683da04e5b3b91b4fa8c6952956ba5b980c3d35ff7497f022d50355");
+    expect(sha(sea.fragment)).toBe("b04de6b4189acdb49d947861138d4e437231f66f0ee465d17b7c2cdc0e0271bb");
     expect(sha(sea.vertex)).toBe("8567a97912ecb053b293c7ede51379d96a50adabe74c140480a481aebee7e4b7");
     // and a material drawn as a lake, then given its ocean, rebuilds its uniforms to the sea's
     const turned = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true, true);
-    expect(sha(turned.fragment)).toBe("f6bf7a409683da04e5b3b91b4fa8c6952956ba5b980c3d35ff7497f022d50355");
+    expect(sha(turned.fragment)).toBe("b04de6b4189acdb49d947861138d4e437231f66f0ee465d17b7c2cdc0e0271bb");
     expect(sha(turned.vertex)).toBe("8567a97912ecb053b293c7ede51379d96a50adabe74c140480a481aebee7e4b7");
     // and one drawn as a sea, then taken off its ocean, rebuilds them to the lake's
     const back = await compiled((m) => new WaterPlugin(m, WATER_ROWS.lowlandLake), false, true);
@@ -971,13 +978,17 @@ describe("the sea's waves in the water plugin", () => {
     // hold, and the cove's bed in the bed's square and its fades' dry side left it, reads none of the lake's
     // ripples.
     const main = (fragment: string): string => fragment.slice(fragment.indexOf("void main("));
-    expect(sha(main(sea.fragment))).toBe("3e7a46ed47957ac30176a88cb01e9cedb2beff75faa2b3dbcbf4a38e9be21414");
-    for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover", "waterMirror", "waterCalmShare", "wMirror"]) {
+    expect(sha(main(sea.fragment))).toBe("4763e666832cc71759c9dd617d6f304e65916d3acd7ef08b0cebd8b18fe19591");
+    for (const name of ["lakePaw(", "lakeGust(", "lakeRainSlope(", "octaveAmplitude(", "wPaw", "waterLakeTime", "waterPawCover", "waterSun", "waterMirror", "waterCalmShare", "wMirror"]) {
       expect(main(sea.fragment), name).not.toContain(name);
     }
     expect(main(sea.fragment)).toContain("vec2 wRs = waterRainSlope(vPositionW.xz);");
     // and the lake's reads them in place of the four layers: the comparison can see the lake's code
-    expect(main(lake.fragment)).toContain("float wPaw = 0.0;\nif (waterPawCover > 0.0) {\nwPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));\n}\n");
+    // the breeze's field, never thresholded, is the whole lake's amplitude: the paws' mask is defined (its twins
+    // are tested) but never read
+    expect(main(lake.fragment)).toContain("vec3 wBreeze = lakeBreeze(vPositionW.xz, waterLakeTime, waterWind, lakeGust(vPositionW.xz, waterLakeTime, waterWind));\n");
+    expect(main(lake.fragment)).toContain("float wOctave = octaveAmplitude(wPaw, waterCalmShare);\n");
+    expect(main(lake.fragment)).not.toContain("lakePaw(");
     expect(main(lake.fragment)).toContain("vec2 wRs = lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain, length(vPositionW - vEyePosition.xyz));");
     expect(main(lake.fragment)).not.toContain("waterRainSlope(");
   }, timeLimit(30_000));
@@ -1012,12 +1023,12 @@ describe("the lake's mirror in the water plugin", () => {
         "// sea binds a placeholder to a name its stages never declare.\nuniform sampler2D waterMirror;\n",
     );
     const u = p.getUniforms();
-    expect(u.ubo.map((e) => e.name).slice(13, 22)).toEqual(["waterLakeTime", "waterPawCover", ...MIRROR_UNIFORMS]);
+    expect(u.ubo.map((e) => e.name).slice(13, 23)).toEqual(["waterLakeTime", "waterPawCover", "waterSun", ...MIRROR_UNIFORMS]);
     // the view-projection's four columns, an array as the sea's components are
-    expect(u.ubo[15]).toEqual({ name: "waterMirrorVP", size: 4, type: "vec4", arraySize: 4 });
-    expect(u.ubo[22]).toEqual({ name: "waterLakeCentre", size: 3, type: "vec3" });
-    expect(u.ubo[27]).toEqual({ name: "oceanPhase0", size: 4, type: "vec4" });
-    expect(u.ubo).toHaveLength(38);
+    expect(u.ubo[16]).toEqual({ name: "waterMirrorVP", size: 4, type: "vec4", arraySize: 4 });
+    expect(u.ubo[23]).toEqual({ name: "waterLakeCentre", size: 3, type: "vec3" });
+    expect(u.ubo[28]).toEqual({ name: "oceanPhase0", size: 4, type: "vec4" });
+    expect(u.ubo).toHaveLength(39);
     for (const name of MIRROR_UNIFORMS.slice(1)) {
       expect(u.ubo).toContainEqual({ name, size: 1, type: "float" });
       expect(u.fragment).toContain(`uniform float ${name};`);
@@ -1166,7 +1177,7 @@ describe("the lake's mirror in the water plugin", () => {
     expect(c.indexOf("wMirrorW);")).toBeLessThan(c.indexOf("finalRadianceScaled *= 1.0 - wSkin;"));
     // the paw mask, 0 on glass, in the lake's branch of the lights, declared there once
     const l = fx("waterLights.fragment.fx");
-    const paw = l.indexOf("float wPaw = 0.0;");
+    const paw = l.indexOf("float wPaw = waterPawCover * LAKE_BREEZE_GAIN");
     expect(paw).toBeGreaterThan(l.indexOf("float wOceanVar ="));
     expect(paw).toBeLessThan(l.indexOf("if (waterOctaves > 1.5) {"));
     expect(l.split("float wPaw")).toHaveLength(2);

@@ -1,6 +1,7 @@
-// Water plugin, before the final colour composition: the bed's light through
-// the surface on the high tier (zero elsewhere), added as emissive so fog and
-// the colour path apply to it as to the rest of the surface.
+// Water plugin, before the final colour composition: the lake's shore in
+// place of the sky probe, and the skin and the white water held matte. The
+// bed's light through the surface is not added here but after the fog
+// (waterFinal.fragment.fx), since the copy it is read from is hazed already.
 //
 // COMMENT RULES: never put a semicolon inside a trailing comment on a code
 // line, and never spell a hashed preprocessor keyword in comment prose. The
@@ -57,4 +58,3 @@ finalRadianceScaled *= 1.0 - wFoam;
 finalSpecularScaled *= 1.0 - wFoam;
 #endif
 #endif
-finalEmissive += wTransmit;

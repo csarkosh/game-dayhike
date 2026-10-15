@@ -38,6 +38,7 @@ import lakeRipplesDefs from "./shaders/lakeRipples.fragment.fx?raw";
 import lakeMirrorDefs from "./shaders/lakeMirror.fragment.fx?raw";
 import fragmentLights from "./shaders/waterLights.fragment.fx?raw";
 import fragmentCompose from "./shaders/waterCompose.fragment.fx?raw";
+import fragmentFinal from "./shaders/waterFinal.fragment.fx?raw";
 import oceanVertexDefs from "./shaders/ocean.vertex.fx?raw";
 import oceanDisplace from "./shaders/oceanDisplace.vertex.fx?raw";
 import oceanFragmentDefs from "./shaders/ocean.fragment.fx?raw";
@@ -121,8 +122,8 @@ const OCEAN_UNIFORMS = [
   "oceanWindStats", "oceanWindPivot",
 ] as const;
 
-/** The lake's ripples' two floats (`lakeRipples.fragment.fx`), declared on a lake alone, after `waterRain`. */
-const LAKE_UNIFORMS = ["waterLakeTime", "waterPawCover"] as const;
+/** The lake's three floats (`lakeRipples.fragment.fx`, and the sun's share its caustics take), declared on a lake alone, after `waterRain`. */
+const LAKE_UNIFORMS = ["waterLakeTime", "waterPawCover", "waterSun"] as const;
 
 /** The lake's mirror's six floats (`lakeMirror.fragment.fx`), the last the held
  * frames' smear (`waterMirrorMotion`), declared on a lake alone, after its
@@ -261,6 +262,10 @@ export class WaterPlugin extends MaterialPluginBase {
    * the puddles' own on the sea (`waterRainSlope`), the lake's near the eye
    * (`lakeRainSlope`). */
   rain = 0;
+  /** The sun's share through the cloud and above the horizon, 0 to 1, per
+   * frame (`lakeSunShare`): what the caustics on a lake's shallow bed are
+   * scaled by, none under heavy cloud or after dark. */
+  sun = 0;
   /** The lake's time: the shared seconds wrapped at WIND_TIME_WRAP, which the
    * cat's-paws and the rain's rings read (`lakeRipples.fragment.fx`). */
   lakeTime = 0;
@@ -602,6 +607,7 @@ export class WaterPlugin extends MaterialPluginBase {
     if (this._ocean === null) {
       uniformBuffer.updateFloat("waterLakeTime", this.lakeTime);
       uniformBuffer.updateFloat("waterPawCover", this.pawCover);
+      uniformBuffer.updateFloat("waterSun", this.sun);
       // The lake's mirror: off, the identity and a calm of zero until set.
       uniformBuffer.updateFloatArray(MIRROR_VP, this._mirrorViewProjection);
       uniformBuffer.updateFloat("waterMirrorOn", this._mirror !== null ? 1 : 0);
@@ -678,6 +684,9 @@ export class WaterPlugin extends MaterialPluginBase {
         CUSTOM_FRAGMENT_DEFINITIONS: this._ocean !== null ? SEA_FRAGMENT_DEFINITIONS : LAKE_FRAGMENT_DEFINITIONS,
         CUSTOM_FRAGMENT_BEFORE_LIGHTS: fragmentLights,
         CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: fragmentCompose,
+        // After the fog: the bed's light, hazed once already in the copy it
+        // is read from.
+        CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: fragmentFinal,
         // Listed always: Babylon gathers a plugin's hook names once, when the
         // plugin is added. An empty string injects nothing, so a lake's line
         // stays Babylon's own.

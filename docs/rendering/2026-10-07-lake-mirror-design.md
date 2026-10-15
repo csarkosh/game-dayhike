@@ -313,6 +313,27 @@ only when the lake is all glass. The floor is the lake's, not the pixel's: in
 a preset whose daytime share is 0.3 the glass carries 0.175 of the octaves and
 its shore image softens by that much, a faint life on it rather than a sheet.
 
+Amended 2026-10-15: the field is no longer read. Two states with moving
+edges, ripples inside a patch and glass with a sharp mirror outside, drifting
+over the lake at 1.5 m/s while the octaves drift at their own speeds, read as
+one water surface clipping through another. The cover, the share of the lake
+the paws would have taken, is now the whole lake's amplitude at every pixel:
+`amplitude = max(smoothstep(0, 1, cover), 0.25 · (1 − calmShare))`, the mirror's
+weight `(1 − cover) · calmShare` and its smear `cover` times a full paw's, the
+same everywhere, so a lake is one surface whose ripples rise and fall with the
+wind as a whole and drift downwind as a whole. `lakePaw` and `lakeGust` keep
+their definitions and their twins' tests.
+
+Then, the same day: one amplitude over the whole lake read as a pond moving
+in lockstep. The paws' field is read again, but never thresholded
+(`lakeBreeze`, the gust-raised field `lakePaw` now thresholds): the amplitude
+is the cover times 0.7 (`LAKE_BREEZE_GAIN`, the whole calmer) times
+0.4 to 1 (`LAKE_BREEZE_FLOOR`) by the field, soft streaks that drift
+downwind and swell under the gusts with no edge anywhere, and the second
+octave is read 1.5 m (`LAKE_WARP_M`) either way across the wind by the same
+field, so its ripples keep no one phase over the lake. The mirror's weight
+and smear follow the same amplitude, so nothing has an edge.
+
 ### 7.2 Rain rings
 
 Within 8 m of the eye, an analytic ring a cell of an 18 cm hashed grid, one
@@ -335,7 +356,9 @@ skin's flattening follow unchanged, on the assembled normal.
 Amended 2026-10-13: the high tier's refracted offset takes a floor of 0.3 m of
 depth, and the bed seen through the surface is brightened where the second
 octave's surface is convex, at the octaves' amplitude, fading out over 1.5 m of
-water (the water material design, §5.2).
+water (the water material design, §5.2). Amended 2026-10-15: brightened where
+convex and darkened where concave, by the sun's share through the cloud
+(`waterSun`), so the shallows take no net lift and no caustics without the sun.
 
 ## 8. Tiers, costs and shaders
 

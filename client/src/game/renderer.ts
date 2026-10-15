@@ -150,6 +150,8 @@ import type { WaterLifeSound } from "./waterLifeAudio.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo } from "./rendererSwap.js";
 import { calmShare, isRough, roughShare, smearPx, SLOPE_PAW_DEG } from "./lakeCalm.js";
+import { lakeSunShare } from "./lakeRipples.js";
+import { SUN_PEAK } from "./sky.js";
 import { createLakeMirror, createLakeMirrorTerrain, MIRROR_MOTION_SMEAR, mirrorMotion } from "./lakeMirror.js";
 import { createLakePanorama, createSkylineTexture } from "./lakePanorama.js";
 import { createLakeChoice } from "./lakeChoice.js";
@@ -785,6 +787,8 @@ export type Water = {
   setWind(wind01: number, dir: [number, number]): void;
   /** Per frame from the weather: the rain, 0 to 1, that rings the surface. */
   setRain(rain: number): void;
+  /** Per frame from the sky: the sun's share through the cloud, 0 to 1, that lights the caustics on a lake's bed. */
+  setSun(share: number): void;
   /** The sea's edge on the cove, made with the sea and moved by `update`. */
   readonly edge: SeaEdge;
   dispose(): void;
@@ -1583,6 +1587,9 @@ export function createWater(
     },
     setRain(rain) {
       for (const p of plugins) p.rain = rain;
+    },
+    setSun(share) {
+      for (const p of plugins) p.sun = share;
     },
     edge,
     dispose() {
@@ -3158,6 +3165,7 @@ function buildRenderer(
       // The haze reads the sky state the lighting last applied; there is
       // none until the table holds its first slices.
       const sky = lighting.sky;
+      water?.setSun(sky === null ? 0 : lakeSunShare(sky.sunIntensity, sky.sunDir.y, SUN_PEAK));
       if (sky !== null) atmosphere.update(weather, sky);
       // The stare's lens: the dead have none, and the Hollow nearest the aim
       // is the side its darkness closes from. The camera's pose is last

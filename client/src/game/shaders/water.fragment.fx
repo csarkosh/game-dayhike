@@ -120,23 +120,30 @@ float waterSkinNoise(vec2 p) {
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Where the skin lies, 0 to 1: duckweed in drifts on the sheltered shallows,
-// under 1.5 m, and algae in clumped mats along the margin, under 0.4 m.
+// Where the skin lies, 0 or 1 with an edge: duckweed in drifts on the
+// sheltered shallows, under 1.5 m, and algae in clumped mats along the
+// margin, under 0.4 m. A mat is whole where it lies: the depth and the lake's
+// murk raise the threshold its noise must clear rather than thinning the mat,
+// so it breaks into islands and ends as the water deepens or the lake clears,
+// instead of fading to a translucent sheet over the shallows.
 float waterSkinMask(vec2 xz, float depth) {
   if (waterSkin.x <= 0.0) return 0.0;
   vec2 p = xz + waterSkin.y - waterWindTime * WATER_SKIN_DRIFT;
+  float clear = 0.4 * (1.0 - waterSkin.x);
   float drift = waterSkinNoise(p / 9.0) * 0.65 + waterSkinNoise(p / 3.0) * 0.35;
-  float duckweed = smoothstep(0.55, 0.62, drift) * (1.0 - smoothstep(0.9, 1.5, depth));
-  float algae = smoothstep(0.5, 0.58, waterSkinNoise(p / 1.6)) * (1.0 - smoothstep(0.15, 0.4, depth));
-  return waterSkin.x * max(duckweed, algae);
+  float duckweedAt = mix(0.55 + clear, 1.05, smoothstep(0.6, 1.5, depth));
+  float duckweed = smoothstep(duckweedAt, duckweedAt + 0.06, drift);
+  float algaeAt = mix(0.5 + clear, 1.05, smoothstep(0.15, 0.4, depth));
+  float algae = smoothstep(algaeAt, algaeAt + 0.07, waterSkinNoise(p / 1.6));
+  return max(duckweed, algae);
 }
 
 // The skin's colour: duckweed's bright fronds, finely speckled near the eye
-// and evened out with distance so the speckle never shimmers, and the
+// and evened out from 20 m to 60 m so the speckle never shimmers, and the
 // yellower algae where the mats clump.
 vec3 waterSkinColour(vec2 xz, float viewDepth) {
   vec2 p = xz + waterSkin.y - waterWindTime * WATER_SKIN_DRIFT;
-  float frond = mix(waterSkinNoise(p * 7.0), 0.5, smoothstep(10.0, 40.0, viewDepth));
+  float frond = mix(waterSkinNoise(p * 7.0), 0.5, smoothstep(20.0, 60.0, viewDepth));
   vec3 duckweed = mix(vec3(0.16, 0.26, 0.05), vec3(0.24, 0.34, 0.07), frond);
   vec3 algae = vec3(0.30, 0.32, 0.10);
   return mix(duckweed, algae, 0.5 * smoothstep(0.4, 0.6, waterSkinNoise(p / 1.6)));

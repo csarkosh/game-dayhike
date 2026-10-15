@@ -1264,13 +1264,17 @@ describe("a lake's shaders", () => {
     // under their uniform branches; the composition once more as the mirror's read gained the eye's
     // motion's smear; the lights' once more as the lake's octaves took their floor outside the
     // paws, scaled by the lake's glass share (`octaveAmplitude(wPaw, waterCalmShare)`); the water's
-    // definitions and the lights' as the bed's refraction took its floor and the lake's bed its caustics.
+    // definitions and the lights' as the bed's refraction took its floor and the lake's bed its caustics;
+    // the lights' again as the caustics took their sign and the sun's share (`waterSun`); the water's
+    // definitions as the skin's mats took an edge (the depth and the murk raise its threshold); the lights'
+    // as the paws' cover became the whole lake's amplitude, the paws' field no longer read; and again as the
+    // breeze's field set that amplitude in streaks and shifted the second octave.
     const before: Record<string, string> = {
       "water.vertex.fx": "3732482554b89e357fec2298edc8724ad085cc9defe35017b243df6b7782d50b",
       "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
-      "water.fragment.fx": "edf8a9b7d58b253c354940eff9387ad7f2d05de11a13eed90dc838280b5a0ccf",
-      "waterLights.fragment.fx": "b2dd2a416daf8fc605252fba190047ca4959515a3f8e4cc55fbcc4cb13dae590",
-      "waterCompose.fragment.fx": "404a808f1764a431f855083b4ae12d03c20ed2c3226848fdd6aea4bcf9f4eee0",
+      "water.fragment.fx": "72c5c6c4679453d9107a4e11c9be407c9ac6396b28590b6d2d43790b651d8601",
+      "waterLights.fragment.fx": "d36fda42c95ca57d06956aac44c1e0845e1283b84411d6df7bceca5a59c502d0",
+      "waterCompose.fragment.fx": "03bc9a45b4f0e057189cbe23cd00476bf69722e75d177b733e6bf61670d2dc19",
     };
     for (const [name, hash] of Object.entries(before)) {
       expect(sha256(await processed(fx(name), !name.includes(".vertex."))), name).toBe(hash);
@@ -1302,11 +1306,12 @@ describe("the sea's shaders", () => {
     // shallower of the read and the profile's depth inside the bed's square as well, and as the depth where
     // the sea rests was held to 0 within a hundredth of a millimetre, and once more as the bed on the dry side
     // of the cove's end fades took the shallower whole; the water's definitions and the lights' again as the
-    // bed's refraction took its floor.
+    // bed's refraction took its floor, and the lights' as the caustics' comment over the sea's gate changed;
+    // the water's definitions again as the skin's mats took an edge.
     const before: Record<string, string> = {
-      "water.fragment.fx": "8995ea59d7db8304141414bd8dd53daaf6525aaf5c9c263cff3d6d1baac21665",
-      "waterLights.fragment.fx": "5b19742ba42df88edf7f961aa974c1e3314f3e58210f0452b98eacbf6d6bff45",
-      "waterCompose.fragment.fx": "0a6d181c12b8e63ef804a9b0a97e31ad7dd58044c8295239ed6f74d2ce5735e3",
+      "water.fragment.fx": "b992aca0388f5a2e470767c6c2d043990e9aad4d06708dd64aba80c0459c0e1a",
+      "waterLights.fragment.fx": "75313b6facc8e867bf24ca9ebab961bea2770424a2063ac95bccfb605227ea60",
+      "waterCompose.fragment.fx": "57480eeaf3cae19b7c214edd7fd5ccc80bf86fb82da75f131237cce969ef34f2",
     };
     for (const [name, hash] of Object.entries(before)) {
       expect(sha256(await processed(fx(name), true, SEA_DEFINES)), name).toBe(hash);
@@ -1424,8 +1429,11 @@ describe("the water material's stages, compiled", () => {
       expect(f).toContain("vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 fallback)");
       expect(f).toContain("vec3 waterCylinderHit(vec3 origin, vec3 dir)");
       expect(f).toContain("vec3 waterSkylineRadiance(vec3 dir, vec3 probeRadiance)");
-      expect(f).toContain("lakeRipple2(vPositionW.xz)");
-      expect(f).toContain("if (waterPawCover > 0.0) {\nwPaw = lakePaw(");
+      expect(f).toContain("lakeRipple2(wRippleXz)");
+      // the cover is the whole lake's amplitude: the paws' field is defined but never read
+      expect(f).toContain("vec3 wBreeze = lakeBreeze(vPositionW.xz, waterLakeTime, waterWind, lakeGust(vPositionW.xz, waterLakeTime, waterWind));");
+      expect(f).toContain("float wOctave = octaveAmplitude(wPaw, waterCalmShare);");
+      expect(f).not.toContain("wPaw = lakePaw(");
       expect(f).toContain("lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain,");
       expect(f).not.toContain("wOcean");
       expect(f).not.toContain("swash");
@@ -1582,7 +1590,9 @@ describe("the white water", () => {
     const foam = at(c, "finalRadianceScaled *= 1.0 - wFoam;");
     expect(c).toContain("finalSpecularScaled *= 1.0 - wFoam;");
     expect(foam).toBeGreaterThan(at(c, "#ifdef OCEAN"));
-    expect(foam).toBeLessThan(at(c, "finalEmissive += wTransmit;"));
+    // the bed's light is no longer added in the compose at all: it goes in after the fog (waterFinal.fragment.fx)
+    expect(c).not.toContain("wTransmit");
+    expect(fx("waterFinal.fragment.fx")).toContain("finalColor.rgb += wTransmit;");
   });
 });
 

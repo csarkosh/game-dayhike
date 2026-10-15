@@ -199,7 +199,13 @@ there silted up to the water's level.
   decides where the skin lies: duckweed on sheltered shallows, clumpy
   yellow-green algae mats along the margin. The layer is a matte green film
   with a tiled frond pattern over the water, hiding the reflection where it
-  lies. Derived from sim data, so every peer sees the same skin.
+  lies. Derived from sim data, so every peer sees the same skin. Amended
+  2026-10-15: the mask is 0 or 1 with an edge, never a part. The depth and
+  the murk raise the threshold the noise must clear, so a mat breaks into
+  islands and ends where the water deepens or the lake clears, where before
+  it thinned to a translucent sheet over the whole shallows that read as a
+  flat quad through the surface; the frond speckle evens out from 20 m to
+  60 m rather than 10 m to 40 m.
 - **Clear lakes** get none of these; their margin stays bare apart from the
   existing needle and leaf litter, and their bed shows stones (§5.5).
 

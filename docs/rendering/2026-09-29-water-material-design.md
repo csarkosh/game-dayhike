@@ -239,6 +239,14 @@ albedo is L∞·(1 − T), T = e^(−2 Kd d): the bed's radiance is not handed t
 as an albedo, which would light it twice, and bed·T·(1 − F) is added after
 lighting through the emissive at the final colour composition.
 
+Amended 2026-10-15: added after the fog instead, through the plugin's hook
+before the fragment's colour is written (`waterFinal.fragment.fx`). The copy
+the bed is read from is the opaque pass's, which the atmosphere hazed to the
+bed's distance as it drew it; through the emissive the surface's own haze was
+laid over it again, and every shallow where the bed showed lit up in the haze's
+colour along the depth's contour, a flat pale sheet. The colour path runs as a
+post-process, so nothing but the fog lay between the two places.
+
 On the **high tier** the term is computed exactly: the plugin samples the
 scene-colour copy the spike measured (research §8.5, under 1 ms at 1080p) at
 the pixel's position offset by the ripple normal's xz, the offset scaled by
@@ -260,6 +268,16 @@ tilts spread and focus the light, scales the bed by
 (0 on glass) and the shallow share fading from 1 at the surface to 0 at 1.5 m
 of water. The caustics so move exactly as the surface does. The sea takes the
 floor but not the caustics.
+
+Amended 2026-10-15: brightening alone lifted the whole shallows by up to 60 %,
+a flat pale sheet with a soft edge on the 1.5 m contour, in any light. The
+lens term is now signed, clamp(0.15 · amplitude · shallow · sun · lens, −0.6, 0.6):
+convex water brightens the bed, concave darkens it, so the ripples move the
+bed's light about and add none. `sun` is the sun's share through the cloud,
+`lakeSunShare`, the sky state's sun intensity over its clear-noon peak times
+the sun's height, fed to the lake plugin each frame as `waterSun`: a tenth of
+the way through overcast, none in mist or after dark, where caustics have no
+sharp source to focus.
 
 On **medium and low** the surface stays alpha-blended and the blend does the
 transmission: the shader outputs colour L∞ and alpha = 1 − (1 − F)·T̄ with T̄ = e^(−2 K̄ d), K̄

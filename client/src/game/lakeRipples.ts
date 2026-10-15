@@ -28,6 +28,12 @@ export const PAW_GUST_FLOOR = 0.5;
 /** The octaves' amplitude outside the paws where the lake is not glass: a faint
  * bump of its own, so the surface between the paws never reads frozen. */
 export const OCTAVE_FLOOR = 0.25;
+/** The breeze over the whole lake (`lakeBreeze`, the lights): the ripples' amplitude is the paws' cover
+ * scaled by LAKE_BREEZE_GAIN, from LAKE_BREEZE_FLOOR of it where the field is lowest to all of it where
+ * highest; the second octave is shifted across the wind by up to LAKE_WARP_M metres by the same field. */
+export const LAKE_BREEZE_GAIN = 0.7;
+export const LAKE_BREEZE_FLOOR = 0.4;
+export const LAKE_WARP_M = 1.5;
 /**
  * The paws' threshold on the gust-raised field at cover 0, 1/8, 2/8 … 1: the
  * field's values crowd about the middle and the floor halves it where no gust
@@ -71,6 +77,17 @@ export const LENS_STEP_M = 0.0625;
 export const CAUSTIC_GAIN = 0.15;
 export const CAUSTIC_MAX = 0.6;
 export const CAUSTIC_DEPTH_M = 1.5;
+
+/**
+ * The sun's share the caustics are scaled by, 0 to 1: the sun's intensity as
+ * the sky state has it (`peak` at a clear noon, less through cloud, toward
+ * dusk and under the eye's adaptation) over that peak, times how far up the
+ * sun is (`sunUp`, the sun direction's y); 0 with the sun down. The renderer
+ * feeds it to `WaterPlugin.sun` each frame.
+ */
+export function lakeSunShare(sunIntensity: number, sunUp: number, peak: number): number {
+  return Math.min(1, Math.max(0, (sunIntensity * Math.max(0, sunUp)) / peak));
+}
 
 const TAU = 2 * Math.PI;
 
@@ -153,17 +170,16 @@ function pawField(x: number, z: number, t: number, dirX: number, dirZ: number, s
 }
 
 /**
- * The cat's-paw mask at world (x, z), 0 on glass to 1 in a paw: two octaves
- * of living value noise, PAW_FEATURE_M a feature, drifting downwind; raised
- * where the gust blows (`gust`, `lakeGust` at the pixel); thresholded at
- * `lakePawThreshold(cover)`, so the paws cover about `cover` of the lake,
- * with an edge PAW_EDGE_M metres wide, measured along the field's own
- * gradient. Over the wrap's last PAW_LIFE_S the drift crosses to the next
- * wrap's, so the pattern runs on through it. The next wrap's field is read
- * only in those last PAW_LIFE_S seconds, the one span where its blend is
- * above 0, as the GLSL reads it.
+ * The breeze's field at world (x, z): the paws' field, two octaves of living
+ * value noise PAW_FEATURE_M a feature drifting downwind, raised where the gust
+ * blows (`gust`, `lakeGust` at the pixel): its value, 0 to about 1, and its
+ * gradient per metre. Over the wrap's last PAW_LIFE_S the drift crosses to the
+ * next wrap's, so the pattern runs on through it; the next wrap's field is
+ * read only in those seconds, the one span where its blend is above 0, as the
+ * GLSL reads it. The lights take it whole for the ripples' amplitude and the
+ * second octave's shift; `lakePaw` thresholds it.
  */
-export function lakePaw(x: number, z: number, t: number, windDirX: number, windDirZ: number, cover: number, gust: number): number {
+export function lakeBreeze(x: number, z: number, t: number, windDirX: number, windDirZ: number, gust: number): [number, number, number] {
   let [f, gx, gz] = pawField(x, z, t, windDirX, windDirZ, t);
   if (t > WIND_TIME_WRAP - PAW_LIFE_S) {
     const b = pawField(x, z, t, windDirX, windDirZ, t - WIND_TIME_WRAP);
@@ -173,9 +189,17 @@ export function lakePaw(x: number, z: number, t: number, windDirX: number, windD
     gz += (b[2] - gz) * w;
   }
   const g = PAW_GUST_FLOOR + (1 - PAW_GUST_FLOOR) * clamp01(gust);
-  f *= g;
-  gx *= g;
-  gz *= g;
+  return [f * g, gx * g, gz * g];
+}
+
+/**
+ * The cat's-paw mask at world (x, z), 0 on glass to 1 in a paw: the breeze's
+ * field thresholded at `lakePawThreshold(cover)`, so the paws cover about
+ * `cover` of the lake, with an edge PAW_EDGE_M metres wide, measured along
+ * the field's own gradient.
+ */
+export function lakePaw(x: number, z: number, t: number, windDirX: number, windDirZ: number, cover: number, gust: number): number {
+  const [f, gx, gz] = lakeBreeze(x, z, t, windDirX, windDirZ, gust);
   const slope = Math.max(Math.hypot(gx, gz), 1e-4);
   return clamp01((f - lakePawThreshold(cover)) / (slope * PAW_EDGE_M));
 }

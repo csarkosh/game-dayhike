@@ -86,22 +86,26 @@ normalW = oceanLipNormal(normalW, wOceanLip);
 // once the drawn waves carry theirs, calmer in a headland's lee as the chop is.
 float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn + wWindDrawn * wWindSteep * wWindSteep);
 #else
-// The lake's two states (lakeRipples.fragment.fx): the cat's-paw mask at this
-// pixel, from the gust that crosses it, and the two octaves at its amplitude.
-// Outside the paws the octaves run at a faint floor wherever the lake is not
-// glass, fading to silent as the glass share waterCalmShare reaches 1, so the
-// surface is glass only when the glass share is 1. The field is skipped where the
-// cover is 0 (glass all over), where its threshold of 1 is no lower than any
-// value the field takes, so the mask is 0 there either way. PBR's bump, the first
-// octave, is scaled about the up it was built on.
-float wPaw = 0.0;
-if (waterPawCover > 0.0) {
-  wPaw = lakePaw(vPositionW.xz, waterLakeTime, waterWind, waterPawCover, lakeGust(vPositionW.xz, waterLakeTime, waterWind));
-}
+// The lake's one surface (lakeRipples.fragment.fx): the breeze's field, the
+// cat's-paws' field never thresholded, sets the ripples' amplitude from
+// LAKE_BREEZE_FLOOR of the paws' cover to the cover itself, all scaled by
+// LAKE_BREEZE_GAIN: soft streaks that drift downwind and swell under the
+// gusts, with no edge anywhere. The same field shifts the second octave
+// across the wind by up to LAKE_WARP_M, so its ripples keep no one phase over
+// the lake. The paws' mask, patches with ripples inside and glass outside, is
+// no longer read: two states with moving edges read as one surface clipping
+// through another. The octaves run at least at a faint floor wherever the
+// lake is not glass, fading to silent as the glass share waterCalmShare
+// reaches 1, so the surface is glass only when the glass share is 1. PBR's
+// bump, the first octave, is scaled about the up it was built on.
+vec3 wBreeze = lakeBreeze(vPositionW.xz, waterLakeTime, waterWind, lakeGust(vPositionW.xz, waterLakeTime, waterWind));
+float wBreezeAt = clamp(wBreeze.x, 0.0, 1.0);
+float wPaw = waterPawCover * LAKE_BREEZE_GAIN * mix(LAKE_BREEZE_FLOOR, 1.0, wBreezeAt);
+vec2 wRippleXz = vPositionW.xz + (2.0 * wBreezeAt - 1.0) * LAKE_WARP_M * vec2(-waterWind.y, waterWind.x);
 float wOctave = octaveAmplitude(wPaw, waterCalmShare);
 normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));
 if (waterOctaves > 1.5) {
-  vec2 wSlope = lakeRipple2(vPositionW.xz);
+  vec2 wSlope = lakeRipple2(wRippleXz);
   normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y) * wOctave);
 }
 // The rain's rings near the eye, every tier: beyond their reach the rain is
@@ -130,10 +134,13 @@ float wF = WATER_F0 + (1.0 - WATER_F0) * pow(1.0 - wNdV, 5.0);
 // the ripples' slope, over at least WATER_REFRACT_MIN metres of water so a
 // shallow shelf still wobbles under them. The bend fades in over the first
 // 2 cm of water rather than starting at once, so the bed does not jump a few
-// pixels at the waterline. On a lake the bed is brightened where the second
-// octave's surface is convex (lakeLens), scaled by the octaves' amplitude, at
-// most by CAUSTIC_MAX, and fading out over CAUSTIC_DEPTH_M of water: caustics
-// that move as the surface does, none on glass. The sea skips them.
+// pixels at the waterline. On a lake the bed is lit by the second octave's
+// lens (lakeLens): brighter where the surface is convex and its tilts spread,
+// darker where concave and they gather, light the ripples move and never add,
+// scaled by the octaves' amplitude and the sun's share through the cloud
+// (the lake's own uniform), within CAUSTIC_MAX either way, and fading out over
+// CAUSTIC_DEPTH_M of water: caustics that move as the surface does, none on
+// glass, none without the sun. The sea skips them.
 vec3 wTransmit = vec3(0.0);
 if (waterHigh < 0.5) {
   // The blend scales the reflection too, so the reflected share is kept out
@@ -153,9 +160,9 @@ if (waterHigh < 0.5) {
   vec2 wOff = normalW.xz * WATER_REFRACT * min(max(wBehind, WATER_REFRACT_MIN), WATER_REFRACT_DEPTH) * smoothstep(0.0, 0.02, wBehind);
   vec3 wBed = texture2D(waterScene, wUv + wOff).rgb;
 #ifndef OCEAN
-  float wLens = max(0.0, lakeLens(vPositionW.xz));
+  float wLens = lakeLens(wRippleXz);
   float wShallow = 1.0 - smoothstep(0.0, CAUSTIC_DEPTH_M, wBehind);
-  wBed *= 1.0 + min(CAUSTIC_GAIN * wOctave * wShallow * wLens, CAUSTIC_MAX);
+  wBed *= 1.0 + clamp(CAUSTIC_GAIN * wOctave * wShallow * waterSun * wLens, -CAUSTIC_MAX, CAUSTIC_MAX);
 #endif
   vec3 wT = exp(-2.0 * waterKd * wBehind);
   // The water's own colour where the bed is not seen: L-infinity times 1 - T.
