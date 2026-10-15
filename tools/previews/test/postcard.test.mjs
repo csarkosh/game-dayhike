@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { MARGIN_PX, TILT_MAX_DEG, TILT_MIN_DEG, postcard, tiltFor } from "../lib/postcard.mjs";
+import { MARGIN_PX, TILT_MAX_DEG, TILT_MIN_DEG, postcard, postmarkSvg, tiltFor } from "../lib/postcard.mjs";
 
 const NAMES = ["trailhead", "forest", "tarn", "meadow", "crest", "beach"];
 
@@ -48,5 +48,30 @@ describe("postcard", () => {
     expect([mid[0], mid[1], mid[2], mid[3]]).toEqual([0x40, 0x60, 0x80, 255]);
     // the same still and name give the same bytes
     expect((await postcard(still, "tarn")).equals(card)).toBe(true);
+  });
+});
+
+describe("postmarkSvg", () => {
+  const mark = { title: "Day Hike", author: "Cyrus Sarkosh", site: "games.csarko.sh", year: "2026", line: "1 to 5 players" };
+  it("rings the title and the site a letter at a time, the author over the year and the line in the middle, five bars to the left, in upper case", () => {
+    const svg = postmarkSvg(mark, 300);
+    for (const word of ["CYRUS SARKOSH", "2026", "1 TO 5 PLAYERS"]) expect(svg).toContain(`>${word}</text>`);
+    for (const ch of [..."DAY HIKE", ..."GAMES.CSARKO.SH"]) expect(svg).toContain(`>${ch}</text>`);
+    expect(svg.match(/<path d="M /g)).toHaveLength(10);
+    expect(svg).not.toContain("textPath");
+    expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
+  });
+  it("escapes the mark's text, so a title is never markup", () => {
+    expect(postmarkSvg({ ...mark, title: "<b>&", line: undefined }, 300)).toContain(">&lt;</text>");
+    expect(postmarkSvg({ ...mark, line: undefined }, 300)).not.toContain("PLAYERS");
+  });
+  it("marks the card it is asked for, and the same still and mark give the same bytes", async () => {
+    const still = await sharp({ create: { width: 320, height: 180, channels: 3, background: "#406080" } }).png().toBuffer();
+    const plain = await postcard(still, "trailhead");
+    const marked = await postcard(still, "trailhead", mark);
+    expect(marked.equals(plain)).toBe(false);
+    expect((await postcard(still, "trailhead", mark)).equals(marked)).toBe(true);
+    const meta = await sharp(marked).metadata();
+    expect([meta.width, meta.height]).toEqual([(await sharp(plain).metadata()).width, (await sharp(plain).metadata()).height]);
   });
 });
