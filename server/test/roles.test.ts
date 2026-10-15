@@ -34,7 +34,7 @@ describe("the telemetry role and the store", () => {
     const data: AdminData = {
       live: () => Promise.resolve({ at: 0, instances: [], rooms: [] }),
       query: () => Promise.resolve([]),
-      session: () => Promise.resolve([]),
+      lookup: () => Promise.resolve([]),
       kpis: () => Promise.reject(new Error("not asked")),
     };
     // An ID token as the admin host's project (`csarko-sh`) would sign one,

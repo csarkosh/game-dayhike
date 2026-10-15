@@ -1,7 +1,9 @@
 /**
- * A fixed data set in the shape the six queries return, for the page's
- * preview: a week around a test party, two builds, a handful of errors, and
- * one world's paths. Seeded, so the preview is the same every time.
+ * A fixed data set in the shape the queries return, for the page's preview:
+ * a week around a test party, two builds, a handful of errors, a few
+ * visitors, one world's paths, and one session's trail (which also stands in
+ * for a visitor's sessions and a match's). Seeded, so the preview is the same
+ * every time.
  */
 
 import type { Live, QueryName, Range, Row, Source } from "./source.js";
@@ -33,9 +35,50 @@ const day = (ms: number): string => iso(ms).slice(0, 10);
 
 function funnel(): Row[] {
   return [
+    { build: "all", landed: 181, pressed_play: 78, started: 69, finished: 40, sessions: 191, first_seen: iso(NOW - 5 * DAY), last_seen: iso(NOW - 600_000) },
     { build: "9557492d", landed: 143, pressed_play: 61, started: 54, finished: 31, sessions: 151, first_seen: iso(NOW - 2 * DAY), last_seen: iso(NOW - 600_000) },
     { build: "5759b340", landed: 38, pressed_play: 17, started: 15, finished: 9, sessions: 40, first_seen: iso(NOW - 5 * DAY), last_seen: iso(NOW - 2 * DAY) },
   ];
+}
+
+/** The kpis query's rows: the whole range, the two windows, and the weeks. */
+function kpis(): Row[] {
+  const r = rng(5);
+  const rows: Row[] = [
+    { kind: "range", period: "all", week_start: null, sessions: 191, matches: 62, ended: 170, clean: 161, erred: 7, visitors: 64, returning: 21 },
+    { kind: "window", period: "current", week_start: null, sessions: 151, matches: 50, ended: 134, clean: 128, erred: 4, visitors: 52, returning: 17 },
+    { kind: "window", period: "previous", week_start: null, sessions: 40, matches: 12, ended: 36, clean: 33, erred: 3, visitors: 19, returning: 6 },
+  ];
+  for (let i = 11; i >= 0; i--) {
+    const monday = NOW - i * 7 * DAY;
+    const sessions = i === 0 ? 151 : Math.floor(r() * 40);
+    rows.push({ kind: "week", period: `W${12 - i}`, week_start: day(monday), sessions, matches: Math.floor(sessions / 3), ended: Math.floor(sessions * 0.9), clean: Math.floor(sessions * 0.85), erred: Math.floor(sessions * 0.03), visitors: Math.floor(sessions / 3), returning: Math.floor(sessions / 9) });
+  }
+  return rows;
+}
+
+/** The visitors query's rows: the browsers of the range, the most recently seen first. */
+function visitors(): Row[] {
+  const r = rng(17);
+  const rows: Row[] = [];
+  const machines = ["darwin-arm64 155", "win32-x64 141", "win32-x64 157", "linux-x64 140", "darwin-arm64 26"];
+  for (let i = 0; i < 16; i++) {
+    const sessions = i === 0 ? 11 : 1 + Math.floor(r() * 4);
+    const last = NOW - i * 5_400_000 - 300_000;
+    rows.push({
+      vid: `v${(0x7a10 + i * 0x61).toString(16)}-${(0x1000 + i).toString(16)}`,
+      sessions,
+      days: Math.min(sessions, 1 + Math.floor(r() * 3)),
+      played: Math.max(0, sessions - Math.floor(r() * 2)),
+      finished: Math.floor(sessions / 2),
+      build: i < 12 ? BUILDS[1]! : BUILDS[0]!,
+      machine: machines[i % machines.length]!,
+      last_sid: `s${(1000 + i * 37).toString(16)}`,
+      first_seen: iso(last - sessions * 3_600_000),
+      last_seen: iso(last),
+    });
+  }
+  return rows;
 }
 
 function lobbies(): Row[] {
@@ -70,13 +113,14 @@ function progress(): Row[] {
     const died = result === "lost" || r() < 0.2;
     const minutes = Math.round((4 + farthest * 22 + r() * 6) * 10) / 10;
     const started = NOW - i * 1_800_000 - 600_000;
+    const party = 1 + Math.floor(r() * 5);
     rows.push({
       sid: `s${(1000 + i * 37).toString(16)}`,
       game: `g${(5000 + i * 91).toString(16)}`,
       build: i < 22 ? BUILDS[1]! : BUILDS[0]!,
       world: WORLD,
-      role: r() < 0.6 ? "host" : "client",
-      party: 1 + Math.floor(r() * 5),
+      players: Math.max(1, party - (r() < 0.3 ? 1 : 0)),
+      party,
       farthest,
       wet: farthest >= 0.1,
       dusk: farthest >= 0.3,
@@ -85,7 +129,6 @@ function progress(): Row[] {
       chase,
       died,
       result: result ?? null,
-      self_at_end: result === null ? null : died ? "dead" : "alive",
       left_by: result === null && i % 7 !== 3 ? (["end", "exit", "session_end"] as const)[i % 3]! : null,
       minutes,
       started_at: iso(started),
@@ -96,23 +139,43 @@ function progress(): Row[] {
 }
 
 function errors(): Row[] {
+  // The totals are distinct over the range and the same on every row.
+  const totals = { sessions_with_errors: 5, sessions_with_warnings: 7 };
   return [
-    { n: "error", kind: "console", at_page: "game", msg: "WebGPU: the renderer could not be built on it; building it on WebGL2.", build: "9557492d", times: 4, sessions: 3, a_session: "s3f8a", a_machine: "win32-x64 141 ANGLE (NVIDIA, NVIDIA GeForce RTX 3060)", last_seen: iso(NOW - 2_400_000) },
-    { n: "tier_fallback", kind: null, at_page: "start", msg: null, build: "9557492d", times: 2, sessions: 2, a_session: "s41b2", a_machine: "darwin-arm64 26 Apple M1", last_seen: iso(NOW - 5_000_000) },
-    { n: "connect_fail", kind: null, at_page: "game", msg: "ice_failed", build: "9557492d", times: 2, sessions: 2, a_machine: "win32-x64 141 ANGLE (Intel, Intel(R) Iris(R) Xe)", last_seen: iso(NOW - 7_200_000) },
-    { n: "warn", kind: "console", at_page: "game", msg: "forest impostor: bake retried once for clutter.fungus_b", build: "9557492d", times: 9, sessions: 6, a_machine: "darwin-arm64 26 Apple M2", last_seen: iso(NOW - 900_000) },
-    { n: "error", kind: "unhandled", at_page: "landing", msg: "TypeError: Failed to fetch", build: "5759b340", times: 1, sessions: 1, a_machine: "other 0 null", last_seen: iso(NOW - 3 * DAY) },
+    { level: "error", n: "error", kind: "console", at_page: "game", msg: "WebGPU: the renderer could not be built on it; building it on WebGL2.", build: "9557492d", times: 4, sessions: 3, a_session: "s3f8a", a_machine: "win32-x64 141 ANGLE (NVIDIA, NVIDIA GeForce RTX 3060)", last_seen: iso(NOW - 2_400_000), ...totals },
+    { level: "error", n: "connect_fail", kind: null, at_page: "game", msg: "ice_failed", build: "9557492d", times: 2, sessions: 2, a_machine: "win32-x64 141 ANGLE (Intel, Intel(R) Iris(R) Xe)", last_seen: iso(NOW - 7_200_000), ...totals },
+    { level: "error", n: "error", kind: "unhandled", at_page: "landing", msg: "TypeError: Failed to fetch", build: "5759b340", times: 1, sessions: 1, a_machine: "other 0 null", last_seen: iso(NOW - 3 * DAY), ...totals },
+    { level: "warning", n: "warn", kind: "console", at_page: "game", msg: "forest impostor: bake retried once for clutter.fungus_b", build: "9557492d", times: 9, sessions: 6, a_machine: "darwin-arm64 26 Apple M2", last_seen: iso(NOW - 900_000), ...totals },
+    { level: "warning", n: "tier_fallback", kind: null, at_page: "start", msg: null, build: "9557492d", times: 2, sessions: 2, a_session: "s41b2", a_machine: "darwin-arm64 26 Apple M1", last_seen: iso(NOW - 5_000_000), ...totals },
   ];
 }
 
 function health(): Row[] {
+  const line = (build: string, tier: string, engine: string, sessions: number, played: number, ended: number, clean: number, silent: number, backgrounded: number, timing: number[]): Row => ({
+    build,
+    tier,
+    engine,
+    sessions,
+    played,
+    ended,
+    clean,
+    troubled: ended - clean,
+    unknown: sessions - ended,
+    backgrounded,
+    ended_silently: silent,
+    p50_start_ms: timing[0]!,
+    p90_start_ms: timing[1]!,
+    p50_ready_ms: timing[2]!,
+    p50_fps: timing[3]!,
+    p90_worst_frame_ms: timing[4]!,
+  });
   return [
-    { build: "9557492d", tier: "high", engine: "webgpu", sessions: 21, played: 19, ended_silently: 1, clean: 17, p50_start_ms: 2640, p90_start_ms: 4810, p50_ready_ms: 6100, p50_fps: 59.8, p90_worst_frame_ms: 180 },
-    { build: "9557492d", tier: "high", engine: "webgl2", sessions: 14, played: 13, ended_silently: 0, clean: 12, p50_start_ms: 2210, p90_start_ms: 3900, p50_ready_ms: 5400, p50_fps: 58.9, p90_worst_frame_ms: 260 },
-    { build: "9557492d", tier: "medium", engine: "webgl2", sessions: 25, played: 18, ended_silently: 2, clean: 20, p50_start_ms: 1980, p90_start_ms: 3600, p50_ready_ms: 4900, p50_fps: 57.5, p90_worst_frame_ms: 410 },
-    { build: "9557492d", tier: "low", engine: "webgl2", sessions: 6, played: 4, ended_silently: 1, clean: 4, p50_start_ms: 1720, p90_start_ms: 3100, p50_ready_ms: 4200, p50_fps: 44.2, p90_worst_frame_ms: 900 },
-    { build: "5759b340", tier: "high", engine: "webgpu", sessions: 9, played: 8, ended_silently: 1, clean: 7, p50_start_ms: 2890, p90_start_ms: 5200, p50_ready_ms: 6500, p50_fps: 59.6, p90_worst_frame_ms: 210 },
-    { build: "5759b340", tier: "medium", engine: "webgl2", sessions: 8, played: 7, ended_silently: 0, clean: 7, p50_start_ms: 2050, p90_start_ms: 3700, p50_ready_ms: 5000, p50_fps: 56.8, p90_worst_frame_ms: 450 },
+    line("9557492d", "high", "webgpu", 21, 19, 19, 17, 1, 1, [2640, 4810, 6100, 59.8, 180]),
+    line("9557492d", "high", "webgl2", 14, 13, 13, 12, 0, 1, [2210, 3900, 5400, 58.9, 260]),
+    line("9557492d", "medium", "webgl2", 25, 18, 22, 20, 2, 1, [1980, 3600, 4900, 57.5, 410]),
+    line("9557492d", "low", "webgl2", 6, 4, 5, 4, 1, 0, [1720, 3100, 4200, 44.2, 900]),
+    line("5759b340", "high", "webgpu", 9, 8, 8, 7, 1, 0, [2890, 5200, 6500, 59.6, 210]),
+    line("5759b340", "medium", "webgl2", 8, 7, 8, 7, 0, 0, [2050, 3700, 5000, 56.8, 450]),
   ];
 }
 
@@ -235,37 +298,127 @@ function live(): Live {
   };
 }
 
-/** One session's timeline: a session that loaded, played, hit a shader failure mid-climb and ended. */
-function session(sid: string): Row[] {
-  const t0 = NOW - 40 * 60_000;
+const LOBBY = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+const GAME = "g1388";
+const VID = "v7a10-1000";
+
+/**
+ * One session's trail: a session that landed, made a lobby, was joined,
+ * loaded, played, hit a shader failure mid-climb, died and said goodbye.
+ * Each row carries `row_json` as the query does, with the envelope's facts
+ * the drawer reads from the first.
+ */
+function session(sid: string, offsetMs = 0): Row[] {
+  const t0 = NOW - 40 * 60_000 - offsetMs;
   const at = (ms: number): string => iso(t0 + ms);
-  const row = (ms: number, n: string, fields: Row = {}): Row => ({ timestamp: at(ms), t: ms, n, svc: "telemetry", at_page: null, kind: null, msg: null, stack: null, lobby: null, build: "9557492d", ...fields });
+  const envelope = { sid, vid: VID, build: "9557492d", os: "darwin-arm64", browser: "155", gpu: "Apple M2", tz: "America/New_York", lang: "en-US", vw: 1440, vh: 900, path: "/dayhike/", ref: "" };
+  const row = (ms: number, n: string, fields: Record<string, unknown> = {}): Row => {
+    const payload = { n, t: ms, ...envelope, ...fields };
+    return {
+      timestamp: at(ms),
+      t: ms,
+      n,
+      svc: "telemetry",
+      sid,
+      vid: VID,
+      game: (fields.game as string | undefined) ?? null,
+      lobby: (fields.lobby as string | undefined) ?? null,
+      at_page: (fields.where as string | undefined) ?? null,
+      kind: (fields.kind as string | undefined) ?? null,
+      reason: (fields.reason as string | undefined) ?? null,
+      result: (fields.result as string | undefined) ?? null,
+      act: (fields.act as string | undefined) ?? null,
+      phase: (fields.phase as string | undefined) ?? null,
+      tier: (fields.tier as string | undefined) ?? null,
+      fps: (fields.fps as number | undefined) ?? null,
+      dur: (fields.dur as number | undefined) ?? null,
+      trouble: (fields.trouble as number | undefined) ?? null,
+      p: (fields.p as number | undefined) ?? null,
+      msg: (fields.msg as string | undefined) ?? null,
+      stack: (fields.stack as string | undefined) ?? null,
+      build: "9557492d",
+      row_json: JSON.stringify(payload),
+    };
+  };
+  const signal = (ms: number, n: string, fields: Record<string, unknown> = {}): Row => ({
+    timestamp: at(ms),
+    t: null,
+    n,
+    svc: "signaling",
+    sid: null,
+    vid: null,
+    game: null,
+    lobby: LOBBY,
+    at_page: null,
+    kind: null,
+    reason: (fields.reason as string | undefined) ?? null,
+    result: null,
+    act: null,
+    phase: null,
+    tier: null,
+    fps: null,
+    dur: (fields.lifeMs as number | undefined) ?? null,
+    trouble: null,
+    p: null,
+    msg: (fields.code as string | undefined) ?? null,
+    stack: null,
+    build: "4580155c",
+    row_json: JSON.stringify({ n, room: LOBBY, sbuild: "4580155c", ...fields }),
+  });
+  const inMatch = { game: GAME, lobby: LOBBY, world: WORLD, seed: SEED };
   return [
-    row(0, "page", { at_page: "landing" }),
-    row(1_900, "play"),
-    row(2_000, "page", { at_page: "game" }),
-    row(2_050, "invite"),
-    row(2_600, "lobby_joined", { lobby: "3f2504e0-4f89-41d3-9a0c-0305e82c3301" }),
-    { timestamp: at(2_600), t: null, n: "room_create", svc: "signaling", at_page: null, kind: null, msg: null, stack: null, lobby: "3f2504e0-4f89-41d3-9a0c-0305e82c3301", build: "9557492d" },
-    row(6_900, "load", { at_page: "start:build" }),
-    row(12_400, "ready"),
-    row(12_500, "match_start"),
-    { timestamp: at(41_000), t: null, n: "room_join", svc: "signaling", at_page: null, kind: null, msg: null, stack: null, lobby: "3f2504e0-4f89-41d3-9a0c-0305e82c3301", build: "9557492d" },
-    row(30_000, "hb"),
-    row(41_200, "lobby_change"),
-    row(190_000, "act", { kind: "wet" }),
-    row(420_000, "act", { kind: "dusk" }),
-    row(601_000, "error", { at_page: "game", kind: "console", msg: "WebGPU: the renderer could not be built on it; building it on WebGL2.", stack: "Error: pipeline\n    at https://games.csarko.sh/dayhike/assets/index-CJQw8Dxw.js:2:5" }),
-    row(601_100, "engine_failed", { kind: "pipeline" }),
-    row(640_000, "act", { kind: "mist" }),
-    row(1_310_000, "death"),
-    row(1_530_000, "outcome", { msg: "lost" }),
-    row(1_545_000, "match_end"),
-    row(1_546_000, "end", { msg: "pagehide" }),
-    { timestamp: at(1_546_200), t: null, n: "room_leave", svc: "signaling", at_page: null, kind: null, msg: null, stack: null, lobby: "3f2504e0-4f89-41d3-9a0c-0305e82c3301", build: "9557492d" },
-    { timestamp: at(1_546_300), t: null, n: "room_end", svc: "signaling", at_page: null, kind: "host_left", msg: null, stack: null, lobby: "3f2504e0-4f89-41d3-9a0c-0305e82c3301", build: "9557492d" },
-  ].map((r) => ({ ...r, sid }));
+    row(0, "page", { kind: "landing" }),
+    row(1_900, "invite"),
+    row(2_000, "page", { kind: "party" }),
+    signal(2_500, "room_create", { peers: 1, role: "host" }),
+    row(2_600, "lobby_joined", { kind: "invite", role: "host", members: 1, ms: 480, lobby: LOBBY }),
+    row(2_700, "invite_copied", { lobby: LOBBY }),
+    signal(31_000, "room_join", { peers: 2, role: "client" }),
+    row(31_200, "lobby_change", { members: 2, joined: 1, left: 0, lobby: LOBBY }),
+    row(41_000, "play", { party: 2, lobby: LOBBY }),
+    row(41_100, "page", { kind: "game", lobby: LOBBY }),
+    row(46_900, "load", { tier: "high", engine: "webgpu", source: "choice", decideMs: 12, introMs: 102, engineMs: 410, buildMs: 2084, lobby: LOBBY }),
+    row(52_400, "ready", { ms: 6100, lobby: LOBBY }),
+    row(52_500, "match_start", { role: "host", party: 2, ...inMatch }),
+    row(52_600, "intro", { reason: "stepOut", ...inMatch }),
+    row(54_500, "pos", { tick: 120, x: -338.1, z: 0.2, p: 0.001, hp: 100, ...inMatch }),
+    row(54_500, "edge", { edge: 0, kind: "stem", p: 0.001, ...inMatch }),
+    row(82_500, "hb", { fps: 59, worst: 48, stalls: 0, rtt: 41, p: 0.02, ...inMatch }),
+    row(190_000, "act", { act: "wet", p: 0.1, tick: 1445, ...inMatch }),
+    row(260_000, "visibility", { state: "hidden", ...inMatch }),
+    row(275_000, "visibility", { state: "visible", ...inMatch }),
+    row(420_000, "act", { act: "dusk", p: 0.3, tick: 7698, ...inMatch }),
+    row(421_000, "lamp", { on: true, p: 0.31, tick: 7720, ...inMatch }),
+    row(601_000, "error", { where: "game", kind: "console", msg: "WebGPU: the renderer could not be built on it; building it on WebGL2.", stack: "Error: pipeline\n    at https://games.csarko.sh/dayhike/assets/index-CJQw8Dxw.js:2:5", ...inMatch }),
+    row(601_100, "engine_failed", { reason: "pipeline", ...inMatch }),
+    row(601_300, "tier_change", { from: "high", to: "medium", source: "fallback", fellBack: true, ...inMatch }),
+    row(640_000, "act", { act: "mist", p: 0.4, tick: 11_600, ...inMatch }),
+    row(1_250_000, "hollow_seen", { p: 0.88, tick: 16_878, ...inMatch }),
+    row(1_310_000, "death", { cause: "hollow", p: 0.925, phase: "climb", near: 1, x: 652.3, z: 322.1, tick: 19_453, ...inMatch }),
+    row(1_530_000, "outcome", { result: "lost", self: "dead", alive: 0, players: 2, p: 0.93, tick: 31_552, ...inMatch }),
+    row(1_545_000, "match_end", { p: 0.93, ended: true, dead: true, ...inMatch }),
+    row(1_545_500, "page", { kind: "landing", lobby: LOBBY }),
+    row(1_545_800, "lobby_end", { reason: "left", members: 2 }),
+    row(1_546_000, "end", { reason: "pagehide", dur: 1_546_000, trouble: 1, failed: 0, dropped: 0, sent: 52 }),
+    signal(1_546_200, "room_leave", { host: true, peers: 1 }),
+    signal(1_546_300, "room_end", { reason: "host_left", lifeMs: 1_543_800, peers: 1 }),
+  ];
 }
+
+/** A visitor's sessions: the trail three times over, on three days, as the sample visitor's. */
+function visitor(): Row[] {
+  return [...session("s3f8a", 2 * DAY), ...session("s41b2", DAY + 3_600_000), ...session("s1000", 0)].filter((r) => r.svc === "telemetry");
+}
+
+/** A match's sessions: the host's trail and a follower's, side by side. */
+function match(): Row[] {
+  const follower = session("s3f8a", -30_000)
+    .filter((r) => r.svc === "telemetry" && r.n !== "invite" && r.n !== "invite_copied")
+    .map((r) => (r.n === "match_start" || r.n === "lobby_joined" ? { ...r, row_json: str(r.row_json).replace('"role":"host"', '"role":"client"') } : r));
+  return [...session("s1000", 0), ...follower].sort((a, b) => Date.parse(str(a.timestamp)) - Date.parse(str(b.timestamp)));
+}
+
+const str = (v: unknown): string => (v === null || v === undefined ? "" : String(v));
 
 /** A query's rows cut to the range, by the date column each carries. */
 function within(rows: Row[], column: string, range: Range): Row[] {
@@ -277,8 +430,8 @@ function within(rows: Row[], column: string, range: Range): Row[] {
 }
 
 export function sampleSource(): Source {
-  const tables: Record<QueryName, () => Row[]> = { funnel, lobbies, progress, errors, health, paths };
-  const dated: Partial<Record<QueryName, string>> = { lobbies: "day", progress: "started_at", errors: "last_seen", funnel: "last_seen" };
+  const tables: Record<QueryName, () => Row[]> = { funnel, lobbies, progress, errors, health, paths, kpis, visitors };
+  const dated: Partial<Record<QueryName, string>> = { lobbies: "day", progress: "started_at", errors: "last_seen", funnel: "last_seen", visitors: "last_seen" };
   return {
     kind: "sample",
     query: (name, range) => {
@@ -288,5 +441,7 @@ export function sampleSource(): Source {
     },
     live: () => Promise.resolve(live()),
     session: (sid) => Promise.resolve(session(sid)),
+    visitor: () => Promise.resolve(visitor()),
+    match: () => Promise.resolve(match()),
   };
 }

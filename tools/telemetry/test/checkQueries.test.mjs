@@ -8,7 +8,7 @@ describe('checkQueries', () => {
     const seen = [];
     const problems = await checkQueries(queries, 'p', 'd', async (sql, params) => {
       seen.push({ sql, params });
-      if (sql.includes('WITH events AS')) return;
+      if (sql.includes('WITH real AS')) return;
       throw new Error(`Syntax error at [1:1]`);
     });
     for (const { sql } of seen) {
@@ -16,8 +16,10 @@ describe('checkQueries', () => {
       expect(sql).not.toContain('global.dayhike-telemetry');
       expect(sql).not.toContain('-- range');
       expect(sql).not.toContain("'SID'");
+      expect(sql).not.toContain("'VID'");
+      expect(sql).not.toContain("'GAME'");
     }
-    expect(problems).toEqual(['lobbies.sql: Syntax error at [1:1]', 'paths.sql: Syntax error at [1:1]', 'session.sql: Syntax error at [1:1]']);
+    expect(problems).toEqual(['match.sql: Syntax error at [1:1]', 'session.sql: Syntax error at [1:1]', 'visitor.sql: Syntax error at [1:1]']);
   });
 
   it('names no reserved word as a table alias in any saved query', () => {

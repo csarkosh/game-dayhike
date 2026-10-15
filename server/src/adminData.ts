@@ -12,7 +12,7 @@
 import { BigQuery } from "@google-cloud/bigquery";
 import type { AdminData, Json, LiveView, Row } from "./admin.js";
 import { KPI_WEEKS, shapeKpis } from "./adminKpis.js";
-import { forBigQuery, readQuery, type QueryName } from "./adminQueries.js";
+import { forBigQuery, readQuery, type LookupName, type QueryName } from "./adminQueries.js";
 import type { Store } from "./store.js";
 
 export type AdminDataOptions = {
@@ -44,7 +44,7 @@ export function plain(value: unknown): Json {
 export function createAdminData(options: AdminDataOptions): AdminData {
   const bq = new BigQuery({ projectId: options.projectId });
   const now = options.now ?? (() => Date.now());
-  const run = async (name: QueryName | "session", values: Record<string, number | string>): Promise<Row[]> => {
+  const run = async (name: QueryName | LookupName, values: Record<string, number | string>): Promise<Row[]> => {
     const prepared = forBigQuery(readQuery(name, options.queriesDir), options.projectId, options.dataset);
     const params: Record<string, number | string> = {};
     for (const p of prepared.params) params[p] = values[p] ?? "";
@@ -67,7 +67,8 @@ export function createAdminData(options: AdminDataOptions): AdminData {
   };
   return {
     query: (name, days) => run(name, { days }),
-    session: (sid) => run("session", { sid }),
+    // Each lookup's file names its parameter after its id (`sid`, `vid`, `game`).
+    lookup: (name, id) => run(name, { sid: id, vid: id, game: id }),
     live,
     // The index card: the `kpis` query over the weeks its trends span, and the
     // lobbies open now from the same store the live view reads.

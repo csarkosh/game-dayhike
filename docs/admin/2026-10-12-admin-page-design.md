@@ -182,3 +182,64 @@ hit an error more than doubled week over week and is above 5%, a warning when it
 otherwise, with the numbers in the note. The query is a saved query like the others
 (`/admin/query/kpis` serves its rows too), so the deploy's dry run covers it; its range line
 reads 84 days when pasted, and the server's rewrite now takes whatever days a range line says.
+
+## 7. The trail, the visitors and the definitions (amended 2026-10-15)
+
+*The timeline design (`../telemetry/2026-10-15-timeline-design.md`, §3) fixed the queries
+and this page together: one exclusion, each definition once, New York everywhere, and a
+session read as a trail. What changed here:*
+
+**One exclusion, in every query.** Each query over a range begins with the same `real`
+CTE (`tools/telemetry/queries/README.md`): the deploy's verification rows and rooms, the
+owner's test browsers (`tester`), every session of the README's stills shoot (a `cmd` row) and
+headless browsers (a SwiftShader GPU) are out of every number on this page. The owner's own
+play is dropped at the server by address. The lookups by id exclude nothing.
+
+**New York.** The range row scopes a query to New York calendar days: "Today" is that
+calendar day (midnight to now, New York), "7 days" today and the six before, and the days,
+weeks and windows the queries answer are by that calendar. Beside every "12 min ago" the page
+shows the New York wall clock (`Oct 14, 7:05 PM`), with the full moment as the title.
+
+**The cards.**
+
+| Card | What it says now |
+|---|---|
+| From landing to the end | The headline is the funnel's `all` row, every build together, with the stages nested per session (a session counts at a stage only where it counted at the one before); the builds are the breakdown in the table. |
+| Lobbies a day | As before, by New York day, without the rooms a deploy's verification opens. |
+| Visitors | New. Distinct browsers (`vid`) in the range and how many came back (seen on more than one New York day in the last ninety), from `kpis.sql`'s range row, the last seven days against the seven before from its window rows; and the browsers themselves from `visitors.sql`, the most recently seen first, each a link to its sessions. |
+| How far parties got | One line a match (a distinct `game` with a host's `match_start`), not one a session: the host's session, the players of the party, the farthest climb, the acts, the end (the outcome and whether anyone died, else the first way out, else still playing or ended silently) and the length (the longest of its sessions' `match_end` or `outcome` minus `match_start`). The players link to the match's sessions. |
+| What went wrong | Errors before warnings; the subtitle counts distinct errors and the distinct sessions they touched, and the same for warnings, so a session with two problems is one session. |
+| Load times and frame rates | Clean is of the sessions that said goodbye; unknown (no `end` row) is its own number; of the sessions that played and never said goodbye, those whose tab went hidden and never came back went to the background, the rest ended silently. |
+| Where parties went | As before, over the shared exclusion. |
+
+**The session drawer is a trail** (`client/src/admin/timeline.ts`, `views.ts`). One time
+axis, the row's `timestamp` (the event's own time from the 2026-10-15 server build on), shown
+as the New York wall clock with a Δt column, the time since the step before. The payload is a
+line of text per event name: the outcome's result and who was alive, a death's cause and
+climb, a lobby's reason, a tier change, the load's laps, the heartbeat's fps and rtt, the end's
+reason, length and trouble, Play's party, `match_start`'s role and party, a settings choice, a
+download's platform, a visibility state; an unknown event lists what it carried beyond the
+envelope; an error's stack is behind a fold. Segment headings (Landing, Lobby, Loading, Match,
+After) stand where the events open them: a lobby begun or joined opens the lobby, Play the
+loading, `match_start` the match, a way out of it the after. The route's samples (`pos`,
+`edge`, `fork`, `place`, `lamp`, the trail's transitions) are folded until asked for, since the
+paths card draws them. Above the trail: the New York date, the session's length, its build,
+the envelope's facts (machine, GPU, viewport, language, zone, path, referrer, tester,
+webdriver), and the visitor id.
+
+**Two more routes and two more drawers.** `GET /admin/visitor/<vid>` runs `visitor.sql`,
+every row of every session of one browser; `GET /admin/match/<game>` runs `match.sql`, every
+row of every session that was in one match. Both take the same id shape as the session route
+and answer 404 to anything else. On the page, the visitor id in a trail's head (and in the
+Visitors card) opens the visitor's sessions as a list, one line a session (when it began in New
+York, its role, build, rows, length, how it ended, errors, its match), each opening its trail
+over the list; the lobby's heading in a trail and the players column in the matches table
+open the match's sessions the same way. `?preview&visitor=<id>` and `?preview&match=<id>`
+open the sample lists, as `?preview&session=<id>` opens the sample trail.
+
+**The lookups read a window.** `session.sql`, `visitor.sql` and `match.sql` first find the
+span of the id's own rows, then read the rows between a day before it and a day after, so a
+lookup scans those days and not the whole table; the session's lobby rows come from the same
+window. Each selects the payload columns the design names (`vid`, `game`, `lobby`, `reason`,
+`result`, `act`, `phase`, `tier`, `fps`, `dur`, `trouble`, `msg`, `p`) and the whole row as
+`row_json`, which is what the trail's text is read from.

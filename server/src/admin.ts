@@ -4,13 +4,17 @@
  * that host's index reads of this app, behind the allowlist (`adminAuth.ts`).
  *
  *   GET /admin/live                  the open rooms and the instances up
- *   GET /admin/query/<name>?days=N   one of the saved queries, over N days
+ *   GET /admin/query/<name>?days=N   one of the saved queries, over the last N
+ *                                    New York calendar days (1 is today)
  *   GET /admin/session/<sid>         one session's timeline
+ *   GET /admin/visitor/<vid>         every session of one browser, in order
+ *   GET /admin/match/<game>          every session of one match, side by side
  *   GET /admin/kpis                  the index card: four numbers with their
  *                                    trends, and a health reading (`adminKpis.ts`)
  *
  * Each answers JSON, or 401 to an account that is not on the list, 404 to a query
- * that does not exist, and 429 past the per-address budget. The origins the
+ * that does not exist (or an id that is not the shape of one), and 429 past the
+ * per-address budget. The origins the
  * page may call from are the server's one list (`admission.ts`
  * `DEFAULT_ALLOWED_ORIGINS`, or `ALLOWED_ORIGINS`), the same one the socket
  * and the batch route check, so the admin host is listed once. The data behind
@@ -22,7 +26,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { clientIpOf, isAllowedOrigin } from "./admission.js";
 import type { AdminAuth } from "./adminAuth.js";
 import type { Kpis } from "./adminKpis.js";
-import { isQueryName, type QueryName } from "./adminQueries.js";
+import { isQueryName, type LookupName, type QueryName } from "./adminQueries.js";
 import type { PostLimiter } from "./telemetry.js";
 
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
@@ -37,7 +41,8 @@ export type LiveView = {
 export interface AdminData {
   live(): Promise<LiveView>;
   query(name: QueryName, days: number): Promise<Row[]>;
-  session(sid: string): Promise<Row[]>;
+  /** One session's rows and its lobby's, one visitor's every session, or one match's every session (`session.sql`, `visitor.sql`, `match.sql`). */
+  lookup(name: LookupName, id: string): Promise<Row[]>;
   /** The index card's numbers: the `kpis` query shaped, and the open lobbies from the live view. */
   kpis(): Promise<Kpis>;
 }
@@ -51,7 +56,10 @@ export type AdminRouteOptions = {
 };
 
 const DAYS = new Set([1, 7, 30, 90]);
-const SID_RE = /^[A-Za-z0-9-]{1,64}$/;
+/** A session, visitor or game id: what the page makes (a UUID, or `boot-` and one), and nothing that is not. */
+const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
+/** The lookups' routes, each by the name of its saved query. */
+const LOOKUPS: Record<string, LookupName> = { session: "session", visitor: "visitor", match: "match" };
 
 function answer(res: ServerResponse, status: number, headers: Record<string, string>, body: string, type = "text/plain"): void {
   res.writeHead(status, { "content-type": type, "content-length": String(Buffer.byteLength(body)), "cache-control": "no-store", ...headers });
@@ -117,11 +125,12 @@ async function handle(data: AdminData, path: string, search: URLSearchParams): P
     const days = Number(search.get("days") ?? "7");
     return { rows: await data.query(name, DAYS.has(days) ? days : 7) };
   }
-  const session = /^\/admin\/session\/([^/]+)$/.exec(path);
-  if (session !== null) {
-    const sid = decodeURIComponent(session[1] ?? "");
-    if (!SID_RE.test(sid)) return null;
-    return { rows: await data.session(sid) };
+  const lookup = /^\/admin\/(session|visitor|match)\/([^/]+)$/.exec(path);
+  if (lookup !== null) {
+    const name = LOOKUPS[lookup[1] ?? ""];
+    const id = decodeURIComponent(lookup[2] ?? "");
+    if (name === undefined || !ID_RE.test(id)) return null;
+    return { rows: await data.lookup(name, id) };
   }
   return null;
 }

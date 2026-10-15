@@ -6,8 +6,9 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 
 describe("matchEnd", () => {
   it("names the outcome, and a death at the end", () => {
-    expect(matchEnd({ result: "won", self_at_end: "alive" }, NOW)).toEqual({ text: "won", tone: "won" });
-    expect(matchEnd({ result: "lost", self_at_end: "dead", left_by: "match_end" }, NOW)).toEqual({ text: "lost, died", tone: "lost" });
+    expect(matchEnd({ result: "won", died: null }, NOW)).toEqual({ text: "won", tone: "won" });
+    expect(matchEnd({ result: "lost", died: true, left_by: "match_end" }, NOW)).toEqual({ text: "lost, died", tone: "lost" });
+    expect(matchEnd({ result: "won", died: false }, NOW)).toEqual({ text: "won", tone: "won" });
   });
 
   it("names the way out when there was no outcome", () => {

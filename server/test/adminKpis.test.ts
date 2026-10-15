@@ -17,10 +17,12 @@ describe("weekStarts", () => {
     expect(starts[0]).toBe("2026-07-27");
   });
 
-  it("finds the Monday from any day of the week, Sunday included", () => {
+  it("finds the Monday from any day of the week, Sunday included, by the New York date", () => {
     expect(weekStarts(Date.UTC(2026, 9, 18, 23), 1)).toEqual(["2026-10-12"]);
     expect(weekStarts(Date.UTC(2026, 9, 14), 1)).toEqual(["2026-10-12"]);
-    expect(weekStarts(Date.UTC(2026, 9, 19), 1)).toEqual(["2026-10-19"]);
+    // Monday 00:00 UTC is still Sunday evening in New York, where the week has not turned.
+    expect(weekStarts(Date.UTC(2026, 9, 19), 1)).toEqual(["2026-10-12"]);
+    expect(weekStarts(Date.UTC(2026, 9, 19, 5), 1)).toEqual(["2026-10-19"]);
   });
 });
 

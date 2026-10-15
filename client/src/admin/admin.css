@@ -158,4 +158,29 @@ details.table summary { color: var(--faint); font-size: 12px; cursor: pointer; }
 .drawer-top h2 { font-size: 14px; font-weight: 600; margin: 0; }
 .drawer pre.stack { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--ink-2); margin: 6px 0 0; }
 .drawer details summary { cursor: pointer; }
-a[data-sid] { text-decoration: underline dotted; }
+.drawer .sub { margin-bottom: 6px; }
+.drawer .trace-toggle { display: inline-block; color: var(--faint); font-size: 12px; margin: 4px 0 8px; cursor: pointer; }
+.drawer .trace-toggle input { accent-color: var(--series); margin: 0 4px 0 0; vertical-align: -1px; }
+a[data-sid], a[data-vid], a[data-game] { text-decoration: underline dotted; }
+
+/* The trail: the New York clock and the step since the row before in the mono face,
+   narrow; the event and its text take the rest and wrap. A segment's heading is a row
+   of its own, set off from the steps; the route's samples, when shown, are dimmed. At
+   a phone's width the drawer is the viewport and the four columns still fit: the clock
+   and the delta are about 11 characters together. */
+table.trail { font-size: 12.5px; }
+table.trail th, table.trail td { padding: 4px 6px; }
+table.trail td.when, table.trail td.dt { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); white-space: nowrap; }
+table.trail td.dt { text-align: right; }
+table.trail td.what { overflow-wrap: anywhere; }
+table.trail tr.segment td { padding: 12px 6px 4px; color: var(--ink); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--axis); }
+table.trail tr.segment td .mono, table.trail tr.segment td a { text-transform: none; letter-spacing: 0; font-weight: 500; font-family: var(--mono); font-size: 11.5px; }
+table.trail tr.trace td { color: var(--faint); }
+table.trail tr.signal td { color: var(--ink-2); font-style: italic; }
+table.trail tr.signal td .status { font-style: normal; }
+@media (max-width: 480px) {
+  .drawer { padding: 12px 10px; }
+  table.trail { font-size: 12px; }
+  table.trail th, table.trail td { padding: 4px 4px; }
+  .tile .value { font-size: 22px; }
+}

@@ -16,14 +16,15 @@ import { el } from "./charts.js";
 import { sampleSource } from "./sample.js";
 import { remoteSource, type QueryName, type Range, type Row, type Source } from "./source.js";
 import { accountMenu, requireSession, UNAUTHORIZED, type User } from "./auth.js";
-import { errorsView, failedCard, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer, waitingCard } from "./views.js";
+import { errorsView, failedCard, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer, sessionsDrawer, visitorsView, waitingCard } from "./views.js";
 import { pathsCard, trailBuilder } from "./paths.js";
 
-const RANGES: { days: Range; label: string }[] = [
-  { days: 1, label: "Today" },
-  { days: 7, label: "7 days" },
-  { days: 30, label: "30 days" },
-  { days: 90, label: "90 days" },
+/** The ranges, in New York calendar days back from today: "Today" is that calendar day, "7 days" today and the six before. */
+const RANGES: { days: Range; label: string; title: string }[] = [
+  { days: 1, label: "Today", title: "The New York calendar day" },
+  { days: 7, label: "7 days", title: "Today and the six New York days before" },
+  { days: 30, label: "30 days", title: "Today and the 29 New York days before" },
+  { days: 90, label: "90 days", title: "Today and the 89 New York days before" },
 ];
 const LIVE_EVERY_MS = 10_000;
 
@@ -41,6 +42,27 @@ if (theme === "light" || theme === "dark") document.documentElement.dataset.them
 function notice(title: string, line: string): void {
   root!.replaceChildren(el("div", { class: "gate" }, el("h1", {}, title), el("p", { class: "note" }, line)));
 }
+
+/**
+ * The source the drawers read from: the page shown last. A session, visitor or
+ * match id anywhere on the page or in a drawer opens its drawer over whatever
+ * is open; the listener is on the document, once, since the drawers are
+ * appended to the body and the page can be shown more than once (a sign-in
+ * after a sign-out).
+ */
+let drawerSource: Source | null = null;
+document.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || drawerSource === null) return;
+  const link = target.closest<HTMLElement>("[data-sid], [data-vid], [data-game]");
+  if (link === null) return;
+  event.preventDefault();
+  const source = drawerSource;
+  const { sid, vid, game } = link.dataset;
+  if (sid !== undefined) document.body.append(sessionDrawer(sid, source.session(sid)));
+  else if (vid !== undefined) document.body.append(sessionsDrawer("visitor", vid, source.visitor(vid)));
+  else if (game !== undefined) document.body.append(sessionsDrawer("match", game, source.match(game)));
+});
 
 /** The admin routes' base: the telemetry service, whose `/t` is the batches' route. */
 function adminBase(): string | null {
@@ -67,8 +89,9 @@ function dashboard(source: Source, account: User | null): () => void {
   // refresh stops through the UNAUTHORIZED listener and the auth state change.
   const accountHost = document.querySelector<HTMLElement>("#account");
   if (accountHost !== null) accountMenu(accountHost, { account, preview: source.kind === "sample" });
+  drawerSource = source;
   const buttons = RANGES.map((r) => {
-    const b = el("button", { type: "button", "aria-pressed": String(r.days === range) }, r.label);
+    const b = el("button", { type: "button", "aria-pressed": String(r.days === range), title: r.title }, r.label);
     b.addEventListener("click", () => {
       range = r.days;
       for (const other of buttons) other.setAttribute("aria-pressed", String(other === b));
@@ -76,21 +99,10 @@ function dashboard(source: Source, account: User | null): () => void {
     });
     return b;
   });
-  const filters = el("div", { class: "filters" }, el("span", { class: "label" }, "Range"), ...buttons);
+  const filters = el("div", { class: "filters" }, el("span", { class: "label", title: "New York calendar days" }, "Range"), ...buttons);
   const liveSlot = el("div", { class: "grid" });
   const grid = el("div", { class: "grid" });
   root!.replaceChildren(filters, liveSlot, el("div", { style: "height:16px" }), grid);
-  // A session id anywhere on the page opens its timeline in a drawer.
-  root!.addEventListener("click", (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const link = target.closest<HTMLElement>("[data-sid]");
-    if (link === null || link.dataset.sid === undefined) return;
-    event.preventDefault();
-    const sid = link.dataset.sid;
-    const drawer = sessionDrawer(sid, source.session(sid));
-    document.body.append(drawer);
-  });
 
   async function refreshLive(): Promise<void> {
     try {
@@ -100,18 +112,19 @@ function dashboard(source: Source, account: User | null): () => void {
     }
   }
 
-  // The six cards, one a query: each is on the page at once as a skeleton the
-  // shape of what it waits for, fills on its own as its query answers, and
-  // shows its own error, so a slow or failed query holds only its card. The
-  // title and copy here are the waiting card's; the rendered card brings its
-  // own, with what the rows say.
-  const CARDS: { name: QueryName; title: string; sub: string; cls: string; shape: { tiles?: number; chart?: boolean; lines?: number }; render(rows: Row[]): HTMLElement }[] = [
-    { name: "funnel", title: "From landing to the end", sub: "Sessions by what they reached", cls: "half", shape: { chart: true, lines: 3 }, render: funnelView },
-    { name: "lobbies", title: "Lobbies a day", sub: "From signaling's own rows", cls: "half", shape: { chart: true, lines: 1 }, render: lobbiesView },
-    { name: "progress", title: "How far parties got", sub: "Each match's farthest climb, 0 at the trailhead and 1 at the crest; the night falls from 30%", cls: "", shape: { chart: true, lines: 4 }, render: progressView },
-    { name: "errors", title: "What went wrong", sub: "Problems in this range, grouped by their first hundred characters", cls: "", shape: { lines: 4 }, render: errorsView },
-    { name: "health", title: "Load times and frame rates", sub: "By build, tier and engine; the start is the tier's decision, the engine and the build, the ready is the world's first whole frame", cls: "", shape: { tiles: 4, lines: 3 }, render: healthView },
-    { name: "paths", title: "Where parties went", sub: "One world at a time: the trail rebuilt from its seed, each session's path over it", cls: "", shape: { chart: true, lines: 2 }, render: (rows) => pathsCard(rows, trailFor) },
+  // The seven cards, each over one query or two: each is on the page at once
+  // as a skeleton the shape of what it waits for, fills on its own as its
+  // queries answer, and shows its own error, so a slow or failed query holds
+  // only its card. The title and copy here are the waiting card's; the
+  // rendered card brings its own, with what the rows say.
+  const CARDS: { names: QueryName[]; title: string; sub: string; cls: string; shape: { tiles?: number; chart?: boolean; lines?: number }; render(rows: Row[][]): HTMLElement }[] = [
+    { names: ["funnel"], title: "From landing to the end", sub: "Sessions by what they reached, each stage of the one before", cls: "half", shape: { chart: true, lines: 3 }, render: ([rows = []]) => funnelView(rows) },
+    { names: ["lobbies"], title: "Lobbies a day", sub: "From signaling's own rows", cls: "half", shape: { chart: true, lines: 1 }, render: ([rows = []]) => lobbiesView(rows) },
+    { names: ["kpis", "visitors"], title: "Visitors", sub: "Distinct browsers in this range, and how many came back on another day", cls: "", shape: { tiles: 3, lines: 3 }, render: ([kpis = [], visitors = []]) => visitorsView(kpis, visitors) },
+    { names: ["progress"], title: "How far parties got", sub: "One line a match; each match's farthest climb, 0 at the trailhead and 1 at the crest; the night falls from 30%", cls: "", shape: { chart: true, lines: 4 }, render: ([rows = []]) => progressView(rows) },
+    { names: ["errors"], title: "What went wrong", sub: "Problems in this range, grouped by their first hundred characters", cls: "", shape: { lines: 4 }, render: ([rows = []]) => errorsView(rows) },
+    { names: ["health"], title: "Load times and frame rates", sub: "By build, tier and engine; the start is the tier's decision, the engine and the build, the ready is the world's first whole frame", cls: "", shape: { tiles: 5, lines: 3 }, render: ([rows = []]) => healthView(rows) },
+    { names: ["paths"], title: "Where parties went", sub: "One world at a time: the trail rebuilt from its seed, each session's path over it", cls: "", shape: { chart: true, lines: 2 }, render: ([rows = []]) => pathsCard(rows, trailFor) },
   ];
   const slots = CARDS.map((c) => waitingCard(c.title, c.sub, c.cls, c.shape));
   grid.replaceChildren(...slots);
@@ -127,7 +140,7 @@ function dashboard(source: Source, account: User | null): () => void {
         if (slot.querySelector(".skeleton") === null) slot.classList.add("loading");
         let next: HTMLElement;
         try {
-          const rows = await source.query(c.name, range);
+          const rows = await Promise.all(c.names.map((name) => source.query(name, range)));
           if (token !== loading) return;
           next = c.render(rows);
         } catch (error) {
@@ -151,9 +164,14 @@ function dashboard(source: Source, account: User | null): () => void {
 if (preview) {
   const sample = sampleSource();
   dashboard(sample, null);
-  // `?preview&session=<id>` opens a session's drawer at once, for looking at it.
-  const open = params.get("session");
-  if (open !== null) document.body.append(sessionDrawer(open, sample.session(open)));
+  // `?preview&session=<id>` opens a session's drawer at once, for looking at
+  // it; `&visitor=<id>` and `&match=<id>` the lists of sessions.
+  const session = params.get("session");
+  if (session !== null) document.body.append(sessionDrawer(session, sample.session(session)));
+  const visitor = params.get("visitor");
+  if (visitor !== null) document.body.append(sessionsDrawer("visitor", visitor, sample.visitor(visitor)));
+  const match = params.get("match");
+  if (match !== null) document.body.append(sessionsDrawer("match", match, sample.match(match)));
 } else {
   const base = adminBase();
   if (base === null) {

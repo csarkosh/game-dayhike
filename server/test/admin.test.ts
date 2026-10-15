@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import { createLocalJWKSet } from "jose";
 import { createAdminAuth, parseAllowlist } from "../src/adminAuth.js";
-import { forBigQuery, QUERY_NAMES, readQuery } from "../src/adminQueries.js";
+import { forBigQuery, LOOKUP_NAMES, QUERY_NAMES, readQuery } from "../src/adminQueries.js";
 import type { AdminData, LiveView } from "../src/admin.js";
 import { plain } from "../src/adminData.js";
 import { shapeKpis } from "../src/adminKpis.js";
@@ -72,7 +72,7 @@ describe("createAdminAuth", () => {
 });
 
 describe("the saved queries for BigQuery", () => {
-  it("rename the table, parameterise the range, and keep the session's placeholder for the session query", () => {
+  it("rename the table, parameterise the range, and turn each lookup's placeholder into its parameter", () => {
     for (const name of QUERY_NAMES) {
       const out = forBigQuery(readQuery(name, QUERIES), "fps-csarko", "dayhike_telemetry");
       expect(out.sql).toContain("`fps-csarko.dayhike_telemetry._AllLogs`");
@@ -81,10 +81,33 @@ describe("the saved queries for BigQuery", () => {
       expect(out.sql).not.toContain("-- range");
       expect(out.params).toEqual(["days"]);
     }
-    const session = forBigQuery(readQuery("session", QUERIES), "fps-csarko", "dayhike_telemetry");
-    expect(session.sql).toContain("= @sid");
-    expect(session.sql).not.toContain("'SID'");
-    expect(session.params).toEqual(["sid"]);
+    const placeholders = { session: ["'SID'", "@sid", "sid"], visitor: ["'VID'", "@vid", "vid"], match: ["'GAME'", "@game", "game"] } as const;
+    for (const name of LOOKUP_NAMES) {
+      const [literal, param, key] = placeholders[name];
+      const out = forBigQuery(readQuery(name, QUERIES), "fps-csarko", "dayhike_telemetry");
+      expect(out.sql).toContain(`= ${param}`);
+      expect(out.sql).not.toContain(literal);
+      expect(out.sql).not.toContain("global.dayhike-telemetry");
+      // The placeholder stands twice in each file (the span, then the rows); the parameter is named once.
+      expect(out.params).toEqual([key]);
+    }
+  });
+
+  it("share one exclusion, the same text in every query over a range", () => {
+    const block = (sql: string): string => sql.slice(sql.indexOf("WITH real AS ("), sql.indexOf("\n),\n") + 4);
+    const first = block(readQuery("funnel", QUERIES));
+    expect(first).toContain("!= 'verify'");
+    expect(first).toContain("IFNULL(JSON_VALUE(json_payload.tester), '') != 'true'");
+    expect(first).toContain("IFNULL(JSON_VALUE(json_payload.verify), '') != 'true'");
+    expect(first).toContain("NOT LIKE '%SwiftShader%'");
+    expect(first).toContain("JSON_VALUE(json_payload.n) = 'cmd'");
+    for (const name of QUERY_NAMES) expect(block(readQuery(name, QUERIES)), `${name}.sql's exclusion differs`).toBe(first);
+  });
+
+  it("scope a range to New York calendar days, so one day is today there", () => {
+    for (const name of QUERY_NAMES) {
+      expect(readQuery(name, QUERIES)).toContain("TIMESTAMP_SUB(TIMESTAMP(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), 'America/New_York'), INTERVAL");
+    }
   });
 
   it("take the range line's days whatever the file reads when pasted", () => {
@@ -120,8 +143,8 @@ describe("the admin routes", () => {
       asked.push(`${name}:${days}`);
       return Promise.resolve([{ build: "abc", n: 1 }]);
     },
-    session: (sid) => {
-      asked.push(`session:${sid}`);
+    lookup: (name, id) => {
+      asked.push(`${name}:${id}`);
       return Promise.resolve([{ n: "page", t: 0 }]);
     },
     kpis: () => {
@@ -159,10 +182,14 @@ describe("the admin routes", () => {
     expect(bad.status).toBe(200);
     const s = await get("/admin/session/s-1", bearer);
     expect(await s.json()).toEqual({ rows: [{ n: "page", t: 0 }] });
+    const v = await get("/admin/visitor/v-1", bearer);
+    expect(await v.json()).toEqual({ rows: [{ n: "page", t: 0 }] });
+    const m = await get("/admin/match/g-1", bearer);
+    expect(await m.json()).toEqual({ rows: [{ n: "page", t: 0 }] });
     const k = await get("/admin/kpis", bearer);
     expect(k.status).toBe(200);
     expect(await k.json()).toEqual(kpis);
-    expect(asked).toEqual(["funnel:30", "errors:7", "session:s-1", "kpis"]);
+    expect(asked).toEqual(["funnel:30", "errors:7", "session:s-1", "visitor:v-1", "match:g-1", "kpis"]);
   });
 
   it("answers the shell's local preview too, with its own origin echoed", async () => {
@@ -180,6 +207,9 @@ describe("the admin routes", () => {
     const bearer = `Bearer ${await token({ email: "me@example.com" })}`;
     expect((await get("/admin/query/nope", bearer)).status).toBe(404);
     expect((await get("/admin/session/not%20ok", bearer)).status).toBe(404);
+    expect((await get("/admin/visitor/not%20ok", bearer)).status).toBe(404);
+    expect((await get("/admin/match/x%2Fy", bearer)).status).toBe(404);
+    expect((await get("/admin/player/p-1", bearer)).status).toBe(404);
     expect((await get("/admin/other", bearer)).status).toBe(404);
   });
 

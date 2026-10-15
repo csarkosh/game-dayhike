@@ -9,9 +9,11 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The server's rewrites, in one place for the check: the dataset's view, and
- * the two parameters. The range line's days are whatever the file reads when
- * pasted (seven for most, twelve weeks for `kpis.sql`), as the server takes them.
+ * The server's rewrites, in one place for the check: the dataset's view, the
+ * range and the three lookups' ids. The range line's days are whatever the
+ * file reads when pasted (seven for most, twelve weeks for `kpis.sql`), as
+ * the server takes them; the session's `'SID'`, the visitor's `'VID'` and the
+ * match's `'GAME'` become parameters.
  */
 export function forBigQuery(sql, projectId, dataset) {
   const params = {};
@@ -21,9 +23,10 @@ export function forBigQuery(sql, projectId, dataset) {
     out = ranged;
     params.days = 7;
   }
-  if (out.includes("'SID' -- session")) {
-    out = out.replaceAll("'SID' -- session", '@sid');
-    params.sid = 'x';
+  for (const [marker, name] of [["'SID' -- session", 'sid'], ["'VID' -- visitor", 'vid'], ["'GAME' -- match", 'game']]) {
+    if (!out.includes(marker)) continue;
+    out = out.replaceAll(marker, `@${name}`);
+    params[name] = 'x';
   }
   return { sql: out, params };
 }

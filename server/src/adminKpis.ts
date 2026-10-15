@@ -5,15 +5,19 @@
  * §2.3): four numbers, each with the week before it and a sparkline of weekly
  * values, and one health reading.
  *
- *   sessions   sessions with a `page` row, the last 7 days against the 7 before
- *   matches    `match_start` rows, the same two windows
+ *   sessions   sessions with a `page` row, the last 7 New York days against
+ *              the 7 before
+ *   matches    matches (a distinct game with a host's `match_start`), the
+ *              same two windows
  *   clean      of the sessions that said goodbye (an `end` row), the share whose
  *              `trouble` was 0, as a percentage
  *   lobbies    rooms open now, from the live view; no history, so no trend
  *
  * The numbers come from one saved query (`tools/telemetry/queries/kpis.sql`),
- * which answers one row a period: an ISO week, by the week a session started,
- * and the two seven-day windows. This module only shapes those rows, so it is
+ * which answers one row a period: an ISO week, by the New York day a session
+ * started, the two seven-day windows, and the whole range (which the admin
+ * page's Visitors card reads, with the visitor counts the rows also carry;
+ * the card does not show them). This module only shapes those rows, so it is
  * pure over them and the clock, and tested with rows made in the test.
  */
 
@@ -73,12 +77,23 @@ function percent(part: number, whole: number): number | null {
   return Math.round((part / whole) * 1000) / 10;
 }
 
-/** The Mondays (UTC) of the last `weeks` ISO weeks, oldest first, the current week last, as `YYYY-MM-DD`. */
+/** The New York calendar date of a moment, as `[year, month, day]`, read the way the query labels its weeks. */
+const NY_DATE = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "numeric", day: "numeric" });
+function newYorkDate(ms: number): [number, number, number] {
+  const parts = NY_DATE.formatToParts(new Date(ms));
+  const part = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return [part("year"), part("month"), part("day")];
+}
+
+/** The Mondays of the last `weeks` ISO weeks by New York dates, oldest first, the current week last, as `YYYY-MM-DD`. */
 export function weekStarts(nowMs: number, weeks: number = KPI_WEEKS): string[] {
-  const today = new Date(nowMs);
-  // JavaScript counts Sunday as 0; an ISO week starts on Monday.
-  const sinceMonday = (today.getUTCDay() + 6) % 7;
-  const monday = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - sinceMonday);
+  const [year, month, day] = newYorkDate(nowMs);
+  // The date's weekday is a property of the date, so the arithmetic runs on a
+  // UTC midnight of that date. JavaScript counts Sunday as 0; an ISO week
+  // starts on Monday.
+  const today = Date.UTC(year, month - 1, day);
+  const sinceMonday = (new Date(today).getUTCDay() + 6) % 7;
+  const monday = today - sinceMonday * DAY_MS;
   return Array.from({ length: weeks }, (_, i) => new Date(monday - (weeks - 1 - i) * 7 * DAY_MS).toISOString().slice(0, 10));
 }
 
