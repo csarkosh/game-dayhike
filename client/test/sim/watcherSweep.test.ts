@@ -254,7 +254,7 @@ function sweep(token: string): Case[] {
  * admitted 25 792.
  */
 describe("the watcher on fifty seeds", () => {
-  it("stands only where every rule holds, and shows within 120 ticks on 913 of 936 stands", () => {
+  it("stands only where every rule holds, and shows within 120 ticks on 907 of 936 stands", () => {
     const cases: Case[] = [];
     for (let i = 0; i < 50; i++) cases.push(...sweep(`hollow${i}`));
     const shown = cases.filter((c) => c.shownAt !== -1);
@@ -279,22 +279,31 @@ describe("the watcher on fifty seeds", () => {
     ].join("\n");
     console.info(`[watcher sweep]\n${summary}`);
     expect(cases.length, summary).toBe(936);
-    expect(shown.length, summary).toBeGreaterThanOrEqual(913);
+    // 913 until 2026-10-15: the fallen logs collide, so a stand on a log or
+    // behind one is refused by the ground rule or its sightline; measured
+    // 907 shown and 71,276 admitted with them (the clearance 16,744, the
+    // ground 19,186, the slope 2,117, the corridor 3,078, the sightline
+    // 74,799), the same on two runs.
+    expect(shown.length, summary).toBeGreaterThanOrEqual(907);
     // 74,240 until 2026-10-04: a tree that would have fallen across a trail
     // stands dead beside it instead, and a snag is in a stand's way where a
     // log was not (74,228 admitted). 77,593 from 2026-10-10. 75,494 from
     // 2026-10-13: the walkable rock's layer is the ground the watcher
     // stands on (`sim/rockSurface.ts`), steeper under the plates, so the
     // ground and slope rules refuse more tries; every stand still shows.
-    expect(admitted, summary).toBeGreaterThanOrEqual(75400);
+    expect(admitted, summary).toBeGreaterThanOrEqual(71200);
     expect(refused.flee, summary).toBe(0);
     expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
     expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
     expect(bySlot.map((b) => `${b.slot} ${b.stands}`), summary).toEqual(["climb 0 200", "climb 0.25 200", "climb 0.5 200", "climb 0.75 200", "top fork 180"]);
-    const floors = [188, 197, 192, 200, 180];
+    // 2026-10-15: [188, 197, 192, 200, 180] shown before the logs collided;
+    // measured [186, 195, 192, 200, 178] with them.
+    const floors = [186, 195, 192, 200, 178];
     // 2026-10-13: [4184, 13490, 17944, 24856, 23077] before the walkable
     // rock's layer; measured [4184, 13122, 17374, 23424, 22926] with it.
-    const admittedFloors = [4184, 13100, 17300, 23400, 22900];
+    // 2026-10-15: measured [3744, 11774, 16756, 22924, 21614] with the logs
+    // colliding, the floors a little under each.
+    const admittedFloors = [3700, 11700, 16700, 22900, 21600];
     bySlot.forEach((b, i) => {
       expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
       expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);

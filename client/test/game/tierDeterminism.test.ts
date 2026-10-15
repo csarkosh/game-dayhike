@@ -77,12 +77,13 @@ describe("the tier is drawing only", () => {
     // The pass hash `groundGradient.test.ts` pins: the world with the car at
     // the pad and the board at the trail's entrance.
     // 2026-10-12: -190240058 before the cliff modules left the faces.
-    expect(bare.passHash).toBe(1527270963);
+    // 2026-10-15: 1527270963 before the fallen logs collided.
+    expect(bare.passHash).toBe(64181734);
     expect(bare.blades).toBe(null);
     const drawn = { low: run("low"), medium: run("medium"), high: run("high") };
     for (const got of [drawn.low, drawn.medium, drawn.high]) {
       expect(got.state).toBe(bare.state);
-      expect(got.passHash).toBe(1527270963);
+      expect(got.passHash).toBe(64181734);
     }
     expect([drawn.low.blades, drawn.medium.blades, drawn.high.blades]).toEqual([false, true, true]);
   }, timeLimit(120_000));

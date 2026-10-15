@@ -810,6 +810,9 @@ describe("the level id does not move", () => {
     // moves) that leaves no cliff collider in the digested chunks.
     // 2026-10-13: -1570667467 before the walkable rock's layer joined the
     // elevation pass's tunables (the player stands on it, `sim/rockSurface.ts`).
-    expect(passHash()).toBe(1527270963);
+    // 2026-10-15: 1527270963 before the fallen logs' chains of boxes joined the
+    // trees pass's tunables and its emitted boxes (a hiker climbs over a log
+    // or goes round it, never through, `sim/passes/trees.ts`).
+    expect(passHash()).toBe(64181734);
   });
 });
