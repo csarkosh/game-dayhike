@@ -193,7 +193,7 @@ describe("WGSL's uniformity analysis and the game's shaders", () => {
       // The ground blend's parallax and relief gates, and the road and trail
       // paints (`TERRAIN_UNIFORMITY_OFF`). The feature paint reads its table
       // and the shore atlas by `texelFetch`, which takes no derivative.
-      terrain: ["roadAsphalt", "terrainFloor", "terrainNormals", "terrainPebble", "terrainRAH", "trailSegs"],
+      terrain: ["roadAsphalt", "terrainFloor", "terrainNormals", "terrainPebble", "terrainRAH", "trailTable"],
     });
   });
 

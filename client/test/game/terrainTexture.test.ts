@@ -997,7 +997,7 @@ describe("the grass floor compiles into the fragment source on both paths", () =
     } finally { s.dispose(); e.dispose(); }
   });
 
-  it("with the trail enabled: trailSegs and terrainWet each declare once on both paths, row 1 read once", async () => {
+  it("with the trail enabled: trailTable and terrainWet each declare once on both paths, row 1 read once", async () => {
     for (const forceUbo of [false, true]) {
       const e = new NullEngine();
       if (forceUbo) (e as unknown as { _webGLVersion: number })._webGLVersion = 2;
@@ -1008,19 +1008,30 @@ describe("the grass floor compiles into the fragment source on both paths", () =
           plugin.enableTrail(trailGraphFixture);
           trailPlugin = plugin;
         });
-        expect(source).toContain("trailSegs");
+        expect(source).toContain("trailTable");
         expect(source).toContain("terrainWet");
-        expect(source.match(/uniform sampler2D trailSegs;/g)).toHaveLength(1);
+        // One sampler for the segment list and the bucket grid together; the
+        // two the trail once bound are gone.
+        expect(source.match(/uniform sampler2D trailTable;/g)).toHaveLength(1);
+        expect(source).not.toMatch(/trailSegs|trailIndex/);
         const terrainWetDecl = forceUbo ? /\bfloat terrainWet;/g : /uniform\s+float\s+terrainWet\s*;/g;
         expect(source.match(terrainWetDecl)).toHaveLength(1);
-        expect(source.match(/texture2D\(trailSegs, vec2\(tuBest, 0\.75\)\)/g)).toHaveLength(1);
-        // The regression this pins: at height 1 the shader would read world
-        // coordinates as u and width, and every TypeScript-side test would
-        // stay green since none of them touch the real texture.
+        // Row 1 of the 18-row table, read once at its texel centre.
+        expect(source.match(/texture2D\(trailTable, vec2\(tuBest, 1\.5 \/ 18\.0\)\)/g)).toHaveLength(1);
+        // The regression this pins: a texture of the wrong height would put
+        // the shader's texel centres on the wrong rows (world coordinates read
+        // as u and width, or the grid read as segments), and every
+        // TypeScript-side test would stay green since none of them touch the
+        // real texture.
         const active: RawTexture[] = [];
         trailPlugin!.getActiveTextures(active);
-        const segsTex = active.find((t) => t.name === "trailSegs")!;
-        expect(segsTex.getSize()).toEqual({ width: TRAIL_PAINT_MAX_SEGMENTS, height: 2 });
+        expect(active.filter((t) => typeof t.name === "string" && t.name.startsWith("trail")).map((t) => t.name)).toEqual(["trailTable"]);
+        const tableTex = active.find((t) => t.name === "trailTable")!;
+        expect(tableTex.getSize()).toEqual({ width: TRAIL_PAINT_MAX_SEGMENTS, height: 18 });
+        // The sampler list and the bind name the one texture alone.
+        const samplers: string[] = [];
+        trailPlugin!.getSamplers(samplers);
+        expect(samplers.filter((s) => s.startsWith("trail"))).toEqual(["trailTable"]);
         // The hex include's latticeHash is what trailValueNoise1 calls, and
         // CUSTOM_FRAGMENT_DEFINITIONS splices the include before the trail
         // defs for exactly that reason.

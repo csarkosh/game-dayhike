@@ -299,3 +299,11 @@ widened junction — accepted rather than chased.
 **§4, litter's altitude.** Litter keeps only the snow-line fade and takes no low-altitude
 floor: the trail leaves the pad a few metres above the tide, inside the grass's own sand fade,
 and a walked path carries pebbles and twigs there too.
+
+**§5, the table texture (2026-10-14).** The segment list and the bucket index were two textures,
+`trailSegs` (512 × 2) and `trailIndex` (16 × 16); they are one, `trailTable`, 512 × 18 RGBA float:
+rows 0 and 1 the list as above, rows 2 to 17 the 16 × 16 grid in the first sixteen columns, the rest
+of each row zero. Nearest sampling at texel centres (`v = 0.5 / 18` and `1.5 / 18` for the list, `(2 +
+z + 0.5) / 18` on column `x` for a bucket) reads the same values the two textures held, so the paint
+is unchanged; the trail takes one of the terrain's sixteen samplers rather than two, and the unit it
+gives back is the soft-edged sun shadows' depth read on the high tier.

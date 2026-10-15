@@ -3,16 +3,19 @@
  *
  * The graph is a polyline with many short edges — up to ~180 on a world once
  * the bed follows the ground — so the segments are BUCKETED: a 16 × 16 index
- * texture over the graph's bounding box (100 m buckets, one empty ring around
+ * grid over the graph's bounding box (100 m buckets, one empty ring around
  * it so a clamped lookup outside reads nothing) holds (start, count) per
  * bucket, and a 512-entry, two-row list holds the segments: row 0 is
  * (ax, az, bx, bz), row 1 is (ua, ub, wa, wb) — the along-trail arc length and
- * the junction width factor at each end. The arc length is computed HERE
- * (`edgeArcLengths`), walking the stem from the pad and each loop from its
- * first junction, rather than read off `TrailNode.u` — the road-relative
- * coordinate (`x − roadCenterX(z)`) the route builder uses to shape the
- * search, which runs parallel to the road rather than along the trail and is
- * never read by the paint. A fragment reads its bucket and loops at
+ * the junction width factor at each end. Both live in ONE texture, 512 wide
+ * by TRAIL_PAINT_TABLE_ROWS (18) high: rows 0 and 1 the list, rows 2 to 17
+ * the grid in the first 16 columns (the rest of each row zero), so the paint
+ * takes one of the terrain's sixteen samplers rather than two. The arc length
+ * is computed HERE (`edgeArcLengths`), walking the stem from the pad and each
+ * loop from its first junction, rather than read off `TrailNode.u` — the
+ * road-relative coordinate (`x − roadCenterX(z)`) the route builder uses to
+ * shape the search, which runs parallel to the road rather than along the
+ * trail and is never read by the paint. A fragment reads its bucket and loops at
  * most TRAIL_PAINT_BUCKET_MAX segments over row 0 to find the nearest one,
  * then reads row 1 once, at the winner's index, to paint it: every band below
  * is a function of that segment's along-length wear and width, and of the
@@ -57,6 +60,12 @@ export const TRAIL_PAINT_BUCKET = 100;
 export const TRAIL_PAINT_BUCKET_MAX = 32;
 export const TRAIL_PAINT_MAX_SEGMENTS = 512;
 export const TRAIL_PAINT_GRID = 16;
+/** The first row of the table texture holding the bucket grid: rows 0 and 1 are the segment list. */
+export const TRAIL_PAINT_INDEX_ROW = 2;
+/** The table texture's height: the list's two rows and the grid's sixteen. */
+export const TRAIL_PAINT_TABLE_ROWS = TRAIL_PAINT_INDEX_ROW + TRAIL_PAINT_GRID;
+/** Floats per row of the table texture: TRAIL_PAINT_MAX_SEGMENTS texels of RGBA. */
+const ROW_STRIDE = TRAIL_PAINT_MAX_SEGMENTS * 4;
 /** Re-exported so existing importers of the old local constant keep working;
  * the value now lives in trailBenchParams.ts beside the bands it edges. */
 export { TRAIL_PAINT_EDGE } from "./trailBenchParams.js";
@@ -67,10 +76,11 @@ const GROW = TRAIL_CORRIDOR_HALF;
 
 export type Segment = { ax: number; az: number; bx: number; bz: number; ua: number; ub: number; wa: number; wb: number };
 export type TrailTable = {
-  /** TRAIL_PAINT_GRID² × RGBA: (start, count, 0, 0) per bucket, row-major in z then x. */
-  index: Float32Array;
-  /** Two rows of TRAIL_PAINT_MAX_SEGMENTS × RGBA: row 0 (ax, az, bx, bz), row 1 (ua, ub, wa, wb). */
-  list: Float32Array;
+  /** The whole texture, TRAIL_PAINT_MAX_SEGMENTS × TRAIL_PAINT_TABLE_ROWS × RGBA,
+   * row-major: row 0 (ax, az, bx, bz) and row 1 (ua, ub, wa, wb) per segment
+   * entry; from row TRAIL_PAINT_INDEX_ROW on, one grid row (z) each, (start,
+   * count, 0, 0) per bucket in the first TRAIL_PAINT_GRID columns (x). */
+  data: Float32Array;
   x0: number;
   z0: number;
   /** Entries used in the list (duplicates included). */
@@ -170,9 +180,8 @@ export function trailSegments(graph: TrailGraph): Segment[] {
 
 export function buildTrailTable(segments: Segment[]): TrailTable {
   const N = TRAIL_PAINT_GRID;
-  const index = new Float32Array(N * N * 4);
-  const list = new Float32Array(TRAIL_PAINT_MAX_SEGMENTS * 4 * 2);
-  const ROW1 = TRAIL_PAINT_MAX_SEGMENTS * 4;
+  const data = new Float32Array(ROW_STRIDE * TRAIL_PAINT_TABLE_ROWS);
+  const ROW1 = ROW_STRIDE;
   let minX = Infinity, minZ = Infinity;
   for (const s of segments) {
     minX = Math.min(minX, s.ax, s.bx);
@@ -192,13 +201,13 @@ export function buildTrailTable(segments: Segment[]): TrailTable {
         if (Math.max(s.ax, s.bx) + GROW < bx0 || Math.min(s.ax, s.bx) - GROW >= bx1) continue;
         if (Math.max(s.az, s.bz) + GROW < bz0 || Math.min(s.az, s.bz) - GROW >= bz1) continue;
         if (n >= TRAIL_PAINT_BUCKET_MAX || count >= TRAIL_PAINT_MAX_SEGMENTS) { overflow = true; break; }
-        list[count * 4] = s.ax; list[count * 4 + 1] = s.az; list[count * 4 + 2] = s.bx; list[count * 4 + 3] = s.bz;
-        list[ROW1 + count * 4] = s.ua; list[ROW1 + count * 4 + 1] = s.ub;
-        list[ROW1 + count * 4 + 2] = s.wa; list[ROW1 + count * 4 + 3] = s.wb;
+        data[count * 4] = s.ax; data[count * 4 + 1] = s.az; data[count * 4 + 2] = s.bx; data[count * 4 + 3] = s.bz;
+        data[ROW1 + count * 4] = s.ua; data[ROW1 + count * 4 + 1] = s.ub;
+        data[ROW1 + count * 4 + 2] = s.wa; data[ROW1 + count * 4 + 3] = s.wb;
         count++; n++;
       }
-      const b = (bj * N + bi) * 4;
-      index[b] = start; index[b + 1] = n;
+      const b = bucketTexel(bj * N + bi);
+      data[b] = start; data[b + 1] = n;
       bucketMax = Math.max(bucketMax, n);
     }
   }
@@ -207,7 +216,15 @@ export function buildTrailTable(segments: Segment[]): TrailTable {
     if (Math.max(s.ax, s.bx) + GROW >= x0 + (N - 1) * TRAIL_PAINT_BUCKET) overflow = true;
     if (Math.max(s.az, s.bz) + GROW >= z0 + (N - 1) * TRAIL_PAINT_BUCKET) overflow = true;
   }
-  return { index, list, x0, z0, count, bucketMax, overflow };
+  return { data, x0, z0, count, bucketMax, overflow };
+}
+
+/** Where bucket `b` (row-major in z then x, as `bucketOf` numbers them) sits
+ * in `TrailTable.data`: the first float of its texel, on grid row z of the
+ * table's rows from TRAIL_PAINT_INDEX_ROW, column x. */
+export function bucketTexel(b: number): number {
+  const N = TRAIL_PAINT_GRID;
+  return (TRAIL_PAINT_INDEX_ROW + Math.floor(b / N)) * ROW_STRIDE + (b % N) * 4;
 }
 
 function clamp01(x: number): number { return Math.min(1, Math.max(0, x)); }
@@ -228,13 +245,13 @@ export function bucketOf(table: TrailTable, x: number, z: number): number {
  * AWAY from the bed (zero on the bed), the winning entry's list index `k`
  * (−1 when the bucket is empty) and the parameter `t` along it. */
 export function trailNearest(table: TrailTable, x: number, z: number): { d: number; ex: number; ez: number; k: number; t: number } {
-  const b = bucketOf(table, x, z);
-  const start = table.index[b * 4]!, n = table.index[b * 4 + 1]!;
+  const b = bucketTexel(bucketOf(table, x, z));
+  const start = table.data[b]!, n = table.data[b + 1]!;
   let d = Infinity, qx = 0, qz = 0, bestK = -1, bestT = 0;
   for (let i = 0; i < n; i++) {
     const k = start + i;
     const kk = k * 4;
-    const ax = table.list[kk]!, az = table.list[kk + 1]!, bx = table.list[kk + 2]!, bz = table.list[kk + 3]!;
+    const ax = table.data[kk]!, az = table.data[kk + 1]!, bx = table.data[kk + 2]!, bz = table.data[kk + 3]!;
     const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez;
     const px = x - ax, pz = z - az;
     const t = L2 > 0 ? clamp01((px * ex + pz * ez) / L2) : 0;
@@ -278,9 +295,9 @@ export function trailPaintAt(x: number, z: number, table: TrailTable, opts?: Tra
   const height = opts?.height ?? 0.5;
   const n = trailNearest(table, x, z);
   if (n.k < 0) return { core: 0, margin: 0, trample: 0, wear: 0, u: 0, widthK: 1 };
-  const row1 = TRAIL_PAINT_MAX_SEGMENTS * 4 + n.k * 4;
-  const u = table.list[row1]! + (table.list[row1 + 1]! - table.list[row1]!) * n.t;
-  const wj = table.list[row1 + 2]! + (table.list[row1 + 3]! - table.list[row1 + 2]!) * n.t;
+  const row1 = ROW_STRIDE + n.k * 4;
+  const u = table.data[row1]! + (table.data[row1 + 1]! - table.data[row1]!) * n.t;
+  const wj = table.data[row1 + 2]! + (table.data[row1 + 3]! - table.data[row1 + 2]!) * n.t;
   const wear = trailWear(u);
   const widthK = (TRAIL_WEAR_W0 + (TRAIL_WEAR_W1 - TRAIL_WEAR_W0) * wear) * wj;
   const dB = (n.d + edgeNoise) / widthK - TRAIL_HEIGHT_SHIFT * (height - 0.5);
@@ -331,11 +348,12 @@ function rippleLayerGlsl(index: number): string {
 /** The four layers summed into `tRipple`. */
 const RIPPLE_LAYERS_GLSL = RIPPLE_LAYERS.map((_, i) => rippleLayerGlsl(i)).join("\n");
 
-/** Declarations; `terrainTexture.ts` declares `trailInfo` (x0, z0, 1/bucket, grid) beside its own uniforms. */
+/** Declarations; `terrainTexture.ts` declares `trailInfo` (x0, z0, 1/bucket, grid) beside its own uniforms.
+ * `trailTable` is the one texture the segment list and the bucket grid share (TRAIL_PAINT_MAX_SEGMENTS
+ * wide, TRAIL_PAINT_TABLE_ROWS high). */
 export const TRAIL_FRAGMENT_DEFS = `
 #ifdef TRAILPAINT
-uniform sampler2D trailIndex;
-uniform sampler2D trailSegs;
+uniform sampler2D trailTable;
 float trailValueNoise1(float u, float wave) {
   float q = u / wave;
   float c = floor(q);
@@ -351,8 +369,10 @@ float trailValueNoise1(float u, float wave) {
  * loop and the fwidth run in uniform control flow; the ring of empty buckets
  * makes a clamped lookup outside the box read count 0. The loop bound is the
  * compile-time constant TRAIL_PAINT_BUCKET_MAX; the break on the bucket's count
- * stops at the live entries. Row 0 of the 512 × 2 segment texture is read once
- * per candidate to find the nearest one; row 1 is read once more, at the
+ * stops at the live entries. Every read is of the one 512 × 18 table texture,
+ * nearest-sampled at a texel's centre: the bucket's (start, count) from grid
+ * row z of the rows from TRAIL_PAINT_INDEX_ROW, column x; then row 0 once per
+ * candidate to find the nearest segment; then row 1 once more, at the
  * winner's index, for the node parameter and junction width the bands below
  * are shaped by. The bank side comes from vNormalW, the vertex normal, before
  * any detail normal has been folded into normalW.
@@ -365,7 +385,7 @@ export const TRAIL_FRAGMENT_PAINT = `
 #ifdef TRAILPAINT
 {
   vec2 tb = clamp((vPositionW.xz - trailInfo.xy) * trailInfo.z, 0.0, trailInfo.w - 1.0);
-  vec2 tIdx = texture2D(trailIndex, (floor(tb) + 0.5) / trailInfo.w).xy;
+  vec2 tIdx = texture2D(trailTable, vec2((floor(tb.x) + 0.5) / ${TRAIL_PAINT_MAX_SEGMENTS}.0, (${TRAIL_PAINT_INDEX_ROW}.0 + floor(tb.y) + 0.5) / ${TRAIL_PAINT_TABLE_ROWS}.0)).xy;
   float tdBest = 1.0e9;
   vec2 tOff = vec2(0.0);
   float tuBest = 0.0;
@@ -373,7 +393,7 @@ export const TRAIL_FRAGMENT_PAINT = `
   for (int ti = 0; ti < ${TRAIL_PAINT_BUCKET_MAX}; ti++) {
     if (float(ti) >= tIdx.y) break;
     float tu = (tIdx.x + float(ti) + 0.5) / ${TRAIL_PAINT_MAX_SEGMENTS}.0;
-    vec4 ts = texture2D(trailSegs, vec2(tu, 0.25));
+    vec4 ts = texture2D(trailTable, vec2(tu, 0.5 / ${TRAIL_PAINT_TABLE_ROWS}.0));
     vec2 te = ts.zw - ts.xy;
     vec2 tp = vPositionW.xz - ts.xy;
     float tl2 = dot(te, te);
@@ -401,7 +421,7 @@ export const TRAIL_FRAGMENT_PAINT = `
     // blends to a slightly darker, bluer snow, keeps the snow's normal and
     // roughness, and the bare-floor bank fades out with the soil under it.
     float tSnow = 1.0 - clamp(vTerrainW2.y, 0.0, 1.0);
-    vec4 tRow = texture2D(trailSegs, vec2(tuBest, 0.75));
+    vec4 tRow = texture2D(trailTable, vec2(tuBest, 1.5 / ${TRAIL_PAINT_TABLE_ROWS}.0));
     float tU = mix(tRow.x, tRow.y, ttBest);
     float tWj = mix(tRow.z, tRow.w, ttBest);
     float tWear = ${f(TRAIL_WEAR_WEIGHT[0])} * trailValueNoise1(tU, ${f(TRAIL_WEAR_WAVE[0])}) + ${f(TRAIL_WEAR_WEIGHT[1])} * trailValueNoise1(tU, ${f(TRAIL_WEAR_WAVE[1])});

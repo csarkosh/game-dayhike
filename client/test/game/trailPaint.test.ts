@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   TRAIL_PAINT_BUCKET, TRAIL_PAINT_BUCKET_MAX, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_GRID,
+  TRAIL_PAINT_INDEX_ROW, TRAIL_PAINT_TABLE_ROWS,
   TRAIL_PAINT_EDGE, TRAIL_BANK_SLOPE,
-  trailSegments, buildTrailTable, bucketOf, trailNearest, trailBand, bankRise, trailBankBand,
+  trailSegments, buildTrailTable, bucketOf, bucketTexel, trailNearest, trailBand, bankRise, trailBankBand,
   nodeWidths, trailPaintAt, glslFloat,
   TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT,
   type Segment,
@@ -30,38 +31,80 @@ const SEGS: Segment[] = [
 
 describe("the bucketed segment table", () => {
   const t = buildTrailTable(SEGS);
+  it("is one texture, 512 wide by 18 high: the list's two rows, then the grid's sixteen", () => {
+    expect(TRAIL_PAINT_MAX_SEGMENTS).toBe(512);
+    expect(TRAIL_PAINT_GRID).toBe(16);
+    expect(TRAIL_PAINT_INDEX_ROW).toBe(2);
+    expect(TRAIL_PAINT_TABLE_ROWS).toBe(18);
+    // 512 × 18 texels of RGBA.
+    expect(t.data.length).toBe(36864);
+    // A row is 512 × 4 floats: bucket (x, z) sits on texture row 2 + z, column x.
+    expect(bucketTexel(0)).toBe(4096);
+    expect(bucketTexel(1)).toBe(4100);
+    expect(bucketTexel(16)).toBe(6144);
+    expect(bucketTexel(16 * 3 + 5)).toBe(10260);
+    expect(bucketTexel(255)).toBe(34876);
+    // Past the grid's sixteen columns, every grid row is zero.
+    for (let row = 2; row < 18; row++) {
+      expect(t.data.subarray(row * 2048 + 64, (row + 1) * 2048).every((v) => v === 0), `row ${row}`).toBe(true);
+    }
+  });
   it("leaves an empty ring of buckets around the segments' bounding box", () => {
-    expect(t.x0).toBe(0 - TRAIL_CORRIDOR_HALF - TRAIL_PAINT_BUCKET);
-    expect(t.z0).toBe(0 - TRAIL_CORRIDOR_HALF - TRAIL_PAINT_BUCKET);
+    // One bucket (100 m) and the corridor's half-width (7 m) before the first segment.
+    expect(TRAIL_PAINT_BUCKET).toBe(100);
+    expect(t.x0).toBe(-107);
+    expect(t.z0).toBe(-107);
     expect(t.overflow).toBe(false);
-    // The bucket seaward of the first segment (in the ring) is empty.
+    // The bucket seaward of the first segment (in the ring) is empty: bucket
+    // (0, 0), the first texel of texture row 2.
     const ring = bucketOf(t, t.x0 + 1, t.z0 + 1);
-    expect(t.index[ring * 4 + 1]).toBe(0);
+    expect(ring).toBe(0);
+    expect(t.data[4096 + 1]).toBe(0);
   });
   it("lists a segment in every bucket its corridor-grown box touches, and only those", () => {
-    // Segment 0 spans x ∈ [−4, 104] after growing: buckets 0 (ring), 1 and 2 of its row.
+    // Segment 0 spans x ∈ [−7, 107] after growing: buckets 1 and 2 of grid
+    // row 1 (texture row 3), the ring's column 0 untouched.
     const b1 = bucketOf(t, 50, 0), b2 = bucketOf(t, 101, 0);
-    expect(t.index[b1 * 4 + 1]).toBe(1);
-    expect(t.index[b2 * 4 + 1]).toBe(2); // both segments meet here
+    expect([b1, b2]).toEqual([17, 18]);
+    expect([bucketTexel(b1), bucketTexel(b2)]).toEqual([6148, 6152]);
+    expect(t.data[6148 + 1]).toBe(1);
+    expect(t.data[6152 + 1]).toBe(2); // both segments meet here
     const far = bucketOf(t, 50, 300);
-    expect(t.index[far * 4 + 1]).toBe(0);
-    // The list entries are the segments themselves.
-    const s0 = t.index[b1 * 4]!;
-    expect([t.list[s0 * 4], t.list[s0 * 4 + 1], t.list[s0 * 4 + 2], t.list[s0 * 4 + 3]]).toEqual([0, 0, 100, 0]);
+    expect(far).toBe(65);
+    expect(t.data[12292 + 1]).toBe(0);
+    // The list entries, on texture row 0, are the segments themselves.
+    const s0 = t.data[6148]!;
+    expect(s0).toBe(0);
+    expect([t.data[s0 * 4], t.data[s0 * 4 + 1], t.data[s0 * 4 + 2], t.data[s0 * 4 + 3]]).toEqual([0, 0, 100, 0]);
+    // The grid's counts add up to the entries written.
+    let counted = 0;
+    for (let b = 0; b < 256; b++) counted += t.data[bucketTexel(b) + 1]!;
+    expect(counted).toBe(t.count);
+    expect(t.count).toBe(3);
   });
   it("reports bucketMax and flags an overflow instead of overrunning", () => {
     expect(t.bucketMax).toBe(2);
     const many: Segment[] = Array.from({ length: TRAIL_PAINT_BUCKET_MAX + 1 }, (_, i) => ({ ax: 10, az: i, bx: 20, bz: i, ua: i, ub: i + 10, wa: 1, wb: 1 }));
     const o = buildTrailTable(many);
     expect(o.overflow).toBe(true);
-    expect(o.bucketMax).toBe(TRAIL_PAINT_BUCKET_MAX);
-    expect(o.list.length).toBe(TRAIL_PAINT_MAX_SEGMENTS * 4 * 2);
-    expect(o.index.length).toBe(TRAIL_PAINT_GRID * TRAIL_PAINT_GRID * 4);
+    expect(o.bucketMax).toBe(32);
+    expect(o.data.length).toBe(36864);
   });
   it("bucketOf clamps to the ring outside the box, so a far fragment reads an empty bucket", () => {
     const b = bucketOf(t, -5000, 9000);
-    expect(b).toBeGreaterThanOrEqual(0);
-    expect(t.index[b * 4 + 1]).toBe(0);
+    expect(b).toBe(240);
+    expect(bucketTexel(b)).toBe(34816);
+    expect(t.data[34816 + 1]).toBe(0);
+  });
+  it("builds an empty table from an empty graph: the box at the origin, every texel zero", () => {
+    const empty = buildTrailTable([]);
+    expect(empty.x0).toBe(-107);
+    expect(empty.z0).toBe(-107);
+    expect(empty.overflow).toBe(false);
+    expect(empty.count).toBe(0);
+    expect(empty.bucketMax).toBe(0);
+    expect(empty.data.length).toBe(36864);
+    expect(empty.data.every((v) => v === 0)).toBe(true);
   });
   it("takes every edge of a graph, uncapped", () => {
     // u is garbage on every node: the paint reads arc length, computed from
@@ -137,19 +180,19 @@ describe("the table's second row", () => {
   it("never leaves an edge unwalked", () => {
     for (const s of trailSegments(graph)) expect(s.ua !== 0 || s.ub !== 0).toBe(true);
   });
-  it("writes row 1 behind row 0 in one buffer, so the texture is 512 by 2", () => {
+  it("writes row 1 behind row 0 in the one buffer the grid follows, so the texture is 512 by 18", () => {
     const t = buildTrailTable(trailSegments(graph));
-    expect(t.list.length).toBe(TRAIL_PAINT_MAX_SEGMENTS * 4 * 2);
+    expect(t.data.length).toBe(36864);
     // Past x = 193 (a bucket boundary given this graph's corridor-grown bounding
     // box), only edge 1 → 2 reaches: the corridor growth off edge 0 → 1 stops
     // at x = 107, so a query here lands in a bucket the earlier edge never touches.
     const b = bucketOf(t, 250, 0);
-    const s = t.index[b * 4]!;
-    const row1 = TRAIL_PAINT_MAX_SEGMENTS * 4;
-    expect([t.list[s * 4], t.list[s * 4 + 2]]).toEqual([100, 200]);
-    // TRAIL_JUNCTION_W round-trips through the Float32Array list, so the
+    const s = t.data[bucketTexel(b)]!;
+    const row1 = 2048;
+    expect([t.data[s * 4], t.data[s * 4 + 2]]).toEqual([100, 200]);
+    // TRAIL_JUNCTION_W round-trips through the Float32Array, so the
     // expected value here is its own float32 rounding, not the float64 constant.
-    expect([t.list[row1 + s * 4], t.list[row1 + s * 4 + 1], t.list[row1 + s * 4 + 2], t.list[row1 + s * 4 + 3]]).toEqual([100, 200, Math.fround(TRAIL_JUNCTION_W), 1]);
+    expect([t.data[row1 + s * 4], t.data[row1 + s * 4 + 1], t.data[row1 + s * 4 + 2], t.data[row1 + s * 4 + 3]]).toEqual([100, 200, Math.fround(TRAIL_JUNCTION_W), 1]);
   });
 });
 
@@ -357,9 +400,10 @@ describe("the neglect patches", () => {
 });
 
 describe("shader strings", () => {
-  it("declare both samplers and paint under TRAILPAINT, with no hashed keyword inside a comment", () => {
-    expect(TRAIL_FRAGMENT_DEFS).toContain("uniform sampler2D trailSegs;");
-    expect(TRAIL_FRAGMENT_DEFS).toContain("uniform sampler2D trailIndex;");
+  it("declare the one table sampler and paint under TRAILPAINT, with no hashed keyword inside a comment", () => {
+    expect(TRAIL_FRAGMENT_DEFS).toContain("uniform sampler2D trailTable;");
+    expect(TRAIL_FRAGMENT_DEFS.match(/uniform sampler2D/g)).toHaveLength(1);
+    for (const src of [TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT]) expect(src).not.toMatch(/trailSegs|trailIndex/);
     expect(TRAIL_FRAGMENT_PAINT).toContain("trailInfo");
     for (const src of [TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT]) {
       for (const line of src.split("\n")) {
@@ -385,8 +429,12 @@ describe("the GLSL", () => {
     expect(g).toContain("trailValueNoise1(tU, 3.0)");
     expect(g).toContain("macroValueNoise(vPositionW.xz, 6.0)");
     expect(g).toContain("mix(vec3(1.0), tBedBase, 0.8)");
-    expect(g).toContain("texture2D(trailSegs, vec2(tu, 0.25))");
-    expect(g.split("texture2D(trailSegs, vec2(tuBest, 0.75))").length).toBe(2);
+    // Every read is of the one table at a texel centre: the bucket on texture
+    // row 2 + z, column x; the segments on rows 0 and 1.
+    expect(g).toContain("vec2 tIdx = texture2D(trailTable, vec2((floor(tb.x) + 0.5) / 512.0, (2.0 + floor(tb.y) + 0.5) / 18.0)).xy;");
+    expect(g).toContain("texture2D(trailTable, vec2(tu, 0.5 / 18.0))");
+    expect(g.split("texture2D(trailTable, vec2(tuBest, 1.5 / 18.0))").length).toBe(2);
+    expect(g.match(/texture2D\(trailTable/g)).toHaveLength(3);
     for (const term of ["trailValueNoise1(", "macroValueNoise(", "terrainWet", "tPuddle", "tLip", "tWidthK", "tDarkK", "tdN"]) expect(g).toContain(term);
     expect(g.indexOf("fwidth(tdBest)")).toBeLessThan(g.indexOf("if (tdBest <"));
   });

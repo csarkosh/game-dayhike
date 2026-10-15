@@ -88,7 +88,7 @@ import {
   buildRoadTable, roadTableStale, roadTableZ0, type RoadCenterX,
 } from "./roadPaint.js";
 import {
-  TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_GRID, TRAIL_PAINT_BUCKET,
+  TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, TRAIL_PAINT_GRID, TRAIL_PAINT_BUCKET,
   buildTrailTable, trailSegments,
 } from "./trailPaint.js";
 import {
@@ -793,8 +793,8 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   private _roadSeed = 0;
   private _roadCentreZ = 0;
   private _roadCenterX: RoadCenterX | null = null;
-  private _trailSegs: RawTexture | null = null;
-  private _trailIndex: RawTexture | null = null;
+  /** The trail's one table texture: the segment list and the bucket grid (trailPaint.ts). */
+  private _trailTable: RawTexture | null = null;
   private _trailInfo: [number, number, number, number] = [0, 0, 0, 0];
   private _wet = 0;
   private _rain = 0;
@@ -870,23 +870,19 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     this.markAllDefinesAsDirty();
   }
 
-  /** Turn the trail on for this world: bake the bucketed segment table once. */
+  /** Turn the trail on for this world: bake the bucketed segment table once,
+   * the segment list and the bucket grid in one texture (trailPaint.ts), so
+   * the trail takes one of the terrain's sixteen samplers. */
   enableTrail(graph: TrailGraph): void {
-    if (this._trailSegs !== null) return;
+    if (this._trailTable !== null) return;
     const table = buildTrailTable(trailSegments(graph));
     if (table.overflow) console.warn("trail paint: segment table overflowed; some of the trail is unpainted");
-    const segs = RawTexture.CreateRGBATexture(
-      table.list, TRAIL_PAINT_MAX_SEGMENTS, 2, this._scene,
+    const tex = RawTexture.CreateRGBATexture(
+      table.data, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, this._scene,
       false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
     );
-    segs.name = "trailSegs"; segs.wrapU = Texture.CLAMP_ADDRESSMODE; segs.wrapV = Texture.CLAMP_ADDRESSMODE;
-    const index = RawTexture.CreateRGBATexture(
-      table.index, TRAIL_PAINT_GRID, TRAIL_PAINT_GRID, this._scene,
-      false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
-    );
-    index.name = "trailIndex"; index.wrapU = Texture.CLAMP_ADDRESSMODE; index.wrapV = Texture.CLAMP_ADDRESSMODE;
-    this._trailSegs = segs;
-    this._trailIndex = index;
+    tex.name = "trailTable"; tex.wrapU = Texture.CLAMP_ADDRESSMODE; tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+    this._trailTable = tex;
     this._trailInfo = [table.x0, table.z0, 1 / TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID];
     this.markAllDefinesAsDirty();
   }
@@ -937,7 +933,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   override prepareDefines(defines: MaterialDefines, _scene: Scene, _mesh: AbstractMesh): void {
     defines.TERRAINTEX = true;
     defines.ROADPAINT = this._roadCenter !== null;
-    defines.TRAILPAINT = this._trailSegs !== null;
+    defines.TRAILPAINT = this._trailTable !== null;
     defines.FEATUREPAINT = this._featureTex !== null;
     defines.TERRAINFARLOW = this._farLow;
   }
@@ -954,7 +950,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
       "terrainNormals", "terrainRAH",
     );
     if (this._roadCenter !== null) samplers.push("roadCenter", "roadAsphalt");
-    if (this._trailSegs !== null) samplers.push("trailSegs", "trailIndex");
+    if (this._trailTable !== null) samplers.push("trailTable");
     if (this._featureTex !== null) samplers.push("featureTex");
   }
 
@@ -1117,10 +1113,9 @@ uniform vec4 terrainSwardBand;
       uniformBuffer.setTexture("roadCenter", this._roadCenter);
       uniformBuffer.setTexture("roadAsphalt", this._asphalt);
     }
-    if (this._trailSegs !== null) {
+    if (this._trailTable !== null) {
       uniformBuffer.updateFloat4("trailInfo", ...this._trailInfo);
-      uniformBuffer.setTexture("trailSegs", this._trailSegs);
-      uniformBuffer.setTexture("trailIndex", this._trailIndex!);
+      uniformBuffer.setTexture("trailTable", this._trailTable);
     }
     if (this._featureTex !== null) {
       uniformBuffer.updateFloat4("featureInfo", ...this._featureInfo);
@@ -1140,7 +1135,7 @@ uniform vec4 terrainSwardBand;
   override getActiveTextures(activeTextures: BaseTexture[]): void {
     activeTextures.push(...this._textures, this._arrays.normals, this._arrays.rah);
     if (this._roadCenter !== null) activeTextures.push(this._roadCenter);
-    if (this._trailSegs !== null) activeTextures.push(this._trailSegs, this._trailIndex!);
+    if (this._trailTable !== null) activeTextures.push(this._trailTable);
     if (this._featureTex !== null) activeTextures.push(this._featureTex);
   }
 
@@ -1148,8 +1143,7 @@ uniform vec4 terrainSwardBand;
     return (
       this._textures.some((t) => t === texture)
       || texture === this._roadCenter
-      || texture === this._trailSegs
-      || texture === this._trailIndex
+      || texture === this._trailTable
       || texture === this._featureTex
       || texture === this._arrays.normals
       || texture === this._arrays.rah
@@ -1163,8 +1157,7 @@ uniform vec4 terrainSwardBand;
     // hands this plugin sole ownership, so they are disposed unconditionally
     // too, not gated on `forceDisposeTextures`.
     this._roadCenter?.dispose();
-    this._trailSegs?.dispose();
-    this._trailIndex?.dispose();
+    this._trailTable?.dispose();
     this._featureTex?.dispose();
     this._arrays.dispose();
     // Scene disposal already reclaims these (every Texture registers itself in

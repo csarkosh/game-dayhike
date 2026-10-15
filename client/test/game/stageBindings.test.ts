@@ -52,13 +52,15 @@ import { timeLimit } from "../helpers/timeLimit.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
 /**
- * Three of WebGPU's per-stage limits sit exactly at their defaults in the
- * browser's sweep (the verification note, §4): sampled textures and samplers
- * per stage, 16 each, set by the terrain's fragment stage, and uniform buffers
+ * Three of WebGPU's per-stage limits sit at their defaults in the browser's
+ * sweep (the verification note, §4): sampled textures and samplers per stage,
+ * 16 each, which the terrain's fragment stage once filled exactly and now sits
+ * one below (the trail's segment list and bucket grid in one texture, the
+ * unit it freed for the soft-edged shadows' depth read), and uniform buffers
  * per stage, 12, set by every lit PBR material with the seven lights the game
  * binds at most. The device asks for exactly the default of these
- * (`WEBGPU_REQUIRED_LIMITS`), so one more texture or sampler on the terrain,
- * or an eighth light, fails the pipeline on every adapter.
+ * (`WEBGPU_REQUIRED_LIMITS`), so two more textures or samplers on the terrain,
+ * or an eighth light, fail the pipeline on every adapter.
  *
  * What the suite can see of them: the terrain's clipmap and the forest, built
  * as the renderer builds them with every lamp of a full party lit, on a
@@ -170,8 +172,7 @@ describe("WebGPU's per-stage bindings, at the defaults the device keeps", () => 
       "terrainRAH",
       "roadCenter",
       "roadAsphalt",
-      "trailIndex",
-      "trailSegs",
+      "trailTable",
       "featureTex",
     ]);
   });
@@ -194,11 +195,15 @@ describe("WebGPU's per-stage bindings, at the defaults the device keeps", () => 
     ]);
   });
 
-  it("counts what the browser read for the terrain on both tiers: 16 textures, 16 samplers, 12 uniform buffers", () => {
+  it("counts the terrain's bindings on both tiers: 15 textures, 15 samplers, 12 uniform buffers", () => {
+    // The browser read 16 textures and 16 samplers when the trail bound its
+    // segment list and its bucket grid as two textures; they are one table
+    // now (trailPaint.ts), so the terrain sits one below the device's default
+    // and the soft-edged shadows' depth read on the high tier has its unit.
     const terrain = world.drawn.get("mat_terrain") as Drawn;
     const measured = {
       vertex: { textures: 0, samplers: 0, uniformBuffers: 12 },
-      fragment: { textures: 16, samplers: 16, uniformBuffers: 12 },
+      fragment: { textures: 15, samplers: 15, uniformBuffers: 12 },
     };
     expect({ high: onTier(terrain, "high"), medium: onTier(terrain, "medium") }, CEILING).toEqual({ high: measured, medium: measured });
   });

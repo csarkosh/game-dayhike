@@ -91,7 +91,12 @@ const PINS: Record<string, string> = {
   // (groundFarCover.fragment.fx: its constants and its comments); the test
   // below takes the far cover out and finds the text before it unchanged, so
   // the far cover is the whole difference.
-  "terrain.fragment": "5fb3c4fd6567b40894379375b452825f46529edbec261bb76c01409458f326d7",
+  // Re-pinned for the trail's two tables read from one texture (trailPaint.ts:
+  // `trailTable`, 512 × 18, the segment list on rows 0 and 1 and the bucket
+  // grid from row 2, one sampler where there were two); its three reads and
+  // the declaration are the difference, and they stay in the texts the tests
+  // below take their pieces out of.
+  "terrain.fragment": "737174f9f82d0d750080bc62cae358698225cbb596ccbe832ecb1b9327b2d77a",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
 };
@@ -125,7 +130,9 @@ const INTERFACE_PINS: Record<string, string> = {
   // Re-pinned for `terrainRain` and `terrainTime`, the two floats the
   // puddles' ripples read, declared on both uniform paths, and again for
   // TERRAINFARLOW, the far cover's low band, false on medium and high.
-  "terrain.interface": "2218c50bb5071b9eb9de88d31c3616d8cadfd2b8a19d89e6ee5785889f675b64",
+  // Re-pinned for the trail's one sampler, `trailTable`, where `trailSegs`
+  // and `trailIndex` were (trailPaint.ts, terrainTexture.ts).
+  "terrain.interface": "e03d08f797f76a0ed886258abaf8b55ecf8c8b3415f08fad5c398d14cbfb2cb4",
   "wing.interface": "bb03268d86b3711b1e489d0f2a62c81f60556c063d98fc835954b43a11cff985",
 };
 
@@ -174,7 +181,7 @@ describe("WebGL2's shader text", () => {
     }
   });
 
-  it("changes the terrain fragment by one renamed identifier, the puddles' ripples and the shore atlas, and nothing else", () => {
+  it("changes the terrain fragment by one renamed identifier, the puddles' ripples, the shore atlas and the trail's one table, and nothing else", () => {
     const text = pluginTexts()["terrain.fragment"] as string;
     // The WGSL-reserved local `macro` renamed at source on both engines. The
     // word survives only in the hex include's comments, which glslang drops.
@@ -186,17 +193,23 @@ describe("WebGL2's shader text", () => {
     expect(text.match(/vec2 tRc = floor\(tRp\);/g)).toHaveLength(4);
     expect(text).toContain("if (terrainRain > 0.0) {");
     expect(text).toContain("vec3 tPuddleN = normalize(vec3(tRipple.x * terrainRain, 1.0, tRipple.y * terrainRain));");
+    // The trail's one table: the sampler declared once, read three times at
+    // texel centres, and the two it replaced gone.
+    expect(text.match(/uniform sampler2D trailTable;/g)).toHaveLength(1);
+    expect(text.match(/texture2D\(trailTable, /g)).toHaveLength(3);
+    expect(text).not.toMatch(/trailSegs|trailIndex/);
     // With the ripples taken out and the rename undone, the base's text, the
-    // shore tint's one line, and the lakes' shore atlas (2026-10-10).
+    // shore tint's one line, the lakes' shore atlas (2026-10-10) and the
+    // trail's one table (2026-10-14).
     const base = withoutFarCover(withoutRipples(text)).replaceAll("macroRgb", "macro");
     expect(base).not.toContain("tRipple");
-    expect(sha(base)).toBe("cbde97ea8dd9347b5aca72f220c01f8fc24e3433207dbf05f22c583f5d157c53");
+    expect(sha(base)).toBe("851c0e2c8395222c0708521d1e90deef4120891094c2e4b3d66860ed0e951140");
   });
 
   it("takes the far cover out and gets the text before it", () => {
     const text = pluginTexts()["terrain.fragment"] as string;
-    // With the lakes' shore atlas in it (2026-10-10).
-    expect(sha(withoutFarCover(withoutRipples(text)))).toBe("195b49d319db736be3b02913d90dcc23b4bd36fa4c505ed616488737dc2e4bbf");
+    // With the lakes' shore atlas (2026-10-10) and the trail's one table (2026-10-14) in it.
+    expect(sha(withoutFarCover(withoutRipples(text)))).toBe("b22513828399aea433b9180436ba31a4dfcd5cef9e6a9cef3c53adb709d36ffc");
   }, timeLimit(20_000));
 
   it("keeps every plugin's uniforms, samplers, attributes and defines what they were", () => {
@@ -205,11 +218,14 @@ describe("WebGL2's shader text", () => {
     for (const [key, text] of Object.entries(texts)) expect(sha(text), key).toBe(INTERFACE_PINS[key]);
   });
 
-  it("changes the terrain's interface by the far cover's one define and nothing else", () => {
+  it("changes the terrain's interface by the far cover's one define and the trail's one sampler, and nothing else", () => {
     const text = pluginInterfaces()["terrain.interface"] as string;
     expect(text.split('"TERRAINFARLOW":false,').length - 1).toBe(2);
+    // The trail's sampler list: `trailTable` where `trailSegs` and `trailIndex` were.
+    expect(text).toContain("trailTable");
+    expect(text).not.toMatch(/trailSegs|trailIndex/);
     expect(sha(text.replaceAll('"TERRAINFARLOW":false,', ""))).toBe(
-      "c0528421aedd3e5f0c3030247b528331ea69f7bf78fcd8b9c59201a21ce63ad2",
+      "01ca60e01032fa2d77bece34b788d571a44381fc5fd50708ca3a6f6fd2ab95f7",
     );
   }, timeLimit(20_000));
 
