@@ -258,6 +258,7 @@ const STYLE = `
   }
 `;
 
+import type { GameMode } from "./gameMode.js";
 import type { Platform } from "../net/desktopRelease.js";
 import { creditsEntries, renderCredits } from "./credits.js";
 import { landingPanelFocus, type LandingPanel, type LandingView } from "./landingModel.js";
@@ -321,6 +322,7 @@ export function renderLanding(
     onSettings(): void;
     /** A choice picked on the Settings panel: kept at once, for the hike Play starts. */
     onChooseTier(choice: TierChoice): void;
+    onChooseMode(mode: GameMode): void;
     onCredits(): void;
     onBack(): void;
     /** A download link followed: the browser carries the file off, the page stays. */
@@ -382,6 +384,7 @@ export function renderLanding(
   settings.className = "panel settings";
   const settingsUi = renderSettings(settings, view.settingsPage, {
     onChoose: handlers.onChooseTier,
+    onChooseMode: handlers.onChooseMode,
     onBack: handlers.onBack,
   });
 

@@ -120,6 +120,8 @@ export function stepSummit(world: World): void {
   const search = world.search;
   const state = world.state;
   if (search === null || world.trail === null) return;
+  // An explore world's summit is a summit: no find, no scene, no chase.
+  if (world.peaceful) return;
   // A finished match finds nothing and ends nothing. The guard covers the
   // climb as well as the chase: a forest party that died on the way up is
   // already Lost (`updateLoss`), and a player joining that match must not be

@@ -224,6 +224,16 @@ describe("/stand", () => {
   });
 });
 
+describe("/mode", () => {
+  it("takes one of game, explore and freecam, as a world entry, and nothing else", () => {
+    expect(findCommand("mode")?.kind).toBe("world");
+    for (const mode of ["game", "explore", "freecam"]) expect(validateCommand({ name: "mode", args: [mode] })).toBeNull();
+    expect(validateCommand({ name: "mode", args: [] })).toBe("mode takes one of game, explore, freecam");
+    expect(validateCommand({ name: "mode", args: ["peaceful"] })).not.toBeNull();
+    expect(validateCommand({ name: "mode", args: ["explore", "game"] })).not.toBeNull();
+  });
+});
+
 describe("/escalation", () => {
   it("accepts no argument or a value in [0, 1], rejects everything else, and is never URL-representable", () => {
     expect(validateCommand({ name: "escalation", args: [] })).toBeNull();

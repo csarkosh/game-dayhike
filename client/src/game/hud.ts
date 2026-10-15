@@ -1,4 +1,5 @@
 import { endLines } from "./passages.js";
+import { lineIcon } from "./icons.js";
 const STYLE = `
   .hud { position: absolute; inset: 0; pointer-events: none; font-family: system-ui, sans-serif; color: #fff; }
   .hud .status {
@@ -49,6 +50,26 @@ const STYLE = `
     transition: opacity 1.5s ease-in;
   }
   .hud .fade.on { opacity: 1; }
+  /* The headlamp's hint, for a keyboard: the torch and its key, at the bottom
+     left corner (the roster sits at the right), as faint as the touch controls
+     sit (touchControls.ts) and lit with the lamp, so every player knows the
+     lamp is there and what turns it on. Hidden by default: the touch layer has
+     its own button. A scene's bars take it down. */
+  .hud .lamp {
+    position: absolute; left: calc(14px + env(safe-area-inset-left, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    display: none; align-items: center; gap: 8px; padding: 6px 10px 6px 8px;
+    color: #fff; background: rgba(16, 16, 20, 0.72); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 22px;
+    font: 500 13px/1 system-ui, sans-serif; opacity: 0.35; transition: opacity 300ms ease-out, box-shadow 300ms ease-out;
+  }
+  .hud .lamp.shown { display: flex; }
+  .hud .lamp.lit { opacity: 1; box-shadow: 0 0 0 1px #ffd24d; }
+  .hud .lamp svg { width: 22px; height: 22px; display: block; }
+  .hud .lamp .key {
+    display: inline-block; min-width: 1.4em; padding: 3px 5px; text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.45); border-bottom-width: 2px; border-radius: 4px;
+    font-family: ui-monospace, monospace; font-size: 12px; letter-spacing: 0.04em;
+  }
+  .hud .bars.on ~ .lamp { opacity: 0; }
 `;
 
 export type Hud = {
@@ -71,6 +92,10 @@ export type Hud = {
   flash(text: string, ms: number): void;
   /** Darkens the whole view over 1.5 s; the status line stays readable on top. */
   fade(on: boolean): void;
+  /** The headlamp's hint: shown with the key that turns it on and lit while the lamp is; null takes it down (a touch screen, the end). */
+  setLamp(lamp: { key: string; on: boolean } | null): void;
+  /** The hint now: its key and whether it is lit, or null while none shows. */
+  lamp(): { key: string; on: boolean } | null;
   dispose(): void;
 };
 
@@ -109,8 +134,14 @@ export function createHud(container: HTMLElement): Hud {
   voice.className = "voice";
   const bars = document.createElement("div");
   bars.className = "bars";
+  const lamp = document.createElement("div");
+  lamp.className = "lamp";
+  lamp.setAttribute("aria-hidden", "true");
+  const lampKey = document.createElement("span");
+  lampKey.className = "key";
+  lamp.append(lineIcon("lamp"), lampKey);
 
-  root.append(fade, bars, status, end, voice);
+  root.append(fade, bars, status, end, voice, lamp);
   container.append(style, root);
 
   let flashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -171,6 +202,14 @@ export function createHud(container: HTMLElement): Hud {
     },
     fade(on) {
       fade.classList.toggle("on", on);
+    },
+    setLamp(state) {
+      lamp.classList.toggle("shown", state !== null);
+      lamp.classList.toggle("lit", state?.on === true);
+      lampKey.textContent = state?.key ?? "";
+    },
+    lamp() {
+      return lamp.classList.contains("shown") ? { key: lampKey.textContent ?? "", on: lamp.classList.contains("lit") } : null;
     },
     dispose() {
       if (voiceTimer !== null) clearTimeout(voiceTimer);

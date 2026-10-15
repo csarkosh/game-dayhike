@@ -388,6 +388,12 @@ export class StandInDocument {
     if (tag === "video") return new StandInVideo(this, tag);
     return new StandInElement(this, tag);
   }
+  /** An element in a namespace (the icons' SVG, icons.ts): the same stand-in, the namespace kept for a test to read. */
+  createElementNS(namespace: string, tag: string): StandInElement {
+    const el = new StandInElement(this, tag);
+    el.setAttribute("xmlns", namespace);
+    return el;
+  }
   /** The page finishing its load, as the browser fires it. */
   finishLoading(): void {
     this.readyState = "complete";

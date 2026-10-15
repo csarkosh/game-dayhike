@@ -109,16 +109,16 @@ export function createClientSession(
   seed: number,
   transport: Transport,
   clock: () => number,
-  opts: { expectedLevelId?: string; forest?: Forest | null } = {},
+  opts: { expectedLevelId?: string; forest?: Forest | null; peaceful?: boolean } = {},
 ): ClientSession {
-  const { expectedLevelId, forest = null } = opts;
+  const { expectedLevelId, forest = null, peaceful = false } = opts;
 
   // The predicted world holds ONLY the local player. Remote entities are
   // interpolated from snapshots instead: the client has no authority over
   // them and cannot predict them correctly. Non-authoritative, so it never
   // runs the spawn director, enemy AI, or respawn timers.
   const predicted: World =
-    forest === null ? createWorld(level, seed, false) : createForestWorld(forest, false);
+    forest === null ? createWorld(level, seed, false) : createForestWorld(forest, false, peaceful);
   let localId = 0;
   let ready = false;
 

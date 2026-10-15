@@ -118,6 +118,24 @@ describe("the inner voice", () => {
     expect(INNER_LINES.safe).toContain(car.line?.text);
   });
 
+  it("on a calm hike says only the trailhead's line and the weather's, never the trail's, the dark's or the dread's", () => {
+    const calm = { ...DAY, calm: true, climb: 0, wet: 0 };
+    let { state, lines } = run(voiceRest(3), calm, VOICE_FIRST_S + 2);
+    expect(lines).toHaveLength(1);
+    expect(INNER_LINES.trailhead).toContain(lines[0]);
+    // Off the trail for long, by day and by night, standing still, the lamp off, a cry, the cap, the crest: nothing.
+    const far = { ...calm, climb: 0.95, offTrail: OFF_TRAIL_M + 10, moving: false, night: 1, stare: 1, cry: true, nearCap: true };
+    ({ state, lines } = run(state, far, 200));
+    expect(lines).toEqual([]);
+    // The rain coming in, then the fog: each answered once.
+    ({ state, lines } = run(state, { ...calm, wet: 0.7 }, VOICE_GAP_S + 2));
+    expect(lines).toHaveLength(1);
+    expect(INNER_LINES.rain).toContain(lines[0]);
+    ({ state, lines } = run(state, { ...calm, mist: 0.4 }, VOICE_GAP_S + 2));
+    expect(lines).toHaveLength(1);
+    expect(INNER_LINES.mist).toContain(lines[0]);
+  });
+
   it("says nothing once the match has ended", () => {
     const out = run(voiceRest(7), { ...NIGHT, ended: true, cry: true, nearBody: true, offTrail: 20 }, 60);
     expect(out.lines).toEqual([]);

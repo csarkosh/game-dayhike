@@ -84,6 +84,23 @@ describe("createAmbientAudio", () => {
     audio.dispose();
   });
 
+  it("muted before unlock, the master is born silent; muted after, it is ramped to silence and the volume waits under it", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.setMuted(true);
+    audio.unlock();
+    const master = created.gains[0]!;
+    expect(master.gain.value).toBe(0);
+    // The volume under a mute sets nothing on the master until the mute lifts.
+    audio.setVolume(0.3);
+    expect(master.gain.targets.map((t) => t.value)).toEqual([]);
+    audio.setMuted(false);
+    expect(master.gain.targets.map((t) => t.value)).toEqual([0.3]);
+    audio.setMuted(true);
+    expect(master.gain.targets.map((t) => t.value)).toEqual([0.3, 0]);
+    audio.dispose();
+  });
+
   it("defaults: pending weather is the bright preset, volume 0.5, wind bed not silent", () => {
     const { ctx, created } = fakeCtx();
     const audio = createAmbientAudio(() => ctx);

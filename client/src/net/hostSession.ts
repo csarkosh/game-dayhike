@@ -104,13 +104,13 @@ export function createHostSession(
   level: Level,
   seed: number,
   clock: () => number = () => performance.now(),
-  opts: { forest?: Forest | null; hostPeerId?: string } = {},
+  opts: { forest?: Forest | null; hostPeerId?: string; peaceful?: boolean } = {},
 ): HostSession {
-  const { forest = null, hostPeerId = "host" } = opts;
+  const { forest = null, hostPeerId = "host", peaceful = false } = opts;
   // A forest world's `level.id` is the versioned generator identity, which is
   // what the Welcome event below sends and the client validates. No geometry
   // crosses the wire either way, so the codec is untouched.
-  const world = forest === null ? createWorld(level, seed) : createForestWorld(forest);
+  const world = forest === null ? createWorld(level, seed) : createForestWorld(forest, true, peaceful);
   const localPlayer = spawnPlayer(world);
   const peers = new Map<string, PeerRecord>();
   const history = new PositionHistory();

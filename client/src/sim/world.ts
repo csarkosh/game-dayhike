@@ -102,6 +102,10 @@ export type World = {
    * other and reaches every peer through the snapshot.
    */
   watcher: WatcherRecord | null;
+  /** Explore (`game/gameMode.ts`): no watcher, no haunt, and the summit is
+   * never found (summit.ts), so nothing walks out of the woods and the
+   * climb never flips. The world's, so every peer runs the same one. */
+  peaceful: boolean;
 };
 
 export function createWorld(level: Level, seed: number, authoritative = true): World {
@@ -119,6 +123,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     cut: null,
     haunt: null,
     watcher: null,
+    peaceful: false,
     state: {
       tick: 0,
       players: new Map(),
@@ -138,7 +143,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
  * `level.id` in Welcome, which is how the generator version and seed reach the
  * client, and `renderer.ts` iterates `level.brushes`, which is correctly empty.
  */
-export function createForestWorld(forest: Forest, authoritative = true): World {
+export function createForestWorld(forest: Forest, authoritative = true, peaceful = false): World {
   const variant = activeTerrainVariant();
   const graph = variant.trailGraph?.(forest.seed);
   const world: World = {
@@ -153,8 +158,9 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
     search: null,
     trail: graph ?? null,
     cut: null,
-    watcher: graph === undefined || !authoritative ? null : createWatcherRecord(forest.seed),
-    haunt: graph === undefined || !authoritative ? null : createHauntRecord(forest.seed),
+    watcher: graph === undefined || !authoritative || peaceful ? null : createWatcherRecord(forest.seed),
+    haunt: graph === undefined || !authoritative || peaceful ? null : createHauntRecord(forest.seed),
+    peaceful,
     state: {
       tick: 0,
       players: new Map(),

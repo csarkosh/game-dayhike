@@ -1,5 +1,6 @@
 import { DEFAULT_WEATHER, WEATHER_NAMES } from "./weather.js";
 import { DEFAULT_BOB_SCALE, MAX_BOB_SCALE } from "./viewBob.js";
+import { GAME_MODES } from "./gameMode.js";
 
 export type CommandKind = "view" | "world";
 
@@ -190,6 +191,17 @@ const SPECS: readonly CommandSpec[] = [
       if (!SEED_TOKEN.test(token)) return "a seed token cannot contain whitespace or ;";
       if (token.length > SEED_TOKEN_MAX) return `a seed token is at most ${SEED_TOKEN_MAX} characters`;
       return null;
+    },
+  },
+  {
+    name: "mode",
+    kind: "world",
+    // `mode game|explore|freecam` (gameMode.ts): the world's, so every peer
+    // runs the same one; resolved as `seed` is, and written into the
+    // address so an invite carries it. Absent, the saved choice stands.
+    validate(args) {
+      if (args.length === 1 && (GAME_MODES as readonly string[]).includes(args[0] as string)) return null;
+      return `mode takes one of ${GAME_MODES.join(", ")}`;
     },
   },
   {

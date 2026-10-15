@@ -37,6 +37,9 @@ export type VoiceInputs = {
   nearCap: boolean;
   nearBody: boolean;
   safe: boolean;
+  /** An explore hike (gameMode.ts): nothing to dread and nowhere to be, so
+   * only the lines that greet the day and answer the weather (`CALM_LINES`). */
+  calm?: boolean;
 };
 
 export type VoiceState = {
@@ -102,6 +105,8 @@ const CAPS: Readonly<Record<VoiceScenario, { cap: number; gap: number }>> = {
 };
 /** The scenarios the chase allows; the rest are the climb's. */
 const CHASE_ONLY: ReadonlySet<VoiceScenario> = new Set(["chaseStart", "chaseOffTrail", "safe"]);
+/** The lines an explore hike keeps: the trailhead's, and the rain's and the fog's as they come in. */
+export const CALM_LINES: ReadonlySet<VoiceScenario> = new Set(["trailhead", "rain", "mist"]);
 /** Lines that cut the gap: the body, the chase's start and the car do not wait on the cooldown. */
 const URGENT: ReadonlySet<VoiceScenario> = new Set(["body", "hollow", "chaseStart", "safe", "cryFirst"]);
 
@@ -226,6 +231,7 @@ export function stepInnerVoice(prev: VoiceState, input: VoiceInputs, dt: number)
     // The chase's lines are the chase's alone (the car is safe ground before it too: the trailhead
     // stands on the road), and the climb's are the climb's.
     if (input.chase !== CHASE_ONLY.has(scenario)) continue;
+    if (input.calm === true && !CALM_LINES.has(scenario)) continue;
     if (!may(state, scenario)) continue;
     state.said[scenario] = (state.said[scenario] ?? 0) + 1;
     state.last[scenario] = state.elapsed;

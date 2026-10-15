@@ -60,6 +60,8 @@ import {
   type StartupTier,
 } from "./game/frameProbe.js";
 import { createHud } from "./game/hud.js";
+import { createModeKeeper, type GameMode } from "./game/gameMode.js";
+import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";
 import { probeDeps } from "./game/probeScene.js";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
 import type { AutoSummary } from "./game/settings.js";
@@ -101,6 +103,17 @@ const app: HTMLDivElement = found;
 /** The veil the pages switch behind (veil.ts), and the milliseconds a new page gets to settle before it lifts. */
 const veil = createVeil(document.body);
 const VEIL_SETTLE_MS = 250;
+/** The page's mute (muteButton.ts), on the body beside the veil: over every
+ * page and film, and the hike's ambient through `gameMute` while one runs. */
+let gameMute: ((muted: boolean) => void) | null = null;
+const mute = createMuteButton(document.body, {
+  muted: readMuted(pageStorage()),
+  onChange: (on) => {
+    writeMuted(pageStorage(), on);
+    gameMute?.(on);
+    activeIntro?.overlay.setSound();
+  },
+});
 
 let running: { dispose(): void } | null = null;
 // The match on this page, when the route is the game's: what a lobby opened
@@ -227,6 +240,13 @@ const saveChoice = (choice: TierChoice): void => {
   tierChoice.save(choice);
   choiceNotice = null;
   telemetry.event("settings", { choice });
+};
+// The mode (gameMode.ts), kept the same way; the hike reads it where its address names none.
+const modeChoice = createModeKeeper(pageStorage);
+const currentMode = (): GameMode => modeChoice.mode();
+const saveMode = (mode: GameMode): void => {
+  modeChoice.save(mode);
+  telemetry.event("settings", { mode });
 };
 
 /**
@@ -364,7 +384,7 @@ function cutIntro(run: IntroRun, reason: CutReason): void {
 
 function startIntro(src: string, muted: boolean): IntroRun {
   const run: IntroRun = { overlay: null as unknown as IntroOverlay, frame: 0, launched: null, cutEarly: null };
-  run.overlay = createIntroOverlay(app, { src, captions: INTRO_CAPTIONS, muted, onCut: (reason) => cutIntro(run, reason) });
+  run.overlay = createIntroOverlay(app, { src, captions: INTRO_CAPTIONS, muted, sound: () => !mute.muted(), onCut: (reason) => cutIntro(run, reason) });
   const draw = (now: number): void => {
     run.overlay.render(now);
     run.frame = requestAnimationFrame(draw);
@@ -706,6 +726,7 @@ function landingInput(over: Partial<LandingInput> = {}): LandingInput {
       override: parseTierOverride(location.search),
       stored: choiceStored(),
       notice: choiceNotice ?? undefined,
+      mode: currentMode(),
     },
     notice: landingNotice ?? undefined,
     ...over,
@@ -978,6 +999,8 @@ function render(container: HTMLDivElement): void {
   landing = null;
   endIntro(activeIntro);
   container.replaceChildren();
+  // The mute sits faint over a hike, plain on every other page.
+  mute.setFaint(route.kind === "game");
 
   // The staged intro on its fixed world, a frame at a time for its recording:
   // the film is made on the high tier, which is what Auto means here, on the
@@ -1029,6 +1052,10 @@ function render(container: HTMLDivElement): void {
         onSettings: () => navigateToPanel("settings"),
         onChooseTier: (choice) => {
           saveChoice(choice);
+          repaintLanding();
+        },
+        onChooseMode: (mode) => {
+          saveMode(mode);
           repaintLanding();
         },
         onCredits: () => navigateToPanel("credits"),
@@ -1233,6 +1260,16 @@ function launch(
           override: parseTierOverride(location.search),
           notice: () => choiceNotice,
           save: saveChoice,
+        },
+        mode: { choice: currentMode, save: saveMode },
+        mute: {
+          bind: (apply) => {
+            gameMute = apply;
+            apply(mute.muted());
+            return () => {
+              if (gameMute === apply) gameMute = null;
+            };
+          },
         },
       }),
     engineFailed,

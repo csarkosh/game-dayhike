@@ -79,6 +79,23 @@ describe("safe ground", SUITE, () => {
   });
 });
 
+describe("a peaceful world", SUITE, () => {
+  it("has no watcher and no haunt, and the body is never found: a player at it stays on the climb, with no Hollow", () => {
+    const w = createForestWorld(createForest(seed), true, true);
+    expect(w.peaceful).toBe(true);
+    expect(w.watcher).toBeNull();
+    expect(w.haunt).toBeNull();
+    expect(createForestWorld(createForest(seed)).peaceful).toBe(false);
+    const p = spawnPlayer(w);
+    const body = w.search!.body.pos;
+    standAt(p, body.x - (DISCOVERY_RADIUS - 1), body.z);
+    tick(w, 30);
+    expect(w.state.phase).toBe(Phase.Climb);
+    expect(w.state.enemies.size).toBe(0);
+    expect(w.state.outcome).toBe(Outcome.Playing);
+  });
+});
+
 describe("the discovery", SUITE, () => {
   it("flips the phase for everyone when the first living player reaches the body, and the Hollow steps out behind it", () => {
     const { w, p } = forestWorld();

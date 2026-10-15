@@ -90,6 +90,8 @@ import { createTrace, type Trace } from "./game/trace.js";
 import { afterNextPaint } from "./game/paint.js";
 import type { QualityTier } from "./game/quality.js";
 import { settingsModel, type AutoSummary } from "./game/settings.js";
+import { DEFAULT_MODE, isGameMode, peaceful, type GameMode } from "./game/gameMode.js";
+import { EXPLORE_HOUR_S, exploreHour, exploreWeather } from "./game/exploreDay.js";
 import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice.js";
 import {
   buildFirstRenderer,
@@ -262,6 +264,18 @@ export type GameOptions = {
     notice(): string | null;
     save(choice: TierChoice): void;
   };
+  /** The mode setting (`gameMode.ts`): the saved choice, read where the
+   * address's script names none, and how to keep a new one. */
+  mode: {
+    choice(): GameMode;
+    save(mode: GameMode): void;
+  };
+  /** The page's mute (`muteButton.ts`): `bind` hands the hike's ambient a
+   * setter, calls it with the state now and on every change, and returns the
+   * unbinding, called at the hike's end. */
+  mute: {
+    bind(apply: (muted: boolean) => void): () => void;
+  };
 };
 
 /**
@@ -318,6 +332,16 @@ function buildGame(
   // registry is host-side truth) and turns on the Interacted console logging
   // on both sessions, so Interact can be proven end to end in the browser.
   const debugOn = lastEntry(world, "debug") !== undefined;
+
+  // The mode (gameMode.ts), resolved as `seed` is: the address's entry, else
+  // the saved choice, which is then written into the address, so an invite
+  // carries it and every peer runs the same world. `calm` is the explore
+  // modes' world: no one in the woods, nothing to dread, a day of its own.
+  const modeEntry = lastEntry(world, "mode");
+  const modeArg = modeEntry?.args[0];
+  const mode: GameMode = isGameMode(modeArg) ? modeArg : options.mode.choice();
+  const calm = peaceful(mode);
+  if (modeEntry === undefined && mode !== DEFAULT_MODE) persist("mode", [mode]);
 
   // Resolved like `seed`, never dispatched — a dispatched world entry would
   // rewrite ?cmd= and re-initialise forever. The active variant is module
@@ -519,6 +543,8 @@ function buildGame(
   let escalation: EscalationState = ESCALATION_REST;
   /** The `escalation` command's hold on the world's escalation for a look, or null for the climb's own. */
   let escalationHold: number | null = null;
+  /** The explore day's clock (exploreDay.ts): seconds since the hike began, on a calm world. */
+  let exploreClockS = 0;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
   let woods: WoodsState = WOODS_REST;
   // The summit scene (cutscene.ts): from the flip, the controls are stilled and the camera is the scene's for SUMMIT_REVEAL_S.
@@ -607,6 +633,8 @@ function buildGame(
   let capAt: (DroppedCap & { y: number }) | null | undefined;
   const voiceClips = createVoiceClips(ambient);
   made(() => voiceClips.dispose());
+  // The page's mute: the ambient master follows it from now to the hike's end.
+  made(options.mute.bind((on) => ambient.setMuted(on)));
   /** The woods' other voices (woodsSounds.ts), on this screen's own stream. */
   let woodsSounds: WoodsSoundsState = WOODS_SOUNDS_REST;
   // Recomputed when the weather does: on a `weather` command directly below,
@@ -992,15 +1020,30 @@ function buildGame(
     }
     // The `escalation` command's hold, for a look: the atmosphere and the acts
     // read it; the lens, the chase and the telemetry keep the climb's truth.
-    const shown = escalationHold === null ? escalation : { ...escalation, world: escalationHold };
+    // A calm world holds the sky's fall, the lens, the chase and the haunt at nothing.
+    const shown = calm
+      ? { ...escalation, world: 0, lens: 0, chase: 0, haunt: 0 }
+      : escalationHold === null ? escalation : { ...escalation, world: escalationHold };
     // The end scene's road shot draws the mist back, so the car can be followed down the highway.
-    const settled = atmosphereUnder(base, shown);
+    // A calm world's weather and hour are the explore day's (exploreDay.ts), turning with its
+    // clock from the hour the console set; the lake's calm follows the preset the day is nearest.
+    let settled: AtmosphereBase;
+    if (calm) {
+      exploreClockS += dt;
+      const hour = exploreHour(base.hour, exploreClockS);
+      const day = exploreWeather(hour);
+      settled = { weather: day.weather, hour };
+      if (day.name !== weatherName) {
+        weatherName = day.name;
+        renderer.setWeatherName(weatherName, EXPLORE_HOUR_S / 2);
+      }
+    } else settled = atmosphereUnder(base, shown);
     const mist = endMistNow();
     const a = mist === 1 ? settled : { ...settled, weather: { ...settled.weather, mist: settled.weather.mist * mist } };
     // The chase's cast and its pulse, every frame: neither waits on the weather's gate below.
-    renderer.setChase(escalation.chase);
-    renderer.setHaunt(escalation.haunt);
-    ambient.setChase(escalation.chase, escalation.lens);
+    renderer.setChase(shown.chase);
+    renderer.setHaunt(shown.haunt);
+    ambient.setChase(shown.chase, shown.lens);
     wildlifePresence = wildlifePresenceUnder(a.weather, a.hour);
     // The woods' voice: the birdsong's level, and the Hollow's call from up
     // the trail as the climb passes each mark. The call is the elk's bugle,
@@ -1014,10 +1057,11 @@ function buildGame(
     }
     const ear = renderer.listener();
     const crest = world.search.body.pos;
-    const acts = actsUnder(shown.world);
+    // A calm world's acts: its rain as the wet, and never the night or its mist.
+    const acts = calm ? { wet: settled.weather.rain, night: 0, mist: 0 } : actsUnder(shown.world);
     renderer.setMistIn(acts.mist * mist);
     const voiced = stepWoods(woods, {
-      climb: escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase !== Phase.Climb, hollow, rain: a.weather.rain,
+      climb: calm ? 0 : escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase !== Phase.Climb, hollow, rain: a.weather.rain,
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
     }, dt);
     woods = voiced.state;
@@ -1069,7 +1113,7 @@ function buildGame(
       for (const e of state.enemies.values()) if (e.ai === AiState.Shade && playerSees(self, e, world)) { shadeSeen = true; break; }
       const body = world.search.body.pos;
       const spoke = stepInnerVoice(voice, {
-        climb: escalation.progressMax, wet: acts.wet, night: acts.night, mist: acts.mist,
+        climb: calm ? 0 : escalation.progressMax, wet: acts.wet, night: acts.night, mist: calm ? settled.weather.mist : acts.mist,
         chase: state.phase === Phase.Chase, ended: ended || dead, covered: gate.covered, scene: sceneOn() ? sceneKind : "none",
         offTrail: world.trail === null ? 0 : trailDistance(world.trail, self.pos.x, self.pos.z),
         lamp: self.lamp.on, stare: self.stare, moving: Math.hypot(self.vel.x, self.vel.z) > 0.2,
@@ -1080,6 +1124,7 @@ function buildGame(
         // The scene is the find on every screen (the flip comes at DISCOVERY_RADIUS, further than a step): the body's line in its second shot.
         nearBody: sceneOn() ? sceneUntil - performance.now() <= (SUMMIT_SCENE_S - (SHOTS[0] as number)) * 1000 : Math.hypot(self.pos.x - body.x, self.pos.z - body.z) < 4,
         safe: self.safe,
+        calm,
       }, dt);
       voice = spoke.state;
       if (spoke.line !== null) {
@@ -1449,11 +1494,12 @@ function buildGame(
     return endMistShare(scene.t - scene.arrival - END_ROAD_AT_S);
   }
 
-  /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
+  /** Advances and paints the touch layer, and the HUD's lamp hint for a keyboard. Both loops, after `renderer.sync`. */
   function syncTouch(lampOn: boolean): void {
     touchModel.tick(performance.now());
     touchModel.setLampOn(lampOn);
     touchLayer.sync();
+    hud.setLamp(touchStart || ended || dead ? null : { key: "F", on: lampOn });
   }
 
   /**
@@ -1535,6 +1581,10 @@ function buildGame(
       if (parsed.name === "weather" && parsed.args.length === 0) {
         return `weather: ${weatherName}`;
       }
+      // A calm world's weather is the explore day's own: a preset asked for is answered, not set.
+      if (calm && parsed.name === "weather") {
+        return `weather: ${weatherName}, turning with the hour in ${mode} mode`;
+      }
 
       // A bare toggle typed into the bar flips; the URL records the state that
       // results, not the keystroke that caused it.
@@ -1587,10 +1637,19 @@ function buildGame(
           applying,
           error: swapError ?? undefined,
           notice: options.quality.notice() ?? undefined,
+          mode,
         }),
       onApply: (choice, readyMaxMs) => applyTier(choice, readyMaxMs),
       onChoose: () => {
         swapError = null;
+      },
+      // A new mode is kept, and the hike started over on it: a world entry,
+      // re-initialised through the path `main.ts` listens on, as `/mode` is.
+      onChooseMode: (chosen) => {
+        options.mode.save(chosen);
+        if (chosen === mode) return;
+        persist("mode", [chosen]);
+        window.dispatchEvent(new PopStateEvent("popstate"));
       },
     },
   });
@@ -1628,6 +1687,8 @@ function buildGame(
   // A look named there (`summit`, `escape`) waits for the world (`ready`, below): its hand is the
   // host's, installed with the host session, and its scene is for a world already in.
   for (const entry of view) if (!isLook(entry.name)) applyView(entry.name, entry.args, { instant: true });
+  // The free camera mode: the camera freed from the start, unless the address says otherwise.
+  if (mode === "freecam" && lastEntry(view, "freecam") === undefined) applyView("freecam", [], { instant: true });
   if (errors.length > 0) bar.showError(errors.join("  •  "));
 
   const degradation = parseNetConditions(location.search);
@@ -1794,6 +1855,7 @@ function buildGame(
     const host = createHostSession(level, seed, () => performance.now(), {
       forest,
       hostPeerId: selfPeerId,
+      peaceful: calm,
     });
     summitPreview = () => {
       const me = host.world.state.players.get(host.localEntityId);
@@ -1988,6 +2050,7 @@ function buildGame(
     const client = createClientSession(level, seed, transport, () => performance.now(), {
       expectedLevelId: forest.levelId,
       forest,
+      peaceful: calm,
     });
     session = client;
     matchStarted("client", client.world, () => ({ rtt: client.stats.rttMs, pe: client.stats.lastPredictionError }));

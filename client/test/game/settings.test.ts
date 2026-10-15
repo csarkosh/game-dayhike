@@ -7,6 +7,12 @@ import { landingModel } from "../../src/game/landingModel.js";
 import type { TierChoice } from "../../src/game/tierChoice.js";
 import { StandInElement, StandInOption, StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
 
+const MODES = (selected: string) => [
+  { mode: "game", label: "Game", selected: selected === "game", disabled: false },
+  { mode: "explore", label: "Explore", selected: selected === "explore", disabled: false },
+  { mode: "freecam", label: "Free camera", selected: selected === "freecam", disabled: false },
+];
+
 const CHOICES = (selected: string) => [
   { choice: "auto", label: "Auto (Recommended)", selected: selected === "auto", disabled: false },
   { choice: "high", label: "High", selected: selected === "high", disabled: false },
@@ -24,6 +30,7 @@ describe("settingsModel", () => {
       group: "Graphics",
       choices: CHOICES("auto"),
       lines: ["Auto picks Medium on this computer."],
+      mode: { group: "Mode", choices: MODES("game"), lines: ["The hike as it is."] },
       back: { label: "Back", disabled: false },
     });
   });
@@ -158,6 +165,29 @@ describe("the stand-in document these screens are tested against", () => {
     expect(doc.activeElement).toBe(control);
     box.replaceChildren();
     expect(doc.activeElement).toBe(doc.body);
+  });
+
+  it("paints the mode under the graphics, its line for the one chosen, and a pick is heard as the mode", () => {
+    const doc = installStandInDom();
+    const root = doc.createElement("div");
+    doc.body.append(root);
+    const modes: string[] = [];
+    const view = settingsModel({ context: "title", choice: "auto", auto: null, override: null, stored: true, mode: "explore" });
+    expect(view.mode.lines).toEqual(["No one in the woods and nothing to dread; the weather turns with the hour."]);
+    const ui = renderSettings(asHtml(root), view, { onChoose: () => {}, onChooseMode: (m) => modes.push(m), onBack: () => {} });
+    const selects = root.descendants().filter((el) => el.tagName === "SELECT") as StandInSelect[];
+    expect(selects.map((s) => (s as unknown as { name: string }).name)).toEqual(["graphics", "mode"]);
+    const mode = selects[1]!;
+    expect(mode.value).toBe("explore");
+    expect(root.descendants().filter((el) => el.tagName === "OPTION").map((o) => o.textContent).slice(4)).toEqual(["Game", "Explore", "Free camera"]);
+    mode.choose("freecam");
+    expect(modes).toEqual(["freecam"]);
+    // The pause screen says a pick starts the hike over.
+    ui.setView(settingsModel({ context: "pause", choice: "auto", auto: null, override: null, stored: true, running: "high", mode: "game" }));
+    expect(mode.value).toBe("game");
+    const lines = root.descendants().filter((el) => el.classList.contains("line") && !el.classList.contains("caution")).map((el) => el.textContent);
+    expect(lines).toEqual(["This hike is using High.", "The hike as it is.", "Picking another mode restarts the hike at its trailhead."]);
+    ui.dispose();
   });
 
   it("fires nothing when a script sets a select's value, and input then change when a person picks", () => {
@@ -320,9 +350,10 @@ describe("the Graphics select", () => {
     return { doc, root, ui, chosen, selects, select, caption };
   }
 
-  it("is one select, not a row of buttons, offering Auto (Recommended), High, Medium and Low in that order", () => {
+  it("is one select, not a row of buttons, offering Auto (Recommended), High, Medium and Low in that order; the mode's is the second", () => {
     const { root, selects, select } = mount(title());
-    expect(selects.length).toBe(1);
+    expect(selects.length).toBe(2);
+    expect((selects[1] as unknown as { name: string }).name).toBe("mode");
     expect(root.descendants().filter((el) => el.tagName === "BUTTON" && el.classList.contains("choice")).length).toBe(0);
     expect(select.options.map((o) => o.value)).toEqual(["auto", "high", "medium", "low"]);
     expect(select.options.map((o) => o.textContent)).toEqual(["Auto (Recommended)", "High", "Medium", "Low"]);
@@ -353,7 +384,7 @@ describe("the Graphics select", () => {
     ui.setView(
       settingsModel(title({ choice: "high", auto: { tier: "medium", probePending: false, ceiling: "medium" }, stored: false })),
     );
-    expect(root.querySelectorAll("select")).toEqual([select]);
+    expect(root.querySelectorAll("select")[0]).toBe(select);
     expect(select.options.length).toBe(4);
     select.options.forEach((o, i) => expect(o).toBe(options[i]));
     expect(select.isConnected).toBe(true);
@@ -377,8 +408,7 @@ describe("the Graphics select", () => {
   it("is named Graphics by a label for it, has an id and a name, and is described by the caption", () => {
     const { root, select, caption } = mount(title());
     const labels = root.querySelectorAll("label");
-    expect(labels.length).toBe(1);
-    expect(labels[0]!.textContent).toBe("Graphics");
+    expect(labels.map((l) => l.textContent)).toEqual(["Graphics", "Mode"]);
     expect(select.id).toMatch(/^settings-graphics-\d+$/);
     expect(labels[0]!.htmlFor).toBe(select.id);
     expect(select.name).toBe("graphics");
@@ -462,6 +492,7 @@ describe("the title screen's Settings panel", () => {
       onCreate: noop, onJoin: noop, onDownloads: noop, onCredits: noop, onBack: noop,
       onSettings: () => page.setPanel("settings"),
       onChooseTier: (c) => kept.push(c),
+      onChooseMode: noop,
     });
     const entry = container.descendants().find((el) => el.tagName === "BUTTON" && el.textContent === "Settings")!;
     const panel = container.descendants().find((el) => el.classList.contains("panel") && el.classList.contains("settings"))!;

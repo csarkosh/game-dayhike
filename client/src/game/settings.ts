@@ -5,7 +5,10 @@
  * `textContent` only, into whichever panel hosts it.
  *
  * The graphics choice is one native `<select>`, drawn in the look the game's
- * text inputs share (the landing's join field). Apply and Back are plain
+ * text inputs share (the landing's join field), and the mode (`gameMode.ts`)
+ * a second under it, kept as it is picked on both screens: on the pause
+ * screen a new mode restarts the hike at its trailhead, and the line under
+ * it says so. Apply and Back are plain
  * `<button>`s, so they take the host's own rules (`.landing button`,
  * `.pausemenu button`) and the host's tokens. The one style literal here is
  * for what is the component's own: the label, the select and its list, and
@@ -13,6 +16,7 @@
  */
 import type { QualityTier } from "./quality.js";
 import type { TierChoice } from "./tierChoice.js";
+import { DEFAULT_MODE, GAME_MODES, MODE_LABELS, MODE_LINES, type GameMode } from "./gameMode.js";
 
 /** The choices, in the order the screen offers them: Auto first, and the default. */
 export const TIER_CHOICES: readonly TierChoice[] = ["auto", "high", "medium", "low"];
@@ -55,6 +59,8 @@ export type SettingsInput = {
   override: QualityTier | null;
   /** Whether the browser keeps the choice across pages. */
   stored: boolean;
+  /** The mode chosen (`gameMode.ts`); the hike as it is when absent. */
+  mode?: GameMode;
 };
 
 export type SettingsView = {
@@ -65,10 +71,16 @@ export type SettingsView = {
    * so in one quiet line under the select. */
   caution?: string;
   lines: string[];
+  /** The mode's group under the graphics': its choices, and the line for the
+   * one chosen, with what a change does on the pause screen. */
+  mode: { group: string; choices: { mode: GameMode; label: string; selected: boolean; disabled: boolean }[]; lines: string[] };
   /** Pause only: the title screen keeps a choice as it is picked. */
   apply?: { label: string; disabled: boolean };
   back: { label: string; disabled: boolean };
 };
+
+/** The pause screen's line under the mode: a pick there starts the hike over. */
+export const MODE_RESTARTS = "Picking another mode restarts the hike at its trailhead.";
 
 /**
  * The screen as data. The lines, each only when it applies and in this order:
@@ -106,6 +118,11 @@ export function settingsModel(input: SettingsInput): SettingsView {
       disabled: applying,
     })),
     lines,
+    mode: {
+      group: "Mode",
+      choices: GAME_MODES.map((mode) => ({ mode, label: MODE_LABELS[mode], selected: mode === (input.mode ?? DEFAULT_MODE), disabled: applying })),
+      lines: input.context === "pause" ? [MODE_LINES[input.mode ?? DEFAULT_MODE], MODE_RESTARTS] : [MODE_LINES[input.mode ?? DEFAULT_MODE]],
+    },
     back: { label: "Back", disabled: applying },
   };
   const ceiling = input.auto?.ceiling;
@@ -197,6 +214,8 @@ const STYLE = `
     color: rgba(255, 255, 255, 0.62);
   }
   .settings .caution { min-height: 1.3em; font-size: 0.8rem; color: rgba(255, 255, 255, 0.45); }
+  /* The second group stands off the first's lines. */
+  .settings .group.mode { margin-top: 0.6rem; }
 `;
 
 /**
@@ -215,7 +234,7 @@ const STYLE = `
 export function renderSettings(
   root: HTMLElement,
   view: SettingsView,
-  handlers: { onChoose(choice: TierChoice): void; onBack(): void; onApply?(opener: Opener): void },
+  handlers: { onChoose(choice: TierChoice): void; onChooseMode?(mode: GameMode): void; onBack(): void; onApply?(opener: Opener): void },
 ): { setView(view: SettingsView): void; entry(opener: Opener): HTMLElement; dispose(): void } {
   const style = document.createElement("style");
   style.textContent = STYLE;
@@ -257,6 +276,29 @@ export function renderSettings(
   const lines = document.createElement("div");
   lines.style.display = "contents";
 
+  // The mode: its own select under the graphics' lines, heard on `change` as the first is.
+  const modeSelect = document.createElement("select");
+  modeSelect.className = "choice mode";
+  modeSelect.id = `settings-mode-${n}`;
+  modeSelect.name = "mode";
+  const modeOptions = new Map<GameMode, HTMLOptionElement>();
+  for (const c of view.mode.choices) {
+    const option = document.createElement("option");
+    option.value = c.mode;
+    modeOptions.set(c.mode, option);
+    modeSelect.append(option);
+  }
+  modeSelect.addEventListener("change", () => {
+    const mode = GAME_MODES.find((m) => m === modeSelect.value);
+    if (mode !== undefined) handlers.onChooseMode?.(mode);
+  });
+  const modeGroup = document.createElement("label");
+  modeGroup.className = "group mode";
+  modeGroup.htmlFor = modeSelect.id;
+  modeGroup.textContent = view.mode.group;
+  const modeLines = document.createElement("div");
+  modeLines.style.display = "contents";
+
   const apply = document.createElement("button");
   apply.type = "button";
   apply.className = "apply";
@@ -292,6 +334,24 @@ export function renderSettings(
         return line;
       }),
     );
+    modeGroup.textContent = v.mode.group;
+    for (const c of v.mode.choices) {
+      const option = modeOptions.get(c.mode);
+      if (option === undefined) continue;
+      option.textContent = c.label;
+      option.disabled = c.disabled;
+    }
+    const chosenMode = v.mode.choices.find((c) => c.selected);
+    if (chosenMode !== undefined && modeSelect.value !== chosenMode.mode) modeSelect.value = chosenMode.mode;
+    modeSelect.disabled = v.mode.choices.every((c) => c.disabled);
+    modeLines.replaceChildren(
+      ...v.mode.lines.map((text) => {
+        const line = document.createElement("p");
+        line.className = "line";
+        line.textContent = text;
+        return line;
+      }),
+    );
     apply.hidden = v.apply === undefined;
     if (v.apply !== undefined) {
       apply.textContent = v.apply.label;
@@ -302,13 +362,13 @@ export function renderSettings(
   }
 
   paint(view);
-  root.append(style, heading, group, select, caution, lines, apply, back);
+  root.append(style, heading, group, select, caution, lines, modeGroup, modeSelect, modeLines, apply, back);
 
   return {
     setView: paint,
     entry: (opener) => (opener === "keyboard" ? select : heading),
     dispose() {
-      for (const node of [style, heading, group, select, caution, lines, apply, back]) node.remove();
+      for (const node of [style, heading, group, select, caution, lines, modeGroup, modeSelect, modeLines, apply, back]) node.remove();
     },
   };
 }

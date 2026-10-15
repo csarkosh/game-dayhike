@@ -1,3 +1,4 @@
+import type { GameMode } from "./gameMode.js";
 import { APPLY_SWAP_READY_MAX_MS } from "./rendererSwap.js";
 import { listOpen, openerOf, renderSettings, type Opener, type SettingsView } from "./settings.js";
 import type { TierChoice } from "./tierChoice.js";
@@ -329,6 +330,9 @@ export type PauseSettings = {
   /** A choice was picked (the selection changed): what the last Apply said
    * can be let go. */
   onChoose?(choice: TierChoice): void;
+  /** A mode was picked (`gameMode.ts`): kept and applied at once, which
+   * starts the hike over at its trailhead. */
+  onChooseMode?(mode: GameMode): void;
 };
 
 export type PauseMenu = {
@@ -402,6 +406,7 @@ export function createPauseMenu(
   settingsPage.inert = true;
   const settingsUi = renderSettings(settingsPage, options.settings.view(options.settings.saved(), false), {
     onChoose: (choice) => dispatch({ kind: "choose", choice }),
+    onChooseMode: (mode) => options.settings.onChooseMode?.(mode),
     onBack: () => dispatch({ kind: "back" }),
     onApply: (how) => {
       opener = how;

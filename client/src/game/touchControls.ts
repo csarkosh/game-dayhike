@@ -1,3 +1,4 @@
+import { lineIcon } from "./icons.js";
 import { bindCanvas } from "./canvasBinding.js";
 import { Button } from "../sim/types.js";
 
@@ -424,34 +425,6 @@ const STYLE = `
   }
 `;
 
-const SVG = "http://www.w3.org/2000/svg";
-
-/**
- * A line icon in the game's own strokes. Drawn with DOM APIs, never markup:
- * nothing dynamic goes in, but the file's rule is the same for every node.
- */
-function icon(kind: "lamp" | "pause"): SVGSVGElement {
-  const svg = document.createElementNS(SVG, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "1.6");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("stroke-linecap", "round");
-  const paths =
-    kind === "lamp"
-      ? // A hand torch, head up: the body, the shoulder where it narrows, and the lens.
-        ["M8.5 3h7v3.2L13.5 9.5V21h-3V9.5L8.5 6.2z", "M8.5 6.2h7", "M12 12.5v3"]
-      : ["M8.5 5.5v13", "M15.5 5.5v13"];
-  for (const d of paths) {
-    const path = document.createElementNS(SVG, "path");
-    path.setAttribute("d", d);
-    if (kind === "pause") path.setAttribute("stroke-width", "2.6");
-    svg.append(path);
-  }
-  return svg;
-}
 
 export type TouchLayer = {
   sync(): void;
@@ -496,12 +469,12 @@ export function createTouchLayer(
   lamp.type = "button";
   lamp.className = "lamp";
   lamp.setAttribute("aria-label", "Lamp");
-  lamp.append(icon("lamp"));
+  lamp.append(lineIcon("lamp"));
   const pause = document.createElement("button");
   pause.type = "button";
   pause.className = "pause";
   pause.setAttribute("aria-label", "Pause");
-  pause.append(icon("pause"));
+  pause.append(lineIcon("pause"));
 
   root.append(stick, lamp, pause);
   container.append(style, root);

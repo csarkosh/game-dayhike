@@ -260,6 +260,12 @@ export type AmbientAudio = {
   setStare(lens: StareLens, haunt?: number): void;
   setVolume(v: number): void;
   /**
+   * The page's mute (muteButton.ts): the master held at silence while on,
+   * whatever the volume; off, the volume stands again. Kept across
+   * `unlock()`, so a mute set before the first gesture holds.
+   */
+  setMuted(on: boolean): void;
+  /**
    * The game's sound going (the end scene): the `scene` gain, which the
    * world's beds and calls, the stare's sounds and the chase's pulse reach
    * the master through, ramped on the context's clock from where it is to
@@ -357,6 +363,7 @@ export function createAmbientAudio(
   let ctx: AudioContext | null = null;
   let pending: WeatherParams = { ...WEATHER_PRESETS[DEFAULT_WEATHER] };
   let volume = DEFAULT_VOLUME;
+  let muted = false;
   let master: GainNode | null = null;
   /** The inner voice's bus, made on its first line (`speak`). */
   let voiceGain: GainNode | null = null;
@@ -489,7 +496,7 @@ export function createAmbientAudio(
       ctx = createCtx();
 
       master = ctx.createGain();
-      master.gain.value = volume;
+      master.gain.value = muted ? 0 : volume;
       master.connect(ctx.destination);
       // The world's bus: every bed and call below is mixed into it, and it
       // reaches the master through a low-pass the stare shuts, a limiter and
@@ -750,7 +757,11 @@ export function createAmbientAudio(
     },
     setVolume(v) {
       volume = clamp01(v);
-      if (ctx && master) master.gain.setTargetAtTime(volume, ctx.currentTime, 0.1);
+      if (ctx && master && !muted) master.gain.setTargetAtTime(volume, ctx.currentTime, 0.1);
+    },
+    setMuted(on) {
+      muted = on;
+      if (ctx && master) master.gain.setTargetAtTime(on ? 0 : volume, ctx.currentTime, 0.05);
     },
     fadeWorld(seconds) {
       if (!ctx || !scene) return;
