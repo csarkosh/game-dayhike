@@ -971,15 +971,15 @@
     {
       "id": "intro",
       "output": "video/intro.mp4",
-      "bytes": 42384664
+      "bytes": 42304612
     },
     {
       "id": "title",
       "output": "video/title.mp4",
-      "bytes": 16923075,
+      "bytes": 16800665,
       "still": {
         "output": "images/title.still.webp",
-        "bytes": 87214
+        "bytes": 92632
       }
     }
   ]
