@@ -10,10 +10,10 @@
 //   npm run previews -- --settle 80        wait longer for the scene (seconds; 55 by default)
 //   npm run previews -- --cards            only the postcards, from the stills already shot (no browser)
 //
-// Beside each still its postcard (`<name>.card.png`, lib/postcard.mjs): the frame on a paper
-// border, tilted by its name, shadowed, on a transparent ground, which the README lays out; the
-// one `stills.json` names under `stamp` carries a postage stamp with the icon, the title, the author
-// and the year.
+// Beside each still its postcard (`<name>.card.png`, lib/postcard.mjs): the frame faded on an aged
+// paper border, worn as old mail is, tilted by its name, shadowed, on a transparent ground, which
+// the README lays out; the one `stills.json` names under `stamp` carries a postage stamp with the
+// title, the author and the year, its picture a cut of the still.
 //
 // Needs Google Chrome (`CHROME` names another binary). Chrome opens as a window, not headless:
 // the stills are shot on the WebGPU path at the high tier, which headless Chrome does not give.
@@ -165,8 +165,7 @@ async function main() {
   const known = new Set(config.stills.map((s) => s.name));
   for (const name of options.names) if (!known.has(name)) throw new Error(`no still named ${name}; stills.json has ${[...known].join(", ")}`);
   const chosen = options.names.length === 0 ? config.stills : config.stills.filter((s) => options.names.includes(s.name));
-  const markFor = (still) =>
-    config.stamp?.still === still.name ? { ...config.stamp, icon: readFileSync(join(HERE, "../..", config.stamp.icon)) } : undefined;
+  const markFor = (still) => (config.stamp?.still === still.name ? config.stamp : undefined);
   if (options.cards) {
     for (const still of chosen) await writeCard(still.name, readFileSync(join(OUT, `${still.name}.png`)), markFor(still));
     return;

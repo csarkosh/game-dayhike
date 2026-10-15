@@ -1,15 +1,17 @@
-// A README still as a postcard: the frame on a paper-white border, tilted a few degrees one way
-// or the other by its name alone, so the same still always lies at the same angle, with a soft
-// shadow under it on a transparent ground. The README lays the cards out at different widths and
-// sides, like postcards picked up at the trailhead and dropped on a table.
+// A README still as a postcard that has been through the mail: the frame on an aged paper border,
+// the picture faded and warmed, grain and foxing over the whole card, its corners rubbed and
+// rounded and its edge softened, tilted a few degrees one way or the other by its name alone, so
+// the same still always lies at the same angle, with a soft shadow under it on a transparent
+// ground. The README lays the cards out at different widths and sides, like postcards picked up
+// at the trailhead and dropped on a table. One carries a postage stamp, worn the same way.
 import sharp from "sharp";
 import { stripPng } from "./still.mjs";
 
 /** The border's width (px) at the sides and top, and at the foot, where a print's is wider. */
 export const BORDER_PX = 22;
 export const FOOT_PX = 30;
-/** The paper: a warm white, so the card reads as card against GitHub's white and dark pages. */
-export const PAPER = "#f4efe6";
+/** The paper: an aged warm white, so the card reads as old card against GitHub's white and dark pages. */
+export const PAPER = "#ece3cf";
 /** The tilt's range (degrees): never flat, never past a few degrees. */
 export const TILT_MIN_DEG = 1.5;
 export const TILT_MAX_DEG = 4;
@@ -20,19 +22,34 @@ export const SHADOW_BLUR = 14;
 export const SHADOW_ALPHA = 0.5;
 /** The transparent margin round the tilted card, room for the shadow. */
 export const MARGIN_PX = 36;
-/** The stamp's ink, a postal blue-black, and its paper, a shade whiter than the card's. */
-export const INK = "#26324a";
-export const STAMP_PAPER = "#faf7f0";
+/** The picture's fade: its saturation, its contrast about mid grey, the lift under its blacks,
+ * the warmth (the green's and the blue's share against the red's) and the softening blur. */
+export const FADE_SATURATION = 0.8;
+export const FADE_CONTRAST = 0.88;
+export const FADE_LIFT = 14;
+export const FADE_WARM = [1, 0.975, 0.92];
+export const FADE_BLUR = 0.5;
+/** The wear over the whole card: the card's corner radius, the rubbed corners' reach as a share
+ * of the card's width and their lightness, the edge's darkening, and the grain's seed. */
+export const CORNER_RADIUS_PX = 6;
+export const RUB_SHARE = 0.16;
+export const RUB_ALPHA = 0.5;
+export const EDGE_ALPHA = 0.16;
+export const GRAIN_SEED = 11;
+/** The stamp's ink, a postal blue-black, faded, and its paper, yellowed a shade past the card's. */
+export const INK = "#2b3650";
+export const INK_ALPHA = 0.74;
+export const INK_BLUR = 0.45;
+export const STAMP_PAPER = "#e9dfc6";
 /** The stamp's width as a share of the card's, its height over its width, its perforation's
- * pitch and hole radius (px at a 250 px stamp, scaled), and its inset from the card's top right. */
-export const STAMP_SHARE = 0.2;
+ * pitch and hole radius (px at a 250 px stamp, scaled), its inset from the card's top right and
+ * its lean (degrees), stuck on a little crooked. */
+export const STAMP_SHARE = 0.15;
 export const STAMP_ASPECT = 1.22;
 export const PERF_PITCH = 14;
 export const PERF_RADIUS = 4.2;
-export const STAMP_INSET_PX = 40;
-/** The share of the icon's canvas its art fills (`branding/dayhike.svg`: a tile in the middle
- * of a square, its glow round it), so the picture shows the art. */
-export const ICON_ART = 0.42;
+export const STAMP_INSET_PX = 44;
+export const STAMP_LEAN_DEG = -3.5;
 
 /** FNV-1a of the name, so a still's tilt follows its name and nothing else. */
 function hashOf(name) {
@@ -61,47 +78,38 @@ function escaped(text) {
 /** A perforated edge's path, the rectangle at (x, y) of w by h with half-round holes bitten out
  * of every edge, `pitch` apart, `r` across: a postage stamp's outline. */
 function perforated(x, y, w, h, pitch, r) {
-  const edge = (from, to, along, across) => {
-    // the holes along one edge, from `from` to `to` on the `along` axis at `across` on the other
-    const length = to - from;
+  const holes = (from, length) => {
     const count = Math.floor(length / pitch);
     const first = from + (length - (count - 1) * pitch) / 2;
-    let d = "";
-    for (let i = 0; i < count; i++) {
-      const c = first + i * pitch;
-      const a = along === "x" ? `${c - r} ${across}` : `${across} ${c - r}`;
-      const b = along === "x" ? `${c + r} ${across}` : `${across} ${c + r}`;
-      d += ` L ${a} A ${r} ${r} 0 0 0 ${b}`;
-    }
-    return d;
+    return Array.from({ length: count }, (_, i) => first + i * pitch);
   };
-  // clockwise round the stamp, each edge's holes bitten inward (the arcs sweep through the inside)
   let d = `M ${x} ${y}`;
-  d += edge(x, x + w, "x", y);
+  for (const c of holes(x, w)) d += ` L ${c - r} ${y} A ${r} ${r} 0 0 0 ${c + r} ${y}`;
   d += ` L ${x + w} ${y}`;
-  d += edge(y, y + h, "y", x + w).replace(/A (\S+) (\S+) 0 0 0/g, "A $1 $2 0 0 0");
+  for (const c of holes(y, h)) d += ` L ${x + w} ${c - r} A ${r} ${r} 0 0 0 ${x + w} ${c + r}`;
   d += ` L ${x + w} ${y + h}`;
-  // along the bottom and the left the holes are met in the other direction, so their sweep flips
-  let bottom = "";
-  {
-    const length = w; const count = Math.floor(length / pitch); const first = x + (length - (count - 1) * pitch) / 2;
-    for (let i = count - 1; i >= 0; i--) { const c = first + i * pitch; bottom += ` L ${c + r} ${y + h} A ${r} ${r} 0 0 0 ${c - r} ${y + h}`; }
-  }
-  d += bottom + ` L ${x} ${y + h}`;
-  let left = "";
-  {
-    const length = h; const count = Math.floor(length / pitch); const first = y + (length - (count - 1) * pitch) / 2;
-    for (let i = count - 1; i >= 0; i--) { const c = first + i * pitch; left += ` L ${x} ${c + r} A ${r} ${r} 0 0 0 ${x} ${c - r}`; }
-  }
-  d += left + " Z";
-  return d;
+  for (const c of holes(x, w).reverse()) d += ` L ${c + r} ${y + h} A ${r} ${r} 0 0 0 ${c - r} ${y + h}`;
+  d += ` L ${x} ${y + h}`;
+  for (const c of holes(y, h).reverse()) d += ` L ${x} ${c + r} A ${r} ${r} 0 0 0 ${x} ${c - r}`;
+  return `${d} Z`;
+}
+
+/** Where the stamp's picture goes, at a stamp `width` px across: the square's side and its
+ * offset from the stamp's top left, between the title and the author. */
+export function stampPicture(width) {
+  const k = width / 250;
+  const height = Math.round(width * STAMP_ASPECT);
+  const m = Math.round(8 * k);
+  const side = Math.round(width * 0.6);
+  return { side, left: m + Math.round((width - side) / 2), top: m + Math.round(11 * k + 40 * k + (height - 22 * k - 40 * k - 40 * k - side) / 2) };
 }
 
 /**
- * A postage stamp as SVG, `width` px across: perforated paper, a double frame, the title over
- * the picture (the icon, composited by `postcard` where `stampPicture` says), the author under
- * it, and a bottom row with the line at the left and the year at the right as the
- * denomination. `mark` is `{ title, author, year, line }`; `line` may be absent.
+ * A postage stamp as SVG, `width` px across: perforated paper with a window where the picture
+ * goes (`stampPicture`, a cut of the card's own photo laid under it), a double frame, the title
+ * over the picture, the author under it, and a bottom row with the line at the left and the year
+ * at the right as the denomination. The ink is faded and a little soft, and the paper mottled,
+ * as old mail is. `mark` is `{ title, author, year, line }`; `line` may be absent.
  */
 export function stampSvg(mark, width) {
   const k = width / 250;
@@ -112,69 +120,111 @@ export function stampSvg(mark, width) {
   const font = "'Courier New', Courier, monospace";
   const upper = (text) => escaped(String(text).toUpperCase());
   const outline = perforated(m, m, width, height, pitch, r);
+  const picture = stampPicture(width);
+  const window = `M ${picture.left} ${picture.top} h ${picture.side} v ${picture.side} h ${-picture.side} Z`;
   const inset = 11 * k;
   const line = mark.line === undefined ? "" : `<text x="${m + inset + 7 * k}" y="${m + height - inset - 8 * k}" font-family="${font}" font-size="${9.5 * k}" fill="${INK}" text-anchor="start">${upper(mark.line)}</text>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width + 2 * m}" height="${height + 2 * m}" viewBox="0 0 ${width + 2 * m} ${height + 2 * m}">
-<path d="${outline}" fill="#000" fill-opacity="0.22" transform="translate(${2 * k} ${3 * k})"/>
-<path d="${outline}" fill="${STAMP_PAPER}"/>
+<defs>
+<filter id="soft" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="${INK_BLUR * k}"/></filter>
+<filter id="mottle" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="${0.06 / k}" numOctaves="3" seed="${GRAIN_SEED}" stitchTiles="stitch"/><feColorMatrix type="matrix" values="0.18 0 0 0 0.82  0 0.18 0 0 0.79  0 0 0.24 0 0.7  0 0 0 0 1"/></filter>
+</defs>
+<path d="${outline} ${window}" fill-rule="evenodd" fill="#000" fill-opacity="0.22" transform="translate(${2 * k} ${3 * k})"/>
+<path d="${outline} ${window}" fill-rule="evenodd" fill="${STAMP_PAPER}"/>
+<path d="${outline} ${window}" fill-rule="evenodd" filter="url(#mottle)" style="mix-blend-mode:multiply" opacity="0.6"/>
+<g opacity="${INK_ALPHA}" filter="url(#soft)">
 <rect x="${m + inset}" y="${m + inset}" width="${width - 2 * inset}" height="${height - 2 * inset}" fill="none" stroke="${INK}" stroke-width="${1.8 * k}"/>
 <rect x="${m + inset + 3.5 * k}" y="${m + inset + 3.5 * k}" width="${width - 2 * inset - 7 * k}" height="${height - 2 * inset - 7 * k}" fill="none" stroke="${INK}" stroke-width="${0.8 * k}"/>
 <text x="${m + width / 2}" y="${m + inset + 27 * k}" font-family="${font}" font-size="${21 * k}" font-weight="bold" fill="${INK}" text-anchor="middle" letter-spacing="${2.5 * k}">${upper(mark.title)}</text>
 <text x="${m + width / 2}" y="${m + height - inset - 24 * k}" font-family="${font}" font-size="${12.5 * k}" font-weight="bold" fill="${INK}" text-anchor="middle" letter-spacing="${1 * k}">${upper(mark.author)}</text>
 ${line}
 <text x="${m + width - inset - 7 * k}" y="${m + height - inset - 8 * k}" font-family="${font}" font-size="${13 * k}" font-weight="bold" fill="${INK}" text-anchor="end">${upper(mark.year)}</text>
+</g>
 </svg>`;
 }
 
-/** Where the stamp's picture goes, at a stamp `width` px across: the square's side and its
- * offset from the stamp's top left, between the title and the author. */
-export function stampPicture(width) {
-  const k = width / 250;
-  const height = Math.round(width * STAMP_ASPECT);
-  const m = Math.round(8 * k);
-  const side = Math.round(width * 0.6);
-  return { side, left: m + Math.round((width - side) / 2), top: m + Math.round(11 * k + 40 * k + ((height - 22 * k - 40 * k - 40 * k) - side) / 2) };
+/** The wear over a whole card of `width` by `height`, as two SVGs: the grain and foxing to lay
+ * over it multiplied, and the rubbed corners and the darkened edge to lay over it plainly. */
+export function wearSvgs(width, height) {
+  const reach = Math.round(width * RUB_SHARE);
+  const corners = [[0, 0], [width, 0], [0, height], [width, height]]
+    .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="${reach}" fill="url(#rub)"/>`)
+    .join("\n");
+  const grain = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+<defs><filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="4" seed="${GRAIN_SEED}" stitchTiles="stitch"/><feColorMatrix type="matrix" values="0.14 0 0 0 0.86  0 0.14 0 0 0.85  0 0 0.2 0 0.8  0 0 0 0 1"/></filter></defs>
+<rect width="${width}" height="${height}" filter="url(#grain)"/>
+</svg>`;
+  const marks = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+<defs>
+<radialGradient id="rub"><stop offset="0" stop-color="#fbf6ea" stop-opacity="${RUB_ALPHA}"/><stop offset="0.55" stop-color="#fbf6ea" stop-opacity="${RUB_ALPHA * 0.35}"/><stop offset="1" stop-color="#fbf6ea" stop-opacity="0"/></radialGradient>
+<filter id="edge" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="3"/></filter>
+</defs>
+${corners}
+<rect x="1" y="1" width="${width - 2}" height="${height - 2}" fill="none" stroke="#4a3a22" stroke-opacity="${EDGE_ALPHA}" stroke-width="5" filter="url(#edge)"/>
+</svg>`;
+  const mask = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" rx="${CORNER_RADIUS_PX}" fill="#fff"/></svg>`;
+  return { grain: Buffer.from(grain), marks: Buffer.from(marks), mask: Buffer.from(mask) };
 }
 
 /**
- * The still (a PNG's bytes) as a postcard: bordered, tilted by `tiltFor(name)`, shadowed, on a
- * transparent ground, as a PNG with only its image chunks. With `mark` (`stampSvg`'s, and
- * `icon`, an SVG's bytes for its picture), a postage stamp is stuck at the card's top right
- * before it tilts. Deterministic for one still, name and mark.
+ * The still (a PNG's bytes) as a postcard that has been through the mail: faded, bordered,
+ * worn, tilted by `tiltFor(name)`, shadowed, on a transparent ground, as a PNG with only its
+ * image chunks. With `mark` (`stampSvg`'s), a postage stamp is stuck at the card's top right
+ * before the wear and the tilt, its picture a cut of the still. Deterministic for one still,
+ * name and mark.
  */
 export async function postcard(still, name, mark) {
-  let card = await sharp(still)
+  const faded = await sharp(still)
+    .modulate({ saturation: FADE_SATURATION })
+    .linear(
+      FADE_WARM.map((warm) => FADE_CONTRAST * warm),
+      FADE_WARM.map((warm) => 128 * (1 - FADE_CONTRAST * warm) + FADE_LIFT),
+    )
+    .blur(FADE_BLUR)
+    .png()
+    .toBuffer();
+  let card = await sharp(faded)
     .extend({ top: BORDER_PX, bottom: FOOT_PX, left: BORDER_PX, right: BORDER_PX, background: PAPER })
     .png()
     .toBuffer();
+  const { width, height } = await sharp(card).metadata();
   if (mark !== undefined) {
-    const { width } = await sharp(card).metadata();
     const stampWidth = Math.round(width * STAMP_SHARE);
     const svg = Buffer.from(stampSvg(mark, stampWidth));
-    const { width: svgWidth } = await sharp(svg).metadata();
-    const left = width - svgWidth - STAMP_INSET_PX;
-    const top = STAMP_INSET_PX;
+    const { width: svgWidth, height: svgHeight } = await sharp(svg).metadata();
     const picture = stampPicture(stampWidth);
-    const layers = [{ input: svg, left, top }];
-    if (mark.icon !== undefined) {
-      // The icon's art fills ICON_ART of its canvas, the rest its glow's room: drawn at the size
-      // that makes the art the picture, then the picture cut from its middle.
-      const drawn = Math.round(picture.side / ICON_ART);
-      const cut = Math.round((drawn - picture.side) / 2);
-      const icon = await sharp(mark.icon)
-        .resize(drawn, drawn)
-        .extract({ left: cut, top: cut, width: picture.side, height: picture.side })
-        .png()
-        .toBuffer();
-      layers.push({ input: icon, left: left + picture.left, top: top + picture.top });
-    }
-    card = await sharp(card).composite(layers).png().toBuffer();
+    // the stamp's picture: the middle of the still, square, faded further
+    const stillMeta = await sharp(still).metadata();
+    const cutSide = Math.round(Math.min(stillMeta.width, stillMeta.height) * 0.6);
+    const cut = await sharp(still)
+      .extract({ left: Math.round((stillMeta.width - cutSide) / 2), top: Math.round((stillMeta.height - cutSide) / 2), width: cutSide, height: cutSide })
+      .resize(picture.side, picture.side)
+      .modulate({ saturation: 0.55, brightness: 1.04 })
+      .blur(0.6)
+      .png()
+      .toBuffer();
+    const stamp = await sharp({ create: { width: svgWidth, height: svgHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([{ input: cut, left: picture.left, top: picture.top }, { input: svg, left: 0, top: 0 }])
+      .png()
+      .toBuffer();
+    const leaned = await sharp(stamp).rotate(STAMP_LEAN_DEG, { background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+    const { width: leanedWidth } = await sharp(leaned).metadata();
+    card = await sharp(card).composite([{ input: leaned, left: width - leanedWidth - STAMP_INSET_PX, top: STAMP_INSET_PX }]).png().toBuffer();
   }
+  const wear = wearSvgs(width, height);
+  card = await sharp(card)
+    .composite([
+      { input: wear.grain, blend: "multiply" },
+      { input: wear.marks, blend: "over" },
+      { input: wear.mask, blend: "dest-in" },
+    ])
+    .png()
+    .toBuffer();
   const tilted = await sharp(card)
     .rotate(tiltFor(name), { background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
     .toBuffer();
-  const { width, height } = await sharp(tilted).metadata();
+  const tiltedMeta = await sharp(tilted).metadata();
   // The shadow: the card's own shape, black, blurred, half transparent, laid under it and offset.
   const shadow = await sharp(tilted)
     .ensureAlpha()
@@ -184,7 +234,7 @@ export async function postcard(still, name, mark) {
     .png()
     .toBuffer();
   const out = await sharp({
-    create: { width: width + 2 * MARGIN_PX, height: height + 2 * MARGIN_PX, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+    create: { width: tiltedMeta.width + 2 * MARGIN_PX, height: tiltedMeta.height + 2 * MARGIN_PX, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
   })
     .composite([
       { input: shadow, left: MARGIN_PX + SHADOW_DX, top: MARGIN_PX + SHADOW_DY },

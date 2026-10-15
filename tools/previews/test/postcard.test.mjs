@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { MARGIN_PX, STAMP_ASPECT, TILT_MAX_DEG, TILT_MIN_DEG, postcard, stampPicture, stampSvg, tiltFor } from "../lib/postcard.mjs";
+import { MARGIN_PX, STAMP_ASPECT, TILT_MAX_DEG, TILT_MIN_DEG, postcard, stampPicture, stampSvg, tiltFor, wearSvgs } from "../lib/postcard.mjs";
 
 const NAMES = ["trailhead", "forest", "tarn", "meadow", "crest", "beach"];
 
@@ -44,8 +44,11 @@ describe("postcard", () => {
     const { data, info } = await sharp(card).raw().toBuffer({ resolveWithObject: true });
     const at = (x, y) => data.subarray((y * info.width + x) * 4, (y * info.width + x) * 4 + 4);
     expect(at(0, 0)[3]).toBe(0);
+    // the still's blue, faded and warmed but still blue, under the grain
     const mid = at(Math.floor(info.width / 2), Math.floor(info.height / 2));
-    expect([mid[0], mid[1], mid[2], mid[3]]).toEqual([0x40, 0x60, 0x80, 255]);
+    expect(mid[3]).toBe(255);
+    expect(mid[2]).toBeGreaterThan(mid[0]);
+    expect(Math.abs(mid[2] - 0x80)).toBeLessThan(40);
     // the same still and name give the same bytes
     expect((await postcard(still, "tarn")).equals(card)).toBe(true);
   });
@@ -56,8 +59,9 @@ describe("stampSvg", () => {
   it("carries the title, the author, the line and the year in upper case on a perforated, double-framed stamp", () => {
     const svg = stampSvg(mark, 250);
     for (const word of ["DAY HIKE", "CYRUS SARKOSH", "1 TO 5 PLAYERS", "2026"]) expect(svg).toContain(`>${word}</text>`);
-    // the outline twice, the shadow under the paper, its edges bitten by arcs; the frame twice
-    expect(svg.match(/<path d="M /g)).toHaveLength(2);
+    // the outline three times (the shadow, the paper, its mottle), each with the picture's window, its edges bitten by arcs; the frame twice
+    expect(svg.match(/<path d="M /g)).toHaveLength(3);
+    expect(svg.match(/fill-rule="evenodd"/g)).toHaveLength(3);
     expect(svg.match(/ A /g).length).toBeGreaterThan(40);
     expect(svg.match(/<rect /g)).toHaveLength(2);
     expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
@@ -74,24 +78,37 @@ describe("stampSvg", () => {
     expect(top).toBeGreaterThan(8 + 11 + 27);
     expect(top + side).toBeLessThan(8 + Math.round(250 * STAMP_ASPECT) - 11 - 40);
   });
-  it("sticks the stamp and its picture on the card it is asked for, and the same still and mark give the same bytes", async () => {
-    const still = await sharp({ create: { width: 480, height: 270, channels: 3, background: "#406080" } }).png().toBuffer();
-    const icon = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="30" y="30" width="40" height="40" fill="#e03030"/></svg>');
+  it("sticks the stamp on the card it is asked for, its picture the still's middle, and the same still and mark give the same bytes", async () => {
+    // a blue still with a red middle: the red is what the stamp's window shows
+    const still = await sharp({ create: { width: 480, height: 270, channels: 3, background: "#406080" } })
+      .composite([{ input: await sharp({ create: { width: 160, height: 160, channels: 3, background: "#e03030" } }).png().toBuffer(), left: 160, top: 55 }])
+      .png()
+      .toBuffer();
     const plain = await postcard(still, "trailhead");
-    const marked = await postcard(still, "trailhead", { ...mark, icon });
+    const marked = await postcard(still, "trailhead", mark);
     expect(marked.equals(plain)).toBe(false);
-    expect((await postcard(still, "trailhead", { ...mark, icon })).equals(marked)).toBe(true);
+    expect((await postcard(still, "trailhead", mark)).equals(marked)).toBe(true);
     expect([(await sharp(marked).metadata()).width, (await sharp(marked).metadata()).height]).toEqual([
       (await sharp(plain).metadata()).width,
       (await sharp(plain).metadata()).height,
     ]);
-    // the icon's red square is on the card: somewhere in the top right quarter a pixel is red
+    // the still's red middle shows in the stamp's window: in the top right quarter, reddish pixels
     const { data, info } = await sharp(marked).raw().toBuffer({ resolveWithObject: true });
     let red = 0;
     for (let y = 0; y < info.height / 2; y++) for (let x = Math.floor(info.width / 2); x < info.width; x++) {
       const at = (y * info.width + x) * 4;
-      if (data[at] > 0xc0 && data[at + 1] < 0x60 && data[at + 2] < 0x60 && data[at + 3] === 255) red++;
+      if (data[at] > data[at + 2] + 60 && data[at + 3] === 255) red++;
     }
     expect(red).toBeGreaterThan(100);
+  });
+});
+
+describe("wearSvgs", () => {
+  it("gives the grain to multiply over the card, the four rubbed corners and the edge to lay over it, and the rounded mask", () => {
+    const wear = wearSvgs(400, 300);
+    expect(wear.grain.toString()).toContain("feTurbulence");
+    expect(wear.marks.toString().match(/<circle /g)).toHaveLength(4);
+    expect(wear.marks.toString()).toContain('cx="400" cy="300"');
+    expect(wear.mask.toString()).toContain('rx="6"');
   });
 });
