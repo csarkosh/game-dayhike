@@ -95,7 +95,7 @@ describe("the material plugins' numbers", () => {
       const text = readFileSync(file, "utf8");
       return [...text.matchAll(/class \w+ extends MaterialPluginBase \{[\s\S]*?getClassName\(\): string \{\s*return "(\w+)";/g)].map((m) => m[1] as string);
     });
-    expect(games.length).toBe(14);
+    expect(games.length).toBe(15);
     expect(games.filter((name) => !PLUGIN_ORDER.includes(name))).toEqual([]);
     expect(new Set(PLUGIN_ORDER).size).toBe(PLUGIN_ORDER.length);
   });
@@ -123,8 +123,10 @@ describe("the material plugins' numbers", () => {
     expect(numbering._MaterialPluginClassToMainDefine.RainPlugin).toBe("MATERIALPLUGIN_20");
     expect(numbering._MaterialPluginClassToMainDefine.SplashPlugin).toBe("MATERIALPLUGIN_21");
     expect(numbering._MaterialPluginClassToMainDefine.SprayPlugin).toBe("MATERIALPLUGIN_22");
+    // The trunks' moss, after them: the corpus carries its stages as 23.
+    expect(numbering._MaterialPluginClassToMainDefine.MossPlugin).toBe("MATERIALPLUGIN_23");
     expect(numbering._MaterialPluginClassToMainDefine.SomethingEarlier).toBe(undefined);
-    expect(numbering._MaterialPluginCounter).toBe(22);
+    expect(numbering._MaterialPluginCounter).toBe(23);
   });
 
   it("are pinned by the WebGPU engine's maker once its engine stands, before any of its materials", () => {

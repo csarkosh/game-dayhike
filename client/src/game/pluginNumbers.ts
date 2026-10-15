@@ -51,6 +51,8 @@ export const PLUGIN_ORDER: readonly string[] = [
   "RainPlugin",
   "SplashPlugin",
   "SprayPlugin",
+  // The corpus carries the trunks' moss as 23.
+  "MossPlugin",
 ];
 
 /** Babylon 9.18's page-wide numbering of plugin classes. */

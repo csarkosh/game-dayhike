@@ -64,7 +64,9 @@ const PINS: Record<string, string> = {
   // The trunks' moss (mossPlugin.ts, moss*.fx), pinned at its first text:
   // the varying and the hash, the mask and the albedo, and the roughness
   // written into the reflectivity block's output before Babylon's own line.
-  "moss.fragment": "4d957cd76a720e2058e50433785198c39c9ff5e29b7b332225c5d11158f4fcaa",
+  // The fragment re-pinned for its block keyed on the albedo it samples at
+  // (`MOSS` and `ALBEDO` both), so a trunk without a map compiles without it.
+  "moss.fragment": "d9add135f40f3b235b0d009a880005ffbf8fae937333dd439ac92262dc22d138",
   "moss.vertex": "c27e94af368ce3ae552266d9c14d9ae34bada23df9a3150d7c9018e101e68816",
   "post.finish": "4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5",
   "post.grade": "74e331711356b6afe2ce371d749cfff39c64bc02473988dd2ba26bc9653ecd3a",
