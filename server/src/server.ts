@@ -16,6 +16,7 @@ import {
   DEFAULT_ALLOWED_ORIGINS,
   isAllowedOrigin,
   type ConnectionLimiterOptions,
+  type IpRange,
 } from "./admission.js";
 
 export const MAX_PEERS = 5;
@@ -105,6 +106,16 @@ export const MESSAGE_RATE_REFILL_PER_SECOND = 50;
  */
 export const MAX_BUFFERED_BYTES = 1024 * 1024;
 
+/**
+ * The peer id a deploy's verification signs in with (`tools/deploy/verify.mjs`
+ * sends `verify-<time>`), so its rooms are told apart from players'.
+ */
+export const VERIFY_PEER_PREFIX = "verify-";
+
+export function isVerifyPeer(peerId: string): boolean {
+  return peerId.startsWith(VERIFY_PEER_PREFIX);
+}
+
 export type SignalingServer = {
   /** Node's listener, exposed so callers can await "listening" and read the port. */
   readonly http: HttpServer;
@@ -177,6 +188,8 @@ export type SignalingServerOptions = {
   serverBuild?: string;
   /** Per-address batch budget for the telemetry route. See `PostLimiter`. */
   postLimits?: PostLimiterOptions;
+  /** Addresses whose batches the telemetry route drops (`TELEMETRY_IGNORE_IPS`). Defaults to none. */
+  ignoreIps?: readonly IpRange[];
   /**
    * Where the rooms live. Defaults to this process's memory
    * (`MemoryRegistry`), which is right for one instance; the shared one
@@ -212,8 +225,23 @@ export function createSignalingServer(
   // the ground truth of how many parties formed and how big they were, which
   // no page has to report and no blocker can keep from arriving. A match's
   // own events come from the pages, over the telemetry route.
-  const roomRow = (name: string, room: RoomInfo, fields: Record<string, unknown> = {}): void =>
-    log(row("INFO", name, { room: room.id, peers: room.peerCount, ...fields, at: now(), sbuild: serverBuild, svc: "signaling" }));
+  //
+  // A deploy's verification (`tools/deploy/verify.mjs`) opens a room of its
+  // own, as the peer `verify-<time>`; its rows carry `verify: true`, on the
+  // room's own events (the host is that peer) and on whatever such a peer
+  // does in another's, so the lobby counts can leave them out.
+  const roomRow = (name: string, room: RoomInfo, fields: Record<string, unknown> = {}, peerId: string = room.hostId): void =>
+    log(
+      row("INFO", name, {
+        room: room.id,
+        peers: room.peerCount,
+        ...fields,
+        ...(isVerifyPeer(room.hostId) || isVerifyPeer(peerId) ? { verify: true } : {}),
+        at: now(),
+        sbuild: serverBuild,
+        svc: "signaling",
+      }),
+    );
   const registryOptions = {
     maxPeers: MAX_PEERS,
     now,
@@ -229,7 +257,8 @@ export function createSignalingServer(
   const allowedOrigins = options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
   const limiter = new ConnectionLimiter({ now: options.now, ...options.limits });
   const postLimiter = new PostLimiter({ now: options.now, ...options.postLimits });
-  const telemetry = role === "signaling" ? null : telemetryRoute({ allowedOrigins, limiter: postLimiter, log, serverBuild, now });
+  const telemetry =
+    role === "signaling" ? null : telemetryRoute({ allowedOrigins, limiter: postLimiter, log, serverBuild, now, ignore: options.ignoreIps ?? [] });
   const admin =
     role === "signaling" || options.admin === undefined
       ? null
@@ -397,7 +426,7 @@ export function createSignalingServer(
             return;
           }
           session = { roomId: msg.room, peer };
-          roomRow(msg.t === "create" ? "room_create" : "room_join", result.room, { role: result.role });
+          roomRow(msg.t === "create" ? "room_create" : "room_join", result.room, { role: result.role }, peer.id);
           send({ t: "joined", role: result.role, hostId: result.hostId, peers: result.peers });
         });
         return;
@@ -421,7 +450,7 @@ export function createSignalingServer(
           // Before the registry acts, so the row comes before the room's end
           // where this is the host's goodbye; the count is what remains.
           const room = registry.info(session.roomId);
-          if (room !== undefined) roomRow("room_leave", room, { host: session.peer.id === room.hostId, peers: room.peerCount - 1 });
+          if (room !== undefined) roomRow("room_leave", room, { host: session.peer.id === room.hostId, peers: room.peerCount - 1 }, session.peer.id);
           const leaving = session;
           session = null;
           await registry.leave(leaving.roomId, leaving.peer);
@@ -441,7 +470,7 @@ export function createSignalingServer(
         // Not `leave`: the socket dying is not the peer choosing to go, and for
         // a host the difference is a live match versus a dead one.
         const room = registry.info(session.roomId);
-        if (room !== undefined) roomRow("room_drop", room, { host: session.peer.id === room.hostId, peers: room.peerCount - 1 });
+        if (room !== undefined) roomRow("room_drop", room, { host: session.peer.id === room.hostId, peers: room.peerCount - 1 }, session.peer.id);
         const dropped = session;
         session = null;
         await registry.disconnect(dropped.roomId, dropped.peer);

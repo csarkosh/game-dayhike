@@ -3,7 +3,9 @@ import {
   clientIpOf,
   ConnectionLimiter,
   DEFAULT_ALLOWED_ORIGINS,
+  ipInRanges,
   isAllowedOrigin,
+  parseIpRanges,
 } from "../src/admission.js";
 
 describe("isAllowedOrigin", () => {
@@ -197,5 +199,51 @@ describe("ConnectionLimiter", () => {
 
     if (held.ok) held.release();
     expect(limiter.admit("a").ok).toBe(true);
+  });
+});
+
+describe("the ignore list", () => {
+  it("reads addresses and prefixes of either family, skipping blanks", () => {
+    const ranges = parseIpRanges(" 203.0.113.7, 198.51.100.0/24 ,, 2001:db8::1 , 2001:db8:abcd::/48,");
+    expect(ranges).toHaveLength(4);
+    expect(ranges.map((r) => r.prefix)).toEqual([128, 120, 128, 48]);
+    expect(parseIpRanges(undefined)).toEqual([]);
+    expect(parseIpRanges("")).toEqual([]);
+    expect(parseIpRanges(" , ")).toEqual([]);
+  });
+
+  it("refuses an entry that is neither, naming it", () => {
+    for (const bad of ["home", "203.0.113", "203.0.113.256", "203.0.113.7/33", "203.0.113.7/x", "2001:db8::/129", "2001:db8:::1", "1:2:3:4:5:6:7:8:9", "fe80::1%en0", "203.0.113.7/24/1"]) {
+      expect(() => parseIpRanges(`203.0.113.1, ${bad}`)).toThrow(`"${bad}"`);
+    }
+  });
+
+  it("matches an address to its prefix and no further", () => {
+    const ranges = parseIpRanges("198.51.100.0/24, 2001:db8:abcd::/48, 203.0.113.7");
+    expect(ipInRanges("198.51.100.1", ranges)).toBe(true);
+    expect(ipInRanges("198.51.100.255", ranges)).toBe(true);
+    expect(ipInRanges("198.51.101.1", ranges)).toBe(false);
+    expect(ipInRanges("203.0.113.7", ranges)).toBe(true);
+    expect(ipInRanges("203.0.113.8", ranges)).toBe(false);
+    expect(ipInRanges("2001:db8:abcd:1234::1", ranges)).toBe(true);
+    expect(ipInRanges("2001:DB8:ABCD:ffff:ffff:ffff:ffff:ffff", ranges)).toBe(true);
+    expect(ipInRanges("2001:db8:abce::1", ranges)).toBe(false);
+    expect(ipInRanges("unknown", ranges)).toBe(false);
+    expect(ipInRanges("203.0.113.7", [])).toBe(false);
+  });
+
+  it("masks an entry's host bits and takes a prefix of nought", () => {
+    expect(ipInRanges("10.1.2.3", parseIpRanges("10.200.0.1/8"))).toBe(true);
+    expect(ipInRanges("10.1.2.3", parseIpRanges("0.0.0.0/0"))).toBe(true);
+    expect(ipInRanges("2001:db8::1", parseIpRanges("::/0"))).toBe(true);
+    expect(ipInRanges("2001:db8::1", parseIpRanges("0.0.0.0/0"))).toBe(false);
+  });
+
+  it("matches a v4-mapped address as its v4 self, written either way", () => {
+    const ranges = parseIpRanges("198.51.100.0/24");
+    expect(ipInRanges("::ffff:198.51.100.7", ranges)).toBe(true);
+    expect(ipInRanges("::ffff:c633:6407", ranges)).toBe(true);
+    expect(ipInRanges("::198.51.100.7", ranges)).toBe(false);
+    expect(ipInRanges("198.51.100.7", parseIpRanges("::ffff:198.51.100.0/120"))).toBe(true);
   });
 });

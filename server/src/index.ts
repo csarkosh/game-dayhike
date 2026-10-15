@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createSignalingServer, parseRole, SIGNALING_PATH } from "./server.js";
-import { DEFAULT_ALLOWED_ORIGINS } from "./admission.js";
+import { DEFAULT_ALLOWED_ORIGINS, parseIpRanges, type IpRange } from "./admission.js";
 import { TELEMETRY_PATH } from "./telemetry.js";
 import { FirestoreStore } from "./firestoreStore.js";
 import { SharedRegistry } from "./sharedRegistry.js";
@@ -53,6 +53,20 @@ const ALLOWED_ORIGINS =
 const allowedOrigins =
   ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ALLOWED_ORIGINS;
 
+// Addresses whose batches the telemetry route takes and drops: the owner's
+// own, so their play is no part of the numbers. Comma-separated addresses
+// or CIDR prefixes, either family (`parseIpRanges`); Terraform sets it from
+// the git-ignored tfvars. An entry that is neither stops the process here,
+// with the entry named, rather than count what it was told to leave out.
+// The list itself is never printed: the rows this process writes are kept.
+let ignoreIps: IpRange[];
+try {
+  ignoreIps = parseIpRanges(process.env.TELEMETRY_IGNORE_IPS);
+} catch (error) {
+  console.error(`TELEMETRY_IGNORE_IPS: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
+
 // A failed promise nobody awaited is logged, not fatal: the rooms are in the
 // store, so a restart buys nothing a log line does not, and a service that
 // scales from zero should not be made to start again for one refused call.
@@ -69,6 +83,7 @@ const server = createSignalingServer(PORT, {
   allowedOrigins,
   role: ROLE,
   serverBuild: BUILD_SHA,
+  ignoreIps,
   ...(store !== null && ROLE !== "telemetry" ? { registry: (o) => new SharedRegistry(store, { ...o, instance: INSTANCE }) } : {}),
   ...(ADMIN
     ? {
@@ -80,6 +95,7 @@ const server = createSignalingServer(PORT, {
     : {}),
 });
 console.log(`allowing origins: ${allowedOrigins.join(", ")}`);
+if (ignoreIps.length > 0) console.log(`ignoring telemetry from ${ignoreIps.length} address range(s)`);
 const serving = [ROLE !== "telemetry" ? `signaling on ${SIGNALING_PATH}` : null, ROLE !== "signaling" ? `telemetry on ${TELEMETRY_PATH}` : null]
   .filter((line) => line !== null)
   .join(", ");

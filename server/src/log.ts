@@ -32,10 +32,18 @@ export const stdoutSink: LogSink = (row) => {
 
 /**
  * A row's fixed part: the mark the sink routes on, the severity Cloud Logging
- * lifts out, the event's name, and a message so the Logs Explorer's summary
- * column reads as the event rather than as a wall of JSON. The fixed part
- * wins over a field of the same name: a page cannot unmark its own row.
+ * lifts out, the event's name, a message so the Logs Explorer's summary
+ * column reads as the event rather than as a wall of JSON, and, where the
+ * caller knows it, the entry's time (`timestamp`, RFC 3339 with milliseconds,
+ * which Cloud Logging lifts out the same way and BigQuery then reads as the
+ * row's own). The fixed part wins over a field of the same name: a page
+ * cannot unmark its own row, nor date it; with no time given, the entry is
+ * timed at its write, and a `timestamp` among the fields is dropped rather
+ * than let through.
  */
-export function row(severity: Severity, name: string, fields: LogRow, message: string = name): LogRow {
-  return { ...fields, dh: 1, severity, message, n: name };
+export function row(severity: Severity, name: string, fields: LogRow, message: string = name, timestamp?: string): LogRow {
+  const out: LogRow = { ...fields, dh: 1, severity, message, n: name };
+  if (timestamp === undefined) delete out.timestamp;
+  else out.timestamp = timestamp;
+  return out;
 }

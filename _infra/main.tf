@@ -89,6 +89,7 @@ module "gcp_telemetry" {
   admin_emails       = var.admin_emails
   admin_auth_project = var.admin_auth_project
   registry           = var.signaling_registry
+  ignore_ips         = var.telemetry_ignore_ips
 
   providers = {
     google         = google

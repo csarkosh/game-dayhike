@@ -6,6 +6,7 @@ import {
   cleanFields,
   MAX_ARRAY_LENGTH,
   MAX_BATCH_BYTES,
+  MAX_EVENT_AGE_MS,
   MAX_EVENTS_PER_BATCH,
   MAX_FIELDS,
   MAX_STRING_LENGTH,
@@ -15,7 +16,8 @@ import {
   severityOf,
   TELEMETRY_PATH,
 } from "../src/telemetry.js";
-import type { LogRow } from "../src/log.js";
+import { parseIpRanges } from "../src/admission.js";
+import { row, type LogRow } from "../src/log.js";
 
 const ORIGIN = "https://games.csarko.sh";
 
@@ -53,6 +55,19 @@ describe("parseBatch", () => {
     expect(parseBatch(batch(many))).toEqual({ ok: false, problem: "too_many_events" });
   });
 
+  it("reads the batch's own time off the envelope, and drops one that is not a time", () => {
+    const sent = parseBatch(batch([{ n: "hb", t: 1 }], { st: 1500 }));
+    if (!sent.ok) throw new Error(sent.problem);
+    expect(sent.batch.sentAt).toBe(1500);
+    expect(sent.batch.envelope).not.toHaveProperty("st");
+    for (const st of ["1500", -1, Number.NaN, null]) {
+      const parsed = parseBatch(batch([{ n: "hb", t: 1 }], { st }));
+      if (!parsed.ok) throw new Error(parsed.problem);
+      expect(parsed.batch).not.toHaveProperty("sentAt");
+      expect(parsed.batch.envelope).not.toHaveProperty("st");
+    }
+  });
+
   it("bounds every field", () => {
     const wide: Record<string, unknown> = {};
     for (let i = 0; i < MAX_FIELDS + 10; i++) wide[`k${i}`] = i;
@@ -78,6 +93,46 @@ describe("rowsOf", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ dh: 1, severity: "INFO", message: "match_start", n: "match_start", sid: "s1", build: "abc1234", world: "forest/8/x/1/2", role: "host", t: 5, at: 1000, sbuild: "srv1", svc: "telemetry" });
     expect(rows[1]).toMatchObject({ severity: "ERROR", n: "error", world: "unset", message: "error: boom", dh: 1 });
+  });
+
+  it("dates each row at its event when the batch says when it was sent", () => {
+    const receivedAt = Date.UTC(2026, 9, 15, 12, 0, 0, 500);
+    const parsed = parseBatch(batch([{ n: "page", t: 1000 }, { n: "play", t: 30_250 }, { n: "hb", t: 31_000 }], { st: 31_000 }));
+    if (!parsed.ok) throw new Error(parsed.problem);
+    const rows = rowsOf(parsed.batch, { serverBuild: "srv1", receivedAt });
+    expect(rows.map((r) => r.timestamp)).toEqual(["2026-10-15T11:59:30.500Z", "2026-10-15T11:59:59.750Z", "2026-10-15T12:00:00.500Z"]);
+    expect(rows.map((r) => r.at)).toEqual([receivedAt, receivedAt, receivedAt]);
+    expect(rows.map((r) => r.t)).toEqual([1000, 30_250, 31_000]);
+  });
+
+  it("dates a row at its arrival when the batch carries no time", () => {
+    const receivedAt = Date.UTC(2026, 9, 15, 12, 0, 0, 500);
+    const parsed = parseBatch(batch([{ n: "page", t: 1000 }, { n: "play", t: 30_250 }]));
+    if (!parsed.ok) throw new Error(parsed.problem);
+    const rows = rowsOf(parsed.batch, { serverBuild: "srv1", receivedAt });
+    expect(rows.map((r) => r.timestamp)).toEqual(["2026-10-15T12:00:00.500Z", "2026-10-15T12:00:00.500Z"]);
+  });
+
+  it("falls back to arrival for an event older than a day or dated after its batch", () => {
+    const receivedAt = Date.UTC(2026, 9, 15, 12, 0, 0, 0);
+    const arrival = "2026-10-15T12:00:00.000Z";
+    const parsed = parseBatch(
+      batch([{ n: "old", t: 0 }, { n: "edge", t: 1000 }, { n: "future", t: MAX_EVENT_AGE_MS + 2000 }, { n: "now", t: MAX_EVENT_AGE_MS + 1000 }], {
+        st: MAX_EVENT_AGE_MS + 1000,
+      }),
+    );
+    if (!parsed.ok) throw new Error(parsed.problem);
+    const rows = rowsOf(parsed.batch, { serverBuild: "srv1", receivedAt });
+    expect(rows.map((r) => r.timestamp)).toEqual([arrival, "2026-10-14T12:00:00.000Z", arrival, arrival]);
+  });
+
+  it("lets no page field date, mark or grade its own row", () => {
+    const parsed = parseBatch(batch([{ n: "hb", t: 1, timestamp: "1999-01-01T00:00:00.000Z", severity: "ERROR", message: "no", dh: 0 }], { st: 1 }));
+    if (!parsed.ok) throw new Error(parsed.problem);
+    const [only] = rowsOf(parsed.batch, { serverBuild: "srv1", receivedAt: Date.UTC(2026, 9, 15) });
+    expect(only).toMatchObject({ timestamp: "2026-10-15T00:00:00.000Z", severity: "INFO", message: "hb", dh: 1 });
+    // A row with no time of its own, as signaling's are, drops one rather than carry a stranger's.
+    expect(row("INFO", "x", { timestamp: "1999-01-01T00:00:00.000Z", a: 1 })).toEqual({ a: 1, dh: 1, severity: "INFO", message: "x", n: "x" });
   });
 
   it("gives errors and warnings their severity", () => {
@@ -133,6 +188,7 @@ describe("the telemetry route", () => {
       log: (r) => rows.push(r),
       serverBuild: "srv1",
       postLimits: { capacity: 3, refillPerSecond: 0 },
+      ignoreIps: parseIpRanges("203.0.113.0/24, 2001:db8:1::/48"),
     });
     await new Promise<void>((resolve) => server.http.once("listening", () => resolve()));
     base = `http://127.0.0.1:${(server.http.address() as AddressInfo).port}`;
@@ -209,6 +265,23 @@ describe("the telemetry route", () => {
     expect((await post(batch([{ n: "hb", t: 3 }]), {}, ip)).status).toBe(429);
     expect(rows).toHaveLength(3);
   });
+
+  it("answers an ignored address 204, with CORS, writes nothing and counts nothing against it", async () => {
+    rows.length = 0;
+    for (const ip of ["203.0.113.7", "::ffff:203.0.113.8", "2001:db8:1:2::3"]) {
+      for (let i = 0; i < 5; i++) {
+        const res = await post(batch([{ n: "hb", t: i }]), { origin: ORIGIN }, ip);
+        expect(res.status).toBe(204);
+        expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN);
+      }
+    }
+    expect(rows).toHaveLength(0);
+    // Still the origin check first: an ignored address on another site's page is refused, not humoured.
+    expect((await post(batch([{ n: "hb", t: 0 }]), { origin: "https://evil.example" }, "203.0.113.7")).status).toBe(403);
+    // And a neighbour outside the prefix is written as ever.
+    expect((await post(batch([{ n: "hb", t: 0 }]), { origin: ORIGIN }, "203.0.114.7")).status).toBe(204);
+    expect(rows).toHaveLength(1);
+  });
 });
 
 describe("the roles", () => {
@@ -239,34 +312,38 @@ describe("the roles", () => {
 });
 
 describe("room rows", () => {
-  it("records a lobby's life: create, join, leave, and its end with a lifetime", async () => {
+  const open = async (url: string): Promise<WebSocket> => {
+    const socket = new WebSocket(url);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve());
+      socket.once("error", reject);
+    });
+    return socket;
+  };
+  const next = (socket: WebSocket): Promise<unknown> => new Promise((resolve) => socket.once("message", (raw) => resolve(JSON.parse(raw.toString()))));
+  const until = async (predicate: () => boolean): Promise<void> => {
+    for (let i = 0; i < 200 && !predicate(); i++) await new Promise((r) => setTimeout(r, 10));
+    expect(predicate()).toBe(true);
+  };
+  const start = async (now: () => number): Promise<{ server: SignalingServer; rows: LogRow[]; url: string }> => {
     const rows: LogRow[] = [];
-    let clock = 1_000;
-    const server = createSignalingServer(0, { role: "signaling", log: (r) => rows.push(r), serverBuild: "srv1", now: () => clock });
+    const server = createSignalingServer(0, { role: "signaling", log: (r) => rows.push(r), serverBuild: "srv1", now });
     await new Promise<void>((resolve) => server.http.once("listening", () => resolve()));
-    const url = `ws://127.0.0.1:${(server.http.address() as AddressInfo).port}${SIGNALING_PATH}`;
+    return { server, rows, url: `ws://127.0.0.1:${(server.http.address() as AddressInfo).port}${SIGNALING_PATH}` };
+  };
+
+  it("records a lobby's life: create, join, leave, and its end with a lifetime", async () => {
+    let clock = 1_000;
+    const { server, rows, url } = await start(() => clock);
     const room = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
-    const open = async (): Promise<WebSocket> => {
-      const socket = new WebSocket(url);
-      await new Promise<void>((resolve, reject) => {
-        socket.once("open", () => resolve());
-        socket.once("error", reject);
-      });
-      return socket;
-    };
-    const next = (socket: WebSocket): Promise<unknown> => new Promise((resolve) => socket.once("message", (raw) => resolve(JSON.parse(raw.toString()))));
-    const until = async (predicate: () => boolean): Promise<void> => {
-      for (let i = 0; i < 200 && !predicate(); i++) await new Promise((r) => setTimeout(r, 10));
-      expect(predicate()).toBe(true);
-    };
     try {
-      const host = await open();
+      const host = await open(url);
       host.send(JSON.stringify({ t: "create", room, peerId: "h" }));
       await next(host);
-      const guest = await open();
+      const guest = await open(url);
       guest.send(JSON.stringify({ t: "join", room, peerId: "g" }));
       await next(guest);
-      const stranger = await open();
+      const stranger = await open(url);
       stranger.send(JSON.stringify({ t: "join", room: "3f2504e0-4f89-41d3-9a0c-0305e82c3302", peerId: "s" }));
       await next(stranger);
       guest.send(JSON.stringify({ t: "leave" }));
@@ -282,7 +359,31 @@ describe("room rows", () => {
       expect(rows[3]).toMatchObject({ room, peers: 1, host: false });
       expect(rows[4]).toMatchObject({ room, peers: 0, host: true });
       expect(rows[5]).toMatchObject({ room, reason: "host_left", lifeMs: 5_000 });
+      // A player's room is nobody's verification.
+      for (const r of rows) expect(r).not.toHaveProperty("verify");
       stranger.close();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("marks a deploy verification's room on every row of its life", async () => {
+    const { server, rows, url } = await start(() => 1_000);
+    const room = "3f2504e0-4f89-41d3-9a0c-0305e82c3303";
+    try {
+      // As `tools/deploy/verify.mjs` does: a room of its own, then straight out.
+      const probe = await open(url);
+      probe.send(JSON.stringify({ t: "create", room, peerId: `verify-${Date.now()}` }));
+      await next(probe);
+      const guest = await open(url);
+      guest.send(JSON.stringify({ t: "join", room, peerId: "g" }));
+      await next(guest);
+      probe.send(JSON.stringify({ t: "leave" }));
+      await until(() => rows.some((r) => r.n === "room_end"));
+
+      expect(rows.map((r) => r.n)).toEqual(["room_create", "room_join", "room_leave", "room_end"]);
+      for (const r of rows) expect(r).toMatchObject({ room, verify: true });
+      guest.close();
     } finally {
       await server.close();
     }

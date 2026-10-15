@@ -33,6 +33,21 @@ variable "admin_auth_project" {
   default     = "csarko-sh"
 }
 
+variable "ignore_ips" {
+  description = <<-EOT
+    The owner's own addresses, or CIDR prefixes, of either family: a batch
+    from one is answered as accepted and never written, so the owner's own
+    play is no part of the numbers (`TELEMETRY_IGNORE_IPS`, which the
+    service refuses to start on a bad entry of). Empty sets no such
+    variable. Sensitive: the addresses are a home's, and the repository is
+    public, so they belong in the git-ignored tfvars and nowhere a plan
+    prints.
+  EOT
+  type        = list(string)
+  default     = []
+  sensitive   = true
+}
+
 variable "registry" {
   description = "Where the signaling rooms live, for the admin page's live view: `firestore` or `memory` (then the view is empty)."
   type        = string

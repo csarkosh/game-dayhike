@@ -139,6 +139,20 @@ resource "google_cloud_run_v2_service" "telemetry" {
         value = var.registry
       }
 
+      # The owner's own addresses, whose batches are dropped (`variables.tf`).
+      # Set only when there are any, so an empty list leaves the service as it
+      # was rather than add an empty variable to it. The list is sensitive and
+      # a `for_each` may not be, so the one fact it needs, whether there is a
+      # list at all, is unmarked on its own; the value stays marked, and the
+      # plan shows the block redacted.
+      dynamic "env" {
+        for_each = nonsensitive(length(var.ignore_ips) > 0) ? ["TELEMETRY_IGNORE_IPS"] : []
+        content {
+          name  = env.value
+          value = join(",", var.ignore_ips)
+        }
+      }
+
       resources {
         limits = {
           cpu    = "1"

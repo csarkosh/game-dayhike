@@ -109,6 +109,18 @@ variable "admin_auth_project" {
   default     = "csarko-sh"
 }
 
+variable "telemetry_ignore_ips" {
+  description = <<-EOT
+    The owner's own addresses, or CIDR prefixes, v4 and v6, whose telemetry
+    batches the service drops unwritten, so the owner's play is no part of
+    the numbers. Set only in the git-ignored terraform.tfvars: the repository
+    is public and these are a home's. Empty (the default) drops nothing.
+  EOT
+  type        = list(string)
+  default     = []
+  sensitive   = true
+}
+
 variable "signaling_registry" {
   description = "Where the signaling rooms live: `firestore` (shared, lets the service scale) or `memory` (one instance only)."
   type        = string

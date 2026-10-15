@@ -5,20 +5,22 @@
  * The page sends a batch every half minute and on its way out, each a JSON
  * object: an envelope naming the page (its session, the build it runs, the
  * world it is in) and a list of events, each a name, a time and a few fields
- * (`client/src/net/telemetry.ts`). The route does three things and no more:
+ * (`client/src/net/telemetry.ts`). The route does four things and no more:
  * refuses what is not a well-formed batch from an allowed origin within the
- * size and rate limits; flattens the envelope onto every event so each row
+ * size and rate limits; drops, unread, a batch from an address on the ignore
+ * list (the owner's own); flattens the envelope onto every event so each row
  * stands alone in a query, with no join back to a session row that may never
- * have arrived; and writes the rows. It holds nothing between requests but
- * the rate limiter, which is why it can run on as many instances as a spike
- * needs while the signaling service stays at its one.
+ * have arrived; and writes the rows, each dated at the event rather than the
+ * batch. It holds nothing between requests but the rate limiter, which is
+ * why it can run on as many instances as a spike needs while the signaling
+ * service stays at its one.
  *
  * Everything that reads the request is a pure function over strings and
  * objects, so the limits are tested without a socket.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { clientIpOf, isAllowedOrigin } from "./admission.js";
+import { clientIpOf, ipInRanges, isAllowedOrigin, type IpRange } from "./admission.js";
 import { row, type LogRow, type LogSink, type Severity } from "./log.js";
 import { TokenBucket } from "./tokenBucket.js";
 
@@ -46,6 +48,13 @@ export const MAX_STRING_LENGTH = 2000;
 export const MAX_ARRAY_LENGTH = 256;
 /** The batch format this route reads. */
 export const BATCH_VERSION = 1;
+/**
+ * The furthest back an event may be dated from its batch's arrival. A page
+ * holds a batch half a minute, or until it is next shown after a long sleep
+ * in the background; a day covers a laptop closed overnight and opened once
+ * more. Past it, `st - t` is not an age but a clock the page got wrong.
+ */
+export const MAX_EVENT_AGE_MS = 86_400_000;
 
 /** The event names the page may send: lowercase words, so a row's name is a
  * safe column value and never a surprise in a query. */
@@ -62,6 +71,12 @@ export type Batch = {
   /** The envelope: every field the page sent beside the events, flattened. */
   envelope: Fields;
   events: TelemetryEvent[];
+  /**
+   * The page's clock (`t`) as the batch was serialised (`st`), so each
+   * event's age at arrival is `sentAt - t` whatever the page's wall clock
+   * says. Absent from a page that does not send it.
+   */
+  sentAt?: number;
 };
 
 export type BatchProblem = "not_json" | "not_object" | "bad_version" | "no_session" | "no_events" | "too_many_events";
@@ -132,8 +147,11 @@ export function parseBatch(raw: string): { ok: true; batch: Batch } | { ok: fals
   if (!Array.isArray(body.events)) return { ok: false, problem: "no_events" };
   if (body.events.length > MAX_EVENTS_PER_BATCH) return { ok: false, problem: "too_many_events" };
 
-  const envelope = cleanFields(body, ["events", "v"]);
+  // `st` is the batch's, read for `rowsOf` and kept off the rows like `v`.
+  // A page that sends none, or nonsense, dates its events at arrival.
+  const envelope = cleanFields(body, ["events", "v", "st"]);
   if (sessionIdOf(envelope) === null) return { ok: false, problem: "no_session" };
+  const sentAt = typeof body.st === "number" && Number.isFinite(body.st) && body.st >= 0 ? body.st : undefined;
 
   const events: TelemetryEvent[] = [];
   for (const entry of body.events) {
@@ -143,7 +161,7 @@ export function parseBatch(raw: string): { ok: true; batch: Batch } | { ok: fals
     if (typeof e.t !== "number" || !Number.isFinite(e.t)) continue;
     events.push({ n: e.n, t: e.t, fields: cleanFields(e, ["n", "t"]) });
   }
-  return { ok: true, batch: { envelope, events } };
+  return { ok: true, batch: { envelope, events, ...(sentAt === undefined ? {} : { sentAt }) } };
 }
 
 /** What the row says of the request itself, beside what the page said. */
@@ -163,10 +181,25 @@ export function severityOf(name: string): Severity {
 }
 
 /**
+ * When an event happened, by the server's clock: its batch's arrival less
+ * how long the page had held it (`st - t`, both the page's own `t()`, so
+ * its wall clock is never trusted). An age that is negative or past
+ * `MAX_EVENT_AGE_MS` is a page with no `st` or a broken one, and the event
+ * is dated at arrival, as every row was before `st` existed.
+ */
+export function eventTimeOf(event: TelemetryEvent, batch: Batch, receivedAt: number): number {
+  if (batch.sentAt === undefined) return receivedAt;
+  const age = batch.sentAt - event.t;
+  return age >= 0 && age <= MAX_EVENT_AGE_MS ? receivedAt - age : receivedAt;
+}
+
+/**
  * The rows of a batch: the envelope flattened onto every event, so each is
  * its own record of which page, which build and which world it came from. An
  * event's own field of the same name wins over the envelope's, which is
- * what lets a late-arriving `world` ride on the event that learned it.
+ * what lets a late-arriving `world` ride on the event that learned it. Each
+ * row's `timestamp` is the event's time (`eventTimeOf`), which Cloud Logging
+ * takes as the entry's; `at` stays the batch's arrival.
  */
 export function rowsOf(batch: Batch, meta: ReceiptMeta): LogRow[] {
   return batch.events.map((event) => {
@@ -174,7 +207,7 @@ export function rowsOf(batch: Batch, meta: ReceiptMeta): LogRow[] {
     // An error's text in the summary column, so a scan of the log reads the
     // failures without opening a row.
     const text = typeof event.fields.msg === "string" ? `${event.n}: ${event.fields.msg}` : event.n;
-    return row(severityOf(event.n), event.n, fields, text);
+    return row(severityOf(event.n), event.n, fields, text, new Date(eventTimeOf(event, batch, meta.receivedAt)).toISOString());
   });
 }
 
@@ -245,6 +278,13 @@ export type TelemetryRouteOptions = {
   limiter: PostLimiter;
   log: LogSink;
   serverBuild: string;
+  /**
+   * Addresses whose batches are taken and thrown away: the owner's own, so
+   * their play is no part of the numbers (`TELEMETRY_IGNORE_IPS`). Answered
+   * 204 as an accepted batch is, so the page never retries and never knows,
+   * and before the limiter, so they are not counted either.
+   */
+  ignore?: readonly IpRange[];
   now?: () => number;
   maxBatchBytes?: number;
 };
@@ -323,6 +363,10 @@ export function telemetryRoute(options: TelemetryRouteOptions): (req: IncomingMe
       return true;
     }
     const ip = clientIpOf(req.headers["x-forwarded-for"], req.socket.remoteAddress);
+    if (options.ignore !== undefined && ipInRanges(ip, options.ignore)) {
+      answer(res, 204, cors);
+      return true;
+    }
     if (!options.limiter.allow(ip)) {
       answer(res, 429, cors, "too many requests");
       return true;

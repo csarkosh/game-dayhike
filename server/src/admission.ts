@@ -1,5 +1,6 @@
 /**
- * Who is allowed to open a signaling socket, and how many at a time.
+ * Who is allowed to open a signaling socket, and how many at a time; and,
+ * for the telemetry route, whose batches are to be dropped (`parseIpRanges`).
  *
  * The upgrade handler in `server.ts` is public and unauthenticated — there is
  * no account system and a room id is the only secret — so the checks here are
@@ -75,6 +76,103 @@ export function clientIpOf(
   const first = header?.split(",")[0]?.trim();
   if (first !== undefined && first !== "") return first;
   return remoteAddress ?? "unknown";
+}
+
+/**
+ * An address range, for the telemetry route's ignore list: a network and a
+ * prefix length, both in the 128-bit space IPv6 and IPv4 share. An IPv4
+ * address is held as its mapped form (`::ffff:a.b.c.d`) and an IPv4 prefix
+ * is lengthened by 96 to match, so one comparison serves both families and
+ * a v4-mapped address, as a proxy may forward one, matches its v4 range.
+ */
+export type IpRange = { readonly net: bigint; readonly prefix: number };
+
+const IPV4_BITS = 32;
+const IPV6_BITS = 128;
+/** The mapped block, `::ffff:0:0/96`: where an IPv4 address sits in 128 bits. */
+const V4_MAPPED = 0xffffn << 32n;
+
+function parseIpv4(text: string): bigint | null {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
+  if (match === null) return null;
+  let out = 0n;
+  for (const octet of match.slice(1)) {
+    const n = Number(octet);
+    if (n > 255) return null;
+    out = (out << 8n) | BigInt(n);
+  }
+  return out;
+}
+
+/** The address as 128 bits, an IPv4 one mapped; null for what is neither. */
+function parseIpv6(text: string): bigint | null {
+  if (!/^[0-9a-fA-F:.]+$/.test(text) || !text.includes(":")) return null;
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const groups = (part: string): string[] => (part === "" ? [] : part.split(":"));
+  const head = groups(halves[0] ?? "");
+  const tail = halves.length === 2 ? groups(halves[1] ?? "") : [];
+  // A dotted IPv4 tail, as `::ffff:203.0.113.7` has, is its last two groups.
+  const last = tail.length > 0 ? tail : head;
+  const dotted = last[last.length - 1];
+  if (dotted !== undefined && dotted.includes(".")) {
+    const v4 = parseIpv4(dotted);
+    if (v4 === null) return null;
+    last.splice(-1, 1, (v4 >> 16n).toString(16), (v4 & 0xffffn).toString(16));
+  }
+  const given = head.length + tail.length;
+  if (halves.length === 2 ? given > 7 : given !== 8) return null;
+  const words = [...head, ...new Array<string>(8 - given).fill("0"), ...tail];
+  let out = 0n;
+  for (const word of words) {
+    if (!/^[0-9a-fA-F]{1,4}$/.test(word)) return null;
+    out = (out << 16n) | BigInt(parseInt(word, 16));
+  }
+  return out;
+}
+
+/** An address of either family as 128 bits, or null. */
+function parseIp(text: string): { bits: bigint; family: 4 | 6 } | null {
+  const v4 = parseIpv4(text);
+  if (v4 !== null) return { bits: V4_MAPPED | v4, family: 4 };
+  const v6 = parseIpv6(text);
+  return v6 === null ? null : { bits: v6, family: 6 };
+}
+
+/**
+ * The ignore list from its environment variable: addresses or CIDR prefixes
+ * of either family, comma-separated, blanks skipped. A bad entry throws,
+ * naming itself, so the process fails to start rather than quietly counting
+ * what it was told to leave out.
+ */
+export function parseIpRanges(text: string | undefined): IpRange[] {
+  const ranges: IpRange[] = [];
+  for (const entry of (text ?? "").split(",")) {
+    const trimmed = entry.trim();
+    if (trimmed === "") continue;
+    const [address, prefixText, ...rest] = trimmed.split("/");
+    const ip = address === undefined ? null : parseIp(address);
+    if (ip === null || rest.length > 0) throw new Error(`not an IP address or CIDR prefix: "${trimmed}"`);
+    const width = ip.family === 4 ? IPV4_BITS : IPV6_BITS;
+    const prefixOwn = prefixText === undefined ? width : /^\d{1,3}$/.test(prefixText) ? Number(prefixText) : -1;
+    if (prefixOwn < 0 || prefixOwn > width) throw new Error(`not an IP address or CIDR prefix: "${trimmed}"`);
+    const prefix = prefixOwn + (IPV6_BITS - width);
+    // Masked to its network, so the host bits an entry carries do not matter.
+    const shift = BigInt(IPV6_BITS - prefix);
+    ranges.push({ net: (ip.bits >> shift) << shift, prefix });
+  }
+  return ranges;
+}
+
+/** Whether `ip` (as `clientIpOf` gives it) lies in any of `ranges`. An address that does not parse is in none. */
+export function ipInRanges(ip: string, ranges: readonly IpRange[]): boolean {
+  if (ranges.length === 0) return false;
+  const parsed = parseIp(ip);
+  if (parsed === null) return false;
+  return ranges.some((range) => {
+    const shift = BigInt(IPV6_BITS - range.prefix);
+    return parsed.bits >> shift === range.net >> shift;
+  });
 }
 
 export type Admission =
