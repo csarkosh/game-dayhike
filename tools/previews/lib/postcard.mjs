@@ -44,11 +44,11 @@ export const INK = "#2b3650";
 export const INK_ALPHA = 0.74;
 export const INK_BLUR = 0.45;
 export const STAMP_PAPER = "#e9dfc6";
-/** The stamp's width as a share of the card's, its height over its width, its perforation's
- * pitch and hole radius (px at a 250 px stamp, scaled), its inset from the card's top right and
- * its lean (degrees), stuck on a little crooked. */
-export const STAMP_SHARE = 0.15;
-export const STAMP_ASPECT = 1.22;
+/** The stamp's width as a share of the card's, its picture window's width over its height (a
+ * landscape stamp, for a range), its perforation's pitch and hole radius (px at a 250 px stamp,
+ * scaled), its inset from the card's top right and its lean (degrees), stuck on a little crooked. */
+export const STAMP_SHARE = 0.19;
+export const WINDOW_ASPECT = 1.62;
 export const PERF_PITCH = 14;
 export const PERF_RADIUS = 4.2;
 export const STAMP_INSET_PX = 44;
@@ -97,26 +97,36 @@ function perforated(x, y, w, h, pitch, r) {
   return `${d} Z`;
 }
 
-/** Where the stamp's picture goes, at a stamp `width` px across: the square's side and its
- * offset from the stamp's top left, between the title and the author. */
+/** Where the stamp's picture goes, at a stamp `width` px across: the window's size and its
+ * offset from the stamp's top left, under the title and over the author's line, as wide as the
+ * frame allows and WINDOW_ASPECT wide for its height. */
 export function stampPicture(width) {
   const k = width / 250;
-  const height = Math.round(width * STAMP_ASPECT);
   const m = Math.round(8 * k);
-  const side = Math.round(width * 0.6);
-  return { side, left: m + Math.round((width - side) / 2), top: m + Math.round(11 * k + 40 * k + (height - 22 * k - 40 * k - 40 * k - side) / 2) };
+  const inset = 11 * k;
+  const pictureWidth = Math.round(width - 2 * inset - 12 * k);
+  const pictureHeight = Math.round(pictureWidth / WINDOW_ASPECT);
+  return { width: pictureWidth, height: pictureHeight, left: m + Math.round((width - pictureWidth) / 2), top: m + Math.round(inset + 32 * k) };
+}
+
+/** The stamp's height at a stamp `width` px across: the title's band, the picture and the
+ * author's band with the bottom row, inside the frame's insets. */
+export function stampHeight(width) {
+  const k = width / 250;
+  const picture = stampPicture(width);
+  return Math.round(11 * k + 32 * k + picture.height + 40 * k + 11 * k);
 }
 
 /**
- * A postage stamp as SVG, `width` px across: perforated paper with a window where the picture
- * goes (`stampPicture`, a cut of the card's own photo laid under it), a double frame, the title
- * over the picture, the author under it, and a bottom row with the line at the left and the year
- * at the right as the denomination. The ink is faded and a little soft, and the paper mottled,
+ * A postage stamp as SVG, `width` px across and `stampHeight` high: perforated paper with a
+ * window where the picture goes (`stampPicture`, the picture laid under it), a double frame, the
+ * title over the picture, the author under it, and a bottom row with the line at the left and
+ * the year at the right as the denomination. The ink is faded and a little soft, and the paper mottled,
  * as old mail is. `mark` is `{ title, author, year, line }`; `line` may be absent.
  */
 export function stampSvg(mark, width) {
   const k = width / 250;
-  const height = Math.round(width * STAMP_ASPECT);
+  const height = stampHeight(width);
   const m = Math.round(8 * k);
   const pitch = PERF_PITCH * k;
   const r = PERF_RADIUS * k;
@@ -124,7 +134,7 @@ export function stampSvg(mark, width) {
   const upper = (text) => escaped(String(text).toUpperCase());
   const outline = perforated(m, m, width, height, pitch, r);
   const picture = stampPicture(width);
-  const window = `M ${picture.left} ${picture.top} h ${picture.side} v ${picture.side} h ${-picture.side} Z`;
+  const window = `M ${picture.left} ${picture.top} h ${picture.width} v ${picture.height} h ${-picture.width} Z`;
   const inset = 11 * k;
   const line = mark.line === undefined ? "" : `<text x="${m + inset + 7 * k}" y="${m + height - inset - 8 * k}" font-family="${font}" font-size="${9.5 * k}" fill="${INK}" text-anchor="start">${upper(mark.line)}</text>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width + 2 * m}" height="${height + 2 * m}" viewBox="0 0 ${width + 2 * m} ${height + 2 * m}">
@@ -172,9 +182,10 @@ export function wearSvgs(width, height) {
 /**
  * The still (a PNG's bytes) as a postcard that has been through the mail: faded, bordered,
  * worn, tilted by `tiltFor(name)`, shadowed, on a transparent ground, as a PNG with only its
- * image chunks. With `mark` (`stampSvg`'s), a postage stamp is stuck at the card's top right
- * before the wear and the tilt, its picture a cut of the still. Deterministic for one still,
- * name and mark.
+ * image chunks. With `mark` (`stampSvg`'s, and `picture`, a PNG's bytes, the still the stamp
+ * shows, which fills its window whole, cropped only to the window's shape; the card's own still
+ * without it), a postage stamp is stuck at the card's top right before the wear and the tilt.
+ * Deterministic for one still, name and mark.
  */
 export async function postcard(still, name, mark) {
   const faded = await sharp(still)
@@ -196,12 +207,10 @@ export async function postcard(still, name, mark) {
     const svg = Buffer.from(stampSvg(mark, stampWidth));
     const { width: svgWidth, height: svgHeight } = await sharp(svg).metadata();
     const picture = stampPicture(stampWidth);
-    // the stamp's picture: the middle of the still, square, faded further
-    const stillMeta = await sharp(still).metadata();
-    const cutSide = Math.round(Math.min(stillMeta.width, stillMeta.height) * 0.6);
-    const cut = await sharp(still)
-      .extract({ left: Math.round((stillMeta.width - cutSide) / 2), top: Math.round((stillMeta.height - cutSide) / 2), width: cutSide, height: cutSide })
-      .resize(picture.side, picture.side)
+    // the stamp's picture: the still it was given (the card's own without one), filling the
+    // window whole, cropped to the window's shape about its middle, faded further
+    const cut = await sharp(mark.picture ?? still)
+      .resize(picture.width, picture.height, { fit: "cover", position: "centre" })
       .modulate({ saturation: 0.55, brightness: 1.04 })
       .blur(0.6)
       .png()

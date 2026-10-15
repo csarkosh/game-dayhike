@@ -13,7 +13,7 @@
 // Beside each still its postcard (`<name>.card.png`, lib/postcard.mjs): the frame faded on an aged
 // paper border, worn as old mail is, tilted by its name, shadowed, on a transparent ground, which
 // the README lays out; the one `stills.json` names under `stamp` carries a postage stamp with the
-// title, the author and the year, its picture a cut of the still.
+// title, the author and the year, its picture the still `stamp.picture` names, whole.
 //
 // Needs Google Chrome (`CHROME` names another binary). Chrome opens as a window, not headless:
 // the stills are shot on the WebGPU path at the high tier, which headless Chrome does not give.
@@ -165,7 +165,12 @@ async function main() {
   const known = new Set(config.stills.map((s) => s.name));
   for (const name of options.names) if (!known.has(name)) throw new Error(`no still named ${name}; stills.json has ${[...known].join(", ")}`);
   const chosen = options.names.length === 0 ? config.stills : config.stills.filter((s) => options.names.includes(s.name));
-  const markFor = (still) => (config.stamp?.still === still.name ? config.stamp : undefined);
+  // The stamp's picture is another still (`stamp.picture`), read from disk once every still is shot.
+  const markFor = (still) => {
+    if (config.stamp?.still !== still.name) return undefined;
+    const picture = config.stamp.picture === undefined ? undefined : readFileSync(join(OUT, `${config.stamp.picture}.png`));
+    return { ...config.stamp, picture };
+  };
   if (options.cards) {
     for (const still of chosen) await writeCard(still.name, readFileSync(join(OUT, `${still.name}.png`)), markFor(still));
     return;
@@ -181,11 +186,12 @@ async function main() {
       const out = join(OUT, `${still.name}.png`);
       writeFileSync(out, png);
       process.stdout.write(`  wrote ${out} (${png.length} bytes)\n`);
-      await writeCard(still.name, png, markFor(still));
     }
   } finally {
     await close();
   }
+  // The cards after every still, so the stamp's picture is this shoot's.
+  for (const still of chosen) await writeCard(still.name, readFileSync(join(OUT, `${still.name}.png`)), markFor(still));
 }
 
 main().catch((error) => {

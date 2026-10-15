@@ -3,6 +3,7 @@
   "tier": "high",
   "stamp": {
     "still": "trailhead",
+    "picture": "range",
     "title": "Day Hike",
     "author": "Cyrus Sarkosh",
     "year": "2026",
@@ -56,6 +57,14 @@
       "z": -200,
       "yaw": 3.14,
       "what": "the beach below the road, the stack off it"
+    },
+    {
+      "name": "range",
+      "seed": "ash",
+      "x": 606.3,
+      "z": -246,
+      "yaw": 0,
+      "what": "the massif side-on from the south, its whole crest across the frame: the stamp's picture"
     }
   ]
 }

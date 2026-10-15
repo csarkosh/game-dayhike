@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { MARGIN_PX, STAMP_ASPECT, TILT_MAX_DEG, TILT_MIN_DEG, postcard, stampPicture, stampSvg, tiltFor, wearSvgs } from "../lib/postcard.mjs";
+import { MARGIN_PX, TILT_MAX_DEG, TILT_MIN_DEG, WINDOW_ASPECT, postcard, stampHeight, stampPicture, stampSvg, tiltFor, wearSvgs } from "../lib/postcard.mjs";
 
 const NAMES = ["trailhead", "forest", "tarn", "meadow", "crest", "beach"];
 
@@ -70,29 +70,28 @@ describe("stampSvg", () => {
     expect(stampSvg({ ...mark, title: "<b>&" }, 250)).toContain(">&lt;B&gt;&amp;</text>");
     expect(stampSvg({ ...mark, line: undefined }, 250)).not.toContain("PLAYERS");
   });
-  it("puts the picture between the title and the author, inside the stamp", () => {
-    const { side, left, top } = stampPicture(250);
-    expect(side).toBe(150);
-    expect(left).toBeGreaterThan(8);
-    expect(left + side).toBeLessThan(258);
-    expect(top).toBeGreaterThan(8 + 11 + 27);
-    expect(top + side).toBeLessThan(8 + Math.round(250 * STAMP_ASPECT) - 11 - 40);
+  it("puts a landscape picture between the title and the author, as wide as the frame allows, the stamp as high as that needs", () => {
+    const { width, height, left, top } = stampPicture(250);
+    expect(width).toBe(216);
+    expect(height).toBe(Math.round(216 / WINDOW_ASPECT));
+    expect(left).toBe(8 + 17);
+    expect(top).toBe(8 + 11 + 32);
+    expect(stampHeight(250)).toBe(11 + 32 + height + 40 + 11);
+    expect(stampHeight(250)).toBeLessThan(250);
   });
-  it("sticks the stamp on the card it is asked for, its picture the still's middle, and the same still and mark give the same bytes", async () => {
-    // a blue still with a red middle: the red is what the stamp's window shows
-    const still = await sharp({ create: { width: 480, height: 270, channels: 3, background: "#406080" } })
-      .composite([{ input: await sharp({ create: { width: 160, height: 160, channels: 3, background: "#e03030" } }).png().toBuffer(), left: 160, top: 55 }])
-      .png()
-      .toBuffer();
+  it("sticks the stamp on the card it is asked for, its picture the still it is given whole, and the same still and mark give the same bytes", async () => {
+    const still = await sharp({ create: { width: 480, height: 270, channels: 3, background: "#406080" } }).png().toBuffer();
+    // a red picture for the stamp: the red is what the stamp's window shows
+    const picture = await sharp({ create: { width: 320, height: 200, channels: 3, background: "#e03030" } }).png().toBuffer();
     const plain = await postcard(still, "trailhead");
-    const marked = await postcard(still, "trailhead", mark);
+    const marked = await postcard(still, "trailhead", { ...mark, picture });
     expect(marked.equals(plain)).toBe(false);
-    expect((await postcard(still, "trailhead", mark)).equals(marked)).toBe(true);
+    expect((await postcard(still, "trailhead", { ...mark, picture })).equals(marked)).toBe(true);
     expect([(await sharp(marked).metadata()).width, (await sharp(marked).metadata()).height]).toEqual([
       (await sharp(plain).metadata()).width,
       (await sharp(plain).metadata()).height,
     ]);
-    // the still's red middle shows in the stamp's window: in the top right quarter, reddish pixels
+    // the picture shows in the stamp's window: in the top right quarter, reddish pixels
     const { data, info } = await sharp(marked).raw().toBuffer({ resolveWithObject: true });
     let red = 0;
     for (let y = 0; y < info.height / 2; y++) for (let x = Math.floor(info.width / 2); x < info.width; x++) {
