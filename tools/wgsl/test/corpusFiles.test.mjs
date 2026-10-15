@@ -316,13 +316,20 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1613 recorded stages, each file\'s bytes hashing to the name it has: 926 on the medium and high tiers, 583 on low, 75 on high alone, 25 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1613);
+  it('holds the 1444 recorded stages, each file\'s bytes hashing to the name it has: 733 on the medium and high tiers, 454 on low, 231 on high alone, 22 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1444);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1613);
+    expect(read.stages).toHaveLength(1444);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(602);
-    // The 926 recorded on the medium and high tiers (the trunks' bark under its moss, on the wet
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(656);
+    // The 733 recorded on the medium and high tiers (the lake as one surface, its ripples'
+    // amplitude the breeze's field in streaks, its skin in whole mats, its bed added after the fog
+    // and its caustics signed under the sun, met at a lake on the title's world from its lower
+    // shore, a tenth place, at the tarn and from the title's tour (2026-10-15); the sun's
+    // soft-edged shadows on the high tier, the terrain reading the trail's two tables from one
+    // texture and every shadowed receiver under the contact-hardening define, met at the ten
+    // places on high alone, 192 stages new over this recording and most of the 231 the high
+    // tier alone holds (2026-10-15); the trunks' bark under its moss, on the wet
     // side, low on the trunk and more on some trees than others, 26 stages here and 20 on low, met
     // on the forest floor, at the trailhead, in the meadow, at the tarn, dry and under rain, from
     // the win to the title page, and on the title's and the intro's pages (2026-10-14); the
@@ -351,16 +358,22 @@ describe('the committed corpus and the tests\' fixture', () => {
     // materials first met at a lake under three lights among them
     // (2026-10-11), a foliage material's pbr pair first met when the foliage
     // light injection took its FOLIAGE guard (2026-10-12)), the low tier's
-    // 583, recorded on it alone (the end scene's 98, which the tier's earlier
+    // 454, recorded on it alone (the end scene's 98, which the tier's earlier
     // recording, ended before the win, had not met (2026-10-13), a foliage pbr
     // pair of the same recording
-    // among them, and the rain's streak vertex stage with the sky fade softened), the 75 the high tier alone met (the lake's
+    // among them, and the rain's streak vertex stage with the sky fade softened), the 231 the high tier alone met (the soft-edged shadows' receivers, the lake's
     // mirror, the sea's curl and fourteen PBR stages the canopy trail under rain
-    // first met on 2026-10-12 among them), the 25 the medium tier alone met (a PBR pair
+    // first met on 2026-10-12 among them), the 22 the medium tier alone met (a PBR pair
     // the canopy trail under rain first met on 2026-10-13 among them), and the sky
     // dome's 2 and the midges' 2, whose text is the same on every tier.
     // Stages whose text a shader no longer produces are
-    // retired, not kept: the trees' bark's 11 fragment stages before the moss, and the foliage's
+    // retired, not kept, each one a tracked stage whose define set a recorded stage meets with
+    // another text and which none of the thirty pages met as it was: 292 PBR vertex stages before
+    // the atmosphere's cloud uniforms (its near veil and its trail) were in the block, 60 PBR
+    // fragment stages (the lake's and the sea's water before the one surface, the bed after the
+    // fog and the signed caustics, and stages whose headlamp's light defines the page now lists
+    // in another order), the grade's 4, the lens's 1 and 4 postprocess vertex stages before the
+    // shades were lighter and blurrier, 361 over the recording of 2026-10-15; the trees' bark's 11 fragment stages before the moss, and the foliage's
     // 61 fragment stages and the far ground's 4 recorded before the floors' and the olive sward's
     // last wording, every one met again in the wording that stands (2026-10-14); the foliage's
     // vertex stages, retired with the stages before the floors though the pages still met them,
@@ -388,13 +401,13 @@ describe('the committed corpus and the tests\' fixture', () => {
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1613);
+    expect(read.tiers.size).toBe(1444);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([587, 955, 1005]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(926);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(583);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(75);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(25);
+    expect([on('low'), on('medium'), on('high')]).toEqual([458, 759, 968]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(733);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(454);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(231);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(22);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
