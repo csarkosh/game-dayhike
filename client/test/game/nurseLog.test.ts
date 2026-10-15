@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  MOSS_TINT, NURSE_FERN, NURSE_FERN_SCALE, NURSE_FERNS_MAX, NURSE_SEEDLING, NURSE_SEEDLING_SCALE, NURSE_SEEDLINGS_MAX,
-  NURSE_SHARE, mossColours, nursePlants, seedlingGeometry,
+  NURSE_FERN, NURSE_FERN_SCALE, NURSE_FERNS_MAX, NURSE_SEEDLING, NURSE_SEEDLING_SCALE, NURSE_SEEDLINGS_MAX,
+  NURSE_SHARE, nursePlants, seedlingGeometry,
 } from "../../src/game/nurseLog.js";
 import { trunkTop } from "../../src/game/logSeat.js";
 
@@ -33,23 +33,6 @@ describe("nursePlants", () => {
     }
     expect(nurse / N).toBeGreaterThan(NURSE_SHARE - 0.05);
     expect(nurse / N).toBeLessThan(NURSE_SHARE + 0.05);
-  });
-});
-
-describe("mossColours", () => {
-  it("leaves the underside bark and greens the upper side", () => {
-    const positions = [0, 0, 0, 0.5, 1, 0.2, 1, 0.5, -0.1];
-    const normals = [0, -1, 0, 0, 1, 0, 1, 0, 0];
-    const c = mossColours(positions, normals);
-    expect(Array.from(c.slice(0, 4))).toEqual([1, 1, 1, 1]);
-    // Up-facing: toward the tint, greener than red, never past it.
-    expect(c[5]!).toBeGreaterThan(1);
-    expect(c[5]!).toBeLessThanOrEqual(MOSS_TINT[1]);
-    expect(c[4]!).toBeLessThan(1);
-    expect(c[7]).toBe(1);
-    // A side face carries a little: between bark and the top's.
-    expect(c[9]!).toBeGreaterThanOrEqual(1);
-    expect(c[9]!).toBeLessThan(c[5]!);
   });
 });
 

@@ -115,6 +115,11 @@ whole of `u` and of `v`, and neither axis follows the length (correlation
 read off such UVs: any scale would cut the plates at every island's edge. It
 stays as it was, with its moss (`nurseLog.ts`).
 
+*Since 2026-10-15:* the dead trees wear the pine set after all, laid in the
+vertex stage along the trunk and round it instead of through the file's UVs
+(`client/src/game/deadwoodPlugin.ts`, `deadwoodParams.ts`), with the trunks'
+moss and a contact band; `ARCHITECTURE.md` has the shape.
+
 ## 4. How a material is dressed
 
 `dressBark` (`forestMeshes.ts`) runs on each bark material of a model, the

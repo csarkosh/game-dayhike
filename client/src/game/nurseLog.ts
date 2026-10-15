@@ -1,9 +1,9 @@
 /**
- * What grows on a fallen log, and the moss over it. In the rain forest a log
- * is under moss within two decades and carries several times the seedlings
- * of the floor beside it: the next trees start on it. Here a share of the
- * logs are nurse logs, each with a few ferns and conifer seedlings along its
- * top, and every log's upper side is tinted to moss.
+ * What grows on a fallen log. In the rain forest a log is under moss within
+ * two decades and carries several times the seedlings of the floor beside
+ * it: the next trees start on it. Here a share of the logs are nurse logs,
+ * each with a few ferns and conifer seedlings along its top; the moss over
+ * every log is the deadwood plugin's (`deadwoodPlugin.ts`).
  *
  * Pure and Babylon-free; a pure function of the log's own `hash`, so the same
  * log carries the same plants on every rebuild and on every peer's screen.
@@ -74,38 +74,6 @@ export function nursePlants(hash: number, minX: number, maxX: number): NursePlan
   };
   add(NURSE_FERN, 2 + Math.floor(rand() * (NURSE_FERNS_MAX - 1)), NURSE_FERN_SCALE);
   add(NURSE_SEEDLING, 2 + Math.floor(rand() * (NURSE_SEEDLINGS_MAX - 1)), NURSE_SEEDLING_SCALE);
-  return out;
-}
-
-/** The moss's tint, which multiplies the bark's own colour: over 1 in green,
- * so brown bark comes out a deep green and not an olive. */
-export const MOSS_TINT: readonly [number, number, number] = [0.38, 1.15, 0.3];
-/** A face is bare below MOSS_UP_LO of upward normal and full moss from MOSS_UP_HI. */
-export const MOSS_UP_LO = -0.1;
-export const MOSS_UP_HI = 0.55;
-/** The moss is patchy: its weight varies between this and 1 over the trunk. */
-const MOSS_PATCH_FLOOR = 0.55;
-
-/**
- * Vertex colours (RGBA) that lay moss on a trunk modelled lying along local
- * X with +Y up: white where the bark shows, `MOSS_TINT` on the upper side,
- * in patches. `positions` and `normals` are xyz triples.
- */
-export function mossColours(positions: ArrayLike<number>, normals: ArrayLike<number>): Float32Array {
-  const count = positions.length / 3;
-  const out = new Float32Array(count * 4);
-  for (let i = 0; i < count; i++) {
-    const up = normals[i * 3 + 1] as number;
-    const t = Math.min(1, Math.max(0, (up - MOSS_UP_LO) / (MOSS_UP_HI - MOSS_UP_LO)));
-    const x = positions[i * 3] as number, z = positions[i * 3 + 2] as number;
-    // Smooth along the trunk, so a patch spans many vertices.
-    const patch = MOSS_PATCH_FLOOR + (1 - MOSS_PATCH_FLOOR) * (0.5 + 0.5 * Math.sin(x * 3.1 + Math.sin(z * 7.3) * 1.7));
-    const w = t * t * (3 - 2 * t) * patch;
-    out[i * 4] = 1 + (MOSS_TINT[0] - 1) * w;
-    out[i * 4 + 1] = 1 + (MOSS_TINT[1] - 1) * w;
-    out[i * 4 + 2] = 1 + (MOSS_TINT[2] - 1) * w;
-    out[i * 4 + 3] = 1;
-  }
   return out;
 }
 

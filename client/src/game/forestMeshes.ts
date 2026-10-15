@@ -8,8 +8,10 @@
  *
  * Four cohorts, one shell: canopy giants and regeneration saplings both take
  * the full 3-LOD-plus-impostor treatment, and standing snags and fallen nurse
- * logs share ONE near bucket, instancing `deadwood.snag`'s LOD2 mesh — see
- * `deadwoodMatrixBuffer` for why LOD2 and not LOD0 — whose SNAG half carries
+ * logs share ONE near bucket, instancing `deadwood.snag`'s LOD0 mesh on the
+ * high tier and its LOD1 below (see the load, and `deadwoodMatrixBuffer` for
+ * the two roles' poses), dressed by the deadwood plugin in a trunk bark set
+ * laid along the trunk, the moss and a contact band — whose SNAG half carries
  * on past the near radius as a billboard of its own, baked upright
  * (`SNAG_POSE`) because the asset is modelled lying down. Saplings and snags
  * used to STOP at the near radius, on the argument that an 11 m tree is
@@ -112,7 +114,7 @@ import { attachFoliage, FOLIAGE_PROFILES, setFoliageEdges } from "./foliagePlugi
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { groundNormalTilt, groundNormalY, seatOnGround } from "./groundTilt.js";
 import { LOG_STATIONS, logStationOffsets, seatLog, trunkSeat, trunkTop, type TrunkSeat } from "./logSeat.js";
-import { mossColours, NURSE_FERN, nursePlants, seedlingGeometry } from "./nurseLog.js";
+import { NURSE_FERN, nursePlants, seedlingGeometry } from "./nurseLog.js";
 import { attachGroundConform } from "./groundConformPlugin.js";
 import {
   attachDistanceFade,
@@ -122,6 +124,8 @@ import {
 } from "./distanceFadePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { attachMoss } from "./mossPlugin.js";
+import { attachDeadwood, type DeadwoodPlugin } from "./deadwoodPlugin.js";
+import { DEADWOOD_BARK, DEADWOOD_TONE } from "./deadwoodParams.js";
 import { MOSS_OUTPUT } from "./mossParams.js";
 import { BARK_SKY, CROWN_SKY, IMPOSTOR_SKY, TREE_SPECULAR_WEIGHT } from "./forestLookParams.js";
 import { coverAlbedoTint, FOLIAGE_CARD_CONTRAST } from "./coverAlbedoParams.js";
@@ -591,6 +595,7 @@ function applyBucketBuffer(
   grad?: Float32Array,
   bands?: Float32Array,
   foliage?: Float32Array,
+  role?: Float32Array,
 ): void {
   const count = buf.length / 16;
   const fade = bands ?? fadeBandsBuffer(count, bucket.fade);
@@ -605,6 +610,8 @@ function applyBucketBuffer(
     mesh.thinInstanceSetBuffer("fadeBands", fade, 4, true);
     if (grad !== undefined) mesh.thinInstanceSetBuffer("groundGrad", grad, 2, true);
     if (foliage !== undefined) mesh.thinInstanceSetBuffer("foliage", foliage, 4, true);
+    // The dead trees' role, a float an instance (`deadwoodPlugin.ts`).
+    if (role !== undefined) mesh.thinInstanceSetBuffer("deadwoodRole", role, 1, true);
     // A zero-count bucket must be disabled outright: with `instancesCount` 0
     // Babylon's `hasThinInstances` is false and the bare bucket mesh would be
     // drawn once at the origin.
@@ -754,7 +761,11 @@ function deadwoodMatrixBuffer(
     const t = list[i] as TreeInstance;
     const isSnag = t.cohort === COHORT_SNAG;
     const yaw = t.hash * Math.PI * 2;
-    scratchScale.copyFromFloats(t.scale, t.scale, t.scale);
+    // A log of the second draw (`TreeInstance.variant`) is the model mirrored
+    // across the trunk's own plane: the same trunk read the other way round,
+    // so two logs in one view share no silhouette. The mirror turns the
+    // winding, which the material's back faces drawn absorbs (`adopt`).
+    scratchScale.copyFromFloats(t.scale, t.scale, !isSnag && t.variant === 1 ? -t.scale : t.scale);
     if (isSnag) {
       Quaternion.FromEulerAnglesToRef(0, yaw, Math.PI / 2, scratchQ);
       // Lay the standing trunk onto the ground normal, composed AFTER the
@@ -1815,23 +1826,56 @@ export function createForestMeshes(
     // meshes — the same rule `adoptSpecies` records for the tree bakes — and
     // posed upright, because the asset is modelled lying down (`SNAG_POSE`).
     // The bake options are the third parameter, the pose the fourth.
-    // Moss on the trunk's upper side, as vertex colours over the bark
-    // (`nurseLog.ts`): set before the bake, so the snag's billboard carries
-    // it too. A snag stands the trunk on end, and its moss is down one side.
-    // The snag is bark, opaque: a trunk's share of the sky and the bark's
-    // specular weight, set before its bake for the reason `adoptSpecies`
-    // gives, so its billboard carries them too.
+    // The dead trees' dressing (`deadwoodPlugin.ts`), the material's part
+    // set before the bake so the snag's billboard carries it too: the
+    // material dressed in a trunk bark set (`DEADWOOD_BARK`, its repeats 1,
+    // the plugin laying the coordinates along the trunk and round it), its
+    // file's tangents dropped as a dressed trunk's are (the set's normal map
+    // is read in the frame of the laid coordinates), and its back faces
+    // drawn with the lighting one-sided: a log is mirrored by its draw
+    // (`deadwoodMatrixBuffer`), which turns its winding, so culling would
+    // show its inside and two-sided lighting would turn its normals inward
+    // (one-sided, each face keeps the mesh's own, which the mirror carries
+    // right). The snag is bark, opaque: a trunk's share of the sky and the
+    // bark's specular weight, set before its bake for the reason
+    // `adoptSpecies` gives. The plugin itself, the moss and the contact band
+    // with the forest's moss map, attaches AFTER the bake's clone is taken,
+    // as the trees' moss does: a material clone cannot carry it (see
+    // `bakeImpostor`), so the bake's clone wears its own (`BakeOptions.dress`;
+    // the clone's single mesh has no role attribute, so it reads the snag's
+    // role of zero). The bake waits for the set with the moss map, as a
+    // tree's bake waits for its species' set.
+    const deadwoodLanded: Promise<void>[] = [moss.landed];
+    const deadwoodMaterials = new Set<PBRMaterial>();
     for (const mesh of loaded.deadwood) {
-      if (mesh.material) shadeTreeMaterial(mesh.material);
-      const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
-      const normals = mesh.getVerticesData(VertexBuffer.NormalKind);
-      if (positions === null || normals === null) continue;
-      mesh.setVerticesData(VertexBuffer.ColorKind, mossColours(positions, normals), false, 4);
-      mesh.useVertexColors = true;
+      if (mesh.isVerticesDataPresent(VertexBuffer.TangentKind)) mesh.removeVerticesData(VertexBuffer.TangentKind);
+      const material = mesh.material;
+      if (!(material instanceof PBRMaterial)) continue;
+      shadeTreeMaterial(material);
+      material.backFaceCulling = false;
+      material.twoSidedLighting = false;
+      if (!deadwoodMaterials.has(material)) {
+        deadwoodMaterials.add(material);
+        deadwoodLanded.push(dressBark(material, DEADWOOD_BARK, barkSize(tier, DEADWOOD_BARK), scene, loadTexture, textures));
+        // Weathered: the set's tone taken down to dead wood's.
+        material.albedoColor.copyFromFloats(DEADWOOD_TONE.r, DEADWOOD_TONE.g, DEADWOOD_TONE.b);
+      }
     }
+    const deadwoodPlugins: DeadwoodPlugin[] = [];
+    const dressDeadwood = (material: Material): void => {
+      deadwoodPlugins.push(attachDeadwood(material, moss.texture));
+    };
     const snagSource = loaded.deadwood[0];
     const snagBake =
-      snagSource === undefined ? null : bakeImpostor(snagSource, scene, bakeOptions, SNAG_POSE);
+      snagSource === undefined
+        ? null
+        : bakeImpostor(
+            snagSource,
+            scene,
+            { ...bakeOptions, textures: Promise.all(deadwoodLanded).then(() => undefined), dress: dressDeadwood },
+            SNAG_POSE,
+          );
+    for (const material of deadwoodMaterials) dressDeadwood(material);
 
     // Both dead-tree roles end at the near seam: the SNAG half cross-fades
     // into its billboard there, and a ~1 m log is sub-pixel beyond it and
@@ -1847,6 +1891,9 @@ export function createForestMeshes(
     // so adding `offset * scale` to groundH raises the origin until that
     // minimum sits at ground level.
     deadwoodSnagBaseOffset = -deadwoodBounds.min.x;
+    // The plugin's moss band on a snag reads its height over this base: the
+    // near material's and the bake clone's alike (the bake renders frames on).
+    for (const plugin of deadwoodPlugins) plugin.base = deadwoodSnagBaseOffset;
     // LOG keeps local X as its trunk axis: its ends are the local X
     // min/max, and its base is its trunk's underside, measured from the
     // vertices themselves (`trunkSeat`), not the box's local Y minimum, which
@@ -2046,8 +2093,11 @@ export function createForestMeshes(
       // file-head comment). It was LOD2 while a log was 6 to 8 m long; at
       // 9 to 17 m and over a metre through, LOD2's 754 triangles are a
       // faceted spindle from the trail, and LOD1's 1,880 hold the trunk's
-      // round and its root flare.
-      const deadwoodGroups = await loadBucketed(DEADWOOD_URL, (c) => [lodMeshes(c, "LOD1")]);
+      // round and its root flare. On the high tier LOD0's 4,196 hold its
+      // bark plates and stubs too, a trunk seen from a stride away under a
+      // bark set whose relief the silhouette must keep up with, on the two
+      // dozen instances of one bucket.
+      const deadwoodGroups = await loadBucketed(DEADWOOD_URL, (c) => [lodMeshes(c, tier === "high" ? "LOD0" : "LOD1")]);
       if (deadwoodGroups === null) return;
       const deadwood = deadwoodGroups[0] as Mesh[];
 
@@ -2158,9 +2208,10 @@ export function createForestMeshes(
     buf: Float32Array,
     grad?: Float32Array,
     foliage?: Float32Array,
+    role?: Float32Array,
   ): () => void {
     const fade = fadeBandsBuffer(buf.length / 16, bucket.fade);
-    return () => applyBucketBuffer(bucket, buf, grad, fade, foliage);
+    return () => applyBucketBuffer(bucket, buf, grad, fade, foliage, role);
   }
 
   /**
@@ -2198,7 +2249,12 @@ export function createForestMeshes(
       deadwoodLogMaxX,
       deadwoodLogSeat,
     );
-    applies.push(bucketApply(deadwoodBucket as Bucket, deadwoodBuf));
+    // Each instance's role for the plugin: 1 a fallen log, 0 a standing snag.
+    const deadwoodRoles = new Float32Array(bands.deadwood.length);
+    bands.deadwood.forEach((t, i) => {
+      deadwoodRoles[i] = t.cohort === COHORT_LOG ? 1 : 0;
+    });
+    applies.push(bucketApply(deadwoodBucket as Bucket, deadwoodBuf, undefined, undefined, deadwoodRoles));
     // What grows on the nurse logs, placed on each log's own matrix.
     const nurse = nurseBuffers(bands.deadwood, deadwoodBuf, deadwoodLogMinX, deadwoodLogMaxX, deadwoodLogTop, deadwoodLogSeat.diameter);
     if (nurseFernBucket !== null) applies.push(bucketApply(nurseFernBucket, nurse.ferns));

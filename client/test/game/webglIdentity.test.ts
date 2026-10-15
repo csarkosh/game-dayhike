@@ -68,6 +68,11 @@ const PINS: Record<string, string> = {
   // (`MOSS` and `ALBEDO` both), so a trunk without a map compiles without it.
   "moss.fragment": "d9add135f40f3b235b0d009a880005ffbf8fae937333dd439ac92262dc22d138",
   "moss.vertex": "c27e94af368ce3ae552266d9c14d9ae34bada23df9a3150d7c9018e101e68816",
+  // The dead trees' dressing (deadwoodPlugin.ts, deadwood*.fx), pinned at its
+  // first text: the bark's coordinates laid along the trunk and round it over
+  // the material's own, the moss by the role and the contact band.
+  "deadwood.fragment": "012e902e87f6870e8c9d8a7b0ec99102277d6faec927d9db3aa548cd934681cf",
+  "deadwood.vertex": "ed84af0f7f03c0c16fcb52292e468a318e043231ac2162ec80b5fcc9ad5d51fe",
   "post.finish": "4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5",
   "post.grade": "74e331711356b6afe2ce371d749cfff39c64bc02473988dd2ba26bc9653ecd3a",
   "post.halationExtract": "1ee9b9ed30d66fd1e10e4a327104c3e9016a91a2b4ed6aa2cec64cb09df5d3fd",
@@ -126,6 +131,8 @@ const INTERFACE_PINS: Record<string, string> = {
   "groundConform.interface": "d1318897a8b44958dc6d4ba703fe861a79590ee61c6d7cb830bc54cb33e7b75a",
   // The trunks' moss: one sampler, no uniform, one define, no attribute.
   "moss.interface": "1d4bc4eabead2dd9a9ff3444a09e3be683f72b7e15a000f5e4fd37c6019f7bd3",
+  // The dead trees' dressing: the moss sampler, two uniforms, one define, the role attribute.
+  "deadwood.interface": "3bf55f85ee3071a28520a18057b042165a6879d1b1d4be70899c746f226ece7c",
   "skin.interface": "d39b98bf284499c66f8b2765d9947ff326b97a8a716bcb4f2c89cf5b9c1bc2de",
   // Re-pinned for `terrainRain` and `terrainTime`, the two floats the
   // puddles' ripples read, declared on both uniform paths, and again for

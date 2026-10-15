@@ -50,6 +50,7 @@ import {
 import { DistanceFadePlugin, fadeBands, fadeVisibility } from "../../src/game/distanceFadePlugin.js";
 import { attachFoliage, FOLIAGE_PROFILES, FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import { MossPlugin } from "../../src/game/mossPlugin.js";
+import { DeadwoodPlugin } from "../../src/game/deadwoodPlugin.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import {
   createForestMeshes,
@@ -1645,9 +1646,10 @@ describe("the trees' bark", () => {
 
     // The trunks' moss map first, once for the forest, as a colour map; then
     // three maps a bark material: the fir's three LODs, the pine's three in
-    // each of its two barks, the two saplings' three each: 15 materials, 45
-    // maps, 46 loads.
-    expect(loads.length).toBe(46);
+    // each of its two barks, the two saplings' three each, and the dead
+    // trees' one (`DEADWOOD_BARK`, the pine set): 16 materials, 48 maps, 49
+    // loads.
+    expect(loads.length).toBe(49);
     expect(loads[0]).toMatchObject({ url: textureUrl("textures/moss.wood.1k.ktx2"), colour: true });
     expect([loads[0]!.texture.wrapU, loads[0]!.texture.wrapV]).toEqual([Texture.WRAP_ADDRESSMODE, Texture.WRAP_ADDRESSMODE]);
     expect(loads.filter((l) => l.url.includes("moss."))).toHaveLength(1);
@@ -1733,22 +1735,24 @@ describe("the trees' bark", () => {
     const sap = (s: number): PBRMaterial => assets.saplings[s]!.lods[0].material as PBRMaterial;
     expect(urlOf(sap(0).albedoTexture)).toBe(textureUrl("textures/bark.pine.1k.ktx2"));
     expect(urlOf(sap(1).albedoTexture)).toBe(textureUrl("textures/bark.metasequoia.1k.ktx2"));
-    // Every bark material of the scene has its three maps.
+    // Every bark material of the scene has its three maps, the dead trees' among them.
     const dressed = scene.materials.filter((m): m is PBRMaterial => m instanceof PBRMaterial && m.metallicTexture !== null);
-    expect(dressed.length).toBe(15);
+    expect(dressed.length).toBe(16);
     for (const m of dressed) {
       expect(m.albedoTexture, m.name).not.toBeNull();
       expect(m.bumpTexture, m.name).not.toBeNull();
-      expect([m.albedoColor.r, m.albedoColor.g, m.albedoColor.b], m.name).toEqual([0.68, 0.68, 0.7]);
+      // The living trunks' tone; the dead trees' own, weathered under it.
+      const tone = m === assets.deadwood.material ? [0.5, 0.5, 0.53] : [0.68, 0.68, 0.7];
+      expect([m.albedoColor.r, m.albedoColor.g, m.albedoColor.b], m.name).toEqual(tone);
     }
     // The cedar's clone was made of the dressed metasequoia material, with
     // copies of its three maps: all three copies are disposed with the file's
-    // own, the ARM map's too. The scene holds the loader's 45 bark maps and
+    // own, the ARM map's too. The scene holds the loader's 48 bark maps and
     // the moss map and, of its own, PBR's BRDF lookup alone (named with a
     // counter of the process's).
     const own = scene.textures.filter((t) => !t.name.startsWith("data:EnvironmentBRDFTexture"));
     expect(own.filter((t) => !loads.some((l) => l.texture === t)).map((t) => t.name)).toEqual([]);
-    expect(own.length).toBe(46);
+    expect(own.length).toBe(49);
   });
 
   it("gives the pine's second set geometry of its own, so a rebuild of one set never takes the other's instance buffers", () => {
@@ -1837,13 +1841,13 @@ describe("the trees' bark", () => {
       bakeImpostor: () => null,
       loadTexture: load,
     });
-    // The moss map and the set's three.
-    expect(loads.length).toBe(4);
+    // The moss map, the set's three, and the dead trees' three.
+    expect(loads.length).toBe(7);
     expect(lods[2].material).not.toBe(sharedMat);
-    // The loader's four maps and the split's three copies: the moss is not
+    // The loader's seven maps and the split's three copies: the moss is not
     // copied, since the split clones before the plugin is on the material,
     // and the clone's plugin shares the forest's one map.
-    expect(scene.textures.length - before).toBe(7);
+    expect(scene.textures.length - before).toBe(10);
     expect((lods[2].material as PBRMaterial).pluginManager?.getPlugin("Moss")).toBeTruthy();
     expect(lods[2].material!.getActiveTextures()).toContain(loads[0]!.texture);
     forest.dispose();
@@ -1855,14 +1859,14 @@ describe("the trees' bark", () => {
       const { scene, assets } = barkScene();
       const { loads, load } = recordingLoader();
       createForestMeshes(scene, SEED, { assets, bakeImpostor: () => null, loadTexture: load, tier });
-      // The 45 bark maps and the moss map, which ships at 1k alone.
-      expect(loads.length).toBe(46);
-      expect(loads.filter((l) => l.url.includes(".1k.")).length).toBe(46);
+      // The 48 bark maps and the moss map, which ships at 1k alone.
+      expect(loads.length).toBe(49);
+      expect(loads.filter((l) => l.url.includes(".1k.")).length).toBe(49);
       expect(loads.filter((l) => l.url.includes(".2k.")).length).toBe(0);
     }
   });
 
-  it("hands each tree's bake the promise of its bark set, which settles once every map has loaded or failed; the snag's bake gets none", async () => {
+  it("hands each tree's bake the promise of its bark set, which settles once every map has loaded or failed; the snag's bake its dressing's", async () => {
     const { scene, assets } = barkScene();
     const { loads, load } = recordingLoader();
     const given: (Promise<void> | undefined)[] = [];
@@ -1874,10 +1878,10 @@ describe("the trees' bark", () => {
         return null;
       },
     });
-    // Three giant sets, two saplings, the snag.
+    // Three giant sets, two saplings, the snag: every bake its set's promise,
+    // the snag's its dressing's with the moss map.
     expect(given.length).toBe(6);
-    for (const held of given.slice(0, 5)) expect(held).toBeInstanceOf(Promise);
-    expect(given[5]).toBeUndefined();
+    for (const held of given) expect(held).toBeInstanceOf(Promise);
     // The fir's set is its first three LODs' nine maps, loads 1 to 9, and
     // the forest's moss map, load 0.
     let landed = false;
@@ -1920,6 +1924,50 @@ describe("the trees' bark", () => {
     expect(settled).toEqual([true, true, true, true, true]);
   });
 
+  it("dresses the dead trees after the snag's bake takes its clone, the clone through the bake's dress, with back faces drawn and lit one-sided", () => {
+    const { scene, assets } = barkScene();
+    const { loads, load } = recordingLoader();
+    const snag = assets.deadwood.material as PBRMaterial;
+    // Each bake dresses its clone as the real one does, as it is called.
+    const treeClone = new PBRMaterial("tree_clone", scene);
+    const snagClone = new PBRMaterial("snag_clone", scene);
+    let dresses = 0;
+    let pluginAtBake: unknown = null;
+    const forest = createForestMeshes(scene, SEED, {
+      assets,
+      loadTexture: load,
+      tier: "high",
+      bakeImpostor: (mesh, _s, options) => {
+        if (mesh === assets.deadwood) pluginAtBake = snag.pluginManager?.getPlugin("Deadwood") ?? null;
+        options?.dress?.(mesh === assets.deadwood ? snagClone : treeClone);
+        if (options?.dress) dresses++;
+        return null;
+      },
+    });
+    // A material clone cannot carry the plugin, so the bake's clone is taken first.
+    expect(pluginAtBake).toBeNull();
+    const plugin = snag.pluginManager?.getPlugin("Deadwood") as DeadwoodPlugin;
+    expect(plugin).toBeInstanceOf(DeadwoodPlugin);
+    expect(plugin.texture).toBe(loads[0]!.texture);
+    expect(snag.backFaceCulling).toBe(false);
+    expect(snag.twoSidedLighting).toBe(false);
+    expect(snag.metallicTexture).not.toBeNull();
+    expect(assets.deadwood.isVerticesDataPresent(VertexBuffer.TangentKind)).toBe(false);
+    // Every bake dresses its clone: the trees' with the moss, the snag's with the dead trees' plugin.
+    expect(dresses).toBe(6);
+    expect(treeClone.pluginManager?.getPlugin("Moss")).toBeInstanceOf(MossPlugin);
+    expect(treeClone.pluginManager?.getPlugin("Deadwood") ?? null).toBeNull();
+    const clonePlugin = snagClone.pluginManager?.getPlugin("Deadwood") as DeadwoodPlugin;
+    expect(clonePlugin).toBeInstanceOf(DeadwoodPlugin);
+    expect(snagClone.pluginManager?.getPlugin("Moss") ?? null).toBeNull();
+    // The snag's base, measured once the file is adopted (the model's x minimum, negated), reaches both plugins.
+    const base = -assets.deadwood.getBoundingInfo().boundingBox.minimum.x;
+    expect(base).toBeGreaterThan(0);
+    expect(plugin.base).toBe(base);
+    expect(clonePlugin.base).toBe(base);
+    forest.dispose();
+  });
+
   it("wears the moss on every dressed bark material with the forest's one map, and on no crown, snag, billboard or nurse plant", () => {
     const { scene, assets } = barkScene();
     const { loads, load } = recordingLoader();
@@ -1957,7 +2005,7 @@ describe("the trees' bark", () => {
     expect(names.indexOf("Moss")).toBeLessThan(names.indexOf("Wet"));
   });
 
-  it("hands every tree's bake a dressing that puts the moss on an opaque material and leaves an alpha-tested one; the snag's bake gets none", () => {
+  it("hands every tree's bake a dressing that puts the moss on an opaque material and leaves an alpha-tested one; the snag's bake the dead trees' own", () => {
     const { scene, assets } = barkScene();
     const { loads, load } = recordingLoader();
     const given: (BakeOptions["dress"] | undefined)[] = [];
@@ -1971,8 +2019,7 @@ describe("the trees' bark", () => {
     });
     // Three giant sets, two saplings, the snag.
     expect(given.length).toBe(6);
-    for (const dress of given.slice(0, 5)) expect(dress).toBeTypeOf("function");
-    expect(given[5]).toBeUndefined();
+    for (const dress of given) expect(dress).toBeTypeOf("function");
     const bark = new PBRMaterial("bake_bark", scene);
     const crown = new PBRMaterial("bake_crown", scene);
     crown.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
@@ -2019,8 +2066,8 @@ describe("the trees' bark", () => {
     const { scene, assets } = barkScene();
     const { loads, load } = recordingLoader();
     const forest = createForestMeshes(scene, SEED, { assets, bakeImpostor: () => null, loadTexture: load });
-    // The 45 bark maps and the moss map.
-    expect(loads.length).toBe(46);
+    // The 48 bark maps and the moss map.
+    expect(loads.length).toBe(49);
     for (const l of loads) expect(scene.textures).toContain(l.texture);
     forest.dispose();
     for (const l of loads) {

@@ -238,6 +238,9 @@ describe("inter-stage variables on WebGPU", () => {
     expect(plugins.locations, WEIGH).toEqual({
       atmosphere: 0,
       cliffTint: 1,
+      // The dead trees' dressing: one vec4, the role, the height over the
+      // snag's base, the model's y and the foot's hash (2026-10-15).
+      deadwood: 1,
       distanceFade: 2,
       "foliage.BLADES": 4,
       "foliage.BUSH": 4,

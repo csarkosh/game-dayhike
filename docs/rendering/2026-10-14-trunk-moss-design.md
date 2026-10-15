@@ -161,6 +161,12 @@ three LODs, the pine's second set's clones, the saplings and the alder.
 Never the crowns, the snag (which keeps its file's bark and its own moss,
 `nurseLog.ts`), the billboards' own material or the nurse plants.
 
+*Since 2026-10-15:* the snag and the logs wear a plugin of their own with
+this one's mask and constants and the same map
+(`client/src/game/deadwoodPlugin.ts`); the vertex-colour moss of
+`nurseLog.ts` is gone, and the snag's bake dresses its clone as the trees'
+do. `ARCHITECTURE.md` has the shape.
+
 In the loop with the ground conform, the distance fade and the wet, and not
 in `dressSpecies` where the bark is dressed, because the LOD2 split in
 `adoptSpecies` clones the bark material before any plugin is on it: a
