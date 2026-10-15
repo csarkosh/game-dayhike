@@ -1,6 +1,6 @@
 // A README still as a postcard that has been through the mail: the frame on an aged paper border,
-// the picture faded and warmed, grain and foxing over the whole card, its corners rubbed and
-// rounded and its edge softened, tilted a few degrees one way or the other by its name alone, so
+// the picture faded and warmed, grain over the whole card and foxing on its border, a grime band
+// creeping in from its edge, its corners rounded, tilted a few degrees one way or the other by its name alone, so
 // the same still always lies at the same angle, with a soft shadow under it on a transparent
 // ground. The README lays the cards out at different widths and sides, like postcards picked up
 // at the trailhead and dropped on a table. One carries a postage stamp, worn the same way.
@@ -29,12 +29,15 @@ export const FADE_CONTRAST = 0.88;
 export const FADE_LIFT = 14;
 export const FADE_WARM = [1, 0.975, 0.92];
 export const FADE_BLUR = 0.5;
-/** The wear over the whole card: the card's corner radius, the rubbed corners' reach as a share
- * of the card's width and their lightness, the edge's darkening, and the grain's seed. */
+/** The wear over the whole card: the card's corner radius; the grime band creeping in from the
+ * edge, its width (px), its colour and its darkness, and the darker line at the very edge; the
+ * foxing on the paper border, heavier than the grain over the picture; and the grain's seed. */
 export const CORNER_RADIUS_PX = 6;
-export const RUB_SHARE = 0.16;
-export const RUB_ALPHA = 0.5;
-export const EDGE_ALPHA = 0.16;
+export const EDGE_BAND_PX = 20;
+export const EDGE_COLOUR = "#5e4524";
+export const EDGE_ALPHA = 0.28;
+export const EDGE_LINE_ALPHA = 0.34;
+export const FOXING_ALPHA = 0.55;
 export const GRAIN_SEED = 11;
 /** The stamp's ink, a postal blue-black, faded, and its paper, yellowed a shade past the card's. */
 export const INK = "#2b3650";
@@ -143,24 +146,24 @@ ${line}
 </svg>`;
 }
 
-/** The wear over a whole card of `width` by `height`, as two SVGs: the grain and foxing to lay
- * over it multiplied, and the rubbed corners and the darkened edge to lay over it plainly. */
+/** The wear over a whole card of `width` by `height`, as SVGs: the grain and foxing to lay over
+ * it multiplied (the foxing heavier on the paper border round the picture than over the picture),
+ * the grime band and the dark line at the edge to lay over it plainly, and the rounded mask. */
 export function wearSvgs(width, height) {
-  const reach = Math.round(width * RUB_SHARE);
-  const corners = [[0, 0], [width, 0], [0, height], [width, height]]
-    .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="${reach}" fill="url(#rub)"/>`)
-    .join("\n");
+  const photo = { left: BORDER_PX, top: BORDER_PX, width: width - 2 * BORDER_PX, height: height - BORDER_PX - FOOT_PX };
+  const border = `M 0 0 h ${width} v ${height} h ${-width} Z M ${photo.left} ${photo.top} h ${photo.width} v ${photo.height} h ${-photo.width} Z`;
   const grain = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-<defs><filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="4" seed="${GRAIN_SEED}" stitchTiles="stitch"/><feColorMatrix type="matrix" values="0.14 0 0 0 0.86  0 0.14 0 0 0.85  0 0 0.2 0 0.8  0 0 0 0 1"/></filter></defs>
+<defs>
+<filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="4" seed="${GRAIN_SEED}" stitchTiles="stitch"/><feColorMatrix type="matrix" values="0.14 0 0 0 0.86  0 0.14 0 0 0.85  0 0 0.2 0 0.8  0 0 0 0 1"/></filter>
+<filter id="foxing" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" seed="${GRAIN_SEED + 1}" stitchTiles="stitch"/><feColorMatrix type="matrix" values="0.45 0 0 0 0.62  0 0.4 0 0 0.6  0 0 0.3 0 0.5  0 0 0 0 1"/></filter>
+</defs>
 <rect width="${width}" height="${height}" filter="url(#grain)"/>
+<path d="${border}" fill-rule="evenodd" filter="url(#foxing)" opacity="${FOXING_ALPHA}"/>
 </svg>`;
   const marks = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-<defs>
-<radialGradient id="rub"><stop offset="0" stop-color="#fbf6ea" stop-opacity="${RUB_ALPHA}"/><stop offset="0.55" stop-color="#fbf6ea" stop-opacity="${RUB_ALPHA * 0.35}"/><stop offset="1" stop-color="#fbf6ea" stop-opacity="0"/></radialGradient>
-<filter id="edge" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="3"/></filter>
-</defs>
-${corners}
-<rect x="1" y="1" width="${width - 2}" height="${height - 2}" fill="none" stroke="#4a3a22" stroke-opacity="${EDGE_ALPHA}" stroke-width="5" filter="url(#edge)"/>
+<defs><filter id="band" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="${EDGE_BAND_PX / 3}"/></filter></defs>
+<rect x="${-EDGE_BAND_PX / 2}" y="${-EDGE_BAND_PX / 2}" width="${width + EDGE_BAND_PX}" height="${height + EDGE_BAND_PX}" fill="none" stroke="${EDGE_COLOUR}" stroke-opacity="${EDGE_ALPHA}" stroke-width="${EDGE_BAND_PX * 2}" filter="url(#band)"/>
+<rect x="1" y="1" width="${width - 2}" height="${height - 2}" fill="none" stroke="${EDGE_COLOUR}" stroke-opacity="${EDGE_LINE_ALPHA}" stroke-width="3"/>
 </svg>`;
   const mask = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" rx="${CORNER_RADIUS_PX}" fill="#fff"/></svg>`;
   return { grain: Buffer.from(grain), marks: Buffer.from(marks), mask: Buffer.from(mask) };

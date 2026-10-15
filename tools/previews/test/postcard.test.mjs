@@ -104,11 +104,14 @@ describe("stampSvg", () => {
 });
 
 describe("wearSvgs", () => {
-  it("gives the grain to multiply over the card, the four rubbed corners and the edge to lay over it, and the rounded mask", () => {
+  it("gives the grain and the border's foxing to multiply over the card, the grime band and the edge's line to lay over it, and the rounded mask", () => {
     const wear = wearSvgs(400, 300);
-    expect(wear.grain.toString()).toContain("feTurbulence");
-    expect(wear.marks.toString().match(/<circle /g)).toHaveLength(4);
-    expect(wear.marks.toString()).toContain('cx="400" cy="300"');
+    expect(wear.grain.toString().match(/feTurbulence/g)).toHaveLength(2);
+    // the foxing's path is the border: the card's rectangle with the picture's cut out
+    expect(wear.grain.toString()).toContain('d="M 0 0 h 400 v 300 h -400 Z M 22 22 h 356 v 248 h -356 Z" fill-rule="evenodd" filter="url(#foxing)"');
+    expect(wear.marks.toString()).not.toContain("<circle");
+    expect(wear.marks.toString().match(/<rect /g)).toHaveLength(2);
+    expect(wear.marks.toString()).toContain('filter="url(#band)"');
     expect(wear.mask.toString()).toContain('rx="6"');
   });
 });
