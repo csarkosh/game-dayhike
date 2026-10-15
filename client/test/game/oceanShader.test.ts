@@ -1262,12 +1262,13 @@ describe("a lake's shaders", () => {
     // hashed again as the lake's mirror and its shore left them (their samplers, their reads); the
     // lights' and the composition hashed again once the paws' field and the shore's reads went
     // under their uniform branches; the composition once more as the mirror's read gained the eye's
-    // motion's smear.
+    // motion's smear; the lights' once more as the lake's octaves took their floor outside the
+    // paws, scaled by the lake's glass share (`octaveAmplitude(wPaw, waterCalmShare)`).
     const before: Record<string, string> = {
       "water.vertex.fx": "3732482554b89e357fec2298edc8724ad085cc9defe35017b243df6b7782d50b",
       "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
       "water.fragment.fx": "64d0992cb60dc15186b2dc2e90f3e62ebecca81a74fe09aac825c88328089fb2",
-      "waterLights.fragment.fx": "5841b9be8b5e54d8da49459f91a811f724d54a0a7018c9cb2cbabe39df6cc8cb",
+      "waterLights.fragment.fx": "bdd7a55f8d58e59019687ab89bd72ecdba385d0531a94953c9769c265267bdfa",
       "waterCompose.fragment.fx": "404a808f1764a431f855083b4ae12d03c20ed2c3226848fdd6aea4bcf9f4eee0",
     };
     for (const [name, hash] of Object.entries(before)) {
