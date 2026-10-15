@@ -54,6 +54,19 @@ export const PERF_RADIUS = 4.2;
 export const STAMP_INSET_PX = 44;
 export const STAMP_LEAN_DEG = -3.5;
 
+/** The PNG with its alpha scaled by `share`: its colour kept, its alpha channel taken out raw,
+ * scaled a byte at a time and joined back, since the library's own adjustments leave the alpha
+ * of an image alone whatever the order they are asked in. */
+async function faded(png, share) {
+  const colour = await sharp(png).removeAlpha().png().toBuffer();
+  const { data, info } = await sharp(png).ensureAlpha().extractChannel("alpha").raw().toBuffer({ resolveWithObject: true });
+  const alpha = Buffer.from(data.map((a) => Math.round(a * share)));
+  return sharp(colour)
+    .joinChannel(alpha, { raw: { width: info.width, height: info.height, channels: 1 } })
+    .png()
+    .toBuffer();
+}
+
 /** FNV-1a of the name, so a still's tilt follows its name and nothing else. */
 function hashOf(name) {
   let h = 2166136261;
@@ -189,7 +202,7 @@ export function wearSvgs(width, height) {
  * Deterministic for one still, name and mark.
  */
 export async function postcard(still, name, mark) {
-  const faded = await sharp(still)
+  const fadedStill = await sharp(still)
     .modulate({ saturation: FADE_SATURATION })
     .linear(
       FADE_WARM.map((warm) => FADE_CONTRAST * warm),
@@ -198,7 +211,7 @@ export async function postcard(still, name, mark) {
     .blur(FADE_BLUR)
     .png()
     .toBuffer();
-  let card = await sharp(faded)
+  let card = await sharp(fadedStill)
     .extend({ top: BORDER_PX, bottom: FOOT_PX, left: BORDER_PX, right: BORDER_PX, background: PAPER })
     .png()
     .toBuffer();
@@ -244,13 +257,10 @@ export async function postcard(still, name, mark) {
     .toBuffer();
   const tiltedMeta = await sharp(tilted).metadata();
   // The shadow: the card's own shape, black, blurred, half transparent, laid under it and offset.
-  const shadow = await sharp(tilted)
-    .ensureAlpha()
-    .modulate({ brightness: 0 })
-    .blur(SHADOW_BLUR)
-    .linear([1, 1, 1, SHADOW_ALPHA], [0, 0, 0, 0])
-    .png()
-    .toBuffer();
+  const shadow = await faded(
+    await sharp(tilted).ensureAlpha().modulate({ brightness: 0 }).blur(SHADOW_BLUR).png().toBuffer(),
+    SHADOW_ALPHA,
+  );
   const out = await sharp({
     create: { width: tiltedMeta.width + 2 * MARGIN_PX, height: tiltedMeta.height + 2 * MARGIN_PX, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
   })
@@ -258,6 +268,56 @@ export async function postcard(still, name, mark) {
       { input: shadow, left: MARGIN_PX + SHADOW_DX, top: MARGIN_PX + SHADOW_DY },
       { input: tilted, left: MARGIN_PX, top: MARGIN_PX },
     ])
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+  return stripPng(out);
+}
+
+/** The title's collage: its canvas, the front card's width on it, the back cards' width, their
+ * opacity (the same for every one; 1 is the cards as they are) and where they lie: x and y are
+ * the share of the canvas's spare room, after the card's own size, that lies to its left and
+ * above it (0 the edge, 1 the far edge, 0.5 the middle), so no card crosses the canvas's edge,
+ * with a lean of their own on top of each card's. */
+export const COLLAGE_WIDTH = 1600;
+export const COLLAGE_HEIGHT = 760;
+export const COLLAGE_FRONT_SHARE = 0.68;
+export const COLLAGE_BACK_SHARE = 0.36;
+export const COLLAGE_BACK_ALPHA = 1;
+export const COLLAGE_BACK_PLACES = [
+  { x: 0, y: 0, lean: -6 },
+  { x: 1, y: 0, lean: 5 },
+  { x: 0.5, y: 0, lean: 2 },
+  { x: 0, y: 1, lean: 4 },
+  { x: 1, y: 1, lean: -5 },
+];
+
+/**
+ * The title's picture: the front card (a postcard's PNG) smaller in the middle, and the back
+ * cards scattered behind it, leaning their own way, every one at the same light opacity, on a
+ * transparent ground, as a PNG with only its image chunks. Deterministic for the same cards.
+ */
+export async function collage(front, backs) {
+  const layers = [];
+  const backWidth = Math.round(COLLAGE_WIDTH * COLLAGE_BACK_SHARE);
+  for (const [i, back] of backs.entries()) {
+    const place = COLLAGE_BACK_PLACES[i % COLLAGE_BACK_PLACES.length];
+    const leaned = await faded(
+      await sharp(back).resize({ width: backWidth }).rotate(place.lean, { background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer(),
+      COLLAGE_BACK_ALPHA,
+    );
+    const { width: leanedWidth, height: leanedHeight } = await sharp(leaned).metadata();
+    layers.push({
+      input: leaned,
+      left: Math.round((COLLAGE_WIDTH - leanedWidth) * place.x),
+      top: Math.round((COLLAGE_HEIGHT - leanedHeight) * place.y),
+    });
+  }
+  const frontWidth = Math.round(COLLAGE_WIDTH * COLLAGE_FRONT_SHARE);
+  const frontCard = await sharp(front).resize({ width: frontWidth }).png().toBuffer();
+  const { height: frontHeight } = await sharp(frontCard).metadata();
+  layers.push({ input: frontCard, left: Math.round((COLLAGE_WIDTH - frontWidth) / 2), top: Math.round((COLLAGE_HEIGHT - frontHeight) / 2) });
+  const out = await sharp({ create: { width: COLLAGE_WIDTH, height: COLLAGE_HEIGHT, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite(layers)
     .png({ compressionLevel: 9 })
     .toBuffer();
   return stripPng(out);

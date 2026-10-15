@@ -10,6 +10,16 @@
     "year": "2026",
     "line": "1 to 5 players"
   },
+  "collage": {
+    "front": "trailhead",
+    "backs": [
+      "forest",
+      "tarn",
+      "meadow",
+      "crest",
+      "beach"
+    ]
+  },
   "stills": [
     {
       "name": "trailhead",

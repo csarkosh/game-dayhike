@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { MARGIN_PX, TILT_MAX_DEG, TILT_MIN_DEG, WINDOW_ASPECT, postcard, stampHeight, stampPicture, stampSvg, tiltFor, wearSvgs } from "../lib/postcard.mjs";
+import { COLLAGE_HEIGHT, COLLAGE_WIDTH, MARGIN_PX, TILT_MAX_DEG, TILT_MIN_DEG, WINDOW_ASPECT, collage, postcard, stampHeight, stampPicture, stampSvg, tiltFor, wearSvgs } from "../lib/postcard.mjs";
 
 const NAMES = ["trailhead", "forest", "tarn", "meadow", "crest", "beach"];
 
@@ -131,5 +131,27 @@ describe("wearSvgs", () => {
     expect(wear.marks.toString().match(/<rect /g)).toHaveLength(2);
     expect(wear.marks.toString()).toContain('filter="url(#band)"');
     expect(wear.mask.toString()).toContain('rx="6"');
+  });
+});
+
+describe("collage", () => {
+  it("lays the back cards whole inside the canvas behind the front one, as they are, and gives the same bytes for the same cards", async () => {
+    const card = (colour) => sharp({ create: { width: 400, height: 250, channels: 4, background: colour } }).png().toBuffer();
+    const front = await card("#e03030");
+    const backs = await Promise.all(["#3050e0", "#30c050", "#e0c030", "#c030c0", "#30c0c0"].map(card));
+    const out = await collage(front, backs);
+    const meta = await sharp(out).metadata();
+    expect([meta.width, meta.height, meta.channels]).toEqual([COLLAGE_WIDTH, COLLAGE_HEIGHT, 4]);
+    const { data, info } = await sharp(out).raw().toBuffer({ resolveWithObject: true });
+    const at = (x, y) => data.subarray((y * info.width + x) * 4, (y * info.width + x) * 4 + 4);
+    // the front card's red in the middle, whole; a back card at a corner, whole (opaque, not faded)
+    expect([...at(Math.floor(info.width / 2), Math.floor(info.height / 2))]).toEqual([0xe0, 0x30, 0x30, 255]);
+    let blue = 0;
+    for (let y = 0; y < 120; y++) for (let x = 0; x < 300; x++) { const p = at(x, y); if (p[2] > 0xc0 && p[0] < 0x60 && p[3] === 255) blue++; }
+    expect(blue).toBeGreaterThan(10000);
+    // the canvas's corners are ground: a leaning card's own corners are its transparent ones, so a card
+    // at the canvas's edge touches it and is never cut
+    for (const [x, y] of [[0, 0], [info.width - 1, 0], [0, info.height - 1], [info.width - 1, info.height - 1]]) expect(at(x, y)[3]).toBe(0);
+    expect((await collage(front, backs)).equals(out)).toBe(true);
   });
 });

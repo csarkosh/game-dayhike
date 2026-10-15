@@ -13,7 +13,8 @@
 // Beside each still its postcard (`<name>.card.png`, lib/postcard.mjs): the frame faded on an aged
 // paper border, worn as old mail is, tilted by its name, shadowed, on a transparent ground, which
 // the README lays out; the one `stills.json` names under `stamp` carries a postage stamp with the
-// title, the author and the year, its picture the still `stamp.picture` names, whole.
+// title, the author and the year, its picture the still `stamp.picture` names, whole. The title's
+// picture, `postcards.png`, is the cards `collage` names laid over each other, the front one large.
 //
 // Needs Google Chrome (`CHROME` names another binary). Chrome opens as a window, not headless:
 // the stills are shot on the WebGPU path at the high tier, which headless Chrome does not give.
@@ -23,7 +24,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { postcard } from "./lib/postcard.mjs";
+import { collage, postcard } from "./lib/postcard.mjs";
 import { stillUrl, stripPng } from "./lib/still.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -159,6 +160,16 @@ async function writeCard(name, png, mark) {
   process.stdout.write(`  wrote ${out} (${card.length} bytes)\n`);
 }
 
+/** The title's collage from the cards on disk, where `stills.json` names them (`collage`). */
+async function writeCollage(config) {
+  if (config.collage === undefined) return;
+  const card = (name) => readFileSync(join(OUT, `${name}.card.png`));
+  const png = await collage(card(config.collage.front), config.collage.backs.map(card));
+  const out = join(OUT, "postcards.png");
+  writeFileSync(out, png);
+  process.stdout.write(`  wrote ${out} (${png.length} bytes)\n`);
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const config = JSON.parse(readFileSync(join(HERE, "stills.json"), "utf8"));
@@ -173,6 +184,7 @@ async function main() {
   };
   if (options.cards) {
     for (const still of chosen) await writeCard(still.name, readFileSync(join(OUT, `${still.name}.png`)), markFor(still));
+    await writeCollage(config);
     return;
   }
   const probe = await fetch(options.base, { redirect: "manual" }).catch(() => null);
@@ -190,8 +202,9 @@ async function main() {
   } finally {
     await close();
   }
-  // The cards after every still, so the stamp's picture is this shoot's.
+  // The cards after every still, so the stamp's picture is this shoot's, and the title's collage after the cards.
   for (const still of chosen) await writeCard(still.name, readFileSync(join(OUT, `${still.name}.png`)), markFor(still));
+  await writeCollage(config);
 }
 
 main().catch((error) => {
