@@ -124,6 +124,24 @@ const acts = (row: Record<string, unknown>): Node =>
     ...(["wet", "dusk", "mist", "summit", "chase"] as const).map((a) => el("span", { class: `chip${row[a] === true ? " on" : ""}` }, a)),
   );
 
+/** How long a match may go unheard before it no longer counts as still playing: four of the page's 30 s heartbeats. */
+const QUIET_MS = 120_000;
+
+/**
+ * A match's End column: its outcome, else the first way out the page reported, else
+ * "still playing" while it is still heard from and "ended silently" once it is not (a
+ * page that died, or was closed with no `pagehide`).
+ */
+export function matchEnd(row: Record<string, unknown>, now: number): { text: string; tone: string } {
+  const result = str(row.result);
+  if (result !== "") return { text: `${result}${row.self_at_end === "dead" ? ", died" : ""}`, tone: result };
+  const left = str(row.left_by);
+  if (left !== "") return { text: left, tone: "" };
+  const heard = Date.parse(str(row.last_seen) || str(row.started_at));
+  if (Number.isFinite(heard) && now - heard < QUIET_MS) return { text: "still playing", tone: "" };
+  return { text: "ended silently", tone: "warn" };
+}
+
 export function progressView(rows: Row[]): HTMLElement {
   const values = rows.map((r) => num(r.farthest));
   const won = rows.filter((r) => r.result === "won").length;
@@ -146,10 +164,9 @@ export function progressView(rows: Row[]): HTMLElement {
     {
       key: "result",
       label: "End",
-      render: (v, row) => {
-        const result = str(v);
-        if (result === "") return el("span", { class: "status" }, str(row.left_by) || "still playing");
-        return el("span", { class: `status ${result}` }, `${result}${row.self_at_end === "dead" ? ", died" : ""}`);
+      render: (_, row) => {
+        const end = matchEnd(row, Date.now());
+        return el("span", { class: `status ${end.tone}`.trim() }, end.text);
       },
     },
     { key: "minutes", label: "Minutes", num: true },

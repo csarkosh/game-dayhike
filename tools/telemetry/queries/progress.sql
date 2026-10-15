@@ -1,6 +1,9 @@
 -- Each match: how far the party got (p: 0 at the trailhead, 1 at the crest),
 -- which acts they reached, whether the chase came, and how it ended. One
--- line a session and game, newest first.
+-- line a session and game, newest first. `left_by` is the first way out the
+-- page reported (`end` is the page itself leaving, on pagehide); a match with
+-- neither an outcome nor a way out was last heard from at `last_seen`, which
+-- is how the page tells one still going from one that ended silently.
 WITH events AS (
   SELECT
     JSON_VALUE(json_payload.sid) AS sid,
@@ -39,9 +42,13 @@ SELECT
   LOGICAL_OR(n = 'death') AS died,
   MAX(IF(n = 'outcome', result, NULL)) AS result,
   MAX(IF(n = 'outcome', self, NULL)) AS self_at_end,
-  MAX(IF(n = 'session_end' OR n = 'exit' OR n = 'host_session_end', n, NULL)) AS left_by,
+  ARRAY_AGG(
+    IF(n IN ('exit', 'session_end', 'host_session_end', 'match_end', 'continue_offline', 'lobby_end', 'end'), n, NULL)
+    IGNORE NULLS ORDER BY t LIMIT 1
+  )[SAFE_OFFSET(0)] AS left_by,
   (MAX(t) - MIN(IF(n = 'match_start', t, NULL))) / 60000 AS minutes,
-  MIN(timestamp) AS started_at
+  MIN(timestamp) AS started_at,
+  MAX(timestamp) AS last_seen
 FROM events
 GROUP BY sid, game, build, world
 ORDER BY started_at DESC;

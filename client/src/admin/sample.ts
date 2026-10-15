@@ -68,6 +68,8 @@ function progress(): Row[] {
     const chase = farthest >= 0.98;
     const result = chase ? results[i % 4] : i % 5 === 0 ? "lost" : null;
     const died = result === "lost" || r() < 0.2;
+    const minutes = Math.round((4 + farthest * 22 + r() * 6) * 10) / 10;
+    const started = NOW - i * 1_800_000 - 600_000;
     rows.push({
       sid: `s${(1000 + i * 37).toString(16)}`,
       game: `g${(5000 + i * 91).toString(16)}`,
@@ -84,9 +86,10 @@ function progress(): Row[] {
       died,
       result: result ?? null,
       self_at_end: result === null ? null : died ? "dead" : "alive",
-      left_by: result === null ? (r() < 0.5 ? "exit" : "session_end") : null,
-      minutes: Math.round((4 + farthest * 22 + r() * 6) * 10) / 10,
-      started_at: iso(NOW - i * 1_800_000 - 600_000),
+      left_by: result === null && i % 7 !== 3 ? (["end", "exit", "session_end"] as const)[i % 3]! : null,
+      minutes,
+      started_at: iso(started),
+      last_seen: iso(started + minutes * 60_000),
     });
   }
   return rows;
