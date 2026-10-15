@@ -1,5 +1,5 @@
 #version 450
-#define MATERIALPLUGIN_7
+#define MATERIALPLUGIN_24
 #define BRDF_V_HEIGHT_CORRELATED
 #define MS_BRDF_ENERGY_CONSERVATION
 #define SPHERICAL_HARMONICS
@@ -25,6 +25,7 @@
 #define SS_TRANSLUCENCYCOLOR_TEXTUREDIRECTUV 0
 #define DETAILDIRECTUV 0
 #define DETAIL_NORMALBLENDMETHOD 0
+#define DEADWOOD
 #define UV1
 #define PREPASS_COLOR_INDEX -1
 #define PREPASS_IRRADIANCE_LEGACY_INDEX -1
@@ -47,26 +48,30 @@
 #define PBR
 #define NUM_SAMPLES 0
 #define ALBEDO
-#define GAMMAALBEDO
 #define ALBEDODIRECTUV 1
 #define BASE_WEIGHTDIRECTUV 0
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
-#define ALPHABLEND
-#define ALPHAFROMALBEDO
 #define ALPHATESTVALUE 0.4
+#define SPECULAROVERALPHA
+#define RADIANCEOVERALPHA
 #define EMISSIVEDIRECTUV 0
-#define REFLECTIVITYDIRECTUV 0
+#define REFLECTIVITY
+#define REFLECTIVITYDIRECTUV 1
 #define SPECULARTERM
 #define LODBASEDMICROSFURACE
 #define MICROSURFACEMAPDIRECTUV 0
 #define METALLICWORKFLOW
+#define ROUGHNESSSTOREINMETALMAPGREEN
+#define METALLNESSSTOREINMETALMAPBLUE
+#define AOSTOREINMETALMAPRED
 #define METALLIC_REFLECTANCEDIRECTUV 0
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
-#define BUMPDIRECTUV 0
+#define BUMP
+#define BUMPDIRECTUV 1
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
 #define REFLECTION
@@ -74,7 +79,6 @@
 #define REFLECTIONMAP_CUBIC
 #define INVERTCUBICMAP
 #define USESPHERICALFROMREFLECTIONMAP
-#define USESPHERICALINVERTEX
 #define GAMMAREFLECTION
 #define RADIANCEOCCLUSION
 #define HORIZONOCCLUSION
@@ -83,10 +87,10 @@
 #define NUM_MORPH_INFLUENCERS 0
 #define ORDER_INDEPENDENT_TRANSPARENCY_16BITS
 #define USEPHYSICALLIGHTFALLOFF
-#define SHADOWFLOAT
 #define FOG
-#define CAMERA_PERSPECTIVE
+#define CAMERA_ORTHOGRAPHIC
 #define AREALIGHTSUPPORTED
+#define SPECULARAA
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
@@ -96,24 +100,14 @@
 #define SPOTLIGHT0
 #define LIGHT1
 #define DIRLIGHT1
-#define SHADOW1
-#define SHADOWCSM1
-#define SHADOWCSMNUM_CASCADES1 2
-#define SHADOWCSMUSESHADOWMAXZ1
-#define SHADOWPCF1
 #define LIGHT2
 #define HEMILIGHT2
-#define SHADOWS
 #define LIGHTCOUNT 3
-#define MAXLIGHTCOUNT 4
+#define MAXLIGHTCOUNT 7
 
 #define SHADER_NAME vertex:pbr
-layout(set = 1, binding = 16) uniform LeftOver {
-        mat4 lightMatrix1[2];
-    float viewFrustumZ1[2];
-    float frustumLengths1[2];
-    float cascadeBlendFactor1;
-    vec4 vFogInfos;
+layout(set = 1, binding = 20) uniform LeftOver {
+        vec4 vFogInfos;
     vec3 vFogColor;
 };
 
@@ -245,6 +239,22 @@ float atmSunPower;
 float atmSunWeight;
 vec3 atmSunDir;
 vec3 atmSunColour;
+vec3 atmFarColour;
+float atmCloudDensity;
+float atmCloudSteps;
+float atmCloudRange;
+float atmCloudFalloff;
+float atmCloudSeat;
+float atmCloudGroundRange;
+float atmCloudNear;
+float atmCloudTrail;
+vec2 atmCloudNoiseScale;
+vec2 atmCloudWind;
+vec2 atmCloudGlow;
+vec3 atmCloudColour;
+vec4 atmCloudGroundRect;
+vec4 deadwoodBark;
+vec2 deadwoodAxis;
 };
 layout(std140,column_major) uniform;
 layout(set = 0, binding = 0) uniform Scene {mat4 viewProjection;
@@ -415,18 +425,7 @@ uint2float(rstate*2447445414u));
 #define CONDUCTOR_SPECULAR_MODEL_OPENPBR 1
 layout(location = 1)  out vec3 vPositionW;
 layout(location = 2)  out vec3 vNormalW;
-layout(location = 3)  out vec3 vEnvironmentIrradiance;
-vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
-+ vSphericalL1_1*(normal.y)
-+ vSphericalL10*(normal.z)
-+ vSphericalL11*(normal.x)
-+ vSphericalL2_2*(normal.y*normal.x)
-+ vSphericalL2_1*(normal.y*normal.z)
-+ vSphericalL20*((3.0*normal.z*normal.z)-1.0)
-+ vSphericalL21*(normal.z*normal.x)
-+ vSphericalL22*(normal.x*normal.x-(normal.y*normal.y));
-}
-layout(location = 4)  out vec3 vFogDistance;
+layout(location = 3)  out vec3 vFogDistance;
 layout(set = 1, binding = 3) uniform Light0
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -443,10 +442,6 @@ vec4 vLightSpecular;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light1;
-
-layout(location = 5)  out vec4 vPositionFromLight1[SHADOWCSMNUM_CASCADES1];
-layout(location = 7)  out float vDepthMetric1[SHADOWCSMNUM_CASCADES1];
-layout(location = 9)  out vec4 vPositionFromCamera1;
 layout(set = 1, binding = 5) uniform Light2
 {vec4 vLightData;
 vec4 vLightDiffuse;
@@ -455,6 +450,21 @@ vec3 vLightGround;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light2;
+// Deadwood plugin, vertex definitions: the role attribute (0 a standing snag,
+// 1 a fallen log, per thin instance), the varying the fragment reads, the
+// bark's uniforms where no uniform buffer carries them, and the hash of the
+// tree's foot that draws its moss.
+//
+// COMMENT RULES: never put a semicolon inside a trailing comment on a code
+// line, and never spell a hashed preprocessor keyword in comment prose. The
+// shaderHygiene test enforces both.
+layout(location = 3) in float deadwoodRole;
+layout(location = 4)  out vec4 vDeadwood;
+float deadwoodHash(vec2 p) {
+vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+p3 += dot(p3, p3.yzx + 33.33);
+return fract((p3.x + p3.y) * p3.z);
+}
 #define CUSTOM_VERTEX_DEFINITIONS
 void main(void) {
 #define CUSTOM_VERTEX_MAIN_BEGIN
@@ -468,21 +478,30 @@ vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);
 vPositionW=vec3(worldPos);
 mat3 normalWorld=mat3(finalWorld);
 vNormalW=normalize(normalWorld*normalUpdated);
-vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
-float NdotV=max(dot(vNormalW,viewDirectionW),0.0);
-vec3 roughNormal=mix(vNormalW,viewDirectionW,(0.5*(1.0-NdotV))*baseDiffuseRoughness);
-vec3 reflectionVector=vec3(reflectionMatrix*vec4(roughNormal,0)).xyz;
-vEnvironmentIrradiance=computeEnvironmentIrradiance(reflectionVector);
 #define CUSTOM_VERTEX_UPDATE_WORLDPOS
 gl_Position=viewProjection*worldPos;
 vec2 uv2Updated=vec2(0.,0.);
 vMainUV1=uvUpdated;
 vFogDistance=(view*worldPos).xyz;
-vPositionFromCamera1=view*worldPos;
-for (int i=0;
-i<SHADOWCSMNUM_CASCADES1;
-i++) {vPositionFromLight1[i]=lightMatrix1[i]*worldPos;
-vDepthMetric1[i]=(vPositionFromLight1[i].z+light1.depthValues.x)/light1.depthValues.y;
+// Deadwood plugin, at the vertex's end: the bark's coordinates laid along the
+// trunk (the model's x) and round it (the turn about the trunk's axis), in
+// the set's own metres at the instance's scale, so the plates stay life-size
+// on a trunk drawn two or three times its model, a whole number of tiles
+// round so the seam closes, written over the material's own coordinates for
+// its colour, its normal and its roughness maps alike: the mesh's first uv
+// set, which the three maps read straight (no transform of their own), and
+// the map's own coordinates where it has a transform. Then the varying: the
+// role, the height over the snag's base (the model's x past it, in metres at
+// the instance's scale, as the moss band is measured on a trunk), the model's
+// own y (the log's underside is low in it), and the foot's hash.
+{
+float dwScale = length(finalWorld[0].xyz);
+float dwAlong = positionUpdated.x * dwScale * deadwoodBark.x;
+float dwTurn = atan(positionUpdated.y - deadwoodAxis.x, positionUpdated.z - deadwoodAxis.y) / 6.283185307179586;
+float dwTiles = max(1.0, floor(6.283185307179586 * deadwoodBark.z * dwScale * deadwoodBark.y + 0.5));
+vec2 dwUv = vec2(dwTurn * dwTiles, dwAlong);
+vMainUV1 = dwUv;
+vDeadwood = vec4(deadwoodRole, (positionUpdated.x + deadwoodBark.w) * dwScale, positionUpdated.y, deadwoodHash(finalWorld[3].xz));
 }
 #define CUSTOM_VERTEX_MAIN_END
 gl_Position.y *= yFactor_;

@@ -316,13 +316,16 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1444 recorded stages, each file\'s bytes hashing to the name it has: 733 on the medium and high tiers, 454 on low, 231 on high alone, 22 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1444);
+  it('holds the 1467 recorded stages, each file\'s bytes hashing to the name it has: 745 on the medium and high tiers, 465 on low, 231 on high alone, 22 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1467);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1444);
+    expect(read.stages).toHaveLength(1467);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(656);
-    // The 733 recorded on the medium and high tiers (the lake as one surface, its ripples'
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(670);
+    // The 745 recorded on the medium and high tiers (the dead trees' dressing, the deadwood
+    // plugin's role attribute, varying and moss sampler on the snag's and the logs' PBR stages
+    // and the snag's bake, 12 stages here and 11 on low, met at the ten places, the six PBR
+    // vertex stages of the undressed snag retired (2026-10-15); the lake as one surface, its ripples'
     // amplitude the breeze's field in streaks, its skin in whole mats, its bed added after the fog
     // and its caustics signed under the sun, met at a lake on the title's world from its lower
     // shore, a tenth place, at the tarn and from the title's tour (2026-10-15); the sun's
@@ -401,11 +404,11 @@ describe('the committed corpus and the tests\' fixture', () => {
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1444);
+    expect(read.tiers.size).toBe(1467);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([458, 759, 968]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(733);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(454);
+    expect([on('low'), on('medium'), on('high')]).toEqual([469, 771, 980]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(745);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(465);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(231);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(22);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);

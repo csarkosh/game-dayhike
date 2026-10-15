@@ -42,20 +42,27 @@
 #define PREPASS_VELOCITY_LINEAR_INDEX -1
 #define PREPASS_REFLECTIVITY_INDEX -1
 #define SCENE_MRT_COUNT 0
-#define TONEMAPPING 0
-#define IMAGEPROCESSINGPOSTPROCESS
+#define IMAGEPROCESSING
+#define VIGNETTE
+#define VIGNETTEBLENDMODEMULTIPLY
+#define TONEMAPPING 3
+#define CONTRAST
+#define COLORCURVES
+#define SAMPLER3DGREENDEPTH
+#define SAMPLER3DBGRMAP
+#define DITHER
+#define EXPOSURE
 #define PBR
 #define NUM_SAMPLES 0
 #define ALBEDO
-#define GAMMAALBEDO
 #define ALBEDODIRECTUV 1
 #define BASE_WEIGHTDIRECTUV 0
 #define BASE_DIFFUSE_ROUGHNESSDIRECTUV 0
 #define AMBIENTDIRECTUV 0
 #define OPACITYDIRECTUV 0
-#define ALPHABLEND
-#define ALPHAFROMALBEDO
 #define ALPHATESTVALUE 0.4
+#define SPECULAROVERALPHA
+#define RADIANCEOVERALPHA
 #define EMISSIVEDIRECTUV 0
 #define REFLECTIVITYDIRECTUV 0
 #define SPECULARTERM
@@ -66,7 +73,9 @@
 #define REFLECTANCEDIRECTUV 0
 #define ENVIRONMENTBRDF
 #define NORMAL
-#define BUMPDIRECTUV 0
+#define TANGENT
+#define BUMP
+#define BUMPDIRECTUV 1
 #define NORMALXYSCALE
 #define LIGHTMAPDIRECTUV 0
 #define REFLECTION
@@ -74,19 +83,19 @@
 #define REFLECTIONMAP_CUBIC
 #define INVERTCUBICMAP
 #define USESPHERICALFROMREFLECTIONMAP
-#define USESPHERICALINVERTEX
 #define GAMMAREFLECTION
 #define RADIANCEOCCLUSION
 #define HORIZONOCCLUSION
-#define NUM_BONE_INFLUENCERS 0
+#define NUM_BONE_INFLUENCERS 4
 #define BonesPerMesh 0
+#define BONETEXTURE
 #define NUM_MORPH_INFLUENCERS 0
 #define ORDER_INDEPENDENT_TRANSPARENCY_16BITS
 #define USEPHYSICALLIGHTFALLOFF
-#define SHADOWFLOAT
 #define FOG
 #define CAMERA_PERSPECTIVE
 #define AREALIGHTSUPPORTED
+#define SPECULARAA
 #define TEXTURE_REPETITION_MODE 0
 #define DEBUGMODE 0
 #define VERTEX_PULLING_USE_INDEX_BUFFER
@@ -96,23 +105,23 @@
 #define SPOTLIGHT0
 #define LIGHT1
 #define DIRLIGHT1
-#define SHADOW1
-#define SHADOWCSM1
-#define SHADOWCSMNUM_CASCADES1 2
-#define SHADOWCSMUSESHADOWMAXZ1
-#define SHADOWPCF1
 #define LIGHT2
 #define HEMILIGHT2
-#define SHADOWS
 #define LIGHTCOUNT 3
 #define MAXLIGHTCOUNT 4
 
 #define SHADER_NAME vertex:pbr
-layout(set = 1, binding = 16) uniform LeftOver {
-        mat4 lightMatrix1[2];
-    float viewFrustumZ1[2];
-    float frustumLengths1[2];
-    float cascadeBlendFactor1;
+layout(set = 1, binding = 18) uniform LeftOver {
+        vec2 boneTextureInfo;
+    float exposureLinear;
+    float contrast;
+    vec2 vInverseScreenSize;
+    vec4 vignetteSettings1;
+    vec4 vignetteSettings2;
+    vec4 vCameraColorCurveNegative;
+    vec4 vCameraColorCurveNeutral;
+    vec4 vCameraColorCurvePositive;
+    float ditherIntensity;
     vec4 vFogInfos;
     vec3 vFogColor;
 };
@@ -252,6 +261,8 @@ float atmCloudRange;
 float atmCloudFalloff;
 float atmCloudSeat;
 float atmCloudGroundRange;
+float atmCloudNear;
+float atmCloudTrail;
 vec2 atmCloudNoiseScale;
 vec2 atmCloudWind;
 vec2 atmCloudGlow;
@@ -274,7 +285,8 @@ float visibility;
 #define CUSTOM_VERTEX_BEGIN
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
-layout(location = 2) in vec2 uv;
+layout(location = 2) in vec4 tangent;
+layout(location = 3) in vec2 uv;
 layout(location = 0)  out vec2 vMainUV1;
 const float PI=3.1415926535897932384626433832795;
 const float TWO_PI=6.283185307179586;
@@ -425,21 +437,18 @@ uint2float(rstate*2447445414u));
 #define DIELECTRIC_SPECULAR_MODEL_OPENPBR 1
 #define CONDUCTOR_SPECULAR_MODEL_GLTF 0
 #define CONDUCTOR_SPECULAR_MODEL_OPENPBR 1
+layout(location = 4) in uvec4 _int_matricesIndices_; vec4 matricesIndices = vec4(_int_matricesIndices_);
+layout(location = 5) in vec4 matricesWeights;
+layout(set = 1, binding = 4) uniform sampler boneSamplerSampler;
+                        layout(set = 1, binding = 3) uniform texture2D boneSamplerTexture;
+                        #define boneSampler sampler2D(boneSamplerTexture, boneSamplerSampler)
+
+
 layout(location = 1)  out vec3 vPositionW;
 layout(location = 2)  out vec3 vNormalW;
-layout(location = 3)  out vec3 vEnvironmentIrradiance;
-vec3 computeEnvironmentIrradiance(vec3 normal) {return vSphericalL00
-+ vSphericalL1_1*(normal.y)
-+ vSphericalL10*(normal.z)
-+ vSphericalL11*(normal.x)
-+ vSphericalL2_2*(normal.y*normal.x)
-+ vSphericalL2_1*(normal.y*normal.z)
-+ vSphericalL20*((3.0*normal.z*normal.z)-1.0)
-+ vSphericalL21*(normal.z*normal.x)
-+ vSphericalL22*(normal.x*normal.x-(normal.y*normal.y));
-}
-layout(location = 4)  out vec3 vFogDistance;
-layout(set = 1, binding = 3) uniform Light0
+layout(location = 3)  out mat3 vTBN;
+layout(location = 6)  out vec3 vFogDistance;
+layout(set = 1, binding = 5) uniform Light0
 {vec4 vLightData;
 vec4 vLightDiffuse;
 vec4 vLightSpecular;
@@ -448,18 +457,14 @@ vec4 vLightFalloff;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light0;
-layout(set = 1, binding = 4) uniform Light1
+layout(set = 1, binding = 6) uniform Light1
 {vec4 vLightData;
 vec4 vLightDiffuse;
 vec4 vLightSpecular;
 vec4 shadowsInfo;
 vec2 depthValues;
 } light1;
-
-layout(location = 5)  out vec4 vPositionFromLight1[SHADOWCSMNUM_CASCADES1];
-layout(location = 7)  out float vDepthMetric1[SHADOWCSMNUM_CASCADES1];
-layout(location = 9)  out vec4 vPositionFromCamera1;
-layout(set = 1, binding = 5) uniform Light2
+layout(set = 1, binding = 7) uniform Light2
 {vec4 vLightData;
 vec4 vLightDiffuse;
 vec4 vLightSpecular;
@@ -472,30 +477,78 @@ void main(void) {
 #define CUSTOM_VERTEX_MAIN_BEGIN
 vec3 positionUpdated=position;
 vec3 normalUpdated=normal;
+vec4 tangentUpdated=tangent;
 vec2 uvUpdated=uv;
 #define CUSTOM_VERTEX_UPDATE_POSITION
 #define CUSTOM_VERTEX_UPDATE_NORMAL
 mat4 finalWorld=world;
+mat4 influence;
+mat4 readMatrixFromRawSampler_0;
+{
+int offset=int(matricesIndices[0])*4;
+int textureWidth=int(boneTextureInfo.x);
+int y=int(offset)/textureWidth;
+int x=int(offset) % textureWidth;
+vec4 m0=texelFetch(boneSampler,ivec2(x+0,y),0);
+vec4 m1=texelFetch(boneSampler,ivec2(x+1,y),0);
+vec4 m2=texelFetch(boneSampler,ivec2(x+2,y),0);
+vec4 m3=texelFetch(boneSampler,ivec2(x+3,y),0);
+readMatrixFromRawSampler_0 = mat4(m0,m1,m2,m3);
+}
+influence=readMatrixFromRawSampler_0*matricesWeights[0];
+mat4 readMatrixFromRawSampler_1;
+{
+int offset=int(matricesIndices[1])*4;
+int textureWidth=int(boneTextureInfo.x);
+int y=int(offset)/textureWidth;
+int x=int(offset) % textureWidth;
+vec4 m0=texelFetch(boneSampler,ivec2(x+0,y),0);
+vec4 m1=texelFetch(boneSampler,ivec2(x+1,y),0);
+vec4 m2=texelFetch(boneSampler,ivec2(x+2,y),0);
+vec4 m3=texelFetch(boneSampler,ivec2(x+3,y),0);
+readMatrixFromRawSampler_1 = mat4(m0,m1,m2,m3);
+}
+influence+=readMatrixFromRawSampler_1*matricesWeights[1];
+mat4 readMatrixFromRawSampler_2;
+{
+int offset=int(matricesIndices[2])*4;
+int textureWidth=int(boneTextureInfo.x);
+int y=int(offset)/textureWidth;
+int x=int(offset) % textureWidth;
+vec4 m0=texelFetch(boneSampler,ivec2(x+0,y),0);
+vec4 m1=texelFetch(boneSampler,ivec2(x+1,y),0);
+vec4 m2=texelFetch(boneSampler,ivec2(x+2,y),0);
+vec4 m3=texelFetch(boneSampler,ivec2(x+3,y),0);
+readMatrixFromRawSampler_2 = mat4(m0,m1,m2,m3);
+}
+influence+=readMatrixFromRawSampler_2*matricesWeights[2];
+mat4 readMatrixFromRawSampler_3;
+{
+int offset=int(matricesIndices[3])*4;
+int textureWidth=int(boneTextureInfo.x);
+int y=int(offset)/textureWidth;
+int x=int(offset) % textureWidth;
+vec4 m0=texelFetch(boneSampler,ivec2(x+0,y),0);
+vec4 m1=texelFetch(boneSampler,ivec2(x+1,y),0);
+vec4 m2=texelFetch(boneSampler,ivec2(x+2,y),0);
+vec4 m3=texelFetch(boneSampler,ivec2(x+3,y),0);
+readMatrixFromRawSampler_3 = mat4(m0,m1,m2,m3);
+}
+influence+=readMatrixFromRawSampler_3*matricesWeights[3];
+finalWorld=finalWorld*influence;
 vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);
 vPositionW=vec3(worldPos);
 mat3 normalWorld=mat3(finalWorld);
 vNormalW=normalize(normalWorld*normalUpdated);
-vec3 viewDirectionW=normalize(vEyePosition.xyz-vPositionW);
-float NdotV=max(dot(vNormalW,viewDirectionW),0.0);
-vec3 roughNormal=mix(vNormalW,viewDirectionW,(0.5*(1.0-NdotV))*baseDiffuseRoughness);
-vec3 reflectionVector=vec3(reflectionMatrix*vec4(roughNormal,0)).xyz;
-vEnvironmentIrradiance=computeEnvironmentIrradiance(reflectionVector);
 #define CUSTOM_VERTEX_UPDATE_WORLDPOS
 gl_Position=viewProjection*worldPos;
 vec2 uv2Updated=vec2(0.,0.);
 vMainUV1=uvUpdated;
+vec3 tbnNormal=normalize(normalUpdated);
+vec3 tbnTangent=normalize(tangentUpdated.xyz);
+vec3 tbnBitangent=cross(tbnNormal,tbnTangent)*tangentUpdated.w;
+vTBN=mat3(finalWorld)*mat3(tbnTangent,tbnBitangent,tbnNormal);
 vFogDistance=(view*worldPos).xyz;
-vPositionFromCamera1=view*worldPos;
-for (int i=0;
-i<SHADOWCSMNUM_CASCADES1;
-i++) {vPositionFromLight1[i]=lightMatrix1[i]*worldPos;
-vDepthMetric1[i]=(vPositionFromLight1[i].z+light1.depthValues.x)/light1.depthValues.y;
-}
 #define CUSTOM_VERTEX_MAIN_END
 gl_Position.y *= yFactor_;
 }
