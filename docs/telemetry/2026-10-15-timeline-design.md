@@ -33,8 +33,9 @@ format, the server and the queries together, and is the contract between the thr
   `receivedAt`. Cloud Logging takes that field as the entry's time, so BigQuery's `timestamp`
   becomes the event's. `at` stays the time of receipt.
 - **`TELEMETRY_IGNORE_IPS`**: a comma-separated list of addresses or CIDR prefixes (v4 and v6).
-  A batch from one of them is answered 204 after the origin check and never written, nor
-  counted against the limiter. Terraform: module variable `ignore_ips` (list of strings,
+  A batch from one of them is read and checked like any other (a bad one is still refused,
+  so a deploy verified from the owner's machine still proves the route), and a good one is
+  answered 204 and never written. Terraform: module variable `ignore_ips` (list of strings,
   sensitive, default empty) into that env; root variable `telemetry_ignore_ips`, set only in
   the git-ignored `_infra/terraform.tfvars` (the repo is public).
 - Signaling rows of a room created by a deploy verification (peer id `verify-…`) carry

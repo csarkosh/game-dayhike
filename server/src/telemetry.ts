@@ -363,10 +363,10 @@ export function telemetryRoute(options: TelemetryRouteOptions): (req: IncomingMe
       return true;
     }
     const ip = clientIpOf(req.headers["x-forwarded-for"], req.socket.remoteAddress);
-    if (options.ignore !== undefined && anyIpInRanges(req.headers["x-forwarded-for"], req.socket.remoteAddress, options.ignore)) {
-      answer(res, 204, cors);
-      return true;
-    }
+    // An ignored address (the owner's own) is read and checked like any other, so a bad
+    // batch is still refused and a deploy verified from that address still proves the
+    // route; only a good batch from it goes unwritten.
+    const ignored = options.ignore !== undefined && anyIpInRanges(req.headers["x-forwarded-for"], req.socket.remoteAddress, options.ignore);
     if (!options.limiter.allow(ip)) {
       answer(res, 429, cors, "too many requests");
       return true;
@@ -381,8 +381,10 @@ export function telemetryRoute(options: TelemetryRouteOptions): (req: IncomingMe
         answer(res, 400, cors, parsed.problem);
         return;
       }
-      const meta: ReceiptMeta = { serverBuild: options.serverBuild, receivedAt: now() };
-      for (const entry of rowsOf(parsed.batch, meta)) options.log(entry);
+      if (!ignored) {
+        const meta: ReceiptMeta = { serverBuild: options.serverBuild, receivedAt: now() };
+        for (const entry of rowsOf(parsed.batch, meta)) options.log(entry);
+      }
       answer(res, 204, cors);
     });
     return true;

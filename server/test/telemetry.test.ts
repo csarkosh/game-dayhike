@@ -266,16 +266,18 @@ describe("the telemetry route", () => {
     expect(rows).toHaveLength(3);
   });
 
-  it("answers an ignored address 204, with CORS, writes nothing and counts nothing against it", async () => {
+  it("answers an ignored address 204, with CORS, and writes nothing; a bad batch from it is still refused", async () => {
     rows.length = 0;
     for (const ip of ["203.0.113.7", "::ffff:203.0.113.8", "2001:db8:1:2::3"]) {
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 3; i++) {
         const res = await post(batch([{ n: "hb", t: i }]), { origin: ORIGIN }, ip);
         expect(res.status).toBe(204);
         expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN);
       }
     }
     expect(rows).toHaveLength(0);
+    // The batch is read and checked as any other, so a deploy verified from the owner's machine still sees the 400.
+    expect((await post("{", { origin: ORIGIN }, "203.0.113.9")).status).toBe(400);
     // Still the origin check first: an ignored address on another site's page is refused, not humoured.
     expect((await post(batch([{ n: "hb", t: 0 }]), { origin: "https://evil.example" }, "203.0.113.7")).status).toBe(403);
     // And a neighbour outside the prefix is written as ever.
