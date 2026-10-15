@@ -20,7 +20,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { clientIpOf, ipInRanges, isAllowedOrigin, type IpRange } from "./admission.js";
+import { anyIpInRanges, clientIpOf, isAllowedOrigin, type IpRange } from "./admission.js";
 import { row, type LogRow, type LogSink, type Severity } from "./log.js";
 import { TokenBucket } from "./tokenBucket.js";
 
@@ -363,7 +363,7 @@ export function telemetryRoute(options: TelemetryRouteOptions): (req: IncomingMe
       return true;
     }
     const ip = clientIpOf(req.headers["x-forwarded-for"], req.socket.remoteAddress);
-    if (options.ignore !== undefined && ipInRanges(ip, options.ignore)) {
+    if (options.ignore !== undefined && anyIpInRanges(req.headers["x-forwarded-for"], req.socket.remoteAddress, options.ignore)) {
       answer(res, 204, cors);
       return true;
     }

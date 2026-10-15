@@ -18,7 +18,7 @@ import { join } from 'node:path';
 export function forBigQuery(sql, projectId, dataset) {
   const params = {};
   let out = sql.replace(/`([a-z0-9-]+)\.global\.dayhike-telemetry\._AllLogs`/g, `\`${projectId}.${dataset}._AllLogs\``);
-  const ranged = out.replace(/INTERVAL \d+ DAY\) -- range/g, 'INTERVAL @days DAY)');
+  const ranged = out.replace(/INTERVAL \d+ DAY\), 'America\/New_York'\) -- range/g, "INTERVAL @days DAY), 'America/New_York')");
   if (ranged !== out) {
     out = ranged;
     params.days = 7;

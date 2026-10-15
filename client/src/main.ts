@@ -940,13 +940,21 @@ function render(container: HTMLDivElement): void {
   shownPage = page;
   if (switched && veil.down) setTimeout(() => veil.lift(), VEIL_SETTLE_MS);
   const token = ++renderToken;
-  // One row a navigation: which page, and which of the landing's panels.
-  telemetry.event("page", { kind: route.kind });
+  // One row a navigation: which page, and which of the landing's panels. Sent
+  // once a running game is torn down, so a landing row never carries the match
+  // it left (`app.ts` clears the context when the game is disposed).
+  let pageSent = false;
+  const pageRow = (): void => {
+    if (pageSent) return;
+    pageSent = true;
+    telemetry.event("page", { kind: route.kind });
+  };
   telemetry.mark(route.kind);
 
   // An invite: consume it (so back/forward never re-join), show the landing
   // page, and join in the background. The roster reports how that went.
   if (route.kind === "party") {
+    pageRow();
     replaceWithLanding();
     void enterLobby(route.lobbyId);
   }
@@ -956,12 +964,14 @@ function render(container: HTMLDivElement): void {
   // running on, and it would also drop and re-place the still behind them.
   if (isLandingRoute(route) && landing !== null) {
     landing.setPanel(panelFor(route));
+    pageRow();
     announcer.now();
     paintRoster();
     return;
   }
 
   running?.dispose();
+  pageRow();
   running = null;
   game = null;
   paused = false;

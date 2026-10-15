@@ -75,4 +75,4 @@ rooms AS (
 SELECT * FROM page
 UNION ALL
 SELECT * FROM rooms
-ORDER BY timestamp;
+ORDER BY timestamp, t;

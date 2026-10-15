@@ -34,7 +34,7 @@ rooms AS (
     timestamp
   FROM real
   WHERE JSON_VALUE(json_payload.svc) = 'signaling'
-    AND timestamp >= TIMESTAMP_SUB(TIMESTAMP(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), 'America/New_York'), INTERVAL 7 DAY) -- range
+    AND timestamp >= TIMESTAMP(DATE_SUB(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), INTERVAL 7 DAY), 'America/New_York') -- range
 )
 SELECT
   DATE(timestamp, 'America/New_York') AS day,

@@ -46,4 +46,4 @@ FROM `fps-csarko.global.dayhike-telemetry._AllLogs`
 WHERE timestamp >= (SELECT TIMESTAMP_SUB(first_at, INTERVAL 1 DAY) FROM span)
   AND timestamp <= (SELECT TIMESTAMP_ADD(last_at, INTERVAL 1 DAY) FROM span)
   AND JSON_VALUE(json_payload.sid) IN (SELECT sid FROM members)
-ORDER BY timestamp;
+ORDER BY timestamp, t;

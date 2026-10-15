@@ -297,10 +297,12 @@ export function visitorsView(kpis: Row[], visitors: Row[]): HTMLElement {
   const unique = range === undefined ? 0 : num(range.visitors);
   const returning = range === undefined ? 0 : num(range.returning);
   const sessions = range === undefined ? 0 : num(range.sessions);
+  // The windows are the last seven days and the seven before, inside the range: a range
+  // shorter than fourteen days cuts them, so the trend is shown only when both are whole.
   const trend = (key: string): { text: string; tone?: "good" | "bad" } | undefined => {
-    if (current === undefined) return undefined;
+    if (current === undefined || previous === undefined || num(previous.sessions) === 0) return undefined;
     const now = num(current[key]);
-    const before = previous === undefined ? 0 : num(previous[key]);
+    const before = num(previous[key]);
     return { text: `${now} in the last 7 days, ${before} the 7 before`, tone: now > before ? "good" : now < before ? "bad" : undefined };
   };
   const tiles = el(

@@ -43,7 +43,8 @@ export const stdoutSink: LogSink = (row) => {
  */
 export function row(severity: Severity, name: string, fields: LogRow, message: string = name, timestamp?: string): LogRow {
   const out: LogRow = { ...fields, dh: 1, severity, message, n: name };
-  if (timestamp === undefined) delete out.timestamp;
-  else out.timestamp = timestamp;
+  // The other spellings Cloud Logging reads as the entry's time go too.
+  for (const key of ["timestamp", "time", "timestampSeconds", "timestampNanos"]) delete out[key];
+  if (timestamp !== undefined) out.timestamp = timestamp;
   return out;
 }

@@ -38,7 +38,8 @@ format, the server and the queries together, and is the contract between the thr
   sensitive, default empty) into that env; root variable `telemetry_ignore_ips`, set only in
   the git-ignored `_infra/terraform.tfvars` (the repo is public).
 - Signaling rows of a room created by a deploy verification (peer id `verify-…`) carry
-  `verify: true`, so the lobby counts can leave them out.
+  `verify: true`, so the lobby counts can leave them out. Rows from before this build carry
+  no mark and are not special-cased, like their arrival-time timestamps.
 
 ## 3. The queries and the admin page
 

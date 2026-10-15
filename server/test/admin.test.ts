@@ -106,18 +106,18 @@ describe("the saved queries for BigQuery", () => {
 
   it("scope a range to New York calendar days, so one day is today there", () => {
     for (const name of QUERY_NAMES) {
-      expect(readQuery(name, QUERIES)).toContain("TIMESTAMP_SUB(TIMESTAMP(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), 'America/New_York'), INTERVAL");
+      expect(readQuery(name, QUERIES)).toContain("TIMESTAMP(DATE_SUB(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), INTERVAL");
     }
   });
 
   it("take the range line's days whatever the file reads when pasted", () => {
-    const seven = forBigQuery("INTERVAL 7 DAY) -- range", "p", "d");
-    const twelveWeeks = forBigQuery("INTERVAL 84 DAY) -- range", "p", "d");
-    expect(seven.sql).toBe("INTERVAL @days DAY)");
-    expect(twelveWeeks.sql).toBe("INTERVAL @days DAY)");
+    const seven = forBigQuery("INTERVAL 7 DAY), 'America/New_York') -- range", "p", "d");
+    const twelveWeeks = forBigQuery("INTERVAL 84 DAY), 'America/New_York') -- range", "p", "d");
+    expect(seven.sql).toBe("INTERVAL @days DAY), 'America/New_York')");
+    expect(twelveWeeks.sql).toBe("INTERVAL @days DAY), 'America/New_York')");
     expect(twelveWeeks.params).toEqual(["days"]);
     // The kpis query reads twelve weeks when pasted, the length of its trends.
-    expect(readQuery("kpis", QUERIES)).toContain("INTERVAL 84 DAY) -- range");
+    expect(readQuery("kpis", QUERIES)).toContain("INTERVAL 84 DAY), 'America/New_York') -- range");
   });
 });
 

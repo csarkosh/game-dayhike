@@ -32,7 +32,7 @@ const CONSOLE_TABLE = /`([a-z0-9-]+)\.global\.dayhike-telemetry\._AllLogs`/g;
  * parameter here. Most read seven; `kpis.sql` reads the twelve weeks its
  * trends need, so the count is whatever the file says, not a fixed seven.
  */
-const RANGE_LINE = /INTERVAL \d+ DAY\) -- range/g;
+const RANGE_LINE = /INTERVAL \d+ DAY\), 'America\/New_York'\) -- range/g;
 /** Each lookup's placeholder, a string literal when pasted, and the parameter it becomes. */
 const LOOKUP_LINES: readonly { marker: string; param: LookupParam }[] = [
   { marker: "'SID' -- session", param: "sid" },
@@ -50,7 +50,7 @@ export type LookupParam = "sid" | "vid" | "game";
 export function forBigQuery(sql: string, projectId: string, dataset: string): { sql: string; params: string[] } {
   const params: string[] = [];
   let out = sql.replace(CONSOLE_TABLE, () => `\`${projectId}.${dataset}._AllLogs\``);
-  const ranged = out.replace(RANGE_LINE, "INTERVAL @days DAY)");
+  const ranged = out.replace(RANGE_LINE, "INTERVAL @days DAY), 'America/New_York')");
   if (ranged !== out) {
     out = ranged;
     params.push("days");

@@ -43,7 +43,7 @@ events AS (
     timestamp
   FROM real
   WHERE JSON_VALUE(json_payload.svc) = 'telemetry'
-    AND timestamp >= TIMESTAMP_SUB(TIMESTAMP(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), 'America/New_York'), INTERVAL 7 DAY) -- range
+    AND timestamp >= TIMESTAMP(DATE_SUB(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), INTERVAL 7 DAY), 'America/New_York') -- range
     AND JSON_VALUE(json_payload.game) IS NOT NULL
 ),
 matches AS (

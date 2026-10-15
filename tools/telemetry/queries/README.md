@@ -15,7 +15,7 @@ stricter than the Log Analytics editor: `rows` is a reserved word there, for one
 
 Every query over a range begins with the same CTE, `real`, the same text in each file (the
 server's tests compare them): the rows that are real play. It drops the deploy's
-verification (`build = 'verify'` on a page's rows, `verify` on the signaling rows of a room a
+verification (`build = 'verify'` on a page's rows, `verify` (on signaling rows written since 2026-10-15; older verification rooms stay in the counts) on the signaling rows of a room a
 verification opened), the owner's test browsers (`tester`), every session of the README's
 stills shoot (a session with a `cmd` row, looked for over the last ninety days), and headless
 browsers (a `gpu` naming SwiftShader). The owner's own play never reaches the table: the

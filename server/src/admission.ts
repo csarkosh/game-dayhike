@@ -297,3 +297,18 @@ export class ConnectionLimiter {
     }
   }
 }
+
+/**
+ * Whether any address the request names is in `ranges`: every X-Forwarded-For
+ * entry and the socket's own. The ignore list is for the owner's own machines,
+ * and behind a proxy or VPN of their own the owner's address is not the first
+ * entry; nothing is lost by reading them all, since a forged entry can only
+ * get a stranger ignored, never un-ignore the owner.
+ */
+export function anyIpInRanges(forwardedFor: string | string[] | undefined, remoteAddress: string | undefined, ranges: readonly IpRange[]): boolean {
+  if (ranges.length === 0) return false;
+  const headers = Array.isArray(forwardedFor) ? forwardedFor : forwardedFor === undefined ? [] : [forwardedFor];
+  const entries = headers.flatMap((h) => h.split(",")).map((e) => e.trim()).filter((e) => e !== "");
+  if (remoteAddress !== undefined && remoteAddress !== "") entries.push(remoteAddress);
+  return entries.some((ip) => ipInRanges(ip, ranges));
+}
