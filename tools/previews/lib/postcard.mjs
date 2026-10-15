@@ -183,8 +183,9 @@ export function wearSvgs(width, height) {
  * The still (a PNG's bytes) as a postcard that has been through the mail: faded, bordered,
  * worn, tilted by `tiltFor(name)`, shadowed, on a transparent ground, as a PNG with only its
  * image chunks. With `mark` (`stampSvg`'s, and `picture`, a PNG's bytes, the still the stamp
- * shows, which fills its window whole, cropped only to the window's shape; the card's own still
- * without it), a postage stamp is stuck at the card's top right before the wear and the tilt.
+ * shows, which fills its window whole below the share of its top `pictureTop` cuts away, cropped
+ * only to the window's shape; the card's own still without it), a postage stamp is stuck at the
+ * card's top right before the wear and the tilt.
  * Deterministic for one still, name and mark.
  */
 export async function postcard(still, name, mark) {
@@ -207,9 +208,14 @@ export async function postcard(still, name, mark) {
     const svg = Buffer.from(stampSvg(mark, stampWidth));
     const { width: svgWidth, height: svgHeight } = await sharp(svg).metadata();
     const picture = stampPicture(stampWidth);
-    // the stamp's picture: the still it was given (the card's own without one), filling the
-    // window whole, cropped to the window's shape about its middle, faded further
-    const cut = await sharp(mark.picture ?? still)
+    // the stamp's picture: the still it was given (the card's own without one), its top
+    // `pictureTop` of it cut away first (the sky over a crest), filling the window whole,
+    // cropped to the window's shape about its middle, faded further
+    const source = sharp(mark.picture ?? still);
+    const sourceMeta = await source.metadata();
+    const topCut = Math.round(sourceMeta.height * (mark.pictureTop ?? 0));
+    const cut = await source
+      .extract({ left: 0, top: topCut, width: sourceMeta.width, height: sourceMeta.height - topCut })
       .resize(picture.width, picture.height, { fit: "cover", position: "centre" })
       .modulate({ saturation: 0.55, brightness: 1.04 })
       .blur(0.6)

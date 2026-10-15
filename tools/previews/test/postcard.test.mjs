@@ -100,6 +100,25 @@ describe("stampSvg", () => {
     }
     expect(red).toBeGreaterThan(100);
   });
+  it("cuts the picture's top away by pictureTop before it fills the window", async () => {
+    const still = await sharp({ create: { width: 480, height: 270, channels: 3, background: "#406080" } }).png().toBuffer();
+    // a picture blue above and red below: with its top half cut, the window shows red only
+    const picture = await sharp({ create: { width: 320, height: 200, channels: 3, background: "#3050e0" } })
+      .composite([{ input: await sharp({ create: { width: 320, height: 100, channels: 3, background: "#e03030" } }).png().toBuffer(), left: 0, top: 100 }])
+      .png()
+      .toBuffer();
+    const marked = await postcard(still, "trailhead", { ...mark, picture, pictureTop: 0.5 });
+    const { data, info } = await sharp(marked).raw().toBuffer({ resolveWithObject: true });
+    let red = 0, blue = 0;
+    for (let y = 0; y < info.height / 2; y++) for (let x = Math.floor(info.width / 2); x < info.width; x++) {
+      const at = (y * info.width + x) * 4;
+      if (data[at + 3] !== 255) continue;
+      if (data[at] > data[at + 2] + 60) red++;
+      if (data[at + 2] > data[at] + 60 && data[at + 2] > data[at + 1] + 40) blue++;
+    }
+    expect(red).toBeGreaterThan(100);
+    expect(blue).toBe(0);
+  });
 });
 
 describe("wearSvgs", () => {

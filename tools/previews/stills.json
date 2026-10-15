@@ -4,6 +4,7 @@
   "stamp": {
     "still": "trailhead",
     "picture": "range",
+    "pictureTop": 0.32,
     "title": "Day Hike",
     "author": "Cyrus Sarkosh",
     "year": "2026",
@@ -60,11 +61,9 @@
     },
     {
       "name": "range",
-      "seed": "ash",
-      "x": 606.3,
-      "z": -246,
-      "yaw": 0,
-      "what": "the massif side-on from the south, its whole crest across the frame: the stamp's picture"
+      "route": "scene/title",
+      "step": 760,
+      "what": "the massif's crest against the sky from the title's summit shot, its whole body across the frame: the stamp's picture"
     }
   ]
 }

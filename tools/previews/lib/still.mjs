@@ -10,9 +10,15 @@ export function stillScript(still) {
 
 /** The URL that opens a still's view on `base` (the dev server or the live site, with the game's
  * path under it), on `tier` so every still is the same quality, with `telemetry=off` so a shoot
- * never reaches the admin page's matches as a party that never said goodbye. */
+ * never reaches the admin page's matches as a party that never said goodbye. A still with a
+ * `route` and a `step` is a staged scene's frame instead of a place in a world. */
 export function stillUrl(base, config, still) {
   const root = base.replace(/\/+$/, "");
+  if (still.route !== undefined) {
+    // A still of a staged scene (the title's tour, the intro) held at one of its frames: the
+    // route plays nothing on a held frame, so the frame is the same however long the page waits.
+    return `${root}/${still.route}?step=${still.step}&tier=${config.tier}&telemetry=off`;
+  }
   const cmd = encodeURIComponent(stillScript(still)).replace(/%3B/g, ";");
   return `${root}/game/${config.game}?cmd=${cmd}&tier=${config.tier}&telemetry=off`;
 }
