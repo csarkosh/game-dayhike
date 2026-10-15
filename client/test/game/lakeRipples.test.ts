@@ -152,6 +152,17 @@ describe("the lake's ripples' constants", () => {
     expect(glsl.endsWith("}\n")).toBe(true);
   });
 
+  it("is the gust-raised field lakePaw thresholds: a point's mask follows its breeze", () => {
+    const [f, gx, gz] = lakeBreeze(12.3, -7.1, 120, DX, DZ, 0.7);
+    expect(f).toBeGreaterThanOrEqual(0);
+    expect(f).toBeLessThanOrEqual(1);
+    const slope = Math.max(Math.hypot(gx, gz), 1e-4);
+    const expected = Math.min(1, Math.max(0, (f - lakePawThreshold(0.5)) / (slope * PAW_EDGE_M)));
+    expect(lakePaw(12.3, -7.1, 120, DX, DZ, 0.5, 0.7)).toBeCloseTo(expected, 12);
+    // with no gust the field is halved by its floor, and the breeze is what the lights read
+    expect(lakeBreeze(12.3, -7.1, 120, DX, DZ, 0)[0]).toBeCloseTo(f * (0.5 / (0.5 + 0.5 * 0.7)), 12);
+  });
+
   it("scale the caustics by the sun over its peak: 1 at a clear noon, a tenth of the way through heavy cloud, 0 with the sun down", () => {
     expect(lakeSunShare(4, 1, 4)).toBe(1);
     expect(lakeSunShare(4 * (1 - 0.9 * 0.8), 1, 4)).toBeCloseTo(0.28, 12);
