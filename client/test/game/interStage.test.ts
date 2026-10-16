@@ -24,6 +24,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js";
 import { WEBGPU_REQUIRED_LIMITS, WEBGPU_TEXTURE_FEATURES, featuresToRequest } from "../../src/game/engineChoice.js";
+import { postFeaturesFor } from "../../src/game/postParams.js";
 import { QUALITY, type QualityTier } from "../../src/game/quality.js";
 import { createAtmosphere } from "../../src/game/atmosphere.js";
 import { createLighting } from "../../src/game/lighting.js";
@@ -348,7 +349,8 @@ describe("inter-stage variables on WebGPU", () => {
     // cascaded shadow generator's count to at least two, so the medium
     // tier's one cascade is drawn as two. The high tier's three (2026-10-15,
     // to 1500 m) cost every lit material two more variables than the two
-    // before, which is what raised the device's limit from 19 to 21.
+    // before, which is what raised the device's limit from 19 to 21; the far
+    // softening's prepass (2026-10-16) one more, from 21 to 22.
     expect(Object.fromEntries(tiers.map((tier) => [tier, QUALITY[tier].shadowMapSize > 0 ? QUALITY[tier].shadowCascades : 0])), WEIGH).toEqual({
       low: 0,
       medium: 1,
@@ -417,12 +419,19 @@ describe("inter-stage variables on WebGPU", () => {
       "tree.giant_pine.material1_lod2",
       "understory.fern.material0_nurse",
     ]);
+    let fullest = 0;
     for (const [name, drawn] of forest.drawn) {
       // The processed shader's outputs and Babylon's own count agree.
       const listed = drawn.varyings.reduce((sum, v) => sum + Number(/\((\d+)\)$/.exec(v)?.[1] ?? 1), 0);
       expect(listed, name).toBe(drawn.locations);
       for (const tier of Object.keys(QUALITY) as QualityTier[]) {
-        const outputs = drawn.locations + (drawn.receivesShadows ? shadowLocations(tier, lights) : 0);
+        // The far softening's prepass (post.ts, the tiers with a post chain)
+        // has every capable material write its camera-space depth from a
+        // `vViewPos` output of its own, which NullEngine, drawing to one
+        // target, never asks for: one more on those tiers, on every material
+        // but the sky dome's, which draws to one target.
+        const prepass = postFeaturesFor(tier, true).pipeline && name !== "skyDome" ? 1 : 0;
+        const outputs = drawn.locations + (drawn.receivesShadows ? shadowLocations(tier, lights) : 0) + prepass;
         const builtins = drawn.frontFacing ? 1 : 0;
         const at = `${name} on ${tier}: ${WEIGH}`;
         // The vertex stage: every output within the count, and the last location below the limit.
@@ -431,8 +440,12 @@ describe("inter-stage variables on WebGPU", () => {
         // The fragment stage: Babylon declares every vertex output as an input,
         // and each inter-stage built-in it reads takes one more.
         expect(outputs + builtins, at).toBeLessThanOrEqual(limit);
+        fullest = Math.max(fullest, outputs + builtins);
       }
     }
+    // The limit is the scene's whole need, with no margin: the fullest
+    // fragment stage (the giants' faded material on high) fills it exactly.
+    expect(fullest, WEIGH).toBe(limit);
   });
 
   it("reads Babylon's rules the count rests on (canaries on the installed engine)", () => {

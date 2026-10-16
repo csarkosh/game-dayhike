@@ -36,6 +36,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
+import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
@@ -121,6 +122,11 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
       generateDepthBuffer: true,
     },
   );
+  // The far softening's prepass (post.ts) draws for the scene's camera alone: a
+  // render target it took up would get a prepass target of its own and re-read
+  // every material's defines the first time it cleared, so each of the game's
+  // own opts out.
+  texture.noPrePassRenderer = true;
   // Round the turn: u wraps, so the seam at +z filters across; v clamps.
   texture.wrapU = Texture.WRAP_ADDRESSMODE;
   texture.wrapV = Texture.CLAMP_ADDRESSMODE;

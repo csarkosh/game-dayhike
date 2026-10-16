@@ -54,7 +54,7 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high"];
  * measured, over every pipeline of 13 WebGPU pages on both tiers, each
  * replayed at chosen limits (the verification note, §4):
  *
- * - Inter-stage variables, 19. WebGPU lets a vertex stage write at most this
+ * - Inter-stage variables, 22. WebGPU lets a vertex stage write at most this
  *   many user-defined outputs, each at a location below it, and a fragment
  *   stage read at most this many user-defined inputs less one for each
  *   inter-stage built-in it reads (`front_facing`, `sample_index`,
@@ -66,7 +66,12 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high"];
  *   `float` more to every lit material; 18 on medium's two), and its
  *   two-sided fragment reads those and `front_facing`: at 20 it fails
  *   validation, at 21 no pipeline does (`interStage.test.ts` holds the
- *   count). It is the one pipeline that sets 21. The halation's blur sizes its
+ *   count). The far softening's prepass (2026-10-16, `post.ts`) has every
+ *   capable material write its camera-space depth as a second target, from a
+ *   `vViewPos` output of its own, one more to every lit material on the high
+ *   and medium tiers: the faded material's fragment then reads 21 and
+ *   `front_facing`, which is what raised the limit from 21 to 22. It is the
+ *   one pipeline that sets 22. The halation's blur sizes its
  *   taps from the device's own limit, so it fills whatever the device offers
  *   and fits it; it failed at 18 only where the replay made, on a device of 18,
  *   a pipeline built for one of 19, the count before. The specification lowers the
@@ -87,7 +92,7 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high"];
  *   them turns none away.
  */
 export const WEBGPU_REQUIRED_LIMITS: Readonly<Record<string, number>> = {
-  maxInterStageShaderVariables: 21,
+  maxInterStageShaderVariables: 22,
   maxVertexBuffers: 8,
   maxSampledTexturesPerShaderStage: 16,
   maxSamplersPerShaderStage: 16,

@@ -33,6 +33,7 @@ import type { Camera } from "@babylonjs/core/Cameras/camera.js";
 import type { PostProcess } from "@babylonjs/core/PostProcesses/postProcess.js";
 import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
+import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
@@ -110,6 +111,11 @@ export function createWaterFrame(
     samplingMode: Texture.BILINEAR_SAMPLINGMODE,
     generateDepthBuffer: false,
   });
+  // The far softening's prepass (post.ts) draws for the scene's camera alone: a
+  // render target it took up would get a prepass target of its own and re-read
+  // every material's defines the first time it cleared, so each of the game's
+  // own opts out.
+  colour.noPrePassRenderer = true;
   colour.wrapU = Texture.CLAMP_ADDRESSMODE;
   colour.wrapV = Texture.CLAMP_ADDRESSMODE;
   const copier = new CopyTextureToTexture(engine, false, false);

@@ -26,6 +26,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { Camera } from "@babylonjs/core/Cameras/camera.js";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
+import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color.js";
@@ -64,6 +65,11 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
     generateDepthBuffer: true,
   });
   texture.renderList = [];
+  // The far softening's prepass (post.ts) draws for the scene's camera alone: a
+  // render target it took up would get a prepass target of its own and re-read
+  // every material's defines the first time it cleared, so each of the game's
+  // own opts out.
+  texture.noPrePassRenderer = true;
   texture.renderParticles = false;
   texture.renderSprites = false;
   texture.clearColor = new Color4(0, 0, 0, 0);

@@ -25,6 +25,10 @@ import halationExtractFragment from "./shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "./shaders/grade.fragment.fx?raw";
 import lensFragment from "./shaders/lens.fragment.fx?raw";
 import finishFragment from "./shaders/finish.fragment.fx?raw";
+import farSoftFragment from "./shaders/farSoft.fragment.fx?raw";
+// Registers `scene.enablePrePassRenderer`, the far softening's depth.
+import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
+import type { PrePassRenderer } from "@babylonjs/core/Rendering/prePassRenderer.js";
 
 export type Post = {
   readonly features: PostFeatures;
@@ -55,6 +59,10 @@ export function endBlurKernel(blur: number): number {
   return (END_BLUR_KERNEL / END_BLUR_STEPS) * step;
 }
 
+/** The far softening's band of camera depth (m) and its radius at the band's end, in texels. */
+export const FAR_SOFT_BAND: readonly [number, number] = [80, 450];
+export const FAR_SOFT_RADIUS = 5;
+
 /** The capability every HDR pass needs: float or half-float render targets. */
 export function fxSupportedBy(engine: AbstractEngine): boolean {
   const caps = engine.getCaps();
@@ -84,12 +92,25 @@ const HALATION_RATIO = 0.25;
 const HALATION_KERNEL = 32;
 
 /**
- * The post chain: on high, a full-resolution scene pass, then halation
- * extract and blur, then the grade pass, chromatic aberration, FXAA, then the
- * finish pass; on medium the scene pass and halation are skipped and grade is
- * first. Passes attach in creation order, which is what fixes the order —
+ * The post chain: the far softening first (where the engine draws to several
+ * targets at once; below), then on high a full-resolution scene pass, then
+ * halation extract and blur, then the grade pass, chromatic aberration, FXAA,
+ * then the finish pass; on medium the scene pass and halation are skipped.
+ * Passes attach in creation order, which is what fixes the order —
  * aberration and FXAA must run before grain and dither, and dither must be
  * last.
+ *
+ * The far softening (2026-10-16, `farSoft.fragment.fx`) blurs the frame past
+ * `FAR_SOFT_BAND` metres of camera depth by a radius rising to
+ * `FAR_SOFT_RADIUS` texels, each read kept only where it is not much nearer
+ * than the texel itself, so the far field's cards and rims melt into a mass
+ * without the near grass bleeding into it. Its depth is the scene's own:
+ * Babylon's prepass renderer draws the camera-space depth as a second target
+ * of the scene's one pass, with the materials' own shaders, so every vertex
+ * plugin's displacement and every alpha test holds in it and nothing is
+ * drawn twice. The prepass's targets are then the first pass's input, and
+ * the multisampling goes to them. On an engine without multiple render
+ * targets there is no softening and the chain starts as before.
  *
  * The scene pass exists only because Babylon renders the scene straight into
  * the FIRST post-process's own input render target: on high that would
@@ -156,6 +177,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let aberration: ChromaticAberrationPostProcess | null = null;
   let fxaa: FxaaPostProcess | null = null;
   let lens: PostProcess | null = null;
+  /** The far field's softening (2026-10-16) and the prepass whose depth it reads. */
+  let farSoft: PostProcess | null = null;
+  let prePass: PrePassRenderer | null = null;
   let droplets: RawTexture | null = null;
   let black: RawTexture | null = null;
   // The lens's gate: its strength this frame, the slot it holds in the
@@ -206,6 +230,59 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     Effect.ShadersStore["gradeFragmentShader"] = gradeFragment;
     Effect.ShadersStore["finishFragmentShader"] = finishFragmentFor(engine.isWebGPU);
     Effect.ShadersStore["lensFragmentShader"] = lensFragment;
+    Effect.ShadersStore["farSoftFragmentShader"] = farSoftFragment;
+
+    // The far softening, first in the chain, on the scene as rendered. Its
+    // depth is the scene's own: Babylon's prepass draws the camera-space
+    // depth as a second target of the scene's one pass, from the materials'
+    // own shaders, so every vertex plugin's displacement and every alpha test
+    // holds in it, and there is no second pass over the geometry. The same
+    // on WebGL2 and WebGPU. A material that cannot draw to several targets
+    // (the sky dome's, the midges') leaves the depth target at its clear, 0,
+    // which the shader reads as the far sky. Where the engine has no
+    // multiple render targets there is no softening.
+    if (engine.getCaps().drawBuffersExtension) prePass = scene.enablePrePassRenderer();
+    if (prePass !== null) {
+      // The prepass sets `applyByPostProcess` each frame from whether the
+      // chain holds Babylon's own image-processing pass. The grade is not
+      // it, and a false there would have every material tone-map in its own
+      // shader, so the flag is pinned to the true `lighting.ts` sets on this
+      // path; the instance's accessor goes with the prepass at dispose.
+      image.applyByPostProcess = true;
+      Object.defineProperty(image, "applyByPostProcess", { configurable: true, get: () => true, set: () => undefined });
+      farSoft = new PostProcess("farSoft", "farSoft", ["texel", "soft"], ["depthSampler"], 1.0, camera,
+        Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
+      // The prepass draws for the passes that ask it for a target: it reads
+      // each pass's configuration as it updates, and draws the depth once
+      // one asks for it.
+      farSoft._prePassEffectConfiguration = { enabled: true, name: "farSoft", texturesRequired: [Constants.PREPASS_DEPTH_TEXTURE_TYPE] };
+      // It reads that chain from the scene's active camera when it updates,
+      // which is at the first draw after anything marks it dirty: its own
+      // creation, a pass attached or detached (the lens, the end's blurs).
+      // That draw is as often a render target's, the lake's mirror or the
+      // impostors' bake, whose own camera is the active one then, and the
+      // prepass, finding no chain on it, would switch itself off. Its
+      // update runs with the chain's camera active.
+      const withChainCamera = prePass as unknown as { _update(): void };
+      const prepassUpdate = withChainCamera._update.bind(prePass);
+      withChainCamera._update = () => {
+        const was = scene.activeCamera;
+        scene.activeCamera = camera;
+        try {
+          prepassUpdate();
+        } finally {
+          scene.activeCamera = was;
+        }
+      };
+      prePass.markAsDirty();
+      const bound = prePass;
+      farSoft.onApply = (effect) => {
+        const target = bound.getRenderTarget();
+        effect.setTexture("depthSampler", target.textures[bound.getIndex(Constants.PREPASS_DEPTH_TEXTURE_TYPE)] ?? null);
+        effect.setFloat2("texel", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
+        effect.setFloat3("soft", FAR_SOFT_BAND[0], FAR_SOFT_BAND[1], FAR_SOFT_RADIUS);
+      };
+    }
 
     if (features.halation) {
       // Absorbs the halation extract's quarter-resolution ratio so the scene
@@ -347,13 +424,17 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       effect.setFloat("time", f.time);
     };
 
-    // The first pass owns the scene's render target. Babylon's setter clamps
-    // to the engine's cap, but an engine may report no cap at all, and
-    // Math.min(4, undefined) is NaN, so ask only where a cap above 1 exists;
-    // a capped engine (Safari) reads 1 and nothing else changes. FXAA stays
-    // for the cards' alpha-test edges, which MSAA does not touch.
-    const first = scenePass ?? grade;
-    if (first !== null && engine.getCaps().maxMSAASamples > 1) first.samples = MSAA_SAMPLES;
+    // The first pass owns the scene's render target, or the prepass does
+    // where there is one, its targets the first pass's input. Babylon's
+    // setter clamps to the engine's cap, but an engine may report no cap at
+    // all, and Math.min(4, undefined) is NaN, so ask only where a cap above
+    // 1 exists; a capped engine (Safari) reads 1 and nothing else changes.
+    // FXAA stays for the cards' alpha-test edges, which MSAA does not touch.
+    const first = farSoft ?? scenePass ?? grade;
+    if (engine.getCaps().maxMSAASamples > 1) {
+      if (prePass !== null) prePass.samples = MSAA_SAMPLES;
+      else if (first !== null) first.samples = MSAA_SAMPLES;
+    }
   } else {
     image.vignetteEnabled = true;
     image.vignetteColor = new Color4(0.01, 0.02, 0.03, 0);
@@ -416,6 +497,13 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       }
     },
     dispose() {
+      farSoft?.dispose();
+      farSoft = null;
+      if (prePass !== null) {
+        scene.disablePrePassRenderer();
+        prePass = null;
+        delete (image as { applyByPostProcess?: boolean }).applyByPostProcess;
+      }
       endBlurX?.dispose();
       endBlurY?.dispose();
       finish?.dispose();

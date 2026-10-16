@@ -11,7 +11,9 @@ import type { PostProcess } from "@babylonjs/core/PostProcesses/postProcess.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
-import { END_BLUR_KERNEL, END_BLUR_STEPS, endBlurKernel, createPost, finishFragmentFor, fxSupportedBy } from "../../src/game/post.js";
+import { END_BLUR_KERNEL, END_BLUR_STEPS, endBlurKernel, createPost, FAR_SOFT_BAND, FAR_SOFT_RADIUS, finishFragmentFor, fxSupportedBy } from "../../src/game/post.js";
+import { Constants } from "@babylonjs/core/Engines/constants.js";
+import farSoftFx from "../../src/game/shaders/farSoft.fragment.fx?raw";
 import { postFeaturesFor, MSAA_SAMPLES } from "../../src/game/postParams.js";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "../../src/game/weather.js";
 import { STARE_LENS_REST, stareReach, type StareLens } from "../../src/game/stareLens.js";
@@ -143,6 +145,133 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     expect(c?.highlightsDensity).toBe(0);
     expect(c?.midtonesSaturation).toBe(0);
     post.dispose();
+  });
+
+  // NullEngine draws to one target at a time, so under it there is no prepass
+  // and no far softening: the chain pins above are the chain without them.
+  // The softening's wiring is pinned against a prepass stood in for the
+  // scene's, on an engine told it can draw to several targets.
+  describe("the far softening and the prepass it reads", () => {
+    type FakePrePass = {
+      samples: number;
+      dirty: number;
+      updates: (string | undefined)[];
+      markAsDirty(): void;
+      _update(): void;
+      getRenderTarget(): { textures: unknown[] };
+      getIndex(type: number): number;
+    };
+    const standIn = (): { prePass: FakePrePass; disabled: () => number } => {
+      let disabledCount = 0;
+      const depthTexture = { name: "the prepass's depth" };
+      const prePass: FakePrePass = {
+        samples: 1,
+        dirty: 0,
+        updates: [],
+        markAsDirty() {
+          this.dirty++;
+        },
+        _update() {
+          this.updates.push(scene.activeCamera?.name);
+        },
+        getRenderTarget: () => ({ textures: [{ name: "the prepass's colour" }, depthTexture] }),
+        getIndex: (type) => (type === Constants.PREPASS_DEPTH_TEXTURE_TYPE ? 1 : -1),
+      };
+      engine.getCaps().drawBuffersExtension = true;
+      (scene as unknown as { enablePrePassRenderer(): unknown }).enablePrePassRenderer = () => prePass;
+      (scene as unknown as { disablePrePassRenderer(): void }).disablePrePassRenderer = () => {
+        disabledCount++;
+      };
+      return { prePass, disabled: () => disabledCount };
+    };
+
+    it("is the first pass on high and medium, at ratio 1, asking the prepass for the depth and nothing else, and absent where the engine draws to one target", () => {
+      for (const tier of ["high", "medium"] as const) {
+        const { prePass } = standIn();
+        const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+        const post = createPost(scene, camera, postFeaturesFor(tier, true));
+        const names = camera._postProcesses.map((p) => p?.name ?? null);
+        expect(names[0]).toBe("farSoft");
+        expect(names[1]).toBe(tier === "high" ? "scene" : "grade");
+        const farSoft = passNamed(camera, "farSoft");
+        expect(ratioOf(farSoft)).toBe(1);
+        expect(farSoft._prePassEffectConfiguration).toEqual({ enabled: true, name: "farSoft", texturesRequired: [Constants.PREPASS_DEPTH_TEXTURE_TYPE] });
+        expect(prePass.dirty).toBe(1);
+        post.dispose();
+        camera.dispose();
+      }
+      const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+      engine.getCaps().drawBuffersExtension = false;
+      const post = createPost(scene, camera, postFeaturesFor("high", true));
+      expect(camera._postProcesses.map((p) => p?.name ?? null)).not.toContain("farSoft");
+      post.dispose();
+      camera.dispose();
+    });
+
+    it("binds the prepass's depth, the texel and the band each apply, and its shader reads the clear as the far sky at explicit levels", () => {
+      const bigEngine = nullEngineAt(1920, 1080);
+      const bigScene = new Scene(bigEngine);
+      bigEngine.getCaps().drawBuffersExtension = true;
+      const depthTexture = { name: "depth" };
+      const prePass = {
+        samples: 1,
+        markAsDirty: () => undefined,
+        _update: () => undefined,
+        getRenderTarget: () => ({ textures: [{ name: "colour" }, depthTexture] }),
+        getIndex: (type: number) => (type === Constants.PREPASS_DEPTH_TEXTURE_TYPE ? 1 : -1),
+      };
+      (bigScene as unknown as { enablePrePassRenderer(): unknown }).enablePrePassRenderer = () => prePass;
+      (bigScene as unknown as { disablePrePassRenderer(): void }).disablePrePassRenderer = () => undefined;
+      const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), bigScene);
+      const post = createPost(bigScene, camera, postFeaturesFor("medium", true));
+      const calls: { fn: string; args: unknown[] }[] = [];
+      const fakeEffect = new Proxy(
+        {},
+        { get: (_target, prop: string) => (...args: unknown[]) => calls.push({ fn: prop, args }) },
+      ) as unknown as Effect;
+      passNamed(camera, "farSoft").onApplyObservable.notifyObservers(fakeEffect);
+      expect(calls).toEqual([
+        { fn: "setTexture", args: ["depthSampler", depthTexture] },
+        { fn: "setFloat2", args: ["texel", 1 / 1920, 1 / 1080] },
+        { fn: "setFloat3", args: ["soft", FAR_SOFT_BAND[0], FAR_SOFT_BAND[1], FAR_SOFT_RADIUS] },
+      ]);
+      expect(FAR_SOFT_BAND).toEqual([80, 450]);
+      expect(FAR_SOFT_RADIUS).toBe(5);
+      // The reads: every sample at an explicit level, none implicit, so the
+      // early leave keeps WGSL's uniformity rule; the clear read as the sky.
+      expect(farSoftFx).not.toMatch(/texture2D\(|\btexture\(/);
+      expect(farSoftFx.match(/textureLod\(/g)?.length).toBe(3);
+      expect(farSoftFx).toContain("return d > 0.0 ? d : FAR_SOFT_SKY;");
+      expect(farSoftFx).toContain("uniform sampler2D depthSampler;");
+      post.dispose();
+      camera.dispose();
+      bigScene.dispose();
+      bigEngine.dispose();
+    });
+
+    it("gives the multisampling to the prepass, keeps the image processing by post process whatever the prepass writes, runs the prepass's update with the chain's camera active, and lets all of it go at dispose", () => {
+      engine.getCaps().maxMSAASamples = 4;
+      const { prePass, disabled } = standIn();
+      const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+      const other = new UniversalCamera("other", new Vector3(0, 2, 0), scene);
+      const post = createPost(scene, camera, postFeaturesFor("high", true));
+      expect(prePass.samples).toBe(MSAA_SAMPLES);
+      for (const p of camera._postProcesses) if (p !== null) expect(p.samples, p.name).toBe(1);
+      const image = scene.imageProcessingConfiguration;
+      expect(image.applyByPostProcess).toBe(true);
+      image.applyByPostProcess = false;
+      expect(image.applyByPostProcess).toBe(true);
+      scene.activeCamera = other;
+      prePass._update();
+      expect(prePass.updates).toEqual(["cam"]);
+      expect(scene.activeCamera).toBe(other);
+      post.dispose();
+      expect(disabled()).toBe(1);
+      image.applyByPostProcess = false;
+      expect(image.applyByPostProcess).toBe(false);
+      camera.dispose();
+      other.dispose();
+    });
   });
 
   it("attaches the passes in the spec's order on high and medium, the lens's slot empty until there is rain on the glass, and the end's two blurs' until the end", () => {

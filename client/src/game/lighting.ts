@@ -14,6 +14,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 // instead and there is no error and no shadows — the same failure mode that cost
 // hours on thin instances in `renderer.ts`.
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js";
+import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
 import { ReflectionProbe } from "@babylonjs/core/Probes/reflectionProbe.js";
 
@@ -389,6 +390,11 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
       : null;
   if (shadows !== null) {
     shadows.numCascades = settings.shadowCascades;
+    // The far softening's prepass (post.ts) draws for the scene's camera
+    // alone: the shadow map opts out, as every render target of the game's
+    // own does.
+    const shadowMap = shadows.getShadowMap();
+    if (shadowMap !== null) shadowMap.noPrePassRenderer = true;
     // Stabilisation is chosen deliberately over `autoCalcDepthBounds`, not merely
     // left at a default: the two fight, since stabilisation exists to stop
     // cascade bounds shimmering while `autoCalcDepthBounds` recomputes the depth

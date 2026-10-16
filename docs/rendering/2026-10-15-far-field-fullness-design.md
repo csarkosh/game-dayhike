@@ -59,7 +59,11 @@ scree is not a plane either (`fcBare`). A roughness ramp, `FAR_ROUGH_BAND`
 (`terrainTexture.ts`), so the far field goes matte under a flat light. The
 clipmap blends each ring's colour, cover and gradient toward the coarser
 ring's across its band as it blends the height (`coarseSample`, `clipmap.ts`),
-so nothing snaps at a ring's edge.
+so nothing snaps at a ring's edge. The far sward's target colour (`FAR_SWARD`)
+was refitted on 2026-10-16 with the meadow's far band (part 3) in place: the
+ground between the far cards read a yellow the eye took for the far grass's
+own, so by ratio in linear the red went to 0.87 and the blue to 1.23 of the
+earlier fit, the green as it was, which `groundHexParams.ts` mirrors.
 
 ## 3. The cover: thin by rule, not stop at a line (`clutterField.ts`, `bladeField.ts`)
 
@@ -76,8 +80,19 @@ relief alone.
 and the wet and high plants) takes its own out-band from its hash between the
 bucket's band start and its end (`rampBands`, `clutterField.ts`), so the cover
 thins from the band's start to its end instead of dithering out at one line.
-`COVER_WIDEN` was not built: the far cover's relief under the ramp fills the
-ground the thinned cards leave without it.
+The meadow has a far band as well (2026-10-16, `COVER_FAR_FROM`): its cards
+reached 40 m and the slope past them read bare to the tree line, so they now
+reach 100 m, the near level and its seam still the 40 m band's
+(`clutterNearRadius`). Past 40 m one card in two is kept by its hash
+(`COVER_FAR_KEEP`, `farKeep`), the rest fade out over 12 m (`COVER_FAR_RAMP`,
+`coverBands`), and the kept cards widen to twice their width across 24 m of eye
+distance in the vertex stage (`COVER_WIDEN`, `COVER_WIDEN_RAMP`, `coverWiden`;
+`setDistanceWiden` and the `fadeWiden` uniform, `distanceFadePlugin.ts`), so the
+slope keeps silhouettes to 100 m at half the instances and nothing pops
+at a rebuild. The collector lists a card not kept only until its fade is done,
+and its budget and sweep size grew with the radius (`CLUTTER_BUDGETS`,
+`COLLECTOR_SWEEP_SIZE`). The other ramped classes have no far band: the far
+cover's relief under the ramp fills the ground their thinned cards leave.
 
 ## 4. The trees: impostors in place of billboards (`forestMeshes.ts`)
 
@@ -129,6 +144,20 @@ in first and the red is left to the horizon, the powers' mean near one so the
 far field reaches the fog's floor where it did. The sky's own coefficients and
 `FOG_CLEAR_FLOOR` were not built.
 
+**The ground haze (2026-10-16).** With the field full, the far ground at noon
+still read as a painted plane: every blade of the far cover as crisp as the
+near, and the tree line's feet as hard as its crowns. A second height fog lies
+over the first in every weather, a thin layer at the walker's level
+(`ATM_HAZE_SEAT` 1.5 m below the eye, `ATM_HAZE_DENSITY` 0.0016 at its base,
+`ATM_HAZE_FALLOFF` 0.12 a metre of height, so it halves every six metres; a
+steeper layer showed its top as a line where the ground dipped under it),
+mixed after the air's own mix and without the scattering by channel, in an air
+`ATM_HAZE_WARMTH` 0.35 of the way from the gradient's colour to the sun's, so
+the far ground and the trunks' feet sit in a faint, warm veil and the crowns in
+less of it, as a meadow's far edge does on a dry day, and the far grass keeps
+its green under it. `HAZE` and `groundHazeAmount` mirror it in
+`atmosphereParams.ts`, pinned by the lockstep test.
+
 ## 6. The clipmap: colour and normal across rings (`clipmap.ts`)
 
 Only the height blends between rings; colour and normal are point samples that jump
@@ -163,6 +192,46 @@ from 19 to 21 (`WEBGPU_REQUIRED_LIMITS`, `engineChoice.ts`); the sun's
 `SUN_LIGHT_SIZE_UV` went from 0.1 to 0.15 with the shorter first slice. No
 temporal pass was built: the field's rim and the ramp's thinning read clean
 under MSAA and FXAA without it.
+
+**The far softening (2026-10-16, `farSoft.fragment.fx`, `post.ts`).** What a
+temporal pass would have given the far field, the melting of sub-pixel cards
+and rims into a mass, a depth-gated blur gives it directly: the first pass of
+the chain on the high and medium tiers reads the frame past `FAR_SOFT_BAND`
+80 m of camera depth with a radius rising to `FAR_SOFT_RADIUS` 5 texels at
+450 m, two rings of reads round the texel, eight at the radius and four at
+half of it, each kept only where its own depth is not much nearer than the
+texel's (four fifths), so the near grass against the far field keeps its edge
+and never bleeds into it. Every read is at an explicit level, since WGSL
+allows an implicit-level sample only in uniform control flow and the pass
+leaves early where the radius is under a fifth of a texel. Its depth is the
+scene's own: Babylon's prepass renderer draws the camera-space depth as a
+second target of the scene's one pass, from the materials' own shaders, so
+every vertex plugin's displacement and every alpha test holds in it, nothing
+is drawn twice, and WebGL2 and WebGPU take the same path; the pass registers
+the depth as the one target it needs, the prepass's targets become the first
+pass's input, and the multisampling goes to them. A material that draws to
+one target alone (the sky dome's, the midges') leaves the depth at its clear,
+0, which the pass reads as the far sky. The depth is a `vViewPos` output of
+every capable material's vertex stage, one more inter-stage variable on
+WebGPU, where the giants' faded material already filled the device's 21 on
+the high tier, so the limit the game asks for rose to 22
+(`WEBGPU_REQUIRED_LIMITS`; the reference adapter offers 28). A depth renderer, a second pass over
+the whole scene, was tried first and dropped: the second pass cost what the
+far field had saved, and on WebGPU a post process reading its map lost the
+device within half a minute on some runs and not others. Two things the
+prepass needed from this chain: it reads the chain it draws for from the
+scene's active camera when it updates, which is at the first draw after
+anything marks it dirty, and that draw is as often a render target's (the
+lake's mirror, the impostors' bake) whose own camera is active then, so its
+update runs with the chain's camera active; it sets
+`applyByPostProcess` each frame from whether the chain holds Babylon's own
+image-processing pass, which the grade is not, so the flag is pinned to the
+true `lighting.ts` sets on this path; and it takes up every render target
+the scene draws, giving each a prepass target of its own and re-reading every
+material's defines the first time it clears, which left the impostors' bake
+with no bake and the far trees as bare poles, so each render target of the
+game's own opts out (`noPrePassRenderer`: the bake, the lake's mirror and
+panorama, the water frame, the rain map, the shade mask, the shadow map).
 
 ## 8. What is measured
 

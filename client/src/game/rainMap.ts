@@ -36,6 +36,7 @@
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
+import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { Effect } from "@babylonjs/core/Materials/effect.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
@@ -160,6 +161,11 @@ export function createRainMap(scene: Scene, tier: QualityTier): RainMap | null {
       generateDepthBuffer: true,
     },
   );
+  // The far softening's prepass (post.ts) draws for the scene's camera alone: a
+  // render target it took up would get a prepass target of its own and re-read
+  // every material's defines the first time it cleared, so each of the game's
+  // own opts out.
+  texture.noPrePassRenderer = true;
   texture.renderList = [];
   texture.renderParticles = false;
   texture.renderSprites = false;
