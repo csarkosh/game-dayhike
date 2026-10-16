@@ -91,7 +91,7 @@ import { afterNextPaint } from "./game/paint.js";
 import type { QualityTier } from "./game/quality.js";
 import { settingsModel, type AutoSummary } from "./game/settings.js";
 import { DEFAULT_MODE, isGameMode, peaceful, type GameMode } from "./game/gameMode.js";
-import { EXPLORE_HOUR_S, exploreHour, exploreWeather } from "./game/exploreDay.js";
+import { EXPLORE_HOUR_S, exploreHour, exploreNight, exploreWeather } from "./game/exploreDay.js";
 import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice.js";
 import {
   buildFirstRenderer,
@@ -1057,11 +1057,12 @@ function buildGame(
     }
     const ear = renderer.listener();
     const crest = world.search.body.pos;
-    // A calm world's acts: its rain as the wet, and never the night or its mist.
+    // A calm world's acts: its rain as the wet, and never the night's dread or its mist; the
+    // birds alone hush under the sky's own night (the calls need the climb, held at zero).
     const acts = calm ? { wet: settled.weather.rain, night: 0, mist: 0 } : actsUnder(shown.world);
     renderer.setMistIn(acts.mist * mist);
     const voiced = stepWoods(woods, {
-      climb: calm ? 0 : escalation.progressMax, wet: acts.wet, night: acts.night, chase: state.phase !== Phase.Climb, hollow, rain: a.weather.rain,
+      climb: calm ? 0 : escalation.progressMax, wet: acts.wet, night: calm ? exploreNight(settled.hour) : acts.night, chase: state.phase !== Phase.Climb, hollow, rain: a.weather.rain,
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
     }, dt);
     woods = voiced.state;

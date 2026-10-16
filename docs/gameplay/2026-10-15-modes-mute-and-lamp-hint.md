@@ -9,7 +9,7 @@ button that stands on every page; and a HUD hint for the headlamp.
 | Mode | The world | The sky and the voice |
 |---|---|---|
 | `game` | The hike as it is: the climb's three acts, the watcher, the haunt, the summit's find, the chase. | The escalation's. |
-| `explore` | The same mountain with no one in it: the sim builds no watcher and no haunt, and the summit is never found (`sim/summit.ts` returns before the finder), so the climb never flips. The trail, the car, the board and the headlamp stay. | The escalation's world, lens, chase and haunt are held at nothing. The day is the explore day's (§1.2). The woods' calls never come (the climb is read as zero), the night's sounds never start (no night), and the inner voice keeps the trailhead's line and its answers to the rain and the fog (`CALM_LINES`, `innerVoice.ts`). |
+| `explore` | The same mountain with no one in it: the sim builds no watcher and no haunt, and the summit is never found (`sim/summit.ts` returns before the finder), so the climb never flips. The trail, the car, the board and the headlamp stay. | The escalation's world, lens, chase and haunt are held at nothing. The day is the explore day's (§1.2). The woods' calls never come (the climb is read as zero), the night's odd sounds never start (the acts' night is read as zero, the sky's night comes with the hour), and the inner voice keeps the trailhead's line and its answers to the rain and the fog (`CALM_LINES`, `innerVoice.ts`). |
 | `freecam` | Explore. | Explore, with the camera freed from the start (`/freecam`), unless the address names a `freecam` entry of its own. |
 
 The mode is the world's: every peer must run the same one, so it is a
@@ -32,16 +32,23 @@ once, which starts the hike over at its trailhead.
 
 ### 1.2 The explore day
 
-`exploreDay.ts`: a clock from dawn (6) to dusk (20) at two minutes an hour,
-wrapping to dawn at dusk, so the hike never meets the dark and the whole of
-the weather passes in under half an hour. `/time` sets where it starts (a
-night hour starts it at dawn). The weather is read off a schedule, a preset
-at each of its hours (clear, bright, overcast, mist, rain, overcast, bright,
-clear) and the lerp between neighbours in between, so a rain comes in over
-an hour and goes out over the next; the eerie preset is never on it, and
-every preset on it carries no dread. The name the lake's calm reads is the
-nearer preset's, faded over a minute. `/weather <preset>` on a calm world
-answers with the day's weather and sets nothing.
+`exploreDay.ts`: a clock round the twenty-four hours at forty seconds an hour,
+a day in sixteen minutes, so the hike meets its nights and its dawns, and the
+whole of the weather several times over. `/time` sets where it starts. The
+weather is read off a schedule with a preset every hour and a half or two,
+midnight to midnight (overcast, clear, mist, clear, bright, overcast, rain,
+bright, clear, overcast, mist, rain, bright, clear, mist, overcast), and the
+lerp between neighbours in between, so a rain comes in over an hour and a half
+and goes out over the next, twice a day; the eerie preset is never on it, and
+every preset on it carries no dread. The night's dark is the sky's own, as any
+hike's night is; nothing of the dread's comes with it. The name the lake's calm
+reads is the nearer preset's, faded over twenty seconds. `/weather <preset>` on
+a calm world answers with the day's weather and sets nothing.
+
+Amended 2026-10-15 after the first hike in it: the day ran dawn to dusk at two
+minutes an hour, and a hike started at noon sat under the schedule's one rain
+for most of its length; the clock now runs the whole day three times faster and
+the schedule turns twice as often.
 
 The inner voice reads the day's rain as the wet act and the day's mist as
 the mist act, so its two weather lines come as the weather does.

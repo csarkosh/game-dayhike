@@ -1,29 +1,44 @@
 import { describe, it, expect } from "vitest";
-import { EXPLORE_DAWN, EXPLORE_DUSK, EXPLORE_HOUR_S, EXPLORE_SCHEDULE, exploreHour, exploreWeather } from "../../src/game/exploreDay.js";
+import { EXPLORE_HOUR_S, EXPLORE_SCHEDULE, exploreHour, exploreNight, exploreWeather } from "../../src/game/exploreDay.js";
 import { WEATHER_PRESETS, lerpWeather } from "../../src/game/weather.js";
 
 describe("the explore day's clock", () => {
-  it("runs from dawn at two minutes an hour and wraps to dawn at dusk", () => {
-    expect([EXPLORE_DAWN, EXPLORE_DUSK, EXPLORE_HOUR_S]).toEqual([6, 20, 120]);
+  it("runs round the clock at forty seconds an hour, a day in sixteen minutes", () => {
+    expect(EXPLORE_HOUR_S).toBe(40);
     expect(exploreHour(6, 0)).toBe(6);
     expect(exploreHour(6, EXPLORE_HOUR_S)).toBe(7);
-    expect(exploreHour(6, 14 * EXPLORE_HOUR_S)).toBe(6);
-    expect(exploreHour(6, 14.5 * EXPLORE_HOUR_S)).toBeCloseTo(6.5, 9);
+    expect(exploreHour(6, 24 * EXPLORE_HOUR_S)).toBe(6);
+    expect(exploreHour(23, 1.5 * EXPLORE_HOUR_S)).toBeCloseTo(0.5, 9);
+    expect(24 * EXPLORE_HOUR_S).toBe(16 * 60);
   });
 
-  it("starts from the hour the console set when it is daylight, and from dawn when it is the night", () => {
+  it("starts from the hour the console set, any hour of the day, and never runs back", () => {
     expect(exploreHour(12, 0)).toBe(12);
-    expect(exploreHour(19.5, EXPLORE_HOUR_S)).toBeCloseTo(6.5, 9);
-    expect(exploreHour(22, 0)).toBe(6);
-    expect(exploreHour(3, 0)).toBe(6);
-    expect(exploreHour(20, 0)).toBe(6);
+    expect(exploreHour(22, 0)).toBe(22);
+    expect(exploreHour(3, 0)).toBe(3);
+    expect(exploreHour(24, 0)).toBe(0);
     expect(exploreHour(12, -5)).toBe(12);
   });
 });
 
+describe("the explore day's night", () => {
+  it("is none by day, comes in over the two hours to ten and goes out over the two to six, for the birds alone", () => {
+    expect(exploreNight(12)).toBe(0);
+    expect(exploreNight(20)).toBe(0);
+    expect(exploreNight(21)).toBe(0.5);
+    expect(exploreNight(22)).toBe(1);
+    expect(exploreNight(2)).toBe(1);
+    expect(exploreNight(5)).toBe(0.5);
+    expect(exploreNight(6)).toBe(0);
+    expect(exploreNight(30)).toBe(0);
+  });
+});
+
 describe("the explore day's weather", () => {
-  it("meets every preset but the eerie one, dawn to dusk, a preset at each hour of the schedule", () => {
-    expect(EXPLORE_SCHEDULE.map((s) => s.hour)).toEqual([6, 8, 10, 12, 14, 16, 18, 20]);
+  it("meets every preset but the eerie one, midnight to midnight, a preset at each hour of the schedule, the ends the same", () => {
+    expect(EXPLORE_SCHEDULE[0]!.hour).toBe(0);
+    expect(EXPLORE_SCHEDULE.at(-1)!.hour).toBe(24);
+    expect(EXPLORE_SCHEDULE.at(-1)!.weather).toBe(EXPLORE_SCHEDULE[0]!.weather);
     expect(new Set(EXPLORE_SCHEDULE.map((s) => s.weather))).toEqual(new Set(["clear", "bright", "overcast", "mist", "rain"]));
     for (const { hour, weather } of EXPLORE_SCHEDULE) {
       const at = exploreWeather(hour);
@@ -33,20 +48,26 @@ describe("the explore day's weather", () => {
     }
   });
 
-  it("lerps between the schedule's neighbours, named for the nearer, and never beyond the day", () => {
-    expect(exploreWeather(13).weather).toEqual(lerpWeather(WEATHER_PRESETS.mist, WEATHER_PRESETS.rain, 0.5));
-    expect(exploreWeather(12.5).name).toBe("mist");
-    expect(exploreWeather(13.5).name).toBe("rain");
-    expect(exploreWeather(14.5).weather.rain).toBeCloseTo(0.75, 9);
-    expect(exploreWeather(5)).toEqual(exploreWeather(6));
-    expect(exploreWeather(21)).toEqual(exploreWeather(20));
+  it("turns every hour and a half or two, rains twice a day, and lerps between the schedule's neighbours, named for the nearer", () => {
+    const hours = EXPLORE_SCHEDULE.map((s) => s.hour);
+    for (let i = 1; i < hours.length; i++) {
+      expect(hours[i]! - hours[i - 1]!).toBeGreaterThanOrEqual(1.5);
+      expect(hours[i]! - hours[i - 1]!).toBeLessThanOrEqual(2);
+    }
+    expect(EXPLORE_SCHEDULE.filter((s) => s.weather === "rain")).toHaveLength(2);
+    expect(exploreWeather(10.25).weather).toEqual(lerpWeather(WEATHER_PRESETS.rain, WEATHER_PRESETS.bright, 0.5));
+    expect(exploreWeather(9).name).toBe("rain");
+    expect(exploreWeather(8.5).name).toBe("overcast");
+    expect(exploreWeather(23).weather).toEqual(lerpWeather(WEATHER_PRESETS.mist, WEATHER_PRESETS.overcast, 0.5));
+    expect(exploreWeather(24)).toEqual(exploreWeather(0));
+    expect(exploreWeather(-1)).toEqual(exploreWeather(23));
   });
 
   it("comes in and goes out through the lines the voice answers: the rain past half, the fog in its band", () => {
-    const rain = exploreWeather(13.6).weather;
+    const rain = exploreWeather(9.1).weather;
     expect(rain.rain).toBeGreaterThanOrEqual(0.5);
     expect(rain.rain).toBeLessThan(1);
-    const fog = exploreWeather(10.8).weather;
+    const fog = exploreWeather(14.6).weather;
     expect(fog.mist).toBeGreaterThanOrEqual(0.2);
     expect(fog.mist).toBeLessThanOrEqual(0.6);
   });
