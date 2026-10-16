@@ -136,6 +136,24 @@ describe("the inner voice", () => {
     expect(INNER_LINES.mist).toContain(lines[0]);
   });
 
+  it("at the road's wall says it will not leave, in the voice's own caption, at most three times and not within its own gap, never in the chase or on a calm hike", () => {
+    const wall = { ...DAY, atRoad: true };
+    let { state, lines } = run(voiceRest(5), { ...DAY, climb: 0.2 }, VOICE_FIRST_S + 1);
+    ({ state, lines } = run(state, wall, VOICE_GAP_S + 1));
+    expect(lines).toHaveLength(1);
+    expect(INNER_LINES.road).toContain(lines[0]);
+    // Its own gap of 45 s: nothing for the next twenty, then its second and third, and no fourth.
+    ({ state, lines } = run(state, wall, 20));
+    expect(lines).toEqual([]);
+    ({ state, lines } = run(state, wall, 200));
+    expect(lines).toHaveLength(2);
+    for (const line of lines) expect(INNER_LINES.road).toContain(line);
+    ({ state, lines } = run(state, wall, 200));
+    expect(lines).toEqual([]);
+    expect(run(voiceRest(5), { ...wall, chase: true }, 60).lines.every((l) => !INNER_LINES.road.includes(l))).toBe(true);
+    expect(run(voiceRest(5), { ...wall, calm: true, climb: 0.2 }, 60).lines).toEqual([]);
+  });
+
   it("says nothing once the match has ended", () => {
     const out = run(voiceRest(7), { ...NIGHT, ended: true, cry: true, nearBody: true, offTrail: 20 }, 60);
     expect(out.lines).toEqual([]);

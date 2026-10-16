@@ -76,7 +76,7 @@ import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
-import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_LANDING_MS, WON_LINE, WON_TITLE, roadLine } from "./game/passages.js";
+import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_LANDING_MS, WON_LINE, WON_TITLE, atRoadWall } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
@@ -1126,6 +1126,7 @@ function buildGame(
         nearBody: sceneOn() ? sceneUntil - performance.now() <= (SUMMIT_SCENE_S - (SHOTS[0] as number)) * 1000 : Math.hypot(self.pos.x - body.x, self.pos.z - body.z) < 4,
         safe: self.safe,
         calm,
+        atRoad,
       }, dt);
       voice = spoke.state;
       if (spoke.line !== null) {
@@ -1336,17 +1337,15 @@ function buildGame(
     posterPanel.show(posterModel(world.search));
   }
 
-  let roadLineAt = -Infinity;
-  /** The line at the wall, at most once every four seconds. */
+  /** Whether this player stands at the road's wall this frame: the inner voice's line there (`road`). */
+  let atRoad = false;
   function syncRoadLine(self: PlayerState | undefined, state: WorldState): void {
     const roadCenterX = activeTerrainVariant().roadCenterX;
-    if (self === undefined || roadCenterX === undefined) return;
-    const u = self.pos.x - roadCenterX(seed, self.pos.z);
-    const line = roadLine(u, state.phase, calm);
-    const now = performance.now();
-    if (line === null || now - roadLineAt < 4000) return;
-    roadLineAt = now;
-    hud.flash(line, 3000);
+    if (self === undefined || roadCenterX === undefined) {
+      atRoad = false;
+      return;
+    }
+    atRoad = atRoadWall(self.pos.x - roadCenterX(seed, self.pos.z), state.phase, calm);
   }
 
   let dead = false;

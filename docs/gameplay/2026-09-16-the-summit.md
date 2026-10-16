@@ -26,7 +26,9 @@ everyone else for the newcomer, with the local player named "You"; a Hollow with
 unsafe target stands where it is facing the pad, a third `AiState.Stand` rather than an Emerge
 with no timer, and `AiState.Crawl` and `AiState.Merge` are deleted with their numbers 4 and 6 left
 unused; `roadLine` survives with the wall, reading "Not yet. Somebody is still up there." on the
-climb and nothing in the chase, because reaching the corridor is its own line on the end panel;
+climb and nothing in the chase, because reaching the corridor is its own line on the end panel
+(since 2026-10-15 the inner voice says it, as its `road` scenario, captioned and spoken;
+`passages.ts` keeps only where the wall is, `atRoadWall`);
 and the sign posts stay, reading the summit as their one site, while the trailhead board's lines
 become the poster's — the poster's date and the number to call (§7) are deferred, and the
 placeholder shows the name and "last seen" lines only. Three more decisions came out of the build itself: the safety pass runs at the

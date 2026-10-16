@@ -50,6 +50,7 @@ Hollow before the eyes (the summit scene's reveal), the cap, the body, the car.
 | `offTrailDay` / `offTrailNight` | more than `OFF_TRAIL_M` (6 m) off the trail for `OFF_TRAIL_S` (8 s); the night's from `OFF_TRAIL_NIGHT` (0.5) | 3 each, 60 s apart |
 | `dusk` | the night coming in (0.3 to 0.7) | once |
 | `lamp` | the lamp off `UNLIT_S` (10 s) into the dark | once |
+| `road` | at the wall at the road on the climb (`passages.ts` `atRoadWall`, within half a metre), never on a calm hike; added 2026-10-15 in place of the status line's flash there, so the ranger says it, captioned | 3, 45 s apart |
 | `mist` | the mist act rising (0.2 to 0.6) | once |
 | `cryFirst` / `cryAgain` | the first cry; the second: answered once every howl has ended (the clip at its slowest rate, its tail, and `CRY_BEAT_S` 0.6 s; a second howl pushes the answer back); heard, not understood, so the lines are confusion, not fear. Not the summit scene's cry, which the terror below answers | once each |
 | `shadeFirst` / `shadeGone` | a shade in view for 0.3 s; then none for `SHADE_GONE_S` (1.5 s) after one was | once each |

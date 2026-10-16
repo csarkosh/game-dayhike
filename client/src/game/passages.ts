@@ -1,6 +1,7 @@
 /**
- * The lines the game speaks at the road wall, on a player's death, and on
- * a win. There is no panel of names at the end: the line is the end.
+ * The lines the game speaks on a player's death and on a win, and where the
+ * road's wall is for the inner voice's line there. There is no panel of names
+ * at the end: the line is the end.
  */
 import { ROAD_WALL_U } from "../sim/containment.js";
 import { Phase } from "../sim/types.js";
@@ -40,13 +41,12 @@ export const DEATH_FADE_AFTER_MS = 6000;
 export const DEATH_SOUND_FADE_S = 5;
 
 /**
- * What a player at road offset `u` is told at the wall, or null: on the
- * climb, somebody is still up there; in the chase, nothing — the road is
- * the only way out and the wall no longer needs explaining; on a peaceful
- * world (`gameMode.ts`) nothing either, since there is no wall and no one
- * up there.
+ * Whether a player at road offset `u` stands at the wall where the inner
+ * voice says it will not leave (`innerLines.ts` `road`): on the climb, within
+ * half a metre of it; in the chase never, since the road is the only way out
+ * and the wall no longer needs explaining; on a peaceful world
+ * (`gameMode.ts`) never, since there is no wall and no one up there.
  */
-export function roadLine(u: number, phase: Phase, peaceful = false): string | null {
-  if (peaceful || phase !== Phase.Climb || u > ROAD_LINE_U) return null;
-  return "Not yet. Somebody is still up there.";
+export function atRoadWall(u: number, phase: Phase, peaceful = false): boolean {
+  return !peaceful && phase === Phase.Climb && u <= ROAD_LINE_U;
 }

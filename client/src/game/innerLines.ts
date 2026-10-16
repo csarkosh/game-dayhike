@@ -8,7 +8,7 @@
  * `audio/voice.<scenario>.<n>.mp3`, n from 1 in the pool's order.
  */
 export type VoiceScenario =
-  | "trailhead" | "rain" | "offTrailDay" | "offTrailNight" | "dusk" | "lamp" | "mist"
+  | "trailhead" | "rain" | "offTrailDay" | "offTrailNight" | "dusk" | "lamp" | "mist" | "road"
   | "cryFirst" | "cryAgain" | "shadeFirst" | "shadeGone" | "still" | "dontLook" | "crest" | "cap"
   | "body" | "hollow" | "chaseStart" | "chaseOffTrail" | "safe";
 
@@ -47,6 +47,11 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
     "Fog's coming up off the ground.",
     "The ground's smoking. It's just fog. Just fog.",
     "This fog came out of nowhere.",
+  ],
+  road: [
+    "Not yet. Somebody is still up there.",
+    "Not the road. They're still up there.",
+    "I can't leave. Not with somebody still up there.",
   ],
   cryFirst: [
     "What was that?!",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEATH_FADE_AFTER_MS, DEATH_LINE, DEATH_SOUND_FADE_S, DEATH_TITLE, WON_LINE, WON_TITLE, ROAD_LINE_U, roadLine,
+  DEATH_FADE_AFTER_MS, DEATH_LINE, DEATH_SOUND_FADE_S, DEATH_TITLE, WON_LINE, WON_TITLE, ROAD_LINE_U, atRoadWall,
 } from "../../src/game/passages.js";
 import { DIED_CLOSE_FROM_S } from "../../src/game/ending.js";
 import { Phase } from "../../src/sim/types.js";
@@ -32,12 +32,12 @@ describe("the death's sound", () => {
   });
 });
 
-describe("roadLine", () => {
-  it("speaks within half a metre of the wall on the climb, and never in the chase or on a peaceful world", () => {
-    expect(roadLine(ROAD_LINE_U + 0.01, Phase.Climb)).toBeNull();
-    expect(roadLine(ROAD_LINE_U, Phase.Climb)).toBe("Not yet. Somebody is still up there.");
-    expect(roadLine(ROAD_LINE_U - 1, Phase.Chase)).toBeNull();
-    expect(roadLine(ROAD_LINE_U - 1, Phase.Climb, true)).toBeNull();
-    expect(roadLine(-30, Phase.Climb, true)).toBeNull();
+describe("atRoadWall", () => {
+  it("is within half a metre of the wall on the climb, and never in the chase or on a peaceful world", () => {
+    expect(atRoadWall(ROAD_LINE_U + 0.01, Phase.Climb)).toBe(false);
+    expect(atRoadWall(ROAD_LINE_U, Phase.Climb)).toBe(true);
+    expect(atRoadWall(ROAD_LINE_U - 1, Phase.Chase)).toBe(false);
+    expect(atRoadWall(ROAD_LINE_U - 1, Phase.Climb, true)).toBe(false);
+    expect(atRoadWall(-30, Phase.Climb, true)).toBe(false);
   });
 });

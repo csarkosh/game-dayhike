@@ -40,6 +40,8 @@ export type VoiceInputs = {
   /** An explore hike (gameMode.ts): nothing to dread and nowhere to be, so
    * only the lines that greet the day and answer the weather (`CALM_LINES`). */
   calm?: boolean;
+  /** At the wall at the road (passages.ts `atRoadWall`): the ranger will not leave with somebody still up there. */
+  atRoad?: boolean;
 };
 
 export type VoiceState = {
@@ -89,6 +91,7 @@ const CAPS: Readonly<Record<VoiceScenario, { cap: number; gap: number }>> = {
   dusk: { cap: 1, gap: 0 },
   lamp: { cap: 1, gap: 0 },
   mist: { cap: 1, gap: 0 },
+  road: { cap: 3, gap: 45 },
   cryFirst: { cap: 1, gap: 0 },
   cryAgain: { cap: 1, gap: 0 },
   shadeFirst: { cap: 1, gap: 0 },
@@ -213,6 +216,7 @@ export function stepInnerVoice(prev: VoiceState, input: VoiceInputs, dt: number)
   if (input.chase) {
     if (state.offTrailFor >= OFF_TRAIL_S / 2 && input.offTrail > OFF_TRAIL_M + 2) candidates.push("chaseOffTrail");
   } else {
+    if (input.atRoad === true) candidates.push("road");
     if (input.cry && state.cries === 2) candidates.push("cryAgain");
     if (input.nearCap) candidates.push("cap");
     if (input.shadeSeen && state.shadeFor > 0.3) candidates.push("shadeFirst");
