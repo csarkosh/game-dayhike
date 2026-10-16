@@ -66,6 +66,21 @@ describe("the wall in a forest world", { timeout: timeLimit(120_000) }, () => {
       expect(p.pos.x - roadX(p.pos.z)).toBeGreaterThanOrEqual(ROAD_WALL_U - 1e-6);
       expect(CAR_ROAD_U - CAR_HALF.x).toBeCloseTo(ROAD_BED_HALF + 0.5, 9);
     }
+    // A peaceful world (game/gameMode.ts) has no wall: a player walking at the
+    // road crosses it, and the beach beyond is theirs.
+    for (const seed of [0x5eed, 1]) {
+      const world = createForestWorld(createForest(seed), true, true);
+      const roadX = (z: number) => v.roadCenterX!(seed, z);
+      const p = spawnPlayer(world);
+      // From beside the car, which keeps its own box and stands straight in front of the pad.
+      p.pos = { ...p.pos, z: world.search!.car.z + 8 };
+      let crossed = false;
+      for (let t = 0; t < 900 && !crossed; t++) {
+        tickWorld(world, new Map([[p.id, input({ seq: t + 1, moveZ: 1, yaw: -Math.PI / 2 })]]));
+        crossed = p.pos.x - roadX(p.pos.z) < -ROAD_WALL_U;
+      }
+      expect(crossed, `seed ${seed} crosses the road on a peaceful world`).toBe(true);
+    }
     // 5 was the wall at the road; 6, the ground's stick standing a hull on a
     // box top; 7, the car at the pad, the sign at the trail's entrance and
     // the player facing the trail; 8, the trail from the treeline. Either way

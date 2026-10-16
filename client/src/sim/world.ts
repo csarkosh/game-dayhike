@@ -365,8 +365,10 @@ function applyMove(world: World, player: PlayerState, cmd: InputCommand): void {
   );
   // The wall at the road (containment.ts): a forest world with a road keeps
   // every hull off the pavement. After the step, on the settled position, so
-  // the box sweep and the ground have already had their say.
-  if (world.forest !== null) {
+  // the box sweep and the ground have already had their say. A peaceful world
+  // (`game/gameMode.ts`) has no wall: the road and the beach beyond it are
+  // the explorer's too; the car keeps its own box.
+  if (world.forest !== null && !world.peaceful) {
     const variant = activeTerrainVariant();
     const roadCenterX = variant.roadCenterX;
     if (roadCenterX !== undefined) {
