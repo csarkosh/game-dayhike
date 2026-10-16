@@ -1342,7 +1342,7 @@ function buildGame(
     const roadCenterX = activeTerrainVariant().roadCenterX;
     if (self === undefined || roadCenterX === undefined) return;
     const u = self.pos.x - roadCenterX(seed, self.pos.z);
-    const line = roadLine(u, state.phase);
+    const line = roadLine(u, state.phase, calm);
     const now = performance.now();
     if (line === null || now - roadLineAt < 4000) return;
     roadLineAt = now;

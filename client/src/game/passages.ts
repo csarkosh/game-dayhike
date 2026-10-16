@@ -42,9 +42,11 @@ export const DEATH_SOUND_FADE_S = 5;
 /**
  * What a player at road offset `u` is told at the wall, or null: on the
  * climb, somebody is still up there; in the chase, nothing — the road is
- * the only way out and the wall no longer needs explaining.
+ * the only way out and the wall no longer needs explaining; on a peaceful
+ * world (`gameMode.ts`) nothing either, since there is no wall and no one
+ * up there.
  */
-export function roadLine(u: number, phase: Phase): string | null {
-  if (phase !== Phase.Climb || u > ROAD_LINE_U) return null;
+export function roadLine(u: number, phase: Phase, peaceful = false): string | null {
+  if (peaceful || phase !== Phase.Climb || u > ROAD_LINE_U) return null;
   return "Not yet. Somebody is still up there.";
 }

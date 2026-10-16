@@ -33,9 +33,11 @@ describe("the death's sound", () => {
 });
 
 describe("roadLine", () => {
-  it("speaks within half a metre of the wall on the climb, and never in the chase", () => {
+  it("speaks within half a metre of the wall on the climb, and never in the chase or on a peaceful world", () => {
     expect(roadLine(ROAD_LINE_U + 0.01, Phase.Climb)).toBeNull();
     expect(roadLine(ROAD_LINE_U, Phase.Climb)).toBe("Not yet. Somebody is still up there.");
     expect(roadLine(ROAD_LINE_U - 1, Phase.Chase)).toBeNull();
+    expect(roadLine(ROAD_LINE_U - 1, Phase.Climb, true)).toBeNull();
+    expect(roadLine(-30, Phase.Climb, true)).toBeNull();
   });
 });
