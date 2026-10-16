@@ -33,6 +33,13 @@ uniform sampler2D atmCloudMap;
 // rising as t to the power 1 / ATM_GRADIENT_BIAS. Mirrors fogGradientUnder.
 const float ATM_NEAR_DIM = 0.85;
 const float ATM_GRADIENT_BIAS = 1.6;
+// Aerial perspective (2026-10-15): the air's transmittance raised to a power
+// a channel, the blue scattering in over the first kilometre and the red
+// left to the horizon, so a far hillside lifts toward the sky's colour and
+// loses its contrast by depth as a real one does. The powers' mean is near
+// one, so the far field reaches the fog's floor where it did. Mirrors
+// AIR_POWER in atmosphereParams.ts.
+const vec3 ATM_AIR_POWER = vec3(0.72, 0.92, 1.3);
 // Half a texel of the map: the ground read stays this far inside it.
 const float ATM_CLOUD_EDGE = 0.5 / 64.0;
 
@@ -112,11 +119,11 @@ vec3 atmosphereFog(vec3 lit, float fog) {
   vec3 rd = toFrag / max(d, 1.0e-4);
   float y0 = vEyePosition.y - atmReferenceLevel;
   float height = atmHeightFog(y0, rd.y, d, atmHeightDensity, atmHeightFalloff);
-  float transmit = fog * exp(-max(height, 0.0));
+  float transmit = clamp(fog * exp(-max(height, 0.0)), 0.0, 1.0);
   vec3 gradient = atmFarColour * mix(ATM_NEAR_DIM, 1.0, pow(clamp(d * atmGradientScale, 0.0, 1.0), 1.0 / ATM_GRADIENT_BIAS));
   float glow = pow(max(dot(rd, atmSunDir), 0.0), atmSunPower) * atmSunWeight;
   vec3 air = mix(gradient, atmSunColour, glow);
-  vec3 fogged = mix(air, lit, clamp(transmit, 0.0, 1.0));
+  vec3 fogged = mix(air, lit, pow(vec3(transmit), ATM_AIR_POWER));
   if (atmCloudSteps < 0.5) {
     return fogged;
   }

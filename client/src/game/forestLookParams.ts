@@ -14,20 +14,24 @@
  * scene's, so each share below is the part of the open sky's light that kind
  * of surface takes.
  *
- * The billboards are the exception. A billboard's colour is its bake, a lit
- * render of the tree's LOD1 under the bark's and the crown's shares, so the
- * canopy's cut is already in the baked colour. The billboard then lights that
- * colour again with the live sky; at a share below 1 the cut would land twice
- * on the far trees and once on the near ones, and the far trees would meet
- * the near ones at the seam darker, most under overcast and mist, when the
- * sky is most of the light. So the billboard takes the live sky at full share.
+ * The billboards were the exception until 2026-10-15: a billboard's colour
+ * was its bake, a lit render of the tree's LOD1 under the bark's and the
+ * crown's shares, so the canopy's cut was already in the baked colour, and
+ * the billboard lit that colour again with the live sky at full share so the
+ * cut landed once. Now the bake is the species' colour unlit, with its
+ * normal map (`impostorBakePlugin.ts`), and the billboard lights it once,
+ * live, as a crown (`CROWN_SKY`): the cut lands once on the far trees as on
+ * the near, and the two meet at the seam under the same light.
  */
 
 /** A trunk's share (the opaque bark): the canopy hides most of the sky from it. */
 export const BARK_SKY = 0.35;
 /** A crown's share (the alpha-tested cards): it stands in the canopy, open to more of the sky than a trunk below it. */
 export const CROWN_SKY = 0.6;
-/** A billboard's share of the live sky: full, because the canopy's cut is in its baked colour already and must not be applied twice. */
+/** A billboard's share of the live sky before its bake lands: full. Since
+ * 2026-10-15 the bake is the species' colour unlit (`impostorBakePlugin.ts`),
+ * and a billboard whose bake has landed takes the crown's share, `CROWN_SKY`,
+ * so the cut lands once, live, on the far trees as on the near ones. */
 export const IMPOSTOR_SKY = 1;
 
 /**

@@ -256,6 +256,8 @@ describe("inter-stage variables on WebGPU", () => {
       "foliage.UNDERSTORY": 4,
       foliageLight: 0,
       groundConform: 0,
+      // The bake clones' pictures (2026-10-15): the fragment's tail alone, on no drawn material.
+      impostorBake: 0,
       // The trunks' moss: one vec2, the model height and the tree's draw.
       moss: 1,
       skin: 0,
@@ -344,13 +346,15 @@ describe("inter-stage variables on WebGPU", () => {
     const tiers = Object.keys(QUALITY) as QualityTier[];
     // The tiers' settings, and what Babylon draws of them: it raises a
     // cascaded shadow generator's count to at least two, so the medium
-    // tier's one cascade is drawn as two.
+    // tier's one cascade is drawn as two. The high tier's three (2026-10-15,
+    // to 1500 m) cost every lit material two more variables than the two
+    // before, which is what raised the device's limit from 19 to 21.
     expect(Object.fromEntries(tiers.map((tier) => [tier, QUALITY[tier].shadowMapSize > 0 ? QUALITY[tier].shadowCascades : 0])), WEIGH).toEqual({
       low: 0,
       medium: 1,
-      high: 2,
+      high: 3,
     });
-    expect(Object.fromEntries(tiers.map((tier) => [tier, drawnCascades(tier)])), WEIGH).toEqual({ low: 0, medium: 2, high: 2 });
+    expect(Object.fromEntries(tiers.map((tier) => [tier, drawnCascades(tier)])), WEIGH).toEqual({ low: 0, medium: 2, high: 3 });
   });
 
   it("counts what the browser read for the giants on both tiers", () => {
@@ -360,7 +364,8 @@ describe("inter-stage variables on WebGPU", () => {
     // less the normal map's basis (three locations, gone with the vertex
     // tangents), plus the occlusion-roughness-metalness map's UV, plus the
     // moss's varying (one location, `vMoss`), as Babylon's processing here
-    // counts them; not read again in a browser.
+    // counts them; not read again in a browser. Two more on high since
+    // 2026-10-15, the third cascade's `vec4` and `float`.
     const count = (tier: QualityTier) =>
       Object.fromEntries(
         GIANTS.map((name) => {
@@ -374,7 +379,8 @@ describe("inter-stage variables on WebGPU", () => {
       "tree.giant_pine.material0": 16,
       "tree.giant_pine.material1": 18,
     };
-    expect({ high: count("high"), medium: count("medium") }, WEIGH).toEqual({ high: measured, medium: measured });
+    const measuredHigh = Object.fromEntries(Object.entries(measured).map(([name, n]) => [name, n + 2]));
+    expect({ high: count("high"), medium: count("medium") }, WEIGH).toEqual({ high: measuredHigh, medium: measured });
   });
 
   it("holds every material the forest draws within the device's limit on every tier, counted as the specification counts", () => {
@@ -534,7 +540,7 @@ describe("inter-stage variables of the sea's water material on WebGPU, its waves
     for (const dispose of disposers) dispose();
   });
 
-  it("writes nine vertex outputs on the low tier and eight on high and medium, and reads front_facing on the low tier alone: 10 and 8 of the 19", () => {
+  it("writes nine vertex outputs on the low tier and eight on high and medium, and reads front_facing on the low tier alone: 10 and 8 of the 21", () => {
     for (const [tier, sea] of seas) {
       expect(sea.ocean, tier).toBe(true);
       // The water takes no shadows, so no light's shadow varyings join these.
@@ -619,7 +625,7 @@ describe("inter-stage variables and textures of a lake's water material on WebGP
     for (const dispose of disposers) dispose();
   });
 
-  it("writes the six vertex outputs it wrote before the mirror and reads front_facing: 7 of the 19", () => {
+  it("writes the six vertex outputs it wrote before the mirror and reads front_facing: 7 of the 21", () => {
     for (const [tier, effect] of lakes) {
       const varyings = [...effect._vertexSourceCode.matchAll(/layout\(location = \d+\)\s*(?:flat\s+)?out (\w+) (\w+);/g)].map(
         ([, type, name]) => `${type} ${name}`,
@@ -689,7 +695,7 @@ describe("inter-stage variables of the cliffs' LOD1 material on WebGPU, which th
   }, timeLimit(60_000));
   afterAll(() => dispose());
 
-  it("writes eight vertex outputs, five more for the sun's two cascades, and reads front_facing: 14 of the 19", () => {
+  it("writes eight vertex outputs, seven more for the sun's three cascades, and reads front_facing: 16 of the 21", () => {
     expect([...drawn.keys()].sort()).toEqual(["cliff_m0_l1", "cliff_m1_l1"]);
     for (const [name, d] of drawn) {
       const varyings = [...d.effect._vertexSourceCode.matchAll(/layout\(location = \d+\)\s*(?:flat\s+)?out (\w+) (\w+);/g)].map(
@@ -701,11 +707,11 @@ describe("inter-stage variables of the cliffs' LOD1 material on WebGPU, which th
       expect(d.effect._processingContext._varyingNextLocation, name).toBe(8);
       // A near bucket casts and takes the sun's shadows.
       expect(d.receivesShadows, name).toBe(true);
-      expect(shadowLocations("high", 1), name).toBe(5);
+      expect(shadowLocations("high", 1), name).toBe(7);
       const frontFacing = d.effect._fragmentSourceCode.includes("gl_FrontFacing");
       expect(frontFacing, name).toBe(true);
       const inputs = d.effect._processingContext._varyingNextLocation + shadowLocations("high", 1) + (frontFacing ? 1 : 0);
-      expect(inputs, `${name}: ${WEIGH_CLIFF}`).toBe(14);
+      expect(inputs, `${name}: ${WEIGH_CLIFF}`).toBe(16);
       expect(inputs).toBeLessThanOrEqual(limit);
     }
   });

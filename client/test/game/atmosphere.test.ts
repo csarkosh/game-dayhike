@@ -10,7 +10,7 @@ import "@babylonjs/core/Shaders/ShadersInclude/fogFragment.js";
 import atmosphereFragment from "../../src/game/shaders/atmosphereFog.fragment.fx?raw";
 import { ATMOSPHERE_FOG_ANCHOR, createAtmosphere, type Atmosphere } from "../../src/game/atmosphere.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
-import { fogGradientUnder, GRADIENT_BIAS, GRADIENT_NEAR_DIM, GRADIENT_STEPS } from "../../src/game/atmosphereParams.js";
+import { fogGradientUnder, GRADIENT_BIAS, GRADIENT_NEAR_DIM, GRADIENT_STEPS, AIR_POWER, airTransmittance } from "../../src/game/atmosphereParams.js";
 import { CLOUD_NOISE_SIZE } from "../../src/game/cloudParams.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { skyFixture } from "./helpers/skyFixture.js";
@@ -123,6 +123,14 @@ describe("GLSL literals stay in lockstep with atmosphereParams.ts", () => {
   it("draws the gradient with the TS mirror's near dim and bias, and reads the cloud map half a texel inside its edge", () => {
     expect(atmosphereFragment).toContain(`const float ATM_NEAR_DIM = ${GRADIENT_NEAR_DIM};`);
     expect(atmosphereFragment).toContain(`const float ATM_GRADIENT_BIAS = ${GRADIENT_BIAS};`);
+    expect(atmosphereFragment).toContain(`const vec3 ATM_AIR_POWER = vec3(${AIR_POWER[0]}, ${AIR_POWER[1]}, ${AIR_POWER[2]});`);
+    expect(atmosphereFragment).toContain("vec3 fogged = mix(air, lit, pow(vec3(transmit), ATM_AIR_POWER));");
+    // The blue goes first, the red last, and clear air stays clear.
+    expect(airTransmittance(1)).toEqual([1, 1, 1]);
+    const [r, g, b] = airTransmittance(0.5);
+    expect(r).toBeGreaterThan(g);
+    expect(g).toBeGreaterThan(b);
+    expect(airTransmittance(0)).toEqual([0, 0, 0]);
     expect(atmosphereFragment).toContain(`const float ATM_CLOUD_EDGE = 0.5 / ${CLOUD_NOISE_SIZE}.0;`);
   });
 });
@@ -195,9 +203,10 @@ describe("F1 regression: atmCloudMap compiles into the fragment source on both p
 describe("the fog's shader text", () => {
   it("is byte for byte the text every PBR material's stage is built with", () => {
     // The scattering sky changes no PBR shader: the glow's new shape is all in
-    // the values the plugin binds (`atmosphereParams.ts`).
+    // the values the plugin binds (`atmosphereParams.ts`). The aerial
+    // perspective (2026-10-15) is the one line of the mix and its constant.
     expect(createHash("sha256").update(atmosphereFragment).digest("hex")).toBe(
-      "4769023adf97e99e61c873999a9a1f1cec31493dec98421d4d3d709d572a0025",
+      "05afa09682b616abdcdd4ace43fd7f7242efa4e72f4fd49c312c12fdd0b7ae55",
     );
   });
 });

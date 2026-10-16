@@ -18,7 +18,7 @@ const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 // every plugin injects per stage, and the three post shaders as stored. A
 // change here is a change to what every WebGL2 player compiles.
 const PINS: Record<string, string> = {
-  "atmosphere.fragment": "2f8a58972f2bd3a2af532928ec9f540aabf60eef0963d25bb776a27fe41ffaf6",
+  "atmosphere.fragment": "0bd248348819bbc2daf253d2b7fc8d8d41f2a96c9b84d9333bf06b52a37dd7b0",
   "cliffTint.fragment": "34b80348c2b278087d42892dd31129fc6aac2b12c93f275293617b88e9e2bccd",
   "cliffTint.vertex": "3fcb23ae5aab79e441e6d140e71ad0c149a0702f72c48fa093fc0b9fd3076de1",
   "distanceFade.fragment": "e9fd42d78c56e2f364ac16691996386de60dd9717060cc3822bd296c9c09281f",
@@ -66,6 +66,7 @@ const PINS: Record<string, string> = {
   // written into the reflectivity block's output before Babylon's own line.
   // The fragment re-pinned for its block keyed on the albedo it samples at
   // (`MOSS` and `ALBEDO` both), so a trunk without a map compiles without it.
+  "impostorBake.fragment": "223ebdbbd9e79f5fcc071441e651566fc95bb551eadd9248d099e3a37f281e24",
   "moss.fragment": "d9add135f40f3b235b0d009a880005ffbf8fae937333dd439ac92262dc22d138",
   "moss.vertex": "c27e94af368ce3ae552266d9c14d9ae34bada23df9a3150d7c9018e101e68816",
   // The dead trees' dressing (deadwoodPlugin.ts, deadwood*.fx), pinned at its
@@ -101,7 +102,7 @@ const PINS: Record<string, string> = {
   // grid from row 2, one sampler where there were two); its three reads and
   // the declaration are the difference, and they stay in the texts the tests
   // below take their pieces out of.
-  "terrain.fragment": "737174f9f82d0d750080bc62cae358698225cbb596ccbe832ecb1b9327b2d77a",
+  "terrain.fragment": "aad65ad2960fc9a19a85a69bac95e15808e7d432add3c9ab47ee84c3906234b7",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
 };
@@ -130,6 +131,7 @@ const INTERFACE_PINS: Record<string, string> = {
   "foliageLight.interface": "a86a666d70d9ecddd600f74e67b8028f7795551c775a05e786e4ee73bea725e8",
   "groundConform.interface": "d1318897a8b44958dc6d4ba703fe861a79590ee61c6d7cb830bc54cb33e7b75a",
   // The trunks' moss: one sampler, no uniform, one define, no attribute.
+  "impostorBake.interface": "c31f8eb93689db015c895c45cd18282c3bdd7a5dc7107f1483d6c99a4b9bc1d7",
   "moss.interface": "1d4bc4eabead2dd9a9ff3444a09e3be683f72b7e15a000f5e4fd37c6019f7bd3",
   // The dead trees' dressing: the moss sampler, two uniforms, one define, the role attribute.
   "deadwood.interface": "3bf55f85ee3071a28520a18057b042165a6879d1b1d4be70899c746f226ece7c",
@@ -206,17 +208,18 @@ describe("WebGL2's shader text", () => {
     expect(text.match(/texture2D\(trailTable, /g)).toHaveLength(3);
     expect(text).not.toMatch(/trailSegs|trailIndex/);
     // With the ripples taken out and the rename undone, the base's text, the
-    // shore tint's one line, the lakes' shore atlas (2026-10-10) and the
-    // trail's one table (2026-10-14).
+    // shore tint's one line, the lakes' shore atlas (2026-10-10), the
+    // trail's one table (2026-10-14) and the far roughness ramp (2026-10-15).
     const base = withoutFarCover(withoutRipples(text)).replaceAll("macroRgb", "macro");
     expect(base).not.toContain("tRipple");
-    expect(sha(base)).toBe("851c0e2c8395222c0708521d1e90deef4120891094c2e4b3d66860ed0e951140");
+    expect(sha(base)).toBe("62726619d20723f0b3f76cad50ae68943a87c74965fe973e156754d8cce726a1");
   });
 
   it("takes the far cover out and gets the text before it", () => {
     const text = pluginTexts()["terrain.fragment"] as string;
-    // With the lakes' shore atlas (2026-10-10) and the trail's one table (2026-10-14) in it.
-    expect(sha(withoutFarCover(withoutRipples(text)))).toBe("b22513828399aea433b9180436ba31a4dfcd5cef9e6a9cef3c53adb709d36ffc");
+    // With the lakes' shore atlas (2026-10-10), the trail's one table
+    // (2026-10-14) and the far roughness ramp (2026-10-15) in it.
+    expect(sha(withoutFarCover(withoutRipples(text)))).toBe("9276a32ad797f7b5fe4361d3281ce51316a225887779afd8492c8730d7bf06e1");
   }, timeLimit(20_000));
 
   it("keeps every plugin's uniforms, samplers, attributes and defines what they were", () => {

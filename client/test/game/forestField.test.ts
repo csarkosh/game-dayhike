@@ -24,6 +24,9 @@ import {
   IMPOSTOR_RADIUS,
   IMPOSTOR_CELL_STRIDE,
   IMPOSTOR_FULL_RADIUS,
+  FAR_TREE_SCALE,
+  farTreeScale,
+  SEAM_FILL,
   IMPOSTOR_FILL_BUDGET_MAX,
   NEAR_BUDGET_MAX,
   IMPOSTOR_BUDGET_MAX,
@@ -580,5 +583,19 @@ describe("understory membership is padded by SEAM_PAD", () => {
       if (d > UNDERSTORY_RADIUS) sawBeyondRadius = true;
     }
     expect(sawBeyondRadius).toBe(true);
+  });
+});
+
+describe("farTreeScale", () => {
+  it("grows a lattice billboard across the fill's seam to the far scale, and not before", () => {
+    expect(FAR_TREE_SCALE).toEqual({ across: 1.4, up: 1.1 });
+    expect(SEAM_FILL).toEqual([900, 1000]);
+    expect(farTreeScale(0)).toEqual([1, 1]);
+    expect(farTreeScale(900)).toEqual([1, 1]);
+    const [across, up] = farTreeScale(950);
+    expect(across).toBeCloseTo(1.2, 6);
+    expect(up).toBeCloseTo(1.05, 6);
+    expect(farTreeScale(1000)).toEqual([1.4, 1.1]);
+    expect(farTreeScale(1900)).toEqual([1.4, 1.1]);
   });
 });

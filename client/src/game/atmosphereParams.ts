@@ -46,6 +46,18 @@ export const LEVEL_DREAD_RISE = 6;
 export const GRADIENT_NEAR_DIM = 0.85;
 /** Bias of the gradient toward the near colour: t^(1/GRADIENT_BIAS). */
 export const GRADIENT_BIAS = 1.6;
+/** Aerial perspective (2026-10-15): the air's transmittance raised to a
+ * power a channel (r, g, b), the blue scattering in over the first kilometre
+ * and the red left to the horizon, so a far hillside lifts toward the sky's
+ * colour and loses its contrast by depth. The mean is near one, so the far
+ * field reaches the fog's floor where it did. Mirrors ATM_AIR_POWER. */
+export const AIR_POWER: readonly [number, number, number] = [0.72, 0.92, 1.3];
+
+/** The fogged colour's mix weight a channel for a scalar transmittance `t`: t to each power. */
+export function airTransmittance(t: number): [number, number, number] {
+  const c = Math.min(1, Math.max(0, t));
+  return [Math.pow(c, AIR_POWER[0]), Math.pow(c, AIR_POWER[1]), Math.pow(c, AIR_POWER[2])];
+}
 
 /**
  * Quílez's closed-form height fog: density a·exp(−b·y) integrated along a

@@ -114,6 +114,15 @@ export function whenSkyHeld(table: SkyTable, hour: () => number, options: { sign
  * ridge.
  */
 const SHADOW_DISTANCE = 300;
+/** Since 2026-10-15 the reach and the split are the tier's
+ * (`QualitySettings.shadowDistance`, `shadowLambda`): medium keeps the
+ * 300 m above at lambda 0.9; high reaches 1500 m over three cascades at
+ * lambda 0.97, which split at about 16.5 m of camera depth (Babylon's
+ * split with the 0.05 m near plane: 0.97 × 1.55 + 0.03 × 500) and 77 m,
+ * so the near field keeps a texel finer than the 18.5 m slice the bias
+ * below was tuned against, the middle distance a 4 cm one, and the far
+ * field's hillsides and tree lines keep their shadows at 70 cm. The
+ * distance above is what medium reads. */
 
 /**
  * The sun's size for the soft-edged shadows, in the shadow map's UV units:
@@ -131,7 +140,7 @@ const SHADOW_DISTANCE = 300;
  * cascade's width and `Z` its depth range, and the sun's is
  * `ratio = tan(0.265°) × Z / X` ≈ 0.00463 Z / X.
  *
- * `X` follows `SHADOW_DISTANCE`: two cascades at lambda 0.9 split 300 m at
+ * `X` follows the reach: medium's two cascades at lambda 0.9 split 300 m at
  * 18.5 m of camera depth, and the stabilised first cascade is the sphere
  * round that slice of the 1.4 rad frustum, 66 m across in a 16:9 window
  * (41 m in a window twice as tall as wide), 32 mm a texel at 2048. `Z` is not
@@ -150,8 +159,13 @@ const SHADOW_DISTANCE = 300;
  * what to look at in the browser is the shadows of trunks, rocks and fronds
  * at the contact, not only the softness under the canopy.
  */
-export const SUN_LIGHT_SIZE_UV = 0.1;
+export const SUN_LIGHT_SIZE_UV = 0.15;
 
+/* Amended 2026-10-15 with the high tier's three cascades to 1500 m: the
+ * first cascade's slice is 16.5 m of camera depth, so `X` is about 59 m in a
+ * 16:9 window and the sun's ratio at noon 0.00463 × 1400 / 59 ≈ 0.11; 0.15
+ * widens the penumbra a little past that, toward the soft edge a cast
+ * shadow has under real sky at a few metres. */
 /** What the shadow generator filters with, by tier: the plain
  * percentage-closer filter at Babylon's default quality (a 5×5 texel
  * kernel, nine hardware-compared taps), or the percentage-closer soft shadow
@@ -388,8 +402,8 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // costs one fewer depth-reduction pass per frame. Revisit once someone has
     // actually flown around and looked.
     shadows.stabilizeCascades = true;
-    shadows.lambda = 0.9;
-    shadows.shadowMaxZ = SHADOW_DISTANCE;
+    shadows.lambda = settings.shadowLambda > 0 ? settings.shadowLambda : 0.9;
+    shadows.shadowMaxZ = settings.shadowDistance > 0 ? settings.shadowDistance : SHADOW_DISTANCE;
     if (filter.filter === "pcss") {
       // The percentage-closer soft shadow: the filter's radius grows with the
       // distance between the caster and the receiver, found by a search of

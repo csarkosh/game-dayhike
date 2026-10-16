@@ -68,7 +68,7 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
-import { CLUTTER_MEADOW_NEAR_IN, clutterFadeEdges, clutterSeamEdges, createClutterCollector } from "./clutterField.js";
+import { CLUTTER_MEADOW_NEAR_IN, COVER_RAMP_CLASSES, clutterFadeEdges, clutterSeamEdges, createClutterCollector, rampBands } from "./clutterField.js";
 import {
   CLUTTER_BOULDER,
   CLUTTER_BUSH,
@@ -443,8 +443,11 @@ type Bucket = {
    * when `tints` is set — the classes without the foliage plugin never read
    * this buffer, so it stays at `EMPTY_BUFFER`. */
   foliage: Float32Array;
-  /** The constant every instance of this bucket carries. */
+  /** The constant every instance of this bucket carries, or on a ramped
+   * bucket (`COVER_RAMP_CLASSES`, the far level) the bands each instance's
+   * own are drawn from (`rampBands`). */
   fade: FadeBands;
+  ramp: boolean;
   /** Set for the classes that wear the foliage plugin (`FOLIAGE_BY_CLASS`),
    * which is exactly the classes whose `foliage` buffer this file writes and
    * uploads. */
@@ -941,7 +944,7 @@ export function createClutterMeshes(
       origins[i * 3 + 1] = buf[m + 13]!;
       origins[i * 3 + 2] = buf[m + 14]!;
     }
-    writeFadeBands(bands, i * 4, bucket.fade);
+    writeFadeBands(bands, i * 4, bucket.ramp ? rampBands(bucket.fade, inst.hash) : bucket.fade);
     if (bucket.tints) {
       const f = i * 4;
       for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
@@ -1342,6 +1345,7 @@ export function createClutterMeshes(
             count: 0,
             grown: false,
             fade,
+            ramp: lod === FAR_LOD && COVER_RAMP_CLASSES.has(cls),
             tints: profile !== undefined,
             culled: culling && CLUTTER_CULLED.has(cls),
             drawn: { buf: EMPTY_BUFFER, bands: EMPTY_BUFFER, foliage: EMPTY_BUFFER },

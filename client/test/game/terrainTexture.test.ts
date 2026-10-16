@@ -377,9 +377,11 @@ describe("relief plugin wiring", () => {
     expect(blend).toContain("vec3(0.0, tx.x, tx.y)");
     expect(blend).not.toContain("vec3(0.0, tx.y, tx.x)");
   });
-  it("computes roughness: base times a map/0.5 modulation, clamped", () => {
+  it("computes roughness: base times a map/0.5 modulation, lifted by the far ramp, clamped", () => {
     const blend = pluginFor("r8").getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
-    expect(blend).toContain("terrainRough = clamp(rBase * mix(1.0, rMap / 0.5, strength), 0.0, 1.0);");
+    // The far ramp (2026-10-15, `FAR_ROUGH_BAND`): the ground goes matte with
+    // distance, from the detail's fade to 400 m, whatever its maps say.
+    expect(blend).toContain("terrainRough = clamp(max(rBase * mix(1.0, rMap / 0.5, strength), smoothstep(80.0, 400.0, dist)), 0.0, 1.0);");
     // An earlier form replaced the base outright at full strength
     // (mix(rBase, rMap, strength) / 0.95) — a glossy flash across the whole
     // ground at the neutral 0.5 placeholder. Regression-pinned absent.
@@ -1237,7 +1239,18 @@ vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
   // their own. Constants in the far-cover include.
   vec2 fcFw = fwidth(vPositionW.xz);
   float fcFoot = max(fcFw.x, fcFw.y);
+  // The far macro: the lush and dry drift at sixty and two hundred metres, on
+  // all ground that carries cover at every distance, never faded, so the near
+  // ground carries the drift the far hillside is a field of.
+  vec3 fcFarMacro = macroTint(farMacro(vPositionW.xz), 0.0);
+  surfaceAlbedo *= mix(vec3(1.0), fcFarMacro, clamp(w0 + vTerrainCover, 0.0, 1.0) * terrainMacroOn);
+  // The drift, in uniform flow: the far cover's relief, and the bare far
+  // ground's past the detail's fade, where no cover grows and nothing else
+  // would vary a summit's rock or snow.
+  vec3 fcDrift = farDrift(vPositionW.xz, fcFoot);
   terrainFarW = farCoverWeight(vTerrainCover, vTerrainW2.z, dist);
+  float fcBare = smoothstep(terrainFade.x, terrainFade.y, dist) * (1.0 - terrainFarW);
+  surfaceAlbedo *= mix(1.0, mix(FAR_BARE_AO, 1.0, fcDrift.z), fcBare);
   if (terrainFarW > 0.0) {
     vec3 fcClump = farClump(vPositionW.xz, fcFoot);
     float fcB18 = 1.0 - smoothstep(0.5, 1.0, fcFoot / MACRO_WAVE.x);
@@ -1245,10 +1258,12 @@ vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
     vec3 fcMacro = macroTint(MACRO_WEIGHT.x * mix(0.5, macroN18, fcB18) + MACRO_WEIGHT.y * mix(0.5, macroN6, fcB6), 1.0 - terrainN.y);
     vec3 fcTarget = mix(FAR_SWARD, FAR_LITTER, clamp(vTerrainW2.z, 0.0, 1.0))
       * fcMacro
+      * fcFarMacro
       * (1.0 - FAR_CANOPY_SHADE * clamp(vTerrainW2.w, 0.0, 1.0))
-      * mix(FAR_CLUMP_AO, 1.0, fcClump.z);
+      * mix(FAR_CLUMP_AO, 1.0, fcClump.z)
+      * mix(FAR_DRIFT_AO, 1.0, fcDrift.z);
     surfaceAlbedo = mix(surfaceAlbedo, fcTarget, FAR_SWARD_MAX * terrainFarW);
-    terrainFarN = normalize(normalW + vec3(-fcClump.x, 0.0, -fcClump.y) * FAR_CLUMP_TILT);
+    terrainFarN = normalize(normalW + vec3(-fcClump.x, 0.0, -fcClump.y) * FAR_CLUMP_TILT + vec3(-fcDrift.x, 0.0, -fcDrift.y) * FAR_DRIFT_TILT);
   }
 `);
     const blend = pluginFor("fc5").getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;

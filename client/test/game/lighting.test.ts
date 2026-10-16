@@ -107,13 +107,15 @@ describe("createLighting", () => {
     // false), so the filter it is given is read from the pure rule the
     // lighting applies. The soft shadow takes Babylon's medium quality,
     // sixteen search taps and thirty-two filter taps on the cascaded path,
-    // at the sun's size in the first cascade's UV: 0.1, a penumbra 28 mm
-    // wide under a branch 3 m up at noon in a 16:9 window.
-    expect(SUN_LIGHT_SIZE_UV).toBe(0.1);
-    expect(shadowFilterFor(QUALITY.high)).toEqual({ filter: "pcss", quality: 1, lightSizeUV: 0.1 });
+    // at the sun's size in the first cascade's UV: 0.15 since 2026-10-15,
+    // when the high tier's three cascades to 1500 m shortened the first
+    // cascade's slice (0.1 gave a penumbra 28 mm wide under a branch 3 m up
+    // at noon in a 16:9 window over the 18.5 m slice before).
+    expect(SUN_LIGHT_SIZE_UV).toBe(0.15);
+    expect(shadowFilterFor(QUALITY.high)).toEqual({ filter: "pcss", quality: 1, lightSizeUV: 0.15 });
     expect(shadowFilterFor(QUALITY.medium)).toEqual({ filter: "pcf" });
     expect(shadowFilterFor(QUALITY.low)).toEqual({ filter: "pcf" });
-    expect(shadowFilterFor({ shadowSoftEdges: true })).toEqual({ filter: "pcss", quality: 1, lightSizeUV: 0.1 });
+    expect(shadowFilterFor({ shadowSoftEdges: true })).toEqual({ filter: "pcss", quality: 1, lightSizeUV: 0.15 });
     expect(shadowFilterFor({ shadowSoftEdges: false })).toEqual({ filter: "pcf" });
   });
 

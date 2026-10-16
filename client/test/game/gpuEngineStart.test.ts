@@ -347,7 +347,7 @@ describe("createWebGpuEngine", () => {
         powerPreference: "high-performance",
         deviceDescriptor: {
           requiredLimits: {
-            maxInterStageShaderVariables: 19,
+            maxInterStageShaderVariables: 21,
             maxVertexBuffers: 8,
             maxSampledTexturesPerShaderStage: 16,
             maxSamplersPerShaderStage: 16,

@@ -78,6 +78,7 @@ import { Color4 } from "@babylonjs/core/Maths/math.color.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
 import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera.js";
 import { Camera } from "@babylonjs/core/Cameras/camera.js";
@@ -94,9 +95,12 @@ import {
   SEAM_LOD1,
   SEAM_FILL,
   SEAM_FAR,
+  farTreeScale,
   seamNear,
   UNDERSTORY_RADIUS,
 } from "./forestField.js";
+import { attachImpostorBake } from "./impostorBakePlugin.js";
+import { IMPOSTOR_FIELD_CUT, impostorFields } from "./impostorField.js";
 import {
   SPECIES_COUNT,
   COHORT_GIANT,
@@ -170,8 +174,11 @@ const DEADWOOD_URL = modelUrl("models/deadwood.snag.glb");
 const NURSE_FERN_ID = "understory.fern";
 const NURSE_FERN_URL = modelUrl(`models/${NURSE_FERN_ID}.glb`);
 
-/** Impostor bake resolution — a quad this far away needs no more. */
-const IMPOSTOR_BAKE_SIZE = 256;
+/** Impostor bake resolution: 512 since 2026-10-15 (256 before), so a
+ * giant's card at the near seam, 120 m off and some 400 px tall in a 1080p
+ * window, is drawn from near its own texels and its branches survive the
+ * field's spread. Six bakes, two pictures each, a few megabytes. */
+const IMPOSTOR_BAKE_SIZE = 512;
 
 /** A bake still waiting on its shaders this long says so, once, as a warning,
  * and goes on waiting: late is better than never, but late must be visible. A
@@ -239,6 +246,13 @@ export type BakeOptions = {
  * took to settle, null while baking. */
 export type ImpostorBake = { name: string; state: "baking" | "ready" | "failed"; ms: number | null };
 
+/** What a bake hands the billboard (2026-10-15): its colour, with the alpha
+ * the card tests, and its normal map when the bake's pixels could be read
+ * back, with `signed` saying the alpha is the distance field
+ * (`impostorField.ts`), tested at `IMPOSTOR_FIELD_CUT`. The colour is the
+ * species' own, unlit, on every path: the card lights it once, live. */
+export type BakedImpostor = { albedo: Texture; normal: Texture | null; signed: boolean };
+
 /** The snag billboard bakes from an UPRIGHT clone. `deadwood.snag` is
  * modelled lying down (long axis on local X — see `deadwoodMatrixBuffer`), so
  * an un-posed bake would billboard a felled trunk against standing ones; this
@@ -279,7 +293,7 @@ export type ForestMeshesOptions = {
     scene: Scene,
     options?: BakeOptions,
     pose?: Quaternion,
-  ) => Texture | null | Promise<Texture | null>;
+  ) => BakedImpostor | null | Promise<BakedImpostor | null>;
   /** Near-band radius override — the quality-tier knob (low = 140). */
   nearRadius?: number;
   /** The WebGPU engine's asynchronous pipelines, handed to every bake
@@ -906,13 +920,19 @@ function* impostorMatrixSlices(
     for (const t of list) {
       // Thousands of billboards a bucket: a slice composes a share of them.
       if (i > 0 && i % IMPOSTOR_SLICE === 0) yield;
-      // Yaw that points the quad's normal (±Z; the material is two-sided) at
-      // the camera: rotating +Z by atan2(dx, dz) about Y lands it on (dx, dz).
-      Quaternion.RotationAxisToRef(UP, Math.atan2(camX - t.x, camZ - t.z), scratchQ);
-      scratchScale.copyFromFloats(t.scale, t.scale, t.scale);
+      // Yaw that points the quad's face (−Z, Babylon's plane; the material
+      // is two-sided for the frames a rebuild is stale) at the camera:
+      // rotating +Z by atan2(dx, dz) about Y lands it on (dx, dz), so −Z
+      // faces the camera half a turn on. The face, not the back: the bake's
+      // normal map is in the face's frame (`impostorBakePlugin.ts`).
+      Quaternion.RotationAxisToRef(UP, Math.atan2(camX - t.x, camZ - t.z) + Math.PI, scratchQ);
+      // A lattice card past the fill's seam grows (`farTreeScale`): the
+      // on-lattice list is the first of the two.
+      const [across, up] = list === lattice ? farTreeScale(Math.hypot(t.x - camX, t.z - camZ)) : [1, 1];
+      scratchScale.copyFromFloats(t.scale * across, t.scale * up, t.scale * across);
       // The quad is centred on its origin while the tree origin sits at the
       // footprint base, so the quad centre rides up by the scaled tree centre.
-      scratchPos.copyFromFloats(t.x, t.groundH + centreY * t.scale, t.z);
+      scratchPos.copyFromFloats(t.x, t.groundH + centreY * t.scale * up, t.z);
       Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchMat);
       scratchMat.copyToArray(buf, i * 16);
       i++;
@@ -1058,7 +1078,7 @@ export async function defaultBakeImpostor(
   scene: Scene,
   options: BakeOptions = {},
   pose?: Quaternion,
-): Promise<Texture | null> {
+): Promise<BakedImpostor | null> {
   // Clones share geometry and materials with the source; identical vertex
   // layout means an effect compiled for a clone is the effect the source
   // would use, so nothing is compiled twice.
@@ -1081,11 +1101,15 @@ export async function defaultBakeImpostor(
   // attached (the same reason `adoptSpecies` splits LOD2's material before
   // any of its own plugins attach), so cloning here, ahead of the unsafe
   // ones, is what keeps it from ever throwing.
+  const bakePlugins = [];
   for (const m of bakeMeshes) {
     if (m.material) {
       m.material = m.material.clone(`${m.material.name}_bake`) ?? m.material;
       // What the far trees wear that the clone dropped (`BakeOptions.dress`).
       options.dress?.(m.material);
+      // And what the bake writes in place of the lit colour: the albedo
+      // first, the normal map second (`impostorBakePlugin.ts`).
+      bakePlugins.push(attachImpostorBake(m.material));
     }
     m.layerMask = IMPOSTOR_BAKE_LAYER;
     m.isPickable = false;
@@ -1216,14 +1240,62 @@ export async function defaultBakeImpostor(
     }
 
     if (pipelines === undefined) rtt.render();
+    // The albedo is baked. Its pixels read back (asynchronous on WebGPU),
+    // the normal map is baked over it and read back too, and the two go to
+    // the card through the field (`impostorField.ts`) as their own
+    // textures, the target let go. Where the pixels cannot be read (the
+    // read answers null, as under NullEngine) the target itself is the
+    // card's colour, as it was before the field: an unlit bake with the
+    // plain alpha test, no normal map, no field.
+    const albedoPixels = await readBake(rtt, options.signal);
+    if (albedoPixels === undefined) {
+      camera.dispose();
+      rtt.dispose();
+      return null;
+    }
+    if (albedoPixels === null) {
+      camera.dispose();
+      return { albedo: rtt, normal: null, signed: false };
+    }
+    for (const plugin of bakePlugins) plugin.mode = 2;
+    if (pipelines === undefined) rtt.render();
+    else pipelines.guarded(() => rtt.render());
+    const normalPixels = await readBake(rtt, options.signal);
     camera.dispose();
-    return rtt;
+    if (normalPixels === undefined) {
+      rtt.dispose();
+      return null;
+    }
+    const fields = impostorFields(albedoPixels, normalPixels, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE);
+    rtt.dispose();
+    const albedo = RawTexture.CreateRGBATexture(fields.albedo, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE);
+    albedo.name = `${mesh.name}_impostor_albedo`;
+    albedo.hasAlpha = true;
+    const normal =
+      fields.normal === null
+        ? null
+        : RawTexture.CreateRGBATexture(fields.normal, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE);
+    if (normal !== null) normal.name = `${mesh.name}_impostor_normal`;
+    return { albedo, normal, signed: true };
   } finally {
     // true: dispose the per-mesh material clones (and the textures `clone()`
     // made for them) along with the mesh hierarchy — they are owned
     // exclusively by this bake, never shared with the live buckets.
     clone.dispose(false, true);
   }
+}
+
+/** The bake target's pixels, RGBA bytes row by row from the first row in
+ * memory, which is how the target samples too (`RawTexture` with `invertY`
+ * false keeps the order); null where the engine cannot read them (the read
+ * answers null, never throws); undefined when the forest was disposed while
+ * the read was in flight. */
+async function readBake(rtt: RenderTargetTexture, signal: AbortSignal | undefined): Promise<Uint8Array | null | undefined> {
+  const read = await rtt.readPixels();
+  if (signal?.aborted) return undefined;
+  if (read === null || read === undefined) return null;
+  const bytes = read instanceof Uint8Array ? read : new Uint8Array(read.buffer, read.byteOffset, read.byteLength);
+  return bytes.length === IMPOSTOR_BAKE_SIZE * IMPOSTOR_BAKE_SIZE * 4 ? bytes : null;
 }
 
 /** True once `held` resolves, false at once if `signal` is aborted first,
@@ -1396,8 +1468,8 @@ export function createForestMeshes(
    * the billboard, and its record says `failed`. A null after `dispose` is the
    * abort, and says nothing.
    */
-  function adoptBake(imp: Impostor, mat: PBRMaterial, texture: Texture | null): void {
-    if (texture === null) {
+  function adoptBake(imp: Impostor, mat: PBRMaterial, baked: BakedImpostor | null): void {
+    if (baked === null) {
       if (disposed) return;
       imp.bake.state = "failed";
       imp.bake.ms = performance.now() - imp.bakeStartedAt;
@@ -1405,14 +1477,24 @@ export function createForestMeshes(
       return;
     }
     if (disposed) {
-      texture.dispose();
+      baked.albedo.dispose();
+      baked.normal?.dispose();
       return;
     }
     imp.bake.state = "ready";
     imp.bake.ms = performance.now() - imp.bakeStartedAt;
-    textures.push(texture);
-    mat.albedoTexture = texture;
+    textures.push(baked.albedo);
+    mat.albedoTexture = baked.albedo;
     mat.useAlphaFromAlbedoTexture = true;
+    // The bake is the species' own colour, unlit (`impostorBakePlugin.ts`):
+    // the card lights it once, live, as a crown, through the bake's normal
+    // map where there is one, and tests the field's alpha at the rim.
+    mat.environmentIntensity = CROWN_SKY;
+    if (baked.normal !== null) {
+      textures.push(baked.normal);
+      mat.bumpTexture = baked.normal;
+    }
+    if (baked.signed) mat.alphaCutOff = IMPOSTOR_FIELD_CUT;
     imp.ready = true;
     // A rebuild may already have filled the buffer while the bake compiled;
     // enable now under the same non-empty rule `applyBucketBuffer` uses.
@@ -1428,7 +1510,7 @@ export function createForestMeshes(
    */
   function createImpostor(
     name: string,
-    bake: Texture | null | Promise<Texture | null>,
+    bake: BakedImpostor | null | Promise<BakedImpostor | null>,
     width: number,
     height: number,
     centreY: number,
@@ -1447,11 +1529,12 @@ export function createForestMeshes(
     mat.backFaceCulling = false;
     mat.metallic = 0;
     mat.roughness = 1;
-    // The live sky at full share (`IMPOSTOR_SKY`): the canopy's cut is in
-    // the baked colour already (`adoptSpecies`), and a share below 1 here
-    // would cut the far trees twice. And the bark's specular weight: a plane
-    // made in code takes Babylon's weight of 1, whose grazing reflection would
-    // rim every billboard with the sky.
+    // The live sky at full share (`IMPOSTOR_SKY`) until a bake lands: the
+    // bake is the species' colour unlit (`impostorBakePlugin.ts`, since
+    // 2026-10-15), so `adoptBake` sets the crown's share then, and the cut
+    // lands once, live. And the bark's specular weight: a plane made in
+    // code takes Babylon's weight of 1, whose grazing reflection would rim
+    // every billboard with the sky.
     mat.environmentIntensity = IMPOSTOR_SKY;
     mat.metallicF0Factor = TREE_SPECULAR_WEIGHT;
     attachDistanceFade(mat);
@@ -1481,7 +1564,7 @@ export function createForestMeshes(
     if (bake instanceof Promise) {
       bakes.push(
         bake.then(
-          (texture) => adoptBake(impostor, mat, texture),
+          (baked) => adoptBake(impostor, mat, baked),
           () => adoptBake(impostor, mat, null),
         ),
       );
@@ -1579,16 +1662,14 @@ export function createForestMeshes(
     // Kick the bake off BEFORE prepBucketMesh touches the buckets: the
     // default bake clones the LOD1 hierarchy synchronously, so it must see
     // the meshes as loaded — enabled and free of thin instances. Impostor
-    // texture from LOD1 — detailed enough for a 256² bake, cheaper than LOD0.
+    // texture from LOD1 — detailed enough for a 512² bake, cheaper than LOD0.
     //
     // The sky's share and the specular weights are set on every LOD's
-    // material FIRST, before the bake clones LOD1's materials, so the bake
-    // carries them: the billboard's colour is then LOD1 lit under the bark's
-    // and the crown's shares, the canopy's cut and the weaker rim already in
-    // the baked colour. The billboard lights that colour again with the live
-    // sky, so it takes the sky at full share (`IMPOSTOR_SKY`) and the cut is
-    // not applied twice. A bake taken at the full open sky would hand the near
-    // trees over at the seam to paler, cooler, sky-rimmed billboards. The LOD2
+    // material FIRST, before the bake clones LOD1's materials, so the clones
+    // carry them. Since 2026-10-15 the bake writes the species' colour unlit
+    // and its normal map (`impostorBakePlugin.ts`), and the billboard lights
+    // that colour once, live, under the crown's share (`adoptBake`), so the
+    // cut lands once on the near trees and once on the far. The LOD2
     // split below clones after this too, so the lake's mirror, which draws
     // LOD2 on its own material, sees the same trees. Each set's bake waits
     // on its bark set and the moss map (`BakeOptions.textures`) as well as
@@ -1764,7 +1845,7 @@ export function createForestMeshes(
               },
         impostor: createImpostor(
           `${kind}_${index + k}`,
-          bakes[k] as Texture | null | Promise<Texture | null>,
+          bakes[k] as BakedImpostor | null | Promise<BakedImpostor | null>,
           width,
           height,
           (bounds.min.y + bounds.max.y) / 2,

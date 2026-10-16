@@ -36,6 +36,7 @@ import { attachWing } from "../../../src/game/wingPlugin.js";
 import { attachCliffTint } from "../../../src/game/cliffTintPlugin.js";
 import { attachMoss } from "../../../src/game/mossPlugin.js";
 import { attachDeadwood } from "../../../src/game/deadwoodPlugin.js";
+import { attachImpostorBake } from "../../../src/game/impostorBakePlugin.js";
 import halationExtractFragment from "../../../src/game/shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "../../../src/game/shaders/grade.fragment.fx?raw";
 import finishFragment from "../../../src/game/shaders/finish.fragment.fx?raw";
@@ -142,6 +143,8 @@ export function pluginsInStates(): { cases: PluginCase[]; dispose(): void } {
   add("moss", (m) => attachMoss(m, RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene)), "Moss");
   // The dead trees' dressing, with the same stand-in for the moss map.
   add("deadwood", (m) => attachDeadwood(m, RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene)), "Deadwood");
+  // The bake clones' two pictures (2026-10-15), on no material the scene draws.
+  add("impostorBake", (m) => attachImpostorBake(m), "ImpostorBake");
   return {
     cases,
     dispose() {

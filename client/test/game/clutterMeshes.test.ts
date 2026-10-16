@@ -12,7 +12,7 @@ import {
   CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTWOOD, CLUTTER_FERN, CLUTTER_FLOWER, CLUTTER_FUNGUS, CLUTTER_GRASS,
   CLUTTER_HIGHPLANT, CLUTTER_LITTER, CLUTTER_MEADOW, CLUTTER_ROCK, CLUTTER_SHRUB, CLUTTER_WETPLANT,
 } from "../../src/sim/clutter.js";
-import { clutterFadeEdges, clutterSeamEdges, collectClutter } from "../../src/game/clutterField.js";
+import { clutterFadeEdges, clutterSeamEdges, collectClutter, COVER_RAMP_CLASSES, COVER_RAMP_WIDTH } from "../../src/game/clutterField.js";
 import {
   CLUTTER_CULLED,
   CLUTTER_SINK,
@@ -44,7 +44,7 @@ import type { ClutterInstance } from "../../src/sim/clutter.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("createClutterMeshes attaches the distance fade", () => {
-  it("puts the plugin on every bucket material and a constant fadeBands per bucket", () => {
+  it("puts the plugin on every bucket material and a constant fadeBands per bucket, the cover's far level ramped by instance", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     // Two variants, two LODs per class; each mesh has its own material so a
@@ -127,6 +127,23 @@ describe("createClutterMeshes attaches the distance fade", () => {
               ? [-2, -1, seam.start, seam.end]
               : [seam.start, seam.end, edge.start, edge.end]
             ).map(Math.fround);
+            if (lod !== 0 && COVER_RAMP_CLASSES.has(cls)) {
+              // A ramped bucket (the cover's far level): the in band kept, each
+              // instance's own out band COVER_RAMP_WIDTH wide inside the
+              // class's, and not one edge for all.
+              const width = Math.fround(Math.min(COVER_RAMP_WIDTH, edge.end - edge.start));
+              const edges = new Set<number>();
+              for (let i = 0; i < mesh.thinInstanceCount; i++) {
+                const b = Array.from(bands!.subarray(i * 4, i * 4 + 4));
+                expect(b.slice(0, 2), `${mesh.name}#${i}`).toEqual(expected.slice(0, 2));
+                expect(b[2]!, `${mesh.name}#${i}`).toBeGreaterThanOrEqual(expected[2]!);
+                expect(b[3]!, `${mesh.name}#${i}`).toBeLessThanOrEqual(expected[3]! + 1e-4);
+                expect(Math.fround(b[3]! - b[2]!), `${mesh.name}#${i}`).toBeCloseTo(width, 4);
+                edges.add(b[2]!);
+              }
+              if (mesh.thinInstanceCount > 8) expect(edges.size, mesh.name).toBeGreaterThan(1);
+              continue;
+            }
             for (let i = 0; i < mesh.thinInstanceCount; i++) {
               expect(Array.from(bands!.subarray(i * 4, i * 4 + 4)), `${mesh.name}#${i}`).toEqual(expected);
             }

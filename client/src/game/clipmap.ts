@@ -549,15 +549,87 @@ export function blendWeight(hole: { x0: number; z0: number } | null, ix: number,
 }
 
 /**
+ * What the coarser ring carries at this ring's vertex (ix, iz) in one of its
+ * per-vertex arrays (`arr`, `stride` floats a vertex, channel `k`): its own
+ * sample where the lattices coincide, else the mean of the two along the
+ * edge or across the drawn diagonal, as `coarseHeight` reads its heights.
+ */
+export function coarseSample(arr: Float32Array, stride: number, k: number, x0: number, z0: number, ix: number, iz: number): number {
+  const cx = x0 + (ix >> 1);
+  const cz = z0 + (iz >> 1);
+  const at = (x: number, z: number): number => arr[(z * SIDE + x) * stride + k] as number;
+  if ((ix & 1) === 0 && (iz & 1) === 0) return at(cx, cz);
+  if ((iz & 1) === 0) return (at(cx, cz) + at(cx + 1, cz)) / 2;
+  if ((ix & 1) === 0) return (at(cx, cz) + at(cx, cz + 1)) / 2;
+  return (at(cx + 1, cz) + at(cx, cz + 1)) / 2;
+}
+
+/**
  * Draws the ring's field as an upper envelope: the chord-excess lift,
  * blended toward what the coarser ring draws so the
  * two agree exactly at the border — the old odd-vertex crack fix is
- * now the t = 1 case. Normals stay the exact analytic gradient and colours
- * and weights are untouched; only the drawn height moves. Under `covered`
+ * now the t = 1 case. The gradient the normal is built from, the colour,
+ * the weights and the cover blend toward the coarser ring's across the same
+ * band (2026-10-15, the far field's fullness): a point sample every 8 to
+ * 64 m jumped at every snap and met the next ring's sample at a line, and
+ * now each ring hands its shading over to the next as it hands its height.
+ * Only the drawn height is lifted. Under `covered`
  * ground the triangles another surface draws over are left out of the
  * indices (`CoveredGround`); the vertices stay, so the buffers' layout and
  * the blend toward the coarser ring do not change.
  */
+/** The per-vertex buffers a ring's geometry carries besides its positions. */
+type VertexBuffers = Pick<RingGeometry, "normals" | "colors" | "weights" | "weights2" | "cover">;
+
+/**
+ * One vertex's normal, colour, weights and cover into `out` at `at`: the
+ * ring's own, blended toward the coarser ring's by `t` (2026-10-15) as the
+ * height is, exact at the border, so nothing snaps at a ring's edge. The
+ * normal is the heightfield's (-dh/dx, 1, -dh/dz), normalised, from the
+ * blended gradient; at `t` 0 it is the one the ring's own `normals` hold,
+ * read from the same float32 gradient. Both the whole build and the sliced
+ * one write through here, so their buffers agree bit for bit.
+ */
+function writeVertexToward(
+  out: VertexBuffers,
+  at: number,
+  ring: RingSamples,
+  coarser: RingSamples | null,
+  outer: { x0: number; z0: number } | null,
+  ix: number,
+  iz: number,
+  t: number,
+): void {
+  const toward = (own: number, arr: Float32Array, stride: number, k: number): number => {
+    if (t <= 0 || coarser === null || outer === null) return own;
+    const c = coarseSample(arr, stride, k, outer.x0, outer.z0, ix, iz);
+    return t >= 1 ? c : own + (c - own) * t;
+  };
+  const p = at * 3;
+  // Heightfield normal (-dh/dx, 1, -dh/dz), normalised — from the EXACT
+  // analytic gradient, which is the payoff of the derivative discipline in
+  // sim/montane.ts: it yields smooth true normals. Handedness does
+  // not enter here; the index winding is where it does.
+  const gx = coarser === null ? (ring.dx[at] as number) : toward(ring.dx[at] as number, coarser.dx, 1, 0);
+  const gz = coarser === null ? (ring.dz[at] as number) : toward(ring.dz[at] as number, coarser.dz, 1, 0);
+  const len = Math.hypot(gx, 1, gz);
+  out.normals[p] = -gx / len;
+  out.normals[p + 1] = 1 / len;
+  out.normals[p + 2] = -gz / len;
+  for (let k = 0; k < 3; k++) {
+    out.colors[at * 4 + k] = coarser === null ? (ring.colors[at * 4 + k] as number) : toward(ring.colors[at * 4 + k] as number, coarser.colors, 4, k);
+  }
+  out.colors[at * 4 + 3] = ring.colors[at * 4 + 3] as number;
+  for (let k = 0; k < 4; k++) {
+    out.weights[at * 4 + k] = coarser === null ? (ring.weights[at * 4 + k] as number) : toward(ring.weights[at * 4 + k] as number, coarser.weights, 4, k);
+  }
+  const w2 = at * WEIGHTS2_STRIDE;
+  for (let k = 0; k < 4; k++) {
+    out.weights2[w2 + k] = coarser === null ? (ring.weights2[w2 + k] as number) : toward(ring.weights2[w2 + k] as number, coarser.weights2, WEIGHTS2_STRIDE, k);
+  }
+  out.cover[at] = coarser === null ? (ring.cover[at] as number) : toward(ring.cover[at] as number, coarser.cover, 1, 0);
+}
+
 export function ringGeometry(
   ring: RingSamples,
   hole: { x0: number; z0: number } | null,
@@ -570,6 +642,7 @@ export function ringGeometry(
   const weights = new Float32Array(SIDE * SIDE * 4);
   const weights2 = new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE);
   const cover = new Float32Array(SIDE * SIDE);
+  const out = { normals, colors, weights, weights2, cover };
   const outer = coarser === null ? null : holeCellsFor(coarser, ring);
 
   for (let iz = 0; iz < SIDE; iz++) {
@@ -583,8 +656,9 @@ export function ringGeometry(
       // rounding away. The outermost ring has no neighbour and draws its
       // own lift throughout.
       let y = liftedHeight(ring, ix, iz);
+      let t = 0;
       if (coarser !== null && outer !== null) {
-        const t = blendWeight(hole, ix, iz);
+        t = blendWeight(hole, ix, iz);
         if (t >= 1) y = coarseHeight(coarser, outer.x0, outer.z0, ix, iz);
         else if (t > 0) y += (coarseHeight(coarser, outer.x0, outer.z0, ix, iz) - y) * t;
       }
@@ -592,33 +666,7 @@ export function ringGeometry(
       positions[p] = ring.originX + ix * ring.spacing;
       positions[p + 1] = y;
       positions[p + 2] = ring.originZ + iz * ring.spacing;
-
-      // Heightfield normal (-dh/dx, 1, -dh/dz), normalised — from the EXACT
-      // analytic gradient, which is the payoff of the derivative discipline in
-      // sim/montane.ts: it yields smooth true normals. Handedness does
-      // not enter here; winding below is where it does.
-      const gx = ring.dx[at] as number;
-      const gz = ring.dz[at] as number;
-      const len = Math.hypot(gx, 1, gz);
-      normals[p] = -gx / len;
-      normals[p + 1] = 1 / len;
-      normals[p + 2] = -gz / len;
-
-      colors[at * 4] = ring.colors[at * 4] as number;
-      colors[at * 4 + 1] = ring.colors[at * 4 + 1] as number;
-      colors[at * 4 + 2] = ring.colors[at * 4 + 2] as number;
-      colors[at * 4 + 3] = ring.colors[at * 4 + 3] as number;
-
-      weights[at * 4] = ring.weights[at * 4] as number;
-      weights[at * 4 + 1] = ring.weights[at * 4 + 1] as number;
-      weights[at * 4 + 2] = ring.weights[at * 4 + 2] as number;
-      weights[at * 4 + 3] = ring.weights[at * 4 + 3] as number;
-      const w2 = at * WEIGHTS2_STRIDE;
-      weights2[w2] = ring.weights2[w2] as number;
-      weights2[w2 + 1] = ring.weights2[w2 + 1] as number;
-      weights2[w2 + 2] = ring.weights2[w2 + 2] as number;
-      weights2[w2 + 3] = ring.weights2[w2 + 3] as number;
-      cover[at] = ring.cover[at] as number;
+      writeVertexToward(out, at, ring, coarser, outer, ix, iz, t);
     }
   }
 
@@ -779,11 +827,13 @@ function coarseLift(lift: Float64Array, x0: number, z0: number, ix: number, iz: 
 /**
  * `ringGeometry` into `out`, in slices: the same buffers, bit for bit, from
  * what the ring keeps rather than computed again. The normals, colours,
- * weights and cover are the ring's own arrays, copied whole; each vertex's
- * height is its kept lift, blended toward the coarser ring's kept lifts
- * exactly as `ringGeometry` blends the ones `liftedHeight` returns; the
- * indices are written again, since the hole moves with the finer ring and
- * the covered ground with the camera, and `out.indexCount` says how many.
+ * weights and cover are the ring's own arrays, copied whole, then written
+ * again through `writeVertexToward` at every vertex the blend toward the
+ * coarser ring touches (2026-10-15); each vertex's height is its kept lift,
+ * blended toward the coarser ring's kept lifts exactly as `ringGeometry`
+ * blends the ones `liftedHeight` returns; the indices are written again,
+ * since the hole moves with the finer ring and the covered ground with the
+ * camera, and `out.indexCount` says how many.
  */
 export function* ringGeometrySlices(
   ring: RingSamples,
@@ -807,6 +857,7 @@ export function* ringGeometrySlices(
         const t = blendWeight(hole, ix, iz);
         if (t >= 1) y = coarseLift(coarser.lift, outer.x0, outer.z0, ix, iz);
         else if (t > 0) y += (coarseLift(coarser.lift, outer.x0, outer.z0, ix, iz) - y) * t;
+        if (t > 0) writeVertexToward(out, at, ring, coarser, outer, ix, iz, t);
       }
       const p = at * 3;
       positions[p] = ring.originX + ix * ring.spacing;

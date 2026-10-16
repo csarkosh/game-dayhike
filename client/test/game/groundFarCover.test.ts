@@ -7,6 +7,7 @@ import {
   FAR_COVER_BAND, FAR_COVER_BAND_LOW, FAR_SWARD_COVER, FAR_SWARD_MAX, FAR_SWARD, FAR_LITTER, FAR_CANOPY_SHADE,
   FAR_CLUMP_CELL, FAR_CLUMP_WEIGHT, FAR_CLUMP_SALT, FAR_CLUMP_WRAP, FAR_CLUMP_AO, FAR_CLUMP_TILT,
   FAR_COVER_TILT, FAR_SPEC_CUT, FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX,
+  FAR_DRIFT_CELL, FAR_DRIFT_WEIGHT, FAR_DRIFT_SALT, FAR_DRIFT_AO, FAR_DRIFT_TILT, FAR_BARE_AO, FAR_MACRO_CELL, FAR_MACRO_WEIGHT, FAR_MACRO_SALT,
 } from "../../src/game/groundHexParams.js";
 import { TERRAIN_SUN_INJECTION_CODE } from "../../src/game/terrainTexture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -53,13 +54,24 @@ describe("groundFarCover.fragment.fx stays in lockstep with groundHexParams.ts",
       `const float FAR_CLUMP_TILT = ${glslFloat(FAR_CLUMP_TILT)};`,
       `const float FAR_COVER_TILT = ${glslFloat(FAR_COVER_TILT)};`,
       `const float FAR_SPEC_CUT = ${glslFloat(FAR_SPEC_CUT)};`,
+      `const vec2 FAR_DRIFT_CELL = ${glslVec2(FAR_DRIFT_CELL)};`,
+      `const vec2 FAR_DRIFT_WEIGHT = ${glslVec2(FAR_DRIFT_WEIGHT)};`,
+      `const vec2 FAR_DRIFT_SALT_A = ${glslVec2(FAR_DRIFT_SALT[0])};`,
+      `const vec2 FAR_DRIFT_SALT_B = ${glslVec2(FAR_DRIFT_SALT[1])};`,
+      `const float FAR_DRIFT_AO = ${glslFloat(FAR_DRIFT_AO)};`,
+      `const float FAR_DRIFT_TILT = ${glslFloat(FAR_DRIFT_TILT)};`,
+      `const float FAR_BARE_AO = ${glslFloat(FAR_BARE_AO)};`,
+      `const vec2 FAR_MACRO_CELL = ${glslVec2(FAR_MACRO_CELL)};`,
+      `const vec2 FAR_MACRO_WEIGHT = ${glslVec2(FAR_MACRO_WEIGHT)};`,
+      `const vec2 FAR_MACRO_SALT_A = ${glslVec2(FAR_MACRO_SALT[0])};`,
+      `const vec2 FAR_MACRO_SALT_B = ${glslVec2(FAR_MACRO_SALT[1])};`,
     ]) expect(farFx, line).toContain(line);
   }, timeLimit(5_000));
 
   it("hashes on the wrapped cells with the macro noise's hash, band-limits with a rising smoothstep, and reads no texture", () => {
     expect(farFx).toContain("vec2 c0 = mod(c + salt, FAR_CLUMP_WRAP);");
     expect(farFx).toContain("float a = latticeHash(c0);");
-    expect(farFx.split("1.0 - smoothstep(0.5, 1.0,").length - 1).toBe(2);
+    expect(farFx.split("1.0 - smoothstep(0.5, 1.0,").length - 1).toBe(4);
     expect(farFx).not.toContain("texture");
     expect(farFx).not.toContain("discard");
     expect(farFx).not.toContain("uniform");
@@ -141,6 +153,25 @@ const float FAR_COVER_TILT = 0.3;
 // Fitted 2026-10-10: At the canopy pose at 16:00 far over near is 0.77 at a cut
 // of 0.25.
 const float FAR_SPEC_CUT = 0.25;
+// The drift at ten and thirty metres (2026-10-15): patches of thicker and
+// thinner cover between the clumps' grain and the far macro's drifts, faded
+// as the clumps are, troughs at 0.55, a gentler tilt.
+const vec2 FAR_DRIFT_CELL = vec2(10.0, 30.0);
+const vec2 FAR_DRIFT_WEIGHT = vec2(0.5, 0.5);
+const vec2 FAR_DRIFT_SALT_A = vec2(7.0, 23.0);
+const vec2 FAR_DRIFT_SALT_B = vec2(61.0, 5.0);
+const float FAR_DRIFT_AO = 0.55;
+const float FAR_DRIFT_TILT = 0.3;
+// Bare far ground past the detail's fade takes the drift's darkening too,
+// shallower, so a far summit is a field of patches as a hillside is.
+const float FAR_BARE_AO = 0.72;
+// The far macro (2026-10-15): the lush and dry drift of a hillside at sixty
+// and two hundred and twenty metres, on all ground that carries cover at
+// every distance, never faded.
+const vec2 FAR_MACRO_CELL = vec2(60.0, 220.0);
+const vec2 FAR_MACRO_WEIGHT = vec2(0.6, 0.4);
+const vec2 FAR_MACRO_SALT_A = vec2(3.0, 19.0);
+const vec2 FAR_MACRO_SALT_B = vec2(29.0, 47.0);
 
 // The far cover's weight in [0, 1]: any cover the near field draws, grass or
 // litter, ramped in over the tier's band of eye distance. Mirrors
@@ -180,6 +211,21 @@ vec3 farClump(vec2 p, float foot) {
   float b2 = FAR_CLUMP_WEIGHT.y * (1.0 - smoothstep(0.5, 1.0, foot / FAR_CLUMP_CELL.y));
   return vec3(b1 * o1.xy + b2 * o2.xy, 0.5 + b1 * (o1.z - 0.5) + b2 * (o2.z - 0.5));
 }
+
+// The drift's two octaves, band-limited as the clumps are. Mirrors farDrift.
+vec3 farDrift(vec2 p, float foot) {
+  vec3 o1 = farClumpOctave(p, FAR_DRIFT_CELL.x, FAR_DRIFT_SALT_A);
+  vec3 o2 = farClumpOctave(p, FAR_DRIFT_CELL.y, FAR_DRIFT_SALT_B);
+  float b1 = FAR_DRIFT_WEIGHT.x * (1.0 - smoothstep(0.5, 1.0, foot / FAR_DRIFT_CELL.x));
+  float b2 = FAR_DRIFT_WEIGHT.y * (1.0 - smoothstep(0.5, 1.0, foot / FAR_DRIFT_CELL.y));
+  return vec3(b1 * o1.xy + b2 * o2.xy, 0.5 + b1 * (o1.z - 0.5) + b2 * (o2.z - 0.5));
+}
+
+// The far macro's noise in [0, 1]: its two octaves weighted, never faded. Mirrors farMacro.
+float farMacro(vec2 p) {
+  return FAR_MACRO_WEIGHT.x * farClumpOctave(p, FAR_MACRO_CELL.x, FAR_MACRO_SALT_A).z
+    + FAR_MACRO_WEIGHT.y * farClumpOctave(p, FAR_MACRO_CELL.y, FAR_MACRO_SALT_B).z;
+}
 `);
   }, timeLimit(5_000));
 
@@ -191,7 +237,7 @@ vec3 farClump(vec2 p, float foot) {
     expect(high).toContain("const vec2 FAR_COVER_BAND = vec2(24.0, 30.0);");
     expect(high).not.toContain("vec2(14.4, 18.0)");
     for (const out of [low, high]) {
-      for (const name of ["farCoverWeight(", "farClumpOctave(", "farClump("]) expect(out, name).toContain(name);
+      for (const name of ["farCoverWeight(", "farClumpOctave(", "farClump(", "farDrift(", "farMacro("]) expect(out, name).toContain(name);
     }
   }, timeLimit(5_000));
 

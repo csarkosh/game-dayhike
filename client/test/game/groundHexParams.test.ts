@@ -8,7 +8,8 @@ import {
   FAR_COVER_BAND, FAR_COVER_BAND_LOW, FAR_SWARD_COVER, FAR_SWARD_MAX, FAR_SWARD, FAR_LITTER, FAR_CANOPY_SHADE,
   FAR_CLUMP_CELL, FAR_CLUMP_WEIGHT, FAR_CLUMP_SALT, FAR_CLUMP_WRAP, FAR_CLUMP_AO, FAR_CLUMP_TILT,
   FAR_COVER_TILT, FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX, FAR_SPEC_CUT,
-  farCoverWeight, farClumpOctave, farClump, farCoverTarget, farSunFactor, farSpecWeight,
+  farCoverWeight, farClumpOctave, farClump, farCoverTarget, farSunFactor, farSpecWeight, farDrift, farMacro,
+  FAR_DRIFT_CELL, FAR_DRIFT_SALT, FAR_DRIFT_WEIGHT, FAR_DRIFT_AO,
 } from "../../src/game/groundHexParams.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -289,6 +290,34 @@ describe("the far cover", () => {
     expect(whole.n).toBeCloseTo(0.5712102075555563, 12);
     expect(whole.gx).toBeCloseTo(-0.1263664000000013, 12);
     expect(whole.gz).toBeCloseTo(-0.42322960000000076, 12);
+  }, timeLimit(5_000));
+
+  it("drifts at ten and thirty metres, faded as the clumps are, and the far macro never fades", () => {
+    for (const [x, z] of [[1.0, 0.3], [-55.5, 12.25], [812.4, -97.1]] as const) {
+      // A 30 m footprint: both drift cells under two pixels, the mean alone.
+      const gone = farDrift(x, z, 30);
+      expect(gone.n).toBe(0.5);
+      expect(gone.gx).toBeCloseTo(0, 12);
+      expect(gone.gz).toBeCloseTo(0, 12);
+      // A 12 m footprint: the 10 m octave gone, the 30 m one whole.
+      const half = farDrift(x, z, 12);
+      const o2 = farClumpOctave(x, z, FAR_DRIFT_CELL[1], FAR_DRIFT_SALT[1]);
+      expect(half.n).toBeCloseTo(0.5 + FAR_DRIFT_WEIGHT[1] * (o2.n - 0.5), 12);
+      // The far macro: in [0, 1], the same at any footprint, and not one value over a hillside.
+      const m = farMacro(x, z);
+      expect(m).toBeGreaterThanOrEqual(0);
+      expect(m).toBeLessThanOrEqual(1);
+    }
+    const whole = farDrift(1.0, 0.3, 1);
+    const o1 = farClumpOctave(1.0, 0.3, FAR_DRIFT_CELL[0], FAR_DRIFT_SALT[0]);
+    const o2 = farClumpOctave(1.0, 0.3, FAR_DRIFT_CELL[1], FAR_DRIFT_SALT[1]);
+    expect(whole.n).toBeCloseTo(0.5 + 0.5 * (o1.n - 0.5) + 0.5 * (o2.n - 0.5), 12);
+    const samples = Array.from({ length: 64 }, (_, i) => farMacro(i * 37.3, i * 11.7));
+    expect(Math.max(...samples) - Math.min(...samples)).toBeGreaterThan(0.3);
+    // The target's drift darkening: the trough at FAR_DRIFT_AO of the crown, the clumps whole.
+    const white = { r: 1, g: 1, b: 1 };
+    expect(farCoverTarget(0, 0, white, 1, white, 0).r).toBeCloseTo(0.1328 * FAR_DRIFT_AO, 12);
+    expect(farCoverTarget(0, 0, white, 1, { r: 0.5, g: 2, b: 1 }, 1).g).toBeCloseTo(0.1312 * 2, 12);
   }, timeLimit(5_000));
 
   it("mixes the target from the sward and the litter, shaded by the canopy and darkened in the clumps' troughs", () => {

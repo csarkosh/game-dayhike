@@ -270,6 +270,36 @@ export const FAR_SUN_GAIN_MAX = 2;
 /** The specular weight's cut at full weight on dry ground. Fitted 2026-10-10:
  * at the canopy pose at 16:00 far over near is 0.77 at a cut of 0.25. */
 export const FAR_SPEC_CUT = 0.25;
+/** The drift octaves (2026-10-15, the far field's fullness): patches of
+ * thicker and thinner cover at ten and thirty metres, the same lattice noise
+ * as the clumps with salts of their own, each faded to its mean under two
+ * pixels as the clumps are. They carry the ground from where the clumps have
+ * averaged out, inside a hundred metres at a grazing footprint, to where the
+ * far macro takes over: a 30 m cell is still a few pixels wide a kilometre
+ * out. Troughs at FAR_DRIFT_AO of the crowns, a gentler tilt than the clumps'. */
+export const FAR_DRIFT_CELL: readonly [number, number] = [10, 30];
+export const FAR_DRIFT_WEIGHT: readonly [number, number] = [0.5, 0.5];
+export const FAR_DRIFT_SALT: readonly [readonly [number, number], readonly [number, number]] = [[7, 23], [61, 5]];
+export const FAR_DRIFT_AO = 0.55;
+export const FAR_DRIFT_TILT = 0.3;
+/** Bare far ground (2026-10-15): rock, scree, snow and sand past the detail's
+ * fade carry no cover and so none of the far cover's relief, and read as a
+ * plane. They take the drift's darkening too, shallower, from the fade's end,
+ * so a far summit is a field of patches as a far hillside is. */
+export const FAR_BARE_AO = 0.72;
+/** The far roughness (2026-10-15): the ground goes matte with distance, from
+ * the detail's fade to here, so a far hillside and a far scree never sparkle
+ * under a flat light as mipmapped relief does. */
+export const FAR_ROUGH_BAND: readonly [number, number] = [80, 400];
+/** The far macro (2026-10-15): the lush and dry drift of a hillside at sixty
+ * and two hundred and twenty metres, the near macro's tint (`macroTint`, with
+ * no slope push) from noise at these wavelengths, on all ground that carries
+ * cover at every distance, so the far hillside is a field of drifts and the
+ * near ground carries the same drift the far does. Never faded: a 60 m cell
+ * is nine pixels wide at the horizon. */
+export const FAR_MACRO_CELL: readonly [number, number] = [60, 220];
+export const FAR_MACRO_WEIGHT: readonly [number, number] = [0.6, 0.4];
+export const FAR_MACRO_SALT: readonly [readonly [number, number], readonly [number, number]] = [[3, 19], [29, 47]];
 
 /** GLSL's mod: never negative for a positive divisor. */
 function glslMod(x: number, y: number): number {
@@ -327,18 +357,39 @@ export function farClump(x: number, z: number, foot: number): FarClump {
   };
 }
 
+/** The drift's two octaves, band-limited by the footprint as the clumps are.
+ * Mirrors farDrift. */
+export function farDrift(x: number, z: number, foot: number): FarClump {
+  const o1 = farClumpOctave(x, z, FAR_DRIFT_CELL[0], FAR_DRIFT_SALT[0]);
+  const o2 = farClumpOctave(x, z, FAR_DRIFT_CELL[1], FAR_DRIFT_SALT[1]);
+  const b1 = FAR_DRIFT_WEIGHT[0] * (1 - smoothstep(0.5, 1, foot / FAR_DRIFT_CELL[0]));
+  const b2 = FAR_DRIFT_WEIGHT[1] * (1 - smoothstep(0.5, 1, foot / FAR_DRIFT_CELL[1]));
+  return {
+    n: 0.5 + b1 * (o1.n - 0.5) + b2 * (o2.n - 0.5),
+    gx: b1 * o1.gx + b2 * o2.gx,
+    gz: b1 * o1.gz + b2 * o2.gz,
+  };
+}
+
+/** The far macro's noise in [0, 1]: its two octaves weighted, never faded. Mirrors farMacro. */
+export function farMacro(x: number, z: number): number {
+  const o1 = farClumpOctave(x, z, FAR_MACRO_CELL[0], FAR_MACRO_SALT[0]);
+  const o2 = farClumpOctave(x, z, FAR_MACRO_CELL[1], FAR_MACRO_SALT[1]);
+  return FAR_MACRO_WEIGHT[0] * o1.n + FAR_MACRO_WEIGHT[1] * o2.n;
+}
+
 /** The far target before the pull: the sward and the litter mixed by the
- * litter weight, times the macro tint, the canopy's shade by ρ (`canopy`) and
- * the clumps' trough darkening by the clump value. Mirrors the fcTarget lines
- * of the terrain's far block. */
-export function farCoverTarget(duff: number, canopy: number, macro: Rgb, clump: number): Rgb {
+ * litter weight, times the macro tint and the far macro's, the canopy's shade
+ * by ρ (`canopy`), the clumps' trough darkening by the clump value and the
+ * drift's by its own. Mirrors the fcTarget lines of the terrain's far block. */
+export function farCoverTarget(duff: number, canopy: number, macro: Rgb, clump: number, farMacroTint: Rgb = { r: 1, g: 1, b: 1 }, drift = 1): Rgb {
   const l = clamp01(duff);
   const shade = 1 - FAR_CANOPY_SHADE * clamp01(canopy);
-  const ao = mixNum(FAR_CLUMP_AO, 1, clump);
+  const ao = mixNum(FAR_CLUMP_AO, 1, clump) * mixNum(FAR_DRIFT_AO, 1, drift);
   return {
-    r: mixNum(FAR_SWARD.r, FAR_LITTER.r, l) * macro.r * shade * ao,
-    g: mixNum(FAR_SWARD.g, FAR_LITTER.g, l) * macro.g * shade * ao,
-    b: mixNum(FAR_SWARD.b, FAR_LITTER.b, l) * macro.b * shade * ao,
+    r: mixNum(FAR_SWARD.r, FAR_LITTER.r, l) * macro.r * farMacroTint.r * shade * ao,
+    g: mixNum(FAR_SWARD.g, FAR_LITTER.g, l) * macro.g * farMacroTint.g * shade * ao,
+    b: mixNum(FAR_SWARD.b, FAR_LITTER.b, l) * macro.b * farMacroTint.b * shade * ao,
   };
 }
 

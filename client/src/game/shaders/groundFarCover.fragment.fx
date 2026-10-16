@@ -73,6 +73,25 @@ const float FAR_COVER_TILT = 0.3;
 // Fitted 2026-10-10: At the canopy pose at 16:00 far over near is 0.77 at a cut
 // of 0.25.
 const float FAR_SPEC_CUT = 0.25;
+// The drift at ten and thirty metres (2026-10-15): patches of thicker and
+// thinner cover between the clumps' grain and the far macro's drifts, faded
+// as the clumps are, troughs at 0.55, a gentler tilt.
+const vec2 FAR_DRIFT_CELL = vec2(10.0, 30.0);
+const vec2 FAR_DRIFT_WEIGHT = vec2(0.5, 0.5);
+const vec2 FAR_DRIFT_SALT_A = vec2(7.0, 23.0);
+const vec2 FAR_DRIFT_SALT_B = vec2(61.0, 5.0);
+const float FAR_DRIFT_AO = 0.55;
+const float FAR_DRIFT_TILT = 0.3;
+// Bare far ground past the detail's fade takes the drift's darkening too,
+// shallower, so a far summit is a field of patches as a hillside is.
+const float FAR_BARE_AO = 0.72;
+// The far macro (2026-10-15): the lush and dry drift of a hillside at sixty
+// and two hundred and twenty metres, on all ground that carries cover at
+// every distance, never faded.
+const vec2 FAR_MACRO_CELL = vec2(60.0, 220.0);
+const vec2 FAR_MACRO_WEIGHT = vec2(0.6, 0.4);
+const vec2 FAR_MACRO_SALT_A = vec2(3.0, 19.0);
+const vec2 FAR_MACRO_SALT_B = vec2(29.0, 47.0);
 
 // The far cover's weight in [0, 1]: any cover the near field draws, grass or
 // litter, ramped in over the tier's band of eye distance. Mirrors
@@ -111,4 +130,19 @@ vec3 farClump(vec2 p, float foot) {
   float b1 = FAR_CLUMP_WEIGHT.x * (1.0 - smoothstep(0.5, 1.0, foot / FAR_CLUMP_CELL.x));
   float b2 = FAR_CLUMP_WEIGHT.y * (1.0 - smoothstep(0.5, 1.0, foot / FAR_CLUMP_CELL.y));
   return vec3(b1 * o1.xy + b2 * o2.xy, 0.5 + b1 * (o1.z - 0.5) + b2 * (o2.z - 0.5));
+}
+
+// The drift's two octaves, band-limited as the clumps are. Mirrors farDrift.
+vec3 farDrift(vec2 p, float foot) {
+  vec3 o1 = farClumpOctave(p, FAR_DRIFT_CELL.x, FAR_DRIFT_SALT_A);
+  vec3 o2 = farClumpOctave(p, FAR_DRIFT_CELL.y, FAR_DRIFT_SALT_B);
+  float b1 = FAR_DRIFT_WEIGHT.x * (1.0 - smoothstep(0.5, 1.0, foot / FAR_DRIFT_CELL.x));
+  float b2 = FAR_DRIFT_WEIGHT.y * (1.0 - smoothstep(0.5, 1.0, foot / FAR_DRIFT_CELL.y));
+  return vec3(b1 * o1.xy + b2 * o2.xy, 0.5 + b1 * (o1.z - 0.5) + b2 * (o2.z - 0.5));
+}
+
+// The far macro's noise in [0, 1]: its two octaves weighted, never faded. Mirrors farMacro.
+float farMacro(vec2 p) {
+  return FAR_MACRO_WEIGHT.x * farClumpOctave(p, FAR_MACRO_CELL.x, FAR_MACRO_SALT_A).z
+    + FAR_MACRO_WEIGHT.y * farClumpOctave(p, FAR_MACRO_CELL.y, FAR_MACRO_SALT_B).z;
 }

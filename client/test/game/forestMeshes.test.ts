@@ -31,6 +31,7 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.j
 import type { TargetCamera } from "@babylonjs/core/Cameras/targetCamera.js";
 import {
   collectBands,
+  farTreeScale,
   NEAR_RADIUS,
   SEAM_FAR,
   SEAM_FILL,
@@ -57,6 +58,7 @@ import {
   defaultBakeImpostor,
   IMPOSTOR_BAKE_FAIL_MS,
   IMPOSTOR_BAKE_WARN_MS,
+  type BakedImpostor,
   type BakeOptions,
   type BarkTextureLoader,
   type SpeciesMeshes,
@@ -223,7 +225,7 @@ describe("createForestMeshes under NullEngine", () => {
       scene: Scene,
       options?: BakeOptions,
       pose?: Quaternion,
-    ) => Texture | null | Promise<Texture | null> = () => null,
+    ) => BakedImpostor | null | Promise<BakedImpostor | null> = () => null,
   ) {
     const engine = new NullEngine();
     engines.push(engine);
@@ -264,9 +266,11 @@ describe("createForestMeshes under NullEngine", () => {
     forest.dispose();
   });
 
-  /** A 1×1 stand-in for a successful bake. */
-  function stubBakeTexture(scene: Scene): Texture {
-    return RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
+  /** A 1×1 stand-in for a successful bake: its colour, no normal map, the
+   * plain alpha, as the target itself stands in where the pixels cannot be
+   * read back. */
+  function stubBakeTexture(scene: Scene): BakedImpostor {
+    return { albedo: RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene), normal: null, signed: false };
   }
 
   function impostorPlanes(scene: Scene): Mesh[] {
@@ -284,8 +288,8 @@ describe("createForestMeshes under NullEngine", () => {
   ): readonly [number, number] => (s[1] <= nearRadius ? s : seamNear(nearRadius));
 
   it("is ready only once every billboard bake has settled, baked or given up", async () => {
-    const bakes: ((texture: Texture | null) => void)[] = [];
-    const { forest } = build(undefined, () => new Promise<Texture | null>((resolve) => bakes.push(resolve)));
+    const bakes: ((baked: BakedImpostor | null) => void)[] = [];
+    const { forest } = build(undefined, () => new Promise<BakedImpostor | null>((resolve) => bakes.push(resolve)));
     let ready = false;
     void forest.ready.then(() => { ready = true; });
     await new Promise((r) => setTimeout(r, 20));
@@ -731,7 +735,7 @@ describe("createForestMeshes under NullEngine", () => {
     errors.mockClear();
     let land: (() => void) | null = null;
     const { scene, forest } = build(undefined, (_mesh, s) =>
-      new Promise<Texture | null>((resolve) => {
+      new Promise<BakedImpostor | null>((resolve) => {
         const previous = land;
         land = () => {
           previous?.();
@@ -753,10 +757,10 @@ describe("createForestMeshes under NullEngine", () => {
     const errors = vi.mocked(console.error);
     errors.mockClear();
     const signals: (AbortSignal | undefined)[] = [];
-    const resolvers: ((t: Texture | null) => void)[] = [];
+    const resolvers: ((t: BakedImpostor | null) => void)[] = [];
     const { forest } = build(undefined, (_mesh, _s, options) => {
       signals.push(options?.signal);
-      return new Promise<Texture | null>((resolve) => resolvers.push(resolve));
+      return new Promise<BakedImpostor | null>((resolve) => resolvers.push(resolve));
     });
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
     expect(signals.length).toBe(6);
@@ -1392,13 +1396,17 @@ describe("createForestMeshes under NullEngine", () => {
     const isSnag = (t: TreeInstance) => t.cohort === COHORT_SNAG;
     // On-lattice first, then the off-lattice fill — the order `rebuild`
     // concatenates them in, and the order the fadeBands test above relies on.
-    const snags = [...bands.impostors.filter(isSnag), ...bands.impostorsFill.filter(isSnag)];
+    const latticeSnags = bands.impostors.filter(isSnag);
+    const snags = [...latticeSnags, ...bands.impostorsFill.filter(isSnag)];
     expect(snags.length).toBeGreaterThan(0);
     expect(buf!.length / 16).toBe(snags.length);
     for (let i = 0; i < snags.length; i++) {
       const t = snags[i]!;
-      // Translation Y is element 13 of a Babylon world matrix.
-      expect(buf![i * 16 + 13], `instance ${i}`).toBeCloseTo(t.groundH + 4 * t.scale, 2);
+      // Translation Y is element 13 of a Babylon world matrix. A lattice
+      // card past the fill's seam is taller by `farTreeScale`, its base
+      // still on the ground; the fill's cards keep their scale.
+      const up = i < latticeSnags.length ? farTreeScale(Math.hypot(t.x - FOREST_CAM.x, t.z - FOREST_CAM.z))[1] : 1;
+      expect(buf![i * 16 + 13], `instance ${i}`).toBeCloseTo(t.groundH + 4 * t.scale * up, 2);
     }
   });
 

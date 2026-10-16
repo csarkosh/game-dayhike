@@ -104,8 +104,7 @@ import {
   DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   HORIZON, HORIZON_MAX, TUFT_ALBEDO,
   SWARD_FLOOR, SWARD_MAX, SWARD_COVER, SWARD_FADE,
-  FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX,
-} from "./groundHexParams.js";
+  FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX, FAR_ROUGH_BAND } from "./groundHexParams.js";
 // The key of each light's plain diffuse line; the terrain never carries the
 // foliage light plugin, so the key is never applied twice.
 import { FOLIAGE_LIGHT_INJECTION_POINT } from "./foliageLightPlugin.js";
@@ -505,7 +504,18 @@ export const TERRAIN_FRAGMENT_FAR_COVER = `  // Far cover: past the band where t
   // their own. Constants in the far-cover include.
   vec2 fcFw = fwidth(vPositionW.xz);
   float fcFoot = max(fcFw.x, fcFw.y);
+  // The far macro: the lush and dry drift at sixty and two hundred metres, on
+  // all ground that carries cover at every distance, never faded, so the near
+  // ground carries the drift the far hillside is a field of.
+  vec3 fcFarMacro = macroTint(farMacro(vPositionW.xz), 0.0);
+  surfaceAlbedo *= mix(vec3(1.0), fcFarMacro, clamp(w0 + vTerrainCover, 0.0, 1.0) * terrainMacroOn);
+  // The drift, in uniform flow: the far cover's relief, and the bare far
+  // ground's past the detail's fade, where no cover grows and nothing else
+  // would vary a summit's rock or snow.
+  vec3 fcDrift = farDrift(vPositionW.xz, fcFoot);
   terrainFarW = farCoverWeight(vTerrainCover, vTerrainW2.z, dist);
+  float fcBare = smoothstep(terrainFade.x, terrainFade.y, dist) * (1.0 - terrainFarW);
+  surfaceAlbedo *= mix(1.0, mix(FAR_BARE_AO, 1.0, fcDrift.z), fcBare);
   if (terrainFarW > 0.0) {
     vec3 fcClump = farClump(vPositionW.xz, fcFoot);
     float fcB18 = 1.0 - smoothstep(0.5, 1.0, fcFoot / MACRO_WAVE.x);
@@ -513,10 +523,12 @@ export const TERRAIN_FRAGMENT_FAR_COVER = `  // Far cover: past the band where t
     vec3 fcMacro = macroTint(MACRO_WEIGHT.x * mix(0.5, macroN18, fcB18) + MACRO_WEIGHT.y * mix(0.5, macroN6, fcB6), 1.0 - terrainN.y);
     vec3 fcTarget = mix(FAR_SWARD, FAR_LITTER, clamp(vTerrainW2.z, 0.0, 1.0))
       * fcMacro
+      * fcFarMacro
       * (1.0 - FAR_CANOPY_SHADE * clamp(vTerrainW2.w, 0.0, 1.0))
-      * mix(FAR_CLUMP_AO, 1.0, fcClump.z);
+      * mix(FAR_CLUMP_AO, 1.0, fcClump.z)
+      * mix(FAR_DRIFT_AO, 1.0, fcDrift.z);
     surfaceAlbedo = mix(surfaceAlbedo, fcTarget, FAR_SWARD_MAX * terrainFarW);
-    terrainFarN = normalize(normalW + vec3(-fcClump.x, 0.0, -fcClump.y) * FAR_CLUMP_TILT);
+    terrainFarN = normalize(normalW + vec3(-fcClump.x, 0.0, -fcClump.y) * FAR_CLUMP_TILT + vec3(-fcDrift.x, 0.0, -fcDrift.y) * FAR_DRIFT_TILT);
   }
 `;
 
@@ -710,7 +722,8 @@ ${TERRAIN_FRAGMENT_FAR_COVER}  // Roughness: the blended per-layer base,
   // gloss); F0: per layer, never faded.
   float rBase = terrainLayerRough.x * w0 + terrainLayerRough.y * w1 + terrainLayerRough.z * w2 + terrainLayerRough.w * w3 + terrainLayerRough2.x * w4;
   float rMap = rah0.r * w0 + rah1.r * w1 + rah2.r * w2 + rah3.r * w3 + rah4.r * w4;
-  terrainRough = clamp(rBase * mix(1.0, rMap / 0.5, strength), 0.0, 1.0);
+  // Matte with distance: whatever the relief said, the far field goes rough (FAR_ROUGH_BAND).
+  terrainRough = clamp(max(rBase * mix(1.0, rMap / 0.5, strength), smoothstep(${f2(FAR_ROUGH_BAND[0])}, ${f2(FAR_ROUGH_BAND[1])}, dist)), 0.0, 1.0);
   terrainF0 = terrainLayerF0.x * w0 + terrainLayerF0.y * w1 + terrainLayerF0.z * w2 + terrainLayerF0.w * w3 + terrainLayerF02.x * w4;
 }
 #endif

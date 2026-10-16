@@ -41,7 +41,7 @@ describe("the plugins' samplers", () => {
       // Eleven plugins, the trunks' moss with its one sampler and the dead
       // trees' dressing with the same among them; the foliage once per
       // profile (ten, the nurse log's fern among them).
-      expect(built.cases.length).toBe(20);
+      expect(built.cases.length).toBe(21);
     } finally {
       built.dispose();
     }

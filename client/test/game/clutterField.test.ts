@@ -1,14 +1,13 @@
+import type { FadeBands } from "../../src/game/distanceFadePlugin.js";
 import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import {
   CLUTTER_BLADE_HANDOFF, CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION, CLUTTER_MEADOW_NEAR_IN,
   CLUTTER_FADE_MIN_RAMP, CLUTTER_FAR_SPLIT, CLUTTER_RADII, COLLECTOR_SWEEP_SIZE, clutterFadeEdges,
-  clutterSeamEdges, collectClutter, collectClutterWithBudgets, createClutterCollector,
-} from "../../src/game/clutterField.js";
+  clutterSeamEdges, collectClutter, collectClutterWithBudgets, createClutterCollector, rampBands, COVER_RAMP_CLASSES, COVER_RAMP_WIDTH } from "../../src/game/clutterField.js";
 import {
   CLUTTER_CLASS_COUNT, clutterCell, CLUTTER_DRIFTWOOD, CLUTTER_GRASS, CLUTTER_GRASS_CELL, CLUTTER_JITTER,
-  CLUTTER_MEADOW,
-} from "../../src/sim/clutter.js";
+  CLUTTER_MEADOW, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_BUSH, CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_FUNGUS, CLUTTER_DRIFTLOG } from "../../src/sim/clutter.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 0x5eed;
@@ -47,6 +46,25 @@ describe("clutter band properties", () => {
       const hard = (Math.PI * Math.pow(r + Math.SQRT2 * (CLUTTER_JITTER / 2) * cell, 2)) / (cell * cell);
       expect(CLUTTER_BUDGETS[cls]!).toBeGreaterThanOrEqual(hard);
     }
+  });
+});
+
+describe("the cover's density ramp", () => {
+  it("draws each instance its own edge across the out band, a dissolve COVER_RAMP_WIDTH wide, the last ending where the band does, and the in band kept", () => {
+    const fade: FadeBands = [10, 20, 88, 110];
+    expect(rampBands(fade, 0)).toEqual([10, 20, 88, 88 + COVER_RAMP_WIDTH]);
+    const last = rampBands(fade, 0.999999);
+    expect(last[3]).toBeCloseTo(110, 3);
+    const mid = rampBands(fade, 0.5);
+    expect(mid[2]).toBeCloseTo(88 + (22 - COVER_RAMP_WIDTH) / 2, 9);
+    expect(mid[3] - mid[2]).toBeCloseTo(COVER_RAMP_WIDTH, 9);
+    // A hash past 1 or under 0 is clamped, and a band narrower than the width is the band.
+    expect(rampBands(fade, 1.5)[3]).toBeCloseTo(110, 3);
+    expect(rampBands(fade, -1)[2]).toBe(88);
+    expect(rampBands([0, 1, 100, 102], 0.7)).toEqual([0, 1, 100, 102]);
+    // The cover ramps, the stones do not.
+    for (const cls of [CLUTTER_GRASS, CLUTTER_MEADOW, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_BUSH]) expect(COVER_RAMP_CLASSES.has(cls)).toBe(true);
+    for (const cls of [CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_DRIFTLOG]) expect(COVER_RAMP_CLASSES.has(cls)).toBe(false);
   });
 });
 

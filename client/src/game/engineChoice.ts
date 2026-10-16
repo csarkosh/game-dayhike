@@ -61,13 +61,15 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high"];
  *   `sample_mask`, `primitive_index` and the two subgroup built-ins; the
  *   position does not count). On WebGPU Babylon declares every vertex output
  *   as a fragment input, a `mat3` taking three locations. The giant trees'
- *   faded material (`material1`) writes 18 outputs and its two-sided fragment
- *   reads 18 inputs and `front_facing`, on both tiers: at 18 it fails
- *   validation, at 19 no pipeline does (`interStage.test.ts` holds the
- *   count). It is the one pipeline that sets 19. The halation's blur sizes its
+ *   faded material (`material1`) writes 20 outputs on the high tier, whose
+ *   sun casts three cascades since 2026-10-15 (each cascade a `vec4` and a
+ *   `float` more to every lit material; 18 on medium's two), and its
+ *   two-sided fragment reads those and `front_facing`: at 20 it fails
+ *   validation, at 21 no pipeline does (`interStage.test.ts` holds the
+ *   count). It is the one pipeline that sets 21. The halation's blur sizes its
  *   taps from the device's own limit, so it fills whatever the device offers
  *   and fits it; it failed at 18 only where the replay made, on a device of 18,
- *   a pipeline built for one of 19. The specification lowers the
+ *   a pipeline built for one of 19, the count before. The specification lowers the
  *   vertex stage's count twice more: by one for a pipeline drawing
  *   `point-list` topology, and by one for every four `clip_distances` it
  *   writes. The game uses neither: it draws no points, and the device is not
@@ -85,7 +87,7 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high"];
  *   them turns none away.
  */
 export const WEBGPU_REQUIRED_LIMITS: Readonly<Record<string, number>> = {
-  maxInterStageShaderVariables: 19,
+  maxInterStageShaderVariables: 21,
   maxVertexBuffers: 8,
   maxSampledTexturesPerShaderStage: 16,
   maxSamplersPerShaderStage: 16,

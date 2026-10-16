@@ -24,9 +24,21 @@ export type QualitySettings = {
   /** Shadow map edge in texels. Zero means shadows are off. */
   shadowMapSize: number;
   /** Cascade count; meaningless when `shadowMapSize` is zero. `medium` uses a
-   * single cascade; `high` uses Babylon's default cascade count as a
-   * tuning value. */
+   * single cascade over its 300 m; `high` three, to the far field's reach
+   * (2026-10-15), split at `shadowLambda` so the first still holds the near
+   * field's texel. Each cascade past the first costs every lit material two
+   * inter-stage variables on WebGPU (`engineChoice.ts`,
+   * `interStage.test.ts`), which is what holds the count at three. */
   shadowCascades: number;
+  /** How far the sun's shadows reach (m): a few hundred on medium, where
+   * cast shadows read at human and boulder scale; the far field's hillsides
+   * and tree lines on high, where the clipmap casts its own form onto the
+   * next ridge. Meaningless when `shadowMapSize` is zero. */
+  shadowDistance: number;
+  /** Babylon's cascade split, `lambda · log + (1 − lambda) · uniform`: near
+   * one where the far reach would otherwise spend the first cascade on
+   * ground kilometres away. */
+  shadowLambda: number;
   /**
    * Whether the sun's shadows soften with the caster's height above the
    * receiver, as a real sun's do: sharp where a trunk meets the ground, wider
@@ -40,9 +52,12 @@ export type QualitySettings = {
    * pay; meaningless when `shadowMapSize` is zero.
    */
   shadowSoftEdges: boolean;
-  /** Levels coarser to bias mesh LOD selection by. */
+  /** Levels coarser to bias mesh LOD selection by. Read by nothing
+   * (2026-10-15): the forest's and the cover's radii are their own
+   * (`forestField.ts`, `clutterField.ts`), and the tier scales them there. */
   lodBias: number;
-  /** Largest mip dimension to keep. Zero means no cap. */
+  /** Largest mip dimension to keep. Zero means no cap. Read by nothing
+   * (2026-10-15): the bark sets pick their size by tier (`barkSize`). */
   textureMipCap: number;
 };
 
@@ -59,6 +74,8 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     hardwareScaling: 1.5,
     shadowMapSize: 0,
     shadowCascades: 0,
+    shadowDistance: 0,
+    shadowLambda: 0,
     shadowSoftEdges: false,
     lodBias: 1,
     textureMipCap: 512,
@@ -67,6 +84,8 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     hardwareScaling: 1,
     shadowMapSize: 1024,
     shadowCascades: 1,
+    shadowDistance: 300,
+    shadowLambda: 0.9,
     shadowSoftEdges: false,
     lodBias: 0,
     textureMipCap: 1024,
@@ -74,7 +93,9 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
   high: {
     hardwareScaling: 1,
     shadowMapSize: 2048,
-    shadowCascades: 2,
+    shadowCascades: 3,
+    shadowDistance: 1500,
+    shadowLambda: 0.97,
     shadowSoftEdges: true,
     lodBias: 0,
     textureMipCap: 0,

@@ -15,13 +15,9 @@
  * across rebuilds so a camera move re-samples only the cells newly inside
  * some class's disc. Pure and Babylon-free, like `forestField.ts`.
  */
+import type { FadeBands } from "./distanceFadePlugin.js";
 import {
-  clutterInCell,
-  clutterCell,
-  CLUTTER_CLASS_COUNT,
-  CLUTTER_GRASS_CELL,
-  CLUTTER_MEADOW,
-  type ClutterInstance,
+  clutterInCell, clutterCell, CLUTTER_CLASS_COUNT, CLUTTER_GRASS_CELL, CLUTTER_MEADOW, type ClutterInstance, CLUTTER_GRASS, CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_LITTER, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT,
 } from "../sim/clutter.js";
 import { finish, nextCrossing, type Slices } from "./syncJobs.js";
 import {
@@ -232,6 +228,32 @@ export const CLUTTER_FADE_FRACTION: readonly number[] = [0.2, 0.2, 0.2, 0.2, 0.2
  * floor unless `clutterFadeEdges` clamps it back up.
  */
 export const CLUTTER_FADE_MIN_RAMP = Math.SQRT2 * CLUTTER_GRASS_CELL;
+
+/** The cover's density ramp (2026-10-15, the far field's fullness): the
+ * classes that are the ground's cover, which thin by rule toward their disc
+ * edge instead of dithering out together along a front that moves with the
+ * camera. Each far instance takes its own edge, drawn from its hash across
+ * the class's fade band, and dissolves over `COVER_RAMP_WIDTH` about it, so
+ * the cover's density falls across the band and no line stands anywhere;
+ * the far cover under it is already the cards' average, so what remains past
+ * the ramp is relief alone. The rocks, the boulders, the driftwood, the fungi
+ * and the drift logs keep the one edge: a rock that thins out is a rock gone. */
+export const COVER_RAMP_CLASSES: ReadonlySet<number> = new Set([
+  CLUTTER_GRASS, CLUTTER_BUSH, CLUTTER_MEADOW, CLUTTER_FLOWER, CLUTTER_LITTER, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT,
+]);
+/** How wide each instance's own dissolve is (m): the jitter floor, so a disc edge that snaps still clears it. */
+export const COVER_RAMP_WIDTH = Math.SQRT2 * CLUTTER_GRASS_CELL;
+
+/** One instance's fade bands on a ramped bucket: the in band kept, the out
+ * band `COVER_RAMP_WIDTH` wide about an edge drawn from `hash` in [0, 1)
+ * across the bucket's out band, the last edge ending where the bucket's does. */
+export function rampBands(fade: FadeBands, hash: number): FadeBands {
+  const start = fade[2];
+  const end = fade[3];
+  const width = Math.min(COVER_RAMP_WIDTH, end - start);
+  const edge = start + (end - start - width) * Math.min(Math.max(hash, 0), 0.999999);
+  return [fade[0], fade[1], edge, edge + width];
+}
 
 /** The fade's edges for a class: end at the tier-scaled radius, start a
  * fraction inside it, but never closer to `end` than `CLUTTER_FADE_MIN_RAMP`

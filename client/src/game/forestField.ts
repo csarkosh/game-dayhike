@@ -95,6 +95,21 @@ export const SEAM_FILL: readonly [number, number] = [900, IMPOSTOR_FULL_RADIUS];
  * 41–70 m giant is only 16–27 px at 2 km under 47% haze, already close to
  * sub-pixel, so the fade only has to finish erasing an already-faint shape. */
 export const SEAM_FAR: readonly [number, number] = [1800, IMPOSTOR_RADIUS];
+/** How much a billboard on the stride lattice grows past the fill's seam
+ * (2026-10-15), across and up: the lattice keeps one tree in four, and a
+ * card half as wide again and a tenth taller makes the four's cover of the
+ * hillside from the one, as a far tree line reads as a mass and not as
+ * trees. Scaled in over `SEAM_FILL`, where the fill's three go. */
+export const FAR_TREE_SCALE: { readonly across: number; readonly up: number } = { across: 1.4, up: 1.1 };
+
+/** The scale of a lattice billboard `dist` metres from the eye, across and
+ * up: 1 inside the fill's seam, `FAR_TREE_SCALE` past it, smoothstep across. */
+export function farTreeScale(dist: number): readonly [number, number] {
+  const t = Math.min(1, Math.max(0, (dist - SEAM_FILL[0]) / (SEAM_FILL[1] - SEAM_FILL[0])));
+  const w = t * t * (3 - 2 * t);
+  return [1 + (FAR_TREE_SCALE.across - 1) * w, 1 + (FAR_TREE_SCALE.up - 1) * w];
+}
+
 /** The near/impostor seam ends at the (tier-scaled) near radius. */
 export function seamNear(nearRadius: number): readonly [number, number] {
   return [nearRadius - 20, nearRadius];
