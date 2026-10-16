@@ -18,11 +18,11 @@ const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 // every plugin injects per stage, and the three post shaders as stored. A
 // change here is a change to what every WebGL2 player compiles.
 const PINS: Record<string, string> = {
-  "atmosphere.fragment": "0bd248348819bbc2daf253d2b7fc8d8d41f2a96c9b84d9333bf06b52a37dd7b0",
+  "atmosphere.fragment": "0f65cdd4ef1b91da36317abbe90659c5ded272f528e8523a30ec30b84e86d517",
   "cliffTint.fragment": "34b80348c2b278087d42892dd31129fc6aac2b12c93f275293617b88e9e2bccd",
   "cliffTint.vertex": "3fcb23ae5aab79e441e6d140e71ad0c149a0702f72c48fa093fc0b9fd3076de1",
   "distanceFade.fragment": "e9fd42d78c56e2f364ac16691996386de60dd9717060cc3822bd296c9c09281f",
-  "distanceFade.vertex": "230ec584603269b72bb5be0710463bb2cf58096cb6cdabaf513941807db4112b",
+  "distanceFade.vertex": "3f81eacd1008ff5306bdf04629d9cf733e410af4effaf6c51b4e261bd606a526",
   // The foliage plugin's fragment re-pinned for the canopy's share of the sky
   // (foliageSky.fragment.fx), the cards' contrast toward the cover's green
   // and the albedo floor (foliage.fragment.fx, foliageLights.fragment.fx).
@@ -102,7 +102,7 @@ const PINS: Record<string, string> = {
   // grid from row 2, one sampler where there were two); its three reads and
   // the declaration are the difference, and they stay in the texts the tests
   // below take their pieces out of.
-  "terrain.fragment": "aad65ad2960fc9a19a85a69bac95e15808e7d432add3c9ab47ee84c3906234b7",
+  "terrain.fragment": "726092e1aedfe6a6e73bed80a6ea7a511d0e1989380ece83c7e2ccd67a376842",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
 };
@@ -114,7 +114,7 @@ const PINS: Record<string, string> = {
 const INTERFACE_PINS: Record<string, string> = {
   "atmosphere.interface": "b3abd6248a3183ba01bc79d415b4a92efa7f63962e43609b041db61bab7a96a6",
   "cliffTint.interface": "17f58097180ad484779cd5302189b01c65ae910a947d6d347ac9eff595479115",
-  "distanceFade.interface": "c59e5c6bd9a213d90f127332528ef16d234392159113be81a6cc47b38d2709cb",
+  "distanceFade.interface": "a3cd043ba841b5ae90f0bed3e03d89476d4dc0642265659becf46c113fdc0953",
   // Re-pinned for the foliage plugin's two floats, `foliageCanopySun` and
   // `foliageContrast`, declared on both uniform paths. `foliage.NURSE`, the
   // nurse log's fern's profile, has the tree's and the reeds' interface.

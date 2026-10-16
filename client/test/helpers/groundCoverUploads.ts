@@ -16,7 +16,7 @@ import type { BladeTiers } from "../../src/game/bladeField.js";
 import { bladeHeightScale, bladeMeshName } from "../../src/game/bladeMeshes.js";
 import type { DuffTiers } from "../../src/game/duffField.js";
 import { duffMeshName } from "../../src/game/duffMeshes.js";
-import { clutterFadeEdges, clutterSeamEdges, COVER_RAMP_CLASSES, rampBands, type ClutterBands } from "../../src/game/clutterField.js";
+import { clutterFadeEdges, clutterSeamEdges, COVER_RAMP_CLASSES, coverBands, coverFarBand, type ClutterBands } from "../../src/game/clutterField.js";
 import { fadeBands, writeFadeBands } from "../../src/game/distanceFadePlugin.js";
 
 /** The one seed every comparison runs on. */
@@ -192,8 +192,9 @@ export function expectedClutter(meshes: readonly Mesh[], bands: ClutterBands): U
         instanceMatrixFor(inst, frame, m);
         e.push(`${name}|matrix`, m);
         // The far level of a ramped class draws each instance's own out band
-        // from its hash (2026-10-15); every other bucket one band throughout.
-        writeFadeBands(b, 0, lod === 1 && COVER_RAMP_CLASSES.has(cls) ? rampBands(fades[1]!, inst.hash) : fades[lod]!);
+        // from its hash (2026-10-15), and a card not kept past a far band
+        // goes out across it (2026-10-16); every other bucket one band throughout.
+        writeFadeBands(b, 0, coverBands(fades[lod]!, lod === 1 && COVER_RAMP_CLASSES.has(cls), lod === 1 ? coverFarBand(cls, 1) : null, inst.hash));
         e.push(`${name}|fadeBands`, b);
         if (TINTED.has(cls)) {
           writeFoliage(SEED, inst, f, 0, frame);

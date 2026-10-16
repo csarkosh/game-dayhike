@@ -67,7 +67,64 @@ import {
  * ground plants (index 12) get 60 m, under the canopy that hides them sooner,
  * and the high ground's (index 13) the same: knee-high flowers in grass.
  */
-export const CLUTTER_RADII: readonly number[] = [110, 110, 400, 110, 70, 110, 40, 50, 40, 70, 75, 160, 60, 60];
+export const CLUTTER_RADII: readonly number[] = [110, 110, 400, 110, 70, 110, 100, 50, 40, 70, 75, 160, 60, 60];
+
+/**
+ * Where a class's far band begins (m, at radiusScale 1; none for a class at
+ * infinity), 2026-10-16. Past it the cover keeps one card in
+ * 1 / COVER_FAR_KEEP by its hash, the rest fading out over COVER_FAR_RAMP,
+ * and the survivors widen about their origin to COVER_WIDEN times their
+ * width across COVER_WIDEN_RAMP of eye distance in the vertex stage
+ * (`distanceFadePlugin.ts`), so the ground keeps silhouettes to the class's
+ * radius at half the instances: the tile doubling a far grass field is
+ * drawn with elsewhere. The meadow's: its cards ended at 40 m and the
+ * ground past them read bare to the tree line; they now reach 100 m, the
+ * near level and its seam still at the 40 m band's (`clutterNearRadius`).
+ */
+export const COVER_FAR_FROM: readonly number[] = [
+  Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, 40, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity,
+];
+/** The share of a class's cards kept past its far band's start: a half,
+ * from a quarter, which left the slope reading bare between its cards. */
+export const COVER_FAR_KEEP = 0.5;
+/** Over how far (m) the cards not kept fade out past the band's start. */
+export const COVER_FAR_RAMP = 12;
+/** How many times its width a kept card grows to across the band. */
+export const COVER_WIDEN = 2;
+/** Over how far (m) of eye distance a kept card grows, from the band's start. */
+export const COVER_WIDEN_RAMP = 24;
+
+/** The radius (m) a class's near level and seam are drawn to: its own, or
+ * its far band's start where it has one, so a far band grows a class's
+ * reach without growing its near level. */
+export function clutterNearRadius(cls: number, radiusScale = 1): number {
+  return Math.min(CLUTTER_RADII[cls] as number, COVER_FAR_FROM[cls] as number) * radiusScale;
+}
+
+/** A class's far band at the tier's scale: where the cards not kept start
+ * fading and where they are gone; null for a class without one. */
+export function coverFarBand(cls: number, radiusScale = 1): readonly [number, number] | null {
+  const from = COVER_FAR_FROM[cls] as number;
+  if (!Number.isFinite(from)) return null;
+  return [from * radiusScale, (from + COVER_FAR_RAMP) * radiusScale];
+}
+
+/** Whether a card is kept past its class's far band: a share
+ * `COVER_FAR_KEEP` of them, by a scramble of the instance's hash that is
+ * not the one the ramp draws its edge from (`rampBands`), so the kept
+ * cards' edges still spread across the out band. */
+export function farKeep(hash: number): boolean {
+  const h = hash * 61.0;
+  return h - Math.floor(h) < COVER_FAR_KEEP;
+}
+
+/** The widening a class's cards take with eye distance, for the material:
+ * none without a far band. */
+export function coverWiden(cls: number, radiusScale = 1): { band: readonly [number, number]; factor: number } | null {
+  const band = coverFarBand(cls, radiusScale);
+  if (band === null) return null;
+  return { band: [band[0], band[0] + COVER_WIDEN_RAMP * radiusScale], factor: COVER_WIDEN };
+}
 
 /**
  * Fraction of a class's radius inside which the near (full-detail) LOD
@@ -160,7 +217,13 @@ export const CLUTTER_FAR_SPLIT = 0.45;
  *            D 2.05 stays above the one-per-cell cap 1/0.49 ≈ 2.04 (a
  *            property of D and cell, unaffected by radius), so as before
  *            the jitter-widened hard geometric ceiling is the binding one;
- *            budget 10600 clears it. Radius grown 20→40 (the launch
+ *            budget 10600 cleared it. With the far band (2026-10-16,
+ *            `COVER_FAR_FROM`) the radius is 100 m: the disc to 40 m as
+ *            above, the cards not kept listed to 40 + 12 + 4.24 m, half
+ *            kept to 100 m, so the hard ceiling is
+ *            10437 + 0.5·π·(56.6² − 40.35²)/0.49 + 0.5·π·(100.35² − 40.35²)/0.49
+ *            ≈ 10437 + 5040 + 27040 ≈ 42517; budget 43000 clears it. The
+ *            radius had grown 20→40 before that (the launch
  *            value was 20 m): the carpet's near/far seam (`clutterSeamEdges`)
  *            now sits at 18 m and floors at the fixed 4.24 m
  *            (√2·CLUTTER_GRASS_CELL) jitter width instead of the 15%
@@ -197,7 +260,7 @@ export const CLUTTER_FAR_SPLIT = 0.45;
  *            real counts are a twentieth of that.
  * high plant: the wet plant's cell, density and radius, and its budget.
  */
-export const CLUTTER_BUDGETS: readonly number[] = [4400, 550, 260, 700, 500, 2500, 10600, 3650, 5200, 4000, 2950, 620, 5200, 5200];
+export const CLUTTER_BUDGETS: readonly number[] = [4400, 550, 260, 700, 500, 2500, 43000, 3650, 5200, 4000, 2950, 620, 5200, 5200];
 
 /**
  * Edge-fade ramp per class, as a fraction of the effective radius (this
@@ -255,6 +318,16 @@ export function rampBands(fade: FadeBands, hash: number): FadeBands {
   return [fade[0], fade[1], edge, edge + width];
 }
 
+/** One instance's fade bands on a bucket: the bucket's own; on a ramped
+ * bucket its own edge across the out band (`rampBands`); on a bucket with
+ * a far band, a card not kept (`farKeep`) goes out across the far band
+ * instead, its in band kept. The fill and the tests' oracle both write
+ * through here. */
+export function coverBands(fade: FadeBands, ramp: boolean, far: readonly [number, number] | null, hash: number): FadeBands {
+  if (far !== null && !farKeep(hash)) return [fade[0], fade[1], far[0], far[1]];
+  return ramp ? rampBands(fade, hash) : fade;
+}
+
 /** The fade's edges for a class: end at the tier-scaled radius, start a
  * fraction inside it, but never closer to `end` than `CLUTTER_FADE_MIN_RAMP`
  * — and never below zero for a disc smaller than the
@@ -297,7 +370,7 @@ export const CLUTTER_MEADOW_NEAR_IN: readonly [number, number] = [1, 2.5];
  * field's hand-off and opens to `CLUTTER_BLADE_HANDOFF`. The far LOD dithers
  * IN across it, the near LOD OUT. */
 export function clutterSeamEdges(cls: number, radiusScale = 1): { start: number; end: number } {
-  const end = (CLUTTER_RADII[cls] as number) * radiusScale * CLUTTER_FAR_SPLIT;
+  const end = clutterNearRadius(cls, radiusScale) * CLUTTER_FAR_SPLIT;
   // Zero for every other class, so `end - handoff` is `end` and never binds.
   const handoff = cls === CLUTTER_MEADOW ? CLUTTER_BLADE_HANDOFF * radiusScale : 0;
   const start = Math.max(0, Math.min(end * 0.85, end - CLUTTER_FADE_MIN_RAMP, end - handoff));
@@ -340,9 +413,14 @@ function* collectClutterSlices(
   for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
     const cell = clutterCell(cls);
     const r = CLUTTER_RADII[cls]! * radiusScale;
-    const split = r * CLUTTER_FAR_SPLIT;
+    const split = clutterNearRadius(cls, radiusScale) * CLUTTER_FAR_SPLIT;
     const r2 = r * r;
     const split2 = split * split;
+    // The far band: a card not kept is listed until its fade is done, padded
+    // by the snap jitter as the seam is, and not past it.
+    const farBand = coverFarBand(cls, radiusScale);
+    const farGone = farBand === null ? Infinity : farBand[1] + CLUTTER_FADE_MIN_RAMP;
+    const farGone2 = farGone * farGone;
     const seam = clutterSeamEdges(cls, radiusScale);
     const seamLo = Math.max(0, seam.start - CLUTTER_FADE_MIN_RAMP);
     const seamHi = seam.end + CLUTTER_FADE_MIN_RAMP;
@@ -368,6 +446,7 @@ function* collectClutterSlices(
         const dz = inst.z - az;
         const d2 = dx * dx + dz * dz;
         if (d2 >= r2) continue;
+        if (d2 >= farGone2 && !farKeep(inst.hash)) continue;
         // Seam duplication: an instance inside the seam
         // band, padded by the snap jitter on each side, is emitted to BOTH
         // LOD buckets — the shader fades one out and the other in from the
@@ -543,9 +622,15 @@ function evictRadius(cls: number): number {
  * ground's and the high ground's classes: fourteen grids where the figures
  * above are nine's. A cold collect now looks up 58,941 cells and a crossing
  * about 1,440 more, so 110000 left some 35 crossings between sweeps where it
- * was sized for 108; 160000 leaves 70, and bounds the cache near 220k
+ * was sized for 108; 160000 left 70, and bounded the cache near 220k
+ * entries.
+ *
+ * Raised 160000 -> 240000 with the meadow's far band (2026-10-16): its
+ * radius 40 -> 100 m grows its square from 115² to 287² cells, so a cold
+ * collect looks up some 128,000 cells, and 160000 left margin for about 40
+ * crossings; 240000 leaves over 140, and bounds the cache near 370k
  * entries. */
-export const COLLECTOR_SWEEP_SIZE = 160000;
+export const COLLECTOR_SWEEP_SIZE = 240000;
 
 /** Cached cells a slice of the eviction sweep looks at before it yields. */
 const SWEEP_SLICE = 2048;

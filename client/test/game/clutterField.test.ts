@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import {
   CLUTTER_BLADE_HANDOFF, CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION, CLUTTER_MEADOW_NEAR_IN,
-  CLUTTER_FADE_MIN_RAMP, CLUTTER_FAR_SPLIT, CLUTTER_RADII, COLLECTOR_SWEEP_SIZE, clutterFadeEdges,
+  CLUTTER_FADE_MIN_RAMP, CLUTTER_FAR_SPLIT, CLUTTER_RADII, COLLECTOR_SWEEP_SIZE, COVER_FAR_FROM, COVER_FAR_KEEP, COVER_FAR_RAMP,
+  COVER_WIDEN, COVER_WIDEN_RAMP, clutterFadeEdges, clutterNearRadius, coverBands, coverFarBand, coverWiden, farKeep,
   clutterSeamEdges, collectClutter, collectClutterWithBudgets, createClutterCollector, rampBands, COVER_RAMP_CLASSES, COVER_RAMP_WIDTH } from "../../src/game/clutterField.js";
 import {
   CLUTTER_CLASS_COUNT, clutterCell, CLUTTER_DRIFTWOOD, CLUTTER_GRASS, CLUTTER_GRASS_CELL, CLUTTER_JITTER,
@@ -43,8 +44,16 @@ describe("clutter band properties", () => {
       // radius can still land an instance inside the disc (the jitter can
       // pull it back in), so the true hard ceiling widens the radius by
       // that amount before squaring — not the bare π·r²/cell².
-      const hard = (Math.PI * Math.pow(r + Math.SQRT2 * (CLUTTER_JITTER / 2) * cell, 2)) / (cell * cell);
-      expect(CLUTTER_BUDGETS[cls]!).toBeGreaterThanOrEqual(hard);
+      const pad = Math.SQRT2 * (CLUTTER_JITTER / 2) * cell;
+      const disc = (radius: number) => (Math.PI * Math.pow(radius + pad, 2)) / (cell * cell);
+      // A class with a far band lists every card to the band's start, the
+      // cards not kept to the band's end plus the snap jitter, and the kept
+      // share to the radius.
+      const from = COVER_FAR_FROM[cls]!;
+      const hard = Number.isFinite(from)
+        ? disc(from) + (1 - COVER_FAR_KEEP) * (disc(from + COVER_FAR_RAMP + CLUTTER_FADE_MIN_RAMP) - disc(from)) + COVER_FAR_KEEP * (disc(r) - disc(from))
+        : disc(r);
+      expect(CLUTTER_BUDGETS[cls]!, `class ${cls}`).toBeGreaterThanOrEqual(hard);
     }
   });
 });
@@ -65,6 +74,77 @@ describe("the cover's density ramp", () => {
     // The cover ramps, the stones do not.
     for (const cls of [CLUTTER_GRASS, CLUTTER_MEADOW, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_BUSH]) expect(COVER_RAMP_CLASSES.has(cls)).toBe(true);
     for (const cls of [CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_DRIFTLOG]) expect(COVER_RAMP_CLASSES.has(cls)).toBe(false);
+  });
+});
+
+describe("the cover's far band", () => {
+  it("is the meadow's alone, from 40 m to its 100 m radius, half kept, the rest gone over 12 m, the kept twice as wide over 24 m", () => {
+    expect(COVER_FAR_FROM.map((from) => Number.isFinite(from))).toEqual(Array.from({ length: CLUTTER_CLASS_COUNT }, (_, cls) => cls === CLUTTER_MEADOW));
+    expect(COVER_FAR_FROM[CLUTTER_MEADOW]).toBe(40);
+    expect(CLUTTER_RADII[CLUTTER_MEADOW]).toBe(100);
+    expect(COVER_FAR_KEEP).toBe(0.5);
+    expect(COVER_FAR_RAMP).toBe(12);
+    expect(COVER_WIDEN).toBe(2);
+    expect(COVER_WIDEN_RAMP).toBe(24);
+    expect(coverFarBand(CLUTTER_MEADOW)).toEqual([40, 52]);
+    expect(coverFarBand(CLUTTER_MEADOW, 0.5)).toEqual([20, 26]);
+    expect(coverFarBand(CLUTTER_GRASS)).toBeNull();
+    expect(coverWiden(CLUTTER_MEADOW)).toEqual({ band: [40, 64], factor: 2 });
+    expect(coverWiden(CLUTTER_MEADOW, 0.5)).toEqual({ band: [20, 32], factor: 2 });
+    expect(coverWiden(CLUTTER_BUSH)).toBeNull();
+  });
+
+  it("keeps the near level and the seam at the band's start, not the radius", () => {
+    expect(clutterNearRadius(CLUTTER_MEADOW)).toBe(40);
+    expect(clutterNearRadius(CLUTTER_MEADOW, 0.5)).toBe(20);
+    expect(clutterNearRadius(CLUTTER_GRASS)).toBe(110);
+    expect(clutterSeamEdges(CLUTTER_MEADOW).end).toBeCloseTo(40 * CLUTTER_FAR_SPLIT, 9);
+    expect(clutterFadeEdges(CLUTTER_MEADOW).end).toBe(100);
+  });
+
+  it("keeps half of the cards by a scramble of the hash the ramp does not read", () => {
+    let kept = 0;
+    const n = 20000;
+    for (let i = 0; i < n; i++) if (farKeep((i + 0.5) / n)) kept++;
+    expect(kept / n).toBeGreaterThan(0.48);
+    expect(kept / n).toBeLessThan(0.52);
+    // The kept cards' ramp edges still spread across the out band.
+    const edges = Array.from({ length: n }, (_, i) => (i + 0.5) / n).filter(farKeep).map((h) => rampBands([0, 1, 70, 100], h)[2]);
+    expect(Math.min(...edges)).toBeLessThan(72);
+    expect(Math.max(...edges)).toBeGreaterThan(94);
+  });
+
+  it("writes a card not kept the far band as its out band, and a kept one its ramp", () => {
+    const fade: FadeBands = [10, 20, 70, 100];
+    const keptHash = Array.from({ length: 1000 }, (_, i) => i / 1000).find(farKeep)!;
+    const goneHash = Array.from({ length: 1000 }, (_, i) => i / 1000).find((h) => !farKeep(h))!;
+    expect(coverBands(fade, true, [40, 52], goneHash)).toEqual([10, 20, 40, 52]);
+    expect(coverBands(fade, true, [40, 52], keptHash)).toEqual(rampBands(fade, keptHash));
+    expect(coverBands(fade, false, null, goneHash)).toEqual(fade);
+    expect(coverBands(fade, true, null, goneHash)).toEqual(rampBands(fade, goneHash));
+  });
+
+  it("lists past the band only the kept cards, and every card inside it", () => {
+    const bands = collectClutter(SEED, 1, 1);
+    const far = bands[CLUTTER_MEADOW]!.far;
+    expect(far.length).toBeGreaterThan(5000);
+    const gone = 52 + CLUTTER_FADE_MIN_RAMP;
+    let beyond = 0;
+    let within = 0;
+    let withinGone = 0;
+    for (const inst of far) {
+      const d = Math.hypot(inst.x - 1, inst.z - 1);
+      if (d >= gone + 2) {
+        beyond++;
+        expect(farKeep(inst.hash), `${inst.x},${inst.z}`).toBe(true);
+      } else if (d < 40) {
+        within++;
+        if (!farKeep(inst.hash)) withinGone++;
+      }
+    }
+    expect(beyond).toBeGreaterThan(2000);
+    expect(within).toBeGreaterThan(1000);
+    expect(withinGone).toBeGreaterThan(within / 2);
   });
 });
 
@@ -98,21 +178,22 @@ describe("edge fade ramp", () => {
     // not without the floor.
     const full = clutterFadeEdges(CLUTTER_MEADOW);
     expect(full.end - full.start).toBeGreaterThan(Math.SQRT2 * CLUTTER_GRASS_CELL);
-    // Meadow radius 20 → 40, so end/start move 20/14 → 40/28.
-    expect(full.end).toBe(40);
-    expect(full.start).toBe(28);
+    // Meadow radius 20 → 40 → 100 (the far band, 2026-10-16), so end/start
+    // moved 20/14 → 40/28 → 100/70.
+    expect(full.end).toBe(100);
+    expect(full.start).toBe(70);
 
     const low = clutterFadeEdges(CLUTTER_MEADOW, 0.6);
-    // At the grown 40 m radius the low tier is no longer floor-bound: its
-    // own fractional term (end 24 · (1 − 0.3) = 16.8) already clears
+    // At the grown radius the low tier is no longer floor-bound: its
+    // own fractional term (end 60 · (1 − 0.3) = 42) already clears
     // CLUTTER_FADE_MIN_RAMP (4.24 m) on its own, so clutterFadeEdges's
     // Math.min takes the fractional branch, not the floor — unlike the old
     // 20 m radius, where this exact case was the floor. Still comfortably
     // wider than the jitter, just not pinned to it; the floor property
     // itself is covered generically by the "floors every class's low-tier
     // ramp" test below.
-    expect(low.end).toBe(24);
-    expect(low.start).toBeCloseTo(16.8, 9);
+    expect(low.end).toBe(60);
+    expect(low.start).toBeCloseTo(42, 9);
     expect(low.end - low.start).toBeGreaterThan(Math.SQRT2 * CLUTTER_GRASS_CELL);
   });
 
@@ -132,7 +213,8 @@ describe("near/far seam", () => {
   it("ends at the split and starts 15% of the near disc inside it, floored at the jitter width", () => {
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       const { start, end } = clutterSeamEdges(cls);
-      const split = CLUTTER_RADII[cls]! * CLUTTER_FAR_SPLIT;
+      // The near radius: a class with a far band keeps its split where it was.
+      const split = clutterNearRadius(cls) * CLUTTER_FAR_SPLIT;
       expect(end).toBeCloseTo(split, 9);
       expect(end - start).toBeGreaterThanOrEqual(CLUTTER_FADE_MIN_RAMP - 1e-9);
       expect(start).toBeLessThan(end);
@@ -202,9 +284,9 @@ describe("clutter bands", () => {
     // passes 0.75 m from the canopy pose now, where the nearest trail was the
     // stem, 2.5 m off.
     const canopy = collectClutter(627994160, 123, -105.5)[CLUTTER_MEADOW]!;
-    expect([canopy.near.length, canopy.far.length]).toEqual([2639, 8861]);
+    expect([canopy.near.length, canopy.far.length]).toEqual([2639, 37756]);
     const meadow = collectClutter(627994160, 369, -855)[CLUTTER_MEADOW]!;
-    expect([meadow.near.length, meadow.far.length]).toEqual([3168, 10166]);
+    expect([meadow.near.length, meadow.far.length]).toEqual([3168, 42107]);
   }, timeLimit(30_000));
 
   it("assigns every instance to the right band by distance", () => {

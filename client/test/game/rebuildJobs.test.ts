@@ -408,8 +408,10 @@ function keeper(): SyncJobs & { held: Slices | null } {
  * work it has done, so a rebuild that stops slicing, in any of its loops,
  * changes these. The forest's 143 since the pine's second bark set: a
  * giant bucket set more to slice through, its three LOD buckets and its
- * billboard (the understory stays with the species' first set). */
-const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 106, blades: 18, duff: 5, forest: 143 };
+ * billboard (the understory stays with the species' first set). The
+ * clutter's 168 since the meadow's far band: its cards to 100 m, so more
+ * cells looked up a step and more instances staged. */
+const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 168, blades: 18, duff: 5, forest: 143 };
 
 /** How a walk that turns meets each shell's grid: its rebuild cell (m), and
  * where its lines lie. The clipmap's step is ring 0's snap, whose lines lie
@@ -662,13 +664,14 @@ describe("rebuilds as jobs: what is computed", () => {
     engine.dispose();
   }, timeLimit(60_000));
 
-  it("looks up 1,435 clutter cells a grass cell on, where a walk of every cell looks up 58,941", () => {
+  it("looks up 2,115 clutter cells a grass cell on, where a walk of every cell looks up 127,281", () => {
     const collector = createClutterCollector(SEED);
     collector.collect(100.5, 100.5);
-    expect(collector.walked).toBe(58941);
+    expect(collector.walked).toBe(127281);
     const bands = collector.collect(103.5, 100.5);
-    // The strips the fourteen classes' squares add, a column or a few each.
-    expect(collector.walked).toBe(1435);
+    // The strips the fourteen classes' squares add, a column or a few each,
+    // the meadow's 287 cells high since its far band.
+    expect(collector.walked).toBe(2115);
     expect(bands).toEqual(collectClutter(SEED, 103.5, 100.5));
   }, timeLimit(60_000));
 
@@ -723,10 +726,12 @@ describe("rebuilds as jobs: what is computed", () => {
       if (clutter.size < size) break;
       size = clutter.size;
     }
-    // The sweep 198 m on; the collect after it looks up the fourteen strips and
-    // the corner cells the sweep let go, 3,883 in all.
+    // The sweep 150 m on (the meadow's square, 287 cells a side since its far
+    // band, fills the cache sooner); the collect after it looks up the
+    // fourteen strips and the corner cells the sweep let go, 14,985 in all,
+    // most of them the meadow square's corners past its disc.
     const bands = clutter.collect(cx + 3, 100.5);
-    expect([cx, clutter.walked]).toEqual([298.5, 3883]);
+    expect([cx, clutter.walked]).toEqual([250.5, 14985]);
     expect(bands).toEqual(collectClutter(SEED, cx + 3, 100.5));
   }, timeLimit(120_000));
 
@@ -739,7 +744,7 @@ describe("rebuilds as jobs: what is computed", () => {
     finishSlices(clutter.prefetchSlices(100.5, 100.5, 0.0875, 0, 1));
     const ahead = clutter.size;
     const bands = clutter.collect(102.05, 100.5);
-    expect([ahead - cold, clutter.size - ahead]).toEqual([831, 0]);
+    expect([ahead - cold, clutter.size - ahead]).toEqual([1171, 0]);
     expect(bands).toEqual(collectClutter(SEED, 102.05, 100.5));
 
     const blades = createBladeCollector(SEED);

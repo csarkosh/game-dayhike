@@ -2,6 +2,7 @@ import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
 import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors.js";
@@ -14,6 +15,8 @@ import {
   fadeVisibility,
   fadeWeight,
   ign,
+  setDistanceWiden,
+  WIDEN_NONE,
   writeFadeBands,
 } from "../../src/game/distanceFadePlugin.js";
 
@@ -177,7 +180,7 @@ describe("distance fade plugin", () => {
     const attrs: string[] = [];
     plugin.getAttributes(attrs, scene, undefined as never);
     expect(attrs).toEqual(["fadeBands"]);
-    expect(plugin.getUniforms().ubo.map((u) => u.name)).toEqual(["fadeEye"]);
+    expect(plugin.getUniforms().ubo.map((u) => u.name)).toEqual(["fadeEye", "fadeWiden"]);
     expect(Object.keys(plugin.getCustomCode("vertex")!).sort()).toEqual(
       ["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_WORLDPOS"],
     );
@@ -186,6 +189,34 @@ describe("distance fade plugin", () => {
     );
     expect(plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_MAIN_BEGIN!).toContain("discard");
     expect(plugin.getCustomCode("vertex")!.CUSTOM_VERTEX_UPDATE_WORLDPOS!).toContain("finalWorld[3]");
+  });
+  it("widens an instance about its origin across its band by the eye distance, and not at all until told to", () => {
+    const mat = new PBRMaterial("df2w", scene);
+    attachDistanceFade(mat, { force: true });
+    const plugin = mat.pluginManager!.getPlugin("DistanceFade") as DistanceFadePlugin;
+    expect(plugin.widen).toBe(WIDEN_NONE);
+    expect(WIDEN_NONE).toEqual({ band: [1e8, 2e8], factor: 1 });
+    const written: [string, number, number, number][] = [];
+    const ubo = { updateFloat3: (n: string, a: number, b: number, c: number) => written.push([n, a, b, c]) } as unknown as UniformBuffer;
+    plugin.bindForSubMesh(ubo, scene, scene.getEngine(), null as never);
+    setDistanceWiden(mat, { band: [24, 38.4], factor: 2 });
+    plugin.bindForSubMesh(ubo, scene, scene.getEngine(), null as never);
+    // The band's edges and the growth past one: a factor of one is a no-op.
+    expect(written.filter(([n]) => n === "fadeWiden")).toEqual([
+      ["fadeWiden", 1e8, 2e8, 0],
+      ["fadeWiden", 24, 38.4, 1],
+    ]);
+    // In the vertex stage, on instances alone, about the instance's origin
+    // in the ground plane, by the same eye distance the fade reads.
+    const worldPos = plugin.getCustomCode("vertex")!.CUSTOM_VERTEX_UPDATE_WORLDPOS!;
+    expect(worldPos).toContain(
+      "worldPos.xz = finalWorld[3].xz + (worldPos.xz - finalWorld[3].xz) * (1.0 + fadeWiden.z * smoothstep(fadeWiden.x, fadeWiden.y, vFadeDist));",
+    );
+    expect(worldPos.indexOf("vFadeDist = distance(")).toBeLessThan(worldPos.indexOf("worldPos.xz ="));
+    expect(worldPos.indexOf("worldPos.xz =")).toBeLessThan(worldPos.indexOf("#else"));
+    expect(plugin.getUniforms().vertex).toContain("uniform vec3 fadeWiden;");
+    // A material without the plugin is left alone.
+    setDistanceWiden(new PBRMaterial("df2x", scene), { band: [1, 2], factor: 3 });
   });
   it("tests the incoming side against 1 - noise (the seam partition)", () => {
     const plugin = pluginFor("df2b");

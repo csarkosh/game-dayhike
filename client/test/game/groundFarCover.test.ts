@@ -114,7 +114,12 @@ const float FAR_SWARD_MAX = 1.0;
 // colour (0.1001, 0.0989, 0.0297) x 1.327), and at this value the far
 // band beyond the cards reads Y 0.0570 against the near band's 0.0605, R and
 // G within 3 and 9 % of the near's, B 1.25 of it from the mist.
-const vec3 FAR_SWARD = vec3(0.1328, 0.1312, 0.0394);
+// Refitted 2026-10-16 with the meadow's far band, on the same still at noon
+// in clear weather: the ground between the far cards read R 1.01 and B 0.69
+// of G where the card band read 0.97 and 0.74 (sRGB, the mean per channel),
+// a yellow the eye took for the far grass's own; by ratio in linear, in two
+// steps, R at 0.87 and B at 1.23 of the 2026-10-14 fit, G as it was.
+const vec3 FAR_SWARD = vec3(0.1156, 0.1312, 0.0485);
 // Not fitted 2026-10-10: kept at its start: the canopy fit reached its target
 // through the canopy shade alone, and the litter share along the far crops was
 // not read from the simulation.

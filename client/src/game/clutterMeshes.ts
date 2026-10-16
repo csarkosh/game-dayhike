@@ -68,7 +68,7 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
-import { CLUTTER_MEADOW_NEAR_IN, COVER_RAMP_CLASSES, clutterFadeEdges, clutterSeamEdges, createClutterCollector, rampBands } from "./clutterField.js";
+import { CLUTTER_MEADOW_NEAR_IN, COVER_RAMP_CLASSES, clutterFadeEdges, clutterSeamEdges, coverBands, coverFarBand, coverWiden, createClutterCollector } from "./clutterField.js";
 import {
   CLUTTER_BOULDER,
   CLUTTER_BUSH,
@@ -91,7 +91,7 @@ import {
 import { activeTerrainVariant } from "../sim/terrain.js";
 import { attachFoliage, setFoliageEdges, FOLIAGE_PROFILES, type FoliageProfile } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
-import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
+import { attachDistanceFade, fadeBands, setDistanceWiden, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
@@ -448,6 +448,9 @@ type Bucket = {
    * own are drawn from (`rampBands`). */
   fade: FadeBands;
   ramp: boolean;
+  /** The far band (`coverFarBand`) on the far level of a class that has one:
+   * a card not kept past it goes out across this band (`coverBands`). */
+  far: readonly [number, number] | null;
   /** Set for the classes that wear the foliage plugin (`FOLIAGE_BY_CLASS`),
    * which is exactly the classes whose `foliage` buffer this file writes and
    * uploads. */
@@ -944,7 +947,7 @@ export function createClutterMeshes(
       origins[i * 3 + 1] = buf[m + 13]!;
       origins[i * 3 + 2] = buf[m + 14]!;
     }
-    writeFadeBands(bands, i * 4, bucket.ramp ? rampBands(bucket.fade, inst.hash) : bucket.fade);
+    writeFadeBands(bands, i * 4, coverBands(bucket.fade, bucket.ramp, bucket.far, inst.hash));
     if (bucket.tints) {
       const f = i * 4;
       for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
@@ -1331,9 +1334,13 @@ export function createClutterMeshes(
           const fade: FadeBands = lod === NEAR_LOD
             ? fadeBands(nearIn, [seam.start, seam.end])
             : fadeBands([seam.start, seam.end], [edge.start, edge.end]);
+          // The far band's widening by eye distance, on the class's material
+          // (the two levels share it; the near level ends inside the band).
+          const widen = coverWiden(cls, radiusScale);
           for (const mesh of meshes) {
             if (mesh.material) {
               attachDistanceFade(mesh.material);
+              if (widen !== null) setDistanceWiden(mesh.material, widen);
               attachWet(mesh.material, WET_CAP_BY_CLASS.get(cls)!);
             }
           }
@@ -1346,6 +1353,7 @@ export function createClutterMeshes(
             grown: false,
             fade,
             ramp: lod === FAR_LOD && COVER_RAMP_CLASSES.has(cls),
+            far: lod === FAR_LOD ? coverFarBand(cls, radiusScale) : null,
             tints: profile !== undefined,
             culled: culling && CLUTTER_CULLED.has(cls),
             drawn: { buf: EMPTY_BUFFER, bands: EMPTY_BUFFER, foliage: EMPTY_BUFFER },

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { CLUTTER_MEADOW, groundCover } from "../../src/sim/clutter.js";
 import { bowlFor } from "../../src/sim/olympic.js";
-import { CLUTTER_FAR_SPLIT, CLUTTER_RADII, clutterSeamEdges } from "../../src/game/clutterField.js";
+import { CLUTTER_FAR_SPLIT, clutterNearRadius, clutterSeamEdges } from "../../src/game/clutterField.js";
 import {
   BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_CHARACTER_WEIGHTS, BLADE_FINE, BLADE_FLOWER, BLADE_FLOWER_MIN_STRENGTH,
   BLADE_FULL_BAND, BLADE_JITTER, BLADE_PAD, BLADE_REACH, BLADE_REBUILD_CELL, BLADE_SIZE_BASE, BLADE_SIZE_FULL,
@@ -24,8 +24,8 @@ function origin(v: number): number {
 }
 
 describe("the blade field's constants", () => {
-  it("reaches the meadow's own near/far split and pads for a 1 m rebuild on a 0.5 m lattice", () => {
-    expect(BLADE_REACH).toBe(CLUTTER_RADII[CLUTTER_MEADOW]! * CLUTTER_FAR_SPLIT);
+  it("reaches the split of the meadow's near level (not its far band's) and pads for a 1 m rebuild on a 0.5 m lattice", () => {
+    expect(BLADE_REACH).toBe(clutterNearRadius(CLUTTER_MEADOW) * CLUTTER_FAR_SPLIT);
     expect(BLADE_REACH).toBe(18);
     expect(BLADE_PAD).toBeCloseTo(Math.SQRT2 * (BLADE_REBUILD_CELL + BLADE_CELL), 12);
     expect(BLADE_TIER_EDGE).toEqual([4, 8]);

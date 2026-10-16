@@ -59,6 +59,22 @@ export function airTransmittance(t: number): [number, number, number] {
   return [Math.pow(c, AIR_POWER[0]), Math.pow(c, AIR_POWER[1]), Math.pow(c, AIR_POWER[2])];
 }
 
+/** The ground haze (2026-10-16): a thin layer of air at the walker's level in
+ * every weather, its base `seat` metres below the eye, its density at the
+ * base and its falloff a metre of height (halving every six metres), and
+ * the share of the way from the gradient's air to the sun's colour the haze
+ * is seen in, so the far ground sits in a faint, warm veil at noon and the
+ * crowns in less of it. Mirrors ATM_HAZE_DENSITY, ATM_HAZE_FALLOFF,
+ * ATM_HAZE_SEAT and ATM_HAZE_WARMTH in atmosphereFog.fragment.fx. */
+export const HAZE = { density: 0.0016, falloff: 0.12, seat: 1.5, warmth: 0.35 } as const;
+
+/** The haze's optical depth along a ray of slope `rdY` to `t` metres from an
+ * eye `HAZE.seat` above its base: the height fog's integral at the haze's
+ * own constants, as the shader takes it. */
+export function groundHazeAmount(rdY: number, t: number): number {
+  return heightFogAmount(HAZE.seat, rdY, t, HAZE.density, HAZE.falloff, 0);
+}
+
 /**
  * Quílez's closed-form height fog: density a·exp(−b·y) integrated along a
  * ray of length t from height camY (relative to `level`) with vertical slope

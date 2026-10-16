@@ -10,7 +10,7 @@ import "@babylonjs/core/Shaders/ShadersInclude/fogFragment.js";
 import atmosphereFragment from "../../src/game/shaders/atmosphereFog.fragment.fx?raw";
 import { ATMOSPHERE_FOG_ANCHOR, createAtmosphere, type Atmosphere } from "../../src/game/atmosphere.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
-import { fogGradientUnder, GRADIENT_BIAS, GRADIENT_NEAR_DIM, GRADIENT_STEPS, AIR_POWER, airTransmittance } from "../../src/game/atmosphereParams.js";
+import { fogGradientUnder, GRADIENT_BIAS, GRADIENT_NEAR_DIM, GRADIENT_STEPS, AIR_POWER, airTransmittance, HAZE, groundHazeAmount, heightFogAmount } from "../../src/game/atmosphereParams.js";
 import { CLOUD_NOISE_SIZE } from "../../src/game/cloudParams.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { skyFixture } from "./helpers/skyFixture.js";
@@ -133,6 +133,21 @@ describe("GLSL literals stay in lockstep with atmosphereParams.ts", () => {
     expect(airTransmittance(0)).toEqual([0, 0, 0]);
     expect(atmosphereFragment).toContain(`const float ATM_CLOUD_EDGE = 0.5 / ${CLOUD_NOISE_SIZE}.0;`);
   });
+  it("lays the ground haze at the TS mirror's density, falloff, seat and warmth, over the air's mix", () => {
+    expect(atmosphereFragment).toContain(`const float ATM_HAZE_DENSITY = ${HAZE.density};`);
+    expect(atmosphereFragment).toContain(`const float ATM_HAZE_FALLOFF = ${HAZE.falloff};`);
+    expect(atmosphereFragment).toContain(`const float ATM_HAZE_SEAT = ${HAZE.seat};`);
+    expect(atmosphereFragment).toContain(`const float ATM_HAZE_WARMTH = ${HAZE.warmth};`);
+    expect(atmosphereFragment).toContain("float haze = atmHeightFog(ATM_HAZE_SEAT, rd.y, d, ATM_HAZE_DENSITY, ATM_HAZE_FALLOFF);");
+    expect(atmosphereFragment).toContain("fogged = mix(mix(air, atmSunColour, ATM_HAZE_WARMTH), fogged, exp(-max(haze, 0.0)));");
+    // The haze is the height fog's integral at its own constants: thin at the eye, thicker along the ground than up into the crowns.
+    expect(groundHazeAmount(0, 100)).toBeCloseTo(heightFogAmount(HAZE.seat, 0, 100, HAZE.density, HAZE.falloff, 0), 12);
+    expect(groundHazeAmount(0, 1)).toBeLessThan(0.01);
+    expect(groundHazeAmount(0, 300)).toBeGreaterThan(groundHazeAmount(0.2, 300));
+    // Halving every six metres of height or so.
+    expect(Math.log(2) / HAZE.falloff).toBeGreaterThan(5);
+    expect(Math.log(2) / HAZE.falloff).toBeLessThan(6);
+  });
 });
 
 describe("F1 regression: atmCloudMap compiles into the fragment source on both paths", () => {
@@ -204,9 +219,10 @@ describe("the fog's shader text", () => {
   it("is byte for byte the text every PBR material's stage is built with", () => {
     // The scattering sky changes no PBR shader: the glow's new shape is all in
     // the values the plugin binds (`atmosphereParams.ts`). The aerial
-    // perspective (2026-10-15) is the one line of the mix and its constant.
+    // perspective (2026-10-15) is the one line of the mix and its constant;
+    // the ground haze (2026-10-16) its integral, its mix and four constants.
     expect(createHash("sha256").update(atmosphereFragment).digest("hex")).toBe(
-      "05afa09682b616abdcdd4ace43fd7f7242efa4e72f4fd49c312c12fdd0b7ae55",
+      "f73811f3f54e7952a88f528d5907f66a812a089f164fdcd05d95c57836fb0cf8",
     );
   });
 });

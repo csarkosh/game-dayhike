@@ -138,6 +138,7 @@ const FADE_VERTEX_WORLDPOS = `
 #ifdef THIN_INSTANCES
 vFadeBands = fadeBands;
 vFadeDist = distance(finalWorld[3].xz, fadeEye.xz);
+worldPos.xz = finalWorld[3].xz + (worldPos.xz - finalWorld[3].xz) * (1.0 + fadeWiden.z * smoothstep(fadeWiden.x, fadeWiden.y, vFadeDist));
 #else
 vFadeBands = vec4(-2.0, -1.0, 1.0e8, 2.0e8);
 vFadeDist = 0.0;
@@ -166,7 +167,21 @@ const FADE_FRAGMENT_MAIN_BEGIN = `
 #endif
 `;
 
+/** How a material's instances widen with eye distance (`setDistanceWiden`):
+ * across `band` the card grows about its origin, in the ground plane, from
+ * its own width to `factor` times it. */
+export type DistanceWiden = { readonly band: readonly [number, number]; readonly factor: number };
+
+/** No widening: the band never reached, the factor one. */
+export const WIDEN_NONE: DistanceWiden = { band: [1e8, 2e8], factor: 1 };
+
 export class DistanceFadePlugin extends MaterialPluginBase {
+  /** The widening by distance (2026-10-16): the cover's far band keeps one
+   * card in four and the survivors widen to cover the ground the others
+   * left, by the true eye distance in the vertex stage, so nothing pops at a
+   * rebuild. Off by default. */
+  widen: DistanceWiden = WIDEN_NONE;
+
   constructor(material: Material) {
     super(material, "DistanceFade", 205, { DISTANCEFADE: false });
     this._enable(true);
@@ -189,10 +204,14 @@ export class DistanceFadePlugin extends MaterialPluginBase {
 
   override getUniforms(): { ubo: { name: string; size: number; type: string }[]; vertex: string } {
     return {
-      ubo: [{ name: "fadeEye", size: 3, type: "vec3" }],
+      ubo: [
+        { name: "fadeEye", size: 3, type: "vec3" },
+        { name: "fadeWiden", size: 3, type: "vec3" },
+      ],
       vertex: `
 #ifdef DISTANCEFADE
 uniform vec3 fadeEye;
+uniform vec3 fadeWiden;
 #endif
 `,
     };
@@ -204,6 +223,8 @@ uniform vec3 fadeEye;
     // terrainTexture.ts precedent), so the fade cannot break on an engine rename.
     const eye = scene.activeCamera?.globalPosition;
     uniformBuffer.updateFloat3("fadeEye", eye?.x ?? 0, eye?.y ?? 0, eye?.z ?? 0);
+    // The band's edges and the growth past one, so a factor of one is a no-op.
+    uniformBuffer.updateFloat3("fadeWiden", this.widen.band[0], this.widen.band[1], this.widen.factor - 1);
   }
 
   override getCustomCode(shaderType: string): { [pointName: string]: string } | null {
@@ -249,4 +270,11 @@ export function attachDistanceFade(material: Material, options: { force?: boolea
   if (material.pluginManager?.getPlugin("DistanceFade")) return;
   if (!options.force && !material.needAlphaTesting()) return;
   new DistanceFadePlugin(material);
+}
+
+/** Sets how a material's instances widen with eye distance (the plugin
+ * must be attached): the cover's far band (`clutterField.ts`). */
+export function setDistanceWiden(material: Material, widen: DistanceWiden): void {
+  const plugin = material.pluginManager?.getPlugin("DistanceFade");
+  if (plugin instanceof DistanceFadePlugin) plugin.widen = widen;
 }

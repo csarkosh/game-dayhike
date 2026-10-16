@@ -2,7 +2,7 @@ import { CLUTTER_MEADOW, groundCover, type ClutterInstance } from "../sim/clutte
 import { activeTerrainVariant } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
-import { CLUTTER_FAR_SPLIT, CLUTTER_RADII, clutterSeamEdges } from "./clutterField.js";
+import { CLUTTER_FAR_SPLIT, clutterNearRadius, clutterSeamEdges } from "./clutterField.js";
 import { finish, nextCrossing, type Slices } from "./syncJobs.js";
 import { createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
 
@@ -35,8 +35,10 @@ export const BLADE_REBUILD_CELL = 1;
  * present for every eye inside the rebuild cell and never pops. */
 export const BLADE_PAD = Math.SQRT2 * (BLADE_REBUILD_CELL + BLADE_CELL);
 /** The outer reach: the meadow carpet's own near/far split, so the coarse
- * tier hands off to the far cards where they already dither in. */
-export const BLADE_REACH = (CLUTTER_RADII[CLUTTER_MEADOW] as number) * CLUTTER_FAR_SPLIT;
+ * tier hands off to the far cards where they already dither in. The near
+ * radius, not the class's: the meadow's far band (`COVER_FAR_FROM`) reaches
+ * past 40 m without moving the split. */
+export const BLADE_REACH = clutterNearRadius(CLUTTER_MEADOW) * CLUTTER_FAR_SPLIT;
 /** Outer edges (m) of the fine and mid tiers. */
 export const BLADE_TIER_EDGE: readonly [number, number] = [4, 8];
 /** Width (m) of the fine→mid and mid→coarse hand-off bands, ending at the tier edge. */

@@ -12,7 +12,7 @@ import {
   CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTWOOD, CLUTTER_FERN, CLUTTER_FLOWER, CLUTTER_FUNGUS, CLUTTER_GRASS,
   CLUTTER_HIGHPLANT, CLUTTER_LITTER, CLUTTER_MEADOW, CLUTTER_ROCK, CLUTTER_SHRUB, CLUTTER_WETPLANT,
 } from "../../src/sim/clutter.js";
-import { clutterFadeEdges, clutterSeamEdges, collectClutter, COVER_RAMP_CLASSES, COVER_RAMP_WIDTH } from "../../src/game/clutterField.js";
+import { clutterFadeEdges, clutterSeamEdges, collectClutter, COVER_RAMP_CLASSES, COVER_RAMP_WIDTH, coverFarBand } from "../../src/game/clutterField.js";
 import {
   CLUTTER_CULLED,
   CLUTTER_SINK,
@@ -132,16 +132,31 @@ describe("createClutterMeshes attaches the distance fade", () => {
               // instance's own out band COVER_RAMP_WIDTH wide inside the
               // class's, and not one edge for all.
               const width = Math.fround(Math.min(COVER_RAMP_WIDTH, edge.end - edge.start));
+              // A class with a far band: a card not kept goes out across the
+              // far band instead, the same for all of them.
+              const farBand = coverFarBand(cls, 0.6)?.map(Math.fround) ?? null;
               const edges = new Set<number>();
+              let notKept = 0;
               for (let i = 0; i < mesh.thinInstanceCount; i++) {
                 const b = Array.from(bands!.subarray(i * 4, i * 4 + 4));
                 expect(b.slice(0, 2), `${mesh.name}#${i}`).toEqual(expected.slice(0, 2));
+                if (farBand !== null && b[2] === farBand[0]) {
+                  expect(b[3], `${mesh.name}#${i}`).toBe(farBand[1]);
+                  notKept++;
+                  continue;
+                }
                 expect(b[2]!, `${mesh.name}#${i}`).toBeGreaterThanOrEqual(expected[2]!);
                 expect(b[3]!, `${mesh.name}#${i}`).toBeLessThanOrEqual(expected[3]! + 1e-4);
                 expect(Math.fround(b[3]! - b[2]!), `${mesh.name}#${i}`).toBeCloseTo(width, 4);
                 edges.add(b[2]!);
               }
               if (mesh.thinInstanceCount > 8) expect(edges.size, mesh.name).toBeGreaterThan(1);
+              // About half the cards past the far band's start are not kept; the
+              // bucket also holds the cards inside it, which all are.
+              if (farBand !== null && mesh.thinInstanceCount > 40) {
+                expect(notKept / mesh.thinInstanceCount, mesh.name).toBeGreaterThan(0.15);
+                expect(notKept / mesh.thinInstanceCount, mesh.name).toBeLessThan(0.6);
+              }
               continue;
             }
             for (let i = 0; i < mesh.thinInstanceCount; i++) {
