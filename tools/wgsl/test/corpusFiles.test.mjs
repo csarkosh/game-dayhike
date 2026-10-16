@@ -316,13 +316,26 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1467 recorded stages, each file\'s bytes hashing to the name it has: 745 on the medium and high tiers, 465 on low, 231 on high alone, 22 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1467);
+  it('holds the 1092 recorded stages, each file\'s bytes hashing to the name it has: 222 on the medium and high tiers, 483 on low, 151 on high alone, 232 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1092);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1467);
+    expect(read.stages).toHaveLength(1092);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(670);
-    // The 745 recorded on the medium and high tiers (the dead trees' dressing, the deadwood
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(591);
+    // The 222 recorded on the medium and high tiers (the far field: the prepass's variants of
+    // every material on the two tiers the far softening reads the scene's depth on, the
+    // ground haze in every PBR fragment, the meadow's far band in the clutter's vertex stages,
+    // the high tier's three cascades and its far shadows, 790 stages new over a recording at
+    // the ten places on the three tiers; 193 retired as define-set twins, 155 PBR fragments
+    // and 6 under uniformity off before the haze and 32 PBR vertex stages before the far band;
+    // and, the high and medium maps having passed the 10 MiB ceiling, every material stage
+    // those two tiers can no longer compile dropped from them, 972 of them whole files: the
+    // prepass's define is the scene's, so a render target that opts out of the prepass still
+    // compiles the prepass variant (the impostor bake's stages carry it), and a plain PBR or
+    // default stage the recording did not meet on the tier cannot recur there, nor can a
+    // receiver under the high tier's two cascades or its PCF; the eighteen plain stages the
+    // medium tier did meet, two materials compiled twice on each page, are kept (2026-10-16);
+    // the dead trees' dressing, the deadwood
     // plugin's role attribute, varying and moss sampler on the snag's and the logs' PBR stages
     // and the snag's bake, 12 stages here and 11 on low, met at the ten places, the six PBR
     // vertex stages of the undressed snag retired (2026-10-15); the lake as one surface, its ripples'
@@ -361,12 +374,12 @@ describe('the committed corpus and the tests\' fixture', () => {
     // materials first met at a lake under three lights among them
     // (2026-10-11), a foliage material's pbr pair first met when the foliage
     // light injection took its FOLIAGE guard (2026-10-12)), the low tier's
-    // 454, recorded on it alone (the end scene's 98, which the tier's earlier
+    // 483, recorded on it alone (the end scene's 98, which the tier's earlier
     // recording, ended before the win, had not met (2026-10-13), a foliage pbr
     // pair of the same recording
-    // among them, and the rain's streak vertex stage with the sky fade softened), the 231 the high tier alone met (the soft-edged shadows' receivers, the lake's
+    // among them, and the rain's streak vertex stage with the sky fade softened), the 151 the high tier alone met (the soft-edged shadows' receivers and their prepass variants, the lake's
     // mirror, the sea's curl and fourteen PBR stages the canopy trail under rain
-    // first met on 2026-10-12 among them), the 22 the medium tier alone met (a PBR pair
+    // first met on 2026-10-12 among them), the 232 the medium tier alone met (its receivers' prepass variants under its two cascades' PCF, and a PBR pair
     // the canopy trail under rain first met on 2026-10-13 among them), and the sky
     // dome's 2 and the midges' 2, whose text is the same on every tier.
     // Stages whose text a shader no longer produces are
@@ -404,13 +417,13 @@ describe('the committed corpus and the tests\' fixture', () => {
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1467);
+    expect(read.tiers.size).toBe(1092);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([469, 771, 980]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(745);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(465);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(231);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(22);
+    expect([on('low'), on('medium'), on('high')]).toEqual([487, 458, 377]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(222);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(483);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(151);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(232);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
