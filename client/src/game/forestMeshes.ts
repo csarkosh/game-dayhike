@@ -129,7 +129,7 @@ import {
 } from "./distanceFadePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { attachMoss } from "./mossPlugin.js";
-import { attachDeadwood, type DeadwoodPlugin } from "./deadwoodPlugin.js";
+import { attachDeadwood, DEADWOOD_ROLE_ATTRIBUTE, type DeadwoodPlugin } from "./deadwoodPlugin.js";
 import { DEADWOOD_BARK, DEADWOOD_TONE } from "./deadwoodParams.js";
 import { MOSS_OUTPUT } from "./mossParams.js";
 import { BARK_SKY, CROWN_SKY, IMPOSTOR_SKY, TREE_SPECULAR_WEIGHT } from "./forestLookParams.js";
@@ -237,8 +237,12 @@ export type BakeOptions = {
    * knows and drops the rest, and the bake clones before the forest's own
    * plugins attach in any case (`defaultBakeImpostor`), so the trunks' moss
    * (`mossPlugin.ts`) reaches the far trees through this alone. The sway is
-   * left off on purpose, as the bake records. */
-  dress?: (material: Material) => void;
+   * left off on purpose, as the bake records. The bake mesh comes with its
+   * material, for what a dressing's shader asks of the geometry (the
+   * deadwood's per-instance role, which a clone with no instances carries
+   * as a vertex attribute instead: `bakeDeadwoodRole`); the forest's own
+   * materials are dressed without one. */
+  dress?: (material: Material, mesh?: Mesh) => void;
 };
 
 /** One billboard's bake, as the forest last saw it: still baking, landed
@@ -262,6 +266,24 @@ export type BakedImpostor = { albedo: Texture; normal: Texture | null; signed: b
  * math types are mutable, and a callee that scaled or normalized it in place
  * would silently re-pose every later bake. */
 const SNAG_POSE: Quaternion = Object.freeze(Quaternion.FromEulerAngles(0, 0, Math.PI / 2));
+
+/** The snag's bake clone draws with the deadwood plugin, whose role is a
+ * per-instance attribute (`deadwoodRole`, `deadwoodPlugin.ts`). The clone
+ * shared its source's geometry, and the source's bucket puts the role on
+ * that geometry per instance, after the clone is taken and sized to the dead
+ * trees in range: where there are some, the clone's one draw read the first
+ * instance's role; where there are none (the beach, the title's view) the
+ * buffer is empty, and WebGPU refuses the draw ("Instance range ... requires
+ * a larger buffer than the bound buffer size (0)"), an uncaptured error the
+ * hike answers by rebuilding its renderer on WebGL2 (`engineFailure.ts`),
+ * with the pause menu over the beach (found 2026-10-17, live since the far
+ * field; WebGL2 drew on, reading whatever the buffer held). So the clone
+ * gets geometry of its own, taken before the bucket's buffer, with the role
+ * as a vertex attribute of zeros, a snag's. */
+function bakeDeadwoodRole(bake: Mesh): void {
+  bake.makeGeometryUnique();
+  bake.setVerticesData(DEADWOOD_ROLE_ATTRIBUTE, new Float32Array(bake.getTotalVertices()), false, 1);
+}
 
 export type SpeciesMeshes = { lods: [Mesh, Mesh, Mesh]; understory?: Mesh };
 
@@ -1107,7 +1129,7 @@ export async function defaultBakeImpostor(
     if (m.material) {
       m.material = m.material.clone(`${m.material.name}_bake`) ?? m.material;
       // What the far trees wear that the clone dropped (`BakeOptions.dress`).
-      options.dress?.(m.material);
+      options.dress?.(m.material, m);
       // And what the bake writes in place of the lit colour: the albedo
       // first, the normal map second (`impostorBakePlugin.ts`).
       bakePlugins.push(attachImpostorBake(m.material));
@@ -1929,9 +1951,9 @@ export function createForestMeshes(
     // with the forest's moss map, attaches AFTER the bake's clone is taken,
     // as the trees' moss does: a material clone cannot carry it (see
     // `bakeImpostor`), so the bake's clone wears its own (`BakeOptions.dress`;
-    // the clone's single mesh has no role attribute, so it reads the snag's
-    // role of zero). The bake waits for the set with the moss map, as a
-    // tree's bake waits for its species' set.
+    // the clone has no instances to carry the role, so it gets the snag's
+    // zero as a vertex attribute, `bakeDeadwoodRole`). The bake waits for
+    // the set with the moss map, as a tree's bake waits for its species' set.
     const deadwoodLanded: Promise<void>[] = [moss.landed];
     const deadwoodMaterials = new Set<PBRMaterial>();
     for (const mesh of loaded.deadwood) {
@@ -1949,8 +1971,9 @@ export function createForestMeshes(
       }
     }
     const deadwoodPlugins: DeadwoodPlugin[] = [];
-    const dressDeadwood = (material: Material): void => {
+    const dressDeadwood = (material: Material, bake?: Mesh): void => {
       deadwoodPlugins.push(attachDeadwood(material, moss.texture));
+      if (bake !== undefined) bakeDeadwoodRole(bake);
     };
     const snagSource = loaded.deadwood[0];
     const snagBake =

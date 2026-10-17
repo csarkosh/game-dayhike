@@ -1375,6 +1375,47 @@ describe("createForestMeshes under NullEngine", () => {
     expect(named("forest_impostor_snag")).toBe(1);
   });
 
+  it("gives the snag's bake clone the deadwood role as a vertex attribute of zeros, on geometry of its own", () => {
+    // What `defaultBakeImpostor` does with the dressing, under NullEngine: a
+    // clone of the source with a material clone of its own, dressed with the
+    // clone. The role is a per-instance attribute of the deadwood plugin,
+    // and the clone shared its source's geometry, whose role buffer the
+    // bucket sizes to the dead trees in range: none at the beach, so WebGPU
+    // refused the draw and the hike rebuilt its renderer on WebGL2 there
+    // (2026-10-17).
+    const seen: { source: Mesh; clone: Mesh }[] = [];
+    const { forest } = build(undefined, (mesh, s, options, pose) => {
+      if (pose !== undefined) {
+        const clone = mesh.clone(`${mesh.name}_bake`, null, false);
+        clone.material = clone.material!.clone(`${clone.material!.name}_bake`)!;
+        options?.dress?.(clone.material, clone);
+        seen.push({ source: mesh, clone });
+      }
+      return stubBakeTexture(s);
+    });
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    expect(seen.length).toBe(1);
+    const { source, clone } = seen[0]!;
+    expect(clone.material!.pluginManager!.getPlugin("Deadwood")).toBeInstanceOf(DeadwoodPlugin);
+    // Its own geometry, with the role per vertex: zeros, a snag's, one float
+    // each, not instanced.
+    expect(clone.geometry).not.toBe(source.geometry);
+    const role = clone.getVertexBuffer("deadwoodRole");
+    expect(role).not.toBeNull();
+    expect(role!.getIsInstanced()).toBe(false);
+    expect(role!.getSize()).toBe(1);
+    const data = clone.getVerticesData("deadwoodRole")!;
+    expect(data.length).toBe(clone.getTotalVertices());
+    expect(clone.getTotalVertices()).toBeGreaterThan(0);
+    expect(Array.from(data).every((v) => v === 0)).toBe(true);
+    // The source's geometry carries the bucket's role per instance (set after
+    // the clone was taken, sized to the bucket, empty where no dead tree
+    // stands), which the clone's own geometry no longer shares.
+    expect(source.getVertexBuffer("deadwoodRole")!.getIsInstanced()).toBe(true);
+    // The forest's own materials are dressed without a mesh, as before.
+    expect(source.material!.pluginManager!.getPlugin("Deadwood")).toBeInstanceOf(DeadwoodPlugin);
+  });
+
   it("seats the snag billboard on the ground, at half the standing trunk's height", () => {
     const { scene, forest } = build(undefined, (_mesh, s) => stubBakeTexture(s));
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");

@@ -165,7 +165,14 @@ Never the crowns, the snag (which keeps its file's bark and its own moss,
 this one's mask and constants and the same map
 (`client/src/game/deadwoodPlugin.ts`); the vertex-colour moss of
 `nurseLog.ts` is gone, and the snag's bake dresses its clone as the trees'
-do. `ARCHITECTURE.md` has the shape.
+do. `ARCHITECTURE.md` has the shape. *Since 2026-10-17:* the bake's clone
+gets geometry of its own with the role as a vertex attribute of zeros, a
+snag's (`bakeDeadwoodRole`). It shared its source's geometry, on which the
+bucket later puts the role per instance, sized to the dead trees in range:
+none at the beach or in the title's view, an empty buffer, and WebGPU
+refuses a draw against one, an uncaptured error the hike answers by
+rebuilding its renderer on WebGL2 (WebGL2 drew on regardless). Live from
+the far field's deploy of 2026-10-16 to the fix.
 
 In the loop with the ground conform, the distance fade and the wet, and not
 in `dressSpecies` where the bark is dressed, because the LOD2 split in
