@@ -8,7 +8,14 @@ import { dreadLensUnder, type WeatherParams } from "./weather.js";
  * BABYLON_FREE_FILES list; `post.ts` is the shell.
  */
 
-export type PostFeatures = { pipeline: boolean; halation: boolean; lens: boolean; colourPath: "post" | "material" };
+export type PostFeatures = {
+  pipeline: boolean;
+  halation: boolean;
+  lens: boolean;
+  colourPath: "post" | "material";
+  /** The paint pass's stroke radius (px at PAINT_ROWS rows), 0 for no pass (2026-10-17). */
+  paint: number;
+};
 
 /**
  * The tier ladder as data. Without float render targets (NullEngine, weak
@@ -17,8 +24,28 @@ export type PostFeatures = { pipeline: boolean; halation: boolean; lens: boolean
  * (rain on the glass) rides the pipeline: every tier with the chain has it.
  */
 export function postFeaturesFor(tier: QualityTier, fxSupported: boolean): PostFeatures {
-  if (!fxSupported || tier === "low") return { pipeline: false, halation: false, lens: false, colourPath: "material" };
-  return { pipeline: true, halation: tier === "high", lens: true, colourPath: "post" };
+  if (!fxSupported || tier === "low") return { pipeline: false, halation: false, lens: false, colourPath: "material", paint: 0 };
+  return { pipeline: true, halation: tier === "high", lens: true, colourPath: "post", paint: tier === "high" ? PAINT_RADIUS_HIGH : PAINT_RADIUS_MEDIUM };
+}
+
+// ---- The paint pass (2026-10-17): the frame smeared into strokes before the grade. ----
+/** The stroke radius (px) at PAINT_ROWS rows, by tier: a wider stroke on
+ * high, where the pass's taps (the square of twice the radius plus one) are
+ * affordable, a narrower one on medium. */
+export const PAINT_RADIUS_HIGH = 3;
+export const PAINT_RADIUS_MEDIUM = 2;
+/** The frame height the radii are set at; a taller frame scales the stroke
+ * with it, so a stroke is the same share of the picture at any size. */
+export const PAINT_ROWS = 675;
+/** The shader's window never reaches past this many pixels (its loop bound). */
+export const PAINT_REACH = 6;
+/** How far the painted frame replaces the rendered one: 1 wholly. */
+export const PAINT_STRENGTH = 0.8;
+/** The stroke radius for a frame of `rows` rows: the tier's radius scaled by
+ * the rows, never under 2 (a 1 px stroke is no stroke) nor past the reach. */
+export function paintRadiusFor(base: number, rows: number): number {
+  if (base <= 0) return 0;
+  return Math.min(PAINT_REACH, Math.max(2, Math.round((base * rows) / PAINT_ROWS)));
 }
 
 /** MSAA sample count on the first pass of the chain (the scene pass on high,

@@ -192,7 +192,8 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
         const post = createPost(scene, camera, postFeaturesFor(tier, true));
         const names = camera._postProcesses.map((p) => p?.name ?? null);
         expect(names[0]).toBe("farSoft");
-        expect(names[1]).toBe(tier === "high" ? "scene" : "grade");
+        expect(names[1]).toBe("paint");
+        expect(names[2]).toBe(tier === "high" ? "scene" : "grade");
         const farSoft = passNamed(camera, "farSoft");
         expect(ratioOf(farSoft)).toBe(1);
         expect(farSoft._prePassEffectConfiguration).toEqual({ enabled: true, name: "farSoft", texturesRequired: [Constants.PREPASS_DEPTH_TEXTURE_TYPE] });
@@ -288,12 +289,12 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       return { fresh, order };
     };
     expect(names("high")).toEqual({
-      fresh: ["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", null, null, null, "finish"],
-      order: ["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"],
+      fresh: ["paint", "scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", null, null, null, "finish"],
+      order: ["paint", "scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"],
     });
     expect(names("medium")).toEqual({
-      fresh: ["grade", "chromaticAberration", "fxaa", null, null, null, "finish"],
-      order: ["grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"],
+      fresh: ["paint", "grade", "chromaticAberration", "fxaa", null, null, null, "finish"],
+      order: ["paint", "grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"],
     });
   });
 
@@ -302,7 +303,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     const post = createPost(scene, camera, postFeaturesFor("medium", true));
     const names = () => camera._postProcesses.map((p) => p?.name ?? null);
     post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0, 0, 0.5);
-    expect(names()).toEqual(["grade", "chromaticAberration", "fxaa", null, "endBlurX", "endBlurY", "finish"]);
+    expect(names()).toEqual(["paint", "grade", "chromaticAberration", "fxaa", null, "endBlurX", "endBlurY", "finish"]);
     const blurs = camera._postProcesses.filter((p) => p?.name.startsWith("endBlur")) as BlurPostProcess[];
     for (const b of blurs) expect(b.kernel).toBeCloseTo(endBlurKernel(0.5), 6);
     post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0, 0, 1);
@@ -313,7 +314,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     expect(endBlurKernel(0)).toBe(0);
     expect(new Set([0.01, 0.2, 0.4, 0.6, 0.8, 1].map(endBlurKernel)).size).toBe(END_BLUR_STEPS);
     post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0, 0, 0);
-    expect(names()).toEqual(["grade", "chromaticAberration", "fxaa", null, null, null, "finish"]);
+    expect(names()).toEqual(["paint", "grade", "chromaticAberration", "fxaa", null, null, null, "finish"]);
     post.dispose();
     camera.dispose();
   });
@@ -426,8 +427,8 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     let ms = 0;
     const post = createPost(scene, camera, postFeaturesFor("medium", true), { now: () => ms });
     const names = () => camera._postProcesses.map((p) => p?.name ?? null);
-    const attached = ["grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"];
-    const detached = ["grade", "chromaticAberration", "fxaa", null, null, null, "finish"];
+    const attached = ["paint", "grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"];
+    const detached = ["paint", "grade", "chromaticAberration", "fxaa", null, null, null, "finish"];
     expect(names()).toEqual(detached);
     // An update with no strength (every other call site) leaves it so.
     post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST);
@@ -473,7 +474,8 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 1);
       // The end's blurs sit detached, null in their slots, until the end.
       const passes = camera._postProcesses.filter((p) => p !== null);
-      expect(passes[0]!.name).toBe(tier === "high" ? "scene" : "grade");
+      // The paint pass is first on both tiers since 2026-10-17, and carries the samples.
+      expect(passes[0]!.name).toBe("paint");
       expect(passes[0]!.samples).toBe(MSAA_SAMPLES);
       for (const p of passes.slice(1)) expect(p.samples, p.name).toBe(1);
       post.dispose();
@@ -525,12 +527,14 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     camera.dispose();
   });
 
-  it("on medium, grade is built at ratio 1.0 and is the first pass that carries the multisampling", () => {
+  it("on medium, grade is built at ratio 1.0 and follows the paint pass, which is first and carries the multisampling", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     const post = createPost(scene, camera, postFeaturesFor("medium", true));
     const grade = passNamed(camera, "grade");
     expect(ratioOf(grade)).toBe(1.0);
-    expect(camera._postProcesses[0]).toBe(grade);
+    expect(camera._postProcesses[0]).toBe(passNamed(camera, "paint"));
+    expect(ratioOf(passNamed(camera, "paint"))).toBe(1.0);
+    expect(camera._postProcesses[1]).toBe(grade);
     post.dispose();
     camera.dispose();
   });

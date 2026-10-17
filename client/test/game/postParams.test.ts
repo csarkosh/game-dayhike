@@ -6,9 +6,9 @@ import { WEATHER_PRESETS } from "../../src/game/weather.js";
 
 describe("postFeaturesFor", () => {
   it("high gets the pipeline, halation and the lens, medium the pipeline and the lens, low nothing", () => {
-    expect(postFeaturesFor("high", true)).toEqual({ pipeline: true, halation: true, lens: true, colourPath: "post" });
-    expect(postFeaturesFor("medium", true)).toEqual({ pipeline: true, halation: false, lens: true, colourPath: "post" });
-    expect(postFeaturesFor("low", true)).toEqual({ pipeline: false, halation: false, lens: false, colourPath: "material" });
+    expect(postFeaturesFor("high", true)).toEqual({ pipeline: true, halation: true, lens: true, colourPath: "post", paint: 3 });
+    expect(postFeaturesFor("medium", true)).toEqual({ pipeline: true, halation: false, lens: true, colourPath: "post", paint: 2 });
+    expect(postFeaturesFor("low", true)).toEqual({ pipeline: false, halation: false, lens: false, colourPath: "material", paint: 0 });
   });
 
   it("without float render targets every tier takes the material path, and no lens", () => {

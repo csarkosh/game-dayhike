@@ -19,13 +19,14 @@ import type { WeatherParams } from "./weather.js";
 import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
 import { CHASE_LIFT, CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, CHASE_TINT, gradeRecordUnder, STARE_VIGNETTE, type GradeRecord } from "./gradeParams.js";
 import type { StareLens } from "./stareLens.js";
-import { finishUnder, MSAA_SAMPLES, type PostFeatures } from "./postParams.js";
+import { finishUnder, MSAA_SAMPLES, PAINT_STRENGTH, paintRadiusFor, type PostFeatures } from "./postParams.js";
 import { LENS, lensDropletMap } from "./lensParams.js";
 import halationExtractFragment from "./shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "./shaders/grade.fragment.fx?raw";
 import lensFragment from "./shaders/lens.fragment.fx?raw";
 import finishFragment from "./shaders/finish.fragment.fx?raw";
 import farSoftFragment from "./shaders/farSoft.fragment.fx?raw";
+import paintFragment from "./shaders/paint.fragment.fx?raw";
 // Registers `scene.enablePrePassRenderer`, the far softening's depth.
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import type { PrePassRenderer } from "@babylonjs/core/Rendering/prePassRenderer.js";
@@ -180,6 +181,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   /** The far field's softening (2026-10-16) and the prepass whose depth it reads. */
   let farSoft: PostProcess | null = null;
   let prePass: PrePassRenderer | null = null;
+  /** The paint pass (2026-10-17): the frame smeared into strokes, after the far softening and before the grade. */
+  let paint: PostProcess | null = null;
   let droplets: RawTexture | null = null;
   let black: RawTexture | null = null;
   // The lens's gate: its strength this frame, the slot it holds in the
@@ -231,6 +234,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     Effect.ShadersStore["finishFragmentShader"] = finishFragmentFor(engine.isWebGPU);
     Effect.ShadersStore["lensFragmentShader"] = lensFragment;
     Effect.ShadersStore["farSoftFragmentShader"] = farSoftFragment;
+    Effect.ShadersStore["paintFragmentShader"] = paintFragment;
 
     // The far softening, first in the chain, on the scene as rendered. Its
     // depth is the scene's own: Babylon's prepass draws the camera-space
@@ -281,6 +285,22 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
         effect.setTexture("depthSampler", target.textures[bound.getIndex(Constants.PREPASS_DEPTH_TEXTURE_TYPE)] ?? null);
         effect.setFloat2("texel", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
         effect.setFloat3("soft", FAR_SOFT_BAND[0], FAR_SOFT_BAND[1], FAR_SOFT_RADIUS);
+      };
+    }
+
+    if (features.paint > 0) {
+      // The paint: a generalized Kuwahara at the tier's stroke radius, on the
+      // scene's linear colour (after the far softening, which reads the depth
+      // of the scene as rendered), ahead of the halation's extract and the
+      // grade, so the halo and the colour identity are taken from the painted
+      // frame. Ratio 1: the strokes are the picture's.
+      const strokes = features.paint;
+      paint = new PostProcess("paint", "paint", ["texel", "radius", "strength"], [], 1.0, camera,
+        Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
+      paint.onApply = (effect) => {
+        effect.setFloat2("texel", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
+        effect.setFloat("radius", paintRadiusFor(strokes, engine.getRenderHeight()));
+        effect.setFloat("strength", PAINT_STRENGTH);
       };
     }
 
@@ -430,7 +450,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     // all, and Math.min(4, undefined) is NaN, so ask only where a cap above
     // 1 exists; a capped engine (Safari) reads 1 and nothing else changes.
     // FXAA stays for the cards' alpha-test edges, which MSAA does not touch.
-    const first = farSoft ?? scenePass ?? grade;
+    const first = farSoft ?? paint ?? scenePass ?? grade;
     if (engine.getCaps().maxMSAASamples > 1) {
       if (prePass !== null) prePass.samples = MSAA_SAMPLES;
       else if (first !== null) first.samples = MSAA_SAMPLES;
@@ -499,6 +519,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     dispose() {
       farSoft?.dispose();
       farSoft = null;
+      paint?.dispose();
+      paint = null;
       if (prePass !== null) {
         scene.disablePrePassRenderer();
         prePass = null;

@@ -57,6 +57,23 @@ const float AGX_MIN_EV = -12.47393;
 const float AGX_MAX_EV = 4.026069;
 const float SPLIT_TONE_DENSITY_SCALE = 0.35;
 const float SPLIT_TONE_SATURATION_SCALE = 0.5;
+// The painted base (2026-10-17): the tonal identity every frame wears under
+// the weather's own split-tone, after the manner of a landscape in oils:
+// shadows pulled to a warm umber, midtones to an olive sage, highlights to a
+// cream, the whole drained of a quarter of its saturation and its blacks
+// lifted to a warm grey, so no frame is a photograph's black or a monitor's
+// green. The weather's bands (violet shadows, teal midtones under mood)
+// lay over it as before.
+const vec3 PAINT_SHADOW = vec3(0.30, 0.25, 0.19);
+const vec3 PAINT_MIDTONE = vec3(0.60, 0.58, 0.44);
+const vec3 PAINT_HIGHLIGHT = vec3(0.98, 0.94, 0.84);
+const vec2 PAINT_SHADOW_AMOUNT = vec2(1.0, -0.2);
+const vec2 PAINT_MIDTONE_AMOUNT = vec2(0.7, -0.15);
+const vec2 PAINT_HIGHLIGHT_AMOUNT = vec2(0.7, -0.3);
+const float PAINT_SATURATION = -0.12;
+const vec3 PAINT_LIFT = vec3(0.006, 0.0055, 0.005);
+const float PAINT_CONTRAST = 1.22;
+const float PAINT_PIVOT = 0.18;
 
 float gradeLuma(vec3 c) {
   return dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -121,6 +138,17 @@ void main(void) {
   float shadowMask = 1.0 - smoothstep(0.0, 0.35, l);
   float highlightMask = smoothstep(0.55, 1.0, l);
   float midMask = 1.0 - shadowMask - highlightMask;
+  c = gradeBand(c, shadowMask, PAINT_SHADOW, PAINT_SHADOW_AMOUNT);
+  c = gradeBand(c, midMask, PAINT_MIDTONE, PAINT_MIDTONE_AMOUNT);
+  c = gradeBand(c, highlightMask, PAINT_HIGHLIGHT, PAINT_HIGHLIGHT_AMOUNT);
+  c = mix(vec3(gradeLuma(c)), c, 1.0 + PAINT_SATURATION);
+  // The paintings' values: a wider range round middle grey for everything
+  // the eye reads as lit, the deep shadow left where the render put it (a
+  // dark evening is dark already and must stay readable), then the blacks
+  // lifted a shade.
+  float paintLit = smoothstep(0.02, 0.25, gradeLuma(c));
+  c = clamp(c + (c - PAINT_PIVOT) * (PAINT_CONTRAST - 1.0) * paintLit, 0.0, 1.0);
+  c = PAINT_LIFT + c * (1.0 - PAINT_LIFT);
   c = gradeBand(c, shadowMask, shadowTint, shadowAmount);
   c = gradeBand(c, midMask, midtoneTint, midtoneAmount);
   c = gradeBand(c, highlightMask, highlightTint, highlightAmount);
