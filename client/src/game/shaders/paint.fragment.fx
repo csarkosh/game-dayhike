@@ -13,6 +13,15 @@
 // Anisotropic Kuwahara Filtering" (2009), without the anisotropy: the
 // sectors are round.
 //
+// The eight sectors' sums are eight sets of named variables, added to by a
+// function called eight times a tap with the sector's direction a constant,
+// never an array indexed by the sector: an array in a function's scope
+// indexed at run time is kept in memory by one translation of this shader
+// and read back at every tap, at several times the cost on one engine and
+// a little on the other (the design doc has the pair). The window's loops
+// run to the radius, not to the reach: the reach is only the most a radius
+// may be.
+//
 // COMMENT RULES: no semicolon inside a trailing comment on a code line, no
 // hashed preprocessor keyword in comment prose.
 precision highp float;
@@ -46,66 +55,70 @@ vec3 paintCompress(vec3 c) {
   return c / (1.0 + c);
 }
 
+void paintTap(vec3 c, vec3 cLinear, vec2 v, float w, float zeta, vec2 dir, inout vec3 mean, inout vec3 meanLinear, inout vec3 square, inout float weight) {
+  float along = dot(v, dir);
+  float across = dot(v, vec2(-dir.y, dir.x));
+  float s = max(0.0, along + zeta - PAINT_SECTOR_OVERLAP * across * across);
+  s = s * s * w;
+  mean += c * s;
+  meanLinear += cLinear * s;
+  square += c * c * s;
+  weight += s;
+}
+
+void paintSector(vec3 own, vec3 mean, vec3 meanLinear, vec3 square, float weight, inout vec3 sum, inout float total) {
+  float wk = max(weight, 1.0e-5);
+  vec3 m = mean / wk;
+  vec3 s = max(square / wk - m * m, vec3(0.0));
+  float sigma = sqrt(paintLuma(s));
+  float w = 1.0 / (1.0 + pow(PAINT_VARIANCE_SCALE * sigma, PAINT_SHARPNESS));
+  // A sector whose mean is far from the pixel's own colour weighs less: a
+  // leaf against the sky would otherwise take the sky's flat sector and
+  // vanish into it, every thin thing eaten by the flat ground behind it.
+  vec3 away = m - own;
+  w *= exp(-PAINT_KEEP * dot(away, away));
+  sum += (meanLinear / wk) * w;
+  total += w;
+}
+
 void main(void) {
-  vec3 ownLinear = clamp(texture2D(textureSampler, vUV).rgb, vec3(0.0), vec3(PAINT_CAP));
+  vec3 ownLinear = clamp(textureLod(textureSampler, vUV, 0.0).rgb, vec3(0.0), vec3(PAINT_CAP));
   vec3 own = paintCompress(ownLinear);
-  vec3 mean[8];
-  vec3 meanLinear[8];
-  vec3 square[8];
-  float weight[8];
-  for (int k = 0; k < 8; k++) {
-    mean[k] = vec3(0.0);
-    meanLinear[k] = vec3(0.0);
-    square[k] = vec3(0.0);
-    weight[k] = 0.0;
-  }
   float r = clamp(radius, 1.0, float(PAINT_REACH));
   float zeta = 2.0 / r;
-  // The window is the radius's, not the reach's: a stroke of 2 px reads 25
-  // taps, not the 169 of the loop's bound.
   int reach = int(ceil(r));
-  for (int j = -PAINT_REACH; j <= PAINT_REACH; j++) {
-    if (j < -reach || j > reach) continue;
-    for (int i = -PAINT_REACH; i <= PAINT_REACH; i++) {
-      if (i < -reach || i > reach) continue;
+  vec3 m0 = vec3(0.0), m1 = vec3(0.0), m2 = vec3(0.0), m3 = vec3(0.0), m4 = vec3(0.0), m5 = vec3(0.0), m6 = vec3(0.0), m7 = vec3(0.0);
+  vec3 l0 = vec3(0.0), l1 = vec3(0.0), l2 = vec3(0.0), l3 = vec3(0.0), l4 = vec3(0.0), l5 = vec3(0.0), l6 = vec3(0.0), l7 = vec3(0.0);
+  vec3 q0 = vec3(0.0), q1 = vec3(0.0), q2 = vec3(0.0), q3 = vec3(0.0), q4 = vec3(0.0), q5 = vec3(0.0), q6 = vec3(0.0), q7 = vec3(0.0);
+  float w0 = 0.0, w1 = 0.0, w2 = 0.0, w3 = 0.0, w4 = 0.0, w5 = 0.0, w6 = 0.0, w7 = 0.0;
+  for (int j = -reach; j <= reach; j++) {
+    for (int i = -reach; i <= reach; i++) {
       vec2 o = vec2(float(i), float(j));
-      float d = length(o);
-      if (d > r) continue;
-      vec3 cLinear = clamp(texture2D(textureSampler, vUV + o * texel).rgb, vec3(0.0), vec3(PAINT_CAP));
-      vec3 c = paintCompress(cLinear);
+      if (dot(o, o) > r * r) continue;
       vec2 v = o / r;
       float fall = exp(-PAINT_SECTOR_SPREAD * dot(v, v));
-      for (int k = 0; k < 8; k++) {
-        float a = float(k) * 0.78539816339;
-        vec2 dir = vec2(cos(a), sin(a));
-        vec2 perp = vec2(-dir.y, dir.x);
-        float along = dot(v, dir);
-        float across = dot(v, perp);
-        float w = max(0.0, along + zeta - PAINT_SECTOR_OVERLAP * across * across);
-        w = w * w * fall;
-        mean[k] += c * w;
-        meanLinear[k] += cLinear * w;
-        square[k] += c * c * w;
-        weight[k] += w;
-      }
+      vec3 cLinear = clamp(textureLod(textureSampler, vUV + o * texel, 0.0).rgb, vec3(0.0), vec3(PAINT_CAP));
+      vec3 c = paintCompress(cLinear);
+      paintTap(c, cLinear, v, fall, zeta, vec2(1.0, 0.0), m0, l0, q0, w0);
+      paintTap(c, cLinear, v, fall, zeta, vec2(0.70710678, 0.70710678), m1, l1, q1, w1);
+      paintTap(c, cLinear, v, fall, zeta, vec2(0.0, 1.0), m2, l2, q2, w2);
+      paintTap(c, cLinear, v, fall, zeta, vec2(-0.70710678, 0.70710678), m3, l3, q3, w3);
+      paintTap(c, cLinear, v, fall, zeta, vec2(-1.0, 0.0), m4, l4, q4, w4);
+      paintTap(c, cLinear, v, fall, zeta, vec2(-0.70710678, -0.70710678), m5, l5, q5, w5);
+      paintTap(c, cLinear, v, fall, zeta, vec2(0.0, -1.0), m6, l6, q6, w6);
+      paintTap(c, cLinear, v, fall, zeta, vec2(0.70710678, -0.70710678), m7, l7, q7, w7);
     }
   }
   vec3 sum = vec3(0.0);
   float total = 0.0;
-  for (int k = 0; k < 8; k++) {
-    float wk = max(weight[k], 1.0e-5);
-    vec3 m = mean[k] / wk;
-    vec3 s = max(square[k] / wk - m * m, vec3(0.0));
-    float sigma = sqrt(paintLuma(s));
-    float w = 1.0 / (1.0 + pow(PAINT_VARIANCE_SCALE * sigma, PAINT_SHARPNESS));
-    // A sector whose mean is far from the pixel's own colour weighs less: a
-    // leaf against the sky would otherwise take the sky's flat sector and
-    // vanish into it, every thin thing eaten by the flat ground behind it.
-    vec3 away = m - own;
-    w *= exp(-PAINT_KEEP * dot(away, away));
-    sum += (meanLinear[k] / wk) * w;
-    total += w;
-  }
+  paintSector(own, m0, l0, q0, w0, sum, total);
+  paintSector(own, m1, l1, q1, w1, sum, total);
+  paintSector(own, m2, l2, q2, w2, sum, total);
+  paintSector(own, m3, l3, q3, w3, sum, total);
+  paintSector(own, m4, l4, q4, w4, sum, total);
+  paintSector(own, m5, l5, q5, w5, sum, total);
+  paintSector(own, m6, l6, q6, w6, sum, total);
+  paintSector(own, m7, l7, q7, w7, sum, total);
   vec3 painted = total > 1.0e-6 ? sum / total : ownLinear;
   gl_FragColor = vec4(mix(ownLinear, painted, strength), 1.0);
 }

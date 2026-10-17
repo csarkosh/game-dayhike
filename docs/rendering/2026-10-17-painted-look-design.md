@@ -85,7 +85,11 @@ no base identity: at clear it is a photograph.
   expanded again bent every leaf against a low sun toward the sky's brighter
   channels and turned the crowns cyan-white. A sector whose mean is far from
   the pixel's own colour weighs less, so a thin leaf against the flat sky is
-  not eaten by the sky's sector.
+  not eaten by the sky's sector. And the pass's shape: its eight sectors'
+  sums as named variables added to by a function called eight times a tap,
+  the window's loops run to the radius; the textbook shape, the sums in
+  arrays indexed by the sector loop, cost six times as much on WebGPU as on
+  WebGL2 (`2026-10-17-painted-post-webgpu-vs-webgl2.md` §1).
 
 - **The world, round one.** The opening weather (`bright`) is drearier:
   cloud 0.6 and mist 0.18 where it was 0.45 and 0.12. The ground haze is
@@ -112,12 +116,15 @@ no base identity: at clear it is a photograph.
 
 | Pose, tier | Before | After |
 |---|---|---|
-| meadow, medium | 49.0 fps | 43.4 fps |
+| meadow, medium, WebGL2 | 55.3 fps | 49.1 fps |
+| meadow, medium, WebGPU | 76.9 fps | 65.5 fps |
 
-On this Mac (the `apple-base` class, Chrome, WebGPU), 1200 by 675, frames
-counted over 15 s after 30 s of settling: about 2.6 ms for the pass at 2 px
-(two means a sector since the linear-mean fix), the base and the world's
-first round. The rig pairs are owed.
+On this Mac (the `apple-base` class, Chrome 157), 1200 by 675, frames counted
+over 15 s after 30 s of settling with the display's cap off, the engine forced
+each way: about 2.3 ms for the pass at 2 px, the base and the world's rounds,
+on either engine, once the pass took its final shape (the sibling doc,
+`2026-10-17-painted-post-webgpu-vs-webgl2.md`, has the shapes and their
+costs). The rig pairs are owed.
 
 ## 5. What a player sees
 
