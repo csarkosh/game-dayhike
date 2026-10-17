@@ -195,9 +195,10 @@ depth renderer's map bound and read, and once with the prepass's target bound an
 read; a pass that bound the depth and read a constant instead never lost it, nor
 did the depth pass drawing with no post process reading it, nor any of six later
 runs that read the depth, with and without Dawn's backend validation, with and
-without the game's asynchronous pipeline creation. The cause is not found; the
-correlation with reading a float render target in a post process is the strongest
-there is, and the runs that survived say it is not that alone.
+without the game's asynchronous pipeline creation. The cause was not found
+then; the correlation with reading a float render target in a post process was the
+strongest there was, and the runs that survived said it was not that alone. It was
+found the day after the softening shipped, and it was not the depth's (section 10).
 
 What a lost GPU looks like is itself an engine difference. On WebGL2 the context
 is lost and the canvas raises `webglcontextlost`; the GPU process is usually still
@@ -271,7 +272,47 @@ engine's speed; it is where the translation happens.
 No frame times were taken for the prepass against the depth renderer or against
 no softening, on either engine; the prepass was chosen on what it does not do
 (a second pass) and on the correctness of its depth, not on a measurement. The
-device loss has no reproduction. Both belong in the next measurement on the
-reference machine and the Windows rig (`2026-09-26-webgpu-high-tier-verification.md`,
-§1 for the method): the cost of the second target and its resolve at 4 samples
-on each engine, and a run long enough to say whether the loss returns.
+device loss had no reproduction when this was written; section 10 has one, and
+its cause. What remains for the next measurement on the reference machine and
+the Windows rig (`2026-09-26-webgpu-high-tier-verification.md`, §1 for the
+method) is the cost of the second target and its resolve at 4 samples on each
+engine.
+
+## 10. Amendment (2026-10-17): the loss was a frame's GPU time, and the depth a bystander
+
+The loss came back on the far-field build the day after it shipped, on the same
+Mac with the high tier forced on WebGPU (the `apple-base` class is capped at
+medium, which draws on WebGL2), in about half of 60 s starts at the trailhead,
+and this time it was reproduced and traced. A probe on the page's queue
+(`onSubmittedWorkDone` after every submit, with the render passes each carried)
+put every loss after a single frame of 6 s or more of GPU; Chrome's log had the
+compositor lose its own Dawn device first (`[Device] is lost. - While calling
+[Device].ImportSharedTextureMemory`), the GPU process restart, and the page's
+device go with it, which is the one line section 6 quotes. On that Mac the high
+tier is GPU-bound at about 0.8 s a whole frame whatever the build. The frames
+that reached 6 s were the ones drawn while the asynchronous pipeline creation
+(`2026-09-28-webgpu-async-pipelines-design.md`) still had pipelines pending:
+with the ground and the trees left out, the sward, the far cover and the sky
+behind them are shaded over the whole screen, and the frame with fewer draws
+cost 4 to 7 s against 1.3 s for a whole one. The previous build's partial frames
+were 5.5 s; the prepass's second target and the three cascades pushed them over
+the line. The depth texture of section 6 was a bystander: the depth renderer's
+second pass over the scene added to the same frames, which is why its runs lost
+the device more often, and the runs that survived, with and without the
+asynchronous creation, were the half that any start had. The compiles were not
+the cost either: every shipped shader compiles in under 10 ms alone, and the
+seconds they appeared to take were the GPU process's main thread waiting on the
+saturated GPU.
+
+The fix holds the scene's frames while any pipeline is pending (§12 of that
+design doc): the first frame asks for its pipelines and draws nothing, the
+frames after wait, and the first frame drawn is whole; the canvas keeps its last
+image because the engine acquires its texture only when a main pass starts.
+Measured on the same Mac, 60 s at the trailhead on the forced high tier:
+before, 1 loss in 5 runs (about half over the day); after, 0 in 6 on the dev
+server and 0 in 12 on the built bundle, the first rendered frame whole at
+1.0 to 4.2 s. The engine lesson for section 6's list: on WebGPU in Chrome the
+page's device and the compositor's share one GPU process, so a frame that holds
+the GPU for seconds is not a slow frame, it is the end of every API the process
+hosts; the frame's GPU time on a saturated machine is a hard limit, and a frame
+with its occluders left out is the dear one, not the cheap one.

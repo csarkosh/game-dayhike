@@ -218,7 +218,9 @@ the high tier, so the limit the game asks for rose to 22
 (`WEBGPU_REQUIRED_LIMITS`; the reference adapter offers 28). A depth renderer, a second pass over
 the whole scene, was tried first and dropped: the second pass cost what the
 far field had saved, and on WebGPU a post process reading its map lost the
-device within half a minute on some runs and not others. Two things the
+device within half a minute on some runs and not others (the loss was the
+frame's GPU time, not the map's: `2026-10-16-scene-depth-webgpu-vs-webgl2.md`
+§10). Two things the
 prepass needed from this chain: it reads the chain it draws for from the
 scene's active camera when it updates, which is at the first draw after
 anything marks it dirty, and that draw is as often a render target's (the
