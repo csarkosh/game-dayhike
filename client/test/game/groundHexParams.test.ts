@@ -27,7 +27,7 @@ describe("constants are the spec's", () => {
     expect(MACRO_SLOPE).toBe(0.6);
     expect(MACRO_LUSH).toEqual({ r: 0.82, g: 1.06, b: 0.84 });
     expect(MACRO_DRY).toEqual({ r: 1.18, g: 0.98, b: 0.7 });
-    expect(TUFT_ALBEDO).toEqual({ r: 0.18, g: 0.22, b: 0.11 });
+    expect(TUFT_ALBEDO).toEqual({ r: 0.165, g: 0.205, b: 0.125 });
     expect(HORIZON).toEqual([35, 90]);
     expect(HORIZON_MAX).toBe(0.5);
     expect(HEX_SKEW).toEqual([1, 0, -0.57735027, 1.15470054]);
@@ -127,7 +127,7 @@ describe("horizonWeight", () => {
 
 describe("the sward floor", () => {
   it("pins the thatch colour, the pull and its bands", () => {
-    expect(SWARD_FLOOR).toEqual({ r: 0.05, g: 0.065, b: 0.03 });
+    expect(SWARD_FLOOR).toEqual({ r: 0.047, g: 0.06, b: 0.036 });
     expect(SWARD_MAX).toBe(0.6);
     expect(SWARD_COVER).toEqual([0.05, 0.5]);
     // Gone by the blade field's 18 m reach, so the open floor beyond is unchanged.
@@ -166,11 +166,13 @@ describe("the far cover", () => {
     // The cards' olive, fitted by ratio on the meadow still of 2026-10-14
     // against the near card band: the main tuft's texture mean (0.1001,
     // 0.0989, 0.0297) × 1.327, four decimals; refitted 2026-10-16 against the
-    // card band with the far band in, R at 0.87 and B at 1.23 of that.
-    expect(FAR_SWARD).toEqual({ r: 0.1156, g: 0.1312, b: 0.0485 });
-    expect(FAR_SWARD.r).toBeCloseTo(0.1001 * 1.327 * 0.87, 4);
-    expect(FAR_SWARD.g).toBeCloseTo(0.0989 * 1.327, 4);
-    expect(FAR_SWARD.b).toBeCloseTo(0.0297 * 1.327 * 1.23, 4);
+    // card band with the far band in, R at 0.87 and B at 1.23 of that; taken
+    // toward a sage with the cover's painted tint on 2026-10-17 (R 0.917 and
+    // B 1.2 of the refit, G 0.93), three decimals.
+    expect(FAR_SWARD).toEqual({ r: 0.106, g: 0.122, b: 0.058 });
+    expect(FAR_SWARD.r).toBeCloseTo(0.1001 * 1.327 * 0.87 * 0.917, 3);
+    expect(FAR_SWARD.g).toBeCloseTo(0.0989 * 1.327 * 0.93, 3);
+    expect(FAR_SWARD.b).toBeCloseTo(0.0297 * 1.327 * 1.23 * 1.2, 3);
     expect(FAR_LITTER).toEqual({ r: 0.081, g: 0.057, b: 0.032 });
     // Derived from the cards' canopy terms and root darkening, not fitted:
     // the fit's 0.4615 at a closed canopy (rho 0.9) times the cards' gain of
@@ -317,27 +319,27 @@ describe("the far cover", () => {
     expect(Math.max(...samples) - Math.min(...samples)).toBeGreaterThan(0.3);
     // The target's drift darkening: the trough at FAR_DRIFT_AO of the crown, the clumps whole.
     const white = { r: 1, g: 1, b: 1 };
-    expect(farCoverTarget(0, 0, white, 1, white, 0).r).toBeCloseTo(0.1156 * FAR_DRIFT_AO, 12);
-    expect(farCoverTarget(0, 0, white, 1, { r: 0.5, g: 2, b: 1 }, 1).g).toBeCloseTo(0.1312 * 2, 12);
+    expect(farCoverTarget(0, 0, white, 1, white, 0).r).toBeCloseTo(0.106 * FAR_DRIFT_AO, 12);
+    expect(farCoverTarget(0, 0, white, 1, { r: 0.5, g: 2, b: 1 }, 1).g).toBeCloseTo(0.122 * 2, 12);
   }, timeLimit(5_000));
 
   it("mixes the target from the sward and the litter, shaded by the canopy and darkened in the clumps' troughs", () => {
     const white = { r: 1, g: 1, b: 1 };
     // FAR_SWARD itself, the cards' olive: × 1 (macro) × 1 (no canopy) × 1 (crest).
     const sward = farCoverTarget(0, 0, white, 1);
-    expect(sward.r).toBeCloseTo(0.1156, 12);
-    expect(sward.g).toBeCloseTo(0.1312, 12);
-    expect(sward.b).toBeCloseTo(0.0485, 12);
+    expect(sward.r).toBeCloseTo(0.106, 12);
+    expect(sward.g).toBeCloseTo(0.122, 12);
+    expect(sward.b).toBeCloseTo(0.058, 12);
     // FAR_LITTER × (1 − FAR_CANOPY_SHADE).
     const litter = farCoverTarget(1, 1, white, 1);
     expect(litter.r).toBeCloseTo(0.0580608, 12);
     expect(litter.g).toBeCloseTo(0.0408576, 12);
     expect(litter.b).toBeCloseTo(0.0229376, 12);
-    // FAR_SWARD × FAR_CLUMP_AO: 0.1156 × 0.2, 0.1312 × 0.2, 0.0485 × 0.2.
+    // FAR_SWARD × FAR_CLUMP_AO: 0.106 × 0.2, 0.122 × 0.2, 0.058 × 0.2.
     const trough = farCoverTarget(0, 0, white, 0);
-    expect(trough.r).toBeCloseTo(0.02312, 12);
-    expect(trough.g).toBeCloseTo(0.02624, 12);
-    expect(trough.b).toBeCloseTo(0.0097, 12);
+    expect(trough.r).toBeCloseTo(0.0212, 12);
+    expect(trough.g).toBeCloseTo(0.0244, 12);
+    expect(trough.b).toBeCloseTo(0.0116, 12);
     // Litter and canopy beyond 1 are clamped.
     const over = farCoverTarget(2, 2, white, 1);
     expect(over.r).toBeCloseTo(0.0580608, 12);

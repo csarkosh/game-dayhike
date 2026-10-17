@@ -95,9 +95,18 @@ no base identity: at clear it is a photograph.
   and dread) is taken down to 45, 40 and 20 from 70, 65 and 30: under a
   painted base it is a cast over the oils, in full at eerie, where before it
   was the whole colour of an overcast day and fought the palette with a
-  violet grey. No material and no light changed; the ground's greens are a
-  measured identity with derived pins across the cover and wait for a round
-  of their own.
+  violet grey. No material and no light changed in this round.
+- **The world, round two.** The ground's greens go toward a sage: the
+  cover's green, a measured identity (the main tuft's texture mean at 0.85
+  of its luminance), takes a painted tint (`COVER_PAINT`, 0.93, 0.97, 1.3:
+  red and green down, blue up), and with it the floor every cover fragment
+  is held above, the luminance every card is brought to, and every card's
+  per-channel gain; the near tuft, the sward floor under the blades and the
+  far sward move the same way by hand. The sky's aerosol scale rises from
+  3.75 to 5 (`SKY_MIE_SCALE`): the noon horizon two degrees up is 1.57
+  times the zenith where it was 1.99, a paler, evener sky, the aerosols'
+  white over the zenith's blue, as a landscape in oils has it. The sun is
+  the scattering model's own and was left.
 
 ## 4. Measured
 

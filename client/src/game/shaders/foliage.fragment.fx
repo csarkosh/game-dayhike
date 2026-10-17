@@ -11,6 +11,6 @@ varying vec4 vFoliage;
 varying float vFoliageH;
 varying float vFoliageClump;
 varying float vFoliageDist;
-const vec3 FOLIAGE_CARD_GREEN = vec3(0.0851, 0.0841, 0.0252);
-const vec3 FOLIAGE_ALBEDO_FLOOR = vec3(0.0532, 0.0525, 0.0158);
+const vec3 FOLIAGE_CARD_GREEN = vec3(0.0791, 0.0815, 0.0328);
+const vec3 FOLIAGE_ALBEDO_FLOOR = vec3(0.0494, 0.0509, 0.0205);
 #endif

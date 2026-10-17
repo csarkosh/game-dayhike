@@ -50,7 +50,7 @@ export const MACRO_DRY: Rgb = { r: 1.18, g: 0.98, b: 0.7 };
 /** The tuft colour the far floor blends toward (linear albedo): the mean
  * albedo a lit tuft card reads at, measured against the far field in the
  * running game, not the card texture's own mean. */
-export const TUFT_ALBEDO: Rgb = { r: 0.18, g: 0.22, b: 0.11 };
+export const TUFT_ALBEDO: Rgb = { r: 0.165, g: 0.205, b: 0.125 };
 /** Distance band (m) of the horizon tint, and its cap. */
 export const HORIZON: readonly [number, number] = [35, 90];
 export const HORIZON_MAX = 0.5;
@@ -58,7 +58,7 @@ export const HORIZON_MAX = 0.5;
  * reads as the shaded thatch between the blades (linear albedo) rather than
  * as bare ground. Dark and green-brown, between the blades' own albedo and
  * the grass floor's. */
-export const SWARD_FLOOR: Rgb = { r: 0.05, g: 0.065, b: 0.03 };
+export const SWARD_FLOOR: Rgb = { r: 0.047, g: 0.06, b: 0.036 };
 /** The pull toward SWARD_FLOOR at full cover. */
 export const SWARD_MAX = 0.6;
 /** The ground cover (the blade field's strength, min(1, grass)) the pull
@@ -204,7 +204,7 @@ export const FAR_SWARD_MAX = 1;
  * of G where the card band read 0.97 and 0.74 (sRGB, the mean per channel),
  * a yellow the eye took for the far grass's own; by ratio in linear, in two
  * steps, R at 0.87 and B at 1.23 of the 2026-10-14 fit, G as it was. */
-export const FAR_SWARD: Rgb = { r: 0.1156, g: 0.1312, b: 0.0485 };
+export const FAR_SWARD: Rgb = { r: 0.106, g: 0.122, b: 0.058 };
 /** The litter as the near field renders it (linear albedo). Not fitted 2026-10-10:
  * kept at its start, the needle bed (0.15, 0.105, 0.06) × 0.54: the canopy fit
  * reached its target through the canopy shade alone, and the litter share along

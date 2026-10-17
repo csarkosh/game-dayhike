@@ -85,11 +85,11 @@ describe("foliage plugin", () => {
   });
 
   it("compresses the texture toward the cover's green first, at the uniform, with the green pinned to the params", () => {
-    expect(COVER_GREEN).toEqual({ r: 0.0851, g: 0.0841, b: 0.0252 });
+    expect(COVER_GREEN).toEqual({ r: 0.0791, g: 0.0815, b: 0.0328 });
     expect(fragmentDefs).toContain(
       `const vec3 FOLIAGE_CARD_GREEN = vec3(${COVER_GREEN.r.toFixed(4)}, ${COVER_GREEN.g.toFixed(4)}, ${COVER_GREEN.b.toFixed(4)});`,
     );
-    expect(fragmentDefs).toContain("const vec3 FOLIAGE_CARD_GREEN = vec3(0.0851, 0.0841, 0.0252);");
+    expect(fragmentDefs).toContain("const vec3 FOLIAGE_CARD_GREEN = vec3(0.0791, 0.0815, 0.0328);");
     expect(fragmentLights).toContain("surfaceAlbedo = mix(FOLIAGE_CARD_GREEN, surfaceAlbedo, foliageContrast);");
     // The first line of the block: the root darkening and the tint shape the
     // root on top of the texture the mix leaves.
@@ -99,11 +99,11 @@ describe("foliage plugin", () => {
   });
 
   it("floors the albedo last, after the root darkening, the tint and the clump nudge, with the floor pinned to the params", () => {
-    expect(FOLIAGE_ALBEDO_FLOOR).toEqual({ r: 0.0532, g: 0.0525, b: 0.0158 });
+    expect(FOLIAGE_ALBEDO_FLOOR).toEqual({ r: 0.0494, g: 0.0509, b: 0.0205 });
     expect(fragmentDefs).toContain(
       `const vec3 FOLIAGE_ALBEDO_FLOOR = vec3(${FOLIAGE_ALBEDO_FLOOR.r.toFixed(4)}, ${FOLIAGE_ALBEDO_FLOOR.g.toFixed(4)}, ${FOLIAGE_ALBEDO_FLOOR.b.toFixed(4)});`,
     );
-    expect(fragmentDefs).toContain("const vec3 FOLIAGE_ALBEDO_FLOOR = vec3(0.0532, 0.0525, 0.0158);");
+    expect(fragmentDefs).toContain("const vec3 FOLIAGE_ALBEDO_FLOOR = vec3(0.0494, 0.0509, 0.0205);");
     // Declared under the plugin's define with the green, before its end.
     const declared = fragmentDefs.indexOf("const vec3 FOLIAGE_ALBEDO_FLOOR");
     expect(declared).toBeGreaterThan(fragmentDefs.indexOf("#ifdef FOLIAGE"));

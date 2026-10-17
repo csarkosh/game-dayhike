@@ -253,20 +253,27 @@ describe("the sky's light", () => {
     expect(noon.zenith.g).toBeGreaterThan(noon.zenith.r);
   });
 
-  it("keeps the clear noon horizon 2 degrees up at most twice the zenith, at the smallest aerosol scale that does", () => {
-    expect(horizonOverZenith(tables, noon)).toBeLessThanOrEqual(2);
-    // On the 0.05 grid, from the standard atmosphere's 1 up: one step less and the horizon is over twice the zenith.
+  it("keeps the clear noon horizon 2 degrees up well under twice the zenith: the painted direction's paler, evener sky", () => {
+    // Until 2026-10-17 the scale was the smallest on a 0.05 grid at which the
+    // horizon stayed under twice the zenith (3.75, ratio 1.99). The painted
+    // direction asks for a paler sky, the aerosols' white over the zenith's
+    // blue, so the scale is 5 and the ratio 1.57: an even sky, not a graded
+    // one, as a landscape in oils has it.
+    expect(SKY_MIE_SCALE).toBe(5);
     expect(Math.abs(SKY_MIE_SCALE * 20 - Math.round(SKY_MIE_SCALE * 20))).toBeLessThan(1e-9);
-    expect(SKY_MIE_SCALE).toBeGreaterThanOrEqual(1);
-    const fewer = buildSkyTables(SKY_MIE_SCALE - 0.05);
-    expect(horizonOverZenith(fewer, buildSlice(fewer, NOON_DEG))).toBeGreaterThan(2);
+    const ratio = horizonOverZenith(tables, noon);
+    expect(ratio).toBeGreaterThan(1.5);
+    expect(ratio).toBeLessThan(1.65);
+    // Fewer aerosols grade the sky more steeply.
+    const fewer = buildSkyTables(3.75);
+    expect(horizonOverZenith(fewer, buildSlice(fewer, NOON_DEG))).toBeGreaterThan(ratio);
   });
 
-  it("reads the ring at the horizon itself, where the clear noon horizon is 1.72 times the zenith", () => {
+  it("reads the ring at the horizon itself, where the clear noon horizon is 1.33 times the zenith", () => {
     expect(RING_ELEVATION_DEG).toBe(0);
     const ratio = luma(ringMean(noon.ring, 16, 31)) / luma(noon.zenith);
-    expect(ratio).toBeGreaterThan(1.71);
-    expect(ratio).toBeLessThan(1.72);
+    expect(ratio).toBeGreaterThan(1.32);
+    expect(ratio).toBeLessThan(1.34);
   });
 
   it("keeps a blue zenith at sunset, between 3 % and 15 % of noon's light", () => {

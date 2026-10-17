@@ -37,13 +37,15 @@ export const SKY_MIE_G = 0.8;
  * aerosols the clear noon horizon is about 4 times as bright as the zenith,
  * and fewer aerosols make it brighter still: the zenith, 14 degrees from the
  * noon sun, takes much of its light from the aerosols' forward scattering.
- * This is the smallest scale on a 0.05 grid from 1 up at which the horizon's
- * luminance 2 degrees up (its mean away from the sun) is at most twice the
- * zenith's (1.99; at 3.7 it is 2.01), which keeps noon's sky close to even,
- * as the game's noon has always looked. At the horizon itself, where the
- * ring is read, the noon horizon is 1.72 times the zenith.
+ * Until 2026-10-17 this was the smallest scale on a 0.05 grid from 1 up at
+ * which the horizon's luminance 2 degrees up (its mean away from the sun)
+ * stayed at most twice the zenith's (3.75: 1.99; at 3.7 it is 2.01), which
+ * kept noon's sky close to even. The painted direction asks for a paler sky,
+ * the aerosols' white laid over the zenith's blue as a landscape in oils has
+ * it, so the scale is 5: the horizon 2 degrees up is 1.57 times the zenith,
+ * and at the horizon itself, where the ring is read, 1.33.
  */
-export const SKY_MIE_SCALE = 3.75;
+export const SKY_MIE_SCALE = 5;
 export const SKY_OZONE: Rgb = { r: 0.65e-3, g: 1.881e-3, b: 0.085e-3 };
 export const SKY_OZONE_PEAK_KM = 25;
 export const SKY_OZONE_HALF_WIDTH_KM = 15;

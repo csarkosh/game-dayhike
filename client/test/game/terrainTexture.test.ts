@@ -859,20 +859,20 @@ describe("the grass floor", () => {
     const defs = plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS!;
     expect(defs).not.toContain("uniform vec4 terrainSward");
     const { writes } = makeBoundPlugin();
-    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0.6]);
+    expect(writes.terrainSward).toEqual([0.047, 0.06, 0.036, 0.6]);
     expect(writes.terrainSwardBand).toEqual([0.05, 0.5, 12, 18]);
   });
 
   it("binds the pull's strength as 0 while the sward is off, and keeps the rest bound", () => {
     const { plugin, ubo, writes } = makeBoundPlugin();
-    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0.6]);
+    expect(writes.terrainSward).toEqual([0.047, 0.06, 0.036, 0.6]);
     plugin.setSward(false);
     plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
-    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0]);
+    expect(writes.terrainSward).toEqual([0.047, 0.06, 0.036, 0]);
     expect(writes.terrainSwardBand).toEqual([0.05, 0.5, 12, 18]);
     plugin.setSward(true);
     plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
-    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0.6]);
+    expect(writes.terrainSward).toEqual([0.047, 0.06, 0.036, 0.6]);
   });
 
   it("rebuilds swardWeight from the bound uniforms, component for component as the GLSL reads them", () => {

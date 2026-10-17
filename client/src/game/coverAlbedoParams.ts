@@ -28,9 +28,17 @@
  */
 import type { Rgb } from "./colour.js";
 
+/** The painted tint (2026-10-17) on the cover's green: the measured green
+ * taken toward a sage, less yellow and a little greyer (its red and green
+ * down, its blue up), so the cover sits in the oils palette's olive without
+ * the grade having to drain it there. Applied to `COVER_GREEN` and so to
+ * the floor and the target; the measured means stay as measured. */
+export const COVER_PAINT: Rgb = { r: 0.93, g: 0.97, b: 1.3 };
+
 /** The luminance (linear Y) every card is brought to: the green's own,
- * 0.85 of the main tuft's texture (`COVER_ALBEDO_Y`, 0.0942). */
-export const COVER_ALBEDO_TARGET = 0.0801;
+ * 0.85 of the main tuft's texture (`COVER_ALBEDO_Y`, 0.0942) under the
+ * painted tint. */
+export const COVER_ALBEDO_TARGET = 0.0775;
 
 /** The ground cover's one green, linear: the main tuft's own colour (its
  * texture's mean, `COVER_ALBEDO_RGB` `clutter.grass_a`, (0.1001, 0.0989,
@@ -41,14 +49,14 @@ export const COVER_ALBEDO_TARGET = 0.0801;
  * on every channel. The green every green card's mean is brought to, and the
  * colour the cards' contrast compresses toward (`FOLIAGE_CARD_GREEN` in
  * `shaders/foliage.fragment.fx`, pinned to this at four decimals). */
-export const COVER_GREEN: Rgb = { r: 0.0851, g: 0.0841, b: 0.0252 };
+export const COVER_GREEN: Rgb = { r: 0.0791, g: 0.0815, b: 0.0328 };
 
 /** The darkest a ground-cover fragment's albedo may be, linear: five
  * eighths of the green, applied after the root darkening and the tint, so a
  * blade's tip, a card's baked-dark pixel or a root in the turf never goes to
  * black (`FOLIAGE_ALBEDO_FLOOR` in `shaders/foliage.fragment.fx`, pinned to
  * this at four decimals). */
-export const FOLIAGE_ALBEDO_FLOOR: Rgb = { r: 0.0532, g: 0.0525, b: 0.0158 };
+export const FOLIAGE_ALBEDO_FLOOR: Rgb = { r: 0.0494, g: 0.0509, b: 0.0205 };
 
 /** The least of the sun's light a ground-cover fragment keeps in a cast
  * shadow, 0 to 1: the shadow generator's darkness applies to every receiver,

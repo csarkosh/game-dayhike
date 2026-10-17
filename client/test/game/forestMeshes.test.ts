@@ -245,15 +245,15 @@ describe("createForestMeshes under NullEngine", () => {
     fern.material = loaded;
     const forest = createForestMeshes(scene, SEED, { assets: { ...stubAssets(scene), nurseFern: fern }, bakeImpostor: () => null });
     // The copy made for the log takes the texture and sets its own colour:
-    // the understory fern's tint, (0.0851, 0.0841, 0.0252) / (0.0700,
+    // the understory fern's tint, (0.0791, 0.0815, 0.0328) / (0.0700,
     // 0.1035, 0.0165), none of it at the cap, at the nurse shade of 1. The
     // material as loaded is left white and never draws.
     const worn = fern.material as PBRMaterial;
     expect(worn).not.toBe(loaded);
     expect(worn.name).toBe("understory.fern.material0_nurse");
-    expect(worn.albedoColor.r).toBeCloseTo(1.21571, 5);
-    expect(worn.albedoColor.g).toBeCloseTo(0.81256, 5);
-    expect(worn.albedoColor.b).toBeCloseTo(1.52727, 5);
+    expect(worn.albedoColor.r).toBeCloseTo(1.13000, 5);
+    expect(worn.albedoColor.g).toBeCloseTo(0.78744, 5);
+    expect(worn.albedoColor.b).toBeCloseTo(1.98788, 5);
     expect([loaded.albedoColor.r, loaded.albedoColor.g, loaded.albedoColor.b]).toEqual([1, 1, 1]);
     // The cards' contrast rides the foliage plugin, under the nurse profile
     // (no wind, no tint, no root darkening, the card's own normals), with
