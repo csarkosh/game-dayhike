@@ -64,12 +64,29 @@ const STYLE = `
   .hud .lamp.shown { display: flex; }
   .hud .lamp.lit { opacity: 1; box-shadow: 0 0 0 1px #ffd24d; }
   .hud .lamp svg { width: 22px; height: 22px; display: block; }
-  .hud .lamp .key {
+  .hud .lamp .key, .hud .pause .key {
     display: inline-block; min-width: 1.4em; padding: 3px 5px; text-align: center;
     border: 1px solid rgba(255, 255, 255, 0.45); border-bottom-width: 2px; border-radius: 4px;
     font-family: ui-monospace, monospace; font-size: 12px; letter-spacing: 0.04em;
   }
-  .hud .bars.on ~ .lamp { opacity: 0; }
+  /* The pause button, for a keyboard: the bars and the key that pauses, at
+     the top left corner where the touch layer's own Pause sits, so every
+     player sees the game can be paused and what does it; the page's mute
+     sits under it (muteButton.ts). As faint as the lamp's hint, up under the
+     pointer and on focus, and pressed it pauses as the key does. Hidden by
+     default: the touch layer has its own button. A scene's bars take it down. */
+  .hud .pause {
+    position: absolute; left: calc(14px + env(safe-area-inset-left, 0px)); top: calc(14px + env(safe-area-inset-top, 0px));
+    display: none; align-items: center; gap: 8px; height: 44px; box-sizing: border-box; padding: 0 12px 0 10px;
+    pointer-events: auto; cursor: pointer;
+    color: #fff; background: rgba(16, 16, 20, 0.72); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 22px;
+    font: 500 13px/1 system-ui, sans-serif; opacity: 0.35; transition: opacity 120ms ease-out;
+  }
+  .hud .pause.shown { display: flex; }
+  .hud .pause:hover, .hud .pause:focus-visible { opacity: 1; }
+  .hud .pause:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 3px; }
+  .hud .pause svg { width: 22px; height: 22px; display: block; }
+  .hud .bars.on ~ .lamp, .hud .bars.on ~ .pause { opacity: 0; }
 `;
 
 export type Hud = {
@@ -96,6 +113,10 @@ export type Hud = {
   setLamp(lamp: { key: string; on: boolean } | null): void;
   /** The hint now: its key and whether it is lit, or null while none shows. */
   lamp(): { key: string; on: boolean } | null;
+  /** The pause button, for a keyboard: shown with the key that pauses; null takes it down (a touch screen, the end). */
+  setPause(pause: { key: string } | null): void;
+  /** The pause button now: its key, or null while none shows. */
+  pause(): { key: string } | null;
   dispose(): void;
 };
 
@@ -103,7 +124,7 @@ export type Hud = {
  * Built with DOM APIs rather than innerHTML: setStatus carries server-supplied
  * disconnect reasons, and textContent makes injection structurally impossible.
  */
-export function createHud(container: HTMLElement): Hud {
+export function createHud(container: HTMLElement, hooks: { onPause?: () => void } = {}): Hud {
   const style = document.createElement("style");
   style.textContent = STYLE;
 
@@ -140,8 +161,16 @@ export function createHud(container: HTMLElement): Hud {
   const lampKey = document.createElement("span");
   lampKey.className = "key";
   lamp.append(lineIcon("lamp"), lampKey);
+  const pause = document.createElement("button");
+  pause.type = "button";
+  pause.className = "pause";
+  pause.setAttribute("aria-label", "Pause");
+  const pauseKey = document.createElement("span");
+  pauseKey.className = "key";
+  pause.append(lineIcon("pause"), pauseKey);
+  pause.addEventListener("click", () => hooks.onPause?.());
 
-  root.append(fade, bars, status, end, voice, lamp);
+  root.append(fade, bars, status, end, voice, lamp, pause);
   container.append(style, root);
 
   let flashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -207,6 +236,13 @@ export function createHud(container: HTMLElement): Hud {
       lamp.classList.toggle("shown", state !== null);
       lamp.classList.toggle("lit", state?.on === true);
       lampKey.textContent = state?.key ?? "";
+    },
+    setPause(state) {
+      pause.classList.toggle("shown", state !== null);
+      pauseKey.textContent = state?.key ?? "";
+    },
+    pause() {
+      return pause.classList.contains("shown") ? { key: pauseKey.textContent ?? "" } : null;
     },
     lamp() {
       return lamp.classList.contains("shown") ? { key: lampKey.textContent ?? "", on: lamp.classList.contains("lit") } : null;

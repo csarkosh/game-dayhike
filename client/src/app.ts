@@ -672,7 +672,8 @@ function buildGame(
   made(() => input.dispose());
   const accumulator = new FixedStepAccumulator();
   const container = canvas.parentElement ?? document.body;
-  const hud = createHud(container);
+  // The HUD's Pause button, for a keyboard, pauses as the key does: the controls let go.
+  const hud = createHud(container, { onPause: () => input.disengage() });
   made(() => hud.dispose());
   const touchLayer = createTouchLayer(container, canvas, touchModel, {
     engaged: () => input.engaged,
@@ -1494,12 +1495,13 @@ function buildGame(
     return endMistShare(scene.t - scene.arrival - END_ROAD_AT_S);
   }
 
-  /** Advances and paints the touch layer, and the HUD's lamp hint for a keyboard. Both loops, after `renderer.sync`. */
+  /** Advances and paints the touch layer, and the HUD's lamp hint and Pause button for a keyboard. Both loops, after `renderer.sync`. */
   function syncTouch(lampOn: boolean): void {
     touchModel.tick(performance.now());
     touchModel.setLampOn(lampOn);
     touchLayer.sync();
     hud.setLamp(touchStart || ended || dead ? null : { key: "F", on: lampOn });
+    hud.setPause(touchStart || ended || dead ? null : { key: "Esc" });
   }
 
   /**

@@ -999,8 +999,8 @@ function render(container: HTMLDivElement): void {
   landing = null;
   endIntro(activeIntro);
   container.replaceChildren();
-  // The mute sits faint over a hike, plain on every other page.
-  mute.setFaint(route.kind === "game");
+  // The mute sits faint over a hike, under its Pause button; plain on every other page.
+  mute.setHike(route.kind === "game");
 
   // The staged intro on its fixed world, a frame at a time for its recording:
   // the film is made on the high tier, which is what Auto means here, on the

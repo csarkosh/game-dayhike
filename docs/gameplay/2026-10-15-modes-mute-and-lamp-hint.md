@@ -65,6 +65,11 @@ draws plain; over a hike it sits as faint as the touch controls do and
 comes up under the pointer, on keyboard focus, and whenever it is pressed,
 so a muted hike always shows why it is silent.
 
+*Since 2026-10-17:* over a hike the button sits at the top left, under the
+Pause button (the touch layer's on a touch screen, the HUD's for a keyboard,
+section 3), 44 px below its top at the same 14 px from the corner; on a page
+it stays top right.
+
 The intro's own sound button is gone with it. A follower's film still
 starts muted, as a browser plays a film without a gesture no other way;
 the page's first gesture, a press or a key, turns its track on unless the
@@ -78,6 +83,14 @@ and lit with the lamp (`hud.ts` `setLamp`). A touch screen has its lamp
 button already and shows no hint; the hint goes with a scene's bars and at
 the hike's end.
 
+*Since 2026-10-17:* the HUD shows a keyboard player the pause the same way:
+a Pause button at the top left corner, where the touch layer's own sits,
+with the key that pauses, `Esc`, beside the bars (`hud.ts` `setPause`), as
+faint as the lamp's hint, up under the pointer and on focus; pressed, it
+lets the controls go as the key does (`app.ts`, `input.disengage`). The
+page's mute sits under it. A touch screen has its Pause button already and
+shows none; it goes with a scene's bars and at the hike's end.
+
 ## 4. Where it lives
 
 | File | What |
@@ -87,6 +100,6 @@ the hike's end.
 | `client/src/game/commands.ts` | `/mode`, a world entry. |
 | `client/src/game/settings.ts` | The Mode group. |
 | `client/src/game/muteButton.ts`, `icons.ts` | The button and the line icons the HUD and the touch layer share. |
-| `client/src/game/hud.ts` | The lamp hint. |
+| `client/src/game/hud.ts` | The lamp hint and the Pause button for a keyboard. |
 | `client/src/sim/world.ts`, `summit.ts`, `client/src/net/*Session.ts` | `World.peaceful`. |
-| `client/src/app.ts`, `main.ts` | The mode resolved and written to the address; the calm atmosphere; the mute bound to the ambient; the hint synced with the lamp. |
+| `client/src/app.ts`, `main.ts` | The mode resolved and written to the address; the calm atmosphere; the mute bound to the ambient; the hint synced with the lamp, the Pause button with the lamp's hint. |

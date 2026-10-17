@@ -1,16 +1,18 @@
 /**
  * The page's one mute button: on every page, the title screen, the films
- * and the hike alike, at the top right corner, so no sound ever plays
- * without a way to stop it. Pressed, nothing sounds: the hike's ambient
- * master (`ambientAudio.ts`) and the intro film's track (`introOverlay.ts`)
- * both read it. The state is the player's and lives in localStorage under
- * `MUTE_KEY`, so a page opened muted stays so.
+ * and the hike alike, so no sound ever plays without a way to stop it.
+ * Pressed, nothing sounds: the hike's ambient master (`ambientAudio.ts`)
+ * and the intro film's track (`introOverlay.ts`) both read it. The state is
+ * the player's and lives in localStorage under `MUTE_KEY`, so a page opened
+ * muted stays so.
  *
- * On a page it draws plain; over a hike it goes faint, as the touch
- * controls sit (`touchControls.ts`), and comes up under the pointer, on
- * keyboard focus, and whenever it is pressed, so a muted hike always shows
- * why it is silent. Built with DOM calls, and placed on the body, outside
- * the page's own container, which the pages replace as they come and go.
+ * On a page it draws plain, at the top right corner. Over a hike it sits at
+ * the top left, under the Pause button (the touch layer's, `touchControls.ts`,
+ * or the HUD's for a keyboard, `hud.ts`), as faint as the touch controls
+ * sit, and comes up under the pointer, on keyboard focus, and whenever it is
+ * pressed, so a muted hike always shows why it is silent. Built with DOM
+ * calls, and placed on the body, outside the page's own container, which
+ * the pages replace as they come and go.
  */
 import { lineIcon } from "./icons.js";
 
@@ -55,8 +57,9 @@ const STYLE = `
     opacity: 0.85; transition: opacity 120ms ease-out, background 80ms ease-out;
   }
   .mute svg { width: 22px; height: 22px; display: block; }
-  /* Over a hike it sits as faint as the touch controls do, and comes up when wanted or when pressed. */
-  .mute.faint { opacity: 0.35; }
+  /* Over a hike it sits as faint as the touch controls do, and comes up when wanted or when pressed,
+     at the top left under the Pause button (44px tall at 14px from the corner, in the touch layer and the HUD alike). */
+  .mute.hike { opacity: 0.35; right: auto; left: calc(14px + env(safe-area-inset-left, 0px)); top: calc(68px + env(safe-area-inset-top, 0px)); }
   .mute.on, .mute:hover, .mute:focus-visible { opacity: 1; }
   .mute.on { background: rgba(255, 255, 255, 0.18); }
   .mute:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 3px; }
@@ -66,8 +69,8 @@ export type MuteButton = {
   muted(): boolean;
   /** The state set from outside (a key, a command): drawn, and told as a press is. */
   set(muted: boolean): void;
-  /** Faint over a hike; plain on a page. */
-  setFaint(on: boolean): void;
+  /** Over a hike: faint, at the top left under the Pause button; plain at the top right on a page. */
+  setHike(on: boolean): void;
   dispose(): void;
 };
 
@@ -96,8 +99,8 @@ export function createMuteButton(host: HTMLElement, options: { muted: boolean; o
   return {
     muted: () => muted,
     set,
-    setFaint(on) {
-      button.classList.toggle("faint", on);
+    setHike(on) {
+      button.classList.toggle("hike", on);
     },
     dispose() {
       button.remove();

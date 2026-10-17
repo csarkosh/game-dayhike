@@ -32,7 +32,7 @@ describe("the page's mute", () => {
     expect(muteLabel(true)).toBe("Sound on");
   });
 
-  it("draws one button on its host, the speaker or the speaker struck through, pressed and told on a click, faint over a hike", () => {
+  it("draws one button on its host, the speaker or the speaker struck through, pressed and told on a click, faint and under the Pause button over a hike", () => {
     const doc = installStandInDom();
     const host = doc.createElement("div");
     doc.body.append(host);
@@ -54,10 +54,10 @@ describe("the page's mute", () => {
     mute.set(false);
     expect(heard).toEqual([true, false]);
     expect(button.classList.contains("on")).toBe(false);
-    mute.setFaint(true);
-    expect(button.classList.contains("faint")).toBe(true);
-    mute.setFaint(false);
-    expect(button.classList.contains("faint")).toBe(false);
+    mute.setHike(true);
+    expect(button.classList.contains("hike")).toBe(true);
+    mute.setHike(false);
+    expect(button.classList.contains("hike")).toBe(false);
     mute.dispose();
     expect(host.querySelector("button")).toBeNull();
     expect(host.querySelector("style")).toBeNull();
