@@ -11,6 +11,7 @@ import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTa
 import { RenderingGroupInfo } from "@babylonjs/core/Rendering/renderingManager.js";
 import {
   asyncPipelinesOf,
+  heldOn,
   installPipelines,
   leftOutOn,
   maxInFlightFor,
@@ -568,15 +569,27 @@ describe("the frames the governor does not measure", () => {
       draw(engine, effect(1));
       engine.onEndFrameObservable.notifyObservers(engine);
       expect(told).toBe(1);
+      // A frame held while a creation is pending is one.
+      const scene = { render: (): void => undefined };
+      engine.onNewSceneAddedObservable.notifyObservers(scene);
+      draw(engine, effect(3));
+      scene.render();
+      engine.onEndFrameObservable.notifyObservers(engine);
+      expect(told).toBe(2);
+      asked[1]!.made.resolve({ made: 3 });
+      await flush();
+      scene.render();
+      engine.onEndFrameObservable.notifyObservers(engine);
+      expect(told).toBe(2);
       // A pipeline made synchronously is one.
       WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame = 1;
       engine.onEndFrameObservable.notifyObservers(engine);
-      expect(told).toBe(2);
+      expect(told).toBe(3);
       WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame = 0;
       stop();
       draw(engine, effect(2));
       engine.onEndFrameObservable.notifyObservers(engine);
-      expect(told).toBe(2);
+      expect(told).toBe(3);
     } finally {
       stop();
     }
@@ -605,6 +618,36 @@ describe("the reveal", () => {
     draw(engine, effect(2));
     engine.onEndFrameObservable.notifyObservers(engine);
     engine.onEndFrameObservable.notifyObservers(engine);
+    expect(lifted).toBe(1);
+  });
+
+  it("does not lift on a frame held while a creation is pending, and lifts on the whole frame drawn after", async () => {
+    const { asked, engine, pipelines } = patched(2);
+    let lifted = 0;
+    revealWhenWhole(engine as never, () => void lifted++);
+    let rendered = 0;
+    const scene = {
+      render(): void {
+        rendered++;
+        pipelines.enter();
+        draw(engine, effect(1));
+        pipelines.leave();
+      },
+    };
+    engine.onNewSceneAddedObservable.notifyObservers(scene);
+    scene.render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    expect(rendered).toBe(1);
+    // Held: nothing drawn, nothing left out, and no whole world either.
+    scene.render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    expect(rendered).toBe(1);
+    expect(lifted).toBe(0);
+    asked[0]!.made.resolve({ made: 1 });
+    await flush();
+    scene.render();
+    engine.onEndFrameObservable.notifyObservers(engine);
+    expect(rendered).toBe(2);
     expect(lifted).toBe(1);
   });
 
@@ -690,6 +733,89 @@ describe("a creation that does not settle, or fails", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]![0])).toContain("the first pipeline is invalid");
     expect(page().failed).toBe(2);
+  });
+});
+
+describe("a scene's frames while a creation is pending", () => {
+  /** A scene whose render draws one effect inside the scope, as the game's does. */
+  function sceneDrawing(engine: FakeEngine, pipelines: AsyncPipelines, e: unknown) {
+    const scene = {
+      rendered: 0,
+      render(): void {
+        scene.rendered++;
+        pipelines.enter();
+        draw(engine, e);
+        pipelines.leave();
+      },
+    };
+    engine.onNewSceneAddedObservable.notifyObservers(scene);
+    return scene;
+  }
+
+  it("are held, drawing nothing, until the last pending creation lands, and the frame after draws whole", async () => {
+    const { asked, engine, pipelines } = patched(1);
+    const scene = sceneDrawing(engine, pipelines, effect(1));
+    scene.render();
+    expect(scene.rendered).toBe(1);
+    expect(asked.length).toBe(1);
+    expect(pipelines.pending()).toBe(1);
+    scene.render();
+    scene.render();
+    expect(scene.rendered).toBe(1);
+    expect(heldOn(engine as never)).toBe(2);
+    expect(page()).toMatchObject({ held: 2, leftOut: 1 });
+    asked[0]!.made.resolve({ made: 1 });
+    await flush();
+    scene.render();
+    expect(scene.rendered).toBe(2);
+    expect(engine.drawn.at(-1)).toEqual({ made: 1 });
+    expect(heldOn(engine as never)).toBe(2);
+  });
+
+  it("are held while a creation waits its turn in the queue, not only while one is in flight", async () => {
+    const { asked, engine, pipelines } = patched(1);
+    pipelines.enter();
+    draw(engine, effect(1));
+    draw(engine, effect(2));
+    pipelines.leave();
+    expect(asked.length).toBe(1);
+    const scene = sceneDrawing(engine, pipelines, effect(1));
+    asked[0]!.made.resolve({ made: 1 });
+    await flush();
+    expect(pipelines.pending()).toBe(1);
+    scene.render();
+    expect(scene.rendered).toBe(0);
+    asked[1]!.made.resolve({ made: 2 });
+    await flush();
+    scene.render();
+    expect(scene.rendered).toBe(1);
+  });
+
+  it("run again once a creation that never settles is given up, and once the patch is off", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { engine, pipelines } = patched(1);
+    const scene = sceneDrawing(engine, pipelines, effect(1));
+    scene.render();
+    scene.render();
+    expect(scene.rendered).toBe(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(pipelines.pending()).toBe(0);
+    scene.render();
+    expect(scene.rendered).toBe(2);
+    pipelines.remove();
+    scene.render();
+    expect(scene.rendered).toBe(3);
+  });
+
+  it("do not hold a render outside the frame, which the bake polls until whole", () => {
+    const { engine, pipelines } = patched(1);
+    pipelines.enter();
+    draw(engine, effect(1));
+    pipelines.leave();
+    let ran = 0;
+    expect(pipelines.guard(() => void ran++)).toBe(true);
+    expect(ran).toBe(1);
   });
 });
 

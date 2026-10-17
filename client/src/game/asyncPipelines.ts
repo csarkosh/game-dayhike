@@ -44,12 +44,27 @@
  * Outside the scope, and while the engine renders by snapshot, every draw is
  * Babylon's, untouched.
  *
+ * While a creation is pending, the scene's frames are held: its render
+ * returns at once, drawing nothing, and the canvas keeps its last image
+ * (`guardRender`; the engine acquires the canvas's texture only for a main
+ * pass). A frame drawn with draws left out is not a cheaper frame but a far
+ * dearer one on a saturated GPU (2026-10-17): with the ground or the trees
+ * left out, what stood behind them is shaded in full, and such a frame took
+ * four to seven seconds of GPU against the whole frame's one on the Mac that
+ * measured it, which is where Chrome's compositor loses its own device and
+ * takes the page's with it. So a frame asks for its pipelines (the first
+ * frame, with none landed, draws nothing and costs nothing), the next frames
+ * wait for them, and the first frame drawn after is whole. A render outside
+ * the frames (`guard`, the impostor bake's) is not held: it draws to its own
+ * small target and polls until it is whole.
+ *
  * An asynchronous creation is not a hitch and does not raise Babylon's count
  * of the pipelines a frame made (`NumPipelineCreationLastFrame`), but a frame
- * with draws left out is cheaper than a whole one: `watchPipelines` voids the
- * governor's window for either (`leftOutOn`). The start's reveal waits for a
- * frame that left nothing out (`revealWhenWhole`), and the impostor bake keeps
- * only a render that left nothing out (`forestMeshes.ts`).
+ * held or with draws left out is no measure of a whole one: `watchPipelines`
+ * voids the governor's window for any (`leftOutOn`, `heldOn`). The start's
+ * reveal waits for a frame that drew and left nothing out (`revealWhenWhole`),
+ * and the impostor bake keeps only a render that left nothing out
+ * (`forestMeshes.ts`).
  *
  * Only the WebGPU module (`gpuEngine.ts`) imports this one at run time; the
  * rest of the game names its types alone, so a WebGL2 page loads none of it.
@@ -127,6 +142,8 @@ export type PipelinesReport = {
   sync: number;
   /** Draws left out while their pipeline was made. */
   leftOut: number;
+  /** Frames of a scene held, drawing nothing, while a pipeline was pending. */
+  held: number;
   /** The longest time from a pipeline asked for to its landing, queue included. */
   longestMs: number;
   /** Pipelines asked for and not yet landed. */
@@ -166,9 +183,10 @@ const LEFT_OUT = new Error("a draw left out while its render pipeline is made");
 /** The patch on each engine that has one. */
 const installed = new WeakMap<object, AsyncPipelines>();
 
-/** Per engine, the draws it left out and the pipelines it asked for, never
- * reset: frame readers take the difference from frame to frame. */
-const tallies = new WeakMap<object, { leftOut: number; asked: number }>();
+/** Per engine, the draws it left out, the frames it held and the pipelines
+ * it asked for, never reset: frame readers take the difference from frame to
+ * frame. */
+const tallies = new WeakMap<object, { leftOut: number; asked: number; held: number }>();
 
 /** The patch on `engine`, or null: not installed (`?pipelines=sync`, or an
  * engine with no pipeline cache), or removed. */
@@ -179,6 +197,12 @@ export function asyncPipelinesOf(engine: AbstractEngine): AsyncPipelines | null 
 /** The draws `engine` has left out so far; 0 without the patch. */
 export function leftOutOn(engine: AbstractEngine): number {
   return tallies.get(engine)?.leftOut ?? 0;
+}
+
+/** The frames `engine`'s scenes have held so far, drawing nothing while a
+ * pipeline was pending; 0 without the patch. */
+export function heldOn(engine: AbstractEngine): number {
+  return tallies.get(engine)?.held ?? 0;
 }
 
 /**
@@ -206,6 +230,7 @@ export function installPipelines(
     escapes: 0,
     sync: 0,
     leftOut: 0,
+    held: 0,
     longestMs: 0,
     pending: 0,
   };
@@ -235,7 +260,7 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
   const ownDraw = own._draw;
   if (cache === undefined || typeof ownDraw !== "function") return null;
   const device = cache._device;
-  const tally = { leftOut: 0, asked: 0 };
+  const tally = { leftOut: 0, asked: 0, held: 0 };
   tallies.set(engine, tally);
 
   /** Each node asked for: being made, or failed for good. */
@@ -452,6 +477,13 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
     const ownRender = scene.render;
     const hadOwn = Object.prototype.hasOwnProperty.call(scene, "render");
     const guarded = (...args: unknown[]): void => {
+      // Held while a pipeline is pending: nothing drawn, the canvas's last
+      // image kept, the frame drawn after it whole (see the module's notes).
+      if (pending() > 0) {
+        tally.held++;
+        report.held++;
+        return;
+      }
       guard(() => ownRender.apply(scene, args));
     };
     scene.render = guarded;
@@ -519,12 +551,12 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
 }
 
 /**
- * Calls `lift` once: at the end of the first frame of `engine` that left no
- * draw out, once it has asked for a pipeline (a frame before any draw met the
- * cache is not a whole world, only an empty one), or `maxMs` after the end of
- * its first frame, whichever comes first. On an engine without the patch,
- * where nothing is left out, at once. Returns a function that stops waiting,
- * without lifting.
+ * Calls `lift` once: at the end of the first frame of `engine` that drew,
+ * neither held nor leaving a draw out, once it has asked for a pipeline (a
+ * frame before any draw met the cache is not a whole world, only an empty
+ * one), or `maxMs` after the end of its first frame, whichever comes first.
+ * On an engine without the patch, where nothing is left out, at once.
+ * Returns a function that stops waiting, without lifting.
  */
 export function revealWhenWhole(engine: AbstractEngine, lift: () => void, maxMs = REVEAL_PIPELINES_MAX_MS): () => void {
   if (asyncPipelinesOf(engine) === null) {
@@ -532,6 +564,7 @@ export function revealWhenWhole(engine: AbstractEngine, lift: () => void, maxMs 
     return () => undefined;
   }
   let seen = leftOutOn(engine);
+  let seenHeld = heldOn(engine);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let done = false;
   const stop = (): void => {
@@ -547,8 +580,10 @@ export function revealWhenWhole(engine: AbstractEngine, lift: () => void, maxMs 
   const observer = engine.onEndFrameObservable.add(() => {
     timer ??= setTimeout(finish, maxMs);
     const leftOut = leftOutOn(engine);
-    const whole = leftOut === seen && (tallies.get(engine)?.asked ?? 0) > 0;
+    const held = heldOn(engine);
+    const whole = leftOut === seen && held === seenHeld && (tallies.get(engine)?.asked ?? 0) > 0;
     seen = leftOut;
+    seenHeld = held;
     if (whole) finish();
   });
   return stop;

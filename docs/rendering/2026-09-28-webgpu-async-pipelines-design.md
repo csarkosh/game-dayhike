@@ -247,9 +247,10 @@ the GPU process need.
 
 An asynchronous creation is not a hitch and does not raise Babylon's count
 of the pipelines a frame made synchronously (`NumPipelineCreationLastFrame`).
-But a frame that left draws out is cheaper than a whole one, so
-`watchPipelines`, which the governor reads, voids a window in which a
-pipeline was made synchronously **or** a draw was left out (`leftOutOn`,
+But a frame that left draws out is no measure of a whole one (nor is a
+frame held while a pipeline was pending, §12), so `watchPipelines`, which
+the governor reads, voids a window in which a pipeline was made synchronously
+**or** a draw was left out **or** a frame was held (`leftOutOn`, `heldOn`,
 counted per engine). The other readers of frame times: the governor's idle
 timing runs with the render loop stopped, so nothing is drawn or left out;
 the probe's steps build their renderer without the patch, so every draw is
@@ -328,3 +329,57 @@ asked for when a draw needs them, and how many compile at once is bounded.
 **Spreading synchronous creations over frames.** Each synchronous creation
 still holds every later command of its frame; a budget per frame only makes
 the freezes shorter and more numerous.
+
+## 12. Amendment (2026-10-17): the scene's frames are held while a pipeline is pending
+
+**What was found.** On the far-field build (main `1980b608`) the high tier on
+WebGPU lost its device on an Apple-silicon Mac of the `apple-base` class in
+about half of its starts (`engine=webgpu&tier=high` forced: that class is
+capped at medium, which draws on WebGL2). The loss is Chrome's: its
+compositor loses its own Dawn device first (`[Device] is lost. - While
+calling [Device].ImportSharedTextureMemory`), restarts the GPU process, and
+the page's device goes with it ("A valid external Instance reference no
+longer exists"); the page's rebuild then fails the same way. Measured with a
+probe on the page's queue (`onSubmittedWorkDone` after each submit, with the
+render passes it carried), the loss followed a single frame of 6 s or more
+of GPU. On that Mac the high tier is GPU-bound at about 0.8 s a frame
+whatever the build; what reached 6 s was a frame drawn **while pipelines
+were pending**: with the ground and the trees left out, the sward, the far
+cover and the sky behind them are shaded in full over the whole screen, so
+the frame with fewer draws costs four to seven times the whole one (4.2 s,
+6.2 s, 6.6 s against 1.3 s with every draw in). The frame drawn whole once
+the pipelines land is the cheap one. §8's premise that a frame with draws
+left out is cheaper was wrong on a saturated GPU; the previous build
+(`b91d28b2`) had the same partial frames at 5.5 s and never crossed the
+line, the far field's prepass and three cascades did.
+
+**The rule.** While any creation is pending (in flight or queued), a scene's
+guarded render (§2, `guardRender`) returns at once and draws nothing; the
+engine acquires the canvas's texture only when a main pass starts
+(`_startMainRenderPass`), so the canvas keeps its last image. The first
+frame, with no pipeline landed yet, asks for every pipeline it meets and
+draws nothing (it costs nothing); the frames after wait; the first frame
+drawn after the last landing is whole. A render outside the frames (§5, the
+bake's `guard`) is not held: its target is small and it polls until whole. A
+creation given up at its deadline (§7) or a removed patch frees the frames as
+before. The frames held are counted per engine (`heldOn`, `dayhikePipelines.held`):
+the reveal (§6) does not lift on a held frame, and the governor's window is
+voided by one as by a draw left out (§8). The startup probe hears them too:
+a step's `StepEngine` carries `unmeasured` (`watchPipelines`), and a held
+frame starts its warm-up again as a late compile does, so a held frame is
+never measured as a fast one.
+
+**Measured (2026-10-17, the same Mac, dev server with the WGSL maps, high on
+WebGPU, 60 s at the trailhead):** before, 1 loss in 5 runs with first frames
+of 1.3–6.6 s; `?pipelines=sync` (no partial frames) 0 in 10 with first
+frames ≤ 1.3 s; held frames 0 in 6 with first frames of 1.3–1.5 s (one 3.5 s
+that carried the first mipmap generations) and the first frame drawn whole
+(170–179 draws). Steady state is unchanged, about 1.3 fps on that Mac, which
+is the tier's cost there and the governor's to drop.
+
+**What a player sees.** At the start, nothing new: the reveal already held
+the world until a whole frame. In play, a pipeline first met mid-game (a
+character or a prop arriving, the bake's impostors adopting their textures)
+now holds the frame for the creation's time, a short freeze where before a
+mesh was missing for the same time; the creations are small and the maps
+(`tools/wgsl/`) make them from WGSL already translated.

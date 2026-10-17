@@ -52,6 +52,13 @@ export type StepEngine = {
   canvas: HTMLCanvasElement;
   engine: AbstractEngine | null;
   watch: ((engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void) => () => void) | null;
+  /** Tells `onFrame` at the end of each frame of a WebGPU engine that is no
+   * measure of its tier: one held while a render pipeline was made, one that
+   * left a draw out, or one that made a pipeline synchronously
+   * (`watchPipelines`); absent or null on WebGL2, and where the page has no
+   * WebGPU module. The step starts its warm-up again on each, as after a
+   * late compile. */
+  unmeasured?: ((engine: AbstractEngine, onFrame: () => void) => () => void) | null;
 };
 
 /** A probe step ended by a fault of its WebGPU engine: its build, an effect,
@@ -156,6 +163,10 @@ export function runProbeStep(
     const began = performance.now();
     const meter = createProbeMeter(began, opts.readyBy === undefined ? PROBE_READY_MAX_MS : Math.min(PROBE_READY_MAX_MS, opts.readyBy - began));
     const compiled = engine.onAfterShaderCompilationObservable.add(() => meter.compiled(performance.now()));
+    // A frame held while a pipeline was made, or that left a draw out, is no
+    // measure of the tier either: the warm-up starts again (`StepEngine`).
+    const unwatchFrames =
+      given !== null && opts.on?.unmeasured != null ? opts.on.unmeasured(given, () => meter.compiled(performance.now())) : (): void => undefined;
     let done = false;
     let unwatch = (): void => undefined;
 
@@ -164,6 +175,7 @@ export function runProbeStep(
       done = true;
       engine.stopRenderLoop(loop);
       engine.onAfterShaderCompilationObservable.remove(compiled);
+      unwatchFrames();
       opts.signal?.removeEventListener("abort", onAbort);
       // Before the dispose: a disposed engine is not a failing one.
       unwatch();

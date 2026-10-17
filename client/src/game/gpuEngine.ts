@@ -74,7 +74,7 @@ import {
   type PipelineMode,
   type ShaderLookupMode,
 } from "./engineChoice.js";
-import { installPipelines, leftOutOn } from "./asyncPipelines.js";
+import { heldOn, installPipelines, leftOutOn } from "./asyncPipelines.js";
 import { pinPluginNumbers } from "./pluginNumbers.js";
 import type { QualityTier } from "./quality.js";
 import { defaultSources, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
@@ -550,16 +550,19 @@ export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: "pipelin
  * compile. Babylon counts the pipelines each frame made synchronously
  * (`WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame`) before it tells
  * the frame's end. A pipeline made asynchronously (`asyncPipelines.ts`) is not
- * counted there and is no hitch; but a frame that left a draw out while one
- * was made is cheaper than a whole one, so it is told too (`leftOutOn`).
- * Returns a function that stops listening.
+ * counted there and is no hitch; but a frame held while one was made, or
+ * that left a draw out, is no measure of a whole one, so either is told too
+ * (`heldOn`, `leftOutOn`). Returns a function that stops listening.
  */
 export function watchPipelines(engine: AbstractEngine, onCreated: () => void): () => void {
   let seen = leftOutOn(engine);
+  let seenHeld = heldOn(engine);
   const observer = engine.onEndFrameObservable.add(() => {
     const leftOut = leftOutOn(engine);
-    const unmeasured = WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame > 0 || leftOut !== seen;
+    const held = heldOn(engine);
+    const unmeasured = WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame > 0 || leftOut !== seen || held !== seenHeld;
     seen = leftOut;
+    seenHeld = held;
     if (unmeasured) onCreated();
   });
   return () => engine.onEndFrameObservable.remove(observer);

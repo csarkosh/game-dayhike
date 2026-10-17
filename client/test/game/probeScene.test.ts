@@ -211,6 +211,51 @@ describe("a probe step's engine", () => {
   }, timeLimit(60_000));
 });
 
+describe("a probe step's frames that are no measure of its tier", () => {
+  it("are heard through the engine's own watcher, from the step's start until it ends, before the engine is disposed", async () => {
+    const engine = new NullEngine();
+    let heard: ((reason: "pipeline" | "lost") => void) | null = null;
+    let watchingFrames = false;
+    let frames: (() => void) | null = null;
+    const on: StepEngine = {
+      canvas: FAKE_CANVAS,
+      engine,
+      watch: (_watched, onFailure) => {
+        heard = onFailure;
+        return () => undefined;
+      },
+      unmeasured: (watched, onFrame) => {
+        expect(watched).toBe(engine);
+        frames = onFrame;
+        watchingFrames = true;
+        return () => {
+          expect(engine.isDisposed).toBe(false);
+          watchingFrames = false;
+        };
+      },
+    };
+    const container = { appendChild: () => undefined, clientWidth: 1600, clientHeight: 900 } as unknown as HTMLElement;
+    (FAKE_CANVAS as unknown as { remove(): void }).remove = () => undefined;
+    const step = runProbeStep(container, "medium", { cancelled: () => false, on });
+    expect(watchingFrames).toBe(true);
+    // A frame told is a late compile to the meter: its warm-up starts again.
+    frames!();
+    const src = readFileSync(new URL("../../src/game/probeScene.ts", import.meta.url), "utf8");
+    expect(src).toContain("opts.on.unmeasured(given, () => meter.compiled(performance.now()))");
+    heard!("lost");
+    expect(await step).toBe("engine-failed");
+    expect(watchingFrames).toBe(false);
+    expect(engine.isDisposed).toBe(true);
+  }, timeLimit(60_000));
+
+  it("are not listened for on WebGL2, which has none, nor where the page gives no watcher", () => {
+    const src = readFileSync(new URL("../../src/game/probeScene.ts", import.meta.url), "utf8");
+    expect(src).toContain('given !== null && opts.on?.unmeasured != null ? opts.on.unmeasured(given, () => meter.compiled(performance.now())) : (): void => undefined;');
+    const main = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8");
+    expect(main).toContain("return { canvas, engine, watch: watchers?.failures ?? null, unmeasured: watchers?.pipelines ?? null };");
+  });
+});
+
 describe("a probe step on the engine the rule gives its tier", () => {
   const webgl2 = (): StepEngine => ({ canvas: {} as HTMLCanvasElement, engine: null, watch: null });
   const reading = (engine: "webgl2" | "webgpu"): ProbeReading => ({ tier: "high", frames: 120, meanMs: 16.7, p95Ms: 16.7, pixels: 2_073_600, engine });

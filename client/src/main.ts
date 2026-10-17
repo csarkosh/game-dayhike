@@ -1122,7 +1122,7 @@ function render(container: HTMLDivElement): void {
       // step cannot settle (`probeStepEngine`): the verdict holds for both.
       if (probeStepEngine(read, verdictEngineNow(read)) === "webgl2") return { canvas: document.createElement("canvas"), engine: null, watch: null };
       const { canvas, engine, watchers } = await engineFor(tier, read, () => !cancelled());
-      return { canvas, engine, watch: watchers?.failures ?? null };
+      return { canvas, engine, watch: watchers?.failures ?? null, unmeasured: watchers?.pipelines ?? null };
     },
     failed: () => void rememberFailure("init", !cancelled()),
     // Asked of the engine a step got, which a failed WebGPU start makes
