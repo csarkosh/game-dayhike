@@ -220,9 +220,10 @@ describe("the fog's shader text", () => {
     // The scattering sky changes no PBR shader: the glow's new shape is all in
     // the values the plugin binds (`atmosphereParams.ts`). The aerial
     // perspective (2026-10-15) is the one line of the mix and its constant;
-    // the ground haze (2026-10-16) its integral, its mix and four constants.
+    // the ground haze (2026-10-16) its integral, its mix and four constants;
+    // the painted direction (2026-10-17) the haze's density and warmth.
     expect(createHash("sha256").update(atmosphereFragment).digest("hex")).toBe(
-      "f73811f3f54e7952a88f528d5907f66a812a089f164fdcd05d95c57836fb0cf8",
+      "cb370d898ddd1ec0fb9bd4452d7abfb3211918eea4f1957246b85b03e71625c6",
     );
   });
 });

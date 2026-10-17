@@ -49,7 +49,7 @@ describe("weather model", () => {
 
   it("ships the semi-sunny day as the default, and the presets in their order", () => {
     expect(DEFAULT_WEATHER).toBe("bright");
-    expect(WEATHER_PRESETS.bright).toEqual({ cloudCover: 0.45, mist: 0.12, rain: 0, wetness: 0.15, dread: 0 });
+    expect(WEATHER_PRESETS.bright).toEqual({ cloudCover: 0.6, mist: 0.18, rain: 0, wetness: 0.15, dread: 0 });
     expect(WEATHER_NAMES).toEqual(["clear", "bright", "overcast", "mist", "rain", "eerie"]);
   });
 

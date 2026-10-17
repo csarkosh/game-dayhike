@@ -49,6 +49,7 @@ import { createSurfAudio } from "./game/surfAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
+import { DEFAULT_PAINT_PALETTE, PAINT_PALETTES, type PaintPaletteName } from "./game/gradeParams.js";
 import { actsUnder,
   ESCALATION_REST,
   escalationAt,
@@ -840,6 +841,10 @@ function buildGame(
       // frame's comparison and the console's hour stands for the rest of the
       // match instead of the escalation re-asserting itself.
       appliedHour = base.hour;
+    } else if (name === "palette") {
+      // The painted palette (gradeParams.ts): by name, faded in, or at once from a script.
+      const palette = typeof value === "string" && Object.hasOwn(PAINT_PALETTES, value) ? (value as PaintPaletteName) : DEFAULT_PAINT_PALETTE;
+      renderer.setPalette(palette, options.instant ? 0 : undefined);
     } else if (name === "weather") {
       // `Object.hasOwn`, not `in`: `in` also passes prototype keys (e.g.
       // "toString"), which are not entries of WEATHER_PRESETS.

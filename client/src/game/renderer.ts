@@ -83,6 +83,7 @@ import { createSkinShading } from "./skin.js";
 import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, setTerrainSward, setTerrainWetness, sharedGroundArrays } from "./terrainTexture.js";
 import { FACE_PATCH_MATERIAL, FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS, createFacePatches } from "./facePatchMeshes.js";
 import type { WeatherParams, WeatherPresetName } from "./weather.js";
+import { PAINT_PALETTES, type PaintPaletteName } from "./gradeParams.js";
 import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../sim/terrain.js";
@@ -1805,6 +1806,8 @@ export type Renderer = {
    * over `fadeSeconds` (3 absent, as `setWeather`'s), at once at 0. The
    * escalation's weather departs from it and keeps it. */
   setWeatherName(name: WeatherPresetName, fadeSeconds?: number): void;
+  /** The painted palette by name (gradeParams.ts), faded in over `fadeSeconds` (the post chain's default unless given). */
+  setPalette(name: PaintPaletteName, fadeSeconds?: number): void;
   /** 0 switches the walking cue off; 1 is the tuned default. */
   setBobScale(scale: number): void;
   /** 0 silences the lens-side dread effects; 1 is full. */
@@ -3565,6 +3568,9 @@ function buildRenderer(
     },
     setView(hour, weather) {
       lighting.setView(hour, weather);
+    },
+    setPalette(name, fadeSeconds) {
+      post.setPalette(PAINT_PALETTES[name], fadeSeconds);
     },
     setWeatherName(name, fadeSeconds = 3) {
       if (fadeSeconds <= 0) {

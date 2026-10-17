@@ -1,3 +1,4 @@
+import { PAINT_AMBER, PAINT_ASH, PAINT_OILS } from "../../src/game/gradeParams.js";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -621,5 +622,35 @@ describe("the finish pass's text per engine", () => {
   it("uses the words Babylon's WebGPU engine looks for (a canary on the installed engine)", () => {
     const src = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
     expect(src).toContain("const disableUniformityAnalysisInFragment = fragmentCode.indexOf(`#define DISABLE_UNIFORMITY_ANALYSIS`) >= 0;");
+  });
+});
+
+describe("the painted palette on the chain", () => {
+  it("wears oils until told, fades to the palette given over its seconds, and jumps at 0", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+    let ms = 0;
+    const post = createPost(scene, camera, postFeaturesFor("medium", true), { now: () => ms });
+    expect(post.palette()).toBe(PAINT_OILS);
+    post.setPalette(PAINT_ASH, 2);
+    expect(post.palette()).toBe(PAINT_OILS);
+    ms = 1000;
+    const half = post.palette();
+    expect(half.shadows.r).toBeCloseTo((PAINT_OILS.shadows.r + PAINT_ASH.shadows.r) / 2, 12);
+    expect(half.saturation).toBeCloseTo((PAINT_OILS.saturation + PAINT_ASH.saturation) / 2, 12);
+    ms = 2000;
+    expect(post.palette()).toBe(PAINT_ASH);
+    // The record the grade binds carries the palette of the moment.
+    post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST);
+    // A fade begun mid-fade starts from the palette worn then.
+    post.setPalette(PAINT_AMBER, 2);
+    ms = 2500;
+    post.setPalette(PAINT_OILS, 0);
+    expect(post.palette()).toBe(PAINT_OILS);
+    post.dispose();
+    camera.dispose();
+    scene.dispose();
+    engine.dispose();
   });
 });

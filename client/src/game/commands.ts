@@ -1,4 +1,5 @@
 import { DEFAULT_WEATHER, WEATHER_NAMES } from "./weather.js";
+import { DEFAULT_PAINT_PALETTE, PAINT_PALETTE_NAMES } from "./gradeParams.js";
 import { DEFAULT_BOB_SCALE, MAX_BOB_SCALE } from "./viewBob.js";
 import { GAME_MODES } from "./gameMode.js";
 
@@ -119,6 +120,18 @@ const SPECS: readonly CommandSpec[] = [
     },
     scriptValue: (args) => args[0] ?? DEFAULT_WEATHER,
     defaultValue: DEFAULT_WEATHER,
+  },
+  {
+    // The painted palette (gradeParams.ts): the frame's tonal identity, set
+    // by name and faded over a few seconds, an atmosphere the game can turn.
+    name: "palette",
+    kind: "view",
+    validate(args) {
+      if (args.length === 1 && (PAINT_PALETTE_NAMES as readonly string[]).includes(args[0] as string)) return null;
+      return `palette takes one of ${PAINT_PALETTE_NAMES.join(", ")}`;
+    },
+    scriptValue: (args) => args[0] ?? DEFAULT_PAINT_PALETTE,
+    defaultValue: DEFAULT_PAINT_PALETTE,
   },
   {
     name: "volume",

@@ -62,6 +62,13 @@ describe("validateCommand", () => {
     expect(validateCommand({ name: "time", args: ["24"] })).not.toBeNull();
     expect(validateCommand({ name: "time", args: ["-1"] })).not.toBeNull();
     expect(validateCommand({ name: "time", args: ["noon"] })).not.toBeNull();
+    // The painted palette: one of its names, nothing else.
+    expect(validateCommand({ name: "palette", args: ["ash"] })).toBeNull();
+    expect(validateCommand({ name: "palette", args: ["oils"] })).toBeNull();
+    expect(validateCommand({ name: "palette", args: [] })).not.toBeNull();
+    expect(validateCommand({ name: "palette", args: ["sepia"] })).not.toBeNull();
+    expect(findCommand("palette")?.scriptValue?.(["amber"])).toBe("amber");
+    expect(findCommand("palette")?.defaultValue).toBe("oils");
   });
 
   it("accepts a toggle bare or with on/off, and nothing else", () => {

@@ -46,10 +46,10 @@ const vec3 ATM_AIR_POWER = vec3(0.72, 0.92, 1.3);
 // under it), so the far ground and the trunks' feet sit in a faint haze at
 // noon and the crowns in less of it, as a meadow's far edge does on a dry
 // day. Mirrors HAZE in atmosphereParams.ts.
-const float ATM_HAZE_DENSITY = 0.0016;
+const float ATM_HAZE_DENSITY = 0.002;
 const float ATM_HAZE_FALLOFF = 0.12;
 const float ATM_HAZE_SEAT = 1.5;
-const float ATM_HAZE_WARMTH = 0.35;
+const float ATM_HAZE_WARMTH = 0.5;
 // Half a texel of the map: the ground read stays this far inside it.
 const float ATM_CLOUD_EDGE = 0.5 / 64.0;
 

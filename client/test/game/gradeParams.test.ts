@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { CHASE_TINT,
   agx, gradeRecordUnder, whitePointMatrix, hueToRgb, IDENTITY,
+  DEFAULT_PAINT_PALETTE, mixPalette, PAINT_AMBER, PAINT_ASH, PAINT_NONE, PAINT_OILS, PAINT_PALETTE_NAMES, PAINT_PALETTES,
   HALATION_BASE, ABERRATION_BASE, AGX_MIN_EV, AGX_MAX_EV, STARE_DIM, sightUnder,
 } from "../../src/game/gradeParams.js";
 import { WEATHER_PRESETS, exposureUnder, vignetteWeightUnder, VIGNETTE_WEIGHT_BASE } from "../../src/game/weather.js";
@@ -174,5 +175,45 @@ describe("the stare", () => {
     expect(r.stare.y).toBeCloseTo(0, 12);
     expect(r.stare.time).toBe(7.5);
     expect(r.stare.reach).toBe(stareReach(at(1)));
+  });
+});
+
+describe("the painted palette", () => {
+  it("names four palettes with oils the default, every one a full record", () => {
+    expect(PAINT_PALETTE_NAMES).toEqual(["oils", "ash", "amber", "none"]);
+    expect(DEFAULT_PAINT_PALETTE).toBe("oils");
+    expect(PAINT_PALETTES.oils).toBe(PAINT_OILS);
+    for (const name of PAINT_PALETTE_NAMES) {
+      const p = PAINT_PALETTES[name];
+      for (const band of [p.shadows, p.midtones, p.highlights]) {
+        expect(band.density).toBeGreaterThanOrEqual(0);
+        expect(band.saturation).toBeLessThanOrEqual(0);
+      }
+      expect(p.saturation).toBeLessThanOrEqual(0);
+      expect(p.contrast).toBeGreaterThanOrEqual(1);
+    }
+    // None is the render as the tone map leaves it.
+    expect(PAINT_NONE.shadows.density).toBe(0);
+    expect(PAINT_NONE.saturation).toBe(0);
+    expect(PAINT_NONE.contrast).toBe(1);
+    expect(PAINT_NONE.lift).toEqual({ r: 0, g: 0, b: 0 });
+  });
+
+  it("mixes two palettes linearly, the ends themselves", () => {
+    expect(mixPalette(PAINT_OILS, PAINT_ASH, 0)).toBe(PAINT_OILS);
+    expect(mixPalette(PAINT_OILS, PAINT_ASH, 1)).toBe(PAINT_ASH);
+    expect(mixPalette(PAINT_OILS, PAINT_ASH, -1)).toBe(PAINT_OILS);
+    expect(mixPalette(PAINT_OILS, PAINT_ASH, 2)).toBe(PAINT_ASH);
+    const half = mixPalette(PAINT_OILS, PAINT_ASH, 0.5);
+    expect(half.shadows.r).toBeCloseTo((PAINT_OILS.shadows.r + PAINT_ASH.shadows.r) / 2, 12);
+    expect(half.midtones.density).toBeCloseTo((PAINT_OILS.midtones.density + PAINT_ASH.midtones.density) / 2, 12);
+    expect(half.saturation).toBeCloseTo((PAINT_OILS.saturation + PAINT_ASH.saturation) / 2, 12);
+    expect(half.contrast).toBeCloseTo((PAINT_OILS.contrast + PAINT_ASH.contrast) / 2, 12);
+    expect(half.lift.b).toBeCloseTo((PAINT_OILS.lift.b + PAINT_ASH.lift.b) / 2, 12);
+  });
+
+  it("rides the grade record: oils unless another is given", () => {
+    expect(gradeRecordUnder(CLEAR, 12, 0, 1).paint).toBe(PAINT_OILS);
+    expect(gradeRecordUnder(CLEAR, 12, 0, 1, 0, STARE_LENS_REST, 0, PAINT_AMBER).paint).toBe(PAINT_AMBER);
   });
 });

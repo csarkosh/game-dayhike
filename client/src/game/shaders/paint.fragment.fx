@@ -28,18 +28,34 @@ const float PAINT_SECTOR_OVERLAP = 0.5;
 const float PAINT_SECTOR_SPREAD = 2.5;
 const float PAINT_SHARPNESS = 8.0;
 const float PAINT_VARIANCE_SCALE = 40.0;
+const float PAINT_KEEP = 24.0;
+const float PAINT_CAP = 64.0;
 
 float paintLuma(vec3 c) {
   return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }
 
+// The sectors are judged on the colour compressed toward 1 (c over 1 + c):
+// the scene is linear HDR, and a sun seen through a crown is a texel of ten
+// or a hundred that would own the variance of every sector it falls in; in
+// the compressed range it is one bright texel among the others. The colour
+// written is the sectors' mean of the linear colour itself, capped: a mean
+// taken in the compressed range and expanded again bends a leaf against a
+// bright sky toward the sky's brighter channels and turns it cyan-white.
+vec3 paintCompress(vec3 c) {
+  return c / (1.0 + c);
+}
+
 void main(void) {
-  vec3 own = texture2D(textureSampler, vUV).rgb;
+  vec3 ownLinear = clamp(texture2D(textureSampler, vUV).rgb, vec3(0.0), vec3(PAINT_CAP));
+  vec3 own = paintCompress(ownLinear);
   vec3 mean[8];
+  vec3 meanLinear[8];
   vec3 square[8];
   float weight[8];
   for (int k = 0; k < 8; k++) {
     mean[k] = vec3(0.0);
+    meanLinear[k] = vec3(0.0);
     square[k] = vec3(0.0);
     weight[k] = 0.0;
   }
@@ -55,7 +71,8 @@ void main(void) {
       vec2 o = vec2(float(i), float(j));
       float d = length(o);
       if (d > r) continue;
-      vec3 c = texture2D(textureSampler, vUV + o * texel).rgb;
+      vec3 cLinear = clamp(texture2D(textureSampler, vUV + o * texel).rgb, vec3(0.0), vec3(PAINT_CAP));
+      vec3 c = paintCompress(cLinear);
       vec2 v = o / r;
       float fall = exp(-PAINT_SECTOR_SPREAD * dot(v, v));
       for (int k = 0; k < 8; k++) {
@@ -67,6 +84,7 @@ void main(void) {
         float w = max(0.0, along + zeta - PAINT_SECTOR_OVERLAP * across * across);
         w = w * w * fall;
         mean[k] += c * w;
+        meanLinear[k] += cLinear * w;
         square[k] += c * c * w;
         weight[k] += w;
       }
@@ -80,9 +98,14 @@ void main(void) {
     vec3 s = max(square[k] / wk - m * m, vec3(0.0));
     float sigma = sqrt(paintLuma(s));
     float w = 1.0 / (1.0 + pow(PAINT_VARIANCE_SCALE * sigma, PAINT_SHARPNESS));
-    sum += m * w;
+    // A sector whose mean is far from the pixel's own colour weighs less: a
+    // leaf against the sky would otherwise take the sky's flat sector and
+    // vanish into it, every thin thing eaten by the flat ground behind it.
+    vec3 away = m - own;
+    w *= exp(-PAINT_KEEP * dot(away, away));
+    sum += (meanLinear[k] / wk) * w;
     total += w;
   }
-  vec3 painted = sum / max(total, 1.0e-5);
-  gl_FragColor = vec4(mix(own, painted, strength), 1.0);
+  vec3 painted = total > 1.0e-6 ? sum / total : ownLinear;
+  gl_FragColor = vec4(mix(ownLinear, painted, strength), 1.0);
 }

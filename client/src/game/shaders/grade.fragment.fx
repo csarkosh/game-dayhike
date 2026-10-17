@@ -48,6 +48,15 @@ uniform vec3 chaseLift;
 uniform sampler2D shadeSampler;
 uniform vec4 shadeShape;
 uniform float shadeMonster;
+uniform vec3 paintShadowTint;
+uniform vec2 paintShadowAmount;
+uniform vec3 paintMidtoneTint;
+uniform vec2 paintMidtoneAmount;
+uniform vec3 paintHighlightTint;
+uniform vec2 paintHighlightAmount;
+uniform float paintSaturation;
+uniform vec2 paintCurve;
+uniform vec3 paintLift;
 
 const mat3 SRGB_TO_REC2020 = mat3(0.6274, 0.0691, 0.0164, 0.3293, 0.9195, 0.088, 0.0433, 0.0113, 0.8956);
 const mat3 REC2020_TO_SRGB = mat3(1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187);
@@ -58,22 +67,11 @@ const float AGX_MAX_EV = 4.026069;
 const float SPLIT_TONE_DENSITY_SCALE = 0.35;
 const float SPLIT_TONE_SATURATION_SCALE = 0.5;
 // The painted base (2026-10-17): the tonal identity every frame wears under
-// the weather's own split-tone, after the manner of a landscape in oils:
-// shadows pulled to a warm umber, midtones to an olive sage, highlights to a
-// cream, the whole drained of a quarter of its saturation and its blacks
-// lifted to a warm grey, so no frame is a photograph's black or a monitor's
-// green. The weather's bands (violet shadows, teal midtones under mood)
-// lay over it as before.
-const vec3 PAINT_SHADOW = vec3(0.30, 0.25, 0.19);
-const vec3 PAINT_MIDTONE = vec3(0.60, 0.58, 0.44);
-const vec3 PAINT_HIGHLIGHT = vec3(0.98, 0.94, 0.84);
-const vec2 PAINT_SHADOW_AMOUNT = vec2(1.0, -0.2);
-const vec2 PAINT_MIDTONE_AMOUNT = vec2(0.7, -0.15);
-const vec2 PAINT_HIGHLIGHT_AMOUNT = vec2(0.7, -0.3);
-const float PAINT_SATURATION = -0.12;
-const vec3 PAINT_LIFT = vec3(0.006, 0.0055, 0.005);
-const float PAINT_CONTRAST = 1.22;
-const float PAINT_PIVOT = 0.18;
+// the weather's own split-tone, after the manner of a landscape in oils, as
+// the game sets it (gradeParams.ts PaintPalette, Post.setPalette): the three
+// bands' tints and amounts, the drain, the curve (x the contrast, y its
+// pivot) and the lift. The weather's bands (violet shadows, teal midtones
+// under mood) lay over it as before.
 
 float gradeLuma(vec3 c) {
   return dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -138,17 +136,19 @@ void main(void) {
   float shadowMask = 1.0 - smoothstep(0.0, 0.35, l);
   float highlightMask = smoothstep(0.55, 1.0, l);
   float midMask = 1.0 - shadowMask - highlightMask;
-  c = gradeBand(c, shadowMask, PAINT_SHADOW, PAINT_SHADOW_AMOUNT);
-  c = gradeBand(c, midMask, PAINT_MIDTONE, PAINT_MIDTONE_AMOUNT);
-  c = gradeBand(c, highlightMask, PAINT_HIGHLIGHT, PAINT_HIGHLIGHT_AMOUNT);
-  c = mix(vec3(gradeLuma(c)), c, 1.0 + PAINT_SATURATION);
-  // The paintings' values: a wider range round middle grey for everything
-  // the eye reads as lit, the deep shadow left where the render put it (a
-  // dark evening is dark already and must stay readable), then the blacks
-  // lifted a shade.
-  float paintLit = smoothstep(0.02, 0.25, gradeLuma(c));
-  c = clamp(c + (c - PAINT_PIVOT) * (PAINT_CONTRAST - 1.0) * paintLit, 0.0, 1.0);
-  c = PAINT_LIFT + c * (1.0 - PAINT_LIFT);
+  c = gradeBand(c, shadowMask, paintShadowTint, paintShadowAmount);
+  c = gradeBand(c, midMask, paintMidtoneTint, paintMidtoneAmount);
+  c = gradeBand(c, highlightMask, paintHighlightTint, paintHighlightAmount);
+  c = mix(vec3(gradeLuma(c)), c, 1.0 + paintSaturation);
+  // The paintings' values: a wider range round the pivot for everything the
+  // eye reads as lit, the deep shadow left where the render put it (a dark
+  // evening is dark already and must stay readable) and the brightest left
+  // too (a leaf against a low sun, widened, clips to white and loses its
+  // hue channel by channel), then the blacks lifted.
+  float paintLuma = gradeLuma(c);
+  float paintLit = smoothstep(0.02, 0.25, paintLuma) * (1.0 - smoothstep(0.55, 0.9, paintLuma));
+  c = clamp(c + (c - paintCurve.y) * (paintCurve.x - 1.0) * paintLit, 0.0, 1.0);
+  c = paintLift + c * (1.0 - paintLift);
   c = gradeBand(c, shadowMask, shadowTint, shadowAmount);
   c = gradeBand(c, midMask, midtoneTint, midtoneAmount);
   c = gradeBand(c, highlightMask, highlightTint, highlightAmount);

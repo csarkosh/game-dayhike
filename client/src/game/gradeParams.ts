@@ -39,9 +39,105 @@ export type GradeRecord = {
   chase: number;
   halationStrength: number;
   aberrationAmount: number;
+  /** The painted base this frame (`PaintPalette`), under the weather's bands. */
+  paint: PaintPalette;
 };
 
 export const IDENTITY: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+// ---- The painted palette (2026-10-17). ----
+
+/**
+ * The painted base: the tonal identity every frame wears under the
+ * weather's own split-tone, after the manner of a landscape in oils. A
+ * record the game drives, not a constant of the shader, so a scene, a
+ * weather, a place or an event can set the atmosphere and fade between
+ * palettes (`Post.setPalette`, `/palette`). The three bands' tints are the
+ * colours the shadows, the midtones and the highlights are pulled toward,
+ * each by its density (in the grade's band units, `SPLIT_TONE_DENSITY_SCALE`
+ * of it the mix) with its saturation eased; then the whole drained by
+ * `saturation` (−1..0), its lit values widened by `contrast` round `pivot`
+ * (the deep shadow left as rendered), and its blacks lifted toward `lift`.
+ */
+export type PaintPalette = {
+  shadows: Tint;
+  midtones: Tint;
+  highlights: Tint;
+  saturation: number;
+  contrast: number;
+  pivot: number;
+  lift: Rgb;
+};
+
+/** A landscape in oils: umber shadows, olive-sage midtones, cream lights. The default. */
+export const PAINT_OILS: PaintPalette = {
+  shadows: { r: 0.30, g: 0.25, b: 0.19, density: 1.0, saturation: -0.2 },
+  midtones: { r: 0.60, g: 0.58, b: 0.44, density: 0.7, saturation: -0.15 },
+  highlights: { r: 0.98, g: 0.94, b: 0.84, density: 0.7, saturation: -0.3 },
+  saturation: -0.12,
+  contrast: 1.22,
+  pivot: 0.18,
+  lift: { r: 0.006, g: 0.0055, b: 0.005 },
+};
+/** Ash: a cold, drained palette for a dead place, blue-grey shadows and chalk lights. */
+export const PAINT_ASH: PaintPalette = {
+  shadows: { r: 0.22, g: 0.23, b: 0.27, density: 1.0, saturation: -0.4 },
+  midtones: { r: 0.52, g: 0.54, b: 0.53, density: 0.8, saturation: -0.4 },
+  highlights: { r: 0.90, g: 0.92, b: 0.95, density: 0.7, saturation: -0.5 },
+  saturation: -0.32,
+  contrast: 1.15,
+  pivot: 0.18,
+  lift: { r: 0.010, g: 0.011, b: 0.013 },
+};
+/** Amber: an evening in oils, the light gone to gold and the shadows to a warm brown. */
+export const PAINT_AMBER: PaintPalette = {
+  shadows: { r: 0.32, g: 0.24, b: 0.16, density: 0.7, saturation: -0.15 },
+  midtones: { r: 0.66, g: 0.57, b: 0.40, density: 0.5, saturation: -0.1 },
+  highlights: { r: 1.0, g: 0.93, b: 0.76, density: 0.5, saturation: -0.25 },
+  saturation: -0.1,
+  contrast: 1.12,
+  pivot: 0.18,
+  lift: { r: 0.008, g: 0.006, b: 0.004 },
+};
+/** None: the render as the tone map leaves it, for comparison. */
+export const PAINT_NONE: PaintPalette = {
+  shadows: { r: 1, g: 1, b: 1, density: 0, saturation: 0 },
+  midtones: { r: 1, g: 1, b: 1, density: 0, saturation: 0 },
+  highlights: { r: 1, g: 1, b: 1, density: 0, saturation: 0 },
+  saturation: 0,
+  contrast: 1,
+  pivot: 0.18,
+  lift: { r: 0, g: 0, b: 0 },
+};
+export const PAINT_PALETTES = Object.freeze({ oils: PAINT_OILS, ash: PAINT_ASH, amber: PAINT_AMBER, none: PAINT_NONE });
+export type PaintPaletteName = keyof typeof PAINT_PALETTES;
+export const PAINT_PALETTE_NAMES = Object.freeze(Object.keys(PAINT_PALETTES)) as readonly PaintPaletteName[];
+export const DEFAULT_PAINT_PALETTE: PaintPaletteName = "oils";
+/** Seconds a palette fades over when none is given. */
+export const PAINT_FADE_SECONDS = 3;
+
+function mixTint(a: Tint, b: Tint, t: number): Tint {
+  return {
+    r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t,
+    density: a.density + (b.density - a.density) * t, saturation: a.saturation + (b.saturation - a.saturation) * t,
+  };
+}
+
+/** The palette `t` of the way from `a` to `b`, every value linearly: at 0 `a` itself, at 1 `b` itself. */
+export function mixPalette(a: PaintPalette, b: PaintPalette, t: number): PaintPalette {
+  const k = clamp01(t);
+  if (k === 0) return a;
+  if (k === 1) return b;
+  return {
+    shadows: mixTint(a.shadows, b.shadows, k),
+    midtones: mixTint(a.midtones, b.midtones, k),
+    highlights: mixTint(a.highlights, b.highlights, k),
+    saturation: a.saturation + (b.saturation - a.saturation) * k,
+    contrast: a.contrast + (b.contrast - a.contrast) * k,
+    pivot: a.pivot + (b.pivot - a.pivot) * k,
+    lift: { r: a.lift.r + (b.lift.r - a.lift.r) * k, g: a.lift.g + (b.lift.g - a.lift.g) * k, b: a.lift.b + (b.lift.b - a.lift.b) * k },
+  };
+}
 
 // ---- AgX (three.js port, MIT). Column-major, mirrored in grade.fragment.fx. ----
 // Constants are copied verbatim from three.js `tonemapping_pars_fragment.glsl.js`
@@ -234,7 +330,10 @@ export function sightUnder(stare: number): number {
  * frame a little and carries the darkness the pass closes over it. `chase`
  * is the chase's cast (escalation.ts), 0 before the body is found.
  */
-export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, unsettle: number, timeSeconds = 0, stare: StareLens = STARE_LENS_REST, chase = 0): GradeRecord {
+export function gradeRecordUnder(
+  w: WeatherParams, hour: number, night: number, unsettle: number, timeSeconds = 0, stare: StareLens = STARE_LENS_REST, chase = 0,
+  paint: PaintPalette = PAINT_OILS,
+): GradeRecord {
   const altitude = sunPositionAt(hour).y;
   const lens = dreadLensUnder(w) * clamp01(unsettle);
   const world = dreadWorldUnder(w);
@@ -260,5 +359,6 @@ export function gradeRecordUnder(w: WeatherParams, hour: number, night: number, 
     chase: clamp01(chase),
     halationStrength: lens === 0 ? HALATION_BASE : HALATION_BASE * (1 + HALATION_DREAD_GAIN * lens),
     aberrationAmount: lens === 0 ? ABERRATION_BASE : ABERRATION_BASE * (1 + ABERRATION_DREAD_GAIN * lens),
+    paint,
   };
 }

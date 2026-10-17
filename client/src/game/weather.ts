@@ -32,8 +32,10 @@ export type WeatherPresetName = "clear" | "bright" | "overcast" | "mist" | "rain
  */
 export const WEATHER_PRESETS: Record<WeatherPresetName, WeatherParams> = Object.freeze({
   clear: Object.freeze({ cloudCover: 0, mist: 0, rain: 0, wetness: 0, dread: 0 }),
-  /** A semi-sunny day on the peninsula: broken cloud, a little haze, the ground not quite dry. The forest's start. */
-  bright: Object.freeze({ cloudCover: 0.45, mist: 0.12, rain: 0, wetness: 0.15, dread: 0 }),
+  /** The forest's start: a dreary day on the peninsula, more cloud than
+   * sun, a haze in the air, the ground not quite dry (2026-10-17, the
+   * painted direction: a sunnier 0.45 and 0.12 before). */
+  bright: Object.freeze({ cloudCover: 0.6, mist: 0.18, rain: 0, wetness: 0.15, dread: 0 }),
   overcast: Object.freeze({ cloudCover: 0.8, mist: 0.25, rain: 0, wetness: 0.3, dread: 0 }),
   mist: Object.freeze({ cloudCover: 0.9, mist: 1, rain: 0, wetness: 0.5, dread: 0 }),
   rain: Object.freeze({ cloudCover: 1, mist: 0.6, rain: 1, wetness: 1, dread: 0 }),
@@ -202,7 +204,11 @@ export function ambientCollapseUnder(w: WeatherParams): number {
  * `/weather clear` — grade densities all scale to zero there — stays the
  * identical sunny anchor. */
 export const GRADE_SHADOW_HUE = 275;
-export const GRADE_SHADOW_DENSITY = 70;
+/** 2026-10-17, the painted direction: the densities of all three bands are
+ * taken down (70, 65, 30 before) now that a painted base under them
+ * carries the overcast's colour (gradeParams.ts PaintPalette); the mood's
+ * violet and teal lay over the oils as a cast, and read in full at eerie. */
+export const GRADE_SHADOW_DENSITY = 45;
 export const GRADE_SHADOW_SATURATION = 30;
 /** Sickly green-teal midtones — terrain, bark and foliage live here, so this
  * band carries the "rich" half of rich-eerie. Density and saturation raised
@@ -211,7 +217,7 @@ export const GRADE_SHADOW_SATURATION = 30;
  * but still subtle in a deep-shadow forest framing, so pushed further to
  * 65/60 alongside the shadow-band push above. */
 export const GRADE_MIDTONE_HUE = 150;
-export const GRADE_MIDTONE_DENSITY = 65;
+export const GRADE_MIDTONE_DENSITY = 40;
 export const GRADE_MIDTONE_SATURATION = 60;
 /** Cold cyan highlights, deliberately drained: saturated mids under bright
  * highlights would read cheerful, which is the one thing this must not be.
@@ -221,7 +227,7 @@ export const GRADE_MIDTONE_SATURATION = 60;
  * the second push: highlights were never the muted band, only shadows and
  * midtones needed the extra push. */
 export const GRADE_HIGHLIGHT_HUE = 200;
-export const GRADE_HIGHLIGHT_DENSITY = 30;
+export const GRADE_HIGHLIGHT_DENSITY = 20;
 export const GRADE_HIGHLIGHT_SATURATION = -10;
 
 export function fogDensityUnder(w: WeatherParams, viewDistance: number): number {

@@ -66,7 +66,7 @@ export function airTransmittance(t: number): [number, number, number] {
  * is seen in, so the far ground sits in a faint, warm veil at noon and the
  * crowns in less of it. Mirrors ATM_HAZE_DENSITY, ATM_HAZE_FALLOFF,
  * ATM_HAZE_SEAT and ATM_HAZE_WARMTH in atmosphereFog.fragment.fx. */
-export const HAZE = { density: 0.0016, falloff: 0.12, seat: 1.5, warmth: 0.35 } as const;
+export const HAZE = { density: 0.002, falloff: 0.12, seat: 1.5, warmth: 0.5 } as const;
 
 /** The haze's optical depth along a ray of slope `rdY` to `t` metres from an
  * eye `HAZE.seat` above its base: the height fog's integral at the haze's

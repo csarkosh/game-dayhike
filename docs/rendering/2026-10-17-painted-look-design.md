@@ -38,9 +38,15 @@ no base identity: at clear it is a photograph.
 
 ## 3. As built (2026-10-17)
 
-- **The painted base** (`grade.fragment.fx`, the `PAINT_*` constants): a
-  constant split-tone every frame wears under the weather's, applied right
-  after the tone map and the Purkinje shift: shadows pulled toward an umber
+- **The painted base** (`gradeParams.ts` `PaintPalette`, bound by the grade
+  as uniforms): a split-tone every frame wears under the weather's, applied
+  right after the tone map and the Purkinje shift. A record the game drives,
+  not a constant of the shader: named palettes (`PAINT_PALETTES`: `oils`,
+  the default; `ash`, cold and drained, for a dead place; `amber`, an evening
+  gone to gold; `none`, the render as the tone map leaves it), set by name
+  through `/palette` or `Renderer.setPalette` and faded over three seconds
+  (`Post.setPalette`, `mixPalette`), so a weather, a place or an event can
+  turn the atmosphere. The oils palette: shadows pulled toward an umber
   (0.30, 0.25, 0.19) at density 1.0, midtones toward an olive sage (0.60,
   0.58, 0.44) at 0.7, highlights toward a cream (0.98, 0.94, 0.84) at 0.7,
   each band's saturation eased, then the whole drained by 12 %, its values
@@ -70,19 +76,39 @@ no base identity: at clear it is a photograph.
   25 taps); the low tier, which has no chain, has no strokes. A first pass at
   5 px wholly replacing the frame turned the crowns against the sky into
   blotches with holes and the near grass into mush: the stroke must stay
-  under the size of the smallest thing the picture is made of.
+  under the size of the smallest thing the picture is made of. Two more
+  things the scene's linear HDR colour taught it: the sectors are judged
+  (their variance taken) on the colour compressed toward 1, so a sun seen
+  through a crown, a texel of ten or a hundred, does not own every sector it
+  falls in; and the colour written is the sectors' mean of the linear colour
+  itself, capped at 64, because a mean taken in the compressed range and
+  expanded again bent every leaf against a low sun toward the sky's brighter
+  channels and turned the crowns cyan-white. A sector whose mean is far from
+  the pixel's own colour weighs less, so a thin leaf against the flat sky is
+  not eaten by the sky's sector.
 
-Nothing in the world changed: no material, no light, no fog.
+- **The world, round one.** The opening weather (`bright`) is drearier:
+  cloud 0.6 and mist 0.18 where it was 0.45 and 0.12. The ground haze is
+  warmer and a little denser (`HAZE` warmth 0.5, density 0.002, from 0.35
+  and 0.0016), so the far ground sits in a creamier veil. And the mood's own
+  split-tone (the violet shadows and teal midtones that rise with cloud, mist
+  and dread) is taken down to 45, 40 and 20 from 70, 65 and 30: under a
+  painted base it is a cast over the oils, in full at eerie, where before it
+  was the whole colour of an overcast day and fought the palette with a
+  violet grey. No material and no light changed; the ground's greens are a
+  measured identity with derived pins across the cover and wait for a round
+  of their own.
 
 ## 4. Measured
 
 | Pose, tier | Before | After |
 |---|---|---|
-| meadow, medium | 49.0 fps | 45.0 fps |
+| meadow, medium | 49.0 fps | 43.4 fps |
 
 On this Mac (the `apple-base` class, Chrome, WebGPU), 1200 by 675, frames
-counted over 15 s after 30 s of settling: about 1.8 ms for the pass at 2 px
-and the base. The rig pairs are owed.
+counted over 15 s after 30 s of settling: about 2.6 ms for the pass at 2 px
+(two means a sector since the linear-mean fix), the base and the world's
+first round. The rig pairs are owed.
 
 ## 5. What a player sees
 

@@ -17,6 +17,7 @@ import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
 
 import type { WeatherParams } from "./weather.js";
 import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
+import { mixPalette, PAINT_FADE_SECONDS, PAINT_OILS, type PaintPalette } from "./gradeParams.js";
 import { CHASE_LIFT, CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, CHASE_TINT, gradeRecordUnder, STARE_VIGNETTE, type GradeRecord } from "./gradeParams.js";
 import type { StareLens } from "./stareLens.js";
 import { finishUnder, MSAA_SAMPLES, PAINT_STRENGTH, paintRadiusFor, type PostFeatures } from "./postParams.js";
@@ -37,6 +38,13 @@ export type Post = {
    * point and the rods follow. `lens` is the smoothed strength of the rain
    * on the glass (lensParams.ts), 0 when dry. */
   update(weather: WeatherParams, hour: number, night: number, unsettle: number, stare: StareLens, lens?: number, chase?: number, blur?: number): void;
+  /** The painted palette (gradeParams.ts) the frames wear from now, faded
+   * from the one they wear over `fadeSeconds` (PAINT_FADE_SECONDS unless
+   * given; 0 at once). On the material path there is no grade and nothing
+   * changes. */
+  setPalette(palette: PaintPalette, fadeSeconds?: number): void;
+  /** The palette the frames wear this moment, mid-fade included. */
+  palette(): PaintPalette;
   /** The haunt's mask to read the shades from, and whether any shade is in it this frame (shadeSilhouette.ts). */
   setShades(mask: BaseTexture | null, any: boolean): void;
   dispose(): void;
@@ -219,6 +227,16 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     }
   }
   let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 0, 1);
+  // The painted palette: the one the frames fade from, the one they fade
+  // to, when the fade began (ms of `now`) and how long it takes.
+  let paletteFrom: PaintPalette = PAINT_OILS;
+  let paletteTo: PaintPalette = PAINT_OILS;
+  let paletteFadeStart = 0;
+  let paletteFadeMs = 0;
+  const paletteNow = (): PaintPalette => {
+    if (paletteFadeMs <= 0) return paletteTo;
+    return mixPalette(paletteFrom, paletteTo, (now() - paletteFadeStart) / paletteFadeMs);
+  };
   /** The haunt's mask (shadeSilhouette.ts), once handed in, and whether any shade is in it this frame. */
   let shadeMask: BaseTexture | null = null;
   let shadeAny = false;
@@ -333,7 +351,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     grade = new PostProcess("grade", "grade",
       ["exposure", "whitePoint", "purkinje", "purkinjeThreshold", "purkinjeStrength", "shadowTint", "shadowAmount",
         "midtoneTint", "midtoneAmount", "highlightTint", "highlightAmount", "saturation", "lift", "vignetteWeight",
-        "vignetteColour", "halationStrength", "stareShade", "chaseTint", "chaseLift", "shadeShape", "shadeMonster"],
+        "vignetteColour", "halationStrength", "stareShade", "chaseTint", "chaseLift", "shadeShape", "shadeMonster",
+        "paintShadowTint", "paintShadowAmount", "paintMidtoneTint", "paintMidtoneAmount", "paintHighlightTint", "paintHighlightAmount",
+        "paintSaturation", "paintCurve", "paintLift"],
       ["halationSampler", "shadeSampler"], gradeRatio, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
     const boundScenePass = scenePass;
     const boundBlurY = blurY;
@@ -363,6 +383,16 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       effect.setFloat3("lift", r.lift.r, r.lift.g, r.lift.b);
       effect.setFloat("vignetteWeight", r.vignetteWeight);
       effect.setFloat3("vignetteColour", r.vignetteColour.r, r.vignetteColour.g, r.vignetteColour.b);
+      const p = r.paint;
+      effect.setFloat3("paintShadowTint", p.shadows.r, p.shadows.g, p.shadows.b);
+      effect.setFloat2("paintShadowAmount", p.shadows.density, p.shadows.saturation);
+      effect.setFloat3("paintMidtoneTint", p.midtones.r, p.midtones.g, p.midtones.b);
+      effect.setFloat2("paintMidtoneAmount", p.midtones.density, p.midtones.saturation);
+      effect.setFloat3("paintHighlightTint", p.highlights.r, p.highlights.g, p.highlights.b);
+      effect.setFloat2("paintHighlightAmount", p.highlights.density, p.highlights.saturation);
+      effect.setFloat("paintSaturation", p.saturation);
+      effect.setFloat2("paintCurve", p.contrast, p.pivot);
+      effect.setFloat3("paintLift", p.lift.r, p.lift.g, p.lift.b);
       effect.setFloat("halationStrength", r.halationStrength);
       effect.setFloat4("stareShade", r.stare.x, r.stare.y, r.stare.reach, r.stare.time);
       effect.setFloat4("chaseTint", CHASE_TINT.r, CHASE_TINT.g, CHASE_TINT.b, r.chase);
@@ -468,10 +498,19 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       shadeMask = mask;
       shadeAny = any;
     },
+    setPalette(palette, fadeSeconds = PAINT_FADE_SECONDS) {
+      paletteFrom = paletteNow();
+      paletteTo = palette;
+      paletteFadeMs = Math.max(0, fadeSeconds) * 1000;
+      paletteFadeStart = now();
+    },
+    palette() {
+      return paletteNow();
+    },
     update(weather, hour, night, unsettle, stare, lensTarget = 0, chase = 0, blur = 0) {
       setEndBlur(blur);
       const seconds = (now() - start) / 1000;
-      record = gradeRecordUnder(weather, hour, night, unsettle, seconds, stare, chase);
+      record = gradeRecordUnder(weather, hour, night, unsettle, seconds, stare, chase, paletteNow());
       finishRecord = finishUnder(weather, unsettle, seconds);
       lensStrength = lensTarget;
       if (lens !== null) {
