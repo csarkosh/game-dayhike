@@ -248,9 +248,9 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     const f = frameAt(m.x, m.y, m.z + 1, 18.25);
     life.update(f);
     expect(seen.sunLight).toEqual([0, 0, 0]);
-    expect(seen.skyGlow![0]).toBeCloseTo(1.8279791202740467, 9);
-    expect(seen.skyGlow![1]).toBeCloseTo(0.46724543707121463, 9);
-    expect(seen.skyGlow![2]).toBeCloseTo(0.5186590210160579, 9);
+    expect(seen.skyGlow![0]).toBeCloseTo(0.8218802196893824, 9);
+    expect(seen.skyGlow![1]).toBeCloseTo(0.30319884009596815, 9);
+    expect(seen.skyGlow![2]).toBeCloseTo(0.42583100375147226, 9);
     f.sky = null;
     run(life, f, 0.05);
     expect(seen.sunLight).toEqual([0, 0, 0]);
@@ -265,9 +265,9 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     // 1), not the red glow the clear sky's ring holds under it.
     const f = frameAt(m.x, m.y, m.z + 1, 18, WEATHER_PRESETS.mist);
     life.update(f);
-    expect(seen.skyGlow![0]).toBeCloseTo(0.13512684221165877, 9);
-    expect(seen.skyGlow![1]).toBeCloseTo(0.13365015103716507, 9);
-    expect(seen.skyGlow![2]).toBeCloseTo(0.13812700476024908, 9);
+    expect(seen.skyGlow![0]).toBeCloseTo(0.12350372633140894, 9);
+    expect(seen.skyGlow![1]).toBeCloseTo(0.12287433164221656, 9);
+    expect(seen.skyGlow![2]).toBeCloseTo(0.1271538738582281, 9);
     life.dispose();
   });
 

@@ -41,8 +41,10 @@ export const SKY_Y_FLOOR = Math.pow(NIGHT_YA_NIGHT, 1 / SKY_GAMMA);
 /** The cloud deck's transmission: its zenith is DECK_TAU times the zenith an
  * overcast sky has over the clear sky's light on level ground. Set so the
  * dome's zenith at noon in mist (cloud 0.9) has a luma of 0.80, the noon mist
- * dome of the sky the table replaced. */
-export const DECK_TAU = 0.1729;
+ * dome of the sky the table replaced; refitted 2026-10-17 (0.1729 before) for
+ * the paler sky the painted direction asked of the table (`SKY_MIE_SCALE` 5),
+ * whose brighter light would have lifted the mist dome to 0.91. */
+export const DECK_TAU = 0.2022;
 /** Scale, in the sine of the elevation, of the mist's blend toward the fog
  * colour at the horizon. Mist is the one part of the air the table does not
  * hold, so with this blend the dome meets the fog without a band. */

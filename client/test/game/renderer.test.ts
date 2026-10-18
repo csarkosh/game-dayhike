@@ -1283,13 +1283,13 @@ describe("the lake's life's frame", () => {
     const table = skyFixture();
     const clear = WEATHER_PRESETS.clear;
     expect(skyLumaOf(null)).toBe(0);
-    expect(skyLumaOf(skyStateFor(table, 0, clear))).toBeCloseTo(0.03004000324483503, 12);
-    expect(skyLumaOf(skyStateFor(table, 6, clear))).toBeCloseTo(0.5250530506882067, 12);
-    expect(skyLumaOf(skyStateFor(table, 12, clear))).toBeCloseTo(0.7137754737861965, 12);
-    // 1.22 a clear late afternoon, held at 1.
-    expect(skyLumaOf(skyStateFor(table, 17, clear))).toBe(1);
-    expect(skyLumaOf(skyStateFor(table, 18.25, clear))).toBeCloseTo(0.25418511448490166, 12);
-    expect(skyLumaOf(skyStateFor(table, 12, WEATHER_PRESETS.mist))).toBeCloseTo(0.3241337701287073, 12);
+    expect(skyLumaOf(skyStateFor(table, 0, clear))).toBeCloseTo(0.03004000095048176, 12);
+    expect(skyLumaOf(skyStateFor(table, 6, clear))).toBeCloseTo(0.4177118958488141, 12);
+    expect(skyLumaOf(skyStateFor(table, 12, clear))).toBeCloseTo(0.5512049204274297, 12);
+    // 0.90 a clear late afternoon under the painted sky's thicker Mie (1.22 before, held at 1).
+    expect(skyLumaOf(skyStateFor(table, 17, clear))).toBeCloseTo(0.9019063443040668, 12);
+    expect(skyLumaOf(skyStateFor(table, 18.25, clear))).toBeCloseTo(0.2165320467445114, 12);
+    expect(skyLumaOf(skyStateFor(table, 12, WEATHER_PRESETS.mist))).toBeCloseTo(0.30838618250994004, 12);
   });
 
   it("gives a pixel's size a metre from the lens from the field of view and the render's height", () => {
@@ -1661,9 +1661,9 @@ describe("the reflections' ground colour", () => {
     const out = new Color3(-1, -1, -1);
     expect(lakeMirrorColourOf(sky, WEATHER_PRESETS.clear, out)).toBe(out);
     // The needle bed (0.15, 0.105, 0.06) under the clear noon's sun and its whole fill.
-    expect(out.asArray()).toEqual([0.6330198249202751, 0.41276601161115783, 0.21302384813695235]);
+    expect(out.asArray()).toEqual([0.63340055479454, 0.4127478745650198, 0.2126780736653244]);
     // Under the eerie preset the fill all but goes, the sun's term left as it was.
-    expect(lakeMirrorColourOf(sky, WEATHER_PRESETS.eerie, new Color3()).asArray()).toEqual([0.6273726259499178, 0.4059863490191407, 0.20538830865598035]);
+    expect(lakeMirrorColourOf(sky, WEATHER_PRESETS.eerie, new Color3()).asArray()).toEqual([0.6274677357893329, 0.40598181956124996, 0.2053019233926781]);
     // A sun under the horizon lights nothing: the fill alone.
     const night = skyStateFor(skyFixture(), 0, WEATHER_PRESETS.clear);
     expect(lakeMirrorColourOf(night, WEATHER_PRESETS.clear, new Color3()).asArray()).toEqual([0.036, 0.03276, 0.0288]);
@@ -2250,9 +2250,9 @@ describe("the sward floor follows the blade field's tiers", () => {
   }
 
   it("binds no pull on the low tier, which draws no blades, and the full pull on the others", () => {
-    expect(boundSward("low")).toEqual({ sward: [0.05, 0.065, 0.03, 0], band: [0.05, 0.5, 12, 18] });
-    expect(boundSward("medium")).toEqual({ sward: [0.05, 0.065, 0.03, 0.6], band: [0.05, 0.5, 12, 18] });
-    expect(boundSward("high")).toEqual({ sward: [0.05, 0.065, 0.03, 0.6], band: [0.05, 0.5, 12, 18] });
+    expect(boundSward("low")).toEqual({ sward: [0.047, 0.06, 0.036, 0], band: [0.05, 0.5, 12, 18] });
+    expect(boundSward("medium")).toEqual({ sward: [0.047, 0.06, 0.036, 0.6], band: [0.05, 0.5, 12, 18] });
+    expect(boundSward("high")).toEqual({ sward: [0.047, 0.06, 0.036, 0.6], band: [0.05, 0.5, 12, 18] });
   }, timeLimit(60_000));
 });
 

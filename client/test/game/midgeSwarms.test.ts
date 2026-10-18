@@ -576,15 +576,15 @@ describe("the midges' stages", () => {
     // the western horizon still glows red, and the midges with it.
     const dusk = at(18.75);
     expect(dusk.night).toBe(1);
-    dusk.colour.forEach((v, i) => expect(v).toBeCloseTo([0.173467, 0.035212, 0.038471][i]!, 6));
+    dusk.colour.forEach((v, i) => expect(v).toBeCloseTo([0.065203, 0.024211, 0.037805][i]!, 6));
     const duskLuma = luma({ r: dusk.colour[0]!, g: dusk.colour[1]!, b: dusk.colour[2]! });
-    expect(duskLuma).toBeCloseTo(0.06484, 5);
+    expect(duskLuma).toBeCloseTo(0.03391, 5);
     // 22:00: the twilight gone, only the night sky's own floor toward the
     // west, under a third of the glint at 18:45 and none of its red.
     const night = at(22);
     expect(night.night).toBe(1);
-    night.colour.forEach((v, i) => expect(v).toBeCloseTo([0.012149, 0.018012, 0.036][i]!, 6));
-    expect(luma({ r: night.colour[0]!, g: night.colour[1]!, b: night.colour[2]! })).toBeCloseTo(0.018064, 6);
+    night.colour.forEach((v, i) => expect(v).toBeCloseTo([0.012048, 0.018004, 0.036][i]!, 6));
+    expect(luma({ r: night.colour[0]!, g: night.colour[1]!, b: night.colour[2]! })).toBeCloseTo(0.018037, 6);
   }, timeLimit(10_000));
 
   const mix = (x: number, y: number, t: number): number => x * (1 - t) + y * t;

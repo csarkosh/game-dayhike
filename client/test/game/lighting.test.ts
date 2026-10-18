@@ -609,7 +609,7 @@ describe("weather in lighting", () => {
     expect(sunShadowDarkness(CLEAR)).toBe(0.17);
     expect(sunShadowDarkness({ ...CLEAR, cloudCover: 0.1 })).toBe(0.17);
     expect(sunShadowDarkness({ ...CLEAR, cloudCover: 0.3 })).toBe(0.3);
-    expect(sunShadowDarkness(WEATHER_PRESETS.bright)).toBe(0.45);
+    expect(sunShadowDarkness(WEATHER_PRESETS.bright)).toBe(0.6);
     expect(sunShadowDarkness(WEATHER_PRESETS.overcast)).toBe(0.8);
     expect(sunShadowDarkness(WEATHER_PRESETS.rain)).toBe(1);
   });
@@ -620,8 +620,8 @@ describe("weather in lighting", () => {
     const w = WEATHER_PRESETS.bright;
     expect(lighting.weather).toEqual(w);
     expect(s.fogDensity).toBeCloseTo(fogDensityUnder(w, 70), 12);
-    // SUN_PEAK x (1 - SUN_CLOUD_LOSS x 0.45).
-    expect(sunOf(s).intensity).toBeCloseTo(SUN_PEAK * (1 - SUN_CLOUD_LOSS * 0.45), 6);
+    // SUN_PEAK x (1 - SUN_CLOUD_LOSS x 0.6): the bright preset's cloud since the painted direction (0.45 before).
+    expect(sunOf(s).intensity).toBeCloseTo(SUN_PEAK * (1 - SUN_CLOUD_LOSS * 0.6), 6);
     expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(exposureUnder(w, sunPositionAt(12).y), 12);
     lighting.dispose();
   });

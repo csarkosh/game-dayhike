@@ -16,9 +16,13 @@ const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 
 // WebGL2's shader text at the branch's base (ba0fd95), one hash per text: what
 // every plugin injects per stage, and the three post shaders as stored. A
-// change here is a change to what every WebGL2 player compiles.
+// change here is a change to what every WebGL2 player compiles. Re-pinned
+// 2026-10-17 for the painted look: the haze's warmth and density
+// (atmosphere.fragment), the cover's sage green and floor and the long
+// grass's patch hue and base in the foliage fragment, the far sward
+// (terrain.fragment), and the palette's uniforms in the grade.
 const PINS: Record<string, string> = {
-  "atmosphere.fragment": "0f65cdd4ef1b91da36317abbe90659c5ded272f528e8523a30ec30b84e86d517",
+  "atmosphere.fragment": "62c5991129522bd873adeff3c6bd4b7d5875ab17388c3736dbb94090d12b9ca0",
   "cliffTint.fragment": "34b80348c2b278087d42892dd31129fc6aac2b12c93f275293617b88e9e2bccd",
   "cliffTint.vertex": "3fcb23ae5aab79e441e6d140e71ad0c149a0702f72c48fa093fc0b9fd3076de1",
   "distanceFade.fragment": "e9fd42d78c56e2f364ac16691996386de60dd9717060cc3822bd296c9c09281f",
@@ -28,25 +32,25 @@ const PINS: Record<string, string> = {
   // and the albedo floor (foliage.fragment.fx, foliageLights.fragment.fx).
   // The nurse log's fern wears the plugin under a profile of its own
   // (`foliage.NURSE.*`), with every other profile's text.
-  "foliage.BLADES.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
+  "foliage.BLADES.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
   "foliage.BLADES.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.BUSH.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
+  "foliage.BUSH.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
   "foliage.BUSH.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.DUFF.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
+  "foliage.DUFF.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
   "foliage.DUFF.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.FLOWER.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
+  "foliage.FLOWER.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
   "foliage.FLOWER.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.GRASS.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
+  "foliage.GRASS.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
   "foliage.GRASS.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.MEADOW.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
+  "foliage.MEADOW.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
   "foliage.MEADOW.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.NURSE.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
+  "foliage.NURSE.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
   "foliage.NURSE.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.REEDS.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
-  "foliage.TREE.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
+  "foliage.REEDS.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
+  "foliage.TREE.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
   "foliage.REEDS.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
   "foliage.TREE.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.UNDERSTORY.fragment": "f9e86f552d13a8f8b60b38a726f79c500be07729df913598db4eb2878dae0904",
+  "foliage.UNDERSTORY.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
   "foliage.UNDERSTORY.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
   // Re-pinned for the `#ifdef FOLIAGE` guard on the injected per-light call
   // (foliageLightPlugin.ts): compiled with FOLIAGE, the guard resolves to the
@@ -75,7 +79,7 @@ const PINS: Record<string, string> = {
   "deadwood.fragment": "012e902e87f6870e8c9d8a7b0ec99102277d6faec927d9db3aa548cd934681cf",
   "deadwood.vertex": "ed84af0f7f03c0c16fcb52292e468a318e043231ac2162ec80b5fcc9ad5d51fe",
   "post.finish": "4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5",
-  "post.grade": "74e331711356b6afe2ce371d749cfff39c64bc02473988dd2ba26bc9653ecd3a",
+  "post.grade": "ef8f76d76294375ff885eba472a8b2ec32dfb3923f5fec2b858add66983d4dc9",
   "post.halationExtract": "1ee9b9ed30d66fd1e10e4a327104c3e9016a91a2b4ed6aa2cec64cb09df5d3fd",
   "skin.fragment": "111388dbf745542db596dae9ac3c41d726c7c0c61aeb4c8e87cc16e9e8c07fdf",
   // Re-pinned for the WGSL-reserved local `macro` renamed `macroRgb`. The
@@ -102,7 +106,7 @@ const PINS: Record<string, string> = {
   // grid from row 2, one sampler where there were two); its three reads and
   // the declaration are the difference, and they stay in the texts the tests
   // below take their pieces out of.
-  "terrain.fragment": "726092e1aedfe6a6e73bed80a6ea7a511d0e1989380ece83c7e2ccd67a376842",
+  "terrain.fragment": "b00471ab26ef4dcdc16f7c5cef8b1c1a2e320386244f1ccee299c5529de10b28",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
 };
