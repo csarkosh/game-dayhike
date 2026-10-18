@@ -142,8 +142,9 @@ async function shoot(page, url, settle) {
     await sleep(500);
   }
   await sleep(settle * 1000);
-  // The roster, the HUD's voice and status lines, and the command bar: not the game's view.
-  await evaluate(page, "document.querySelectorAll('.roster, .hud, .cmdbar').forEach((e) => { e.style.display = 'none'; }); true");
+  // The roster, the HUD's voice and status lines, the mute button (the page's own, outside
+  // the HUD) and the command bar: not the game's view.
+  await evaluate(page, "document.querySelectorAll('.roster, .hud, .mute, .cmdbar').forEach((e) => { e.style.display = 'none'; }); true");
   await sleep(1500);
   const shot = await page("Page.captureScreenshot", {
     format: "png",
