@@ -64,6 +64,13 @@ Built with TypeScript, Babylon.js 9, Vite, Vitest and WebRTC. The details, from 
 generation to the rendering to the hosting, are in [`ARCHITECTURE.md`](ARCHITECTURE.md) and
 [`docs/`](docs/).
 
+Write-ups of the work, with measurements, are on csarko.sh:
+[WebGPU vs WebGL2](https://csarko.sh/research/webgpu-vs-webgl2),
+[photorealistic water](https://csarko.sh/research/photorealistic-water-rendering),
+[atmosphere and dread shaders](https://csarko.sh/research/atmosphere-and-dread-shaders),
+[host-authoritative co-op netcode](https://csarko.sh/research/browser-coop-netcode), and
+[20+ more](https://csarko.sh/research).
+
 ## Run it yourself
 
 ```bash
