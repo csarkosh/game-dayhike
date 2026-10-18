@@ -316,12 +316,12 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1092 recorded stages, each file\'s bytes hashing to the name it has: 222 on the medium and high tiers, 483 on low, 151 on high alone, 232 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1092);
+  it('holds the 1104 recorded stages, each file\'s bytes hashing to the name it has: 224 on the medium and high tiers, 484 on low, 147 on high alone, 245 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1104);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1092);
+    expect(read.stages).toHaveLength(1104);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(591);
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(601);
     // The 222 recorded on the medium and high tiers (the far field: the prepass's variants of
     // every material on the two tiers the far softening reads the scene's depth on, the
     // ground haze in every PBR fragment, the meadow's far band in the clutter's vertex stages,
@@ -417,13 +417,19 @@ describe('the committed corpus and the tests\' fixture', () => {
     // shades' dissolve, the 156 PBR fragments before the cloud's near veil,
     // the 149 before the trail's share and the real thing's shadow form, and
     // the grade's before the real thing stood whole and sharper.
-    expect(read.tiers.size).toBe(1092);
+    // 2026-10-17, the painted look: every PBR fragment (the fog's haze, the
+    // cover's green), the far cover, the grade and the new paint pass changed
+    // text, so 41 pages were recorded again on the three tiers, 257 older
+    // texts retired and 269 new stages added (12 of them the paint pass and
+    // the grade's palette variants), the eerie evening on low left unrecorded
+    // (its page hung) and so its older texts kept.
+    expect(read.tiers.size).toBe(1104);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([487, 458, 377]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(222);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(483);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(151);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(232);
+    expect([on('low'), on('medium'), on('high')]).toEqual([488, 473, 375]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(224);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(484);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(147);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(245);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
