@@ -13,11 +13,6 @@ briefing. You are the park ranger sent to find them. Lead a search party of up t
 trail to the crest, where the hiker is waiting, and so is whatever left them there. Then get
 everyone back down to the road.
 
-Open the link, press Play, and send the invite link to friends; they join your party from
-anywhere. Walk with **WASD**, look with the mouse, run with **Shift**, jump with **Space**,
-**F** for the headlamp, and **click** to search. Alone works too: the woods count one as readily
-as five.
-
 ## Trail 14
 
 *From the park's leaflet, as you'd find it in the box at the trailhead.*
