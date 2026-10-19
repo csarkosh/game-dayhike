@@ -945,6 +945,11 @@ describe("world shell wiring", () => {
     return src.slice(a, b);
   }
 
+  it("draws the floor cover at CLUTTER_REACH of its radii on the tiers with the blades, the low tier at its own", () => {
+    const creation = slice("const clutterMeshes =", "nearBlades:");
+    expect(creation).toContain('radiusScale: tier === "low" ? 0.6 : CLUTTER_REACH,');
+  });
+
   it("creates wildlife under the forest guard, at the low tier's radius, with both shadow hooks", () => {
     const creation = slice("const wildlife =", "const wildlifePlayerPool");
     // Hand-authored levels have no forest and must get no animals; a renderer

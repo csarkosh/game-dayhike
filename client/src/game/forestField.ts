@@ -36,9 +36,12 @@ import { finish, sortSlices, type Slices } from "./syncJobs.js";
 export const NEAR_RADIUS = 120;
 /** LOD 0 (full detail) out to here, LOD 1 to LOD_RING_1, LOD 2 to the near
  * radius. Rings tightened (was 60/120): LOD1 at 42 m
- * reads clean even in dense stands. */
-export const LOD_RING_0 = 42;
-export const LOD_RING_1 = 85;
+ * reads clean even in dense stands. Tightened again (2026-10-18, was 42/85):
+ * the near giants were the forest's largest single cost, and at 36/70 m a
+ * forest view drew 1.3 ms a frame less on an Apple M4 with the picture all
+ * but the same under the paint (the frame-rate pass's panels). */
+export const LOD_RING_0 = 36;
+export const LOD_RING_1 = 70;
 /** Ferns and ground cover render only this close (m). Re-anchored:
  * was 50, then reduced to 65 in a performance
  * check — 2.6× the pre-retune understory instance count at the D = 0.01
@@ -71,15 +74,15 @@ export const IMPOSTOR_FILL_BUDGET_MAX = 20000;
  * tree cell, the shader measures from the eye. */
 export const SEAM_PAD = Math.SQRT2 * TREE_CELL;
 /** LOD0 → LOD1 giant/sapling geometry seam: LOD0's full mesh fades out and
- * LOD1's mid mesh fades in across [36, LOD_RING_0). A 6 m span is enough —
+ * LOD1's mid mesh fades in across [30, LOD_RING_0). A 6 m span is enough —
  * this close, silhouette detail is still resolvable, so the swap only needs
  * to hide behind a couple of frames' worth of dither, not a wide band. */
-export const SEAM_LOD0: readonly [number, number] = [36, LOD_RING_0];
+export const SEAM_LOD0: readonly [number, number] = [30, LOD_RING_0];
 /** LOD1 → LOD2 geometry seam, same fade direction as SEAM_LOD0, across
- * [76, LOD_RING_1). Wider than SEAM_LOD0 (9 m) because LOD1's mid mesh reads
+ * [61, LOD_RING_1). Wider than SEAM_LOD0 (9 m) because LOD1's mid mesh reads
  * coarser detail than LOD0's, so a mismatch is more visible mid-fade and
  * wants a longer cross-fade to hide it. */
-export const SEAM_LOD1: readonly [number, number] = [76, LOD_RING_1];
+export const SEAM_LOD1: readonly [number, number] = [61, LOD_RING_1];
 /** `impostorsFill` (off-lattice, unthinned) → `impostors` (on-lattice,
  * stride-thinned) seam, across [900, IMPOSTOR_FULL_RADIUS). Fill's unthinned
  * quads fade out and the sparser stride lattice fades in. Needs its full

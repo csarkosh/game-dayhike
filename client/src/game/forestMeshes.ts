@@ -476,7 +476,7 @@ export type ForestMeshes = {
   readonly casterMeshes: readonly Mesh[];
   /** The giants' and the saplings' LOD2 bucket meshes, append-only as the
    * GLBs land, as `casterMeshes` is: the trees the lake's mirror draws on
-   * their own material, 85 to 120 m out. */
+   * their own material, 70 to 120 m out. */
   readonly lod2Meshes: readonly Mesh[];
   /** The six billboard planes, in the order made: the far forest the lake's
    * reflections draw. */
@@ -1396,17 +1396,20 @@ export function createForestMeshes(
   // clipped to it below. At the default
   // NEAR_RADIUS every fixed seam (SEAM_LOD0, SEAM_LOD1) already ends inside
   // it, so this only bites the low tier's shrunk nearRadius (70 m): ring 1's
-  // fixed out-band SEAM_LOD1 = [76, 85] would otherwise stay fully visible
-  // past 70 m while the impostor has already faded fully in over
-  // seamNear(70) = [50, 70] — every such tree drawn twice from 70 to 85 m.
+  // fixed out-band (SEAM_LOD1 = [76, 85] before 2026-10-18's tighter rings,
+  // [61, 70] since) stayed fully visible past 70 m while the impostor had
+  // already faded fully in over seamNear(70) = [50, 70], every such tree
+  // drawn twice from 70 to 85 m; the clip keeps that from coming back.
   const nearSeamBand = seamNear(nearRadius);
   /** A ring's own out-band, clipped to `nearSeamBand` when the ring's fixed
-   * edge would otherwise sit past `nearRadius` (see the comment above). A
-   * ring whose fixed edge is still inside `nearRadius` is untouched — this
-   * is a no-op at the default tier, where every fixed seam already clears
-   * it. */
+   * edge reaches `nearRadius` or would sit past it (see the comment above):
+   * since 2026-10-18 ring 1 ends at 70 m, the low tier's near radius itself,
+   * where an unclipped [61, 70] would leave its trees whole from 50 to 61 m
+   * over the impostors fading in. A ring whose fixed edge is inside
+   * `nearRadius` is untouched — a no-op at the default tier, where every
+   * fixed seam clears it. */
   const ringOutBand = (s: readonly [number, number]): readonly [number, number] =>
-    s[1] <= nearRadius ? s : nearSeamBand;
+    s[1] < nearRadius ? s : nearSeamBand;
   const bakeImpostor = options.bakeImpostor ?? defaultBakeImpostor;
   // Memoizing collector, not the pure collectBands: a rebuild happens on every
   // 12 m tree-cell crossing, and re-sampling the whole ~112k-cell impostor
@@ -1827,7 +1830,7 @@ export function createForestMeshes(
       }
     }
 
-    // Only the GIANTS' LOD0 (≤42 m, LOD_RING_0) casts shadows — LOD1 was
+    // Only the GIANTS' LOD0 (≤36 m since 2026-10-18, LOD_RING_0) casts shadows — LOD1 was
     // dropped from the caster set in a performance check:
     // LOD1 casting measured ~2 ms of cascade re-render there, and its
     // shadows are unreadable in closed-canopy interiors anyway (dense

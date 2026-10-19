@@ -278,14 +278,14 @@ describe("createForestMeshes under NullEngine", () => {
   }
 
   /** Mirrors `forestMeshes.ts`'s internal (unexported) `ringOutBand`: a
-   * ring's own out-band, clipped to the near seam when its fixed edge would
-   * otherwise sit past `nearRadius` — the same clip "clips ring 1's out-band
+   * ring's own out-band, clipped to the near seam when its fixed edge reaches
+   * `nearRadius` or would sit past it — the same clip "clips ring 1's out-band
    * to the near seam at a low nearRadius" (below) exercises on the fade
    * bands themselves. */
   const ringOutBand = (
     nearRadius: number,
     s: readonly [number, number],
-  ): readonly [number, number] => (s[1] <= nearRadius ? s : seamNear(nearRadius));
+  ): readonly [number, number] => (s[1] < nearRadius ? s : seamNear(nearRadius));
 
   it("is ready only once every billboard bake has settled, baked or given up", async () => {
     const bakes: ((baked: BakedImpostor | null) => void)[] = [];
@@ -1167,7 +1167,7 @@ describe("createForestMeshes under NullEngine", () => {
 
   it("clips LOD1's sway to the near seam too, at a low nearRadius where its bucket's out-band clips", () => {
     // Same low tier as "clips ring 1's out-band to the near seam..." below:
-    // SEAM_LOD1's fixed edge (85) sits past LOW_NEAR (70), so the bucket's
+    // SEAM_LOD1's fixed edge (70) reaches LOW_NEAR (70), so the bucket's
     // OWN out-band clips to seamNear(70) — the sway must clip with it, or
     // LOD1 would keep swaying at full amplitude past where its instances are
     // already dissolving into the impostor.
@@ -1310,11 +1310,11 @@ describe("createForestMeshes under NullEngine", () => {
 
   it("clips ring 1's out-band to the near seam at a low nearRadius, leaves ring 0 alone", () => {
     // Low tier's nearRadius (renderer.ts: round(NEAR_RADIUS * 140/240) = 70).
-    // Ring 1's fixed out-band SEAM_LOD1 = [76, 85] sits past 70 m, so
-    // unclipped it would stay fully visible past the near radius while the
-    // impostor has already faded fully in over seamNear(70) = [50, 70] —
-    // every such giant drawn twice from 70 to 85 m. Ring 0's fixed out-band
-    // SEAM_LOD0 = [36, 42] is still inside 70 m, so it is untouched.
+    // Ring 1's fixed out-band SEAM_LOD1 = [61, 70] ends at 70 m, so
+    // unclipped its trees would stay whole from 50 to 61 m while the
+    // impostor fades in over seamNear(70) = [50, 70]: drawn twice there.
+    // Ring 0's fixed out-band SEAM_LOD0 = [30, 36] is inside 70 m, so it is
+    // untouched.
     const LOW_NEAR = 70;
     const { assets, forest } = build(LOW_NEAR);
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
@@ -1834,12 +1834,12 @@ describe("the trees' bark", () => {
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
     const counts = (): number[][] => [first, second].map((set) => set.filter((_m, k) => k % 2 === 0).map((m) => m.thinInstanceCount));
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
-    expect(counts()).toEqual([[27, 48, 58], [19, 52, 67]]);
+    expect(counts()).toEqual([[22, 41, 67], [18, 37, 71]]);
     // One cell over: both barks stand there too, at counts of their own, so
     // a count left from the first camera would show.
     const moved = { x: FOREST_CAM.x + TREE_CELL, z: FOREST_CAM.z };
     forest.update(moved.x, moved.z);
-    expect(counts()).toEqual([[26, 52, 58], [18, 52, 68]]);
+    expect(counts()).toEqual([[24, 42, 66], [17, 36, 76]]);
     const bands = collectBands(SEED, moved.x, moved.z);
     const count = (list: readonly TreeInstance[], variant: number): number =>
       list.filter((t) => t.cohort === COHORT_GIANT && t.species === 1 && t.variant === variant).length;

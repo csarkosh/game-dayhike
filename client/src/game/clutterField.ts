@@ -68,6 +68,15 @@ import {
  * and the high ground's (index 13) the same: knee-high flowers in grass.
  */
 export const CLUTTER_RADII: readonly number[] = [110, 110, 400, 110, 70, 110, 100, 50, 40, 70, 75, 160, 60, 60];
+/** The share of every class's radius the tiers with the blade field draw
+ * (2026-10-18; the low tier keeps its own 0.6). The floor cover was a third
+ * of a forest view's frame on an Apple M4, most of it in the outer rings,
+ * where a card is a few pixels under the fog and the paint and the ground's
+ * own far cover reads the same: at 0.7 a forest view drew 3 ms a frame less,
+ * the frame-rate pass's panels the same to the eye. Applied through each
+ * class's fades, seams and far band (`clutterFadeEdges`, `clutterSeamEdges`,
+ * `coverFarBand`, `coverWiden`) as the low tier's is. */
+export const CLUTTER_REACH = 0.7;
 
 /**
  * Where a class's far band begins (m, at radiusScale 1; none for a class at

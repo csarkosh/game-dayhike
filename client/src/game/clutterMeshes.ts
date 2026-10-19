@@ -182,6 +182,14 @@ const FERN_LOD_NAMES = ["LOD1", "LOD2"] as const;
  * logs draw LOD1 (`forestMeshes.ts`), and LOD0's 4,196 triangles buy nothing
  * on a beach seen from the road. */
 const DRIFTLOG_LOD_NAMES = ["LOD1", "LOD2"] as const;
+/** The bushes draw the model's LOD1 near and its LOD2 far, as the ferns do
+ * (2026-10-18). Their 110 m disc put about 2,000 of them past the seam at a
+ * forest view, each LOD1's 510 triangles, and some 550 inside it at LOD0's
+ * 1,150: 1.7 million triangles a frame, the most of any one thing in the
+ * scene, for a shrub a metre across that past the seam is a few pixels under
+ * the canopy, and inside it one the player walks among, where LOD1's cut of
+ * the same cards reads as LOD0's. LOD2 is 200 triangles. */
+const BUSH_LOD_NAMES = ["LOD1", "LOD2"] as const;
 /** A drift log lies along the shore, within this (rad) either way of it: the
  * sea leaves a trunk where the last wave turned it, mostly side-on. */
 export const DRIFTLOG_SWING = 0.9;
@@ -1393,7 +1401,7 @@ export function createClutterMeshes(
         const urls = CLUTTER_MODEL_URLS[cls] as readonly string[];
         const variants: Mesh[][][] = [];
         for (const url of urls) {
-          const groups = await loadBucketed(url, cls === CLUTTER_FERN ? FERN_LOD_NAMES : cls === CLUTTER_DRIFTLOG ? DRIFTLOG_LOD_NAMES : LOD_NAMES);
+          const groups = await loadBucketed(url, cls === CLUTTER_FERN ? FERN_LOD_NAMES : cls === CLUTTER_DRIFTLOG ? DRIFTLOG_LOD_NAMES : cls === CLUTTER_BUSH ? BUSH_LOD_NAMES : LOD_NAMES);
           if (groups === null) return;
           variants.push(groups);
         }
