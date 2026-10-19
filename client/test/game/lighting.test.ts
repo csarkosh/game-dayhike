@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -45,7 +47,7 @@ vi.mock("../../src/game/skyDome.js", async (importOriginal) => {
 });
 
 import {
-  createLighting, DEFAULT_HOUR, SHADOW_FLOOR, SKY_WAIT_WARN_MS, SUN_LIGHT_SIZE_UV, shadowFilterFor, sunAltitudeDeg,
+  createLighting, DEFAULT_HOUR, FAR_CASCADE_REACH_M, SHADOW_FLOOR, SKY_WAIT_WARN_MS, SUN_LIGHT_SIZE_UV, farCascadeIndex, farCasters, shadowFilterFor, sunAltitudeDeg,
   sunShadowDarkness, whenSkyHeld,
   type Lighting, type LightingOptions,
 } from "../../src/game/lighting.js";
@@ -117,6 +119,48 @@ describe("createLighting", () => {
     expect(shadowFilterFor(QUALITY.low)).toEqual({ filter: "pcf" });
     expect(shadowFilterFor({ shadowSoftEdges: true })).toEqual({ filter: "pcss", quality: 1, lightSizeUV: 0.15 });
     expect(shadowFilterFor({ shadowSoftEdges: false })).toEqual({ filter: "pcf" });
+  });
+
+  it("leaves the small casters out of the farthest cascade of a long reach, and out of no cascade on the shorter ones", () => {
+    expect(FAR_CASCADE_REACH_M).toBe(500);
+    // High: three cascades to 1500 m, the third without the near casters. Medium: one cascade. Low: no shadows.
+    expect(farCascadeIndex(QUALITY.high)).toBe(2);
+    expect(farCascadeIndex(QUALITY.medium)).toBe(-1);
+    expect(farCascadeIndex(QUALITY.low)).toBe(-1);
+    expect(farCascadeIndex({ shadowMapSize: 2048, shadowCascades: 2, shadowDistance: 500 })).toBe(1);
+    expect(farCascadeIndex({ shadowMapSize: 2048, shadowCascades: 2, shadowDistance: 499 })).toBe(-1);
+    expect(farCascadeIndex({ shadowMapSize: 0, shadowCascades: 3, shadowDistance: 1500 })).toBe(-1);
+    const a = { name: "facePatch_1" } as unknown as AbstractMesh;
+    const b = { name: "tree.giant_0" } as unknown as AbstractMesh;
+    const c = { name: "sign_3" } as unknown as AbstractMesh;
+    const d = { name: "clipmap_0" } as unknown as AbstractMesh;
+    const near = new Set<AbstractMesh>([a, c]);
+    expect(farCasters([a, b, c, d], 4, near)).toEqual([b, d]);
+    // Only the list's first `length` count, as Babylon hands them.
+    expect(farCasters([a, b, c, d], 2, near)).toEqual([b]);
+    expect(farCasters([], 0, near)).toEqual([]);
+    // The renderer hands the small casters in as near: the rock patches, the signs, the animals and the boulders.
+    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
+    expect(renderer.match(/lighting\.addShadowMesh\(mesh, "near"\)/g)).toHaveLength(3);
+    expect(renderer).toContain('lighting.addShadowMesh(clutterMeshes.casterMeshes[clutterCastersRegistered] as Mesh, "near");');
+    // The lighting registers a near caster as such, and forgets it with the mesh.
+    const source = readFileSync(new URL("../../src/game/lighting.ts", import.meta.url), "utf8");
+    expect(source).toContain('addShadowMesh(mesh, reach = "far") {');
+    expect(source).toContain('if (reach === "near") nearOnly.add(mesh);');
+    expect(source).toContain("shadowMap.getCustomRenderList = (layer, list, length) => {");
+  });
+
+  it("puts the soft shadow's filter in Babylon's store with its taps written out, where the soft filter is chosen", () => {
+    // The generator cannot be built under NullEngine, so the install is read
+    // from the lighting's source: inside the soft-shadow branch, after the
+    // filter's settings and before any material compiles
+    // (`softShadowInclude.ts`: the by-value Poisson table cost WebGPU the
+    // whole frame, 1.4 fps against 13.7 on an Apple M4 at the meadow).
+    const source = readFileSync(new URL("../../src/game/lighting.ts", import.meta.url), "utf8");
+    const branch = source.slice(source.indexOf('if (filter.filter === "pcss") {'), source.indexOf("} else {", source.indexOf('if (filter.filter === "pcss") {')));
+    expect(branch).toContain("shadows.useContactHardeningShadow = true;");
+    expect(branch).toContain("installSoftShadows();");
+    expect(source).toContain('import { installSoftShadows } from "./softShadowInclude.js";');
   });
 
   it("points the sun light along the direction light travels", () => {

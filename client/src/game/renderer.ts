@@ -2477,7 +2477,8 @@ function buildRenderer(
     : createFacePatches(scene, forest.seed, tier, facePatchMaterial, jobs, {
       // The world's trail, which the walkable rock keeps off, as the ground the player stands on does.
       trail: activeTerrainVariant().trailGraph?.(forest.seed) ?? null,
-      shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
+      // Small casters: left out of the farthest cascade (`ShadowReach`).
+      shadows: { add: (mesh) => lighting.addShadowMesh(mesh, "near"), remove: lighting.removeShadowMesh },
       reflections: {
         add: (mesh) => {
           lakeMirror?.register(mesh, mirrorTerrain);
@@ -2682,7 +2683,7 @@ function buildRenderer(
           // as they come and go.
           shadows: {
             add: (mesh) => {
-              lighting.addShadowMesh(mesh);
+              lighting.addShadowMesh(mesh, "near");
               if (mesh instanceof Mesh) lakeMirror?.register(mesh, null);
             },
             remove: (mesh) => {
@@ -3051,7 +3052,8 @@ function buildRenderer(
     engine,
     camera,
     views,
-    shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
+    // The signs: small casters, left out of the farthest cascade (`ShadowReach`).
+    shadows: { add: (mesh) => lighting.addShadowMesh(mesh, "near"), remove: lighting.removeShadowMesh },
     cover,
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
     skyReady,
@@ -3117,7 +3119,7 @@ function buildRenderer(
       // sub-metre set dressing that never enters the shadow map.
       if (clutterMeshes !== null) {
         for (; clutterCastersRegistered < clutterMeshes.casterMeshes.length; clutterCastersRegistered++) {
-          lighting.addShadowMesh(clutterMeshes.casterMeshes[clutterCastersRegistered] as Mesh);
+          lighting.addShadowMesh(clutterMeshes.casterMeshes[clutterCastersRegistered] as Mesh, "near");
         }
       }
       // The cliff modules' near buckets, once their two GLBs have loaded:

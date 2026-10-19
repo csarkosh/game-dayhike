@@ -14,6 +14,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 // instead and there is no error and no shadows — the same failure mode that cost
 // hours on thin instances in `renderer.ts`.
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js";
+import { installSoftShadows } from "./softShadowInclude.js";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
 import { ReflectionProbe } from "@babylonjs/core/Probes/reflectionProbe.js";
@@ -192,6 +193,37 @@ export function shadowFilterFor(settings: Pick<QualitySettings, "shadowSoftEdges
 }
 
 /**
+ * How far a caster reaches into the cascades. `far`: every cascade, for the
+ * ground, the far field's clipmap, the trees and the cliffs, whose shadows
+ * are read kilometres off. `near`: every cascade but the farthest where the
+ * reach is long (`farCascadeIndex`), for the small casters, the rock
+ * patches, the signs, the animals and the boulders, a metre or three across:
+ * the farthest cascade of a 1500 m reach has a texel of 0.6 m, which draws
+ * such a shadow as a speck or not at all, and drawing 650 of them into it
+ * three times a frame was a third of the high tier's draw calls (2026-10-18:
+ * 2163 a frame at the meadow, 676 casters, three cascades).
+ */
+export type ShadowReach = "near" | "far";
+/** A reach (m) from which the farthest cascade is coarser than a small caster. */
+export const FAR_CASCADE_REACH_M = 500;
+
+/** The index of the cascade the near casters are left out of, or -1 where every cascade takes them: the last of two or more cascades reaching `FAR_CASCADE_REACH_M` or more. */
+export function farCascadeIndex(settings: Pick<QualitySettings, "shadowMapSize" | "shadowCascades" | "shadowDistance">): number {
+  if (settings.shadowMapSize <= 0 || settings.shadowCascades < 2 || settings.shadowDistance < FAR_CASCADE_REACH_M) return -1;
+  return settings.shadowCascades - 1;
+}
+
+/** The casters of `list` (its first `length`) that are not near-only: the farthest cascade's own list. */
+export function farCasters(list: readonly AbstractMesh[], length: number, nearOnly: ReadonlySet<AbstractMesh>): AbstractMesh[] {
+  const out: AbstractMesh[] = [];
+  for (let i = 0; i < length && i < list.length; i++) {
+    const mesh = list[i] as AbstractMesh;
+    if (!nearOnly.has(mesh)) out.push(mesh);
+  }
+  return out;
+}
+
+/**
  * The least of the sun's light a cast shadow keeps: the shadow generator's
  * darkness (0 a black shadow, 1 none) never falls under this. With the
  * weather's own darkness at 0 under a clear sky, a shadowed face had only the
@@ -288,7 +320,7 @@ export type Lighting = {
    * still runs for it too, redundantly but harmlessly, when the renderer
    * wires it up as a caster.
    */
-  addShadowMesh(mesh: AbstractMesh): void;
+  addShadowMesh(mesh: AbstractMesh, reach?: ShadowReach): void;
   /**
    * Takes a mesh back out of the shadow map. Needed because Babylon's
    * `AbstractMesh.dispose` does NOT remove the mesh from a shadow generator's
@@ -388,6 +420,9 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     settings.shadowMapSize > 0 && CascadedShadowGenerator.IsSupported
       ? new CascadedShadowGenerator(settings.shadowMapSize, sun, filter.filter === "pcss")
       : null;
+  /** The casters that reach every cascade but the farthest (`ShadowReach`), and that cascade's own list, remade when they change. */
+  const nearOnly = new Set<AbstractMesh>();
+  let farList: AbstractMesh[] | null = null;
   if (shadows !== null) {
     shadows.numCascades = settings.shadowCascades;
     // The far softening's prepass (post.ts) draws for the scene's camera
@@ -395,6 +430,16 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // own does.
     const shadowMap = shadows.getShadowMap();
     if (shadowMap !== null) shadowMap.noPrePassRenderer = true;
+    // The farthest cascade of a long reach draws the far casters alone
+    // (`farCascadeIndex`); Babylon asks for each cascade's list by its layer.
+    const farCascade = farCascadeIndex(settings);
+    if (shadowMap !== null && farCascade >= 0) {
+      shadowMap.getCustomRenderList = (layer, list, length) => {
+        if (layer !== farCascade || list === null) return null;
+        if (farList === null) farList = farCasters(list, length, nearOnly);
+        return farList;
+      };
+    }
     // Stabilisation is chosen deliberately over `autoCalcDepthBounds`, not merely
     // left at a default: the two fight, since stabilisation exists to stop
     // cascade bounds shimmering while `autoCalcDepthBounds` recomputes the depth
@@ -422,6 +467,9 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
       shadows.useContactHardeningShadow = true;
       shadows.filteringQuality = filter.quality;
       shadows.contactHardeningLightSizeUVRatio = filter.lightSizeUV;
+      // The filter's taps written out, no array (`softShadowInclude.ts`):
+      // the by-value Poisson table cost WebGPU the whole frame.
+      installSoftShadows();
     } else {
       // Already the constructor default; pinned explicitly so it reads as a
       // deliberate choice rather than an oversight among the settings above
@@ -625,12 +673,17 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
       sight = sightUnder(stare);
       image.exposure = exposure * sight;
     },
-    addShadowMesh(mesh) {
+    addShadowMesh(mesh, reach = "far") {
       mesh.receiveShadows = true;
       shadows?.addShadowCaster(mesh);
+      if (reach === "near") nearOnly.add(mesh);
+      else nearOnly.delete(mesh);
+      farList = null;
     },
     removeShadowMesh(mesh) {
       shadows?.removeShadowCaster(mesh);
+      nearOnly.delete(mesh);
+      farList = null;
     },
     dispose() {
       offTable();
