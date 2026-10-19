@@ -41,6 +41,7 @@ import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, capPose, summitShot, type SceneBase, type SceneContext } from "./cutscene.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { MAX_PLAYERS, PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
+import { blendedEye, type EyePose } from "./eyeBlend.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
 import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
@@ -1640,7 +1641,10 @@ export type EndSceneNow = {
 };
 
 /** This frame's view inputs that come from neither the world nor the clock. */
-export type FrameView = { dt: number; sprinting: boolean };
+/** `before` is the local player's pose as the frame's last tick began
+ * (`eyeBlend.ts`): the eye is drawn `alpha` of the way from it to the pose
+ * now. Absent or null, the eye is drawn where the tick left it. */
+export type FrameView = { dt: number; sprinting: boolean; before?: EyePose | null };
 
 /**
  * Fills `out` with a camera pose for the audio listener, in Babylon's world.
@@ -3040,6 +3044,8 @@ function buildRenderer(
 
   /** `retire` rather than `dispose`: the engine is kept. */
   let retiring = false;
+  /** The blended eye's scratch (`eyeBlend.ts`), filled every following frame. */
+  const eyeScratch: EyePose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
   const renderer: Renderer = {
     scene,
     engine,
@@ -3301,20 +3307,24 @@ function buildRenderer(
           },
           frame.dt,
         );
+        // The eye between the frame's last tick and the one before it
+        // (`eyeBlend.ts`): where the last tick left it would move a tick on
+        // some frames and two on others at any frame rate but the tick rate.
+        const eye = blendedEye(frame.before ?? null, local, alpha, eyeScratch);
         // Lateral bob rides the camera's right vector. yaw 0 faces +Z and
         // increases toward +X (`sim/movement.ts` wishDirection), so forward is
         // (sin, 0, cos) and right is (cos, 0, -sin).
-        const right = Math.cos(local.yaw);
-        const rightZ = -Math.sin(local.yaw);
+        const right = Math.cos(eye.yaw);
+        const rightZ = -Math.sin(eye.yaw);
         camera.position.set(
-          local.pos.x + offset.dx * right,
-          local.pos.y + PLAYER_EYE_OFFSET + offset.dy,
-          local.pos.z + offset.dx * rightZ,
+          eye.x + offset.dx * right,
+          eye.y + PLAYER_EYE_OFFSET + offset.dy,
+          eye.z + offset.dx * rightZ,
         );
         // Babylon UniversalCamera Euler order puts pitch on x and yaw on y,
         // and its default forward is +Z, which matches the sim convention.
         // Roll goes on z — the only thing that ever writes it.
-        camera.rotation.set(local.pitch, local.yaw, offset.roll);
+        camera.rotation.set(eye.pitch, eye.yaw, offset.roll);
         // The summit scene: from the flip's frame the camera is the scene's,
         // from the eye the player had then, for the reveal's seconds.
         sceneFov = null;

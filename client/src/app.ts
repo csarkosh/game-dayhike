@@ -7,6 +7,7 @@ import { FALLBACK_NOTICE_MS } from "./game/engineChoice.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
+import { capturedEye, type EyePose } from "./game/eyeBlend.js";
 import { createHud } from "./game/hud.js";
 import { LOADING_LINE } from "./game/frameProbe.js";
 import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
@@ -672,6 +673,9 @@ function buildGame(
   const input = createInputSampler(canvas, { touch: touchModel, touchMode: touchStart, startYaw: start?.yaw ?? 0 });
   made(() => input.dispose());
   const accumulator = new FixedStepAccumulator();
+  /** The local player's pose as the frame's last tick began, for the eye's blend (`eyeBlend.ts`); null until a tick has run. */
+  let eyeBefore: EyePose | null = null;
+  const eyeBeforeScratch: EyePose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
   const container = canvas.parentElement ?? document.body;
   // The HUD's Pause button, for a keyboard, pauses as the key does: the controls let go.
   const hud = createHud(container, { onPause: () => input.disengage() });
@@ -1974,7 +1978,9 @@ function buildGame(
       let cmd: InputCommand | null = null;
       escapeStep?.();
       for (let i = 0; i < ticks; i++) {
-        cmd = ranToCar(stilled(input.sample(++seq)), host.world.state.players.get(host.localEntityId));
+        const me = host.world.state.players.get(host.localEntityId);
+        cmd = ranToCar(stilled(input.sample(++seq)), me);
+        if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
         host.tick(cmd);
       }
       stepFreecamView(dt);
@@ -1982,7 +1988,7 @@ function buildGame(
       const state: WorldState = host.world.state;
       const self = state.players.get(host.localEntityId);
       syncAtmosphere(host.world, state, host.localEntityId, dt);
-      renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
+      renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
       playWildlifeAudio();
       syncWind();
       syncDrip();
@@ -2127,7 +2133,9 @@ function buildGame(
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
-        cmd = ranToCar(stilled(input.sample(++seq)), client.world.state.players.get(client.localEntityId));
+        const me = client.world.state.players.get(client.localEntityId);
+        cmd = ranToCar(stilled(input.sample(++seq)), me);
+        if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
         client.tick(cmd);
       }
       stepFreecamView(dt);
@@ -2135,7 +2143,7 @@ function buildGame(
       const state = client.renderState(performance.now());
       const self = state.players.get(client.localEntityId);
       syncAtmosphere(client.world, state, client.localEntityId, dt);
-      renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
+      renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
       playWildlifeAudio();
       syncWind();
       syncDrip();
