@@ -232,17 +232,40 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
         { get: (_target, prop: string) => (...args: unknown[]) => calls.push({ fn: prop, args }) },
       ) as unknown as Effect;
       passNamed(camera, "farSoft").onApplyObservable.notifyObservers(fakeEffect);
-      expect(calls).toEqual([
+      expect(calls.slice(0, 3)).toEqual([
         { fn: "setTexture", args: ["depthSampler", depthTexture] },
         { fn: "setFloat2", args: ["texel", 1 / 1920, 1 / 1080] },
         { fn: "setFloat3", args: ["soft", FAR_SOFT_BAND[0], FAR_SOFT_BAND[1], FAR_SOFT_RADIUS] },
       ]);
+      // The ground cloud's ray (2026-10-18): the camera's forward, its right
+      // and up at the half view's tangents, and the eye; with no cloud handed
+      // in, no steps and the chain's black texel for its map.
+      const named = (fn: string, name: string) => calls.find((c) => c.fn === fn && c.args[0] === name)?.args.slice(1);
+      expect(post.marchesCloud).toBe(true);
+      const tanY = Math.tan(camera.fov / 2);
+      const forward = named("setFloat3", "farForward") as number[];
+      expect(forward[2]).toBeCloseTo(1, 6);
+      const up = named("setFloat3", "farUp") as number[];
+      expect(up[1]).toBeCloseTo(tanY, 6);
+      const right = named("setFloat3", "farRight") as number[];
+      expect(right[0]).toBeCloseTo(tanY * (1920 / 1080), 6);
+      expect((named("setFloat3", "farEye") as number[]).map((v) => v + 0)).toEqual([0, 2, 0]);
+      expect(named("setFloat", "atmCloudSteps")).toEqual([0]);
+      expect(named("setTexture", "atmCloudMap")).toHaveLength(1);
+      // Handed the atmosphere's binder, it binds that instead.
+      const bound: string[] = [];
+      post.setCloud(() => bound.push("cloud"));
+      calls.length = 0;
+      passNamed(camera, "farSoft").onApplyObservable.notifyObservers(fakeEffect);
+      expect(bound).toEqual(["cloud"]);
+      expect(named("setFloat", "atmCloudSteps")).toBeUndefined();
       expect(FAR_SOFT_BAND).toEqual([80, 450]);
       expect(FAR_SOFT_RADIUS).toBe(5);
       // The reads: every sample at an explicit level, none implicit, so the
       // early leave keeps WGSL's uniformity rule; the clear read as the sky.
       expect(farSoftFx).not.toMatch(/texture2D\(|\btexture\(/);
-      expect(farSoftFx.match(/textureLod\(/g)?.length).toBe(3);
+      // The softening's three, and the cloud march's three (the ground and the two noises), every one explicit.
+      expect(farSoftFx.match(/textureLod\(/g)?.length).toBe(6);
       expect(farSoftFx).toContain("return d > 0.0 ? d : FAR_SOFT_SKY;");
       expect(farSoftFx).toContain("uniform sampler2D depthSampler;");
       post.dispose();

@@ -2179,6 +2179,13 @@ function buildRenderer(
   };
   const clock = options.clock ?? (() => performance.now());
   const post = createPost(scene, camera, postFeatures, { now: clock });
+  // The ground cloud is marched once a pixel by the far softening's pass
+  // where the chain has one (it reads the scene's depth), and the materials
+  // then draw none; elsewhere they draw it as before (atmosphere.ts).
+  if (post.marchesCloud) {
+    atmosphere.setCloudInPost(true);
+    post.setCloud((effect) => atmosphere.bindCloud(effect));
+  }
   partOf(post);
   let unsettle = 1;
   /** The rain on the lens, smoothed (lensParams.ts). */

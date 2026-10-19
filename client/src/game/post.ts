@@ -10,7 +10,7 @@ import { FxaaPostProcess } from "@babylonjs/core/PostProcesses/fxaaPostProcess.j
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
-import { Vector2 } from "@babylonjs/core/Maths/math.vector.js";
+import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color4 } from "@babylonjs/core/Maths/math.color.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
@@ -47,6 +47,12 @@ export type Post = {
   palette(): PaintPalette;
   /** The haunt's mask to read the shades from, and whether any shade is in it this frame (shadeSilhouette.ts). */
   setShades(mask: BaseTexture | null, any: boolean): void;
+  /** Whether the chain marches the ground cloud (the far softening's pass,
+   * which reads the scene's depth): where it does, the renderer hands it the
+   * atmosphere's cloud (`setCloud`) and the materials draw none. */
+  readonly marchesCloud: boolean;
+  /** What binds the cloud's uniforms and map to the far softening's effect each frame (`Atmosphere.bindCloud`). */
+  setCloud(bind: ((effect: Effect) => void) | null): void;
   dispose(): void;
 };
 
@@ -77,6 +83,13 @@ export function fxSupportedBy(engine: AbstractEngine): boolean {
   const caps = engine.getCaps();
   return Boolean(caps.textureHalfFloatRender || caps.textureFloatRender);
 }
+
+/** The far softening's uniforms for the ground cloud it marches (farSoft.fragment.fx). */
+export const FAR_CLOUD_UNIFORMS = [
+  "farEye", "farForward", "farRight", "farUp", "atmSunDir", "atmSunColour",
+  "atmCloudDensity", "atmCloudSteps", "atmCloudRange", "atmCloudFalloff", "atmCloudSeat", "atmCloudGroundRange",
+  "atmCloudNear", "atmCloudTrail", "atmCloudNoiseScale", "atmCloudWind", "atmCloudGlow", "atmCloudColour", "atmCloudGroundRect",
+] as const;
 
 /**
  * The finish pass's fragment shader for an engine. On WebGL2, the file itself,
@@ -188,6 +201,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let lens: PostProcess | null = null;
   /** The far field's softening (2026-10-16) and the prepass whose depth it reads. */
   let farSoft: PostProcess | null = null;
+  /** What binds the ground cloud to the far softening's pass (`setCloud`), and a scratch axis. */
+  let cloudBinder: ((effect: Effect) => void) | null = null;
+  const farAxis = new Vector3();
   let prePass: PrePassRenderer | null = null;
   /** The paint pass (2026-10-17): the frame smeared into strokes, after the far softening and before the grade. */
   let paint: PostProcess | null = null;
@@ -272,7 +288,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       // path; the instance's accessor goes with the prepass at dispose.
       image.applyByPostProcess = true;
       Object.defineProperty(image, "applyByPostProcess", { configurable: true, get: () => true, set: () => undefined });
-      farSoft = new PostProcess("farSoft", "farSoft", ["texel", "soft"], ["depthSampler"], 1.0, camera,
+      farSoft = new PostProcess("farSoft", "farSoft", ["texel", "soft", ...FAR_CLOUD_UNIFORMS], ["depthSampler", "atmCloudMap"], 1.0, camera,
         Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
       // The prepass draws for the passes that ask it for a target: it reads
       // each pass's configuration as it updates, and draws the depth once
@@ -303,6 +319,25 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
         effect.setTexture("depthSampler", target.textures[bound.getIndex(Constants.PREPASS_DEPTH_TEXTURE_TYPE)] ?? null);
         effect.setFloat2("texel", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
         effect.setFloat3("soft", FAR_SOFT_BAND[0], FAR_SOFT_BAND[1], FAR_SOFT_RADIUS);
+        // The ground cloud's march (farSoft.fragment.fx): the ray through each
+        // pixel is the camera's forward plus the pixel's place across the
+        // view, the right and up axes each at the half view's tangent. With
+        // nothing bound it marches no steps.
+        const tanY = Math.tan(camera.fov / 2);
+        const tanX = tanY * engine.getAspectRatio(camera);
+        camera.getDirectionToRef(Vector3.Forward(), farAxis);
+        effect.setFloat3("farForward", farAxis.x, farAxis.y, farAxis.z);
+        camera.getDirectionToRef(Vector3.Right(), farAxis);
+        effect.setFloat3("farRight", farAxis.x * tanX, farAxis.y * tanX, farAxis.z * tanX);
+        camera.getDirectionToRef(Vector3.Up(), farAxis);
+        effect.setFloat3("farUp", farAxis.x * tanY, farAxis.y * tanY, farAxis.z * tanY);
+        const eye = camera.globalPosition;
+        effect.setFloat3("farEye", eye.x, eye.y, eye.z);
+        if (cloudBinder !== null) cloudBinder(effect);
+        else {
+          effect.setFloat("atmCloudSteps", 0);
+          if (black !== null) effect.setTexture("atmCloudMap", black);
+        }
       };
     }
 
@@ -494,6 +529,12 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
 
   return {
     features,
+    get marchesCloud() {
+      return farSoft !== null;
+    },
+    setCloud(bind) {
+      cloudBinder = bind;
+    },
     setShades(mask, any) {
       shadeMask = mask;
       shadeAny = any;
