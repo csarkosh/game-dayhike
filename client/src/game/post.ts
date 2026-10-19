@@ -5,7 +5,6 @@ import { Effect } from "@babylonjs/core/Materials/effect.js";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess.js";
 import { PassPostProcess } from "@babylonjs/core/PostProcesses/passPostProcess.js";
 import { BlurPostProcess } from "@babylonjs/core/PostProcesses/blurPostProcess.js";
-import { ChromaticAberrationPostProcess } from "@babylonjs/core/PostProcesses/chromaticAberrationPostProcess.js";
 import { FxaaPostProcess } from "@babylonjs/core/PostProcesses/fxaaPostProcess.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
@@ -20,14 +19,14 @@ import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
 import { mixPalette, PAINT_FADE_SECONDS, PAINT_OILS, type PaintPalette } from "./gradeParams.js";
 import { CHASE_LIFT, CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, CHASE_TINT, gradeRecordUnder, STARE_VIGNETTE, type GradeRecord } from "./gradeParams.js";
 import type { StareLens } from "./stareLens.js";
-import { finishUnder, MSAA_SAMPLES, PAINT_STRENGTH, paintRadiusFor, type PostFeatures } from "./postParams.js";
+import { MSAA_SAMPLES, PAINT_SCALE, PAINT_STRENGTH, paintTargetSize, paintTexelRadius, type PostFeatures } from "./postParams.js";
 import { LENS, lensDropletMap } from "./lensParams.js";
 import halationExtractFragment from "./shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "./shaders/grade.fragment.fx?raw";
 import lensFragment from "./shaders/lens.fragment.fx?raw";
-import finishFragment from "./shaders/finish.fragment.fx?raw";
 import farSoftFragment from "./shaders/farSoft.fragment.fx?raw";
 import paintFragment from "./shaders/paint.fragment.fx?raw";
+import paintComposeFragment from "./shaders/paintCompose.fragment.fx?raw";
 // Registers `scene.enablePrePassRenderer`, the far softening's depth.
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import type { PrePassRenderer } from "@babylonjs/core/Rendering/prePassRenderer.js";
@@ -91,21 +90,6 @@ export const FAR_CLOUD_UNIFORMS = [
   "atmCloudNear", "atmCloudTrail", "atmCloudNoiseScale", "atmCloudWind", "atmCloudGlow", "atmCloudColour", "atmCloudGroundRect",
 ] as const;
 
-/**
- * The finish pass's fragment shader for an engine. On WebGL2, the file itself,
- * byte for byte. On WebGPU, the file with Babylon's own per-shader switch in
- * front of it, `#define DISABLE_UNIFORMITY_ANALYSIS`, which the WebGPU engine
- * reads from a stage's code and hands the GLSL-to-WGSL translation: the pass
- * reads the scene a second time inside a branch on `vUV` (the peripheral
- * overlap), and WGSL refuses an implicit-derivative read in non-uniform
- * control flow. It is safe here because the scene target has one mip level,
- * so the level of detail the read gives up cannot select another. Only this
- * shader: every other one keeps the analysis, and its faults with it.
- */
-export function finishFragmentFor(webgpu: boolean): string {
-  return webgpu ? `#define DISABLE_UNIFORMITY_ANALYSIS\n${finishFragment}` : finishFragment;
-}
-
 // The ratio shared by every pass in the halation sub-chain — extract, blur X,
 // blur Y, and (on high) grade — so a pass's own ratio and the previous
 // pass's ratio agree and the whole sub-chain reads and writes quarter size
@@ -116,11 +100,10 @@ const HALATION_KERNEL = 32;
 /**
  * The post chain: the far softening first (where the engine draws to several
  * targets at once; below), then on high a full-resolution scene pass, then
- * halation extract and blur, then the grade pass, chromatic aberration, FXAA,
+ * halation extract and blur, then the grade pass, FXAA,
  * then the finish pass; on medium the scene pass and halation are skipped.
  * Passes attach in creation order, which is what fixes the order —
- * aberration and FXAA must run before grain and dither, and dither must be
- * last.
+ * FXAA must run before the dither, and the dither must be last.
  *
  * The far softening (2026-10-16, `farSoft.fragment.fx`) blurs the frame past
  * `FAR_SOFT_BAND` metres of camera depth by a radius rising to
@@ -155,15 +138,14 @@ const HALATION_KERNEL = 32;
  * instead of writing full size and taking a step a quarter as long vertically
  * as horizontally — the glow was 76 by 22 px at half its peak before this,
  * 74 by 74 px after (see `docs/rendering/2026-09-27-halation-blur-size.md`).
- * `grade`'s own OUTPUT is unaffected: it draws into `chromaticAberration`'s
+ * `grade`'s own OUTPUT is unaffected: it draws into `fxaa`'s
  * input, whose ratio stays 1.0, so `grade` still writes full size regardless
  * of the ratio it was built with. On medium there is no halation chain ahead
  * of it, so `grade` is the FIRST pass and its ratio sizes the scene render
  * itself (the same hazard the scene pass exists to avoid on high) — there it
  * stays 1.0.
  *
- * Aberration and FXAA are constructed directly as `ChromaticAberrationPostProcess`
- * and `FxaaPostProcess` rather than through `DefaultRenderingPipeline`: the
+ * FXAA is constructed directly as `FxaaPostProcess` rather than through `DefaultRenderingPipeline`: the
  * pipeline's `imageProcessingEnabled = false` writes
  * `scene.imageProcessingConfiguration.isEnabled = false`, which is scene-wide
  * and turns off `IMAGEPROCESSINGPOSTPROCESS` in every PBR material — so
@@ -191,12 +173,10 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   const engine = scene.getEngine();
   const image = scene.imageProcessingConfiguration;
   let grade: PostProcess | null = null;
-  let finish: PostProcess | null = null;
   let scenePass: PassPostProcess | null = null;
   let extract: PostProcess | null = null;
   let blurX: BlurPostProcess | null = null;
   let blurY: BlurPostProcess | null = null;
-  let aberration: ChromaticAberrationPostProcess | null = null;
   let fxaa: FxaaPostProcess | null = null;
   let lens: PostProcess | null = null;
   /** The far field's softening (2026-10-16) and the prepass whose depth it reads. */
@@ -207,6 +187,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let prePass: PrePassRenderer | null = null;
   /** The paint pass (2026-10-17): the frame smeared into strokes, after the far softening and before the grade. */
   let paint: PostProcess | null = null;
+  /** The paint's compose (2026-10-18): the half-size strokes back over the full frame, by the frame's own edges. */
+  let paintCompose: PostProcess | null = null;
   let droplets: RawTexture | null = null;
   let black: RawTexture | null = null;
   // The lens's gate: its strength this frame, the slot it holds in the
@@ -215,7 +197,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let lensSlot = -1;
   let lensAttached = false;
   let lensIdleSince: number | null = null;
-  /** The end's softening (ending.ts): two blur passes ahead of the finish, attached while there is any, their kernel by it. */
+  /** The end's softening (ending.ts): two blur passes after the chain, attached while there is any, their kernel by it. */
   let endBlurX: BlurPostProcess | null = null;
   let endBlurY: BlurPostProcess | null = null;
   let endBlurAttached = false;
@@ -231,7 +213,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       return;
     }
     if (!endBlurAttached) {
-      // Back into their own slots, ahead of the finish, as the lens returns to its.
+      // Back into their own slots, after FXAA, as the lens returns to its.
       camera.attachPostProcess(endBlurX, endBlurSlot);
       camera.attachPostProcess(endBlurY, endBlurSlot + 1);
       endBlurAttached = true;
@@ -256,7 +238,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   /** The haunt's mask (shadeSilhouette.ts), once handed in, and whether any shade is in it this frame. */
   let shadeMask: BaseTexture | null = null;
   let shadeAny = false;
-  let finishRecord = finishUnder(WEATHER_PRESETS.clear, 1, 0);
+  /** Seconds since the chain was made, which the grade's dither moves by. */
+  let ditherSeconds = 0;
   const start = now();
 
   if (features.pipeline) {
@@ -265,10 +248,10 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       : Constants.TEXTURETYPE_FLOAT;
     Effect.ShadersStore["halationExtractFragmentShader"] = halationExtractFragment;
     Effect.ShadersStore["gradeFragmentShader"] = gradeFragment;
-    Effect.ShadersStore["finishFragmentShader"] = finishFragmentFor(engine.isWebGPU);
     Effect.ShadersStore["lensFragmentShader"] = lensFragment;
     Effect.ShadersStore["farSoftFragmentShader"] = farSoftFragment;
     Effect.ShadersStore["paintFragmentShader"] = paintFragment;
+    Effect.ShadersStore["paintComposeFragmentShader"] = paintComposeFragment;
 
     // The far softening, first in the chain, on the scene as rendered. Its
     // depth is the scene's own: Babylon's prepass draws the camera-space
@@ -346,13 +329,27 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       // scene's linear colour (after the far softening, which reads the depth
       // of the scene as rendered), ahead of the halation's extract and the
       // grade, so the halo and the colour identity are taken from the painted
-      // frame. Ratio 1: the strokes are the picture's.
+      // frame. It paints at half the frame's pixels on each axis
+      // (`PAINT_SCALE`): the compose after it takes the half-size target,
+      // which the paint therefore renders into, and writes the full frame,
+      // each pixel from the painted texels round it whose scene is like its
+      // own, mixed with the scene by the paint's strength.
       const strokes = features.paint;
-      paint = new PostProcess("paint", "paint", ["texel", "radius", "strength"], [], 1.0, camera,
+      paint = new PostProcess("paint", "paint", ["texel", "radius"], [], 1.0, camera,
         Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
       paint.onApply = (effect) => {
-        effect.setFloat2("texel", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
-        effect.setFloat("radius", paintRadiusFor(strokes, engine.getRenderHeight()));
+        const target = paintTargetSize(engine.getRenderWidth(), engine.getRenderHeight());
+        effect.setFloat2("texel", 1 / target.width, 1 / target.height);
+        effect.setFloat("radius", paintTexelRadius(strokes, engine.getRenderHeight()));
+      };
+      paintCompose = new PostProcess("paintCompose", "paintCompose", ["halfTexel", "strength"], ["sceneSampler"], PAINT_SCALE, camera,
+        Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
+      const boundPaint = paint;
+      paintCompose.onApply = (effect) => {
+        // The paint's own input: the frame as it came to the paint, full size.
+        effect.setTextureFromPostProcess("sceneSampler", boundPaint);
+        const target = paintTargetSize(engine.getRenderWidth(), engine.getRenderHeight());
+        effect.setFloat2("halfTexel", 1 / target.width, 1 / target.height);
         effect.setFloat("strength", PAINT_STRENGTH);
       };
     }
@@ -386,7 +383,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     grade = new PostProcess("grade", "grade",
       ["exposure", "whitePoint", "purkinje", "purkinjeThreshold", "purkinjeStrength", "shadowTint", "shadowAmount",
         "midtoneTint", "midtoneAmount", "highlightTint", "highlightAmount", "saturation", "lift", "vignetteWeight",
-        "vignetteColour", "halationStrength", "stareShade", "chaseTint", "chaseLift", "shadeShape", "shadeMonster",
+        "vignetteColour", "halationStrength", "stareShade", "chaseTint", "chaseLift", "shadeShape", "shadeMonster", "texelSize", "time",
         "paintShadowTint", "paintShadowAmount", "paintMidtoneTint", "paintMidtoneAmount", "paintHighlightTint", "paintHighlightAmount",
         "paintSaturation", "paintCurve", "paintLift"],
       ["halationSampler", "shadeSampler"], gradeRatio, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
@@ -395,6 +392,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     const boundBlack = black;
     grade.onApply = (effect) => {
       const r = record;
+      // The dither (2026-10-18, the finish pass's before, which the grade's end now draws).
+      effect.setFloat2("texelSize", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
+      effect.setFloat("time", ditherSeconds);
       // With halation the scene is the scene pass's INPUT (setTextureFromPostProcess
       // binds a pass's input texture, and the scene pass's own input is the
       // camera's actual render since it is first in the chain); without
@@ -436,18 +436,6 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       else if (boundBlack !== null) effect.setTexture("shadeSampler", boundBlack);
       effect.setFloat4("shadeShape", SHADE_BLUR, SHADE_DARK, engine.getRenderWidth() / engine.getRenderHeight(), shadeMask !== null && shadeAny ? 1 : 0);
       effect.setFloat("shadeMonster", SHADE_MONSTER_DARK);
-    };
-
-    aberration = new ChromaticAberrationPostProcess("chromaticAberration", engine.getRenderWidth(),
-      engine.getRenderHeight(), 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
-    // Babylon defaults radialIntensity to 0 — a flat screen-uniform shift.
-    aberration.radialIntensity = 2;
-    const boundAberration = aberration;
-    boundAberration.onApply = () => {
-      // screenWidth/Height are constructor-time snapshots; keep them current
-      // so a resize does not leave the effect reading a stale render size.
-      boundAberration.screenWidth = engine.getRenderWidth();
-      boundAberration.screenHeight = engine.getRenderHeight();
     };
 
     fxaa = new FxaaPostProcess("fxaa", 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
@@ -498,17 +486,6 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       };
     }
 
-    finish = new PostProcess("finish", "finish", ["texelSize", "overlapGain", "overlapPhase", "grainGain", "time"], [],
-      1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
-    finish.onApply = (effect) => {
-      const f = finishRecord;
-      effect.setFloat2("texelSize", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
-      effect.setFloat("overlapGain", f.overlapGain);
-      effect.setFloat("overlapPhase", f.overlapPhase);
-      effect.setFloat("grainGain", f.grainGain);
-      effect.setFloat("time", f.time);
-    };
-
     // The first pass owns the scene's render target, or the prepass does
     // where there is one, its targets the first pass's input. Babylon's
     // setter clamps to the engine's cap, but an engine may report no cap at
@@ -552,7 +529,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       setEndBlur(blur);
       const seconds = (now() - start) / 1000;
       record = gradeRecordUnder(weather, hour, night, unsettle, seconds, stare, chase, paletteNow());
-      finishRecord = finishUnder(weather, unsettle, seconds);
+      ditherSeconds = seconds;
       lensStrength = lensTarget;
       if (lens !== null) {
         if (lensTarget >= LENS.floor) {
@@ -569,10 +546,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
           }
         }
       }
-      if (aberration !== null) {
-        aberration.aberrationAmount = record.aberrationAmount;
-        return;
-      }
+      // The post path: the grade's own uniforms are read as it applies.
+      if (grade !== null) return;
       // Material path: the same intent through Babylon's own operators, the
       // exposure aside (see the doc comment above).
       // The stare here is Babylon's own vignette, heavier and moved off the
@@ -599,6 +574,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     dispose() {
       farSoft?.dispose();
       farSoft = null;
+      paintCompose?.dispose();
       paint?.dispose();
       paint = null;
       if (prePass !== null) {
@@ -608,11 +584,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       }
       endBlurX?.dispose();
       endBlurY?.dispose();
-      finish?.dispose();
       lens?.dispose();
       droplets?.dispose();
       fxaa?.dispose();
-      aberration?.dispose();
       grade?.dispose();
       blurY?.dispose();
       blurX?.dispose();

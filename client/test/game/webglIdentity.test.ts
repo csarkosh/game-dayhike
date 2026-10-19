@@ -4,7 +4,6 @@ import { pluginInterfaces, pluginTexts } from "./helpers/pluginText.js";
 import groundHexHead from "../../src/game/shaders/groundHex.fragment.fx?raw";
 import groundHexFetch from "../../src/game/shaders/groundHexFetch.fragment.fx?raw";
 import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
-import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
 import {
   terrainFarCoverDefs, TERRAIN_FRAGMENT_FAR_COVER, TERRAIN_MACRO_OCTAVES,
   TERRAIN_FRAGMENT_FAR_LIGHT, TERRAIN_SPEC_INJECTION_POINT, TERRAIN_SPEC_INJECTION_CODE, TERRAIN_SUN_INJECTION_CODE,
@@ -78,8 +77,7 @@ const PINS: Record<string, string> = {
   // the material's own, the moss by the role and the contact band.
   "deadwood.fragment": "012e902e87f6870e8c9d8a7b0ec99102277d6faec927d9db3aa548cd934681cf",
   "deadwood.vertex": "ed84af0f7f03c0c16fcb52292e468a318e043231ac2162ec80b5fcc9ad5d51fe",
-  "post.finish": "4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5",
-  "post.grade": "ef8f76d76294375ff885eba472a8b2ec32dfb3923f5fec2b858add66983d4dc9",
+  "post.grade": "db0f4203e05446ed0f2cc5d1f837bbf9e0909c88891ff7688807e2c6a0bb0f97",
   "post.halationExtract": "1ee9b9ed30d66fd1e10e4a327104c3e9016a91a2b4ed6aa2cec64cb09df5d3fd",
   "skin.fragment": "111388dbf745542db596dae9ac3c41d726c7c0c61aeb4c8e87cc16e9e8c07fdf",
   // Re-pinned for the WGSL-reserved local `macro` renamed `macroRgb`. The
@@ -248,6 +246,5 @@ describe("WebGL2's shader text", () => {
     expect(sha(groundHexHead + groundHexFetch + groundHexNoise)).toBe(
       "21a6e1061ff6d1a66c384400f5eae5538cec24b17e7f551c647aa825c710f9bb",
     );
-    expect(sha(finishFx)).toBe("4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5");
   });
 });

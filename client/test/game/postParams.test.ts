@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  postFeaturesFor, finishUnder, OVERLAP_MAX, GRAIN_BASE, GRAIN_DREAD_GAIN, OVERLAP_BREATH_HZ,
+  postFeaturesFor,
+  PAINT_JOINT_SHARPNESS, PAINT_RADIUS_HIGH, PAINT_RADIUS_MEDIUM, PAINT_REACH, PAINT_ROWS, PAINT_SCALE, paintRadiusFor, paintTargetSize, paintTexelRadius,
 } from "../../src/game/postParams.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
 
 describe("postFeaturesFor", () => {
   it("high gets the pipeline, halation and the lens, medium the pipeline and the lens, low nothing", () => {
@@ -20,25 +20,33 @@ describe("postFeaturesFor", () => {
   });
 });
 
-describe("finishUnder", () => {
-  it("at clear the overlap is off and grain sits at its base", () => {
-    const f = finishUnder(WEATHER_PRESETS.clear, 1, 3);
-    expect(f.overlapGain).toBe(0);
-    expect(f.grainGain).toBe(GRAIN_BASE);
-    expect(f.time).toBe(3);
+describe("paintRadiusFor", () => {
+  it("scales the tier's stroke with the frame's rows, never under 2 nor past the reach", () => {
+    expect(PAINT_RADIUS_HIGH).toBe(3);
+    expect(PAINT_RADIUS_MEDIUM).toBe(2);
+    expect(PAINT_ROWS).toBe(675);
+    expect(PAINT_REACH).toBe(6);
+    expect(paintRadiusFor(0, 675)).toBe(0);
+    expect(paintRadiusFor(3, 675)).toBe(3);
+    expect(paintRadiusFor(3, 1350)).toBe(6);
+    expect(paintRadiusFor(3, 4000)).toBe(6);
+    expect(paintRadiusFor(2, 338)).toBe(2);
+    // A laptop's 982 rows: 4 px on high, 3 on medium.
+    expect(paintRadiusFor(3, 982)).toBe(4);
+    expect(paintRadiusFor(2, 982)).toBe(3);
   });
 
-  it("eerie reaches the full overlap and grain; unsettle scales both back to base", () => {
-    const on = finishUnder(WEATHER_PRESETS.eerie, 1, 0);
-    expect(on.overlapGain).toBeCloseTo(OVERLAP_MAX, 10);
-    expect(on.grainGain).toBeCloseTo(GRAIN_BASE * (1 + GRAIN_DREAD_GAIN), 10);
-    const off = finishUnder(WEATHER_PRESETS.eerie, 0, 0);
-    expect(off.overlapGain).toBe(0);
-    expect(off.grainGain).toBe(GRAIN_BASE);
-  });
-
-  it("the overlap breathes at OVERLAP_BREATH_HZ", () => {
-    const period = 1 / OVERLAP_BREATH_HZ;
-    expect(finishUnder(WEATHER_PRESETS.eerie, 1, 0).overlapPhase).toBeCloseTo(finishUnder(WEATHER_PRESETS.eerie, 1, period).overlapPhase, 6);
+  it("paints at half the frame's pixels, the stroke the same share of the picture in the half-size frame's pixels", () => {
+    expect(PAINT_SCALE).toBe(0.5);
+    expect(PAINT_JOINT_SHARPNESS).toBe(60);
+    expect(paintTexelRadius(2, 982)).toBe(1.5);
+    expect(paintTexelRadius(3, 982)).toBe(2);
+    expect(paintTexelRadius(2, 675)).toBe(1);
+    expect(paintTexelRadius(0, 675)).toBe(0);
+    // Babylon's own truncation of the frame's size times the ratio.
+    expect(paintTargetSize(1512, 982)).toEqual({ width: 756, height: 491 });
+    expect(paintTargetSize(1201, 675)).toEqual({ width: 600, height: 337 });
+    expect(paintTargetSize(1, 1)).toEqual({ width: 1, height: 1 });
   });
 });
+

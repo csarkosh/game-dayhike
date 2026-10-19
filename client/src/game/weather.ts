@@ -176,7 +176,7 @@ export function dreadWorldUnder(w: WeatherParams): number {
   return stepped(w.dread);
 }
 
-/** The continuous dread the lens-side terms read: grain, aberration, vignette, halation, overlap. */
+/** The continuous dread the lens-side terms read: the vignette and the halation. */
 export function dreadLensUnder(w: WeatherParams): number {
   return clamp01(w.dread);
 }

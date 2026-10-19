@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import gradeFragment from "../../src/game/shaders/grade.fragment.fx?raw";
-import finishFragment from "../../src/game/shaders/finish.fragment.fx?raw";
 import {
   WEATHER_PRESETS, fogDensityUnder, saturationUnder, ambientCollapseUnder,
   FOG_DREAD_GAIN, FOG_MIST_GAIN, AMBIENT_COLLAPSE, DREAD_SATURATION_DROP, DREAD_FOG_PULL,
@@ -8,9 +7,8 @@ import {
 import { fogDensityFor } from "../../src/game/sky.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import {
-  gradeRecordUnder, LIFT_DREAD, VIGNETTE_PULSE, VIGNETTE_PULSE_PERIOD, PURKINJE_MAX, ABERRATION_DREAD_GAIN,
+  gradeRecordUnder, LIFT_DREAD, VIGNETTE_PULSE, VIGNETTE_PULSE_PERIOD, PURKINJE_MAX,
 } from "../../src/game/gradeParams.js";
-import { finishUnder, OVERLAP_MAX, OVERLAP_INNER, OVERLAP_ECHO, GRAIN_DREAD_GAIN } from "../../src/game/postParams.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
 const CLEAR = WEATHER_PRESETS.clear;
@@ -18,10 +16,6 @@ const EERIE = WEATHER_PRESETS.eerie;
 const DREAD_ONLY = { ...CLEAR, dread: 1 };
 /** The escalation's end, 20:00, is full night: the sun is 29 degrees down. */
 const NIGHT = 1;
-
-function glslFloat(n: number): string {
-  return Number.isInteger(n) ? `${n}.0` : `${n}`;
-}
 
 describe("darker and swallowed", () => {
   it("dread thickens the far fog on top of mist, and clear is exact", () => {
@@ -75,14 +69,11 @@ describe("sicker, not just darker", () => {
 });
 
 describe("heavier lens", () => {
-  it("full dread is unmistakable and unsettle 0 still silences it", () => {
-    expect(OVERLAP_MAX).toBeGreaterThanOrEqual(0.8);
-    expect(OVERLAP_INNER).toBeLessThanOrEqual(0.45);
-    expect(GRAIN_DREAD_GAIN).toBeGreaterThanOrEqual(4);
-    expect(ABERRATION_DREAD_GAIN).toBeGreaterThanOrEqual(3);
-    expect(finishUnder(EERIE, 0, 0).overlapGain).toBe(0);
-    expect(finishFragment).toContain(`const float OVERLAP_ECHO = ${glslFloat(OVERLAP_ECHO)};`);
-    expect(finishFragment).toContain(`const float OVERLAP_INNER = ${glslFloat(OVERLAP_INNER)};`);
+  it("the dither is the grade's last lines, and the finish pass, the overlap, the grain and the aberration went (2026-10-18)", () => {
+    expect(gradeFragment).not.toContain("overlapGain");
+    expect(gradeFragment).not.toContain("grainGain");
+    expect(gradeFragment).toContain("const float DITHER_LSB = 0.00392156862745098;");
+    expect(gradeFragment).toContain("shown += (d1 + d2 - 1.0) * DITHER_LSB;");
   });
 
   it("the vignette breathes under dread and holds still at clear", () => {

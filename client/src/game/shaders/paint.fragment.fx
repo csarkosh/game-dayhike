@@ -6,8 +6,11 @@
 // flat each sector is (the flattest weigh most), so an edge is kept where
 // the sectors on either side of it disagree and the texture inside a
 // region is flattened into a stroke, which is what a painting does with
-// detail: fine grain goes, edges stay. The radius is the stroke's size in
-// pixels of this frame; a strength of 0 leaves the frame as it was.
+// detail: fine grain goes, edges stay. It paints at half the frame's pixels
+// on each axis (2026-10-18): the radius and the texel are the half-size
+// frame's, each read of the frame a 2 by 2 average of it, and the compose
+// after it (paintCompose.fragment.fx) brings the strokes back to full and
+// mixes them with the scene.
 //
 // After Kyprianidis, Kang and Doellner, "Image and Video Abstraction by
 // Anisotropic Kuwahara Filtering" (2009), without the anisotropy: the
@@ -30,7 +33,6 @@ varying vec2 vUV;
 uniform sampler2D textureSampler;
 uniform vec2 texel;
 uniform float radius;
-uniform float strength;
 
 const int PAINT_REACH = 6;
 const float PAINT_SECTOR_OVERLAP = 0.5;
@@ -84,7 +86,7 @@ void paintSector(vec3 own, vec3 mean, vec3 meanLinear, vec3 square, float weight
 void main(void) {
   vec3 ownLinear = clamp(textureLod(textureSampler, vUV, 0.0).rgb, vec3(0.0), vec3(PAINT_CAP));
   vec3 own = paintCompress(ownLinear);
-  float r = clamp(radius, 1.0, float(PAINT_REACH));
+  float r = clamp(radius, 0.5, float(PAINT_REACH));
   float zeta = 2.0 / r;
   int reach = int(ceil(r));
   vec3 m0 = vec3(0.0), m1 = vec3(0.0), m2 = vec3(0.0), m3 = vec3(0.0), m4 = vec3(0.0), m5 = vec3(0.0), m6 = vec3(0.0), m7 = vec3(0.0);
@@ -120,5 +122,5 @@ void main(void) {
   paintSector(own, m6, l6, q6, w6, sum, total);
   paintSector(own, m7, l7, q7, w7, sum, total);
   vec3 painted = total > 1.0e-6 ? sum / total : ownLinear;
-  gl_FragColor = vec4(mix(ownLinear, painted, strength), 1.0);
+  gl_FragColor = vec4(painted, 1.0);
 }

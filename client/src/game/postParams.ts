@@ -1,6 +1,4 @@
-import { clamp01 } from "./colour.js";
 import type { QualityTier } from "./quality.js";
-import { dreadLensUnder, type WeatherParams } from "./weather.js";
 
 /**
  * The pure arithmetic of the post chain: which passes a tier gets, and the
@@ -25,7 +23,13 @@ export type PostFeatures = {
  */
 export function postFeaturesFor(tier: QualityTier, fxSupported: boolean): PostFeatures {
   if (!fxSupported || tier === "low") return { pipeline: false, halation: false, lens: false, colourPath: "material", paint: 0 };
-  return { pipeline: true, halation: tier === "high", lens: true, colourPath: "post", paint: tier === "high" ? PAINT_RADIUS_HIGH : PAINT_RADIUS_MEDIUM };
+  return {
+    pipeline: true,
+    halation: tier === "high",
+    lens: true,
+    colourPath: "post",
+    paint: tier === "high" ? PAINT_RADIUS_HIGH : PAINT_RADIUS_MEDIUM,
+  };
 }
 
 // ---- The paint pass (2026-10-17): the frame smeared into strokes before the grade. ----
@@ -48,6 +52,30 @@ export function paintRadiusFor(base: number, rows: number): number {
   return Math.min(PAINT_REACH, Math.max(2, Math.round((base * rows) / PAINT_ROWS)));
 }
 
+/** The share of the frame's pixels, on each axis, the strokes are painted
+ * at (2026-10-18): the paint pass's cost is its window's reads times its
+ * pixels, and at half the pixels on each axis it reads a quarter as many,
+ * each read a 2 by 2 average of the frame. A laptop's 1512 by 982 window on
+ * the medium tier drew at 32 to 37 frames a second with the strokes at full
+ * resolution and 51 at half, on an Apple M4. The compose
+ * (`paintCompose.fragment.fx`) brings them back to full. */
+export const PAINT_SCALE = 0.5;
+/** How sharply the compose prefers, of the four painted texels round a
+ * pixel, those whose scene is like the pixel's own (a joint bilateral
+ * upsample, the frame's own colour the guide): a plain bilinear upscale
+ * smeared every edge a painted texel wide, the blades and the kiosk soft. */
+export const PAINT_JOINT_SHARPNESS = 60;
+/** The stroke's radius in the half-size frame's pixels: the frame's own
+ * radius (`paintRadiusFor`), the same share of the picture, at the scale. */
+export function paintTexelRadius(base: number, rows: number): number {
+  return paintRadiusFor(base, rows) * PAINT_SCALE;
+}
+/** The half-size frame's size as Babylon makes a pass's target: the frame's
+ * size times the ratio, truncated. */
+export function paintTargetSize(width: number, height: number): { width: number; height: number } {
+  return { width: Math.max(1, Math.floor(width * PAINT_SCALE)), height: Math.max(1, Math.floor(height * PAINT_SCALE)) };
+}
+
 /** MSAA sample count on the first pass of the chain (the scene pass on high,
  * the grade on medium): that pass's input target is the scene render, so
  * multisampling it multisamples every opaque edge, which is what the blade
@@ -55,26 +83,7 @@ export function paintRadiusFor(base: number, rows: number): number {
  * and gets none. */
 export const MSAA_SAMPLES = 4;
 
-export type FinishRecord = { overlapGain: number; overlapPhase: number; grainGain: number; time: number };
-
 // ---- Browser-tunable magnitudes. `clear` identity is not. ----
-/** Overlap gain at full dread and unsettle 1. 0.35 was imperceptible in the
- * browser (the gate note said so, then the owner did); 0.8 reads. */
-export const OVERLAP_MAX = 0.8;
-/** Radius (of the half-diagonal) inside which the overlap mask is zero. */
-export const OVERLAP_INNER = 0.4;
-/** How bright the de-lit echo is before the mask: the echo's luma × this. */
-export const OVERLAP_ECHO = 0.6;
-/** Scale of the echo about the frame centre. */
-export const OVERLAP_SCALE = 1.06;
-/** The echo's breathing rate. */
-export const OVERLAP_BREATH_HZ = 0.05;
-/** Grain amplitude in display units at clear; near the threshold of perception. */
-export const GRAIN_BASE = 0.035;
-/** Grain gain at full dread: base × (1 + gain). 1.5 was below the threshold
- * of noticing next to the clear baseline; 4 is the point the image reads as
- * a bad recording. */
-export const GRAIN_DREAD_GAIN = 4;
 /** One 8-bit step. The finish pass applies TPDF dither at ±1 LSB
  * (`(d1 + d2 − 1) · LSB`, the sum of two uniform draws), the correct
  * triangular form — not ±½ LSB, which is RPDF (a single uniform draw). Don't
@@ -86,12 +95,3 @@ export const HALATION_THRESHOLD = 1.0;
 /** Luminance excess at which the extract saturates; keeps the response bounded. */
 export const HALATION_CAP = 4.0;
 
-export function finishUnder(w: WeatherParams, unsettle: number, timeSeconds: number): FinishRecord {
-  const lens = dreadLensUnder(w) * clamp01(unsettle);
-  return {
-    overlapGain: lens === 0 ? 0 : OVERLAP_MAX * lens,
-    overlapPhase: (timeSeconds * OVERLAP_BREATH_HZ) % 1,
-    grainGain: lens === 0 ? GRAIN_BASE : GRAIN_BASE * (1 + GRAIN_DREAD_GAIN * lens),
-    time: timeSeconds,
-  };
-}

@@ -132,7 +132,7 @@ describe("layer boundaries", () => {
   });
 
   it("never turns WebGPU's uniformity analysis off for every shader", () => {
-    // The finish pass turns it off for itself (`finishFragmentFor`); replacing
+    // The terrain's material turns it off for itself (`TERRAIN_UNIFORMITY_OFF`); replacing
     // the engine's stage-descriptor method would hide every other shader's
     // uniformity fault too. The shader lookup calls it, with WGSL already
     // translated (each stage's switch read as Babylon reads it), and nothing

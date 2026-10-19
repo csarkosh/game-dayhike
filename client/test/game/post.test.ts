@@ -4,15 +4,13 @@ import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngin
 import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import type { PostProcess } from "@babylonjs/core/PostProcesses/postProcess.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
-import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
-import { END_BLUR_KERNEL, END_BLUR_STEPS, endBlurKernel, createPost, FAR_SOFT_BAND, FAR_SOFT_RADIUS, finishFragmentFor, fxSupportedBy } from "../../src/game/post.js";
+import { END_BLUR_KERNEL, END_BLUR_STEPS, endBlurKernel, createPost, FAR_SOFT_BAND, FAR_SOFT_RADIUS, fxSupportedBy } from "../../src/game/post.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import farSoftFx from "../../src/game/shaders/farSoft.fragment.fx?raw";
 import { postFeaturesFor, MSAA_SAMPLES } from "../../src/game/postParams.js";
@@ -194,7 +192,10 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
         const names = camera._postProcesses.map((p) => p?.name ?? null);
         expect(names[0]).toBe("farSoft");
         expect(names[1]).toBe("paint");
-        expect(names[2]).toBe(tier === "high" ? "scene" : "grade");
+        // The paint's compose (2026-10-18) follows it, at half the frame: the paint renders into its half-size input.
+        expect(names[2]).toBe("paintCompose");
+        expect(ratioOf(passNamed(camera, "paintCompose"))).toBe(0.5);
+        expect(names[3]).toBe(tier === "high" ? "scene" : "grade");
         const farSoft = passNamed(camera, "farSoft");
         expect(ratioOf(farSoft)).toBe(1);
         expect(farSoft._prePassEffectConfiguration).toEqual({ enabled: true, name: "farSoft", texturesRequired: [Constants.PREPASS_DEPTH_TEXTURE_TYPE] });
@@ -313,21 +314,21 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       return { fresh, order };
     };
     expect(names("high")).toEqual({
-      fresh: ["paint", "scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", null, null, null, "finish"],
-      order: ["paint", "scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"],
+      fresh: ["paint", "paintCompose", "scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "fxaa", null, null, null],
+      order: ["paint", "paintCompose", "scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "fxaa", "lens", null, null],
     });
     expect(names("medium")).toEqual({
-      fresh: ["paint", "grade", "chromaticAberration", "fxaa", null, null, null, "finish"],
-      order: ["paint", "grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"],
+      fresh: ["paint", "paintCompose", "grade", "fxaa", null, null, null],
+      order: ["paint", "paintCompose", "grade", "fxaa", "lens", null, null],
     });
   });
 
-  it("attaches the end's blurs ahead of the finish while there is any blur, their kernel by it, and detaches them after", () => {
+  it("attaches the end's blurs after the chain while there is any blur, their kernel by it, and detaches them after", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     const post = createPost(scene, camera, postFeaturesFor("medium", true));
     const names = () => camera._postProcesses.map((p) => p?.name ?? null);
     post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0, 0, 0.5);
-    expect(names()).toEqual(["paint", "grade", "chromaticAberration", "fxaa", null, "endBlurX", "endBlurY", "finish"]);
+    expect(names()).toEqual(["paint", "paintCompose", "grade", "fxaa", null, "endBlurX", "endBlurY"]);
     const blurs = camera._postProcesses.filter((p) => p?.name.startsWith("endBlur")) as BlurPostProcess[];
     for (const b of blurs) expect(b.kernel).toBeCloseTo(endBlurKernel(0.5), 6);
     post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0, 0, 1);
@@ -338,7 +339,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     expect(endBlurKernel(0)).toBe(0);
     expect(new Set([0.01, 0.2, 0.4, 0.6, 0.8, 1].map(endBlurKernel)).size).toBe(END_BLUR_STEPS);
     post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST, 0, 0, 0);
-    expect(names()).toEqual(["paint", "grade", "chromaticAberration", "fxaa", null, null, null, "finish"]);
+    expect(names()).toEqual(["paint", "paintCompose", "grade", "fxaa", null, null, null]);
     post.dispose();
     camera.dispose();
   });
@@ -451,8 +452,8 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     let ms = 0;
     const post = createPost(scene, camera, postFeaturesFor("medium", true), { now: () => ms });
     const names = () => camera._postProcesses.map((p) => p?.name ?? null);
-    const attached = ["paint", "grade", "chromaticAberration", "fxaa", "lens", null, null, "finish"];
-    const detached = ["paint", "grade", "chromaticAberration", "fxaa", null, null, null, "finish"];
+    const attached = ["paint", "paintCompose", "grade", "fxaa", "lens", null, null];
+    const detached = ["paint", "paintCompose", "grade", "fxaa", null, null, null];
     expect(names()).toEqual(detached);
     // An update with no strength (every other call site) leaves it so.
     post.update(WEATHER_PRESETS.clear, 12, 0, 1, STARE_LENS_REST);
@@ -551,14 +552,17 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     camera.dispose();
   });
 
-  it("on medium, grade is built at ratio 1.0 and follows the paint pass, which is first and carries the multisampling", () => {
+  it("on medium, grade is built at ratio 1.0 and follows the paint and its compose; the paint is first and carries the multisampling", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     const post = createPost(scene, camera, postFeaturesFor("medium", true));
     const grade = passNamed(camera, "grade");
     expect(ratioOf(grade)).toBe(1.0);
     expect(camera._postProcesses[0]).toBe(passNamed(camera, "paint"));
     expect(ratioOf(passNamed(camera, "paint"))).toBe(1.0);
-    expect(camera._postProcesses[1]).toBe(grade);
+    // The compose's half ratio sizes the paint's own target: the strokes are painted at half the frame.
+    expect(camera._postProcesses[1]).toBe(passNamed(camera, "paintCompose"));
+    expect(ratioOf(passNamed(camera, "paintCompose"))).toBe(0.5);
+    expect(camera._postProcesses[2]).toBe(grade);
     post.dispose();
     camera.dispose();
   });
@@ -569,12 +573,12 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), bigScene);
     const post = createPost(bigScene, camera, postFeaturesFor("high", true));
     // Blur X's write target is blur Y's own input; blur Y's write target is
-    // grade's own input; grade's write target is chromatic aberration's own
-    // input. See `activatedSize` above for why activating the pass AFTER the
-    // one in question reads the right target.
+    // grade's own input; grade's write target is FXAA's own input. See
+    // `activatedSize` above for why activating the pass AFTER the one in
+    // question reads the right target.
     expect(activatedSize(passNamed(camera, "halationBlurY"), camera)).toEqual({ width: 480, height: 270 });
     expect(activatedSize(passNamed(camera, "grade"), camera)).toEqual({ width: 480, height: 270 });
-    expect(activatedSize(passNamed(camera, "chromaticAberration"), camera)).toEqual({ width: 1920, height: 1080 });
+    expect(activatedSize(passNamed(camera, "fxaa"), camera)).toEqual({ width: 1920, height: 1080 });
     post.dispose();
     camera.dispose();
     bigScene.dispose();
@@ -629,22 +633,6 @@ describe("the halation's sizes on the WebGPU engine (canaries on the installed e
     expect(read("@babylonjs/core/Engines/thinEngine.pure.js")).toContain(
       "    get needPOTTextures() {\n        return this._webGLVersion < 2 || this.forcePOTTextures;\n    }",
     );
-  });
-});
-
-describe("the finish pass's text per engine", () => {
-  const sha = (s: string) => createHash("sha256").update(s).digest("hex");
-  it("is the file itself on WebGL2", () => {
-    expect(sha(finishFragmentFor(false))).toBe("4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5");
-  });
-  it("turns uniformity analysis off for itself alone on WebGPU", () => {
-    // Its second read of the scene sits inside a branch on vUV. The target has
-    // one mip level, so the implicit LOD it gives up cannot pick another.
-    expect(finishFragmentFor(true)).toBe("#define DISABLE_UNIFORMITY_ANALYSIS\n" + finishFx);
-  });
-  it("uses the words Babylon's WebGPU engine looks for (a canary on the installed engine)", () => {
-    const src = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
-    expect(src).toContain("const disableUniformityAnalysisInFragment = fragmentCode.indexOf(`#define DISABLE_UNIFORMITY_ANALYSIS`) >= 0;");
   });
 });
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { CHASE_TINT,
   agx, gradeRecordUnder, whitePointMatrix, hueToRgb, IDENTITY,
   DEFAULT_PAINT_PALETTE, mixPalette, PAINT_AMBER, PAINT_ASH, PAINT_NONE, PAINT_OILS, PAINT_PALETTE_NAMES, PAINT_PALETTES,
-  HALATION_BASE, ABERRATION_BASE, AGX_MIN_EV, AGX_MAX_EV, STARE_DIM, sightUnder,
+  HALATION_BASE, AGX_MIN_EV, AGX_MAX_EV, STARE_DIM, sightUnder,
 } from "../../src/game/gradeParams.js";
 import { WEATHER_PRESETS, exposureUnder, vignetteWeightUnder, VIGNETTE_WEIGHT_BASE } from "../../src/game/weather.js";
 import { sunPositionAt } from "../../src/game/sky.js";
@@ -99,7 +99,6 @@ describe("gradeRecordUnder", () => {
       expect(g.saturation).toBe(0);
       expect(g.vignetteWeight).toBe(VIGNETTE_WEIGHT_BASE);
       expect(g.halationStrength).toBe(HALATION_BASE);
-      expect(g.aberrationAmount).toBe(ABERRATION_BASE);
     }
   });
 
@@ -118,10 +117,8 @@ describe("gradeRecordUnder", () => {
     const full = gradeRecordUnder(EERIE, 17, 0, 1);
     const off = gradeRecordUnder(EERIE, 17, 0, 0);
     expect(full.halationStrength).toBeGreaterThan(HALATION_BASE);
-    expect(full.aberrationAmount).toBeGreaterThan(ABERRATION_BASE);
     expect(full.vignetteWeight).toBe(vignetteWeightUnder(EERIE));
     expect(off.halationStrength).toBe(HALATION_BASE);
-    expect(off.aberrationAmount).toBe(ABERRATION_BASE);
     expect(off.vignetteWeight).toBe(VIGNETTE_WEIGHT_BASE);
     // The world-side colour is untouched by the slider.
     expect(off.shadows).toEqual(full.shadows);

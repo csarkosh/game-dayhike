@@ -26,7 +26,6 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { createAtmosphere } from "../../src/game/atmosphere.js";
 import { createClipmap } from "../../src/game/renderer.js";
-import { finishFragmentFor } from "../../src/game/post.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { FOG_DISTANCE } from "../../src/sim/forestConstants.js";
 import { pluginsInStates } from "./helpers/pluginText.js";
@@ -34,7 +33,6 @@ import { drawnEffect, probeReady, webgpuProcessingEngine } from "./helpers/webgp
 import { timeLimit } from "../helpers/timeLimit.js";
 import halationExtractFragment from "../../src/game/shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "../../src/game/shaders/grade.fragment.fx?raw";
-import finishFragment from "../../src/game/shaders/finish.fragment.fx?raw";
 import lensFragment from "../../src/game/shaders/lens.fragment.fx?raw";
 
 /**
@@ -179,7 +177,6 @@ describe("WGSL's uniformity analysis and the game's shaders", () => {
       ...pluginFragments(false),
       "post.grade": gradeFragment,
       "post.halationExtract": halationExtractFragment,
-      "post.finish": finishFragment,
       "post.lens": lensFragment,
     };
     const found = Object.fromEntries(
@@ -188,8 +185,6 @@ describe("WGSL's uniformity analysis and the game's shaders", () => {
         .filter(([, reads]) => reads.length > 0),
     );
     expect(found).toEqual({
-      // The finish pass's peripheral echo, under `mask > 0.0` (§6.1).
-      "post.finish": ["textureSampler"],
       // The ground blend's parallax and relief gates, and the road and trail
       // paints (`TERRAIN_UNIFORMITY_OFF`). The feature paint reads its table
       // and the shore atlas by `texelFetch`, which takes no derivative.
@@ -201,19 +196,17 @@ describe("WGSL's uniformity analysis and the game's shaders", () => {
     const onWebGpu = pluginFragments(true);
     const onWebGl2 = pluginFragments(false);
     // Each shader's text on each engine: the plugins' as they inject it, the
-    // post passes' as `post.ts` stores them (only the finish pass differs).
+    // post passes' as `post.ts` stores them.
     const webgpu: Record<string, string> = {
       ...onWebGpu,
       "post.grade": gradeFragment,
       "post.halationExtract": halationExtractFragment,
-      "post.finish": finishFragmentFor(true),
       "post.lens": lensFragment,
     };
     const webgl2: Record<string, string> = {
       ...onWebGl2,
       "post.grade": gradeFragment,
       "post.halationExtract": halationExtractFragment,
-      "post.finish": finishFragmentFor(false),
       "post.lens": lensFragment,
     };
     // Every shader that reads a texture under a branch: a new one fails here

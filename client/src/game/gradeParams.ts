@@ -38,7 +38,6 @@ export type GradeRecord = {
   /** The chase's cast, 0 to 1: the frame pulled toward burgundy, sky, rain and ground alike. */
   chase: number;
   halationStrength: number;
-  aberrationAmount: number;
   /** The painted base this frame (`PaintPalette`), under the weather's bands. */
   paint: PaintPalette;
 };
@@ -253,8 +252,6 @@ export const PURKINJE_MATRIX: Mat3 = [0.02, 0.03, 0.05, 0.35, 0.45, 0.60, 0.20, 
 // ---- Lens-side gains. Browser-tunable; `clear` identity is not. ----
 export const HALATION_BASE = 0.04;
 export const HALATION_DREAD_GAIN = 4;
-export const ABERRATION_BASE = 10;
-export const ABERRATION_DREAD_GAIN = 3;
 export const VIGNETTE_COLOUR: Rgb = { r: 0.01, g: 0.02, b: 0.03 };
 /** The vignette's breathing under dread: ±VIGNETTE_PULSE of its weight on a
  * VIGNETTE_PULSE_PERIOD-second cycle, scaled by the lens dread (Amnesia's
@@ -358,7 +355,6 @@ export function gradeRecordUnder(
     stare: stareShadeUnder(stare, timeSeconds),
     chase: clamp01(chase),
     halationStrength: lens === 0 ? HALATION_BASE : HALATION_BASE * (1 + HALATION_DREAD_GAIN * lens),
-    aberrationAmount: lens === 0 ? ABERRATION_BASE : ABERRATION_BASE * (1 + ABERRATION_DREAD_GAIN * lens),
     paint,
   };
 }

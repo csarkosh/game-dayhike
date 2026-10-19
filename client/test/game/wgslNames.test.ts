@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pluginInterfaces, pluginTexts } from "./helpers/pluginText.js";
 import { terrainHexDefs } from "../../src/game/terrainTexture.js";
-import { finishFragmentFor } from "../../src/game/post.js";
 
 // WGSL's keywords and reserved words (the WGSL specification's lists). A GLSL
 // name the translation carries through as one fails to parse on WebGPU.
@@ -49,7 +48,6 @@ describe("GLSL names on the WebGPU path", () => {
       // The uniforms each plugin declares, which the translation names too.
       ...pluginInterfaces(),
       "terrain.hex.webgpu": terrainHexDefs(true),
-      "post.finish.webgpu": finishFragmentFor(true),
     };
     for (const [key, text] of Object.entries(texts)) {
       expect(declaredNames(text).filter((n) => WGSL_RESERVED.has(n)), key).toEqual([]);

@@ -1,5 +1,5 @@
 // The grade pass: the whole colour identity in one full-screen shader, run
-// on linear HDR before the pipeline's chromatic aberration and FXAA. Order:
+// on linear HDR before the pipeline's FXAA. Order:
 // exposure, AgX, white point, Purkinje, split-tone, global saturation, lift
 // (a colour: under dread the shadows go milky green-grey), vignette,
 // halation, the stare's darkness, sRGB encode. Every knob is a uniform from gradeRecordUnder in
@@ -57,6 +57,15 @@ uniform vec2 paintHighlightAmount;
 uniform float paintSaturation;
 uniform vec2 paintCurve;
 uniform vec3 paintLift;
+uniform vec2 texelSize;
+uniform float time;
+
+const float DITHER_LSB = 0.00392156862745098;
+
+// Interleaved gradient noise on pixel coordinates plus a per-frame offset.
+float gradeNoise(vec2 p, float seed) {
+  return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y + seed));
+}
 
 const mat3 SRGB_TO_REC2020 = mat3(0.6274, 0.0691, 0.0164, 0.3293, 0.9195, 0.088, 0.0433, 0.0113, 0.8956);
 const mat3 REC2020_TO_SRGB = mat3(1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187);
@@ -210,5 +219,14 @@ void main(void) {
   float openTo = mix(1.25, 0.3, stareShade.z);
   float dark = smoothstep(openTo - 0.42, openTo + 0.14, sr) * min(1.0, stareShade.z * 3.0);
   c *= 1.0 - 0.97 * dark;
-  gl_FragColor = vec4(toSrgb(clamp(c, 0.0, 1.0)), 1.0);
+  // The dither, last: triangular, a step of the 8-bit frame either way, so
+  // the display's quantisation does not band the grade's slow gradients. It
+  // was the finish pass's, the chain's last, until 2026-10-18; FXAA after it
+  // leaves it where no edge is, which is where banding shows.
+  vec3 shown = toSrgb(clamp(c, 0.0, 1.0));
+  vec2 pixel = vUV / texelSize;
+  float d1 = gradeNoise(pixel, fract(time * 3.17));
+  float d2 = gradeNoise(pixel + vec2(37.0, 11.0), fract(time * 5.03));
+  shown += (d1 + d2 - 1.0) * DITHER_LSB;
+  gl_FragColor = vec4(clamp(shown, 0.0, 1.0), 1.0);
 }
