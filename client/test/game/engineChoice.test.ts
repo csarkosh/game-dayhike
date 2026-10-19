@@ -26,8 +26,9 @@ describe("chooseEngine", () => {
     expect(chooseEngine(high)).toBe("probe");
     expect(chooseEngine({ ...high, fits: true })).toBe("webgpu");
     expect(chooseEngine({ ...high, fits: false })).toBe("webgl2");
-    expect(chooseEngine({ ...high, tier: "medium" })).toBe("webgl2");
-    expect(chooseEngine({ ...high, tier: "medium", fits: true })).toBe("webgl2");
+    expect(chooseEngine({ ...high, tier: "medium" })).toBe("probe");
+    expect(chooseEngine({ ...high, tier: "medium", fits: true })).toBe("webgpu");
+    expect(chooseEngine({ ...high, tier: "medium", fits: false })).toBe("webgl2");
     expect(chooseEngine({ ...high, tier: "low" })).toBe("webgl2");
     expect(chooseEngine({ ...high, tier: "low", fits: true })).toBe("webgl2");
     expect(chooseEngine({ ...high, on: false })).toBe("webgl2");
@@ -43,8 +44,8 @@ describe("chooseEngine", () => {
   it("ships switched on", () => {
     expect(WEBGPU_ENABLED).toBe(true);
   });
-  it("applies to the tiers one constant names: high alone, never medium or low", () => {
-    expect(WEBGPU_TIERS).toEqual(["high"]);
+  it("applies to the tiers one constant names: high and medium, never low", () => {
+    expect(WEBGPU_TIERS).toEqual(["high", "medium"]);
     // A change of tiers is a change to that constant alone: the rule reads it.
     const medium = { ...high, tier: "medium" as const };
     expect(chooseEngine(medium, ["high", "medium"])).toBe("probe");
@@ -81,20 +82,20 @@ describe("the rule on each browser and platform, the switch on", () => {
   // A tablet whose browser reports a desktop platform: mobile decides.
   const CHROME_TABLET_WINDOWS = { chromeOrEdge: true, os: "windows", mobile: true } as const;
 
-  it("gives WebGPU on the high tier to desktop Chrome and Edge on macOS and Windows, where the adapter fits", () => {
-    for (const host of [CHROME_MAC, CHROME_WINDOWS, EDGE_MAC, EDGE_WINDOWS]) expect(answer(host, "high")).toBe("webgpu");
-    expect(answer(CHROME_MAC, "high", { fits: null })).toBe("probe");
-    expect(answer(EDGE_WINDOWS, "high", { fits: null })).toBe("probe");
-    expect(answer(CHROME_MAC, "high", { fits: false })).toBe("webgl2");
-    expect(answer(EDGE_WINDOWS, "high", { fits: false })).toBe("webgl2");
+  it("gives WebGPU on the high and medium tiers to desktop Chrome and Edge on macOS and Windows, where the adapter fits", () => {
+    for (const tier of ["high", "medium"] as const) {
+      for (const host of [CHROME_MAC, CHROME_WINDOWS, EDGE_MAC, EDGE_WINDOWS]) expect(answer(host, tier)).toBe("webgpu");
+      expect(answer(CHROME_MAC, tier, { fits: null })).toBe("probe");
+      expect(answer(EDGE_WINDOWS, tier, { fits: null })).toBe("probe");
+      expect(answer(CHROME_MAC, tier, { fits: false })).toBe("webgl2");
+      expect(answer(EDGE_WINDOWS, tier, { fits: false })).toBe("webgl2");
+    }
   });
 
-  it("keeps medium and low on WebGL2 there, without asking the adapter", () => {
+  it("keeps low on WebGL2 there, without asking the adapter", () => {
     for (const host of [CHROME_MAC, EDGE_WINDOWS]) {
-      for (const tier of ["medium", "low"] as const) {
-        expect(answer(host, tier)).toBe("webgl2");
-        expect(answer(host, tier, { fits: null })).toBe("webgl2");
-      }
+      expect(answer(host, "low")).toBe("webgl2");
+      expect(answer(host, "low", { fits: null })).toBe("webgl2");
     }
   });
 

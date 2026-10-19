@@ -172,10 +172,11 @@ describe("probeStepCanSettle", () => {
     expect(probeStepEngine({ adapterStatus: "ok" }, "webgpu", true)).toBe("webgpu");
     expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgpu", true)).toBe(null);
     expect(probeStepEngine({ adapterStatus: "ok" }, "webgl2", true)).toBe("webgl2");
-    // Only the high tier draws on WebGPU, so the probed tiers need not share
-    // the rule's engine: `engine` is the high tier's, and a step that ends on
-    // another engine is asked as it runs (`measureOnRuleEngine`).
-    expect(WEBGPU_TIERS).toEqual(["high"]);
+    // High and medium draw on WebGPU and low does not, so the probed tiers
+    // need not share the rule's engine: `engine` is the high tier's, and a
+    // step that ends on another engine is asked as it runs
+    // (`measureOnRuleEngine`).
+    expect(WEBGPU_TIERS).toEqual(["high", "medium"]);
   });
 });
 

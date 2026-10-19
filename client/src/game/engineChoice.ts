@@ -1,6 +1,6 @@
 /**
  * Which engine draws the game: WebGL2, or Babylon's WebGPU engine on the tiers
- * `WEBGPU_TIERS` names (high), in Google Chrome or Microsoft Edge on macOS or
+ * `WEBGPU_TIERS` names (high and medium), in Google Chrome or Microsoft Edge on macOS or
  * Windows on a device that is not a phone or a tablet, where the browser offers a
  * hardware adapter with the limits the scene needs. Everywhere else WebGL2,
  * as every tier always drew.
@@ -42,10 +42,15 @@ export type EngineName = "webgl2" | "webgpu";
  * the rule names (`chooseEngine`). False, only `?engine=webgpu` reaches it. */
 export const WEBGPU_ENABLED = true;
 
-/** The tiers the WebGPU default applies to: high alone, the one it drew
- * faster at every pose not at the display's cap. Medium did not gain under
- * the canopy (19.2 → 19.3 ms); it, low and the landing backdrop stay WebGL2. */
-export const WEBGPU_TIERS: readonly QualityTier[] = ["high"];
+/** The tiers the WebGPU default applies to: high, the one it drew faster at
+ * every pose not at the display's cap from the start, and medium since
+ * 2026-10-18. Medium did not gain under the canopy when the high tier moved
+ * (19.2 → 19.3 ms); with the painted chain, the far field and the half-size
+ * strokes drawn since, it does at every pose: on an Apple M4 at a laptop's
+ * 1512 × 982, WebGL2 → WebGPU, the forest 34.1 → 28.0 ms, the trailhead
+ * 40.3 → 26.1 and the meadow 29.6 → 20.1 (two pairs each, interleaved).
+ * Low and the landing backdrop stay WebGL2. */
+export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
 
 /**
  * What the device is created with, and what an adapter must reach to be

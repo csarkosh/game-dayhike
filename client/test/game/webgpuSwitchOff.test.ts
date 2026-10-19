@@ -30,14 +30,14 @@ describe("the start where the rule gives WebGL2", () => {
     { chromeOrEdge: false, os: "windows", mobile: false }, // the same on Windows
   ] as const;
 
-  it("is on, for the high tier alone", () => {
+  it("is on, for the high and medium tiers", () => {
     expect(WEBGPU_ENABLED).toBe(true);
-    expect(WEBGPU_TIERS).toEqual(["high"]);
+    expect(WEBGPU_TIERS).toEqual(["high", "medium"]);
   });
 
-  it("draws medium and low on WebGL2 without asking for WebGPU, on every browser: the module is never imported, no translator fetched", async () => {
+  it("draws low on WebGL2 without asking for WebGPU, on every browser: the module is never imported, no translator fetched", async () => {
     for (const host of [CHROME_MAC, EDGE_WINDOWS, ...OTHERS]) {
-      for (const tier of ["low", "medium"] as const) {
+      for (const tier of ["low"] as const) {
         for (const remembered of [false, true]) {
           for (const fits of [null, false, true]) {
             const input: EngineInput = { tier, override: null, remembered, on: WEBGPU_ENABLED, fits, ...host };
