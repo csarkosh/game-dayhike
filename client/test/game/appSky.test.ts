@@ -38,6 +38,9 @@ describe("the hike's sky", () => {
     // The audio hears the settled weather; the view, the mist the end scene's road shot draws back.
     expect(sync).toContain("    renderer.setView(a.hour, a.weather);\n    ambient.setWeather(settled.weather);");
     expect(sync).not.toMatch(/renderer\.set(?:Hour|Weather)\(/);
+    // The sun's light alone, on every frame, ahead of the gate (2026-10-18).
+    expect(sync.indexOf("    renderer.followHour(a.hour);\n")).toBeGreaterThan(sync.indexOf("    const a = mist === 1"));
+    expect(sync.indexOf("    renderer.followHour(a.hour);\n")).toBeLessThan(sync.indexOf("    const hourMoved ="));
     const restore = src.slice(src.indexOf("  function restoreView(r: Renderer): void {"), src.indexOf("  const swapBindings: SwapBindings = {"));
     expect(restore).toContain("    r.setView(appliedHour, appliedWeather);");
     expect(restore).not.toMatch(/r\.set(?:Hour|Weather)\(/);

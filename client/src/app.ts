@@ -1167,6 +1167,10 @@ function buildGame(
       // The cry's variant is this screen's own draw: the sound is not on the wire.
       ambient.hollowCall(bugle, crest.x - ear.x, crest.y - ear.y, -(crest.z - ear.z), voiced.call.level, voiced.call.cutoffHz, Math.random());
     }
+    // The sun's light follows the hour on every frame, so the shadows glide
+    // with it: it is one vector, and the gate below stepped them 0.4 s apart
+    // on the explore day's clock (`Lighting.followHour`).
+    renderer.followHour(a.hour);
     // Skip the renderer and ambient pushes on a frame the eased state barely
     // moved: `renderer.setView` recomputes the sky, the sun and the fog and
     // re-renders the reflection probe on every call, once for both.

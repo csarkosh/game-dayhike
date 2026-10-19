@@ -271,6 +271,18 @@ export type LightingOptions = {
 
 export type Lighting = {
   setHour(hour: number): void;
+  /**
+   * The sun's light alone at `hour`, for the frames between two applies: the
+   * directional light's direction, and the hour the next apply (a weather
+   * fade's frame, the next `setView`) starts from. Nothing of the sky, the
+   * fog or the probe, so it costs one vector a frame. The escalation and the
+   * explore day push the whole view only once the hour has moved a
+   * hundredth (`syncAtmosphere`, app.ts), 0.4 s apart on the explore day's
+   * clock; a light that waited for those pushes moved every shadow in steps
+   * of 0.14 degrees (2026-10-18). Nothing while the table waits on its
+   * slices, as `apply` leaves the light then.
+   */
+  followHour(hour: number): void;
   readonly hour: number;
   /**
    * Starts a fade from the current weather to `next` over `fadeSeconds`
@@ -649,6 +661,13 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     setHour(next) {
       hour = next;
       apply();
+    },
+    followHour(next) {
+      hour = next;
+      if (waiting) return;
+      // As `apply` sets it: the direction light travels, away from the sun.
+      const toSun = sunPositionAt(next);
+      sun.direction.set(-toSun.x, -toSun.y, -toSun.z);
     },
     setWeather(next, fadeSeconds = 3) {
       if (fadeSeconds <= 0) {

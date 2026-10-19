@@ -1807,6 +1807,9 @@ export type Renderer = {
   /** The hour and the weather together, the weather at once, applied once
    * (`Lighting.setView`). */
   setView(hour: number, weather: WeatherParams): void;
+  /** The sun's light alone at `hour`, on every frame between two `setView`s
+   * (`Lighting.followHour`), so the shadows move with the hour. */
+  followHour(hour: number): void;
   /** The weather preset the console set, which the lake's calm reads by
    * name (`calmShare`): its share fades from the last preset's to this one's
    * over `fadeSeconds` (3 absent, as `setWeather`'s), at once at 0. The
@@ -3597,6 +3600,9 @@ function buildRenderer(
     },
     setView(hour, weather) {
       lighting.setView(hour, weather);
+    },
+    followHour(hour) {
+      lighting.followHour(hour);
     },
     setPalette(name, fadeSeconds) {
       post.setPalette(PAINT_PALETTES[name], fadeSeconds);

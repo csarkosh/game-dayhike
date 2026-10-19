@@ -695,6 +695,29 @@ describe("weather in lighting", () => {
     lighting.dispose();
   });
 
+  it("followHour moves the sun's light alone, and the next apply starts from its hour (2026-10-18)", () => {
+    const s = scene();
+    const lighting = light(s, { hour: 15, weather: CLEAR });
+    const before = dome.updates.length;
+    const intensity = sunOf(s).intensity;
+    const fog = s.fogDensity;
+    lighting.followHour(15.004);
+    const toSun = sunPositionAt(15.004);
+    expect(sunOf(s).direction.x).toBeCloseTo(-toSun.x, 12);
+    expect(sunOf(s).direction.y).toBeCloseTo(-toSun.y, 12);
+    expect(sunOf(s).direction.z).toBeCloseTo(-toSun.z, 12);
+    // Nothing else: no sky, no fog, no intensity, no probe.
+    expect(dome.updates.length).toBe(before);
+    expect(sunOf(s).intensity).toBe(intensity);
+    expect(s.fogDensity).toBe(fog);
+    expect(lighting.hour).toBe(15.004);
+    // An apply after it (here a weather set at once) lights the hour it followed to, not the last one pushed.
+    lighting.setWeather(WEATHER_PRESETS.rain, 0);
+    expect(dome.updates.at(-1)!.state.hour).toBe(15.004);
+    expect(sunOf(s).direction.x).toBeCloseTo(-toSun.x, 12);
+    lighting.dispose();
+  });
+
   it("setView sets the hour and the weather together and applies once, ending any fade", () => {
     const s = scene();
     const lighting = light(s, { hour: 12, weather: CLEAR });
