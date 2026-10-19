@@ -421,7 +421,7 @@ const STYLE = `
   .touch .lamp.pulse { box-shadow: 0 0 0 3px #ffd24d; transition: none; }
   .touch .pause {
     left: calc(14px + env(safe-area-inset-left, 0px));
-    top: calc(14px + env(safe-area-inset-top, 0px));
+    top: calc(68px + env(safe-area-inset-top, 0px));
   }
 `;
 

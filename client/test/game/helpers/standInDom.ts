@@ -29,6 +29,10 @@ export type StandInEvent = {
   target: StandInElement;
   code?: string;
   key?: string;
+  ctrlKey?: boolean;
+  altKey?: boolean;
+  metaKey?: boolean;
+  repeat?: boolean;
   /** A click's count: 0 for a click no pointer made (Enter or Space on a button). */
   detail?: number;
   defaultPrevented: boolean;

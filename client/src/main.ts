@@ -108,6 +108,7 @@ const VEIL_SETTLE_MS = 250;
 let gameMute: ((muted: boolean) => void) | null = null;
 const mute = createMuteButton(document.body, {
   muted: readMuted(pageStorage()),
+  showKey: !isTouchDevice(),
   onChange: (on) => {
     writeMuted(pageStorage(), on);
     gameMute?.(on);

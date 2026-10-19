@@ -71,9 +71,9 @@ export type InputOptions = {
  * the browser, takes the keyboard and the mouse for itself, so a Space or a
  * click that opened it can lose its keyup or mouseup to the list and stay held
  * after Resume. While play is engaged every press is the game's, whatever has
- * the focus.
+ * the focus. The page's mute key (`muteButton.ts`) refuses such a press too.
  */
-function aimedAtFormControl(target: EventTarget | null): boolean {
+export function aimedAtFormControl(target: EventTarget | null): boolean {
   const el = target as { tagName?: unknown; isContentEditable?: unknown } | null;
   if (el === null || typeof el !== "object") return false;
   if (el.isContentEditable === true) return true;

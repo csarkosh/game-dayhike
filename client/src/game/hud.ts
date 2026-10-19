@@ -76,7 +76,8 @@ const STYLE = `
      pointer and on focus, and pressed it pauses as the key does. Hidden by
      default: the touch layer has its own button. A scene's bars take it down. */
   .hud .pause {
-    position: absolute; left: calc(14px + env(safe-area-inset-left, 0px)); top: calc(14px + env(safe-area-inset-top, 0px));
+    /* Under the mute button (muteButton.ts), 44px tall at 14px from the corner. */
+    position: absolute; left: calc(14px + env(safe-area-inset-left, 0px)); top: calc(68px + env(safe-area-inset-top, 0px));
     display: none; align-items: center; gap: 8px; height: 44px; box-sizing: border-box; padding: 0 12px 0 10px;
     pointer-events: auto; cursor: pointer;
     color: #fff; background: rgba(16, 16, 20, 0.72); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 22px;

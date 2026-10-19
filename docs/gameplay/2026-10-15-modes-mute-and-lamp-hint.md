@@ -70,6 +70,16 @@ Pause button (the touch layer's on a touch screen, the HUD's for a keyboard,
 section 3), 44 px below its top at the same 14 px from the corner; on a page
 it stays top right.
 
+*Since 2026-10-19:* the button sits at the top left corner on every page,
+the title screen included, 14 px from the corner, and over a hike the Pause
+button sits under it, 10 px below its foot (`top: 68px` in `hud.ts` and
+`touchControls.ts`), so the button keeps one place from the title screen
+to the hike. `M` presses it on every page (`isMuteKey`): the M the layout
+types, or the key in M's place on a layout of another script, never with
+Ctrl, Alt or Cmd held and never typed into a form field. For a keyboard the
+button carries the key beside the speaker, drawn as the HUD's Pause button
+and lamp hint draw theirs; a touch screen's is the speaker alone.
+
 The intro's own sound button is gone with it. A follower's film still
 starts muted, as a browser plays a film without a gesture no other way;
 the page's first gesture, a press or a key, turns its track on unless the
@@ -90,6 +100,9 @@ faint as the lamp's hint, up under the pointer and on focus; pressed, it
 lets the controls go as the key does (`app.ts`, `input.disengage`). The
 page's mute sits under it. A touch screen has its Pause button already and
 shows none; it goes with a scene's bars and at the hike's end.
+
+*Since 2026-10-19:* the Pause button sits under the page's mute, which has
+the corner (section 2).
 
 ## 4. Where it lives
 
