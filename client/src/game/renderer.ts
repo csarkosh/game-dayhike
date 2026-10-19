@@ -80,13 +80,14 @@ import { adoptEngine, pinShaders } from "./keptEngine.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
+import { createRenderScale } from "./renderScale.js";
 import { createSkinShading } from "./skin.js";
 import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, setTerrainSward, setTerrainWetness, sharedGroundArrays } from "./terrainTexture.js";
 import { FACE_PATCH_MATERIAL, FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS, createFacePatches } from "./facePatchMeshes.js";
 import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { PAINT_PALETTES, type PaintPaletteName } from "./gradeParams.js";
 import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
-import { detectTier, type QualityTier } from "./quality.js";
+import { detectTier, QUALITY, type QualityTier } from "./quality.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../sim/terrain.js";
 import { lakeShoreInto, newLakeShore, type LakeShape } from "../sim/lakeShape.js";
 import { fbm2 } from "../sim/field.js";
@@ -2163,6 +2164,13 @@ function buildRenderer(
   }
   partOf(ownSky);
   const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });
+  // The render scale under the paint (renderScale.ts): the window's pixels
+  // while the frames hold, a step down to 87 % of them and then to 75 % while
+  // they do not, and back up a step at a time. Only where the
+  // paint pass draws, whose strokes hide the difference; the tier's own
+  // scaling (`QUALITY`, set by the lighting) is the scale's full.
+  const renderScale = postFeatures.paint > 0 ? createRenderScale() : null;
+  const baseScaling = QUALITY[tier].hardwareScaling;
   partOf(lighting);
   /** Aborted on dispose, or as a build that throws is undone: a wait for the
    * sky then stops listening and never resolves. */
@@ -3066,6 +3074,7 @@ function buildRenderer(
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
     skyReady,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
+      if (renderScale !== null && renderScale.frame(frame.dt)) engine.setHardwareScalingLevel(baseScaling / renderScale.scale);
       // Nothing has stepped the lake's life or the surf this frame yet.
       waterLifeStepped = false;
       surfStepped = false;
