@@ -99,19 +99,32 @@ without collateral damage.
 These are the gates:
 
 ```bash
-npm run typecheck && npm run lint && npm test
+npm run gate
 ```
 
-Run them and read the output. A failing gate is reported to the user before pushing, not
-after.
+It runs `npm run typecheck`, `npm run lint` and the client, server and tools suites
+(`tools/gate.mjs`). Where `DAYHIKE_GATE` names a runner, the gate hands this checkout to it
+instead: the same commands, and the client's build with its WGSL maps checked as the workflow's
+`build` job does, run on other machines in a few minutes while this one stays free, the tests
+tagged `wall-clock` run here meanwhile (below), and one report. Without a runner the gates run
+here one after another, which takes half an hour or more. `npm run gate -- <client test files>`
+runs only those files: a quick check while working, not the gate.
+
+Read the report. A failing gate is reported to the user before pushing, not after.
+
+vitest hands a file to one worker whole, so no file should take much over a minute and a half:
+a sweep over hundreds of worlds is split into part files by seed
+(`client/test/helpers/seedPart.ts`; `client/test/sim/searchSweep.ts` and its parts are the
+pattern), or a file of many slow tests into files by `describe`. A runner's report names the
+slowest file.
 
 The `test` workflow (`.github/workflows/test.yml`) runs the same commands on GitHub's runners,
 **only when started by hand** (`workflow_dispatch`; no push or pull request triggers it, Cyrus,
 2026-10-13): typecheck and lint in one job, the server and tools suites in another, the client
 suite split across shards, and a final `gates` job that fails unless every other job passed.
-`gates` is the one result to read. What the workflow adds is a clean Linux checkout, and the
-long client suite run somewhere other than this machine, which then stays quiet for frame-time
-measurements. It is a pass-or-fail check; nothing it times means anything, because the runners
+`gates` is the one result to read. What the workflow adds is a clean checkout: a runner takes
+this tree's files, untracked ones included, where the workflow runs only what was pushed.
+It is a pass-or-fail check; nothing it times means anything, because the runners
 are shared machines. Two things differ from a local run for that reason:
 
 - **Time limits are scaled, in the client suite.** A test's time limit guards against a hang,
@@ -119,21 +132,20 @@ are shared machines. Two things differ from a local run for that reason:
   on a wait (`vi.waitFor`, `expect.poll`) — is written `timeLimit(<ms>)`
   (`client/test/helpers/timeLimit.ts`), which multiplies it by `TEST_TIME_SCALE`; unset,
   locally, the factor is exactly 1, and it may be at most 10. The workflow sets 3 for the client
-  job. The server and tools suites set no limits and are not scaled. The architecture test
+  job, and a runner does as the workflow does. The server and tools suites set no limits and are not scaled. The architecture test
   fails on a limit written as a bare number, naming the line to change.
 - **Wall-clock tests are left out.** A test that asserts on elapsed time carries the
-  `wall-clock` tag, and the workflow skips the tag. A local `npm test` still runs them;
-  `npm run test:wall-clock` runs only them, one file at a time, and they are only meaningful on
-  a quiet machine. A dedicated machine for them is planned, not present; until then a local run
+  `wall-clock` tag, and the workflow skips the tag, as a runner does on its machines while it runs
+  `npm run test:wall-clock` here. A local `npm test` still runs them; `npm run test:wall-clock`
+  runs only them, one file at a time. They are only meaningful on a quiet machine. A dedicated machine for them is planned, not present; until then a local run
   is where they run. The architecture test fails on a test that reads a clock without the tag
   (unless it is listed as printing a timing without asserting on it), on the tag on a test that
   reads no clock, and when the number of tagged tests is not the one it states (2).
 
-**When to start it.** The local gates are the rule; the runners are the exception, for when
-the local run could not be trusted or could not be had: the client suite timed out or was
-skipped because the machine was busy, the change touches the build itself (`vite.config.ts`,
-the WGSL maps, `package.json` dependencies) and a clean checkout is the point, or Cyrus asks
-for it. Not for a docs or copy change, and not as a habit after every push: every run costs
+**When to start it.** `npm run gate` is the rule; the workflow's runners are the exception: a
+clean checkout of what was pushed is the point (a change to the build itself, `vite.config.ts`,
+the WGSL maps or `package.json` dependencies, before it lands on main), the gate could not be had
+in full, or Cyrus asks for it. Not for a docs or copy change, and not as a habit after every push: every run costs
 minutes he pays for. Push the branch (a work branch is fine), then:
 
 ```bash

@@ -48,7 +48,7 @@ old host sends players into it.
 
 ```bash
 git fetch origin && git status -sb    # 1. be on main, synced, clean
-npm run typecheck && npm run lint && npm test
+npm run gate                          #    the gates (github-push says how)
 npm run deploy                        # 2. server first, then client
 npm run deploy:verify                 # 3. prove it from outside
 ```

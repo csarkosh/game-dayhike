@@ -14,9 +14,8 @@ name: test
 # Started by hand only (Cyrus, 2026-10-13: runner minutes cost time and money,
 # so nothing runs that nobody asked for). No push, no pull request starts it;
 # an agent runs it on purpose, `gh workflow run test.yml --ref <branch>`, when
-# the local gates could not run in full (the development machine busy with the
-# client suite's frame-time work, say) or before a large change lands on main.
-# The github-push skill says when.
+# a clean checkout is the point (a change to the build itself) or the gate
+# (`npm run gate`) could not be had in full. The github-push skill says when.
 
 on:
   workflow_dispatch:
