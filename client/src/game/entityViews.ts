@@ -79,15 +79,20 @@ function stride(instance: CharacterInstance, speed: number, clipSpeed: number): 
   }
 }
 
-/** Seconds a shade, a lunge or a Hollow stepping out takes to come in from nothing, and a shade or a lunge to go out. */
-export const SHADE_FADE_IN_S = 0.9;
-/** Seconds a gone shade takes to go: slowly, and unevenly (the grade dissolves it by `gone`, shadeSilhouette.ts). */
+/**
+ * Seconds a shade, or a Hollow stepping out, takes to come in from nothing,
+ * and a lunge, which has metres to cover; and a shade or a lunge to go out.
+ * Coming and going alike are the smoke's (shadeSmoke.ts): the figure stands
+ * at its whole height throughout and comes up out of the mist, or goes back
+ * into it, patch by patch (2026-10-20; before, it grew up out of the ground
+ * over 2.4 s, a lunge over 1.2).
+ */
+export const SHADE_FADE_IN_S = 2.4;
+export const LUNGE_FADE_IN_S = 1.2;
 export const SHADE_FADE_OUT_S = 2.6;
-/** Seconds a shade takes to rise from the ground to its height as it comes in, at half its opacity by then; and the seconds after that to its whole. Going, it keeps its height and dissolves. A lunge rises in half the time and is whole as it stands: it has metres to cover. */
-export const SHADE_RISE_S = 2.4;
-export const SHADE_SETTLE_S = 3;
-export const LUNGE_RISE_S = 1.2;
-/** Seconds the Hollow stepping out at the crest, in the summit scene, waits before its rise: the scene's first two shots and the reveal's first beat, the camera on its spot by then (cutscene.ts SUMMIT_RISE_AT_S). The chase's fork Hollows step out in the same state and never wait. */
+/** The figure's opacity in the mask over how far in it is: whole by a third of the way, so the smoke, not a fade, is what brings it in. */
+export const SHADE_OPACITY_GAIN = 3;
+/** Seconds the Hollow stepping out at the crest, in the summit scene, waits before it comes in: the scene's first two shots and the reveal's first beat, the camera on its spot by then (cutscene.ts SUMMIT_RISE_AT_S). The chase's fork Hollows step out in the same state and never wait. */
 export const SUMMIT_RISE_DELAY_S = 8.8;
 /**
  * The eyes: the real one's, dulled to this share of their glow once it has
@@ -103,9 +108,9 @@ export const SHADE_RESOLVE_M = 24;
 export const SHADE_RESOLVE_S = 0.7;
 /** Seconds a gone lunge takes to be a shade again as it goes out. */
 export const SHADE_UNRESOLVE_S = 0.5;
-/** Metres within which a shade is whole in the mask, the metres at which it is SHADE_FAR_SHARE of itself, and that share. */
-export const SHADE_NEAR_M = 10;
-export const SHADE_FAR_M = 40;
+/** Metres within which a shade is whole in the mask, the metres at which it is SHADE_FAR_SHARE of itself, and that share. Whole to 20 m since the climb's shades stand 15 to 20 m off the trail (2026-10-20; 10 and 40 m before, when they stood from 7 m). */
+export const SHADE_NEAR_M = 20;
+export const SHADE_FAR_M = 50;
 export const SHADE_FAR_SHARE = 0.35;
 
 /** Writes `visibility` on every mesh under `node`: 1 is drawn as it is, under 1 is blended toward nothing. */
@@ -123,20 +128,23 @@ export const ARMS: readonly { shoulder: string; elbow: string; wrist: string }[]
   { shoulder: "hollow.antlered.node38", elbow: "hollow.antlered.node37", wrist: "hollow.antlered.node36" },
 ];
 
+/** How far in a figure is when its eyes begin to come, and they are whole with it: the smoke brings the lower body first, so the eyes come last, with the head, and on the way out go first. */
+export const SHADE_EYES_FROM = 0.7;
+
 /**
  * The eyes' level on the frame: the real one's dulled glow, a shade's fainter, by the softness
- * between, and the fade. The level is the eye meshes' alpha, and they glow at HOLLOW_EYE_INTENSITY,
- * so the alpha is the level over that: a figure half there has eyes half there, the frame showing
- * through them as through its body, never a glow that saturates while the body is a veil.
+ * between, and how far in the figure is, from SHADE_EYES_FROM. The level is the eye meshes' alpha,
+ * and they glow at HOLLOW_EYE_INTENSITY, so the alpha is the level over that: never a glow that
+ * saturates while the body is a veil, nor eyes in the mist before the head they are in.
  */
-export function eyeLevelOf(soft: number, fade: number): number {
-  return ((SHADE_EYES_SHADE * soft + SHADE_EYES_DULL * (1 - soft)) * fade) / HOLLOW_EYE_INTENSITY;
+export function eyeLevelOf(soft: number, presence: number): number {
+  const t = Math.max(0, Math.min(1, (presence - SHADE_EYES_FROM) / (1 - SHADE_EYES_FROM)));
+  return ((SHADE_EYES_SHADE * soft + SHADE_EYES_DULL * (1 - soft)) * t * t * (3 - 2 * t)) / HOLLOW_EYE_INTENSITY;
 }
 
-/** The share of its height a shade stands at for a rise of `t`: eased, so it slows into its full height. */
-export function risen(t: number): number {
-  const r = Math.max(0, Math.min(1, t));
-  return r * r * (3 - 2 * r);
+/** The figure's opacity in the mask for how far in it is, 0 to 1. */
+export function opacityOf(presence: number): number {
+  return Math.max(0, Math.min(1, presence * SHADE_OPACITY_GAIN));
 }
 
 function setVisibility(node: TransformNode, level: number): void {
@@ -169,14 +177,14 @@ export class EntityViews {
    * through the end scene, and nothing is asked of the pipelines anew in it.
    */
   keepLocalLamp = false;
-  private readonly fades = new Map<number, { level: number; ai: number; rise: number; settle: number; quick: boolean; delay: number }>();
+  private readonly fades = new Map<number, { level: number; ai: number; quick: boolean; delay: number }>();
   /** Each enemy's reach, 0 to 1: how far its arms are turned out at the local player (REACH_S). */
   private readonly reaches = new Map<number, number>();
   /** Where the reaching arms aim this frame: the local player's eyes, or null with no local player. */
   private reachAt: Vector3 | null = null;
   private readonly reachObserver: Observer<Scene> | null;
   /** Views of shades gone from the state, fading out: the model is held until the fade ends. */
-  private readonly fading = new Map<number, { entry: HollowView; level: number; rise: number; soft: number; near: number }>();
+  private readonly fading = new Map<number, { entry: HollowView; level: number; soft: number; near: number }>();
   /** Each shade's softness (shadeSilhouette.ts): 1 a blur in the mist, 0 the Hollow; a lunge resolves as it closes on the local eye. */
   private readonly soft = new Map<number, number>();
   private readonly near = new Map<number, number>();
@@ -339,32 +347,25 @@ export class EntityViews {
       const feet = enemy.pos.y - ENEMY_HALF.y;
       let fade = this.fades.get(id);
       if (fade === undefined) {
+        // A shade, a lunge and the Hollow stepping out come up out of the mist; a lunge quick; the rest stand at once.
         const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
-        // A shade, and the Hollow stepping out at the crest, come up out of the ground; a lunge quick; the rest stand at once.
-        const shade = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
         const quick = enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike;
         // The Hollow stepping out at the crest, in the summit scene, waits SUMMIT_RISE_DELAY_S before it
-        // rises: the scene's arrival and find come first. A fork's Hollow steps out in the same state in
-        // the chase, and rises at once: held, it would reach its player before it had drawn.
-        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, rise: shade ? 0 : 1, settle: shade && !quick ? 0 : 1, quick, delay: enemy.ai === AiState.Emerge && state.phase === Phase.Scene ? SUMMIT_RISE_DELAY_S : 0 };
+        // comes in: the scene's arrival and find come first. A fork's Hollow steps out in the same state in
+        // the chase, and comes in at once: held, it would reach its player before it had drawn.
+        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, quick, delay: enemy.ai === AiState.Emerge && state.phase === Phase.Scene ? SUMMIT_RISE_DELAY_S : 0 };
         this.fades.set(id, fade);
       }
       fade.ai = enemy.ai;
-      // The held wait spends the frame first; what is left of it begins the rise, so the rise is not a frame late.
+      // The held wait spends the frame first; what is left of it begins the coming in, so it is not a frame late.
       let step = dt;
       if (fade.delay > 0) {
         const held = Math.min(fade.delay, step);
         fade.delay -= held;
         step -= held;
       }
-      if (fade.rise < 1 || fade.settle < 1) {
-        // A shade comes up out of the ground to its height over SHADE_RISE_S,
-        // as if out of the mist, at half its opacity by then, and settles to
-        // its whole over SHADE_SETTLE_S after.
-        if (step > 0 && fade.rise < 1) fade.rise = Math.min(1, fade.rise + step / (fade.quick ? LUNGE_RISE_S : SHADE_RISE_S));
-        else if (step > 0) fade.settle = Math.min(1, fade.settle + step / SHADE_SETTLE_S);
-        fade.level = fade.quick ? risen(fade.rise) : 0.5 * risen(fade.rise) + 0.5 * fade.settle;
-      } else if (step > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + step / SHADE_FADE_IN_S);
+      // It comes up out of the mist at its whole height, the smoke bringing it in (shadeSmoke.ts).
+      if (step > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + step / (fade.quick ? LUNGE_FADE_IN_S : SHADE_FADE_IN_S));
       // A lunge resolves from the mist as it closes on the local eye; a shade
       // never does; a Hollow out in the open is the resolved form from the
       // start, the same black figure with the dulled eyes.
@@ -388,10 +389,9 @@ export class EntityViews {
         // way the sim has it going: the figure, and its head with it, is
         // always turned to whoever is looking at it.
         entry.view.node.rotation.y = this.facingOf(state, localId, enemy.pos.x, enemy.pos.z, enemy.yaw);
-        entry.instance.root.scaling.y = HOLLOW_SCALE * risen(fade.rise);
         if (this.softShades && this.soft.has(id)) {
           const soft = this.soft.get(id) as number;
-          this.shadeList.push({ node: entry.view.node, fade: fade.level, soft, near: this.near.get(id) ?? 1, gone: 0, eyes: entry.eyes, eyeLevel: eyeLevelOf(soft, fade.level) });
+          this.shadeList.push({ node: entry.view.node, fade: opacityOf(fade.level), presence: fade.level, soft, near: this.near.get(id) ?? 1, eyes: entry.eyes, eyeLevel: eyeLevelOf(soft, fade.level) });
         }
         else setVisibility(entry.view.node, fade.level);
         // Enemy velocity never reaches a client (it is zeroed there), so the
@@ -442,7 +442,7 @@ export class EntityViews {
       const entry = this.enemyModels.get(id);
       if (entry !== undefined && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge || fade.ai === AiState.Strike)) {
         this.enemyModels.delete(id);
-        this.fading.set(id, { entry, level: fade.level, rise: fade.rise, soft: this.soft.get(id) ?? 1, near: this.near.get(id) ?? 1 });
+        this.fading.set(id, { entry, level: fade.level, soft: this.soft.get(id) ?? 1, near: this.near.get(id) ?? 1 });
       }
       this.fades.delete(id);
       this.soft.delete(id);
@@ -456,14 +456,13 @@ export class EntityViews {
         out.level -= dt / SHADE_FADE_OUT_S;
         out.soft = Math.min(1, out.soft + dt / SHADE_UNRESOLVE_S);
       }
-      // It keeps its height: the going is the grade's, patch by patch, by `gone`.
-      out.entry.instance.root.scaling.y = HOLLOW_SCALE * risen(out.rise);
+      // It keeps its height: the going is the smoke's, patch by patch (shadeSmoke.ts).
       if (out.level <= 0) {
         this.models.release(id);
         this.fading.delete(id);
         continue;
       }
-      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: out.level, soft: out.soft, near: out.near, gone: 1 - out.level, eyes: out.entry.eyes, eyeLevel: eyeLevelOf(out.soft, out.level) });
+      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: opacityOf(out.level), presence: out.level, soft: out.soft, near: out.near, eyes: out.entry.eyes, eyeLevel: eyeLevelOf(out.soft, out.level) });
       else setVisibility(out.entry.view.node, out.level);
     }
     this.pruneModels(this.enemyModels, state.enemies);

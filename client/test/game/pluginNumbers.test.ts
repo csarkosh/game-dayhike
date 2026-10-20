@@ -95,7 +95,7 @@ describe("the material plugins' numbers", () => {
       const text = readFileSync(file, "utf8");
       return [...text.matchAll(/class \w+ extends MaterialPluginBase \{[\s\S]*?getClassName\(\): string \{\s*return "(\w+)";/g)].map((m) => m[1] as string);
     });
-    expect(games.length).toBe(17);
+    expect(games.length).toBe(18);
     expect(games.filter((name) => !PLUGIN_ORDER.includes(name))).toEqual([]);
     expect(new Set(PLUGIN_ORDER).size).toBe(PLUGIN_ORDER.length);
   });
@@ -129,8 +129,10 @@ describe("the material plugins' numbers", () => {
     expect(numbering._MaterialPluginClassToMainDefine.DeadwoodPlugin).toBe("MATERIALPLUGIN_24");
     // The impostor bake's pictures after that (2026-10-15).
     expect(numbering._MaterialPluginClassToMainDefine.ImpostorBakePlugin).toBe("MATERIALPLUGIN_25");
+    // The shades' smoke after that (2026-10-20): the corpus carries its stages as 26.
+    expect(numbering._MaterialPluginClassToMainDefine.ShadeSmokePlugin).toBe("MATERIALPLUGIN_26");
     expect(numbering._MaterialPluginClassToMainDefine.SomethingEarlier).toBe(undefined);
-    expect(numbering._MaterialPluginCounter).toBe(25);
+    expect(numbering._MaterialPluginCounter).toBe(26);
   });
 
   it("are pinned by the WebGPU engine's maker once its engine stands, before any of its materials", () => {

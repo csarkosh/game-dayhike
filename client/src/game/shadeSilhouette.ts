@@ -8,16 +8,19 @@
  * nothing. A lunge resolves: as it closes, its share of the mask moves from
  * the red (the shade, a little darker than the mist) to the blue (the real
  * thing, near black), and its eyes alone come onto the frame, dulled; the
- * model's own surface is never drawn.
+ * model's own surface is never drawn. Every figure comes in, goes out and
+ * stands through smoke of its own (shadeSmoke.ts, a plugin on its material
+ * here): never a growing or a shrinking, and never a still outline.
  *
  * The mask is a render target on a camera of its own that copies the
  * player's every frame and sees only SHADE_LAYER (the main camera does not
  * see that bit). Each shade's meshes are on that layer and, while it
  * resolves, on the main layer too; the mask draws them with a flat material
- * whose red is the shade's softness (fainter far off), blue what has
- * resolved, and green how far gone it is, and the mesh's `visibility` is set
- * for each pass as the target renders and restores after: the mask's alpha
- * is the fade; on the frame the body is nothing and the eyes their level.
+ * whose red is the shade's softness (fainter far off) and blue what has
+ * resolved (green, how far gone it was, is 0 since the smoke took the going,
+ * 2026-10-20), and the mesh's `visibility` is set for each pass as the target
+ * renders and restores after: the mask's alpha is the fade, times what the
+ * smoke keeps; on the frame the body is nothing and the eyes their level.
  *
  * The low tier has no grade pass: there the shades are the Hollow, fading
  * in and out by `visibility` alone (entityViews.ts).
@@ -33,6 +36,9 @@ import { Color3, Color4 } from "@babylonjs/core/Maths/math.color.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { Material } from "@babylonjs/core/Materials/material.js";
+import { attachShadeSmoke, SHADE_SMOKE_FOLD_S, type ShadeSmokePlugin } from "./shadeSmoke.js";
+import { HOLLOW_FIGURE_M } from "./hollowLook.js";
 
 /** The layer bit the mask's camera sees and the main camera (Babylon's default mask, 0x0FFFFFFF) does not. */
 export const SHADE_LAYER = 0x10000000;
@@ -43,10 +49,10 @@ export const SHADE_MASK_RATIO = 0.5;
 
 /** One figure in the mask: its node, how far in it is (0 to 1), how soft (1 a blur in the mist, 0 the Hollow itself), and how near (1 close, less far off: a far figure is fainter in the mist). */
 /**
- * `gone` is how far a going shade has gone, 0 to 1: the mask's green, which the grade dissolves it by, patch by patch.
+ * `fade` is its opacity in the mask; `presence` how far in it is, 0 to 1, coming or going, which the smoke keeps it by (shadeSmoke.ts).
  * `eyes` are the meshes that are the figure's eyes, let onto the frame at `eyeLevel` (their glow, dulled) as it resolves; the body never is: the real thing is a darker shadow in the same mask, its blue.
  */
-export type ShadeEntry = { node: TransformNode; fade: number; soft: number; near: number; gone: number; eyes: readonly AbstractMesh[]; eyeLevel: number };
+export type ShadeEntry = { node: TransformNode; fade: number; presence: number; soft: number; near: number; eyes: readonly AbstractMesh[]; eyeLevel: number };
 
 export type ShadeSilhouette = {
   /** The mask, for the grade pass to read. */
@@ -81,8 +87,10 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
   texture.activeCamera = maskCamera;
   scene.customRenderTargets.push(texture);
 
-  /** Each figure's flat material for the mask: unlit, its red the softness. */
+  /** Each figure's flat material for the mask: unlit, its red the softness, and its smoke. */
   const materials = new Map<TransformNode, StandardMaterial>();
+  const smokes = new Map<TransformNode, ShadeSmokePlugin>();
+  const started = performance.now();
   let current: readonly ShadeEntry[] = [];
   let anyNow = false;
 
@@ -124,8 +132,10 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
         }
         material.dispose();
         materials.delete(node);
+        smokes.delete(node);
       }
       anyNow = false;
+      const seconds = ((performance.now() - started) / 1000) % SHADE_SMOKE_FOLD_S;
       for (const e of entries) {
         let material = materials.get(e.node);
         if (material === undefined) {
@@ -135,16 +145,26 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
           material.diffuseColor = new Color3(0, 0, 0);
           material.specularColor = new Color3(0, 0, 0);
           material.backFaceCulling = false;
+          // Blended always, so the smoke's thinning shows on a whole figure too.
+          material.transparencyMode = Material.MATERIAL_ALPHABLEND;
+          smokes.set(e.node, attachShadeSmoke(material));
           materials.set(e.node, material);
           for (const m of meshesOf(e.node)) {
             if (!list.includes(m)) list.push(m);
             texture.setMaterialForRendering(m, material);
           }
         }
-        // Red the shade (fainter far off), blue the real thing resolved out of it, green how far gone.
+        // Red the shade (fainter far off), blue the real thing resolved out of it.
         material.emissiveColor.r = e.soft * e.near;
-        material.emissiveColor.g = e.gone;
+        material.emissiveColor.g = 0;
         material.emissiveColor.b = 1 - e.soft;
+        const smoke = smokes.get(e.node);
+        if (smoke !== undefined) {
+          smoke.presence = e.presence;
+          smoke.time = seconds;
+          smoke.feetY = e.node.getAbsolutePosition().y;
+          smoke.height = HOLLOW_FIGURE_M;
+        }
         // The body is in the mask alone; the eyes are on the frame too, dulled, as it resolves.
         for (const m of meshesOf(e.node)) {
           m.layerMask = SHADE_LAYER;
@@ -167,6 +187,7 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
       if (at >= 0) scene.customRenderTargets.splice(at, 1);
       for (const material of materials.values()) material.dispose();
       materials.clear();
+      smokes.clear();
       texture.dispose();
       maskCamera.dispose();
     },

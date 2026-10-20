@@ -19,6 +19,8 @@ describe("the cloud's height", () => {
   it("stands taller with the haunt, from its own height to that plus the haunt's", () => {
     expect(cloudHeightUnder(0)).toBe(CLOUD_HEIGHT_M);
     expect(cloudHeightUnder(1)).toBe(CLOUD_HEIGHT_M + CLOUD_HAUNT_HEIGHT_M);
+    // At a full haunt the mist thins to 1/e at the figure's own height, 5.4 m.
+    expect(cloudHeightUnder(1)).toBeCloseTo(5.4, 9);
     expect(cloudHeightUnder(0.5)).toBeCloseTo(CLOUD_HEIGHT_M + CLOUD_HAUNT_HEIGHT_M / 2, 9);
     expect(cloudHeightUnder(3)).toBe(CLOUD_HEIGHT_M + CLOUD_HAUNT_HEIGHT_M);
   });

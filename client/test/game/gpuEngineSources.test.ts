@@ -98,6 +98,7 @@ describe("the WebGPU engine's maker, by default", () => {
     expect(numbering._MaterialPluginClassToMainDefine.MossPlugin).toBe("MATERIALPLUGIN_23");
     expect(numbering._MaterialPluginClassToMainDefine.DeadwoodPlugin).toBe("MATERIALPLUGIN_24");
     expect(numbering._MaterialPluginClassToMainDefine.ImpostorBakePlugin).toBe("MATERIALPLUGIN_25");
-    expect(numbering._MaterialPluginCounter).toBe(25);
+    expect(numbering._MaterialPluginClassToMainDefine.ShadeSmokePlugin).toBe("MATERIALPLUGIN_26");
+    expect(numbering._MaterialPluginCounter).toBe(26);
   });
 });

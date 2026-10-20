@@ -100,6 +100,30 @@ the frame. A strike plays the Hollow's attack clip.
 **The low tier** has no grade pass: there the shades are the Hollow, fading in and out by
 `visibility` alone.
 
+## 2a. The smoke (amended 2026-10-20)
+
+The rise is gone: no figure grows up out of the ground or shrinks. Each figure's flat material in
+the mask carries a plugin (`game/shadeSmoke.ts`, `shaders/shadeSmoke*.fx`) that keeps it through
+smoke of its own, in the world's metres, so it stays on the figure as the eye turns:
+
+- **Coming and going.** A fbm of value noise rises through the figure at `SHADE_SMOKE_RISE`
+  (0.6 m/s); the figure is kept where that noise, biased a quarter by height so the lower body comes
+  first, is under how far in it is (`presence`, 0 to 1). A shade or the Hollow stepping out comes in
+  over `SHADE_FADE_IN_S` (2.4 s), a lunge over `LUNGE_FADE_IN_S` (1.2 s), and goes over
+  `SHADE_FADE_OUT_S` (2.6 s); its opacity in the mask is whole a third of the way
+  (`SHADE_OPACITY_GAIN`), so the smoke, not a fade, brings it. Its eyes come last, from 0.7 of the
+  way in (`SHADE_EYES_FROM`), with the head, and on the way out go first. The bottom
+  `SHADE_SMOKE_FEET` (0.16) of its height is lost in the mist.
+- **Never still.** The outline swells and draws in along the normals by a slow rising noise, up to
+  `SHADE_SMOKE_SWELL_M` (0.35 m), and where the surface turns from the eye a faster noise frays it by
+  `SHADE_SMOKE_FRAY` (0.55).
+
+The mask's green, the old `gone`, is 0: the grade's patch dissolve stays in its shader, idle, until the
+grade is next recorded. Since the climb's shades stand 15 to 20 m off the trail, a figure is whole in
+the mask within `SHADE_NEAR_M` 20 m and `SHADE_FAR_SHARE` of itself at `SHADE_FAR_M` 50 m (10 and 40
+before). The mist stands taller with them: at a full haunt the cloud thins to 1/e at the figure's own
+height, 5.4 m (`CLOUD_HAUNT_HEIGHT_M`, 2.4 before, a 1/e height of 4 m that left its head above).
+
 ## 3. Where it lives
 
 - `game/shadeSilhouette.ts`: the mask, its camera, the per-shade materials, the layer and

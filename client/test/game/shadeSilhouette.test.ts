@@ -6,7 +6,9 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { Material } from "@babylonjs/core/Materials/material.js";
 import { createShadeSilhouette, MAIN_LAYER, SHADE_LAYER, SHADE_MASK_RATIO } from "../../src/game/shadeSilhouette.js";
+import type { ShadeSmokePlugin } from "../../src/game/shadeSmoke.js";
 
 function figure(scene: Scene, name: string): TransformNode {
   const node = new TransformNode(name, scene);
@@ -44,19 +46,29 @@ describe("the shade mask", () => {
     engine.dispose();
   });
 
-  it("writes a going shade's `gone` into its mask material's green, beside the softness in red", () => {
+  it("puts the smoke on each figure's mask material, always blended: how far in it is, its feet and its height; the green is 0", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const camera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
     const mask = createShadeSilhouette(scene, camera);
     const node = new TransformNode("shade", scene);
+    node.position.set(3, 12, -4);
     const mesh = MeshBuilder.CreateBox("body", { size: 1 }, scene);
     mesh.parent = node;
-    mask.sync([{ node, fade: 1, soft: 1, near: 1, gone: 0.6, eyes: [], eyeLevel: 0 }]);
+    mask.sync([{ node, fade: 1, presence: 0.4, soft: 1, near: 1, eyes: [], eyeLevel: 0 }]);
     const material = scene.materials.find((m) => m.name.startsWith("mat_shade_mask_")) as StandardMaterial | undefined;
     expect(material).toBeDefined();
     expect(material!.emissiveColor.r).toBe(1);
-    expect(material!.emissiveColor.g).toBeCloseTo(0.6, 12);
+    expect(material!.emissiveColor.g).toBe(0);
+    expect(material!.transparencyMode).toBe(Material.MATERIAL_ALPHABLEND);
+    const smoke = material!.pluginManager?.getPlugin("ShadeSmoke") as ShadeSmokePlugin | null;
+    expect(smoke).not.toBeNull();
+    expect(smoke!.presence).toBeCloseTo(0.4, 12);
+    expect(smoke!.feetY).toBeCloseTo(12, 9);
+    expect(smoke!.height).toBeCloseTo(5.4, 9);
+    // Coming or going, the smoke follows: the same material, its presence moved.
+    mask.sync([{ node, fade: 1, presence: 0.9, soft: 1, near: 1, eyes: [], eyeLevel: 0 }]);
+    expect(smoke!.presence).toBeCloseTo(0.9, 12);
     mask.dispose();
     scene.dispose();
   });
@@ -68,7 +80,7 @@ describe("the shade mask", () => {
     const mask = createShadeSilhouette(scene, camera);
     const soft = figure(scene, "shade");
     const meshes = soft.getChildMeshes(false);
-    mask.sync([{ node: soft, fade: 0.5, soft: 1, near: 1, gone: 0, eyes: [], eyeLevel: 0 }]);
+    mask.sync([{ node: soft, fade: 0.5, soft: 1, near: 1, presence: 1, eyes: [], eyeLevel: 0 }]);
     expect(mask.texture.renderList?.length).toBe(meshes.length);
     for (const m of meshes) expect(mask.texture.renderList).toContain(m);
     for (const m of meshes) {
@@ -83,7 +95,7 @@ describe("the shade mask", () => {
     for (const m of meshes) expect(m.visibility).toBe(0);
     // Resolving: the body stays in the mask alone, its red falling to blue; the eyes come onto the frame at their level.
     const eye = meshes[0]!;
-    mask.sync([{ node: soft, fade: 1, soft: 0.25, near: 1, gone: 0, eyes: [eye], eyeLevel: 0.4 }]);
+    mask.sync([{ node: soft, fade: 1, soft: 0.25, near: 1, presence: 1, eyes: [eye], eyeLevel: 0.4 }]);
     for (const m of meshes) {
       expect(m.layerMask).toBe(m === eye ? SHADE_LAYER | MAIN_LAYER : SHADE_LAYER);
       expect(m.visibility).toBe(m === eye ? 0.4 : 0);
@@ -96,12 +108,12 @@ describe("the shade mask", () => {
     mask.texture.onAfterRenderObservable.notifyObservers(0);
     expect(eye.visibility).toBe(0.4);
     // Resolved: still in the mask, as the real thing (blue), its eyes whole at their level.
-    mask.sync([{ node: soft, fade: 1, soft: 0, near: 1, gone: 0, eyes: [eye], eyeLevel: 0.55 }]);
+    mask.sync([{ node: soft, fade: 1, soft: 0, near: 1, presence: 1, eyes: [eye], eyeLevel: 0.55 }]);
     expect(mask.any()).toBe(true);
     expect(material.emissiveColor.r).toBe(0);
     expect(material.emissiveColor.b).toBe(1);
     // A far figure is fainter in the mask: its red is scaled by `near`.
-    mask.sync([{ node: soft, fade: 1, soft: 1, near: 0.4, gone: 0, eyes: [], eyeLevel: 0 }]);
+    mask.sync([{ node: soft, fade: 1, soft: 1, near: 0.4, presence: 1, eyes: [], eyeLevel: 0 }]);
     expect(material.emissiveColor.r).toBeCloseTo(0.4, 12);
     mask.texture.onBeforeRenderObservable.notifyObservers(0);
     for (const m of meshes) expect(m.visibility).toBe(1);

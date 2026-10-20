@@ -1,3 +1,4 @@
+import { HOLLOW_FIGURE_M } from "./hollowLook.js";
 import { clamp01, type Rgb } from "./colour.js";
 import { hash2 } from "../sim/field.js";
 
@@ -20,9 +21,15 @@ export const CLOUD_CHASE_DENSITY = 0.7;
 export const CLOUD_HAUNT_LIFT = 0.25;
 /** Extinction a metre at a density of 1, at the ground, where the noise is full. */
 export const CLOUD_SIGMA = 0.55;
-/** Metres above the ground at which the cloud has thinned to 1/e, and the metres the haunt adds to that at its full: the mist stands taller as the shades come. */
+/**
+ * Metres above the ground at which the cloud has thinned to 1/e, and the
+ * metres the haunt adds to that at its full: the mist stands taller as the
+ * shades come, at a full haunt to the figure's own height (HOLLOW_FIGURE_M,
+ * 5.4 m), so a figure stands in it head to foot and comes out of it
+ * (2026-10-20; 2.4 m before, a 1/e height of 4 m that left its head above).
+ */
 export const CLOUD_HEIGHT_M = 1.6;
-export const CLOUD_HAUNT_HEIGHT_M = 2.4;
+export const CLOUD_HAUNT_HEIGHT_M = HOLLOW_FIGURE_M - CLOUD_HEIGHT_M;
 /** Metres the cloud's floor sits below the ground, so a slope never shows its edge. */
 export const CLOUD_SEAT = 0.3;
 /** Metres from the eye the march reaches; the atmosphere's own fog is beyond. */

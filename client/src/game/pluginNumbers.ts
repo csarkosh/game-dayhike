@@ -58,6 +58,9 @@ export const PLUGIN_ORDER: readonly string[] = [
   // After that: the impostor bake's two pictures (2026-10-15), on the bake
   // clones alone, which the corpus records as the bakes' stages.
   "ImpostorBakePlugin",
+  // After that: the shades' smoke (2026-10-20), on the shade mask's figures
+  // alone, which the corpus records as 26 (the haunt's page).
+  "ShadeSmokePlugin",
 ];
 
 /** Babylon 9.18's page-wide numbering of plugin classes. */
