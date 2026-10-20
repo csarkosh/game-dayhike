@@ -15,6 +15,7 @@
     { "name": "eerie", "cmd": ["seed atmo", "freecam -275 -1 1.571", "escalation 0", "unsettle 0", "weather eerie", "time 17"] },
     { "name": "night", "cmd": ["seed atmo", "freecam -275 -1 1.571", "escalation 0", "unsettle 0", "time 22"] },
     { "name": "mist", "cmd": ["seed pine", "freecam 90 -316 0.8", "escalation 0", "unsettle 0", "weather mist"] },
-    { "name": "tarn-clear", "cmd": ["seed atmo", "freecam 228 72 1.571", "escalation 0", "unsettle 0", "weather clear", "time 12"] }
+    { "name": "tarn-clear", "cmd": ["seed atmo", "freecam 228 72 1.571", "escalation 0", "unsettle 0", "weather clear", "time 12"] },
+    { "name": "haunt", "cmd": ["seed atmo", "stand 560 -284 1.571"] }
   ]
 }

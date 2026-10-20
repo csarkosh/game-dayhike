@@ -316,12 +316,12 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1115 recorded stages, each file\'s bytes hashing to the name it has: 240 on the medium and high tiers, 484 on low, 154 on high alone, 233 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1115);
+  it('holds the 1124 recorded stages, each file\'s bytes hashing to the name it has: 249 on the medium and high tiers, 484 on low, 154 on high alone, 233 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1124);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1115);
+    expect(read.stages).toHaveLength(1124);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(605);
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(606);
     // The 222 recorded on the medium and high tiers (the far field: the prepass's variants of
     // every material on the two tiers the far softening reads the scene's depth on, the
     // ground haze in every PBR fragment, the meadow's far band in the clutter's vertex stages,
@@ -422,11 +422,13 @@ describe('the committed corpus and the tests\' fixture', () => {
     // text, so 41 pages were recorded again on the three tiers, 257 older
     // texts retired and 269 new stages added (12 of them the paint pass and
     // the grade's palette variants), the eerie evening on low left unrecorded
-    // (its page hung) and so its older texts kept.
-    expect(read.tiers.size).toBe(1115);
+    // (its page hung) and so its older texts kept. 2026-10-20: the shades'
+    // smoke, the plugin on the mask's figures, 9 stages on the medium and high
+    // tiers, met on the haunt's page (high on the climb at night).
+    expect(read.tiers.size).toBe(1124);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([488, 477, 398]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(240);
+    expect([on('low'), on('medium'), on('high')]).toEqual([488, 486, 407]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(249);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(484);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(154);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(233);
