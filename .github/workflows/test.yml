@@ -128,10 +128,11 @@ jobs:
 
   # The client suite whole on one runner took 17 min (vitest's own figure:
   # 1014 s). Five shards bring the longest to about 5 min: vitest assigns files
-  # to shards by a hash of their path, not by duration, and the longest single
-  # file (test/sim/trailBed.test.ts, ~280 s on a runner) sets a floor that more
-  # shards cannot lower. At four, the hash put four of the six slowest files in
-  # one shard and it took 8 min.
+  # to shards by a hash of their path, not by duration. At four, the hash put
+  # four of the six slowest files in one shard and it took 8 min. The longest
+  # single file set a floor more shards could not lower (trailBed.test.ts's
+  # sweep, ~280 s on a runner) until 2026-10-19, when every sweep that long was
+  # split into part files by seed; no file now takes much over two minutes.
   client:
     needs: lfs
     runs-on: ubuntu-latest

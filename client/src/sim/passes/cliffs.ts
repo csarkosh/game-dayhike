@@ -30,7 +30,7 @@ import {
  * long model at the top of the band), drops the front of the base below the
  * origin, and lifts the back of the top edge above the plumb height. Bounding
  * the plumb, unleant box instead leaves nearly half the drawn solid outside
- * (`test/sim/passes/cliffs.test.ts`). A seated point of the piece is a convex
+ * (`test/sim/passes/cliffsSweep.ts`). A seated point of the piece is a convex
  * combination of the piece's seated corners, so it lies inside their bounds:
  * the boxes contain the whole drawn solid, above the ground and below it.
  *
@@ -69,7 +69,7 @@ export const CLIFF_BOX_STEP = 4;
 export const CLIFF_BURY_STEP = 1;
 /** The furthest (m) a box's uphill face is moved into the hill. Where the
  * terrain along the face is still below the top there, the box stops at this
- * and the case is counted (`passes/cliffs.test.ts`). The seven boxes that
+ * and the case is counted (`passes/cliffsSweep.ts`). The seven boxes that
  * trapped a hiker at the scarp needed 1–5 m; over every module within 400 m
  * of the origin on 200 worlds the furthest any face needed was 14 m, and
  * none reached this. */

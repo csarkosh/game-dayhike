@@ -257,7 +257,7 @@ describe("buildStrands on the flat frame", () => {
    * THE FLUSH RULE'S OWN PIN. `BRAID_FLUSH_MAX` only means something while
    * `maxFlushOff` still reads what the braid dropped strands for, so this
    * asserts it of the built worlds — the strand beds that SURVIVED are under
-   * the cap. `trailBed.test.ts` is the gate this keeps the braid inside (its
+   * the cap. `trailBedSweep.ts` is the gate this keeps the braid inside (its
    * own ceiling is 2 m over the 227-seed sweep); if that gate's step, kernel
    * or ceiling moves, this is the assertion to re-read.
    */

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
@@ -10,7 +10,7 @@ import { GUIDE_MAX, GUIDE_MIN, homeDistances, pathLength } from "../../src/sim/t
 import { FORK_CUT_RADIUS } from "../../src/sim/cut.js";
 import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
 import { TICK_DT } from "../../src/sim/constants.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { seedPart } from "../helpers/seedPart.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
@@ -130,38 +130,81 @@ function descend(token: string): Descent {
 }
 
 /**
- * The cut on fifty seeds, walked as above, with the timeout `hollowWalk.test.ts`
- * carries for the same fifty worlds. The floors are what the walk measured on
+ * The cut on fifty seeds, walked as above, with the timeout the parts of
+ * `hollowWalkSweep.ts` carry for the same fifty worlds. The floors are what the walk measured on
  * 2026-09-25 and again on 2026-09-29, pinned; the shares are the trail builder's and the guide's, not
  * the cut's, and moving them is the density follow-up.
+ *
+ * Since 2026-10-19 the walk runs in three parts (`seedPart`), one test file
+ * each (`cutSweep.part<k>.test.ts`): vitest hands out files, not tests, and
+ * as one test the fifty walks took about 200 s on a CI runner, one of the
+ * floors under the client suite. Every check on a seed's own walk holds on
+ * each part as it did on the whole; the counts over seeds are each part's own
+ * (`PART_PINS`), and hold together what the whole was held to.
  */
-describe("the cut on fifty seeds", () => {
-  it("walks the guide home on every seed, and cuts only what the guide reaches", () => {
-    const runs: Descent[] = [];
-    for (let i = 0; i < 50; i++) runs.push(descend(`hollow${i}`));
-    const inBand = runs.filter((r) => r.inBand).length;
-    const packs = runs.map((r) => r.pack).sort((a, b) => a - b);
-    // The lower of the two middle values: what half the seeds at least send.
-    const median = packs[24]!;
-    const largest = packs[49]!;
-    const corridor = runs.map((r, i) => (r.corridorForks.length > 0 ? `hollow${i}` : null)).filter((t) => t !== null);
-    console.info(`[cut sweep] guide in band on ${inBand} of 50; pack at the pad: ${packs.join(" ")}; a fork on the corridor on ${corridor.join(", ") || "no seed"}`);
-    // The guide lands in its band on 24 of the 50; the rest walk the longest
-    // route found under the cap, as the summit design's §3.5 allows.
-    // 2026-09-29: 29 before the trail left the pad inland, through the
-    // doorway (`closeShore`, trailGrid.ts). The trail is another one below
-    // its first forks on most worlds, and the way home with it. 2026-10-10:
-    // 28 before the valley lakes, whose loops are fewer (the pond's loop
-    // keeps 7 m off a real shore), so fewer guides have a long way round.
-    expect(inBand, `guide in band on ${inBand} of 50`).toBeGreaterThanOrEqual(24);
-    // The pack at the pad, the summit Hollow counted: the median world sends
-    // five, the busiest twelve (2026-10-10: eleven before the valley lakes,
-    // whose worlds have other forks). 2026-09-29: no seed stands a fork on the
-    // corridor, where `hollow29` stood one: the shore is closed to the
-    // trail's search. `cut.test.ts` tries the rule for such a fork on one
-    // hung there by hand.
-    expect(median, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(5);
-    expect(largest, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(12);
-    expect(corridor, `a fork on the corridor on ${corridor.join(", ") || "no seed"}`).toEqual([]);
-  }, timeLimit(300_000));
-});
+
+/** The parts the walk is split into, one test file each (`cutSweep.part<k>.test.ts`). */
+export const CUT_PARTS = 3;
+
+/** The fifty worlds, `hollow0` to `hollow49`. */
+const TOKENS = Array.from({ length: 50 }, (_, i) => `hollow${i}`);
+
+/** What a part pins: its seeds with the guide in band, its seeds sending five or more, and its largest pack. */
+type PartPins = { inBand: number; fivePlus: number; largest: number };
+
+/**
+ * Each part's floors, measured on 2026-10-19 when the walk was split into
+ * three parts of sixteen or seventeen worlds (part k takes `hollow${k - 1}`,
+ * then every third); a part takes 55–80 s on a CI runner. The in-band counts
+ * sum to the 24 of 50 the walk whole was held to. The whole's median pack was
+ * held to five, which is 26 of the 50 seeds sending five or more: a count, so
+ * each part holds its own, and the parts' sum to 27 (a part's own median is
+ * not the whole's: the first part's is three). The largest pack was held to
+ * twelve, the third part's largest; each part's largest is held as measured.
+ *
+ * A part with no floors here fails naming what it measured, in this table's
+ * shape, so a change to the split or to the worlds re-pins from one run.
+ */
+const PART_PINS: Record<number, PartPins> = {
+  1: { inBand: 8, fivePlus: 6, largest: 9 },
+  2: { inBand: 7, fivePlus: 10, largest: 8 },
+  3: { inBand: 9, fivePlus: 11, largest: 12 },
+};
+
+/**
+ * One part of the walk: its worlds walked, every tick and every cut checked
+ * as the whole walk did, and its counts held to the part's own floors.
+ */
+export function checkCutPart(part: number): void {
+  const tokens = seedPart(TOKENS, part, CUT_PARTS);
+  const runs: Descent[] = [];
+  for (const token of tokens) runs.push(descend(token));
+  const inBand = runs.filter((r) => r.inBand).length;
+  const packs = runs.map((r) => r.pack).sort((a, b) => a - b);
+  // The seeds that send five or more: 26 of the fifty make the lower of the
+  // two middle values, what half the seeds at least send, five.
+  const fivePlus = packs.filter((n) => n >= 5).length;
+  const largest = packs[packs.length - 1]!;
+  const corridor = runs.map((r, i) => (r.corridorForks.length > 0 ? tokens[i]! : null)).filter((t) => t !== null);
+  const summary = `guide in band on ${inBand} of ${runs.length}; pack at the pad: ${packs.join(" ")}; a fork on the corridor on ${corridor.join(", ") || "no seed"}`;
+  console.info(`[cut sweep, part ${part} of ${CUT_PARTS}] ${summary}`);
+  const pins = PART_PINS[part];
+  if (pins === undefined) throw new Error(`no floors for part ${part} of ${CUT_PARTS}; it measured ${JSON.stringify({ inBand, fivePlus, largest })}\n${summary}`);
+  // The guide lands in its band on 24 of the 50; the rest walk the longest
+  // route found under the cap, as the summit design's §3.5 allows.
+  // 2026-09-29: 29 before the trail left the pad inland, through the
+  // doorway (`closeShore`, trailGrid.ts). The trail is another one below
+  // its first forks on most worlds, and the way home with it. 2026-10-10:
+  // 28 before the valley lakes, whose loops are fewer (the pond's loop
+  // keeps 7 m off a real shore), so fewer guides have a long way round.
+  expect(inBand, `guide in band on ${inBand} of ${runs.length}`).toBeGreaterThanOrEqual(pins.inBand);
+  // The pack at the pad, the summit Hollow counted: the median world sends
+  // five, the busiest twelve (2026-10-10: eleven before the valley lakes,
+  // whose worlds have other forks). 2026-09-29: no seed stands a fork on the
+  // corridor, where `hollow29` stood one: the shore is closed to the
+  // trail's search. `cut.test.ts` tries the rule for such a fork on one
+  // hung there by hand.
+  expect(fivePlus, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(pins.fivePlus);
+  expect(largest, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(pins.largest);
+  expect(corridor, `a fork on the corridor on ${corridor.join(", ") || "no seed"}`).toEqual([]);
+}

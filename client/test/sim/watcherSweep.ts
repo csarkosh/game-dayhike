@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer } from "../../src/sim/world.js";
@@ -17,7 +17,7 @@ import { hasLineOfSight } from "../../src/sim/ai.js";
 import { aimDirection } from "../../src/sim/view.js";
 import { WATCH_SALT, climbOf, placeWatcher, reachOf, stepWatcher, topForkClimb } from "../../src/sim/watcher.js";
 import type { WatcherRecord } from "../../src/sim/watcher.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { seedPart } from "../helpers/seedPart.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
@@ -173,8 +173,8 @@ function sweep(token: string): Case[] {
 }
 
 /**
- * The watcher on fifty seeds, with the timeout `hollowWalk.test.ts` carries
- * for the same fifty worlds. The floors are what the sweep measured on
+ * The watcher on fifty seeds, the worlds `hollowWalkSweep.ts` walks. The
+ * floors were first what the sweep measured on
  * 2026-09-26, pinned: of 936 stands the watcher showed on 881 within 120
  * ticks (94 %), and 79 264 of 187 200 placements were admitted (42 %); the
  * refusals were the sightline 59 506, the ground 24 179, the trail clearance
@@ -252,61 +252,103 @@ function sweep(token: string): Case[] {
  * 936 stands, 913 shown and 77 593 admitted; the pad is 188 of 200 shown and
  * 4 184 admitted, and three quarters of the way up admits 24 856 where it
  * admitted 25 792.
+ *
+ * Since 2026-10-19 the sweep runs in eight parts, each held to its own
+ * floors (`PART_PINS`), which sum to the totals it was last held to whole.
  */
-describe("the watcher on fifty seeds", () => {
-  it("stands only where every rule holds, and shows within 120 ticks on 907 of 936 stands", () => {
-    const cases: Case[] = [];
-    for (let i = 0; i < 50; i++) cases.push(...sweep(`hollow${i}`));
-    const shown = cases.filter((c) => c.shownAt !== -1);
-    const tries = cases.length * 200;
-    const admitted = cases.reduce((n, c) => n + c.admitted, 0);
-    const refused: Record<Refusal, number> = { clearance: 0, ground: 0, slope: 0, corridor: 0, flee: 0, sightline: 0 };
-    for (const c of cases) for (const r of REFUSALS) refused[r] += c.refused[r];
-    const ranges = shown.map((c) => c.range).sort((a, b) => a - b);
-    const bySlot = SLOTS.map((s) => {
-      const of = cases.filter((c) => c.slot.split("/").includes(s));
-      const on = of.filter((c) => c.shownAt !== -1).length;
-      const adm = of.reduce((n, c) => n + c.admitted, 0);
-      return { slot: s, stands: of.length, shown: on, admitted: adm };
-    });
-    const never = cases.filter((c) => c.shownAt === -1).map((c) => c.label);
-    const summary = [
-      `${shown.length} of ${cases.length} stands shown within 120 ticks`,
-      `${admitted} of ${tries} tries admitted; refused ${REFUSALS.map((r) => `${r} ${refused[r]}`).join(", ")}`,
-      `ranges ${ranges[0]?.toFixed(2)}–${ranges[ranges.length - 1]?.toFixed(2)} m`,
-      ...bySlot.map((b) => `${b.slot}: shown ${b.shown}/${b.stands}, admitted ${b.admitted}/${b.stands * 200}`),
-      `never shown: ${never.join("; ")}`,
-    ].join("\n");
-    console.info(`[watcher sweep]\n${summary}`);
-    expect(cases.length, summary).toBe(936);
-    // 913 until 2026-10-15: the fallen logs collide, so a stand on a log or
-    // behind one is refused by the ground rule or its sightline; measured
-    // 907 shown and 71,276 admitted with them (the clearance 16,744, the
-    // ground 19,186, the slope 2,117, the corridor 3,078, the sightline
-    // 74,799), the same on two runs.
-    expect(shown.length, summary).toBeGreaterThanOrEqual(907);
-    // 74,240 until 2026-10-04: a tree that would have fallen across a trail
-    // stands dead beside it instead, and a snag is in a stand's way where a
-    // log was not (74,228 admitted). 77,593 from 2026-10-10. 75,494 from
-    // 2026-10-13: the walkable rock's layer is the ground the watcher
-    // stands on (`sim/rockSurface.ts`), steeper under the plates, so the
-    // ground and slope rules refuse more tries; every stand still shows.
-    expect(admitted, summary).toBeGreaterThanOrEqual(71200);
-    expect(refused.flee, summary).toBe(0);
-    expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
-    expect(bySlot.map((b) => `${b.slot} ${b.stands}`), summary).toEqual(["climb 0 200", "climb 0.25 200", "climb 0.5 200", "climb 0.75 200", "top fork 180"]);
-    // 2026-10-15: [188, 197, 192, 200, 180] shown before the logs collided;
-    // measured [186, 195, 192, 200, 178] with them.
-    const floors = [186, 195, 192, 200, 178];
-    // 2026-10-13: [4184, 13490, 17944, 24856, 23077] before the walkable
-    // rock's layer; measured [4184, 13122, 17374, 23424, 22926] with it.
-    // 2026-10-15: measured [3744, 11774, 16756, 22924, 21614] with the logs
-    // colliding, the floors a little under each.
-    const admittedFloors = [3700, 11700, 16700, 22900, 21600];
-    bySlot.forEach((b, i) => {
-      expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
-      expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);
-    });
-  }, timeLimit(300_000));
-});
+
+/** The parts the sweep is split into, one test file each (`watcherSweep.part<k>.test.ts`). */
+export const WATCHER_PARTS = 8;
+
+/** The fifty worlds, `hollow0` to `hollow49`. */
+const TOKENS = Array.from({ length: 50 }, (_, i) => `hollow${i}`);
+
+/** What a part pins: its stands, how many of them showed, the placements admitted, and each by slot. */
+type PartPins = { stands: number; shown: number; admitted: number; slots: { stands: number[]; shown: number[]; admitted: number[] } };
+
+/**
+ * Each part's floors, measured on 2026-10-19 when the sweep was split into
+ * eight parts of six or seven worlds (part k takes `hollow${k - 1}`, then
+ * every eighth), so that each runs on a worker of its own rather than one
+ * sweep setting the floor under the whole suite (a part takes 70–130 s on a
+ * CI runner). The stands and the shown are the measured counts and the
+ * admitted the measured counts to the ten below; the parts sum to the totals
+ * the sweep whole was held to: 936 stands, 907 shown, 71 276 admitted, and
+ * by slot [200, 200, 200, 200, 180] stands, [186, 195, 192, 200, 178] shown
+ * and [3744, 11774, 16756, 22924, 21614] admitted.
+ *
+ * The totals' history: 913 shown until 2026-10-15, when the fallen logs
+ * began to collide, so a stand on a log or behind one is refused by the
+ * ground rule or its sightline; measured 907 shown and 71 276 admitted with
+ * them (the clearance 16 744, the ground 19 186, the slope 2 117, the
+ * corridor 3 078, the sightline 74 799), the same on two runs, the slots
+ * [188, 197, 192, 200, 180] shown before them. 74 240 admitted until
+ * 2026-10-04, when a tree that would have fallen across a trail came to
+ * stand dead beside it instead and a snag was in a stand's way where a log
+ * was not (74 228 admitted); 77 593 from 2026-10-10; 75 494 from 2026-10-13,
+ * when the walkable rock's layer became the ground the watcher stands on
+ * (`sim/rockSurface.ts`), steeper under the plates, so the ground and slope
+ * rules refuse more tries, the slots [4184, 13490, 17944, 24856, 23077]
+ * admitted before it and [4184, 13122, 17374, 23424, 22926] with it.
+ *
+ * A part with no floors here fails naming what it measured, in this table's
+ * shape, so a change to the split or to the worlds re-pins from one run.
+ */
+const PART_PINS: Record<number, PartPins> = {
+  1: { stands: 132, shown: 130, admitted: 10480, slots: { stands: [28, 28, 28, 28, 28], shown: [27, 28, 27, 28, 28], admitted: [610, 1890, 2210, 2950, 3690] } },
+  2: { stands: 132, shown: 131, admitted: 9820, slots: { stands: [28, 28, 28, 28, 24], shown: [28, 28, 27, 28, 24], admitted: [670, 1510, 2050, 3130, 3040] } },
+  3: { stands: 116, shown: 113, admitted: 8570, slots: { stands: [24, 24, 24, 24, 20], shown: [23, 23, 23, 24, 20], admitted: [290, 1330, 1860, 2780, 2290] } },
+  4: { stands: 108, shown: 108, admitted: 7690, slots: { stands: [24, 24, 24, 24, 20], shown: [24, 24, 24, 24, 20], admitted: [460, 1090, 2390, 2580, 1790] } },
+  5: { stands: 116, shown: 108, admitted: 9740, slots: { stands: [24, 24, 24, 24, 24], shown: [19, 21, 24, 24, 24], admitted: [360, 1410, 2180, 3170, 3150] } },
+  6: { stands: 100, shown: 95, admitted: 7310, slots: { stands: [24, 24, 24, 24, 16], shown: [22, 24, 21, 24, 16], admitted: [340, 1560, 1840, 2940, 2490] } },
+  7: { stands: 120, shown: 115, admitted: 9570, slots: { stands: [24, 24, 24, 24, 24], shown: [21, 23, 24, 24, 23], admitted: [630, 1010, 2350, 2970, 2600] } },
+  8: { stands: 112, shown: 107, admitted: 8050, slots: { stands: [24, 24, 24, 24, 24], shown: [22, 24, 22, 24, 23], admitted: [340, 1940, 1840, 2370, 2530] } },
+};
+
+/**
+ * One part of the sweep (`seedPart`): its six or seven worlds swept, every
+ * stand and every try checked against the rule as the whole sweep did, and
+ * its counts held to the part's own floors.
+ */
+export function checkWatcherPart(part: number): void {
+  const cases: Case[] = [];
+  for (const token of seedPart(TOKENS, part, WATCHER_PARTS)) cases.push(...sweep(token));
+  const shown = cases.filter((c) => c.shownAt !== -1);
+  const tries = cases.length * 200;
+  const admitted = cases.reduce((n, c) => n + c.admitted, 0);
+  const refused: Record<Refusal, number> = { clearance: 0, ground: 0, slope: 0, corridor: 0, flee: 0, sightline: 0 };
+  for (const c of cases) for (const r of REFUSALS) refused[r] += c.refused[r];
+  const ranges = shown.map((c) => c.range).sort((a, b) => a - b);
+  const bySlot = SLOTS.map((s) => {
+    const of = cases.filter((c) => c.slot.split("/").includes(s));
+    const on = of.filter((c) => c.shownAt !== -1).length;
+    const adm = of.reduce((n, c) => n + c.admitted, 0);
+    return { slot: s, stands: of.length, shown: on, admitted: adm };
+  });
+  const never = cases.filter((c) => c.shownAt === -1).map((c) => c.label);
+  const summary = [
+    `${shown.length} of ${cases.length} stands shown within 120 ticks`,
+    `${admitted} of ${tries} tries admitted; refused ${REFUSALS.map((r) => `${r} ${refused[r]}`).join(", ")}`,
+    `ranges ${ranges[0]?.toFixed(2)}–${ranges[ranges.length - 1]?.toFixed(2)} m`,
+    ...bySlot.map((b) => `${b.slot}: shown ${b.shown}/${b.stands}, admitted ${b.admitted}/${b.stands * 200}`),
+    `never shown: ${never.join("; ")}`,
+  ].join("\n");
+  console.info(`[watcher sweep, part ${part} of ${WATCHER_PARTS}]\n${summary}`);
+  const measured: PartPins = {
+    stands: cases.length, shown: shown.length, admitted,
+    slots: { stands: bySlot.map((b) => b.stands), shown: bySlot.map((b) => b.shown), admitted: bySlot.map((b) => b.admitted) },
+  };
+  const pins = PART_PINS[part];
+  if (pins === undefined) throw new Error(`no floors for part ${part} of ${WATCHER_PARTS}; it measured ${JSON.stringify(measured)}, ranges ${ranges[0]}–${ranges[ranges.length - 1]}\n${summary}`);
+  expect(cases.length, summary).toBe(pins.stands);
+  expect(shown.length, summary).toBeGreaterThanOrEqual(pins.shown);
+  expect(admitted, summary).toBeGreaterThanOrEqual(pins.admitted);
+  expect(refused.flee, summary).toBe(0);
+  expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
+  expect(measured.slots.stands, summary).toEqual(pins.slots.stands);
+  bySlot.forEach((b, i) => {
+    expect(b.shown, summary).toBeGreaterThanOrEqual(pins.slots.shown[i]!);
+    expect(b.admitted, summary).toBeGreaterThanOrEqual(pins.slots.admitted[i]!);
+  });
+}

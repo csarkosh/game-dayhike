@@ -141,7 +141,7 @@ describe("one run on the seed `hollow`", SUITE, () => {
     expect(h.targetId).toBe(p.id);
 
     // Down the guide, node by node, the way the seed sweep walks every seed
-    // (cutSweep.test.ts): for every guide node one tick on the edge into it,
+    // (cutSweep.ts): for every guide node one tick on the edge into it,
     // FORK_CUT_RADIUS − 1 m short of the node (or on the node before, when
     // the edge is shorter; none of this guide's is), then one tick on the
     // node. The pad's edge in is the road's: 8 m short of the pad is inside
@@ -175,7 +175,7 @@ describe("one run on the seed `hollow`", SUITE, () => {
       const len = Math.sqrt((node.x - prev.x) ** 2 + (node.z - prev.z) ** 2);
       let f = Math.min(FORK_CUT_RADIUS - 1, len) / len;
       // A way point a Hollow stands on (the summit's, after its steps) is taken half as far from
-      // the node, on the same edge: the same arrival, no kill (cutSweep.test.ts does the same).
+      // the node, on the same edge: the same arrival, no kill (cutSweep.ts does the same).
       const wayOf = (k: number) => ({ x: node.x + (prev.x - node.x) * k, z: node.z + (prev.z - node.z) * k });
       if ([...w.state.enemies.values()].some((e) => Math.hypot(e.pos.x - wayOf(f).x, e.pos.z - wayOf(f).z) < 3)) f /= 2;
       place(wayOf(f).x, wayOf(f).z);

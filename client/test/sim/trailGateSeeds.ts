@@ -3,10 +3,10 @@ import { seedFromToken } from "../../src/game/seed.js";
 /**
  * The 227-seed sweep set shared by every test that has to hold on the REAL,
  * realistic seed population rather than a handful of probes — pulled out of
- * `trailBed.test.ts` so `trailhead.test.ts`'s departure-frame
- * check can hold every seed the bed scan does, without shortening it or
- * drifting from it. Not itself a `*.test.ts` file, so vitest never collects
- * it as a suite of its own.
+ * `trailBed.test.ts` (the bed scan is `trailBedSweep.ts` now) so the
+ * trailhead's sweep (`trailheadSweep.ts`) can hold every seed the bed scan
+ * does, without shortening it or drifting from it. Not itself a `*.test.ts`
+ * file, so vitest never collects it as a suite of its own.
  */
 
 /** The five seeds the graph and landmark tests probe. */

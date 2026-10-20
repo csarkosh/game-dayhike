@@ -1,7 +1,7 @@
 /**
  * A cliff module's solid as a lattice of points, seated the way
  * the field seats it. Shared by the placement's tests (`cliffField.test.ts`)
- * and the collider's (`passes/cliffs.test.ts`), which sweep the same lattice.
+ * and the collider's (`passes/cliffsSweep.ts`), which sweep the same lattice.
  */
 import type { ClutterInstance } from "../../../src/sim/clutter.js";
 import {

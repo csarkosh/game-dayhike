@@ -65,7 +65,7 @@ export const BRAID_MIN_SPAN = 240;
  * `maxFlushOff` measures it.
  *
  * A STRAND IS OPTIONAL, SO IT CAN BE HELD TO THIS (2026-09-16, fix round 2).
- * The flush invariant belongs to `trailBed.test.ts`, which caps the finished
+ * The flush invariant belongs to `trailBedSweep.ts`, which caps the finished
  * world's worst bed-to-ground residual at 2 m over the 227-seed sweep; the
  * stem and the loops sit where they sit under it, because they have to exist
  * and a bed cutting a ridgelet narrower than the profile's own 8 m kernel is
@@ -234,7 +234,7 @@ export function peakEntryArc(samples: readonly StemSample[], features: readonly 
  * edge's centreline, as an absolute value. Cut and fill count the same.
  *
  * This is the braid's OWN measure, not a call into the gate it serves.
- * `trailBed.test.ts`'s flush gate asks the same question of the finished world
+ * `trailBedSweep.ts`'s flush gate asks the same question of the finished world
  * — composed field against the pre-trail ground with its domes, at 1 m along
  * every centreline — and `trailBraid.test.ts` pins the two together by
  * asserting this function reads under BRAID_FLUSH_MAX on the built worlds.

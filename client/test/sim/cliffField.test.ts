@@ -199,49 +199,7 @@ describe("the lean and the facing, without trig", () => {
 });
 
 describe("the placement", () => {
-  it("carries no module further from its cell than CLIFF_RUN_REACH", () => {
-    // Every module every cell lays within 463.84 m of the origin, on 200
-    // worlds, against the bound the chunk pass and the collector walk by.
-    // The residual this walk once also measured — solid hanging over ground
-    // the probes never cleared — is retired by the colliders of the cliff
-    // pass (`passes/cliffs.test.ts`), which contain the whole solid.
-    const WORLDS = 200;
-    let laid = 0, farthest = 0;
-    const w = 400 + CLIFF_RUN_REACH;
-    for (let seed = 1; seed <= WORLDS; seed++) {
-      for (let cj = Math.floor(-w / CLIFF_CELL); cj <= Math.floor(w / CLIFF_CELL); cj++) {
-        for (let ci = Math.floor(-w / CLIFF_CELL); ci <= Math.floor(w / CLIFF_CELL); ci++) {
-          const run = cliffCellRuns(seed, ci, cj, CLIFF_LAID);
-          if (run.length === 0) continue;
-          const home = cliffCellPoint(seed, ci, cj);
-          for (const m of run) {
-            laid++;
-            const reach = Math.hypot(m.x - home.x, m.z - home.z);
-            farthest = Math.max(farthest, reach);
-            expect(reach).toBeLessThanOrEqual(CLIFF_RUN_REACH);
-          }
-        }
-      }
-    }
-    // 2026-09-29: 405 before the trail left the pad inland. The placement
-    // reads the terrain and nothing else, and the trail's bed is cut into
-    // the terrain: the trail is another line on 122 of these worlds, and on
-    // 9 of them the ground by the old line or the new one opens or shuts a
-    // cell's gate. 11 modules went and 32 came, every one within 31.2 m of
-    // one line or the other. The farthest carry reads as it did.
-    // 2026-09-30: 426 before the lakes and the cove. They are ground the
-    // placement reads, and 49 more modules stand on the worlds they change.
-    // 2026-10-10: 475 before the valley lakes, whose shores, banks and aprons
-    // are other ground than the round ponds' dishes, and whose trails run
-    // elsewhere; net 3 more modules (475 to 478) stand on the worlds they change, and none
-    // on a lake's ground (one did, on world 147's outer bank, 479 laid).
-    expect(laid).toBe(478);
-    // Measured: the farthest a run carried a module across these worlds,
-    // 50.59 m of the 63.84 the constants allow.
-    expect(farthest).toBeCloseTo(50.594476156076325, 9);
-    // 200 worlds built, about a second each with the valley lakes, and read cell by cell: 251 s.
-  }, timeLimit(420_000));
-
+  // That no run carries a module further than CLIFF_RUN_REACH is swept over 200 worlds in parts (`cliffFieldSweep.ts`).
   it("pins the run's reach to the arithmetic of its constants", () => {
     // Every step along a run is CLIFF_RUN_SPACING of the mean of its two
     // modules' placed widths, the models alternate, and a straight contour at
@@ -257,7 +215,7 @@ describe("the placement", () => {
     // What the placement does guarantee, asserted over the probe set itself:
     // every point of the box lattice the field reads is open under the same
     // seating. 40 worlds; what lies between those probes is covered by the
-    // module's colliders (`passes/cliffs.test.ts`).
+    // module's colliders (`passes/cliffsSweep.ts`).
     let modules = 0, probes = 0;
     const p: CliffPoint = { x: 0, y: 0, z: 0 };
     for (let seed = 1; seed <= 40; seed++) {

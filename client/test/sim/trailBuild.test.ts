@@ -1,7 +1,7 @@
 /**
  * The builder on a world whose shape is known: the ridge with one gap and the
  * knoll are placed by hand, so what the search does with them is legible. The
- * REAL-terrain gate on the same code is `trailBed.test.ts` — the fine check
+ * REAL-terrain gate on the same code is `trailBedSweep.ts` — the fine check
  * measures the composed field, and only a scan over hundreds of seeds says
  * whether it holds.
  */
@@ -251,7 +251,7 @@ describe("buildTrail on a synthetic world", () => {
     const close = closeNonAdjacentEdgePairs(g, TRAIL_EDGE_MIN_GAP);
     // A single stem chain has no branching, so non-adjacent pairs are scarce
     // on this small synthetic world — just assert the invariant holds on
-    // whatever pairs exist; the 227-seed sweep (`trailBed.test.ts`) is the
+    // whatever pairs exist; the 227-seed sweep (`trailBedSweep.ts`) is the
     // real gate on how many that is on real terrain.
     expect(close).toEqual([]);
   });
