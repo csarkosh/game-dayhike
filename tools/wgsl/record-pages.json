@@ -1,0 +1,20 @@
+{
+  "game": "0f1c2a3b-4d5e-4f60-8a9b-0c1d2e3f4a5b",
+  "seconds": 90,
+  "pages": [
+    { "name": "title", "route": "scene/title?step=760" },
+    { "name": "intro", "route": "scene/intro" },
+    { "name": "start", "cmd": ["seed atmo", "escalation 0", "unsettle 0"] },
+    { "name": "trailhead", "cmd": ["seed atmo", "freecam -275 -1 1.571", "escalation 0", "unsettle 0"] },
+    { "name": "forest", "cmd": ["seed atmo", "freecam 250 -500 1.09", "escalation 0", "unsettle 0"] },
+    { "name": "tarn", "cmd": ["seed atmo", "freecam 228 72 1.571", "escalation 0", "unsettle 0"] },
+    { "name": "meadow", "cmd": ["seed pine", "freecam 90 -316 0.8", "escalation 0", "unsettle 0"] },
+    { "name": "crest", "cmd": ["seed pine", "freecam 602 -116 2.5", "escalation 0", "unsettle 0"] },
+    { "name": "beach", "cmd": ["seed atmo", "freecam -432 -200 3.14", "escalation 0", "unsettle 0"] },
+    { "name": "rain", "cmd": ["seed atmo", "freecam -275 -1 1.571", "escalation 0", "unsettle 0", "weather rain"] },
+    { "name": "eerie", "cmd": ["seed atmo", "freecam -275 -1 1.571", "escalation 0", "unsettle 0", "weather eerie", "time 17"] },
+    { "name": "night", "cmd": ["seed atmo", "freecam -275 -1 1.571", "escalation 0", "unsettle 0", "time 22"] },
+    { "name": "mist", "cmd": ["seed pine", "freecam 90 -316 0.8", "escalation 0", "unsettle 0", "weather mist"] },
+    { "name": "tarn-clear", "cmd": ["seed atmo", "freecam 228 72 1.571", "escalation 0", "unsettle 0", "weather clear", "time 12"] }
+  ]
+}
