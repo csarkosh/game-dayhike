@@ -9,7 +9,8 @@
 //
 // Every stage is keyed with the page's own code under this build's salt and
 // translated once with the very translator files the page ships, as the page
-// translates it. Each tier's map holds the stages the index puts on that
+// translates it, the stages shared out over worker threads
+// (`lib/translatePool.mjs`). Each tier's map holds the stages the index puts on that
 // tier, every distinct line of WGSL once and each stage as runs of those
 // lines (`mapText`): the union of the tiers' stages outgrew one map's
 // ceiling, and a page knows its tier before its engine is made. The same
@@ -23,12 +24,14 @@
 // compared with its translation, byte for byte: any difference fails the
 // build, naming the entry, and every map is removed.
 //
-// Usage: node tools/wgsl/build-map.mjs [--corpus <dir>] [--out <dir>] [--reuse]
+// Usage: node tools/wgsl/build-map.mjs [--corpus <dir>] [--out <dir>] [--reuse] [--threads <n>]
 //   --out    the directory the maps are written to, `wgsl-map-<tier>.json`
 //            each, with `wgsl-map.inputs`, the record of what they were made
 //            from (`client/shaders/map/` by default)
 //   --reuse  leaves maps made from the same corpus under the same salt as
 //            they are (the dev server's start).
+//   --threads  the threads the stages are translated on (the machine's cores
+//            less one, at most eight, by default).
 
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -43,16 +46,16 @@ import {
   nodeSalt,
   readBackProblems,
   readTimes,
-  sizes,
+  sizesOf,
   tableFigures,
 } from './lib/buildMap.mjs';
 import { readCorpusDir, refusalText, tiersText } from './lib/corpus.mjs';
 import { CORPUS_DIR, MAP_DIR, inputsFile, mapFile, writeWhole } from './lib/files.mjs';
 import { loadShared } from './lib/shared.mjs';
-import { startTranslators, translateStage } from './lib/translators.mjs';
+import { defaultThreads, translateOnThreads } from './lib/translatePool.mjs';
 
 const { values } = parseArgs({
-  options: { corpus: { type: 'string' }, out: { type: 'string' }, reuse: { type: 'boolean', default: false } },
+  options: { corpus: { type: 'string' }, out: { type: 'string' }, reuse: { type: 'boolean', default: false }, threads: { type: 'string' } },
 });
 const corpusDir = values.corpus === undefined ? CORPUS_DIR : resolve(values.corpus);
 const outDir = values.out === undefined ? MAP_DIR : resolve(values.out);
@@ -80,17 +83,29 @@ if (values.reuse && outputs.every(({ file }) => existsSync(file)) && existsSync(
   process.exit(0);
 }
 
+const threads = values.threads === undefined ? defaultThreads() : Number(values.threads);
+if (!Number.isInteger(threads) || threads < 1) {
+  console.error(`--threads ${values.threads}: a whole number of threads, 1 or more`);
+  process.exit(1);
+}
 const started = performance.now();
-const translators = await startTranslators();
-const startMs = performance.now() - started;
-const made = buildMap({ stages, salt, translate: (entry) => translateStage(translators, entry), shared });
+const results = await translateOnThreads(stages, threads);
+const wallMs = performance.now() - started;
+const translate = (entry) => {
+  const result = results.get(entry);
+  if (result.error !== undefined) throw new Error(result.error);
+  return result.wgsl;
+};
+const made = buildMap({ stages, salt, translate, shared });
+// Each stage's milliseconds on its thread: buildMap's own clock times the look-up.
+const msOf = new Map(stages.map((entry) => [shared.corpusId(entry), results.get(entry).ms]));
 for (const stage of made.translated) {
-  console.log(`  ${stage.ms.toFixed(0).padStart(6)} ms  ${stage.stage.padEnd(8)}  ${stage.id.slice(0, 16)}  ${stage.glslBytes} B GLSL -> ${stage.wgslBytes} B WGSL`);
+  console.log(`  ${msOf.get(stage.id).toFixed(0).padStart(6)} ms  ${stage.stage.padEnd(8)}  ${stage.id.slice(0, 16)}  ${stage.glslBytes} B GLSL -> ${stage.wgslBytes} B WGSL`);
 }
 for (const stage of made.failed) {
   console.error(`  FAILED     ${stage.stage.padEnd(8)}  ${stage.id.slice(0, 16)}  ${stage.message}`);
 }
-const ms = made.translated.map((stage) => stage.ms);
+const ms = made.translated.map((stage) => msOf.get(stage.id));
 const total = ms.reduce((a, b) => a + b, 0);
 const onTier = (tier) => [...tiers.values()].filter((on) => on.includes(tier)).length;
 console.log(`wgsl maps: ${shown(outDir)}, one a tier`);
@@ -100,7 +115,7 @@ console.log(
 );
 console.log(`  failed:       ${made.failed.length}${made.failed.length > 0 ? ` (${made.failed.map((stage) => stage.id).join(', ')})` : ''}`);
 console.log(
-  `  translation:  translators started in ${startMs.toFixed(0)} ms; ${total.toFixed(0)} ms in all, ` +
+  `  translation:  on ${Math.min(threads, stages.length)} threads, ${wallMs.toFixed(0)} ms; ${total.toFixed(0)} ms in all, ` +
     `${(made.translated.length ? total / made.translated.length : 0).toFixed(0)} ms a stage on average, ${Math.max(0, ...ms).toFixed(0)} ms the longest`,
 );
 
@@ -110,7 +125,10 @@ const refusals = [];
 for (const output of outputs) {
   output.entries = entriesOn(made, tiers, output.tier);
   output.text = shared.mapText(salt, output.entries, output.tier);
-  const size = sizes(output.text);
+}
+const figures = await sizesOf(outputs.map((output) => output.text));
+for (const [i, output] of outputs.entries()) {
+  const size = figures[i];
   // A map the page's reader refuses is timed as nothing here, and fails the
   // build when it is read back (below).
   let times;

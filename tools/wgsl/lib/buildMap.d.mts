@@ -36,6 +36,7 @@ export declare function entriesOn(
   tier: string,
 ): Map<string, string>;
 export declare function sizes(text: string): { raw: number; gzip: number; brotli: number };
+export declare function sizesOf(texts: string[]): Promise<{ raw: number; gzip: number; brotli: number }[]>;
 export declare function mapSizeProblem(bytes: number, ceiling?: number, named?: string): string | null;
 export declare function lineFigures(texts: Iterable<string>): {
   lines: number;

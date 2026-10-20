@@ -7,7 +7,8 @@
 // reader (`readMap`) before it is shipped.
 
 import { createHash } from 'node:crypto';
-import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { brotliCompress, brotliCompressSync, constants, gzipSync } from 'node:zlib';
 import { AbstractEngine } from '@babylonjs/core/Engines/abstractEngine.js';
 import { WebGPUTintWASM } from '@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js';
 import { CLIENT_DIR, translatorDigests } from './translators.mjs';
@@ -168,16 +169,27 @@ export function asciiProblem(text) {
   return `the WGSL map is not ASCII: ${outside} character${outside === 1 ? '' : 's'} outside it, the first at character ${first}`;
 }
 
+const brotliParams = (bytes) => ({ params: { [constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_SIZE_HINT]: bytes.length } });
+
 /** `text`'s bytes raw, gzipped at level 9 and brotli'd at quality 11. */
 export function sizes(text) {
   const bytes = Buffer.from(text, 'utf8');
-  return {
-    raw: bytes.length,
-    gzip: gzipSync(bytes, { level: 9 }).length,
-    brotli: brotliCompressSync(bytes, {
-      params: { [constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_SIZE_HINT]: bytes.length },
-    }).length,
-  };
+  return { raw: bytes.length, gzip: gzipSync(bytes, { level: 9 }).length, brotli: brotliCompressSync(bytes, brotliParams(bytes)).length };
+}
+
+/**
+ * `sizes` of each of `texts`, the brotli of each on a thread of its own: at
+ * quality 11 a map takes about nine seconds, one after another most of the
+ * build's time once its translation is on threads.
+ */
+export async function sizesOf(texts) {
+  const brotli = promisify(brotliCompress);
+  return Promise.all(
+    texts.map(async (text) => {
+      const bytes = Buffer.from(text, 'utf8');
+      return { raw: bytes.length, gzip: gzipSync(bytes, { level: 9 }).length, brotli: (await brotli(bytes, brotliParams(bytes))).length };
+    }),
+  );
 }
 
 /**

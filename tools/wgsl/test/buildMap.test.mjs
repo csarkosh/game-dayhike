@@ -202,7 +202,7 @@ describe('the map the build ships', () => {
     expect(lines.filter((line) => line === '  runs:         24, over a table of 24 lines')).toHaveLength(3);
     expect(done.stdout.match(/^ {2}read back: {4}\S+wgsl-map-(low|medium|high)\.json: 2 entries, each byte for byte its translation$/gm)).toHaveLength(3);
     expect(done.stdout.match(/^ {2}bytes: {8}\d+ raw, \d+ gzip -9, \d+ brotli -q 11$/gm)).toHaveLength(3);
-    expect(done.stdout.match(/^ {2}translation: {2}translators started in \d+ ms; \d+ ms in all, \d+ ms a stage on average, \d+ ms the longest$/gm)).toHaveLength(1);
+    expect(done.stdout.match(/^ {2}translation: {2}on \d+ threads, \d+ ms; \d+ ms in all, \d+ ms a stage on average, \d+ ms the longest$/gm)).toHaveLength(1);
     expect(done.stdout.match(/^ {2}reading it: {3}\d+\.\d\d ms to read with the page's reader, \d+\.\d\d ms to expand every entry, \d+\.\d\d ms the largest$/gm)).toHaveLength(3);
     expect(done.stderr).toBe('');
   }, timeLimit(60_000));

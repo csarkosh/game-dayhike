@@ -34,7 +34,9 @@ mkdirSync(`site${sitePath}`, { recursive: true });
 // The source maps stay out of the site (`sourcemap: "hidden"` writes them
 // beside the chunks) and go to the downloads bucket under the build's sha,
 // where `tools/telemetry/symbolicate.mjs` reads a telemetry stack against
-// them. The bucket is public, as the repository is.
+// them. The bucket is public, as the repository is. They go up gzipped on the
+// wire and are stored as they are: 20 MB of JSON is 4 MB that way, most of the
+// upload's time at a home connection's upload speed.
 cpSync('client/dist', `site${sitePath}`, { recursive: true, filter: (src) => !src.endsWith('.map') });
 const maps = readdirSync('client/dist/assets').filter((name) => name.endsWith('.map'));
 const downloadsBucket = tfOutput('downloads_bucket');
@@ -44,6 +46,7 @@ if (maps.length > 0) {
     'cp',
     ...maps.map((name) => `client/dist/assets/${name}`),
     `gs://${downloadsBucket}/sourcemaps/${env.VITE_BUILD_SHA}/assets/`,
+    '--gzip-in-flight-all',
     '--quiet',
   ]);
   console.log(`→ ${maps.length} source maps stored under sourcemaps/${env.VITE_BUILD_SHA}/`);
