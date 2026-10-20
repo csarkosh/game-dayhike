@@ -316,12 +316,12 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1124 recorded stages, each file\'s bytes hashing to the name it has: 249 on the medium and high tiers, 484 on low, 154 on high alone, 233 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1124);
+  it('holds the 1345 recorded stages, each file\'s bytes hashing to the name it has: 297 on the medium and high tiers, 561 on low, 200 on high alone, 283 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1345);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1124);
+    expect(read.stages).toHaveLength(1345);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(606);
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(748);
     // The 222 recorded on the medium and high tiers (the far field: the prepass's variants of
     // every material on the two tiers the far softening reads the scene's depth on, the
     // ground haze in every PBR fragment, the meadow's far band in the clutter's vertex stages,
@@ -424,14 +424,17 @@ describe('the committed corpus and the tests\' fixture', () => {
     // the grade's palette variants), the eerie evening on low left unrecorded
     // (its page hung) and so its older texts kept. 2026-10-20: the shades'
     // smoke, the plugin on the mask's figures, 9 stages on the medium and high
-    // tiers, met on the haunt's page (high on the climb at night).
-    expect(read.tiers.size).toBe(1124);
+    // tiers, met on the haunt's page (high on the climb at night). The same
+    // day the summit's scene and the win's end scene, which no page had met,
+    // so a WebGPU page translated some 80 stages at each one's first frame:
+    // 221 stages on the three tiers, the two pages recorded.
+    expect(read.tiers.size).toBe(1345);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([488, 486, 407]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(249);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(484);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(154);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(233);
+    expect([on('low'), on('medium'), on('high')]).toEqual([565, 584, 501]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(297);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(561);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(200);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(283);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
