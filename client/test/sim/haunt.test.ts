@@ -8,7 +8,7 @@ import { timeLimit } from "../helpers/timeLimit.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "../../src/sim/terrain.js";
 import { AiState, Phase } from "../../src/sim/types.js";
 import type { EnemyState, PlayerState, Vec3 } from "../../src/sim/types.js";
-import { PLAYER_EYE_OFFSET, TICK_DT } from "../../src/sim/constants.js";
+import { PLAYER_EYE_OFFSET, TICK_DT, WALK_SPEED } from "../../src/sim/constants.js";
 import type { TrailNode } from "../../src/sim/trail.js";
 import { stemNodes } from "../../src/sim/trailRoute.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
@@ -16,9 +16,9 @@ import { hasLineOfSight } from "../../src/sim/ai.js";
 import { climbOf } from "../../src/sim/watcher.js";
 import { MIST_AT, MIST_SPAN, actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
 import {
-  GUIDE_REACH, HAUNT_MIST_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_CHASE, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
-  LUNGE_RANGE, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_TRAIL_BEARING_MAX_COS, SHADE_TRAIL_OFF_M, SHADE_WATCHED_S, OFF_TRAIL_FROM_M, OFF_TRAIL_SPAN_M, OFF_TRAIL_REAL_EACH, offTrailOf,
-  bestClimb, isHaunting, isShadeState, placeShadeOnGuide, pressureOf, spawnShade,
+  HAUNT_MIST_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_BY_S, HAUNT_REAL_CHASE, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
+  LUNGE_SPEED, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_TRAIL_BEARING_MAX_COS, SHADE_TRAIL_OFF_M, SHADE_WATCHED_S, OFF_TRAIL_FROM_M, OFF_TRAIL_SPAN_M, OFF_TRAIL_REAL_EACH, offTrailOf,
+  bestClimb, isHaunting, isShadeState, nearestOnTrail, placeShadeOnGuide, pressureOf, spawnShade,
 } from "../../src/sim/haunt.js";
 import { isHollow, SHADE_STARE_CAP, SUMMIT_REVEAL_S, spawnHollow } from "../../src/sim/hollow.js";
 import { trailDistance } from "../../src/sim/trail.js";
@@ -192,7 +192,7 @@ describe("the director", () => {
     expect(w.state.enemies.has(h.id)).toBe(false);
   });
 
-  it("in the chase, a lunge comes at its player, strikes at arm's length, and kills; a player who steps out of its line sees it pass and go", () => {
+  it("in the chase, a lunge walks at its player, strikes at arm's length, and kills; a player who keeps walking away outwalks it, and it goes when its time is up", () => {
     const { w, p } = forestWorld();
     w.haunt!.active = false;
     standAtClimb(w, p, 0.3);
@@ -202,15 +202,19 @@ describe("the director", () => {
     const h = spawnShade(w, from, p, true, 0);
     expect(h.ai).toBe(AiState.Lunge);
     expect(isHollow(h)).toBe(true);
-    expect(h.stateTimer).toBe(LUNGE_MAX_S);
+    expect(h.stateTimer).toBe(40);
+    expect(LUNGE_MAX_S).toBe(40);
+    expect(LUNGE_SPEED).toBe(4);
+    expect(h.emergeTo).toBeNull();
     w.haunt!.active = true;
     const start = dist(h.pos, p.pos);
-    tick(w, 60);
+    // A second and a half at its walk.
+    tick(w, 90);
     expect(w.state.enemies.has(h.id)).toBe(true);
     expect(dist(h.pos, p.pos)).toBeLessThan(start - 4);
     // Standing still: it comes to arm's length, strikes, and they are dead before the strike is over; then it is gone.
     let struck = -1, touched = -1, gone = -1;
-    for (let t = 0; t < 400 && gone < 0; t++) {
+    for (let t = 0; t < 600 && gone < 0; t++) {
       tick(w);
       if (struck < 0 && h.ai === AiState.Strike) { struck = t; expect(dist(h.pos, p.pos)).toBeLessThanOrEqual(LUNGE_ATTACK_M + 0.5); }
       if (touched < 0 && p.health <= 0) touched = t;
@@ -221,25 +225,51 @@ describe("the director", () => {
     expect(gone).toBeGreaterThan(struck);
     expect((gone - struck) * TICK_DT).toBeLessThanOrEqual(LUNGE_ATTACK_S + 0.05);
 
-    // Again, and this time they step out of its line: it passes, and is gone, and they live.
+    // Again, and this time they walk away from it at a walk and keep going: it never reaches them, and it goes.
     const { w: w2, p: q } = forestWorld();
     standAtClimb(w2, q, 0.3);
     w2.state.phase = Phase.Chase;
     const from2 = { x: q.pos.x + Math.sin(q.yaw) * 22, y: 0, z: q.pos.z + Math.cos(q.yaw) * 22 };
     from2.y = elevationAt(seed, from2.x, from2.z) + 1;
     const l = spawnShade(w2, from2, q, true, 0);
-    tick(w2, 30);
-    // Six metres across the line, more than the drift can follow.
-    standAt(q, q.pos.x + Math.cos(q.yaw) * 6, q.pos.z - Math.sin(q.yaw) * 6);
-    let passed = -1;
-    for (let t = 0; t < Math.round(LUNGE_MAX_S / TICK_DT) + 10 && passed < 0; t++) {
+    const away = { x: -Math.sin(q.yaw), z: -Math.cos(q.yaw) };
+    let closest = Infinity, ended = -1;
+    for (let t = 0; t < Math.round((LUNGE_MAX_S + 1) / TICK_DT) && ended < 0; t++) {
+      standAt(q, q.pos.x + away.x * WALK_SPEED * TICK_DT, q.pos.z + away.z * WALK_SPEED * TICK_DT);
       tick(w2);
-      if (!w2.state.enemies.has(l.id)) passed = t;
+      if (w2.state.enemies.has(l.id)) closest = Math.min(closest, dist(l.pos, q.pos));
+      else ended = t;
     }
-    expect(passed).toBeGreaterThanOrEqual(0);
+    expect(ended).toBeGreaterThanOrEqual(0);
+    expect(closest).toBeGreaterThan(LUNGE_ATTACK_M);
     expect(q.health).toBe(100);
-    expect(LUNGE_RANGE[0]).toBeGreaterThan(SHADE_FLEE_RADIUS);
+    expect(LUNGE_SPEED).toBeLessThan(WALK_SPEED);
   });
+
+  it("in the chase a real one comes even at the crest, where few places stand: a player who stands still there is reached within a minute", () => {
+    const { w, p } = forestWorld();
+    const graph = w.trail!;
+    const chain = stemNodes(graph);
+    const here = node(w, chain[chain.length - 2] as number), down = node(w, chain[chain.length - 3] as number);
+    standAt(p, here.x, here.z);
+    p.yaw = Math.atan2(down.x - here.x, down.z - here.z);
+    w.state.phase = Phase.Chase;
+    w.cut = { guide: [...chain].reverse(), cuts: new Map(), closed: new Set() };
+    w.haunt!.rest = 0;
+    let real = 0;
+    const seen = new Set<number>();
+    for (let t = 0; t < Math.round(60 / TICK_DT) && p.health > 0; t++) {
+      tick(w);
+      for (const e of w.state.enemies.values()) {
+        if (seen.has(e.id)) continue;
+        seen.add(e.id);
+        if (e.ai === AiState.Lunge) real++;
+      }
+    }
+    expect(real).toBeGreaterThanOrEqual(1);
+    expect(p.health).toBe(0);
+    expect(HAUNT_REAL_BY_S).toBe(6);
+  }, timeLimit(60_000));
 
   it("a shade in the stare's cone closes the dark a little, to SHADE_STARE_CAP and no further, on the climb as in the chase", () => {
     const { w, p } = forestWorld();
@@ -318,7 +348,7 @@ describe("the director", () => {
     expect(w.haunt!.episode !== null || [...w.state.enemies.values()].some((e) => e.ai === AiState.Shade || e.ai === AiState.Lunge)).toBe(true);
   });
 
-  it("in the chase, a shade stands beside the open way home, ahead of its player and nearer the pad", () => {
+  it("in the chase, a shade stands 15 to 20 m off the open way home, ahead of its player and in view", () => {
     const { w, p } = forestWorld();
     const graph = w.trail!;
     const chain = stemNodes(graph);
@@ -328,20 +358,25 @@ describe("the director", () => {
     standAt(p, here.x, here.z);
     p.yaw = Math.atan2(down.x - here.x, down.z - here.z);
     w.state.phase = Phase.Chase;
-    w.cut = { guide: [...chain].reverse(), cuts: new Map(), closed: new Set() };
+    const guide = [...chain].reverse();
+    w.cut = { guide, cuts: new Map(), closed: new Set() };
     const rng = { rngSeed: 7 };
     let placed: Vec3 | null = null;
-    for (let i = 0; i < 20 && placed === null; i++) placed = placeShadeOnGuide(w, p, rng);
+    for (let i = 0; i < 40 && placed === null; i++) placed = placeShadeOnGuide(w, p, rng);
     expect(placed).not.toBeNull();
+    const off = trailDistance(graph, placed!.x, placed!.z);
+    expect(off).toBeGreaterThanOrEqual(15);
+    expect(off).toBeLessThanOrEqual(20);
+    // In view: 16° to 50° off the look down the stem.
     const d = dist(placed!, p.pos);
-    expect(d).toBeLessThanOrEqual(GUIDE_REACH[1]);
-    expect(d).toBeGreaterThan(3);
-    // Ahead: within the wide view of the look down the stem.
     const dx = placed!.x - p.pos.x, dz = placed!.z - p.pos.z;
-    expect((dx * Math.sin(p.yaw) + dz * Math.cos(p.yaw)) / d).toBeGreaterThan(0.17);
-    // Nearer the next node down the way home than the player is.
-    expect(dist(placed!, { x: down.x, y: 0, z: down.z })).toBeLessThan(dist(p.pos, { x: down.x, y: 0, z: down.z }));
-    // Looking back up the stem, no guide node is ahead: null, and the band placement stands in.
+    const cos = (dx * Math.sin(p.yaw) + dz * Math.cos(p.yaw)) / d;
+    expect(cos).toBeGreaterThanOrEqual(SHADE_TRAIL_BEARING_MAX_COS - 1e-3);
+    expect(cos).toBeLessThanOrEqual(SHADE_BEARING_MIN_COS + 1e-3);
+    // The point of the way home it stands off is ahead of the player, down the stem.
+    const on = nearestOnTrail(graph, placed!.x, placed!.z, guide);
+    expect((on.x - p.pos.x) * Math.sin(p.yaw) + (on.z - p.pos.z) * Math.cos(p.yaw)).toBeGreaterThan(0);
+    // Looking back up the stem, no guide node is ahead: null, and the plain stand off the trail stands in.
     p.yaw += Math.PI;
     expect(placeShadeOnGuide(w, p, rng)).toBeNull();
   });

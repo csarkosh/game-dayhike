@@ -4,16 +4,17 @@
  * through the chase: for a dozen or twenty seconds, every few seconds, a
  * shade stands up somewhere at the edge of a player's sight and stands and
  * stares at them, and is gone again when they come near, when they look at
- * it too long, or when its time is up. On the climb every one is nothing
- * (2026-10-20): it stands SHADE_TRAIL_OFF_M off the trail, ahead of its
- * player, and stares, and nothing before the chase can kill. In the chase
- * one in an episode, sometimes, is a lunge: it comes fast and straight,
- * bending only a little toward its player, and at arm's length it strikes,
- * which kills within its reach; a player who steps out of its line sees it
- * pass and dissolve. The haunt begins once the mist is whole on the ground,
- * lightly, and presses harder the nearer the party is to the crest. In the
- * chase a shade stands where the open way home runs, beside the path: the
- * thing that hunts the party also shows them the way.
+ * it too long, or when its time is up. Every one stands SHADE_TRAIL_OFF_M
+ * off the trail, ahead of its player, where it comes out of the mist
+ * (2026-10-20). On the climb every one is nothing, and nothing before the
+ * chase can kill. In the chase one in an episode, sometimes, is real (a
+ * lunge): from where it stood up it walks at its player, wherever they go,
+ * and at arm's length it strikes, which kills within its reach; a player
+ * who keeps moving down the trail outwalks it, and it goes when its time is
+ * up. The haunt begins once the mist is whole on the ground, lightly, and
+ * presses harder the nearer the party is to the crest. In the chase a shade
+ * stands off the open way home: the thing that hunts the party also shows
+ * them the way.
  *
  * Host only, off the wire and outside the fingerprint, like the watcher's
  * record; the shades themselves are enemies in the snapshot, drawn as the
@@ -35,7 +36,7 @@ import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";
 import { isOnCorridor } from "./containment.js";
 import { faceToward, horizontalDistSq, playerSees, revealing, walkToward } from "./hollow.js";
-import { climbOf, WATCH_SLOPE_NY, WATCH_VIEW_COS } from "./watcher.js";
+import { climbOf, WATCH_SLOPE_NY } from "./watcher.js";
 import { actsUnder, MIST_AT, MIST_SPAN, smootherstep } from "./acts.js";
 import { trailDistance } from "./trail.js";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
@@ -60,13 +61,9 @@ export const HAUNT_EPISODE_S: readonly [number, number] = [18, 30];
 export const HAUNT_SHADE_GAP_S: readonly [number, number] = [0.9, 2.2];
 /** The chance an episode's last shade is a lunge, in the chase. On the climb there is none (2026-10-20; 0.55 before): nothing kills before the chase. */
 export const HAUNT_REAL_CHASE = 0.9;
-/**
- * Metres from its player a shade stands in the chase (the climb's stand off
- * the trail, SHADE_TRAIL_OFF_M), how long it stands, how near a player may
- * come, and how long it may be looked at. Close: the first showings, 12 to
- * 28 m out and 30° to 70° off the look, were never seen.
- */
-export const SHADE_RANGE: readonly [number, number] = [7, 40];
+/** Seconds before a real episode's end by which its lunge comes, if its last shade has not: where few places stand, the count alone would run out the clock first. */
+export const HAUNT_REAL_BY_S = 6;
+/** How long a shade stands, how near a player may come, and how long it may be looked at. */
 export const SHADE_DWELL_S: readonly [number, number] = [8, 18];
 export const SHADE_FLEE_RADIUS = 5;
 /** Metres a new shade keeps from every shade standing: no two in one spot. */
@@ -84,44 +81,42 @@ export const OFF_TRAIL_SPAN_M = 16;
 export const OFF_TRAIL_SHADES_GAIN = 2;
 export const OFF_TRAIL_REAL_EACH = 0.1;
 /**
- * The bearing band off the player's look a shade or a lunge stands in, 16°
- * to 40°, as the cosines and sines of its two edges (the watcher's method,
- * watcher.ts): in the player's view and in the mist at their side
- * (game/hauntMist.ts), and just outside the stare's 20° at its near edge,
- * so a shade is seen before it is looked at. The figure is drawn as a blur
- * in the mist, not lit (game/shadeSilhouette.ts), so the headlamp's cone
- * does not bound it.
+ * Where every shade and lunge stands (2026-10-20; on the climb first, then
+ * in the chase): metres off the trail, measured from its centreline as
+ * `trailDistance` measures, and how far along its player's look the trail
+ * point it stands off may be. It must be in view, from SHADE_BEARING_MIN_COS
+ * (16°, just outside the stare's 20°, so a shade is seen before it is
+ * looked at) to SHADE_TRAIL_BEARING_MAX_COS (50°) off the look. The figure
+ * is drawn as a blur in the mist, not lit (game/shadeSilhouette.ts), so the
+ * headlamp's cone does not bound it.
  */
 export const SHADE_BEARING_MIN_COS = 0.9613;
 export const SHADE_BEARING_MIN_SIN = 0.2756;
-export const SHADE_BEARING_MAX_COS = 0.766;
-export const SHADE_BEARING_MAX_SIN = 0.6428;
-/**
- * On the climb (2026-10-20): metres off the trail a shade stands, measured
- * from its centreline as `trailDistance` measures, and how far along its
- * player's look the trail point it stands off may be; it must still be in
- * view, between the band's near edge (16°) and SHADE_TRAIL_BEARING_MAX_COS
- * (50°) off the look.
- */
 export const SHADE_TRAIL_OFF_M: readonly [number, number] = [15, 20];
 export const SHADE_AHEAD_M: readonly [number, number] = [12, 40];
 export const SHADE_TRAIL_BEARING_MAX_COS = 0.6428;
-/** A lunge: where it starts, its speed (over a sprint), how far its line may drift toward its player a second, and its most seconds. */
-export const LUNGE_RANGE: readonly [number, number] = [30, 44];
-export const LUNGE_SPEED = 6;
+export const SHADE_TRAIL_BEARING_MAX_SIN = 0.766;
+/** Where the stand off the trail ahead finds nothing (near the trail's end, at a bend), a place in the view band itself at this range, kept when it is SHADE_TRAIL_OFF_M off the trail. */
+export const SHADE_BAND_RANGE_M: readonly [number, number] = [15, 45];
+/**
+ * A lunge, the real one: it walks at its player, wherever they are, at
+ * LUNGE_SPEED (under the player's walk, so one who keeps moving down the
+ * trail outwalks it; one who stops, or comes back toward it, is reached),
+ * for at most LUNGE_MAX_S, long enough to cross the 40 m it may stand off
+ * a player who stands. (Until 2026-10-20 it came at 6 m/s from 30 to 44 m
+ * along a line through its player that drifted toward them at 1.2 m/s, for
+ * at most 16 s, and a player who stepped out of the line saw it pass.)
+ */
+export const LUNGE_SPEED = 4;
+export const LUNGE_MAX_S = 40;
 /** The strike: within this of its player the lunge stops and strikes, the strike lasting this long, landing this far into it, and killing within this reach. */
 export const LUNGE_ATTACK_M = 2.6;
 export const LUNGE_ATTACK_S = 0.9;
 export const LUNGE_ATTACK_HIT_S = 0.4;
 export const LUNGE_ATTACK_REACH = 3.4;
-export const LUNGE_DRIFT = 1.2;
-export const LUNGE_MAX_S = 16;
-/** Metres beyond its player a lunge's line runs. */
-export const LUNGE_LINE_M = 60;
-/** In the chase: how far along the open way home a guide shade's node may be, how far along the way to it the shade stands, and how far beside it. */
+/** In the chase: how far along the open way home a guide shade's node may be, and how far along the way to it the trail point it stands off (SHADE_TRAIL_OFF_M) is. */
 export const GUIDE_REACH: readonly [number, number] = [15, 60];
 export const GUIDE_ALONG: readonly [number, number] = [0.55, 0.8];
-export const GUIDE_SIDE_M = 3;
 /** Placements tried for a shade before the director waits a tick. */
 export const HAUNT_PLACE_TRIES = 6;
 /** Mixed into the world seed for the haunt's own stream. */
@@ -218,37 +213,19 @@ function admits(world: World, x: number, z: number, eye: Vec3): Vec3 | null {
 }
 
 /**
- * One try at a place in the band off `target`'s look, by the watcher's
- * method (watcher.ts `placeWatcher`) in the shade's own band: a drawn side,
- * a drawn mix of the band's two edges, at a drawn range. Spends three
- * draws whatever the ground says.
+ * The point of the trail nearest (x, z), and the unit direction of the edge
+ * it is on: on any edge, or, given `path` (node indices in order, the
+ * guide's), on the segments between its nodes alone.
  */
-export function placeShade(world: World, target: PlayerState, rng: { rngSeed: number }, range: readonly [number, number]): Vec3 | null {
-  const side = nextRandom(rng) < 0.5 ? -1 : 1;
-  const mix = nextRandom(rng);
-  const metres = between(rng, range);
-  if (world.trail === null) return null;
-  const look = aimDirection(target.yaw, 0);
-  const minX = look.x * SHADE_BEARING_MIN_COS - side * look.z * SHADE_BEARING_MIN_SIN;
-  const minZ = side * look.x * SHADE_BEARING_MIN_SIN + look.z * SHADE_BEARING_MIN_COS;
-  const maxX = look.x * SHADE_BEARING_MAX_COS - side * look.z * SHADE_BEARING_MAX_SIN;
-  const maxZ = side * look.x * SHADE_BEARING_MAX_SIN + look.z * SHADE_BEARING_MAX_COS;
-  let bx = (1 - mix) * minX + mix * maxX;
-  let bz = (1 - mix) * minZ + mix * maxZ;
-  const len = Math.sqrt(bx * bx + bz * bz);
-  bx /= len;
-  bz /= len;
-  const eye: Vec3 = { x: target.pos.x, y: target.pos.y + PLAYER_EYE_OFFSET, z: target.pos.z };
-  return admits(world, target.pos.x + bx * metres, target.pos.z + bz * metres, eye);
-}
-
-/** The point of the trail nearest (x, z), and the unit direction of the edge it is on. */
-export function nearestOnTrail(graph: TrailGraph, x: number, z: number): { x: number; z: number; tx: number; tz: number } {
+export function nearestOnTrail(graph: TrailGraph, x: number, z: number, path: readonly number[] | null = null): { x: number; z: number; tx: number; tz: number } {
   let best = { x, z, tx: 1, tz: 0 };
   let bestSq = Infinity;
-  for (const e of graph.edges) {
-    const a = graph.nodes[e.a] as TrailNode;
-    const b = graph.nodes[e.b] as TrailNode;
+  const segments = path === null ? graph.edges.length : path.length - 1;
+  for (let k = 0; k < segments; k++) {
+    const ia = path === null ? (graph.edges[k] as { a: number }).a : (path[k] as number);
+    const ib = path === null ? (graph.edges[k] as { b: number }).b : (path[k + 1] as number);
+    const a = graph.nodes[ia] as TrailNode;
+    const b = graph.nodes[ib] as TrailNode;
     const ex = b.x - a.x;
     const ez = b.z - a.z;
     const l2 = ex * ex + ez * ez;
@@ -267,23 +244,15 @@ export function nearestOnTrail(graph: TrailGraph, x: number, z: number): { x: nu
 }
 
 /**
- * One try at a place off the trail, for the climb: the point of the trail
- * nearest a drawn SHADE_AHEAD_M along `target`'s look, and from it a drawn
- * side across the trail at a drawn SHADE_TRAIL_OFF_M. The place must stand
- * that far from every edge (not nearer another branch), in view between the
- * band's near edge and SHADE_TRAIL_BEARING_MAX_COS off the look, and pass
- * `admits`. Spends three draws whatever the ground says.
+ * The place `off` metres to `side` across the trail from its point `on`,
+ * kept when it is in view of `target` (SHADE_BEARING_MIN_COS to
+ * SHADE_TRAIL_BEARING_MAX_COS off the look), admitted (`admits`), and that
+ * far from every edge, not nearer another branch.
  */
-export function placeShadeOffTrail(world: World, target: PlayerState, rng: { rngSeed: number }): Vec3 | null {
-  const side = nextRandom(rng) < 0.5 ? -1 : 1;
-  const ahead = between(rng, SHADE_AHEAD_M);
-  const off = between(rng, SHADE_TRAIL_OFF_M);
-  const graph = world.trail;
-  if (graph === null) return null;
-  const look = aimDirection(target.yaw, 0);
-  const on = nearestOnTrail(graph, target.pos.x + look.x * ahead, target.pos.z + look.z * ahead);
+function standOff(world: World, graph: TrailGraph, target: PlayerState, on: { x: number; z: number; tx: number; tz: number }, side: number, off: number): Vec3 | null {
   const x = on.x - side * on.tz * off;
   const z = on.z + side * on.tx * off;
+  const look = aimDirection(target.yaw, 0);
   const bx = x - target.pos.x;
   const bz = z - target.pos.z;
   const len = Math.sqrt(bx * bx + bz * bz);
@@ -298,11 +267,49 @@ export function placeShadeOffTrail(world: World, target: PlayerState, rng: { rng
 }
 
 /**
- * One try at a place beside the open way home, for the chase: the nearest
+ * One try at a place off the trail, for every shade and lunge: the point of
+ * the trail nearest a drawn SHADE_AHEAD_M along `target`'s look, and from it
+ * a drawn side across the trail at a drawn SHADE_TRAIL_OFF_M (`standOff`);
+ * where that is out of view (near the trail's end, at a bend), a drawn
+ * bearing in the view band, to a drawn side, at a drawn SHADE_BAND_RANGE_M,
+ * kept when it stands SHADE_TRAIL_OFF_M off the trail. The bearing mixes the
+ * band's two edges, the watcher's method (watcher.ts), without trig. Spends
+ * six draws whatever the ground says.
+ */
+export function placeShadeOffTrail(world: World, target: PlayerState, rng: { rngSeed: number }): Vec3 | null {
+  const side = nextRandom(rng) < 0.5 ? -1 : 1;
+  const ahead = between(rng, SHADE_AHEAD_M);
+  const off = between(rng, SHADE_TRAIL_OFF_M);
+  const bandSide = nextRandom(rng) < 0.5 ? -1 : 1;
+  const mix = nextRandom(rng);
+  const range = between(rng, SHADE_BAND_RANGE_M);
+  const graph = world.trail;
+  if (graph === null) return null;
+  const look = aimDirection(target.yaw, 0);
+  const stood = standOff(world, graph, target, nearestOnTrail(graph, target.pos.x + look.x * ahead, target.pos.z + look.z * ahead), side, off);
+  if (stood !== null) return stood;
+  const minX = look.x * SHADE_BEARING_MIN_COS - bandSide * look.z * SHADE_BEARING_MIN_SIN;
+  const minZ = bandSide * look.x * SHADE_BEARING_MIN_SIN + look.z * SHADE_BEARING_MIN_COS;
+  const maxX = look.x * SHADE_TRAIL_BEARING_MAX_COS - bandSide * look.z * SHADE_TRAIL_BEARING_MAX_SIN;
+  const maxZ = bandSide * look.x * SHADE_TRAIL_BEARING_MAX_SIN + look.z * SHADE_TRAIL_BEARING_MAX_COS;
+  const bx = (1 - mix) * minX + mix * maxX;
+  const bz = (1 - mix) * minZ + mix * maxZ;
+  const len = Math.sqrt(bx * bx + bz * bz);
+  const eye: Vec3 = { x: target.pos.x, y: target.pos.y + PLAYER_EYE_OFFSET, z: target.pos.z };
+  const at = admits(world, target.pos.x + (bx / len) * range, target.pos.z + (bz / len) * range, eye);
+  if (at === null) return null;
+  const d = trailDistance(graph, at.x, at.z);
+  return d >= SHADE_TRAIL_OFF_M[0] && d <= SHADE_TRAIL_OFF_M[1] ? at : null;
+}
+
+/**
+ * One try at a place off the open way home, for the chase: the nearest
  * guide node within GUIDE_REACH of `target` that is nearer the pad than
- * their own nearest node, the shade a drawn share of the way to it and a
- * drawn side of that line, within the wide view of the target's look. Null
- * without a guide or a node, and then the band placement is used.
+ * their own nearest node, the point of the guide's own path nearest a drawn
+ * share of the way to it, and from that point a drawn side at a drawn
+ * SHADE_TRAIL_OFF_M (`standOff`): beside the branch that is open, never a
+ * closed one. Null without a guide or a node, and then the plain stand off
+ * the trail is used. Spends three draws.
  */
 export function placeShadeOnGuide(world: World, target: PlayerState, rng: { rngSeed: number }): Vec3 | null {
   const graph = world.trail;
@@ -323,27 +330,14 @@ export function placeShadeOnGuide(world: World, target: PlayerState, rng: { rngS
   }
   const along = between(rng, GUIDE_ALONG);
   const side = nextRandom(rng) < 0.5 ? -1 : 1;
+  const off = between(rng, SHADE_TRAIL_OFF_M);
   if (best === null) return null;
-  const dx = best.x - target.pos.x;
-  const dz = best.z - target.pos.z;
-  const len = Math.sqrt(dx * dx + dz * dz);
-  const x = target.pos.x + dx * along - side * (dz / len) * GUIDE_SIDE_M;
-  const z = target.pos.z + dz * along + side * (dx / len) * GUIDE_SIDE_M;
-  const look = aimDirection(target.yaw, 0);
-  const tx = x - target.pos.x;
-  const tz = z - target.pos.z;
-  const tl = Math.sqrt(tx * tx + tz * tz);
-  if (!(tl > 0) || (tx * look.x + tz * look.z) / tl < WATCH_VIEW_COS) return null;
-  const eye: Vec3 = { x: target.pos.x, y: target.pos.y + PLAYER_EYE_OFFSET, z: target.pos.z };
-  return admits(world, x, z, eye);
+  const on = nearestOnTrail(graph, target.pos.x + (best.x - target.pos.x) * along, target.pos.z + (best.z - target.pos.z) * along, cut.guide);
+  return standOff(world, graph, target, on, side, off);
 }
 
-/** Spawns a shade or a lunge at `at` for `target`: a shade stands `dwell` seconds, a lunge runs its line LUNGE_LINE_M past the target. */
+/** Spawns a shade or a lunge at `at` for `target`: a shade stands `dwell` seconds, a lunge walks at the target for at most LUNGE_MAX_S. */
 export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: boolean, dwell: number): EnemyState {
-  const dx = target.pos.x - at.x;
-  const dz = target.pos.z - at.z;
-  const len = Math.sqrt(dx * dx + dz * dz);
-  const line: Vec3 | null = lunge && len > 0 ? { x: target.pos.x + (dx / len) * LUNGE_LINE_M, y: target.pos.y, z: target.pos.z + (dz / len) * LUNGE_LINE_M } : null;
   const shade: EnemyState = {
     id: world.state.nextEntityId++,
     pos: cloneVec3(at),
@@ -362,7 +356,7 @@ export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: b
     routeAt: 0,
     approach: false,
     seen: false,
-    emergeTo: line,
+    emergeTo: null,
   };
   faceToward(shade, target.pos.x, target.pos.z);
   world.state.enemies.set(shade.id, shade);
@@ -396,13 +390,11 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
     }
     return h.stateTimer <= 0;
   }
-  // The lunge: its line drifts toward its player by at most LUNGE_DRIFT a
-  // second, and it walks that line; at arm's length it strikes; past the
-  // player, or out of time, or stuck, it is gone. Contact is the Hollows'
-  // (updateHollows) as well.
-  const line = h.emergeTo;
-  if (line === null || h.stateTimer <= 0) return true;
-  if (target !== undefined && target.health > 0 && horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_M * LUNGE_ATTACK_M) {
+  // The real one: it walks at its player, wherever they are; at arm's
+  // length it strikes. Out of time, stuck, or its player dead or safe, it
+  // is gone. Contact is the Hollows' (updateHollows) as well.
+  if (h.stateTimer <= 0 || target === undefined || target.health <= 0 || target.safe) return true;
+  if (horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_M * LUNGE_ATTACK_M) {
     h.ai = AiState.Strike;
     h.stateTimer = LUNGE_ATTACK_S;
     h.attackCooldown = 0;
@@ -410,28 +402,8 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
     faceToward(h, target.pos.x, target.pos.z);
     return false;
   }
-  if (target !== undefined && target.health > 0) {
-    const ex = target.pos.x - line.x;
-    const ez = target.pos.z - line.z;
-    // Drift the far point sideways toward where the player now is, projected to the line's distance.
-    const dx = line.x - h.pos.x;
-    const dz = line.z - h.pos.z;
-    const len = Math.sqrt(dx * dx + dz * dz);
-    if (len > 0) {
-      // The player's offset from the line, across it.
-      const across = (ex * -dz + ez * dx) / len;
-      const step = Math.max(-LUNGE_DRIFT * dt, Math.min(LUNGE_DRIFT * dt, across));
-      line.x += (-dz / len) * step;
-      line.z += (dx / len) * step;
-    }
-    const tx = target.pos.x - h.pos.x;
-    const tz = target.pos.z - h.pos.z;
-    if (tx * dx + tz * dz < 0) return true;
-  }
-  walkToward(h, world, dt, line.x, line.z, LUNGE_SPEED);
-  if (h.stuckTimer > 1.5) return true;
-  if (horizontalDistSq(h.pos, line) < 4) return true;
-  return false;
+  walkToward(h, world, dt, target.pos.x, target.pos.z, LUNGE_SPEED);
+  return h.stuckTimer > 1.5;
 }
 
 /**
@@ -475,19 +447,18 @@ export function stepHaunt(world: World, dt: number): void {
     const targets = targetsOf(world);
     if (targets.length > 0) {
       const target = targets[Math.floor(nextRandom(record.rng) * targets.length) % targets.length] as PlayerState;
-      // The episode's last shade is its lunge, when it has one; off the trail in the chase, any shade may be.
-      const lunge = (ep.real && ep.shades === 1) || (off > 0 && nextRandom(record.rng) < OFF_TRAIL_REAL_EACH + (1 - OFF_TRAIL_REAL_EACH) * off);
+      // The episode's last shade is its lunge, when it has one, or the shade placed once only HAUNT_REAL_BY_S is left; off the trail in the chase, any shade may be.
+      const lunge = (ep.real && (ep.shades === 1 || ep.left <= HAUNT_REAL_BY_S)) || (off > 0 && nextRandom(record.rng) < OFF_TRAIL_REAL_EACH + (1 - OFF_TRAIL_REAL_EACH) * off);
       let at: Vec3 | null = null;
-      // On the climb a shade stands off the trail ahead of its player; in the chase, beside the way home or in the band off the look.
+      // Every one stands off the trail ahead of its player; in the chase a shade first off the open way home.
       for (let i = 0; i < HAUNT_PLACE_TRIES && at === null; i++) {
-        if (!chase) at = placeShadeOffTrail(world, target, record.rng);
-        else {
-          if (!lunge) at = placeShadeOnGuide(world, target, record.rng);
-          if (at === null) at = placeShade(world, target, record.rng, lunge ? LUNGE_RANGE : SHADE_RANGE);
-        }
+        if (chase && !lunge) at = placeShadeOnGuide(world, target, record.rng);
+        if (at === null) at = placeShadeOffTrail(world, target, record.rng);
       }
       if (at !== null) {
         spawnShade(world, at, target, lunge, between(record.rng, SHADE_DWELL_S));
+        // One real one an episode: once it has come, the rest are shades.
+        if (lunge) ep.real = false;
         ep.shades--;
         // Off the trail the shades come that much faster too: an episode's count alone would run out its clock.
         ep.nextShade = between(record.rng, HAUNT_SHADE_GAP_S) / (1 + OFF_TRAIL_SHADES_GAIN * off);
