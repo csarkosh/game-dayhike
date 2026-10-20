@@ -47,6 +47,14 @@ as before. The three marks are the dials: a quarter, or a tenth, is one number.
 
 The base preset is `bright` (cloud 0.45, mist 0.12, wetness 0.15), the game's new default.
 
+*Amended 2026-10-20.* The night's end is `NIGHT_WEATHER`, the eerie preset with its rain at 0
+(cloud 1, mist 1, wetness 0.6, dread 1), not the eerie preset itself, whose drizzle (0.3) the
+`/weather eerie` command keeps. Under the night sky the drizzle could not be seen, and on high it
+still drew 14,400 streaks, 360 splashes, the lens's drops and, once the canopy had filled, about
+400 drips. So the wet act's rain stops as the sun goes, the ground stays wet, the rain's hiss goes
+with it, the canopy drains over its ten minutes, and the night's frost motes, which rain thins, come
+back by about two fifths more. The lake was already glass under the drizzle and is unchanged.
+
 ## 2. The animals (`game/wildlifeBehaviour.ts`, `game/woodsVoice.ts`)
 
 `wildlifePresenceUnder` takes the hour: every species, the ravens included, fades from 2.5 h

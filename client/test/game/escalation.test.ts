@@ -7,10 +7,12 @@ import { spawnHollow } from "../../src/sim/hollow.js";
 import { Phase } from "../../src/sim/types.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
+import { rainCountUnder, splashCountUnder } from "../../src/game/rainParams.js";
+import { lensStrengthUnder } from "../../src/game/lensParams.js";
 import { HAUNT_DREAD, HAUNT_IN_S, HAUNT_OUT_S, NIGHT_SPAN, CHASE_EASE_S, ACT_WET, DUSK_AT, WET_AT, WET_SPAN, actsUnder,
   ESCALATION_REST, LENS_EASE_S, NEAR_BLIND, NEAR_FULL, NEAR_START, NIGHT_HOUR, OFF_TRAIL_FULL, OFF_TRAIL_START,
   SPIKE_DECAY_S, SPIKE_RISE_S, WORLD_EASE_S, atmosphereUnder, escalationTargets, stepEscalation,
-  escalationAt,
+  escalationAt, NIGHT_WEATHER,
   type EscalationTargets,
 } from "../../src/game/escalation.js";
 import { graph } from "../sim/helpers/stemGraph.js";
@@ -189,11 +191,12 @@ describe("atmosphereUnder", () => {
     expect(atmosphereUnder(noon, ESCALATION_REST)).toEqual(noon);
   });
 
-  it("reaches night and the eerie preset at world 1, and a later base hour stays", () => {
+  it("reaches night and the night's weather, the eerie preset dry, at world 1, and a later base hour stays", () => {
     const s = { ...ESCALATION_REST, world: 1 };
     const a = atmosphereUnder(noon, s);
     expect(a.hour).toBe(NIGHT_HOUR);
-    expect(a.weather).toEqual(WEATHER_PRESETS.eerie);
+    expect(a.weather).toEqual({ cloudCover: 1, mist: 1, rain: 0, wetness: 0.6, dread: 1 });
+    expect(NIGHT_WEATHER).toEqual({ cloudCover: 1, mist: 1, rain: 0, wetness: 0.6, dread: 1 });
     expect(atmosphereUnder({ weather: WEATHER_PRESETS.clear, hour: 23 }, s).hour).toBe(23);
   });
 
@@ -217,10 +220,23 @@ describe("atmosphereUnder", () => {
     const wet = atmosphereUnder(noon, { ...ESCALATION_REST, world: DUSK_AT });
     expect(wet.hour).toBe(12);
     expect(wet.weather).toEqual(ACT_WET);
-    // Half way into the night: the sun half way down, the weather half way from wet to eerie.
+    // Half way into the night: the sun half way down, the weather half way from wet to the night's, the rain half gone.
     const dusk = atmosphereUnder(noon, { ...ESCALATION_REST, world: DUSK_AT + NIGHT_SPAN / 2 });
-    expect(dusk.hour).toBeCloseTo(12 + (NIGHT_HOUR - 12) * 0.5, 9);
-    expect(dusk.weather.rain).toBeCloseTo((ACT_WET.rain + WEATHER_PRESETS.eerie.rain) / 2, 9);
+    expect(dusk.hour).toBeCloseTo(17, 9);
+    expect(dusk.weather.rain).toBeCloseTo(0.275, 9);
+  });
+
+  it("draws no rain at night on any tier, from a wet act or a dry one, while the eerie preset keeps its drizzle", () => {
+    for (const weather of [WEATHER_PRESETS.clear, WEATHER_PRESETS.bright, WEATHER_PRESETS.rain]) {
+      const night = atmosphereUnder({ weather, hour: 12 }, { ...ESCALATION_REST, world: 1 }).weather;
+      expect(night.rain).toBe(0);
+      for (const tier of ["low", "medium", "high"] as const) {
+        expect(rainCountUnder(night.rain, tier), tier).toBe(0);
+        expect(splashCountUnder(night.rain, tier), tier).toBe(0);
+      }
+      for (const pitch of [-1.2, 0, 1.2]) expect(lensStrengthUnder(night.rain, pitch)).toBe(0);
+    }
+    expect(WEATHER_PRESETS.eerie.rain).toBe(0.3);
   });
 
   it("lifts dread to the lens and never lowers it", () => {

@@ -341,7 +341,9 @@ its 75 % step:
 ## 13. Not done
 
 The rain's streaks (about 1.8 ms on a wet or night frame) were left as they
-are: fewer would show. The forest at the laptop window on a base M4 is
+are: fewer would show. *Amended 2026-10-20:* by night they are gone: the night's
+weather has no rain (`NIGHT_WEATHER`, `2026-10-05-three-acts.md`), so its frame draws no
+streaks, splashes or lens drops, on any tier. The forest at the laptop window on a base M4 is
 still in the forties at full size; the render scale's steps carry it from
 there. The high tier was measured on a base chip; the Max chips it is meant
 for will show their own numbers in the telemetry.

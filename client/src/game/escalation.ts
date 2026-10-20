@@ -4,9 +4,10 @@
  * The world — shared, never falling — is how far up the stem the party's
  * best living climber has reached, and 1 once the chase has begun, and it
  * takes the sun from the base hour to night and the weather toward the
- * eerie preset. The lens — yours — is being off the trail or the nearest
- * Hollow's closeness, and it lifts the dread the grade and the wildlife
- * read. Nothing here is authoritative; nothing crosses the wire.
+ * night's (`NIGHT_WEATHER`: the eerie preset, dry). The lens — yours — is
+ * being off the trail or the nearest Hollow's closeness, and it lifts the
+ * dread the grade and the wildlife read. Nothing here is authoritative;
+ * nothing crosses the wire.
  */
 import { Phase, type WorldState, type Vec3 } from "../sim/types.js";
 import { isHollowState } from "../sim/hollow.js";
@@ -40,6 +41,14 @@ export const NEAR_BLIND = 0.5;
 export const NIGHT_HOUR = 22;
 /** The second act's weather (the acts are sim/acts.ts): a wet day, and a first touch of the dread axis. */
 export const ACT_WET: WeatherParams = Object.freeze({ cloudCover: 1, mist: 0.9, rain: 0.55, wetness: 0.85, dread: 0.35 });
+/**
+ * The third act's weather, and the chase's and the end's: the eerie preset
+ * with its drizzle taken out (2026-10-20). Under the night sky the rain could
+ * not be seen and still drew its streaks, its splashes and the drops on the
+ * lens, so the wet act's rain stops as the sun goes, and the ground stays wet.
+ * The eerie preset itself (`/weather eerie`) keeps its drizzle.
+ */
+export const NIGHT_WEATHER: WeatherParams = Object.freeze({ ...WEATHER_PRESETS.eerie, rain: 0 });
 /** The sky's sunrise; a base before it is already dark and stays. */
 export const DAWN_HOUR = 6;
 /** Time constant of the world's easing, seconds: the light goes over about a minute. */
@@ -178,8 +187,8 @@ export function stepEscalation(prev: EscalationState, t: EscalationTargets, dt: 
 
 /**
  * The sky and the weather for an eased state, in three acts (`actsUnder`):
- * the weather from the base preset to ACT_WET by the wet act, then to eerie
- * by the night; the sun from the base hour to NIGHT_HOUR by the night alone
+ * the weather from the base preset to ACT_WET by the wet act, then to
+ * NIGHT_WEATHER by the night; the sun from the base hour to NIGHT_HOUR by the night alone
  * (a base already past it, or before DAWN_HOUR, stays); then dread lifted
  * to the lens.
  */
@@ -187,7 +196,7 @@ export function atmosphereUnder(base: AtmosphereBase, s: EscalationState): Atmos
   const { wet, night } = actsUnder(s.world);
   const hour =
     base.hour >= NIGHT_HOUR || base.hour <= DAWN_HOUR ? base.hour : base.hour + (NIGHT_HOUR - base.hour) * night;
-  const weather = lerpWeather(lerpWeather(base.weather, ACT_WET, wet), WEATHER_PRESETS.eerie, night);
+  const weather = lerpWeather(lerpWeather(base.weather, ACT_WET, wet), NIGHT_WEATHER, night);
   // The lens, and the haunt's slight vignette under it.
   const lens = Math.max(clamp01(s.lens), HAUNT_DREAD * clamp01(s.haunt));
   return { weather: { ...weather, dread: Math.min(1, Math.max(weather.dread, lens)) }, hour };
