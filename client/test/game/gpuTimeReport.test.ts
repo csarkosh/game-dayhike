@@ -31,4 +31,7 @@ describe("gpuTimeReport", () => {
   it("writes the line the corner shows", () => {
     expect(gpuTimeLine(gpuTimeReport(raw))).toBe("gpu 12.345 ms · main 8.100 ms");
   });
+  it("writes n/a for a frame the browser does not time", () => {
+    expect(gpuTimeLine(gpuTimeReport({ ...raw, frameNs: null }))).toBe("gpu n/a · main 8.100 ms");
+  });
 });
