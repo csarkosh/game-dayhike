@@ -576,6 +576,8 @@ function buildGame(
   let escapeLook: (() => void) | null = null;
   /** The `stand` command's hand on the host's own player, installed with the host session; null on a client. */
   let standAt: ((x: number, z: number, yaw: number) => void) | null = null;
+  /** The `lamp` command's hand on the host's own player's lamp, installed with the host session; null on a client. */
+  let setLamp: ((on: boolean) => void) | null = null;
   /** Each host frame before its ticks: the `escape` look's step, which puts the player by the car once the film's car is in. */
   let escapeStep: (() => void) | null = null;
   let lastLook = { yaw: 0, pitch: 0 };
@@ -722,7 +724,7 @@ function buildGame(
 
   /** The commands that play a scene for a look (`summit`, `escape`), and `stand`, which puts the host's player at a place: never written back to the URL, and from the URL called once the world is in. */
   function isLook(name: string): boolean {
-    return name === "summit" || name === "escape" || name === "stand";
+    return name === "summit" || name === "escape" || name === "stand" || name === "lamp";
   }
 
   function currentScript(): ScriptEntry[] {
@@ -822,6 +824,10 @@ function buildGame(
       const [x, z, yaw = 0] = args.map(Number) as [number, number, number?];
       if (standAt === null) hud.setStatus("stand: the host's to call");
       else standAt(x, z, yaw);
+    } else if (name === "lamp") {
+      // The host's own player's lamp, on unless asked off.
+      if (setLamp === null) hud.setStatus("lamp: the host's to call");
+      else setLamp(args[0] !== "off");
     } else if (name === "end") {
       // The ending, on the spot, nothing of the match: won, the end scene from where the player
       // stands, with the trailhead's car, and no landing after it (endScene.ts);
@@ -1889,6 +1895,11 @@ function buildGame(
       me.vel = { x: 0, y: 0, z: 0 };
       me.yaw = yaw;
       input.setLook(yaw, 0);
+    };
+    setLamp = (on) => {
+      // Host truth, as the Lamp button toggles it (hostSession.ts); the lamp has no drain, so it stays.
+      const me = host.world.state.players.get(host.localEntityId);
+      if (me !== undefined) me.lamp.on = on;
     };
     /** When the `escape` look was called, and when the film's car's first frames were over; null while not. */
     let escapeFrom: number | null = null;

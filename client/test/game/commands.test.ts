@@ -273,6 +273,22 @@ describe("/mist", () => {
   });
 });
 
+describe("/lamp", () => {
+  it("takes nothing, on or off", () => {
+    expect(validateCommand({ name: "lamp", args: [] })).toBeNull();
+    expect(validateCommand({ name: "lamp", args: ["on"] })).toBeNull();
+    expect(validateCommand({ name: "lamp", args: ["off"] })).toBeNull();
+    expect(validateCommand({ name: "lamp", args: ["maybe"] })).toMatch(/on.*off/);
+    expect(validateCommand({ name: "lamp", args: ["on", "off"] })).not.toBeNull();
+  });
+  it("is a view command that is never persisted", () => {
+    const spec = findCommand("lamp");
+    expect(spec?.kind).toBe("view");
+    expect(spec?.scriptValue).toBeUndefined();
+    expect(spec?.defaultValue).toBeUndefined();
+  });
+});
+
 describe("time command", () => {
   it("keeps its default in step with the renderer's", async () => {
     // Two defaults that must agree: `commands.ts` omits `time` from the URL at

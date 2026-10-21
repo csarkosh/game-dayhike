@@ -308,6 +308,19 @@ const SPECS: readonly CommandSpec[] = [
     },
   },
   {
+    name: "lamp",
+    kind: "view",
+    // The lamp is the host's player's, for a link's look at the night: `lamp`
+    // or `lamp on` lights it, `lamp off` puts it out. Not persisted: no
+    // `scriptValue`, so it never rides the URL into a match (`toggleSpec`
+    // would give it one).
+    validate(args) {
+      if (args.length === 0) return null;
+      if (args.length > 1 || (args[0] !== "on" && args[0] !== "off")) return 'lamp takes no argument, or "on" or "off"';
+      return null;
+    },
+  },
+  {
     name: "debug",
     kind: "world",
     // Bare only: on a forest world it registers the trailhead pad marker
