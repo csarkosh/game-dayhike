@@ -2,8 +2,9 @@
 // that say a reading cannot be trusted, the order two builds are interleaved in, the pairs' deltas
 // and the table a run prints.
 
-/** The load average above which a machine is too busy for its reading to count. */
-export const QUIET_LOAD = 3.0;
+/** The CPU cores busy with other work (outside the harness and its Chrome) above which a machine
+ * is too busy for its reading to count. Not a load average: the harness's own Chrome would fill it. */
+export const QUIET_LOAD = 2.0;
 
 const round = (x, dp) => Math.round(x * 10 ** dp) / 10 ** dp;
 

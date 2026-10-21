@@ -26,10 +26,12 @@
 //
 // On this Mac the script starts Chrome itself (Google Chrome, or `CHROME`) from a fresh profile,
 // as a window: the frame cap off and WebGPU's timestamps allowed. Each sample is a browser context
-// of its own. A row's `load` is the Mac's one-minute load average; with --remote it is null, the rig
-// running nothing else by construction (its steadiness run is its load check).
+// of its own. A row's `load` is the CPU cores busy outside the harness as the sample ends: every
+// process's share in `ps`, less this script's and the Chrome it started (the load average cannot be
+// used: the harness's own uncapped Chrome takes an idle Air's to 8). With --remote it is null, the
+// rig running nothing else by construction (its steadiness run is its load check).
+import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verdict } from "./lib/budget.mjs";
@@ -200,10 +202,37 @@ async function sample(session, { tier, base, game, view, still, settle, shotPath
   }
 }
 
+/** The CPU cores busy outside the harness, to 2 dp: the sum of `ps`'s %CPU over every process
+ * but this one and its descendants (the Chrome it started and Chrome's helpers). The one-minute
+ * load average cannot tell other work from the harness: with the harness alone on an idle Air it
+ * reads 8, the uncapped Chrome's own threads counted in it. */
+function busyOutside() {
+  const procs = execFileSync("ps", ["-Ao", "pid=,ppid=,pcpu="], { encoding: "utf8" })
+    .trim()
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/).map(Number))
+    .map(([pid, ppid, pcpu]) => ({ pid, ppid, pcpu }));
+  const children = new Map();
+  for (const p of procs) {
+    if (!children.has(p.ppid)) children.set(p.ppid, []);
+    children.get(p.ppid).push(p.pid);
+  }
+  const ours = new Set();
+  const stack = [process.pid];
+  while (stack.length > 0) {
+    const pid = stack.pop();
+    if (ours.has(pid)) continue;
+    ours.add(pid);
+    stack.push(...(children.get(pid) ?? []));
+  }
+  const busy = procs.filter((p) => !ours.has(p.pid)).reduce((sum, p) => sum + p.pcpu / 100, 0);
+  return Math.round(busy * 100) / 100;
+}
+
 /** The row a sample is written as. */
 function rowOf(r, { machine, about, base, build, tier, view, remote }) {
   const { n, mean, p95 } = summarise(r.frames);
-  const load = remote ? null : Math.round(loadavg()[0] * 100) / 100;
+  const load = remote ? null : busyOutside();
   const row = {
     time: new Date().toISOString(),
     machine,

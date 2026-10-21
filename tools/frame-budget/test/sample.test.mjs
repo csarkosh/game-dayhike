@@ -19,6 +19,7 @@ describe("sample", () => {
     expect(flagsFor(row([1470, 956], 1.2))).toEqual([]);
     expect(flagsFor(row([1279, 832], 1.2))).toEqual(["scale-moved"]);
     expect(flagsFor(row([1470, 956], 9.8))).toEqual(["loaded"]);
+    expect(flagsFor(row([1470, 956], 2.5))).toEqual(["loaded"]);
     expect(flagsFor(row([1279, 832], 9.8))).toEqual(["scale-moved", "loaded"]);
     expect(flagsFor(row([1470, 956], null))).toEqual([]);
     expect(keep([row([1470, 956], 1), row([1279, 832], 1)])).toHaveLength(1);

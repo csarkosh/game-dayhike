@@ -120,13 +120,15 @@ comparison; the dev server is for checking a view's shape.
 | `mean`, `p95`, `n` | the frames' mean and 95th percentile in ms (requestAnimationFrame intervals), and how many frames |
 | `canvas` | the canvas size at the start and the end; unequal is flagged `scale-moved` |
 | `gpuTime` | the page's GPU readout at the start and the end of the frames (below) |
-| `load` | the Mac's one-minute load average read after the sample; null with `--remote` |
-| `quiet` | `load` at or under 3.0; null with `--remote` |
+| `load` | the CPU cores busy outside the harness as the sample ends: `ps`'s %CPU summed over every process but the script and the Chrome it started; null with `--remote` |
+| `quiet` | `load` at or under 2.0; null with `--remote` |
 | `flags` | why the row cannot be trusted: `scale-moved`, `loaded` |
 
 Flagged rows stay in the file and are left out of the medians, the budget's mean and p95, and the
-verdict. If an otherwise idle Air flags every row as `loaded`, say so; do not average the rows.
-The harness's own uncapped Chrome adds to the load.
+verdict. `load` is not the load average: the harness's own uncapped Chrome takes an idle Air's
+one-minute load average from 2 to 8, which would flag every row, so the script counts only the work
+outside itself and its Chrome. If an otherwise idle Air still flags every row as `loaded`, something
+else is running: say so, find it, and do not average the rows.
 
 ## Reading the GPU readout
 
