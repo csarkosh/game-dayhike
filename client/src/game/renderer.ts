@@ -81,6 +81,8 @@ import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createRenderScale } from "./renderScale.js";
+import { installGpuTimeReadout } from "./gpuTime.js";
+import type { GpuTimeReport } from "./gpuTimeReport.js";
 import { createSkinShading } from "./skin.js";
 import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainFarBand, setTerrainRain, setTerrainSward, setTerrainWetness, sharedGroundArrays } from "./terrainTexture.js";
 import { FACE_PATCH_MATERIAL, FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS, createFacePatches } from "./facePatchMeshes.js";
@@ -1685,6 +1687,8 @@ export type Renderer = {
   views: EntityViews;
   /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
   shadows: PropShadows;
+  /** The measurement mode's readout (`?gpuTime`, `gpuTime.ts`); null without it. */
+  gpuTime: { read(): GpuTimeReport } | null;
   /** The rain's cover map, for the same scenery: a mesh added is hard cover
    * (`rainMap.ts`); nothing on the tiers without a map. */
   cover: MeshRegistry;
@@ -1886,6 +1890,10 @@ export type RendererOptions = {
    * tier makes none of them again. Absent, the renderer starts a source of
    * its own (`startSkySource`) and stops it on dispose. */
   skyTable?: SkyTable;
+  /** The measurement mode (`?gpuTime`, `parseGpuTime`): the GPU's timings
+   * read out as `window.__gpuTime()` and a corner line (`gpuTime.ts`), and
+   * the render scale held at full. */
+  gpuTime?: boolean;
 };
 
 /** What the impostor bakes read of the pipelines and the scope: the draws a
@@ -2171,8 +2179,10 @@ function buildRenderer(
   // while the frames hold, a step down to 87 % of them and then to 75 % while
   // they do not, and back up a step at a time. Only where the
   // paint pass draws, whose strokes hide the difference; the tier's own
-  // scaling (`QUALITY`, set by the lighting) is the scale's full.
-  const renderScale = postFeatures.paint > 0 ? createRenderScale() : null;
+  // scaling (`QUALITY`, set by the lighting) is the scale's full. The
+  // measurement mode holds it at full for the page's life, so a timing is
+  // always of the same pixels.
+  const renderScale = postFeatures.paint > 0 && options.gpuTime !== true ? createRenderScale() : null;
   const baseScaling = QUALITY[tier].hardwareScaling;
   partOf(lighting);
   /** Aborted on dispose, or as a build that throws is undone: a wait for the
@@ -2199,6 +2209,12 @@ function buildRenderer(
     post.setCloud((effect) => atmosphere.bindCloud(effect));
   }
   partOf(post);
+  // The measurement mode's readout, beside the canvas (or on the page's body;
+  // nowhere under Node, where it is read from `window.__gpuTime` alone).
+  const gpuTime = options.gpuTime === true
+    ? installGpuTimeReadout(scene, engine, engine.getRenderingCanvas()?.parentElement ?? (typeof document !== "undefined" ? document.body : null), import.meta.env.VITE_BUILD_SHA || "dev")
+    : null;
+  partOf(gpuTime);
   let unsettle = 1;
   /** The rain on the lens, smoothed (lensParams.ts). */
   let lensStrength = 0;
@@ -3076,6 +3092,7 @@ function buildRenderer(
     cover,
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
     skyReady,
+    gpuTime,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       if (renderScale !== null && renderScale.frame(frame.dt)) engine.setHardwareScalingLevel(baseScaling / renderScale.scale);
       // Nothing has stepped the lake's life or the surf this frame yet.
@@ -3550,6 +3567,7 @@ function buildRenderer(
       rain.dispose();
       rainSplash?.dispose();
       motes?.dispose();
+      gpuTime?.dispose();
       post.dispose();
       skinShading.dispose();
       // A wait for the sky ends unresolved: nothing waits on what has gone.

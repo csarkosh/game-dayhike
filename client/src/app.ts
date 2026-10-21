@@ -3,7 +3,7 @@ import { createForest } from "./sim/forest.js";
 import { createRenderer, terrainMaterialFor, type EndSceneSetup, type FreecamView, type Renderer } from "./game/renderer.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AsyncPipelines } from "./game/asyncPipelines.js";
-import { FALLBACK_NOTICE_MS } from "./game/engineChoice.js";
+import { FALLBACK_NOTICE_MS, parseGpuTime } from "./game/engineChoice.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
@@ -421,7 +421,7 @@ function buildGame(
     [options.tier, ...options.fallbackTiers],
     {
       build: (next, at, engine) =>
-        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, skyTable: skySource.table }),
+        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
@@ -2360,7 +2360,7 @@ function buildGame(
     // The target's engine is made before the swap by the WebGPU rule
     // (`options.engineFor`), on the canvas `freshCanvas` hands out first;
     // null, the renderer makes WebGL2's.
-    build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table }),
+    build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
     freshCanvas: () => document.createElement("canvas"),
     extras: { dispose: disposeExtras, build: buildExtras },
     rebind: (next) => {

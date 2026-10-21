@@ -451,6 +451,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "gpuClass.ts"),
       join(SRC, "game", "tierChoice.ts"),
       join(SRC, "game", "frameProbe.ts"),
+      join(SRC, "game", "gpuTimeReport.ts"),
       join(SRC, "game", "settings.ts"),
       join(SRC, "game", "governor.ts"),
       join(SRC, "game", "rainParams.ts"),
