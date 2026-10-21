@@ -36,6 +36,7 @@
     "desktop:outdated": "node tools/deploy/desktopOutdated.mjs",
     "deploy:verify": "node tools/deploy/verify.mjs",
     "previews": "node tools/previews/shoot.mjs",
+    "frame-budget": "node tools/frame-budget/measure.mjs",
     "preview:channel": "node tools/deploy/channel.mjs"
   },
   "devDependencies": {
