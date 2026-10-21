@@ -86,16 +86,17 @@ export function pairDeltas(rows) {
   return { pairs, median: pairs.length === 0 ? null : medianOf(pairs.map((p) => p.delta)) };
 }
 
-/** One line a view, and with a budget a last line for the tier. Takes rows already kept. */
+/** One line a view, and with a budget a last line for the tier. Takes all the rows: the counts
+ * show how many of a view's rows were kept, and the medians and the verdict use the kept ones. */
 export function table(rows, budget = null) {
   const lines = [];
   let worst = null;
   let worstRatio = -Infinity;
   let anyOver = false;
-  for (const [view, m] of viewMedians(rows)) {
-    const all = rows.filter((r) => r.view === view);
-    const kept = all.filter((r) => flagsFor(r).length === 0).length;
-    let line = `${view}  n=${kept}/${all.length}  mean ${m.meanMs} ms  p95 ${m.p95Ms} ms`;
+  const total = new Map();
+  for (const r of rows) total.set(r.view, (total.get(r.view) ?? 0) + 1);
+  for (const [view, m] of viewMedians(keep(rows))) {
+    let line = `${view}  n=${m.n}/${total.get(view)}  mean ${m.meanMs} ms  p95 ${m.p95Ms} ms`;
     if (budget !== null) {
       const over = m.meanMs > budget.meanMs || m.p95Ms > budget.p95Ms;
       anyOver = anyOver || over;

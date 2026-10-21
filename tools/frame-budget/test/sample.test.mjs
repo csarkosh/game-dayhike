@@ -45,5 +45,7 @@ describe("sample", () => {
     expect(table(rows, { meanMs: 19.5, p95Ms: 27 })).toMatch(/OVER budget \(worst forest\)/);
     expect(table(rows, { meanMs: 21, p95Ms: 27 })).toMatch(/under budget/);
     expect(table(rows)).toBe("forest  n=1/1  mean 20 ms  p95 26 ms");
+    const flagged = [...rows, mk("forest", "A", 99, { load: 9 })];
+    expect(table(flagged)).toBe("forest  n=1/2  mean 20 ms  p95 26 ms");
   });
 });
