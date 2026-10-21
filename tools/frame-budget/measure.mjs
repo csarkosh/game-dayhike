@@ -12,7 +12,7 @@
 //   --base <url>       the build measured (A): the dev server, the live site or a preview channel
 //   --tier <tier>      medium or high, the size and the quality the views are opened at
 //   --machine <label>  the machine's name in the rows (air-m4, rig-t4, …)
-//   --views a,b        only these views (a `check` view only by name); every other view by default
+//   --views a,b        only these views (a `check` view only by name); every view without `check` by default
 //   --pairs <n>        samples a view, or with --against pairs of samples (3 by default)
 //   --against <url2>   a second build (B), interleaved with A: A B, B A, A B, … each pair back to back
 //   --remote <port>    a Chrome already running behind a forwarded port (the rig's) instead of one
@@ -234,7 +234,7 @@ const today = () => {
 };
 
 /** The tier's budget from `budgets.json`, or null when there is none yet. */
-function budgetFor(tier) {
+function tierBudget(tier) {
   const path = join(HERE, "budgets.json");
   if (!existsSync(path)) return null;
   const entry = JSON.parse(readFileSync(path, "utf8"))[tier];
@@ -331,13 +331,28 @@ async function main() {
   }
 
   process.stdout.write(`\nrows: ${out}\n\n`);
-  const budget = budgetFor(options.tier);
-  const lines = table(rows, budget);
-  process.stdout.write(lines === "" ? "(no view has a row without a flag: nothing to tabulate)\n" : `${lines}\n`);
-  if (budget === null) process.stdout.write(`(no budget for ${options.tier} in budgets.json: not judged)\n`);
+  // One table and one verdict a build: the medians group by view, so two builds' rows never mix.
+  const budget = tierBudget(options.tier);
+  const builds = options.against === undefined ? ["A"] : ["A", "B"];
+  for (const build of builds) {
+    const own = rows.filter((r) => r.build === build);
+    if (options.against !== undefined) process.stdout.write(`build ${build}: ${bases[build]}\n`);
+    const lines = table(own, budget);
+    process.stdout.write(lines === "" ? "(no view has a row without a flag: nothing to tabulate)\n" : `${lines}\n`);
+    if (budget === null) process.stdout.write(`(no budget for ${options.tier} in budgets.json: not judged)\n`);
+    else {
+      const v = verdict(own, budget);
+      const line =
+        v.worst === null
+          ? "not judged: no row without a flag"
+          : `${v.over ? "OVER" : "under"} the ${options.tier} budget (${budget.meanMs} ms mean, ${budget.p95Ms} ms p95); worst ${v.worst} at ${v.views[v.worst].meanMs} ms mean, ${v.views[v.worst].p95Ms} ms p95`;
+      process.stdout.write(`verdict: ${line}\n`);
+    }
+    process.stdout.write("\n");
+  }
   const flagged = rows.filter((r) => r.flags.length > 0);
   if (flagged.length > 0) {
-    process.stdout.write(`\nflagged, left out of the medians:\n`);
+    process.stdout.write(`flagged, left out of the medians:\n`);
     for (const r of flagged) process.stdout.write(`  ${r.view} ${r.build}  mean ${r.mean} ms  [${r.flags.join(", ")}]  load ${r.load ?? "n/a"}\n`);
   }
   if (options.against !== undefined) {
@@ -349,14 +364,6 @@ async function main() {
     const spread = (Math.max(...means) - Math.min(...means)) / medianOf(means);
     process.stdout.write(`\nsteadiness, ${views[0].view.name}: means ${means.join(", ")} ms\n`);
     process.stdout.write(`  spread (max - min) / median ${(spread * 100).toFixed(1)} %${flagged.length ? ` (${flagged.length} of ${rows.length} flagged)` : ""}\n`);
-  }
-  if (budget !== null) {
-    const v = verdict(rows, budget);
-    const line =
-      v.worst === null
-        ? "not judged: no row without a flag"
-        : `${v.over ? "OVER" : "under"} the ${options.tier} budget (${budget.meanMs} ms mean, ${budget.p95Ms} ms p95); worst ${v.worst} at ${v.views[v.worst].meanMs} ms mean, ${v.views[v.worst].p95Ms} ms p95`;
-    process.stdout.write(`\nverdict: ${line}\n`);
   }
 }
 

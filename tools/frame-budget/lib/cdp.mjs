@@ -102,6 +102,7 @@ export async function launchChrome({ profileDir = join(tmpdir(), "dayhike-frame-
   try {
     const portFile = join(profileDir, "DevToolsActivePort");
     for (let i = 0; !existsSync(portFile); i++) {
+      if (proc.exitCode !== null) throw new Error(`Chrome exited (code ${proc.exitCode}) before it opened its debugging port`);
       if (i > 150) throw new Error("Chrome did not open its debugging port");
       await sleep(200);
     }
