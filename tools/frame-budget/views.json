@@ -1,0 +1,13 @@
+{
+  "sizes": { "medium": { "width": 1470, "height": 956 }, "high": { "width": 1512, "height": 982 } },
+  "views": [
+    { "name": "trailhead", "still": "trailhead" },
+    { "name": "forest", "still": "forest" },
+    { "name": "tarn", "still": "tarn" },
+    { "name": "meadow", "still": "meadow" },
+    { "name": "crest", "still": "crest" },
+    { "name": "beach", "still": "beach" },
+    { "name": "forest-night", "still": "forest", "firstPerson": true, "escalation": 1, "lamp": true },
+    { "name": "chase", "seed": "atmo", "look": "summit", "check": true, "extraSettleS": 60 }
+  ]
+}
