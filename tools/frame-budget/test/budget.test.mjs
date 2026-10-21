@@ -13,6 +13,17 @@ describe("budget", () => {
     expect(k.spread).toEqual([1.1, 1.4]);
     expect(k.missing.sort()).toEqual(["d", "e"]);
   });
+  it("leaves flagged rows out of k, and a view with none kept is missing", () => {
+    const air = [row("a", 20), row("b", 30)];
+    const rig = [row("a", 24), { ...row("a", 90), load: 9 }, { ...row("b", 99), canvas: { start: [1, 1], end: [2, 2] } }];
+    const k = kFor(rig, air);
+    expect(k.perView).toEqual({ a: 1.2 });
+    expect(k.k).toBe(1.2);
+    expect(k.missing).toEqual(["b"]);
+  });
+  it("refuses a k when no view is in both sets", () => {
+    expect(() => kFor([row("a", 20)], [row("b", 20)])).toThrow(/no view/);
+  });
   it("sets the budgets from the bars, the factor and k", () => {
     expect(budgetFor(1.2)).toEqual({ meanMs: 19.2, p95Ms: 26.4 });
     expect(budgetFor(1.2, 1.5)).toEqual({ meanMs: 28.8, p95Ms: 39.6 });
@@ -23,6 +34,11 @@ describe("budget", () => {
     expect(v.worst).toBe("b");
     expect(v.over).toBe(true);
     expect(verdict([row("a", 18)], { meanMs: 19.2, p95Ms: 26.4 }).over).toBe(false);
+  });
+  it("does not count a flagged row over budget", () => {
+    const v = verdict([row("a", 18), { ...row("a", 50), load: 9 }], { meanMs: 19.2, p95Ms: 26.4 });
+    expect(v.views.a.over).toBe(false);
+    expect(v.over).toBe(false);
   });
   it("estimates the Pro from the Air by the factor, and says whether two estimates agree", () => {
     expect(proEstimate(40)).toBeCloseTo(37.5, 3);

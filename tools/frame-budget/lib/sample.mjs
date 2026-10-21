@@ -55,27 +55,20 @@ export function byView(rows) {
   return views;
 }
 
-/** Each view's rows reduced to the median of their means and of their 95th percentiles. */
+/** Each kept view's rows reduced to the median of their means and of their 95th percentiles.
+ * Flagged rows are left out here, so every reading built on it sees kept rows only. */
 export function viewMedians(rows) {
   const out = new Map();
-  for (const [view, rs] of groupAll(rows)) {
+  for (const [view, rs] of byView(rows)) {
     out.set(view, { meanMs: medianOf(rs.map((r) => r.mean)), p95Ms: medianOf(rs.map((r) => r.p95)), n: rs.length });
   }
   return out;
 }
 
-function groupAll(rows) {
-  const views = new Map();
-  for (const r of rows) {
-    if (!views.has(r.view)) views.set(r.view, []);
-    views.get(r.view).push(r);
-  }
-  return views;
-}
-
 /** The pairs of one view's rows (A then B, in order) as `{ pair, a, b, delta }` on the means, delta
  * `b - a` to 2 dp, and the median of the deltas. A pair is each A with the nearest B in its
- * interleaving: rows are taken in order, the first A with the first B, the next A with the next B. */
+ * interleaving: rows are taken in order, the first A with the first B, the next A with the next B.
+ * When the builds have different counts the surplus rows are dropped. */
 export function pairDeltas(rows) {
   const as = rows.filter((r) => r.build === "A");
   const bs = rows.filter((r) => r.build === "B");
@@ -95,7 +88,7 @@ export function table(rows, budget = null) {
   let anyOver = false;
   const total = new Map();
   for (const r of rows) total.set(r.view, (total.get(r.view) ?? 0) + 1);
-  for (const [view, m] of viewMedians(keep(rows))) {
+  for (const [view, m] of viewMedians(rows)) {
     let line = `${view}  n=${m.n}/${total.get(view)}  mean ${m.meanMs} ms  p95 ${m.p95Ms} ms`;
     if (budget !== null) {
       const over = m.meanMs > budget.meanMs || m.p95Ms > budget.p95Ms;
