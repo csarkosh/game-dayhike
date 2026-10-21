@@ -93,6 +93,12 @@ run again.
 
 ## Budgets
 
+```bash
+node tools/frame-budget/budget.mjs --tier medium --air <air.jsonl> --rig <rig.jsonl> --machine "g4dn.xlarge" [--factor 1.5]
+```
+
+It prints the per-view k, the median k, the spread and the missing views (for `--tier high` also the Pro's two estimates and whether they agree), and writes or replaces the tier's entry in `budgets.json`, keeping the other tier's.
+
 `budget.mjs` writes `budgets.json` from an Air file and a rig file. The Air's rows give the
 medium tier's budget; the high tier's is derived from them by the ratio 1.5. The numbers are put
 here when the first calibration lands.
