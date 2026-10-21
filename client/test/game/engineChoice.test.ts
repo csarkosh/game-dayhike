@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   adapterFits, adapterFromSignals, chooseEngine, signalsFit, failureSwap, fallbackHolds, featuresToRequest,
-  parseEngineOverride, readFallback, recordFailure, resolveWebGpu,
+  parseEngineOverride, parseGpuTime, readFallback, recordFailure, resolveWebGpu,
   withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
   type AdapterReport, type WebGpuSteps,
   FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
@@ -408,6 +408,18 @@ describe("the texture compression the device asks for", () => {
     expect(featuresToRequest(new Set(["texture-compression-astc", "texture-compression-etc2"])))
       .toEqual(["texture-compression-etc2", "texture-compression-astc"]);
     expect(featuresToRequest([])).toEqual([]);
+    expect(featuresToRequest(["texture-compression-bc", "timestamp-query"], true)).toEqual(["texture-compression-bc", "timestamp-query"]);
+    expect(featuresToRequest(["texture-compression-bc"], true)).toEqual(["texture-compression-bc"]);
+    expect(featuresToRequest(["timestamp-query"])).toEqual([]);
+  });
+});
+
+describe("parseGpuTime", () => {
+  it("is on when the flag is present with any value, off otherwise", () => {
+    expect(parseGpuTime("?gpuTime")).toBe(true);
+    expect(parseGpuTime("?tier=high&gpuTime=1")).toBe(true);
+    expect(parseGpuTime("?tier=high")).toBe(false);
+    expect(parseGpuTime("")).toBe(false);
   });
 });
 
@@ -464,6 +476,15 @@ describe("resolveWebGpu", () => {
     expect(log.calls).toEqual(["load", "probe", "fetchTranslators", "create"]);
     expect(log.created).toEqual([[10_000, ["texture-compression-bc"]]]);
     expect(log.remembered).toEqual([]);
+  });
+
+  it("asks for timestamp queries only in measurement mode, and only where the adapter has them", async () => {
+    const timed = steps();
+    await resolveWebGpu({ ...high, timing: true }, timed.s, budgets, () => 1_000);
+    expect(timed.log.created).toEqual([[10_000, ["texture-compression-bc", "timestamp-query"]]]);
+    const plain = steps();
+    await resolveWebGpu(high, plain.s, budgets, () => 1_000);
+    expect(plain.log.created[0]?.[1]).not.toContain("timestamp-query");
   });
 
   it("fetches no translator where the adapter does not fit, and says why only under ?engine=webgpu", async () => {

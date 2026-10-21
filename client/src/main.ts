@@ -85,6 +85,7 @@ import {
   engineForTier,
   fallbackHolds,
   parseEngineOverride,
+  parseGpuTime,
   parsePipelines,
   parseShaderLookup,
   readFallback,
@@ -823,6 +824,7 @@ function engineInput(tier: QualityTier, read: GpuSignals): EngineInput {
     chromeOrEdge: isChromeOrEdge(nav),
     os: hostOs(nav),
     mobile: read.mobile,
+    timing: parseGpuTime(location.search),
   };
 }
 
@@ -922,7 +924,7 @@ function makeWebGpu(
           translators = await gpu.loadTranslators();
         },
         create: async (ms, features) => ({
-          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, tier: input.tier, lookup, pipelines }),
+          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, tier: input.tier, lookup, pipelines, timing: input.timing }),
           watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines, asyncPipelines: gpu.asyncPipelinesOf, reveal: gpu.revealWhenWhole },
         }),
       };

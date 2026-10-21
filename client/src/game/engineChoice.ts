@@ -118,6 +118,9 @@ export const WEBGPU_TEXTURE_FEATURES: readonly string[] = [
   "texture-compression-astc",
 ];
 
+/** The feature the GPU timer reads: with it the device can time a pass. */
+export const WEBGPU_TIMING_FEATURE = "timestamp-query";
+
 /** The remembered fallback, in `localStorage`. */
 export const FALLBACK_KEY = "dayhike.engine";
 /** How long a remembered fallback holds while nothing else changes. */
@@ -192,6 +195,12 @@ export function parsePipelines(search: string): PipelineMode {
   return "async";
 }
 
+/** `?gpuTime`, with any value: the measurement mode, which asks the device
+ * for timestamp queries and times the frame from creation. */
+export function parseGpuTime(search: string): boolean {
+  return new URLSearchParams(search).has("gpuTime");
+}
+
 /** What the rule reads of the high-performance adapter (`adapterFromSignals`). */
 export type AdapterReport = {
   limits: Readonly<Record<string, number>>;
@@ -229,10 +238,13 @@ export function signalsFit(signals: Pick<GpuSignals, "adapterStatus" | "adapter"
   return adapterFits({ limits: signals.limits, isFallbackAdapter: signals.adapter.isFallbackAdapter }).fits;
 }
 
-/** Of `WEBGPU_TEXTURE_FEATURES`, those the adapter has, in that order. */
-export function featuresToRequest(adapterFeatures: Iterable<string>): string[] {
+/** Of `WEBGPU_TEXTURE_FEATURES`, those the adapter has, in that order; then,
+ * in the measurement mode (`timing`), `timestamp-query` if it has that. */
+export function featuresToRequest(adapterFeatures: Iterable<string>, timing = false): string[] {
   const have = new Set(adapterFeatures);
-  return WEBGPU_TEXTURE_FEATURES.filter((feature) => have.has(feature));
+  const wanted = WEBGPU_TEXTURE_FEATURES.filter((feature) => have.has(feature));
+  if (timing && have.has(WEBGPU_TIMING_FEATURE)) wanted.push(WEBGPU_TIMING_FEATURE);
+  return wanted;
 }
 
 /** Whether the adapter can run the scene, and if not, why, in a few words. A
@@ -266,6 +278,8 @@ export type EngineInput = {
   os: HostOs;
   /** A phone or a tablet (`GpuSignals.mobile`). */
   mobile: boolean;
+  /** The measurement mode, `?gpuTime` (`parseGpuTime`). */
+  timing?: boolean;
 };
 
 /**
@@ -556,7 +570,7 @@ export async function resolveWebGpu<E>(
   }
 
   try {
-    return await gpu.create(Math.max(0, startLeft), featuresToRequest(report?.features ?? []));
+    return await gpu.create(Math.max(0, startLeft), featuresToRequest(report?.features ?? [], input.timing === true));
   } catch (err) {
     steps.remember(err instanceof WebGpuStartTimeout ? "timeout" : "init");
     steps.warn("WebGPU: the engine did not start; drawing with WebGL2.", err);

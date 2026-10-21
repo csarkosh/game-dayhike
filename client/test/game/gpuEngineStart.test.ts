@@ -12,6 +12,8 @@ const made = vi.hoisted(() => ({
   options: [] as unknown[],
   initArgs: [] as unknown[][],
   disposed: 0,
+  initialised: false,
+  timingSetAt: null as string | null,
   init: (): Promise<void> => Promise.resolve(),
   prepare: (): Promise<void> => Promise.resolve(),
 }));
@@ -26,6 +28,7 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.pure.js", () => {
     }
     initAsync(...args: unknown[]): Promise<void> {
       made.initArgs.push(args);
+      made.initialised = true;
       return made.init();
     }
     prepareGlslangAndTintAsync(): Promise<void> {
@@ -33,6 +36,14 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.pure.js", () => {
     }
     dispose(): void {
       made.disposed++;
+    }
+    private timing = false;
+    get enableGPUTimingMeasurements(): boolean {
+      return this.timing;
+    }
+    set enableGPUTimingMeasurements(value: boolean) {
+      this.timing = value;
+      made.timingSetAt = made.initialised ? "after-init" : "before-init";
     }
     _compiledEffects = {};
     _preparePipelineContextAsync(): Promise<void> {
@@ -96,6 +107,8 @@ afterEach(() => {
   made.options.length = 0;
   made.initArgs.length = 0;
   made.disposed = 0;
+  made.initialised = false;
+  made.timingSetAt = null;
   made.init = () => Promise.resolve();
   made.prepare = () => Promise.resolve();
   PBRBaseMaterial.ForceGLSL = false;
@@ -365,6 +378,18 @@ describe("createWebGpuEngine", () => {
     const engine = await createWebGpuEngine(canvas, { translators: TRANSLATORS });
     const own = Object.getOwnPropertyDescriptor(engine, "_preparePipelineContextAsync");
     expect(typeof own?.value).toBe("function");
+  });
+
+  it("switches the timing on after the device comes, only when asked and the feature was requested", async () => {
+    const on = await createWebGpuEngine(canvas, { translators: TRANSLATORS, lookup: "off", timing: true, features: ["timestamp-query"] });
+    expect(on.enableGPUTimingMeasurements).toBe(true);
+    expect(made.timingSetAt).toBe("after-init");
+    made.timingSetAt = null;
+    const notAsked = await createWebGpuEngine(canvas, { translators: TRANSLATORS, lookup: "off", features: ["timestamp-query"] });
+    expect(notAsked.enableGPUTimingMeasurements).toBe(false);
+    const noFeature = await createWebGpuEngine(canvas, { translators: TRANSLATORS, lookup: "off", timing: true, features: [] });
+    expect(noFeature.enableGPUTimingMeasurements).toBe(false);
+    expect(made.timingSetAt).toBeNull();
   });
 
   it("asks for no optional feature when it is given none", async () => {

@@ -70,6 +70,7 @@ import {
   WEBGPU_FETCH_MS,
   WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS,
+  WEBGPU_TIMING_FEATURE,
   WebGpuStartTimeout,
   type PipelineMode,
   type ShaderLookupMode,
@@ -301,7 +302,9 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
  * Once it stands, its render pipelines are made as `pipelines` says
  * (`installPipelines`, `?pipelines=`): by default asynchronously, a draw left
  * out until its pipeline lands, inside the scope its renderer opens
- * (`asyncPipelines.ts`).
+ * (`asyncPipelines.ts`). With `timing` (`?gpuTime`) and `timestamp-query`
+ * among `features`, Babylon's GPU timing is switched on right after the
+ * device comes, so every render target made later has its counter.
  * Rejects on any failure, or when `ms` pass first (with `WebGpuStartTimeout`,
  * which the rule remembers as a `timeout` rather than a failure), having
  * disposed what it made; the canvas may then hold a WebGPU context, so
@@ -317,6 +320,9 @@ export async function createWebGpuEngine(
     lookup?: ShaderLookupMode;
     sources?: (salt: string) => Promise<readonly WgslSource[]>;
     pipelines?: PipelineMode;
+    /** The measurement mode (`?gpuTime`): with `timestamp-query` among
+     * `features`, Babylon's GPU timing is on from the moment the device comes. */
+    timing?: boolean;
   } = {},
 ): Promise<WebGPUEngine> {
   const tier = options.tier ?? DEFAULT_TIER;
@@ -362,6 +368,10 @@ export async function createWebGpuEngine(
     // The started translators, as Babylon's options take them: glslang as a
     // promise (its setup waits on it), twgsl as the instance. No path to load.
     await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });
+    // On before any scene or render target exists: Babylon gives a render
+    // target a GPU-time counter only if it is made while this is on
+    // (`webgpuRenderTargetWrapper.js`).
+    if (options.timing && (options.features ?? []).includes(WEBGPU_TIMING_FEATURE)) engine.enableGPUTimingMeasurements = true;
     await engine.prepareGlslangAndTintAsync();
     await Promise.race([looking, sourcesBy]);
     return engine;
