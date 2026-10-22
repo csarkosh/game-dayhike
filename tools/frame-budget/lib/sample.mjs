@@ -6,6 +6,16 @@
  * is too busy for its reading to count. Not a load average: the harness's own Chrome would fill it. */
 export const QUIET_LOAD = 2.0;
 
+/** The GPU's Device Utilization % (from `ioreg -r -c AGXAccelerator -d 1`) at or above which another
+ * page is drawing on the Mac and its rows are void. An idle desktop reads 0 to 15. */
+export const QUIET_GPU = 20;
+
+/** The number after `"Device Utilization %"=` in `ioreg`'s text, or null when it is not there. */
+export function parseGpuUtil(ioregText) {
+  const m = /"Device Utilization %"\s*=\s*(\d+)/.exec(ioregText);
+  return m === null ? null : Number(m[1]);
+}
+
 const round = (x, dp) => Math.round(x * 10 ** dp) / 10 ** dp;
 
 /** A sample's frame times as `{ n, mean, p95 }`, each to 2 dp. */

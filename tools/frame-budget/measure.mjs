@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // The frame budget's measurements: each fixed view of `views.json` opened on a fresh page at a
-// tier's standard size, left to settle, warmed 3 s, then its frames timed for 10 s with the GPU
+// tier's standard size, waited for until the page says its world is ready (`body.world-ready`: the
+// world in and the URL's looks applied), settled, warmed 3 s, then its frames timed for 10 s with the GPU
 // readout (`?gpuTime`) read at the start and the end. One JSON row a sample is appended to a JSONL
 // file, and the run ends with a table of each view's medians, against the tier's budget when
 // `budgets.json` has one. The verdict is information: the script exits 0 over budget or under.
 //
 //   npm run frame-budget -- --base <url> --tier medium|high --machine <label> [--views a,b] [--pairs 3]
-//       [--against <url2>] [--remote <port>] [--settle 55] [--warm 0] [--rotate 0] [--out <file.jsonl>] [--steadiness]
+//       [--against <url2>] [--remote <port>] [--settle 30] [--warm 0] [--rotate 0] [--out <file.jsonl>] [--steadiness]
 //       [--shot]
 //
 //   --base <url>       the build measured (A): the dev server, the live site or a preview channel
@@ -17,7 +18,8 @@
 //   --against <url2>   a second build (B), interleaved with A: A B, B A, A B, … each pair back to back
 //   --remote <port>    a Chrome already running behind a forwarded port (the rig's) instead of one
 //                      started here; refused unless its user agent says Windows NT
-//   --settle <s>       seconds from the canvas to the warm-up (55 by default), plus the view's extraSettleS
+//   --settle <s>       seconds from the world ready (`body.world-ready`) to the warm-up (30 by default),
+//                      plus the view's extraSettleS
 //   --warm <s>         this Mac only: the first view open that long before the first sample (a warm Air)
 //   --rotate <n>       the views' order rotated left by n, so a run's drift falls on different views
 //   --out <file>       the rows' file (tools/frame-budget/runs/<date>-<machine>-<tier>.jsonl by default)
@@ -29,14 +31,16 @@
 // of its own. A row's `load` is the CPU cores busy outside the harness as the sample ends: every
 // process's share in `ps`, less this script's and the Chrome it started (the load average cannot be
 // used: the harness's own uncapped Chrome takes an idle Air's to 8). With --remote it is null, the
-// rig running nothing else by construction (its steadiness run is its load check).
+// rig running nothing else by construction (its steadiness run is its load check). A row's `readyS`
+// is the seconds from the canvas to the page's `world-ready` class. Before Chrome starts, the Mac's
+// GPU must read under QUIET_GPU % busy in `ioreg`: another page drawing on it voids every row.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verdict } from "./lib/budget.mjs";
 import { attachChrome, evaluate, launchChrome, openPage, version } from "./lib/cdp.mjs";
-import { QUIET_LOAD, flagsFor, medianOf, pairDeltas, pairOrder, summarise, table } from "./lib/sample.mjs";
+import { QUIET_GPU, QUIET_LOAD, flagsFor, medianOf, parseGpuUtil, pairDeltas, pairOrder, summarise, table } from "./lib/sample.mjs";
 import { TIER_SIZES, resolveViews, viewUrl } from "./lib/views.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -47,6 +51,8 @@ const SAMPLE_S = 10;
 /** The page's canvas, waited for as the previews wait (60 s at most). */
 const CANVAS_TRIES = 120;
 const CANVAS_POLL_MS = 500;
+/** The world's readiness class, waited for up to this long after the canvas (a cold cache takes 60 to 120 s). */
+const READY_MAX_S = 180;
 /** The samples a steadiness run takes. */
 const STEADINESS_SAMPLES = 6;
 
@@ -59,7 +65,7 @@ function parseArgs(argv) {
     pairs: 3,
     against: undefined,
     remote: undefined,
-    settle: 55,
+    settle: 30,
     warm: 0,
     rotate: 0,
     out: undefined,
@@ -182,12 +188,24 @@ async function openView(browser, port, tier, url) {
   }
 }
 
+/** Waits for `body.world-ready` on `page`, up to READY_MAX_S; the seconds it took, to 1 dp. */
+async function awaitReady(page, name) {
+  const start = Date.now();
+  for (;;) {
+    if (await evaluate(page, "document.body.classList.contains('world-ready')").catch(() => false)) break;
+    if (Date.now() - start > READY_MAX_S * 1000) throw new Error(`${name}: the world was not ready within ${READY_MAX_S} s`);
+    await sleep(CANVAS_POLL_MS);
+  }
+  return Math.round((Date.now() - start) / 100) / 10;
+}
+
 /** One sample: a fresh page at the view, settled, its frames timed; the page closed after, and on a
  * failure too. With `shotPath`, the page's JPEG as the frames end. */
 async function sample(session, { tier, base, game, view, still, settle, shotPath }) {
   const url = viewUrl(base, game, tier, view, still, { gpuTime: true });
   const { page, close } = await openView(session.browser, session.port, tier, url);
   try {
+    const readyS = await awaitReady(page, view.name);
     await sleep((settle + (view.extraSettleS ?? 0)) * 1000);
     const limit = (WARMUP_S + SAMPLE_S + 30) * 1000;
     const r = await within(evaluate(page, SAMPLE_EXPRESSION), limit, `${view.name}: the sample did not finish in ${limit / 1000} s (did the page stop drawing?)`);
@@ -196,7 +214,7 @@ async function sample(session, { tier, base, game, view, still, settle, shotPath
       const shot = await page("Page.captureScreenshot", { format: "jpeg", quality: 70 });
       writeFileSync(shotPath, Buffer.from(shot.data, "base64"));
     }
-    return r;
+    return { ...r, readyS };
   } finally {
     await close();
   }
@@ -248,6 +266,7 @@ function rowOf(r, { machine, about, base, build, tier, view, remote }) {
     p95,
     n,
     canvas: { start: r.canvasStart, end: r.canvasEnd },
+    readyS: r.readyS,
     gpuTime: { start: r.gpuStart, end: r.gpuEnd },
     load,
     quiet: load === null ? null : load <= QUIET_LOAD,
@@ -319,6 +338,16 @@ async function main() {
       if (probe === null) throw new Error(`nothing answers at ${base}: start the dev server (npm run dev:client) or check the URL`);
     }
   }
+  if (!remote) {
+    let util = null;
+    try {
+      util = parseGpuUtil(execFileSync("ioreg", ["-r", "-c", "AGXAccelerator", "-d", "1"], { encoding: "utf8" }));
+    } catch {}
+    if (util === null) process.stdout.write("GPU check unavailable (ioreg failed)\n");
+    else if (util >= QUIET_GPU) {
+      throw new Error(`the Mac's GPU is busy before Chrome starts (Device Utilization ${util} %, limit ${QUIET_GPU}): close every other page or app that draws, then run again`);
+    } else process.stdout.write(`gpu idle: ${util} %\n`);
+  }
   const session = remote ? await attachChrome(options.remote) : await launchChrome();
   const rows = [];
   try {
@@ -334,6 +363,7 @@ async function main() {
       process.stdout.write(`warming ${options.warm} s on ${view.name} (${options.tier})\n`);
       const warm = await openView(session.browser, session.port, options.tier, viewUrl(options.base, stills.game, options.tier, view, still, { gpuTime: true }));
       try {
+        await awaitReady(warm.page, view.name);
         await sleep(options.warm * 1000);
       } finally {
         await warm.close();
@@ -352,7 +382,7 @@ async function main() {
       rows.push(row);
       const scale = `canvas ${row.canvas.start.join("x")} -> ${row.canvas.end.join("x")}`;
       process.stdout.write(
-        `  mean ${row.mean} ms  p95 ${row.p95} ms  n ${row.n}  ${scale}  sha ${row.sha}  load ${row.load ?? "n/a"}${row.flags.length ? `  [${row.flags.join(", ")}]` : ""}${shotPath ? `\n  shot ${shotPath}` : ""}\n`,
+        `  mean ${row.mean} ms  p95 ${row.p95} ms  n ${row.n}  ${scale}  sha ${row.sha}  load ${row.load ?? "n/a"}  ready ${row.readyS} s${row.flags.length ? `  [${row.flags.join(", ")}]` : ""}${shotPath ? `\n  shot ${shotPath}` : ""}\n`,
       );
     }
   } finally {

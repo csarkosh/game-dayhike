@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byView, flagsFor, keep, medianOf, pairDeltas, pairOrder, summarise, table } from "../lib/sample.mjs";
+import { byView, flagsFor, keep, medianOf, pairDeltas, pairOrder, parseGpuUtil, summarise, table } from "../lib/sample.mjs";
 
 const mk = (view, build, mean, extra = {}) => ({ view, build, mean, p95: mean + 5, canvas: { start: [1, 1], end: [1, 1] }, load: 1, ...extra });
 
@@ -48,5 +48,14 @@ describe("sample", () => {
     expect(table(rows)).toBe("forest  n=1/1  mean 20 ms  p95 26 ms");
     const flagged = [...rows, mk("forest", "A", 99, { load: 9 })];
     expect(table(flagged)).toBe("forest  n=1/2  mean 20 ms  p95 26 ms");
+  });
+});
+
+describe("parseGpuUtil", () => {
+  it("reads the figure after the key", () => {
+    expect(parseGpuUtil('{"PerformanceStatistics" = {"Device Utilization %"=13,"Renderer Utilization %"=4}}')).toBe(13);
+  });
+  it("is null without the key", () => {
+    expect(parseGpuUtil("nothing here")).toBeNull();
   });
 });

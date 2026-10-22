@@ -1,8 +1,9 @@
 # Frame budget
 
 The game's frame time, measured the same way every time. `measure.mjs` opens each fixed view of
-`views.json` on a fresh page at a tier's standard size, lets it settle, warms it for 3 s, then
-times its frames for 10 s with the GPU readout (`?gpuTime`) read at the start and the end. Each
+`views.json` on a fresh page at a tier's standard size, waits for the page's readiness class
+(`body.world-ready`, set once the world is in and the URL's looks are applied), settles 30 s, warms
+it for 3 s, then times its frames for 10 s with the GPU readout (`?gpuTime`) read at the start and the end. Each
 sample is one JSON row appended to a JSONL file in `runs/`, and the run ends with a table of each
 view's medians, against the tier's budget when `budgets.json` has one. The verdict is information:
 the script exits 0 over budget or under. The options are in the header of `measure.mjs`.
@@ -28,7 +29,12 @@ npm run frame-budget -- --base <url> --tier medium --machine air-m4 --warm 300 -
 
 Run it three times, `--rotate 0`, `--rotate 1`, `--rotate 2`, so a run's drift falls on different
 views. `--warm 300` keeps the first view open for five minutes before its first sample, so the Air
-is warm when the numbers start. A run with loaded rows is discarded, not averaged: `rm` its file and
+is warm when the numbers start. Each sample waits for `body.world-ready` and then settles 30 s. A
+fresh browser context downloads the world each time, so readiness takes 60 to 120 s on the Air; the
+row records it as `readyS`. The wait is there because the page applies the URL's script (seed,
+camera, escalation) only once the world is ready: a fixed sleep sometimes timed the default start
+(5 to 9 ms a frame) and sometimes the real view (19 to 26 ms), and the Air's rows came out
+bimodal. A run with loaded rows is discarded, not averaged: `rm` its file and
 run again.
 
 ## The rig's day
@@ -119,6 +125,7 @@ comparison; the dev server is for checking a view's shape.
 | `base`, `build` | the address measured, and `A` or `B` |
 | `mean`, `p95`, `n` | the frames' mean and 95th percentile in ms (requestAnimationFrame intervals), and how many frames |
 | `canvas` | the canvas size at the start and the end; unequal is flagged `scale-moved` |
+| `readyS` | seconds from the canvas to `body.world-ready` |
 | `gpuTime` | the page's GPU readout at the start and the end of the frames (below) |
 | `load` | the CPU cores busy outside the harness as the sample ends: `ps`'s %CPU summed over every process but the script and the Chrome it started; null with `--remote` |
 | `quiet` | `load` at or under 2.0; null with `--remote` |
@@ -132,11 +139,13 @@ else is running: say so, find it, and do not average the rows.
 
 ## Reading the GPU readout
 
-- **On an Apple GPU the per-pass numbers are not per-pass costs.** On the M4 Air every pass read
-  about the whole frame (the shadow map 17 ms, each post pass 37 to 40 ms, main 43 ms at about
-  40 ms a frame): that is how Metal resolves pass-boundary timestamps on Apple silicon. On the Mac
-  the frame time (`mean` and `p95`) is the measure. Per-pass costs are the T4's. A paint pass's cost
-  on the Air comes from pair deltas only.
+- **On an Apple GPU the per-pass numbers are not per-pass costs.** The timestamps span the command
+  buffer's time in the queue, so every pass reads about the same figure (queue latency, about two
+  frames) and none is a cost: on 5 ms frames a half-resolution `paint` pass read 8.7 ms and every
+  pass read 8 to 10 ms, and on vsync-paced frames every pass read about the interval. On the Mac the
+  frame time (`mean` and `p95`) is the measure. Pass costs come from the rig (T4: `paint` 0.16 to
+  0.30 ms, `paintCompose` 0.09 to 0.12 ms, this build). A paint pass's cost on the Air comes from
+  pair deltas only.
 - A target that draws every n-th frame (the lake's mirror) reports its per-draw ms.
   `drewLastFrame` says whether it drew in the latest resolved frame. Its per-frame share is that
   ms divided by n.
@@ -153,6 +162,13 @@ The `chase` view is a check view: it is measured only by name and sets no budget
 about 35 s after the page opens, the idle player dies about 13 s later and the title returns at
 60 s, so no settle fits a 13 s sample. It fails with "the canvas went away during the sample" until
 the page gives a phase signal and a player that survives the chase.
+
+## Traps
+
+- **Another page drawing on this Mac's GPU voids every row.** A leftover dev page took 87 to 95 % of
+  the GPU one morning and doubled every frame time. `ioreg -r -c AGXAccelerator -d 1` prints
+  `"Device Utilization %"=N`; an idle desktop reads 0 to 15. The script reads it before Chrome starts
+  and refuses at 20 or more: "the Mac's GPU is busy before Chrome starts".
 
 ## Rules
 
