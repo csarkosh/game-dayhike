@@ -204,7 +204,7 @@ random id and measured a bare hillside.
 
 The first six are the stills as they are (their hour and weather the
 game's defaults), the free camera at the place. The night view is my
-call, and it differs from the others in two ways, both settled here:
+call, and it differs from the others in three ways, all settled here:
 
 - It is **first person**, because the lamp is a light at the player's
   eye (`lamp.on` rides the snapshot), so a free camera at the place would
@@ -217,14 +217,17 @@ call, and it differs from the others in two ways, both settled here:
   today, and a synthesised keypress needs an input focus the harness
   cannot grant on the Mac. It is a small change to `commands.ts` and the
   host's handling of the Lamp key.
-- The night is the escalation's (`escalation 1`), not `time 22` with `weather rain` held at `escalation 0`: on a forest world the mist and the night's weather come only with the escalation, so holding it at 0 would measure a dry, clear 22:00. Builder's call.
+- The night is the escalation's (`escalation 1`), not `time 22` with
+  `weather rain` held at `escalation 0`: on a forest world the mist and
+  the night's weather come only with the escalation, so holding it at 0
+  would measure a dry, clear 22:00. Builder's call.
 
 **The chase is not a fixed view.** The chase's cast (the shades, their
 smoke, the pulse) exists only once the simulation's phase is the chase,
 reached through the find at the summit (`sim/summit.ts`), and the
 escalation command holds only the world's night, not that phase. Putting
 a solo world into the chase from a link would be a simulation change of
-days. So the budgets are set by the eight link-reachable views above,
+days. So the budgets are set by the seven link-reachable views above,
 and the chase is measured separately, where it happens (the `summit`
 look, then the descent from the body, in the harness's hands with the
 cutscene waited through), whenever the chase's own features are on the
@@ -504,3 +507,64 @@ estimate, not the 4 to 5× that §1 feared from the M3 Max figure.
 
 The cost of the day: about 12 rig hours at $0.71 (started 14:11 PDT, the
 daily stop at 02:00; the first five hours' rows were the void ones).
+
+### The paint pass's cost (the first use, 2026-10-21)
+
+The game (`1fb913ae`) against the same build with the paint pass off
+(`c9bbfd66`), three interleaved pairs a view on the rig at both tiers, and
+the medium tier's confirmation on the Air. Two readings of the same pass:
+
+**By the T4's timestamp queries** (the A rows' `?gpuTime` readout, every
+view, both tiers): the `paint` pass at half resolution (735×478) reads
+**0.16 to 0.21 ms**, 0.26 to 0.32 on the crest; its `paintCompose` at full
+size **0.09 to 0.13 ms**. Together **0.25 to 0.45 rig-milliseconds** a
+frame: 1.6 to 2.9 % of B_medium, 1.1 to 2.1 % of B_high. For scale, the
+main scene pass reads 11.7 ms on the trailhead at medium and the colour
+grade 0.30.
+
+**By frame-time pairs** (B minus A on the means, the median of three
+pairs; a negative number is the frame without the pass being faster):
+
+| View | rig medium | rig high | Air medium (warm) |
+|---|---|---|---|
+| trailhead | −1.17 | +0.45 | −1.15 |
+| forest | −0.23 | −1.65 | −0.96 |
+| tarn | −0.72 | +0.06 | −1.35 |
+| meadow | −1.36 | +0.88 | −1.02 |
+| crest | −0.26 | −0.83 | −1.18 (two pairs) |
+| beach | −0.59 | −0.90 | −1.44 |
+| forest-night | −0.73 | −0.75 | −1.23 |
+
+On the Air the pairs resolve the pass: **1.0 to 1.4 ms a frame in every
+view**, nineteen of the twenty kept pairs with the same sign, the view
+medians within half a millisecond of each other. On the rig a single pair
+moves by 1 to 3 ms either way, so the rig's pairs cannot resolve a pass
+this small: at medium every view's median is negative (fifteen of
+twenty-one pairs, 0.2 to 1.4 ms), at high the signs are mixed. The two
+readings are of different things. The timestamp queries time the two
+passes' GPU execution, a third of a millisecond; the pairs measure what
+the frame loses when the pass is gone, which includes the target switches,
+the compose's texture reads and the CPU's draws, and on the Air that is
+about a millisecond. One check was not run today and bounds the Air's
+figure: a same-build pair (A against A, the two channels serving one
+build) would show any bias between the channels themselves.
+
+Four samples were discarded by the medians, not by a flag. One is a
+stall (the rig's B trailhead at 159 ms); the other three share a shape, a
+complete, post-ready sample at 0.4 to 0.6× the view's time. The rig's B tarn at
+12.5 ms is the same odd fast tarn as the calibration's (that view at high,
+now twice), and the Air's A meadow at 12.2 ms (beside 19.6 and 19.8) is
+the third. The camera's placement not landing is the suspect, unconfirmed;
+`--pairs 3` and the median are the guard. One Air row (crest B) was
+flagged `loaded` (2.2 cores busy outside the harness) and left out by the
+harness; the brief's rule would have rerun the set, and it was not rerun:
+the twenty other pairs settle it.
+
+**The answer to 2026-10-20's question:** the painted look costs about
+**1.2 ms a frame on the Air** at medium (7 % of the frame; a seventh of
+the 8 ms medium's slow views must find), and **0.3 rig-milliseconds of
+GPU time on the T4** (2 % of either budget), with the rig's frame-time
+pairs leaning the same way at medium. It is a real cost and not the
+problem: the time medium must find is elsewhere, and the per-pass readout
+says where to look first (the scene pass at 11.7 rig-ms on the
+trailhead).
