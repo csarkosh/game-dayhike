@@ -48,7 +48,9 @@ export function gpuTimeReport(raw: RawGpuTime): GpuTimeReport {
       ms: msOf(t.ns),
       width: t.width,
       height: t.height,
-      drewLastFrame: t.lastFrameId !== null && t.lastFrameId >= raw.frameId - 1,
+      // A target that never drew (-1) did not draw in the last frame, even in
+      // the first frames, while the main pass's own frame id is -1 too.
+      drewLastFrame: t.lastFrameId !== null && t.lastFrameId >= 0 && t.lastFrameId >= raw.frameId - 1,
     });
   }
   return {

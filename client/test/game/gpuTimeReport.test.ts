@@ -22,6 +22,10 @@ describe("gpuTimeReport", () => {
     ]);
     expect(r.missed).toEqual(["early"]);
   });
+  it("never marks a target that never drew as drawn, in the first frames too", () => {
+    const first = gpuTimeReport({ ...raw, frameId: -1, targets: [{ name: "mirror", ns: 0, lastFrameId: -1, width: 1, height: 1 }] });
+    expect(first.targets[0]?.drewLastFrame).toBe(false);
+  });
   it("says so when unsupported", () => {
     const r = gpuTimeReport({ ...raw, supported: false, frameNs: null, mainNs: null, targets: [] });
     expect(r.supported).toBe(false);

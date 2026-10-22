@@ -722,7 +722,7 @@ function buildGame(
   let windOverride: number | null = null;
   let lastFreecamView: FreecamView | null = null;
 
-  /** The commands that play a scene for a look (`summit`, `escape`), and `stand`, which puts the host's player at a place: never written back to the URL, and from the URL called once the world is in. */
+  /** The commands that play a scene for a look (`summit`, `escape`), `stand`, which puts the host's player at a place, and `lamp`, which lights that player's lamp or puts it out: never written back to the URL, and from the URL called once the world is in. */
   function isLook(name: string): boolean {
     return name === "summit" || name === "escape" || name === "stand" || name === "lamp";
   }
