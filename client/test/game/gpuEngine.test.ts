@@ -321,6 +321,10 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     // before the engine is handed over: no preparation then waits.
     expect(start).toContain(
       "    await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });\n" +
+        "    // On before any scene or render target exists: Babylon gives a render\n" +
+        "    // target a GPU-time counter only if it is made while this is on\n" +
+        "    // (`webgpuRenderTargetWrapper.js`).\n" +
+        "    if (options.timing && (options.features ?? []).includes(WEBGPU_TIMING_FEATURE)) engine.enableGPUTimingMeasurements = true;\n" +
         "    await engine.prepareGlslangAndTintAsync();\n    await Promise.race([looking, sourcesBy]);\n",
     );
     // By default, the translations shipped with the build for the engine's tier first, then the store.

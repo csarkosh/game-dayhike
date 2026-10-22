@@ -26,10 +26,10 @@ describe("the hike's sky", () => {
   it("hands its table to every renderer it builds: the first, and a swap's", () => {
     expect(src.match(/\bcreateRenderer\(/g)).toHaveLength(2);
     expect(src).toContain(
-      "createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, skyTable: skySource.table }),",
+      "createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
     );
     expect(src).toContain(
-      "build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table }),",
+      "build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
     );
   });
 
