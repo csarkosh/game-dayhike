@@ -531,7 +531,7 @@ pairs; a negative number is the frame without the pass being faster):
 | forest | −0.23 | −1.65 | −0.96 |
 | tarn | −0.72 | +0.06 | −1.35 |
 | meadow | −1.36 | +0.88 | −1.02 |
-| crest | −0.26 | −0.83 | −1.18 (two pairs) |
+| crest | −0.26 | −0.83 | −1.21 (two pairs) |
 | beach | −0.59 | −0.90 | −1.44 |
 | forest-night | −0.73 | −0.75 | −1.23 |
 
