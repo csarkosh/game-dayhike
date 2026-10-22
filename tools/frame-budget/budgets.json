@@ -1,0 +1,36 @@
+{
+  "medium": {
+    "tier": "medium",
+    "machine": "g4dn.xlarge",
+    "gpu": "NVIDIA Tesla T4",
+    "browser": "Chrome/154.0.8037.58",
+    "k": 0.963,
+    "spread": [
+      0.751,
+      1.933
+    ],
+    "factor": 1,
+    "airWarm": true,
+    "date": "2026-10-22",
+    "commit": "1fb913ae",
+    "meanMs": 15.408,
+    "p95Ms": 21.186
+  },
+  "high": {
+    "tier": "high",
+    "machine": "g4dn.xlarge",
+    "gpu": "NVIDIA Tesla T4",
+    "browser": "Chrome/154.0.8037.58",
+    "k": 0.909,
+    "spread": [
+      0.871,
+      1.686
+    ],
+    "factor": 1.5,
+    "airWarm": true,
+    "date": "2026-10-22",
+    "commit": "1fb913ae",
+    "meanMs": 21.816,
+    "p95Ms": 29.997
+  }
+}

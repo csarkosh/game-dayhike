@@ -414,6 +414,93 @@ confirmation on the Air.
 
 ## As built
 
-(Filled by the calibration run: the date, the build, the rig's machine
-type and GPU, k_medium and k_high with their spreads, B_medium and
-B_high, the Pro's two estimates and whether they agree.)
+### The first calibration (2026-10-21)
+
+Build `1fb913ae` on both machines, served from the Firebase preview
+channel `frame-budget` (the no-paint build `c9bbfd66`, the same build with
+`PAINT_ENABLED = false`, from the channel `no-paint`). The rig was
+`g4dn.xlarge` (one NVIDIA Tesla T4, Windows, Chrome 154.0.8037.58, in
+`us-east-1`); the Air a 13-inch M4 MacBook Air (Chrome 155.0.8059.85,
+Apple M4, 1470×956), read **warm** after a five-minute page at the tier.
+Three rotations a view on the Air (`--rotate 0,1,2`, one sample each),
+three samples a view on the rig; the frame cap off on both; no row
+flagged. The numbers live in `tools/frame-budget/budgets.json`.
+
+| Tier | k (median) | spread (least, greatest) | B mean | B p95 | factor |
+|---|---|---|---|---|---|
+| medium | **0.963** | 0.751 (forest-night), 1.933 (crest) | **15.41 ms** | **21.19 ms** | 1 |
+| high | **0.909** | 0.871 (forest), 1.686 (crest) | **21.82 ms** | **30.00 ms** | 1.5 |
+
+The per-view medians of the means (ms; p95 after the slash):
+
+| View | Air medium | rig medium | k | Air high | rig high | k |
+|---|---|---|---|---|---|---|
+| trailhead | 24.04 / 109 | 25.70 / 29 | 1.069 | 34.90 / 161 | 31.72 / 35 | 0.909 |
+| forest | 24.25 / 140 | 18.89 / 36 | 0.779 | 38.08 / 124 | 33.17 / 48 | 0.871 |
+| tarn | 20.13 / 107 | 19.39 / 35 | 0.963 | 27.63 / 97 | 28.86 / 33 | 1.045 |
+| meadow | 19.15 / 36 | 32.03 / 37 | 1.673 | 30.82 / 92 | 42.58 / 48 | 1.382 |
+| crest | 17.23 / 34 | 33.31 / 51 | 1.933 | 21.61 / 32 | 36.43 / 54 | 1.686 |
+| beach | 15.89 / 32 | 12.97 / 15 | 0.816 | 23.10 / 30 | 20.22 / 35 | 0.875 |
+| forest-night | 24.22 / 138 | 18.20 / 36 | 0.751 | 36.08 / 130 | 32.16 / 37 | 0.891 |
+
+**The spread is wider than ±20 % on both tiers**, as §3 allowed for: the
+T4 is slow where the Air is fast (the meadow and the crest, the two open
+views with the most grass and the farthest ground) and fast where the Air
+is slow (the forests, the beach). So the budgets hold as medians, and a
+cut whose whole gain is in one view is confirmed on the Air before it
+counts. The two GPUs rank the views differently, not just scale them.
+
+**The Pro's two estimates DISAGREE**, and §3 says this is said before
+any high budget is quoted. From the Air, high's median view (30.82 ms)
+divided by 1.5 puts the base M5 Pro at **48.7 frames a second**; the
+M3 Max reading (about 30 a second, scaled by the GPUs' benchmark ratio)
+puts it at **12 to 15**. That is 3.6× apart, over the 2× line. The
+reading taken under the harness's conditions is the Air's; the M3 Max
+figure was the owner playing on a 16-inch Pro's own screen (3456×2234
+native, 5.5× the pixels of the Air's window), on an unknown browser and
+engine and an earlier build, and a pixel count alone accounts for the
+gap. So B_high above stands on the Air and the factor 1.5, labelled
+"derived", and the M3 Max check is treated as the bound §3 said it was,
+not a second estimate. It is replaced the day the owner reads a frame
+rate off the Pro's screen. If the factor itself is off, every high-tier
+verdict is off by the same factor.
+
+**Where the tiers stand against their bars.** Medium on the Air draws
+every view at 16 to 24 ms mean (41 to 63 frames a second): the beach's
+mean is under the bar, the trailhead, the forests and forest-night need
+a 1.5× cut. High on the Air draws 22 to 38 ms (26 to 46), which on a
+base M5 Pro by the factor would be 14 to 25 ms: the crest and the beach
+at the bar, the rest needing up to a 1.6× cut on the Pro by this
+estimate, not the 4 to 5× that §1 feared from the M3 Max figure.
+
+**What the rows say beside the means.**
+
+- *The Air's p95s are bursts, not a slow mean.* With the frame cap off,
+  four views on medium (trailhead, forest, tarn, forest-night) and five on
+  high show a p95 of 90 to 160 ms beside a steady mean: periodic long
+  frames in a burst-and-stall pattern that repeats across rotations
+  (meadow, crest and beach sit at 30 to 36). The mean is the throughput
+  figure the budget is derived from; the p95 bar (22 ms) is judged on the
+  rig, whose p95s are 15 to 54. Whether the Air's stalls survive the
+  60 Hz cap a player runs under is a question for the first cut.
+- *The high crest on the Air* read 21.61, 22.01 and 15.88 ms in its three
+  rotations (28 % spread, every other view under 9 %); the median takes
+  the odd one out. *The rig's tarn at high* read 30.26, 11.37 and 28.86 ms;
+  the 11.37 was a complete, post-ready sample (882 frames) and is
+  unexplained; the median takes it out too.
+- *The rig is steady only warm.* Six samples of the forest at medium
+  spread 57.7 % right after boot (18.2 to 30.2 ms) and 7.4 % after three
+  and a half hours up (19.2 to 20.6). The README's day starts with the
+  steadiness run, and a cold rig's first set is not a calibration.
+- *Readiness.* The Air's rows reached `body.world-ready` 56 to 63 s after
+  the canvas (a fresh browser context downloads the world each sample);
+  the rig's in 20 to 37 s. Every row taken before the harness waited for
+  that class (the whole first day) measured a mix of the default start and
+  the view, and was discarded; see the README's "the readiness wait".
+- *Apple's per-pass readout is latency, not cost.* On the M4 every pass
+  reads about the same figure (two frames of queue latency uncapped); pass
+  costs come from the rig alone. The Mac's rows carry the readout for
+  completeness and nothing is derived from it.
+
+The cost of the day: about 12 rig hours at $0.71 (started 14:11 PDT, the
+daily stop at 02:00; the first five hours' rows were the void ones).
