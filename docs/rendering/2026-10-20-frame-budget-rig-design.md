@@ -497,13 +497,21 @@ estimate, not the 4 to 5× that §1 feared from the M3 Max figure.
   steadiness run, and a cold rig's first set is not a calibration.
 - *Readiness.* The Air's rows reached `body.world-ready` 56 to 63 s after
   the canvas (a fresh browser context downloads the world each sample);
-  the rig's in 20 to 37 s. Every row taken before the harness waited for
+  the rig's in 20 to 38 s. Every row taken before the harness waited for
   that class (the whole first day) measured a mix of the default start and
-  the view, and was discarded; see the README's "the readiness wait".
+  the view, and was discarded; see the README's "The Mac's run".
 - *Apple's per-pass readout is latency, not cost.* On the M4 every pass
   reads about the same figure (two frames of queue latency uncapped); pass
   costs come from the rig alone. The Mac's rows carry the readout for
   completeness and nothing is derived from it.
+- *The skipping pass's division was not built.* §5's rule for a pass
+  drawn every n-th frame (timed with the skip forced off, the reading
+  divided by n) is not in the readout: it marks `drewLastFrame` and the
+  README says to divide by n, and nothing measured this round needed it.
+- *The rig's label.* These rows carry the label `g4dn-t4`, and the
+  instance type reached `budgets.json` only through `budget.mjs
+  --machine`. The README's rig commands pass `--machine g4dn.xlarge`, so
+  each row names the instance type, as §7 asks.
 
 The cost of the day: about 12 rig hours at $0.71 (started 14:11 PDT, the
 daily stop at 02:00; the first five hours' rows were the void ones).
@@ -557,7 +565,7 @@ now twice), and the Air's A meadow at 12.2 ms (beside 19.6 and 19.8) is
 the third. The camera's placement not landing is the suspect, unconfirmed;
 `--pairs 3` and the median are the guard. One Air row (crest B) was
 flagged `loaded` (2.2 cores busy outside the harness) and left out by the
-harness; the brief's rule would have rerun the set, and it was not rerun:
+harness; a flagged row would normally rerun the set, and it was not rerun:
 the twenty other pairs settle it.
 
 **The answer to 2026-10-20's question:** the painted look costs about
