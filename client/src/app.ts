@@ -2315,6 +2315,8 @@ function buildGame(
   void ready.then(() => {
     if (disposed || broken) return;
     for (const entry of view) if (isLook(entry.name)) applyView(entry.name, entry.args);
+    // The world is in and the URL's looks applied: tools that time or shoot the page wait for this class.
+    document.body.classList.add("world-ready");
   });
 
   const onResize = () => {
