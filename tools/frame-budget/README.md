@@ -5,8 +5,11 @@ The game's frame time, measured the same way every time. `measure.mjs` opens eac
 (`body.world-ready`, set once the world is in and the URL's looks are applied), settles 30 s, warms
 it for 3 s, then times its frames for 10 s with the GPU readout (`?gpuTime`) read at the start and the end. Each
 sample is one JSON row appended to a JSONL file in `runs/`, and the run ends with a table of each
-view's medians, against the tier's budget when `budgets.json` has one. The verdict is information:
-the script exits 0 over budget or under. The options are in the header of `measure.mjs`.
+view's medians and a verdict that names what it judged against. A rig run (`--remote`) is judged
+against the tier's budget in `budgets.json`, which is in the rig's milliseconds; a run on the Mac
+against the bars themselves, medium at 16.0 ms mean and 22 p95, high at those times the factor 1.5
+(24.0 / 33.0, the Pro's bars carried to the Air). The verdict is information: the script exits 0
+over budget or under. The options are in the header of `measure.mjs`.
 
 Two machines measure:
 
@@ -30,14 +33,17 @@ npm run frame-budget -- --base <url> --tier medium --machine air-m4 --warm 300 -
 Run it three times, `--rotate 0`, `--rotate 1`, `--rotate 2`, so a run's drift falls on different
 views. `--warm 300` keeps the first view open for five minutes before its first sample, so the Air
 is warm when the numbers start. Each sample waits for `body.world-ready` and then settles 30 s. A
-fresh browser context downloads the world each time, so readiness takes 60 to 120 s on the Air; the
-row records it as `readyS`. The wait is there because the page applies the URL's script (seed,
+fresh browser context downloads the world each time, so readiness took 56 to 63 s on the Air (20 to
+38 s on the rig); the row records it as `readyS`. The wait is there because the page applies the URL's script (seed,
 camera, escalation) only once the world is ready: a fixed sleep sometimes timed the default start
 (5 to 9 ms a frame) and sometimes the real view (19 to 26 ms), and the Air's rows came out
 bimodal. A run with loaded rows is discarded, not averaged: `rm` its file and
 run again.
 
 ## The rig's day
+
+The Mac needs the AWS CLI and its Session Manager plugin (`session-manager-plugin`), which the port
+forward in step 4 runs through.
 
 1. **Start the rig**, from the main checkout, never from a worktree, and only with the owner's
    go-ahead:
@@ -63,8 +69,13 @@ run again.
      --parameters "$(jq -Rs '{commands: [.]}' tools/frame-budget/rig/start-chrome.ps1)"
    ```
 
-   Read the command's output (`aws ssm get-command-invocation`): it prints Chrome's `/json/version`
-   and the listening port. It stops any Chrome and any earlier `frame-budget-chrome` task first, so
+   Read the command's output, with the `CommandId` that `send-command` printed:
+
+   ```bash
+   aws ssm get-command-invocation --region us-east-1 --command-id <command id> --instance-id <instance id>
+   ```
+
+   It prints Chrome's `/json/version` and the listening port. It stops any Chrome and any earlier `frame-budget-chrome` task first, so
    it can be run again.
 
 4. **Forward the port**, in a second terminal, left running:
@@ -78,15 +89,19 @@ run again.
 5. **Check the rig is steady**: six samples of one view and the spread of their means.
 
    ```bash
-   npm run frame-budget -- --base <channel url> --tier high --machine rig-t4 --remote 9333 --steadiness --views forest
+   npm run frame-budget -- --base <channel url> --tier high --machine g4dn.xlarge --remote 9333 --steadiness --views forest
    ```
 
 6. **The runs**, both tiers:
 
    ```bash
-   npm run frame-budget -- --base <channel url> --tier medium --machine rig-t4 --remote 9333
-   npm run frame-budget -- --base <channel url> --tier high --machine rig-t4 --remote 9333
+   npm run frame-budget -- --base <channel url> --tier medium --machine g4dn.xlarge --remote 9333
+   npm run frame-budget -- --base <channel url> --tier high --machine g4dn.xlarge --remote 9333
    ```
+
+   The machine's label is the instance type, so every row names the machine it was taken on. As
+   on the Mac, each sample waits for `body.world-ready` and then settles 30 s; `--settle <s>`
+   changes the settle (a view's `extraSettleS` is added to it).
 
    `--remote` is refused unless the Chrome behind it says Windows NT, so a run cannot be pointed
    at the Mac by mistake.
@@ -106,8 +121,11 @@ node tools/frame-budget/budget.mjs --tier medium --air <air.jsonl> --rig <rig.js
 It prints the per-view k, the median k, the spread and the missing views (for `--tier high` also the Pro's two estimates and whether they agree), and writes or replaces the tier's entry in `budgets.json`, keeping the other tier's.
 
 `budget.mjs` writes `budgets.json` from an Air file and a rig file. The Air's rows give the
-medium tier's budget; the high tier's is derived from them by the ratio 1.5. The numbers are put
-here when the first calibration lands.
+medium tier's budget; the high tier's is derived from them by the ratio 1.5. The entry's `commit`
+is the build the kept rows were taken on, their one `sha` (files of two builds, an `--against`
+file among them, are refused), and its `date` the local date of the latest kept row. The first
+calibration (2026-10-21, build `1fb913ae`) is in `budgets.json`, and its per-view numbers in the
+design doc's As built (`docs/rendering/2026-10-20-frame-budget-rig-design.md`).
 
 ## Comparing builds
 

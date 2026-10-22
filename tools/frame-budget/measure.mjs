@@ -14,7 +14,7 @@
 //
 //   --base <url>       the build measured (A): the dev server, the live site or a preview channel
 //   --tier <tier>      medium or high, the size and the quality the views are opened at
-//   --machine <label>  the machine's name in the rows (air-m4, rig-t4, …)
+//   --machine <label>  the machine's name in the rows (air-m4; on the rig its instance type, g4dn.xlarge)
 //   --views a,b        only these views (a `check` view only by name); every view without `check` by default
 //   --pairs <n>        samples a view, or with --against pairs of samples (3 by default)
 //   --against <url2>   a second build (B), interleaved with A: A B, B A, A B, … each pair back to back
