@@ -39,7 +39,14 @@ if (args.dryRun) {
   process.exit(0);
 }
 
-const stdout = run('npx', deployArgs, { maxBuffer: 64 * 1024 * 1024 });
+// The CLI's output is read for the address, so it is shown when the deploy ends, or on a failure.
+console.log('→ deploying (the CLI prints when it ends)');
+let stdout;
+try {
+  stdout = run('npx', deployArgs, { maxBuffer: 64 * 1024 * 1024 });
+} catch (error) {
+  fail(`the channel deploy failed (exit ${error.status ?? 'unknown'}):\n${error.stdout ?? ''}${error.stderr ?? error.message}`);
+}
 process.stdout.write(stdout);
 let url;
 try {

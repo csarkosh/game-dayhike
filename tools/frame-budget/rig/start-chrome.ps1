@@ -10,7 +10,7 @@
 $ErrorActionPreference = 'Stop'
 
 $chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
-$profile = 'C:\Users\hiker\frame-budget-profile'
+$profileDir = 'C:\Users\hiker\frame-budget-profile'
 $taskName = 'frame-budget-chrome'
 
 # Any earlier task and any Chrome first, so the port and the profile are free.
@@ -19,7 +19,7 @@ Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Silent
 Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 
-$arguments = '--remote-debugging-port=9222 --user-data-dir=C:\Users\hiker\frame-budget-profile --no-first-run --no-default-browser-check --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling --disable-gpu-vsync --disable-frame-rate-limit --enable-webgpu-developer-features --start-maximized about:blank'
+$arguments = "--remote-debugging-port=9222 --user-data-dir=$profileDir --no-first-run --no-default-browser-check --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling --disable-gpu-vsync --disable-frame-rate-limit --enable-webgpu-developer-features --start-maximized about:blank"
 
 $action = New-ScheduledTaskAction -Execute $chrome -Argument $arguments
 $principal = New-ScheduledTaskPrincipal -UserId "$env:COMPUTERNAME\hiker" -LogonType Interactive -RunLevel Limited

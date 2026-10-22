@@ -3,8 +3,10 @@
 // tier's standard size, waited for until the page says its world is ready (`body.world-ready`: the
 // world in and the URL's looks applied), settled, warmed 3 s, then its frames timed for 10 s with the GPU
 // readout (`?gpuTime`) read at the start and the end. One JSON row a sample is appended to a JSONL
-// file, and the run ends with a table of each view's medians, against the tier's budget when
-// `budgets.json` has one. The verdict is information: the script exits 0 over budget or under.
+// file, and the run ends with a table of each view's medians and a verdict that names what it
+// judged against: with --remote the tier's budget from `budgets.json` (rig-milliseconds, the rig's
+// rows), on this Mac the bars themselves (medium's, high's times the factor: `runBudget`). The
+// verdict is information: the script exits 0 over budget or under.
 //
 //   npm run frame-budget -- --base <url> --tier medium|high --machine <label> [--views a,b] [--pairs 3]
 //       [--against <url2>] [--remote <port>] [--settle 30] [--warm 0] [--rotate 0] [--out <file.jsonl>] [--steadiness]
@@ -32,15 +34,16 @@
 // process's share in `ps`, less this script's and the Chrome it started (the load average cannot be
 // used: the harness's own uncapped Chrome takes an idle Air's to 8). With --remote it is null, the
 // rig running nothing else by construction (its steadiness run is its load check). A row's `readyS`
-// is the seconds from the canvas to the page's `world-ready` class. Before Chrome starts, the Mac's
+// is the seconds from the canvas to the page's `world-ready` class. When `ps` fails, `load` is null
+// and the row reads as a --remote row does, unflagged. Before Chrome starts, the Mac's
 // GPU must read under QUIET_GPU % busy in `ioreg`: another page drawing on it voids every row.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { verdict } from "./lib/budget.mjs";
+import { judgement, runBudget } from "./lib/budget.mjs";
 import { attachChrome, evaluate, launchChrome, openPage, version } from "./lib/cdp.mjs";
-import { QUIET_GPU, QUIET_LOAD, flagsFor, medianOf, parseGpuUtil, pairDeltas, pairOrder, summarise, table } from "./lib/sample.mjs";
+import { QUIET_GPU, QUIET_LOAD, flagsFor, localDate, medianOf, parseGpuUtil, pairDeltas, pairOrder, summarise, table } from "./lib/sample.mjs";
 import { TIER_SIZES, resolveViews, viewUrl } from "./lib/views.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -51,8 +54,10 @@ const SAMPLE_S = 10;
 /** The page's canvas, waited for as the previews wait (60 s at most). */
 const CANVAS_TRIES = 120;
 const CANVAS_POLL_MS = 500;
-/** The world's readiness class, waited for up to this long after the canvas (a cold cache takes 60 to 120 s). */
+/** The world's readiness class, waited for up to this long after the canvas (the Air took 56 to 63 s,
+ * the rig 20 to 38), and the bound on one look at it, so a page that stops answering ends the wait. */
 const READY_MAX_S = 180;
+const READY_CALL_MS = 10_000;
 /** The samples a steadiness run takes. */
 const STEADINESS_SAMPLES = 6;
 
@@ -192,7 +197,8 @@ async function openView(browser, port, tier, url) {
 async function awaitReady(page, name) {
   const start = Date.now();
   for (;;) {
-    if (await evaluate(page, "document.body.classList.contains('world-ready')").catch(() => false)) break;
+    const ready = await within(evaluate(page, "document.body.classList.contains('world-ready')"), READY_CALL_MS, "no answer").catch(() => false);
+    if (ready) break;
     if (Date.now() - start > READY_MAX_S * 1000) throw new Error(`${name}: the world was not ready within ${READY_MAX_S} s`);
     await sleep(CANVAS_POLL_MS);
   }
@@ -223,9 +229,16 @@ async function sample(session, { tier, base, game, view, still, settle, shotPath
 /** The CPU cores busy outside the harness, to 2 dp: the sum of `ps`'s %CPU over every process
  * but this one and its descendants (the Chrome it started and Chrome's helpers). The one-minute
  * load average cannot tell other work from the harness: with the harness alone on an idle Air it
- * reads 8, the uncapped Chrome's own threads counted in it. */
+ * reads 8, the uncapped Chrome's own threads counted in it. Null when `ps` fails, so a sample
+ * already taken is kept: its row then reads as a --remote row does, with no load and no flag. */
 function busyOutside() {
-  const procs = execFileSync("ps", ["-Ao", "pid=,ppid=,pcpu="], { encoding: "utf8" })
+  let text;
+  try {
+    text = execFileSync("ps", ["-Ao", "pid=,ppid=,pcpu="], { encoding: "utf8" });
+  } catch {
+    return null;
+  }
+  const procs = text
     .trim()
     .split("\n")
     .map((line) => line.trim().split(/\s+/).map(Number))
@@ -276,17 +289,13 @@ function rowOf(r, { machine, about, base, build, tier, view, remote }) {
   return row;
 }
 
-const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+const today = () => localDate(new Date());
 
-/** The tier's budget from `budgets.json`, or null when there is none yet. */
-function tierBudget(tier) {
+/** The tier's entry in `budgets.json`, or undefined when there is none yet. */
+function budgetEntry(tier) {
   const path = join(HERE, "budgets.json");
-  if (!existsSync(path)) return null;
-  const entry = JSON.parse(readFileSync(path, "utf8"))[tier];
-  return entry === undefined ? null : { meanMs: entry.meanMs, p95Ms: entry.p95Ms };
+  if (!existsSync(path)) return undefined;
+  return JSON.parse(readFileSync(path, "utf8"))[tier];
 }
 
 /** Each view's pairs, A against B on the means, and the median of the pairs with no flagged row. */
@@ -337,8 +346,6 @@ async function main() {
       const probe = await fetch(base, { redirect: "manual" }).catch(() => null);
       if (probe === null) throw new Error(`nothing answers at ${base}: start the dev server (npm run dev:client) or check the URL`);
     }
-  }
-  if (!remote) {
     let util = null;
     try {
       util = parseGpuUtil(execFileSync("ioreg", ["-r", "-c", "AGXAccelerator", "-d", "1"], { encoding: "utf8" }));
@@ -391,22 +398,15 @@ async function main() {
 
   process.stdout.write(`\nrows: ${out}\n\n`);
   // One table and one verdict a build: the medians group by view, so two builds' rows never mix.
-  const budget = tierBudget(options.tier);
+  const budget = runBudget(options.tier, remote, budgetEntry(options.tier));
   const builds = options.against === undefined ? ["A"] : ["A", "B"];
   for (const build of builds) {
     const own = rows.filter((r) => r.build === build);
     if (options.against !== undefined) process.stdout.write(`build ${build}: ${bases[build]}\n`);
-    const lines = table(own, budget);
+    // The table's last line is the verdict, naming what it judged against.
+    const lines = table(own, budget === null ? null : judgement(own, budget));
     process.stdout.write(lines === "" ? "(no view has a row without a flag: nothing to tabulate)\n" : `${lines}\n`);
     if (budget === null) process.stdout.write(`(no budget for ${options.tier} in budgets.json: not judged)\n`);
-    else {
-      const v = verdict(own, budget);
-      const line =
-        v.worst === null
-          ? "not judged: no row without a flag"
-          : `${v.over ? "OVER" : "under"} the ${options.tier} budget (${budget.meanMs} ms mean, ${budget.p95Ms} ms p95); worst ${v.worst} at ${v.views[v.worst].meanMs} ms mean, ${v.views[v.worst].p95Ms} ms p95`;
-      process.stdout.write(`verdict: ${line}\n`);
-    }
     process.stdout.write("\n");
   }
   const flagged = rows.filter((r) => r.flags.length > 0);

@@ -7,24 +7,42 @@
 //   node tools/frame-budget/budget.mjs --tier medium --air <air.jsonl> --rig <rig.jsonl> \
 //     --machine "g4dn.xlarge" [--factor 1.5]
 //
-// Writes (or replaces) the tier's entry in budgets.json, keeping the other tier's.
-import { execFileSync } from "node:child_process";
+// Writes (or replaces) the tier's entry in budgets.json, keeping the other tier's. The entry's
+// `commit` is the build the kept rows were taken on (their one `sha`: rows of two builds are
+// refused), and its `date` the local date of the latest kept row.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { PRO_FACTOR, budgetRecord, estimatesAgree, kFor, proEstimate } from "./lib/budget.mjs";
-import { keep, medianOf, viewMedians } from "./lib/sample.mjs";
+import { keep, localDate, medianOf, viewMedians } from "./lib/sample.mjs";
 
 const BUDGETS = fileURLToPath(new URL("./budgets.json", import.meta.url));
 /** The owner's reading on the M3 Max, 30 fps, divided by 2 to 2.5 for the Pro: frames a second. */
 const M3_MAX_PRO_FPS = [12, 15];
 const M3_MAX_MIDPOINT = 13.5;
 
+/** Where a set of kept rows came from: `commit`, their one build's `sha`, and `date`, the local
+ * date of the latest row's `time`. Throws unless every row carries the same sha, naming the
+ * builds found, so an `--against` file (two builds) cannot set a budget. */
+export function provenance(rows) {
+  const shas = [...new Set(rows.map((r) => r.sha ?? null))];
+  if (shas.length === 0) throw new Error("no kept rows to calibrate from");
+  if (shas.length > 1) {
+    const found = shas.map((sha) => sha ?? "no sha").join(", ");
+    throw new Error(`the kept rows come from ${shas.length} builds (${found}): a budget is one build's, so calibrate from files of one build`);
+  }
+  if (shas[0] === null) throw new Error("the kept rows carry no build sha (a build without the readout): a budget names its build");
+  const latest = Math.max(...rows.map((r) => Date.parse(r.time)));
+  return { commit: shas[0], date: localDate(new Date(latest)) };
+}
+
 /** The tier's k and budget record from the two sets of rows, and for the high tier the Pro's two
  * estimates (frames a second) and whether they agree; `info` is what the rows cannot give
- * (`machine`, `date`, `commit`) with `gpu` and `browser` falling back to the rig rows'. */
+ * (`machine`), with `gpu` and `browser` falling back to the rig rows'. The record's `commit` and
+ * `date` are the kept rows' (`provenance`). */
 export function calibrate(airRows, rigRows, tier, factor, info) {
   const air = keep(airRows.filter((r) => r.tier === tier));
   const rig = keep(rigRows.filter((r) => r.tier === tier));
+  const { commit, date } = provenance([...air, ...rig]);
   const k = kFor(rig, air);
   const record = budgetRecord({
     tier,
@@ -35,8 +53,8 @@ export function calibrate(airRows, rigRows, tier, factor, info) {
     spread: k.spread,
     factor,
     airWarm: true,
-    date: info.date,
-    commit: info.commit,
+    date,
+    commit,
   });
   let estimates = null;
   if (tier === "high") {
@@ -80,17 +98,13 @@ const readRows = (path) =>
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
-  const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
-  const date = new Date().toISOString().slice(0, 10);
   const { k, record, estimates } = calibrate(readRows(options.air), readRows(options.rig), options.tier, options.factor, {
     machine: options.machine,
-    date,
-    commit,
   });
   process.stdout.write(`${options.tier}: k ${k.k}, spread ${k.spread[0]} to ${k.spread[1]}\n`);
   for (const [view, ratio] of Object.entries(k.perView)) process.stdout.write(`  ${view}: ${ratio}\n`);
   process.stdout.write(`  missing: ${k.missing.length === 0 ? "none" : k.missing.join(", ")}\n`);
-  process.stdout.write(`  budget: mean ${record.meanMs} ms, p95 ${record.p95Ms} ms (factor ${record.factor})\n`);
+  process.stdout.write(`  budget: mean ${record.meanMs} ms, p95 ${record.p95Ms} ms (factor ${record.factor}), build ${record.commit}, ${record.date}\n`);
   if (estimates !== null) {
     process.stdout.write(
       `  Pro: ${estimates.fromAir.toFixed(1)} fps from the Air, ${estimates.fromM3Max[0]} to ${estimates.fromM3Max[1]} fps from the M3 Max: ${estimates.agree ? "agree" : "DISAGREE"}\n`,

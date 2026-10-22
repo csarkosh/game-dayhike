@@ -1,5 +1,4 @@
 {
-  "sizes": { "medium": { "width": 1470, "height": 956 }, "high": { "width": 1512, "height": 982 } },
   "views": [
     { "name": "trailhead", "still": "trailhead" },
     { "name": "forest", "still": "forest" },

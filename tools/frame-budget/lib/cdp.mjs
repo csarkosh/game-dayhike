@@ -4,7 +4,7 @@
 // of its own, so no GPU state or cache carries from one sample into the next. Plumbing only; what
 // is measured, and how, is `measure.mjs`'s.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -83,12 +83,12 @@ export async function version(port) {
   return { browser: v.Browser, userAgent: v["User-Agent"], wsUrl: v.webSocketDebuggerUrl };
 }
 
-/** Chrome started on this Mac from a fresh profile under the OS temp dir, with remote debugging:
- * the browser's session, its port and a `close()` that quits it. */
-export async function launchChrome({ profileDir = join(tmpdir(), "dayhike-frame-budget-profile"), flags = MEASURE_FLAGS } = {}) {
+/** Chrome started on this Mac from a fresh profile, a directory of its own under the OS temp dir
+ * (so a second run never deletes a first run's live profile), with remote debugging: the browser's
+ * session, its port and a `close()` that quits it and removes the profile. */
+export async function launchChrome({ flags = MEASURE_FLAGS } = {}) {
   if (!existsSync(CHROME)) throw new Error(`Chrome not found at ${CHROME} (set CHROME)`);
-  rmSync(profileDir, { recursive: true, force: true });
-  mkdirSync(profileDir, { recursive: true });
+  const profileDir = mkdtempSync(join(tmpdir(), "dayhike-frame-budget-"));
   const proc = spawn(CHROME, [`--user-data-dir=${profileDir}`, "--remote-debugging-port=0", ...PREVIEW_FLAGS, ...flags, "about:blank"], {
     stdio: "ignore",
   });
@@ -98,6 +98,10 @@ export async function launchChrome({ profileDir = join(tmpdir(), "dayhike-frame-
     browser?.close();
     await sleep(500);
     if (proc.exitCode === null) proc.kill();
+    // A profile left behind (a helper still writing as it exits) is only a temp dir: never a failure.
+    try {
+      rmSync(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {}
   };
   try {
     const portFile = join(profileDir, "DevToolsActivePort");

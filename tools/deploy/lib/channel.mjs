@@ -14,7 +14,7 @@ export function parseChannelArgs(argv) {
     if (arg === '--dry-run') dryRun = true;
     else if (arg === '--expires') {
       expires = argv[++i];
-      if (!expires) throw new Error('--expires needs a duration, such as 7d');
+      if (!expires || expires.startsWith('--')) throw new Error('--expires needs a duration, such as 7d');
     } else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}`);
     else names.push(arg);
   }

@@ -7,6 +7,8 @@ describe("parseChannelArgs", () => {
     expect(parseChannelArgs(["--expires", "2d", "--dry-run", "x1"])).toEqual({ name: "x1", expires: "2d", dryRun: true });
     expect(() => parseChannelArgs([])).toThrow(/needs a name/);
     expect(() => parseChannelArgs(["a", "b"])).toThrow(/one name/);
+    expect(() => parseChannelArgs(["x1", "--expires", "--dry-run"])).toThrow(/needs a duration/);
+    expect(() => parseChannelArgs(["x1", "--expires"])).toThrow(/needs a duration/);
   });
 });
 describe("checkChannelName", () => {

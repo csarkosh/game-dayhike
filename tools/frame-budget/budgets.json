@@ -11,7 +11,7 @@
     ],
     "factor": 1,
     "airWarm": true,
-    "date": "2026-10-22",
+    "date": "2026-10-21",
     "commit": "1fb913ae",
     "meanMs": 15.408,
     "p95Ms": 21.186
@@ -28,7 +28,7 @@
     ],
     "factor": 1.5,
     "airWarm": true,
-    "date": "2026-10-22",
+    "date": "2026-10-21",
     "commit": "1fb913ae",
     "meanMs": 21.816,
     "p95Ms": 29.997

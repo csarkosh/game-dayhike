@@ -90,28 +90,24 @@ export function pairDeltas(rows) {
   return { pairs, median: pairs.length === 0 ? null : medianOf(pairs.map((p) => p.delta)) };
 }
 
-/** One line a view, and with a budget a last line for the tier. Takes all the rows: the counts
- * show how many of a view's rows were kept, and the medians and the verdict use the kept ones. */
-export function table(rows, budget = null) {
+/** One line a view, and with `judged` (`judgement`'s result in `budget.mjs`) each view's place
+ * against the budget and the verdict's line last, "not judged" when no view has a kept row. Takes
+ * all the rows: the counts show how many of a view's rows were kept, and the medians use the kept
+ * ones. */
+export function table(rows, judged = null) {
   const lines = [];
-  let worst = null;
-  let worstRatio = -Infinity;
-  let anyOver = false;
   const total = new Map();
   for (const r of rows) total.set(r.view, (total.get(r.view) ?? 0) + 1);
   for (const [view, m] of viewMedians(rows)) {
     let line = `${view}  n=${m.n}/${total.get(view)}  mean ${m.meanMs} ms  p95 ${m.p95Ms} ms`;
-    if (budget !== null) {
-      const over = m.meanMs > budget.meanMs || m.p95Ms > budget.p95Ms;
-      anyOver = anyOver || over;
-      line += `  ${over ? "OVER" : "under"} (B ${budget.meanMs}/${budget.p95Ms})`;
-      if (m.meanMs / budget.meanMs > worstRatio) {
-        worstRatio = m.meanMs / budget.meanMs;
-        worst = view;
-      }
-    }
+    if (judged !== null) line += `  ${judged.views[view].over ? "OVER" : "under"} (B ${judged.budget.meanMs}/${judged.budget.p95Ms})`;
     lines.push(line);
   }
-  if (budget !== null) lines.push(anyOver ? `OVER budget (worst ${worst})` : "under budget");
+  if (judged !== null) lines.push(judged.line);
   return lines.join("\n");
+}
+
+/** A time's date in this machine's zone, `YYYY-MM-DD`. */
+export function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

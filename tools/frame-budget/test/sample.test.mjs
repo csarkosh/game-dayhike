@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { byView, flagsFor, keep, medianOf, pairDeltas, pairOrder, parseGpuUtil, summarise, table } from "../lib/sample.mjs";
+import { judgement } from "../lib/budget.mjs";
+import { byView, flagsFor, keep, localDate, medianOf, pairDeltas, pairOrder, parseGpuUtil, summarise, table } from "../lib/sample.mjs";
 
 const mk = (view, build, mean, extra = {}) => ({ view, build, mean, p95: mean + 5, canvas: { start: [1, 1], end: [1, 1] }, load: 1, ...extra });
 
@@ -42,12 +43,20 @@ describe("sample", () => {
   });
   it("writes a table line a view and the tier's verdict", () => {
     const rows = [mk("forest", "A", 20, { p95: 26 })];
-    expect(table(rows, { meanMs: 19.5, p95Ms: 27 })).toContain("forest");
-    expect(table(rows, { meanMs: 19.5, p95Ms: 27 })).toMatch(/OVER budget \(worst forest\)/);
-    expect(table(rows, { meanMs: 21, p95Ms: 27 })).toMatch(/under budget/);
+    const over = { meanMs: 19.5, p95Ms: 27, label: "the bars" };
+    expect(table(rows, judgement(rows, over))).toBe(
+      "forest  n=1/1  mean 20 ms  p95 26 ms  OVER (B 19.5/27)\nverdict: OVER the bars; worst forest at 20 ms mean, 26 ms p95",
+    );
+    expect(table(rows, judgement(rows, { ...over, meanMs: 21 }))).toMatch(/under \(B 21\/27\)\nverdict: under the bars/);
     expect(table(rows)).toBe("forest  n=1/1  mean 20 ms  p95 26 ms");
     const flagged = [...rows, mk("forest", "A", 99, { load: 9 })];
     expect(table(flagged)).toBe("forest  n=1/2  mean 20 ms  p95 26 ms");
+    const allFlagged = [mk("forest", "A", 99, { load: 9 })];
+    expect(table(allFlagged, judgement(allFlagged, over))).toBe("verdict: not judged: no row without a flag");
+  });
+  it("writes a date in this machine's zone", () => {
+    expect(localDate(new Date(2026, 9, 21, 23, 30))).toBe("2026-10-21");
+    expect(localDate(new Date(2026, 0, 2, 0, 5))).toBe("2026-01-02");
   });
 });
 

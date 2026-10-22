@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { budgetFor, budgetRecord, estimatesAgree, kFor, proEstimate, verdict } from "../lib/budget.mjs";
+import { budgetFor, budgetRecord, estimatesAgree, judgement, kFor, proEstimate, runBudget, verdict } from "../lib/budget.mjs";
 
 const row = (view, mean) => ({ view, build: "A", mean, p95: mean + 6, canvas: { start: [1, 1], end: [1, 1] }, load: 1 });
 
@@ -39,6 +39,27 @@ describe("budget", () => {
     const v = verdict([row("a", 18), { ...row("a", 50), load: 9 }], { meanMs: 19.2, p95Ms: 26.4 });
     expect(v.views.a.over).toBe(false);
     expect(v.over).toBe(false);
+  });
+  it("judges the rig's rows by budgets.json and this Mac's by the bars, and names which", () => {
+    const entry = { machine: "g4dn.xlarge", meanMs: 15.408, p95Ms: 21.186, factor: 1 };
+    expect(runBudget("medium", true, entry)).toEqual({ meanMs: 15.408, p95Ms: 21.186, label: "the medium budget on g4dn.xlarge (15.408 ms mean, 21.186 p95)" });
+    expect(runBudget("medium", true, undefined)).toBeNull();
+    expect(runBudget("medium", false, entry)).toEqual({ meanMs: 16, p95Ms: 22, label: "the medium bars on this machine (16.0 ms mean, 22 p95)" });
+    expect(runBudget("medium", false, undefined)).toEqual(runBudget("medium", false, entry));
+    const high = { machine: "g4dn.xlarge", meanMs: 21.816, p95Ms: 29.997, factor: 1.5 };
+    expect(runBudget("high", true, high).meanMs).toBe(21.816);
+    expect(runBudget("high", false, high)).toEqual({ meanMs: 24, p95Ms: 33, label: "the high bars × 1.5, the Pro's by the factor (24.0 ms mean, 33.0 p95)" });
+    expect(runBudget("high", false, undefined).meanMs).toBe(24);
+  });
+  it("states the verdict in one line, naming the budget, or not judged with no kept row", () => {
+    const budget = runBudget("medium", false, undefined);
+    expect(judgement([row("a", 15), row("b", 17)], budget).line).toBe(
+      "verdict: OVER the medium bars on this machine (16.0 ms mean, 22 p95); worst b at 17 ms mean, 23 ms p95",
+    );
+    expect(judgement([row("a", 15)], budget).line).toMatch(/^verdict: under the medium bars/);
+    const none = judgement([{ ...row("a", 15), load: 9 }], budget);
+    expect(none.worst).toBeNull();
+    expect(none.line).toBe("verdict: not judged: no row without a flag");
   });
   it("estimates the Pro from the Air by the factor, and says whether two estimates agree", () => {
     expect(proEstimate(40)).toBeCloseTo(37.5, 3);
