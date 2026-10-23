@@ -47,7 +47,7 @@ vi.mock("../../src/game/skyDome.js", async (importOriginal) => {
 });
 
 import {
-  createLighting, DEFAULT_HOUR, FAR_CASCADE_REACH_M, SHADOW_FLOOR, SKY_WAIT_WARN_MS, SUN_LIGHT_SIZE_UV, farCascadeIndex, farCasters, shadowFilterFor, sunAltitudeDeg,
+  cascadeCasters, createLighting, DEFAULT_HOUR, FAR_CASCADE_REACH_M, SHADOW_FLOOR, SKY_WAIT_WARN_MS, SUN_LIGHT_SIZE_UV, farCascadeIndex, farCasters, shadowFilterFor, sunAltitudeDeg,
   sunShadowDarkness, whenSkyHeld,
   type Lighting, type LightingOptions,
 } from "../../src/game/lighting.js";
@@ -148,6 +148,38 @@ describe("createLighting", () => {
     expect(source).toContain('addShadowMesh(mesh, reach = "far") {');
     expect(source).toContain('if (reach === "near") nearOnly.add(mesh);');
     expect(source).toContain("shadowMap.getCustomRenderList = (layer, list, length) => {");
+  });
+
+  it("draws into a cascade only the casters its frustum holds, the near-only ones left out of the far cascade", () => {
+    type Fake = { name: string; alwaysSelectAsActiveMesh: boolean; infiniteDistance: boolean; isInFrustum(planes: unknown): boolean };
+    const fake = (name: string, inside: boolean, extra: Partial<Fake> = {}): Fake => ({
+      name, alwaysSelectAsActiveMesh: false, infiniteDistance: false, isInFrustum: () => inside, ...extra,
+    });
+    const patchIn = fake("facePatch_1", true);
+    const patchOut = fake("facePatch_2", false);
+    const ring = fake("clipmap_0", false, { alwaysSelectAsActiveMesh: true });
+    const giantIn = fake("tree.giant_0", true);
+    const giantOut = fake("tree.giant_1", false);
+    const sky = fake("dome", false, { infiniteDistance: true });
+    const list = [patchIn, patchOut, ring, giantIn, giantOut, sky];
+    const near = new Set<Fake>([patchIn, patchOut]);
+    const out: Fake[] = ["stale" as unknown as Fake];
+    // A near cascade: the frustum decides, the always-active and infinite meshes pass regardless.
+    expect(cascadeCasters(list, list.length, near, false, [], out)).toEqual([patchIn, ring, giantIn, sky]);
+    expect(out).toEqual([patchIn, ring, giantIn, sky]); // written in place, the old contents gone
+    // The far cascade: the near-only casters are left out even inside the frustum.
+    expect(cascadeCasters(list, list.length, near, true, [], out)).toEqual([ring, giantIn, sky]);
+    // Only the list's first `length` count, as Babylon hands them.
+    expect(cascadeCasters(list, 1, near, false, [], out)).toEqual([patchIn]);
+    // The planes reach the mesh's own test.
+    const planes = [{ normal: 1 }];
+    const seen: unknown[] = [];
+    cascadeCasters([fake("a", true, { isInFrustum: (p) => (seen.push(p), true) })], 1, new Set(), false, planes as never, []);
+    expect(seen).toEqual([planes]);
+    // Wired for every cascade, from each layer's own transform, with the far list as the fallback before the matrices exist.
+    const source = readFileSync(new URL("../../src/game/lighting.ts", import.meta.url), "utf8");
+    expect(source).toContain("const transform = shadows.getCascadeTransformMatrix(layer);");
+    expect(source).toContain("return cascadeCasters(list, length, nearOnly, layer === farCascade, planes, (perCascade[layer] ??= []));");
   });
 
   it("puts the soft shadow's filter in Babylon's store with its taps written out, where the soft filter is chosen", () => {

@@ -7,6 +7,8 @@ import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imagePro
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
 import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
+import type { Plane } from "@babylonjs/core/Maths/math.plane.js";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
 // Non-`.pure` imports, and it is load-bearing. Babylon 9 splits each of these
 // into a `.pure.js` half that defines behaviour and a wrapper that registers it.
 // `cascadedShadowGenerator.js` calls RegisterCascadedShadowGenerator();
@@ -219,6 +221,31 @@ export function farCasters(list: readonly AbstractMesh[], length: number, nearOn
   for (let i = 0; i < length && i < list.length; i++) {
     const mesh = list[i] as AbstractMesh;
     if (!nearOnly.has(mesh)) out.push(mesh);
+  }
+  return out;
+}
+
+/** What the cascade's frustum test reads of a caster: Babylon's own test for the camera, mirrored. */
+export type CasterLike = Pick<AbstractMesh, "isInFrustum" | "alwaysSelectAsActiveMesh" | "infiniteDistance">;
+
+/**
+ * The casters of `list` (its first `length`) one cascade draws: those its
+ * light-space frustum (`planes`, from the cascade's view-projection) holds, by
+ * the test the camera's own culling makes (`isInFrustum`; a mesh marked
+ * `alwaysSelectAsActiveMesh` or `infiniteDistance` always passes), less the
+ * near-only casters when `far`. Babylon culls nothing from an explicit render
+ * list, so without this every caster is drawn into every cascade every frame
+ * (2026-10-22: 4–14 ms a frame of CPU on the rig, the shadow pass's GPU under
+ * 3.5). Written into `out`, emptied first, so a frame allocates nothing.
+ */
+export function cascadeCasters<T extends CasterLike>(
+  list: readonly T[], length: number, nearOnly: ReadonlySet<T>, far: boolean, planes: Plane[], out: T[],
+): T[] {
+  out.length = 0;
+  for (let i = 0; i < length && i < list.length; i++) {
+    const mesh = list[i] as T;
+    if (far && nearOnly.has(mesh)) continue;
+    if (mesh.alwaysSelectAsActiveMesh || mesh.infiniteDistance || mesh.isInFrustum(planes)) out.push(mesh);
   }
   return out;
 }
@@ -445,11 +472,23 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // The farthest cascade of a long reach draws the far casters alone
     // (`farCascadeIndex`); Babylon asks for each cascade's list by its layer.
     const farCascade = farCascadeIndex(settings);
-    if (shadowMap !== null && farCascade >= 0) {
+    if (shadowMap !== null) {
+      // Each cascade draws the casters its own frustum holds (`cascadeCasters`):
+      // Babylon computes the cascades' matrices as the map binds, before it asks
+      // for any layer's list, so the layer's transform is this frame's.
+      const perCascade: AbstractMesh[][] = [];
+      let planes: Plane[] | null = null;
       shadowMap.getCustomRenderList = (layer, list, length) => {
-        if (layer !== farCascade || list === null) return null;
-        if (farList === null) farList = farCasters(list, length, nearOnly);
-        return farList;
+        if (list === null) return null;
+        const transform = shadows.getCascadeTransformMatrix(layer);
+        if (transform === null) {
+          if (layer !== farCascade) return null;
+          if (farList === null) farList = farCasters(list, length, nearOnly);
+          return farList;
+        }
+        if (planes === null) planes = Frustum.GetPlanes(transform);
+        else Frustum.GetPlanesToRef(transform, planes);
+        return cascadeCasters(list, length, nearOnly, layer === farCascade, planes, (perCascade[layer] ??= []));
       };
     }
     // Stabilisation is chosen deliberately over `autoCalcDepthBounds`, not merely
