@@ -17,6 +17,7 @@ import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Node } from "@babylonjs/core/node.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
+import type { Plane } from "@babylonjs/core/Maths/math.plane.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -539,6 +540,26 @@ export function birdLodMeshes(container: AssetContainer): Mesh[] {
     mesh.parent = null;
   }
   return out;
+}
+
+/** Within this distance (m) an animal off the screen animates still: a low sun's shadow of it may reach the screen. */
+export const ANIMATE_OFFSCREEN_WITHIN_M = 25;
+/** The sphere (m) an animal's pose is taken to fill for the camera's frustum test. */
+export const CREATURE_SPHERE_M = 4;
+
+/**
+ * Whether an animal at (x, y, z), `distance` m from the camera, is worth
+ * animating: always without the camera's frustum (`planes`, the scene's, last
+ * frame's) or within `ANIMATE_OFFSCREEN_WITHIN_M`; past that, only when a
+ * `CREATURE_SPHERE_M` sphere about it touches the frustum, the test Babylon's
+ * own culling makes of a bounding sphere.
+ */
+export function creatureInView(planes: readonly Plane[] | undefined, x: number, y: number, z: number, distance: number): boolean {
+  if (planes === undefined || distance <= ANIMATE_OFFSCREEN_WITHIN_M) return true;
+  for (const p of planes) {
+    if (p.normal.x * x + p.normal.y * y + p.normal.z * z + p.d <= -CREATURE_SPHERE_M) return false;
+  }
+  return true;
 }
 
 export function createWildlifeMeshes(
@@ -1276,10 +1297,15 @@ export function createWildlifeMeshes(
           // the species. Shrinking the root toward its own ground point is the
           // same shape of fade `fadeWeight` describes, at one multiply per
           // animal per frame.
-          const fade = fadeWeight(Math.hypot(pose.x - camX, pose.z - camZ), edgeStart, r);
+          const distance = Math.hypot(pose.x - camX, pose.z - camZ);
+          const fade = fadeWeight(distance, edgeStart, r);
           const scale = pose.scale * presenceGround * fade;
           inst.root.scaling.set(scale, scale, scale);
           inst.play(pose.clip);
+          // Its clip runs only where someone could see it (`creatureInView`):
+          // every pooled animal's animation groups otherwise step every frame,
+          // on or off the screen (2026-10-22: 3.5 ms a frame at the meadow).
+          inst.animate?.(creatureInView(scene.frustumPlanes as Plane[] | undefined, pose.x, inst.root.position.y, pose.z, distance));
         }
       }
       updateBirds(camX, camZ);

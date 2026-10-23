@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  creatureClipFor, creatureGroupsByName, creatureRoleGroups, resolveCreatureAssets, type CreatureAsset,
+  animateGroup, creatureClipFor, creatureGroupsByName, creatureRoleGroups, resolveCreatureAssets, type CreatureAsset,
 } from "../../src/game/creatureModel.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 
@@ -144,5 +144,36 @@ describe("the per-instance clip memo", () => {
     const byRole = creatureRoleGroups({ ...elk, clips: {} }, ["Dance"], byName);
     expect(byRole.has("run")).toBe(true);
     expect(byRole.get("run")).toBeNull();
+  });
+});
+
+describe("animateGroup", () => {
+  const group = (isStarted: boolean, isPlaying: boolean) => {
+    const calls: string[] = [];
+    return {
+      g: { isStarted, isPlaying, pause: () => { calls.push("pause"); }, restart: () => { calls.push("restart"); } },
+      calls,
+    };
+  };
+
+  it("pauses a playing group taken out of view, and restarts a paused one coming back, each once", () => {
+    const playing = group(true, true);
+    animateGroup(playing.g, false);
+    expect(playing.calls).toEqual(["pause"]);
+    animateGroup(playing.g, true); // still reports playing: nothing to restart
+    expect(playing.calls).toEqual(["pause"]);
+    const paused = group(true, false);
+    animateGroup(paused.g, true);
+    expect(paused.calls).toEqual(["restart"]);
+    animateGroup(paused.g, false); // reports paused already: nothing to pause
+    expect(paused.calls).toEqual(["restart"]);
+  });
+
+  it("leaves a group never started, or no group, alone: `play` starts it", () => {
+    const fresh = group(false, false);
+    animateGroup(fresh.g, true);
+    animateGroup(fresh.g, false);
+    expect(fresh.calls).toEqual([]);
+    expect(() => animateGroup(null, true)).not.toThrow();
   });
 });

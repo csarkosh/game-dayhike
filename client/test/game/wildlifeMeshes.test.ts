@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 /**
@@ -51,6 +52,7 @@ import {
   BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, BUTTERFLY_BODY_HALF, BUTTERFLY_COLOURWAYS, BUTTERFLY_OMEGA,
   BUTTERFLY_WING_CHORD, BUTTERFLY_WING_SPAN, birdBucketOmega, birdLodMeshes, butterflyColourway, butterflyGeometry,
   createWildlifeMeshes, PRESENCE_RAMP_SECONDS, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
+  ANIMATE_OFFSCREEN_WITHIN_M, CREATURE_SPHERE_M, creatureInView,
 } from "../../src/game/wildlifeMeshes.js";
 import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
 import {
@@ -1419,5 +1421,44 @@ describe("bird bucket adoption", () => {
     expect(birds[BIRD_PERCHED_ASSET]!.thinInstanceCount).toBeGreaterThan(0);
     w.dispose();
     engine.dispose();
+  });
+});
+
+describe("an animal's clip runs only where someone could see it", () => {
+  // A frustum looking down +z from the origin: four side planes 45° out, a near
+  // plane just ahead, a far plane at 200 m. Babylon's planes: normal·p + d >= 0 inside.
+  const s = Math.SQRT1_2;
+  const plane = (nx: number, ny: number, nz: number, d: number) => ({ normal: { x: nx, y: ny, z: nz }, d }) as never;
+  const planes = [
+    plane(0, 0, 1, -0.1), plane(0, 0, -1, 200), // near, far
+    plane(s, 0, s, 0), plane(-s, 0, s, 0), plane(0, s, s, 0), plane(0, -s, s, 0), // left, right, down, up
+  ];
+
+  it("animates every animal within the near distance, in view or not", () => {
+    expect(creatureInView(planes, 0, 0, -10, 10)).toBe(true); // behind the camera, 10 m off
+    expect(creatureInView(planes, 0, 0, -ANIMATE_OFFSCREEN_WITHIN_M, ANIMATE_OFFSCREEN_WITHIN_M)).toBe(true);
+    // No frustum yet (the first frame): animate.
+    expect(creatureInView(undefined, 0, 0, -100, 100)).toBe(true);
+  });
+
+  it("past it, animates an animal only when a sphere about it touches the frustum", () => {
+    expect(creatureInView(planes, 0, 0, 100, 100)).toBe(true); // dead ahead
+    expect(creatureInView(planes, 0, 0, -100, 100)).toBe(false); // behind
+    expect(creatureInView(planes, 300, 0, 100, 316)).toBe(false); // far off to the left
+    // Just outside the left plane by less than the sphere: still in, by the sphere's margin.
+    const edge = 100 + (CREATURE_SPHERE_M - 0.5) * Math.SQRT2;
+    expect(creatureInView(planes, edge, 0, 100, Math.hypot(edge, 100))).toBe(true);
+    // Beyond the sphere's margin: out.
+    const past = 100 + (CREATURE_SPHERE_M + 0.5) * Math.SQRT2;
+    expect(creatureInView(planes, past, 0, 100, Math.hypot(past, 100))).toBe(false);
+    // Beyond the far plane: out.
+    expect(creatureInView(planes, 0, 0, 210, 210)).toBe(false);
+  });
+
+  it("is wired at the pose, after the clip is chosen, with the scene's own frustum", () => {
+    const source = readFileSync(new URL("../../src/game/wildlifeMeshes.ts", import.meta.url), "utf8");
+    expect(source).toContain("inst.play(pose.clip);");
+    expect(source).toContain("inst.animate?.(creatureInView(scene.frustumPlanes as Plane[] | undefined, pose.x, inst.root.position.y, pose.z, distance));");
+    expect(source.indexOf("inst.play(pose.clip);")).toBeLessThan(source.indexOf("inst.animate?.(creatureInView("));
   });
 });

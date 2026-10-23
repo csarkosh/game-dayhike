@@ -38,7 +38,32 @@ const SYNONYMS: Record<ClipRole, string[]> = {
 };
 
 export type CreatureAsset = { id: string; url: string; clips: Partial<Record<ClipRole, string>> };
-export type CreatureInstance = { root: TransformNode; play(role: ClipRole): void; dispose(): void };
+export type CreatureInstance = {
+  root: TransformNode;
+  play(role: ClipRole): void;
+  /** The current clip run (`true`) or held where it stands: an animal nobody sees animates nothing. */
+  animate?(on: boolean): void;
+  dispose(): void;
+};
+
+/** What `animateGroup` reads and moves of an animation group (Babylon's returns itself from each; a fake need not). */
+export type AnimatedGroup = { readonly isStarted: boolean; readonly isPlaying: boolean; pause(): unknown; restart(): unknown };
+
+/**
+ * The group run (`on`) or held where it stands: paused, it keeps its frame
+ * and costs the scene's animation step nothing, and `restart` picks it up
+ * from that frame, so an animal coming back into view carries on mid-stride
+ * rather than from the clip's start. A group never started, or none, is left
+ * alone: `play` starts it. Babylon steps every started group every frame, on
+ * or off the screen; the meadow's herd was 3.5 ms a frame of that on the rig
+ * (2026-10-22).
+ */
+export function animateGroup(group: AnimatedGroup | null, on: boolean): void {
+  if (group === null || !group.isStarted) return;
+  if (on) {
+    if (!group.isPlaying) group.restart();
+  } else if (group.isPlaying) group.pause();
+}
 export type CreaturePool = {
   load(scene: Scene): Promise<void>;
   has(assetId: string): boolean;
@@ -268,6 +293,9 @@ export function createCreaturePool(): CreaturePool {
           // frame instead of looping it.
           next.play(role !== "alert");
           current = next;
+        },
+        animate(on) {
+          animateGroup(current, on);
         },
         dispose() {
           entries.dispose();
