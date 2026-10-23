@@ -18,8 +18,13 @@ server's tests compare them): the rows that are real play. It drops the deploy's
 verification (`build = 'verify'` on a page's rows, `verify` (on signaling rows written since 2026-10-15; older verification rooms stay in the counts) on the signaling rows of a room a
 verification opened), the owner's test browsers (`tester`), every session of the README's
 stills shoot (a session with a `cmd` row, looked for over the last ninety days), and headless
-browsers (a `gpu` naming SwiftShader). The owner's own play never reaches the table: the
-server drops it by address (`TELEMETRY_IGNORE_IPS`). The three lookups (`session.sql`,
+or automated browsers: a `gpu` naming SwiftShader, a `ua` naming HeadlessChrome, or `wd` true
+(the page's `navigator.webdriver`). Headless Chrome on a machine with a real GPU names that GPU
+(an NVIDIA L4, an Apple M4), not SwiftShader: eleven such sessions around the 2026-10-19
+deploys counted as visitors until the last two checks *(2026-10-22)*. The owner's own play
+never reaches the table: the server drops it by address (`TELEMETRY_IGNORE_IPS`, the same
+home addresses as csarko.sh's collector), so play from another network counts unless that
+browser is marked a tester (`?telemetry=tester` once). The three lookups (`session.sql`,
 `visitor.sql`, `match.sql`) are by id and exclude nothing, so a tester's own session can
 still be opened.
 

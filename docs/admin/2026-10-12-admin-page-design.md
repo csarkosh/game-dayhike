@@ -192,7 +192,8 @@ session read as a trail. What changed here:*
 **One exclusion, in every query.** Each query over a range begins with the same `real`
 CTE (`tools/telemetry/queries/README.md`): the deploy's verification rows and rooms, the
 owner's test browsers (`tester`), every session of the README's stills shoot (a `cmd` row) and
-headless browsers (a SwiftShader GPU) are out of every number on this page. The owner's own
+headless or automated browsers (a SwiftShader GPU, a HeadlessChrome user agent, or
+`navigator.webdriver`, the last two since 2026-10-22) are out of every number on this page. The owner's own
 play is dropped at the server by address. The lookups by id exclude nothing.
 
 **New York.** The range row scopes a query to New York calendar days: "Today" is that

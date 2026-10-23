@@ -16,7 +16,9 @@
 -- not the deploy's verification (`build = 'verify'` on a page's rows,
 -- `verify` on signaling's), not the owner's test browsers (`tester`), not a
 -- session of the README's stills shoot (one with a `cmd` row, looked for over
--- the last ninety days), not a headless browser (a `SwiftShader` GPU).
+-- the last ninety days), not a headless or automated browser (a `SwiftShader`
+-- GPU, a `HeadlessChrome` user agent, or `wd`, the page's navigator.webdriver:
+-- headless Chrome on a real GPU names NVIDIA or Apple, not SwiftShader).
 WITH real AS (
   SELECT timestamp, json_payload
   FROM `fps-csarko.global.dayhike-telemetry._AllLogs`
@@ -24,6 +26,8 @@ WITH real AS (
     AND IFNULL(JSON_VALUE(json_payload.tester), '') != 'true'
     AND IFNULL(JSON_VALUE(json_payload.verify), '') != 'true'
     AND IFNULL(JSON_VALUE(json_payload.gpu), '') NOT LIKE '%SwiftShader%'
+    AND IFNULL(JSON_VALUE(json_payload.ua), '') NOT LIKE '%HeadlessChrome%'
+    AND IFNULL(JSON_VALUE(json_payload.wd), '') != 'true'
     AND IFNULL(JSON_VALUE(json_payload.sid), '') NOT IN (
       SELECT DISTINCT JSON_VALUE(json_payload.sid)
       FROM `fps-csarko.global.dayhike-telemetry._AllLogs`

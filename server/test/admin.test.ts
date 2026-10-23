@@ -100,6 +100,8 @@ describe("the saved queries for BigQuery", () => {
     expect(first).toContain("IFNULL(JSON_VALUE(json_payload.tester), '') != 'true'");
     expect(first).toContain("IFNULL(JSON_VALUE(json_payload.verify), '') != 'true'");
     expect(first).toContain("NOT LIKE '%SwiftShader%'");
+    expect(first).toContain("IFNULL(JSON_VALUE(json_payload.ua), '') NOT LIKE '%HeadlessChrome%'");
+    expect(first).toContain("IFNULL(JSON_VALUE(json_payload.wd), '') != 'true'");
     expect(first).toContain("JSON_VALUE(json_payload.n) = 'cmd'");
     for (const name of QUERY_NAMES) expect(block(readQuery(name, QUERIES)), `${name}.sql's exclusion differs`).toBe(first);
   });
