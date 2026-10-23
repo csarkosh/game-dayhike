@@ -70,6 +70,7 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
     running: () => engine,
     runningOnWebGpu: () => engine.webgpu,
     unwatch: () => void log.push(`unwatch ${engine.name}`),
+    abandon: () => void log.push(`abandon ${engine.name}`),
     record: (reason) => {
       const line = recordEngineFailure(reason, { storage, env: ENV, now: page.now, override: null, pin: () => (page.url = "webgl2") });
       log.push(`record ${reason}: ${line}`);
@@ -118,11 +119,12 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
 }
 
 describe("a failure of the running WebGPU engine: a live rebuild, never a reload", () => {
-  it("swaps a pipeline error onto WebGL2 at once: the watcher off first, the cover lifted, the line", async () => {
+  it("swaps a pipeline error onto WebGL2 at once: the watcher off first, the renderer's work on the engine ended, the cover lifted, the line", async () => {
     const h = hike();
     await h.answer(h.engine(), "pipeline");
     expect(h.log).toEqual([
       "unwatch gpu0",
+      "abandon gpu0",
       `record pipeline: ${NOTICE_SWITCHED}`,
       "cover",
       "stop gpu0",
@@ -153,6 +155,7 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     await h.answer(h.engine(), "lost");
     expect(h.log).toEqual([
       "unwatch gpu1",
+      "abandon gpu1",
       `record lost: ${NOTICE_SWITCHED}`,
       "cover",
       "stop gpu1",
@@ -177,13 +180,13 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     void h.serial.track(apply.promise.then(() => void h.setEngine({ name: "gpu9", webgpu: true })));
     const answered = h.answer(h.engine(), "pipeline");
     await Promise.resolve();
-    expect(h.log).toEqual(["unwatch gpu0", `record pipeline: ${NOTICE_SWITCHED}`]);
+    expect(h.log).toEqual(["unwatch gpu0", "abandon gpu0", `record pipeline: ${NOTICE_SWITCHED}`]);
     apply.resolve();
     await answered;
     // Remembered for the engines the rule gives from now on (the next load
     // takes WebGL2); the renderer the switch built on another engine, which
     // has its own watcher, is not rebuilt.
-    expect(h.log).toEqual(["unwatch gpu0", `record pipeline: ${NOTICE_SWITCHED}`]);
+    expect(h.log).toEqual(["unwatch gpu0", "abandon gpu0", `record pipeline: ${NOTICE_SWITCHED}`]);
     expect(readFallback(h.storage)).toEqual({ reason: "pipeline", browser: 153, babylon: "9.18.0", at: T0, losses: 0 });
     expect(h.engine().name).toBe("gpu9");
   });
@@ -197,7 +200,7 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     h.log.push("switch settles");
     apply.resolve();
     await answered;
-    expect(h.log.slice(2)).toEqual(["switch settles", "cover", "stop gpu0", "rebuild from gpu0", "on gl1 (c1)", "lift", `flash ${NOTICE_SWITCHED}`]);
+    expect(h.log.slice(3)).toEqual(["switch settles", "cover", "stop gpu0", "rebuild from gpu0", "on gl1 (c1)", "lift", `flash ${NOTICE_SWITCHED}`]);
   });
 
   it("keeps a governor's drop out while the rebuild runs: one at a time", async () => {
@@ -243,12 +246,14 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     await second;
     expect(h.log).toEqual([
       "unwatch gpu0",
+      "abandon gpu0",
       `record lost: ${NOTICE_RESTARTED}`,
       "cover",
       "stop gpu0",
       "rebuild from gpu0",
       "on gpu1 (c1)",
       "unwatch gpu1",
+      "abandon gpu1",
       `record pipeline: ${NOTICE_SWITCHED}`,
       "lift",
       `flash ${NOTICE_RESTARTED}`,
@@ -294,11 +299,11 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     expect(h.log.slice(-2)).toEqual(["on gl1 (c1)", "lift"]);
   });
 
-  it("does nothing for a hike that is already gone but take its watcher off", async () => {
+  it("does nothing for a hike that is already gone but take its watcher off and end its work", async () => {
     const h = hike();
     h.end();
     await h.answer(h.engine(), "pipeline");
-    expect(h.log).toEqual(["unwatch gpu0"]);
+    expect(h.log).toEqual(["unwatch gpu0", "abandon gpu0"]);
   });
 });
 

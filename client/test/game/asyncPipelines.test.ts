@@ -392,6 +392,32 @@ describe("render pipelines made asynchronously", () => {
     expect(pipelines.pending()).toBe(0);
   });
 
+  it("starts nothing, stores nothing and says nothing once the engine is given up on, the patch still on until remove", async () => {
+    const { asked, made, cache, engine, pipelines } = patched(1);
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    pipelines.enter();
+    const first = effect(1);
+    draw(engine, first);
+    draw(engine, effect(2));
+    expect(pipelines.pending()).toBe(2);
+    pipelines.abandon();
+    // The queue is dropped at once; the one in flight is let settle, unkept.
+    expect(pipelines.pending()).toBe(0);
+    expect(await pipelines.settled(1_000)).toBe(true);
+    asked[0]!.made.resolve({ made: 1 });
+    await flush();
+    expect(asked.length).toBe(1);
+    expect(cache._lookupRenderPipeline(0, first, 1, 0)).toBeNull();
+    // A creation that fails after is not said: the failure is the engine's, answered once.
+    draw(engine, effect(3));
+    expect(made).toEqual(["effect 3"]);
+    expect(warnings).not.toHaveBeenCalled();
+    // The patch is still on, for `remove` to take off as the renderer goes.
+    expect(asyncPipelinesOf(engine as never)).toBe(pipelines);
+    pipelines.remove();
+    expect(asyncPipelinesOf(engine as never)).toBeNull();
+  });
+
   it("puts the engine's own methods back on remove, and starts and stores nothing after", async () => {
     const { asked, made, cache, engine, pipelines } = patched(1);
     expect(Object.prototype.hasOwnProperty.call(cache, "getRenderPipeline")).toBe(true);

@@ -772,6 +772,32 @@ describe("createForestMeshes under NullEngine", () => {
     expect(errors).not.toHaveBeenCalled();
   });
 
+  it("abandon ends every bake still pending at once and quietly, the forest standing until dispose", async () => {
+    const errors = vi.mocked(console.error);
+    errors.mockClear();
+    const signals: (AbortSignal | undefined)[] = [];
+    const resolvers: ((t: BakedImpostor | null) => void)[] = [];
+    const { scene, forest } = build(undefined, (_mesh, _s, options) => {
+      signals.push(options?.signal);
+      return new Promise<BakedImpostor | null>((resolve) => resolvers.push(resolve));
+    });
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    expect(signals.length).toBe(6);
+    forest.abandon();
+    expect(signals.every((sg) => sg!.aborted)).toBe(true);
+    // The bakes end as a bake aborted does, null; nothing is said, and the
+    // billboards' records say so no more than an abort at dispose does.
+    for (const resolve of resolvers) resolve(null);
+    await forest.ready;
+    expect(errors).not.toHaveBeenCalled();
+    expect(forest.impostorBakes().every((b) => b.state === "baking")).toBe(true);
+    // The near forest stands: the engine's renderer is disposed by the rebuild, not here.
+    expect(forest.impostorMeshes.length).toBe(6);
+    expect(scene.meshes.length).toBeGreaterThan(0);
+    forest.dispose();
+    expect(scene.meshes.length).toBe(0);
+  });
+
   it("hands every bake the pipelines it was given, so a bake on WebGPU keeps only a render that left nothing out", () => {
     const engine = new NullEngine();
     engines.push(engine);

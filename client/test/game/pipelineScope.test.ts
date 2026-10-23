@@ -155,8 +155,22 @@ describe("the renderer on a WebGPU engine with pipelines made asynchronously", (
       takeSkipped: () => 0,
       settled: () => Promise.resolve(true),
       remove: () => void order.push("remove"),
+      abandon: () => void order.push("abandon"),
     };
   }
+
+  it("gives up the pipelines being made when its engine has failed, and leaves the patch on until it is disposed", () => {
+    const order: string[] = [];
+    const r = createRenderer(CANVAS, LEVEL, null, { tier: "medium", pipelines: recorded(order) });
+    try {
+      order.length = 0;
+      r.abandon();
+      expect(order).toEqual(["abandon"]);
+    } finally {
+      r.dispose();
+    }
+    expect(order).toEqual(["abandon", "remove"]);
+  });
 
   it("scopes its scene's rendering groups, and takes the scope and the patch off before its engine goes", () => {
     const order: string[] = [];

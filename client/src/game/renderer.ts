@@ -1795,6 +1795,15 @@ export type Renderer = {
    */
   project(pos: Vec3): { x: number; y: number; depth: number } | null;
   resize(): void;
+  /**
+   * The engine has failed (`answerFailures`): the asynchronous work still
+   * under way on it, which would otherwise poll a dead engine until the
+   * rebuild disposes this renderer and report failures of its own, ends at
+   * once and quietly: the forest's billboard bakes (`ForestMeshes.abandon`)
+   * and the render pipelines being made (`AsyncPipelines.abandon`). The
+   * renderer stands until `dispose`.
+   */
+  abandon(): void;
   dispose(): void;
   /**
    * Everything `dispose` does but let the engine go: the scene alone goes,
@@ -3530,6 +3539,10 @@ function buildRenderer(
     },
     resize() {
       engine.resize();
+    },
+    abandon() {
+      forestMeshes?.abandon();
+      pipelines?.abandon();
     },
     dispose() {
       views.dispose();

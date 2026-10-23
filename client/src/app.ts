@@ -2544,6 +2544,7 @@ function buildGame(
     running: () => renderer.engine,
     runningOnWebGpu: () => renderer.engine.isWebGPU,
     unwatch: () => engineBindings.unwatch(),
+    abandon: () => renderer.abandon(),
     record: (reason) => options.engineFailed(reason),
     cover: coverPlay,
     stopLoop: () => renderer.engine.stopRenderLoop(),

@@ -689,6 +689,14 @@ gates' prerequisite, so the WebGPU switch waits on that work. With the swap:
   WebGL2, but it does not rebuild the renderer that switch built on
   another engine: that engine has its own watcher, which answers its own
   failure (as built, `answerFailures`).
+- As built (2026-10-22): at the report, before anything waits, the
+  renderer's work still in flight on the failed engine ends at once and
+  quietly (`Renderer.abandon`): the forest's billboard bakes, which poll
+  their target until it is ready, and the render pipelines being made
+  asynchronously (§13). Until the rebuild disposes the renderer, a bake
+  polling the dead engine reported a failure of its own for every billboard
+  (seven `console.error` rows for one GPU error in telemetry, 2026-10-19);
+  now one failure is one report.
 - Where storage refuses the record, the tab's URL is pinned to
   `engine=webgl2` as today, so a reload stays on WebGL2. Until then the
 reload paths stay as built, reachable only with `?engine=webgpu` behind the off

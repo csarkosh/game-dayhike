@@ -88,6 +88,11 @@ export type FailureDeps = {
   runningOnWebGpu(): boolean;
   /** Stops listening to the running engine. */
   unwatch(): void;
+  /** Ends the running renderer's asynchronous work on the failed engine at
+   * once and quietly (`Renderer.abandon`): the billboard bakes and the
+   * pipelines being made, which would otherwise poll the dead engine until
+   * the rebuild disposes the renderer and report failures of their own. */
+  abandon(): void;
   /** Remembers the failure for the next engine the rule gives (the page's
    * record, and the URL's pin where needed: `recordEngineFailure`). Its line
    * is the one that engine would earn; the line shown is chosen from the
@@ -109,7 +114,10 @@ export type FailureDeps = {
  * The hike's answer to a failure of its running WebGPU engine, reported by
  * its watcher (`watchWebGpu`): the watcher comes off first (the rebuild then
  * disposes the engine, and a disposed engine is not a failing one), the
- * failure is remembered, and once any switch under way has settled, the
+ * renderer's work still in flight on the engine ends (`abandon`, so one
+ * failure is one report: a bake polling the dead engine meanwhile logged a
+ * failure of its own for each billboard, 2026-10-19), the failure is
+ * remembered, and once any switch under way has settled, the
  * renderer is rebuilt at the running tier on the engine the rule now gives
  * it, under a cover over play, with the loop stopped on the failed engine.
  * A report from an engine that is no longer the running one, or one already
@@ -124,6 +132,7 @@ export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pi
     if (answered.has(engine) || engine !== deps.running()) return;
     answered.add(engine);
     deps.unwatch();
+    deps.abandon();
     if (!deps.alive()) return;
     deps.log(`WebGPU: ${reason === "lost" ? "the device was lost" : "a GPU error"}; rebuilding the renderer.`);
     deps.record(reason);

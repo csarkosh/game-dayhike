@@ -778,6 +778,13 @@ describe("world shell wiring", () => {
     return src.slice(a, b);
   }
 
+  it("ends the forest's bakes and the pipelines being made when its engine has failed, before the rebuild disposes it", () => {
+    // `answerFailures` calls this at the report, before anything waits: a
+    // bake polling the failed engine meanwhile logged a failure for each
+    // billboard (telemetry, 2026-10-19).
+    expect(src).toContain("abandon() {\n      forestMeshes?.abandon();\n      pipelines?.abandon();\n    },");
+  });
+
   it("draws the floor cover at CLUTTER_REACH of its radii on the tiers with the blades, the low tier at its own", () => {
     const creation = slice("const clutterMeshes =", "nearBlades:");
     expect(creation).toContain('radiusScale: tier === "low" ? 0.6 : CLUTTER_REACH,');

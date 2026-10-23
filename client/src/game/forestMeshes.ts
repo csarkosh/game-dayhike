@@ -495,6 +495,15 @@ export type ForestMeshes = {
    * report ready while the billboards beyond the near band are still to come.
    */
   readonly ready: Promise<void>;
+  /**
+   * Ends every bake still in flight, and any model still loading, at once and
+   * quietly, as `dispose` does first, leaving what stands standing: for an
+   * engine that has failed, whose renderer is about to be disposed
+   * (`answerFailures`), so no bake polls it meanwhile and reports a failure
+   * of its own. A bake so ended counts as given up, saying nothing; `ready`
+   * settles as the bakes do.
+   */
+  abandon(): void;
   dispose(): void;
 };
 
@@ -1496,12 +1505,13 @@ export function createForestMeshes(
    * A bake landing on a billboard. A null texture — or a bake that failed —
    * leaves `ready` false forever, so the bucket never enables: far trees drop
    * out rather than draw opaque grey quads. Never silently: the console names
-   * the billboard, and its record says `failed`. A null after `dispose` is the
-   * abort, and says nothing.
+   * the billboard, and its record says `failed`. A null after `dispose` or
+   * `abandon` is the abort, and says nothing.
    */
   function adoptBake(imp: Impostor, mat: PBRMaterial, baked: BakedImpostor | null): void {
     if (baked === null) {
-      if (disposed) return;
+      // The abort (`dispose`, `abandon`), never a failure.
+      if (disposed || loads.signal.aborted) return;
       imp.bake.state = "failed";
       imp.bake.ms = performance.now() - imp.bakeStartedAt;
       console.error(`forest impostor: no bake for ${imp.bake.name}`);
@@ -2509,6 +2519,9 @@ export function createForestMeshes(
       return impostors.map((imp) => ({ ...imp.bake }));
     },
     ready,
+    abandon() {
+      loads.abort();
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

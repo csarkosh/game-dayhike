@@ -37,8 +37,10 @@
  * - a creation still in flight `ASYNC_PIPELINE_MAX_MS` after it started is
  *   given up the same way, its slot freed; one that lands after that stores
  *   nothing. The first rejection, and the first deadline passed, are said;
- * - once the engine is disposed or its device lost, or the patch removed,
- *   nothing is started and nothing is stored, and every draw is Babylon's.
+ * - once the engine is disposed or its device lost, or the patch removed, or
+ *   the engine given up on after a failure (`abandon`, from the hike's answer
+ *   to one), nothing is started and nothing is stored, and every draw is
+ *   Babylon's.
  * And should the sentinel ever leave a frame (`guardRender`), the patch comes
  * off that engine for good rather than stop the game.
  * Outside the scope, and while the engine renders by snapshot, every draw is
@@ -89,6 +91,11 @@ export type AsyncPipelines = {
   settled(ms: number): Promise<boolean>;
   /** Takes the patch off (the engine's own methods back). */
   remove(): void;
+  /** The engine has failed and its renderer is about to go: nothing queued
+   * is started, and a creation in flight that settles stores nothing and
+   * says nothing, so the failure makes no report but its own. The patch stays
+   * on until `remove`; every draw meanwhile is Babylon's. */
+  abandon(): void;
   /** Runs `render`, a render outside the scene's frames (the impostor
    * bake's), inside the guard each scene's frame has: where a draw left out
    * escapes it, the patch comes off for good, said once and recorded, and
@@ -271,6 +278,7 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
   let skipped = 0;
   let removed = false;
   let lost = false;
+  let abandoned = false;
   /** The creations in flight, each until it lands, fails or is given up. */
   const flying = new Set<Creation>();
   /** Whether a rejection, and a deadline passed, has been said. */
@@ -278,7 +286,7 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
   let saidExpiry = false;
   const waiters = new Set<{ resolve(emptied: boolean): void; timer: ReturnType<typeof setTimeout> }>();
 
-  const stopped = (): boolean => removed || lost || own.isDisposed;
+  const stopped = (): boolean => removed || lost || abandoned || own.isDisposed;
   const pending = (): number => (stopped() ? 0 : inFlight + queue.length);
   /** The report's count, and every wait that has emptied. */
   const update = (): void => {
@@ -519,6 +527,11 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
         };
         waiters.add(waiter);
       });
+    },
+    abandon() {
+      abandoned = true;
+      queue.length = 0;
+      update();
     },
     remove() {
       if (removed) return;
