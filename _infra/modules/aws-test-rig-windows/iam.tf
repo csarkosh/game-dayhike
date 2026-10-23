@@ -42,10 +42,11 @@ locals {
         Resource = "${local.arn_prefix}:s3:::dcv-license.${var.region}/*"
       },
       {
-        Sid      = "WriteDesktopPassword"
-        Effect   = "Allow"
-        Action   = "ssm:PutParameter"
-        Resource = local.password_parameter_arn
+        Sid    = "WriteDesktopPassword"
+        Effect = "Allow"
+        Action = "ssm:PutParameter"
+        # The first machine's parameter, and `<name>-<n>` for the copies (instance.tf, rig_count).
+        Resource = [local.password_parameter_arn, "${local.password_parameter_arn}-*"]
       },
       # AmazonSSMManagedInstanceCore allows ssm:GetParameter and GetParameters
       # on every parameter in the account. Session Manager does not need them,
@@ -75,12 +76,18 @@ locals {
     }]
   })
 
+  # Every machine of this module: the first and its copies (instance.tf).
+  instance_ids  = concat([aws_instance.test_rig.id], aws_instance.extra[*].id)
+  instance_arns = concat([aws_instance.test_rig.arn], aws_instance.extra[*].arn)
+
+  # One machine: its ARN alone, as before, so the policy of a state made before
+  # rig_count existed plans no change; several: the list of them.
   backstop_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
       Action   = "ec2:StopInstances"
-      Resource = aws_instance.test_rig.arn
+      Resource = jsondecode(length(local.instance_arns) == 1 ? jsonencode(local.instance_arns[0]) : jsonencode(local.instance_arns))
     }]
   })
 }
@@ -173,6 +180,6 @@ resource "aws_scheduler_schedule" "backstop" {
     # directly. Stopping a machine that is already stopped does nothing.
     arn      = "${local.arn_prefix}:scheduler:::aws-sdk:ec2:stopInstances"
     role_arn = aws_iam_role.backstop[0].arn
-    input    = jsonencode({ InstanceIds = [aws_instance.test_rig.id] })
+    input    = jsonencode({ InstanceIds = local.instance_ids })
   }
 }

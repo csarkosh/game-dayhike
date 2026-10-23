@@ -26,6 +26,11 @@ variable "disk_size_gb" {
   type        = number
 }
 
+variable "rig_count" {
+  description = "How many machines: the first is the machine as before; the others are its copies, made and stopped with it, for experiments run side by side."
+  type        = number
+}
+
 variable "running" {
   description = "true runs the machine; false stops it. Creating or replacing a machine is refused while false."
   type        = bool

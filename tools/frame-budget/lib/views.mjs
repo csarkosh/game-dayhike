@@ -43,9 +43,11 @@ export function viewScript(view, still) {
   return stillScript(still);
 }
 
-/** The URL that opens a view on `base`, on `tier`, telemetry off, with the GPU readout when asked. */
-export function viewUrl(base, game, tier, view, still, { gpuTime = false } = {}) {
+/** The URL that opens a view on `base`, on `tier`, telemetry off, with the GPU readout when asked,
+ * and with the engine forced when asked (`?engine=webgpu`: a rig whose Chrome runs on Linux, which
+ * the game's own rule would put on WebGL2; see `chooseEngine` in `engineChoice.ts`). */
+export function viewUrl(base, game, tier, view, still, { gpuTime = false, engine = undefined } = {}) {
   const root = base.replace(/\/+$/, "");
   const cmd = encodeURIComponent(viewScript(view, still)).replace(/%3B/g, ";");
-  return `${root}/game/${game}?cmd=${cmd}&tier=${tier}&telemetry=off${gpuTime ? "&gpuTime" : ""}`;
+  return `${root}/game/${game}?cmd=${cmd}&tier=${tier}&telemetry=off${gpuTime ? "&gpuTime" : ""}${engine ? `&engine=${engine}` : ""}`;
 }

@@ -74,7 +74,10 @@ locals {
   # A machine exists whose build differs from this one: this apply replaces
   # it. A machine without the tag (every machine this module makes has it; only
   # a hand can remove it) cannot be judged and counts as this build.
-  replaces_machine = anytrue([for m in data.aws_instance.existing : lookup(m.tags, "build", local.build_key) != local.build_key])
+  replaces_machine = anytrue([
+    for m in data.aws_instance.existing : lookup(m.tags, "build", local.build_key) != local.build_key
+    if tonumber(lookup(m.tags, "rig", "0")) == 0
+  ])
 }
 
 resource "aws_instance" "test_rig" {
@@ -111,6 +114,8 @@ resource "aws_instance" "test_rig" {
 
   tags = {
     Name = local.name
+    # The first machine; its copies (below) count from 1.
+    rig = "0"
     # Read by the start-up script at every boot: how long after each boot the
     # machine shuts itself down. A tag, not part of the script, so a change is
     # applied in place and never restarts or replaces the machine.
@@ -170,5 +175,128 @@ resource "aws_ec2_instance_state" "test_rig" {
     # its creation starts or stops the machine as `running` says, and its
     # removal does nothing to the machine.
     replace_triggered_by = [aws_instance.test_rig]
+  }
+}
+
+# The machines beyond the first (rig_count - 1 of them): copies of the first,
+# from the same image, start-up script, subnet and identity, each with its own
+# disk. The first machine keeps its address, its script and its tags, so a
+# state made before this existed plans no change on it. A copy carries the
+# tag `rig` (1, 2, …) and a start-up script that writes its password to its
+# own parameter (locals below); the first has `rig = 0`. The same
+# refusal as the first machine's: a copy is created only while running is
+# true (stopped in its first boot, a Windows machine may never boot again),
+# and the copies AWS reports now (by their `rig` tag) must already be there
+# for an apply with running = false to be allowed.
+locals {
+  extra_count = var.rig_count - 1
+
+  # A copy's start-up script is the first machine's with its own password
+  # parameter, `<password_parameter>-<n>`; its user data is the first's with
+  # that script in place of the first's; its build key is derived the same
+  # way, so each copy's `build` tag names its own script. The first machine's
+  # script, user data and key are untouched by any of this.
+  extra_setup_scripts = [
+    for n in range(1, var.rig_count) : replace(replace(templatefile("${path.module}/setup.ps1", {
+      region             = var.region
+      desktop_user       = var.desktop_user
+      password_parameter = "${var.password_parameter}-${n}"
+      display_width      = var.display_width
+      display_height     = var.display_height
+    }), "/(?m)^[ \\t]*#.*\\r?\\n/", ""), "/(?m)^[ \\t]*\\r?\\n/", "")
+  ]
+  extra_user_data = [
+    for script in local.extra_setup_scripts : replace(local.user_data, base64gzip(local.setup_script), base64gzip(script))
+  ]
+  extra_build_keys = [
+    for i, script in local.extra_setup_scripts : sha256(jsonencode({
+      setup    = sha256(join("\n", [script, replace(local.extra_user_data[i], base64gzip(script), "")]))
+      vpc_cidr = var.vpc_cidr
+    }))
+  ]
+
+  # The build each existing machine is expected to carry, by its `rig` tag
+  # (0, or absent, is the first machine), and the copies AWS reports among the
+  # ones rig_count still asks for.
+  expected_build = merge({ "0" = local.build_key }, { for i, key in local.extra_build_keys : tostring(i + 1) => key })
+  existing_copies = [
+    for m in data.aws_instance.existing : m
+    if tonumber(lookup(m.tags, "rig", "0")) > 0 && tonumber(lookup(m.tags, "rig", "0")) < var.rig_count
+  ]
+  extras_existing = length(local.existing_copies)
+  replaces_copy = anytrue([
+    for m in local.existing_copies :
+    lookup(m.tags, "build", local.expected_build[lookup(m.tags, "rig", "0")]) != local.expected_build[lookup(m.tags, "rig", "0")]
+  ])
+}
+
+resource "aws_instance" "extra" {
+  count = local.extra_count
+
+  # The prepared image when one is named (a copy made after image_id was set
+  # starts from it, whatever the first machine still runs), else the first
+  # machine's image.
+  ami           = var.image_id != null ? var.image_id : aws_instance.test_rig.ami
+  instance_type = var.instance_type
+
+  subnet_id              = aws_subnet.test_rig.id
+  vpc_security_group_ids = [aws_security_group.test_rig.id]
+  iam_instance_profile   = aws_iam_instance_profile.test_rig.name
+
+  instance_initiated_shutdown_behavior = "stop"
+  user_data                            = local.extra_user_data[count.index]
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
+  }
+
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = var.disk_size_gb
+    encrypted             = true
+    delete_on_termination = true
+  }
+
+  tags = {
+    Name            = local.name
+    rig             = tostring(count.index + 1)
+    max-run-minutes = tostring(local.max_run_minutes)
+    build           = local.extra_build_keys[count.index]
+  }
+
+  lifecycle {
+    ignore_changes       = [ami, user_data]
+    replace_triggered_by = [terraform_data.setup_script]
+
+    precondition {
+      condition     = length(local.extra_user_data[count.index]) <= 16384
+      error_message = "The copy's start-up script is ${length(local.extra_user_data[count.index])} bytes; EC2 user data is capped at 16384."
+    }
+
+    precondition {
+      condition     = var.running || (local.extras_existing >= local.extra_count && !local.replaces_copy)
+      error_message = "running is false, and this apply creates or replaces a copy of the machine (rig_count is ${var.rig_count}; AWS reports ${local.extras_existing} copies). A new machine must never be stopped before its first-boot set-up has finished. Apply with running = true, wait for every copy's set-up to finish, then apply with running = false."
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy.test_rig,
+    aws_iam_role_policy_attachments_exclusive.test_rig,
+    aws_iam_role_policies_exclusive.test_rig,
+    aws_route_table_association.test_rig,
+  ]
+}
+
+resource "aws_ec2_instance_state" "extra" {
+  count = local.extra_count
+
+  instance_id = aws_instance.extra[count.index].id
+  state       = var.running ? "running" : "stopped"
+
+  lifecycle {
+    replace_triggered_by = [aws_instance.extra[count.index]]
   }
 }

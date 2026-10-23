@@ -63,6 +63,7 @@ module "test_rig" {
   instance_type          = var.instance_type
   image_id               = var.image_id
   disk_size_gb           = var.disk_size_gb
+  rig_count              = var.rig_count
   running                = var.running
   max_run_hours          = var.max_run_hours
   backstop_stop_schedule = var.backstop_stop_schedule
