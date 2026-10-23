@@ -5,7 +5,7 @@
  * §2.3): four numbers, each with the week before it and a sparkline of weekly
  * values, and one health reading.
  *
- *   sessions   sessions with a `page` row, the last 7 New York days against
+ *   sessions   sessions with a `page` row, the last 7 calendar days against
  *              the 7 before
  *   matches    matches (a distinct game with a host's `match_start`), the
  *              same two windows
@@ -14,14 +14,17 @@
  *   lobbies    rooms open now, from the live view; no history, so no trend
  *
  * The numbers come from one saved query (`tools/telemetry/queries/kpis.sql`),
- * which answers one row a period: an ISO week, by the New York day a session
- * started, the two seven-day windows, and the whole range (which the admin
- * page's Visitors card reads, with the visitor counts the rows also carry;
- * the card does not show them). This module only shapes those rows, so it is
- * pure over them and the clock, and tested with rows made in the test.
+ * which answers one row a period: an ISO week, by the day a session started,
+ * the two seven-day windows, and the whole range (which the admin page's
+ * Visitors card reads, with the visitor counts the rows also carry; the card
+ * does not show them). Every day and week is the caller's zone's (the
+ * route's `tz`, New York's when it names none), the query's and this
+ * module's alike. This module only shapes those rows, so it is pure over
+ * them, the clock and the zone, and tested with rows made in the test.
  */
 
 import type { Row } from "./admin.js";
+import { QUERY_ZONE } from "./adminQueries.js";
 
 /** How many weekly values a trend holds, and so how many weeks the query reads. */
 export const KPI_WEEKS = 12;
@@ -77,17 +80,23 @@ function percent(part: number, whole: number): number | null {
   return Math.round((part / whole) * 1000) / 10;
 }
 
-/** The New York calendar date of a moment, as `[year, month, day]`, read the way the query labels its weeks. */
-const NY_DATE = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "numeric", day: "numeric" });
-function newYorkDate(ms: number): [number, number, number] {
-  const parts = NY_DATE.formatToParts(new Date(ms));
+/** Each zone's date format, made once a zone. */
+const DATE_FORMATS = new Map<string, Intl.DateTimeFormat>();
+/** The calendar date of a moment in a zone, as `[year, month, day]`, read the way the query labels its weeks. */
+function zoneDate(ms: number, zone: string): [number, number, number] {
+  let format = DATE_FORMATS.get(zone);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "numeric", day: "numeric" });
+    DATE_FORMATS.set(zone, format);
+  }
+  const parts = format.formatToParts(new Date(ms));
   const part = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? 0);
   return [part("year"), part("month"), part("day")];
 }
 
-/** The Mondays of the last `weeks` ISO weeks by New York dates, oldest first, the current week last, as `YYYY-MM-DD`. */
-export function weekStarts(nowMs: number, weeks: number = KPI_WEEKS): string[] {
-  const [year, month, day] = newYorkDate(nowMs);
+/** The Mondays of the last `weeks` ISO weeks by `zone`'s dates, oldest first, the current week last, as `YYYY-MM-DD`. */
+export function weekStarts(nowMs: number, weeks: number = KPI_WEEKS, zone: string = QUERY_ZONE): string[] {
+  const [year, month, day] = zoneDate(nowMs, zone);
   // The date's weekday is a property of the date, so the arithmetic runs on a
   // UTC midnight of that date. JavaScript counts Sunday as 0; an ISO week
   // starts on Monday.
@@ -114,11 +123,12 @@ export function healthOf(current: Period, previous: Period): Health {
 }
 
 /**
- * The card, from the query's rows, the lobbies open now and the clock. A week
- * the rows do not name had nothing in it and reads as zero, so a trend is
- * always `KPI_WEEKS` long and in order whatever the rows' order.
+ * The card, from the query's rows, the lobbies open now, the clock and the
+ * zone the query read its weeks in. A week the rows do not name had nothing
+ * in it and reads as zero, so a trend is always `KPI_WEEKS` long and in order
+ * whatever the rows' order.
  */
-export function shapeKpis(rows: readonly Row[], lobbies: number, nowMs: number): Kpis {
+export function shapeKpis(rows: readonly Row[], lobbies: number, nowMs: number, zone: string = QUERY_ZONE): Kpis {
   const weeks = new Map<string, Period>();
   let current = EMPTY;
   let previous = EMPTY;
@@ -127,7 +137,7 @@ export function shapeKpis(rows: readonly Row[], lobbies: number, nowMs: number):
     else if (row.kind === "window" && row.period === "current") current = periodOf(row);
     else if (row.kind === "window" && row.period === "previous") previous = periodOf(row);
   }
-  const trend = weekStarts(nowMs).map((start) => weeks.get(start) ?? EMPTY);
+  const trend = weekStarts(nowMs, KPI_WEEKS, zone).map((start) => weeks.get(start) ?? EMPTY);
   return {
     app: "game-dayhike",
     at: new Date(nowMs).toISOString(),

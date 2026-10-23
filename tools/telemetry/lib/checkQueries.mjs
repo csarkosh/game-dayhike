@@ -1,5 +1,5 @@
 // The saved queries (tools/telemetry/queries/), dry-run against BigQuery as
-// the admin routes run them: the same three rewrites the server makes
+// the admin routes run them: the same rewrites the server makes
 // (server/src/adminQueries.ts), then a job BigQuery plans but does not
 // execute, which costs nothing and refuses a query it could not run. Log
 // Analytics' editor accepts what BigQuery's parser does not (`rows` as a
@@ -9,10 +9,19 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
+ * The zone the check runs the queries in: not the files' own New York, so a
+ * literal the rewrite missed, or a function that will not take its zone as a
+ * parameter, shows.
+ */
+export const CHECK_ZONE = 'America/Los_Angeles';
+
+/**
  * The server's rewrites, in one place for the check: the dataset's view, the
- * range and the three lookups' ids. The range line's days are whatever the
- * file reads when pasted (seven for most, twelve weeks for `kpis.sql`), as
- * the server takes them; the session's `'SID'`, the visitor's `'VID'` and the
+ * range, the zone and the three lookups' ids. The range line's days are
+ * whatever the file reads when pasted (seven for most, twelve weeks for
+ * `kpis.sql`), as the server takes them; every `'America/New_York'`, the zone
+ * the files are written in, becomes `@tz`, which the admin routes fill with
+ * the viewer's zone; the session's `'SID'`, the visitor's `'VID'` and the
  * match's `'GAME'` become parameters.
  */
 export function forBigQuery(sql, projectId, dataset) {
@@ -22,6 +31,10 @@ export function forBigQuery(sql, projectId, dataset) {
   if (ranged !== out) {
     out = ranged;
     params.days = 7;
+  }
+  if (out.includes("'America/New_York'")) {
+    out = out.replaceAll("'America/New_York'", '@tz');
+    params.tz = CHECK_ZONE;
   }
   for (const [marker, name] of [["'SID' -- session", 'sid'], ["'VID' -- visitor", 'vid'], ["'GAME' -- match", 'game']]) {
     if (!out.includes(marker)) continue;

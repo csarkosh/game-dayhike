@@ -24,6 +24,20 @@ describe("weekStarts", () => {
     expect(weekStarts(Date.UTC(2026, 9, 19), 1)).toEqual(["2026-10-12"]);
     expect(weekStarts(Date.UTC(2026, 9, 19, 5), 1)).toEqual(["2026-10-19"]);
   });
+
+  it("turns the week at the caller's midnight, not New York's", () => {
+    // Sunday 9:30 PM in San Francisco is already Monday 12:30 AM in New York.
+    const sundayEveningPacific = Date.UTC(2026, 9, 19, 4, 30);
+    expect(weekStarts(sundayEveningPacific, 1)).toEqual(["2026-10-19"]);
+    expect(weekStarts(sundayEveningPacific, 1, "America/Los_Angeles")).toEqual(["2026-10-12"]);
+    // Monday 12:30 AM in San Francisco: the week has turned there too.
+    expect(weekStarts(Date.UTC(2026, 9, 19, 7, 30), 1, "America/Los_Angeles")).toEqual(["2026-10-19"]);
+    // Ahead of UTC: Monday 1 AM in Tokyo is still Sunday in New York and in UTC.
+    const mondayTokyo = Date.UTC(2026, 9, 18, 16);
+    expect(weekStarts(mondayTokyo, 1, "Asia/Tokyo")).toEqual(["2026-10-19"]);
+    expect(weekStarts(mondayTokyo, 1)).toEqual(["2026-10-12"]);
+    expect(weekStarts(mondayTokyo, 1, "UTC")).toEqual(["2026-10-12"]);
+  });
 });
 
 describe("healthOf", () => {
@@ -66,6 +80,16 @@ describe("shapeKpis", () => {
     expect(clean).toEqual({ key: "clean", label: "Clean sessions", value: 75, prev: 100, unit: "%", trend: [0, 0, 0, 0, 0, 0, 0, 0, 0, 100, 0, 75] });
     expect(lobbies).toEqual({ key: "lobbies", label: "Lobbies open now", value: 2, prev: null, unit: "", trend: [] });
     expect(out.health).toEqual({ status: "critical", note: "1 of 7 sessions hit an error in the last 7 days (14.3%), 0 of 9 the week before (0%)." });
+  });
+
+  it("lays the trend on the weeks of the zone the query read in", () => {
+    // Sunday 9:30 PM in San Francisco: the query, run in that zone, put the
+    // evening's sessions in the week of Monday the 12th, its current week.
+    const now = Date.UTC(2026, 9, 19, 4, 30);
+    const rows: Row[] = [week("2026-10-12", 4, 1, 4, 4, 0), week("2026-10-05", 2, 1, 2, 2, 0)];
+    expect(shapeKpis(rows, 0, now, "America/Los_Angeles").kpis[0]?.trend.slice(-2)).toEqual([2, 4]);
+    // In New York the 19th's week has begun and has nothing in it yet.
+    expect(shapeKpis(rows, 0, now).kpis[0]?.trend.slice(-3)).toEqual([2, 4, 0]);
   });
 
   it("reads counts BigQuery hands back as strings, and answers an empty range with zeros and no clean share", () => {

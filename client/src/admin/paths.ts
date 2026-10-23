@@ -8,6 +8,7 @@
 
 import { ago, compact, el, table, tile, type Column } from "./charts.js";
 import type { Row } from "./source.js";
+import { zoned } from "./timeline.js";
 import { sameGeneration, type DrawableTrail, type TrailAnswer, type TrailRequest } from "./trail.js";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v ?? 0) || 0);
@@ -44,11 +45,11 @@ export function worldsOf(rows: Row[]): World[] {
   return [...by.values()].sort((a, b) => b.startedAt - a.startedAt || a.key.localeCompare(b.key));
 }
 
-const dateFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
-const timeFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
-const fullWhenFormat = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+const dateOf = zoned({ month: "short", day: "numeric" });
+const timeOf = zoned({ hour: "numeric", minute: "2-digit" });
+const fullWhenOf = zoned({ month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
-/** A world's line in the list: when its party set out (New York time), how many hikers, the farthest climb among them, and how it ended. */
+/** A world's line in the list: when its party set out (the viewer's time), how many hikers, the farthest climb among them, and how it ended. */
 export type WorldLine = { key: string; date: string; time: string; hikers: string; farthest: string; end: "won" | "died" | "lost" | "unfinished" };
 
 /**
@@ -67,8 +68,8 @@ export function worldLines(rows: Row[], worlds: World[]): WorldLine[] {
     const dated = Number.isFinite(w.startedAt);
     return {
       key: w.key,
-      date: dated ? dateFormat.format(w.startedAt) : "Undated",
-      time: dated ? timeFormat.format(w.startedAt) : "",
+      date: dated ? dateOf(w.startedAt) : "Undated",
+      time: dated ? timeOf(w.startedAt) : "",
       hikers: `${sessions.length} ${sessions.length === 1 ? "hiker" : "hikers"}`,
       farthest: `${Math.round(farthest * 100)}%`,
       end,
@@ -78,7 +79,7 @@ export function worldLines(rows: Row[], worlds: World[]): WorldLine[] {
 
 /** The note's first sentence: the world as the rows name it, its seed, and when the party set out in full. */
 export function worldDetail(w: World): string {
-  const when = Number.isFinite(w.startedAt) ? `set out ${fullWhenFormat.format(w.startedAt)}` : "undated";
+  const when = Number.isFinite(w.startedAt) ? `set out ${fullWhenOf(w.startedAt)}` : "undated";
   return `World ${w.world}, seed ${w.seed}, ${when}.`;
 }
 

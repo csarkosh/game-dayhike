@@ -18,13 +18,18 @@ import { remoteSource, type QueryName, type Range, type Row, type Source } from 
 import { accountMenu, requireSession, UNAUTHORIZED, type User } from "./auth.js";
 import { errorsView, failedCard, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer, sessionsDrawer, visitorsView, waitingCard } from "./views.js";
 import { pathsCard, trailBuilder } from "./paths.js";
+import { zoneName } from "./timeline.js";
 
-/** The ranges, in New York calendar days back from today: "Today" is that calendar day, "7 days" today and the six before. */
-const RANGES: { days: Range; label: string; title: string }[] = [
-  { days: 1, label: "Today", title: "The New York calendar day" },
-  { days: 7, label: "7 days", title: "Today and the six New York days before" },
-  { days: 30, label: "30 days", title: "Today and the 29 New York days before" },
-  { days: 90, label: "90 days", title: "Today and the 89 New York days before" },
+/**
+ * The ranges, in calendar days of the viewer's zone back from today: "Today"
+ * is that calendar day, "7 days" today and the six before. Each title names
+ * the zone (`PDT`).
+ */
+const RANGES: { days: Range; label: string; title: (zone: string) => string }[] = [
+  { days: 1, label: "Today", title: (zone) => `Today, the calendar day in ${zone}` },
+  { days: 7, label: "7 days", title: (zone) => `Today and the six before, calendar days in ${zone}` },
+  { days: 30, label: "30 days", title: (zone) => `Today and the 29 before, calendar days in ${zone}` },
+  { days: 90, label: "90 days", title: (zone) => `Today and the 89 before, calendar days in ${zone}` },
 ];
 const LIVE_EVERY_MS = 10_000;
 
@@ -90,8 +95,9 @@ function dashboard(source: Source, account: User | null): () => void {
   const accountHost = document.querySelector<HTMLElement>("#account");
   if (accountHost !== null) accountMenu(accountHost, { account, preview: source.kind === "sample" });
   drawerSource = source;
+  const zone = zoneName();
   const buttons = RANGES.map((r) => {
-    const b = el("button", { type: "button", "aria-pressed": String(r.days === range), title: r.title }, r.label);
+    const b = el("button", { type: "button", "aria-pressed": String(r.days === range), title: r.title(zone) }, r.label);
     b.addEventListener("click", () => {
       range = r.days;
       for (const other of buttons) other.setAttribute("aria-pressed", String(other === b));
@@ -99,7 +105,7 @@ function dashboard(source: Source, account: User | null): () => void {
     });
     return b;
   });
-  const filters = el("div", { class: "filters" }, el("span", { class: "label", title: "New York calendar days" }, "Range"), ...buttons);
+  const filters = el("div", { class: "filters" }, el("span", { class: "label", title: `Calendar days in ${zone}` }, "Range"), ...buttons);
   const liveSlot = el("div", { class: "grid" });
   const grid = el("div", { class: "grid" });
   root!.replaceChildren(filters, liveSlot, el("div", { style: "height:16px" }), grid);

@@ -6,13 +6,14 @@
  * tables, with a status mark beside a word where a state is the point; paths
  * are a drawing; a session is a trail (`timeline.ts`), in a drawer.
  *
- * Every time shown is New York's: the relative "12 min ago" and, beside it,
- * the wall clock there, which is the clock the queries bucket by.
+ * Every time shown is in the viewer's own zone (`timeline.ts`): the relative
+ * "12 min ago" and, beside it, the wall clock there, which is the clock the
+ * queries bucket by; a label names the zone by its short name (`PDT`).
  */
 
 import { ago, columns, compact, el, funnel, histogram, table, tableView, tile, type Column } from "./charts.js";
 import type { Live, Row } from "./source.js";
-import { clock, dayOf, delta, duration, envelopeLine, fullWhen, sessionsOf, trailOf, when as nyWhen, type Segment, type Step } from "./timeline.js";
+import { clock, dayOf, delta, duration, envelopeLine, fullWhen, sessionsOf, trailOf, when as wallWhen, zoneName, type Segment, type Step } from "./timeline.js";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v ?? 0) || 0);
 const str = (v: unknown): string => (v === null || v === undefined ? "" : String(v));
@@ -23,12 +24,12 @@ const sidLink = (sid: string): Node => el("a", { href: "#", class: "mono", "data
 const vidLink = (vid: string, text = shortId(vid)): Node => el("a", { href: "#", class: "mono", "data-vid": vid, title: `Every session of visitor ${vid}` }, text);
 /** A game id as the link that lists the match's sessions side by side (`data-game`). */
 const gameLink = (game: string, text = shortId(game)): Node => el("a", { href: "#", class: "mono", "data-game": game, title: `Every session of match ${game}` }, text);
-/** A time column: how long ago, and the New York wall clock beside it; the full moment as the title. */
+/** A time column: how long ago, and the viewer's wall clock beside it; the full moment, its zone named, as the title. */
 const when = (v: unknown): Node | string => {
   if (typeof v !== "string" || v === "") return "";
   const ms = Date.parse(v);
   if (!Number.isFinite(ms)) return "";
-  return el("span", { title: `${fullWhen(ms)} (New York)` }, `${ago(ms)} · ${nyWhen(ms)}`);
+  return el("span", { title: fullWhen(ms) }, `${ago(ms)} · ${wallWhen(ms)}`);
 };
 
 export function card(title: string, sub: string, cls = "", ...body: Node[]): HTMLElement {
@@ -119,7 +120,7 @@ export function lobbiesView(rows: Row[]): HTMLElement {
   const refused = rows.reduce((n, r) => n + num(r.refused_full) + num(r.refused_stale_invite) + num(r.refused_host_away), 0);
   const lost = rows.reduce((n, r) => n + num(r.hosts_lost), 0);
   const cols: Column[] = [
-    { key: "day", label: "Day (New York)" },
+    { key: "day", label: `Day (${zoneName()})` },
     { key: "lobbies", label: "Lobbies", num: true },
     { key: "lobbies_joined", label: "Joined", num: true },
     { key: "largest", label: "Largest", num: true },
@@ -285,8 +286,8 @@ export function healthView(rows: Row[]): HTMLElement {
 
 /**
  * Visitors: distinct browsers (`vid`) over the range and how many came back
- * (seen on more than one New York day in the last ninety), from the `kpis`
- * query's range row; the last seven New York days against the seven before
+ * (seen on more than one day in the last ninety), from the `kpis` query's
+ * range row; the last seven days against the seven before
  * from its window rows; and the browsers themselves, the most recently seen
  * first, from the `visitors` query, each a link to its sessions.
  */
@@ -326,7 +327,7 @@ export function visitorsView(kpis: Row[], visitors: Row[]): HTMLElement {
   const shown = visitors.slice(0, 12);
   return card(
     "Visitors",
-    "Distinct browsers in this range; returning is one seen on more than one New York day in the last ninety",
+    `Distinct browsers in this range; returning is one seen on more than one day (${zoneName()}) in the last ninety`,
     "",
     tiles,
     el("details", { class: "table", open: "" }, el("summary", {}, `Visitors, the latest ${shown.length} of ${visitors.length}`), table(cols, shown, "No visitors in this range.")),
@@ -362,7 +363,7 @@ const SEGMENT_WORDS: Record<Segment, string> = { landing: "Landing", lobby: "Lob
 /**
  * The trail's rows: a heading where a step opens a segment (the lobby's and
  * the match's carrying the ids, linked to the party's other sessions), then
- * the step with its New York clock, the time since the step before it shown,
+ * the step with its wall clock, the time since the step before it shown,
  * its name and its text, an error's stack behind a fold.
  */
 function trailRows(steps: Step[], game: string, lobby: string): HTMLElement[] {
@@ -383,7 +384,7 @@ function trailRows(steps: Step[], game: string, lobby: string): HTMLElement[] {
       el(
         "tr",
         { class: `step${step.trace ? " trace" : ""}${step.signaling ? " signal" : ""}` },
-        el("td", { class: "when", title: Number.isFinite(step.at) ? `${fullWhen(step.at)} (New York)` : "" }, Number.isFinite(step.at) ? clock(step.at) : ""),
+        el("td", { class: "when", title: Number.isFinite(step.at) ? fullWhen(step.at) : "" }, Number.isFinite(step.at) ? clock(step.at) : ""),
         el("td", { class: "num dt" }, delta(gap)),
         el("td", {}, name),
         el("td", { class: "what" }, text),
@@ -395,7 +396,7 @@ function trailRows(steps: Step[], game: string, lobby: string): HTMLElement[] {
 
 /**
  * One session's trail, as a drawer over the page: the envelope's facts, then
- * every row in order under the segment it falls in, with the New York wall
+ * every row in order under the segment it falls in, with the viewer's wall
  * clock and the time since the row before, the payload as a line of text, the
  * signaling rows of its lobby among them, an error's stack in full behind a
  * fold. The route's samples (position and edge rows, every two seconds of a
@@ -413,7 +414,7 @@ export function sessionDrawer(sid: string, rows: Promise<Row[]>): HTMLElement {
       }
       const trail = trailOf(list);
       const facts: (Node | string)[] = [];
-      if (Number.isFinite(trail.startedAt)) facts.push(`${dayOf(trail.startedAt)}, New York`);
+      if (Number.isFinite(trail.startedAt)) facts.push(`${dayOf(trail.startedAt)}, ${zoneName(trail.startedAt)}`);
       if (Number.isFinite(trail.startedAt) && Number.isFinite(trail.endedAt)) facts.push(` · ${duration(trail.endedAt - trail.startedAt)}`);
       facts.push(` · ${list.length} rows`);
       if (trail.build !== "") facts.push(" · build ", el("span", { class: "mono" }, trail.build));
@@ -431,7 +432,7 @@ export function sessionDrawer(sid: string, rows: Promise<Row[]>): HTMLElement {
       const table = el(
         "table",
         { class: "trail" },
-        el("thead", {}, el("tr", {}, el("th", {}, "New York"), el("th", { class: "num" }, "Δt"), el("th", {}, "Event"), el("th", {}, "What"))),
+        el("thead", {}, el("tr", {}, el("th", {}, zoneName()), el("th", { class: "num" }, "Δt"), el("th", {}, "Event"), el("th", {}, "What"))),
         tbody,
       );
       body.replaceChildren(head, machine === "" ? el("span", {}) : el("p", { class: "sub" }, machine), traceLine, el("div", { class: "table-wrap" }, table));
@@ -463,7 +464,7 @@ export function sessionsDrawer(kind: "visitor" | "match", id: string, rows: Prom
       const last = lines[lines.length - 1]!;
       const days = new Set(lines.map((l) => dayOf(l.startedAt))).size;
       const cols: Column[] = [
-        { key: "startedAt", label: "Began (New York)", when: true, render: (v) => el("span", { title: `${fullWhen(num(v))} (New York)` }, nyWhen(num(v))) },
+        { key: "startedAt", label: `Began (${zoneName()})`, when: true, render: (v) => el("span", { title: fullWhen(num(v)) }, wallWhen(num(v))) },
         { key: "sid", label: "Session", render: (v) => sidLink(str(v)) },
         { key: "role", label: "Role" },
         { key: "build", label: "Build", render: (v) => el("span", { class: "mono" }, str(v)) },
@@ -475,8 +476,8 @@ export function sessionsDrawer(kind: "visitor" | "match", id: string, rows: Prom
       ];
       const sub =
         kind === "visitor"
-          ? `${lines.length} session${lines.length === 1 ? "" : "s"} on ${days} New York day${days === 1 ? "" : "s"}, ${nyWhen(first.startedAt)} to ${nyWhen(last.endedAt)}; open one for its trail`
-          : `${lines.length} session${lines.length === 1 ? "" : "s"} in the match, ${nyWhen(first.startedAt)} to ${nyWhen(last.endedAt)}; open one for its trail`;
+          ? `${lines.length} session${lines.length === 1 ? "" : "s"} on ${days} day${days === 1 ? "" : "s"} (${zoneName()}), ${wallWhen(first.startedAt)} to ${wallWhen(last.endedAt)}; open one for its trail`
+          : `${lines.length} session${lines.length === 1 ? "" : "s"} in the match, ${wallWhen(first.startedAt)} to ${wallWhen(last.endedAt)}; open one for its trail`;
       body.replaceChildren(el("p", { class: "sub" }, sub), table(cols, lines as unknown as Record<string, unknown>[]));
     },
     (error: unknown) => {

@@ -1,10 +1,12 @@
 /**
  * The saved queries (`tools/telemetry/queries/`), as the admin routes run
  * them: read from their files, the Log Analytics table name turned into the
- * linked dataset's, the `-- range` line's days turned into a parameter, and
- * the lookups' ids (the session query's `'SID'`, the visitor's `'VID'`, the
- * match's `'GAME'`) into one each. The files stay what a person pastes into
- * the console; this is the only translation.
+ * linked dataset's, the `-- range` line's days turned into a parameter, the
+ * zone the files are written in (`'America/New_York'`, every calendar day and
+ * week they read) into the viewer's, and the lookups' ids (the session
+ * query's `'SID'`, the visitor's `'VID'`, the match's `'GAME'`) into one
+ * each. The files stay what a person pastes into the console, in New York
+ * days; this is the only translation.
  *
  * Pure over the file's text, so the rewriting is tested on the files
  * themselves.
@@ -25,6 +27,15 @@ export function isQueryName(name: string): name is QueryName {
   return (QUERY_NAMES as readonly string[]).includes(name);
 }
 
+/**
+ * The zone the saved queries are written in, and so the zone a route reads
+ * its days in when the caller names none: an older caller and a pasted query
+ * agree. The admin page names the viewer's own (`tz`).
+ */
+export const QUERY_ZONE = "America/New_York";
+/** The zone as a SQL literal in a saved query, every occurrence of which becomes the `tz` parameter. */
+const ZONE_LITERAL = `'${QUERY_ZONE}'`;
+
 /** The table a saved query names, as Log Analytics spells it. */
 const CONSOLE_TABLE = /`([a-z0-9-]+)\.global\.dayhike-telemetry\._AllLogs`/g;
 /**
@@ -41,11 +52,32 @@ const LOOKUP_LINES: readonly { marker: string; param: LookupParam }[] = [
 ];
 export type LookupParam = "sid" | "vid" | "game";
 
+/** A zone name's shape: `UTC`, or an IANA `Area/Location` with up to one more part (`America/Argentina/Salta`, `Etc/GMT+5`). */
+const ZONE_RE = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/;
+
+/**
+ * The zone a request names (its `tz`): the queries' own when it names none,
+ * null when the name is not the shape of one or not a zone this runtime
+ * knows. Checked before it reaches a query, where it is a parameter, never
+ * text.
+ */
+export function zoneOf(raw: string | null): string | null {
+  if (raw === null) return QUERY_ZONE;
+  if (raw.length > 64 || !ZONE_RE.test(raw)) return null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: raw });
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A saved query made runnable from BigQuery: the dataset's view for the
- * console's, and the range or the lookup's id as a query parameter. A
- * placeholder may stand in a file more than once (the span and the rows of a
- * lookup); the parameter is named once.
+ * console's, and the range, the zone or the lookup's id as a query
+ * parameter. A placeholder may stand in a file more than once (the span and
+ * the rows of a lookup, the zone in every date a query reads); the parameter
+ * is named once.
  */
 export function forBigQuery(sql: string, projectId: string, dataset: string): { sql: string; params: string[] } {
   const params: string[] = [];
@@ -54,6 +86,10 @@ export function forBigQuery(sql: string, projectId: string, dataset: string): { 
   if (ranged !== out) {
     out = ranged;
     params.push("days");
+  }
+  if (out.includes(ZONE_LITERAL)) {
+    out = out.replaceAll(ZONE_LITERAL, "@tz");
+    params.push("tz");
   }
   for (const { marker, param } of LOOKUP_LINES) {
     if (!out.includes(marker)) continue;

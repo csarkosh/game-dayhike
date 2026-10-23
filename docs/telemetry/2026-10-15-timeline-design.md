@@ -57,6 +57,10 @@ format, the server and the queries together, and is the contract between the thr
   "unknown" its own number; **visitors** are distinct `vid`, **returning** those seen on more
   than one New York day.
 - Everything buckets and labels in `America/New_York`; "Today" is that calendar day.
+  *(Amended 2026-10-22: in the viewer's own zone instead, the browser's, which the admin page
+  sends as `tz` on every request; the saved queries stay written in New York's, the default
+  when a caller names none, and the server makes the zone a parameter. See
+  `../admin/2026-10-12-admin-page-design.md` §8.)*
 - `session.sql` is the timeline: every row the page sent with its payload (`vid`, `game`,
   `lobby`, `reason`, `result`, `act`, `phase`, `tier`, `fps`, `dur`, `trouble`, `msg`), ordered
   by `timestamp`, over a window around the session's own span; `visitor.sql` is every session

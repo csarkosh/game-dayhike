@@ -1,17 +1,18 @@
 -- The index card (the admin host's front page, `GET /admin/kpis`) and the
 -- page's Visitors card: sessions, matches, sessions that ended clean, sessions
 -- that hit an error, visitors and returning visitors, one row a period. The
--- periods are the ISO weeks of the range by the New York day a session
--- started (`kind = 'week'`, `week_start` its Monday), the last seven New York
--- days against the seven before (`kind = 'window'`, `period` 'current' or
--- 'previous'), and the whole range read (`kind = 'range'`, `period` 'all').
+-- periods are the ISO weeks of the range by the day a session started
+-- (`kind = 'week'`, `week_start` its Monday), the last seven days against the
+-- seven before (`kind = 'window'`, `period` 'current' or 'previous'), and the
+-- whole range read (`kind = 'range'`, `period` 'all'). Every day and week is
+-- New York's when pasted, and the viewer's zone (the route's `tz`) from the
+-- admin routes and the index card.
 -- A session counts where it has a `page` row; a match is a distinct `game`
 -- with a host's `match_start`, in the period that row fell in; clean where
 -- the session's `end` row said `trouble` 0, of the sessions that have one;
 -- erred where any row of it is an error or a failed start; a visitor is a
 -- distinct `vid`, and returning where that browser was seen on more than one
--- New York day in the last ninety. The range is twelve weeks, the trend's
--- length.
+-- day in the last ninety. The range is twelve weeks, the trend's length.
 -- The rows that are real play, the same text in every query (`README.md`):
 -- not the deploy's verification (`build = 'verify'` on a page's rows,
 -- `verify` on signaling's), not the owner's test browsers (`tester`), not a

@@ -1,8 +1,9 @@
 -- Visitors: one line a browser (`vid`) over the range, the most recently seen
--- first: how many sessions it had and on how many New York days, how many of
--- them played a match and reached an outcome, the build and machine it was
--- last seen on, and its last session, which the admin page opens. A browser
--- whose storage refused the id is not here.
+-- first: how many sessions it had and on how many calendar days (New York's
+-- when pasted, the viewer's zone from the admin page), how many of them played
+-- a match and reached an outcome, the build and machine it was last seen on,
+-- and its last session, which the admin page opens. A browser whose storage
+-- refused the id is not here.
 -- The rows that are real play, the same text in every query (`README.md`):
 -- not the deploy's verification (`build = 'verify'` on a page's rows,
 -- `verify` on signaling's), not the owner's test browsers (`tester`), not a

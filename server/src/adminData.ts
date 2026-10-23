@@ -66,15 +66,16 @@ export function createAdminData(options: AdminDataOptions): AdminData {
     };
   };
   return {
-    query: (name, days) => run(name, { days }),
+    query: (name, days, zone) => run(name, { days, tz: zone }),
     // Each lookup's file names its parameter after its id (`sid`, `vid`, `game`).
     lookup: (name, id) => run(name, { sid: id, vid: id, game: id }),
     live,
-    // The index card: the `kpis` query over the weeks its trends span, and the
-    // lobbies open now from the same store the live view reads.
-    async kpis() {
-      const [rows, view] = await Promise.all([run("kpis", { days: KPI_WEEKS * 7 }), live()]);
-      return shapeKpis(rows, view.rooms.length, now());
+    // The index card: the `kpis` query over the weeks its trends span, by the
+    // caller's calendar, and the lobbies open now from the same store the live
+    // view reads.
+    async kpis(zone) {
+      const [rows, view] = await Promise.all([run("kpis", { days: KPI_WEEKS * 7, tz: zone }), live()]);
+      return shapeKpis(rows, view.rooms.length, now(), zone);
     },
   };
 }

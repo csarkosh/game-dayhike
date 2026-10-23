@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import { createLocalJWKSet } from "jose";
 import { createAdminAuth, parseAllowlist } from "../src/adminAuth.js";
-import { forBigQuery, LOOKUP_NAMES, QUERY_NAMES, readQuery } from "../src/adminQueries.js";
+import { forBigQuery, LOOKUP_NAMES, QUERY_NAMES, readQuery, zoneOf } from "../src/adminQueries.js";
 import type { AdminData, LiveView } from "../src/admin.js";
 import { plain } from "../src/adminData.js";
 import { shapeKpis } from "../src/adminKpis.js";
@@ -72,14 +72,15 @@ describe("createAdminAuth", () => {
 });
 
 describe("the saved queries for BigQuery", () => {
-  it("rename the table, parameterise the range, and turn each lookup's placeholder into its parameter", () => {
+  it("rename the table, parameterise the range and the zone, and turn each lookup's placeholder into its parameter", () => {
     for (const name of QUERY_NAMES) {
       const out = forBigQuery(readQuery(name, QUERIES), "fps-csarko", "dayhike_telemetry");
       expect(out.sql).toContain("`fps-csarko.dayhike_telemetry._AllLogs`");
       expect(out.sql).not.toContain("global.dayhike-telemetry");
-      expect(out.sql).toContain("INTERVAL @days DAY");
+      expect(out.sql).toContain("INTERVAL @days DAY), @tz)");
       expect(out.sql).not.toContain("-- range");
-      expect(out.params).toEqual(["days"]);
+      expect(out.sql, `${name}.sql keeps a New York date`).not.toContain("America/New_York");
+      expect(out.params).toEqual(["days", "tz"]);
     }
     const placeholders = { session: ["'SID'", "@sid", "sid"], visitor: ["'VID'", "@vid", "vid"], match: ["'GAME'", "@game", "game"] } as const;
     for (const name of LOOKUP_NAMES) {
@@ -106,7 +107,7 @@ describe("the saved queries for BigQuery", () => {
     for (const name of QUERY_NAMES) expect(block(readQuery(name, QUERIES)), `${name}.sql's exclusion differs`).toBe(first);
   });
 
-  it("scope a range to New York calendar days, so one day is today there", () => {
+  it("are written in New York calendar days, so a pasted query's one day is today there", () => {
     for (const name of QUERY_NAMES) {
       expect(readQuery(name, QUERIES)).toContain("TIMESTAMP(DATE_SUB(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), INTERVAL");
     }
@@ -115,11 +116,27 @@ describe("the saved queries for BigQuery", () => {
   it("take the range line's days whatever the file reads when pasted", () => {
     const seven = forBigQuery("INTERVAL 7 DAY), 'America/New_York') -- range", "p", "d");
     const twelveWeeks = forBigQuery("INTERVAL 84 DAY), 'America/New_York') -- range", "p", "d");
-    expect(seven.sql).toBe("INTERVAL @days DAY), 'America/New_York')");
-    expect(twelveWeeks.sql).toBe("INTERVAL @days DAY), 'America/New_York')");
-    expect(twelveWeeks.params).toEqual(["days"]);
+    expect(seven.sql).toBe("INTERVAL @days DAY), @tz)");
+    expect(twelveWeeks.sql).toBe("INTERVAL @days DAY), @tz)");
+    expect(twelveWeeks.params).toEqual(["days", "tz"]);
     // The kpis query reads twelve weeks when pasted, the length of its trends.
     expect(readQuery("kpis", QUERIES)).toContain("INTERVAL 84 DAY), 'America/New_York') -- range");
+  });
+});
+
+describe("the zone a query reads its days in", () => {
+  it("becomes the tz parameter wherever the file names New York, named once", () => {
+    const out = forBigQuery("SELECT DATE(timestamp, 'America/New_York') AS day, CURRENT_DATE('America/New_York') AS today", "p", "d");
+    expect(out.sql).toBe("SELECT DATE(timestamp, @tz) AS day, CURRENT_DATE(@tz) AS today");
+    expect(out.params).toEqual(["tz"]);
+    // A file that reads no calendar asks for no zone.
+    expect(forBigQuery("SELECT 1 WHERE x = 'SID' -- session", "p", "d").params).toEqual(["sid"]);
+  });
+
+  it("is New York's when the request names none, the name when it is a zone, and refused otherwise", () => {
+    expect(zoneOf(null)).toBe("America/New_York");
+    for (const zone of ["America/Los_Angeles", "UTC", "Asia/Tokyo", "America/Argentina/Buenos_Aires", "Etc/GMT+5", "America/Port-au-Prince"]) expect(zoneOf(zone)).toBe(zone);
+    for (const bad of ["", "Mars/Olympus_Mons", "America/New_York'; DROP TABLE x; --", "America/New York", "../etc/passwd", "a/b/c/d", "x".repeat(65)]) expect(zoneOf(bad), bad).toBeNull();
   });
 });
 
@@ -141,16 +158,16 @@ describe("the admin routes", () => {
   const kpis = shapeKpis([{ kind: "window", period: "current", week_start: null, sessions: 3, matches: 2, ended: 2, clean: 2, erred: 0 }], 1, Date.UTC(2026, 9, 12));
   const data: AdminData = {
     live: () => Promise.resolve(live),
-    query: (name, days) => {
-      asked.push(`${name}:${days}`);
+    query: (name, days, zone) => {
+      asked.push(`${name}:${days}:${zone}`);
       return Promise.resolve([{ build: "abc", n: 1 }]);
     },
     lookup: (name, id) => {
       asked.push(`${name}:${id}`);
       return Promise.resolve([{ n: "page", t: 0 }]);
     },
-    kpis: () => {
-      asked.push("kpis");
+    kpis: (zone) => {
+      asked.push(`kpis:${zone}`);
       return Promise.resolve(kpis);
     },
   };
@@ -191,7 +208,26 @@ describe("the admin routes", () => {
     const k = await get("/admin/kpis", bearer);
     expect(k.status).toBe(200);
     expect(await k.json()).toEqual(kpis);
-    expect(asked).toEqual(["funnel:30", "errors:7", "session:s-1", "visitor:v-1", "match:g-1", "kpis"]);
+    expect(asked).toEqual(["funnel:30:America/New_York", "errors:7:America/New_York", "session:s-1", "visitor:v-1", "match:g-1", "kpis:America/New_York"]);
+  });
+
+  it("reads the days in the zone the caller names, and refuses a tz that is not a zone", async () => {
+    const bearer = `Bearer ${await token({ email: "me@example.com" })}`;
+    asked.length = 0;
+    expect((await get("/admin/query/lobbies?days=1&tz=America%2FLos_Angeles", bearer)).status).toBe(200);
+    expect((await get("/admin/kpis?tz=Asia/Tokyo", bearer)).status).toBe(200);
+    expect((await get("/admin/live?tz=UTC", bearer)).status).toBe(200);
+    expect((await get("/admin/session/s-1?tz=America/Los_Angeles", bearer)).status).toBe(200);
+    expect(asked).toEqual(["lobbies:1:America/Los_Angeles", "kpis:Asia/Tokyo", "session:s-1"]);
+    asked.length = 0;
+    for (const path of ["/admin/query/funnel?days=7&tz=Mars/Olympus_Mons", "/admin/kpis?tz=", "/admin/live?tz=America/New%20York", "/admin/visitor/v-1?tz=%27UTC%27", "/admin/match/g-1?tz=../x"]) {
+      const res = await get(path, bearer);
+      expect(res.status, path).toBe(400);
+      expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN);
+    }
+    expect(asked).toEqual([]);
+    // A stranger is told to sign in first, whatever the tz.
+    expect((await get("/admin/kpis?tz=nope")).status).toBe(401);
   });
 
   it("answers the shell's local preview too, with its own origin echoed", async () => {

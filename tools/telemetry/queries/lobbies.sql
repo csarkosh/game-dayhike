@@ -1,6 +1,7 @@
 -- Parties: from the signaling server's own rows, how many lobbies formed, how
--- big each got, how long it lived, and the joins it refused, one line a New
--- York day. A lobby of one is a solo game that pressed Invite and nobody came.
+-- big each got, how long it lived, and the joins it refused, one line a
+-- calendar day (New York's when pasted, the viewer's zone from the admin
+-- page). A lobby of one is a solo game that pressed Invite and nobody came.
 -- The rooms a deploy's verification opens are left out with the rest.
 -- The rows that are real play, the same text in every query (`README.md`):
 -- not the deploy's verification (`build = 'verify'` on a page's rows,

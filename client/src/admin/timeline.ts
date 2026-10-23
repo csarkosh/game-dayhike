@@ -2,33 +2,82 @@
  * A session read as a trail: the rows the session query answers
  * (`tools/telemetry/queries/session.sql`, and the visitor's and the match's,
  * which add a session column), turned into steps the drawer draws, one a row:
- * its New York wall clock, the segment it opens (landing, lobby, loading,
+ * its wall clock, the segment it opens (landing, lobby, loading,
  * match, after), its payload as a short line of text, and whether it is one
  * of the route's samples (hidden until asked for). Pure over the rows, so the
  * reading is tested without a page; `views.ts` draws it.
  *
- * Everything is labelled in New York time: the page is run from there, the
- * queries bucket by that calendar, and a wall clock the reader shares is the
- * one that makes "at 7:05 PM" mean something.
+ * Everything is labelled in the viewer's own zone, the one the browser is
+ * in (Cyrus, 2026-10-22: the page is read wherever its owner is, and a day or
+ * a "7:05 PM" means the reader's): every clock and date here, and every day
+ * the queries bucket by, since every request names the zone (`tz`,
+ * `source.ts`). The labels name it by its short name (`PDT`, `zoneName`).
  */
 
 import type { Row } from "./source.js";
 
-export const NEW_YORK = "America/New_York";
+/** A zone name's shape, the one the admin routes accept (`server/src/adminQueries.ts` `zoneOf`). */
+const ZONE_RE = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/;
 
-const clockFormat = new Intl.DateTimeFormat("en-US", { timeZone: NEW_YORK, hour: "numeric", minute: "2-digit", second: "2-digit" });
-const dayFormat = new Intl.DateTimeFormat("en-US", { timeZone: NEW_YORK, weekday: "short", month: "short", day: "numeric", year: "numeric" });
-const whenFormat = new Intl.DateTimeFormat("en-US", { timeZone: NEW_YORK, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const fullFormat = new Intl.DateTimeFormat("en-US", { timeZone: NEW_YORK, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" });
+/**
+ * The browser's zone, an IANA name (`America/Los_Angeles`), or UTC where the
+ * browser names none or one the routes would refuse (a legacy `EST5EDT`), so
+ * the labels and the queries always agree.
+ */
+export function browserZone(): string {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return typeof zone === "string" && zone.length <= 64 && ZONE_RE.test(zone) ? zone : "UTC";
+}
 
-/** 7:05:51 PM, the wall clock in New York. */
-export const clock = (ms: number): string => clockFormat.format(ms);
+let zone = browserZone();
+
+/** The zone every time and day on the page is read in. */
+export const viewerZone = (): string => zone;
+
+/** Reads the page in another zone from here on: for the tests, which cannot choose the machine's. */
+export function useZone(next: string): void {
+  zone = next;
+}
+
+/** A formatter in the viewer's zone, made again if the zone changes. */
+export function zoned(options: Intl.DateTimeFormatOptions): (ms: number) => string {
+  let made: Intl.DateTimeFormat | null = null;
+  let madeFor = "";
+  return (ms) => {
+    if (made === null || madeFor !== zone) {
+      made = new Intl.DateTimeFormat("en-US", { ...options, timeZone: zone });
+      madeFor = zone;
+    }
+    return made.format(ms);
+  };
+}
+
+let nameFormat: Intl.DateTimeFormat | null = null;
+let nameFor = "";
+/** The viewer's zone by its short name at a moment (`PDT`, `PST`, `GMT+9`), which the labels name it by; now when no moment is given. */
+export function zoneName(ms: number = Date.now()): string {
+  if (nameFormat === null || nameFor !== zone) {
+    nameFormat = new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "short" });
+    nameFor = zone;
+  }
+  return nameFormat.formatToParts(ms).find((p) => p.type === "timeZoneName")?.value ?? zone;
+}
+
+const isoDate = zoned({ year: "numeric", month: "2-digit", day: "2-digit" });
+/** 2026-10-14: the calendar date of a moment in the viewer's zone, as the queries' `DATE` columns read. */
+export function calendarDate(ms: number): string {
+  const [month, day, year] = isoDate(ms).split("/");
+  return `${year}-${month}-${day}`;
+}
+
+/** 7:05:51 PM, the wall clock in the viewer's zone. */
+export const clock = zoned({ hour: "numeric", minute: "2-digit", second: "2-digit" });
 /** Wed, Oct 14, 2026. */
-export const dayOf = (ms: number): string => dayFormat.format(ms);
+export const dayOf = zoned({ weekday: "short", month: "short", day: "numeric", year: "numeric" });
 /** Oct 14, 7:05 PM: the absolute time beside a relative one. */
-export const when = (ms: number): string => whenFormat.format(ms);
-/** Oct 14, 2026, 7:05:51 PM EDT, for a title. */
-export const fullWhen = (ms: number): string => fullFormat.format(ms);
+export const when = zoned({ month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+/** Oct 14, 2026, 7:05:51 PM PDT, for a title: it names the zone itself. */
+export const fullWhen = zoned({ month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" });
 
 /** 0.0 s, 12.4 s, 3 min 2 s, 1 h 4 min: a length of time, short. */
 export function duration(ms: number): string {

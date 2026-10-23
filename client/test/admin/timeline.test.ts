@@ -1,18 +1,52 @@
-import { describe, it, expect } from "vitest";
-import { clock, dayOf, delta, describe as describeEvent, duration, envelopeLine, opens, payloadOf, sessionsOf, toneOf, trailOf, when } from "../../src/admin/timeline.js";
+import { afterEach, describe, it, expect } from "vitest";
+import { browserZone, calendarDate, clock, dayOf, delta, describe as describeEvent, duration, envelopeLine, fullWhen, opens, payloadOf, sessionsOf, toneOf, trailOf, useZone, viewerZone, when, zoneName } from "../../src/admin/timeline.js";
 import type { Row } from "../../src/admin/source.js";
 
 /** 2026-10-14 23:05:51 UTC, which is 7:05:51 PM in New York (EDT). */
 const T0 = Date.UTC(2026, 9, 14, 23, 5, 51);
 const iso = (ms: number): string => new Date(ms).toISOString();
 
-describe("the New York clocks", () => {
-  it("label a moment on the New York wall clock and calendar", () => {
+/** 9:30 PM on Oct 22 in San Francisco (PDT), already 12:30 AM on Oct 23 in New York. */
+const EVENING_PACIFIC = Date.UTC(2026, 9, 23, 4, 30);
+
+describe("the viewer's clocks", () => {
+  afterEach(() => useZone(browserZone()));
+
+  it("start in the browser's own zone", () => {
+    expect(viewerZone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  it("label a moment on the viewer's wall clock and calendar", () => {
+    useZone("America/New_York");
     expect(clock(T0)).toBe("7:05:51 PM");
     expect(dayOf(T0)).toBe("Wed, Oct 14, 2026");
     expect(when(T0)).toBe("Oct 14, 7:05 PM");
     // Past midnight in New York is still the day before UTC's.
     expect(dayOf(Date.UTC(2026, 9, 15, 3, 30))).toBe("Wed, Oct 14, 2026");
+    useZone("America/Los_Angeles");
+    expect(clock(T0)).toBe("4:05:51 PM");
+    expect(fullWhen(T0)).toBe("Oct 14, 2026, 4:05:51 PM PDT");
+  });
+
+  it("put an evening in San Francisco on that day, not New York's next one", () => {
+    useZone("America/Los_Angeles");
+    expect(clock(EVENING_PACIFIC)).toBe("9:30:00 PM");
+    expect(when(EVENING_PACIFIC)).toBe("Oct 22, 9:30 PM");
+    expect(dayOf(EVENING_PACIFIC)).toBe("Thu, Oct 22, 2026");
+    expect(calendarDate(EVENING_PACIFIC)).toBe("2026-10-22");
+    useZone("America/New_York");
+    expect(clock(EVENING_PACIFIC)).toBe("12:30:00 AM");
+    expect(calendarDate(EVENING_PACIFIC)).toBe("2026-10-23");
+  });
+
+  it("name the zone by its short name at the moment", () => {
+    useZone("America/Los_Angeles");
+    expect(zoneName(EVENING_PACIFIC)).toBe("PDT");
+    expect(zoneName(Date.UTC(2026, 11, 1))).toBe("PST");
+    useZone("America/New_York");
+    expect(zoneName(EVENING_PACIFIC)).toBe("EDT");
+    useZone("UTC");
+    expect(zoneName(EVENING_PACIFIC)).toBe("UTC");
   });
 
   it("write a length of time short, and a step's delta with its sign", () => {

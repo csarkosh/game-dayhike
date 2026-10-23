@@ -176,7 +176,7 @@ details.table summary { color: var(--faint); font-size: 12px; cursor: pointer; }
 .drawer .trace-toggle input { accent-color: var(--series); margin: 0 4px 0 0; vertical-align: -1px; }
 a[data-sid], a[data-vid], a[data-game] { text-decoration: underline dotted; }
 
-/* The trail: the New York clock and the step since the row before in the mono face,
+/* The trail: the viewer's clock and the step since the row before in the mono face,
    narrow; the event and its text take the rest and wrap. A segment's heading is a row
    of its own, set off from the steps; the route's samples, when shown, are dimmed. At
    a phone's width the drawer is the viewport and the four columns still fit: the clock

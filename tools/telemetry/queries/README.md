@@ -30,19 +30,26 @@ still be opened.
 
 ## The range
 
-Each query over a range reads the last seven New York calendar days (`kpis.sql` the last
-twelve weeks, the length of the trends it feeds): the line marked `-- range` is the one to
-change, and the admin page's server sets its days from the range chosen there
-(`server/src/admin.ts`; 1 is today in New York, 7 today and the six days before), or to the
-twelve weeks for the index card. Every day, week and window is by `America/New_York` dates,
-and `timestamp` is the event's own time for rows from the 2026-10-15 server build on (older
-rows keep the time the batch arrived).
+Each query over a range reads the last seven calendar days (`kpis.sql` the last twelve
+weeks, the length of the trends it feeds): the line marked `-- range` is the one to change,
+and the admin page's server sets its days from the range chosen there (`server/src/admin.ts`;
+1 is today, 7 today and the six days before), or to the twelve weeks for the index card.
+Every day, week and window is by the dates of one zone. Pasted, that zone is New York's: the
+files are written in `'America/New_York'`. The admin routes run them in the viewer's zone
+instead *(2026-10-22)*: the page sends the browser's zone as `tz` on every request (and the
+shared admin host's index sends one to `GET /admin/kpis`), and the server
+(`server/src/adminQueries.ts` `forBigQuery`) turns every `'America/New_York'` in a file into
+the `@tz` parameter, as it turns the range line's days into `@days`; a route given no `tz`
+reads New York's, as a pasted query does. So write a query's zone as that literal, wherever a
+date is read (`DATE(timestamp, 'America/New_York')`, `CURRENT_DATE('America/New_York')`), and
+never another zone. `timestamp` is the event's own time for rows from the 2026-10-15 server
+build on (older rows keep the time the batch arrived).
 
 ## The definitions, each once
 
 - A **session** is a `sid`, one a page load; it counts where it has a `page` row.
-- A **visitor** is a `vid`, one a browser; **returning** where it was seen on more than one New
-  York day in the last ninety.
+- A **visitor** is a `vid`, one a browser; **returning** where it was seen on more than one
+  calendar day (the zone's, above) in the last ninety.
 - A **match** is a distinct `game` with a host's `match_start`; its **players** are the sessions
   with a `match_start` for it; its **length** is the longest of its sessions' own `match_end` or
   `outcome` minus `match_start`.
@@ -60,7 +67,7 @@ rows keep the time the batch arrived).
 | File | Answers |
 |---|---|
 | `funnel.sql` | Of the sessions that landed, how many pressed Play, started a match, and reached an outcome; one line `all`, and one a build. |
-| `lobbies.sql` | How many parties formed, how big they were, and how joins failed, by New York day. |
+| `lobbies.sql` | How many parties formed, how big they were, and how joins failed, by calendar day (New York's pasted, the viewer's on the page). |
 | `progress.sql` | One line a match: its host's session, its players, how far they got, which acts they reached, and how it ended. |
 | `errors.sql` | What threw, where, on which build, and how many sessions it touched, errors before warnings, with the distinct totals. |
 | `health.sql` | Load times by tier and engine, frame rates, and how sessions ended: clean, troubled, unknown, silent, or to the background. |

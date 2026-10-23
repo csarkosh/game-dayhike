@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import { sessionsOf, worldDetail, worldLines, worldsOf } from "../../src/admin/paths.js";
 import type { Row } from "../../src/admin/source.js";
+import { browserZone, useZone } from "../../src/admin/timeline.js";
 import { buildTrailFor, parseWorld, sameGeneration } from "../../src/admin/trail.js";
 import { GEN_VERSION } from "../../src/sim/forest.js";
 import { DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
@@ -62,7 +63,10 @@ describe("sessionsOf", () => {
 });
 
 describe("worldsOf", () => {
-  it("lists each world once, newest party first, dated by its earliest row in New York time", () => {
+  afterEach(() => useZone(browserZone()));
+
+  it("lists each world once, newest party first, dated by its earliest row in the viewer's time", () => {
+    useZone("America/New_York");
     const rows: Row[] = [
       { world: "forest/8/olympic/1/2", seed: 11, sid: "a", n: "pos", timestamp: "2026-10-12T20:30:00Z" },
       { world: "forest/8/olympic/1/2", seed: 11, sid: "a", n: "match_start", timestamp: "2026-10-12T20:00:00Z" },
@@ -77,7 +81,8 @@ describe("worldsOf", () => {
     expect(worldDetail(worlds[0]!)).toBe("World forest/8/olympic/1/2, seed 22, set out Oct 12, 2026, 9:15 PM EDT.");
   });
 
-  it("lines each world up as date, time, hikers, farthest climb and end", () => {
+  it("lines each world up as date, time, hikers, farthest climb and end, on the viewer's clock", () => {
+    useZone("America/New_York");
     const rows: Row[] = [
       { world: "forest/8/olympic/1/2", seed: 11, sid: "a", n: "match_start", timestamp: "2026-10-12T20:00:00Z" },
       { world: "forest/8/olympic/1/2", seed: 11, sid: "a", n: "pos", tick: 60, p: 0.4, timestamp: "2026-10-12T20:05:00Z" },
@@ -90,6 +95,13 @@ describe("worldsOf", () => {
       ["Oct 12", "9:15 PM", "1 hiker", "0%", "unfinished"],
       ["Oct 12", "4:00 PM", "2 hikers", "40%", "won"],
     ]);
+    // The same parties read from San Francisco: 9:15 PM in New York is 6:15 PM there.
+    useZone("America/Los_Angeles");
+    expect(worldLines(rows, worldsOf(rows)).map((l) => [l.date, l.time])).toEqual([
+      ["Oct 12", "6:15 PM"],
+      ["Oct 12", "1:00 PM"],
+    ]);
+    expect(worldDetail(worldsOf(rows)[0]!)).toBe("World forest/8/olympic/1/2, seed 22, set out Oct 12, 2026, 6:15 PM PDT.");
     expect(worldLines([], [{ key: "w|1", world: "w", seed: "1", startedAt: Infinity }])[0]).toMatchObject({ date: "Undated", time: "", hikers: "0 hikers" });
   });
 });

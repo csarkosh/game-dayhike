@@ -1,7 +1,7 @@
 # Telemetry
 
 **Date:** 2026-10-12
-**Status:** Built 2026-10-12. Amended the same day: a stored error is traceable to its cause (§8), and the trace of where a player went and what they chose (§9). Amended 2026-10-15 so a session reads back as a timeline (`2026-10-15-timeline-design.md`): each batch says the page's clock (`st`), the match and the lobby ride on each event rather than the envelope, the envelope says the page's facts from the start, and four events were added (§2).
+**Status:** Built 2026-10-12. Amended the same day: a stored error is traceable to its cause (§8), and the trace of where a player went and what they chose (§9). Amended 2026-10-15 so a session reads back as a timeline (`2026-10-15-timeline-design.md`): each batch says the page's clock (`st`), the match and the lobby ride on each event rather than the envelope, the envelope says the page's facts from the start, and four events were added (§2). Amended 2026-10-22: the admin page dates the worlds in the viewer's zone, not New York's (§9).
 
 ## 0. What this is
 
@@ -276,5 +276,6 @@ numbered, the named places as discs, a × at a death, a ◇ at the Hollow's firs
 list of who walked a loop, left the trail, used the lamp, or died. The card shows one
 world at a time, chosen from a list of every world in the range, newest party first, each
 entry dated in New York time by its earliest row (when the party set out) and naming the
-world and its seed. A world of another generation of the generator is drawn with a note,
+world and its seed *(amended 2026-10-22: dated in the viewer's own zone, the browser's, as
+every time on the admin page is; `../admin/2026-10-12-admin-page-design.md` §8)*. A world of another generation of the generator is drawn with a note,
 since its trail may have differed.

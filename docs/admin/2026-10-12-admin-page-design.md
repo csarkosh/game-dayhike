@@ -200,6 +200,7 @@ play is dropped at the server by address. The lookups by id exclude nothing.
 calendar day (midnight to now, New York), "7 days" today and the six before, and the days,
 weeks and windows the queries answer are by that calendar. Beside every "12 min ago" the page
 shows the New York wall clock (`Oct 14, 7:05 PM`), with the full moment as the title.
+*(Amended 2026-10-22: every time and day is now the viewer's own zone, not New York's; §8.)*
 
 **The cards.**
 
@@ -244,3 +245,46 @@ lookup scans those days and not the whole table; the session's lobby rows come f
 window. Each selects the payload columns the design names (`vid`, `game`, `lobby`, `reason`,
 `result`, `act`, `phase`, `tier`, `fps`, `dur`, `trouble`, `msg`, `p`) and the whole row as
 `row_json`, which is what the trail's text is read from.
+
+## 8. Every time in the viewer's zone (amended 2026-10-22)
+
+*Cyrus, 2026-10-22: the page is read wherever its owner is (San Francisco, this week), so
+every time and every day boundary on it follows the zone the browser is in, not New York's.
+At 9:30 PM Pacific on Oct 22 a session shows "9:30 PM", falls on Oct 22 in the per-day
+tables, and is inside "Today". This replaces §7's New York rule.*
+
+**The zone is the browser's.** The page reads it once from
+`Intl.DateTimeFormat().resolvedOptions().timeZone` (`client/src/admin/timeline.ts`
+`viewerZone`; UTC where the browser names none, or a name the routes would refuse). Every
+clock, date and full moment on the page is formatted in it (`timeline.ts`'s formatters and
+`paths.ts`'s), and every label that said "New York" names it by its short name at the moment
+(`PDT`, `PST`, `GMT+9`): the Lobbies a day table's "Day (PDT)", the trail's clock column, the
+trail's head ("Thu, Oct 22, 2026, PDT"), a visitor's or match's list ("Began (PDT)", "on 3
+days (PDT)"), the Visitors card's returning rule. The full moment in a title carries the
+zone itself (`Oct 22, 2026, 9:30:00 PM PDT`). The range buttons' titles say "calendar days in
+PDT", "Today" being the calendar day there. The sample (`?preview`) dates its per-day rows by
+the viewer's calendar too.
+
+**Every request names it.** The page adds `tz=<IANA name>` to every route it calls
+(`source.ts` `zonedPath`): `/admin/query/<name>?days=N&tz=America%2FLos_Angeles`, the live
+view and the three lookups alike. The server (`server/src/adminQueries.ts` `zoneOf`) takes a
+name of the shape `^[A-Za-z_]+(/[A-Za-z0-9_+-]+){0,2}$`, at most 64 characters, that the
+runtime's `Intl.DateTimeFormat` accepts as a `timeZone`, and answers 400 ("tz is not a time
+zone") to anything else; absent, the zone is `America/New_York`, so an older caller reads what
+it read before. `GET /admin/kpis` takes the same `tz`, so the index card on the shared admin
+host shows its weeks and its seven-day windows in the zone the host's index sends; its ISO
+week labels (`adminKpis.ts` `weekStarts`) are that zone's Mondays, the same calendar the
+query's `week_start` is in. The lookups and the live view read no calendar; they check the
+`tz` and do not use it.
+
+**The queries stay New York's when pasted.** The saved queries are still written in
+`'America/New_York'`, so one pasted into Log Analytics reads New York days as before. The
+server's rewrite (`forBigQuery`) turns every `'America/New_York'` literal into the `@tz`
+parameter, as it turns the range line's days into `@days`; the zone is a query parameter,
+never text in the query. `node tools/telemetry/check-queries.mjs` dry-runs every query with
+`tz` set to `America/Los_Angeles`, so a function that would not take its zone as a parameter
+shows there.
+
+**What is not the viewer's.** The envelope's `tz` in a trail's head is the player's own
+browser zone, a fact about the player, and stays as the row says. The live card's "refreshed"
+time is the browser's local time, which is the viewer's zone already.

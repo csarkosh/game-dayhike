@@ -7,6 +7,7 @@
  */
 
 import type { Live, QueryName, Range, Row, Source } from "./source.js";
+import { calendarDate } from "./timeline.js";
 import { buildTrailFor } from "./trail.js";
 import { GEN_VERSION } from "../sim/forest.js";
 import { DEFAULT_TERRAIN_VARIANT } from "../sim/terrain.js";
@@ -31,7 +32,8 @@ function rng(seed: number): () => number {
 }
 
 const iso = (ms: number): string => new Date(ms).toISOString();
-const day = (ms: number): string => iso(ms).slice(0, 10);
+/** A day as the queries' `DATE` columns read it: the viewer's calendar date, as the routes would answer. */
+const day = (ms: number): string => calendarDate(ms);
 
 function funnel(): Row[] {
   return [
