@@ -79,6 +79,31 @@ variable "disk_size_gb" {
   }
 }
 
+variable "rig_count" {
+  description = <<-EOT
+    How many machines to run, 1 by default. The first is the machine as it has
+    always been (the addresses, outputs and password parameter are unchanged);
+    the others are copies of it, from the same image and start-up script, in
+    the same subnet, with the same identity, each with its own disk and its
+    own Chrome, so that a round's experiments run side by side, one an
+    experiment (tools/frame-budget/rig/chain.mjs). Every machine starts and
+    stops with `running`, carries the same timer and is stopped by the same
+    daily backstop. Machine n writes its desktop password to
+    `<password_parameter>-n` (the first keeps `<password_parameter>`). Raising
+    it creates machines, which is refused while running is false, as a first
+    machine is; lowering it destroys the machines above the new count, disks
+    and all. The on-demand quota for G instances is 768 vCPUs a region, 4 a
+    machine.
+  EOT
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.rig_count >= 1 && var.rig_count <= 32 && floor(var.rig_count) == var.rig_count
+    error_message = "rig_count is a whole number from 1 to 32."
+  }
+}
+
 variable "running" {
   description = "true runs the machine; false stops it (billing only its disk) without destroying it. An apply that would create or replace the machine is refused while this is false: a new machine must never be stopped before its first-boot set-up has finished."
   type        = bool

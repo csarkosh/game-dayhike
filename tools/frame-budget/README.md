@@ -112,6 +112,32 @@ forward in step 4 runs through.
    terraform -chdir=_infra/test-rig-aws-windows apply -var running=false
    ```
 
+## Several rigs at once
+
+One Chrome runs one experiment at a time, so a round of ten or twenty experiments is run on as
+many machines as there are experiments to run side by side: `rig_count` in
+`_infra/test-rig-aws-windows/` (its README, "Several machines at once") makes copies of the rig,
+`terraform output -json forward_commands` prints one forward a machine (local ports 9333, 9334, …),
+and the chain spreads a queue of experiments over those ports, each port taking the next job as it
+comes free:
+
+```bash
+node tools/frame-budget/rig/chain.mjs --queue round.json --ports 9333,9334,9335 --dry-run   # the jobs and the round's length
+node tools/frame-budget/rig/chain.mjs --queue round.json --ports 9333,9334,9335
+```
+
+`round.json` names the base build and the experiments, each with its `against` build, `views`,
+and `tier` (both tiers unless one is named); the header of `rig/chain.mjs` has the shape. A job is
+one `measure.mjs` run with `--remote <port>` and `--out runs/<name>-<tier>.jsonl`, capped by its
+page loads; one that fails (a forward that dropped under it, a page that never came ready) goes
+back on the queue once, its partial rows kept beside the file. `rig/forward.sh` reopens a forward
+that ends, so a dropped tunnel costs a sample, not an evening. A rig is stopped by itself after
+fifteen minutes without a harness on its port once `rig/idle-stop.ps1` has been run on it (once;
+an image keeps it).
+
+`--engine webgpu` forces the engine on every page: for a rig whose Chrome runs on Linux, which the
+game's own rule would put on WebGL2 (`docs/rendering/2026-10-22-parallel-rigs-research.md` §4).
+
 ## Budgets
 
 ```bash

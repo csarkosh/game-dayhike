@@ -21,6 +21,7 @@ variables {
   instance_type          = "g4dn.xlarge"
   image_id               = null
   disk_size_gb           = 50
+  rig_count              = 1
   running                = true
   max_run_hours          = 4
   backstop_stop_schedule = "cron(0 9 * * ? *)"
@@ -291,7 +292,7 @@ run "defaults" {
       ] == [
       { action = "s3:GetObject", resource = "arn:aws:s3:::ec2-windows-nvidia-drivers/*" },
       { action = "s3:GetObject", resource = "arn:aws:s3:::dcv-license.us-east-1/*" },
-      { action = "ssm:PutParameter", resource = "arn:aws:ssm:us-east-1:111122223333:parameter/test-rig/desktop-password" },
+      { action = "ssm:PutParameter", resource = ["arn:aws:ssm:us-east-1:111122223333:parameter/test-rig/desktop-password", "arn:aws:ssm:us-east-1:111122223333:parameter/test-rig/desktop-password-*"] },
     ]
     error_message = "The instance role allows exactly: read the GRID driver bucket, read DCV's licence bucket, write the password parameter."
   }
@@ -365,6 +366,73 @@ run "l4" {
     condition     = aws_subnet.test_rig.availability_zone == "us-east-1a"
     error_message = "Changing the size does not move the subnet."
   }
+}
+
+run "three_rigs" {
+  command = plan
+
+  module {
+    source = "../modules/aws-test-rig-windows"
+  }
+
+  variables {
+    rig_count = 3
+  }
+
+  assert {
+    condition     = length(aws_instance.extra) == 2 && length(aws_ec2_instance_state.extra) == 2
+    error_message = "rig_count = 3 makes two copies of the machine, each with its running/stopped setting."
+  }
+
+  assert {
+    condition = alltrue([
+      for i, m in aws_instance.extra :
+      m.instance_type == aws_instance.test_rig.instance_type &&
+      m.instance_initiated_shutdown_behavior == "stop" &&
+      m.metadata_options[0].http_tokens == "required" &&
+      m.metadata_options[0].instance_metadata_tags == "enabled" &&
+      m.root_block_device[0].encrypted == true &&
+      m.root_block_device[0].volume_size == 50 &&
+      m.tags["Name"] == "test-rig" &&
+      m.tags["rig"] == tostring(i + 1) &&
+      m.tags["max-run-minutes"] == "240" &&
+      m.tags["build"] != aws_instance.test_rig.tags["build"] &&
+      m.user_data != aws_instance.test_rig.user_data
+    ])
+    error_message = "A copy is the first machine over again (size, disk, timer; its image, subnet and identity are the same expressions), tagged rig 1 and 2, with a start-up script and build of its own (its own password parameter)."
+  }
+
+  assert {
+    condition     = aws_instance.test_rig.tags["rig"] == "0"
+    error_message = "The first machine is rig 0."
+  }
+
+  assert {
+    condition     = aws_instance.extra[0].tags["build"] != aws_instance.extra[1].tags["build"] && aws_instance.extra[0].user_data != aws_instance.extra[1].user_data
+    error_message = "Each copy's script names its own parameter (-1, -2), so its user data and its build are its own."
+  }
+
+  assert {
+    condition = contains([
+      for st in jsondecode(aws_iam_role_policy.test_rig.policy).Statement : st.Resource if st.Sid == "WriteDesktopPassword"
+    ][0], "arn:aws:ssm:us-east-1:111122223333:parameter/test-rig/desktop-password-*")
+    error_message = "A copy may write its own password parameter, <name>-<n>."
+  }
+}
+
+run "refuses_copies_while_stopped" {
+  command = plan
+
+  module {
+    source = "../modules/aws-test-rig-windows"
+  }
+
+  variables {
+    rig_count = 2
+    running   = false
+  }
+
+  expect_failures = [aws_instance.extra]
 }
 
 run "ninety_minutes" {

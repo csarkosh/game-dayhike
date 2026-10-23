@@ -21,6 +21,19 @@ output "instance_id" {
   value       = aws_instance.test_rig.id
 }
 
+output "instance_ids" {
+  description = "Every machine, the first and then its copies in order (rig_count): the ids the harness's forwards and chain take."
+  value       = local.instance_ids
+}
+
+output "forward_commands" {
+  description = "One port forward a machine, the first on local port 9333 and each copy on the next: the rig's Chrome (9222) on this computer, for `--remote <port>` and the chain's --ports."
+  value = [
+    for i, id in local.instance_ids :
+    "tools/frame-budget/rig/forward.sh ${id} ${9333 + i}"
+  ]
+}
+
 output "region" {
   description = "Region the machine runs in."
   value       = var.region

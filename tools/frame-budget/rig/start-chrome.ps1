@@ -24,7 +24,11 @@ $arguments = "--remote-debugging-port=9222 --user-data-dir=$profileDir --no-firs
 $action = New-ScheduledTaskAction -Execute $chrome -Argument $arguments
 $principal = New-ScheduledTaskPrincipal -UserId "$env:COMPUTERNAME\hiker" -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero)
-Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -Force | Out-Null
+# Also at hiker's logon: once this has run on a machine, Chrome comes up by itself at every boot (a
+# stopped rig started again answers on 9222 within a minute with nothing sent to it), and an image
+# made of the machine keeps that.
+$atLogon = New-ScheduledTaskTrigger -AtLogOn -User "$env:COMPUTERNAME\hiker"
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $atLogon -Principal $principal -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
 
 Start-Sleep -Seconds 8

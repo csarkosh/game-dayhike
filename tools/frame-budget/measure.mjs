@@ -10,7 +10,7 @@
 //
 //   npm run frame-budget -- --base <url> --tier medium|high --machine <label> [--views a,b] [--pairs 3]
 //       [--against <url2>] [--remote <port>] [--settle 30] [--warm 0] [--rotate 0] [--out <file.jsonl>] [--steadiness]
-//       [--shot]
+//       [--shot] [--engine webgpu]
 //
 //   --base <url>       the build measured (A): the dev server, the live site or a preview channel
 //   --tier <tier>      medium or high, the size and the quality the views are opened at
@@ -27,6 +27,8 @@
 //   --out <file>       the rows' file (tools/frame-budget/runs/<date>-<machine>-<tier>.jsonl by default)
 //   --steadiness       six samples of the first view on --base, and the spread of their means
 //   --shot             a JPEG of each sample's page beside the rows, taken as its frames end
+//   --engine webgpu    the engine forced on every page (`?engine=webgpu`): for a rig whose Chrome runs on
+//                      Linux, which the game's own rule would otherwise put on WebGL2
 //
 // On this Mac the script starts Chrome itself (Google Chrome, or `CHROME`) from a fresh profile,
 // as a window: the frame cap off and WebGPU's timestamps allowed. Each sample is a browser context
@@ -76,6 +78,7 @@ function parseArgs(argv) {
     out: undefined,
     steadiness: false,
     shot: false,
+    engine: undefined,
   };
   const value = (i, arg) => {
     const v = argv[i];
@@ -107,6 +110,7 @@ function parseArgs(argv) {
     else if (arg === "--out") options.out = value(++i, arg);
     else if (arg === "--steadiness") options.steadiness = true;
     else if (arg === "--shot") options.shot = true;
+    else if (arg === "--engine") options.engine = value(i++, arg);
     else throw new Error(`unknown option ${arg}`);
   }
   for (const required of ["base", "tier", "machine"]) {
@@ -115,6 +119,7 @@ function parseArgs(argv) {
   if (!Object.hasOwn(TIER_SIZES, options.tier)) throw new Error(`--tier must be ${Object.keys(TIER_SIZES).join(" or ")}, got ${options.tier}`);
   if (options.remote !== undefined && options.warm > 0) throw new Error("--warm is for this Mac only, not with --remote");
   if (options.steadiness && options.against !== undefined) throw new Error("--steadiness measures one base, not with --against");
+  if (options.engine !== undefined && options.engine !== "webgpu" && options.engine !== "webgl2") throw new Error(`--engine is webgpu or webgl2, not ${options.engine}`);
   return options;
 }
 
@@ -207,8 +212,8 @@ async function awaitReady(page, name) {
 
 /** One sample: a fresh page at the view, settled, its frames timed; the page closed after, and on a
  * failure too. With `shotPath`, the page's JPEG as the frames end. */
-async function sample(session, { tier, base, game, view, still, settle, shotPath }) {
-  const url = viewUrl(base, game, tier, view, still, { gpuTime: true });
+async function sample(session, { tier, base, game, view, still, settle, shotPath, engine }) {
+  const url = viewUrl(base, game, tier, view, still, { gpuTime: true, engine });
   const { page, close } = await openView(session.browser, session.port, tier, url);
   try {
     const readyS = await awaitReady(page, view.name);
@@ -368,7 +373,7 @@ async function main() {
     if (options.warm > 0) {
       const { view, still } = views[0];
       process.stdout.write(`warming ${options.warm} s on ${view.name} (${options.tier})\n`);
-      const warm = await openView(session.browser, session.port, options.tier, viewUrl(options.base, stills.game, options.tier, view, still, { gpuTime: true }));
+      const warm = await openView(session.browser, session.port, options.tier, viewUrl(options.base, stills.game, options.tier, view, still, { gpuTime: true, engine: options.engine }));
       try {
         await awaitReady(warm.page, view.name);
         await sleep(options.warm * 1000);
@@ -383,7 +388,7 @@ async function main() {
       const base = bases[build];
       process.stdout.write(`[${i + 1}/${plan.length}] ${view.name} ${build} (${base})\n`);
       const shotPath = options.shot ? `${stem}-${view.name}-${build}${nth}.jpg` : undefined;
-      const r = await sample(session, { tier: options.tier, base, game: stills.game, view, still, settle: options.settle, shotPath });
+      const r = await sample(session, { tier: options.tier, base, game: stills.game, view, still, settle: options.settle, shotPath, engine: options.engine });
       const row = rowOf(r, { machine: options.machine, about, base, build, tier: options.tier, view, remote });
       appendFileSync(out, `${JSON.stringify(row)}\n`);
       rows.push(row);

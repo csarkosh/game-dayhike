@@ -27,6 +27,7 @@ Resources and data sources are the module's, at `module.test_rig.<address>`.
 | Resource | Why |
 |---|---|
 | `aws_instance.test_rig` | `g4dn.xlarge` (one NVIDIA T4) by default, or `g6.xlarge` (one L4). Windows Server 2025 from AWS's public image, 50 GB gp3 boot disk, encrypted and deleted with the machine. IMDSv2 required. Shutting down from inside Windows stops it. |
+| `aws_instance.extra[*]`, `aws_ec2_instance_state.extra[*]` | The copies of the machine beyond the first, `rig_count - 1` of them, and their running/stopped settings; see [Several machines at once](#several-machines-at-once). None by default. |
 | `aws_ec2_instance_state.test_rig` | Running or stopped (`running`), without destroying anything; made again after any change to the machine, so the change cannot leave it in the wrong state (see [What a change does](#what-a-change-does-to-the-machine)). |
 | `terraform_data.setup_script` | The start-up script's SHA-256, with the user data around it: a change replaces the machine. The machine carries it (with `vpc_cidr`) as the tag `build`, and `data.aws_instances.existing` reads that tag back from AWS at every plan, so a replacement is refused while `running = false`. |
 | `terraform_data.region` | The region of the first apply; a plan in another region is refused. |
@@ -221,11 +222,41 @@ its public address, which AWS takes away while it is stopped, comes from its sub
 (the AWS provider replaces a machine whose `associate_public_ip_address` reads back differently).
 Step 13 of the first run checks it. What `destroy` leaves behind is listed above.
 
+### Several machines at once
+
+`rig_count` (1 by default) runs copies of the machine beside it, one an experiment, so a round of
+the frame budget's experiments runs side by side (`tools/frame-budget/rig/chain.mjs` spreads a
+queue of them over the forwarded ports). The first machine is the machine as it has always been:
+its address in state, its tags, its outputs and its password parameter are unchanged, and a
+state made before `rig_count` existed plans no change on it. Each copy
+(`module.test_rig.aws_instance.extra[n-1]`, tagged `rig = n`) is the first over again: the same
+image, start-up script, size, subnet, security group and identity, its own disk and its own
+Chrome. Every machine starts and stops with `running`, carries the same `max-run-minutes` tag,
+and is stopped by the same daily backstop (its schedule's target lists every id). A copy writes
+its desktop password to `<password_parameter>-n`; the first keeps `<password_parameter>`.
+
+```bash
+terraform apply -var rig_count=4                 # three copies, each running its first-boot set-up (about 10 minutes)
+terraform output -json instance_ids              # the first, then the copies in order
+terraform output -json forward_commands          # one forward a machine: 9333, 9334, …
+terraform apply -var rig_count=4 -var running=false   # all stopped
+terraform apply                                  # back to one machine: the copies are destroyed, disks and all
+```
+
+Raising `rig_count` creates machines, which is refused while `running = false` as a first machine
+is (a Windows machine stopped in its first boot may never boot again): apply with `running = true`,
+wait for every copy's `verified`, then stop them. The copies are created from the public image and
+run the full set-up unless `image_id` names an image made from a set-up machine (below), in which
+case they are ready in the time of a boot. Lowering it destroys the copies above the new count
+without touching the first. The on-demand quota for G instances (768 vCPUs a region on this
+account) allows 192 of `g4dn.xlarge`; `rig_count` stops at 32.
+
 ### What a change does to the machine
 
 | Change | What happens |
 |---|---|
 | `running` | The machine is started or stopped. |
+| `rig_count` | Raised: copies of the machine are created (refused while `running = false`), each running its first-boot set-up unless `image_id` is set; the backstop's target and the role's inline policy change in place. Lowered: the copies above the new count are destroyed, disks and all; the first machine is never touched. See [Several machines at once](#several-machines-at-once). |
 | `instance_type` | The provider stops the machine, changes its size and **starts it again**, whatever `running` says; the running/stopped setting is then applied again (it is re-made after any change to the machine), so a machine meant to be stopped ends stopped. The disk is kept. |
 | `max_run_hours` | The instance tag `max-run-minutes` changes in place. Nothing is restarted or replaced; the new limit applies from the machine's next boot. The running/stopped setting is applied again, as above. |
 | `disk_size_gb` | The disk grows in place, running or stopped (Windows' partition then needs extending by hand). A smaller size is refused by AWS. |

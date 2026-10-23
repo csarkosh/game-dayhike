@@ -6,6 +6,16 @@ output "instance_id" {
   value       = module.test_rig.instance_id
 }
 
+output "instance_ids" {
+  description = "Every machine, the first and then its copies in order (rig_count)."
+  value       = module.test_rig.instance_ids
+}
+
+output "forward_commands" {
+  description = "One port forward a machine: the first on local port 9333, each copy on the next."
+  value       = module.test_rig.forward_commands
+}
+
 output "region" {
   description = "Region the machine runs in."
   value       = module.test_rig.region

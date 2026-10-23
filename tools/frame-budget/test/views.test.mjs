@@ -29,4 +29,10 @@ describe("views", () => {
   it("holds the two standards' sizes", () => {
     expect(TIER_SIZES).toEqual({ medium: { width: 1470, height: 956 }, high: { width: 1512, height: 982 } });
   });
+  it("forces the engine on the URL only when asked", () => {
+    const forest = stills.stills.find((s) => s.name === "forest");
+    const view = { name: "forest", still: "forest" };
+    expect(viewUrl("https://a.example/dayhike/", stills.game, "high", view, forest, { gpuTime: true })).not.toContain("engine=");
+    expect(viewUrl("https://a.example/dayhike/", stills.game, "high", view, forest, { gpuTime: true, engine: "webgpu" })).toMatch(/&gpuTime&engine=webgpu$/);
+  });
 });
