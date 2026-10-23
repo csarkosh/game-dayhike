@@ -1175,11 +1175,17 @@ uniform vec4 terrainSwardBand;
     this._roadCenter?.dispose();
     this._trailTable?.dispose();
     this._featureTex?.dispose();
-    this._arrays.dispose();
+    // Babylon registers a plugin with its material in the base constructor,
+    // before this constructor's body runs: a constructor that threw loading
+    // a texture or the arrays left a plugin registered with these unset, and
+    // the material's disposal (an engine given up on at boot, 2026-10-19,
+    // telemetry) must not throw a second error over the first.
+    const own = this as unknown as { _arrays?: GroundArrays; _textures?: readonly Texture[] };
+    own._arrays?.dispose();
     // Scene disposal already reclaims these (every Texture registers itself in
     // scene.textures); this covers the explicit material.dispose(_, true) path.
     if (!forceDisposeTextures) return;
-    for (const texture of this._textures) texture.dispose();
+    for (const texture of own._textures ?? []) texture.dispose();
   }
 
   override getCustomCode(shaderType: string): Nullable<{ [pointName: string]: string }> {

@@ -276,6 +276,20 @@ describe("feature paint", () => {
     expect(disposeSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("a plugin whose constructor threw disposes with its material without throwing again", () => {
+    // Babylon registers the plugin in the base constructor; the arrays' loader
+    // throwing after that leaves a half-built plugin on the material, which the
+    // material's disposal still visits (2026-10-19: `_arrays.dispose` of
+    // undefined at an engine given up on at boot).
+    const mat = new PBRMaterial("half", scene);
+    const loaderFailed = new Error("ground arrays: no decoder");
+    expect(() => attachTerrainTexture(scene, mat, { groundArrays: () => { throw loaderFailed; } })).toThrow(loaderFailed);
+    const plugin = mat.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin;
+    expect(plugin).toBeDefined();
+    expect(() => plugin.dispose(true)).not.toThrow();
+    expect(() => mat.dispose(true, true)).not.toThrow();
+  });
+
   it("enableFeaturePaint reads the active variant's trail graph and is a no-op without one", () => {
     setActiveTerrainVariant("montane");
     const bare = new PBRMaterial("f4", scene);
