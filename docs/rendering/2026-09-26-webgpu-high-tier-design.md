@@ -697,6 +697,16 @@ gates' prerequisite, so the WebGPU switch waits on that work. With the swap:
   polling the dead engine reported a failure of its own for every billboard
   (seven `console.error` rows for one GPU error in telemetry, 2026-10-19);
   now one failure is one report.
+- As built (2026-10-22): the GLSL shaders the WebGL2 renderer loads lazily
+  (the shadow map's, the depth pass's, the post chain's: on the WebGPU
+  engine those are WGSL, and never fetched) are fetched ahead at idle once a
+  hike started on WebGPU has its world in (`webgl2Shaders.ts`, from
+  `app.ts`), each as the literal import Babylon's own would make, so they
+  are in the page's module map when a rebuild on WebGL2 asks for them. The
+  rebuild of 2026-10-19 ran while the network was down and its imports
+  failed, which left the scene without shadows; now it needs no network.
+  A test builds the renderer at every tier and fails when it loads a module
+  the list does not name.
 - Where storage refuses the record, the tab's URL is pinned to
   `engine=webgl2` as today, so a reload stays on WebGL2. Until then the
 reload paths stay as built, reachable only with `?engine=webgpu` behind the off

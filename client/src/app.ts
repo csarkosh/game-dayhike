@@ -19,6 +19,7 @@ import {
   endMistShare,
 } from "./game/endScene.js";
 import { READY_MAX_MS, startReady } from "./game/startReady.js";
+import { loadWebGl2Shaders, pageIdle, prefetchWebGl2Shaders } from "./game/webgl2Shaders.js";
 import { ENGAGE_MAX_MS, whenEngaged } from "./game/engageWait.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
 import { navigateToLanding } from "./game/router.js";
@@ -2310,6 +2311,16 @@ function buildGame(
   const ready = firstBuild.then(() =>
     startReady({ scene: renderer.scene, forestReady: renderer.forestReady, reveal: firstWholeFrame, progress, maxMs: READY_MAX_MS }),
   );
+  // On a WebGPU engine, the GLSL shaders the WebGL2 renderer loads lazily are
+  // fetched ahead once the world is in, at idle, so a rebuild on WebGL2 after
+  // a failure of the engine (`answerFailure`) needs no network
+  // (`webgl2Shaders.ts`: on 2026-10-19 the network was down when one ran).
+  /** Stops the fetch ahead where the hike ends first. */
+  let stopPrefetch = (): void => undefined;
+  void ready.then(() => {
+    if (disposed || broken || !renderer.engine.isWebGPU) return;
+    stopPrefetch = prefetchWebGl2Shaders({ idle: pageIdle, load: () => loadWebGl2Shaders(), log: (line) => console.info(line) });
+  });
   // A look named in the URL (`?cmd=seed hollow;time 22;escape`) is called once the world is in,
   // so a link opens on its scene; on a client it says whose it is to call, as the typed one does.
   void ready.then(() => {
@@ -2668,6 +2679,7 @@ function buildGame(
       netgraph.dispose();
       if (landingTimer !== null) clearTimeout(landingTimer);
       endRevealHold();
+      stopPrefetch();
       // Before anything of the engine goes: a disposed engine is not a
       // failing one.
       engineBindings.unwatch();
