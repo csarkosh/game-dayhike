@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   createAmbientAudio, DEFAULT_VOLUME, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
   WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
@@ -294,6 +294,23 @@ describe("createAmbientAudio", () => {
     expect([listener.forwardX.value, listener.forwardY.value, listener.forwardZ.value])
       .toEqual([0.5, -0.25, -0.75]);
     expect([listener.upX.value, listener.upY.value, listener.upZ.value]).toEqual([0, 1, 0]);
+    audio.dispose();
+  });
+
+  it("setListener uses the listener's setters where it has no AudioParams (Firefox)", () => {
+    // Firefox's AudioListener has none of the nine parameters, only the
+    // older `setPosition` and `setOrientation`; writing `positionX.value`
+    // threw on the first frame and no Firefox player got past the loading
+    // screen (telemetry, 2026-10-13 and 2026-10-21).
+    const { ctx } = fakeCtx();
+    const setPosition = vi.fn();
+    const setOrientation = vi.fn();
+    (ctx as unknown as { listener: unknown }).listener = { setPosition, setOrientation };
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    expect(() => audio.setListener(1, 2, -3, 0.5, -0.25, -0.75, 0, 1, 0)).not.toThrow();
+    expect(setPosition).toHaveBeenCalledWith(1, 2, -3);
+    expect(setOrientation).toHaveBeenCalledWith(0.5, -0.25, -0.75, 0, 1, 0);
     audio.dispose();
   });
 

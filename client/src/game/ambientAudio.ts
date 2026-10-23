@@ -342,6 +342,44 @@ export type AmbientAudio = {
   dispose(): void;
 };
 
+/** The listener as Firefox has it: no AudioParams, the two setters alone. */
+type ListenerWithSetters = {
+  positionX?: AudioParam;
+  setPosition(x: number, y: number, z: number): void;
+  setOrientation(fx: number, fy: number, fz: number, ux: number, uy: number, uz: number): void;
+};
+
+/**
+ * The listener placed at (x, y, z) facing (fx, fy, fz) with (ux, uy, uz) up,
+ * in Web Audio's frame. Through the nine AudioParams where the browser has
+ * them; Firefox (157 and 158, 2026-10) has none on `AudioListener`, only the
+ * older `setPosition` and `setOrientation`, and writing `positionX.value`
+ * there threw on the first frame, so no Firefox player got past the loading
+ * screen.
+ */
+export function placeListener(
+  listener: AudioListener,
+  x: number, y: number, z: number,
+  fx: number, fy: number, fz: number,
+  ux: number, uy: number, uz: number,
+): void {
+  const l = listener as unknown as ListenerWithSetters;
+  if (l.positionX === undefined) {
+    l.setPosition(x, y, z);
+    l.setOrientation(fx, fy, fz, ux, uy, uz);
+    return;
+  }
+  listener.positionX.value = x;
+  listener.positionY.value = y;
+  listener.positionZ.value = z;
+  listener.forwardX.value = fx;
+  listener.forwardY.value = fy;
+  listener.forwardZ.value = fz;
+  listener.upX.value = ux;
+  listener.upY.value = uy;
+  listener.upZ.value = uz;
+}
+
 /**
  * Three synthesized ambience layers on gain nodes — not an audio engine. Rain
  * patter is band-passed noise whose centre falls as the rain gets heavier and
@@ -904,16 +942,7 @@ export function createAmbientAudio(
       ear.z = z;
       ear.fx = fx; ear.fy = fy; ear.fz = fz;
       ear.ux = ux; ear.uy = uy; ear.uz = uz;
-      const l = ctx.listener;
-      l.positionX.value = x;
-      l.positionY.value = y;
-      l.positionZ.value = z;
-      l.forwardX.value = fx;
-      l.forwardY.value = fy;
-      l.forwardZ.value = fz;
-      l.upX.value = ux;
-      l.upY.value = uy;
-      l.upZ.value = uz;
+      placeListener(ctx.listener, x, y, z, fx, fy, fz, ux, uy, uz);
     },
     dispose() {
       // Before the context goes: a loop's sources would otherwise play on
