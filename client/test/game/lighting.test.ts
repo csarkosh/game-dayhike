@@ -47,7 +47,7 @@ vi.mock("../../src/game/skyDome.js", async (importOriginal) => {
 });
 
 import {
-  cascadeCasters, createLighting, DEFAULT_HOUR, FAR_CASCADE_REACH_M, SHADOW_FLOOR, SKY_WAIT_WARN_MS, SUN_LIGHT_SIZE_UV, farCascadeIndex, farCasters, shadowFilterFor, sunAltitudeDeg,
+  cascadeCasters, createLighting, DEFAULT_HOUR, FAR_CASCADE_REACH_M, SHADOW_FLOOR, SHADOW_INVISIBLE_DARKNESS, SHADOW_INVISIBLE_SUN, SKY_WAIT_WARN_MS, SUN_LIGHT_SIZE_UV, farCascadeIndex, farCasters, shadowFilterFor, shadowMapDrawn, sunAltitudeDeg,
   sunShadowDarkness, whenSkyHeld,
   type Lighting, type LightingOptions,
 } from "../../src/game/lighting.js";
@@ -180,6 +180,26 @@ describe("createLighting", () => {
     const source = readFileSync(new URL("../../src/game/lighting.ts", import.meta.url), "utf8");
     expect(source).toContain("const transform = shadows.getCascadeTransformMatrix(layer);");
     expect(source).toContain("return cascadeCasters(list, length, nearOnly, layer === farCascade, planes, (perCascade[layer] ??= []));");
+  });
+
+  it("draws the shadow map only while a shadow can show: not under full cloud, not with the sun down", () => {
+    // A clear noon: drawn. The floor's darkness with the sun up: drawn.
+    expect(shadowMapDrawn(SHADOW_FLOOR, 1)).toBe(true);
+    expect(shadowMapDrawn(0.9, 0.01)).toBe(true);
+    // Full cloud (the rain and eerie presets reach a darkness of 1): the shadow is gone, the map is not drawn.
+    expect(shadowMapDrawn(1, 1)).toBe(false);
+    expect(shadowMapDrawn(SHADOW_INVISIBLE_DARKNESS, 1)).toBe(false);
+    expect(sunShadowDarkness({ ...WEATHER_PRESETS.rain })).toBe(1);
+    expect(shadowMapDrawn(sunShadowDarkness(WEATHER_PRESETS.rain), 1)).toBe(false);
+    // Night: the sun's intensity is nothing, the map is not drawn.
+    expect(shadowMapDrawn(SHADOW_FLOOR, 0)).toBe(false);
+    expect(shadowMapDrawn(SHADOW_FLOOR, SHADOW_INVISIBLE_SUN)).toBe(false);
+    // Wired at the weather's apply: the rate set from the verdict, drawn once more as it goes dark, and only on a change.
+    const source = readFileSync(new URL("../../src/game/lighting.ts", import.meta.url), "utf8");
+    expect(source).toContain("const rate = shadowMapDrawn(darkness, s.sunIntensity)");
+    expect(source).toContain("? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME");
+    expect(source).toContain(": RenderTargetTexture.REFRESHRATE_RENDER_ONCE;");
+    expect(source).toContain("if (sunMap.refreshRate !== rate) sunMap.refreshRate = rate;");
   });
 
   it("puts the soft shadow's filter in Babylon's store with its taps written out, where the soft filter is chosen", () => {
