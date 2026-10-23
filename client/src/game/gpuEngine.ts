@@ -382,6 +382,9 @@ export async function createWebGpuEngine(
     // On this engine's own cache and draw, which `initAsync` made; a draw is
     // left out only inside the scope its renderer opens.
     installPipelines(engine, options.pipelines ?? "async");
+    // Babylon's WebGPU fast path: bind groups and vertex state re-set only
+    // when they change between draws, not on every draw.
+    engine.compatibilityMode = false;
     // Only once the engine stands: a failed start leaves Babylon's defaults,
     // and neither switch changes anything on WebGL2, where every material is
     // GLSL.

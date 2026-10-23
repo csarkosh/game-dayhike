@@ -131,6 +131,17 @@ describe("watchWebGpu", () => {
     expect(start).toContain("    giveUpRestore(engine);");
   });
 
+  it("puts every WebGPU engine that stands in Babylon's non-compatibility mode, after its pipelines are installed", () => {
+    // The fast path re-sets bind groups and vertex state only when they change
+    // between draws: 4.6 to 7.4 ms a frame on medium and 8.2 to 10 on high on
+    // the rig (2026-10-22), the picture unchanged. Set once the engine stands,
+    // after `installPipelines`, which wraps the engine's own draw.
+    const src = readFileSync(new URL("../../src/game/gpuEngine.ts", import.meta.url), "utf8");
+    const stood = src.slice(src.indexOf("    const engine = await Promise.race([starting, deadline]);"), src.indexOf("    PBRBaseMaterial.ForceGLSL = true;"));
+    expect(stood).toContain('    installPipelines(engine, options.pipelines ?? "async");');
+    expect(stood.indexOf("    engine.compatibilityMode = false;")).toBeGreaterThan(stood.indexOf("installPipelines(engine"));
+  });
+
   it("notifies a lost device before Babylon starts its restore, which it looks up on the engine (a canary on the installed engine)", () => {
     const src = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
     // The restore is the engine's own `_restoreEngineAfterContextLost`, looked
