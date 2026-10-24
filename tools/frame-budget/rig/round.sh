@@ -71,6 +71,10 @@ for i in "${!ids[@]}"; do
   ports+=("$port")
 done
 list=$(IFS=,; echo "${ports[*]}")
+# The Mac drives every sample: asleep, it freezes the harness mid-sample and drops every forward
+# (2026-10-24: the lid closed a minute into a round, nothing measured). `caffeinate` holds off idle
+# sleep for the round's life; a lid closed on battery still sleeps, so a round wants the lid open.
+caffeinate -i -w $$ &
 echo "forwards on $list; the chain waits for each Chrome to answer"
 set +e
 node tools/frame-budget/rig/chain.mjs --queue "$queue" --ports "$list" --retries "$retries"
