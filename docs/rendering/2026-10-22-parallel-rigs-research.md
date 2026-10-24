@@ -49,7 +49,7 @@ start call on the Air.
 | … to the OS reachable | 70 s (Session Manager online) | 163 s (Windows specialised), 182 s (SSH over IAP) | about 60 s (Session Manager online) | 5 s |
 | … to the set-up finished (driver, Chrome) | **613 s** | **624 s** | **141 s** (Chrome and the Vulkan loader installed; the driver was in the image) | 41 s to build the image once, then nothing |
 | … to Chrome answering on 9222 | about 660 s (started by hand with Run Command; the first start of a fresh profile takes longer than the script's 8 s wait) | 649 s | 141 s | 1 s (but see §5) |
-| From a prepared image to Chrome answering | **355 s** (running 9 s, Session Manager online 173 s, Chrome 355 s: a new machine's first boot runs EC2Launch's own tasks before the logon) | **55 s** (create 13 s, SSH 40 s, Chrome 55 s) | not reached: the image was still being made when the research ended (next row); a copy's first boot is the 20 s boot below plus cloud-init's first-boot work, so about a minute | not applicable |
+| From a prepared image to Chrome answering | **355 s** from an image taken without sysprep (running 9 s, Session Manager online 173 s, Chrome 355 s: a new machine's first boot runs EC2Launch's own tasks before the logon); **467 s** from the sysprepped image the root now uses (a `rig_count` copy on 2026-10-24: Session Manager online 376 s, its password written 444 s, Chrome started by the logon trigger 467 s, answering through a fresh forward 587 s; sysprep's specialize pass and a reboot come before the logon). Once per copy's creation; after that the copy is a stopped machine, the row below | **55 s** (create 13 s, SSH 40 s, Chrome 55 s) | not reached: the image was still being made when the research ended (next row); a copy's first boot is the 20 s boot below plus cloud-init's first-boot work, so about a minute | not applicable |
 | Stopped machine started to Chrome answering | **about 45 s** (running 9 s, Session Manager 25 s, Chrome's logon task ran 20 s after the start) | **66 s** (started 25 s, SSH 56 s, Chrome 66 s) | **20 s** (running 9 s, the kernel and userspace 18 s, Chrome's service listening 20 s after the start call; Session Manager online 28 s) | not applicable: a container is new every time |
 | Stopping the machine | **6 min 37 s** | 27 s (and 43 s) | **6 min 44 s** | 0 |
 | Making the image | **34 min 12 s** (a 50 GB Windows volume's first snapshot) | 6 min 38 s | **over 15 minutes** (the 80 GB volume's snapshot was at 17 % after 14 min, and the research ended before it finished) | the image build, 41 s |
@@ -269,19 +269,31 @@ Not recommended, and why:
 
 What was built for this is listed under "As built" below: the `rig_count` copies, the chain over
 N ports, the self-reopening forward, the idle watchdog, the engine override, and Chrome's logon
-trigger in the start script. None of it has been applied to a machine.
+trigger in the start script.
 
-To do, with the owner's go-ahead, in this order:
+The rig itself now carries Chrome's logon trigger and the idle watchdog, and an image of it,
+`test-rig-20261023` (`ami-0b574292e2419a6cf`, made 2026-10-23 after a sysprep, as the root's
+README describes), is the root's `image_id` in its git-ignored `terraform.tfvars`: a copy starts
+from it, set up, and skips the ten-minute first-boot set-up. The rig's own next boot is a first
+boot from the sysprep: it makes a new desktop password and verifies itself again before Chrome
+comes up. That boot found what the README's image procedure now says: sysprep's answer file turns
+Remote Desktop back on, so a machine from this image fails its check ("Remote Desktop is on") on
+its first boot and is marked verified only on its second (nothing is exposed meanwhile, as the
+security group admits no inbound connection). The next image, made with `done-closed` removed
+as well, closes it again in the first boot; a snapshot after the first is incremental, so that
+image takes minutes rather than the first one's 34.
 
-1. Run `rig/start-chrome.ps1` (now with the logon trigger) and `rig/idle-stop.ps1` on today's rig
-   (two Run Commands), and make an image of it (`image_id`), so that every later machine starts
-   ready; the copies then skip the ten-minute set-up.
+To do, in this order:
+
+1. Remake the image with the README's procedure (`done-user`, `done-closed`, `verified` removed,
+   then sysprep), set the new id as `image_id`, deregister `test-rig-20261023` and delete its
+   snapshot.
 2. `terraform apply -var rig_count=10` on a round's day, then `running=false` at its end; the
    ten forwards from `terraform output forward_commands`, each in its own terminal (or one
    process manager), and the round as a queue file for `chain.mjs`.
-3. Optionally, a Session Manager preferences document with `idleSessionTimeout` at 60 (its
+2. Optionally, a Session Manager preferences document with `idleSessionTimeout` at 60 (its
    maximum), if a forward is ever seen to die idle; none did here.
-4. Modal's two follow-ups (§5), when there is an evening for them.
+3. Modal's two follow-ups (§5), when there is an evening for them.
 
 ## As built
 
