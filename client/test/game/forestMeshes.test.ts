@@ -608,6 +608,31 @@ describe("createForestMeshes under NullEngine", () => {
     expect(new Set(forest.casterMeshes)).toEqual(expected);
   });
 
+  it("exposes exactly the giants' LOD1 bucket as the near shadow casters (2026-10-23)", () => {
+    // LOD1 came back as a near-only caster: without it a tree cast nothing
+    // until the player was within LOD0's 36 m, and its canopy's shadow
+    // switched on over the trunk as they walked up — see the comment at
+    // `casterMeshes.push` in `adoptSpecies`.
+    const { scene, assets, forest } = build();
+    const expected = new Set<Mesh>();
+    for (const species of assets.giants) {
+      const lodRoot = species.lods[1];
+      expected.add(lodRoot);
+      for (const child of lodRoot.getChildMeshes(false)) expected.add(child as Mesh);
+    }
+    for (const name of ["s1_lod1_bark_cedar", "s1_lod1_bark_cedar.s1_lod1_canopy"]) {
+      const clone = scene.getMeshByName(name) as Mesh | null;
+      expect(clone, name).not.toBeNull();
+      expected.add(clone!);
+    }
+    expect(expected.size).toBe(6);
+    expect(new Set(forest.nearCasterMeshes)).toEqual(expected);
+    // Disjoint from the every-cascade casters, and emptied with them on dispose.
+    for (const m of forest.nearCasterMeshes) expect(forest.casterMeshes).not.toContain(m);
+    forest.dispose();
+    expect(forest.nearCasterMeshes.length).toBe(0);
+  });
+
   it("lists the giants' and the saplings' LOD1 and LOD2 buckets and the six billboards for the lake's reflections, and empties them on dispose", () => {
     const { scene, assets, forest } = build();
     const bucketsAt = (lod: number): Set<Mesh> => {

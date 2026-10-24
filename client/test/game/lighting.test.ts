@@ -143,6 +143,8 @@ describe("createLighting", () => {
     const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
     expect(renderer.match(/lighting\.addShadowMesh\(mesh, "near"\)/g)).toHaveLength(3);
     expect(renderer).toContain('lighting.addShadowMesh(clutterMeshes.casterMeshes[clutterCastersRegistered] as Mesh, "near");');
+    // And the giants' LOD1 buckets (2026-10-23): near casters, so a tree casts before the player is within LOD0's 36 m.
+    expect(renderer).toContain('lighting.addShadowMesh(forestMeshes.nearCasterMeshes[forestNearCastersRegistered] as Mesh, "near");');
     // The lighting registers a near caster as such, and forgets it with the mesh.
     const source = readFileSync(new URL("../../src/game/lighting.ts", import.meta.url), "utf8");
     expect(source).toContain('addShadowMesh(mesh, reach = "far") {');
