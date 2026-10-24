@@ -221,6 +221,12 @@ frame, and the two bushes at 1.7 million of those.
   42) and the middle level to 70 m (from 85), the seams 30 to 36 m and 61
   to 70 m: 1.3 ms. The giants' full models are the forest's shadow casters,
   so the trees cast to 36 m.
+  *Amended 2026-10-23:* the giants' LOD1 buckets cast again, as near casters (every
+  cascade but a long reach's farthest), so a tree casts out to LOD1's edge; without them a
+  tree cast nothing until the player was within 36 m and its canopy's shadow switched on over
+  the trunk as they walked up. The caster pass is culled per cascade and drawn every second
+  frame since the second pass (`2026-10-23-frame-rate-pass-two-design.md`), so the LOD1 draws
+  cost a fraction of the 2 ms measured here.
 
 | Cap on, at the laptop window | Floor cover as it was | at 0.85 | at 0.7 |
 |---|---|---|---|

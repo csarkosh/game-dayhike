@@ -466,14 +466,21 @@ function loadMoss(scene: Scene, load: BarkTextureLoader, keep: Texture[]): { tex
 export type ForestMeshes = {
   update(camX: number, camZ: number): void;
   /**
-   * The LOD0 bucket meshes — the complete forest shadow-caster set. LOD1,
-   * LOD2, understory and impostors never cast (LOD1 dropped in a performance
-   * check — see the comment at the `casterMeshes.push`
-   * call in `adoptSpecies`). In production the GLBs load asynchronously, so
-   * this array starts empty and fills once; callers that register casters
-   * must watch its length, not snapshot it at creation.
+   * The giants' LOD0 bucket meshes: the casters that reach every cascade.
+   * LOD2, understory and impostors never cast (see the comment at the
+   * `casterMeshes.push` call in `adoptSpecies`). In production the GLBs load
+   * asynchronously, so this array starts empty and fills once; callers that
+   * register casters must watch its length, not snapshot it at creation.
    */
   readonly casterMeshes: readonly Mesh[];
+  /**
+   * The giants' LOD1 bucket meshes, the near-only casters (`ShadowReach`):
+   * every cascade but a long reach's farthest. Append-only as the GLBs land,
+   * as `casterMeshes` is. A tree cast its shadow only once it was within
+   * LOD0's 36 m (2026-10-18); with these it casts out to LOD1's edge, so its
+   * canopy's shadow does not switch on as the player walks up to it.
+   */
+  readonly nearCasterMeshes: readonly Mesh[];
   /** The giants' and the saplings' LOD2 bucket meshes, append-only as the
    * GLBs land, as `casterMeshes` is: the trees the lake's mirror draws on
    * their own material, 70 to 120 m out. */
@@ -1427,6 +1434,7 @@ export function createForestMeshes(
   const collector = createBandCollector(seed);
 
   const casterMeshes: Mesh[] = [];
+  const nearCasterMeshes: Mesh[] = [];
   const lod2Meshes: Mesh[] = [];
   const impostorMeshes: Mesh[] = [];
   const containers: AssetContainer[] = [];
@@ -1840,17 +1848,22 @@ export function createForestMeshes(
       }
     }
 
-    // Only the GIANTS' LOD0 (≤36 m since 2026-10-18, LOD_RING_0) casts shadows — LOD1 was
-    // dropped from the caster set in a performance check:
-    // LOD1 casting measured ~2 ms of cascade re-render there, and its
-    // shadows are unreadable in closed-canopy interiors anyway (dense
-    // overlapping canopy already self-shadows the ground more than any one
-    // tree's shadow map would add). LOD2, understory and impostors still
-    // never cast. Saplings (this same function, kind "sapling") and deadwood
-    // (adoptBucket, below) are deliberately excluded too, for the same
-    // reason: they are small, numerous, and sit under the giants'
-    // own shadows, so the shadow-map cost is not worth paying.
-    if (kind === "giant") casterMeshes.push(...sets.flatMap((set) => set.lods[0]));
+    // The GIANTS cast: LOD0 (≤36 m, LOD_RING_0) into every cascade, LOD1
+    // (to LOD_RING_1) as a near caster, left out of a long reach's farthest
+    // cascade. LOD1 was dropped from the caster set on 2026-10-18 (~2 ms of
+    // cascade re-render then) and put back on 2026-10-23: without it a tree
+    // cast nothing until the player was within 36 m, and its canopy's shadow
+    // switched on over the trunk as they walked up (the owner's recording);
+    // the caster pass has since been culled per cascade and halved in rate,
+    // so the LOD1 draws cost a fraction of what they did. LOD2, understory
+    // and impostors still never cast. Saplings (this same function, kind
+    // "sapling") and deadwood (adoptBucket, below) are deliberately excluded
+    // too: they are small, numerous, and sit under the giants' own shadows,
+    // so the shadow-map cost is not worth paying.
+    if (kind === "giant") {
+      casterMeshes.push(...sets.flatMap((set) => set.lods[0]));
+      nearCasterMeshes.push(...sets.flatMap((set) => set.lods[1]));
+    }
     // The lake's mirror draws the LOD2 buckets on their own material.
     lod2Meshes.push(...sets.flatMap((set) => set.lods[2]));
 
@@ -2513,6 +2526,7 @@ export function createForestMeshes(
     },
     view,
     casterMeshes,
+    nearCasterMeshes,
     lod2Meshes,
     impostorMeshes,
     impostorBakes() {
@@ -2553,6 +2567,7 @@ export function createForestMeshes(
       // overlap with the loop above is harmless.
       for (const container of containers) container.dispose();
       casterMeshes.length = 0;
+      nearCasterMeshes.length = 0;
       lod2Meshes.length = 0;
       impostorMeshes.length = 0;
       species = null;

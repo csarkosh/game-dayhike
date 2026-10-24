@@ -2628,6 +2628,8 @@ function buildRenderer(
   // below registers new entries as they appear — append-only, so a plain
   // high-water mark is enough.
   let forestCastersRegistered = 0;
+  /** The same high-water mark for the giants' LOD1 buckets, the near casters. */
+  let forestNearCastersRegistered = 0;
 
   // Ground clutter rides the same guard as the forest above it: hand-authored
   // levels have no forest and get no grass, rocks, boulders, driftwood or
@@ -3159,6 +3161,10 @@ function buildRenderer(
       if (forestMeshes !== null) {
         for (; forestCastersRegistered < forestMeshes.casterMeshes.length; forestCastersRegistered++) {
           lighting.addShadowMesh(forestMeshes.casterMeshes[forestCastersRegistered] as Mesh);
+        }
+        // The giants' LOD1 buckets: near casters, out of a long reach's farthest cascade (`ShadowReach`).
+        for (; forestNearCastersRegistered < forestMeshes.nearCasterMeshes.length; forestNearCastersRegistered++) {
+          lighting.addShadowMesh(forestMeshes.nearCasterMeshes[forestNearCastersRegistered] as Mesh, "near");
         }
       }
       // Clutter's casters are its boulder buckets only — everything else is
