@@ -285,16 +285,16 @@ set-up script's closing step is a first-boot step an image never runs again, so 
 an image failed its check ("Remote Desktop is on") on its first boot and was marked verified only
 on its second (nothing is exposed meanwhile, as the security group admits no inbound connection).
 Removing the step's marker before the sysprep, as a second image tried, changes nothing. The
-set-up script now closes the host again before its check whenever it finds Remote Desktop on;
-that change replaces the rig (from the image, so no set-up), after which the image is made once
-more. A snapshot after the first is incremental: the second image took under four minutes.
+set-up script now closes the host again before its check whenever it finds Remote Desktop on.
+That change replaced the rig from the image (its first boot closed the host at 455 s and was
+verified at 484 s, Chrome up from the logon trigger), and the image was made once more from the
+replaced, verified machine: `test-rig-20261024b` (`ami-0add705f6e967ec88`) is the root's
+`image_id` now, and the two earlier images are deregistered. A snapshot after the first is
+incremental: the second and third images took under four minutes each.
 
 To do, in this order:
 
-1. Apply the set-up script change (`running = true`; the rig is replaced from the image and
-   verifies itself), make the image again with the README's procedure, set its id as `image_id`,
-   and deregister `test-rig-20261023` and `test-rig-20261024` with their snapshots.
-2. `terraform apply -var rig_count=10` on a round's day, then `running=false` at its end; the
+1. `terraform apply -var rig_count=10` on a round's day, then `running=false` at its end; the
    ten forwards from `terraform output forward_commands`, each in its own terminal (or one
    process manager), and the round as a queue file for `chain.mjs`.
 2. Optionally, a Session Manager preferences document with `idleSessionTimeout` at 60 (its
