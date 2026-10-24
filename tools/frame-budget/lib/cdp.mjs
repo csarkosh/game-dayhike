@@ -133,6 +133,20 @@ export async function attachChrome(port) {
   };
 }
 
+/**
+ * Closes every page of the Chrome on 127.0.0.1:`port` but the blank ones, and returns their URLs.
+ * For a rig's Chrome, which only this harness drives: a page open when a run starts was left by an
+ * earlier run that lost its connection (a forward that dropped mid-sample), and it is still
+ * drawing on the same GPU. On 2026-10-24 one such page halved every frame of the retry that ran
+ * beside it (46 ms against 24), and nothing in the rows said so.
+ */
+export async function closeStrayPages(port, fetchImpl = fetch) {
+  const targets = await (await fetchImpl(`http://127.0.0.1:${port}/json/list`)).json();
+  const strays = targets.filter((t) => t.type === "page" && t.url !== "about:blank");
+  for (const t of strays) await fetchImpl(`http://127.0.0.1:${port}/json/close/${t.id}`);
+  return strays.map((t) => t.url);
+}
+
 /** A page in a browser context of its own, in front, with the page and runtime domains on; its
  * `close()` empties it and disposes the context, which closes the page's window. */
 export async function openPage(browser, port) {

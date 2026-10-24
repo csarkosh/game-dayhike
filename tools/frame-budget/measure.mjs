@@ -44,7 +44,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { judgement, runBudget } from "./lib/budget.mjs";
-import { attachChrome, evaluate, launchChrome, openPage, version } from "./lib/cdp.mjs";
+import { attachChrome, closeStrayPages, evaluate, launchChrome, openPage, version } from "./lib/cdp.mjs";
 import { QUIET_GPU, QUIET_LOAD, flagsFor, localDate, medianOf, parseGpuUtil, pairDeltas, pairOrder, summarise, table } from "./lib/sample.mjs";
 import { TIER_SIZES, resolveViews, viewUrl } from "./lib/views.mjs";
 
@@ -369,6 +369,9 @@ async function main() {
       if (!about.userAgent.includes("Windows NT")) {
         throw new Error(`the browser on port ${options.remote} is not the rig's (no "Windows NT" in its user agent): a reading on the wrong machine is void`);
       }
+      // A page an earlier run left drawing would share the GPU with every sample (`closeStrayPages`).
+      const strays = await closeStrayPages(session.port);
+      if (strays.length > 0) process.stdout.write(`closed ${strays.length} page(s) an earlier run left open:\n${strays.map((u) => `  ${u}\n`).join("")}`);
     }
     if (options.warm > 0) {
       const { view, still } = views[0];
