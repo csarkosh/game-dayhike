@@ -213,9 +213,10 @@ same GPU time on 1 machine or 20. What changes is the wall-clock time and the st
 one boot a machine (under a minute from stopped, so under $0.02 a machine), and the disks kept
 while stopped. **Eight stopped Windows rigs cost $32 a month in disks and run a 40-job round in
 about 2 h 10 min; twenty cost $80 a month and run it in under an hour.** From an image instead of
-stopped disks, the disks cost nothing between rounds and each start costs a first boot: about six
-minutes on AWS Windows, which is why stopped disks are the recommendation there, and under a
-minute on GCP.
+stopped disks, the disks cost nothing between rounds and each start costs a first boot: about
+eight minutes on AWS Windows from the sysprepped image (six from one taken without sysprep,
+which the GRID driver's documentation advises against), which is why stopped disks are the
+recommendation there, and under a minute on GCP.
 
 Idle release: Modal bills nothing once the function ends. For the machines, `rig/idle-stop.ps1`
 registers a watchdog task that shuts the machine down after 15 minutes without a connection to
@@ -274,7 +275,10 @@ trigger in the start script.
 The rig itself now carries Chrome's logon trigger and the idle watchdog, and an image of it,
 `test-rig-20261023` (`ami-0b574292e2419a6cf`, made 2026-10-23 after a sysprep, as the root's
 README describes), is the root's `image_id` in its git-ignored `terraform.tfvars`: a copy starts
-from it, set up, and skips the ten-minute first-boot set-up. The rig's own next boot is a first
+from it set up, with Chrome's trigger and the watchdog in place, so no Run Command is needed on
+it. Its first boot is not quick, though: sysprep's specialize pass and a reboot put Chrome at
+467 s, three minutes under a fresh machine's set-up (§3), and that is paid once, when the copy
+is created; every later start is the stopped machine's, under a minute. The rig's own next boot is a first
 boot from the sysprep: it makes a new desktop password and verifies itself again before Chrome
 comes up. That boot found what the README's image procedure now says: sysprep's answer file turns
 Remote Desktop back on, so a machine from this image fails its check ("Remote Desktop is on") on
@@ -297,7 +301,9 @@ To do, in this order:
 
 ## As built
 
-What this change adds, none of it applied to a real machine:
+What this change adds. The two scripts are on the rig and in its image; the module change is
+applied (the first machine's tag and policy), and `rig_count = 2` was applied once, for the copy
+timed in §3, then lowered again:
 
 - `_infra/modules/aws-test-rig-windows/instance.tf`: `aws_instance.extra[*]` and
   `aws_ec2_instance_state.extra[*]`, `rig_count - 1` copies of the machine; each copy's start-up

@@ -247,7 +247,9 @@ Raising `rig_count` creates machines, which is refused while `running = false` a
 is (a Windows machine stopped in its first boot may never boot again): apply with `running = true`,
 wait for every copy's `verified`, then stop them. The copies are created from the public image and
 run the full set-up unless `image_id` names an image made from a set-up machine (below), in which
-case they are ready in the time of a boot. Lowering it destroys the copies above the new count
+case their first boot skips the set-up steps but still runs sysprep's specialize pass and a
+reboot (Chrome about 8 minutes after the create call, measured 2026-10-24, against about 11 for a
+fresh machine); every later start is a boot. Lowering it destroys the copies above the new count
 without touching the first. The on-demand quota for G instances (768 vCPUs a region on this
 account) allows 192 of `g4dn.xlarge`; `rig_count` stops at 32.
 
@@ -769,7 +771,11 @@ Virtual Workstation rule fails by design.
 ## An image, so later machines start ready
 
 Once the machine is set up and verified, an image of it lets a later machine skip the 7-minute
-set-up. AWS's GRID page says a Windows machine started from a custom image needs that image
+set-up and keeps what was put on the machine by hand afterwards (Chrome's logon task and the idle
+watchdog from `tools/frame-budget/rig/`). The saving in time is small, since the sysprep below
+makes the first boot run a specialize pass and a reboot first (about 8 minutes to Chrome against
+11, measured 2026-10-24); the point is a machine that comes up ready without a Run Command.
+AWS's GRID page says a Windows machine started from a custom image needs that image
 "created with Windows Sysprep to ensure that the GRID driver works". So, from a Session Manager
 shell:
 
