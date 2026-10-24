@@ -272,6 +272,19 @@ export const SHADOW_INVISIBLE_DARKNESS = 0.999;
 export const SHADOW_INVISIBLE_SUN = 0.001;
 
 /**
+ * The sun's shadow map is drawn every second frame while a shadow can show:
+ * Babylon's refresh rate for the map (`REFRESHRATE_RENDER_ONEVERYTWOFRAMES`).
+ * The caster pass was the frame's largest CPU cost and this halves it: on the
+ * rig −4.9 / −2.9 / −6.1 / −9.4 ms a frame on medium and −6.3 / −9.9 / −12.8 /
+ * −10.4 on high at the trailhead, the forest, the meadow and the crest. What
+ * it costs the player, chosen by the owner after a live comparison
+ * (2026-10-23): between two draws the shadows stand where the last draw put
+ * them, so as the camera moves a shadow's edge steps at half the frame rate
+ * and an animal's shadow trails it by a frame; standing still, nothing changes.
+ */
+export const SHADOW_MAP_REFRESH_RATE = RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYTWOFRAMES;
+
+/**
  * Whether the sun's shadow map is worth drawing this frame: not under a
  * darkness that leaves no shadow (full cloud, the rain and eerie presets)
  * nor a sun that is down (night). Every receiver still samples the map, so
@@ -676,13 +689,14 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // the CSM. A clear sky's shadows keep SHADOW_FLOOR of the sun.
     const darkness = sunShadowDarkness(weather);
     shadows?.setDarkness(darkness);
-    // The map itself only while a shadow can show (`shadowMapDrawn`): drawn
-    // once more as the light goes, so the map that stays bound is the last
-    // lit one's, then every frame again when the light returns.
+    // The map itself only while a shadow can show (`shadowMapDrawn`), at its
+    // rate (`SHADOW_MAP_REFRESH_RATE`): drawn once more as the light goes, so
+    // the map that stays bound is the last lit one's, then at its rate again
+    // when the light returns.
     const sunMap = shadows?.getShadowMap() ?? null;
     if (sunMap !== null) {
       const rate = shadowMapDrawn(darkness, s.sunIntensity)
-        ? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME
+        ? SHADOW_MAP_REFRESH_RATE
         : RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
       if (sunMap.refreshRate !== rate) sunMap.refreshRate = rate;
     }

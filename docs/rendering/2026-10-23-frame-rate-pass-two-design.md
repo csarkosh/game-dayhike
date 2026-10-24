@@ -100,7 +100,14 @@ returns. The receivers still sample it; what it holds cannot show.
   FXAA stays on either way. Stills of both tiers at 4× and none, crops at 2×, were given.
 - **The shadow map every other frame**: medium −4.9 / −2.9 / −6.1 / −9.4, high −6.3 / −9.9 /
   −12.8 / −10.4. A still cannot show it: the shadow follows the camera a frame late, and the
-  cascades step at 30 Hz as the camera turns.
+  cascades step at 30 Hz as the camera turns. *Taken, 2026-10-23:* the owner compared the two
+  builds live on the high tier's forest and meadow and chose the half rate on both tiers
+  (`SHADOW_MAP_REFRESH_RATE` in `lighting.ts`, composed with `shadowMapDrawn`: once as the
+  light goes, every second frame while it shows). A gentler variant, the far cascade alone
+  held between draws with the near cascades every frame (`farCascadeHold.ts` on the
+  `tune/farhold` branch, built as a channel, unmeasured), is the fallback if the half rate
+  shows more than wanted. Measured one at a time against `main`, not yet on one build with
+  the four cuts of §2.
 
 ## 5. Measuring
 

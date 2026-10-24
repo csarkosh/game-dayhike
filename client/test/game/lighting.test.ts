@@ -47,7 +47,7 @@ vi.mock("../../src/game/skyDome.js", async (importOriginal) => {
 });
 
 import {
-  cascadeCasters, createLighting, DEFAULT_HOUR, FAR_CASCADE_REACH_M, SHADOW_FLOOR, SHADOW_INVISIBLE_DARKNESS, SHADOW_INVISIBLE_SUN, SKY_WAIT_WARN_MS, SUN_LIGHT_SIZE_UV, farCascadeIndex, farCasters, shadowFilterFor, shadowMapDrawn, sunAltitudeDeg,
+  cascadeCasters, createLighting, DEFAULT_HOUR, FAR_CASCADE_REACH_M, SHADOW_FLOOR, SHADOW_INVISIBLE_DARKNESS, SHADOW_INVISIBLE_SUN, SHADOW_MAP_REFRESH_RATE, SKY_WAIT_WARN_MS, SUN_LIGHT_SIZE_UV, farCascadeIndex, farCasters, shadowFilterFor, shadowMapDrawn, sunAltitudeDeg,
   sunShadowDarkness, whenSkyHeld,
   type Lighting, type LightingOptions,
 } from "../../src/game/lighting.js";
@@ -197,9 +197,16 @@ describe("createLighting", () => {
     // Wired at the weather's apply: the rate set from the verdict, drawn once more as it goes dark, and only on a change.
     const source = readFileSync(new URL("../../src/game/lighting.ts", import.meta.url), "utf8");
     expect(source).toContain("const rate = shadowMapDrawn(darkness, s.sunIntensity)");
-    expect(source).toContain("? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME");
+    expect(source).toContain("? SHADOW_MAP_REFRESH_RATE");
     expect(source).toContain(": RenderTargetTexture.REFRESHRATE_RENDER_ONCE;");
     expect(source).toContain("if (sunMap.refreshRate !== rate) sunMap.refreshRate = rate;");
+  });
+
+  it("draws the shadow map every second frame while a shadow can show (the owner's call, 2026-10-23)", () => {
+    // Babylon's `REFRESHRATE_RENDER_ONEVERYTWOFRAMES` is 2: a render target's refresh rate is the frames between draws.
+    expect(SHADOW_MAP_REFRESH_RATE).toBe(2);
+    const source = readFileSync(new URL("../../src/game/lighting.ts", import.meta.url), "utf8");
+    expect(source).toContain("export const SHADOW_MAP_REFRESH_RATE = RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYTWOFRAMES;");
   });
 
   it("puts the soft shadow's filter in Babylon's store with its taps written out, where the soft filter is chosen", () => {
