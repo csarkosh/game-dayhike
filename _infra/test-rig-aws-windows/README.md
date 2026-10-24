@@ -782,9 +782,8 @@ shell:
 ```powershell
 # Make the next boot set a new desktop password, close Remote Desktop again and check
 # everything again. Sysprep's answer file (EC2Launch's unattend.xml) turns Remote Desktop
-# back on in the first boot's specialize pass, before the start-up script runs: without
-# done-closed removed, that boot's check fails with "Remote Desktop is on" and the machine
-# is never marked verified until a second boot.
+# back on in the first boot's specialize pass, before the start-up script runs; the script
+# closes it again before its check when it finds it on, done-closed removed or not.
 Remove-Item C:\ProgramData\test-rig\done-user, C:\ProgramData\test-rig\done-closed, C:\ProgramData\test-rig\verified
 & "$env:ProgramFiles\Amazon\EC2Launch\EC2Launch.exe" sysprep --shutdown
 ```

@@ -280,18 +280,20 @@ it. Its first boot is not quick, though: sysprep's specialize pass and a reboot 
 467 s, three minutes under a fresh machine's set-up (§3), and that is paid once, when the copy
 is created; every later start is the stopped machine's, under a minute. The rig's own next boot is a first
 boot from the sysprep: it makes a new desktop password and verifies itself again before Chrome
-comes up. That boot found what the README's image procedure now says: sysprep's answer file turns
-Remote Desktop back on, so a machine from this image fails its check ("Remote Desktop is on") on
-its first boot and is marked verified only on its second (nothing is exposed meanwhile, as the
-security group admits no inbound connection). The next image, made with `done-closed` removed
-as well, closes it again in the first boot; a snapshot after the first is incremental, so that
-image takes minutes rather than the first one's 34.
+comes up. That boot found a flaw: sysprep's answer file turns Remote Desktop back on, and the
+set-up script's closing step is a first-boot step an image never runs again, so a machine from
+an image failed its check ("Remote Desktop is on") on its first boot and was marked verified only
+on its second (nothing is exposed meanwhile, as the security group admits no inbound connection).
+Removing the step's marker before the sysprep, as a second image tried, changes nothing. The
+set-up script now closes the host again before its check whenever it finds Remote Desktop on;
+that change replaces the rig (from the image, so no set-up), after which the image is made once
+more. A snapshot after the first is incremental: the second image took under four minutes.
 
 To do, in this order:
 
-1. Remake the image with the README's procedure (`done-user`, `done-closed`, `verified` removed,
-   then sysprep), set the new id as `image_id`, deregister `test-rig-20261023` and delete its
-   snapshot.
+1. Apply the set-up script change (`running = true`; the rig is replaced from the image and
+   verifies itself), make the image again with the README's procedure, set its id as `image_id`,
+   and deregister `test-rig-20261023` and `test-rig-20261024` with their snapshots.
 2. `terraform apply -var rig_count=10` on a round's day, then `running=false` at its end; the
    ten forwards from `terraform output forward_commands`, each in its own terminal (or one
    process manager), and the round as a queue file for `chain.mjs`.
