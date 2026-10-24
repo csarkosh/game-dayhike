@@ -25,6 +25,10 @@
 # A boot from an image whose `done-user` marker was removed (README.md):
 #   - a new desktop password, then 3010 again.
 # The boot after that (until marker `verified` exists):
+#   - closes Remote Desktop and the rest again when the `done-closed` marker
+#     was removed with `done-user`, or when Remote Desktop is found on: the
+#     answer file Sysprep runs with (EC2Launch's unattend.xml) turns it back
+#     on in an image's first boot, before this script runs;
 #   - checks, with things that can fail, that the driver runs as a licensed
 #     virtual workstation, that DCV's console session belongs to the desktop
 #     user, that the desktop user is logged on, that Remote Desktop and its and
@@ -650,26 +654,35 @@ function Install-Everything {
   }
 
   # --- Closed on the host as well --------------------------------------------
-  # Nothing reaches this machine through its security group. So that one
-  # mistake there exposes nothing either: Remote Desktop is off and the host
-  # firewall's Remote Desktop and Windows Remote Management rules are disabled.
-  # DCV (console sessions, its own port on loopback) and Session Manager (the
-  # agent's outbound HTTPS) use neither. And the desktop user's processes, a
-  # browser among them, may not reach the instance metadata service and so
-  # the instance role's credentials; the agents, DCV's licence check and the
-  # driver's run as the local system account and still can.
-  if (-not (Test-Step 'closed')) {
-    Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 1 -Type DWord
-    foreach ($group in $ClosedGroups) {
-      Get-NetFirewallRule -DisplayGroup $group -ErrorAction SilentlyContinue | Disable-NetFirewallRule
-    }
-    $sid = (Get-LocalUser -Name $DesktopUser).SID.Value
-    Get-NetFirewallRule -Name 'test-rig-block-imds' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-    New-NetFirewallRule -Name 'test-rig-block-imds' -DisplayName "Block the instance metadata service for $DesktopUser" -Direction Outbound -Action Block `
-      -Protocol TCP -RemoteAddress 169.254.169.254 -LocalUser "D:(A;;CC;;;$sid)" | Out-Null
-    Log "Closed: Remote Desktop off, firewall groups $($ClosedGroups -join ' and ') disabled, metadata service blocked for $DesktopUser"
-    Complete-Step 'closed'
+  if (-not (Test-Step 'closed')) { Close-Host }
+}
+
+# Nothing reaches this machine through its security group. So that one
+# mistake there exposes nothing either: Remote Desktop is off and the host
+# firewall's Remote Desktop and Windows Remote Management rules are disabled.
+# DCV (console sessions, its own port on loopback) and Session Manager (the
+# agent's outbound HTTPS) use neither. And the desktop user's processes, a
+# browser among them, may not reach the instance metadata service and so
+# the instance role's credentials; the agents, DCV's licence check and the
+# driver's run as the local system account and still can. Run at set-up, and
+# again in a boot from an image (Test-RemoteDesktopOff, the main part below).
+function Close-Host {
+  Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 1 -Type DWord
+  foreach ($group in $ClosedGroups) {
+    Get-NetFirewallRule -DisplayGroup $group -ErrorAction SilentlyContinue | Disable-NetFirewallRule
   }
+  $sid = (Get-LocalUser -Name $DesktopUser).SID.Value
+  Get-NetFirewallRule -Name 'test-rig-block-imds' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+  New-NetFirewallRule -Name 'test-rig-block-imds' -DisplayName "Block the instance metadata service for $DesktopUser" -Direction Outbound -Action Block `
+    -Protocol TCP -RemoteAddress 169.254.169.254 -LocalUser "D:(A;;CC;;;$sid)" | Out-Null
+  Log "Closed: Remote Desktop off, firewall groups $($ClosedGroups -join ' and ') disabled, metadata service blocked for $DesktopUser"
+  Complete-Step 'closed'
+}
+
+# Whether Remote Desktop is off (fDenyTSConnections set), as Close-Host leaves
+# it. Sysprep's answer file sets it on again in an image's first boot.
+function Test-RemoteDesktopOff {
+  (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server').fDenyTSConnections -eq 1
 }
 
 # An adapter's current mode, or `inactive` for one that drives no display.
@@ -770,7 +783,7 @@ function Test-Setup {
   $size = Set-ConsoleDisplay
   if ($size -ne "$($DisplayWidth)x$($DisplayHeight)") { throw "The console is $size, not $($DisplayWidth)x$($DisplayHeight)" }
 
-  if ((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server').fDenyTSConnections -ne 1) { throw 'Remote Desktop is on' }
+  if (-not (Test-RemoteDesktopOff)) { throw 'Remote Desktop is on' }
   foreach ($group in $ClosedGroups) {
     $open = @(Get-NetFirewallRule -DisplayGroup $group -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq 'True' })
     if ($open.Count -gt 0) { throw "Firewall rules still enabled in $($group): $($open.DisplayName -join ', ')" }
@@ -803,6 +816,13 @@ try {
     Set-DesktopUser
     $exitCode = 3010
   } elseif (-not (Test-Path (Join-Path $Root 'verified'))) {
+    # A machine started from an image: Sysprep's answer file turned Remote
+    # Desktop on in its first boot, so it is closed again before the check,
+    # marker or no marker.
+    if (-not (Test-Step 'closed') -or -not (Test-RemoteDesktopOff)) {
+      Log 'Closing the host again (a boot from an image: Remote Desktop on, or no closed marker).'
+      Close-Host
+    }
     Test-Setup
     Set-Content -Path (Join-Path $Root 'verified') -Value (Get-Date -Format o)
     Log 'Set-up checked: the machine is ready.'
