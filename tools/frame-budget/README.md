@@ -135,6 +135,25 @@ that ends, so a dropped tunnel costs a sample, not an evening. A rig is stopped 
 fifteen minutes without a harness on its port once `rig/idle-stop.ps1` has been run on it (once;
 an image keeps it).
 
+A round in one command, the rigs started, forwarded, measured on and stopped:
+
+```bash
+tools/frame-budget/rig/round.sh round.json             # as many rigs as the queue has jobs (at most 10)
+tools/frame-budget/rig/round.sh round.json --rigs 4    # or a count of its own
+```
+
+It sets `rig_count` to the queue's job count (an experiment on two tiers is two jobs; `--max-rigs`
+caps it, and it never lowers a count already in state, since lowering destroys copies), applies
+`running=true` from the main checkout's root, opens one `forward.sh` a machine on 9333, 9334, …,
+runs the chain over every port, and applies `running=false` when it ends, however it ends
+(`--keep-running` leaves them to their idle stop). The round then waits for its slowest machine's
+start and its slowest job, not for the sum of its jobs. Starting machines is an apply: the
+owner's go-ahead is the rule for a round as for one machine.
+
+Every remote run first closes the rig Chrome's pages but its blank one (`closeStrayPages`): a
+forward that dropped mid-sample leaves that sample's page drawing, and the retry beside it read
+every frame at half speed (46 ms against 24, 2026-10-24).
+
 `--engine webgpu` forces the engine on every page: for a rig whose Chrome runs on Linux, which the
 game's own rule would put on WebGL2 (`docs/rendering/2026-10-22-parallel-rigs-research.md` §4).
 
