@@ -774,8 +774,12 @@ set-up. AWS's GRID page says a Windows machine started from a custom image needs
 shell:
 
 ```powershell
-# Make the next boot set a new desktop password and check everything again.
-Remove-Item C:\ProgramData\test-rig\done-user, C:\ProgramData\test-rig\verified
+# Make the next boot set a new desktop password, close Remote Desktop again and check
+# everything again. Sysprep's answer file (EC2Launch's unattend.xml) turns Remote Desktop
+# back on in the first boot's specialize pass, before the start-up script runs: without
+# done-closed removed, that boot's check fails with "Remote Desktop is on" and the machine
+# is never marked verified until a second boot.
+Remove-Item C:\ProgramData\test-rig\done-user, C:\ProgramData\test-rig\done-closed, C:\ProgramData\test-rig\verified
 & "$env:ProgramFiles\Amazon\EC2Launch\EC2Launch.exe" sysprep --shutdown
 ```
 
@@ -790,8 +794,9 @@ aws ec2 create-image --region us-east-1 --instance-id <instance id> --name test-
 and set `image_id = "ami-..."` in `terraform.tfvars`, then
 `terraform apply -replace=module.test_rig.aws_instance.test_rig` with `running = true` (the machine ignores a
 change of image until it is replaced, and a new machine must finish its first boot before it is
-stopped). The image keeps its set-up markers, so the start-up script only makes the new
-password, checks the machine and arms the timer. A later change to the start-up script still
+stopped). The image keeps its other set-up markers, so the start-up script only makes the new
+password, closes Remote Desktop and the firewall groups again, checks the machine and arms the
+timer. A later change to the start-up script still
 replaces the machine, from the image: its set-up steps are then skipped, so a change to them
 needs a new image.
 
