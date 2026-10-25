@@ -36,6 +36,8 @@ import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.loadFile.js";
 import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.textureLoaders.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
 import { keyEveryBoundBuffer } from "./webgpuVertexBuffer.js";
+import { resetDrawsOnBufferSwap } from "./webgpuDrawCache.js";
+import { Geometry } from "@babylonjs/core/Meshes/geometry.js";
 // Side-effect import, load-bearing: the WebGPU engine's own extensions (its
 // dynamic texture, compute shader, multi-render, render target and the rest),
 // which the WebGL2 imports the rest of the game makes never reach. Without
@@ -346,6 +348,9 @@ export async function createWebGpuEngine(
   // Every vertex buffer this engine draws keyed by its offset in the
   // pipeline cache (`webgpuVertexBuffer.ts`); once per page.
   keyEveryBoundBuffer(WebGPUCacheRenderPipeline.prototype as never);
+  // Every buffer a geometry takes in place of another resets the draws
+  // recorded with the old one (`webgpuDrawCache.ts`); once per page.
+  resetDrawsOnBufferSwap(Geometry.prototype as never);
   const start = async (): Promise<WebGPUEngine> => {
     const engine = new WebGPUEngine(canvas, {
       antialias: true,
@@ -382,15 +387,11 @@ export async function createWebGpuEngine(
     // On this engine's own cache and draw, which `initAsync` made; a draw is
     // left out only inside the scope its renderer opens.
     installPipelines(engine, options.pipelines ?? "async");
-    // Babylon's compatibility mode is kept ON. Its fast path (`compatibilityMode
-    // = false`, bind groups and vertex state re-set only when they change
-    // between draws) saved 5 to 10 ms a frame on the rig (2026-10-23) but a
-    // vertex buffer recreated after its first draw, a thin-instance bucket's
-    // of nine matrices, stayed bound in a cached draw and was submitted after
-    // its destruction: "used in submit while destroyed", the engine lost and
-    // the page rebuilt on WebGL2, on the owner's Mac and a player's within
-    // hours of the deploy. The fast path comes back only with the buffer
-    // recreations marking their draws dirty, measured first.
+    // Babylon's WebGPU fast path: bind groups and vertex state re-set only
+    // when they change between draws, not on every draw (5 to 10 ms a frame
+    // on the rig, 2026-10-23). Safe only with every buffer swap resetting the
+    // draws that baked the old buffer in (`resetDrawsOnBufferSwap` above).
+    engine.compatibilityMode = false;
     // Only once the engine stands: a failed start leaves Babylon's defaults,
     // and neither switch changes anything on WebGL2, where every material is
     // GLSL.

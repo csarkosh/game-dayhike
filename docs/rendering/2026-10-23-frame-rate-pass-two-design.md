@@ -72,6 +72,22 @@ pixel for pixel, with `main`'s own frame-to-frame noise as the yardstick: no dif
 on any view of either tier. Medium: trailhead 26.2 → 20.1, forest 20.0 → 15.6, meadow 35.0 →
 29.0, crest 37.5 → 29.9; high: 34.7 → 26.4, 40.6 → 31.3, 49.7 → 39.7, 44.4 → 35.0.
 
+*Amendment, 2026-10-25.* Within hours of shipping, the mode lost the engine in play ("Buffer …
+used in submit while destroyed", the page rebuilt on WebGL2), and it was turned off again. The
+fast path records each sub-mesh's draw in each pass as a render bundle, with its vertex and
+index buffers baked in, and drops the bundle only on a new effect, a changed material context or
+a changed uniform buffer. A geometry that takes a new buffer in place of another (a thin-instance
+bucket grown, `setVerticesData` on a buffer that cannot be written in place) dirties the main
+pass's material, which sets its effect again; the shadow pass sets a new effect only when its
+defines change, so its bundle kept the destroyed buffer. `webgpuDrawCache.ts` wraps the three
+doors a geometry takes a buffer through (`setVerticesBuffer`, `setIndices`, `setIndexBuffer`)
+and resets the draw context of every sub-mesh of every mesh on it, in every pass, after each;
+the mode is on again with it. Checked on the Air before it shipped: one shadow-casting pine's
+matrix buffer swapped for a copy failed the renderer on the next frame without the reset and
+drew on with it; thin-instance matrix buffers on every mesh swapped and grown every half second
+for a minute, on both tiers, drew without a GPU error; and a flight of the free camera across the
+world, which failed without the reset after about five minutes, ran its ten minutes with it.
+
 **Animals off the screen** (`creatureModel.ts` `animateGroup`, `wildlifeMeshes.ts`
 `creatureInView`): past 25 m, an animal whose 4 m sphere misses the camera's frustum (the scene's
 planes, last frame's) has its clip paused where it stands, and restarted from that frame when it
