@@ -116,7 +116,14 @@ Euclidean distance transform with the nearest seed kept (Felzenszwalb and
 Huttenlocher), run twice, so the alpha becomes the signed distance to the rim
 over `IMPOSTOR_FIELD_SPREAD` 8 texels, tested at `IMPOSTOR_FIELD_CUT` 0.5, and
 every texel outside the tree takes the nearest inside texel's colour and normal,
-so the filter has nothing black to pull into the rim. The card lights the albedo
+so the filter has nothing black to pull into the rim. Since 2026-10-26 the tree
+the field is taken from is the bake's crown filled (`crownFill`): every gap up to
+`IMPOSTOR_CROWN_CLOSE` 8 texels in radius closed, as a morphological closing by a
+disc, the card's edge counting as outside, and every hole the outside cannot reach
+filled, each filled texel coloured as the nearest texel the bake drew. Sky seen
+through a far crown is a pixel or less on the screen and flickered as the camera
+moved; the fill took that flicker in the forest down by two fifths, for fuller,
+rounder crowns on the farthest trees. The card lights the albedo
 once, live, through the normal map, under the crown's share of the sky
 (`CROWN_SKY`, where it took the full share for a bake lit already), and its face
 (Babylon's plane faces −Z) is turned to the camera so the map's frame is the

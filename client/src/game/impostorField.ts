@@ -36,6 +36,15 @@ export const IMPOSTOR_FIELD_INSIDE = 128;
 /** The alpha the card tests the field at: the rim, where the field is half. */
 export const IMPOSTOR_FIELD_CUT = 0.5;
 
+/** How wide a gap in a crown the bake closes, in texels of the bake, as a
+ * radius (`crownFill`): sky between the branches of a far tree is a pixel or
+ * less on the screen and flickers as the camera moves, so the billboard
+ * shows the crown filled to its outline. Eight, the owner's pick from a live
+ * comparison with four (2026-10-26): it took the far crowns' flicker in the
+ * forest down by two fifths (four took a fifth), at the cost of fuller,
+ * rounder crowns on the farthest trees. */
+export const IMPOSTOR_CROWN_CLOSE = 8;
+
 /** A tangent-space normal that faces out, as the field writes outside a bake
  * that has no tree at all. */
 const FLAT_NORMAL: readonly [number, number, number] = [128, 128, 255];
@@ -125,6 +134,65 @@ export function nearestSeeds(seed: Uint8Array, width: number, height: number): N
   return { dist, index };
 }
 
+/**
+ * A bake's tree texels with the gaps in its crown filled (`tree` is 1 where a
+ * texel is tree): every gap no wider than `radius` texels across is closed,
+ * as a morphological closing by a disc does (the tree grown by `radius`,
+ * then shrunk by it again), and every clear region the outside cannot reach
+ * is filled. The card's edge counts as outside, so a crown that touches it
+ * is not grown along it. Returns a new mask; `radius` 0 fills only the
+ * enclosed holes.
+ */
+export function crownFill(tree: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  const n = width * height;
+  const filled = new Uint8Array(n);
+  if (radius > 0) {
+    const toTree = nearestSeeds(tree, width, height).dist;
+    const grown = new Uint8Array(n);
+    for (let i = 0; i < n; i++) grown[i] = (toTree[i] as number) <= radius ? 1 : 0;
+    const clear = new Uint8Array(n);
+    for (let i = 0; i < n; i++) clear[i] = (grown[i] as number) ^ 1;
+    const toClear = nearestSeeds(clear, width, height).dist;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        const toEdge = Math.min(x + 1, y + 1, width - x, height - y);
+        filled[i] = tree[i] === 1 || Math.min(toClear[i] as number, toEdge) > radius ? 1 : 0;
+      }
+    }
+  } else {
+    filled.set(tree);
+  }
+  // The outside: every clear texel a path of clear texels joins to the edge.
+  const reached = new Uint8Array(n);
+  const stack = new Int32Array(n);
+  let top = 0;
+  const visit = (i: number): void => {
+    if (filled[i] === 0 && reached[i] === 0) {
+      reached[i] = 1;
+      stack[top++] = i;
+    }
+  };
+  for (let x = 0; x < width; x++) {
+    visit(x);
+    visit((height - 1) * width + x);
+  }
+  for (let y = 0; y < height; y++) {
+    visit(y * width);
+    visit(y * width + width - 1);
+  }
+  while (top > 0) {
+    const i = stack[--top] as number;
+    const x = i % width;
+    if (x > 0) visit(i - 1);
+    if (x < width - 1) visit(i + 1);
+    if (i >= width) visit(i - width);
+    if (i < n - width) visit(i + width);
+  }
+  for (let i = 0; i < n; i++) if (reached[i] === 0) filled[i] = 1;
+  return filled;
+}
+
 /** What the field makes of a bake: its colour with the outside filled from
  * the nearest inside and its alpha the signed distance; and the same fill of
  * a second picture over the same alpha, the bake's normals, when given. */
@@ -132,7 +200,9 @@ export type ImpostorFields = { albedo: Uint8Array; normal: Uint8Array | null };
 
 /**
  * The field of a bake's RGBA pixels (`width` by `height`, four bytes a
- * texel): the alpha of every texel becomes its signed distance to the rim,
+ * texel): the tree is what the bake drew with its crown's gaps up to `close`
+ * texels filled (`crownFill`), each filled texel coloured as the nearest
+ * texel the bake drew; the alpha of every texel becomes its signed distance to the rim,
  * `spread` texels either way mapped onto 0 to 1 with the rim at a half
  * (`IMPOSTOR_FIELD_CUT`), and every texel outside takes the nearest inside
  * texel's colour, from both pictures. The rim lies half a texel outside each
@@ -147,17 +217,19 @@ export function impostorFields(
   width: number,
   height: number,
   spread: number = IMPOSTOR_FIELD_SPREAD,
+  close: number = IMPOSTOR_CROWN_CLOSE,
 ): ImpostorFields {
   const n = width * height;
-  const inside = new Uint8Array(n);
-  const outside = new Uint8Array(n);
+  const opaque = new Uint8Array(n);
   let any = false;
   for (let i = 0; i < n; i++) {
-    const tree = (albedo[i * 4 + 3] as number) >= IMPOSTOR_FIELD_INSIDE ? 1 : 0;
-    inside[i] = tree;
-    outside[i] = tree ^ 1;
-    if (tree) any = true;
+    opaque[i] = (albedo[i * 4 + 3] as number) >= IMPOSTOR_FIELD_INSIDE ? 1 : 0;
+    if (opaque[i]) any = true;
   }
+  // The tree the card shows: what the bake drew, its crown filled.
+  const inside = any ? crownFill(opaque, width, height, close) : opaque;
+  const outside = new Uint8Array(n);
+  for (let i = 0; i < n; i++) outside[i] = (inside[i] as number) ^ 1;
   const outAlbedo = new Uint8Array(n * 4);
   const outNormal = normal === null ? null : new Uint8Array(n * 4);
   if (!any) {
@@ -175,15 +247,18 @@ export function impostorFields(
   }
   const toInside = nearestSeeds(inside, width, height);
   const toOutside = nearestSeeds(outside, width, height);
+  // A filled gap was clear in the bake: its colour, like the outside's, is
+  // the nearest texel the bake drew.
+  const toOpaque = nearestSeeds(opaque, width, height);
   for (let i = 0; i < n; i++) {
-    const tree = inside[i] === 1;
+    const isTree = inside[i] === 1;
     // The nearest texel of the other kind lies at least one texel away; the
     // rim is halfway to it.
-    const signed = tree
+    const signed = isTree
       ? Math.min(toOutside.dist[i] as number, Infinity) - 0.5
       : 0.5 - (toInside.dist[i] as number);
     const alpha = Math.max(0, Math.min(1, 0.5 + signed / (2 * spread)));
-    const from = tree ? i : (toInside.index[i] as number);
+    const from = opaque[i] === 1 ? i : (toOpaque.index[i] as number);
     outAlbedo[i * 4] = albedo[from * 4] as number;
     outAlbedo[i * 4 + 1] = albedo[from * 4 + 1] as number;
     outAlbedo[i * 4 + 2] = albedo[from * 4 + 2] as number;

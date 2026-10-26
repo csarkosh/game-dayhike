@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  crownFill,
+  IMPOSTOR_CROWN_CLOSE,
   IMPOSTOR_FIELD_CUT,
   IMPOSTOR_FIELD_INSIDE,
   IMPOSTOR_FIELD_SPREAD,
@@ -85,6 +87,77 @@ describe("nearestSeeds", () => {
   });
 });
 
+/** A mask from rows of characters: `#` 1, `.` 0. */
+function mask(rows: string[]): { tree: Uint8Array; width: number; height: number } {
+  const width = rows[0]!.length;
+  const tree = new Uint8Array(width * rows.length);
+  rows.forEach((row, y) => {
+    for (let x = 0; x < width; x++) tree[y * width + x] = row[x] === "#" ? 1 : 0;
+  });
+  return { tree, width, height: rows.length };
+}
+
+/** A mask back to rows of characters. */
+function rowsOf(tree: Uint8Array, width: number): string[] {
+  const rows: string[] = [];
+  for (let i = 0; i < tree.length; i += width) rows.push([...tree.slice(i, i + width)].map((t) => (t ? "#" : ".")).join(""));
+  return rows;
+}
+
+describe("crownFill", () => {
+  it("fills a hole the outside cannot reach, and leaves a notch open to it, at radius 0", () => {
+    const { tree, width, height } = mask([
+      ".........",
+      ".#######.",
+      ".#..#..#.",
+      ".#######.",
+      ".........",
+    ]);
+    expect(rowsOf(crownFill(tree, width, height, 0), width)).toEqual([
+      ".........",
+      ".#######.",
+      ".#######.",
+      ".#######.",
+      ".........",
+    ]);
+    const notch = mask([".......", ".##.##.", ".##.##.", ".#####.", "......."]);
+    expect(rowsOf(crownFill(notch.tree, notch.width, notch.height, 0), notch.width)).toEqual(rowsOf(notch.tree, notch.width));
+  });
+
+  it("closes a gap no wider than twice the radius and leaves a wider one", () => {
+    const narrow = mask([
+      "...........",
+      ".####.####.",
+      ".####.####.",
+      ".####.####.",
+      "...........",
+    ]);
+    const closed = rowsOf(crownFill(narrow.tree, narrow.width, narrow.height, 1), narrow.width);
+    expect(closed[2]).toBe(".#########.");
+    const wide = mask([
+      "...............",
+      ".####.....####.",
+      ".####.....####.",
+      ".####.....####.",
+      "...............",
+    ]);
+    expect(rowsOf(crownFill(wide.tree, wide.width, wide.height, 1), wide.width)).toEqual(rowsOf(wide.tree, wide.width));
+  });
+
+  it("leaves a convex crown exactly as it is", () => {
+    const pad = ".".repeat(15);
+    const block = ".....#####.....";
+    const { tree, width, height } = mask([pad, pad, pad, pad, block, block, block, block, block, pad, pad, pad, pad]);
+    expect(rowsOf(crownFill(tree, width, height, 3), width)).toEqual(rowsOf(tree, width));
+  });
+
+  it("does not grow a crown along the card's edge it touches", () => {
+    const { tree, width, height } = mask(["#...#", "#...#", "#####"]);
+    // The gap is three wide, which radius 2 would close in the open; at the edge it stays.
+    expect(rowsOf(crownFill(tree, width, height, 2), width)[0]).toBe("#...#");
+  });
+});
+
 describe("impostorFields", () => {
   it("writes the rim at the cut, half a texel outside each inside texel, and the spread either way", () => {
     expect(IMPOSTOR_FIELD_CUT).toBe(0.5);
@@ -93,7 +166,7 @@ describe("impostorFields", () => {
     // A column of tree down the middle of a 21-wide picture, one row.
     const row = ".........###########.";
     const { rgba, width, height } = picture([row, row, row]);
-    const { albedo } = impostorFields(rgba, null, width, height, 4);
+    const { albedo } = impostorFields(rgba, null, width, height, 4, 0);
     const alpha = (x: number) => albedo[(1 * width + x) * 4 + 3]! / 255;
     // The inside texel at the rim is half a texel inside; its neighbour outside half a texel outside.
     expect(alpha(9)).toBeCloseTo(0.5 + 0.5 / 8, 2);
@@ -124,6 +197,22 @@ describe("impostorFields", () => {
     expect(fields.albedo[3]! / 255).toBeLessThan(0.5);
   });
 
+  it("draws a filled gap as tree, coloured as the nearest texel the bake drew", () => {
+    expect(IMPOSTOR_CROWN_CLOSE).toBe(8);
+    const { rgba, width, height } = picture([
+      "...........",
+      ".####.####.",
+      ".####.####.",
+      ".####.####.",
+      "...........",
+    ]);
+    const { albedo } = impostorFields(rgba, null, width, height, 4, 1);
+    const gap = (2 * width + 5) * 4;
+    expect(albedo[gap + 3]! / 255).toBeGreaterThan(IMPOSTOR_FIELD_CUT);
+    // Its neighbours either side are the same distance; the colour is one of them.
+    expect([[14, 12, 200], [16, 12, 200]]).toContainEqual([...albedo.slice(gap, gap + 3)]);
+  });
+
   it("leaves a bake without a tree all outside: alpha zero, the colour as it was, the normal flat", () => {
     const { rgba, width, height } = picture(["...", "..."]);
     const fields = impostorFields(rgba, new Uint8Array(width * height * 4), width, height);
@@ -140,7 +229,7 @@ describe("impostorFields", () => {
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) rgba[(y * size + x) * 4 + 3] = inside(x, y) ? 255 : 0;
     }
-    const fields = impostorFields(rgba, rgba, size, size);
+    const fields = impostorFields(rgba, rgba, size, size, IMPOSTOR_FIELD_SPREAD, 0);
     expect(fields.albedo.length).toBe(size * size * 4);
     // Every texel inside is at or above the cut, every texel outside below it.
     for (let y = 0; y < size; y += 7) {
