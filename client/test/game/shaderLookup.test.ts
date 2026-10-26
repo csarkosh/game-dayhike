@@ -23,6 +23,10 @@ import {
   WGSL_SOURCES_MS,
   buildSalt,
   defaultSources,
+  effectLabel,
+  effectNamedIn,
+  LABELLED_EFFECTS_MAX,
+  labelShaderModules,
   lookUpShaders,
   openingSource,
   releaseShaderLookup,
@@ -63,6 +67,7 @@ afterEach(() => {
  */
 function harness() {
   const modules: string[] = [];
+  const labels: string[] = [];
   const compiled: [string, string][] = [];
   const engine = Object.create(WebGPUEngine.prototype) as WebGPUEngine;
   Object.assign(engine, {
@@ -75,8 +80,9 @@ function harness() {
     onBeforeShaderCompilationObservable: new Observable(),
     onAfterShaderCompilationObservable: new Observable(),
     _device: {
-      createShaderModule: ({ code }: { code: string }) => {
+      createShaderModule: ({ code, label }: { code: string; label?: string }) => {
         modules.push(code);
+        labels.push(label ?? "");
         return { code };
       },
     },
@@ -90,7 +96,7 @@ function harness() {
     },
     twgsl: { convertSpirV2WGSL: (code: { spirvOf: string }) => `// WGSL of\n${code.spirvOf}` },
   };
-  return { engine, modules, compiled, translators };
+  return { engine, modules, labels, compiled, translators };
 }
 
 type Harness = ReturnType<typeof harness>;
@@ -1200,6 +1206,7 @@ describe("the re-preparation Babylon makes at the first draw of integer vertex b
   async function drawSkinned(store: ReturnType<typeof memorySource>) {
     const h = effectEngine();
     await lookUp(h, [store.source]);
+    labelShaderModules(h.engine);
     const effect = (h.engine as unknown as { createEffect(...a: unknown[]): Effect }).createEffect(SKINNED, ["position", "matricesIndices"], [], [], "");
     const context = effect.getPipelineContext() as WebGPUPipelineContext;
     expect(effect.isReady()).toBe(true);
@@ -1219,6 +1226,15 @@ describe("the re-preparation Babylon makes at the first draw of integer vertex b
     expect(missed.after?.vertexStage.module.code).toContain("_int_matricesIndices_");
     // The integer variant's fragment stage is the first's: translated once.
     expect(missed.h.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment", "vertex"]);
+
+    // Each module names its effect, and the second preparation says so.
+    expect(missed.h.labels).toHaveLength(4);
+    expect(missed.h.labels[0]).toMatch(/^vertex .*#[0-9a-f]{8}$/);
+    expect(missed.h.labels[1]).toMatch(/^fragment .*#[0-9a-f]{8}$/);
+    expect(missed.h.labels[2]).toMatch(/^vertex .*#[0-9a-f]{8} again$/);
+    expect(effectNamedIn(`While validating vertex stage ([ShaderModule "${missed.h.labels[2]}"], entryPoint: "main").`)).toBe(
+      (missed.context as unknown as { _name: string })._name,
+    );
 
     const hit = await drawSkinned(kept);
     expect(hit.after).not.toBe(hit.before);
@@ -1240,6 +1256,26 @@ describe("the re-preparation Babylon makes at the first draw of integer vertex b
     expect(build.indexOf("module: webgpuPipelineContext.stages.vertexStage.module,")).toBeGreaterThan(
       build.indexOf("checkNonFloatVertexBuffers(this._vertexBuffers, effect);"),
     );
+  });
+});
+
+describe("the labels a GPU error names an effect by", () => {
+  it("carries the shaders' names and a hash of the whole key, and reads the key back from a message", () => {
+    const key = "pbr+pbr@#define UV1|#define NUM_BONE_INFLUENCERS 0";
+    const label = effectLabel(key, false);
+    expect(label).toMatch(/^pbr\+pbr#[0-9a-f]{8}$/);
+    expect(effectLabel(key, true)).toBe(`${label} again`);
+    expect(effectLabel("pbr+pbr@#define UV2", false)).not.toBe(label);
+    expect(effectNamedIn(`[ShaderModule "vertex ${label}"]`)).toBe(key);
+    expect(effectNamedIn('[ShaderModule "vertex"]')).toBeNull();
+    expect(effectNamedIn("[ShaderModule \"vertex x#0badf00d\"]")).toBeNull();
+  });
+
+  it("keeps the newest effects only", () => {
+    const first = effectLabel("first@#define A", false);
+    for (let i = 0; i < LABELLED_EFFECTS_MAX; i++) effectLabel(`filler${i}@`, false);
+    expect(effectNamedIn(first)).toBeNull();
+    expect(effectNamedIn(effectLabel(`filler${LABELLED_EFFECTS_MAX - 1}@`, false))).toBe(`filler${LABELLED_EFFECTS_MAX - 1}@`);
   });
 });
 

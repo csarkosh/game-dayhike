@@ -80,7 +80,7 @@ import {
 import { heldOn, installPipelines, leftOutOn } from "./asyncPipelines.js";
 import { pinPluginNumbers } from "./pluginNumbers.js";
 import type { QualityTier } from "./quality.js";
-import { defaultSources, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
+import { defaultSources, effectNamedIn, labelShaderModules, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
 
 // The game reaches the patch on an engine made here, and the start's reveal,
 // through this module alone (`main.ts`'s watchers).
@@ -369,6 +369,7 @@ export async function createWebGpuEngine(
     // sources are read in while the device comes, and waited for (bounded)
     // before the engine is handed over.
     const looking = lookUpShaders(engine, { mode: options.lookup ?? "on", tier, sources: options.sources ?? shippedThenStored(tier) });
+    labelShaderModules(engine);
     catchTranslationFailures(engine);
     // The started translators, as Babylon's options take them: glslang as a
     // promise (its setup waits on it), twgsl as the instance. No path to load.
@@ -519,6 +520,12 @@ export function giveUpRestore(engine: AbstractEngine): void {
   (engine as unknown as { _restoreEngineAfterContextLost: (init: unknown) => void })._restoreEngineAfterContextLost = () => undefined;
 }
 
+/** An effect's key as one short line: its shaders, then its defines' names
+ * and values without the `#define` each one starts with. */
+export function compactEffect(key: string): string {
+  return key.replace(/#define /g, "").replace(/\|/g, " ").replace(/\s+/g, " ").trim();
+}
+
 /**
  * Watches a running WebGPU engine for the failures the game answers with a
  * live swap of its renderer (`failureSwap`, `engineChoice.ts`): an effect that
@@ -547,7 +554,15 @@ export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: "pipelin
   // The device Babylon itself listens on for uncaptured errors; an engine
   // not yet started has none.
   const device = (engine as unknown as { _device?: EventTarget })._device;
-  const onUncaptured = (): void => report("pipeline");
+  const onUncaptured = (event?: Event): void => {
+    // Babylon logs the error's text, which names the shader module by its
+    // effect's label (`effectLabel`); the effect's defines are said here, so
+    // the telemetry row says which material it was.
+    const message = (event as (Event & { error?: { message?: string } }) | undefined)?.error?.message ?? "";
+    const effect = effectNamedIn(message);
+    if (effect !== null && !reported.has("pipeline")) console.error(`WebGPU: the failing effect: ${compactEffect(effect)}`);
+    report("pipeline");
+  };
   device?.addEventListener("uncapturederror", onUncaptured);
   const heard = untranslatedHeard.get(engine) ?? new Set<() => void>();
   untranslatedHeard.set(engine, heard);

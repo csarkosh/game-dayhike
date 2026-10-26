@@ -287,7 +287,7 @@ type LookupEngine = {
   _compileRawShaderToSpirV(source: string, type: string): unknown;
   _tintWASM: { convertSpirV2WGSL(code: unknown, disableUniformityAnalysis?: boolean): string } | null;
   _createPipelineStageDescriptor(vertex: string, fragment: string, shaderLanguage: number, uaVertex: boolean, uaFragment: boolean): unknown;
-  _device: { createShaderModule(descriptor: { code: string }): unknown };
+  _device: { createShaderModule(descriptor: { code: string; label?: string }): unknown };
   onBeforeShaderCompilationObservable: { notifyObservers(engine: unknown): void };
   onAfterShaderCompilationObservable: { notifyObservers(engine: unknown): void };
   onDisposeObservable?: { addOnce(callback: () => void): unknown };
@@ -300,6 +300,75 @@ type LookupContext = {
   sources?: { fragment: string; vertex: string; rawVertex: string; rawFragment: string };
   stages?: unknown;
 };
+
+/** The effects the labels name, by the hash a label carries (`effectLabel`),
+ * the newest `LABELLED_EFFECTS_MAX` of them. */
+const labelled = new Map<string, string>();
+export const LABELLED_EFFECTS_MAX = 512;
+
+/** FNV-1a over `text`'s UTF-16 code units, as eight hex digits. */
+function hash8(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
+ * What a shader module of the effect `name` (its key: the two shaders' names,
+ * then `@` and its defines) is labelled after Babylon's own `vertex` or
+ * `fragment`: the shaders' names, `#` and a hash of the whole key, and
+ * `again` where the effect's pipeline context is prepared a second time
+ * (Babylon does at the first draw of a mesh with integer vertex buffers).
+ * Babylon labels every module by its stage alone, so a GPU validation error
+ * named no material; with the label it names the effect, and
+ * `effectNamedIn` reads its defines back.
+ */
+export function effectLabel(name: string, again: boolean): string {
+  const at = name.indexOf("@");
+  const shaders = (at < 0 ? name : name.slice(0, at)).slice(0, 80);
+  const hash = hash8(name);
+  if (!labelled.has(hash)) {
+    if (labelled.size >= LABELLED_EFFECTS_MAX) labelled.delete(labelled.keys().next().value as string);
+    labelled.set(hash, name);
+  }
+  return `${shaders}#${hash}${again ? " again" : ""}`;
+}
+
+/** The key of the effect whose label `message` quotes (a GPU error's text), or null. */
+export function effectNamedIn(message: string): string | null {
+  for (const match of message.matchAll(/#([0-9a-f]{8})\b/g)) {
+    const name = labelled.get(match[1] as string);
+    if (name !== undefined) return name;
+  }
+  return null;
+}
+
+/**
+ * Labels every shader module `engine` makes while it prepares an effect with
+ * that effect (`effectLabel`): the lookup's preparations and Babylon's own
+ * (a native WGSL effect, a raw one) alike. Wraps whatever preparation the
+ * engine has; the label is set for the preparation's synchronous run, which
+ * on a started engine is the whole of it.
+ */
+export function labelShaderModules(engine: AbstractEngine): void {
+  const own = engine as unknown as LookupEngine;
+  const prepare = own._preparePipelineContextAsync.bind(engine);
+  own._preparePipelineContextAsync = (pipelineContext, ...rest) => {
+    const device = own._device as LookupEngine["_device"] | undefined;
+    if (device === undefined) return prepare(pipelineContext, ...rest);
+    const context = pipelineContext as LookupContext;
+    const label = effectLabel(context._name ?? "", context.stages !== undefined);
+    const create = device.createShaderModule;
+    let pending: Promise<void> = Promise.resolve();
+    during(device, "createShaderModule", (descriptor: { code: string; label?: string }) => create.call(device, { ...descriptor, label: `${descriptor.label ?? ""} ${label}` }), () => {
+      pending = prepare(pipelineContext, ...rest);
+    });
+    return pending;
+  };
+}
 
 /** Per engine, what lets its lookup go (`releaseShaderLookup`). */
 const releases = new WeakMap<AbstractEngine, () => void>();

@@ -136,7 +136,7 @@ The events, in the order a session makes them:
 | `connect_fail`, `reconnect` | `msg` | a follower's handshake failed, or its channel dropped |
 | `tier_fallback`, `governor_drop`, `engine_failed`, `webgpu_start_failed` | the reason | the graphics ladders |
 | `exit`, `continue_offline`, `match_end` | | leaving |
-| `error`, `warn` | `kind`, `msg`, `stack`, `where` | an uncaught throw, an unhandled rejection, or the page's own `console.error`/`warn` |
+| `error`, `warn` | `kind`, `msg`, `stack`, `where` | an uncaught throw, an unhandled rejection, the page's own `console.error`/`warn`, or Babylon's own logged warning or error (`kind: babylon`, §8) |
 | `end` | `reason`, `dropped`, `trouble`, `suppressed`, `sent`, `failed`, `dur` | the page is leaving |
 
 "Did it run without errors" is answered by the last row of a session: an `end` with
@@ -235,6 +235,22 @@ world, the platform and the GPU from the first day; four things were missing for
   the user agent: the page that never started still says so. Vite substitutes the telemetry
   URL and the build sha into the script; in development they stay as written and nothing is
   sent.
+- **Babylon's own log, and a GPU error's material** *(amended 2026-10-26)*. Babylon's
+  logger keeps `console.warn` and `console.error` in its levels from the moment its module
+  loads, before the page wraps the console, so nothing Babylon logged reached a row: not a
+  GPU validation error, not an effect that would not compile on WebGL2, not a lost WebGL
+  context. `installErrorCapture` now wraps the logger's warning and error levels too
+  (`Logger._Levels`), as `kind: babylon` with Babylon's clock taken off the front. A GPU
+  validation error runs to six or eight hundred characters and names the shader module at
+  its end, so `MAX_MESSAGE_LENGTH` is 1,000 (it was 300). Babylon labelled every shader
+  module `vertex` or `fragment`, so that name said nothing: the WebGPU engine now labels
+  each module, the lookup's and Babylon's own, with its effect's shaders and a hash of the
+  effect's key (`labelShaderModules`, `effectLabel`, `shaderLookup.ts`), with ` again` when Babylon prepares the effect a second
+  time on the same pipeline context (at the first draw of integer vertex buffers), and the
+  engine's watcher logs the failing effect's defines once (`WebGPU: the failing effect:`,
+  `watchWebGpu`). A batch is also cut at 40,000 characters of events (`MAX_BATCH_CHARS`):
+  the server refuses a body over 64 KiB, and a refused batch is put back and sent again, so a
+  session's twenty long errors in one batch would have held up every batch after them.
 - **The session timeline.** `tools/telemetry/queries/session.sql`, every row a session sent
   and its lobby's signaling rows in order; the admin page opens it as a drawer from any
   session id.

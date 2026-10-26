@@ -37,7 +37,7 @@ import { parseLatest, type DesktopRelease } from "./net/desktopRelease.js";
 import { createSignalingClient, type SignalingClient } from "./net/signaling.js";
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
-import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
+import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type LoggerLevels, type Telemetry } from "./net/telemetry.js";
 import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
@@ -46,6 +46,7 @@ import { releaseEngine } from "./game/renderer.js";
 import { adoptEngine, dropEngine, keepEngine, takeEngine } from "./game/keptEngine.js";
 import { recordEngineFailure, recordStartFailure, startOnEngine } from "./game/engineFailure.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import { Logger } from "@babylonjs/core/Misc/logger.js";
 import { browserEnv, browserMajor, hostOs, isChromeOrEdge, readSignals, type GpuSignals } from "./game/gpuSignals.js";
 import {
   LOADING_LINE,
@@ -187,7 +188,15 @@ const telemetry: Telemetry = createTelemetry(
   },
   browserDeps(),
 );
-installErrorCapture(telemetry, window, console, (window as unknown as { __dh?: EarlyCatch }).__dh);
+// Babylon's own warnings and errors too: its logger took the console's
+// functions when it loaded, so it is heard at its levels, not the console.
+installErrorCapture(
+  telemetry,
+  window,
+  console,
+  (window as unknown as { __dh?: EarlyCatch }).__dh,
+  (Logger as unknown as { _Levels: LoggerLevels })._Levels,
+);
 // Every change of visibility is a row: the last `hidden` is "last seen" for a
 // page that never says goodbye. On the way out, everything held goes by
 // beacon with the session's counts; a tab put in the background flushes too,

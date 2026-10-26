@@ -8,6 +8,7 @@ import { EffectFallbacks } from "@babylonjs/core/Materials/effectFallbacks.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
 import { ThinWebGPUEngine } from "@babylonjs/core/Engines/thinWebGPUEngine.js";
 import { catchTranslationFailures, mipEveryLayer, watchPipelines, watchWebGpu } from "../../src/game/gpuEngine.js";
+import { effectLabel } from "../../src/game/shaderLookup.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -35,6 +36,24 @@ describe("watchWebGpu", () => {
       expect(seen).toEqual(["pipeline"]);
     } finally {
       stop();
+      engine.dispose();
+    }
+  });
+
+  it("says the failing effect's defines when the error names a labelled module, once", () => {
+    const engine = withDevice();
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void logged.push(String(a[0])));
+    const label = effectLabel("tree+tree@#define ALPHATEST|#define NUM_BONE_INFLUENCERS 0", true);
+    const stop = watchWebGpu(engine, () => undefined);
+    try {
+      const failure = (message: string) => Object.assign(new Event("uncapturederror"), { error: { message } });
+      engine._device.dispatchEvent(failure(`While validating vertex stage ([ShaderModule "vertex ${label}"], entryPoint: "main").`));
+      engine._device.dispatchEvent(failure(`While validating vertex stage ([ShaderModule "vertex ${label}"], entryPoint: "main").`));
+      expect(logged).toEqual(["WebGPU: the failing effect: tree+tree@ALPHATEST NUM_BONE_INFLUENCERS 0"]);
+    } finally {
+      stop();
+      spy.mockRestore();
       engine.dispose();
     }
   });

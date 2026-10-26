@@ -32,14 +32,22 @@ export const FLUSH_MS = 30_000;
 export const FLUSH_AT_EVENTS = 50;
 /** Events one batch carries at most; the server refuses more (`MAX_EVENTS_PER_BATCH`). */
 export const MAX_BATCH_EVENTS = 200;
+/** The most JSON one batch's events come to: the server refuses a body over
+ * 64 KiB (`MAX_BATCH_BYTES`), and a refused batch is put back and sent again,
+ * so a batch of long errors over it would block every later one. Room is left
+ * for the envelope and for text that is more than a byte a character. */
+export const MAX_BATCH_CHARS = 40_000;
 /** Events held at most: past it the oldest are dropped and counted. */
 export const MAX_QUEUE = 500;
 /** Errors and warnings one session reports in full; the rest are counted. */
 export const MAX_TROUBLE = 20;
-/** An error's text and stack are cut here. Two thousand characters of stack
- * is a dozen or more minified frames, which `tools/telemetry/symbolicate.mjs`
- * reads back against the build's source maps. */
-export const MAX_MESSAGE_LENGTH = 300;
+/** An error's text and stack are cut here. A GPU validation error runs to six
+ * or eight hundred characters and names the shader module and the pipeline
+ * only at its end, so the text keeps a thousand. Two thousand characters of
+ * stack is a dozen or more minified frames, which
+ * `tools/telemetry/symbolicate.mjs` reads back against the build's source
+ * maps. The server keeps two thousand of any string (`MAX_STRING_LENGTH`). */
+export const MAX_MESSAGE_LENGTH = 1000;
 export const MAX_STACK_LENGTH = 2000;
 /** The batch format the server reads (`BATCH_VERSION`). */
 export const BATCH_VERSION = 1;
@@ -160,18 +168,32 @@ export function createTelemetry(url: string | null, envelope: Fields, deps: Tele
    * next; a send that fails puts its events back at the front, where the
    * queue's bound still holds.
    */
+  /** The oldest events, at most `count` of them and `MAX_BATCH_CHARS` of JSON
+   * (always one at least), taken off the queue. */
+  function take(count: number): Queued[] {
+    let chars = 0;
+    let n = 0;
+    while (n < queue.length && n < count) {
+      const size = JSON.stringify(queue[n]).length + 1;
+      if (n > 0 && chars + size > MAX_BATCH_CHARS) break;
+      chars += size;
+      n += 1;
+    }
+    return queue.splice(0, n);
+  }
+
   function flushNow(viaBeacon: boolean): void {
     if (disposed || queue.length === 0) return;
     if (viaBeacon) {
       while (queue.length > 0) {
-        const chunk = queue.splice(0, FLUSH_AT_EVENTS);
+        const chunk = take(FLUSH_AT_EVENTS);
         if (deps.beacon(target, body(chunk))) sent += chunk.length;
         else failed += chunk.length;
       }
       return;
     }
     if (inFlight) return;
-    const batch = queue.splice(0, MAX_BATCH_EVENTS);
+    const batch = take(MAX_BATCH_EVENTS);
     inFlight = true;
     deps.send(target, body(batch)).then(
       (ok) => {
@@ -433,75 +455,93 @@ export type EarlyError = { kind: string; msg: string; stack?: string; at?: numbe
 export type EarlyCatch = { q: EarlyError[]; on: ((error: EarlyError) => void) | null };
 
 /**
- * Hears what the page would otherwise only print: uncaught throws, rejected
- * promises nobody awaited, and the game's own `console.error` and
- * `console.warn`, whose prefixes ("WebGPU:", "quality:") already bucket them.
- * The console keeps printing; the wrap only listens. Nothing here runs unless
- * something is wrong, so a clean session pays for a few closures and no more.
+ * Babylon's logger's levels (`Logger._Levels`). Babylon takes `console.warn`
+ * and `console.error` into them when its module loads, before the page's
+ * wrap of the console exists, so its warnings and errors (a GPU validation
+ * error, an effect that would not compile) never pass through that wrap; the
+ * levels' own functions are wrapped instead.
  */
-export function installErrorCapture(telemetry: Telemetry, target: ErrorTarget, con: ConsoleLike, early?: EarlyCatch): () => void {
-  if (!telemetry.enabled) return () => undefined;
-  // What the HTML caught before this ran, then everything it catches after:
-  // its listeners stay the page's listeners, so nothing is heard twice.
-  if (early !== undefined) {
-    for (const e of early.q) telemetry.error(e.kind, e.msg, e.stack);
-    early.q.length = 0;
-    early.on = (e) => telemetry.error(e.kind, e.msg, e.stack);
-    const restore = con.error;
-    const restoreWarn = con.warn;
-    con.error = (...args: unknown[]) => {
-      restore.apply(con, args);
-      try {
-        telemetry.error("console", textOf(args), stackOf(args));
-      } catch {
-        // A listener must never be the page's next error.
-      }
-    };
-    con.warn = (...args: unknown[]) => {
-      restoreWarn.apply(con, args);
-      try {
-        telemetry.warn("console", textOf(args), stackOf(args));
-      } catch {
-        // As above.
-      }
-    };
-    return () => {
-      early.on = null;
-      con.error = restore;
-      con.warn = restoreWarn;
-    };
-  }
-  target.addEventListener("error", (event) => {
-    const error = event.error;
-    const stack = error instanceof Error ? error.stack : undefined;
-    const at = event.filename ? ` (${event.filename.split("/").pop() ?? ""}:${event.lineno ?? 0})` : "";
-    telemetry.error("uncaught", `${event.message}${at}`, stack);
-  });
-  target.addEventListener("unhandledrejection", (event) => {
-    const reason = event.reason;
-    telemetry.error("unhandled", textOf([reason]), reason instanceof Error ? reason.stack : undefined);
-  });
-  const error = con.error;
-  const warn = con.warn;
-  con.error = (...args: unknown[]) => {
-    error.apply(con, args);
+export type LoggerLevels = ReadonlyArray<{ name?: string; logFunc?: (...args: unknown[]) => void }>;
+
+/** What Babylon puts before every line it logs: its name and the wall clock,
+ * which would make every repeat of a line a new one. */
+const BABYLON_PREFIX = /^BJS - \[\d{2}:\d{2}:\d{2}\]: /;
+
+/** `con[key]` replaced by one that prints as before, then tells `hear`; returns what puts it back. */
+function listenTo<K extends "error" | "warn">(con: ConsoleLike, key: K, hear: (args: unknown[]) => void): () => void {
+  const original = con[key];
+  con[key] = (...args: unknown[]) => {
+    original.apply(con, args);
     try {
-      telemetry.error("console", textOf(args), stackOf(args));
+      hear(args);
     } catch {
       // A listener must never be the page's next error.
     }
   };
-  con.warn = (...args: unknown[]) => {
-    warn.apply(con, args);
-    try {
-      telemetry.warn("console", textOf(args), stackOf(args));
-    } catch {
-      // As above.
-    }
-  };
   return () => {
-    con.error = error;
-    con.warn = warn;
+    con[key] = original;
+  };
+}
+
+/**
+ * Hears what the page would otherwise only print: uncaught throws, rejected
+ * promises nobody awaited, the game's own `console.error` and `console.warn`,
+ * whose prefixes ("WebGPU:", "quality:") already bucket them, and Babylon's
+ * own warnings and errors (`babylon`, its logger's levels; kind `babylon`).
+ * What prints keeps printing; the wraps only listen. Nothing here runs unless
+ * something is wrong, so a clean session pays for a few closures and no more.
+ */
+export function installErrorCapture(
+  telemetry: Telemetry,
+  target: ErrorTarget,
+  con: ConsoleLike,
+  early?: EarlyCatch,
+  babylon?: LoggerLevels,
+): () => void {
+  if (!telemetry.enabled) return () => undefined;
+  const undo: Array<() => void> = [];
+  if (early !== undefined) {
+    // What the HTML caught before this ran, then everything it catches after:
+    // its listeners stay the page's listeners, so nothing is heard twice.
+    for (const e of early.q) telemetry.error(e.kind, e.msg, e.stack);
+    early.q.length = 0;
+    early.on = (e) => telemetry.error(e.kind, e.msg, e.stack);
+    undo.push(() => {
+      early.on = null;
+    });
+  } else {
+    target.addEventListener("error", (event) => {
+      const error = event.error;
+      const stack = error instanceof Error ? error.stack : undefined;
+      const at = event.filename ? ` (${event.filename.split("/").pop() ?? ""}:${event.lineno ?? 0})` : "";
+      telemetry.error("uncaught", `${event.message}${at}`, stack);
+    });
+    target.addEventListener("unhandledrejection", (event) => {
+      const reason = event.reason;
+      telemetry.error("unhandled", textOf([reason]), reason instanceof Error ? reason.stack : undefined);
+    });
+  }
+  undo.push(listenTo(con, "error", (args) => telemetry.error("console", textOf(args), stackOf(args))));
+  undo.push(listenTo(con, "warn", (args) => telemetry.warn("console", textOf(args), stackOf(args))));
+  for (const level of babylon ?? []) {
+    const original = level.logFunc;
+    const severity = level.name === "Error" ? "error" : level.name === "Warn" ? "warn" : null;
+    if (original === undefined || severity === null) continue;
+    const mutable = level as { logFunc?: (...args: unknown[]) => void };
+    mutable.logFunc = (...args: unknown[]) => {
+      original(...args);
+      try {
+        telemetry[severity]("babylon", textOf(args).replace(BABYLON_PREFIX, ""), stackOf(args));
+      } catch {
+        // As above.
+      }
+    };
+    undo.push(() => {
+      mutable.logFunc = original;
+    });
+  }
+  return () => {
+    for (const step of undo.reverse()) step();
   };
 }
 

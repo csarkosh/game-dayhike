@@ -6,6 +6,7 @@ import {
   installErrorCapture,
   MAX_QUEUE,
   MAX_REFERRER_LENGTH,
+  MAX_MESSAGE_LENGTH,
   MAX_TROUBLE,
   referrerOf,
   SWITCH_KEY,
@@ -171,6 +172,18 @@ describe("createTelemetry", () => {
     expect(trouble[1]).toMatchObject({ n: "warn", msg: "quality: slow" });
     const end = events[events.length - 1]!;
     expect(end).toMatchObject({ n: "end", trouble: MAX_TROUBLE, suppressed: 1 + 5 + 2 });
+  });
+
+  it("splits a batch of long errors so no body passes what the server takes", () => {
+    const f = fakeDeps({ ok: true });
+    const t = createTelemetry("u", ENVELOPE, f.deps);
+    for (let i = 0; i < MAX_TROUBLE; i++) t.error("uncaught", `${i} ${"m".repeat(MAX_MESSAGE_LENGTH)}`, "s".repeat(4000));
+    t.end("test");
+    const beacons = f.sent.filter((s) => s.beacon);
+    expect(beacons.length).toBeGreaterThan(1);
+    for (const { batch } of beacons) expect(JSON.stringify(batch).length).toBeLessThan(64 * 1024);
+    const events = beacons.flatMap((s) => s.batch.events);
+    expect(events.filter((e) => e.n === "error")).toHaveLength(MAX_TROUBLE);
   });
 
   it("heartbeats from the sampler while a match runs, and not between", () => {
@@ -423,6 +436,43 @@ describe("installErrorCapture", () => {
     expect(printed).toHaveLength(3);
     t.flush();
     expect(f.sent).toHaveLength(1);
+  });
+
+  it("hears Babylon's logger at its warning and error levels, without its clock, and puts them back", () => {
+    const f = fakeDeps({ ok: true });
+    const t = createTelemetry("u", ENVELOPE, f.deps);
+    const printed: string[] = [];
+    const levels = [
+      {},
+      { name: "Log", logFunc: (...a: unknown[]) => void printed.push(`L ${textOf(a)}`) },
+      { name: "Warn", logFunc: (...a: unknown[]) => void printed.push(`W ${textOf(a)}`) },
+      {},
+      { name: "Error", logFunc: (...a: unknown[]) => void printed.push(`E ${textOf(a)}`) },
+    ];
+    const originalWarn = levels[2]!.logFunc;
+    const con = { error: () => undefined, warn: () => undefined };
+    const uninstall = installErrorCapture(t, { addEventListener: () => undefined }, con, undefined, levels);
+    levels[1]!.logFunc!("BJS - [10:58:23]: a log line");
+    levels[2]!.logFunc!("BJS - [10:58:23]: [Frame 2707] WebGPU uncaptured error (1): [object GPUValidationError] - Binding type");
+    levels[4]!.logFunc!("BJS - [10:58:24]: Unable to compile effect:");
+    t.flush();
+    expect(f.sent[0]!.batch.events.map((e) => [e.n, e.kind, e.msg])).toEqual([
+      ["warn", "babylon", "[Frame 2707] WebGPU uncaptured error (1): [object GPUValidationError] - Binding type"],
+      ["error", "babylon", "Unable to compile effect:"],
+    ]);
+    expect(printed).toHaveLength(3);
+    uninstall();
+    expect(levels[2]!.logFunc).toBe(originalWarn);
+  });
+
+  it("keeps a GPU error's text to its end, where it names the shader module", () => {
+    const f = fakeDeps({ ok: true });
+    const t = createTelemetry("u", ENVELOPE, f.deps);
+    const long = "Binding type in the shader (buffer) doesn't match the type in the layout (texture). " + "x".repeat(600) + ' [ShaderModule "vertex"]';
+    t.error("babylon", long);
+    t.flush();
+    expect(f.sent[0]!.batch.events[0]!.msg).toBe(long);
+    expect(long.length).toBeLessThan(MAX_MESSAGE_LENGTH);
   });
 
   it("installs nothing when telemetry is off", () => {
