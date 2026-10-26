@@ -40,7 +40,7 @@ import {
   splitEntries,
   type ScriptEntry,
 } from "./game/script.js";
-import { stepFreecam, type FreecamState } from "./game/freecam.js";
+import { aimAt, stepFreecam, type FreecamState } from "./game/freecam.js";
 import { DEFAULT_HOUR, sunAltitudeDeg } from "./game/lighting.js";
 import { startSkySource } from "./game/skyWorker.js";
 import { seedFromToken } from "./game/seed.js";
@@ -722,6 +722,21 @@ function buildGame(
   let unsettleLevel = 1;
   let windOverride: number | null = null;
   let lastFreecamView: FreecamView | null = null;
+  /** The point an `aim` asked the view to face, until the camera has a place to face it from. */
+  let pendingAim: { x: number; y: number; z: number } | null = null;
+  /** Turns the view to face `pendingAim`, once the camera stands somewhere: the free camera's place, or the player's eye. */
+  function tryAim(): void {
+    if (pendingAim === null) return;
+    const from = freecam ?? (cameraOnPlayer ? renderer.camera.position : null);
+    if (from === null) return;
+    const { yaw, pitch } = aimAt(from, pendingAim);
+    pendingAim = null;
+    input.setLook(yaw, pitch);
+    if (freecam !== null) {
+      lastFreecamView = { ...freecam, yaw, pitch };
+      renderer.setFreecam(lastFreecamView);
+    }
+  }
 
   /** The commands that play a scene for a look (`summit`, `escape`), `stand`, which puts the host's player at a place, and `lamp`, which lights that player's lamp or puts it out: never written back to the URL, and from the URL called once the world is in. */
   function isLook(name: string): boolean {
@@ -777,7 +792,13 @@ function buildGame(
    */
   function applyView(name: string, args: readonly string[], options: { instant?: boolean } = {}): void {
     const value = findCommand(name)?.scriptValue?.(args);
-    if (name === "freecam") {
+    if (name === "aim") {
+      if (typeof value === "string" && value !== "") {
+        const [x, y, z] = value.split(" ").map(Number) as [number, number, number];
+        pendingAim = { x, y, z };
+        tryAim();
+      }
+    } else if (name === "freecam") {
       if (typeof value === "string") {
         // A place: the camera stands on the ground there at the player's eye
         // height, facing the yaw given (or north), flying from this frame.
@@ -1531,6 +1552,7 @@ function buildGame(
    * piece of them has no such reason to fork.
    */
   function stepFreecamView(dt: number): void {
+    tryAim();
     if (freecamPending) {
       // Wait for a real position. This runs *before* `renderer.sync` in both
       // loops, so on the frame freecam is enabled the camera has not been moved

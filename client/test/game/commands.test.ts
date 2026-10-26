@@ -83,6 +83,17 @@ describe("validateCommand", () => {
     expect(validateCommand({ name: "freecam", args: ["1", "2", "3", "4"] })).not.toBeNull();
   });
 
+  it("takes a point for aim, three numbers, kept as its text", () => {
+    expect(validateCommand({ name: "aim", args: ["-254.6", "17", "52.1"] })).toBeNull();
+    expect(validateCommand({ name: "aim", args: ["1", "2"] })).not.toBeNull();
+    expect(validateCommand({ name: "aim", args: ["1", "up", "3"] })).not.toBeNull();
+    expect(findCommand("aim")?.kind).toBe("view");
+    expect(findCommand("aim")?.scriptValue?.(["-254.6", "17", "52.1"])).toBe("-254.6 17 52.1");
+    const { entries, errors } = parseScript("freecam -265 45 0.5;aim -254.6 17 52.1");
+    expect(errors).toEqual([]);
+    expect(entries.map((e) => e.name)).toEqual(["freecam", "aim"]);
+  });
+
   it("rejects any terrain variant while none are registered, and lists them once they are", () => {
     expect(validateCommand({ name: "terrain", args: ["montane"] })).not.toBeNull();
     registerTerrainVariants(["montane", "ridged"]);

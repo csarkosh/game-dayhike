@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stepFreecam, FREECAM_SPEED, FREECAM_BOOST } from "../../src/game/freecam.js";
+import { aimAt, stepFreecam, FREECAM_SPEED, FREECAM_BOOST } from "../../src/game/freecam.js";
 
 const at = (x = 0, y = 0, z = 0) => ({ x, y, z });
 const keys = (...k: string[]) => new Set(k);
@@ -71,5 +71,19 @@ describe("stepFreecam", () => {
 
   it("stands still with no keys held", () => {
     expect(stepFreecam(at(1, 2, 3), { yaw: 1, keys: keys(), dt: 1 })).toEqual(at(1, 2, 3));
+  });
+});
+
+describe("aimAt", () => {
+  it("faces +Z at yaw 0 and +X at yaw π/2, level", () => {
+    expect(aimAt(at(), at(0, 0, 5))).toEqual({ yaw: 0, pitch: -0 });
+    const east = aimAt(at(), at(5, 0, 0));
+    expect(east.yaw).toBeCloseTo(Math.PI / 2, 9);
+    expect(east.pitch).toBeCloseTo(0, 9);
+  });
+
+  it("looks up at a point above with a negative pitch, and down at one below with a positive one", () => {
+    expect(aimAt(at(0, 10, 0), at(0, 22, 12)).pitch).toBeCloseTo(-Math.PI / 4, 9);
+    expect(aimAt(at(0, 10, 0), at(0, -2, 12)).pitch).toBeCloseTo(Math.PI / 4, 9);
   });
 });

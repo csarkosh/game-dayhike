@@ -56,3 +56,15 @@ export function stepFreecam(state: FreecamState, input: FreecamInput): FreecamSt
     z: state.z + (forward * cos - right * sin) * speed,
   };
 }
+
+/**
+ * The look that faces `to` from `from`, both in world metres (y up): yaw 0
+ * faces +Z and π/2 faces +X, and positive pitch looks down, as the input's
+ * look and the renderer's camera read them. The `aim` command's.
+ */
+export function aimAt(from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }): { yaw: number; pitch: number } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dz = to.z - from.z;
+  return { yaw: Math.atan2(dx, dz), pitch: -Math.atan2(dy, Math.hypot(dx, dz)) };
+}

@@ -90,8 +90,29 @@ const freecamSpec: CommandSpec = {
   defaultValue: false,
 };
 
+/**
+ * `aim x y z`: turns the view, the free camera's or the player's, to face the
+ * point (x, y, z) in world metres (y up) from where the camera stands, so a
+ * `?cmd=` link after `freecam x z` frames one thing, a crown or a rock, with
+ * no hand on the mouse, as a test shot needs (2026-10-26). Applied once the
+ * camera has a place; the mouse moves it on from there. The point is the
+ * script value as text, "x y z", which the app parses.
+ */
+const aimSpec: CommandSpec = {
+  name: "aim",
+  kind: "view",
+  validate(args) {
+    if (args.length !== 3) return "aim takes a point: x y z";
+    for (const a of args) if (!Number.isFinite(Number(a))) return `"${a}" is not a number`;
+    return null;
+  },
+  scriptValue: (args) => args.join(" "),
+  defaultValue: "",
+};
+
 const SPECS: readonly CommandSpec[] = [
   freecamSpec,
+  aimSpec,
   toggleSpec("wireframe"),
   // On by default: the URL records only `skin off`.
   toggleSpec("skin", true),
