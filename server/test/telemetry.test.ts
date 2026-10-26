@@ -266,23 +266,36 @@ describe("the telemetry route", () => {
     expect(rows).toHaveLength(3);
   });
 
-  it("answers an ignored address 204, with CORS, and writes nothing; a bad batch from it is still refused", async () => {
+  it("writes the owner's address marked tester and owner; a bad batch from it is still refused", async () => {
     rows.length = 0;
     for (const ip of ["203.0.113.7", "::ffff:203.0.113.8", "2001:db8:1:2::3"]) {
-      for (let i = 0; i < 3; i++) {
-        const res = await post(batch([{ n: "hb", t: i }]), { origin: ORIGIN }, ip);
-        expect(res.status).toBe(204);
-        expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN);
-      }
+      const res = await post(batch([{ n: "error", t: 0, kind: "babylon", msg: "boom" }]), { origin: ORIGIN }, ip);
+      expect(res.status).toBe(204);
+      expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN);
     }
-    expect(rows).toHaveLength(0);
-    // The batch is read and checked as any other, so a deploy verified from the owner's machine still sees the 400.
+    expect(rows).toHaveLength(3);
+    for (const r of rows) expect(r).toMatchObject({ n: "error", msg: "boom", tester: true, owner: true });
     expect((await post("{", { origin: ORIGIN }, "203.0.113.9")).status).toBe(400);
-    // Still the origin check first: an ignored address on another site's page is refused, not humoured.
+    // Still the origin check first: the owner's address on another site's page is refused.
     expect((await post(batch([{ n: "hb", t: 0 }]), { origin: "https://evil.example" }, "203.0.113.7")).status).toBe(403);
-    // And a neighbour outside the prefix is written as ever.
+    // A neighbour outside the prefix is no one's but its own.
+    rows.length = 0;
     expect((await post(batch([{ n: "hb", t: 0 }]), { origin: ORIGIN }, "203.0.114.7")).status).toBe(204);
-    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty("owner");
+    expect(rows[0]).not.toHaveProperty("tester");
+  });
+
+  it("takes a preview channel of a listed site, marked tester and preview, and refuses a lookalike", async () => {
+    rows.length = 0;
+    const channel = "https://fps-csarko--tune-shimmer-4zen2bs4.web.app";
+    const res = await post(batch([{ n: "engine_failed", t: 0, reason: "pipeline" }]), { origin: channel }, "198.51.100.20");
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe(channel);
+    expect(rows[0]).toMatchObject({ n: "engine_failed", tester: true, preview: true });
+    expect(rows[0]).not.toHaveProperty("owner");
+    for (const origin of ["https://evil--x.web.app", "https://fps-csarko--x.web.app.evil.example", "http://fps-csarko--x.web.app"]) {
+      expect((await post(batch([{ n: "hb", t: 0 }]), { origin }, "198.51.100.21")).status).toBe(403);
+    }
   });
 });
 

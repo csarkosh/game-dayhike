@@ -6,9 +6,10 @@
  * object: an envelope naming the page (its session, the build it runs, the
  * world it is in) and a list of events, each a name, a time and a few fields
  * (`client/src/net/telemetry.ts`). The route does four things and no more:
- * refuses what is not a well-formed batch from an allowed origin within the
- * size and rate limits; drops, unread, a batch from an address on the ignore
- * list (the owner's own); flattens the envelope onto every event so each row
+ * refuses what is not a well-formed batch from an allowed origin (or one of
+ * its preview channels) within the size and rate limits; marks every row of
+ * a batch from the owner's address or a preview channel `tester`, so it
+ * counts in no number and its errors are still kept; flattens the envelope onto every event so each row
  * stands alone in a query, with no join back to a session row that may never
  * have arrived; and writes the rows, each dated at the event rather than the
  * batch. It holds nothing between requests but the rate limiter, which is
@@ -170,6 +171,10 @@ export type ReceiptMeta = {
   serverBuild: string;
   /** When the batch arrived, epoch milliseconds. */
   receivedAt: number;
+  /** Fields the server sets on every row of the batch over the page's own:
+   * `tester` and `owner` for the owner's address, `tester` and `preview` for
+   * a preview channel's page (`telemetryRoute`). */
+  stamp?: Record<string, boolean>;
 };
 
 /** An event's severity: its name says. Errors and warnings the page caught
@@ -203,7 +208,7 @@ export function eventTimeOf(event: TelemetryEvent, batch: Batch, receivedAt: num
  */
 export function rowsOf(batch: Batch, meta: ReceiptMeta): LogRow[] {
   return batch.events.map((event) => {
-    const fields = { ...batch.envelope, ...event.fields, t: event.t, at: meta.receivedAt, sbuild: meta.serverBuild, svc: "telemetry" };
+    const fields = { ...batch.envelope, ...event.fields, ...meta.stamp, t: event.t, at: meta.receivedAt, sbuild: meta.serverBuild, svc: "telemetry" };
     // An error's text in the summary column, so a scan of the log reads the
     // failures without opening a row.
     const text = typeof event.fields.msg === "string" ? `${event.n}: ${event.fields.msg}` : event.n;
@@ -279,10 +284,10 @@ export type TelemetryRouteOptions = {
   log: LogSink;
   serverBuild: string;
   /**
-   * Addresses whose batches are taken and thrown away: the owner's own, so
-   * their play is no part of the numbers (`TELEMETRY_IGNORE_IPS`). Answered
-   * 204 as an accepted batch is, so the page never retries and never knows,
-   * and before the limiter, so they are not counted either.
+   * The owner's own addresses (`TELEMETRY_IGNORE_IPS`): their batches are
+   * written with every row marked `tester` and `owner`, so their play is no
+   * part of the numbers (every query over a range leaves `tester` out) while
+   * the errors their testing meets are kept, to be read and fixed.
    */
   ignore?: readonly IpRange[];
   now?: () => number;
@@ -298,6 +303,18 @@ export type TelemetryRouteOptions = {
  * (`isAllowedOrigin`): a missing origin is a probe or a test and is let
  * through, a present and unlisted one is somebody else's page.
  */
+/**
+ * Whether `origin` is a Firebase Hosting preview channel of a site on the
+ * list: `https://<site>--<channel>-<hash>.web.app` for a listed
+ * `https://<site>.web.app`. Only the site's own project can make a channel,
+ * so its pages are this game's builds, under test; their rows are marked
+ * `tester` and `preview`. The telemetry route takes them; the socket does not.
+ */
+export function isPreviewOrigin(origin: string | undefined, allowed: readonly string[]): boolean {
+  const match = origin === undefined ? null : /^https:\/\/([a-z0-9-]+?)--[a-z0-9-]+\.web\.app$/.exec(origin);
+  return match !== null && allowed.includes(`https://${match[1]}.web.app`);
+}
+
 function corsHeaders(origin: string | undefined): Record<string, string> {
   if (origin === undefined) return {};
   return { "access-control-allow-origin": origin, vary: "origin" };
@@ -340,7 +357,8 @@ export function telemetryRoute(options: TelemetryRouteOptions): (req: IncomingMe
   return (req, res, path) => {
     if (path !== TELEMETRY_PATH) return false;
     const origin = req.headers.origin;
-    if (!isAllowedOrigin(origin, options.allowedOrigins)) {
+    const preview = isPreviewOrigin(origin, options.allowedOrigins);
+    if (!preview && !isAllowedOrigin(origin, options.allowedOrigins)) {
       answer(res, 403, {}, "forbidden");
       return true;
     }
@@ -363,10 +381,11 @@ export function telemetryRoute(options: TelemetryRouteOptions): (req: IncomingMe
       return true;
     }
     const ip = clientIpOf(req.headers["x-forwarded-for"], req.socket.remoteAddress);
-    // An ignored address (the owner's own) is read and checked like any other, so a bad
-    // batch is still refused and a deploy verified from that address still proves the
-    // route; only a good batch from it goes unwritten.
-    const ignored = options.ignore !== undefined && anyIpInRanges(req.headers["x-forwarded-for"], req.socket.remoteAddress, options.ignore);
+    // The owner's address is read and checked like any other; its rows are
+    // marked, not dropped (`ignore`).
+    const owner = options.ignore !== undefined && anyIpInRanges(req.headers["x-forwarded-for"], req.socket.remoteAddress, options.ignore);
+    const stamp: Record<string, boolean> | undefined =
+      owner || preview ? { tester: true, ...(owner ? { owner: true } : {}), ...(preview ? { preview: true } : {}) } : undefined;
     if (!options.limiter.allow(ip)) {
       answer(res, 429, cors, "too many requests");
       return true;
@@ -381,10 +400,8 @@ export function telemetryRoute(options: TelemetryRouteOptions): (req: IncomingMe
         answer(res, 400, cors, parsed.problem);
         return;
       }
-      if (!ignored) {
-        const meta: ReceiptMeta = { serverBuild: options.serverBuild, receivedAt: now() };
-        for (const entry of rowsOf(parsed.batch, meta)) options.log(entry);
-      }
+      const meta: ReceiptMeta = { serverBuild: options.serverBuild, receivedAt: now(), ...(stamp ? { stamp } : {}) };
+      for (const entry of rowsOf(parsed.batch, meta)) options.log(entry);
       answer(res, 204, cors);
     });
     return true;

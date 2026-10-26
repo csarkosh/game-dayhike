@@ -15,7 +15,8 @@ dns_zone_name      = "csarko.sh"
 # admin_auth_project = "csarko-sh"
 
 # Optional: your own addresses, or prefixes, v4 and v6. Telemetry from them is
-# dropped at the service, so your own play is no part of the numbers. Only
+# marked `tester` at the service, so your own play is no part of the numbers
+# while its errors are kept. Only
 # here, never in a tracked file: the repository is public.
 # telemetry_ignore_ips = ["203.0.113.7", "2001:db8:abcd::/64"]
 

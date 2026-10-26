@@ -21,10 +21,11 @@ stills shoot (a session with a `cmd` row, looked for over the last ninety days),
 or automated browsers: a `gpu` naming SwiftShader, a `ua` naming HeadlessChrome, or `wd` true
 (the page's `navigator.webdriver`). Headless Chrome on a machine with a real GPU names that GPU
 (an NVIDIA L4, an Apple M4), not SwiftShader: eleven such sessions around the 2026-10-19
-deploys counted as visitors until the last two checks *(2026-10-22)*. The owner's own play
-never reaches the table: the server drops it by address (`TELEMETRY_IGNORE_IPS`, the same
-home addresses as csarko.sh's collector), so play from another network counts unless that
-browser is marked a tester (`?telemetry=tester` once). The three lookups (`session.sql`,
+deploys counted as visitors until the last two checks *(2026-10-22)*. The owner's own play is marked `tester` (and `owner`) at the server by address
+(`TELEMETRY_IGNORE_IPS`, the same home addresses as csarko.sh's collector), and so are pages
+on a preview channel (`preview`), so this exclusion leaves both out while their errors stay in
+the table *(2026-10-26; before, the owner's batches were dropped unwritten)*; play from another
+network counts unless that browser is marked a tester (`?telemetry=tester` once). The three lookups (`session.sql`,
 `visitor.sql`, `match.sql`) are by id and exclude nothing, so a tester's own session can
 still be opened.
 
@@ -77,3 +78,22 @@ build on (older rows keep the time the batch arrived).
 | `session.sql` | One session's trail: every row the page sent with its payload, and its lobby's signaling rows, ordered by `timestamp`, read over a window a day either side of the session's own span. Replace `SID`. |
 | `visitor.sql` | Every row of every session of one browser, in order, each with its session, match and lobby ids. Replace `VID`. |
 | `match.sql` | Every row of every session that was in one match, in order, the sessions side by side. Replace `GAME`. |
+
+## The errors testing met
+
+`errors.sql` is the players' errors. The owner's own sessions and preview channels' pages are
+left out of it with the rest of `tester`, and are in the table all the same (above). Their
+errors, pasted into BigQuery as written:
+
+```sql
+SELECT timestamp, JSON_VALUE(json_payload.sid) AS sid, JSON_VALUE(json_payload.build) AS build,
+  JSON_VALUE(json_payload.n) AS n, JSON_VALUE(json_payload.kind) AS kind,
+  JSON_VALUE(json_payload.owner) AS owner, JSON_VALUE(json_payload.preview) AS preview,
+  JSON_VALUE(json_payload.msg) AS msg, JSON_VALUE(json_payload.reason) AS reason
+FROM `fps-csarko.dayhike_telemetry._AllLogs`
+WHERE JSON_VALUE(json_payload.svc) = 'telemetry'
+  AND JSON_VALUE(json_payload.tester) = 'true'
+  AND JSON_VALUE(json_payload.n) IN ('error', 'warn', 'engine_failed', 'webgpu_start_failed', 'tier_fallback', 'start_fail', 'connect_fail')
+  AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+ORDER BY timestamp DESC;
+```

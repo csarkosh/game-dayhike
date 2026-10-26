@@ -34,8 +34,13 @@ format, the server and the queries together, and is the contract between the thr
   becomes the event's. `at` stays the time of receipt.
 - **`TELEMETRY_IGNORE_IPS`**: a comma-separated list of addresses or CIDR prefixes (v4 and v6).
   A batch from one of them is read and checked like any other (a bad one is still refused,
-  so a deploy verified from the owner's machine still proves the route), and a good one is
-  answered 204 and never written. Terraform: module variable `ignore_ips` (list of strings,
+  so a deploy verified from the owner's machine still proves the route). *Amended
+  2026-10-26:* a good one is written with every row marked `tester: true` and `owner: true`,
+  where it was answered 204 and never written: the owner's testing meets errors no player has
+  met yet, and those were lost. Every query over a range leaves `tester` out, so the numbers
+  are as they were. A page on a Firebase preview channel of a listed `*.web.app` site
+  (`https://<site>--<channel>-<hash>.web.app`, `isPreviewOrigin`) is taken too, its rows
+  marked `tester: true` and `preview: true`; the socket still refuses that origin. Terraform: module variable `ignore_ips` (list of strings,
   sensitive, default empty) into that env; root variable `telemetry_ignore_ips`, set only in
   the git-ignored `_infra/terraform.tfvars` (the repo is public).
 - Signaling rows of a room created by a deploy verification (peer id `verify-…`) carry
@@ -48,7 +53,8 @@ format, the server and the queries together, and is the contract between the thr
   arrival time and are not special-cased.
 - One exclusion, the same in every query: `build != 'verify'`, `tester` not `'true'`, no
   session with a `cmd` row (the stills shoot), no `gpu` containing `SwiftShader`, and no
-  signaling row with `verify`. The owner's own play is dropped at the server by address.
+  signaling row with `verify`. The owner's own play and preview pages are marked `tester` at
+  the server (§2), so the same exclusion leaves them out.
 - Definitions, each once: a **match** is a distinct `game` with a host's `match_start`;
   **players** are the distinct sessions with a `match_start` for it; its **length** is its
   `match_end` or `outcome` minus its `match_start` within one session; the **funnel** nests

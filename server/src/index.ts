@@ -53,8 +53,9 @@ const ALLOWED_ORIGINS =
 const allowedOrigins =
   ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ALLOWED_ORIGINS;
 
-// Addresses whose batches the telemetry route takes and drops: the owner's
-// own, so their play is no part of the numbers. Comma-separated addresses
+// Addresses whose rows the telemetry route marks `tester` and `owner`: the
+// owner's own, so their play is no part of the numbers while its errors are
+// kept. Comma-separated addresses
 // or CIDR prefixes, either family (`parseIpRanges`); Terraform sets it from
 // the git-ignored tfvars. An entry that is neither stops the process here,
 // with the entry named, rather than count what it was told to leave out.

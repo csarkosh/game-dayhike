@@ -35,9 +35,10 @@ variable "admin_auth_project" {
 
 variable "ignore_ips" {
   description = <<-EOT
-    The owner's own addresses, or CIDR prefixes, of either family: a batch
-    from one is answered as accepted and never written, so the owner's own
-    play is no part of the numbers (`TELEMETRY_IGNORE_IPS`, which the
+    The owner's own addresses, or CIDR prefixes, of either family: every
+    row of a batch from one is marked `tester` and `owner`, so the owner's
+    own play is no part of the numbers while its errors are kept
+    (`TELEMETRY_IGNORE_IPS`, which the
     service refuses to start on a bad entry of). Empty sets no such
     variable. Sensitive: the addresses are a home's, and the repository is
     public, so they belong in the git-ignored tfvars and nowhere a plan

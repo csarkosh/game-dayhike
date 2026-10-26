@@ -112,9 +112,10 @@ variable "admin_auth_project" {
 variable "telemetry_ignore_ips" {
   description = <<-EOT
     The owner's own addresses, or CIDR prefixes, v4 and v6, whose telemetry
-    batches the service drops unwritten, so the owner's play is no part of
-    the numbers. Set only in the git-ignored terraform.tfvars: the repository
-    is public and these are a home's. Empty (the default) drops nothing.
+    rows the service marks `tester` and `owner`, so the owner's play is no
+    part of the numbers while its errors are kept. Set only in the
+    git-ignored terraform.tfvars: the repository is public and these are a
+    home's. Empty (the default) marks nothing.
   EOT
   type        = list(string)
   default     = []
