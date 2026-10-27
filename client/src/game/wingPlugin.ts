@@ -109,13 +109,23 @@ export class WingPlugin extends MaterialPluginBase {
     return "WingPlugin";
   }
 
-  // `scene` and `mesh` are part of MaterialPluginBase's required override
-  // signature even though a constant define needs neither; TS's own
-  // noUnusedParameters exempts the leading underscore, only this project's
-  // eslint config does not — the `cel.ts` precedent, as in foliagePlugin.ts.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  override prepareDefines(defines: MaterialDefines, _scene: Scene, _mesh: AbstractMesh): void {
+  /**
+   * The wing define, and the instance colour held to the draws that are
+   * instanced. Babylon sets `INSTANCESCOLOR` once a mesh has had an
+   * `instanceColor` buffer and never clears it, while `INSTANCES` and
+   * `THIN_INSTANCES` follow each preparation; its colour mixing reads
+   * `instanceColor` under `INSTANCESCOLOR` alone, but only an instanced stage
+   * declares it. A bucket emptied (and disabled) is still prepared, without
+   * instances, by `scene.isReady()`, which walks every mesh: that vertex stage
+   * failed to compile, and on WebGPU the failure rebuilt the renderer on
+   * WebGL2 (2026-10-26). Plugins prepare after the attributes, so this is the
+   * last word, and it is worked out whole each time so an instanced draw after
+   * a bare one gets its colour back.
+   */
+  override prepareDefines(defines: MaterialDefines, _scene: Scene, mesh: AbstractMesh): void {
     defines.WING = true;
+    const instanced = defines["INSTANCES"] === true || defines["THIN_INSTANCES"] === true;
+    defines["INSTANCESCOLOR"] = instanced && mesh.isVerticesDataPresent("instanceColor");
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

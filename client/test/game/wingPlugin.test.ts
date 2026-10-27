@@ -3,6 +3,7 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
+import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 import { WING_GLSL, WingPlugin, attachWing, wingAngle, WING_TIME_WRAP } from "../../src/game/wingPlugin.js";
 
 describe("wing beat", () => {
@@ -68,6 +69,46 @@ describe("wing beat", () => {
     }
     // Guards the loop against passing on a plugin that injects no directives at all.
     expect(hashed).toBeGreaterThan(5);
+    engine.dispose();
+  });
+
+  it("reads the instance colour only where the draw is instanced", async () => {
+    // Babylon sets INSTANCESCOLOR once a mesh has had instance colours and
+    // never clears it, while INSTANCES and THIN_INSTANCES follow each draw.
+    // `scene.isReady()` prepares every mesh, a bucket emptied and disabled
+    // included, without instances: its vertex stage then read `instanceColor`,
+    // which only an instanced stage declares, and the compile failure took
+    // WebGPU down to WebGL2 (2026-10-26).
+    const engine = new NullEngine();
+    // The null engine reports no instancing, which would leave thin instances off.
+    engine.getCaps().instancedArrays = true;
+    const scene = new Scene(engine);
+    const material = new PBRMaterial("bird_tint", scene);
+    attachWing(material, 0.5, 1);
+    const box = CreateBox("bucket", { size: 1 }, scene);
+    box.material = material;
+    box.thinInstanceSetBuffer("matrix", new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]), 16, false);
+    box.thinInstanceSetBuffer("wing", new Float32Array([0, 0]), 2, false);
+    box.thinInstanceSetBuffer("color", new Float32Array([1, 1, 1, 1]), 4, false);
+    const subMesh = box.subMeshes[0]!;
+    const defines = (): Record<string, unknown> => subMesh.materialDefines as unknown as Record<string, unknown>;
+    // The PBR material waits on its environment lookup's load before it prepares.
+    // Readiness is cached within a render, so each phase is a render of its own.
+    const ready = (instanced: boolean): Promise<void> => new Promise((resolve) => {
+      scene.incrementRenderId();
+      const tick = (): void => { if (material.isReadyForSubMesh(box, subMesh, instanced)) resolve(); else setTimeout(tick, 16); };
+      tick();
+    });
+    await ready(true);
+    expect(defines()["THIN_INSTANCES"]).toBe(true);
+    expect(defines()["INSTANCESCOLOR"]).toBe(true);
+    box.thinInstanceCount = 0;
+    await ready(false);
+    expect(defines()["THIN_INSTANCES"]).toBe(false);
+    expect(defines()["INSTANCESCOLOR"]).toBe(false);
+    box.thinInstanceCount = 1;
+    await ready(true);
+    expect(defines()["INSTANCESCOLOR"]).toBe(true);
     engine.dispose();
   });
 

@@ -144,7 +144,10 @@ const INTERFACE_PINS: Record<string, string> = {
   // Re-pinned for the trail's one sampler, `trailTable`, where `trailSegs`
   // and `trailIndex` were (trailPaint.ts, terrainTexture.ts).
   "terrain.interface": "e03d08f797f76a0ed886258abaf8b55ecf8c8b3415f08fad5c398d14cbfb2cb4",
-  "wing.interface": "bb03268d86b3711b1e489d0f2a62c81f60556c063d98fc835954b43a11cff985",
+  // Re-pinned for INSTANCESCOLOR, which the wing plugin now sets on every
+  // preparation from whether the draw is instanced (wingPlugin.ts): the text
+  // it injects is unchanged.
+  "wing.interface": "6b8c288e7f4baa2375ce52816f90791d14ad2c1405e1a1c44d87fc9eb1f37e42",
 };
 
 /** The puddles' ripples (trailPaint.ts) taken out of the terrain fragment:
