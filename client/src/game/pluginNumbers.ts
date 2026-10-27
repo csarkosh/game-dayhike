@@ -61,6 +61,9 @@ export const PLUGIN_ORDER: readonly string[] = [
   // After that: the shades' smoke (2026-10-20), on the shade mask's figures
   // alone, which the corpus records as 26 (the haunt's page).
   "ShadeSmokePlugin",
+  // After that: the trunks' shade (2026-10-27), on the bark alone, which the
+  // corpus records as 27 once it is recorded again.
+  "BarkShadePlugin",
 ];
 
 /** Babylon 9.18's page-wide numbering of plugin classes. */

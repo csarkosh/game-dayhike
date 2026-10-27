@@ -115,8 +115,9 @@ import {
 import { surfaceAlbedo } from "./terrainSurface.js";
 import { macroNoise, macroTint } from "./groundHexParams.js";
 import { elevationAt } from "../sim/terrain.js";
-import { attachFoliage, FOLIAGE_PROFILES, setFoliageEdges } from "./foliagePlugin.js";
+import { attachFoliage, FOLIAGE_PROFILES, setFoliageEdges, foliageMatched } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
+import { attachBarkShade } from "./barkShadePlugin.js";
 import { groundNormalTilt, groundNormalY, seatOnGround } from "./groundTilt.js";
 import { LOG_STATIONS, logStationOffsets, seatLog, trunkSeat, trunkTop, type TrunkSeat } from "./logSeat.js";
 import { NURSE_FERN, nursePlants, seedlingGeometry } from "./nurseLog.js";
@@ -1793,7 +1794,12 @@ export function createForestMeshes(
         // Here every LOD's material takes it, the pine's second set's clones
         // and the LOD2 clones among them. The bakes' clones, made before this
         // loop for the reason above, take theirs through `BakeOptions.dress`.
-        if (!mesh.material.needAlphaTesting()) attachMoss(mesh.material, moss.texture);
+        if (!mesh.material.needAlphaTesting()) {
+          attachMoss(mesh.material, moss.texture);
+          // The trunk reads the sun's shadow at its axis (barkShadePlugin.ts),
+          // here with the moss for the same reason.
+          attachBarkShade(mesh.material);
+        }
       }
     }
 
@@ -1835,12 +1841,15 @@ export function createForestMeshes(
           // models put the origin at the footprint base, so max.y IS the height.
           mesh.refreshBoundingInfo();
           // The understory receives no cast shadows (`prepBucketMesh` leaves
-          // the flag off and nothing here turns it on), so the canopy's cut of
-          // the sun is the plugin's, per instance. Its material is not among
-          // the trees' (`shadeTreeMaterial` runs on the LOD ladder alone), so
-          // it takes the sky at full share and the canopy's cut of the sky is
-          // per instance too, once.
-          attachFoliage(mesh.material, FOLIAGE_PROFILES.UNDERSTORY, mesh.getBoundingInfo().boundingBox.maximum.y);
+          // the flag off), so the canopy's cut of the sun is the plugin's, per
+          // instance, but for the ferns, matched to the ground
+          // (`foliageMatched`): they take the trees' cast shadows as the ground
+          // does. Its material is not among the trees' (`shadeTreeMaterial`
+          // runs on the LOD ladder alone), so it takes the sky at full share
+          // and the canopy's cut of the sky is per instance too, once.
+          const matched = foliageMatched(mesh.material, FOLIAGE_PROFILES.UNDERSTORY);
+          if (matched) mesh.receiveShadows = true;
+          attachFoliage(mesh.material, FOLIAGE_PROFILES.UNDERSTORY, mesh.getBoundingInfo().boundingBox.maximum.y, { sunShadowed: matched });
           attachFoliageLight(mesh.material);
           attachDistanceFade(mesh.material);
           attachWet(mesh.material, WET_CAP.leaf);

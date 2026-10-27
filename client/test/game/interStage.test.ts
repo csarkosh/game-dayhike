@@ -334,10 +334,12 @@ describe("inter-stage variables on WebGPU", () => {
     });
     expect(features, WEIGH).toEqual({
       // The wet plugin adds uniforms and no varying; the moss, on the bark
-      // alone, its one varying (`vMoss`) and one sampler.
-      "tree.giant_fir.material0": bark(["Atmosphere", "Foliage", "GroundConform", "Moss", "Wet"]),
+      // alone, its one varying (`vMoss`) and one sampler; the bark's shade
+      // (2026-10-27), on the bark alone, writes the shadow varyings Babylon
+      // already has and adds none.
+      "tree.giant_fir.material0": bark(["Atmosphere", "Foliage", "GroundConform", "Moss", "BarkShade", "Wet"]),
       "tree.giant_fir.material1": giant(["Atmosphere", "Foliage", "DistanceFade", "GroundConform", "Wet"]),
-      "tree.giant_pine.material0": bark(["Atmosphere", "Foliage", "GroundConform", "Moss", "Wet"]),
+      "tree.giant_pine.material0": bark(["Atmosphere", "Foliage", "GroundConform", "Moss", "BarkShade", "Wet"]),
       "tree.giant_pine.material1": giant(["Atmosphere", "Foliage", "DistanceFade", "GroundConform", "Wet"]),
     });
   });
