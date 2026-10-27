@@ -57,7 +57,25 @@ refused, and the engine failure sent the hike to WebGL2 with the fallback
 remembered — on about half of first visits, measured twelve runs headless.
 At the retire the scene is going and no more of its draws come, so there the
 hooks are the compile's leavings (the processed source is stored on the
-effect, so a context restore rebuilds without them). Measured over five
+effect, so a context restore rebuilds without them). The next hike's draws
+do come to the same effects, though (2026-10-27): a material of the next
+hike with the same key takes the cached effect up, Babylon hands it back
+without touching its hooks, and the first deer's draw reprocessed it
+stripped — no plugin code, bindings shifted from the layout its pipeline
+keeps, "Binding type in the shader (buffer) doesn't match the type in the
+layout (texture)", the hike swapped to WebGL2 — about thirty seconds after
+a switch from the game to explore. The texture was the atmosphere plugin's
+cloud map, which the plugin injects under no define of its own, so the
+effect's key says nothing of it. So the retire's sweep no longer drops the
+hook but replaces it (`replayHook`): Babylon keeps on every effect the code
+its compile made after the includes and the plugins' injection
+(`vertexSourceCodeBeforeMigration`, `fragmentSourceCodeBeforeMigration`), and
+the replay answers the reprocess with that, the text the effect was compiled
+from, holding the effect alone, which the engine's cache holds anyway. A
+first version armed a stripped effect again with the hook of the next
+material to ask for it through `createEffect`; some of a new hike's draws
+reprocess an effect before any of its materials has asked, and those stayed
+broken. Measured over five
 hikes, the page's heap after a forced collection stays flat (363–380 MB)
 where it climbed ~100 MB a hike before, and each retired hike's world is
 collected whole.

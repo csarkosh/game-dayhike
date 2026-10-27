@@ -64,7 +64,15 @@ type CompileTime = { _processCodeAfterIncludes?: unknown; onCompiled?: unknown; 
  * plugin code at all — bindings shifted, the pipeline refused, the hike
  * swapped to WebGL2. At the retire the scene is going and no more of its
  * draws come, so there the hooks are the compile's leavings and dropping
- * them frees the world.
+ * them frees the world. The next hike's draws do come, though, to the same
+ * effects: a material of the next hike with the same key takes the cached
+ * effect up, Babylon hands it back without touching its hooks, and its
+ * skinned animal's first draw reprocesses it (2026-10-27: a switch of mode,
+ * then the first deer, and the atmosphere plugin's cloud map, injected under
+ * no define, gone from the reprocess). So the hook is not dropped but
+ * replaced by one that holds nothing of the hike (`replayHook`): Babylon
+ * keeps on the effect the code its compile made after the includes and the
+ * plugins' injection, and the replay answers with that.
  */
 export function pinShaders(engine: AbstractEngine, strip = false): void {
   const held = pinned.get(engine) ?? new WeakSet<Effect>();
@@ -78,10 +86,33 @@ export function pinShaders(engine: AbstractEngine, strip = false): void {
     }
     if (!strip) continue;
     const compile = effect as unknown as CompileTime;
-    compile._processCodeAfterIncludes = undefined;
+    compile._processCodeAfterIncludes = replayHook(effect);
     compile.onCompiled = null;
     compile.onError = null;
   }
+}
+
+/**
+ * The compile hook a pinned effect keeps in place of the plugin manager's
+ * (`pinShaders` with `strip`): Babylon processes an effect's source again at
+ * the first draw of a mesh whose vertex buffers are not of floats
+ * (`checkNonFloatVertexBuffers`, every skinned glTF model), from the raw
+ * shader through this hook, and an effect whose hook was dropped came out of
+ * the reprocess with no plugin code — the atmosphere's cloud map, injected
+ * under no define, gone, every binding after it shifted from the layout the
+ * effect's pipeline keeps, the pipeline refused, the hike swapped to WebGL2.
+ * The code the effect's own compile made after the includes and the
+ * injection is kept on the effect by Babylon (`vertexSourceCodeBeforeMigration`,
+ * `fragmentSourceCodeBeforeMigration`), so the replay answers with that: the
+ * same text the effect was compiled from, holding the effect alone, which
+ * the engine's cache holds anyway. Where the effect keeps none (its code
+ * cache cleared), the code is handed back as it came.
+ */
+export function replayHook(effect: Effect): (shaderType: string, code: string) => string {
+  return (shaderType, code) => {
+    const kept = shaderType === "vertex" ? effect.vertexSourceCodeBeforeMigration : effect.fragmentSourceCodeBeforeMigration;
+    return kept === undefined || kept === "" ? code : kept;
+  };
 }
 
 /** Keeps `next` for the next hike; one kept before it is released. */

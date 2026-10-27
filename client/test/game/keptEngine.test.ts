@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import { adoptEngine, dropEngine, keepEngine, pinShaders, takeEngine, type KeptEngine } from "../../src/game/keptEngine.js";
+import type { Effect } from "@babylonjs/core/Materials/effect.js";
+import { adoptEngine, dropEngine, keepEngine, pinShaders, replayHook, takeEngine, type KeptEngine } from "../../src/game/keptEngine.js";
 
 const fakeEngine = (webgpu: boolean): AbstractEngine => ({ isWebGPU: webgpu, isDisposed: false }) as unknown as AbstractEngine;
 const kept = (webgpu: boolean, tier: KeptEngine["tier"] = "high"): KeptEngine => ({
@@ -69,6 +70,8 @@ describe("pinning the compiled shaders", () => {
     _processCodeAfterIncludes: unknown;
     onCompiled: unknown;
     onError: unknown;
+    vertexSourceCodeBeforeMigration: string;
+    fragmentSourceCodeBeforeMigration: string;
   };
   const effect = (over: Partial<{ ready: boolean; error: string }> = {}): FakeEffect => ({
     isReady: () => over.ready ?? true,
@@ -77,7 +80,14 @@ describe("pinning the compiled shaders", () => {
     _processCodeAfterIncludes: () => "code",
     onCompiled: () => undefined,
     onError: () => undefined,
+    vertexSourceCodeBeforeMigration: "the vertex code the compile made",
+    fragmentSourceCodeBeforeMigration: "the fragment code the compile made",
   });
+  /** What a hook answers for each stage, given raw code. */
+  const answers = (hook: unknown): [string, string] => {
+    const fn = hook as (shaderType: string, code: string) => string;
+    return [fn("vertex", "raw vertex"), fn("fragment", "raw fragment")];
+  };
   const engineWith = (cache: Record<string, FakeEffect>): AbstractEngine =>
     ({ _compiledEffects: cache }) as unknown as AbstractEngine;
 
@@ -98,7 +108,7 @@ describe("pinning the compiled shaders", () => {
     expect(failed._processCodeAfterIncludes).toBeTypeOf("function");
   });
 
-  it("the retire's sweep drops the compile's hooks, which held the hike that compiled it, from every clean effect, pinned before or not", () => {
+  it("the retire's sweep replaces the compile's hook, which held the hike that compiled it, with the replay of its own code, on every clean effect, pinned before or not", () => {
     const sweptBefore = effect();
     const fresh = effect();
     const failed = effect({ error: "boom" });
@@ -107,12 +117,20 @@ describe("pinning the compiled shaders", () => {
     pinShaders(engine, true);
     for (const held of [sweptBefore, fresh]) {
       expect(held._refCount).toBe(2);
-      expect(held._processCodeAfterIncludes).toBeUndefined();
+      // Not the manager's hook, and not nothing: the code the compile made, for Babylon's reprocess.
+      expect(answers(held._processCodeAfterIncludes)).toEqual(["the vertex code the compile made", "the fragment code the compile made"]);
       expect(held.onCompiled).toBeNull();
       expect(held.onError).toBeNull();
     }
     expect(failed._refCount).toBe(1);
     expect(failed._processCodeAfterIncludes).toBeTypeOf("function");
+  });
+
+  it("replayHook answers with the effect's kept code, and with the code as it came where none is kept", () => {
+    const kept = effect();
+    expect(answers(replayHook(kept as unknown as Effect))).toEqual(["the vertex code the compile made", "the fragment code the compile made"]);
+    const cleared = { ...effect(), vertexSourceCodeBeforeMigration: "", fragmentSourceCodeBeforeMigration: "" };
+    expect(answers(replayHook(cleared as unknown as Effect))).toEqual(["raw vertex", "raw fragment"]);
   });
 
   it("leaves an effect still compiling for a later sweep", () => {
@@ -125,6 +143,6 @@ describe("pinning the compiled shaders", () => {
     ready = true;
     pinShaders(engine, true);
     expect(slow._refCount).toBe(2);
-    expect(slow._processCodeAfterIncludes).toBeUndefined();
+    expect(answers(slow._processCodeAfterIncludes)).toEqual(["the vertex code the compile made", "the fragment code the compile made"]);
   });
 });
