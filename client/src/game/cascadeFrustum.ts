@@ -22,7 +22,7 @@
  * world through any camera motion.
  */
 import type { Camera } from "@babylonjs/core/Cameras/camera.js";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js";
 
 /** A camera's pose and lens, as the slice reads them. */
@@ -116,5 +116,123 @@ export function installExactCascadeFrustum(shadows: CascadedShadowGenerator): vo
     const far = camera.maxZ === 0 ? this._shadowMaxZ : camera.maxZ;
     const pose = cameraPose(camera, this._scene.getEngine().getAspectRatio(camera), this._scene.useRightHandedSystem);
     sliceCorners(pose, near + (far - near) * cascade.prevBreakDistance, near + (far - near) * cascade.breakDistance, corners);
+  };
+}
+
+/**
+ * The texel snap's anchor, near (2026-10-27): the point Babylon holds on a
+ * texel corner is the world origin, and as the sun moves it is the wrong
+ * point. The cascade's light space turns with the sun about the slice's
+ * centre; a point `r` metres from that centre moves `r·δ` across the map
+ * when the sun turns by `δ`. The origin is hundreds of metres from the
+ * player, so on the explore day (a day in sixteen minutes, 0.0003 rad a
+ * redraw) it moves whole texels a redraw, and the snap, which rounds it to a
+ * corner, re-phases the whole grid by a fraction of a texel each time: every
+ * shadow edge is rasterised at a new sub-texel offset twenty times a second
+ * while the camera stands still, and the light on the trunks and the cover
+ * flickers. In the game the sun moves the same way through the escalation.
+ *
+ * The anchor here is a world point within `ANCHOR_RANGE` of the slice's
+ * centre, fixed while the centre stays near it, so a turn of the sun moves it
+ * a fortieth of a texel a redraw at most (the shadows themselves move more)
+ * and the camera's own motion does not move it at all. When the centre
+ * has left the range the anchor steps after it by whole texels along the
+ * map's own axes (`moveAlongLattice`): the grid before and after the step is
+ * the same grid, so the step shows nothing. Babylon's origin snap stays and is
+ * then overridden by this one (`snapToAnchor`), the generator's matrices
+ * rewritten in place after its own `_computeMatrices`, on every redraw.
+ */
+
+/** How far (m) a cascade's centre may leave its anchor, across the light, before the anchor steps after it. */
+export const ANCHOR_RANGE = 2;
+
+/** A cascade's texel lattice: the world directions of the map's x and y, and the texel's size in metres. */
+export type TexelLattice = { readonly ex: Vector3; readonly ey: Vector3; readonly texel: number };
+
+/**
+ * The lattice of a cascade from its light-space view matrix (Babylon's row
+ * vectors: the world direction that becomes light-space x is the matrix's
+ * first column) and its orthographic extent across `mapSize` texels.
+ */
+export function texelLattice(view: Matrix, minX: number, maxX: number, mapSize: number): TexelLattice {
+  const m = view.m;
+  return { ex: new Vector3(m[0], m[4], m[8]), ey: new Vector3(m[1], m[5], m[9]), texel: (maxX - minX) / mapSize };
+}
+
+/** How far `target` is from `anchor` across the light, in metres. */
+export function acrossLight(anchor: Vector3, target: Vector3, lattice: TexelLattice): number {
+  const d = target.subtract(anchor);
+  return Math.hypot(Vector3.Dot(d, lattice.ex), Vector3.Dot(d, lattice.ey));
+}
+
+/** Moves `anchor` to the lattice point nearest `target` across the light: whole texels along the map's axes, so the grid it anchors is unchanged. */
+export function moveAlongLattice(anchor: Vector3, target: Vector3, lattice: TexelLattice): void {
+  const d = target.subtract(anchor);
+  const nx = Math.round(Vector3.Dot(d, lattice.ex) / lattice.texel);
+  const ny = Math.round(Vector3.Dot(d, lattice.ey) / lattice.texel);
+  anchor.addInPlace(lattice.ex.scale(nx * lattice.texel)).addInPlace(lattice.ey.scale(ny * lattice.texel));
+}
+
+/**
+ * Shifts the cascade's projection, as Babylon's own snap does, so that
+ * `anchor` lands on a texel corner, and rewrites `transform` (view ×
+ * projection). Returns the shift applied, in texels.
+ */
+export function snapToAnchor(anchor: Vector3, view: Matrix, projection: Matrix, transform: Matrix, mapSize: number): { x: number; y: number } {
+  const p = Vector3.TransformCoordinates(anchor, transform).scaleInPlace(mapSize / 2);
+  const x = Math.round(p.x) - p.x;
+  const y = Math.round(p.y) - p.y;
+  projection.multiplyToRef(Matrix.Translation((x * 2) / mapSize, (y * 2) / mapSize, 0), projection);
+  view.multiplyToRef(projection, transform);
+  return { x, y };
+}
+
+/** What the anchored snap reads of a generator: its public cascade matrices and extents, and the private centre and array the stock snap also writes. */
+type SnapState = {
+  stabilizeCascades: boolean;
+  mapSize: number;
+  numCascades: number;
+  getCascadeViewMatrix(cascadeNum: number): Matrix | null;
+  getCascadeProjectionMatrix(cascadeNum: number): Matrix | null;
+  getCascadeTransformMatrix(cascadeNum: number): Matrix | null;
+  getCascadeMinExtents(cascadeNum: number): Vector3 | null;
+  getCascadeMaxExtents(cascadeNum: number): Vector3 | null;
+  _frustumCenter: Vector3[];
+  _transformMatricesAsArray: Float32Array;
+  _computeMatrices(): void;
+};
+
+/**
+ * Makes `shadows` anchor each cascade's texel snap at a world point near the
+ * cascade (`ANCHOR_RANGE`) instead of at the world origin, so the map's grid
+ * stays still in the world as the sun moves. Nothing while `stabilizeCascades`
+ * is off. `range` is the anchor's reach, for tests.
+ */
+export function installAnchoredSnap(shadows: CascadedShadowGenerator, range: number = ANCHOR_RANGE): void {
+  const state = shadows as unknown as SnapState;
+  const anchors: Vector3[] = [];
+  const stock = state._computeMatrices;
+  state._computeMatrices = function (this: SnapState): void {
+    stock.call(this);
+    if (!this.stabilizeCascades) return;
+    for (let i = 0; i < this.numCascades; i++) {
+      const view = this.getCascadeViewMatrix(i);
+      const projection = this.getCascadeProjectionMatrix(i);
+      const transform = this.getCascadeTransformMatrix(i);
+      const min = this.getCascadeMinExtents(i);
+      const max = this.getCascadeMaxExtents(i);
+      const centre = this._frustumCenter[i];
+      if (view === null || projection === null || transform === null || min === null || max === null || centre === undefined) continue;
+      let anchor = anchors[i];
+      if (anchor === undefined) {
+        anchor = centre.clone();
+        anchors[i] = anchor;
+      } else {
+        const lattice = texelLattice(view, min.x, max.x, this.mapSize);
+        if (acrossLight(anchor, centre, lattice) > range) moveAlongLattice(anchor, centre, lattice);
+      }
+      snapToAnchor(anchor, view, projection, transform, this.mapSize);
+      transform.copyToArray(this._transformMatricesAsArray, i * 16);
+    }
   };
 }

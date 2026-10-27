@@ -17,7 +17,7 @@ import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
 // hours on thin instances in `renderer.ts`.
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js";
 import { installSoftShadows } from "./softShadowInclude.js";
-import { installExactCascadeFrustum } from "./cascadeFrustum.js";
+import { installAnchoredSnap, installExactCascadeFrustum } from "./cascadeFrustum.js";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
 import { ReflectionProbe } from "@babylonjs/core/Probes/reflectionProbe.js";
@@ -543,6 +543,10 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // re-phased the map's texels every redraw while the camera moved: the
     // flicker of the light on the trees (2026-10-27).
     installExactCascadeFrustum(shadows);
+    // And the snap's anchor near the cascade, not at the world origin, so the
+    // sun's own motion (the explore day, the escalation) does not re-phase the
+    // map either (cascadeFrustum.ts, 2026-10-27).
+    installAnchoredSnap(shadows);
     shadows.lambda = settings.shadowLambda > 0 ? settings.shadowLambda : 0.9;
     shadows.shadowMaxZ = settings.shadowDistance > 0 ? settings.shadowDistance : SHADOW_DISTANCE;
     if (filter.filter === "pcss") {

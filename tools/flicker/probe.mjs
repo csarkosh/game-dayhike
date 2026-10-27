@@ -8,11 +8,16 @@
 //
 //   node tools/flicker/probe.mjs [--base http://localhost:5173/dayhike] [--tier medium]
 //     [--engine webgl2|webgpu] [--cmd "<?cmd= script>"] [--extra "<more query>"] [--turn 6]
-//     [--frames 40] [--settle 20]
+//     [--frames 40] [--settle 20] [--phase 0.01]
 //
 // Prints one row a frame (whether the map was redrawn, the point's texel x/y, the cascade's
 // radius) and a verdict: the largest change of the texel coordinate's fractional part between
 // redraws, and the spread of the radius. Exit code 1 when either exceeds its tolerance.
+//
+// Under a moving sun (`--cmd "mode explore" --turn 0`: the explore day, the camera still) the
+// point itself moves across the map as the light turns about the cascade, 0.0003 rad a redraw: a
+// point 10 m from the cascade's centre by 0.1 texel. `--phase 0.25` allows that and still catches
+// the re-phasing an origin-anchored snap makes, a random fraction of a texel every redraw.
 import { randomUUID } from "node:crypto";
 import { launchChrome } from "../frame-budget/lib/cdp.mjs";
 
@@ -25,7 +30,7 @@ const TURN = Number(args.turn ?? 6);
 const FRAMES = Number(args.frames ?? 40);
 const SETTLE = Number(args.settle ?? 20);
 /** A phase change over this, in texels, re-rasterises every shadow edge: the flicker. */
-const PHASE_TOLERANCE = 0.01;
+const PHASE_TOLERANCE = Number(args.phase ?? 0.01);
 /** Babylon rounds the radius to 1/16 m; a spread under that cannot change the texel size. */
 const RADIUS_TOLERANCE = 1 / 16;
 

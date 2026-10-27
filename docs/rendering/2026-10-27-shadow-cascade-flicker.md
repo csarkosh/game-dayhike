@@ -52,6 +52,42 @@ stand-in with the camera, wobbles by more than its 1/16 m rounding step across a
 the fix (constant radius equal to the analytic value; agreement with Babylon's corners where its
 inverse is well conditioned, in both handednesses and both fov modes).
 
+## The same flicker with the camera still: the sun moved (amendment, later the same day)
+
+With the exact cascade live, the owner recorded the forest flickering at the explore trailhead
+before taking a step. The explore day turns the sun through the whole sky in sixteen minutes
+(`exploreDay.ts`, 40 s an hour), the light's direction followed every frame (`followHour`); the
+escalation moves it the same way in the game. Measured on screen-recordings and on captures of the
+live site with the camera still (a trunk's mean brightness, detrended, over four seconds): every
+trunk in dappled light stepped by two to four levels on every second frame, the map's redraw rate;
+with the sun's direction held at one value for the capture, nothing moved (0.01–0.02 against
+0.1–0.5); with the wind off, or the trunks' axis shading off, it moved as before. In the game mode
+at its start, where the sun stands still, no capture showed it.
+
+The cause is the snap's anchor. The cascade's light space turns with the sun about the slice's
+centre, and a world point `r` metres from that centre moves `r·δ` across the map when the sun
+turns by `δ`. Babylon holds the **world origin** on a texel corner, 560 m from the forest view:
+0.0003 rad a redraw moves it 17 cm, six texels, and the rounding leaves the grid at a new random
+fraction of a texel each time, every edge rasterised afresh twenty times a second.
+
+`installAnchoredSnap` (`cascadeFrustum.ts`), installed with the exact frustum: after Babylon's own
+`_computeMatrices`, each cascade's projection is shifted again so that a world point within 2 m of
+the slice's centre (`ANCHOR_RANGE`) lands on a texel corner. The anchor is fixed in the world while
+the centre stays within its range, so the camera's motion does not move it and the sun's turn moves
+it by at most 2 m · δ, a fortieth of a texel a redraw; the shadows themselves move more. When the
+centre has left the range the anchor steps after it by whole texels along the map's own axes
+(`moveAlongLattice`), the same grid before and after, so the step shows nothing. A few vector
+operations a cascade a redraw, no GPU cost. `client/test/game/cascadeAnchor.test.ts` holds it on a
+stand-in built as Babylon builds its matrices: the origin snap re-phases by more than 0.15 texel a
+redraw under the explore day's turn, the anchored snap by less than the point's own motion, and a
+22 m walk under a fixed sun keeps the grid still through the anchor's steps.
+
+`tools/flicker/probe.mjs` takes `--turn 0 --cmd "mode explore" --phase 0.25` for this case: the
+point it projects, 20 m ahead of the camera and 11 m from the first cascade's centre, moves 0.13
+texel a redraw of its own as the light turns, so the tolerance allows that and still catches the
+random re-phasing (0.37 texel measured on `main`; 0.17 with the anchor at 8 m, within the point's
+own motion at 2 m).
+
 ## What remains
 
 The exact cascade removes the re-phasing; a residual blink (about 1.3 % of tree pixels a frame on the
