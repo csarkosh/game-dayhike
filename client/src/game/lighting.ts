@@ -17,6 +17,7 @@ import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
 // hours on thin instances in `renderer.ts`.
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js";
 import { installSoftShadows } from "./softShadowInclude.js";
+import { installExactCascadeFrustum } from "./cascadeFrustum.js";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
 import { ReflectionProbe } from "@babylonjs/core/Probes/reflectionProbe.js";
@@ -535,6 +536,13 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // costs one fewer depth-reduction pass per frame. Revisit once someone has
     // actually flown around and looked.
     shadows.stabilizeCascades = true;
+    // The stabilisation holds only if the slice's bounding sphere is the same
+    // size every frame: found from the camera's pose in doubles
+    // (cascadeFrustum.ts), not from Babylon's inverse of the single-precision
+    // view-projection, which wobbles ±1 % with the camera's orientation and
+    // re-phased the map's texels every redraw while the camera moved: the
+    // flicker of the light on the trees (2026-10-27).
+    installExactCascadeFrustum(shadows);
     shadows.lambda = settings.shadowLambda > 0 ? settings.shadowLambda : 0.9;
     shadows.shadowMaxZ = settings.shadowDistance > 0 ? settings.shadowDistance : SHADOW_DISTANCE;
     if (filter.filter === "pcss") {
