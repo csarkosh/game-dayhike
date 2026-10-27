@@ -223,10 +223,11 @@ describe("foliage attribute and plugin", () => {
     const rockNear = assets[CLUTTER_ROCK]![0]![0]![0]!;
     const plugin = grassNear.material!.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
     expect(plugin).toBeInstanceOf(FoliagePlugin);
-    // The cards receive no cast shadows (`prepBucketMesh`), so the canopy's
-    // cut of the sun is the plugin's, at its constant.
-    expect(grassNear.receiveShadows).toBe(false);
-    expect(plugin.canopySun).toBe(0.4);
+    // The grass is matched to the ground (`foliageMatched`, 2026-10-27): its
+    // cards receive the trees' cast shadows, so the canopy's cut of the sun
+    // is the shadow's and the plugin binds 0.
+    expect(grassNear.receiveShadows).toBe(true);
+    expect(plugin.canopySun).toBe(0);
     expect(rockNear.material!.pluginManager?.getPlugin("Foliage") ?? null).toBeNull();
     const edge = clutterFadeEdges(CLUTTER_GRASS, RADIUS_SCALE);
     expect(plugin.edges).toEqual([edge.start, edge.end]);

@@ -133,6 +133,31 @@ export const FOLIAGE_PROFILES = {
   NURSE: { amp: 0, groundTint: 0, rootAO: 1, normalRoot: 1, tilt: false, bend: false, blades: false, normalUp: 0 },
 } as const satisfies Record<string, FoliageProfile>;
 
+/**
+ * The cover that is matched to the ground (2026-10-27): the grass, the
+ * meadow and the blades, and the ferns of the understory. A matched card
+ * is drawn most of the way to the ground's own colour at its root
+ * (`vFoliage`, the ground tint; `FOLIAGE_MATCH_WEIGHT` in
+ * foliageLights.fragment.fx) over its whole height, is matte, and receives
+ * the trees' cast shadows as the ground does (its canopy cut is the shadow's,
+ * so `foliageCanopySun` binds 0, and the shadow floor is not held); it keeps
+ * its own texture and normal. The cover read lighter than the terrain it
+ * stood on: a card's texture is its own green, lit under a flat cut of the
+ * sun where the ground beside it stood in the canopy's real shadow. The
+ * owner chose the shadowed, matte cover over the flat cut (2026-10-26,
+ * "option B"); that preview replaced the card's colour and normal outright,
+ * which made the near cover one flat carpet, so the colour is mixed and the
+ * normal kept.
+ */
+const MATCHED_PROFILES: ReadonlySet<FoliageProfile> = new Set<FoliageProfile>([FOLIAGE_PROFILES.GRASS, FOLIAGE_PROFILES.MEADOW, FOLIAGE_PROFILES.BLADES]);
+/** The understory's ferns, matched by their material's name: their profile (`UNDERSTORY`) is the bushes' too. The nurse log's fern wears the same name under its own profile and is not matched: it receives no cast shadow. */
+const MATCHED_MATERIAL = /^understory\.fern/;
+/** Whether `material` under `profile` is matched to the ground (`MATCHED_PROFILES`, and the ferns of the understory). */
+export function foliageMatched(material: Pick<Material, "name">, profile: FoliageProfile | undefined): boolean {
+  if (profile === undefined) return false;
+  return MATCHED_PROFILES.has(profile) || (profile === FOLIAGE_PROFILES.UNDERSTORY && MATCHED_MATERIAL.test(material.name));
+}
+
 // Module-level like skin.ts: every material's plugin instance reads one truth,
 // written once per frame by the renderer.
 let wind: WindRecord = { dirX: 1, dirZ: 0, speed: 0, lean: 0, gustAmp: 0, flutterAmp: 0, time: 0 };
@@ -188,10 +213,17 @@ export class FoliagePlugin extends MaterialPluginBase {
   bladeEdges: BladeEdges = [FADE_NONE_IN[0], FADE_NONE_IN[1], FADE_NONE_OUT[0], FADE_NONE_OUT[1]];
 
   constructor(material: Material, profile: FoliageProfile, meshHeight: number, canopySun: number, contrast: number) {
-    super(material, "Foliage", 200, { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false });
+    super(material, "Foliage", 200, { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false, FOLIAGE_MATCH: false });
     this._profile = profile;
     this._meshHeight = meshHeight;
-    this.canopySun = canopySun;
+    const matched = foliageMatched(material, profile);
+    // Matched cover is lit as the ground: the cast shadow carries the
+    // canopy's cut, and nothing glints on it.
+    this.canopySun = matched ? 0 : canopySun;
+    if (matched) {
+      const pbr = material as Material & { metallicF0Factor?: number };
+      if (pbr.metallicF0Factor !== undefined) pbr.metallicF0Factor = 0;
+    }
     this.contrast = contrast;
     this._enable(true);
   }
@@ -205,6 +237,7 @@ export class FoliagePlugin extends MaterialPluginBase {
     defines.FOLIAGE = true;
     defines.FOLIAGE_TINT = this._profile.groundTint > 0;
     defines.FOLIAGE_BLADES = this._profile.blades;
+    defines.FOLIAGE_MATCH = foliageMatched(this._material, this._profile);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

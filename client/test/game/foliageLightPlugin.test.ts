@@ -57,7 +57,7 @@ describe("foliage light plugin", () => {
     const code = mat.pluginManager!.getPlugin("FoliageLight")!.getCustomCode("fragment")![FOLIAGE_SHADOW_INJECTION_POINT]!;
     // The floor under the foliage define, then Babylon's own line, so an
     // effect processed without the define keeps the line alone.
-    expect(code).toBe("#ifdef FOLIAGE\nshadow=max(shadow,0.75);\n#endif\ndiffuseBase+=info.diffuse*shadow;");
+    expect(code).toBe("#ifdef FOLIAGE\n#ifndef FOLIAGE_MATCH\nshadow=max(shadow,0.75);\n#endif\n#endif\ndiffuseBase+=info.diffuse*shadow;");
     const injected = include.replace(re, code);
     expect(injected.split("shadow=max(shadow,0.75);").length - 1).toBe(1);
     expect(injected.split("diffuseBase+=info.diffuse*shadow;").length - 1).toBe(1);
@@ -148,7 +148,10 @@ describe("foliage light plugin", () => {
     try {
       gameLights(s);
       const mat = new PBRMaterial("compiled-shadow", s);
-      attachFoliage(mat, FOLIAGE_PROFILES.GRASS, 1);
+      // A bush: cover that is not matched to the ground, so it holds the
+      // floor (the matched cover, the grass among it, is lit as the ground
+      // is and holds none; `foliageMatched`).
+      attachFoliage(mat, FOLIAGE_PROFILES.BUSH, 1);
       attachFoliageLight(mat);
       const box = CreateBox("compiled-shadow-box", {}, s);
       box.material = mat;

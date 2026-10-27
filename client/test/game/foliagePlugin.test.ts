@@ -12,7 +12,7 @@ import {
   attachFoliage, setFoliageWind, setFoliageEdges, setFoliageBladeEdges, FoliagePlugin, FOLIAGE_PROFILES,
   FOLIAGE_PLAYERS,
   FOLIAGE_TILT, FOLIAGE_BEND, FOLIAGE_BEND_R, FOLIAGE_SINK, FOLIAGE_CLUMP_LUMA, FOLIAGE_CLUMP_CELL,
-  FOLIAGE_PLAYER_PARKED, FOLIAGE_BLADE_SOFT, FOLIAGE_CANOPY_SKY, FOLIAGE_CANOPY_SUN,
+  FOLIAGE_PLAYER_PARKED, FOLIAGE_BLADE_SOFT, FOLIAGE_CANOPY_SKY, FOLIAGE_CANOPY_SUN, foliageMatched,
 } from "../../src/game/foliagePlugin.js";
 import {
   WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_OMEGA_FLUTTER, WIND_K1, WIND_K2, WIND_RAGGED, WIND_RAGGED_CELL,
@@ -117,6 +117,8 @@ describe("foliage plugin", () => {
       "surfaceAlbedo *= mix(foliageRootAO, 1.0, vFoliageH);",
       "surfaceAlbedo = mix(surfaceAlbedo, vFoliage.rgb, clamp(fTintW, 0.0, 0.85));",
       "surfaceAlbedo *= 1.0 + FOLIAGE_CLUMP_LUMA * (vFoliageClump - 0.5);",
+      // The cover matched to the ground takes the ground's colour instead, under FOLIAGE_MATCH; the floor is still last.
+      "surfaceAlbedo = mix(surfaceAlbedo, vFoliage.rgb * mix(foliageRootAO, 1.0, vFoliageH) / (0.5 * (foliageRootAO + 1.0)) * (1.0 + FOLIAGE_CLUMP_LUMA * (vFoliageClump - 0.5)), FOLIAGE_MATCH_WEIGHT);",
       "surfaceAlbedo = max(surfaceAlbedo, FOLIAGE_ALBEDO_FLOOR);",
     ]);
     expect(block.split("FOLIAGE_ALBEDO_FLOOR").length - 1).toBe(1);
@@ -233,10 +235,10 @@ describe("foliage plugin", () => {
     attachFoliage(tree, FOLIAGE_PROFILES.TREE, 30);
     const dg: Record<string, boolean> = { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false };
     (grass.pluginManager!.getPlugin("Foliage") as FoliagePlugin).prepareDefines(dg as never, scene, undefined as never);
-    expect(dg).toEqual({ FOLIAGE: true, FOLIAGE_TINT: true, FOLIAGE_BLADES: false });
+    expect(dg).toEqual({ FOLIAGE: true, FOLIAGE_TINT: true, FOLIAGE_BLADES: false, FOLIAGE_MATCH: true });
     const dt: Record<string, boolean> = { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false };
     (tree.pluginManager!.getPlugin("Foliage") as FoliagePlugin).prepareDefines(dt as never, scene, undefined as never);
-    expect(dt).toEqual({ FOLIAGE: true, FOLIAGE_TINT: false, FOLIAGE_BLADES: false });
+    expect(dt).toEqual({ FOLIAGE: true, FOLIAGE_TINT: false, FOLIAGE_BLADES: false, FOLIAGE_MATCH: false });
     // The attribute is pushed only for tinting profiles.
     const ag: string[] = [];
     (grass.pluginManager!.getPlugin("Foliage") as FoliagePlugin).getAttributes(ag, scene, undefined as never);
@@ -252,7 +254,7 @@ describe("foliage plugin", () => {
     const plugin = blades.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
     const d: Record<string, boolean> = { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false };
     plugin.prepareDefines(d as never, scene, undefined as never);
-    expect(d).toEqual({ FOLIAGE: true, FOLIAGE_TINT: true, FOLIAGE_BLADES: true });
+    expect(d).toEqual({ FOLIAGE: true, FOLIAGE_TINT: true, FOLIAGE_BLADES: true, FOLIAGE_MATCH: true });
     const a: string[] = [];
     plugin.getAttributes(a, scene, undefined as never);
     expect(a).toEqual(["foliage", "blade", "bladeStrength"]);
@@ -496,4 +498,19 @@ describe("compiles on both shader paths (the sampler/UBO trap, pinned even with 
       }
     });
   }
+
+  describe("matched cover", () => {
+    it("is the grass, the meadow, the blades and the understory's ferns", () => {
+      const named = (name: string) => ({ name });
+      expect(foliageMatched(named("clutter.grass_a"), FOLIAGE_PROFILES.GRASS)).toBe(true);
+      expect(foliageMatched(named("clutter.meadow"), FOLIAGE_PROFILES.MEADOW)).toBe(true);
+      expect(foliageMatched(named("blades"), FOLIAGE_PROFILES.BLADES)).toBe(true);
+      expect(foliageMatched(named("understory.fern.material0"), FOLIAGE_PROFILES.UNDERSTORY)).toBe(true);
+      expect(foliageMatched(named("understory.bush.material0"), FOLIAGE_PROFILES.UNDERSTORY)).toBe(false);
+      // The nurse log's fern, the same name under its own profile, receives no cast shadow and is not matched.
+      expect(foliageMatched(named("understory.fern.material0_nurse"), FOLIAGE_PROFILES.NURSE)).toBe(false);
+      expect(foliageMatched(named("tree.alder.material1"), FOLIAGE_PROFILES.TREE)).toBe(false);
+      expect(foliageMatched(named("clutter.grass_a"), undefined)).toBe(false);
+    });
+  });
 });

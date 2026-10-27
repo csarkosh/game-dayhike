@@ -78,13 +78,15 @@ const FOLIAGE_LIGHT_INJECTION_CODE =
  * the sun casts shadows. The
  * lines after it in the include (the specular's among them) read the held
  * value too. Under `FOLIAGE` for the reason the diffuse call is: an effect
- * processed without the define keeps Babylon's line alone.
+ * processed without the define keeps Babylon's line alone. Not on the cover
+ * matched to the ground (`FOLIAGE_MATCH`, foliagePlugin.ts): it is lit as the
+ * ground is, and the ground holds no floor.
  */
 export const FOLIAGE_SHADOW_INJECTION_POINT = "!diffuseBase\\+=info\\.diffuse\\*shadow;";
 const FOLIAGE_SHADOW_INJECTION_CODE =
-  "#ifdef FOLIAGE\n" +
+  "#ifdef FOLIAGE\n#ifndef FOLIAGE_MATCH\n" +
   `shadow=max(shadow,${FOLIAGE_SHADOW_FLOOR.toFixed(2)});\n` +
-  "#endif\n" +
+  "#endif\n#endif\n" +
   "diffuseBase+=info.diffuse*shadow;";
 
 class FoliageLightPlugin extends MaterialPluginBase {

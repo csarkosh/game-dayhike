@@ -31,25 +31,29 @@ const PINS: Record<string, string> = {
   // and the albedo floor (foliage.fragment.fx, foliageLights.fragment.fx).
   // The nurse log's fern wears the plugin under a profile of its own
   // (`foliage.NURSE.*`), with every other profile's text.
-  "foliage.BLADES.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
+  // Re-pinned 2026-10-27 for the cover matched to the ground
+  // (`FOLIAGE_MATCH`, foliagePlugin.ts): the matched block in the foliage
+  // fragment, the define on every profile's interface, and the floor's
+  // guard in the light plugin's injection.
+  "foliage.BLADES.fragment": "5aa823a5dd82391bbb5c1c44603dd46060438610de1d167c7f603232aa79f3c2",
   "foliage.BLADES.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.BUSH.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
+  "foliage.BUSH.fragment": "5aa823a5dd82391bbb5c1c44603dd46060438610de1d167c7f603232aa79f3c2",
   "foliage.BUSH.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.DUFF.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
+  "foliage.DUFF.fragment": "5aa823a5dd82391bbb5c1c44603dd46060438610de1d167c7f603232aa79f3c2",
   "foliage.DUFF.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.FLOWER.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
+  "foliage.FLOWER.fragment": "5aa823a5dd82391bbb5c1c44603dd46060438610de1d167c7f603232aa79f3c2",
   "foliage.FLOWER.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.GRASS.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
+  "foliage.GRASS.fragment": "5aa823a5dd82391bbb5c1c44603dd46060438610de1d167c7f603232aa79f3c2",
   "foliage.GRASS.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.MEADOW.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
+  "foliage.MEADOW.fragment": "5aa823a5dd82391bbb5c1c44603dd46060438610de1d167c7f603232aa79f3c2",
   "foliage.MEADOW.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.NURSE.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
+  "foliage.NURSE.fragment": "5aa823a5dd82391bbb5c1c44603dd46060438610de1d167c7f603232aa79f3c2",
   "foliage.NURSE.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.REEDS.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
-  "foliage.TREE.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
+  "foliage.REEDS.fragment": "5aa823a5dd82391bbb5c1c44603dd46060438610de1d167c7f603232aa79f3c2",
+  "foliage.TREE.fragment": "5aa823a5dd82391bbb5c1c44603dd46060438610de1d167c7f603232aa79f3c2",
   "foliage.REEDS.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
   "foliage.TREE.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
-  "foliage.UNDERSTORY.fragment": "1b9826c9cf3ebb9fcb64da30ca2c104862abfcb986aa90105552a184cdd0f228",
+  "foliage.UNDERSTORY.fragment": "5aa823a5dd82391bbb5c1c44603dd46060438610de1d167c7f603232aa79f3c2",
   "foliage.UNDERSTORY.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
   // Re-pinned for the `#ifdef FOLIAGE` guard on the injected per-light call
   // (foliageLightPlugin.ts): compiled with FOLIAGE, the guard resolves to the
@@ -62,7 +66,7 @@ const PINS: Record<string, string> = {
   // `foliageCanopySun` uniform, and the half-Lambert wrap
   // (foliageDiffuse.fragment.fx), and the cast shadow held at three quarters
   // on foliage (`FOLIAGE_SHADOW_INJECTION_POINT`).
-  "foliageLight.fragment": "6e962f27fa3343fdaa8453c12d1fd7f8935a428ad8d7ba9b1ad2d13df6f0af65",
+  "foliageLight.fragment": "a536529fe6639528fab76610137faee444d99f8fd08e5895271a99066d70ec2c",
   "groundConform.vertex": "a9f54562519ab094b2883463cec48050737f16a4f17e4a18852cfb414e227cea",
   // The trunks' moss (mossPlugin.ts, moss*.fx), pinned at its first text:
   // the varying and the hash, the mask and the albedo, and the roughness
@@ -120,16 +124,16 @@ const INTERFACE_PINS: Record<string, string> = {
   // Re-pinned for the foliage plugin's two floats, `foliageCanopySun` and
   // `foliageContrast`, declared on both uniform paths. `foliage.NURSE`, the
   // nurse log's fern's profile, has the tree's and the reeds' interface.
-  "foliage.BLADES.interface": "2c10d1964d220469c9c552364c77fbe140297f8202506e978cea936400a44a6f",
-  "foliage.BUSH.interface": "b1faa0bc44bcbc09407bf26fb83348dd31f85227f88c89440e5aa267edd9bb30",
-  "foliage.DUFF.interface": "2c10d1964d220469c9c552364c77fbe140297f8202506e978cea936400a44a6f",
-  "foliage.FLOWER.interface": "b1faa0bc44bcbc09407bf26fb83348dd31f85227f88c89440e5aa267edd9bb30",
-  "foliage.GRASS.interface": "b1faa0bc44bcbc09407bf26fb83348dd31f85227f88c89440e5aa267edd9bb30",
-  "foliage.MEADOW.interface": "b1faa0bc44bcbc09407bf26fb83348dd31f85227f88c89440e5aa267edd9bb30",
-  "foliage.NURSE.interface": "800361f8153711abaab95eb934923aa80257522be5f7a2b380ca027c5209ebcf",
-  "foliage.REEDS.interface": "800361f8153711abaab95eb934923aa80257522be5f7a2b380ca027c5209ebcf",
-  "foliage.TREE.interface": "800361f8153711abaab95eb934923aa80257522be5f7a2b380ca027c5209ebcf",
-  "foliage.UNDERSTORY.interface": "b1faa0bc44bcbc09407bf26fb83348dd31f85227f88c89440e5aa267edd9bb30",
+  "foliage.BLADES.interface": "25ff7db306766f50e6873f0becc72c3d371faa4d81022aa88d2503e8e4a983bd",
+  "foliage.BUSH.interface": "a04fef458dcb17073b0668295044332784cbb59bc213ad2d8ac0415de554a8c0",
+  "foliage.DUFF.interface": "6df1a0d767d73acc0663b22d2cdbf21b1579926475090159e09b122ed65c6934",
+  "foliage.FLOWER.interface": "a04fef458dcb17073b0668295044332784cbb59bc213ad2d8ac0415de554a8c0",
+  "foliage.GRASS.interface": "9f66e0058d5b2bcbd1cf7caa250d2e6bf0cd16c5f48331c6b4db2c6de1e1107c",
+  "foliage.MEADOW.interface": "9f66e0058d5b2bcbd1cf7caa250d2e6bf0cd16c5f48331c6b4db2c6de1e1107c",
+  "foliage.NURSE.interface": "9f81764746444eac5d750aa413992938892b586cd7c9aaa2e2b1d7f5ea279b34",
+  "foliage.REEDS.interface": "9f81764746444eac5d750aa413992938892b586cd7c9aaa2e2b1d7f5ea279b34",
+  "foliage.TREE.interface": "9f81764746444eac5d750aa413992938892b586cd7c9aaa2e2b1d7f5ea279b34",
+  "foliage.UNDERSTORY.interface": "a04fef458dcb17073b0668295044332784cbb59bc213ad2d8ac0415de554a8c0",
   "foliageLight.interface": "a86a666d70d9ecddd600f74e67b8028f7795551c775a05e786e4ee73bea725e8",
   "groundConform.interface": "d1318897a8b44958dc6d4ba703fe861a79590ee61c6d7cb830bc54cb33e7b75a",
   // The trunks' moss: one sampler, no uniform, one define, no attribute.

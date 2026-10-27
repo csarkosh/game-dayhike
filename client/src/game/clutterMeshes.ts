@@ -89,7 +89,7 @@ import {
   type ClutterInstance,
 } from "../sim/clutter.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
-import { attachFoliage, setFoliageEdges, FOLIAGE_PROFILES, type FoliageProfile } from "./foliagePlugin.js";
+import { attachFoliage, setFoliageEdges, foliageMatched, FOLIAGE_PROFILES, type FoliageProfile } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { attachDistanceFade, fadeBands, setDistanceWiden, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
@@ -1315,7 +1315,11 @@ export function createClutterMeshes(
                 // contrast with their tint above; a class built in code has
                 // no texture with shade baked in and keeps its colours whole.
                 const contrast = (CLUTTER_MODEL_IDS[cls]?.length ?? 0) > 0 ? FOLIAGE_CARD_CONTRAST : 1;
-                attachFoliage(mesh.material, profile, mesh.getBoundingInfo().boundingBox.maximum.y, { contrast });
+                // Cover matched to the ground takes the trees' cast shadows
+                // as the ground does (`foliageMatched`).
+                const matched = foliageMatched(mesh.material, profile);
+                if (matched) mesh.receiveShadows = true;
+                attachFoliage(mesh.material, profile, mesh.getBoundingInfo().boundingBox.maximum.y, { contrast, sunShadowed: matched });
                 attachFoliageLight(mesh.material);
                 // `edges` lives on the plugin instance, so it is per MATERIAL:
                 // a card GLB's two LOD buckets share one material, so setting
