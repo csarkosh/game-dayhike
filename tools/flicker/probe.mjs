@@ -93,15 +93,17 @@ try {
   }
   // The engine, caught from the next frame it begins. The page keeps no handle to it.
   const caught = await evaluate(page, `(async () => {
-    const u = performance.getEntriesByType("resource").map((e) => e.name).find((n) => /abstractEngine/.test(n));
-    if (!u) return false;
-    const proto = (await import(u)).AbstractEngine.prototype;
+    // Any loaded script (a dev module or a production chunk) that exports a class with beginFrame: the engine's prototype.
+    const urls = performance.getEntriesByType("resource").map((e) => e.name).filter((n) => /[.]js([?]|$)/.test(n));
+    let proto = null;
+    for (const u of urls) { try { const m = await import(u); for (const v of Object.values(m)) { if (typeof v === "function" && v.prototype && typeof v.prototype.beginFrame === "function") { let p = v.prototype; while (p && !Object.prototype.hasOwnProperty.call(p, "beginFrame")) p = Object.getPrototypeOf(p); proto = p; break; } } } catch (e) {} if (proto) break; }
+    if (!proto) return false;
     const saved = ["beginFrame", "endFrame"].map((k) => [k, proto[k]]);
     await Promise.race([new Promise((resolve) => { for (const [k, f] of saved) proto[k] = function (...a) { if (this.scenes && this.scenes.length > 0) { window.__engine = this; for (const [k2, f2] of saved) proto[k2] = f2; resolve(); } return f.apply(this, a); }; }), new Promise((r) => setTimeout(r, 8000))]);
     for (const [k, f] of saved) proto[k] = f;
     return !!window.__engine;
   })()`);
-  if (!caught) throw new Error("the page's engine was not caught (is this the dev server, with Babylon served as a module?)");
+  if (!caught) throw new Error("the page's engine was not caught (no loaded script exports the engine's class?)");
   await sleep(SETTLE * 1000);
   const out = await evaluate(page, `(async () => {
     const e = window.__engine, scene = e.scenes[0];
