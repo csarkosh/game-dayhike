@@ -88,6 +88,18 @@ texel a redraw of its own as the light turns, so the tolerance allows that and s
 random re-phasing (0.37 texel measured on `main`; 0.17 with the anchor at 8 m, within the point's
 own motion at 2 m).
 
+With the anchored snap live the owner still saw the trunks shimmer at the explore trailhead, on
+both engines alike (the same captures on WebGPU and WebGL2, and with the shader lookup off, spread
+over the same range from run to run). What is left is the shadow map's own content: the leaf cards'
+alpha-tested silhouettes move across the map's texels as the sun turns, and each edge pops a whole
+texel at a time, so a trunk's axis column (and, a few pixels at a time, every shadow edge) changes
+at random on every redraw. The sun held still, nothing moves (0.03 % of pixels against 0.5–2 %); the
+wind off, the trunks' axis shading off, the map drawn every frame, none of them change it; medium's
+percentage-closer filter is already Babylon's highest. Halving the texel does: medium's map is 2048
+from 1024 (`quality.ts`), 2.6 cm a texel in the forest slice, which left 0.1–0.2 % of pixels blinking
+where 0.5–2 % had, at no change in the shadow pass's GPU time on the Air (its cost is the forest's
+instances, not the fill). 4096 did not do better and cost a third of the frame rate.
+
 ## What remains
 
 The exact cascade removes the re-phasing; a residual blink (about 1.3 % of tree pixels a frame on the

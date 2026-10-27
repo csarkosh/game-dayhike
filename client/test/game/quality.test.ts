@@ -44,7 +44,7 @@ describe("QUALITY", () => {
     });
     expect(QUALITY.medium).toEqual({
       hardwareScaling: 1,
-      shadowMapSize: 1024,
+      shadowMapSize: 2048,
       shadowCascades: 1,
       shadowDistance: 300,
       shadowLambda: 0.9,
@@ -75,7 +75,10 @@ describe("QUALITY", () => {
   it("turns shadows off only at low", () => {
     expect(QUALITY.low.shadowMapSize).toBe(0);
     expect(QUALITY.medium.shadowMapSize).toBeGreaterThan(0);
-    expect(QUALITY.high.shadowMapSize).toBeGreaterThan(QUALITY.medium.shadowMapSize);
+    // The same map on both since medium's went to 2048 (2026-10-27); high reaches further, in more cascades.
+    expect(QUALITY.high.shadowMapSize).toBeGreaterThanOrEqual(QUALITY.medium.shadowMapSize);
+    expect(QUALITY.high.shadowDistance).toBeGreaterThan(QUALITY.medium.shadowDistance);
+    expect(QUALITY.high.shadowCascades).toBeGreaterThan(QUALITY.medium.shadowCascades);
   });
 });
 

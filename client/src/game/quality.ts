@@ -82,7 +82,16 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
   },
   medium: {
     hardwareScaling: 1,
-    shadowMapSize: 1024,
+    // 2048, from 1024 (2026-10-27): a 2.6 cm texel over the first cascade's
+    // 26.65 m forest slice, not 5.2. Under the explore day's sun, which
+    // turns 0.0003 rad a redraw, every leaf card's shadow silhouette moves
+    // across the map's texels and pops a texel at a time; at half the texel
+    // the pops are a quarter the area and the dapple on the trunks and the
+    // cover stops reading as a shimmer (five times fewer blinking pixels,
+    // measured on the Air). The shadow pass's GPU time did not move with it
+    // (its cost is the forest's instances, not the fill); the map is four
+    // times the bytes.
+    shadowMapSize: 2048,
     shadowCascades: 1,
     shadowDistance: 300,
     shadowLambda: 0.9,
