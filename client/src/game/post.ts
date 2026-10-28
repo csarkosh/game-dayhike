@@ -19,7 +19,7 @@ import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
 import { mixPalette, PAINT_FADE_SECONDS, PAINT_OILS, type PaintPalette } from "./gradeParams.js";
 import { CHASE_LIFT, CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, CHASE_TINT, gradeRecordUnder, STARE_VIGNETTE, type GradeRecord } from "./gradeParams.js";
 import type { StareLens } from "./stareLens.js";
-import { MSAA_SAMPLES, PAINT_SCALE, PAINT_STRENGTH, paintTargetSize, paintTexelRadius, TAA_BLEND, TAA_CLIP, TAA_SHARPEN, taaJitter, type PostFeatures } from "./postParams.js";
+import { MSAA_SAMPLES, PAINT_SCALE, PAINT_STRENGTH, paintTargetSize, paintTexelRadius, TAA_BLEND, TAA_CLIP, TAA_SHARPEN, taaBlendFor, taaCameraPixels, taaJitter, type PostFeatures } from "./postParams.js";
 import { LENS, lensDropletMap } from "./lensParams.js";
 import halationExtractFragment from "./shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "./shaders/grade.fragment.fx?raw";
@@ -389,6 +389,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       const cur = { eye: new Vector3(), f: new Vector3(), r: new Vector3(), u: new Vector3() };
       const prev = { eye: new Vector3(), f: new Vector3(), r: new Vector3(), u: new Vector3() };
       let frame = 0;
+      const axis = new Vector3();
       // The jitter: the projection's third row carries the clip-space offset
       // (it multiplies by the depth, so the offset is the same at every
       // depth), set on the matrix Babylon has just computed, and the matrix
@@ -438,7 +439,14 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
         effect.setVector3("taaPrevForward", prev.f);
         effect.setVector3("taaPrevRight", prev.r);
         effect.setVector3("taaPrevUp", prev.u);
-        effect.setFloat3("taaParams", TAA_BLEND, TAA_CLIP, valid ? 1 : 0);
+        // The blend by how far the camera moved since the last frame: its
+        // turn, the angle between the two forward axes, and its step. A still
+        // camera blends gently, so the jitter's swing on a trunk thinner than
+        // a pixel does not come through (TAA_BLEND_STILL).
+        const turn = Math.atan2(Vector3.CrossToRef(prev.f, cur.f, axis).length(), Vector3.Dot(prev.f, cur.f));
+        const move = Vector3.Distance(prev.eye, cur.eye);
+        const blend = valid ? taaBlendFor(taaCameraPixels(turn, move, camera.fov, engine.getRenderHeight())) : TAA_BLEND;
+        effect.setFloat3("taaParams", blend, TAA_CLIP, valid ? 1 : 0);
         prev.eye.copyFrom(cur.eye); prev.f.copyFrom(cur.f); prev.r.copyFrom(cur.r); prev.u.copyFrom(cur.u);
         valid = true;
       };

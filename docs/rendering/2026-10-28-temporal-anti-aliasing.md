@@ -111,3 +111,30 @@ jitter's walk and bounds, the chain's order with and without a prepass, the jitt
 projection and its restoration, the bindings of the first and second frames, and the two history
 targets' making, remaking and disposal (`client/test/game/postParams.test.ts`,
 `client/test/game/post.test.ts`).
+
+## Amendment, the same day: a gentler blend while the camera is still
+
+At noon the pass made a flicker of its own. The jitter moves a trunk thinner than a pixel in and out
+of it, and against the bright noon fog that swing is large; the blend passes it on at its share, a
+tenth, so short vertical streaks blinked down the far trunks with the camera still (the low sun of
+the evening lights that fog less, which is why it showed at high sun only). Measured in the page
+itself, the finished canvas read back every frame with no image codec between (a screencast's
+JPEG noise is as large as the flicker), at the explore trailhead at 12 h with the wind off: 1.8 %
+of the far trunks' band flickered by over a level; with the jitter off, none; with the sun held,
+the shadows off, the trunks' axis shading off or the sharpen off, no change; with the history's
+clip widened, no change; with the jitter halved or the blend halved, half.
+
+So the blend follows the camera (`taaBlendFor`, `taaCameraPixels`, `postParams.ts`): the frame's
+share is `TAA_BLEND_STILL`, 0.03, while the camera is still, rising in a straight line to
+`TAA_BLEND` at a pixel of motion in the frame (`TAA_MOVING_PX`), the motion being the turn between
+the two frames' forward axes plus the step seen at 2 m (`TAA_NEAR`), each in pixels of the
+frame's height under its field of view. A walk or a turn is many pixels a frame, so a moving view
+keeps the blend it had; a still one converges in under a second at the game's frame rate, and the
+neighbourhood clip still keeps what moves of itself from trailing. The pass's code computes the
+blend each frame and sets it as the uniform it already had, so the shader is unchanged.
+
+In one page, alternating with the blend held at 0.1: the far trunks' band 0.19 to 0.25 % against
+1.1 % (over two levels, 0.03 % against 0.35 %); the whole frame 0.10 to 0.16 % against 0.8 %.
+Turning (2 px of mouse a frame) the two are the same. The pass's tests add the still frame's blend
+and a turn of half a pixel's angle taking the blend half way.
+

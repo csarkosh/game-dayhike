@@ -42,6 +42,29 @@ export function postFeaturesFor(tier: QualityTier, fxSupported: boolean): PostFe
  * chain without it (leaf flutter against the low sun 3.5 % from 8.4 %, the
  * sunrise's sweeping dapple 8 % from 30 %), at 0.9 ms a frame. */
 export const TAA_BLEND = 0.1;
+/** The new frame's share while the camera is still. The jitter moves a trunk
+ * thinner than a pixel in and out of it, and the blend passes that swing on
+ * at its share: against the bright noon fog, 1.8 % of the far trunks' pixels
+ * flickered at 0.1 with the camera still. A still camera needs no quick
+ * response, so the share falls to this when nothing moves (2026-10-28). */
+export const TAA_BLEND_STILL = 0.03;
+/** The camera motion in a frame, in pixels, from which the blend is TAA_BLEND:
+ * below it the share rises in a straight line from TAA_BLEND_STILL. */
+export const TAA_MOVING_PX = 1;
+/** The distance (m) a camera's step is seen at when it is measured in pixels:
+ * the nearest ground a walker looks over. */
+export const TAA_NEAR = 2;
+/** The new frame's share for a camera that moved `pixels` since the last frame. */
+export function taaBlendFor(pixels: number): number {
+  const t = Math.min(Math.max(pixels / TAA_MOVING_PX, 0), 1);
+  return TAA_BLEND_STILL + (TAA_BLEND - TAA_BLEND_STILL) * t;
+}
+/** The camera's motion since the last frame in pixels of a frame `height`
+ * pixels tall under a vertical field of view `fovY`: its turn by the angle
+ * `turn` (radians) and its step of `move` metres, seen at TAA_NEAR. */
+export function taaCameraPixels(turn: number, move: number, fovY: number, height: number): number {
+  return ((turn + move / TAA_NEAR) * height) / fovY;
+}
 /** How far the history may stray from the current frame's 3 by 3
  * neighbourhood, in that neighbourhood's standard deviations, before it is
  * clipped to it: what keeps a leaf that has moved, or an animal, from

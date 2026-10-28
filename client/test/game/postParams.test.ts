@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   postFeaturesFor,
   PAINT_JOINT_SHARPNESS, PAINT_RADIUS_HIGH, PAINT_RADIUS_MEDIUM, PAINT_REACH, PAINT_ROWS, PAINT_SCALE, paintRadiusFor, paintTargetSize, paintTexelRadius,
-  TAA_BLEND, TAA_CLIP, TAA_SAMPLES, TAA_SHARPEN, halton, taaJitter,
+  TAA_BLEND, TAA_BLEND_STILL, TAA_CLIP, TAA_MOVING_PX, TAA_NEAR, TAA_SAMPLES, TAA_SHARPEN, halton, taaBlendFor, taaCameraPixels, taaJitter,
 } from "../../src/game/postParams.js";
 
 describe("postFeaturesFor", () => {
@@ -50,6 +50,42 @@ describe("the temporal anti-aliasing's jitter", () => {
     expect(taaJitter(1, width, height)).toEqual({ x: ((0.25 - 0.5) * 2) / width, y: ((2 / 3 - 0.5) * 2) / height });
     // Eight distinct steps.
     expect(new Set(Array.from({ length: TAA_SAMPLES }, (_, f) => JSON.stringify(taaJitter(f, width, height)))).size).toBe(TAA_SAMPLES);
+  });
+});
+
+describe("the temporal anti-aliasing's blend", () => {
+  it("holds the measured still blend, below the moving one, reached at a pixel of motion", () => {
+    expect(TAA_BLEND_STILL).toBe(0.03);
+    expect(TAA_BLEND_STILL).toBeLessThan(TAA_BLEND);
+    expect(TAA_MOVING_PX).toBe(1);
+    expect(TAA_NEAR).toBe(2);
+  });
+
+  it("takes the still blend for a camera that has not moved and the full blend from a pixel of motion on", () => {
+    expect(taaBlendFor(0)).toBe(TAA_BLEND_STILL);
+    expect(taaBlendFor(TAA_MOVING_PX)).toBe(TAA_BLEND);
+    expect(taaBlendFor(40)).toBe(TAA_BLEND);
+    expect(taaBlendFor(-1)).toBe(TAA_BLEND_STILL);
+  });
+
+  it("rises steadily between the two", () => {
+    let last = taaBlendFor(0);
+    for (let px = 0.1; px <= TAA_MOVING_PX; px += 0.1) {
+      const b = taaBlendFor(px);
+      expect(b).toBeGreaterThan(last);
+      last = b;
+    }
+    expect(taaBlendFor(TAA_MOVING_PX / 2)).toBeCloseTo((TAA_BLEND_STILL + TAA_BLEND) / 2, 10);
+  });
+
+  it("measures the camera's motion in pixels: a turn by its angle, a step as seen at TAA_NEAR", () => {
+    const fovY = 0.8;
+    const height = 776;
+    const pixel = fovY / height;
+    expect(taaCameraPixels(0, 0, fovY, height)).toBe(0);
+    expect(taaCameraPixels(pixel, 0, fovY, height)).toBeCloseTo(1, 10);
+    expect(taaCameraPixels(0, TAA_NEAR * pixel, fovY, height)).toBeCloseTo(1, 10);
+    expect(taaCameraPixels(3 * pixel, TAA_NEAR * 2 * pixel, fovY, height)).toBeCloseTo(5, 10);
   });
 });
 

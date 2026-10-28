@@ -13,7 +13,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { END_BLUR_KERNEL, END_BLUR_STEPS, endBlurKernel, createPost, FAR_SOFT_BAND, FAR_SOFT_RADIUS, fxSupportedBy } from "../../src/game/post.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import farSoftFx from "../../src/game/shaders/farSoft.fragment.fx?raw";
-import { postFeaturesFor, MSAA_SAMPLES, TAA_BLEND, TAA_CLIP, TAA_SHARPEN, taaJitter } from "../../src/game/postParams.js";
+import { postFeaturesFor, MSAA_SAMPLES, TAA_BLEND, TAA_BLEND_STILL, TAA_CLIP, TAA_SHARPEN, taaBlendFor, taaJitter } from "../../src/game/postParams.js";
 import taaFx from "../../src/game/shaders/taa.fragment.fx?raw";
 import taaSharpenFx from "../../src/game/shaders/taaSharpen.fragment.fx?raw";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "../../src/game/weather.js";
@@ -325,6 +325,20 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
         expect(named("setFloat3", "taaParams")).toEqual([TAA_BLEND, TAA_CLIP, 1]);
         expect(vector("taaEye").x).toBe(5);
         expect(vector("taaPrevEye").x + 0).toBe(0);
+        // A frame the camera has not moved in takes the still blend.
+        calls.length = 0;
+        taa.onActivateObservable.notifyObservers(camera);
+        taa.onApplyObservable.notifyObservers(fakeEffect);
+        expect(named("setFloat3", "taaParams")).toEqual([TAA_BLEND_STILL, TAA_CLIP, 1]);
+        // A turn by half a pixel's angle takes the blend half way between.
+        camera.rotation.y = (0.5 * camera.fov) / 1080;
+        camera.computeWorldMatrix();
+        calls.length = 0;
+        taa.onActivateObservable.notifyObservers(camera);
+        taa.onApplyObservable.notifyObservers(fakeEffect);
+        const params = named("setFloat3", "taaParams") as number[];
+        expect(params[0]).toBeCloseTo(taaBlendFor(0.5), 6);
+        expect(params.slice(1)).toEqual([TAA_CLIP, 1]);
         // The sharpen lifts by the constant.
         calls.length = 0;
         passNamed(camera, "taaSharpen").onApplyObservable.notifyObservers(fakeEffect);
