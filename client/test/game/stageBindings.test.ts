@@ -199,18 +199,18 @@ describe("WebGPU's per-stage bindings, at the defaults the device keeps", () => 
     ]);
   });
 
-  it("counts the terrain's bindings: 16 textures and 16 samplers on high, 15 and 15 on medium, 12 uniform buffers on both", () => {
+  it("counts the terrain's bindings: 14 textures and 14 samplers on both tiers, 12 uniform buffers", () => {
     // The browser read 16 textures and 16 samplers when the trail bound its
     // segment list and its bucket grid as two textures under the plain
-    // shadow filter; they are one table now (trailPaint.ts), and the unit
-    // that freed goes to the soft-edged shadows' depth read on the high tier,
-    // so the terrain fills the device's default there and sits one below it
-    // on medium.
+    // shadow filter; they are one table now (trailPaint.ts). The sun's shadow
+    // map took one more on medium and two on high (its soft edges read the
+    // map's depth too) until no tier drew it (2026-10-28): the terrain sits
+    // two below the device's default on both.
     const terrain = world.drawn.get("mat_terrain") as Drawn;
     const vertex = { textures: 0, samplers: 0, uniformBuffers: 12 };
     expect({ high: onTier(terrain, "high"), medium: onTier(terrain, "medium") }, CEILING).toEqual({
-      high: { vertex, fragment: { textures: 16, samplers: 16, uniformBuffers: 12 } },
-      medium: { vertex, fragment: { textures: 15, samplers: 15, uniformBuffers: 12 } },
+      high: { vertex, fragment: { textures: 14, samplers: 14, uniformBuffers: 12 } },
+      medium: { vertex, fragment: { textures: 14, samplers: 14, uniformBuffers: 12 } },
     });
   });
 

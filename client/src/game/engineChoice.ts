@@ -59,24 +59,20 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
  * measured, over every pipeline of 13 WebGPU pages on both tiers, each
  * replayed at chosen limits (the verification note, §4):
  *
- * - Inter-stage variables, 22. WebGPU lets a vertex stage write at most this
+ * - Inter-stage variables, 16, WebGPU's default (22 until 2026-10-28). WebGPU lets a vertex stage write at most this
  *   many user-defined outputs, each at a location below it, and a fragment
  *   stage read at most this many user-defined inputs less one for each
  *   inter-stage built-in it reads (`front_facing`, `sample_index`,
  *   `sample_mask`, `primitive_index` and the two subgroup built-ins; the
  *   position does not count). On WebGPU Babylon declares every vertex output
- *   as a fragment input, a `mat3` taking three locations. The giant trees'
- *   faded material (`material1`) writes 20 outputs on the high tier, whose
- *   sun casts three cascades since 2026-10-15 (each cascade a `vec4` and a
- *   `float` more to every lit material; 18 on medium's two), and its
- *   two-sided fragment reads those and `front_facing`: at 20 it fails
- *   validation, at 21 no pipeline does (`interStage.test.ts` holds the
- *   count). The far softening's prepass (2026-10-16, `post.ts`) has every
- *   capable material write its camera-space depth as a second target, from a
- *   `vViewPos` output of its own, one more to every lit material on the high
- *   and medium tiers: the faded material's fragment then reads 21 and
- *   `front_facing`, which is what raised the limit from 21 to 22. It is the
- *   one pipeline that sets 22. The halation's blur sizes its
+ *   as a fragment input, a `mat3` taking three locations. The most any
+ *   pipeline needs is 15: the giant trees' faded material (`material1`), its
+ *   outputs, the far softening's camera-space depth (`vViewPos`, 2026-10-16,
+ *   `post.ts`) and `front_facing` (`interStage.test.ts` holds the count). The
+ *   sun's shadow took a `vec4` and a `float` a cascade from every lit
+ *   material, which on the high tier's three cascades raised the need to 22;
+ *   no tier draws it since 2026-10-28, so the default is enough and turns no
+ *   adapter away. The halation's blur sizes its
  *   taps from the device's own limit, so it fills whatever the device offers
  *   and fits it; it failed at 18 only where the replay made, on a device of 18,
  *   a pipeline built for one of 19, the count before. The specification lowers the
@@ -88,16 +84,16 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
  *   clumps, the giant fir's `material1`, the fern, the meadow's clutter, the
  *   grass).
  * - Sampled textures and samplers per stage, 16 each, and uniform buffers per
- *   stage, 12: WebGPU's defaults, at which the scene sits with no margin. The
- *   terrain's fragment stage takes all 16 textures and 16 samplers on the
- *   high tier, whose soft-edged shadows read the map's depth too, and every
+ *   stage, 12: WebGPU's defaults. The terrain's fragment stage takes 14
+ *   textures and 14 samplers (16 on the high tier while its soft-edged sun
+ *   shadow read the map's depth too, until 2026-10-28), and every
  *   lit PBR material with a full party's seven lights all 12 uniform buffers
  *   (`stageBindings.test.ts` holds the counts). They are named so that this
  *   is the scene's whole need; every adapter offers the defaults, so naming
  *   them turns none away.
  */
 export const WEBGPU_REQUIRED_LIMITS: Readonly<Record<string, number>> = {
-  maxInterStageShaderVariables: 22,
+  maxInterStageShaderVariables: 16,
   maxVertexBuffers: 8,
   maxSampledTexturesPerShaderStage: 16,
   maxSamplersPerShaderStage: 16,

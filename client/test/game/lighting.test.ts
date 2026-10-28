@@ -104,7 +104,7 @@ describe("createLighting", () => {
     lighting.dispose();
   });
 
-  it("softens the high tier's shadow edges with the sun's size, and keeps the plain filter on the others", () => {
+  it("softens a soft-edged tier's shadow with the sun's size, and keeps the plain filter on the others", () => {
     // The generator cannot be built under NullEngine (`IsSupported` is
     // false), so the filter it is given is read from the pure rule the
     // lighting applies. The soft shadow takes Babylon's medium quality,
@@ -114,7 +114,8 @@ describe("createLighting", () => {
     // cascade's slice (0.1 gave a penumbra 28 mm wide under a branch 3 m up
     // at noon in a 16:9 window over the 18.5 m slice before).
     expect(SUN_LIGHT_SIZE_UV).toBe(0.15);
-    expect(shadowFilterFor(QUALITY.high)).toEqual({ filter: "pcss", quality: 1, lightSizeUV: 0.15 });
+    // No tier draws the sun's shadow since 2026-10-28, so none softens it; the rule stays for a tier that takes a map again.
+    expect(shadowFilterFor(QUALITY.high)).toEqual({ filter: "pcf" });
     expect(shadowFilterFor(QUALITY.medium)).toEqual({ filter: "pcf" });
     expect(shadowFilterFor(QUALITY.low)).toEqual({ filter: "pcf" });
     expect(shadowFilterFor({ shadowSoftEdges: true })).toEqual({ filter: "pcss", quality: 1, lightSizeUV: 0.15 });
@@ -123,8 +124,9 @@ describe("createLighting", () => {
 
   it("leaves the small casters out of the farthest cascade of a long reach, and out of no cascade on the shorter ones", () => {
     expect(FAR_CASCADE_REACH_M).toBe(500);
-    // High: three cascades to 1500 m, the third without the near casters. Medium: one cascade. Low: no shadows.
-    expect(farCascadeIndex(QUALITY.high)).toBe(2);
+    // Three cascades to 1500 m (the high tier's until 2026-10-28): the third without the near casters. No tier draws a map now.
+    expect(farCascadeIndex({ shadowMapSize: 2048, shadowCascades: 3, shadowDistance: 1500 })).toBe(2);
+    expect(farCascadeIndex(QUALITY.high)).toBe(-1);
     expect(farCascadeIndex(QUALITY.medium)).toBe(-1);
     expect(farCascadeIndex(QUALITY.low)).toBe(-1);
     expect(farCascadeIndex({ shadowMapSize: 2048, shadowCascades: 2, shadowDistance: 500 })).toBe(1);

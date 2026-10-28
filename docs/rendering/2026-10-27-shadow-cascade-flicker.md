@@ -114,3 +114,28 @@ the Air, not on the rig.
 not lower the blink; what settled the cards' edges, and the shadow's residual pops with them, is the
 temporal anti-aliasing (`docs/rendering/2026-10-28-temporal-anti-aliasing.md`), at under a
 millisecond a frame.
+
+## The shadow map dropped (2026-10-28)
+
+No tier draws the sun's shadow map any more (`quality.ts`: `shadowMapSize` 0 on medium and high, as
+on low). Measured on the Air on the live site (5f2e42ca), one page a view at the frame-budget
+harness's medium size with the frame cap off, the sun's shadow switched on and off in alternating
+blocks with the render scale held:
+
+| Engine | View | Shadow on | Shadow off | Saved |
+|---|---|---|---|---|
+| WebGL2 | trailhead | 34.4 ms (p95 62) | 28.5 ms (p95 47) | 6.0 ms, 17 % |
+| WebGL2 | forest | 37.9 ms (p95 74) | 25.3 ms (p95 43) | 12.6 ms, 33 % |
+| WebGPU | trailhead | 34.6 ms | 27.7 ms | 6.9 ms, 20 % |
+| WebGPU | forest | 34.9 ms | 25.0 ms | 9.9 ms, 28 % |
+
+On WebGPU the main pass's GPU time fell by 1.5 ms at the trailhead and 3.5 ms in the forest, the
+shadow's sampling in every lit material; the rest was the map itself, the forest's instances drawn
+into it. The forest costs more for having more casters. High's three soft cascades cost more than
+medium's one and went with it. Without the shadow every lit material carries five to seven fewer
+inter-stage variables, so the WebGPU device now asks for WebGPU's default of 16 (22 before) and
+turns no adapter away for that limit; the terrain binds two fewer textures and samplers.
+
+The cascade code above stays (`cascadeFrustum.ts`, the trunks' axis shading in
+`barkShadePlugin.ts`), unused while no tier sets a map size, so a tier can take a map again.
+

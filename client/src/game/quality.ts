@@ -62,13 +62,10 @@ export type QualitySettings = {
 };
 
 /** Hardware scaling, shadow map sizes, LOD bias, and texture mip caps, by
- * tier. Cascade counts are tuning values: `medium` uses a single
- * cascade, and `high`'s count is ours to tune. `high` ran Babylon's default of 4 until
- * 2026-08-26: rasterising the old-growth giants' alpha-tested canopy into four 2048²
- * cascade maps measured ~5 ms/frame of GPU time at a deep-forest camera on production —
- * the frame missed 60 Hz vsync and juddered. Two cascades restore a locked 60 fps; the
- * first cascade widens from ~8 m to ~19 m of camera depth (still on a full 2048 map),
- * which PCF keeps acceptable. */
+ * tier. No tier draws the sun's shadow map since 2026-10-28 (its cost is
+ * under `medium`); before that, medium drew one cascade to 300 m and high
+ * three soft ones to 1500 m (four, Babylon's default, until 2026-08-26, when
+ * the old-growth canopy across four 2048² maps measured ~5 ms a frame). */
 export const QUALITY: Record<QualityTier, QualitySettings> = {
   low: {
     hardwareScaling: 1.5,
@@ -82,30 +79,28 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
   },
   medium: {
     hardwareScaling: 1,
-    // 2048, from 1024 (2026-10-27): a 2.6 cm texel over the first cascade's
-    // 26.65 m forest slice, not 5.2. Under the explore day's sun, which
-    // turns 0.0003 rad a redraw, every leaf card's shadow silhouette moves
-    // across the map's texels and pops a texel at a time; at half the texel
-    // the pops are a quarter the area and the dapple on the trunks and the
-    // cover stops reading as a shimmer (five times fewer blinking pixels,
-    // measured on the Air). The shadow pass's GPU time did not move with it
-    // (its cost is the forest's instances, not the fill); the map is four
-    // times the bytes.
-    shadowMapSize: 2048,
-    shadowCascades: 1,
-    shadowDistance: 300,
-    shadowLambda: 0.9,
+    // No sun shadow (2026-10-28). The 2048 map, one cascade to 300 m, cost
+    // 6 ms a frame at the trailhead and 10 to 13 in the forest on the Air,
+    // a fifth to a third of the frame, most of it the forest's instances
+    // drawn into the map; the shadow's sampling in every material was the
+    // rest. The fields stay so a tier can take a map again.
+    shadowMapSize: 0,
+    shadowCascades: 0,
+    shadowDistance: 0,
+    shadowLambda: 0,
     shadowSoftEdges: false,
     lodBias: 0,
     textureMipCap: 1024,
   },
   high: {
     hardwareScaling: 1,
-    shadowMapSize: 2048,
-    shadowCascades: 3,
-    shadowDistance: 1500,
-    shadowLambda: 0.97,
-    shadowSoftEdges: true,
+    // No sun shadow either (2026-10-28): three soft cascades to 1500 m cost
+    // more than medium's one.
+    shadowMapSize: 0,
+    shadowCascades: 0,
+    shadowDistance: 0,
+    shadowLambda: 0,
+    shadowSoftEdges: false,
     lodBias: 0,
     textureMipCap: 0,
   },

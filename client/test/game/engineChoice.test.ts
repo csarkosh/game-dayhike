@@ -140,10 +140,12 @@ const DEFAULT_LIMITS = {
 
 describe("adapterFits", () => {
   it("wants the limits the scene was measured to need, and a hardware adapter", () => {
-    // 22 inter-stage variables and 8 vertex buffers; 16 sampled textures, 16
-    // samplers and 12 uniform buffers per stage, each WebGPU's default.
+    // WebGPU's default of each: 16 inter-stage variables (22 while the high
+    // tier drew the sun's three shadow cascades, until 2026-10-28) and 8
+    // vertex buffers; 16 sampled textures, 16 samplers and 12 uniform buffers
+    // per stage.
     expect(WEBGPU_REQUIRED_LIMITS).toEqual({
-      maxInterStageShaderVariables: 22,
+      maxInterStageShaderVariables: 16,
       maxVertexBuffers: 8,
       maxSampledTexturesPerShaderStage: 16,
       maxSamplersPerShaderStage: 16,
@@ -151,12 +153,10 @@ describe("adapterFits", () => {
     });
     const defaults = { ...DEFAULT_LIMITS };
     const reference = { ...DEFAULT_LIMITS, maxInterStageShaderVariables: 28 };
-    expect(adapterFits({ limits: defaults, isFallbackAdapter: false }))
-      .toEqual({ fits: false, why: "maxInterStageShaderVariables 16 < 22" });
-    // Every other limit is the default, so an adapter that offers the defaults
-    // and 22 inter-stage variables fits.
-    expect(adapterFits({ limits: { ...defaults, maxInterStageShaderVariables: 22 }, isFallbackAdapter: false }))
-      .toEqual({ fits: true, why: null });
+    // An adapter that offers the defaults fits.
+    expect(adapterFits({ limits: defaults, isFallbackAdapter: false })).toEqual({ fits: true, why: null });
+    expect(adapterFits({ limits: { ...defaults, maxInterStageShaderVariables: 15 }, isFallbackAdapter: false }))
+      .toEqual({ fits: false, why: "maxInterStageShaderVariables 15 < 16" });
     expect(adapterFits({ limits: { ...reference, maxUniformBuffersPerShaderStage: 11 }, isFallbackAdapter: false }))
       .toEqual({ fits: false, why: "maxUniformBuffersPerShaderStage 11 < 12" });
     expect(adapterFits({ limits: reference, isFallbackAdapter: false })).toEqual({ fits: true, why: null });
@@ -495,7 +495,7 @@ describe("resolveWebGpu", () => {
     expect(quiet.log.remembered).toEqual([]);
     const forced = steps({ probe: () => Promise.resolve(small) });
     expect(await resolveWebGpu({ ...high, override: "webgpu" }, forced.s, budgets)).toBeNull();
-    expect(forced.log.warned).toEqual(["WebGPU: not on this browser (maxInterStageShaderVariables 16 < 22); drawing with WebGL2."]);
+    expect(forced.log.warned).toEqual(["WebGPU: not on this browser (maxSampledTexturesPerShaderStage 0 < 16); drawing with WebGL2."]);
     const none = steps({ probe: () => Promise.resolve(null) });
     expect(await resolveWebGpu(high, none.s, budgets)).toBeNull();
     expect(none.log.calls).toEqual(["load"]);
@@ -668,7 +668,7 @@ describe("whether the signals' adapter fits", () => {
   it("is known where the request answered in time, and not known where it timed out", () => {
     const fits = { adapter, limits: { ...DEFAULT_LIMITS, maxInterStageShaderVariables: 28 }, features: [] };
     expect(signalsFit({ ...fits, adapterStatus: "ok" })).toBe(true);
-    expect(signalsFit({ ...fits, limits: { ...DEFAULT_LIMITS }, adapterStatus: "ok" })).toBe(false);
+    expect(signalsFit({ ...fits, limits: { ...DEFAULT_LIMITS, maxInterStageShaderVariables: 15 }, adapterStatus: "ok" })).toBe(false);
     expect(signalsFit({ ...fits, adapter: { ...adapter, isFallbackAdapter: true }, adapterStatus: "ok" })).toBe(false);
     const none = { adapter: null, limits: null, features: null };
     expect(signalsFit({ ...none, adapterStatus: "timed-out" })).toBe(null);

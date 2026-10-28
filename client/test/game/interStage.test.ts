@@ -347,18 +347,16 @@ describe("inter-stage variables on WebGPU", () => {
   it("pins the lights that cast shadows, and the cascades each tier draws", () => {
     expect(shadowGenerators(), WEIGH).toEqual(["game/lighting.ts: CascadedShadowGenerator"]);
     const tiers = Object.keys(QUALITY) as QualityTier[];
-    // The tiers' settings, and what Babylon draws of them: it raises a
-    // cascaded shadow generator's count to at least two, so the medium
-    // tier's one cascade is drawn as two. The high tier's three (2026-10-15,
-    // to 1500 m) cost every lit material two more variables than the two
-    // before, which is what raised the device's limit from 19 to 21; the far
-    // softening's prepass (2026-10-16) one more, from 21 to 22.
+    // The tiers' settings, and what Babylon draws of them (it raises a
+    // cascaded shadow generator's count to at least two). Medium drew one
+    // cascade as two and high three, each a `vec4` and a `float` more to every
+    // lit material, until no tier drew the sun's shadow (2026-10-28).
     expect(Object.fromEntries(tiers.map((tier) => [tier, QUALITY[tier].shadowMapSize > 0 ? QUALITY[tier].shadowCascades : 0])), WEIGH).toEqual({
       low: 0,
-      medium: 1,
-      high: 3,
+      medium: 0,
+      high: 0,
     });
-    expect(Object.fromEntries(tiers.map((tier) => [tier, drawnCascades(tier)])), WEIGH).toEqual({ low: 0, medium: 2, high: 3 });
+    expect(Object.fromEntries(tiers.map((tier) => [tier, drawnCascades(tier)])), WEIGH).toEqual({ low: 0, medium: 0, high: 0 });
   });
 
   it("counts what the browser read for the giants on both tiers", () => {
@@ -368,8 +366,9 @@ describe("inter-stage variables on WebGPU", () => {
     // less the normal map's basis (three locations, gone with the vertex
     // tangents), plus the occlusion-roughness-metalness map's UV, plus the
     // moss's varying (one location, `vMoss`), as Babylon's processing here
-    // counts them; not read again in a browser. Two more on high since
-    // 2026-10-15, the third cascade's `vec4` and `float`.
+    // counts them; not read again in a browser. The sun's cascades added
+    // five on medium and seven on high until no tier drew them (2026-10-28):
+    // the same on both tiers now.
     const count = (tier: QualityTier) =>
       Object.fromEntries(
         GIANTS.map((name) => {
@@ -377,14 +376,14 @@ describe("inter-stage variables on WebGPU", () => {
           return [name, drawn.locations + (drawn.receivesShadows ? shadowLocations(tier, 1) : 0)];
         }),
       );
+    // Those counts held medium's two cascades, five locations; without them:
     const measured = {
-      "tree.giant_fir.material0": 16,
-      "tree.giant_fir.material1": 18,
-      "tree.giant_pine.material0": 16,
-      "tree.giant_pine.material1": 18,
+      "tree.giant_fir.material0": 11,
+      "tree.giant_fir.material1": 13,
+      "tree.giant_pine.material0": 11,
+      "tree.giant_pine.material1": 13,
     };
-    const measuredHigh = Object.fromEntries(Object.entries(measured).map(([name, n]) => [name, n + 2]));
-    expect({ high: count("high"), medium: count("medium") }, WEIGH).toEqual({ high: measuredHigh, medium: measured });
+    expect({ high: count("high"), medium: count("medium") }, WEIGH).toEqual({ high: measured, medium: measured });
   });
 
   it("holds every material the forest draws within the device's limit on every tier, counted as the specification counts", () => {
@@ -445,9 +444,11 @@ describe("inter-stage variables on WebGPU", () => {
         fullest = Math.max(fullest, outputs + builtins);
       }
     }
-    // The limit is the scene's whole need, with no margin: the fullest
-    // fragment stage (the giants' faded material on high) fills it exactly.
-    expect(fullest, WEIGH).toBe(limit);
+    // The fullest fragment stage (the giants' faded material on the tiers
+    // with the prepass) reads 15, one under WebGPU's default of 16, the limit
+    // the device asks for; 22 while the high tier drew three cascades.
+    expect(fullest, WEIGH).toBe(15);
+    expect(limit).toBe(16);
   });
 
   it("reads Babylon's rules the count rests on (canaries on the installed engine)", () => {
@@ -710,7 +711,7 @@ describe("inter-stage variables of the cliffs' LOD1 material on WebGPU, which th
   }, timeLimit(60_000));
   afterAll(() => dispose());
 
-  it("writes eight vertex outputs, seven more for the sun's three cascades, and reads front_facing: 16 of the 21", () => {
+  it("writes eight vertex outputs and reads front_facing: 9 of the 16", () => {
     expect([...drawn.keys()].sort()).toEqual(["cliff_m0_l1", "cliff_m1_l1"]);
     for (const [name, d] of drawn) {
       const varyings = [...d.effect._vertexSourceCode.matchAll(/layout\(location = \d+\)\s*(?:flat\s+)?out (\w+) (\w+);/g)].map(
@@ -720,13 +721,14 @@ describe("inter-stage variables of the cliffs' LOD1 material on WebGPU, which th
         "vec2 vMainUV1", "vec3 vPositionW", "vec3 vNormalW", "mat3 vTBN", "vec3 vFogDistance", "vec4 vCliffTint",
       ]);
       expect(d.effect._processingContext._varyingNextLocation, name).toBe(8);
-      // A near bucket casts and takes the sun's shadows.
+      // A near bucket is still marked to take the sun's shadows, but no tier
+      // draws them since 2026-10-28 (seven more locations on high before).
       expect(d.receivesShadows, name).toBe(true);
-      expect(shadowLocations("high", 1), name).toBe(7);
+      expect(shadowLocations("high", 1), name).toBe(0);
       const frontFacing = d.effect._fragmentSourceCode.includes("gl_FrontFacing");
       expect(frontFacing, name).toBe(true);
       const inputs = d.effect._processingContext._varyingNextLocation + shadowLocations("high", 1) + (frontFacing ? 1 : 0);
-      expect(inputs, `${name}: ${WEIGH_CLIFF}`).toBe(16);
+      expect(inputs, `${name}: ${WEIGH_CLIFF}`).toBe(9);
       expect(inputs).toBeLessThanOrEqual(limit);
     }
   });

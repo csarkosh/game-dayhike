@@ -26,12 +26,7 @@ import { AUTO_KEY, readAutoRecord } from "../../src/game/tierChoice.js";
 describe("QUALITY", () => {
   it("matches the quality tier table", () => {
     // Pins the specified values: hardware scaling, shadow map sizes, LOD
-    // bias, and texture mip caps. Also pins cascade counts so
-    // they cannot drift silently; note that `high`'s cascade count is a
-    // tuning value, not a fixed requirement. It was 4 (Babylon's default)
-    // until production measurement showed the old-growth canopy's
-    // alpha-tested fragments across four 2048² cascade maps cost ~5 ms/frame
-    // at a deep forest camera; 2 cascades restores a locked 60 fps.
+    // bias, and texture mip caps, so they cannot drift silently.
     expect(QUALITY.low).toEqual({
       hardwareScaling: 1.5,
       shadowMapSize: 0,
@@ -44,41 +39,33 @@ describe("QUALITY", () => {
     });
     expect(QUALITY.medium).toEqual({
       hardwareScaling: 1,
-      shadowMapSize: 2048,
-      shadowCascades: 1,
-      shadowDistance: 300,
-      shadowLambda: 0.9,
+      shadowMapSize: 0,
+      shadowCascades: 0,
+      shadowDistance: 0,
+      shadowLambda: 0,
       shadowSoftEdges: false,
       lodBias: 0,
       textureMipCap: 1024,
     });
     expect(QUALITY.high).toEqual({
       hardwareScaling: 1,
-      shadowMapSize: 2048,
-      shadowCascades: 3,
-      shadowDistance: 1500,
-      shadowLambda: 0.97,
-      shadowSoftEdges: true,
+      shadowMapSize: 0,
+      shadowCascades: 0,
+      shadowDistance: 0,
+      shadowLambda: 0,
+      shadowSoftEdges: false,
       lodBias: 0,
       textureMipCap: 0,
     });
   });
 
-  it("softens the sun's shadow edges on high alone", () => {
-    // The soft shadow's search and filter are paid per shadowed fragment, on
-    // the tier whose machine can pay; low has no shadows to soften.
-    expect(QUALITY.low.shadowSoftEdges).toBe(false);
-    expect(QUALITY.medium.shadowSoftEdges).toBe(false);
-    expect(QUALITY.high.shadowSoftEdges).toBe(true);
-  });
-
-  it("turns shadows off only at low", () => {
-    expect(QUALITY.low.shadowMapSize).toBe(0);
-    expect(QUALITY.medium.shadowMapSize).toBeGreaterThan(0);
-    // The same map on both since medium's went to 2048 (2026-10-27); high reaches further, in more cascades.
-    expect(QUALITY.high.shadowMapSize).toBeGreaterThanOrEqual(QUALITY.medium.shadowMapSize);
-    expect(QUALITY.high.shadowDistance).toBeGreaterThan(QUALITY.medium.shadowDistance);
-    expect(QUALITY.high.shadowCascades).toBeGreaterThan(QUALITY.medium.shadowCascades);
+  it("draws no sun shadow on any tier", () => {
+    // The shadow map cost 6 to 13 ms a frame on medium on the Air (2026-10-28),
+    // a fifth to a third of the frame; every tier now draws without it.
+    for (const tier of ["low", "medium", "high"] as const) {
+      expect(QUALITY[tier].shadowMapSize).toBe(0);
+      expect(QUALITY[tier].shadowSoftEdges).toBe(false);
+    }
   });
 });
 
