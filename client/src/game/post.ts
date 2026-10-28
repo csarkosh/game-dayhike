@@ -19,7 +19,7 @@ import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
 import { mixPalette, PAINT_FADE_SECONDS, PAINT_OILS, type PaintPalette } from "./gradeParams.js";
 import { CHASE_LIFT, CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, CHASE_TINT, gradeRecordUnder, STARE_VIGNETTE, type GradeRecord } from "./gradeParams.js";
 import type { StareLens } from "./stareLens.js";
-import { MSAA_SAMPLES, PAINT_SCALE, PAINT_STRENGTH, paintTargetSize, paintTexelRadius, type PostFeatures } from "./postParams.js";
+import { MSAA_SAMPLES, PAINT_SCALE, PAINT_STRENGTH, paintTargetSize, paintTexelRadius, TAA_BLEND, TAA_CLIP, TAA_SHARPEN, taaJitter, type PostFeatures } from "./postParams.js";
 import { LENS, lensDropletMap } from "./lensParams.js";
 import halationExtractFragment from "./shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "./shaders/grade.fragment.fx?raw";
@@ -27,6 +27,9 @@ import lensFragment from "./shaders/lens.fragment.fx?raw";
 import farSoftFragment from "./shaders/farSoft.fragment.fx?raw";
 import paintFragment from "./shaders/paint.fragment.fx?raw";
 import paintComposeFragment from "./shaders/paintCompose.fragment.fx?raw";
+import taaFragment from "./shaders/taa.fragment.fx?raw";
+import taaSharpenFragment from "./shaders/taaSharpen.fragment.fx?raw";
+import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper.js";
 // Registers `scene.enablePrePassRenderer`, the far softening's depth.
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent.js";
 import type { PrePassRenderer } from "@babylonjs/core/Rendering/prePassRenderer.js";
@@ -95,15 +98,33 @@ export const FAR_CLOUD_UNIFORMS = [
 // pass's ratio agree and the whole sub-chain reads and writes quarter size
 // throughout, blur Y's write target included (see grade's ratio below).
 const HALATION_RATIO = 0.25;
+
 const HALATION_KERNEL = 32;
 
 /**
  * The post chain: the far softening first (where the engine draws to several
- * targets at once; below), then on high a full-resolution scene pass, then
- * halation extract and blur, then the grade pass, FXAA,
- * then the finish pass; on medium the scene pass and halation are skipped.
- * Passes attach in creation order, which is what fixes the order —
- * FXAA must run before the dither, and the dither must be last.
+ * targets at once; below), the temporal anti-aliasing and its sharpen on the
+ * softened frame, the paint, then on high a full-resolution scene pass, then
+ * halation extract and blur, then the grade pass, then the lens; on medium
+ * the scene pass and halation are skipped. Where there is no far softening
+ * (no prepass, so no depth to reproject with) there is no temporal
+ * anti-aliasing either, and FXAA follows the grade instead. Passes attach in
+ * creation order, which is what fixes the order — the anti-aliasing must run
+ * before the paint smears the edges it is settling, and FXAA before the dither.
+ *
+ * The temporal anti-aliasing (2026-10-28, `taa.fragment.fx`): the scene is
+ * drawn each frame with the projection moved by a fraction of a pixel along
+ * an eight-step Halton walk (`taaJitter`), and the pass blends the frame into
+ * the history of the frames before it at `TAA_BLEND`, the history found by
+ * rebuilding each pixel's point from the prepass's depth and projecting it
+ * with last frame's camera, and held to the current frame's neighbourhood
+ * (`TAA_CLIP`) so what moves of itself does not trail. It writes into one of
+ * two history targets in turn, which the sharpen pass (`taaSharpen.fragment.fx`,
+ * `TAA_SHARPEN`) copies on down the chain and which the next frame reads as
+ * its history. What it settles: the leaf cards' alpha-tested edges
+ * fluttering against the sky, and the shadow map's texel pops under the
+ * explore day's fast sun, neither of which the multisampling touches
+ * (`docs/rendering/2026-10-28-temporal-anti-aliasing.md`).
  *
  * The far softening (2026-10-16, `farSoft.fragment.fx`) blurs the frame past
  * `FAR_SOFT_BAND` metres of camera depth by a radius rising to
@@ -138,7 +159,7 @@ const HALATION_KERNEL = 32;
  * instead of writing full size and taking a step a quarter as long vertically
  * as horizontally — the glow was 76 by 22 px at half its peak before this,
  * 74 by 74 px after (see `docs/rendering/2026-09-27-halation-blur-size.md`).
- * `grade`'s own OUTPUT is unaffected: it draws into `fxaa`'s
+ * `grade`'s own OUTPUT is unaffected: it draws into the next pass's
  * input, whose ratio stays 1.0, so `grade` still writes full size regardless
  * of the ratio it was built with. On medium there is no halation chain ahead
  * of it, so `grade` is the FIRST pass and its ratio sizes the scene render
@@ -178,6 +199,13 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let blurX: BlurPostProcess | null = null;
   let blurY: BlurPostProcess | null = null;
   let fxaa: FxaaPostProcess | null = null;
+  /** The temporal anti-aliasing (2026-10-28) and the sharpen that carries its frame on. */
+  let taa: PostProcess | null = null;
+  let taaSharpen: PostProcess | null = null;
+  /** The anti-aliasing's two history targets, read and written in turn. */
+  let taaPing: RenderTargetWrapper | null = null;
+  let taaPong: RenderTargetWrapper | null = null;
+  const taaObservers: (() => void)[] = [];
   let lens: PostProcess | null = null;
   /** The far field's softening (2026-10-16) and the prepass whose depth it reads. */
   let farSoft: PostProcess | null = null;
@@ -252,6 +280,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     Effect.ShadersStore["farSoftFragmentShader"] = farSoftFragment;
     Effect.ShadersStore["paintFragmentShader"] = paintFragment;
     Effect.ShadersStore["paintComposeFragmentShader"] = paintComposeFragment;
+    Effect.ShadersStore["taaFragmentShader"] = taaFragment;
+    Effect.ShadersStore["taaSharpenFragmentShader"] = taaSharpenFragment;
 
     // The far softening, first in the chain, on the scene as rendered. Its
     // depth is the scene's own: Babylon's prepass draws the camera-space
@@ -321,6 +351,96 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
           effect.setFloat("atmCloudSteps", 0);
           if (black !== null) effect.setTexture("atmCloudMap", black);
         }
+      };
+    }
+
+    if (features.taa && farSoft !== null && prePass !== null) {
+      // The temporal anti-aliasing, right after the far softening, on the
+      // scene's linear colour: see the chain's note above.
+      const bound = prePass;
+      taa = new PostProcess("taa", "taa",
+        ["texel", "taaEye", "taaForward", "taaRight", "taaUp", "taaPrevEye", "taaPrevForward", "taaPrevRight", "taaPrevUp", "taaParams"],
+        ["historySampler", "depthSampler"], 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
+      const sharpen = new PostProcess("taaSharpen", "taaSharpen", ["texel", "sharpen"], [], 1.0, camera,
+        Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
+      taaSharpen = sharpen;
+      // The sharpen's input is whichever history target the anti-aliasing
+      // just wrote, swapped in at its activation, so its target is never
+      // cleared: the clear would be of the history itself.
+      sharpen.autoClear = false;
+      sharpen.onApply = (effect) => {
+        effect.setFloat2("texel", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
+        effect.setFloat("sharpen", TAA_SHARPEN);
+      };
+      let flip = 0;
+      let valid = false;
+      const makeTargets = (): void => {
+        taaPing?.dispose();
+        taaPong?.dispose();
+        const size = { width: engine.getRenderWidth(), height: engine.getRenderHeight() };
+        const opts = { generateMipMaps: false, generateDepthBuffer: false, type: textureType, samplingMode: Texture.BILINEAR_SAMPLINGMODE };
+        taaPing = engine.createRenderTargetTexture(size, opts);
+        taaPong = engine.createRenderTargetTexture(size, opts);
+        valid = false;
+      };
+      makeTargets();
+      // The camera's basis this frame and last: its eye, its forward axis,
+      // and its right and up axes each at the half view's tangent.
+      const cur = { eye: new Vector3(), f: new Vector3(), r: new Vector3(), u: new Vector3() };
+      const prev = { eye: new Vector3(), f: new Vector3(), r: new Vector3(), u: new Vector3() };
+      let frame = 0;
+      // The jitter: the projection's third row carries the clip-space offset
+      // (it multiplies by the depth, so the offset is the same at every
+      // depth), set on the matrix Babylon has just computed, and the matrix
+      // computed afresh after the render so nothing else sees the offset.
+      const jitter = scene.onBeforeRenderObservable.add(() => {
+        const proj = camera.getProjectionMatrix(true);
+        const { x, y } = taaJitter(frame++, engine.getRenderWidth(), engine.getRenderHeight());
+        proj.setRowFromFloats(2, x, y, proj.m[10] ?? 1, proj.m[11] ?? 1);
+      });
+      const unjitter = scene.onAfterRenderObservable.add(() => {
+        camera.getProjectionMatrix(true);
+      });
+      taaObservers.push(() => {
+        scene.onBeforeRenderObservable.remove(jitter);
+        scene.onAfterRenderObservable.remove(unjitter);
+      });
+      taa.onActivateObservable.add(() => {
+        if (taaPing === null || taaPing.width !== engine.getRenderWidth() || taaPing.height !== engine.getRenderHeight()) makeTargets();
+        sharpen.inputTexture = (flip ? taaPing : taaPong)!;
+        flip ^= 1;
+      });
+      taa.onApply = (effect) => {
+        const target = bound.getRenderTarget();
+        effect.setTexture("depthSampler", target.textures[bound.getIndex(Constants.PREPASS_DEPTH_TEXTURE_TYPE)] ?? null);
+        const history = (flip ? taaPing : taaPong)!;
+        effect._bindTexture("historySampler", history.texture);
+        effect.setFloat2("texel", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
+        const tanY = Math.tan(camera.fov / 2);
+        const tanX = tanY * engine.getAspectRatio(camera);
+        camera.getDirectionToRef(Vector3.Forward(), cur.f);
+        camera.getDirectionToRef(Vector3.Right(), cur.r);
+        cur.r.scaleInPlace(tanX);
+        camera.getDirectionToRef(Vector3.Up(), cur.u);
+        cur.u.scaleInPlace(tanY);
+        // After the directions: reading them computes the world matrix the global position is of.
+        cur.eye.copyFrom(camera.globalPosition);
+        // The first frame, and the first after the targets are remade, has no
+        // history: last frame's basis is this frame's, and the blend is held off.
+        if (!valid) {
+          prev.eye.copyFrom(cur.eye); prev.f.copyFrom(cur.f); prev.r.copyFrom(cur.r); prev.u.copyFrom(cur.u);
+        }
+        effect.setVector3("taaEye", cur.eye);
+        effect.setVector3("taaForward", cur.f);
+        effect.setVector3("taaRight", cur.r);
+        effect.setVector3("taaUp", cur.u);
+        effect.setVector3("taaPrevEye", prev.eye);
+        effect.setVector3("taaPrevForward", prev.f);
+        effect.setVector3("taaPrevRight", prev.r);
+        effect.setVector3("taaPrevUp", prev.u);
+        effect.setFloat3("taaParams", TAA_BLEND, TAA_CLIP, valid ? 1 : 0);
+        prev.eye.copyFrom(cur.eye); prev.f.copyFrom(cur.f); prev.r.copyFrom(cur.r); prev.u.copyFrom(cur.u);
+        valid = true;
       };
     }
 
@@ -438,11 +558,13 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       effect.setFloat("shadeMonster", SHADE_MONSTER_DARK);
     };
 
-    fxaa = new FxaaPostProcess("fxaa", 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
+    // FXAA only where the temporal anti-aliasing could not be built: it does
+    // for the cards' alpha-tested edges what the multisampling cannot, less well.
+    if (taa === null) fxaa = new FxaaPostProcess("fxaa", 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
 
     if (features.lens) {
-      // Rain on the glass, after FXAA so the drops' edges are anti-aliased
-      // and before the finish so the dither stays last. The droplet map is
+      // Rain on the glass, after the anti-aliasing so the drops' edges are
+      // anti-aliased and before the finish so the dither stays last. The droplet map is
       // generated (lensParams.ts) and tiles, so it wraps. The frost between
       // the drops is the scene itself, read four texels out on the
       // diagonals and averaged in the shader: the same on every tier, and no
@@ -491,7 +613,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     // setter clamps to the engine's cap, but an engine may report no cap at
     // all, and Math.min(4, undefined) is NaN, so ask only where a cap above
     // 1 exists; a capped engine (Safari) reads 1 and nothing else changes.
-    // FXAA stays for the cards' alpha-test edges, which MSAA does not touch.
+    // The cards' alpha-test edges, which MSAA does not touch, are the
+    // temporal anti-aliasing's, or FXAA's without it.
     const first = farSoft ?? paint ?? scenePass ?? grade;
     if (engine.getCaps().maxMSAASamples > 1) {
       if (prePass !== null) prePass.samples = MSAA_SAMPLES;
@@ -574,6 +697,15 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     dispose() {
       farSoft?.dispose();
       farSoft = null;
+      for (const remove of taaObservers.splice(0)) remove();
+      taaSharpen?.dispose();
+      taaSharpen = null;
+      taa?.dispose();
+      taa = null;
+      taaPing?.dispose();
+      taaPing = null;
+      taaPong?.dispose();
+      taaPong = null;
       paintCompose?.dispose();
       paint?.dispose();
       paint = null;

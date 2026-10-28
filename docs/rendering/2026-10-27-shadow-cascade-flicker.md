@@ -109,3 +109,8 @@ does not depend on the shadow map. Two things would reduce it without a per-fram
 the render scale fall below the window's CSS pixels on a 2× display (today 975 wide for 1300), and
 alpha-to-coverage for the leaf cards (prototyped on `worktree-tree-flutter`), to be judged by eye on
 the Air, not on the rig.
+
+**Later (2026-10-28):** the scale floor was measured at a third of the frame rate on the Air and did
+not lower the blink; what settled the cards' edges, and the shadow's residual pops with them, is the
+temporal anti-aliasing (`docs/rendering/2026-10-28-temporal-anti-aliasing.md`), at under a
+millisecond a frame.

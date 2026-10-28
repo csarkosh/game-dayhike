@@ -13,7 +13,9 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { END_BLUR_KERNEL, END_BLUR_STEPS, endBlurKernel, createPost, FAR_SOFT_BAND, FAR_SOFT_RADIUS, fxSupportedBy } from "../../src/game/post.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import farSoftFx from "../../src/game/shaders/farSoft.fragment.fx?raw";
-import { postFeaturesFor, MSAA_SAMPLES } from "../../src/game/postParams.js";
+import { postFeaturesFor, MSAA_SAMPLES, TAA_BLEND, TAA_CLIP, TAA_SHARPEN, taaJitter } from "../../src/game/postParams.js";
+import taaFx from "../../src/game/shaders/taa.fragment.fx?raw";
+import taaSharpenFx from "../../src/game/shaders/taaSharpen.fragment.fx?raw";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "../../src/game/weather.js";
 import { STARE_LENS_REST, stareReach, type StareLens } from "../../src/game/stareLens.js";
 import { CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, gradeRecordUnder, STARE_VIGNETTE } from "../../src/game/gradeParams.js";
@@ -191,11 +193,17 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
         const post = createPost(scene, camera, postFeaturesFor(tier, true));
         const names = camera._postProcesses.map((p) => p?.name ?? null);
         expect(names[0]).toBe("farSoft");
-        expect(names[1]).toBe("paint");
+        // The temporal anti-aliasing (2026-10-28) and its sharpen follow it, on the softened frame, before the paint.
+        expect(names[1]).toBe("taa");
+        expect(names[2]).toBe("taaSharpen");
+        expect(names[3]).toBe("paint");
         // The paint's compose (2026-10-18) follows it, at half the frame: the paint renders into its half-size input.
-        expect(names[2]).toBe("paintCompose");
+        expect(names[4]).toBe("paintCompose");
         expect(ratioOf(passNamed(camera, "paintCompose"))).toBe(0.5);
-        expect(names[3]).toBe(tier === "high" ? "scene" : "grade");
+        expect(names[5]).toBe(tier === "high" ? "scene" : "grade");
+        // FXAA is not built where the anti-aliasing is: the chain ends grade, the lens's slot, the end's two.
+        expect(names).not.toContain("fxaa");
+        expect(names.slice(-3)).toEqual([null, null, null]);
         const farSoft = passNamed(camera, "farSoft");
         expect(ratioOf(farSoft)).toBe(1);
         expect(farSoft._prePassEffectConfiguration).toEqual({ enabled: true, name: "farSoft", texturesRequired: [Constants.PREPASS_DEPTH_TEXTURE_TYPE] });
@@ -206,9 +214,159 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
       engine.getCaps().drawBuffersExtension = false;
       const post = createPost(scene, camera, postFeaturesFor("high", true));
-      expect(camera._postProcesses.map((p) => p?.name ?? null)).not.toContain("farSoft");
+      const names = camera._postProcesses.map((p) => p?.name ?? null);
+      expect(names).not.toContain("farSoft");
+      // No depth to reproject with: no anti-aliasing, and FXAA stays for the cards' edges.
+      expect(names).not.toContain("taa");
+      expect(names).toContain("fxaa");
       post.dispose();
       camera.dispose();
+    });
+
+    describe("the temporal anti-aliasing", () => {
+      it("is two passes at ratio 1, the second keeping its target, each reading at explicit levels", () => {
+        standIn();
+        const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+        const post = createPost(scene, camera, postFeaturesFor("medium", true));
+        const taa = passNamed(camera, "taa");
+        const sharpen = passNamed(camera, "taaSharpen");
+        expect(ratioOf(taa)).toBe(1);
+        expect(ratioOf(sharpen)).toBe(1);
+        expect(sharpen.autoClear).toBe(false);
+        expect(taaFx).not.toMatch(/texture2D\(|\btexture\(/);
+        expect(taaSharpenFx).not.toMatch(/texture2D\(|\btexture\(/);
+        expect(taaFx).toContain("uniform sampler2D historySampler;");
+        expect(taaFx).toContain("uniform sampler2D depthSampler;");
+        post.dispose();
+        camera.dispose();
+      });
+
+      it("jitters the projection by the frame's step before the scene renders and restores it after, a new step each frame", () => {
+        standIn();
+        const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+        scene.activeCamera = camera;
+        const post = createPost(scene, camera, postFeaturesFor("medium", true));
+        const width = engine.getRenderWidth();
+        const height = engine.getRenderHeight();
+        const row2 = () => [camera.getProjectionMatrix().m[8], camera.getProjectionMatrix().m[9]];
+        // The matrix holds floats: close to the step, not equal.
+        const expectRow2 = (x: number, y: number) => {
+          expect(row2()[0]).toBeCloseTo(x, 9);
+          expect(row2()[1]).toBeCloseTo(y, 9);
+        };
+        expectRow2(0, 0);
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+        const first = taaJitter(0, width, height);
+        expect(first.y).not.toBe(0);
+        expectRow2(first.x, first.y);
+        scene.onAfterRenderObservable.notifyObservers(scene);
+        expectRow2(0, 0);
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+        const second = taaJitter(1, width, height);
+        expect(second).not.toEqual(first);
+        expectRow2(second.x, second.y);
+        scene.onAfterRenderObservable.notifyObservers(scene);
+        post.dispose();
+        // Disposed, the chain jitters no more.
+        scene.onBeforeRenderObservable.notifyObservers(scene);
+        expectRow2(0, 0);
+        camera.dispose();
+      });
+
+      it("binds the prepass's depth, the history, the camera's basis this frame and last, the parameters, and holds the first frame to itself", () => {
+        const bigEngine = nullEngineAt(1920, 1080);
+        const bigScene = new Scene(bigEngine);
+        bigEngine.getCaps().drawBuffersExtension = true;
+        const depthTexture = { name: "depth" };
+        const prePass = {
+          samples: 1,
+          markAsDirty: () => undefined,
+          _update: () => undefined,
+          getRenderTarget: () => ({ textures: [{ name: "colour" }, depthTexture] }),
+          getIndex: (type: number) => (type === Constants.PREPASS_DEPTH_TEXTURE_TYPE ? 1 : -1),
+        };
+        (bigScene as unknown as { enablePrePassRenderer(): unknown }).enablePrePassRenderer = () => prePass;
+        (bigScene as unknown as { disablePrePassRenderer(): void }).disablePrePassRenderer = () => undefined;
+        const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), bigScene);
+        const post = createPost(bigScene, camera, postFeaturesFor("medium", true));
+        const calls: { fn: string; args: unknown[] }[] = [];
+        // Babylon uploads a vector as it is set; the pass then reuses the
+        // vectors, so what was set is kept as a copy.
+        const fakeEffect = new Proxy(
+          {},
+          { get: (_target, prop: string) => (...args: unknown[]) => calls.push({ fn: prop, args: args.map((a) => (a instanceof Vector3 ? a.clone() : a)) }) },
+        ) as unknown as Effect;
+        const taa = passNamed(camera, "taa");
+        taa.onActivateObservable.notifyObservers(camera);
+        taa.onApplyObservable.notifyObservers(fakeEffect);
+        const named = (fn: string, name: string) => calls.find((c) => c.fn === fn && c.args[0] === name)?.args.slice(1);
+        expect(named("setTexture", "depthSampler")).toEqual([depthTexture]);
+        expect(named("_bindTexture", "historySampler")).toHaveLength(1);
+        expect(named("setFloat2", "texel")).toEqual([1 / 1920, 1 / 1080]);
+        const tanY = Math.tan(camera.fov / 2);
+        const vector = (name: string): Vector3 => {
+          const v = (named("setVector3", name) as Vector3[] | undefined)?.[0];
+          if (v === undefined) throw new Error(`${name} not set`);
+          return v;
+        };
+        expect(vector("taaForward").z).toBeCloseTo(1, 6);
+        expect(vector("taaUp").y).toBeCloseTo(tanY, 6);
+        expect(vector("taaRight").x).toBeCloseTo(tanY * (1920 / 1080), 6);
+        expect(vector("taaEye").asArray().map((v) => v + 0)).toEqual([0, 2, 0]);
+        // The first frame has no history: last frame's basis is this frame's, and the blend is held off.
+        expect(vector("taaPrevEye").asArray().map((v) => v + 0)).toEqual([0, 2, 0]);
+        expect(named("setFloat3", "taaParams")).toEqual([TAA_BLEND, TAA_CLIP, 0]);
+        // The second frame blends, against the basis the first frame had.
+        camera.position.x = 5;
+        camera.computeWorldMatrix();
+        calls.length = 0;
+        taa.onActivateObservable.notifyObservers(camera);
+        taa.onApplyObservable.notifyObservers(fakeEffect);
+        expect(named("setFloat3", "taaParams")).toEqual([TAA_BLEND, TAA_CLIP, 1]);
+        expect(vector("taaEye").x).toBe(5);
+        expect(vector("taaPrevEye").x + 0).toBe(0);
+        // The sharpen lifts by the constant.
+        calls.length = 0;
+        passNamed(camera, "taaSharpen").onApplyObservable.notifyObservers(fakeEffect);
+        expect(named("setFloat", "sharpen")).toEqual([TAA_SHARPEN]);
+        post.dispose();
+        camera.dispose();
+        bigScene.dispose();
+        bigEngine.dispose();
+      });
+
+      it("keeps two history targets at the frame's size, remade when the frame's size changes, and lets them go at dispose", () => {
+        standIn();
+        const made: { width: number; height: number; disposed: boolean }[] = [];
+        const create = engine.createRenderTargetTexture.bind(engine);
+        engine.createRenderTargetTexture = (size, options) => {
+          const target = create(size, options);
+          const record = { width: target.width, height: target.height, disposed: false };
+          made.push(record);
+          const dispose = target.dispose.bind(target);
+          target.dispose = () => {
+            record.disposed = true;
+            dispose();
+          };
+          return target;
+        };
+        const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+        const post = createPost(scene, camera, postFeaturesFor("medium", true));
+        expect(made.map((m) => [m.width, m.height])).toEqual([[engine.getRenderWidth(), engine.getRenderHeight()], [engine.getRenderWidth(), engine.getRenderHeight()]]);
+        const taa = passNamed(camera, "taa");
+        taa.onActivateObservable.notifyObservers(camera);
+        expect(made).toHaveLength(2);
+        // NullEngine's size is its options'.
+        const sized = engine as unknown as { _options: { renderWidth: number; renderHeight: number } };
+        sized._options.renderWidth = 300;
+        sized._options.renderHeight = 200;
+        taa.onActivateObservable.notifyObservers(camera);
+        expect(made.slice(0, 2).every((m) => m.disposed)).toBe(true);
+        expect(made.slice(2).map((m) => [m.width, m.height])).toEqual([[300, 200], [300, 200]]);
+        post.dispose();
+        expect(made.every((m) => m.disposed)).toBe(true);
+        camera.dispose();
+      });
     });
 
     it("binds the prepass's depth, the texel and the band each apply, and its shader reads the clear as the far sky at explicit levels", () => {
