@@ -32,8 +32,9 @@ permissions:
   contents: read
 
 env:
-  # The 22.x line the development machine runs; package.json's engines says >=22.13.0.
-  NODE_VERSION: 22.13.1
+  # The 22.x line the development machine runs: the first with the Brotli fix
+  # (CVE-2026-111497), the floor package.json's engines sets for 22.x.
+  NODE_VERSION: 22.23.4
 
 jobs:
   # The shipped models, textures and sounds are Git LFS objects and the client

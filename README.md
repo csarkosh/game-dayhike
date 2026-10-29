@@ -69,7 +69,7 @@ Write-ups of the work, with measurements, are on csarko.sh:
 ## Run it yourself
 
 ```bash
-npm install      # Node >= 22.13
+npm install      # Node 22.23.4+ or 24.22.1+ (the Brotli fix, CVE-2026-111497)
 git lfs install  # the models and textures are LFS objects
 npm run dev      # signaling server and Vite together, then open http://localhost:5173
 npm test         # headless: determinism, movement, collision, the protocol, the world
