@@ -102,8 +102,11 @@ These are the gates:
 npm run gate
 ```
 
-It runs `npm run typecheck`, `npm run lint` and the client, server and tools suites
-(`tools/gate.mjs`). Where `DAYHIKE_GATE` names a runner, the gate hands this checkout to it
+It builds the WGSL maps from the corpus first (`tools/wgsl/build-map.mjs --reuse`: nothing when
+the corpus is unchanged, about two minutes when it is not; a map over its 10 MiB ceiling fails
+the gate here, in minutes, where before only the workflow's `build` job found it, and a map past
+90 % of the ceiling is reported), then runs `npm run typecheck`, `npm run lint` and the client,
+server and tools suites (`tools/gate.mjs`). Where `DAYHIKE_GATE` names a runner, the gate hands this checkout to it
 instead: the same commands, and the client's build with its WGSL maps checked as the workflow's
 `build` job does, run on other machines in a few minutes while this one stays free, the tests
 tagged `wall-clock` run here meanwhile (below), and one report. Without a runner the gates run

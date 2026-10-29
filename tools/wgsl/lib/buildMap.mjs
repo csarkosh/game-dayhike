@@ -90,6 +90,30 @@ export function mapSizeProblem(bytes, ceiling = MAP_CEILING, named = 'the WGSL m
   );
 }
 
+/** The share of the ceiling a map may use before the build says so: at this
+ * much, one more recording of a page or two can pass the ceiling (the high
+ * tier's map stood at 93.6 % on 2026-10-27 and passed it the next day). */
+export const HEADROOM_WARN = 0.9;
+
+/**
+ * How close a map of `bytes` is to `ceiling`: the bytes left under it and
+ * the share used, in percent to one decimal, for the build's report.
+ */
+export function mapHeadroom(bytes, ceiling = MAP_CEILING) {
+  return { left: ceiling - bytes, used: Math.round((bytes / ceiling) * 1000) / 10 };
+}
+
+/**
+ * A warning that a map of `bytes` (`named`) is near its ceiling, from
+ * `HEADROOM_WARN` of it up to the ceiling itself, or null: the build goes on,
+ * and the next recording merged is the one to watch.
+ */
+export function headroomWarning(bytes, ceiling = MAP_CEILING, named = 'the WGSL map') {
+  if (bytes > ceiling || bytes < ceiling * HEADROOM_WARN) return null;
+  const { left, used } = mapHeadroom(bytes, ceiling);
+  return `${named} is at ${used} % of its ceiling of ${ceiling} bytes, ${left} bytes left: the next recording merged may pass it`;
+}
+
 /**
  * Why the map's `text`, read back with the page's own reader (`readMap`) for
  * `salt` (and for `tier`, where one is given), does not serve exactly

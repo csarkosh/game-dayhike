@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// The push gate (`npm run gate`): typecheck, lint, and the client, server and tools suites.
+// The push gate (`npm run gate`): the WGSL maps built from the corpus, with their ceiling, then
+// typecheck, lint, and the client, server and tools suites.
 //
 //   npm run gate                               the whole gate
 //   npm run gate -- test/sim/a.test.ts ...     only these client test files
@@ -8,8 +9,10 @@
 // exit is the gate's: a Node script (run with this Node) or an executable, given `--game <this
 // checkout>` and the arguments, that runs the same commands, and the client's build as the deploy
 // builds it, on other machines and prints one report; it may take options of its own. Without
-// one, the gates run here, one after another: `npm run typecheck && npm run lint && npm test`, or
-// only the client test files named.
+// one, the gates run here, one after another: the maps first (`tools/wgsl/build-map.mjs --reuse`:
+// nothing when the corpus is unchanged, about two minutes when it is not, and the one check the
+// suites do not make, a map over its 10 MiB ceiling, which only the deploy's build made before),
+// then `npm run typecheck && npm run lint && npm test`, or only the client test files named.
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -28,6 +31,8 @@ if (options.length > 0) {
   process.exit(2);
 }
 if (args.length > 0) process.exit(run('npx', ['vitest', 'run', '--root', 'client', ...args.map((f) => f.replace(/^client\//, ''))]));
+const maps = run(process.execPath, ['tools/wgsl/build-map.mjs', '--reuse']);
+if (maps !== 0) process.exit(maps);
 for (const script of ['typecheck', 'lint', 'test']) {
   const code = run('npm', ['run', script]);
   if (code !== 0) process.exit(code);

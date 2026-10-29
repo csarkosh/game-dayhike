@@ -40,8 +40,10 @@ import {
   asciiProblem,
   buildMap,
   entriesOn,
+  headroomWarning,
   inputsDigest,
   lineFigures,
+  mapHeadroom,
   mapSizeProblem,
   nodeSalt,
   readBackProblems,
@@ -120,8 +122,10 @@ console.log(
 );
 
 // Each tier's map, its figures first, so a map over its ceiling still says
-// what it is; nothing is written until every map may be.
+// what it is; nothing is written until every map may be. A map near its
+// ceiling (`HEADROOM_WARN`) is written and said so, after the figures.
 const refusals = [];
+const warnings = [];
 for (const output of outputs) {
   output.entries = entriesOn(made, tiers, output.tier);
   output.text = shared.mapText(salt, output.entries, output.tier);
@@ -158,14 +162,20 @@ for (const [i, output] of outputs.entries()) {
       : `  reading it:   the page's reader refuses it (${times.refused})`,
   );
   if (notAscii !== null) refusals.push(notAscii.replace('the WGSL map', `the WGSL map of the ${output.tier} tier`));
-  const tooLarge = mapSizeProblem(Buffer.byteLength(output.text), shared.MAP_MAX_BYTES, `the WGSL map of the ${output.tier} tier`);
+  const mapBytes = Buffer.byteLength(output.text);
+  const { left, used } = mapHeadroom(mapBytes, shared.MAP_MAX_BYTES);
+  console.log(`  ceiling:      ${used} % of ${shared.MAP_MAX_BYTES} B used, ${left} B left`);
+  const tooLarge = mapSizeProblem(mapBytes, shared.MAP_MAX_BYTES, `the WGSL map of the ${output.tier} tier`);
   if (tooLarge !== null) refusals.push(tooLarge);
+  const nearly = headroomWarning(mapBytes, shared.MAP_MAX_BYTES, `the WGSL map of the ${output.tier} tier`);
+  if (nearly !== null) warnings.push(nearly);
 }
 if (refusals.length > 0) {
   for (const refusal of refusals) console.error(`\n!! ${refusal}.`);
   console.error('\nNothing was written.\n');
   process.exit(1);
 }
+for (const warning of warnings) console.error(`\n! ${warning}.`);
 for (const output of outputs) writeWhole(output.file, output.text);
 // Each file as the page will read it: every entry expanded and compared with
 // the translation it was made of. A map that does not serve exactly them is
