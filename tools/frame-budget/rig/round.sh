@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# A round of experiments in one command, on as many rigs as it has jobs: starts that many machines
-# (`rig_count`, copies from the root's image, Chrome about 8 minutes after a create, a boot for a
-# copy kept from an earlier round), opens one forward a machine (`forward.sh`, which reopens itself),
-# runs the chain over every port (`chain.mjs`, a job to a port, each port taking the next as it comes
-# free), then stops every machine. The round's wait is the slowest machine's start plus its slowest
-# job, not the sum of the jobs.
+# A round of experiments in one command, on as many rigs as it has jobs: makes that many machines
+# (`rig_count`, from the root's image, Chrome about 8 minutes after a create), opens one forward a
+# machine (`forward.sh`, which reopens itself), runs the chain over every port (`chain.mjs`, a job
+# to a port, each port taking the next as it comes free), then ends every machine, disk and all
+# (`tools/rig/session.sh down`): nothing bills between rounds but the image. The round's wait is
+# the slowest machine's start plus its slowest job, not the sum of the jobs.
 #
 #   tools/frame-budget/rig/round.sh <queue.json> [--rigs N] [--max-rigs 10] [--retries 1] [--keep-running]
 #
 # The queue's shape is the chain's (`rig/chain.mjs`). --rigs sets the machine count; by default it is
-# the queue's job count (an experiment on two tiers is two jobs), at most --max-rigs. The count never
-# falls below the machines the root already has: lowering `rig_count` destroys copies, which is a
-# decision for its own apply, not a side effect of a round. Starting and stopping machines is
-# `terraform apply` on `_infra/test-rig-aws-windows/`, and the owner's go-ahead is the rule for it.
+# the queue's job count (an experiment on two tiers is two jobs), at most --max-rigs. A machine is
+# about 8 minutes and $0.10 away, so the count is the round's, whatever an earlier round had.
+# Making machines is `terraform apply` on `_infra/test-rig-aws-windows/`, and the owner's go-ahead
+# is the rule for it. With --keep-running the machines are left to their idle watchdog, which ends
+# each fifteen minutes after the last harness left it. The forwards' logs go on the lab disk
+# (`DAYHIKE_LAB`, `/Volumes/CyrusExtSSD/dayhike-lab` by default), never this Mac's own.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -41,17 +43,18 @@ jobs=$(node --input-type=module -e "
   console.log(expandJobs(JSON.parse(readFileSync(process.argv[1], 'utf8'))).length);
 " "$queue")
 [ -d "$root/.terraform" ] || { echo "the rig root is not initialised: run terraform init in $root" >&2; exit 2; }
-have=$( (cd "$root" && terraform output -json instance_ids 2>/dev/null) | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).length)}catch{console.log(1)}})' ) || have=1
+lab="${DAYHIKE_LAB:-/Volumes/CyrusExtSSD/dayhike-lab}"
+[ -d "$lab" ] || { echo "the lab disk is not mounted ($lab): mount it, or set DAYHIKE_LAB" >&2; exit 2; }
 want=${rigs:-$(( jobs < max_rigs ? jobs : max_rigs ))}
 [ "$want" -ge 1 ] || want=1
-count=$(( want > have ? want : have ))
-echo "round: $jobs job(s), $want rig(s) wanted, $have in state: rig_count=$count  $(date '+%H:%M')"
+count=$want
+echo "round: $jobs job(s), rig_count=$count  $(date '+%H:%M')"
 
 stop() {
   [ "$count" -ge 1 ] || return 0
-  [ "$keep" = 1 ] && { echo "machines left running (--keep-running): their idle stop and run cap stand"; return; }
-  echo "stopping every machine (running=false, rig_count=$count)  $(date '+%H:%M')"
-  (cd "$root" && terraform apply -input=false -auto-approve -var running=false -var rig_count="$count" | grep -E "Apply complete|Error" | tail -2) || true
+  [ "$keep" = 1 ] && { echo "machines left running (--keep-running): their idle watchdog and run cap end them"; return; }
+  echo "ending every machine  $(date '+%H:%M')"
+  "$here/tools/rig/session.sh" down || true
 }
 # Bash 3.2 (macOS's own) has no mapfile, and an empty array is "unbound" under `set -u`: the
 # forwards are killed through this shell's children instead of a list.
@@ -62,7 +65,7 @@ trap 'cleanup; stop' EXIT
 ids=()
 while IFS= read -r id; do ids+=("$id"); done < <(cd "$root" && terraform output -json instance_ids | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const id of JSON.parse(s)) console.log(id)})')
 ports=()
-logs="$here/tools/frame-budget/runs"
+logs="$lab/rig-sessions/$(date '+%Y-%m-%d')"
 mkdir -p "$logs"
 for i in "${!ids[@]}"; do
   [ "$i" -lt "$want" ] || break

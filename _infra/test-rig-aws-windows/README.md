@@ -26,7 +26,7 @@ Resources and data sources are the module's, at `module.test_rig.<address>`.
 
 | Resource | Why |
 |---|---|
-| `aws_instance.test_rig` | `g4dn.xlarge` (one NVIDIA T4) by default, or `g6.xlarge` (one L4). Windows Server 2025 from AWS's public image, 50 GB gp3 boot disk, encrypted and deleted with the machine. IMDSv2 required. Shutting down from inside Windows stops it. |
+| `aws_instance.test_rig` | `g4dn.xlarge` (one NVIDIA T4) by default, or `g6.xlarge` (one L4). Windows Server 2025 from AWS's public image, 50 GB gp3 boot disk, encrypted and deleted with the machine. IMDSv2 required. Shutting down from inside Windows ends it, disk and all (since 2026-10-29; see [Create, stop, start, destroy](#create-stop-start-destroy)). |
 | `aws_instance.extra[*]`, `aws_ec2_instance_state.extra[*]` | The copies of the machine beyond the first, `rig_count - 1` of them, and their running/stopped settings; see [Several machines at once](#several-machines-at-once). None by default. |
 | `aws_ec2_instance_state.test_rig` | Running or stopped (`running`), without destroying anything; made again after any change to the machine, so the change cannot leave it in the wrong state (see [What a change does](#what-a-change-does-to-the-machine)). |
 | `terraform_data.setup_script` | The start-up script's SHA-256, with the user data around it: a change replaces the machine. The machine carries it (with `vpc_cidr`) as the tag `build`, and `data.aws_instances.existing` reads that tag back from AWS at every plan, so a replacement is refused while `running = false`. |
@@ -79,7 +79,7 @@ one-minute minimum.
 | `g4dn.xlarge`, Windows, on demand | $0.710/h | running |
 | `g6.xlarge`, Windows, on demand | $0.9888/h | running |
 | Public IPv4 address | $0.005/h | running (released when stopped) |
-| gp3 disk | $0.08/GB-month, $4.00 a month at 50 GB | running or stopped |
+| gp3 disk | $0.08/GB-month, $4.00 a month at 50 GB | while the machine exists: running, or parked with `running = false`; a machine that ends itself takes its disk with it |
 | EBS snapshot (an image, below) | $0.05/GB-month of data stored | while the image is kept |
 | Session Manager, Amazon DCV on EC2, a budget that only alerts, EventBridge Scheduler at one call a day | nothing | |
 
@@ -87,7 +87,8 @@ On the default machine, running costs $0.710 + $0.005 = **$0.715 an hour**.
 
 - **One three-hour run:** 3 × $0.715 = **$2.15**.
 - **A month of four such runs:** 4 × $2.145 = $8.58, plus the disk's $4.00 = **$12.58**.
-- **Stopped all month:** the disk alone, **$4.00**.
+- **Between sessions:** nothing for the machines, which end themselves; the image's snapshot
+  alone, about **$1.50** (below). A machine parked with `running = false` is the disk, **$4.00**.
 - **Left running all month** (730 hours, were nothing to stop it): 730 × $0.715 = $521.95 + $4.00 =
   **about $526**. The machine's own timer caps one forgotten start at `max_run_hours` (default
   4): 4 × $0.715 = $2.86. If the timer never fired, the daily backstop caps it at a day:
@@ -187,6 +188,17 @@ Delete what it leaves by design:
 - the activation of `purpose` as a cost allocation tag, if it is no longer wanted.
 
 ## Create, stop, start, destroy
+
+**Since 2026-10-29 a machine is never parked: idle must cost nothing.** A machine ends itself
+(disk and all) when its Windows shuts down: the run cap's shutdown, the idle watchdog's
+(`tools/frame-budget/rig/idle-stop.ps1`, fifteen minutes without a harness), or the daily
+backstop's `TerminateInstances`. What survives a session is the image (`image_id` in
+`terraform.tfvars`), from which the next `apply` makes machines in about 8 minutes, and the
+VPC, roles and schedule, which cost nothing. The session script,
+`tools/rig/session.sh up <N>` / `down` (`tools/frame-budget/README.md`), is how a day's rigs
+are made and ended; `running = false` still parks a machine, for the rare case a disk is wanted
+tomorrow, at $4 a month each. Between sessions the account holds the image's snapshot alone,
+about $1.50 a month.
 
 ```bash
 cd _infra/test-rig-aws-windows
@@ -568,7 +580,10 @@ A running machine costs $0.715 an hour; one forgotten for a month about $526. Tw
 
 1. **Inside Windows:** a scheduled task, run as the local system account whether or not anyone is
    logged on, runs `shutdown /s /f /t 0` `max_run_hours` (default 4 hours) after each boot. The
-   instance's shutdown behaviour is `stop`, so the machine stops and keeps its disk. The start-up
+   instance's shutdown behaviour is `terminate` (since 2026-10-29; `stop` before, which parked
+   the machine with its disk billing), so the machine ends, disk and all, and the next `apply`
+   makes one from the image. The same shutdown is what the idle watchdog runs
+   (`tools/frame-budget/rig/idle-stop.ps1`: fifteen minutes without a harness on Chrome's port). The start-up
    script sets it at every boot, as its very first act, before it even opens its log: it reads
    the limit from the instance tag `max-run-minutes`, removes the task and registers it afresh
    with two triggers, one for this boot (`max_run_hours` after it) and one at every start-up
@@ -583,12 +598,16 @@ A running machine costs $0.715 an hour; one forgotten for a month about $526. Tw
    script turns it into a restart a minute away instead of asking the launch agent for one. The
    task never starts late: a shutdown missed while the machine was off does not fire at a later
    boot.
-2. **From outside, once a day:** an EventBridge Scheduler schedule calls `StopInstances` on the
-   machine at 09:00 UTC (`backstop_stop_schedule`; `null` in `terraform.tfvars` turns it off):
-   05:00 in US Eastern daylight time, 04:00 in US Eastern standard time. It catches a machine
-   whose Windows never came up far enough to run the task. It runs at that fixed hour whatever the
-   machine is doing, so it also stops a machine started just before it; start a run at least four
-   hours clear of it. Stopping a stopped machine does nothing.
+2. **From outside, once a day:** an EventBridge Scheduler schedule calls `TerminateInstances`
+   (`StopInstances` until 2026-10-29) on every machine at 09:00 UTC (`backstop_stop_schedule`;
+   `null` in `terraform.tfvars` turns it off): 05:00 in US Eastern daylight time, 04:00 in US
+   Eastern standard time. It catches a machine whose Windows never came up far enough to run the
+   task. It runs at that fixed hour whatever the machine is doing, so it also ends a machine
+   started just before it; start a run at least four hours clear of it. Ending a machine already
+   gone does nothing.
+
+The walkthrough below predates the change to `terminate` and reads `stopped` where a machine now
+reads `terminated` (and is gone, so each step makes a new one from the image).
 
 To give a long run more time, raise `max_run_hours` and restart the machine (the new limit is
 read at boot), or restart it (the clock starts again).

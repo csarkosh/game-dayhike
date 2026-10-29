@@ -1,9 +1,11 @@
 # An idle watchdog for a rig: a scheduled task, every minute, that shuts the machine down (and so
-# stops it: the instance's shutdown behaviour is `stop`) once Chrome's debugging port has had no
-# connection for IdleMinutes in a row. A harness run holds a connection to 9222 the whole time
-# (the browser's own socket and each page's), so a machine is stopped only when no harness is on
-# it: a forgotten rig costs IdleMinutes, not max_run_hours. Run as the local administrator, through
-# Run Command or a Session Manager shell, once per machine (an image keeps it):
+# ends it, disk and all: the instance's shutdown behaviour is `terminate` since 2026-10-29, so
+# that an idle rig costs nothing; the image makes the next one) once Chrome's debugging port has
+# had no connection for IdleMinutes in a row. A harness run holds a connection to 9222 the whole
+# time (the browser's own socket and each page's), and so does `rig/forward.sh`'s check every
+# 5 s, so a machine ends only when no harness and no forward is on it: a forgotten rig costs
+# IdleMinutes, not max_run_hours. Run as the local administrator, through Run Command or a
+# Session Manager shell, once per machine (an image keeps it):
 #
 #   aws ssm send-command --region us-east-1 --instance-ids <instance id> \
 #     --document-name AWS-RunPowerShellScript \

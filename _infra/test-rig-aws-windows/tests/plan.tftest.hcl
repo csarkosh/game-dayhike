@@ -130,8 +130,8 @@ run "defaults" {
   }
 
   assert {
-    condition     = aws_instance.test_rig.instance_initiated_shutdown_behavior == "stop"
-    error_message = "A shutdown from inside Windows must stop the machine, never terminate it."
+    condition     = aws_instance.test_rig.instance_initiated_shutdown_behavior == "terminate"
+    error_message = "A shutdown from inside Windows must end the machine, disk and all: idle costs nothing, and the image makes the next one."
   }
 
   assert {
@@ -388,7 +388,7 @@ run "three_rigs" {
     condition = alltrue([
       for i, m in aws_instance.extra :
       m.instance_type == aws_instance.test_rig.instance_type &&
-      m.instance_initiated_shutdown_behavior == "stop" &&
+      m.instance_initiated_shutdown_behavior == "terminate" &&
       m.metadata_options[0].http_tokens == "required" &&
       m.metadata_options[0].instance_metadata_tags == "enabled" &&
       m.root_block_device[0].encrypted == true &&
@@ -698,14 +698,14 @@ run "stopped" {
   # The backstop may stop this one machine and is pointed at it.
   assert {
     condition     = jsondecode(aws_scheduler_schedule.backstop[0].target[0].input).InstanceIds == [aws_instance.test_rig.id]
-    error_message = "The scheduled stop's target is this machine."
+    error_message = "The daily backstop's target is this machine."
   }
 
   assert {
     condition = jsondecode(aws_iam_role_policy.backstop[0].policy).Statement == [
-      { Effect = "Allow", Action = "ec2:StopInstances", Resource = aws_instance.test_rig.arn },
+      { Effect = "Allow", Action = "ec2:TerminateInstances", Resource = aws_instance.test_rig.arn },
     ]
-    error_message = "The backstop's role may stop this machine and do nothing else."
+    error_message = "The backstop's role may end this machine and do nothing else."
   }
 }
 

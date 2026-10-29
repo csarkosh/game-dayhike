@@ -335,6 +335,13 @@ its own timer after a working day. Started from the main checkout with
 `terraform apply -var running=true` and stopped with `running=false`,
 never from a worktree (`test-rigs-on-main`).
 
+*Amended 2026-10-29:* a rig is never parked now. Its shutdown behaviour is
+`terminate`, so the run cap, the idle watchdog (fifteen minutes without a
+harness) and the daily backstop each end the machine, disk and all, and only
+its image remains between sessions: idle costs nothing. A session's rigs are
+made from the image by `tools/rig/session.sh up <N>` (about 8 minutes to
+Chrome, the WGSL maps built meanwhile) and ended by `session.sh down`.
+
 **Why the T4.** Graphics benchmarks put it between the two laptops
 (3DMark Time Spy graphics about 5,200 to 5,600, the class of a GTX 1660;
 the M4 10-core is the class of a laptop RTX 3050 and the M5 10-core a

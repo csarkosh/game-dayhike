@@ -86,7 +86,7 @@ locals {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = "ec2:StopInstances"
+      Action   = "ec2:TerminateInstances"
       Resource = jsondecode(length(local.instance_arns) == 1 ? jsonencode(local.instance_arns[0]) : jsonencode(local.instance_arns))
     }]
   })
@@ -167,7 +167,7 @@ resource "aws_scheduler_schedule" "backstop" {
   count = var.backstop_stop_schedule != null ? 1 : 0
 
   name                         = "${local.name}-backstop-stop"
-  description                  = "Stops the rented Windows GPU machine if it is still running"
+  description                  = "Ends the rented Windows GPU machines if any still exists"
   schedule_expression          = var.backstop_stop_schedule
   schedule_expression_timezone = "UTC"
 
@@ -176,9 +176,10 @@ resource "aws_scheduler_schedule" "backstop" {
   }
 
   target {
-    # EventBridge Scheduler's universal target: calls EC2 StopInstances
-    # directly. Stopping a machine that is already stopped does nothing.
-    arn      = "${local.arn_prefix}:scheduler:::aws-sdk:ec2:stopInstances"
+    # EventBridge Scheduler's universal target: calls EC2 TerminateInstances
+    # directly (StopInstances until 2026-10-29: a machine is never parked now,
+    # see instance.tf). Ending a machine already gone does nothing.
+    arn      = "${local.arn_prefix}:scheduler:::aws-sdk:ec2:terminateInstances"
     role_arn = aws_iam_role.backstop[0].arn
     input    = jsonencode({ InstanceIds = local.instance_ids })
   }

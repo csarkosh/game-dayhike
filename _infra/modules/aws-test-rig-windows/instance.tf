@@ -90,9 +90,12 @@ resource "aws_instance" "test_rig" {
   vpc_security_group_ids = [aws_security_group.test_rig.id]
   iam_instance_profile   = aws_iam_instance_profile.test_rig.name
 
-  # A shutdown from inside Windows (setup.ps1's timer, or anyone's) stops the
-  # machine and keeps its disk; it never terminates it.
-  instance_initiated_shutdown_behavior = "stop"
+  # A shutdown from inside Windows (setup.ps1's run cap, the idle watchdog, or
+  # anyone's) ends the machine, disk and all: idle costs nothing (Cyrus,
+  # 2026-10-29). The image (var.image_id) is what survives, and the next apply
+  # makes a machine from it in about 8 minutes. Until 2026-10-29 this was
+  # "stop", and a parked machine billed its disk.
+  instance_initiated_shutdown_behavior = "terminate"
 
   user_data = local.user_data
 
@@ -243,7 +246,7 @@ resource "aws_instance" "extra" {
   vpc_security_group_ids = [aws_security_group.test_rig.id]
   iam_instance_profile   = aws_iam_instance_profile.test_rig.name
 
-  instance_initiated_shutdown_behavior = "stop"
+  instance_initiated_shutdown_behavior = "terminate"
   user_data                            = local.extra_user_data[count.index]
 
   metadata_options {

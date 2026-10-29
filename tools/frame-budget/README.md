@@ -45,15 +45,18 @@ run again.
 The Mac needs the AWS CLI and its Session Manager plugin (`session-manager-plugin`), which the port
 forward in step 4 runs through.
 
-1. **Start the rig**, from the main checkout, never from a worktree, and only with the owner's
-   go-ahead:
+1. **Make the rig**, first thing, with the owner's go-ahead (since 2026-10-29 a rig is made from
+   its image for the day and ends itself after, disk and all, so nothing bills between days):
 
    ```bash
-   terraform -chdir=_infra/test-rig-aws-windows apply -var running=true -var max_run_hours=9
-   terraform -chdir=_infra/test-rig-aws-windows output instance_id
+   tools/rig/session.sh up 1 --channel <name>
    ```
 
-   Session Manager answers a few minutes after the start.
+   It applies the rig from the main checkout's root (about 8 minutes to Chrome), builds the WGSL
+   maps meanwhile, publishes the channel, opens the forward on 9333 and prints when Chrome
+   answers: steps 2 to 4 below, done. Its logs go under `rig-sessions/<date>/` on the lab disk.
+   The steps are kept here for doing them by hand; `terraform output instance_id` names the
+   machine.
 
 2. **Publish the build to a channel**. The address is the last line printed.
 
@@ -106,11 +109,15 @@ forward in step 4 runs through.
    `--remote` is refused unless the Chrome behind it says Windows NT, so a run cannot be pointed
    at the Mac by mistake.
 
-7. **Stop the rig**, with the owner's go-ahead again. An idle machine bills by the hour.
+7. **End the rig.** A running machine bills by the hour, and an ended one nothing:
 
    ```bash
-   terraform -chdir=_infra/test-rig-aws-windows apply -var running=false
+   tools/rig/session.sh down
    ```
+
+   Left alone, it ends itself fifteen minutes after the last harness and forward left it
+   (`rig/idle-stop.ps1`), or at its run cap. `terraform apply -var running=false` still parks a
+   machine with its disk ($4 a month), for the rare day its disk is wanted tomorrow.
 
 ## Several rigs at once
 
@@ -143,12 +150,14 @@ tools/frame-budget/rig/round.sh round.json --rigs 4    # or a count of its own
 ```
 
 It sets `rig_count` to the queue's job count (an experiment on two tiers is two jobs; `--max-rigs`
-caps it, and it never lowers a count already in state, since lowering destroys copies), applies
+caps it; a machine is 8 minutes and $0.10 from the image, so the count is the round's own), applies
 `running=true` from the main checkout's root, opens one `forward.sh` a machine on 9333, 9334, …,
-runs the chain over every port, and applies `running=false` when it ends, however it ends
-(`--keep-running` leaves them to their idle stop). The round then waits for its slowest machine's
-start and its slowest job, not for the sum of its jobs. Starting machines is an apply: the
-owner's go-ahead is the rule for a round as for one machine.
+runs the chain over every port, and ends every machine (`tools/rig/session.sh down`) when it ends,
+however it ends (`--keep-running` leaves them to their idle watchdog, which ends each fifteen
+minutes after its last harness). The round then waits for its slowest machine's start and its
+slowest job, not for the sum of its jobs. Making machines is an apply: the owner's go-ahead is the
+rule for a round as for one machine. The forwards' logs go under `rig-sessions/<date>/` on the lab
+disk (`DAYHIKE_LAB`), never this Mac's own.
 
 Every remote run first closes the rig Chrome's pages but its blank one (`closeStrayPages`): a
 forward that dropped mid-sample leaves that sample's page drawing, and the retry beside it read
