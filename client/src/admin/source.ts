@@ -59,3 +59,23 @@ export function remoteSource(base: string): Source {
     match: (game) => rows(`/admin/match/${encodeURIComponent(game)}`),
   };
 }
+
+/**
+ * The range keeps its state in the address (Cyrus, 2026-10-29), as on the host's
+ * other dashboards: `?range=30`, left out at the default 7, so a refresh or a saved
+ * link opens on the same range. The other parameters (`preview`, `theme`) are kept.
+ */
+const DEFAULT_RANGE: Range = 7;
+const RANGE_DAYS: readonly Range[] = [1, 7, 30, 90];
+export function rangeFrom(search: string): Range {
+  const days = Number(new URLSearchParams(search).get("range"));
+  return RANGE_DAYS.find((d) => d === days) ?? DEFAULT_RANGE;
+}
+export function searchWithRange(search: string, days: Range): string {
+  const p = new URLSearchParams(search);
+  if (days === DEFAULT_RANGE) p.delete("range");
+  else p.set("range", String(days));
+  // A bare flag stays bare (`?preview`, not `?preview=`).
+  const q = p.toString().replace(/=(?=&|$)/g, "");
+  return q === "" ? "" : `?${q}`;
+}

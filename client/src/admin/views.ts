@@ -109,7 +109,7 @@ export function funnelView(rows: Row[]): HTMLElement {
   return card(
     "From landing to the end",
     all === undefined ? "Sessions by what they reached" : `${num(all.sessions)} sessions on ${builds.length} build${builds.length === 1 ? "" : "s"}, each stage of the one before; every build in the table`,
-    "half",
+    "",
     all === undefined || num(all.landed) === 0 ? el("div", { class: "empty" }, "No sessions in this range.") : funnel(stages),
     tableView(cols, builds),
   );
@@ -133,7 +133,7 @@ export function lobbiesView(rows: Row[]): HTMLElement {
   return card(
     "Lobbies a day",
     `From signaling's own rows · ${refused} joins refused, ${lost} hosts lost in this range`,
-    "half",
+    "",
     rows.length === 0 ? el("div", { class: "empty" }, "No lobbies in this range.") : columns(bars, { height: 170, width: 520 }),
     tableView(cols, rows),
   );

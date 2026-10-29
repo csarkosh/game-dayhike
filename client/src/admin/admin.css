@@ -57,13 +57,11 @@ button { font: inherit; }
 .filters button[aria-pressed="true"] { border-color: var(--series); background: var(--series-soft); font-weight: 600; }
 .filters button:hover { background: var(--series-soft); }
 
-/* minmax(0, 1fr), not 1fr: a bare 1fr track cannot shrink below its content, so a wide
-   table in a half-width card pushed the page past the viewport (seen 2026-10-13). */
+/* Every card spans the page, one under another (Cyrus, 2026-10-29: side-by-side cards sized
+   badly), as on the host's other dashboards. minmax(0, 1fr), not 1fr: a bare 1fr track cannot
+   shrink below its content, so a wide table pushed the page past the viewport (seen 2026-10-13). */
 .grid { display: grid; gap: 16px; grid-template-columns: repeat(12, minmax(0, 1fr)); }
 .card { grid-column: span 12; background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 16px 18px 14px; min-width: 0; }
-.card.half { grid-column: span 6; }
-.card.third { grid-column: span 4; }
-@media (max-width: 900px) { .card.half, .card.third { grid-column: span 12; } }
 .card h2 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
 .card .sub { color: var(--faint); font-size: 12px; margin: 0 0 12px; }
 .card.loading > :not(h2):not(.sub) { opacity: 0.5; }

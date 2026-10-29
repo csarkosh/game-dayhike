@@ -14,7 +14,7 @@
 
 import { el } from "./charts.js";
 import { sampleSource } from "./sample.js";
-import { remoteSource, type QueryName, type Range, type Row, type Source } from "./source.js";
+import { rangeFrom, remoteSource, searchWithRange, type QueryName, type Range, type Row, type Source } from "./source.js";
 import { accountMenu, requireSession, UNAUTHORIZED, type User } from "./auth.js";
 import { errorsView, failedCard, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer, sessionsDrawer, visitorsView, waitingCard } from "./views.js";
 import { pathsCard, trailBuilder } from "./paths.js";
@@ -83,7 +83,7 @@ function adminBase(): string | null {
  * keep asking, and keep being refused, every ten seconds.
  */
 function dashboard(source: Source, account: User | null): () => void {
-  let range: Range = 7;
+  let range: Range = rangeFrom(location.search);
   // The trail builder, one worker for the page's life, its answers kept.
   const trailFor = trailBuilder();
   // The chrome is the host's markup (`client/admin/index.html`, the same as
@@ -100,6 +100,7 @@ function dashboard(source: Source, account: User | null): () => void {
     const b = el("button", { type: "button", "aria-pressed": String(r.days === range), title: r.title(zone) }, r.label);
     b.addEventListener("click", () => {
       range = r.days;
+      history.replaceState(history.state, "", location.pathname + searchWithRange(location.search, range) + location.hash);
       for (const other of buttons) other.setAttribute("aria-pressed", String(other === b));
       void load();
     });
@@ -124,8 +125,8 @@ function dashboard(source: Source, account: User | null): () => void {
   // only its card. The title and copy here are the waiting card's; the
   // rendered card brings its own, with what the rows say.
   const CARDS: { names: QueryName[]; title: string; sub: string; cls: string; shape: { tiles?: number; chart?: boolean; lines?: number }; render(rows: Row[][]): HTMLElement }[] = [
-    { names: ["funnel"], title: "From landing to the end", sub: "Sessions by what they reached, each stage of the one before", cls: "half", shape: { chart: true, lines: 3 }, render: ([rows = []]) => funnelView(rows) },
-    { names: ["lobbies"], title: "Lobbies a day", sub: "From signaling's own rows", cls: "half", shape: { chart: true, lines: 1 }, render: ([rows = []]) => lobbiesView(rows) },
+    { names: ["funnel"], title: "From landing to the end", sub: "Sessions by what they reached, each stage of the one before", cls: "", shape: { chart: true, lines: 3 }, render: ([rows = []]) => funnelView(rows) },
+    { names: ["lobbies"], title: "Lobbies a day", sub: "From signaling's own rows", cls: "", shape: { chart: true, lines: 1 }, render: ([rows = []]) => lobbiesView(rows) },
     { names: ["kpis", "visitors"], title: "Visitors", sub: "Distinct browsers in this range, and how many came back on another day", cls: "", shape: { tiles: 3, lines: 3 }, render: ([kpis = [], visitors = []]) => visitorsView(kpis, visitors) },
     { names: ["progress"], title: "How far parties got", sub: "One line a match; each match's farthest climb, 0 at the trailhead and 1 at the crest; the night falls from 30%", cls: "", shape: { chart: true, lines: 4 }, render: ([rows = []]) => progressView(rows) },
     { names: ["errors"], title: "What went wrong", sub: "Problems in this range, grouped by their first hundred characters", cls: "", shape: { lines: 4 }, render: ([rows = []]) => errorsView(rows) },

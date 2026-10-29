@@ -10,7 +10,7 @@ vi.mock("../../src/admin/auth.js", () => ({
   },
 }));
 
-const { remoteSource, zonedPath } = await import("../../src/admin/source.js");
+const { rangeFrom, remoteSource, searchWithRange, zonedPath } = await import("../../src/admin/source.js");
 const { browserZone, useZone } = await import("../../src/admin/timeline.js");
 
 describe("the admin routes' source", () => {
@@ -39,5 +39,22 @@ describe("the admin routes' source", () => {
   it("adds the zone to an address with or without a query string", () => {
     expect(zonedPath("/admin/kpis", "Asia/Tokyo")).toBe("/admin/kpis?tz=Asia%2FTokyo");
     expect(zonedPath("/admin/query/funnel?days=7", "UTC")).toBe("/admin/query/funnel?days=7&tz=UTC");
+  });
+});
+
+describe("the range in the address", () => {
+  it("opens on the range a link names, else 7 days", () => {
+    expect(rangeFrom("?range=30")).toBe(30);
+    expect(rangeFrom("?preview&range=1")).toBe(1);
+    expect(rangeFrom("")).toBe(7);
+    expect(rangeFrom("?range=12")).toBe(7);
+    expect(rangeFrom("?range=abc")).toBe(7);
+  });
+
+  it("writes the range back, leaves it out at 7, and keeps the other parameters bare", () => {
+    expect(searchWithRange("?preview", 30)).toBe("?preview&range=30");
+    expect(searchWithRange("?preview&range=30", 7)).toBe("?preview");
+    expect(searchWithRange("?range=90", 7)).toBe("");
+    expect(searchWithRange("?theme=light&range=1", 90)).toBe("?theme=light&range=90");
   });
 });
