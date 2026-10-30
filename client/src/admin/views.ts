@@ -36,17 +36,29 @@ export function card(title: string, sub: string, cls = "", ...body: Node[]): HTM
   return el("section", { class: `card ${cls}`.trim() }, el("h2", {}, title), el("p", { class: "sub" }, sub), ...body);
 }
 
+/** What a waiting card stands in for: stat `tiles` (`tile` px tall), a `chart` this many px tall, `rows` of a table (`row` px apart), `folds` folded tables. */
+export type Shape = { tiles?: number; tile?: number; chart?: number; rows?: number; row?: number; folds?: number };
+
 /**
  * The card as it waits for its query: the same title and copy over a skeleton the shape
- * of what is coming (`tiles` stat tiles, a `chart`, `lines` of a table), the host's
- * classes (`/theme.css`). Busy for a screen reader, which hears "Loading"; the shapes
- * are hidden from it.
+ * of what is coming, in the host's Material skeleton (`/theme.css`: each part the shape of
+ * the content it stands for, in a tint of the text colour that pulses; Cyrus, 2026-10-29).
+ * Busy for a screen reader, which hears "Loading"; the shapes are hidden from it. The page
+ * holds it at the height the card last had (`hold.ts`), so nothing moves when it fills.
  */
-export function waitingCard(title: string, sub: string, cls: string, shape: { tiles?: number; chart?: boolean; lines?: number }): HTMLElement {
+export function waitingCard(title: string, sub: string, cls: string, shape: Shape): HTMLElement {
+  const sk = (c: string, style = ""): HTMLElement => el("div", style === "" ? { class: `skel ${c}` } : { class: `skel ${c}`, style });
   const parts: HTMLElement[] = [];
-  if (shape.tiles) parts.push(el("div", { class: "skel-tiles" }, ...Array.from({ length: shape.tiles }, () => el("div", { class: "skel tile" }))));
-  if (shape.chart) parts.push(el("div", { class: "skel chart" }));
-  for (let i = 0; i < (shape.lines ?? 0); i += 1) parts.push(el("div", { class: `skel line${i % 3 === 2 ? " short" : ""}` }));
+  if (shape.tiles) {
+    parts.push(el("div", { class: "skel-tiles" }, ...Array.from({ length: shape.tiles }, () =>
+      el("div", { class: "skel-tile", style: `height:${shape.tile ?? 98}px` }, sk("text label"), sk("text figure"), ...((shape.tile ?? 98) >= 110 ? [sk("text short")] : [])))));
+  }
+  if (shape.chart) parts.push(sk("rect chart", `height:${shape.chart}px`));
+  if (shape.rows) {
+    parts.push(el("div", { class: "skel-list" }, sk("text head"), ...Array.from({ length: shape.rows }, (_, i) =>
+      el("div", { class: "skel-trow", style: `height:${shape.row ?? 33}px` }, sk(`text${i % 3 === 2 ? " short" : ""}`), sk("text num"), sk("text num")))));
+  }
+  for (let i = 0; i < (shape.folds ?? 0); i += 1) parts.push(sk("text fold"));
   const body = el("div", { class: "body", "aria-busy": "true" }, el("p", { class: "sr-only" }, "Loading"), el("div", { class: "skeleton", "aria-hidden": "true" }, ...parts));
   return card(title, sub, cls, body);
 }

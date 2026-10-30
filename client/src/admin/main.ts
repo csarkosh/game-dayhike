@@ -16,7 +16,8 @@ import { el } from "./charts.js";
 import { sampleSource } from "./sample.js";
 import { rangeFrom, remoteSource, searchWithRange, type QueryName, type Range, type Row, type Source } from "./source.js";
 import { accountMenu, requireSession, UNAUTHORIZED, type User } from "./auth.js";
-import { errorsView, failedCard, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer, sessionsDrawer, visitorsView, waitingCard } from "./views.js";
+import { errorsView, failedCard, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer, sessionsDrawer, visitorsView, waitingCard, type Shape } from "./views.js";
+import { hold, settle } from "./hold.js";
 import { pathsCard, trailBuilder } from "./paths.js";
 import { zoneName } from "./timeline.js";
 
@@ -82,7 +83,7 @@ function adminBase(): string | null {
  * shell hides the page behind its gate then, and the refresh would otherwise
  * keep asking, and keep being refused, every ten seconds.
  */
-function dashboard(source: Source, account: User | null): () => void {
+function dashboard(source: Source, account: User | null | undefined): () => void {
   let range: Range = rangeFrom(location.search);
   // The trail builder, one worker for the page's life, its answers kept.
   const trailFor = trailBuilder();
@@ -93,7 +94,8 @@ function dashboard(source: Source, account: User | null): () => void {
   // out of all of them, and the shell's gate comes back on its own; the live
   // refresh stops through the UNAUTHORIZED listener and the auth state change.
   const accountHost = document.querySelector<HTMLElement>("#account");
-  if (accountHost !== null) accountMenu(accountHost, { account, preview: source.kind === "sample" });
+  // `undefined`: the session is still being restored, and the menu comes with it (below).
+  if (accountHost !== null && account !== undefined) accountMenu(accountHost, { account, preview: source.kind === "sample" });
   drawerSource = source;
   const zone = zoneName();
   const buttons = RANGES.map((r) => {
@@ -107,16 +109,23 @@ function dashboard(source: Source, account: User | null): () => void {
     return b;
   });
   const filters = el("div", { class: "filters" }, el("span", { class: "label", title: `Calendar days in ${zone}` }, "Range"), ...buttons);
-  const liveSlot = el("div", { class: "grid" });
+  // "Right now" waits as a skeleton too, held at its last height, so the cards under it
+  // never drop when it first fills.
+  const liveWaiting = waitingCard("Right now", "What signaling holds this moment, refreshed every 10 s", "", { tiles: 3, rows: 3 });
+  const liveSlot = el("div", { class: "grid" }, liveWaiting);
   const grid = el("div", { class: "grid" });
   root!.replaceChildren(filters, liveSlot, el("div", { style: "height:16px" }), grid);
+  hold(liveWaiting, "live");
 
   async function refreshLive(): Promise<void> {
+    let next: HTMLElement;
     try {
-      liveSlot.replaceChildren(liveView(await source.live()));
+      next = liveView(await source.live());
     } catch (error) {
-      liveSlot.replaceChildren(el("section", { class: "card" }, el("h2", {}, "Right now"), el("p", { class: "sub" }, `Could not read the rooms: ${error instanceof Error ? error.message : String(error)}`)));
+      next = el("section", { class: "card" }, el("h2", {}, "Right now"), el("p", { class: "sub" }, `Could not read the rooms: ${error instanceof Error ? error.message : String(error)}`));
     }
+    liveSlot.replaceChildren(next);
+    settle(next, "live");
   }
 
   // The seven cards, each over one query or two: each is on the page at once
@@ -124,17 +133,19 @@ function dashboard(source: Source, account: User | null): () => void {
   // queries answer, and shows its own error, so a slow or failed query holds
   // only its card. The title and copy here are the waiting card's; the
   // rendered card brings its own, with what the rows say.
-  const CARDS: { names: QueryName[]; title: string; sub: string; cls: string; shape: { tiles?: number; chart?: boolean; lines?: number }; render(rows: Row[][]): HTMLElement }[] = [
-    { names: ["funnel"], title: "From landing to the end", sub: "Sessions by what they reached, each stage of the one before", cls: "", shape: { chart: true, lines: 3 }, render: ([rows = []]) => funnelView(rows) },
-    { names: ["lobbies"], title: "Lobbies a day", sub: "From signaling's own rows", cls: "", shape: { chart: true, lines: 1 }, render: ([rows = []]) => lobbiesView(rows) },
-    { names: ["kpis", "visitors"], title: "Visitors", sub: "Distinct browsers in this range, and how many came back on another day", cls: "", shape: { tiles: 3, lines: 3 }, render: ([kpis = [], visitors = []]) => visitorsView(kpis, visitors) },
-    { names: ["progress"], title: "How far parties got", sub: "One line a match; each match's farthest climb, 0 at the trailhead and 1 at the crest; the night falls from 30%", cls: "", shape: { chart: true, lines: 4 }, render: ([rows = []]) => progressView(rows) },
-    { names: ["errors"], title: "What went wrong", sub: "Problems in this range, grouped by their first hundred characters", cls: "", shape: { lines: 4 }, render: ([rows = []]) => errorsView(rows) },
-    { names: ["health"], title: "Load times and frame rates", sub: "By build, tier and engine; the start is the tier's decision, the engine and the build, the ready is the world's first whole frame", cls: "", shape: { tiles: 5, lines: 3 }, render: ([rows = []]) => healthView(rows) },
-    { names: ["paths"], title: "Where parties went", sub: "One world at a time: the trail rebuilt from its seed, each session's path over it", cls: "", shape: { chart: true, lines: 2 }, render: ([rows = []]) => pathsCard(rows, trailFor) },
+  const CARDS: { names: QueryName[]; title: string; sub: string; cls: string; shape: Shape; render(rows: Row[][]): HTMLElement }[] = [
+    { names: ["funnel"], title: "From landing to the end", sub: "Sessions by what they reached, each stage of the one before", cls: "", shape: { chart: 99, folds: 1 }, render: ([rows = []]) => funnelView(rows) },
+    { names: ["lobbies"], title: "Lobbies a day", sub: "From signaling's own rows", cls: "", shape: { chart: 170, folds: 1 }, render: ([rows = []]) => lobbiesView(rows) },
+    { names: ["kpis", "visitors"], title: "Visitors", sub: "Distinct browsers in this range, and how many came back on another day", cls: "", shape: { tiles: 3, rows: 12, row: 32 }, render: ([kpis = [], visitors = []]) => visitorsView(kpis, visitors) },
+    { names: ["progress"], title: "How far parties got", sub: "One line a match; each match's farthest climb, 0 at the trailhead and 1 at the crest; the night falls from 30%", cls: "", shape: { tiles: 5, chart: 160, rows: 12 }, render: ([rows = []]) => progressView(rows) },
+    { names: ["errors"], title: "What went wrong", sub: "Problems in this range, grouped by their first hundred characters", cls: "", shape: { rows: 5 }, render: ([rows = []]) => errorsView(rows) },
+    { names: ["health"], title: "Load times and frame rates", sub: "By build, tier and engine; the start is the tier's decision, the engine and the build, the ready is the world's first whole frame", cls: "", shape: { tiles: 5, tile: 133, rows: 6, row: 32 }, render: ([rows = []]) => healthView(rows) },
+    { names: ["paths"], title: "Where parties went", sub: "One world at a time: the trail rebuilt from its seed, each session's path over it", cls: "", shape: { chart: 715 }, render: ([rows = []]) => pathsCard(rows, trailFor) },
   ];
   const slots = CARDS.map((c) => waitingCard(c.title, c.sub, c.cls, c.shape));
   grid.replaceChildren(...slots);
+  const holdId = (c: (typeof CARDS)[number]): string => c.names.join("+");
+  CARDS.forEach((c, i) => hold(slots[i]!, holdId(c)));
 
   let loading = 0;
   async function load(): Promise<void> {
@@ -143,8 +154,15 @@ function dashboard(source: Source, account: User | null): () => void {
       CARDS.map(async (c, i) => {
         const slot = slots[i];
         if (slot === undefined) return;
-        // A skeleton is already the loading state; a rendered card dims while it reloads.
-        if (slot.querySelector(".skeleton") === null) slot.classList.add("loading");
+        // A rendered card goes back to its skeleton while it reloads, held at the height
+        // this view had last (else the one it has now), so nothing under it moves.
+        if (slot.querySelector(".skeleton") === null) {
+          const now = slot.getBoundingClientRect().height;
+          const waiting = waitingCard(c.title, c.sub, c.cls, c.shape);
+          slot.replaceWith(waiting);
+          slots[i] = waiting;
+          hold(waiting, holdId(c), now);
+        }
         let next: HTMLElement;
         try {
           const rows = await Promise.all(c.names.map((name) => source.query(name, range)));
@@ -154,8 +172,9 @@ function dashboard(source: Source, account: User | null): () => void {
           if (token !== loading) return;
           next = failedCard(c.title, c.sub, c.cls, error instanceof Error ? error.message : String(error));
         }
-        slot.replaceWith(next);
+        slots[i]!.replaceWith(next);
         slots[i] = next;
+        settle(next, holdId(c));
       }),
     );
   }
@@ -185,8 +204,25 @@ if (preview) {
     notice("Day Hike admin", "This build has no admin routes. Add ?preview to the address to see the page with sample data.");
   } else {
     const source = remoteSource(base);
-    // What stops the page shown last, if one is; nothing until then.
-    let stop: (() => void) | null = null;
+    // The page from the first paint (Cyrus, 2026-10-29): restoring the sign-in takes a second
+    // or so, and a page drawn only after it popped in and pushed everything down. Its cards
+    // wait, held at their last heights, on a source whose every request is parked until the
+    // session is restored and the routes have answered; then they fill in place.
+    let openSource: (s: Source) => void = () => {};
+    const opened = new Promise<Source>((resolve) => {
+      openSource = resolve;
+    });
+    const parked: Source = {
+      kind: "live",
+      query: (name, range) => opened.then((s) => s.query(name, range)),
+      live: () => opened.then((s) => s.live()),
+      session: (sid) => opened.then((s) => s.session(sid)),
+      visitor: (vid) => opened.then((s) => s.visitor(vid)),
+      match: (game) => opened.then((s) => s.match(game)),
+    };
+    // What stops the page shown last: the parked page, until an account is let in.
+    let stop: (() => void) | null = dashboard(parked, undefined);
+    let first = true;
     // The gate, then the page; the first request proves the account is on the
     // list, and a refusal (a 401) is the shell's to show: its gate comes back
     // with "<email> is not on the list." and a Sign out, so another account
@@ -195,6 +231,16 @@ if (preview) {
       source
         .live()
         .then(() => {
+          // The first account let in fills the page already drawn; a later one (after a
+          // refusal or a sign-out) gets the page drawn again, as before.
+          if (first && stop !== null) {
+            first = false;
+            const accountHost = document.querySelector<HTMLElement>("#account");
+            if (accountHost !== null) accountMenu(accountHost, { account, preview: false });
+            openSource(source);
+            return;
+          }
+          first = false;
           stop?.();
           stop = dashboard(source, account);
         })

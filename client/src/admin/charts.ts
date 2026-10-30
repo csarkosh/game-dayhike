@@ -128,6 +128,10 @@ const tickWidth = (label: string): number => label.length * 6.6 + 8;
 function drawColumns(bars: Bar[], W: number, H: number, unit: string | undefined, tip: Tip, host: HTMLElement): SVGSVGElement {
   const pad = { l: 36, r: 8, t: 14, b: 26 };
   const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+  // Its own height, whatever the width it was drawn at: the first draw (at 640, before the
+  // host is measured) would otherwise scale to the card's width for a frame, and move every
+  // card under it (2026-10-29).
+  root.style.height = `${H}px`;
   const innerW = W - pad.l - pad.r;
   const innerH = H - pad.t - pad.b;
   const ticks = ticksFor(Math.max(0, ...bars.map((b) => b.value)));
