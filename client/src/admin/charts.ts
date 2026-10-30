@@ -78,13 +78,15 @@ type Tip = { show(x: number, y: number, lines: { v: string; k: string }[]): void
  * fades out quicker; moving from one mark to the next glides it there (`.glide`) instead of
  * fading it out and in again, so a hide is held for a frame in case a show follows straight away,
  * as it does between neighbouring marks. `show()` before measuring it: it is laid out only when on.
+ * A tooltip placed at the pointer rather than at a mark (the paths card's map) takes `glide: false`:
+ * it follows the pointer directly, as anything that tracks the pointer does, and only fades.
  */
-export function tipMotion(node: HTMLElement): { show(): void; hide(): void } {
+export function tipMotion(node: HTMLElement, { glide = true }: { glide?: boolean } = {}): { show(): void; hide(): void } {
   let leaving = 0;
   return {
     show() {
       cancelAnimationFrame(leaving);
-      node.classList.toggle("glide", node.classList.contains("on"));
+      node.classList.toggle("glide", glide && node.classList.contains("on"));
       node.classList.add("on");
     },
     hide() {

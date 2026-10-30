@@ -315,7 +315,8 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
   const note = el("p", { class: "sub" }, "");
   const side = el("div", { class: "side" });
   const tip = el("div", { class: "tooltip" });
-  const tipping = tipMotion(tip);
+  // Placed at the pointer, so it follows it directly: it fades in and out but never glides.
+  const tipping = tipMotion(tip, { glide: false });
   const wrap = el("div", { class: "chart" }, canvas, tip);
   const layout = el("div", { class: "paths" });
   let sessions: Session[] = [];
@@ -403,7 +404,11 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
     const fade = play(snap, [{ opacity: 1 }, { opacity: 0 }], { duration: t.medium2, easing: t.standard, fill: "forwards" });
     ghost = snap;
     ghostFade = fade;
-    fade?.finished.then(() => {
+    if (fade === null) {
+      dropGhost();
+      return;
+    }
+    fade.finished.then(() => {
       if (ghost === snap) dropGhost();
     }, () => {});
   };
@@ -443,7 +448,11 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
   };
 
   list.addEventListener("change", choose);
-  scrub.addEventListener("input", draw);
+  // The scrubber is direct: the drawing follows it at once, never under a fading one.
+  scrub.addEventListener("input", () => {
+    dropGhost();
+    draw();
+  });
   side.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
