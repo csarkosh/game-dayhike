@@ -4,9 +4,15 @@
  * scrubber over sim time. One world at a time, since positions are the
  * world's own frame. The trail comes from a worker (`trail.worker.ts`); until
  * it answers, the samples are drawn alone.
+ *
+ * Choosing another world, following one session or the trail arriving
+ * cross-fades the drawing (medium2): what was drawn is laid over the canvas
+ * and fades out as the new drawing shows under it. The scrubber stays direct:
+ * the drawing follows it frame by frame, as anything dragged should.
  */
 
-import { ago, compact, el, table, tile, type Column } from "./charts.js";
+import { ago, compact, el, table, tile, tipMotion, type Column } from "./charts.js";
+import { easeHeight, fadeIn, live, look, play, tokens } from "./motion.js";
 import type { Row } from "./source.js";
 import { zoned } from "./timeline.js";
 import { sameGeneration, type DrawableTrail, type TrailAnswer, type TrailRequest } from "./trail.js";
@@ -309,7 +315,9 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
   const note = el("p", { class: "sub" }, "");
   const side = el("div", { class: "side" });
   const tip = el("div", { class: "tooltip" });
+  const tipping = tipMotion(tip);
   const wrap = el("div", { class: "chart" }, canvas, tip);
+  const layout = el("div", { class: "paths" });
   let sessions: Session[] = [];
   let trail: DrawableTrail | null = null;
   let frame: Fit = fit(null, []);
@@ -360,7 +368,53 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
     );
   };
 
+  // The drawing on screen, over the canvas while it fades out, and its fade.
+  let ghost: HTMLCanvasElement | null = null;
+  let ghostFade: Animation | null = null;
+  const dropGhost = (): void => {
+    ghostFade?.cancel();
+    ghost?.remove();
+    ghost = null;
+    ghostFade = null;
+  };
+  /** Redraws by `change()`, cross-fading from what is on screen (at once under reduced motion). */
+  const crossFade = (change: () => void): void => {
+    const t = tokens();
+    const snap = el("canvas", { width: String(CANVAS), height: String(CANVAS), class: "map-ghost", "aria-hidden": "true" });
+    const ctx = t.medium2 && canvas.isConnected ? snap.getContext("2d") : null;
+    if (ctx === null) {
+      dropGhost();
+      change();
+      return;
+    }
+    // What is drawn now: the drawing, and over it an earlier one still fading out, at the opacity
+    // it is drawn at, on the page's ground as the canvas shows it.
+    ctx.drawImage(canvas, 0, 0);
+    if (ghost !== null && live(ghostFade)) {
+      ctx.globalAlpha = look(ghost).opacity;
+      ctx.fillStyle = token("--page", "#0a0b0e");
+      ctx.fillRect(0, 0, CANVAS, CANVAS);
+      ctx.drawImage(ghost, 0, 0);
+      ctx.globalAlpha = 1;
+    }
+    dropGhost();
+    wrap.insertBefore(snap, tip);
+    change();
+    const fade = play(snap, [{ opacity: 1 }, { opacity: 0 }], { duration: t.medium2, easing: t.standard, fill: "forwards" });
+    ghost = snap;
+    ghostFade = fade;
+    fade?.finished.then(() => {
+      if (ghost === snap) dropGhost();
+    }, () => {});
+  };
+
+  let chosenOnce = false;
   const choose = (): void => {
+    // Once the card is up, a world chosen cross-fades the drawing, fades the side in and eases the
+    // card to its new height; the first is drawn at once.
+    const again = chosenOnce;
+    chosenOnce = true;
+    const from = layout.getBoundingClientRect().height;
     const [world = "", seed = ""] = (picked() || "|").split("|");
     const own = rows.filter((r) => str(r.world) === world && str(r.seed) === seed);
     sessions = sessionsOf(own);
@@ -373,13 +427,17 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
     const detail = chosen === undefined ? "" : `${worldDetail(chosen)} `;
     note.textContent = world === "" ? "" : `${detail}${sameGeneration(world) ? "The trail is rebuilt from the seed by this build's generator." : "This session's world was made by another generation of the generator; the trail drawn here may differ from the one they walked."}`;
     sidePanel();
-    draw();
+    if (again) {
+      crossFade(draw);
+      fadeIn(side);
+      easeHeight(layout, from, layout.getBoundingClientRect().height);
+    } else draw();
     if (world !== "") {
       void trailFor(world, Number(seed)).then((built) => {
         if (picked() !== `${world}|${seed}`) return;
         trail = built;
         if (built === null) note.textContent = `${note.textContent} The trail could not be rebuilt for this world.`.trim();
-        draw();
+        crossFade(draw);
       });
     }
   };
@@ -392,7 +450,7 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
     const pick = target.closest<HTMLElement>("[data-pick]")?.dataset.pick;
     if (pick === undefined) return;
     selected = selected === pick ? null : pick;
-    draw();
+    crossFade(draw);
   });
   canvas.addEventListener("pointermove", (event) => {
     const rect = canvas.getBoundingClientRect();
@@ -409,7 +467,7 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
       }
     }
     if (best === null) {
-      tip.style.display = "none";
+      tipping.hide();
       return;
     }
     const { s, p } = best;
@@ -418,21 +476,20 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
       el("div", { class: "k" }, `climb ${Math.round(p.p * 100)}% · hp ${p.hp}${p.lamp ? " · lamp" : ""}${p.sprint ? " · sprinting" : ""}${p.off > 0 ? ` · off trail ${Math.round(p.off * 100)}%` : ""}`),
       el("div", { class: "k" }, `lens ${Math.round(p.lens * 100)}% · Hollow ${Math.round(p.near * 100)}%`),
     );
-    tip.style.display = "block";
+    tipping.show();
     tip.style.left = `${Math.min((px / CANVAS) * rect.width + 12, rect.width - 200)}px`;
     tip.style.top = `${Math.max(0, (py / CANVAS) * rect.height - 60)}px`;
   });
-  canvas.addEventListener("pointerleave", () => {
-    tip.style.display = "none";
-  });
+  canvas.addEventListener("pointerleave", () => tipping.hide());
 
   const card = el(
     "section",
     { class: "card" },
     el("h2", {}, "Where parties went"),
     el("p", { class: "sub" }, "One world at a time: the trail rebuilt from its seed, each session's path over it, a × where they died, a ◇ where they first saw the Hollow, a □ where they read the poster. Hover a path for its moment."),
-    el("div", { class: "paths" }, el("div", { class: "drawing" }, lines.length === 0 ? el("p", { class: "empty" }, "No parties in this range.") : list, wrap, el("div", { class: "scrub" }, scrub, clock), note), side),
+    layout,
   );
+  layout.append(el("div", { class: "drawing" }, lines.length === 0 ? el("p", { class: "empty" }, "No parties in this range.") : list, wrap, el("div", { class: "scrub" }, scrub, clock), note), side);
   if (worlds.length === 0) {
     side.replaceChildren(el("div", { class: "empty" }, "No position samples in this range."));
   } else {

@@ -8,7 +8,12 @@
    The chart's one hue is the accent; the ordinal ramp mixes it toward the
    surface; the states are the accent (good) and the warning (warning,
    serious, critical, each a step toward the text), since the palette has no
-   red and the word beside each mark says which. */
+   red and the word beside each mark says which.
+
+   Motion is Material 3's, on the host's tokens only (`/theme.css`: --md-easing-* and
+   --md-duration-*, every duration 0ms under prefers-reduced-motion: reduce), never a bare
+   easing or a time typed here (Cyrus, 2026-10-29): hovers and state changes over short3 on
+   the standard curve; the scripted motion is `motion.ts`'s. */
 
 :root {
   --page: var(--bg);
@@ -48,12 +53,12 @@ button { font: inherit; }
    page head; the badge, the account and the Sign out up there are the host's classes. */
 #admin { padding: 0 0 32px; }
 
-.ghost { background: none; border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; color: var(--ink); cursor: pointer; }
+.ghost { background: none; border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; color: var(--ink); cursor: pointer; transition: background-color var(--md-duration-short3) var(--md-easing-standard); }
 .ghost:hover { background: var(--series-soft); }
 
 .filters { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 0 0 16px; color: var(--ink-2); }
 .filters .label { margin-right: 6px; }
-.filters button { background: none; border: 1px solid var(--ring); border-radius: 6px; padding: 3px 10px; color: var(--ink); cursor: pointer; }
+.filters button { background: none; border: 1px solid var(--ring); border-radius: 6px; padding: 3px 10px; color: var(--ink); cursor: pointer; transition: background-color var(--md-duration-short3) var(--md-easing-standard), border-color var(--md-duration-short3) var(--md-easing-standard); }
 .filters button[aria-pressed="true"] { border-color: var(--series); background: var(--series-soft); font-weight: 600; }
 .filters button:hover { background: var(--series-soft); }
 
@@ -82,14 +87,20 @@ button { font: inherit; }
 .chart .grid-line { stroke: var(--grid); stroke-width: 1; }
 .chart .axis-line { stroke: var(--axis); stroke-width: 1; }
 .chart .tick { fill: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
-.chart .bar { fill: var(--series); }
+.chart .bar { fill: var(--series); transition: filter var(--md-duration-short3) var(--md-easing-standard); }
 .chart .bar.hover { filter: brightness(1.15); }
 .chart .hit { fill: transparent; cursor: default; }
 .chart .dlabel { fill: var(--ink-2); font-size: 11px; font-variant-numeric: tabular-nums; }
 .chart .line { fill: none; stroke: var(--series); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .area { fill: var(--series-soft); }
 .chart .dot { fill: var(--series); stroke: var(--surface); stroke-width: 2; }
-.tooltip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px var(--shadow); white-space: nowrap; z-index: 2; display: none; }
+/* The tooltip fades and lifts 4 px in (short3, standard) and fades out quicker (short2,
+   accelerate); moving to the next mark, it glides there (`charts.ts` tipMotion). */
+.tooltip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px var(--shadow); white-space: nowrap; z-index: 2; display: none; opacity: 0; translate: 0 4px;
+  transition: opacity var(--md-duration-short2) var(--md-easing-emphasized-accelerate), translate var(--md-duration-short2) var(--md-easing-emphasized-accelerate), display var(--md-duration-short2) allow-discrete; }
+.tooltip.on { display: block; opacity: 1; translate: none; transition: opacity var(--md-duration-short3) var(--md-easing-standard), translate var(--md-duration-short3) var(--md-easing-standard); }
+.tooltip.on.glide { transition: opacity var(--md-duration-short3) var(--md-easing-standard), translate var(--md-duration-short3) var(--md-easing-standard), left var(--md-duration-short3) var(--md-easing-standard), top var(--md-duration-short3) var(--md-easing-standard); }
+@starting-style { .tooltip.on { opacity: 0; translate: 0 4px; } }
 .tooltip .v { font-weight: 600; font-size: 13px; }
 .tooltip .k { color: var(--ink-2); }
 .tooltip .key { display: inline-block; width: 10px; height: 2px; background: var(--series); vertical-align: middle; margin-right: 6px; }
@@ -125,11 +136,20 @@ td .mono { font-family: var(--mono); font-size: 12px; }
 
 details.table { margin-top: 10px; }
 details.table summary { color: var(--faint); font-size: 12px; cursor: pointer; }
+/* A fold opens and closes as an accordion (`motion.ts`); its arrow turns with it, open over
+   medium2 on the standard curve and back as soon as it starts to close (short4, accelerate),
+   while `data-closing` is on it. */
+details.table summary, .drawer details summary { list-style: none; }
+details.table summary::-webkit-details-marker, .drawer details summary::-webkit-details-marker { display: none; }
+details.table summary::before, .drawer details summary::before { content: "▸"; display: inline-block; margin-right: 0.45em; transition: transform var(--md-duration-short4) var(--md-easing-emphasized-accelerate); }
+details.table[open]:not([data-closing]) > summary::before, .drawer details[open]:not([data-closing]) > summary::before { transform: rotate(90deg); transition: transform var(--md-duration-medium2) var(--md-easing-standard); }
 .empty { color: var(--faint); padding: 16px 0; }
 
 .paths { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .paths .drawing { flex: 1 1 420px; max-width: 640px; min-width: 0; }
 .paths canvas { background: var(--page); border: 1px solid var(--ring); border-radius: 8px; width: 100%; aspect-ratio: 1; display: block; }
+/* The drawing that was, laid over the new one while it fades out (`paths.ts` crossFade). */
+.paths canvas.map-ghost { position: absolute; top: 0; left: 0; pointer-events: none; }
 .paths .scrub { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .paths .side { flex: 1 1 320px; min-width: 0; }
 .paths .side .tiles { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
@@ -137,7 +157,7 @@ details.table summary { color: var(--faint); font-size: 12px; cursor: pointer; }
 /* The worlds, one radio a line, its parts in columns that line up: date, time, hikers,
    farthest climb, end. Scrolls past seven or so; the checked line is tinted. */
 .worlds { display: grid; gap: 2px; max-height: 236px; overflow: auto; margin: 0 0 10px; padding: 4px; border: 1px solid var(--ring); border-radius: 8px; background: var(--surface); container-type: inline-size; }
-.worlds .world { display: grid; grid-template-columns: 16px 4.5em 7em minmax(0, 1fr) 3.5em 5.5em; gap: 10px; align-items: center; padding: 5px 8px; border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.worlds .world { display: grid; grid-template-columns: 16px 4.5em 7em minmax(0, 1fr) 3.5em 5.5em; gap: 10px; align-items: center; padding: 5px 8px; border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); cursor: pointer; transition: background-color var(--md-duration-short3) var(--md-easing-standard), color var(--md-duration-short3) var(--md-easing-standard); }
 .worlds .world:hover { background: var(--series-soft); }
 .worlds .world:has(input:checked) { background: var(--series-soft); color: var(--ink); }
 .worlds .world input { margin: 0; accent-color: var(--series); }
@@ -160,10 +180,12 @@ details.table summary { color: var(--faint); font-size: 12px; cursor: pointer; }
 .gate { max-width: 420px; margin: 20vh auto 0; text-align: center; }
 .gate h1 { font-size: 20px; font-weight: 600; }
 .gate p { color: var(--ink-2); }
-.gate button { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--ring); background: var(--surface); color: var(--ink); cursor: pointer; font-weight: 600; }
+.gate button { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--ring); background: var(--surface); color: var(--ink); cursor: pointer; font-weight: 600; transition: background-color var(--md-duration-short3) var(--md-easing-standard); }
 .gate .note { font-size: 12px; color: var(--faint); margin-top: 24px; }
 
-.backdrop { position: fixed; inset: 0; background: var(--shade); z-index: 10; display: flex; justify-content: flex-end; }
+/* A drawer slides in from the right edge over a scrim that fades in, and leaves the same way
+   (`views.ts` drawer); clipped so the panel off the edge never widens the page. */
+.backdrop { position: fixed; inset: 0; background: var(--shade); z-index: 10; display: flex; justify-content: flex-end; overflow: hidden; }
 .drawer { width: min(820px, 100%); height: 100%; background: var(--surface); border-left: 1px solid var(--ring); overflow: auto; padding: 16px 18px; box-shadow: -4px 0 24px var(--shadow); }
 .drawer-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .drawer-top h2 { font-size: 14px; font-weight: 600; margin: 0; }

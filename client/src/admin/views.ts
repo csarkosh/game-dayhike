@@ -11,7 +11,8 @@
  * queries bucket by; a label names the zone by its short name (`PDT`).
  */
 
-import { ago, columns, compact, el, funnel, histogram, table, tableView, tile, type Column } from "./charts.js";
+import { ago, columns, compact, el, folded, funnel, histogram, table, tableView, tile, type Column } from "./charts.js";
+import { accordion, easeHeight, fadeIn, look, parseDuration, play, rootToken, settled, tokens } from "./motion.js";
 import type { Live, Row } from "./source.js";
 import { clock, dayOf, delta, duration, envelopeLine, fullWhen, sessionsOf, trailOf, when as wallWhen, zoneName, type Segment, type Step } from "./timeline.js";
 
@@ -214,7 +215,7 @@ export function progressView(rows: Row[]): HTMLElement {
     "",
     tiles,
     rows.length === 0 ? el("div", { class: "empty" }, "No matches in this range.") : histogram(values, 10, (lo, hi) => `${Math.round(lo * 100)}–${Math.round(hi * 100)}%`, 1100),
-    el("details", { class: "table", open: "" }, el("summary", {}, `Matches, the latest ${Math.min(rows.length, 12)} of ${rows.length}`), table(cols, rows.slice(0, 12))),
+    folded(`Matches, the latest ${Math.min(rows.length, 12)} of ${rows.length}`, table(cols, rows.slice(0, 12)), true),
   );
 }
 
@@ -342,23 +343,65 @@ export function visitorsView(kpis: Row[], visitors: Row[]): HTMLElement {
     `Distinct browsers in this range; returning is one seen on more than one day (${zoneName()}) in the last ninety`,
     "",
     tiles,
-    el("details", { class: "table", open: "" }, el("summary", {}, `Visitors, the latest ${shown.length} of ${visitors.length}`), table(cols, shown, "No visitors in this range.")),
+    folded(`Visitors, the latest ${shown.length} of ${visitors.length}`, table(cols, shown, "No visitors in this range."), true),
   );
 }
 
-/** A drawer over the page, closed by its button, the backdrop or Escape; the body is the caller's to fill. */
+/**
+ * How long a drawer takes to leave, in ms: the host's short4 token (`/theme.css`), read through
+ * `parseDuration`; 0 under reduced motion or without the token, when it goes at once. `read` is
+ * the token reader, :root's computed style by default.
+ */
+export function drawerExitMs(read: (name: string) => string = rootToken): number {
+  return parseDuration(read("--md-duration-short4"));
+}
+
+/**
+ * A drawer over the page, closed by its button, the backdrop or Escape; the body is the caller's
+ * to fill (`fillDrawer`). It slides in from the right edge (medium4, emphasized decelerate) over
+ * a scrim that fades in (medium2), as soon as the caller has put it on the page; one opened from
+ * inside another slides over it the same way. Every way of closing it is the one exit: it slides
+ * out and the scrim fades (`drawerExitMs`, emphasized accelerate), from wherever its entrance had
+ * got to, and it is removed once that is done. Meanwhile it is inert, so the page or the drawer
+ * under it takes the clicks and Escape goes to the next drawer down.
+ */
 function drawer(title: (Node | string)[], body: HTMLElement): HTMLElement {
   const close = el("button", { class: "ghost", type: "button" }, "Close");
   const panel = el("div", { class: "drawer" }, el("div", { class: "drawer-top" }, el("h2", {}, ...title), close), body);
   const backdrop = el("div", { class: "backdrop" }, panel);
+  let entering: Animation[] = [];
+  // Its entrance, once the caller has appended it (the same task, so no frame shows it still).
+  queueMicrotask(() => {
+    if (!backdrop.isConnected || backdrop.hasAttribute("data-closing")) return;
+    const t = tokens();
+    entering = [
+      play(panel, [{ transform: "translateX(100%)" }, { transform: "none" }], { duration: t.medium4, easing: t.decelerate }),
+      play(backdrop, [{ backgroundColor: "transparent" }, { backgroundColor: getComputedStyle(backdrop).backgroundColor }], { duration: t.medium2, easing: t.decelerate }),
+    ].filter((a): a is Animation => a !== null);
+  });
   const dismiss = (): void => {
-    backdrop.remove();
+    if (backdrop.hasAttribute("data-closing")) return;
+    backdrop.setAttribute("data-closing", "");
+    backdrop.inert = true;
     document.removeEventListener("keydown", onKey);
+    const t = tokens();
+    const ms = drawerExitMs();
+    // As drawn now, an entrance in flight included; then that entrance goes.
+    const slid = look(panel).transform;
+    const scrim = getComputedStyle(backdrop).backgroundColor;
+    entering.forEach((a) => a.cancel());
+    entering = [];
+    const leaving = [
+      play(panel, [{ transform: slid }, { transform: "translateX(100%)" }], { duration: ms, easing: t.accelerate, fill: "forwards" }),
+      play(backdrop, [{ backgroundColor: scrim }, { backgroundColor: "transparent" }], { duration: ms, easing: t.accelerate, fill: "forwards" }),
+    ].filter((a): a is Animation => a !== null);
+    if (leaving.length === 0) backdrop.remove();
+    else void settled(leaving).then(() => backdrop.remove());
   };
   const onKey = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
-      // The topmost drawer takes the key.
-      const open = document.querySelectorAll(".backdrop");
+      // The topmost drawer that is not already leaving takes the key.
+      const open = document.querySelectorAll(".backdrop:not([data-closing])");
       if (open[open.length - 1] === backdrop) dismiss();
     }
   };
@@ -368,6 +411,17 @@ function drawer(title: (Node | string)[], body: HTMLElement): HTMLElement {
   });
   document.addEventListener("keydown", onKey);
   return backdrop;
+}
+
+/**
+ * A drawer's body takes its content (the loading line's place): the content fades in and the body
+ * eases from the height it had to its new one.
+ */
+function fillDrawer(body: HTMLElement, ...nodes: Node[]): void {
+  const from = body.getBoundingClientRect().height;
+  body.replaceChildren(...nodes);
+  fadeIn(body);
+  easeHeight(body, from, body.getBoundingClientRect().height);
 }
 
 const SEGMENT_WORDS: Record<Segment, string> = { landing: "Landing", lobby: "Lobby", loading: "Loading", match: "Match", after: "After" };
@@ -391,7 +445,12 @@ function trailRows(steps: Step[], game: string, lobby: string): HTMLElement[] {
     const gap = previous === null || !Number.isFinite(step.at) ? null : step.at - previous;
     if (Number.isFinite(step.at)) previous = step.at;
     const name = el("span", { class: `status ${step.tone}`.trim() }, step.signaling ? `${step.n} (signaling)` : step.n);
-    const text: Node | string = step.stack === "" ? step.text : el("details", {}, el("summary", {}, step.text), el("pre", { class: "stack" }, step.stack));
+    let text: Node | string = step.text;
+    if (step.stack !== "") {
+      const fold = el("details", {}, el("summary", {}, step.text), el("pre", { class: "stack" }, step.stack));
+      accordion(fold);
+      text = fold;
+    }
     out.push(
       el(
         "tr",
@@ -421,7 +480,7 @@ export function sessionDrawer(sid: string, rows: Promise<Row[]>): HTMLElement {
   rows.then(
     (list) => {
       if (list.length === 0) {
-        body.replaceChildren(el("div", { class: "empty" }, "No rows for this session."));
+        fillDrawer(body, el("div", { class: "empty" }, "No rows for this session."));
         return;
       }
       const trail = trailOf(list);
@@ -438,7 +497,13 @@ export function sessionDrawer(sid: string, rows: Promise<Row[]>): HTMLElement {
         tbody.replaceChildren(...trailRows(withTrace ? trail.steps : trail.steps.filter((s) => !s.trace), trail.game, trail.lobby));
       };
       const toggle = el("input", { type: "checkbox" });
-      toggle.addEventListener("change", () => draw(toggle.checked));
+      // The samples in or out: the trail fades to its new rows and the body eases to its new height.
+      toggle.addEventListener("change", () => {
+        const from = body.getBoundingClientRect().height;
+        draw(toggle.checked);
+        fadeIn(tbody, tokens().short4);
+        easeHeight(body, from, body.getBoundingClientRect().height);
+      });
       const traceLine = trail.trace === 0 ? el("span", {}) : el("label", { class: "trace-toggle" }, toggle, ` Show the route's ${trail.trace} samples (pos, edge, fork, place, lamp)`);
       draw(false);
       const table = el(
@@ -447,10 +512,10 @@ export function sessionDrawer(sid: string, rows: Promise<Row[]>): HTMLElement {
         el("thead", {}, el("tr", {}, el("th", {}, zoneName()), el("th", { class: "num" }, "Δt"), el("th", {}, "Event"), el("th", {}, "What"))),
         tbody,
       );
-      body.replaceChildren(head, machine === "" ? el("span", {}) : el("p", { class: "sub" }, machine), traceLine, el("div", { class: "table-wrap" }, table));
+      fillDrawer(body, head, machine === "" ? el("span", {}) : el("p", { class: "sub" }, machine), traceLine, el("div", { class: "table-wrap" }, table));
     },
     (error: unknown) => {
-      body.replaceChildren(el("div", { class: "empty" }, `Could not read the session: ${error instanceof Error ? error.message : String(error)}`));
+      fillDrawer(body, el("div", { class: "empty" }, `Could not read the session: ${error instanceof Error ? error.message : String(error)}`));
     },
   );
   return backdrop;
@@ -469,7 +534,7 @@ export function sessionsDrawer(kind: "visitor" | "match", id: string, rows: Prom
     (list) => {
       const lines = sessionsOf(list);
       if (lines.length === 0) {
-        body.replaceChildren(el("div", { class: "empty" }, kind === "visitor" ? "No sessions for this visitor." : "No sessions for this match."));
+        fillDrawer(body, el("div", { class: "empty" }, kind === "visitor" ? "No sessions for this visitor." : "No sessions for this match."));
         return;
       }
       const first = lines[0]!;
@@ -490,10 +555,10 @@ export function sessionsDrawer(kind: "visitor" | "match", id: string, rows: Prom
         kind === "visitor"
           ? `${lines.length} session${lines.length === 1 ? "" : "s"} on ${days} day${days === 1 ? "" : "s"} (${zoneName()}), ${wallWhen(first.startedAt)} to ${wallWhen(last.endedAt)}; open one for its trail`
           : `${lines.length} session${lines.length === 1 ? "" : "s"} in the match, ${wallWhen(first.startedAt)} to ${wallWhen(last.endedAt)}; open one for its trail`;
-      body.replaceChildren(el("p", { class: "sub" }, sub), table(cols, lines as unknown as Record<string, unknown>[]));
+      fillDrawer(body, el("p", { class: "sub" }, sub), table(cols, lines as unknown as Record<string, unknown>[]));
     },
     (error: unknown) => {
-      body.replaceChildren(el("div", { class: "empty" }, `Could not read the ${kind}: ${error instanceof Error ? error.message : String(error)}`));
+      fillDrawer(body, el("div", { class: "empty" }, `Could not read the ${kind}: ${error instanceof Error ? error.message : String(error)}`));
     },
   );
   return backdrop;

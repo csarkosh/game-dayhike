@@ -5,6 +5,8 @@
  * chart, so the series colour is the one token and no legend is needed.
  */
 
+import { accordion } from "./motion.js";
+
 const SVG = "http://www.w3.org/2000/svg";
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -54,30 +56,60 @@ export function table(columns: Column[], rows: Record<string, unknown>[], empty 
   return el("div", { class: "table-wrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, ...body)));
 }
 
+/**
+ * A folded table, `details.table`, that opens and closes as an accordion (`motion.ts`): still a
+ * <details>, so the keyboard, screen readers and find-in-page work as before. `open` starts it open.
+ */
+export function folded(summary: string, body: Node, open = false): HTMLDetailsElement {
+  const node = el("details", open ? { class: "table", open: "" } : { class: "table" }, el("summary", {}, summary), body);
+  accordion(node);
+  return node;
+}
+
 /** The table view behind a chart, folded. */
 export function tableView(columns: Column[], rows: Record<string, unknown>[]): HTMLElement {
-  return el("details", { class: "table" }, el("summary", {}, "Table"), table(columns, rows));
+  return folded("Table", table(columns, rows));
 }
 
 type Tip = { show(x: number, y: number, lines: { v: string; k: string }[]): void; hide(): void; node: HTMLElement };
 
+/**
+ * A tooltip's coming and going (`.tooltip.on` in `admin.css`): it fades and lifts 4 px in and
+ * fades out quicker; moving from one mark to the next glides it there (`.glide`) instead of
+ * fading it out and in again, so a hide is held for a frame in case a show follows straight away,
+ * as it does between neighbouring marks. `show()` before measuring it: it is laid out only when on.
+ */
+export function tipMotion(node: HTMLElement): { show(): void; hide(): void } {
+  let leaving = 0;
+  return {
+    show() {
+      cancelAnimationFrame(leaving);
+      node.classList.toggle("glide", node.classList.contains("on"));
+      node.classList.add("on");
+    },
+    hide() {
+      cancelAnimationFrame(leaving);
+      leaving = requestAnimationFrame(() => node.classList.remove("on", "glide"));
+    },
+  };
+}
+
 function tooltip(host: HTMLElement): Tip {
   const node = el("div", { class: "tooltip" });
   host.append(node);
+  const motion = tipMotion(node);
   return {
     node,
     show(x, y, lines) {
       node.replaceChildren(
         ...lines.map((line) => el("div", {}, el("span", { class: "key" }), el("span", { class: "v" }, line.v), " ", el("span", { class: "k" }, line.k))),
       );
-      node.style.display = "block";
+      motion.show();
       const w = host.clientWidth;
-      node.style.left = `${Math.min(x + 12, w - node.offsetWidth - 4)}px`;
+      node.style.left = `${Math.max(0, Math.min(x + 12, w - node.offsetWidth - 4))}px`;
       node.style.top = `${Math.max(0, y - node.offsetHeight - 10)}px`;
     },
-    hide() {
-      node.style.display = "none";
-    },
+    hide: motion.hide,
   };
 }
 

@@ -18,6 +18,7 @@ import { rangeFrom, remoteSource, searchWithRange, type QueryName, type Range, t
 import { accountMenu, requireSession, UNAUTHORIZED, type User } from "./auth.js";
 import { errorsView, failedCard, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer, sessionsDrawer, visitorsView, waitingCard, type Shape } from "./views.js";
 import { hold, settle } from "./hold.js";
+import { fadeIn, fadeOut, tokens } from "./motion.js";
 import { pathsCard, trailBuilder } from "./paths.js";
 import { zoneName } from "./timeline.js";
 
@@ -70,6 +71,32 @@ document.addEventListener("click", (event) => {
   else if (game !== undefined) document.body.append(sessionsDrawer("match", game, source.match(game)));
 });
 
+/**
+ * A card keeps its element for the page's life, so its height can ease and its content fade
+ * (Material 3 motion, Cyrus 2026-10-29): what a view renders, a whole card, moves into it.
+ */
+function adopt(card: HTMLElement, next: HTMLElement): void {
+  card.className = next.className;
+  card.replaceChildren(...next.childNodes);
+}
+
+/** What fades as a card's content changes: everything under its title, which stays. */
+const content = (card: HTMLElement): HTMLElement[] => [...card.children].filter((node): node is HTMLElement => node instanceof HTMLElement && node.localName !== "h2");
+
+/** Each element with no element in it, by where it sits in `card`, with its text. */
+function figures(card: HTMLElement): Map<string, { node: Element; text: string }> {
+  const out = new Map<string, { node: Element; text: string }>();
+  const walk = (node: Element, path: string): void => {
+    if (node.childElementCount === 0) {
+      out.set(path, { node, text: node.textContent ?? "" });
+      return;
+    }
+    [...node.children].forEach((child, i) => walk(child, `${path}/${child.localName}${i}`));
+  };
+  walk(card, "");
+  return out;
+}
+
 /** The admin routes' base: the telemetry service, whose `/t` is the batches' route. */
 function adminBase(): string | null {
   const url = import.meta.env.VITE_TELEMETRY_URL;
@@ -117,6 +144,10 @@ function dashboard(source: Source, account: User | null | undefined): () => void
   root!.replaceChildren(filters, liveSlot, el("div", { style: "height:16px" }), grid);
   hold(liveWaiting, "live");
 
+  // "Right now" fills its waiting card, then refreshes in place every ten seconds: the figures
+  // that changed cross-fade (short3) and the card does not rebuild visibly; when lobbies come or
+  // go, its height eases to the new one.
+  let liveShown = false;
   async function refreshLive(): Promise<void> {
     let next: HTMLElement;
     try {
@@ -124,8 +155,13 @@ function dashboard(source: Source, account: User | null | undefined): () => void
     } catch (error) {
       next = el("section", { class: "card" }, el("h2", {}, "Right now"), el("p", { class: "sub" }, `Could not read the rooms: ${error instanceof Error ? error.message : String(error)}`));
     }
-    liveSlot.replaceChildren(next);
-    settle(next, "live");
+    const from = liveWaiting.getBoundingClientRect().height;
+    const before = liveShown ? figures(liveWaiting) : null;
+    adopt(liveWaiting, next);
+    liveShown = true;
+    if (before === null) content(liveWaiting).forEach((node) => fadeIn(node));
+    else for (const [path, now] of figures(liveWaiting)) if (before.get(path)?.text !== now.text) fadeIn(now.node, tokens().short3);
+    settle(liveWaiting, "live", from);
   }
 
   // The seven cards, each over one query or two: each is on the page at once
@@ -154,27 +190,34 @@ function dashboard(source: Source, account: User | null | undefined): () => void
       CARDS.map(async (c, i) => {
         const slot = slots[i];
         if (slot === undefined) return;
-        // A rendered card goes back to its skeleton while it reloads, held at the height
-        // this view had last (else the one it has now), so nothing under it moves.
+        const answers = Promise.all(c.names.map((name) => source.query(name, range)));
+        answers.catch(() => {});
+        // A rendered card goes back to its skeleton while it reloads (its content fades out, the
+        // skeleton in), held at the height this view had last, else the one it has now, so
+        // nothing under it moves but by easing.
         if (slot.querySelector(".skeleton") === null) {
           const now = slot.getBoundingClientRect().height;
-          const waiting = waitingCard(c.title, c.sub, c.cls, c.shape);
-          slot.replaceWith(waiting);
-          slots[i] = waiting;
-          hold(waiting, holdId(c), now);
+          hold(slot, holdId(c), now);
+          await Promise.all(content(slot).map((node) => fadeOut(node)?.finished.catch(() => {})));
+          if (token !== loading) return;
+          adopt(slot, waitingCard(c.title, c.sub, c.cls, c.shape));
+          content(slot).forEach((node) => fadeIn(node, tokens().short3));
+          hold(slot, holdId(c), now);
         }
         let next: HTMLElement;
         try {
-          const rows = await Promise.all(c.names.map((name) => source.query(name, range)));
+          const rows = await answers;
           if (token !== loading) return;
           next = c.render(rows);
         } catch (error) {
           if (token !== loading) return;
           next = failedCard(c.title, c.sub, c.cls, error instanceof Error ? error.message : String(error));
         }
-        slots[i]!.replaceWith(next);
-        slots[i] = next;
-        settle(next, holdId(c));
+        // The content fades in over the place its skeleton held, and the card eases from the
+        // held height to its own, which is what it remembers.
+        adopt(slot, next);
+        content(slot).forEach((node) => fadeIn(node));
+        settle(slot, holdId(c));
       }),
     );
   }
