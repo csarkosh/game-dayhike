@@ -108,12 +108,12 @@ function adminBase(): string | null {
  * The page itself, for the account given (null for the sample). Returns what
  * stops its live refresh, for when the account signs out or is refused: the
  * shell hides the page behind its gate then, and the refresh would otherwise
- * keep asking, and keep being refused, every ten seconds.
+ * keep asking, and keep being refused, every ten seconds. `trailFor` is the
+ * trail builder, one worker for the page's life, its answers kept; the sample
+ * shares the page's so its trail is built once, off the main thread.
  */
-function dashboard(source: Source, account: User | null | undefined): () => void {
+function dashboard(source: Source, account: User | null | undefined, trailFor = trailBuilder()): () => void {
   let range: Range = rangeFrom(location.search);
-  // The trail builder, one worker for the page's life, its answers kept.
-  const trailFor = trailBuilder();
   // The chrome is the host's markup (`client/admin/index.html`, the same as
   // csarko.sh's own dashboard), and the nav's account menu (the Live or Sample
   // badge, the email, Sign out) is the shell's: `accountMenu` renders it. The
@@ -231,8 +231,9 @@ function dashboard(source: Source, account: User | null | undefined): () => void
 }
 
 if (preview) {
-  const sample = sampleSource();
-  dashboard(sample, null);
+  const trails = trailBuilder();
+  const sample = sampleSource(trails);
+  dashboard(sample, null, trails);
   // `?preview&session=<id>` opens a session's drawer at once, for looking at
   // it; `&visitor=<id>` and `&match=<id>` the lists of sessions.
   const session = params.get("session");

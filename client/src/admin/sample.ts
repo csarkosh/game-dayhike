@@ -8,7 +8,7 @@
 
 import type { Live, QueryName, Range, Row, Source } from "./source.js";
 import { calendarDate } from "./timeline.js";
-import { buildTrailFor } from "./trail.js";
+import { buildTrailFor, type DrawableTrail } from "./trail.js";
 import { GEN_VERSION } from "../sim/forest.js";
 import { DEFAULT_TERRAIN_VARIANT } from "../sim/terrain.js";
 
@@ -185,11 +185,13 @@ function health(): Row[] {
  * Fourteen sessions on the real trail of the sample's seed, built as the
  * page builds it: up the stem a node at a time with a little wander, some
  * round a loop, some straying off the trail, some dying in the night, with
- * the route's events as the game would send them.
+ * the route's events as the game would send them. The trail is given, not
+ * built here: building one is the generator's whole run, too long for the
+ * page's main thread (2026-10-30: 1.5 s of blocked load under Lighthouse),
+ * so the page hands in its worker's builder.
  */
-function paths(): Row[] {
+function paths(trail: DrawableTrail | null): Row[] {
   const r = rng(23);
-  const trail = buildTrailFor(WORLD, SEED);
   const rows: Row[] = [];
   if (trail === null) return rows;
   // The stem as a node chain, pad to crest: each stem edge in order, taken
@@ -431,15 +433,27 @@ function within(rows: Row[], column: string, range: Range): Row[] {
   });
 }
 
-export function sampleSource(): Source {
-  const tables: Record<QueryName, () => Row[]> = { funnel, lobbies, progress, errors, health, paths, kpis, visitors };
+/** A trail for a world and seed, as the page's worker answers (`paths.ts`, `trailBuilder`). */
+export type TrailFor = (world: string, seed: number) => Promise<DrawableTrail | null>;
+
+/**
+ * The sample. Its paths walk the sample world's real trail, which `trailFor` builds: the page
+ * passes its worker's builder, so the trail is made off the main thread and once for the paths
+ * card too; a caller with no worker (the tests) gets the generator run in place.
+ */
+export function sampleSource(trailFor: TrailFor = (world, seed) => Promise.resolve(buildTrailFor(world, seed))): Source {
+  let pathRows: Promise<Row[]> | null = null;
+  const tables: Record<QueryName, () => Row[] | Promise<Row[]>> = {
+    funnel, lobbies, progress, errors, health, kpis, visitors,
+    paths: () => (pathRows ??= trailFor(WORLD, SEED).then(paths)),
+  };
   const dated: Partial<Record<QueryName, string>> = { lobbies: "day", progress: "started_at", errors: "last_seen", funnel: "last_seen", visitors: "last_seen" };
   return {
     kind: "sample",
-    query: (name, range) => {
-      const rows = tables[name]();
+    query: async (name, range) => {
+      const rows = await tables[name]();
       const column = dated[name];
-      return Promise.resolve(column === undefined ? rows : within(rows, column, range));
+      return column === undefined ? rows : within(rows, column, range);
     },
     live: () => Promise.resolve(live()),
     session: (sid) => Promise.resolve(session(sid)),

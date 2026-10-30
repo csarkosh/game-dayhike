@@ -310,7 +310,7 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
   );
   const picked = (): string => inputs.find((input) => input.checked)?.value ?? "";
   const canvas = el("canvas", { width: String(CANVAS), height: String(CANVAS) });
-  const scrub = el("input", { type: "range", min: "0", max: "1", value: "1", step: "1", style: "width:100%" });
+  const scrub = el("input", { type: "range", min: "0", max: "1", value: "1", step: "1", style: "width:100%", "aria-label": "Time into the sessions: drag to replay where each party was" });
   const clock = el("span", { class: "sub" }, "");
   const note = el("p", { class: "sub" }, "");
   const side = el("div", { class: "side" });
