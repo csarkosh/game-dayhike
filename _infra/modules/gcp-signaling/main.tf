@@ -184,6 +184,16 @@ resource "google_cloud_run_v2_service" "signaling" {
           cpu    = "1"
           memory = "512Mi"
         }
+
+        # Request-based billing: the CPU is billed while a request is in
+        # flight and not for the instance's idle life. A socket is a request
+        # here, so a room's host keeps the CPU allocated for the match, as
+        # before; what stops billing is the quarter of an hour an instance
+        # lingers after its last socket closes, and every empty minute of a
+        # visit that never clicked Invite. Unset, the provider left the CPU
+        # always allocated, which billed 118 instance-hours across the two
+        # services in October 2026 for a game that was idle most of them.
+        cpu_idle = true
       }
 
       startup_probe {

@@ -158,6 +158,12 @@ resource "google_cloud_run_v2_service" "telemetry" {
           cpu    = "1"
           memory = "512Mi"
         }
+
+        # Request-based billing: a batch is a few milliseconds of CPU and the
+        # instance then waits up to a quarter of an hour for the next one.
+        # Unset, the provider left the CPU always allocated, so every one of
+        # those idle minutes billed as if a batch were being written.
+        cpu_idle = true
       }
 
       startup_probe {
