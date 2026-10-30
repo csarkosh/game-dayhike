@@ -1,8 +1,8 @@
 // The frame-budget harness's way to the browser, over the Chrome DevTools Protocol: a session,
 // an expression evaluated in a page, Chrome started on this Mac from a fresh profile or a Chrome
-// already running elsewhere attached through a forwarded port, and a page in a browser context
-// of its own, so no GPU state or cache carries from one sample into the next. Plumbing only; what
-// is measured, and how, is `measure.mjs`'s.
+// already running elsewhere attached through a forwarded port, and a page of its own with the
+// game's stored state cleared, so nothing of one sample carries into the next but the build's
+// files in the profile's HTTP cache. Plumbing only; what is measured, and how, is `measure.mjs`'s.
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -147,26 +147,38 @@ export async function closeStrayPages(port, fetchImpl = fetch) {
   return strays.map((t) => t.url);
 }
 
-/** A page in a browser context of its own, in front, with the page and runtime domains on; its
- * `close()` empties it and disposes the context, which closes the page's window. */
-export async function openPage(browser, port) {
-  const { browserContextId } = await browser("Target.createBrowserContext");
+/** What a sample's page is not allowed to inherit from an earlier one on the same Chrome: the
+ * game's remembered choices (its tier, its engine fallback, the player's name, the mute), its
+ * translated-shader store and its cookies. The HTTP cache is not in the list, on purpose: it holds
+ * the build's files alone, each named by its content and immutable for a year, so a second sample
+ * reading them from disk measures the same frames as the first and downloads nothing. Before this
+ * (to 2026-10-29) every sample opened a context of its own, whose cache died with it, and a rig
+ * fetched the whole client (239 MB) once a sample: 135 GiB of Firebase Hosting egress in one month
+ * of rounds, which was most of the game's hosting bill. */
+export const ORIGIN_STORAGE =
+  "cookies,local_storage,session_storage,indexeddb,websql,service_workers,cache_storage";
+
+/** A page in the browser's own context, in front, with the page and runtime domains on, and with
+ * `origin`'s stored state cleared (`ORIGIN_STORAGE`) so nothing of the game carries from one sample
+ * into the next while the profile's HTTP cache does; its `close()` empties the page and closes its
+ * window. */
+export async function openPage(browser, port, { origin } = {}) {
   let page;
+  let targetId;
   const close = async () => {
     if (page !== undefined) {
       await page("Page.navigate", { url: "about:blank" }).catch(() => undefined);
       page.close();
     }
-    await browser("Target.disposeBrowserContext", { browserContextId }).catch(() => undefined);
+    if (targetId !== undefined) await browser("Target.closeTarget", { targetId }).catch(() => undefined);
   };
   try {
-    const { targetId } = await browser("Target.createTarget", {
+    ({ targetId } = await browser("Target.createTarget", {
       url: "about:blank",
-      browserContextId,
       newWindow: true,
       width: WINDOW.width,
       height: WINDOW.height,
-    });
+    }));
     let target;
     for (let i = 0; !target; i++) {
       if (i > 50) throw new Error("the new page never appeared in /json/list");
@@ -177,8 +189,9 @@ export async function openPage(browser, port) {
     page = await connect(local(target.webSocketDebuggerUrl, port));
     await page("Page.enable");
     await page("Runtime.enable");
+    if (origin !== undefined) await page("Storage.clearDataForOrigin", { origin, storageTypes: ORIGIN_STORAGE });
     await page("Page.bringToFront");
-    return { page, contextId: browserContextId, close };
+    return { page, targetId, close };
   } catch (error) {
     await close();
     throw error;

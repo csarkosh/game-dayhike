@@ -33,8 +33,11 @@ npm run frame-budget -- --base <url> --tier medium --machine air-m4 --warm 300 -
 Run it three times, `--rotate 0`, `--rotate 1`, `--rotate 2`, so a run's drift falls on different
 views. `--warm 300` keeps the first view open for five minutes before its first sample, so the Air
 is warm when the numbers start. Each sample waits for `body.world-ready` and then settles 30 s. A
-fresh browser context downloads the world each time, so readiness took 56 to 63 s on the Air (20 to
-38 s on the rig); the row records it as `readyS`. The wait is there because the page applies the URL's script (seed,
+sample's page starts with the game's stored state cleared (its remembered tier, engine fallback,
+name and translated shaders) but with the profile's HTTP cache kept, so a Chrome downloads the
+build once and every later sample reads it from disk; until 2026-10-29 each sample had a context
+of its own and downloaded the world again (readiness took 56 to 63 s on the Air then, 20 to 38 s on
+the rig, and a month of rounds moved 135 GiB from the hosting). The row records readiness as `readyS`. The wait is there because the page applies the URL's script (seed,
 camera, escalation) only once the world is ready: a fixed sleep sometimes timed the default start
 (5 to 9 ms a frame) and sometimes the real view (19 to 26 ms), and the Air's rows came out
 bimodal. A run with loaded rows is discarded, not averaged: `rm` its file and

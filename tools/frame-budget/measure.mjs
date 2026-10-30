@@ -180,7 +180,7 @@ const SAMPLE_EXPRESSION = `(async () => {
 
 /** The page at `url`, at the tier's size, its canvas waited for. */
 async function openView(browser, port, tier, url) {
-  const opened = await openPage(browser, port);
+  const opened = await openPage(browser, port, { origin: new URL(url).origin });
   try {
     const { width, height } = TIER_SIZES[tier];
     await opened.page("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });

@@ -503,8 +503,13 @@ estimate, not the 4 to 5× that §1 feared from the M3 Max figure.
   and a half hours up (19.2 to 20.6). The README's day starts with the
   steadiness run, and a cold rig's first set is not a calibration.
 - *Readiness.* The Air's rows reached `body.world-ready` 56 to 63 s after
-  the canvas (a fresh browser context downloads the world each sample);
-  the rig's in 20 to 38 s. Every row taken before the harness waited for
+  the canvas (a fresh browser context downloaded the world each sample);
+  the rig's in 20 to 38 s. *Amended 2026-10-29:* a sample's page now opens
+  in the browser's own context with the game's stored state cleared and
+  the HTTP cache kept, so a Chrome downloads the build once: the
+  per-sample contexts had moved 135 GiB out of Firebase Hosting in one
+  month of rounds, most of the game's hosting bill, and a cached sample
+  reads the same immutable files it would have fetched. Every row taken before the harness waited for
   that class (the whole first day) measured a mix of the default start and
   the view, and was discarded; see the README's "The Mac's run".
 - *Apple's per-pass readout is latency, not cost.* On the M4 every pass
