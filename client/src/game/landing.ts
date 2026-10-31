@@ -255,13 +255,29 @@ const STYLE = `
   .landing .tokens-icon {
     width: calc(1em * 32 / 22); height: 1em; vertical-align: -0.12em; margin-right: 0.35em;
   }
-  /* Narrow windows: a roster at its widest (22rem) and the line would meet
-     below about 540 px, so the roster stands on the line's band instead of
-     beside it. This sheet lives only while the title screen does, so the
-     roster sits at its own inset everywhere else. */
-  @media (max-width: 560px) {
-    body:has(.landing a.tokens) .roster { bottom: calc(0.75rem + 1.25rem + 0.5rem); }
+  /* The roster beside the line. This sheet lives only while the title screen
+     does, so these rules reach the roster there and never during a hike
+     (body .roster outranks roster.ts's own .roster, whose sheet comes later).
+     Above the roster's collapse the two share the bottom edge, so the roster
+     is capped short of the line's band: its two insets, the band, a gap, and
+     its own padding and border, since max-width sizes its content box.
+     --tokens-band is the line's width reserved, set here and nowhere else;
+     the line itself is about 9.6rem at 1rem. */
+  :root {
+    --tokens-band: 10.5rem;
+    --roster-cap: calc(100vw - 0.75rem - var(--tokens-band) - 0.5rem - 0.75rem - 1.2rem - 2px);
   }
+  @media (min-width: 481px) {
+    body .roster { max-width: min(22rem, var(--roster-cap)); }
+  }
+  @media (min-width: 481px) and (max-height: 420px) {
+    body .roster { max-width: min(40vw, var(--roster-cap)); }
+  }
+  /* A name too long for the capped roster ends in an ellipsis rather than
+     wrapping or widening it; the host mark beside it keeps its size. The
+     invite link's field already shrinks (flex: 1; min-width: 0). */
+  body .roster li .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body .roster li .mark { flex: none; }
   .landing .waiting { color: rgba(255, 255, 255, 0.62); margin-top: 1.25rem; }
   .landing .notice { color: #dbe2e2; margin-top: 1rem; }
   .landing .empty { color: rgba(255, 255, 255, 0.45); }
@@ -282,9 +298,10 @@ const STYLE = `
        line moves under it, in its column: the roster's own 1rem inset, the
        body copy's phone size, and the roster lifted by the line's band
        (0.75rem inset, 0.85rem at 1.25 lines, a 0.5rem gap), which the
-       panels' reservation above leaves room for too. */
+       panels' reservation above leaves room for too. The only width at
+       which the roster leaves its bottom inset. */
     .landing a.tokens { left: 1rem; font-size: 0.85rem; }
-    body:has(.landing a.tokens) .roster { bottom: calc(0.75rem + 1.0625rem + 0.5rem); }
+    body .roster { bottom: calc(0.75rem + 1.0625rem + 0.5rem); }
   }
 `;
 

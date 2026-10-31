@@ -73,6 +73,19 @@ describe("the title screen's Buy me tokens line", () => {
     });
   });
 
+  it("caps the title screen's roster short of the line and ends a long name in an ellipsis", () => {
+    const { container } = title();
+    const sheet = container.descendants().find((el) => el.tagName === "STYLE")!.textContent;
+    // One place sets the line's band, and the cap above the collapse is taken from it.
+    expect(sheet.match(/--tokens-band:/g)).toHaveLength(1);
+    expect(sheet).toContain("--roster-cap: calc(100vw - 0.75rem - var(--tokens-band) - 0.5rem - 0.75rem - 1.2rem - 2px);");
+    expect(sheet).toContain("body .roster { max-width: min(22rem, var(--roster-cap)); }");
+    expect(sheet).toContain("body .roster li .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }");
+    // The roster stays on the bottom edge beside the line; nothing lifts it but the phone collapse.
+    expect(sheet).not.toContain(":has(");
+    expect(sheet.match(/body \.roster \{ bottom:/g)).toHaveLength(1);
+  });
+
   it("leaves with the title screen: a hike's HUD carries none", () => {
     const { doc, container } = title();
     // The route change into a hike clears the container (main.ts) before the HUD is built.
