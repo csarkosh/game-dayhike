@@ -239,6 +239,29 @@ const STYLE = `
     position: absolute; right: 0.75rem; bottom: 0.5rem;
     font-size: 0.75rem; color: rgba(255, 255, 255, 0.35);
   }
+  /* Buy me tokens: the donate page's door, once, in the bottom-left corner
+     at the roster's inset. The body copy's size, weight and muted colour, no
+     colour of its own on the words and nothing that moves: the icon is the
+     only colour, a pixel sprite one line tall, on the baseline (tokens.ts).
+     Positioned in the landing's box, not fixed, so it leaves with the title
+     screen and is never there, or focusable, during a hike. */
+  .landing a.tokens {
+    position: absolute; left: 0.75rem; bottom: 0.75rem;
+    font-size: 1rem; font-weight: normal; line-height: 1.25;
+    color: rgba(255, 255, 255, 0.62); text-decoration: none; white-space: nowrap;
+  }
+  .landing a.tokens:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+  .landing a.tokens:focus-visible { outline: 2px solid var(--btn-edge-lit); outline-offset: 3px; }
+  .landing .tokens-icon {
+    width: calc(1em * 32 / 22); height: 1em; vertical-align: -0.12em; margin-right: 0.35em;
+  }
+  /* Narrow windows: a roster at its widest (22rem) and the line would meet
+     below about 540 px, so the roster stands on the line's band instead of
+     beside it. This sheet lives only while the title screen does, so the
+     roster sits at its own inset everywhere else. */
+  @media (max-width: 560px) {
+    body:has(.landing a.tokens) .roster { bottom: calc(0.75rem + 1.25rem + 0.5rem); }
+  }
   .landing .waiting { color: rgba(255, 255, 255, 0.62); margin-top: 1.25rem; }
   .landing .notice { color: #dbe2e2; margin-top: 1rem; }
   .landing .empty { color: rgba(255, 255, 255, 0.45); }
@@ -248,13 +271,20 @@ const STYLE = `
     /* The roster is a fixed full-width panel at the bottom here (roster.ts),
        and publishes its height; leaving that much room keeps every panel's
        last control — Back, the last credit — above it however big the party. */
-    .landing .panel { padding: 1rem 1rem calc(var(--roster-height, 0px) + 1.5rem); gap: 0.6rem; }
+    .landing .panel { padding: 1rem 1rem calc(var(--roster-height, 0px) + 1.5rem + 1.0625rem + 0.5rem); gap: 0.6rem; }
     .landing h1 { font-size: 1.4rem; letter-spacing: 0.1em; }
     .landing p { font-size: 0.85rem; max-width: 100%; }
     .landing button { width: 100%; max-width: 20rem; margin-top: 0.75rem; }
     .landing button.secondary { width: auto; }
     .landing form.join { width: 100%; max-width: 20rem; }
     .landing form.join input { width: 100%; max-width: none; min-width: 0; }
+    /* The roster collapses to a full-width panel here (roster.ts), and the
+       line moves under it, in its column: the roster's own 1rem inset, the
+       body copy's phone size, and the roster lifted by the line's band
+       (0.75rem inset, 0.85rem at 1.25 lines, a 0.5rem gap), which the
+       panels' reservation above leaves room for too. */
+    .landing a.tokens { left: 1rem; font-size: 0.85rem; }
+    body:has(.landing a.tokens) .roster { bottom: calc(0.75rem + 1.0625rem + 0.5rem); }
   }
 `;
 
@@ -263,6 +293,7 @@ import type { Platform } from "../net/desktopRelease.js";
 import { creditsEntries, renderCredits } from "./credits.js";
 import { landingPanelFocus, type LandingPanel, type LandingView } from "./landingModel.js";
 import { openerOf, renderSettings, type Opener } from "./settings.js";
+import { tokensLink } from "./tokens.js";
 import type { TierChoice } from "./tierChoice.js";
 
 export type { LandingPanel } from "./landingModel.js";
@@ -388,7 +419,8 @@ export function renderLanding(
     onBack: handlers.onBack,
   });
 
-  root.append(home, downloads, settings, credits);
+  // Last, so it paints over the panels it sits on and is the last tab stop.
+  root.append(home, downloads, settings, credits, tokensLink());
   // How the Settings button was last pressed, taken once by the panel's
   // opening: the panel is reached otherwise too (the browser's Forward), and
   // with no press to go by it opens as for a pointer.
