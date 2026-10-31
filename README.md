@@ -77,6 +77,8 @@ npm test         # headless: determinism, movement, collision, the protocol, the
 
 A desktop launcher for macOS and Windows that loads the site lives in [`desktop/`](desktop/).
 
+[<img src="https://donate.csarko.sh/icon.svg" alt="" height="16"> Buy me tokens](https://donate.csarko.sh/dayhike)
+
 ## License
 
 [GPL-3.0](./LICENSE). Use it, study it, change it and share it, and share your changes under the
