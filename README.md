@@ -1,4 +1,4 @@
-<p align="center"><a href="https://games.csarko.sh/dayhike"><img src="branding/previews/postcards.png" alt="Postcards from Trail 14: the trailhead in front, the old wood, the tarn, the meadow, the crest and the beach behind it" width="900"></a></p>
+<p align="center"><a href="https://games.csarko.sh/dayhike"><img src="branding/cover/landscape.png" alt="Day Hike, Trail 14: the trailhead towards evening, ground fog rolled in among the tall trunks, the kiosk standing by the path" width="900"></a></p>
 
 <h1 align="center">Day Hike</h1>
 

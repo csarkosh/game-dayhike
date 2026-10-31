@@ -2,10 +2,16 @@
 // under the conditions the game opens with, and the PNG stripped of what a still must not carry.
 
 /** The page's `?cmd=` script for a still: its world, the camera at its place, and the day held
- * where the game starts it (`escalation 0`, `unsettle 0`). No `time` or `weather`: the hour and
- * the sky are the game's own defaults, so a still follows the game when those change. */
+ * where the game starts it (`escalation 0`, `unsettle 0`). A README still names no `weather`,
+ * `time` or `mist`: the sky, the hour and the ground cloud are the game's own, so it follows the
+ * game when those change. The cover's stills name all three for its look: the game's `mist`
+ * weather, an hour towards evening and the ground cloud held thick (`mist 1`). */
 export function stillScript(still) {
-  return `seed ${still.seed};freecam ${still.x} ${still.z} ${still.yaw};escalation 0;unsettle 0`;
+  const parts = [`seed ${still.seed}`, `freecam ${still.x} ${still.z} ${still.yaw}`, "escalation 0", "unsettle 0"];
+  if (still.weather !== undefined) parts.push(`weather ${still.weather}`);
+  if (still.time !== undefined) parts.push(`time ${still.time}`);
+  if (still.mist !== undefined) parts.push(`mist ${still.mist}`);
+  return parts.join(";");
 }
 
 /** The URL that opens a still's view on `base` (the dev server or the live site, with the game's

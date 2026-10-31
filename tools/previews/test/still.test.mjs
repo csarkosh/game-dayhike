@@ -8,6 +8,11 @@ describe("stillScript", () => {
   it("puts the free camera at the place and holds the day at its start, with no hour or weather", () => {
     expect(stillScript(tarn)).toBe("seed atmo;freecam 228 72 1.571;escalation 0;unsettle 0");
   });
+  it("sets the weather, the hour and the ground cloud a still names, after the day is held", () => {
+    expect(stillScript({ ...tarn, weather: "mist", time: 17.6, mist: 1 })).toBe(
+      "seed atmo;freecam 228 72 1.571;escalation 0;unsettle 0;weather mist;time 17.6;mist 1",
+    );
+  });
 });
 
 describe("stillUrl", () => {

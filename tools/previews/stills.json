@@ -20,6 +20,40 @@
       "beach"
     ]
   },
+  "cover": {
+    "title": "Day Hike",
+    "line": "Trail 14",
+    "shapes": [
+      {
+        "name": "landscape",
+        "width": 1920,
+        "height": 1080,
+        "titleAt": 0.2,
+        "seed": "atmo",
+        "x": -275,
+        "z": -1,
+        "yaw": 1.62,
+        "weather": "mist",
+        "time": 17.6,
+        "mist": 1,
+        "what": "the trailhead towards evening, the ground cloud rolled in: the path into the trees, the kiosk with the poster on the right"
+      },
+      {
+        "name": "portrait",
+        "width": 1200,
+        "height": 1800,
+        "titleAt": 0.8,
+        "seed": "atmo",
+        "x": -275,
+        "z": -1,
+        "yaw": 1.72,
+        "weather": "mist",
+        "time": 17.6,
+        "mist": 1,
+        "what": "the same, turned a little right so the path runs up the middle of the narrower view, the title low on the fog"
+      }
+    ]
+  },
   "stills": [
     {
       "name": "trailhead",

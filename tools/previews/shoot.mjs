@@ -9,12 +9,19 @@
 //   npm run previews -- tarn crest         only these
 //   npm run previews -- --settle 80        wait longer for the scene (seconds; 55 by default)
 //   npm run previews -- --cards            only the postcards, from the stills already shot (no browser)
+//   npm run previews -- --cover            only the cover, from its stills already shot (no browser)
+//   npm run previews -- cover              only the cover's stills, shot again, and the cover from them
 //
 // Beside each still its postcard (`<name>.card.png`, lib/postcard.mjs): the frame faded on an aged
 // paper border, worn as old mail is, tilted by its name, shadowed, on a transparent ground, which
 // the README lays out; the one `stills.json` names under `stamp` carries a postage stamp with the
 // title, the author and the year, its picture the still `stamp.picture` names, whole. The title's
 // picture, `postcards.png`, is the cards `collage` names laid over each other, the front one large.
+//
+// The game's cover (`branding/cover/<shape>.png`, lib/cover.mjs), for the README's title and
+// wherever the game is listed: each shape `cover` names in `stills.json` (landscape, portrait) is a
+// still of its own, shot at that shape's size so neither is a crop of the other, kept beside it as
+// `<shape>.still.png`, then graded, fogged and titled with the words `cover` gives.
 //
 // Needs Google Chrome (`CHROME` names another binary). Chrome opens as a window, not headless:
 // the stills are shot on the WebGPU path at the high tier, which headless Chrome does not give.
@@ -24,11 +31,13 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cover } from "./lib/cover.mjs";
 import { collage, postcard } from "./lib/postcard.mjs";
 import { stillUrl, stripPng } from "./lib/still.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const OUT = fileURLToPath(new URL("../../branding/previews/", import.meta.url));
+const COVER_OUT = fileURLToPath(new URL("../../branding/cover/", import.meta.url));
 const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const DEFAULT_BASE = "http://localhost:5173/dayhike";
 const WIDTH = 1920;
@@ -37,12 +46,13 @@ const HEIGHT = 1080;
 const SCALE = 0.625;
 
 function parseArgs(argv) {
-  const options = { base: DEFAULT_BASE, settle: 55, names: [], cards: false };
+  const options = { base: DEFAULT_BASE, settle: 55, names: [], cards: false, cover: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--base") options.base = argv[++i];
     else if (arg === "--settle") options.settle = Number(argv[++i]);
     else if (arg === "--cards") options.cards = true;
+    else if (arg === "--cover") options.cover = true;
     else if (arg.startsWith("--")) throw new Error(`unknown option ${arg}`);
     else options.names.push(arg);
   }
@@ -133,8 +143,10 @@ async function openChrome() {
   return { page, close };
 }
 
-/** One still: the page at its URL, the scene settled, the roster hidden, the frame scaled. */
-async function shoot(page, url, settle) {
+/** One still: the page at its URL in a viewport of `width` by `height`, the scene settled, the
+ * roster hidden, the frame scaled by `scale`. */
+async function shoot(page, url, settle, { width = WIDTH, height = HEIGHT, scale = SCALE } = {}) {
+  await page("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
   await page("Page.navigate", { url });
   for (let i = 0; i < 120; i++) {
     if (await evaluate(page, "!!document.querySelector('canvas')")) break;
@@ -148,7 +160,7 @@ async function shoot(page, url, settle) {
   await sleep(1500);
   const shot = await page("Page.captureScreenshot", {
     format: "png",
-    clip: { x: 0, y: 0, width: WIDTH, height: HEIGHT, scale: SCALE },
+    clip: { x: 0, y: 0, width, height, scale },
   });
   return stripPng(Buffer.from(shot.data, "base64"));
 }
@@ -171,21 +183,42 @@ async function writeCollage(config) {
   process.stdout.write(`  wrote ${out} (${png.length} bytes)\n`);
 }
 
+/** The cover's shapes from the stills on disk: each `<shape>.still.png` graded and titled. */
+async function writeCovers(config, shapes) {
+  for (const shape of shapes) {
+    const png = await cover(readFileSync(join(COVER_OUT, `${shape.name}.still.png`)), {
+      title: config.cover.title,
+      line: config.cover.line,
+      titleAt: shape.titleAt,
+    });
+    const out = join(COVER_OUT, `${shape.name}.png`);
+    writeFileSync(out, png);
+    process.stdout.write(`  wrote ${out} (${png.length} bytes)\n`);
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const config = JSON.parse(readFileSync(join(HERE, "stills.json"), "utf8"));
   const known = new Set(config.stills.map((s) => s.name));
-  for (const name of options.names) if (!known.has(name)) throw new Error(`no still named ${name}; stills.json has ${[...known].join(", ")}`);
-  const chosen = options.names.length === 0 ? config.stills : config.stills.filter((s) => options.names.includes(s.name));
+  // `cover` among the names is the cover's stills; any other name is a README still.
+  const wantsCover = options.names.length === 0 || options.names.includes("cover");
+  const stillNames = options.names.filter((name) => name !== "cover");
+  for (const name of stillNames) if (!known.has(name)) throw new Error(`no still named ${name}; stills.json has ${[...known].join(", ")}, and cover`);
+  const chosen = options.names.length === 0 ? config.stills : config.stills.filter((s) => stillNames.includes(s.name));
+  const shapes = wantsCover ? (config.cover?.shapes ?? []) : [];
   // The stamp's picture is another still (`stamp.picture`), read from disk once every still is shot.
   const markFor = (still) => {
     if (config.stamp?.still !== still.name) return undefined;
     const picture = config.stamp.picture === undefined ? undefined : readFileSync(join(OUT, `${config.stamp.picture}.png`));
     return { ...config.stamp, picture };
   };
-  if (options.cards) {
-    for (const still of chosen) await writeCard(still.name, readFileSync(join(OUT, `${still.name}.png`)), markFor(still));
-    await writeCollage(config);
+  if (options.cards || options.cover) {
+    if (options.cards) {
+      for (const still of chosen) await writeCard(still.name, readFileSync(join(OUT, `${still.name}.png`)), markFor(still));
+      await writeCollage(config);
+    }
+    if (options.cover) await writeCovers(config, config.cover?.shapes ?? []);
     return;
   }
   const probe = await fetch(options.base, { redirect: "manual" }).catch(() => null);
@@ -200,12 +233,25 @@ async function main() {
       writeFileSync(out, png);
       process.stdout.write(`  wrote ${out} (${png.length} bytes)\n`);
     }
+    // The cover's stills at their own sizes, unscaled: the cover is shot at the size it is shown.
+    mkdirSync(COVER_OUT, { recursive: true });
+    for (const shape of shapes) {
+      const url = stillUrl(options.base, config, shape);
+      process.stdout.write(`cover ${shape.name}: ${url}\n`);
+      const png = await shoot(page, url, options.settle, { width: shape.width, height: shape.height, scale: 1 });
+      const out = join(COVER_OUT, `${shape.name}.still.png`);
+      writeFileSync(out, png);
+      process.stdout.write(`  wrote ${out} (${png.length} bytes)\n`);
+    }
   } finally {
     await close();
   }
   // The cards after every still, so the stamp's picture is this shoot's, and the title's collage after the cards.
-  for (const still of chosen) await writeCard(still.name, readFileSync(join(OUT, `${still.name}.png`)), markFor(still));
-  await writeCollage(config);
+  if (chosen.length > 0) {
+    for (const still of chosen) await writeCard(still.name, readFileSync(join(OUT, `${still.name}.png`)), markFor(still));
+    await writeCollage(config);
+  }
+  await writeCovers(config, shapes);
 }
 
 main().catch((error) => {
