@@ -96,22 +96,35 @@ without collateral damage.
 
 ## Before pushing
 
-These are the gates:
+**Nothing load-sensitive runs on the development machine** *(Cyrus, 2026-10-31)*: other
+workstreams always run on it, so it is never quiet enough for the client suite's time limits or
+its wall-clock tests, and a timing failure there says nothing about the change. The cloud comes
+first; the Mac runs only what load cannot fail.
 
 ```bash
-npm run gate
+npm run gate -- --plan    # which plan this branch needs, and why
+npm run gate              # run it
 ```
 
-It builds the WGSL maps from the corpus first (`tools/wgsl/build-map.mjs --reuse`: nothing when
-the corpus is unchanged, about two minutes when it is not; a map over its 10 MiB ceiling fails
-the gate here, in minutes, where before only the workflow's `build` job found it, and a map past
-90 % of the ceiling is reported), then runs `npm run typecheck`, `npm run lint` and the client,
-server and tools suites (`tools/gate.mjs`). Where `DAYHIKE_GATE` names a runner, the gate hands this checkout to it
-instead: the same commands, and the client's build with its WGSL maps checked as the workflow's
-`build` job does, run on other machines in a few minutes while this one stays free, the tests
-tagged `wall-clock` run here meanwhile (below), and one report. Without a runner the gates run
-here one after another, which takes half an hour or more. `npm run gate -- <client test files>`
-runs only those files: a quick check while working, not the gate.
+The gate (`tools/gate.mjs`) reads what the branch changes against `origin/main`, committed or
+not, and picks one of two plans (`tools/gate/plan.mjs`):
+
+- **light**: only tooling, docs, branding or agent files changed (`tools/` except `tools/wgsl/`,
+  `docs/`, `branding/`, `.agents/`, `.claude/`, `README.md`, `AGENTS.md`, `ARCHITECTURE.md`).
+  Lint and the tools suite, here, in seconds: neither has a time limit, so load cannot fail
+  them, and nothing the client or server suites test was touched.
+- **cloud**: anything else (the game, the server, the build, the shader corpus, the WGSL tools,
+  dependencies, CI, `CREDITS.md`). The gate dispatches the `test` workflow on GitHub's runners
+  for this branch and follows it to its end; its exit is the run's. It runs what is pushed, so
+  push the work branch first (never `main`); the gate refuses, saying what to do, while the
+  branch is unpushed, behind, or has game files uncommitted.
+
+Where `DAYHIKE_GATE` names a runner, the gate hands this checkout to it instead (no runner has
+been built yet). `npm run gate -- <client test files>` runs only those files here, as the
+runners run them (limits scaled by 3, wall-clock tests left out): a check while working, not the
+gate. `npm run gate -- --local` is the old whole gate on this machine, half an hour or more and
+at the mercy of its load: only when Cyrus asks for it by name, never as a fallback when the
+cloud plan says to push first.
 
 Read the report. A failing gate is reported to the user before pushing, not after.
 
@@ -138,18 +151,16 @@ are shared machines. Two things differ from a local run for that reason:
   job, and a runner does as the workflow does. The server and tools suites set no limits and are not scaled. The architecture test
   fails on a limit written as a bare number, naming the line to change.
 - **Wall-clock tests are left out.** A test that asserts on elapsed time carries the
-  `wall-clock` tag, and the workflow skips the tag, as a runner does on its machines while it runs
-  `npm run test:wall-clock` here. A local `npm test` still runs them; `npm run test:wall-clock`
-  runs only them, one file at a time. They are only meaningful on a quiet machine. A dedicated machine for them is planned, not present; until then a local run
-  is where they run. The architecture test fails on a test that reads a clock without the tag
+  `wall-clock` tag, and the workflow skips the tag. `npm run test:wall-clock` runs only them, one
+  file at a time; they are only meaningful on a quiet machine, which the development machine
+  never is, so they run only when Cyrus asks for them by name. A dedicated machine for them is
+  planned, not present. The architecture test fails on a test that reads a clock without the tag
   (unless it is listed as printing a timing without asserting on it), on the tag on a test that
   reads no clock, and when the number of tagged tests is not the one it states (2).
 
-**When to start it.** `npm run gate` is the rule; the workflow's runners are the exception: a
-clean checkout of what was pushed is the point (a change to the build itself, `vite.config.ts`,
-the WGSL maps or `package.json` dependencies, before it lands on main), the gate could not be had
-in full, or Cyrus asks for it. Not for a docs or copy change, and not as a habit after every push: every run costs
-minutes he pays for. Push the branch (a work branch is fine), then:
+**When it runs.** The gate starts the workflow itself for every change it plans as `cloud`, so
+that is the usual way in; a change it plans as `light` (a docs, copy, tooling or branding change)
+never starts it. Started by hand only otherwise (`workflow_dispatch`), as below, when Cyrus asks:
 
 ```bash
 gh workflow run test.yml --ref <branch>                      # start it; prints nothing
