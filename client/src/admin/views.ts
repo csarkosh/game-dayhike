@@ -231,6 +231,9 @@ export function errorsView(rows: Row[]): HTMLElement {
       },
     },
     { key: "msg", label: "Message" },
+    // The owner's own sessions are out of every count on the page, but the errors they meet are
+    // the first anyone sees, so the query keeps them on rows of their own, marked here.
+    { key: "whose", label: "Whose", render: (v) => (str(v) === "you" ? el("span", { class: "status warn" }, "you") : "players") },
     { key: "at_page", label: "Where" },
     { key: "a_session", label: "A session", render: (v) => (str(v) === "" ? "" : sidLink(str(v))) },
     { key: "sessions", label: "Sessions", num: true },
@@ -244,12 +247,14 @@ export function errorsView(rows: Row[]): HTMLElement {
   const first = rows[0];
   const erred = first === undefined ? 0 : num(first.sessions_with_errors);
   const warned = first === undefined ? 0 : num(first.sessions_with_warnings);
-  const problems = rows.filter((r) => r.level !== "warning").length;
-  const warnings = rows.length - problems;
+  const players = rows.filter((r) => str(r.whose) !== "you");
+  const own = rows.length - players.length;
+  const problems = players.filter((r) => r.level !== "warning").length;
+  const warnings = players.length - problems;
   const sub =
     rows.length === 0
       ? "Problems in this range, grouped by their first hundred characters"
-      : `${problems} distinct error${problems === 1 ? "" : "s"} in ${erred} session${erred === 1 ? "" : "s"}, ${warnings} distinct warning${warnings === 1 ? "" : "s"} in ${warned}; grouped by their first hundred characters`;
+      : `${problems} distinct error${problems === 1 ? "" : "s"} in ${erred} session${erred === 1 ? "" : "s"}, ${warnings} distinct warning${warnings === 1 ? "" : "s"} in ${warned}${own > 0 ? `, and ${own} of your own` : ""}; grouped by their first hundred characters`;
   return card("What went wrong", sub, "", table(cols, rows, "Nothing went wrong in this range."));
 }
 

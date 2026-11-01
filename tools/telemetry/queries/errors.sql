@@ -5,7 +5,11 @@
 -- that would not build) from a warning (`warn`, a tier fallen back to);
 -- `sessions` is distinct per line, and `sessions_with_errors` and
 -- `sessions_with_warnings`, the same on every line, are distinct over the
--- whole range, so a session with two problems is counted once there.
+-- whole range, so a session with two problems is counted once there. `whose`
+-- is `players` or `you`: the owner's own play (`owner`, marked at the server by
+-- address) is out of every count on the page, but the errors it meets are the
+-- first anyone sees, so they are here too, on rows of their own and out of the
+-- totals (Cyrus, 2026-11-01).
 -- The rows that are real play, the same text in every query (`README.md`):
 -- not the deploy's verification (`build = 'verify'` on a page's rows,
 -- `verify` on signaling's), not the owner's test browsers (`tester`), not a
@@ -30,8 +34,22 @@ WITH real AS (
         AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 90 DAY)
     )
 ),
+-- The owner's own sessions: every row the server marked `owner`, less the deploy's verification.
+owner AS (
+  SELECT timestamp, json_payload
+  FROM `fps-csarko.global.dayhike-telemetry._AllLogs`
+  WHERE IFNULL(JSON_VALUE(json_payload.owner), '') = 'true'
+    AND IFNULL(JSON_VALUE(json_payload.build), '') != 'verify'
+    AND IFNULL(JSON_VALUE(json_payload.verify), '') != 'true'
+),
+play AS (
+  SELECT timestamp, json_payload, 'players' AS whose FROM real
+  UNION ALL
+  SELECT timestamp, json_payload, 'you' AS whose FROM owner
+),
 events AS (
   SELECT
+    whose,
     JSON_VALUE(json_payload.sid) AS sid,
     JSON_VALUE(json_payload.build) AS build,
     JSON_VALUE(json_payload.n) AS n,
@@ -43,7 +61,7 @@ events AS (
     JSON_VALUE(json_payload.browser) AS browser,
     JSON_VALUE(json_payload.gpu) AS gpu,
     timestamp
-  FROM real
+  FROM play
   WHERE JSON_VALUE(json_payload.svc) = 'telemetry'
     AND timestamp >= TIMESTAMP(DATE_SUB(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), INTERVAL 7 DAY), 'America/New_York') -- range
     AND JSON_VALUE(json_payload.n) IN ('error', 'warn', 'start_fail', 'connect_fail', 'engine_failed', 'webgpu_start_failed', 'tier_fallback')
@@ -53,8 +71,10 @@ totals AS (
     COUNT(DISTINCT IF(level = 'error', sid, NULL)) AS sessions_with_errors,
     COUNT(DISTINCT IF(level = 'warning', sid, NULL)) AS sessions_with_warnings
   FROM events
+  WHERE whose = 'players'
 )
 SELECT
+  whose,
   level,
   n,
   kind,
@@ -68,6 +88,6 @@ SELECT
   MAX(timestamp) AS last_seen,
   ANY_VALUE(totals.sessions_with_errors) AS sessions_with_errors,
   ANY_VALUE(totals.sessions_with_warnings) AS sessions_with_warnings
-FROM events, totals
-GROUP BY level, n, kind, at_page, msg, build
-ORDER BY IF(level = 'error', 0, 1), sessions DESC, last_seen DESC;
+FROM events LEFT JOIN totals ON TRUE
+GROUP BY whose, level, n, kind, at_page, msg, build
+ORDER BY IF(level = 'error', 0, 1), IF(whose = 'players', 0, 1), sessions DESC, last_seen DESC;

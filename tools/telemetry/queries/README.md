@@ -81,8 +81,12 @@ build on (older rows keep the time the batch arrived).
 
 ## The errors testing met
 
-`errors.sql` is the players' errors. The owner's own sessions and preview channels' pages are
-left out of it with the rest of `tester`, and are in the table all the same (above). Their
+`errors.sql` is the players' errors, and the owner's own beside them *(2026-11-01, Cyrus: "I still
+want my errors sent to the dashboard when I play the game")*: it reads `real` and, apart from it,
+every row the server marked `owner`, and each row of its result says `whose` it is, `players` or
+`you`; the owner's rows stay out of its totals (`sessions_with_errors`, `sessions_with_warnings`),
+as they are out of every other query. Preview channels' pages and other testers' browsers are
+still left out with the rest of `tester`, and are in the table all the same (above). Their
 errors, pasted into BigQuery as written:
 
 ```sql

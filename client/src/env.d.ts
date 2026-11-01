@@ -18,6 +18,11 @@ declare module "virtual:dayhike-wgsl-map" {
   export default urls;
 }
 
+/** lib-visits' client, when `index.html` loaded it: `page()` counts a route change as a view. */
+interface Window {
+  visits?: { page?: () => void; send?: (name: string, data?: Record<string, string | number | boolean>) => void };
+}
+
 interface ImportMetaEnv {
   readonly VITE_SIGNALING_URL?: string;
   /** The public site's base URL, e.g. https://games.csarko.sh/dayhike. Invites are built on it. */

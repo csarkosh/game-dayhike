@@ -981,6 +981,8 @@ function render(container: HTMLDivElement): void {
     if (pageSent) return;
     pageSent = true;
     telemetry.event("page", { kind: route.kind });
+    // csarko.sh's analytics (index.html): the route is a page of the visitor's journey there.
+    window.visits?.page?.();
   };
   telemetry.mark(route.kind);
 
