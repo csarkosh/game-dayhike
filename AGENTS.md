@@ -104,7 +104,7 @@ Every file committed under `docs/` is named `YYYY-MM-DD-<topic>.md`:
 
 `tools/docs/test/docNames.test.mjs` fails `npm test` if any file under `docs/` breaks this rule.
 
-A doc describes the game and how it is built, never how the work on it was organised. Implementation plans, step lists and working notes are not committed: keep them under `.superpowers/`, which is gitignored. A design doc records what was built in its own terms (an "As built" section, or the amendments as they landed), never by pointing at a step of a plan.
+A doc describes the game and how it is built, never how the work on it was organised. Implementation plans, step lists and working notes are not committed: keep them under `docs/superpowers/` (research, `plans/`, `specs/`, and the agents' `brainstorm/` and `sdd/` runs), which its own `.gitignore` keeps out of the repository and the file-name test skips. A design doc records what was built in its own terms (an "As built" section, or the amendments as they landed), never by pointing at a step of a plan.
 
 ## Skills
 

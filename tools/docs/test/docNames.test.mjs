@@ -1,5 +1,7 @@
 // Every file under docs/ is named YYYY-MM-DD-<topic>.md, so the folder sorts by date and a doc's
 // age reads straight off its name. AGENTS.md states the rule; this makes `npm test` hold it.
+// docs/superpowers/ is the exception: working notes kept beside a checkout (plans, research, the
+// agents' brainstorm and SDD runs), ignored by its own .gitignore and never committed.
 import { existsSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +51,9 @@ describe('docs/ file names', () => {
   });
 
   it('holds for every file in docs/', () => {
-    const files = existsSync(DOCS) ? listFiles(DOCS).map((file) => relative(DOCS, file)) : [];
+    const files = existsSync(DOCS)
+      ? listFiles(DOCS).map((file) => relative(DOCS, file)).filter((file) => !file.startsWith('superpowers/'))
+      : [];
     expect(misnamed(files)).toEqual([]);
   });
 });
