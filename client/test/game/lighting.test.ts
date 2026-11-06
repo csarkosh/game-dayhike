@@ -60,6 +60,8 @@ import { WEATHER_PRESETS, SUN_CLOUD_LOSS, fogDensityUnder, exposureUnder, ambien
 import { SUN_PEAK } from "../../src/game/sky.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 import { STARE_DIM } from "../../src/game/gradeParams.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { writeExposureSilently } from "../../src/game/lighting.js";
 
 const CLEAR = WEATHER_PRESETS.clear;
 
@@ -839,6 +841,46 @@ describe("weather in lighting", () => {
     const lighting = light(s, { hour: 12, weather: CLEAR });
     lighting.setWeather(WEATHER_PRESETS.rain, 3);
     expect(lighting.weather).toEqual(CLEAR);
+    lighting.dispose();
+  });
+});
+
+describe("the silent exposure write (the material path)", () => {
+  it("reaches the uniform without raising the update observers", () => {
+    const image = new ImageProcessingConfiguration();
+    let raised = 0;
+    image.onUpdateParameters.add(() => raised++);
+    image.exposure = 0.8; // Babylon's setter: raises once
+    writeExposureSilently(image, 0.65);
+    expect(raised).toBe(1);
+    expect(image.exposure).toBeCloseTo(0.65, 12);
+    const sets: [string, number][] = [];
+    image.bind({ setFloat: (n: string, v: number) => sets.push([n, v]), setFloat2() {}, setFloat3() {}, setFloat4() {}, setColor4() {}, setColorCurves() {} } as never);
+    const exposureSet = sets.find(([n]) => n === "exposureLinear");
+    expect(exposureSet?.[1]).toBeCloseTo(0.65, 12);
+  });
+
+  it("never lands on exactly 1, which would want the EXPOSURE define flipped", () => {
+    const image = new ImageProcessingConfiguration();
+    image.exposure = 0.9;
+    writeExposureSilently(image, 1);
+    expect(image.exposure).not.toBe(1);
+    expect(Math.abs(image.exposure - 1)).toBeLessThan(2e-6);
+  });
+
+  it("marks no material dirty for a stare, where Babylon's setter marks every one", () => {
+    const s = scene();
+    const lighting = light(s, { hour: 12, weather: CLEAR });
+    const material = new PBRMaterial("probe", s);
+    const dirty = vi.spyOn(material as unknown as { _markAllSubMeshesAsImageProcessingDirty(): void }, "_markAllSubMeshesAsImageProcessingDirty");
+    const rest = s.imageProcessingConfiguration.exposure;
+    lighting.setStare(0.5);
+    expect(dirty).not.toHaveBeenCalled();
+    expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(rest * (1 - STARE_DIM / 2), 12);
+    // The control: the public setter is what raises it.
+    s.imageProcessingConfiguration.exposure = 0.123;
+    expect(dirty).toHaveBeenCalledTimes(1);
+    material.dispose();
     lighting.dispose();
   });
 });

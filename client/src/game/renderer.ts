@@ -3259,7 +3259,6 @@ function buildRenderer(
       lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x), engine.getDeltaTime() / 1000);
       // The stare dims the frame's exposure: the lighting's on the material
       // path, so a weather fade's applies keep it; the grade's on the post path.
-      lighting.setStare(stareLens.level);
       // Before the sky's first slices there is no night factor; the day's 0
       // stands in, for frames no one sees.
       // The death's closing dark rides the stare's shade, driven to full.

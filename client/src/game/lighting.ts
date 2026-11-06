@@ -298,6 +298,26 @@ export function shadowMapDrawn(darkness: number, sunIntensity: number): boolean 
   return darkness < SHADOW_INVISIBLE_DARKNESS && sunIntensity > SHADOW_INVISIBLE_SUN;
 }
 
+/**
+ * Writes the scene's exposure on the material path without raising the
+ * configuration's update observers. Babylon's `exposure` setter notifies
+ * `onUpdateParameters`, on which every material in the scene marks all its
+ * sub-meshes image-processing-dirty and re-prepares its defines and effect
+ * next frame: on a phone that was a fifth of the main thread's time while
+ * the stare animated the exposure (2026-11-05, the Pixel 9). The value is a
+ * uniform of the compiled shader: `bind` reads the stored field into
+ * `exposureLinear` at every material bind, so a silent write reaches every
+ * material on its next draw. One thing the define does key on the value,
+ * `EXPOSURE = exposure !== 1.0`, so no silent write lands on exactly 1: a
+ * value that would is nudged by one part in a million. The first write of a
+ * `Lighting` goes through the setter (`createLighting`), so the define is
+ * compiled true once and never needs to flip. `lighting.test.ts` pins what
+ * this relies on against the installed Babylon.
+ */
+export function writeExposureSilently(image: ImageProcessingConfiguration, value: number): void {
+  (image as unknown as { _exposure: number })._exposure = value === 1 ? 1 + 1e-6 : value;
+}
+
 /** The shadow generator's darkness under `w`: the weather's, held at
  * SHADOW_FLOOR or above. */
 export function sunShadowDarkness(w: WeatherParams): number {
@@ -638,6 +658,10 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     image.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
     image.contrast = 1.1;
     image.ditheringEnabled = true;
+    // The one write through Babylon's setter: it compiles the exposure's
+    // define true (`writeExposureSilently`); every later write is silent.
+    const first = exposureUnder(weather, sunPositionAt(hour).y);
+    image.exposure = first === 1 ? 1 + 1e-6 : first;
     // Colour curves carry the split-tone grade on this path, written by
     // post.ts's update() rather than here — see the doc comment above
     // createLighting. Neutral is 0 on Babylon's scale, so enabling them under
@@ -661,7 +685,8 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // fade's, keeps the stare's dimming. On the post path the grade pass
     // carries its own exposure and no material reads this one.
     exposure = exposureUnder(weather, sunPositionAt(hour).y);
-    image.exposure = exposure * sight;
+    if (options.colourPath === "material") writeExposureSilently(image, exposure * sight);
+    else image.exposure = exposure * sight;
     // Until the table holds the slices either side of noon and of the hour,
     // the state cannot be made: whatever stands (the defaults, or the last
     // hour's light) stays, and the next slice to arrive tries again.
@@ -784,7 +809,7 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     setStare(stare) {
       if (options.colourPath !== "material") return;
       sight = sightUnder(stare);
-      image.exposure = exposure * sight;
+      writeExposureSilently(image, exposure * sight);
     },
     addShadowMesh(mesh, reach = "far") {
       mesh.receiveShadows = true;
