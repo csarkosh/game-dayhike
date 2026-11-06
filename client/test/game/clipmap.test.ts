@@ -7,6 +7,7 @@ import {
 } from "../../src/sim/terrain.js";
 import {
   BASE_SPACING,
+  BASE_SPACING_BY_TIER,
   blendWeight,
   coarseHeight,
   COVER_FINE_SPACING,
@@ -377,6 +378,21 @@ describe("ringGeometry", () => {
     // Teeth: the tint genuinely moves this vertex — a sampleInto that dropped
     // the density argument would bake `bare` instead.
     expect(Math.fround(bare.g)).not.toBe(Math.fround(tinted.g));
+  });
+});
+
+describe("the base spacing by tier", () => {
+  it("doubles on low, so a ring covers twice the ground and a walk crosses its lattice half as often", () => {
+    expect(BASE_SPACING_BY_TIER).toEqual({ low: 2, medium: 1, high: 1 });
+    expect(ringSpacing(0, 2)).toBe(2);
+    expect(ringSpacing(3, 2)).toBe(16);
+    expect(ringSpacing(3)).toBe(8);
+    const ring = createRingSamples(SEED, 0, 10.3, -7.9, 2);
+    expect(ring.spacing).toBe(2);
+    // The origin snaps to the lattice of twice the spacing.
+    expect(Math.abs(ring.originX % 4)).toBe(0);
+    expect(Math.abs(ring.originZ % 4)).toBe(0);
+    expect(createRingSamples(SEED, 0, 10.3, -7.9).spacing).toBe(1);
   });
 });
 

@@ -62,6 +62,7 @@ import {
   prepareRingMove,
   snapOrigin,
   BASE_SPACING,
+  BASE_SPACING_BY_TIER,
   RING_COUNT,
   WEIGHTS2_STRIDE,
   type CoveredGround,
@@ -405,8 +406,10 @@ export function createClipmap(
   scene: Scene,
   seed: number,
   jobs?: SyncJobs,
-  options: { deferred?: boolean; cover?: (camX: number, camZ: number) => CoveredGround | null } = {},
+  options: { deferred?: boolean; cover?: (camX: number, camZ: number) => CoveredGround | null; baseSpacing?: number } = {},
 ): Clipmap {
+  /** The finest ring's spacing (m): the tier's (`BASE_SPACING_BY_TIER`). */
+  const base = options.baseSpacing ?? BASE_SPACING;
   const rings: RingSamples[] = [];
   const meshes: Mesh[] = [];
   /** The origins each ring's buffers were built from: its own, the finer
@@ -647,7 +650,7 @@ export function createClipmap(
   function* firstBuild(onRing?: (level: number) => void): Slices {
     if (rings.length === RING_COUNT) return;
     for (let level = 0; level < RING_COUNT; level++) {
-      rings.push(createRingSamples(seed, level, 0, 0));
+      rings.push(createRingSamples(seed, level, 0, 0, base));
       onRing?.(level);
       yield;
     }
@@ -673,7 +676,7 @@ export function createClipmap(
         headingZ = hz;
       }
       const kind = crossingAt(
-        crossing, camX, camZ, snapOrigin(camX, BASE_SPACING), snapOrigin(camZ, BASE_SPACING), CLIPMAP_STEP,
+        crossing, camX, camZ, snapOrigin(camX, base), snapOrigin(camZ, base), CLIPMAP_STEP,
         jobs !== undefined,
       );
       if (kind === "none") {
@@ -2412,6 +2415,7 @@ function buildRenderer(
     ? null
     : createClipmap(scene, forest.seed, jobs, {
       deferred: options.deferClipmap,
+      baseSpacing: BASE_SPACING_BY_TIER[tier],
       // The ground the patches drawn now cover, not the camera's: theirs
       // may still be building. They are made below, and updated before it.
       cover: () => facePatches?.cover() ?? null,

@@ -18,10 +18,21 @@ import { elevationSampleAt } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { classifySurface } from "./terrainSurface.js";
 import { waterGroundAt } from "./waterGround.js";
+import type { QualityTier } from "./quality.js";
 
 export const RING_CELLS = 128;
 export const RING_COUNT = 7;
 export const BASE_SPACING = 1;
+/**
+ * The finest ring's sample spacing (m) by quality tier: medium's and high's
+ * the base, Low's twice it (2026-11-05), so each ring covers twice the
+ * ground, a walk crosses each ring's lattice half as often and the terrain
+ * sampling a walk drives is halved, on the phones Low stands for. The ring
+ * count is unchanged, so the reach doubles with it. What it costs is the
+ * ground under the feet at 2 m instead of 1 m, and the chord-excess lift,
+ * which grows with the spacing (docs/rendering/2026-11-05-low-tier-material-path.md).
+ */
+export const BASE_SPACING_BY_TIER: Readonly<Record<QualityTier, number>> = { low: 2, medium: 1, high: 1 };
 /** Components per vertex in `weights2`/`terrainWeights2`: pebble, detail,
  * duff, canopy density. Every allocation, write and copy of that buffer is
  * sized off this constant so a stride change cannot silently corrupt the
@@ -118,8 +129,8 @@ export type RingGeometry = {
   cover: Float32Array;
 };
 
-export function ringSpacing(level: number): number {
-  let s = BASE_SPACING;
+export function ringSpacing(level: number, base = BASE_SPACING): number {
+  let s = base;
   for (let i = 0; i < level; i++) s *= 2;
   return s;
 }
@@ -200,8 +211,8 @@ function sampleHalfInto(t: Target, seed: number, jx: number, jz: number): void {
   t.a.hh[jz * HALF_SIDE + jx] = elevationSampleAt(seed, t.originX + jx * half, t.originZ + jz * half).h;
 }
 
-export function createRingSamples(seed: number, level: number, camX: number, camZ: number): RingSamples {
-  const spacing = ringSpacing(level);
+export function createRingSamples(seed: number, level: number, camX: number, camZ: number, base = BASE_SPACING): RingSamples {
+  const spacing = ringSpacing(level, base);
   const originX = snapOrigin(camX, spacing);
   const originZ = snapOrigin(camZ, spacing);
   const target: Target = { a: ringArrays(), originX, originZ, spacing };

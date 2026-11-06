@@ -21,7 +21,7 @@ vi.mock("../../src/game/groundMaps.js", () => ({
 }));
 
 import "../../src/sim/passes/index.js";
-import { createClipmap } from "../../src/game/renderer.js";
+import { createClipmap, type Clipmap } from "../../src/game/renderer.js";
 import { snapOrigin } from "../../src/game/clipmap.js";
 import { createSyncJobs, finish as finishSlices, type Slices, type SyncJobs } from "../../src/game/syncJobs.js";
 import { collectBladeCells, createBladeCollector } from "../../src/game/bladeField.js";
@@ -362,4 +362,26 @@ describe("rebuilds as jobs: what is computed", () => {
     clipmap.dispose();
     engine.dispose();
   }, timeLimit(120_000));
+});
+
+describe("the clipmap's base spacing by tier", () => {
+  it("builds rings twice as wide when given twice the spacing", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const fine = createClipmap(scene, SEED);
+    fine.update(0.5, 0.5);
+    const coarse = createClipmap(scene, SEED, undefined, { baseSpacing: 2 });
+    coarse.update(0.5, 0.5);
+    const width = (c: Clipmap, level: number): number => {
+      const positions = c.meshes[level]!.getVerticesData("position") as Float32Array;
+      let min = Infinity, max = -Infinity;
+      for (let i = 0; i < positions.length; i += 3) { min = Math.min(min, positions[i]!); max = Math.max(max, positions[i]!); }
+      return max - min;
+    };
+    expect(width(coarse, 0)).toBeCloseTo(2 * width(fine, 0), 6);
+    expect(width(coarse, 3)).toBeCloseTo(2 * width(fine, 3), 6);
+    fine.dispose();
+    coarse.dispose();
+    engine.dispose();
+  });
 });
