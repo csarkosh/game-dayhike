@@ -85,11 +85,14 @@ world-ready (the standing player is dead by 40 s), and a CPU profile when asked.
 The branch's build (`ed381b4e`, a preview channel), the same phone, the same views, the jobs'
 counters read each frame:
 
-| Moment on Low, after, the phone cool | Mean | p95 | Longest frame | Late job runs |
-|---|---|---|---|---|
-| The reveal, two windows (the third is the death) | 16.9, 16.8 ms | 16.7, 16.7 ms | 75 ms | 0 |
-| Walking in the night forest, three windows | 17.0, 17.1, 16.6 ms | 16.7 ms | 108 ms | 0 |
-| The trailhead, three windows | 16.7, 16.7, 16.6 ms | 16.7 ms | 42 ms | 0 |
+| Moment on Low, after, the phone cool | Mean | p95 | Longest frame |
+|---|---|---|---|
+| The reveal, two windows (the third is the death) | 16.9, 16.8 ms | 16.7, 16.7 ms | 75 ms |
+| Walking in the night forest, three windows | 17.0, 17.1, 16.6 ms | 16.7 ms | 108 ms |
+| The trailhead, three windows | 16.7, 16.7, 16.6 ms | 16.7 ms | 42 ms |
+
+(The forest and the night forest standing still, which held 60 before, were not re-run after;
+the trailhead stands for them and the walk begins at the night forest's stand.)
 
 That run was on a phone that had rested; the morning's rows were taken on one warm from an hour
 of runs, at Android's thermal status 1, where the CPU is held back and even a page's world takes
@@ -109,13 +112,13 @@ is shader compiles on the Hollow's and the night's first draw (`getProgramParame
 exposure is written on a steady night, and the warm walk is the same on both builds. Its profile
 on the branch is 43 % the renderer's `sync`, of which the streaming jobs are 35 % (the clipmap's
 ring sampling through `olympic.ts`, `field.ts`, `montane.ts`, `trail.ts`, and its geometry's
-upload slice), and 42 % Babylon's draw; the jobs never ran late in any window, so the frames over
-20 ms are the budget's 4 ms and the upload slice on a throttled CPU, not a forced late run.
+upload slice), and 42 % Babylon's draw.
 
 Of the design's ladder of streaming levers, the first (one ring fewer) was dropped before it was
 built: `FOG_DISTANCE` is 4 km and six rings reach 2 km, and the outermost ring rebuilds once every
-128 m walked, so dropping it buys nothing. The second (late runs spread over frames) answers a
-cause the counters ruled out. The third was built: Low samples the clipmap at twice the base
+128 m walked, so dropping it buys nothing. The second (late runs spread over frames) was not
+taken: the pads that hide a late rebuild are reckoned against the 100 ms bound, and the profile
+puts the walking cost in the sampling itself, not in its timing. The third was built: Low samples the clipmap at twice the base
 spacing (`BASE_SPACING_BY_TIER`), so each ring covers twice the ground and a walk crosses each
 lattice half as often, the ring count unchanged and the reach doubled with it. The near ground at
 2 m and at 1 m, shot at the same stand on Low, cannot be told apart under the ground cover.
@@ -132,23 +135,27 @@ Low, against 20 to 24 before, and the bar the design set for the walk (a mean at
 and a p95 at or under 20) is met only while the phone is cool. What is left of the warm walking
 frame is Babylon's own draw (42 %) and the terrain's sampling, each a round of its own.
 
-The counters say one more thing about that sampling. While walking, nearly all of the jobs' time
-is under `idle`: the clipmap's prepare-ahead, which samples the ground its rings will move onto
-next with the budget no job needs, so that a crossing commits a move without sampling. On the
-warm Pixel it took 4.2 s of a 10 s window, 7 ms a frame against a 4 ms budget: a slice that says
-nothing of its length runs whenever any budget is left, and on a throttled phone a slice sized for
-a desktop's tenth of a millisecond runs for several. The budget bounds the slices begun, not the
-time spent, and on this CPU that is the difference between 17 ms and 21. Sizing the prepare-ahead's
-slices by the machine (or declaring their length, which the scheduler already honours) is the
-first lever of the next round.
+The jobs' counters, on their first run, handed the harness the scheduler's live record, so
+each window's reading was its last frame's alone (found in the branch's review and fixed: the
+readout now copies, and the harness refuses a window of identical readings). What those single
+frames showed is still worth a next round's look: in each, the frame's job time was under `idle`,
+the clipmap's prepare-ahead, which samples the ground its rings will move onto next with the
+budget no job needs, and it ran 5 to 8 ms in that frame against a 4 ms budget, since a slice that
+says nothing of its length runs whenever any budget is left and a slice sized for a desktop's
+tenth of a millisecond runs longer on a throttled phone. The window sums with the fixed readout
+are owed from the next cable session.
 
 ## What is left
 
 - The ground cloud, the night's mist volume the Hollow comes out of on the post tiers, is still
   none on Low (`CLOUD_STEPS` 0). Wanted; a round of its own, measured on the phone.
-- The streaming jobs' slices on a slow CPU: the idle prepare-ahead overruns the 4 ms budget by
-  the length of its last slice every frame (above). Declaring the slices' length, or sizing them
-  by a measured tick, would hold the budget.
+- The streaming jobs' slices on a slow CPU: single frames show the idle prepare-ahead past the
+  4 ms budget by the length of its last slice (above); the window sums with the fixed counters,
+  then, if they bear it out, declaring the slices' length or sizing them by a measured tick.
+- The look beside medium: the reveal was shot on both tiers from the same build
+  (`look/reveal-low-vs-medium.jpg` in the lab folder) and the Hollow is the dark figure with its
+  eyes on both; a shade coming in and a lunge resolving beside medium's, and the owner's own eye
+  on all of it and on Low's 2 m ground, are owed.
 - The canvas resolution on phones: 250 × 452 is cheap and the GPU is idle, so a sharper canvas
   on Low is a look decision now that the CPU has room.
 - The summit scene's first frames still stall (75 ms here, 0.85 s before): the night's and the
