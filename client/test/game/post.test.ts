@@ -17,8 +17,8 @@ import { postFeaturesFor, MSAA_SAMPLES, TAA_BLEND, TAA_BLEND_STILL, TAA_CLIP, TA
 import taaFx from "../../src/game/shaders/taa.fragment.fx?raw";
 import taaSharpenFx from "../../src/game/shaders/taaSharpen.fragment.fx?raw";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "../../src/game/weather.js";
-import { STARE_LENS_REST, stareReach, type StareLens } from "../../src/game/stareLens.js";
-import { CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, gradeRecordUnder, STARE_VIGNETTE } from "../../src/game/gradeParams.js";
+import { STARE_LENS_REST, type StareLens } from "../../src/game/stareLens.js";
+import { CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, gradeRecordUnder } from "../../src/game/gradeParams.js";
 import { BlurPostProcess } from "@babylonjs/core/PostProcesses/blurPostProcess.js";
 
 /** A lens half closed, the Hollow to the right, between beats. */
@@ -100,14 +100,16 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     ip.exposure = 0.7;
     post.update(WEATHER_PRESETS.eerie, 17, 0, 1, HALF_STARE);
     expect(ip.exposure).toBe(0.7);
-    // The stare on this path is Babylon's own vignette: heavier by the
-    // lens's reach, and its centre moved off the Hollow's side.
+    // The stare on this path is the veil's (shadeVeil.ts), the crawling
+    // darkness the grade draws on the post tiers: the vignette stays the
+    // record's own, centred, and never stands in for it (it did, heavier by
+    // the lens's reach and moved off the Hollow's side, until 2026-11-05).
     const rest = gradeRecordUnder(WEATHER_PRESETS.eerie, 17, 0, 1).vignetteWeight;
-    expect(ip.vignetteWeight).toBeCloseTo(rest + STARE_VIGNETTE * stareReach(HALF_STARE), 2);
-    expect(ip.vignetteCenterX).toBeLessThan(0);
-    expect(ip.vignetteCenterY).toBeCloseTo(0, 12);
-    post.update(WEATHER_PRESETS.eerie, 17, 0, 1, STARE_LENS_REST);
+    expect(ip.vignetteWeight).toBeCloseTo(rest, 2);
     expect(ip.vignetteCenterX).toBe(0);
+    expect(ip.vignetteCenterY).toBe(0);
+    post.update(WEATHER_PRESETS.eerie, 17, 0, 1, STARE_LENS_REST);
+    expect(ip.vignetteWeight).toBeCloseTo(rest, 2);
     // The chase on this path: the shadows turned toward burgundy and deepened.
     const g = gradeUnder(WEATHER_PRESETS.eerie);
     expect(ip.colorCurves!.shadowsHue).toBeCloseTo(g.shadowsHue, 9);

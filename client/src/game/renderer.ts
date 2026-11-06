@@ -23,7 +23,7 @@ import type { Vec3, WorldState } from "../sim/types.js";
 import { AiState } from "../sim/types.js";
 import type { Forest } from "../sim/forest.js";
 import { isHollow } from "../sim/hollow.js";
-import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
+import { STARE_LENS_REST, stareShadeUnder, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
 import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import {
   DOOR_IN_M, HEADLAMP_CONE, HEADLAMP_RANGE,
@@ -36,6 +36,7 @@ import type { Road } from "./scene/roadPath.js";
 import { stageCar } from "./scene/sceneStage.js";
 import type { TrailheadCar } from "./trailheadMeshes.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
+import { createShadeVeil } from "./shadeVeil.js";
 import { CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, capPose, summitShot, type SceneBase, type SceneContext } from "./cutscene.js";
@@ -2833,6 +2834,10 @@ function buildRenderer(
   // material path, below).
   const silhouette = forest !== null ? createShadeSilhouette(scene, camera) : null;
   partOf(silhouette);
+  // The veil (shadeVeil.ts): the material path's quad that darkens the frame
+  // by the mask and the stare, as the grade does with the chain.
+  const veil = silhouette !== null && !postFeatures.pipeline ? createShadeVeil(scene) : null;
+  partOf(veil);
   // The ground cloud (cloudParams.ts): the night's mist as a volume the
   // atmosphere marches through, on the post tiers, resting on a height map
   // of the ground round the eye that is rebuilt as the eye moves.
@@ -3145,6 +3150,7 @@ function buildRenderer(
       if (silhouette !== null) {
         silhouette.sync(views.shades());
         post.setShades(silhouette.texture, silhouette.any());
+        veil?.setShades(silhouette.texture, silhouette.any());
       }
       if (cloudSteps > 0 && forest !== null) {
         if (cloudGroundAt === null || Math.hypot(camera.position.x - cloudGroundAt.x, camera.position.z - cloudGroundAt.z) > CLOUD_GROUND_REBUILD_M) {
@@ -3265,6 +3271,8 @@ function buildRenderer(
       const shown = endClose > 0 ? { ...stareLens, level: Math.max(stareLens.level, endClose), phase: 0.9 } : stareLens;
       lighting.setStare(shown.level);
       post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, shown, lensStrength, chaseCast, endBlur);
+      // The stare's closing darkness on the material path is the veil's.
+      veil?.setStare(stareShadeUnder(shown, seconds));
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
@@ -3551,6 +3559,7 @@ function buildRenderer(
     },
     dispose() {
       views.dispose();
+      veil?.dispose();
       silhouette?.dispose();
       droppedCap?.dispose();
       localLamp.dispose();

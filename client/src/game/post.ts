@@ -17,7 +17,7 @@ import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
 import type { WeatherParams } from "./weather.js";
 import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
 import { mixPalette, PAINT_FADE_SECONDS, PAINT_OILS, type PaintPalette } from "./gradeParams.js";
-import { CHASE_LIFT, CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, CHASE_TINT, gradeRecordUnder, STARE_VIGNETTE, type GradeRecord } from "./gradeParams.js";
+import { CHASE_LIFT, CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, CHASE_TINT, gradeRecordUnder, type GradeRecord } from "./gradeParams.js";
 import type { StareLens } from "./stareLens.js";
 import { MSAA_SAMPLES, PAINT_SCALE, PAINT_STRENGTH, paintTargetSize, paintTexelRadius, TAA_BLEND, TAA_CLIP, TAA_SHARPEN, taaBlendFor, taaCameraPixels, taaJitter, type PostFeatures } from "./postParams.js";
 import { LENS, lensDropletMap } from "./lensParams.js";
@@ -680,12 +680,11 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       // The post path: the grade's own uniforms are read as it applies.
       if (grade !== null) return;
       // Material path: the same intent through Babylon's own operators, the
-      // exposure aside (see the doc comment above).
-      // The stare here is Babylon's own vignette, heavier and moved off the
-      // Hollow: this path has no pass to draw the crawling edge with.
-      image.vignetteWeight = record.vignetteWeight + STARE_VIGNETTE * record.stare.reach;
-      image.vignetteCenterX = record.stare.x;
-      image.vignetteCenterY = record.stare.y;
+      // exposure aside (see the doc comment above). The stare here is the
+      // veil's (shadeVeil.ts), the crawling darkness the grade draws on the
+      // post path, so the vignette is the record's own (until 2026-11-05 it
+      // stood in for the stare, heavier and moved off the Hollow).
+      image.vignetteWeight = record.vignetteWeight;
       if (image.colorCurves) {
         const curves = image.colorCurves;
         const g = gradeUnder(weather);
