@@ -130,13 +130,25 @@ the run-to-run spread of a warm phone is of the same size, so its gain is real b
 stays. **The round stops here**: a warm Pixel 9 walks the night forest at 18 to 21 ms a frame on
 Low, against 20 to 24 before, and the bar the design set for the walk (a mean at or under 17.5 ms
 and a p95 at or under 20) is met only while the phone is cool. What is left of the warm walking
-frame is Babylon's own draw (42 %) and the terrain's sampling under the 4 ms budget, each a round
-of its own: fewer meshes to cull and bind on Low, and cells per ring for the clipmap.
+frame is Babylon's own draw (42 %) and the terrain's sampling, each a round of its own.
+
+The counters say one more thing about that sampling. While walking, nearly all of the jobs' time
+is under `idle`: the clipmap's prepare-ahead, which samples the ground its rings will move onto
+next with the budget no job needs, so that a crossing commits a move without sampling. On the
+warm Pixel it took 4.2 s of a 10 s window, 7 ms a frame against a 4 ms budget: a slice that says
+nothing of its length runs whenever any budget is left, and on a throttled phone a slice sized for
+a desktop's tenth of a millisecond runs for several. The budget bounds the slices begun, not the
+time spent, and on this CPU that is the difference between 17 ms and 21. Sizing the prepare-ahead's
+slices by the machine (or declaring their length, which the scheduler already honours) is the
+first lever of the next round.
 
 ## What is left
 
 - The ground cloud, the night's mist volume the Hollow comes out of on the post tiers, is still
   none on Low (`CLOUD_STEPS` 0). Wanted; a round of its own, measured on the phone.
+- The streaming jobs' slices on a slow CPU: the idle prepare-ahead overruns the 4 ms budget by
+  the length of its last slice every frame (above). Declaring the slices' length, or sizing them
+  by a measured tick, would hold the budget.
 - The canvas resolution on phones: 250 × 452 is cheap and the GPU is idle, so a sharper canvas
   on Low is a look decision now that the CPU has room.
 - The summit scene's first frames still stall (75 ms here, 0.85 s before): the night's and the
