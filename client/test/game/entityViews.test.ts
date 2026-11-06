@@ -9,7 +9,7 @@ import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js"
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { ARMS, EntityViews } from "../../src/game/entityViews.js";
+import { ARMS, EntityViews, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, opacityOf } from "../../src/game/entityViews.js";
 import { createCharacterPool, type CharacterLoader, type CharacterPool } from "../../src/game/characterModel.js";
 import type { EnemyState } from "../../src/sim/types.js";
 import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } from "../../src/game/headlamp.js";
@@ -428,6 +428,33 @@ describe("EntityViews the Hollow", () => {
     views.sync(world, 99, 1);
     expect(capsule.isEnabled()).toBe(false);
     expect(scene.getTransformNodeByName("character_7_orientation")!.isEnabled()).toBe(true);
+    views.dispose();
+  });
+});
+
+describe("EntityViews the shades go to the mask", () => {
+  it("lists a shade's model for the silhouette mask and never fades its meshes by visibility", async () => {
+    const pool = createCharacterPool(catalog, fromDisk);
+    await pool.load(scene, ["hollow.antlered"]);
+    const views = new EntityViews(scene, pool);
+    const world = state();
+    world.enemies.set(7, { ...hollow(7, 1, 2), ai: AiState.Shade });
+    views.sync(world, 99, 1, undefined, 0);
+    expect(views.shades()).toHaveLength(1);
+    expect(views.shades()[0]!.presence).toBe(0);
+    expect(views.shades()[0]!.fade).toBe(opacityOf(0));
+    const meshes = scene.getTransformNodeByName("character_7_orientation")!.getChildMeshes(false);
+    expect(meshes.length).toBeGreaterThan(0);
+    expect(meshes.every((m) => m.visibility === 1)).toBe(true);
+    views.sync(world, 99, 1, undefined, SHADE_FADE_IN_S / 2);
+    expect(views.shades()[0]!.presence).toBeCloseTo(0.5, 6);
+    expect(meshes.every((m) => m.visibility === 1)).toBe(true);
+    // Gone from the state: it stays in the list, going out, until released.
+    world.enemies.delete(7);
+    views.sync(world, 99, 1, undefined, SHADE_FADE_OUT_S / 4);
+    expect(views.shades()).toHaveLength(1);
+    expect(views.shades()[0]!.presence).toBeCloseTo(0.25, 6);
+    expect(meshes.every((m) => m.visibility === 1)).toBe(true);
     views.dispose();
   });
 });

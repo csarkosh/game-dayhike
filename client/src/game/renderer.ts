@@ -2828,11 +2828,11 @@ function buildRenderer(
   setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLives, spray: water?.edge.spray ?? null });
 
   const views = new EntityViews(scene);
-  // The haunt's shades: soft figures in a pale mist on the post tiers (the
-  // mask the grade reads), the Hollow fading in and out on the low tier.
-  const silhouette = forest !== null && postFeatures.pipeline ? createShadeSilhouette(scene, camera) : null;
+  // The haunt's shades: soft figures in a pale mist, drawn into a mask on
+  // every path (the grade reads it on the post tiers, the veil on the
+  // material path, below).
+  const silhouette = forest !== null ? createShadeSilhouette(scene, camera) : null;
   partOf(silhouette);
-  views.softShades = silhouette !== null;
   // The ground cloud (cloudParams.ts): the night's mist as a volume the
   // atmosphere marches through, on the post tiers, resting on a height map
   // of the ground round the eye that is rebuilt as the eye moves.

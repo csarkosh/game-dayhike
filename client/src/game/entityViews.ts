@@ -188,14 +188,10 @@ export class EntityViews {
   /** Each shade's softness (shadeSilhouette.ts): 1 a blur in the mist, 0 the Hollow; a lunge resolves as it closes on the local eye. */
   private readonly soft = new Map<number, number>();
   private readonly near = new Map<number, number>();
-  /**
-   * Whether the shades are drawn soft, through the silhouette mask
-   * (shadeSilhouette.ts): then this sets their fade and softness and leaves
-   * their `visibility` and layer to the mask; otherwise (the low tier) they
-   * are the Hollow, fading by `visibility` here.
-   */
-  softShades = false;
-  /** This frame's shades for the mask: each node, its fade and its softness. */
+  /** This frame's shades for the silhouette mask (shadeSilhouette.ts), which
+   * sets their fade and softness and leaves their `visibility` and layer to
+   * the mask on every path (the low tier's own fade by `visibility` went
+   * 2026-11-05: the mask and the veil draw the figure there too). */
   private readonly shadeList: ShadeEntry[] = [];
   private readonly lamps = new Map<number, SpotLight>();
   private readonly playerMaterial: PBRMaterial;
@@ -389,11 +385,10 @@ export class EntityViews {
         // way the sim has it going: the figure, and its head with it, is
         // always turned to whoever is looking at it.
         entry.view.node.rotation.y = this.facingOf(state, localId, enemy.pos.x, enemy.pos.z, enemy.yaw);
-        if (this.softShades && this.soft.has(id)) {
+        if (this.soft.has(id)) {
           const soft = this.soft.get(id) as number;
           this.shadeList.push({ node: entry.view.node, fade: opacityOf(fade.level), presence: fade.level, soft, near: this.near.get(id) ?? 1, eyes: entry.eyes, eyeLevel: eyeLevelOf(soft, fade.level) });
         }
-        else setVisibility(entry.view.node, fade.level);
         // Enemy velocity never reaches a client (it is zeroed there), so the
         // pace is measured from how far the drawn body moved: the same on
         // every peer, and it walks through Emerge as well as the hunt.
@@ -462,8 +457,7 @@ export class EntityViews {
         this.fading.delete(id);
         continue;
       }
-      if (this.softShades) this.shadeList.push({ node: out.entry.view.node, fade: opacityOf(out.level), presence: out.level, soft: out.soft, near: out.near, eyes: out.entry.eyes, eyeLevel: eyeLevelOf(out.soft, out.level) });
-      else setVisibility(out.entry.view.node, out.level);
+      this.shadeList.push({ node: out.entry.view.node, fade: opacityOf(out.level), presence: out.level, soft: out.soft, near: out.near, eyes: out.entry.eyes, eyeLevel: eyeLevelOf(out.soft, out.level) });
     }
     this.pruneModels(this.enemyModels, state.enemies);
     this.prune(this.enemies, state.enemies);
@@ -500,7 +494,7 @@ export class EntityViews {
     setLamp(lamp, true);
   }
 
-  /** This frame's shades for the silhouette mask, when `softShades`. */
+  /** This frame's shades for the silhouette mask. */
   shades(): readonly ShadeEntry[] {
     return this.shadeList;
   }
