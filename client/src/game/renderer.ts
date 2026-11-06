@@ -2394,14 +2394,23 @@ function buildRenderer(
   const jobs = createSyncJobs(() => performance.now());
   // The measurement mode (`?gpuTime`): the jobs' milliseconds a frame, by
   // owner, read out as `window.__syncJobs()` for a harness that times whole
-  // frames (tools/frame-budget/phone.mjs), beside `__gpuTime`.
-  if (options.gpuTime === true) {
-    const global = globalThis as { __syncJobs?: () => SyncJobs["last"] };
-    global.__syncJobs = () => jobs.last;
-    made(() => {
-      if (global.__syncJobs !== undefined) delete global.__syncJobs;
-    });
-  }
+  // frames (tools/frame-budget/phone.mjs), beside `__gpuTime`. A copy each
+  // time: the scheduler's record is mutated in place every frame, and a
+  // harness that keeps a reading a frame would otherwise hold one object
+  // six hundred times (2026-11-05, found in review).
+  const jobsReadout = options.gpuTime === true
+    ? {
+      install() {
+        (globalThis as { __syncJobs?: () => SyncJobs["last"] }).__syncJobs = () => ({ ...jobs.last, owners: { ...jobs.last.owners } });
+      },
+      dispose() {
+        const global = globalThis as { __syncJobs?: unknown };
+        if (global.__syncJobs !== undefined) delete global.__syncJobs;
+      },
+    }
+    : null;
+  jobsReadout?.install();
+  partOf(jobsReadout);
 
   // ---- Generated terrain: geometry clipmap -------------------------------
   //
@@ -3609,6 +3618,7 @@ function buildRenderer(
       rainSplash?.dispose();
       motes?.dispose();
       gpuTime?.dispose();
+      jobsReadout?.dispose();
       post.dispose();
       skinShading.dispose();
       // A wait for the sky ends unresolved: nothing waits on what has gone.

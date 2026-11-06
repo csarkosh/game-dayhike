@@ -76,6 +76,19 @@ describe("the gpu time readout in a renderer", () => {
     expect(scalesSet(true)).toEqual([]);
   }, timeLimit(120_000));
 
+  it("with ?gpuTime the jobs' readout hands out a copy each time, never the scheduler's live record", () => {
+    const renderer = createRenderer(canvas, level, null, { tier: "low", gpuTime: true, skyTable: skyFixture() });
+    const readout = (globalThis as { __syncJobs?: () => { ms: number; owners: Record<string, number> } }).__syncJobs;
+    expect(readout).toBeTypeOf("function");
+    const first = readout!();
+    const second = readout!();
+    expect(first).not.toBe(second);
+    expect(first.owners).not.toBe(second.owners);
+    expect(first).toEqual(second);
+    renderer.dispose();
+    expect((globalThis as { __syncJobs?: unknown }).__syncJobs).toBeUndefined();
+  }, timeLimit(120_000));
+
   it("without ?gpuTime nothing is installed", () => {
     const renderer = createRenderer(canvas, level, null, { tier: "high", skyTable: skyFixture() });
     expect(renderer.gpuTime).toBeNull();

@@ -85,6 +85,13 @@ export function rowOf(window, sample, about) {
 export function jobsOf(frames) {
   let any = false;
   const out = { ms: 0, lateMs: 0, frames: 0, lateFrames: 0, owners: {} };
+  // A dozen readings or more that are all one and the same is a readout that handed the
+  // scheduler's live record out by reference, and every reading is the last frame's: refused,
+  // so a window's sums are never one frame's counts times its frame count.
+  const read = frames.map((f) => f?.jobs).filter((j) => j != null);
+  if (read.length >= 10 && read[0].ms > 0 && read.every((j) => JSON.stringify(j) === JSON.stringify(read[0]))) {
+    throw new Error(`the jobs' readings alias one record (${read.length} readings all ${JSON.stringify(read[0])}); the page's __syncJobs must hand out a copy`);
+  }
   for (const f of frames) {
     out.frames++;
     const j = f?.jobs;

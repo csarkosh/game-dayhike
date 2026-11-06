@@ -58,4 +58,12 @@ describe("a window's jobs", () => {
     expect(jobsOf(frames)).toEqual({ ms: 6, lateMs: 2, frames: 4, lateFrames: 1, owners: { clipmap: 4.5, forest: 1.5 } });
     expect(jobsOf([{ jobs: null }, {}])).toBeNull();
   });
+  it("refuses a window whose readings are all one and the same, which is a readout that aliased the scheduler's record", () => {
+    const same = { ms: 7.3, lateMs: 0, owners: { idle: 7.3 } };
+    const frames = Array.from({ length: 12 }, () => ({ jobs: { ...same, owners: { ...same.owners } } }));
+    expect(() => jobsOf(frames)).toThrow(/alias/);
+    // Two frames alike is nothing; a dozen with one of them different is a real window.
+    expect(jobsOf(frames.slice(0, 2)).ms).toBeCloseTo(14.6, 9);
+    expect(jobsOf([...frames.slice(0, 11), { jobs: { ms: 1, lateMs: 0, owners: { idle: 1 } } }]).ms).toBeCloseTo(81.3, 9);
+  });
 });
