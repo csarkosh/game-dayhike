@@ -83,6 +83,9 @@ const PINS: Record<string, string> = {
   "deadwood.vertex": "ed84af0f7f03c0c16fcb52292e468a318e043231ac2162ec80b5fcc9ad5d51fe",
   "post.grade": "db0f4203e05446ed0f2cc5d1f837bbf9e0909c88891ff7688807e2c6a0bb0f97",
   "post.halationExtract": "1ee9b9ed30d66fd1e10e4a327104c3e9016a91a2b4ed6aa2cec64cb09df5d3fd",
+  // The shade veil (2026-11-05): the material path's quad, the grade's shade
+  // and stare blocks verbatim (shadeVeilShader.test.ts holds them so).
+  "post.shadeVeil": "e4039c6f7f6847e9f1b2bf2ab05080105b204d478e36de26e4af654135d5f899",
   "skin.fragment": "111388dbf745542db596dae9ac3c41d726c7c0c61aeb4c8e87cc16e9e8c07fdf",
   // Re-pinned for the WGSL-reserved local `macro` renamed `macroRgb`. The
   // puddles' ripples under rain (trailPaint.ts) are stripped before hashing

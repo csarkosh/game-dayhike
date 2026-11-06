@@ -39,6 +39,7 @@ import { attachDeadwood } from "../../../src/game/deadwoodPlugin.js";
 import { attachImpostorBake } from "../../../src/game/impostorBakePlugin.js";
 import halationExtractFragment from "../../../src/game/shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "../../../src/game/shaders/grade.fragment.fx?raw";
+import shadeVeilFragment from "../../../src/game/shaders/shadeVeil.fragment.fx?raw";
 
 /** One plugin, on its own material and mesh, with the states it is bound in. */
 export type PluginCase = {
@@ -227,5 +228,6 @@ export function pluginTexts(): Record<string, string> {
   }
   texts["post.halationExtract"] = halationExtractFragment;
   texts["post.grade"] = gradeFragment;
+  texts["post.shadeVeil"] = shadeVeilFragment;
   return texts;
 }
