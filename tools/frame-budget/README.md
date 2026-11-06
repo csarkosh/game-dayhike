@@ -231,12 +231,54 @@ else is running: say so, find it, and do not average the rows.
 - The post chain's entries are named after the pass that drew into them, so `paint` is the paint
   pass's draw. The last post process draws to the canvas, and that is `mainMs`.
 
+## The phone
+
+Every phone is put on Low with no probe (`gpuClass.ts`, class `mobile`), so Low's standard is a
+phone: the owner's Pixel 9 (Chrome, Android, Mali-G715, WebGL2). `phone.mjs` measures it over the
+cable, as `measure.mjs --remote` measures a rig through a forwarded port:
+
+```bash
+adb forward tcp:9222 localabstract:chrome_devtools_remote
+npm run frame-budget:phone -- --base https://games.csarko.sh/dayhike --tier low \
+  --views trailhead,reveal,walk-night --windows 3 --label pixel9 --tag before \
+  --out /Volumes/CyrusExtSSD/dayhike-lab/frame-budget/<date>-pixel9-low
+```
+
+The phone: Developer options (About phone, Build number tapped seven times), USB debugging, a
+data cable (a charge-only one never shows up), and the Allow prompt accepted. `adb devices` lists
+it; `adb shell cat /proc/net/unix | grep devtools_remote` shows Chrome's socket. A Chrome in the
+background does not answer on it: the harness wakes the screen, keeps it on while charging and
+opens the game in front with `am start` before it attaches, but a phone that locks itself mid-run
+ends the run. Wireless debugging (`adb tcpip` or pairing) is refused from the owner's IDE terminal
+by macOS's local-network rule for Homebrew binaries (2026-11-05); use the cable.
+
+What a phone run is, against the Mac's and the rig's:
+
+- The phone's own size, no emulation: the Pixel's canvas on Low is 250 × 452 (the 375 × 679 CSS
+  viewport under Low's 1.5× scaling, the pixel ratio ignored as on every tier).
+- Whole frames only. The GPU readout (`?gpuTime`) is WebGPU's and every phone draws with WebGL2;
+  the measurement mode is still asked for, so the page exposes `window.__syncJobs()`, the
+  streaming jobs' milliseconds a frame by owner, which each window sums into its row's `jobs`.
+- Windows, not a settle and one sample: `--windows 3` times three consecutive 10 s windows from
+  the first, so a moment that passes (the summit scene, the reveal, the death) is seen in turn. A
+  `check` view's `extraSettleS` is skipped with more than one window.
+- `walk-night` walks: the joystick's base is found in the page (`.touch .stick`) and held forward
+  by synthetic touches (`Input.dispatchTouchEvent`) for every window; `reveal` is the chase view
+  timed from world-ready (the standing player is dead by 40 s, so it cannot be settled into).
+- `--profile` saves a CPU profile of the view (`Profiler.start/stop`); its minified frames read
+  back to source with `node tools/telemetry/symbolicate.mjs <build sha> <stack.txt>`.
+- A JPEG at each window's end beside the rows, and the phone's battery temperature and thermal
+  status (`adb shell dumpsys`) in each row: a run that warms the phone past thermal status 1 is
+  a run to discard.
+
 ## Not measurable yet
 
 The `chase` view is a check view: it is measured only by name and sets no budget. The chase begins
 about 35 s after the page opens, the idle player dies about 13 s later and the title returns at
 60 s, so no settle fits a 13 s sample. It fails with "the canvas went away during the sample" until
-the page gives a phase signal and a player that survives the chase.
+the page gives a phase signal and a player that survives the chase. On a phone the same moment is
+`reveal`, timed in windows from world-ready (above): the summit scene, the Hollow stepping out and
+the death each fall in a window of their own.
 
 ## Traps
 

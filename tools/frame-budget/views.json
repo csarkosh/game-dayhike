@@ -1,12 +1,57 @@
 {
   "views": [
-    { "name": "trailhead", "still": "trailhead" },
-    { "name": "forest", "still": "forest" },
-    { "name": "tarn", "still": "tarn" },
-    { "name": "meadow", "still": "meadow" },
-    { "name": "crest", "still": "crest" },
-    { "name": "beach", "still": "beach" },
-    { "name": "forest-night", "still": "forest", "firstPerson": true, "escalation": 1, "lamp": true },
-    { "name": "chase", "seed": "atmo", "look": "summit", "check": true, "extraSettleS": 60 }
+    {
+      "name": "trailhead",
+      "still": "trailhead"
+    },
+    {
+      "name": "forest",
+      "still": "forest"
+    },
+    {
+      "name": "tarn",
+      "still": "tarn"
+    },
+    {
+      "name": "meadow",
+      "still": "meadow"
+    },
+    {
+      "name": "crest",
+      "still": "crest"
+    },
+    {
+      "name": "beach",
+      "still": "beach"
+    },
+    {
+      "name": "forest-night",
+      "still": "forest",
+      "firstPerson": true,
+      "escalation": 1,
+      "lamp": true
+    },
+    {
+      "name": "chase",
+      "seed": "atmo",
+      "look": "summit",
+      "check": true,
+      "extraSettleS": 60
+    },
+    {
+      "name": "walk-night",
+      "still": "forest",
+      "firstPerson": true,
+      "escalation": 1,
+      "lamp": true,
+      "walk": true,
+      "check": true
+    },
+    {
+      "name": "reveal",
+      "seed": "atmo",
+      "look": "summit",
+      "check": true
+    }
   ]
 }

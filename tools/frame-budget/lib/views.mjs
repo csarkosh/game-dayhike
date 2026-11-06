@@ -1,7 +1,8 @@
 // The frame-budget harness's fixed views: the places in the world every measurement is taken at,
 // each the same however many times it is opened, and the links that open them. A view is a still
 // of the README's (the free camera at a place), a first-person stand at a still's place, or a look
-// (a command that runs a scene); a view marked `check` is measured only when asked for by name.
+// (a command that runs a scene); a view marked `check` is measured only when asked for by name. A
+// first-person view marked `walk` is one the phone harness (phone.mjs) walks forward through.
 import { stillScript } from "../../previews/lib/still.mjs";
 
 /** The canvas size each tier is measured at, fixed so a reading on one machine is the same pixels

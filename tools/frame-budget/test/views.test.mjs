@@ -11,6 +11,14 @@ describe("views", () => {
     expect(all.map((v) => v.view.name)).toEqual(["trailhead", "forest", "tarn", "meadow", "crest", "beach", "forest-night"]);
     expect(resolveViews(config, stills, ["chase"])[0].view.check).toBe(true);
     expect(resolveViews(config, stills, ["chase"])[0].still).toBeUndefined();
+    // The phone's two check views (phone.mjs): the night forest walked, and the reveal timed from world-ready.
+    const walk = resolveViews(config, stills, ["walk-night"])[0];
+    expect(walk.view.check).toBe(true);
+    expect(walk.view.walk).toBe(true);
+    expect(viewScript(walk.view, walk.still)).toBe("seed atmo;stand 250 -500 1.09;escalation 1;unsettle 0;lamp");
+    const reveal = resolveViews(config, stills, ["reveal"])[0];
+    expect(reveal.view.check).toBe(true);
+    expect(viewScript(reveal.view, reveal.still)).toBe("seed atmo;summit");
     expect(() => resolveViews(config, stills, ["lake"])).toThrow(/no view named lake/);
     expect(() => resolveViews({ ...config, views: [{ name: "x", still: "nowhere" }] }, stills)).toThrow(/nowhere/);
   });
