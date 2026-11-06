@@ -561,7 +561,7 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
         return;
       }
       if (kind === "later") {
-        (jobs as SyncJobs).begin(owner, rebuild(x, z));
+        (jobs as SyncJobs).begin(owner, rebuild(x, z), false, "blades");
         return;
       }
       jobs?.cancel(owner);

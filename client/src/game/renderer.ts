@@ -683,7 +683,7 @@ export function createClipmap(
         // it, though the camera has not moved, so none waits on a further
         // crossing to stop leaving out ground the new set no longer covers.
         if (!(jobs?.pending(owner) ?? false) && (options.cover?.(camX, camZ) ?? null) !== covered) {
-          if (jobs !== undefined) jobs.begin(owner, build(camX, camZ));
+          if (jobs !== undefined) jobs.begin(owner, build(camX, camZ), false, "clipmap");
           else finish(build(camX, camZ));
           return;
         }
@@ -691,7 +691,7 @@ export function createClipmap(
         return;
       }
       if (kind === "later") {
-        (jobs as SyncJobs).begin(owner, build(camX, camZ));
+        (jobs as SyncJobs).begin(owner, build(camX, camZ), false, "clipmap");
         return;
       }
       jobs?.cancel(owner);
@@ -2389,6 +2389,16 @@ function buildRenderer(
   // (`syncJobs.ts`), rather than whole in the frame of the crossing. `sync`
   // runs this frame's share once every shell has seen the view.
   const jobs = createSyncJobs(() => performance.now());
+  // The measurement mode (`?gpuTime`): the jobs' milliseconds a frame, by
+  // owner, read out as `window.__syncJobs()` for a harness that times whole
+  // frames (tools/frame-budget/phone.mjs), beside `__gpuTime`.
+  if (options.gpuTime === true) {
+    const global = globalThis as { __syncJobs?: () => SyncJobs["last"] };
+    global.__syncJobs = () => jobs.last;
+    made(() => {
+      if (global.__syncJobs !== undefined) delete global.__syncJobs;
+    });
+  }
 
   // ---- Generated terrain: geometry clipmap -------------------------------
   //

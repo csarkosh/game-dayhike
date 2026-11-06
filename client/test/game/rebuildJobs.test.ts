@@ -68,7 +68,7 @@ function keeper(): SyncJobs & { held: Slices | null } {
     },
     run() {},
     frame: 0,
-    last: { slices: 0, late: 0, completed: 0, idle: 0 },
+    last: { slices: 0, late: 0, completed: 0, idle: 0, ms: 0, lateMs: 0, owners: {} },
   };
   return k;
 }

@@ -405,7 +405,7 @@ export function createFacePatches(
         // The face in front of the camera on the first frame, the distance
         // over the frames after it.
         finish(rebuild(ci, cj, true));
-        jobs.begin(slot, rebuild(ci, cj), true);
+        jobs.begin(slot, rebuild(ci, cj), true, "facePatches");
         return;
       }
       finish(rebuild(ci, cj));

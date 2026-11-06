@@ -531,3 +531,33 @@ describe("crossingAt", () => {
     expect(on10(30.04)).toBe("later");
   });
 });
+
+describe("the jobs' milliseconds, by owner", () => {
+  it("counts a frame's slices' time under the owner's name, and the late run's time apart", () => {
+    const { clock, advance } = testClock();
+    const jobs = createSyncJobs(clock);
+    const done = { at: null as number | null };
+    jobs.begin({}, job({ advance }, 3, 0.5, done, () => jobs.frame), false, "clipmap");
+    jobs.run();
+    expect(jobs.last.ms).toBeCloseTo(1.5, 9);
+    expect(jobs.last.lateMs).toBe(0);
+    expect(jobs.last.owners.clipmap).toBeCloseTo(1.5, 9);
+    expect(done.at).toBe(0);
+    // A job of 50 slices of 1 ms gets 4 a frame; at its sixth frame it is late and runs to its end.
+    const long = { at: null as number | null };
+    jobs.begin({}, job({ advance }, 50, 1, long, () => jobs.frame), false, "forest");
+    for (let f = 0; f < 6; f++) jobs.run();
+    expect(jobs.last.owners.clipmap).toBe(0);
+    expect(jobs.last.lateMs).toBe(0);
+    expect(long.at).toBeNull();
+    jobs.run();
+    expect(long.at).toBe(7);
+    expect(jobs.last.lateMs).toBeGreaterThan(20);
+    expect(jobs.last.ms).toBe(jobs.last.lateMs);
+    expect(jobs.last.owners.forest).toBe(jobs.last.ms);
+    // An unnamed owner counts under "other".
+    jobs.begin({}, job({ advance }, 2, 0.25, { at: null }, () => jobs.frame));
+    jobs.run();
+    expect(jobs.last.owners.other).toBeCloseTo(0.5, 9);
+  });
+});

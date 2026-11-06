@@ -2149,7 +2149,7 @@ export function createForestMeshes(
       return;
     }
     if (kind === "later") {
-      (options.jobs as SyncJobs).begin(owner, rebuild(camX, camZ));
+      (options.jobs as SyncJobs).begin(owner, rebuild(camX, camZ), false, "forest");
       return;
     }
     options.jobs?.cancel(owner);

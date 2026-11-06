@@ -367,7 +367,7 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
         return;
       }
       if (kind === "later") {
-        (jobs as SyncJobs).begin(owner, rebuild(x, z));
+        (jobs as SyncJobs).begin(owner, rebuild(x, z), false, "duff");
         return;
       }
       jobs?.cancel(owner);

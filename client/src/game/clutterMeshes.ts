@@ -1086,7 +1086,7 @@ export function createClutterMeshes(
       return;
     }
     if (kind === "later") {
-      (jobs as SyncJobs).begin(owner, rebuild(camX, camZ));
+      (jobs as SyncJobs).begin(owner, rebuild(camX, camZ), false, "clutter");
       return;
     }
     jobs?.cancel(owner);
