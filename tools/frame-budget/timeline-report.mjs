@@ -107,6 +107,32 @@ if (wgsl.length > 0) {
   }
 }
 
+// ---- The streaming jobs: each shell's milliseconds a frame, and what ran late ---------------------
+const jobRows = run.jobs ?? [];
+if (jobRows.length > 0) {
+  const names = [...new Set(jobRows.flatMap((j) => Object.keys(j.owners ?? {})))];
+  console.log(`\nStreaming jobs (frames whose jobs took over 2 ms), ms a frame of the stretch; "other" is the face patches':`);
+  console.log(`${pad("stretch", 24)}${lpad("all", 7)}${lpad("late", 7)}${lpad(">30ms", 7)}  ${names.map((n) => lpad(n.slice(0, 9), 10)).join("")}`);
+  for (const s of stretches) {
+    const n = Math.max(1, stats(s.from, s.to).n);
+    const rows = jobRows.filter((j) => j.t >= s.from && j.t < s.to);
+    const sum = (f) => rows.reduce((a, j) => a + f(j), 0);
+    console.log(`${pad(s.name, 24)}${lpad(f1(sum((j) => j.ms) / n), 7)}${lpad(f1(sum((j) => j.late ?? 0) / n), 7)}${lpad(rows.filter((j) => j.ms > 30).length, 7)}  ${names.map((k) => lpad(f1(sum((j) => j.owners?.[k] ?? 0) / n), 10)).join("")}`);
+  }
+}
+
+// ---- A film over the page (the intro): the frames it presented and dropped ----------------------
+const video = run.video ?? [];
+if (video.length > 1) {
+  const v0 = (t) => video.filter((v) => v.t <= t).at(-1) ?? video[0];
+  console.log(`\nThe film: ${video.at(-1).total} frames presented, ${video.at(-1).dropped} dropped`);
+  console.log(`${pad("stretch", 24)}${lpad("frames", 8)}${lpad("dropped", 9)}${lpad("film s", 8)}`);
+  for (const s of stretches) {
+    const a = v0(s.from), b = v0(s.to);
+    console.log(`${pad(s.name, 24)}${lpad(b.total - a.total, 8)}${lpad(b.dropped - a.dropped, 9)}${lpad(f1(b.at - a.at), 8)}`);
+  }
+}
+
 // ---- The pipelines: what was asked for, and how long the screen was held for it ----------------
 // A WebGPU page holds its frames, the canvas keeping its last image, while a render pipeline is
 // being made (`asyncPipelines.ts`): the page's frames keep coming, short, and show nothing new. A

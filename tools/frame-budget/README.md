@@ -181,6 +181,11 @@ to the end of the chase's first minute, with the page's long frames, the pipelin
 stages the shipped maps had, and those translated in the page), the GPU readout once a second and,
 with `--profile`, a CPU profile. `--climb <s>` is the same sprint with no find, the chase's control;
 `--approach escape` plays the end scene instead (the console's `escape`) and times 30 s of it.
+`--climb <s> --walk` walks instead of sprinting, and `--stand "x z yaw"` moves any of them (a
+forest: `250 -500 1.09` on seed atmo). `--intro <s>` is a start as a player meets it: the landing
+page, Play clicked, and that many seconds kept from the click (the page's frames, the film's
+presented and dropped frames, the world's readiness as a mark); `--cold` empties the site's cache
+and storage first, a first visit.
 
 ```bash
 node tools/frame-budget/timeline.mjs --base <url> --out <dir on the lab disk> --remote 9333 --label base --settle 75 --profile
@@ -191,7 +196,8 @@ node tools/frame-budget/timeline-report.mjs <dir>/base.json --maps <the build's 
 `timeline-report.mjs` reads a run back by stretch (the approach, the scene's five shots, the chase
 ten seconds at a time): frames, mean, median, p95 and worst, the share of frames over a 60 Hz
 frame, the stalls (over 50 ms) and freezes (over 250 ms); the seconds the screen was held on one
-image; the shaders translated in the page; the main thread's hottest functions by stretch; and the worst frames, each with what ran in
+image; the shaders translated in the page; each streaming shell's milliseconds a frame and what
+ran late; a film's frames by stretch; the main thread's hottest functions by stretch; and the worst frames, each with what ran in
 it. `--maps` names functions by source (keep a build's `client/dist/assets/*.map` beside its
 runs: a channel's maps are not stored); without it, `--full` prints whole URLs for
 `tools/telemetry/symbolicate.mjs <build>`, which reads a deployed build's. `--watch a.ts:12,b.ts:34`

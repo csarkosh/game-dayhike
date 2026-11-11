@@ -7,7 +7,8 @@
 //
 //   node tools/frame-budget/timeline.mjs --base <url> --out <dir> --remote <port> [--tier medium]
 //       [--engine webgpu|webgl2] [--label <name>] [--settle 45] [--chase 60] [--approach walk|command|escape]
-//       [--stand "x z yaw"] [--seed atmo] [--profile] [--still] [--climb <s>] [--screencast] [--query <a=b&c=d>]
+//       [--stand "x z yaw"] [--seed atmo] [--profile] [--still] [--climb <s>] [--walk] [--screencast]
+//       [--intro <s>] [--cold] [--query <a=b&c=d>]
 //
 //   --base <url>      the build: the live site or a preview channel
 //   --out <dir>       where the run's files go (under the lab disk): <label>.json, <label>.cpuprofile,
@@ -28,6 +29,10 @@
 //   --still           the player stands still through the chase (the Hollow reaches them); without
 //                     it they sprint the way the threshold turned them
 //   --query <text>    more of the URL's query, as written (`a=b&c=d`)
+//   --walk            with --climb: they walk
+//   --intro <s>       a start as a player meets it: the landing page, Play clicked, that many seconds
+//                     kept from the click (the film's frames with the page's)
+//   --cold            the site's cache and storage emptied first: a first visit
 //   --climb <s>       no find: from where the player stands they sprint that many seconds the way they
 //                     face, on the climb, for the same run without the chase (the chase's control)
 //   --screencast      what the screen showed: the compositor's frames (at most every fourth, small
@@ -46,7 +51,7 @@ const STILLS = fileURLToPath(new URL("../previews/stills.json", import.meta.url)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function parseArgs(argv) {
-  const o = { base: undefined, out: undefined, remote: undefined, tier: "medium", engine: undefined, label: "run", settle: 45, chase: 60, approach: "walk", stand: "650 -276 1.5708", seed: "atmo", profile: false, still: false, query: "", screencast: false, climb: 0 };
+  const o = { base: undefined, out: undefined, remote: undefined, tier: "medium", engine: undefined, label: "run", settle: 45, chase: 60, approach: "walk", stand: "650 -276 1.5708", seed: "atmo", profile: false, still: false, query: "", screencast: false, climb: 0, walk: false, intro: 0, cold: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -66,6 +71,9 @@ function parseArgs(argv) {
     else if (a === "--query") o.query = next();
     else if (a === "--screencast") o.screencast = true;
     else if (a === "--climb") o.climb = Number(next());
+    else if (a === "--walk") o.walk = true;
+    else if (a === "--intro") o.intro = Number(next());
+    else if (a === "--cold") o.cold = true;
     else throw new Error(`unknown option ${a}`);
   }
   if (!o.base || !o.out || !o.remote) throw new Error("--base, --out and --remote are needed");
@@ -77,7 +85,7 @@ function parseArgs(argv) {
  * readiness as marks, the long frames with their scripts, and the GPU readout once a second. */
 const RECORDER = `(() => {
   if (window.__tl) return;
-  const tl = (window.__tl = { t: [], marks: [], loaf: [], gpu: [], jobs: [], pipes: [], wgsl: [] });
+  const tl = (window.__tl = { t: [], marks: [], loaf: [], gpu: [], jobs: [], pipes: [], wgsl: [], video: [] });
   let scene = false, ready = false, end = false, pipeKey = "", wgslKey = "";
   tl.mark = (name) => tl.marks.push({ t: performance.now(), name });
   const tick = (t) => {
@@ -106,6 +114,13 @@ const RECORDER = `(() => {
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+  // A film playing over the page (the intro): the frames it presented and those it dropped, four times a second.
+  setInterval(() => {
+    const v = document.querySelector("video");
+    if (!v || v.paused || typeof v.getVideoPlaybackQuality !== "function") return;
+    const q = v.getVideoPlaybackQuality();
+    tl.video.push({ t: performance.now(), at: v.currentTime, total: q.totalVideoFrames, dropped: q.droppedVideoFrames });
+  }, 250);
   setInterval(() => {
     if (typeof window.__gpuTime !== "function") return;
     const r = window.__gpuTime();
@@ -144,6 +159,48 @@ async function waitFor(what, test, maxS) {
   }
 }
 
+/**
+ * The intro over a start, as a player meets it: the landing page, Play clicked (a real click, so
+ * the film plays with sound as theirs does), and `o.intro` seconds kept from the click: the page's
+ * frames, the film's presented and dropped frames, the world's readiness as a mark. Marked as a
+ * sprint is (`sprint-on` at the click), so the report reads it in ten-second stretches.
+ */
+async function intro(page, o, root, about) {
+  const size = TIER_SIZES[o.tier] ?? TIER_SIZES.medium;
+  await page("Emulation.setDeviceMetricsOverride", { width: size.width, height: size.height, deviceScaleFactor: 1, mobile: false });
+  await page("Page.addScriptToEvaluateOnNewDocument", { source: RECORDER });
+  const url = `${root}/?tier=${o.tier}&telemetry=off${o.engine ? `&engine=${o.engine}` : ""}${o.query ? `&${o.query}` : ""}`;
+  const nav = await page("Page.navigate", { url });
+  if (nav.errorText) throw new Error(`${url} did not load: ${nav.errorText}`);
+  process.stdout.write(`${o.label}: ${url}\n`);
+  await waitFor("the Play button", () => evaluate(page, `(() => { const b = document.querySelector("button#create"); return !!b && !b.disabled; })()`).catch(() => false), 60);
+  await sleep(3000);
+  if (o.profile) {
+    await page("Profiler.enable");
+    await page("Profiler.setSamplingInterval", { interval: 500 });
+    await page("Profiler.start");
+    await evaluate(page, `(() => { const t0 = performance.now(); (function __tlSyncBurn() { while (performance.now() - t0 < 40); })(); window.__tl.marks.push({ t: t0, name: "sync-burn" }); })()`);
+  }
+  const at = await evaluate(page, `(() => { const r = document.querySelector("button#create").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+  await mark(page, "sprint-on");
+  await page("Input.dispatchMouseEvent", { type: "mousePressed", x: at[0], y: at[1], button: "left", clickCount: 1 });
+  await page("Input.dispatchMouseEvent", { type: "mouseReleased", x: at[0], y: at[1], button: "left", clickCount: 1 });
+  process.stdout.write(`${o.label}: Play clicked; keeping ${o.intro} s\n`);
+  await sleep(o.intro * 1000);
+  await mark(page, "chase-end");
+  let profile = null;
+  if (o.profile) profile = (await page("Profiler.stop")).profile;
+  const tl = await evaluate(page, `(() => { const c = document.querySelector("canvas"); return { ...window.__tl, canvas: c ? [c.width, c.height] : null, href: location.href }; })()`);
+  const engine = await evaluate(page, `(async () => { let gpu = null; try { const info = (await navigator.gpu?.requestAdapter())?.info; gpu = (info && (info.description || info.architecture)) || null; } catch {} return { gpu, classes: document.body.className, status: null }; })()`);
+  const shot = await page("Page.captureScreenshot", { format: "jpeg", quality: 70 });
+  writeFileSync(join(o.out, `${o.label}.jpg`), Buffer.from(shot.data, "base64"));
+  const ready = tl.marks.find((m) => m.name === "world-ready"), play = tl.marks.find((m) => m.name === "sprint-on");
+  const meta = { label: o.label, time: new Date().toISOString(), url, tier: o.tier, engine: o.engine ?? null, approach: "intro", still: false, settle: 0, chase: o.intro, readyS: ready && play ? (ready.t - play.t) / 1000 : Number.NaN, cold: o.cold, browser: about.browser, ...engine };
+  writeFileSync(join(o.out, `${o.label}.json`), JSON.stringify({ meta, ...tl, cast: null }));
+  if (profile !== null) writeFileSync(join(o.out, `${o.label}.cpuprofile`), JSON.stringify(profile));
+  process.stdout.write(`${o.label}: ${tl.t.length} frames, ${tl.loaf.length} long frames, world ready ${meta.readyS.toFixed(1)} s after Play; written to ${o.out}\n`);
+}
+
 async function main() {
   const o = parseArgs(process.argv.slice(2));
   const game = JSON.parse(readFileSync(STILLS, "utf8")).game;
@@ -158,6 +215,13 @@ async function main() {
   const url = `${root}/game/${game}?cmd=${cmd}&tier=${o.tier}&telemetry=off&gpuTime${o.engine ? `&engine=${o.engine}` : ""}${o.query ? `&${o.query}` : ""}`;
   const { page, close } = await openPage(session.browser, o.remote, { origin: new URL(url).origin });
   try {
+    if (o.cold) {
+      // A first visit: nothing of the site in the cache or its storage (the shaders the page kept, the pipelines' cache).
+      await page("Network.enable");
+      await page("Network.clearBrowserCache");
+      await page("Storage.clearDataForOrigin", { origin: new URL(url).origin, storageTypes: "all" });
+    }
+    if (o.intro > 0) { await intro(page, o, root, about); return; }
     const size = TIER_SIZES[o.tier] ?? TIER_SIZES.medium;
     await page("Emulation.setDeviceMetricsOverride", { width: size.width, height: size.height, deviceScaleFactor: 1, mobile: false });
     await page("Page.addScriptToEvaluateOnNewDocument", { source: RECORDER });
@@ -191,13 +255,13 @@ async function main() {
     }
     if (o.climb > 0) {
       await mark(page, "sprint-on");
-      await keyDown(page, "ShiftLeft");
+      if (!o.walk) await keyDown(page, "ShiftLeft");
       await keyDown(page, "KeyW");
-      process.stdout.write(`${o.label}: sprinting ${o.climb} s on the climb\n`);
+      process.stdout.write(`${o.label}: ${o.walk ? "walking" : "sprinting"} ${o.climb} s on the climb\n`);
       await sleep(o.climb * 1000);
       await mark(page, "chase-end");
       await keyUp(page, "KeyW");
-      await keyUp(page, "ShiftLeft");
+      if (!o.walk) await keyUp(page, "ShiftLeft");
     } else {
     await mark(page, "approach");
     if (o.approach === "walk") {
