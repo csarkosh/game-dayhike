@@ -78,7 +78,7 @@ for (let t = chaseFrom; t < chaseEnd - 1000; t += 10_000) stretches.push({ name:
 if (sprintOn === null) stretches.push({ name: "SCENE (whole)", from: sceneOn, to: chaseFrom });
 stretches.push({ name: "CHASE (whole)", from: chaseFrom, to: chaseEnd });
 
-const f1 = (x) => x.toFixed(1);
+const f1 = (x) => (typeof x === "number" && Number.isFinite(x) ? x.toFixed(1) : "–");
 const pad = (s, n) => String(s).padEnd(n);
 const lpad = (s, n) => String(s).padStart(n);
 
@@ -130,6 +130,29 @@ if (video.length > 1) {
   for (const s of stretches) {
     const a = v0(s.from), b = v0(s.to);
     console.log(`${pad(s.name, 24)}${lpad(b.total - a.total, 8)}${lpad(b.dropped - a.dropped, 9)}${lpad(f1(b.at - a.at), 8)}`);
+  }
+}
+
+// ---- The film's picture: where it stood and jumped ------------------------------------------------
+// Between two frames this thread heard were shown: the film's seconds that passed, the wall's, and
+// the frames shown. The picture's own rate is the film's (24 a second here, taken from the run).
+// A gap is film time that passed with no frame shown for it (the picture stood, then jumped), or
+// wall time that passed with the film's clock standing (the film waited: buffering, or starved).
+const shown = run.shown ?? [];
+if (shown.length > 2) {
+  const rate = (() => { const d = []; for (let i = 1; i < shown.length; i++) { const f = shown[i][2] - shown[i - 1][2], m = shown[i][1] - shown[i - 1][1]; if (f === 1 && m > 0) d.push(m); } d.sort((a, b) => a - b); return d.length ? 1 / d[d.length >> 1] : 24; })();
+  const gaps = [];
+  for (let i = 1; i < shown.length; i++) {
+    const wall = (shown[i][0] - shown[i - 1][0]) / 1000, film = shown[i][1] - shown[i - 1][1], n = shown[i][2] - shown[i - 1][2];
+    const jumped = Math.max(0, film - n / rate), stood = Math.max(0, wall - film);
+    if (jumped > 0.1 || stood > 0.1) gaps.push({ t: shown[i - 1][0], wall, film, n, jumped, stood });
+  }
+  const sum = (rows, k) => rows.reduce((a, g) => a + g[k], 0);
+  console.log(`\nThe film's picture (${f1(rate)} frames a second): ${gaps.length} gaps over 0.1 s; ${f1(sum(gaps, "jumped"))} s of film passed unseen (the picture stood, then jumped), ${f1(sum(gaps, "stood"))} s with the film's clock standing; the longest ${f1(Math.max(0, ...gaps.map((g) => Math.max(g.jumped, g.stood))))} s`);
+  console.log(`${pad("stretch", 24)}${lpad("gaps", 6)}${lpad("unseen s", 10)}${lpad("stood s", 9)}${lpad("longest", 9)}`);
+  for (const s of stretches) {
+    const rows = gaps.filter((g) => g.t >= s.from && g.t < s.to);
+    console.log(`${pad(s.name, 24)}${lpad(rows.length, 6)}${lpad(f1(sum(rows, "jumped")), 10)}${lpad(f1(sum(rows, "stood")), 9)}${lpad(f1(Math.max(0, ...rows.map((g) => Math.max(g.jumped, g.stood)))), 9)}`);
   }
 }
 

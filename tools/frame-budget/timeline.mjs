@@ -85,7 +85,7 @@ function parseArgs(argv) {
  * readiness as marks, the long frames with their scripts, and the GPU readout once a second. */
 const RECORDER = `(() => {
   if (window.__tl) return;
-  const tl = (window.__tl = { t: [], marks: [], loaf: [], gpu: [], jobs: [], pipes: [], wgsl: [], video: [] });
+  const tl = (window.__tl = { t: [], marks: [], loaf: [], gpu: [], jobs: [], pipes: [], wgsl: [], video: [], shown: [] });
   let scene = false, ready = false, end = false, pipeKey = "", wgslKey = "";
   tl.mark = (name) => tl.marks.push({ t: performance.now(), name });
   const tick = (t) => {
@@ -114,9 +114,24 @@ const RECORDER = `(() => {
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+  // The film's picture: each frame the compositor put on the screen that this thread heard of, with
+  // the film's own time and the count of frames shown so far. Between two of them, the film's seconds
+  // passed against the frames shown say whether the picture kept up (a picture that stood and then
+  // jumped passes film seconds with few frames shown), whether this thread was running or not.
+  // The film is the intro itself: the video under .intro, not the landing loop.
+  let watched = null;
+  const onShown = (now, m) => {
+    tl.shown.push([now, m.mediaTime, m.presentedFrames]);
+    if (watched && watched.isConnected) watched.requestVideoFrameCallback(onShown); else watched = null;
+  };
+  setInterval(() => {
+    if (watched && watched.isConnected) return;
+    const v = document.querySelector(".intro video");
+    if (v && typeof v.requestVideoFrameCallback === "function") { watched = v; v.requestVideoFrameCallback(onShown); }
+  }, 100);
   // A film playing over the page (the intro): the frames it presented and those it dropped, four times a second.
   setInterval(() => {
-    const v = document.querySelector("video");
+    const v = document.querySelector(".intro video");
     if (!v || v.paused || typeof v.getVideoPlaybackQuality !== "function") return;
     const q = v.getVideoPlaybackQuality();
     tl.video.push({ t: performance.now(), at: v.currentTime, total: q.totalVideoFrames, dropped: q.droppedVideoFrames });

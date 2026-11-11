@@ -197,7 +197,9 @@ node tools/frame-budget/timeline-report.mjs <dir>/base.json --maps <the build's 
 ten seconds at a time): frames, mean, median, p95 and worst, the share of frames over a 60 Hz
 frame, the stalls (over 50 ms) and freezes (over 250 ms); the seconds the screen was held on one
 image; the shaders translated in the page; each streaming shell's milliseconds a frame and what
-ran late; a film's frames by stretch; the main thread's hottest functions by stretch; and the worst frames, each with what ran in
+ran late; a film's frames by stretch, and its picture: the seconds its clock stood and the film's
+seconds no frame was shown for (a picture that stood and then jumped), from each frame shown
+(`requestVideoFrameCallback`); the main thread's hottest functions by stretch; and the worst frames, each with what ran in
 it. `--maps` names functions by source (keep a build's `client/dist/assets/*.map` beside its
 runs: a channel's maps are not stored); without it, `--full` prints whole URLs for
 `tools/telemetry/symbolicate.mjs <build>`, which reads a deployed build's. `--watch a.ts:12,b.ts:34`
