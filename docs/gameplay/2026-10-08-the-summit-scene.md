@@ -21,8 +21,10 @@ problem, the wrong note, the threshold), hard cuts between them, one slow move w
 film lens on all but the last (`LENS_24` 0.57, `LENS_32` 0.43 and `LENS_50` 0.28 rad vertical;
 the game's own is 1.4). The summit at night has no light but the sky and the local player's own
 headlamp, worn on the body the scene shows (on for the scene's length, whatever its switch; the
-lamp on the lens is off, since a third-person shot lit from its lens is lit from nowhere), so
-every shot frames its subject against the sky.
+lens's own lamp moved there from the camera, since a third-person shot lit from its lens is lit
+from nowhere, and one lamp so the find adds no light: since 2026-11-09,
+`docs/rendering/2026-11-09-summit-scene-and-chase-frames.md`), so every shot frames its subject
+against the sky.
 
 | Shot | Seconds | Lens | Camera | What it says |
 | --- | --- | --- | --- | --- |
@@ -71,8 +73,9 @@ where they fell.
   party's eye; Babylon-free. (`summitPose`, the first scene's one move, stays for the cap's.)
 - `game/renderer.ts`: `setScene("summit", body, { hollow, party })`; the shot over the player's
   camera, as the ending's is, its lens on the camera, for `SUMMIT_SCENE_S`; the local body shown
-  (`views.showLocal`) through all but the last shot, the lens's lamp off meanwhile.
-- `game/entityViews.ts`: the local body drawn and its lamp lit while `showLocal`; the summit
+  (`views.showLocal`) through all but the last shot, the lens's lamp worn at its eye meanwhile
+  (`placeLensLamp`).
+- `game/entityViews.ts`: the local body drawn while `showLocal`, its eye reported (`localEye`); the summit
   Hollow's rise held `SUMMIT_RISE_DELAY_S`.
 - `game/hud.ts`: `setBars(on)`, the letterbox, the roster hidden under it.
 - `app.ts`: the flip seen in `syncAtmosphere` (the phase in the snapshot), `setScene` with the
@@ -92,7 +95,7 @@ to call.
 
 `test/game/cutscene.test.ts` (the five shots: their seconds the reveal's, the look's
 conventions, each shot's lens and move, the last the eye), `test/game/entityViews.test.ts` (the
-local body and its lamp in a scene),
+local body and its eye in a scene),
 `test/sim/summit.test.ts` (the party gathered, the dead left; the shades cleared, nothing
 killing and the stare capped through the reveal, the kill back after), `test/sim/haunt.test.ts` (the
 director's wait), and the summit and hollow suites on the reveal's new length.

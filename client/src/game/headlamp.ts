@@ -55,7 +55,13 @@ export function setLamp(
   }
 }
 
-/** Sun + fill + one lamp per player. Babylon binds lights per mesh in scene
+/** Sun + fill + one lamp per player: the lens's for the local player, and
+ * one on every other's body. The lens's is the local player's only one, all
+ * game: a scene that shows their body, and the end scene's car, wear it
+ * (renderer.ts `placeLensLamp`), so no scene adds a light and no material's
+ * shader changes in one. The budget cannot grow: a terrain's stage binds
+ * twelve uniform buffers with seven lights, WebGPU's default most
+ * (`stageBindings.test.ts`). Babylon binds lights per mesh in scene
  * order up to a material's maxSimultaneousLights (default 4), so without this
  * a third player's lamp lights nothing. Applied to every material, present and
  * future — GLB loads add their own. Babylon's canAffectMesh has no distance or

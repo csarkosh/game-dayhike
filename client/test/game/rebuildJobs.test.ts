@@ -67,6 +67,8 @@ function keeper(): SyncJobs & { held: Slices | null } {
       slices?.return(undefined);
     },
     run() {},
+    // No clock: a view's step is read as it is.
+    started: () => Number.NaN,
     frame: 0,
     last: { slices: 0, late: 0, completed: 0, idle: 0, ms: 0, lateMs: 0, owners: {} },
   };

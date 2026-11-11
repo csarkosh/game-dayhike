@@ -258,11 +258,14 @@ export const NO_ROCK: RockLayer = Object.freeze({ rise: 0, dx: 0, dz: 0 });
  */
 export function rockRiseAt(seed: number, x: number, z: number, s: TerrainSample, trail: TrailGraph | null = null): number {
   const g2 = s.dx * s.dx + s.dz * s.dz;
+  // The trail's clearance first: one distance to the graph, against the mask slope's four ground
+  // samples, and nothing either way where either is nothing (a sight line down the trail's bed
+  // reads this at every step).
+  const clear = trailClearAt(trail, x, z);
+  if (clear === 0) return 0;
   const gm = maskSlopeAt(seed, x, z);
   const paint = rockOfSlope(gm);
   if (paint === 0) return 0;
-  const clear = trailClearAt(trail, x, z);
-  if (clear === 0) return 0;
   const mask = paint * (1 - faceMask(gm)) * loudnessAt(seed, x, z) * clear;
   if (mask === 0) return 0;
   const depth = depthUnderBend(GROUND_DEPTH, groundBend(seed, x, z, s), GROUND_BEND_SHARE);

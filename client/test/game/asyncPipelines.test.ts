@@ -10,6 +10,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
 import { RenderingGroupInfo } from "@babylonjs/core/Rendering/renderingManager.js";
 import {
+  HOLD_PENDING_OVER,
   asyncPipelinesOf,
   heldOn,
   installPipelines,
@@ -796,6 +797,97 @@ describe("a scene's frames while a creation is pending", () => {
     expect(scene.rendered).toBe(2);
     expect(engine.drawn.at(-1)).toEqual({ made: 1 });
     expect(heldOn(engine as never)).toBe(2);
+  });
+
+  /** A scene whose render draws every effect of `effects`, a list the test changes, inside the scope. */
+  function sceneDrawingAll(engine: FakeEngine, pipelines: AsyncPipelines, effects: unknown[]) {
+    const scene = {
+      rendered: 0,
+      render(): void {
+        scene.rendered++;
+        pipelines.enter();
+        for (const e of effects) draw(engine, e);
+        pipelines.leave();
+      },
+    };
+    engine.onNewSceneAddedObservable.notifyObservers(scene);
+    return scene;
+  }
+
+  it("once a frame has been whole, draw on with a few pipelines pending, their draws left out, and nothing held", async () => {
+    const { asked, engine, pipelines } = patched(2);
+    const effects: unknown[] = [effect(1)];
+    const scene = sceneDrawingAll(engine, pipelines, effects);
+    // The world: asked for, held for, then drawn whole.
+    scene.render();
+    scene.render();
+    expect([scene.rendered, heldOn(engine as never)]).toEqual([1, 1]);
+    asked[0]!.made.resolve({ made: 1 });
+    await flush();
+    scene.render();
+    expect([scene.rendered, heldOn(engine as never)]).toEqual([2, 1]);
+    // The hike under way: HOLD_PENDING_OVER things newly in view, each its own pipeline.
+    for (let i = 0; i < HOLD_PENDING_OVER; i++) effects.push(effect(100 + i));
+    scene.render();
+    expect(pipelines.pending()).toBe(HOLD_PENDING_OVER);
+    const drawnBefore = engine.drawn.length;
+    scene.render();
+    scene.render();
+    // Every frame drew: the world's draw in each, the new things left out, no frame held.
+    expect([scene.rendered, heldOn(engine as never)]).toEqual([5, 1]);
+    expect(engine.drawn.length).toBe(drawnBefore + 2);
+    expect(page().leftOut).toBe(1 + HOLD_PENDING_OVER * 3);
+    // Landed (two in flight at a time, the rest in turn), they are in the next frame.
+    while (pipelines.pending() > 0) {
+      for (const a of asked.slice(1)) a.made.resolve({ made: 2 });
+      await flush();
+    }
+    scene.render();
+    expect(engine.drawn.length).toBe(drawnBefore + 2 + 1 + HOLD_PENDING_OVER);
+  });
+
+  it("hold again, after a whole frame, while more than HOLD_PENDING_OVER pipelines are pending at once", async () => {
+    const { asked, engine, pipelines } = patched(2);
+    const effects: unknown[] = [effect(1)];
+    const scene = sceneDrawingAll(engine, pipelines, effects);
+    scene.render();
+    asked[0]!.made.resolve({ made: 1 });
+    await flush();
+    scene.render();
+    expect(scene.rendered).toBe(2);
+    // A change that asks for every material's again: one over the bound.
+    for (let i = 0; i <= HOLD_PENDING_OVER; i++) effects.push(effect(100 + i));
+    scene.render();
+    expect(pipelines.pending()).toBe(HOLD_PENDING_OVER + 1);
+    scene.render();
+    scene.render();
+    expect([scene.rendered, heldOn(engine as never)]).toEqual([3, 2]);
+    // Down to the bound, the frames draw again.
+    asked[1]!.made.resolve({ made: 2 });
+    await flush();
+    expect(pipelines.pending()).toBe(HOLD_PENDING_OVER);
+    scene.render();
+    expect([scene.rendered, heldOn(engine as never)]).toEqual([4, 2]);
+  });
+
+  it("do not take a frame that left a draw out, or one that asked for more, for a whole one", async () => {
+    const { asked, engine, pipelines } = patched(2);
+    const effects: unknown[] = [effect(1)];
+    const scene = sceneDrawingAll(engine, pipelines, effects);
+    scene.render();
+    asked[0]!.made.resolve({ made: 1 });
+    await flush();
+    // The frame after the first wave finds a second: it drew, but it is not whole.
+    effects.push(effect(2));
+    scene.render();
+    expect(scene.rendered).toBe(2);
+    expect(pipelines.pending()).toBe(1);
+    scene.render();
+    expect([scene.rendered, heldOn(engine as never)]).toEqual([2, 1]);
+    asked[1]!.made.resolve({ made: 2 });
+    await flush();
+    scene.render();
+    expect(scene.rendered).toBe(3);
   });
 
   it("are held while a creation waits its turn in the queue, not only while one is in flight", async () => {

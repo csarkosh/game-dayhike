@@ -10,6 +10,7 @@
  * road, as the summit's shots are (cutscene.ts). Babylon-free.
  */
 import { CAR_HALF, CAR_ROAD_U } from "../sim/trailhead.js";
+import { LAMP_INTENSITY } from "./lampParams.js";
 import { LENS_24, LENS_32, easeInOut, type ShotPose } from "./cutscene.js";
 import { carAlong, type Road } from "./scene/roadPath.js";
 import type { CarPose } from "./scene/timeline.js";
@@ -74,11 +75,15 @@ export const ESCAPE_SETTLE_S = 2;
 export const END_MIST_EASE_S = 4;
 export const END_MIST_FLOOR = 0.2;
 /**
- * The car's headlamps: the bodies' own lamps (lampParams.ts) moved to its
- * nose, this far apart and up, aimed this far down, at a wider cone and a
- * longer reach (radians and metres, as `LAMP_ANGLE` and `LAMP_RANGE`).
+ * The car's headlamps, one light: the bodies' own lamp (lampParams.ts) at the
+ * middle of its nose, this far up, aimed this far down, at a wider cone and a
+ * longer reach (radians and metres, as `LAMP_ANGLE` and `LAMP_RANGE`), as
+ * bright as its two lamps together (`HEADLAMP_INTENSITY`), which a road lit
+ * metres on from a nose 1.2 m wide hardly tells apart from two. One light,
+ * not two: a second was a fourth light on every lit material through the
+ * whole hike (docs/rendering/2026-11-09-summit-scene-and-chase-frames.md).
  */
-export const HEADLAMP_APART = 1.2;
+export const HEADLAMP_INTENSITY = 2 * LAMP_INTENSITY;
 export const HEADLAMP_UP = 0.7;
 export const HEADLAMP_DOWN = 0.1;
 export const HEADLAMP_CONE = 1.9;
@@ -319,13 +324,12 @@ export function arrived(runner: Ground, door: Ground, t: number): boolean {
 /** A lamp's place and the way it points, in the world. */
 export type LampAim = { x: number; y: number; z: number; dx: number; dy: number; dz: number };
 
-/** A headlamp on the car: `side` 1 its right, −1 its left, at its nose, aimed along its heading and `HEADLAMP_DOWN` down. Writes `out`. */
-export function headlampAt(car: { x: number; y: number; z: number; yaw: number }, side: 1 | -1, out: LampAim): LampAim {
+/** The car's headlamp: at the middle of its nose, aimed along its heading and `HEADLAMP_DOWN` down. Writes `out`. */
+export function headlampAt(car: { x: number; y: number; z: number; yaw: number }, out: LampAim): LampAim {
   const hx = Math.sin(car.yaw), hz = Math.cos(car.yaw);
-  const across = side * HEADLAMP_APART / 2;
-  out.x = car.x + hx * CAR_HALF.z + hz * across;
+  out.x = car.x + hx * CAR_HALF.z;
   out.y = car.y + HEADLAMP_UP;
-  out.z = car.z + hz * CAR_HALF.z - hx * across;
+  out.z = car.z + hz * CAR_HALF.z;
   const level = Math.cos(HEADLAMP_DOWN);
   out.dx = hx * level;
   out.dy = -Math.sin(HEADLAMP_DOWN);

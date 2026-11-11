@@ -26,7 +26,7 @@ import { isHollow } from "../sim/hollow.js";
 import { STARE_LENS_REST, stareShadeUnder, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
 import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
 import {
-  DOOR_IN_M, HEADLAMP_CONE, HEADLAMP_RANGE,
+  DOOR_IN_M, HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE,
   arrived, carDistance, carSpeed, endCar, endShot, endShotIndex, headlampAt, roadRelease, type EndShotContext, type LampAim,
 } from "./endScene.js";
 import { CATCH_AT_S } from "./carAudio.js";
@@ -46,8 +46,8 @@ import { blendedEye, type EyePose } from "./eyeBlend.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
 import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
-import { budgetLights, budgetMaterial, createHeadlamp, setLamp } from "./headlamp.js";
-import { lampUnder } from "./lampParams.js";
+import { LAMP_ANGLE, LAMP_COLOUR, LAMP_RANGE, budgetLights, budgetMaterial, createHeadlamp, setLamp } from "./headlamp.js";
+import { lampUnder, type LampState } from "./lampParams.js";
 import { windRecordUnder, type WindRecord } from "./windParams.js";
 import { sharedSeconds } from "./oceanWindSea.js";
 import { setFoliageWind, FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED } from "./foliagePlugin.js";
@@ -677,7 +677,7 @@ export function createClipmap(
       }
       const kind = crossingAt(
         crossing, camX, camZ, snapOrigin(camX, base), snapOrigin(camZ, base), CLIPMAP_STEP,
-        jobs !== undefined,
+        jobs !== undefined, jobs?.started(),
       );
       if (kind === "none") {
         // The covering surface drew a new set since the rings last asked
@@ -2152,7 +2152,9 @@ function buildRenderer(
 
   // The local player's headlamp, camera-parented so it needs no per-frame
   // position write: a child of the camera inherits its rotation, so +Z local
-  // is the view direction.
+  // is the view direction. The local player's one lamp all game: a scene that
+  // shows their body moves it there, and the end scene's car wears it
+  // (`placeLensLamp`), so no scene adds a light.
   const localLamp = createHeadlamp(scene, "lamp_local");
   localLamp.parent = camera;
   localLamp.position.set(0, 0, 0);
@@ -2253,7 +2255,6 @@ function buildRenderer(
     now: EndSceneNow;
     hide: { x: number; z: number; radius: number };
     lens: LampAim;
-    body: LampAim & { angle: number; range: number };
     /** The car whose tail lamps were last lit, at the catch. */
     tailsLit: TrailheadCar | null;
     /** The car standing parked, where its lamps stay when there is no model to drive. */
@@ -2273,9 +2274,9 @@ function buildRenderer(
    * lens, the local body drawn through the run and in the car from the
    * arrival, the other bodies at the door hidden, the car staged at its pose
    * (its parts where it has them, else moved whole), and from the catch the
-   * body's lamp aimed as the car's left headlamp and the tail lamps lit.
+   * headlamp's place at the car's nose as posed this frame and the tail lamps lit.
    */
-  function stepEndScene(e: NonNullable<typeof endRun>, localId: number, local: { pos: Vec3; yaw: number }, seconds: number): void {
+  function stepEndScene(e: NonNullable<typeof endRun>, local: { pos: Vec3; yaw: number }, seconds: number): void {
     const t = seconds - e.since;
     const ctx = e.ctx;
     ctx.runner.x = local.pos.x;
@@ -2317,37 +2318,59 @@ function buildRenderer(
     now.car.z = car.z;
     now.car.yaw = car.yaw;
     now.car.speed = carSpeed(after);
-    if (ctx.arrival === null || after < CATCH_AT_S) {
-      views.localLampAt = null;
-      return;
-    }
-    // With no car drawn to drive (its box alone), the lamps stay where it stands.
-    const lit = handle === null ? e.parked : car;
-    headlampAt(lit, -1, e.body);
-    views.localLampAt = e.body;
-    // The views placed it before the car was posed: placed again, so it is where the car is now.
-    views.aimLocalLamp(localId);
-    headlampAt(lit, 1, e.lens);
+    if (ctx.arrival === null || after < CATCH_AT_S) return;
+    // With no car drawn to drive (its box alone), the lamp stays where it stands.
+    headlampAt(handle === null ? e.parked : car, e.lens);
     if (handle !== null && e.tailsLit !== handle) {
       handle.tailLamps(true);
       e.tailsLit = handle;
     }
   }
 
-  /** The lens's lamp in the end scene: off, or from the catch the car's right headlamp, freed from the camera. */
-  function endLensLamp(e: NonNullable<typeof endRun>): void {
-    if (e.ctx.arrival === null || e.now.t - e.ctx.arrival < CATCH_AT_S) {
-      setLamp(localLamp, false);
+  /** The car's headlamp as lit: the tuned lamp's colour, as bright as the car's two lamps, no dread in it. */
+  const carLamp = { intensity: HEADLAMP_INTENSITY, colour: { r: LAMP_COLOUR[0], g: LAMP_COLOUR[1], b: LAMP_COLOUR[2] } };
+
+  /** The lens's lamp freed from the camera, at `at` in the world with this cone and reach. */
+  function lensLampAt(at: LampAim, angle: number, range: number): void {
+    if (localLamp.parent !== null) localLamp.parent = null;
+    localLamp.position.set(at.x, at.y, at.z);
+    localLamp.direction.set(at.dx, at.dy, at.dz);
+    if (localLamp.angle !== angle) localLamp.angle = angle;
+    if (localLamp.range !== range) localLamp.range = range;
+  }
+
+  /**
+   * The local player's one lamp, after the frame's scene has set the camera:
+   * on the lens through the hike; worn at the body's eye whenever a scene
+   * shows the body (the summit's shots, the end scene's run), lit for the
+   * shot whether the player's was or not; off between the end scene's arrival
+   * and the catch, then the car's headlamp. Off in the frame a scene first
+   * shows the body, which the views have not drawn yet. One light for all of
+   * it, so the lights every material binds are the same all game (a body's
+   * lamp of its own was a fourth: docs/rendering/2026-11-09-summit-scene-and-chase-frames.md).
+   */
+  function placeLensLamp(on: boolean, lampState: LampState): void {
+    const e = endRun;
+    if (e !== null && e.ctx.arrival !== null && e.now.t - e.ctx.arrival >= CATCH_AT_S) {
+      lensLampAt(e.lens, HEADLAMP_CONE, HEADLAMP_RANGE);
+      setLamp(localLamp, true, carLamp);
       return;
     }
-    if (localLamp.parent !== null) {
-      localLamp.parent = null;
-      localLamp.angle = HEADLAMP_CONE;
-      localLamp.range = HEADLAMP_RANGE;
+    if (views.showLocal) {
+      const eye = views.localEye;
+      if (eye !== null) lensLampAt(eye, LAMP_ANGLE, LAMP_RANGE);
+      setLamp(localLamp, eye !== null, lampState);
+      return;
     }
-    localLamp.position.set(e.lens.x, e.lens.y, e.lens.z);
-    localLamp.direction.set(e.lens.dx, e.lens.dy, e.lens.dz);
-    setLamp(localLamp, true);
+    if (localLamp.parent !== camera) {
+      localLamp.parent = camera;
+      localLamp.position.set(0, 0, 0);
+      localLamp.direction.set(0, 0, 1);
+      localLamp.angle = LAMP_ANGLE;
+      localLamp.range = LAMP_RANGE;
+    }
+    // In the end scene the camera is not the eye: off there from the arrival to the catch.
+    setLamp(localLamp, on && e === null, lampState);
   }
 
   const stareAt = new Vector3();
@@ -3438,7 +3461,7 @@ function buildRenderer(
         // The local body stands in the summit's shots, until the last returns to its eye.
         views.showLocal = sceneShot >= 0 && sceneShot < SHOTS.length - 1;
         // The end scene: its camera and lens, the body through the run, the car.
-        if (endRun !== null) stepEndScene(endRun, localId, local, seconds);
+        if (endRun !== null) stepEndScene(endRun, local, seconds);
         // The end: from its first frame the camera is the ending's, from the
         // pose the player had then, and the pass takes its blur and its dark.
         if (ending.since >= 0) {
@@ -3451,10 +3474,8 @@ function buildRenderer(
         }
         // A hike after a scene draws with the game's lens again; a shot of the summit's with its own.
         camera.fov = sceneFov ?? GAME_FOV;
-        // In the summit's shots the lamp on the lens is off: the body's own lights them (entityViews.ts).
-        setLamp(localLamp, local.lamp.on && !views.showLocal, lampState);
-        // In the end scene it is off too, the camera not being the eye, until the catch makes it a headlamp.
-        if (endRun !== null) endLensLamp(endRun);
+        // On the lens, on the body a scene shows, or on the car.
+        placeLensLamp(local.lamp.on, lampState);
         // The end scene's camera goes down the road from the player: the rain's cover goes with it.
         rainMap?.update(endRun !== null ? camera.position : local.pos);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
@@ -3526,14 +3547,11 @@ function buildRenderer(
           now: { t: 0, arrival: null, shot: 0, car: { x: scene.site.x, y: groundY, z: scene.site.z, yaw: scene.direction === 1 ? 0 : Math.PI, speed: 0 } },
           hide: { x: scene.door.x, z: scene.door.z, radius: DOOR_IN_M },
           lens: { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1 },
-          body: { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, angle: HEADLAMP_CONE, range: HEADLAMP_RANGE },
           tailsLit: null,
           parked: endCar(0, scene.road, scene.site, scene.direction),
           left: null,
         };
         endRun.ctx.held = roadRelease(scene.road, scene.site, scene.direction);
-        // The body's lamp stays a light to the end, dark between the arrival and the catch.
-        views.keepLocalLamp = true;
         return;
       }
       if (ending.since >= 0) return;

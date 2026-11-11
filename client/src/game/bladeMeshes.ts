@@ -555,7 +555,7 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
       const ox = Math.floor(x / BLADE_REBUILD_CELL) * BLADE_REBUILD_CELL;
       const oz = Math.floor(z / BLADE_REBUILD_CELL) * BLADE_REBUILD_CELL;
       if (turn(heading, x - crossing.lastX, z - crossing.lastZ)) aimed = false;
-      const kind = crossingAt(crossing, x, z, ox, oz, BLADE_REBUILD_CELL, jobs !== undefined);
+      const kind = crossingAt(crossing, x, z, ox, oz, BLADE_REBUILD_CELL, jobs !== undefined, jobs?.started());
       if (kind === "none") {
         aim(x, z);
         return;

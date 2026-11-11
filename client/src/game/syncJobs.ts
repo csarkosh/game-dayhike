@@ -170,6 +170,9 @@ export type SyncJobs = {
   /** This frame's share: the late jobs to their end, then slices of the rest
    * until the budget is spent. Call once a frame, after every shell's update. */
   run(): void;
+  /** The clock (ms) as the last `run` began, NaN before the first: a frame's
+   * time for `crossingAt`, read without another reading of the clock. */
+  started(): number;
   /** Frames `run` has closed. */
   readonly frame: number;
   /** Slices the last `run` ran, how many of them it ran past the budget
@@ -200,6 +203,7 @@ export function createSyncJobs(clock: () => number): SyncJobs {
   const idle: { owner: object; slices: Slices; next: number }[] = [];
   let idleTurn = 0;
   let frame = 0;
+  let startedAt = Number.NaN;
   const last: { slices: number; late: number; completed: number; idle: number; ms: number; lateMs: number; owners: Record<string, number> } =
     { slices: 0, late: 0, completed: 0, idle: 0, ms: 0, lateMs: 0, owners: {} };
   /** The slice the clock's next reading is charged to: the one that just ran
@@ -286,6 +290,7 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       if (at >= 0) idle.splice(at, 1)[0]?.slices.return(undefined);
       if (slices !== null) idle.push({ owner, slices, next: 0 });
     },
+    started: () => startedAt,
     run() {
       last.slices = 0;
       last.late = 0;
@@ -296,6 +301,7 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       for (const name in last.owners) last.owners[name] = 0;
       charging = null;
       const start = tick();
+      startedAt = start;
       // A late job goes to its end first: it is the one the picture waits on.
       // Its last slice takes it out of the queue, so the next job moves up
       // into its index. Indexed rather than iterated over a copy: this runs
@@ -425,11 +431,14 @@ export type CrossingKind = "none" | "now" | "later";
 
 /** A shell's record of the views it has been handed: the origin on its
  * rebuild grid it last built or began building for, and last frame's view. */
-export type Crossing = { originX: number; originZ: number; lastX: number; lastZ: number };
+export type Crossing = { originX: number; originZ: number; lastX: number; lastZ: number; lastAt: number };
 
 export function createCrossing(): Crossing {
-  return { originX: NaN, originZ: NaN, lastX: NaN, lastZ: NaN };
+  return { originX: NaN, originZ: NaN, lastX: NaN, lastZ: NaN, lastAt: NaN };
 }
+
+/** The frame a view's step is reckoned against (s): 60 a second. */
+export const SYNC_FRAME_S = 1 / 60;
 
 /**
  * Classifies this frame's view (x, z), whose origin on the shell's rebuild
@@ -441,6 +450,17 @@ export function createCrossing(): Crossing {
  * or more than `SYNC_FAST_STEP_M`, and for a shell given no scheduler
  * (`deferrable` false). "later" for everything else: a one-cell step at a walk
  * or a run, which becomes a job.
+ *
+ * The step since last frame is read as it would be at 60 frames a second:
+ * over a frame longer than `SYNC_FRAME_S` (by `now`, the scheduler's clock as
+ * its last share began, `SyncJobs.started`; no clock, no scaling)
+ * it is scaled to one, so it is the view's speed that says a burst, not a slow
+ * frame. A sprint moves 0.12 m a frame at 60; after one frame of 150 ms (a
+ * collection, a buffer's upload) it had moved 1.05 m, was taken for the free
+ * camera's boost, and every shell crossing a line that frame rebuilt at once:
+ * the face patches' set in one frame of 1.1 to 1.3 s on the rig that measured
+ * it (2026-11-09), three times in six runs, each after a frame of 0.18 to
+ * 0.26 s. A jump of more than a cell is a jump at any frame rate.
  */
 export function crossingAt(
   c: Crossing,
@@ -450,8 +470,13 @@ export function crossingAt(
   oz: number,
   cell: number,
   deferrable: boolean,
+  now: number = Number.NaN,
 ): CrossingKind {
-  const moved = Math.hypot(x - c.lastX, z - c.lastZ);
+  const step = Math.hypot(x - c.lastX, z - c.lastZ);
+  const seconds = (now - c.lastAt) / 1000;
+  // With no clock (a shell given no scheduler, a first view), the step stands as it is.
+  const moved = seconds > SYNC_FRAME_S ? (step * SYNC_FRAME_S) / seconds : step;
+  c.lastAt = now;
   c.lastX = x;
   c.lastZ = z;
   if (ox === c.originX && oz === c.originZ) return "none";

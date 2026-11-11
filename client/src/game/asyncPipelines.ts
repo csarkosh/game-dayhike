@@ -46,7 +46,8 @@
  * Outside the scope, and while the engine renders by snapshot, every draw is
  * Babylon's, untouched.
  *
- * While a creation is pending, the scene's frames are held: its render
+ * While a creation is pending and no frame has yet been whole, or more than
+ * `HOLD_PENDING_OVER` are pending at once after, the scene's frames are held: its render
  * returns at once, drawing nothing, and the canvas keeps its last image
  * (`guardRender`; the engine acquires the canvas's texture only for a main
  * pass). A frame drawn with draws left out is not a cheaper frame but a far
@@ -121,6 +122,25 @@ export const ASYNC_PIPELINES_MAX_IN_FLIGHT = maxInFlightFor(globalThis.navigator
  * synchronously from its next draw, so a creation that never settles can
  * neither keep a mesh out for good nor stall the queue behind it. */
 export const ASYNC_PIPELINE_MAX_MS = 30_000;
+
+/**
+ * Once a frame of an engine has been drawn whole, the most pipelines that may
+ * be pending while its frames still draw, their draws left out: more than
+ * this at once holds the frames, as any does before that first whole frame.
+ *
+ * The hold is for a world that is not in: with the ground or the trees left
+ * out a frame is dearer, not cheaper (the module's notes). A hike under way
+ * asks for a few at a time, each for one thing newly in view (an animal, a
+ * pond, a sign, a model that has just landed), and holding the page for
+ * those froze it: on the rig that measured the summit scene (2026-11-09, a
+ * T4, two creations in flight) each pipeline took 0.4 to 0.9 s, the film's
+ * car's seven held the scene's first shots for 3.7 s, and an animal's one
+ * held the hike for half a second wherever it was first met. Left out, such
+ * a thing is in the picture that much later and nothing stops. A change that
+ * asks for every material's again (a light added: 22 at once at the find,
+ * until the lights were made constant) is far over the bound, and holds.
+ */
+export const HOLD_PENDING_OVER = 8;
 
 /** The longest the start holds its reveal for a frame that left nothing out,
  * counted from the end of its first frame (`revealWhenWhole`). */
@@ -479,20 +499,27 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
       return false;
     }
   };
+  /** Whether a frame of this engine has been drawn with nothing pending: its world is in. */
+  let wholeOnce = false;
   const scenes = new Map<Renders, { ownRender: Renders["render"]; hadOwn: boolean; guarded: Renders["render"] }>();
   const guardRender = (scene: Renders): void => {
     if (scenes.has(scene)) return;
     const ownRender = scene.render;
     const hadOwn = Object.prototype.hasOwnProperty.call(scene, "render");
     const guarded = (...args: unknown[]): void => {
-      // Held while a pipeline is pending: nothing drawn, the canvas's last
-      // image kept, the frame drawn after it whole (see the module's notes).
-      if (pending() > 0) {
+      // Held while pipelines are pending: nothing drawn, the canvas's last
+      // image kept, the frame drawn after it whole (see the module's notes):
+      // any pending until a frame has been whole, and after that only more
+      // than a few at once (`HOLD_PENDING_OVER`).
+      if (pending() > (wholeOnce ? HOLD_PENDING_OVER : 0)) {
         tally.held++;
         report.held++;
         return;
       }
-      guard(() => ownRender.apply(scene, args));
+      const leftOut = tally.leftOut;
+      const drew = guard(() => ownRender.apply(scene, args));
+      // Whole: it drew, having asked for pipelines before it, left no draw out and asked for none.
+      if (drew && !wholeOnce && tally.asked > 0 && tally.leftOut === leftOut && pending() === 0) wholeOnce = true;
     };
     scene.render = guarded;
     scenes.set(scene, { ownRender, hadOwn, guarded });

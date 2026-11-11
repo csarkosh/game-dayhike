@@ -80,9 +80,9 @@ export type TrailheadCar = { root: TransformNode; model: CarModel | null; leave(
  * The film's car is drawn wherever it stands once swapped in, each mesh
  * until its material has been ready for it on two passes running, and none past
  * this many frames: the effects prepared, the shader modules made and the
- * pipelines requested at the swap, while the car stands unseen a kilometre
- * off in the dark of the chase, so the scene's first frames draw the car
- * whole instead of leaving it out or holding the page.
+ * pipelines requested at the swap, which comes as the hike starts (`app.ts`
+ * fetches the car with the hike's scenery), so the end scene's first frames
+ * draw the car whole instead of leaving it out or holding the page.
  */
 export const PIPELINE_WARM_FRAMES_MAX = 30;
 

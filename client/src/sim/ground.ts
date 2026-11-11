@@ -1,7 +1,7 @@
 import type { Vec3 } from "./types.js";
 import { elevationSampleAt } from "./terrain.js";
 import { GROUND_NORMAL_Y, ROCK_STAND_NORMAL_Y } from "./constants.js";
-import { rockLayerAt, rockPaintAt, rockRiseAt, trailClearAt } from "./rockSurface.js";
+import { GROUND_DEPTH, rockLayerAt, rockPaintAt, rockRiseAt, trailClearAt } from "./rockSurface.js";
 import type { TrailGraph } from "./trail.js";
 
 /**
@@ -43,7 +43,20 @@ export type GroundField = {
    * fields of the tests).
    */
   standNormalY?(x: number, z: number): number;
+  /**
+   * Whether the point (x, y, z) is above the surface: `y - heightAt(x, z) > 0`,
+   * and the same answer to the bit, got without the walkable rock's layer
+   * (five to nine ground samples a point) wherever the point is under the
+   * bare ground or clears it by more than the layer can rise. What a ray
+   * asks at every step of its march (`raycastGround`): a sight line's cost
+   * was the layer's, read 160 times over 80 m. Absent, `heightAt` is asked.
+   */
+  above?(x: number, y: number, z: number): boolean;
 };
+
+/** Metres over the layer's greatest rise at which a point is taken as clear
+ * of it without asking: far over any rounding of the heights compared. */
+const ABOVE_MARGIN = 1e-6;
 
 /** The steepest gradient a foot holds at a least normal `normalY`: the
  * inverse of the normal's rule, `sqrt(1 / normalY² − 1)`. */
@@ -89,6 +102,16 @@ export function createGroundField(seed: number, trail: TrailGraph | null = null,
       out.x = -dx * inv;
       out.y = inv;
       out.z = -dz * inv;
+    },
+    above(x, y, z) {
+      const s = elevationSampleAt(seed, x, z);
+      const over = y - s.h;
+      // The layer never sinks the ground, and rises it by `mask · depth · sqrt(1 + g²) · (v + 1) / 2`
+      // at most GROUND_DEPTH · sqrt(1 + g²): the mask and (v + 1) / 2 are in [0, 1], the depth under GROUND_DEPTH.
+      if (over <= 0) return false;
+      if (over > GROUND_DEPTH * Math.sqrt(1 + s.dx * s.dx + s.dz * s.dz) + ABOVE_MARGIN) return true;
+      const rise = rockRiseAt(seed, x, z, s, trail);
+      return y - (rise === 0 ? s.h : s.h + rise) > 0;
     },
     standNormalY(x, z) {
       // The paint and the trail's clearance alone say whether the layer can stand here.

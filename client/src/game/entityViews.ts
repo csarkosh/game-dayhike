@@ -21,6 +21,18 @@ import {
   HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED,
 } from "./hollowLook.js";
 import { AiState, Phase } from "../sim/types.js";
+
+/**
+ * The local player's own body in its first frames (`warmLocal`): the metres
+ * under their feet it is drawn at, behind the ground, and the frames and the
+ * milliseconds it is drawn for at least. The time is what the pipelines take,
+ * not the frames: on the rig that measured it (a T4, two creations in
+ * flight) a body's two took about a second, asked for while the hike's own
+ * were still being made.
+ */
+export const WARM_DEPTH_M = 40;
+export const WARM_FRAMES_MIN = 30;
+export const WARM_MS = 8000;
 import type { ShadeEntry } from "./shadeSilhouette.js";
 
 /**
@@ -165,24 +177,20 @@ export class EntityViews {
   /** In the end scene, every other body within `radius` of this point (the car's door) is hidden: it is in the car. */
   hideNear: { x: number; z: number; radius: number } | null = null;
   /**
-   * In the end scene from the engine's catch, the local player's lamp is one
-   * of the car's headlamps: here, pointed so, at this cone and reach, lit
-   * whatever the body shows. Null, it is the body's own.
+   * Where the local body's eyes are and the way they look, as this sync drew
+   * it: null when it drew no local body. The body has no lamp of its own; a
+   * scene that shows it moves the lens's lamp here (renderer.ts), so the
+   * lights every material binds are the same all game.
    */
-  localLampAt: { x: number; y: number; z: number; dx: number; dy: number; dz: number; angle: number; range: number } | null = null;
-  /**
-   * Keep the local player's lamp a light, dark while their body is not drawn,
-   * rather than dispose it: from the chase's flip to the end, so the lights
-   * every material binds stay the same from the film's car's first frames
-   * through the end scene, and nothing is asked of the pipelines anew in it.
-   */
-  keepLocalLamp = false;
+  localEye: { x: number; y: number; z: number; dx: number; dy: number; dz: number } | null = null;
+  private readonly eye = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1 };
   private readonly fades = new Map<number, { level: number; ai: number; quick: boolean; delay: number }>();
   /** Each enemy's reach, 0 to 1: how far its arms are turned out at the local player (REACH_S). */
   private readonly reaches = new Map<number, number>();
   /** Where the reaching arms aim this frame: the local player's eyes, or null with no local player. */
   private reachAt: Vector3 | null = null;
   private readonly reachObserver: Observer<Scene> | null;
+  private readonly warmObserver: Observer<Scene> | null;
   /** Views of shades gone from the state, fading out: the model is held until the fade ends. */
   private readonly fading = new Map<number, { entry: HollowView; level: number; soft: number; near: number }>();
   /** Each shade's softness (shadeSilhouette.ts): 1 a blur in the mist, 0 the Hollow; a lunge resolves as it closes on the local eye. */
@@ -200,6 +208,8 @@ export class EntityViews {
   constructor(
     private readonly scene: Scene,
     readonly models: CharacterPool = createCharacterPool(),
+    /** The page's clock (ms), which times the local body's first frames; the tests hand in their own. */
+    private readonly now: () => number = () => performance.now(),
   ) {
     // PBRMaterial, not StandardMaterial: a StandardMaterial ignores
     // `scene.environmentTexture` entirely and takes the full sun intensity
@@ -211,6 +221,7 @@ export class EntityViews {
     // frame (scene.animate runs before this observer), so it stands on the
     // idle rather than under it.
     this.reachObserver = scene.onBeforeRenderObservable.add(() => this.applyReaches());
+    this.warmObserver = scene.onAfterRenderObservable.add(() => this.warmDrawn());
     this.playerMaterial = new PBRMaterial("mat_player", scene);
     this.playerMaterial.albedoColor = new Color3(0.3, 0.7, 0.95);
     this.playerMaterial.metallic = 0;
@@ -253,12 +264,15 @@ export class EntityViews {
     dt = 0,
   ): void {
     const clamped = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
+    this.localEye = null;
 
     for (const [id, player] of state.players) {
       // The local player is the camera; drawing their own body would fill
       // the screen from the inside. In a scene (showLocal) the camera is
       // elsewhere and the body stands in the shot.
       if (id === localId && !this.showLocal) {
+        // Its first frames: drawn out of sight, so the summit scene's first shot asks for nothing.
+        if (this.warmLocal(id, player.pos.x, player.pos.y - PLAYER_HALF.y, player.pos.z)) continue;
         this.players.get(id)?.node.setEnabled(false);
         this.playerModels.get(id)?.view.node.setEnabled(false);
         continue;
@@ -300,6 +314,23 @@ export class EntityViews {
       }
       node.rotation.y = player.yaw;
 
+      const eyeY = feetY + PLAYER_HALF.y + PLAYER_EYE_OFFSET;
+      const d = aimDirection(player.yaw, player.pitch);
+      // The local body wears the lens's lamp, which the renderer moves here: a lamp of its own was a
+      // fourth light on every lit material (to 2026-11-09), so each needed its shader and its
+      // pipeline again in the summit scene's first frame: the page held 18 of the scene's 21 seconds
+      // for them on WebGPU, and drew five frames of it on WebGL2 (the rig's measure).
+      if (id === localId) {
+        const eye = this.eye;
+        eye.x = node.position.x;
+        eye.y = eyeY;
+        eye.z = node.position.z;
+        eye.dx = d.x;
+        eye.dy = d.y;
+        eye.dz = d.z;
+        this.localEye = eye;
+        continue;
+      }
       // Unparented: a child of the body would inherit its yaw and turn
       // `direction` into a local vector, so position and direction are written
       // in world space every sync instead. At the eyes, whichever body is drawn.
@@ -308,23 +339,16 @@ export class EntityViews {
         lamp = createHeadlamp(this.scene, `lamp_player_${id}`);
         this.lamps.set(id, lamp);
       }
-      lamp.position.set(node.position.x, feetY + PLAYER_HALF.y + PLAYER_EYE_OFFSET, node.position.z);
-      const d = aimDirection(player.yaw, player.pitch);
+      lamp.position.set(node.position.x, eyeY, node.position.z);
       lamp.direction.set(d.x, d.y, d.z);
       if (lamp.angle !== LAMP_ANGLE) lamp.angle = LAMP_ANGLE;
       if (lamp.range !== LAMP_RANGE) lamp.range = LAMP_RANGE;
-      // The scene's light is the local player's own headlamp, worn on the body it shows, on for its length.
-      setLamp(lamp, player.lamp.on || (id === localId && this.showLocal), lampState);
-    }
-    // The car's headlamp the local lamp has become, after the body's own use of it.
-    if (state.players.has(localId)) {
-      if (this.localLampAt !== null) this.aimLocalLamp(localId);
-      else if (this.keepLocalLamp && !this.showLocal) setLamp(this.localLamp(localId), false);
+      setLamp(lamp, player.lamp.on, lampState);
     }
     this.pruneModels(this.playerModels, state.players);
     this.prune(this.players, state.players);
     for (const [id, lamp] of this.lamps) {
-      if (!state.players.has(id) || (id === localId && !this.showLocal && this.localLampAt === null && !this.keepLocalLamp)) {
+      if (!state.players.has(id)) {
         lamp.dispose();
         this.lamps.delete(id);
       }
@@ -468,30 +492,54 @@ export class EntityViews {
     return this.fading.size;
   }
 
-  /** The local player's lamp, made if it is not there. */
-  private localLamp(localId: number): SpotLight {
-    let lamp = this.lamps.get(localId);
-    if (lamp === undefined) {
-      lamp = createHeadlamp(this.scene, `lamp_player_${localId}`);
-      this.lamps.set(localId, lamp);
+  /**
+   * The local body's warm-up: whether it stands in the frame being made, the frames that drew it,
+   * when the first and the latest of them ended, and whether it is over.
+   */
+  private readonly warm = { placed: false, frames: 0, since: Number.NaN, last: Number.NaN, done: false };
+  /** After a frame the scene drew: one more of the body's first frames, if it stood in it. */
+  private warmDrawn(): void {
+    const w = this.warm;
+    if (!w.placed) return;
+    w.placed = false;
+    w.frames++;
+    w.last = this.now();
+    if (Number.isNaN(w.since)) w.since = w.last;
+  }
+  /**
+   * The local player's own body in its first frames: drawn WARM_DEPTH_M under where they stand,
+   * behind the ground, whatever the view, so its shaders and its pipelines (on WebGL2 its
+   * programs) are made while the hike starts. A body first drawn in the summit scene's first shot
+   * asked for them there: the page held that shot's frames for them on WebGPU, and stopped for
+   * them on WebGL2. Counted in frames the scene drew, from the first of them: a page still
+   * holding its frames for the world's pipelines has drawn none. True while it draws.
+   */
+  private warmLocal(id: number, x: number, feet: number, z: number): boolean {
+    const w = this.warm;
+    if (w.done) return false;
+    const instance = this.models.acquire(id, variantForId(RANGER_IDS, id) as string);
+    if (instance === null) return false;
+    const meshes = instance.root.getChildMeshes(false);
+    if (w.frames >= WARM_FRAMES_MIN && w.last - w.since >= WARM_MS) {
+      w.done = true;
+      for (const m of meshes) m.alwaysSelectAsActiveMesh = false;
+      // Placed anew when a scene shows it: its view forgotten, the instance kept.
+      this.playerModels.get(id)?.view.node.setEnabled(false);
+      this.playerModels.delete(id);
+      return false;
     }
-    return lamp;
+    const entry = this.ensureModel(this.playerModels, id, instance, x, feet - WARM_DEPTH_M, z);
+    this.players.get(id)?.node.setEnabled(false);
+    entry.view.node.setEnabled(true);
+    entry.view.node.position.set(x, feet - WARM_DEPTH_M, z);
+    for (const m of meshes) m.alwaysSelectAsActiveMesh = true;
+    w.placed = true;
+    return true;
   }
 
-  /**
-   * The local lamp as the car's headlamp, where `localLampAt` says, lit:
-   * nothing without it. `sync` does it; the renderer does it again once the
-   * car is posed later in the frame, so the lamp is where the car is.
-   */
-  aimLocalLamp(localId: number): void {
-    const at = this.localLampAt;
-    if (at === null) return;
-    const lamp = this.localLamp(localId);
-    lamp.position.set(at.x, at.y, at.z);
-    lamp.direction.set(at.dx, at.dy, at.dz);
-    if (lamp.angle !== at.angle) lamp.angle = at.angle;
-    if (lamp.range !== at.range) lamp.range = at.range;
-    setLamp(lamp, true);
+  /** Whether the local body is still in its first frames (`warmLocal`), for the tests. */
+  warming(): boolean {
+    return !this.warm.done;
   }
 
   /** This frame's shades for the silhouette mask. */
@@ -647,6 +695,7 @@ export class EntityViews {
 
   dispose(): void {
     if (this.reachObserver !== null) this.scene.onBeforeRenderObservable.remove(this.reachObserver);
+    if (this.warmObserver !== null) this.scene.onAfterRenderObservable.remove(this.warmObserver);
     this.fading.clear();
     this.fades.clear();
     for (const view of this.players.values()) view.node.dispose();

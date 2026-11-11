@@ -388,7 +388,7 @@ export function createFacePatches(
       const ci = Math.floor(camX / PATCH_CELL);
       const cj = Math.floor(camZ / PATCH_CELL);
       const first = Number.isNaN(crossing.originX);
-      const kind = crossingAt(crossing, camX, camZ, ci * PATCH_CELL, cj * PATCH_CELL, PATCH_CELL, jobs !== undefined);
+      const kind = crossingAt(crossing, camX, camZ, ci * PATCH_CELL, cj * PATCH_CELL, PATCH_CELL, jobs !== undefined, jobs?.started());
       if (kind === "none") {
         aim(camX, camZ);
         return;

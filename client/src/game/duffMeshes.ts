@@ -361,7 +361,7 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
       const ox = Math.floor(x / DUFF_REBUILD_CELL) * DUFF_REBUILD_CELL;
       const oz = Math.floor(z / DUFF_REBUILD_CELL) * DUFF_REBUILD_CELL;
       if (turn(heading, x - crossing.lastX, z - crossing.lastZ)) aimed = false;
-      const kind = crossingAt(crossing, x, z, ox, oz, DUFF_REBUILD_CELL, jobs !== undefined);
+      const kind = crossingAt(crossing, x, z, ox, oz, DUFF_REBUILD_CELL, jobs !== undefined, jobs?.started());
       if (kind === "none") {
         aim(x, z);
         return;

@@ -489,8 +489,10 @@ describe("a view's next crossing", () => {
 
 describe("crossingAt", () => {
   const CELL = 2;
-  const at = (c: ReturnType<typeof createCrossing>, x: number, z: number, deferrable = true) =>
-    crossingAt(c, x, z, Math.floor(x / CELL) * CELL, Math.floor(z / CELL) * CELL, CELL, deferrable);
+  /** The page's clock, a frame of 60 a second on at every view unless a test says how long its frame was. */
+  let clock = 0;
+  const at = (c: ReturnType<typeof createCrossing>, x: number, z: number, deferrable = true, frameMs = 1000 / 60) =>
+    crossingAt(c, x, z, Math.floor(x / CELL) * CELL, Math.floor(z / CELL) * CELL, CELL, deferrable, (clock += frameMs));
 
   it("builds the first view at once, then waits for a crossing", () => {
     const c = createCrossing();
@@ -524,11 +526,39 @@ describe("crossingAt", () => {
     // A cell of 10 m: the boost's 2.4 m a frame is under half a cell, and
     // still more than a metre.
     const wide = createCrossing();
-    const on10 = (x: number) => crossingAt(wide, x, 0, Math.floor(x / 10) * 10, 0, 10, true);
+    const on10 = (x: number) => crossingAt(wide, x, 0, Math.floor(x / 10) * 10, 0, 10, true, (clock += 1000 / 60));
     on10(18.5);
     expect(on10(20.9)).toBe("now");
     on10(29.95);
     expect(on10(30.04)).toBe("later");
+  });
+
+  it("reads a step by the view's speed, so a slow frame at a sprint is a job and not a burst", () => {
+    const c = createCrossing();
+    at(c, 10.5, 10.5);
+    // A sprint, 7 m/s, over one frame of 200 ms: 1.4 m, across a line. At 60 frames a second
+    // that step is the free camera's (below); over 200 ms it is 0.117 m a frame, a run.
+    expect(at(c, 11.9, 10.5, true, 200)).toBe("none");
+    expect(at(c, 13.3, 10.5, true, 200)).toBe("later");
+    // The same 1.4 m in one frame of 60 a second: at once.
+    at(c, 13.9, 10.5);
+    expect(at(c, 15.3, 10.5)).toBe("now");
+    // The free camera's boost in a frame shorter than one of 60 a second is still a burst: 1.8 m in 12.5 ms.
+    at(c, 15.5, 10.5);
+    expect(at(c, 17.3, 10.5, true, 12.5)).toBe("now");
+    // A jump of more than a cell is a jump, however long the frame.
+    expect(at(c, 30.5, 10.5, true, 5000)).toBe("now");
+    // A frame shorter than one of 60 a second is not scaled up: the uncapped page's 2 ms frames.
+    const fast = createCrossing();
+    at(fast, 11.95, 10.5);
+    expect(at(fast, 12.0, 10.5, true, 2)).toBe("later");
+  });
+
+  it("takes a first view's step as it is, having no frame before it", () => {
+    const c = createCrossing();
+    expect(Number.isNaN(c.lastAt)).toBe(true);
+    expect(at(c, 10.5, 10.5, true, 5000)).toBe("now");
+    expect(c.lastAt).toBe(clock);
   });
 });
 

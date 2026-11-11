@@ -115,7 +115,8 @@ import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFr
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
-import { Button, Outcome, Phase, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
+import { Button, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
+import { hasLineOfSight } from "./sim/ai.js";
 import { isHollowState, playerSees } from "./sim/hollow.js";
 import { trailDistance } from "./sim/trail.js";
 import { AiState } from "./sim/types.js";
@@ -131,6 +132,8 @@ import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
 /** Seconds after the last howl ends before the voice answers it, and the milliseconds into the cap's scene its line comes. */
 const CRY_BEAT_S = 0.6;
 const CAP_LINE_DELAY_MS = 1100;
+/** Milliseconds between the lens's sight lines to a Hollow (`sightEvery`). */
+const LENS_SIGHT_MS = 100;
 import { HOLLOW_CALL_CLIP, stepWoods, WOODS_REST, type WoodsState } from "./game/woodsVoice.js";
 import { loadBirdBed } from "./game/birdBed.js";
 import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "./game/woodsSounds.js";
@@ -1039,9 +1042,28 @@ function buildGame(
    * console's base stands and this does nothing. Both loops, before
    * `renderer.sync`, which reads the weather this sets.
    */
+  /**
+   * The lens's sight line to each Hollow, asked every LENS_SIGHT_MS and kept between: the lens
+   * eases over LENS_EASE_S (1.5 s), so a sight a tenth of a second old cannot be seen in it, and
+   * a ray through the ground every frame was a tenth of the chase's main thread. Kept by the
+   * Hollow's place in the frame's order, which holds while the same Hollows stand.
+   */
+  const sightKept: { at: number; seen: boolean }[] = [];
+  let sightIndex = 0;
+  function sightEvery(eye: Vec3, h: Vec3, world: World): boolean {
+    const now = performance.now();
+    const k = (sightKept[sightIndex] ??= { at: -Infinity, seen: true });
+    sightIndex++;
+    if (now - k.at >= LENS_SIGHT_MS) {
+      k.at = now;
+      k.seen = hasLineOfSight(eye, h, world.boxes, world.ground);
+    }
+    return k.seen;
+  }
   function syncAtmosphere(world: World, state: WorldState, localId: number, dt: number): void {
     if (world.search === null || world.trail === null) return;
-    const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground);
+    sightIndex = 0;
+    const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground, (eye, h) => sightEvery(eye, h, world));
     escalation = stepEscalation(escalation, targets, dt);
     lastTargets = targets;
     if (telemetry !== null) {
@@ -1114,8 +1136,6 @@ function buildGame(
     if (cryOver) cryPending = false;
     // The find: the frame the phase flips, the scene begins on this screen.
     const chaseNow = state.phase !== Phase.Climb;
-    // The film's car for the end, fetched while the car is far off and out of sight.
-    if (chaseNow && !wasChase) requestFilmCar();
     // A flip first read with the match already decided (a follower's snapshot that carries the
     // phase and the win together, a tab back from hidden) has no find to show: the end scene's.
     if (chaseNow && !wasChase && state.outcome === Outcome.Playing) {
@@ -1279,22 +1299,20 @@ function buildGame(
 
   /**
    * The film's car (`trailheadMeshes.ts` `swapCar`), the parked car's double
-   * with wheels and a door, for the end scene: wanted from the flip to the
-   * chase, fetched into the trailhead as it stands, and again into one built
-   * anew with the extras. Never counted by a loading screen, which is gone
-   * by then. A fetch that fails says so once and leaves the parked car.
+   * with wheels and a door, for the end scene: fetched into the trailhead as
+   * the hike's scenery is built, and again into one built anew with the
+   * extras, so its textures, its shaders and its pipelines are made while the
+   * hike starts. Until 2026-11-09 it was fetched at the find, and landed in
+   * the summit scene's first shots: on WebGPU the page held its frames for
+   * the car's pipelines, on WebGL2 it stopped for the car's textures and
+   * programs. A fetch that fails says so once and leaves the parked car.
    */
-  let filmCarWanted = false;
   let filmCarLoad: AbortController | null = null;
+  /** The film's car, if it is not already here or on its way (the end's own asks: a look at the end before the scenery's fetch began). */
   function requestFilmCar(): void {
-    filmCarWanted = true;
     fetchFilmCar(renderer);
   }
   function fetchFilmCar(r: Renderer): void {
-    if (!filmCarWanted) return;
-    // From the flip to the end the body's lamp stays a light, so the lights every material binds
-    // are the same from the film's car's first frames through the end scene (entityViews.ts).
-    r.views.keepLocalLamp = true;
     if (filmCarLoad !== null || signs === null) return;
     const trailhead = signs.trailhead;
     const loads = new AbortController();

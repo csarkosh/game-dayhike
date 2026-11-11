@@ -216,15 +216,21 @@ export function raycastGround(
   maxDist: number,
   ground: GroundField,
 ): number | null {
-  const gapAt = (t: number): number =>
-    origin.y + dir.y * t - ground.heightAt(origin.x + dir.x * t, origin.z + dir.z * t);
+  // Only the gap's sign is read, here and in the bisection, so the field's own test of a point
+  // answers it where it has one (`GroundField.above`: the same answer, without the walkable
+  // rock's layer wherever the point is under the bare ground or clear of all the layer can rise).
+  const above = ground.above;
+  const clearAt =
+    above !== undefined
+      ? (t: number): boolean => above(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t)
+      : (t: number): boolean => origin.y + dir.y * t - ground.heightAt(origin.x + dir.x * t, origin.z + dir.z * t) > 0;
 
-  if (gapAt(0) <= 0) return 0; // started inside the ground
+  if (!clearAt(0)) return 0; // started inside the ground
 
   let previous = 0;
   for (let t = GROUND_RAY_STEP; previous < maxDist; t += GROUND_RAY_STEP) {
     const capped = t > maxDist ? maxDist : t;
-    if (gapAt(capped) > 0) {
+    if (clearAt(capped)) {
       previous = capped;
       continue;
     }
@@ -233,7 +239,7 @@ export function raycastGround(
     let below = capped;
     for (let i = 0; i < GROUND_RAY_REFINEMENTS; i++) {
       const mid = (above + below) / 2;
-      if (gapAt(mid) > 0) above = mid;
+      if (clearAt(mid)) above = mid;
       else below = mid;
     }
     return below;

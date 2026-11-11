@@ -116,6 +116,7 @@ export function escalationTargets(
   graph: TrailGraph,
   boxes: BoxProvider,
   ground: GroundField | null,
+  sight: (eye: Vec3, hollow: Vec3) => boolean = (eye, hollow) => hasLineOfSight(eye, hollow, boxes, ground),
 ): EscalationTargets {
   const hollows: Vec3[] = [];
   for (const e of state.enemies.values()) {
@@ -147,7 +148,7 @@ export function escalationTargets(
     const dz = h.z - eye.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     let n = clamp01((NEAR_START - dist) / (NEAR_START - NEAR_FULL));
-    if (n > 0 && !hasLineOfSight(eye, h, boxes, ground)) n *= NEAR_BLIND;
+    if (n > 0 && !sight(eye, h)) n *= NEAR_BLIND;
     if (n > near) near = n;
   }
   let haunt = 0;

@@ -9,7 +9,7 @@ import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js"
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { ARMS, EntityViews, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, opacityOf } from "../../src/game/entityViews.js";
+import { ARMS, EntityViews, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, WARM_DEPTH_M, WARM_FRAMES_MIN, WARM_MS, opacityOf } from "../../src/game/entityViews.js";
 import { createCharacterPool, type CharacterLoader, type CharacterPool } from "../../src/game/characterModel.js";
 import type { EnemyState } from "../../src/sim/types.js";
 import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } from "../../src/game/headlamp.js";
@@ -91,11 +91,12 @@ describe("headlamp", () => {
 });
 
 describe("EntityViews lamps", () => {
-  it("gives every remote player a lamp that follows lamp.on, and the local player none", () => {
+  it("gives every remote player a lamp that follows lamp.on, and the local player's body none", () => {
     const views = new EntityViews(scene);
     const before = scene.lights.length;
     views.sync(state(player(1, true), player(2, false), player(3, true, 1.2)), 1, 1);
     const lamps = scene.lights.filter((l) => l.name.startsWith("lamp_player_")) as SpotLight[];
+    // The local player's one lamp is the lens's (renderer.ts): a body's own would be one light more on every material.
     expect(lamps.map((l) => l.name).sort()).toEqual(["lamp_player_2", "lamp_player_3"]);
     expect(lamps.find((l) => l.name === "lamp_player_2")!.intensity).toBe(0);
     expect(lamps.find((l) => l.name === "lamp_player_3")!.intensity).toBe(LAMP_INTENSITY);
@@ -103,23 +104,30 @@ describe("EntityViews lamps", () => {
     const d = lamps.find((l) => l.name === "lamp_player_3")!.direction;
     expect(d.x).toBeCloseTo(Math.sin(1.2), 5);
     expect(d.z).toBeCloseTo(Math.cos(1.2), 5);
+    // The body not drawn: no eye to wear the lamp at.
+    expect(views.localEye).toBeNull();
     views.sync(state(player(1, true)), 1, 1);
-    expect(scene.lights.filter((l) => l.name.startsWith("lamp_player_"))).toHaveLength(0);
+    expect(scene.lights.filter((l) => l.name.startsWith("lamp_player_"))).toEqual([]);
     views.dispose();
     expect(scene.lights.length).toBe(before);
   });
 
-  it("in a scene (showLocal) the local player's body is drawn and their lamp lit, their own switch aside", () => {
+  it("in a scene (showLocal) draws the local body and says where its eye is and looks, adding no light", () => {
     const views = new EntityViews(scene);
     views.sync(state(player(1, false)), 1, 1);
-    expect(scene.lights.filter((l) => l.name === "lamp_player_1")).toHaveLength(0);
+    const count = scene.lights.length;
     views.showLocal = true;
-    views.sync(state(player(1, false)), 1, 1);
-    const lamp = scene.lights.find((l) => l.name === "lamp_player_1") as SpotLight | undefined;
-    expect(lamp?.intensity).toBe(LAMP_INTENSITY);
+    views.sync(state(player(1, false, 1.2)), 1, 1);
+    expect(scene.lights.length).toBe(count);
+    const eye = views.localEye!;
+    expect([eye.x, eye.z]).toEqual([1, 0]);
+    expect(eye.y).toBeCloseTo(0.9 + PLAYER_EYE_OFFSET, 9);
+    expect(eye.dx).toBeCloseTo(Math.sin(1.2), 9);
+    expect(eye.dz).toBeCloseTo(Math.cos(1.2), 9);
     views.showLocal = false;
     views.sync(state(player(1, false)), 1, 1);
-    expect(scene.lights.filter((l) => l.name === "lamp_player_1")).toHaveLength(0);
+    expect(views.localEye).toBeNull();
+    expect(scene.lights.length).toBe(count);
     views.dispose();
   });
 });
@@ -140,47 +148,6 @@ describe("EntityViews in the end scene", () => {
     views.sync(state(player(1, true), at(2, 11.2)), 1, 1);
     expect(scene.getMeshByName("player_2")!.isEnabled()).toBe(false);
     expect((scene.lights.find((l) => l.name === "lamp_player_2") as SpotLight).intensity).toBe(0);
-    views.dispose();
-  });
-
-  it("keeps the local lamp a light from the run through the arrival to the catch, dark between", () => {
-    const views = new EntityViews(scene);
-    views.keepLocalLamp = true;
-    // The chase, the body not drawn: the lamp is there, dark.
-    views.sync(state(player(1, true), player(2, true)), 1, 1);
-    const count = scene.lights.length;
-    const lamp = scene.lights.find((l) => l.name === "lamp_player_1") as SpotLight;
-    expect(lamp.intensity).toBe(0);
-    // The run: the body drawn, its lamp lit.
-    views.showLocal = true;
-    views.sync(state(player(1, true), player(2, true)), 1, 1);
-    expect(lamp.intensity).toBe(LAMP_INTENSITY);
-    // The arrival: the body hidden, the lamp kept and dark, no light gone.
-    views.showLocal = false;
-    views.sync(state(player(1, true), player(2, true)), 1, 1);
-    expect(scene.lights.length).toBe(count);
-    expect(scene.lights.find((l) => l.name === "lamp_player_1")).toBe(lamp);
-    expect(lamp.intensity).toBe(0);
-    // The catch: the same light, the car's headlamp.
-    views.localLampAt = { x: 7.5, y: 0.7, z: 2.3, dx: 0, dy: -0.1, dz: 1, angle: 1.9, range: 60 };
-    views.sync(state(player(1, true), player(2, true)), 1, 1);
-    expect(scene.lights.length).toBe(count);
-    expect([lamp.intensity, lamp.angle]).toEqual([LAMP_INTENSITY, 1.9]);
-    views.dispose();
-  });
-
-  it("stands the local lamp where the car's headlamp is, at its cone and reach, with the body hidden", () => {
-    const views = new EntityViews(scene);
-    views.localLampAt = { x: 7.5, y: 0.7, z: 2.3, dx: 0, dy: -0.1, dz: 1, angle: 1.9, range: 60 };
-    views.sync(state(player(1, false)), 1, 1);
-    const lamp = scene.lights.find((l) => l.name === "lamp_player_1") as SpotLight;
-    expect(lamp.position.asArray()).toEqual([7.5, 0.7, 2.3]);
-    expect(lamp.direction.asArray()).toEqual([0, -0.1, 1]);
-    expect([lamp.angle, lamp.range, lamp.intensity]).toEqual([1.9, 60, LAMP_INTENSITY]);
-    expect(scene.getMeshByName("player_1")?.isEnabled() ?? false).toBe(false);
-    views.localLampAt = null;
-    views.sync(state(player(1, false)), 1, 1);
-    expect(scene.lights.filter((l) => l.name === "lamp_player_1")).toHaveLength(0);
     views.dispose();
   });
 });
@@ -258,13 +225,14 @@ function playing(prefix: string): { name: string; speedRatio: number }[] {
 }
 
 describe("EntityViews rangers", () => {
-  it("draws a ranger for a remote player and nothing for the local one", async () => {
+  it("draws a ranger for a remote player, and the local one's only out of sight in its first frames", async () => {
     const views = new EntityViews(scene, await loadedPool());
     views.sync(state(player(1, false), { ...player(2, false), pos: { x: 7, y: 0.9, z: -3 } }), 1, 1);
     const root = scene.getTransformNodeByName("character_2_orientation")!;
     expect(root).not.toBeNull();
     expect(root.isEnabled()).toBe(true);
-    expect(scene.getTransformNodeByName("character_1_orientation")).toBeNull();
+    // The local player's own: under their feet, behind the ground (the warm-up's test below).
+    expect(scene.getTransformNodeByName("character_1_orientation")!.position.y).toBe(-WARM_DEPTH_M);
     // The model's origin is at its feet, 0.9 m under the hull's centre.
     expect(root.position.asArray()).toEqual([7, 0, -3]);
     // No capsule for a player who has a ranger.
@@ -272,6 +240,49 @@ describe("EntityViews rangers", () => {
     // The lamp stays at the eyes: feet + 0.9 + 0.7.
     const lamp = scene.lights.find((l) => l.name === "lamp_player_2") as SpotLight;
     expect(lamp.position.y).toBeCloseTo(1.6, 9);
+    views.dispose();
+  });
+
+  it("draws the local player's own body under the ground for its first frames, counted in frames drawn, then hides it until a scene", async () => {
+    let now = 1000;
+    const views = new EntityViews(scene, await loadedPool(), () => now);
+    const here = state({ ...player(1, false), pos: { x: 4, y: 20.9, z: -6 } });
+    const drawn = () => scene.onAfterRenderObservable.notifyObservers(scene);
+    views.sync(here, 1, 1);
+    const root = scene.getTransformNodeByName("character_1_orientation")!;
+    const meshes = root.getChildMeshes(false);
+    // Under the feet (20 m), whatever the view: drawn, so its shaders and pipelines are asked for.
+    expect(root.isEnabled()).toBe(true);
+    expect(root.position.asArray()).toEqual([4, 20 - WARM_DEPTH_M, -6]);
+    expect(meshes.length).toBeGreaterThan(0);
+    expect(meshes.every((m) => m.alwaysSelectAsActiveMesh)).toBe(true);
+    expect(scene.getMeshByName("player_1")).toBeNull();
+    // A page holding its frames draws none: the seconds alone do not end it.
+    now += WARM_MS * 3;
+    for (let i = 0; i < WARM_FRAMES_MIN * 2; i++) views.sync(here, 1, 1);
+    expect(views.warming()).toBe(true);
+    expect(root.isEnabled()).toBe(true);
+    // Nor do the frames alone, drawn in less than the time the pipelines take.
+    for (let i = 0; i < WARM_FRAMES_MIN; i++) {
+      views.sync(here, 1, 1);
+      drawn();
+      now += 16;
+    }
+    views.sync(here, 1, 1);
+    expect(views.warming()).toBe(true);
+    // Both: over, the body hidden and culled as ever again.
+    now += WARM_MS;
+    views.sync(here, 1, 1);
+    drawn();
+    views.sync(here, 1, 1);
+    expect(views.warming()).toBe(false);
+    expect(root.isEnabled()).toBe(false);
+    expect(meshes.some((m) => m.alwaysSelectAsActiveMesh)).toBe(false);
+    // A scene's body stands where the player does, at once, not risen from the ground.
+    views.showLocal = true;
+    views.sync(here, 1, 0.5);
+    expect(root.isEnabled()).toBe(true);
+    expect(root.position.asArray()).toEqual([4, 20, -6]);
     views.dispose();
   });
 

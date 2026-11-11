@@ -1079,7 +1079,7 @@ export function createClutterMeshes(
     const originZ = Math.floor(camZ / CLUTTER_GRASS_CELL) * CLUTTER_GRASS_CELL;
     const kind = crossingAt(
       crossing, camX, camZ, originX, originZ, CLUTTER_GRASS_CELL,
-      jobs !== undefined && !first,
+      jobs !== undefined && !first, jobs?.started(),
     );
     if (kind === "none") {
       aim();

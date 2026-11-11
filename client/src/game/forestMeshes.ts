@@ -2143,7 +2143,7 @@ export function createForestMeshes(
   function maybeBuild(first: boolean): void {
     if (species === null || Number.isNaN(camX)) return;
     const origin = bandsOrigin(camX, camZ);
-    const kind = crossingAt(crossing, camX, camZ, origin.x, origin.z, TREE_CELL, options.jobs !== undefined && !first);
+    const kind = crossingAt(crossing, camX, camZ, origin.x, origin.z, TREE_CELL, options.jobs !== undefined && !first, options.jobs?.started());
     if (kind === "none") {
       aim();
       return;

@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
+  HEADLAMP_INTENSITY,
   arrived, carDistance, carHeard, carSpeed, endBeats, endCar, endShot, endShotIndex, endMistShare, headlampAt, laneAt, releaseAt, roadRelease,
   type EndShotContext, type LampAim,
 } from "../../src/game/endScene.js";
+import { LAMP_INTENSITY } from "../../src/game/lampParams.js";
 import { doorSpot } from "../../src/sim/trailhead.js";
 
 /** A straight road along z, its centreline at x 0, on flat ground at 0; the car on its shoulder at the pad, nose to +z. */
@@ -162,13 +164,15 @@ describe("the car", () => {
     expect(doorSpot(site, -1)).toEqual({ x: 8.4, z: -0.5 });
   });
 
-  it("lights its headlamps at its nose, 1.2 m apart and 0.7 m up, aimed ahead and 0.1 rad down", () => {
+  it("lights its headlamps as one lamp at the middle of its nose, 0.7 m up, aimed ahead and 0.1 rad down", () => {
     const out: LampAim = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0 };
-    expect(headlampAt({ x: 6.9, y: 0, z: 0, yaw: 0 }, 1, out)).toEqual({
-      x: 7.5, y: 0.7, z: 2.3, dx: 0, dy: expect.closeTo(-0.09983341664682815, 12), dz: expect.closeTo(0.9950041652780257, 12),
+    expect(headlampAt({ x: 6.9, y: 0, z: 0, yaw: 0 }, out)).toEqual({
+      x: 6.9, y: 0.7, z: 2.3, dx: 0, dy: expect.closeTo(-0.09983341664682815, 12), dz: expect.closeTo(0.9950041652780257, 12),
     });
-    const back = headlampAt({ x: 6.9, y: 0, z: 0, yaw: Math.PI }, -1, out);
-    expect([back.x, back.y, back.z, back.dz]).toEqual([expect.closeTo(7.5, 9), 0.7, expect.closeTo(-2.3, 9), expect.closeTo(-0.9950041652780257, 12)]);
+    const back = headlampAt({ x: 6.9, y: 0, z: 0, yaw: Math.PI }, out);
+    expect([back.x, back.y, back.z, back.dz]).toEqual([expect.closeTo(6.9, 9), 0.7, expect.closeTo(-2.3, 9), expect.closeTo(-0.9950041652780257, 12)]);
+    // As bright as the two lamps it stands for.
+    expect(HEADLAMP_INTENSITY).toBe(2 * LAMP_INTENSITY);
   });
 
   it("is heard from the camera in the ear's own frame, as far from it as it is", () => {
