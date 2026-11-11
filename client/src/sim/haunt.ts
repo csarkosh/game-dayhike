@@ -117,8 +117,17 @@ export const LUNGE_ATTACK_REACH = 3.4;
 /** In the chase: how far along the open way home a guide shade's node may be, and how far along the way to it the trail point it stands off (SHADE_TRAIL_OFF_M) is. */
 export const GUIDE_REACH: readonly [number, number] = [15, 60];
 export const GUIDE_ALONG: readonly [number, number] = [0.55, 0.8];
-/** Placements tried for a shade before the director waits a tick. */
+/** Placements tried for a shade in one attempt. */
 export const HAUNT_PLACE_TRIES = 6;
+/**
+ * Seconds from an attempt that placed nothing to the next. Tried again every
+ * tick (to 2026-11-11), a shade due where nothing admits one (dense forest,
+ * a steep bank) cast the attempt's sight lines sixty times a second until
+ * its episode ran out, each a march through the ground at the eye's height,
+ * where the walkable rock is asked at every step: half of the main thread
+ * for twenty to thirty seconds on the rig that measured it, walking.
+ */
+export const HAUNT_RETRY_S = 0.25;
 /** Mixed into the world seed for the haunt's own stream. */
 export const HAUNT_SALT = 0x4a7e;
 
@@ -462,6 +471,8 @@ export function stepHaunt(world: World, dt: number): void {
         ep.shades--;
         // Off the trail the shades come that much faster too: an episode's count alone would run out its clock.
         ep.nextShade = between(record.rng, HAUNT_SHADE_GAP_S) / (1 + OFF_TRAIL_SHADES_GAIN * off);
+      } else {
+        ep.nextShade = HAUNT_RETRY_S;
       }
     }
   }

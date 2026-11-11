@@ -16,7 +16,7 @@ import { hasLineOfSight } from "../../src/sim/ai.js";
 import { climbOf } from "../../src/sim/watcher.js";
 import { MIST_AT, MIST_SPAN, actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/sim/acts.js";
 import {
-  HAUNT_MIST_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_BY_S, HAUNT_REAL_CHASE, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
+  HAUNT_MIST_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_BY_S, HAUNT_RETRY_S, HAUNT_REAL_CHASE, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
   LUNGE_SPEED, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_TRAIL_BEARING_MAX_COS, SHADE_TRAIL_OFF_M, SHADE_WATCHED_S, OFF_TRAIL_FROM_M, OFF_TRAIL_SPAN_M, OFF_TRAIL_REAL_EACH, offTrailOf,
   bestClimb, isHaunting, isShadeState, nearestOnTrail, placeShadeOnGuide, pressureOf, spawnShade,
 } from "../../src/sim/haunt.js";
@@ -331,6 +331,39 @@ describe("the director", () => {
     expect(away.lunges / Math.max(1, away.lunges + away.shades)).toBeGreaterThan(0.8);
     expect(on.lunges / Math.max(1, on.lunges + on.shades)).toBeLessThan(0.5);
     expect(OFF_TRAIL_REAL_EACH).toBeLessThan(0.3);
+  });
+
+  it("tries a place again HAUNT_RETRY_S after an attempt that placed nothing, not every tick", () => {
+    const { w, p } = forestWorld();
+    standAtClimb(w, p, 0.9);
+    w.state.phase = Phase.Chase;
+    // Far off every trail and looking away from it: no stand off the trail is in view, and none
+    // within the view band's reach is 15 to 20 m off it. Every attempt places nothing.
+    const graph = w.trail!;
+    const from = { x: p.pos.x, z: p.pos.z };
+    for (let step = 1; step <= 400 && trailDistance(graph, p.pos.x, p.pos.z) < 90; step++) standAt(p, from.x + step, from.z);
+    expect(trailDistance(graph, p.pos.x, p.pos.z)).toBeGreaterThanOrEqual(90);
+    const near = nearestOnTrail(graph, p.pos.x, p.pos.z);
+    p.yaw = Math.atan2(p.pos.x - near.x, p.pos.z - near.z);
+    w.haunt!.rest = 0;
+    // The episode begins, and its first attempt is made.
+    tick(w, 2);
+    expect(w.haunt!.episode).not.toBeNull();
+    // Each attempt draws from the haunt's own stream: the ticks that moved it are the attempts.
+    let attempts = 0;
+    let stream = w.haunt!.rng.rngSeed;
+    const seconds = 2;
+    for (let i = 0; i < seconds / TICK_DT; i++) {
+      tick(w);
+      if (w.haunt!.rng.rngSeed !== stream) attempts++;
+      stream = w.haunt!.rng.rngSeed;
+    }
+    expect(shades(w)).toEqual([]);
+    expect(w.haunt!.episode).not.toBeNull();
+    expect(HAUNT_RETRY_S).toBe(0.25);
+    // Eight in two seconds, or seven where the wait's last tick falls a rounding short: not the 120 of a try every tick.
+    expect(attempts).toBeGreaterThanOrEqual(seconds / HAUNT_RETRY_S - 1);
+    expect(attempts).toBeLessThanOrEqual(seconds / HAUNT_RETRY_S);
   });
 
   it("waits while a Hollow is stepping out: no episode begins during the summit's reveal", () => {
