@@ -113,6 +113,7 @@ import { releaseAtmosphere } from "./game/atmosphere.js";
 import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
+import { createCoveredDraw } from "./game/coveredDraw.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
@@ -1805,6 +1806,12 @@ function buildGame(
   const wrap = (t: Transport): Transport =>
     degradation === null ? t : degradeTransport(t, degradation);
 
+  /** The frame's draw: every frame, or one every `COVERED_DRAW_MS` while the intro's film covers the hike. */
+  const filmDraw = createCoveredDraw();
+  function drawHike(): void {
+    if (filmDraw.due(performance.now())) renderer.scene.render();
+  }
+
   let last = performance.now();
   function frameSeconds(): number {
     const now = performance.now();
@@ -2062,7 +2069,7 @@ function buildGame(
       // the only case in which `renderer.camera.position` is an eye position
       // a pending freecam can adopt.
       cameraOnPlayer = self !== undefined && freecam === null;
-      renderer.scene.render();
+      drawHike();
 
       const now = performance.now();
       frameRate.add(1, now);
@@ -2215,7 +2222,7 @@ function buildGame(
       syncTelemetry(client.world, state, self, input.sprinting);
       // See the host loop: a pending freecam waits for this.
       cameraOnPlayer = self !== undefined && freecam === null;
-      renderer.scene.render();
+      drawHike();
 
       const now = performance.now();
       frameRate.add(1, now);
@@ -2277,7 +2284,7 @@ function buildGame(
       // Not connected yet: keep the frame clock from accumulating a huge first
       // delta, and still draw the empty level behind the HUD.
       frameSeconds();
-      renderer.scene.render();
+      drawHike();
       return;
     }
     stepAndRender();
@@ -2679,7 +2686,10 @@ function buildGame(
     ready,
     cover() {
       const release = gate.cover();
+      // The intro's film is over the hike: drawn slowly until the cut (`coveredDraw.ts`).
+      const lift = filmDraw.cover();
       return () => {
+        lift();
         if (!disposed) release();
       };
     },

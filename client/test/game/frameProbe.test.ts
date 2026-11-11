@@ -865,6 +865,27 @@ describe("startHike", () => {
     expect(p.events).toEqual(["loading", "decide", "engine medium", "loading gone", "build medium on webgl2"]);
   });
 
+  it("waits for beforeBuild between the engine and the build, and a start left meanwhile lets the engine go and builds nothing", async () => {
+    let topped: () => void = () => undefined;
+    const p = page({ beforeBuild: () => new Promise<void>((resolve) => { p.events.push("before build"); topped = resolve; }) });
+    const started = startHike(p.deps);
+    // The awaits up to the wait are promises already resolved: a turn of the task queue passes them.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(p.events).toEqual(["loading", "decide", "engine medium", "loading gone", "before build"]);
+    topped();
+    await started;
+    expect(p.events).toEqual(["loading", "decide", "engine medium", "loading gone", "before build", "build medium on webgl2"]);
+
+    let toppedLate: () => void = () => undefined;
+    const left = page({ beforeBuild: () => new Promise<void>((resolve) => { left.events.push("before build"); toppedLate = resolve; }) });
+    const leaving = startHike(left.deps);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    left.leave();
+    toppedLate();
+    await leaving;
+    expect(left.events).toEqual(["loading", "decide", "engine medium", "loading gone", "before build", "discard webgl2"]);
+  });
+
   it("hands Loading… over to the probe's screen, and says it again while the engine is made", async () => {
     const p = page({
       decide: async (_signals, hideLoading) => {

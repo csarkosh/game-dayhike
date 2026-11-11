@@ -682,6 +682,10 @@ export type HikeStartDeps<E> = {
   /** The engine the WebGPU rule gives the tier decided, made for the game's
    * canvas, which is created here, after the probe. */
   engine(decided: StartupTier, signals: GpuSignals): Promise<E>;
+  /** Waited for once the engine is made and before the build, which stops
+   * the page while it runs: where an intro plays over the start, its film's
+   * buffer topped up so it outlasts the stop. */
+  beforeBuild?(): Promise<void>;
   /** Lets go of an engine made for a start the page has since left. */
   discard(engine: E): void;
   /** Builds the hike at the tier decided, on the engine made for it; a
@@ -700,7 +704,8 @@ export type HikeStartDeps<E> = {
  * is answered with a line, never a blank page. A start the page has moved on
  * from builds nothing, says nothing, and lets go of an engine made meanwhile.
  * With `before`, the start waits for it between the tier and the engine; with
- * `paint`, it lets the page paint before the engine and before the build.
+ * `beforeBuild`, between the engine and the build; with `paint`, it lets the
+ * page paint before the engine and before the build.
  */
 export async function startHike<E>(deps: HikeStartDeps<E>): Promise<void> {
   let loading = deps.showLoading();
@@ -731,6 +736,13 @@ export async function startHike<E>(deps: HikeStartDeps<E>): Promise<void> {
       return;
     }
     hide();
+    if (deps.beforeBuild !== undefined) {
+      await deps.beforeBuild();
+      if (!deps.current()) {
+        deps.discard(engine);
+        return;
+      }
+    }
     await deps.paint?.();
     await deps.build(decided, engine);
   } catch (error) {

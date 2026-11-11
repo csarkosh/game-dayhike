@@ -350,6 +350,18 @@ function introSource(): string | null {
  * download waits for them: the film has the line to itself under its fade in. */
 const INTRO_BUFFER_S = 6;
 const INTRO_BUFFER_MAX_MS = 3000;
+/**
+ * Seconds of video in hand before the build begins, and the longest the
+ * build waits for them. The build stops the page while it runs (1.7 to 2.3 s
+ * on a laptop, 4.4 to 5.1 s on a phone, as measured 2026-11-11), and a film
+ * is fed its file through the page: it plays through a stop on what it has
+ * buffered and stands when that runs out. With the six seconds of the
+ * download's gate, part of them played by the time the engine was made, a
+ * phone's film stood through one build of two; a browser keeps about ten
+ * seconds ahead, so nine is asked for.
+ */
+const INTRO_BUILD_BUFFER_S = 9;
+const INTRO_BUILD_BUFFER_MAX_MS = 2000;
 
 /** Resolves once the video has `seconds` buffered ahead, or `maxMs` have passed. */
 function waitForBuffer(overlay: IntroOverlay, seconds: number, maxMs: number): Promise<void> {
@@ -1152,7 +1164,7 @@ function render(container: HTMLDivElement): void {
   // named `<step>Ms` so none shadows the row's `build` or `engine`.
   const laps: Record<string, number> = {};
   let lapStart = performance.now();
-  const lap = (name: "decide" | "intro" | "engine" | "build"): void => {
+  const lap = (name: "decide" | "intro" | "engine" | "film" | "build"): void => {
     const now = performance.now();
     laps[`${name}Ms`] = Math.round(now - lapStart);
     lapStart = now;
@@ -1184,6 +1196,10 @@ function render(container: HTMLDivElement): void {
       intro === null
         ? undefined
         : () => waitForBuffer(intro.overlay, INTRO_BUFFER_S, INTRO_BUFFER_MAX_MS).then(() => lap("intro")),
+    beforeBuild:
+      intro === null
+        ? undefined
+        : () => waitForBuffer(intro.overlay, INTRO_BUILD_BUFFER_S, INTRO_BUILD_BUFFER_MAX_MS).then(() => lap("film")),
     paint: () => new Promise((resolve) => afterNextPaint(resolve)),
     engine: (decided, read) => {
       hikeSignals = read;

@@ -195,6 +195,12 @@ the page light; it takes the still's place and nothing else changes. Designed in
    build begin: the engine, the ground maps, the models in the order the first frame needs them,
    the calls, and on WebGPU the translators and the shader map. Until then the video has the
    line to itself.
+   Once the engine is made, the build waits again, for nine seconds in hand or two seconds
+   (`INTRO_BUILD_BUFFER_S`, `INTRO_BUILD_BUFFER_MAX_MS`; `startHike`'s `beforeBuild`, amended
+   2026-11-11): the build stops the page while it runs (1.7 to 2.3 s on a laptop, 4.4 to 5.1 s on a
+   phone, as measured then; item 4's steps are not all it holds), a film is fed its file through
+   the page and plays through a stop only on what it has buffered, and six seconds partly played
+   were not always enough: a phone's film stood 5.0 s through a build of 5.1 s.
 4. The world build runs in steps that yield between them: the start's phases are already
    separate awaits; the clipmap's first build is a slice generator and is stepped rather than run
    whole; the first frame's collectors run under the sync budget rather than whole. Today the
@@ -203,6 +209,14 @@ the page light; it takes the still's place and nothing else changes. Designed in
 5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, and on
    WebGPU a whole frame has been drawn with no draw left out; the gate the tier switch already
    uses, run once at start.
+6. Under the film the hike is drawn once every `COVERED_DRAW_MS` (250 ms), not every frame, and
+   every frame again from the cut (`game/coveredDraw.ts`, amended 2026-11-11). The hidden world,
+   drawn every frame, took the graphics chip from the film: on a phone (WebGL2, a first visit) the
+   film's picture stood 8.5 s of its first 53 and jumped 1.8 s more, the longest pause 6.1 s;
+   drawn four times a second, 1.7 s and none, the longest 0.5 s. Its loading and its simulation go
+   on every frame as before, and each new thing is still first drawn within a quarter second of
+   arriving, so its shaders and pipelines are made before the cut. The quality probe's screen,
+   which covers play too, is not slowed: it times the frames it covers.
 
 ### 5.3 The bar and the line
 
@@ -292,6 +306,11 @@ Every numeric expectation is a literal; explicit time limits go through `timeLim
 - `catalog.json`'s `bytes` matches every file on disk; the video and the still are in the
   catalog and the build hashes them.
 - The scene runs with no local player and the sim's state is untouched by a scene frame.
+- `startHike`: `beforeBuild` is waited for between the engine and the build, and a start left
+  during it lets the engine go and builds nothing.
+- `coveredDraw.ts`: every frame draws with no film over the hike; a covered hike draws the frames
+  at 0, 250, 500 and 750 ms of a second at sixty a second, and every frame again once every cover
+  is lifted.
 
 ### 8.2 In the browser, on this machine
 
