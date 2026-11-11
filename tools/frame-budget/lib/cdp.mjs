@@ -34,9 +34,11 @@ export async function connect(wsUrl) {
   const waiting = new Map();
   let id = 0;
   let closed = false;
+  const listeners = new Map();
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.id !== undefined) waiting.get(m.id)?.(m);
+    else if (m.method !== undefined) for (const heard of listeners.get(m.method) ?? []) heard(m.params);
   };
   await new Promise((resolve, reject) => {
     ws.onopen = resolve;
@@ -61,6 +63,10 @@ export async function connect(wsUrl) {
       ws.send(JSON.stringify({ id: n, method, params }));
     });
   send.close = () => ws.close();
+  // The browser's own events (`Page.screencastFrame`, …): `heard(params)` on each.
+  send.on = (method, heard) => {
+    listeners.set(method, [...(listeners.get(method) ?? []), heard]);
+  };
   return send;
 }
 

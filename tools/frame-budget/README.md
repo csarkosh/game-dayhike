@@ -169,6 +169,48 @@ every frame at half speed (46 ms against 24, 2026-10-24).
 `--engine webgpu` forces the engine on every page: for a rig whose Chrome runs on Linux, which the
 game's own rule would put on WebGL2 (`docs/rendering/2026-10-22-parallel-rigs-research.md` §4).
 
+## A scene's frames, one by one
+
+The views above time ten settled seconds of a place. What happens as a world changes (the summit
+scene, the chase after it) is timed by `timeline.mjs`, where a hitch is the measure and a mean is
+not: on a rig's Chrome it stands the player 30 m down the stem from seed atmo's body, waits out a
+settle (75 s puts the night where a climb leaves it; the world eases over 20 s), walks them the
+last metres so the find comes as a match's does, and keeps every frame's time from before the find
+to the end of the chase's first minute, with the page's long frames, the pipelines' report
+(`dayhikePipelines`: asked, landed, frames held), the WGSL lookup's counters (`dayhikeWgsl`: the
+stages the shipped maps had, and those translated in the page), the GPU readout once a second and,
+with `--profile`, a CPU profile. `--climb <s>` is the same sprint with no find, the chase's control;
+`--approach escape` plays the end scene instead (the console's `escape`) and times 30 s of it.
+
+```bash
+node tools/frame-budget/timeline.mjs --base <url> --out <dir on the lab disk> --remote 9333 --label base --settle 75 --profile
+node tools/frame-budget/timeline.mjs --base <url> --out <dir> --remote 9334 --label base-webgl2 --engine webgl2 --settle 75 --profile
+node tools/frame-budget/timeline-report.mjs <dir>/base.json --maps <the build's client/dist/assets> --worst 10
+```
+
+`timeline-report.mjs` reads a run back by stretch (the approach, the scene's five shots, the chase
+ten seconds at a time): frames, mean, median, p95 and worst, the share of frames over a 60 Hz
+frame, the stalls (over 50 ms) and freezes (over 250 ms); the seconds the screen was held on one
+image; the shaders translated in the page; the main thread's hottest functions by stretch; and the worst frames, each with what ran in
+it. `--maps` names functions by source (keep a build's `client/dist/assets/*.map` beside its
+runs: a channel's maps are not stored); without it, `--full` prints whole URLs for
+`tools/telemetry/symbolicate.mjs <build>`, which reads a deployed build's. `--watch a.ts:12,b.ts:34`
+gives named functions' inclusive milliseconds a frame over the chase's first 20 s.
+
+Three things to know when reading a run:
+
+- **A held frame is a short frame.** A WebGPU page holding its frames for pipelines
+  (`asyncPipelines.ts`) keeps calling its frame, which draws nothing: the frame times read 60 a
+  second while the screen shows one image. The held seconds are in the report's pipelines table,
+  not its frame times. `--screencast` saves what the compositor presented, for looking.
+- **The rig's frames are sometimes capped.** Its Chrome runs with the frame cap off, yet stretches
+  of a run tick at the display's 60 Hz (a median of 16 to 18 ms where the next stretch reads 3):
+  a median there says the page kept up, not what a frame cost.
+- **The rig's CPU is the slow part.** A g4dn.xlarge's core is a fraction of an Apple M4's, and a
+  walk or a sprint is bound by the main thread on it (streaming, the simulation, Babylon's own
+  frame): moving stretches read 25 to 40 ms there on builds that hold 60 Hz on the Air. Compare a
+  build with another on the same stretch; a stall or a hold is a fault on any machine.
+
 ## Budgets
 
 ```bash
