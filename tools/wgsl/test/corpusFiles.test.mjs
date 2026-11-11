@@ -316,12 +316,12 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1098 recorded stages, each file\'s bytes hashing to the name it has: 447 on the medium and high tiers, 561 on low, 19 on high alone, 67 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1098);
+  it('holds the 1182 recorded stages, each file\'s bytes hashing to the name it has: 478 on the medium and high tiers, 617 on low, 17 on high alone, 66 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1182);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1098);
+    expect(read.stages).toHaveLength(1182);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(609);
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(662);
     // The 222 recorded on the medium and high tiers (the far field: the prepass's variants of
     // every material on the two tiers the far softening reads the scene's depth on, the
     // ground haze in every PBR fragment, the meadow's far band in the clutter's vertex stages,
@@ -434,13 +434,16 @@ describe('the committed corpus and the tests\' fixture', () => {
     // The sun's shadow map dropped on medium and high (2026-10-28): every page recorded again on
     // both tiers, 139 stages new, 7 gained a tier; the 440 that sampled the sun's shadow, on one of the
     // two tiers each, retired.
-    expect(read.tiers.size).toBe(1098);
+    // The film's car and the local body under the hike's own three lights (2026-11-11: the car
+    // fetched with the scenery, the body drawn in its first frames, and no scene adding a light):
+    // every page recorded again on the three tiers, 84 stages new, 3 gained a tier.
+    expect(read.tiers.size).toBe(1182);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([565, 518, 470]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(447);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(561);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(19);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(67);
+    expect([on('low'), on('medium'), on('high')]).toEqual([621, 548, 499]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(478);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(617);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(17);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(66);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
