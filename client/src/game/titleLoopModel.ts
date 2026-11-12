@@ -11,8 +11,13 @@ export type TitleLoopView = { src: boolean; playing: boolean; still: boolean };
 /** The connections too slow for the loop; a browser that does not say counts as fast. */
 const SLOW = new Set(["slow-2g", "2g", "3g"]);
 
+/** A connection not to spend on film: data is being saved, or it is 3g or worse. */
+export function slowConnection(env: { saveData: boolean; effectiveType: string | null }): boolean {
+  return env.saveData || (env.effectiveType !== null && SLOW.has(env.effectiveType));
+}
+
 export function titleLoopStart(env: TitleLoopEnv): TitleLoopState {
-  const still = !env.hasFilm || env.saveData || env.reducedMotion || (env.effectiveType !== null && SLOW.has(env.effectiveType));
+  const still = !env.hasFilm || env.reducedMotion || slowConnection(env);
   return { phase: still ? "still" : "waiting", hidden: false };
 }
 

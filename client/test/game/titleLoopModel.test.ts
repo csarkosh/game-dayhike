@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { titleLoopNext, titleLoopStart, titleLoopView, type TitleLoopEnv, type TitleLoopEvent } from "../../src/game/titleLoopModel.js";
+import { slowConnection, titleLoopNext, titleLoopStart, titleLoopView, type TitleLoopEnv, type TitleLoopEvent } from "../../src/game/titleLoopModel.js";
 
 const fast: TitleLoopEnv = { saveData: false, effectiveType: "4g", reducedMotion: false, hasFilm: true };
 const run = (env: TitleLoopEnv, events: TitleLoopEvent[]) => titleLoopView(events.reduce(titleLoopNext, titleLoopStart(env)));
 const STILL = { src: false, playing: false, still: true };
 
 describe("the title loop's model", () => {
+  it("calls a connection slow when data is saved or it is 3g or worse, and fast when the browser does not say", () => {
+    expect(slowConnection({ saveData: true, effectiveType: "4g" })).toBe(true);
+    for (const t of ["slow-2g", "2g", "3g"]) expect(slowConnection({ saveData: false, effectiveType: t })).toBe(true);
+    expect(slowConnection({ saveData: false, effectiveType: "4g" })).toBe(false);
+    expect(slowConnection({ saveData: false, effectiveType: null })).toBe(false);
+  });
   it("keeps the still when data is saved, the connection is slow, motion is to be reduced, or no film ships", () => {
     for (const env of [
       { ...fast, saveData: true }, { ...fast, effectiveType: "3g" }, { ...fast, effectiveType: "2g" },
