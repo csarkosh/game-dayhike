@@ -233,8 +233,10 @@ The intro is a player's first sight of the game: a film over the hike while the 
 it, with captions and a loading bar the page draws. Its bar is two limits, from the Play tap to
 the film's end: no page stop longer than 0.25 s (a long animation frame; while the page is
 stopped the captions and the bar stand), and no film pause longer than 0.1 s by either of the
-film's measures (above). It is met by three first-visit runs in a row on a cool phone, all inside
-both limits.
+film's measures (above); and, for the film's start alone, no more than 0.3 s behind the tap a
+second after it (a film with sound starts when the phone's sound output does, a quarter second
+on the Pixel 9: `film-start.mjs`, below). It is met by three first-visit runs in a row on a cool
+phone, all inside the limits.
 
 ```bash
 node tools/frame-budget/timeline-verdict.mjs <dir>/live-1.json <dir>/live-2.json <dir>/live-3.json
@@ -248,10 +250,12 @@ run made without `--cold` (not a first visit), a film that did not reach its end
 short, or a film that stalled for good). The window ends at the film's `ended` event (the run's
 `film-end` mark); a stop counts by its part inside the window, so one that runs through the
 film's end, or began before Play, is counted for what fell inside. A pause of the film's clock
-that spans several samples is one step, at its whole size. The film's start is judged with its
-pauses: how far behind the tap the film is at the first sample that shows it moving (a run whose
-first sample comes after a page stop has no pair of samples across its start, and without this
-its late start would pass unseen). The tap is the Play button's click where the run marks it
+that spans several samples is one step, at its whole size. The film's start is judged apart
+from its pauses: how far behind the tap the film is a second after it, at the last sample inside
+that second that shows it moving, or the first after it where the page was stopped through the
+second (a run whose first sample comes after a page stop has no pair of samples across its
+start, and without this its late start would pass unseen). What the film's clock loses inside
+that second is its start and not a pause. The tap is the Play button's click where the run marks it
 (`play-click`); the recorder also marks the film's `play()` call and its first `playing` event
 (`film-play`, `film-playing`), so a late start can be laid to the tap's handling or the film's own. `timeline-report.mjs` prints the
 same verdict for an intro run, with every stop over 0.25 s and when it came.

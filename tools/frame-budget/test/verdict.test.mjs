@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILM_PAUSE_S, PAGE_STOP_MS, verdictOf, verdictRow } from "../lib/verdict.mjs";
+import { FILM_PAUSE_S, FILM_START_S, PAGE_STOP_MS, verdictOf, verdictRow } from "../lib/verdict.mjs";
 
 // A film that keeps exact time from Play (page ms 1000) and ends at 72 s, sampled four times a second.
 const SMOOTH = Array.from({ length: 290 }, (_, i) => ({ t: 1000 + i * 250, at: Math.min(72, i * 0.25), total: Math.min(1728, i * 6), dropped: 0 }));
@@ -45,12 +45,32 @@ describe("an intro's verdict on a run that knows its film's length and end", () 
     expect(verdictOf(real({ loaf: [{ start: 800, dur: 3000 }] })).stops).toEqual([{ at: 0, ms: 2800 }]);
     expect(verdictOf(real({ loaf: [{ start: 600, dur: 600 }] })).pass).toBe(true);
   });
-  it("judges the film's start: how far behind the tap the film is once it is seen moving", () => {
+  it("judges the film's start: how far behind the tap the film is a second after it", () => {
     // The film stood 0.6 s on its first frame, then kept time: no pause after that, and a late start.
     const late = REAL.map((r) => ({ ...r, at: Math.max(0, r.at - 0.6) }));
     const v = verdictOf(real({ video: late, ended: 73600 }));
     expect(v.start.behind).toBeCloseTo(0.6, 2);
-    expect(v.why).toEqual(["the film was 0.60 s behind the Play tap once it was moving"]);
+    expect(v.why).toEqual(["the film was 0.60 s behind the Play tap after its first second"]);
+  });
+  it("allows the start what a phone's sound takes to begin, and no more", () => {
+    // A film with sound starts when the phone's sound output does: a quarter second on a Pixel 9.
+    const by = (s) => REAL.map((r) => ({ ...r, at: Math.max(0, r.at - s) }));
+    const quarter = verdictOf(real({ video: by(0.25), ended: 73250 }));
+    expect(quarter.start.behind).toBeCloseTo(0.25, 2);
+    expect(quarter.why).toEqual([]);
+    expect(verdictOf(real({ video: by(0.35), ended: 73350 })).why).toEqual(["the film was 0.35 s behind the Play tap after its first second"]);
+  });
+  it("takes what the film loses inside its first second as its start, not as a pause", () => {
+    // Its clock creeps for a moment, then it stands for the sound and keeps time from there.
+    const video = [{ t: 1050, at: 0.01, total: 0, dropped: 0, dur: 72 }, ...REAL.slice(1).map((r) => ({ ...r, at: r.at - (r.t <= 1250 ? 0.21 : 0.25) }))];
+    const v = verdictOf(real({ video, ended: 73250 }));
+    expect(v.start.behind).toBeCloseTo(0.25, 2);
+    expect(v.clockWorst).toBeNull();
+    expect(v.why).toEqual([]);
+  });
+  it("still fails a pause over the limit after the first second, however good the start", () => {
+    const video = REAL.map((r) => (r.t > 3000 ? { ...r, at: r.at - 0.15 } : r));
+    expect(verdictOf(real({ video, ended: 73150 })).why).toEqual(["the film's clock fell 0.15 s behind at 2.0 s"]);
   });
   it("reads the start from the first sample though it comes only after a page stop", () => {
     // No sample until 4.2 s after Play (the page was stopped), by when the film is at 3.6 s.
@@ -78,6 +98,8 @@ describe("an intro's verdict", () => {
   it("holds the owner's two limits", () => {
     expect(PAGE_STOP_MS).toBe(250);
     expect(FILM_PAUSE_S).toBe(0.1);
+    // And, for the film's start alone, what a phone's sound output takes to begin.
+    expect(FILM_START_S).toBe(0.3);
   });
   it("passes a run with no stop over 0.25 s and a film that keeps time", () => {
     const v = verdictOf(run({ loaf: [{ start: 3000, dur: 240 }, { start: 9000, dur: 120 }] }));
