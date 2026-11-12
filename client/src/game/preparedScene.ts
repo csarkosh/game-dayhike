@@ -12,15 +12,15 @@
  * Babylon-free, as everything it imports is: it runs in a worker.
  */
 import { trailheadStart } from "../sim/spawn.js";
-import { activeTerrainVariant, setActiveTerrainVariant, type LakeSource } from "../sim/terrain.js";
-import { BED_GRID, bakeBed, createBedGrid, type BedGrid } from "./bedHeight.js";
-import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples, type RingSamples } from "./clipmap.js";
+import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant, type LakeSource } from "../sim/terrain.js";
+import { BED_GRID, bakeBed, bedOriginFor, createBedGrid, type BedGrid } from "./bedHeight.js";
+import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples, ringSpacing, snapOrigin, type RingSamples } from "./clipmap.js";
 import { skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "./oceanSwell.js";
 import { oceanFieldFor, type OceanField } from "./oceanWaves.js";
 import type { QualityTier } from "./quality.js";
-import { WATER_RING_COUNT, createWaterRingSamples, type WaterRingSamples } from "./water.js";
+import { WATER_RING_COUNT, createWaterRingSamples, waterRingSpacing, type WaterRingSamples } from "./water.js";
 import { waterLifeLayout, type WaterLifeLayout } from "./waterLifeField.js";
 import { waterPlantPlacements, type WaterPlantPlacements } from "./waterPlantField.js";
 
@@ -125,4 +125,64 @@ export function sceneTransfer(scene: PreparedScene): ArrayBuffer[] {
   };
   walk(scene);
   return [...buffers];
+}
+
+/** `scene` when it was sampled for this world: `seed` on the terrain that is active now. Else null. */
+function sceneOf(scene: PreparedScene | null | undefined, seed: number): PreparedScene | null {
+  if (scene === null || scene === undefined) return null;
+  return scene.seed === seed && scene.variant === activeTerrainVariantName() ? scene : null;
+}
+
+/** Whether `rings` are the `count` rings a build with a camera at (camX, camZ) samples, ring `level` on `spacingOf(level)`. */
+function standAt(
+  rings: readonly { level: number; spacing: number; originX: number; originZ: number }[],
+  count: number, spacingOf: (level: number) => number, camX: number, camZ: number,
+): boolean {
+  if (rings.length !== count) return false;
+  return rings.every((ring, level) => {
+    const spacing = spacingOf(level);
+    return ring.level === level && ring.spacing === spacing
+      && ring.originX === snapOrigin(camX, spacing) && ring.originZ === snapOrigin(camZ, spacing);
+  });
+}
+
+/**
+ * The scene's rings when they are what a clipmap's first build at `start` on
+ * the base spacing `base` would sample, for `seed` on the active terrain;
+ * else null, and the clipmap samples its own.
+ */
+export function fittingRings(
+  scene: PreparedScene | null | undefined, seed: number, start: { x: number; z: number }, base: number,
+): RingSamples[] | null {
+  const from = sceneOf(scene, seed);
+  if (from === null) return null;
+  return standAt(from.rings, RING_COUNT, (level) => ringSpacing(level, base), start.x, start.z) ? from.rings : null;
+}
+
+/** The scene's water rings when they are what the water samples with its camera at (camX, camZ); else null. */
+export function fittingWaterRings(
+  scene: PreparedScene | null | undefined, seed: number, camX: number, camZ: number,
+): WaterRingSamples[] | null {
+  const rings = sceneOf(scene, seed)?.waterRings ?? null;
+  if (rings === null) return null;
+  return standAt(rings, WATER_RING_COUNT, waterRingSpacing, camX, camZ) ? rings : null;
+}
+
+/** The scene's bed when it is the tier's grid (`BED_GRID`) baked where a bake for a camera at (camX, camZ) stands; else null. */
+export function fittingBed(
+  scene: PreparedScene | null | undefined, seed: number, tier: QualityTier, camX: number, camZ: number,
+): BedGrid | null {
+  const bed = sceneOf(scene, seed)?.bed ?? null;
+  if (bed === null) return null;
+  const { texels, spacing } = BED_GRID[tier];
+  const fits = bed.texels === texels && bed.spacing === spacing && bed.heights.length === texels * texels
+    && bed.originX === bedOriginFor(camX, texels, spacing) && bed.originZ === bedOriginFor(camZ, texels, spacing);
+  return fits ? bed : null;
+}
+
+/** The scene's ocean field when it holds the swell components `tier` draws; else null. */
+export function fittingOcean(scene: PreparedScene | null | undefined, seed: number, tier: QualityTier): OceanField | null {
+  const from = sceneOf(scene, seed);
+  if (from === null || from.ocean === null) return null;
+  return swellCountFor(from.tier) === swellCountFor(tier) ? from.ocean : null;
 }

@@ -114,7 +114,7 @@ import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame
 import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "./waterShading.js";
 import { attachWet, setWetCove, setWetLine, setWetSwash, setWetWeather, wetCapOf, wetLineFor, type WetBody } from "./wetPlugin.js";
 import { SWELL_COMPONENTS } from "./oceanSwell.js";
-import { swellPhases } from "./oceanWaves.js";
+import { swellPhases, type OceanField } from "./oceanWaves.js";
 import { coastProfilesFor } from "./oceanTables.js";
 import { COVE_END_BLEND, COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../sim/olympic.js";
 import { SwashTable, type SwashCove } from "./swashTable.js";
@@ -133,6 +133,7 @@ import {
   beginBake,
   createBedGrid,
   type BedBake,
+  type BedGrid,
 } from "./bedHeight.js";
 import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
@@ -411,6 +412,10 @@ export function createClipmap(
     baseSpacing?: number;
     /** Where the first build is centred: where the hike's player starts. Absent or null, the origin. */
     start?: { x: number; z: number } | null;
+    /** The first build's rings, sampled ahead (`preparedScene.ts`): the ones a build at `start` on
+     * `baseSpacing` samples, which the caller has checked (`fittingRings`). The clipmap takes them
+     * as its own and samples none; absent or null, it samples them. */
+    rings?: RingSamples[] | null;
   } = {},
 ): Clipmap {
   /** The finest ring's spacing (m): the tier's (`BASE_SPACING_BY_TIER`). */
@@ -646,7 +651,8 @@ export function createClipmap(
     prepared.push(null);
   }
 
-  /** The rings sampled at the origin, one a slice, then built as `build`
+  /** The rings sampled at the origin, one a slice (or taken as they were
+   * sampled ahead, `options.rings`, all in one), then built as `build`
    * builds them: the first build's sampling is the one `build` skips, since
    * a ring made at the origin already stands there. It leaves no ground
    * out: no patch stands at the origin yet, and the camera is not there.
@@ -657,11 +663,14 @@ export function createClipmap(
     // Around the hike's start when it is known: built at the origin, every ring is sampled
     // again, whole and in one frame, when the player's first frame finds them a trail away.
     const at = options.start ?? { x: 0, z: 0 };
+    const sampled = options.rings ?? null;
     for (let level = 0; level < RING_COUNT; level++) {
-      rings.push(createRingSamples(seed, level, at.x, at.z, base));
+      rings.push(sampled?.[level] ?? createRingSamples(seed, level, at.x, at.z, base));
       onRing?.(level);
-      yield;
+      // A ring taken made costs nothing: the seven are one slice.
+      if (sampled === null) yield;
     }
+    if (sampled !== null) yield;
     yield* build(at.x, at.z, true);
   }
   if (options.deferred !== true) finish(firstBuild());
@@ -1140,6 +1149,18 @@ export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, se
 }
 
 /**
+ * What `createWater` takes made instead of sampling it, each piece the one it
+ * would make for its seed, tier and camera, which the caller has checked
+ * (`preparedScene.ts`'s `fitting…`): the seven rings' samples, the bed baked
+ * at the camera, and the ocean's field. A piece that is null is made here.
+ */
+export type PreparedWater = {
+  rings: WaterRingSamples[] | null;
+  bed: BedGrid | null;
+  ocean: OceanField | null;
+};
+
+/**
  * The seven-ring camera-following ocean surface. Same shape as `createClipmap`
  * — rings array, `emitRing`, moved-or-finer-moved re-emit — because the hole
  * in a coarser ring tracks the finer ring's footprint exactly as the terrain
@@ -1158,6 +1179,9 @@ export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, se
  * WebGPU, a multisampled first pass, so the post chain must exist first), the
  * water is opaque in `WATER_GROUP` and reads the opaque pass behind it from the
  * frame; elsewhere, high included, it is the blended water of the medium tier.
+ *
+ * `prepared` is what was sampled ahead of the build (`PreparedWater`): taken
+ * as the water's own, and nothing it holds is sampled here.
  */
 export function createWater(
   scene: Scene,
@@ -1168,6 +1192,7 @@ export function createWater(
   camX = 0,
   camZ = 0,
   now: () => number = () => performance.now(),
+  prepared: PreparedWater | null = null,
 ): Water {
   const high = tier === "high" && waterFrameSupported(scene);
   // White albedo is the plugin's business now: it sets the row's colour.
@@ -1179,7 +1204,7 @@ export function createWater(
   seaPlugin.skin = [0, waterSkinOffset(seed)];
   // The sea's waves, bound before any draw: the swell's tables and what moves
   // each frame. The lakes have none (no `OCEAN` on their materials).
-  const ocean = createOcean(scene, seed, tier);
+  const ocean = createOcean(scene, seed, tier, {}, prepared?.ocean);
   ocean.bind(seaPlugin);
   // The wind as `setWind` last had it: the sea's waves are given it in
   // `update`, and the lakes' ripple drifts by it.
@@ -1261,7 +1286,8 @@ export function createWater(
   });
 
   const { texels, spacing } = BED_GRID[tier];
-  let grid = createBedGrid(texels, spacing);
+  const bakedAhead = prepared?.bed ?? null;
+  let grid = bakedAhead ?? createBedGrid(texels, spacing);
   let spare = createBedGrid(texels, spacing);
   let bake: BedBake | null = null;
   // The last square found out of every body's reach: not asked again until
@@ -1296,8 +1322,9 @@ export function createWater(
     }
   }
   for (const p of plugins) p.octaves = tier === "low" ? 1 : 2;
-  // The first fill is at load, before any frame is shown: the whole grid at once.
-  bakeBed(grid, seed, camX, camZ);
+  // The first fill is at load, before any frame is shown: the whole grid at
+  // once, unless it came baked ahead.
+  if (bakedAhead === null) bakeBed(grid, seed, camX, camZ);
   uploadBed();
 
   // The cove the sea's edge runs along (below), and the span of z its
@@ -1340,7 +1367,7 @@ export function createWater(
   }
 
   for (let level = 0; level < WATER_RING_COUNT; level++) {
-    rings.push(createWaterRingSamples(seed, level, camX, camZ));
+    rings.push(prepared?.rings?.[level] ?? createWaterRingSamples(seed, level, camX, camZ));
     const mesh = new Mesh(`water_${level}`, scene);
     mesh.useVertexColors = false;
     mesh.isPickable = false;

@@ -66,6 +66,18 @@ describe("the sea's waves as the water material reads them (createOcean)", () =>
     }
   }, timeLimit(30_000));
 
+  it("draws a field it is handed, made ahead, and makes none of its own", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const field = oceanFieldFor(SEED, 8);
+    field.tables.data[5] = 4321;
+    const ocean = createOcean(scene, SEED, "low", {}, field);
+    expect(ocean.field).toBe(field);
+    expect(uploaded(ocean.atlas)).toBe(field.tables.data);
+    expect(uploaded(ocean.atlas)[5]).toBe(4321);
+    ocean.dispose();
+  }, timeLimit(30_000));
+
   it("draws the wind sea by its normals on every tier here, its textures the scene's one 1×1 array", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);

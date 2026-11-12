@@ -407,6 +407,56 @@ describe("createClipmap", () => {
     origin.dispose();
   }, timeLimit(120_000));
 
+  it("takes rings sampled ahead for its first build and draws them, sampling none of its own", () => {
+    const seed = 627994160;
+    const start = { x: 437.25, z: -1290.5 };
+    const rings = Array.from({ length: RING_COUNT }, (_, level) => createRingSamples(seed, level, start.x, start.z));
+    // Heights no sampling gives: ring k stands 5000 + k m up, so a mesh drawn from them holds nothing lower.
+    rings.forEach((ring, level) => ring.lift.fill(5000 + level));
+    const s = scene();
+    const clipmap = createClipmap(s, seed, undefined, { start, rings });
+    expect(clipmap.view).toEqual(start);
+    clipmap.meshes.forEach((mesh, level) => {
+      const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+      let lowest = Infinity;
+      let highest = -Infinity;
+      for (let i = 1; i < positions.length; i += 3) {
+        lowest = Math.min(lowest, positions[i]!);
+        highest = Math.max(highest, positions[i]!);
+      }
+      // A ring's border blends to the coarser ring's heights, a metre up.
+      expect(lowest).toBe(5000 + level);
+      expect(highest).toBeLessThanOrEqual(5000 + level + 1);
+    });
+    // The rings stand on the start: the player's first frame there moves none.
+    clipmap.update(start.x, start.z);
+    expect(clipmap.lifted).toBe(0);
+    clipmap.dispose();
+  }, timeLimit(120_000));
+
+  it("makes the same first geometry from rings sampled ahead as from its own, and tells each ring as it takes it", () => {
+    const seed = 627994160;
+    const start = { x: 437.25, z: -1290.5 };
+    const s = scene();
+    const own = createClipmap(s, seed, undefined, { start });
+    const rings = Array.from({ length: RING_COUNT }, (_, level) => createRingSamples(seed, level, start.x, start.z));
+    const given = createClipmap(s, seed, undefined, { start, rings, deferred: true });
+    const told: number[] = [];
+    const slices = given.firstBuild((level) => told.push(level));
+    while (slices.next().done !== true);
+    expect(told).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    for (let level = 0; level < RING_COUNT; level++) {
+      const a = own.meshes[level]!;
+      const b = given.meshes[level]!;
+      for (const kind of [VertexBuffer.PositionKind, VertexBuffer.NormalKind, VertexBuffer.ColorKind]) {
+        expect(b.getVerticesData(kind)).toEqual(a.getVerticesData(kind));
+      }
+      expect(b.getIndices()).toEqual(a.getIndices());
+    }
+    own.dispose();
+    given.dispose();
+  }, timeLimit(120_000));
+
   it("leaves no ground out in its first build, at the origin, and the covered ground at the camera's first", () => {
     // The scarp's world, under a cover wider than any tier's, so that the
     // rings at the origin hold fully steep ground within it (the scarp, a

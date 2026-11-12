@@ -93,14 +93,17 @@ export function oceanComponentsFor(components: readonly SwellComponent[]): Float
  * in a worker on medium and wherever the FFT cannot be had, none on low; its
  * textures are the scene's 1×1 array placeholder until a field is ready.
  * `wind` replaces how the fields are started (the tests', under Node).
+ * `made` is the world's field for the tier made ahead (`preparedScene.ts`),
+ * taken as the ocean's own; absent or null, it is made here.
  */
 export function createOcean(
   scene: Scene,
   seed: number,
   tier: QualityTier,
   wind: { startLoop?: LoopStarter; startGpu?: GpuStarter } = {},
+  made?: OceanField | null,
 ): Ocean {
-  const field = oceanFieldFor(seed, tier === "low" ? SWELL_COMPONENTS_LOW : SWELL_COMPONENTS);
+  const field = made ?? oceanFieldFor(seed, tier === "low" ? SWELL_COMPONENTS_LOW : SWELL_COMPONENTS);
   const profiles = coastProfilesFor(seed);
   const { tables } = field;
   const cove = coveFor(seed);

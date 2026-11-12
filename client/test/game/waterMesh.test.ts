@@ -30,7 +30,7 @@ import { timeLimit } from "../helpers/timeLimit.js";
 import { stadiumLake } from "../helpers/lakeShapes.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
-import { LAKE_SURFACE_REACH, bedOriginFor } from "../../src/game/bedHeight.js";
+import { BED_GRID, LAKE_SURFACE_REACH, bakeBed, bedOriginFor, createBedGrid } from "../../src/game/bedHeight.js";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
@@ -53,13 +53,18 @@ vi.mock("../../src/game/waterFrame.js", async (importOriginal) => {
 
 // What the sea's waves are told each frame of whether the sea is drawn: the
 // real ocean, its `update` recorded on the way in.
-const seaFrames = vi.hoisted(() => ({ drawn: [] as (boolean | undefined)[], mode: null as 0 | 1 | 2 | null }));
+const seaFrames = vi.hoisted(() => ({
+  drawn: [] as (boolean | undefined)[], mode: null as 0 | 1 | 2 | null,
+  /** Every ocean made, in order. */
+  oceans: [] as import("../../src/game/oceanRender.js").Ocean[],
+}));
 vi.mock("../../src/game/oceanRender.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/game/oceanRender.js")>();
   return {
     ...actual,
     createOcean: (...args: Parameters<typeof actual.createOcean>) => {
       const ocean = actual.createOcean(...args);
+      seaFrames.oceans.push(ocean);
       const update = ocean.update.bind(ocean);
       // The plugin bound, so a test can hold the wind mode the frame wrote
       // (`seaFrames.mode`): NullEngine never runs the FFT.
@@ -306,6 +311,67 @@ describe("createWater under NullEngine", () => {
     for (const d of depths) expect(d).toBe(0);
     water.dispose();
   }, timeLimit(30_000));
+
+  /** A texture's data as NullEngine holds it: the array it was made from. */
+  const uploaded = (texture: unknown): Float32Array =>
+    ((texture as RawTexture).getInternalTexture() as unknown as { _bufferView: Float32Array })._bufferView;
+
+  it("takes the rings, the bed and the ocean's field sampled ahead as its own, and samples none", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const seed = 7;
+    const cam = { x: 900, z: -400 };
+    const rings = Array.from({ length: WATER_RING_COUNT }, (_, level) => createWaterRingSamples(seed, level, cam.x, cam.z));
+    // A bed no sampling gives: ring k's lies 100 + k m under the level, and the bed's first texel far below it.
+    rings.forEach((ring, level) => ring.h.fill(-(100 + level)));
+    const bed = createBedGrid(BED_GRID.low.texels, BED_GRID.low.spacing);
+    bakeBed(bed, seed, cam.x, cam.z);
+    bed.heights[0] = -4321;
+    const field = oceanFieldFor(seed, 8);
+    const water = createWater(scene, seed, 0, [], "low", cam.x, cam.z, undefined, { rings, bed, ocean: field });
+    water.meshes.forEach((mesh, level) => {
+      expect([...new Set(mesh.getVerticesData("bedDepth")!)]).toEqual([100 + level]);
+    });
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    expect(uploaded(plugin.bedTexture)).toBe(bed.heights);
+    expect(uploaded(plugin.bedTexture)[0]).toBe(-4321);
+    expect(plugin.bedOrigin).toEqual([bed.originX, bed.originZ]);
+    expect(seaFrames.oceans.at(-1)?.field).toBe(field);
+    // It goes on from them as from its own: a camera far off moves the rings and bakes the bed again.
+    for (let frame = 0; frame < 200; frame++) water.update(cam.x + 600, cam.z, frame / 60);
+    expect(plugin.bedOrigin).toEqual([bedOriginFor(cam.x + 600, 128, 2), bedOriginFor(cam.z, 128, 2)]);
+    expect(Math.max(...water.meshes[0]!.getVerticesData("bedDepth")!)).toBeLessThan(100);
+    water.dispose();
+  }, timeLimit(60_000));
+
+  it("makes the same water from pieces sampled ahead as from its own sampling", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const seed = 7;
+    const cam = { x: 900, z: -400 };
+    const own = createWater(scene, seed, 0, [], "low", cam.x, cam.z);
+    const bed = createBedGrid(BED_GRID.low.texels, BED_GRID.low.spacing);
+    bakeBed(bed, seed, cam.x, cam.z);
+    const given = createWater(scene, seed, 0, [], "low", cam.x, cam.z, undefined, {
+      rings: Array.from({ length: WATER_RING_COUNT }, (_, level) => createWaterRingSamples(seed, level, cam.x, cam.z)),
+      bed,
+      ocean: oceanFieldFor(seed, 8),
+    });
+    const pluginOf = (w: typeof own): WaterPlugin => (w.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    expect(uploaded(pluginOf(given).bedTexture)).toEqual(uploaded(pluginOf(own).bedTexture));
+    expect(pluginOf(given).bedOrigin).toEqual(pluginOf(own).bedOrigin);
+    for (let level = 0; level < WATER_RING_COUNT; level++) {
+      const a = own.meshes[level]!;
+      const b = given.meshes[level]!;
+      expect(b.isEnabled()).toBe(a.isEnabled());
+      for (const kind of ["position", "bedDepth", "oceanMorph", "oceanCoarse"]) expect(b.getVerticesData(kind)).toEqual(a.getVerticesData(kind));
+      expect(b.getIndices()).toEqual(a.getIndices());
+    }
+    const [first, second] = seaFrames.oceans.slice(-2);
+    expect(uploaded(second!.atlas)).toEqual(uploaded(first!.atlas));
+    own.dispose();
+    given.dispose();
+  }, timeLimit(60_000));
 
   it("the mechanism fired: the bed texture is uploaded after the first update and the plugin points at it", () => {
     engine = new NullEngine();
