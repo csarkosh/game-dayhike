@@ -79,7 +79,7 @@ import type { SkyTable } from "./skyTable.js";
 import { startSkySource, type SkySource } from "./skyWorker.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { adoptEngine, pinShaders } from "./keptEngine.js";
-import type { FirstBuilds } from "./firstBuilds.js";
+import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
@@ -418,6 +418,10 @@ export function createClipmap(
     baseSpacing?: number;
     /** Where the first build is centred: where the hike's player starts. Absent or null, the origin. */
     start?: { x: number; z: number } | null;
+    /** The loader of first builds, for a start whose intro's film covers the hike (`firstBuilds.ts`):
+     * while it is open, a rebuild that cannot wait (the first frame's, for the ground the face patches
+     * cover, or one after a jump) is handed to it and stepped; closed or absent, it runs whole in the call. */
+    firstBuilds?: FirstBuilds;
     /** The world's feature table made already (`featureTableFor`); absent or null, the ground's material bakes it. */
     featureTable?: Float32Array | null;
     /** The first build's rings, sampled ahead (`preparedScene.ts`): the ones a build at `start` on
@@ -705,6 +709,8 @@ export function createClipmap(
         jobs !== undefined, jobs?.started(),
       );
       if (kind === "none") {
+        // While the loader steps this clipmap's build, nothing else is begun and nothing prepared ahead of it.
+        if (options.firstBuilds?.queued(owner) === true) return;
         // The covering surface drew a new set since the rings last asked
         // (the patches' job applied after the rings' rebuild read the set
         // before it): the rings that leave ground out are drawn again for
@@ -712,18 +718,21 @@ export function createClipmap(
         // crossing to stop leaving out ground the new set no longer covers.
         if (!(jobs?.pending(owner) ?? false) && (options.cover?.(camX, camZ) ?? null) !== covered) {
           if (jobs !== undefined) jobs.begin(owner, build(camX, camZ), false, "clipmap");
-          else finish(build(camX, camZ));
+          else buildAtOnce(options.firstBuilds, owner, build(camX, camZ), "clipmap");
           return;
         }
         aim(camX, camZ, false);
         return;
       }
+      // A new place: a build the loader still holds for the last one is dropped.
+      options.firstBuilds?.cancel(owner);
       if (kind === "later") {
         (jobs as SyncJobs).begin(owner, build(camX, camZ), false, "clipmap");
         return;
       }
       jobs?.cancel(owner);
-      finish(build(camX, camZ));
+      // At once, or stepped by the loader while the film covers the hike.
+      buildAtOnce(options.firstBuilds, owner, build(camX, camZ), "clipmap");
     },
     view,
     get lifted() {
@@ -733,6 +742,7 @@ export function createClipmap(
       return preparedUsed;
     },
     dispose() {
+      options.firstBuilds?.cancel(owner);
       jobs?.cancel(owner);
       jobs?.idle(owner, null);
       for (const mesh of meshes) mesh.dispose();
@@ -2459,6 +2469,7 @@ function buildRenderer(
       deferred: options.deferClipmap,
       start: options.start,
       baseSpacing: BASE_SPACING_BY_TIER[tier],
+      firstBuilds: options.firstBuilds,
       featureTable: featureTableData,
       // The rings the world's worker sampled, where they are this build's own.
       rings: fittingRings(prepared, forest.seed, options.start ?? { x: 0, z: 0 }, BASE_SPACING_BY_TIER[tier]),
