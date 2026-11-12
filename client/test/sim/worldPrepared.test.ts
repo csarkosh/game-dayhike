@@ -6,6 +6,9 @@ type Sim = {
   forest: typeof import("../../src/sim/forest.js");
   olympic: typeof import("../../src/sim/olympic.js");
   spawn: typeof import("../../src/sim/spawn.js");
+  world: typeof import("../../src/sim/world.js");
+  chunk: typeof import("../../src/sim/chunk.js");
+  trailRoute: typeof import("../../src/sim/trailRoute.js");
 };
 /** A sim of its own, as another thread's is: its module caches are empty. */
 async function freshSim(): Promise<Sim> {
@@ -16,15 +19,41 @@ async function freshSim(): Promise<Sim> {
     forest: await import("../../src/sim/forest.js"),
     olympic: await import("../../src/sim/olympic.js"),
     spawn: await import("../../src/sim/spawn.js"),
+    world: await import("../../src/sim/world.js"),
+    chunk: await import("../../src/sim/chunk.js"),
+    trailRoute: await import("../../src/sim/trailRoute.js"),
   };
 }
 const SEED = 627994160;
-/** What a hike's world is, as far as two threads must agree: its id, its start and its ground. */
+/**
+ * What a hike's world is, as far as two threads must agree: its id, its start, its ground, the
+ * chunks along its trail, the trail's routes (which the ground never reads), and the simulation's
+ * whole state after a hiker has walked up the stem for five seconds.
+ */
 function fingerprint(sim: Sim) {
   const forest = sim.forest.createForest(SEED);
   const heights: number[] = [];
   for (let i = 0; i < 64; i++) heights.push(sim.terrain.elevationSampleAt(SEED, (i % 8) * 137 - 480, Math.floor(i / 8) * 211 - 700).h);
-  return { levelId: forest.levelId, fieldHash: forest.fieldHash, passHash: forest.passHash, start: sim.spawn.trailheadStart(SEED), heights };
+  const world = sim.world.createForestWorld(forest, true, false);
+  const graph = world.trail;
+  if (graph === null) throw new Error("the default terrain has a trail");
+  const player = sim.world.spawnPlayer(world);
+  const states: string[] = [];
+  for (let tick = 0; tick < 300; tick++) {
+    const at = world.state.players.get(player.id);
+    const ahead = at === undefined ? null : sim.trailRoute.stemAhead(graph, at.pos.x, at.pos.z, 12);
+    const yaw = ahead === null || at === undefined ? 0 : Math.atan2(ahead.x - at.pos.x, ahead.z - at.pos.z);
+    sim.world.tickWorld(world, new Map([[player.id, { seq: tick + 1, moveX: 0, moveZ: 1, yaw, pitch: 0, buttons: tick === 100 ? 1 : 0 }]]));
+    if (tick % 100 === 99) states.push(sim.world.serializeWorldState(world.state));
+  }
+  const chunks: unknown[] = [];
+  for (let n = 0; n < graph.nodes.length; n += Math.max(1, Math.floor(graph.nodes.length / 6))) {
+    const node = graph.nodes[n] as { x: number; z: number };
+    const made = sim.chunk.generateChunk(SEED, Math.floor(node.x / 32), Math.floor(node.z / 32));
+    chunks.push([Array.from(made.columns), made.props]);
+  }
+  const routes = [sim.trailRoute.route(graph, 0, graph.summit), sim.trailRoute.route(graph, graph.summit, 0), graph.forks, graph.homeDist];
+  return { levelId: forest.levelId, fieldHash: forest.fieldHash, passHash: forest.passHash, start: sim.spawn.trailheadStart(SEED), heights, states, chunks, routes };
 }
 
 describe("a world prepared in another thread", () => {
@@ -42,7 +71,23 @@ describe("a world prepared in another thread", () => {
     const alone = fingerprint(await freshSim());
     expect(withInstall).toEqual(alone);
     expect(withInstall.passHash).toBe(64181734);
-  }, timeLimit(120_000));
+    expect(withInstall.states).toHaveLength(3);
+    expect(withInstall.chunks.length).toBeGreaterThanOrEqual(6);
+  }, timeLimit(180_000));
+
+  it("is a different world when the bowl it was given is not the one it would have made", async () => {
+    // What the comparison above can see: a trail whose way home, which no height reads, was altered on the way.
+    const worker = await freshSim();
+    const altered = structuredClone(worker.olympic.bowlFor(SEED));
+    const homeDist = altered.graph.homeDist as unknown as number[];
+    homeDist[homeDist.length - 1] = (homeDist[homeDist.length - 1] as number) + 1;
+    const page = await freshSim();
+    expect(page.olympic.installBowl(SEED, altered)).toBe(true);
+    const withAltered = fingerprint(page);
+    const alone = fingerprint(await freshSim());
+    expect(withAltered.routes).not.toEqual(alone.routes);
+    expect(withAltered).not.toEqual(alone);
+  }, timeLimit(180_000));
 
   it("keeps the bowl a seed already has", async () => {
     const sim = await freshSim();
