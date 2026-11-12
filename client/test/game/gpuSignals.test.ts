@@ -122,7 +122,7 @@ describe("isChromeOrEdge and hostOs, the browser and platform the WebGPU rule re
   const CHROME_IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/154.0.0.0 Mobile/15E148 Safari/604.1";
 
   it("reads the user agent where there is no client hint (Safari, Firefox, a page not served securely)", () => {
-    const rows: [string, boolean, "mac" | "windows" | "other"][] = [
+    const rows: [string, boolean, "mac" | "windows" | "android" | "other"][] = [
       [CHROME_MAC, true, "mac"],
       [CHROME_WINDOWS, true, "windows"],
       [EDGE_WINDOWS, true, "windows"],
@@ -130,13 +130,14 @@ describe("isChromeOrEdge and hostOs, the browser and platform the WebGPU rule re
       [LAUNCHER_MAC, false, "mac"],
       [LAUNCHER_WINDOWS, false, "windows"],
       [OPERA_WINDOWS, false, "windows"],
-      [SAMSUNG_ANDROID, false, "other"],
+      [SAMSUNG_ANDROID, false, "android"],
       [YANDEX_WINDOWS, false, "windows"],
       [SAFARI_MAC, false, "mac"],
       [FIREFOX_WINDOWS, false, "windows"],
       [FIREFOX_MAC, false, "mac"],
+      // Chrome on Android, which the rule admits on a phone or a tablet.
+      [CHROME_ANDROID, true, "android"],
       // Chrome by name, on a platform the rule turns away.
-      [CHROME_ANDROID, true, "other"],
       [CHROME_LINUX, true, "other"],
       [CHROME_OS, true, "other"],
       // Chrome on iOS is WebKit underneath, and names no `Chrome/`.
@@ -185,7 +186,9 @@ describe("isChromeOrEdge and hostOs, the browser and platform the WebGPU rule re
     expect(hostOs({ userAgent: CHROME_LINUX, userAgentData: { platform: "macOS" } })).toBe("mac");
     expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Windows" } })).toBe("windows");
     expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Linux" } })).toBe("other");
-    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Android" } })).toBe("other");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Android" } })).toBe("android");
+    // An Android browser asked for the desktop site names Linux, and is Linux to the rule.
+    expect(hostOs({ userAgent: CHROME_ANDROID, userAgentData: { platform: "Linux" } })).toBe("other");
     expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Chrome OS" } })).toBe("other");
     expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "" } })).toBe("mac");
   });

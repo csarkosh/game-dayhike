@@ -6,7 +6,7 @@ import {
   type AdapterReport, type WebGpuSteps,
   FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
   NOTICE_SWITCHED, TIMEOUT_HOLD_DAYS, TIMEOUT_WINDOW_MS, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
-  WEBGPU_START_MS, WEBGPU_TIERS, WebGpuStartTimeout,
+  WEBGPU_PHONE_TIERS, WEBGPU_START_MS, WEBGPU_TIERS, WebGpuStartTimeout,
 } from "../../src/game/engineChoice.js";
 
 describe("the engine override", () => {
@@ -53,13 +53,25 @@ describe("chooseEngine", () => {
     expect(chooseEngine(high, ["high"])).toBe("probe");
     expect(chooseEngine(high, [])).toBe("webgl2");
   });
+  it("applies on an Android phone to the tiers another constant names: low, the one tier a phone is given", () => {
+    expect(WEBGPU_PHONE_TIERS).toEqual(["low"]);
+    const phone = { ...high, tier: "low" as const, os: "android" as const, mobile: true };
+    expect(chooseEngine(phone)).toBe("probe");
+    expect(chooseEngine({ ...phone, fits: true })).toBe("webgpu");
+    expect(chooseEngine({ ...phone, fits: false })).toBe("webgl2");
+    // The desktop's tiers say nothing of a phone, nor a phone's of a desktop.
+    expect(chooseEngine(phone, [])).toBe("probe");
+    expect(chooseEngine(phone, WEBGPU_TIERS, [])).toBe("webgl2");
+    expect(chooseEngine({ ...high, tier: "low" }, WEBGPU_TIERS, ["low"])).toBe("webgl2");
+    expect(chooseEngine({ ...phone, tier: "medium" }, WEBGPU_TIERS, ["low", "medium"])).toBe("probe");
+  });
 });
 
 describe("the rule on each browser and platform, the switch on", () => {
   /** The rule's answer for a host at `tier`, with no override, nothing
    * remembered, and an adapter that fits. */
   const answer = (
-    host: { chromeOrEdge: boolean; os: "mac" | "windows" | "other"; mobile: boolean },
+    host: { chromeOrEdge: boolean; os: "mac" | "windows" | "android" | "other"; mobile: boolean },
     tier: "high" | "medium" | "low",
     over: { override?: "webgl2" | "webgpu" | null; remembered?: boolean; fits?: boolean | null } = {},
   ) => chooseEngine({ tier, override: null, remembered: false, on: true, fits: true, ...host, ...over });
@@ -76,7 +88,14 @@ describe("the rule on each browser and platform, the switch on", () => {
   const SAFARI_MAC = { chromeOrEdge: false, os: "mac", mobile: false } as const;
   const FIREFOX_MAC = { chromeOrEdge: false, os: "mac", mobile: false } as const;
   const FIREFOX_WINDOWS = { chromeOrEdge: false, os: "windows", mobile: false } as const;
-  const CHROME_ANDROID = { chromeOrEdge: true, os: "other", mobile: true } as const;
+  const CHROME_ANDROID = { chromeOrEdge: true, os: "android", mobile: true } as const;
+  const EDGE_ANDROID = { chromeOrEdge: true, os: "android", mobile: true } as const;
+  // Samsung Internet, Firefox and the rest on Android: neither Chrome nor Edge by name.
+  const SAMSUNG_ANDROID = { chromeOrEdge: false, os: "android", mobile: true } as const;
+  // Android that does not call itself a phone or a tablet (a television, a headset).
+  const CHROME_ANDROID_DESK = { chromeOrEdge: true, os: "android", mobile: false } as const;
+  // Chrome on an iPhone or an iPad: WebKit underneath, not Chrome by name.
+  const CHROME_IOS = { chromeOrEdge: false, os: "other", mobile: true } as const;
   const CHROME_LINUX = { chromeOrEdge: true, os: "other", mobile: false } as const;
   const CHROME_OS = { chromeOrEdge: true, os: "other", mobile: false } as const;
   // A tablet whose browser reports a desktop platform: mobile decides.
@@ -99,10 +118,25 @@ describe("the rule on each browser and platform, the switch on", () => {
     }
   });
 
-  it("keeps Brave, Opera, the desktop launcher, Safari, Firefox, Chrome on Android, Linux and ChromeOS, and a tablet, on WebGL2 at every tier, without asking the adapter", () => {
+  it("gives WebGPU on the low tier to Chrome and Edge on an Android phone or tablet, where the adapter fits", () => {
+    for (const host of [CHROME_ANDROID, EDGE_ANDROID]) {
+      expect(answer(host, "low")).toBe("webgpu");
+      expect(answer(host, "low", { fits: null })).toBe("probe");
+      expect(answer(host, "low", { fits: false })).toBe("webgl2");
+      expect(answer(host, "low", { remembered: true })).toBe("webgl2");
+      // A tier a phone is never given, only asked for by the address: not measured there.
+      for (const tier of ["high", "medium"] as const) {
+        expect(answer(host, tier)).toBe("webgl2");
+        expect(answer(host, tier, { fits: null })).toBe("webgl2");
+      }
+    }
+  });
+
+  it("keeps Brave, Opera, the desktop launcher, Safari, Firefox, Linux and ChromeOS, a tablet that names a desktop, another browser on Android, an Android that is no phone and an iPhone, on WebGL2 at every tier, without asking the adapter", () => {
     const hosts = [
       BRAVE_WINDOWS, OPERA_WINDOWS, LAUNCHER_MAC, LAUNCHER_WINDOWS,
-      SAFARI_MAC, FIREFOX_MAC, FIREFOX_WINDOWS, CHROME_ANDROID, CHROME_LINUX, CHROME_OS, CHROME_TABLET_WINDOWS,
+      SAFARI_MAC, FIREFOX_MAC, FIREFOX_WINDOWS, CHROME_LINUX, CHROME_OS, CHROME_TABLET_WINDOWS,
+      SAMSUNG_ANDROID, CHROME_ANDROID_DESK, CHROME_IOS,
     ];
     for (const host of hosts) {
       for (const tier of ["high", "medium", "low"] as const) {
@@ -363,7 +397,12 @@ describe("what a failure of the running WebGPU engine does: a live swap, never a
 });
 
 describe("the rule's later rungs", () => {
-  it("gives WebGL2 to a tier below one it gave WebGL2, so a ladder's later rungs are WebGL2 by the rule", () => {
+  it("gives low WebGPU under a tier it gave WebGL2 on an Android phone alone, where a ladder's last rung is WebGL2 all the same", () => {
+    const phone = { override: null, remembered: false, on: true, fits: true, chromeOrEdge: true, os: "android", mobile: true } as const;
+    expect(chooseEngine({ tier: "medium", ...phone })).toBe("webgl2");
+    expect(chooseEngine({ tier: "low", ...phone })).toBe("webgpu");
+  });
+  it("gives WebGL2 to a tier below one it gave WebGL2 everywhere else, so a ladder's later rungs are WebGL2 by the rule", () => {
     const order = ["low", "medium", "high"] as const;
     const hosts = [
       { chromeOrEdge: true, os: "mac", mobile: false },

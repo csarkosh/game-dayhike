@@ -9,7 +9,7 @@
 
 Every phone is put on Low with no probe (`gpuClass.ts`, class `mobile`), so Low is the phone
 experience. The owner played the game on a Pixel 9 (Chrome 156, Android 17, Mali-G715, drawing
-with WebGL2 as every phone does) and it was poor: slow, choppy frames, worst in the chase, and
+with WebGL2 as every phone did until 2026-11-12) and it was poor: slow, choppy frames, worst in the chase, and
 the Hollow drawn as its raw model instead of the dark figure the other tiers show. The second is
 by construction: the haunt's shades and the Hollow are drawn into a silhouette mask the grade pass
 reads back as a blurred darkness (`docs/gameplay/2026-10-06-the-mist-shades.md`), and Low has no

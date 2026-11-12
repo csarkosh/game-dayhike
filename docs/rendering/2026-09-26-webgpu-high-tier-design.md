@@ -485,6 +485,16 @@ the resolved tier, so it needs no change when detection does.
 
 ### 5.1 The rule
 
+**Amended 2026-11-12: the low tier on an Android phone.** The rule also gives
+WebGPU to the low tier (`WEBGPU_PHONE_TIERS = ["low"]`) in Google Chrome or
+Microsoft Edge on an Android phone or tablet (`hostOs` reads `android` from
+the client hint's platform or the user agent; `GpuSignals.mobile` says it is
+a phone or a tablet). A phone's start, not its frame, is why: on WebGL2 every
+program's link stops the page there (the verification note, §9). The tiers
+are read per platform, so a desktop's low and a phone's medium or high, which
+only the address can ask for, stay on WebGL2. Everything below describes the
+rule as it was switched on for the desktop, which still holds there.
+
 **As switched on (2026-09-28).** WebGPU is the default on the high tier alone
 (`WEBGPU_TIERS = ["high"]`, `WEBGPU_ENABLED = true`), and only in Google
 Chrome or Microsoft Edge on macOS or Windows on a device that is not a phone

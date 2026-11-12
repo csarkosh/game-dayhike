@@ -2,16 +2,16 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chooseEngine, engineForTier, WEBGPU_ENABLED, WEBGPU_TIERS, type EngineInput } from "../../src/game/engineChoice.js";
+import { chooseEngine, engineForTier, WEBGPU_ENABLED, WEBGPU_PHONE_TIERS, WEBGPU_TIERS, type EngineInput } from "../../src/game/engineChoice.js";
 import { autoPick, qualityLine, runProbe } from "../../src/game/frameProbe.js";
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
 import type { AutoRecord, ProbeReading, QualityTier } from "../../src/game/quality.js";
 import { readAutoRecord } from "../../src/game/tierChoice.js";
 
 /**
- * Wherever the rule gives WebGL2, which with `WEBGPU_ENABLED` on is every tier
- * but high, and high everywhere but Chrome and Edge on macOS and Windows, a
- * player's start is what it was before the WebGPU engine was built: the same
+ * Wherever the rule gives WebGL2, which with `WEBGPU_ENABLED` on is everywhere
+ * but high and medium in desktop Chrome and Edge on macOS and Windows and low
+ * in Chrome and Edge on an Android phone or tablet, a player's start is what it was before the WebGPU engine was built: the same
  * tier decision, the same engine (WebGL2), the same records and log lines, the
  * engine's name aside. Nothing of WebGPU is fetched there: its module is
  * reached only by a dynamic import behind the rule, so neither the translators
@@ -24,18 +24,22 @@ describe("the start where the rule gives WebGL2", () => {
   const OTHERS = [
     { chromeOrEdge: false, os: "mac", mobile: false }, // Safari
     { chromeOrEdge: false, os: "windows", mobile: false }, // Firefox
-    { chromeOrEdge: true, os: "other", mobile: true }, // Chrome on Android
+    { chromeOrEdge: false, os: "android", mobile: true }, // Samsung Internet, Firefox on Android
+    { chromeOrEdge: false, os: "other", mobile: true }, // an iPhone, Safari or Chrome
     { chromeOrEdge: true, os: "other", mobile: false }, // Chrome on Linux
     { chromeOrEdge: false, os: "mac", mobile: false }, // the desktop launcher, Brave, Opera
     { chromeOrEdge: false, os: "windows", mobile: false }, // the same on Windows
   ] as const;
 
-  it("is on, for the high and medium tiers", () => {
+  const CHROME_ANDROID = { chromeOrEdge: true, os: "android", mobile: true } as const;
+
+  it("is on, for the high and medium tiers on a desktop and the low tier on an Android phone", () => {
     expect(WEBGPU_ENABLED).toBe(true);
     expect(WEBGPU_TIERS).toEqual(["high", "medium"]);
+    expect(WEBGPU_PHONE_TIERS).toEqual(["low"]);
   });
 
-  it("draws low on WebGL2 without asking for WebGPU, on every browser: the module is never imported, no translator fetched", async () => {
+  it("draws low on WebGL2 without asking for WebGPU, on every browser but Chrome and Edge on Android: the module is never imported, no translator fetched", async () => {
     for (const host of [CHROME_MAC, EDGE_WINDOWS, ...OTHERS]) {
       for (const tier of ["low"] as const) {
         for (const remembered of [false, true]) {
@@ -54,7 +58,7 @@ describe("the start where the rule gives WebGL2", () => {
     }
   });
 
-  it("draws every tier on WebGL2 without asking for WebGPU on Safari, Firefox, Chrome on Android and Linux, the desktop launcher, Brave and Opera", async () => {
+  it("draws every tier on WebGL2 without asking for WebGPU on Safari, Firefox, Chrome on Linux, the desktop launcher, Brave and Opera, an iPhone, and another browser on Android", async () => {
     for (const host of OTHERS) {
       for (const tier of TIERS) {
         for (const fits of [null, false, true]) {
@@ -82,6 +86,22 @@ describe("the start where the rule gives WebGL2", () => {
         });
         expect(engine).toBe(remembered ? null : "webgpu engine");
         expect(asked).toBe(remembered ? 0 : 1);
+      }
+    }
+  });
+
+  it("asks for WebGPU on the low tier in Chrome on an Android phone, unless a failure is remembered, and for no other tier there", async () => {
+    for (const tier of TIERS) {
+      for (const remembered of [false, true]) {
+        const input: EngineInput = { tier, override: null, remembered, on: WEBGPU_ENABLED, fits: null, ...CHROME_ANDROID };
+        let asked = 0;
+        const engine = await engineForTier(input, async () => {
+          asked += 1;
+          return "webgpu engine";
+        });
+        const wanted = tier === "low" && !remembered;
+        expect(engine).toBe(wanted ? "webgpu engine" : null);
+        expect(asked).toBe(wanted ? 1 : 0);
       }
     }
   });

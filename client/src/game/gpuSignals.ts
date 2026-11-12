@@ -182,23 +182,27 @@ export function isChromeOrEdge(nav: NavigatorLike | undefined): boolean {
 }
 
 /** The operating system as the WebGPU engine rule reads it. */
-export type HostOs = "mac" | "windows" | "other";
+export type HostOs = "mac" | "windows" | "android" | "other";
 
 /**
  * The operating system: the client hint's platform where it names one
- * ("macOS", "Windows"), else the user agent's `Macintosh`/`Mac OS X` or
- * `Windows NT`; an iPhone or an iPad that names itself is neither. An iPad
- * that says Macintosh is `isMobile`'s to tell apart.
+ * ("macOS", "Windows", "Android"), else the user agent's `Macintosh`/`Mac OS X`,
+ * `Windows NT` or `Android`; an iPhone or an iPad that names itself is none of
+ * them. An iPad that says Macintosh is `isMobile`'s to tell apart. An Android
+ * browser asked for the desktop site names Linux in both, and is `other`.
  */
 export function hostOs(nav: NavigatorLike | undefined): HostOs {
   if (!nav) return "other";
   try {
     const platform = nav.userAgentData?.platform;
-    if (typeof platform === "string" && platform !== "") return platform === "macOS" ? "mac" : platform === "Windows" ? "windows" : "other";
+    if (typeof platform === "string" && platform !== "") {
+      return platform === "macOS" ? "mac" : platform === "Windows" ? "windows" : platform === "Android" ? "android" : "other";
+    }
     const agent = agentOf(nav);
     // An iPhone's says "like Mac OS X".
     if (/\biPhone|\biPad|\biPod/.test(agent)) return "other";
     if (/\bWindows NT\b/.test(agent)) return "windows";
+    if (/\bAndroid\b/.test(agent)) return "android";
     if (/\bMacintosh\b|\bMac OS X\b/.test(agent)) return "mac";
     return "other";
   } catch {

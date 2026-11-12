@@ -29,12 +29,14 @@
  * so the rule gives WebGL2 from then on); a tier that fails on WebGL2 too is
  * the tier's fault, and nothing is held against the engine. Every later rung
  * is WebGL2, the last one always. That is the rule's engine for each of them
- * but one: the rule gives WebGL2 to a tier below one it gave WebGL2, and to
- * every tier once a failure is remembered (`engineChoice.test.ts`). The one
+ * but two: the rule gives WebGL2 to a tier below one it gave WebGL2, and to
+ * every tier once a failure is remembered (`engineChoice.test.ts`). One
  * exception is a switch down to low whose WebGL2 build fails: its ladder is
  * low, then the tier that was running, and that last rung, which the rule
  * may give WebGPU, is built on WebGL2, the engine least likely to fail and
- * one the swap need not wait for.
+ * one the swap need not wait for. The other is an Android phone, where the
+ * rule gives WebGPU to low alone: a tier above it, which only the address
+ * can ask for there, ladders down to low on WebGL2 for the same reason.
  *
  * **Only a standing engine is listened to.** The old engine's watcher is
  * taken off before anything of it is disposed (`unwatch`), so a disposed

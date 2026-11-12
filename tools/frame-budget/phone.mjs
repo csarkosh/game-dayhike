@@ -21,13 +21,14 @@
 //   --settle <s>     seconds from world-ready to the first window
 //   --port <port>    the forwarded port (9222)
 //   --label <name>   the phone's name in the rows; --tag <text> the run's
-//   --engine <e>     the engine forced (`?engine=`): a phone is put on WebGL2 by the game's own rule, so
-//                    `webgpu` is how its WebGPU path is timed; the row's `engine` says what was asked
+//   --engine <e>     the engine forced (`?engine=`): the game's own rule puts Chrome on an Android phone
+//                    on WebGPU and every other phone on WebGL2, so this is how the other engine is
+//                    timed; the row's `engine` says what was asked
 //   --profile        a CPU profile (`Profiler.start/stop`, 0.5 ms samples) over the view, saved as
 //                    <view>-<stamp>.cpuprofile; `tools/telemetry/symbolicate.mjs` reads its frames back
 //
-// The phone's GPU readout (`?gpuTime`) is WebGPU's and every phone draws with WebGL2, so a phone
-// measures whole frames; the measurement mode is still asked for, so the page exposes
+// The GPU readout (`?gpuTime`) is WebGPU's, and a Mali's gives the main pass alone, so a phone
+// measures whole frames on either engine; the measurement mode is still asked for, so the page exposes
 // `window.__syncJobs()` (the streaming jobs' milliseconds a frame), read each frame into the row's `jobs`.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

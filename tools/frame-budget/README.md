@@ -324,7 +324,8 @@ else is running: say so, find it, and do not average the rows.
 ## The phone
 
 Every phone is put on Low with no probe (`gpuClass.ts`, class `mobile`), so Low's standard is a
-phone: the owner's Pixel 9 (Chrome, Android, Mali-G715, WebGL2). `phone.mjs` measures it over the
+phone: the owner's Pixel 9 (Chrome, Android, Mali-G715; WebGPU by the game's rule since 2026-11-12,
+WebGL2 before). `phone.mjs` measures it over the
 cable, as `measure.mjs --remote` measures a rig through a forwarded port:
 
 ```bash
@@ -367,7 +368,8 @@ What a phone run is, against the Mac's and the rig's:
 
 - The phone's own size, no emulation: the Pixel's canvas on Low is 250 × 452 (the 375 × 679 CSS
   viewport under Low's 1.5× scaling, the pixel ratio ignored as on every tier).
-- Whole frames only. The GPU readout (`?gpuTime`) is WebGPU's and every phone draws with WebGL2;
+- Whole frames only. The GPU readout (`?gpuTime`) is WebGPU's, and on the Pixel's Mali it gives
+  the main pass alone (`gpu n/a`), nothing on WebGL2;
   the measurement mode is still asked for, so the page exposes `window.__syncJobs()`, the
   streaming jobs' milliseconds a frame by owner, which each window sums into its row's `jobs`.
 - Windows, not a settle and one sample: `--windows 3` times three consecutive 10 s windows from
@@ -381,9 +383,10 @@ What a phone run is, against the Mac's and the rig's:
 - A JPEG at each window's end beside the rows, and the phone's battery temperature and thermal
   status (`adb shell dumpsys`) in each row: a run that warms the phone past thermal status 1 is
   a run to discard.
-- `--engine webgpu` forces the engine (`?engine=`): the game's own rule puts every phone on
-  WebGL2, so this is how a phone's WebGPU path is timed. A row's `engine` is what was asked for
-  and its `ran` is what the page drew with.
+- `--engine webgl2` or `--engine webgpu` forces the engine (`?engine=`): the game's own rule puts
+  Chrome and Edge on an Android phone on WebGPU and every other phone on WebGL2, so this is how
+  the other engine is timed. A row's `engine` is what was asked for (none: the rule's) and its
+  `ran` is what the page drew with.
 
 An intro is timed on the phone by `timeline.mjs`, as on a rig, with `--phone`:
 
@@ -398,8 +401,8 @@ until the phone is cool: thermal status 0 and a battery at most 34.5 °C, read e
 twelve minutes at most (`--cool 300` for five). It matters: three intros back to back warm a
 Pixel 9 until a fourth runs about 2.5 times slower, and a phone on charge with its screen held on
 cools slowly. How warm the phone was, how long the run waited and whether it started cool are in
-the run's `meta.phone`, with or without `--cool`. `--query engine=webgpu` times the intro on
-WebGPU. `--cellular` tells the browser its connection is cellular (4g) while leaving the line at
+the run's `meta.phone`, with or without `--cool`. `--engine webgl2` times the intro on
+the engine the rule does not give the phone. `--cellular` tells the browser its connection is cellular (4g) while leaving the line at
 its own speed: Chrome fetches only a film's metadata ahead on a cellular connection, whatever the
 page asks, so this is how the intro film's start is timed as a phone on mobile data meets it
 (the run's `meta.cellular`).

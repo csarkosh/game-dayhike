@@ -758,10 +758,74 @@ measured.
   unchanged, and what Vivaldi's brands hold was not read. Safari and Firefox
   were not measured, and the rule keeps them on WebGL2.
 - **Other platforms.** Only macOS and Windows. Linux, ChromeOS, Android and
-  iOS were not measured, and the rule keeps them on WebGL2.
+  iOS were not measured, and the rule keeps them on WebGL2. (Android was
+  measured on 2026-11-12, and its phones moved: §9.)
 - **The medium tier** beyond the canopy and the meadow.
 - **A party.** Every reading is of one player alone; a hike with other
   players drawn was not measured on either engine.
+
+## 9. The low tier on an Android phone
+
+As of 2026-11-12 WebGPU is also the default on the low tier in Google Chrome
+or Microsoft Edge on an Android phone or tablet, where no failure is
+remembered and the adapter fits (`WEBGPU_PHONE_TIERS`, `chooseEngine`). Low is
+the one tier a phone is given (`gpuClass.ts`, class `mobile`). A low tier on a
+desktop stays on WebGL2, and so does every other browser on Android, an
+Android browser asked for the desktop site (it names Linux), and every
+browser on an iPhone or an iPad.
+
+The reason is the start, not the frame. Chrome on Android offers no
+`KHR_parallel_shader_compile` (ANGLE on OpenGL ES), so on WebGL2 every
+program's link runs on the page's thread, and while the hike loads under the
+intro's film each link stops the page: the captions and the loading bar stand.
+Asking a program's status later, behind a fence, moved the wait into the next
+texture upload and cost the film frames; no form of it helped. WebGPU makes
+its pipelines off the page's thread (`asyncPipelines.ts`).
+
+Measured on the owner's Pixel 9 (Mali-G715, Chrome 156, Android 17) with
+`tools/frame-budget/timeline.mjs --phone --intro 85 --cold --cool`: a first
+visit, the phone started cool (thermal status 0, battery at most 34.5 °C),
+from the Play tap to the film's end, one build (`0ba98c66`) on both engines.
+
+| | WebGL2, five runs | WebGPU (`?engine=webgpu`), two runs |
+| --- | --- | --- |
+| page stops over 0.25 s | 5 to 10 | 3 and 4 |
+| the longest (the world's build) | 2.35 to 3.77 s | 2.31 and 2.74 s |
+| the others | four to eight links of 0.25 to 0.6 s | 0.25, 0.99, 0.44 s; 0.25, 0.36 s |
+| page stops over 0.1 s | 53 to 67 | 37 and 41 |
+
+In play, `tools/frame-budget/phone.mjs`, 10 s windows, the same phone warm
+from the runs before (36 to 39.5 °C, thermal status 1), each view once on each
+engine and then, the trailhead aside, again in the other order. Mean frame,
+WebGL2 against WebGPU:
+
+| view | WebGL2 | WebGPU |
+| --- | --- | --- |
+| the trailhead | 16.6 to 16.7 ms | 16.6 to 16.7 ms |
+| a night forest, the lamp on | 16.6 to 16.7 ms | 16.7 ms, then 17.3 to 17.5 ms in the second pass |
+| a night walk | 16.6 to 18.8 ms | 16.6 to 18.2 ms |
+| the summit scene and the chase | 16.7 to 18.4 ms, the longest frame 42 to 125 ms | 17.2 to 17.5 ms, the longest frame 450 and 466 ms |
+
+The pictures are the same on both (a JPEG a window, compared by eye at the
+trailhead and in the night forest).
+
+What the path fetches on a first visit that WebGL2 does not, as the site
+serves it compressed: the engine's module (60 kB), the two translators
+(glslang 238 kB, twgsl 469 kB) and the low tier's map of translations
+(572 kB): 1.3 MB, against the film's 42 MB.
+
+Not settled, and not measured:
+
+- **One long frame at the summit.** In the first ten seconds of the summit
+  scene on WebGPU one frame took 450 ms and, in the second pass, 466 ms; on
+  WebGL2 the longest there was 58 ms. Its cause was not found.
+- **The night forest's second pass**, 17.3 to 17.5 ms on WebGPU where WebGL2
+  held 16.7 ms, on a phone a degree warmer. Two passes do not tell the engine
+  from the phone's heat.
+- **Any other phone.** One Pixel 9. Another GPU (an Adreno, an older Mali)
+  was not measured; the adapter's check, a start's ten seconds and the
+  remembered fallback are what stand between such a phone and a fault.
+- **Edge on Android**, admitted as the same engine as Chrome, as on a desktop.
 
 ## Appendix A. The pipeline-cache bug, as a draft issue
 

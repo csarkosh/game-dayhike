@@ -1,9 +1,10 @@
 /**
  * Which engine draws the game: WebGL2, or Babylon's WebGPU engine on the tiers
  * `WEBGPU_TIERS` names (high and medium), in Google Chrome or Microsoft Edge on macOS or
- * Windows on a device that is not a phone or a tablet, where the browser offers a
- * hardware adapter with the limits the scene needs. Everywhere else WebGL2,
- * as every tier always drew.
+ * Windows on a device that is not a phone or a tablet, and on the tier
+ * `WEBGPU_PHONE_TIERS` names (low) in the same two browsers on an Android
+ * phone or tablet, where the browser offers a hardware adapter with the
+ * limits the scene needs. Everywhere else WebGL2, as every tier always drew.
  *
  * Why there and nowhere else: WebGPU was measured to draw faster on macOS,
  * and to reach its full rate sooner on a first visit on Windows (18 to 21 s
@@ -13,8 +14,9 @@
  * 19.5 → 17.1, the trailside 21.6 → 19.6, the night 23.6 → 20.1, and the
  * canopy at four times the pixels 51.0 → 40.1; on medium, the canopy
  * 19.2 → 19.3 ms (no gain) and the meadow 17.3 → 16.7 (at the display's cap).
- * Only Chrome on macOS and on Windows was measured, no other browser or
- * platform. Edge is admitted as the same engine as Chrome; the desktop
+ * On a phone the reason is the start, not the frame (`WEBGPU_PHONE_TIERS`).
+ * Only Chrome on macOS, on Windows and on one Android phone was measured, no
+ * other browser or platform. Edge is admitted as the same engine as Chrome; the desktop
  * launcher is not, nor is a browser whose brands name neither (Brave, Opera).
  * A browser is told apart from Chrome only by the brands it reports: one
  * that reports Google Chrome's is taken for Chrome, and the adapter's check
@@ -51,6 +53,28 @@ export const WEBGPU_ENABLED = true;
  * 40.3 → 26.1 and the meadow 29.6 → 20.1 (two pairs each, interleaved).
  * Low and the landing backdrop stay WebGL2. */
 export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
+
+/**
+ * The tiers the WebGPU default applies to on an Android phone or tablet: low,
+ * the one tier a phone is given (`gpuClass.ts`, class `mobile`), since
+ * 2026-11-12. Not for the frame, which the two engines draw alike there, but
+ * for the start: Chrome on Android has no `KHR_parallel_shader_compile`, so
+ * on WebGL2 every program's link stops the page while the hike loads under
+ * the intro's film, and WebGPU makes its pipelines off the page's thread.
+ * Measured on a Pixel 9 (Mali-G715, Chrome 156), a first visit, the phone
+ * started cool, from the Play tap to the film's end: 5 to 10 page stops over
+ * 0.25 s on WebGL2 (the world's build, then four to eight links of 0.25 to
+ * 0.6 s), 3 to 4 on WebGPU (the build, then one or two). In play, a 10 s
+ * window's mean frame, WebGL2 against WebGPU: the trailhead 16.6 to 16.7 ms on
+ * both, the night forest 16.6 to 16.7 against 16.7 to 17.5 (the higher in a
+ * second pass, the phone at 38 to 39.5 °C), a night walk 16.6 to 18.8 against
+ * 16.6 to 18.2; the summit scene held one frame of 0.45 s on WebGPU that
+ * WebGL2 did not (the verification note, §9). One phone was measured, no other, and
+ * the adapter's check and the fallback apply to every one. What the path
+ * fetches that WebGL2 does not: the engine's module, the two translators and
+ * the tier's map of translations.
+ */
+export const WEBGPU_PHONE_TIERS: readonly QualityTier[] = ["low"];
 
 /**
  * What the device is created with, and what an adapter must reach to be
@@ -281,27 +305,36 @@ export type EngineInput = {
 /**
  * The rule. `"probe"` means the answer needs the adapter: ask it, then call
  * again with `fits`. WebGPU by default only where every one of these holds:
- * the tier is in `tiers` (high), the switch is on, the browser is Google
- * Chrome or Microsoft Edge, the platform is macOS or Windows on a device that
- * is not mobile, no failure is remembered, and the adapter fits. Safari and
+ * the switch is on, the browser is Google Chrome or Microsoft Edge, the
+ * platform and the tier are measured ones (macOS or Windows on a device that
+ * is not mobile, at a tier in `tiers`; or Android on one that is, at a tier
+ * in `phoneTiers`), no failure is remembered, and the adapter fits. Safari and
  * Firefox are WebGL2 whatever they offer at `navigator.gpu`, and so are the
- * desktop launcher and the browsers built on Chromium whose brands name
- * neither Chrome nor Edge (Brave, Opera), none of them measured. `?engine=webgl2` wins
+ * desktop launcher, the browsers built on Chromium whose brands name
+ * neither Chrome nor Edge (Brave, Opera, Samsung Internet), an iPhone's and
+ * an iPad's every browser, and an Android browser asked for the desktop
+ * site, none of them measured. `?engine=webgl2` wins
  * outright; `?engine=webgpu` goes past the tier, the switch, the browser, the
  * platform and the memory, but never past the adapter.
  */
-export function chooseEngine(input: EngineInput, tiers: readonly QualityTier[] = WEBGPU_TIERS): EngineName | "probe" {
+export function chooseEngine(
+  input: EngineInput,
+  tiers: readonly QualityTier[] = WEBGPU_TIERS,
+  phoneTiers: readonly QualityTier[] = WEBGPU_PHONE_TIERS,
+): EngineName | "probe" {
   if (input.override === "webgl2") return "webgl2";
-  const measured = input.chromeOrEdge && (input.os === "mac" || input.os === "windows") && !input.mobile;
-  if (input.override !== "webgpu" && (!tiers.includes(input.tier) || !input.on || !measured || input.remembered)) return "webgl2";
+  const desktop = (input.os === "mac" || input.os === "windows") && !input.mobile && tiers.includes(input.tier);
+  const phone = input.os === "android" && input.mobile && phoneTiers.includes(input.tier);
+  const measured = input.chromeOrEdge && (desktop || phone);
+  if (input.override !== "webgpu" && (!input.on || !measured || input.remembered)) return "webgl2";
   if (input.fits === null) return "probe";
   return input.fits ? "webgpu" : "webgl2";
 }
 
 /**
  * The engine for `input.tier`: WebGL2 (null) at once where the rule says so,
- * nothing fetched and nothing asked, as for medium and low, for every tier off
- * desktop Chrome and Edge on macOS and Windows, and while `WEBGPU_ENABLED` is false,
+ * nothing fetched and nothing asked, as for low on a desktop, for every tier off
+ * Chrome and Edge on macOS, Windows and Android, and while `WEBGPU_ENABLED` is false,
  * where the address sets no engine; else what `resolve` makes of it
  * (`resolveWebGpu`), which may still be WebGL2.
  */
