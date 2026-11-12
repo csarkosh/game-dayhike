@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../../src/sim/passes/index.js";
-import { WORLD_PREP_TIMEOUT_MS, startWorldPrep, type WorldPrepOutcome } from "../../src/game/worldPrep.js";
+import { WORLD_PREP_TIMEOUT_MS, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "../../src/game/worldPrep.js";
 import type { WorldPrepReply } from "../../src/game/world.worker.js";
 import { installPassHash, passHash, passHashCachedFor, passHashKey } from "../../src/sim/forest.js";
 import { bowlFor, type Bowl } from "../../src/sim/olympic.js";
@@ -59,6 +59,16 @@ async function settled(ready: Promise<WorldPrepOutcome>): Promise<WorldPrepOutco
   return outcome;
 }
 
+describe("the console's line for how the world's worker ended", () => {
+  it("names the way out, the time and what was installed", () => {
+    expect(worldPrepLine({ why: "done", prepared: true, passHash: true, ms: 1479.6 })).toBe("world prep: done in 1480 ms, the trail and the level check installed");
+    expect(worldPrepLine({ why: "timeout", prepared: true, passHash: false, ms: 30000 })).toBe("world prep: timeout in 30000 ms, the trail installed");
+    expect(worldPrepLine({ why: "done", prepared: false, passHash: true, ms: 800 })).toBe("world prep: done in 800 ms, the level check installed");
+    expect(worldPrepLine({ why: "failed", prepared: false, passHash: false, ms: 12.2 })).toBe("world prep: failed in 12 ms, nothing installed");
+    expect(worldPrepLine({ why: "cached", prepared: false, passHash: false, ms: 0 })).toBe("world prep: cached in 0 ms, nothing installed");
+  });
+});
+
 describe("a hike's world, prepared for the page by its worker", () => {
   let clock = 0;
   const deps = { now: () => clock };
@@ -97,8 +107,7 @@ describe("a hike's world, prepared for the page by its worker", () => {
 
   it("installs the bowl and the pass hash as they arrive, and is ready when the worker is done", async () => {
     const bowl = await bowlFromAnotherSim(9);
-    const steps: string[] = [];
-    const prep = startWorldPrep({ seed: 9, variant: "olympic" }, { ...deps, onStep: (kind) => steps.push(kind) });
+    const prep = startWorldPrep({ seed: 9, variant: "olympic" }, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     worker.send({ id: worker.id, kind: "prepared", seed: 9, variant: "olympic", prepared: bowl });
     expect(bowlFor(9)).toBe(bowl);
@@ -108,7 +117,6 @@ describe("a hike's world, prepared for the page by its worker", () => {
     clock = 1750;
     worker.send({ id: worker.id, kind: "done" });
     expect(await prep.ready).toEqual({ why: "done", prepared: true, passHash: true, ms: 750 });
-    expect(steps).toEqual(["prepared", "passHash"]);
     expect(worker.terminated).toBe(1);
     expect(passHash()).toBe(64181734);
     // A timer left running would end it a second time.
@@ -134,14 +142,12 @@ describe("a hike's world, prepared for the page by its worker", () => {
     prep.dispose();
   });
 
-  it("refuses a pass hash made over another count of passes, and says the step was taken", async () => {
-    const steps: string[] = [];
-    const prep = startWorldPrep({ seed: 12, variant: "olympic" }, { ...deps, onStep: (kind) => steps.push(kind) });
+  it("refuses a pass hash made over another count of passes", async () => {
+    const prep = startWorldPrep({ seed: 12, variant: "olympic" }, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     worker.send({ id: worker.id, kind: "passHash", hash: 5, passCount: passHashKey().passCount + 1, variant: "olympic" });
     worker.send({ id: worker.id, kind: "done" });
     expect(await prep.ready).toEqual({ why: "done", prepared: false, passHash: false, ms: 0 });
-    expect(steps).toEqual(["passHash"]);
     expect(passHashCachedFor("olympic")).toBe(false);
   });
 

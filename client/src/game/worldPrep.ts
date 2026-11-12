@@ -38,6 +38,13 @@ export type WorldPrepOutcome = {
 
 export type WorldPrep = { readonly ready: Promise<WorldPrepOutcome>; dispose(): void };
 
+/** The console's line for an outcome, beside the start's own (`launchLine`):
+ * how the worker ended, in how long, and what the page took from it. */
+export function worldPrepLine(outcome: WorldPrepOutcome): string {
+  const took = [outcome.prepared ? "the trail" : null, outcome.passHash ? "the level check" : null].filter((part) => part !== null);
+  return `world prep: ${outcome.why} in ${Math.round(outcome.ms)} ms, ${took.length === 0 ? "nothing" : took.join(" and ")} installed`;
+}
+
 let lastId = 0;
 
 /**
@@ -45,13 +52,12 @@ let lastId = 0;
  * with one request, for `input.seed` on the terrain `input.variant`. A reply
  * is taken only when it is this request's, for this seed and terrain; a pass
  * hash made over another count of passes than this thread's is refused
- * (`installPassHash`). `onStep` hears of each result as it is taken or
- * refused. `ready` never rejects; `dispose` ends the worker, and nothing is
- * installed after `ready` has resolved.
+ * (`installPassHash`). `ready` never rejects; `dispose` ends the worker, and
+ * nothing is installed after `ready` has resolved.
  */
 export function startWorldPrep(
   input: { seed: number; variant: string },
-  deps: { now?: () => number; timeoutMs?: number; onStep?: (kind: "prepared" | "passHash") => void } = {},
+  deps: { now?: () => number; timeoutMs?: number } = {},
 ): WorldPrep {
   const now = deps.now ?? ((): number => performance.now());
   const from = now();
@@ -85,11 +91,9 @@ export function startWorldPrep(
     if (reply.kind === "prepared") {
       if (reply.seed !== input.seed || reply.variant !== input.variant) return;
       installed.prepared = terrainVariant(reply.variant)?.install?.(reply.seed, reply.prepared) === true;
-      deps.onStep?.("prepared");
     } else if (reply.kind === "passHash") {
       if (reply.variant !== input.variant) return;
       installed.passHash = installPassHash(reply.hash, { passCount: reply.passCount, variant: reply.variant });
-      deps.onStep?.("passHash");
     } else {
       end(reply.kind === "done" ? "done" : "failed");
     }

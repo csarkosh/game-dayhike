@@ -242,8 +242,23 @@ and a later hike in the same session makes its own, with the file by then in the
      each on a phone, run whole. The loader lives while the film covers the hike: at the cut
      what is left runs to its end, and from then a build that cannot wait runs whole, as in any
      play. A start with no film has no loader and builds as it always did.
-   - Still whole: the build itself (`buildGame` is one task), the water's first fill, the face
-     patches' near band and wildlife's first collect.
+   - The hike's trail and its level check are made off the page (amended 2026-11-12). They
+     were the first half of the build's one task: the trail for the hike's seed, and the pass
+     hash, which probes ten chunks at a seed of its own and builds a second trail to do it,
+     0.8 s each on a phone. A module worker (`game/world.worker.ts`) is started at the route's
+     change, with the seed and the terrain the address gives (`game/worldInputs.ts`, the rule
+     the build reads them by), and runs the sim's own code while the tier is decided, the film
+     buffers and the engine starts. The page takes each result into the sim's caches as it
+     arrives (`game/worldPrep.ts`), and the build, which waits for the worker once the film has
+     its top-up (`beforeBuild`), finds both made. The world is the same to the bit: the pass
+     hash is still made at run time by the browser that plays the hike, and a hash made over
+     another count of passes is refused. Where there is no worker, it fails, or it has not
+     answered in 30 s (`WORLD_PREP_TIMEOUT_MS`), the build makes both itself, as before. What
+     the page already holds is not asked for: a second hike needs no pass hash, and the same
+     hike again starts no worker.
+   - Still whole: the rest of the build (`buildGame` is one task: the water, its plants and
+     life, the renderer, the session), the water's first fill, the face patches' near band and
+     wildlife's first collect.
 5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, a frame
    has shown the shells the player's place and the loader of first builds has drained (asked once
    the scene is ready, so a fill queued as its models landed is waited for; so a player
@@ -272,7 +287,7 @@ muted. The line names the stage the load is in and its count, one stage at a tim
 | ground and sound | `ground and sound 20 of 24` | the 18 map fetches and the 6 calls |
 | shaders, WebGPU | `shaders 3.1 of 4.2 MB`, then `pipelines 40 of 60` | the translators' and the map's bytes against `content-length`; pipelines landed of asked |
 | shaders, WebGL2 | `compiling shaders 40` | the engine's compile observable; no total exists at run time, so the line counts up and the bar's segment fills when the gate says done |
-| building the world | `building the world 3 of 7` | the clipmap's rings, then the billboards baked of the billboards wanted |
+| building the world | `building the world 3 of 11` | the trail and the level check (told as the build finds them made), the clipmap's rings, the billboards' bakes and, under the film, the first fills |
 | ready | `ready` | the gate |
 
 The bar is one value in [0, 1], weighted by bytes for the download stages (the only part that

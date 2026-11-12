@@ -26,6 +26,8 @@ import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
+import { worldInputs } from "./game/worldInputs.js";
+import { startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "./game/worldPrep.js";
 import { startSceneRoute } from "./game/scene/sceneRoute.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
@@ -1172,6 +1174,12 @@ function render(container: HTMLDivElement): void {
   // name their stage as telemetry's breadcrumb, so an error mid-load says
   // which stage was in progress.
   setLoadProgress(markedProgress(intro?.overlay.progress ?? null, (stage) => telemetry.mark(`load:${stage}`)));
+  // The hike's trail and level check, made off this thread from now, while
+  // the tier is decided, the film buffers and the engine starts: the build
+  // waits for them (`beforeBuild`) and finds them made. With no worker, or
+  // one that fails, the build makes them as it always did (`worldPrep.ts`).
+  const prep = startWorldPrep(worldInputs(route.token, location.search));
+  let prepOutcome: WorldPrepOutcome | null = null;
   // Each probe step draws on the engine the WebGPU rule gives its tier, on
   // its own canvas, and a WebGPU step that fails is the rule's start failure
   // (`measureOnRuleEngine`); the game's failure handling never hears of it.
@@ -1189,16 +1197,22 @@ function render(container: HTMLDivElement): void {
     // WebGL2; `?probe=` measures whatever the rule says.
     settles: async (engine) => parseProbeOverride(location.search) !== null || probeStepCanSettle((await signalsReady).parallelCompile, engine),
   });
-  running = { dispose: () => probe.abort() };
+  running = {
+    dispose: () => {
+      probe.abort();
+      prep.dispose();
+    },
+  };
   /** The GPU's signals this start read, for the engines made later. */
   let hikeSignals: GpuSignals | null = null;
   // How long each step of the start took, for its `load` row: the tier's
   // decision (with its probe, where one ran), the intro's buffer, the engine,
-  // and the build. Each lap is measured from the end of the one before, and
-  // named `<step>Ms` so none shadows the row's `build` or `engine`.
+  // the film's top-up, what the start then still waited for the world's
+  // worker, and the build. Each lap is measured from the end of the one
+  // before, and named `<step>Ms` so none shadows the row's `build` or `engine`.
   const laps: Record<string, number> = {};
   let lapStart = performance.now();
-  const lap = (name: "decide" | "intro" | "engine" | "film" | "build"): void => {
+  const lap = (name: "decide" | "intro" | "engine" | "film" | "world" | "build"): void => {
     const now = performance.now();
     laps[`${name}Ms`] = Math.round(now - lapStart);
     lapStart = now;
@@ -1230,10 +1244,15 @@ function render(container: HTMLDivElement): void {
       intro === null
         ? undefined
         : () => waitForBuffer(intro.overlay, INTRO_BUFFER_S, INTRO_BUFFER_MAX_MS).then(() => lap("intro")),
-    beforeBuild:
-      intro === null
-        ? undefined
-        : () => waitForBuffer(intro.overlay, INTRO_BUILD_BUFFER_S, INTRO_BUILD_BUFFER_MAX_MS).then(() => lap("film")),
+    beforeBuild: async () => {
+      if (intro !== null) {
+        await waitForBuffer(intro.overlay, INTRO_BUILD_BUFFER_S, INTRO_BUILD_BUFFER_MAX_MS);
+        lap("film");
+      }
+      prepOutcome = await prep.ready;
+      lap("world");
+      console.info(worldPrepLine(prepOutcome));
+    },
     paint: () => new Promise((resolve) => afterNextPaint(resolve)),
     engine: (decided, read) => {
       hikeSignals = read;
@@ -1253,12 +1272,20 @@ function render(container: HTMLDivElement): void {
       telemetry.mark("start:build");
       launch(container, onCanvas, route.token, decided, (tier, wanted) => engineFor(tier, read, () => !cancelled(), wanted), intro);
       lap("build");
-      telemetry.event("load", { ...laps, tier: decided.tier, source: decided.source, engine: game?.graphics().engine ?? "none" });
+      telemetry.event("load", {
+        ...laps,
+        tier: decided.tier,
+        source: decided.source,
+        engine: game?.graphics().engine ?? "none",
+        prep: prepOutcome?.why ?? "none",
+        prepMs: Math.round(prepOutcome?.ms ?? 0),
+      });
       telemetry.mark("game");
     },
     fail: (error) => {
       telemetry.event("start_fail", { ...laps, msg: error instanceof Error ? error.message : String(error) });
       console.error("The game could not start.", error);
+      prep.dispose();
       endIntro(intro);
       // Whichever canvas the start left: a renderer that fell back builds on
       // a fresh one in the first one's place.

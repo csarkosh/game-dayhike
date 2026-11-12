@@ -43,7 +43,7 @@ import {
 import { aimAt, stepFreecam, type FreecamState } from "./game/freecam.js";
 import { DEFAULT_HOUR, sunAltitudeDeg } from "./game/lighting.js";
 import { startSkySource } from "./game/skyWorker.js";
-import { seedFromToken } from "./game/seed.js";
+import { worldInputs } from "./game/worldInputs.js";
 import { createAmbientAudio } from "./game/ambientAudio.js";
 import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
 import { createWaterLifeAudio } from "./game/waterLifeAudio.js";
@@ -63,7 +63,6 @@ import { actsUnder,
   type EscalationState,
 } from "./game/escalation.js";
 import {
-  DEFAULT_TERRAIN_VARIANT,
   activeTerrainVariant,
   elevationAt,
   setActiveTerrainVariant,
@@ -287,6 +286,16 @@ export type GameOptions = {
  * made behind (`buildOrUndo`): above all no engine, and no global plugin
  * registration for the next renderer to meet.
  */
+/**
+ * How many items the loading bar's world stage has: the trail and the level
+ * check (made by the world's worker before the build, or by the build), the
+ * clipmap's rings, the billboards' bakes, and, under a film (`deferred`), the
+ * first fills the loader steps.
+ */
+function worldStageTotal(deferred: boolean): number {
+  return 2 + RING_COUNT + (deferred ? 2 : 1);
+}
+
 export function startGame(canvas: HTMLCanvasElement, token: string, options: GameOptions): GameHandle {
   return buildOrUndo((made) => buildGame(canvas, token, options, made));
 }
@@ -327,10 +336,9 @@ function buildGame(
   // World entries are *resolved* here, never dispatched. Dispatching one would
   // rewrite `?cmd=` and re-initialise, which would re-read the script and
   // dispatch it again — an unbounded restart loop.
-  // `lastEntry`, not `find`: a later entry wins, so `seed a;seed b` builds `b` —
-  // which is also the only entry the write-back would leave in the URL.
-  const seedEntry = lastEntry(world, "seed");
-  const seed = seedFromToken(seedEntry ? (seedEntry.args[0] as string) : token);
+  // The seed and the terrain by `worldInputs`, the rule the page started the
+  // world's worker by (`worldPrep.ts`), so what it prepared is this world's.
+  const { seed, variant } = worldInputs(token, location.search);
 
   // `?cmd=debug`: registers the trailhead pad marker below (host only — the
   // registry is host-side truth) and turns on the Interacted console logging
@@ -352,16 +360,17 @@ function buildGame(
   // state that survives the popstate re-initialisation, so it is set
   // explicitly on EVERY start: an absent entry must reset to the default, not
   // inherit the previous world's. An unknown name (hand-edited URL) falls
-  // back to the default rather than crashing the boot.
-  const terrainEntry = lastEntry(world, "terrain");
-  const requested = terrainEntry?.args[0];
-  setActiveTerrainVariant(
-    requested !== undefined && terrainVariantNames().includes(requested)
-      ? requested
-      : DEFAULT_TERRAIN_VARIANT,
-  );
+  // back to the default rather than crashing the boot (`worldInputs`).
+  setActiveTerrainVariant(variant);
 
   const forest = createForest(seed);
+  // The trail and the level check are made by now, the bar's world stage's
+  // first two items: by the world's worker before this build (`worldPrep.ts`),
+  // or just above, here. The bar hears of them here and not as the worker
+  // makes them, during the download: a line standing at "2 of 11" until the
+  // build began would read as a stall.
+  reportProgress()?.done("world", "trail");
+  reportProgress()?.done("world", "check");
   // Where this hike's players start, from the seed alone, as the sim places them (`pickSpawn`):
   // the first renderer builds its terrain and its water around it, and the look starts facing
   // the way it faces. Null for a world with no trail.
@@ -2333,8 +2342,7 @@ function buildGame(
   // stood with the renderer. The render loop starts once they stand and the
   // sky's first slices are in.
   const progress = reportProgress();
-  // The rings, the billboards' bakes, and under a film the first fills the loader steps.
-  progress?.total("world", RING_COUNT + (firstBuilds === undefined ? 1 : 2));
+  progress?.total("world", worldStageTotal(firstBuilds !== undefined));
   const ringBuilt = (level: number): void => {
     progress?.start("world", `ring${level}`);
     progress?.done("world", `ring${level}`);
