@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TRACE_CATEGORIES, gpuCallTotals, gpuMainTasks, keepForGpu, pageClockOffset, skipsWithHolds, traceReader } from "../lib/gpuTrace.mjs";
+import { TRACE_CATEGORIES, gpuCallTotals, gpuMainTasks, keepForGpu, pageClockOffset, skipsWithHolds, traceExtent, traceNote, traceReader } from "../lib/gpuTrace.mjs";
 
 /** The trace's clock is this many microseconds ahead of the page's. */
 const OFFSET = 500_000_000;
@@ -49,6 +49,16 @@ describe("a Chrome trace read as it arrives", () => {
     }
   });
 
+  it("knows a stream that ended before its events did from one that ended whole", () => {
+    const whole = traceReader(keepForGpu());
+    whole.push(TEXT);
+    expect(whole.whole()).toBe(true);
+    const cut = traceReader(keepForGpu());
+    cut.push(TEXT.slice(0, TEXT.indexOf("ShaderModuleVk")));
+    expect(cut.whole()).toBe(false);
+    expect(cut.events().length).toBeGreaterThan(0);
+  });
+
   it("asks Chrome for the categories the GPU thread's tasks and Dawn's calls are in", () => {
     expect(TRACE_CATEGORIES).toEqual(expect.arrayContaining(["toplevel", "gpu", "disabled-by-default-gpu.dawn"]));
   });
@@ -92,6 +102,28 @@ describe("what held Chrome's GPU thread", () => {
     // The same starts with tasks half as long are other tasks: no offset is taken from them.
     const halved = KEPT.map((e) => (e.pid === 20 && e.ph === "X" ? { ...e, dur: e.dur / 2 } : e));
     expect(pageClockOffset(RUN, halved)).toBeNull();
+  });
+
+  it("says where a trace begins and ends, and what its run noted of it", () => {
+    // The first slice kept is the page's at 1500 ms; the last to end is another thread's, at 8100 ms.
+    expect(traceExtent(KEPT)).toEqual({ from: us(1500), to: us(8100), lost: false, cut: false });
+    expect(traceExtent([traceNote({ lost: true, cut: false }), ...KEPT])).toMatchObject({ lost: true, cut: false });
+    expect(traceExtent([traceNote({ lost: false, cut: true }), ...KEPT])).toMatchObject({ lost: false, cut: true });
+    // The note is one the reader's filter keeps, so a trace read back from its file still holds it.
+    expect(keepForGpu()(traceNote({ lost: true, cut: false }))).toBe(true);
+    expect(traceExtent([])).toBeNull();
+  });
+
+  it("says of each skip whether the trace saw its moment: a skip after the trace's end has no hold to find", () => {
+    const skips = [{ t: 6050, skipped: 0.125 }, { t: 7500, skipped: 0.083 }, { t: 40000, skipped: 0.125 }, { t: 900, skipped: 0.083 }];
+    expect(skipsWithHolds(RUN, KEPT, skips).map((s) => [s.t, s.seen, s.hold?.ms ?? null])).toEqual([
+      [6050, "seen", 96],
+      [7500, "seen", null],
+      [40000, "outside", null],
+      [900, "outside", null],
+    ]);
+    // With no clock to lay the page on, nothing was looked at.
+    expect(skipsWithHolds({ ...RUN, loaf: [] }, KEPT, skips).map((s) => s.seen)).toEqual(["no clock", "no clock", "no clock", "no clock"]);
   });
 
   it("names the hold a film's skip fell in or just after, and leaves a skip far from any alone", () => {

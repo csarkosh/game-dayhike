@@ -287,10 +287,13 @@ Tracing costs time, so a traced run is read for its holds and never judged again
 verdict's runs are made without it. `timeline-gpu.mjs` prints, a run, the GPU thread's tasks of
 60 ms and more (`--task <ms>` for another bar) with when each ran after Play, the WebGPU calls
 inside it (a pipeline made synchronously, a shader module, a submit, each with its label) and
-what of the task no call accounts for; the film's skips, each with the hold it fell in; and the
-thread's WebGPU calls summed by kind. The page's clock is laid on the trace's by the run's
-longest frames (`lib/gpuTrace.mjs`); where it cannot be, times are given into the trace and no
-skip is laid to a hold.
+what of the task no call of 1.5 ms and more accounts for; the film's skips, each with the hold
+it fell in; and the thread's WebGPU calls of 1.5 ms and more summed by kind. The page's clock is
+laid on the trace's by the run's longest frames (`lib/gpuTrace.mjs`); where it cannot be, times
+are given into the trace and no skip is looked for. A skip is said to have no hold only where
+the trace saw its moment: one after the trace's end (a trace is 30 s of an 85 s run) reads
+"outside the trace". A trace Chrome dropped part of (its buffer filled), or whose stream ended
+early, is kept with a note at its head, and the report says a hold may be missing from it.
 
 ## Budgets
 

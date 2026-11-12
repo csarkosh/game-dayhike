@@ -30,11 +30,12 @@ const ARGS_MAX = 300;
  * Reads a Chrome trace's JSON text in chunks, as it arrives (`{"traceEvents":[{…},{…}],…}`, hundreds
  * of megabytes whole), and keeps the events `keep(event)` says to, each as `{ ph, pid, tid, ts, dur,
  * name, cat, args }` with `args` dropped where it is long. `push(text)` feeds a chunk, cut anywhere;
- * `events()` is what was kept so far. Text that is not an event (the trace's own metadata) is passed over.
+ * `events()` is what was kept so far, and `whole()` whether the events' list was read to its end (a
+ * stream cut short never closes it). Text that is not an event (the trace's own metadata) is passed over.
  */
 export function traceReader(keep) {
   const kept = [];
-  let depth = 0, inString = false, escaped = false, inArray = false, buf = "";
+  let depth = 0, inString = false, escaped = false, inArray = false, closed = false, buf = "";
   const take = (text) => {
     let e;
     try {
@@ -51,7 +52,7 @@ export function traceReader(keep) {
       for (let i = 0; i < text.length; i++) {
         const c = text[i];
         if (!inArray) {
-          if (c === "[") inArray = true;
+          if (c === "[" && !closed) inArray = true;
           continue;
         }
         if (depth > 0) buf += c;
@@ -71,16 +72,49 @@ export function traceReader(keep) {
             take(buf);
             buf = "";
           }
-        } else if (c === "]" && depth === 0) inArray = false;
+        } else if (c === "]" && depth === 0) {
+          inArray = false;
+          closed = true;
+        }
       }
     },
     events: () => kept,
+    whole: () => closed,
   };
 }
 
-/** What the report needs of a trace: the processes' and threads' names, and every complete slice of `minMs` or more. */
+/** The name of the note a run leaves at the head of its kept trace (`traceNote`). */
+const NOTE = "dayhike_trace";
+
+/** What the report needs of a trace: the processes' and threads' names, the run's note, and every complete slice of `minMs` or more. */
 export function keepForGpu(minMs = 1.5) {
-  return (e) => (e.ph === "M" && (e.name === "process_name" || e.name === "thread_name")) || (e.ph === "X" && e.dur >= minMs * 1000);
+  return (e) => (e.ph === "M" && (e.name === "process_name" || e.name === "thread_name" || e.name === NOTE)) || (e.ph === "X" && e.dur >= minMs * 1000);
+}
+
+/**
+ * What a run notes of the trace it kept, as an event at its head: `lost`, Chrome said it dropped
+ * part of the trace (its buffer filled), and `cut`, the stream ended before the events did. Either
+ * way a stretch of the run may be missing from the trace with nothing to show where.
+ */
+export function traceNote({ lost, cut }) {
+  return { ph: "M", pid: 0, tid: 0, name: NOTE, args: { lost: lost === true, cut: cut === true } };
+}
+
+/**
+ * Where a kept trace begins and ends, in its own microseconds (`from` the first slice's start, `to`
+ * the last slice's end), with the run's note of it (`lost`, `cut`; false where it left none). Null
+ * for a trace with no slice.
+ */
+export function traceExtent(events) {
+  let from = Infinity, to = -Infinity;
+  for (const e of events) {
+    if (e.ph !== "X") continue;
+    from = Math.min(from, e.ts);
+    to = Math.max(to, e.ts + e.dur);
+  }
+  if (from === Infinity) return null;
+  const note = events.find((e) => e.ph === "M" && e.name === NOTE)?.args ?? {};
+  return { from, to, lost: note.lost === true, cut: note.cut === true };
 }
 
 /** The `pid:tid` of every thread named `name`. */
@@ -115,7 +149,8 @@ export function gpuMainTasks(events, { taskMs = 60 } = {}) {
     });
 }
 
-/** Every WebGPU call the GPU thread ran, summed by kind, whatever task it was in: `{ name, count, ms }`, the most first. */
+/** Every WebGPU call the GPU thread ran that the trace kept (those of 1.5 ms and more, with `keepForGpu`),
+ * summed by kind, whatever task it was in: `{ name, count, ms }`, the most first. */
 export function gpuCallTotals(events) {
   const [thread] = threadsNamed(events, GPU_MAIN);
   if (thread === undefined) return [];
@@ -170,14 +205,20 @@ const HOLD_MS = 40;
 
 /**
  * The film's skips (`pictureSkips`: `{ t, skipped }`, page ms), each with the GPU thread task it fell
- * in or just after as `hold`, or null where there is none, or no clock to lay the page on.
+ * in or just after as `hold`, or null, and `seen`, whether the trace could have shown one: `"seen"`
+ * where the skip's moment is inside the trace (a null hold there is no hold), `"outside"` where the
+ * skip came before the trace began or after it ended (a trace is shorter than a run), `"no clock"`
+ * where the page's clock could not be laid on the trace. Only a skip seen with no hold had none.
  */
 export function skipsWithHolds(run, events, skips) {
   const offset = pageClockOffset(run, events);
+  const extent = traceExtent(events);
   const tasks = offset === null ? [] : gpuMainTasks(events, { taskMs: HOLD_MS });
   return skips.map((skip) => {
-    const at = skip.t * 1000 + (offset ?? 0);
+    if (offset === null || extent === null) return { ...skip, hold: null, seen: "no clock" };
+    const at = skip.t * 1000 + offset;
+    if (at < extent.from || at > extent.to) return { ...skip, hold: null, seen: "outside" };
     const hold = tasks.filter((task) => at >= task.ts && at <= task.ts + (task.ms + AFTER_HOLD_MS) * 1000).sort((a, b) => b.ms - a.ms)[0] ?? null;
-    return { ...skip, hold };
+    return { ...skip, hold, seen: "seen" };
   });
 }

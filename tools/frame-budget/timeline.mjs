@@ -57,7 +57,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { attachChrome, closeStrayPages, connect, evaluate, openPage, version, ORIGIN_STORAGE } from "./lib/cdp.mjs";
 import { isAndroid, isCool, phoneState, waitUntilCool } from "./lib/phone.mjs";
-import { TRACE_CATEGORIES, keepForGpu, traceReader } from "./lib/gpuTrace.mjs";
+import { TRACE_CATEGORIES, keepForGpu, traceNote, traceReader } from "./lib/gpuTrace.mjs";
 import { fileURLToPath } from "node:url";
 import { TIER_SIZES } from "./lib/views.mjs";
 
@@ -269,20 +269,27 @@ function traceOf(browser, o) {
       if (!started) return;
       try {
         await (ending ?? end());
-        const { stream } = await Promise.race([complete, sleep(120_000).then(() => ({}))]);
+        let bound;
+        const { stream, dataLossOccurred } = await Promise.race([complete, new Promise((resolve) => (bound = setTimeout(() => resolve({}), 120_000)))]);
+        clearTimeout(bound);
         if (stream === undefined) throw new Error("it never completed");
         const reader = traceReader(keepForGpu());
         const text = new TextDecoder();
-        for (;;) {
-          const chunk = await browser("IO.read", { handle: stream, size: 4 * 1024 * 1024 });
-          reader.push(chunk.base64Encoded ? text.decode(Buffer.from(chunk.data, "base64"), { stream: true }) : chunk.data);
-          if (chunk.eof) break;
+        try {
+          for (;;) {
+            const chunk = await browser("IO.read", { handle: stream, size: 4 * 1024 * 1024 });
+            reader.push(chunk.base64Encoded ? text.decode(Buffer.from(chunk.data, "base64"), { stream: true }) : chunk.data);
+            if (chunk.eof) break;
+          }
+        } finally {
+          await browser("IO.close", { handle: stream }).catch(() => undefined);
         }
-        await browser("IO.close", { handle: stream }).catch(() => undefined);
         const kept = reader.events();
         if (kept.length === 0) throw new Error("it held nothing");
-        writeFileSync(join(o.out, `${o.label}.trace.jsonl`), `${kept.map((e) => JSON.stringify(e)).join("\n")}\n`);
-        say(`trace of ${o.trace} s after Play: ${kept.length} slices kept in ${o.label}.trace.jsonl`);
+        // A trace with a stretch missing is kept, with a note at its head that the report reads.
+        const lost = dataLossOccurred === true, cut = !reader.whole();
+        writeFileSync(join(o.out, `${o.label}.trace.jsonl`), `${[traceNote({ lost, cut }), ...kept].map((e) => JSON.stringify(e)).join("\n")}\n`);
+        say(`trace of ${o.trace} s after Play: ${kept.length} slices kept in ${o.label}.trace.jsonl${lost ? "; Chrome dropped part of it (its buffer filled)" : ""}${cut ? "; its stream ended early" : ""}`);
       } catch (error) {
         say(`no trace kept: ${error.message}`);
       }
