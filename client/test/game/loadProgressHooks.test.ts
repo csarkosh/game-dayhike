@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createLoadProgress } from "../../src/game/loadProgress.js";
 import { MODEL_TOTAL, setLoadProgress, reportProgress } from "../../src/game/modelLoad.js";
 import { reportLayer } from "../../src/game/groundMaps.js";
@@ -52,24 +52,38 @@ describe("the loading hooks", () => {
       for (let i = 0; i < 10; i++) { ran++; if (i === 2) stopped = true; yield i; }
       return "done";
     }
-    const out = await stepSlices(work(), 1, () => stopped);
+    const out = await stepSlices(work(), 1, () => stopped, () => 0);
     expect(out).toBeUndefined();
     expect(ran).toBe(3);
   });
 
-  it("step a generator of slices with a macrotask between every N, and return its value", async () => {
-    const yields: number[] = [];
-    function* work(): Generator<number, string, void> {
-      for (let i = 0; i < 7; i++) { yields.push(i); yield i; }
+  it("give the thread back whenever sliceMs have passed, however many slices that is, and return the slices' value", async () => {
+    let clock = 0;
+    let handBacks = 0;
+    const real = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", (f: () => void, ms?: number) => { handBacks++; return real(f, ms); });
+    function* work(): Generator<void, string, void> {
+      for (let i = 0; i < 10; i++) { clock += 3; yield; }
       return "done";
     }
-    let macrotasks = 0;
-    const tick = setInterval(() => macrotasks++, 0);
-    const out = await stepSlices(work(), 3);
-    clearInterval(tick);
+    const out = await stepSlices(work(), 8, () => false, () => clock);
+    vi.unstubAllGlobals();
     expect(out).toBe("done");
-    expect(yields).toEqual([0, 1, 2, 3, 4, 5, 6]);
-    // Seven slices with a pause every three: two pauses, each letting the timer run at least once.
-    expect(macrotasks).toBeGreaterThanOrEqual(2);
+    // 3 ms a slice against 8: a hand-back after every third slice (9 ms), three in ten slices.
+    expect(handBacks).toBe(3);
+  });
+
+  it("run one slice longer than sliceMs to its end, then give the thread back", async () => {
+    let clock = 0;
+    let handBacks = 0;
+    const real = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", (f: () => void, ms?: number) => { handBacks++; return real(f, ms); });
+    // A ring's sampling is one slice of about 70 ms on a phone.
+    function* rings(): Generator<void, void, void> {
+      for (let i = 0; i < 7; i++) { clock += 70; yield; }
+    }
+    await stepSlices(rings(), 8, () => false, () => clock);
+    vi.unstubAllGlobals();
+    expect(handBacks).toBe(7);
   });
 });

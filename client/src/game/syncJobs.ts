@@ -132,22 +132,37 @@ export function finish<T>(slices: Slices<T>): T {
 }
 
 /**
- * Runs `slices` to its end with a macrotask between every `yieldEvery` of
- * them, so the page paints and its video keeps its frames between, and
- * returns what it returns. A rebuild done this way, not by `SyncJobs`, is one
- * that has no frame to fit: the first build, before the render loop runs.
+ * The longest a first build holds the page's thread before it gives it back
+ * (ms): half a frame at sixty a second. A single slice longer than this runs
+ * to its end; a ring's sampling is one slice, about 70 ms on a phone.
+ */
+export const FIRST_BUILD_SLICE_MS = 8;
+
+/**
+ * Runs `slices` to its end, giving the thread back (a macrotask) whenever
+ * `sliceMs` have passed since it last did, so the page paints and its video
+ * keeps its frames between, and returns what the slices return. A rebuild done
+ * this way, not by `SyncJobs`, is one that has no frame to fit: the first
+ * build, before the render loop runs. It is paced by the clock and not by a
+ * count of slices, since a slice is a ring on one machine's 20 ms and another's
+ * 400: a count of eight once let all seven rings run before the first paint.
  * Asked before every slice, `stopped` ends the run early with nothing: what
  * the slices build has gone (a renderer disposed while its world was made).
  */
-export async function stepSlices<T>(slices: Slices<T>, yieldEvery: number, stopped: () => boolean = () => false): Promise<T | undefined> {
-  let sinceYield = 0;
+export async function stepSlices<T>(
+  slices: Slices<T>,
+  sliceMs: number,
+  stopped: () => boolean = () => false,
+  now: () => number = () => performance.now(),
+): Promise<T | undefined> {
+  let since = now();
   for (;;) {
     if (stopped()) return undefined;
     const step = slices.next();
     if (step.done === true) return step.value;
-    if (++sinceYield >= yieldEvery) {
-      sinceYield = 0;
+    if (now() - since >= sliceMs) {
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      since = now();
     }
   }
 }

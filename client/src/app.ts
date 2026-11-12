@@ -114,6 +114,7 @@ import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { createCoveredDraw } from "./game/coveredDraw.js";
+import { FIRST_BUILD_SLICE_MS } from "./game/syncJobs.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
@@ -160,11 +161,6 @@ const STALL_MS = 250;
 function phaseName(phase: Phase): string {
   return phase === Phase.Climb ? "climb" : phase === Phase.Scene ? "scene" : phase === Phase.Chase ? "chase" : String(phase);
 }
-
-/** Slices of the clipmap's first build between paints, when it is deferred:
- * a ring's sampling is one slice, its geometry a few, so a paint comes
- * about every ring. */
-const CLIPMAP_YIELD_EVERY = 8;
 
 export type GameHandle = {
   dispose(): void;
@@ -2324,7 +2320,7 @@ function buildGame(
   }
   // The world stage of the loading bar: the clipmap's rings, then the
   // forest's billboards. With the build deferred, the rings are made a slice
-  // at a time with a paint between (`CLIPMAP_YIELD_EVERY`); otherwise they
+  // at a time with a paint between (`FIRST_BUILD_SLICE_MS`); otherwise they
   // stood with the renderer. The render loop starts once they stand and the
   // sky's first slices are in.
   const progress = reportProgress();
@@ -2338,7 +2334,7 @@ function buildGame(
   const built = renderer;
   let clipmapBuilt: Promise<void>;
   if (options.deferClipmap === true) {
-    clipmapBuilt = built.buildFirstClipmap(CLIPMAP_YIELD_EVERY, ringBuilt);
+    clipmapBuilt = built.buildFirstClipmap(FIRST_BUILD_SLICE_MS, ringBuilt);
   } else {
     for (let level = 0; level < RING_COUNT; level++) ringBuilt(level);
     clipmapBuilt = Promise.resolve();

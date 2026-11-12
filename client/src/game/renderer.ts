@@ -1864,11 +1864,11 @@ export type Renderer = {
    * the recording's. */
   setDepthOfField(on: boolean): void;
   /** The first clipmap build, for a renderer made with `deferClipmap`:
-   * stepped, a macrotask between every `yieldEvery` slices so the page
+   * stepped, the thread given back whenever `sliceMs` have passed so the page
    * paints between, each ring's level told to `onRing` as it is sampled.
    * Nothing to do without a forest, or once it has run; a renderer disposed
    * while it runs ends it quietly, no slice touching the scene it lost. */
-  buildFirstClipmap(yieldEvery: number, onRing?: (level: number) => void): Promise<void>;
+  buildFirstClipmap(sliceMs: number, onRing?: (level: number) => void): Promise<void>;
   /** The first clipmap build run whole, for a start with nothing to paint
    * between its slices. */
   buildClipmapNow(): void;
@@ -3673,8 +3673,8 @@ function buildRenderer(
     setDepthOfField() {
       // No depth of field in the post chain today (see the type's note).
     },
-    async buildFirstClipmap(yieldEvery, onRing) {
-      if (clipmap !== null) await stepSlices(clipmap.firstBuild(onRing), yieldEvery, () => scene.isDisposed);
+    async buildFirstClipmap(sliceMs, onRing) {
+      if (clipmap !== null) await stepSlices(clipmap.firstBuild(onRing), sliceMs, () => scene.isDisposed);
     },
     buildClipmapNow() {
       if (clipmap !== null) finish(clipmap.firstBuild());
