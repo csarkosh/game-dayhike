@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // The shader stages the game's pages ask for on the WebGPU path, recorded as `?wgsl=record`
 // keeps them: one JSON file a page and tier, the recordings `merge-corpus.mjs` adds to the corpus.
-// The pages are `record-pages.json`'s: the title's tour and the intro held at a frame, and places
-// in two named worlds on the free camera, by day and night and in each weather; each is opened on a
+// The pages are `record-pages.json`'s: the title's tour and the intro held at a frame, places
+// in two named worlds on the free camera, by day and night and in each weather, and a hike's start
+// in a world named as a lobby names one, by its token (a lake beside its trailhead, where a phone
+// met two stages no other page asks for); each is opened on a
 // page of its own with the tier pinned, left for `seconds`, and its recording caught as the page
 // makes the download.
 //
@@ -11,6 +13,7 @@
 //   node tools/wgsl/record.mjs --out <dir> --base https://games.csarko.sh/dayhike
 //   node tools/wgsl/record.mjs --out <dir> --jobs 4                 four pages at once
 //   node tools/wgsl/record.mjs --out <dir> --attach http://127.0.0.1:9333
+//   node tools/wgsl/record.mjs --out <dir> --tier low --attach http://127.0.0.1:9222   a phone's Chrome
 //
 // From the dev server (http://localhost:5173/dayhike) by default. Each page runs on a Chrome of its
 // own, started here from a fresh profile (Google Chrome; `CHROME` names another binary), opened as
@@ -18,7 +21,10 @@
 // from Chrome 156; headless Chrome on a Linux GPU). With `--attach <url>`, the pages run instead on
 // a Chrome already running whose DevTools endpoint is at `url` (a rig's Chrome, through a forwarded
 // port: `tools/frame-budget/rig/forward.sh`), each on a tab of its own, and that Chrome is left
-// running. Before each page it opens a file of the same origin and waits for a WebGPU adapter,
+// running. A phone's Chrome is attached the same way, through adb's forwarded port
+// (`tools/frame-budget/README.md`, "The phone"): Chrome on Android draws the low tier with WebGPU,
+// and a stage the maps lack is translated on its page's thread, half a second to a second of a
+// stopped page, so the low tier is recorded on the phone that plays it. Before each page it opens a file of the same origin and waits for a WebGPU adapter,
 // which a freshly started headless Chrome gives a page only after a moment.
 //
 // `--jobs <n>` records that many pages at once (1 by default): on one GPU, a page that draws more

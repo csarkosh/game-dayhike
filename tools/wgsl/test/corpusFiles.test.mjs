@@ -316,12 +316,12 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1182 recorded stages, each file\'s bytes hashing to the name it has: 478 on the medium and high tiers, 617 on low, 17 on high alone, 66 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1182);
+  it('holds the 1195 recorded stages, each file\'s bytes hashing to the name it has: 478 on the medium and high tiers, 630 on low, 17 on high alone, 66 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1195);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1182);
+    expect(read.stages).toHaveLength(1195);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(662);
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(667);
     // The 222 recorded on the medium and high tiers (the far field: the prepass's variants of
     // every material on the two tiers the far softening reads the scene's depth on, the
     // ground haze in every PBR fragment, the meadow's far band in the clutter's vertex stages,
@@ -437,11 +437,17 @@ describe('the committed corpus and the tests\' fixture', () => {
     // The film's car and the local body under the hike's own three lights (2026-11-11: the car
     // fetched with the scenery, the body drawn in its first frames, and no scene adding a light):
     // every page recorded again on the three tiers, 84 stages new, 3 gained a tier.
-    expect(read.tiers.size).toBe(1182);
+    // The low tier as a phone asks for it (2026-11-12: Chrome on Android draws low with WebGPU,
+    // and a stage the map lacks stops its page for the translation, 0.5 to 0.9 s): every page and
+    // a start in a third world recorded on low on a Pixel 9 itself, 13 stages new, which no
+    // page had met on the recording machine in its 90 s: the shades' smoke outside the prepass,
+    // materials under three lights where four were met, a skinned body's, a thin-instanced
+    // colour's, an alpha-tested albedo's.
+    expect(read.tiers.size).toBe(1195);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([621, 548, 499]);
+    expect([on('low'), on('medium'), on('high')]).toEqual([634, 548, 499]);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(478);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(617);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(630);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(17);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(66);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low,medium,high')).toHaveLength(4);
