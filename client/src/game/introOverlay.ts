@@ -57,8 +57,13 @@ const STYLE = `
      margin), the bar and the line: never under --band, so a wide viewport,
      where the film at full width would leave them 1/18 of it, pillarboxes
      the film instead. */
-  .intro { --band: clamp(110px, 12vh, 160px); position: absolute; inset: 0; background: #000; display: grid; grid-template-rows: minmax(var(--band), 1fr) auto minmax(var(--band), 1fr); z-index: ${INTRO_Z}; user-select: none; }
-  .intro video { grid-column: 1; grid-row: 2; justify-self: center; width: min(100%, calc((100vh - 2 * var(--band)) * 2)); aspect-ratio: 2 / 1; display: block; }
+  /* A press anywhere on it is a hold and nothing else: nothing is selected or
+     called out by it, and a finger that drifts is not the browser's to pan or
+     zoom with (which would take the press away mid-hold). */
+  .intro { --band: clamp(110px, 12vh, 160px); position: absolute; inset: 0; background: #000; display: grid; grid-template-rows: minmax(var(--band), 1fr) auto minmax(var(--band), 1fr); z-index: ${INTRO_Z}; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  /* The film takes no press of its own: a long press on a phone lands on the
+     overlay, which has no menu, not on a video, which has the browser's. */
+  .intro video { grid-column: 1; grid-row: 2; justify-self: center; width: min(100%, calc((100vh - 2 * var(--band)) * 2)); aspect-ratio: 2 / 1; display: block; pointer-events: none; }
   /* The caption and the bar share the lower band: both in the one column,
      or the grid would place the second in an implicit column of its own. */
   .intro-caption { grid-column: 1; grid-row: 3; align-self: start; margin: 14px auto 0; max-width: 44ch; text-align: center; white-space: pre-line; color: #eee; font: 500 clamp(16px, 2.4vh, 26px)/1.35 system-ui, sans-serif; }
@@ -106,6 +111,11 @@ export function createIntroOverlay(
   if (video.getAttribute("src") !== input.src) video.setAttribute("src", input.src);
   video.setAttribute("playsinline", "");
   video.setAttribute("preload", "auto");
+  // The film is the page's own, on this screen: offered to no other screen (a phone's Chrome draws a
+  // cast button over a video that is) and to no picture-in-picture window. AirPlay is Safari's name.
+  video.setAttribute("disableremoteplayback", "");
+  video.setAttribute("disablepictureinpicture", "");
+  video.setAttribute("x-webkit-airplay", "deny");
   // The track: off while the page has had no gesture of its own, and off under the page's mute.
   let gestured = false;
   const drawSound = (): void => {
@@ -168,6 +178,9 @@ export function createIntroOverlay(
       if (playback.state() === "cut") doCut("stepOut");
     } else holdStart();
   };
+  // A long press on a phone asks for the browser's menu (a video's: download, copy frame, picture
+  // in picture). Over the intro a press is a hold, so the menu is never opened.
+  const onContextMenu = (e: Event): void => e.preventDefault();
   const onVisibility = (): void => {
     const hidden = document.visibilityState === "hidden";
     playback.hidden(hidden, deps.now());
@@ -181,7 +194,11 @@ export function createIntroOverlay(
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", holdEnd);
   window.addEventListener("pointerup", holdEnd);
+  // A press the browser takes away (a gesture of its own, a menu) ends as a release does: without
+  // it the hold would run on with no finger down, and the next touch would cut.
+  window.addEventListener("pointercancel", holdEnd);
   root.addEventListener("pointerdown", onPointerDown);
+  root.addEventListener("contextmenu", onContextMenu);
   document.addEventListener("visibilitychange", onVisibility);
   video.addEventListener("error", onError);
 
@@ -238,6 +255,8 @@ export function createIntroOverlay(
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", holdEnd);
       window.removeEventListener("pointerup", holdEnd);
+      window.removeEventListener("pointercancel", holdEnd);
+      root.removeEventListener("contextmenu", onContextMenu);
       document.removeEventListener("visibilitychange", onVisibility);
       video.removeEventListener("error", onError);
       stop();

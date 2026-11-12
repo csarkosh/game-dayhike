@@ -116,6 +116,75 @@ describe("the intro overlay", () => {
     r.overlay.dispose();
   });
 
+  it("offers the film to no other screen and no picture-in-picture window: a browser draws no cast button over it", () => {
+    const r = rig();
+    const video = r.container.querySelector("video");
+    expect(video?.getAttribute("disableremoteplayback")).toBe("");
+    expect(video?.getAttribute("disablepictureinpicture")).toBe("");
+    // Safari's name for the same.
+    expect(video?.getAttribute("x-webkit-airplay")).toBe("deny");
+    r.overlay.dispose();
+  });
+
+  it("opens no menu on a long press: the press is a hold and nothing else", () => {
+    const r = rig();
+    // A phone's long press on the film asks for the browser's menu for a video (download, copy frame, picture in picture).
+    const onFilm = r.container.querySelector("video")!.dispatch("contextmenu");
+    expect(onFilm.defaultPrevented).toBe(true);
+    const onBand = r.container.querySelector("div.intro-caption")!.dispatch("contextmenu");
+    expect(onBand.defaultPrevented).toBe(true);
+    // The film takes no press of its own (the overlay does), nothing in the overlay is selected or
+    // called out by a press, and a finger that drifts is not the browser's to pan or zoom with.
+    const style = r.container.querySelector("style")?.textContent ?? "";
+    expect(style).toMatch(/\.intro video \{[^}]*pointer-events: none;/);
+    expect(style).toMatch(/\.intro \{[^}]*touch-action: none;/);
+    expect(style).toMatch(/\.intro \{[^}]*-webkit-touch-callout: none;/);
+    expect(style).toMatch(/\.intro \{[^}]*-webkit-user-select: none;/);
+    r.overlay.dispose();
+    // Once the overlay is gone the page's menus are its own again.
+    expect(r.container.dispatch("contextmenu").defaultPrevented).toBe(false);
+  });
+
+  it("cuts on a full hold of a finger, and reads a press the browser took away as a release", () => {
+    const r = rig();
+    r.overlay.ready();
+    r.overlay.render(10);
+    const root = r.container.querySelector("div.intro")!;
+    // A press the browser cancels before the ring is full is a hold let go: no cut, and no hold left running.
+    r.at(100);
+    root.dispatch("pointerdown");
+    r.overlay.render(400);
+    r.at(450);
+    root.dispatch("pointercancel");
+    r.overlay.render(2000);
+    r.at(2100);
+    root.dispatch("pointerup");
+    expect(r.cuts).toEqual([]);
+    // A full hold, then the finger lifted: the cut.
+    r.at(3000);
+    root.dispatch("pointerdown");
+    r.overlay.render(4000);
+    expect(r.cuts).toEqual([]);
+    r.at(4100);
+    root.dispatch("pointerup");
+    expect(r.cuts).toEqual(["hold"]);
+    r.overlay.dispose();
+  });
+
+  it("cuts when a full hold ends by the browser taking the press", () => {
+    const r = rig();
+    r.overlay.ready();
+    r.overlay.render(10);
+    const root = r.container.querySelector("div.intro")!;
+    r.at(100);
+    root.dispatch("pointerdown");
+    r.overlay.render(1000);
+    r.at(1100);
+    root.dispatch("pointercancel");
+    expect(r.cuts).toEqual(["hold"]);
+    r.overlay.dispose();
+  });
+
   it("holds the last frame, shows the title card, then steps out on a click in the click's own task", () => {
     const r = rig();
     r.overlay.ready();

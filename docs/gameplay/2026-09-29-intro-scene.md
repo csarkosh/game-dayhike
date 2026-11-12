@@ -414,6 +414,14 @@ menu. The cut is to first person on the player's own pad, facing up their trail,
 If the world is not ready when the film ends, the last frame holds and the bar keeps counting
 until it is.
 
+On a phone a press on the intro is a hold and nothing else (amended 2026-11-12). The film takes
+no press of its own and the overlay refuses the browser's menu, so a long press opens no menu
+for a video (download, copy frame, picture in picture); nothing in the overlay is selected by
+it, and a finger that drifts is not taken by the browser as a pan or a zoom. A press the
+browser does take away ends as a release does: a hold cut short does nothing, a full one cuts.
+The film is offered to no other screen and no picture-in-picture window
+(`disableremoteplayback`, `disablepictureinpicture`), so Chrome draws no cast button over it.
+
 The title card: three seconds of the game's name over black after shot 8, once per Play, then
 the last frame returns for the hold.
 
