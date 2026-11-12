@@ -1,0 +1,65 @@
+import { describe, expect, it } from "vitest";
+import { FILM_PAUSE_S, PAGE_STOP_MS, verdictOf, verdictRow } from "../lib/verdict.mjs";
+
+// A film that keeps exact time from Play (page ms 1000) and ends at 72 s, sampled four times a second.
+const SMOOTH = Array.from({ length: 290 }, (_, i) => ({ t: 1000 + i * 250, at: Math.min(72, i * 0.25), total: Math.min(1728, i * 6), dropped: 0 }));
+const run = ({ loaf = [], video = SMOOTH, shown = [], phone = undefined } = {}) => ({
+  meta: { label: "r", approach: "intro", ...(phone === undefined ? {} : { phone }) },
+  marks: [{ name: "sprint-on", t: 1000 }],
+  loaf,
+  video,
+  shown,
+});
+
+describe("an intro's verdict", () => {
+  it("holds the owner's two limits", () => {
+    expect(PAGE_STOP_MS).toBe(250);
+    expect(FILM_PAUSE_S).toBe(0.1);
+  });
+  it("passes a run with no stop over 0.25 s and a film that keeps time", () => {
+    const v = verdictOf(run({ loaf: [{ start: 3000, dur: 240 }, { start: 9000, dur: 120 }] }));
+    expect(v.pass).toBe(true);
+    expect(v.why).toEqual([]);
+    expect(v.stopsOver100).toBe(2);
+  });
+  it("fails on one page stop over 0.25 s and names it", () => {
+    const v = verdictOf(run({ loaf: [{ start: 6000, dur: 300 }] }));
+    expect(v.pass).toBe(false);
+    expect(v.stops).toEqual([{ at: 5, ms: 300 }]);
+    expect(v.why).toEqual(["1 page stop over 0.25 s, the longest 0.30 s at 5.0 s"]);
+  });
+  it("counts every stop over the limit and names the longest", () => {
+    const v = verdictOf(run({ loaf: [{ start: 2000, dur: 400 }, { start: 6000, dur: 3900 }, { start: 20000, dur: 260 }] }));
+    expect(v.why).toEqual(["3 page stops over 0.25 s, the longest 3.90 s at 5.0 s"]);
+  });
+  it("ignores a stop after the film's end", () => {
+    expect(verdictOf(run({ loaf: [{ start: 1000 + 73000, dur: 900 }] })).pass).toBe(true);
+  });
+  it("fails when the film's clock falls more than 0.1 s behind", () => {
+    const video = SMOOTH.map((r) => (r.t > 5000 ? { ...r, at: r.at - 0.2 } : r));
+    const v = verdictOf(run({ video }));
+    expect(v.pass).toBe(false);
+    expect(v.clockWorst.behind).toBeCloseTo(0.2, 2);
+    expect(v.why).toEqual(["the film's clock fell 0.20 s behind at 4.0 s"]);
+  });
+  it("fails when the picture skips more than 0.1 s, and not on a late callback", () => {
+    const skipped = verdictOf(run({ shown: [[3000, 2.0, 48], [3500, 2.5, 50]] }));
+    expect(skipped.why).toEqual(["the film's picture skipped 0.42 s at 2.5 s"]);
+    expect(verdictOf(run({ shown: [[4128, 0, 1], [4145, 0.041667, 2], [4195, 0.083333, 3], [4212, 3.583333, 87], [7907, 3.625, 88]] })).pass).toBe(true);
+  });
+  it("fails a run with no film rather than passing it on no pauses", () => {
+    expect(verdictOf(run({ video: [] })).why).toEqual(["no film was seen"]);
+  });
+  it("fails a run with no Play marked", () => {
+    expect(verdictOf({ ...run(), marks: [] }).why).toEqual(["no Play was marked"]);
+  });
+  it("fails a run whose phone was not cool, and says nothing of a run with no phone", () => {
+    expect(verdictOf(run({ phone: { cool: false } })).why).toEqual(["the phone was not cool at the start"]);
+    expect(verdictOf(run({ phone: { cool: true } })).pass).toBe(true);
+    expect(verdictOf(run()).cool).toBeNull();
+  });
+  it("prints a run as one row that says pass or FAIL", () => {
+    expect(verdictRow("live-1", verdictOf(run()))).toMatch(/^live-1 +pass /);
+    expect(verdictRow("live-2", verdictOf(run({ loaf: [{ start: 6000, dur: 300 }] })))).toMatch(/^live-2 +FAIL /);
+  });
+});

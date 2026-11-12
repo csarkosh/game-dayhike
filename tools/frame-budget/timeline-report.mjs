@@ -19,6 +19,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { clockSteps, filmRate, pictureSkips } from "./lib/film.mjs";
+import { verdictOf } from "./lib/verdict.mjs";
 
 const SHOTS = [4, 4, 5, 4, 4];
 const FRAME_60 = 1000 / 60;
@@ -153,6 +154,14 @@ if (video.length > 1 || shown.length > 2) {
     const a = steps.filter((r) => r.t >= s.from && r.t < s.to), b = skips.filter((r) => r.t >= s.from && r.t < s.to);
     console.log(`${pad(s.name, 24)}${lpad(over(a, "behind").length, 7)}${lpad(f2(worst(a, "behind")?.behind ?? 0), 9)}${lpad(over(b, "skipped").length, 7)}${lpad(f2(b.reduce((x, r) => x + r.skipped, 0)), 11)}${lpad(f2(worst(b, "skipped")?.skipped ?? 0), 9)}`);
   }
+}
+
+// ---- An intro's verdict: its page stops and its film's pauses against the limits ------------------
+const verdict = run.meta?.approach === "intro" ? verdictOf(run) : null;
+if (verdict !== null) {
+  console.log(`\nThe intro's verdict, Play to the film's end: ${verdict.pass ? "PASS" : "FAIL"}${verdict.cool === null ? "" : verdict.cool ? " (the phone started cool)" : ""}`);
+  for (const line of verdict.why) console.log(`  ${line}`);
+  if (verdict.stops.length > 0) console.log(`  the stops over 0.25 s (s from Play: s): ${verdict.stops.map((x) => `${f1(x.at)}: ${(x.ms / 1000).toFixed(2)}`).join("  ")}`);
 }
 
 // ---- The pipelines: what was asked for, and how long the screen was held for it ----------------

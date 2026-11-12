@@ -224,6 +224,25 @@ Three things to know when reading a run:
   frame): moving stretches read 25 to 40 ms there on builds that hold 60 Hz on the Air. Compare a
   build with another on the same stretch; a stall or a hold is a fault on any machine.
 
+## An intro's verdict
+
+The intro is a player's first sight of the game: a film over the hike while the hike loads under
+it, with captions and a loading bar the page draws. Its bar is two limits, from the Play tap to
+the film's end: no page stop longer than 0.25 s (a long animation frame; while the page is
+stopped the captions and the bar stand), and no film pause longer than 0.1 s by either of the
+film's measures (above). It is met by three first-visit runs in a row on a cool phone, all inside
+both limits.
+
+```bash
+node tools/frame-budget/timeline-verdict.mjs <dir>/live-1.json <dir>/live-2.json <dir>/live-3.json
+```
+
+It prints one row a run (pass or FAIL, the stops over 0.1 s and over 0.25 s, the longest, the
+clock's worst step, the picture's worst skip, the frames dropped), under a failing run what put
+it outside, and a last line for the lot; it exits 1 when a run fails. A run on a phone that did
+not start cool (`meta.phone.cool`) fails as a run not to count. `timeline-report.mjs` prints the
+same verdict for an intro run, with every stop over 0.25 s and when it came.
+
 ## Budgets
 
 ```bash

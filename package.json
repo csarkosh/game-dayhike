@@ -39,6 +39,7 @@
     "previews": "node tools/previews/shoot.mjs",
     "frame-budget": "node tools/frame-budget/measure.mjs",
     "frame-budget:phone": "node tools/frame-budget/phone.mjs",
+    "frame-budget:verdict": "node tools/frame-budget/timeline-verdict.mjs",
     "preview:channel": "node tools/deploy/channel.mjs"
   },
   "devDependencies": {
