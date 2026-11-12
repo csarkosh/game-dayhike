@@ -190,10 +190,13 @@ One thing of the game is fetched before Play: the intro film's head (`game/filmH
 2026-11-11). A film element made at Play begins its download at Play, and on a first visit the
 film stood on its first frame until its first seconds were in: 0.2 to 2.1 s on a phone. So once
 the title page has loaded it makes the film's element, off the page, silent, with the film's file
-and `preload="auto"`; the browser buffers the film's head and readies its decoder, and Play takes
-that element. How far ahead a preloading element buffers is the browser's to decide. There is no
-head start where the title loop would not play either: when data is being saved, or on a
-connection of 3g or worse (`slowConnection`). One element a page load: it is handed over once,
+and `preload="auto"`, and Play takes that element. Where the browser honours the preload it has
+the film's head buffered and its decoder ready by then; how far ahead it buffers is the browser's
+to decide. Chrome does not honour it on a cellular connection, whatever the attribute says: there
+it fetches the file's metadata only, and the film still waits for its first seconds at Play. No
+head start is made when data is being saved or on a connection of 3g or worse (`slowConnection`),
+nor at the page's load if Play was tapped before it (the film is then already playing from an
+element of its own). One element a page load: it is handed over once,
 and a later hike in the same session makes its own, with the file by then in the browser's cache.
 
 ### 5.2 On Play

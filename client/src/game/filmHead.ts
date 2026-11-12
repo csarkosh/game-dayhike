@@ -2,8 +2,10 @@
  * The intro film's head start. A film element made at Play begins its download at Play, and on a
  * first visit the film stands on its first frame until its first seconds are in: 0.2 to 2.1 s on a
  * phone (2026-11-11). So the title page makes the element early, off the page, with the film's
- * file and `preload="auto"`: the browser has the film's head buffered and its decoder ready, and
- * Play hands that element to the intro (`introOverlay.ts`) instead of making one.
+ * file and `preload="auto"`, and Play hands that element to the intro (`introOverlay.ts`) instead
+ * of making one. Where the browser honours the preload it has the film's head buffered and its
+ * decoder ready by then. Chrome does not on a cellular connection, whatever the attribute says:
+ * there it fetches the file's metadata only, and the film still waits for its first seconds.
  *
  * One element a page load. It is handed over once; a later hike in the same session makes its own,
  * and by then the file is in the browser's cache. How far ahead a preloading element buffers is
@@ -59,4 +61,17 @@ export function createFilmHead(deps: { video(): HTMLVideoElement }): FilmHead {
     },
     drop,
   };
+}
+
+/**
+ * Makes the head start once the page has loaded: at once on a page that has, else at its `load`,
+ * and then only if `still` says the title page is still up with no intro begun. A Play tapped
+ * before the load starts the film on an element of its own; warming a second one at the load
+ * would fetch the film twice, beside the game's own download.
+ */
+export function warmWhenLoaded(page: { loaded(): boolean; onLoad(run: () => void): void; still(): boolean }, warm: () => void): void {
+  if (page.loaded()) warm();
+  else page.onLoad(() => {
+    if (page.still()) warm();
+  });
 }

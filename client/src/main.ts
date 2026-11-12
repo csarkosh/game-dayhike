@@ -25,7 +25,7 @@ import { markedProgress } from "./game/loadProgress.js";
 import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
-import { createFilmHead, filmHeadWanted } from "./game/filmHead.js";
+import { createFilmHead, filmHeadWanted, warmWhenLoaded } from "./game/filmHead.js";
 import { startSceneRoute } from "./game/scene/sceneRoute.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
@@ -417,12 +417,18 @@ function cutIntro(run: IntroRun, reason: CutReason): void {
  * and its decoder by the time Play is tapped.
  */
 function warmFilmHead(): void {
-  const warm = (): void => {
-    const src = introSource();
-    if (src !== null && filmHeadWanted(titleLoopEnv(), src)) filmHead.warm(src);
-  };
-  if (document.readyState === "complete") warm();
-  else window.addEventListener("load", warm, { once: true });
+  warmWhenLoaded(
+    {
+      loaded: () => document.readyState === "complete",
+      onLoad: (run) => window.addEventListener("load", run, { once: true }),
+      // Play before the page's load plays the film from an element of its own: no second fetch then.
+      still: () => landing !== null && pendingIntro === null,
+    },
+    () => {
+      const src = introSource();
+      if (src !== null && filmHeadWanted(titleLoopEnv(), src)) filmHead.warm(src);
+    },
+  );
 }
 
 function startIntro(src: string, muted: boolean): IntroRun {

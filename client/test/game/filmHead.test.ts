@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createFilmHead, filmHeadWanted } from "../../src/game/filmHead.js";
+import { createFilmHead, filmHeadWanted, warmWhenLoaded } from "../../src/game/filmHead.js";
 import { installStandInDom, type StandInVideo } from "./helpers/standInDom.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -62,5 +62,28 @@ describe("the film's head start", () => {
     expect(filmHeadWanted({ saveData: true, effectiveType: "4g" }, "/intro.mp4")).toBe(false);
     expect(filmHeadWanted({ saveData: false, effectiveType: "3g" }, "/intro.mp4")).toBe(false);
     expect(filmHeadWanted({ saveData: false, effectiveType: "4g" }, null)).toBe(false);
+  });
+});
+
+describe("the head start's moment", () => {
+  it("warms at once on a page that has loaded", () => {
+    let warmed = 0;
+    warmWhenLoaded({ loaded: () => true, onLoad: () => { throw new Error("no listener is needed"); }, still: () => false }, () => { warmed++; });
+    expect(warmed).toBe(1);
+  });
+  it("waits for the page's load, and warms then if the title page is still up", () => {
+    let warmed = 0;
+    let fire: () => void = () => undefined;
+    warmWhenLoaded({ loaded: () => false, onLoad: (run) => { fire = run; }, still: () => true }, () => { warmed++; });
+    expect(warmed).toBe(0);
+    fire();
+    expect(warmed).toBe(1);
+  });
+  it("does not warm at the page's load when Play was tapped first: the film is already playing from an element of its own", () => {
+    let warmed = 0;
+    let fire: () => void = () => undefined;
+    warmWhenLoaded({ loaded: () => false, onLoad: (run) => { fire = run; }, still: () => false }, () => { warmed++; });
+    fire();
+    expect(warmed).toBe(0);
   });
 });
