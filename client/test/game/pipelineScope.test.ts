@@ -62,13 +62,36 @@ function addedBy(scene: Scene, make: () => RenderTargetTexture): { target: Rende
   return { target, manager: added[0]!.renderingManager };
 }
 
-function scopeLog(): { calls: string[]; pipelines: Pick<AsyncPipelines, "enter" | "leave" | "guard"> } {
+function scopeLog(): { calls: string[]; pipelines: Pick<AsyncPipelines, "enter" | "leave" | "guard" | "takeSkipped"> } {
   const calls: string[] = [];
   const guard = (render: () => void): boolean => {
     render();
     return true;
   };
-  return { calls, pipelines: { enter: () => void calls.push("enter"), leave: () => void calls.push("leave"), guard } };
+  return { calls, pipelines: { enter: () => void calls.push("enter"), leave: () => void calls.push("leave"), guard, takeSkipped: () => 0 } };
+}
+
+/** As `scopeLog`, with the guard and the count of draws left out recorded too: `leaveOut(n)` is a render leaving `n` draws out. */
+function aheadLog() {
+  const calls: string[] = [];
+  let skipped = 0;
+  const pipelines: Pick<AsyncPipelines, "enter" | "leave" | "guard" | "takeSkipped"> = {
+    enter: () => void calls.push("enter"),
+    leave: () => void calls.push("leave"),
+    guard: (render) => {
+      calls.push("guard");
+      render();
+      calls.push("guarded");
+      return true;
+    },
+    takeSkipped: () => {
+      const count = skipped;
+      skipped = 0;
+      calls.push(`take ${count}`);
+      return count;
+    },
+  };
+  return { calls, pipelines, leaveOut: (n: number) => void (skipped += n), skipped: () => skipped };
 }
 
 describe("where draws may be left out: the rendering groups", () => {
@@ -116,6 +139,82 @@ describe("where draws may be left out: the rendering groups", () => {
     scene.onBeforeRenderingGroupObservable.notifyObservers(onceGroup);
     scene.onAfterRenderingGroupObservable.notifyObservers(onceGroup);
     expect(calls).toEqual(["enter", "leave", "enter", "leave"]);
+    once.dispose();
+  });
+
+  /**
+   * A scene with a target drawn once, the reflection probe's kind, and `draw`,
+   * what Babylon's rendering manager tells the scene around that target's one
+   * group whenever the target is rendered, by a frame or by hand (the canary
+   * below). The null engine draws no such target: its meshes are never ready
+   * for one.
+   */
+  function sceneWithOnce(): { scene: Scene; once: RenderTargetTexture; onceGroup: RenderingGroupInfo; draw(): void } {
+    const scene = sceneOnNullEngine();
+    const { target: once, manager } = addedBy(scene, () => new RenderTargetTexture("once", 4, scene));
+    once.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+    const onceGroup = groupOf(scene, manager);
+    const draw = (): void => {
+      scene.onBeforeRenderingGroupObservable.notifyObservers(onceGroup);
+      scene.onAfterRenderingGroupObservable.notifyObservers(onceGroup);
+    };
+    return { scene, once, onceGroup, draw };
+  }
+
+  it("draws a target drawn once inside the scope when it is rendered ahead, for nothing, and outside it in a frame as before", () => {
+    const { scene, once, draw } = sceneWithOnce();
+    const log = aheadLog();
+    const scope = scopeRenderingGroups(scene, log.pipelines);
+    // Ahead: the target's render, its group inside the scope and the patch's guard around it.
+    expect(scope.ahead(draw)).toBe(true);
+    expect(log.calls).toEqual(["guard", "enter", "leave", "guarded", "take 0"]);
+    // In a frame the target is a render that is kept: its group never enters.
+    log.calls.length = 0;
+    draw();
+    expect(log.calls).toEqual([]);
+    once.dispose();
+  });
+
+  it("keeps the draws a render ahead left out from any later reader of the count", () => {
+    const { scene, once, draw } = sceneWithOnce();
+    const log = aheadLog();
+    const scope = scopeRenderingGroups(scene, log.pipelines);
+    scope.ahead(() => {
+      draw();
+      log.leaveOut(3);
+    });
+    // The count is taken as the render ahead ends: a bake's read after it finds none of its three.
+    expect(log.calls.at(-1)).toBe("take 3");
+    expect(log.skipped()).toBe(0);
+    once.dispose();
+  });
+
+  it("shuts what a render ahead that throws left open, and draws the target outside the scope again after it", () => {
+    const { scene, once, onceGroup, draw } = sceneWithOnce();
+    const log = aheadLog();
+    const scope = scopeRenderingGroups(scene, log.pipelines);
+    expect(() =>
+      scope.ahead(() => {
+        scene.onBeforeRenderingGroupObservable.notifyObservers(onceGroup);
+        throw new Error("a render that failed");
+      }),
+    ).toThrow("a render that failed");
+    expect(log.calls).toEqual(["guard", "enter", "leave", "take 0"]);
+    log.calls.length = 0;
+    draw();
+    expect(log.calls).toEqual([]);
+    once.dispose();
+  });
+
+  it("renders nothing ahead once the scope is off", () => {
+    const { scene, once } = sceneWithOnce();
+    const log = aheadLog();
+    const scope = scopeRenderingGroups(scene, log.pipelines);
+    scope.off();
+    const render = vi.fn();
+    expect(scope.ahead(render)).toBe(false);
+    expect(render).not.toHaveBeenCalled();
+    expect(log.calls).toEqual([]);
     once.dispose();
   });
 

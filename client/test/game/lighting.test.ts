@@ -560,6 +560,47 @@ describe("the sky's table", () => {
     lighting.dispose();
   });
 
+  it("asks for the probe's capture ahead once, at the first apply that finds its slices, with the probe's own render", () => {
+    const s = scene();
+    const table = createSkyTable();
+    const ahead: Array<() => void> = [];
+    const lighting = light(s, { hour: 12, weather: CLEAR, sky: table, captureAhead: (render) => void ahead.push(render) });
+    // No slices, no state, no dome to capture: nothing is asked for.
+    expect(ahead).toEqual([]);
+    const fixture = skyFixture();
+    table.add(fixture.blendAt(74));
+    expect(ahead).toEqual([]);
+    table.add(fixture.blendAt(76));
+    expect(ahead.length).toBe(1);
+    // By then the dome holds the state, and the probe is armed for its one kept capture.
+    expect(dome.updates.length).toBe(1);
+    expect(captureOf(s).refreshRate).toBe(0);
+    // What it is handed renders the probe's cube, and nothing else.
+    const render = vi.spyOn(captureOf(s), "render").mockImplementation(() => undefined);
+    ahead[0]!();
+    expect(render).toHaveBeenCalledTimes(1);
+    // A later apply (an hour set, more slices) captures again in a frame, as before: nothing more ahead.
+    lighting.setHour(15);
+    table.add(fixture.blendAt(42));
+    table.add(fixture.blendAt(44));
+    expect(dome.updates.length).toBe(2);
+    lighting.setWeather(CLEAR, 0);
+    expect(ahead.length).toBe(1);
+    expect(captureOf(s).refreshRate).toBe(0);
+    lighting.dispose();
+  });
+
+  it("asks for the capture ahead at its creation where the table already holds the slices, and for none where it is not asked to", () => {
+    const s = scene();
+    const ahead: Array<() => void> = [];
+    const lighting = light(s, { hour: 12, captureAhead: (render) => void ahead.push(render) });
+    expect(ahead.length).toBe(1);
+    lighting.dispose();
+    const plain = light(scene(), { hour: 12 });
+    expect(plain.sky).not.toBeNull();
+    plain.dispose();
+  });
+
   it("waits again for an hour whose slices are not in, keeping the last state, and applies when they arrive", () => {
     const s = scene();
     const table = createSkyTable();

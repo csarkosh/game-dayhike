@@ -1958,15 +1958,40 @@ function bakePipelines(pipelines: AsyncPipelines | null, scope: GroupScope | nul
  * frames (the impostor bake's) goes through `guarded`, which shuts what its
  * render left open, even as it throws, inside the patch's own guard
  * (`AsyncPipelines.guard`): false where a draw left out escaped it and the
- * patch came off. Returns `off`, which takes the scope off, and `guarded`.
+ * patch came off. Returns `off`, which takes the scope off, `guarded`, and
+ * `ahead`.
+ *
+ * A pipeline made on the synchronous path holds Chrome's GPU thread while it
+ * is compiled, and that thread presents a film's frames too: the reflection
+ * probe's, made in the hike's first frame, held it 55 ms of a 96 ms task on a
+ * Pixel 9 and the intro's film dropped three frames (2026-11-12). So a target
+ * drawn once can be rendered `ahead`, for nothing: a render to throw away in
+ * which its groups are inside the scope like any other's, so each draw whose
+ * pipeline is not made is left out and its pipeline asked for. The frames are
+ * held while a pipeline is pending and none has been whole (`asyncPipelines.ts`),
+ * so the render that is kept, in a frame and outside the scope as ever, finds
+ * its pipeline made; where the creation failed or ran past its deadline, that
+ * render makes it synchronously, as before.
  */
-export type GroupScope = { off(): void; guarded(render: () => void): boolean };
+export type GroupScope = {
+  off(): void;
+  guarded(render: () => void): boolean;
+  /** Runs `render`, a render to throw away, with every rendering group
+   * inside the scope, those of a target drawn once included, inside the
+   * patch's guard. The draws it left out are taken off the count a bake
+   * reads (`takeSkipped`) as it ends. False, having run nothing, once the
+   * scope is off; false too where the patch came off during it. */
+  ahead(render: () => void): boolean;
+};
 
-export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipelines, "enter" | "leave" | "guard">): GroupScope {
+export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipelines, "enter" | "leave" | "guard" | "takeSkipped">): GroupScope {
   /** The target that owns each rendering manager met, or null for the scene's own. */
   const owners = new WeakMap<RenderingManager, ObjectRenderer | null>();
+  /** A render ahead is under way: no target's groups stay outside the scope. */
+  let rendersAhead = false;
+  let isOff = false;
   const drawnOnce = (manager: RenderingManager): boolean => {
-    if (manager === scene.renderingManager) return false;
+    if (rendersAhead || manager === scene.renderingManager) return false;
     let owner = owners.get(manager);
     if (owner === undefined) {
       owner = scene.objectRenderers.find((r) => r.renderingManager === manager) ?? null;
@@ -1991,6 +2016,7 @@ export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipeline
   const frame = scene.onBeforeRenderObservable.add(() => shutTo(0));
   return {
     off() {
+      isOff = true;
       scene.onBeforeRenderingGroupObservable.remove(before);
       scene.onAfterRenderingGroupObservable.remove(after);
       scene.onBeforeRenderObservable.remove(frame);
@@ -2001,6 +2027,18 @@ export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipeline
         return pipelines.guard(render);
       } finally {
         shutTo(depth);
+      }
+    },
+    ahead(render) {
+      if (isOff) return false;
+      const depth = open.length;
+      rendersAhead = true;
+      try {
+        return pipelines.guard(render);
+      } finally {
+        rendersAhead = false;
+        shutTo(depth);
+        pipelines.takeSkipped();
       }
     },
   };
@@ -2217,7 +2255,14 @@ function buildRenderer(
     skyTable = ownSky.table;
   }
   partOf(ownSky);
-  const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });
+  const lighting = createLighting(scene, {
+    tier,
+    viewDistance: FOG_DISTANCE,
+    colourPath: postFeatures.colourPath,
+    sky: skyTable,
+    // WebGPU with pipelines made asynchronously: the probe's pipeline is asked for before the first frame needs it.
+    captureAhead: scope === null ? undefined : (render) => void scope.ahead(render),
+  });
   // The render scale under the paint (renderScale.ts): the window's pixels
   // while the frames hold, a step down to 87 % of them and then to 75 % while
   // they do not, and back up a step at a time. Only where the

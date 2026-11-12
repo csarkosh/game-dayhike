@@ -346,6 +346,16 @@ export type LightingOptions = {
    * a slice that arrives while that waits tries again.
    */
   sky: SkyTable;
+  /**
+   * Called once, at the first apply that finds its slices, with the probe's
+   * own render: the renderer's way to draw the capture ahead, for nothing,
+   * so the pipeline the capture needs is asked for before the frame that
+   * keeps one (`GroupScope.ahead` in renderer.ts, WebGPU with pipelines made
+   * asynchronously). What that render draws is thrown away: the probe stays
+   * armed, and its one kept capture is the scene's, in a frame. Absent,
+   * nothing is drawn ahead.
+   */
+  captureAhead?: (render: () => void) => void;
 };
 
 export type Lighting = {
@@ -469,6 +479,8 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   let sky: SkyState | null = null;
   /** The last apply found the table without its slices: the next slice to arrive applies again. */
   let waiting = true;
+  /** The probe's capture has been offered ahead (`LightingOptions.captureAhead`): once a lighting. */
+  let offeredAhead = false;
   /** The weather's and the hour's exposure, as of the last apply. */
   let exposure = 1;
   /** What the stare leaves of it on the material path (`setStare`); 1 on the post path. */
@@ -741,6 +753,12 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     dome.update(s, image.exposure);
     // One more capture of the dome as it now stands, then idle again.
     capture.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+    // The first of them is the one the hike's first frame makes its pipeline
+    // for: offered ahead of that frame, to whoever can ask for it early.
+    if (!offeredAhead) {
+      offeredAhead = true;
+      options.captureAhead?.(() => capture.render());
+    }
   }
 
   // A slice that arrives while an apply waits for one tries it again. Once

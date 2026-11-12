@@ -1302,7 +1302,9 @@ describe("world shell wiring", () => {
       /forest !== null && options\.wildlife !== false\s*\?\s*lakes\.map\(\(l, i\) => createWaterLife\(scene, forest\.seed, l, tier, postFeatures\.colourPath, lakePieces\[i\]\?\.life\)\)/,
     );
     expect(src).toContain("const lakeChoice = createLakeChoice(lakes);");
-    expect(src).toContain("createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });");
+    expect(src).toMatch(/createLighting\(scene, \{\s*tier,\s*viewDistance: FOG_DISTANCE,\s*colourPath: postFeatures\.colourPath,\s*sky: skyTable,/);
+    // On WebGPU the probe's pipeline is asked for ahead, through the rendering groups' scope; on WebGL2 there is none.
+    expect(src).toContain("captureAhead: scope === null ? undefined : (render) => void scope.ahead(render),");
     // Its insects draw among the see-through effects, in the water's group on high.
     expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist, waterLives, spray: water?.edge.spray ?? null });");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
