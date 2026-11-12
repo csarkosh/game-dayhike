@@ -11,6 +11,7 @@ import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
 import { createPropMeshes, PROP_DRAWN_ELSEWHERE, PROP_MESH_RADIUS_CHUNKS } from "../../src/game/propMeshes.js";
 import { CLIFF_MATERIAL } from "../../src/sim/passes/cliffs.js";
+import { createFirstBuilds } from "../../src/game/firstBuilds.js";
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
 let engine: NullEngine; let scene: Scene;
@@ -120,5 +121,67 @@ describe("chunk props are drawn", () => {
       expect(PROP_DRAWN_ELSEWHERE.has(m) || drawn.has(m), m).toBe(true);
     }
     props.dispose();
+  });
+});
+
+describe("the props' first fill under the film", () => {
+  /** A grid that only says which chunks were asked for. */
+  function askedGrid(): { grid: ChunkGrid; asked: string[] } {
+    const asked: string[] = [];
+    return { asked, grid: { chunkAt: (cx: number, cz: number) => { asked.push(`${cx},${cz}`); return { props: [] }; } } as unknown as ChunkGrid };
+  }
+  const side = 2 * PROP_MESH_RADIUS_CHUNKS + 1;
+  const material = (): StandardMaterial => new StandardMaterial("m", scene);
+
+  it("builds its first chunks through a loader that is open, one chunk a slice", () => {
+    const { grid, asked } = askedGrid();
+    const turns: (() => void)[] = [];
+    let clock = 0;
+    // Every slice is 9 ms on this clock against the loader's 8: one chunk a turn.
+    const loader = createFirstBuilds({ later: (run) => void turns.push(run), now: () => (clock += 9) });
+    const props = createPropMeshes(scene, grid, material, undefined, undefined, loader);
+    props.update(8, 8);
+    expect(asked).toHaveLength(0);
+    expect(loader.pending()).toBe(1);
+    turns.shift()!();
+    expect(asked).toHaveLength(1);
+    while (turns.length > 0) turns.shift()!();
+    expect(asked).toHaveLength(side * side);
+    expect(new Set(asked).size).toBe(side * side);
+    expect(loader.pending()).toBe(0);
+    props.dispose();
+  });
+  it("builds whole without a loader, and once the loader has closed, as it always has", () => {
+    const whole = askedGrid();
+    createPropMeshes(scene, whole.grid, material).update(8, 8);
+    expect(whole.asked).toHaveLength(side * side);
+    const closed = askedGrid();
+    const loader = createFirstBuilds({ later: () => undefined });
+    loader.close();
+    createPropMeshes(scene, closed.grid, material, undefined, undefined, loader).update(8, 8);
+    expect(closed.asked).toHaveLength(side * side);
+  });
+  it("builds only the newer place's chunks when the view moves before the first fill has run, and none twice", () => {
+    const { grid, asked } = askedGrid();
+    const turns: (() => void)[] = [];
+    const loader = createFirstBuilds({ later: (run) => void turns.push(run), now: () => 0 });
+    const props = createPropMeshes(scene, grid, material, undefined, undefined, loader);
+    props.update(8, 8);
+    props.update(8 + 100 * CHUNK_SIZE, 8);
+    expect(loader.pending()).toBe(1);
+    loader.close();
+    expect(asked).toHaveLength(side * side);
+    expect(asked.every((key) => Number(key.split(",")[0]) >= 100 - PROP_MESH_RADIUS_CHUNKS)).toBe(true);
+    props.dispose();
+  });
+  it("drops its queued fill when it is disposed", () => {
+    const { grid, asked } = askedGrid();
+    const loader = createFirstBuilds({ later: () => undefined, now: () => 0 });
+    const props = createPropMeshes(scene, grid, material, undefined, undefined, loader);
+    props.update(8, 8);
+    props.dispose();
+    expect(loader.pending()).toBe(0);
+    loader.close();
+    expect(asked).toHaveLength(0);
   });
 });

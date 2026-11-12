@@ -5,6 +5,8 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { ChunkGrid } from "../sim/chunkGrid.js";
 import { CHUNK_SIZE } from "../sim/forestConstants.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
+import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
+import type { Slices } from "./syncJobs.js";
 
 /**
  * Every chunk prop the sim collides with is drawn: the
@@ -59,9 +61,24 @@ export function createPropMeshes(
   materialFor: (name: string) => Material,
   shadows?: PropShadows,
   cover?: MeshRegistry,
+  /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`): the
+   * chunks around a new place are made a chunk a slice by it. Absent, in the call, as always. */
+  firstBuilds?: FirstBuilds,
 ): PropMeshes {
   const live = new Map<string, Mesh[]>(); // "cx,cz" → that chunk's meshes
   let lastCx = Number.NaN, lastCz = Number.NaN;
+  /** This shell, as the loader knows it. */
+  const owner = {};
+  /** The chunks the newest view wants, by key: a fill never makes one that is no longer wanted. */
+  let want = new Set<string>();
+  /** The chunks named, made one a slice: a chunk is the sim's generation of it and its boxes. */
+  function* fill(missing: readonly (readonly [number, number])[]): Slices {
+    for (const [cx, cz] of missing) {
+      const key = `${cx},${cz}`;
+      if (want.has(key) && !live.has(key)) live.set(key, build(cx, cz));
+      yield;
+    }
+  }
   function build(cx: number, cz: number): Mesh[] {
     const out: Mesh[] = [];
     const chunk = grid.chunkAt(cx, cz);
@@ -87,14 +104,18 @@ export function createPropMeshes(
       const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE);
       if (cx === lastCx && cz === lastCz) return;
       lastCx = cx; lastCz = cz;
-      const want = new Set<string>();
+      want = new Set<string>();
+      const missing: [number, number][] = [];
       for (let i = -PROP_MESH_RADIUS_CHUNKS; i <= PROP_MESH_RADIUS_CHUNKS; i++) {
         for (let j = -PROP_MESH_RADIUS_CHUNKS; j <= PROP_MESH_RADIUS_CHUNKS; j++) {
           const key = `${cx + i},${cz + j}`;
           want.add(key);
-          if (!live.has(key)) live.set(key, build(cx + i, cz + j));
+          if (!live.has(key)) missing.push([cx + i, cz + j]);
         }
       }
+      // A fill still queued for the last place gives way to this one's.
+      firstBuilds?.cancel(owner);
+      if (missing.length > 0) buildAtOnce(firstBuilds, owner, fill(missing), "props");
       for (const [key, meshes] of live) {
         if (want.has(key)) continue;
         for (const m of meshes) {
@@ -111,6 +132,7 @@ export function createPropMeshes(
       return n;
     },
     dispose() {
+      firstBuilds?.cancel(owner);
       for (const meshes of live.values()) {
         for (const m of meshes) {
           shadows?.remove(m);
