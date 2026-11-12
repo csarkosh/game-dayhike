@@ -29,7 +29,8 @@ import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { CLUTTER_SINK, instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { createKeptValues } from "./keptValues.js";
-import { createCrossing, crossingAt, finish, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
+import { createCrossing, crossingAt, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
+import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 
 export const DUFF_MESH_PREFIX = "duff_clumps";
 export function duffMeshName(character: number, tier: number): string {
@@ -44,6 +45,10 @@ export type DuffMeshesOptions = {
   /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
    * over the frames that follow rather than in the frame of the crossing. */
   jobs?: SyncJobs;
+  /** The loader of first builds, while the intro's film covers the hike
+   * (`firstBuilds.ts`): a build that cannot wait is stepped by it rather
+   * than run whole in the call that asked for it. Absent, it runs whole. */
+  firstBuilds?: FirstBuilds;
 };
 
 export type DuffMeshes = {
@@ -363,15 +368,17 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
       if (turn(heading, x - crossing.lastX, z - crossing.lastZ)) aimed = false;
       const kind = crossingAt(crossing, x, z, ox, oz, DUFF_REBUILD_CELL, jobs !== undefined, jobs?.started());
       if (kind === "none") {
-        aim(x, z);
+        // While the loader steps this shell's build, nothing is prepared ahead of it.
+        if (options.firstBuilds?.queued(owner) !== true) aim(x, z);
         return;
       }
+      options.firstBuilds?.cancel(owner);
       if (kind === "later") {
         (jobs as SyncJobs).begin(owner, rebuild(x, z), false, "duff");
         return;
       }
       jobs?.cancel(owner);
-      finish(rebuild(x, z));
+      buildAtOnce(options.firstBuilds, owner, rebuild(x, z), "duff");
     },
     view,
     meshes,

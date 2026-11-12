@@ -75,6 +75,7 @@ import { wetCapOf } from "../../src/game/wetPlugin.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { createFirstBuilds } from "../../src/game/firstBuilds.js";
 
 setActiveTerrainVariant("olympic");
 
@@ -234,6 +235,34 @@ describe("createForestMeshes under NullEngine", () => {
     const forest = createForestMeshes(scene, SEED, { assets, bakeImpostor, nearRadius });
     return { scene, assets, forest };
   }
+
+  it("hands its first fill to a loader that is open, uploads what a whole build uploads, and builds whole once it has closed", () => {
+    const at = { x: 2500, z: 2500 };
+    const uploads = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    build().forest.update(at.x, at.z);
+    const whole = uploads.mock.calls.length;
+    expect(whole).toBeGreaterThan(0);
+    uploads.mockClear();
+    const loader = createFirstBuilds({ later: () => undefined, now: () => 0 });
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const forest = createForestMeshes(scene, SEED, { assets: stubAssets(scene), bakeImpostor: () => null, firstBuilds: loader });
+    forest.update(at.x, at.z);
+    expect(loader.pending()).toBe(1);
+    expect(uploads.mock.calls.length).toBe(0); // queued, not built in the call
+    // The frames after it, standing still, queue nothing more and build nothing beside it.
+    forest.update(at.x, at.z);
+    expect(loader.pending()).toBe(1);
+    expect(uploads.mock.calls.length).toBe(0);
+    loader.close(); // the cut: what is left runs to its end
+    expect(uploads.mock.calls.length).toBe(whole);
+    // And from the cut on a build that cannot wait runs whole again.
+    uploads.mockClear();
+    forest.update(at.x + 6000, at.z + 6000);
+    expect(loader.pending()).toBe(0);
+    expect(uploads.mock.calls.length).toBeGreaterThan(0);
+  }, timeLimit(120_000));
 
   it("gives the nurse log's fern the cover's tint and contrast, on the plain material it wears there", () => {
     const engine = new NullEngine();

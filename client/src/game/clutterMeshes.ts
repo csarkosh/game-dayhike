@@ -109,7 +109,8 @@ import { ROCK_CUTS, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
 import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 import { createKeptValues } from "./keptValues.js";
-import { createCrossing, crossingAt, finish, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
+import { createCrossing, crossingAt, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
+import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -405,6 +406,10 @@ export type ClutterMeshesOptions = {
   /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
    * over the frames that follow rather than in the frame of the crossing. */
   jobs?: SyncJobs;
+  /** The loader of first builds, while the intro's film covers the hike
+   * (`firstBuilds.ts`): a build that cannot wait is stepped by it rather
+   * than run whole in the call that asked for it. Absent, it runs whole. */
+  firstBuilds?: FirstBuilds;
 };
 
 export type ClutterMeshes = {
@@ -1082,15 +1087,17 @@ export function createClutterMeshes(
       jobs !== undefined && !first, jobs?.started(),
     );
     if (kind === "none") {
-      aim();
+      // While the loader steps this shell's build, nothing is prepared ahead of it.
+      if (options.firstBuilds?.queued(owner) !== true) aim();
       return;
     }
+    options.firstBuilds?.cancel(owner);
     if (kind === "later") {
       (jobs as SyncJobs).begin(owner, rebuild(camX, camZ), false, "clutter");
       return;
     }
     jobs?.cancel(owner);
-    finish(rebuild(camX, camZ));
+    buildAtOnce(options.firstBuilds, owner, rebuild(camX, camZ), "clutter");
   }
 
   /**

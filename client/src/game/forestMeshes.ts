@@ -153,7 +153,8 @@ import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 // the same decoder the characters' textures are, wherever this loads first.
 import "./ktx2.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
-import { createCrossing, crossingAt, finish, nextCrossing, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
+import { createCrossing, crossingAt, nextCrossing, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
+import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 
 /** Species index 0 → fir/conifer_a, 1 → pine/conifer_b (the `treeInCell`
  * convention). Understory keeps pairing off SPECIES, not cohort. */
@@ -329,6 +330,10 @@ export type ForestMeshesOptions = {
   /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
    * over the frames that follow rather than in the frame of the crossing. */
   jobs?: SyncJobs;
+  /** The loader of first builds, while the intro's film covers the hike
+   * (`firstBuilds.ts`): a build that cannot wait is stepped by it rather
+   * than run whole in the call that asked for it. Absent, it runs whole. */
+  firstBuilds?: FirstBuilds;
   /** The quality tier the forest is built for: the size of bark each tree
    * wears (`barkSize`). "medium" if unset. */
   tier?: QualityTier;
@@ -2145,15 +2150,17 @@ export function createForestMeshes(
     const origin = bandsOrigin(camX, camZ);
     const kind = crossingAt(crossing, camX, camZ, origin.x, origin.z, TREE_CELL, options.jobs !== undefined && !first, options.jobs?.started());
     if (kind === "none") {
-      aim();
+      // While the loader steps this shell's build, nothing is prepared ahead of it.
+      if (options.firstBuilds?.queued(owner) !== true) aim();
       return;
     }
+    options.firstBuilds?.cancel(owner);
     if (kind === "later") {
       (options.jobs as SyncJobs).begin(owner, rebuild(camX, camZ), false, "forest");
       return;
     }
     options.jobs?.cancel(owner);
-    finish(rebuild(camX, camZ));
+    buildAtOnce(options.firstBuilds, owner, rebuild(camX, camZ), "forest");
   }
 
   /** Loads one container, adds it to the scene, and disables everything it

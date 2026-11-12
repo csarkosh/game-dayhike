@@ -81,6 +81,16 @@ describe("a hike's first builds, stepped", () => {
     r.drain();
     expect(log).toEqual(["old", "new", "new"]);
   });
+  it("says whether an owner has a build queued or in hand", () => {
+    const r = rig();
+    const owner = {};
+    expect(r.loader.queued(owner)).toBe(false);
+    r.loader.add(owner, build("forest", 2, 9, r.clock, []), "forest");
+    expect(r.loader.queued(owner)).toBe(true);
+    expect(r.loader.queued({})).toBe(false);
+    r.drain();
+    expect(r.loader.queued(owner)).toBe(false);
+  });
   it("drops an owner's build on cancel", async () => {
     const r = rig();
     const log: string[] = [];

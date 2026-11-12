@@ -22,6 +22,8 @@ export type FirstBuilds = {
   add(owner: object, slices: Slices, name: string): void;
   /** Ends `owner`'s queued build and drops it. */
   cancel(owner: object): void;
+  /** Whether `owner` has a build queued or in hand: a shell does no other work on what that build is making meanwhile. */
+  queued(owner: object): boolean;
   /** How many builds are queued or in hand. */
   pending(): number;
   /** Resolves when nothing is queued or in hand; at once when nothing is. */
@@ -103,6 +105,7 @@ export function createFirstBuilds(deps: { now?: () => number; later?: (run: () =
       drop(owner);
       settle();
     },
+    queued: (owner) => queue.some((j) => j.owner === owner),
     pending: () => queue.length,
     idle: () => (queue.length === 0 ? Promise.resolve() : new Promise<void>((resolve) => waiting.push(resolve))),
     close() {
@@ -117,4 +120,14 @@ export function createFirstBuilds(deps: { now?: () => number; later?: (run: () =
       settle();
     },
   };
+}
+
+/**
+ * A shell's build that cannot wait for the scheduler (its first, or one after a jump): handed to
+ * the loader while one is open, which is while the intro's film covers the hike, and otherwise
+ * run whole here, as it always was.
+ */
+export function buildAtOnce(loader: FirstBuilds | undefined, owner: object, slices: Slices, name: string): void {
+  if (loader?.open === true) loader.add(owner, slices, name);
+  else finish(slices);
 }

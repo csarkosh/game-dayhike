@@ -53,7 +53,8 @@ import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
 import { createKeptValues } from "./keptValues.js";
-import { createCrossing, crossingAt, finish, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
+import { createCrossing, crossingAt, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
+import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 
 export const BLADE_MESH_PREFIX = "blade_clumps";
 export function bladeMeshName(character: number, tier: number, size: number): string {
@@ -80,6 +81,10 @@ export type BladeMeshesOptions = {
   /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
    * over the frames that follow rather than in the frame of the crossing. */
   jobs?: SyncJobs;
+  /** The loader of first builds, while the intro's film covers the hike
+   * (`firstBuilds.ts`): a build that cannot wait is stepped by it rather
+   * than run whole in the call that asked for it. Absent, it runs whole. */
+  firstBuilds?: FirstBuilds;
 };
 
 export type BladeMeshes = {
@@ -557,15 +562,17 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
       if (turn(heading, x - crossing.lastX, z - crossing.lastZ)) aimed = false;
       const kind = crossingAt(crossing, x, z, ox, oz, BLADE_REBUILD_CELL, jobs !== undefined, jobs?.started());
       if (kind === "none") {
-        aim(x, z);
+        // While the loader steps this shell's build, nothing is prepared ahead of it.
+        if (options.firstBuilds?.queued(owner) !== true) aim(x, z);
         return;
       }
+      options.firstBuilds?.cancel(owner);
       if (kind === "later") {
         (jobs as SyncJobs).begin(owner, rebuild(x, z), false, "blades");
         return;
       }
       jobs?.cancel(owner);
-      finish(rebuild(x, z));
+      buildAtOnce(options.firstBuilds, owner, rebuild(x, z), "blades");
     },
     view,
     cull(pose) {
