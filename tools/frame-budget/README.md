@@ -185,7 +185,8 @@ with `--profile`, a CPU profile. `--climb <s>` is the same sprint with no find, 
 forest: `250 -500 1.09` on seed atmo). `--intro <s>` is a start as a player meets it: the landing
 page, Play clicked, and that many seconds kept from the click (the page's frames, the film's
 presented and dropped frames, the world's readiness as a mark); `--cold` empties the site's cache
-and storage first, a first visit.
+and storage first, a first visit. With `--phone --remote 9222 --tier low` the intro is timed on a
+phone's Chrome over the cable ("The phone", below), at the phone's own size, Play tapped.
 
 ```bash
 node tools/frame-budget/timeline.mjs --base <url> --out <dir on the lab disk> --remote 9333 --label base --settle 75 --profile
@@ -320,6 +321,25 @@ What a phone run is, against the Mac's and the rig's:
 - A JPEG at each window's end beside the rows, and the phone's battery temperature and thermal
   status (`adb shell dumpsys`) in each row: a run that warms the phone past thermal status 1 is
   a run to discard.
+- `--engine webgpu` forces the engine (`?engine=`): the game's own rule puts every phone on
+  WebGL2, so this is how a phone's WebGPU path is timed. A row's `engine` is what was asked for
+  and its `ran` is what the page drew with.
+
+An intro is timed on the phone by `timeline.mjs`, as on a rig, with `--phone`:
+
+```bash
+adb forward tcp:9222 localabstract:chrome_devtools_remote
+node tools/frame-budget/timeline.mjs --base https://games.csarko.sh/dayhike/ --out <dir on the lab disk> \
+  --remote 9222 --tier low --phone --intro 85 --cold --cool --profile --label live-1
+```
+
+The tab is the phone's own size and Play is tapped, not clicked. `--cool` waits before the run
+until the phone is cool: thermal status 0 and a battery at most 34.5 °C, read every 15 s, for
+twelve minutes at most (`--cool 300` for five). It matters: three intros back to back warm a
+Pixel 9 until a fourth runs about 2.5 times slower, and a phone on charge with its screen held on
+cools slowly. How warm the phone was, how long the run waited and whether it started cool are in
+the run's `meta.phone`, with or without `--cool`. `--query engine=webgpu` times the intro on
+WebGPU.
 
 ## Not measurable yet
 

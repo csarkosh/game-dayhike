@@ -10,6 +10,7 @@
 //
 //   npm run frame-budget:phone -- --base <url> --out <dir> --views reveal,walk-night [--tier low]
 //       [--windows 1] [--settle 0] [--port 9222] [--label phone] [--tag <text>] [--profile]
+//       [--engine webgpu|webgl2]
 //
 //   --base <url>     the build measured: the live site, a preview channel or a dev server the phone can reach
 //   --out <dir>      the rows' and the JPEGs' directory (under the lab disk)
@@ -20,6 +21,8 @@
 //   --settle <s>     seconds from world-ready to the first window
 //   --port <port>    the forwarded port (9222)
 //   --label <name>   the phone's name in the rows; --tag <text> the run's
+//   --engine <e>     the engine forced (`?engine=`): a phone is put on WebGL2 by the game's own rule, so
+//                    `webgpu` is how its WebGPU path is timed; the row's `engine` says what was asked
 //   --profile        a CPU profile (`Profiler.start/stop`, 0.5 ms samples) over the view, saved as
 //                    <view>-<stamp>.cpuprofile; `tools/telemetry/symbolicate.mjs` reads its frames back
 //
@@ -30,7 +33,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { connect, evaluate, version, ORIGIN_STORAGE } from "./lib/cdp.mjs";
-import { isAndroid, jobsOf, parseArgs, rowOf, stickTouches } from "./lib/phone.mjs";
+import { isAndroid, jobsOf, parseArgs, phoneState, rowOf, stickTouches } from "./lib/phone.mjs";
 import { resolveViews, viewUrl } from "./lib/views.mjs";
 
 const HERE = new URL(".", import.meta.url);
@@ -69,7 +72,8 @@ const WINDOW_EXPRESSION = `(async () => {
     gpu = (ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || null;
     gl && gl.getExtension("WEBGL_lose_context")?.loseContext();
   } catch {}
-  return { frames, readings, canvasStart, canvasEnd, gpu, dpr: devicePixelRatio, inner: [innerWidth, innerHeight] };
+  const ran = typeof window.dayhikePipelines !== "undefined" ? "webgpu" : "webgl2";
+  return { frames, readings, canvasStart, canvasEnd, gpu, ran, dpr: devicePixelRatio, inner: [innerWidth, innerHeight] };
 })()`;
 
 /** The phone woken, kept awake while on the cable, and the game opened in front through adb (best
@@ -83,21 +87,6 @@ function wakePhone(base) {
   adb("shell", "input", "keyevent", "KEYCODE_WAKEUP");
   adb("shell", "svc", "power", "stayon", "usb");
   adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", `${base.replace(/\/+$/, "")}/`, "com.android.chrome");
-}
-
-/** The phone's battery temperature and thermal status through adb, or nothing where adb is not there. */
-function phoneState() {
-  const out = {};
-  try {
-    const b = execFileSync("adb", ["shell", "dumpsys", "battery"], { encoding: "utf8" });
-    out.batteryTempC = Number(/temperature: (\d+)/.exec(b)?.[1] ?? NaN) / 10;
-  } catch {}
-  try {
-    const t = execFileSync("adb", ["shell", "dumpsys", "thermalservice"], { encoding: "utf8" });
-    const m = /Thermal Status: (\d+)/.exec(t);
-    if (m) out.thermalStatus = Number(m[1]);
-  } catch {}
-  return out;
 }
 
 /** A tab of the phone's Chrome, the game's stored state cleared, navigated to `url` and its canvas waited for. */
@@ -159,7 +148,7 @@ async function holdStick(page) {
 }
 
 async function measureView(session, options, stills, view, still, rowsFile, about) {
-  const url = viewUrl(options.base, stills.game, options.tier, view, still, { gpuTime: true });
+  const url = viewUrl(options.base, stills.game, options.tier, view, still, { gpuTime: true, engine: options.engine });
   const { page, close } = await openTab(session.browser, session.port, url);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   let release = null;
@@ -219,7 +208,7 @@ const results = [];
 try {
   for (const { view, still } of views) {
     try {
-      results.push(...(await measureView(session, options, stills, view, still, rowsFile, { browser: about.browser, label: options.label, tag: options.tag, base: options.base, tier: options.tier })));
+      results.push(...(await measureView(session, options, stills, view, still, rowsFile, { browser: about.browser, label: options.label, tag: options.tag, base: options.base, tier: options.tier, engine: options.engine })));
     } catch (error) {
       console.log(`  ${view.name}: FAILED: ${error.message}`);
     }

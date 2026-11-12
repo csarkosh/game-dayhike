@@ -1,12 +1,14 @@
 // The phone harness's pure parts (phone.mjs is the driver): its arguments, the joystick's
-// touches, the user-agent check, a window's row and a window's jobs. Tested without a phone.
+// touches, the user-agent check, a window's row and a window's jobs, and the phone's own state
+// through adb (how warm it is, and the wait until it is cool). Tested without a phone.
+import { execFileSync } from "node:child_process";
 
 /** Thumb travel from the stick's base that reads as full deflection, CSS px (touchControls.ts STICK_RADIUS). */
 export const STICK_FORWARD = 60;
 
 /** The options, with the defaults; throws on a missing `--base` or `--out`, or an option not known. */
 export function parseArgs(argv) {
-  const o = { base: undefined, out: undefined, tier: "low", views: [], windows: 1, settle: 0, port: 9222, label: "phone", tag: "", profile: false };
+  const o = { base: undefined, out: undefined, tier: "low", views: [], windows: 1, settle: 0, port: 9222, label: "phone", tag: "", profile: false, engine: undefined };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const v = () => {
@@ -24,7 +26,10 @@ export function parseArgs(argv) {
     else if (a === "--label") o.label = v();
     else if (a === "--tag") o.tag = v();
     else if (a === "--profile") o.profile = true;
-    else throw new Error(`unknown option ${a}`);
+    else if (a === "--engine") {
+      o.engine = v();
+      if (o.engine !== "webgpu" && o.engine !== "webgl2") throw new Error("--engine takes webgpu or webgl2");
+    } else throw new Error(`unknown option ${a}`);
   }
   if (!o.base) throw new Error("--base <url> is required");
   if (!o.out) throw new Error("--out <dir> is required");
@@ -61,6 +66,8 @@ export function rowOf(window, sample, about) {
     gpu: sample.gpu ?? null,
     base: about.base,
     tier: about.tier,
+    engine: about.engine ?? null,
+    ran: sample.ran ?? null,
     view: about.view,
     window,
     mean,
@@ -107,4 +114,38 @@ export function jobsOf(frames) {
   out.lateMs = round2(out.lateMs);
   for (const k of Object.keys(out.owners)) out.owners[k] = round2(out.owners[k]);
   return out;
+}
+
+/** The phone's battery temperature and thermal status through adb; a field is absent where adb gave nothing. */
+export function phoneState(run = execFileSync) {
+  const out = {};
+  try {
+    const m = /temperature: (\d+)/.exec(run("adb", ["shell", "dumpsys", "battery"], { encoding: "utf8" }));
+    if (m) out.batteryTempC = Number(m[1]) / 10;
+  } catch {}
+  try {
+    const m = /Thermal Status: (\d+)/.exec(run("adb", ["shell", "dumpsys", "thermalservice"], { encoding: "utf8" }));
+    if (m) out.thermalStatus = Number(m[1]);
+  } catch {}
+  return out;
+}
+
+/** A phone cool enough to time: three runs back to back warm a Pixel 9 until a fourth runs about 2.5 times slower. */
+export const COOL = { thermalStatus: 0, batteryTempC: 34.5 };
+
+export function isCool(state) {
+  return state.thermalStatus !== undefined && state.batteryTempC !== undefined && state.thermalStatus <= COOL.thermalStatus && state.batteryTempC <= COOL.batteryTempC;
+}
+
+/** Waits, reading every `everyS`, until the phone is cool or `maxS` have passed; refuses at once a phone adb cannot read. */
+export async function waitUntilCool({ maxS = 720, everyS = 15, read = phoneState, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), now = Date.now } = {}) {
+  const from = now();
+  for (let first = true; ; first = false) {
+    const state = read();
+    if (first && state.thermalStatus === undefined && state.batteryTempC === undefined) throw new Error("no phone answers adb: is it plugged in, unlocked, and USB debugging allowed?");
+    const waitedS = Math.round((now() - from) / 1000);
+    if (isCool(state)) return { cool: true, waitedS, ...state };
+    if (waitedS >= maxS) return { cool: false, waitedS, ...state };
+    await sleep(everyS * 1000);
+  }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAndroid, jobsOf, parseArgs, rowOf, stickTouches } from "../lib/phone.mjs";
+import { isAndroid, isCool, jobsOf, parseArgs, phoneState, rowOf, stickTouches, waitUntilCool } from "../lib/phone.mjs";
 
 const PIXEL_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36";
 const RIG_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
@@ -14,6 +14,11 @@ describe("the phone harness's arguments", () => {
     expect(() => parseArgs(["--out", "o"])).toThrow(/--base/);
     expect(() => parseArgs(["--base", "b"])).toThrow(/--out/);
     expect(() => parseArgs(["--base", "b", "--out", "o", "--rotate", "1"])).toThrow(/unknown option --rotate/);
+  });
+  it("forces an engine when asked, and only one the game knows", () => {
+    expect(parseArgs(["--base", "b", "--out", "o"]).engine).toBeUndefined();
+    expect(parseArgs(["--base", "b", "--out", "o", "--engine", "webgpu"]).engine).toBe("webgpu");
+    expect(() => parseArgs(["--base", "b", "--out", "o", "--engine", "metal"])).toThrow(/webgpu or webgl2/);
   });
 });
 
@@ -65,5 +70,34 @@ describe("a window's jobs", () => {
     // Two frames alike is nothing; a dozen with one of them different is a real window.
     expect(jobsOf(frames.slice(0, 2)).ms).toBeCloseTo(14.6, 9);
     expect(jobsOf([...frames.slice(0, 11), { jobs: { ms: 1, lateMs: 0, owners: { idle: 1 } } }]).ms).toBeCloseTo(81.3, 9);
+  });
+});
+
+describe("a cool phone", () => {
+  it("is cool only at thermal status 0 and a battery of 34.5 °C or less", () => {
+    expect(isCool({ thermalStatus: 0, batteryTempC: 34.5 })).toBe(true);
+    expect(isCool({ thermalStatus: 0, batteryTempC: 34.6 })).toBe(false);
+    expect(isCool({ thermalStatus: 1, batteryTempC: 30 })).toBe(false);
+    expect(isCool({ batteryTempC: 30 })).toBe(false);
+    expect(isCool({})).toBe(false);
+  });
+  it("reads the battery and the thermal status from adb's text", () => {
+    const run = (_cmd, args) => (args.includes("battery") ? "  level: 100\n  temperature: 354\n" : "IsStatusOverride: false\nThermal Status: 1\n");
+    expect(phoneState(run)).toEqual({ batteryTempC: 35.4, thermalStatus: 1 });
+  });
+  it("waits, reading every 15 s, until the phone is cool", async () => {
+    const readings = [{ thermalStatus: 1, batteryTempC: 36 }, { thermalStatus: 0, batteryTempC: 35 }, { thermalStatus: 0, batteryTempC: 34.4 }];
+    let clock = 0;
+    const r = await waitUntilCool({ read: () => readings.shift(), sleep: async (ms) => { clock += ms; }, now: () => clock });
+    expect(r).toEqual({ cool: true, waitedS: 30, thermalStatus: 0, batteryTempC: 34.4 });
+  });
+  it("gives up after maxS and says the phone was not cool", async () => {
+    let clock = 0;
+    const r = await waitUntilCool({ maxS: 30, read: () => ({ thermalStatus: 0, batteryTempC: 36 }), sleep: async (ms) => { clock += ms; }, now: () => clock });
+    expect(r.cool).toBe(false);
+    expect(r.waitedS).toBe(30);
+  });
+  it("refuses at once when no phone answers", async () => {
+    await expect(waitUntilCool({ read: () => ({}), sleep: async () => undefined, now: () => 0 })).rejects.toThrow(/no phone answers adb/);
   });
 });
