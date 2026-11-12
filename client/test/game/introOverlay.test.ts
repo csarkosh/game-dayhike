@@ -32,11 +32,19 @@ class StandInVideo extends StandInElement {
   }
 }
 
-function rig(over: { captions?: Caption[]; muted?: boolean; sound?: () => boolean } = {}) {
+function rig(over: { captions?: Caption[]; muted?: boolean; sound?: () => boolean; warmed?: string } = {}) {
   const doc = installStandInDom();
   const container = doc.createElement("div");
   doc.body.append(container);
   const video = new StandInVideo(doc);
+  // A film handed over already loading (`filmHead.ts`): it has its file before the overlay is made.
+  if (over.warmed !== undefined) video.setAttribute("src", over.warmed);
+  let srcSets = 0;
+  const set = video.setAttribute.bind(video);
+  video.setAttribute = (name: string, value: string): void => {
+    if (name === "src") srcSets++;
+    set(name, value);
+  };
   let t = 0;
   const cuts: CutReason[] = [];
   const overlay = createIntroOverlay(
@@ -44,12 +52,30 @@ function rig(over: { captions?: Caption[]; muted?: boolean; sound?: () => boolea
     { src: "/x.mp4", captions: over.captions ?? captions, muted: over.muted, sound: over.sound, onCut: (reason) => void cuts.push(reason) },
     { video: () => video as unknown as HTMLVideoElement, now: () => t },
   );
-  return { doc, container, video, overlay, cuts, at: (ms: number) => { t = ms; } };
+  return { doc, container, video, overlay, cuts, srcSets: () => srcSets, at: (ms: number) => { t = ms; } };
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the intro overlay", () => {
+  it("gives a film made for it its file", () => {
+    const r = rig();
+    expect(r.srcSets()).toBe(1);
+  });
+  it("does not restart a film that was already loading its file", () => {
+    const r = rig({ warmed: "/x.mp4" });
+    expect(r.srcSets()).toBe(0);
+    expect(r.container.querySelector("video")?.getAttribute("src")).toBe("/x.mp4");
+  });
+  it("gives a film warmed for another file the file it was asked for", () => {
+    const r = rig({ warmed: "/other.mp4" });
+    expect(r.srcSets()).toBe(1);
+    expect(r.container.querySelector("video")?.getAttribute("src")).toBe("/x.mp4");
+  });
+  it("starts a warmed film muted for a page with no gesture of its own", () => {
+    const r = rig({ warmed: "/x.mp4", muted: true });
+    expect(r.video.muted).toBe(true);
+  });
   it("draws the video, the caption at the video's time, and the bar's line", () => {
     const r = rig();
     expect(r.container.querySelector("video")?.getAttribute("src")).toBe("/x.mp4");

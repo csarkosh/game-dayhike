@@ -101,7 +101,9 @@ export function createIntroOverlay(
   const root = document.createElement("div");
   root.className = "intro";
   const video = deps.video();
-  video.setAttribute("src", input.src);
+  // A film handed over already loading its file (`filmHead.ts`) keeps it: setting `src`, even to
+  // the value it has, starts the element's load again and throws away what it has buffered.
+  if (video.getAttribute("src") !== input.src) video.setAttribute("src", input.src);
   video.setAttribute("playsinline", "");
   video.setAttribute("preload", "auto");
   // The track: off while the page has had no gesture of its own, and off under the page's mute.
