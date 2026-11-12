@@ -45,6 +45,26 @@ describe("an intro's verdict on a run that knows its film's length and end", () 
     expect(verdictOf(real({ loaf: [{ start: 800, dur: 3000 }] })).stops).toEqual([{ at: 0, ms: 2800 }]);
     expect(verdictOf(real({ loaf: [{ start: 600, dur: 600 }] })).pass).toBe(true);
   });
+  it("judges the film's start: how far behind the tap the film is once it is seen moving", () => {
+    // The film stood 0.6 s on its first frame, then kept time: no pause after that, and a late start.
+    const late = REAL.map((r) => ({ ...r, at: Math.max(0, r.at - 0.6) }));
+    const v = verdictOf(real({ video: late, ended: 73600 }));
+    expect(v.start.behind).toBeCloseTo(0.6, 2);
+    expect(v.why).toEqual(["the film was 0.60 s behind the Play tap once it was moving"]);
+  });
+  it("reads the start from the first sample though it comes only after a page stop", () => {
+    // No sample until 4.2 s after Play (the page was stopped), by when the film is at 3.6 s.
+    const video = REAL.filter((r) => r.t >= 5200).map((r) => ({ ...r, at: r.at - 0.6 }));
+    const v = verdictOf(real({ video, ended: 73600 }));
+    expect(v.start.behind).toBeCloseTo(0.6, 2);
+    expect(v.clockWorst).toBeNull();
+  });
+  it("measures the start from the Play button's click where the run marks it", () => {
+    const late = REAL.map((r) => ({ ...r, at: Math.max(0, r.at - 0.6) }));
+    const run = real({ video: late, ended: 73600 });
+    run.marks.push({ name: "play-click", t: 1150 });
+    expect(verdictOf(run).start.behind).toBeCloseTo(0.45, 2);
+  });
   it("fails a run that was not a first visit", () => {
     expect(verdictOf(real({ cold: false })).why).toEqual(["not a first visit"]);
   });

@@ -133,6 +133,18 @@ const RECORDER = `(() => {
   // the film's own time and the count of frames shown so far. Between two of them, the film's seconds
   // passed against the frames shown say whether the picture kept up (a picture that stood and then
   // jumped passes film seconds with few frames shown), whether this thread was running or not.
+  // The film's start, mark by mark: the Play button's click, the film's play() call (a film is a
+  // video that does not loop: the title's does), and its first playing event.
+  const once = (name) => { if (!tl.marks.some((m) => m.name === name)) tl.mark(name); };
+  document.addEventListener("click", (e) => { if (e.target && e.target.closest && e.target.closest("button#create")) once("play-click"); }, true);
+  const playOf = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function () {
+    if (!this.loop) {
+      once("film-play");
+      this.addEventListener("playing", () => once("film-playing"), { once: true });
+    }
+    return playOf.apply(this, arguments);
+  };
   // The film is the intro itself: the video under .intro, not the landing loop.
   let watched = null;
   const onShown = (now, m) => {
