@@ -375,6 +375,11 @@ What a phone run is, against the Mac's and the rig's:
 - Windows, not a settle and one sample: `--windows 3` times three consecutive 10 s windows from
   the first, so a moment that passes (the summit scene, the reveal, the death) is seen in turn. A
   `check` view's `extraSettleS` is skipped with more than one window.
+- On WebGPU a row carries what its window added, warm-up included, to the page's counters:
+  `wgsl` (the stages the shipped maps had, those translated in the page and their milliseconds)
+  and `pipes` (pipelines asked for and landed, those made while a frame waited, the frames held
+  and the draws left out). A stage translated in the page is a long frame on a phone: one cost
+  0.88 s in a start.
 - `walk-night` walks: the joystick's base is found in the page (`.touch .stick`) and held forward
   by synthetic touches (`Input.dispatchTouchEvent`) for every window; `reveal` is the chase view
   timed from world-ready (the standing player is dead by 40 s, so it cannot be settled into).

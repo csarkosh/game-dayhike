@@ -49,6 +49,20 @@ describe("a window's row", () => {
     expect(row.fps).toBe(Math.round(1000 / row.mean));
     expect(row.frames).toHaveLength(11);
     expect(typeof row.time).toBe("string");
+    // Nothing of WebGPU's on a WebGL2 page.
+    expect(row.wgsl).toBeNull();
+    expect(row.pipes).toBeNull();
+  });
+
+  it("carries what the window added to the shader lookup's and the pipelines' counters on WebGPU", () => {
+    const frames = Array.from({ length: 12 }, () => 16.7);
+    const row = rowOf(0, {
+      frames, canvasStart: [250, 452], canvasEnd: [250, 452], readyS: 9, ran: "webgpu",
+      wgsl: { start: { hits: 140, misses: 0, translateMs: 0 }, end: { hits: 151, misses: 1, translateMs: 446.4 } },
+      pipes: { start: { asked: 60, landed: 60, sync: 2, held: 6, leftOut: 700 }, end: { asked: 71, landed: 70, sync: 3, held: 9, leftOut: 760 } },
+    }, { browser: "Chrome/156", label: "pixel9", tag: "", base: "https://x", tier: "low", view: "reveal" });
+    expect(row.wgsl).toEqual({ hits: 11, misses: 1, translateMs: 446.4 });
+    expect(row.pipes).toEqual({ asked: 11, landed: 10, sync: 1, held: 3, leftOut: 60 });
   });
 });
 

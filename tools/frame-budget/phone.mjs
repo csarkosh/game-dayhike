@@ -49,6 +49,11 @@ const WINDOW_EXPRESSION = `(async () => {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const size = () => { const c = document.querySelector("canvas"); return c ? [c.width, c.height] : null; };
   const jobs = () => (typeof window.__syncJobs === "function" ? window.__syncJobs() : null);
+  // WebGPU's counters, read before the warm-up and after the window: what the lookup found in the
+  // shipped maps and what it translated in the page, and the pipelines made.
+  const wgsl = () => { const w = globalThis.dayhikeWgsl; return w ? { hits: w.hits, misses: w.misses, translateMs: w.translateMs } : null; };
+  const pipes = () => { const p = globalThis.dayhikePipelines; return p ? { asked: p.asked, landed: p.landed, sync: p.sync, held: p.held, leftOut: p.leftOut } : null; };
+  const counters = { wgsl: wgsl(), pipes: pipes() };
   await sleep(${WARMUP_S * 1000});
   const canvasStart = size();
   const frames = [];
@@ -74,7 +79,7 @@ const WINDOW_EXPRESSION = `(async () => {
     gl && gl.getExtension("WEBGL_lose_context")?.loseContext();
   } catch {}
   const ran = typeof window.dayhikePipelines !== "undefined" ? "webgpu" : "webgl2";
-  return { frames, readings, canvasStart, canvasEnd, gpu, ran, dpr: devicePixelRatio, inner: [innerWidth, innerHeight] };
+  return { frames, readings, canvasStart, canvasEnd, gpu, ran, dpr: devicePixelRatio, inner: [innerWidth, innerHeight], wgsl: { start: counters.wgsl, end: wgsl() }, pipes: { start: counters.pipes, end: pipes() } };
 })()`;
 
 /** The phone woken, kept awake while on the cable, and the game opened in front through adb (best

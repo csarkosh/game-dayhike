@@ -50,6 +50,12 @@ export function isAndroid(userAgent) {
 
 const round2 = (x) => Math.round(x * 100) / 100;
 
+/** What a window added to a page's counters: the end's reading less the start's, key by key; null where either is missing. */
+function added(pair) {
+  if (!pair || !pair.start || !pair.end) return null;
+  return Object.fromEntries(Object.keys(pair.end).map((key) => [key, round2(pair.end[key] - (pair.start[key] ?? 0))]));
+}
+
 /** A window's row: the frames summarised, the slow ones and the stalls counted, and what was measured where. */
 export function rowOf(window, sample, about) {
   const frames = sample.frames;
@@ -83,6 +89,11 @@ export function rowOf(window, sample, about) {
     readyS: sample.readyS,
     walking: about.walking ?? false,
     jobs: sample.jobs ?? null,
+    // On WebGPU, what the window added: the stages the shipped maps had (`hits`) and those
+    // translated in the page (`misses`, with their milliseconds), and the pipelines asked for,
+    // landed, made while a frame waited (`sync`), and the frames held and draws left out for them.
+    wgsl: added(sample.wgsl),
+    pipes: added(sample.pipes),
     phone: about.phone ?? null,
     frames: frames.map(round2),
   };
