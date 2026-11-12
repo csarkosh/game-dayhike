@@ -91,6 +91,19 @@ vi.mock("../../src/game/bladeMeshes.js", async (importOriginal) => {
 
 // Every update the renderer gives the mist banks and the motes, counted on the
 // way through to the real shells.
+// How many shore atlases are baked: one a feature table made (`featureTable.ts`). The real one, counted.
+const shoreAtlases = vi.hoisted(() => ({ baked: 0 }));
+vi.mock("../../src/game/shoreAtlas.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/shoreAtlas.js")>();
+  return {
+    ...actual,
+    bakeShoreAtlas: (...args: Parameters<typeof actual.bakeShoreAtlas>) => {
+      shoreAtlases.baked += 1;
+      return actual.bakeShoreAtlas(...args);
+    },
+  };
+});
+
 const effectUpdates = vi.hoisted(() => ({ mist: 0, motes: 0 }));
 vi.mock("../../src/game/mistMeshes.js", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../../src/game/mistMeshes.js")>();
@@ -1421,10 +1434,16 @@ describe("a renderer handed the hike's first scene, sampled ahead", () => {
     // One reed at the lake's middle, where none grows.
     lake.plants = { reeds: [[{ cls: 0, x: lake.cx, z: lake.cz, groundH: 0, groundDx: 0, groundDz: 0, scale: 1, variant: 0, hash: 0.5 }], [], []], pads: [] };
     lake.skyline![0] = 0.4321;
+    // A float no table holds, in the table's last texel.
+    scene.featureTable![scene.featureTable!.length - 1] = 4321.5;
     return scene;
   }
   const skyline = (): Float32Array =>
     (EngineStore.LastCreatedScene!.textures.find((t) => t.name === "lake_skyline")!.getInternalTexture() as unknown as { _bufferView: Float32Array })._bufferView;
+  /** The last float of every feature table uploaded: the ground's and the cliff patches', two textures. */
+  const featureTails = (): number[] =>
+    EngineStore.LastCreatedScene!.textures.filter((t) => t.name === "featureTex")
+      .map((t) => (t.getInternalTexture() as unknown as { _bufferView: Float32Array })._bufferView.at(-1)!);
   const reeds = (): number => [0, 1, 2].reduce((n, v) => n + mesh(`water_reeds_${v}`).thinInstanceCount, 0);
 
   it("builds its terrain, its water and its lake from the scene's pieces, and from its own sampling where the scene is not its own", () => {
@@ -1439,8 +1458,12 @@ describe("a renderer handed the hike's first scene, sampled ahead", () => {
     const forSeed = structuredClone(scene);
     forSeed.seed = SEED + 1;
 
+    shoreAtlases.baked = 0;
     const given = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "low", start, prepared: scene });
     try {
+      // The ground's material and the cliff patches' both hold the table that came, and none was baked here.
+      expect(featureTails()).toEqual([4321.5, 4321.5]);
+      expect(shoreAtlases.baked).toBe(0);
       expect(lowestGround()).toBe(5000);
       expect([...new Set(mesh("water_0").getVerticesData("bedDepth")!)]).toEqual([100]);
       expect(mesh("pond_0").getVerticesData("bedDepth")![0]).toBe(4321);
@@ -1452,8 +1475,13 @@ describe("a renderer handed the hike's first scene, sampled ahead", () => {
 
     // A scene sampled for another tier, or for another world, is not this renderer's: it samples everything.
     for (const other of [forTier, forSeed, null]) {
+      shoreAtlases.baked = 0;
       const own = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "low", start, prepared: other });
       try {
+        // Its own table, baked once for the two materials that read it.
+        expect(featureTails()).toHaveLength(2);
+        expect(featureTails()).not.toContain(4321.5);
+        expect(shoreAtlases.baked).toBe(1);
         expect(lowestGround()).toBeLessThan(5000);
         expect(mesh("water_0").getVerticesData("bedDepth")).not.toContain(100);
         expect(mesh("pond_0").getVerticesData("bedDepth")![0]).not.toBe(4321);

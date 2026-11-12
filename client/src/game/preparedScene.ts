@@ -15,6 +15,7 @@ import { trailheadStart } from "../sim/spawn.js";
 import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant, type LakeSource } from "../sim/terrain.js";
 import { BED_GRID, bakeBed, bedOriginFor, createBedGrid, type BedGrid } from "./bedHeight.js";
 import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples, ringSpacing, snapOrigin, type RingSamples } from "./clipmap.js";
+import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTableFor } from "./featureTable.js";
 import { skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "./oceanSwell.js";
@@ -57,6 +58,8 @@ export type PreparedScene = {
   start: { x: number; z: number };
   /** `RING_COUNT` rings on the tier's base spacing (`BASE_SPACING_BY_TIER`). */
   rings: RingSamples[];
+  /** The made features' table (`featureTableFor`); null on a terrain with no trail graph. */
+  featureTable: Float32Array | null;
   /** `WATER_RING_COUNT` rings; null where the terrain has no water level. */
   waterRings: WaterRingSamples[] | null;
   /** Each water ring's first geometry and wet box, made from `waterRings` as the water's first emit makes them; null with no water. */
@@ -130,7 +133,7 @@ export function prepareScene(seed: number, variant: string, tier: QualityTier): 
       skyline: watered && tier !== "high" ? skylineElevations(lake, seed, skylineTrees(lake, seed)) : null,
     };
   });
-  return { seed, variant, tier, start, rings, waterRings, waterFirst, waterBump, bed, ocean, lakes };
+  return { seed, variant, tier, start, rings, featureTable: featureTableFor(seed), waterRings, waterFirst, waterBump, bed, ocean, lakes };
 }
 
 /**
@@ -207,6 +210,12 @@ export function fittingWaterFirst(
 export function fittingWaterBump(scene: PreparedScene | null | undefined, seed: number): Uint8Array | null {
   const bump = sceneOf(scene, seed)?.waterBump ?? null;
   return bump !== null && bump.length === WATER_BUMP_SIZE * WATER_BUMP_SIZE * 4 ? bump : null;
+}
+
+/** The scene's feature table when the scene is this world's and the table is whole; else null. */
+export function fittingFeatureTable(scene: PreparedScene | null | undefined, seed: number): Float32Array | null {
+  const table = sceneOf(scene, seed)?.featureTable ?? null;
+  return table !== null && table.length === FEATURE_TEX_WIDTH * FEATURE_TEX_ROWS * 4 ? table : null;
 }
 
 /** The scene's bed when it is the tier's grid (`BED_GRID`) baked where a bake for a camera at (camX, camZ) stands; else null. */

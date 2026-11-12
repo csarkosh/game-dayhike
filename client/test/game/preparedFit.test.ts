@@ -7,9 +7,10 @@ import { BED_GRID, bakeBed, createBedGrid } from "../../src/game/bedHeight.js";
 import { oceanFieldFor } from "../../src/game/oceanWaves.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "../../src/game/oceanSwell.js";
 import {
-  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterFirst, fittingWaterRings, type PreparedLake, type PreparedScene,
+  fittingBed, fittingFeatureTable, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterFirst, fittingWaterRings, type PreparedLake, type PreparedScene,
 } from "../../src/game/preparedScene.js";
 import type { QualityTier } from "../../src/game/quality.js";
+import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH } from "../../src/game/featureTable.js";
 import { stadiumLake } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -31,6 +32,7 @@ function sceneAt(start: { x: number; z: number }, tier: QualityTier = "low", see
     // Seven stand-ins: the fit reads the rings' keys and this list's length, never a geometry.
     waterFirst: Array.from({ length: WATER_RING_COUNT }, () => ({ geometry: {} as WaterGeometry, bounds: null })),
     waterBump: new Uint8Array(256 * 256 * 4),
+    featureTable: new Float32Array(FEATURE_TEX_WIDTH * FEATURE_TEX_ROWS * 4),
     bed,
     ocean: oceanFieldFor(seed, tier === "low" ? SWELL_COMPONENTS_LOW : SWELL_COMPONENTS),
     lakes: [],
@@ -91,6 +93,15 @@ describe("whether a piece sampled ahead is the one a builder would make", () => 
     expect(fittingWaterBump({ ...scene, waterBump: new Uint8Array(16) }, SEED)).toBeNull();
     expect(fittingWaterBump({ ...scene, waterBump: null }, SEED)).toBeNull();
     expect(fittingWaterBump(null, SEED)).toBeNull();
+  }, timeLimit(60_000));
+
+  it("takes the feature table of this world's scene when it is a whole table", () => {
+    const scene = sceneAt(START);
+    expect(fittingFeatureTable(scene, SEED)).toBe(scene.featureTable);
+    expect(fittingFeatureTable(scene, SEED + 1)).toBeNull();
+    expect(fittingFeatureTable({ ...scene, featureTable: new Float32Array(8) }, SEED)).toBeNull();
+    expect(fittingFeatureTable({ ...scene, featureTable: null }, SEED)).toBeNull();
+    expect(fittingFeatureTable(null, SEED)).toBeNull();
   }, timeLimit(60_000));
 
   it("takes the bed of the builder's tier baked where a bake at the camera would stand, and refuses another", () => {

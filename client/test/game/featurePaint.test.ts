@@ -4,6 +4,9 @@ import {
   FEATURE_FRAGMENT_PAINT, FEATURE_FRAGMENT_DEFS,
 } from "../../src/game/featurePaint.js";
 import { bakeShoreAtlas } from "../../src/game/shoreAtlas.js";
+import { featureTableFor } from "../../src/game/featureTable.js";
+import "../../src/sim/passes/index.js";
+import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { stadiumShape } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import {
@@ -267,5 +270,23 @@ describe("the feature paint's weights", { timeout: timeLimit(30_000) }, () => {
     expect(featurePaintWeights(noPeak, atlas, 0, 0, 1000).rock).toBe(0);
     expect(featurePaintWeights(noPeak, atlas, 0, 0, -1000).rock).toBe(0);
     expect(featureTable(noPeak, atlas)[FEATURE_TEX_WIDTH * 4]).toBe(0);
+  });
+});
+
+describe("a world's feature table, made from its seed alone", { timeout: timeLimit(120_000) }, () => {
+  it("is the table of the terrain's features over their shore atlas, and null on a terrain with no trail", () => {
+    const before = activeTerrainVariantName();
+    try {
+      setActiveTerrainVariant("olympic");
+      const seed = 388817;
+      const features = activeTerrainVariant().trailGraph!(seed).features;
+      const table = featureTableFor(seed);
+      expect(table).toEqual(featureTable(features, bakeShoreAtlas(paintedLakes(features))));
+      expect(table).toHaveLength(FEATURE_TEX_WIDTH * FEATURE_TEX_ROWS * 4);
+      setActiveTerrainVariant("montane");
+      expect(featureTableFor(seed)).toBeNull();
+    } finally {
+      setActiveTerrainVariant(before);
+    }
   });
 });

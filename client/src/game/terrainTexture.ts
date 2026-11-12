@@ -97,6 +97,8 @@ import {
 import {
   FEATURE_FRAGMENT_DEFS, FEATURE_FRAGMENT_PAINT, FEATURE_PAINT_MAX, createFeatureTexture,
 } from "./featurePaint.js";
+import { featureTable, paintedLakes } from "./featureTable.js";
+import { bakeShoreAtlas } from "./shoreAtlas.js";
 import type { TrailGraph } from "../sim/trail.js";
 import type { Feature } from "../sim/features.js";
 import { loadGroundArrays, reportLayer, type GroundArrays, type GroundArraysFactory } from "./groundMaps.js";
@@ -929,10 +931,12 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   }
 
   /** Turn feature paint on for this world: bake the (x, z, radius, kind) +
-   * treeline table once. Idempotent, same story as `enableRoad`/`enableTrail`. */
-  enableFeatures(features: readonly Feature[]): void {
+   * treeline table once, or take `table`, the same table made already (by
+   * the renderer for its two ground materials, or ahead by the world's
+   * worker). Idempotent, same story as `enableRoad`/`enableTrail`. */
+  enableFeatures(features: readonly Feature[], table?: Float32Array | null): void {
     if (this._featureTex !== null) return;
-    this._featureTex = createFeatureTexture(this._scene, features);
+    this._featureTex = createFeatureTexture(this._scene, table ?? featureTable(features, bakeShoreAtlas(paintedLakes(features))));
     this._featureTex.name = "featureTex";
     this._featureTex.wrapU = Texture.CLAMP_ADDRESSMODE;
     this._featureTex.wrapV = Texture.CLAMP_ADDRESSMODE;
@@ -1384,12 +1388,14 @@ export function setTerrainFarBand(_scene: Scene, material: PBRMaterial, low: boo
  * Turn on per-fragment feature paint for the world `seed` if the active
  * variant has a trail graph — the made features (the peak, the loop
  * features) travel on the same graph as the trail.
+ * `table` is the world's table made already (`featureTableFor`), which the
+ * material's texture is then made from; absent or null, it is baked here.
  * Variants without one leave the plugin exactly as it was, define false, and
  * compile today's shader.
  */
-export function enableFeaturePaint(scene: Scene, material: PBRMaterial, seed: number): void {
+export function enableFeaturePaint(scene: Scene, material: PBRMaterial, seed: number, table?: Float32Array | null): void {
   const graphOf = activeTerrainVariant().trailGraph;
   if (graphOf === undefined) return;
   attachTerrainTexture(scene, material);
-  (material.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin).enableFeatures(graphOf(seed).features);
+  (material.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin).enableFeatures(graphOf(seed).features, table);
 }

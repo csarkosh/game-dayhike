@@ -75,6 +75,9 @@ export type FacePatchRegistries = {
   /** The world's trail, which the walkable rock keeps off (`sim/rockSurface.ts`,
    * `trailClearAt`), as the ground the player stands on does; null or absent, none. */
   trail?: TrailGraph | null;
+  /** The world's feature table made already (`featureTableFor`): the ground's
+   * and this material's textures are of one table. Absent or null, baked here. */
+  featureTable?: Float32Array | null;
 };
 
 /** What a cell's slice is expected to take (ms) by its spacing, near, far
@@ -153,7 +156,7 @@ export function createFacePatches(
   // the tier, so both are turned on here for this one.
   enableRoadPaint(scene, material, seed);
   enableTrailPaint(scene, material, seed);
-  enableFeaturePaint(scene, material, seed);
+  enableFeaturePaint(scene, material, seed, options.featureTable);
   setTerrainFarBand(scene, material, tier === "low");
 
   /** The cells drawn: the set last applied. */

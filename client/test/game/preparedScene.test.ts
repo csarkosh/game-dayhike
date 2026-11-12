@@ -15,6 +15,7 @@ import { lakeSurfaceGrid } from "../../src/game/lakeSurfaceGrid.js";
 import { waterPlantPlacements } from "../../src/game/waterPlantField.js";
 import { prepareScene, sceneTransfer, type PreparedScene } from "../../src/game/preparedScene.js";
 import { waterBumpData } from "../../src/game/waterBump.js";
+import { featureTableFor } from "../../src/game/featureTable.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const before = activeTerrainVariantName();
@@ -61,6 +62,8 @@ describe("a hike's first scene, sampled ahead", () => {
     expect(scene.bed).toEqual(bed);
     expect(scene.ocean).toEqual(oceanFieldFor(seed, SWELL_COMPONENTS_LOW));
     expect(scene.waterBump).toEqual(waterBumpData());
+    expect(scene.featureTable).toEqual(featureTableFor(seed));
+    expect(scene.featureTable).not.toBeNull();
     const lakes = lakesOf(seed);
     expect(lakes.length).toBeGreaterThan(0);
     expect(scene.lakes.map((l) => [l.cx, l.cz])).toEqual(lakes.map((l) => [l.shape.cx, l.shape.cz]));
@@ -112,6 +115,7 @@ describe("a hike's first scene, sampled ahead", () => {
     expect(scene.waterRings).toBeNull();
     expect(scene.waterFirst).toBeNull();
     expect(scene.waterBump).toBeNull();
+    expect(scene.featureTable).toBeNull();
     expect(scene.bed).toBeNull();
     expect(scene.ocean).toBeNull();
     expect(scene.lakes).toEqual([]);
@@ -127,8 +131,8 @@ describe("a hike's first scene, sampled ahead", () => {
     const transfer = sceneTransfer(scene);
     expect(new Set(transfer).size).toBe(transfer.length);
     // A ring's ten arrays, a water ring's one and its first geometry's seven, the bed, the ocean's table, the
-    // ripple bump, and a lake's surface (five) and skyline.
-    expect(transfer.length).toBe(RING_COUNT * 10 + WATER_RING_COUNT * 8 + 3 + scene.lakes.length * 6);
+    // ripple bump, the feature table, and a lake's surface (five) and skyline.
+    expect(transfer.length).toBe(RING_COUNT * 10 + WATER_RING_COUNT * 8 + 4 + scene.lakes.length * 6);
     const moved = structuredClone(scene, { transfer });
     expect(moved).toEqual(copy);
     // Moved, not copied: no typed array anywhere in what was sent still holds its bytes.

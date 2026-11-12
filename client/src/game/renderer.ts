@@ -137,8 +137,9 @@ import {
 } from "./bedHeight.js";
 import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
 import { WATER_BUMP_SIZE, waterBumpData } from "./waterBump.js";
+import { featureTableFor } from "./featureTable.js";
 import {
-  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterFirst, fittingWaterRings,
+  fittingBed, fittingFeatureTable, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterFirst, fittingWaterRings,
   type PreparedLakeSurface, type PreparedScene, type PreparedWaterRing,
 } from "./preparedScene.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
@@ -417,6 +418,8 @@ export function createClipmap(
     baseSpacing?: number;
     /** Where the first build is centred: where the hike's player starts. Absent or null, the origin. */
     start?: { x: number; z: number } | null;
+    /** The world's feature table made already (`featureTableFor`); absent or null, the ground's material bakes it. */
+    featureTable?: Float32Array | null;
     /** The first build's rings, sampled ahead (`preparedScene.ts`): the ones a build at `start` on
      * `baseSpacing` samples, which the caller has checked (`fittingRings`). The clipmap takes them
      * as its own and samples none; absent or null, it samples them. */
@@ -684,7 +687,7 @@ export function createClipmap(
   // is per world, so the clipmap, which knows the seed, turns it on.
   enableRoadPaint(scene, terrainMaterialFor(scene, "terrain"), seed);
   enableTrailPaint(scene, terrainMaterialFor(scene, "terrain"), seed);
-  enableFeaturePaint(scene, terrainMaterialFor(scene, "terrain"), seed);
+  enableFeaturePaint(scene, terrainMaterialFor(scene, "terrain"), seed, options.featureTable);
 
   return {
     meshes,
@@ -2446,12 +2449,17 @@ function buildRenderer(
   // Ring meshes are also the complete shadow-caster set: seven meshes,
   // bounded, which closes the old grows-without-bound caster list.
   // The rings leave out the steep ground the face patches below draw over.
+  // The made features' table, which the ground's material and the cliff
+  // patches' both read: made once here for the two, or taken as the world's
+  // worker made it.
+  const featureTableData = forest === null ? null : fittingFeatureTable(prepared, forest.seed) ?? featureTableFor(forest.seed);
   const clipmap = forest === null
     ? null
     : createClipmap(scene, forest.seed, jobs, {
       deferred: options.deferClipmap,
       start: options.start,
       baseSpacing: BASE_SPACING_BY_TIER[tier],
+      featureTable: featureTableData,
       // The rings the world's worker sampled, where they are this build's own.
       rings: fittingRings(prepared, forest.seed, options.start ?? { x: 0, z: 0 }, BASE_SPACING_BY_TIER[tier]),
       // The ground the patches drawn now cover, not the camera's: theirs
@@ -2589,6 +2597,7 @@ function buildRenderer(
     : createFacePatches(scene, forest.seed, tier, facePatchMaterial, jobs, {
       // The world's trail, which the walkable rock keeps off, as the ground the player stands on does.
       trail: activeTerrainVariant().trailGraph?.(forest.seed) ?? null,
+      featureTable: featureTableData,
       // Small casters: left out of the farthest cascade (`ShadowReach`).
       shadows: { add: (mesh) => lighting.addShadowMesh(mesh, "near"), remove: lighting.removeShadowMesh },
       reflections: {
