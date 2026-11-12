@@ -361,6 +361,10 @@ function buildGame(
   );
 
   const forest = createForest(seed);
+  // Where this hike's players start, from the seed alone, as the sim places them (`pickSpawn`):
+  // the first renderer builds its terrain and its water around it, and the look starts facing
+  // the way it faces. Null for a world with no trail.
+  const start = trailheadStart(seed);
   // The match's world goes on every telemetry row from here to dispose(): the
   // version of the generator that built it, by its level id without the seed,
   // and the seed and the game token on their own (`worldVersionOf`).
@@ -422,7 +426,7 @@ function buildGame(
     [options.tier, ...options.fallbackTiers],
     {
       build: (next, at, engine) =>
-        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
@@ -670,9 +674,8 @@ function buildGame(
     { onPause: () => input.disengage() },
   );
   // A player's yaw is whatever their input says, so the look starts where
-  // the spawn faces: the trail's entrance. Every peer derives it from the
-  // seed, as the sim does, so a follower starts facing the trail too.
-  const start = trailheadStart(seed);
+  // the spawn faces: the trail's entrance (`start`, above). Every peer derives
+  // it from the seed, as the sim does, so a follower starts facing the trail too.
   const input = createInputSampler(canvas, { touch: touchModel, touchMode: touchStart, startYaw: start?.yaw ?? 0 });
   made(() => input.dispose());
   const accumulator = new FixedStepAccumulator();

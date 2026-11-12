@@ -387,6 +387,26 @@ describe("createClipmap", () => {
     clipmap.dispose();
   }, timeLimit(120_000));
 
+  it("builds its first rings around the start it is given, so the first view there samples nothing again", () => {
+    const seed = 627994160;
+    const start = { x: 437.25, z: -1290.5 };
+    const s = scene();
+    const clipmap = createClipmap(s, seed, undefined, { start });
+    expect(clipmap.view).toEqual(start);
+    // The player's first frame, where the hike starts: every ring already stands on the start's
+    // snapped origin, so the rebuild computes no vertex of its own.
+    clipmap.update(start.x, start.z);
+    expect(clipmap.lifted).toBe(0);
+    clipmap.dispose();
+    // Built at the origin, as a clipmap given no start is (a world with no trail has none to give),
+    // the same first frame moves every ring.
+    const origin = createClipmap(s, seed, undefined, { start: null });
+    expect(origin.view).toEqual({ x: 0, z: 0 });
+    origin.update(start.x, start.z);
+    expect(origin.lifted).toBeGreaterThan(0);
+    origin.dispose();
+  }, timeLimit(120_000));
+
   it("leaves no ground out in its first build, at the origin, and the covered ground at the camera's first", () => {
     // The scarp's world, under a cover wider than any tier's, so that the
     // rings at the origin hold fully steep ground within it (the scarp, a
@@ -870,6 +890,11 @@ describe("world shell wiring", () => {
     // bound and run at once.
     expect(src).toContain("const jobs = createSyncJobs(() => performance.now());");
     expect(src).toContain("createClipmap(scene, forest.seed, jobs, {\n      deferred: options.deferClipmap,");
+    // The first rings and the water are made where the hike starts, when the renderer is told where
+    // (`RendererOptions.start`): at the origin and the level's first spawn they are built twice,
+    // the second time whole in the player's first frame.
+    expect(src).toContain("      start: options.start,");
+    expect(src).toContain("createWater(scene, forest.seed, waterLevel, lakes, tier, options.start?.x ?? level.playerSpawns[0]?.x ?? 0, options.start?.z ?? level.playerSpawns[0]?.z ?? 0, clock)");
     // The rings leave out the ground the face patches drawn now cover, and
     // the patches build on the same scheduler.
     expect(src).toContain("cover: () => facePatches?.cover() ?? null,");

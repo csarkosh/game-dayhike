@@ -406,7 +406,13 @@ export function createClipmap(
   scene: Scene,
   seed: number,
   jobs?: SyncJobs,
-  options: { deferred?: boolean; cover?: (camX: number, camZ: number) => CoveredGround | null; baseSpacing?: number } = {},
+  options: {
+    deferred?: boolean;
+    cover?: (camX: number, camZ: number) => CoveredGround | null;
+    baseSpacing?: number;
+    /** Where the first build is centred: where the hike's player starts. Absent or null, the origin. */
+    start?: { x: number; z: number } | null;
+  } = {},
 ): Clipmap {
   /** The finest ring's spacing (m): the tier's (`BASE_SPACING_BY_TIER`). */
   const base = options.baseSpacing ?? BASE_SPACING;
@@ -649,12 +655,15 @@ export function createClipmap(
    * camera, and every ring that can leave any out is stale for it. */
   function* firstBuild(onRing?: (level: number) => void): Slices {
     if (rings.length === RING_COUNT) return;
+    // Around the hike's start when it is known: built at the origin, every ring is sampled
+    // again, whole and in one frame, when the player's first frame finds them a trail away.
+    const at = options.start ?? { x: 0, z: 0 };
     for (let level = 0; level < RING_COUNT; level++) {
-      rings.push(createRingSamples(seed, level, 0, 0, base));
+      rings.push(createRingSamples(seed, level, at.x, at.z, base));
       onRing?.(level);
       yield;
     }
-    yield* build(0, 0, true);
+    yield* build(at.x, at.z, true);
   }
   if (options.deferred !== true) finish(firstBuild());
 
@@ -1891,6 +1900,12 @@ export type RendererOptions = {
    * with time read; `performance.now` absent. A scene stepped a frame at a
    * time hands in its own, so the grass and the water move in step with it. */
   clock?: () => number;
+  /** Where the hike's player starts (`trailheadStart`): the first terrain
+   * rings and the water (its bed and its rings) are made around it, so the
+   * player's first frame finds them in place. Absent or null (a world with
+   * no trail), the origin and the level's first spawn, and that first frame
+   * builds them again. */
+  start?: { x: number; z: number } | null;
   /** Leave the clipmap's first build to `buildFirstClipmap` or
    * `buildClipmapNow`, so a start can step it between paints; the renderer
    * draws no terrain until one has run. Absent, it is built here as always. */
@@ -2447,6 +2462,7 @@ function buildRenderer(
     ? null
     : createClipmap(scene, forest.seed, jobs, {
       deferred: options.deferClipmap,
+      start: options.start,
       baseSpacing: BASE_SPACING_BY_TIER[tier],
       // The ground the patches drawn now cover, not the camera's: theirs
       // may still be building. They are made below, and updated before it.
@@ -2472,7 +2488,7 @@ function buildRenderer(
       : [];
   const water =
     forest !== null && waterLevel !== undefined
-      ? createWater(scene, forest.seed, waterLevel, lakes, tier, level.playerSpawns[0]?.x ?? 0, level.playerSpawns[0]?.z ?? 0, clock)
+      ? createWater(scene, forest.seed, waterLevel, lakes, tier, options.start?.x ?? level.playerSpawns[0]?.x ?? 0, options.start?.z ?? level.playerSpawns[0]?.z ?? 0, clock)
       : null;
   partOf(water);
   // A murky lake's reeds, cattails and lilies: placed by the sim, built here.
