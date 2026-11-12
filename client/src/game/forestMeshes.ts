@@ -102,6 +102,7 @@ import {
 } from "./forestField.js";
 import { attachImpostorBake } from "./impostorBakePlugin.js";
 import { IMPOSTOR_FIELD_CUT, impostorFields } from "./impostorField.js";
+import { createFieldMaker, type FieldMaker } from "./impostorFieldWorker.js";
 import {
   SPECIES_COUNT,
   COHORT_GIANT,
@@ -180,7 +181,8 @@ const NURSE_FERN_URL = modelUrl(`models/${NURSE_FERN_ID}.glb`);
 /** Impostor bake resolution: 512 since 2026-10-15 (256 before), so a
  * giant's card at the near seam, 120 m off and some 400 px tall in a 1080p
  * window, is drawn from near its own texels and its branches survive the
- * field's spread. Six bakes, two pictures each, a few megabytes. */
+ * field's spread. Seven bakes (three giant sets, three saplings, the snag),
+ * two pictures each, a few megabytes. */
 const IMPOSTOR_BAKE_SIZE = 512;
 
 /** A bake still waiting on its shaders this long says so, once, as a warning,
@@ -245,6 +247,11 @@ export type BakeOptions = {
    * as a vertex attribute instead: `bakeDeadwoodRole`); the forest's own
    * materials are dressed without one. */
   dress?: (material: Material, mesh?: Mesh) => void;
+  /** Makes the bake's distance fields from the pixels it read back, off
+   * the page where it can (`impostorFieldWorker.ts`); null when its maker
+   * was disposed meanwhile, which the bake reads as the forest's leaving.
+   * Absent, the fields are computed here, in the bake's own continuation. */
+  fields?: FieldMaker["fields"];
 };
 
 /** One billboard's bake, as the forest last saw it: still baking, landed
@@ -1316,8 +1323,12 @@ export async function defaultBakeImpostor(
       rtt.dispose();
       return null;
     }
-    const fields = impostorFields(albedoPixels, normalPixels, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE);
+    const fields = options.fields === undefined
+      ? impostorFields(albedoPixels, normalPixels, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE)
+      : await options.fields(albedoPixels, normalPixels, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE);
     rtt.dispose();
+    // The forest was left while the fields were made: nothing is uploaded.
+    if (fields === null || options.signal?.aborted === true) return null;
     const albedo = RawTexture.CreateRGBATexture(fields.albedo, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE);
     albedo.name = `${mesh.name}_impostor_albedo`;
     albedo.hasAlpha = true;
@@ -1499,7 +1510,9 @@ export function createForestMeshes(
   const loads = new AbortController();
   // The bakes share the signal: a bake still waiting on its shaders stops
   // polling and lets its target go.
-  const bakeOptions: BakeOptions = { signal: loads.signal, pipelines: options.pipelines, sky: options.sky };
+  // One maker of distance fields for this forest's bakes: a worker, started at the first bake.
+  const fieldMaker = createFieldMaker();
+  const bakeOptions: BakeOptions = { signal: loads.signal, pipelines: options.pipelines, sky: options.sky, fields: fieldMaker.fields };
   // A tree bake's clones wear the moss the near trunks do, on the bark alone
   // (the rule `shadeTreeMaterial` tells bark from crown by), so the far
   // trees are mossed as the near ones. The trees' bakes alone: the snag
@@ -2551,6 +2564,7 @@ export function createForestMeshes(
     ready,
     abandon() {
       loads.abort();
+      fieldMaker.dispose();
     },
     dispose() {
       if (disposed) return;
@@ -2560,8 +2574,10 @@ export function createForestMeshes(
       // A build the loader still holds is dropped with the shell: it would be stepped against meshes that have gone.
       options.firstBuilds?.cancel(owner);
       // First: a GLB in flight ends quietly and a bake still waiting stops
-      // polling and releases its target.
+      // polling and releases its target; one waiting on its fields is
+      // answered with none, and their worker is ended.
       loads.abort();
+      fieldMaker.dispose();
       for (const sp of [...(species ?? []), ...(saplingSpecies ?? [])]) {
         for (const bucket of [...sp.lods, sp.understory, sp.impostor.bucket]) {
           if (bucket === null) continue;

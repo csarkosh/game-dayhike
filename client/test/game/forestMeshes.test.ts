@@ -68,6 +68,7 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { LOG_SINK } from "../../src/game/logSeat.js";
 import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
 import { whenSkyHeld } from "../../src/game/lighting.js";
+import { impostorFields } from "../../src/game/impostorField.js";
 import { createSkyTable } from "../../src/game/skyTable.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
@@ -2264,6 +2265,81 @@ describe("defaultBakeImpostor readiness gate", () => {
     const camera = cameraAtRender as { name: string } | null;
     expect(camera?.name).toBe("forest_impostor_bake_cam");
     expect(cameraAtRender).not.toBe(scene.activeCamera);
+  });
+
+  /** A bake whose target is ready, renders nothing and reads back `pixels`: the field step is reached. */
+  function readableBake(pixels: Uint8Array): void {
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
+    vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockImplementation((() => Promise.resolve(pixels.slice())) as never);
+  }
+  const dataOf = (texture: unknown): Uint8Array =>
+    ((texture as { getInternalTexture(): unknown }).getInternalTexture() as { _bufferView: Uint8Array })._bufferView;
+  /** A 512² picture with a square drawn in its middle. */
+  function bakedPixels(): Uint8Array {
+    const pixels = new Uint8Array(512 * 512 * 4);
+    for (let y = 200; y < 312; y++) for (let x = 200; x < 312; x++) pixels.set([90, 120, 60, 255], (y * 512 + x) * 4);
+    return pixels;
+  }
+
+  it("awaits the fields it is handed, after its two read-backs, and makes the card's textures of them", async () => {
+    const { scene, mesh } = bakeScene();
+    readableBake(bakedPixels());
+    const marked = { albedo: new Uint8Array(512 * 512 * 4).fill(7), normal: new Uint8Array(512 * 512 * 4).fill(9) };
+    const asked: { albedo: Uint8Array; normal: Uint8Array | null; width: number; height: number }[] = [];
+    const baked = await defaultBakeImpostor(mesh, scene, {
+      fields: (albedo, normal, width, height) => {
+        asked.push({ albedo, normal, width, height });
+        // In a later task, as a worker's answer comes.
+        return new Promise((resolve) => setTimeout(() => resolve(marked), 0));
+      },
+    });
+    expect(asked).toHaveLength(1);
+    expect([asked[0]!.width, asked[0]!.height]).toEqual([512, 512]);
+    expect(asked[0]!.albedo).toEqual(bakedPixels());
+    expect(asked[0]!.normal).toEqual(bakedPixels());
+    expect(baked?.signed).toBe(true);
+    expect(dataOf(baked?.albedo)).toBe(marked.albedo);
+    expect(dataOf(baked?.normal)).toBe(marked.normal);
+  }, timeLimit(60_000));
+
+  it("uploads nothing where the fields come back null, or the forest was left while they were made", async () => {
+    const { scene, mesh } = bakeScene();
+    readableBake(bakedPixels());
+    const cards = (): number => scene.textures.filter((t) => /_impostor_(albedo|normal)$/.test(t.name)).length;
+    expect(await defaultBakeImpostor(mesh, scene, { fields: () => Promise.resolve(null) })).toBeNull();
+    const left = new AbortController();
+    const marked = { albedo: new Uint8Array(512 * 512 * 4), normal: null };
+    const aborted = await defaultBakeImpostor(mesh, scene, {
+      signal: left.signal,
+      fields: () => {
+        left.abort();
+        return Promise.resolve(marked);
+      },
+    });
+    expect(aborted).toBeNull();
+    expect(cards()).toBe(0);
+    // Neither left its clone, its camera or its target behind.
+    expect(scene.meshes.filter((m) => m !== mesh)).toHaveLength(0);
+    expect(scene.cameras).toHaveLength(0);
+    expect(scene.customRenderTargets).toHaveLength(0);
+  }, timeLimit(60_000));
+
+  it("computes the fields on the page where it is handed no maker", async () => {
+    const { scene, mesh } = bakeScene();
+    readableBake(bakedPixels());
+    const baked = await defaultBakeImpostor(mesh, scene);
+    expect(baked?.signed).toBe(true);
+    const want = impostorFields(bakedPixels(), bakedPixels(), 512, 512);
+    expect(dataOf(baked?.albedo)).toEqual(want.albedo);
+    expect(dataOf(baked?.normal)).toEqual(want.normal);
+  }, timeLimit(60_000));
+
+  it("gives every bake of a forest one maker of fields, and ends it with the forest", () => {
+    const src = readFileSync(new URL("../../src/game/forestMeshes.ts", import.meta.url), "utf8");
+    expect(src.match(/createFieldMaker\(\)/g)).toHaveLength(1);
+    expect(src).toContain("const bakeOptions: BakeOptions = { signal: loads.signal, pipelines: options.pipelines, sky: options.sky, fields: fieldMaker.fields };");
+    expect(src).toContain("fieldMaker.dispose();");
   });
 
   it("frames the bake from the POSED clone, so a felled snag bakes standing up", async () => {
