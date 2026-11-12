@@ -184,7 +184,10 @@ with `--profile`, a CPU profile. `--climb <s>` is the same sprint with no find, 
 `--climb <s> --walk` walks instead of sprinting, and `--stand "x z yaw"` moves any of them (a
 forest: `250 -500 1.09` on seed atmo). `--intro <s>` is a start as a player meets it: the landing
 page, Play clicked, and that many seconds kept from the click (the page's frames, the film's
-presented and dropped frames, the world's readiness as a mark); `--cold` empties the site's cache
+presented and dropped frames, the world's readiness as a mark; and of the film's start, its
+clock beside the page's every frame of its first five seconds (`clock`), what its element says of
+itself as it goes, a wait, a stall, a pause, and each time it is put somewhere else in the page
+(`film`), and the title loop's end as marks); `--cold` empties the site's cache
 and storage first, a first visit. With `--phone --remote 9222 --tier low` the intro is timed on a
 phone's Chrome over the cable ("The phone", below), at the phone's own size, Play tapped.
 
@@ -411,6 +414,20 @@ the engine the rule does not give the phone. `--cellular` tells the browser its 
 its own speed: Chrome fetches only a film's metadata ahead on a cellular connection, whatever the
 page asks, so this is how the intro film's start is timed as a phone on mobile data meets it
 (the run's `meta.cellular`).
+
+`film-start.mjs` times a film's start with nothing of the game around it: a blank page on the
+phone, a film's file fetched ahead and played by a tap, and how far behind the tap its picture
+runs, alone and with one thing a page might do at the tap (its sound off, its sound turned on
+after, its element moved, a second film ended beside it, a busy thread, a WebGL2 engine
+starting). It is how a late start is laid to the phone or to the page: on the Pixel 9 a film
+with sound runs 0.20 to 0.29 s behind the tap and a silent one 0.01 to 0.04 s, so the intro's
+start, a quarter second behind its tap, is the phone's sound starting and no limit of the
+verdict's can ask for less.
+
+```bash
+node tools/frame-budget/film-start.mjs --film https://games.csarko.sh/dayhike/assets/<the intro's file> \
+  --out <dir on the lab disk>/film-start.json --runs 3
+```
 
 ## Not measurable yet
 

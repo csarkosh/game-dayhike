@@ -100,7 +100,8 @@ function parseArgs(argv) {
  * readiness as marks, the long frames with their scripts, and the GPU readout once a second. */
 const RECORDER = `(() => {
   if (window.__tl) return;
-  const tl = (window.__tl = { t: [], marks: [], loaf: [], gpu: [], jobs: [], pipes: [], wgsl: [], video: [], shown: [] });
+  const tl = (window.__tl = { t: [], marks: [], loaf: [], gpu: [], jobs: [], pipes: [], wgsl: [], video: [], shown: [], clock: [], film: [] });
+  let film = null, filmFrom = 0, filmHome = null;
   let scene = false, ready = false, end = false, pipeKey = "", wgslKey = "";
   tl.mark = (name) => tl.marks.push({ t: performance.now(), name });
   const tick = (t) => {
@@ -126,6 +127,14 @@ const RECORDER = `(() => {
       if (key !== wgslKey) { wgslKey = key; tl.wgsl.push({ t, hits: w.hits, misses: w.misses, translateMs: w.translateMs }); }
     }
     if (typeof window.__syncJobs === "function") { const j = window.__syncJobs(); if (j && j.ms > 2) tl.jobs.push({ t, ms: j.ms, late: j.lateMs, owners: j.owners }); }
+    // The film's start, frame by frame: its clock beside the page's for its first five seconds, and
+    // a mark whenever its element is put somewhere else in the page.
+    if (film) {
+      const now = performance.now();
+      if (now - filmFrom < 5000) tl.clock.push([now, film.currentTime, film.readyState]);
+      const home = film.parentNode && film.parentNode.parentNode;
+      if (home !== filmHome) { filmHome = home; tl.film.push({ t: now, name: "moved", at: film.currentTime, ready: film.readyState }); }
+    }
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -142,6 +151,18 @@ const RECORDER = `(() => {
     if (!this.loop) {
       once("film-play");
       this.addEventListener("playing", () => once("film-playing"), { once: true });
+      if (film !== this) {
+        film = this; filmFrom = performance.now(); filmHome = this.parentNode && this.parentNode.parentNode;
+        // What the film's element says of itself as it goes: a wait for data, a stall, a seek, a pause.
+        for (const name of ["waiting", "stalled", "playing", "pause", "seeking", "seeked", "canplay", "canplaythrough", "ratechange", "emptied", "suspend", "error"]) {
+          this.addEventListener(name, () => tl.film.push({ t: performance.now(), name, at: this.currentTime, ready: this.readyState }));
+        }
+      }
+    } else if (!tl.marks.some((m) => m.name === "loop-play")) {
+      // The title's loop, whose pause at Play is a mark too: it and the film share the phone's decoders.
+      tl.mark("loop-play");
+      this.addEventListener("pause", () => once("loop-pause"), { once: true });
+      this.addEventListener("emptied", () => once("loop-emptied"), { once: true });
     }
     return playOf.apply(this, arguments);
   };
