@@ -266,6 +266,32 @@ simulation's code), linking shaders, uploading textures, in Babylon, collecting 
 game's builders. A native call is named by what it is; a script's frame by where its source
 lives, so the table needs `--maps` at the report (without it script time reads as "other").
 
+### What drops the film's frames
+
+A page stop does not drop the film's frames: a page thread held 0.3 s on a blank page dropped
+none (a Pixel 9, 2026-11-12). Chrome's GPU process does. It decodes the page's WebGPU commands
+and presents the film's frames on one thread, so a batch of the game's commands that holds that
+thread about 85 ms drops two of the film's frames (0.083 s at 24 frames a second, inside the
+limit), and one near 100 ms and more has dropped three (0.125 s, outside it). Nothing the page
+can read says how long that thread was held, so a run asks Chrome for its own trace:
+
+```bash
+node tools/frame-budget/timeline.mjs … --phone --intro 85 --cold --cool --trace --label trace-1
+node tools/frame-budget/timeline-gpu.mjs <dir>/trace-1.json
+```
+
+`--trace [s]` records Chrome's trace across its processes from the page's opening to that many
+seconds after Play (30 by default) and keeps, as `<label>.trace.jsonl` beside the run, only the
+slices of 1.5 ms and more with the threads' names (a few megabytes; the trace whole is hundreds).
+Tracing costs time, so a traced run is read for its holds and never judged against the bar: the
+verdict's runs are made without it. `timeline-gpu.mjs` prints, a run, the GPU thread's tasks of
+60 ms and more (`--task <ms>` for another bar) with when each ran after Play, the WebGPU calls
+inside it (a pipeline made synchronously, a shader module, a submit, each with its label) and
+what of the task no call accounts for; the film's skips, each with the hold it fell in; and the
+thread's WebGPU calls summed by kind. The page's clock is laid on the trace's by the run's
+longest frames (`lib/gpuTrace.mjs`); where it cannot be, times are given into the trace and no
+skip is laid to a hold.
+
 ## Budgets
 
 ```bash

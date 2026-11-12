@@ -37,6 +37,10 @@
 //                     README's "The phone"), at the phone's own size, Play tapped
 //   --cellular        with --intro: the browser is told its connection is cellular (4g), at the line's
 //                     own speed, so what it does differently there is timed (a film's preload)
+//   --trace [s]       with --intro: Chrome's own trace across its processes, from the page's opening to
+//                     that many seconds after Play (30 by default), kept as <label>.trace.jsonl: the
+//                     slices `timeline-gpu.mjs` reads for what held the GPU thread (a film's dropped
+//                     frames). Tracing costs time: a run judged against the bar is not traced
 //   --cool [s]        with --phone: the run waits until the phone is cool (thermal status 0, battery at
 //                     most 34.5 °C), 720 s at most or the seconds given; how warm it was is in the
 //                     run's `meta.phone` either way
@@ -53,6 +57,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { attachChrome, closeStrayPages, connect, evaluate, openPage, version, ORIGIN_STORAGE } from "./lib/cdp.mjs";
 import { isAndroid, isCool, phoneState, waitUntilCool } from "./lib/phone.mjs";
+import { TRACE_CATEGORIES, keepForGpu, traceReader } from "./lib/gpuTrace.mjs";
 import { fileURLToPath } from "node:url";
 import { TIER_SIZES } from "./lib/views.mjs";
 
@@ -86,11 +91,13 @@ function parseArgs(argv) {
     else if (a === "--phone") o.phone = true;
     else if (a === "--cellular") o.cellular = true;
     else if (a === "--cool") o.cool = /^\d+$/.test(argv[i + 1] ?? "") ? Number(next()) : 720;
+    else if (a === "--trace") o.trace = /^\d+$/.test(argv[i + 1] ?? "") ? Number(next()) : 30;
     else throw new Error(`unknown option ${a}`);
   }
   if (!o.base || !o.out || !o.remote) throw new Error("--base, --out and --remote are needed");
   if (o.phone && !(o.intro > 0)) throw new Error("--phone times an intro: give --intro <s>");
   if (o.cool > 0 && !o.phone) throw new Error("--cool is a phone's: give --phone");
+  if (o.trace > 0 && !(o.intro > 0)) throw new Error("--trace is an intro's: give --intro <s>");
   if (o.cellular && !(o.intro > 0)) throw new Error("--cellular is an intro's: give --intro <s>");
   if (!(o.tier in TIER_SIZES) && o.tier !== "low") throw new Error(`--tier is medium, high or low, not ${o.tier}`);
   return o;
@@ -228,12 +235,70 @@ async function waitFor(what, test, maxS) {
 }
 
 /**
+ * Chrome's own trace of an intro (`--trace`), or null where none is asked for: started on the
+ * browser as the page is opened, ended `o.trace` seconds after Play, and read off the browser as a
+ * stream, of which only the slices the GPU thread's report reads are kept (`lib/gpuTrace.mjs`; the
+ * trace whole is hundreds of megabytes). A trace that cannot be started, or never completes, is
+ * said in a line and the run is as it would have been.
+ */
+function traceOf(browser, o) {
+  if (!(o.trace > 0)) return null;
+  const say = (text) => process.stdout.write(`${o.label}: ${text}\n`);
+  let started = false, asked = false, ending = null;
+  const complete = new Promise((resolve) => browser.on("Tracing.tracingComplete", resolve));
+  const end = () => {
+    if (!started || asked) return Promise.resolve();
+    asked = true;
+    return browser("Tracing.end").catch(() => undefined);
+  };
+  return {
+    async start() {
+      try {
+        await browser("Tracing.start", { transferMode: "ReturnAsStream", streamFormat: "json", traceConfig: { recordMode: "recordAsMuchAsPossible", traceBufferSizeInKb: 600 * 1024, includedCategories: TRACE_CATEGORIES } });
+        started = true;
+      } catch (error) {
+        say(`no trace: ${error.message}`);
+      }
+    },
+    /** Ends the trace `o.trace` seconds from now, the run going on meanwhile. */
+    endLater() {
+      if (started) ending = sleep(o.trace * 1000).then(end);
+    },
+    /** Reads the trace off the browser and writes what is kept beside the run. */
+    async write() {
+      if (!started) return;
+      try {
+        await (ending ?? end());
+        const { stream } = await Promise.race([complete, sleep(120_000).then(() => ({}))]);
+        if (stream === undefined) throw new Error("it never completed");
+        const reader = traceReader(keepForGpu());
+        const text = new TextDecoder();
+        for (;;) {
+          const chunk = await browser("IO.read", { handle: stream, size: 4 * 1024 * 1024 });
+          reader.push(chunk.base64Encoded ? text.decode(Buffer.from(chunk.data, "base64"), { stream: true }) : chunk.data);
+          if (chunk.eof) break;
+        }
+        await browser("IO.close", { handle: stream }).catch(() => undefined);
+        const kept = reader.events();
+        if (kept.length === 0) throw new Error("it held nothing");
+        writeFileSync(join(o.out, `${o.label}.trace.jsonl`), `${kept.map((e) => JSON.stringify(e)).join("\n")}\n`);
+        say(`trace of ${o.trace} s after Play: ${kept.length} slices kept in ${o.label}.trace.jsonl`);
+      } catch (error) {
+        say(`no trace kept: ${error.message}`);
+      }
+    },
+    /** For a run that ended early: nothing is left tracing on the browser. */
+    stop: end,
+  };
+}
+
+/**
  * The intro over a start, as a player meets it: the landing page, Play clicked (a real click, so
  * the film plays with sound as theirs does), and `o.intro` seconds kept from the click: the page's
  * frames, the film's presented and dropped frames, the world's readiness as a mark. Marked as a
  * sprint is (`sprint-on` at the click), so the report reads it in ten-second stretches.
  */
-async function intro(page, o, root, about, phone = undefined) {
+async function intro(page, o, root, about, phone = undefined, trace = null) {
   // A phone is timed at its own size, as its player sees it.
   if (!o.phone) {
     const size = TIER_SIZES[o.tier] ?? TIER_SIZES.medium;
@@ -247,6 +312,7 @@ async function intro(page, o, root, about, phone = undefined) {
   }
   await page("Page.addScriptToEvaluateOnNewDocument", { source: RECORDER });
   const url = `${root}/?tier=${o.tier}&telemetry=off${o.engine ? `&engine=${o.engine}` : ""}${o.query ? `&${o.query}` : ""}`;
+  await trace?.start();
   const nav = await page("Page.navigate", { url });
   if (nav.errorText) throw new Error(`${url} did not load: ${nav.errorText}`);
   process.stdout.write(`${o.label}: ${url}\n`);
@@ -268,6 +334,7 @@ async function intro(page, o, root, about, phone = undefined) {
     await page("Input.dispatchMouseEvent", { type: "mouseReleased", x: at[0], y: at[1], button: "left", clickCount: 1 });
   }
   process.stdout.write(`${o.label}: Play clicked; keeping ${o.intro} s\n`);
+  trace?.endLater();
   await sleep(o.intro * 1000);
   await mark(page, "chase-end");
   let profile = null;
@@ -281,6 +348,7 @@ async function intro(page, o, root, about, phone = undefined) {
   writeFileSync(join(o.out, `${o.label}.json`), JSON.stringify({ meta, ...tl, cast: null }));
   if (profile !== null) writeFileSync(join(o.out, `${o.label}.cpuprofile`), JSON.stringify(profile));
   process.stdout.write(`${o.label}: ${tl.t.length} frames, ${tl.loaf.length} long frames, world ready ${meta.readyS.toFixed(1)} s after Play; written to ${o.out}\n`);
+  await trace?.write();
 }
 
 /**
@@ -321,6 +389,7 @@ async function phoneIntro(o) {
     if (!target) await sleep(200);
   }
   const page = await connect(local(target.webSocketDebuggerUrl));
+  const trace = traceOf(browser, o);
   try {
     await page("Page.enable");
     await page("Runtime.enable");
@@ -333,8 +402,9 @@ async function phoneIntro(o) {
       await page("Network.clearBrowserCache");
     }
     await browser("Target.activateTarget", { targetId }).catch(() => undefined);
-    await intro(page, o, root, about, phone);
+    await intro(page, o, root, about, phone, trace);
   } finally {
+    await trace?.stop();
     await page("Page.navigate", { url: "about:blank" }).catch(() => undefined);
     page.close();
     await browser("Target.closeTarget", { targetId }).catch(() => undefined);
@@ -363,7 +433,15 @@ async function main() {
       await page("Network.clearBrowserCache");
       await page("Storage.clearDataForOrigin", { origin: new URL(url).origin, storageTypes: "all" });
     }
-    if (o.intro > 0) { await intro(page, o, root, about); return; }
+    if (o.intro > 0) {
+      const trace = traceOf(session.browser, o);
+      try {
+        await intro(page, o, root, about, undefined, trace);
+      } finally {
+        await trace?.stop();
+      }
+      return;
+    }
     const size = TIER_SIZES[o.tier] ?? TIER_SIZES.medium;
     await page("Emulation.setDeviceMetricsOverride", { width: size.width, height: size.height, deviceScaleFactor: 1, mobile: false });
     await page("Page.addScriptToEvaluateOnNewDocument", { source: RECORDER });
