@@ -328,9 +328,25 @@ and a later hike in the same session makes its own, with the file by then in the
      stop that is over the limit in every run is one this item does not answer: the scene's
      last readiness check, in which Babylon makes the effects of every material not yet drawn
      in one call (0.24 to 0.29 s).
+   - The last whole builds of a start are spread too (amended 2026-11-12):
+     - *The readiness check.* The hike is ready when Babylon's `scene.isReady()` says so, and
+       that call makes the effect of every material no frame has drawn yet, all at once. The
+       wait now checks the scene's meshes itself first, giving the thread back every 8 ms
+       (`rendererSwap.ts`, `walkSceneReady`), so each effect is made in a task of its own
+       and the scene's own check finds them made. The tier switch and the governor's drop
+       use the same wait.
+     - *The cliff patches' first set.* The loop's first frame built the patches nearest the
+       camera at once. While the loader of first builds is open the whole first set is its
+       to step, and the rings are then rebuilt for the ground it covers as a build that
+       cannot wait: the loader's under the film, whole in the call once the film is cut, so
+       no frame shows the rings under the patches.
+     - *The lake's far chorus.* Its two places on the shore, found by walking the outline,
+       come with the worker's scene (`waterLifeField.ts`, `waterLifeBed`).
+     - *The signs.* A host's signs, trailhead board and body are built in the task after
+       the build while the film covers the hike (`extrasLater.ts`), and only if the hike and
+       its renderer still stand; a follower's, and a start with no film, as before.
    - Still whole: what is left of the build (`buildGame` is one task: the renderer and its
-     materials, the meshes made from what came sampled, the session, the signs) and the face
-     patches' near band.
+     materials, the meshes made from what came sampled, the session).
 5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, a frame
    has shown the shells the player's place and the loader of first builds has drained (asked once
    the scene is ready, so a fill queued as its models landed is waited for; so a player
