@@ -186,10 +186,23 @@ cut with dissolves, its loop's seam inside a dissolve so it is never seen, small
 the page light; it takes the still's place and nothing else changes. Designed in
 [`2026-10-01-title-loop.md`](2026-10-01-title-loop.md).
 
+One thing of the game is fetched before Play: the intro film's head (`game/filmHead.ts`, amended
+2026-11-11). A film element made at Play begins its download at Play, and on a first visit the
+film stood on its first frame until its first seconds were in: 0.2 to 2.1 s on a phone. So once
+the title page has loaded it makes the film's element, off the page, silent, with the film's file
+and `preload="auto"`; the browser buffers the film's head and readies its decoder, and Play takes
+that element. How far ahead a preloading element buffers is the browser's to decide. There is no
+head start where the title loop would not play either: when data is being saved, or on a
+connection of 3g or worse (`slowConnection`). One element a page load: it is handed over once,
+and a later hike in the same session makes its own, with the file by then in the browser's cache.
+
 ### 5.2 On Play
 
 1. The Play click starts the video at once, in the click's own gesture so it plays with sound.
-   The file streams: it plays after a couple of seconds are buffered, under shot 1's fade in.
+   It is the element the title page has been loading (§5.1) when there is one, which starts on
+   what it has buffered; else one made at the click, whose file streams and plays after a couple
+   of seconds are buffered, under shot 1's fade in. The overlay leaves alone a `src` the element
+   already has: setting it again would start the load over.
 2. The tier probe, where it runs (a first visit on Auto), runs behind the video.
 3. Once the video has six seconds in hand, or three seconds have passed, the game's download and
    build begin: the engine, the ground maps, the models in the order the first frame needs them,
@@ -308,6 +321,11 @@ Every numeric expectation is a literal; explicit time limits go through `timeLim
 - The scene runs with no local player and the sim's state is untouched by a scene frame.
 - `startHike`: `beforeBuild` is waited for between the engine and the build, and a start left
   during it lets the engine go and builds nothing.
+- `filmHead.ts`: one silent, inline, preloading element however often it is warmed; handed over
+  once, and only for the file it was warmed for; nothing after it was taken, before it was warmed
+  or when it failed; not wanted when data is saved or the connection is 3g or worse. The overlay
+  does not set again a `src` the element already has, and a warmed film still starts muted on a
+  page with no gesture of its own.
 - `coveredDraw.ts`: every frame draws with no film over the hike; a covered hike draws the frames
   at 0, 250, 500 and 750 ms of a second at sixty a second, and every frame again once every cover
   is lifted.

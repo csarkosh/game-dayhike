@@ -25,6 +25,7 @@ import { markedProgress } from "./game/loadProgress.js";
 import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
+import { createFilmHead, filmHeadWanted } from "./game/filmHead.js";
 import { startSceneRoute } from "./game/scene/sceneRoute.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
@@ -125,6 +126,8 @@ let game: GameHandle | null = null;
 let landing: LandingHandle | null = null;
 /** The title page's loop behind its still, while the title page is up. */
 let titleLoop: TitleLoop | null = null;
+/** The intro film, loading its head from the title page on, for Play to take (`filmHead.ts`). */
+const filmHead = createFilmHead({ video: () => document.createElement("video") });
 // Whether the game's pause menu is open. Only the game sets it; leaving the
 // game route resets it, so the roster never stays "full" on a stale flag.
 let paused = false;
@@ -405,9 +408,25 @@ function cutIntro(run: IntroRun, reason: CutReason): void {
   });
 }
 
+/**
+ * Starts the intro film's head start once the page has loaded, where the connection is one to
+ * spend on film: the title page makes the film's element early, so the film has its first seconds
+ * and its decoder by the time Play is tapped.
+ */
+function warmFilmHead(): void {
+  const warm = (): void => {
+    const src = introSource();
+    if (src !== null && filmHeadWanted(titleLoopEnv(), src)) filmHead.warm(src);
+  };
+  if (document.readyState === "complete") warm();
+  else window.addEventListener("load", warm, { once: true });
+}
+
 function startIntro(src: string, muted: boolean): IntroRun {
   const run: IntroRun = { overlay: null as unknown as IntroOverlay, frame: 0, launched: null, cutEarly: null };
-  run.overlay = createIntroOverlay(app, { src, captions: INTRO_CAPTIONS, muted, sound: () => !mute.muted(), onCut: (reason) => cutIntro(run, reason) });
+  // The film the title page has been loading, when there is one for this file; else one made here.
+  const deps = { video: () => filmHead.take(src) ?? document.createElement("video"), now: () => performance.now() };
+  run.overlay = createIntroOverlay(app, { src, captions: INTRO_CAPTIONS, muted, sound: () => !mute.muted(), onCut: (reason) => cutIntro(run, reason) }, deps);
   const draw = (now: number): void => {
     run.overlay.render(now);
     run.frame = requestAnimationFrame(draw);
@@ -1053,9 +1072,11 @@ function render(container: HTMLDivElement): void {
   if (isLandingRoute(route)) {
     endIntro(pendingIntro);
     // The still goes in first so the UI paints above it; the loop behind it
-    // fetches nothing until the page has loaded, and nothing of the game is
-    // built or fetched before Play.
+    // fetches nothing until the page has loaded. Nothing of the game is built
+    // before Play, and of it only the intro film's head is fetched, so the
+    // film starts at the tap.
     titleLoop = createTitleLoop(container, titleStillUrl(), titleVideoUrl(), titleLoopEnv());
+    warmFilmHead();
     landingNotice = takeNotice(pageSessionStorage(), Date.now());
 
     const handle = renderLanding(
