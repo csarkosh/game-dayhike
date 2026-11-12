@@ -1,0 +1,120 @@
+/**
+ * A hike's first builds, stepped while its intro's film covers it.
+ *
+ * A shell's first build is its largest: the forest and the ground cover each fill a whole disc
+ * around the player, half a second of work on a phone. Run whole, each stops the page for that
+ * long, and under the film the captions and the loading bar stand with it. So a shell that is
+ * building for the first time hands its build here instead of draining it: the loader steps the
+ * builds one at a time, in the order they came, in turns of its own (macrotasks, not frames),
+ * each turn giving the thread back once `sliceMs` have passed.
+ *
+ * It lives only as long as the film's cover. `close` (the cut) runs whatever is left to its end
+ * and from then on a build handed in runs whole, at once: a first build in play, after a
+ * teleport or on a renderer made mid-hike, is not held back. `dispose` (the hike left) runs
+ * nothing more.
+ */
+import { FIRST_BUILD_SLICE_MS, finish, type Slices } from "./syncJobs.js";
+
+export type FirstBuilds = {
+  /** True until `close` or `dispose`: a shell asks before handing a first build over. */
+  readonly open: boolean;
+  /** Queues `owner`'s first build to be stepped; a build of the owner's already queued is ended and replaced. Closed, the build runs whole here; disposed, not at all. */
+  add(owner: object, slices: Slices, name: string): void;
+  /** Ends `owner`'s queued build and drops it. */
+  cancel(owner: object): void;
+  /** How many builds are queued or in hand. */
+  pending(): number;
+  /** Resolves when nothing is queued or in hand; at once when nothing is. */
+  idle(): Promise<void>;
+  /** Runs everything queued to its end now, in order, and closes. */
+  close(): void;
+  /** Ends everything queued without running it, and closes. */
+  dispose(): void;
+};
+
+type Job = { owner: object; slices: Slices; name: string };
+
+export function createFirstBuilds(deps: { now?: () => number; later?: (run: () => void) => void; sliceMs?: number } = {}): FirstBuilds {
+  const now = deps.now ?? (() => performance.now());
+  const later = deps.later ?? ((run: () => void) => void setTimeout(run, 0));
+  const sliceMs = deps.sliceMs ?? FIRST_BUILD_SLICE_MS;
+  const queue: Job[] = [];
+  let open = true;
+  let disposed = false;
+  let asked = false;
+  let waiting: (() => void)[] = [];
+  const settle = (): void => {
+    if (queue.length > 0) return;
+    const resolve = waiting;
+    waiting = [];
+    for (const r of resolve) r();
+  };
+  const ask = (): void => {
+    if (asked || queue.length === 0) return;
+    asked = true;
+    later(turn);
+  };
+  /** One turn: the build in hand stepped until `sliceMs` have passed, the next taken up as one ends. */
+  function turn(): void {
+    asked = false;
+    const since = now();
+    while (queue.length > 0) {
+      const job = queue[0] as Job;
+      let done: boolean;
+      try {
+        done = job.slices.next().done === true;
+      } catch (error) {
+        // A build that broke is dropped; the rest go on, and the page's own handling sees the error.
+        queue.shift();
+        ask();
+        settle();
+        throw error;
+      }
+      if (done) queue.shift();
+      else if (now() - since >= sliceMs) break;
+    }
+    ask();
+    settle();
+  }
+  const drop = (owner: object): void => {
+    const i = queue.findIndex((j) => j.owner === owner);
+    if (i < 0) return;
+    const [job] = queue.splice(i, 1);
+    (job as Job).slices.return();
+  };
+  return {
+    get open() {
+      return open;
+    },
+    add(owner, slices, name) {
+      if (disposed) {
+        slices.return();
+        return;
+      }
+      if (!open) {
+        finish(slices);
+        return;
+      }
+      drop(owner);
+      queue.push({ owner, slices, name });
+      ask();
+    },
+    cancel(owner) {
+      drop(owner);
+      settle();
+    },
+    pending: () => queue.length,
+    idle: () => (queue.length === 0 ? Promise.resolve() : new Promise<void>((resolve) => waiting.push(resolve))),
+    close() {
+      open = false;
+      while (queue.length > 0) finish((queue.shift() as Job).slices);
+      settle();
+    },
+    dispose() {
+      open = false;
+      disposed = true;
+      for (const job of queue.splice(0)) job.slices.return();
+      settle();
+    },
+  };
+}
