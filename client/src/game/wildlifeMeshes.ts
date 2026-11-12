@@ -45,6 +45,8 @@ import {
 } from "./wildlifeBehaviour.js";
 import { createCreaturePool, type CreatureInstance, type CreaturePool } from "./creatureModel.js";
 import { loadContainer, loadUntilAborted } from "./modelLoad.js";
+import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
+import type { Slices } from "./syncJobs.js";
 import {
   createDirectorState, DIRECTOR_ID_BASE, onScreen, PLACE_BODY_H, step as stepDirector,
   type Candidate, type CueEvent, type Ground, type MatchState, type View,
@@ -341,6 +343,10 @@ const DIRECTOR_REMOVAL_BACKLOG_CAP = 4096;
 export type WildlifeShadows = { add(mesh: AbstractMesh): void; remove(mesh: AbstractMesh): void };
 export type WildlifeMeshesOptions = {
   radiusScale?: number;
+  /** The loader of first builds, for a start whose intro's film covers the hike (`firstBuilds.ts`):
+   * while it is open, a collect of the field (the first, about 30 ms, and one after the camera has
+   * moved on) is a task of the loader's own, never part of a frame; closed or absent, it runs in the call. */
+  firstBuilds?: FirstBuilds;
   pool?: CreaturePool;
   /** The clock (ms) the wings beat on: the renderer's, so a stepped scene
    * beats in step with it; the wall clock absent. */
@@ -650,6 +656,8 @@ export function createWildlifeMeshes(
   let perchedBucket: BirdBucket | null = null;
   let lastX = Infinity;
   let lastZ = Infinity;
+  /** What the loader of first builds knows this shell's queued collect by. */
+  const collectOwner = {};
   let presenceGround = 1;
   let presenceAloft = 1;
   let presenceRaven = 1;
@@ -1219,7 +1227,10 @@ export function createWildlifeMeshes(
       const dx = camX - lastX;
       const dz = camZ - lastZ;
       if (dx * dx + dz * dz >= WILDLIFE_REBUILD_STEP * WILDLIFE_REBUILD_STEP) {
-        rebuild(camX, camZ, tick);
+        // One step, the whole collect: in the call, or a turn of the loader's while the film covers
+        // the hike, where a collect still queued for the last place is replaced by this one. Until
+        // it has run the shell steps the units it has, none at first.
+        buildAtOnce(options.firstBuilds, collectOwner, (function* (): Slices { rebuild(camX, camZ, tick); })(), "wildlife");
         lastX = camX;
         lastZ = camZ;
       }
@@ -1354,6 +1365,7 @@ export function createWildlifeMeshes(
       return directorRemovals.slice();
     },
     dispose() {
+      options.firstBuilds?.cancel(collectOwner);
       loads.abort();
       for (const [key, inst] of slots) {
         if (shadows !== undefined) for (const mesh of inst.root.getChildMeshes()) shadows.remove(mesh);

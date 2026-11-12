@@ -1043,7 +1043,7 @@ describe("world shell wiring", () => {
     expect(src).toContain("createClipmap(scene, forest.seed, jobs, {\n      deferred: options.deferClipmap,");
     // Under the intro's film the shells are handed the loader of first builds (`firstBuilds.ts`), so a
     // first fill is stepped rather than run whole in the player's first frame.
-    expect(src.match(/firstBuilds: options\.firstBuilds,/g)).toHaveLength(3); // the rings', the forest's and the ground cover's
+    expect(src.match(/firstBuilds: options\.firstBuilds,/g)).toHaveLength(4); // the rings', the forest's, the ground cover's and the wildlife's
     expect(src).toContain("createBladeMeshes(scene, forest.seed, { quality: tier, jobs, firstBuilds: options.firstBuilds })");
     expect(src).toContain("createDuffMeshes(scene, forest.seed, { quality: tier, jobs, firstBuilds: options.firstBuilds })");
     expect(src).toContain("          cover,\n          options.firstBuilds,\n        )"); // the props'

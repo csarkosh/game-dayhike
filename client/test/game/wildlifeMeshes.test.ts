@@ -54,6 +54,7 @@ import {
   createWildlifeMeshes, PRESENCE_RAMP_SECONDS, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
   ANIMATE_OFFSCREEN_WITHIN_M, CREATURE_SPHERE_M, creatureInView,
 } from "../../src/game/wildlifeMeshes.js";
+import { createFirstBuilds } from "../../src/game/firstBuilds.js";
 import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
 import {
   CUE_WEIGHT, GAP, LEAD, NOTICE, onScreen, STILL_RELAX, type Ground, type MatchState, type View,
@@ -151,6 +152,59 @@ describe("createWildlifeMeshes", () => {
     // must not dispose it, or a second shell sharing it would find it empty.
     expect(state.disposed).toBe(0);
     expect(acquired.size).toBe(0);
+    engine.dispose();
+  });
+
+  it("collects its first field in a turn of the loader of first builds while one is open, and in the call with none", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const units = wildlifeUnitsInDisc(SEED, CAM_X, CAM_Z);
+    const expected = units.filter((u) => u.species < 4).reduce((n, u) => n + u.members, 0);
+    // The loader's turns, taken when the test says.
+    const turns: (() => void)[] = [];
+    const loader = createFirstBuilds({ later: (run) => turns.push(run) });
+    const { pool, acquired } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool, firstBuilds: loader });
+    w.update(CAM_X, CAM_Z, 1000, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    // Nothing collected in the call: one build queued, no animal placed, nothing said or logged.
+    expect(loader.pending()).toBe(1);
+    expect(acquired.size).toBe(0);
+    // Frames before the turn step what there is, which is nothing, and queue no second collect.
+    w.update(CAM_X, CAM_Z, 1001, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    w.update(CAM_X, CAM_Z, 1002, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    expect(loader.pending()).toBe(1);
+    expect(acquired.size).toBe(0);
+    expect(w.events).toHaveLength(0);
+    expect(w.directorLog()).toHaveLength(0);
+    // The turn collects; the next frame places every animal a shell with no loader places there.
+    while (turns.length > 0) (turns.shift() as () => void)();
+    expect(loader.pending()).toBe(0);
+    w.update(CAM_X, CAM_Z, 1003, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    expect(acquired.size).toBe(expected);
+    expect(expected).toBeGreaterThan(0);
+    w.dispose();
+
+    // The cut finds the collect still queued: `close` runs it, and later collects run in the call.
+    const cut = createFirstBuilds({ later: () => undefined });
+    const second = fakePool(scene, GROUND_ASSETS);
+    const atCut = createWildlifeMeshes(scene, SEED, { pool: second.pool, firstBuilds: cut });
+    atCut.update(CAM_X, CAM_Z, 1000, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    expect(second.acquired.size).toBe(0);
+    cut.close();
+    atCut.update(CAM_X, CAM_Z, 1001, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    expect(second.acquired.size).toBe(expected);
+    atCut.update(5000, 5000, 1002, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    expect(cut.pending()).toBe(0);
+    for (const key of second.acquired.keys()) expect(units.some((u) => Math.floor(key / SLOT_STRIDE) === u.id)).toBe(false);
+    atCut.dispose();
+
+    // Disposed while its collect is queued: the loader holds nothing of it.
+    const left = createFirstBuilds({ later: () => undefined });
+    const gone = createWildlifeMeshes(scene, SEED, { pool: fakePool(scene, GROUND_ASSETS).pool, firstBuilds: left });
+    gone.update(CAM_X, CAM_Z, 1000, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    expect(left.pending()).toBe(1);
+    gone.dispose();
+    expect(left.pending()).toBe(0);
     engine.dispose();
   });
 

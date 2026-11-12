@@ -2815,6 +2815,7 @@ function buildRenderer(
     forest !== null && options.wildlife !== false
       ? createWildlifeMeshes(scene, forest.seed, {
           radiusScale: tier === "low" ? 0.6 : undefined,
+          firstBuilds: options.firstBuilds,
           now: clock,
           // The animals go to the shadows, and to the lake's mirror on high,
           // as they come and go.
