@@ -15,12 +15,10 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import {
-  CLUTTER_LILY, CLUTTER_LILY_PATCH_WAVE, CLUTTER_LILY_SALT, CLUTTER_REED, clutterInRect, type ClutterInstance,
-} from "../sim/clutter.js";
+import { CLUTTER_LILY_PATCH_WAVE, CLUTTER_LILY_SALT, type ClutterInstance } from "../sim/clutter.js";
 import { hash3 } from "../sim/field.js";
-import { POND_SHORE } from "../sim/features.js";
 import type { LakeSource } from "../sim/terrain.js";
+import { waterPlantPlacements } from "./waterPlantField.js";
 import { BLADE_VERTS, bladeClumpGeometry, type BladeCharacter, type BladeClumpGeometry } from "./bladeClump.js";
 import { attachFoliage, setFoliageEdges, FOLIAGE_PROFILES } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
@@ -243,13 +241,9 @@ export function createWaterPlants(scene: Scene, seed: number, lakes: readonly La
   const pads: ClutterInstance[] = [];
   const levelOf = new Map<ClutterInstance, number>();
   for (const lake of lakes) {
-    // The lake's box: its farthest shore point and the reeds' POND_SHORE past it, and a metre.
-    const shape = lake.shape;
-    const r = shape.shoreMax + POND_SHORE + 1;
-    for (const inst of clutterInRect(seed, CLUTTER_REED, shape.cx - r, shape.cz - r, shape.cx + r, shape.cz + r)) {
-      (reeds[inst.variant] as ClutterInstance[]).push(inst);
-    }
-    for (const inst of clutterInRect(seed, CLUTTER_LILY, shape.cx - r, shape.cz - r, shape.cx + r, shape.cz + r)) {
+    const placed = waterPlantPlacements(seed, lake);
+    placed.reeds.forEach((list, variant) => (reeds[variant] as ClutterInstance[]).push(...list));
+    for (const inst of placed.pads) {
       pads.push(inst);
       levelOf.set(inst, lake.level);
     }
