@@ -5,10 +5,11 @@
  * file and `preload="auto"`, and Play hands that element to the intro (`introOverlay.ts`) instead
  * of making one. Where the browser honours the preload it has the film's head buffered and its
  * decoder ready by then. Chrome does not on a cellular connection, whatever the attribute says:
- * there it fetches the file's metadata only. So the head is fetched first, by a request of the
- * page's own for the file's first `FILM_HEAD_BYTES`, into the browser's cache; the element is made
- * when that is in, and reads its first seconds from the cache on any connection. A film taken
- * before the fetch is in stops it, and plays from an element of its own.
+ * there it fetches the file's metadata only. So on a cellular connection (`onCellular`) the head
+ * is fetched first, by a request of the page's own for the file's first `FILM_HEAD_BYTES`, into
+ * the browser's cache, and the element is made when that is in, to read its first seconds from
+ * there. Everywhere else the element is made at once, as its own preload is the head start. A
+ * film taken before the fetch is in stops it, and plays from an element of its own.
  *
  * One element a page load. It is handed over once; a later hike in the same session makes its own,
  * and by then the file is in the browser's cache. How far ahead a preloading element buffers is
@@ -58,7 +59,12 @@ export function filmHeadWanted(env: { saveData: boolean; effectiveType: string |
   return src !== null && !slowConnection(env);
 }
 
-export function createFilmHead(deps: { video(): HTMLVideoElement; fetchHead?(src: string): FilmHeadFetch }): FilmHead {
+/** Whether the browser says its connection is cellular (Chrome on Android does; one that does not say is taken not to be). */
+export function onCellular(nav: { connection?: { type?: string } }): boolean {
+  return nav.connection?.type === "cellular";
+}
+
+export function createFilmHead(deps: { video(): HTMLVideoElement; fetchHead?(src: string): FilmHeadFetch | null }): FilmHead {
   let warmed = false;
   let kept: HTMLVideoElement | null = null;
   /** The head's fetch while it is in flight; the element is made when it settles. */
@@ -89,11 +95,12 @@ export function createFilmHead(deps: { video(): HTMLVideoElement; fetchHead?(src
     warm(src) {
       if (warmed) return;
       warmed = true;
-      if (deps.fetchHead === undefined) {
+      // No fetch of the page's own where none is wanted: the element is made now, and preloads.
+      const f = deps.fetchHead?.(src) ?? null;
+      if (f === null) {
         make(src);
         return;
       }
-      const f = deps.fetchHead(src);
       fetching = f;
       // In or not, the element is made: where the fetch failed it preloads for itself, as far as the browser lets it.
       void f.done.then(() => {

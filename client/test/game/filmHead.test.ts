@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FILM_HEAD_BYTES, createFilmHead, fetchFilmHead, filmHeadWanted, warmWhenLoaded, type FilmHeadFetch } from "../../src/game/filmHead.js";
+import { FILM_HEAD_BYTES, createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded, type FilmHeadFetch } from "../../src/game/filmHead.js";
 import { installStandInDom, type StandInVideo } from "./helpers/standInDom.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -180,6 +180,27 @@ describe("the film's first seconds, fetched", () => {
     expect(r.stops()).toBe(1);
     await tick();
     expect(r.made).toHaveLength(0);
+  });
+  it("makes the element at once where no fetch is wanted: the browser's own preload is the head start there", () => {
+    const doc = installStandInDom();
+    const made: StandInVideo[] = [];
+    const head = createFilmHead({
+      video: () => {
+        const v = doc.createElement("video") as StandInVideo;
+        made.push(v);
+        return v as unknown as HTMLVideoElement;
+      },
+      fetchHead: () => null,
+    });
+    head.warm("/intro.mp4");
+    expect(made).toHaveLength(1);
+    expect(head.take("/intro.mp4")).toBe(made[0]);
+  });
+  it("tells a cellular connection from the rest, and a browser that does not say from one", () => {
+    expect(onCellular({ connection: { type: "cellular" } })).toBe(true);
+    expect(onCellular({ connection: { type: "wifi" } })).toBe(false);
+    expect(onCellular({ connection: {} })).toBe(false);
+    expect(onCellular({})).toBe(false);
   });
   it("stops the fetch on a drop", async () => {
     const r = rigFetched();

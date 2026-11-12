@@ -193,11 +193,12 @@ the title page has loaded it makes the film's element, off the page, silent, wit
 and `preload="auto"`, and Play takes that element. Where the browser honours the preload it has
 the film's head buffered and its decoder ready by then; how far ahead it buffers is the browser's
 to decide. Chrome does not honour it on a cellular connection, whatever the attribute says: there
-it fetches the file's metadata only. So the page first fetches the head itself: one request for
-the file's first 4 MB (`FILM_HEAD_BYTES`, a little under seven seconds of film), read whole into
-the browser's cache, and the element is made when that is in, so its first seconds come from the
-cache on any connection. A visitor who never taps Play has spent those 4 MB, and whatever more
-the browser chose to buffer where it preloads. No head start is made when data is being saved or
+it fetches the file's metadata only. So on a cellular connection (`onCellular`) the page first
+fetches the head itself: one request for the file's first 4 MB (`FILM_HEAD_BYTES`, a little under
+seven seconds of film), read whole into the browser's cache, and the element is made when that is
+in, to read its first seconds from there. Everywhere else the element is made at once and its
+own preload is the head start. A visitor who never taps Play has spent what the browser chose to
+buffer, or on a cellular connection those 4 MB. No head start is made when data is being saved or
 on a connection of 3g or worse (`slowConnection`), nor at the page's load if Play was tapped
 before it; and a Play tapped while the head is still coming stops that fetch and plays the film
 from an element of its own. One element a page load: it is handed over once,
@@ -244,7 +245,8 @@ and a later hike in the same session makes its own, with the file by then in the
    - Still whole: the build itself (`buildGame` is one task), the water's first fill, the face
      patches' near band and wildlife's first collect.
 5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, a frame
-   has shown the shells the player's place and the loader of first builds is empty (so a player
+   has shown the shells the player's place and the loader of first builds has drained (asked once
+   the scene is ready, so a fill queued as its models landed is waited for; so a player
    who skips the film never sees the world fill in; a follower the host has not yet welcomed has
    no such frame, and is not ready until it has), and on
    WebGPU a whole frame has been drawn with no draw left out; the gate the tier switch already

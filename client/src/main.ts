@@ -25,7 +25,7 @@ import { markedProgress } from "./game/loadProgress.js";
 import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
-import { createFilmHead, fetchFilmHead, filmHeadWanted, warmWhenLoaded } from "./game/filmHead.js";
+import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { startSceneRoute } from "./game/scene/sceneRoute.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
@@ -127,7 +127,11 @@ let landing: LandingHandle | null = null;
 /** The title page's loop behind its still, while the title page is up. */
 let titleLoop: TitleLoop | null = null;
 /** The intro film, loading its head from the title page on, for Play to take (`filmHead.ts`). */
-const filmHead = createFilmHead({ video: () => document.createElement("video"), fetchHead: (src) => fetchFilmHead(src) });
+const filmHead = createFilmHead({
+  video: () => document.createElement("video"),
+  // Chrome preloads a film's metadata only on a cellular connection: there the page fetches the head itself first.
+  fetchHead: (src) => (onCellular(navigator as { connection?: { type?: string } }) ? fetchFilmHead(src) : null),
+});
 // Whether the game's pause menu is open. Only the game sets it; leaving the
 // game route resets it, so the roster never stays "full" on a stale flag.
 let paused = false;
