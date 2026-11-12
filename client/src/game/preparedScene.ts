@@ -25,6 +25,7 @@ import {
   WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, waterHoleCellsFor, waterRingGeometry, waterRingSpacing, wetBounds,
   type WaterGeometry, type WaterRingSamples,
 } from "./water.js";
+import { WATER_BUMP_SIZE, waterBumpData } from "./waterBump.js";
 import { waterLifeLayout, type WaterLifeLayout } from "./waterLifeField.js";
 import { waterPlantPlacements, type WaterPlantPlacements } from "./waterPlantField.js";
 
@@ -60,6 +61,8 @@ export type PreparedScene = {
   waterRings: WaterRingSamples[] | null;
   /** Each water ring's first geometry and wet box, made from `waterRings` as the water's first emit makes them; null with no water. */
   waterFirst: PreparedWaterRing[] | null;
+  /** The water's ripple bump (`waterBumpData`), a constant picture; null with no water. */
+  waterBump: Uint8Array | null;
   /** The tier's bed (`BED_GRID`), baked at the start; null with no water. */
   bed: BedGrid | null;
   /** The ocean's field with the tier's count of components; null with no water. */
@@ -95,6 +98,7 @@ export function prepareScene(seed: number, variant: string, tier: QualityTier): 
   const watered = activeTerrainVariant().waterLevel !== undefined;
   let waterRings: WaterRingSamples[] | null = null;
   let waterFirst: PreparedWaterRing[] | null = null;
+  let waterBump: Uint8Array | null = null;
   let bed: BedGrid | null = null;
   let ocean: OceanField | null = null;
   if (watered) {
@@ -109,6 +113,7 @@ export function prepareScene(seed: number, variant: string, tier: QualityTier): 
       const geometry = waterRingGeometry(ring, finer === null ? null : waterHoleCellsFor(ring, finer), waterLevel);
       return { geometry, bounds: wetBounds(geometry, ring.h, SWASH_FACE_LIFT_M, faceZ) };
     });
+    waterBump = waterBumpData();
     bed = createBedGrid(BED_GRID[tier].texels, BED_GRID[tier].spacing);
     bakeBed(bed, seed, start.x, start.z);
     ocean = oceanFieldFor(seed, swellCountFor(tier));
@@ -125,7 +130,7 @@ export function prepareScene(seed: number, variant: string, tier: QualityTier): 
       skyline: watered && tier !== "high" ? skylineElevations(lake, seed, skylineTrees(lake, seed)) : null,
     };
   });
-  return { seed, variant, tier, start, rings, waterRings, waterFirst, bed, ocean, lakes };
+  return { seed, variant, tier, start, rings, waterRings, waterFirst, waterBump, bed, ocean, lakes };
 }
 
 /**
@@ -196,6 +201,12 @@ export function fittingWaterFirst(
   if (fittingWaterRings(scene, seed, camX, camZ) === null) return null;
   const first = scene?.waterFirst ?? null;
   return first !== null && first.length === WATER_RING_COUNT ? first : null;
+}
+
+/** The scene's ripple bump when the scene is this world's and the picture is whole; else null. */
+export function fittingWaterBump(scene: PreparedScene | null | undefined, seed: number): Uint8Array | null {
+  const bump = sceneOf(scene, seed)?.waterBump ?? null;
+  return bump !== null && bump.length === WATER_BUMP_SIZE * WATER_BUMP_SIZE * 4 ? bump : null;
 }
 
 /** The scene's bed when it is the tier's grid (`BED_GRID`) baked where a bake for a camera at (camX, camZ) stands; else null. */

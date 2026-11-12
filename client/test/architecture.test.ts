@@ -477,6 +477,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "preparedScene.ts"),
       join(SRC, "game", "lakeSurfaceGrid.ts"),
       join(SRC, "game", "waterPlantField.ts"),
+      join(SRC, "game", "waterBump.ts"),
       join(SRC, "game", "skyState.ts"),
       join(SRC, "game", "halfFloat.ts"),
       join(SRC, "game", "waterLifeParams.ts"),

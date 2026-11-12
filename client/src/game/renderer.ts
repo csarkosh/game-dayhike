@@ -94,7 +94,6 @@ import { PAINT_PALETTES, type PaintPaletteName } from "./gradeParams.js";
 import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
 import { detectTier, QUALITY, type QualityTier } from "./quality.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../sim/terrain.js";
-import { fbm2 } from "../sim/field.js";
 import {
   createWaterRingSamples,
   seaFaceZ,
@@ -137,8 +136,9 @@ import {
   type BedGrid,
 } from "./bedHeight.js";
 import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
+import { WATER_BUMP_SIZE, waterBumpData } from "./waterBump.js";
 import {
-  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterFirst, fittingWaterRings,
+  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterFirst, fittingWaterRings,
   type PreparedLakeSurface, type PreparedScene, type PreparedWaterRing,
 } from "./preparedScene.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
@@ -742,29 +742,14 @@ export function createClipmap(
 export const WATER_UV_SCROLL = [0.015, 0.011] as const;
 
 /**
- * Runtime-generated 256² ripple normal map from `fbm2` finite differences.
- * The tile is NOT seamless — a mild seam every `WATER_UV_SCALE` metres under
- * motion is accepted at this fidelity bar (the motion is cosmetic);
- * the vertex ramp and low roughness dominate the read.
+ * The water's ripple normal map as a texture: `waterBumpData`'s picture, or
+ * the same picture made ahead and handed in (`data`). The tile is NOT
+ * seamless — a mild seam every `WATER_UV_SCALE` metres under motion is
+ * accepted at this fidelity bar (the motion is cosmetic); the vertex ramp and
+ * low roughness dominate the read.
  */
-function createWaterBump(scene: Scene): RawTexture {
-  const size = 256;
-  const data = new Uint8Array(size * size * 4);
-  const f = 12 / size; // ~12 ripples per WATER_UV_SCALE tile
-  const amp = 2.5;
-  for (let z = 0; z < size; z++) {
-    for (let x = 0; x < size; x++) {
-      const h0 = fbm2(x * f, z * f, 0x77aa, 3);
-      const nx = (fbm2((x + 1) * f, z * f, 0x77aa, 3) - h0) * amp * size * f;
-      const nz = (fbm2(x * f, (z + 1) * f, 0x77aa, 3) - h0) * amp * size * f;
-      const inv = 1 / Math.hypot(nx, nz, 1);
-      const at = (z * size + x) * 4;
-      data[at] = Math.round((-nx * inv * 0.5 + 0.5) * 255);
-      data[at + 1] = Math.round((-nz * inv * 0.5 + 0.5) * 255);
-      data[at + 2] = Math.round((inv * 0.5 + 0.5) * 255);
-      data[at + 3] = 255;
-    }
-  }
+function createWaterBump(scene: Scene, data: Uint8Array = waterBumpData()): RawTexture {
+  const size = WATER_BUMP_SIZE;
   const tex = RawTexture.CreateRGBATexture(
     data,
     size,
@@ -1169,6 +1154,8 @@ export type PreparedWater = {
   rings: WaterRingSamples[] | null;
   bed: BedGrid | null;
   ocean: OceanField | null;
+  /** The ripple bump's picture (`waterBumpData`); absent or null, made here. */
+  bump?: Uint8Array | null;
   /** Each ring's first geometry and wet box, made from `rings`; absent or null, made here. */
   first?: PreparedWaterRing[] | null;
   /** Each lake's surface, by its place in `lakes`; a lake with none, or null, makes its own. */
@@ -1267,12 +1254,14 @@ export function createWater(
   }
   const group = high ? WATER_GROUP : 0;
 
-  const bump = createWaterBump(scene);
+  // The ripple's picture is a constant: made once here, or ahead, and every bump texture is of it.
+  const bumpData = prepared?.bump ?? waterBumpData();
+  const bump = createWaterBump(scene, bumpData);
   // The sea's normal is its waves' on high and medium (oceanSurface.fx): PBR's
   // bump stays on the low tier's sea alone, where it draws the wind sea, and on
   // every lake. The lakes' ripple drifts with the wind and the sea's does not,
   // so where both read one (the low tier) the lakes have a bump of their own.
-  const lakeBump = tier === "low" && lakes.length > 0 ? createWaterBump(scene) : bump;
+  const lakeBump = tier === "low" && lakes.length > 0 ? createWaterBump(scene, bumpData) : bump;
   if (tier === "low") seaMat.bumpTexture = bump;
   for (const mat of lakeMats) mat.bumpTexture = lakeBump;
   /** The scroll's speed, tiles a second: what a lake's ripple drifts at in a full wind. */
@@ -2496,6 +2485,7 @@ function buildRenderer(
       ? createWater(scene, forest.seed, waterLevel, lakes, tier, waterAt.x, waterAt.z, clock, {
         rings: fittingWaterRings(prepared, forest.seed, waterAt.x, waterAt.z),
         first: fittingWaterFirst(prepared, forest.seed, waterAt.x, waterAt.z),
+        bump: fittingWaterBump(prepared, forest.seed),
         bed: fittingBed(prepared, forest.seed, tier, waterAt.x, waterAt.z),
         ocean: fittingOcean(prepared, forest.seed, tier),
         surfaces: lakePieces.map((piece) => piece?.surface ?? null),

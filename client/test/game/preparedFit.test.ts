@@ -7,7 +7,7 @@ import { BED_GRID, bakeBed, createBedGrid } from "../../src/game/bedHeight.js";
 import { oceanFieldFor } from "../../src/game/oceanWaves.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "../../src/game/oceanSwell.js";
 import {
-  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterFirst, fittingWaterRings, type PreparedLake, type PreparedScene,
+  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterFirst, fittingWaterRings, type PreparedLake, type PreparedScene,
 } from "../../src/game/preparedScene.js";
 import type { QualityTier } from "../../src/game/quality.js";
 import { stadiumLake } from "../helpers/lakeShapes.js";
@@ -30,6 +30,7 @@ function sceneAt(start: { x: number; z: number }, tier: QualityTier = "low", see
     waterRings: Array.from({ length: WATER_RING_COUNT }, (_, level) => createWaterRingSamples(seed, level, start.x, start.z)),
     // Seven stand-ins: the fit reads the rings' keys and this list's length, never a geometry.
     waterFirst: Array.from({ length: WATER_RING_COUNT }, () => ({ geometry: {} as WaterGeometry, bounds: null })),
+    waterBump: new Uint8Array(256 * 256 * 4),
     bed,
     ocean: oceanFieldFor(seed, tier === "low" ? SWELL_COMPONENTS_LOW : SWELL_COMPONENTS),
     lakes: [],
@@ -81,6 +82,15 @@ describe("whether a piece sampled ahead is the one a builder would make", () => 
     expect(fittingWaterFirst({ ...scene, waterFirst: (scene.waterFirst ?? []).slice(1) }, SEED, START.x, START.z)).toBeNull();
     expect(fittingWaterFirst({ ...scene, waterRings: null }, SEED, START.x, START.z)).toBeNull();
     expect(fittingWaterFirst(null, SEED, START.x, START.z)).toBeNull();
+  }, timeLimit(60_000));
+
+  it("takes the ripple bump of this world's scene when it is a whole picture", () => {
+    const scene = sceneAt(START);
+    expect(fittingWaterBump(scene, SEED)).toBe(scene.waterBump);
+    expect(fittingWaterBump(scene, SEED + 1)).toBeNull();
+    expect(fittingWaterBump({ ...scene, waterBump: new Uint8Array(16) }, SEED)).toBeNull();
+    expect(fittingWaterBump({ ...scene, waterBump: null }, SEED)).toBeNull();
+    expect(fittingWaterBump(null, SEED)).toBeNull();
   }, timeLimit(60_000));
 
   it("takes the bed of the builder's tier baked where a bake at the camera would stand, and refuses another", () => {

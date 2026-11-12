@@ -14,6 +14,7 @@ import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "../../src/g
 import { seedFromToken } from "../../src/game/seed.js";
 import { LAKE_SURFACE_SPACING, WATER_UV_SCROLL, createWater, effectsGroupFor, lakeSurfaceGrid, setEffectsGroup } from "../../src/game/renderer.js";
 import { lakeSurfaceDepths } from "../../src/game/lakeSurfaceGrid.js";
+import { waterBumpData } from "../../src/game/waterBump.js";
 import { lakeOutline, lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { createRain } from "../../src/game/rain.js";
@@ -384,6 +385,30 @@ describe("createWater under NullEngine", () => {
     for (let frame = 0; frame < 200; frame++) shown.update(cam.x + 600, cam.z, frame / 60);
     expect(shown.meshes[3]!.getVerticesData("bedDepth")).not.toContain(77);
     shown.dispose();
+  }, timeLimit(60_000));
+
+  it("makes the ripple bump's data once: the sea's and the lakes' on the low tier are two textures of one picture, and a picture handed in is the one both hold", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const bumps = (water: ReturnType<typeof createWater>): [Texture, Texture] => [
+      (water.meshes[0]!.material as PBRMaterial).bumpTexture as Texture,
+      (water.lakeMeshes[0]!.material as PBRMaterial).bumpTexture as Texture,
+    ];
+    const own = createWater(scene, 1, 0, [lake()], "low");
+    const [sea, lakes] = bumps(own);
+    // Two textures (the lakes' drifts with the wind, the sea's does not), holding the same array.
+    expect(lakes).not.toBe(sea);
+    expect(uploaded(lakes)).toBe(uploaded(sea));
+    expect(uploaded(sea)).toEqual(waterBumpData());
+    own.dispose();
+    const picture = waterBumpData();
+    picture[1] = 201;
+    const given = createWater(scene, 1, 0, [lake()], "low", 0, 0, undefined, { rings: null, bed: null, ocean: null, bump: picture });
+    const [seaGiven, lakesGiven] = bumps(given);
+    expect(uploaded(seaGiven)).toBe(picture);
+    expect(uploaded(lakesGiven)).toBe(picture);
+    expect(seaGiven.wrapU).toBe(sea.wrapU);
+    given.dispose();
   }, timeLimit(60_000));
 
   it("makes the same water from pieces sampled ahead as from its own sampling", () => {
