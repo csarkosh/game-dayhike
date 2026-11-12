@@ -549,6 +549,37 @@ describe("createClipmap", () => {
     expect(left.pending()).toBe(0);
   }, timeLimit(180_000));
 
+  it("begins nothing on the scheduler while the loader holds the rings' build, as the renderer wires them", () => {
+    // The rings on a scheduler, as in the renderer, and a loader whose turn is one slice: a frame between two
+    // turns finds the build still held. Were a second begun for the same rings meanwhile (the cover the queued
+    // build has yet to read looks new to every frame before its first slice), two builds would write one set of rings.
+    const scarp = 627994160;
+    const wide: ReturnType<typeof facePatchCover> = { x: 8, z: 8, reach: 4096, fine: 4096, cell: 16 };
+    const s = scene();
+    let now = 0;
+    const jobs = createSyncJobs(() => now);
+    const turns: (() => void)[] = [];
+    // Its clock runs a slice's whole budget every time it is read: one slice a turn.
+    const loader = createFirstBuilds({ later: (run) => turns.push(run), now: () => (now += 1000), sliceMs: 1 });
+    const clipmap = createClipmap(s, scarp, jobs, { cover: () => wide, firstBuilds: loader });
+    clipmap.update(0, 0);
+    expect(loader.pending()).toBe(1);
+    let frames = 0;
+    let stepped = 0;
+    while (loader.pending() > 0) {
+      // A frame: the rings asked again, the scheduler run. Nothing of the rings' is its to step.
+      clipmap.update(0, 0);
+      jobs.run();
+      stepped += jobs.last.slices + jobs.last.idle;
+      frames++;
+      (turns.shift() as () => void)();
+    }
+    expect(frames).toBeGreaterThan(2); // the build took several turns, with a frame between each
+    expect(stepped).toBe(0);
+    expect(clipmap.meshes.map((m) => m.getTotalIndices() / 3)).toEqual([32768, 24576, 24576, 24575, 24371, 24576, 24576]);
+    clipmap.dispose();
+  }, timeLimit(180_000));
+
   it("hands the loader of first builds to the rings, as to the shells", () => {
     const src = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
     const call = src.slice(src.indexOf("    : createClipmap(scene, forest.seed, jobs, {"), src.indexOf("  partOf(clipmap);"));

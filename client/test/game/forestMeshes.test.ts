@@ -2432,7 +2432,58 @@ describe("defaultBakeImpostor readiness gate", () => {
     const src = readFileSync(new URL("../../src/game/forestMeshes.ts", import.meta.url), "utf8");
     expect(src.match(/createFieldMaker\(\)/g)).toHaveLength(1);
     expect(src).toContain("const bakeOptions: BakeOptions = { signal: loads.signal, pipelines: options.pipelines, sky: options.sky, fields: fieldMaker.fields };");
-    expect(src).toContain("fieldMaker.dispose();");
+  });
+
+  it("makes every bake's fields on one worker of the forest's own, and ends it when the forest is disposed or abandoned", async () => {
+    /** A Worker that records what it is sent and whether it was ended, and answers nothing. */
+    class FakeWorker {
+      static made: FakeWorker[] = [];
+      readonly posted: unknown[] = [];
+      terminated = 0;
+      onmessage: unknown = null;
+      onerror: unknown = null;
+      onmessageerror: unknown = null;
+      constructor() {
+        FakeWorker.made.push(this);
+      }
+      postMessage(message: unknown): void {
+        this.posted.push(message);
+      }
+      terminate(): void {
+        this.terminated++;
+      }
+    }
+    vi.stubGlobal("Worker", FakeWorker);
+    try {
+      for (const way of ["dispose", "abandon"] as const) {
+        FakeWorker.made = [];
+        const engine = new NullEngine();
+        engines.push(engine);
+        const scene = new Scene(engine);
+        // Each bake asks for its fields as the real bake does after its read-backs, and is left waiting.
+        const waiting: Promise<unknown>[] = [];
+        const forest = createForestMeshes(scene, SEED, {
+          assets: stubAssets(scene),
+          bakeImpostor: (_mesh, _scene, options) => {
+            waiting.push((options as BakeOptions).fields!(new Uint8Array(16), null, 2, 2));
+            return null;
+          },
+        });
+        expect(waiting.length).toBeGreaterThan(1);
+        expect(FakeWorker.made).toHaveLength(1);
+        const worker = FakeWorker.made[0] as FakeWorker;
+        expect(worker.posted).toHaveLength(waiting.length);
+        expect(worker.terminated).toBe(0);
+        forest[way]();
+        // The worker is ended, and every bake still waiting is answered with none.
+        expect(worker.terminated, way).toBe(1);
+        expect(await Promise.all(waiting), way).toEqual(waiting.map(() => null));
+        forest.dispose();
+        expect(worker.terminated, way).toBe(1);
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("frames the bake from the POSED clone, so a felled snag bakes standing up", async () => {
