@@ -24,6 +24,25 @@ describe("the film's clock", () => {
     expect(playing(ENDED).at(-1).at).toBe(4.105797);
     expect(clockSteps(ENDED)).toHaveLength(1);
   });
+  it("reads one pause that spans several samples as one step, not as slices", () => {
+    // The film waited 0.18 s across two samples, 0.09 s in each: under the limit apiece, over it together.
+    const rows = [{ t: 0, at: 0 }, { t: 250, at: 0.16 }, { t: 500, at: 0.32 }, { t: 750, at: 0.57 }, { t: 1000, at: 0.82 }, { t: 5000, at: 4.82 }, { t: 5250, at: 5.07 }];
+    const steps = clockSteps(rows);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].t).toBe(0);
+    expect(steps[0].behind).toBeCloseTo(0.18, 5);
+  });
+  it("keeps two pauses with playing film between them apart", () => {
+    const rows = [{ t: 0, at: 0 }, { t: 250, at: 0.05 }, { t: 500, at: 0.3 }, { t: 750, at: 0.35 }, { t: 1000, at: 0.6 }, { t: 5000, at: 4.6 }, { t: 5250, at: 4.85 }];
+    expect(clockSteps(rows).map((x) => [x.t, Math.round(x.behind * 100) / 100])).toEqual([[0, 0.2], [500, 0.2]]);
+  });
+  it("with the film's end marked, reads every row up to it", () => {
+    // The real shape: the recorder skips a paused film, so the rows stop at the end; the last pair waited 0.3 s.
+    const rows = [{ t: 0, at: 0 }, { t: 250, at: 0.25 }, { t: 500, at: 0.5 }, { t: 1050, at: 0.75 }];
+    expect(clockSteps(rows)).toEqual([]);
+    expect(clockSteps(rows, { endT: 1300 })).toHaveLength(1);
+    expect(clockSteps(rows, { endT: 600 })).toEqual([]);
+  });
   it("has nothing to say of a run with no film", () => {
     expect(filmEnd([])).toBeNull();
     expect(playing([])).toEqual([]);

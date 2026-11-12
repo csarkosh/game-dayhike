@@ -17,19 +17,39 @@ export function filmEnd(video) {
   return video.length < 2 ? null : Math.max(...video.map((v) => v.at));
 }
 
-/** The rows from before the film's end: a film that has ended stands, which is not a pause. */
-export function playing(video) {
+/** The film's length where the run's rows carry it (`dur`), else null: an older run's do not. */
+export function filmLength(video) {
+  for (let i = video.length - 1; i >= 0; i--) if (Number.isFinite(video[i].dur) && video[i].dur > 0) return video[i].dur;
+  return null;
+}
+
+/**
+ * The rows from while the film played. With the film's end known (`endT`, page ms: the run's
+ * `film-end` mark), every row up to it. Without, the rows before the largest `currentTime`
+ * sampled: a film that has ended stands, which is not a pause, and so does one that stalled for
+ * good, which `verdict.mjs` tells apart by the film's length.
+ */
+export function playing(video, endT = null) {
+  if (endT !== null) return video.filter((v) => v.t <= endT);
   const end = filmEnd(video);
   return end === null ? [] : video.filter((v) => v.at < end - 0.1);
 }
 
-/** The steps the film's clock fell behind the page's, each `{ t, behind }`: page ms of the step's start, seconds. */
-export function clockSteps(video, { min = 0.03 } = {}) {
-  const rows = playing(video);
+/**
+ * The steps the film's clock fell behind the page's, each `{ t, behind }`: page ms of the step's
+ * start, seconds. A pause that spans several rows is one step, its size their sum: read a row at a
+ * time, a pause of any length would be slices of a quarter of a second.
+ */
+export function clockSteps(video, { min = 0.03, endT = null } = {}) {
+  const rows = playing(video, endT);
   const steps = [];
+  let open = null;
   for (let i = 1; i < rows.length; i++) {
     const behind = (rows[i].t - rows[i - 1].t) / 1000 - (rows[i].at - rows[i - 1].at);
-    if (behind > min) steps.push({ t: rows[i - 1].t, behind });
+    if (behind > min) {
+      if (open === null) steps.push((open = { t: rows[i - 1].t, behind: 0 }));
+      open.behind += behind;
+    } else open = null;
   }
   return steps;
 }

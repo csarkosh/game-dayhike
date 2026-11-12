@@ -11,6 +11,49 @@ const run = ({ loaf = [], video = SMOOTH, shown = [], phone = undefined } = {}) 
   shown,
 });
 
+// The shape a run really has: each row carries the film's length, the rows stop when the film ends
+// (the recorder skips a paused film) and the film's end is a mark.
+const REAL = Array.from({ length: 288 }, (_, i) => ({ t: 1000 + i * 250, at: i * 0.25, total: i * 6, dropped: 0, dur: 72 }));
+const real = ({ loaf = [], video = REAL, ended = 73000, cold = true } = {}) => ({
+  meta: { label: "r", approach: "intro", cold },
+  marks: [{ name: "sprint-on", t: 1000 }, ...(ended === null ? [] : [{ name: "film-end", t: ended }])],
+  loaf,
+  video,
+  shown: [],
+});
+
+describe("an intro's verdict on a run that knows its film's length and end", () => {
+  it("passes a first visit whose film played to its end", () => {
+    const v = verdictOf(real());
+    expect(v.why).toEqual([]);
+    expect(v.end).toBe(73000);
+  });
+  it("fails a film that never reached its end", () => {
+    const stalled = [...REAL.slice(0, 121), ...Array.from({ length: 40 }, (_, i) => ({ t: 1000 + (121 + i) * 250, at: 30, total: 720, dropped: 0, dur: 72 }))];
+    expect(verdictOf(real({ video: stalled, ended: null })).why).toEqual(["the film did not reach its end (stopped at 30.0 of 72.0 s)"]);
+    expect(verdictOf(real({ video: REAL.slice(0, 160), ended: null })).why).toEqual(["the film did not reach its end (stopped at 39.8 of 72.0 s)"]);
+  });
+  it("takes a film whose rows reach its end as ended though the mark is missing", () => {
+    expect(verdictOf(real({ ended: null })).pass).toBe(true);
+  });
+  it("counts a stop that runs through the film's end, by its part inside the window", () => {
+    const v = verdictOf(real({ loaf: [{ start: 72000, dur: 2000 }] }));
+    expect(v.stops).toEqual([{ at: 71, ms: 1000 }]);
+    expect(v.pass).toBe(false);
+  });
+  it("counts a stop that began before Play by its part after it", () => {
+    expect(verdictOf(real({ loaf: [{ start: 800, dur: 3000 }] })).stops).toEqual([{ at: 0, ms: 2800 }]);
+    expect(verdictOf(real({ loaf: [{ start: 600, dur: 600 }] })).pass).toBe(true);
+  });
+  it("fails a run that was not a first visit", () => {
+    expect(verdictOf(real({ cold: false })).why).toEqual(["not a first visit"]);
+  });
+  it("reads a pause that spans several samples as one, at its whole size", () => {
+    const video = REAL.map((r) => (r.t > 5000 ? { ...r, at: r.at - (r.t > 5250 ? 0.18 : 0.09) } : r));
+    expect(verdictOf(real({ video })).why).toEqual(["the film's clock fell 0.18 s behind at 4.0 s"]);
+  });
+});
+
 describe("an intro's verdict", () => {
   it("holds the owner's two limits", () => {
     expect(PAGE_STOP_MS).toBe(250);

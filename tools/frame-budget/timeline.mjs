@@ -138,14 +138,19 @@ const RECORDER = `(() => {
   setInterval(() => {
     if (watched && watched.isConnected) return;
     const v = document.querySelector(".intro video");
-    if (v && typeof v.requestVideoFrameCallback === "function") { watched = v; v.requestVideoFrameCallback(onShown); }
+    if (v && typeof v.requestVideoFrameCallback === "function") {
+      watched = v;
+      v.requestVideoFrameCallback(onShown);
+      // The film's end, as a mark: an ended film is paused, and the sampler below skips a paused one.
+      v.addEventListener("ended", () => tl.marks.push({ t: performance.now(), name: "film-end" }), { once: true });
+    }
   }, 100);
   // A film playing over the page (the intro): the frames it presented and those it dropped, four times a second.
   setInterval(() => {
     const v = document.querySelector(".intro video");
     if (!v || v.paused || typeof v.getVideoPlaybackQuality !== "function") return;
     const q = v.getVideoPlaybackQuality();
-    tl.video.push({ t: performance.now(), at: v.currentTime, total: q.totalVideoFrames, dropped: q.droppedVideoFrames });
+    tl.video.push({ t: performance.now(), at: v.currentTime, total: q.totalVideoFrames, dropped: q.droppedVideoFrames, dur: v.duration });
   }, 250);
   setInterval(() => {
     if (typeof window.__gpuTime !== "function") return;
@@ -267,10 +272,12 @@ async function phoneIntro(o) {
     await page("Page.enable");
     await page("Runtime.enable");
     const origin = new URL(root).origin;
-    await page("Storage.clearDataForOrigin", { origin, storageTypes: o.cold ? "all" : ORIGIN_STORAGE }).catch(() => undefined);
+    // A first visit that could not be made one is no run: with --cold a clear that fails ends it.
+    const cleared = page("Storage.clearDataForOrigin", { origin, storageTypes: o.cold ? "all" : ORIGIN_STORAGE });
+    await (o.cold ? cleared : cleared.catch(() => undefined));
     if (o.cold) {
       await page("Network.enable");
-      await page("Network.clearBrowserCache").catch(() => undefined);
+      await page("Network.clearBrowserCache");
     }
     await browser("Target.activateTarget", { targetId }).catch(() => undefined);
     await intro(page, o, root, about, phone);

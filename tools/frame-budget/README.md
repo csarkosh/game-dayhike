@@ -239,8 +239,13 @@ node tools/frame-budget/timeline-verdict.mjs <dir>/live-1.json <dir>/live-2.json
 
 It prints one row a run (pass or FAIL, the stops over 0.1 s and over 0.25 s, the longest, the
 clock's worst step, the picture's worst skip, the frames dropped), under a failing run what put
-it outside, and a last line for the lot; it exits 1 when a run fails. A run on a phone that did
-not start cool (`meta.phone.cool`) fails as a run not to count. `timeline-report.mjs` prints the
+it outside, and a last line for the lot; it exits 1 when a run fails. A run that is not what the
+bar asks for fails as a run not to count: a phone that did not start cool (`meta.phone.cool`), a
+run made without `--cold` (not a first visit), a film that did not reach its end (a run kept too
+short, or a film that stalled for good). The window ends at the film's `ended` event (the run's
+`film-end` mark); a stop counts by its part inside the window, so one that runs through the
+film's end, or began before Play, is counted for what fell inside. A pause of the film's clock
+that spans several samples is one step, at its whole size. `timeline-report.mjs` prints the
 same verdict for an intro run, with every stop over 0.25 s and when it came.
 
 For an intro run with a profile (`--profile` at the run), the report also names the stops by

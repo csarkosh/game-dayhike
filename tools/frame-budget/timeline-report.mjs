@@ -143,13 +143,13 @@ if (video.length > 1) {
 const shown = run.shown ?? [];
 if (video.length > 1 || shown.length > 2) {
   const rate = filmRate(shown);
-  const steps = clockSteps(video), skips = pictureSkips(shown, { rate });
+  const steps = clockSteps(video, { endT: markAt("film-end") }), skips = pictureSkips(shown, { rate });
   const over = (rows, k) => rows.filter((r) => r[k] > 0.1);
   const worst = (rows, k) => rows.reduce((a, r) => (a === null || r[k] > a[k] ? r : a), null);
   const at = (r) => (r === null ? "" : ` at ${f1((r.t - sceneOn) / 1000)} s`);
   const f2 = (x) => x.toFixed(2);
   const ws = worst(steps, "behind"), wk = worst(skips, "skipped");
-  console.log(`\nThe film (clock beside the page's; picture by frames presented, ${f1(rate)} a second): ${over(steps, "behind").length} clock steps over 0.1 s, the worst ${f2(ws?.behind ?? 0)} s${at(ws)}; ${over(skips, "skipped").length} picture skips over 0.1 s, ${f2(skips.reduce((a, r) => a + r.skipped, 0))} s skipped in all, the worst ${f2(wk?.skipped ?? 0)} s${at(wk)}`);
+  console.log(`\nThe film (clock beside the page's; picture by frames presented, ${f1(rate)} a second): ${over(steps, "behind").length} clock step(s) over 0.1 s, the worst ${f2(ws?.behind ?? 0)} s${at(ws)}; ${over(skips, "skipped").length} picture skips over 0.1 s, ${f2(skips.reduce((a, r) => a + r.skipped, 0))} s skipped in all, the worst ${f2(wk?.skipped ?? 0)} s${at(wk)}`);
   console.log(`${pad("stretch", 24)}${lpad("steps", 7)}${lpad("worst s", 9)}${lpad("skips", 7)}${lpad("skipped s", 11)}${lpad("worst s", 9)}`);
   for (const s of stretches) {
     const a = steps.filter((r) => r.t >= s.from && r.t < s.to), b = skips.filter((r) => r.t >= s.from && r.t < s.to);
