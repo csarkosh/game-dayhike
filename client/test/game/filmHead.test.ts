@@ -17,12 +17,13 @@ function rig() {
 }
 
 describe("the film's head start", () => {
-  it("makes one silent, inline element that preloads the film", () => {
+  it("makes one inline element that preloads the film, its sound left on", () => {
     const { head, made } = rig();
     head.warm("/intro.mp4");
     head.warm("/intro.mp4");
     expect(made).toHaveLength(1);
-    expect([made[0]!.getAttribute("src"), made[0]!.getAttribute("preload"), made[0]!.hasAttribute("playsinline"), made[0]!.muted]).toEqual(["/intro.mp4", "auto", true, true]);
+    // Never muted: a film muted while it loaded and given its sound at Play starts its picture and then stands a quarter second for the sound.
+    expect([made[0]!.getAttribute("src"), made[0]!.getAttribute("preload"), made[0]!.hasAttribute("playsinline"), made[0]!.muted]).toEqual(["/intro.mp4", "auto", true, false]);
   });
   it("hands the element over once, for the film it warmed", () => {
     const { head, made } = rig();

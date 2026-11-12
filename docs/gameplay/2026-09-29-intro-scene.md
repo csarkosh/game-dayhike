@@ -189,8 +189,9 @@ the page light; it takes the still's place and nothing else changes. Designed in
 One thing of the game is fetched before Play: the intro film's head (`game/filmHead.ts`, amended
 2026-11-11). A film element made at Play begins its download at Play, and on a first visit the
 film stood on its first frame until its first seconds were in: 0.2 to 2.1 s on a phone. So once
-the title page has loaded it makes the film's element, off the page, silent, with the film's file
-and `preload="auto"`, and Play takes that element. Where the browser honours the preload it has
+the title page has loaded it makes the film's element, off the page, with the film's file
+and `preload="auto"`, and Play takes that element. (It makes no sound until it plays, and is
+never muted while it waits: §5.2, item 1.) Where the browser honours the preload it has
 the film's head buffered and its decoder ready by then; how far ahead it buffers is the browser's
 to decide. Chrome does not honour it on a cellular connection, whatever the attribute says: there
 it fetches the file's metadata only. So on a cellular connection (`onCellular`) the page first
@@ -211,6 +212,20 @@ and a later hike in the same session makes its own, with the file by then in the
    what it has buffered; else one made at the click, whose file streams and plays after a couple
    of seconds are buffered, under shot 1's fade in. The overlay leaves alone a `src` the element
    already has: setting it again would start the load over.
+   On a phone the film's picture still runs a quarter second behind the tap, and that is the
+   phone's, not the page's (measured 2026-11-12, `tools/frame-budget/film-start.mjs`): on a blank
+   page, the film's file fetched ahead and played by a tap, a Pixel 9's picture ran 0.20 to
+   0.29 s behind the tap with the film's sound and 0.01 to 0.04 s with it off. The sound's output
+   takes that long to start and the browser holds the picture for it. Nothing the page does at
+   Play changed it: the overlay's move into the hike's page, the title loop ending, a busy
+   thread, a WebGL2 engine starting. A film started silent whose sound is turned on after
+   starts at once and then stands 0.16 to 0.18 s in mid-motion, about 0.45 s after the sound is
+   asked for, which is worse to watch than a start a quarter second late under a fade from black.
+   So the film starts with its sound, and its first moving frame comes when the phone's sound
+   does. That holds only for an element that was never muted, which is why the one the title
+   page makes ahead is not: muted while it loaded and unmuted at Play, as it was at first, it is
+   the silent start above (in a start on the phone, frames 0.01 s behind the tap for a fifth of
+   a second, then one held 0.25 s).
 2. The tier probe, where it runs (a first visit on Auto), runs behind the video.
 3. Once the video has six seconds in hand, or three seconds have passed, the game's download and
    build begin: the engine, the ground maps, the models in the order the first frame needs them,
@@ -255,7 +270,9 @@ and a later hike in the same session makes its own, with the file by then in the
      another count of passes is refused. Where there is no worker, it fails, or it has not
      answered in 30 s (`WORLD_PREP_TIMEOUT_MS`), the build makes both itself, as before. What
      the page already holds is not asked for: a second hike needs no pass hash, and the same
-     hike again starts no worker.
+     hike again starts no worker. Measured on a phone (a Pixel 9, first visits started cool,
+     2026-11-12): the build's stop fell from 2.3 to 3.8 s to 0.8 to 2.0 s, the longer in a world
+     with a lake beside its trailhead, whose water the build still samples itself.
    - Still whole: the rest of the build (`buildGame` is one task: the water, its plants and
      life, the renderer, the session), the water's first fill, the face patches' near band and
      wildlife's first collect.
@@ -370,7 +387,7 @@ Every numeric expectation is a literal; explicit time limits go through `timeLim
   an error, a failure or a stop answered without a throw; the element made when the fetch is in
   (or has failed), and none made when the film was taken or dropped first; a head start at the
   page's load only while the title page is still up;
-  one silent, inline, preloading element however often it is warmed; handed over
+  one inline, preloading element with its sound on however often it is warmed; handed over
   once, and only for the file it was warmed for; nothing after it was taken, before it was warmed
   or when it failed; not wanted when data is saved or the connection is 3g or worse. The overlay
   does not set again a `src` the element already has, and a warmed film still starts muted on a
