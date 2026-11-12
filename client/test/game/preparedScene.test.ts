@@ -4,7 +4,8 @@ import { activeTerrainVariant, activeTerrainVariantName, elevationAt, setActiveT
 import { trailheadStart } from "../../src/sim/spawn.js";
 import { firstPondWorld } from "../sim/helpers/lakes.js";
 import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples } from "../../src/game/clipmap.js";
-import { WATER_RING_COUNT, createWaterRingSamples } from "../../src/game/water.js";
+import { WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, waterHoleCellsFor, waterRingGeometry, wetBounds } from "../../src/game/water.js";
+import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
 import { BED_GRID, bakeBed, createBedGrid } from "../../src/game/bedHeight.js";
 import { oceanFieldFor } from "../../src/game/oceanWaves.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "../../src/game/oceanSwell.js";
@@ -45,6 +46,15 @@ describe("a hike's first scene, sampled ahead", () => {
     expect(scene.rings[3]).toEqual(createRingSamples(seed, 3, start.x, start.z, BASE_SPACING_BY_TIER.low));
     expect(scene.waterRings).toHaveLength(WATER_RING_COUNT);
     expect(scene.waterRings?.[2]).toEqual(createWaterRingSamples(seed, 2, start.x, start.z));
+    // Each water ring's first geometry and wet box, as the water's own first emit makes them.
+    expect(scene.waterFirst).toHaveLength(WATER_RING_COUNT);
+    const waterLevel = activeTerrainVariant().waterLevel as number;
+    for (const level of [0, 2]) {
+      const ring = createWaterRingSamples(seed, level, start.x, start.z);
+      const finer = level > 0 ? createWaterRingSamples(seed, level - 1, start.x, start.z) : null;
+      const geometry = waterRingGeometry(ring, finer === null ? null : waterHoleCellsFor(ring, finer), waterLevel);
+      expect(scene.waterFirst?.[level]).toEqual({ geometry, bounds: wetBounds(geometry, ring.h, SWASH_FACE_LIFT_M, seaFaceZ(seed)) });
+    }
     const bed = createBedGrid(BED_GRID.low.texels, BED_GRID.low.spacing);
     bakeBed(bed, seed, start.x, start.z);
     expect(scene.bed).toEqual(bed);
@@ -98,6 +108,7 @@ describe("a hike's first scene, sampled ahead", () => {
     expect(scene.rings).toHaveLength(RING_COUNT);
     expect(scene.rings[0]).toEqual(createRingSamples(7, 0, 0, 0, BASE_SPACING_BY_TIER.low));
     expect(scene.waterRings).toBeNull();
+    expect(scene.waterFirst).toBeNull();
     expect(scene.bed).toBeNull();
     expect(scene.ocean).toBeNull();
     expect(scene.lakes).toEqual([]);
@@ -112,8 +123,9 @@ describe("a hike's first scene, sampled ahead", () => {
     const copy = structuredClone(scene);
     const transfer = sceneTransfer(scene);
     expect(new Set(transfer).size).toBe(transfer.length);
-    // A ring's ten arrays, a water ring's one, the bed, the ocean's table, and a lake's surface (five) and skyline.
-    expect(transfer.length).toBe(RING_COUNT * 10 + WATER_RING_COUNT + 2 + scene.lakes.length * 6);
+    // A ring's ten arrays, a water ring's one and its first geometry's seven, the bed, the ocean's table, and a
+    // lake's surface (five) and skyline.
+    expect(transfer.length).toBe(RING_COUNT * 10 + WATER_RING_COUNT * 8 + 2 + scene.lakes.length * 6);
     const moved = structuredClone(scene, { transfer });
     expect(moved).toEqual(copy);
     // Moved, not copied: no typed array anywhere in what was sent still holds its bytes.

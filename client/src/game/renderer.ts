@@ -97,6 +97,7 @@ import { activeTerrainVariant, elevationAt, type LakeSource } from "../sim/terra
 import { fbm2 } from "../sim/field.js";
 import {
   createWaterRingSamples,
+  seaFaceZ,
   updateWaterRingSamples,
   waterHoleCellsFor,
   waterRingGeometry,
@@ -116,7 +117,7 @@ import { attachWet, setWetCove, setWetLine, setWetSwash, setWetWeather, wetCapOf
 import { SWELL_COMPONENTS } from "./oceanSwell.js";
 import { swellPhases, type OceanField } from "./oceanWaves.js";
 import { coastProfilesFor } from "./oceanTables.js";
-import { COVE_END_BLEND, COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../sim/olympic.js";
+import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../sim/olympic.js";
 import { SwashTable, type SwashCove } from "./swashTable.js";
 import { createSwashTexture } from "./swashTexture.js";
 import { LIP_SPEED_MAX, LIP_SPEED_MIN, LipTracker, lipProfile } from "./oceanBreaker.js";
@@ -137,7 +138,8 @@ import {
 } from "./bedHeight.js";
 import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
 import {
-  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterRings, type PreparedLakeSurface, type PreparedScene,
+  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterFirst, fittingWaterRings,
+  type PreparedLakeSurface, type PreparedScene, type PreparedWaterRing,
 } from "./preparedScene.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
 import { NEAR_RADIUS } from "./forestField.js";
@@ -1167,6 +1169,8 @@ export type PreparedWater = {
   rings: WaterRingSamples[] | null;
   bed: BedGrid | null;
   ocean: OceanField | null;
+  /** Each ring's first geometry and wet box, made from `rings`; absent or null, made here. */
+  first?: PreparedWaterRing[] | null;
   /** Each lake's surface, by its place in `lakes`; a lake with none, or null, makes its own. */
   surfaces?: readonly (PreparedLakeSurface | null)[];
 };
@@ -1349,9 +1353,7 @@ export function createWater(
     faceGrade: COVE_FACE_GRADE,
     coastX: (z) => profiles.coastlineX(z),
   };
-  const faceZ: readonly [number, number] = [
-    cove.z0 - (cove.halfWidth + COVE_END_BLEND), cove.z0 + (cove.halfWidth + COVE_END_BLEND),
-  ];
+  const faceZ = seaFaceZ(seed);
 
   const rings: WaterRingSamples[] = [];
   const meshes: Mesh[] = [];
@@ -1365,13 +1367,14 @@ export function createWater(
   // wet, so the rings that cover the cove's face draw the swash up it; along
   // the rest of the coast, where no swash climbs, the ground must be under
   // the level.
-  function emitRing(level: number): void {
+  function emitRing(level: number, made?: PreparedWaterRing): void {
     const ring = rings[level] as WaterRingSamples;
     const finer = level > 0 ? (rings[level - 1] as WaterRingSamples) : null;
     const mesh = meshes[level] as Mesh;
-    const geometry = waterRingGeometry(ring, finer === null ? null : waterHoleCellsFor(ring, finer), waterLevel);
+    // The first emit takes the geometry and the box made ahead with the rings; a ring that moves makes its own.
+    const geometry = made?.geometry ?? waterRingGeometry(ring, finer === null ? null : waterHoleCellsFor(ring, finer), waterLevel);
     applyWaterGeometry(mesh, geometry);
-    const bounds = wetBounds(geometry, ring.h, SWASH_FACE_LIFT_M, faceZ);
+    const bounds = made !== undefined ? made.bounds : wetBounds(geometry, ring.h, SWASH_FACE_LIFT_M, faceZ);
     mesh.setEnabled(bounds !== null);
     // Never refreshBoundingInfo after this: it would put back the whole plane.
     if (bounds !== null) mesh.setBoundingInfo(new BoundingInfo(Vector3.FromArray(bounds.min), Vector3.FromArray(bounds.max)));
@@ -1389,7 +1392,7 @@ export function createWater(
     // The wet box is what must be tested: the default sphere-only test never culls a camera inside the sphere.
     mesh.cullingStrategy = AbstractMesh.CULLINGSTRATEGY_STANDARD;
     meshes.push(mesh);
-    emitRing(level);
+    emitRing(level, prepared?.first?.[level]);
   }
 
   // One surface per lake, on its own material. Static — no
@@ -2492,6 +2495,7 @@ function buildRenderer(
     forest !== null && waterLevel !== undefined
       ? createWater(scene, forest.seed, waterLevel, lakes, tier, waterAt.x, waterAt.z, clock, {
         rings: fittingWaterRings(prepared, forest.seed, waterAt.x, waterAt.z),
+        first: fittingWaterFirst(prepared, forest.seed, waterAt.x, waterAt.z),
         bed: fittingBed(prepared, forest.seed, tier, waterAt.x, waterAt.z),
         ocean: fittingOcean(prepared, forest.seed, tier),
         surfaces: lakePieces.map((piece) => piece?.surface ?? null),

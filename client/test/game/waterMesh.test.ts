@@ -22,7 +22,7 @@ import { createMistMeshes } from "../../src/game/mistMeshes.js";
 import { createWaterLife } from "../../src/game/waterLife.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
 import {
-  OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, createWaterRingSamples, waterRingGeometry, waterRingSpacing, wetBounds,
+  OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, createWaterRingSamples, seaFaceZ, waterHoleCellsFor, waterRingGeometry, waterRingSpacing, wetBounds,
 } from "../../src/game/water.js";
 import { coastProfilesFor } from "../../src/game/oceanTables.js";
 import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
@@ -343,6 +343,47 @@ describe("createWater under NullEngine", () => {
     expect(plugin.bedOrigin).toEqual([bedOriginFor(cam.x + 600, 128, 2), bedOriginFor(cam.z, 128, 2)]);
     expect(Math.max(...water.meshes[0]!.getVerticesData("bedDepth")!)).toBeLessThan(100);
     water.dispose();
+  }, timeLimit(60_000));
+
+  it("takes each ring's first geometry and wet box made ahead, and makes its own from then on", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const seed = 7;
+    const cam = { x: 900, z: -400 };
+    const ringsAt = () => Array.from({ length: WATER_RING_COUNT }, (_, level) => createWaterRingSamples(seed, level, cam.x, cam.z));
+    const firstOf = (rings: ReturnType<typeof ringsAt>) => rings.map((ring, level) => {
+      const geometry = waterRingGeometry(ring, level === 0 ? null : waterHoleCellsFor(ring, rings[level - 1]!), 0);
+      return { geometry, bounds: wetBounds(geometry, ring.h, SWASH_FACE_LIFT_M, seaFaceZ(seed)) };
+    });
+    const own = createWater(scene, seed, 0, [], "low", cam.x, cam.z);
+    const rings = ringsAt();
+    const given = createWater(scene, seed, 0, [], "low", cam.x, cam.z, undefined, { rings, bed: null, ocean: null, first: firstOf(rings) });
+    for (let level = 0; level < WATER_RING_COUNT; level++) {
+      const a = own.meshes[level]!;
+      const b = given.meshes[level]!;
+      expect(b.isEnabled()).toBe(a.isEnabled());
+      for (const kind of ["position", "normal", "uv", "bedDepth", "oceanMorph", "oceanCoarse"]) expect(b.getVerticesData(kind)).toEqual(a.getVerticesData(kind));
+      expect(b.getIndices()).toEqual(a.getIndices());
+      expect(b.getBoundingInfo().boundingBox.minimum.asArray()).toEqual(a.getBoundingInfo().boundingBox.minimum.asArray());
+      expect(b.getBoundingInfo().boundingBox.maximum.asArray()).toEqual(a.getBoundingInfo().boundingBox.maximum.asArray());
+    }
+    own.dispose();
+    given.dispose();
+    // A geometry no sampling gives, and a wet box where the ring's own cells are dry: both are what the mesh holds.
+    const markedRings = ringsAt();
+    const marked = firstOf(markedRings);
+    marked[3]!.geometry.bedDepth.fill(77);
+    marked[3]!.bounds = { min: [1, 2, 3], max: [4, 5, 6] };
+    marked[5]!.bounds = null;
+    const shown = createWater(scene, seed, 0, [], "low", cam.x, cam.z, undefined, { rings: markedRings, bed: null, ocean: null, first: marked });
+    expect([...new Set(shown.meshes[3]!.getVerticesData("bedDepth")!)]).toEqual([77]);
+    expect(shown.meshes[3]!.getBoundingInfo().boundingBox.minimum.asArray()).toEqual([1, 2, 3]);
+    expect(shown.meshes[3]!.isEnabled()).toBe(true);
+    expect(shown.meshes[5]!.isEnabled()).toBe(false);
+    // A ring that moves is emitted from its samples, as always.
+    for (let frame = 0; frame < 200; frame++) shown.update(cam.x + 600, cam.z, frame / 60);
+    expect(shown.meshes[3]!.getVerticesData("bedDepth")).not.toContain(77);
+    shown.dispose();
   }, timeLimit(60_000));
 
   it("makes the same water from pieces sampled ahead as from its own sampling", () => {

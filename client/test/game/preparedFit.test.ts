@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { activeTerrainVariantName, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples } from "../../src/game/clipmap.js";
-import { WATER_RING_COUNT, createWaterRingSamples } from "../../src/game/water.js";
+import { WATER_RING_COUNT, createWaterRingSamples, type WaterGeometry } from "../../src/game/water.js";
 import { BED_GRID, bakeBed, createBedGrid } from "../../src/game/bedHeight.js";
 import { oceanFieldFor } from "../../src/game/oceanWaves.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "../../src/game/oceanSwell.js";
 import {
-  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterRings, type PreparedLake, type PreparedScene,
+  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterFirst, fittingWaterRings, type PreparedLake, type PreparedScene,
 } from "../../src/game/preparedScene.js";
 import type { QualityTier } from "../../src/game/quality.js";
 import { stadiumLake } from "../helpers/lakeShapes.js";
@@ -28,6 +28,8 @@ function sceneAt(start: { x: number; z: number }, tier: QualityTier = "low", see
     seed, variant: "olympic", tier, start,
     rings: Array.from({ length: RING_COUNT }, (_, level) => createRingSamples(seed, level, start.x, start.z, BASE_SPACING_BY_TIER[tier])),
     waterRings: Array.from({ length: WATER_RING_COUNT }, (_, level) => createWaterRingSamples(seed, level, start.x, start.z)),
+    // Seven stand-ins: the fit reads the rings' keys and this list's length, never a geometry.
+    waterFirst: Array.from({ length: WATER_RING_COUNT }, () => ({ geometry: {} as WaterGeometry, bounds: null })),
     bed,
     ocean: oceanFieldFor(seed, tier === "low" ? SWELL_COMPONENTS_LOW : SWELL_COMPONENTS),
     lakes: [],
@@ -67,6 +69,18 @@ describe("whether a piece sampled ahead is the one a builder would make", () => 
     expect(fittingWaterRings(null, SEED, START.x, START.z)).toBeNull();
     setActiveTerrainVariant("montane");
     expect(fittingWaterRings(scene, SEED, START.x, START.z)).toBeNull();
+  }, timeLimit(60_000));
+
+  it("takes the water's first geometry only with the rings it was made from", () => {
+    const scene = sceneAt(START);
+    expect(fittingWaterFirst(scene, SEED, START.x, START.z)).toBe(scene.waterFirst);
+    // Where the rings are not the builder's, neither is what was made of them.
+    expect(fittingWaterFirst(scene, SEED, START.x + 64, START.z)).toBeNull();
+    expect(fittingWaterFirst(scene, SEED + 1, START.x, START.z)).toBeNull();
+    expect(fittingWaterFirst({ ...scene, waterFirst: null }, SEED, START.x, START.z)).toBeNull();
+    expect(fittingWaterFirst({ ...scene, waterFirst: (scene.waterFirst ?? []).slice(1) }, SEED, START.x, START.z)).toBeNull();
+    expect(fittingWaterFirst({ ...scene, waterRings: null }, SEED, START.x, START.z)).toBeNull();
+    expect(fittingWaterFirst(null, SEED, START.x, START.z)).toBeNull();
   }, timeLimit(60_000));
 
   it("takes the bed of the builder's tier baked where a bake at the camera would stand, and refuses another", () => {

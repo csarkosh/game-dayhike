@@ -11,6 +11,7 @@
  *
  * Pure and Babylon-free; the water shell uploads the output.
  */
+import { COVE_END_BLEND, coveFor } from "../sim/olympic.js";
 import { elevationAt } from "../sim/terrain.js";
 import { HOLE_CELLS, blendWeight, snapOrigin } from "./clipmap.js";
 
@@ -258,6 +259,16 @@ export function waterRingGeometry(
  * level is in view from almost anywhere, and a mesh in view is what asks for
  * the high tier's copy.
  */
+/**
+ * The span of z over which the sea's swash can climb the face of `seed`'s
+ * cove: the cove and its ends' blends. Within it `wetBounds` counts ground up
+ * to the swash's lift above the level as wet.
+ */
+export function seaFaceZ(seed: number): readonly [number, number] {
+  const cove = coveFor(seed);
+  return [cove.z0 - (cove.halfWidth + COVE_END_BLEND), cove.z0 + (cove.halfWidth + COVE_END_BLEND)];
+}
+
 export function wetBounds(
   geometry: WaterGeometry,
   ground: Float32Array | null = null,

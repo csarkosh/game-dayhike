@@ -245,7 +245,7 @@ describe("a hike's first scene, asked of the world's worker", () => {
   const deps = { now: () => clock };
   /** A scene as the worker would send one: only what `scene()` checks. */
   const sceneFor = (seed: number, variant: string, tier: QualityTier): PreparedScene =>
-    ({ seed, variant, tier, start: { x: 0, z: 0 }, rings: [], waterRings: null, bed: null, ocean: null, lakes: [] });
+    ({ seed, variant, tier, start: { x: 0, z: 0 }, rings: [], waterRings: null, waterFirst: null, bed: null, ocean: null, lakes: [] });
   /** Lets `ready`'s continuation, and what it starts, run. */
   const turn = async (): Promise<void> => {
     for (let i = 0; i < 4; i++) await Promise.resolve();

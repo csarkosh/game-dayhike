@@ -20,7 +20,11 @@ import { lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "./oceanSwell.js";
 import { oceanFieldFor, type OceanField } from "./oceanWaves.js";
 import type { QualityTier } from "./quality.js";
-import { WATER_RING_COUNT, createWaterRingSamples, waterRingSpacing, type WaterRingSamples } from "./water.js";
+import { SWASH_FACE_LIFT_M } from "./swashRunUp.js";
+import {
+  WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, waterHoleCellsFor, waterRingGeometry, waterRingSpacing, wetBounds,
+  type WaterGeometry, type WaterRingSamples,
+} from "./water.js";
 import { waterLifeLayout, type WaterLifeLayout } from "./waterLifeField.js";
 import { waterPlantPlacements, type WaterPlantPlacements } from "./waterPlantField.js";
 
@@ -41,6 +45,9 @@ export type PreparedLake = {
   skyline: Float32Array | null;
 };
 
+/** A water ring as its mesh takes it the first time: the geometry, and the box of its wet cells (null: none wet). */
+export type PreparedWaterRing = { geometry: WaterGeometry; bounds: { min: number[]; max: number[] } | null };
+
 export type PreparedScene = {
   seed: number;
   variant: string;
@@ -51,6 +58,8 @@ export type PreparedScene = {
   rings: RingSamples[];
   /** `WATER_RING_COUNT` rings; null where the terrain has no water level. */
   waterRings: WaterRingSamples[] | null;
+  /** Each water ring's first geometry and wet box, made from `waterRings` as the water's first emit makes them; null with no water. */
+  waterFirst: PreparedWaterRing[] | null;
   /** The tier's bed (`BED_GRID`), baked at the start; null with no water. */
   bed: BedGrid | null;
   /** The ocean's field with the tier's count of components; null with no water. */
@@ -85,6 +94,7 @@ export function prepareScene(seed: number, variant: string, tier: QualityTier): 
   }
   const watered = activeTerrainVariant().waterLevel !== undefined;
   let waterRings: WaterRingSamples[] | null = null;
+  let waterFirst: PreparedWaterRing[] | null = null;
   let bed: BedGrid | null = null;
   let ocean: OceanField | null = null;
   if (watered) {
@@ -92,6 +102,13 @@ export function prepareScene(seed: number, variant: string, tier: QualityTier): 
     for (let level = 0; level < WATER_RING_COUNT; level++) {
       waterRings.push(createWaterRingSamples(seed, level, start.x, start.z));
     }
+    const waterLevel = activeTerrainVariant().waterLevel as number;
+    const faceZ = seaFaceZ(seed);
+    waterFirst = waterRings.map((ring, level) => {
+      const finer = level > 0 ? (waterRings as WaterRingSamples[])[level - 1] as WaterRingSamples : null;
+      const geometry = waterRingGeometry(ring, finer === null ? null : waterHoleCellsFor(ring, finer), waterLevel);
+      return { geometry, bounds: wetBounds(geometry, ring.h, SWASH_FACE_LIFT_M, faceZ) };
+    });
     bed = createBedGrid(BED_GRID[tier].texels, BED_GRID[tier].spacing);
     bakeBed(bed, seed, start.x, start.z);
     ocean = oceanFieldFor(seed, swellCountFor(tier));
@@ -108,7 +125,7 @@ export function prepareScene(seed: number, variant: string, tier: QualityTier): 
       skyline: watered && tier !== "high" ? skylineElevations(lake, seed, skylineTrees(lake, seed)) : null,
     };
   });
-  return { seed, variant, tier, start, rings, waterRings, bed, ocean, lakes };
+  return { seed, variant, tier, start, rings, waterRings, waterFirst, bed, ocean, lakes };
 }
 
 /**
@@ -166,6 +183,19 @@ export function fittingWaterRings(
   const rings = sceneOf(scene, seed)?.waterRings ?? null;
   if (rings === null) return null;
   return standAt(rings, WATER_RING_COUNT, waterRingSpacing, camX, camZ) ? rings : null;
+}
+
+/**
+ * The scene's first water geometry when its rings are the water's own for a
+ * camera at (camX, camZ) (`fittingWaterRings`): it was made from them, so it
+ * fits where they do. Else null, and the water makes its own.
+ */
+export function fittingWaterFirst(
+  scene: PreparedScene | null | undefined, seed: number, camX: number, camZ: number,
+): PreparedWaterRing[] | null {
+  if (fittingWaterRings(scene, seed, camX, camZ) === null) return null;
+  const first = scene?.waterFirst ?? null;
+  return first !== null && first.length === WATER_RING_COUNT ? first : null;
 }
 
 /** The scene's bed when it is the tier's grid (`BED_GRID`) baked where a bake for a camera at (camX, camZ) stands; else null. */

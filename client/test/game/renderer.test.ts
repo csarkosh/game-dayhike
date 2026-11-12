@@ -1414,6 +1414,8 @@ describe("a renderer handed the hike's first scene, sampled ahead", () => {
     const scene = prepareScene(SEED, "olympic", "low");
     scene.rings.forEach((ring, level) => ring.lift.fill(5000 + level));
     scene.waterRings!.forEach((ring) => ring.h.fill(-100));
+    // The water's first meshes are made from the geometry that came with the rings: a bed 100 m down.
+    scene.waterFirst!.forEach((first) => first.geometry.bedDepth.fill(100));
     const lake = scene.lakes[0]!;
     lake.surface.depths[0] = 4321;
     // One reed at the lake's middle, where none grows.
