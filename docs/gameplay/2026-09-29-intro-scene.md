@@ -287,7 +287,14 @@ and a later hike in the same session makes its own, with the file by then in the
      the bed's square, a lake's place and centre) and samples for itself when it is not. So a
      renderer made at a fallback tier, one made again on WebGL2, one a switch from Settings
      makes, and a hike whose worker had no scene to give all sample as before, and the world
-     is the same to the bit. The worker is ended once the build has taken the scene.
+     is the same to the bit. The worker is ended when its scene has arrived, and the page
+     holds the scene only until the first renderer has taken it. Measured on a phone (a
+     Pixel 9, first visits started cool, on WebGPU, 2026-11-12): the build's stop fell from 1.8
+     to 2.0 s to 0.34 s, the longest stop of the whole start to 0.36 to 0.39 s, and the time
+     spent in stops over 0.1 s from 6.2 to 7.7 s to 4.0 to 4.2 s. The build begins about 2.5 s
+     later than it did, under the film, while the worker samples; the world is ready no later
+     (14.3 to 16.7 s after Play, from 15.2 to 17.2 s). On WebGL2, which a phone no longer
+     starts on, the build's stop is 0.5 to 0.9 s.
    - Still whole: the rest of the build (`buildGame` is one task: the renderer, its materials,
      the session, and the meshes made from what was sampled), the face patches' near band and
      wildlife's first collect.

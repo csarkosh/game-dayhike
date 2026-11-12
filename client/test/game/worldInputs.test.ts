@@ -50,18 +50,24 @@ describe("the seed and the terrain a hike's world is made from", () => {
     const wait = main.slice(main.indexOf("prepOutcome = await prep.ready;"), main.indexOf("paint: () =>"));
     expect(wait).toContain("sampled = await sampling;");
     expect(wait).toContain('lap("scene");');
-    // The first start takes it; a start made again on WebGL2 after a WebGPU start threw gets none.
-    expect(main).toContain("prepared: takeSampled(),");
-    expect(main.match(/takeSampled\(\)/g)).toHaveLength(1);
+    // Nothing here holds the scene past the wait: the promise that carried it is let go of at once.
+    expect(wait).toContain("sampled = await sampling;\n      sampling = Promise.resolve(null);");
+    // The game is handed the way to take it, never the scene: the first renderer made takes it, and a start
+    // made again on WebGL2 after a WebGPU start threw finds none left.
+    expect(main).toContain("takePrepared: takeSampled,");
+    expect(main).not.toContain("takeSampled()");
     expect(main).toContain('scene: sampledFor === null ? "none" : "made",');
   });
 
   it("hands the scene to the hike's first renderer at the tier asked for, and to no other", () => {
     const app = readFileSync(new URL("../../src/app.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    // The one renderer made with it: the ladder's first attempt.
+    // The one renderer made with it: the ladder's first attempt, which takes it as it is built.
     expect(app.match(/prepared: /g)).toEqual(["prepared: "]);
-    expect(app).toContain("prepared: takePrepared(),");
     const first = app.slice(app.indexOf("const first = buildFirstRenderer("), app.indexOf("let renderer: Renderer = first.renderer;"));
-    expect(first).toContain("prepared: takePrepared(),");
+    expect(first).toContain("prepared: options.takePrepared?.() ?? null,");
+    // The game's options, which it keeps for the hike, never hold the scene itself: a renderer made later
+    // would otherwise stand beside the first one's dead arrays.
+    expect(app).not.toMatch(/\bprepared\?: PreparedScene/);
+    expect(app).not.toContain("options.prepared");
   });
 });

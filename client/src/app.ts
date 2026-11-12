@@ -215,11 +215,14 @@ export type GameOptions = {
    * for a start with an intro playing over it, whose frames the build must
    * not take. Absent, the terrain is built with the renderer, as always. */
   deferClipmap?: boolean;
-  /** The hike's first scene as the world's worker sampled it for `tier`
-   * (`preparedScene.ts`, `worldPrep.ts`): handed to the first renderer made
-   * and to no other, since its builders take the arrays as their own. Absent
-   * or null, the renderer samples the ground itself, as always. */
-  prepared?: PreparedScene | null;
+  /** Takes the hike's first scene as the world's worker sampled it for
+   * `tier` (`preparedScene.ts`, `worldPrep.ts`), once: the first renderer
+   * made calls it as it is built and takes the arrays as its own, and every
+   * call after finds none. A function, never the scene: these options live
+   * as long as the hike, and a scene held here would stand, dead, beside
+   * every renderer made after the first. Absent, or with none to give, the
+   * renderer samples the ground itself, as always. */
+  takePrepared?: () => PreparedScene | null;
   /** An engine already made for the canvas (WebGPU, where `main.ts` chose
    * it) for the first renderer at `tier`; absent, the renderer makes the
    * WebGL2 one. */
@@ -443,20 +446,15 @@ function buildGame(
   const firstBuilds = options.deferClipmap === true ? createFirstBuilds() : undefined;
   made(() => firstBuilds?.dispose());
   // The scene the world's worker sampled goes to the first renderer made, the ladder's first
-  // attempt at the tier it was sampled for, and is let go of here: a renderer made after it (a
-  // lower tier, WebGL2 after WebGPU, a switch from Settings) samples the ground for itself.
-  let sampledAhead = options.prepared ?? null;
-  const takePrepared = (): PreparedScene | null => {
-    const scene = sampledAhead;
-    sampledAhead = null;
-    return scene;
-  };
+  // attempt at the tier it was sampled for, which takes it as it is built: a renderer made after
+  // it (a lower tier, WebGL2 after WebGPU, a switch from Settings) finds none and samples the
+  // ground for itself.
   const first = buildFirstRenderer(
     canvas,
     [options.tier, ...options.fallbackTiers],
     {
       build: (next, at, engine) =>
-        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, prepared: takePrepared(), firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },

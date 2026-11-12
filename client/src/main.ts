@@ -1182,9 +1182,11 @@ function render(container: HTMLDivElement): void {
   const prep = startWorldPrep(worldInputs(route.token, location.search));
   let prepOutcome: WorldPrepOutcome | null = null;
   // The hike's first scene (`preparedScene.ts`): asked of the same worker
-  // once the tier is decided, waited for before the build, and handed to the
-  // first start alone, whose renderer takes its arrays in place of sampling
+  // once the tier is decided, waited for before the build, and taken by the
+  // first renderer made, whose builders use its arrays in place of sampling
   // the ground. Where there is none, the build samples as it always did.
+  // Nothing here holds it once it is taken: these closures live as long as
+  // the hike, and a renderer made later samples its own.
   let sampling: Promise<PreparedScene | null> = Promise.resolve(null);
   let sampled: PreparedScene | null = null;
   /** The tier the scene was asked for, and the tier of the one that came (null: none came). */
@@ -1270,6 +1272,7 @@ function render(container: HTMLDivElement): void {
       lap("world");
       console.info(worldPrepLine(prepOutcome));
       sampled = await sampling;
+      sampling = Promise.resolve(null);
       sampledFor = sampled?.tier ?? null;
       lap("scene");
       if (sceneTier !== null) console.info(sceneLine(sceneTier, sampled, laps.sceneMs ?? 0));
@@ -1330,9 +1333,9 @@ function render(container: HTMLDivElement): void {
  * the container, and the throw is held against the engine once that stands
  * (`startOnEngine`); a throw on WebGL2 goes up to the start's one catch
  * (`startHike`). `engineForGame` makes the engine for a switch of tier or a
- * rebuild later. `takeSampled` hands over the hike's first scene from the
- * world's worker, once: the first start's renderer takes its arrays, and a
- * start made again on WebGL2 samples the ground for itself.
+ * rebuild later. `takeSampled` gives up the hike's first scene from the
+ * world's worker, once: the first renderer made takes its arrays, and a
+ * start made again on WebGL2 finds none and samples the ground for itself.
  */
 function launch(
   container: HTMLElement,
@@ -1360,7 +1363,7 @@ function launch(
           if (intro !== null && activeIntro === intro) cutIntro(intro, "error");
         },
         deferClipmap: intro !== null,
-        prepared: takeSampled(),
+        takePrepared: takeSampled,
         engine: engine ?? undefined,
         watchers: watchers ?? undefined,
         keepEngine: (kept) => keepEngine(kept, releaseEngine),
