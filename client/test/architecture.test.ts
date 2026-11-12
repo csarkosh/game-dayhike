@@ -479,6 +479,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "waterPlantField.ts"),
       join(SRC, "game", "waterBump.ts"),
       join(SRC, "game", "featureTable.ts"),
+      join(SRC, "game", "extrasLater.ts"),
       join(SRC, "game", "impostorField.ts"),
       join(SRC, "game", "impostorField.worker.ts"),
       join(SRC, "game", "impostorFieldWorker.ts"),

@@ -116,6 +116,7 @@ import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScree
 import { createCoveredDraw } from "./game/coveredDraw.js";
 import { FIRST_BUILD_SLICE_MS } from "./game/syncJobs.js";
 import { createFirstBuilds } from "./game/firstBuilds.js";
+import { extrasLater } from "./game/extrasLater.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
@@ -1382,6 +1383,8 @@ function buildGame(
 
   /** The session's world, once there is one: what the scene extras are built from. */
   let activeWorld: World | null = null;
+  /** The host's extras still to be built, in the task after the build (`extrasLater.ts`); null once built, cancelled or never put off. */
+  let extrasToCome: { cancel(): void } | null = null;
 
   /** Everything built into the scene outside the renderer: the signs and the
    * body at the crest, from the session's world, in `r`'s scene. */
@@ -1393,6 +1396,8 @@ function buildGame(
   }
 
   function disposeExtras(): void {
+    extrasToCome?.cancel();
+    extrasToCome = null;
     filmCarLoad?.abort();
     filmCarLoad = null;
     signs?.dispose();
@@ -2050,7 +2055,18 @@ function buildGame(
 
     registerInteractables(host.world);
     activeWorld = host.world;
-    buildExtras(renderer);
+    // Under the intro's film no frame shows the signs: they are built in the task after this one,
+    // out of the build's own (`extrasLater.ts`), for the renderer that stands now and only if it
+    // still stands then with none built meanwhile. A start with no film builds them here, as always.
+    const asked = renderer;
+    if (firstBuilds === undefined) buildExtras(renderer);
+    else extrasToCome = extrasLater({
+      build: () => buildExtras(asked),
+      still: () => !disposed && !broken && renderer === asked && signs === null && body === null,
+      // The task is outside the start's catch: the hike goes on without its signs, and the console
+      // (which telemetry reads) says so.
+      failed: (error) => console.error("The trailhead's signs could not be built.", error),
+    });
     host.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
