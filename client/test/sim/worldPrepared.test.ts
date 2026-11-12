@@ -8,6 +8,8 @@ type Sim = {
   spawn: typeof import("../../src/sim/spawn.js");
   world: typeof import("../../src/sim/world.js");
   chunk: typeof import("../../src/sim/chunk.js");
+  chunkGrid: typeof import("../../src/sim/chunkGrid.js");
+  constants: typeof import("../../src/sim/constants.js");
   trailRoute: typeof import("../../src/sim/trailRoute.js");
 };
 /** A sim of its own, as another thread's is: its module caches are empty. */
@@ -21,6 +23,8 @@ async function freshSim(): Promise<Sim> {
     spawn: await import("../../src/sim/spawn.js"),
     world: await import("../../src/sim/world.js"),
     chunk: await import("../../src/sim/chunk.js"),
+    chunkGrid: await import("../../src/sim/chunkGrid.js"),
+    constants: await import("../../src/sim/constants.js"),
     trailRoute: await import("../../src/sim/trailRoute.js"),
   };
 }
@@ -74,6 +78,36 @@ describe("a world prepared in another thread", () => {
     expect(withInstall.states).toHaveLength(3);
     expect(withInstall.chunks.length).toBeGreaterThanOrEqual(6);
   }, timeLimit(180_000));
+
+  it("is the same world when the spawn's chunks were made in another thread and installed, and its spawn then generates none", async () => {
+    const worker = await freshSim();
+    const cells = worker.spawn.spawnChunkCells(SEED, worker.constants.PLAYER_HALF);
+    expect(cells.length).toBeGreaterThanOrEqual(1);
+    expect(cells.length).toBeLessThanOrEqual(4);
+    const chunks = structuredClone(cells.map(({ cx, cz }) => worker.chunk.generateChunk(SEED, cx, cz)));
+    /** How many chunks placing the first player generates in `sim`'s world. */
+    const generatedBySpawn = (sim: Sim): number => {
+      const forest = sim.forest.createForest(SEED);
+      const world = sim.world.createForestWorld(forest, true, false);
+      const before = forest.grid.generatedCount();
+      sim.world.spawnPlayer(world);
+      return forest.grid.generatedCount() - before;
+    };
+    const page = await freshSim();
+    expect(page.chunkGrid.installChunks(SEED, "olympic", chunks)).toBe(true);
+    expect(generatedBySpawn(page)).toBe(0);
+    // The control: with nothing installed, the spawn generates exactly the cells named.
+    expect(generatedBySpawn(await freshSim())).toBe(cells.length);
+    const again = await freshSim();
+    expect(again.chunkGrid.installChunks(SEED, "olympic", structuredClone(chunks))).toBe(true);
+    expect(fingerprint(again)).toEqual(fingerprint(await freshSim()));
+  }, timeLimit(240_000));
+
+  it("names no chunk for a spawn on a terrain with no trailhead", async () => {
+    const sim = await freshSim();
+    sim.terrain.setActiveTerrainVariant("montane");
+    expect(sim.spawn.spawnChunkCells(SEED, sim.constants.PLAYER_HALF)).toEqual([]);
+  });
 
   it("is a different world when the bowl it was given is not the one it would have made", async () => {
     // What the comparison above can see: a trail whose way home, which no height reads, was altered on the way.

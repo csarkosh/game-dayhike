@@ -1,6 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createChunkGrid } from "../../src/sim/chunkGrid.js";
+import { createChunkGrid, installChunks } from "../../src/sim/chunkGrid.js";
+import { CELLS_PER_CHUNK, generateChunk, type Chunk } from "../../src/sim/chunk.js";
+import { activeTerrainVariantName } from "../../src/sim/terrain.js";
 import { depenetrate, raycast, sweepBox } from "../../src/sim/collision.js";
 import { PLAYER_HALF } from "../../src/sim/constants.js";
 import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
@@ -162,5 +164,53 @@ describe("createChunkGrid", () => {
     // Guards against the guard: probes that never overlap anything would make
     // every comparison above a comparison of two no-ops.
     expect(displaced).toBeGreaterThan(0);
+  });
+});
+
+describe("chunks made elsewhere, installed for the next grid", () => {
+  /** Two of the world's chunks as another thread's message carries them. */
+  const made = (): Chunk[] => structuredClone([generateChunk(SEED, 3, -2), generateChunk(SEED, 4, -2)]);
+  // Whatever a test left waiting is dropped: an install replaces the one before it.
+  afterEach(() => void installChunks(0, "no terrain", []));
+
+  it("starts the next grid made for that seed with them, generates the rest, and is used once", () => {
+    const chunks = made();
+    expect(installChunks(SEED, activeTerrainVariantName(), chunks)).toBe(true);
+    const grid = createChunkGrid(SEED);
+    expect(grid.generatedCount()).toBe(2);
+    expect(grid.chunkAt(3, -2)).toBe(chunks[0]);
+    expect(grid.chunkAt(4, -2)).toBe(chunks[1]);
+    expect(grid.generatedCount()).toBe(2);
+    // Any other chunk is generated as always, and the installed one is the chunk the grid would have made.
+    expect(grid.chunkAt(0, 0)).toEqual(generateChunk(SEED, 0, 0));
+    expect(grid.generatedCount()).toBe(3);
+    expect(chunks[0]).toEqual(generateChunk(SEED, 3, -2));
+    // The grid after it starts empty.
+    expect(createChunkGrid(SEED).generatedCount()).toBe(0);
+  });
+
+  it("is not used by a grid for another seed, nor while another terrain is active", () => {
+    expect(installChunks(SEED, activeTerrainVariantName(), made())).toBe(true);
+    expect(createChunkGrid(SEED + 1).generatedCount()).toBe(0);
+    // Still waiting for its own seed's grid.
+    expect(createChunkGrid(SEED).generatedCount()).toBe(2);
+    expect(installChunks(SEED, "some other terrain", made())).toBe(true);
+    expect(createChunkGrid(SEED).generatedCount()).toBe(0);
+  });
+
+  it("refuses a list whole when anything in it is not a chunk", () => {
+    const [good] = made() as [Chunk];
+    const bad: unknown[] = [
+      { ...good, cx: 0.5 },
+      { ...good, cz: "4" },
+      { ...good, columns: Array.from(good.columns) },
+      { ...good, columns: new Int16Array(CELLS_PER_CHUNK) },
+      { ...good, props: null },
+      null,
+    ];
+    for (const one of bad) {
+      expect(installChunks(SEED, activeTerrainVariantName(), [good, one as Chunk])).toBe(false);
+      expect(createChunkGrid(SEED).generatedCount()).toBe(0);
+    }
   });
 });

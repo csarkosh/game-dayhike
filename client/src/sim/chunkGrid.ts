@@ -1,8 +1,9 @@
 import type { Vec3 } from "./types.js";
 import type { Aabb } from "./level.js";
 import type { BoxSource } from "./boxSource.js";
-import { generateChunk, type Chunk } from "./chunk.js";
+import { CELLS_PER_CHUNK, generateChunk, type Chunk } from "./chunk.js";
 import { CHUNK_SIZE } from "./forestConstants.js";
+import { activeTerrainVariantName } from "./terrain.js";
 
 export type ChunkGrid = BoxSource & {
   chunkAt(cx: number, cz: number): Chunk;
@@ -15,6 +16,33 @@ export type ChunkGrid = BoxSource & {
    */
   allBoxesIn(minCx: number, minCz: number, maxCx: number, maxCz: number): Aabb[];
 };
+
+/** Chunks made elsewhere, waiting for the next grid of their seed on their terrain; one install at a time. */
+let installed: { seed: number; variant: string; chunks: readonly Chunk[] } | null = null;
+
+function isChunk(c: unknown): c is Chunk {
+  if (c === null || typeof c !== "object") return false;
+  const { cx, cz, columns, props } = c as Partial<Chunk>;
+  return Number.isInteger(cx) && Number.isInteger(cz)
+    && columns instanceof Int16Array && columns.length === CELLS_PER_CHUNK * CELLS_PER_CHUNK
+    && Array.isArray(props);
+}
+
+/**
+ * Chunks made elsewhere for `seed` on the terrain `variant` (another thread
+ * running `generateChunk`, which is a pure function of the seed and the cell):
+ * the next grid made for that seed while that terrain is active starts with
+ * them and generates only the rest, and the install is used by that one grid.
+ * It replaces any install still waiting. Refused whole (false) unless every
+ * chunk has integer `cx` and `cz`, the columns `generateChunk` makes and an
+ * array of props; a refusal leaves nothing waiting.
+ */
+export function installChunks(seed: number, variant: string, chunks: readonly Chunk[]): boolean {
+  installed = null;
+  if (!Array.isArray(chunks) || !chunks.every(isChunk)) return false;
+  installed = { seed, variant, chunks };
+  return true;
+}
 
 /**
  * A `BoxSource` over lazily generated chunks.
@@ -29,6 +57,11 @@ export type ChunkGrid = BoxSource & {
  */
 export function createChunkGrid(worldSeed: number): ChunkGrid {
   const chunks = new Map<string, Chunk>();
+  // What another thread made of this world ahead (`installChunks`), taken once.
+  if (installed !== null && installed.seed === worldSeed && installed.variant === activeTerrainVariantName()) {
+    for (const c of installed.chunks) chunks.set(`${c.cx},${c.cz}`, c);
+    installed = null;
+  }
 
   /**
    * Reused across queries so that answering one costs no allocation. Callers

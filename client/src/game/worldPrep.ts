@@ -2,9 +2,10 @@
  * The page's side of a hike's world made off its thread: starts the module
  * worker (`world.worker.ts`) for the hike that is about to start, and takes
  * what it sends into the sim's own caches as it arrives: what the terrain
- * prepares for the seed (the bowl, with the trail) and the pass hash. The
- * world's build then finds both made, where it would have stopped the page
- * to make them.
+ * prepares for the seed (the bowl, with the trail), the pass hash, and the
+ * chunks the first spawn reads, which wait for the hike's chunk grid
+ * (`installChunks`). The world's build then finds them made, where it would
+ * have stopped the page to make them.
  *
  * The hike always starts. Where there is no Worker, it cannot be made, it
  * fails, it sends what cannot be read or it has not finished in
@@ -21,6 +22,7 @@
  * the hike is left, or when it fails. The same rule holds there: no scene to
  * be had is a null, never a rejection, and the build samples as it always did.
  */
+import { installChunks } from "../sim/chunkGrid.js";
 import { installPassHash, passHashCachedFor } from "../sim/forest.js";
 import { terrainVariant } from "../sim/terrain.js";
 import type { PreparedScene } from "./preparedScene.js";
@@ -41,6 +43,8 @@ export type WorldPrepOutcome = {
   prepared: boolean;
   /** Whether the pass hash was installed here. */
   passHash: boolean;
+  /** How many of the spawn's chunks were installed for the hike's grid. */
+  chunks: number;
   /** Milliseconds from the start to the end. */
   ms: number;
 };
@@ -60,8 +64,13 @@ export type WorldPrep = {
 /** The console's line for an outcome, beside the start's own (`launchLine`):
  * how the worker ended, in how long, and what the page took from it. */
 export function worldPrepLine(outcome: WorldPrepOutcome): string {
-  const took = [outcome.prepared ? "the trail" : null, outcome.passHash ? "the level check" : null].filter((part) => part !== null);
-  return `world prep: ${outcome.why} in ${Math.round(outcome.ms)} ms, ${took.length === 0 ? "nothing" : took.join(" and ")} installed`;
+  const took = [
+    outcome.prepared ? "the trail" : null,
+    outcome.passHash ? "the level check" : null,
+    outcome.chunks > 0 ? `${outcome.chunks} chunk${outcome.chunks === 1 ? "" : "s"}` : null,
+  ].filter((part) => part !== null);
+  const list = took.length === 0 ? "nothing" : took.length === 1 ? took[0] : `${took.slice(0, -1).join(", ")} and ${took.at(-1)}`;
+  return `world prep: ${outcome.why} in ${Math.round(outcome.ms)} ms, ${list} installed`;
 }
 
 /** The console's line for the scene: whether the worker made one for `tier`, and how long the start waited for it. */
@@ -93,7 +102,7 @@ export function startWorldPrep(
   const limit = deps.timeoutMs ?? WORLD_PREP_TIMEOUT_MS;
   const from = now();
   const id = ++lastId;
-  const installed = { prepared: false, passHash: false };
+  const installed = { prepared: false, passHash: false, chunks: 0 };
   let worker: Worker | null = null;
   /** The limit on whichever request is out: the world's, then the scene's. */
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -145,6 +154,9 @@ export function startWorldPrep(
     } else if (reply.kind === "passHash") {
       if (reply.variant !== input.variant) return;
       installed.passHash = installPassHash(reply.hash, { passCount: reply.passCount, variant: reply.variant });
+    } else if (reply.kind === "chunks") {
+      if (reply.seed !== input.seed || reply.variant !== input.variant) return;
+      installed.chunks = installChunks(reply.seed, reply.variant, reply.chunks) ? reply.chunks.length : 0;
     } else if (reply.kind === "done") {
       end("done");
     } else if (reply.kind === "failed") {

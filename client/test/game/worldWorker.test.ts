@@ -3,6 +3,9 @@ import { prepareSceneReply, prepareWorld, type WorldPrepReply } from "../../src/
 import { RING_COUNT } from "../../src/game/clipmap.js";
 import { sceneTransfer } from "../../src/game/preparedScene.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { generateChunk } from "../../src/sim/chunk.js";
+import { PLAYER_HALF } from "../../src/sim/constants.js";
+import { spawnChunkCells } from "../../src/sim/spawn.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("a hike's world, prepared as the worker prepares it", () => {
@@ -12,7 +15,15 @@ describe("a hike's world, prepared as the worker prepares it", () => {
   it("posts the bowl, then the pass hash, then done, each as data that survives a clone", () => {
     const replies: WorldPrepReply[] = [];
     prepareWorld({ id: 7, seed: 627994160, variant: "olympic" }, (r) => replies.push(structuredClone(r)));
-    expect(replies.map((r) => r.kind)).toEqual(["prepared", "passHash", "done"]);
+    expect(replies.map((r) => r.kind)).toEqual(["prepared", "passHash", "chunks", "done"]);
+    // The chunks the first spawn reads, as `generateChunk` makes them, their columns still typed after the clone.
+    const sent = replies[2] as Extract<WorldPrepReply, { kind: "chunks" }>;
+    expect([sent.seed, sent.variant]).toEqual([627994160, "olympic"]);
+    const cells = spawnChunkCells(627994160, PLAYER_HALF);
+    expect(sent.chunks.map((c) => [c.cx, c.cz])).toEqual(cells.map((c) => [c.cx, c.cz]));
+    expect(sent.chunks.length).toBeGreaterThan(0);
+    for (const c of sent.chunks) expect(c).toEqual(generateChunk(627994160, c.cx, c.cz));
+    expect(sent.chunks[0]!.columns).toBeInstanceOf(Int16Array);
     expect(replies.every((r) => r.id === 7)).toBe(true);
     const prepared = replies[0] as Extract<WorldPrepReply, { kind: "prepared" }>;
     expect([prepared.seed, prepared.variant]).toEqual([627994160, "olympic"]);
@@ -36,7 +47,10 @@ describe("a hike's world, prepared as the worker prepares it", () => {
     prepareWorld({ id: 4, seed: 627994160, variant: "olympic", skip: { prepared: true, passHash: false } }, (r) => replies.push(r));
     prepareWorld({ id: 5, seed: 627994160, variant: "olympic", skip: { prepared: false, passHash: true } }, (r) => replies.push(r));
     prepareWorld({ id: 6, seed: 627994160, variant: "olympic", skip: { prepared: true, passHash: true } }, (r) => replies.push(r));
-    expect(replies.map((r) => [r.id, r.kind])).toEqual([[4, "passHash"], [4, "done"], [5, "prepared"], [5, "done"], [6, "done"]]);
+    // The spawn's chunks are sent whatever the page holds: a grid is made anew for every hike.
+    expect(replies.map((r) => [r.id, r.kind])).toEqual([
+      [4, "passHash"], [4, "chunks"], [4, "done"], [5, "prepared"], [5, "chunks"], [5, "done"], [6, "chunks"], [6, "done"],
+    ]);
   }, timeLimit(120_000));
 
   it("answers an unknown terrain with one failure", () => {
