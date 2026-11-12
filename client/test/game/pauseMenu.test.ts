@@ -9,7 +9,7 @@ import type { TierChoice } from "../../src/game/tierChoice.js";
 import { StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
 
 /** A scene that is ready, with nothing waiting to load. */
-const readyScene = { isDisposed: false, isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
+const readyScene = { isDisposed: false, meshes: [], isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
 
 describe("pauseMenuModel", () => {
   it("offers Resume, Settings and Exit, in that order", () => {

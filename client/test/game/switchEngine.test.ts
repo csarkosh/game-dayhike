@@ -106,6 +106,7 @@ describe("the engine a switch makes, within its cover's bound", () => {
     const from = clock.t;
     return {
       isDisposed: false,
+      meshes: [],
       isReady: () => readyAt !== null && clock.t - from >= readyAt,
       getWaitingItemsCount: () => 0,
     } as unknown as Scene;

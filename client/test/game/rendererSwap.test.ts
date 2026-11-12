@@ -94,6 +94,9 @@ import { createBodyMesh } from "../../src/game/bodyMesh.js";
 import { createSignMeshes } from "../../src/game/signMeshes.js";
 import { createTrailheadMeshes } from "../../src/game/trailheadMeshes.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Scene as BabylonScene } from "@babylonjs/core/scene.js";
 import {
   APPLY_SWAP_READY_MAX_MS,
@@ -102,6 +105,8 @@ import {
   buildOrUndo,
   swapRenderer,
   switchOutcome,
+  READY_WALK_SLICE_MS,
+  walkSceneReady,
   whenSceneReady,
   whenStandingSkyHeld,
   type SwapBindings,
@@ -968,7 +973,7 @@ describe("a swap that fails at every tier, on NullEngine", () => {
 
 describe("whenSceneReady", () => {
   /** A scene that is ready, with nothing waiting to load. */
-  const readyScene = { isDisposed: false, isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
+  const readyScene = { isDisposed: false, meshes: [], isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
 
   /** Whether `p` has settled after `ms`. */
   async function settledAfter(p: Promise<unknown>, ms: number): Promise<boolean> {
@@ -999,6 +1004,132 @@ describe("whenSceneReady", () => {
   });
 });
 
+describe("the readiness walk", () => {
+  const engines: NullEngine[] = [];
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const e of engines.splice(0)) e.dispose();
+  });
+
+  /**
+   * A scene of `count` boxes whose own check costs 40 ms of a clock the test holds the first time it is asked
+   * (an effect made) and nothing after, with the turns the walk takes counted.
+   */
+  function costlyScene(count: number) {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new BabylonScene(engine);
+    const clock = { ms: 0 };
+    const turns = { taken: 0, before: () => undefined as void };
+    /** Each mesh's checks: the turn it was asked in and what it was asked with. */
+    const asked = new Map<string, { turn: number; complete: unknown }[]>();
+    const add = (name: string): Mesh => {
+      const mesh = MeshBuilder.CreateBox(name, { size: 1 }, scene);
+      asked.set(name, []);
+      vi.spyOn(mesh, "isReady").mockImplementation((complete?: boolean) => {
+        const calls = asked.get(name)!;
+        if (calls.length === 0) clock.ms += 40;
+        calls.push({ turn: turns.taken, complete });
+        return true;
+      });
+      return mesh;
+    };
+    const meshes = Array.from({ length: count }, (_, i) => add(`box${i}`));
+    const deps = {
+      now: () => clock.ms,
+      turn: () => {
+        turns.before();
+        turns.taken++;
+        return Promise.resolve();
+      },
+    };
+    return { scene, meshes, asked, turns, deps, add };
+  }
+
+  it("asks every mesh as the scene's own check would, and makes no two effects in one task", async () => {
+    const { scene, asked, turns, deps } = costlyScene(6);
+    await walkSceneReady(scene, deps);
+    expect(READY_WALK_SLICE_MS).toBe(8);
+    // Each asked once, with the complete check, and each costly check in a turn of its own.
+    expect([...asked.values()].map((calls) => calls.length)).toEqual([1, 1, 1, 1, 1, 1]);
+    expect([...asked.values()].every((calls) => calls[0]!.complete === true)).toBe(true);
+    expect([...asked.values()].map((calls) => calls[0]!.turn)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(turns.taken).toBe(6);
+    // A scene whose meshes are ready already is walked in the one task.
+    await walkSceneReady(scene, deps);
+    expect(turns.taken).toBe(6);
+    expect([...asked.values()].map((calls) => calls.length)).toEqual([2, 2, 2, 2, 2, 2]);
+  });
+
+  it("checks under the camera's render pass and puts the engine's own back", async () => {
+    const { scene, meshes, deps } = costlyScene(1);
+    const engine = scene.getEngine();
+    const camera = new FreeCamera("cam", Vector3.Zero(), scene);
+    scene.activeCamera = camera;
+    engine.currentRenderPassId = 77;
+    let during = -1;
+    vi.spyOn(meshes[0]!, "isReady").mockImplementation(() => {
+      during = engine.currentRenderPassId;
+      return true;
+    });
+    await walkSceneReady(scene, deps);
+    expect(during).toBe(camera.renderPassId);
+    expect(engine.currentRenderPassId).toBe(77);
+    // A check that throws leaves the pass as it was too, and the walk goes on.
+    vi.spyOn(meshes[0]!, "isReady").mockImplementation(() => {
+      throw new Error("not this frame");
+    });
+    await expect(walkSceneReady(scene, deps)).resolves.toBeUndefined();
+    expect(engine.currentRenderPassId).toBe(77);
+  });
+
+  it("leaves out a mesh disposed between two turns, and ends on a scene disposed between two", async () => {
+    const a = costlyScene(4);
+    a.turns.before = () => {
+      if (a.turns.taken === 0) a.meshes[2]!.dispose();
+    };
+    await walkSceneReady(a.scene, a.deps);
+    expect([...a.asked.values()].map((calls) => calls.length)).toEqual([1, 1, 0, 1]);
+    const b = costlyScene(4);
+    b.turns.before = () => {
+      if (b.turns.taken === 1) b.scene.dispose();
+    };
+    await walkSceneReady(b.scene, b.deps);
+    expect([...b.asked.values()].map((calls) => calls.length)).toEqual([1, 1, 0, 0]);
+  });
+
+  it("is walked before the scene is asked whether it is ready, every poll", async () => {
+    const { scene, asked, deps, add } = costlyScene(3);
+    /** How many meshes had been asked each time the scene itself was. */
+    const askedAtScene: number[] = [];
+    let ready = false;
+    vi.spyOn(scene, "isReady").mockImplementation(() => {
+      askedAtScene.push([...asked.values()].filter((calls) => calls.length > 0).length);
+      return ready;
+    });
+    const lifted = whenSceneReady(scene, 10_000, Promise.resolve(), deps);
+    // The first poll finds the layers not yet in and asks nothing; the second, 100 ms on, walks and asks.
+    await vi.waitFor(() => expect(askedAtScene).toEqual([3]), { timeout: timeLimit(2_000), interval: 10 });
+    // A model lands between two polls: the next poll walks it too, and only then asks the scene.
+    add("late");
+    ready = true;
+    await lifted;
+    expect(askedAtScene).toEqual([3, 4]);
+    expect(asked.get("late")).toHaveLength(1);
+  });
+
+  it("lifts at its cap though the walk is between two turns, and asks no more of the scene", async () => {
+    const { scene, asked } = costlyScene(3);
+    const sceneAsked = vi.spyOn(scene, "isReady");
+    let clock = 0;
+    // A turn that never comes back: the page went on to something that never yields to the walk.
+    const lifted = whenSceneReady(scene, 200, Promise.resolve(), { now: () => (clock += 40), turn: () => new Promise(() => undefined) });
+    await lifted;
+    expect([...asked.values()].map((calls) => calls.length)).toEqual([1, 0, 0]);
+    expect(sceneAsked).not.toHaveBeenCalled();
+  });
+});
+
 describe("whenSceneReady's cap", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -1012,6 +1143,7 @@ describe("whenSceneReady's cap", () => {
         n += 1;
         return false;
       },
+      meshes: [],
       isReady: () => true,
       getWaitingItemsCount: () => 0,
     } as unknown as Scene;

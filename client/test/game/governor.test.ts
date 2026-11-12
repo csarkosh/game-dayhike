@@ -8,7 +8,7 @@ import type { QualityTier } from "../../src/game/quality.js";
 import { whenSceneReady } from "../../src/game/rendererSwap.js";
 
 /** A scene that is ready, with nothing waiting to load. */
-const readyScene = { isDisposed: false, isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
+const readyScene = { isDisposed: false, meshes: [], isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
 
 /** Frames of `ms` each, from `from` until the clock reaches `until`; returns the clock. */
 function feed(g: Governor, from: number, until: number, ms: number, steady = true): number {
