@@ -265,6 +265,99 @@ describe("createForestMeshes under NullEngine", () => {
     expect(uploads.mock.calls.length).toBeGreaterThan(0);
   }, timeLimit(120_000));
 
+  /** What a scene holds, for comparing two forests: every mesh by name, whether it draws, and how many instances it holds. */
+  const picture = (scene: Scene): string[] =>
+    scene.meshes.map((m) => `${m.name} ${m.isEnabled() ? "on" : "off"} ${(m as Mesh).thinInstanceCount ?? 0}`).sort();
+  /** Lets an adoption's continuation run after its turn is given. */
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+  };
+
+  it("adopts its models a species a task, into the forest one run whole makes, and fills nothing until all of them stand", async () => {
+    const at = { x: 2500, z: 2500 };
+    const engineA = new NullEngine();
+    engines.push(engineA);
+    const sceneA = new Scene(engineA);
+    const whole = createForestMeshes(sceneA, SEED, { assets: stubAssets(sceneA), bakeImpostor: () => null });
+    whole.update(at.x, at.z);
+    await whole.ready;
+
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const assets = stubAssets(scene);
+    const drawing = new Set(scene.meshes.filter((m) => m.isEnabled()));
+    // The adoption's turns, given when the test says.
+    const turns: (() => void)[] = [];
+    const uploads = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    uploads.mockClear();
+    const forest = createForestMeshes(scene, SEED, {
+      assets, bakeImpostor: () => null, adoptTurn: () => new Promise<void>((given) => turns.push(given)),
+    });
+    let between = 0;
+    while (turns.length > 0) {
+      between++;
+      // A frame between two species: the camera is remembered, nothing is filled, and nothing new draws.
+      forest.update(at.x, at.z);
+      expect(uploads.mock.calls.length).toBe(0);
+      for (const m of scene.meshes) if (m.isEnabled()) expect(drawing.has(m), m.name).toBe(true);
+      (turns.shift() as () => void)();
+      await settle();
+    }
+    await forest.ready;
+    // A turn after each giant species, each sapling species and the dead wood; the nurse plants and the fill end it.
+    expect(between).toBe(assets.giants.length + assets.saplings.length + 1);
+    expect(uploads.mock.calls.length).toBeGreaterThan(0);
+    expect(picture(scene)).toEqual(picture(sceneA));
+    expect(forest.impostorBakes()).toEqual(whole.impostorBakes().map((b) => ({ ...b, ms: expect.anything() })));
+    expect(forest.casterMeshes.map((m) => m.name)).toEqual(whole.casterMeshes.map((m) => m.name));
+    forest.dispose();
+    whole.dispose();
+  }, timeLimit(120_000));
+
+  it("adopts nothing more once it is disposed between two species, and leaves what a forest disposed whole leaves", async () => {
+    const engineA = new NullEngine();
+    engines.push(engineA);
+    const sceneA = new Scene(engineA);
+    const whole = createForestMeshes(sceneA, SEED, { assets: stubAssets(sceneA), bakeImpostor: () => null });
+    whole.dispose();
+    const left = sceneA.materials.length;
+    expect(sceneA.meshes).toHaveLength(0);
+
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const turns: (() => void)[] = [];
+    let bakes = 0;
+    const assets = stubAssets(scene);
+    // The models handed in: under the stubs they are the caller's until the forest adopts them.
+    const handed = new Set(scene.meshes);
+    const forest = createForestMeshes(scene, SEED, {
+      assets,
+      bakeImpostor: () => {
+        bakes++;
+        return null;
+      },
+      adoptTurn: () => new Promise<void>((given) => turns.push(given)),
+    });
+    // One species stands; the hike is left before the next.
+    (turns.shift() as () => void)();
+    await settle();
+    expect(turns).toHaveLength(1);
+    const bakedBefore = bakes;
+    forest.dispose();
+    (turns.shift() as () => void)();
+    await settle();
+    await forest.ready;
+    expect(turns).toHaveLength(0);
+    expect(bakes).toBe(bakedBefore);
+    // Nothing the forest made is left: only models it never came to adopt, which are still the caller's
+    // (a loaded forest's go with their containers), and fewer than were handed in.
+    for (const m of scene.meshes) expect(handed.has(m), m.name).toBe(true);
+    expect(scene.meshes.length).toBeLessThan(handed.size);
+    expect(scene.materials.length).toBe(left);
+  }, timeLimit(120_000));
+
   it("drops its queued fill when it is disposed, so nothing is stepped against meshes that have gone", () => {
     const loader = createFirstBuilds({ later: () => undefined, now: () => 0 });
     const engine = new NullEngine();

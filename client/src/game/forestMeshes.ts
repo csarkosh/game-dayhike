@@ -154,7 +154,7 @@ import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 // the same decoder the characters' textures are, wherever this loads first.
 import "./ktx2.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
-import { createCrossing, crossingAt, nextCrossing, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
+import { createCrossing, crossingAt, finish, nextCrossing, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 
 /** Species index 0 → fir/conifer_a, 1 → pine/conifer_b (the `treeInCell`
@@ -326,6 +326,11 @@ export type ForestMeshesOptions = {
     options?: BakeOptions,
     pose?: Quaternion,
   ) => BakedImpostor | null | Promise<BakedImpostor | null>;
+  /** How the adoption of the loaded models waits between two species
+   * (`adoptSlices`): a task of its own (`setTimeout(0)`) when absent. For
+   * the tests, which give the turns themselves; given with `assets`, the
+   * stubs are adopted stepped, as loaded models are, rather than whole. */
+  adoptTurn?: () => Promise<void>;
   /** Near-band radius override — the quality-tier knob (low = 140). */
   nearRadius?: number;
   /** The WebGPU engine's asynchronous pipelines, handed to every bake
@@ -1481,14 +1486,14 @@ export function createForestMeshes(
   // same shape the giants get, once they got their own billboard.
   // The single deadwood bucket both dead-tree roles ride inside the near
   // radius, and the SNAG half's billboard beyond it — species-agnostic, one
-  // for the whole cohort. All set together with `species` in `adopt()`, so a
+  // for the whole cohort. All set together with `species` in `adoptSlices()`, so a
   // null check on `species` gates every one of them.
   let saplingSpecies: SpeciesBuckets[] | null = null;
   let deadwoodBucket: Bucket | null = null;
   let snagImpostor: Impostor | null = null;
   // Base-to-ground offset for the snag role, and the log role's local X
   // bounds and its trunk's underside line (`trunkSeat`), measured
-  // once from the loaded bucket geometry (see `adopt()`) — never hardcoded,
+  // once from the loaded bucket geometry (see `adoptSlices()`) — never hardcoded,
   // so an updated `deadwood.snag` with different bounds updates these
   // instead of silently reintroducing a half-buried snag or a floating log.
   // See `deadwoodMatrixBuffer` for the derivation of which local axis each
@@ -1502,6 +1507,10 @@ export function createForestMeshes(
   let nurseFernBucket: Bucket | null = null;
   let nurseSeedlingBucket: Bucket | null = null;
   let disposed = false;
+  /** Every loaded species is the forest's (`adoptSlices`' last slice): until then no fill is built. */
+  let adopted = false;
+  /** How the adoption waits between two species: a task of its own. */
+  const adoptTurn = options.adoptTurn ?? ((): Promise<void> => new Promise((given) => setTimeout(given, 0)));
   /** Every billboard bake still to land, as it settles into its bucket. */
   const bakes: Promise<void>[] = [];
   /** Aborted first thing in `dispose`: a GLB in flight then ends at once and
@@ -1956,33 +1965,48 @@ export function createForestMeshes(
     return { meshes, fade };
   }
 
-  function adopt(loaded: {
+  /**
+   * The loaded models made the forest's: their materials dressed and shaded,
+   * their buckets and billboards made, their bakes kicked. A slice a giant
+   * species, a slice a sapling species, one for the dead wood, and a last for
+   * what grows on the nurse logs, which ends by filling the forest for the
+   * camera as it stands. All of it at once was a quarter of a second of a
+   * phone's frame; the models' own loader runs it a slice a task
+   * (`adoptStepped`). What each slice makes is the shell's from then, so a
+   * dispose between two finds it; the fill, and so everything a frame draws,
+   * waits for `adopted`, which the last slice sets.
+   */
+  function* adoptSlices(loaded: {
     giants: { lods: [Mesh[], Mesh[], Mesh[]]; understory: Mesh[] | null }[];
     saplings: [Mesh[], Mesh[], Mesh[]][];
     deadwood: Mesh[];
     /** The fern on the nurse logs; none under the stubs. */
     nurseFern?: Mesh[];
-  }): void {
+  }): Slices {
     // Each giant species' bucket sets, one a bark it wears: `GIANT_SETS`'
     // prefix for the species that loaded, in its order.
     const sets: SpeciesBuckets[] = [];
     const loadedSets: (typeof GIANT_SETS)[number][] = [];
-    loaded.giants.forEach((s, i) => {
+    giantSets = loadedSets;
+    species = sets;
+    for (const [i, s] of loaded.giants.entries()) {
       const barks = GIANT_SETS.filter((set) => set.species === i);
       loadedSets.push(...barks);
       sets.push(...adoptSpecies(sets.length, dressSpecies(s.lods, barks.map((set) => set.bark)), s.understory, "giant"));
-    });
-    giantSets = loadedSets;
-    species = sets;
+      yield;
+    }
     // Saplings are a species like the giants now, understory aside: their own
     // GLBs, their own LOD ladder, their own billboard and bake. Each wears
     // one bark; a sapling species the barks do not name (none today) keeps
     // its file's.
-    saplingSpecies = loaded.saplings.flatMap((lods, i) => {
+    const saplings: SpeciesBuckets[] = [];
+    saplingSpecies = saplings;
+    for (const [i, lods] of loaded.saplings.entries()) {
       const bark = SAPLING_BARKS[i];
       const dressed: DressedSet[] = bark === undefined ? [{ lods, textures: Promise.resolve() }] : dressSpecies(lods, [bark]);
-      return adoptSpecies(i, dressed, null, "sapling");
-    });
+      saplings.push(...adoptSpecies(i, dressed, null, "sapling"));
+      yield;
+    }
 
     // The snag's bake, kicked BEFORE `adoptBucket` disables the deadwood
     // meshes — the same rule `adoptSpecies` records for the tree bakes — and
@@ -2066,6 +2090,7 @@ export function createForestMeshes(
     const deadwoodPositions = loaded.deadwood.flatMap((mesh) => Array.from(mesh.getVerticesData(VertexBuffer.PositionKind) ?? []));
     deadwoodLogSeat = trunkSeat(deadwoodPositions);
     deadwoodLogTop = trunkTop(deadwoodPositions);
+    yield;
     // What grows on a nurse log (`nurseLog.ts`): the fern and a seedling.
     // The fern wears a plain material made here from its model's textures,
     // with the dither, the cards' tint and contrast, and nothing else: a
@@ -2149,8 +2174,18 @@ export function createForestMeshes(
       deadwoodSnagBaseOffset + (deadwoodBounds.min.x + deadwoodBounds.max.x) / 2,
     );
 
-    // An update that arrived while loading is honoured now.
+    // Every species stands: an update that arrived while loading is honoured now.
+    adopted = true;
     maybeBuild(true);
+  }
+
+  /** The adoption a slice a task: `turn` is waited for after each slice but
+   * the last, and a forest disposed meanwhile adopts no more. */
+  async function adoptStepped(slices: Slices, wait: () => Promise<void>): Promise<void> {
+    while (slices.next().done !== true) {
+      await wait();
+      if (disposed || loads.signal.aborted) return;
+    }
   }
 
   /** Rebuild only when the cell-snapped origin moves — `collectBands` is a
@@ -2159,7 +2194,7 @@ export function createForestMeshes(
    * says which crossings build at once); the first build, when the models
    * land, is always at once. */
   function maybeBuild(first: boolean): void {
-    if (species === null || Number.isNaN(camX)) return;
+    if (!adopted || Number.isNaN(camX)) return;
     const origin = bandsOrigin(camX, camZ);
     const kind = crossingAt(crossing, camX, camZ, origin.x, origin.z, TREE_CELL, options.jobs !== undefined && !first, options.jobs?.started());
     if (kind === "none") {
@@ -2270,7 +2305,7 @@ export function createForestMeshes(
       const fernGroups = await loadBucketed(NURSE_FERN_URL, (c) => [lodMeshes(c, "LOD0")]);
       if (fernGroups === null) return;
 
-      adopt({ giants, saplings, deadwood, nurseFern: fernGroups[0] as Mesh[] });
+      await adoptStepped(adoptSlices({ giants, saplings, deadwood, nurseFern: fernGroups[0] as Mesh[] }), adoptTurn);
     } catch {
       // A missing or broken asset costs the trees, never the match — the same
       // degrade-don't-block rule as the character pool's `load`. A dispose
@@ -2514,7 +2549,7 @@ export function createForestMeshes(
   let landed: Promise<void> = Promise.resolve();
   if (options.assets != null) {
     const stub = options.assets;
-    adopt({
+    const stubbed = adoptSlices({
       giants: stub.giants.map((a) => ({
         lods: [geometryMeshes(a.lods[0]), geometryMeshes(a.lods[1]), geometryMeshes(a.lods[2])] as [
           Mesh[],
@@ -2534,6 +2569,10 @@ export function createForestMeshes(
       deadwood: geometryMeshes(stub.deadwood),
       ...(stub.nurseFern === undefined ? {} : { nurseFern: geometryMeshes(stub.nurseFern) }),
     });
+    // Models in hand are adopted whole, here, so a test reads its buckets at once; one that
+    // says how the adoption waits (`adoptTurn`) has it stepped, as loaded models are.
+    if (options.adoptTurn === undefined) finish(stubbed);
+    else landed = adoptStepped(stubbed, adoptTurn);
   } else {
     // Fire and forget, like `views.models.load`: the forest pops in when the
     // assets land, and stays absent forever if they fail. `loadAssets`
@@ -2550,7 +2589,7 @@ export function createForestMeshes(
       camX = x;
       camZ = z;
       // While the GLBs are still loading this only remembers the camera;
-      // adopt() replays it the moment they land.
+      // the adoption's last slice replays it the moment they stand.
       maybeBuild(false);
     },
     view,
@@ -2604,6 +2643,7 @@ export function createForestMeshes(
       nearCasterMeshes.length = 0;
       lod2Meshes.length = 0;
       impostorMeshes.length = 0;
+      adopted = false;
       species = null;
       giantSets = [];
       saplingSpecies = null;
