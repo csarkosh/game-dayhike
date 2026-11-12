@@ -295,9 +295,33 @@ and a later hike in the same session makes its own, with the file by then in the
      later than it did, under the film, while the worker samples; the world is ready no later
      (14.3 to 16.7 s after Play, from 15.2 to 17.2 s). On WebGL2, which a phone no longer
      starts on, the build's stop is 0.5 to 0.9 s.
-   - Still whole: the rest of the build (`buildGame` is one task: the renderer, its materials,
-     the session, and the meshes made from what was sampled), the face patches' near band and
-     wildlife's first collect.
+   - More of the build is made ahead, and less of the first frames runs whole (amended
+     2026-11-12). Four stops were still over or near a quarter of a second on a phone, and each
+     is answered in the way of the items above:
+     - *The build's task* (0.36 s). The worker's scene also carries what the water's first
+       emit makes of its rings (their geometry and wet boxes), the water's ripple bump (a
+       constant picture, which a water also made twice on the low tier beside a lake), and
+       the made features' table with its shore atlas (which the ground's material and the
+       cliff patches' each baked for themselves; a renderer now bakes one, and none where the
+       worker sent it). The worker's first request also generates the collision chunks the
+       first spawn reads, which the hike's chunk grid starts with (`sim/chunkGrid.ts`,
+       `installChunks`). Each has the page's own making as its fallback.
+     - *The loop's first frame* (0.24 to 0.27 s). It rebuilt the terrain's inner rings at
+       once, to leave out the ground the cliff patches cover, and collected the wildlife's
+       field. While the loader of first builds is open both are its to step: the rings' rebuild
+       a few milliseconds a turn, the collect a turn of its own.
+     - *The far trees' pictures* (0.31 to 0.39 s). Each of the forest's seven bakes turns the
+       pixels it read back into distance fields, about 50 ms of arithmetic, and several
+       landed in one frame. A worker of the forest's own makes them
+       (`game/impostorField.worker.ts`, `impostorFieldWorker.ts`); with no worker, or one
+       that fails or does not answer in 10 s, the page computes them from the pixels it kept,
+       a bake a task.
+     - *The forest taking its models* (0.28 s at worst). The loaded models were dressed,
+       bucketed and their bakes kicked in one task; now a species a task
+       (`forestMeshes.ts`, `adoptSlices`), the first fill waiting for the last.
+   - Still whole: what is left of the build (`buildGame` is one task: the renderer and its
+     materials, the meshes made from what came sampled, the session, the signs) and the face
+     patches' near band.
 5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, a frame
    has shown the shells the player's place and the loader of first builds has drained (asked once
    the scene is ready, so a fill queued as its models landed is waited for; so a player
