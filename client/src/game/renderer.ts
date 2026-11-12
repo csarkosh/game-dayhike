@@ -136,6 +136,7 @@ import {
   type BedGrid,
 } from "./bedHeight.js";
 import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
+import type { PreparedLakeSurface } from "./preparedScene.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
 import { NEAR_RADIUS } from "./forestField.js";
 import { CLUTTER_REACH } from "./clutterField.js";
@@ -1122,11 +1123,16 @@ export { LAKE_SURFACE_SPACING, lakeSurfaceGrid };
  * samples a real tile and its pattern runs on from the rings'. Static: a
  * lake's ground does not scroll with the camera; built once.
  *
+ * `made` is the grid and the depths made ahead (`preparedScene.ts`), taken in
+ * place of making them.
+ *
  * Exported so it is reachable from a test without a full `createWater` call.
  */
-export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, seed: number, index: number): Mesh {
-  const g = lakeSurfaceGrid(lake.shape);
-  const depths = lakeSurfaceDepths(seed, lake, g.positions);
+export function lakeSurface(
+  scene: Scene, mat: PBRMaterial, lake: LakeSource, seed: number, index: number, made?: PreparedLakeSurface | null,
+): Mesh {
+  const g = made ?? lakeSurfaceGrid(lake.shape);
+  const depths = made?.depths ?? lakeSurfaceDepths(seed, lake, g.positions);
   const mesh = new Mesh(`pond_${index}`, scene);
   const data = new VertexData();
   data.positions = g.positions;
@@ -1152,12 +1158,15 @@ export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, se
  * What `createWater` takes made instead of sampling it, each piece the one it
  * would make for its seed, tier and camera, which the caller has checked
  * (`preparedScene.ts`'s `fitting…`): the seven rings' samples, the bed baked
- * at the camera, and the ocean's field. A piece that is null is made here.
+ * at the camera, the ocean's field, and each lake's surface. A piece that is
+ * null is made here.
  */
 export type PreparedWater = {
   rings: WaterRingSamples[] | null;
   bed: BedGrid | null;
   ocean: OceanField | null;
+  /** Each lake's surface, by its place in `lakes`; a lake with none, or null, makes its own. */
+  surfaces?: readonly (PreparedLakeSurface | null)[];
 };
 
 /**
@@ -1385,7 +1394,7 @@ export function createWater(
   // ring-style re-emit, since a lake's ground does not scroll with the camera —
   // so they need no place in `meshes` (the doc'd one-per-ring,
   // shadow-caster-exempt set); they are disposed alongside it instead.
-  const lakeMeshes: Mesh[] = lakes.map((l, i) => lakeSurface(scene, lakeMats[i] as PBRMaterial, l, seed, i));
+  const lakeMeshes: Mesh[] = lakes.map((l, i) => lakeSurface(scene, lakeMats[i] as PBRMaterial, l, seed, i, prepared?.surfaces?.[i]));
   for (const mesh of lakeMeshes) mesh.renderingGroupId = group;
   waterMeshes.push(...meshes, ...lakeMeshes);
 

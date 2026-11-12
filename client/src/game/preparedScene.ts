@@ -186,3 +186,16 @@ export function fittingOcean(scene: PreparedScene | null | undefined, seed: numb
   if (from === null || from.ocean === null) return null;
   return swellCountFor(from.tier) === swellCountFor(tier) ? from.ocean : null;
 }
+
+/**
+ * The scene's pieces for `lake`, the terrain's lake number `index`: the entry
+ * at that place when its centre is the lake's; else null, and each of the
+ * lake's builders samples for itself.
+ */
+export function fittingLake(
+  scene: PreparedScene | null | undefined, seed: number, lake: LakeSource, index: number,
+): PreparedLake | null {
+  const piece = sceneOf(scene, seed)?.lakes[index];
+  if (piece === undefined) return null;
+  return piece.cx === lake.shape.cx && piece.cz === lake.shape.cz ? piece : null;
+}

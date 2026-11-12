@@ -10,7 +10,7 @@ import { windRecordUnder } from "../../src/game/windParams.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { MIDGE_NAME } from "../../src/game/midgeSwarms.js";
 import { HUM_RANGE } from "../../src/game/waterLifeAudio.js";
-import type { WaterLifeLayout } from "../../src/game/waterLifeField.js";
+import { waterLifeLayout, type WaterLifeLayout } from "../../src/game/waterLifeField.js";
 import type { Dragonflies } from "../../src/game/dragonflyBehaviour.js";
 import { createWaterLife, type WaterLife, type WaterLifeFrame } from "../../src/game/waterLife.js";
 import { skyFixture } from "./helpers/skyFixture.js";
@@ -199,6 +199,32 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     // Their bounds sit at the origin: they sort by their index alone, last.
     for (const mesh of life.meshes) expect(mesh.alphaIndex).toBe(Number.POSITIVE_INFINITY);
     life.dispose();
+  });
+
+  it("is laid out by a layout made ahead, and lays none out itself", () => {
+    const lake = lakeOf(SEED);
+    const alone = createWaterLife(scene(), SEED, lake, "high", "post");
+    const blocksAlone = [...seen.blocks];
+    alone.dispose();
+    // As a worker's message carries it: without the lake, through a structured clone.
+    const made = waterLifeLayout(SEED, lake);
+    const layout = structuredClone({ markers: made.markers, beats: made.beats, perches: made.perches, stems: made.stems, voices: made.voices });
+    seen.layout = null;
+    seen.dragonflies = null;
+    const given = createWaterLife(scene(), SEED, lake, "high", "post", layout);
+    expect(seen.layout).toBeNull();
+    expect(seen.blocks).toEqual(blocksAlone);
+    expect(seen.dragonflies).not.toBeNull();
+    given.dispose();
+    // A layout no sampling gives: the first two markers alone. Its rows are the ones filled.
+    const few = createWaterLife(scene(), SEED, lake, "high", "post", { ...layout, markers: layout.markers.slice(0, 2) });
+    expect(seen.layout).toBeNull();
+    expect(seen.blocks.slice(0, 25)).toEqual([106, 302, ...new Array<number>(23).fill(0)]);
+    few.dispose();
+    // None handed in: laid out here.
+    const own = createWaterLife(scene(), SEED, lake, "high", "post", null);
+    expect(seen.layout).not.toBeNull();
+    own.dispose();
   });
 
   it("tones its midges for the frame's colour path, as the sky dome is toned", () => {

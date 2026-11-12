@@ -13,6 +13,7 @@ import { activeTerrainVariant, setActiveTerrainVariant, type LakeSource } from "
 import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "../../src/game/waterShading.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { LAKE_SURFACE_SPACING, WATER_UV_SCROLL, createWater, effectsGroupFor, lakeSurfaceGrid, setEffectsGroup } from "../../src/game/renderer.js";
+import { lakeSurfaceDepths } from "../../src/game/lakeSurfaceGrid.js";
 import { lakeOutline, lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { createRain } from "../../src/game/rain.js";
@@ -371,6 +372,37 @@ describe("createWater under NullEngine", () => {
     expect(uploaded(second!.atlas)).toEqual(uploaded(first!.atlas));
     own.dispose();
     given.dispose();
+  }, timeLimit(60_000));
+
+  it("makes a lake's surface from a grid and depths made ahead: the same mesh as from its own, and the depths handed in are the ones drawn", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const seed = 1;
+    const lakes = [lake({ murk: 1 }), lake({ x: -300, z: 200, murk: 0 })];
+    const surfaceOf = (l: LakeSource) => {
+      const grid = lakeSurfaceGrid(l.shape);
+      return { ...grid, depths: lakeSurfaceDepths(seed, l, grid.positions) };
+    };
+    const own = createWater(scene, seed, 0, lakes, "low");
+    // The first lake's surface as it is sampled; the second's with a depth no sampling gives; a third entry no lake has.
+    const marked = surfaceOf(lakes[1]!);
+    marked.depths[0] = 4321;
+    const given = createWater(scene, seed, 0, lakes, "low", 0, 0, undefined, {
+      rings: null, bed: null, ocean: null, surfaces: [surfaceOf(lakes[0]!), marked, surfaceOf(lakes[0]!)],
+    });
+    for (const kind of ["position", "normal", "uv", "bedDepth"]) {
+      expect(given.lakeMeshes[0]!.getVerticesData(kind)).toEqual(own.lakeMeshes[0]!.getVerticesData(kind));
+    }
+    expect(given.lakeMeshes[0]!.getIndices()).toEqual(own.lakeMeshes[0]!.getIndices());
+    expect(given.lakeMeshes[0]!.position.asArray()).toEqual(own.lakeMeshes[0]!.position.asArray());
+    expect(given.lakeMeshes[1]!.getVerticesData("bedDepth")![0]).toBe(4321);
+    expect(own.lakeMeshes[1]!.getVerticesData("bedDepth")![0]).not.toBe(4321);
+    // A lake with no surface handed in (null, or none listed) makes its own.
+    const mixed = createWater(scene, seed, 0, lakes, "low", 0, 0, undefined, { rings: null, bed: null, ocean: null, surfaces: [null] });
+    for (const i of [0, 1]) expect(mixed.lakeMeshes[i]!.getVerticesData("bedDepth")).toEqual(own.lakeMeshes[i]!.getVerticesData("bedDepth"));
+    own.dispose();
+    given.dispose();
+    mixed.dispose();
   }, timeLimit(60_000));
 
   it("the mechanism fired: the bed texture is uploaded after the first update and the plugin points at it", () => {

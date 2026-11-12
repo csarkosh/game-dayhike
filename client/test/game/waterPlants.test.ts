@@ -11,6 +11,7 @@ import {
   createWaterPlants, LILY_LIFT, LILY_FLOWER_PATCHES,
 } from "../../src/game/waterPlants.js";
 import { CLUTTER_LILY, CLUTTER_LILY_PATCH_WAVE, CLUTTER_REED, clutterInRect } from "../../src/sim/clutter.js";
+import { waterPlantPlacements } from "../../src/game/waterPlantField.js";
 import type { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -126,6 +127,35 @@ describe("a lake's plants in the scene", { timeout: timeLimit(120_000) }, () => 
     expect(plants.meshes[3]!.thinInstanceCount).toBe(clutterInRect(seed, CLUTTER_LILY, ...box).length);
     plants.dispose();
   });
+
+  it("plants a lake from placements made ahead: the same instances as from its own, and the ones handed in are the ones planted", () => {
+    const { seed } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
+    const lake = lakeOf(seed);
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const matrices = (plants: ReturnType<typeof createWaterPlants>): number[][][] =>
+      plants.meshes.map((m) => (m.thinInstanceCount === 0 ? [] : m.thinInstanceGetWorldMatrices().map((w) => Array.from(w.m))));
+    const own = createWaterPlants(scene, seed, [lake]);
+    const alone = matrices(own);
+    expect(alone[0]!.length + alone[1]!.length + alone[2]!.length).toBeGreaterThan(0);
+    own.dispose();
+    // As a worker's message carries them: a structured clone.
+    const placed = structuredClone(waterPlantPlacements(seed, lake));
+    const given = createWaterPlants(scene, seed, [lake], [placed]);
+    expect(matrices(given)).toEqual(alone);
+    given.dispose();
+    // Placements no sampling gives: no reed at all, and the first pad alone.
+    const altered = createWaterPlants(scene, seed, [lake], [{ reeds: [[], [], []], pads: placed.pads.slice(0, 1) }]);
+    expect(altered.meshes.slice(0, 3).map((m) => m.thinInstanceCount)).toEqual([0, 0, 0]);
+    expect(altered.meshes[3]!.thinInstanceCount).toBe(1);
+    altered.dispose();
+    // A lake with none handed in (null, or none listed) is sampled here.
+    for (const placements of [[null], []]) {
+      const sampled = createWaterPlants(scene, seed, [lake], placements);
+      expect(matrices(sampled)).toEqual(alone);
+      sampled.dispose();
+    }
+  }, timeLimit(120_000));
 
   it("gives a clear lake none", () => {
     const { seed } = firstPondWorld((f) => (f.murk ?? 1) <= 0.5);

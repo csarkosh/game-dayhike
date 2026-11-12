@@ -18,7 +18,7 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.j
 import { CLUTTER_LILY_PATCH_WAVE, CLUTTER_LILY_SALT, type ClutterInstance } from "../sim/clutter.js";
 import { hash3 } from "../sim/field.js";
 import type { LakeSource } from "../sim/terrain.js";
-import { waterPlantPlacements } from "./waterPlantField.js";
+import { waterPlantPlacements, type WaterPlantPlacements } from "./waterPlantField.js";
 import { BLADE_VERTS, bladeClumpGeometry, type BladeCharacter, type BladeClumpGeometry } from "./bladeClump.js";
 import { attachFoliage, setFoliageEdges, FOLIAGE_PROFILES } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
@@ -236,12 +236,19 @@ function place(mesh: Mesh, list: readonly ClutterInstance[], yaw: (inst: Clutter
   mesh.thinInstanceRefreshBoundingInfo(false);
 }
 
-export function createWaterPlants(scene: Scene, seed: number, lakes: readonly LakeSource[]): WaterPlants {
+/**
+ * The plants of every lake in `lakes`. `placements[i]` is where lake i's
+ * stand, made ahead (`waterPlantPlacements`, by `preparedScene.ts`); a lake
+ * with none, or null, is sampled here.
+ */
+export function createWaterPlants(
+  scene: Scene, seed: number, lakes: readonly LakeSource[], placements: readonly (WaterPlantPlacements | null)[] = [],
+): WaterPlants {
   const reeds: ClutterInstance[][] = [[], [], []];
   const pads: ClutterInstance[] = [];
   const levelOf = new Map<ClutterInstance, number>();
-  for (const lake of lakes) {
-    const placed = waterPlantPlacements(seed, lake);
+  for (const [index, lake] of lakes.entries()) {
+    const placed = placements[index] ?? waterPlantPlacements(seed, lake);
     placed.reeds.forEach((list, variant) => (reeds[variant] as ClutterInstance[]).push(...list));
     for (const inst of placed.pads) {
       pads.push(inst);

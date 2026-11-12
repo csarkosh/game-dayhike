@@ -44,7 +44,7 @@ import {
   type DragonflyShare,
   type WaterLifePresence,
 } from "./waterLifeParams.js";
-import { farthestOnWalk, inShoreBand, marshMid, shoreWalk, waterLifeLayout, type FrogVoice, type ShoreWalk } from "./waterLifeField.js";
+import { farthestOnWalk, inShoreBand, marshMid, shoreWalk, waterLifeLayout, type FrogVoice, type ShoreWalk, type WaterLifeLayout } from "./waterLifeField.js";
 import {
   HEAD_MIDGES,
   HEAD_ROW0,
@@ -196,11 +196,14 @@ export type WaterLife = {
 /**
  * The life of `lake` in `scene`, placed from the world's `seed`, its midges
  * capped by `tier` and toned for the frame's `colourPath`, as the sky dome is.
+ * `made` is the lake's layout made ahead, without its `lake`
+ * (`preparedScene.ts`); absent or null, it is laid out here.
  */
 export function createWaterLife(
   scene: Scene, seed: number, lake: LakeSource, tier: QualityTier, colourPath: "post" | "material",
+  made?: Omit<WaterLifeLayout, "lake"> | null,
 ): WaterLife {
-  const layout = waterLifeLayout(seed, lake);
+  const layout: WaterLifeLayout = made !== null && made !== undefined ? { ...made, lake } : waterLifeLayout(seed, lake);
   const markers = layout.markers;
   const markerRows = Math.min(markers.length, HEAD_ROW0);
 

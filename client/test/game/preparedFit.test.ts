@@ -7,9 +7,10 @@ import { BED_GRID, bakeBed, createBedGrid } from "../../src/game/bedHeight.js";
 import { oceanFieldFor } from "../../src/game/oceanWaves.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "../../src/game/oceanSwell.js";
 import {
-  fittingBed, fittingOcean, fittingRings, fittingWaterRings, type PreparedScene,
+  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterRings, type PreparedLake, type PreparedScene,
 } from "../../src/game/preparedScene.js";
 import type { QualityTier } from "../../src/game/quality.js";
+import { stadiumLake } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const before = activeTerrainVariantName();
@@ -90,5 +91,26 @@ describe("whether a piece sampled ahead is the one a builder would make", () => 
     // Medium and high draw the same twelve: a field made for one fits the other.
     const medium = sceneAt(START, "medium");
     expect(fittingOcean(medium, SEED, "high")).toBe(medium.ocean);
+  }, timeLimit(60_000));
+  it("takes a lake's pieces by its place in the terrain's list and its centre, and refuses another lake's", () => {
+    const first = stadiumLake({ cx: 100, cz: 50, halfLen: 0.5, w: 30, level: 42, murk: 1 });
+    const second = stadiumLake({ cx: -300, cz: 200, halfLen: 0.5, w: 30, level: 42, murk: 0 });
+    const piece = (cx: number, cz: number): PreparedLake => ({
+      cx, cz,
+      plants: { reeds: [[], [], []], pads: [] },
+      life: { markers: [], beats: [], perches: [], stems: [], voices: [] },
+      surface: { positions: new Float32Array(0), normals: new Float32Array(0), uvs: new Float32Array(0), indices: new Uint32Array(0), depths: new Float32Array(0) },
+      skyline: null,
+    });
+    const scene: PreparedScene = { ...sceneAt(START), lakes: [piece(100, 50), piece(-300, 200)] };
+    expect(fittingLake(scene, SEED, first, 0)).toBe(scene.lakes[0]);
+    expect(fittingLake(scene, SEED, second, 1)).toBe(scene.lakes[1]);
+    // The right lake at the wrong place in the list, a place past the list's end, another world's scene, no scene.
+    expect(fittingLake(scene, SEED, second, 0)).toBeNull();
+    expect(fittingLake(scene, SEED, first, 2)).toBeNull();
+    expect(fittingLake(scene, SEED + 1, first, 0)).toBeNull();
+    expect(fittingLake(null, SEED, first, 0)).toBeNull();
+    setActiveTerrainVariant("montane");
+    expect(fittingLake(scene, SEED, first, 0)).toBeNull();
   }, timeLimit(60_000));
 });
