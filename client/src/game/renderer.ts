@@ -717,11 +717,13 @@ export function createClipmap(
         // it, though the camera has not moved, so none waits on a further
         // crossing to stop leaving out ground the new set no longer covers.
         if (!(jobs?.pending(owner) ?? false) && (options.cover?.(camX, camZ) ?? null) !== covered) {
-          // The first cover the rings are built for cannot wait: under the film the cliff patches'
-          // first set is the loader's, so it comes after the rings' first frame, and a frame shown
-          // with the rings still under the patches is what this keeps off (stepped by the loader
-          // while it is open, whole in the call once the film is cut). A cover after that is the
-          // scheduler's, a little a frame.
+          // The first cover the rings are built for cannot wait. Under the film the cliff patches'
+          // first set is the loader's and stands ahead of the rings' first build in its queue, so
+          // that build reads the set's cover as it begins and this branch is not reached. It is
+          // reached where the rings were built first, with no cover to read (the set dropped for a
+          // crossing's, say): the rings are then rebuilt by the loader while it is open and whole
+          // in the call once the film is cut, so no frame is shown with the rings still under the
+          // patches. A cover that changes after that is the scheduler's, a little a frame.
           if (jobs !== undefined && covered !== null) {
             jobs.begin(owner, build(camX, camZ), false, "clipmap");
           } else {

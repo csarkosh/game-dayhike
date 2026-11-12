@@ -628,6 +628,66 @@ describe("createClipmap", () => {
     }
   }, timeLimit(180_000));
 
+  it("builds the rings once, for the patches' whole first set, when both go through the loader as the renderer wires them", () => {
+    // The scarp, the patches and the rings on one scheduler and one loader, updated in the renderer's order: the
+    // patches first, the rings asking them. The patches' set is ahead of the rings' build in the loader's queue,
+    // and that build reads the cover as its first slice runs, so it is built once, for the whole set.
+    const scarp = 627994160;
+    const at = { x: -368.2, z: -900 };
+    const s = scene();
+    /** The triangles rings 0 to 4 draw for the camera at `at`, leaving out what the cell's whole set covers. */
+    const coveredRings = (): number[] => {
+      const rings: RingSamples[] = [];
+      for (let level = 0; level < 5; level++) rings.push(createRingSamples(scarp, level, at.x, at.z));
+      const cover = facePatchCover(-24 * 16 + 8, -904, PATCH_REACH.high);
+      return rings.map((ring, level) =>
+        ringGeometry(ring, level === 0 ? null : holeCellsFor(ring, rings[level - 1]!), null, cover).indexCount / 3);
+    };
+    const want = coveredRings();
+    for (const cutAfter of [null, 3]) {
+      let now = 0;
+      const jobs = createSyncJobs(() => (now += 0.1));
+      const turns: (() => void)[] = [];
+      const loader = createFirstBuilds({ later: (run) => turns.push(run) });
+      const patches = createFacePatches(s, scarp, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), jobs, { firstBuilds: loader });
+      const clipmap = createClipmap(s, scarp, jobs, { cover: () => patches.cover(), firstBuilds: loader });
+      const drawn = (): number[] => clipmap.meshes.slice(0, 5).map((m) => m.getTotalIndices() / 3);
+      const frame = (): void => {
+        patches.update(at.x, at.z);
+        clipmap.update(at.x, at.z);
+        jobs.run();
+      };
+      frame();
+      // The patches' set, then the rings' build: two, in that order, and nothing of either on the scheduler.
+      expect(loader.pending()).toBe(2);
+      expect(jobs.last.slices).toBe(0);
+      expect(patches.meshCount()).toBe(0);
+      if (cutAfter === null) {
+        // The film plays on: frames between the loader's turns queue nothing more.
+        let guard = 0;
+        while (turns.length > 0 && guard++ < 100_000) {
+          (turns.shift() as () => void)();
+          if (guard % 500 === 0) frame();
+        }
+      } else {
+        // The film is cut with the set part built: what is left of both runs to its end, in order.
+        for (let i = 0; i < cutAfter; i++) (turns.shift() as () => void)();
+        loader.close();
+      }
+      expect(loader.pending()).toBe(0);
+      expect(patches.cover()).toEqual(facePatchCover(-24 * 16 + 8, -904, PATCH_REACH.high));
+      // Built for the whole set's cover, before another frame is asked for.
+      expect(drawn()).toEqual(want);
+      // The frame after finds nothing to rebuild: no second build queued, none begun on the scheduler.
+      frame();
+      expect(loader.pending()).toBe(0);
+      expect(jobs.last.slices).toBe(0);
+      expect(drawn()).toEqual(want);
+      clipmap.dispose();
+      patches.dispose();
+    }
+  }, timeLimit(240_000));
+
   it("hands the loader of first builds to the rings, as to the shells", () => {
     const src = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
     const call = src.slice(src.indexOf("    : createClipmap(scene, forest.seed, jobs, {"), src.indexOf("  partOf(clipmap);"));
