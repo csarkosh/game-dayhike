@@ -13,10 +13,19 @@
  * already holds (a second hike on the page: the pass hash; the same hike
  * again: the bowl too) the worker is not asked for, and where it holds both
  * no worker is started.
+ *
+ * The worker that finished the world is kept, with the bowl it made, for one
+ * more request: the hike's first scene at the tier the page decides on
+ * (`scene`, `preparedScene.ts`), which the build then takes in place of
+ * sampling the ground itself. It is ended when that request settles, when
+ * the hike is left, or when it fails. The same rule holds there: no scene to
+ * be had is a null, never a rejection, and the build samples as it always did.
  */
 import { installPassHash, passHashCachedFor } from "../sim/forest.js";
 import { terrainVariant } from "../sim/terrain.js";
-import type { WorldPrepReply, WorldPrepRequest } from "./world.worker.js";
+import type { PreparedScene } from "./preparedScene.js";
+import type { QualityTier } from "./quality.js";
+import type { WorldPrepReply, WorldPrepRequest, WorldSceneRequest } from "./world.worker.js";
 
 /** How long the start waits for the worker before the page makes the world
  * itself. A phone makes both in about two seconds; this is for a worker that
@@ -36,13 +45,28 @@ export type WorldPrepOutcome = {
   ms: number;
 };
 
-export type WorldPrep = { readonly ready: Promise<WorldPrepOutcome>; dispose(): void };
+export type WorldPrep = {
+  readonly ready: Promise<WorldPrepOutcome>;
+  /**
+   * The hike's first scene at `tier`, sampled by the worker once the world is
+   * ready; null where there is none to be had. Asked once: a later call is
+   * the first's promise, whatever its tier. Never rejects.
+   */
+  scene(tier: QualityTier): Promise<PreparedScene | null>;
+  /** Ends the worker and lets go of the scene: the hike was left, or its build has taken what it wanted. */
+  dispose(): void;
+};
 
 /** The console's line for an outcome, beside the start's own (`launchLine`):
  * how the worker ended, in how long, and what the page took from it. */
 export function worldPrepLine(outcome: WorldPrepOutcome): string {
   const took = [outcome.prepared ? "the trail" : null, outcome.passHash ? "the level check" : null].filter((part) => part !== null);
   return `world prep: ${outcome.why} in ${Math.round(outcome.ms)} ms, ${took.length === 0 ? "nothing" : took.join(" and ")} installed`;
+}
+
+/** The console's line for the scene: whether the worker made one for `tier`, and how long the start waited for it. */
+export function sceneLine(tier: QualityTier, scene: PreparedScene | null, ms: number): string {
+  return `world scene: ${scene === null ? "none" : "made"} for ${tier} in ${Math.round(ms)} ms`;
 }
 
 let lastId = 0;
@@ -52,51 +76,143 @@ let lastId = 0;
  * with one request, for `input.seed` on the terrain `input.variant`. A reply
  * is taken only when it is this request's, for this seed and terrain; a pass
  * hash made over another count of passes than this thread's is refused
- * (`installPassHash`). `ready` never rejects; `dispose` ends the worker, and
- * nothing is installed after `ready` has resolved.
+ * (`installPassHash`). `ready` never rejects, and nothing is installed after
+ * it has resolved.
+ *
+ * `scene(tier)` then asks the same worker for the hike's first scene, with a
+ * time limit of its own from the asking; where the page held the world
+ * already (`cached`), it starts a worker for the scene alone. A scene is
+ * taken only when it is that request's, for this seed, terrain and tier.
+ * `dispose` ends the worker and settles whatever is waited for.
  */
 export function startWorldPrep(
   input: { seed: number; variant: string },
   deps: { now?: () => number; timeoutMs?: number } = {},
 ): WorldPrep {
   const now = deps.now ?? ((): number => performance.now());
+  const limit = deps.timeoutMs ?? WORLD_PREP_TIMEOUT_MS;
   const from = now();
   const id = ++lastId;
   const installed = { prepared: false, passHash: false };
   let worker: Worker | null = null;
+  /** The limit on whichever request is out: the world's, then the scene's. */
   let timer: ReturnType<typeof setTimeout> | null = null;
+  /** The world's request is over: `ready` has resolved. */
   let ended = false;
+  let disposed = false;
   let resolve: (outcome: WorldPrepOutcome) => void = () => undefined;
   const ready = new Promise<WorldPrepOutcome>((r) => {
     resolve = r;
   });
+  /** The scene's request: its promise once asked, and what settles it while it is out. */
+  let asked: Promise<PreparedScene | null> | null = null;
+  let wanted: { id: number; tier: QualityTier; settle(scene: PreparedScene | null): void } | null = null;
+
+  /** Ends the worker, if there is one, and the limit that is running. */
+  function stop(): void {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    if (worker === null) return;
+    worker.onmessage = null;
+    worker.onerror = null;
+    worker.onmessageerror = null;
+    worker.terminate();
+    worker = null;
+  }
 
   function end(why: WorldPrepOutcome["why"]): void {
     if (ended) return;
     ended = true;
     if (timer !== null) clearTimeout(timer);
     timer = null;
-    if (worker !== null) {
-      worker.onmessage = null;
-      worker.onerror = null;
-      worker.onmessageerror = null;
-      worker.terminate();
-      worker = null;
-    }
+    // A worker that finished is kept, with the world it made, for the scene.
+    if (why !== "done") stop();
     resolve({ why, ...installed, ms: now() - from });
   }
 
+  /** The worker is of no more use: whatever is waited for is settled without it. */
+  function fail(): void {
+    end("failed");
+    wanted?.settle(null);
+    stop();
+  }
+
   function take(reply: WorldPrepReply): void {
-    if (ended || reply.id !== id) return;
+    if (reply.id !== id) return;
     if (reply.kind === "prepared") {
       if (reply.seed !== input.seed || reply.variant !== input.variant) return;
       installed.prepared = terrainVariant(reply.variant)?.install?.(reply.seed, reply.prepared) === true;
     } else if (reply.kind === "passHash") {
       if (reply.variant !== input.variant) return;
       installed.passHash = installPassHash(reply.hash, { passCount: reply.passCount, variant: reply.variant });
-    } else {
-      end(reply.kind === "done" ? "done" : "failed");
+    } else if (reply.kind === "done") {
+      end("done");
+    } else if (reply.kind === "failed") {
+      fail();
     }
+  }
+
+  function takeScene(reply: WorldPrepReply): void {
+    if (wanted === null || reply.id !== wanted.id) return;
+    if (reply.kind === "scene") {
+      const { scene } = reply;
+      if (scene.seed !== input.seed || scene.variant !== input.variant || scene.tier !== wanted.tier) return;
+      wanted.settle(scene);
+    } else if (reply.kind === "done" || reply.kind === "failed") {
+      // Done with no scene taken: it sent none that was this request's.
+      wanted.settle(null);
+    }
+  }
+
+  /** A worker with this wrapper listening, or null where none can be had. */
+  function listen(): Worker | null {
+    if (typeof Worker === "undefined") return null;
+    let made: Worker;
+    try {
+      made = new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" });
+    } catch {
+      return null;
+    }
+    made.onmessage = (event: MessageEvent<WorldPrepReply>): void => {
+      try {
+        if (ended) takeScene(event.data);
+        else take(event.data);
+      } catch {
+        fail();
+      }
+    };
+    made.onerror = fail;
+    made.onmessageerror = fail;
+    return made;
+  }
+
+  function scene(tier: QualityTier): Promise<PreparedScene | null> {
+    asked ??= ready.then((outcome) => new Promise<PreparedScene | null>((done) => {
+      if (disposed) return done(null);
+      // The page held the world, so no worker was started: one for the scene alone.
+      if (outcome.why === "cached") worker = listen();
+      else if (outcome.why !== "done") return done(null);
+      if (worker === null) return done(null);
+      const mine = {
+        id: ++lastId,
+        tier,
+        settle(made: PreparedScene | null): void {
+          if (wanted !== mine) return;
+          wanted = null;
+          stop();
+          done(made);
+        },
+      };
+      wanted = mine;
+      timer = setTimeout(() => mine.settle(null), limit);
+      try {
+        const request: WorldSceneRequest = { id: mine.id, kind: "scene", seed: input.seed, variant: input.variant, tier };
+        worker.postMessage(request);
+      } catch {
+        mine.settle(null);
+      }
+    }));
+    return asked;
   }
 
   const variant = terrainVariant(input.variant);
@@ -106,27 +222,12 @@ export function startWorldPrep(
   };
   if (skip.prepared && skip.passHash) {
     end("cached");
-  } else if (typeof Worker === "undefined") {
-    end("no-worker");
   } else {
-    try {
-      worker = new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" });
-    } catch {
-      worker = null;
-    }
+    worker = listen();
     if (worker === null) {
       end("no-worker");
     } else {
-      worker.onmessage = (event: MessageEvent<WorldPrepReply>): void => {
-        try {
-          take(event.data);
-        } catch {
-          end("failed");
-        }
-      };
-      worker.onerror = (): void => end("failed");
-      worker.onmessageerror = (): void => end("failed");
-      timer = setTimeout(() => end("timeout"), deps.timeoutMs ?? WORLD_PREP_TIMEOUT_MS);
+      timer = setTimeout(() => end("timeout"), limit);
       try {
         const request: WorldPrepRequest = { id, seed: input.seed, variant: input.variant, skip };
         worker.postMessage(request);
@@ -135,5 +236,15 @@ export function startWorldPrep(
       }
     }
   }
-  return { ready, dispose: () => end("disposed") };
+  return {
+    ready,
+    scene,
+    dispose(): void {
+      disposed = true;
+      end("disposed");
+      wanted?.settle(null);
+      stop();
+      asked = null;
+    },
+  };
 }

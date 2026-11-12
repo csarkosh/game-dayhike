@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { prepareWorld, type WorldPrepReply } from "../../src/game/world.worker.js";
+import { prepareSceneReply, prepareWorld, type WorldPrepReply } from "../../src/game/world.worker.js";
+import { RING_COUNT } from "../../src/game/clipmap.js";
+import { sceneTransfer } from "../../src/game/preparedScene.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -51,6 +53,42 @@ describe("a hike's world, prepared as the worker prepares it", () => {
         refused = true;
         throw new Error("could not be cloned");
       }
+      replies.push(r);
+    });
+    expect(replies).toEqual([{ id: 3, kind: "failed", message: expect.stringContaining("could not be cloned") }]);
+  }, timeLimit(120_000));
+});
+
+describe("a hike's first scene, sampled as the worker samples it", () => {
+  afterEach(() => setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT));
+
+  it("posts the scene with every one of its buffers in the transfer list, then done", () => {
+    const posts: { reply: WorldPrepReply; transfer: ArrayBuffer[] }[] = [];
+    prepareSceneReply({ id: 4, kind: "scene", seed: 7, variant: "montane", tier: "low" }, (reply, transfer) => posts.push({ reply, transfer }));
+    expect(posts.map((p) => [p.reply.id, p.reply.kind])).toEqual([[4, "scene"], [4, "done"]]);
+    const first = posts[0]!;
+    if (first.reply.kind !== "scene") throw new Error("not a scene");
+    expect(first.reply.scene).toMatchObject({ seed: 7, variant: "montane", tier: "low", start: { x: 0, z: 0 }, lakes: [] });
+    expect(first.transfer).toHaveLength(RING_COUNT * 10);
+    expect(first.transfer).toEqual(sceneTransfer(first.reply.scene));
+    expect(posts[1]!.transfer).toEqual([]);
+    // As the message crosses: cloned, its buffers moved.
+    const crossed = structuredClone(first.reply, { transfer: first.transfer });
+    expect(crossed.scene.rings).toHaveLength(RING_COUNT);
+    expect(crossed.scene.rings[0]!.h.byteLength).toBeGreaterThan(0);
+    expect(first.reply.scene.rings[0]!.h.byteLength).toBe(0);
+  }, timeLimit(120_000));
+
+  it("answers an unknown terrain with one failure", () => {
+    const replies: WorldPrepReply[] = [];
+    prepareSceneReply({ id: 2, kind: "scene", seed: 5, variant: "nowhere", tier: "low" }, (r) => replies.push(r));
+    expect(replies).toEqual([{ id: 2, kind: "failed", message: expect.stringContaining("nowhere") }]);
+  });
+
+  it("answers a scene that cannot be posted with one failure, and nothing after it", () => {
+    const replies: WorldPrepReply[] = [];
+    prepareSceneReply({ id: 3, kind: "scene", seed: 5, variant: "montane", tier: "low" }, (r) => {
+      if (r.kind === "scene") throw new Error("could not be cloned");
       replies.push(r);
     });
     expect(replies).toEqual([{ id: 3, kind: "failed", message: expect.stringContaining("could not be cloned") }]);

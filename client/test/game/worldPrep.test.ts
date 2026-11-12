@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../../src/sim/passes/index.js";
-import { WORLD_PREP_TIMEOUT_MS, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "../../src/game/worldPrep.js";
+import { WORLD_PREP_TIMEOUT_MS, sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "../../src/game/worldPrep.js";
+import type { PreparedScene } from "../../src/game/preparedScene.js";
+import type { QualityTier } from "../../src/game/quality.js";
 import type { WorldPrepReply } from "../../src/game/world.worker.js";
 import { installPassHash, passHash, passHashCachedFor, passHashKey } from "../../src/sim/forest.js";
 import { bowlFor, type Bowl } from "../../src/sim/olympic.js";
@@ -67,6 +69,11 @@ describe("the console's line for how the world's worker ended", () => {
     expect(worldPrepLine({ why: "failed", prepared: false, passHash: false, ms: 12.2 })).toBe("world prep: failed in 12 ms, nothing installed");
     expect(worldPrepLine({ why: "cached", prepared: false, passHash: false, ms: 0 })).toBe("world prep: cached in 0 ms, nothing installed");
   });
+
+  it("says whether the first scene was made, for which tier and in how long", () => {
+    expect(sceneLine("low", { tier: "low" } as PreparedScene, 412.4)).toBe("world scene: made for low in 412 ms");
+    expect(sceneLine("high", null, 30000)).toBe("world scene: none for high in 30000 ms");
+  });
 });
 
 describe("a hike's world, prepared for the page by its worker", () => {
@@ -117,10 +124,11 @@ describe("a hike's world, prepared for the page by its worker", () => {
     clock = 1750;
     worker.send({ id: worker.id, kind: "done" });
     expect(await prep.ready).toEqual({ why: "done", prepared: true, passHash: true, ms: 750 });
-    expect(worker.terminated).toBe(1);
     expect(passHash()).toBe(64181734);
-    // A timer left running would end it a second time.
+    // The worker is kept, with the bowl it made, for the hike's first scene; no timer left running ends it.
     vi.advanceTimersByTime(WORLD_PREP_TIMEOUT_MS * 2);
+    expect(worker.terminated).toBe(0);
+    prep.dispose();
     expect(worker.terminated).toBe(1);
   }, timeLimit(120_000));
 
@@ -230,4 +238,193 @@ describe("a hike's world, prepared for the page by its worker", () => {
     startWorldPrep({ seed: 18, variant: "montane" }, deps).dispose();
     expect((FakeWorker.made[1] as FakeWorker).posted[0]).toMatchObject({ variant: "montane", skip: { prepared: true, passHash: false } });
   }, timeLimit(120_000));
+});
+
+describe("a hike's first scene, asked of the world's worker", () => {
+  let clock = 0;
+  const deps = { now: () => clock };
+  /** A scene as the worker would send one: only what `scene()` checks. */
+  const sceneFor = (seed: number, variant: string, tier: QualityTier): PreparedScene =>
+    ({ seed, variant, tier, start: { x: 0, z: 0 }, rings: [], waterRings: null, bed: null, ocean: null, lakes: [] });
+  /** Lets `ready`'s continuation, and what it starts, run. */
+  const turn = async (): Promise<void> => {
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+  };
+  /** A wrapper whose world is done, its worker, and the id of a scene request once one is posted. */
+  async function doneWorld(seed: number): Promise<{ prep: ReturnType<typeof startWorldPrep>; worker: FakeWorker }> {
+    const prep = startWorldPrep({ seed, variant: "montane" }, deps);
+    const worker = FakeWorker.made.at(-1) as FakeWorker;
+    worker.send({ id: worker.id, kind: "done" });
+    expect((await prep.ready).why).toBe("done");
+    return { prep, worker };
+  }
+  const sceneId = (worker: FakeWorker): number => (worker.posted.at(-1) as { id: number }).id;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal("Worker", FakeWorker);
+    FakeWorker.made = [];
+    FakeWorker.refuse = false;
+    clock = 1000;
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    forgetPassHash();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("asks the worker it kept, once the world is ready, and resolves with the scene it sends, ending the worker", async () => {
+    const prep = startWorldPrep({ seed: 9, variant: "montane" }, deps);
+    const worker = FakeWorker.made[0] as FakeWorker;
+    const asked = prep.scene("low");
+    // A second call is the first's promise: one request, whatever it is asked.
+    expect(prep.scene("high")).toBe(asked);
+    await turn();
+    // Not before the world is ready: the worker's own bowl is then made.
+    expect(worker.posted).toHaveLength(1);
+    worker.send({ id: worker.id, kind: "done" });
+    await turn();
+    expect(worker.posted).toHaveLength(2);
+    expect(worker.posted[1]).toEqual({ id: sceneId(worker), kind: "scene", seed: 9, variant: "montane", tier: "low" });
+    expect(sceneId(worker)).not.toBe(worker.id);
+    expect(worker.terminated).toBe(0);
+    const scene = sceneFor(9, "montane", "low");
+    worker.send({ id: sceneId(worker), kind: "scene", scene });
+    expect(await asked).toBe(scene);
+    expect(worker.terminated).toBe(1);
+    // The worker's `done` after it, and a timer left running, end nothing twice.
+    worker.send({ id: sceneId(worker), kind: "done" });
+    vi.advanceTimersByTime(WORLD_PREP_TIMEOUT_MS * 2);
+    expect(worker.terminated).toBe(1);
+    expect(FakeWorker.made).toHaveLength(1);
+  });
+
+  it("drops a scene that is not this request's, and resolves null when the worker is done without one", async () => {
+    const { prep, worker } = await doneWorld(10);
+    const asked = prep.scene("low");
+    await turn();
+    const id = sceneId(worker);
+    worker.send({ id: id + 1, kind: "scene", scene: sceneFor(10, "montane", "low") });
+    worker.send({ id, kind: "scene", scene: sceneFor(11, "montane", "low") });
+    worker.send({ id, kind: "scene", scene: sceneFor(10, "olympic", "low") });
+    worker.send({ id, kind: "scene", scene: sceneFor(10, "montane", "high") });
+    worker.send({ id: worker.id, kind: "done" });
+    let got: PreparedScene | null | undefined;
+    void asked.then((scene) => (got = scene));
+    await turn();
+    expect(got).toBeUndefined();
+    worker.send({ id, kind: "done" });
+    expect(await asked).toBeNull();
+    expect(worker.terminated).toBe(1);
+  });
+
+  it("resolves null and ends the worker once on each way of giving up", async () => {
+    for (const way of ["failed", "onerror", "onmessageerror", "timeout", "dispose", "unreadable"] as const) {
+      const { prep, worker } = await doneWorld(12);
+      const asked = prep.scene("low");
+      await turn();
+      const id = sceneId(worker);
+      if (way === "failed") worker.send({ id, kind: "failed", message: "it threw" });
+      else if (way === "onerror" || way === "onmessageerror") worker[way]?.({} as ErrorEvent & MessageEvent);
+      else if (way === "timeout") vi.advanceTimersByTime(WORLD_PREP_TIMEOUT_MS);
+      else if (way === "dispose") prep.dispose();
+      else worker.onmessage?.({ data: null } as unknown as MessageEvent<WorldPrepReply>);
+      expect(await asked, way).toBeNull();
+      expect(worker.terminated, way).toBe(1);
+      // A scene already on its way when the worker was ended changes nothing.
+      worker.send({ id, kind: "scene", scene: sceneFor(12, "montane", "low") });
+      expect(await prep.scene("low"), way).toBeNull();
+      prep.dispose();
+      expect(worker.terminated, way).toBe(1);
+    }
+  });
+
+  it("times the scene from its own request, not from the hike's start", async () => {
+    const { prep, worker } = await doneWorld(13);
+    // Long after the world was ready (a film that was slow to load).
+    vi.advanceTimersByTime(WORLD_PREP_TIMEOUT_MS * 3);
+    const asked = prep.scene("medium");
+    await turn();
+    vi.advanceTimersByTime(WORLD_PREP_TIMEOUT_MS - 1);
+    const scene = sceneFor(13, "montane", "medium");
+    worker.send({ id: sceneId(worker), kind: "scene", scene });
+    expect(await asked).toBe(scene);
+  });
+
+  it("starts a worker for the scene alone where the page held the world already", async () => {
+    installPassHash(5, { passCount: passHashKey().passCount, variant: "montane" });
+    const prep = startWorldPrep({ seed: 14, variant: "montane" }, deps);
+    expect((await prep.ready).why).toBe("cached");
+    expect(FakeWorker.made).toHaveLength(0);
+    const asked = prep.scene("low");
+    await turn();
+    expect(FakeWorker.made).toHaveLength(1);
+    const worker = FakeWorker.made[0] as FakeWorker;
+    expect(worker.options).toEqual({ type: "module" });
+    expect(worker.posted).toEqual([{ id: sceneId(worker), kind: "scene", seed: 14, variant: "montane", tier: "low" }]);
+    const scene = sceneFor(14, "montane", "low");
+    worker.send({ id: sceneId(worker), kind: "scene", scene });
+    expect(await asked).toBe(scene);
+    expect(worker.terminated).toBe(1);
+  });
+
+  it("has no scene where the world had no worker, where it failed or ran out of time, and starts none for it", async () => {
+    FakeWorker.refuse = true;
+    const none = startWorldPrep({ seed: 15, variant: "montane" }, deps);
+    expect(await none.scene("low")).toBeNull();
+    expect(FakeWorker.made).toHaveLength(0);
+    // Held already, and no worker to be had for the scene alone.
+    installPassHash(5, { passCount: passHashKey().passCount, variant: "montane" });
+    expect(await startWorldPrep({ seed: 15, variant: "montane" }, deps).scene("low")).toBeNull();
+    forgetPassHash();
+    FakeWorker.refuse = false;
+    const failed = startWorldPrep({ seed: 15, variant: "montane" }, deps);
+    const worker = FakeWorker.made[0] as FakeWorker;
+    worker.send({ id: worker.id, kind: "failed", message: "it threw" });
+    expect(await failed.scene("low")).toBeNull();
+    const slow = startWorldPrep({ seed: 15, variant: "montane" }, deps);
+    vi.advanceTimersByTime(WORLD_PREP_TIMEOUT_MS);
+    expect(await slow.scene("low")).toBeNull();
+    expect(FakeWorker.made).toHaveLength(2);
+    for (const made of FakeWorker.made) {
+      expect(made.posted).toHaveLength(1);
+      expect(made.terminated).toBe(1);
+    }
+  });
+
+  it("asked after it was disposed, resolves null without starting or asking anything", async () => {
+    const { prep, worker } = await doneWorld(16);
+    prep.dispose();
+    expect(worker.terminated).toBe(1);
+    expect(await prep.scene("low")).toBeNull();
+    expect(worker.posted).toHaveLength(1);
+    // Where the page held the world: no worker is started for a hike that was left.
+    installPassHash(5, { passCount: passHashKey().passCount, variant: "montane" });
+    const held = startWorldPrep({ seed: 16, variant: "montane" }, deps);
+    held.dispose();
+    expect(await held.scene("low")).toBeNull();
+    expect(FakeWorker.made).toHaveLength(1);
+  });
+
+  it("lets go of the scene when it is disposed: a later call does not hand it out again", async () => {
+    const { prep, worker } = await doneWorld(17);
+    const asked = prep.scene("low");
+    await turn();
+    const scene = sceneFor(17, "montane", "low");
+    worker.send({ id: sceneId(worker), kind: "scene", scene });
+    expect(await asked).toBe(scene);
+    prep.dispose();
+    expect(await prep.scene("low")).toBeNull();
+  });
+
+  it("never rejects: a scene request that cannot be posted is no scene", async () => {
+    const { prep, worker } = await doneWorld(18);
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(() => {
+      throw new Error("cannot post");
+    });
+    expect(await prep.scene("low")).toBeNull();
+    expect(worker.terminated).toBe(1);
+  });
 });
