@@ -237,6 +237,16 @@ export function waterRingGeometry(
 }
 
 /**
+ * The span of z over which the sea's swash can climb the face of `seed`'s
+ * cove: the cove and its ends' blends. Within it `wetBounds` counts ground up
+ * to the swash's lift above the level as wet.
+ */
+export function seaFaceZ(seed: number): readonly [number, number] {
+  const cove = coveFor(seed);
+  return [cove.z0 - (cove.halfWidth + COVE_END_BLEND), cove.z0 + (cove.halfWidth + COVE_END_BLEND)];
+}
+
+/**
  * The box a ring's water can be drawn in, or null when it has none. Its wet
  * cells are the triangles it draws with a wet vertex (`bedDepth > 0`); outside
  * the bed texture the fragment's depth is `bedDepth` interpolated, so such a
@@ -259,16 +269,6 @@ export function waterRingGeometry(
  * level is in view from almost anywhere, and a mesh in view is what asks for
  * the high tier's copy.
  */
-/**
- * The span of z over which the sea's swash can climb the face of `seed`'s
- * cove: the cove and its ends' blends. Within it `wetBounds` counts ground up
- * to the swash's lift above the level as wet.
- */
-export function seaFaceZ(seed: number): readonly [number, number] {
-  const cove = coveFor(seed);
-  return [cove.z0 - (cove.halfWidth + COVE_END_BLEND), cove.z0 + (cove.halfWidth + COVE_END_BLEND)];
-}
-
 export function wetBounds(
   geometry: WaterGeometry,
   ground: Float32Array | null = null,

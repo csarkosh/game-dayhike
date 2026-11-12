@@ -319,6 +319,15 @@ and a later hike in the same session makes its own, with the file by then in the
      - *The forest taking its models* (0.28 s at worst). The loaded models were dressed,
        bucketed and their bakes kicked in one task; now a species a task
        (`forestMeshes.ts`, `adoptSlices`), the first fill waiting for the last.
+     Measured on a phone (a Pixel 9, three first visits started cool, on WebGPU, 2026-11-12):
+     the stops over a quarter of a second fell from three a run to one or two, and the longest
+     from 0.36 to 0.39 s to 0.26 to 0.29 s. The build's frame is 0.19 to 0.23 s, and 0.28 s in
+     a world with a lake by the trailhead (from 0.36 s); the loop's first frame 0.20 to 0.26 s
+     (from 0.24 to 0.27 s), the cliff patches' near band and the first draw's pipelines what is
+     left of it; the far trees' fields and the forest's adoption no longer show as stops. The
+     stop that is over the limit in every run is one this item does not answer: the scene's
+     last readiness check, in which Babylon makes the effects of every material not yet drawn
+     in one call (0.24 to 0.29 s).
    - Still whole: what is left of the build (`buildGame` is one task: the renderer and its
      materials, the meshes made from what came sampled, the session, the signs) and the face
      patches' near band.
