@@ -51,7 +51,7 @@ export const WEBGPU_ENABLED = true;
  * strokes drawn since, it does at every pose: on an Apple M4 at a laptop's
  * 1512 × 982, WebGL2 → WebGPU, the forest 34.1 → 28.0 ms, the trailhead
  * 40.3 → 26.1 and the meadow 29.6 → 20.1 (two pairs each, interleaved).
- * Low and the landing backdrop stay WebGL2. */
+ * A desktop's low and the landing backdrop stay WebGL2. */
 export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
 
 /**

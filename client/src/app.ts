@@ -282,11 +282,6 @@ export type GameOptions = {
 };
 
 /**
- * Starts a hike on `canvas`. A start that throws part-way leaves nothing it
- * made behind (`buildOrUndo`): above all no engine, and no global plugin
- * registration for the next renderer to meet.
- */
-/**
  * How many items the loading bar's world stage has: the trail and the level
  * check (made by the world's worker before the build, or by the build), the
  * clipmap's rings, the billboards' bakes, and, under a film (`deferred`), the
@@ -296,6 +291,11 @@ function worldStageTotal(deferred: boolean): number {
   return 2 + RING_COUNT + (deferred ? 2 : 1);
 }
 
+/**
+ * Starts a hike on `canvas`. A start that throws part-way leaves nothing it
+ * made behind (`buildOrUndo`): above all no engine, and no global plugin
+ * registration for the next renderer to meet.
+ */
 export function startGame(canvas: HTMLCanvasElement, token: string, options: GameOptions): GameHandle {
   return buildOrUndo((made) => buildGame(canvas, token, options, made));
 }
