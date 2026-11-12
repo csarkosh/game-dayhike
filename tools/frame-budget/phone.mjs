@@ -85,7 +85,7 @@ function wakePhone(base) {
     } catch {}
   };
   adb("shell", "input", "keyevent", "KEYCODE_WAKEUP");
-  adb("shell", "svc", "power", "stayon", "usb");
+  adb("shell", "svc", "power", "stayon", "true");
   adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", `${base.replace(/\/+$/, "")}/`, "com.android.chrome");
 }
 

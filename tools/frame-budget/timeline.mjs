@@ -257,14 +257,24 @@ async function intro(page, o, root, about, phone = undefined) {
  */
 async function phoneIntro(o) {
   mkdirSync(o.out, { recursive: true });
-  for (const args of [["shell", "input", "keyevent", "KEYCODE_WAKEUP"], ["shell", "svc", "power", "stayon", "usb"], ["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", "about:blank", "com.android.chrome"]]) {
-    try { execFileSync("adb", args, { stdio: "ignore" }); } catch {}
-  }
+  // Awake, kept awake on any charger (the cable's or a wall's: off the cable the phone is reached
+  // over Wi-Fi, the README's "The phone"), and Chrome in front: a Chrome behind answers nothing.
+  const front = () => {
+    for (const args of [["shell", "input", "keyevent", "KEYCODE_WAKEUP"], ["shell", "svc", "power", "stayon", "true"], ["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", "about:blank", "com.android.chrome"]]) {
+      try { execFileSync("adb", args, { stdio: "ignore" }); } catch {}
+    }
+  };
+  front();
   await sleep(2000);
   // How warm the phone is as the run starts: with --cool, waited for; without, only read.
   const phone = o.cool > 0 ? await waitUntilCool({ maxS: o.cool }) : { ...phoneState(), waitedS: 0 };
   phone.cool ??= isCool(phone);
   process.stdout.write(`${o.label}: thermal ${phone.thermalStatus ?? "?"}, battery ${phone.batteryTempC ?? "?"} °C, waited ${phone.waitedS} s${phone.cool ? "" : " (not cool)"}\n`);
+  // A wait of minutes can leave Chrome behind: it is brought in front again before it is asked anything.
+  if (phone.waitedS > 0) {
+    front();
+    await sleep(2000);
+  }
   const about = await version(o.remote);
   if (!isAndroid(about.userAgent)) throw new Error(`--remote ${o.remote} is not a phone's Chrome (${about.userAgent})`);
   const local = (ws) => ws.replace(/^ws:\/\/[^/]+/, `ws://127.0.0.1:${o.remote}`);

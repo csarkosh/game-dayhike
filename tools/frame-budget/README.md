@@ -334,8 +334,29 @@ data cable (a charge-only one never shows up), and the Allow prompt accepted. `a
 it; `adb shell cat /proc/net/unix | grep devtools_remote` shows Chrome's socket. A Chrome in the
 background does not answer on it: the harness wakes the screen, keeps it on while charging and
 opens the game in front with `am start` before it attaches, but a phone that locks itself mid-run
-ends the run. Wireless debugging (`adb tcpip` or pairing) is refused from the owner's IDE terminal
-by macOS's local-network rule for Homebrew binaries (2026-11-05); use the cable.
+ends the run.
+
+Off the cable the phone is reached over Wi-Fi, through a relay. macOS's Local Network privacy
+refuses a third-party program's connection to an address on the local network unless the app
+responsible for it was allowed, and says so only as "No route to host": in a terminal whose
+processes are their own responsible process (the owner's IDE's, started by a launchd agent) no
+prompt is ever shown, and `adb connect <phone>:5555` and node both fail that way (2026-11-05).
+The programs that ship with macOS are not subject to it, so `wifi-relay.py`, run by the system's
+own `/usr/bin/python3`, listens on the loopback and carries adb to the phone:
+
+```bash
+adb tcpip 5555                                           # once, over the cable; lasts until the phone restarts
+adb shell ip -f inet addr show wlan0                     # the phone's address
+/usr/bin/python3 tools/frame-budget/wifi-relay.py <phone address> &
+adb connect 127.0.0.1:5560
+export ANDROID_SERIAL=127.0.0.1:5560                     # every adb call of the harness goes over Wi-Fi
+adb forward tcp:9222 localabstract:chrome_devtools_remote
+```
+
+The cable can then be pulled. The phone must stay on a charger: the harness keeps its screen on
+while it is powered (`svc power stayon true`), and on its battery the screen times out, the phone
+locks and the run ends. `adb usb` closes the phone's port on the network again when the work is
+done.
 
 What a phone run is, against the Mac's and the rig's:
 
