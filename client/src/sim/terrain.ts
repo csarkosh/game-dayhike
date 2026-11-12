@@ -89,6 +89,9 @@ export type TerrainVariant = {
    * theirs. False, and nothing taken, where the seed already has one: what was
    * handed out from the first must stay what the hooks hold. */
   install?: (seed: number, prepared: unknown) => boolean;
+  /** Whether this thread already holds the seed's prepared value, without
+   * making it: what a caller asks before having another thread make one. */
+  isPrepared?: (seed: number) => boolean;
   sample(worldSeed: number, x: number, z: number): TerrainSample;
 };
 

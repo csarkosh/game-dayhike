@@ -29,6 +29,14 @@ describe("a hike's world, prepared as the worker prepares it", () => {
     expect(hash.hash).not.toBe(64181734);
   }, timeLimit(120_000));
 
+  it("leaves out what the page says it holds", () => {
+    const replies: WorldPrepReply[] = [];
+    prepareWorld({ id: 4, seed: 627994160, variant: "olympic", skip: { prepared: true, passHash: false } }, (r) => replies.push(r));
+    prepareWorld({ id: 5, seed: 627994160, variant: "olympic", skip: { prepared: false, passHash: true } }, (r) => replies.push(r));
+    prepareWorld({ id: 6, seed: 627994160, variant: "olympic", skip: { prepared: true, passHash: true } }, (r) => replies.push(r));
+    expect(replies.map((r) => [r.id, r.kind])).toEqual([[4, "passHash"], [4, "done"], [5, "prepared"], [5, "done"], [6, "done"]]);
+  }, timeLimit(120_000));
+
   it("answers an unknown terrain with one failure", () => {
     const replies: WorldPrepReply[] = [];
     prepareWorld({ id: 2, seed: 5, variant: "nowhere" }, (r) => replies.push(r));

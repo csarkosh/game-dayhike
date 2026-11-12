@@ -57,6 +57,23 @@ describe("a world prepared in another thread", () => {
     expect(clone.graph.features).toBe(clone.features);
   }, timeLimit(60_000));
 
+  it("says whether a seed's bowl is held, without making it", async () => {
+    const sim = await freshSim();
+    const variant = sim.terrain.activeTerrainVariant();
+    expect(variant.isPrepared?.(SEED)).toBe(false);
+    sim.olympic.bowlFor(SEED);
+    expect(variant.isPrepared?.(SEED)).toBe(true);
+    expect(variant.isPrepared?.(SEED + 1)).toBe(false);
+  }, timeLimit(60_000));
+
+  it("says whether the pass hash is held for a terrain, without making it", async () => {
+    const sim = await freshSim();
+    expect(sim.forest.passHashCachedFor("olympic")).toBe(false);
+    sim.forest.passHash();
+    expect(sim.forest.passHashCachedFor("olympic")).toBe(true);
+    expect(sim.forest.passHashCachedFor("montane")).toBe(false);
+  }, timeLimit(60_000));
+
   it("has nothing to prepare on a terrain with no trail", async () => {
     const sim = await freshSim();
     expect(sim.terrain.terrainVariant("montane")?.prepare).toBeUndefined();

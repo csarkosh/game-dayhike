@@ -337,6 +337,13 @@ export function passHashKey(): PassHashKey {
   return { passCount: registeredPasses().length, variant: activeTerrainVariantName() };
 }
 
+/** Whether `passHash()` would answer from its cache with `variant` active,
+ * without running the probe: what a caller asks before having another thread
+ * make the hash. */
+export function passHashCachedFor(variant: string): boolean {
+  return cachedPassHash !== null && cachedPassCount === registeredPasses().length && cachedVariant === variant;
+}
+
 /**
  * Takes a pass hash made in another thread of the same build (a worker's) as
  * this thread's cached one, so the probe is not run twice. False, and nothing

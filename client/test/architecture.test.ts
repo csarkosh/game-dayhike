@@ -473,6 +473,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "sky.worker.ts"),
       join(SRC, "game", "skyWorker.ts"),
       join(SRC, "game", "world.worker.ts"),
+      join(SRC, "game", "worldPrep.ts"),
       join(SRC, "game", "skyState.ts"),
       join(SRC, "game", "halfFloat.ts"),
       join(SRC, "game", "waterLifeParams.ts"),

@@ -19,7 +19,8 @@ import "../sim/passes/index.js";
 import { passHash, passHashKey } from "../sim/forest.js";
 import { activeTerrainVariant, setActiveTerrainVariant } from "../sim/terrain.js";
 
-export type WorldPrepRequest = { id: number; seed: number; variant: string };
+/** `skip`: what the page already holds and the worker leaves out. */
+export type WorldPrepRequest = { id: number; seed: number; variant: string; skip?: { prepared?: boolean; passHash?: boolean } };
 export type WorldPrepReply =
   | { id: number; kind: "prepared"; seed: number; variant: string; prepared: unknown }
   | { id: number; kind: "passHash"; hash: number; passCount: number; variant: string }
@@ -28,7 +29,8 @@ export type WorldPrepReply =
 
 /**
  * The request's results, posted in order: what the variant prepares for the
- * seed (where it prepares anything), the pass hash, then `done`. A terrain
+ * seed (where it prepares anything), the pass hash, then `done`; either left
+ * out where the request says the page holds it. A terrain
  * the sim does not know, a computation that throws or a result that cannot be
  * posted ends the run with one `failed`, and nothing after it.
  */
@@ -36,10 +38,9 @@ export function prepareWorld(request: WorldPrepRequest, post: (reply: WorldPrepR
   const { id, seed, variant } = request;
   try {
     setActiveTerrainVariant(variant);
-    const prepared = activeTerrainVariant().prepare?.(seed);
+    const prepared = request.skip?.prepared === true ? undefined : activeTerrainVariant().prepare?.(seed);
     if (prepared !== undefined) post({ id, kind: "prepared", seed, variant, prepared });
-    const hash = passHash();
-    post({ id, kind: "passHash", hash, ...passHashKey() });
+    if (request.skip?.passHash !== true) post({ id, kind: "passHash", hash: passHash(), ...passHashKey() });
     post({ id, kind: "done" });
   } catch (error) {
     post({ id, kind: "failed", message: error instanceof Error ? error.message : String(error) });

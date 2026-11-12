@@ -959,5 +959,6 @@ registerTerrainVariant({
   featureMask: featureMaskHook,
   prepare: bowlFor,
   install: (seed, prepared) => installBowl(seed, prepared as Bowl),
+  isPrepared: (seed) => BOWL_CACHE.has(seed),
   sample: olympicSample,
 });
