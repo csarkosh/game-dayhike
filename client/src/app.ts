@@ -82,6 +82,7 @@ import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_L
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
+import type { PreparedScene } from "./game/preparedScene.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
 import { carDirection, doorSpot, trailEntrance, trailheadPlaces } from "./sim/trailhead.js";
 import { BOARD_IMAGE_URLS } from "./game/boardImages.js";
@@ -214,6 +215,11 @@ export type GameOptions = {
    * for a start with an intro playing over it, whose frames the build must
    * not take. Absent, the terrain is built with the renderer, as always. */
   deferClipmap?: boolean;
+  /** The hike's first scene as the world's worker sampled it for `tier`
+   * (`preparedScene.ts`, `worldPrep.ts`): handed to the first renderer made
+   * and to no other, since its builders take the arrays as their own. Absent
+   * or null, the renderer samples the ground itself, as always. */
+  prepared?: PreparedScene | null;
   /** An engine already made for the canvas (WebGPU, where `main.ts` chose
    * it) for the first renderer at `tier`; absent, the renderer makes the
    * WebGL2 one. */
@@ -436,12 +442,21 @@ function buildGame(
   // and the props fill. With no film there is nothing to keep moving, and they build as always.
   const firstBuilds = options.deferClipmap === true ? createFirstBuilds() : undefined;
   made(() => firstBuilds?.dispose());
+  // The scene the world's worker sampled goes to the first renderer made, the ladder's first
+  // attempt at the tier it was sampled for, and is let go of here: a renderer made after it (a
+  // lower tier, WebGL2 after WebGPU, a switch from Settings) samples the ground for itself.
+  let sampledAhead = options.prepared ?? null;
+  const takePrepared = (): PreparedScene | null => {
+    const scene = sampledAhead;
+    sampledAhead = null;
+    return scene;
+  };
   const first = buildFirstRenderer(
     canvas,
     [options.tier, ...options.fallbackTiers],
     {
       build: (next, at, engine) =>
-        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, prepared: takePrepared(), firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },

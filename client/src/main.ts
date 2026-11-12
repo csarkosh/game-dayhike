@@ -27,7 +27,8 @@ import { createRouteAnnouncer } from "./game/routeAnnounce.js";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { worldInputs } from "./game/worldInputs.js";
-import { startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "./game/worldPrep.js";
+import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "./game/worldPrep.js";
+import type { PreparedScene } from "./game/preparedScene.js";
 import { startSceneRoute } from "./game/scene/sceneRoute.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
@@ -1180,6 +1181,20 @@ function render(container: HTMLDivElement): void {
   // one that fails, the build makes them as it always did (`worldPrep.ts`).
   const prep = startWorldPrep(worldInputs(route.token, location.search));
   let prepOutcome: WorldPrepOutcome | null = null;
+  // The hike's first scene (`preparedScene.ts`): asked of the same worker
+  // once the tier is decided, waited for before the build, and handed to the
+  // first start alone, whose renderer takes its arrays in place of sampling
+  // the ground. Where there is none, the build samples as it always did.
+  let sampling: Promise<PreparedScene | null> = Promise.resolve(null);
+  let sampled: PreparedScene | null = null;
+  /** The tier the scene was asked for, and the tier of the one that came (null: none came). */
+  let sceneTier: QualityTier | null = null;
+  let sampledFor: QualityTier | null = null;
+  const takeSampled = (): PreparedScene | null => {
+    const scene = sampled;
+    sampled = null;
+    return scene;
+  };
   // Each probe step draws on the engine the WebGPU rule gives its tier, on
   // its own canvas, and a WebGPU step that fails is the rule's start failure
   // (`measureOnRuleEngine`); the game's failure handling never hears of it.
@@ -1208,11 +1223,11 @@ function render(container: HTMLDivElement): void {
   // How long each step of the start took, for its `load` row: the tier's
   // decision (with its probe, where one ran), the intro's buffer, the engine,
   // the film's top-up, what the start then still waited for the world's
-  // worker, and the build. Each lap is measured from the end of the one
+  // worker and then for its scene, and the build. Each lap is measured from the end of the one
   // before, and named `<step>Ms` so none shadows the row's `build` or `engine`.
   const laps: Record<string, number> = {};
   let lapStart = performance.now();
-  const lap = (name: "decide" | "intro" | "engine" | "film" | "world" | "build"): void => {
+  const lap = (name: "decide" | "intro" | "engine" | "film" | "world" | "scene" | "build"): void => {
     const now = performance.now();
     laps[`${name}Ms`] = Math.round(now - lapStart);
     lapStart = now;
@@ -1238,6 +1253,8 @@ function render(container: HTMLDivElement): void {
       ).then((decided) => {
         lap("decide");
         telemetry.mark("start:engine");
+        sceneTier = decided.tier;
+        sampling = prep.scene(decided.tier);
         return decided;
       }),
     before:
@@ -1252,6 +1269,10 @@ function render(container: HTMLDivElement): void {
       prepOutcome = await prep.ready;
       lap("world");
       console.info(worldPrepLine(prepOutcome));
+      sampled = await sampling;
+      sampledFor = sampled?.tier ?? null;
+      lap("scene");
+      if (sceneTier !== null) console.info(sceneLine(sceneTier, sampled, laps.sceneMs ?? 0));
     },
     paint: () => new Promise((resolve) => afterNextPaint(resolve)),
     engine: (decided, read) => {
@@ -1270,8 +1291,10 @@ function render(container: HTMLDivElement): void {
       // The engine's lap ends here, a paint after it was made.
       lap("engine");
       telemetry.mark("start:build");
-      launch(container, onCanvas, route.token, decided, (tier, wanted) => engineFor(tier, read, () => !cancelled(), wanted), intro);
+      launch(container, onCanvas, route.token, decided, (tier, wanted) => engineFor(tier, read, () => !cancelled(), wanted), intro, takeSampled);
       lap("build");
+      // The build has what it wanted of the worker: the worker ends, and the scene is let go of.
+      prep.dispose();
       telemetry.event("load", {
         ...laps,
         tier: decided.tier,
@@ -1279,6 +1302,7 @@ function render(container: HTMLDivElement): void {
         engine: game?.graphics().engine ?? "none",
         prep: prepOutcome?.why ?? "none",
         prepMs: Math.round(prepOutcome?.ms ?? 0),
+        scene: sampledFor === null ? "none" : "made",
       });
       telemetry.mark("game");
     },
@@ -1306,7 +1330,9 @@ function render(container: HTMLDivElement): void {
  * the container, and the throw is held against the engine once that stands
  * (`startOnEngine`); a throw on WebGL2 goes up to the start's one catch
  * (`startHike`). `engineForGame` makes the engine for a switch of tier or a
- * rebuild later.
+ * rebuild later. `takeSampled` hands over the hike's first scene from the
+ * world's worker, once: the first start's renderer takes its arrays, and a
+ * start made again on WebGL2 samples the ground for itself.
  */
 function launch(
   container: HTMLElement,
@@ -1315,6 +1341,7 @@ function launch(
   decided: StartupTier,
   engineForGame: (tier: QualityTier, wanted: () => boolean) => Promise<EngineOnCanvas>,
   intro: IntroRun | null,
+  takeSampled: () => PreparedScene | null,
 ): void {
   const handle = startOnEngine<GameHandle>(onCanvas, {
     // The recorder the game is handed is `startOnEngine`'s: a fault found
@@ -1333,6 +1360,7 @@ function launch(
           if (intro !== null && activeIntro === intro) cutIntro(intro, "error");
         },
         deferClipmap: intro !== null,
+        prepared: takeSampled(),
         engine: engine ?? undefined,
         watchers: watchers ?? undefined,
         keepEngine: (kept) => keepEngine(kept, releaseEngine),

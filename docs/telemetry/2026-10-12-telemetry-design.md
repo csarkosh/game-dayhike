@@ -120,7 +120,7 @@ The events, in the order a session makes them:
 | `invite_copied` | | the invite link reached the clipboard |
 | `lobby_change` | `members`, `joined`, `left` | the roster changed: who came and who went, by count |
 | `lobby_end` | `reason`, `members` | `host_gone` or `left` |
-| `load` | `decideMs`, `introMs`, `engineMs`, `filmMs`, `worldMs`, `buildMs`, `tier`, `source`, `engine`, `prep`, `prepMs` | the start chain finished (`startHike`); `worldMs` is what the start still waited for the world's worker once the film had its top-up, `prep` how that worker ended (`done`, `cached`, `no-worker`, `failed`, `timeout`) and `prepMs` how long it ran |
+| `load` | `decideMs`, `introMs`, `engineMs`, `filmMs`, `worldMs`, `sceneMs`, `buildMs`, `tier`, `source`, `engine`, `prep`, `prepMs`, `scene` | the start chain finished (`startHike`); `worldMs` is what the start still waited for the world's worker once the film had its top-up, `prep` how that worker ended (`done`, `cached`, `no-worker`, `failed`, `timeout`) and `prepMs` how long it ran; `sceneMs` is what the start then still waited for the worker's first scene, and `scene` whether one came (`made`) or the build sampled the ground itself (`none`) |
 | `start_fail` | the laps so far, `msg` | it did not |
 | `ready` | `ms` | the world ready to be looked at, from the launch |
 | `match_start` | `role`, `party`, `lobby` | the host session, or a follower's once connected |

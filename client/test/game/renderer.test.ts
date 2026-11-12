@@ -14,6 +14,7 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import type { TerrainTexturePlugin } from "../../src/game/terrainTexture.js";
 
@@ -159,7 +160,10 @@ import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { Level } from "../../src/sim/level.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
 import { createForest } from "../../src/sim/forest.js";
-import { elevationAt } from "../../src/sim/terrain.js";
+import { activeTerrainVariant, elevationAt, type LakeSource } from "../../src/sim/terrain.js";
+import { trailheadStart } from "../../src/sim/spawn.js";
+import { prepareScene } from "../../src/game/preparedScene.js";
+import { waterPlantPlacements } from "../../src/game/waterPlantField.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { createSkyTable } from "../../src/game/skyTable.js";
 import { skyFixture } from "./helpers/skyFixture.js";
@@ -979,7 +983,8 @@ describe("world shell wiring", () => {
     // (`RendererOptions.start`): at the origin and the level's first spawn they are built twice,
     // the second time whole in the player's first frame.
     expect(src).toContain("      start: options.start,");
-    expect(src).toContain("createWater(scene, forest.seed, waterLevel, lakes, tier, options.start?.x ?? level.playerSpawns[0]?.x ?? 0, options.start?.z ?? level.playerSpawns[0]?.z ?? 0, clock)");
+    expect(src).toContain("const waterAt = { x: options.start?.x ?? level.playerSpawns[0]?.x ?? 0, z: options.start?.z ?? level.playerSpawns[0]?.z ?? 0 };");
+    expect(src).toContain("createWater(scene, forest.seed, waterLevel, lakes, tier, waterAt.x, waterAt.z, clock, {");
     // The rings leave out the ground the face patches drawn now cover, and
     // the patches build on the same scheduler.
     expect(src).toContain("cover: () => facePatches?.cover() ?? null,");
@@ -1087,7 +1092,7 @@ describe("world shell wiring", () => {
     // frame at a time get none.
     // Its midges toned for the frame's colour path, as the lighting's dome is.
     expect(creation).toMatch(
-      /forest !== null && options\.wildlife !== false\s*\?\s*lakes\.map\(\(l\) => createWaterLife\(scene, forest\.seed, l, tier, postFeatures\.colourPath\)\)/,
+      /forest !== null && options\.wildlife !== false\s*\?\s*lakes\.map\(\(l, i\) => createWaterLife\(scene, forest\.seed, l, tier, postFeatures\.colourPath, lakePieces\[i\]\?\.life\)\)/,
     );
     expect(src).toContain("const lakeChoice = createLakeChoice(lakes);");
     expect(src).toContain("createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath, sky: skyTable });");
@@ -1389,6 +1394,87 @@ describe("the reflections' ground colour", () => {
     // A sun under the horizon lights nothing: the fill alone.
     const night = skyStateFor(skyFixture(), 0, WEATHER_PRESETS.clear);
     expect(lakeMirrorColourOf(night, WEATHER_PRESETS.clear, new Color3()).asArray()).toEqual([0.036, 0.03276, 0.0288]);
+  });
+});
+
+describe("a renderer handed the hike's first scene, sampled ahead", () => {
+  const SEED = 388817;
+  const LEVEL: Level = { id: "prepared-scene-test", brushes: [], playerSpawns: [], enemySpawns: [] };
+  const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
+  const mesh = (name: string): Mesh => EngineStore.LastCreatedScene!.getMeshByName(name) as Mesh;
+  /** The lowest height the innermost terrain ring draws. */
+  const lowestGround = (): number => {
+    const positions = mesh("clipmap_0").getVerticesData(VertexBuffer.PositionKind)!;
+    let lowest = Infinity;
+    for (let i = 1; i < positions.length; i += 3) lowest = Math.min(lowest, positions[i]!);
+    return lowest;
+  };
+  /** A low-tier scene of the world in which every piece is one no sampling gives. */
+  function markedScene() {
+    const scene = prepareScene(SEED, "olympic", "low");
+    scene.rings.forEach((ring, level) => ring.lift.fill(5000 + level));
+    scene.waterRings!.forEach((ring) => ring.h.fill(-100));
+    const lake = scene.lakes[0]!;
+    lake.surface.depths[0] = 4321;
+    // One reed at the lake's middle, where none grows.
+    lake.plants = { reeds: [[{ cls: 0, x: lake.cx, z: lake.cz, groundH: 0, groundDx: 0, groundDz: 0, scale: 1, variant: 0, hash: 0.5 }], [], []], pads: [] };
+    lake.skyline![0] = 0.4321;
+    return scene;
+  }
+  const skyline = (): Float32Array =>
+    (EngineStore.LastCreatedScene!.textures.find((t) => t.name === "lake_skyline")!.getInternalTexture() as unknown as { _bufferView: Float32Array })._bufferView;
+  const reeds = (): number => [0, 1, 2].reduce((n, v) => n + mesh(`water_reeds_${v}`).thinInstanceCount, 0);
+
+  it("builds its terrain, its water and its lake from the scene's pieces, and from its own sampling where the scene is not its own", () => {
+    const start = trailheadStart(SEED);
+    expect(start).not.toBeNull();
+    const scene = markedScene();
+    const lakeSource = activeTerrainVariant().waterBodies!(SEED).find((b): b is LakeSource => b.kind === "lake")!;
+    // The reed handed in means something only where sampling gives none: this world's lake is clear.
+    expect(waterPlantPlacements(SEED, lakeSource).reeds.flat()).toHaveLength(0);
+    const forTier = structuredClone(scene);
+    forTier.tier = "medium";
+    const forSeed = structuredClone(scene);
+    forSeed.seed = SEED + 1;
+
+    const given = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "low", start, prepared: scene });
+    try {
+      expect(lowestGround()).toBe(5000);
+      expect([...new Set(mesh("water_0").getVerticesData("bedDepth")!)]).toEqual([100]);
+      expect(mesh("pond_0").getVerticesData("bedDepth")![0]).toBe(4321);
+      expect(reeds()).toBe(1);
+      expect(skyline()[0]).toBe(Math.fround(0.4321));
+    } finally {
+      given.dispose();
+    }
+
+    // A scene sampled for another tier, or for another world, is not this renderer's: it samples everything.
+    for (const other of [forTier, forSeed, null]) {
+      const own = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED), { tier: "low", start, prepared: other });
+      try {
+        expect(lowestGround()).toBeLessThan(5000);
+        expect(mesh("water_0").getVerticesData("bedDepth")).not.toContain(100);
+        expect(mesh("pond_0").getVerticesData("bedDepth")![0]).not.toBe(4321);
+        expect(reeds()).toBe(0);
+        expect(skyline()[0]).not.toBe(Math.fround(0.4321));
+      } finally {
+        own.dispose();
+      }
+    }
+  }, timeLimit(240_000));
+
+  it("hands each builder its piece through the check that says the piece is its own", () => {
+    const src = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
+    // A scene for another tier is no scene at all.
+    expect(src).toContain("const prepared = options.prepared?.tier === tier ? options.prepared : null;");
+    expect(src).toContain("rings: fittingRings(prepared, forest.seed, options.start ?? { x: 0, z: 0 }, BASE_SPACING_BY_TIER[tier]),");
+    expect(src).toContain("rings: fittingWaterRings(prepared, forest.seed, waterAt.x, waterAt.z),");
+    expect(src).toContain("bed: fittingBed(prepared, forest.seed, tier, waterAt.x, waterAt.z),");
+    expect(src).toContain("ocean: fittingOcean(prepared, forest.seed, tier),");
+    expect(src).toContain("surfaces: lakePieces.map((piece) => piece?.surface ?? null),");
+    expect(src).toContain("createWaterPlants(scene, forest.seed, lakes, lakePieces.map((piece) => piece?.plants ?? null))");
+    expect(src).toContain("createWaterLife(scene, forest.seed, l, tier, postFeatures.colourPath, lakePieces[i]?.life)");
+    expect(src).toContain("lakePieces[i]?.skyline ?? skylineElevations(l, forest.seed, skylineTrees(l, forest.seed))");
   });
 });
 

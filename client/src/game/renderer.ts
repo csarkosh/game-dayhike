@@ -136,7 +136,9 @@ import {
   type BedGrid,
 } from "./bedHeight.js";
 import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
-import type { PreparedLakeSurface } from "./preparedScene.js";
+import {
+  fittingBed, fittingLake, fittingOcean, fittingRings, fittingWaterRings, type PreparedLakeSurface, type PreparedScene,
+} from "./preparedScene.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
 import { NEAR_RADIUS } from "./forestField.js";
 import { CLUTTER_REACH } from "./clutterField.js";
@@ -1884,6 +1886,13 @@ export type RendererOptions = {
    * no trail), the origin and the level's first spawn, and that first frame
    * builds them again. */
   start?: { x: number; z: number } | null;
+  /** The hike's first scene, sampled ahead by the world's worker
+   * (`preparedScene.ts`): the terrain's rings, the water's rings, bed and
+   * ocean field, and each lake's plants, life, surface and skyline. For the
+   * hike's first renderer alone: the builders take its arrays as their own.
+   * Each piece is used only where it is the one this renderer would sample
+   * for its seed, terrain, tier and start; the rest it samples. */
+  prepared?: PreparedScene | null;
   /** The loader of first builds, for a start whose intro's film covers the
    * hike (`firstBuilds.ts`): the forest, the ground cover, the blades, the
    * duff and the props hand it the builds that cannot wait, and it steps
@@ -2172,6 +2181,10 @@ function buildRenderer(
   // brush path as well as the forest — one lit world is worth more than the
   // sandbox's old dark clear colour.
   const tier = options.tier ?? detectTier(globalThis.navigator);
+  // The hike's first scene as the world's worker sampled it, when it was
+  // sampled for this tier: each builder below takes its piece where the
+  // piece is the one it would make (`preparedScene.ts`'s `fitting…`).
+  const prepared = options.prepared?.tier === tier ? options.prepared : null;
   // Who owns colour is decided once, before lighting and the post chain are
   // built, from the tier and the float-target capability.
   const postFeatures = postFeaturesFor(tier, fxSupportedBy(engine));
@@ -2447,6 +2460,8 @@ function buildRenderer(
       deferred: options.deferClipmap,
       start: options.start,
       baseSpacing: BASE_SPACING_BY_TIER[tier],
+      // The rings the world's worker sampled, where they are this build's own.
+      rings: fittingRings(prepared, forest.seed, options.start ?? { x: 0, z: 0 }, BASE_SPACING_BY_TIER[tier]),
       // The ground the patches drawn now cover, not the camera's: theirs
       // may still be building. They are made below, and updated before it.
       cover: () => facePatches?.cover() ?? null,
@@ -2469,13 +2484,24 @@ function buildRenderer(
     forest !== null
       ? (activeTerrainVariant().waterBodies?.(forest.seed).filter((b): b is LakeSource => b.kind === "lake") ?? [])
       : [];
+  // Where the water's rings and bed are first centred: the hike's start.
+  const waterAt = { x: options.start?.x ?? level.playerSpawns[0]?.x ?? 0, z: options.start?.z ?? level.playerSpawns[0]?.z ?? 0 };
+  // What the world's worker sampled for each lake, where it is that lake's.
+  const lakePieces = forest === null ? [] : lakes.map((l, i) => fittingLake(prepared, forest.seed, l, i));
   const water =
     forest !== null && waterLevel !== undefined
-      ? createWater(scene, forest.seed, waterLevel, lakes, tier, options.start?.x ?? level.playerSpawns[0]?.x ?? 0, options.start?.z ?? level.playerSpawns[0]?.z ?? 0, clock)
+      ? createWater(scene, forest.seed, waterLevel, lakes, tier, waterAt.x, waterAt.z, clock, {
+        rings: fittingWaterRings(prepared, forest.seed, waterAt.x, waterAt.z),
+        bed: fittingBed(prepared, forest.seed, tier, waterAt.x, waterAt.z),
+        ocean: fittingOcean(prepared, forest.seed, tier),
+        surfaces: lakePieces.map((piece) => piece?.surface ?? null),
+      })
       : null;
   partOf(water);
   // A murky lake's reeds, cattails and lilies: placed by the sim, built here.
-  const waterPlants = forest !== null && lakes.length > 0 ? createWaterPlants(scene, forest.seed, lakes) : null;
+  const waterPlants = forest !== null && lakes.length > 0
+    ? createWaterPlants(scene, forest.seed, lakes, lakePieces.map((piece) => piece?.plants ?? null))
+    : null;
   partOf(waterPlants);
   // The midges, the dragonflies and the frogs of every lake (spec §10.3):
   // cosmetic like the animals, so under their guard too (a scene recorded a
@@ -2485,7 +2511,7 @@ function buildRenderer(
   // lake's reach (`lakeChoice.ts`), resting otherwise.
   const waterLives: WaterLife[] =
     forest !== null && options.wildlife !== false
-      ? lakes.map((l) => createWaterLife(scene, forest.seed, l, tier, postFeatures.colourPath))
+      ? lakes.map((l, i) => createWaterLife(scene, forest.seed, l, tier, postFeatures.colourPath, lakePieces[i]?.life))
       : [];
   for (const life of waterLives) partOf(life);
   /** The lake the mirror, the panorama and the life heard serve, and each lake's life's reach. */
@@ -2547,7 +2573,9 @@ function buildRenderer(
   const lakePanorama = reflected && tier === "medium" ? createLakePanorama(scene, firstLake) : null;
   partOf(lakePanorama);
   const lakeSkylines: RawTexture[] =
-    reflected && tier !== "high" ? lakes.map((l) => createSkylineTexture(scene, skylineElevations(l, forest.seed, skylineTrees(l, forest.seed)))) : [];
+    reflected && tier !== "high"
+      ? lakes.map((l, i) => createSkylineTexture(scene, lakePieces[i]?.skyline ?? skylineElevations(l, forest.seed, skylineTrees(l, forest.seed))))
+      : [];
   for (const skyline of lakeSkylines) partOf(skyline);
   // The ground in either: the five inner rings (to the ridges past ring 3's
   // 512 m) through a cheap lit stand-in, never the terrain's own material.

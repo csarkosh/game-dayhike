@@ -273,8 +273,23 @@ and a later hike in the same session makes its own, with the file by then in the
      hike again starts no worker. Measured on a phone (a Pixel 9, first visits started cool,
      2026-11-12): the build's stop fell from 2.3 to 3.8 s to 0.8 to 2.0 s, the longer in a world
      with a lake beside its trailhead, whose water the build still samples itself.
-   - Still whole: the rest of the build (`buildGame` is one task: the water, its plants and
-     life, the renderer, the session), the water's first fill, the face patches' near band and
+   - The ground the first renderer reads is sampled off the page too (amended 2026-11-12). What
+     was left of the build's task was mostly sampling: the water's seven rings, the first
+     terrain ring, the bed under the water and the ocean's field, and beside a lake its reeds
+     and lilies, its life's layout, its surface and its skyline (on a phone 0.5 s with no lake
+     by the start, 1.6 s with one), and after the build the other six terrain rings, a stop of
+     0.11 to 0.20 s each. Once the tier is decided the page asks the same worker for the hike's
+     first scene at that tier (`game/preparedScene.ts`): one pure function that samples all of
+     it around the trailhead by the builders' own functions, posted with its arrays moved
+     across, not copied. The build waits for it after the world (`beforeBuild`) and hands it to
+     the hike's first renderer, where each builder takes its piece when the piece is the one it
+     would have made (the scene's seed, terrain and tier, a ring's spacing and snapped origin,
+     the bed's square, a lake's place and centre) and samples for itself when it is not. So a
+     renderer made at a fallback tier, one made again on WebGL2, one a switch from Settings
+     makes, and a hike whose worker had no scene to give all sample as before, and the world
+     is the same to the bit. The worker is ended once the build has taken the scene.
+   - Still whole: the rest of the build (`buildGame` is one task: the renderer, its materials,
+     the session, and the meshes made from what was sampled), the face patches' near band and
      wildlife's first collect.
 5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, a frame
    has shown the shells the player's place and the loader of first builds has drained (asked once

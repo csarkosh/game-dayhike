@@ -38,7 +38,30 @@ describe("the seed and the terrain a hike's world is made from", () => {
     expect(main.match(/\bstartWorldPrep\(/g)).toEqual(["startWorldPrep("]);
     expect(main).toContain("const prep = startWorldPrep(worldInputs(route.token, location.search));");
     expect(main).toContain("prepOutcome = await prep.ready;");
-    // A render that moves on, and a start that fails, end the worker.
-    expect(main.match(/prep\.dispose\(\);/g)).toHaveLength(2);
+    // A render that moves on, and a start that fails, end the worker; a start that built lets go of it and its scene.
+    expect(main.match(/prep\.dispose\(\);/g)).toHaveLength(3);
+  });
+
+  it("asks the worker for the hike's first scene once, at the tier decided, waits for it before the build and hands it to the build once", () => {
+    const main = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(main.match(/prep\.scene\(/g)).toEqual(["prep.scene("]);
+    expect(main).toContain("sampling = prep.scene(decided.tier);");
+    // After the world is ready, so the wait for it is its own lap.
+    const wait = main.slice(main.indexOf("prepOutcome = await prep.ready;"), main.indexOf("paint: () =>"));
+    expect(wait).toContain("sampled = await sampling;");
+    expect(wait).toContain('lap("scene");');
+    // The first start takes it; a start made again on WebGL2 after a WebGPU start threw gets none.
+    expect(main).toContain("prepared: takeSampled(),");
+    expect(main.match(/takeSampled\(\)/g)).toHaveLength(1);
+    expect(main).toContain('scene: sampledFor === null ? "none" : "made",');
+  });
+
+  it("hands the scene to the hike's first renderer at the tier asked for, and to no other", () => {
+    const app = readFileSync(new URL("../../src/app.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    // The one renderer made with it: the ladder's first attempt.
+    expect(app.match(/prepared: /g)).toEqual(["prepared: "]);
+    expect(app).toContain("prepared: takePrepared(),");
+    const first = app.slice(app.indexOf("const first = buildFirstRenderer("), app.indexOf("let renderer: Renderer = first.renderer;"));
+    expect(first).toContain("prepared: takePrepared(),");
   });
 });
