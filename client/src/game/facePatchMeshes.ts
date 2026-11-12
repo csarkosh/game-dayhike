@@ -47,6 +47,7 @@ import {
 } from "./facePatches.js";
 import type { QualityTier } from "./quality.js";
 import { createCrossing, crossingAt, finish, nextCrossing, type Slices, type SyncJobs } from "./syncJobs.js";
+import type { FirstBuilds } from "./firstBuilds.js";
 import { enableFeaturePaint, enableRoadPaint, enableTrailPaint, setTerrainFarBand } from "./terrainTexture.js";
 
 /** The patches' material's name in `terrainMaterialFor`'s cache. */
@@ -75,6 +76,12 @@ export type FacePatchRegistries = {
   /** The world's trail, which the walkable rock keeps off (`sim/rockSurface.ts`,
    * `trailClearAt`), as the ground the player stands on does; null or absent, none. */
   trail?: TrailGraph | null;
+  /** The loader of first builds, for a start whose intro's film covers the
+   * hike (`firstBuilds.ts`): while it is open the first set is handed to it
+   * whole and stepped, no near band built at once, since no frame shows it;
+   * closed or absent, the near band is built in the call and the rest over
+   * the frames after, as always. */
+  firstBuilds?: FirstBuilds;
   /** The world's feature table made already (`featureTableFor`): the ground's
    * and this material's textures are of one table. Absent or null, baked here. */
   featureTable?: Float32Array | null;
@@ -393,9 +400,12 @@ export function createFacePatches(
       const first = Number.isNaN(crossing.originX);
       const kind = crossingAt(crossing, camX, camZ, ci * PATCH_CELL, cj * PATCH_CELL, PATCH_CELL, jobs !== undefined, jobs?.started());
       if (kind === "none") {
-        aim(camX, camZ);
+        // While the loader steps the first set, nothing is built ahead of it.
+        if (options.firstBuilds?.queued(slot) !== true) aim(camX, camZ);
         return;
       }
+      // A new place: a set the loader still holds for the last one is dropped.
+      options.firstBuilds?.cancel(slot);
       // Idle work runs beside a patient job: the job builds what it needs,
       // and the idle work starts again once it is drawn.
       stopAhead();
@@ -405,6 +415,12 @@ export function createFacePatches(
       }
       jobs?.cancel(slot);
       if (first && jobs !== undefined) {
+        if (options.firstBuilds?.open === true) {
+          // Under the film no frame shows the face in front of the camera:
+          // the whole set is the loader's, a few milliseconds a turn.
+          options.firstBuilds.add(slot, rebuild(ci, cj), "facePatches");
+          return;
+        }
         // The face in front of the camera on the first frame, the distance
         // over the frames after it.
         finish(rebuild(ci, cj, true));
@@ -424,6 +440,7 @@ export function createFacePatches(
     },
     dispose() {
       disposed = true;
+      options.firstBuilds?.cancel(slot);
       jobs?.cancel(slot);
       jobs?.idle(slot, null);
       for (const entry of cells.values()) drop(entry);

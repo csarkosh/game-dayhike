@@ -13,6 +13,7 @@ import {
   NO_STITCH, PATCH_REACH, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch, type PatchCell,
 } from "../../src/game/facePatches.js";
 import { createSyncJobs, type SyncJobs } from "../../src/game/syncJobs.js";
+import { createFirstBuilds } from "../../src/game/firstBuilds.js";
 import { TerrainTexturePlugin } from "../../src/game/terrainTexture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -289,6 +290,58 @@ describe("createFacePatches, as jobs", () => {
     expect(patches.cover()).toEqual(facePatchCover(CAM.x, CAM.z, PATCH_REACH.high));
     patches.dispose();
   }, timeLimit(120_000));
+
+  it("hands its first set, whole, to the loader of first builds while one is open, and builds none of it in the call", () => {
+    const s = scene();
+    const t = steppedJobs();
+    // The loader's turns, taken when the test says.
+    const turns: (() => void)[] = [];
+    const loader = createFirstBuilds({ later: (run) => turns.push(run) });
+    const casting = new Set<AbstractMesh>();
+    const patches = createFacePatches(s, SEED, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), t.jobs, {
+      shadows: { add: (m) => casting.add(m), remove: (m) => casting.delete(m) },
+      firstBuilds: loader,
+    });
+    patches.update(CAM.x, CAM.z);
+    // No near band at once: one build queued, nothing built, nothing drawn, no ground covered.
+    expect(loader.pending()).toBe(1);
+    expect(patches.builds()).toBe(0);
+    expect(patches.meshCount()).toBe(0);
+    expect(patches.cover()).toBeNull();
+    // Frames meanwhile begin nothing on the scheduler, patient or idle, and queue nothing more.
+    for (let frame = 0; frame < 3; frame++) {
+      patches.update(CAM.x, CAM.z);
+      t.frame();
+      expect(t.jobs.last.slices + t.jobs.last.idle).toBe(0);
+    }
+    expect(loader.pending()).toBe(1);
+    // Stepped to its end: the set the near band and the patient job make between them, drawn whole.
+    while (turns.length > 0) (turns.shift() as () => void)();
+    expect(loader.pending()).toBe(0);
+    expect(patches.builds()).toBe(1961);
+    expect(patches.meshCount()).toBe(753);
+    expect(casting).toEqual(new Set(patchMeshes(s)));
+    expect(patches.cover()).toEqual(facePatchCover(CAM.x, CAM.z, PATCH_REACH.high));
+    patches.dispose();
+
+    // The cut finds the set still queued: `close` builds and draws it, and a set after it is the scheduler's.
+    const cut = createFirstBuilds({ later: () => undefined });
+    const atCut = createFacePatches(s, SEED, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), t.jobs, { firstBuilds: cut });
+    atCut.update(CAM.x, CAM.z);
+    expect(atCut.meshCount()).toBe(0);
+    cut.close();
+    expect(atCut.meshCount()).toBe(753);
+    atCut.dispose();
+
+    // Disposed while its set is queued: the loader holds nothing of it, and no mesh is left.
+    const left = createFirstBuilds({ later: () => undefined });
+    const gone = createFacePatches(s, SEED, "high", terrainMaterialFor(s, FACE_PATCH_MATERIAL), t.jobs, { firstBuilds: left });
+    gone.update(CAM.x, CAM.z);
+    expect(left.pending()).toBe(1);
+    gone.dispose();
+    expect(left.pending()).toBe(0);
+    expect(patchMeshes(s)).toHaveLength(0);
+  }, timeLimit(180_000));
 
   /** Frames of `update` at (x, z) and a share each until `done`, at most
    * `most`: how many it took. */

@@ -717,8 +717,18 @@ export function createClipmap(
         // it, though the camera has not moved, so none waits on a further
         // crossing to stop leaving out ground the new set no longer covers.
         if (!(jobs?.pending(owner) ?? false) && (options.cover?.(camX, camZ) ?? null) !== covered) {
-          if (jobs !== undefined) jobs.begin(owner, build(camX, camZ), false, "clipmap");
-          else buildAtOnce(options.firstBuilds, owner, build(camX, camZ), "clipmap");
+          // The first cover the rings are built for cannot wait: under the film the cliff patches'
+          // first set is the loader's, so it comes after the rings' first frame, and a frame shown
+          // with the rings still under the patches is what this keeps off (stepped by the loader
+          // while it is open, whole in the call once the film is cut). A cover after that is the
+          // scheduler's, a little a frame.
+          if (jobs !== undefined && covered !== null) {
+            jobs.begin(owner, build(camX, camZ), false, "clipmap");
+          } else {
+            // Nothing is prepared ahead beside a build the loader steps: the build aims it again as it ends.
+            jobs?.idle(owner, null);
+            buildAtOnce(options.firstBuilds, owner, build(camX, camZ), "clipmap");
+          }
           return;
         }
         aim(camX, camZ, false);
@@ -2608,6 +2618,7 @@ function buildRenderer(
     : createFacePatches(scene, forest.seed, tier, facePatchMaterial, jobs, {
       // The world's trail, which the walkable rock keeps off, as the ground the player stands on does.
       trail: activeTerrainVariant().trailGraph?.(forest.seed) ?? null,
+      firstBuilds: options.firstBuilds,
       featureTable: featureTableData,
       // Small casters: left out of the farthest cascade (`ShadowReach`).
       shadows: { add: (mesh) => lighting.addShadowMesh(mesh, "near"), remove: lighting.removeShadowMesh },

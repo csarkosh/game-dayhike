@@ -580,6 +580,54 @@ describe("createClipmap", () => {
     clipmap.dispose();
   }, timeLimit(180_000));
 
+  it("builds the rings for the first cover they are handed as a build that cannot wait: the loader's while it is open, in the call once it has closed", () => {
+    // The patches' first set is the loader's under the film, so the rings' first frame finds no cover and the
+    // cover comes later. The rings must stand rebuilt for it before a frame is shown: stepped by the loader
+    // while the film covers the hike, whole in the call after the cut, never over the frames after.
+    const scarp = 627994160;
+    const wide: ReturnType<typeof facePatchCover> = { x: 8, z: 8, reach: 4096, fine: 4096, cell: 16 };
+    const whole = [32768, 24576, 24576, 24576, 24576, 24576, 24576];
+    const covered = [32768, 24576, 24576, 24575, 24371, 24576, 24576];
+    const triangles = (c: { meshes: readonly { getTotalIndices(): number }[] }): number[] => c.meshes.map((m) => m.getTotalIndices() / 3);
+    const s = scene();
+    for (const closed of [false, true]) {
+      let now = 0;
+      const jobs = createSyncJobs(() => now);
+      const turns: (() => void)[] = [];
+      const loader = createFirstBuilds({ later: (run) => turns.push(run) });
+      let cover: ReturnType<typeof facePatchCover> | null = null;
+      const clipmap = createClipmap(s, scarp, jobs, { cover: () => cover, firstBuilds: loader });
+      // The first frame, no cover yet: its build is the loader's and changes nothing.
+      clipmap.update(0, 0);
+      while (turns.length > 0) (turns.shift() as () => void)();
+      expect(triangles(clipmap)).toEqual(whole);
+      if (closed) loader.close();
+      // The patches' set lands.
+      cover = wide;
+      clipmap.update(0, 0);
+      if (closed) {
+        // After the cut: rebuilt in the call, before the scheduler runs at all.
+        expect(triangles(clipmap)).toEqual(covered);
+      } else {
+        // Under the film: the loader's, and nothing of it on the scheduler.
+        expect(loader.pending()).toBe(1);
+        jobs.run();
+        expect(jobs.last.slices + jobs.last.idle).toBe(0);
+        expect(triangles(clipmap)).toEqual(whole);
+        loader.close();
+        expect(triangles(clipmap)).toEqual(covered);
+      }
+      // A cover that changes after that is the scheduler's, as it always was.
+      cover = { ...wide, reach: 2048, fine: 2048 };
+      clipmap.update(0, 0);
+      expect(loader.pending()).toBe(0);
+      now += 1000;
+      jobs.run();
+      expect(jobs.last.slices).toBeGreaterThan(0);
+      clipmap.dispose();
+    }
+  }, timeLimit(180_000));
+
   it("hands the loader of first builds to the rings, as to the shells", () => {
     const src = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
     const call = src.slice(src.indexOf("    : createClipmap(scene, forest.seed, jobs, {"), src.indexOf("  partOf(clipmap);"));
@@ -1074,7 +1122,7 @@ describe("world shell wiring", () => {
     expect(src).toContain("createClipmap(scene, forest.seed, jobs, {\n      deferred: options.deferClipmap,");
     // Under the intro's film the shells are handed the loader of first builds (`firstBuilds.ts`), so a
     // first fill is stepped rather than run whole in the player's first frame.
-    expect(src.match(/firstBuilds: options\.firstBuilds,/g)).toHaveLength(4); // the rings', the forest's, the ground cover's and the wildlife's
+    expect(src.match(/firstBuilds: options\.firstBuilds,/g)).toHaveLength(5); // the rings', the cliff patches', the forest's, the ground cover's and the wildlife's
     expect(src).toContain("createBladeMeshes(scene, forest.seed, { quality: tier, jobs, firstBuilds: options.firstBuilds })");
     expect(src).toContain("createDuffMeshes(scene, forest.seed, { quality: tier, jobs, firstBuilds: options.firstBuilds })");
     expect(src).toContain("          cover,\n          options.firstBuilds,\n        )"); // the props'
