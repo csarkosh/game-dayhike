@@ -373,7 +373,10 @@ twelve minutes at most (`--cool 300` for five). It matters: three intros back to
 Pixel 9 until a fourth runs about 2.5 times slower, and a phone on charge with its screen held on
 cools slowly. How warm the phone was, how long the run waited and whether it started cool are in
 the run's `meta.phone`, with or without `--cool`. `--query engine=webgpu` times the intro on
-WebGPU.
+WebGPU. `--cellular` tells the browser its connection is cellular (4g) while leaving the line at
+its own speed: Chrome fetches only a film's metadata ahead on a cellular connection, whatever the
+page asks, so this is how the intro film's start is timed as a phone on mobile data meets it
+(the run's `meta.cellular`).
 
 ## Not measurable yet
 

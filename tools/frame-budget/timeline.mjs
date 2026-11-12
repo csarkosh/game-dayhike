@@ -8,7 +8,7 @@
 //   node tools/frame-budget/timeline.mjs --base <url> --out <dir> --remote <port> [--tier medium]
 //       [--engine webgpu|webgl2] [--label <name>] [--settle 45] [--chase 60] [--approach walk|command|escape]
 //       [--stand "x z yaw"] [--seed atmo] [--profile] [--still] [--climb <s>] [--walk] [--screencast]
-//       [--intro <s>] [--cold] [--phone] [--cool [s]] [--query <a=b&c=d>]
+//       [--intro <s>] [--cold] [--phone] [--cool [s]] [--cellular] [--query <a=b&c=d>]
 //
 //   --base <url>      the build: the live site or a preview channel
 //   --out <dir>       where the run's files go (under the lab disk): <label>.json, <label>.cpuprofile,
@@ -35,6 +35,8 @@
 //   --cold            the site's cache and storage emptied first: a first visit
 //   --phone           with --intro: on a phone's Chrome over the cable (--remote 9222, --tier low; the
 //                     README's "The phone"), at the phone's own size, Play tapped
+//   --cellular        with --intro: the browser is told its connection is cellular (4g), at the line's
+//                     own speed, so what it does differently there is timed (a film's preload)
 //   --cool [s]        with --phone: the run waits until the phone is cool (thermal status 0, battery at
 //                     most 34.5 °C), 720 s at most or the seconds given; how warm it was is in the
 //                     run's `meta.phone` either way
@@ -58,7 +60,7 @@ const STILLS = fileURLToPath(new URL("../previews/stills.json", import.meta.url)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function parseArgs(argv) {
-  const o = { base: undefined, out: undefined, remote: undefined, tier: "medium", engine: undefined, label: "run", settle: 45, chase: 60, approach: "walk", stand: "650 -276 1.5708", seed: "atmo", profile: false, still: false, query: "", screencast: false, climb: 0, walk: false, intro: 0, cold: false, phone: false, cool: 0 };
+  const o = { base: undefined, out: undefined, remote: undefined, tier: "medium", engine: undefined, label: "run", settle: 45, chase: 60, approach: "walk", stand: "650 -276 1.5708", seed: "atmo", profile: false, still: false, query: "", screencast: false, climb: 0, walk: false, intro: 0, cold: false, phone: false, cool: 0, cellular: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -82,12 +84,14 @@ function parseArgs(argv) {
     else if (a === "--intro") o.intro = Number(next());
     else if (a === "--cold") o.cold = true;
     else if (a === "--phone") o.phone = true;
+    else if (a === "--cellular") o.cellular = true;
     else if (a === "--cool") o.cool = /^\d+$/.test(argv[i + 1] ?? "") ? Number(next()) : 720;
     else throw new Error(`unknown option ${a}`);
   }
   if (!o.base || !o.out || !o.remote) throw new Error("--base, --out and --remote are needed");
   if (o.phone && !(o.intro > 0)) throw new Error("--phone times an intro: give --intro <s>");
   if (o.cool > 0 && !o.phone) throw new Error("--cool is a phone's: give --phone");
+  if (o.cellular && !(o.intro > 0)) throw new Error("--cellular is an intro's: give --intro <s>");
   if (!(o.tier in TIER_SIZES) && o.tier !== "low") throw new Error(`--tier is medium, high or low, not ${o.tier}`);
   return o;
 }
@@ -202,6 +206,12 @@ async function intro(page, o, root, about, phone = undefined) {
     const size = TIER_SIZES[o.tier] ?? TIER_SIZES.medium;
     await page("Emulation.setDeviceMetricsOverride", { width: size.width, height: size.height, deviceScaleFactor: 1, mobile: false });
   }
+  // The browser told its connection is cellular, at the line's own speed: Chrome fetches only a
+  // film's metadata ahead on one, whatever the page asks (`filmHead.ts`).
+  if (o.cellular) {
+    await page("Network.enable");
+    await page("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1, connectionType: "cellular4g" });
+  }
   await page("Page.addScriptToEvaluateOnNewDocument", { source: RECORDER });
   const url = `${root}/?tier=${o.tier}&telemetry=off${o.engine ? `&engine=${o.engine}` : ""}${o.query ? `&${o.query}` : ""}`;
   const nav = await page("Page.navigate", { url });
@@ -234,7 +244,7 @@ async function intro(page, o, root, about, phone = undefined) {
   const shot = await page("Page.captureScreenshot", { format: "jpeg", quality: 70 });
   writeFileSync(join(o.out, `${o.label}.jpg`), Buffer.from(shot.data, "base64"));
   const ready = tl.marks.find((m) => m.name === "world-ready"), play = tl.marks.find((m) => m.name === "sprint-on");
-  const meta = { label: o.label, time: new Date().toISOString(), url, tier: o.tier, engine: o.engine ?? null, approach: "intro", still: false, settle: 0, chase: o.intro, readyS: ready && play ? (ready.t - play.t) / 1000 : Number.NaN, cold: o.cold, browser: about.browser, ...engine, ...(phone === undefined ? {} : { phone }) };
+  const meta = { label: o.label, time: new Date().toISOString(), url, tier: o.tier, engine: o.engine ?? null, approach: "intro", still: false, settle: 0, chase: o.intro, readyS: ready && play ? (ready.t - play.t) / 1000 : Number.NaN, cold: o.cold, cellular: o.cellular, browser: about.browser, ...engine, ...(phone === undefined ? {} : { phone }) };
   writeFileSync(join(o.out, `${o.label}.json`), JSON.stringify({ meta, ...tl, cast: null }));
   if (profile !== null) writeFileSync(join(o.out, `${o.label}.cpuprofile`), JSON.stringify(profile));
   process.stdout.write(`${o.label}: ${tl.t.length} frames, ${tl.loaf.length} long frames, world ready ${meta.readyS.toFixed(1)} s after Play; written to ${o.out}\n`);
