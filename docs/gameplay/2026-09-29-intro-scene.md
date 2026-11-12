@@ -345,6 +345,15 @@ and a later hike in the same session makes its own, with the file by then in the
      - *The signs.* A host's signs, trailhead board and body are built in the task after
        the build while the film covers the hike (`extrasLater.ts`), and only if the hike and
        its renderer still stand; a follower's, and a start with no film, as before.
+     Measured on a phone (a Pixel 9, three first visits started cool, on WebGPU, 2026-11-12):
+     no stop over a quarter of a second in any of the three, the longest 0.19 to 0.24 s (from
+     0.26 to 0.29 s, and one or two over the limit a run), and 1.8 to 3.4 s spent in stops over
+     0.1 s (from 3.6 to 4.2 s). The build's frame is 0.18 to 0.21 s; the readiness check is
+     several frames of 0.06 to 0.20 s where it was one of 0.24 to 0.29 s; the longest frame
+     left, 0.24 s, is the loop's first draw making its pipelines with the signs' task beside
+     it. The world is ready 12.5 to 14.2 s after Play (20.1 s on the first visit to a build
+     just published). Two of the three runs are inside every limit; the third's film skipped
+     0.13 s of its picture once, as the world was revealed, with no page stop over 0.2 s near it.
    - Still whole: what is left of the build (`buildGame` is one task: the renderer and its
      materials, the meshes made from what came sampled, the session).
 5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, a frame
