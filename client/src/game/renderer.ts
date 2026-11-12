@@ -79,6 +79,7 @@ import type { SkyTable } from "./skyTable.js";
 import { startSkySource, type SkySource } from "./skyWorker.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { adoptEngine, pinShaders } from "./keptEngine.js";
+import type { FirstBuilds } from "./firstBuilds.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
@@ -1708,6 +1709,11 @@ export type Renderer = {
   /** Resolves once the forest's first fill, billboards included, is drawn
    * (`ForestMeshes.ready`); at once in a world without a forest. */
   readonly forestReady: Promise<void>;
+  /** Resolves at the end of the first `sync` that showed the shells where
+   * the view is (a local player's place, or the free camera's): from then
+   * each has begun its first build. A joiner the host has not welcomed has
+   * no such frame yet. A renderer disposed first resolves it too. */
+  readonly firstSynced: Promise<void>;
   /** Resolves once the sky's table holds the slices the lighting needs:
    * those either side of noon and of the hour the renderer is set to, read
    * again as each slice arrives (`whenSkyHeld`). Until then the lighting has
@@ -1906,6 +1912,11 @@ export type RendererOptions = {
    * no trail), the origin and the level's first spawn, and that first frame
    * builds them again. */
   start?: { x: number; z: number } | null;
+  /** The loader of first builds, for a start whose intro's film covers the
+   * hike (`firstBuilds.ts`): the forest, the ground cover, the blades, the
+   * duff and the props hand it the builds that cannot wait, and it steps
+   * them. Absent, each runs whole in the frame that asked for it. */
+  firstBuilds?: FirstBuilds;
   /** Leave the clipmap's first build to `buildFirstClipmap` or
    * `buildClipmapNow`, so a start can step it between paints; the renderer
    * draws no terrain until one has run. Absent, it is built here as always. */
@@ -2656,6 +2667,7 @@ function buildRenderer(
             remove: lighting.removeShadowMesh,
           },
           cover,
+          options.firstBuilds,
         )
       : null;
   partOf(propMeshes);
@@ -2683,6 +2695,7 @@ function buildRenderer(
         // The billboards bake under the sky's light, never Babylon's defaults.
         sky: skyReady(),
         jobs,
+        firstBuilds: options.firstBuilds,
       })
       : null;
   partOf(forestMeshes);
@@ -2709,13 +2722,14 @@ function buildRenderer(
         nearBlades: tier !== "low",
         cull: tier !== "low",
         jobs,
+        firstBuilds: options.firstBuilds,
       })
       : null;
   partOf(clutterMeshes);
   // The near field of blade grass, on the tiers that can afford it; it
   // rebuilds on its own 1 m crossing and draws over the meadow's near cards
   // as detail rather than taking their place.
-  const bladeMeshes = forest !== null && tier !== "low" ? createBladeMeshes(scene, forest.seed, { quality: tier, jobs }) : null;
+  const bladeMeshes = forest !== null && tier !== "low" ? createBladeMeshes(scene, forest.seed, { quality: tier, jobs, firstBuilds: options.firstBuilds }) : null;
   partOf(bladeMeshes);
   // The terrain's sward floor is the shaded ground between those blades, so it
   // runs exactly where they are drawn: off on the low tier. Without a forest
@@ -2728,7 +2742,7 @@ function buildRenderer(
   // The near field of dead leaves, twigs and small branches, on the same
   // tiers as the blades beside it: what the grass field thins out, this fills
   // in, so the ground reads full rather than bare. Low tier draws neither.
-  const duffMeshes = forest !== null && tier !== "low" ? createDuffMeshes(scene, forest.seed, { quality: tier, jobs }) : null;
+  const duffMeshes = forest !== null && tier !== "low" ? createDuffMeshes(scene, forest.seed, { quality: tier, jobs, firstBuilds: options.firstBuilds }) : null;
   partOf(duffMeshes);
   // Rock-wall modules on the faces too steep to stand on, on every tier —
   // the field carries a ring set per tier. Renderer-only: it reads the
@@ -3160,6 +3174,13 @@ function buildRenderer(
   let retiring = false;
   /** The blended eye's scratch (`eyeBlend.ts`), filled every following frame. */
   const eyeScratch: EyePose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
+  // The first frame that showed the shells where the view is (`Renderer.firstSynced`).
+  let markSynced: () => void = () => undefined;
+  const firstSynced = new Promise<void>((resolve) => {
+    markSynced = resolve;
+  });
+  // A renderer that goes before any such frame resolves it too: nothing waits on it for ever.
+  scene.onDisposeObservable.addOnce(() => markSynced());
   const renderer: Renderer = {
     scene,
     engine,
@@ -3169,6 +3190,7 @@ function buildRenderer(
     shadows: { add: (mesh) => lighting.addShadowMesh(mesh, "near"), remove: lighting.removeShadowMesh },
     cover,
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
+    firstSynced,
     skyReady,
     gpuTime,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
@@ -3382,6 +3404,7 @@ function buildRenderer(
         updateLake(weather, sky, true);
         updateSurf(frame.dt);
         jobs.run();
+        markSynced();
         return;
       }
 
@@ -3507,6 +3530,7 @@ function buildRenderer(
       // This frame's share of the rebuilds the updates above began, once
       // every shell has seen the view.
       jobs.run();
+      if (local) markSynced();
     },
     hasWildlife: wildlife !== null,
     wildlifeEvents() {

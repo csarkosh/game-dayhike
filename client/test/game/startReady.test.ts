@@ -28,4 +28,25 @@ describe("the start-time gate", () => {
     await expect(startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: null, maxMs: 5000 })).resolves.toBeUndefined();
     expect(READY_MAX_MS).toBe(60_000);
   }, timeLimit(10_000));
+
+  it("is not ready while a first build is still being stepped, and is when it ends", async () => {
+    const scene = { isDisposed: false, isReady: () => true, getWaitingItemsCount: () => 0 };
+    let built!: () => void;
+    const firstBuilds = new Promise<void>((resolve) => { built = resolve; });
+    let ready = false;
+    void startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: null, maxMs: 60_000, firstBuilds }).then(() => { ready = true; });
+    await new Promise((r) => setTimeout(r, 250));
+    expect(ready).toBe(false);
+    built();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(ready).toBe(true);
+  }, timeLimit(10_000));
+
+  it("calls the world ready at maxMs though a first build never ends", async () => {
+    const scene = { isDisposed: false, isReady: () => true, getWaitingItemsCount: () => 0 };
+    const p = createLoadProgress();
+    // The limit is the gate's own (300 ms here): the test's is ten seconds, and this would never resolve without one.
+    await startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: p, maxMs: 300, firstBuilds: new Promise(() => undefined) });
+    expect(p.view().ready).toBe(true);
+  }, timeLimit(10_000));
 });

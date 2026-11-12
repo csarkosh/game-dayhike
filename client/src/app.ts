@@ -115,6 +115,7 @@ import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFr
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { createCoveredDraw } from "./game/coveredDraw.js";
 import { FIRST_BUILD_SLICE_MS } from "./game/syncJobs.js";
+import { createFirstBuilds } from "./game/firstBuilds.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
@@ -421,12 +422,17 @@ function buildGame(
   // From here the ladder's renderers own it: `createRenderer` releases the
   // engine it was given if its build throws, and the renderer disposes it.
   unowned = undefined;
+  // A start under the intro's film steps its first builds rather than running each whole
+  // (`firstBuilds.ts`): the film's captions and bar keep moving while the forest, the ground cover
+  // and the props fill. With no film there is nothing to keep moving, and they build as always.
+  const firstBuilds = options.deferClipmap === true ? createFirstBuilds() : undefined;
+  made(() => firstBuilds?.dispose());
   const first = buildFirstRenderer(
     canvas,
     [options.tier, ...options.fallbackTiers],
     {
       build: (next, at, engine) =>
-        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
@@ -2327,7 +2333,8 @@ function buildGame(
   // stood with the renderer. The render loop starts once they stand and the
   // sky's first slices are in.
   const progress = reportProgress();
-  progress?.total("world", RING_COUNT + 1);
+  // The rings, the billboards' bakes, and under a film the first fills the loader steps.
+  progress?.total("world", RING_COUNT + (firstBuilds === undefined ? 1 : 2));
   const ringBuilt = (level: number): void => {
     progress?.start("world", `ring${level}`);
     progress?.done("world", `ring${level}`);
@@ -2354,8 +2361,20 @@ function buildGame(
     () => progress?.done("world", "bakes"),
     () => progress?.done("world", "bakes"),
   );
+  if (firstBuilds !== undefined) {
+    progress?.start("world", "fills");
+    void built.firstSynced.then(() => firstBuilds.idle()).then(() => progress?.done("world", "fills"));
+  }
   const ready = firstBuild.then(() =>
-    startReady({ scene: renderer.scene, forestReady: renderer.forestReady, reveal: firstWholeFrame, progress, maxMs: READY_MAX_MS }),
+    startReady({
+      scene: renderer.scene,
+      forestReady: renderer.forestReady,
+      reveal: firstWholeFrame,
+      progress,
+      maxMs: READY_MAX_MS,
+      // Stepped first builds are done once a frame has shown the shells the player's place and the loader is empty.
+      firstBuilds: firstBuilds === undefined ? null : built.firstSynced.then(() => firstBuilds.idle()),
+    }),
   );
   // On a WebGPU engine, the GLSL shaders the WebGL2 renderer loads lazily are
   // fetched ahead once the world is in, at idle, so a rebuild on WebGL2 after
@@ -2689,6 +2708,9 @@ function buildGame(
       const lift = filmDraw.cover();
       return () => {
         lift();
+        // The film is gone: what is left of the first builds runs to its end here, behind the cut's
+        // veil, and from now on a build that cannot wait runs whole, as in any play.
+        firstBuilds?.close();
         if (!disposed) release();
       };
     },
@@ -2713,6 +2735,8 @@ function buildGame(
     },
     dispose() {
       disposed = true;
+      // Nothing steps against a hike that is going: the first builds still queued are dropped.
+      firstBuilds?.dispose();
       if (telemetry !== null) {
         telemetry.sample(null);
         telemetry.event("match_end", { p: progressRounded(), ended, dead });

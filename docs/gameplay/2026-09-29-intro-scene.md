@@ -226,12 +226,27 @@ and a later hike in the same session makes its own, with the file by then in the
    between them, and after a page stop a callback can carry a timestamp from before it, so the
    stop itself read as a pause. By the film's clock beside the page's, a phone's film plays
    through a build of 4 to 6 s.)
-4. The world build runs in steps that yield between them: the start's phases are already
-   separate awaits; the clipmap's first build is a slice generator and is stepped rather than run
-   whole; the first frame's collectors run under the sync budget rather than whole. Today the
-   whole start is one blocking task of about two seconds on a fast machine; after this it holds
-   the main thread for no more than 150 ms at a time, so the captions and the bar keep painting.
-5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, and on
+4. Under the film, first-time building gives the thread back (amended 2026-11-11; the paragraph
+   this replaces promised it and the game did not do it: the clipmap's first build yielded after
+   every eight slices and has seven rings, and every shell's first fill ran whole).
+   - The clipmap's first build is stepped by the clock: the thread is given back whenever 8 ms
+     have passed (`FIRST_BUILD_SLICE_MS`, `stepSlices`). One ring's sampling is still one slice.
+   - The first rings and the water are made where the player starts (`RendererOptions.start`,
+     from `trailheadStart(seed)`), not at the map's origin and a fixed spawn. Built there, the
+     player's first frame finds them in place; built at the origin, it sampled every ring again,
+     whole, with the water's beside them: half of a one-second stop on a phone.
+   - The forest, the ground cover, the blades, the duff and the props hand any build that
+     cannot wait to a loader (`game/firstBuilds.ts`), which steps them one at a time in turns of
+     its own, 8 ms a turn. The forest's and the ground cover's first fills were half a second
+     each on a phone, run whole. The loader lives while the film covers the hike: at the cut
+     what is left runs to its end, and from then a build that cannot wait runs whole, as in any
+     play. A start with no film has no loader and builds as it always did.
+   - Still whole: the build itself (`buildGame` is one task), the water's first fill, the face
+     patches' near band and wildlife's first collect.
+5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, a frame
+   has shown the shells the player's place and the loader of first builds is empty (so a player
+   who skips the film never sees the world fill in; a follower the host has not yet welcomed has
+   no such frame, and is not ready until it has), and on
    WebGPU a whole frame has been drawn with no draw left out; the gate the tier switch already
    uses, run once at start.
 6. Under the film the hike is drawn once every `COVERED_DRAW_MS` (250 ms), not every frame, and
@@ -343,6 +358,15 @@ Every numeric expectation is a literal; explicit time limits go through `timeLim
   or when it failed; not wanted when data is saved or the connection is 3g or worse. The overlay
   does not set again a `src` the element already has, and a warmed film still starts muted on a
   page with no gesture of its own.
+- `stepSlices`: ten slices of 3 ms against 8 give three hand-backs, seven of 70 ms give seven.
+  `firstBuilds.ts`: turns of the slice time; one build at a time in order; an owner's build
+  replaced, cancelled; what is left run whole at `close` and nothing at `dispose`; a build that
+  throws. The shells (`firstFills.test.ts`, and the forest's and the props' own): a first fill
+  handed to an open loader uploads nothing in the call and, run to its end, what a whole build
+  uploads; whole once the loader has closed; replaced, not doubled, by a jump. The clipmap built
+  around a start is left alone by the first view there. `startReady`: not ready while a first
+  build is stepped, and ready at the limit though one never ends. `Renderer.firstSynced`: at the
+  first frame with a local player, not at one without.
 - `coveredDraw.ts`: every frame draws with no film over the hike; a covered hike draws the frames
   at 0, 250, 500 and 750 ms of a second at sixty a second, and every frame again once every cover
   is lifted.

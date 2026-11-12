@@ -554,6 +554,34 @@ describe("applyWetness", () => {
   });
 });
 
+describe("renderer.firstSynced", () => {
+  it("resolves at the first frame that showed the shells where the player is, and not at one with no player", async () => {
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null);
+    const state = windTestState(windTestPlayer(1));
+    let synced = false;
+    void renderer.firstSynced.then(() => { synced = true; });
+    try {
+      // A joiner the host has not welcomed yet: frames with no player of its own.
+      renderer.sync(state, 99, 0);
+      await Promise.resolve();
+      expect(synced).toBe(false);
+      renderer.sync(state, 1, 0);
+      await Promise.resolve();
+      expect(synced).toBe(true);
+    } finally {
+      renderer.dispose();
+    }
+  });
+  it("resolves for a renderer disposed before any frame, so nothing waits on it for ever", async () => {
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null);
+    let synced = false;
+    void renderer.firstSynced.then(() => { synced = true; });
+    renderer.dispose();
+    await Promise.resolve();
+    expect(synced).toBe(true);
+  });
+});
+
 describe("renderer.wind()", () => {
   it("is the weather-driven record until an override, then the override's speed", () => {
     const canvas = {} as unknown as HTMLCanvasElement;
@@ -879,8 +907,9 @@ describe("world shell wiring", () => {
     // field — both guards must agree, or one draws where the other does not.
     expect(creation).toMatch(/forest !== null && tier !== "low" \? createBladeMeshes\(/);
     expect(creation).toMatch(/forest !== null && tier !== "low" \? createDuffMeshes\(/);
-    expect(creation).toContain("createBladeMeshes(scene, forest.seed, { quality: tier, jobs })");
-    expect(creation).toContain("createDuffMeshes(scene, forest.seed, { quality: tier, jobs })");
+    // Each is also handed the loader of first builds a start under a film has (`firstBuilds.ts`).
+    expect(creation).toContain("createBladeMeshes(scene, forest.seed, { quality: tier, jobs, firstBuilds: options.firstBuilds })");
+    expect(creation).toContain("createDuffMeshes(scene, forest.seed, { quality: tier, jobs, firstBuilds: options.firstBuilds })");
   });
 
   it("hands the terrain and the ground cover one scheduler, and runs its share once a frame in both branches", () => {
@@ -890,6 +919,12 @@ describe("world shell wiring", () => {
     // bound and run at once.
     expect(src).toContain("const jobs = createSyncJobs(() => performance.now());");
     expect(src).toContain("createClipmap(scene, forest.seed, jobs, {\n      deferred: options.deferClipmap,");
+    // Under the intro's film the shells are handed the loader of first builds (`firstBuilds.ts`), so a
+    // first fill is stepped rather than run whole in the player's first frame.
+    expect(src.match(/firstBuilds: options\.firstBuilds,/g)).toHaveLength(2); // the forest's and the ground cover's
+    expect(src).toContain("createBladeMeshes(scene, forest.seed, { quality: tier, jobs, firstBuilds: options.firstBuilds })");
+    expect(src).toContain("createDuffMeshes(scene, forest.seed, { quality: tier, jobs, firstBuilds: options.firstBuilds })");
+    expect(src).toContain("          cover,\n          options.firstBuilds,\n        )"); // the props'
     // The first rings and the water are made where the hike starts, when the renderer is told where
     // (`RendererOptions.start`): at the origin and the level's first spawn they are built twice,
     // the second time whole in the player's first frame.

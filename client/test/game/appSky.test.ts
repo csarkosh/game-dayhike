@@ -26,8 +26,9 @@ describe("the hike's sky", () => {
   it("hands its table to every renderer it builds: the first, and a swap's", () => {
     expect(src.match(/\bcreateRenderer\(/g)).toHaveLength(2);
     expect(src).toContain(
-      // The first renderer is also told where the hike starts (`start`), so its first terrain and water are built there.
-      "createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
+      // The first renderer is also told where the hike starts (`start`), so its first terrain and water are built
+      // there, and given the loader of first builds a start under a film has (`firstBuilds`).
+      "createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
     );
     expect(src).toContain(
       "build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
