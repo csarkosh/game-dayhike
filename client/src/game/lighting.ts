@@ -755,9 +755,16 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     capture.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
     // The first of them is the one the hike's first frame makes its pipeline
     // for: offered ahead of that frame, to whoever can ask for it early.
+    // What is drawn there is drawn for nothing, so it fails for nothing: a
+    // throw from it is said and the lighting stands, the capture's pipeline
+    // made in the first frame as with nothing drawn ahead.
     if (!offeredAhead) {
       offeredAhead = true;
-      options.captureAhead?.(() => capture.render());
+      try {
+        options.captureAhead?.(() => capture.render());
+      } catch (error) {
+        console.warn("the sky probe's capture could not be drawn ahead; its pipeline is made in the first frame", error);
+      }
     }
   }
 

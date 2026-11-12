@@ -590,6 +590,26 @@ describe("the sky's table", () => {
     lighting.dispose();
   });
 
+  it("stands, its sky applied, where the capture drawn ahead throws: what is drawn for nothing fails for nothing, said once", () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const s = scene();
+    const lighting = light(s, {
+      hour: 12,
+      captureAhead: () => {
+        throw new Error("a render that failed");
+      },
+    });
+    expect(lighting.sky).not.toBeNull();
+    expect(dome.updates.length).toBe(1);
+    // The probe is still armed: its kept capture is the scene's, in a frame, as with nothing drawn ahead.
+    expect(captureOf(s).refreshRate).toBe(0);
+    expect(warned.mock.calls.map((c) => String(c[0]))).toEqual(["the sky probe's capture could not be drawn ahead; its pipeline is made in the first frame"]);
+    lighting.setHour(15);
+    expect(warned).toHaveBeenCalledTimes(1);
+    lighting.dispose();
+    warned.mockRestore();
+  });
+
   it("asks for the capture ahead at its creation where the table already holds the slices, and for none where it is not asked to", () => {
     const s = scene();
     const ahead: Array<() => void> = [];
