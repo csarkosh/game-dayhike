@@ -193,10 +193,14 @@ the title page has loaded it makes the film's element, off the page, silent, wit
 and `preload="auto"`, and Play takes that element. Where the browser honours the preload it has
 the film's head buffered and its decoder ready by then; how far ahead it buffers is the browser's
 to decide. Chrome does not honour it on a cellular connection, whatever the attribute says: there
-it fetches the file's metadata only, and the film still waits for its first seconds at Play. No
-head start is made when data is being saved or on a connection of 3g or worse (`slowConnection`),
-nor at the page's load if Play was tapped before it (the film is then already playing from an
-element of its own). One element a page load: it is handed over once,
+it fetches the file's metadata only. So the page first fetches the head itself: one request for
+the file's first 4 MB (`FILM_HEAD_BYTES`, a little under seven seconds of film), read whole into
+the browser's cache, and the element is made when that is in, so its first seconds come from the
+cache on any connection. A visitor who never taps Play has spent those 4 MB, and whatever more
+the browser chose to buffer where it preloads. No head start is made when data is being saved or
+on a connection of 3g or worse (`slowConnection`), nor at the page's load if Play was tapped
+before it; and a Play tapped while the head is still coming stops that fetch and plays the film
+from an element of its own. One element a page load: it is handed over once,
 and a later hike in the same session makes its own, with the file by then in the browser's cache.
 
 ### 5.2 On Play
@@ -330,7 +334,11 @@ Every numeric expectation is a literal; explicit time limits go through `timeLim
 - The scene runs with no local player and the sim's state is untouched by a scene frame.
 - `startHike`: `beforeBuild` is waited for between the engine and the build, and a start left
   during it lets the engine go and builds nothing.
-- `filmHead.ts`: one silent, inline, preloading element however often it is warmed; handed over
+- `filmHead.ts`: the head asked for as the range `bytes=0-3999999`, a part or a whole file taken,
+  an error, a failure or a stop answered without a throw; the element made when the fetch is in
+  (or has failed), and none made when the film was taken or dropped first; a head start at the
+  page's load only while the title page is still up;
+  one silent, inline, preloading element however often it is warmed; handed over
   once, and only for the file it was warmed for; nothing after it was taken, before it was warmed
   or when it failed; not wanted when data is saved or the connection is 3g or worse. The overlay
   does not set again a `src` the element already has, and a warmed film still starts muted on a
