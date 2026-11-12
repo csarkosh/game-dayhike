@@ -19,6 +19,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { clockSteps, filmRate, pictureSkips } from "./lib/film.mjs";
+import { CAUSES, stopsByCause } from "./lib/causes.mjs";
 import { verdictOf } from "./lib/verdict.mjs";
 
 const SHOTS = [4, 4, 5, 4, 4];
@@ -321,6 +322,21 @@ if (samples !== null) {
     if (INCLUSIVE) {
       console.log("    inclusive:");
       for (const [name, ms] of inclusive(s.from, s.to, TOP * 3)) console.log(`    ${lpad(f1(ms), 8)}  ${lpad(`${f1((ms / (s.to - s.from)) * 100)}%`, 6)}  ${name}`);
+    }
+  }
+}
+
+// ---- An intro's stops by cause -------------------------------------------------------------------
+if (verdict !== null) {
+  if (samples === null) console.log("\n(no profile laid on the frames: the stops are not named by cause)");
+  else if (verdict.play === null || verdict.end === null) console.log("\n(no Play or no film in the run: there is no window to name the stops in)");
+  else {
+    const stops = run.loaf.filter((l) => l.start >= verdict.play - 100 && l.start < verdict.end && l.dur >= 100).map((l) => [l.start, l.start + l.dur]);
+    const { ms, total } = stopsByCause(samples, stops, (c) => (MAPS !== null && c.url ? sourceOf(c) : null));
+    console.log(`\nThe page's stops over 0.1 s by cause, Play to the film's end (${stops.length} stops, ${f1(total / 1000)} s of script and browser work)${MAPS === null ? "; without --maps a script's source is unknown and reads as other" : ""}:`);
+    for (const cause of CAUSES) {
+      const t = ms.get(cause) ?? 0;
+      if (t >= 50) console.log(`  ${lpad(f1(t / 1000), 6)} s  ${lpad(`${Math.round((t / total) * 100)}%`, 4)}  ${cause}`);
     }
   }
 }

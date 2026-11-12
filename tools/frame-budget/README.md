@@ -243,6 +243,12 @@ it outside, and a last line for the lot; it exits 1 when a run fails. A run on a
 not start cool (`meta.phone.cool`) fails as a run not to count. `timeline-report.mjs` prints the
 same verdict for an intro run, with every stop over 0.25 s and when it came.
 
+For an intro run with a profile (`--profile` at the run), the report also names the stops by
+cause (`lib/causes.mjs`): the seconds inside the stops over 0.1 s spent sampling the world (the
+simulation's code), linking shaders, uploading textures, in Babylon, collecting garbage, in the
+game's builders. A native call is named by what it is; a script's frame by where its source
+lives, so the table needs `--maps` at the report (without it script time reads as "other").
+
 ## Budgets
 
 ```bash
