@@ -4,10 +4,11 @@
  * A start with an intro builds its world under the film and draws it there,
  * unseen, so its shaders, its pipelines and its buffers are made before the
  * cut. Drawn every frame, that hidden world took the graphics chip from the
- * film: on a phone (WebGL2) the film's picture stood 8.5 s of its first 53
- * and jumped 1.8 s more, its longest pause 6.1 s; drawn four times a second,
- * 1.7 s and none, the longest 0.5 s (2026-11-11, the owner's phone, each a
- * first visit). So while a film covers the hike it is drawn every
+ * film: on a phone (WebGL2) 1.8 s of the film's first 53 passed with no frame
+ * presented for them (the picture stood, then jumped); drawn four times a
+ * second, none (2026-11-11, the owner's phone, each a first visit; by each
+ * frame's own film time and count of frames presented). So while a film
+ * covers the hike it is drawn every
  * `COVERED_DRAW_MS`, which is still each new thing's first draw a quarter
  * second after it arrives, and every frame again from the cut.
  *

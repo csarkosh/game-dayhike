@@ -213,7 +213,12 @@ and a later hike in the same session makes its own, with the file by then in the
    2026-11-11): the build stops the page while it runs (1.7 to 2.3 s on a laptop, 4.4 to 5.1 s on a
    phone, as measured then; item 4's steps are not all it holds), a film is fed its file through
    the page and plays through a stop only on what it has buffered, and six seconds partly played
-   were not always enough: a phone's film stood 5.0 s through a build of 5.1 s.
+   are not always enough on a slow machine: a rented rig's film fell 4 to 20 s behind in a start,
+   a page stop at a time. (A phone's film was first read as standing 5.0 s through a build of
+   5.1 s. That reading subtracted the film time between two frame callbacks from the wall time
+   between them, and after a page stop a callback can carry a timestamp from before it, so the
+   stop itself read as a pause. By the film's clock beside the page's, a phone's film plays
+   through a build of 4 to 6 s.)
 4. The world build runs in steps that yield between them: the start's phases are already
    separate awaits; the clipmap's first build is a slice generator and is stepped rather than run
    whole; the first frame's collectors run under the sync budget rather than whole. Today the
@@ -224,9 +229,10 @@ and a later hike in the same session makes its own, with the file by then in the
    uses, run once at start.
 6. Under the film the hike is drawn once every `COVERED_DRAW_MS` (250 ms), not every frame, and
    every frame again from the cut (`game/coveredDraw.ts`, amended 2026-11-11). The hidden world,
-   drawn every frame, took the graphics chip from the film: on a phone (WebGL2, a first visit) the
-   film's picture stood 8.5 s of its first 53 and jumped 1.8 s more, the longest pause 6.1 s;
-   drawn four times a second, 1.7 s and none, the longest 0.5 s. Its loading and its simulation go
+   drawn every frame, took the graphics chip from the film: on a phone (WebGL2, a first visit)
+   1.8 s of the film's first 53 passed with no frame presented for them (the picture stood, then
+   jumped); drawn four times a second, none. (The "stood" figures first given beside these were
+   the flawed reading item 3 describes, and are withdrawn.) Its loading and its simulation go
    on every frame as before, and each new thing is still first drawn within a quarter second of
    arriving, so its shaders and pipelines are made before the cut. The quality probe's screen,
    which covers play too, is not slowed: it times the frames it covers.

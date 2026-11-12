@@ -358,10 +358,13 @@ const INTRO_BUFFER_MAX_MS = 3000;
  * build waits for them. The build stops the page while it runs (1.7 to 2.3 s
  * on a laptop, 4.4 to 5.1 s on a phone, as measured 2026-11-11), and a film
  * is fed its file through the page: it plays through a stop on what it has
- * buffered and stands when that runs out. With the six seconds of the
- * download's gate, part of them played by the time the engine was made, a
- * phone's film stood through one build of two; a browser keeps about ten
- * seconds ahead, so nine is asked for.
+ * buffered and stands when that runs out. On a slow machine it does stand:
+ * a rented rig's film fell 4 to 20 s behind in a start, a page stop at a
+ * time. The six seconds of the download's gate are partly played by the time
+ * the engine is made; a browser keeps about ten seconds ahead, so nine is
+ * asked for. (A phone's film was first read as standing through its build;
+ * that reading was the page's stop, not the film's. Measured rightly, its
+ * film plays through a build of 4 to 6 s.)
  */
 const INTRO_BUILD_BUFFER_S = 9;
 const INTRO_BUILD_BUFFER_MAX_MS = 2000;
