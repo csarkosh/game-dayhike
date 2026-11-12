@@ -18,6 +18,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
+import { clockSteps, filmRate, pictureSkips } from "./lib/film.mjs";
 
 const SHOTS = [4, 4, 5, 4, 4];
 const FRAME_60 = 1000 / 60;
@@ -133,26 +134,24 @@ if (video.length > 1) {
   }
 }
 
-// ---- The film's picture: where it stood and jumped ------------------------------------------------
-// Between two frames this thread heard were shown: the film's seconds that passed, the wall's, and
-// the frames shown. The picture's own rate is the film's (24 a second here, taken from the run).
-// A gap is film time that passed with no frame shown for it (the picture stood, then jumped), or
-// wall time that passed with the film's clock standing (the film waited: buffering, or starved).
+// ---- The film's pauses: its clock beside the page's, and its picture by the frames presented ------
+// Two measures a page stop cannot fake (`lib/film.mjs`). The wall time between two frame callbacks
+// is not one of them: a callback that arrives after a page stop can carry a timestamp from before
+// it, and the pair after it then reads as a pause as long as the stop.
 const shown = run.shown ?? [];
-if (shown.length > 2) {
-  const rate = (() => { const d = []; for (let i = 1; i < shown.length; i++) { const f = shown[i][2] - shown[i - 1][2], m = shown[i][1] - shown[i - 1][1]; if (f === 1 && m > 0) d.push(m); } d.sort((a, b) => a - b); return d.length ? 1 / d[d.length >> 1] : 24; })();
-  const gaps = [];
-  for (let i = 1; i < shown.length; i++) {
-    const wall = (shown[i][0] - shown[i - 1][0]) / 1000, film = shown[i][1] - shown[i - 1][1], n = shown[i][2] - shown[i - 1][2];
-    const jumped = Math.max(0, film - n / rate), stood = Math.max(0, wall - film);
-    if (jumped > 0.1 || stood > 0.1) gaps.push({ t: shown[i - 1][0], wall, film, n, jumped, stood });
-  }
-  const sum = (rows, k) => rows.reduce((a, g) => a + g[k], 0);
-  console.log(`\nThe film's picture (${f1(rate)} frames a second): ${gaps.length} gaps over 0.1 s; ${f1(sum(gaps, "jumped"))} s of film passed unseen (the picture stood, then jumped), ${f1(sum(gaps, "stood"))} s with the film's clock standing; the longest ${f1(Math.max(0, ...gaps.map((g) => Math.max(g.jumped, g.stood))))} s`);
-  console.log(`${pad("stretch", 24)}${lpad("gaps", 6)}${lpad("unseen s", 10)}${lpad("stood s", 9)}${lpad("longest", 9)}`);
+if (video.length > 1 || shown.length > 2) {
+  const rate = filmRate(shown);
+  const steps = clockSteps(video), skips = pictureSkips(shown, { rate });
+  const over = (rows, k) => rows.filter((r) => r[k] > 0.1);
+  const worst = (rows, k) => rows.reduce((a, r) => (a === null || r[k] > a[k] ? r : a), null);
+  const at = (r) => (r === null ? "" : ` at ${f1((r.t - sceneOn) / 1000)} s`);
+  const f2 = (x) => x.toFixed(2);
+  const ws = worst(steps, "behind"), wk = worst(skips, "skipped");
+  console.log(`\nThe film (clock beside the page's; picture by frames presented, ${f1(rate)} a second): ${over(steps, "behind").length} clock steps over 0.1 s, the worst ${f2(ws?.behind ?? 0)} s${at(ws)}; ${over(skips, "skipped").length} picture skips over 0.1 s, ${f2(skips.reduce((a, r) => a + r.skipped, 0))} s skipped in all, the worst ${f2(wk?.skipped ?? 0)} s${at(wk)}`);
+  console.log(`${pad("stretch", 24)}${lpad("steps", 7)}${lpad("worst s", 9)}${lpad("skips", 7)}${lpad("skipped s", 11)}${lpad("worst s", 9)}`);
   for (const s of stretches) {
-    const rows = gaps.filter((g) => g.t >= s.from && g.t < s.to);
-    console.log(`${pad(s.name, 24)}${lpad(rows.length, 6)}${lpad(f1(sum(rows, "jumped")), 10)}${lpad(f1(sum(rows, "stood")), 9)}${lpad(f1(Math.max(0, ...rows.map((g) => Math.max(g.jumped, g.stood)))), 9)}`);
+    const a = steps.filter((r) => r.t >= s.from && r.t < s.to), b = skips.filter((r) => r.t >= s.from && r.t < s.to);
+    console.log(`${pad(s.name, 24)}${lpad(over(a, "behind").length, 7)}${lpad(f2(worst(a, "behind")?.behind ?? 0), 9)}${lpad(over(b, "skipped").length, 7)}${lpad(f2(b.reduce((x, r) => x + r.skipped, 0)), 11)}${lpad(f2(worst(b, "skipped")?.skipped ?? 0), 9)}`);
   }
 }
 

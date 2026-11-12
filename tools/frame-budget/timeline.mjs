@@ -132,7 +132,7 @@ const RECORDER = `(() => {
   // The film is the intro itself: the video under .intro, not the landing loop.
   let watched = null;
   const onShown = (now, m) => {
-    tl.shown.push([now, m.mediaTime, m.presentedFrames]);
+    tl.shown.push([now, m.mediaTime, m.presentedFrames, m.presentationTime]);
     if (watched && watched.isConnected) watched.requestVideoFrameCallback(onShown); else watched = null;
   };
   setInterval(() => {
