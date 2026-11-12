@@ -1128,6 +1128,25 @@ describe("the readiness walk", () => {
     expect([...asked.values()].map((calls) => calls.length)).toEqual([1, 0, 0]);
     expect(sceneAsked).not.toHaveBeenCalled();
   });
+  it("walks no further once the wait has lifted at its cap, asks the scene nothing and arms no poll", async () => {
+    const { scene, asked } = costlyScene(4);
+    const sceneAsked = vi.spyOn(scene, "isReady");
+    let clock = 0;
+    // The turns the walk waits for, given when the test says: here, only after the cap.
+    const waiting: (() => void)[] = [];
+    const lifted = whenSceneReady(scene, 200, Promise.resolve(), {
+      now: () => (clock += 40),
+      turn: () => new Promise<void>((given) => waiting.push(given)),
+    });
+    await lifted;
+    expect([...asked.values()].map((calls) => calls.length)).toEqual([1, 0, 0, 0]);
+    // The page comes back to the walk after the cover has lifted: it makes no more effects under play.
+    for (const given of waiting.splice(0)) given();
+    await new Promise((r) => setTimeout(r, 250));
+    expect([...asked.values()].map((calls) => calls.length)).toEqual([1, 0, 0, 0]);
+    expect(waiting).toHaveLength(0);
+    expect(sceneAsked).not.toHaveBeenCalled();
+  });
 });
 
 describe("whenSceneReady's cap", () => {

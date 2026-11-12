@@ -389,8 +389,9 @@ export async function whenStandingSkyHeld(standing: () => Renderer, swapped: () 
 /** How long a task of the readiness walk works before it gives the thread back (ms). */
 export const READY_WALK_SLICE_MS = 8;
 
-/** What the readiness walk runs on: the clock, how it gives the thread back, and a task's length. For the tests. */
-export type ReadyWalkDeps = { now?: () => number; turn?: () => Promise<void>; sliceMs?: number };
+/** What the readiness walk runs on: the clock, how it gives the thread back and a task's length (for the
+ * tests), and `stopped`, which ends the walk at the next mesh once it says so. */
+export type ReadyWalkDeps = { now?: () => number; turn?: () => Promise<void>; sliceMs?: number; stopped?: () => boolean };
 
 /**
  * Checks each of the scene's meshes as `scene.isReady()` would
@@ -403,7 +404,7 @@ export type ReadyWalkDeps = { now?: () => number; turn?: () => Promise<void>; sl
  * own, and the scene's own check then finds them made. The meshes are the
  * scene's as the walk begins; one disposed meanwhile is left out, a check
  * that throws is left to the scene's own to report, and a scene disposed
- * meanwhile ends the walk.
+ * meanwhile, or a wait that has lifted (`deps.stopped`), ends the walk.
  */
 export async function walkSceneReady(scene: Scene, deps: ReadyWalkDeps = {}): Promise<void> {
   const now = deps.now ?? ((): number => performance.now());
@@ -411,7 +412,7 @@ export async function walkSceneReady(scene: Scene, deps: ReadyWalkDeps = {}): Pr
   const sliceMs = deps.sliceMs ?? READY_WALK_SLICE_MS;
   let since = now();
   for (const mesh of [...scene.meshes]) {
-    if (scene.isDisposed) return;
+    if (scene.isDisposed || deps.stopped?.() === true) return;
     if (mesh.isDisposed() || mesh.subMeshes === undefined || mesh.subMeshes === null || mesh.subMeshes.length === 0) continue;
     const engine = scene.getEngine();
     const pass = engine.currentRenderPassId;
@@ -446,7 +447,7 @@ export async function walkSceneReady(scene: Scene, deps: ReadyWalkDeps = {}): Pr
  * a ready scene and would spin while items are still waiting. Each poll walks
  * the scene's meshes first, a few milliseconds a task (`walkSceneReady`), so
  * the scene's own check, asked after it, makes no effect of its own; the cap
- * lifts though a walk is between two tasks.
+ * lifts though a walk is between two tasks, and that walk then stops.
  */
 export function whenSceneReady(
   scene: Scene,
@@ -472,7 +473,8 @@ export function whenSceneReady(
     const check = async (): Promise<void> => {
       // The layers as this poll found them: the scene is asked only when it was walked first.
       const walked = layersIn && !scene.isDisposed;
-      if (walked) await walkSceneReady(scene, deps);
+      // A walk still between two tasks when the cap lifts the wait goes no further: no effect is made under play.
+      if (walked) await walkSceneReady(scene, { ...deps, stopped: () => lifted });
       if (lifted) return;
       if (scene.isDisposed || (walked && scene.isReady() && scene.getWaitingItemsCount() === 0)) finish();
       else poll = setTimeout(() => void check(), 100);
