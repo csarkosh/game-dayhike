@@ -684,7 +684,8 @@ export type HikeStartDeps<E> = {
   engine(decided: StartupTier, signals: GpuSignals): Promise<E>;
   /** Waited for once the engine is made and before the build, which stops
    * the page while it runs: where an intro plays over the start, its film's
-   * buffer topped up so it outlasts the stop. */
+   * buffer topped up so it outlasts the stop; and the world's worker, whose
+   * trail and level check the build then finds made. "Loading…" stays up. */
   beforeBuild?(): Promise<void>;
   /** Lets go of an engine made for a start the page has since left. */
   discard(engine: E): void;
@@ -699,7 +700,9 @@ export type HikeStartDeps<E> = {
  * The page's start of a hike, in order: "Loading…" from the first moment, the
  * signals, the tier (the probe's screen taking over from the line when there
  * is one), then the engine for that tier ("Loading…" again, if the probe's
- * screen had taken over), then the build, with the line gone in the same task
+ * screen had taken over, and still there through `beforeBuild`'s wait, which
+ * a start with no film over it would otherwise spend on an empty page), then
+ * the build, with the line gone in the same task
  * so nothing blank shows between. One catch for all of it: a throw anywhere
  * is answered with a line, never a blank page. A start the page has moved on
  * from builds nothing, says nothing, and lets go of an engine made meanwhile.
@@ -735,14 +738,15 @@ export async function startHike<E>(deps: HikeStartDeps<E>): Promise<void> {
       deps.discard(engine);
       return;
     }
-    hide();
     if (deps.beforeBuild !== undefined) {
       await deps.beforeBuild();
       if (!deps.current()) {
+        hide();
         deps.discard(engine);
         return;
       }
     }
+    hide();
     await deps.paint?.();
     await deps.build(decided, engine);
   } catch (error) {
