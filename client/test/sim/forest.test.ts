@@ -4,7 +4,9 @@ import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/
 import {
   createForest,
   GEN_VERSION,
+  installPassHash,
   passHash,
+  passHashKey,
   probeDigest,
   registryDigest,
 } from "../../src/sim/forest.js";
@@ -110,6 +112,23 @@ describe("passHash", () => {
     expect(createForest(11).passHash).toBe(createForest(9999).passHash);
     expect(Number.isInteger(passHash())).toBe(true);
   });
+
+  it("takes a pass hash made for the same passes, and refuses one made for another count of them", () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    const key = passHashKey();
+    expect(key.variant).toBe(DEFAULT_TERRAIN_VARIANT);
+    expect(installPassHash(1234, { ...key, passCount: key.passCount + 1 })).toBe(false);
+    expect(passHash()).toBe(64181734);
+    expect(installPassHash(passHash(), key)).toBe(true);
+    expect(passHash()).toBe(64181734);
+  }, timeLimit(60_000));
+
+  it("does not use an installed pass hash for another terrain", () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    expect(installPassHash(42, { passCount: passHashKey().passCount, variant: "montane" })).toBe(true);
+    // The active terrain is still the default: the installed one does not match, and the hash is made here.
+    expect(passHash()).toBe(64181734);
+  }, timeLimit(60_000));
 
   // The load-bearing assertion. If the probe stopped containing a pass's output,
   // that pass could be changed without changing any levelId, which is the exact

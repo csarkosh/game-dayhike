@@ -79,6 +79,16 @@ export type TerrainVariant = {
    * height, not a radius) — a caller that already holds it should pass it;
    * the hook samples the composed field itself only when it is omitted. */
   featureMask?: (seed: number, x: number, z: number, h?: number) => FeatureMask;
+  /** What the variant works out once for a seed and every hook then reads
+   * (on olympic the bowl: the trail graph, the landmarks, the features). Plain
+   * data, so it survives a structured clone to another thread. Absent on a
+   * variant with nothing of the kind. */
+  prepare?: (seed: number) => unknown;
+  /** Takes a value `prepare` made for `seed`, here or in another thread of
+   * the same build, as this thread's own, so the hooks read it without making
+   * theirs. False, and nothing taken, where the seed already has one: what was
+   * handed out from the first must stay what the hooks hold. */
+  install?: (seed: number, prepared: unknown) => boolean;
   sample(worldSeed: number, x: number, z: number): TerrainSample;
 };
 

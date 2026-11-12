@@ -328,6 +328,31 @@ export function passHash(): number {
   return cachedPassHash;
 }
 
+/** What a pass hash is good for: the count of registered passes and the
+ * active terrain variant it was taken under. */
+export type PassHashKey = { passCount: number; variant: string };
+
+/** The key `passHash()` would be cached under now. */
+export function passHashKey(): PassHashKey {
+  return { passCount: registeredPasses().length, variant: activeTerrainVariantName() };
+}
+
+/**
+ * Takes a pass hash made in another thread of the same build (a worker's) as
+ * this thread's cached one, so the probe is not run twice. False, and nothing
+ * taken, where the other thread counted other passes than this one has: a
+ * worker file from another build, whose digest would be another world's.
+ * `passHash()` still checks the count and the active variant before it uses
+ * the cache, so a hash installed for one terrain is never read for another.
+ */
+export function installPassHash(hash: number, key: PassHashKey): boolean {
+  if (key.passCount !== registeredPasses().length) return false;
+  cachedPassHash = hash | 0;
+  cachedPassCount = key.passCount;
+  cachedVariant = key.variant;
+  return true;
+}
+
 export function createForest(seed: number): Forest {
   const fieldHash = fieldHashOf(seed);
   const passes = passHash();

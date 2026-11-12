@@ -50,7 +50,7 @@ import {
   LANDMARK_TUNABLES, landmarkMaskAt, type Landmark, type LandmarkMask,
 } from "./landmarks.js";
 import { FEATURE_TUNABLES, featureStageD, lakeStageD, featureMaskAt, type Feature, type FeatureMask } from "./features.js";
-import { BRAID_TUNABLES } from "./trailBraid.js";
+import { BRAID_TUNABLES, type Braid } from "./trailBraid.js";
 import { forestDensityUnmasked } from "./vegetation.js";
 import { boulderDensityUnmasked, CLUTTER_BOULDER_SLOPE_LO } from "./clutter.js";
 
@@ -703,7 +703,7 @@ export function olympicPreTrailSample(seed: number, x: number, z: number): Terra
  * not. All three come out of one build (`buildTrail`): the landmarks are
  * chosen among the cells the trail can actually reach, so there is no second
  * pass to place them. */
-export type Bowl = { graph: TrailGraph; landmarks: Landmark[]; features: Feature[] };
+export type Bowl = { graph: TrailGraph; landmarks: Landmark[]; features: Feature[]; braid: Braid };
 const BOWL_CACHE = new Map<number, Bowl>();
 export function bowlFor(seed: number): Bowl {
   let b = BOWL_CACHE.get(seed);
@@ -720,6 +720,19 @@ export function bowlFor(seed: number): Bowl {
     BOWL_CACHE.set(seed, b);
   }
   return b;
+}
+
+/**
+ * Takes a bowl `bowlFor(seed)` made in another thread of the same build (a
+ * worker's, cloned across) as this thread's, so the trail is not built twice.
+ * False, and the bowl dropped, where the seed already has one: its graph and
+ * features may already be in other hands, and two bowls of one seed, equal as
+ * they are, are two objects.
+ */
+export function installBowl(seed: number, bowl: Bowl): boolean {
+  if (BOWL_CACHE.has(seed)) return false;
+  BOWL_CACHE.set(seed, bowl);
+  return true;
 }
 
 /**
@@ -944,5 +957,7 @@ registerTerrainVariant({
   sceneryLandmarks: (seed) => bowlFor(seed).landmarks,
   landmarkMask: landmarkMaskHook,
   featureMask: featureMaskHook,
+  prepare: bowlFor,
+  install: (seed, prepared) => installBowl(seed, prepared as Bowl),
   sample: olympicSample,
 });
