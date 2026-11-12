@@ -10,7 +10,7 @@ import { windRecordUnder } from "../../src/game/windParams.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { MIDGE_NAME } from "../../src/game/midgeSwarms.js";
 import { HUM_RANGE } from "../../src/game/waterLifeAudio.js";
-import { waterLifeLayout, type WaterLifeLayout } from "../../src/game/waterLifeField.js";
+import { waterLifeBed, waterLifeLayout, type WaterLifeLayout } from "../../src/game/waterLifeField.js";
 import type { Dragonflies } from "../../src/game/dragonflyBehaviour.js";
 import { createWaterLife, type WaterLife, type WaterLifeFrame } from "../../src/game/waterLife.js";
 import { skyFixture } from "./helpers/skyFixture.js";
@@ -33,6 +33,8 @@ const seen = vi.hoisted(() => ({
   /** The players the last steps of the dragonflies and of the frogs were handed. */
   dragonflyPlayers: null as readonly unknown[] | null,
   frogPlayers: null as readonly unknown[] | null,
+  /** How many times the far chorus's places were worked out (a walk of the lake's shore each). */
+  beds: 0,
 }));
 vi.mock("../../src/game/waterLifeField.js", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../../src/game/waterLifeField.js")>();
@@ -41,6 +43,10 @@ vi.mock("../../src/game/waterLifeField.js", async (importOriginal) => {
     waterLifeLayout: (...args: Parameters<typeof mod.waterLifeLayout>) => {
       seen.layout = mod.waterLifeLayout(...args);
       return seen.layout;
+    },
+    waterLifeBed: (...args: Parameters<typeof mod.waterLifeBed>) => {
+      seen.beds += 1;
+      return mod.waterLifeBed(...args);
     },
   };
 });
@@ -207,23 +213,34 @@ describe("the lake's life", { timeout: timeLimit(60_000) }, () => {
     const blocksAlone = [...seen.blocks];
     alone.dispose();
     // As a worker's message carries it: without the lake, through a structured clone.
+    const bedAlone = alone.sound().bed.points;
     const made = waterLifeLayout(SEED, lake);
-    const layout = structuredClone({ markers: made.markers, beats: made.beats, perches: made.perches, stems: made.stems, voices: made.voices });
+    const bed = waterLifeBed(lake, made.voices);
+    // The far chorus's places as the life works them out alone.
+    expect(bed).toEqual(bedAlone);
+    const layout = structuredClone({ markers: made.markers, beats: made.beats, perches: made.perches, stems: made.stems, voices: made.voices, bed });
     seen.layout = null;
     seen.dragonflies = null;
+    seen.beds = 0;
     const given = createWaterLife(scene(), SEED, lake, "high", "post", layout);
     expect(seen.layout).toBeNull();
+    // The places came with the layout: the shore is not walked here.
+    expect(seen.beds).toBe(0);
+    expect(given.sound().bed.points).toEqual(bedAlone);
     expect(seen.blocks).toEqual(blocksAlone);
     expect(seen.dragonflies).not.toBeNull();
     given.dispose();
     // A layout no sampling gives: the first two markers alone. Its rows are the ones filled.
-    const few = createWaterLife(scene(), SEED, lake, "high", "post", { ...layout, markers: layout.markers.slice(0, 2) });
+    const elsewhere = [{ x: 1, y: 2, z: 3 }, { x: 4, y: 5, z: 6 }] as const;
+    const few = createWaterLife(scene(), SEED, lake, "high", "post", { ...layout, markers: layout.markers.slice(0, 2), bed: elsewhere });
     expect(seen.layout).toBeNull();
+    expect(few.sound().bed.points).toEqual(elsewhere);
     expect(seen.blocks.slice(0, 25)).toEqual([106, 302, ...new Array<number>(23).fill(0)]);
     few.dispose();
     // None handed in: laid out here.
     const own = createWaterLife(scene(), SEED, lake, "high", "post", null);
     expect(seen.layout).not.toBeNull();
+    expect(seen.beds).toBe(1);
     own.dispose();
   });
 

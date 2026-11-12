@@ -27,7 +27,7 @@ import {
   type WaterGeometry, type WaterRingSamples,
 } from "./water.js";
 import { WATER_BUMP_SIZE, waterBumpData } from "./waterBump.js";
-import { waterLifeLayout, type WaterLifeLayout } from "./waterLifeField.js";
+import { waterLifeBed, waterLifeLayout, type WaterLifeMade } from "./waterLifeField.js";
 import { waterPlantPlacements, type WaterPlantPlacements } from "./waterPlantField.js";
 
 /** A lake's surface as the renderer's mesh takes it: the grid (`lakeSurfaceGrid`) and the depth under each vertex. */
@@ -40,8 +40,8 @@ export type PreparedLake = {
   cx: number;
   cz: number;
   plants: WaterPlantPlacements;
-  /** The life's layout without its `lake`, which is the page's own object, put back on use. */
-  life: Omit<WaterLifeLayout, "lake">;
+  /** The life's layout without its `lake`, which is the page's own object, put back on use, and the far chorus's places. */
+  life: WaterLifeMade;
   surface: PreparedLakeSurface;
   /** The skyline's elevations; null on the high tier, which draws none. */
   skyline: Float32Array | null;
@@ -128,7 +128,10 @@ export function prepareScene(seed: number, variant: string, tier: QualityTier): 
       cx: lake.shape.cx,
       cz: lake.shape.cz,
       plants: waterPlantPlacements(seed, lake),
-      life: { markers: layout.markers, beats: layout.beats, perches: layout.perches, stems: layout.stems, voices: layout.voices },
+      life: {
+        markers: layout.markers, beats: layout.beats, perches: layout.perches, stems: layout.stems, voices: layout.voices,
+        bed: waterLifeBed(lake, layout.voices),
+      },
       surface: { ...grid, depths: lakeSurfaceDepths(seed, lake, grid.positions) },
       skyline: watered && tier !== "high" ? skylineElevations(lake, seed, skylineTrees(lake, seed)) : null,
     };

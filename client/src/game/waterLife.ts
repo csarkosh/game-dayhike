@@ -31,7 +31,6 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 
 import { MAX_PLAYERS } from "../sim/constants.js";
 import type { LakeSource } from "../sim/terrain.js";
-import { rayToShore } from "../sim/lakeShape.js";
 import { nextRandom } from "../sim/types.js";
 import type { QualityTier } from "./quality.js";
 import type { SkyState } from "./skyState.js";
@@ -44,7 +43,7 @@ import {
   type DragonflyShare,
   type WaterLifePresence,
 } from "./waterLifeParams.js";
-import { farthestOnWalk, inShoreBand, marshMid, shoreWalk, waterLifeLayout, type FrogVoice, type ShoreWalk, type WaterLifeLayout } from "./waterLifeField.js";
+import { inShoreBand, waterLifeBed, waterLifeLayout, type WaterLifeLayout, type WaterLifeMade } from "./waterLifeField.js";
 import {
   HEAD_MIDGES,
   HEAD_ROW0,
@@ -81,35 +80,9 @@ const BLOCK_FULLNESS = 1.3;
  * and surge reach one and a half. */
 const SHIFT_RADII = 2;
 
-/** The far chorus's places stand this far above the water (m). */
-const BED_HEIGHT = 0.3;
 /** The far chorus's level with every voice that may call stopped by a player: it thins, never vanishes. */
 const BED_FLOOR = 0.35;
 
-type Place = { x: number; y: number; z: number };
-
-/**
- * The far chorus's two places (spec §10.2): the marsh's middle where the
- * lake has one, along the marsh's direction from the centre where the shore
- * distance is half the shelf; else the point of the shore farthest from its
- * first frog. Then the point of the shore farthest from the first place.
- * `BED_HEIGHT` over the water.
- */
-function bedPlaces(lake: LakeSource, walk: ShoreWalk, voices: readonly FrogVoice[]): readonly [Place, Place] {
-  const shape = lake.shape;
-  let first: { x: number; z: number };
-  if (lake.lobe !== null) {
-    const d = rayToShore(shape, shape.cx, shape.cz, lake.lobe.dirX, lake.lobe.dirZ, marshMid(shape), shape.bound);
-    first = { x: shape.cx + lake.lobe.dirX * d, z: shape.cz + lake.lobe.dirZ * d };
-  } else if (voices.length > 0) {
-    first = farthestOnWalk(walk, voices[0]!.x, voices[0]!.z);
-  } else {
-    first = { x: walk.xs[0] as number, z: walk.zs[0] as number };
-  }
-  const second = farthestOnWalk(walk, first.x, first.z);
-  const y = lake.level + BED_HEIGHT;
-  return [{ x: first.x, y, z: first.z }, { x: second.x, y, z: second.z }];
-}
 
 /** A head swarm is a ball sized as a marker of its count is
  * (`waterLifeField.ts`: 0.3 m and 1.2 mm a midge). */
@@ -196,12 +169,13 @@ export type WaterLife = {
 /**
  * The life of `lake` in `scene`, placed from the world's `seed`, its midges
  * capped by `tier` and toned for the frame's `colourPath`, as the sky dome is.
- * `made` is the lake's layout made ahead, without its `lake`
- * (`preparedScene.ts`); absent or null, it is laid out here.
+ * `made` is the lake's layout made ahead, without its `lake` and with the
+ * far chorus's places (`preparedScene.ts`); absent or null, it is laid out
+ * and the shore walked here.
  */
 export function createWaterLife(
   scene: Scene, seed: number, lake: LakeSource, tier: QualityTier, colourPath: "post" | "material",
-  made?: Omit<WaterLifeLayout, "lake"> | null,
+  made?: WaterLifeMade | null,
 ): WaterLife {
   const layout: WaterLifeLayout = made !== null && made !== undefined ? { ...made, lake } : waterLifeLayout(seed, lake);
   const markers = layout.markers;
@@ -285,7 +259,8 @@ export function createWaterLife(
 
   const sound: WaterLifeSound = {
     hums: [], hums_n: 0, pitch: 0, rustles: NO_RUSTLES, frogCalls: NO_CALLS,
-    bed: { level: 0, duck: [1, 1], points: bedPlaces(lake, shoreWalk(lake.shape), layout.voices) },
+    // The far chorus's places: with a layout made ahead they came with it, and the shore is walked here only without.
+    bed: { level: 0, duck: [1, 1], points: made !== null && made !== undefined ? made.bed : waterLifeBed(lake, layout.voices) },
   };
   for (let r = 0; r < ROWS; r++) sound.hums.push({ x: 0, y: 0, z: 0, midges: 0, presence: 0 });
   let resting = false;

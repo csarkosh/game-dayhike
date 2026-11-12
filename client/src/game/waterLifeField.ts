@@ -1,6 +1,6 @@
 import { hash3 } from "../sim/field.js";
 import { marshWeightAt } from "../sim/features.js";
-import { lakeOutline, lakeShelfWidth, lakeShoreInto, newLakeShore, type LakeShape } from "../sim/lakeShape.js";
+import { lakeOutline, lakeShelfWidth, lakeShoreInto, newLakeShore, rayToShore, type LakeShape } from "../sim/lakeShape.js";
 import { elevationAt, type LakeSource } from "../sim/terrain.js";
 import { COHORT_SNAG, treesInRect } from "../sim/vegetation.js";
 import {
@@ -413,3 +413,45 @@ export function waterLifeLayout(seed: number, lake: LakeSource): WaterLifeLayout
     voices: voicesOf(seed, lake, walk),
   };
 }
+
+/** The far chorus's places stand this far above the water (m). */
+const BED_HEIGHT = 0.3;
+
+/** A place a sound stands at. */
+export type Place = { x: number; y: number; z: number };
+
+/**
+ * The far chorus's two places (spec §10.2): the marsh's middle where the
+ * lake has one, along the marsh's direction from the centre where the shore
+ * distance is half the shelf; else the point of the shore farthest from its
+ * first frog. Then the point of the shore farthest from the first place.
+ * `BED_HEIGHT` over the water.
+ */
+function bedPlaces(lake: LakeSource, walk: ShoreWalk, voices: readonly FrogVoice[]): readonly [Place, Place] {
+  const shape = lake.shape;
+  let first: { x: number; z: number };
+  if (lake.lobe !== null) {
+    const d = rayToShore(shape, shape.cx, shape.cz, lake.lobe.dirX, lake.lobe.dirZ, marshMid(shape), shape.bound);
+    first = { x: shape.cx + lake.lobe.dirX * d, z: shape.cz + lake.lobe.dirZ * d };
+  } else if (voices.length > 0) {
+    first = farthestOnWalk(walk, voices[0]!.x, voices[0]!.z);
+  } else {
+    first = { x: walk.xs[0] as number, z: walk.zs[0] as number };
+  }
+  const second = farthestOnWalk(walk, first.x, first.z);
+  const y = lake.level + BED_HEIGHT;
+  return [{ x: first.x, y, z: first.z }, { x: second.x, y, z: second.z }];
+}
+
+/**
+ * The far chorus's two places for `lake`, its frogs' `voices` given: the
+ * lake's shore walked (`shoreWalk`) and the places chosen on it (`bedPlaces`).
+ * A march of the whole outline, so the world's worker makes it with the
+ * layout where it can (`preparedScene.ts`).
+ */
+export function waterLifeBed(lake: LakeSource, voices: readonly FrogVoice[]): readonly [Place, Place] {
+  return bedPlaces(lake, shoreWalk(lake.shape), voices);
+}
+
+/** A lake's life as it is made ahead of the build: the layout without its `lake`, which is the page's own object, and the far chorus's places. */
+export type WaterLifeMade = Omit<WaterLifeLayout, "lake"> & { bed: readonly [Place, Place] };

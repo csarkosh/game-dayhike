@@ -9,7 +9,7 @@ import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
 import { BED_GRID, bakeBed, createBedGrid } from "../../src/game/bedHeight.js";
 import { oceanFieldFor } from "../../src/game/oceanWaves.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "../../src/game/oceanSwell.js";
-import { waterLifeLayout, type WaterLifeLayout } from "../../src/game/waterLifeField.js";
+import { waterLifeBed, waterLifeLayout, type WaterLifeLayout } from "../../src/game/waterLifeField.js";
 import { skylineElevations, skylineTrees } from "../../src/game/lakeSkyline.js";
 import { lakeSurfaceGrid } from "../../src/game/lakeSurfaceGrid.js";
 import { waterPlantPlacements } from "../../src/game/waterPlantField.js";
@@ -69,9 +69,11 @@ describe("a hike's first scene, sampled ahead", () => {
     expect(scene.lakes.map((l) => [l.cx, l.cz])).toEqual(lakes.map((l) => [l.shape.cx, l.shape.cz]));
     const lake = lakes[0] as LakeSource;
     expect(scene.lakes[0]?.plants).toEqual(waterPlantPlacements(seed, lake));
-    const life: Partial<WaterLifeLayout> = { ...waterLifeLayout(seed, lake) };
+    const layout = waterLifeLayout(seed, lake);
+    const life: Partial<WaterLifeLayout> = { ...layout };
     delete life.lake;
-    expect(scene.lakes[0]?.life).toEqual(life);
+    // The life's layout, and with it the far chorus's two places on the shore.
+    expect(scene.lakes[0]?.life).toEqual({ ...life, bed: waterLifeBed(lake, layout.voices) });
     expect(scene.lakes[0]?.skyline).toEqual(skylineElevations(lake, seed, skylineTrees(lake, seed)));
   }, timeLimit(180_000));
 

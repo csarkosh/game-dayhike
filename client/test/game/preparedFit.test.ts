@@ -133,7 +133,7 @@ describe("whether a piece sampled ahead is the one a builder would make", () => 
     const piece = (cx: number, cz: number): PreparedLake => ({
       cx, cz,
       plants: { reeds: [[], [], []], pads: [] },
-      life: { markers: [], beats: [], perches: [], stems: [], voices: [] },
+      life: { markers: [], beats: [], perches: [], stems: [], voices: [], bed: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
       surface: { positions: new Float32Array(0), normals: new Float32Array(0), uvs: new Float32Array(0), indices: new Uint32Array(0), depths: new Float32Array(0) },
       skyline: null,
     });
