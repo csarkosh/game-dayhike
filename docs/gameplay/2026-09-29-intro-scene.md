@@ -357,10 +357,15 @@ and a later hike in the same session makes its own, with the file by then in the
    - A skip of the film's picture is not a page stop (amended 2026-11-12). The film's frames
      are presented by the thread of Chrome's GPU process that also decodes the page's WebGPU
      commands, and a batch of the hike's commands that holds it near 100 ms drops three of
-     them. The one such hold whose cause was the game's own, the reflection probe's pipeline
-     made synchronously in the hike's first frame, is gone: the pipeline is asked for
-     asynchronously as the sky is first applied
+     them. One such hold was the reflection probe's pipeline, made synchronously in the hike's
+     first frame; it is now asked for asynchronously as the sky is first applied, and three
+     traced starts on the phone hold no such pipeline and drop no three frames at once
      (`docs/rendering/2026-09-26-webgpu-high-tier-verification.md`, §9).
+     Two kinds of hold are left that drop frames: the engine's own two pipelines as it starts
+     (two frames, half a second to a second after Play) and several shader modules made in one
+     batch just before the world is ready (two frames in the traced starts, three in one of
+     three untraced ones, which is outside the limit). Of three untraced first visits started
+     cool one is inside every limit; none has a page stop over a quarter of a second.
    - Still whole: what is left of the build (`buildGame` is one task: the renderer and its
      materials, the meshes made from what came sampled, the session).
 5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, a frame

@@ -858,11 +858,32 @@ first frame drawn and outside the scope as before, finds its pipeline made; were
 to fail or pass its deadline, that capture makes it synchronously as it did. On a desktop
 (Chrome on the M-series Mac, both tiers) the page's own calls show the dome's pipeline asked
 for asynchronously 0.2 to 0.5 s before the first frame and no synchronous one made for it.
-What else held the thread in that trace is not answered here: Babylon's own two pipelines as
-the engine starts (134 ms together, a second after Play, inside the film's first second), the
-first PBR fragment module (78 ms; the modules after it 14 to 46 ms, a task each), and two
-batches of 86 and 93 ms with no long call in them. On the high tier the rain's height map,
-another target drawn once, still makes five to eight pipelines synchronously in the first frame.
+On the phone (three traced first visits started cool, 2026-11-12) no trace holds that
+synchronous pipeline: five are made a start where six were, and from the engine's start to
+the last seconds before the world is ready the thread's longest tasks are 63 to 84 ms, but for
+one batch of 108 ms with no long call in it, where the first frame's was 96 ms with 50 ms
+behind it. No traced run dropped three frames at once.
+
+What still holds the thread 60 ms and more, four to seven tasks a start, in those three traces:
+
+| Hold | Length | When | The film |
+|---|---|---|---|
+| Babylon's own two pipelines as the engine starts (its mipmap and video copies), made synchronously | 155 and 171 ms in two runs, 35 ms in the third | 0.4 to 0.8 s after Play | two frames dropped in each of the two |
+| Several PBR fragment modules in one task: four of 19 to 33 ms, or two of 30 and 45 ms | 114, 120 and 97 ms | 0.3 to 0.7 s before the world is ready (two runs), and 2.2 s before (one) | two frames dropped in each of the two nearest the end |
+| The first PBR fragment modules, one a task | 58 to 66 ms each, in tasks of 70 to 81 ms | the first frames drawn | none |
+| A batch with no call of 1.5 ms in it | 62 to 108 ms | 5 to 11 s after Play | none in these runs (one of 86 ms dropped two frames in the first trace) |
+
+The modules are 1.5 to 1.7 s of the thread's time a start, 109 to 117 of them. The several in
+one task are the page making several effects back to back: beside each such task the page's
+frames are three to five continuations of 13 to 23 ms, each an effect made as its shader
+arrived, with no task between them, so their modules reach the GPU thread as one batch. Three
+more first visits, untraced, judged against the intro's bar: no page stop over a quarter of a
+second in any; one inside every limit; one whose film was 0.31 s behind the tap after its first
+second (the limit is 0.3 s); one whose picture skipped 0.12 s, three frames, 0.1 s before the
+world was ready, where the traced runs show the modules' batch. So the bar is not met by this
+change: the hold it removes was one of three kinds that drop frames, and the two left are the
+engine's start and the modules made together. On the high tier the rain's height map, another
+target drawn once, still makes five to eight pipelines synchronously in the first frame.
 
 Not settled, and not measured:
 
