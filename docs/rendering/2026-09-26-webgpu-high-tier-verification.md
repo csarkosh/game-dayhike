@@ -794,6 +794,19 @@ from the Play tap to the film's end, one build (`0ba98c66`) on both engines.
 | the others | four to eight links of 0.25 to 0.6 s | 0.25, 0.99, 0.44 s; 0.25, 0.36 s |
 | page stops over 0.1 s | 53 to 67 | 37 and 41 |
 
+The same day, on a later build that makes the hike's trail and level check in a worker
+(`worldPrep.ts`; the intro's design, §5.2), the same runs, three on each engine:
+
+| | WebGL2 (`?engine=webgl2`) | WebGPU, the rule's engine |
+| --- | --- | --- |
+| page stops over 0.25 s | 6, 8, 10 | 4, 3, 2 |
+| the longest (the world's build) | 0.92, 0.89, 1.99 s | 0.79, 1.60, 1.67 s |
+| seconds in stops over 0.1 s | 9.1 to 11.7 | 6.5 to 7.4 |
+
+and three more on WebGPU once the low tier's stages had been recorded on the phone (below): 3,
+1 and 1 stops over 0.25 s, the build 1.80 to 2.04 s (it is longer in a world with a lake beside
+the trailhead, 0.8 s in one without), and no stage translated in the page in any of the three.
+
 In play, `tools/frame-budget/phone.mjs`, 10 s windows, the same phone warm
 from the runs before (36 to 39.5 °C, thermal status 1), each view once on each
 engine and then, the trailhead aside, again in the other order. Mean frame,
@@ -814,11 +827,20 @@ serves it compressed: the engine's module (60 kB), the two translators
 (glslang 238 kB, twgsl 469 kB) and the low tier's map of translations
 (572 kB): 1.3 MB, against the film's 42 MB.
 
+**A stage the map lacks is a stopped page on a phone.** The summit's long frame on WebGPU (450,
+466 and, measured again with the page's counters in the row, 541 ms) was three shader stages the
+low tier's map did not hold, translated on the page's thread in 480 ms; a start in one world
+stopped 0.9 s for one stage. A desktop translates a stage in tens of milliseconds, and its low
+tier never drew with WebGPU, so the gap had cost nothing: the low tier was recorded on a
+desktop, whose pages did not meet in their 90 s every stage a phone's do. The phone itself
+recorded every page on low and a start in one more world (`tools/wgsl/record.mjs --attach`
+through adb's port; `record-pages.json`'s `start-token`): 13 stages new. After it the summit
+found every stage in the map and its longest frame was 108 ms, on a phone at 39 to 40 °C, where
+its frame times are not to be read. A world no page was recorded in can still ask for a stage
+the map lacks; the page translates it once, keeps it, and stops for it that once.
+
 Not settled, and not measured:
 
-- **One long frame at the summit.** In the first ten seconds of the summit
-  scene on WebGPU one frame took 450 ms and, in the second pass, 466 ms; on
-  WebGL2 the longest there was 58 ms. Its cause was not found.
 - **The night forest's second pass**, 17.3 to 17.5 ms on WebGPU where WebGL2
   held 16.7 ms, on a phone a degree warmer. Two passes do not tell the engine
   from the phone's heat.
