@@ -839,6 +839,31 @@ found every stage in the map and its longest frame was 108 ms, on a phone at 39 
 its frame times are not to be read. A world no page was recorded in can still ask for a stage
 the map lacks; the page translates it once, keeps it, and stops for it that once.
 
+**A pipeline made synchronously holds the thread that shows a film.** Chrome's GPU process
+decodes a page's WebGPU commands and presents a video's frames on one thread, so a batch of the
+game's commands that holds that thread drops the intro film's frames, whatever the page's own
+thread is doing: a page thread held 0.3 s on a blank page dropped none. Chrome's own trace of a
+start on the phone (2026-11-12; `tools/frame-budget`, `timeline.mjs --trace` and
+`timeline-gpu.mjs`) showed that thread run 3.6 s of the page's commands in the 30 s around Play,
+1.5 s of it 118 shader modules, and five tasks of 86 ms and more. A task of about 85 ms dropped
+two of the film's frames (0.083 s); one of 96 ms, with 50 ms more behind it, dropped three
+(0.125 s, over the intro's limit of 0.1 s). That one was the hike's first frame: the reflection
+probe's capture of the sky dome is a target drawn once, a render that is kept, so its pipeline
+was Babylon's synchronous `createRenderPipeline` (55 ms) where every other draw's is made
+asynchronously. The probe is now drawn once ahead, for nothing, as the sky is first applied:
+its groups inside the asynchronous scope (`GroupScope.ahead` in `renderer.ts`), so the dome's
+draw is left out and its pipeline asked for with `createRenderPipelineAsync`. The frames are
+held while a pipeline is pending and none has been whole, so the capture that is kept, in the
+first frame drawn and outside the scope as before, finds its pipeline made; were the creation
+to fail or pass its deadline, that capture makes it synchronously as it did. On a desktop
+(Chrome on the M-series Mac, both tiers) the page's own calls show the dome's pipeline asked
+for asynchronously 0.2 to 0.5 s before the first frame and no synchronous one made for it.
+What else held the thread in that trace is not answered here: Babylon's own two pipelines as
+the engine starts (134 ms together, a second after Play, inside the film's first second), the
+first PBR fragment module (78 ms; the modules after it 14 to 46 ms, a task each), and two
+batches of 86 and 93 ms with no long call in them. On the high tier the rain's height map,
+another target drawn once, still makes five to eight pipelines synchronously in the first frame.
+
 Not settled, and not measured:
 
 - **The night forest's second pass**, 17.3 to 17.5 ms on WebGPU where WebGL2

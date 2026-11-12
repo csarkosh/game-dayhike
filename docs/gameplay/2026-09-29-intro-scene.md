@@ -354,6 +354,13 @@ and a later hike in the same session makes its own, with the file by then in the
      it. The world is ready 12.5 to 14.2 s after Play (20.1 s on the first visit to a build
      just published). Two of the three runs are inside every limit; the third's film skipped
      0.13 s of its picture once, as the world was revealed, with no page stop over 0.2 s near it.
+   - A skip of the film's picture is not a page stop (amended 2026-11-12). The film's frames
+     are presented by the thread of Chrome's GPU process that also decodes the page's WebGPU
+     commands, and a batch of the hike's commands that holds it near 100 ms drops three of
+     them. The one such hold whose cause was the game's own, the reflection probe's pipeline
+     made synchronously in the hike's first frame, is gone: the pipeline is asked for
+     asynchronously as the sky is first applied
+     (`docs/rendering/2026-09-26-webgpu-high-tier-verification.md`, §9).
    - Still whole: what is left of the build (`buildGame` is one task: the renderer and its
      materials, the meshes made from what came sampled, the session).
 5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, a frame
