@@ -390,6 +390,8 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
       disposed = true;
       jobs?.cancel(owner);
       jobs?.idle(owner, null);
+      // A build the loader still holds is dropped with the shell: it would be stepped against meshes that have gone.
+      options.firstBuilds?.cancel(owner);
       // The meshes and the materials are both ours — generated here, adopted
       // from no container — so both have to be disposed by hand.
       for (const mesh of meshes) mesh.dispose();

@@ -25,15 +25,16 @@ export async function startReady(input: {
   reveal: Promise<void> | null;
   progress: LoadProgress | null;
   maxMs: number;
-  /** The start's first builds, done; absent or null where none are stepped. */
-  firstBuilds?: Promise<void> | null;
+  /** The start's first builds, done: asked for once the scene is ready, by when every model
+   * that readiness waits for has landed and queued its fill. Absent or null where none are stepped. */
+  firstBuilds?: (() => Promise<void>) | null;
 }): Promise<void> {
   const began = Date.now();
   await whenSceneReady(input.scene, input.maxMs, input.forestReady);
   // Each wait is bounded by what is left of the limit: a build that never ends, or a frame that
   // never comes whole (a pipeline that never lands), must not hold the intro past it.
   const left = (): number => input.maxMs - (Date.now() - began);
-  if (input.firstBuilds !== undefined && input.firstBuilds !== null) await within(input.firstBuilds, left());
+  if (input.firstBuilds !== undefined && input.firstBuilds !== null) await within(input.firstBuilds(), left());
   if (input.reveal !== null) await within(input.reveal, left());
   input.progress?.gate();
 }

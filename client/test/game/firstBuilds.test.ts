@@ -155,6 +155,49 @@ describe("a hike's first builds, stepped", () => {
     expect(log).toEqual(["forest"]);
     expect(r.loader.pending()).toBe(0);
   });
+  it("is drained only when nothing is queued any more, though a build was dropped and another queued meanwhile", async () => {
+    const r = rig();
+    const log: string[] = [];
+    const owner = {};
+    let drained = false;
+    r.loader.add(owner, build("old", 3, 9, r.clock, log), "forest");
+    void r.loader.drained().then(() => { drained = true; });
+    // A jump: the shell drops its build and queues the newer one. `idle` resolves in between.
+    r.loader.cancel(owner);
+    r.loader.add(owner, build("new", 2, 9, r.clock, log), "forest");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    r.drain();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(drained).toBe(true);
+    expect(log).toEqual(["new", "new"]);
+  });
+  it("is drained at once with nothing queued", async () => {
+    const r = rig();
+    let drained = false;
+    void r.loader.drained().then(() => { drained = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(drained).toBe(true);
+  });
+  it("finishes the rest on close when one build throws, settles, and lets the error be seen", async () => {
+    const r = rig();
+    const log: string[] = [];
+    const bad = (function* (): Slices { yield; throw new Error("a shell broke"); })();
+    r.loader.add({}, build("forest", 2, 9, r.clock, log), "forest");
+    r.loader.add({}, bad, "bad");
+    r.loader.add({}, build("clutter", 2, 9, r.clock, log), "clutter");
+    let idle = false;
+    void r.loader.idle().then(() => { idle = true; });
+    expect(() => r.loader.close()).toThrow("a shell broke");
+    expect(log).toEqual(["forest", "forest", "clutter", "clutter"]);
+    expect(r.loader.pending()).toBe(0);
+    expect(r.loader.open).toBe(false);
+    await Promise.resolve();
+    expect(idle).toBe(true);
+  });
   it("lets the other builds go on when one throws, and lets the error be seen", () => {
     const r = rig();
     const log: string[] = [];

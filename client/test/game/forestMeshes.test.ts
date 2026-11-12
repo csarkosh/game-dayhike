@@ -264,6 +264,21 @@ describe("createForestMeshes under NullEngine", () => {
     expect(uploads.mock.calls.length).toBeGreaterThan(0);
   }, timeLimit(120_000));
 
+  it("drops its queued fill when it is disposed, so nothing is stepped against meshes that have gone", () => {
+    const loader = createFirstBuilds({ later: () => undefined, now: () => 0 });
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const forest = createForestMeshes(scene, SEED, { assets: stubAssets(scene), bakeImpostor: () => null, firstBuilds: loader });
+    forest.update(2500, 2500);
+    expect(loader.pending()).toBe(1);
+    forest.dispose();
+    expect(loader.pending()).toBe(0);
+    const uploads = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    expect(() => loader.close()).not.toThrow();
+    expect(uploads.mock.calls.length).toBe(0);
+  }, timeLimit(120_000));
+
   it("gives the nurse log's fern the cover's tint and contrast, on the plain material it wears there", () => {
     const engine = new NullEngine();
     engines.push(engine);

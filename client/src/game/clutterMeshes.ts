@@ -1467,6 +1467,8 @@ export function createClutterMeshes(
       disposed = true;
       jobs?.cancel(owner);
       jobs?.idle(owner, null);
+      // A build the loader still holds is dropped with the shell: it would be stepped against meshes that have gone.
+      options.firstBuilds?.cancel(owner);
       loads.abort();
       scene.getEngine().onContextRestoredObservable.remove(restoreObserver);
       if (buckets !== null) {

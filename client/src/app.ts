@@ -2363,7 +2363,7 @@ function buildGame(
   );
   if (firstBuilds !== undefined) {
     progress?.start("world", "fills");
-    void built.firstSynced.then(() => firstBuilds.idle()).then(() => progress?.done("world", "fills"));
+    void Promise.all([built.firstSynced, built.forestReady.catch(() => undefined)]).then(() => firstBuilds.drained()).then(() => progress?.done("world", "fills"));
   }
   const ready = firstBuild.then(() =>
     startReady({
@@ -2372,8 +2372,10 @@ function buildGame(
       reveal: firstWholeFrame,
       progress,
       maxMs: READY_MAX_MS,
-      // Stepped first builds are done once a frame has shown the shells the player's place and the loader is empty.
-      firstBuilds: firstBuilds === undefined ? null : built.firstSynced.then(() => firstBuilds.idle()),
+      // Stepped first builds are done once a frame has shown the shells the player's place and the
+      // loader has drained. Asked once the scene is ready: a fill queued as its models landed,
+      // after that first frame, is waited for too.
+      firstBuilds: firstBuilds === undefined ? null : () => built.firstSynced.then(() => firstBuilds.drained()),
     }),
   );
   // On a WebGPU engine, the GLSL shaders the WebGL2 renderer loads lazily are
@@ -2710,8 +2712,12 @@ function buildGame(
         lift();
         // The film is gone: what is left of the first builds runs to its end here, behind the cut's
         // veil, and from now on a build that cannot wait runs whole, as in any play.
-        firstBuilds?.close();
-        if (!disposed) release();
+        try {
+          firstBuilds?.close();
+        } finally {
+          // A build that threw at the cut must not leave the player's controls held.
+          if (!disposed) release();
+        }
       };
     },
     engage() {

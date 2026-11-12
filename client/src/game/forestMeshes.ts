@@ -2557,6 +2557,8 @@ export function createForestMeshes(
       disposed = true;
       options.jobs?.cancel(owner);
       options.jobs?.idle(owner, null);
+      // A build the loader still holds is dropped with the shell: it would be stepped against meshes that have gone.
+      options.firstBuilds?.cancel(owner);
       // First: a GLB in flight ends quietly and a bake still waiting stops
       // polling and releases its target.
       loads.abort();

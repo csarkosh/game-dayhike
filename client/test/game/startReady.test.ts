@@ -34,7 +34,7 @@ describe("the start-time gate", () => {
     let built!: () => void;
     const firstBuilds = new Promise<void>((resolve) => { built = resolve; });
     let ready = false;
-    void startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: null, maxMs: 60_000, firstBuilds }).then(() => { ready = true; });
+    void startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: null, maxMs: 60_000, firstBuilds: () => firstBuilds }).then(() => { ready = true; });
     await new Promise((r) => setTimeout(r, 250));
     expect(ready).toBe(false);
     built();
@@ -42,11 +42,21 @@ describe("the start-time gate", () => {
     expect(ready).toBe(true);
   }, timeLimit(10_000));
 
+  it("asks for the first builds only once the scene is ready: a fill queued when the models land is not missed", async () => {
+    const order: string[] = [];
+    let readyCalls = 0;
+    const scene = { isDisposed: false, isReady: () => { if (++readyCalls > 2) { order.push("scene"); return true; } return false; }, getWaitingItemsCount: () => 0 };
+    await startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: null, maxMs: 5000, firstBuilds: () => { order.push("fills"); return Promise.resolve(); } });
+    expect(order[0]).toBe("scene");
+    expect(order.at(-1)).toBe("fills");
+    expect(order.filter((x) => x === "fills")).toHaveLength(1);
+  }, timeLimit(10_000));
+
   it("calls the world ready at maxMs though a first build never ends", async () => {
     const scene = { isDisposed: false, isReady: () => true, getWaitingItemsCount: () => 0 };
     const p = createLoadProgress();
     // The limit is the gate's own (300 ms here): the test's is ten seconds, and this would never resolve without one.
-    await startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: p, maxMs: 300, firstBuilds: new Promise(() => undefined) });
+    await startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: p, maxMs: 300, firstBuilds: () => new Promise(() => undefined) });
     expect(p.view().ready).toBe(true);
   }, timeLimit(10_000));
 });

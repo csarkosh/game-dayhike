@@ -6,7 +6,8 @@
  * long, and under the film the captions and the loading bar stand with it. So a shell that is
  * building for the first time hands its build here instead of draining it: the loader steps the
  * builds one at a time, in the order they came, in turns of its own (macrotasks, not frames),
- * each turn giving the thread back once `sliceMs` have passed.
+ * each turn giving the thread back once `sliceMs` have passed. Under the film any build that
+ * cannot wait for the frame's scheduler comes here, a shell's first or one after a jump.
  *
  * It lives only as long as the film's cover. `close` (the cut) runs whatever is left to its end
  * and from then on a build handed in runs whole, at once: a first build in play, after a
@@ -28,6 +29,9 @@ export type FirstBuilds = {
   pending(): number;
   /** Resolves when nothing is queued or in hand; at once when nothing is. */
   idle(): Promise<void>;
+  /** Resolves once nothing is queued and nothing was queued meanwhile: a build dropped and another
+   * queued in its place (a jump) settles `idle` in between, and this waits on. */
+  drained(): Promise<void>;
   /** Runs everything queued to its end now, in order, and closes. */
   close(): void;
   /** Ends everything queued without running it, and closes. */
@@ -78,6 +82,7 @@ export function createFirstBuilds(deps: { now?: () => number; later?: (run: () =
     ask();
     settle();
   }
+  const idle = (): Promise<void> => (queue.length === 0 ? Promise.resolve() : new Promise<void>((resolve) => waiting.push(resolve)));
   const drop = (owner: object): void => {
     const i = queue.findIndex((j) => j.owner === owner);
     if (i < 0) return;
@@ -107,11 +112,24 @@ export function createFirstBuilds(deps: { now?: () => number; later?: (run: () =
     },
     queued: (owner) => queue.some((j) => j.owner === owner),
     pending: () => queue.length,
-    idle: () => (queue.length === 0 ? Promise.resolve() : new Promise<void>((resolve) => waiting.push(resolve))),
+    idle,
+    async drained() {
+      while (queue.length > 0) await idle();
+    },
     close() {
       open = false;
-      while (queue.length > 0) finish((queue.shift() as Job).slices);
+      // Every build is run to its end though one throws: the rest are not left queued for ever, and
+      // whoever waits on `idle` is let go. The first error is seen once they are done.
+      let failed: { error: unknown } | null = null;
+      while (queue.length > 0) {
+        try {
+          finish((queue.shift() as Job).slices);
+        } catch (error) {
+          failed ??= { error };
+        }
+      }
       settle();
+      if (failed !== null) throw failed.error;
     },
     dispose() {
       open = false;

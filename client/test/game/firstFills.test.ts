@@ -27,7 +27,7 @@ function scene(): Scene {
   engines.push(engine);
   return new Scene(engine);
 }
-type Shell = { update(x: number, z: number): void };
+type Shell = { update(x: number, z: number): void; dispose(): void };
 const SHELLS: Record<string, (firstBuilds?: FirstBuilds) => Shell> = {
   "ground cover": (firstBuilds) => {
     const s = scene();
@@ -74,6 +74,18 @@ describe.each(Object.keys(SHELLS))("the %s's first fill", (name) => {
     make(loader).update(AT.x, AT.z);
     expect(loader.pending()).toBe(0);
     expect(uploads.mock.calls.length).toBeGreaterThan(0);
+  }, timeLimit(120_000));
+
+  it("is dropped when the shell is disposed, so nothing is stepped against meshes that have gone", () => {
+    const { loader } = loaderByHand();
+    const shell = make(loader);
+    shell.update(AT.x, AT.z);
+    expect(loader.pending()).toBe(1);
+    shell.dispose();
+    expect(loader.pending()).toBe(0);
+    const uploads = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    expect(() => loader.close()).not.toThrow();
+    expect(uploads.mock.calls.length).toBe(0);
   }, timeLimit(120_000));
 
   it("is replaced, not doubled, when the view jumps before it has run", () => {
