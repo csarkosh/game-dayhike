@@ -22,20 +22,30 @@ into Hollows. The guide, the cuts and the forks' Hollows are gone.
 
 ## 1. The path (`sim/wayDown.ts`, `sim/wayDraw.ts`)
 
-**What it is.** A line of points 2 m apart (`WAY_STEP_M`) from the crest's node to the pad, with
+**What it is.** A line of points 2 m apart (`WAY_STEP_M`) from where the party stands at the
+find to the pad, with
 the metres along at each and a 16 m grid of its segments, so that "how far off the way is this
 place" (`wayDistance`), "how far along" (`wayProject`), and the point and direction at a distance
 along (`wayPoint`, `wayDirection`) are a few segments' arithmetic.
 
+**Where it begins.** Not at the body: on the stem, 12 m down it from the crest (`WAY_START_M`,
+the discovery's radius), where a party coming up the trail stands when the scene takes them. The
+Hollow steps out past the body from there, so no part of the way comes within 8 m of the body
+(`WAY_BODY_CLEAR_M`) or within 22 m of it on the side away from the party
+(`WAY_CREST_CLEAR_M`): the light's mouth is on the party's side, and where the pad lies behind
+the crest the way goes round it.
+
 **Its length.** `wayTarget(straight)`: 840 m (`WAY_TARGET_M`, two minutes at the sprint's 7 m/s)
-or twice the straight line from crest to pad (`WAY_MAX_RATIO`), whichever is less, and never under
+or twice the straight line from its start to the pad (`WAY_MAX_RATIO`), whichever is less, and never under
 1.12 times the line (`WAY_MIN_RATIO`), the least that leaves it room to bend. Straight lines run
 from a few hundred metres to over a kilometre: a line over 1,027 m winds less than that so as to
 stay under 1,150 m (`WAY_MAX_M`), and one over 1,095 m is 1.05 times itself (`WAY_LONG_RATIO`).
 
 **Its shape.** No stretch runs straight for more than about 40 m (`WAY_STRAIGHT_MAX_M`), the
 distance to the pad never grows by more than about 10 m before it falls again
-(`WAY_BACK_MAX_M`), and no two stretches come within 25 m (`WAY_APART_M`).
+(`WAY_BACK_MAX_M`), and no two stretches come within 25 m (`WAY_APART_M`). These two are the
+design's "about": the tests give a straight stretch 8 m and a way gone round a lake 5 m, and
+measure heading back past the way's first 60 m, which may be going round the crest.
 
 **How it is drawn** (`drawWay`, a generator):
 
@@ -43,14 +53,16 @@ distance to the pad never grows by more than about 10 m before it falls again
    ends, their amplitude found by bisection so the meander is the target's length. Waves are
    100 m at the least winding and up to 220 m at the most, so a long way's bends stay gentle.
 2. A search (A*) over a grid of 3 m cells in the line's own axes for the cheapest line from the
-   crest's cell to the pad's. A cell is priced the first time it is touched: refused in a lake
-   (or within 3 m of its shore), under the sea's level, or on ground steeper than a player can
-   stand on with a margin; dearer by a tenth for each metre it is off the meander, to 40 m; a
-   twentieth cheaper where the trail passes. The trail's own cells are never refused for slope.
+   start's cell to the pad's. A cell is priced the first time it is touched: refused on the
+   crest's ground above, in a lake (or within 3 m of its shore), under the sea's level, or on
+   ground steeper than a player can stand on with a margin; dearer by a quarter for each metre it
+   is off the meander or the nearest of its copies, which lie 80 m apart, so a line gone wide
+   round a lake still winds; a twentieth cheaper where the trail passes. The trail's own cells
+   are never refused for slope.
 3. Along the line found, and only there: anything a runner could not step over (a trunk, a
    fallen one, a rock, a cliff) walls its cell, and so does a point of the line itself that
-   stands on ground a player would slide on; then the search goes again, up to 24 rounds. The
-   line is clear ground.
+   stands on ground a player would slide on; then the search goes again, up to 24 rounds, and
+   the last round's line stands with whatever is still on it, a trunk to run round.
 4. The cells' centres are averaged with their neighbours and resampled. A length that misses the
    target corrects the amplitude and the whole goes again, up to three rounds.
 5. Where nothing gets through the ground searched, the search widens (40, 160, 400 m past the
@@ -76,7 +88,9 @@ far a player is from the trail asks how far they are from the way, through one f
 `chaseLineDistance`. The channel is wider than the trail was, so 1.5 m (`WAY_SLACK_M`) is taken
 off the distance from the line: the walls' rim, 5.5 m out (`WAY_RIM_M`), reads as the trail's
 4 m edge, and every threshold keeps its meaning. Before the find, and on any level with no way,
-it is the trail's distance as before.
+it is the trail's distance as before. The place the party stood at the find, and 15 m round
+it (`CREST_GRACE_M`), is on the line whatever the way's distance: a player caught there, or just
+returned there, did not leave the way.
 
 - **The death's cause** (`deathCause.ts`): off the way is the "off the trail" cause.
 - **The haunt** (`haunt.ts`): a player off the way is pressed as one off the trail was, and its
@@ -96,7 +110,9 @@ hunts (`spawnHollowStepping`, once the forks' Hollow) is kept for what will step
 **The shape.** A floor 4 m either side of the line, its light whole within 1.5 m and gone at the
 edge; and a wall each side that begins 2 m from the line and rises by a quarter circle of radius
 3.5 m, so its rim stands 5.5 m out and 3.5 m up. A wall is dark where it begins to rise, gathers
-light as it climbs, and fades to nothing at the rim. Every vertex stands on the ground under it.
+light as it climbs, and fades to nothing at the rim. Every vertex stands on the ground the
+players stand on (the simulation's field, the walkable rock's rise with it), which the app gives
+the renderer with the way.
 
 **How it is drawn.** As geometry with one additive material of its own (`wayLight`), a mesh every
 64 m of way, built a chunk a slice. A vertex's light is its profile times its kind's strength
@@ -109,11 +125,15 @@ every tier and both engines.
 with no post chain, the grade's on the others. The light itself is exempt.
 
 **The mist.** Where the tier has ground mist, its map of "how far off the trail" is built over
-the way instead while the light is up: thin from the line to the walls' foot, whole by their rim.
+the way instead while the light is up: thin from the line to the walls' foot, whole by their rim
+(`wayDistanceWithin`: only the cells near a place are asked).
 
 **When.** The level (`wayLevelFor`) rises over two seconds from the summit scene's threshold,
 the shot in which the player turns to run, holds through the chase, a death and the return to
 the crest, and falls once the match is decided. The console's `way on` and `way off` hold it.
+
+**What is reported.** Each page sends one `way` telemetry event as its way settles: its length,
+its straight line, and whether it is the fallback.
 
 ## 4. The ranger's lines
 
@@ -131,10 +151,12 @@ until they are made again.
 - `test/sim/chaseLine.test.ts`, `hollowWay.test.ts`: the rim and the floor, the cause, the
   haunt's pressure and its shades' stand, a Hollow's descent of the way.
 - `test/sim/waySweep.part1..10.test.ts`: on fifty worlds the way is drawn and keeps its rules
-  (a way gone round a lake may run a quarter over its target and head back 15 m), and a runner
-  who sprints down it with real input, turning only for what is in the way, reaches the road
-  without stalling or leaving the channel (`helpers/wayRunner.ts`).
-- `test/sim/summitRun.test.ts`: the same runner from the find, the crest's Hollow behind it.
+  (a way gone round a lake may run a quarter over its target), and the chase is run as a
+  first-timer meets it: the find from the stem, the scene and its threshold's run down the way,
+  then a runner who sprints with real input, turning only for what is in the way
+  (`helpers/wayRunner.ts`), the crest's Hollow hunting behind. The runner reaches the road
+  without stalling or leaving the channel, and the Hollow never comes within 3 m.
+- `test/sim/summitRun.test.ts`: one whole match on one world, the climb included.
 - `test/game/wayLightGeometry.test.ts`, `wayLight.test.ts`, `wayShow.test.ts`: the half pipe's
   profiles and vertices, the mesh and its material, the level, the dim on both colour paths, the
   mist's map, and the renderer's and the app's wiring.
