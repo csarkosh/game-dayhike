@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import {
   OFF_TRAIL_M, OFF_TRAIL_S, VOICE_FIRST_S, VOICE_GAP_S, returnScenario, stepInnerVoice, voiceRest, type VoiceInputs, type VoiceState,
@@ -182,7 +183,7 @@ describe("the line on coming back from a death in the chase", () => {
   const back = (cause: DeathCause): VoiceInputs => ({ ...CHASE, scene: "return", returned: cause });
 
   it("has the six causes' lines as the design gives them", () => {
-    expect(INNER_LINES.returnOffTrail).toEqual(["Right. The trail. Stay on the trail.", "Shortcut. Never again.", "Off the trail is where it keeps them. Noted."]);
+    expect(INNER_LINES.returnOffTrail).toEqual(["Right. The light. Stay in the light.", "Shortcut. Never again.", "Out of the light is where it keeps them. Noted."]);
     expect(INNER_LINES.returnStill).toEqual(["Standing still. Great plan.", "Don't stop. Do not stop this time.", "It doesn't wait. Why did I?"]);
     expect(INNER_LINES.returnInto).toEqual(["Away from it. AWAY.", "Wrong way. That was the wrong way.", "Maybe don't run at it this time."]);
     expect(INNER_LINES.returnLooked).toEqual(["Don't look at it. Just run.", "Stop staring. Start running.", "Eyes down. Feet moving."]);
@@ -247,5 +248,24 @@ describe("the line on coming back from a death in the chase", () => {
     const quiet = stepInnerVoice(voiceRest(5), { ...CHASE, scene: "return", nearBody: true, hollowSeen: true, safe: true }, DT);
     expect(quiet.line).toBeNull();
     expect(stepInnerVoice(voiceRest(5), back(DeathCause.None), DT).line).toBeNull();
+  });
+});
+
+describe("the chase's lines since the way down", () => {
+  it("speak of the light, never the trail or a path: the way home is the lit channel now", () => {
+    for (const scenario of ["chaseStart", "chaseOffTrail", "returnOffTrail"] as const) {
+      for (const line of INNER_LINES[scenario]) expect(line, scenario).not.toMatch(/trail|path/i);
+    }
+    expect(INNER_LINES.chaseStart).toEqual(["Run. NOW.", "I need to go. NOW.", "Down. Follow the light. NOW."]);
+    expect(INNER_LINES.chaseOffTrail).toEqual(["The light. Stay in the light.", "Not through there. Back!", "I'm out of the light. Go back. Now!"]);
+  });
+
+  it("leave no clip that speaks a line's old words: a reworded line is a caption until its clip is made again", () => {
+    for (const id of ["voice.chaseStart.3", "voice.chaseOffTrail.1", "voice.chaseOffTrail.2", "voice.chaseOffTrail.3"]) {
+      expect(existsSync(`assets/audio/${id}.mp3`), id).toBe(false);
+      expect(readFileSync("assets/catalog.json", "utf8"), id).not.toContain(`"${id}"`);
+    }
+    // The lines that kept their words kept their clips.
+    for (const id of ["voice.chaseStart.1", "voice.chaseStart.2", "voice.safe.1"]) expect(existsSync(`assets/audio/${id}.mp3`), id).toBe(true);
   });
 });

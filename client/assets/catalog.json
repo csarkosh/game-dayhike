@@ -712,21 +712,6 @@
       "bytes": 16796
     },
     {
-      "id": "voice.chaseOffTrail.1",
-      "output": "audio/voice.chaseOffTrail.1.mp3",
-      "bytes": 20557
-    },
-    {
-      "id": "voice.chaseOffTrail.2",
-      "output": "audio/voice.chaseOffTrail.2.mp3",
-      "bytes": 18206
-    },
-    {
-      "id": "voice.chaseOffTrail.3",
-      "output": "audio/voice.chaseOffTrail.3.mp3",
-      "bytes": 25416
-    },
-    {
       "id": "voice.chaseStart.1",
       "output": "audio/voice.chaseStart.1.mp3",
       "bytes": 11467
@@ -735,11 +720,6 @@
       "id": "voice.chaseStart.2",
       "output": "audio/voice.chaseStart.2.mp3",
       "bytes": 13347
-    },
-    {
-      "id": "voice.chaseStart.3",
-      "output": "audio/voice.chaseStart.3.mp3",
-      "bytes": 15228
     },
     {
       "id": "voice.crest.1",
