@@ -410,7 +410,7 @@ export async function createWebGpuEngine(
     // thread a batch each. Let go, all of them, when the engine goes.
     const turns = createEffectTurns();
     const unspace = spaceEffects(engine, turns);
-    engine.onDisposeObservable.addOnce(() => {
+    (engine as { onDisposeObservable?: { addOnce(callback: () => void): unknown } }).onDisposeObservable?.addOnce(() => {
       unspace();
       turns.dispose();
     });

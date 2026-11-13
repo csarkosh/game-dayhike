@@ -251,6 +251,17 @@ describe("mipmapPipelineAhead", () => {
     expect(Object.hasOwn(device, "createRenderPipeline")).toBe(false);
   });
 
+  it("resolves false, and throws nothing, where there is no manager or no device to ask", async () => {
+    // An engine that keeps its texture manager or its device elsewhere (a Babylon that moved, a
+    // stand-in): the start goes on, with Babylon's own pipelines.
+    const device = new StandInDevice();
+    await expect(mipmapPipelineAhead(device as never, undefined as never)).resolves.toBe(false);
+    await expect(mipmapPipelineAhead(device as never, null as never)).resolves.toBe(false);
+    await expect(mipmapPipelineAhead(undefined as never, new StandInManager(device))).resolves.toBe(false);
+    expect(device.asked).toEqual([]);
+    expect(device.sync).toEqual([]);
+  });
+
   it("resolves false where the asynchronous creation throws as it is asked for", async () => {
     const device = new StandInDevice();
     device.createRenderPipelineAsync = () => {

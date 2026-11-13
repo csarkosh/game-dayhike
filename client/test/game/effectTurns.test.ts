@@ -349,6 +349,15 @@ describe("spaceEffects", () => {
     expect(engine.calls[0]?.[1]).toBe(options);
   });
 
+  it("leaves an engine with no createEffect of its own alone", () => {
+    const bare = {} as { createEffect: (...args: never[]) => unknown };
+    const restore = spaceEffects(bare, createEffectTurns({ turn: byHand().turn }));
+    expect(Object.hasOwn(bare, "createEffect")).toBe(false);
+    expect(effectsWaitingOn(bare)).toBe(0);
+    restore();
+    expect(Object.hasOwn(bare, "createEffect")).toBe(false);
+  });
+
   it("leaves a wrap put on after its own where it is", () => {
     const engine = new StandInEngine();
     const restore = spaceEffects(engine, createEffectTurns({ turn: byHand().turn }));
@@ -387,7 +396,7 @@ describe("the WebGPU engine's start", () => {
   it("spaces its effects once it stands, and lets them all go when the engine does", () => {
     const source = readFileSync(new URL("../../src/game/gpuEngine.ts", import.meta.url), "utf8");
     expect(source).toMatch(
-      /installPipelines\(engine, options\.pipelines \?\? "async"\);[\s\S]{0,600}const turns = createEffectTurns\(\);\s*const unspace = spaceEffects\(engine, turns\);\s*engine\.onDisposeObservable\.addOnce\(\(\) => \{\s*unspace\(\);\s*turns\.dispose\(\);\s*\}\);/,
+      /installPipelines\(engine, options\.pipelines \?\? "async"\);[\s\S]{0,600}const turns = createEffectTurns\(\);\s*const unspace = spaceEffects\(engine, turns\);\s*\(engine as \{ onDisposeObservable\?: \{ addOnce\(callback: \(\) => void\): unknown \} \}\)\.onDisposeObservable\?\.addOnce\(\(\) => \{\s*unspace\(\);\s*turns\.dispose\(\);\s*\}\);/,
     );
   });
 });

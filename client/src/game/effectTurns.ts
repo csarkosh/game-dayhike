@@ -145,6 +145,8 @@ export function spaceEffects(
   const own = engine as { createEffect: (...args: unknown[]) => unknown; isDisposed?: boolean };
   const hadOwn = Object.hasOwn(own, "createEffect");
   const original = own.createEffect;
+  // Nothing to wrap (not an engine that makes effects): left as it is.
+  if (typeof original !== "function") return () => undefined;
   let pending = 0;
   waitingOn.set(engine, () => pending);
   const spaced = (...args: unknown[]): unknown => {

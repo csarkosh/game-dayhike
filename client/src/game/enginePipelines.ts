@@ -99,11 +99,15 @@ type MipmapManager = {
  * processed its shader and made and kept its modules, exactly as it does,
  * and stopped short of the synchronous pipeline. Resolves true where it
  * stored one; false where the pipeline was already there, where the manager
- * threw of its own or is not as expected, where the creation failed, or
+ * threw of its own, is not as expected or is not there at all (nor the
+ * device), where the creation failed, or
  * where Babylon had made its own meanwhile, which is then the one kept.
  * Never rejects.
  */
 export function mipmapPipelineAhead(device: GPUDevice, manager: object, format: GPUTextureFormat = "rgba8unorm"): Promise<boolean> {
+  const isObject = (x: unknown): boolean => typeof x === "object" && x !== null;
+  // No manager or no device where they were looked for (a Babylon that moved): Babylon's own path.
+  if (!isObject(manager) || !isObject(device)) return Promise.resolve(false);
   const own = manager as MipmapManager;
   if (typeof own._getPipeline !== "function") return Promise.resolve(false);
   const recorded = new Error("the mipmap pipeline's descriptor, recorded");
