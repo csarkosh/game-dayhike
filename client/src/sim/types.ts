@@ -131,6 +131,13 @@ export type PlayerState = {
   killedBy: number;
   returnIn: number;
   heldFor: number;
+  /**
+   * Whether this player has been out on the mountain in the chase: alive and
+   * off the road at some tick of it, or at the find. Only such a player wins
+   * the match by reaching the road (summit.ts); one admitted mid-chase stands
+   * at the car, safe, and wins nothing by arriving. Host-only.
+   */
+  out: boolean;
 };
 
 export type EnemyState = {

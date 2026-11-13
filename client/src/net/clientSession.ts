@@ -434,7 +434,7 @@ export function createClientSession(
             stare: truth.stare,
             // Host-only and not in the snapshot. A client has no use for where a
             // remote player died: death is host truth and arrives as health 0.
-            deathPos: null, killedBy: 0, returnIn: 0, heldFor: 0,
+            deathPos: null, killedBy: 0, returnIn: 0, heldFor: 0, out: false,
           });
         }
         for (const e of view.enemies) {

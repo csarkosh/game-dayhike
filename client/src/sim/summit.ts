@@ -151,6 +151,8 @@ export function stepSummit(world: World): void {
     gatherParty(world, who);
     // Where the party stands now is where a player who dies in the chase comes back (returns.ts).
     world.crest = { pos: cloneVec3(who.pos), yaw: who.yaw };
+    // Everyone alive at the find has been out on the mountain: any of them wins it by reaching the road.
+    for (const p of state.players.values()) if (!dead(p)) p.out = true;
     spawnHollow(world, emergePoint(world, search.body.pos, who.pos), who.id, SUMMIT_REVEAL_S);
     world.cut = drawGuide(world);
     return;
@@ -162,14 +164,16 @@ export function stepSummit(world: World): void {
   }
 
   stepCuts(world);
-  let out = 0, safe = 0;
+  // The end: the first player to reach the road wins it for all, wherever the
+  // others are, on the trail, dead and counting down, or just returned. Only
+  // a player who was out on the mountain: one admitted mid-chase spawns at
+  // the car, safe, and wins nothing by arriving. And it is never lost: in
+  // the chase the dead come back (checkpoint.ts).
+  let won = false;
   for (const p of state.players.values()) {
     if (dead(p)) continue;
-    if (p.safe) safe++;
-    else out++;
+    if (!p.safe) p.out = true;
+    else if (p.out) won = true;
   }
-  if (out > 0) return;
-  // Nobody out and nobody safe is everyone dead: in the chase they come back (checkpoint.ts), so it is not the end.
-  if (safe === 0) return;
-  state.outcome = Outcome.Won;
+  if (won) state.outcome = Outcome.Won;
 }

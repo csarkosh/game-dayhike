@@ -242,6 +242,7 @@ export function spawnPlayer(world: World): PlayerState {
     killedBy: 0,
     returnIn: 0,
     heldFor: 0,
+    out: false,
   };
   world.state.players.set(id, player);
   return player;

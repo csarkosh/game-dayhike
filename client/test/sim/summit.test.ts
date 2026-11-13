@@ -234,7 +234,7 @@ describe("the discovery", SUITE, () => {
 });
 
 describe("the end", SUITE, () => {
-  it("wins when every living player is on the corridor, once the chase has begun", () => {
+  it("is won only once the chase has begun: a finder who reached the road through the scene wins it on the chase's first tick", () => {
     const { w, p } = forestWorld();
     const body = w.search!.body.pos;
     standAt(p, body.x - 5, body.z);
@@ -248,6 +248,65 @@ describe("the end", SUITE, () => {
     expect(w.state.outcome).toBe(Outcome.Playing);
     tick(w, Math.round(SUMMIT_REVEAL_S / TICK_DT) + 2);
     expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.outcome).toBe(Outcome.Won);
+  });
+
+  /** Two players at the find, the scene over: the chase, the Hollow parked far off so nothing dies unasked. */
+  function party() {
+    const { w, p } = forestWorld();
+    const q = spawnPlayer(w);
+    const body = w.search!.body.pos;
+    standAt(p, body.x - 5, body.z);
+    tick(w, 1);
+    w.state.phase = Phase.Chase;
+    const h = [...w.state.enemies.values()][0]!;
+    h.ai = AiState.Emerge; h.stateTimer = 100_000;
+    standAt(h, body.x + 80, body.z);
+    return { w, p, q, body, th: w.trail!.trailhead };
+  }
+
+  it("is won the tick the first player reaches the road, wherever the others are: on the trail, dead, or just returned", () => {
+    // One still out on the trail.
+    const a = party();
+    standAt(a.q, a.body.x - 100, a.body.z);
+    standAt(a.p, a.th.x, a.th.z);
+    tick(a.w, 1);
+    expect(a.q.safe).toBe(false);
+    expect(a.w.state.outcome).toBe(Outcome.Won);
+
+    // One dead, counting down to their return.
+    const b = party();
+    standAt(b.q, b.body.x - 100, b.body.z);
+    b.q.health = 0;
+    tick(b.w, 30);
+    expect(b.q.health).toBe(0);
+    expect(b.w.state.outcome).toBe(Outcome.Playing);
+    standAt(b.p, b.th.x, b.th.z);
+    tick(b.w, 1);
+    expect(b.w.state.outcome).toBe(Outcome.Won);
+
+    // One back on the crest, held.
+    const c = party();
+    c.q.health = 0;
+    tick(c.w, 361);
+    expect(c.q.health).toBeGreaterThan(0);
+    expect(c.q.heldFor).toBeGreaterThan(0);
+    standAt(c.p, c.th.x, c.th.z);
+    tick(c.w, 1);
+    expect(c.w.state.outcome).toBe(Outcome.Won);
+  });
+
+  it("is not won by a player who joins at the car mid-chase: only by one who was out on the mountain", () => {
+    const { w, p, q, body, th } = party();
+    standAt(q, body.x - 100, body.z);
+    // Admitted now: they spawn on the pad, safe from their first tick.
+    const late = spawnPlayer(w);
+    tick(w, 60);
+    expect(late.safe).toBe(true);
+    expect(w.state.outcome).toBe(Outcome.Playing);
+    // They may walk out and back: now they have been out.
+    standAt(p, th.x, th.z);
+    tick(w, 1);
     expect(w.state.outcome).toBe(Outcome.Won);
   });
 

@@ -674,10 +674,13 @@ describe("the cut in the tick", SUITE, () => {
     w.trail = { ...g, nodes, edges, forks: [...g.forks, fork] };
     const node = nodes[fork]!;
     expect(isOnCorridor(w, node.x, node.z)).toBe(true);
-    // A second player stays out at the crest, far from every fork, so the
-    // match goes on while p stands on safe ground.
+    // A second player stays out at the crest, far from every fork, and p is
+    // one who has never been out on the mountain (as a player admitted in
+    // mid-chase is), so the match goes on while p stands on safe ground: the
+    // first player who was out and reaches the road wins it (summit.ts).
     const q = spawnPlayer(w);
     q.pos = { ...p.pos };
+    p.out = false;
     // Its branch to the north runs along the road: 8 m out is safe ground,
     // and a safe player is nobody's trigger — the fork is not even judged.
     p.pos = along(w, fork, fork + 1, 8);
