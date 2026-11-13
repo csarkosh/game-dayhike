@@ -3,7 +3,7 @@
  * pipe a player in the chase runs inside, drawn as geometry (a floor's strip
  * and two walls, wayLightGeometry.ts) with one additive material of its own,
  * so no other material's shader knows of it. One mesh a WAY_CHUNK_M of way,
- * built a chunk a slice through the renderer's jobs; the renderer sets the
+ * built a few vertices a slice through the renderer's jobs; the renderer sets the
  * way when the app has it and gives the light its level each frame.
  */
 import type { Scene } from "@babylonjs/core/scene.js";
@@ -30,6 +30,8 @@ export const WAY_LIGHT_UNIFORMS = ["viewProjection", "wayEye", "wayGain", "waySh
  * night; the frame's dim never reaches it.
  */
 export const WAY_MATERIAL_GAIN = 1.7;
+/** Heights of the ground the build asks for in one slice of a frame's share. */
+export const WAY_HEIGHTS_A_SLICE = 24;
 /** Frames a new mesh is drawn at nothing, whatever the level, so its pipeline is made before the chase shows it. */
 export const WAY_WARM_FRAMES = 3;
 /** How far toward the eye the light's depth is pulled, so its floor never fights the ground it lies on. */
@@ -91,7 +93,13 @@ export function createWayLight(scene: Scene, colourPath: "post" | "material", jo
     const chunks = wayChunks(way);
     for (let i = 0; i < chunks.length; i++) {
       const [from, to] = chunks[i] as [number, number];
-      const data = wayChunk(way, heightAt, from, to);
+      // The chunk on a flat ground first, then each vertex lifted onto the real one, a few a slice: the ground's
+      // height is the dear part (the walkable rock's layer is several reads a place), a thousand of them a chunk.
+      const data = wayChunk(way, () => 0, from, to);
+      for (let v = 0; v * 3 < data.positions.length; v++) {
+        data.positions[v * 3 + 1] = (data.positions[v * 3 + 1] as number) + heightAt(data.positions[v * 3] as number, data.positions[v * 3 + 2] as number);
+        if ((v + 1) % WAY_HEIGHTS_A_SLICE === 0) yield;
+      }
       const mesh = new Mesh(`${WAY_LIGHT_NAME}_${i}`, scene);
       mesh.setVerticesData(VertexBuffer.PositionKind, data.positions, false);
       mesh.setVerticesData("wayLight", data.light, false, 2);

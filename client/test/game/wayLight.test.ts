@@ -5,7 +5,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { SyncJobs, Slices } from "../../src/game/syncJobs.js";
-import { WAY_LIGHT_NAME, WAY_LIGHT_UNIFORMS, WAY_MATERIAL_GAIN, WAY_WARM_FRAMES, createWayLight } from "../../src/game/wayLight.js";
+import { WAY_HEIGHTS_A_SLICE, WAY_LIGHT_NAME, WAY_LIGHT_UNIFORMS, WAY_MATERIAL_GAIN, WAY_WARM_FRAMES, createWayLight } from "../../src/game/wayLight.js";
 import { WAY_FLOOR_REACH, WAY_FLOOR_STRENGTH, WAY_LIFT_M, WAY_POINT_VERTICES, WAY_TINT, WAY_WALL_REACH, WAY_WALL_STRENGTH, type WayShape } from "../../src/game/wayLightGeometry.js";
 
 /** A straight way along +x, a point every 2 m, `n` points. */
@@ -65,17 +65,33 @@ describe("the way's light", () => {
     expect(light.ready).toBe(false);
   });
 
-  it("builds a chunk a slice as a patient job, each a mesh with the light's attribute", () => {
+  it("builds as a patient job, a few of the ground's heights a slice, each chunk a mesh with the light's attribute", () => {
     const { hand, light } = make();
-    light.setWay(straight(40), GROUND);
+    // The ground's height is the dear part (the walkable rock's layer is several reads a place): no slice asks for many.
+    let asked = 0, most = 0;
+    const ground = (): number => { asked++; return 10; };
+    light.setWay(straight(40), ground);
     expect(hand.begun).toBe(1);
     expect(hand.patient).toBe(true);
     expect(hand.name).toBe("wayLight");
     expect(scene.meshes.length).toBe(0);
-    expect(hand.slice()).toBe(false);
-    expect(scene.meshes.length).toBe(1);
-    expect(light.ready).toBe(false);
-    while (!hand.slice()) { /* the rest */ }
+    let slices = 0, firstMeshAt = -1;
+    for (;;) {
+      const before = asked;
+      const done = hand.slice();
+      slices++;
+      most = Math.max(most, asked - before);
+      if (firstMeshAt < 0 && scene.meshes.length === 1) {
+        firstMeshAt = slices;
+        expect(light.ready).toBe(false);
+      }
+      if (done) break;
+    }
+    expect(most).toBeLessThanOrEqual(WAY_HEIGHTS_A_SLICE);
+    expect(WAY_HEIGHTS_A_SLICE).toBe(24);
+    // Every vertex's height was asked for once: 40 points, the chunks' shared one twice.
+    expect(asked).toBe(41 * WAY_POINT_VERTICES);
+    expect(firstMeshAt).toBeGreaterThan(30);
     expect(scene.meshes.length).toBe(2);
     expect(light.ready).toBe(true);
     const mesh = scene.meshes[0]!;
@@ -135,7 +151,7 @@ describe("the way's light", () => {
   it("a new way replaces the old one's meshes and its unfinished build; none clears them", () => {
     const { hand, light } = make();
     light.setWay(straight(40), GROUND);
-    hand.slice();
+    while (scene.meshes.length === 0) hand.slice();
     expect(scene.meshes.length).toBe(1);
     light.setWay(straight(10), GROUND);
     expect(scene.meshes.length).toBe(0);
@@ -150,7 +166,7 @@ describe("the way's light", () => {
   it("disposes its meshes, its material and its build", () => {
     const { hand, light } = make();
     light.setWay(straight(40), GROUND);
-    hand.slice();
+    while (scene.meshes.length === 0) hand.slice();
     light.dispose();
     expect(scene.meshes.length).toBe(0);
     expect(scene.getMaterialByName(WAY_LIGHT_NAME)).toBeNull();
