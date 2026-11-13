@@ -10,7 +10,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 
 import type { Vec3, WorldState } from "../sim/types.js";
-import { ENEMY_HALF, PLAYER_HALF, PLAYER_EYE_OFFSET } from "../sim/constants.js";
+import { ENEMY_HALF, PLAYER_HALF, PLAYER_EYE_OFFSET, TELEPORT_M } from "../sim/constants.js";
 import { aimDirection } from "../sim/view.js";
 import { HOLLOW_HEIGHT } from "../sim/hollow.js";
 import { createCharacterPool, variantForId, type CharacterInstance, type CharacterPool } from "./characterModel.js";
@@ -668,6 +668,8 @@ export class EntityViews {
     if (view.target.x !== x || view.target.y !== y || view.target.z !== z) {
       view.previous.copyFrom(view.target);
       view.target.set(x, y, z);
+      // A jump no walk makes (a return to the crest): drawn where it lands, not sliding there.
+      if (Vector3.DistanceSquared(view.previous, view.target) > TELEPORT_M * TELEPORT_M) view.previous.copyFrom(view.target);
     }
     Vector3.LerpToRef(view.previous, view.target, alpha, view.node.position);
   }

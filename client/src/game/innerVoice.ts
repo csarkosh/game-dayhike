@@ -164,18 +164,25 @@ const SCENE_LINES: Readonly<Record<VoiceScene, ReadonlySet<VoiceScenario>>> = {
   return: new Set(["returnOffTrail", "returnStill", "returnInto", "returnLooked", "returnLunge", "returnCaught"]),
 };
 
-/** A pool's line for this match: the pool in a seeded order, no repeat until spent, then a new order. */
+/** A pool's line for this match: the pool in a seeded order, no repeat until spent, then a new order, which never opens on the line just said. */
 function draw(state: VoiceState, scenario: VoiceScenario): VoiceLine {
   const pool = INNER_LINES[scenario];
   let order = state.order[scenario];
   let at = state.at[scenario] ?? 0;
   if (order === undefined || at >= order.length) {
+    // The line last said from this pool, where it has been through once: the new order does not open on it.
+    const lastSaid = order === undefined ? undefined : order[order.length - 1];
     order = pool.map((_, i) => i);
     for (let i = order.length - 1; i > 0; i--) {
       const j = Math.floor(next(state) * (i + 1));
       const t = order[i] as number;
       order[i] = order[j] as number;
       order[j] = t;
+    }
+    if (order.length > 1 && order[0] === lastSaid) {
+      const first = order[0] as number;
+      order[0] = order[1] as number;
+      order[1] = first;
     }
     state.order[scenario] = order;
     at = 0;

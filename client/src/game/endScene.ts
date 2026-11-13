@@ -334,6 +334,33 @@ export function endSceneRunner(selfId: number, players: Iterable<{ id: number; s
   return best === null ? { id: selfId, own: true } : { id: best, own: false };
 }
 
+/** The runner a screen's end scene is stepped on: where their body is this frame, how they face, and where they truly are (`at`), which the arrival is judged by. */
+export type RunnerPose = { pos: { x: number; y: number; z: number }; yaw: number; at: { x: number; z: number } };
+
+/**
+ * The runner for this frame, written into `into`: this screen's own player,
+ * or `other` (who reached the car) drawn where their body is (`drawnFeet`,
+ * between snapshots, so the camera follows it smoothly; `half` up to the
+ * hull's middle). The arrival is judged by the player's own place either
+ * way: a body near the door is hidden and its drawn place stops short.
+ */
+export function runnerPose(
+  into: RunnerPose,
+  local: { pos: { x: number; y: number; z: number }; yaw: number },
+  other: { pos: { x: number; y: number; z: number }; yaw: number } | undefined,
+  drawnFeet: { x: number; y: number; z: number } | null,
+  half: number,
+): RunnerPose {
+  const who = other ?? local;
+  into.pos.x = other !== undefined && drawnFeet !== null ? drawnFeet.x : who.pos.x;
+  into.pos.y = other !== undefined && drawnFeet !== null ? drawnFeet.y + half : who.pos.y;
+  into.pos.z = other !== undefined && drawnFeet !== null ? drawnFeet.z : who.pos.z;
+  into.yaw = who.yaw;
+  into.at.x = who.pos.x;
+  into.at.z = who.pos.z;
+  return into;
+}
+
 /** Whether the runner is in: within `DOOR_REACH_M` of the door, or the run's time is up. */
 export function arrived(runner: Ground, door: Ground, t: number): boolean {
   return Math.hypot(runner.x - door.x, runner.z - door.z) <= DOOR_REACH_M || t >= RUN_MAX_S;

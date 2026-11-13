@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   DIED_CLOSE_FROM_S, DIED_CLOSE_S, DIED_EYE_HEIGHT, DIED_FALL_S, DIED_PITCH, DIED_ROLL, easeIn, easeOut, endingPose,
-  type EndingBase,
-} from "../../src/game/ending.js";
+  type EndingBase, liftShare } from "../../src/game/ending.js";
 
 const BASE: EndingBase = { x: 10, y: 3.6, z: -4, yaw: 0.7, pitch: 0.1, feetY: 2 };
 
@@ -38,5 +37,16 @@ describe("the death", () => {
     expect(endingPose("died", DIED_CLOSE_FROM_S + DIED_CLOSE_S / 2, BASE).close).toBeCloseTo(0.5, 12);
     expect(endingPose("died", DIED_CLOSE_FROM_S + DIED_CLOSE_S, BASE).close).toBe(1);
     expect(endingPose("died", 60, BASE).blur).toBe(0);
+  });
+});
+
+describe("the dark lifting on a return", () => {
+  it("goes from all of what it was to nothing over the seconds given, evenly, and at once where none are given", () => {
+    expect(liftShare(0, 1.2)).toBe(1);
+    expect(liftShare(0.6, 1.2)).toBeCloseTo(0.5, 9);
+    expect(liftShare(1.2, 1.2)).toBe(0);
+    expect(liftShare(5, 1.2)).toBe(0);
+    expect(liftShare(-1, 1.2)).toBe(1);
+    expect(liftShare(0, 0)).toBe(0);
   });
 });

@@ -24,8 +24,9 @@ import { AiState } from "../sim/types.js";
 import type { Forest } from "../sim/forest.js";
 import { isHollow } from "../sim/hollow.js";
 import { STARE_LENS_REST, stareShadeUnder, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
-import { endingPose, type EndingBase, type EndingKind } from "./ending.js";
+import { endingPose, liftShare, type EndingBase, type EndingKind } from "./ending.js";
 import {
+  runnerPose, type RunnerPose,
   DOOR_IN_M, HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE,
   arrived, carDistance, carSpeed, endCar, endShot, endShotIndex, headlampAt, roadRelease, type EndShotContext, type LampAim,
 } from "./endScene.js";
@@ -1801,8 +1802,8 @@ export type Renderer = {
   endScene(): EndSceneNow | null;
   /** A scene (cutscene.ts): the camera is the scene's from now; the summit's five shots for SUMMIT_SCENE_S (`at` the body, with the Hollow's feet and the party's eye); the cap's for CAP_SCENE_S, turned to it. */
   setScene(kind: "summit" | "cap", at: { x: number; y: number; z: number }, more?: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } }, fromS?: number): void;
-  /** A death's ending undone (a return in the chase, deathReturn.ts): the camera is the player's again and a scene's may run. The won scene is left as it is. */
-  clearEnding(): void;
+  /** A death's ending undone (a return in the chase, deathReturn.ts): the camera is the player's again and a scene's may run; its dark and blur lift over `liftS` seconds (at once by default). The won scene is left as it is. */
+  clearEnding(liftS?: number): void;
   /**
    * A world point as CSS pixels on the canvas, with its distance from the
    * camera, or null when it is behind the camera. Drives the interact prompt.
@@ -2319,6 +2320,8 @@ function buildRenderer(
   let endClose = 0;
   /** The death's ending, once begun: when it began, and the pose it began from, taken on its first frame. */
   let ending: { kind: "died"; since: number; base: EndingBase | null } = { kind: "died", since: -1, base: null };
+  /** A death's dark and blur lifting after it was undone (`clearEnding`): what they were, since when, over how long; null when none is. */
+  let lift: { close: number; blur: number; since: number; forS: number } | null = null;
   /**
    * The end scene, once begun: when, what it is played over, the shots'
    * context (filled in place each frame), what app.ts reads of it, where the
@@ -2353,35 +2356,30 @@ function buildRenderer(
    * (its parts where it has them, else moved whole), and from the catch the
    * headlamp's place at the car's nose as posed this frame and the tail lamps lit.
    */
-  /** The pose a runner of another screen is read into, reused. */
-  const otherRunner = { pos: { x: 0, y: 0, z: 0 }, yaw: 0 };
+  /** The runner the end scene is stepped on this frame, reused. */
+  const runnerNow: RunnerPose = { pos: { x: 0, y: 0, z: 0 }, yaw: 0, at: { x: 0, z: 0 } };
   /**
    * Whose run the end scene is stepped on: this screen's own player, or the
    * one the setup names (who reached the car), where their body is drawn
-   * this frame, between snapshots, so the camera follows it smoothly.
+   * this frame (endScene.ts `runnerPose`).
    */
-  function endRunner(e: NonNullable<typeof endRun>, state: WorldState, local: { pos: Vec3; yaw: number }): { pos: Vec3; yaw: number } {
+  function endRunner(e: NonNullable<typeof endRun>, state: WorldState, local: { pos: Vec3; yaw: number }): RunnerPose {
     const id = e.setup.runner;
     const other = id === undefined ? undefined : state.players.get(id);
-    if (id === undefined || other === undefined) return local;
-    const drawn = views.drawnAt(id);
-    otherRunner.pos.x = drawn?.x ?? other.pos.x;
-    otherRunner.pos.y = drawn === null ? other.pos.y : drawn.y + PLAYER_HALF.y;
-    otherRunner.pos.z = drawn?.z ?? other.pos.z;
-    otherRunner.yaw = other.yaw;
-    return otherRunner;
+    return runnerPose(runnerNow, local, other, other === undefined || id === undefined ? null : views.drawnAt(id), PLAYER_HALF.y);
   }
-  function stepEndScene(e: NonNullable<typeof endRun>, local: { pos: Vec3; yaw: number }, seconds: number): void {
+  function stepEndScene(e: NonNullable<typeof endRun>, runner: RunnerPose, seconds: number): void {
     const t = seconds - e.since;
     const ctx = e.ctx;
-    ctx.runner.x = local.pos.x;
-    ctx.runner.y = local.pos.y - PLAYER_HALF.y;
-    ctx.runner.z = local.pos.z;
-    ctx.runner.yaw = local.yaw;
-    ctx.eyeY = local.pos.y + PLAYER_EYE_OFFSET;
-    if (ctx.arrival === null && arrived(local.pos, ctx.door, t)) ctx.arrival = t;
+    ctx.runner.x = runner.pos.x;
+    ctx.runner.y = runner.pos.y - PLAYER_HALF.y;
+    ctx.runner.z = runner.pos.z;
+    ctx.runner.yaw = runner.yaw;
+    ctx.eyeY = runner.pos.y + PLAYER_EYE_OFFSET;
+    // By where the runner truly is: another screen's runner is hidden as they near the door, and their drawn place stops short of it.
+    if (ctx.arrival === null && arrived(runner.at, ctx.door, t)) ctx.arrival = t;
     const shot = endShotIndex(t, ctx.arrival);
-    if (shot === 1 && ctx.pursuitFrom === null) ctx.pursuitFrom = { x: local.pos.x, z: local.pos.z };
+    if (shot === 1 && ctx.pursuitFrom === null) ctx.pursuitFrom = { x: runner.pos.x, z: runner.pos.z };
     const pose = endShot(t, ctx);
     camera.position.set(pose.x, pose.y, pose.z);
     camera.rotation.set(pose.pitch, pose.yaw, 0);
@@ -3506,17 +3504,22 @@ function buildRenderer(
 
       const local = state.players.get(localId);
       if (local) {
+        // What the world is built round: the player, but in an end scene shown on another's run
+        // (who reached the car while this screen's player was far up the mountain), that runner,
+        // or the pad would be drawn from a kilometre off, in the far rings' detail.
+        const shown = endRun !== null && endRun.setup.runner !== undefined ? state.players.get(endRun.setup.runner) : undefined;
+        const centre = shown !== undefined ? shown.pos : local.pos;
         // The patches first, as above.
-        facePatches?.update(local.pos.x, local.pos.z);
-        clipmap?.update(local.pos.x, local.pos.z);
-        water?.update(local.pos.x, local.pos.z, oceanSeconds, lighting.hour);
-        updateWet(local.pos.x, local.pos.z);
-        propMeshes?.update(local.pos.x, local.pos.z);
-        forestMeshes?.update(local.pos.x, local.pos.z);
-        cliffMeshes?.update(local.pos.x, local.pos.z);
-        clutterMeshes?.update(local.pos.x, local.pos.z);
-        bladeMeshes?.update(local.pos.x, local.pos.z);
-        duffMeshes?.update(local.pos.x, local.pos.z);
+        facePatches?.update(centre.x, centre.z);
+        clipmap?.update(centre.x, centre.z);
+        water?.update(centre.x, centre.z, oceanSeconds, lighting.hour);
+        updateWet(centre.x, centre.z);
+        propMeshes?.update(centre.x, centre.z);
+        forestMeshes?.update(centre.x, centre.z);
+        cliffMeshes?.update(centre.x, centre.z);
+        clutterMeshes?.update(centre.x, centre.z);
+        bladeMeshes?.update(centre.x, centre.z);
+        duffMeshes?.update(centre.x, centre.z);
         // The sim's own eye, not the camera's: the camera's position/rotation
         // below still hold last frame's transform at this point in `sync`
         // (the view-bob offset is computed after this), and the bob's own
@@ -3537,7 +3540,7 @@ function buildRenderer(
         wildlifeMatch.mist = weather.mist;
         wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);
         // As on the free camera: no mist or motes before the sky's slices.
-        if (sky !== null) mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour(), wind, seconds);
+        if (sky !== null) mist?.update(centre.x, centre.z, weather, atmosphere.midColour(), wind, seconds);
         const offset = bob.update(
           {
             x: local.pos.x,
@@ -3606,6 +3609,12 @@ function buildRenderer(
           camera.rotation.set(pose.pitch, pose.yaw, pose.roll);
           endBlur = pose.blur;
           endClose = pose.close;
+        } else if (lift !== null) {
+          // A death undone (a return): its dark and blur lifting, evenly, to nothing.
+          const share = liftShare(seconds - lift.since, lift.forS);
+          endClose = lift.close * share;
+          endBlur = lift.blur * share;
+          if (share <= 0) lift = null;
         }
         // A hike after a scene draws with the game's lens again; a shot of the summit's with its own.
         camera.fov = sceneFov ?? GAME_FOV;
@@ -3670,10 +3679,14 @@ function buildRenderer(
       // Begun `fromS` seconds in: a return plays the summit's last shot alone (its seventeenth second on).
       summitScene = { kind, since: clock() / 1000 - fromS, base: null, body: { x: at.x, y: at.y, z: at.z }, more: more ?? null };
     },
-    clearEnding() {
+    clearEnding(liftS = 0) {
       ending = { kind: "died", since: -1, base: null };
-      endBlur = 0;
-      endClose = 0;
+      // The dark and the blur go over `liftS` seconds from what they are now (the frame's step below).
+      lift = liftS > 0 && (endClose > 0 || endBlur > 0) ? { close: endClose, blur: endBlur, since: clock() / 1000, forS: liftS } : null;
+      if (lift === null) {
+        endBlur = 0;
+        endClose = 0;
+      }
     },
     setEnding(kind: EndingKind, scene?: EndSceneSetup) {
       if (kind === "won") {

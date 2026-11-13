@@ -26,6 +26,16 @@ export const DIED_CLOSE_FROM_S = 1.0;
 export const DIED_CLOSE_S = 3;
 
 /** Fast then slow: a cubic ease out. */
+/**
+ * How much of a death's dark and blur is left `t` seconds into its lifting
+ * (a return in the chase, deathReturn.ts): all of it at the start, none
+ * after `forS` seconds, evenly between; none at once where `forS` is nothing.
+ */
+export function liftShare(t: number, forS: number): number {
+  if (forS <= 0) return 0;
+  return Math.max(0, Math.min(1, 1 - t / forS));
+}
+
 export function easeOut(t: number): number {
   const u = 1 - clamp01(t);
   return 1 - u * u * u;

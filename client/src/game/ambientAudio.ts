@@ -818,7 +818,10 @@ export function createAmbientAudio(
     restoreMaster(seconds) {
       if (!ctx || !master) return;
       // The fade's ramp let go of, then eased: three time constants in the seconds is all but there.
+      // Held where it is first: a ramp cancelled mid-way would otherwise jump to where it began.
+      const from = master.gain.value;
       master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.setValueAtTime(from, ctx.currentTime);
       master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, Math.max(0.01, seconds) / 3);
     },
     startCar(at) {

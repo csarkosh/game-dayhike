@@ -988,6 +988,8 @@ describe("the end's fades", () => {
     audio.restoreMaster(1.2);
     // The fade's ramp is cancelled, and the gain eased to the volume: three time constants in the seconds.
     expect(master.gain.cancels).toEqual([5, 9]);
+    // Held where it was as the fade is let go of, or it would jump to full and then ease.
+    expect(master.gain.ramps.at(-1)).toMatchObject({ kind: "set", time: 9 });
     expect(master.gain.targets.at(-1)).toMatchObject({ value: 0.5, time: 9 });
     expect(master.gain.targets.at(-1)!.tc).toBeCloseTo(0.4, 6);
     audio.setMuted(true);

@@ -1,3 +1,4 @@
+import { TELEPORT_M } from "../../src/sim/constants.js";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -482,6 +483,17 @@ describe("EntityViews the shades go to the mask", () => {
     expect(at.z).toBeCloseTo(2, 5);
     expect(at.y).toBeCloseTo(0, 5);
     expect(views.drawnAt(99)).toBeNull();
+    views.dispose();
+  });
+
+  it("does not draw a body sliding across the mountain: a jump no walk makes (a return to the crest) is drawn where it lands", () => {
+    const views = new EntityViews(scene);
+    const a = player(1, false);
+    const b = player(2, false);
+    views.sync(state(a, b), 1, 1);
+    b.pos = { x: 2 + TELEPORT_M + 300, y: 0.9, z: 0 };
+    views.sync(state(a, b), 1, 0.5);
+    expect(views.drawnAt(2)!.x).toBeCloseTo(2 + TELEPORT_M + 300, 5);
     views.dispose();
   });
 });

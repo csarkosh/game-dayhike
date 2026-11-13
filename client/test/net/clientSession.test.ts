@@ -1,3 +1,5 @@
+import { blendPosition } from "../../src/net/clientSession.js";
+import { TELEPORT_M } from "../../src/sim/constants.js";
 import { describe, it, expect } from "vitest";
 import { createHostSession } from "../../src/net/hostSession.js";
 import { classifyLevelMismatch, createClientSession, type SessionEnd } from "../../src/net/clientSession.js";
@@ -630,3 +632,12 @@ describe("the phase and safety", () => {
   });
 });
 
+describe("a remote entity between two snapshots", () => {
+  it("is drawn part-way along a step, and where it landed after a jump no walk makes", () => {
+    expect(blendPosition({ x: 0, y: 1, z: 0 }, { x: 0.4, y: 1, z: 0.2 }, 0.5)).toEqual({ x: 0.2, y: 1, z: 0.1 });
+    // A return to the crest, a Hollow moved there: hundreds of metres in one snapshot. Never a streak across the screen.
+    expect(blendPosition({ x: 0, y: 1, z: 0 }, { x: 300, y: 40, z: -120 }, 0.5)).toEqual({ x: 300, y: 40, z: -120 });
+    expect(blendPosition({ x: 0, y: 0, z: 0 }, { x: TELEPORT_M + 0.01, y: 0, z: 0 }, 0.25)).toEqual({ x: TELEPORT_M + 0.01, y: 0, z: 0 });
+    expect(blendPosition({ x: 0, y: 0, z: 0 }, { x: TELEPORT_M - 0.01, y: 0, z: 0 }, 0.5).x).toBeCloseTo((TELEPORT_M - 0.01) / 2, 9);
+  });
+});

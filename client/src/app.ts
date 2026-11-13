@@ -131,6 +131,7 @@ import { createVoiceClips } from "./game/voiceClips.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt } from "./game/cutscene.js";
 import { DIED_CLOSE_FROM_S } from "./game/ending.js";
 import { RETURN_LIFT_MS, causeName, createDeathReturn } from "./game/deathReturn.js";
+import { returnHollowAt } from "./sim/returns.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_HALF } from "./sim/constants.js";
 import { stemAhead } from "./sim/trailRoute.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
@@ -603,6 +604,8 @@ function buildGame(
   let hollowSeen = false;
   /** Which scene `sceneUntil` is: the voice's lines are gated by it (innerVoice.ts VoiceScene). */
   let sceneKind: VoiceScene = "none";
+  /** A scene's letterbox, off when the scene ends (the find's, a return's threshold): one timer, so a later scene's start, or the match's end, takes an earlier one's off. */
+  let barsTimer: ReturnType<typeof setTimeout> | null = null;
   /** The cry: a line waits until every howl has ended (cryQuietAt), then answers once. */
   let cryPending = false;
   let cryQuietAt = -1;
@@ -1194,7 +1197,8 @@ function buildGame(
       downLook = wayDownFrom(me, world);
       renderer.setScene("summit", world.search.body.pos, hollow === null ? undefined : { hollow, party });
       hud.setBars(true);
-      setTimeout(() => { hud.setBars(false); downLook = null; }, SUMMIT_SCENE_S * 1000);
+      if (barsTimer !== null) clearTimeout(barsTimer);
+      barsTimer = setTimeout(() => { barsTimer = null; hud.setBars(false); downLook = null; }, SUMMIT_SCENE_S * 1000);
     }
     wasChase = chaseNow;
     // The inner voice: what this player is in, this frame; one line at most.
@@ -1459,8 +1463,7 @@ function buildGame(
   let returned: DeathCause = DeathCause.None;
   let deathFadeTimer: ReturnType<typeof setTimeout> | null = null;
   let deathSoundTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The letterbox of a return's threshold, off when it ends. */
-  let returnBarsTimer: ReturnType<typeof setTimeout> | null = null;
+
   let endFadeTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Death, once: the poster closed, the view faded onto the passage. Input
@@ -1516,7 +1519,7 @@ function buildGame(
     deathSoundTimer = null;
     // The match decided in the same breath: the end has the screen (syncOutcome).
     if (ended) return;
-    renderer.clearEnding();
+    renderer.clearEnding(RETURN_LIFT_MS / 1000);
     hud.setEnding(null);
     hud.fade(false);
     ambient.restoreMaster(RETURN_LIFT_MS / 1000);
@@ -1525,14 +1528,11 @@ function buildGame(
     sceneUntil = performance.now() + (SHOTS[4] as number) * 1000;
     voiceClips.cut();
     hud.hush();
-    // The Hollow that came for them: the one stepping out nearest where they stand.
-    let hollow: { x: number; y: number; z: number } | null = null;
-    let nearSq = Infinity;
-    for (const e of state.enemies.values()) {
-      if (e.ai !== AiState.Emerge) continue;
-      const sq = (e.pos.x - self.pos.x) ** 2 + (e.pos.z - self.pos.z) ** 2;
-      if (sq < nearSq) { nearSq = sq; hollow = { x: e.pos.x, y: e.pos.y - ENEMY_HALF.y, z: e.pos.z }; }
-    }
+    // Where the Hollow that came for them steps out: worked out, not looked for. A follower's
+    // enemies are a tenth of a second behind, so on this frame its state still has that Hollow
+    // where it stood before; the place follows from the player's own (`sim/returns.ts`).
+    const stepsOut = returnHollowAt(sim, self.pos);
+    const hollow = stepsOut === null ? null : { x: stepsOut.x, y: stepsOut.y - ENEMY_HALF.y, z: stepsOut.z };
     const eye = { x: self.pos.x, y: self.pos.y + PLAYER_EYE_OFFSET, z: self.pos.z };
     // The eye on it, as the threshold begins: its middle, from where they stand.
     if (hollow !== null) {
@@ -1544,8 +1544,8 @@ function buildGame(
     downLook = wayDownFrom(self, sim);
     renderer.setScene("summit", sim.search?.body.pos ?? self.pos, hollow === null ? undefined : { hollow, party: eye }, THRESHOLD_AT_S);
     hud.setBars(true);
-    if (returnBarsTimer !== null) clearTimeout(returnBarsTimer);
-    returnBarsTimer = setTimeout(() => { returnBarsTimer = null; hud.setBars(false); downLook = null; }, (SHOTS[4] as number) * 1000);
+    if (barsTimer !== null) clearTimeout(barsTimer);
+    barsTimer = setTimeout(() => { barsTimer = null; hud.setBars(false); downLook = null; }, (SHOTS[4] as number) * 1000);
     returned = self.cause;
   }
 
@@ -1573,6 +1573,12 @@ function buildGame(
     ended = true;
     gate.refresh();
     posterPanel.hide();
+    // A scene still playing (a return's threshold, the find's) ends here: its letterbox timer would
+    // take the end scene's bars off part-way, and its stilled turn and run are not the end's.
+    if (barsTimer !== null) clearTimeout(barsTimer);
+    barsTimer = null;
+    sceneUntil = -1;
+    downLook = null;
     // Won is won for every screen, wherever its player is: on the trail, or under their death's dark.
     const won = state.outcome === Outcome.Won;
     if (won && dead) {
@@ -1581,7 +1587,7 @@ function buildGame(
       if (deathSoundTimer !== null) clearTimeout(deathSoundTimer);
       deathFadeTimer = null;
       deathSoundTimer = null;
-      renderer.clearEnding();
+      renderer.clearEnding(RETURN_LIFT_MS / 1000);
       hud.setEnding(null);
       hud.fade(false);
       ambient.restoreMaster(RETURN_LIFT_MS / 1000);

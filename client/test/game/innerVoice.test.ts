@@ -230,6 +230,19 @@ describe("the line on coming back from a death in the chase", () => {
     expect(INNER_LINES.returnOffTrail).toContain(said[3]);
   });
 
+  it("never says the same line twice running, whatever the seed: not across a pool spent and drawn again", () => {
+    for (let seed = 1; seed <= 300; seed++) {
+      let state = voiceRest(seed);
+      let last = "";
+      for (let death = 0; death < 9; death++) {
+        const out = stepInnerVoice(state, back(DeathCause.Still), DT);
+        expect(out.line!.text, `seed ${seed}, return ${death + 1}`).not.toBe(last);
+        last = out.line!.text;
+        state = out.state;
+      }
+    }
+  });
+
   it("lets nothing else speak through the replayed threshold, and says nothing for a return with no cause", () => {
     const quiet = stepInnerVoice(voiceRest(5), { ...CHASE, scene: "return", nearBody: true, hollowSeen: true, safe: true }, DT);
     expect(quiet.line).toBeNull();

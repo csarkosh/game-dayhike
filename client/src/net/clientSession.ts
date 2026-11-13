@@ -9,7 +9,7 @@ import {
   type World,
 } from "../sim/world.js";
 import type { Forest } from "../sim/forest.js";
-import { INTERP_DELAY_MS, MAX_UNACKED_INPUTS } from "../sim/constants.js";
+import { INTERP_DELAY_MS, MAX_UNACKED_INPUTS, TELEPORT_M } from "../sim/constants.js";
 import type { Transport } from "./transport.js";
 import {
   MessageType,
@@ -60,6 +60,18 @@ export type SessionEnd =
   | { kind: "host_ended"; message: string };
 
 const STALE_CLIENT_ADVICE = "Reload the page to update.";
+
+/**
+ * A remote entity's place between two snapshots: part-way from the older to
+ * the newer, but for a jump no walk makes (`TELEPORT_M`: a player back on
+ * the crest, a Hollow moved to meet them), which is drawn where it landed,
+ * never as a streak across the screen.
+ */
+export function blendPosition(from: Vec3, to: Vec3, alpha: number): Vec3 {
+  const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+  if (dx * dx + dy * dy + dz * dz > TELEPORT_M * TELEPORT_M) return { x: to.x, y: to.y, z: to.z };
+  return { x: from.x + dx * alpha, y: from.y + dy * alpha, z: from.z + dz * alpha };
+}
 
 /**
  * Why two forest level ids disagree. An id reads
@@ -326,32 +338,15 @@ export function createClientSession(
   }
 
   function blend(a: Snapshot, b: Snapshot, alpha: number): Snapshot {
-    const lerp = (x: number, y: number) => x + (y - x) * alpha;
     const players = b.players.map((to) => {
       const from = a.players.find((p) => p.id === to.id);
       if (from === undefined) return to;
-      return {
-        ...to,
-        pos: {
-          x: lerp(from.pos.x, to.pos.x),
-          y: lerp(from.pos.y, to.pos.y),
-          z: lerp(from.pos.z, to.pos.z),
-        },
-        yaw: lerpAngle(from.yaw, to.yaw, alpha),
-      };
+      return { ...to, pos: blendPosition(from.pos, to.pos, alpha), yaw: lerpAngle(from.yaw, to.yaw, alpha) };
     });
     const enemies = b.enemies.map((to) => {
       const from = a.enemies.find((e) => e.id === to.id);
       if (from === undefined) return to;
-      return {
-        ...to,
-        pos: {
-          x: lerp(from.pos.x, to.pos.x),
-          y: lerp(from.pos.y, to.pos.y),
-          z: lerp(from.pos.z, to.pos.z),
-        },
-        yaw: lerpAngle(from.yaw, to.yaw, alpha),
-      };
+      return { ...to, pos: blendPosition(from.pos, to.pos, alpha), yaw: lerpAngle(from.yaw, to.yaw, alpha) };
     });
     return { tick: b.tick, lastProcessedInput: b.lastProcessedInput, players, enemies, outcome: b.outcome, phase: b.phase };
   }

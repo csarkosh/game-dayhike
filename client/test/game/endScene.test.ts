@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   HEADLAMP_INTENSITY,
-  endSceneRunner,
+  endSceneRunner, runnerPose,
   arrived, carDistance, carHeard, carSpeed, endBeats, endCar, endShot, endShotIndex, endMistShare, headlampAt, laneAt, releaseAt, roadRelease,
   type EndShotContext, type LampAim,
 } from "../../src/game/endScene.js";
@@ -244,7 +244,43 @@ describe("whose run the end scene shows", () => {
   });
 });
 
+describe("the runner a screen's end scene is stepped on", () => {
+  const into = () => ({ pos: { x: 0, y: 0, z: 0 }, yaw: 0, at: { x: 0, z: 0 } });
+  const local = { pos: { x: 1, y: 2, z: 3 }, yaw: 0.5 };
+
+  it("is this screen's own player where the run is its own", () => {
+    expect(runnerPose(into(), local, undefined, null, 0.9)).toEqual({ pos: { x: 1, y: 2, z: 3 }, yaw: 0.5, at: { x: 1, z: 3 } });
+  });
+
+  it("is the other player drawn where their body is, and judged in where they truly are", () => {
+    // The body is hidden as it nears the door and its drawn place stops short of it: the arrival
+    // is the player's own place, or a watcher's scene would wait out the whole run on an empty door.
+    const other = { pos: { x: 8.4, y: 0.9, z: 0.5 }, yaw: 1.2 };
+    const drawn = { x: 9.6, y: 0, z: 0.9 };
+    const r = runnerPose(into(), local, other, drawn, 0.9);
+    expect(r.pos).toEqual({ x: 9.6, y: 0.9, z: 0.9 });
+    expect(r.yaw).toBe(1.2);
+    expect(r.at).toEqual({ x: 8.4, z: 0.5 });
+    expect(arrived(r.at, door, 2)).toBe(true);
+    expect(arrived(r.pos, door, 2)).toBe(false);
+  });
+
+  it("is the other player's own place where no body of theirs is drawn", () => {
+    const other = { pos: { x: 20, y: 5.9, z: -4 }, yaw: 0 };
+    expect(runnerPose(into(), local, other, null, 0.9).pos).toEqual({ x: 20, y: 5.9, z: -4 });
+  });
+});
+
 describe("the end scene on another player's run", () => {
+  it("judges the arrival by the runner's own place, and builds the world round them, not round this screen's player far up the mountain", () => {
+    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
+    expect(renderer).toContain("if (ctx.arrival === null && arrived(runner.at, ctx.door, t)) ctx.arrival = t;");
+    expect(renderer).toContain("clipmap?.update(centre.x, centre.z);");
+    expect(renderer).toContain("forestMeshes?.update(centre.x, centre.z);");
+    expect(renderer).not.toContain("clipmap?.update(local.pos.x, local.pos.z);");
+  });
+
+
   it("is stepped on the runner the setup names, drawn where their body is, with this screen's own body left out", () => {
     const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
     expect(renderer).toContain("if (endRun !== null) stepEndScene(endRun, endRunner(endRun, state, local), seconds);");

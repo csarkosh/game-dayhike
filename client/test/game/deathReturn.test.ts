@@ -53,7 +53,9 @@ describe("the renderer, for a return", () => {
   });
 
   it("undoes a death's ending, so a scene's camera runs again, and leaves the won scene alone", () => {
-    expect(renderer).toMatch(/clearEnding\(\) \{\s*ending = \{ kind: "died", since: -1, base: null \};\s*endBlur = 0;\s*endClose = 0;\s*\}/);
+    expect(renderer).toContain("clearEnding(liftS = 0) {");
+    // The dark and the blur go over the seconds given, from what they were (ending.ts `liftShare`), not in one frame.
+    expect(renderer).toMatch(/const share = liftShare\(seconds - lift\.since, lift\.forS\);\s*endClose = lift\.close \* share;\s*endBlur = lift\.blur \* share;/);
   });
 });
 
@@ -65,10 +67,18 @@ describe("the hike's page, for a return", () => {
     expect(at).toBeGreaterThan(0);
     const body = app.slice(at, app.indexOf("\n  }\n", at));
     for (const piece of [
-      "clearTimeout(deathFadeTimer)", "clearTimeout(deathSoundTimer)", "renderer.clearEnding()", "hud.setEnding(null)", "hud.fade(false)",
+      "clearTimeout(deathFadeTimer)", "clearTimeout(deathSoundTimer)", "renderer.clearEnding(RETURN_LIFT_MS / 1000)", "hud.setEnding(null)", "hud.fade(false)",
       "ambient.restoreMaster(RETURN_LIFT_MS / 1000)", "sceneKind = \"return\"", "sceneUntil = performance.now() + (SHOTS[4] as number) * 1000",
-      "THRESHOLD_AT_S)", "hud.setBars(true)", "returned = self.cause",
+      "THRESHOLD_AT_S)", "hud.setBars(true)", "returned = self.cause", "returnHollowAt(sim, self.pos)",
     ]) expect(body, piece).toContain(piece);
+  });
+
+  it("ends a scene's letterbox and its stilled controls when the match is decided, so neither outlives into the end scene", () => {
+    const at = app.indexOf("function syncOutcome(");
+    const body = app.slice(at, app.indexOf("\n  }\n", at));
+    for (const piece of ["clearTimeout(barsTimer)", "sceneUntil = -1", "downLook = null"]) expect(body, piece).toContain(piece);
+    // One timer for every scene's bars: a later scene's start takes the earlier one's off.
+    expect(app).not.toContain("setTimeout(() => { hud.setBars(false); downLook = null; }, SUMMIT_SCENE_S * 1000);");
   });
 
   it("gives the voice the cause on the frame of the return, and reports the death's real cause", () => {
