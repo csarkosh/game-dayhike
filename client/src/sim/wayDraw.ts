@@ -3,8 +3,9 @@
  * path from the crest to the pad that the chase holds a player to. A meander
  * about the straight line, sized so its length is the design's aim, then a
  * search over the ground for the cheapest line that keeps to it: off the
- * lakes, the sea and the slopes a player slides on, round the cliffs and the
- * boulders, a little cheaper along the trail. Where nothing gets through, the
+ * lakes, the sea and the slopes a player slides on, round every trunk, log,
+ * rock and cliff a runner could not step over, a little cheaper along the
+ * trail. Where nothing gets through, the
  * trail's stem, flagged.
  *
  * Every peer draws it from the seed alone, long before the find, a slice at a
@@ -55,10 +56,8 @@ const OFF_MEANDER_COST = 0.1;
 const OFF_MEANDER_MAX_M = 40;
 /** A cell the trail passes is this much of its cost. */
 const TRAIL_COST = 0.95;
-/** A box is a wall, not a trunk to run round, when its longer side is over this, metres. */
-const WALL_BOX_M = 2.5;
-/** Rounds of the search for boxes found on the line (an old wood's trunks are walls by their size, and each round finds a few more), and of the whole for the length. */
-const BOX_ROUNDS = 12;
+/** Rounds of the search for what stands on the line (each round finds a few more: a wood is full of trunks), and of the whole for the length. */
+const BOX_ROUNDS = 24;
 const LENGTH_ROUNDS = 3;
 /** Points either side a point is averaged with. */
 const SMOOTH_REACH = 3;
@@ -304,7 +303,8 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
       const cells: number[] = [];
       for (let c = to; c !== -1; c = parent[c] as number) cells.push(c);
       cells.reverse();
-      // Boxes, only along what was found: a cliff or a boulder on the line walls its cell, and the search goes again.
+      // Boxes, only along what was found: anything a runner could not step over (a trunk, a fallen one, a rock, a
+      // cliff) walls its cell, and the search goes again, so the line itself is clear ground.
       let blocked = 0;
       for (const c of cells) {
         if (c === from || c === to) continue;
@@ -317,7 +317,6 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
         for (const box of boxesNear(world.boxes, BOX_MIN, BOX_MAX)) {
           if (box.max.x < BOX_MIN.x || box.min.x > BOX_MAX.x || box.max.z < BOX_MIN.z || box.min.z > BOX_MAX.z) continue;
           if (box.max.y - h <= STEP_HEIGHT || box.min.y > BOX_MAX.y) continue;
-          if (Math.max(box.max.x - box.min.x, box.max.z - box.min.z) <= WALL_BOX_M) continue;
           walled[c] = 1;
           cost[c] = Infinity;
           blocked++;
