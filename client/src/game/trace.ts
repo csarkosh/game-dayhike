@@ -37,8 +37,6 @@ export type TraceFrame = {
   sprinting: boolean;
   /** The party's climb, 0 to 1, ratcheted. */
   progress: number;
-  /** The forks the chase has cut so far, host only; null elsewhere. */
-  cuts: ReadonlyMap<number, number> | null;
 };
 
 /** The nearest edge's index, and the distance to it, over straight node-to-node edges. */
@@ -120,7 +118,6 @@ export function createTrace(graph: TrailGraph | null, names: ReadonlyMap<number,
   let place = -1;
   let off = false;
   let lamp: boolean | null = null;
-  let cutsSeen = 0;
   const features = graph?.features ?? [];
   return {
     step(self, frame) {
@@ -131,18 +128,10 @@ export function createTrace(graph: TrailGraph | null, names: ReadonlyMap<number,
       const z = self.pos.z;
       const moved = Number.isNaN(lastX) || Math.hypot(x - lastX, z - lastZ) >= TRACE_MIN_MOVE;
 
-      // The lamp and the cuts are decisions that need no movement.
+      // The lamp is a decision that needs no movement.
       if (lamp !== self.lamp.on) {
         if (lamp !== null) out.push({ n: "lamp", fields: { tick: frame.tick, on: self.lamp.on, p: round(frame.progress, 3) } });
         lamp = self.lamp.on;
-      }
-      if (frame.cuts !== null && frame.cuts.size > cutsSeen) {
-        let i = 0;
-        for (const [node, open] of frame.cuts) {
-          if (i++ < cutsSeen) continue;
-          out.push({ n: "cut", fields: { tick: frame.tick, node, open } });
-        }
-        cutsSeen = frame.cuts.size;
       }
       if (!moved) return out;
       lastX = x;

@@ -8,7 +8,7 @@ import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from ".
 import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import type { EnemyState, PlayerState } from "../../src/sim/types.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_MAX_HEALTH, SIM_TICK_HZ } from "../../src/sim/constants.js";
-import { HOLLOW_STALK_SPEED, playerSees, spawnForkHollow, spawnHollow } from "../../src/sim/hollow.js";
+import { HOLLOW_STALK_SPEED, playerSees, spawnHollow, spawnHollowStepping } from "../../src/sim/hollow.js";
 import { spawnShade } from "../../src/sim/haunt.js";
 import { HOLLOW_PACK_MAX, RETURN_AFTER_S, RETURN_HOLD_S, held, returnsOn } from "../../src/sim/checkpoint.js";
 import { returnHollowAt } from "../../src/sim/returns.js";
@@ -139,21 +139,16 @@ describe("a death in the chase", SUITE, () => {
     expect(RETURN_HOLD_S).toBe(SHOTS[4]);
   });
 
-  it("alone, withdraws every other Hollow and makes the forks they closed whole again", () => {
+  it("alone, withdraws every other Hollow", () => {
     const { w, p, h, body } = chase();
-    const fork = w.trail!.forks[0] ?? 1;
     const at = { x: body.x - 120, y: groundY(body.x - 120, body.z) + ENEMY_HALF.y, z: body.z };
-    const forkHollow = spawnForkHollow(w, at, at, p.id, fork, 3);
-    w.cut!.cuts.set(fork, 0);
-    w.cut!.closed.add(3);
+    const stepping = spawnHollowStepping(w, at, at, p.id);
     const idle = spawnHollow(w, { x: body.x - 200, y: groundY(body.x - 200, body.z) + ENEMY_HALF.y, z: body.z }, p.id, 0);
     kill(w, p, h);
     tick(w, RETURN_TICKS);
     expect(pack(w).map((e) => e.id)).toEqual([h.id]);
-    expect(w.state.enemies.has(forkHollow.id)).toBe(false);
+    expect(w.state.enemies.has(stepping.id)).toBe(false);
     expect(w.state.enemies.has(idle.id)).toBe(false);
-    expect(w.cut!.cuts.has(fork)).toBe(false);
-    expect(w.cut!.closed.has(3)).toBe(false);
   });
 
   it("alone, keeps the pack the size it was however often the player dies", () => {
@@ -299,26 +294,20 @@ describe("what the review found", SUITE, () => {
     expect(q.health).toBe(PLAYER_MAX_HEALTH);
   });
 
-  it("in a party, leaves the fork of a Hollow it moves cut: the pack does not grow by a Hollow a death", () => {
+  it("in a party, moves the Hollow that killed them to the crest: the pack does not grow by a Hollow a death", () => {
     const { w, ps, p, h, body } = chase(2);
     const q = ps[1]!;
     standAt(q, body.x - 300, body.z);
     q.heldFor = 1_000_000;
     h.targetId = q.id;
-    const fork = w.trail!.forks[0] ?? 1;
     const at = { x: body.x - 120, y: groundY(body.x - 120, body.z) + ENEMY_HALF.y, z: body.z };
-    const forkHollow = spawnForkHollow(w, at, at, p.id, fork, 3);
-    forkHollow.emergeTo = null; forkHollow.ai = AiState.Hunt; forkHollow.stateTimer = 0;
-    w.cut!.cuts.set(fork, 0);
-    w.cut!.closed.add(3);
+    const killer = spawnHollow(w, at, p.id, 0);
     standAt(p, body.x - 110, body.z);
-    kill(w, p, forkHollow);
+    kill(w, p, killer);
     for (let i = 0; i < RETURN_TICKS; i++) { standAt(h, q.pos.x + 40, q.pos.z, ENEMY_HALF.y); tick(w, 1); }
     expect(p.health).toBe(PLAYER_MAX_HEALTH);
-    // The fork's own Hollow is the one moved to the crest, and its fork stays cut: nothing new can rise there.
-    expect(forkHollow.targetId).toBe(p.id);
-    expect(w.cut!.cuts.has(fork)).toBe(true);
-    expect(w.cut!.closed.has(3)).toBe(true);
+    // The killer is the one moved to the crest: no new Hollow rises for the return.
+    expect(killer.targetId).toBe(p.id);
     expect(pack(w)).toHaveLength(2);
   });
 

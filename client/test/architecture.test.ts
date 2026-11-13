@@ -708,8 +708,6 @@ describe("wall-clock tests", () => {
       "logs one cull pass's time; asserts only the cell and draw counts",
     "game/clutterMeshes.test.ts > keeps, at the two gate poses, the cards the widened frustum holds, and pins how many":
       "logs one cull pass's time; asserts only the card counts",
-    "sim/trailSystem.test.ts > finds the longest way home the graph offers":
-      "logs the guide walk's time over the seed set; asserts only the walks themselves",
   };
   const report = wallClockOffenders(files, PRINTED_NOT_ASSERTED);
 

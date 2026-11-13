@@ -3,8 +3,6 @@ import "../../src/sim/passes/index.js";
 import { bowlFor } from "../../src/sim/olympic.js";
 import { activeTerrainVariant, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
 import { segmentDistance, TRAIL_EDGE_MIN_GAP, TRAIL_HARD_SLOPE_MAX } from "../../src/sim/trail.js";
-import { guideWalk, GUIDE_MIN, GUIDE_MAX, GUIDE_TRIES } from "../../src/sim/trailRoute.js";
-import { nextRandom } from "../../src/sim/types.js";
 import { TRAILHEAD_U } from "../../src/sim/bowl.js";
 import { closeNonAdjacentEdgePairs } from "./helpers/edgeGap.js";
 import {
@@ -280,34 +278,6 @@ describe(
       // measured 209/227 = 92.1%; the 18 seeds below 2 are bare-stem worlds
       // where neither a loop nor a strand routed.
       expect(atLeast2 / worlds.length).toBeGreaterThanOrEqual(0.88);
-    });
-
-    it("finds the longest way home the graph offers", () => {
-      // MEASURED on this 227-seed set, 2026-09-16 — not a design target. The
-      // walk is the longest crest-to-pad route the graph offers without
-      // repeating an edge, capped at GUIDE_MAX x shortestHome; on a seed set
-      // with 18 bare-stem worlds (only the stem itself to walk) and many
-      // stem-plus-one-loop worlds (no route reaches GUIDE_MIN x
-      // shortestHome), "every seed lands in [GUIDE_MIN, GUIDE_MAX]" does not
-      // hold, so the floor is the share that does.
-      const t0 = performance.now();
-      const results = worlds.map(({ seed, graph }) => {
-        const rng = { rngSeed: seed };
-        const walk = guideWalk(graph, () => nextRandom(rng), GUIDE_MIN, GUIDE_MAX, GUIDE_TRIES);
-        return { seed, graph, walk };
-      });
-      const ms = performance.now() - t0;
-      const inBand = results.filter((r) => r.walk.inBand).length;
-      console.info(`[trailSystem] guide walk: ${ms.toFixed(0)} ms over ${worlds.length} seeds, ${(ms / worlds.length).toFixed(2)} ms/seed`);
-      console.info(`[trailSystem] guide in band: ${inBand}/${worlds.length} = ${(100 * inBand / worlds.length).toFixed(1)}%`);
-      for (const { seed, graph, walk } of results) {
-        expect(walk.path[0], `seed ${seed}`).toBe(graph.summit);
-        expect(walk.path[walk.path.length - 1], `seed ${seed}`).toBe(0);
-        expect(walk.length, `seed ${seed}`).toBeGreaterThanOrEqual(graph.shortestHome - 1e-6);
-        expect(walk.length, `seed ${seed}`).toBeLessThanOrEqual(GUIDE_MAX * graph.shortestHome + 1e-6);
-      }
-      // measured 132/227 = 58.1%
-      expect(inBand / worlds.length).toBeGreaterThanOrEqual(0.55);
     });
 
     it("keeps every bed out of every other bed", () => {

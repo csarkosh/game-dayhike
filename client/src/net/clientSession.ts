@@ -453,7 +453,7 @@ export function createClientSession(
             routeAt: 0,
             approach: false,
             seen: false,
-            emergeTo: null, stalks: false, fork: -1, forkEdge: -1,
+            emergeTo: null, stalks: false,
           });
         }
       }

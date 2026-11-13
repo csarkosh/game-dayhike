@@ -46,7 +46,7 @@ function player(x: number, z: number, over: Partial<{ health: number; lamp: bool
   } as unknown as PlayerState;
 }
 
-const frame = (tick: number, over: Partial<TraceFrame> = {}): TraceFrame => ({ tick, offTrail: 0, lens: 0, near: 0, sprinting: false, progress: 0.3, cuts: null, ...over });
+const frame = (tick: number, over: Partial<TraceFrame> = {}): TraceFrame => ({ tick, offTrail: 0, lens: 0, near: 0, sprinting: false, progress: 0.3, ...over });
 
 describe("the geometry", () => {
   it("finds the nearest edge, a fork within its radius, and a place's disc", () => {
@@ -97,21 +97,15 @@ describe("createTrace", () => {
     expect(back[1]!.fields).toMatchObject({ edge: 1 });
   });
 
-  it("reports the lamp and the chase's cuts whether or not the player moved", () => {
+  it("reports the lamp whether or not the player moved", () => {
     const trace = createTrace(GRAPH, new Map());
     trace.step(player(0, -2), frame(0));
     // Still, lamp on: one lamp row and nothing else.
     expect(trace.step(player(0, -2), frame(TRACE_EVERY_TICKS))).toEqual([]);
     const lampOn = trace.step(player(0, -2, { lamp: true }), frame(2 * TRACE_EVERY_TICKS));
     expect(lampOn).toEqual([{ n: "lamp", fields: { tick: 2 * TRACE_EVERY_TICKS, on: true, p: 0.3 } }]);
-    // The host's cuts, each once, in the order they were made.
-    const cuts = new Map<number, number>([[1, 3]]);
-    const cut1 = trace.step(player(0, -2, { lamp: true }), frame(3 * TRACE_EVERY_TICKS, { cuts }));
-    expect(cut1).toEqual([{ n: "cut", fields: { tick: 3 * TRACE_EVERY_TICKS, node: 1, open: 3 } }]);
-    cuts.set(2, -1);
-    const cut2 = trace.step(player(0, -2, { lamp: true }), frame(4 * TRACE_EVERY_TICKS, { cuts }));
-    expect(cut2).toEqual([{ n: "cut", fields: { tick: 4 * TRACE_EVERY_TICKS, node: 2, open: -1 } }]);
-    expect(trace.step(player(0, -2, { lamp: true }), frame(5 * TRACE_EVERY_TICKS, { cuts }))).toEqual([]);
+    // Once: the lamp still on says nothing more.
+    expect(trace.step(player(0, -2, { lamp: true }), frame(3 * TRACE_EVERY_TICKS))).toEqual([]);
   });
 
   it("samples without a graph, naming no route", () => {

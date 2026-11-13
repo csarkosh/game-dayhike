@@ -44,12 +44,6 @@ function seenByOthers(world: World, h: EnemyState, but: PlayerState): boolean {
   return false;
 }
 
-/** Whether a living player other than `but` is in the match. */
-function othersAlive(world: World, but: PlayerState): boolean {
-  for (const q of world.state.players.values()) if (q.id !== but.id && q.health > 0) return true;
-  return false;
-}
-
 /** The square of the metres from `h` to the nearest living player other than `but`; Infinity when there is none. */
 function nearestOtherSq(world: World, h: EnemyState, but: PlayerState): number {
   let best = Infinity;
@@ -73,14 +67,6 @@ function returnSpot(world: World, p: PlayerState, crest: { pos: Vec3 }): { x: nu
   return { x: crest.pos.x, z: crest.pos.z };
 }
 
-/** The fork `h` closed is whole again, to be cut afresh when a player next reaches it. */
-function reopenFork(world: World, h: EnemyState): void {
-  if (h.fork < 0 || world.cut === null) return;
-  world.cut.cuts.delete(h.fork);
-  world.cut.closed.delete(h.forkEdge);
-  h.fork = -1;
-  h.forkEdge = -1;
-}
 
 /** The Hollow that meets `p`: an existing one where the rules allow, else a new one. */
 function hollowFor(world: World, p: PlayerState, fell: Vec3): EnemyState | null {
@@ -154,10 +140,6 @@ function returnPlayer(world: World, p: PlayerState): void {
 
   const { x, y, z } = returnHollowAt(world, p.pos) ?? p.pos;
   const h = chosen ?? spawnHollow(world, { x, y, z }, p.id, RETURN_HOLD_S);
-  // A fork's Hollow moved stays in the pack. Alone, its fork is made whole, to be cut afresh as the
-  // player comes down again; with others alive it stays cut, or every death at that fork would
-  // raise one more Hollow there, each of which turns on the survivors the next time.
-  if (!othersAlive(world, p)) reopenFork(world, h);
   h.pos = { x, y, z };
   h.vel = { x: 0, y: 0, z: 0 };
   clearRoute(h);
@@ -176,7 +158,6 @@ function returnPlayer(world: World, p: PlayerState): void {
     const target = world.state.players.get(e.targetId);
     const idle = e.ai === AiState.Stand || e.targetId === p.id || target === undefined || target.health <= 0;
     if (!idle) continue;
-    reopenFork(world, e);
     world.state.enemies.delete(id);
   }
 }

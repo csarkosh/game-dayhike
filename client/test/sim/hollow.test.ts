@@ -4,7 +4,7 @@ import { parseLevel } from "../../src/sim/level.js";
 import { AiState, Outcome } from "../../src/sim/types.js";
 import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
 import {
-  FORK_REVEAL_S,
+  STEP_OUT_REVEAL_S,
   HOLLOW_HUNT_SPEED,
   HOLLOW_LOOK_FACTOR,
   HOLLOW_LOOK_RANGE,
@@ -14,7 +14,7 @@ import {
   SUMMIT_REVEAL_S,
   playerHasInView,
   playerSees,
-  spawnForkHollow,
+  spawnHollowStepping,
   spawnHollow,
 } from "../../src/sim/hollow.js";
 import { nearestTrailNode } from "../../src/sim/trail.js";
@@ -375,11 +375,11 @@ describe("a fork Hollow's emerge", () => {
     return t;
   };
 
-  it("walks to the mouth at the hunt speed, still emerging, stands FORK_REVEAL_S facing its trigger, then hunts", () => {
+  it("walks to the mouth at the hunt speed, still emerging, stands STEP_OUT_REVEAL_S facing its trigger, then hunts", () => {
     const w = world();
     const p = spawnPlayer(w);
     p.pos = { x: 12, y: 0.9, z: 20 };
-    const h = spawnForkHollow(w, AT, MOUTH, p.id);
+    const h = spawnHollowStepping(w, AT, MOUTH, p.id);
     expect(h.ai).toBe(AiState.Emerge);
     expect(h.targetId).toBe(p.id);
     expect(h.emergeTo).toEqual({ x: 12, y: 0.9, z: 0 });
@@ -395,7 +395,7 @@ describe("a fork Hollow's emerge", () => {
     expect(h.ai).toBe(AiState.Emerge);
     expect(dist(h.pos, MOUTH)).toBeLessThanOrEqual(1.5);
     const stood = { ...h.pos };
-    tick(w, Math.round(FORK_REVEAL_S / TICK_DT) - 2);
+    tick(w, Math.round(STEP_OUT_REVEAL_S / TICK_DT) - 2);
     expect(h.ai).toBe(AiState.Emerge);
     expect(h.pos).toEqual(stood);
     // Facing its trigger, up the z axis: yaw 0 with a little +x, not the walk's pi/2.
@@ -415,7 +415,7 @@ describe("a fork Hollow's emerge", () => {
     // 40 m down the walk's line, turned round to look straight back at it.
     p.pos = { x: 40, y: 0.9, z: 0 };
     p.yaw = -Math.PI / 2;
-    const h = spawnForkHollow(w, AT, MOUTH, p.id);
+    const h = spawnHollowStepping(w, AT, MOUTH, p.id);
     tick(w, 15);
     expect(h.seen).toBe(true);
     const x0 = h.pos.x;
@@ -431,7 +431,7 @@ describe("a fork Hollow's emerge", () => {
     trigger.pos = { x: 12, y: 0.9, z: 20 };
     const other = spawnPlayer(w);
     other.pos = { x: 6, y: 0.9, z: 0 };
-    const h = spawnForkHollow(w, AT, MOUTH, trigger.id);
+    const h = spawnHollowStepping(w, AT, MOUTH, trigger.id);
     let t = 0;
     while (t < 120 && other.health > 0) { tickWorld(w, new Map()); t++; }
     expect(other.health).toBe(0);
@@ -450,13 +450,13 @@ describe("a fork Hollow's emerge", () => {
     const w = world({ min: [1, 0, -5], max: [2, 4, 5], material: "concrete" });
     const p = spawnPlayer(w);
     p.pos = { x: 12, y: 0.9, z: 20 };
-    const h = spawnForkHollow(w, AT, MOUTH, p.id);
+    const h = spawnHollowStepping(w, AT, MOUTH, p.id);
     expect(walkUntilRevealed(w, h, 200)).toBe(102);
     expect(h.ai).toBe(AiState.Emerge);
     expect(h.pos.x).toBeLessThan(1);
     expect(dist(h.pos, MOUTH)).toBeGreaterThan(11);
     const stood = { ...h.pos };
-    tick(w, Math.round(FORK_REVEAL_S / TICK_DT) - 2);
+    tick(w, Math.round(STEP_OUT_REVEAL_S / TICK_DT) - 2);
     expect(h.ai).toBe(AiState.Emerge);
     expect(h.pos).toEqual(stood);
     tick(w, 4);
@@ -468,7 +468,7 @@ describe("a fork Hollow's emerge", () => {
     const w = world();
     const p = spawnPlayer(w);
     p.pos = { x: 100, y: 0.9, z: 20 };
-    const h = spawnForkHollow(w, AT, { x: 100, y: ENEMY_HALF.y, z: 0 }, p.id);
+    const h = spawnHollowStepping(w, AT, { x: 100, y: ENEMY_HALF.y, z: 0 }, p.id);
     tick(w, 358);
     expect(h.ai).toBe(AiState.Emerge);
     expect(h.emergeTo).not.toBeNull();
@@ -478,13 +478,13 @@ describe("a fork Hollow's emerge", () => {
     // Six seconds at 6.3 m/s, less the wind-up from rest.
     expect(h.pos.x).toBeGreaterThan(37);
     expect(h.pos.x).toBeLessThan(38);
-    tick(w, Math.round(FORK_REVEAL_S / TICK_DT) + 2);
+    tick(w, Math.round(STEP_OUT_REVEAL_S / TICK_DT) + 2);
     expect(h.ai).toBe(AiState.Hunt);
   });
 
   it("is cloned with a destination of its own, and a summit Hollow's stays null", () => {
     const w = world();
-    const fork = spawnForkHollow(w, AT, MOUTH, 0);
+    const fork = spawnHollowStepping(w, AT, MOUTH, 0);
     const summit = spawnHollow(w, { x: 200, y: ENEMY_HALF.y, z: 0 }, 0, SUMMIT_REVEAL_S);
     const copy = cloneWorldState(w.state);
     const forkCopy = copy.enemies.get(fork.id)!;
@@ -497,7 +497,7 @@ describe("a fork Hollow's emerge", () => {
 
   it("keeps its destination out of the fingerprint", () => {
     const w = world();
-    const h = spawnForkHollow(w, AT, MOUTH, 0);
+    const h = spawnHollowStepping(w, AT, MOUTH, 0);
     const withDestination = serializeWorldState(w.state);
     h.emergeTo = null;
     expect(serializeWorldState(w.state)).toBe(withDestination);

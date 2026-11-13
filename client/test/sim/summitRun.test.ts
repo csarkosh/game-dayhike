@@ -10,8 +10,8 @@ import { stemAhead, stemNodes } from "../../src/sim/trailRoute.js";
 /** The threshold's run (game/cutscene.ts: the last shot less its look and turn): the seconds the scene has the player sprinting before the hunt. */
 const SCENE_RUN_S = 1.8;
 import { DISCOVERY_RADIUS } from "../../src/sim/summit.js";
-import { FORK_EMERGE_MAX_S, FORK_REVEAL_S, SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
-import { FORK_CUT_RADIUS } from "../../src/sim/cut.js";
+import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
+import { wayPoint } from "../../src/sim/wayDown.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { WATCH_SALT } from "../../src/sim/watcher.js";
 import { escalationTargets } from "../../src/game/escalation.js";
@@ -28,7 +28,7 @@ setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const SUITE = { timeout: timeLimit(120_000) };
 
 describe("one run on the seed `hollow`", SUITE, () => {
-  it("climbs the stem, finds the body, is hunted, reaches the road, and wins", () => {
+  it("climbs the stem, finds the body, is hunted down the way, reaches the road, and wins", () => {
     const seed = seedFromToken("hollow");
     const w = createForestWorld(createForest(seed));
     // The sightings below are the ones in the trees, at the reach's range:
@@ -140,81 +140,36 @@ describe("one run on the seed `hollow`", SUITE, () => {
     expect(h.ai).toBe(AiState.Hunt);
     expect(h.targetId).toBe(p.id);
 
-    // Down the guide, node by node, the way the seed sweep walks every seed
-    // (cutSweep.ts): for every guide node one tick on the edge into it,
-    // FORK_CUT_RADIUS − 1 m short of the node (or on the node before, when
-    // the edge is shorter; none of this guide's is), then one tick on the
-    // node. The pad's edge in is the road's: 8 m short of the pad is inside
-    // the corridor, so the last stride is the pad itself, below. The player
-    // is prey the whole way down, and no Hollow ever stands on the corridor.
-    const guide = w.cut!.guide;
-    expect(guide[0]).toBe(chain[chain.length - 1]);
-    expect(guide.length).toBe(44);
-    expect(guide[42]).toBe(1);
+    // Down the way (wayDown.ts), a place every 12 m, a tick at each: the player is prey the whole way down, the
+    // crest's Hollow is the only one (no fork raises another), and it never stands on the corridor.
+    const way = w.way!;
+    expect(way.fallback).toBe(false);
     const place = (x: number, z: number) => { p.pos = { x, y: elevationAt(seed, x, z) + 0.9, z }; };
-    /** Each fork's cut, with where the player stood when it fired. */
-    const fired: Array<[number, string]> = [];
-    const step = (where: string) => {
-      const hollows = w.state.enemies.size, judged = w.cut!.cuts.size;
+    const spot = { x: 0, z: 0 };
+    let stops = 0;
+    for (let s = 24; s < way.length; s += 12) {
+      wayPoint(way, s, spot);
+      // The road's corridor is the end: the last strides of the way are inside it.
+      if (isOnCorridor(w, spot.x, spot.z)) break;
+      place(spot.x, spot.z);
       tickWorld(w, new Map());
+      stops++;
+      const where = `${s} m down the way`;
       expect(p.health, where).toBe(100);
       expect(p.safe, where).toBe(false);
+      expect(w.state.enemies.size, where).toBe(1);
       for (const e of w.state.enemies.values()) expect(isOnCorridor(w, e.pos.x, e.pos.z), where).toBe(false);
-      const forks = [...w.cut!.cuts.keys()].slice(judged);
-      for (const f of forks) fired.push([f, where]);
-      // Whoever stepped out this tick is emerging, and bound for the mouth of
-      // a branch of one of the forks just cut, 3 m in from it.
-      for (const e of [...w.state.enemies.values()].slice(hollows)) {
-        expect(e.ai, where).toBe(AiState.Emerge);
-        const mouth = e.emergeTo!;
-        expect(forks.some((f) => { const n = graph.nodes[f]!; return Math.abs(Math.sqrt((n.x - mouth.x) ** 2 + (n.z - mouth.z) ** 2) - 3) < 1e-9; }), where).toBe(true);
-      }
-    };
-    for (let i = 1; i + 1 < guide.length; i++) {
-      const prev = graph.nodes[guide[i - 1]!]!, node = graph.nodes[guide[i]!]!;
-      const len = Math.sqrt((node.x - prev.x) ** 2 + (node.z - prev.z) ** 2);
-      let f = Math.min(FORK_CUT_RADIUS - 1, len) / len;
-      // A way point a Hollow stands on (the summit's, after its steps) is taken half as far from
-      // the node, on the same edge: the same arrival, no kill (cutSweep.ts does the same).
-      const wayOf = (k: number) => ({ x: node.x + (prev.x - node.x) * k, z: node.z + (prev.z - node.z) * k });
-      if ([...w.state.enemies.values()].some((e) => Math.hypot(e.pos.x - wayOf(f).x, e.pos.z - wayOf(f).z) < 3)) f /= 2;
-      place(wayOf(f).x, wayOf(f).z);
-      step(`on the way to ${guide[i]}`);
-      at(guide[i]!);
-      step(`at ${guide[i]}`);
     }
-    // Every fork on the guide, cut as the guide reaches it, opening the
-    // guide's next node; four branches closed, a Hollow in each. 2026-09-29:
-    // four forks cut where there were five, and five branches closed where
-    // there were six. 2026-10-10: the graph has four forks, and the guide
-    // meets every one: down the stem to the strand's fork 21, along the
-    // strand to 61, over the rung to 60 on the stem, and down the stem to 36.
-    expect(fired).toEqual([[21, "on the way to 21"], [61, "on the way to 61"], [60, "on the way to 60"], [36, "on the way to 36"]]);
-    expect([...w.cut!.cuts]).toEqual([[21, 37], [61, 60], [60, 5], [36, 3]]);
-    expect([...w.cut!.closed]).toEqual([20, 61, 60, 59]);
-    expect(w.state.enemies.size).toBe(5);
-    // The walk is far faster than any Hollow, so fork 36's is still stepping
-    // out: the player waits at node 1, off the corridor, until the whole pack
-    // hunts them. The wait is measured on the terrain, not derived.
-    let waited = 0;
-    while (waited < Math.round((FORK_EMERGE_MAX_S + FORK_REVEAL_S) / TICK_DT) && [...w.state.enemies.values()].some((e) => e.ai === AiState.Emerge)) {
-      step("waiting at 1");
-      waited++;
-    }
-    // 129 with the fork's 1 s stand as first built; 2.5 s (FORK_REVEAL_S) is 90 ticks more.
-    // Re-read on the valley lakes' worlds (2026-10-11).
-    expect(waited).toBe(220);
-    for (const e of w.state.enemies.values()) {
-      expect(e.ai).toBe(AiState.Hunt);
-      expect(e.targetId).toBe(p.id);
-    }
+    expect(stops).toBeGreaterThan(40);
+    expect(h.ai).toBe(AiState.Hunt);
+    expect(h.targetId).toBe(p.id);
     // Home: the pad is on the corridor.
     at(0);
     tickWorld(w, new Map());
     expect(p.safe).toBe(true);
     expect(w.state.outcome).toBe(Outcome.Won);
     expect(p.health).toBeGreaterThan(0);
-    expect(w.state.enemies.size).toBe(5);
+    expect(w.state.enemies.size).toBe(1);
     for (const e of w.state.enemies.values()) expect(isOnCorridor(w, e.pos.x, e.pos.z)).toBe(false);
   });
 });

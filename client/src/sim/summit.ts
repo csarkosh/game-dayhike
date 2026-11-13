@@ -15,7 +15,6 @@ import { AiState, Outcome, Phase, cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
 import { isOnCorridor } from "./containment.js";
 import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
-import { drawGuide, stepCuts } from "./cut.js";
 import { wayOf } from "./wayDraw.js";
 import { hideWatcher } from "./watcher.js";
 import { isShadeState } from "./haunt.js";
@@ -155,7 +154,6 @@ export function stepSummit(world: World): void {
     // Everyone alive at the find has been out on the mountain: any of them wins it by reaching the road.
     for (const p of state.players.values()) if (!dead(p)) p.out = true;
     spawnHollow(world, emergePoint(world, search.body.pos, who.pos), who.id, SUMMIT_REVEAL_S);
-    world.cut = drawGuide(world);
     return;
   }
   if (state.phase === Phase.Scene) {
@@ -167,7 +165,6 @@ export function stepSummit(world: World): void {
     return;
   }
 
-  stepCuts(world);
   // The end: the first player to reach the road wins it for all, wherever the
   // others are, on the trail, dead and counting down, or just returned. Only
   // a player who was out on the mountain: one admitted mid-chase spawns at

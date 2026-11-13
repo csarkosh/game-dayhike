@@ -6,7 +6,6 @@ import type { Level } from "./level.js";
 import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
 import type { TrailGraph } from "./trail.js";
-import type { CutRecord } from "./cut.js";
 import { createWatcherRecord, stepWatcher, type WatcherRecord } from "./watcher.js";
 import { createHauntRecord, stepHaunt, type HauntRecord } from "./haunt.js";
 import { spiralSpawn, trailheadStart } from "./spawn.js";
@@ -83,15 +82,6 @@ export type World = {
    * what `app.ts` paints signs from. Null for a hand-authored level.
    */
   trail: TrailGraph | null;
-  /**
-   * The cut (`cut.ts`): the guide route and the forks cut so far, host only.
-   * Null until the discovery tick draws the guide, and null forever on a
-   * client's predicted world. It lives here and not on `WorldState` because
-   * `WorldState` is what `cloneWorldState` copies, `serializeWorldState`
-   * fingerprints and the snapshot carries to every peer — and the record is
-   * the host's alone, like `search` and `trail` beside it.
-   */
-  cut: CutRecord | null;
   /** The haunt's director (haunt.ts): host-only, off the wire, outside the fingerprint. */
   haunt: HauntRecord | null;
   /**
@@ -137,7 +127,6 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     interactables: new Map(),
     search: null,
     trail: null,
-    cut: null,
     crest: null,
     way: null,
     wayDraw: null,
@@ -177,7 +166,6 @@ export function createForestWorld(forest: Forest, authoritative = true, peaceful
     interactables: new Map(),
     search: null,
     trail: graph ?? null,
-    cut: null,
     crest: null,
     way: null,
     wayDraw: null,

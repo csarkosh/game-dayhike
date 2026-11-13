@@ -2017,7 +2017,6 @@ function buildGame(
       near: lastTargets?.near ?? 0,
       sprinting,
       progress: escalation.progressMax,
-      cuts: world.cut?.cuts ?? null,
     };
     for (const e of trace.step(self, frame)) telemetry.event(e.n, e.fields);
   }

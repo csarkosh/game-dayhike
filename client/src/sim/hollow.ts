@@ -49,10 +49,10 @@ export const SUMMIT_REVEAL_S = 21;
 /** The last seconds of its stand it walks at whoever found the body, at this pace: the scene's threshold (cutscene.ts), the first steps the player sees before they turn and run. */
 export const HOLLOW_STEP_S = 4;
 export const HOLLOW_STALK_SPEED = 1.5;
-/** Seconds a fork Hollow stands at the mouth of its branch, facing its trigger, before it hunts. */
-export const FORK_REVEAL_S = 2.5;
-/** Seconds a fork Hollow may spend walking to the mouth before it reveals where it stands. */
-export const FORK_EMERGE_MAX_S = 6;
+/** Seconds a Hollow that stepped out to a place (`spawnHollowStepping`) stands there, facing its player, before it hunts. */
+export const STEP_OUT_REVEAL_S = 2.5;
+/** Seconds such a Hollow may spend walking to its place before it reveals where it stands. */
+export const STEP_OUT_MAX_S = 6;
 /** cos 20°: it must be near the centre of the view, not the edge. */
 export const HOLLOW_LOOK_COS = 0.9397;
 /** Metres from the eye within which looking counts. */
@@ -124,26 +124,23 @@ export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: n
     seen: false,
     emergeTo: null,
     stalks: false,
-    fork: -1,
-    forkEdge: -1,
   };
   world.state.enemies.set(hollow.id, hollow);
   return hollow;
 }
 
 /**
- * A Hollow stepping out of a closed branch (cut.ts `stepCuts`): spawned at `at` in
- * Emerge, it walks to `mouth` at the hunt speed, stands FORK_REVEAL_S there
- * facing `targetId`, then hunts them. The walk ends early, where it stands,
- * once it has been stuck STUCK_SECONDS or has walked FORK_EMERGE_MAX_S: a
- * branch it cannot walk out of is still a Hollow in that branch.
+ * A Hollow stepping out to a place: spawned at `at` in Emerge, it walks to
+ * `to` at the hunt speed, stands STEP_OUT_REVEAL_S there facing `targetId`,
+ * then hunts them. The walk ends early, where it stands, once it has been
+ * stuck STUCK_SECONDS or has walked STEP_OUT_MAX_S: a place it cannot walk
+ * to is still a Hollow on its way there. (Until 2026-11-13 this was the
+ * forks' Hollow, stepping out of a closed branch; the forks are gone with
+ * the guide, the stepping out is kept for what steps into the way down.)
  */
-export function spawnForkHollow(world: World, at: Vec3, mouth: Vec3, targetId: number, fork = -1, edge = -1): EnemyState {
-  const hollow = spawnHollow(world, at, targetId, FORK_EMERGE_MAX_S);
-  hollow.emergeTo = cloneVec3(mouth);
-  // What it closed, so the fork can be made whole again if it is withdrawn (returns.ts).
-  hollow.fork = fork;
-  hollow.forkEdge = edge;
+export function spawnHollowStepping(world: World, at: Vec3, to: Vec3, targetId: number): EnemyState {
+  const hollow = spawnHollow(world, at, targetId, STEP_OUT_MAX_S);
+  hollow.emergeTo = cloneVec3(to);
   return hollow;
 }
 
@@ -439,7 +436,7 @@ function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number):
         const arrived = horizontalDistSq(h.pos, h.emergeTo) <= HOLLOW_WAYPOINT_RADIUS * HOLLOW_WAYPOINT_RADIUS;
         if (arrived || h.stuckTimer > STUCK_SECONDS || h.stateTimer <= 0) {
           h.emergeTo = null;
-          h.stateTimer = FORK_REVEAL_S;
+          h.stateTimer = STEP_OUT_REVEAL_S;
           h.vel = { x: 0, y: 0, z: 0 };
           h.stuckTimer = 0;
           h.unstickTimer = 0;

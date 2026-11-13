@@ -44,7 +44,7 @@ describe("drawing the way down", SUITE, () => {
   beforeAll(() => {
     world = createForestWorld(createForest(seed));
     way = drawWayNow(world) as WayDown;
-  }, SUITE.timeout);
+  }, timeLimit(120_000));
 
   it("runs from the crest to the pad", () => {
     const g = world.trail!, s = g.nodes[g.summit]!;

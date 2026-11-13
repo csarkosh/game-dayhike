@@ -185,12 +185,6 @@ export type EnemyState = {
    * phase, and its touch kills nobody until it hunts. Host-only.
    */
   stalks: boolean;
-  /**
-   * The fork node and the edge a fork's Hollow closed (cut.ts), or -1: what
-   * is made whole again when it is withdrawn or moved (returns.ts). Host-only.
-   */
-  fork: number;
-  forkEdge: number;
 };
 
 export type WorldState = {

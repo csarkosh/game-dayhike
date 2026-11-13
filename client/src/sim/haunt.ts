@@ -30,7 +30,6 @@ import type { EnemyState, PlayerState, Vec3 } from "./types.js";
 import { AiState, Outcome, Phase, cloneVec3, nextRandom } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
-import { nearestTrailNode } from "./trail.js";
 import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";
@@ -117,9 +116,6 @@ export const LUNGE_ATTACK_M = 2.6;
 export const LUNGE_ATTACK_S = 0.9;
 export const LUNGE_ATTACK_HIT_S = 0.4;
 export const LUNGE_ATTACK_REACH = 3.4;
-/** In the chase: how far along the open way home a guide shade's node may be, and how far along the way to it the trail point it stands off (SHADE_TRAIL_OFF_M) is. */
-export const GUIDE_REACH: readonly [number, number] = [15, 60];
-export const GUIDE_ALONG: readonly [number, number] = [0.55, 0.8];
 /** Placements tried for a shade in one attempt. */
 export const HAUNT_PLACE_TRIES = 6;
 /**
@@ -322,40 +318,6 @@ export function placeShadeOffTrail(world: World, target: PlayerState, rng: { rng
   return d >= SHADE_TRAIL_OFF_M[0] && d <= SHADE_TRAIL_OFF_M[1] ? at : null;
 }
 
-/**
- * One try at a place off the open way home, for the chase: the nearest
- * guide node within GUIDE_REACH of `target` that is nearer the pad than
- * their own nearest node, the point of the guide's own path nearest a drawn
- * share of the way to it, and from that point a drawn side at a drawn
- * SHADE_TRAIL_OFF_M (`standOff`): beside the branch that is open, never a
- * closed one. Null without a guide or a node, and then the plain stand off
- * the trail is used. Spends three draws.
- */
-export function placeShadeOnGuide(world: World, target: PlayerState, rng: { rngSeed: number }): Vec3 | null {
-  const graph = world.trail;
-  const cut = world.cut;
-  if (graph === null || cut === null || cut.guide.length === 0) return null;
-  const mine = nearestTrailNode(graph, target.pos.x, target.pos.z);
-  const home = graph.homeDist[mine] as number;
-  let best: TrailNode | null = null;
-  let bestSq = Infinity;
-  for (const gi of cut.guide) {
-    if ((graph.homeDist[gi] as number) >= home) continue;
-    const n = graph.nodes[gi] as TrailNode;
-    const dx = n.x - target.pos.x;
-    const dz = n.z - target.pos.z;
-    const sq = dx * dx + dz * dz;
-    if (sq < GUIDE_REACH[0] * GUIDE_REACH[0] || sq > GUIDE_REACH[1] * GUIDE_REACH[1]) continue;
-    if (sq < bestSq) { bestSq = sq; best = n; }
-  }
-  const along = between(rng, GUIDE_ALONG);
-  const side = nextRandom(rng) < 0.5 ? -1 : 1;
-  const off = between(rng, SHADE_TRAIL_OFF_M);
-  if (best === null) return null;
-  const on = nearestOnTrail(graph, target.pos.x + (best.x - target.pos.x) * along, target.pos.z + (best.z - target.pos.z) * along, cut.guide);
-  return standOff(world, graph, target, on, side, off);
-}
-
 /** Spawns a shade or a lunge at `at` for `target`: a shade stands `dwell` seconds, a lunge walks at the target for at most LUNGE_MAX_S. */
 export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: boolean, dwell: number): EnemyState {
   const shade: EnemyState = {
@@ -376,7 +338,7 @@ export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: b
     routeAt: 0,
     approach: false,
     seen: false,
-    emergeTo: null, stalks: false, fork: -1, forkEdge: -1,
+    emergeTo: null, stalks: false,
   };
   faceToward(shade, target.pos.x, target.pos.z);
   world.state.enemies.set(shade.id, shade);
@@ -476,11 +438,8 @@ export function stepHaunt(world: World, dt: number): void {
       // The episode's last shade is its lunge, when it has one, or the shade placed once only HAUNT_REAL_BY_S is left; off the trail in the chase, any shade may be.
       const lunge = (ep.real && (ep.shades === 1 || ep.left <= HAUNT_REAL_BY_S)) || (off > 0 && nextRandom(record.rng) < OFF_TRAIL_REAL_EACH + (1 - OFF_TRAIL_REAL_EACH) * off);
       let at: Vec3 | null = null;
-      // Every one stands off the trail ahead of its player; in the chase a shade first off the open way home.
-      for (let i = 0; i < HAUNT_PLACE_TRIES && at === null; i++) {
-        if (chase && !lunge) at = placeShadeOnGuide(world, target, record.rng);
-        if (at === null) at = placeShadeOffTrail(world, target, record.rng);
-      }
+      // Every one stands off the line ahead of its player: the trail, or in the chase the way down (chaseLine.ts).
+      for (let i = 0; i < HAUNT_PLACE_TRIES && at === null; i++) at = placeShadeOffTrail(world, target, record.rng);
       if (at !== null) {
         spawnShade(world, at, target, lunge, between(record.rng, SHADE_DWELL_S));
         // One real one an episode: once it has come, the rest are shades.

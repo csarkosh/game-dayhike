@@ -6,7 +6,7 @@ import { createForestWorld, createWorld, spawnPlayer, tickWorld, type World } fr
 import { parseLevel } from "../../src/sim/level.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { DEFAULT_TERRAIN_VARIANT, elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { Phase } from "../../src/sim/types.js";
+import { AiState, Phase } from "../../src/sim/types.js";
 import { drawWayNow, stepWay, wayOf } from "../../src/sim/wayDraw.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -66,6 +66,28 @@ describe("the world's way down", SUITE, () => {
     expect(w.state.phase).toBe(Phase.Chase);
     expect(w.way).not.toBeNull();
     expect(w.way!.fallback).toBe(false);
+  });
+
+  it("the find draws nothing from the world's random stream, and the chase raises no Hollow at a fork", () => {
+    const w = forestWorld();
+    w.haunt!.active = false;
+    const p = spawnPlayer(w);
+    const body = w.search!.body.pos;
+    p.pos = { x: body.x - 5, y: elevationAt(seed, body.x - 5, body.z) + 0.9, z: body.z };
+    const before = w.state.rngSeed;
+    tick(w, 1);
+    expect(w.state.phase).toBe(Phase.Scene);
+    expect(w.state.rngSeed).toBe(before);
+    expect("cut" in w).toBe(false);
+    for (let i = 0; i < 3000 && w.state.phase === Phase.Scene; i++) tick(w, 1);
+    expect(w.state.phase).toBe(Phase.Chase);
+    // Stood at a fork of the trail, held so nothing ends the wait: only the crest's Hollow exists.
+    const fork = w.trail!.nodes[w.trail!.forks[0]!]!;
+    p.pos = { x: fork.x, y: elevationAt(seed, fork.x, fork.z) + 0.9, z: fork.z };
+    p.heldFor = 1e9;
+    tick(w, 120);
+    const hollows = [...w.state.enemies.values()].filter((e) => e.ai === AiState.Emerge || e.ai === AiState.Hunt || e.ai === AiState.Stand);
+    expect(hollows.length).toBe(1);
   });
 
   it("the app steps the draw every frame on the host and on a client, from ten seconds in", () => {

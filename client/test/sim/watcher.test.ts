@@ -418,7 +418,7 @@ describe("the tick", SUITE, () => {
     expect(w.watcher!.rest).toBe(0);
   });
 
-  it("is removed on the flip tick, and the guide is drawn from the world's stream untouched", () => {
+  it("is removed on the flip tick, and the world's stream is left untouched", () => {
     const { w, p } = forestWorld();
     // A second player finds the body while the player at the top fork keeps
     // the watcher in view: it is shown into the flip tick, and only the flip
@@ -443,8 +443,8 @@ describe("the tick", SUITE, () => {
     expect(hollows).toHaveLength(1);
     expect(hollows[0]!.ai).toBe(AiState.Emerge);
     expect(hollows[0]!.id).toBe(id + 1);
-    expect(w.state.rngSeed).toBe(-406737248);
-    expect(w.cut!.guide.length).toBe(44);
+    // The find draws nothing from the world's stream (until 2026-11-13 the chase's guide was drawn from it here).
+    expect(w.state.rngSeed).toBe(2032433950);
   });
 
   it("re-reads the lead when the lead dies: the facing and the next placement follow the survivor", () => {
