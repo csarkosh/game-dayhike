@@ -21,7 +21,7 @@ import { activeTerrainVariant } from "./terrain.js";
 import { lakeShoreInto, newLakeShore } from "./lakeShape.js";
 import { boxesNear } from "./boxSource.js";
 import { hash2 } from "./field.js";
-import { stemNodes } from "./trailRoute.js";
+import { stemAhead, stemNodes } from "./trailRoute.js";
 import { makeWay, type WayDown } from "./wayDown.js";
 
 /** Metres a clean run aims at: two minutes at the sprint's 7 m/s. */
@@ -41,6 +41,11 @@ export const WAY_WAVE_M = 100;
 export const WAY_WAVE_WIDE_M = 220;
 /** Metres a cell of the search spans. */
 export const WAY_CELL_M = 3;
+/** Metres down the stem from the crest the way begins: where a party stands at the find (summit.ts DISCOVERY_RADIUS; a test holds the two equal). */
+export const WAY_START_M = 12;
+/** Metres from the body no part of the way comes within, and the metres from it that are refused on the side away from the party, where the Hollow steps out. */
+export const WAY_BODY_CLEAR_M = 8;
+export const WAY_CREST_CLEAR_M = 22;
 
 /** The least upward normal a cell's ground may have: over GROUND_NORMAL_Y (0.7) by a margin, so the line never skirts a slide. */
 const CELL_NORMAL_Y = 0.8;
@@ -51,8 +56,8 @@ const LAKE_MARGIN_M = 3;
 const SEA_MARGIN_M = 0.5;
 /** Metres the search's grid reaches past the meander, each way: the first that finds a way through is kept, so a lake or a cliff band across the near ground is gone round. */
 const GRID_MARGINS_M = [40, 160, 400] as const;
-/** A cell's cost a metre grows by this for each metre it is off the meander, to OFF_MEANDER_MAX_M. */
-const OFF_MEANDER_COST = 0.1;
+/** A cell's cost a metre grows by this for each metre it is off the meander or the nearest of its copies, which lie 2 × OFF_MEANDER_MAX_M apart: so to OFF_MEANDER_MAX_M at the most. */
+const OFF_MEANDER_COST = 0.25;
 const OFF_MEANDER_MAX_M = 40;
 /** A cell the trail passes is this much of its cost. */
 const TRAIL_COST = 0.95;
@@ -122,9 +127,22 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
   const graph = world.trail, ground = world.ground;
   if (graph === null || ground === null) return null;
   const crest = graph.nodes[graph.summit] as TrailNode;
-  const S = { x: crest.x, z: crest.z }, E = { x: graph.trailhead.x, z: graph.trailhead.z };
+  // The way begins where a party coming up the stem stands at the find, not at the body: on the stem,
+  // WAY_START_M down it from the crest. The Hollow steps out past the body from there (summit.ts
+  // `emergePoint`), so the ground round the body and behind it is never the way's: its mouth is on the party's
+  // side, whichever side of the crest the pad lies.
+  const stand = stemAhead(graph, crest.x, crest.z, -WAY_START_M) ?? crest;
+  const S = { x: stand.x, z: stand.z }, E = { x: graph.trailhead.x, z: graph.trailhead.z };
   const straight = Math.sqrt((E.x - S.x) * (E.x - S.x) + (E.z - S.z) * (E.z - S.z));
-  const stem = (): WayDown => makeWay(stemNodes(graph).reverse().map((i) => graph.nodes[i] as TrailNode), straight, true);
+  // The party's side of the body, as a direction from it.
+  const sideX = S.x - crest.x, sideZ = S.z - crest.z;
+  const stem = (): WayDown => {
+    // The stem from the party's place down: its nodes from the first that is further from the crest than they stand.
+    const down = stemNodes(graph).reverse().map((i) => graph.nodes[i] as TrailNode);
+    let k = 0;
+    while (k < down.length - 1 && (((down[k] as TrailNode).x - crest.x) * ((down[k] as TrailNode).x - crest.x) + ((down[k] as TrailNode).z - crest.z) * ((down[k] as TrailNode).z - crest.z)) <= WAY_START_M * WAY_START_M) k++;
+    return makeWay([S, ...down.slice(k)], straight, true);
+  };
   if (straight < WAY_CELL_M * 4) return makeWay([S, E], straight, false);
 
   const seed = world.forest?.seed ?? 0;
@@ -182,6 +200,13 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
       const x = worldX(i, j), z = worldZ(i, j);
       let value = Infinity;
       let dry = walled[c] === 0;
+      if (dry) {
+        // The crest is the Hollow's: nothing of the way within WAY_BODY_CLEAR_M of the body, nor within
+        // WAY_CREST_CLEAR_M of it on the side away from the party.
+        const bx = x - crest.x, bz = z - crest.z;
+        const b2 = bx * bx + bz * bz;
+        if (b2 < WAY_BODY_CLEAR_M * WAY_BODY_CLEAR_M || (b2 < WAY_CREST_CLEAR_M * WAY_CREST_CLEAR_M && bx * sideX + bz * sideZ < 0)) dry = false;
+      }
       if (dry && sea !== null && ground.heightAt(x, z) < sea + SEA_MARGIN_M) dry = false;
       if (dry) {
         for (const b of lakes) {
@@ -197,8 +222,11 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
         if (NORMAL.y >= CELL_NORMAL_Y || onTrail[c] === 1) {
           let t = alongOf(i) / straight;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
-          const off = Math.abs(acrossOf(j) - offsetAt(meander, t));
-          value = (1 + OFF_MEANDER_COST * Math.min(OFF_MEANDER_MAX_M, off)) * (onTrail[c] === 1 ? TRAIL_COST : 1);
+          // Off the meander, or off the nearest of its copies every 2 × OFF_MEANDER_MAX_M to either side: a line
+          // gone wide round a lake still winds as the meander does, where a flat cost out there let it run straight.
+          let off = acrossOf(j) - offsetAt(meander, t);
+          off -= 2 * OFF_MEANDER_MAX_M * Math.round(off / (2 * OFF_MEANDER_MAX_M));
+          value = (1 + OFF_MEANDER_COST * Math.abs(off)) * (onTrail[c] === 1 ? TRAIL_COST : 1);
         }
       }
       cost[c] = value;
@@ -258,7 +286,7 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
         return Math.sqrt((i - ti) * (i - ti) + (j - tj) * (j - tj)) * WAY_CELL_M * TRAIL_COST;
       };
       let found = false;
-      // The crest's and the pad's own cells are never refused: the way starts and ends there whatever the ground.
+      // The start's and the pad's own cells are never refused: the way starts and ends there whatever the ground.
       if (price(from) === Infinity) cost[from] = 1;
       if (price(to) === Infinity) cost[to] = 1;
       gScore[from] = 0;

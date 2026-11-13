@@ -9,11 +9,13 @@ import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
 import { lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
 import type { Vec3 } from "../../src/sim/types.js";
 import type { WayDown } from "../../src/sim/wayDown.js";
+import { stemAhead } from "../../src/sim/trailRoute.js";
+import { DISCOVERY_RADIUS, emergePoint } from "../../src/sim/summit.js";
 import {
-  WAY_APART_M, WAY_BACK_MAX_M, WAY_LONG_RATIO, WAY_MAX_M, WAY_MAX_RATIO, WAY_MIN_RATIO, WAY_STRAIGHT_MAX_M, WAY_TARGET_M,
+  WAY_APART_M, WAY_BACK_MAX_M, WAY_BODY_CLEAR_M, WAY_CREST_CLEAR_M, WAY_LONG_RATIO, WAY_MAX_M, WAY_MAX_RATIO, WAY_START_M, WAY_MIN_RATIO, WAY_STRAIGHT_MAX_M, WAY_TARGET_M,
   drawWay, drawWayNow, wayTarget,
 } from "../../src/sim/wayDraw.js";
-import { wayRules } from "./helpers/wayRules.js";
+import { STRAIGHT_SLACK_M, wayRules } from "./helpers/wayRules.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
@@ -46,20 +48,43 @@ describe("drawing the way down", SUITE, () => {
     way = drawWayNow(world) as WayDown;
   }, timeLimit(120_000));
 
-  it("runs from the crest to the pad", () => {
-    const g = world.trail!, s = g.nodes[g.summit]!;
+  /** Where a party coming up the stem stands at the find: a discovery's radius down it from the crest. */
+  const stand = (): { x: number; z: number } => {
+    const g = world.trail!, c = g.nodes[g.summit]!;
+    return stemAhead(g, c.x, c.z, -WAY_START_M)!;
+  };
+
+  it("runs from where the party stands at the find, on the stem below the crest, to the pad", () => {
+    const g = world.trail!, s = stand();
+    expect(WAY_START_M).toBe(DISCOVERY_RADIUS);
     expect(way.fallback).toBe(false);
-    expect(Math.hypot(way.xs[0]! - s.x, way.zs[0]! - s.z)).toBeLessThan(6);
+    expect(Math.hypot(way.xs[0]! - s.x, way.zs[0]! - s.z)).toBeLessThan(0.5);
     expect(Math.hypot(way.xs.at(-1)! - g.trailhead.x, way.zs.at(-1)! - g.trailhead.z)).toBeLessThan(6);
     expect(way.straight).toBeCloseTo(Math.hypot(s.x - g.trailhead.x, s.z - g.trailhead.z), 1);
+  });
+
+  it("leaves the crest on the party's side: never over the body, never round behind it where the Hollow steps out", () => {
+    const g = world.trail!, c = g.nodes[g.summit]!, s = stand();
+    expect([WAY_BODY_CLEAR_M, WAY_CREST_CLEAR_M]).toEqual([8, 22]);
+    const hollow = emergePoint(world, { x: c.x, y: 0, z: c.z }, { x: s.x, y: 0, z: s.z });
+    for (let i = 0; i < way.xs.length; i++) {
+      const x = way.xs[i]!, z = way.zs[i]!;
+      const d = Math.hypot(x - c.x, z - c.z);
+      // A metre and a half of give: the line's points are its cells' centres averaged.
+      expect(d, `point ${i}`).toBeGreaterThan(WAY_BODY_CLEAR_M - 1.5);
+      const behind = (x - c.x) * (s.x - c.x) + (z - c.z) * (s.z - c.z) < 0;
+      if (behind) expect(d, `point ${i}`).toBeGreaterThan(WAY_CREST_CLEAR_M - 1.5);
+      expect(Math.hypot(x - hollow.x, z - hollow.z), `point ${i}`).toBeGreaterThan(WAY_START_M);
+    }
   });
 
   it("is the target's length, bends, never heads back and never doubles on itself", () => {
     const r = wayRules(way, world.trail!.trailhead);
     expect(r.length).toBeGreaterThan(r.target * 0.9);
     expect(r.length).toBeLessThan(r.target * 1.1);
-    expect(r.longestStraight).toBeLessThanOrEqual(WAY_STRAIGHT_MAX_M);
+    expect(r.longestStraight).toBeLessThanOrEqual(WAY_STRAIGHT_MAX_M + STRAIGHT_SLACK_M);
     expect(r.worstBack).toBeLessThanOrEqual(WAY_BACK_MAX_M);
+    expect(r.length).toBeLessThanOrEqual(WAY_MAX_M);
     expect(r.closestApart).toBeGreaterThanOrEqual(WAY_APART_M);
   });
 
@@ -98,7 +123,7 @@ describe("drawing the way down", SUITE, () => {
     const w = drawWayNow(walled) as WayDown;
     expect(w.fallback).toBe(true);
     expect(w.length).toBeGreaterThan(w.straight);
-    const g = world.trail!, s = g.nodes[g.summit]!;
+    const s = stand();
     expect([w.xs[0], w.zs[0]]).toEqual([Math.fround(s.x), Math.fround(s.z)]);
   });
 

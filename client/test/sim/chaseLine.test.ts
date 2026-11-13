@@ -12,7 +12,7 @@ import { OFF_TRAIL_M, causeOfDeath } from "../../src/sim/deathCause.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
 import { WAY_RIM_M, wayDirection, wayDistance, wayPoint, wayProject } from "../../src/sim/wayDown.js";
 import { wayOf } from "../../src/sim/wayDraw.js";
-import { WAY_SLACK_M, chaseLineDistance, chaseLinePoint, onWay } from "../../src/sim/chaseLine.js";
+import { CREST_GRACE_M, WAY_SLACK_M, chaseLineDistance, chaseLinePoint, onWay } from "../../src/sim/chaseLine.js";
 import { graph } from "./helpers/stemGraph.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -67,6 +67,25 @@ describe("the line the chase holds a player to", SUITE, () => {
       // The floor's edge is inside the trail's own: on the way.
       expect(chaseLineDistance(w, floor.x, floor.z)).toBeLessThan(OFF_TRAIL_FROM_M);
     }
+  });
+
+  it("where the party stood at the find is on the line, a few strides round: a player caught there, or just returned there, did not leave the way", () => {
+    const w = forest(Phase.Chase);
+    expect(CREST_GRACE_M).toBe(15);
+    // The party's place: beside the way's start, off it by more than its rim.
+    const start = beside(w, 0, 0);
+    w.crest = { pos: { x: start.x + 9, y: elevationAt(seed, start.x + 9, start.z), z: start.z }, yaw: 0 };
+    expect(wayDistance(w.way!, w.crest.pos.x, w.crest.pos.z)).toBeGreaterThan(WAY_RIM_M);
+    expect(chaseLineDistance(w, w.crest.pos.x, w.crest.pos.z)).toBe(0);
+    expect(chaseLineDistance(w, w.crest.pos.x + 10, w.crest.pos.z)).toBe(0);
+    // A player standing there, caught: standing still is why, not leaving the way.
+    const p = spawnPlayer(w);
+    stand(w, p, w.crest.pos.x, w.crest.pos.z);
+    const h = spawnHollow(w, { x: p.pos.x + 1, y: p.pos.y, z: p.pos.z }, p.id, 0);
+    expect(causeOfDeath(w, p, h, "contact")).toBe(DeathCause.Still);
+    // Past the grace it is the way's distance again.
+    const far = { x: w.crest.pos.x + 40, z: w.crest.pos.z };
+    if (wayDistance(w.way!, far.x, far.z) > WAY_RIM_M + 1) expect(chaseLineDistance(w, far.x, far.z)).toBeGreaterThan(0);
   });
 
   it("a level with no way keeps the trail in the chase, and one with no trail is never off it", () => {

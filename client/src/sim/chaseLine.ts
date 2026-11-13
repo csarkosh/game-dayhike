@@ -18,6 +18,9 @@ import { wayDistance, wayPoint, wayProject } from "./wayDown.js";
  */
 export const WAY_SLACK_M = 1.5;
 
+/** Metres round the place the party stood at the find (`World.crest`, host only) that are on the line whatever the way's distance. */
+export const CREST_GRACE_M = 15;
+
 /** Whether the world's players are held to the way down: the scene or the chase is on, and there is a way. */
 export function onWay(world: World): boolean {
   const phase = world.state.phase;
@@ -27,6 +30,13 @@ export function onWay(world: World): boolean {
 /** Metres (x, z) is off the line, as the trail's distance would read: 0 anywhere inside the way's slack, 0 on a world with no trail. */
 export function chaseLineDistance(world: World, x: number, z: number): number {
   if (world.way !== null && onWay(world)) {
+    // Where the party stood at the find (and where a death in the chase returns a player) is the way's own
+    // ground, however they came up to it: a few strides round it are on the line.
+    const crest = world.crest;
+    if (crest !== null) {
+      const cx = x - crest.pos.x, cz = z - crest.pos.z;
+      if (cx * cx + cz * cz <= CREST_GRACE_M * CREST_GRACE_M) return 0;
+    }
     const d = wayDistance(world.way, x, z) - WAY_SLACK_M;
     return d > 0 ? d : 0;
   }
