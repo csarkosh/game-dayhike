@@ -122,6 +122,7 @@ import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/co
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
 import { stepWay } from "./sim/wayDraw.js";
+import { wayLevelFor } from "./game/wayLevel.js";
 import { hasLineOfSight } from "./sim/ai.js";
 import { isHollowState, playerSees } from "./sim/hollow.js";
 import { chaseLineDistance, chaseLinePoint } from "./sim/chaseLine.js";
@@ -587,6 +588,11 @@ function buildGame(
   let escalation: EscalationState = ESCALATION_REST;
   /** The `escalation` command's hold on the world's escalation for a look, or null for the climb's own. */
   let escalationHold: number | null = null;
+  /** The way down's light (wayLevel.ts): the level shown, the console's hold on it (`way on|off`) or null, and the renderer and the way last given to it. */
+  let wayShown = 0;
+  let wayHeld: number | null = null;
+  let wayGivenTo: Renderer | null = null;
+  let wayGiven: World["way"] = null;
   /** The explore day's clock (exploreDay.ts): seconds since the hike began, on a calm world. */
   let exploreClockS = 0;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
@@ -887,6 +893,10 @@ function buildGame(
       const held = args.length === 0 ? null : Number(args[0]);
       const drawn = renderer.setMist(held);
       hud.setStatus(held === null ? `mist: the night's, now ${drawn.toFixed(2)}` : `mist held at ${held.toFixed(2)}`);
+    } else if (name === "way") {
+      // The way down's light, held whole or out, or let go to the chase (wayLevel.ts).
+      wayHeld = args.length === 0 ? null : args[0] === "on" ? 1 : 0;
+      hud.setStatus(wayHeld === null ? "way: the chase's" : `way held ${wayHeld === 1 ? "on" : "off"}`);
     } else if (name === "summit") {
       // The summit scene for a look (cutscene.ts): the host's own player stands at the body, and the next tick is the find.
       if (summitPreview === null) hud.setStatus("summit: the host's to call");
@@ -1119,6 +1129,21 @@ function buildGame(
   function syncWayDraw(world: World, state: WorldState): void {
     if (world.wayDraw === null || state.tick < WAY_DRAW_FROM_TICK) return;
     stepWay(world, state.phase === Phase.Climb ? WAY_DRAW_MS : WAY_DRAW_LATE_MS, () => performance.now());
+  }
+  /**
+   * The way down's light, a frame: whatever renderer is drawing has the world's way (a renderer made again for the
+   * WebGPU swap or a lost device starts with none, and the way itself arrives when its draw ends), and the level
+   * moves toward what the match asks, from the summit scene's threshold through the chase.
+   */
+  function syncWayLight(world: World, dt: number): void {
+    if (wayGivenTo !== renderer || wayGiven !== world.way) {
+      renderer.setWay(world.way);
+      wayGivenTo = renderer;
+      wayGiven = world.way;
+    }
+    const sceneInto = sceneOn() ? SUMMIT_SCENE_S - (sceneUntil - performance.now()) / 1000 : null;
+    wayShown = wayHeld ?? wayLevelFor(world, sceneInto, wayShown, dt);
+    renderer.setWayLevel(wayShown);
   }
   function syncAtmosphere(world: World, state: WorldState, localId: number, dt: number): void {
     if (world.search === null || world.trail === null) return;
@@ -1794,7 +1819,7 @@ function buildGame(
       // Nor /mist and /end, which are for looking at the night's effects on the spot,
       // nor /summit and /escape, which are for looking at a scene (`isLook`).
       // Applied below via applyView; never written back to `?cmd=`.
-      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "escalation" && parsed.name !== "end" && !isLook(parsed.name)) persist(parsed.name, args);
+      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "way" && parsed.name !== "escalation" && parsed.name !== "end" && !isLook(parsed.name)) persist(parsed.name, args);
       if (findCommand(parsed.name)?.kind === "world") {
         // Re-initialise through the path `main.ts` already listens on.
         window.dispatchEvent(new PopStateEvent("popstate"));
@@ -2199,6 +2224,7 @@ function buildGame(
 
       const state: WorldState = host.world.state;
       const self = state.players.get(host.localEntityId);
+      syncWayLight(host.world, dt);
       syncWayDraw(host.world, state);
       syncAtmosphere(host.world, state, host.localEntityId, dt);
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
@@ -2355,6 +2381,7 @@ function buildGame(
 
       const state = client.renderState(performance.now());
       const self = state.players.get(client.localEntityId);
+      syncWayLight(client.world, dt);
       syncWayDraw(client.world, state);
       syncAtmosphere(client.world, state, client.localEntityId, dt);
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });

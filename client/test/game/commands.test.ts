@@ -284,6 +284,19 @@ describe("/mist", () => {
   });
 });
 
+describe("/way", () => {
+  it("takes nothing, on or off, and is a view command that is never persisted", () => {
+    expect(validateCommand({ name: "way", args: [] })).toBeNull();
+    expect(validateCommand({ name: "way", args: ["on"] })).toBeNull();
+    expect(validateCommand({ name: "way", args: ["off"] })).toBeNull();
+    expect(validateCommand({ name: "way", args: ["half"] })).toMatch(/on.*off/);
+    expect(validateCommand({ name: "way", args: ["on", "off"] })).not.toBeNull();
+    const spec = findCommand("way");
+    expect(spec?.kind).toBe("view");
+    expect(spec?.scriptValue).toBeUndefined();
+  });
+});
+
 describe("/lamp", () => {
   it("takes nothing, on or off", () => {
     expect(validateCommand({ name: "lamp", args: [] })).toBeNull();

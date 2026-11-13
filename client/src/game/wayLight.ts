@@ -29,7 +29,7 @@ export const WAY_LIGHT_UNIFORMS = ["viewProjection", "wayEye", "wayGain", "waySh
  * which are the post path's linear ones, are scaled to read the same at
  * night; the frame's dim never reaches it.
  */
-export const WAY_MATERIAL_GAIN = 2.5;
+export const WAY_MATERIAL_GAIN = 1.7;
 /** Frames a new mesh is drawn at nothing, whatever the level, so its pipeline is made before the chase shows it. */
 export const WAY_WARM_FRAMES = 3;
 /** How far toward the eye the light's depth is pulled, so its floor never fights the ground it lies on. */

@@ -884,6 +884,38 @@ describe("weather in lighting", () => {
     lighting.dispose();
   });
 
+  it("on the material path the chase's dim is one more factor in the exposure, beside the stare's, written without raising the image's observers", () => {
+    const s = scene();
+    const lighting = light(s, { hour: 12, weather: CLEAR });
+    const ip = s.imageProcessingConfiguration;
+    let raised = 0;
+    ip.onUpdateParameters.add(() => raised++);
+    lighting.setDim(0.5);
+    expect(ip.exposure).toBeCloseTo(0.9104501249491339 * 0.5, 12);
+    // With a half stare: both factors.
+    const left = 1 - STARE_DIM / 2;
+    lighting.setStare(0.5);
+    expect(ip.exposure).toBeCloseTo(0.9104501249491339 * left * 0.5, 12);
+    // Kept through a weather fade's applies, as the stare's is.
+    vi.spyOn(s.getEngine(), "getDeltaTime").mockReturnValue(500);
+    lighting.setWeather(WEATHER_PRESETS.eerie, 3);
+    s.onBeforeRenderObservable.notifyObservers(s);
+    expect(ip.exposure).toBeCloseTo(0.8728940572949822 * left * 0.5, 12);
+    // Let go: the stare's alone again.
+    lighting.setDim(1);
+    expect(ip.exposure).toBeCloseTo(0.8728940572949822 * left, 12);
+    expect(raised).toBe(0);
+    lighting.dispose();
+  });
+
+  it("on the post path leaves the chase's dim to the grade pass, as it leaves the stare", () => {
+    const s = scene();
+    const lighting = light(s, { tier: "high", hour: 12, weather: CLEAR, colourPath: "post" });
+    lighting.setDim(0.5);
+    expect(s.imageProcessingConfiguration.exposure).toBeCloseTo(0.9104501249491339, 12);
+    lighting.dispose();
+  });
+
   it("on the post path leaves the stare to the grade pass: the image's exposure stays the weather's and the hour's", () => {
     const s = scene();
     const lighting = light(s, { tier: "high", hour: 12, weather: CLEAR, colourPath: "post" });

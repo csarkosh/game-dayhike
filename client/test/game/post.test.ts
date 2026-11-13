@@ -592,6 +592,32 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     bigEngine.dispose();
   });
 
+  it("on the post path the chase's dim is a factor in the grade's exposure, from the next update, and gone at 1", () => {
+    const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+    const post = createPost(scene, camera, postFeaturesFor("medium", true));
+    const exposureDrawn = (): number => {
+      const calls: { fn: string; args: unknown[] }[] = [];
+      const fakeEffect = new Proxy(
+        {},
+        { get: (_target, prop: string) => (...args: unknown[]) => calls.push({ fn: prop, args }) },
+      ) as unknown as Effect;
+      passNamed(camera, "grade").onApplyObservable.notifyObservers(fakeEffect);
+      return calls.find((c) => c.fn === "setFloat" && c.args[0] === "exposure")!.args[1] as number;
+    };
+    post.update(WEATHER_PRESETS.clear, 22, 1, 1, STARE_LENS_REST);
+    const whole = exposureDrawn();
+    post.setDim(0.5);
+    // Not until the frame's update: the record is the frame's.
+    expect(exposureDrawn()).toBe(whole);
+    post.update(WEATHER_PRESETS.clear, 22, 1, 1, STARE_LENS_REST);
+    expect(exposureDrawn()).toBeCloseTo(whole * 0.5, 12);
+    post.setDim(1);
+    post.update(WEATHER_PRESETS.clear, 22, 1, 1, STARE_LENS_REST);
+    expect(exposureDrawn()).toBe(whole);
+    post.dispose();
+    camera.dispose();
+  });
+
   it("hands the grade pass the night factor: the identity white point and no rods by day, the night white and the rods' 0.8 at night", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     const post = createPost(scene, camera, postFeaturesFor("medium", true));

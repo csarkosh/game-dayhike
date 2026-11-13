@@ -329,6 +329,19 @@ const SPECS: readonly CommandSpec[] = [
     },
   },
   {
+    name: "way",
+    kind: "view",
+    // `way on` holds the way down's light (wayLight.ts) whole whatever the
+    // match is doing, `way off` holds it out, for looking at it and for
+    // measuring what it costs; bare `way` lets the chase set it again. Not
+    // persisted: no `scriptValue`, so it never rides the URL into a match.
+    validate(args) {
+      if (args.length === 0) return null;
+      if (args.length > 1 || (args[0] !== "on" && args[0] !== "off")) return 'way takes no argument, or "on" or "off"';
+      return null;
+    },
+  },
+  {
     name: "lamp",
     kind: "view",
     // The lamp is the host's player's, for a link's look at the night: `lamp`

@@ -397,6 +397,14 @@ export type Lighting = {
    * instead, and this changes nothing.
    */
   setStare(stare: number): void;
+  /**
+   * The share of the frame's exposure the chase leaves everything but the
+   * way down's light (wayLevel.ts `wayDimAt`): 1 is all of it. On the
+   * material path it is one more factor in the exposure, beside the stare's
+   * and written as silently; on the post path the grade's record carries it
+   * (`Post.setDim`) and this does nothing.
+   */
+  setDim(share: number): void;
   /** A copy of the current, possibly mid-fade, weather parameters. */
   readonly weather: WeatherParams;
   /**
@@ -485,6 +493,8 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   let exposure = 1;
   /** What the stare leaves of it on the material path (`setStare`); 1 on the post path. */
   let sight = 1;
+  /** What the chase's dim leaves of it on the material path (`setDim`); 1 on the post path. */
+  let dim = 1;
 
   scene.getEngine().setHardwareScalingLevel(settings.hardwareScaling);
 
@@ -697,7 +707,7 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // fade's, keeps the stare's dimming. On the post path the grade pass
     // carries its own exposure and no material reads this one.
     exposure = exposureUnder(weather, sunPositionAt(hour).y);
-    if (options.colourPath === "material") writeExposureSilently(image, exposure * sight);
+    if (options.colourPath === "material") writeExposureSilently(image, exposure * sight * dim);
     else image.exposure = exposure * sight;
     // Until the table holds the slices either side of noon and of the hour,
     // the state cannot be made: whatever stands (the defaults, or the last
@@ -834,7 +844,12 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     setStare(stare) {
       if (options.colourPath !== "material") return;
       sight = sightUnder(stare);
-      writeExposureSilently(image, exposure * sight);
+      writeExposureSilently(image, exposure * sight * dim);
+    },
+    setDim(share) {
+      if (options.colourPath !== "material" || share === dim) return;
+      dim = share;
+      writeExposureSilently(image, exposure * sight * dim);
     },
     addShadowMesh(mesh, reach = "far") {
       mesh.receiveShadows = true;

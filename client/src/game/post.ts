@@ -40,6 +40,13 @@ export type Post = {
    * point and the rods follow. `lens` is the smoothed strength of the rain
    * on the glass (lensParams.ts), 0 when dry. */
   update(weather: WeatherParams, hour: number, night: number, unsettle: number, stare: StareLens, lens?: number, chase?: number, blur?: number): void;
+  /**
+   * The share of the frame's exposure the chase leaves everything but the
+   * way down's light (wayLevel.ts `wayDimAt`), from the next `update`: 1 is
+   * all of it. The post path's; on the material path the lighting's exposure
+   * carries it (`Lighting.setDim`) and this changes nothing drawn.
+   */
+  setDim(share: number): void;
   /** The painted palette (gradeParams.ts) the frames wear from now, faded
    * from the one they wear over `fadeSeconds` (PAINT_FADE_SECONDS unless
    * given; 0 at once). On the material path there is no grade and nothing
@@ -253,6 +260,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     }
   }
   let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 0, 1);
+  /** What the chase's dim leaves of the frame's exposure (`setDim`). */
+  let dim = 1;
   // The painted palette: the one the frames fade from, the one they fade
   // to, when the fade began (ms of `now`) and how long it takes.
   let paletteFrom: PaintPalette = PAINT_OILS;
@@ -643,6 +652,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     setCloud(bind) {
       cloudBinder = bind;
     },
+    setDim(share) {
+      dim = share;
+    },
     setShades(mask, any) {
       shadeMask = mask;
       shadeAny = any;
@@ -660,6 +672,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       setEndBlur(blur);
       const seconds = (now() - start) / 1000;
       record = gradeRecordUnder(weather, hour, night, unsettle, seconds, stare, chase, paletteNow());
+      // The chase's dim (`setDim`): one more factor in the frame's exposure, as the stare's is in the record.
+      if (dim !== 1) record = { ...record, exposure: record.exposure * dim };
       ditherSeconds = seconds;
       lensStrength = lensTarget;
       if (lens !== null) {

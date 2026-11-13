@@ -38,7 +38,10 @@ import { stageCar } from "./scene/sceneStage.js";
 import type { TrailheadCar } from "./trailheadMeshes.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { createShadeVeil } from "./shadeVeil.js";
-import { CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
+import { CLOUD_GROUND_REBUILD_M, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
+import { createWayLight } from "./wayLight.js";
+import { wayDimAt } from "./wayLevel.js";
+import { wayDistance, type WayDown } from "../sim/wayDown.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, capPose, summitShot, type SceneBase, type SceneContext } from "./cutscene.js";
 import { forestDensity } from "../sim/vegetation.js";
@@ -1788,6 +1791,14 @@ export type Renderer = {
   setHaunt(level: number): void;
   /** Hold the ground cloud's density at a level (0 to 1) whatever the night, or null to let the night set it; returns the density now drawn. */
   setMist(density: number | null): number;
+  /** The way down to light in the chase (wayLight.ts), or none: the app gives every renderer the world's, when it has it. */
+  setWay(way: WayDown | null): void;
+  /**
+   * The way's light, 0 to 1 (wayLevel.ts): the half pipe is drawn at it, the
+   * rest of the frame is dimmed by it (`wayDimAt`), and where the mist has a
+   * ground map the mist thins over the way in place of the trail.
+   */
+  setWayLevel(level: number): void;
   /** How far the mist has come in, 0 to 1 (acts.ts): the ground cloud rises by it, after the night. */
   setMistIn(level: number): void;
   /**
@@ -2528,6 +2539,13 @@ function buildRenderer(
     : null;
   jobsReadout?.install();
   partOf(jobsReadout);
+  // The way down's light (wayLight.ts): the half pipe the chase shows, on every tier. A forest's alone.
+  const wayLight = forest === null ? null : createWayLight(scene, postFeatures.colourPath, (x, z) => elevationAt(forest.seed, x, z), jobs);
+  partOf(wayLight);
+  let way: WayDown | null = null;
+  let wayLevel = 0;
+  /** Whether the mist's ground map was last built over the way: a change builds it again. */
+  let wayMistBuilt = false;
 
   // ---- Generated terrain: geometry clipmap -------------------------------
   //
@@ -3331,10 +3349,18 @@ function buildRenderer(
         veil?.setShades(silhouette.texture, silhouette.any());
       }
       if (cloudSteps > 0 && forest !== null) {
-        if (cloudGroundAt === null || Math.hypot(camera.position.x - cloudGroundAt.x, camera.position.z - cloudGroundAt.z) > CLOUD_GROUND_REBUILD_M) {
+        // In the chase the mist thins over the way down, not the trail: the channel is clear air between its walls.
+        const wayMist = way !== null && wayLevel > 0;
+        if (cloudGroundAt === null || wayMist !== wayMistBuilt || Math.hypot(camera.position.x - cloudGroundAt.x, camera.position.z - cloudGroundAt.z) > CLOUD_GROUND_REBUILD_M) {
           cloudGroundAt = { x: camera.position.x, z: camera.position.z };
+          wayMistBuilt = wayMist;
           const trailAt = activeTerrainVariant().trailDistance;
-          atmosphere.setCloudGround(cloudGroundMap((x, z) => elevationAt(forest.seed, x, z), cloudGroundAt.x, cloudGroundAt.z, trailAt === undefined ? null : (x, z) => trailAt(forest.seed, x, z)));
+          const elevation = (x: number, z: number): number => elevationAt(forest.seed, x, z);
+          const over = wayMist ? way : null;
+          atmosphere.setCloudGround(
+            over !== null ? cloudGroundMap(elevation, cloudGroundAt.x, cloudGroundAt.z, (x, z) => wayDistance(over, x, z), CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, WAY_MIST_EDGE_M, WAY_MIST_FADE_M)
+              : cloudGroundMap(elevation, cloudGroundAt.x, cloudGroundAt.z, trailAt === undefined ? null : (x, z) => trailAt(forest.seed, x, z)),
+          );
         }
         cloudDensity = cloudHold ?? cloudDensityUnder(lighting.sky?.night ?? 0, hauntLevel, chaseCast) * mistIn;
         atmosphere.setCloud(cloudDensity, cloudSteps, seconds, hauntLevel);
@@ -3447,6 +3473,11 @@ function buildRenderer(
       // stands in, for frames no one sees.
       // The death's closing dark rides the stare's shade, driven to full.
       const shown = endClose > 0 ? { ...stareLens, level: Math.max(stareLens.level, endClose), phase: 0.9 } : stareLens;
+      // The chase's dim: everything but the way down's light, on whichever path owns the exposure.
+      const wayDim = wayDimAt(wayLevel);
+      lighting.setDim(wayDim);
+      post.setDim(wayDim);
+      wayLight?.update(camera.position, wayLevel, 1 / wayDim);
       lighting.setStare(shown.level);
       post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, shown, lensStrength, chaseCast, endBlur);
       // The stare's closing darkness on the material path is the veil's.
@@ -3668,6 +3699,13 @@ function buildRenderer(
     setHaunt(level) {
       hauntLevel = Math.max(0, Math.min(1, level));
     },
+    setWay(next) {
+      way = next;
+      wayLight?.setWay(next);
+    },
+    setWayLevel(level) {
+      wayLevel = Math.max(0, Math.min(1, level));
+    },
     setMist(density) {
       cloudHold = density === null ? null : Math.max(0, Math.min(1, density));
       return cloudHold ?? cloudDensity;
@@ -3775,6 +3813,7 @@ function buildRenderer(
       panoramaTerrain?.dispose();
       for (const skyline of lakeSkylines) skyline.dispose();
       clipmap?.dispose();
+      wayLight?.dispose();
       facePatches?.dispose();
       water?.dispose();
       waterPlants?.dispose();
