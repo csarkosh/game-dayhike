@@ -20,6 +20,8 @@ import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
 import { route } from "./trailRoute.js";
+import { onWay } from "./chaseLine.js";
+import { wayPoint, wayProject } from "./wayDown.js";
 import { causeOfDeath } from "./deathCause.js";
 import { decided, returnsOn } from "./checkpoint.js";
 import { stepMovement } from "./movement.js";
@@ -347,13 +349,36 @@ function followRoute(h: EnemyState, world: World, graph: TrailGraph, dt: number,
   return true;
 }
 
+/** Metres down the way from its own place a Hollow walks toward, and within which of its player's place along the way it turns straight for them. */
+export const WAY_LEAD_M = 12;
+const WAY_AIM = { x: 0, z: 0 };
+
 /**
- * The hunt's walk: the graph to the node nearest the target, then straight at
- * it. Off the graph, losing sight of the target for HOLLOW_LOST_SIGHT_S drops
+ * The hunt's walk: the graph to the node nearest the target (in the chase,
+ * the way down toward the target's place along it: sim/chaseLine.ts), then
+ * straight at it. Off the graph, losing sight of the target for HOLLOW_LOST_SIGHT_S drops
  * the approach and re-routes from wherever it is.
  */
 function pursue(h: EnemyState, world: World, graph: TrailGraph, dt: number, target: Vec3): void {
   const speed = speedOf(h);
+  if (!h.approach && world.way !== null && onWay(world)) {
+    // The chase's way down, not the trail's graph: down (or up) the way toward its player's place along it, until
+    // it is near them along it, or near them with a clear sight, as the graph's walk ends.
+    const mine = wayProject(world.way, h.pos.x, h.pos.z).s;
+    const gap = wayProject(world.way, target.x, target.z).s - mine;
+    const near =
+      horizontalDistSq(h.pos, target) <= HOLLOW_APPROACH_RANGE * HOLLOW_APPROACH_RANGE &&
+      hasLineOfSight(h.pos, target, world.boxes, world.ground);
+    if (near || (gap <= WAY_LEAD_M && gap >= -WAY_LEAD_M)) {
+      h.approach = true;
+      h.stateTimer = 0;
+      h.lastDistSq = Infinity;
+      return;
+    }
+    const aim = wayPoint(world.way, mine + (gap > 0 ? WAY_LEAD_M : -WAY_LEAD_M), WAY_AIM);
+    walkToward(h, world, dt, aim.x, aim.z, speed);
+    return;
+  }
   if (!h.approach) {
     const targetNode = nearestTrailNode(graph, target.x, target.z);
     if (h.routeAt >= h.route.length || h.route[h.route.length - 1] !== targetNode) {
