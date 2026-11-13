@@ -42,7 +42,7 @@ function player(x: number, z: number, over: Partial<{ health: number; lamp: bool
     lamp: { on: over.lamp ?? false, charge: 1 },
     stare: over.stare ?? 0,
     safe: false,
-    deathPos: null,
+    deathPos: null, killedBy: 0, returnIn: 0, heldFor: 0,
   } as unknown as PlayerState;
 }
 

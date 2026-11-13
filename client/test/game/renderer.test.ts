@@ -1743,7 +1743,7 @@ describe("the wildlife director goes quiet near the Hollow", () => {
   function standingPlayerAt(id: number, x: number, z: number): PlayerState {
     return {
       id, pos: { x, y: elevationAt(SEED, x, z), z }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0,
-      health: 100, grounded: true, lastProcessedInput: 0, deathPos: null, cause: 0,
+      health: 100, grounded: true, lastProcessedInput: 0, deathPos: null, killedBy: 0, returnIn: 0, heldFor: 0, cause: 0,
       lamp: { on: false, charge: 1 }, stare: 0, safe: false,
     };
   }
@@ -1754,7 +1754,7 @@ describe("the wildlife director goes quiet near the Hollow", () => {
       // `y` plays no part — `findHollow` (renderer.ts) measures on X/Z alone.
       id, pos: { x: x + 20, y: 0, z }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, health: 100,
       ai: AiState.Hunt, targetId: 1, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity,
-      stuckTimer: 0, unstickTimer: 0, route: [], routeAt: 0, approach: false, seen: false, emergeTo: null,
+      stuckTimer: 0, unstickTimer: 0, route: [], routeAt: 0, approach: false, seen: false, emergeTo: null, stalks: false, fork: -1, forkEdge: -1,
     };
   }
 

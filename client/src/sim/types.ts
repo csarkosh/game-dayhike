@@ -113,15 +113,24 @@ export type PlayerState = {
    */
   cause: DeathCause;
   /**
-   * Where this player fell. Set once, on the tick health reaches 0, and never
-   * cleared: death is permanent, and `updateDeaths` uses it to know the drop
-   * has been done.
+   * Where this player fell. Set on the tick health reaches 0, which is how
+   * `updateDeaths` knows the drop has been done, and cleared only by a
+   * return in the chase (returns.ts); anywhere else death is permanent.
    *
    * Host-only. The snapshot carries id, pos, vel, yaw, pitch, health, the
    * lamp and the safe bit, so this never reaches the wire and the codec is
    * untouched.
    */
   deathPos: Vec3 | null;
+  /**
+   * The chase's checkpoint (checkpoint.ts, returns.ts), host-only like
+   * `deathPos`: the enemy that killed this player (0 when none), the ticks
+   * left until a dead player comes back (0 when none is counting), and the
+   * ticks left of the hold after a return, through which nothing kills them.
+   */
+  killedBy: number;
+  returnIn: number;
+  heldFor: number;
 };
 
 export type EnemyState = {
@@ -163,6 +172,18 @@ export type EnemyState = {
    * fingerprint. Null on every enemy that is not a Hollow.
    */
   emergeTo: Vec3 | null;
+  /**
+   * A Hollow that meets a returning player (returns.ts): through its whole
+   * stepping out it walks at them at the stalk's pace, whatever the match's
+   * phase, and its touch kills nobody until it hunts. Host-only.
+   */
+  stalks: boolean;
+  /**
+   * The fork node and the edge a fork's Hollow closed (cut.ts), or -1: what
+   * is made whole again when it is withdrawn or moved (returns.ts). Host-only.
+   */
+  fork: number;
+  forkEdge: number;
 };
 
 export type WorldState = {

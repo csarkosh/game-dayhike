@@ -251,7 +251,7 @@ describe("the end", SUITE, () => {
     expect(w.state.outcome).toBe(Outcome.Won);
   });
 
-  it("is a win with one safe and one dead, and a loss with everyone dead", () => {
+  it("is a win with one safe and one dead, and no loss with everyone dead: in the chase the dead come back", () => {
     const { w, p } = forestWorld();
     const q = spawnPlayer(w);
     const body = w.search!.body.pos;
@@ -270,7 +270,10 @@ describe("the end", SUITE, () => {
     tick(two.w, Math.round(SUMMIT_REVEAL_S / TICK_DT) + 2);
     two.p.health = 0;
     tick(two.w, 1);
-    expect(two.w.state.outcome).toBe(Outcome.Lost);
+    expect(two.w.state.outcome).toBe(Outcome.Playing);
+    tick(two.w, 600);
+    expect(two.w.state.outcome).toBe(Outcome.Playing);
+    expect(two.p.health).toBeGreaterThan(0);
   });
 
   it("does not end on the climb: a player on the pad before the discovery is safe but still out", () => {

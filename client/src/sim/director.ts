@@ -46,7 +46,7 @@ export function spawnEnemy(world: World, at: Vec3): EnemyState {
     routeAt: 0,
     approach: false,
     seen: false,
-    emergeTo: null,
+    emergeTo: null, stalks: false, fork: -1, forkEdge: -1,
   };
   world.state.enemies.set(enemy.id, enemy);
   return enemy;

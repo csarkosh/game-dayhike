@@ -366,7 +366,7 @@ export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: b
     routeAt: 0,
     approach: false,
     seen: false,
-    emergeTo: null,
+    emergeTo: null, stalks: false, fork: -1, forkEdge: -1,
   };
   faceToward(shade, target.pos.x, target.pos.z);
   world.state.enemies.set(shade.id, shade);
@@ -396,8 +396,10 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
     if (target !== undefined && target.health > 0) faceToward(h, target.pos.x, target.pos.z);
     if (h.attackCooldown === 0 && h.stateTimer <= LUNGE_ATTACK_S - LUNGE_ATTACK_HIT_S && !revealing(world)) {
       h.attackCooldown = 1;
-      if (target !== undefined && target.health > 0 && !target.safe && horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_REACH * LUNGE_ATTACK_REACH) {
+      // A player just returned is held: the blow passes them (checkpoint.ts).
+      if (target !== undefined && target.health > 0 && !target.safe && target.heldFor <= 0 && horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_REACH * LUNGE_ATTACK_REACH) {
         target.cause = causeOfDeath(world, target, h, "strike");
+        target.killedBy = h.id;
         target.health = 0;
       }
     }
@@ -431,7 +433,8 @@ export function stepHaunt(world: World, dt: number): void {
     if (isShadeState(e.ai) && stepShade(e, world, dt)) world.state.enemies.delete(id);
   }
   // The reveal is the Hollow's alone: while one is stepping out, the director waits.
-  for (const e of world.state.enemies.values()) if (e.ai === AiState.Emerge) return;
+  // (Not for one stepping out to meet a returning player, returns.ts: that is one player's scene, and the rest are still running.)
+  for (const e of world.state.enemies.values()) if (e.ai === AiState.Emerge && !e.stalks) return;
   if (world.state.outcome !== Outcome.Playing || !isHaunting(world)) {
     record.episode = null;
     return;

@@ -22,7 +22,7 @@ export function windTestPlayer(id: number): PlayerState {
     health: 100,
     grounded: true,
     lastProcessedInput: 0,
-    deathPos: null, cause: 0,
+    deathPos: null, killedBy: 0, returnIn: 0, heldFor: 0, cause: 0,
     lamp: { on: false, charge: 1 },
     stare: 0,
     safe: false,

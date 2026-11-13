@@ -41,7 +41,7 @@ function player(id: number, on: boolean, yaw = 0): PlayerState {
     health: 100,
     grounded: true,
     lastProcessedInput: 0,
-    deathPos: null, cause: 0,
+    deathPos: null, killedBy: 0, returnIn: 0, heldFor: 0, cause: 0,
     lamp: { on, charge: 1 },
     stare: 0,
     safe: false,
@@ -51,7 +51,7 @@ function hollow(id: number, x: number, z: number, yaw = 0): EnemyState {
   return {
     id, pos: { x, y: 0.9, z }, vel: { x: 0, y: 0, z: 0 }, yaw, health: 40, ai: AiState.Stand,
     targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
-    route: [], routeAt: 0, approach: false, seen: false, emergeTo: null,
+    route: [], routeAt: 0, approach: false, seen: false, emergeTo: null, stalks: false, fork: -1, forkEdge: -1,
   };
 }
 function state(...players: PlayerState[]): WorldState {

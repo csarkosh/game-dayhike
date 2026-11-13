@@ -374,7 +374,7 @@ export function stepCuts(world: World): void {
       const far = graph.nodes[e.a === fork ? e.b : e.a] as TrailNode;
       const dx = at.x - node.x, dz = at.z - node.z;
       const mouth = bedPoint(world, node, far, Math.min(FORK_MOUTH_DIST, Math.sqrt(dx * dx + dz * dz)));
-      spawnForkHollow(world, at, mouth, trigger.player.id);
+      spawnForkHollow(world, at, mouth, trigger.player.id, fork, ei);
       record.closed.add(ei);
     }
   }

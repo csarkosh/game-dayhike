@@ -8,7 +8,7 @@ import type { EnemyState, WorldState } from "../../src/sim/types.js";
 function enemy(id: number, ai: AiState): EnemyState {
   return {
     id, pos: { x: 0, y: 1, z: 10 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, health: 100, ai, targetId: 0, stateTimer: 0,
-    attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0, route: [], routeAt: 0, approach: false, seen: false, emergeTo: null,
+    attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0, route: [], routeAt: 0, approach: false, seen: false, emergeTo: null, stalks: false, fork: -1, forkEdge: -1,
   };
 }
 function stateWith(enemies: EnemyState[], phase: Phase = Phase.Climb): WorldState {

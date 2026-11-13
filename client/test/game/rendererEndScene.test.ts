@@ -31,7 +31,7 @@ const nullCanvas = (): HTMLCanvasElement => ({ renderWidth: 1600, renderHeight: 
 function player(x: number, z: number): PlayerState {
   return {
     id: 1, pos: { x, y: 0.9, z }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0, health: 100, grounded: true,
-    lastProcessedInput: 0, deathPos: null, cause: 0, lamp: { on: true, charge: 1 }, stare: 0, safe: true,
+    lastProcessedInput: 0, deathPos: null, killedBy: 0, returnIn: 0, heldFor: 0, cause: 0, lamp: { on: true, charge: 1 }, stare: 0, safe: true,
   };
 }
 

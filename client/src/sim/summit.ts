@@ -11,7 +11,7 @@
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
 import type { PlayerState, Vec3 } from "./types.js";
-import { AiState, Outcome, Phase } from "./types.js";
+import { AiState, Outcome, Phase, cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
 import { isOnCorridor } from "./containment.js";
 import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
@@ -58,15 +58,7 @@ export function gatherParty(world: World, finder: PlayerState): void {
   if (graph === null) return;
   const others = [...world.state.players.values()].filter((p) => p.id !== finder.id && !dead(p)).sort((a, b) => a.id - b.id);
   for (const [k, p] of others.entries()) {
-    const back = stemAhead(graph, finder.pos.x, finder.pos.z, -GATHER_STEP_M * (k + 1));
-    const at = back ?? { x: finder.pos.x, z: finder.pos.z };
-    // Off the stem's line a little, alternating: a file, not a stack.
-    const ahead = stemAhead(graph, at.x, at.z, 1) ?? { x: at.x + 1, z: at.z };
-    const dx = ahead.x - at.x, dz = ahead.z - at.z;
-    const len = Math.sqrt(dx * dx + dz * dz) || 1;
-    const side = k % 2 === 0 ? 1 : -1;
-    const x = at.x - (dz / len) * GATHER_SIDE_M * side;
-    const z = at.z + (dx / len) * GATHER_SIDE_M * side;
+    const { x, z } = fileSpot(world, finder.pos, k);
     const ground = world.ground?.heightAt(x, z) ?? p.pos.y - PLAYER_HALF.y;
     p.pos = { x, y: ground + PLAYER_HALF.y, z };
     p.vel = { x: 0, y: 0, z: 0 };
@@ -75,8 +67,25 @@ export function gatherParty(world: World, finder: PlayerState): void {
   }
 }
 
+/**
+ * The `k`th place (from 0) in the file down the stem behind `finder`: a step
+ * back each, a little to one side, alternating, so a file and not a stack.
+ * The finder's own place where the world has no trail.
+ */
+export function fileSpot(world: World, finder: { x: number; z: number }, k: number): { x: number; z: number } {
+  const graph = world.trail;
+  if (graph === null) return { x: finder.x, z: finder.z };
+  const back = stemAhead(graph, finder.x, finder.z, -GATHER_STEP_M * (k + 1));
+  const at = back ?? { x: finder.x, z: finder.z };
+  const ahead = stemAhead(graph, at.x, at.z, 1) ?? { x: at.x + 1, z: at.z };
+  const dx = ahead.x - at.x, dz = ahead.z - at.z;
+  const len = Math.sqrt(dx * dx + dz * dz) || 1;
+  const side = k % 2 === 0 ? 1 : -1;
+  return { x: at.x - (dz / len) * GATHER_SIDE_M * side, z: at.z + (dx / len) * GATHER_SIDE_M * side };
+}
+
 /** Where the Hollow steps out: SUMMIT_SPAWN_DIST past the body along the line from the finder through it. */
-function emergePoint(world: World, body: Vec3, finderPos: Vec3): Vec3 {
+export function emergePoint(world: World, body: Vec3, finderPos: Vec3): Vec3 {
   let dx = body.x - finderPos.x, dz = body.z - finderPos.z;
   const len = Math.sqrt(dx * dx + dz * dz);
   if (len > 1e-9) { dx /= len; dz /= len; } else { dx = 1; dz = 0; }
@@ -140,6 +149,8 @@ export function stepSummit(world: World): void {
     // The scene is the Hollow's alone: every shade and lunge of the climb goes with the watcher.
     for (const [id, e] of state.enemies) if (isShadeState(e.ai)) state.enemies.delete(id);
     gatherParty(world, who);
+    // Where the party stands now is where a player who dies in the chase comes back (returns.ts).
+    world.crest = { pos: cloneVec3(who.pos), yaw: who.yaw };
     spawnHollow(world, emergePoint(world, search.body.pos, who.pos), who.id, SUMMIT_REVEAL_S);
     world.cut = drawGuide(world);
     return;
@@ -158,5 +169,7 @@ export function stepSummit(world: World): void {
     else out++;
   }
   if (out > 0) return;
-  state.outcome = safe > 0 ? Outcome.Won : Outcome.Lost;
+  // Nobody out and nobody safe is everyone dead: in the chase they come back (checkpoint.ts), so it is not the end.
+  if (safe === 0) return;
+  state.outcome = Outcome.Won;
 }

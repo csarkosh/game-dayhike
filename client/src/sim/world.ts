@@ -1,6 +1,7 @@
 import type { Interactable } from "./interact.js";
 import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "./types.js";
 import { DeathCause, Outcome, Phase, cloneVec3 } from "./types.js";
+import { stepReturns } from "./returns.js";
 import type { Level } from "./level.js";
 import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
@@ -102,6 +103,12 @@ export type World = {
    * other and reaches every peer through the snapshot.
    */
   watcher: WatcherRecord | null;
+  /**
+   * Where the party stood at the find, and how the finder faced (summit.ts):
+   * where a player who dies in the chase comes back (returns.ts). Host only;
+   * null until the find, and for ever on a hand-authored level.
+   */
+  crest: { pos: Vec3; yaw: number } | null;
   /** Explore (`game/gameMode.ts`): no watcher, no haunt, and the summit is
    * never found (summit.ts), so nothing walks out of the woods and the
    * climb never flips. The world's, so every peer runs the same one. */
@@ -121,6 +128,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     search: null,
     trail: null,
     cut: null,
+    crest: null,
     haunt: null,
     watcher: null,
     peaceful: false,
@@ -158,6 +166,7 @@ export function createForestWorld(forest: Forest, authoritative = true, peaceful
     search: null,
     trail: graph ?? null,
     cut: null,
+    crest: null,
     watcher: graph === undefined || !authoritative || peaceful ? null : createWatcherRecord(forest.seed),
     haunt: graph === undefined || !authoritative || peaceful ? null : createHauntRecord(forest.seed),
     peaceful,
@@ -230,6 +239,9 @@ export function spawnPlayer(world: World): PlayerState {
     safe: false,
     cause: DeathCause.None,
     deathPos: null,
+    killedBy: 0,
+    returnIn: 0,
+    heldFor: 0,
   };
   world.state.players.set(id, player);
   return player;
@@ -309,6 +321,8 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
     updateDirector(world);
   }
   updateDeaths(world);
+  // The chase's checkpoint: a death there is counted down and comes back (returns.ts), before the loss is judged.
+  stepReturns(world);
   updateLoss(world);
   // The find and the end last: both are judged on everything the tick has
   // settled, the deaths above included (summit.ts).
@@ -324,9 +338,10 @@ export function isDead(player: PlayerState): boolean {
  * had it revoked by the next snapshot would be far worse than a 100 ms delay
  * before the screen changes, so this never runs during reconciliation replay.
  *
- * Death is permanent. On the tick a player's health first reads 0 the spot
- * is recorded; `deathPos` staying set is what stops this running twice, and
- * nothing anywhere restores health.
+ * On the tick a player's health first reads 0 the spot is recorded;
+ * `deathPos` staying set is what stops this running twice. Death is
+ * permanent but in a forest match's chase, where the dead come back
+ * (returns.ts), the one place health is restored and `deathPos` cleared.
  */
 function updateDeaths(world: World): void {
   for (const player of world.state.players.values()) {

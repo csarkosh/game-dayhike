@@ -21,6 +21,7 @@ import type { TrailGraph, TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
 import { route } from "./trailRoute.js";
 import { causeOfDeath } from "./deathCause.js";
+import { returnsOn } from "./checkpoint.js";
 import { stepMovement } from "./movement.js";
 import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
@@ -120,6 +121,9 @@ export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: n
     approach: false,
     seen: false,
     emergeTo: null,
+    stalks: false,
+    fork: -1,
+    forkEdge: -1,
   };
   world.state.enemies.set(hollow.id, hollow);
   return hollow;
@@ -132,9 +136,12 @@ export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: n
  * once it has been stuck STUCK_SECONDS or has walked FORK_EMERGE_MAX_S: a
  * branch it cannot walk out of is still a Hollow in that branch.
  */
-export function spawnForkHollow(world: World, at: Vec3, mouth: Vec3, targetId: number): EnemyState {
+export function spawnForkHollow(world: World, at: Vec3, mouth: Vec3, targetId: number, fork = -1, edge = -1): EnemyState {
   const hollow = spawnHollow(world, at, targetId, FORK_EMERGE_MAX_S);
   hollow.emergeTo = cloneVec3(mouth);
+  // What it closed, so the fork can be made whole again if it is withdrawn (returns.ts).
+  hollow.fork = fork;
+  hollow.forkEdge = edge;
   return hollow;
 }
 
@@ -421,12 +428,14 @@ function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number):
       // threshold) it walks at them, slowly, the first steps the party sees.
       const target = world.state.players.get(h.targetId);
       if (target !== undefined) {
-        if (world.state.phase === Phase.Scene && h.stateTimer <= HOLLOW_STEP_S) walkToward(h, world, dt, target.pos.x, target.pos.z, HOLLOW_STALK_SPEED);
+        // A returning player's Hollow (returns.ts) walks from its first tick, whatever the phase: the threshold again.
+        if (h.stalks || (world.state.phase === Phase.Scene && h.stateTimer <= HOLLOW_STEP_S)) walkToward(h, world, dt, target.pos.x, target.pos.z, HOLLOW_STALK_SPEED);
         else faceToward(h, target.pos.x, target.pos.z);
       }
       h.stateTimer -= dt;
       if (h.stateTimer <= 0) {
         h.ai = AiState.Hunt;
+        h.stalks = false;
         clearRoute(h);
       }
       return;
@@ -509,11 +518,15 @@ export function updateHollows(world: World): void {
   const held = revealing(world);
   for (const h of hollowsOf(world)) {
     if (h.ai === AiState.Watch || held) continue;
+    // A Hollow stepping out for a returning player touches nobody until it hunts (returns.ts).
+    if (h.stalks && h.ai === AiState.Emerge) continue;
     for (const p of state.players.values()) {
-      if (p.health <= 0 || p.safe) continue;
+      // Nor is a player just returned touched by anything, for the threshold's seconds.
+      if (p.health <= 0 || p.safe || p.heldFor > 0) continue;
       const dy = p.pos.y - h.pos.y;
       if (horizontalDistSq(p.pos, h.pos) <= reach * reach && Math.abs(dy) <= tall) {
         p.cause = causeOfDeath(world, p, h, "contact");
+        p.killedBy = h.id;
         p.health = 0;
       }
     }
@@ -534,7 +547,8 @@ export function updateHollows(world: World): void {
       }
     }
     // In the scene the dark closes a little, slowly, and no further: a minor vignette, a slowed pulse.
-    if (held) p.stare = sees ? Math.min(REVEAL_STARE_CAP, p.stare + fill * 0.5) : Math.max(0, p.stare - empty);
+    // A player just returned is in a scene of their own: the same little, slow closing.
+    if (held || p.heldFor > 0) p.stare = sees ? Math.min(REVEAL_STARE_CAP, p.stare + fill * 0.5) : Math.max(0, p.stare - empty);
     else p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
     // A shade of the haunt (not a Hollow: harmless) in the cone fills the
     // stare too, but only to SHADE_STARE_CAP: the dark closes a little on
@@ -583,6 +597,8 @@ export function updateHollows(world: World): void {
 export function updateLoss(world: World): void {
   const state = world.state;
   if (state.outcome !== Outcome.Playing || state.players.size === 0) return;
+  // The chase's checkpoint: a death there comes back, so nobody alive is not the end (checkpoint.ts).
+  if (returnsOn(world)) return;
   for (const p of state.players.values()) if (p.health > 0) return;
   state.outcome = Outcome.Lost;
 }
