@@ -61,7 +61,7 @@ Hollow before the eyes (the summit scene's reveal), the cap, the body, the car.
 | `body` | within 4 m of the body; in the summit scene, on every screen in the find (the flip comes at the discovery radius, further than a step, so no one need walk up) | once, urgent |
 | `hollow` | the Hollow before the eyes: the summit scene's predator's view, after its howl; terror | once, urgent |
 | `chaseStart` | the chase begins | once, urgent |
-| `chaseOffTrail` | the chase, 8 m off the trail for 4 s | once |
+| `chaseOffTrail` | the chase, 8 m off the way down for 4 s (since 2026-11-13 the lit way, `sim/chaseLine.ts`; the trail before) | once |
 | `safe` | safe at the car | once, urgent |
 
 ## 3. The cap (`game/droppedItem.ts`)
@@ -86,7 +86,10 @@ for whatever makes them. The pools are three a scenario, eighty-one lines since 
 ranger says on coming back from a death in the chase, one pool a cause, `returnOffTrail`,
 `returnStill`, `returnInto`, `returnLooked`, `returnLunge`, `returnCaught`; said on the frame of
 the return whatever the gap, at every return, in place of the chase's opening line; their clips
-are still to be made, so their captions stand alone), so the clips stay small
+are still to be made, so their captions stand alone; and since the way down the same day, the
+chase's lines that named the trail name the light, `chaseStart`'s third, `chaseOffTrail`'s three
+and `returnOffTrail`'s first and third, their four old recordings removed and their captions
+alone until they are made again), so the clips stay small
 (a line of a second or three at the calls' encoding is tens of kilobytes; the set about a
 megabyte) while a once-only scenario still reads differently across three matches and a capped
 one never repeats within one. A clip is fetched the first time its line is said and kept decoded;
