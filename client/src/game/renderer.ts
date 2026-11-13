@@ -41,7 +41,7 @@ import { createShadeVeil } from "./shadeVeil.js";
 import { CLOUD_GROUND_REBUILD_M, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
 import { createWayLight } from "./wayLight.js";
 import { wayDimAt } from "./wayLevel.js";
-import { wayDistance, type WayDown } from "../sim/wayDown.js";
+import { wayDistanceWithin, type WayDown } from "../sim/wayDown.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, capPose, summitShot, type SceneBase, type SceneContext } from "./cutscene.js";
 import { forestDensity } from "../sim/vegetation.js";
@@ -3358,7 +3358,7 @@ function buildRenderer(
           const elevation = (x: number, z: number): number => elevationAt(forest.seed, x, z);
           const over = wayMist ? way : null;
           atmosphere.setCloudGround(
-            over !== null ? cloudGroundMap(elevation, cloudGroundAt.x, cloudGroundAt.z, (x, z) => wayDistance(over, x, z), CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, WAY_MIST_EDGE_M, WAY_MIST_FADE_M)
+            over !== null ? cloudGroundMap(elevation, cloudGroundAt.x, cloudGroundAt.z, (x, z) => wayDistanceWithin(over, x, z, WAY_MIST_FADE_M), CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, WAY_MIST_EDGE_M, WAY_MIST_FADE_M)
               : cloudGroundMap(elevation, cloudGroundAt.x, cloudGroundAt.z, trailAt === undefined ? null : (x, z) => trailAt(forest.seed, x, z)),
           );
         }

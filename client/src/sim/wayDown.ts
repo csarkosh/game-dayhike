@@ -152,6 +152,35 @@ export function wayDistance(way: WayDown, x: number, z: number): number {
   return Math.sqrt(foundD2);
 }
 
+/**
+ * Metres from (x, z) to the way's line where that is `within` metres or
+ * less, Infinity where it is more: only the cells that far can reach are
+ * searched, so a place far from the way costs a few lookups. For a map of
+ * many places most of which are nowhere near it (the mist's, renderer.ts).
+ */
+export function wayDistanceWithin(way: WayDown, x: number, z: number, within: number): number {
+  foundS = 0;
+  foundD2 = Infinity;
+  const count = way.xs.length;
+  if (count === 0) return Infinity;
+  if (count === 1) {
+    const ox = x - (way.xs[0] as number), oz = z - (way.zs[0] as number);
+    foundD2 = ox * ox + oz * oz;
+  } else {
+    const cx = Math.floor(x / CELL_M), cz = Math.floor(z / CELL_M);
+    // A segment within reach has an end within reach and a segment's span, and is listed in that end's cell.
+    const rings = Math.ceil((within + WAY_STEP_M) / CELL_M);
+    for (let j = -rings; j <= rings; j++) {
+      for (let i = -rings; i <= rings; i++) {
+        const list = way.cells.get(cellKey(cx + i, cz + j));
+        if (list === undefined) continue;
+        for (let k = 0; k < list.length; k++) trySegment(way, list[k] as number, x, z);
+      }
+    }
+  }
+  return foundD2 <= within * within ? Math.sqrt(foundD2) : Infinity;
+}
+
 /** The index of the segment `s` metres along lies in: the last i with cum[i] <= s, kept inside the way. */
 function segmentAt(way: WayDown, s: number): number {
   const last = way.xs.length - 2;

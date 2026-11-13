@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WAY_FLOOR_M, WAY_RIM_M, WAY_STEP_M, makeWay, wayDirection, wayDistance, wayPoint, wayProject } from "../../src/sim/wayDown.js";
+import { WAY_FLOOR_M, WAY_RIM_M, WAY_STEP_M, makeWay, wayDirection, wayDistance, wayDistanceWithin, wayPoint, wayProject } from "../../src/sim/wayDown.js";
 
 describe("the way down's geometry", () => {
   // An L: 100 m along +x, then 60 m along +z.
@@ -43,6 +43,22 @@ describe("the way down's geometry", () => {
     expect(wayPoint(L, 999, { x: 0, z: 0 }).z).toBeCloseTo(60, 3);
     expect(wayPoint(L, -5, { x: 9, z: 9 })).toEqual({ x: 0, z: 0 });
     expect(wayDirection(L, 10, { x: 0, z: 0 }).x).toBeCloseTo(1, 3);
+  });
+
+  it("asked only whether a place is within a few metres, answers from the cells beside it and says Infinity past that", () => {
+    expect(wayDistanceWithin(L, 50, 3, 5.5)).toBeCloseTo(3, 4);
+    expect(wayDistanceWithin(L, 104, 30, 5.5)).toBeCloseTo(4, 4);
+    expect(wayDistanceWithin(L, 50, 5.5, 5.5)).toBeCloseTo(5.5, 4);
+    expect(wayDistanceWithin(L, 50, 9, 5.5)).toBe(Infinity);
+    expect(wayDistanceWithin(L, 50, 400, 5.5)).toBe(Infinity);
+    // Never a wrong "near": every place the whole search calls within the limit, this one does too.
+    for (let x = -20; x <= 120; x += 7) {
+      for (let z = -20; z <= 80; z += 7) {
+        const whole = wayDistance(L, x, z), near = wayDistanceWithin(L, x, z, 5.5);
+        if (whole <= 5.5) expect(near).toBeCloseTo(whole, 5);
+        else expect(near).toBe(Infinity);
+      }
+    }
   });
 
   it("a way of one point has no length and is still a place", () => {
