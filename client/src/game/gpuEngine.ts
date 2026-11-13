@@ -78,6 +78,7 @@ import {
   type ShaderLookupMode,
 } from "./engineChoice.js";
 import { heldOn, installPipelines, leftOutOn } from "./asyncPipelines.js";
+import { createEffectTurns, spaceEffects } from "./effectTurns.js";
 import { pinPluginNumbers } from "./pluginNumbers.js";
 import type { QualityTier } from "./quality.js";
 import { defaultSources, effectNamedIn, labelShaderModules, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
@@ -304,7 +305,8 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
  * Once it stands, its render pipelines are made as `pipelines` says
  * (`installPipelines`, `?pipelines=`): by default asynchronously, a draw left
  * out until its pipeline lands, inside the scope its renderer opens
- * (`asyncPipelines.ts`). With `timing` (`?gpuTime`) and `timestamp-query`
+ * (`asyncPipelines.ts`), and its PBR effects are processed one a page task
+ * (`effectTurns.ts`). With `timing` (`?gpuTime`) and `timestamp-query`
  * among `features`, Babylon's GPU timing is switched on right after the
  * device comes, so every render target made later has its counter.
  * Rejects on any failure, or when `ms` pass first (with `WebGpuStartTimeout`,
@@ -388,6 +390,16 @@ export async function createWebGpuEngine(
     // On this engine's own cache and draw, which `initAsync` made; a draw is
     // left out only inside the scope its renderer opens.
     installPipelines(engine, options.pipelines ?? "async");
+    // One effect a page task (`effectTurns.ts`): a PBR material's effect is
+    // processed in a task of its own, not in the frame that first draws it
+    // with several others, so its shader modules reach the browser's GPU
+    // thread a batch each. Let go, all of them, when the engine goes.
+    const turns = createEffectTurns();
+    const unspace = spaceEffects(engine, turns);
+    engine.onDisposeObservable.addOnce(() => {
+      unspace();
+      turns.dispose();
+    });
     // Babylon's WebGPU fast path: bind groups and vertex state re-set only
     // when they change between draws, not on every draw (5 to 10 ms a frame
     // on the rig, 2026-10-23). Safe only with every buffer swap resetting the

@@ -874,9 +874,12 @@ What still holds the thread 60 ms and more, four to seven tasks a start, in thos
 | A batch with no call of 1.5 ms in it | 62 to 108 ms | 5 to 11 s after Play | none in these runs (one of 86 ms dropped two frames in the first trace) |
 
 The modules are 1.5 to 1.7 s of the thread's time a start, 109 to 117 of them. The several in
-one task are the page making several effects back to back: beside each such task the page's
-frames are three to five continuations of 13 to 23 ms, each an effect made as its shader
-arrived, with no task between them, so their modules reach the GPU thread as one batch. Three
+one task are a frame's: each of the four such tasks in the three traces begins as a frame of 50
+to 104 ms ends on the page, a frame that first drew several PBR materials whose shader was
+already imported, so each made its effect inside the draw and their modules left with the
+frame's commands as one batch. The effects that wait for their shader's import, 21 to 25 a
+start, are each processed in a task of their own when it comes, and each is a batch of one
+module on the GPU thread (20 to 80 ms): none of those dropped three frames. Three
 more first visits, untraced, judged against the intro's bar: no page stop over a quarter of a
 second in any; one inside every limit; one whose film was 0.31 s behind the tap after its first
 second (the limit is 0.3 s); one whose picture skipped 0.12 s, three frames, 0.1 s before the
@@ -884,6 +887,20 @@ world was ready, where the traced runs show the modules' batch. So the bar is no
 change: the hold it removes was one of three kinds that drop frames, and the two left are the
 engine's start and the modules made together. On the high tier the rain's height map, another
 target drawn once, still makes five to eight pipelines synchronously in the first frame.
+
+**One PBR effect a page task.** On WebGPU a PBR material's effect is no longer processed in the
+call that makes it: the engine's `createEffect` gives it a wait, its turn in a queue that lets
+one effect go a page task (`effectTurns.ts`, on the engine's own instance), after its shader's
+import where it has one to wait for. A frame that first draws four materials asks for four
+effects and draws on, each material with the effect it had (Babylon keeps a material's
+previous effect until the new one is ready) or left out as a material new to the page already
+was, and the four are processed in the four tasks after the frame, their modules a batch each.
+Nothing is made that was not, or not made that was; an effect of any other name (the sky dome,
+a post-process) is ready as soon as it was. In Chrome on the M-series Mac, both tiers, the
+page's own calls show 68 to 69 of a start's 70 or 71 PBR fragment modules made in a task of
+the queue's and no two in one task or one frame, where a frame made six before; the two left
+are Babylon's own second processing of an effect whose mesh has a vertex buffer that is not
+floats, made in the draw, one a frame.
 
 Not settled, and not measured:
 
