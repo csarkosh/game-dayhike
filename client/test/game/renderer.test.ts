@@ -1202,7 +1202,9 @@ describe("world shell wiring", () => {
     // The patches before the clipmap in each, so a set built at once is the
     // one the rings' rebuild in the same frame reads.
     expect(freecamBranch).toContain("facePatches?.update(freecam.x, freecam.z);\n        clipmap?.update(freecam.x, freecam.z);");
-    expect(playerBranch).toContain("facePatches?.update(local.pos.x, local.pos.z);\n        clipmap?.update(local.pos.x, local.pos.z);");
+    expect(playerBranch).toContain("facePatches?.update(centre.x, centre.z);\n        clipmap?.update(centre.x, centre.z);");
+    // What the world is built round: the player, or the runner an end scene on another's run shows.
+    expect(playerBranch).toContain("const centre = shown !== undefined ? shown.pos : local.pos;");
     expect(freecamBranch.match(/jobs\.run\(\)/g)).toHaveLength(1);
     expect(playerBranch.match(/jobs\.run\(\)/g)).toHaveLength(1);
     // After every shell's update in each branch.
@@ -1223,7 +1225,7 @@ describe("world shell wiring", () => {
     expect(freecamBranch.match(/duffMeshes\?\.update\(/g)).toHaveLength(1);
     expect(playerBranch.match(/duffMeshes\?\.update\(/g)).toHaveLength(1);
     expect(freecamBranch).toContain("bladeMeshes?.update(freecam.x, freecam.z);\n        duffMeshes?.update(freecam.x, freecam.z);");
-    expect(playerBranch).toContain("bladeMeshes?.update(local.pos.x, local.pos.z);\n        duffMeshes?.update(local.pos.x, local.pos.z);");
+    expect(playerBranch).toContain("bladeMeshes?.update(centre.x, centre.z);\n        duffMeshes?.update(centre.x, centre.z);");
     expect(src.match(/duffMeshes\?\.dispose\(\)/g)).toHaveLength(1);
   });
 
@@ -1266,7 +1268,7 @@ describe("world shell wiring", () => {
     expect(freecamBranch.match(/cliffMeshes\?\.update\(/g)).toHaveLength(1);
     expect(playerBranch.match(/cliffMeshes\?\.update\(/g)).toHaveLength(1);
     expect(freecamBranch).toContain("forestMeshes?.update(freecam.x, freecam.z);\n        cliffMeshes?.update(freecam.x, freecam.z);");
-    expect(playerBranch).toContain("forestMeshes?.update(local.pos.x, local.pos.z);\n        cliffMeshes?.update(local.pos.x, local.pos.z);");
+    expect(playerBranch).toContain("forestMeshes?.update(centre.x, centre.z);\n        cliffMeshes?.update(centre.x, centre.z);");
     expect(src.match(/cliffMeshes\?\.dispose\(\)/g)).toHaveLength(1);
   });
 
@@ -1436,7 +1438,7 @@ describe("world shell wiring", () => {
     expect(freecamBranch.match(/water\?\.update\(/g)).toHaveLength(1);
     expect(playerBranch.match(/water\?\.update\(/g)).toHaveLength(1);
     expect(freecamBranch).toContain("water?.update(freecam.x, freecam.z, oceanSeconds, lighting.hour);");
-    expect(playerBranch).toContain("water?.update(local.pos.x, local.pos.z, oceanSeconds, lighting.hour);");
+    expect(playerBranch).toContain("water?.update(centre.x, centre.z, oceanSeconds, lighting.hour);");
     // The declaration, the wind, the two water updates and the lake's life's
     // two: nothing else in the frame moves clock.
     expect(syncBlock.match(/oceanSeconds/g)).toHaveLength(6);
