@@ -92,7 +92,8 @@ describe("the renderer and the app", () => {
   it("the renderer feeds the mist's ground map the way in place of the trail while the light is up", () => {
     expect(renderer).toContain("const wayMist = way !== null && wayLevel > 0;");
     expect(renderer).toContain("const over = wayMist ? way : null;");
-    expect(renderer).toContain("(x, z) => wayDistance(over, x, z), CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, WAY_MIST_EDGE_M, WAY_MIST_FADE_M)");
+    // Only as far as the mist's fade reaches: 4,096 places a rebuild, most of them far from the way.
+    expect(renderer).toContain("(x, z) => wayDistanceWithin(over, x, z, WAY_MIST_FADE_M), CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, WAY_MIST_EDGE_M, WAY_MIST_FADE_M)");
   });
 
   it("the app gives every renderer the world's way, and the level every frame", () => {
@@ -102,5 +103,10 @@ describe("the renderer and the app", () => {
     expect(renderer).not.toContain("createWayLight(scene, postFeatures.colourPath, (x, z) => elevationAt");
     expect(app).toContain("renderer.setWayLevel(wayShown);");
     expect(app).toContain("wayShown = wayHeld ?? wayLevelFor(world, sceneInto, wayShown, dt);");
+  });
+
+  it("the app reports the way once it is settled: its length, its straight line and whether it is the fallback", () => {
+    expect(app).toContain('telemetry.event("way", { length: Math.round(way.length), straight: Math.round(way.straight), fallback: way.fallback, tick: world.state.tick });');
+    expect(app.match(/telemetry\.event\("way"/g)).toHaveLength(1);
   });
 });

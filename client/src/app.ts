@@ -593,6 +593,7 @@ function buildGame(
   let wayHeld: number | null = null;
   let wayGivenTo: Renderer | null = null;
   let wayGiven: World["way"] = null;
+  let wayReported = false;
   /** The explore day's clock (exploreDay.ts): seconds since the hike began, on a calm world. */
   let exploreClockS = 0;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
@@ -1140,6 +1141,12 @@ function buildGame(
       const ground = world.ground;
       if (ground === null) renderer.setWay(null, () => 0);
       else renderer.setWay(world.way, (x, z) => ground.heightAt(x, z));
+      // The way, once, as it settles: a fallback to the trail's stem, or a way longer than it should be, is a world to look at.
+      const way = world.way;
+      if (way !== null && !wayReported && telemetry !== null) {
+        wayReported = true;
+        telemetry.event("way", { length: Math.round(way.length), straight: Math.round(way.straight), fallback: way.fallback, tick: world.state.tick });
+      }
       wayGivenTo = renderer;
       wayGiven = world.way;
     }
