@@ -4,14 +4,17 @@ import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "../../src/sim/terrain.js";
-import { AiState, Button, Outcome, Phase } from "../../src/sim/types.js";
+import { AiState, Button, DeathCause, Outcome, Phase } from "../../src/sim/types.js";
 import { TICK_DT } from "../../src/sim/constants.js";
-import { stemAhead, stemNodes } from "../../src/sim/trailRoute.js";
+import { stemNodes } from "../../src/sim/trailRoute.js";
 /** The threshold's run (game/cutscene.ts: the last shot less its look and turn): the seconds the scene has the player sprinting before the hunt. */
 const SCENE_RUN_S = 1.8;
 import { DISCOVERY_RADIUS } from "../../src/sim/summit.js";
 import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
-import { wayPoint } from "../../src/sim/wayDown.js";
+import { WAY_RIM_M } from "../../src/sim/wayDown.js";
+import { wayOf } from "../../src/sim/wayDraw.js";
+import { chaseLinePoint } from "../../src/sim/chaseLine.js";
+import { runDown } from "./helpers/wayRunner.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { WATCH_SALT } from "../../src/sim/watcher.js";
 import { escalationTargets } from "../../src/game/escalation.js";
@@ -129,7 +132,10 @@ describe("one run on the seed `hollow`", SUITE, () => {
     // Through the scene: its last seconds are the threshold (the summit scene), the Hollow walking
     // at the player, who by then has turned and sprints down the stem before the controls are
     // theirs (app.ts drives it); the same here, or the stand ends on top of a player standing still.
-    const down = stemAhead(graph, p.pos.x, p.pos.z, -8)!;
+    // The way down is long drawn by the find in a match (app.ts steps its draw from ten seconds in): the same here,
+    // and the threshold's run is down it, as app.ts's `wayDownFrom` turns the eye.
+    wayOf(w);
+    const down = chaseLinePoint(w, p.pos.x, p.pos.z, 8, { x: 0, z: 0 })!;
     const runYaw = Math.atan2(down.x - p.pos.x, down.z - p.pos.z);
     const sceneTicks = Math.round(SUMMIT_REVEAL_S / TICK_DT) + 1;
     const runTicks = Math.round(SCENE_RUN_S / TICK_DT);
@@ -140,32 +146,30 @@ describe("one run on the seed `hollow`", SUITE, () => {
     expect(h.ai).toBe(AiState.Hunt);
     expect(h.targetId).toBe(p.id);
 
-    // Down the way (wayDown.ts), a place every 12 m, a tick at each: the player is prey the whole way down, the
-    // crest's Hollow is the only one (no fork raises another), and it never stands on the corridor.
+    // Down the way (wayDown.ts) with real input, as a player who stays in the channel and sprints (wayRunner.ts):
+    // prey the whole way, the crest's Hollow the only one (no fork raises another), never on the corridor, and
+    // never nearer than a few strides: a sprint outruns it.
     const way = w.way!;
     expect(way.fallback).toBe(false);
-    const place = (x: number, z: number) => { p.pos = { x, y: elevationAt(seed, x, z) + 0.9, z }; };
-    const spot = { x: 0, z: 0 };
-    let stops = 0;
-    for (let s = 24; s < way.length; s += 12) {
-      wayPoint(way, s, spot);
-      // The road's corridor is the end: the last strides of the way are inside it.
-      if (isOnCorridor(w, spot.x, spot.z)) break;
-      place(spot.x, spot.z);
-      tickWorld(w, new Map());
-      stops++;
-      const where = `${s} m down the way`;
-      expect(p.health, where).toBe(100);
-      expect(p.safe, where).toBe(false);
-      expect(w.state.enemies.size, where).toBe(1);
-      for (const e of w.state.enemies.values()) expect(isOnCorridor(w, e.pos.x, e.pos.z), where).toBe(false);
-    }
-    expect(stops).toBeGreaterThan(40);
-    expect(h.ai).toBe(AiState.Hunt);
-    expect(h.targetId).toBe(p.id);
-    // Home: the pad is on the corridor.
-    at(0);
-    tickWorld(w, new Map());
+    let nearest = Infinity, mostHollows = 0;
+    const run = runDown(w, p.id, {
+      each: () => {
+        mostHollows = Math.max(mostHollows, w.state.enemies.size);
+        // Hunted until the road: a player on its safe ground is nobody's prey.
+        if (!p.safe) expect(h.targetId).toBe(p.id);
+        for (const e of w.state.enemies.values()) {
+          expect(isOnCorridor(w, e.pos.x, e.pos.z)).toBe(false);
+          nearest = Math.min(nearest, Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z));
+        }
+      },
+    });
+    expect(run.cause).toBe(DeathCause.None);
+    expect(run.reached).toBe(true);
+    expect(run.stalledS).toBeLessThan(3);
+    expect(run.maxOff).toBeLessThan(WAY_RIM_M);
+    expect(mostHollows).toBe(1);
+    expect(nearest).toBeGreaterThan(3);
+    // The road ends the match: won on the tick the runner is safe.
     expect(p.safe).toBe(true);
     expect(w.state.outcome).toBe(Outcome.Won);
     expect(p.health).toBeGreaterThan(0);
