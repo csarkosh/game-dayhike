@@ -903,10 +903,10 @@ says it is ready while its new one waits, so what waits for a scene to be ready 
 world-ready, a tier switch's cover) also waits for the queue to be empty, and the film's car,
 drawn wherever it stands for its first thirty frames, does not count a frame drawn while the
 queue is not. In Chrome on the M-series Mac, both tiers, the
-page's own calls show 68 to 69 of a start's 70 or 71 PBR fragment modules made in a task of
-the queue's and no two in one task or one frame, where a frame made six before; the two left
-are Babylon's own second processing of an effect whose mesh has a vertex buffer that is not
-floats, made in the draw, one a frame.
+page's own calls show 66 to 69 of a start's 70 or 71 PBR fragment modules made in a task of
+the queue's and no two in one task or one frame, where a frame made six before; the two to
+four left are Babylon's own second processing of an effect whose mesh has a vertex buffer
+that is not floats, made in the draw, one a frame.
 
 **Babylon's own two pipelines, off the engine's start.** Babylon's WebGPU texture manager makes
 two pipelines synchronously as it is constructed, inside the engine's start: the one that
@@ -924,6 +924,35 @@ all; with the asynchronous creation refused, Babylon made its own at that first 
 the two pictures of the same world are the same. The mipmap pipelines of two more formats
 (`rgba8unorm-srgb`, `rgba16float`) are still Babylon's, made synchronously when first wanted:
 6 ms each on the phone.
+
+**The phone, with both.** Six traced first visits started cool (2026-11-12, three on each of
+two builds: the second adds what the queue does about a disposed engine or effect and about
+readiness) and six untraced:
+
+| | Before | With both |
+|---|---|---|
+| Tasks of two or more PBR fragment modules on the GPU thread | four in three traces, 67 to 120 ms | none in six traces |
+| Babylon's two pipelines as the engine starts | 155 and 171 ms in two traces of three | not there; a `Queue::Submit` of 53 to 57 ms at that moment in three traces, 133 ms in one |
+| Synchronous pipelines a start | five, 150 ms and more together in two traces of three | three, 20 to 32 ms together |
+| The film's worst skip, traced | two frames; three once, in the build before | two frames (0.083 s) in three traces of six, none in three |
+| Untraced runs inside every limit | one of three | six of six |
+| The film behind the tap after its first second, untraced | 0.26 to 0.31 s | 0.25 to 0.28 s |
+| The picture's worst skip, untraced | 0.12 s | 0.08 s, once in six runs; none in five |
+| Frames of 100 ms and more on the page, Play to the film's end | 16 to 24 | 7 to 18 |
+| World ready after Play | 12.7 to 16.6 s | 14.1 to 16.4 s |
+
+So the intro's bar is met on this phone: three cool first visits in a row inside every limit,
+on each build. What still holds the GPU thread 60 ms and more is three or four tasks a start:
+batches with no call of 1.5 ms in them (60 to 117 ms, 5 to 11 s after Play), a first PBR
+fragment module in a task of its own (up to 71 ms, once 112 ms with 39 ms of other work), and
+that first `Queue::Submit`. None dropped three frames; the 133 ms submit dropped two. The
+traces could seldom be laid on the page's clock (two of six): the page now has too few long
+frames for the report to line the two up, so a skip there is listed without its hold. Two
+traced runs touched a limit, which the trace's own cost on the page makes likelier: one film
+0.30 s behind the tap, and one page stop of 0.25 s. That stop is the longest of most runs,
+traced or not and before this change as after it: one timer's task of 0.17 to 0.25 s, four to
+six seconds after Play, 3 ms inside the limit in one untraced run. It is the thinnest margin
+left on the bar.
 
 Not settled, and not measured:
 

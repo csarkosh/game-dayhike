@@ -361,11 +361,19 @@ and a later hike in the same session makes its own, with the file by then in the
      first frame; it is now asked for asynchronously as the sky is first applied, and three
      traced starts on the phone hold no such pipeline and drop no three frames at once
      (`docs/rendering/2026-09-26-webgpu-high-tier-verification.md`, §9).
-     Two kinds of hold are left that drop frames: the engine's own two pipelines as it starts
+     Two more kinds of hold dropped frames then: the engine's own two pipelines as it starts
      (two frames, half a second to a second after Play) and several shader modules made in one
-     batch just before the world is ready (two frames in the traced starts, three in one of
-     three untraced ones, which is outside the limit). Of three untraced first visits started
-     cool one is inside every limit; none has a page stop over a quarter of a second.
+     batch by a frame that first drew several materials (two frames in the traced starts, three
+     in one of three untraced ones, which is outside the limit); of three untraced first visits
+     started cool one was inside every limit. Both are answered (2026-11-12): a PBR effect is
+     processed in a page task of its own, and the engine's two pipelines are not made as it
+     starts (the same §9). Six untraced first visits started cool on the phone, three on each
+     of two builds of it, are all inside every limit: the film 0.25 to 0.28 s behind the tap
+     after its first second, its picture skipping two frames (0.08 s) once in the six and
+     never three, no page stop over a quarter of a second, the world ready 14.1 to 15.7 s
+     after Play. The margin on the page's side is thin: the longest stop of most runs is one
+     timer's task of 0.17 to 0.25 s, four to six seconds after Play, and under Chrome's trace,
+     which slows the page, it reached 0.25 s in one run of six.
    - Still whole: what is left of the build (`buildGame` is one task: the renderer and its
      materials, the meshes made from what came sampled, the session).
 5. Ready: the scene is ready, nothing is in flight, the forest's billboards are baked, a frame
