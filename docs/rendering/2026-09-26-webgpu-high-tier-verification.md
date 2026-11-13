@@ -902,6 +902,23 @@ the queue's and no two in one task or one frame, where a frame made six before; 
 are Babylon's own second processing of an effect whose mesh has a vertex buffer that is not
 floats, made in the draw, one a frame.
 
+**Babylon's own two pipelines, off the engine's start.** Babylon's WebGPU texture manager makes
+two pipelines synchronously as it is constructed, inside the engine's start: the one that
+copies a video's frame to a texture and the one that makes mipmaps (in the three traces 25 to
+85 ms and 10 to 110 ms on the GPU thread, the task they share 155 and 171 ms in two). The
+game has no video texture, so the first is no longer made at the start: Babylon makes it the
+first time one is asked for, which here is never. The second is asked for with
+`createRenderPipelineAsync` as soon as the engine has started, from the descriptor Babylon
+itself builds, and stored where Babylon looks for it (`enginePipelines.ts`); the start does
+not wait for it, and a mipmap wanted before it lands makes Babylon's synchronous one, as
+before, which is then the one kept. In Chrome on the M-series Mac the page's own calls show
+the mipmap pipeline asked for asynchronously once and landed 1.3 ms later, 1.4 s before the
+first mipmap wanted it, no synchronous one of its name, and no video pipeline or module at
+all; with the asynchronous creation refused, Babylon made its own at that first mipmap, and
+the two pictures of the same world are the same. The mipmap pipelines of two more formats
+(`rgba8unorm-srgb`, `rgba16float`) are still Babylon's, made synchronously when first wanted:
+6 ms each on the phone.
+
 Not settled, and not measured:
 
 - **The night forest's second pass**, 17.3 to 17.5 ms on WebGPU where WebGL2

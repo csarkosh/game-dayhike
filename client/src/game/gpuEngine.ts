@@ -35,6 +35,7 @@ import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.texture.js";
 import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.loadFile.js";
 import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.textureLoaders.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
+import { WebGPUTextureManager } from "@babylonjs/core/Engines/WebGPU/webgpuTextureManager.js";
 import { keyEveryBoundBuffer } from "./webgpuVertexBuffer.js";
 import { resetDrawsOnBufferSwap } from "./webgpuDrawCache.js";
 import { Geometry } from "@babylonjs/core/Meshes/geometry.js";
@@ -79,6 +80,7 @@ import {
 } from "./engineChoice.js";
 import { heldOn, installPipelines, leftOutOn } from "./asyncPipelines.js";
 import { createEffectTurns, spaceEffects } from "./effectTurns.js";
+import { mipmapPipelineAhead, withoutEagerPipelines } from "./enginePipelines.js";
 import { pinPluginNumbers } from "./pluginNumbers.js";
 import type { QualityTier } from "./quality.js";
 import { defaultSources, effectNamedIn, labelShaderModules, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
@@ -306,7 +308,9 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
  * (`installPipelines`, `?pipelines=`): by default asynchronously, a draw left
  * out until its pipeline lands, inside the scope its renderer opens
  * (`asyncPipelines.ts`), and its PBR effects are processed one a page task
- * (`effectTurns.ts`). With `timing` (`?gpuTime`) and `timestamp-query`
+ * (`effectTurns.ts`). Babylon's own two pipelines are not made as it
+ * starts: the mipmaps' is asked for asynchronously, the video copy's never
+ * (`enginePipelines.ts`). With `timing` (`?gpuTime`) and `timestamp-query`
  * among `features`, Babylon's GPU timing is switched on right after the
  * device comes, so every render target made later has its counter.
  * Rejects on any failure, or when `ms` pass first (with `WebGpuStartTimeout`,
@@ -375,7 +379,17 @@ export async function createWebGpuEngine(
     catchTranslationFailures(engine);
     // The started translators, as Babylon's options take them: glslang as a
     // promise (its setup waits on it), twgsl as the instance. No path to load.
-    await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });
+    // Babylon's texture manager, made in there, makes two pipelines
+    // synchronously as it is constructed; here it makes neither
+    // (`enginePipelines.ts`). The video copy's is left to the first video
+    // texture, which the game has none of; the mipmaps' is asked for
+    // asynchronously right after, and the start does not wait for it: a
+    // mipmap wanted before it lands makes Babylon's own, as it always did.
+    await withoutEagerPipelines(WebGPUTextureManager, () =>
+      engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl }),
+    );
+    const started = engine as unknown as { _device: GPUDevice; _textureHelper: object };
+    void mipmapPipelineAhead(started._device, started._textureHelper);
     // On before any scene or render target exists: Babylon gives a render
     // target a GPU-time counter only if it is made while this is on
     // (`webgpuRenderTargetWrapper.js`).

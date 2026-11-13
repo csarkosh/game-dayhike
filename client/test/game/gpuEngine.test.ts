@@ -146,7 +146,8 @@ describe("watchWebGpu", () => {
 
   it("makes every WebGPU engine with Babylon's restore given up (the source of the one maker)", () => {
     const src = readFileSync(new URL("../../src/game/gpuEngine.ts", import.meta.url), "utf8");
-    const start = src.slice(src.indexOf("  const start = async (): Promise<WebGPUEngine> => {"), src.indexOf("    await engine.initAsync("));
+    const start = src.slice(src.indexOf("  const start = async (): Promise<WebGPUEngine> => {"), src.indexOf("    await withoutEagerPipelines("));
+    expect(start.length).toBeGreaterThan(0);
     expect(start).toContain("    giveUpRestore(engine);");
   });
 
@@ -351,7 +352,11 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     // The translators handed to Babylon and started, and the sources in,
     // before the engine is handed over: no preparation then waits.
     expect(start).toContain(
-      "    await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });\n" +
+      "    await withoutEagerPipelines(WebGPUTextureManager, () =>\n" +
+        "      engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl }),\n" +
+        "    );\n" +
+        "    const started = engine as unknown as { _device: GPUDevice; _textureHelper: object };\n" +
+        "    void mipmapPipelineAhead(started._device, started._textureHelper);\n" +
         "    // On before any scene or render target exists: Babylon gives a render\n" +
         "    // target a GPU-time counter only if it is made while this is on\n" +
         "    // (`webgpuRenderTargetWrapper.js`).\n" +
