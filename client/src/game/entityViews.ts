@@ -651,6 +651,19 @@ export class EntityViews {
     return view;
   }
 
+  private readonly drawn = { x: 0, y: 0, z: 0 };
+  /** Where player `id`'s body is drawn this frame: between its last two places, at its feet. Null for a player with no body drawn. One reused object. */
+  drawnAt(id: number): { x: number; y: number; z: number } | null {
+    // A model stands on its origin; the capsule that stands in for one is placed by its middle.
+    const model = this.playerModels.get(id)?.view.node;
+    const node = model ?? this.players.get(id)?.node;
+    if (node === undefined) return null;
+    this.drawn.x = node.position.x;
+    this.drawn.y = model !== undefined ? node.position.y : node.position.y - PLAYER_HALF.y;
+    this.drawn.z = node.position.z;
+    return this.drawn;
+  }
+
   private advance(view: View, x: number, y: number, z: number, alpha: number): void {
     if (view.target.x !== x || view.target.y !== y || view.target.z !== z) {
       view.previous.copyFrom(view.target);

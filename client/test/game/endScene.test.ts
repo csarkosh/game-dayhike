@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   HEADLAMP_INTENSITY,
+  endSceneRunner,
   arrived, carDistance, carHeard, carSpeed, endBeats, endCar, endShot, endShotIndex, endMistShare, headlampAt, laneAt, releaseAt, roadRelease,
   type EndShotContext, type LampAim,
 } from "../../src/game/endScene.js";
@@ -213,5 +215,51 @@ describe("the arrival and the beats", () => {
     expect(endBeats(16.5, 1)).toEqual({ title: true, fade: true, landing: false, pullAway: true });
     expect(endBeats(21.5, 1)).toEqual({ title: true, fade: true, landing: true, pullAway: true });
     expect(endBeats(21.4, 1)).toEqual({ title: true, fade: true, landing: false, pullAway: true });
+  });
+});
+
+describe("whose run the end scene shows", () => {
+  const p = (id: number, safe: boolean, health = 100) => ({ id, safe, health });
+
+  it("is this screen's own player's when they are alive at the road", () => {
+    expect(endSceneRunner(2, [p(1, true), p(2, true), p(3, false)])).toEqual({ id: 2, own: true });
+  });
+
+  it("is the player who reached the road, for a screen whose own is still out on the mountain", () => {
+    expect(endSceneRunner(3, [p(1, false), p(2, true), p(3, false)])).toEqual({ id: 2, own: false });
+  });
+
+  it("is the lowest id of two who reached it on one tick", () => {
+    expect(endSceneRunner(9, [p(5, true), p(4, true), p(9, false)])).toEqual({ id: 4, own: false });
+  });
+
+  it("is another's for a screen whose own player is dead, at the road or not", () => {
+    expect(endSceneRunner(1, [p(1, true, 0), p(2, true)])).toEqual({ id: 2, own: false });
+    expect(endSceneRunner(1, [p(1, false, 0), p(2, true)])).toEqual({ id: 2, own: false });
+  });
+
+  it("is the screen's own where nobody alive is at the road: a win called by hand", () => {
+    expect(endSceneRunner(1, [p(1, false), p(2, false)])).toEqual({ id: 1, own: true });
+    expect(endSceneRunner(1, [])).toEqual({ id: 1, own: true });
+  });
+});
+
+describe("the end scene on another player's run", () => {
+  it("is stepped on the runner the setup names, drawn where their body is, with this screen's own body left out", () => {
+    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
+    expect(renderer).toContain("if (endRun !== null) stepEndScene(endRun, endRunner(endRun, state, local), seconds);");
+    expect(renderer).toContain("views.showLocal = ctx.arrival === null && e.setup.runner === undefined;");
+  });
+
+  it("lets the `escape` look win as a match does: its player, stood at the car by hand, counts as one who was out", () => {
+    const app = readFileSync(new URL("../../src/app.ts", import.meta.url), "utf8");
+    const at = app.indexOf("escapeStep = () => {");
+    expect(app.slice(at, app.indexOf("wasChase = true;", at))).toContain("me.out = true;");
+  });
+
+  it("stills this screen's own ranger, who is not the one running", () => {
+    const app = readFileSync(new URL("../../src/app.ts", import.meta.url), "utf8");
+    expect(app).toContain("if (!endRunOwn) return { ...cmd, moveX: 0, moveZ: 0, buttons: 0 };");
+    expect(app).toContain("const won = state.outcome === Outcome.Won;");
   });
 });

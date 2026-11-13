@@ -1639,6 +1639,8 @@ export type EndSceneSetup = {
   road: Road;
   door: { x: number; z: number };
   car: () => TrailheadCar | null;
+  /** The player whose run the scene shows, where it is not this screen's own (endScene.ts `endSceneRunner`): another's, who reached the car. */
+  runner?: number;
 };
 
 /** The end scene this frame, for app.ts: seconds since it began, the arrival (or none yet), the shot, and the car's pose and speed. */
@@ -2351,6 +2353,24 @@ function buildRenderer(
    * (its parts where it has them, else moved whole), and from the catch the
    * headlamp's place at the car's nose as posed this frame and the tail lamps lit.
    */
+  /** The pose a runner of another screen is read into, reused. */
+  const otherRunner = { pos: { x: 0, y: 0, z: 0 }, yaw: 0 };
+  /**
+   * Whose run the end scene is stepped on: this screen's own player, or the
+   * one the setup names (who reached the car), where their body is drawn
+   * this frame, between snapshots, so the camera follows it smoothly.
+   */
+  function endRunner(e: NonNullable<typeof endRun>, state: WorldState, local: { pos: Vec3; yaw: number }): { pos: Vec3; yaw: number } {
+    const id = e.setup.runner;
+    const other = id === undefined ? undefined : state.players.get(id);
+    if (id === undefined || other === undefined) return local;
+    const drawn = views.drawnAt(id);
+    otherRunner.pos.x = drawn?.x ?? other.pos.x;
+    otherRunner.pos.y = drawn === null ? other.pos.y : drawn.y + PLAYER_HALF.y;
+    otherRunner.pos.z = drawn?.z ?? other.pos.z;
+    otherRunner.yaw = other.yaw;
+    return otherRunner;
+  }
   function stepEndScene(e: NonNullable<typeof endRun>, local: { pos: Vec3; yaw: number }, seconds: number): void {
     const t = seconds - e.since;
     const ctx = e.ctx;
@@ -2366,7 +2386,8 @@ function buildRenderer(
     camera.position.set(pose.x, pose.y, pose.z);
     camera.rotation.set(pose.pitch, pose.yaw, 0);
     sceneFov = pose.fov;
-    views.showLocal = ctx.arrival === null;
+    // This screen's own body runs in the shot only where the run is its own.
+    views.showLocal = ctx.arrival === null && e.setup.runner === undefined;
     views.hideNear = e.hide;
     const after = ctx.arrival === null ? 0 : t - ctx.arrival;
     const car = endCar(after, ctx.road, ctx.site, ctx.direction);
@@ -3575,7 +3596,7 @@ function buildRenderer(
         // The local body stands in the summit's shots, until the last returns to its eye.
         views.showLocal = sceneShot >= 0 && sceneShot < SHOTS.length - 1;
         // The end scene: its camera and lens, the body through the run, the car.
-        if (endRun !== null) stepEndScene(endRun, local, seconds);
+        if (endRun !== null) stepEndScene(endRun, endRunner(endRun, state, local), seconds);
         // The end: from its first frame the camera is the ending's, from the
         // pose the player had then, and the pass takes its blur and its dark.
         if (ending.since >= 0) {

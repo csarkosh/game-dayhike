@@ -468,4 +468,20 @@ describe("EntityViews the shades go to the mask", () => {
     expect(meshes.every((m) => m.visibility === 1)).toBe(true);
     views.dispose();
   });
+
+  it("says where a player's body is drawn: between its last two places, at its feet; null for one it does not draw", () => {
+    const views = new EntityViews(scene);
+    const a = player(1, false);
+    const b = player(2, false);
+    views.sync(state(a, b), 1, 1);
+    b.pos = { x: 6, y: 0.9, z: 4 };
+    views.sync(state(a, b), 1, 0.5);
+    const at = views.drawnAt(2)!;
+    // Half way from (2, 0) to (6, 4), on the ground.
+    expect(at.x).toBeCloseTo(4, 5);
+    expect(at.z).toBeCloseTo(2, 5);
+    expect(at.y).toBeCloseTo(0, 5);
+    expect(views.drawnAt(99)).toBeNull();
+    views.dispose();
+  });
 });

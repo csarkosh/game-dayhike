@@ -15,6 +15,7 @@ import { RING_COUNT } from "./game/clipmap.js";
 import { loadUntilAborted, reportCompile, reportProgress } from "./game/modelLoad.js";
 import { defaultModelLoader, placeStaticModel } from "./game/staticModel.js";
 import {
+  endSceneRunner,
   END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, ESCAPE_SETTLE_S, ESCAPE_WAIT_S, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
   endMistShare,
 } from "./game/endScene.js";
@@ -630,6 +631,8 @@ function buildGame(
    */
   let endRunDoor: { x: number; z: number } | null = null;
   let endRunYaw = 0;
+  /** Whether the scene's run is this screen's own player's: not where it shows another's, who reached the car (endScene.ts `endSceneRunner`). */
+  let endRunOwn = true;
   /**
    * The command with the run in it, for both loops after `stilled`, which
    * it overrides. A suppressed sample (the match ended) still comes here as
@@ -637,6 +640,8 @@ function buildGame(
    */
   function ranToCar(cmd: InputCommand, me: PlayerState | undefined): InputCommand {
     if (endRunDoor === null) return cmd;
+    // Another's run: this screen's own ranger stands where they are, out of it.
+    if (!endRunOwn) return { ...cmd, moveX: 0, moveZ: 0, buttons: 0 };
     // A renderer with no scene (one built anew under it) runs nobody anywhere.
     const scene = renderer.endScene();
     if (me !== undefined && scene !== null && scene.arrival === null) {
@@ -1563,12 +1568,24 @@ function buildGame(
    * but not on death — a dead player still looks around under the fade, and
    * once the panel is up there is nothing left in the world to do.
    */
-  function syncOutcome(state: WorldState): void {
+  function syncOutcome(state: WorldState, localId: number): void {
     if (ended || state.outcome === Outcome.Playing) return;
     ended = true;
     gate.refresh();
     posterPanel.hide();
-    const won = state.outcome === Outcome.Won && !dead;
+    // Won is won for every screen, wherever its player is: on the trail, or under their death's dark.
+    const won = state.outcome === Outcome.Won;
+    if (won && dead) {
+      // The death's staging comes off: the end scene comes up out of the dark in place of a return.
+      if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
+      if (deathSoundTimer !== null) clearTimeout(deathSoundTimer);
+      deathFadeTimer = null;
+      deathSoundTimer = null;
+      renderer.clearEnding();
+      hud.setEnding(null);
+      hud.fade(false);
+      ambient.restoreMaster(RETURN_LIFT_MS / 1000);
+    }
     if (telemetry !== null) {
       let alive = 0;
       for (const p of state.players.values()) if (p.health > 0) alive += 1;
@@ -1585,7 +1602,7 @@ function buildGame(
     // car and the car down the road, its beats from the arrival
     // (`syncEndScene`). A dead player is already under their own last word,
     // which stays. There is no panel of names: the line is the end.
-    const scene = won && startEndScene(true);
+    const scene = won && startEndScene(true, endSceneRunner(localId, state.players.values()));
     if (won && !scene) {
       hud.setEnding({ title: WON_TITLE, line: WON_LINE });
       hud.fade(true);
@@ -1605,11 +1622,12 @@ function buildGame(
   const endHeard = { x: 0, y: 0, z: 0 };
 
   /** The end scene on this screen: the bars, the renderer's scene, the run; false on a world with no road. */
-  function startEndScene(lands: boolean): boolean {
+  function startEndScene(lands: boolean, runner: { id: number; own: boolean } | null = null): boolean {
     const setup = endSceneSetup();
     if (setup === null) return false;
     hud.setBars(true);
-    renderer.setEnding("won", setup);
+    endRunOwn = runner === null || runner.own;
+    renderer.setEnding("won", endRunOwn ? setup : { ...setup, runner: runner!.id });
     endRunDoor = setup.door;
     endLands = lands;
     requestFilmCar();
@@ -2100,6 +2118,8 @@ function buildGame(
       me.vel = { x: 0, y: 0, z: 0 };
       me.yaw = Math.atan2(setup.site.x - x, setup.site.z - z);
       input.setLook(me.yaw, 0);
+      // Only a player who was out on the mountain wins by reaching the road (sim/summit.ts): for a look, this one was.
+      me.out = true;
       // The chase's flip is seen as already past, so the find's scene never starts for a look,
       // whatever frame the flip is first read on; a match's own flip comes only through the find.
       wasChase = true;
@@ -2172,7 +2192,7 @@ function buildGame(
       if (cmd !== null) syncPoster(host.world, self, cmd);
       syncRoadLine(self, state);
       syncDeath(self, state, host.world);
-      syncOutcome(state);
+      syncOutcome(state, host.localEntityId);
       syncEndScene();
       syncTelemetry(host.world, state, self, input.sprinting);
       // True exactly when `sync` took its player-following branch, which is
@@ -2327,7 +2347,7 @@ function buildGame(
       if (cmd !== null) syncPoster(client.world, self, cmd);
       syncRoadLine(self, state);
       syncDeath(self, state, client.world);
-      syncOutcome(state);
+      syncOutcome(state, client.localEntityId);
       syncEndScene();
       syncTelemetry(client.world, state, self, input.sprinting);
       // See the host loop: a pending freecam waits for this.

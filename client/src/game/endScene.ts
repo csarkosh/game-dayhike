@@ -316,6 +316,24 @@ export function endBeats(t: number, arrival: number | null): EndBeats {
   };
 }
 
+/**
+ * Whose run a screen's end scene shows. The first player to reach the road
+ * wins the match for all, wherever the others are (sim/summit.ts), so a
+ * screen's own player may be on the trail still, or dead: it then plays the
+ * scene on the player who reached the car, the lowest id of those alive at
+ * the road, and watches the car go. Its own where its player is alive at
+ * the road, and where nobody is (a win called by hand).
+ */
+export function endSceneRunner(selfId: number, players: Iterable<{ id: number; safe: boolean; health: number }>): { id: number; own: boolean } {
+  let best: number | null = null;
+  for (const p of players) {
+    if (!p.safe || p.health <= 0) continue;
+    if (p.id === selfId) return { id: selfId, own: true };
+    if (best === null || p.id < best) best = p.id;
+  }
+  return best === null ? { id: selfId, own: true } : { id: best, own: false };
+}
+
 /** Whether the runner is in: within `DOOR_REACH_M` of the door, or the run's time is up. */
 export function arrived(runner: Ground, door: Ground, t: number): boolean {
   return Math.hypot(runner.x - door.x, runner.z - door.z) <= DOOR_REACH_M || t >= RUN_MAX_S;
