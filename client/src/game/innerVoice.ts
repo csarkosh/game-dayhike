@@ -1,4 +1,5 @@
 import { INNER_LINES, type VoiceScenario } from "./innerLines.js";
+import { DeathCause } from "../sim/types.js";
 
 /**
  * The inner voice (docs/gameplay/2026-10-07-the-inner-voice.md): the ranger's
@@ -42,6 +43,8 @@ export type VoiceInputs = {
   calm?: boolean;
   /** At the wall at the road (passages.ts `atRoadWall`): the ranger will not leave with somebody still up there. */
   atRoad?: boolean;
+  /** The frame a player comes back from a death in the chase (sim/returns.ts): why they died, which names the line; none on every other frame. */
+  returned?: DeathCause;
 };
 
 export type VoiceState = {
@@ -105,13 +108,37 @@ const CAPS: Readonly<Record<VoiceScenario, { cap: number; gap: number }>> = {
   chaseStart: { cap: 1, gap: 0 },
   chaseOffTrail: { cap: 1, gap: 0 },
   safe: { cap: 1, gap: 0 },
+  // A return's line is said at every return: no cap, no gap of its own.
+  returnOffTrail: { cap: Infinity, gap: 0 },
+  returnStill: { cap: Infinity, gap: 0 },
+  returnInto: { cap: Infinity, gap: 0 },
+  returnLooked: { cap: Infinity, gap: 0 },
+  returnLunge: { cap: Infinity, gap: 0 },
+  returnCaught: { cap: Infinity, gap: 0 },
 };
+/** The line for each cause of a death (sim/deathCause.ts), said as the player comes back. */
+const RETURN_LINES: Readonly<Record<DeathCause, VoiceScenario | null>> = {
+  [DeathCause.None]: null,
+  [DeathCause.Caught]: "returnCaught",
+  [DeathCause.OffTrail]: "returnOffTrail",
+  [DeathCause.Still]: "returnStill",
+  [DeathCause.Into]: "returnInto",
+  [DeathCause.Looked]: "returnLooked",
+  [DeathCause.Lunge]: "returnLunge",
+};
+/** The scenario a return's line is drawn from, by why the player died; null for none. */
+export function returnScenario(cause: DeathCause): VoiceScenario | null {
+  return RETURN_LINES[cause] ?? null;
+}
 /** The scenarios the chase allows; the rest are the climb's. */
 const CHASE_ONLY: ReadonlySet<VoiceScenario> = new Set(["chaseStart", "chaseOffTrail", "safe"]);
 /** The lines an explore hike keeps: the trailhead's, and the rain's and the fog's as they come in. */
 export const CALM_LINES: ReadonlySet<VoiceScenario> = new Set(["trailhead", "rain", "mist"]);
 /** Lines that cut the gap: the body, the chase's start and the car do not wait on the cooldown. */
-const URGENT: ReadonlySet<VoiceScenario> = new Set(["body", "hollow", "chaseStart", "safe", "cryFirst"]);
+const URGENT: ReadonlySet<VoiceScenario> = new Set([
+  "body", "hollow", "chaseStart", "safe", "cryFirst",
+  "returnOffTrail", "returnStill", "returnInto", "returnLooked", "returnLunge", "returnCaught",
+]);
 
 export function voiceRest(seed: number): VoiceState {
   return {
@@ -128,12 +155,13 @@ function next(state: VoiceState): number {
 
 /** A line said: its text, and the clip that is it (voiceClips.ts): the scenario and the line's index in its pool. */
 export type VoiceLine = { text: string; scenario: VoiceScenario; index: number };
-export type VoiceScene = "none" | "summit" | "cap";
-/** The lines a scene allows: the summit's own; the cap's none (its line starts it). */
+export type VoiceScene = "none" | "summit" | "cap" | "return";
+/** The lines a scene allows: the summit's own; the cap's none (its line starts it); a return's (the threshold again), the line of how they died. */
 const SCENE_LINES: Readonly<Record<VoiceScene, ReadonlySet<VoiceScenario>>> = {
   none: new Set(),
   summit: new Set(["body", "hollow"]),
   cap: new Set(),
+  return: new Set(["returnOffTrail", "returnStill", "returnInto", "returnLooked", "returnLunge", "returnCaught"]),
 };
 
 /** A pool's line for this match: the pool in a seeded order, no repeat until spent, then a new order. */
@@ -184,6 +212,8 @@ export function stepInnerVoice(prev: VoiceState, input: VoiceInputs, dt: number)
     const wanted: VoiceScenario[] = [];
     if (input.nearBody && allowed.has("body")) wanted.push("body");
     if (input.hollowSeen && allowed.has("hollow")) wanted.push("hollow");
+    const back = returnScenario(input.returned ?? DeathCause.None);
+    if (back !== null && allowed.has(back)) wanted.push(back);
     for (const scenario of wanted) {
       if (!may(state, scenario)) continue;
       state.said[scenario] = (state.said[scenario] ?? 0) + 1;

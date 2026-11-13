@@ -10,7 +10,8 @@
 export type VoiceScenario =
   | "trailhead" | "rain" | "offTrailDay" | "offTrailNight" | "dusk" | "lamp" | "mist" | "road"
   | "cryFirst" | "cryAgain" | "shadeFirst" | "shadeGone" | "still" | "dontLook" | "crest" | "cap"
-  | "body" | "hollow" | "chaseStart" | "chaseOffTrail" | "safe";
+  | "body" | "hollow" | "chaseStart" | "chaseOffTrail" | "safe"
+  | "returnOffTrail" | "returnStill" | "returnInto" | "returnLooked" | "returnLunge" | "returnCaught";
 
 export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
   trailhead: [
@@ -117,5 +118,37 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
     "There's the car!",
     "Get in, get in, get in.",
     "Get in. Lock it. Go.",
+  ],
+  // Back on the crest after a death in the chase (docs/gameplay/2026-09-16-the-summit.md §2): what
+  // the ranger says to themselves about how they died, one pool a cause (sim/deathCause.ts).
+  returnOffTrail: [
+    "Right. The trail. Stay on the trail.",
+    "Shortcut. Never again.",
+    "Off the trail is where it keeps them. Noted.",
+  ],
+  returnStill: [
+    "Standing still. Great plan.",
+    "Don't stop. Do not stop this time.",
+    "It doesn't wait. Why did I?",
+  ],
+  returnInto: [
+    "Away from it. AWAY.",
+    "Wrong way. That was the wrong way.",
+    "Maybe don't run at it this time.",
+  ],
+  returnLooked: [
+    "Don't look at it. Just run.",
+    "Stop staring. Start running.",
+    "Eyes down. Feet moving.",
+  ],
+  returnLunge: [
+    "The mist has hands. Keep moving.",
+    "Didn't even see that one.",
+    "They're in the mist. Of course they are.",
+  ],
+  returnCaught: [
+    "Faster. Faster this time.",
+    "It's quicker than it looks.",
+    "Okay. Okay. Run better.",
   ],
 };

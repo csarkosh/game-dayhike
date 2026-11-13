@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  OFF_TRAIL_M, OFF_TRAIL_S, VOICE_FIRST_S, VOICE_GAP_S, stepInnerVoice, voiceRest, type VoiceInputs, type VoiceState,
+  OFF_TRAIL_M, OFF_TRAIL_S, VOICE_FIRST_S, VOICE_GAP_S, returnScenario, stepInnerVoice, voiceRest, type VoiceInputs, type VoiceState,
 } from "../../src/game/innerVoice.js";
 import { INNER_LINES } from "../../src/game/innerLines.js";
+import { DeathCause } from "../../src/sim/types.js";
 
 const DAY: VoiceInputs = {
   climb: 0.5, wet: 1, night: 0, mist: 0, chase: false, ended: false, offTrail: 0, lamp: false, stare: 0, moving: true,
@@ -172,5 +173,66 @@ describe("the inner voice", () => {
     }
     // Twelve seeds over six orders of three: at least two differ.
     expect(orders.size).toBeGreaterThan(1);
+  });
+});
+
+describe("the line on coming back from a death in the chase", () => {
+  const CHASE: VoiceInputs = { ...NIGHT, climb: 1, chase: true };
+  /** The frame a return begins: the threshold replayed (the `return` scene), the cause on it. */
+  const back = (cause: DeathCause): VoiceInputs => ({ ...CHASE, scene: "return", returned: cause });
+
+  it("has the six causes' lines as the design gives them", () => {
+    expect(INNER_LINES.returnOffTrail).toEqual(["Right. The trail. Stay on the trail.", "Shortcut. Never again.", "Off the trail is where it keeps them. Noted."]);
+    expect(INNER_LINES.returnStill).toEqual(["Standing still. Great plan.", "Don't stop. Do not stop this time.", "It doesn't wait. Why did I?"]);
+    expect(INNER_LINES.returnInto).toEqual(["Away from it. AWAY.", "Wrong way. That was the wrong way.", "Maybe don't run at it this time."]);
+    expect(INNER_LINES.returnLooked).toEqual(["Don't look at it. Just run.", "Stop staring. Start running.", "Eyes down. Feet moving."]);
+    expect(INNER_LINES.returnLunge).toEqual(["The mist has hands. Keep moving.", "Didn't even see that one.", "They're in the mist. Of course they are."]);
+    expect(INNER_LINES.returnCaught).toEqual(["Faster. Faster this time.", "It's quicker than it looks.", "Okay. Okay. Run better."]);
+  });
+
+  it("names a scenario for every cause but none", () => {
+    expect(returnScenario(DeathCause.None)).toBeNull();
+    expect(returnScenario(DeathCause.Caught)).toBe("returnCaught");
+    expect(returnScenario(DeathCause.OffTrail)).toBe("returnOffTrail");
+    expect(returnScenario(DeathCause.Still)).toBe("returnStill");
+    expect(returnScenario(DeathCause.Into)).toBe("returnInto");
+    expect(returnScenario(DeathCause.Looked)).toBe("returnLooked");
+    expect(returnScenario(DeathCause.Lunge)).toBe("returnLunge");
+  });
+
+  it("is said on the frame of the return, whatever the gap since the last line, and takes the place of the chase's opening line", () => {
+    // The chase's own opening line first, as a first attempt has it.
+    let { state, lines } = run(voiceRest(3), CHASE, 1);
+    expect(lines).toHaveLength(1);
+    expect(INNER_LINES.chaseStart).toContain(lines[0]);
+    // Two seconds on, well inside the gap: dead, then back.
+    ({ state } = run(state, { ...CHASE, ended: true }, 2));
+    const out = stepInnerVoice(state, back(DeathCause.Still), DT);
+    expect(out.line?.scenario).toBe("returnStill");
+    expect(INNER_LINES.returnStill).toContain(out.line?.text);
+    // Through the rest of the threshold, and the chase after it, nothing more: not the cause again, not "Run. NOW." again.
+    ({ state, lines } = run(out.state, { ...CHASE, scene: "return" }, 4));
+    expect(lines).toEqual([]);
+    ({ lines } = run(state, CHASE, 30));
+    expect(lines.filter((l) => INNER_LINES.chaseStart.includes(l))).toEqual([]);
+  });
+
+  it("says a cause's three lines before it says one of them again, however often they die of it", () => {
+    let state = voiceRest(9);
+    const said: string[] = [];
+    for (let death = 0; death < 4; death++) {
+      const out = stepInnerVoice(state, back(DeathCause.OffTrail), DT);
+      expect(out.line?.scenario).toBe("returnOffTrail");
+      said.push(out.line!.text);
+      ({ state } = run(out.state, CHASE, 5));
+    }
+    expect(new Set(said.slice(0, 3)).size).toBe(3);
+    expect(INNER_LINES.returnOffTrail).toContain(said[3]);
+  });
+
+  it("lets nothing else speak through the replayed threshold, and says nothing for a return with no cause", () => {
+    const quiet = stepInnerVoice(voiceRest(5), { ...CHASE, scene: "return", nearBody: true, hollowSeen: true, safe: true }, DT);
+    expect(quiet.line).toBeNull();
+    expect(stepInnerVoice(voiceRest(5), back(DeathCause.None), DT).line).toBeNull();
   });
 });

@@ -19,6 +19,7 @@ describe("the inner voice's clips", () => {
   it("names a clip by its scenario and 1-based index", () => {
     expect(voiceClipId({ scenario: "cryFirst", index: 0 })).toBe("voice.cryFirst.1");
     expect(voiceClipId({ scenario: "safe", index: 2 })).toBe("voice.safe.3");
+    expect(voiceClipId({ scenario: "returnOffTrail", index: 0 })).toBe("voice.returnOffTrail.1");
   });
 
   it("fetches a line's clip once, plays it on the voice bus at its level each time the line is said, and a missing clip is silent and not asked for again", async () => {
