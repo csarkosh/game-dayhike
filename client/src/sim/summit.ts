@@ -16,6 +16,7 @@ import type { World } from "./world.js";
 import { isOnCorridor } from "./containment.js";
 import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
 import { drawGuide, stepCuts } from "./cut.js";
+import { wayOf } from "./wayDraw.js";
 import { hideWatcher } from "./watcher.js";
 import { isShadeState } from "./haunt.js";
 import { ENEMY_HALF, PLAYER_HALF } from "./constants.js";
@@ -159,6 +160,9 @@ export function stepSummit(world: World): void {
   }
   if (state.phase === Phase.Scene) {
     for (const e of state.enemies.values()) if (e.ai === AiState.Emerge) return;
+    // The chase holds its players to the way down: settled here if its draw, a slice a frame since early in the
+    // climb (app.ts), is somehow not done.
+    wayOf(world);
     state.phase = Phase.Chase;
     return;
   }

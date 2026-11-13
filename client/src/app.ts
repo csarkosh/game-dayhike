@@ -121,6 +121,7 @@ import { extrasLater } from "./game/extrasLater.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
+import { stepWay } from "./sim/wayDraw.js";
 import { hasLineOfSight } from "./sim/ai.js";
 import { isHollowState, playerSees } from "./sim/hollow.js";
 import { trailDistance } from "./sim/trail.js";
@@ -135,6 +136,11 @@ import { returnHollowAt } from "./sim/returns.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_HALF } from "./sim/constants.js";
 import { stemAhead } from "./sim/trailRoute.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
+
+/** The way down's draw: milliseconds of it a frame through the climb, and once the scene or the chase is on; and the tick it starts at, ten seconds in, so nothing of it runs under the intro. */
+const WAY_DRAW_MS = 1.5;
+const WAY_DRAW_LATE_MS = 4;
+const WAY_DRAW_FROM_TICK = 600;
 
 /** Seconds after the last howl ends before the voice answers it, and the milliseconds into the cap's scene its line comes. */
 const CRY_BEAT_S = 0.6;
@@ -1105,6 +1111,15 @@ function buildGame(
       k.seen = hasLineOfSight(eye, h, world.boxes, world.ground);
     }
     return k.seen;
+  }
+  /**
+   * The way down's draw (sim/wayDraw.ts), a slice a frame on the host and on a client alike, from ten seconds
+   * into the match (never under the intro), so it is long done by the find; a larger slice once the scene or the
+   * chase is on and it somehow is not (a console's `summit`, a peer admitted late).
+   */
+  function syncWayDraw(world: World, state: WorldState): void {
+    if (world.wayDraw === null || state.tick < WAY_DRAW_FROM_TICK) return;
+    stepWay(world, state.phase === Phase.Climb ? WAY_DRAW_MS : WAY_DRAW_LATE_MS, () => performance.now());
   }
   function syncAtmosphere(world: World, state: WorldState, localId: number, dt: number): void {
     if (world.search === null || world.trail === null) return;
@@ -2186,6 +2201,7 @@ function buildGame(
 
       const state: WorldState = host.world.state;
       const self = state.players.get(host.localEntityId);
+      syncWayDraw(host.world, state);
       syncAtmosphere(host.world, state, host.localEntityId, dt);
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
       playWildlifeAudio();
@@ -2341,6 +2357,7 @@ function buildGame(
 
       const state = client.renderState(performance.now());
       const self = state.players.get(client.localEntityId);
+      syncWayDraw(client.world, state);
       syncAtmosphere(client.world, state, client.localEntityId, dt);
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
       playWildlifeAudio();

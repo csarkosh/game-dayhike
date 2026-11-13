@@ -385,6 +385,39 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
   return best ?? stem();
 }
 
+/**
+ * Advances the world's draw until `budgetMs` of `now`'s clock is spent or it
+ * is done: true once the way is settled (drawn, or none to draw). The app
+ * calls it a frame at a time from early in the climb, so the find never
+ * waits on it; `now` is the caller's clock, the sim reads none.
+ */
+export function stepWay(world: World, budgetMs: number, now: () => number): boolean {
+  const draw = world.wayDraw;
+  if (draw === null) return true;
+  const until = now() + budgetMs;
+  do {
+    const r = draw.next();
+    if (r.done === true) {
+      world.way = r.value;
+      world.wayDraw = null;
+      return true;
+    }
+  } while (now() < until);
+  return false;
+}
+
+/** The world's way, what is left of its draw run to its end first: for the tick that cannot go on without it. */
+export function wayOf(world: World): WayDown | null {
+  const draw = world.wayDraw;
+  if (draw !== null) {
+    let r = draw.next();
+    while (r.done !== true) r = draw.next();
+    world.way = r.value;
+    world.wayDraw = null;
+  }
+  return world.way;
+}
+
 /** The way, drawn to its end in one go. */
 export function drawWayNow(world: World): WayDown | null {
   const gen = drawWay(world);
