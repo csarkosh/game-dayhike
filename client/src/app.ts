@@ -119,7 +119,7 @@ import { createFirstBuilds } from "./game/firstBuilds.js";
 import { extrasLater } from "./game/extrasLater.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
-import { Button, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
+import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
 import { hasLineOfSight } from "./sim/ai.js";
 import { isHollowState, playerSees } from "./sim/hollow.js";
 import { trailDistance } from "./sim/trail.js";
@@ -129,6 +129,7 @@ import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js
 import { createVoiceClips } from "./game/voiceClips.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt } from "./game/cutscene.js";
 import { DIED_CLOSE_FROM_S } from "./game/ending.js";
+import { RETURN_LIFT_MS, causeName, createDeathReturn } from "./game/deathReturn.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_HALF } from "./sim/constants.js";
 import { stemAhead } from "./sim/trailRoute.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
@@ -644,6 +645,14 @@ function buildGame(
       return { ...cmd, moveX: 0, moveZ: 1, buttons: Button.Sprint, yaw: endRunYaw, pitch: 0 };
     }
     return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: endRunYaw, pitch: 0 };
+  }
+  /** The way down for the threshold, as a look from where `me` stands: to a point `DOWN_TRAIL_M` back down the stem, and its ground. Null with no player or no trail. */
+  function wayDownFrom(me: PlayerState | undefined, sim: World): { yaw: number; pitch: number } | null {
+    const down = me === undefined || sim.trail === null ? null : stemAhead(sim.trail, me.pos.x, me.pos.z, -DOWN_TRAIL_M);
+    if (down === null || me === undefined) return null;
+    const eyeY = me.pos.y + PLAYER_EYE_OFFSET;
+    const groundY = sim.ground?.heightAt(down.x, down.z) ?? eyeY;
+    return { yaw: Math.atan2(down.x - me.pos.x, down.z - me.pos.z), pitch: Math.atan2(eyeY - groundY, Math.hypot(down.x - me.pos.x, down.z - me.pos.z)) };
   }
   function stilled(cmd: InputCommand): InputCommand {
     if (!sceneOn()) {
@@ -1177,14 +1186,7 @@ function buildGame(
       for (const e of state.enemies.values()) if (e.ai === AiState.Emerge) { hollow = { x: e.pos.x, y: e.pos.y - ENEMY_HALF.y, z: e.pos.z }; break; }
       const me = state.players.get(localId);
       const party = me === undefined ? world.search.body.pos : { x: me.pos.x, y: me.pos.y + PLAYER_EYE_OFFSET, z: me.pos.z };
-      // The way down for the threshold: a point back down the stem from where the player stands.
-      const down = me === undefined || world.trail === null ? null : stemAhead(world.trail, me.pos.x, me.pos.z, -DOWN_TRAIL_M);
-      if (down === null || me === undefined) downLook = null;
-      else {
-        const eyeY = me.pos.y + PLAYER_EYE_OFFSET;
-        const groundY = world.ground?.heightAt(down.x, down.z) ?? eyeY;
-        downLook = { yaw: Math.atan2(down.x - me.pos.x, down.z - me.pos.z), pitch: Math.atan2(eyeY - groundY, Math.hypot(down.x - me.pos.x, down.z - me.pos.z)) };
-      }
+      downLook = wayDownFrom(me, world);
       renderer.setScene("summit", world.search.body.pos, hollow === null ? undefined : { hollow, party });
       hud.setBars(true);
       setTimeout(() => { hud.setBars(false); downLook = null; }, SUMMIT_SCENE_S * 1000);
@@ -1200,6 +1202,9 @@ function buildGame(
       let shadeSeen = false;
       for (const e of state.enemies.values()) if (e.ai === AiState.Shade && playerSees(self, e, world)) { shadeSeen = true; break; }
       const body = world.search.body.pos;
+      // A return's line is said on its frame (syncReturn), once.
+      const returnedNow = returned;
+      returned = DeathCause.None;
       const spoke = stepInnerVoice(voice, {
         climb: calm ? 0 : escalation.progressMax, wet: acts.wet, night: acts.night, mist: calm ? settled.weather.mist : acts.mist,
         chase: state.phase === Phase.Chase, ended: ended || dead, covered: gate.covered, scene: sceneOn() ? sceneKind : "none",
@@ -1214,6 +1219,7 @@ function buildGame(
         safe: self.safe,
         calm,
         atRoad,
+        returned: returnedNow,
       }, dt);
       voice = spoke.state;
       if (spoke.line !== null) {
@@ -1442,8 +1448,14 @@ function buildGame(
   }
 
   let dead = false;
+  /** This screen's death and return, read from its own player's health (deathReturn.ts). */
+  const life = createDeathReturn();
+  /** Why the player died, on the frame they come back: the voice's line for it (innerVoice.ts). None on every other frame. */
+  let returned: DeathCause = DeathCause.None;
   let deathFadeTimer: ReturnType<typeof setTimeout> | null = null;
   let deathSoundTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The letterbox of a return's threshold, off when it ends. */
+  let returnBarsTimer: ReturnType<typeof setTimeout> | null = null;
   let endFadeTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Death, once: the poster closed, the view faded onto the passage. Input
@@ -1452,15 +1464,20 @@ function buildGame(
    * their view angles keep tracking under the fade, and Escape keeps opening
    * the pause menu on every platform.
    */
-  function syncDeath(self: PlayerState | undefined, state: WorldState): void {
-    if (dead || self === undefined || self.health > 0) return;
+  function syncDeath(self: PlayerState | undefined, state: WorldState, sim: World): void {
+    const turn = life.step(self?.health);
+    if (self === undefined || turn === null) return;
+    if (turn === "returned") {
+      syncReturn(self, state, sim);
+      return;
+    }
     dead = true;
-    // The Hollow's reach is the one thing that kills (`sim/hollow.ts`).
+    // What they were doing as the thing reached them (`sim/deathCause.ts`).
     telemetry?.event("death", {
       tick: state.tick,
       p: progressRounded(),
       phase: phaseName(lastPhase),
-      cause: "hollow",
+      cause: causeName(self.cause),
       near: Math.round((lastTargets?.near ?? 0) * 100) / 100,
       x: Math.round(self.pos.x * 10) / 10,
       z: Math.round(self.pos.z * 10) / 10,
@@ -1475,6 +1492,56 @@ function buildGame(
     if (deathSoundTimer !== null) clearTimeout(deathSoundTimer);
     deathSoundTimer = setTimeout(() => ambient.fadeMaster(DEATH_SOUND_FADE_S), DIED_CLOSE_FROM_S * 1000);
     hud.setEnding({ title: DEATH_TITLE, line: DEATH_LINE });
+  }
+
+  /**
+   * The return (`sim/returns.ts`): the player who died in the chase is alive
+   * on the crest again, and this screen comes up with them. Everything the
+   * death put on is taken off, the dark lifts and the sound comes back over
+   * `RETURN_LIFT_MS`, and the summit scene's last shot plays again from its
+   * start, the threshold: the eye held on the Hollow walking at them, turned
+   * to the way down, the legs, the controls. The voice's line this time is
+   * how they died.
+   */
+  function syncReturn(self: PlayerState, state: WorldState, sim: World): void {
+    dead = false;
+    if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
+    if (deathSoundTimer !== null) clearTimeout(deathSoundTimer);
+    deathFadeTimer = null;
+    deathSoundTimer = null;
+    // The match decided in the same breath: the end has the screen (syncOutcome).
+    if (ended) return;
+    renderer.clearEnding();
+    hud.setEnding(null);
+    hud.fade(false);
+    ambient.restoreMaster(RETURN_LIFT_MS / 1000);
+    telemetry?.event("return", { tick: state.tick, cause: causeName(self.cause), n: life.returns() });
+    sceneKind = "return";
+    sceneUntil = performance.now() + (SHOTS[4] as number) * 1000;
+    voiceClips.cut();
+    hud.hush();
+    // The Hollow that came for them: the one stepping out nearest where they stand.
+    let hollow: { x: number; y: number; z: number } | null = null;
+    let nearSq = Infinity;
+    for (const e of state.enemies.values()) {
+      if (e.ai !== AiState.Emerge) continue;
+      const sq = (e.pos.x - self.pos.x) ** 2 + (e.pos.z - self.pos.z) ** 2;
+      if (sq < nearSq) { nearSq = sq; hollow = { x: e.pos.x, y: e.pos.y - ENEMY_HALF.y, z: e.pos.z }; }
+    }
+    const eye = { x: self.pos.x, y: self.pos.y + PLAYER_EYE_OFFSET, z: self.pos.z };
+    // The eye on it, as the threshold begins: its middle, from where they stand.
+    if (hollow !== null) {
+      const yaw = Math.atan2(hollow.x - eye.x, hollow.z - eye.z);
+      const pitch = Math.atan2(eye.y - (hollow.y + ENEMY_HALF.y), Math.hypot(hollow.x - eye.x, hollow.z - eye.z));
+      input.setLook(yaw, pitch);
+      lastLook = { yaw, pitch };
+    }
+    downLook = wayDownFrom(self, sim);
+    renderer.setScene("summit", sim.search?.body.pos ?? self.pos, hollow === null ? undefined : { hollow, party: eye }, THRESHOLD_AT_S);
+    hud.setBars(true);
+    if (returnBarsTimer !== null) clearTimeout(returnBarsTimer);
+    returnBarsTimer = setTimeout(() => { returnBarsTimer = null; hud.setBars(false); downLook = null; }, (SHOTS[4] as number) * 1000);
+    returned = self.cause;
   }
 
   // Not const: a host with no party can open a lobby mid-game (`attachLobby`).
@@ -2104,7 +2171,7 @@ function buildGame(
       syncPrompt(host.world, self);
       if (cmd !== null) syncPoster(host.world, self, cmd);
       syncRoadLine(self, state);
-      syncDeath(self, state);
+      syncDeath(self, state, host.world);
       syncOutcome(state);
       syncEndScene();
       syncTelemetry(host.world, state, self, input.sprinting);
@@ -2259,7 +2326,7 @@ function buildGame(
       syncPrompt(client.world, self);
       if (cmd !== null) syncPoster(client.world, self, cmd);
       syncRoadLine(self, state);
-      syncDeath(self, state);
+      syncDeath(self, state, client.world);
       syncOutcome(state);
       syncEndScene();
       syncTelemetry(client.world, state, self, input.sprinting);

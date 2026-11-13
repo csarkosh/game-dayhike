@@ -1798,7 +1798,9 @@ export type Renderer = {
   /** The end scene as the last `sync` stepped it; null when none plays. One reused object. */
   endScene(): EndSceneNow | null;
   /** A scene (cutscene.ts): the camera is the scene's from now; the summit's five shots for SUMMIT_SCENE_S (`at` the body, with the Hollow's feet and the party's eye); the cap's for CAP_SCENE_S, turned to it. */
-  setScene(kind: "summit" | "cap", at: { x: number; y: number; z: number }, more?: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } }): void;
+  setScene(kind: "summit" | "cap", at: { x: number; y: number; z: number }, more?: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } }, fromS?: number): void;
+  /** A death's ending undone (a return in the chase, deathReturn.ts): the camera is the player's again and a scene's may run. The won scene is left as it is. */
+  clearEnding(): void;
   /**
    * A world point as CSS pixels on the canvas, with its distance from the
    * camera, or null when it is behind the camera. Drives the interact prompt.
@@ -3643,8 +3645,14 @@ function buildRenderer(
     setMistIn(level) {
       mistIn = Math.max(0, Math.min(1, level));
     },
-    setScene(kind, at, more) {
-      summitScene = { kind, since: clock() / 1000, base: null, body: { x: at.x, y: at.y, z: at.z }, more: more ?? null };
+    setScene(kind, at, more, fromS = 0) {
+      // Begun `fromS` seconds in: a return plays the summit's last shot alone (its seventeenth second on).
+      summitScene = { kind, since: clock() / 1000 - fromS, base: null, body: { x: at.x, y: at.y, z: at.z }, more: more ?? null };
+    },
+    clearEnding() {
+      ending = { kind: "died", since: -1, base: null };
+      endBlur = 0;
+      endClose = 0;
     },
     setEnding(kind: EndingKind, scene?: EndSceneSetup) {
       if (kind === "won") {

@@ -977,6 +977,26 @@ describe("the end's fades", () => {
     audio.dispose();
   });
 
+  it("restoreMaster brings the master back from a death's silence to the volume, over the seconds given, and to nothing while muted", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    const master = created.gains[0]!;
+    clock.currentTime = 5;
+    audio.fadeMaster(2);
+    clock.currentTime = 9;
+    audio.restoreMaster(1.2);
+    // The fade's ramp is cancelled, and the gain eased to the volume: three time constants in the seconds.
+    expect(master.gain.cancels).toEqual([5, 9]);
+    expect(master.gain.targets.at(-1)).toMatchObject({ value: 0.5, time: 9 });
+    expect(master.gain.targets.at(-1)!.tc).toBeCloseTo(0.4, 6);
+    audio.setMuted(true);
+    clock.currentTime = 10;
+    audio.restoreMaster(1.2);
+    expect(master.gain.targets.at(-1)).toMatchObject({ value: 0, time: 10 });
+    audio.dispose();
+  });
+
   it("fadeMaster ramps the master from where it is to silence, and a volume set after it lands as it always does", () => {
     const { ctx, created, clock } = fakeCtx();
     const audio = createAmbientAudio(() => ctx);

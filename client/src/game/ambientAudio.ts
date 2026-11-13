@@ -280,6 +280,12 @@ export type AmbientAudio = {
    */
   fadeMaster(seconds: number): void;
   /**
+   * The master back from `fadeMaster`'s silence, eased to the volume (to
+   * nothing while muted) over about `seconds`: a death in the chase undone
+   * (deathReturn.ts). Inert before `unlock()`.
+   */
+  restoreMaster(seconds: number): void;
+  /**
    * The car at the end (carAudio.ts) on the `car` bus: its schedule starts
    * now (the door, the crank, the catch, the revs), placed at `at`, relative
    * to the listener as `setCar`'s place is. A car already playing is
@@ -808,6 +814,12 @@ export function createAmbientAudio(
     fadeMaster(seconds) {
       if (!ctx || !master) return;
       fadeOut(master.gain, ctx.currentTime, seconds);
+    },
+    restoreMaster(seconds) {
+      if (!ctx || !master) return;
+      // The fade's ramp let go of, then eased: three time constants in the seconds is all but there.
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, Math.max(0.01, seconds) / 3);
     },
     startCar(at) {
       if (!ctx || !carBus || !noise) return;
