@@ -82,7 +82,11 @@ wide, system-ui at 2.4 vh), 11 vh up from the bottom, with a dark shadow for the
 
 Each line is a clip, `client/assets/audio/voice.<scenario>.<n>.mp3`, n from 1 in the pool's
 order (`voiceClipId`); `node tools/voice/manifest.mjs` prints every line with its id and file
-for whatever makes them. The pools are three a scenario, sixty lines, so the clips stay small
+for whatever makes them. The pools are three a scenario, eighty-one lines since the six returns' (2026-11-13: what the
+ranger says on coming back from a death in the chase, one pool a cause, `returnOffTrail`,
+`returnStill`, `returnInto`, `returnLooked`, `returnLunge`, `returnCaught`; said on the frame of
+the return whatever the gap, at every return, in place of the chase's opening line; their clips
+are still to be made, so their captions stand alone), so the clips stay small
 (a line of a second or three at the calls' encoding is tens of kilobytes; the set about a
 megabyte) while a once-only scenario still reads differently across three matches and a capped
 one never repeats within one. A clip is fetched the first time its line is said and kept decoded;

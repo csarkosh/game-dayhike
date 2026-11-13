@@ -42,6 +42,17 @@ unseen, which it did on 2026-10-08); it rises as the shades do, in the shadow fo
 facing the finder, still. The lamp flickers through the scene as the stare fills it, which is
 the game's own language.
 
+### The threshold again (2026-11-13)
+
+A player who dies in the chase comes back on the crest (`2026-09-16-the-summit.md` §2), and their
+screen plays the fifth shot again, alone: the renderer's scene begun at `THRESHOLD_AT_S` (17 s),
+the eye turned to the Hollow that stepped out for them and held for `SCENE_LOOK_S`, turned to the
+way down from where they now stand, then the legs and the controls, the letterbox on for the
+shot's four seconds. The find and the reveal are not shown again. The voice's line in it is how
+they died, in place of the chase's opening line. On the sim's side the Hollow's stalk, the hold on
+killing and the haunt's wait, which the first scene ties to the match's phase, are that one
+Hollow's and that one player's here: the match stays in the chase and the others run on.
+
 ### The mechanics through it
 
 The Hollow steps out `SUMMIT_SPAWN_DIST` past the body on the line from the finder through it:

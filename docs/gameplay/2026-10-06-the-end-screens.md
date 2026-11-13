@@ -10,6 +10,15 @@ speaks of it.
 
 ## 0. What this is
 
+*Amended 2026-11-13.* In a forest match's chase a death is no longer the end. The fall, the dark,
+YOU DIED and its line play as below; about six seconds on the player is alive on the crest again
+and the screen comes up with them (`game/deathReturn.ts`, `app.ts` `syncReturn`): the title and
+the line go, the dark lifts and the sound returns over `RETURN_LIFT_MS` (1.2 s), and the summit
+scene's last shot plays again (`2026-10-08-the-summit-scene.md`). The title page comes after a
+death only on the hand-authored test level. And the win is every screen's: one whose player is
+not at the road when the match is won, or is under their death's dark, plays the end scene on
+the player who reached the car (`endScene.ts` `endSceneRunner`).
+
 *Amended 2026-10-07, later.* Longer: won, the view goes dark at 11 s and the landing comes at 15
 (`WON_FADE_AFTER_MS`, `WON_LANDING_MS`); died, dark at 6 s and the landing at 12 (`DEATH_FADE_AFTER_MS`,
 `END_LANDING_MS`). The timings below are as first built.
