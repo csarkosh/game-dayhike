@@ -49,6 +49,7 @@ import type { AsyncPipelines } from "./asyncPipelines.js";
 import type { QualityTier } from "./quality.js";
 import type { Renderer } from "./renderer.js";
 import type { TierChoice } from "./tierChoice.js";
+import { effectsWaitingOn } from "./effectTurns.js";
 
 /**
  * How long the Settings Apply's "Applying…" ground waits for the new scene
@@ -401,7 +402,9 @@ export type ReadyWalkDeps = { now?: () => number; turn?: () => Promise<void>; sl
  * such effect in its one call, and on a phone the effects of the materials
  * no frame had drawn yet were a stop of a quarter of a second; a check that
  * makes an effect is far longer than a slice, so here each is a task of its
- * own, and the scene's own check then finds them made. The meshes are the
+ * own, and the scene's own check then finds them made. (On WebGPU a PBR
+ * effect is only asked for here and made in a task of the engine's queue,
+ * `effectTurns.ts`, so a slice asks for many.) The meshes are the
  * scene's as the walk begins; one disposed meanwhile is left out, a check
  * that throws is left to the scene's own to report, and a scene disposed
  * meanwhile, or a wait that has lifted (`deps.stopped`), ends the walk.
@@ -447,7 +450,10 @@ export async function walkSceneReady(scene: Scene, deps: ReadyWalkDeps = {}): Pr
  * a ready scene and would spin while items are still waiting. Each poll walks
  * the scene's meshes first, a few milliseconds a task (`walkSceneReady`), so
  * the scene's own check, asked after it, makes no effect of its own; the cap
- * lifts though a walk is between two tasks, and that walk then stops.
+ * lifts though a walk is between two tasks, and that walk then stops. The
+ * scene is not ready while any of its engine's effects still waits its turn
+ * (`effectsWaitingOn`): the scene's own check cannot see one that waits
+ * behind the effect its material already had.
  */
 export function whenSceneReady(
   scene: Scene,
@@ -476,7 +482,10 @@ export function whenSceneReady(
       // A walk still between two tasks when the cap lifts the wait goes no further: no effect is made under play.
       if (walked) await walkSceneReady(scene, { ...deps, stopped: () => lifted });
       if (lifted) return;
-      if (scene.isDisposed || (walked && scene.isReady() && scene.getWaitingItemsCount() === 0)) finish();
+      // The engine's effects still waiting their turn (`effectTurns.ts`) are not in the scene's own
+      // count: a material draws with the effect it had, and says ready, until its new one is.
+      const queued = effectsWaitingOn((scene as { getEngine?: () => unknown }).getEngine?.());
+      if (scene.isDisposed || (walked && scene.isReady() && scene.getWaitingItemsCount() === 0 && queued === 0)) finish();
       else poll = setTimeout(() => void check(), 100);
     };
     void check();

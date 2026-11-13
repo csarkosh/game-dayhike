@@ -12,9 +12,14 @@
  * draws on, with what its materials had, and the four are processed in the
  * four tasks after it.
  *
- * Only when an effect is processed changes, never whether. An effect of any
- * other name is ready in the call that made it, as it was, and a queue that
- * is disposed lets everything go.
+ * Only when an effect is processed changes, never whether, but for one that
+ * nothing will draw: an effect disposed while it waited, or whose engine
+ * was, is not processed at all (on a disposed engine that would be every
+ * waiting effect at once, each translated again, its lookup gone). An
+ * effect of any other name is made as it was, with the arguments given. A
+ * PBR material draws with the effect it had while its new one waits, so the
+ * scene's own check says ready meanwhile: what waits for a scene to be
+ * ready also asks `effectsWaitingOn`.
  */
 
 /** A queue that lets one waiter go a page task, first in, first out. */
@@ -94,48 +99,75 @@ export function createEffectTurns(deps: { turn?: (run: () => void) => void } = {
   };
 }
 
-/** The effects made waiting whatever they were given: Babylon's name for a PBR material's, the one
- * whose fragment module is tens of milliseconds on a phone's GPU thread. */
+/** The effects made waiting: Babylon's name for a PBR material's, the one whose fragment module is
+ * tens of milliseconds on a phone's GPU thread. */
 export const SPACED_EFFECTS: readonly string[] = ["pbr"];
 
 /** An effect's options, as far as the spacing reads them (Babylon's `IEffectCreationOptions`). */
 type WaitingOptions = { attributes?: unknown; extraInitializationsAsync?: unknown };
 
+/** How many of an engine's effects are asked for and not yet let go, for each engine spaced. */
+const waitingOn = new WeakMap<object, () => number>();
+
 /**
- * Wraps `engine`'s own `createEffect`, on the instance. An effect made from
- * options (those with `attributes`, which is how Babylon tells options from
- * a list of names) waits its turn in `turns` before it is processed where
- * its name is one of `names`, or where it was given a wait of its own
- * (`extraInitializationsAsync`: a shader's import), which it waits for
- * first: it is made with a copy of the options whose wait is both. The turn
- * is asked for when the effect waits, so an effect the engine already has,
- * which it hands back, takes none. Any other effect, and one made with the
- * older list of arguments, is made with the very arguments given, ready as
- * soon as it was. Returns a function that puts the engine's own back,
- * unless something else wrapped it since.
+ * How many of `engine`'s spaced effects were asked for and are not yet let
+ * go: still waiting for their shader's import or for their turn. Nothing
+ * else shows them: a material with an effect already draws with it, and
+ * says it is ready, until the new one is. 0 for an engine that is not
+ * spaced (WebGL2), and for anything that is not an engine.
+ */
+export function effectsWaitingOn(engine: unknown): number {
+  return typeof engine === "object" && engine !== null ? (waitingOn.get(engine)?.() ?? 0) : 0;
+}
+
+/** A wait that never ends: what an effect nothing will draw is left on. */
+const never = (): Promise<never> => new Promise<never>(() => undefined);
+
+/**
+ * Wraps `engine`'s own `createEffect`, on the instance. An effect whose name
+ * is one of `names`, made from options (those with `attributes`, which is
+ * how Babylon tells options from a list of names), waits its turn in `turns`
+ * before it is processed, after the wait it was given where it was given
+ * one (`extraInitializationsAsync`: its shader's import): it is made with a
+ * copy of the options whose wait is both. The turn is asked for when the
+ * effect waits, so an effect the engine already has, which it hands back,
+ * takes none. When its turn comes, an effect that was disposed meanwhile,
+ * or whose engine was, is left waiting for good and never processed. Any
+ * other effect, and one made with the older list of arguments, is made with
+ * the very arguments given. Returns a function that puts the engine's own
+ * back, unless something else wrapped it since.
  */
 export function spaceEffects(
   engine: { createEffect: (...args: never[]) => unknown },
   turns: EffectTurns,
   names: readonly string[] = SPACED_EFFECTS,
 ): () => void {
-  const own = engine as { createEffect: (...args: unknown[]) => unknown };
+  const own = engine as { createEffect: (...args: unknown[]) => unknown; isDisposed?: boolean };
   const hadOwn = Object.hasOwn(own, "createEffect");
   const original = own.createEffect;
+  let pending = 0;
+  waitingOn.set(engine, () => pending);
   const spaced = (...args: unknown[]): unknown => {
     const options = args[1] as WaitingOptions | null | undefined;
     if (options === null || options === undefined || options.attributes === undefined) return original.apply(engine, args);
+    if (typeof args[0] !== "string" || !names.includes(args[0])) return original.apply(engine, args);
     const given = typeof options.extraInitializationsAsync === "function" ? (options.extraInitializationsAsync as () => Promise<void>) : null;
-    const named = typeof args[0] === "string" && names.includes(args[0]);
-    if (given === null && !named) return original.apply(engine, args);
+    const made: { effect?: { isDisposed?: boolean } } = {};
     const waiting = {
       ...options,
       extraInitializationsAsync: async (): Promise<void> => {
-        if (given !== null) await given();
-        await turns.wait();
+        pending++;
+        try {
+          if (given !== null) await given();
+          await turns.wait();
+        } finally {
+          pending--;
+        }
+        if (own.isDisposed === true || made.effect?.isDisposed === true) await never();
       },
     };
-    return original.apply(engine, [args[0], waiting, ...args.slice(2)]);
+    made.effect = original.apply(engine, [args[0], waiting, ...args.slice(2)]) as { isDisposed?: boolean };
+    return made.effect;
   };
   own.createEffect = spaced;
   return () => {

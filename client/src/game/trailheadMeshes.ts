@@ -25,6 +25,7 @@ import { TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_COLOUR, TAIL_LAMP_H, TAIL_LA
 import { armYaw } from "./signMeshes.js";
 import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
+import { effectsWaitingOn } from "./effectTurns.js";
 
 export const TRAILHEAD_CAR_OUTPUT = "models/trailhead.car.glb";
 export const TRAILHEAD_KIOSK_OUTPUT = "models/trailhead.kiosk.glb";
@@ -79,7 +80,8 @@ export type TrailheadCar = { root: TransformNode; model: CarModel | null; leave(
 /**
  * The film's car is drawn wherever it stands once swapped in, each mesh
  * until its material has been ready for it on two passes running, and none past
- * this many frames: the effects prepared, the shader modules made and the
+ * this many frames (not counting those drawn while the engine's effects still
+ * wait their turn): the effects prepared, the shader modules made and the
  * pipelines requested at the swap, which comes as the hike starts (`app.ts`
  * fetches the car with the hike's scenery), so the end scene's first frames
  * draw the car whole instead of leaving it out or holding the page.
@@ -290,7 +292,9 @@ export function createTrailheadMeshes(
   /** After each frame: each mesh still warming that is now ready leaves; at the cap, all do. */
   function warmStep(): void {
     if (warming === null) return;
-    warming.frames += 1;
+    // A frame drawn while the engine's effects still wait their turn (`effectTurns.ts`) is not one
+    // the car's could have been ready in: its own are behind the hike's in that queue.
+    if (effectsWaitingOn(scene.getEngine()) === 0) warming.frames += 1;
     if (warming.frames >= PIPELINE_WARM_FRAMES_MAX) {
       warmed();
       return;

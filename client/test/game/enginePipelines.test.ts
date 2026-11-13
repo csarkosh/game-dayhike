@@ -284,7 +284,8 @@ describe("the Babylon the engine's start relies on", () => {
   });
 
   it("has the manager know its engine, and the engine hold the manager only once it is made", () => {
-    expect(manager).toContain("this._engine = engine;");
+    // Known before the two calls, which is what tells the constructor's calls from any other.
+    expect(manager).toMatch(/constructor\(engine, device, bufferManager, enabledExtensions\) \{[\s\S]*?this\._engine = engine;[\s\S]*?this\._getPipeline\("rgba8unorm"/);
     expect(read("@babylonjs/core/Engines/webgpuEngine.pure.js")).toContain("this._textureHelper = new WebGPUTextureManager(this, this._device,");
   });
 

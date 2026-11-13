@@ -111,6 +111,7 @@ import {
   whenStandingSkyHeld,
   type SwapBindings,
 } from "../../src/game/rendererSwap.js";
+import { createEffectTurns, spaceEffects } from "../../src/game/effectTurns.js";
 import type { QualityTier } from "../../src/game/quality.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { createSkyTable, type SkyTable } from "../../src/game/skyTable.js";
@@ -989,6 +990,26 @@ describe("whenSceneReady", () => {
     const lifted = whenSceneReady(readyScene, 10_000, layers);
     expect(await settledAfter(lifted, 300)).toBe(false);
     fill();
+    expect(await settledAfter(lifted, 250)).toBe(true);
+  });
+
+  it("waits for the effects still in the engine's queue, which the scene's own check cannot see", async () => {
+    // A PBR material draws with the effect it had while its new one waits its turn, so the scene
+    // says ready; the wait goes on until the queue is empty.
+    const runs: (() => void)[] = [];
+    const turns = createEffectTurns({ turn: (run) => void runs.push(run) });
+    const engine = {
+      createEffect(_name: string, options: { extraInitializationsAsync?: () => Promise<void> }): object {
+        void options.extraInitializationsAsync?.();
+        return { isDisposed: false };
+      },
+    };
+    spaceEffects(engine, turns);
+    engine.createEffect("pbr", { attributes: [] } as never);
+    const scene = { ...readyScene, getEngine: () => engine } as unknown as Scene;
+    const lifted = whenSceneReady(scene, 10_000);
+    expect(await settledAfter(lifted, 300)).toBe(false);
+    runs.shift()?.();
     expect(await settledAfter(lifted, 250)).toBe(true);
   });
 

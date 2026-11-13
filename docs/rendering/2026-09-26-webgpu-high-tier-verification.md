@@ -895,8 +895,14 @@ import where it has one to wait for. A frame that first draws four materials ask
 effects and draws on, each material with the effect it had (Babylon keeps a material's
 previous effect until the new one is ready) or left out as a material new to the page already
 was, and the four are processed in the four tasks after the frame, their modules a batch each.
-Nothing is made that was not, or not made that was; an effect of any other name (the sky dome,
-a post-process) is ready as soon as it was. In Chrome on the M-series Mac, both tiers, the
+Nothing is made that was not, and the one thing no longer made is an effect nothing will draw:
+one disposed while it waited, or whose engine was (a disposed engine's waiting effects would
+otherwise all be processed at once, each translated again). An effect of any other name (the
+sky dome, a post-process) is made as it was. A material that draws with the effect it had
+says it is ready while its new one waits, so what waits for a scene to be ready (the start's
+world-ready, a tier switch's cover) also waits for the queue to be empty, and the film's car,
+drawn wherever it stands for its first thirty frames, does not count a frame drawn while the
+queue is not. In Chrome on the M-series Mac, both tiers, the
 page's own calls show 68 to 69 of a start's 70 or 71 PBR fragment modules made in a task of
 the queue's and no two in one task or one frame, where a frame made six before; the two left
 are Babylon's own second processing of an effect whose mesh has a vertex buffer that is not

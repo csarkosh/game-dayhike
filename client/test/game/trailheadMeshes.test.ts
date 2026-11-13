@@ -14,6 +14,7 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import { carYaw, createCarShadowPatch, createTrailheadMeshes, type TrailheadSites } from "../../src/game/trailheadMeshes.js";
+import { createEffectTurns, effectsWaitingOn, spaceEffects } from "../../src/game/effectTurns.js";
 import type { BoardDrawing } from "../../src/game/boardPaint.js";
 import { placeStaticModel } from "../../src/game/staticModel.js";
 import { stageCar } from "../../src/game/scene/sceneStage.js";
@@ -517,6 +518,37 @@ describe("the film's car swapped in for the end", () => {
     expect(tails.every((m) => m.isEnabled())).toBe(true);
     expect(lamp.emissiveColor.asArray()).toEqual([1, 0.08, 0.04]);
     expect(tails.map((m) => m.position.z)).toEqual([-2.2, -2.2]);
+    meshes.dispose();
+  });
+
+  it("does not count a frame toward the cap while the engine's effects wait their turn", async () => {
+    const scene = freshScene();
+    const { meshes } = setup(scene, diskLoader(scene));
+    await meshes.ready;
+    // An effect of the engine's in its queue, as the car's own would be behind the hike's.
+    const engine = scene.getEngine();
+    const runs: (() => void)[] = [];
+    const turns = createEffectTurns({ turn: (run) => void runs.push(run) });
+    const restore = spaceEffects(engine as never, turns, ["queued"]);
+    const queued = engine.createEffect("queued", { attributes: [], uniformsNames: [], samplers: [], defines: "" } as never, engine);
+    expect(effectsWaitingOn(engine)).toBe(1);
+    meshes.swapCar(placeStaticModel(await diskLoader(scene)("models/intro.car.glb"), "intro.car", 0, 0, 0, 0));
+    const tails = scene.meshes.filter((m) => m.name.startsWith("car_tail_lamp_"));
+    (tails[0]!.material as StandardMaterial).isReadyForSubMesh = () => false;
+    for (let frame = 0; frame < 45; frame++) scene.onAfterRenderObservable.notifyObservers(scene);
+    expect(meshes.warm()).toBe(true);
+    // The queue empties (the effect thrown away, its turn spent on nothing): the cap counts from here.
+    queued.dispose();
+    runs.shift()?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(effectsWaitingOn(engine)).toBe(0);
+    for (let frame = 1; frame < 30; frame++) scene.onAfterRenderObservable.notifyObservers(scene);
+    expect(meshes.warm()).toBe(true);
+    scene.onAfterRenderObservable.notifyObservers(scene);
+    expect(meshes.warm()).toBe(false);
+    restore();
+    turns.dispose();
     meshes.dispose();
   });
 

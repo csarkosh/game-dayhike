@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { createEffectTurns, spaceEffects } from "../../src/game/effectTurns.js";
+import { createEffectTurns, effectsWaitingOn, spaceEffects } from "../../src/game/effectTurns.js";
 
 const require = createRequire(import.meta.url);
 const read = (spec: string): string => readFileSync(require.resolve(spec), "utf8");
@@ -120,9 +120,25 @@ describe("createEffectTurns", () => {
 /** An engine as `spaceEffects` reads it: its `createEffect` on its prototype, each call recorded. */
 class StandInEngine {
   calls: unknown[][] = [];
-  createEffect(...args: unknown[]): string {
+  isDisposed = false;
+  createEffect(...args: unknown[]): unknown {
     this.calls.push(args);
     return `effect ${this.calls.length}`;
+  }
+}
+
+/** An engine whose effects can be disposed, and which starts each one's wait as Babylon's `Effect` does: in its constructor. */
+class EffectsEngine extends StandInEngine {
+  made: { isDisposed: boolean; processed: boolean }[] = [];
+  override createEffect(...args: unknown[]): unknown {
+    super.createEffect(...args);
+    const effect = { isDisposed: false, processed: false };
+    this.made.push(effect);
+    const wait = (args[1] as { extraInitializationsAsync?: () => Promise<void> }).extraInitializationsAsync;
+    void (wait?.() ?? Promise.resolve()).then(() => {
+      effect.processed = true;
+    });
+    return effect;
   }
 }
 
@@ -203,6 +219,87 @@ describe("spaceEffects", () => {
     expect(engine.calls[2]?.[1]).toBe(water);
   });
 
+  it("leaves an effect of another name to the wait it was given, with no turn", async () => {
+    const turns = createEffectTurns({ turn: byHand().turn });
+    const engine = new StandInEngine();
+    spaceEffects(engine, turns);
+    const given = async (): Promise<void> => undefined;
+    const options = { attributes: [], uniformsNames: [], samplers: [], extraInitializationsAsync: given };
+    engine.createEffect("postprocess", options, engine);
+    expect(engine.calls[0]?.[1]).toBe(options);
+    await settle();
+    expect(turns.waiting()).toBe(0);
+  });
+
+  it("does not process the effects of an engine disposed while they waited", async () => {
+    const turns = createEffectTurns({ turn: byHand().turn });
+    const engine = new EffectsEngine();
+    spaceEffects(engine, turns);
+    engine.createEffect("pbr", { attributes: [] }, engine);
+    engine.createEffect("pbr", { attributes: [] }, engine);
+    await settle();
+    expect(effectsWaitingOn(engine)).toBe(2);
+    // As the engine's disposal does: disposed first, then the queue let go.
+    engine.isDisposed = true;
+    turns.dispose();
+    await settle();
+    expect(engine.made.map((e) => e.processed)).toEqual([false, false]);
+    expect(effectsWaitingOn(engine)).toBe(0);
+  });
+
+  it("does not process an effect disposed while it waited, and the next goes on", async () => {
+    const hand = byHand();
+    const turns = createEffectTurns({ turn: hand.turn });
+    const engine = new EffectsEngine();
+    spaceEffects(engine, turns);
+    engine.createEffect("pbr", { attributes: [] }, engine);
+    engine.createEffect("pbr", { attributes: [] }, engine);
+    engine.made[0]!.isDisposed = true;
+    hand.next();
+    await settle();
+    expect(engine.made.map((e) => e.processed)).toEqual([false, false]);
+    expect(effectsWaitingOn(engine)).toBe(1);
+    hand.next();
+    await settle();
+    expect(engine.made.map((e) => e.processed)).toEqual([false, true]);
+    expect(effectsWaitingOn(engine)).toBe(0);
+  });
+
+  it("counts an engine's effects from when they are asked for until they are let go", async () => {
+    const hand = byHand();
+    const turns = createEffectTurns({ turn: hand.turn });
+    const engine = new EffectsEngine();
+    expect(effectsWaitingOn(engine)).toBe(0);
+    expect(effectsWaitingOn(undefined)).toBe(0);
+    const restore = spaceEffects(engine, turns);
+    let arrive: () => void = () => undefined;
+    const importing = (): Promise<void> => new Promise((resolve) => (arrive = resolve));
+    engine.createEffect("pbr", { attributes: [], extraInitializationsAsync: importing }, engine);
+    engine.createEffect("sky", { attributes: [] }, engine);
+    // Counted while its shader is still on its way, before it is in the queue at all.
+    expect(effectsWaitingOn(engine)).toBe(1);
+    expect(turns.waiting()).toBe(0);
+    arrive();
+    await settle();
+    expect(effectsWaitingOn(engine)).toBe(1);
+    hand.next();
+    await settle();
+    expect(effectsWaitingOn(engine)).toBe(0);
+    expect(engine.made[0]!.processed).toBe(true);
+    restore();
+    expect(effectsWaitingOn(engine)).toBe(0);
+  });
+
+  it("stops counting an effect whose own wait failed", async () => {
+    const turns = createEffectTurns({ turn: byHand().turn });
+    const engine = new StandInEngine();
+    spaceEffects(engine, turns);
+    engine.createEffect("pbr", { attributes: [], extraInitializationsAsync: async () => Promise.reject(new Error("no such module")) });
+    const passed = engine.calls[0]?.[1] as { extraInitializationsAsync(): Promise<void> };
+    await expect(passed.extraInitializationsAsync()).rejects.toThrow("no such module");
+    expect(effectsWaitingOn(engine)).toBe(0);
+  });
+
   it("passes every other call through as it was given", () => {
     const turns = createEffectTurns({ turn: byHand().turn });
     const engine = new StandInEngine();
@@ -223,7 +320,7 @@ describe("spaceEffects", () => {
     const engine = new StandInEngine();
     spaceEffects(engine, createEffectTurns({ turn: byHand().turn }));
     const { createEffect } = engine;
-    createEffect("loose", { attributes: [], extraInitializationsAsync: async () => undefined });
+    createEffect("pbr", { attributes: [], extraInitializationsAsync: async () => undefined });
     expect(engine.calls).toHaveLength(1);
   });
 
@@ -267,6 +364,8 @@ describe("the Babylon the spacing relies on", () => {
     const source = read("@babylonjs/core/Materials/PBR/pbrBaseMaterial.pure.js");
     expect(source).toMatch(/extraInitializationsAsync: this\._shadersLoaded\s*\? undefined\s*: async \(\) => \{/);
     expect(source).toMatch(/const effect = engine\.createEffect\(shaderName, \{\s*attributes: attribs,/);
+    // The name the spacing goes by.
+    expect(source).toContain('let shaderName = "pbr";');
   });
 
   it("has an effect take the wait from its options and await it before it processes its shader", () => {
