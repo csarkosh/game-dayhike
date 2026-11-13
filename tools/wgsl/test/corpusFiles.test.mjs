@@ -316,10 +316,10 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 1195 recorded stages, each file\'s bytes hashing to the name it has: 478 on the medium and high tiers, 630 on low, 17 on high alone, 66 on medium alone, 4 on every tier', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(1195);
+  it('holds the 1197 recorded stages, each file\'s bytes hashing to the name it has: 480 on the medium and high tiers, 630 on low, 17 on high alone, 66 on medium alone, 4 on every tier', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(1197);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(1195);
+    expect(read.stages).toHaveLength(1197);
     expect(read.others).toEqual([]);
     expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(667);
     // The 222 recorded on the medium and high tiers (the far field: the prepass's variants of
@@ -443,10 +443,10 @@ describe('the committed corpus and the tests\' fixture', () => {
     // page had met on the recording machine in its 90 s: the shades' smoke outside the prepass,
     // materials under three lights where four were met, a skinned body's, a thin-instanced
     // colour's, an alpha-tested albedo's.
-    expect(read.tiers.size).toBe(1195);
+    expect(read.tiers.size).toBe(1197);
     const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
-    expect([on('low'), on('medium'), on('high')]).toEqual([634, 548, 499]);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(478);
+    expect([on('low'), on('medium'), on('high')]).toEqual([634, 550, 501]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(480);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(630);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(17);
     expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium')).toHaveLength(66);
