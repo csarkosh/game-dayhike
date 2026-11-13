@@ -20,9 +20,11 @@ import {
   quantizePitch,
   dequantizePitch,
   POSITION_PRECISION,
+  PLAYER_BYTES,
+  PROTOCOL_VERSION,
   type Snapshot,
 } from "../../src/net/protocol.js";
-import { AiState } from "../../src/sim/types.js";
+import { AiState, DeathCause } from "../../src/sim/types.js";
 import type { InputCommand } from "../../src/sim/types.js";
 
 describe("quantization", () => {
@@ -141,6 +143,7 @@ function sampleSnapshot(): Snapshot {
       grounded: i % 2 === 0,
       lamp: { on: i % 2 === 1, charge: i / 4 },
       safe: i === 3,
+      cause: (i % 7) as DeathCause,
       stare: i / 4,
     })),
     enemies: Array.from({ length: 30 }, (_, i) => ({
@@ -180,6 +183,7 @@ describe("snapshot codec", () => {
       expect(actual.lamp.on).toBe(expected.lamp.on);
       expect(Math.abs(actual.lamp.charge - expected.lamp.charge)).toBeLessThanOrEqual(0.5 / 127);
       expect(actual.safe).toBe(expected.safe);
+      expect(actual.cause).toBe(expected.cause);
       expect(Math.abs(actual.stare - expected.stare)).toBeLessThanOrEqual(0.5 / 255);
     }
     expect(back.outcome).toBe(2);
@@ -243,9 +247,18 @@ describe("snapshot codec", () => {
     expect(messageTypeOf(encodeSnapshot(sampleSnapshot()))).toBe(MessageType.Snapshot);
   });
 
-  it("carries the safe bit in the flags byte", () => {
-    expect(decodeFlagsByte(encodeFlagsByte({ safe: true }))).toEqual({ safe: true });
-    expect(decodeFlagsByte(encodeFlagsByte({ safe: false }))).toEqual({ safe: false });
+  it("carries the safe bit and the cause of death in the flags byte", () => {
+    for (const safe of [true, false]) {
+      for (const cause of [DeathCause.None, DeathCause.Caught, DeathCause.OffTrail, DeathCause.Still, DeathCause.Into, DeathCause.Looked, DeathCause.Lunge]) {
+        expect(decodeFlagsByte(encodeFlagsByte({ safe, cause }))).toEqual({ safe, cause });
+      }
+    }
+    // Bit 0 is safe; bits 1 to 3 the cause: no byte is added to a player's record.
+    expect(encodeFlagsByte({ safe: true, cause: DeathCause.Lunge })).toBe(0b1101);
+    expect(encodeFlagsByte({ safe: false, cause: DeathCause.None })).toBe(0);
+    expect(PLAYER_BYTES).toBe(28);
+    // A build that cannot bring a player back must not share a match with one that can.
+    expect(PROTOCOL_VERSION).toBe(6);
   });
 
   it("carries the lamp in one byte and round-trips it at exact charge steps", () => {

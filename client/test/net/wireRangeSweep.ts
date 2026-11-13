@@ -31,6 +31,7 @@ function throughTheWire(pos: Vec3): Vec3 {
         grounded: true,
         lamp: { on: false, charge: 1 },
         safe: false,
+        cause: 0,
         stare: 0,
       },
     ],

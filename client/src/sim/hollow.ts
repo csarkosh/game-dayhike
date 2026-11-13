@@ -20,6 +20,7 @@ import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
 import { route } from "./trailRoute.js";
+import { causeOfDeath } from "./deathCause.js";
 import { stepMovement } from "./movement.js";
 import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
@@ -511,7 +512,10 @@ export function updateHollows(world: World): void {
     for (const p of state.players.values()) {
       if (p.health <= 0 || p.safe) continue;
       const dy = p.pos.y - h.pos.y;
-      if (horizontalDistSq(p.pos, h.pos) <= reach * reach && Math.abs(dy) <= tall) p.health = 0;
+      if (horizontalDistSq(p.pos, h.pos) <= reach * reach && Math.abs(dy) <= tall) {
+        p.cause = causeOfDeath(world, p, h, "contact");
+        p.health = 0;
+      }
     }
   }
 

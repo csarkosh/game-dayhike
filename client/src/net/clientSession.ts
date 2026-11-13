@@ -275,6 +275,7 @@ export function createClientSession(
     // one that belongs to a decoded snapshot.
     local.lamp = { on: authoritative.lamp.on, charge: authoritative.lamp.charge };
     local.safe = authoritative.safe;
+    local.cause = authoritative.cause;
     local.stare = authoritative.stare;
     local.lastProcessedInput = snapshot.lastProcessedInput;
     predicted.state.tick = snapshot.tick;
@@ -429,6 +430,7 @@ export function createClientSession(
             lastProcessedInput: 0,
             lamp: { on: truth.lamp.on, charge: truth.lamp.charge },
             safe: truth.safe,
+            cause: truth.cause,
             stare: truth.stare,
             // Host-only and not in the snapshot. A client has no use for where a
             // remote player died: death is host truth and arrives as health 0.

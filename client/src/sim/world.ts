@@ -1,6 +1,6 @@
 import type { Interactable } from "./interact.js";
 import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "./types.js";
-import { Outcome, Phase, cloneVec3 } from "./types.js";
+import { DeathCause, Outcome, Phase, cloneVec3 } from "./types.js";
 import type { Level } from "./level.js";
 import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
@@ -228,6 +228,7 @@ export function spawnPlayer(world: World): PlayerState {
     lamp: { on: false, charge: 1 },
     stare: 0,
     safe: false,
+    cause: DeathCause.None,
     deathPos: null,
   };
   world.state.players.set(id, player);
@@ -426,7 +427,7 @@ export function serializeWorldState(state: WorldState): string {
     parts.push(
       `P${id}:${p.pos.x},${p.pos.y},${p.pos.z},${p.vel.x},${p.vel.y},${p.vel.z},` +
         `${p.yaw},${p.pitch},${p.health},${p.grounded ? 1 : 0},${p.lastProcessedInput}` +
-        `,${p.lamp.on ? 1 : 0},${Math.round(p.lamp.charge * 127)},${p.safe ? 1 : 0},${p.stare}`,
+        `,${p.lamp.on ? 1 : 0},${Math.round(p.lamp.charge * 127)},${p.safe ? 1 : 0},${p.stare},${p.cause}`,
     );
   }
   for (const [id, e] of [...state.enemies.entries()].sort((a, b) => a[0] - b[0])) {

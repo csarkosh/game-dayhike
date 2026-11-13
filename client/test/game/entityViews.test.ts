@@ -41,7 +41,7 @@ function player(id: number, on: boolean, yaw = 0): PlayerState {
     health: 100,
     grounded: true,
     lastProcessedInput: 0,
-    deathPos: null,
+    deathPos: null, cause: 0,
     lamp: { on, charge: 1 },
     stare: 0,
     safe: false,

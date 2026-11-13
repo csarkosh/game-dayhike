@@ -1,4 +1,4 @@
-import type { InputCommand, Vec3 } from "../sim/types.js";
+import type { DeathCause, InputCommand, Vec3 } from "../sim/types.js";
 
 /**
  * Bumped whenever the wire format changes (most recently: the summit loop —
@@ -13,7 +13,7 @@ import type { InputCommand, Vec3 } from "../sim/types.js";
  * version is refused in words instead of decoding garbage. The level id
  * does not cover this — it moves with the terrain, not the codec.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 export const enum MessageType {
   Input = 1,
@@ -92,15 +92,16 @@ export function decodeLampByte(b: number): { on: boolean; charge: number } {
 }
 
 /**
- * The player's flag bits in one byte: bit 0 is `safe`, the road corridor.
- * A byte rather than a bit per flag, so the next host-truth boolean costs
- * nothing on the wire.
+ * The player's flag bits in one byte: bit 0 is `safe`, the road corridor;
+ * bits 1 to 3 are why they last died (`DeathCause`, under 8). A byte rather
+ * than a bit per flag, so the next host-truth boolean costs nothing on the
+ * wire.
  */
-export function encodeFlagsByte(flags: { safe: boolean }): number {
-  return flags.safe ? 1 : 0;
+export function encodeFlagsByte(flags: { safe: boolean; cause: DeathCause }): number {
+  return (flags.safe ? 1 : 0) | ((flags.cause & 7) << 1);
 }
-export function decodeFlagsByte(b: number): { safe: boolean } {
-  return { safe: (b & 1) !== 0 };
+export function decodeFlagsByte(b: number): { safe: boolean; cause: DeathCause } {
+  return { safe: (b & 1) !== 0, cause: ((b >> 1) & 7) as DeathCause };
 }
 
 export type SnapshotPlayer = {
@@ -122,6 +123,8 @@ export type SnapshotPlayer = {
   lamp: { on: boolean; charge: number };
   /** On the road corridor. Carried in the flags byte; see {@link encodeFlagsByte}. */
   safe: boolean;
+  /** Why they last died. Carried in the flags byte beside `safe`. */
+  cause: DeathCause;
   /** The stare, 0 to 1, as one byte. */
   stare: number;
 };
@@ -222,7 +225,7 @@ export function decodeInput(buffer: ArrayBuffer): InputCommand[] {
   return commands;
 }
 
-const PLAYER_BYTES = 28;
+export const PLAYER_BYTES = 28;
 const ENEMY_BYTES = 18;
 
 export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
@@ -344,7 +347,7 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
     o += 1;
     const lamp = decodeLampByte(view.getUint8(o));
     o += 1;
-    const { safe } = decodeFlagsByte(view.getUint8(o));
+    const { safe, cause } = decodeFlagsByte(view.getUint8(o));
     o += 1;
     const stare = view.getUint8(o) / 255;
     o += 1;
@@ -358,6 +361,7 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
       grounded,
       lamp,
       safe,
+      cause,
       stare,
     });
   }

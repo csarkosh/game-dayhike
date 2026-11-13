@@ -43,6 +43,23 @@ export const enum Outcome {
   Lost = 2,
 }
 
+/**
+ * Why a player died in the chase (deathCause.ts): what they were doing as the
+ * thing reached them. Host truth; rides the snapshot in three bits of the
+ * flags byte, so the values stay under 8.
+ */
+export const enum DeathCause {
+  /** Never died. */
+  None = 0,
+  /** Run down from behind. */
+  Caught = 1,
+  OffTrail = 2,
+  Still = 3,
+  Into = 4,
+  Looked = 5,
+  Lunge = 6,
+}
+
 /** The match's acts (docs/gameplay/2026-09-16-the-summit.md §2, docs/gameplay/2026-10-08-the-summit-scene.md). Host truth, one byte on the wire. */
 export const enum Phase {
   Climb = 0,
@@ -89,6 +106,12 @@ export type PlayerState = {
    * snapshot as one bit so every peer's end screen agrees.
    */
   safe: boolean;
+  /**
+   * Why this player last died (deathCause.ts): None until a first death,
+   * then kept until the next. Host truth; rides the snapshot in the flags
+   * byte beside `safe`, and the player's own screen reads it.
+   */
+  cause: DeathCause;
   /**
    * Where this player fell. Set once, on the tick health reaches 0, and never
    * cleared: death is permanent, and `updateDeaths` uses it to know the drop

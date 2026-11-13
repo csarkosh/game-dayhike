@@ -6,7 +6,7 @@ import type { World } from "../../src/sim/world.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "../../src/sim/terrain.js";
-import { AiState, Phase } from "../../src/sim/types.js";
+import { AiState, DeathCause, Phase } from "../../src/sim/types.js";
 import type { EnemyState, PlayerState, Vec3 } from "../../src/sim/types.js";
 import { PLAYER_EYE_OFFSET, TICK_DT, WALK_SPEED } from "../../src/sim/constants.js";
 import type { TrailNode } from "../../src/sim/trail.js";
@@ -268,6 +268,8 @@ describe("the director", () => {
     }
     expect(real).toBeGreaterThanOrEqual(1);
     expect(p.health).toBe(0);
+    // Its blow leaves a cause on the player: standing still here, a lunge's own had they been running.
+    expect(p.cause).not.toBe(DeathCause.None);
     expect(HAUNT_REAL_BY_S).toBe(6);
   }, timeLimit(60_000));
 

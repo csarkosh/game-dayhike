@@ -167,6 +167,7 @@ export function createHostSession(
         grounded: p.grounded,
         lamp: { on: p.lamp.on, charge: p.lamp.charge },
         safe: p.safe,
+        cause: p.cause,
         stare: p.stare,
       })),
       enemies: [...world.state.enemies.values()].map((e) => ({
