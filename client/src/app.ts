@@ -1137,7 +1137,9 @@ function buildGame(
    */
   function syncWayLight(world: World, dt: number): void {
     if (wayGivenTo !== renderer || wayGiven !== world.way) {
-      renderer.setWay(world.way);
+      const ground = world.ground;
+      if (ground === null) renderer.setWay(null, () => 0);
+      else renderer.setWay(world.way, (x, z) => ground.heightAt(x, z));
       wayGivenTo = renderer;
       wayGiven = world.way;
     }

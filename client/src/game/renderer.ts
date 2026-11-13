@@ -1791,8 +1791,8 @@ export type Renderer = {
   setHaunt(level: number): void;
   /** Hold the ground cloud's density at a level (0 to 1) whatever the night, or null to let the night set it; returns the density now drawn. */
   setMist(density: number | null): number;
-  /** The way down to light in the chase (wayLight.ts), or none: the app gives every renderer the world's, when it has it. */
-  setWay(way: WayDown | null): void;
+  /** The way down to light in the chase (wayLight.ts), or none, and the ground its light stands on (the sim's field, as the players stand on it): the app gives every renderer the world's, when it has it. */
+  setWay(way: WayDown | null, heightAt: (x: number, z: number) => number): void;
   /**
    * The way's light, 0 to 1 (wayLevel.ts): the half pipe is drawn at it, the
    * rest of the frame is dimmed by it (`wayDimAt`), and where the mist has a
@@ -2540,7 +2540,7 @@ function buildRenderer(
   jobsReadout?.install();
   partOf(jobsReadout);
   // The way down's light (wayLight.ts): the half pipe the chase shows, on every tier. A forest's alone.
-  const wayLight = forest === null ? null : createWayLight(scene, postFeatures.colourPath, (x, z) => elevationAt(forest.seed, x, z), jobs);
+  const wayLight = forest === null ? null : createWayLight(scene, postFeatures.colourPath, jobs);
   partOf(wayLight);
   let way: WayDown | null = null;
   let wayLevel = 0;
@@ -3699,9 +3699,9 @@ function buildRenderer(
     setHaunt(level) {
       hauntLevel = Math.max(0, Math.min(1, level));
     },
-    setWay(next) {
+    setWay(next, heightAt) {
       way = next;
-      wayLight?.setWay(next);
+      wayLight?.setWay(next, heightAt);
     },
     setWayLevel(level) {
       wayLevel = Math.max(0, Math.min(1, level));

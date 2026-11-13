@@ -36,8 +36,14 @@ export const WAY_WARM_FRAMES = 3;
 const WAY_Z_OFFSET = -2;
 
 export type WayLight = {
-  /** The way to light, or none: its meshes are built a chunk a slice, the old way's gone at once. */
-  setWay(way: WayShape | null): void;
+  /**
+   * The way to light, or none: its meshes are built a chunk a slice, the
+   * old way's gone at once. Every vertex stands on `heightAt`: the ground
+   * the players stand on (the sim's field, the walkable rock's rise with
+   * it), since over rock the bare elevation lies up to a metre under what
+   * is drawn and a floor laid on it would be hidden.
+   */
+  setWay(way: WayShape | null, heightAt: (x: number, z: number) => number): void;
   /**
    * A frame: the eye, the light's `level` (0 none, 1 whole), and `undim`,
    * one over what the frame outside the light is dimmed by, which the post
@@ -49,8 +55,8 @@ export type WayLight = {
   dispose(): void;
 };
 
-/** The way's light in `scene`, toned for `colourPath`, its vertices stood on `heightAt`, built through `jobs`. */
-export function createWayLight(scene: Scene, colourPath: "post" | "material", heightAt: (x: number, z: number) => number, jobs: SyncJobs): WayLight {
+/** The way's light in `scene`, toned for `colourPath`, built through `jobs`. */
+export function createWayLight(scene: Scene, colourPath: "post" | "material", jobs: SyncJobs): WayLight {
   Effect.ShadersStore[`${WAY_LIGHT_NAME}VertexShader`] = wayLightVertex;
   Effect.ShadersStore[`${WAY_LIGHT_NAME}FragmentShader`] = wayLightFragment;
   const material = new ShaderMaterial(WAY_LIGHT_NAME, scene, WAY_LIGHT_NAME, {
@@ -81,7 +87,7 @@ export function createWayLight(scene: Scene, colourPath: "post" | "material", he
     ready = false;
   }
 
-  function* build(way: WayShape): Slices {
+  function* build(way: WayShape, heightAt: (x: number, z: number) => number): Slices {
     const chunks = wayChunks(way);
     for (let i = 0; i < chunks.length; i++) {
       const [from, to] = chunks[i] as [number, number];
@@ -99,9 +105,9 @@ export function createWayLight(scene: Scene, colourPath: "post" | "material", he
   }
 
   return {
-    setWay(way) {
+    setWay(way, heightAt) {
       clear();
-      if (way !== null && way.xs.length > 1) jobs.begin(owner, build(way), true, WAY_LIGHT_NAME);
+      if (way !== null && way.xs.length > 1) jobs.begin(owner, build(way, heightAt), true, WAY_LIGHT_NAME);
     },
     update(eye, level, undim) {
       eyeAt.copyFrom(eye);

@@ -6,7 +6,7 @@ import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { SyncJobs, Slices } from "../../src/game/syncJobs.js";
 import { WAY_LIGHT_NAME, WAY_LIGHT_UNIFORMS, WAY_MATERIAL_GAIN, WAY_WARM_FRAMES, createWayLight } from "../../src/game/wayLight.js";
-import { WAY_FLOOR_REACH, WAY_FLOOR_STRENGTH, WAY_POINT_VERTICES, WAY_TINT, WAY_WALL_REACH, WAY_WALL_STRENGTH, type WayShape } from "../../src/game/wayLightGeometry.js";
+import { WAY_FLOOR_REACH, WAY_FLOOR_STRENGTH, WAY_LIFT_M, WAY_POINT_VERTICES, WAY_TINT, WAY_WALL_REACH, WAY_WALL_STRENGTH, type WayShape } from "../../src/game/wayLightGeometry.js";
 
 /** A straight way along +x, a point every 2 m, `n` points. */
 function straight(n: number): WayShape {
@@ -35,6 +35,7 @@ function handJobs(): { jobs: SyncJobs; slice(): boolean; cancelled: number; begu
   return state;
 }
 const EYE = new Vector3(0, 12, 0);
+const GROUND = (): number => 10;
 type Held = { _floats: Record<string, number>; _vectors3: Record<string, Vector3>; _vectors4: Record<string, { x: number; y: number; z: number; w: number }> };
 
 describe("the way's light", () => {
@@ -43,7 +44,7 @@ describe("the way's light", () => {
     engine = new NullEngine();
     scene = new Scene(engine);
     const hand = handJobs();
-    return { hand, light: createWayLight(scene, colourPath, () => 10, hand.jobs) };
+    return { hand, light: createWayLight(scene, colourPath, hand.jobs) };
   };
   afterEach(() => { scene.dispose(); engine.dispose(); });
 
@@ -66,7 +67,7 @@ describe("the way's light", () => {
 
   it("builds a chunk a slice as a patient job, each a mesh with the light's attribute", () => {
     const { hand, light } = make();
-    light.setWay(straight(40));
+    light.setWay(straight(40), GROUND);
     expect(hand.begun).toBe(1);
     expect(hand.patient).toBe(true);
     expect(hand.name).toBe("wayLight");
@@ -84,9 +85,25 @@ describe("the way's light", () => {
     expect(mesh.material!.name).toBe(WAY_LIGHT_NAME);
   });
 
+  it("stands its vertices on the ground it is given with the way: the ground the players stand on, the walkable rock with it", () => {
+    const { hand, light } = make();
+    // A ground that rises with x, as a rock's plate rises out of the bare ground.
+    const ground = (x: number, z: number): number => 7 + 0.25 * x + 0.5 * z;
+    light.setWay(straight(10), ground);
+    while (!hand.slice()) { /* build */ }
+    const positions = scene.meshes[0]!.getVerticesData("position")!;
+    // The floor's first vertices of each point: a hair over the ground under each.
+    for (let p = 0; p < 10; p++) {
+      for (let k = 0; k < 9; k++) {
+        const v = p * WAY_POINT_VERTICES + k;
+        expect(positions[v * 3 + 1]).toBeCloseTo(ground(positions[v * 3]!, positions[v * 3 + 2]!) + WAY_LIFT_M, 4);
+      }
+    }
+  });
+
   it("draws for its first frames at nothing, then only while its level is up", () => {
     const { hand, light } = make();
-    light.setWay(straight(10));
+    light.setWay(straight(10), GROUND);
     while (!hand.slice()) { /* build */ }
     const mesh = scene.meshes[0]!;
     const held = scene.getMaterialByName(WAY_LIGHT_NAME) as unknown as Held;
@@ -109,7 +126,7 @@ describe("the way's light", () => {
 
   it("on the material path its light is in the frame's own terms, whatever the dim", () => {
     const { hand, light } = make("material");
-    light.setWay(straight(10));
+    light.setWay(straight(10), GROUND);
     while (!hand.slice()) { /* build */ }
     for (let i = 0; i <= WAY_WARM_FRAMES; i++) light.update(EYE, 1, 2);
     expect((scene.getMaterialByName(WAY_LIGHT_NAME) as unknown as Held)._floats.wayGain).toBeCloseTo(WAY_MATERIAL_GAIN, 6);
@@ -117,14 +134,14 @@ describe("the way's light", () => {
 
   it("a new way replaces the old one's meshes and its unfinished build; none clears them", () => {
     const { hand, light } = make();
-    light.setWay(straight(40));
+    light.setWay(straight(40), GROUND);
     hand.slice();
     expect(scene.meshes.length).toBe(1);
-    light.setWay(straight(10));
+    light.setWay(straight(10), GROUND);
     expect(scene.meshes.length).toBe(0);
     while (!hand.slice()) { /* build */ }
     expect(scene.meshes.length).toBe(1);
-    light.setWay(null);
+    light.setWay(null, GROUND);
     expect(scene.meshes.length).toBe(0);
     expect(light.ready).toBe(false);
     light.update(EYE, 1, 1);
@@ -132,7 +149,7 @@ describe("the way's light", () => {
 
   it("disposes its meshes, its material and its build", () => {
     const { hand, light } = make();
-    light.setWay(straight(40));
+    light.setWay(straight(40), GROUND);
     hand.slice();
     light.dispose();
     expect(scene.meshes.length).toBe(0);

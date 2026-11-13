@@ -97,7 +97,9 @@ describe("the renderer and the app", () => {
 
   it("the app gives every renderer the world's way, and the level every frame", () => {
     expect(app).toContain("if (wayGivenTo !== renderer || wayGiven !== world.way) {");
-    expect(app).toContain("renderer.setWay(world.way);");
+    // With the ground the players stand on (the sim's field, the walkable rock in it), not the bare elevation.
+    expect(app).toContain("renderer.setWay(world.way, (x, z) => ground.heightAt(x, z));");
+    expect(renderer).not.toContain("createWayLight(scene, postFeatures.colourPath, (x, z) => elevationAt");
     expect(app).toContain("renderer.setWayLevel(wayShown);");
     expect(app).toContain("wayShown = wayHeld ?? wayLevelFor(world, sceneInto, wayShown, dt);");
   });
