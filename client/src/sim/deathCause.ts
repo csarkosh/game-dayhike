@@ -12,9 +12,9 @@
 import type { EnemyState, PlayerState } from "./types.js";
 import { AiState, DeathCause } from "./types.js";
 import type { World } from "./world.js";
-import { trailDistance } from "./trail.js";
+import { chaseLineDistance } from "./chaseLine.js";
 
-/** Metres from the trail past which a player is off it: the haunt's own measure (`OFF_TRAIL_FROM_M`, haunt.ts; a test holds the two equal). */
+/** Metres from the line the chase holds a player to (chaseLine.ts: the way down, or the trail where there is no way) past which they are off it: the haunt's own measure (`OFF_TRAIL_FROM_M`, haunt.ts; a test holds the two equal). */
 export const OFF_TRAIL_M = 4;
 /** Ground speed, m/s, under which a player is standing still: slower than a walk. */
 export const STILL_SPEED = 1.5;
@@ -29,7 +29,7 @@ export const LOOKED_STARE = 0.6;
  * zeroed with it.
  */
 export function causeOfDeath(world: World, p: PlayerState, killer: EnemyState, by: "contact" | "strike"): DeathCause {
-  if (world.trail !== null && trailDistance(world.trail, p.pos.x, p.pos.z) > OFF_TRAIL_M) return DeathCause.OffTrail;
+  if (chaseLineDistance(world, p.pos.x, p.pos.z) > OFF_TRAIL_M) return DeathCause.OffTrail;
   const speed = Math.sqrt(p.vel.x * p.vel.x + p.vel.z * p.vel.z);
   if (speed < STILL_SPEED) return DeathCause.Still;
   const dx = killer.pos.x - p.pos.x, dz = killer.pos.z - p.pos.z;

@@ -38,7 +38,8 @@ import { isOnCorridor } from "./containment.js";
 import { faceToward, horizontalDistSq, playerSees, revealing, walkToward } from "./hollow.js";
 import { climbOf, WATCH_SLOPE_NY } from "./watcher.js";
 import { actsUnder, MIST_AT, MIST_SPAN, smootherstep } from "./acts.js";
-import { trailDistance } from "./trail.js";
+import { chaseLineDistance, onWay } from "./chaseLine.js";
+import { wayDirection, wayPoint, wayProject } from "./wayDown.js";
 import { causeOfDeath } from "./deathCause.js";
 import { decided } from "./checkpoint.js";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
@@ -156,12 +157,12 @@ export function isShadeState(ai: AiState): boolean {
   return ai === AiState.Shade || ai === AiState.Lunge || ai === AiState.Strike;
 }
 
-/** How far off the trail the chase's targets are, 0 on it to 1 from OFF_TRAIL_FROM_M + OFF_TRAIL_SPAN_M off: the farthest of them. */
+/** How far off the chase's line (chaseLine.ts: the way down, or the trail) its targets are, 0 on it to 1 from OFF_TRAIL_FROM_M + OFF_TRAIL_SPAN_M off: the farthest of them. */
 export function offTrailOf(world: World): number {
   if (world.trail === null) return 0;
   let worst = 0;
   for (const p of targetsOf(world)) {
-    const t = (trailDistance(world.trail, p.pos.x, p.pos.z) - OFF_TRAIL_FROM_M) / OFF_TRAIL_SPAN_M;
+    const t = (chaseLineDistance(world, p.pos.x, p.pos.z) - OFF_TRAIL_FROM_M) / OFF_TRAIL_SPAN_M;
     if (t > worst) worst = t;
   }
   return worst > 1 ? 1 : worst;
@@ -273,8 +274,16 @@ function standOff(world: World, graph: TrailGraph, target: PlayerState, on: { x:
   const eye: Vec3 = { x: target.pos.x, y: target.pos.y + PLAYER_EYE_OFFSET, z: target.pos.z };
   const at = admits(world, x, z, eye);
   if (at === null) return null;
-  const d = trailDistance(graph, at.x, at.z);
+  const d = chaseLineDistance(world, at.x, at.z);
   return d >= SHADE_TRAIL_OFF_M[0] && d <= SHADE_TRAIL_OFF_M[1] ? at : null;
+}
+
+/** The point of the line nearest (x, z) and its direction there: the way down's once the chase holds to it (chaseLine.ts), else the trail's. */
+function nearestOnLine(world: World, graph: TrailGraph, x: number, z: number): { x: number; z: number; tx: number; tz: number } {
+  if (world.way === null || !onWay(world)) return nearestOnTrail(graph, x, z);
+  const s = wayProject(world.way, x, z).s;
+  const at = wayPoint(world.way, s, { x: 0, z: 0 }), along = wayDirection(world.way, s, { x: 0, z: 0 });
+  return { x: at.x, z: at.z, tx: along.x, tz: along.z };
 }
 
 /**
@@ -297,7 +306,7 @@ export function placeShadeOffTrail(world: World, target: PlayerState, rng: { rng
   const graph = world.trail;
   if (graph === null) return null;
   const look = aimDirection(target.yaw, 0);
-  const stood = standOff(world, graph, target, nearestOnTrail(graph, target.pos.x + look.x * ahead, target.pos.z + look.z * ahead), side, off);
+  const stood = standOff(world, graph, target, nearestOnLine(world, graph, target.pos.x + look.x * ahead, target.pos.z + look.z * ahead), side, off);
   if (stood !== null) return stood;
   const minX = look.x * SHADE_BEARING_MIN_COS - bandSide * look.z * SHADE_BEARING_MIN_SIN;
   const minZ = bandSide * look.x * SHADE_BEARING_MIN_SIN + look.z * SHADE_BEARING_MIN_COS;
@@ -309,7 +318,7 @@ export function placeShadeOffTrail(world: World, target: PlayerState, rng: { rng
   const eye: Vec3 = { x: target.pos.x, y: target.pos.y + PLAYER_EYE_OFFSET, z: target.pos.z };
   const at = admits(world, target.pos.x + (bx / len) * range, target.pos.z + (bz / len) * range, eye);
   if (at === null) return null;
-  const d = trailDistance(graph, at.x, at.z);
+  const d = chaseLineDistance(world, at.x, at.z);
   return d >= SHADE_TRAIL_OFF_M[0] && d <= SHADE_TRAIL_OFF_M[1] ? at : null;
 }
 

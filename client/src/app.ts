@@ -124,7 +124,7 @@ import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState
 import { stepWay } from "./sim/wayDraw.js";
 import { hasLineOfSight } from "./sim/ai.js";
 import { isHollowState, playerSees } from "./sim/hollow.js";
-import { trailDistance } from "./sim/trail.js";
+import { chaseLineDistance, chaseLinePoint } from "./sim/chaseLine.js";
 import { AiState } from "./sim/types.js";
 import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState, type VoiceScene } from "./game/innerVoice.js";
 import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
@@ -134,7 +134,6 @@ import { DIED_CLOSE_FROM_S } from "./game/ending.js";
 import { RETURN_LIFT_MS, causeName, createDeathReturn } from "./game/deathReturn.js";
 import { returnHollowAt } from "./sim/returns.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_HALF } from "./sim/constants.js";
-import { stemAhead } from "./sim/trailRoute.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
 
 /** The way down's draw: milliseconds of it a frame through the climb, and once the scene or the chase is on; and the tick it starts at, ten seconds in, so nothing of it runs under the intro. */
@@ -660,9 +659,9 @@ function buildGame(
     }
     return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: endRunYaw, pitch: 0 };
   }
-  /** The way down for the threshold, as a look from where `me` stands: to a point `DOWN_TRAIL_M` back down the stem, and its ground. Null with no player or no trail. */
+  /** The way down for the threshold, as a look from where `me` stands: to a point `DOWN_TRAIL_M` down the line the chase holds them to (sim/chaseLine.ts: the way down, or the stem where there is none), and its ground. Null with no player or no line. */
   function wayDownFrom(me: PlayerState | undefined, sim: World): { yaw: number; pitch: number } | null {
-    const down = me === undefined || sim.trail === null ? null : stemAhead(sim.trail, me.pos.x, me.pos.z, -DOWN_TRAIL_M);
+    const down = me === undefined ? null : chaseLinePoint(sim, me.pos.x, me.pos.z, DOWN_TRAIL_M, { x: 0, z: 0 });
     if (down === null || me === undefined) return null;
     const eyeY = me.pos.y + PLAYER_EYE_OFFSET;
     const groundY = sim.ground?.heightAt(down.x, down.z) ?? eyeY;
@@ -1124,7 +1123,7 @@ function buildGame(
   function syncAtmosphere(world: World, state: WorldState, localId: number, dt: number): void {
     if (world.search === null || world.trail === null) return;
     sightIndex = 0;
-    const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground, (eye, h) => sightEvery(eye, h, world));
+    const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground, (eye, h) => sightEvery(eye, h, world), (x, z) => chaseLineDistance(world, x, z));
     escalation = stepEscalation(escalation, targets, dt);
     lastTargets = targets;
     if (telemetry !== null) {
@@ -1232,7 +1231,7 @@ function buildGame(
       const spoke = stepInnerVoice(voice, {
         climb: calm ? 0 : escalation.progressMax, wet: acts.wet, night: acts.night, mist: calm ? settled.weather.mist : acts.mist,
         chase: state.phase === Phase.Chase, ended: ended || dead, covered: gate.covered, scene: sceneOn() ? sceneKind : "none",
-        offTrail: world.trail === null ? 0 : trailDistance(world.trail, self.pos.x, self.pos.z),
+        offTrail: chaseLineDistance(world, self.pos.x, self.pos.z),
         lamp: self.lamp.on, stare: self.stare, moving: Math.hypot(self.vel.x, self.vel.z) > 0.2,
         shadeSeen, cry: cryOver && !sceneOn(),
         // The scene's reveal: the terror line in the predator's view, the fourth shot.
