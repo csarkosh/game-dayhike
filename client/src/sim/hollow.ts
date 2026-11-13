@@ -21,7 +21,7 @@ import type { TrailGraph, TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
 import { route } from "./trailRoute.js";
 import { causeOfDeath } from "./deathCause.js";
-import { returnsOn } from "./checkpoint.js";
+import { decided, returnsOn } from "./checkpoint.js";
 import { stepMovement } from "./movement.js";
 import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
@@ -518,6 +518,8 @@ export function updateHollows(world: World): void {
   const held = revealing(world);
   for (const h of hollowsOf(world)) {
     if (h.ai === AiState.Watch || held) continue;
+    // A forest match already won: the players still out on the mountain stand in the end scene, untouched (checkpoint.ts).
+    if (decided(world)) break;
     // A Hollow stepping out for a returning player touches nobody until it hunts (returns.ts).
     if (h.stalks && h.ai === AiState.Emerge) continue;
     for (const p of state.players.values()) {
@@ -564,7 +566,8 @@ export function updateHollows(world: World): void {
 
   // Prey: a hunting Hollow whose target is dead, gone or safe takes the
   // nearest living, unsafe player, or stands; a standing one takes the
-  // first prey that appears. A Hollow never merges and never leaves: the
+  // first prey that appears. (A Hollow leaves only at a return, returns.ts,
+  // where one with nobody to hunt is withdrawn.) A Hollow never merges: the
   // pack only grows (summit.ts spawns; S3 adds the forks). The watcher is
   // never prey-driven: it would otherwise be a hunt on its first tick.
   for (const h of all) {
@@ -590,9 +593,10 @@ export function updateHollows(world: World): void {
 }
 
 /**
- * The loss: a match that had players and has no living one is over. Death is
- * permanent on every level, so this runs on every world — the sandbox, where
- * no Hollow walks, ends the same way the forest does.
+ * The loss: a match that had players and has no living one is over. It runs
+ * on every world — the sandbox, where no Hollow walks, ends the same way a
+ * forest's climb would — but in a forest match's chase, where death is not
+ * permanent: the dead come back (checkpoint.ts), so nobody alive is no loss.
  */
 export function updateLoss(world: World): void {
   const state = world.state;

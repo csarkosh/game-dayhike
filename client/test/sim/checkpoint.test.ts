@@ -9,7 +9,9 @@ import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import type { EnemyState, PlayerState } from "../../src/sim/types.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_MAX_HEALTH, SIM_TICK_HZ } from "../../src/sim/constants.js";
 import { HOLLOW_STALK_SPEED, playerSees, spawnForkHollow, spawnHollow } from "../../src/sim/hollow.js";
+import { spawnShade } from "../../src/sim/haunt.js";
 import { HOLLOW_PACK_MAX, RETURN_AFTER_S, RETURN_HOLD_S, held, returnsOn } from "../../src/sim/checkpoint.js";
+import { returnHollowAt } from "../../src/sim/returns.js";
 import { SHOTS } from "../../src/game/cutscene.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -271,6 +273,89 @@ describe("a death in the chase", SUITE, () => {
     tick(w, 30);
     // The director's clock ran on: its rest counted down, or an episode began or went on.
     expect(w.haunt!.rest !== rest || w.haunt!.episode !== episode).toBe(true);
+  });
+});
+
+describe("what the review found", SUITE, () => {
+  it("kills nobody once the match is won: a player still on the trail stands through the end scene with a Hollow on them", () => {
+    const { w, ps, p, h, body } = chase(2);
+    const q = ps[1]!;
+    const th = w.trail!.trailhead;
+    standAt(q, body.x - 100, body.z);
+    standAt(p, th.x, th.z);
+    tick(w, 1);
+    expect(w.state.outcome).toBe(Outcome.Won);
+    // The Hollow on the one left on the trail, hunting them, for ten seconds of the scene.
+    h.ai = AiState.Hunt; h.targetId = q.id;
+    for (let i = 0; i < 600; i++) {
+      h.pos = { x: q.pos.x + 0.3, y: q.pos.y - 0.9 + ENEMY_HALF.y, z: q.pos.z };
+      tick(w, 1);
+    }
+    expect(q.health).toBe(PLAYER_MAX_HEALTH);
+    // A lunge's blow, the same.
+    const lunge = spawnShade(w, { x: q.pos.x + 1, y: q.pos.y, z: q.pos.z }, q, true, 10);
+    lunge.ai = AiState.Strike; lunge.stateTimer = 0.9; lunge.attackCooldown = 0;
+    tick(w, 60);
+    expect(q.health).toBe(PLAYER_MAX_HEALTH);
+  });
+
+  it("in a party, leaves the fork of a Hollow it moves cut: the pack does not grow by a Hollow a death", () => {
+    const { w, ps, p, h, body } = chase(2);
+    const q = ps[1]!;
+    standAt(q, body.x - 300, body.z);
+    q.heldFor = 1_000_000;
+    h.targetId = q.id;
+    const fork = w.trail!.forks[0] ?? 1;
+    const at = { x: body.x - 120, y: groundY(body.x - 120, body.z) + ENEMY_HALF.y, z: body.z };
+    const forkHollow = spawnForkHollow(w, at, at, p.id, fork, 3);
+    forkHollow.emergeTo = null; forkHollow.ai = AiState.Hunt; forkHollow.stateTimer = 0;
+    w.cut!.cuts.set(fork, 0);
+    w.cut!.closed.add(3);
+    standAt(p, body.x - 110, body.z);
+    kill(w, p, forkHollow);
+    for (let i = 0; i < RETURN_TICKS; i++) { standAt(h, q.pos.x + 40, q.pos.z, ENEMY_HALF.y); tick(w, 1); }
+    expect(p.health).toBe(PLAYER_MAX_HEALTH);
+    // The fork's own Hollow is the one moved to the crest, and its fork stays cut: nothing new can rise there.
+    expect(forkHollow.targetId).toBe(p.id);
+    expect(w.cut!.cuts.has(fork)).toBe(true);
+    expect(w.cut!.closed.has(3)).toBe(true);
+    expect(pack(w)).toHaveLength(2);
+  });
+
+  it("calls a Hollow seen that is anywhere in a survivor's frame, not only at its centre", () => {
+    const { w, ps, p, h, body } = chase(2);
+    const q = ps[1]!;
+    standAt(q, body.x - 300, body.z);
+    q.heldFor = 1_000_000;
+    standAt(p, body.x - 70, body.z);
+    kill(w, p, h);
+    tick(w, RETURN_TICKS - 1);
+    // Straight at it first (a clear line), then the look turned 34 degrees off: out of the stare's cone, well inside the frame.
+    const look = lookAt(w, q, h);
+    const off = { ...look, yaw: look.yaw + (34 * Math.PI) / 180 };
+    q.yaw = off.yaw;
+    expect(playerSees(q, h, w)).toBe(false);
+    const kept = { x: h.pos.x, z: h.pos.z };
+    tickWorld(w, new Map([[q.id, off]]));
+    expect(p.health).toBe(PLAYER_MAX_HEALTH);
+    expect(dist(h.pos, kept)).toBeLessThan(1);
+    expect(pack(w)).toHaveLength(2);
+  });
+});
+
+describe("where the returning player's Hollow steps out", SUITE, () => {
+  it("is a place any peer can work out from the player's own: the host's Hollow stands on it, and a follower's world gives the same", () => {
+    const { w, p, h } = chase();
+    kill(w, p, h);
+    tick(w, RETURN_TICKS);
+    const at = returnHollowAt(w, p.pos)!;
+    expect(dist(h.pos, at)).toBeLessThan(0.01);
+    expect(h.pos.y).toBeCloseTo(at.y, 3);
+    // A follower's world: built from the same seed, not authoritative, no enemies in it yet.
+    const follower = createForestWorld(createForest(seed), false);
+    const there = returnHollowAt(follower, p.pos)!;
+    expect(dist(there, at)).toBeLessThan(0.001);
+    expect(there.y).toBeCloseTo(at.y, 6);
   });
 });
 

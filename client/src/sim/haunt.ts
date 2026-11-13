@@ -40,6 +40,7 @@ import { climbOf, WATCH_SLOPE_NY } from "./watcher.js";
 import { actsUnder, MIST_AT, MIST_SPAN, smootherstep } from "./acts.js";
 import { trailDistance } from "./trail.js";
 import { causeOfDeath } from "./deathCause.js";
+import { decided } from "./checkpoint.js";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
 
 /** The mist below which the climb is not haunted: the mist whole on the ground, so the shades have it to come out of. */
@@ -396,8 +397,8 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
     if (target !== undefined && target.health > 0) faceToward(h, target.pos.x, target.pos.z);
     if (h.attackCooldown === 0 && h.stateTimer <= LUNGE_ATTACK_S - LUNGE_ATTACK_HIT_S && !revealing(world)) {
       h.attackCooldown = 1;
-      // A player just returned is held: the blow passes them (checkpoint.ts).
-      if (target !== undefined && target.health > 0 && !target.safe && target.heldFor <= 0 && horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_REACH * LUNGE_ATTACK_REACH) {
+      // A player just returned is held, and a match already won kills nobody: the blow passes them (checkpoint.ts).
+      if (target !== undefined && target.health > 0 && !target.safe && target.heldFor <= 0 && !decided(world) && horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_REACH * LUNGE_ATTACK_REACH) {
         target.cause = causeOfDeath(world, target, h, "strike");
         target.killedBy = h.id;
         target.health = 0;

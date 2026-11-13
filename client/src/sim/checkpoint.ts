@@ -31,6 +31,16 @@ export function returnsOn(world: World): boolean {
   );
 }
 
+/**
+ * Whether a forest match is decided. The first player to the road wins it
+ * with others still out on the mountain, alive, their Hollows on them: from
+ * then nothing kills, since no death would come back and every screen is in
+ * the end scene.
+ */
+export function decided(world: World): boolean {
+  return world.forest !== null && world.state.outcome !== Outcome.Playing;
+}
+
 /** Whether `p` is in the hold after a return: nothing kills them. */
 export function held(p: PlayerState): boolean {
   return p.heldFor > 0;

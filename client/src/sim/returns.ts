@@ -12,14 +12,17 @@
  * farthest from the other players is taken. And every other Hollow with no
  * living player to hunt is withdrawn, the fork it closed whole again: a
  * player alone starts the chase over with the same hidden way down, never
- * running through what their last attempt left standing on it.
+ * running through what their last attempt left standing on it. (A fork's
+ * Hollow that is moved, not withdrawn, leaves its fork cut while others are
+ * alive, so the pack does not grow by a Hollow a death.)
  */
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
 import { AiState } from "./types.js";
 import type { World } from "./world.js";
 import { ENEMY_HALF, PLAYER_HALF, PLAYER_MAX_HEALTH, SIM_TICK_HZ } from "./constants.js";
 import { HOLLOW_PACK_MAX, RETURN_AFTER_S, RETURN_HEAD_START_M, RETURN_HOLD_S, returnsOn } from "./checkpoint.js";
-import { clearRoute, horizontalDistSq, playerSees, spawnHollow } from "./hollow.js";
+import { clearRoute, horizontalDistSq, playerHasInView, spawnHollow } from "./hollow.js";
+import { WATCH_VIEW_COS } from "./watcher.js";
 import { emergePoint, fileSpot } from "./summit.js";
 
 /** A Hollow of the pack: one that hunts, steps out or stands, not a shade, a lunge or the watcher. */
@@ -27,12 +30,23 @@ function inPack(e: EnemyState): boolean {
   return e.ai === AiState.Hunt || e.ai === AiState.Emerge || e.ai === AiState.Stand;
 }
 
-/** Whether a living player other than `but` has `h` in view. */
+/**
+ * Whether a living player other than `but` has `h` anywhere in their frame:
+ * the wide cone the watcher is judged by (watcher.ts `WATCH_VIEW_COS`, a
+ * frame about 112° across), not the stare's narrow one, since a Hollow that
+ * vanishes at the edge of a screen has still vanished before their eyes.
+ */
 function seenByOthers(world: World, h: EnemyState, but: PlayerState): boolean {
   for (const q of world.state.players.values()) {
     if (q.id === but.id || q.health <= 0) continue;
-    if (playerSees(q, h, world)) return true;
+    if (playerHasInView(q, h, world, WATCH_VIEW_COS)) return true;
   }
+  return false;
+}
+
+/** Whether a living player other than `but` is in the match. */
+function othersAlive(world: World, but: PlayerState): boolean {
+  for (const q of world.state.players.values()) if (q.id !== but.id && q.health > 0) return true;
   return false;
 }
 
@@ -97,6 +111,27 @@ function hollowFor(world: World, p: PlayerState, fell: Vec3): EnemyState | null 
   return best;
 }
 
+/**
+ * Where the Hollow that meets a returning player steps out, from where that
+ * player stands on the crest: past the body on the line from them through
+ * it, as the summit's stepped out, and `RETURN_HEAD_START_M` into its walk
+ * at them. From the world's own ground and body alone, so every peer works
+ * out the same place: a follower's screen aims its camera here on the frame
+ * its player is back, before any snapshot has shown the Hollow there. Null
+ * on a world with no summit.
+ */
+export function returnHollowAt(world: World, player: { x: number; z: number }): Vec3 | null {
+  const search = world.search;
+  if (search === null) return null;
+  const out = emergePoint(world, search.body.pos, { x: player.x, y: 0, z: player.z });
+  let dx = player.x - out.x, dz = player.z - out.z;
+  const len = Math.sqrt(dx * dx + dz * dz);
+  if (len > 1e-9) { dx /= len; dz /= len; } else { dx = 0; dz = 0; }
+  const x = out.x + dx * RETURN_HEAD_START_M, z = out.z + dz * RETURN_HEAD_START_M;
+  const y = (world.ground?.heightAt(x, z) ?? out.y - ENEMY_HALF.y) + ENEMY_HALF.y;
+  return { x, y, z };
+}
+
 /** Brings `p` back: stood on the crest, their Hollow stepping out, the idle ones withdrawn. */
 function returnPlayer(world: World, p: PlayerState): void {
   const search = world.search;
@@ -117,15 +152,12 @@ function returnPlayer(world: World, p: PlayerState): void {
   p.returnIn = 0;
   p.heldFor = RETURN_HOLD_S * SIM_TICK_HZ;
 
-  // Past the body on the line from the player through it, as the summit's stepped out, and a little into its walk.
-  const out = emergePoint(world, search.body.pos, p.pos);
-  let dx = p.pos.x - out.x, dz = p.pos.z - out.z;
-  const len = Math.sqrt(dx * dx + dz * dz);
-  if (len > 1e-9) { dx /= len; dz /= len; } else { dx = 0; dz = 0; }
-  const x = out.x + dx * RETURN_HEAD_START_M, z = out.z + dz * RETURN_HEAD_START_M;
-  const y = (world.ground?.heightAt(x, z) ?? out.y - ENEMY_HALF.y) + ENEMY_HALF.y;
+  const { x, y, z } = returnHollowAt(world, p.pos) ?? p.pos;
   const h = chosen ?? spawnHollow(world, { x, y, z }, p.id, RETURN_HOLD_S);
-  reopenFork(world, h);
+  // A fork's Hollow moved stays in the pack. Alone, its fork is made whole, to be cut afresh as the
+  // player comes down again; with others alive it stays cut, or every death at that fork would
+  // raise one more Hollow there, each of which turns on the survivors the next time.
+  if (!othersAlive(world, p)) reopenFork(world, h);
   h.pos = { x, y, z };
   h.vel = { x: 0, y: 0, z: 0 };
   clearRoute(h);

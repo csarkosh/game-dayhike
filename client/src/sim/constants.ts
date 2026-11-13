@@ -86,6 +86,14 @@ export const WADE_CHEST_DEPTH = 1.3;
 export const WADE_FLOOR = 0.45;
 
 export const PLAYER_MAX_HEALTH = 100;
+/**
+ * Metres between two readings of one entity past which it did not walk
+ * there: it was put there (a return to the crest, a Hollow moved to meet it,
+ * sim/returns.ts). A sprint is a tenth of this between two snapshots.
+ * Whatever draws an entity between readings draws such a jump where it
+ * lands, never as a slide across the mountain.
+ */
+export const TELEPORT_M = 10;
 export const ENEMY_MAX_HEALTH = 40;
 
 export const ENEMY_DETECT_RANGE = 30;
