@@ -139,20 +139,24 @@ summit scene's last shot, which their screen plays again) nothing kills them (`s
 `sim/returns.ts`). One Hollow meets them, stepping out past the body and walking at them at the
 stalk's pace through those seconds, then hunting. It is an existing one, moved, whenever that can
 go unseen: the one that killed them if a Hollow did, else the one nearest where they fell, and
-only if no other living player has it in view (in a party it is taken off the survivor it turned
-on); seen, it stays and a new one rises, unless the pack is at `HOLLOW_PACK_MAX` (14), where the
+only if no other living player has it anywhere in their frame (the watcher's wide cone,
+`WATCH_VIEW_COS`; in a party it is taken off the survivor it turned on); seen, it stays and a new
+one rises, unless the pack is at `HOLLOW_PACK_MAX` (14), where the
 unseen Hollow farthest from the others is taken. At the same tick every other Hollow with no
 living player to hunt is withdrawn and the fork it closed is whole again, to be cut afresh when a
 player next reaches it: a player alone starts the chase over with the same guide and none of the
-last attempt's Hollows on the way down, and the pack no longer only grows. The match stays in the
+last attempt's Hollows on the way down. A fork's Hollow that is moved, not withdrawn, has its fork
+made whole only when no other player is alive: with others running it stays cut, so the pack does
+not grow by a Hollow a death. The match stays in the
 chase throughout; only that player is held. The host records why they died at the kill
 (`sim/deathCause.ts`: off the trail, standing still, moving toward it, watching it, a shade's
 lunge, or run down), which rides the flags byte and names the line they say on coming back
 (`2026-10-07-the-inner-voice.md`). The match is never lost in the chase. It is won on the first
 tick a living player who has been out on the mountain in the chase is safe, wherever the others
 are: on the trail, dead and counting down, or just returned; a player admitted in mid-chase
-spawns at the car and wins nothing by arriving (`PlayerState.out`). The hand-authored test level
-keeps permanent death and the loss.
+spawns at the car and wins nothing by arriving (`PlayerState.out`). From the win nothing kills:
+the players still out on the mountain stand in the end scene with their Hollows beside them. The
+hand-authored test level keeps permanent death and the loss.
 
 **One player and five play by the same rules.** The trigger is "first onto the crest"; the cut is
 shared; each player's escape is their own.

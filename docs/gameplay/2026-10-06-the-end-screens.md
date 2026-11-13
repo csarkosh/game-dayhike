@@ -17,7 +17,9 @@ the line go, the dark lifts and the sound returns over `RETURN_LIFT_MS` (1.2 s),
 scene's last shot plays again (`2026-10-08-the-summit-scene.md`). The title page comes after a
 death only on the hand-authored test level. And the win is every screen's: one whose player is
 not at the road when the match is won, or is under their death's dark, plays the end scene on
-the player who reached the car (`endScene.ts` `endSceneRunner`).
+the player who reached the car (`endScene.ts` `endSceneRunner`, `runnerPose`): the camera on
+their body as it is drawn, the arrival judged by where they truly are, and the world built round
+them, not round the screen's own player far up the mountain.
 
 *Amended 2026-10-07, later.* Longer: won, the view goes dark at 11 s and the landing comes at 15
 (`WON_FADE_AFTER_MS`, `WON_LANDING_MS`); died, dark at 6 s and the landing at 12 (`DEATH_FADE_AFTER_MS`,

@@ -46,7 +46,9 @@ the game's own language.
 
 A player who dies in the chase comes back on the crest (`2026-09-16-the-summit.md` §2), and their
 screen plays the fifth shot again, alone: the renderer's scene begun at `THRESHOLD_AT_S` (17 s),
-the eye turned to the Hollow that stepped out for them and held for `SCENE_LOOK_S`, turned to the
+the eye turned to where the Hollow steps out for them (worked out from the player's own place,
+`sim/returns.ts` `returnHollowAt`, since a follower's screen has not yet been shown it there) and
+held for `SCENE_LOOK_S`, turned to the
 way down from where they now stand, then the legs and the controls, the letterbox on for the
 shot's four seconds. The find and the reveal are not shown again. The voice's line in it is how
 they died, in place of the chase's opening line. On the sim's side the Hollow's stalk, the hold on
