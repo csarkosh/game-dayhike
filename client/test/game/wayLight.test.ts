@@ -12,8 +12,9 @@ import { WAY_HEIGHTS_A_SLICE, WAY_LIGHT_NAME, WAY_LIGHT_SAMPLERS, WAY_LIGHT_UNIF
 import {
   WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, WAY_LIFT_M, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT,
   WAY_MIST_REACH, WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_GROUNDS, WAY_POINT_VERTICES, WAY_POST_LIFT, WAY_SHEET_STRENGTH, WAY_STRATA_M, WAY_VEIL_STRENGTH,
-  wayDrift, wayHeavePhases, wayMistColour, type WayShape,
+  wayCastOnMaterial, wayDrift, wayHeavePhases, wayMistColour, type WayShape,
 } from "../../src/game/wayLightGeometry.js";
+import { CHASE_TINT } from "../../src/game/gradeParams.js";
 import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SIZE, CLOUD_NOISE_SMALL_M } from "../../src/game/cloudParams.js";
 
 /** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
@@ -175,42 +176,63 @@ describe("the way's mist", () => {
     const mesh = scene.meshes[0]!;
     // Warm: enabled with no mist, so its pipeline is made before it is seen.
     for (let i = 0; i < WAY_WARM_FRAMES; i++) {
-      light.update(EYE, 0, 1, MIST, 0);
+      light.update(EYE, 0, 1, MIST, 0, 0);
       expect(mesh.isEnabled()).toBe(true);
       expect(held()._floats.wayGain).toBe(0);
     }
-    light.update(EYE, 0, 1, MIST, 0);
+    light.update(EYE, 0, 1, MIST, 0, 0);
     expect(mesh.isEnabled()).toBe(false);
-    light.update(EYE, 0.5, 2, MIST, 0);
+    light.update(EYE, 0.5, 2, MIST, 0, 0);
     expect(mesh.isEnabled()).toBe(true);
     expect(held()._floats.wayGain).toBe(0.5);
     expect(held()._vectors3.wayEye!.asArray()).toEqual([0, 12, 0]);
-    light.update(EYE, 0, 1, MIST, 0);
+    light.update(EYE, 0, 1, MIST, 0, 0);
     expect(mesh.isEnabled()).toBe(false);
   });
 
   it("takes its colour from the ground mist, on the post path with the frame's dim taken back out of it", () => {
     const { light } = make();
-    light.update(EYE, 1, 2, MIST, 0);
+    light.update(EYE, 1, 2, MIST, 0, 0);
     const want = wayMistColour(MIST, WAY_POST_LIFT * 2);
     const got = held()._vectors3.wayTint!.asArray();
     for (let i = 0; i < 3; i++) expect(got[i]).toBeCloseTo(want[i]!, 6);
     // Another night's mist, another colour: nothing of it is fixed.
-    light.update(EYE, 1, 2, { r: 0.1, g: 0.02, b: 0.02 }, 0);
+    light.update(EYE, 1, 2, { r: 0.1, g: 0.02, b: 0.02 }, 0, 0);
     expect(held()._vectors3.wayTint!.x).toBeGreaterThan(held()._vectors3.wayTint!.z);
   });
 
   it("on the material path its colour is in the frame's own terms, whatever the dim", () => {
     const { light } = make("material");
-    light.update(EYE, 1, 2, MIST, 0);
+    light.update(EYE, 1, 2, MIST, 0, 0);
     const want = wayMistColour(MIST, WAY_MATERIAL_LIFT);
+    const got = held()._vectors3.wayTint!.asArray();
+    for (let i = 0; i < 3; i++) expect(got[i]).toBeCloseTo(want[i]!, 6);
+  });
+
+  it("on the material path nothing grades the mist, so it takes the chase's cast itself, as the cast comes in", () => {
+    const { light } = make("material");
+    light.update(EYE, 1, 2, MIST, 0, 1);
+    const plain = wayMistColour(MIST, WAY_MATERIAL_LIFT), cast = wayCastOnMaterial(CHASE_TINT);
+    const got = held()._vectors3.wayTint!.asArray();
+    for (let i = 0; i < 3; i++) expect(got[i]).toBeCloseTo(plain[i]! * cast[i]!, 6);
+    // Redder than it was, and as bright.
+    expect(got[0]! / got[2]!).toBeGreaterThan(plain[0]! / plain[2]!);
+    light.update(EYE, 1, 2, MIST, 0, 0.5);
+    const half = held()._vectors3.wayTint!.asArray();
+    for (let i = 0; i < 3; i++) expect(half[i]).toBeCloseTo(plain[i]! * (1 + (cast[i]! - 1) * 0.5), 6);
+  });
+
+  it("on the post path the mist is graded with the frame: the cast is not put on it twice", () => {
+    const { light } = make("post");
+    light.update(EYE, 1, 2, MIST, 0, 1);
+    const want = wayMistColour(MIST, WAY_POST_LIFT * 2);
     const got = held()._vectors3.wayTint!.asArray();
     for (let i = 0; i < 3; i++) expect(got[i]).toBeCloseTo(want[i]!, 6);
   });
 
   it("is never still: its shapes drift and its banks heave with the frame's seconds", () => {
     const { light } = make();
-    light.update(EYE, 1, 1, MIST, 10);
+    light.update(EYE, 1, 1, MIST, 10, 0);
     const drift10 = four(held()._vectors4.wayDrift!), move10 = four(held()._vectors4.wayMove!);
     const d = wayDrift(10), p = wayHeavePhases(10);
     for (let i = 0; i < 4; i++) expect(drift10[i]).toBeCloseTo(d[i]!, 6);
@@ -218,7 +240,7 @@ describe("the way's mist", () => {
     expect(move10[1]).toBe(WAY_CURL);
     expect(move10[2]).toBeCloseTo(p[0], 6);
     expect(move10[3]).toBeCloseTo(p[1], 6);
-    light.update(EYE, 1, 1, MIST, 10.5);
+    light.update(EYE, 1, 1, MIST, 10.5, 0);
     expect(four(held()._vectors4.wayDrift!)).not.toEqual(drift10);
     expect(four(held()._vectors4.wayMove!).slice(2)).not.toEqual(move10.slice(2));
   });
@@ -235,7 +257,7 @@ describe("the way's mist", () => {
     light.setWay(null, GROUND);
     expect(scene.meshes.length).toBe(0);
     expect(light.ready).toBe(false);
-    light.update(EYE, 1, 1, MIST, 0);
+    light.update(EYE, 1, 1, MIST, 0, 0);
   });
 
   it("disposes its meshes, its material, its noise and its build", () => {

@@ -40,6 +40,7 @@ import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { createShadeVeil } from "./shadeVeil.js";
 import { CLOUD_GROUND_REBUILD_M, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudColourUnder, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
 import { createWayLight } from "./wayLight.js";
+import { createWayMistField } from "./wayMistField.js";
 import { wayDimAt } from "./wayLevel.js";
 import { wayDistanceWithin, type WayDown } from "../sim/wayDown.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
@@ -2542,6 +2543,11 @@ function buildRenderer(
   // The way down's light (wayLight.ts): the channel of pale mist the chase shows, on every tier. A forest's alone.
   const wayLight = forest === null ? null : createWayLight(scene, postFeatures.colourPath, jobs);
   partOf(wayLight);
+  // The mist beyond the way's banks (wayMistField.ts), where no ground mist is marched: the material path's tiers.
+  const wayField = forest === null || postFeatures.colourPath !== "material" ? null : createWayMistField(scene);
+  partOf(wayField);
+  /** The ground the way's mist stands on, as given with the way. */
+  let wayHeightAt: ((x: number, z: number) => number) | null = null;
   let way: WayDown | null = null;
   let wayLevel = 0;
   /** Whether the mist's ground map was last built over the way: a change builds it again. */
@@ -3477,7 +3483,10 @@ function buildRenderer(
       const wayDim = wayDimAt(wayLevel);
       lighting.setDim(wayDim);
       post.setDim(wayDim);
-      wayLight?.update(camera.position, wayLevel, 1 / wayDim, cloudColourUnder(atmosphere.nearColour()), seconds);
+      // The way's mist is a shade of the ground mist's own colour, which every tier has (the low tier never sets the cloud's).
+      const wayMistNow = cloudColourUnder(atmosphere.nearColour());
+      wayLight?.update(camera.position, wayLevel, 1 / wayDim, wayMistNow, seconds, chaseCast);
+      wayField?.update(camera.position, wayLevel, wayMistNow, seconds, chaseCast, way, wayHeightAt);
       lighting.setStare(shown.level);
       post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, shown, lensStrength, chaseCast, endBlur);
       // The stare's closing darkness on the material path is the veil's.
@@ -3702,6 +3711,7 @@ function buildRenderer(
     setWay(next, heightAt) {
       way = next;
       wayLight?.setWay(next, heightAt);
+      wayHeightAt = heightAt;
     },
     setWayLevel(level) {
       wayLevel = Math.max(0, Math.min(1, level));
@@ -3814,6 +3824,7 @@ function buildRenderer(
       for (const skyline of lakeSkylines) skyline.dispose();
       clipmap?.dispose();
       wayLight?.dispose();
+      wayField?.dispose();
       facePatches?.dispose();
       water?.dispose();
       waterPlants?.dispose();

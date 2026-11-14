@@ -4,7 +4,7 @@ import {
   WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HEAVE_RATES, WAY_HIDE_SHARE, WAY_KIND_FIN, WAY_KIND_SHEET, WAY_KIND_VEIL, WAY_LIFT_M, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT, WAY_MIST_REACH,
   WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_GROUNDS, WAY_POINT_VERTICES, WAY_POST_LIFT, WAY_ROW_VERTICES, WAY_SHEETS_M, WAY_SHEET_STRENGTH,
   WAY_SHEET_TOP_M, WAY_SHEET_VERTICES, WAY_STRATA_M, WAY_TINT, WAY_VEILS, WAY_VEIL_STRENGTH, WAY_WIDTH_M, WAY_WIND_SCALE,
-  wayChunk, wayChunks, wayDrift, wayFinTop, wayGroundOf, wayHeavePhases, wayMistColour, wayVeilAt, type WayShape,
+  wayCastOnMaterial, wayChunk, wayChunks, wayDrift, wayFinTop, wayGroundOf, wayHeavePhases, wayMistColour, wayVeilAt, type WayShape,
 } from "../../src/game/wayLightGeometry.js";
 import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M, CLOUD_WIND_MPS } from "../../src/game/cloudParams.js";
 
@@ -42,11 +42,11 @@ describe("the way's mist: its numbers", () => {
   it("is the approved look's strengths: fuller on the path, the banks whole", () => {
     expect([WAY_VEIL_STRENGTH, WAY_FIN_SHARE, WAY_SHEET_STRENGTH, WAY_HIDE_SHARE]).toEqual([0.3, 0.7, 0.28, 0.85]);
     expect([WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_MIST_REACH]).toEqual([0.14, 0.04, 0.012, 0.0144]);
-    expect([WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_NEAR_DAMP, WAY_DENSITY_FLOOR]).toEqual([0.55, 1.7, 0.3, 0.15]);
+    expect([WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_NEAR_DAMP, WAY_DENSITY_FLOOR]).toEqual([0.3, 1.3, 0.3, 0.15]);
     expect([WAY_HEAVE, WAY_CURL, WAY_WIND_SCALE, WAY_STRATA_M]).toEqual([0.3, 0.12, 2.2, 4]);
     expect([WAY_COLD_SHARE, WAY_POST_LIFT, WAY_MATERIAL_LIFT]).toEqual([0.25, 8, 14]);
     expect(WAY_TINT).toEqual([0.62, 0.7, 0.86]);
-    // The path's mist is thinner and lower than the banks', and there is some.
+    // The path's mist is thinner and lower than the banks', and there is some (lighter on the path floor, the owner's word of 2026-11-14: 0.55 and 1.7 m before).
     expect(WAY_PATH_SHARE).toBeGreaterThan(0);
     expect(WAY_PATH_SHARE).toBeLessThan(1);
     expect(WAY_PATH_TOP_M).toBeLessThan(Math.min(...WAY_VEILS.map((v) => v.top)));
@@ -66,6 +66,15 @@ describe("the way's mist: its colour and its drift", () => {
     // The environment's colour carries: a red mist stays redder than a blue one.
     expect(wayMistColour({ r: 0.2, g: 0.1, b: 0.05 }, 1)[0]).toBeGreaterThan(wayMistColour({ r: 0.05, g: 0.1, b: 0.2 }, 1)[0]);
     expect(wayMistColour({ r: 0, g: 0, b: 0 }, 14)).toEqual([0, 0, 0]);
+  });
+
+  it("the chase's cast, for a mist nothing grades: its hue at no cost in brightness", () => {
+    const cast = wayCastOnMaterial({ r: 0.9, g: 0.64, b: 0.7 });
+    expect(0.2126 * cast[0] + 0.7152 * cast[1] + 0.0722 * cast[2]).toBeCloseTo(1, 9);
+    expect(cast[0]).toBeCloseTo(1.287, 2);
+    expect(cast[0]).toBeGreaterThan(cast[2]);
+    expect(cast[2]).toBeGreaterThan(cast[1]);
+    expect(wayCastOnMaterial({ r: 1, g: 1, b: 1 })).toEqual([1, 1, 1]);
   });
 
   it("drifts on the ground mist's wind, faster, the small shapes another way from the large", () => {

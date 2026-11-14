@@ -133,7 +133,8 @@ minute late in a climb, a minute and more for a find that came early) is cut to 
 ## 3. The light (`game/wayLightGeometry.ts`, `game/wayLight.ts`, `game/wayLevel.ts`)
 
 **The shape.** Taller ground mist, not a wall. Across the way the mist is thin on the path
-(`WAY_PATH_SHARE`, 0.55 of the banks', standing to 1.7 m) and whole in a bank either side,
+(`WAY_PATH_SHARE`, 0.3 of the banks', standing to 1.3 m; 0.55 and 1.7 m until the owner asked
+for it lighter on the path floor) and whole in a bank either side,
 filling between 1 m and 3.1 m from the line and gone between 4.6 m and 6.4 m, the banks standing
 2.3 to 3.5 m and taller and shorter as they go. Under it the ground glows faintly, a core on the
 path and a band under the banks. Every vertex stands on the ground the players stand on (the
@@ -169,6 +170,25 @@ three tenths of their height (`WAY_HEAVE`) on two crossed waves, a turn every 7 
 11 s. A veil and a fin are built 1.3 times as high as their mist stands at rest (`WAY_HEAD`)
 and the shader holds the mist under that head, so a bank never shows a cut edge along its top. Near the eye the shapes smooth out and the mist thins, so it hangs round a runner and
 does not rush past.
+
+**The mist beyond the banks** (`wayMistFieldGeometry.ts`, `wayMistField.ts`). On the tiers with
+no marched ground mist (the material path: phones) the way's banks stood alone in dark woods.
+There the mist goes on past them over all the ground round the eye, thicker than the banks
+themselves (a sheet's strength 0.8 and a fin's 0.6, against the banks' 0.28 and 0.21), so the
+way is the thinner, darker lane through it. It is one mesh: a square of 25 by 25 cells of 3 m
+round the eye, moved a cell at a time so every vertex is a place in the world, with three sheets
+that follow the ground and a fin standing on every second line of the lattice both ways, about
+3 m tall and wandering off its line. It reads the way's own noise and moves with it. It comes
+in from 3 m to 6.5 m off the way's line, where the banks go out, and fades out from 22 m to 34 m
+from the eye. The ground under it is asked for forty cells a frame, the nearest the eye first,
+and kept by the cell's place in the world, so a step asks for one new row. The tiers that march
+the night's ground mist have that beyond the banks already.
+
+**The chase's red on the material path.** No pass grades the frame there and Babylon's image
+processing never touches a material of the mist's kind, so the mist takes the chase's cast
+itself: its colour times the cast's tint over the tint's own weight on a grey
+(`wayCastOnMaterial`: for (0.9, 0.64, 0.7), about (1.29, 0.92, 1.0)), mixed in as the cast comes
+in. The hue is the desktop's and the mist is as bright as it was.
 
 **The dark round it.** While the light is up the rest of the frame is dimmed to half
 (`WAY_DIM`) through the frame's exposure, beside the stare's dimming: the lighting's on the tiers

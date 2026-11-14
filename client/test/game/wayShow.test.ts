@@ -91,7 +91,12 @@ describe("the renderer and the app", () => {
     expect(renderer).toContain("lighting.setDim(wayDim);");
     expect(renderer).toContain("post.setDim(wayDim);");
     // The way's mist is a shade of the ground mist's own colour, which every tier has (the low tier never sets the cloud's), and drifts on its clock.
-    expect(renderer).toContain("wayLight?.update(camera.position, wayLevel, 1 / wayDim, cloudColourUnder(atmosphere.nearColour()), seconds);");
+    expect(renderer).toContain("const wayMistNow = cloudColourUnder(atmosphere.nearColour());");
+    expect(renderer).toContain("wayLight?.update(camera.position, wayLevel, 1 / wayDim, wayMistNow, seconds, chaseCast);");
+    // Beyond the way's banks the mist goes on, on the tiers with no marched ground mist of their own (the material path).
+    expect(renderer).toContain("wayField?.update(camera.position, wayLevel, wayMistNow, seconds, chaseCast, way, wayHeightAt);");
+    expect(renderer).toContain('const wayField = forest === null || postFeatures.colourPath !== "material" ? null : createWayMistField(scene);');
+    expect(renderer).toContain("partOf(wayField);");
   });
 
   it("the renderer feeds the mist's ground map the way in place of the trail while the light is up", () => {

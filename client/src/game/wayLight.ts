@@ -19,11 +19,12 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Rgb } from "./colour.js";
 import { CLOUD_NOISE_SIZE, cloudNoiseMap } from "./cloudParams.js";
+import { CHASE_TINT } from "./gradeParams.js";
 import type { Slices, SyncJobs } from "./syncJobs.js";
 import {
-  WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT, WAY_MIST_REACH,
-  WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_VERTICES, WAY_POST_LIFT, WAY_SHEET_STRENGTH, WAY_STRATA_M, WAY_VEIL_STRENGTH,
-  wayChunk, wayChunks, wayDrift, wayGroundOf, wayHeavePhases, wayMistColour, type WayShape,
+  WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, WAY_LIGHT_FLOATS, WAY_MIST_REACH,
+  WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_VERTICES, WAY_SHEET_STRENGTH, WAY_STRATA_M, WAY_VEIL_STRENGTH,
+  wayChunk, wayChunks, wayDrift, wayGroundOf, wayHeavePhases, wayTint, type WayShape,
 } from "./wayLightGeometry.js";
 import wayLightVertex from "./shaders/wayLight.vertex.fx?raw";
 import wayLightFragment from "./shaders/wayLight.fragment.fx?raw";
@@ -52,10 +53,11 @@ export type WayLight = {
    * over what the frame outside the mist is dimmed by, which the post
    * path's colour is multiplied by so the dim does not reach it; `mist`, the
    * ground mist's colour this frame (cloudParams.ts cloudColourUnder), which
-   * the way's mist is a brighter, colder shade of; and the frame's
-   * `seconds` (the ground mist's own clock), which its shapes drift and its banks heave by.
+   * the way's mist is a brighter, colder shade of; the frame's
+   * `seconds` (the ground mist's own clock), which its shapes drift and its banks heave by; and
+   * the chase's `cast` (0 to 1), which the mist takes itself where nothing grades it.
    */
-  update(eye: Vector3, level: number, undim: number, mist: Rgb, seconds: number): void;
+  update(eye: Vector3, level: number, undim: number, mist: Rgb, seconds: number, cast: number): void;
   /** Whether the whole way's meshes are built. */
   readonly ready: boolean;
   dispose(): void;
@@ -146,12 +148,10 @@ export function createWayLight(scene: Scene, colourPath: "post" | "material", jo
       clear();
       if (way !== null && way.xs.length > 1) jobs.begin(owner, build(way, heightAt), true, WAY_LIGHT_NAME);
     },
-    update(eye, level, undim, mist, seconds) {
+    update(eye, level, undim, mist, seconds, cast) {
       eyeAt.copyFrom(eye);
       material.setVector3("wayEye", eyeAt);
-      // On the post path the mist is lit before the tone map and the grade, so the frame's dim is taken back out of
-      // it; on the material path the frame is already toned as each material is drawn, and the dim never reaches it.
-      const [r, g, b] = wayMistColour(mist, colourPath === "post" ? WAY_POST_LIFT * undim : WAY_MATERIAL_LIFT);
+      const [r, g, b] = wayTint(colourPath, mist, undim, cast, CHASE_TINT);
       tint.set(r, g, b);
       material.setVector3("wayTint", tint);
       const [dx, dy, dz, dw] = wayDrift(seconds);

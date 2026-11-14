@@ -84,8 +84,8 @@ export const WAY_GROUND_CORE = 0.04;
 export const WAY_GROUND_REACH = 0.012;
 export const WAY_MIST_REACH = 0.0144;
 /** The path's mist: its share of the banks' and the metres it stands to. Then the share of itself the mist keeps against the eye (it fills to whole by 10 m), and the least a wisp's gap thins it to. */
-export const WAY_PATH_SHARE = 0.55;
-export const WAY_PATH_TOP_M = 1.7;
+export const WAY_PATH_SHARE = 0.3;
+export const WAY_PATH_TOP_M = 1.3;
 export const WAY_NEAR_DAMP = 0.3;
 export const WAY_DENSITY_FLOOR = 0.15;
 /**
@@ -123,6 +123,31 @@ export function wayMistColour(mist: Rgb, lift: number): [number, number, number]
     (mist.g + (cold * WAY_TINT[1] - mist.g) * WAY_COLD_SHARE) * lift,
     (mist.b + (cold * WAY_TINT[2] - mist.b) * WAY_COLD_SHARE) * lift,
   ];
+}
+
+/**
+ * The chase's cast for a mist nothing grades (the material path: there is no
+ * grade pass, and the mist is a material of its own that Babylon's image
+ * processing never touches): the cast's tint over its own weight on a grey,
+ * so the mist takes the cast's hue and loses none of its brightness.
+ */
+export function wayCastOnMaterial(tint: Rgb): [number, number, number] {
+  const grey = 0.2126 * tint.r + 0.7152 * tint.g + 0.0722 * tint.b;
+  return [tint.r / grey, tint.g / grey, tint.b / grey];
+}
+
+/**
+ * The mist's colour for a frame: the ground mist's (`mist`), lit. On the
+ * post path it is lit before the tone map and the grade, so the frame's dim
+ * (`undim`, one over it) is taken back out of it and the grade's cast falls
+ * on it with the rest of the frame. On the material path it is in the
+ * frame's own terms, the dim never reaches it, and it takes the chase's cast
+ * (`tint`) itself by how far the cast has come in (`cast`, 0 to 1).
+ */
+export function wayTint(colourPath: "post" | "material", mist: Rgb, undim: number, cast: number, tint: Rgb): [number, number, number] {
+  if (colourPath === "post") return wayMistColour(mist, WAY_POST_LIFT * undim);
+  const [r, g, b] = wayMistColour(mist, WAY_MATERIAL_LIFT), on = wayCastOnMaterial(tint);
+  return [r * (1 + (on[0] - 1) * cast), g * (1 + (on[1] - 1) * cast), b * (1 + (on[2] - 1) * cast)];
 }
 
 /** Where the shapes have drifted to at `seconds`: the large shapes' offset (x, y) and the small shapes' (z, w), each a share of its tile, the small going another way from the large. */
