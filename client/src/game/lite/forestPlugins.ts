@@ -1,10 +1,11 @@
 /**
- * The forest's materials as plugins on Babylon Lite's PBR material: the
- * foliage (the wind in the vertex stage, the colour block, the canopy's cut
- * of the sky and the per-light term), the distance dither with its widening,
- * the base conform, the trunks' moss, the dead trees' dressing, the wet
- * look, and two corrections of how Lite lights a surface where the game
- * lights it otherwise. The numbers each is drawn with are the game's own,
+ * The forest's and the ground cover's materials as plugins on Babylon Lite's
+ * PBR material: the foliage (the wind in the vertex stage, a blade clump's
+ * collapse to its roots, the colour block, the canopy's cut of the sky and
+ * the per-light term), the distance dither with its widening, the base
+ * conform, the trunks' moss, the dead trees' dressing, the wet look, and two
+ * corrections of how Lite lights a surface where the game lights it
+ * otherwise. The numbers each is drawn with are the game's own,
  * computed with no engine (`foliageUniforms.ts`, `distanceFade.ts`,
  * `groundConform.ts`, `deadwoodParams.ts`, `mossParams.ts`,
  * `wetSurface.ts`).
@@ -37,9 +38,11 @@
  *   difference.
  * - A per-instance attribute rides in the mesh's interleaved plugin instance
  *   data (`vegetationInstanceLayout`), declared only by a material whose
- *   plugin reads it.
+ *   plugin reads it; a blade's root and draw, a per-vertex attribute, in the
+ *   mesh's plugin vertex data.
  */
 import type { MaterialPlugin, Texture2D } from "@babylonjs/lite";
+import { BLADE_SOFT } from "../bladeClump.js";
 import { COVER_GREEN, FOLIAGE_ALBEDO_FLOOR } from "../coverAlbedoParams.js";
 import { DEADWOOD_CONTACT, DEADWOOD_CONTACT_BAND, DEADWOOD_LOG_DRAW, DEADWOOD_UP, deadwoodUniforms, emptyDeadwoodUniforms } from "../deadwoodParams.js";
 import { WIDEN_NONE, emptyFadeUniforms, fadeUniforms, type DistanceWiden } from "../distanceFade.js";
@@ -88,12 +91,12 @@ export type Vegetation = {
 };
 
 /** A per-instance attribute's place in the interleaved plugin instance data: the float it starts at, or -1 where the material reads none. */
-export type VegetationInstanceLayout = { fadeBands: number; groundGrad: number; foliage: number; deadwoodRole: number; floats: number };
+export type VegetationInstanceLayout = { fadeBands: number; groundGrad: number; foliage: number; deadwoodRole: number; bladeStrength: number; floats: number };
 
 /** Where each per-instance attribute `v` reads sits in an instance's data, and the floats an instance. */
 export function vegetationInstanceLayout(v: Pick<Vegetation, "foliage" | "fade" | "conform" | "deadwood">): VegetationInstanceLayout {
-  const layout: VegetationInstanceLayout = { fadeBands: -1, groundGrad: -1, foliage: -1, deadwoodRole: -1, floats: 0 };
-  const take = (name: "fadeBands" | "groundGrad" | "foliage" | "deadwoodRole", floats: number): void => {
+  const layout: VegetationInstanceLayout = { fadeBands: -1, groundGrad: -1, foliage: -1, deadwoodRole: -1, bladeStrength: -1, floats: 0 };
+  const take = (name: "fadeBands" | "groundGrad" | "foliage" | "deadwoodRole" | "bladeStrength", floats: number): void => {
     layout[name] = layout.floats;
     layout.floats += floats;
   };
@@ -101,19 +104,21 @@ export function vegetationInstanceLayout(v: Pick<Vegetation, "foliage" | "fade" 
   if (v.conform) take("groundGrad", 2);
   if (v.foliage !== null && v.foliage.profile.groundTint > 0) take("foliage", 4);
   if (v.deadwood !== null) take("deadwoodRole", 1);
+  if (v.foliage !== null && v.foliage.profile.blades) take("bladeStrength", 1);
   return layout;
 }
 
 /**
  * A bucket's plugin instance data: each attribute `layout` places, taken
  * from its own array (`fadeBands` four floats an instance, `groundGrad`
- * two, `foliage` four, `deadwoodRole` one), interleaved an instance into
- * `out`, which holds at least `count` instances.
+ * two, `foliage` four, `deadwoodRole` and `bladeStrength` one each),
+ * interleaved an instance into `out`, which holds at least `count`
+ * instances.
  */
 export function writeVegetationInstances(
   layout: VegetationInstanceLayout,
   count: number,
-  from: { fadeBands?: Float32Array; groundGrad?: Float32Array; foliage?: Float32Array; deadwoodRole?: Float32Array },
+  from: { fadeBands?: Float32Array; groundGrad?: Float32Array; foliage?: Float32Array; deadwoodRole?: Float32Array; bladeStrength?: Float32Array },
   out: Float32Array,
 ): void {
   const parts: [number, number, Float32Array | undefined, string][] = [
@@ -121,6 +126,7 @@ export function writeVegetationInstances(
     [layout.groundGrad, 2, from.groundGrad, "groundGrad"],
     [layout.foliage, 4, from.foliage, "foliage"],
     [layout.deadwoodRole, 1, from.deadwoodRole, "deadwoodRole"],
+    [layout.bladeStrength, 1, from.bladeStrength, "bladeStrength"],
   ];
   for (const [at, floats, source, name] of parts) {
     if (at < 0) continue;
@@ -145,7 +151,18 @@ const MOSS_HASH = /* wgsl */ `fn mossHash(p:vec2<f32>)->f32{var p3=fract(vec3<f3
  * The varying `worldPos` keeps the place before any of it, as Babylon's `vPositionW` does. */
 function vertexCode(v: Vegetation): string {
   const tint = v.foliage !== null && v.foliage.profile.groundTint > 0;
-  // foliageWorldPos.vertex.fx.
+  const blades = v.foliage !== null && v.foliage.profile.blades;
+  // foliageWorldPos.vertex.fx: a blade clump's motion ignores the outer edge, and in place of the far sink each of
+  // its blades is pulled to its root by its share of the tier's band and of the cell's strength, last, so a
+  // collapsed blade's vertices coincide.
+  const collapse = /* wgsl */ `{
+  let bRoot=(finalWorld*vec4<f32>(blade.x,0.0,blade.y,1.0)).xyz;
+  let bGrow=smoothstep(material.foliageBladeEdges.x,material.foliageBladeEdges.y,fDist);
+  let bThin=smoothstep(material.foliageBladeEdges.z,material.foliageBladeEdges.w,fDist);
+  let bIn=clamp((${f(1 + BLADE_SOFT)}*bGrow-blade.z)/${f(BLADE_SOFT)},0.0,1.0);
+  let bOut=clamp((blade.z-bThin*${f(1 + BLADE_SOFT)})/${f(BLADE_SOFT)}+1.0,0.0,1.0);
+  let bAlive=bIn*bOut*step(fract(blade.x*37.31+blade.y*91.17+0.37),bladeStrength);
+  w=bRoot+(w-bRoot)*bAlive;}`;
   const foliage = v.foliage === null ? "" : /* wgsl */ `
   let fH=clamp(position.y/material.foliageHeight,0.0,1.0);
   let fH2=fH*fH;
@@ -157,7 +174,7 @@ function vertexCode(v: Vegetation): string {
   let fUp=out.worldNormal/max(fNl,1.0e-6)+vec3<f32>(0.0,material.foliageNormalUp,0.0);
   let fUl=length(fUp);
   if(fUl>1.0e-4){out.worldNormal=fUp/fUl*fNl;}else{out.worldNormal=vec3<f32>(0.0,fNl,0.0);}
-  let fEdge=1.0-smoothstep(material.foliageEdges.x,material.foliageEdges.y,fDist);
+  let fEdge=${blades ? "1.0" : "1.0-smoothstep(material.foliageEdges.x,material.foliageEdges.y,fDist)"};
   let fM=material.foliageAmp*fH2*material.foliageHeight*fScale*fEdge;
   let fDir=vec3<f32>(material.windDir.x,0.0,material.windDir.y);
   let fGust=foliageGust(o,material.windTime+0.6*(fClump-0.5));
@@ -180,8 +197,8 @@ function vertexCode(v: Vegetation): string {
     }
   }
   ${tint
-    ? `w.y-=${f(FOLIAGE_SINK)}*material.foliageHeight*smoothstep(material.foliageEdges.x,material.foliageEdges.y,fDist);out.vFoliage=foliage;`
-    : `out.vFoliage=vec4<f32>(0.0,0.0,0.0,1.0);`}
+    ? `${blades ? "" : `w.y-=${f(FOLIAGE_SINK)}*material.foliageHeight*smoothstep(material.foliageEdges.x,material.foliageEdges.y,fDist);`}out.vFoliage=foliage;`
+    : `out.vFoliage=vec4<f32>(0.0,0.0,0.0,1.0);`}${blades ? collapse : ""}
   out.vFoliageH=fH;out.vFoliageClump=fClump;out.vFoliageDist=fDist;`;
   // distanceFadePlugin.ts: the bands and the distance handed on, the instance widened about its origin.
   const fade = !v.fade ? "" : /* wgsl */ `
@@ -271,6 +288,9 @@ const FOLIAGE_SKY = `{let fSky=1.0-${f(FOLIAGE_CANOPY_SKY)}*(1.0-input.vFoliage.
 // renderer, keep the same pixels.
 const FADE_MAIN_BEGIN = `{let dfN=dfNoise(vec2<f32>(input.clipPos.x,material.fadeRows-input.clipPos.y));let dfIn=smoothstep(input.vFadeBands.x,input.vFadeBands.y,input.vFadeDist);let dfOut=1.0-smoothstep(input.vFadeBands.z,input.vFadeBands.w,input.vFadeDist);if(dfIn<1.0-dfN||dfOut<dfN){discard;}}`;
 
+/** The floats a vertex of a blade clump's `blade` attribute: the mesh's plugin vertex data. */
+export const BLADE_VERTEX_FLOATS = 4;
+
 /** The foliage's uniforms but the players, which are laid out as bits (`PLAYERS_FIELD`). */
 function foliageScalars(values: FoliageUniforms): UniformRecord {
   const { windPlayers: _players, ...scalars } = values;
@@ -306,6 +326,7 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
   if (v.light && v.foliage === null) throw new Error("the foliage's light needs the foliage");
   const layout = vegetationInstanceLayout(v);
   const tint = v.foliage !== null && v.foliage.profile.groundTint > 0;
+  const blades = v.foliage !== null && v.foliage.profile.blades;
   const fields: UniformField[] = [
     ...(v.foliage !== null ? FOLIAGE_FIELDS : []),
     ...(v.fade ? FADE_FIELDS : []),
@@ -335,6 +356,7 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
     ...(layout.groundGrad >= 0 ? [{ name: "groundGrad", type: "vec2<f32>", format: "float32x2" as const, stride, offset: layout.groundGrad * 4 }] : []),
     ...(layout.foliage >= 0 ? [{ name: "foliage", type: "vec4<f32>", format: "float32x4" as const, stride, offset: layout.foliage * 4 }] : []),
     ...(layout.deadwoodRole >= 0 ? [{ name: "deadwoodRole", type: "f32", format: "float32" as const, stride, offset: layout.deadwoodRole * 4 }] : []),
+    ...(layout.bladeStrength >= 0 ? [{ name: "bladeStrength", type: "f32", format: "float32" as const, stride, offset: layout.bladeStrength * 4 }] : []),
   ];
 
   const plugin: MaterialPlugin = {
@@ -342,7 +364,7 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
     priority: 200,
     // What the plugin compiles differs by its parts alone; the look's numbers are uniforms.
     defines: {
-      foliage: v.foliage !== null, tint, match: v.match, light: v.light, fade: v.fade, conform: v.conform,
+      foliage: v.foliage !== null, tint, blades, match: v.match, light: v.light, fade: v.fade, conform: v.conform,
       moss: v.moss !== null, deadwood: v.deadwood !== null, sky: v.sky,
     },
     getCustomCode: (stage) =>
@@ -382,6 +404,8 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
     },
   };
   if (attributes.length > 0) plugin.getInstanceAttributes = () => attributes;
+  // A blade's root in its clump (x, z), its draw and its height: four floats a vertex, the mesh's plugin vertex data.
+  if (blades) plugin.getVertexAttributes = () => [{ name: "blade", type: "vec4<f32>", format: "float32x4" as const, stride: BLADE_VERTEX_FLOATS * 4, offset: 0 }];
   if (v.moss !== null) {
     const moss = v.moss;
     plugin.getSamplers = () => [{ texture: "mossSampler", sampler: "mossSamplerSampler" }];
@@ -434,13 +458,16 @@ const WET_WEATHER_KEPT = `var wetShare=1.0;{let wetPorosity=min(material.wetCap,
 // block left, then the colour split into the albedo and the reflectance at normal incidence, a metal's its own colour.
 const SPLIT = `{let fBase=surfaceAlbedo*wetShare;colorF0=mix(dielectricColorF0,fBase,metallic);surfaceAlbedo=fBase*(vec3<f32>(1.0)-vec3<f32>(dielectricF0)*surfaceReflectivityColor)*(1.0-metallic);}`;
 
+// The split with no weather's darkening before it: a surface the rain does not wet.
+const SPLIT_DRY = `{let fBase=surfaceAlbedo;colorF0=mix(dielectricColorF0,fBase,metallic);surfaceAlbedo=fBase*(vec3<f32>(1.0)-vec3<f32>(dielectricF0)*surfaceReflectivityColor)*(1.0-metallic);}`;
+
 /**
  * The colour a forest material's block before the lights works on: the base
  * colour, as on Babylon.js, whose point before the lights comes ahead of
  * its reflectivity block. Lite has split the base colour into albedo and
  * reflectance by its point, so the block starts again from the base colour
- * here, first at the point, and `surfaceWetPlugin`, last at it, makes the
- * split. It matters where the block is not a plain factor: the foliage's
+ * here, first at the point, and `surfaceWetPlugin` (or `surfaceSplitPlugin`,
+ * on a surface with no wet look), last at it, makes the split. It matters where the block is not a plain factor: the foliage's
  * floor holds a bark's dark channels up, the moss lays its own colour in,
  * and the weather and a metal's share then darken what those left.
  */
@@ -473,5 +500,20 @@ export function surfaceWetPlugin(values: WetUniforms): MaterialPlugin {
     writeUbo(data, offsets) {
       writeWetUniforms(data, offsets, values);
     },
+  };
+}
+
+/**
+ * The split of the colour into albedo and reflectance on a material that
+ * wears no wet look (the blade clumps): `surfaceWetPlugin`'s last step
+ * alone, at its place, after the colour block. The material carries
+ * `baseColourPlugin` and its reflectance is set by
+ * `setPbrMetallicReflectance`, as there.
+ */
+export function surfaceSplitPlugin(): MaterialPlugin {
+  return {
+    name: "Split",
+    priority: 240,
+    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_LIGHTS: SPLIT_DRY } : null),
   };
 }

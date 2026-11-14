@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MaterialPlugin } from "@babylonjs/lite";
+import { BLADE_SOFT } from "../../../src/game/bladeClump.js";
+import { bladeTierBands } from "../../../src/game/bladeField.js";
 import { COVER_GREEN, FOLIAGE_ALBEDO_FLOOR } from "../../../src/game/coverAlbedoParams.js";
 import { DEADWOOD_CONTACT, DEADWOOD_LOG_DRAW, deadwoodUniforms, emptyDeadwoodUniforms } from "../../../src/game/deadwoodParams.js";
 import { emptyFadeUniforms, fadeBands } from "../../../src/game/distanceFade.js";
@@ -11,7 +13,7 @@ import { conformUniforms } from "../../../src/game/groundConform.js";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import {
   CONFORM_FIELDS, DEADWOOD_FIELDS, FADE_FIELDS, FADE_ROWS_FIELD, FOLIAGE_FIELDS, PLAYERS_FIELD, baseColourPlugin, directOcclusionPlugin,
-  oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, wgslFloat, writeVegetationInstances,
+  oneSidedLightPlugin, surfaceSplitPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, wgslFloat, writeVegetationInstances,
   type Vegetation,
 } from "../../../src/game/lite/forestPlugins.js";
 import { WET_FIELDS } from "../../../src/game/lite/wetWgsl.js";
@@ -35,6 +37,12 @@ const crownFar: Vegetation = { ...NOTHING, fade: true, conform: true };
 const barkNear = (): Vegetation => ({ ...NOTHING, foliage: sway(), conform: true, moss: MOSS });
 const barkFar: Vegetation = { ...NOTHING, conform: true, moss: MOSS };
 const deadwood = (base = 1.9): Vegetation => ({ ...NOTHING, fade: true, moss: MOSS, deadwood: { base } });
+/** A tier of the blade clumps: matched to the ground, lit by the foliage's own light, no dither. */
+const blades = (): Vegetation => {
+  const look = foliageLook("blade_clumps_t1_mat", FOLIAGE_PROFILES.BLADES, 0.5, { sunShadowed: true });
+  look.bladeEdges = bladeTierBands()[1];
+  return { ...NOTHING, foliage: look, match: true, light: true };
+};
 
 const code = (plugin: MaterialPlugin, stage: "vertex" | "fragment"): string => Object.values(plugin.getCustomCode?.(stage) ?? {}).join("\n");
 const names = (plugin: MaterialPlugin): string[] => (plugin.getUniforms?.().ubo ?? []).map((field) => field.name);
@@ -48,12 +56,12 @@ describe("a number as a WGSL float", () => {
 
 describe("the forest's plugin on Babylon Lite: an instance's own data", () => {
   it("is the fade's bands, the ground's gradient, the foliage's tint and a dead tree's role, each only where the material reads it", () => {
-    expect(vegetationInstanceLayout(crownNear())).toEqual({ fadeBands: 0, groundGrad: 4, foliage: -1, deadwoodRole: -1, floats: 6 });
-    expect(vegetationInstanceLayout(barkFar)).toEqual({ fadeBands: -1, groundGrad: 0, foliage: -1, deadwoodRole: -1, floats: 2 });
-    expect(vegetationInstanceLayout(deadwood())).toEqual({ fadeBands: 0, groundGrad: -1, foliage: -1, deadwoodRole: 4, floats: 5 });
+    expect(vegetationInstanceLayout(crownNear())).toEqual({ fadeBands: 0, groundGrad: 4, foliage: -1, deadwoodRole: -1, bladeStrength: -1, floats: 6 });
+    expect(vegetationInstanceLayout(barkFar)).toEqual({ fadeBands: -1, groundGrad: 0, foliage: -1, deadwoodRole: -1, bladeStrength: -1, floats: 2 });
+    expect(vegetationInstanceLayout(deadwood())).toEqual({ fadeBands: 0, groundGrad: -1, foliage: -1, deadwoodRole: 4, bladeStrength: -1, floats: 5 });
     // A tinting profile carries the ground's colour and the sky's openness.
     const fern = { ...NOTHING, foliage: foliageLook("fern", FOLIAGE_PROFILES.UNDERSTORY, 1), fade: true };
-    expect(vegetationInstanceLayout(fern)).toEqual({ fadeBands: 0, groundGrad: -1, foliage: 4, deadwoodRole: -1, floats: 8 });
+    expect(vegetationInstanceLayout(fern)).toEqual({ fadeBands: 0, groundGrad: -1, foliage: 4, deadwoodRole: -1, bladeStrength: -1, floats: 8 });
     expect(vegetationInstanceLayout(NOTHING).floats).toBe(0);
   });
 
@@ -296,5 +304,70 @@ describe("how a forest material is lit and wetted on Babylon Lite", () => {
   it("undoes the turn of the normal on a back face, where Lite has just made it", () => {
     expect(oneSidedLightPlugin().getCustomCode?.("fragment")).toEqual({ CUSTOM_FRAGMENT_UPDATE_DIFFUSE: "if(!frontFacing){N=-N;N_geom=-N_geom;}" });
     expect(oneSidedLightPlugin().getCustomCode?.("vertex")).toBeNull();
+  });
+});
+
+describe("the blade clumps' material on Babylon Lite", () => {
+  it("reads the ground's tint and the cell's strength an instance, and a blade's root and draw a vertex", () => {
+    const v = blades();
+    expect(vegetationInstanceLayout(v)).toEqual({ fadeBands: -1, groundGrad: -1, foliage: 0, deadwoodRole: -1, bladeStrength: 4, floats: 5 });
+    const plugin = vegetationPlugin(v);
+    expect(plugin.getInstanceAttributes?.()).toEqual([
+      { name: "foliage", type: "vec4<f32>", format: "float32x4", stride: 20, offset: 0 },
+      { name: "bladeStrength", type: "f32", format: "float32", stride: 20, offset: 16 },
+    ]);
+    expect(plugin.getVertexAttributes?.()).toEqual([{ name: "blade", type: "vec4<f32>", format: "float32x4", stride: 16, offset: 0 }]);
+    // A card's material declares no blade.
+    expect(vegetationPlugin(crownNear()).getVertexAttributes).toBeUndefined();
+    const out = new Float32Array(10);
+    writeVegetationInstances(vegetationInstanceLayout(v), 2, { foliage: Float32Array.of(1, 2, 3, 4, 5, 6, 7, 8), bladeStrength: Float32Array.of(0.25, 0.75) }, out);
+    expect([...out]).toEqual([1, 2, 3, 4, 0.25, 5, 6, 7, 8, 0.75]);
+  });
+
+  it("pulls each blade to its root by the tier's band and the cell's strength, last, in place of the far sink and the outer edge", () => {
+    const vertex = code(vegetationPlugin(blades()), "vertex");
+    expect(vertex).toContain("let bRoot=(finalWorld*vec4<f32>(blade.x,0.0,blade.y,1.0)).xyz;");
+    expect(vertex).toContain(`let bIn=clamp((${1 + BLADE_SOFT}*bGrow-blade.z)/${BLADE_SOFT},0.0,1.0);`);
+    expect(vertex).toContain("step(fract(blade.x*37.31+blade.y*91.17+0.37),bladeStrength)");
+    expect(vertex).toContain("w=bRoot+(w-bRoot)*bAlive;");
+    // The motion ignores the outer edge, and nothing sinks.
+    expect(vertex).toContain("let fEdge=1.0;");
+    expect(vertex).not.toContain("w.y-=");
+    // After the wind and the bend, before the clip position.
+    expect(vertex.indexOf("windPlayers")).toBeLessThan(vertex.indexOf("bRoot+(w-bRoot)"));
+    expect(vertex.indexOf("bRoot+(w-bRoot)")).toBeLessThan(vertex.indexOf("out.clipPos=scene.viewProjection"));
+    // A card keeps the edge and the sink, and collapses nothing.
+    const card = code(vegetationPlugin({ ...NOTHING, foliage: foliageLook("clutter.grass_a", FOLIAGE_PROFILES.GRASS, 0.6) }), "vertex");
+    expect(card).toContain("let fEdge=1.0-smoothstep(material.foliageEdges.x,material.foliageEdges.y,fDist);");
+    expect(card).toContain("w.y-=");
+    expect(card).not.toContain("bRoot");
+  });
+
+  it("writes the tier's band, and is drawn toward the ground's colour over its whole height under its own light", () => {
+    const plugin = vegetationPlugin(blades());
+    const { data, offsets } = laidOut(plugin);
+    plugin.writeUbo?.(data, offsets);
+    expect(readUniform(data, offsets, "foliageBladeEdges", 4)).toEqual([...bladeTierBands()[1]].map(Math.fround));
+    // Matched to the ground: the canopy's cut of the sun is the ground's own.
+    expect(readUniform(data, offsets, "foliageCanopySun", 1)).toEqual([0]);
+    const fragment = plugin.getCustomCode?.("fragment") ?? {};
+    expect(fragment.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toContain("if(fHas>0.5){surfaceAlbedo=mix(surfaceAlbedo,input.vFoliage.rgb*");
+    expect(fragment.CUSTOM_FRAGMENT_LIGHT).toContain("fWrapped");
+    expect(fragment.CUSTOM_FRAGMENT_MAIN_BEGIN).toBeUndefined();
+    expect(plugin.defines).toMatchObject({ foliage: true, tint: true, blades: true, match: true, light: true, fade: false });
+  });
+
+  it("splits its colour after the colour block with no wet look before it", () => {
+    const split = surfaceSplitPlugin();
+    const text = split.getCustomCode?.("fragment")?.CUSTOM_FRAGMENT_BEFORE_LIGHTS ?? "";
+    expect(text).toContain("let fBase=surfaceAlbedo;");
+    expect(text).toContain("colorF0=mix(dielectricColorF0,fBase,metallic);");
+    expect(text).not.toContain("wetShare");
+    expect(split.getCustomCode?.("vertex")).toBeNull();
+    expect(split.getUniforms).toBeUndefined();
+    // After the vegetation's block and before the air, where the wet look's split stands.
+    expect(split.priority).toBe(surfaceWetPlugin(emptyWetUniforms()).priority);
+    expect(vegetationPlugin(blades()).priority).toBeLessThan(split.priority as number);
+    expect(split.priority).toBeLessThan(ATMOSPHERE_PRIORITY);
   });
 });
