@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import vertexDefs from "../../src/game/shaders/deadwood.vertex.fx?raw";
@@ -13,6 +14,7 @@ import {
   attachDeadwood, DeadwoodPlugin, DEADWOOD_MOSS_SAMPLER, DEADWOOD_ROLE_ATTRIBUTE, DEADWOOD_ROUGHNESS_INJECTION_CODE,
 } from "../../src/game/deadwoodPlugin.js";
 import { MOSS_ROUGHNESS_INJECTION_POINT, MOSS_SAMPLER } from "../../src/game/mossPlugin.js";
+import { deadwoodUniforms, emptyDeadwoodUniforms } from "../../src/game/deadwoodParams.js";
 import { DEADWOOD_AXIS, DEADWOOD_BARK, DEADWOOD_CONTACT, DEADWOOD_CONTACT_BAND, DEADWOOD_LOG_DRAW, DEADWOOD_RADIUS, DEADWOOD_TONE, DEADWOOD_UP } from "../../src/game/deadwoodParams.js";
 import { BARK_FOOTPRINT, barkTransform } from "../../src/game/barkParams.js";
 
@@ -77,6 +79,26 @@ describe("deadwood plugin", () => {
     ]);
     expect(uniforms.vertex).toBe("uniform vec4 deadwoodBark;\nuniform vec2 deadwoodAxis;");
     expect(uniforms.fragment).toBe("");
+  });
+
+  it("declares the uniforms deadwoodUniforms makes, by name and size, and binds each as the record has it", () => {
+    const map = mossMap(scene);
+    const plugin = attachDeadwood(new PBRMaterial("deadwood_bound", scene), map);
+    plugin.base = 1.9;
+    const made = deadwoodUniforms(plugin.base, emptyDeadwoodUniforms());
+    expect(plugin.getUniforms().ubo.map((u) => [u.name, u.size])).toEqual(Object.entries(made).map(([name, v]) => [name, v.length]));
+    const footprint = BARK_FOOTPRINT[DEADWOOD_BARK.set];
+    expect(made).toEqual({ deadwoodBark: [1 / footprint.height, 1 / footprint.width, DEADWOOD_RADIUS, 1.9], deadwoodAxis: [DEADWOOD_AXIS.y, DEADWOOD_AXIS.z] });
+    const writes: Record<string, number[]> = {};
+    let texture: unknown = null;
+    const ubo = {
+      updateFloat2: (n: string, x: number, y: number) => { writes[n] = [x, y]; },
+      updateFloat4: (n: string, x: number, y: number, z: number, w: number) => { writes[n] = [x, y, z, w]; },
+      setTexture: (_n: string, t: unknown) => { texture = t; },
+    } as unknown as UniformBuffer;
+    plugin.bindForSubMesh(ubo, scene, engine, null as never);
+    expect(writes).toEqual(made);
+    expect(texture).toBe(map);
   });
 
   it("lays the bark's coordinates along the trunk and round it at the instance's scale, a whole number of tiles round, over the mesh's first uv set and any map's own", () => {

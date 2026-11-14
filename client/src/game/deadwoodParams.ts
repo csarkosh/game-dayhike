@@ -7,7 +7,7 @@
  * GLSL in shaders/deadwood*.fx mirrors every constant here, a lockstep test
  * holding them equal.
  */
-import type { BarkDressing } from "./barkParams.js";
+import { BARK_FOOTPRINT, type BarkDressing } from "./barkParams.js";
 
 /** The set the dead trees wear: the fir's pine set at its full size on the
  * high tier, its repeats 1 because the plugin lays the coordinates itself. */
@@ -32,3 +32,30 @@ export const DEADWOOD_TONE: { readonly r: number; readonly g: number; readonly b
  * scale 1), from under the root flare to over the trunk's seat line. */
 export const DEADWOOD_CONTACT = 0.55;
 export const DEADWOOD_CONTACT_BAND: readonly [number, number] = [-0.35, 0.15];
+
+/** The dead trees' uniforms by name: the bark's lay (the set's repeats a
+ * metre along the trunk and round it, the trunk's radius, the snag's base
+ * along the model's x) and where the trunk's axis runs through the model's
+ * y and z. */
+export type DeadwoodUniforms = { deadwoodBark: [number, number, number, number]; deadwoodAxis: [number, number] };
+
+/** A record of the right shape, every component zero. */
+export function emptyDeadwoodUniforms(): DeadwoodUniforms {
+  return { deadwoodBark: [0, 0, 0, 0], deadwoodAxis: [0, 0] };
+}
+
+/**
+ * The uniforms the dead trees' material is drawn with, into `out`. `base` is
+ * the snag's base along the model's x (m at scale 1), measured from the
+ * loaded geometry: the height a snag's moss band reads from.
+ */
+export function deadwoodUniforms(base: number, out: DeadwoodUniforms): DeadwoodUniforms {
+  const footprint = BARK_FOOTPRINT[DEADWOOD_BARK.set];
+  out.deadwoodBark[0] = 1 / footprint.height;
+  out.deadwoodBark[1] = 1 / footprint.width;
+  out.deadwoodBark[2] = DEADWOOD_RADIUS;
+  out.deadwoodBark[3] = base;
+  out.deadwoodAxis[0] = DEADWOOD_AXIS.y;
+  out.deadwoodAxis[1] = DEADWOOD_AXIS.z;
+  return out;
+}

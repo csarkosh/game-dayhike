@@ -39,8 +39,7 @@ import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
-import { BARK_FOOTPRINT } from "./barkParams.js";
-import { DEADWOOD_AXIS, DEADWOOD_BARK, DEADWOOD_RADIUS } from "./deadwoodParams.js";
+import { deadwoodUniforms, emptyDeadwoodUniforms } from "./deadwoodParams.js";
 import { MOSS_ROUGHNESS_INJECTION_POINT } from "./mossPlugin.js";
 import vertexDefs from "./shaders/deadwood.vertex.fx?raw";
 import vertexUv from "./shaders/deadwoodUv.vertex.fx?raw";
@@ -59,6 +58,9 @@ export const DEADWOOD_ROUGHNESS_INJECTION_CODE =
 export const DEADWOOD_MOSS_SAMPLER = "mossSampler";
 /** The per-instance role attribute: 0 a standing snag, 1 a fallen log. */
 export const DEADWOOD_ROLE_ATTRIBUTE = "deadwoodRole";
+
+/** The uniforms of the bind under way (`deadwoodUniforms`), filled again at each: one record for every plugin. */
+const bound = emptyDeadwoodUniforms();
 
 export class DeadwoodPlugin extends MaterialPluginBase {
   /** The moss colour map, the forest's: never disposed here. */
@@ -109,9 +111,9 @@ export class DeadwoodPlugin extends MaterialPluginBase {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override bindForSubMesh(uniformBuffer: UniformBuffer, _scene: Scene, _engine: AbstractEngine, _subMesh: SubMesh): void {
-    const footprint = BARK_FOOTPRINT[DEADWOOD_BARK.set];
-    uniformBuffer.updateFloat4("deadwoodBark", 1 / footprint.height, 1 / footprint.width, DEADWOOD_RADIUS, this.base);
-    uniformBuffer.updateFloat2("deadwoodAxis", DEADWOOD_AXIS.y, DEADWOOD_AXIS.z);
+    const u = deadwoodUniforms(this.base, bound);
+    uniformBuffer.updateFloat4("deadwoodBark", u.deadwoodBark[0], u.deadwoodBark[1], u.deadwoodBark[2], u.deadwoodBark[3]);
+    uniformBuffer.updateFloat2("deadwoodAxis", u.deadwoodAxis[0], u.deadwoodAxis[1]);
     uniformBuffer.setTexture(DEADWOOD_MOSS_SAMPLER, this.texture);
   }
 
