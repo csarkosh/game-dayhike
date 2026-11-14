@@ -50,7 +50,7 @@ import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
 import { releaseEngine } from "./game/renderer.js";
 import { adoptEngine, dropEngine, keepEngine, takeEngine } from "./game/keptEngine.js";
 import { recordEngineFailure, recordStartFailure, startOnEngine } from "./game/engineFailure.js";
-import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import { engineVersion } from "./game/engineVersion.js";
 import { hearEngineLog } from "./game/engineLog.js";
 import { browserEnv, browserMajor, hostOs, isChromeOrEdge, readSignals, type GpuSignals } from "./game/gpuSignals.js";
 import {
@@ -853,7 +853,7 @@ type GpuModule = typeof import("./game/gpuEngine.js");
 type MadeEngine = { engine: EngineHandle; watchers: EngineWatchers };
 
 function engineEnv(): EngineEnv {
-  return { browser: browserMajor(navigator.userAgent), babylon: AbstractEngine.Version };
+  return { browser: browserMajor(navigator.userAgent), babylon: engineVersion() };
 }
 
 /**
