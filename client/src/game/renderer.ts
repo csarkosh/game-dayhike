@@ -1828,6 +1828,17 @@ export type Renderer = {
   /** Stops calling `frame`; with none named, every function `runLoop` was
    * given. */
   stopLoop(frame?: () => void): void;
+  /** Calls `fn` at the end of each frame drawn; the function returned stops
+   * it. */
+  onFrameEnd(fn: () => void): () => void;
+  /** Calls `fn` each time a shader has compiled, on either engine; the
+   * function returned stops it. */
+  onShaderCompiled(fn: () => void): () => void;
+  /** Holds each shader compiled so far that is ready and clean, so it
+   * outlives this renderer's scene on an engine kept for the next hike
+   * (`pinShaders`, `keptEngine.ts`); the compile's own leavings stay until
+   * `retire`. */
+  keepShaders(): void;
   /**
    * The engine has failed (`answerFailures`): the asynchronous work still
    * under way on it, which would otherwise poll a dead engine until the
@@ -3782,6 +3793,17 @@ function buildRenderer(
     },
     stopLoop(frame) {
       engine.stopRenderLoop(frame);
+    },
+    onFrameEnd(fn) {
+      const observer = engine.onEndFrameObservable.add(fn);
+      return () => void engine.onEndFrameObservable.remove(observer);
+    },
+    onShaderCompiled(fn) {
+      const observer = engine.onAfterShaderCompilationObservable.add(fn);
+      return () => void engine.onAfterShaderCompilationObservable.remove(observer);
+    },
+    keepShaders() {
+      pinShaders(engine);
     },
     abandon() {
       forestMeshes?.abandon();

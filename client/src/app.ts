@@ -109,7 +109,7 @@ import {
   type EngineWatchers,
   type SwapBindings,
 } from "./game/rendererSwap.js";
-import { pinShaders, type KeptEngine } from "./game/keptEngine.js";
+import type { KeptEngine } from "./game/keptEngine.js";
 import { releaseAtmosphere } from "./game/atmosphere.js";
 import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
@@ -495,8 +495,8 @@ function buildGame(
    * was made: that frame is a known hitch. */
   let compiledSinceFrame = false;
   let unwatchCompiles: (() => void) | null = null;
-  /** Marks the frames a shader compiled in, on the renderer now running: the
-   * engine's compile observable, which both engines fire, and on WebGPU the
+  /** Marks the frames a shader compiled in, on the renderer now running: its
+   * compiles (`onShaderCompiled`), which both engines tell, and on WebGPU the
    * frames that made a render pipeline (`watchPipelines`), which WebGPU makes
    * at an effect's first draw, after its compile. */
   function watchCompiles(r: Renderer): void {
@@ -506,10 +506,10 @@ function buildGame(
     const mark = (): void => {
       compiledSinceFrame = true;
     };
-    const observer = r.engine.onAfterShaderCompilationObservable.add(mark);
+    const stopCompiles = r.onShaderCompiled(mark);
     const stopPipelines = r.engineName === "webgpu" && watchers !== null ? watchers.pipelines(r.engine, mark) : () => undefined;
     unwatchCompiles = () => {
-      r.engine.onAfterShaderCompilationObservable.remove(observer);
+      stopCompiles();
       stopPipelines();
     };
   }
@@ -522,24 +522,22 @@ function buildGame(
     untellCompiles?.();
     untellCompiles = null;
     if (r.engineName === "webgpu") return;
-    const told = r.engine.onAfterShaderCompilationObservable.add(reportCompile);
-    untellCompiles = () => r.engine.onAfterShaderCompilationObservable.remove(told);
+    untellCompiles = r.onShaderCompiled(reportCompile);
   }
   tellCompiles(renderer);
   made(() => untellCompiles?.());
   /** Holds each shader as it compiles, on an engine that will outlive the
    * hike (`keepEngine`): a material let go mid-hike (a billboard bake's
    * clone, say) would otherwise take its program with it, and the next hike
-   * would compile it again. Swept on the compile observable, which both
-   * engines fire; `pinShaders` takes only what is ready and clean, so an
+   * would compile it again. Swept at each compile, which both engines
+   * tell; `keepShaders` takes only what is ready and clean, so an
    * effect still compiling is picked up by a later sweep or at the retire. */
   let unpinCompiles: (() => void) | null = null;
   function pinCompiles(r: Renderer): void {
     unpinCompiles?.();
     unpinCompiles = null;
     if (options.keepEngine === undefined) return;
-    const pinned = r.engine.onAfterShaderCompilationObservable.add(() => pinShaders(r.engine));
-    unpinCompiles = () => r.engine.onAfterShaderCompilationObservable.remove(pinned);
+    unpinCompiles = r.onShaderCompiled(() => r.keepShaders());
   }
   pinCompiles(renderer);
   made(() => unpinCompiles?.());
@@ -2438,7 +2436,8 @@ function buildGame(
   let firstWholeFrame: Promise<void> | null = null;
   if (renderer.engineName === "webgpu" && watchers !== null) {
     const held = canvas;
-    const engine = renderer.engine;
+    const standing = renderer;
+    const engine = standing.engine;
     const gpu = watchers;
     const line = createHud(container);
     firstWholeFrame = new Promise<void>((resolve) => made(gpu.reveal(engine, resolve)));
@@ -2449,10 +2448,7 @@ function buildGame(
       showLine: (shown) => line.setStatus(shown ? LOADING_LINE : null),
       releaseLine: () => line.dispose(),
       status: () => hud.status(),
-      eachFrame: (fn) => {
-        const observer = engine.onEndFrameObservable.add(fn);
-        return () => engine.onEndFrameObservable.remove(observer);
-      },
+      eachFrame: (fn) => standing.onFrameEnd(fn),
       reveal: (fn) => gpu.reveal(engine, fn),
     });
     endRevealHold = lift;
