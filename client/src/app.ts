@@ -1,8 +1,8 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
 import { createRenderer, terrainMaterialFor, type EndSceneSetup, type FreecamView, type Renderer } from "./game/renderer.js";
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AsyncPipelines } from "./game/asyncPipelines.js";
+import type { EngineHandle } from "./game/engineHandle.js";
 import { FALLBACK_NOTICE_MS, parseGpuTime } from "./game/engineChoice.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
@@ -230,7 +230,7 @@ export type GameOptions = {
   /** An engine already made for the canvas (WebGPU, where `main.ts` chose
    * it) for the first renderer at `tier`; absent, the renderer makes the
    * WebGL2 one. */
-  engine?: AbstractEngine;
+  engine?: EngineHandle;
   /** The WebGPU module's watchers, given with a WebGPU engine. */
   watchers?: EngineWatchers;
   /** At the hike's end, the engine standing, its scene gone, for the next
@@ -324,7 +324,7 @@ function buildGame(
   let canvas = firstCanvas;
   // The WebGPU engine made for this hike belongs to no renderer until the
   // first one is built: a start that throws before then disposes it here.
-  let unowned: AbstractEngine | undefined = options.engine;
+  let unowned: EngineHandle | undefined = options.engine;
   made(() => unowned?.dispose());
   // The sim registry is the source of truth for variant names; the command
   // layer only validates against them. This MUST run before `parseScript`
@@ -435,7 +435,7 @@ function buildGame(
   };
   /** The pipelines a WebGPU engine made here makes asynchronously
    * (`asyncPipelines.ts`), for the renderer built on it; none on WebGL2. */
-  const pipelinesFor = (engine: AbstractEngine | null): AsyncPipelines | undefined =>
+  const pipelinesFor = (engine: EngineHandle | null): AsyncPipelines | undefined =>
     engine !== null && watchers !== null ? (watchers.asyncPipelines(engine) ?? undefined) : undefined;
   // The tier asked for, and should it fail to build, the class's start tier
   // and then low, each on a fresh canvas: only the renderer is retried, not

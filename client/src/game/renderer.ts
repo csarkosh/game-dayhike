@@ -17,6 +17,7 @@ import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTa
 import type { RenderingManager } from "@babylonjs/core/Rendering/renderingManager.js";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
+import { engineOf, type EngineHandle } from "./engineHandle.js";
 
 import type { Level } from "../sim/level.js";
 import type { Vec3, WorldState } from "../sim/types.js";
@@ -1891,7 +1892,7 @@ export type RendererOptions = {
    * (`engineChoice.ts`, `gpuEngine.ts`). Absent, the WebGL2 engine a past
    * hike left on `canvas` (`adoptEngine`), else one made here. Either way the
    * renderer owns it, and disposes it or retires it. */
-  engine?: AbstractEngine;
+  engine?: EngineHandle;
   /** The pipelines that WebGPU engine makes asynchronously
    * (`asyncPipelines.ts`): its scene's rendering groups are their scope
    * (`scopeRenderingGroups`), its impostor bakes keep only a render that left
@@ -2121,7 +2122,8 @@ function onceBrdfSettled(scenes: () => readonly Scene[], gone: () => boolean, re
  * engine goes regardless, and anything the expansion then throws is reported,
  * not hidden. An engine something else has already disposed is left alone.
  */
-export function releaseEngine(engine: AbstractEngine, polls = BRDF_SETTLE_POLLS): void {
+export function releaseEngine(handle: EngineHandle, polls = BRDF_SETTLE_POLLS): void {
+  const engine = engineOf(handle);
   onceBrdfSettled(() => engine.scenes, () => engine.isDisposed, () => engine.dispose(), polls);
 }
 
@@ -2155,7 +2157,8 @@ export function createRenderer(
   // way: disposed with the renderer, or here when the build throws. A WebGL2
   // engine a past hike left on this canvas is taken up again, with the
   // shaders it compiled (`keptEngine.ts`).
-  const engine = options.engine ?? adoptEngine(canvas) ?? new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);
+  const given = options.engine ?? adoptEngine(canvas);
+  const engine = given !== null ? engineOf(given) : new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);
   try {
     // Every part the build has made is disposed, newest first, when a later
     // part throws: the same teardown `dispose` gives a whole renderer, so the

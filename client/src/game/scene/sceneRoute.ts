@@ -5,7 +5,6 @@
  * recorder seek and draw one frame at a time. Everything built here is
  * disposed on leaving the route.
  */
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Scene as BabylonScene } from "@babylonjs/core/scene.js";
 import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
 import { parseLevel } from "../../sim/level.js";
@@ -15,6 +14,7 @@ import type { WorldState } from "../../sim/types.js";
 import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant, type LakeSource } from "../../sim/terrain.js";
 import { coveFor } from "../../sim/olympic.js";
 import { trailheadPlaces } from "../../sim/trailhead.js";
+import type { EngineHandle } from "../engineHandle.js";
 import { createCharacterPool, type CharacterPool } from "../characterModel.js";
 import { lakeRimRadii, rimAt } from "../lakeSkyline.js";
 import { loadContainer, loadUntilAborted } from "../modelLoad.js";
@@ -61,7 +61,7 @@ export type SceneRouteDeps = {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
   tier: QualityTier;
-  engine?: AbstractEngine;
+  engine?: EngineHandle;
   now?: () => number;
   loadCar?: (scene: BabylonScene) => Promise<PlacedModel | null>;
   pool?: CharacterPool;

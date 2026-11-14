@@ -45,6 +45,7 @@ import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetr
 import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
+import type { EngineHandle } from "./game/engineHandle.js";
 import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
 import { releaseEngine } from "./game/renderer.js";
 import { adoptEngine, dropEngine, keepEngine, takeEngine } from "./game/keptEngine.js";
@@ -849,7 +850,7 @@ function onPlay(): void {
 
 type GpuModule = typeof import("./game/gpuEngine.js");
 /** A WebGPU engine made for a canvas, and its module's watchers. */
-type MadeEngine = { engine: AbstractEngine; watchers: EngineWatchers };
+type MadeEngine = { engine: EngineHandle; watchers: EngineWatchers };
 
 function engineEnv(): EngineEnv {
   return { browser: browserMajor(navigator.userAgent), babylon: AbstractEngine.Version };
@@ -979,10 +980,7 @@ function makeWebGpu(
         fetchTranslators: async () => {
           translators = await gpu.loadTranslators();
         },
-        create: async (ms, features) => ({
-          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, tier: input.tier, lookup, pipelines, timing: input.timing }),
-          watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines, asyncPipelines: gpu.asyncPipelinesOf, reveal: gpu.revealWhenWhole },
-        }),
+        create: (ms, features) => gpu.startWebGpu(canvas, { ms, features, translators, tier: input.tier, lookup, pipelines, timing: input.timing }),
       };
     },
     // An engine a switch gave up waiting for was slow, not broken.

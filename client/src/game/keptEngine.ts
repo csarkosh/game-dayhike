@@ -28,16 +28,17 @@
  */
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import { engineOf, type EngineHandle } from "./engineHandle.js";
 import type { QualityTier } from "./quality.js";
 import type { EngineOnCanvas, EngineWatchers } from "./rendererSwap.js";
 
 /** An engine kept between hikes: its canvas, the WebGPU module's watchers
  * (null on WebGL2) and the tier it was last drawing. */
-export type KeptEngine = { canvas: HTMLCanvasElement; engine: AbstractEngine; watchers: EngineWatchers | null; tier: QualityTier };
+export type KeptEngine = { canvas: HTMLCanvasElement; engine: EngineHandle; watchers: EngineWatchers | null; tier: QualityTier };
 
 let kept: KeptEngine | null = null;
 /** WebGL2 engines handed out on their canvas, for the renderer to take up. */
-const onCanvas = new WeakMap<HTMLCanvasElement, AbstractEngine>();
+const onCanvas = new WeakMap<HTMLCanvasElement, EngineHandle>();
 
 /** The effects held here, per engine, each once however many hikes keep it. */
 const pinned = new WeakMap<AbstractEngine, WeakSet<Effect>>();
@@ -116,7 +117,7 @@ export function replayHook(effect: Effect): (shaderType: string, code: string) =
 }
 
 /** Keeps `next` for the next hike; one kept before it is released. */
-export function keepEngine(next: KeptEngine, release: (engine: AbstractEngine) => void): void {
+export function keepEngine(next: KeptEngine, release: (engine: EngineHandle) => void): void {
   const before = kept;
   kept = next;
   if (before !== null && before.engine !== next.engine) release(before.engine);
@@ -127,11 +128,11 @@ export function keepEngine(next: KeptEngine, release: (engine: AbstractEngine) =
  * engine asked for (`webgpu`) at `tier` and still standing; else null, the
  * kept engine released, since a hike that will not use it needs its memory.
  */
-export function takeEngine(webgpu: boolean, tier: QualityTier, release: (engine: AbstractEngine) => void): EngineOnCanvas | null {
+export function takeEngine(webgpu: boolean, tier: QualityTier, release: (engine: EngineHandle) => void): EngineOnCanvas | null {
   const was = kept;
   kept = null;
   if (was === null || was.engine.isDisposed) return null;
-  if (was.engine.isWebGPU !== webgpu || was.tier !== tier) {
+  if (engineOf(was.engine).isWebGPU !== webgpu || was.tier !== tier) {
     release(was.engine);
     return null;
   }
@@ -142,14 +143,14 @@ export function takeEngine(webgpu: boolean, tier: QualityTier, release: (engine:
 
 /** The WebGL2 engine handed out on `canvas` (`takeEngine`), once; null where
  * there is none or it has gone since. */
-export function adoptEngine(canvas: HTMLCanvasElement): AbstractEngine | null {
+export function adoptEngine(canvas: HTMLCanvasElement): EngineHandle | null {
   const engine = onCanvas.get(canvas) ?? null;
   onCanvas.delete(canvas);
   return engine !== null && !engine.isDisposed ? engine : null;
 }
 
 /** Releases the kept engine, if any. */
-export function dropEngine(release: (engine: AbstractEngine) => void): void {
+export function dropEngine(release: (engine: EngineHandle) => void): void {
   const was = kept;
   kept = null;
   if (was !== null) release(was.engine);

@@ -78,16 +78,18 @@ import {
   type PipelineMode,
   type ShaderLookupMode,
 } from "./engineChoice.js";
-import { heldOn, installPipelines, leftOutOn } from "./asyncPipelines.js";
+import { asyncPipelinesOf, heldOn, installPipelines, leftOutOn, revealWhenWhole } from "./asyncPipelines.js";
+import { engineOf, type EngineHandle } from "./engineHandle.js";
 import { createEffectTurns, spaceEffects } from "./effectTurns.js";
 import { mipmapPipelineAhead, withoutEagerPipelines } from "./enginePipelines.js";
 import { pinPluginNumbers } from "./pluginNumbers.js";
 import type { QualityTier } from "./quality.js";
+import type { EngineWatchers } from "./rendererSwap.js";
 import { defaultSources, effectNamedIn, labelShaderModules, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
 
 // The game reaches the patch on an engine made here, and the start's reveal,
-// through this module alone (`main.ts`'s watchers).
-export { asyncPipelinesOf, revealWhenWhole } from "./asyncPipelines.js";
+// through this module alone (`WATCHERS`).
+export { asyncPipelinesOf, revealWhenWhole };
 
 /** The least of its start's budget an engine keeps when it waits for its
  * shader lookup's sources: the wait is given up this long before the
@@ -629,3 +631,29 @@ export function watchPipelines(engine: AbstractEngine, onCreated: () => void): (
   return () => engine.onEndFrameObservable.remove(observer);
 }
 
+/**
+ * This module's watchers, as the game holds them beside an engine made here
+ * (`EngineWatchers`): its failures (`watchWebGpu`), its frames that are no
+ * measure of a whole one (`watchPipelines`), the pipelines it makes
+ * asynchronously (`asyncPipelinesOf`) and the start's reveal
+ * (`revealWhenWhole`).
+ */
+const WATCHERS: EngineWatchers = {
+  failures: (engine, onFailure) => watchWebGpu(engineOf(engine), onFailure),
+  pipelines: (engine, onCreated) => watchPipelines(engineOf(engine), onCreated),
+  asyncPipelines: (engine) => asyncPipelinesOf(engineOf(engine)),
+  reveal: (engine, lift) => revealWhenWhole(engineOf(engine), lift),
+};
+
+/**
+ * A WebGPU engine for `canvas` as the page holds one: the engine
+ * `createWebGpuEngine` makes, as a handle, and this module's watchers for it.
+ * What the page hands the game, which hands the engine to the renderer built
+ * on `canvas`. Rejects as `createWebGpuEngine` does.
+ */
+export async function startWebGpu(
+  canvas: HTMLCanvasElement,
+  options: Parameters<typeof createWebGpuEngine>[1] = {},
+): Promise<{ engine: EngineHandle; watchers: EngineWatchers }> {
+  return { engine: await createWebGpuEngine(canvas, options), watchers: WATCHERS };
+}

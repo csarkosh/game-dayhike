@@ -220,11 +220,14 @@ describe("the start where the rule gives WebGL2", () => {
     expect(fromMain.length).toBeGreaterThan(20);
     expect(fromMain.filter((file) => /asyncPipelines/.test(file))).toEqual([]);
     expect([...reachedFrom(join(src, "game/gpuEngine.ts"))].map((file) => relative(src, file))).toContain("game/asyncPipelines.ts");
-    // The engine is made with the page's switch, and its module hands the
-    // game the patch and the reveal.
+    // The engine is made with the page's switch, by its module, which hands
+    // the game the patch and the reveal beside it.
     const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
-    expect(main).toContain("engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, tier: input.tier, lookup, pipelines, timing: input.timing }),");
-    expect(main).toContain("watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines, asyncPipelines: gpu.asyncPipelinesOf, reveal: gpu.revealWhenWhole },");
+    expect(main).toContain("create: (ms, features) => gpu.startWebGpu(canvas, { ms, features, translators, tier: input.tier, lookup, pipelines, timing: input.timing }),");
+    const gpu = readFileSync(join(src, "game/gpuEngine.ts"), "utf8");
+    expect(gpu).toContain("  return { engine: await createWebGpuEngine(canvas, options), watchers: WATCHERS };");
+    expect(gpu).toContain("  asyncPipelines: (engine) => asyncPipelinesOf(engineOf(engine)),");
+    expect(gpu).toContain("  reveal: (engine, lift) => revealWhenWhole(engineOf(engine), lift),");
     // The game holds its first frames only on a WebGPU engine, and gives the
     // patch only to a renderer on one.
     const app = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");

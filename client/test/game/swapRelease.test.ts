@@ -49,6 +49,7 @@ import { Engine } from "@babylonjs/core/Engines/engine.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { RGBDTextureTools } from "@babylonjs/core/Misc/rgbdTextureTools.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import { engineOf } from "../../src/game/engineHandle.js";
 import { createRenderer, type Renderer } from "../../src/game/renderer.js";
 import { swapRenderer, type SwapBindings } from "../../src/game/rendererSwap.js";
 import type { Level } from "../../src/sim/level.js";
@@ -101,7 +102,7 @@ describe("a swap whose rung on a given engine fails part-way through the real bu
             return r;
           } finally {
             if (engine !== null) {
-              const scene = engine.scenes[0];
+              const scene = engineOf(engine).scenes[0];
               brdfReady = () => scene?.environmentBRDFTexture?.getInternalTexture()?.isReady !== false;
             }
             late.fail = false;

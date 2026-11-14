@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
+import type { EngineHandle } from "../../src/game/engineHandle.js";
 import { adoptEngine, dropEngine, keepEngine, pinShaders, replayHook, takeEngine, type KeptEngine } from "../../src/game/keptEngine.js";
 
 const fakeEngine = (webgpu: boolean): AbstractEngine => ({ isWebGPU: webgpu, isDisposed: false }) as unknown as AbstractEngine;
@@ -13,8 +14,8 @@ const kept = (webgpu: boolean, tier: KeptEngine["tier"] = "high"): KeptEngine =>
 
 describe("the engine a hike leaves for the next", () => {
   it("hands a WebGPU engine on as the next hike's engine, on its canvas, once", () => {
-    const released: AbstractEngine[] = [];
-    const release = (e: AbstractEngine): void => void released.push(e);
+    const released: EngineHandle[] = [];
+    const release = (e: EngineHandle): void => void released.push(e);
     const k = kept(true);
     keepEngine(k, release);
     expect(takeEngine(true, "high", release)).toEqual({ canvas: k.canvas, engine: k.engine, watchers: null });
@@ -33,8 +34,8 @@ describe("the engine a hike leaves for the next", () => {
   });
 
   it("lets go of one that is another engine or another tier, and of one kept before another", () => {
-    const released: AbstractEngine[] = [];
-    const release = (e: AbstractEngine): void => void released.push(e);
+    const released: EngineHandle[] = [];
+    const release = (e: EngineHandle): void => void released.push(e);
     const first = kept(true);
     const second = kept(true);
     keepEngine(first, release);

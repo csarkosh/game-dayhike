@@ -12,7 +12,6 @@
  * stopped when the probe ends (`probeDeps`), so no step makes the slices
  * again.
  */
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { createForest } from "../sim/forest.js";
 import { parseLevel } from "../sim/level.js";
@@ -29,6 +28,7 @@ import {
 } from "./frameProbe.js";
 import { afterNextPaint } from "./paint.js";
 import { showProbeScreen, timeIdleCadence } from "./probeScreen.js";
+import type { EngineHandle } from "./engineHandle.js";
 import { containerPixels, type ProbeReading, type QualityTier, type VerdictEngine } from "./quality.js";
 import { sunAltitudeDeg } from "./lighting.js";
 import { createRenderer, type Renderer } from "./renderer.js";
@@ -50,15 +50,15 @@ export type ProbeScene = { renderer: Renderer; frame(): void; dispose(): void };
  */
 export type StepEngine = {
   canvas: HTMLCanvasElement;
-  engine: AbstractEngine | null;
-  watch: ((engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void) => () => void) | null;
+  engine: EngineHandle | null;
+  watch: ((engine: EngineHandle, onFailure: (reason: "pipeline" | "lost") => void) => () => void) | null;
   /** Tells `onFrame` at the end of each frame of a WebGPU engine that is no
    * measure of its tier: one held while a render pipeline was made, one that
    * left a draw out, or one that made a pipeline synchronously
    * (`watchPipelines`); absent or null on WebGL2, and where the page has no
    * WebGPU module. The step starts its warm-up again on each, as after a
    * late compile. */
-  unmeasured?: ((engine: AbstractEngine, onFrame: () => void) => () => void) | null;
+  unmeasured?: ((engine: EngineHandle, onFrame: () => void) => () => void) | null;
 };
 
 /** A probe step ended by a fault of its WebGPU engine: its build, an effect,
@@ -72,7 +72,7 @@ export const ENGINE_FAILED = "engine-failed";
  * renderer's own: `frame()` puts the free camera on the pose, syncs and
  * renders once; `dispose()` disposes the renderer and its engine.
  */
-export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier, engine: AbstractEngine | null = null, sky?: SkyTable): ProbeScene {
+export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier, engine: EngineHandle | null = null, sky?: SkyTable): ProbeScene {
   // Module state survives a game's `/terrain` command; the pose is the
   // default variant's.
   setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);

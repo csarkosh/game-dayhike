@@ -43,9 +43,9 @@
  * engine is never heard as a failing one, and the new engine's is put on only
  * once its rung stands (`watch`): a rung that failed is never watched.
  */
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
+import type { EngineHandle } from "./engineHandle.js";
 import type { QualityTier } from "./quality.js";
 import type { Renderer } from "./renderer.js";
 import type { TierChoice } from "./tierChoice.js";
@@ -79,7 +79,7 @@ export type Swappable = { renderer: Renderer; canvas: HTMLCanvasElement };
 
 /** Listens to a WebGPU engine for the failures the game answers
  * (`watchWebGpu`, `gpuEngine.ts`); the function returned stops listening. */
-export type WatchEngine = (engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void) => () => void;
+export type WatchEngine = (engine: EngineHandle, onFailure: (reason: "pipeline" | "lost") => void) => () => void;
 
 /** The WebGPU module's watchers (`gpuEngine.ts`): its failures
  * (`watchWebGpu`); the frames that made a render pipeline, or left a draw out
@@ -89,15 +89,15 @@ export type WatchEngine = (engine: AbstractEngine, onFailure: (reason: "pipeline
  * leaves nothing out (`revealWhenWhole`). */
 export type EngineWatchers = {
   failures: WatchEngine;
-  pipelines(engine: AbstractEngine, onCreated: () => void): () => void;
-  asyncPipelines(engine: AbstractEngine): AsyncPipelines | null;
-  reveal(engine: AbstractEngine, lift: () => void): () => void;
+  pipelines(engine: EngineHandle, onCreated: () => void): () => void;
+  asyncPipelines(engine: EngineHandle): AsyncPipelines | null;
+  reveal(engine: EngineHandle, lift: () => void): () => void;
 };
 
 /** A renderer's canvas and the engine made for it: WebGPU with its module's
  * watchers, or WebGL2 (`engine` and `watchers` null), which the renderer
  * makes itself. */
-export type EngineOnCanvas = { canvas: HTMLCanvasElement; engine: AbstractEngine | null; watchers: EngineWatchers | null };
+export type EngineOnCanvas = { canvas: HTMLCanvasElement; engine: EngineHandle | null; watchers: EngineWatchers | null };
 
 /**
  * The least a switch's new scene waits under the cover for its models, ground
@@ -145,7 +145,7 @@ export async function engineWithinBound(
 }
 
 /** One rung of a ladder: a tier, and the engine made for it (null: WebGL2). */
-type Rung = { tier: QualityTier; engine: AbstractEngine | null; watch: WatchEngine | null };
+type Rung = { tier: QualityTier; engine: EngineHandle | null; watch: WatchEngine | null };
 
 /** `first`, then its tier again on WebGL2 when `first` has an engine of its
  * own, then each of `later` on WebGL2, none twice. */
@@ -160,7 +160,7 @@ function ladderOf(first: Rung, later: readonly QualityTier[]): Rung[] {
 /** What the game gives a swap: how to build, where, and what to put back. */
 export type SwapBindings = {
   /** A renderer at `tier` on `canvas`, on `engine` when one is given. */
-  build(canvas: HTMLCanvasElement, tier: QualityTier, engine: AbstractEngine | null): Renderer;
+  build(canvas: HTMLCanvasElement, tier: QualityTier, engine: EngineHandle | null): Renderer;
   /** A canvas not yet in the page. */
   freshCanvas(): HTMLCanvasElement;
   /** What the game builds into the scene outside the renderer (the signs, the
@@ -211,7 +211,7 @@ const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium"
  */
 export function swapRenderer(
   current: Swappable,
-  target: { tier: QualityTier; engine: AbstractEngine | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
+  target: { tier: QualityTier; engine: EngineHandle | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
   bindings: SwapBindings,
 ): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
   // The engine made for the target is the swap's until its rung's build takes
@@ -236,7 +236,7 @@ export function swapRenderer(
  * hands it to the build. */
 function climb(
   current: Swappable,
-  target: { tier: QualityTier; engine: AbstractEngine | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
+  target: { tier: QualityTier; engine: EngineHandle | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
   bindings: SwapBindings,
   taken: () => void,
 ): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
@@ -346,7 +346,7 @@ export function buildFirstRenderer(
   canvas: HTMLCanvasElement,
   tiers: readonly QualityTier[],
   bindings: Pick<SwapBindings, "build" | "freshCanvas" | "watch" | "engineFailed">,
-  first: { engine: AbstractEngine; watch: WatchEngine | null } | null = null,
+  first: { engine: EngineHandle; watch: WatchEngine | null } | null = null,
 ): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
   const [asked = "low", ...later] = tiers;
   const ladder = ladderOf({ tier: asked, engine: first?.engine ?? null, watch: first?.watch ?? null }, later);
