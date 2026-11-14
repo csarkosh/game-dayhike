@@ -77,6 +77,14 @@ export const CLUTTER_RADII: readonly number[] = [110, 110, 400, 110, 70, 110, 10
  * class's fades, seams and far band (`clutterFadeEdges`, `clutterSeamEdges`,
  * `coverFarBand`, `coverWiden`) as the low tier's is. */
 export const CLUTTER_REACH = 0.7;
+/** The share of every class's radius the low tier draws: the clutter's
+ * analogue of the forest's near band on that tier. */
+export const CLUTTER_REACH_LOW = 0.6;
+
+/** The share of every class's radius a quality tier draws (`radiusScale`). */
+export function clutterReachFor(tier: "low" | "medium" | "high"): number {
+  return tier === "low" ? CLUTTER_REACH_LOW : CLUTTER_REACH;
+}
 
 /**
  * Where a class's far band begins (m, at radiusScale 1; none for a class at

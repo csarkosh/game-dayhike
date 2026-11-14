@@ -149,7 +149,7 @@ import {
 } from "./preparedScene.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
 import { nearRadiusFor } from "./forestField.js";
-import { CLUTTER_REACH } from "./clutterField.js";
+import { clutterReachFor } from "./clutterField.js";
 import { createClutterMeshes } from "./clutterMeshes.js";
 import type { CullPose } from "./grassCull.js";
 import { createBladeMeshes } from "./bladeMeshes.js";
@@ -2863,7 +2863,7 @@ function buildRenderer(
   const clutterMeshes =
     forest !== null
       ? createClutterMeshes(scene, forest.seed, {
-        radiusScale: tier === "low" ? 0.6 : CLUTTER_REACH,
+        radiusScale: clutterReachFor(tier),
         nearBlades: tier !== "low",
         cull: tier !== "low",
         jobs,
