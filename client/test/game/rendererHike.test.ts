@@ -20,19 +20,26 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
 import "../../src/sim/passes/index.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
-import { createHikeRenderer, sceneRendererOf, type Renderer } from "../../src/game/renderer.js";
+import { createRenderer, sceneRendererOf, type Renderer, type SceneRenderer } from "../../src/game/renderer.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { EMPTY_LEVEL, windTestState } from "./helpers/rendererWorld.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
 const nullCanvas = (): HTMLCanvasElement => ({ renderWidth: 1600, renderHeight: 900 }) as unknown as HTMLCanvasElement;
 
-/** The renderer as the hike makes it: held by its own surface, its scene reached only through `sceneRendererOf`. */
+/** The renderer on Babylon.js, held as the hike holds a renderer: by its own surface, its scene reached only through `sceneRendererOf`. */
 function hikeRenderer(): Renderer {
-  return createHikeRenderer(nullCanvas(), EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture() });
+  return createRenderer(nullCanvas(), EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture() });
 }
 
-describe("the renderer as the hike holds it", () => {
+/** `renderer` with its scene: every renderer `createRenderer` makes has one. */
+function withScene(renderer: Renderer): SceneRenderer {
+  const own = sceneRendererOf(renderer);
+  if (own === null) throw new Error("the renderer has no Babylon scene");
+  return own;
+}
+
+describe("the renderer on Babylon.js as the hike holds a renderer", () => {
   let renderer: Renderer | null = null;
   afterEach(() => {
     renderer?.dispose();
@@ -42,7 +49,7 @@ describe("the renderer as the hike holds it", () => {
 
   it("is the one renderer, with its scene behind it: the engine it names is the scene's, by a name the page reads", () => {
     renderer = hikeRenderer();
-    const own = sceneRendererOf(renderer);
+    const own = withScene(renderer);
     expect(own).toBe(renderer);
     expect(renderer.engine).toBe(own.scene.getEngine());
     // The engine made where none is given is WebGL2's.
@@ -51,7 +58,7 @@ describe("the renderer as the hike holds it", () => {
 
   it("draws a frame of its scene when asked, and no other", () => {
     renderer = hikeRenderer();
-    const { scene } = sceneRendererOf(renderer);
+    const { scene } = withScene(renderer);
     let drawn = 0;
     scene.onAfterRenderObservable.add(() => {
       drawn += 1;
@@ -65,7 +72,7 @@ describe("the renderer as the hike holds it", () => {
 
   it("runs and stops its loop on its engine: the function given, or every one when none is named", () => {
     renderer = hikeRenderer();
-    const { engine } = sceneRendererOf(renderer);
+    const { engine } = withScene(renderer);
     const run = vi.spyOn(engine, "runRenderLoop").mockImplementation(() => undefined);
     const stop = vi.spyOn(engine, "stopRenderLoop");
     const frame = (): void => undefined;
@@ -78,7 +85,7 @@ describe("the renderer as the hike holds it", () => {
 
   it("tells the end of each frame and each shader compiled, until the function it gave back is called", () => {
     renderer = hikeRenderer();
-    const { engine } = sceneRendererOf(renderer);
+    const { engine } = withScene(renderer);
     const heard: string[] = [];
     const stopFrames = renderer.onFrameEnd(() => void heard.push("frame"));
     const stopCompiles = renderer.onShaderCompiled(() => void heard.push("compile"));
@@ -96,7 +103,7 @@ describe("the renderer as the hike holds it", () => {
 
   it("holds its engine's shaders that compiled cleanly, each once, and leaves their compile's hooks until it retires", () => {
     renderer = hikeRenderer();
-    const cache = (sceneRendererOf(renderer).engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
+    const cache = (withScene(renderer).engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
     const hook = (): string => "";
     const clean = { isReady: () => true, getCompilationError: () => "", _refCount: 1, _processCodeAfterIncludes: hook };
     const compiling = { isReady: () => false, getCompilationError: () => "", _refCount: 1 };
@@ -124,12 +131,12 @@ describe("the renderer as the hike holds it", () => {
     expect(at).toEqual({ x: 12, y: 30, z: -7 });
     at.x = 99;
     expect(renderer.cameraPosition().x).toBe(12);
-    expect(sceneRendererOf(renderer).camera.position.x).toBe(12);
+    expect(withScene(renderer).camera.position.x).toBe(12);
   }, timeLimit(60_000));
 
   it("counts its scene's loads in flight, and calls its world in at the bound it is given at the latest", async () => {
     renderer = hikeRenderer();
-    const { scene } = sceneRendererOf(renderer);
+    const { scene } = withScene(renderer);
     const before = renderer.waitingItems();
     expect(before).toBe(scene.getWaitingItemsCount());
     scene.addPendingData("a model on its way");

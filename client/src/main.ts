@@ -48,7 +48,7 @@ import { startGame, type GameHandle } from "./app.js";
 import type { EngineHandle } from "./game/engineHandle.js";
 import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
 import { releaseEngine } from "./game/renderer.js";
-import { adoptEngine, dropEngine, keepEngine, takeEngine } from "./game/keptEngine.js";
+import { adoptEngine, dropEngine, keepEngine } from "./game/keptEngine.js";
 import { recordEngineFailure, recordStartFailure, startOnEngine } from "./game/engineFailure.js";
 import { engineVersion } from "./game/engineVersion.js";
 import { hearEngineLog } from "./game/engineLog.js";
@@ -906,15 +906,17 @@ function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean, 
 }
 
 /**
- * A hike's engine: the one the last hike on the page left (`keptEngine.ts`),
- * on its canvas, where it is the engine the WebGPU rule gives `tier` now, the
- * adapter's verdict the one read at load; else a fresh one (`engineFor`), the
- * kept one let go.
+ * A hike's canvas: a fresh one, with no engine on it. The hike's renderer
+ * makes its own engine from its canvas (`createHikeRenderer`), so the page
+ * makes none for a hike, at its start or for a switch of tier or a rebuild
+ * later, and an engine an earlier hike left is let go. The renderer draws
+ * with WebGPU alone: on a browser that offers none the hike is refused here,
+ * where the start's one catch says so, not left as a canvas nothing draws.
  */
-function hikeEngineFor(tier: QualityTier, read: GpuSignals, current: () => boolean): Promise<EngineOnCanvas> {
-  const rule = chooseEngine({ ...engineInput(tier, read), fits: signalsFit(read) });
-  const kept = rule === "probe" ? (dropEngine(releaseEngine), null) : takeEngine(rule === "webgpu", tier, releaseEngine);
-  return kept !== null ? Promise.resolve(kept) : engineFor(tier, read, current);
+function hikeCanvas(): Promise<EngineOnCanvas> {
+  dropEngine(releaseEngine);
+  if ((navigator as { gpu?: unknown }).gpu === undefined) return Promise.reject(new Error("a hike is drawn with WebGPU, which this browser does not offer"));
+  return Promise.resolve({ canvas: document.createElement("canvas"), engine: null, watchers: null });
 }
 
 /**
@@ -1220,8 +1222,6 @@ function render(container: HTMLDivElement): void {
       prep.dispose();
     },
   };
-  /** The GPU's signals this start read, for the engines made later. */
-  let hikeSignals: GpuSignals | null = null;
   // How long each step of the start took, for its `load` row: the tier's
   // decision (with its probe, where one ran), the intro's buffer, the engine,
   // the film's top-up, what the start then still waited for the world's
@@ -1278,10 +1278,7 @@ function render(container: HTMLDivElement): void {
       if (sceneTier !== null) console.info(sceneLine(sceneTier, sampled, laps.sceneMs ?? 0));
     },
     paint: () => new Promise((resolve) => afterNextPaint(resolve)),
-    engine: (decided, read) => {
-      hikeSignals = read;
-      return hikeEngineFor(decided.tier, read, () => !cancelled());
-    },
+    engine: () => hikeCanvas(),
     // A kept WebGL2 engine is left on its canvas for the renderer: let go too.
     discard: (onCanvas) => {
       const engine = onCanvas.engine ?? adoptEngine(onCanvas.canvas);
@@ -1289,12 +1286,10 @@ function render(container: HTMLDivElement): void {
     },
     build: (decided, onCanvas) => {
       container.appendChild(onCanvas.canvas);
-      const read = hikeSignals;
-      if (read === null) throw new Error("the GPU's signals were not read");
       // The engine's lap ends here, a paint after it was made.
       lap("engine");
       telemetry.mark("start:build");
-      launch(container, onCanvas, route.token, decided, (tier, wanted) => engineFor(tier, read, () => !cancelled(), wanted), intro, takeSampled);
+      launch(container, onCanvas, route.token, decided, () => hikeCanvas(), intro, takeSampled);
       lap("build");
       // The build has what it wanted of the worker: the worker ends, and the scene is let go of.
       prep.dispose();

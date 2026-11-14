@@ -219,8 +219,10 @@ describe("layer boundaries", () => {
     // the older rule, and the engine from the tier decided.
     expect(main).not.toContain("detectTier");
     expect([...main.matchAll(/\bstartHike</g)].length).toBe(1);
-    // The engine the last hike kept, where it is the one the rule gives.
-    expect(main).toContain("      return hikeEngineFor(decided.tier, read, () => !cancelled());");
+    // A hike's canvas carries no engine: its renderer makes its own from it, at the start and for every switch after.
+    expect(main).toContain("    engine: () => hikeCanvas(),");
+    expect(main).toContain("launch(container, onCanvas, route.token, decided, () => hikeCanvas(), intro, takeSampled);");
+    expect([...main.matchAll(/\bhikeCanvas\(/g)].length).toBe(3);
     // Nothing of the start hangs off a promise outside the chain's catch.
     expect(main).not.toMatch(/makeWebGpu\([^)]*\)\.then\(/);
   });
@@ -327,6 +329,9 @@ describe("layer boundaries", () => {
     const runtimeImports = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"'?]+)["']/gm)].map((m) => m[1] as string);
     const resolveIn = (from: string, spec: string): string | null => {
+      // Babylon Lite is a library of its own, imported whole by its package's name: it holds no
+      // module of Babylon.js and registers nothing on Babylon.js's classes.
+      if (spec === "@babylonjs/lite") return null;
       if (spec.startsWith("@babylonjs/")) return join(NODE_MODULES, spec);
       if (!spec.startsWith(".")) return null;
       const path = join(from, "..", spec);
@@ -578,6 +583,41 @@ describe("layer boundaries", () => {
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
     expect(bad).toEqual([]);
+  });
+
+  /**
+   * The hike's renderer is drawn with Babylon Lite, and nothing of it is
+   * Babylon.js: not a module under `game/lite/`, and not anything one of
+   * them loads. What it shares with the renderer on Babylon.js is the game's
+   * own arithmetic, which loads no engine, and types, which load nothing.
+   */
+  it("draws the hike with Babylon Lite alone: nothing under game/lite/ loads Babylon.js, whatever it imports", () => {
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const own = sourceFiles(join(SRC, "game", "lite"));
+    expect(own.length).toBeGreaterThan(5);
+    const seen = new Set<string>();
+    const stack = [...own];
+    const bad: string[] = [];
+    const lite: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec === "@babylonjs/lite") lite.push(relative(SRC, file));
+        else if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(own.length);
+    expect(bad).toEqual([]);
+    // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
+    expect(lite.sort()).toEqual(["game/lite/groundTextures.ts", "game/lite/renderer.ts", "game/lite/terrainMeshes.ts"]);
+    // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.
+    const renderer = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
+    expect(renderer).toContain("  return createLiteRenderer(canvas, level, forest, options);");
+    expect(loaded(join(SRC, "game/lite/renderer.ts")).filter((spec) => spec === "../renderer.js")).toEqual([]);
   });
 
   /**

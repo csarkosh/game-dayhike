@@ -160,6 +160,7 @@ import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
 import type { MatchState, View } from "./wildlifeDirector.js";
 import type { ListenerPose } from "./ambientAudio.js";
 import { writeListenerPose } from "./listenerPose.js";
+import { createLiteRenderer } from "./lite/renderer.js";
 import { createMistMeshes, type MistMeshes } from "./mistMeshes.js";
 import { createRain, type Rain, type RainLamp } from "./rain.js";
 import { createRainMap } from "./rainMap.js";
@@ -1670,8 +1671,10 @@ export { writeListenerPose };
 /**
  * The renderer as the hike holds it: what it is told, what it is asked, and
  * what it reads back, in the game's own terms. Nothing here says what draws
- * the world; the game's own modules that build into the scene, and the
- * tests, hold it as a `SceneRenderer`.
+ * the world. Two things answer it: the renderer on Babylon Lite the hike is
+ * given (`lite/renderer.ts`), and the renderer on Babylon.js below, which
+ * the game's own modules that build into its scene, and the tests, hold as
+ * a `SceneRenderer`.
  */
 export type Renderer = {
   /** The engine the renderer draws with, as the page holds one
@@ -1899,10 +1902,10 @@ export type Renderer = {
 };
 
 /**
- * The renderer as the game's own modules and the tests hold it: `Renderer`
- * with what it draws with, for whatever builds into its scene, reads its
- * camera or drives its engine. `createRenderer` makes one; a module handed a
- * `Renderer` by the hike gets it through `sceneRendererOf`.
+ * The renderer on Babylon.js as the game's own modules and the tests hold
+ * it: `Renderer` with what it draws with, for whatever builds into its
+ * scene, reads its camera or drives its engine. `createRenderer` makes one;
+ * a module handed a `Renderer` gets it through `sceneRendererOf`.
  */
 export type SceneRenderer = Omit<Renderer, "engine" | "retire"> & {
   scene: Scene;
@@ -1918,10 +1921,10 @@ export type SceneRenderer = Omit<Renderer, "engine" | "retire"> & {
   retire(): AbstractEngine;
 };
 
-/** The renderer the hike holds, with its scene: every `Renderer` is one made
- * by `createRenderer`. */
-export function sceneRendererOf(renderer: Renderer): SceneRenderer {
-  return renderer as SceneRenderer;
+/** `renderer` with its Babylon scene, where it is one `createRenderer` made;
+ * null for the hike's own renderer, which has none to build into. */
+export function sceneRendererOf(renderer: Renderer): SceneRenderer | null {
+  return "scene" in renderer ? (renderer as SceneRenderer) : null;
 }
 
 export type RendererOptions = {
@@ -2214,10 +2217,11 @@ export function createRenderer(
 }
 
 /**
- * A hike's renderer, as the hike holds it: `createRenderer`'s, from the same
- * canvas, world and options, handed over as a `Renderer`. The hike makes its
- * first renderer and each one a swap builds through this, so nothing it
- * holds names what draws the world.
+ * A hike's renderer, as the hike holds it: the one drawn with Babylon Lite
+ * (`lite/renderer.ts`), from the same canvas, world and options
+ * `createRenderer` takes, but an engine, which it makes for itself. The hike
+ * makes its first renderer and each one a swap builds through this, so
+ * nothing it holds names what draws the world.
  */
 export function createHikeRenderer(
   canvas: HTMLCanvasElement,
@@ -2225,7 +2229,7 @@ export function createHikeRenderer(
   forest: Forest | null = null,
   options: RendererOptions = {},
 ): Renderer {
-  return createRenderer(canvas, level, forest, options);
+  return createLiteRenderer(canvas, level, forest, options);
 }
 
 function buildRenderer(

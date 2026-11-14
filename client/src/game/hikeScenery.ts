@@ -7,6 +7,10 @@
  * during a live change of tier is not yet the one running. The hike holds
  * what is built here by what it can ask of it and no more, and disposes it
  * while its scene lives (`SwapBindings.extras`).
+ *
+ * All of it is Babylon's, built into a Babylon scene: a renderer with none
+ * (`sceneRendererOf` null, the hike's own on Babylon Lite) gets no signs, no
+ * film car and a body that is nothing, until that renderer draws them.
  */
 import { activeTerrainVariant, elevationAt } from "../sim/terrain.js";
 import { signSites } from "../sim/placeNames.js";
@@ -43,10 +47,12 @@ const trailheads = new WeakMap<HikeSigns, TrailheadMeshes>();
 /**
  * Junction posts, and the trailhead's car and board, from the same seed the
  * sim used, in `renderer`'s scene. Null for a world with no one to search
- * for, no trail or no road.
+ * for, no trail or no road, and for a renderer with no Babylon scene.
  */
 export function createHikeSigns(renderer: Renderer, world: World, seed: number): HikeSigns | null {
-  const { scene, shadows, cover } = sceneRendererOf(renderer);
+  const built = sceneRendererOf(renderer);
+  if (built === null) return null;
+  const { scene, shadows, cover } = built;
   const search = world.search;
   const variant = activeTerrainVariant();
   const graph = variant.trailGraph?.(seed);
@@ -108,7 +114,9 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
 export function loadFilmCar(renderer: Renderer, signs: HikeSigns, signal: AbortSignal): void {
   const trailhead = trailheads.get(signs);
   if (trailhead === undefined) return;
-  const { scene } = sceneRendererOf(renderer);
+  const built = sceneRendererOf(renderer);
+  if (built === null) return;
+  const { scene } = built;
   loadUntilAborted(() => defaultModelLoader(scene)(FILM_CAR_OUTPUT), signal).then(
     (container) => {
       if (signal.aborted) {
@@ -132,6 +140,7 @@ export function loadFilmCar(renderer: Renderer, signs: HikeSigns, signal: AbortS
  * shadowed with the rest of the scenery placed once.
  */
 export function createHikeBody(renderer: Renderer, body: { pos: Vec3; yaw: number }): { dispose(): void } {
-  const { scene, shadows } = sceneRendererOf(renderer);
-  return createBodyMesh(scene, body, { shadows });
+  const built = sceneRendererOf(renderer);
+  if (built === null) return { dispose: () => undefined };
+  return createBodyMesh(built.scene, body, { shadows: built.shadows });
 }
