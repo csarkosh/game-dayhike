@@ -19,6 +19,7 @@ import {
   WIDEN_NONE,
   writeFadeBands,
 } from "../../src/game/distanceFadePlugin.js";
+import { emptyFadeUniforms, fadeUniforms } from "../../src/game/distanceFade.js";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -162,6 +163,20 @@ describe("distance fade plugin", () => {
     attachDistanceFade(mat, { force: true });
     return mat.pluginManager!.getPlugin("DistanceFade") as DistanceFadePlugin;
   }
+  it("declares the uniforms fadeUniforms makes, by name and size, and binds each as the record has it", () => {
+    const mat = new PBRMaterial("fade_bound", scene);
+    attachDistanceFade(mat, { force: true });
+    setDistanceWiden(mat, { band: [40, 100], factor: 2 });
+    const plugin = mat.pluginManager!.getPlugin("DistanceFade") as DistanceFadePlugin;
+    const made = fadeUniforms(null, plugin.widen, emptyFadeUniforms());
+    expect(plugin.getUniforms().ubo.map((u) => [u.name, u.size])).toEqual(Object.entries(made).map(([name, v]) => [name, v.length]));
+    const writes: Record<string, number[]> = {};
+    const ubo = { updateFloat3: (n: string, x: number, y: number, z: number) => { writes[n] = [x, y, z]; } } as unknown as UniformBuffer;
+    plugin.bindForSubMesh(ubo, scene, engine, null as never);
+    expect(writes).toEqual(fadeUniforms(scene.activeCamera?.globalPosition, plugin.widen, emptyFadeUniforms()));
+    expect(writes.fadeWiden).toEqual([40, 100, 1]);
+  });
+
   it("registers once per material and activates through the manager", () => {
     const mat = new PBRMaterial("df1", scene);
     attachDistanceFade(mat, { force: true });
