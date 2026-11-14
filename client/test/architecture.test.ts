@@ -586,6 +586,39 @@ describe("layer boundaries", () => {
   });
 
   /**
+   * What the forest is drawn with is computed by modules that load no
+   * Babylon either: each plugin's uniforms as a record by name, the instance
+   * lists and their per-instance attributes as typed arrays, the fade bands,
+   * the bark's dressing and the trees' share of the sky, and the pose math
+   * the lists are composed with. The shell that draws them on Babylon.js
+   * (`forestMeshes.ts`) and its plugins take their values from these.
+   */
+  it("what the forest is drawn with is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = [
+      "forestField.ts", "forestInstances.ts", "instancePose.ts", "groundTilt.ts", "logSeat.ts", "nurseLog.ts",
+      "foliageUniforms.ts", "distanceFade.ts", "groundConform.ts", "deadwoodParams.ts", "mossParams.ts", "barkParams.ts",
+      "forestLookParams.ts", "coverAlbedoParams.ts", "windParams.ts", "impostorField.ts",
+    ];
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const seen = new Set<string>();
+    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+  });
+
+  /**
    * The hike's renderer is drawn with Babylon Lite, and nothing of it is
    * Babylon.js: not a module under `game/lite/`, and not anything one of
    * them loads. What it shares with the renderer on Babylon.js is the game's
