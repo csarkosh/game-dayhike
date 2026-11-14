@@ -1,8 +1,8 @@
 # The way down
 
 **Date:** 2026-11-13
-**Status:** Built: the path, the rules that hold a player to it, its light, and the ranger's
-lines. The crowd of shades beside it, the obstacles on it and the whispers are later pieces.
+**Status:** Built: the path, the rules that hold a player to it, its light, the crowd of
+shades beside it, and the ranger's lines. The obstacles on it and the whispers are later pieces.
 **Parents:** `2026-09-16-the-summit.md` (§5, the chase, whose guide and fork cuts this replaces),
 `2026-10-06-the-haunt.md` (§3, §3b), `2026-10-07-the-inner-voice.md`, `2026-10-08-the-summit-scene.md`
 (the threshold, where the light comes up), `2026-10-06-the-mist-shades.md` (the ground mist).
@@ -215,6 +215,64 @@ trail's.
 **What is reported.** Each page sends one `way` telemetry event as its way settles: its length,
 its straight line, and whether it is the fallback.
 
+## 3a. The crowd (`game/crowdField.ts`, `game/crowdEyes.ts`, `game/crowdCards.ts`)
+
+In the chase the woods beside the way are full of shades, and all of them are coming for the
+player. They are dressing: each screen makes and moves its own round its own player, from its
+own random stream, and they hurt nobody. The host knows none of them, nothing of them is on the
+wire, and two players side by side do not see the same ones. What kills is still the host's (a
+Hollow, a shade's lunge: `2026-10-06-the-haunt.md`), told apart by its solid figure and red eyes.
+
+**How many, and where they rise.** Up to sixty a screen on every tier (`CROWD_MOST`): a third
+of that near the crest, all of it from three tenths of the way to eight, half by the road
+(`crowdTarget`). The crowd is up from the summit scene's turn to the way through the chase
+(`crowdOn`). A figure rises beside the way ahead of its player: to 85 m down it, on a drawn
+side, 3 m and more beyond the channel's rim, seven in ten within 15 m of the rim and the rest
+out to 35 m, never within 5.5 m of another, on dry ground a figure can stand on with nothing
+solid in it. Nothing rises in plain view inside the mist's reach (30 m): a figure rises out of
+view, or far off in view as a pair of eyes opening. Round a player who has left the way they
+rise 8 to 15 m from them on any bearing, and still clear of the channel.
+
+**Each figure** is the same for as long as it lives, from its own number (`figureOf`): its size
+(a fifth small at 0.5 to 0.7 of a Hollow, one in seven large at 1.4 to 1.75, the rest 0.8 to
+1.25), how bright its eyes are, their colour from pale to a dull ember (never the Hollow's red)
+and the pace it stalks at (0.6 to 1.4 m/s).
+
+**How they close** (`crowdSpeed`, `stepCrowd`). A figure runs in from far off and stalks the
+last metres: its own pace at 6 m from its player, rising to 3.6 times that from 22 m and
+further. Ahead of the player's place on the way it never enters the channel or the 3 m beside
+its rim: it comes to that edge and slides along it toward them, stopping abreast, so the walls
+of the way fill with figures as a runner nears them. One the player has passed is free to step
+into the channel, and gives chase at up to 9 m/s, faster than a sprint (7 m/s): what follows
+settles where its speed is the runner's, some 16 m behind a sprint, and closes on a player who
+slows. At a runner's back there are ten at the most (`CROWD_PACK`), the furthest going first,
+so the rest of the crowd is ahead of them, where they look. No figure walks into another:
+within 3 m of one it is turned aside, and directly behind one it waits.
+
+**How they go.** A figure goes when it comes within 6 m of its player (none reaches them), is
+left 30 m behind, is too far down the way, or, round a player off the way, is over 25 m from
+them: at once where it is out of view, over 2.6 s where it is in it. It comes in over 2.4 s.
+
+**The crowd and what kills.** When a killer first appears in the state while the crowd is up,
+the nearest living figure within 12 m of it begins to go as the killer comes in (`crowdGives`),
+so one of the crowd is seen to turn. A shade or a lunge gone from the state leaves a figure
+where it stood (`crowdTakes`), unless that is in the channel, on its clear ground or on ground
+that refuses a figure. On the way down the haunt raises no shade that only stands, the crowd
+being those, and a standing shade does not close the dark (`2026-10-06-the-haunt.md` §3c).
+
+**What is drawn.** A figure's eyes are two small additive quads (`crowdEyes.ts`), seen through
+the mist at any distance and dimming from 40 to 120 m, so the eyes far down the way are what
+make the crowd deep. Inside 36 m its body is a card facing the eye (`crowdCards.ts`): an
+antlered figure drawn in the fragment stage, written into the shades' silhouette mask
+(`shadeSilhouette.ts`) as a darkness in the mist, and into the frame as a dark body with a
+faint rim the mist lights, so it shows against black woods as well as pale mist. Both are one
+mesh each, rewritten every frame. The ground under a figure is asked for a few figures a frame
+and again only once one has moved a metre (`crowdHeights`), and whether the ground admits a
+figure's step is asked one step in eight.
+
+**The console.** `crowd on`, `crowd off` and `crowd <count>` hold this screen's crowd for a
+look.
+
 ## 4. The ranger's lines
 
 The chase's lines speak of the light: at the start "Down. Follow the light. NOW."; off the way
@@ -241,3 +299,9 @@ until they are made again.
   sheets, veils and fins, that it never folds at a kink, its colour, drift and heave, the mesh and
   its material, the level, the dim on both colour paths, the
   mist's map, and the renderer's and the app's wiring.
+- `test/game/crowdField.test.ts`, `crowdEyes.test.ts`, `crowdCards.test.ts`, `crowdShow.test.ts`:
+  the crowd's numbers, where a figure may stand, a crowd stepped round a player who stands,
+  runs and leaves the way, how it closes (the speed's shape, the pack and its cap, figures
+  kept apart), the hand-over to and from what kills, and what is drawn and wired.
+- `test/sim/haunt.test.ts`, `hauntOffWay.test.ts`: on the way down no shade that only stands
+  is raised and none closes the dark, and a player who leaves the way is still lunged at.
