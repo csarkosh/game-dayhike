@@ -149,11 +149,12 @@ export function kernelGridCapacity(): number {
 /**
  * A grid of samples in one call: sample (i, j) is at (ox + i * step, oz + j * step), its h, dx, dz at
  * 3 * (j * nx + i) of the returned array. The array is the kernel's own, overwritten by the next call into the
- * kernel: copy what is kept. Throws when the grid is larger than `kernelGridCapacity()`.
+ * kernel: copy what is kept. Throws when the grid has no samples or more than `kernelGridCapacity()`.
  */
 export function kernelMontaneGrid(handle: number, seed: number, ox: number, oz: number, step: number, nx: number, nz: number): Float64Array {
   const k = load();
-  const made = k.ex.montane_grid(handle, seed, ox, oz, step, nx, nz);
-  if (made !== nx * nz) throw new Error(`a grid of ${nx} by ${nz} samples does not fit the field kernel (${k.samples} at most)`);
+  // A grid of no samples is refused with one too large: the kernel answers 0 for both, and 0 by 4 is 0 too.
+  const made = nx >= 1 && nz >= 1 ? k.ex.montane_grid(handle, seed, ox, oz, step, nx, nz) : 0;
+  if (made < 1 || made !== nx * nz) throw new Error(`a grid of ${nx} by ${nz} samples does not fit the field kernel (1 to ${k.samples})`);
   return k.out.subarray(0, made * 3);
 }
