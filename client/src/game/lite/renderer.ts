@@ -1,15 +1,16 @@
 /**
- * The hike's renderer on Babylon Lite: the terrain under the atmosphere, lit
- * by the sun and the sky's fill for the hour and the weather, seen from the
- * player's eye or the free camera. It answers the whole of `Renderer`
+ * The hike's renderer on Babylon Lite: the terrain and the forest's trees
+ * under the atmosphere, lit by the sun and the sky's fill for the hour and
+ * the weather, seen from the player's eye or the free camera. It answers the whole of `Renderer`
  * (`renderer.ts`), and what it does not draw yet it answers as nothing
  * (`notDrawn.ts` has the list).
  *
  * What it draws with is the game's own, computed with no engine: the
- * terrain's uniforms, tables, layers and vertex data, the air's uniforms,
- * the lights and the lens. This module is where those meet Lite: an engine,
- * a scene, a camera, two lights, the terrain's two materials and their
- * meshes.
+ * terrain's uniforms, tables, layers and vertex data, the forest's instance
+ * lists and its materials' uniforms, the air's uniforms, the lights and the
+ * lens. This module is where those meet Lite: an engine, a scene, a camera,
+ * two lights, the terrain's two materials and their meshes, and the
+ * forest's buckets (`forestMeshes.ts`), which land as their models do.
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -44,6 +45,8 @@ import type { EngineHandle } from "../engineHandle.js";
 import { blendedEye, type EyePose } from "../eyeBlend.js";
 import { FACE_PATCH_Z_UNITS } from "../facePatches.js";
 import { featureTableFor } from "../featureTable.js";
+import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../foliageUniforms.js";
+import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
 import { writeListenerPose } from "../listenerPose.js";
 import { sharedSeconds } from "../oceanWindSea.js";
@@ -57,10 +60,11 @@ import { followRoadCentre, terrainTablesFor, type TerrainTables } from "../terra
 import { terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs } from "../terrainUniforms.js";
 import { createViewBob } from "../viewBob.js";
 import { WATER_ROWS, lakeWaterRow } from "../waterShading.js";
-import { emptyWetUniforms, setWetWeather, wetLineFor, wetUniforms, type WetBody } from "../wetSurface.js";
+import { WET_CAP, emptyWetUniforms, setWetWeather, wetLineFor, wetUniforms, type WetBody } from "../wetSurface.js";
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
 import { cameraAxes, projectToCanvas, restAxes, type CameraPose } from "./cameraPose.js";
+import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
 import { notDrawnMembers } from "./notDrawn.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
@@ -106,6 +110,7 @@ type Standing = {
   materials: PbrMaterialProps[];
   terrain: TerrainMeshes | null;
   road: TableTexture | null;
+  forest: ForestMeshes | null;
 };
 
 /**
@@ -144,6 +149,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   };
   const terrainValues = emptyTerrainMaterialUniforms();
   const wetValues = emptyWetUniforms();
+  // The wet look on the forest's materials, a record a porosity cap.
+  const forestWet = { leaf: emptyWetUniforms(), bark: emptyWetUniforms(), deadwood: emptyWetUniforms() };
+  /** The frame drawn into, in the engine's pixels: the forest's dither is laid on its rows. */
+  const frameSize = { height: canvas.height };
+  /** The players that bend the foliage, xyz each: a slot with no player is parked far off. */
+  const windPlayers = new Float32Array(FOLIAGE_PLAYERS * 3);
   const airValues = emptyAtmosphereUniforms();
   const cloud = noCloud();
 
@@ -192,6 +203,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.forest?.dispose();
     made.terrain?.dispose();
     disposeScene(made.scene);
     disposeEngine(made.engine);
@@ -235,7 +247,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const materials: PbrMaterialProps[] = [];
     let terrain: TerrainMeshes | null = null;
     let road: TableTexture | null = null;
-    if (forest !== null) {
+    let trees: ForestMeshes | null = null;
+    // The ground cloud's map, which every material's air reads.
+    const cloudMap = forest === null ? null : cloudMapTexture(engine);
+    if (forest !== null && cloudMap !== null) {
       const arrays = await loadGroundArrays(engine, disposal.signal, () => {
         loading--;
       });
@@ -251,7 +266,6 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         trailTable: tableTexture(engine, tables.trail).texture,
         featureTex: tableTexture(engine, tables.features).texture,
       };
-      const cloudMap = cloudMapTexture(engine);
       const paints = { road: tables.road !== null, trail: tables.trail !== null, features: tables.features !== null };
       const surface = terrainSurfaceUnder(light.weather);
       const material = (extra: MaterialPlugin[]): PbrMaterialProps => {
@@ -287,7 +301,18 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     enablePbrMaterialPluginVertexData();
     enableMaterialPlugins(scene);
     await registerScene(scene);
-    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road };
+    if (forest !== null && cloudMap !== null && !disposed) {
+      // The trees land as their models do: the frames go on meanwhile.
+      trees = createForestMeshes(engine, scene, forest.seed, {
+        tier,
+        nearRadius: nearRadiusFor(tier),
+        eye: pose,
+        frame: frameSize,
+        wet: forestWet,
+        air: () => atmospherePlugin(airValues, cloudMap),
+      });
+    }
+    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees };
     if (disposed) {
       release(made);
       return;
@@ -390,7 +415,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     terrainValues.terrainAlbedo[2] = surface.albedo[2];
     setWetWeather(wetness);
     // Everywhere but under the water of the high tier's own path, the water above darkens what stands in it.
-    wetUniforms({ ...wetLineFor(wetBodies, pose.x, pose.z), attenuate: true, cap: 0 }, wetValues);
+    const wetLine = wetLineFor(wetBodies, pose.x, pose.z);
+    wetUniforms({ ...wetLine, attenuate: true, cap: 0 }, wetValues);
+    // The forest's materials under the same wet line, each kind at its porosity cap.
+    wetUniforms({ ...wetLine, attenuate: true, cap: WET_CAP.leaf }, forestWet.leaf);
+    wetUniforms({ ...wetLine, attenuate: true, cap: WET_CAP.bark }, forestWet.bark);
+    wetUniforms({ ...wetLine, attenuate: true, cap: WET_CAP.deadwood }, forestWet.deadwood);
     // The ground cloud is not marched: no steps.
     atmosphereUniforms(light.air, cloud, 0, airValues);
     for (const material of made.materials) {
@@ -403,14 +433,21 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       material.roughnessFactor = surface.roughness;
       markMaterialUboDirty(material);
     }
+    // The forest's materials read the wind, the eye, the frame's size, the wet line and the air: written again a frame.
+    frameSize.height = canvas.height;
+    made.forest?.frame();
   }
 
   let skyWait: Promise<void> | null = null;
+
+  /** The forest's first lists drawn, once the renderer stands; at once where it cannot, or in a world with no forest. */
+  const forestReady: Promise<void> = made.then(() => standing?.forest?.ready);
 
   const renderer: Renderer = {
     ...absent,
     engine: handle as EngineHandle,
     engineName: "webgpu",
+    forestReady,
     firstSynced,
     skyReady() {
       // The sky's slices and the renderer itself: no frame is drawn before both.
@@ -422,14 +459,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     whenReady(maxMs) {
       return new Promise<void>((resolve) => {
         const bound = setTimeout(resolve, Math.max(0, maxMs));
-        void made.then(() => {
+        void forestReady.then(() => {
           clearTimeout(bound);
           resolve();
         });
       });
     },
     waitingItems() {
-      return loading;
+      return loading + (standing?.forest?.waiting() ?? 0);
     },
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       if (disposed) return;
@@ -441,6 +478,21 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       const weather = light.weather;
       // The wind's time is the simulation's, so every peer's blows the same way; a clock handed in is kept.
       wind = windRecordUnder(weather, options.clock !== undefined ? seconds : sharedSeconds(state.tick, alpha), windOverride ?? undefined);
+      // The players bend the foliage they stand in: up to five, the rest of the slots parked far off in XZ.
+      windPlayers.fill(0);
+      for (let i = 0; i < FOLIAGE_PLAYERS; i++) {
+        windPlayers[i * 3] = FOLIAGE_PLAYER_PARKED;
+        windPlayers[i * 3 + 2] = FOLIAGE_PLAYER_PARKED;
+      }
+      let bending = 0;
+      for (const player of state.players.values()) {
+        if (bending === FOLIAGE_PLAYERS) break;
+        windPlayers[bending * 3] = player.pos.x;
+        windPlayers[bending * 3 + 1] = player.pos.y;
+        windPlayers[bending * 3 + 2] = player.pos.z;
+        bending++;
+      }
+      setFoliageWind(wind, windPlayers);
 
       // The world follows the camera in freecam, the player otherwise.
       let centre: { x: number; z: number } | null = null;
@@ -489,7 +541,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       drawnWith.seconds = seconds;
       if (standing !== null) {
         // The terrain first: the frame draws the ground where the view now is.
-        if (centre !== null) standing.terrain?.update(centre.x, centre.z);
+        if (centre !== null) {
+          standing.terrain?.update(centre.x, centre.z);
+          standing.forest?.update(centre.x, centre.z);
+        }
         draw(standing, weather.wetness);
       }
       if (centre !== null) markSynced();

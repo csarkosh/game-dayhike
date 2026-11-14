@@ -589,15 +589,16 @@ describe("layer boundaries", () => {
    * What the forest is drawn with is computed by modules that load no
    * Babylon either: each plugin's uniforms as a record by name, the instance
    * lists and their per-instance attributes as typed arrays, the fade bands,
-   * the bark's dressing and the trees' share of the sky, and the pose math
-   * the lists are composed with. The shell that draws them on Babylon.js
+   * the bark's dressing and the trees' share of the sky, the pose math the
+   * lists are composed with, and what is read of a model's file and baked
+   * into its vertices. The shell that draws them on Babylon.js
    * (`forestMeshes.ts`) and its plugins take their values from these.
    */
   it("what the forest is drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
       "forestField.ts", "forestInstances.ts", "instancePose.ts", "groundTilt.ts", "logSeat.ts", "nurseLog.ts",
       "foliageUniforms.ts", "distanceFade.ts", "groundConform.ts", "deadwoodParams.ts", "mossParams.ts", "barkParams.ts",
-      "forestLookParams.ts", "coverAlbedoParams.ts", "windParams.ts", "impostorField.ts",
+      "forestLookParams.ts", "coverAlbedoParams.ts", "windParams.ts", "impostorField.ts", "glbParts.ts", "modelBake.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
@@ -646,7 +647,9 @@ describe("layer boundaries", () => {
     expect(seen.size).toBeGreaterThan(own.length);
     expect(bad).toEqual([]);
     // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
-    expect(lite.sort()).toEqual(["game/lite/groundTextures.ts", "game/lite/renderer.ts", "game/lite/terrainMeshes.ts"]);
+    expect(lite.sort()).toEqual([
+      "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/groundTextures.ts", "game/lite/renderer.ts", "game/lite/terrainMeshes.ts",
+    ]);
     // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.
     const renderer = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
     expect(renderer).toContain("  return createLiteRenderer(canvas, level, forest, options);");

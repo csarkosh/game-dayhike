@@ -2,8 +2,9 @@
  * What the renderer built on Babylon Lite does not draw yet, in one list,
  * and what it answers the hike for each of them meanwhile.
  *
- * It draws the terrain under the atmosphere, lit by the sun and the sky's
- * fill for the hour and the weather, from the player's eye or the free
+ * It draws the terrain and the forest's trees (the near rings of full
+ * geometry and the dead trees) under the atmosphere, lit by the sun and the
+ * sky's fill for the hour and the weather, from the player's eye or the free
  * camera. Every other part of the world is absent, and the members of
  * `Renderer` that belong to an absent part are answered here as nothing: a
  * setter keeps what it was told (`held`), for the day its part is drawn; a
@@ -22,7 +23,8 @@ import type { WeatherPresetName } from "../weather.js";
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };
 
 export const NOT_DRAWN: readonly NotDrawn[] = [
-  { what: "the forest, its billboards, the cliffs, the ground cover, the blades, the duff and the props", members: ["forestReady", "impostorBakes", "abandon", "canopyOver"] },
+  { what: "the forest's far billboards and their bakes, and what grows on its nurse logs", members: ["impostorBakes", "abandon"] },
+  { what: "the cliffs, the ground cover, the blades, the duff and the props", members: ["canopyOver"] },
   { what: "the sea, the lakes, their plants and reflections, the surf and its spray", members: ["hasSea", "surfSound"] },
   { what: "the lakes' insects and frogs", members: ["hasWaterLife", "waterLifeSound"] },
   { what: "the animals", members: ["hasWildlife", "wildlifeEvents", "wildlifeDirectorLog"] },
@@ -58,7 +60,7 @@ export type NotDrawnHeld = {
 /** The members answered as nothing: every member `NOT_DRAWN` names. */
 export type NotDrawnMembers = Pick<
   Renderer,
-  | "forestReady" | "impostorBakes" | "abandon" | "canopyOver"
+  | "impostorBakes" | "abandon" | "canopyOver"
   | "hasSea" | "surfSound" | "hasWaterLife" | "waterLifeSound"
   | "hasWildlife" | "wildlifeEvents" | "wildlifeDirectorLog"
   | "setSkinShading" | "setHaunt" | "setMist" | "setMistIn" | "canopyWater"
@@ -95,7 +97,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
     wireframe: false, skinShading: true, depthOfField: false, ending: null, endScene: null, scene: null,
   };
   const members: NotDrawnMembers = {
-    forestReady: Promise.resolve(),
     impostorBakes: () => NO_EVENTS,
     abandon: () => undefined,
     canopyOver: () => 0,
