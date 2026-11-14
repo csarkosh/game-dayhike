@@ -1781,6 +1781,11 @@ export type Renderer = {
    * read every frame and its nine numbers are copied straight into AudioParams.
    */
   listener(): ListenerPose;
+  /** Where the camera stands in the world, as the last `sync` left it: the
+   * local player's eye where it followed the player, the free camera's place
+   * under one, and where the camera was made, (0, 2, 0), before any `sync`.
+   * A copy, the caller's to keep. */
+  cameraPosition(): Vec3;
   /** The local player's stare as `sync` last stepped it, for the audio (stareAudio.ts). */
   stare(): StareLens;
   /** The chase's cast, 0 to 1 (escalation.ts): the grade pulls the frame toward burgundy by it. */
@@ -3756,6 +3761,10 @@ function buildRenderer(
       const cw = canvasEl?.clientWidth ?? w;
       const ch = canvasEl?.clientHeight ?? h;
       return { x: (s.x / w) * cw, y: (s.y / h) * ch, depth: Vector3.Distance(p, camera.position) };
+    },
+    cameraPosition() {
+      const at = camera.position;
+      return { x: at.x, y: at.y, z: at.z };
     },
     resize() {
       engine.resize();

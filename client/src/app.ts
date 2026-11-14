@@ -750,7 +750,7 @@ function buildGame(
   /**
    * Freecam is enabled but has no position yet. It cannot be given one at the
    * moment it is enabled: a script is applied before the first frame, when
-   * `renderer.camera` still holds the `UniversalCamera` constructor value
+   * the renderer's camera still stands where it was made, at
    * (0, 2, 0) — underground on any seed whose ground at the origin is above 2 m,
    * which shows as a black screen. `stepFreecamView` seeds it once the renderer
    * has actually put the camera on the local player.
@@ -776,7 +776,7 @@ function buildGame(
   /** Turns the view to face `pendingAim`, once the camera stands somewhere: the free camera's place, or the player's eye. */
   function tryAim(): void {
     if (pendingAim === null) return;
-    const from = freecam ?? (cameraOnPlayer ? renderer.camera.position : null);
+    const from = freecam ?? (cameraOnPlayer ? renderer.cameraPosition() : null);
     if (from === null) return;
     const { yaw, pitch } = aimAt(from, pendingAim);
     pendingAim = null;
@@ -1706,7 +1706,7 @@ function buildGame(
       // corrected for: freecam flies at 12-144 m/s, so paying for exactness
       // here would mean new renderer API for an error no one can perceive.
       if (!cameraOnPlayer) return;
-      const p = renderer.camera.position;
+      const p = renderer.cameraPosition();
       freecam = { x: p.x, y: p.y, z: p.z };
       freecamPending = false;
     }
@@ -2202,7 +2202,7 @@ function buildGame(
       syncEndScene();
       syncTelemetry(host.world, state, self, input.sprinting);
       // True exactly when `sync` took its player-following branch, which is
-      // the only case in which `renderer.camera.position` is an eye position
+      // the only case in which `renderer.cameraPosition()` is an eye position
       // a pending freecam can adopt.
       cameraOnPlayer = self !== undefined && freecam === null;
       drawHike();
