@@ -455,13 +455,14 @@ export type EarlyError = { kind: string; msg: string; stack?: string; at?: numbe
 export type EarlyCatch = { q: EarlyError[]; on: ((error: EarlyError) => void) | null };
 
 /**
- * Babylon's logger's levels (`Logger._Levels`). Babylon takes `console.warn`
- * and `console.error` into them when its module loads, before the page's
- * wrap of the console exists, so its warnings and errors (a GPU validation
- * error, an effect that would not compile) never pass through that wrap; the
- * levels' own functions are wrapped instead.
+ * Babylon's own log, heard: given `hear`, it tells it each warning and error
+ * Babylon prints from then on, with what was printed, and returns what stops
+ * it. Babylon prints through its own logger, which took the console's
+ * functions before the page's wrap of the console existed, so its warnings
+ * and errors (a GPU validation error, an effect that would not compile)
+ * never pass through that wrap; the page hands in how they are heard.
  */
-export type LoggerLevels = ReadonlyArray<{ name?: string; logFunc?: (...args: unknown[]) => void }>;
+export type EngineLog = (hear: (severity: "error" | "warn", args: unknown[]) => void) => () => void;
 
 /** What Babylon puts before every line it logs: its name and the wall clock,
  * which would make every repeat of a line a new one. */
@@ -487,7 +488,7 @@ function listenTo<K extends "error" | "warn">(con: ConsoleLike, key: K, hear: (a
  * Hears what the page would otherwise only print: uncaught throws, rejected
  * promises nobody awaited, the game's own `console.error` and `console.warn`,
  * whose prefixes ("WebGPU:", "quality:") already bucket them, and Babylon's
- * own warnings and errors (`babylon`, its logger's levels; kind `babylon`).
+ * own warnings and errors (`babylon`, how its log is heard; kind `babylon`).
  * What prints keeps printing; the wraps only listen. Nothing here runs unless
  * something is wrong, so a clean session pays for a few closures and no more.
  */
@@ -496,7 +497,7 @@ export function installErrorCapture(
   target: ErrorTarget,
   con: ConsoleLike,
   early?: EarlyCatch,
-  babylon?: LoggerLevels,
+  babylon?: EngineLog,
 ): () => void {
   if (!telemetry.enabled) return () => undefined;
   const undo: Array<() => void> = [];
@@ -523,22 +524,8 @@ export function installErrorCapture(
   }
   undo.push(listenTo(con, "error", (args) => telemetry.error("console", textOf(args), stackOf(args))));
   undo.push(listenTo(con, "warn", (args) => telemetry.warn("console", textOf(args), stackOf(args))));
-  for (const level of babylon ?? []) {
-    const original = level.logFunc;
-    const severity = level.name === "Error" ? "error" : level.name === "Warn" ? "warn" : null;
-    if (original === undefined || severity === null) continue;
-    const mutable = level as { logFunc?: (...args: unknown[]) => void };
-    mutable.logFunc = (...args: unknown[]) => {
-      original(...args);
-      try {
-        telemetry[severity]("babylon", textOf(args).replace(BABYLON_PREFIX, ""), stackOf(args));
-      } catch {
-        // As above.
-      }
-    };
-    undo.push(() => {
-      mutable.logFunc = original;
-    });
+  if (babylon !== undefined) {
+    undo.push(babylon((severity, args) => telemetry[severity]("babylon", textOf(args).replace(BABYLON_PREFIX, ""), stackOf(args))));
   }
   return () => {
     for (const step of undo.reverse()) step();
