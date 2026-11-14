@@ -111,13 +111,11 @@ import { attachMoss } from "./mossPlugin.js";
 import { attachDeadwood, DEADWOOD_ROLE_ATTRIBUTE, type DeadwoodPlugin } from "./deadwoodPlugin.js";
 import { DEADWOOD_BARK, DEADWOOD_TONE } from "./deadwoodParams.js";
 import { MOSS_OUTPUT } from "./mossParams.js";
-import { BARK_SKY, CROWN_SKY, IMPOSTOR_SKY, TREE_SPECULAR_WEIGHT } from "./forestLookParams.js";
+import { CROWN_SKY, IMPOSTOR_SKY, TREE_SPECULAR_WEIGHT, treeSkyLook } from "./forestLookParams.js";
 import { coverAlbedoTint, FOLIAGE_CARD_CONTRAST } from "./coverAlbedoParams.js";
 import {
-  BARK_TONE,
-  barkOutputs,
+  barkLook,
   barkSize,
-  barkTransform,
   GIANT_SETS,
   inGiantSet,
   SAPLING_BARKS,
@@ -392,8 +390,8 @@ function dressBark(
   load: BarkTextureLoader,
   keep: Texture[],
 ): Promise<void> {
-  const outputs = barkOutputs(dressing.set, size);
-  const transform = barkTransform(dressing);
+  const look = barkLook(dressing, size);
+  const { maps: outputs, transform } = look;
   const landed: Promise<void>[] = [];
   const map = (output: string, colour: boolean): Texture => {
     let settle: () => void = () => undefined;
@@ -416,19 +414,19 @@ function dressBark(
   const old = [material.albedoTexture, material.bumpTexture, material.metallicTexture];
   material.albedoTexture = map(outputs.colour, true);
   const normal = map(outputs.normal, false);
-  normal.level = 1;
+  normal.level = look.normalLevel;
   material.bumpTexture = normal;
   material.metallicTexture = map(outputs.arm, false);
   material.useAmbientOcclusionFromMetallicTextureRed = true;
   material.useRoughnessFromMetallicTextureGreen = true;
   material.useRoughnessFromMetallicTextureAlpha = false;
   material.useMetallnessFromMetallicTextureBlue = true;
-  material.metallic = 1;
-  material.roughness = 1;
+  material.metallic = look.metallic;
+  material.roughness = look.roughness;
   // The set's tone (`BARK_TONE`): the colour map, multiplied down and away
   // from its warmth, so the bark reads as a trunk under the canopy rather
   // than the scan's own light.
-  material.albedoColor.copyFromFloats(BARK_TONE.r, BARK_TONE.g, BARK_TONE.b);
+  material.albedoColor.copyFromFloats(look.tone.r, look.tone.g, look.tone.b);
   for (const texture of old) {
     if (texture === null) continue;
     // A map another material of the scene still reads (none of the tree
@@ -598,13 +596,9 @@ const BABYLON_SPECULAR_WEIGHT = 1;
  * call (the bake's, LOD2's) carries them. */
 function shadeTreeMaterial(material: Material): void {
   if (!(material instanceof PBRMaterial)) return;
-  if (material.needAlphaTesting()) {
-    material.environmentIntensity = CROWN_SKY;
-    if (material.metallicF0Factor === BABYLON_SPECULAR_WEIGHT) material.metallicF0Factor = TREE_SPECULAR_WEIGHT;
-  } else {
-    material.environmentIntensity = BARK_SKY;
-    material.metallicF0Factor = TREE_SPECULAR_WEIGHT;
-  }
+  const look = treeSkyLook(material.needAlphaTesting(), material.metallicF0Factor === BABYLON_SPECULAR_WEIGHT ? null : material.metallicF0Factor);
+  material.environmentIntensity = look.sky;
+  material.metallicF0Factor = look.specularWeight;
 }
 
 /** What handing every bucket its new buffers is expected to take (ms), the

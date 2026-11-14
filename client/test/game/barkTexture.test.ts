@@ -3,7 +3,7 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { defaultLoadBarkTexture } from "../../src/game/forestMeshes.js";
-import { barkOutputs } from "../../src/game/barkParams.js";
+import { GIANT_SETS, SAPLING_BARKS, barkOutputs, barkTransform, barkUv } from "../../src/game/barkParams.js";
 import { textureUrl } from "../../src/game/assetUrls.js";
 
 /**
@@ -54,5 +54,38 @@ describe("defaultLoadBarkTexture", () => {
     expect(arm.invertY).toBe(false);
     expect(arm.samplingMode).toBe(3);
     expect(arm._useSRGBBuffer).toBe(false);
+  });
+});
+
+/**
+ * A dressing's transform as coordinates (`barkUv`) against the matrix
+ * Babylon makes of the same scales and turn: what a material with no texture
+ * transform does to its mesh's coordinates is what Babylon's does in its
+ * vertex stage.
+ */
+describe("barkUv", () => {
+  it("lays a coordinate where Babylon's texture matrix lays it, for every bark a tree wears", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const out = [0, 0];
+    for (const bark of [...GIANT_SETS.map((set) => set.bark), ...SAPLING_BARKS]) {
+      const transform = barkTransform(bark);
+      const texture = new Texture(null, scene);
+      texture.uOffset = 0;
+      texture.vOffset = 0;
+      texture.uScale = transform.uScale;
+      texture.vScale = transform.vScale;
+      texture.wAng = transform.wAng;
+      const m = texture.getTextureMatrix().m;
+      for (const [u, v] of [[0, 0], [1, 0], [0, 1], [0.37, -2.5], [4.6, 1.9]] as const) {
+        barkUv(transform, u, v, out, 0);
+        // The vertex stage's own product: the matrix times (u, v, 1, 0).
+        expect(out[0], `${bark.set} u`).toBeCloseTo((m[0] as number) * u + (m[4] as number) * v + (m[8] as number), 5);
+        expect(out[1], `${bark.set} v`).toBeCloseTo((m[1] as number) * u + (m[5] as number) * v + (m[9] as number), 5);
+      }
+      texture.dispose();
+    }
+    scene.dispose();
+    engine.dispose();
   });
 });

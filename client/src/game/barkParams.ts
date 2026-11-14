@@ -145,3 +145,44 @@ export function barkTransform(dressing: BarkDressing): { uScale: number; vScale:
     ? { uScale: dressing.roundRepeat, vScale: dressing.alongRepeat, wAng: 0 }
     : { uScale: dressing.alongRepeat, vScale: dressing.roundRepeat, wAng: QUARTER_TURN };
 }
+
+/**
+ * A bark's texture coordinates under a dressing's transform: (u, v) scaled
+ * in the primitive's own axes, then turned by `wAng` about the centre of the
+ * scaled unit square, written into `out` from `offset`. It is what
+ * Babylon.js's texture matrix does to a coordinate for a texture of these
+ * scales and this turn with no offset (`Texture.getTextureMatrix`, its
+ * rotation centre at a half), which a material that takes no texture
+ * transform has done to its mesh's coordinates instead.
+ */
+export function barkUv(transform: { uScale: number; vScale: number; wAng: number }, u: number, v: number, out: Float32Array | number[], offset: number): void {
+  const cos = Math.cos(transform.wAng);
+  const sin = Math.sin(transform.wAng);
+  const x = u * transform.uScale - 0.5 * transform.uScale;
+  const y = v * transform.vScale - 0.5 * transform.vScale;
+  out[offset] = x * cos - y * sin + 0.5 * transform.uScale;
+  out[offset + 1] = x * sin + y * cos + 0.5 * transform.vScale;
+}
+
+/**
+ * What a bark material is dressed with (`forestMeshes.ts`, `dressBark`): the
+ * set's three maps at a size, the transform each is laid by, and the
+ * surface's own numbers. The ARM map's values are the surface's (occlusion
+ * in red, on the lights as on the sky; roughness in green; metalness in
+ * blue), so the material's metallic and roughness multipliers are 1; the
+ * colour map is multiplied by `tone`.
+ */
+export type BarkLook = {
+  maps: { colour: string; normal: string; arm: string };
+  transform: { uScale: number; vScale: number; wAng: number };
+  tone: { readonly r: number; readonly g: number; readonly b: number };
+  metallic: number;
+  roughness: number;
+  /** The normal map's strength. */
+  normalLevel: number;
+};
+
+/** The look of `dressing` at `size`, under `tone` (`BARK_TONE` for a living trunk). */
+export function barkLook(dressing: BarkDressing, size: BarkSize, tone: { readonly r: number; readonly g: number; readonly b: number } = BARK_TONE): BarkLook {
+  return { maps: barkOutputs(dressing.set, size), transform: barkTransform(dressing), tone, metallic: 1, roughness: 1, normalLevel: 1 };
+}

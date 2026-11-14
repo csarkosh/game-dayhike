@@ -45,3 +45,19 @@ export const IMPOSTOR_SKY = 1;
  * cards and their bake included. A crown that ships a weight keeps it.
  */
 export const TREE_SPECULAR_WEIGHT = 0.04;
+
+/**
+ * A tree's, a sapling's or a snag's material under its share of the sky, and
+ * its specular weight. Bark and crown are told apart by `crown`: the crown's
+ * cards alpha-test, the bark is opaque. A bark takes the trunk's share and
+ * `TREE_SPECULAR_WEIGHT`, so one that ships without a weight does not rim its
+ * silhouette with the sky. A crown takes the crown's share and keeps the
+ * weight its file carries (`fileWeight`), unless the file gives it none
+ * (null), when it takes `TREE_SPECULAR_WEIGHT` as well: the alder's crown
+ * ships none, and at a weight of 1 its cards and their bake rimmed with the
+ * sky.
+ */
+export function treeSkyLook(crown: boolean, fileWeight: number | null): { sky: number; specularWeight: number } {
+  if (crown) return { sky: CROWN_SKY, specularWeight: fileWeight ?? TREE_SPECULAR_WEIGHT };
+  return { sky: BARK_SKY, specularWeight: TREE_SPECULAR_WEIGHT };
+}
