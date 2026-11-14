@@ -519,6 +519,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "shoreAtlas.ts"),
       join(SRC, "game", "lakeChoice.ts"),
       join(SRC, "game", "carAudio.ts"),
+      join(SRC, "game", "terrainTables.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -536,6 +537,35 @@ describe("layer boundaries", () => {
         .map((spec) => `${file} imports ${spec}`),
     );
     expect(found).toEqual([]);
+  });
+
+  /**
+   * What the ground, the air over it and the scene's light are drawn with is
+   * computed by modules that load no Babylon at all: not by an import of
+   * their own (the list above) and not through anything they import, so each
+   * runs, and is tested, with no engine made. A type's import is erased when
+   * the module is built and loads nothing, so only the imports that load a
+   * module are followed.
+   */
+  it("what the terrain is drawn with is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = ["terrainTables.ts"];
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const seen = new Set<string>();
+    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
   });
 
   /**

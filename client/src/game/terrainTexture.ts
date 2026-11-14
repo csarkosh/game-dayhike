@@ -87,18 +87,13 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 
 import { activeTerrainVariant } from "../sim/terrain.js";
 import {
-  ROAD_FRAGMENT_DEFS, ROAD_FRAGMENT_PAINT, ROAD_TABLE_N, ROAD_TABLE_STEP,
-  buildRoadTable, roadTableStale, roadTableZ0, type RoadCenterX,
+  ROAD_FRAGMENT_DEFS, ROAD_FRAGMENT_PAINT, ROAD_TABLE_N, ROAD_TABLE_STEP, roadTableZ0, type RoadCenterX,
 } from "./roadPaint.js";
+import { TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT } from "./trailPaint.js";
+import { FEATURE_FRAGMENT_DEFS, FEATURE_FRAGMENT_PAINT, createFeatureTexture } from "./featurePaint.js";
 import {
-  TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, TRAIL_PAINT_GRID, TRAIL_PAINT_BUCKET,
-  buildTrailTable, trailSegments,
-} from "./trailPaint.js";
-import {
-  FEATURE_FRAGMENT_DEFS, FEATURE_FRAGMENT_PAINT, FEATURE_PAINT_MAX, createFeatureTexture,
-} from "./featurePaint.js";
-import { featureTable, paintedLakes } from "./featureTable.js";
-import { bakeShoreAtlas } from "./shoreAtlas.js";
+  featurePaintTable, followRoadCentre, roadCentreTable, trailPaintTable, trailTableInfo, type RoadCentreTable,
+} from "./terrainTables.js";
 import type { TrailGraph } from "../sim/trail.js";
 import type { Feature } from "../sim/features.js";
 import { loadGroundArrays, reportLayer, type GroundArrays, type GroundArraysFactory } from "./groundMaps.js";
@@ -807,10 +802,8 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   private readonly _textures: readonly Texture[];
   private readonly _arrays: GroundArrays;
   private _roadCenter: RawTexture | null = null;
-  private _roadData: Float32Array | null = null;
-  private _roadSeed = 0;
-  private _roadCentreZ = 0;
-  private _roadCenterX: RoadCenterX | null = null;
+  /** The road's centreline as numbers (`terrainTables.ts`): what `_roadCenter` holds, and where it is centred. */
+  private _road: RoadCentreTable | null = null;
   /** The trail's one table texture: the segment list and the bucket grid (trailPaint.ts). */
   private _trailTable: RawTexture | null = null;
   private _trailInfo: [number, number, number, number] = [0, 0, 0, 0];
@@ -872,12 +865,9 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
    */
   enableRoad(seed: number, centerX: RoadCenterX): void {
     if (this._roadCenter !== null) return;
-    this._roadSeed = seed;
-    this._roadCenterX = centerX;
-    this._roadCentreZ = 0;
-    this._roadData = buildRoadTable(seed, 0, centerX);
+    this._road = roadCentreTable(seed, centerX);
     const table = RawTexture.CreateRTexture(
-      this._roadData, ROAD_TABLE_N, 1, this._scene,
+      this._road.data, this._road.width, this._road.height, this._scene,
       false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
     );
     table.name = "roadCenter";
@@ -893,15 +883,15 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
    * the trail takes one of the terrain's sixteen samplers. */
   enableTrail(graph: TrailGraph): void {
     if (this._trailTable !== null) return;
-    const table = buildTrailTable(trailSegments(graph));
+    const table = trailPaintTable(graph);
     if (table.overflow) console.warn("trail paint: segment table overflowed; some of the trail is unpainted");
     const tex = RawTexture.CreateRGBATexture(
-      table.data, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, this._scene,
+      table.data, table.width, table.height, this._scene,
       false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
     );
     tex.name = "trailTable"; tex.wrapU = Texture.CLAMP_ADDRESSMODE; tex.wrapV = Texture.CLAMP_ADDRESSMODE;
     this._trailTable = tex;
-    this._trailInfo = [table.x0, table.z0, 1 / TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID];
+    this._trailInfo = trailTableInfo(table);
     this.markAllDefinesAsDirty();
   }
 
@@ -936,11 +926,12 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
    * worker). Idempotent, same story as `enableRoad`/`enableTrail`. */
   enableFeatures(features: readonly Feature[], table?: Float32Array | null): void {
     if (this._featureTex !== null) return;
-    this._featureTex = createFeatureTexture(this._scene, table ?? featureTable(features, bakeShoreAtlas(paintedLakes(features))));
+    const made = featurePaintTable(features, table);
+    this._featureTex = createFeatureTexture(this._scene, made.data);
     this._featureTex.name = "featureTex";
     this._featureTex.wrapU = Texture.CLAMP_ADDRESSMODE;
     this._featureTex.wrapV = Texture.CLAMP_ADDRESSMODE;
-    this._featureInfo = [Math.min(features.length, FEATURE_PAINT_MAX), 0, 0, 0];
+    this._featureInfo = [made.count, 0, 0, 0];
     this.markAllDefinesAsDirty();
   }
 
@@ -1120,15 +1111,10 @@ uniform vec4 terrainSwardBand;
     // uniform must pick up the real array the first bind after that happens.
     uniformBuffer.setTexture("terrainNormals", this._arrays.normals);
     uniformBuffer.setTexture("terrainRAH", this._arrays.rah);
-    if (this._roadCenter !== null && this._roadData !== null && this._roadCenterX !== null) {
-      const camZ = eye?.z ?? 0;
-      if (roadTableStale(this._roadCentreZ, camZ)) {
-        this._roadCentreZ = camZ;
-        buildRoadTable(this._roadSeed, camZ, this._roadCenterX, this._roadData);
-        this._roadCenter.update(this._roadData);
-      }
+    if (this._roadCenter !== null && this._road !== null) {
+      if (followRoadCentre(this._road, eye?.z ?? 0)) this._roadCenter.update(this._road.data);
       uniformBuffer.updateFloat4(
-        "roadTable", roadTableZ0(this._roadCentreZ), ROAD_TABLE_STEP, ROAD_TABLE_N, 1 / TILING_METRES.asphalt,
+        "roadTable", roadTableZ0(this._road.centreZ), ROAD_TABLE_STEP, ROAD_TABLE_N, 1 / TILING_METRES.asphalt,
       );
       uniformBuffer.setTexture("roadCenter", this._roadCenter);
       uniformBuffer.setTexture("roadAsphalt", this._asphalt);
