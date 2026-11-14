@@ -102,6 +102,22 @@ describe("layer boundaries", () => {
     expect(violations(join(SRC, "net"), [/^@babylonjs/, /game\//])).toEqual([]);
   });
 
+  it("keeps the hike and the page clear of Babylon: app.ts and main.ts import nothing of it, and reach what draws the world only through the game", () => {
+    for (const top of ["app.ts", "main.ts"]) {
+      const file = join(SRC, top);
+      // No import of it, static or dynamic, a type's included.
+      expect(importsOf(file).filter((spec) => spec.startsWith("@babylonjs")), top).toEqual([]);
+      const code = stripComments(readFileSync(file, "utf8"));
+      expect(code, top).not.toContain("@babylonjs");
+      // Nor the game's own ways back to it: the renderer with its scene, and the engine behind a handle.
+      expect(code, top).not.toMatch(/\b(?:sceneRendererOf|SceneRenderer|engineOf)\b/);
+      // Nor anything of the scene, the camera or the engine read off the renderer: the renderer
+      // answers for them itself (`drawFrame`, `runLoop`, `cameraPosition`, `engineName`, `whenReady`).
+      expect(code, top).not.toMatch(/\.(?:scene|camera|shadows|views)\b(?!\()/);
+      expect(code, top).not.toMatch(/\b(?:isWebGPU|runRenderLoop|stopRenderLoop|getWaitingItemsCount|on\w+Observable)\b/);
+    }
+  });
+
   it("reaches the WebGPU engine from main.ts only through a dynamic import", () => {
     const staticImports = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*import\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
