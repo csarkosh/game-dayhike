@@ -1,17 +1,19 @@
 /**
- * The hike's renderer on Babylon Lite: the terrain, the forest's trees and
- * the blade grass under the atmosphere, lit by the sun and the sky's fill
- * for the hour and the weather, seen from the player's eye or the free camera. It answers the whole of `Renderer`
+ * The hike's renderer on Babylon Lite: the terrain, the forest's trees, the
+ * ground clutter and the blade grass under the atmosphere, lit by the sun
+ * and the sky's fill for the hour and the weather, seen from the player's
+ * eye or the free camera. It answers the whole of `Renderer`
  * (`renderer.ts`), and what it does not draw yet it answers as nothing
  * (`notDrawn.ts` has the list).
  *
  * What it draws with is the game's own, computed with no engine: the
- * terrain's uniforms, tables, layers and vertex data, the forest's and the
- * grass's instance lists and their materials' uniforms, the air's uniforms,
- * the lights and the lens. This module is where those meet Lite: an engine,
- * a scene, a camera, two lights, the terrain's two materials and their
- * meshes, the forest's buckets (`forestMeshes.ts`), which land as their
- * models do, and the grass's (`bladeMeshes.ts`), on the tiers that draw it.
+ * terrain's uniforms, tables, layers and vertex data, the forest's, the
+ * clutter's and the grass's instance lists and their materials' uniforms,
+ * the air's uniforms, the lights and the lens. This module is where those
+ * meet Lite: an engine, a scene, a camera, two lights, the terrain's two
+ * materials and their meshes, the forest's buckets (`forestMeshes.ts`) and
+ * the clutter's (`clutterMeshes.ts`), which land as their models do, and the
+ * grass's (`bladeMeshes.ts`), on the tiers that draw it.
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -41,6 +43,7 @@ import { activeTerrainVariant, type LakeSource } from "../../sim/terrain.js";
 import type { ListenerPose } from "../ambientAudio.js";
 import { atmosphereUniforms, emptyAtmosphereUniforms } from "../atmosphereParams.js";
 import { BASE_SPACING_BY_TIER } from "../clipmap.js";
+import { clutterReachFor } from "../clutterField.js";
 import { noCloud } from "../cloudParams.js";
 import type { EngineHandle } from "../engineHandle.js";
 import { blendedEye, type EyePose } from "../eyeBlend.js";
@@ -62,11 +65,12 @@ import { followRoadCentre, terrainTablesFor, type TerrainTables } from "../terra
 import { terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs } from "../terrainUniforms.js";
 import { createViewBob } from "../viewBob.js";
 import { WATER_ROWS, lakeWaterRow } from "../waterShading.js";
-import { WET_CAP, emptyWetUniforms, setWetWeather, wetLineFor, wetUniforms, type WetBody } from "../wetSurface.js";
+import { WET_CAP, emptyWetUniforms, setWetWeather, wetLineFor, wetUniforms, type WetBody, type WetUniforms } from "../wetSurface.js";
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
 import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
 import { cameraAxes, projectToCanvas, restAxes, type CameraPose } from "./cameraPose.js";
+import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
 import { notDrawnMembers } from "./notDrawn.js";
@@ -115,6 +119,7 @@ type Standing = {
   road: TableTexture | null;
   forest: ForestMeshes | null;
   blades: BladeMeshes | null;
+  clutter: ClutterMeshes | null;
 };
 
 /**
@@ -153,8 +158,17 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   };
   const terrainValues = emptyTerrainMaterialUniforms();
   const wetValues = emptyWetUniforms();
-  // The wet look on the forest's materials, a record a porosity cap.
-  const forestWet = { leaf: emptyWetUniforms(), bark: emptyWetUniforms(), deadwood: emptyWetUniforms() };
+  // The wet look on the scenery's materials, a record a porosity cap: every material at a cap reads the one.
+  const wetByCap = new Map<number, WetUniforms>();
+  const wetAt = (cap: number): WetUniforms => {
+    let record = wetByCap.get(cap);
+    if (record === undefined) {
+      record = emptyWetUniforms();
+      wetByCap.set(cap, record);
+    }
+    return record;
+  };
+  const forestWet = { leaf: wetAt(WET_CAP.leaf), bark: wetAt(WET_CAP.bark), deadwood: wetAt(WET_CAP.deadwood) };
   /** The frame drawn into, in the engine's pixels: the forest's dither is laid on its rows. */
   const frameSize = { height: canvas.height };
   /** The players that bend the foliage, xyz each: a slot with no player is parked far off. */
@@ -209,6 +223,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.clutter?.dispose();
     made.blades?.dispose();
     made.forest?.dispose();
     made.terrain?.dispose();
@@ -256,6 +271,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     let road: TableTexture | null = null;
     let trees: ForestMeshes | null = null;
     let blades: BladeMeshes | null = null;
+    let clutter: ClutterMeshes | null = null;
     // The ground cloud's map, which every material's air reads.
     const cloudMap = forest === null ? null : cloudMapTexture(engine);
     if (forest !== null && cloudMap !== null) {
@@ -323,8 +339,19 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       if (tier !== "low") {
         blades = createBladeMeshes(engine, scene, forest.seed, { quality: tier, eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap) });
       }
+      // The ground clutter, which lands as its models do. The tiers that draw the blade field draw it over the
+      // meadow's near cards and cut the grass class's cards to the view; low draws the cards alone, whole.
+      clutter = createClutterMeshes(engine, scene, forest.seed, {
+        radiusScale: clutterReachFor(tier),
+        nearBlades: tier !== "low",
+        cull: tier !== "low",
+        eye: pose,
+        frame: frameSize,
+        wet: wetAt,
+        air: () => atmospherePlugin(airValues, cloudMap),
+      });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades };
+    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades, clutter };
     if (disposed) {
       release(made);
       return;
@@ -429,10 +456,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // Everywhere but under the water of the high tier's own path, the water above darkens what stands in it.
     const wetLine = wetLineFor(wetBodies, pose.x, pose.z);
     wetUniforms({ ...wetLine, attenuate: true, cap: 0 }, wetValues);
-    // The forest's materials under the same wet line, each kind at its porosity cap.
-    wetUniforms({ ...wetLine, attenuate: true, cap: WET_CAP.leaf }, forestWet.leaf);
-    wetUniforms({ ...wetLine, attenuate: true, cap: WET_CAP.bark }, forestWet.bark);
-    wetUniforms({ ...wetLine, attenuate: true, cap: WET_CAP.deadwood }, forestWet.deadwood);
+    // The scenery's materials under the same wet line, each kind at its porosity cap.
+    for (const [cap, record] of wetByCap) wetUniforms({ ...wetLine, attenuate: true, cap }, record);
     // The ground cloud is not marched: no steps.
     atmosphereUniforms(light.air, cloud, 0, airValues);
     for (const material of made.materials) {
@@ -449,12 +474,15 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     frameSize.height = canvas.height;
     made.forest?.frame();
     made.blades?.frame();
+    made.clutter?.frame();
   }
 
   let skyWait: Promise<void> | null = null;
 
   /** The forest's first lists drawn, once the renderer stands; at once where it cannot, or in a world with no forest. */
   const forestReady: Promise<void> = made.then(() => standing?.forest?.ready);
+  /** Everything that lands as its models do, drawn: the forest and the ground clutter. */
+  const sceneryReady: Promise<void> = made.then(() => Promise.all([standing?.forest?.ready, standing?.clutter?.ready])).then(() => undefined);
 
   const renderer: Renderer = {
     ...absent,
@@ -472,14 +500,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     whenReady(maxMs) {
       return new Promise<void>((resolve) => {
         const bound = setTimeout(resolve, Math.max(0, maxMs));
-        void forestReady.then(() => {
+        void sceneryReady.then(() => {
           clearTimeout(bound);
           resolve();
         });
       });
     },
     waitingItems() {
-      return loading + (standing?.forest?.waiting() ?? 0);
+      return loading + (standing?.forest?.waiting() ?? 0) + (standing?.clutter?.waiting() ?? 0);
     },
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       if (disposed) return;
@@ -558,8 +586,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           standing.terrain?.update(centre.x, centre.z);
           standing.forest?.update(centre.x, centre.z);
           standing.blades?.update(centre.x, centre.z);
+          standing.clutter?.update(centre.x, centre.z);
         }
-        // The grass is cut to the view once the camera's pose for the frame is final.
+        // The blades and the grass class's cards are cut to the view once the camera's pose for the frame is final.
         cullPose.x = pose.x;
         cullPose.y = pose.y;
         cullPose.z = pose.z;
@@ -569,6 +598,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         cullPose.fov = fov;
         cullPose.aspect = canvas.height > 0 ? canvas.width / canvas.height : 1;
         standing.blades?.cull(cullPose);
+        standing.clutter?.cull(cullPose);
         draw(standing, weather.wetness);
       }
       if (centre !== null) markSynced();

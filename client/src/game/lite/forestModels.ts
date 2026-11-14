@@ -1,7 +1,8 @@
 /**
- * The forest's models and maps on Babylon Lite, loaded by Lite's own
- * loaders from the game's asset URLs: a tree's file as the geometry and the
- * textures of each of its LODs, and a bark set's or the moss's KTX2 map.
+ * The forest's and the ground cover's models and maps on Babylon Lite,
+ * loaded by Lite's own loaders from the game's asset URLs: a model's file as
+ * the geometry and the textures of each of its LODs, and a bark set's or the
+ * moss's KTX2 map.
  *
  * A model's file is fetched once and handed to Lite's glTF loader as bytes,
  * which uploads its textures and keeps each mesh's positions, normals,
@@ -27,6 +28,7 @@ export type ModelPart = {
   facts: GlbPart;
   positions: Float32Array;
   normals: Float32Array;
+  /** The file's coordinates, or zeros for a primitive that has none (it reads no map). */
   uvs: Float32Array;
   /** xyzw a vertex, or null where the file has none. */
   tangents: Float32Array | null;
@@ -37,6 +39,8 @@ export type ModelPart = {
   /** The file's own colour and normal maps, as the loader uploaded them. */
   colour: Texture2D | undefined;
   normal: Texture2D | undefined;
+  /** The file's base colour factor, linear: white where it gives none. */
+  factor: readonly [number, number, number];
 };
 
 /** A model's LODs by the name of their node. */
@@ -85,15 +89,16 @@ export async function loadModel(engine: EngineContext, url: string, lods: readon
       const parts = found.map(({ mesh, chain: nodes }, i) => {
         const geometry = getMeshGeometry(mesh);
         const fact = facts[i] as GlbPart;
-        if (geometry === null || geometry.uvs === undefined) throw new Error(`${url} ${lod}: a mesh with no geometry kept`);
+        if (geometry === null) throw new Error(`${url} ${lod}: a mesh with no geometry kept`);
         if (geometry.positions.length !== fact.vertices * 3) throw new Error(`${url} ${lod}: ${geometry.positions.length / 3} vertices loaded for ${fact.vertices}`);
         const baked = { positions: geometry.positions, normals: geometry.normals, tangents: fact.tangents, indices: geometry.indices };
         bakeGeometry(chainMatrix(nodes as unknown as PlacedNode[]), baked);
         const material = mesh.material as PbrMaterialProps;
         return {
           facts: fact, ...boundsOf(baked.positions),
-          positions: baked.positions, normals: baked.normals, uvs: geometry.uvs, tangents: baked.tangents, indices: baked.indices,
-          colour: material.baseColorTexture, normal: material.normalTexture,
+          positions: baked.positions, normals: baked.normals, uvs: geometry.uvs ?? new Float32Array(fact.vertices * 2), tangents: baked.tangents,
+          indices: baked.indices, colour: material.baseColorTexture, normal: material.normalTexture,
+          factor: [material.baseColorFactor?.[0] ?? 1, material.baseColorFactor?.[1] ?? 1, material.baseColorFactor?.[2] ?? 1] as const,
         };
       });
       model.set(lod, parts);
