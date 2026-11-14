@@ -264,9 +264,15 @@ export const VIGNETTE_PULSE_PERIOD = 7;
 export const STARE_VIGNETTE = 3;
 /** The share of the frame's exposure a full stare takes, everywhere. */
 export const STARE_DIM = 0.3;
-/** The chase's cast at 1: what each channel is multiplied by, and what is added, so the night goes burgundy and stays dark. */
-export const CHASE_TINT: Rgb = { r: 1.2, g: 0.55, b: 0.7 };
-export const CHASE_LIFT: Rgb = { r: 0.02, g: 0.0, b: 0.006 };
+/**
+ * The chase's cast at 1: what each channel is multiplied by, and what is
+ * added, so the night turns toward red and stays dark. Two fifths of the
+ * burgundy it was until 2026-11-14 ((1.2, 0.55, 0.7) and (0.02, 0, 0.006)),
+ * each channel brought that far toward the cast's own weight on a grey, so
+ * the frame is as dark as it was and less red.
+ */
+export const CHASE_TINT: Rgb = { r: 0.9, g: 0.64, b: 0.7 };
+export const CHASE_LIFT: Rgb = { r: 0.0108, g: 0.0028, b: 0.0052 };
 /** The material path's shadows under the chase: the hue the grade's shadow hue turns toward, and the density added. */
 export const CHASE_SHADOW_HUE = 345;
 export const CHASE_SHADOW_DENSITY = 50;

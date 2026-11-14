@@ -14,7 +14,9 @@ that everything has changed.
 the sky, the rain, the ground and the trees alike, since it is the grade's last colour step
 before the stare's darkness. It comes in over 25 s and never goes back. The night stays night:
 the cast multiplies each channel (red up a tenth, green down a quarter, blue down a sixth) and
-adds almost nothing, so nothing gets brighter.
+adds almost nothing, so nothing gets brighter. *(The cast's numbers have changed twice since:
+stronger with the haunt, then softened on 2026-11-14 to (0.9, 0.64, 0.7), no channel raised;
+`2026-10-06-the-haunt.md` has both.)*
 
 **The pulse.** A low thump on every beat and a dry tick between, at 104 beats a minute with
 nothing near and 132 with the Hollow at the ear, under a drone of three rough low tones whose

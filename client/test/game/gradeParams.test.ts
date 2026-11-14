@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CHASE_TINT,
+import { CHASE_LIFT, CHASE_TINT,
   agx, gradeRecordUnder, whitePointMatrix, hueToRgb, IDENTITY,
   DEFAULT_PAINT_PALETTE, mixPalette, PAINT_AMBER, PAINT_ASH, PAINT_NONE, PAINT_OILS, PAINT_PALETTE_NAMES, PAINT_PALETTES,
   HALATION_BASE, AGX_MIN_EV, AGX_MAX_EV, STARE_DIM, sightUnder,
@@ -159,11 +159,14 @@ describe("the stare", () => {
     expect(gradeRecordUnder(CLEAR, 12, 0, 1).chase).toBe(0);
     expect(gradeRecordUnder(CLEAR, 12, 0, 1, 0, STARE_LENS_REST, 0.4).chase).toBe(0.4);
     expect(gradeRecordUnder(CLEAR, 12, 0, 1, 0, STARE_LENS_REST, 3).chase).toBe(1);
-    // Burgundy, and darker than it brightens: the night stays night.
-    expect(CHASE_TINT.r).toBeGreaterThan(1);
+    // Toward red, softly (two fifths of the burgundy it was until 2026-11-14), and no channel brightened: the night stays night.
+    expect(CHASE_TINT).toEqual({ r: 0.9, g: 0.64, b: 0.7 });
+    expect(CHASE_LIFT).toEqual({ r: 0.0108, g: 0.0028, b: 0.0052 });
+    expect(CHASE_TINT.r).toBeGreaterThan(CHASE_TINT.b);
     expect(CHASE_TINT.g).toBeLessThan(CHASE_TINT.b);
-    expect(CHASE_TINT.b).toBeLessThan(1);
-    expect((CHASE_TINT.r + CHASE_TINT.g + CHASE_TINT.b) / 3).toBeLessThan(1);
+    expect(CHASE_TINT.r).toBeLessThan(1);
+    // As dark as the burgundy was: its weight on a grey is the old cast's (1.2, 0.55, 0.7), 0.699.
+    expect(0.2126 * CHASE_TINT.r + 0.7152 * CHASE_TINT.g + 0.0722 * CHASE_TINT.b).toBeCloseTo(0.699, 2);
   });
 
   it("carries the lens's shade: the open centre off the Hollow's side, and the clock its edge crawls on", () => {
