@@ -271,8 +271,11 @@ describe("how a forest material is lit and wetted on Babylon Lite", () => {
     expect(fragment.CUSTOM_FRAGMENT_UPDATE_DIFFUSE).not.toContain("baseColor");
     const lights = fragment.CUSTOM_FRAGMENT_BEFORE_LIGHTS ?? "";
     expect(lights.indexOf("let fBase=surfaceAlbedo*wetShare;")).toBeGreaterThan(lights.indexOf("WET_ROUGHNESS,wetW"));
-    expect(lights).toContain("colorF0=mix(dielectricColorF0,fBase,metallic);");
-    expect(lights).toContain("surfaceAlbedo=fBase*(vec3<f32>(1.0)-vec3<f32>(dielectricF0)*surfaceReflectivityColor)*(1.0-metallic);");
+    expect(lights).toContain("colorF0=mix(vec3<f32>(dielectricF0),fBase,metallic);");
+    expect(lights).toContain("surfaceAlbedo=fBase*(1.0-dielectricF0)*(1.0-metallic);");
+    // Only the one name Lite declares whether or not a material carries its reflectance feature.
+    expect(lights).not.toContain("dielectricColorF0");
+    expect(lights).not.toContain("surfaceReflectivityColor");
     expect(base.getCustomCode?.("vertex")).toBeNull();
     expect(wet.getCustomCode?.("vertex")).toBeNull();
   });
@@ -361,7 +364,7 @@ describe("the blade clumps' material on Babylon Lite", () => {
     const split = surfaceSplitPlugin();
     const text = split.getCustomCode?.("fragment")?.CUSTOM_FRAGMENT_BEFORE_LIGHTS ?? "";
     expect(text).toContain("let fBase=surfaceAlbedo;");
-    expect(text).toContain("colorF0=mix(dielectricColorF0,fBase,metallic);");
+    expect(text).toContain("colorF0=mix(vec3<f32>(dielectricF0),fBase,metallic);");
     expect(text).not.toContain("wetShare");
     expect(split.getCustomCode?.("vertex")).toBeNull();
     expect(split.getUniforms).toBeUndefined();

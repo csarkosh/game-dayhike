@@ -456,10 +456,13 @@ const WET_WEATHER_KEPT = `var wetShare=1.0;{let wetPorosity=min(material.wetCap,
 
 // Babylon's reflectivity block, which follows its point before the lights: the weather's darkening of the colour the
 // block left, then the colour split into the albedo and the reflectance at normal incidence, a metal's its own colour.
-const SPLIT = `{let fBase=surfaceAlbedo*wetShare;colorF0=mix(dielectricColorF0,fBase,metallic);surfaceAlbedo=fBase*(vec3<f32>(1.0)-vec3<f32>(dielectricF0)*surfaceReflectivityColor)*(1.0-metallic);}`;
+// The reflectance at normal incidence is `dielectricF0` on every channel: these materials' reflectance colour is white,
+// and Lite declares that one name with its reflectance feature and without it (it leaves the feature out of a material
+// whose weight is one).
+const SPLIT = `{let fBase=surfaceAlbedo*wetShare;colorF0=mix(vec3<f32>(dielectricF0),fBase,metallic);surfaceAlbedo=fBase*(1.0-dielectricF0)*(1.0-metallic);}`;
 
 // The split with no weather's darkening before it: a surface the rain does not wet.
-const SPLIT_DRY = `{let fBase=surfaceAlbedo;colorF0=mix(dielectricColorF0,fBase,metallic);surfaceAlbedo=fBase*(vec3<f32>(1.0)-vec3<f32>(dielectricF0)*surfaceReflectivityColor)*(1.0-metallic);}`;
+const SPLIT_DRY = `{let fBase=surfaceAlbedo;colorF0=mix(vec3<f32>(dielectricF0),fBase,metallic);surfaceAlbedo=fBase*(1.0-dielectricF0)*(1.0-metallic);}`;
 
 /**
  * The colour a forest material's block before the lights works on: the base
@@ -485,8 +488,8 @@ export function baseColourPlugin(): MaterialPlugin {
  * read whenever the material's uniforms are written), and after it the
  * split of the colour into albedo and reflectance (`baseColourPlugin`,
  * which every material with this plugin carries; the material's
- * reflectance is set by `setPbrMetallicReflectance`, whose names the split
- * reads).
+ * reflectance colour is white, its weight whatever
+ * `setPbrMetallicReflectance` was given).
  */
 export function surfaceWetPlugin(values: WetUniforms): MaterialPlugin {
   return {
@@ -507,8 +510,7 @@ export function surfaceWetPlugin(values: WetUniforms): MaterialPlugin {
  * The split of the colour into albedo and reflectance on a material that
  * wears no wet look (the blade clumps): `surfaceWetPlugin`'s last step
  * alone, at its place, after the colour block. The material carries
- * `baseColourPlugin` and its reflectance is set by
- * `setPbrMetallicReflectance`, as there.
+ * `baseColourPlugin` and a white reflectance colour, as there.
  */
 export function surfaceSplitPlugin(): MaterialPlugin {
   return {
