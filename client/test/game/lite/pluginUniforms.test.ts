@@ -11,6 +11,14 @@ describe("a material plugin's uniforms from a record by name", () => {
     ]);
   });
 
+  it("says which stages read its fields where it is told, and leaves it unsaid where it is not", () => {
+    expect(uniformFields({ a: [1], b: [1, 2] }, "vertex-fragment")).toEqual([
+      { name: "a", type: "f32", visibility: "vertex-fragment" },
+      { name: "b", type: "vec2<f32>", visibility: "vertex-fragment" },
+    ]);
+    expect(Object.keys(uniformFields({ a: [1] })[0] as object)).toEqual(["name", "type"]);
+  });
+
   it("has no type for a value of no floats or of more than four", () => {
     expect(() => wgslType(0)).toThrow(/0 components/);
     expect(() => wgslType(5)).toThrow(/5 components/);

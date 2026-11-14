@@ -32,9 +32,9 @@
 import type { MaterialPlugin, Texture2D, Texture2DArray } from "@babylonjs/lite";
 import { emptyTerrainUniforms, type TerrainUniforms } from "../terrainUniforms.js";
 import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, type TerrainVertices } from "../terrainVertices.js";
-import { emptyWetUniforms, type WetUniforms } from "../wetSurface.js";
-import { uniformFields, writeUniforms, type UniformField, type UniformRecord } from "./pluginUniforms.js";
-import { WET_SWASH_FIELD, WET_WEATHER, WET_WGSL } from "./wetWgsl.js";
+import type { WetUniforms } from "../wetSurface.js";
+import { uniformFields, writeUniforms, type UniformField } from "./pluginUniforms.js";
+import { WET_FIELDS, WET_WEATHER, WET_WGSL, writeWetUniforms } from "./wetWgsl.js";
 
 /**
  * The material's uniforms: the terrain's own by name (`terrainUniforms`),
@@ -745,15 +745,8 @@ let wetResidual=min(vec3<f32>(1.0),exp(-2.0*(material.wetKd-vec3<f32>(wetKdMean)
 surfaceAlbedo*=mix(vec3<f32>(1.0),wetResidual,material.wetAttenuate);
 roughness=mix(mix(roughness,min(roughness,WET_DAMP_ROUGHNESS),wetDamp),WET_ROUGHNESS,wetW);`;
 
-/** The wet look's uniforms but the swash's table, which is laid out as bits (`WET_SWASH_FIELD`). */
-function wetScalars(values: WetUniforms): UniformRecord {
-  const { wetSwash: _swash, ...scalars } = values;
-  void _swash;
-  return scalars;
-}
-
 /** The wet plugin's fields: one a uniform, in the record's order, the swash's table last. */
-export const TERRAIN_WET_FIELDS: readonly UniformField[] = [...uniformFields(wetScalars(emptyWetUniforms())), WET_SWASH_FIELD];
+export const TERRAIN_WET_FIELDS: readonly UniformField[] = WET_FIELDS;
 
 /**
  * The wet look on the terrain, drawn by `values` (`wetUniforms`: one record,
@@ -770,10 +763,7 @@ export function terrainWetPlugin(values: WetUniforms): MaterialPlugin {
         : null,
     getUniforms: () => ({ ubo: [...TERRAIN_WET_FIELDS] }),
     writeUbo(data, offsets) {
-      writeUniforms(data, offsets, wetScalars(values));
-      const swash = offsets.get(WET_SWASH_FIELD.name);
-      if (swash === undefined) throw new Error(`no uniform ${WET_SWASH_FIELD.name} in the material's buffer`);
-      data.set(values.wetSwash, swash / 4);
+      writeWetUniforms(data, offsets, values);
     },
   };
 }

@@ -13,8 +13,9 @@
 /** A record of uniforms by name: one to four floats each. */
 export type UniformRecord = Readonly<Record<string, ArrayLike<number>>>;
 
-/** A field of a material's uniform buffer, as a plugin declares it. */
-export type UniformField = { readonly name: string; readonly type: string };
+/** A field of a material's uniform buffer, as a plugin declares it: read by
+ * the fragment stage unless it says which stages read it. */
+export type UniformField = { readonly name: string; readonly type: string; readonly visibility?: "vertex" | "fragment" | "vertex-fragment" };
 
 /** Where Lite put each declared field: its name to its byte offset in the buffer. */
 export type UniformOffsets = ReadonlyMap<string, number>;
@@ -28,9 +29,10 @@ export function wgslType(components: number): string {
   return type;
 }
 
-/** The fields `record` is declared as, in the record's own order. */
-export function uniformFields(record: UniformRecord): UniformField[] {
-  return Object.entries(record).map(([name, value]) => ({ name, type: wgslType(value.length) }));
+/** The fields `record` is declared as, in the record's own order, read by
+ * the fragment stage or, given `visibility`, by the stages it names. */
+export function uniformFields(record: UniformRecord, visibility?: UniformField["visibility"]): UniformField[] {
+  return Object.entries(record).map(([name, value]) => ({ name, type: wgslType(value.length), ...(visibility === undefined ? {} : { visibility }) }));
 }
 
 /**
