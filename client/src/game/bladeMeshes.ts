@@ -1,14 +1,15 @@
 /**
  * The Babylon shell over `bladeField.ts`: one thin-instance bucket per clump
- * character, distance tier and size, on one opaque material per tier, filled
- * from the field's tier lists with the cards' own matrix, trample and tint writers
- * (clutterMeshes.ts) plus a per-instance strength. Rebuilt on the field's own
- * 1 m crossing; no per-frame allocation on the hot path, the clutter shell's
- * discipline. Nothing here dithers: every hand-off is geometric, so no bucket
- * carries the distance fade or `fadeBands`.
+ * character, distance tier and size, on one opaque material per tier, drawn
+ * from the lists `bladeInstances.ts` makes of the field's tiers with the
+ * cards' own matrix, trample and tint writers plus a per-instance strength.
+ * Rebuilt on the field's own 1 m crossing; no per-frame allocation on the hot
+ * path, the clutter shell's discipline. Nothing here dithers: every hand-off
+ * is geometric, so no bucket carries the distance fade or `fadeBands`.
  *
  * The split is `clutterMeshes.ts`'s and for the same reason: all band and
- * placement maths is the pure field, and what lives here is buffers, matrices
+ * placement maths is the pure field, the buffers and the cut are the lists',
+ * which load no engine, and what lives here is meshes, materials, uploads
  * and dispose. The thirty-six buckets are the product of three axes that
  * cannot be collapsed — a character is a different MESH (its own blade table
  * and tip feature, so its own vertex data), a tier is a different blade COUNT
@@ -42,40 +43,26 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
-import type { Rgb } from "./colour.js";
-import {
-  BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, bladeTierBands, createBladeCollector,
-  type BladeCell, type BladeTiers,
-} from "./bladeField.js";
+import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, bladeTierBands } from "./bladeField.js";
+import { BLADE_ROUGHNESS, BLADE_TIER_COUNT, createBladeLists } from "./bladeInstances.js";
 import { BLADE_ALBEDO, BLADE_CHARACTERS, bladeClumpGeometry, bladeCountFor, type BladeQuality } from "./bladeClump.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
-import { instanceMatrixFor, trampleFrame, writeFoliage } from "./clutterInstances.js";
 import { prepBucketMesh } from "./clutterMeshes.js";
-import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
-import { createKeptValues } from "./keptValues.js";
+import type { CullPose } from "./grassCull.js";
+import type { InstanceList } from "./instanceLists.js";
 import { createCrossing, crossingAt, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
+
+// A cell's height scale, and the lists the buckets draw (the collected
+// buffers a rebuild writes, the drawn ones a cut fills from them), are
+// `bladeInstances.ts`'s, which loads no engine; named from here too.
+export { BLADE_CANOPY_HEIGHT, BLADE_STRENGTH_HEIGHT, bladeHeightScale } from "./bladeInstances.js";
 
 export const BLADE_MESH_PREFIX = "blade_clumps";
 export function bladeMeshName(character: number, tier: number, size: number): string {
   return `${BLADE_MESH_PREFIX}_c${character}_t${tier}_s${size}`;
 }
-/** A cell's height scale at strength 0 and 1 (`strength`, the clamped
- * [0, 1] cut — never the unclamped `cover` a cell's `size` was chosen from). */
-export const BLADE_STRENGTH_HEIGHT: readonly [number, number] = [0.5, 1];
-/** A cell's height scale under full canopy: 1, so the canopy no longer
- * shortens the sward on its own — a cell's strength alone carries the height. */
-export const BLADE_CANOPY_HEIGHT = 1;
-
-/** A cell's height scale: the strength cut between BLADE_STRENGTH_HEIGHT's
- * ends, then the canopy's own scale toward BLADE_CANOPY_HEIGHT. */
-export function bladeHeightScale(strength: number, canopy: number): number {
-  return (BLADE_STRENGTH_HEIGHT[0] + (BLADE_STRENGTH_HEIGHT[1] - BLADE_STRENGTH_HEIGHT[0]) * strength) *
-    (1 + (BLADE_CANOPY_HEIGHT - 1) * canopy);
-}
-/** The material's roughness. */
-const BLADE_ROUGHNESS = 0.8;
 
 export type BladeMeshesOptions = {
   quality: BladeQuality;
@@ -113,143 +100,6 @@ export type BladeMeshes = {
   dispose(): void;
 };
 
-/** One character-and-size bucket inside one tier: its mesh, the three
- * collected buffers the rebuild writes and the three drawn buffers `cull`
- * fills from them, all reused across rebuilds and grown geometrically. No
- * `bands` and no `fade` — the tier hand-off is the shader's geometric
- * collapse, so nothing here ever writes `fadeBands`. */
-type Bucket = {
-  mesh: Mesh;
-  /** Collected matrix data; capacity is `buf.length / 16`. */
-  buf: Float32Array;
-  /** Four floats per instance (ground colour rgb + the sky's openness,
-   * `1 − canopy`), the
-   * collected `foliage` attribute; capacity tracks `buf`. Every bucket wears the
-   * tinting BLADES profile, so unlike the clutter shell there is no bucket
-   * that leaves this one empty. */
-  foliage: Float32Array;
-  /** One float per instance, the `bladeStrength` attribute the BLADES profile
-   * declares: the cell's clamped `strength` (never the unclamped `cover`),
-   * which cuts blades inside the clump. */
-  strength: Float32Array;
-  /** The drawn buffers, the collected ones' capacity each: what the mesh
-   * holds and uploads, the kept prefix at the front. */
-  drawn: { buf: Float32Array; foliage: Float32Array; strength: Float32Array };
-  /** Each cell's translation, x, y, z, written by the fill beside `buf`:
-   * what the cut tests. */
-  origins: Float32Array;
-  /** The collected and drawn buffers as `cullPrefix` walks them, with the
-   * last cut's indices; rebuilt only on growth. */
-  cull: CullSet;
-  /** Instances this rebuild — counted in pass 1, then reused as the write
-   * cursor in pass 2, so it is the live count again when the fill ends. */
-  count: number;
-  /** Set when `buf` was replaced this rebuild: the mesh then needs a fresh
-   * `thinInstanceSetBuffer` (a new GPU buffer) for the new drawn buffers. */
-  grown: boolean;
-  /** Where a rebuild in slices writes first, so that nothing `cull` reads
-   * changes until its last slice copies it across: the collected buffers'
-   * four, grown the same way, never uploaded. */
-  staged: { buf: Float32Array; foliage: Float32Array; strength: Float32Array; origins: Float32Array };
-  /** Instances staged — counted, then the write cursor, as `count` is. */
-  stagedCount: number;
-};
-
-function emptyBucket(mesh: Mesh): Bucket {
-  const drawn = { buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER };
-  return {
-    mesh, buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER, drawn, origins: EMPTY_BUFFER,
-    cull: bucketCullSet(0, EMPTY_BUFFER, EMPTY_BUFFER, EMPTY_BUFFER, EMPTY_BUFFER, drawn), count: 0, grown: false,
-    staged: { buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER, origins: EMPTY_BUFFER }, stagedCount: 0,
-  };
-}
-
-function bucketCullSet(
-  capacity: number, origins: Float32Array, buf: Float32Array, foliage: Float32Array, strength: Float32Array,
-  drawn: Bucket["drawn"],
-): CullSet {
-  return cullSet(capacity, origins, { src: buf, dst: drawn.buf }, [{ src: foliage, dst: drawn.foliage }], [{ src: strength, dst: drawn.strength }]);
-}
-
-/** Instances a bucket's first real allocation covers. A tier's cells are
- * split twelve ways by character and size, and the fine tier's disc (4 m +
- * pad) holds a few hundred cells at full strength, so the common bucket
- * settles after one or two doublings and only the coarse tier's fine-grass
- * bucket — the 0.6 weight over an 18 m disc — climbs further. */
-const BUCKET_MIN_INSTANCES = 64;
-
-/** Shared zero-length placeholder for a bucket that has never held an
- * instance: `ensureCapacity` replaces it the first time one lands, and until
- * then nothing reads or writes it. */
-const EMPTY_BUFFER = new Float32Array(0);
-
-/** One matrix's worth of scratch floats, so a cell's matrix can be composed
- * and copied into the kept values at any offset without a per-instance
- * subarray view — `computeInstance`'s trick in the clutter shell. */
-const scratchMat = new Float32Array(16);
-/** The widened frustum's planes, rewritten by each cut. */
-const cullScratchPlanes = new Float32Array(20);
-/** All-zero planes, which `cullPrefix` passes every instance through. */
-const KEEP_ALL = new Float32Array(20);
-/** The frame handed to `instanceMatrixFor`: the bench's own trample frame with
- * the height scaled by the cell's strength and canopy. Module-level and
- * rewritten per cell, because a walk computes thousands of cells and an
- * object per cell is exactly the allocation this file rules out. */
-const scratchFrame: { height: number; lean: number; ax: number; az: number; tint: Rgb } = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };
-
-/**
- * Grows a bucket's buffers to hold `bucket.count` instances if they do not
- * already, doubling from `BUCKET_MIN_INSTANCES` so a bucket allocates a
- * bounded number of times over a session and never per rebuild. The old
- * contents are dropped rather than copied: every live instance is rewritten
- * immediately afterwards.
- */
-function ensureCapacity(bucket: Bucket): void {
-  const needed = bucket.count * 16;
-  if (bucket.buf.length >= needed) {
-    bucket.grown = false;
-    return;
-  }
-  let capacity = Math.max(bucket.buf.length, BUCKET_MIN_INSTANCES * 16);
-  while (capacity < needed) capacity *= 2;
-  bucket.buf = new Float32Array(capacity);
-  // 16 floats of matrix per instance ↔ 4 of foliage ↔ 1 of strength.
-  bucket.foliage = new Float32Array(capacity / 4);
-  bucket.strength = new Float32Array(capacity / 16);
-  bucket.drawn = { buf: new Float32Array(capacity), foliage: new Float32Array(capacity / 4), strength: new Float32Array(capacity / 16) };
-  bucket.origins = new Float32Array((capacity / 16) * 3);
-  bucket.cull = bucketCullSet(capacity / 16, bucket.origins, bucket.buf, bucket.foliage, bucket.strength, bucket.drawn);
-  bucket.grown = true;
-}
-
-/** Grows a bucket's staging buffers to hold `bucket.stagedCount` instances,
- * by `ensureCapacity`'s doubling; old contents are dropped, as there. */
-function ensureStaging(bucket: Bucket): void {
-  const needed = bucket.stagedCount * 16;
-  if (bucket.staged.buf.length >= needed) return;
-  let capacity = Math.max(bucket.staged.buf.length, BUCKET_MIN_INSTANCES * 16);
-  while (capacity < needed) capacity *= 2;
-  bucket.staged = {
-    buf: new Float32Array(capacity),
-    foliage: new Float32Array(capacity / 4),
-    strength: new Float32Array(capacity / 16),
-    origins: new Float32Array((capacity / 16) * 3),
-  };
-}
-
-/** Copies a bucket's staged cells into its collected buffers, growing those
- * first by `ensureCapacity`: after this the bucket holds exactly what a fill
- * writing them directly would. */
-function commitStaged(bucket: Bucket): void {
-  bucket.count = bucket.stagedCount;
-  ensureCapacity(bucket);
-  const n = bucket.count;
-  bucket.buf.set(bucket.staged.buf.subarray(0, n * 16));
-  bucket.foliage.set(bucket.staged.foliage.subarray(0, n * 4));
-  bucket.strength.set(bucket.staged.strength.subarray(0, n));
-  bucket.origins.set(bucket.staged.origins.subarray(0, n * 3));
-}
-
 /**
  * Hands a grown bucket's new drawn buffers to its mesh after a rebuild. A
  * bucket that did not grow needs nothing here: its mesh keeps drawing the last
@@ -261,12 +111,11 @@ function commitStaged(bucket: Bucket): void {
  * `clutterMeshes.ts` records: `Buffer.updateDirectly` no-ops silently on a
  * non-updatable buffer, so `cull`'s prefix uploads would never reach the GPU.
  */
-function applyGrown(bucket: Bucket): void {
-  if (!bucket.grown) return;
-  const { mesh } = bucket;
-  mesh.thinInstanceSetBuffer("matrix", bucket.drawn.buf, 16, false);
-  mesh.thinInstanceSetBuffer("foliage", bucket.drawn.foliage, 4, false);
-  mesh.thinInstanceSetBuffer("bladeStrength", bucket.drawn.strength, 1, false);
+function applyGrown(list: InstanceList, mesh: Mesh): void {
+  if (!list.grown) return;
+  mesh.thinInstanceSetBuffer("matrix", list.drawn.buf, 16, false);
+  mesh.thinInstanceSetBuffer("foliage", list.drawn.foliage, 4, false);
+  mesh.thinInstanceSetBuffer("bladeStrength", list.drawn.strength, 1, false);
   // `thinInstanceSetBuffer` set the count to the whole capacity. A zero-count
   // bucket must be disabled outright: with `instancesCount` 0 Babylon's
   // `hasThinInstances` is false and the bare clump mesh would be drawn once at
@@ -282,25 +131,22 @@ function applyGrown(bucket: Bucket): void {
  * longer cut would then write past its end. The bucket draws nothing until the
  * next cut fills it again.
  */
-function rehandBucket(bucket: Bucket): void {
-  if (bucket.drawn.buf.length === 0) return;
-  bucket.grown = true;
-  applyGrown(bucket);
-  bucket.grown = false;
-  cullInvalidate(bucket.cull);
+function rehandBucket(list: InstanceList, mesh: Mesh): void {
+  if (list.drawn.buf.length === 0) return;
+  list.grown = true;
+  applyGrown(list, mesh);
+  list.grown = false;
 }
 
 /**
- * Cuts one bucket's collected set by `planes` into its drawn buffers, sets
- * the count to the kept cells and uploads only them (Babylon's count form of
+ * A bucket whose cut changed: its mesh's count set to the kept cells, and
+ * only them uploaded (Babylon's count form of
  * `thinInstancePartialBufferUpdate`: `kept` strides from offset 0). A bucket
- * that keeps exactly the cells of its last cut is left as it is: no copy, no
- * upload.
+ * that keeps exactly the cells of its last cut is never handed here: no
+ * copy, no upload.
  */
-function cutBucket(bucket: Bucket, planes: Float32Array): void {
-  if (!cullPrefix(planes, bucket.count, bucket.cull)) return;
-  const { mesh } = bucket;
-  const kept = bucket.cull.kept;
+function uploadCut(list: InstanceList, mesh: Mesh): void {
+  const kept = list.cull?.kept ?? 0;
   mesh.thinInstanceCount = kept;
   if (kept > 0) {
     mesh.thinInstancePartialBufferUpdate("matrix", kept, 0);
@@ -359,193 +205,64 @@ function createClumpMesh(scene: Scene, character: number, tier: number, size: nu
   return mesh;
 }
 
-/** Floats kept per cell: the matrix (16), then the tint (4). */
-const KEPT_STRIDE = 20;
-const KEPT_FOLIAGE = 16;
-
-/** Cells' worth of work a slice of a fill does before it yields: a cell whose
- * values are copied counts 1, one computed for the first time
- * `FILL_NEW_COST` — its trample frame and ground tint are several walks
- * through the terrain's noise. About a tenth of a millisecond. */
-const FILL_SLICE = 1024;
-const FILL_NEW_COST = 16;
-
-/** What computing a cell's kept values ahead weighs on a slice of idle work,
- * in `prefetchWindow`'s units: about what sampling a cell does. */
-const KEPT_AHEAD_COST = 64;
-
 export function createBladeMeshes(scene: Scene, seed: number, options: BladeMeshesOptions): BladeMeshes {
-  /**
-   * A cell's matrix and tint, computed the first time it is listed. Both are
-   * functions of the cell and the seed alone: the trample frame is the
-   * trail's, the height scale the cell's own strength and canopy, the tint
-   * the ground under it. Nothing in them depends on the eye, the tier the
-   * cell is listed in (a cell in two tiers' lists draws the same clump in
-   * each), the time or the wind. The strength is the cell's own field.
-   */
-  function computeCell(c: BladeCell, out: Float32Array, offset: number): void {
-    const frame = trampleFrame(seed, c);
-    // A thin sward is short as well as sparse: bladeHeightScale carries that.
-    const heightScale = bladeHeightScale(c.strength, c.canopy);
-    // `trampleFrame` returns a SHARED scratch object, valid only until the
-    // next call. The copy below exists so the height can be scaled without
-    // writing through to it, and it copies `tint` only to stay a faithful
-    // frame — `instanceMatrixFor` reads height, lean and the axis, never the
-    // tint, so that field is inert here. The live read of the shared frame
-    // is `writeFoliage`'s `frame.tint`, which is why the order (frame,
-    // matrix, foliage) must stay inside one call: hoisting `writeFoliage`
-    // past the next `trampleFrame` would stain this cell with the following
-    // cell's bench tint. Only values are kept, never the frame.
-    scratchFrame.height = frame.height * heightScale;
-    scratchFrame.lean = frame.lean;
-    scratchFrame.ax = frame.ax;
-    scratchFrame.az = frame.az;
-    scratchFrame.tint = frame.tint;
-    instanceMatrixFor(c, scratchFrame, scratchMat);
-    out.set(scratchMat, offset);
-    writeFoliage(seed, c, out, offset + KEPT_FOLIAGE, frame);
-  }
-  const kept = createKeptValues<BladeCell>(KEPT_STRIDE, computeCell);
-  // Memoizing collector, not the pure `collectBladeCells`: a rebuild happens
-  // on every 1 m crossing, and re-sampling the whole disc from cold each time
-  // would pay fresh gate, terrain and density samples for thousands of cells
-  // that have not moved (see bladeField.ts). A cell it lets go takes its kept
-  // values with it.
-  const collector = createBladeCollector(seed, (c) => kept.release(c));
-  /** `buckets[tier][character][size]`. */
-  const buckets: Bucket[][][] = [];
+  // The lists (`bladeInstances.ts`): the cells collected, their kept matrices
+  // and tints, the buffers and the cut. `lists.all` and `meshes` are in one
+  // order, tier then character then size.
+  const lists = createBladeLists(seed);
   const materials: PBRMaterial[] = [];
   const meshes: Mesh[] = [];
-  for (let tier = 0; tier < 3; tier++) {
-    const row: Bucket[][] = [];
+  for (let tier = 0; tier < BLADE_TIER_COUNT; tier++) {
+    const row: Mesh[] = [];
     // The tier's tallest clump sets the material's height uniform, which the
     // plugin divides the vertex's height by to weight the sway. One material
     // serves all twelve of the tier's character-size buckets, so the tallest
     // of them is the only choice that never drives a weight past 1.
     let tallest = 0;
     for (let ch = 0; ch < BLADE_CHARACTER_COUNT; ch++) {
-      const sizes: Bucket[] = [];
       for (let size = 0; size < BLADE_SIZE_COUNT; size++) {
         const mesh = createClumpMesh(scene, ch, tier, size, bladeCountFor(options.quality, ch, tier, size));
         tallest = Math.max(tallest, mesh.getBoundingInfo().boundingBox.maximum.y);
-        sizes.push(emptyBucket(mesh));
+        row.push(mesh);
         meshes.push(mesh);
       }
-      row.push(sizes);
     }
     const mat = createTierMaterial(scene, tier, tallest);
-    for (const sizes of row) for (const bucket of sizes) bucket.mesh.material = mat;
+    for (const mesh of row) mesh.material = mat;
     materials.push(mat);
-    buckets.push(row);
   }
   let disposed = false;
   const jobs = options.jobs;
   const restoreObserver = scene.getEngine().onContextRestoredObservable.add(() => {
-    for (const row of buckets) for (const sizes of row) for (const bucket of sizes) rehandBucket(bucket);
-    dirty = true;
+    for (const [i, list] of lists.all.entries()) rehandBucket(list, meshes[i] as Mesh);
+    lists.forgetCuts();
   });
-  /** Set by a rebuild: the collected sets changed, so the next `cull` cuts
-   * whatever the pose. */
-  let dirty = false;
-  /** What the drawn buffers hold: nothing cut yet, every cell (`cull(null)`),
-   * or the cut at `lastPose`. */
-  let cutMode: "none" | "all" | "pose" = "none";
-  const lastPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 0, aspect: 0 };
+  const uploadChanged = (list: InstanceList, index: number): void => uploadCut(list, meshes[index] as Mesh);
 
   /**
-   * One tier's fill, as slices: two passes over its list, so every bucket
-   * knows its size before a single matrix is written and no buffer has to
-   * grow mid-fill. Pass 1 counts, `ensureStaging` grows what it must, pass 2
-   * writes each bucket's staging buffers (`stagedCount` the cursor). The list
-   * arrives nearest-first from the field and is walked in order, so each
-   * bucket's instances stay sorted by distance. Pass 2 copies each cell's
-   * kept matrix and tint, computing them only for a cell listed for the
-   * first time (`computeCell`), and yields by the work done: a cell computed
-   * counts as `FILL_NEW_COST` copied ones.
-   */
-  function* stage(list: BladeCell[], row: Bucket[][]): Slices {
-    for (const sizes of row) for (const bucket of sizes) bucket.stagedCount = 0;
-    for (const c of list) row[c.character]![c.size]!.stagedCount++;
-    for (const sizes of row) for (const bucket of sizes) {
-      ensureStaging(bucket);
-      bucket.stagedCount = 0;
-    }
-    yield;
-    let work = 0;
-    for (const c of list) {
-      const bucket = row[c.character]![c.size]!;
-      const known = kept.size;
-      const at = kept.offsetOf(c);
-      const data = kept.data;
-      const { buf, foliage, origins, strength } = bucket.staged;
-      const i = bucket.stagedCount;
-      const m = i * 16, f = i * 4, o = i * 3;
-      for (let k = 0; k < 16; k++) buf[m + k] = data[at + k]!;
-      origins[o] = data[at + 12]!;
-      origins[o + 1] = data[at + 13]!;
-      origins[o + 2] = data[at + 14]!;
-      for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
-      strength[i] = c.strength;
-      bucket.stagedCount++;
-      work += kept.size > known ? FILL_NEW_COST : 1;
-      if (work >= FILL_SLICE) {
-        work = 0;
-        yield;
-      }
-    }
-  }
-
-  /** One tier's staged cells into its collected buffers, then a grown
-   * bucket's new drawn buffers to its mesh; `cull` uploads the rest. */
-  function commit(row: Bucket[][]): void {
-    for (const sizes of row) for (const bucket of sizes) {
-      commitStaged(bucket);
-      applyGrown(bucket);
-      // The collected buffers were rewritten: the last cut's indices no
-      // longer name the same cells.
-      cullInvalidate(bucket.cull);
-    }
-  }
-
-  /**
-   * The rebuild for an eye at (x, z), as slices (`syncJobs.ts`): the tier
-   * lists collected, the three tiers staged, then all three copied into the
-   * collected buffers `cull` reads in the last slice, in one step, so no cut
-   * ever reads a bucket half written.
+   * The rebuild for an eye at (x, z), as slices (`syncJobs.ts`): the lists'
+   * own, whose last slice copies every tier into the collected buffers
+   * `cull` reads, and in that same step a grown bucket's new drawn buffers
+   * to its mesh; `cull` uploads the rest.
    */
   function* rebuild(x: number, z: number): Slices {
-    const tiers: BladeTiers = yield* collector.collectSlices(x, z);
-    yield;
-    yield* stage(tiers.fine, buckets[0]!);
-    yield* stage(tiers.mid, buckets[1]!);
-    yield* stage(tiers.coarse, buckets[2]!);
-    for (const row of buckets) commit(row);
-    dirty = true;
-    view.x = x;
-    view.z = z;
+    yield* lists.rebuild(x, z);
+    for (const [i, list] of lists.all.entries()) applyGrown(list, meshes[i] as Mesh);
     aimed = false;
   }
 
   const crossing = createCrossing();
-  const view = { x: NaN, z: NaN };
   const owner = {};
   const heading: Heading = { x: 0, z: 0 };
   /** Whether the idle work is aimed at the next crossings from where the
    * last rebuild left the field, on the present heading. */
   let aimed = false;
-  /** A cell looked up ahead: its matrix and tint computed too, so the fill at
-   * the crossing only copies them. */
-  const ahead = (c: BladeCell): number => {
-    const known = kept.size;
-    kept.offsetOf(c);
-    return kept.size > known ? KEPT_AHEAD_COST : 1;
-  };
   /** Sets the idle work (`syncJobs.ts`) to look up the cells the next
    * crossings add, while no rebuild is pending. */
   function aim(x: number, z: number): void {
     if (aimed || jobs === undefined || jobs.pending(owner)) return;
     aimed = true;
-    jobs.idle(owner, collector.prefetchSlices(x, z, heading.x, heading.z, ahead));
+    jobs.idle(owner, lists.prefetch(x, z, heading.x, heading.z));
   }
 
   return {
@@ -575,25 +292,14 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
       jobs?.cancel(owner);
       buildAtOnce(options.firstBuilds, owner, rebuild(x, z), "blades");
     },
-    view,
+    view: lists.view,
     cull(pose) {
       if (disposed) return;
-      if (!dirty && (pose === null ? cutMode === "all" : cutMode === "pose" && !needsCull(lastPose, pose))) return;
-      let planes = KEEP_ALL;
-      if (pose === null) {
-        cutMode = "all";
-      } else {
-        cullPlanes(pose, cullScratchPlanes);
-        planes = cullScratchPlanes;
-        Object.assign(lastPose, pose);
-        cutMode = "pose";
-      }
-      dirty = false;
-      for (const row of buckets) for (const sizes of row) for (const bucket of sizes) cutBucket(bucket, planes);
+      lists.cut(pose, uploadChanged);
     },
     meshes,
     get kept() {
-      return kept.size;
+      return lists.kept;
     },
     dispose() {
       if (disposed) return;
