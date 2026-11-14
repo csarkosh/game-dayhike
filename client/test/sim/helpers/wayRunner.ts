@@ -11,6 +11,16 @@ const LOOK_AHEAD_M = 5;
 const CLEAR_M = 0.6;
 /** The turns off its aim it tries, in degrees, nearest first. */
 const TURNS_DEG = [0, 20, 40, 60, 80];
+/**
+ * Seconds without advancing after which the runner is snagged, and the turns
+ * it tries then. Snagged, it takes everything round it for a wall, whatever
+ * its height, and steps round it as a person would: a fallen trunk's end on a
+ * slope can stand under the step's height at the runner's own feet and still
+ * hold them (measured on two of the sweep's worlds: the runner stood against
+ * one, aimed through it, until the chase took them for standing still).
+ */
+const SNAG_S = 0.25;
+const SNAG_TURNS_DEG = [0, 20, 40, 60, 80, 100, 120, 140];
 
 export type RunDown = {
   /** Reached the road's safe ground alive. */
@@ -27,13 +37,13 @@ export type RunDown = {
 
 type Box = { minX: number; maxX: number; minZ: number; maxZ: number };
 
-/** The boxes round `p` that a runner cannot step over, copied out of the provider's scratch buffer. */
-function wallsNear(world: World, p: PlayerState): Box[] {
+/** The boxes round `p` that a runner cannot step over (or, `snagged`, every box that stands over its feet), copied out of the provider's scratch buffer. */
+function wallsNear(world: World, p: PlayerState, snagged: boolean): Box[] {
   const feet = p.pos.y - 0.9;
   const reach = LOOK_AHEAD_M + 2;
   const out: Box[] = [];
   for (const b of boxesNear(world.boxes, { x: p.pos.x - reach, y: feet - 0.5, z: p.pos.z - reach }, { x: p.pos.x + reach, y: feet + 1.8, z: p.pos.z + reach })) {
-    if (b.max.y <= feet + STEP_HEIGHT || b.min.y >= feet + 1.8) continue;
+    if (b.max.y <= feet + (snagged ? 0.05 : STEP_HEIGHT) || b.min.y >= feet + 1.8) continue;
     out.push({ minX: b.min.x - CLEAR_M, maxX: b.max.x + CLEAR_M, minZ: b.min.z - CLEAR_M, maxZ: b.max.z + CLEAR_M });
   }
   return out;
@@ -75,9 +85,10 @@ export function runDown(world: World, playerId: number, opts: { maxSeconds?: num
     }
     wayPoint(way, here.s + AIM_AHEAD_M, aim);
     const want = Math.atan2(aim.x - p.pos.x, aim.z - p.pos.z);
-    const walls = wallsNear(world, p);
+    const snagged = stalled > SNAG_S;
+    const walls = wallsNear(world, p, snagged);
     let yaw = want, fallback: number | null = null, chosen = false;
-    for (const deg of TURNS_DEG) {
+    for (const deg of snagged ? SNAG_TURNS_DEG : TURNS_DEG) {
       for (const s of deg === 0 ? [1] : [side, -side]) {
         const tryYaw = want + (s * deg * Math.PI) / 180;
         if (!clear(walls, p, tryYaw)) continue;
