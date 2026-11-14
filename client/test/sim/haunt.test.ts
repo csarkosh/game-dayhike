@@ -22,6 +22,7 @@ import {
 } from "../../src/sim/haunt.js";
 import { isHollow, SHADE_STARE_CAP, SUMMIT_REVEAL_S, spawnHollow } from "../../src/sim/hollow.js";
 import { trailDistance } from "../../src/sim/trail.js";
+import { makeWay } from "../../src/sim/wayDown.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -381,4 +382,52 @@ describe("the director", () => {
     expect(summit.ai).not.toBe(AiState.Emerge);
     expect(w.haunt!.episode !== null || [...w.state.enemies.values()].some((e) => e.ai === AiState.Shade || e.ai === AiState.Lunge)).toBe(true);
   });
+});
+
+describe("the haunt on a world whose chase follows a way", () => {
+  /** A straight way through the player: from 30 m behind them to 300 m on along their look. */
+  function wayThrough(w: World, p: PlayerState): void {
+    const sx = Math.sin(p.yaw), sz = Math.cos(p.yaw);
+    w.way = makeWay([{ x: p.pos.x - sx * 30, z: p.pos.z - sz * 30 }, { x: p.pos.x + sx * 300, z: p.pos.z + sz * 300 }], 330, false);
+    w.state.phase = Phase.Chase;
+  }
+
+  it("a standing shade no longer closes the dark, the woods being full of them; a Hollow still does", () => {
+    const { w, p } = forestWorld();
+    standAtClimb(w, p, 0.3);
+    wayThrough(w, p);
+    w.haunt!.active = false;
+    const ahead = { x: p.pos.x + Math.sin(p.yaw) * 14, y: 0, z: p.pos.z + Math.cos(p.yaw) * 14 };
+    ahead.y = elevationAt(seed, ahead.x, ahead.z) + 1;
+    const h = spawnShade(w, ahead, p, false, 60);
+    lookAt(p, h.pos);
+    for (let t = 0; t < 120; t++) { h.pos = { ...ahead }; h.stateTimer = 60; h.attackCooldown = 0; tick(w); }
+    expect(p.stare).toBe(0);
+    w.state.enemies.delete(h.id);
+    spawnHollow(w, ahead, p.id, 0);
+    tick(w, 20);
+    expect(p.stare).toBeGreaterThan(0);
+  });
+
+  it("raises no standing shade there, only what lunges: the crowd is the standing shades now", () => {
+    const { w, p } = forestWorld();
+    standAtClimb(w, p, 0.3);
+    wayThrough(w, p);
+    w.haunt!.rest = 0;
+    let standing = 0, episodes = 0, was = false;
+    const seen = new Set<number>();
+    for (let t = 0; t < Math.round(40 / TICK_DT) && p.health > 0; t++) {
+      tick(w);
+      const now = w.haunt!.episode !== null;
+      if (now && !was) episodes++;
+      was = now;
+      for (const e of w.state.enemies.values()) {
+        if (seen.has(e.id)) continue;
+        seen.add(e.id);
+        if (e.ai === AiState.Shade) standing++;
+      }
+    }
+    expect(episodes).toBeGreaterThanOrEqual(1);
+    expect(standing).toBe(0);
+  }, timeLimit(60_000));
 });

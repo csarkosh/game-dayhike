@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CROWD_AHEAD_M, CROWD_APART_M, CROWD_BEHIND_M, CROWD_CLEAR_M, CROWD_FAR_BAND_M, CROWD_KEEP_M, CROWD_MOST, CROWD_NEAR_BAND_M, CROWD_NEAR_SHARE, CROWD_OFF_WAY_M,
   CROWD_CHASE_MPS, CROWD_FADE_S, CROWD_MIST_M, CROWD_PACK, CROWD_PRESS_M, CROWD_RISE_S, CROWD_RUSH, CROWD_RUSH_M, CROWD_TRIES_A_STEP, CROWD_VIEW_COS,
-  crowdSpeed, crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
+  crowdGives, crowdSpeed, crowdTakes, crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
 } from "../../src/game/crowdField.js";
 import { SPRINT_SPEED, WALK_SPEED } from "../../src/sim/constants.js";
 import { WAY_RIM_M } from "../../src/sim/wayDown.js";
@@ -355,5 +355,40 @@ describe("the crowd closing on its player", () => {
     expect(left.length).toBeGreaterThanOrEqual(6);
     for (const f of left) expect(eye.x - f.x).toBeLessThan(CROWD_BEHIND_M);
     for (const a of left) for (const b of left) if (a.id < b.id) expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(CROWD_PRESS_M / 2);
+  });
+});
+
+describe("the crowd and what kills", () => {
+  const crowdOf = (...figures: CrowdFigure[]): Crowd => ({ ...newCrowd(1), figures, nextId: 1000 });
+
+  it("gives the nearest of its figures to a killer the host has raised within 12 m of it: that one begins to go, and no other", () => {
+    const near = figureAt(1, 105, 20), nearer = figureAt(2, 100, 24), far = figureAt(3, 100, 34), going = { ...figureAt(4, 100, 21), gone: 3 };
+    const crowd = crowdOf(near, nearer, far, going);
+    expect(crowdGives(crowd, { x: 100, z: 20 }, 9)).toBe(2);
+    expect(nearer.gone).toBe(9);
+    expect([near.gone, far.gone, going.gone]).toEqual([-1, -1, 3]);
+    // The next killer there takes the next nearest. One past 12 m of every figure takes none, and rises as it always did.
+    expect(crowdGives(crowd, { x: 100, z: 20 }, 10)).toBe(1);
+    expect(crowdGives(crowd, { x: 100, z: 20 }, 11)).toBeNull();
+    expect(far.gone).toBe(-1);
+    expect(crowdGives(crowd, { x: 100, z: 20 }, 12, 15)).toBe(3);
+  });
+
+  it("takes back a killer that has stopped hunting: a figure of the crowd is born where it stood, with a look of its own", () => {
+    const world = straightWorld(), crowd = crowdOf(figureAt(1, 100, 20));
+    crowdTakes(crowd, { x: 140, z: -18 }, 7, world);
+    expect(crowd.figures.length).toBe(2);
+    const born = crowd.figures[1] as CrowdFigure;
+    expect(born).toEqual({ id: 1000, x: 140, z: -18, born: 7, gone: -1, rise: 0, ...figureOf(1000, crowd.seed) });
+    expect(crowd.nextId).toBe(1001);
+  });
+
+  it("leaves nothing where a figure of the crowd may not stand: in the channel, on its clear ground, or on ground that refuses it", () => {
+    const world = straightWorld(), crowd = crowdOf();
+    crowdTakes(crowd, { x: 140, z: 2 }, 7, world);
+    crowdTakes(crowd, { x: 140, z: WAY_RIM_M + CROWD_CLEAR_M - 0.5 }, 7, world);
+    crowdTakes(crowd, { x: 25, z: 15 }, 7, world);
+    expect(crowd.figures.length).toBe(0);
+    expect(crowd.nextId).toBe(1000);
   });
 });

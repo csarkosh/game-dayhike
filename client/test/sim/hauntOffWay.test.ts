@@ -36,14 +36,14 @@ function chase(token: string): { w: World; p: PlayerState; way: WayDown } {
 }
 
 describe("the chase answers a player who leaves the way", { timeout: timeLimit(240_000) }, () => {
-  let run: { seconds: number; off: number; lunges: number; nearestToLine: number; cause: DeathCause; firstAt: number };
+  let run: { seconds: number; off: number; lunges: number; standing: number; nearestToLine: number; cause: DeathCause; firstAt: number };
 
   beforeAll(() => {
     const { w, p, way } = chase("atmo");
     expect(w.state.phase).toBe(Phase.Chase);
     // Down the way for eight seconds, then square off it and on, sprinting, never looking back.
     const seen = new Set<number>();
-    let lunges = 0, nearestToLine = Infinity, off = 0, firstAt = -1, t = 0;
+    let lunges = 0, standing = 0, nearestToLine = Infinity, off = 0, firstAt = -1, t = 0;
     for (; t < 90 / TICK_DT && p.health > 0; t++) {
       const dir = wayDirection(way, wayProject(way, p.pos.x, p.pos.z).s, { x: 0, z: 0 });
       const yaw = t * TICK_DT < 8 ? Math.atan2(dir.x, dir.z) : Math.atan2(-dir.z, dir.x);
@@ -52,13 +52,14 @@ describe("the chase answers a player who leaves the way", { timeout: timeLimit(2
       for (const e of w.state.enemies.values()) {
         if (seen.has(e.id) || (e.ai !== AiState.Shade && e.ai !== AiState.Lunge)) continue;
         seen.add(e.id);
+        if (e.ai === AiState.Shade) standing++;
         if (t * TICK_DT < 8) continue;
         if (firstAt < 0) firstAt = t * TICK_DT;
         if (e.ai === AiState.Lunge) lunges++;
         nearestToLine = Math.min(nearestToLine, chaseLineDistance(w, e.pos.x, e.pos.z));
       }
     }
-    run = { seconds: t * TICK_DT, off, lunges, nearestToLine, cause: p.cause, firstAt };
+    run = { seconds: t * TICK_DT, off, lunges, standing, nearestToLine, cause: p.cause, firstAt };
   }, timeLimit(240_000));
 
   it("something comes for them within seconds of leaving it, wherever they run: the way is the only one, not a trail with another beside it", () => {
@@ -72,6 +73,10 @@ describe("the chase answers a player who leaves the way", { timeout: timeLimit(2
   it("and takes them: they do not get far, and the death is the off-trail one", () => {
     expect(run.seconds).toBeLessThan(45);
     expect(run.cause).toBe(DeathCause.OffTrail);
+  });
+
+  it("what comes is a lunge, never a shade that only stands: the crowd is the standing shades in the chase", () => {
+    expect(run.standing).toBe(0);
   });
 
   it("nothing of it stands in the channel: every shade is as far off the line as a shade ever stands", () => {

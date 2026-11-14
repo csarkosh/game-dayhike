@@ -576,8 +576,10 @@ export function updateHollows(world: World): void {
     else p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
     // A shade of the haunt (not a Hollow: harmless) in the cone fills the
     // stare too, but only to SHADE_STARE_CAP: the dark closes a little on
-    // it, never all the way, as it does on the thing itself.
-    if (!sees && p.stare < SHADE_STARE_CAP) {
+    // it, never all the way, as it does on the thing itself. Not on the way
+    // down, where the woods are full of shades (game/crowdField.ts) and the
+    // dark would never open.
+    if (!sees && p.stare < SHADE_STARE_CAP && !onWay(world)) {
       for (const e of state.enemies.values()) {
         if (e.ai !== AiState.Shade || !playerSees(p, e, world)) continue;
         p.stare = Math.min(SHADE_STARE_CAP, p.stare + fill + empty);

@@ -442,9 +442,15 @@ export function stepHaunt(world: World, dt: number): void {
       // The episode's last shade is its lunge, when it has one, or the shade placed once only HAUNT_REAL_BY_S is left; off the trail in the chase, any shade may be.
       const lunge = (ep.real && (ep.shades === 1 || ep.left <= HAUNT_REAL_BY_S)) || (off > 0 && nextRandom(record.rng) < OFF_TRAIL_REAL_EACH + (1 - OFF_TRAIL_REAL_EACH) * off);
       let at: Vec3 | null = null;
+      // On the way down the standing shades are the crowd's, each screen's own (game/crowdField.ts): the haunt raises
+      // only what lunges, and a shade that would only have stood is one of the episode's count gone by.
+      const stands = !lunge && onWay(world);
       // Every one stands off the line ahead of its player: the trail, or in the chase the way down (chaseLine.ts).
-      for (let i = 0; i < HAUNT_PLACE_TRIES && at === null; i++) at = placeShadeOffTrail(world, target, record.rng);
-      if (at !== null) {
+      for (let i = 0; i < HAUNT_PLACE_TRIES && at === null && !stands; i++) at = placeShadeOffTrail(world, target, record.rng);
+      if (stands) {
+        ep.shades--;
+        ep.nextShade = between(record.rng, HAUNT_SHADE_GAP_S) / (1 + OFF_TRAIL_SHADES_GAIN * off);
+      } else if (at !== null) {
         spawnShade(world, at, target, lunge, between(record.rng, SHADE_DWELL_S));
         // One real one an episode: once it has come, the rest are shades.
         if (lunge) ep.real = false;

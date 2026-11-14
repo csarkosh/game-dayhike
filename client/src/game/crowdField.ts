@@ -153,6 +153,43 @@ export function newCrowd(seed: number): Crowd {
   return { figures: [], rng: { rngSeed: (seed ^ 0x2c0d) >>> 0 }, nextId: 1, seed, steps: 0 };
 }
 
+/** Metres from where the host raises a killer within which a figure of the crowd is the one that turned. */
+export const CROWD_GIVES_M = 12;
+
+/**
+ * The host has raised what can kill (a Hollow, a shade's lunge) at `at`: the
+ * nearest living figure within `within` metres of it begins to go, as the
+ * killer comes in at its own place over the same seconds, so one of the
+ * crowd is seen to turn. Its number, or null where none is near (the killer
+ * rises as it always did).
+ */
+export function crowdGives(crowd: Crowd, at: { x: number; z: number }, seconds: number, within = CROWD_GIVES_M): number | null {
+  let turned: CrowdFigure | null = null, least = within * within;
+  for (const f of crowd.figures) {
+    if (f.gone >= 0) continue;
+    const d2 = (f.x - at.x) * (f.x - at.x) + (f.z - at.z) * (f.z - at.z);
+    if (d2 <= least) {
+      least = d2;
+      turned = f;
+    }
+  }
+  if (turned === null) return null;
+  turned.gone = seconds;
+  return turned.id;
+}
+
+/**
+ * A killer of the host's that has stopped hunting (gone from the state) goes
+ * back into the crowd: a figure is born at `at` as the killer fades. Nothing
+ * is left where a figure of the crowd may not stand (the channel and its
+ * clear ground, ground that refuses it): there it goes into the mist.
+ */
+export function crowdTakes(crowd: Crowd, at: { x: number; z: number }, seconds: number, world: CrowdWorld): void {
+  if (world.project(at.x, at.z).d < WAY_RIM_M + CROWD_CLEAR_M || !world.admit(at.x, at.z)) return;
+  const id = crowd.nextId++;
+  crowd.figures.push({ id, x: at.x, z: at.z, born: seconds, gone: -1, rise: 0, ...figureOf(id, crowd.seed) });
+}
+
 /** Whether the crowd is up: from the summit scene's turn to the way (the way's mist shown) through the chase, while the match is undecided. */
 export function crowdOn(phase: Phase, outcome: Outcome, wayShown: number): boolean {
   return (phase === Phase.Chase || phase === Phase.Scene) && outcome === Outcome.Playing && wayShown > 0;

@@ -126,7 +126,8 @@ import { wayDirection, wayPoint, wayProject } from "./sim/wayDown.js";
 import { groundSpawn } from "./sim/spawn.js";
 import { isOnCorridor } from "./sim/containment.js";
 import { WATCH_SLOPE_NY } from "./sim/watcher.js";
-import { CROWD_MOST, crowdOn, newCrowd, stepCrowd, type Crowd, type CrowdWorld } from "./game/crowdField.js";
+import { CROWD_MOST, crowdGives, crowdOn, crowdTakes, newCrowd, stepCrowd, type Crowd, type CrowdWorld } from "./game/crowdField.js";
+import { isShadeState } from "./sim/haunt.js";
 import { wayLevelFor } from "./game/wayLevel.js";
 import { hasLineOfSight } from "./sim/ai.js";
 import { isHollowState, playerSees } from "./sim/hollow.js";
@@ -608,6 +609,8 @@ function buildGame(
   let crowdHeld: number | null = null;
   let crowdWayFor: World["way"] = null;
   let crowdWorld: CrowdWorld | null = null;
+  /** What can kill, as this screen last saw it in the state: where each stood, and whether it was a shade of the haunt (one that goes back into the crowd). */
+  const crowdKnown = new Map<number, { x: number; z: number; shade: boolean }>();
   /** The explore day's clock (exploreDay.ts): seconds since the hike began, on a calm world. */
   let exploreClockS = 0;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
@@ -1189,6 +1192,20 @@ function buildGame(
     const me = state.players.get(localId);
     const up = me !== undefined && (crowdHeld !== null ? crowdHeld > 0 : crowdOn(state.phase, state.outcome, wayShown));
     const seconds = performance.now() / 1000;
+    // What can kill and the crowd: a killer first seen in the state has the nearest of the crowd to have been (it
+    // goes as the killer comes), and a shade or a lunge gone from the state goes back among them where it stood.
+    if (up && crowdWorld !== null) {
+      for (const e of state.enemies.values()) if (!crowdKnown.has(e.id)) crowdGives(crowd, e.pos, seconds);
+      for (const [id, was] of crowdKnown) if (was.shade && !state.enemies.has(id)) crowdTakes(crowd, was, seconds, crowdWorld);
+    }
+    for (const id of crowdKnown.keys()) if (!state.enemies.has(id)) crowdKnown.delete(id);
+    for (const e of state.enemies.values()) {
+      let known = crowdKnown.get(e.id);
+      if (known === undefined) crowdKnown.set(e.id, (known = { x: 0, z: 0, shade: false }));
+      known.x = e.pos.x;
+      known.z = e.pos.z;
+      known.shade = isShadeState(e.ai);
+    }
     stepCrowd(crowd, up ? crowdWorld : null, me === undefined ? CROWD_NOWHERE : { x: me.pos.x, z: me.pos.z, yaw: me.yaw }, crowdHeld ?? CROWD_MOST[tier], seconds, dt);
     renderer.setCrowd(crowd.figures, seconds);
   }
