@@ -93,6 +93,7 @@ import { LAYER_F0, LAYER_ROUGHNESS, emptyTerrainUniforms, terrainUniforms, type 
 import type { TrailGraph } from "../sim/trail.js";
 import type { Feature } from "../sim/features.js";
 import { loadGroundArrays, reportLayer, type GroundArrays, type GroundArraysFactory } from "./groundMaps.js";
+import { GROUND_ALBEDOS } from "./groundLayers.js";
 import { FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX, FAR_ROUGH_BAND } from "./groundHexParams.js";
 // The key of each light's plain diffuse line; the terrain never carries the
 // foliage light plugin, so the key is never applied twice.
@@ -105,13 +106,6 @@ import groundHexNoise from "./shaders/groundHexNoise.fragment.fx?raw";
 // The far ground's cover: its constants and functions, spliced after the hex
 // include, whose latticeHash its clump noise calls.
 import groundFarCover from "./shaders/groundFarCover.fragment.fx?raw";
-
-import grassUrl from "../../assets/textures/ground.grass.webp?url";
-import floorUrl from "../../assets/textures/ground.forest_floor.webp?url";
-import rockUrl from "../../assets/textures/ground.rock.webp?url";
-import sandUrl from "../../assets/textures/ground.sand.webp?url";
-import pebbleUrl from "../../assets/textures/ground.pebble.webp?url";
-import asphaltUrl from "../../assets/textures/ground.asphalt.webp?url";
 
 /**
  * Each ground albedo's own mean COLOUR, measured off the committed 512² WebPs
@@ -768,12 +762,12 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     // so medium and high compile exactly as without it.
     super(material, "TerrainTexture", 200, { TERRAINTEX: false, ROADPAINT: false, TRAILPAINT: false, FEATUREPAINT: false, TERRAINFARLOW: false });
     this._scene = scene;
-    this._grass = loadGroundTexture(grassUrl, "terrainGrass", scene);
-    this._floor = loadGroundTexture(floorUrl, "terrainFloor", scene);
-    this._rock = loadGroundTexture(rockUrl, "terrainRock", scene);
-    this._sand = loadGroundTexture(sandUrl, "terrainSand", scene);
-    this._pebble = loadGroundTexture(pebbleUrl, "terrainPebble", scene);
-    this._asphalt = loadGroundTexture(asphaltUrl, "roadAsphalt", scene);
+    this._grass = loadGroundTexture(GROUND_ALBEDOS.grass, scene);
+    this._floor = loadGroundTexture(GROUND_ALBEDOS.floor, scene);
+    this._rock = loadGroundTexture(GROUND_ALBEDOS.rock, scene);
+    this._sand = loadGroundTexture(GROUND_ALBEDOS.sand, scene);
+    this._pebble = loadGroundTexture(GROUND_ALBEDOS.pebble, scene);
+    this._asphalt = loadGroundTexture(GROUND_ALBEDOS.asphalt, scene);
     this._textures = [this._grass, this._floor, this._rock, this._sand, this._pebble, this._asphalt];
     this._arrays = (options.groundArrays ?? loadGroundArrays)(scene);
     this._enable(true);
@@ -1180,7 +1174,8 @@ uniform vec4 terrainSwardBand;
 
 /** Trilinear + wrapped, which is what a tiled ground layer needs: mipmaps to
  * stop the distant repeat aliasing into moiré, WRAP so the repeat is seamless. */
-function loadGroundTexture(url: string, name: string, scene: Scene): Texture {
+function loadGroundTexture(albedo: { readonly url: string; readonly sampler: string }, scene: Scene): Texture {
+  const { url, sampler: name } = albedo;
   reportLayer("start", url);
   const landed = () => reportLayer("done", url);
   const texture = new Texture(url, scene, {

@@ -12,7 +12,9 @@
  * Decoding is a browser affair (`createImageBitmap`, `OffscreenCanvas`);
  * NullEngine has no 2D-array textures either, so both are injectable and
  * the pure `interleaveLayers` (and `flipRowsY`) carry the logic
- * a test can pin.
+ * a test can pin. The images, the decode and those two are
+ * `groundLayers.ts`'s, which loads no Babylon; what is here makes the
+ * textures of them.
  *
  * Orientation: WebGL rejects `UNPACK_FLIP_Y_WEBGL` for 3D/array
  * uploads, so `RawTexture2DArray`'s `invertY` is false and `decodeLayer`
@@ -26,88 +28,23 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { reportProgress } from "./modelLoad.js";
 
-import grassN from "../../assets/textures/ground.grass.normal.webp?url";
-import floorN from "../../assets/textures/ground.forest_floor.normal.webp?url";
-import rockN from "../../assets/textures/ground.rock.normal.webp?url";
-import sandN from "../../assets/textures/ground.sand.normal.webp?url";
-import pebbleN from "../../assets/textures/ground.pebble.normal.webp?url";
-import asphaltN from "../../assets/textures/ground.asphalt.normal.webp?url";
-import grassR from "../../assets/textures/ground.grass.rah.webp?url";
-import floorR from "../../assets/textures/ground.forest_floor.rah.webp?url";
-import rockR from "../../assets/textures/ground.rock.rah.webp?url";
-import sandR from "../../assets/textures/ground.sand.rah.webp?url";
-import pebbleR from "../../assets/textures/ground.pebble.rah.webp?url";
-import asphaltR from "../../assets/textures/ground.asphalt.rah.webp?url";
+import {
+  GROUND_LAYERS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, NEUTRAL_NORMAL, NEUTRAL_RAH, decodeGroundLayer, flipRowsY, interleaveLayers,
+} from "./groundLayers.js";
 
-export const GROUND_LAYERS = 6;
-export const GROUND_MAP_SIZE = 512;
-/** Layer order everywhere: grass, floor, rock, sand, pebble, asphalt. */
-export const GROUND_LAYER_URLS = {
-  normal: [grassN, floorN, rockN, sandN, pebbleN, asphaltN],
-  rah: [grassR, floorR, rockR, sandR, pebbleR, asphaltR],
-};
-/** A flat, +Z tangent-space normal. */
-export const NEUTRAL_NORMAL: Uint8ClampedArray = Uint8ClampedArray.from([128, 128, 255, 255]);
-/** Mid roughness, AO's own neutral, mid height. All three RAH channels are
- * packed with their own mean centred on 0.5, so 128 raw is the shared
- * neutral byte for R, G and B alike: the
- * shader divides the blended AO (G) back by 0.5 (`terrainTexture.ts`,
- * `roadPaint.ts`), turning 128/255 ≈ 0.502 into ≈1.0 — a no-op multiplier,
- * not literally "no occlusion" as a flat 255 byte used to mean. */
-export const NEUTRAL_RAH: Uint8ClampedArray = Uint8ClampedArray.from([128, 128, 128, 255]);
+// What the arrays are made from is `groundLayers.ts`'s; named from here too.
+export { GROUND_LAYERS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, NEUTRAL_NORMAL, NEUTRAL_RAH, flipRowsY, interleaveLayers };
 
 export type GroundArrays = { normals: BaseTexture; rah: BaseTexture; readonly ready: Promise<void>; dispose(): void };
 export type GroundArraysFactory = (scene: Scene) => GroundArrays;
 
-export function interleaveLayers(layers: readonly Uint8ClampedArray[], size: number): Uint8Array {
-  if (layers.length !== GROUND_LAYERS) throw new Error(`${layers.length} layers, expected ${GROUND_LAYERS} layers`);
-  const per = size * size * 4;
-  const out = new Uint8Array(per * GROUND_LAYERS);
-  layers.forEach((layer, i) => {
-    if (layer.length !== per) throw new Error(`layer ${i}: ${layer.length} bytes, expected ${per}`);
-    out.set(layer, i * per);
-  });
-  return out;
-}
-
-/** Reverse RGBA row order in place-equivalent fashion (row 0 <-> row
- * `size - 1`, etc.). Pure and Node-testable, unlike the decode around it —
- * see `decodeLayer`'s comment for why this exists instead of an `invertY`
- * flag on the GPU texture. */
-export function flipRowsY(data: Uint8ClampedArray, size: number): Uint8ClampedArray {
-  const rowBytes = size * 4;
-  const out = new Uint8ClampedArray(data.length);
-  for (let row = 0; row < size; row++) {
-    const src = row * rowBytes;
-    out.set(data.subarray(src, src + rowBytes), (size - 1 - row) * rowBytes);
-  }
-  return out;
-}
-
-/** Browser decode: bytes → RGBA at `size`, no colour management — these are
- * data. Flips rows on the CPU (`flipRowsY`) rather than asking the GPU
- * texture to invert Y: WebGL rejects `UNPACK_FLIP_Y_WEBGL` for 3D/array
- * uploads (`texImage3D`: "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for
- * uploading 3D textures"), so `RawTexture2DArray`'s `invertY` below must stay
- * false and the flip has to happen before the data ever reaches the GPU, so
- * the array still agrees with the albedo `Texture`s' default invertY=true on
- * which way v runs over the same planar world-XZ UV. */
+/** A layer's decode (`decodeGroundLayer`: its rows turned over on the CPU,
+ * since `RawTexture2DArray`'s `invertY` below must stay false), told to the
+ * loading bar as it starts and as it ends, however it ends. */
 export async function decodeLayer(url: string, size: number, signal?: AbortSignal): Promise<Uint8ClampedArray> {
   reportLayer("start", url);
   try {
-    const res = await fetch(url, { signal });
-    if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-    const blob = await res.blob();
-    // The decode itself cannot be stopped once begun; this is the last point
-    // before it where a teardown still saves the work.
-    signal?.throwIfAborted();
-    const bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none", premultiplyAlpha: "none" });
-    const canvas = new OffscreenCanvas(size, size);
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (ctx === null) throw new Error("no 2d context");
-    ctx.drawImage(bitmap, 0, 0, size, size);
-    bitmap.close();
-    return flipRowsY(ctx.getImageData(0, 0, size, size).data, size);
+    return await decodeGroundLayer(url, size, signal);
   } finally {
     reportLayer("done", url);
   }

@@ -40,6 +40,8 @@ import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?ra
 import { timeLimit } from "../helpers/timeLimit.js";
 import { featurePaintTable, roadCentreTable, trailPaintTable } from "../../src/game/terrainTables.js";
 import { terrainUniforms } from "../../src/game/terrainUniforms.js";
+import { GROUND_ALBEDOS } from "../../src/game/groundLayers.js";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -1537,5 +1539,20 @@ describe("the uniforms the plugin binds are the terrain's, made without it (terr
     expect(ubo.values).toEqual(rest);
     // What the buffer holds of a uniform never written: zero.
     expect([roadTable, trailInfo, featureInfo]).toEqual([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]);
+  });
+});
+
+describe("the albedos the plugin loads are the ground's layers' (groundLayers.ts)", () => {
+  it("makes one texture a layer, in layer order, from its image, under its sampler's name, read as the layers are described", () => {
+    const active: Texture[] = [];
+    pluginFor("ga1").getActiveTextures(active);
+    const albedos = active.slice(0, 6);
+    expect(albedos.map((t) => [t.name, t.url])).toEqual(Object.values(GROUND_ALBEDOS).map((a) => [a.sampler, a.url]));
+    for (const t of albedos) {
+      // Mipmaps, trilinear, repeating both ways, turned over at upload.
+      expect([t.noMipmap, t.samplingMode, t.wrapU, t.wrapV, t.invertY], t.name).toEqual([
+        false, Texture.TRILINEAR_SAMPLINGMODE, Texture.WRAP_ADDRESSMODE, Texture.WRAP_ADDRESSMODE, true,
+      ]);
+    }
   });
 });
