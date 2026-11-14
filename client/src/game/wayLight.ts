@@ -21,7 +21,7 @@ import type { Rgb } from "./colour.js";
 import { CLOUD_NOISE_SIZE, cloudNoiseMap } from "./cloudParams.js";
 import type { Slices, SyncJobs } from "./syncJobs.js";
 import {
-  WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAVE, WAY_HIDE_SHARE, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT, WAY_MIST_REACH,
+  WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT, WAY_MIST_REACH,
   WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_VERTICES, WAY_POST_LIFT, WAY_SHEET_STRENGTH, WAY_STRATA_M, WAY_VEIL_STRENGTH,
   wayChunk, wayChunks, wayDrift, wayGroundOf, wayHeavePhases, wayMistColour, type WayShape,
 } from "./wayLightGeometry.js";
@@ -29,7 +29,7 @@ import wayLightVertex from "./shaders/wayLight.vertex.fx?raw";
 import wayLightFragment from "./shaders/wayLight.fragment.fx?raw";
 
 export const WAY_LIGHT_NAME = "wayLight";
-export const WAY_LIGHT_UNIFORMS = ["viewProjection", "wayDrift", "wayEye", "wayGain", "wayGround", "wayMist", "wayMove", "wayPath", "wayStrata", "wayTint"] as const;
+export const WAY_LIGHT_UNIFORMS = ["viewProjection", "wayDrift", "wayEye", "wayGain", "wayGround", "wayHead", "wayMist", "wayMove", "wayPath", "wayStrata", "wayTint"] as const;
 export const WAY_LIGHT_SAMPLERS = ["wayNoise"] as const;
 /** Heights of the ground the build asks for in one slice of a frame's share. */
 export const WAY_HEIGHTS_A_SLICE = 24;
@@ -87,6 +87,7 @@ export function createWayLight(scene: Scene, colourPath: "post" | "material", jo
   material.setVector4("wayMove", move);
   material.setFloat("wayGain", 0);
   material.setFloat("wayStrata", WAY_STRATA_M);
+  material.setFloat("wayHead", WAY_HEAD);
   material.setVector4("wayMist", new Vector4(WAY_VEIL_STRENGTH, WAY_FIN_SHARE, WAY_SHEET_STRENGTH, WAY_HIDE_SHARE));
   material.setVector4("wayGround", new Vector4(WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_MIST_REACH));
   material.setVector4("wayPath", new Vector4(WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_NEAR_DAMP, WAY_DENSITY_FLOOR));

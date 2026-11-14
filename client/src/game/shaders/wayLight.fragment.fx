@@ -13,7 +13,9 @@
 // It moves. The shapes drift (wayDrift), the small ones another way from the
 // large and carried by them (wayMove.y), so they curl and change. The banks'
 // tops heave on two crossed waves (wayMove.x of their height, the waves'
-// phases in wayMove.z and wayMove.w).
+// phases in wayMove.z and wayMove.w). A veil's and a fin's mist is held under
+// the head its sheet is built to (wayHead times the height it stands to at
+// rest), so it always ends before its sheet does.
 //
 // Near the eye the shapes smooth to a plain veil and the mist thins to
 // wayPath.z of itself, so it hangs round a runner and never rushes past. A
@@ -34,6 +36,7 @@ uniform vec3 wayTint;
 uniform vec3 wayEye;
 uniform float wayGain;
 uniform float wayStrata;
+uniform float wayHead;
 uniform vec4 wayMist;
 uniform vec4 wayGround;
 uniform vec4 wayPath;
@@ -70,7 +73,7 @@ void main(void) {
   float far = exp(-wayGround.w * d);
 
   float heave = sin(dot(plan, vec2(0.31, 0.22)) - wayMove.z) * sin(dot(plan, vec2(-0.13, 0.19)) + wayMove.w);
-  float top = mix(wayPath.y, vWay.w, bank) * (0.5 + 0.7 * large) * (1.0 + wayMove.x * heave);
+  float top = min(mix(wayPath.y, vWay.w, bank) * (0.5 + 0.7 * large) * (1.0 + wayMove.x * heave), mix(1.0e6, vWay.w * wayHead, standing));
   float fall = 1.0 - smoothstep(0.0, 1.0, up / max(top, 0.01));
 
   float ground = (wayGround.y * core + wayGround.x * band * (0.35 + 0.65 * large) * close) * exp(-wayGround.z * d);

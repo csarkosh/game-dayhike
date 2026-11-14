@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -8,11 +9,11 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { SyncJobs, Slices } from "../../src/game/syncJobs.js";
 import { WAY_HEIGHTS_A_SLICE, WAY_LIGHT_NAME, WAY_LIGHT_SAMPLERS, WAY_LIGHT_UNIFORMS, WAY_WARM_FRAMES, createWayLight } from "../../src/game/wayLight.js";
 import {
-  WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAVE, WAY_HIDE_SHARE, WAY_LIFT_M, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT,
+  WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, WAY_LIFT_M, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT,
   WAY_MIST_REACH, WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_GROUNDS, WAY_POINT_VERTICES, WAY_POST_LIFT, WAY_SHEET_STRENGTH, WAY_STRATA_M, WAY_VEIL_STRENGTH,
   wayDrift, wayHeavePhases, wayMistColour, type WayShape,
 } from "../../src/game/wayLightGeometry.js";
-import { CLOUD_NOISE_SIZE } from "../../src/game/cloudParams.js";
+import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SIZE, CLOUD_NOISE_SMALL_M } from "../../src/game/cloudParams.js";
 
 /** A straight way along +x, a point every 2 m, `n` points. */
 function straight(n: number): WayShape {
@@ -48,6 +49,22 @@ type V4 = { x: number; y: number; z: number; w: number };
 type Held = { _floats: Record<string, number>; _vectors3: Record<string, Vector3>; _vectors4: Record<string, V4>; _textures: Record<string, Texture> };
 const four = (v: V4): number[] => [v.x, v.y, v.z, v.w];
 
+describe("the way's mist: its fragment stage", () => {
+  const fragment = readFileSync("src/game/shaders/wayLight.fragment.fx", "utf8");
+
+  it("reads the noise at the ground mist's two scales, which the drift's shares of a tile are of", () => {
+    expect(fragment).toContain("plan * (1.0 / 11.0) + wayDrift.xy");
+    expect(CLOUD_NOISE_LARGE_M).toBe(11);
+    expect(fragment).toContain("plan * 0.25 + up * vec2(0.37, 0.19)");
+    expect(1 / CLOUD_NOISE_SMALL_M).toBe(0.25);
+  });
+
+  it("holds a standing sheet's mist under the head it is built to, so no veil or fin ends in a cut edge", () => {
+    expect(fragment).toContain("uniform float wayHead;");
+    expect(fragment).toContain("mix(1.0e6, vWay.w * wayHead, standing)");
+  });
+});
+
 describe("the way's mist", () => {
   let engine: NullEngine, scene: Scene;
   const make = (colourPath: "post" | "material" = "post") => {
@@ -70,7 +87,7 @@ describe("the way's mist", () => {
     expect(m.zOffset).toBeLessThan(0);
     expect(m.options.attributes).toEqual(["position", "wayLight"]);
     expect(m.options.uniforms).toEqual([...WAY_LIGHT_UNIFORMS]);
-    expect([...WAY_LIGHT_UNIFORMS]).toEqual(["viewProjection", "wayDrift", "wayEye", "wayGain", "wayGround", "wayMist", "wayMove", "wayPath", "wayStrata", "wayTint"]);
+    expect([...WAY_LIGHT_UNIFORMS]).toEqual(["viewProjection", "wayDrift", "wayEye", "wayGain", "wayGround", "wayHead", "wayMist", "wayMove", "wayPath", "wayStrata", "wayTint"]);
     expect(m.options.samplers).toEqual([...WAY_LIGHT_SAMPLERS]);
     expect([...WAY_LIGHT_SAMPLERS]).toEqual(["wayNoise"]);
     expect(m.options.needAlphaBlending).toBe(true);
@@ -79,6 +96,7 @@ describe("the way's mist", () => {
     expect(four(h._vectors4.wayGround!)).toEqual([WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_MIST_REACH]);
     expect(four(h._vectors4.wayPath!)).toEqual([WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_NEAR_DAMP, WAY_DENSITY_FLOOR]);
     expect(h._floats.wayStrata).toBe(WAY_STRATA_M);
+    expect(h._floats.wayHead).toBe(WAY_HEAD);
     expect(h._floats.wayGain).toBe(0);
     // The ground mist's own noise, tiling, so the way's mist is shaped as the night's is.
     const noise = h._textures.wayNoise!;

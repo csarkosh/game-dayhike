@@ -141,7 +141,8 @@ half pipe was, went white wherever sheets piled up.
 (`WAY_WIND_SCALE`), the small shapes another way from the large and carried by them
 (`WAY_CURL`), so they curl and change and never only slide; and the banks' tops heave by up to
 three tenths of their height (`WAY_HEAVE`) on two crossed waves, a turn every 7 s and every
-11 s. Near the eye the shapes smooth out and the mist thins, so it hangs round a runner and
+11 s. A veil and a fin are built 1.3 times as high as their mist stands at rest (`WAY_HEAD`)
+and the shader holds the mist under that head, so a bank never shows a cut edge along its top. Near the eye the shapes smooth out and the mist thins, so it hangs round a runner and
 does not rush past.
 
 **The dark round it.** While the light is up the rest of the frame is dimmed to half

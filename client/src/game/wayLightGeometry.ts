@@ -22,7 +22,8 @@
  * at a time, each veil's foot and head, and the fin's inner foot and head
  * and outer foot and head. Each vertex carries WAY_LIGHT_FLOATS numbers for
  * the shader: its metres from the line, its metres over the ground, its
- * kind, and the metres the mist stands to where it is.
+ * kind, and the metres the mist stands to where it is (a veil's and a fin's
+ * head is built WAY_HEAD times as high as that).
  */
 import type { Rgb } from "./colour.js";
 import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M, CLOUD_WIND_MPS } from "./cloudParams.js";
@@ -33,6 +34,13 @@ export const WAY_SHEETS_M: readonly number[] = [0, 0.22, 0.45, 0.7, 0.95, 1.25, 
 export const WAY_SHEET_TOP_M = 3;
 /** The veils a side: the metres from the line each stands at and the metres it stands to, before its wandering. */
 export const WAY_VEILS: readonly { out: number; top: number }[] = [{ out: 2.7, top: 2.3 }, { out: 3.7, top: 3.5 }, { out: 4.9, top: 3.0 }];
+/**
+ * A veil and a fin are built this many times as high as their mist stands at
+ * rest. The shader lifts a top with the large shapes (to 1.2 times) and the
+ * heave, and holds it under this head, so the mist always ends before its
+ * sheet does and no bank shows a cut edge along its top.
+ */
+export const WAY_HEAD = 1.3;
 /** A fin: the metres from the line it reaches and the metres it stands to, before its wandering. */
 export const WAY_FIN_REACH_M = 6.4;
 export const WAY_FIN_TOP_M = 3.6;
@@ -211,13 +219,13 @@ export function wayChunk(way: WayShape, heightAt: (x: number, z: number) => numb
       for (let k = 0; k < WAY_VEILS.length; k++) {
         const { out, top } = wayVeilAt(k, side, s);
         put(x + lx * side * out, z + lz * side * out, 0, out, WAY_KIND_VEIL, top);
-        put(x + lx * side * out, z + lz * side * out, top, out, WAY_KIND_VEIL, top);
+        put(x + lx * side * out, z + lz * side * out, top * WAY_HEAD, out, WAY_KIND_VEIL, top);
       }
       const top = wayFinTop(side, s);
       put(x, z, 0, 0, WAY_KIND_FIN, top);
-      put(x, z, top, 0, WAY_KIND_FIN, top);
+      put(x, z, top * WAY_HEAD, 0, WAY_KIND_FIN, top);
       put(x + lx * side * WAY_FIN_REACH_M, z + lz * side * WAY_FIN_REACH_M, 0, WAY_FIN_REACH_M, WAY_KIND_FIN, top);
-      put(x + lx * side * WAY_FIN_REACH_M, z + lz * side * WAY_FIN_REACH_M, top, WAY_FIN_REACH_M, WAY_KIND_FIN, top);
+      put(x + lx * side * WAY_FIN_REACH_M, z + lz * side * WAY_FIN_REACH_M, top * WAY_HEAD, WAY_FIN_REACH_M, WAY_KIND_FIN, top);
     }
   }
   const between = (WAY_ROW_VERTICES - 1) * WAY_SHEETS_M.length + 2 * WAY_VEILS.length;

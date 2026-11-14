@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   WAY_ACROSS_POINTS, WAY_CHUNK_M, WAY_COLD_SHARE, WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_REACH_M, WAY_FIN_SHARE, WAY_FIN_TOP_M, WAY_GROUND_BAND, WAY_GROUND_CORE,
-  WAY_GROUND_REACH, WAY_HEAVE, WAY_HEAVE_RATES, WAY_HIDE_SHARE, WAY_KIND_FIN, WAY_KIND_SHEET, WAY_KIND_VEIL, WAY_LIFT_M, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT, WAY_MIST_REACH,
+  WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HEAVE_RATES, WAY_HIDE_SHARE, WAY_KIND_FIN, WAY_KIND_SHEET, WAY_KIND_VEIL, WAY_LIFT_M, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT, WAY_MIST_REACH,
   WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_GROUNDS, WAY_POINT_VERTICES, WAY_POST_LIFT, WAY_ROW_VERTICES, WAY_SHEETS_M, WAY_SHEET_STRENGTH,
   WAY_SHEET_TOP_M, WAY_SHEET_VERTICES, WAY_STRATA_M, WAY_TINT, WAY_VEILS, WAY_VEIL_STRENGTH, WAY_WIDTH_M, WAY_WIND_SCALE,
   wayChunk, wayChunks, wayDrift, wayFinTop, wayGroundOf, wayHeavePhases, wayMistColour, wayVeilAt, type WayShape,
@@ -30,6 +30,13 @@ describe("the way's mist: its numbers", () => {
     expect(WAY_VEILS).toEqual([{ out: 2.7, top: 2.3 }, { out: 3.7, top: 3.5 }, { out: 4.9, top: 3.0 }]);
     expect([WAY_ROW_VERTICES, WAY_SHEET_VERTICES, WAY_POINT_VERTICES, WAY_POINT_GROUNDS, WAY_LIGHT_FLOATS]).toEqual([15, 105, 125, 23, 4]);
     expect([WAY_KIND_SHEET, WAY_KIND_VEIL, WAY_KIND_FIN]).toEqual([0, 1, 2]);
+  });
+
+  it("builds a veil and a fin taller than its mist stands at rest, with room for the heave: the mist ends before its sheet does", () => {
+    expect(WAY_HEAD).toBe(1.3);
+    // At rest the large shapes lift a top to 1.2 times its height (the shader's 0.5 + 0.7 of them); the heave adds its share on top, and the shader holds the product to WAY_HEAD.
+    expect(WAY_HEAD).toBeGreaterThan(1.2);
+    expect(WAY_HEAD).toBeLessThan(1.2 * (1 + WAY_HEAVE));
   });
 
   it("is the approved look's strengths: fuller on the path, the banks whole", () => {
@@ -130,10 +137,11 @@ describe("a chunk of the way's mist", () => {
         const at = wayVeilAt(k, side === 0 ? 1 : -1, 6);
         expect(Math.abs(c.positions[foot * 3 + 2]!)).toBeCloseTo(at.out, 4);
         expect(c.positions[foot * 3 + 1]).toBeCloseTo(10 + WAY_LIFT_M, 5);
-        expect(c.positions[head * 3 + 1]).toBeCloseTo(10 + WAY_LIFT_M + at.top, 4);
+        expect(c.positions[head * 3 + 1]).toBeCloseTo(10 + WAY_LIFT_M + at.top * WAY_HEAD, 4);
         expect(c.positions[head * 3 + 2]).toBeCloseTo(c.positions[foot * 3 + 2]!, 6);
         expect([...c.light.slice(foot * F, foot * F + 4)]).toEqual([Math.fround(at.out), 0, WAY_KIND_VEIL, Math.fround(at.top)]);
-        expect([...c.light.slice(head * F, head * F + 4)]).toEqual([Math.fround(at.out), Math.fround(at.top), WAY_KIND_VEIL, Math.fround(at.top)]);
+        // Its head is built WAY_HEAD times as high as its mist stands, and still says the height its mist stands to.
+        expect([...c.light.slice(head * F, head * F + 4)]).toEqual([Math.fround(at.out), Math.fround(at.top * WAY_HEAD), WAY_KIND_VEIL, Math.fround(at.top)]);
       }
     }
     // Never far from where it is meant to stand, never the same twice running.
@@ -158,10 +166,10 @@ describe("a chunk of the way's mist", () => {
       expect(c.positions[inFoot * 3 + 2]).toBeCloseTo(0, 6);
       expect(Math.abs(c.positions[outFoot * 3 + 2]!)).toBeCloseTo(WAY_FIN_REACH_M, 5);
       expect(c.positions[inFoot * 3 + 1]).toBeCloseTo(10 + WAY_LIFT_M, 5);
-      expect(c.positions[inHead * 3 + 1]).toBeCloseTo(10 + WAY_LIFT_M + top, 4);
-      expect(c.positions[outHead * 3 + 1]).toBeCloseTo(10 + WAY_LIFT_M + top, 4);
+      expect(c.positions[inHead * 3 + 1]).toBeCloseTo(10 + WAY_LIFT_M + top * WAY_HEAD, 4);
+      expect(c.positions[outHead * 3 + 1]).toBeCloseTo(10 + WAY_LIFT_M + top * WAY_HEAD, 4);
       expect([...c.light.slice(inFoot * F, inFoot * F + 4)]).toEqual([0, 0, WAY_KIND_FIN, Math.fround(top)]);
-      expect([...c.light.slice(outHead * F, outHead * F + 4)]).toEqual([Math.fround(WAY_FIN_REACH_M), Math.fround(top), WAY_KIND_FIN, Math.fround(top)]);
+      expect([...c.light.slice(outHead * F, outHead * F + 4)]).toEqual([Math.fround(WAY_FIN_REACH_M), Math.fround(top * WAY_HEAD), WAY_KIND_FIN, Math.fround(top)]);
     }
     for (let s = 0; s < 400; s += 2) expect(Math.abs(wayFinTop(1, s) / WAY_FIN_TOP_M - 1)).toBeLessThanOrEqual(0.4 + 1e-9);
     // One fin each side.
