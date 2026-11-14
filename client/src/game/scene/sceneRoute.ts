@@ -57,11 +57,15 @@ export type DayhikeScene = {
 };
 export type SceneRun = { dispose(): void; worldState(): WorldState; scene(): BabylonScene; hasWildlife: boolean };
 export type SceneName = "intro" | "title";
-export type SceneRouteDeps = {
+/** What the page gives the route: where it draws, at which tier, and the
+ * engine made for its canvas (absent, the renderer makes WebGL2's). */
+export type ScenePage = {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
   tier: QualityTier;
   engine?: EngineHandle;
+};
+export type SceneRouteDeps = ScenePage & {
   now?: () => number;
   loadCar?: (scene: BabylonScene) => Promise<PlacedModel | null>;
   pool?: CharacterPool;
@@ -99,6 +103,15 @@ async function loadFilmCar(scene: BabylonScene, signal: AbortSignal): Promise<Pl
     if (!signal.aborted) console.warn(`scene: the car did not load (${error instanceof Error ? error.message : String(error)}); its boxes stand in`);
     return null;
   }
+}
+
+/**
+ * The route as the page runs it: `startSceneRoute` on what the page has,
+ * left by `dispose`. What a test or a recorder reads of the route (its
+ * world, its scene) is `startSceneRoute`'s own.
+ */
+export function runSceneRoute(page: ScenePage, search: { t: number | null; step: number | null }, name: SceneName = "intro"): { dispose(): void } {
+  return startSceneRoute(page, search, name);
 }
 
 export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null; step: number | null }, name: SceneName = "intro"): SceneRun {

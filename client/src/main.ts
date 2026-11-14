@@ -29,7 +29,7 @@ import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoad
 import { worldInputs } from "./game/worldInputs.js";
 import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "./game/worldPrep.js";
 import type { PreparedScene } from "./game/preparedScene.js";
-import { startSceneRoute } from "./game/scene/sceneRoute.js";
+import { runSceneRoute } from "./game/scene/sceneRoute.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
 import { inviteLink, parseJoinLink } from "./game/joinLink.js";
@@ -848,7 +848,9 @@ function onPlay(): void {
 // live rebuild of the renderer (`app.ts`), remembered (`dayhike.engine`), or
 // by `?engine=webgl2` in the URL where storage refuses the record.
 
-type GpuModule = typeof import("./game/gpuEngine.js");
+/** What the page uses of the WebGPU module: its translators, and an engine
+ * made for a canvas with the module's watchers. */
+type GpuModule = Pick<typeof import("./game/gpuEngine.js"), "loadTranslators" | "startWebGpu">;
 /** A WebGPU engine made for a canvas, and its module's watchers. */
 type MadeEngine = { engine: EngineHandle; watchers: EngineWatchers };
 
@@ -1076,7 +1078,7 @@ function render(container: HTMLDivElement): void {
           return;
         }
         container.appendChild(canvas);
-        const scene = startSceneRoute({ canvas, container, tier, ...(engine === null ? {} : { engine }) }, parseSceneSearch(location.search), route.name);
+        const scene = runSceneRoute({ canvas, container, tier, ...(engine === null ? {} : { engine }) }, parseSceneSearch(location.search), route.name);
         running = { dispose: () => scene.dispose() };
       });
     paintRoster();
