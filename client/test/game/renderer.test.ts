@@ -1155,8 +1155,11 @@ describe("world shell wiring", () => {
   });
 
   it("draws on an engine it is given, takes up a kept WebGL2 one, and makes WebGL2's own otherwise", () => {
+    // The engine given, else the one a past hike left on the canvas, each held as a handle outside the renderer…
+    expect(src).toContain("const given = options.engine ?? adoptEngine(canvas);");
+    // …and drawn with as the engine it is; with neither, WebGL2's own, its context lost on dispose.
     expect(src).toContain(
-      "const engine = options.engine ?? adoptEngine(canvas) ?? new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);",
+      "const engine = given !== null ? engineOf(given) : new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);",
     );
     expect(src).toMatch(/engine: AbstractEngine;/);
     expect(src).not.toContain("function detectTier(");
