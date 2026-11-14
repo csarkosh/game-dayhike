@@ -315,7 +315,11 @@ export function placeShadeOffTrail(world: World, target: PlayerState, rng: { rng
   const at = admits(world, target.pos.x + (bx / len) * range, target.pos.z + (bz / len) * range, eye);
   if (at === null) return null;
   const d = chaseLineDistance(world, at.x, at.z);
-  return d >= SHADE_TRAIL_OFF_M[0] && d <= SHADE_TRAIL_OFF_M[1] ? at : null;
+  // Where the chase holds its players to the way down, the line is the one way home, with no other trail
+  // beside it: a player who has left it is answered where they are. The place may stand as much further off
+  // the line as they have gone, and never nearer it than a shade ever stands.
+  const gone = onWay(world) ? chaseLineDistance(world, target.pos.x, target.pos.z) : 0;
+  return d >= SHADE_TRAIL_OFF_M[0] && d <= SHADE_TRAIL_OFF_M[1] + gone ? at : null;
 }
 
 /** Spawns a shade or a lunge at `at` for `target`: a shade stands `dwell` seconds, a lunge walks at the target for at most LUNGE_MAX_S. */

@@ -119,6 +119,17 @@ returned there, did not leave the way.
 A first attempt meets the crest's Hollow alone. A Hollow that steps out to a place and then
 hunts (`spawnHollowStepping`, once the forks' Hollow) is kept for what will step into the way.
 
+**Leaving it is answered where the player is.** A shade or a lunge stands 15 to 20 m off the
+line, and while the line was the trail there was always trail near enough for one to stand
+beside. The way is the only line: a player 25 m and more off it, looking away, had nowhere in
+view for anything to stand, and met nothing until the crest's Hollow reached them a minute and
+a half later. On the way, the place a shade is tried at round the player's own look may stand as
+much further off the line as the player has gone (`placeShadeOffTrail`), never nearer it than
+15 m, so nothing of it stands in the channel; and off the line every shade is a lunge, as
+before. The chase's first episode also comes at once: the rest it began under (up to half a
+minute late in a climb, a minute and more for a find that came early) is cut to the chase's own
+2 s as the chase begins (`summit.ts`).
+
 ## 3. The light (`game/wayLightGeometry.ts`, `game/wayLight.ts`, `game/wayLevel.ts`)
 
 **The shape.** Taller ground mist, not a wall. Across the way the mist is thin on the path

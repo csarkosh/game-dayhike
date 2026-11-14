@@ -17,7 +17,7 @@ import { isOnCorridor } from "./containment.js";
 import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
 import { wayOf } from "./wayDraw.js";
 import { hideWatcher } from "./watcher.js";
-import { isShadeState } from "./haunt.js";
+import { HAUNT_REST_CHASE, isShadeState } from "./haunt.js";
 import { ENEMY_HALF, PLAYER_HALF } from "./constants.js";
 import { stemAhead } from "./trailRoute.js";
 
@@ -162,6 +162,9 @@ export function stepSummit(world: World): void {
     // climb (app.ts), is somehow not done.
     wayOf(world);
     state.phase = Phase.Chase;
+    // The chase's first episode comes as soon as any of its own: the climb's rest it began under (up to half a
+    // minute late in a climb, a minute and more for a find that came early) is not waited out.
+    if (world.haunt !== null && world.haunt.rest > HAUNT_REST_CHASE[1]) world.haunt.rest = HAUNT_REST_CHASE[1];
     return;
   }
 
