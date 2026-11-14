@@ -9,6 +9,7 @@ layout(set = 1, binding = 3) uniform LeftOver {
     vec3 wayEye;
     float wayGain;
     float wayStrata;
+    float wayHead;
     vec4 wayMist;
     vec4 wayGround;
     vec4 wayPath;

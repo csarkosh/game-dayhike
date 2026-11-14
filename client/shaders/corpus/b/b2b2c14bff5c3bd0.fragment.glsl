@@ -9,6 +9,7 @@ layout(set = 1, binding = 3) uniform LeftOver {
     vec3 wayEye;
     float wayGain;
     float wayStrata;
+    float wayHead;
     vec4 wayMist;
     vec4 wayGround;
     vec4 wayPath;
@@ -38,7 +39,9 @@ float textureOutputHeight_;
 // It moves. The shapes drift (wayDrift), the small ones another way from the
 // large and carried by them (wayMove.y), so they curl and change. The banks'
 // tops heave on two crossed waves (wayMove.x of their height, the waves'
-// phases in wayMove.z and wayMove.w).
+// phases in wayMove.z and wayMove.w). A veil's and a fin's mist is held under
+// the head its sheet is built to (wayHead times the height it stands to at
+// rest), so it always ends before its sheet does.
 //
 // Near the eye the shapes smooth to a plain veil and the mist thins to
 // wayPath.z of itself, so it hangs round a runner and never rushes past. A
@@ -54,6 +57,7 @@ float textureOutputHeight_;
 // COMMENT RULES: never put a semicolon inside a trailing comment on a code
 // line, and never spell a hashed preprocessor keyword in comment prose. The
 // shaderHygiene test enforces both.
+
 
 
 
@@ -92,15 +96,16 @@ float core = 1.0 - smoothstep(1.5, 4.0, lateral);
 float close = mix(wayPath.z, 1.0, smoothstep(1.0, 10.0, d));
 float far = exp(-wayGround.w * d);
 float heave = sin(dot(plan, vec2(0.31, 0.22)) - wayMove.z) * sin(dot(plan, vec2(-0.13, 0.19)) + wayMove.w);
-float top = mix(wayPath.y, vWay.w, bank) * (0.5 + 0.7 * large) * (1.0 + wayMove.x * heave);
+float top = min(mix(wayPath.y, vWay.w, bank) * (0.5 + 0.7 * large) * (1.0 + wayMove.x * heave), mix(1.0e6, vWay.w * wayHead, standing));
 float fall = 1.0 - smoothstep(0.0, 1.0, up / max(top, 0.01));
 float ground = (wayGround.y * core + wayGround.x * band * (0.35 + 0.65 * large) * close) * exp(-wayGround.z * d);
 float veil = wayMist.x * band * smoothstep(0.0, 0.4, up) * fall * mix(wayPath.w, 1.0, small) * mix(1.0, wayMist.y, isFin) * close * far;
   // A sheet is wisps and gaps.
 float sheet = wayMist.z * band * fall * mix(wayPath.w, 1.0, smoothstep(0.3, 0.75, small)) * close * far;
   // How squarely the eye looks at this face, from the face itself, so a sheet lying on a slope is judged by its own lie.
-vec3 face = normalize(cross(dFdx(vPlace), (-yFactor_)*dFdy(vPlace)));
-float facing = abs(dot(face, (vPlace - wayEye) / max(d, 0.001)));
+  // A face too small to have a lie (a fragment against the eye) is given none, never a division by nothing.
+vec3 face = cross(dFdx(vPlace), (-yFactor_)*dFdy(vPlace));
+float facing = abs(dot(face, vPlace - wayEye)) * inversesqrt(max(dot(face, face), 1.0e-20)) / max(d, 0.001);
 float edge = mix(mix(1.0, smoothstep(0.04, 0.25, facing), isSheet), smoothstep(0.04, 0.3, facing), isFin);
 float amount = clamp(mix(mix(ground, sheet, isSheet), veil, standing) * edge * smoothstep(0.3, 2.0, d) * wayGain, 0.0, 1.0);
 glFragColor = vec4(wayTint * amount, amount * wayMist.w);
