@@ -129,7 +129,9 @@ import { lakeOf } from "../sim/helpers/lakes.js";
 function stubRenderer(id: string, log: string[], sky: Promise<void> = Promise.resolve()): Renderer {
   return {
     id,
-    engine: { stopRenderLoop: () => log.push(`stop ${id}`), runRenderLoop: () => log.push(`run ${id}`) },
+    engine: {},
+    stopLoop: () => log.push(`stop ${id}`),
+    runLoop: () => log.push(`run ${id}`),
     scene: { id },
     skyReady: () => sky,
     dispose: () => log.push(`dispose ${id}`),

@@ -1932,7 +1932,7 @@ function buildGame(
   /** The frame's draw: every frame, or one every `COVERED_DRAW_MS` while the intro's film covers the hike. */
   const filmDraw = createCoveredDraw();
   function drawHike(): void {
-    if (filmDraw.due(performance.now())) renderer.scene.render();
+    if (filmDraw.due(performance.now())) renderer.drawFrame();
   }
 
   let last = performance.now();
@@ -2484,7 +2484,7 @@ function buildGame(
   // renderer swapped in meanwhile takes the wait over (`whenStandingSkyHeld`),
   // since the one it replaced never resolves its own, and starts its own loop.
   const firstBuild = Promise.all([clipmapBuilt, whenStandingSkyHeld(() => renderer, nextSwap)]).then(() => {
-    if (!disposed && !broken && renderer === built) built.engine.runRenderLoop(loop);
+    if (!disposed && !broken && renderer === built) built.runLoop(loop);
   });
   progress?.start("world", "bakes");
   void renderer.forestReady.then(
@@ -2755,7 +2755,7 @@ function buildGame(
     abandon: () => renderer.abandon(),
     record: (reason) => options.engineFailed(reason),
     cover: coverPlay,
-    stopLoop: () => renderer.engine.stopRenderLoop(),
+    stopLoop: () => renderer.stopLoop(),
     // The answer shows the line for what the rebuild ended on; the swap's
     // own is dropped, so it shows once.
     rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {
@@ -2807,9 +2807,9 @@ function buildGame(
         cover: coverPlay,
         stopLoop: () => {
           const stopped = renderer;
-          stopped.engine.stopRenderLoop();
+          stopped.stopLoop();
           return () => {
-            if (!disposed && !broken && renderer === stopped) stopped.engine.runRenderLoop(loop);
+            if (!disposed && !broken && renderer === stopped) stopped.runLoop(loop);
           };
         },
         idleCadence: () => timeIdleCadence(AbortSignal.timeout(GOVERNOR_IDLE_MAX_MS)),
@@ -2892,7 +2892,7 @@ function buildGame(
       // Before anything of the engine goes: a disposed engine is not a
       // failing one.
       engineBindings.unwatch();
-      if (!broken) renderer.engine.stopRenderLoop();
+      if (!broken) renderer.stopLoop();
       session?.dispose();
       admission?.dispose();
       for (const off of unsubscribe) off();

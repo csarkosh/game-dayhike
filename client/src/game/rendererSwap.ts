@@ -240,7 +240,7 @@ function climb(
   bindings: SwapBindings,
   taken: () => void,
 ): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
-  current.renderer.engine.stopRenderLoop(bindings.loop);
+  current.renderer.stopLoop(bindings.loop);
   bindings.unwatch();
   bindings.extras.dispose();
   current.renderer.dispose();
@@ -266,7 +266,7 @@ function climb(
       // starts it a turn later, so a rung taken down in this turn starts none.
       const standing = renderer;
       void standing.skyReady().then(() => {
-        if (stands && !standing.engine.isDisposed) standing.engine.runRenderLoop(bindings.loop);
+        if (stands && !standing.engine.isDisposed) standing.runLoop(bindings.loop);
       });
       if (engine !== null && watch !== null) bindings.watch(renderer, watch);
       engineFaultShown(engineThrow, tier, bindings);

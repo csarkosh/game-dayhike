@@ -1811,6 +1811,14 @@ export type Renderer = {
    */
   project(pos: Vec3): { x: number; y: number; depth: number } | null;
   resize(): void;
+  /** Draws one frame of the world as the last `sync` left it. */
+  drawFrame(): void;
+  /** Calls `frame` once for each frame the page shows from now on, until
+   * `stopLoop`: the loop that steps the world and draws it. */
+  runLoop(frame: () => void): void;
+  /** Stops calling `frame`; with none named, every function `runLoop` was
+   * given. */
+  stopLoop(frame?: () => void): void;
   /**
    * The engine has failed (`answerFailures`): the asynchronous work still
    * under way on it, which would otherwise poll a dead engine until the
@@ -3751,6 +3759,15 @@ function buildRenderer(
     },
     resize() {
       engine.resize();
+    },
+    drawFrame() {
+      scene.render();
+    },
+    runLoop(frame) {
+      engine.runRenderLoop(frame);
+    },
+    stopLoop(frame) {
+      engine.stopRenderLoop(frame);
     },
     abandon() {
       forestMeshes?.abandon();
