@@ -117,3 +117,123 @@ export function placeCrowd(world: CrowdWorld, eye: { x: number; z: number; yaw: 
   }
   return { x, z };
 }
+
+/** A screen's crowd: its figures, its own stream (never the sim's), the next figure's number, and the seed its figures' looks come from. */
+export type Crowd = { figures: CrowdFigure[]; rng: { rngSeed: number }; nextId: number; seed: number };
+export function newCrowd(seed: number): Crowd {
+  return { figures: [], rng: { rngSeed: (seed ^ 0x2c0d) >>> 0 }, nextId: 1, seed };
+}
+
+/**
+ * Places tried in one step; the seconds a figure takes to come and to go;
+ * how far off the player's look is out of their view (its cosine: 60
+ * degrees); and the metres past which the mist leaves only a figure's eyes,
+ * so one may be added there in view (as a pair of eyes opening).
+ */
+export const CROWD_TRIES_A_STEP = 4;
+export const CROWD_RISE_S = 2.4;
+export const CROWD_FADE_S = 2.6;
+export const CROWD_VIEW_COS = 0.5;
+export const CROWD_MIST_M = 30;
+/** Metres past CROWD_AHEAD_M a figure may be before it is taken away, and metres from a player off the way past which one is. */
+const AHEAD_SLACK_M = 20;
+const OFF_WAY_FAR_M = CROWD_OFF_WAY_M[1] + 10;
+
+const clamp01 = (t: number): number => (t <= 0 ? 0 : t >= 1 ? 1 : t);
+
+/** How much of a figure is there, 0 to 1: in over CROWD_RISE_S from its birth, out over CROWD_FADE_S from when it began to go. */
+export function presenceOf(f: CrowdFigure, seconds: number): number {
+  const come = clamp01((seconds - f.born) / CROWD_RISE_S);
+  return f.gone < 0 ? come : come * (1 - clamp01((seconds - f.gone) / CROWD_FADE_S));
+}
+
+/**
+ * A step of the crowd round a player at `eye` (their place and the yaw of
+ * their look), `seconds` on the screen's clock, `dt` since the last step.
+ *
+ * With no world, or `most` at nothing, every figure begins to go. Otherwise
+ * each figure walks toward the player at its own pace. One ahead of the
+ * player's place on the way keeps clear of the channel as it comes, sliding
+ * along beside it; one the player has passed is free to step in behind them.
+ * A figure goes when it has come within CROWD_KEEP_M of its player, has been
+ * left CROWD_BEHIND_M behind, is too far down the way, or, round a player
+ * who has left the way, is too far from them; at once where it is out of
+ * their view, by fading where it is in it. And while there are fewer than
+ * the way wants, places are tried: one is kept only where it is out of the
+ * player's view or past the mist's reach, so nothing appears in plain sight
+ * (round a player off the way they rise close, and their rise is the fade).
+ */
+export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: number; z: number; yaw: number }, most: number, seconds: number, dt: number): void {
+  const figures = crowd.figures;
+  if (world === null || most <= 0) {
+    for (const f of figures) if (f.gone < 0) f.gone = seconds;
+    crowd.figures = figures.filter((f) => seconds - f.gone < CROWD_FADE_S);
+    return;
+  }
+  const here = world.project(eye.x, eye.z);
+  const offWay = Math.max(0, here.d - WAY_RIM_M);
+  const lookX = Math.sin(eye.yaw), lookZ = Math.cos(eye.yaw);
+  const seen = (x: number, z: number, d: number): boolean => d > 0 && ((x - eye.x) * lookX + (z - eye.z) * lookZ) / d >= CROWD_VIEW_COS;
+  const kept: CrowdFigure[] = [];
+  let alive = 0;
+  for (const f of figures) {
+    if (f.gone >= 0) {
+      if (seconds - f.gone < CROWD_FADE_S) kept.push(f);
+      continue;
+    }
+    const dx = eye.x - f.x, dz = eye.z - f.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    const at = world.project(f.x, f.z);
+    const ahead = at.s > here.s;
+    // Its step toward the player; ahead of them, along beside the way where the step would take it into the channel.
+    if (d > 0) {
+      const step = Math.min(f.pace * dt, d);
+      let nx = f.x + (dx / d) * step, nz = f.z + (dz / d) * step;
+      if (ahead && world.project(nx, nz).d < WAY_RIM_M + CROWD_CLEAR_M) {
+        world.direction(at.s, ALONG);
+        nx = f.x - ALONG.x * step;
+        nz = f.z - ALONG.z * step;
+      }
+      if ((!ahead || world.project(nx, nz).d >= WAY_RIM_M + CROWD_CLEAR_M) && world.admit(nx, nz)) {
+        f.x = nx;
+        f.z = nz;
+      }
+    }
+    const nd = Math.sqrt((eye.x - f.x) * (eye.x - f.x) + (eye.z - f.z) * (eye.z - f.z));
+    const going = nd <= CROWD_KEEP_M || at.s < here.s - CROWD_BEHIND_M || at.s > here.s + CROWD_AHEAD_M + AHEAD_SLACK_M || (offWay > 0 && nd > OFF_WAY_FAR_M);
+    if (going) {
+      // Out of view it is simply gone. In view it fades.
+      if (!seen(f.x, f.z, nd)) continue;
+      f.gone = seconds;
+    } else alive++;
+    kept.push(f);
+  }
+  const want = crowdTarget(world.length > 0 ? here.s / world.length : 0, most);
+  // More than the way wants now (the road is coming): the one furthest from the player goes.
+  if (alive > want) {
+    let far: CrowdFigure | null = null, farD = -1;
+    for (const f of kept) {
+      if (f.gone >= 0) continue;
+      const d = (eye.x - f.x) * (eye.x - f.x) + (eye.z - f.z) * (eye.z - f.z);
+      if (d > farD) {
+        farD = d;
+        far = f;
+      }
+    }
+    if (far !== null) {
+      far.gone = seconds;
+      alive--;
+    }
+  }
+  for (let t = 0; t < CROWD_TRIES_A_STEP && alive < want; t++) {
+    const p = placeCrowd(world, eye, kept, crowd.rng, offWay);
+    if (p === null) continue;
+    const d = Math.sqrt((p.x - eye.x) * (p.x - eye.x) + (p.z - eye.z) * (p.z - eye.z));
+    const inView = seen(p.x, p.z, d);
+    if (offWay <= 0 && inView && d < CROWD_MIST_M) continue;
+    const id = crowd.nextId++;
+    kept.push({ id, x: p.x, z: p.z, born: seconds, gone: -1, rise: inView && offWay <= 0 ? 1 : 0, ...figureOf(id, crowd.seed) });
+    alive++;
+  }
+  crowd.figures = kept;
+}

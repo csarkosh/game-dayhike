@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   CROWD_AHEAD_M, CROWD_APART_M, CROWD_BEHIND_M, CROWD_CLEAR_M, CROWD_FAR_BAND_M, CROWD_KEEP_M, CROWD_MOST, CROWD_NEAR_BAND_M, CROWD_NEAR_SHARE, CROWD_OFF_WAY_M,
-  crowdTarget, figureOf, placeCrowd, type CrowdFigure, type CrowdWorld,
+  CROWD_FADE_S, CROWD_MIST_M, CROWD_RISE_S, CROWD_TRIES_A_STEP, CROWD_VIEW_COS,
+  crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
 } from "../../src/game/crowdField.js";
 import { WAY_RIM_M } from "../../src/sim/wayDown.js";
 
@@ -123,5 +124,126 @@ describe("where a figure of the crowd may stand", () => {
     for (let i = 0; i < 50; i++) { placeCrowd(open, eye, [], a, 0); placeCrowd(shut, eye, [], b, 0); }
     expect(a.rngSeed).toBe(b.rngSeed);
     expect(placeCrowd(shut, eye, [], b, 0)).toBeNull();
+  });
+});
+
+describe("the crowd, stepped", () => {
+  const DT = 1 / 60;
+  const living = (c: Crowd): CrowdFigure[] => c.figures.filter((f) => f.gone < 0);
+  const inView = (eye: { x: number; z: number; yaw: number }, f: { x: number; z: number }): boolean => {
+    const dx = f.x - eye.x, dz = f.z - eye.z, d = Math.hypot(dx, dz);
+    return d > 0 && (dx * Math.sin(eye.yaw) + dz * Math.cos(eye.yaw)) / d >= CROWD_VIEW_COS;
+  };
+
+  it("names its numbers", () => {
+    expect([CROWD_TRIES_A_STEP, CROWD_RISE_S, CROWD_FADE_S, CROWD_VIEW_COS, CROWD_MIST_M]).toEqual([4, 2.4, 2.6, 0.5, 30]);
+  });
+
+  it("fills to what the way wants within seconds and never passes it, and nothing is ever added in plain view inside the mist's reach", () => {
+    const world = straightWorld(), crowd = newCrowd(3), eye = { x: 200, z: 0, yaw: Math.PI / 2 };
+    const seen = new Set<number>();
+    for (let i = 0; i < 300; i++) {
+      stepCrowd(crowd, world, eye, 60, i * DT, DT);
+      expect(living(crowd).length).toBeLessThanOrEqual(60);
+      for (const f of crowd.figures) {
+        if (seen.has(f.id)) continue;
+        seen.add(f.id);
+        const d = Math.hypot(f.x - eye.x, f.z - eye.z);
+        expect(d >= CROWD_MIST_M || !inView(eye, f), `figure ${f.id} born ${d.toFixed(1)} m off in view`).toBe(true);
+        // One born in view, far off, opens its eyes there. Any other comes out of the mist.
+        expect(f.rise).toBe(inView(eye, f) ? 1 : 0);
+      }
+    }
+    expect(living(crowd).length).toBe(crowdTarget(0.5, 60));
+  });
+
+  it("keeps a runner's woods full the whole way down: never many short of what the way wants, never over it", () => {
+    const world = straightWorld(), crowd = newCrowd(8);
+    let worstShort = 0, behindInChannel = false;
+    for (let i = 0; i < 50 * 60; i++) {
+      const eye = { x: 20 + 7 * i * DT, z: 0, yaw: Math.PI / 2 };
+      stepCrowd(crowd, world, eye, 60, i * DT, DT);
+      const want = crowdTarget(eye.x / 400, 60), have = living(crowd).length;
+      expect(have).toBeLessThanOrEqual(want + 1);
+      if (i * DT > 10) worstShort = Math.max(worstShort, want - have);
+      for (const f of living(crowd)) {
+        // Ahead of the runner's own place on the way nothing stands in the channel or within 3 m of its rim.
+        if (f.x > eye.x) expect(Math.abs(f.z)).toBeGreaterThanOrEqual(WAY_RIM_M + CROWD_CLEAR_M - 1e-6);
+        else if (Math.abs(f.z) < WAY_RIM_M) behindInChannel = true;
+      }
+    }
+    expect(worstShort).toBeLessThanOrEqual(8);
+    // What the runner has passed follows, and steps into the channel behind them.
+    expect(behindInChannel).toBe(true);
+  });
+
+  it("comes toward a player who stands still, and none of it reaches them: a figure 6 m off begins to go", () => {
+    const world = straightWorld(), crowd = newCrowd(4), eye = { x: 200, z: 0, yaw: Math.PI / 2 };
+    let nearest = Infinity, closed = false;
+    const first = new Map<number, number>();
+    for (let i = 0; i < 40 * 60; i++) {
+      stepCrowd(crowd, world, eye, 60, i * DT, DT);
+      for (const f of living(crowd)) {
+        const d = Math.hypot(f.x - eye.x, f.z - eye.z);
+        nearest = Math.min(nearest, d);
+        if (!first.has(f.id)) first.set(f.id, d);
+        else if (d < first.get(f.id)! - 5) closed = true;
+      }
+      if (i * DT > 10) expect(living(crowd).length).toBeGreaterThanOrEqual(crowdTarget(0.5, 60) - 8);
+    }
+    expect(closed).toBe(true);
+    expect(nearest).toBeGreaterThan(CROWD_KEEP_M - 0.1);
+  });
+
+  it("is drawn in round a player who leaves the way, and is never more than the most", () => {
+    const world = straightWorld(), crowd = newCrowd(6);
+    for (let i = 0; i < 5 * 60; i++) stepCrowd(crowd, world, { x: 200, z: 0, yaw: Math.PI / 2 }, 60, i * DT, DT);
+    const eye = { x: 200, z: 31, yaw: 0 };
+    for (let i = 5 * 60; i < 20 * 60; i++) {
+      stepCrowd(crowd, world, eye, 60, i * DT, DT);
+      expect(living(crowd).length).toBeLessThanOrEqual(60);
+    }
+    const round = living(crowd);
+    expect(round.length).toBeGreaterThanOrEqual(10);
+    for (const f of round) expect(Math.hypot(f.x - eye.x, f.z - eye.z)).toBeLessThanOrEqual(26);
+  });
+
+  it("goes when there is no way to stand beside: every figure fades, and none is left", () => {
+    const world = straightWorld(), crowd = newCrowd(2), eye = { x: 200, z: 0, yaw: Math.PI / 2 };
+    for (let i = 0; i < 300; i++) stepCrowd(crowd, world, eye, 60, i * DT, DT);
+    expect(crowd.figures.length).toBeGreaterThan(40);
+    const from = 300 * DT;
+    stepCrowd(crowd, null, eye, 60, from, DT);
+    expect(living(crowd).length).toBe(0);
+    expect(crowd.figures.length).toBeGreaterThan(0);
+    stepCrowd(crowd, null, eye, 60, from + CROWD_FADE_S + 0.1, DT);
+    expect(crowd.figures.length).toBe(0);
+    // And with the most at nothing (the console's hold), the same.
+    const held = newCrowd(2);
+    for (let i = 0; i < 60; i++) stepCrowd(held, world, eye, 0, i * DT, DT);
+    expect(held.figures.length).toBe(0);
+  });
+
+  it("a figure's presence comes in over its rise and goes out over its fade", () => {
+    const f: CrowdFigure = { id: 1, x: 0, z: 0, born: 10, gone: -1, rise: 0, ...figureOf(1, 1) };
+    expect(presenceOf(f, 10)).toBe(0);
+    expect(presenceOf(f, 10 + CROWD_RISE_S / 2)).toBeCloseTo(0.5, 6);
+    expect(presenceOf(f, 10 + CROWD_RISE_S + 5)).toBe(1);
+    const going = { ...f, gone: 20 };
+    expect(presenceOf(going, 20)).toBe(1);
+    expect(presenceOf(going, 20 + CROWD_FADE_S / 2)).toBeCloseTo(0.5, 6);
+    expect(presenceOf(going, 20 + CROWD_FADE_S)).toBe(0);
+    // One that began to go before it had risen never jumps up.
+    expect(presenceOf({ ...f, gone: 10.6 }, 10.6)).toBeCloseTo(0.25, 6);
+  });
+
+  it("is each screen's own: the same seed and the same steps give the same crowd, another seed another", () => {
+    const run = (seed: number): CrowdFigure[] => {
+      const world = straightWorld(), crowd = newCrowd(seed);
+      for (let i = 0; i < 200; i++) stepCrowd(crowd, world, { x: 150 + i * 0.1, z: 0, yaw: Math.PI / 2 }, 60, i * DT, DT);
+      return crowd.figures;
+    };
+    expect(run(5)).toEqual(run(5));
+    expect(run(5)).not.toEqual(run(6));
   });
 });
