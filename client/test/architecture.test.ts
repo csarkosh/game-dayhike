@@ -551,8 +551,11 @@ describe("layer boundaries", () => {
    * the module is built and loads nothing, so only the imports that load a
    * module are followed.
    */
-  it("what the terrain is drawn with is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["terrainTables.ts", "terrainUniforms.ts", "groundLayers.ts", "wetSurface.ts", "terrainVertices.ts"];
+  it("what the terrain and the air are drawn with is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = [
+      "terrainTables.ts", "terrainUniforms.ts", "groundLayers.ts", "wetSurface.ts", "terrainVertices.ts",
+      "atmosphereParams.ts", "cloudParams.ts", "skyState.ts", "weather.ts",
+    ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();

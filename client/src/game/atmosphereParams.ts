@@ -2,6 +2,7 @@ import { clamp01, mixRgb, type Rgb } from "./colour.js";
 import type { Vec3 } from "./sky.js";
 import type { SkyState } from "./skyState.js";
 import { airColourUnder, dreadWorldUnder, fogDensityUnder, type WeatherParams } from "./weather.js";
+import { cloudUniforms, emptyCloudUniforms, type CloudState, type CloudUniforms } from "./cloudParams.js";
 
 /**
  * The pure arithmetic of the atmosphere plugin: height fog, the distance
@@ -129,4 +130,69 @@ export function atmosphereUnder(w: WeatherParams, sky: SkyState, viewDistance: n
     sunPower: sky.glowPower,
     farColour: { r: sky.mistAir.r, g: sky.mistAir.g, b: sky.mistAir.b },
   };
+}
+
+/**
+ * The atmosphere's uniforms by name: the air's, in the order the plugin
+ * declares them, then the ground cloud's (`cloudParams.ts`).
+ */
+export type AtmosphereUniforms = {
+  /** 1 once there is a record to draw the air by; 0 before, when the fog is Babylon's own. */
+  atmOn: [number];
+  /** The distance fog's density (exponential squared). Babylon carries it as
+   * the scene's fog density, which every material's fog reads, so the
+   * plugin declares no uniform of this name. */
+  atmBaseDensity: [number];
+  atmHeightDensity: [number];
+  atmHeightFalloff: [number];
+  atmReferenceLevel: [number];
+  /** One over the view distance: the gradient's far end. */
+  atmGradientScale: [number];
+  atmSunPower: [number];
+  atmSunWeight: [number];
+  /** Unit and level: toward the glow. */
+  atmSunDir: [number, number, number];
+  atmSunColour: [number, number, number];
+  /** The gradient's far end, the fog's colour. */
+  atmFarColour: [number, number, number];
+} & CloudUniforms;
+
+/** A record of the right shape, every component zero, for `atmosphereUniforms` to fill. */
+export function emptyAtmosphereUniforms(): AtmosphereUniforms {
+  return {
+    atmOn: [0], atmBaseDensity: [0], atmHeightDensity: [0], atmHeightFalloff: [0], atmReferenceLevel: [0], atmGradientScale: [0],
+    atmSunPower: [0], atmSunWeight: [0], atmSunDir: [0, 0, 0], atmSunColour: [0, 0, 0], atmFarColour: [0, 0, 0],
+    ...emptyCloudUniforms(),
+  };
+}
+
+/**
+ * The uniforms the air is drawn with under `record` (`atmosphereUnder`: an
+ * hour's sky state and a weather), over the ground cloud `cloud` marched in
+ * `cloudSteps`. With no record yet the air is off: `atmOn` and the air's own
+ * are zero, and the cloud takes no steps. Fills and returns `out` (a record
+ * of its own when none is given).
+ */
+export function atmosphereUniforms(
+  record: AtmosphereRecord | null, cloud: CloudState, cloudSteps: number, out: AtmosphereUniforms = emptyAtmosphereUniforms(),
+): AtmosphereUniforms {
+  cloudUniforms(cloud, record === null ? 0 : cloudSteps, out);
+  out.atmOn[0] = record === null ? 0 : 1;
+  out.atmBaseDensity[0] = record?.baseDensity ?? 0;
+  out.atmHeightDensity[0] = record?.heightDensity ?? 0;
+  out.atmHeightFalloff[0] = record?.heightFalloff ?? 0;
+  out.atmReferenceLevel[0] = record?.referenceLevel ?? 0;
+  out.atmGradientScale[0] = record?.gradientScale ?? 0;
+  out.atmSunPower[0] = record?.sunPower ?? 0;
+  out.atmSunWeight[0] = record?.sunWeight ?? 0;
+  out.atmSunDir[0] = record?.sunDir.x ?? 0;
+  out.atmSunDir[1] = record?.sunDir.y ?? 0;
+  out.atmSunDir[2] = record?.sunDir.z ?? 0;
+  out.atmSunColour[0] = record?.sunColour.r ?? 0;
+  out.atmSunColour[1] = record?.sunColour.g ?? 0;
+  out.atmSunColour[2] = record?.sunColour.b ?? 0;
+  out.atmFarColour[0] = record?.farColour.r ?? 0;
+  out.atmFarColour[1] = record?.farColour.g ?? 0;
+  out.atmFarColour[2] = record?.farColour.b ?? 0;
+  return out;
 }

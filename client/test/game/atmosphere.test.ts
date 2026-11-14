@@ -10,8 +10,9 @@ import "@babylonjs/core/Shaders/ShadersInclude/fogFragment.js";
 import atmosphereFragment from "../../src/game/shaders/atmosphereFog.fragment.fx?raw";
 import { ATMOSPHERE_FOG_ANCHOR, createAtmosphere, type Atmosphere } from "../../src/game/atmosphere.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
-import { fogGradientUnder, GRADIENT_BIAS, GRADIENT_NEAR_DIM, GRADIENT_STEPS, AIR_POWER, airTransmittance, HAZE, groundHazeAmount, heightFogAmount } from "../../src/game/atmosphereParams.js";
-import { CLOUD_NOISE_SIZE } from "../../src/game/cloudParams.js";
+import { fogGradientUnder, GRADIENT_BIAS, GRADIENT_NEAR_DIM, GRADIENT_STEPS, AIR_POWER, airTransmittance, HAZE, groundHazeAmount, heightFogAmount, atmosphereUniforms } from "../../src/game/atmosphereParams.js";
+import { CLOUD_NOISE_SIZE, cloudGroundMap } from "../../src/game/cloudParams.js";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
@@ -113,6 +114,51 @@ describe("createAtmosphere", () => {
     atmosphere.update(WEATHER_PRESETS.mist, sky);
     const g = fogGradientUnder(WEATHER_PRESETS.mist, sky);
     expect(atmosphere.nearColour()).toEqual(g[0]);
+  });
+});
+
+describe("the uniforms the plugin binds are the atmosphere's, made without it (atmosphereParams.ts)", () => {
+  type Bound = { bindForSubMesh(buffer: UniformBuffer): void; getUniforms(): { ubo: { name: string; size: number }[] } };
+  const pluginOf = (name: string): Bound => new PBRMaterial(name, scene).pluginManager!.getPlugin("Atmosphere") as unknown as Bound;
+  const recorder = (): { buffer: UniformBuffer; writes: Record<string, number[]> } => {
+    const writes: Record<string, number[]> = {};
+    const buffer = {
+      updateFloat: (n: string, x: number) => { writes[n] = [x]; },
+      updateFloat2: (n: string, x: number, y: number) => { writes[n] = [x, y]; },
+      updateFloat3: (n: string, x: number, y: number, z: number) => { writes[n] = [x, y, z]; },
+      updateFloat4: (n: string, x: number, y: number, z: number, w: number) => { writes[n] = [x, y, z, w]; },
+      setTexture: () => undefined,
+    } as unknown as UniformBuffer;
+    return { buffer, writes };
+  };
+
+  it("declares each by the record's name and size, in its order; the distance fog's density is the scene's", () => {
+    const made = atmosphereUniforms(null, atmosphere.cloud, 0);
+    const declared = pluginOf("au1").getUniforms().ubo.map((u) => [u.name, u.size]);
+    expect(declared).toEqual(Object.entries(made).filter(([name]) => name !== "atmBaseDensity").map(([name, v]) => [name, v.length]));
+  });
+
+  it("writes only that it is off, and no steps, before the first update", () => {
+    const { buffer, writes } = recorder();
+    pluginOf("au2").bindForSubMesh(buffer);
+    expect(writes).toEqual({ atmOn: [0], atmCloudSteps: [0] });
+  });
+
+  it("writes every one as the record has it at night under mist, the cloud marched in the materials", () => {
+    const sky = skyStateFor(table, 22, WEATHER_PRESETS.mist);
+    atmosphere.update(WEATHER_PRESETS.mist, sky);
+    atmosphere.setCloudGround(cloudGroundMap((x, z) => 50 + 0.05 * (x + z), 120, -80));
+    atmosphere.setCloud(0.6, 8, 41.5, 0.25);
+    const { buffer, writes } = recorder();
+    pluginOf("au3").bindForSubMesh(buffer);
+    const { atmBaseDensity, ...bound } = atmosphereUniforms(atmosphere.record, atmosphere.cloud, 8);
+    expect(writes).toEqual(bound);
+    expect(writes.atmCloudSteps).toEqual([8]);
+    expect(scene.fogDensity).toBe(atmBaseDensity[0]);
+    // While the post chain marches the cloud, the materials take no steps, the rest as it was.
+    atmosphere.setCloudInPost(true);
+    pluginOf("au4").bindForSubMesh(buffer);
+    expect(writes).toEqual({ ...bound, atmCloudSteps: [0] });
   });
 });
 

@@ -161,3 +161,123 @@ export function cloudGroundMap(elevation: (x: number, z: number) => number, cx: 
   }
   return { data, base: lo, range, centreX: cx, centreZ: cz };
 }
+
+/** The cloud for a frame. */
+export type CloudState = {
+  /** The density knob, 0 to 1 (cloudDensityUnder), the steps the tier marches (0: no cloud), and the haunt's level, which the cloud stands taller by. */
+  density: number;
+  steps: number;
+  haunt: number;
+  /** The clock, seconds, for the wind. */
+  seconds: number;
+  /** The cloud's colour, linear. */
+  colour: Rgb;
+  /** The ground map's centre, base and range (cloudGroundMap). */
+  ground: { centreX: number; centreZ: number; base: number; range: number };
+};
+
+/** No cloud, over no ground yet: the state before the first frame sets one. */
+export function noCloud(): CloudState {
+  return { density: 0, steps: 0, haunt: 0, seconds: 0, colour: { r: 0, g: 0, b: 0 }, ground: { centreX: 0, centreZ: 0, base: 0, range: 1 } };
+}
+
+/**
+ * `state` for a frame: its density knob and the haunt's level, each held to
+ * [0, 1], the tier's steps, the clock, and its colour under the air's near
+ * colour (`cloudColourUnder`: dark by night, pale by day). The ground it
+ * rests on is kept.
+ */
+export function cloudFor(state: CloudState, density: number, steps: number, seconds: number, haunt: number, near: Rgb): CloudState {
+  return { ...state, density: Math.max(0, Math.min(1, density)), steps, seconds, haunt: Math.max(0, Math.min(1, haunt)), colour: cloudColourUnder(near) };
+}
+
+/** `state` resting on `ground`: the map's centre, base and range. */
+export function cloudOn(state: CloudState, ground: CloudGround): CloudState {
+  return { ...state, ground: { centreX: ground.centreX, centreZ: ground.centreZ, base: ground.base, range: ground.range } };
+}
+
+/**
+ * Lays `ground` into the cloud's map (`cloudNoiseMap`, RGBA8): the height in
+ * B and how far off the trail in A, beside the noise in R and G. The one map
+ * is read bilinearly, repeating both ways for the noise; the ground's reads
+ * are held half a texel inside its edge by the shader.
+ */
+export function writeCloudGround(map: Uint8Array, ground: CloudGround): void {
+  for (let i = 0; i < CLOUD_GROUND_SIZE * CLOUD_GROUND_SIZE; i++) {
+    map[i * 4 + 2] = ground.data[i * 4] as number;
+    map[i * 4 + 3] = ground.data[i * 4 + 3] as number;
+  }
+}
+
+/** The density knob at or under which the cloud is not marched at all. */
+export const CLOUD_MARCH_FLOOR = 0.002;
+
+/** The steps the cloud's march takes this frame: the tier's where it has density, else none. */
+export function cloudMarchSteps(state: CloudState): number {
+  return state.density > CLOUD_MARCH_FLOOR ? state.steps : 0;
+}
+
+/** The cloud's uniforms by name, in the order the atmosphere declares them. */
+export type CloudUniforms = {
+  /** Extinction a metre at the ground: CLOUD_SIGMA times the density knob. */
+  atmCloudDensity: [number];
+  /** The march's steps; 0 draws no cloud. */
+  atmCloudSteps: [number];
+  atmCloudRange: [number];
+  /** One over the cloud's height (`cloudHeightUnder`). */
+  atmCloudFalloff: [number];
+  atmCloudSeat: [number];
+  /** Metres the ground map's byte spans. */
+  atmCloudGroundRange: [number];
+  atmCloudNear: [number];
+  atmCloudTrail: [number];
+  /** One over the large and the small shapes' tile, metres. */
+  atmCloudNoiseScale: [number, number];
+  /** The wind's drift of the two reads, in tiles, each folded to [0, 1). */
+  atmCloudWind: [number, number];
+  /** (the glow toward the sun, its sharpness). */
+  atmCloudGlow: [number, number];
+  atmCloudColour: [number, number, number];
+  /** (the ground map's centre x and z, one over its span, its base height). */
+  atmCloudGroundRect: [number, number, number, number];
+};
+
+/** A record of the right shape, every component zero, for `cloudUniforms` to fill. */
+export function emptyCloudUniforms(): CloudUniforms {
+  return {
+    atmCloudDensity: [0], atmCloudSteps: [0], atmCloudRange: [0], atmCloudFalloff: [0], atmCloudSeat: [0],
+    atmCloudGroundRange: [0], atmCloudNear: [0], atmCloudTrail: [0], atmCloudNoiseScale: [0, 0], atmCloudWind: [0, 0],
+    atmCloudGlow: [0, 0], atmCloudColour: [0, 0, 0], atmCloudGroundRect: [0, 0, 0, 0],
+  };
+}
+
+/**
+ * The cloud's uniforms for `c`, marched in `steps` (0: none; the caller's,
+ * since the materials take none while the post chain marches the cloud).
+ * Fills and returns `out` (a record of its own when none is given).
+ */
+export function cloudUniforms(c: CloudState, steps: number, out: CloudUniforms = emptyCloudUniforms()): CloudUniforms {
+  out.atmCloudSteps[0] = steps;
+  out.atmCloudDensity[0] = CLOUD_SIGMA * c.density;
+  out.atmCloudRange[0] = CLOUD_RANGE;
+  out.atmCloudFalloff[0] = 1 / cloudHeightUnder(c.haunt);
+  out.atmCloudSeat[0] = CLOUD_SEAT;
+  out.atmCloudGroundRange[0] = c.ground.range;
+  out.atmCloudNear[0] = CLOUD_NEAR_M;
+  out.atmCloudTrail[0] = CLOUD_TRAIL_SHARE;
+  out.atmCloudNoiseScale[0] = 1 / CLOUD_NOISE_LARGE_M;
+  out.atmCloudNoiseScale[1] = 1 / CLOUD_NOISE_SMALL_M;
+  const wind = (c.seconds * CLOUD_WIND_MPS) / CLOUD_NOISE_LARGE_M;
+  out.atmCloudWind[0] = wind % 1;
+  out.atmCloudWind[1] = (wind * 0.6) % 1;
+  out.atmCloudGlow[0] = CLOUD_GLOW;
+  out.atmCloudGlow[1] = CLOUD_GLOW_POWER;
+  out.atmCloudColour[0] = c.colour.r;
+  out.atmCloudColour[1] = c.colour.g;
+  out.atmCloudColour[2] = c.colour.b;
+  out.atmCloudGroundRect[0] = c.ground.centreX;
+  out.atmCloudGroundRect[1] = c.ground.centreZ;
+  out.atmCloudGroundRect[2] = 1 / CLOUD_GROUND_SPAN;
+  out.atmCloudGroundRect[3] = c.ground.base;
+  return out;
+}

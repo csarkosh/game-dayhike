@@ -21,12 +21,14 @@ import { HOLLOW_MATERIAL } from "./hollowLook.js";
 import type { WeatherParams } from "./weather.js";
 import type { SkyState } from "./skyState.js";
 import {
-  atmosphereUnder, fogGradientUnder, GRADIENT_STEPS, type AtmosphereRecord,
+  atmosphereUnder, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientUnder, GRADIENT_STEPS, type AtmosphereRecord,
 } from "./atmosphereParams.js";
 import {
-  CLOUD_GLOW, CLOUD_GLOW_POWER, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_NEAR_M, CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SIZE, CLOUD_NOISE_SMALL_M,
-  CLOUD_RANGE, CLOUD_SEAT, CLOUD_SIGMA, CLOUD_TRAIL_SHARE, CLOUD_WIND_MPS, cloudColourUnder, cloudHeightUnder, cloudNoiseMap, type CloudGround,
+  CLOUD_NOISE_SIZE, cloudFor, cloudMarchSteps, cloudNoiseMap, cloudOn, cloudUniforms, emptyCloudUniforms, noCloud, writeCloudGround,
+  type CloudGround, type CloudState, type CloudUniforms,
 } from "./cloudParams.js";
+
+export type { CloudState };
 
 /**
  * The regex key that replaces Babylon's fog line. `fogFragment` reads
@@ -41,19 +43,7 @@ const ATMOSPHERE_FOG_CODE = "finalColor.rgb=atmosphereFog(finalColor.rgb,fog);";
 let current: AtmosphereRecord | null = null;
 /** The ground cloud's map (cloudParams.ts, noise in R and G, the ground in B), and its state for the frame. */
 let cloudMapTexture: RawTexture | null = null;
-export type CloudState = {
-  /** The density knob, 0 to 1 (cloudDensityUnder), the steps the tier marches (0: no cloud), and the haunt's level, which the cloud stands taller by. */
-  density: number;
-  steps: number;
-  haunt: number;
-  /** The clock, seconds, for the wind. */
-  seconds: number;
-  /** The cloud's colour, linear. */
-  colour: Rgb;
-  /** The ground map's centre, base and range (cloudGroundMap). */
-  ground: { centreX: number; centreZ: number; base: number; range: number };
-};
-let cloud: CloudState = { density: 0, steps: 0, haunt: 0, seconds: 0, colour: { r: 0, g: 0, b: 0 }, ground: { centreX: 0, centreZ: 0, base: 0, range: 1 } };
+let cloud: CloudState = noCloud();
 /** Whether a registration is live: from `createAtmosphere` until its dispose. */
 let registered = false;
 /** Whether the post chain marches the cloud, once a pixel on the scene's
@@ -63,28 +53,35 @@ let registered = false;
  * Apple M4; once a pixel it is the same arithmetic on the same ray. */
 let cloudInPost = false;
 
-/** Writes the cloud's uniforms, `steps` the march's (0: no cloud), through a
- * material's uniform buffer or a pass's effect alike. */
-type CloudSink = { float(name: string, v: number): void; float2(name: string, a: number, b: number): void; float3(name: string, a: number, b: number, c: number): void; float4(name: string, a: number, b: number, c: number, d: number): void };
-function writeCloud(sink: CloudSink, c: CloudState, steps: number): void {
-  sink.float("atmCloudSteps", steps);
-  sink.float("atmCloudDensity", CLOUD_SIGMA * c.density);
-  sink.float("atmCloudRange", CLOUD_RANGE);
-  sink.float("atmCloudFalloff", 1 / cloudHeightUnder(c.haunt));
-  sink.float("atmCloudSeat", CLOUD_SEAT);
-  sink.float("atmCloudGroundRange", c.ground.range);
-  sink.float("atmCloudNear", CLOUD_NEAR_M);
-  sink.float("atmCloudTrail", CLOUD_TRAIL_SHARE);
-  sink.float2("atmCloudNoiseScale", 1 / CLOUD_NOISE_LARGE_M, 1 / CLOUD_NOISE_SMALL_M);
-  const wind = (c.seconds * CLOUD_WIND_MPS) / CLOUD_NOISE_LARGE_M;
-  sink.float2("atmCloudWind", wind % 1, (wind * 0.6) % 1);
-  sink.float2("atmCloudGlow", CLOUD_GLOW, CLOUD_GLOW_POWER);
-  sink.float3("atmCloudColour", c.colour.r, c.colour.g, c.colour.b);
-  sink.float4("atmCloudGroundRect", c.ground.centreX, c.ground.centreZ, 1 / CLOUD_GROUND_SPAN, c.ground.base);
-}
 /** The cloud's march this frame: its steps where it has density and maps, else 0. */
 function cloudSteps(): number {
-  return current !== null && cloudMapTexture !== null && cloud.density > 0.002 ? cloud.steps : 0;
+  return current !== null && cloudMapTexture !== null ? cloudMarchSteps(cloud) : 0;
+}
+
+/** The uniforms of the material bind under way (`atmosphereUniforms`), filled again at each: one record for every plugin. */
+const bound = emptyAtmosphereUniforms();
+/** The cloud's uniforms as the post chain's pass is bound them (`cloudUniforms`). */
+const boundToPass = emptyCloudUniforms();
+/** The cloud's uniforms' names, in the order they are written. */
+const CLOUD_UNIFORM_NAMES = [
+  "atmCloudSteps", "atmCloudDensity", "atmCloudRange", "atmCloudFalloff", "atmCloudSeat", "atmCloudGroundRange", "atmCloudNear",
+  "atmCloudTrail", "atmCloudNoiseScale", "atmCloudWind", "atmCloudGlow", "atmCloudColour", "atmCloudGroundRect",
+] as const satisfies readonly (keyof CloudUniforms)[];
+
+/** Writes one uniform's components to a material's uniform buffer. */
+function toBuffer(buffer: UniformBuffer, name: string, v: CloudUniforms[keyof CloudUniforms]): void {
+  if (v.length === 1) buffer.updateFloat(name, v[0]);
+  else if (v.length === 2) buffer.updateFloat2(name, v[0], v[1]);
+  else if (v.length === 3) buffer.updateFloat3(name, v[0], v[1], v[2]);
+  else buffer.updateFloat4(name, v[0], v[1], v[2], v[3]);
+}
+
+/** Writes one uniform's components to a pass's effect. */
+function toEffect(effect: Effect, name: string, v: CloudUniforms[keyof CloudUniforms]): void {
+  if (v.length === 1) effect.setFloat(name, v[0]);
+  else if (v.length === 2) effect.setFloat2(name, v[0], v[1]);
+  else if (v.length === 3) effect.setFloat3(name, v[0], v[1], v[2]);
+  else effect.setFloat4(name, v[0], v[1], v[2], v[3]);
 }
 
 /**
@@ -183,28 +180,25 @@ class AtmospherePlugin extends MaterialPluginBase {
       uniformBuffer.updateFloat("atmCloudSteps", 0);
       return;
     }
-    // The cloud: off (no steps) while it has no density or no maps, and in
-    // the materials while the post chain marches it (`cloudInPost`).
-    writeCloud(
-      {
-        float: (n, v) => uniformBuffer.updateFloat(n, v),
-        float2: (n, a, b) => uniformBuffer.updateFloat2(n, a, b),
-        float3: (n, a, b, c) => uniformBuffer.updateFloat3(n, a, b, c),
-        float4: (n, a, b, c, d) => uniformBuffer.updateFloat4(n, a, b, c, d),
-      },
+    const u = atmosphereUniforms(
+      r,
       cloud,
+      // The cloud: off (no steps) while it has no density or no maps, and in
+      // the materials while the post chain marches it (`cloudInPost`).
       cloudInPost ? 0 : cloudSteps(),
+      bound,
     );
-    uniformBuffer.updateFloat("atmOn", 1);
-    uniformBuffer.updateFloat("atmHeightDensity", r.heightDensity);
-    uniformBuffer.updateFloat("atmHeightFalloff", r.heightFalloff);
-    uniformBuffer.updateFloat("atmReferenceLevel", r.referenceLevel);
-    uniformBuffer.updateFloat("atmGradientScale", r.gradientScale);
-    uniformBuffer.updateFloat("atmSunPower", r.sunPower);
-    uniformBuffer.updateFloat("atmSunWeight", r.sunWeight);
-    uniformBuffer.updateFloat3("atmSunDir", r.sunDir.x, r.sunDir.y, r.sunDir.z);
-    uniformBuffer.updateFloat3("atmSunColour", r.sunColour.r, r.sunColour.g, r.sunColour.b);
-    uniformBuffer.updateFloat3("atmFarColour", r.farColour.r, r.farColour.g, r.farColour.b);
+    for (const name of CLOUD_UNIFORM_NAMES) toBuffer(uniformBuffer, name, u[name]);
+    uniformBuffer.updateFloat("atmOn", u.atmOn[0]);
+    uniformBuffer.updateFloat("atmHeightDensity", u.atmHeightDensity[0]);
+    uniformBuffer.updateFloat("atmHeightFalloff", u.atmHeightFalloff[0]);
+    uniformBuffer.updateFloat("atmReferenceLevel", u.atmReferenceLevel[0]);
+    uniformBuffer.updateFloat("atmGradientScale", u.atmGradientScale[0]);
+    uniformBuffer.updateFloat("atmSunPower", u.atmSunPower[0]);
+    uniformBuffer.updateFloat("atmSunWeight", u.atmSunWeight[0]);
+    uniformBuffer.updateFloat3("atmSunDir", u.atmSunDir[0], u.atmSunDir[1], u.atmSunDir[2]);
+    uniformBuffer.updateFloat3("atmSunColour", u.atmSunColour[0], u.atmSunColour[1], u.atmSunColour[2]);
+    uniformBuffer.updateFloat3("atmFarColour", u.atmFarColour[0], u.atmFarColour[1], u.atmFarColour[2]);
   }
 
   override getCustomCode(shaderType: string): Nullable<{ [pointName: string]: string }> {
@@ -317,15 +311,12 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
       return gradient[0] ?? { r: 0, g: 0, b: 0 };
     },
     setCloud(density, steps, seconds, haunt = 0) {
-      cloud = { ...cloud, density: Math.max(0, Math.min(1, density)), steps, seconds, haunt: Math.max(0, Math.min(1, haunt)), colour: cloudColourUnder(gradient[0] ?? { r: 0, g: 0, b: 0 }) };
+      cloud = cloudFor(cloud, density, steps, seconds, haunt, gradient[0] ?? { r: 0, g: 0, b: 0 });
     },
     setCloudGround(g) {
-      for (let i = 0; i < CLOUD_GROUND_SIZE * CLOUD_GROUND_SIZE; i++) {
-        cloudMap[i * 4 + 2] = g.data[i * 4] as number;
-        cloudMap[i * 4 + 3] = g.data[i * 4 + 3] as number;
-      }
+      writeCloudGround(cloudMap, g);
       map.update(cloudMap);
-      cloud = { ...cloud, ground: { centreX: g.centreX, centreZ: g.centreZ, base: g.base, range: g.range } };
+      cloud = cloudOn(cloud, g);
     },
     get cloud() {
       return cloud;
@@ -338,16 +329,8 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
       const r = current;
       effect.setFloat3("atmSunDir", r?.sunDir.x ?? 0, r?.sunDir.y ?? 1, r?.sunDir.z ?? 0);
       effect.setFloat3("atmSunColour", r?.sunColour.r ?? 0, r?.sunColour.g ?? 0, r?.sunColour.b ?? 0);
-      writeCloud(
-        {
-          float: (n, v) => effect.setFloat(n, v),
-          float2: (n, a, b) => effect.setFloat2(n, a, b),
-          float3: (n, a, b, c) => effect.setFloat3(n, a, b, c),
-          float4: (n, a, b, c, d) => effect.setFloat4(n, a, b, c, d),
-        },
-        cloud,
-        cloudSteps(),
-      );
+      const c = cloudUniforms(cloud, cloudSteps(), boundToPass);
+      for (const name of CLOUD_UNIFORM_NAMES) toEffect(effect, name, c[name]);
     },
     dispose() {
       UnregisterMaterialPlugin("Atmosphere");
