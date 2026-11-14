@@ -42,16 +42,12 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
+import { conformUniforms } from "./groundConform.js";
 
-/** Model-space height over which the conform fades to nothing (m). Sized so the
- * weight is still ~0.99 across a giant's root plate, which ends by model
- * y = 0.25, and gone before the trunk is clear of it. */
-export const GROUND_CONFORM_RAMP = 0.8;
-
-/** How far past the local ground plane the downhill edge is pushed. 1.0 leaves
- * a p90 gap of 0.339 m, 1.5 gives 0.316 m, 2.0 gives 0.296 m for more burial —
- * so 1.5. Browser-tunable, like the WIND_AMP constants. */
-export const GROUND_CONFORM_OVERSHOOT = 1.5;
+// The constants, the displacement as arithmetic and the uniforms the conform
+// is drawn with are `groundConform.ts`'s, which loads no engine; named from
+// here too.
+export * from "./groundConform.js";
 
 const CONFORM_DEFS = `
 #ifdef GROUNDCONFORM
@@ -78,27 +74,8 @@ worldPos.y += gcW * min(0.0, gcOvershoot * dot(gcOff, groundGrad));
 #endif
 `;
 
-/** The arithmetic of CONFORM_GLSL, in TypeScript, so the analytic gate and the
- * shader cannot drift apart. `modelY` is the vertex's model-space height;
- * `offX`/`offZ` are its world-space horizontal offset from the instance
- * origin; `dx`/`dz` are the local ground gradient at the instance (the
- * `groundGrad` attribute), i.e. how far the ground rises per metre moved in
- * world X/Z. */
-export function conformDisplacement(
-  offX: number,
-  offZ: number,
-  modelY: number,
-  dx: number,
-  dz: number,
-): number {
-  const t = Math.min(1, Math.max(0, modelY / GROUND_CONFORM_RAMP));
-  const w = 1 - t * t * (3 - 2 * t);
-  // `+ 0` scrubs the signed zero IEEE 754 produces at w === 0 (+0 * a negative
-  // plane term is -0): GLSL draws -0.0 and 0.0 identically, but JS's `toBe`
-  // does not, so leaving it in would fail the ramp-top test over a distinction
-  // that has no shader-visible meaning.
-  return w * Math.min(0, GROUND_CONFORM_OVERSHOOT * (offX * dx + offZ * dz)) + 0;
-}
+/** The uniforms every conformed material binds (`conformUniforms`). */
+const bound = conformUniforms();
 
 export class GroundConformPlugin extends MaterialPluginBase {
   constructor(material: Material) {
@@ -144,8 +121,8 @@ uniform float gcOvershoot;
   // unsuppressed.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override bindForSubMesh(uniformBuffer: UniformBuffer, _scene: Scene, _engine: AbstractEngine, _subMesh: SubMesh): void {
-    uniformBuffer.updateFloat("gcRamp", GROUND_CONFORM_RAMP);
-    uniformBuffer.updateFloat("gcOvershoot", GROUND_CONFORM_OVERSHOOT);
+    uniformBuffer.updateFloat("gcRamp", bound.gcRamp[0]);
+    uniformBuffer.updateFloat("gcOvershoot", bound.gcOvershoot[0]);
   }
 
   override getCustomCode(shaderType: string): { [pointName: string]: string } | null {

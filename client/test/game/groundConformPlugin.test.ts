@@ -2,6 +2,7 @@ import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
 import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors.js";
@@ -12,6 +13,7 @@ import {
   GROUND_CONFORM_OVERSHOOT,
   GROUND_CONFORM_RAMP,
 } from "../../src/game/groundConformPlugin.js";
+import { conformUniforms } from "../../src/game/groundConform.js";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -41,6 +43,16 @@ describe("ground conform plugin", () => {
     const active = (mat.pluginManager as unknown as { _activePlugins: unknown[] })._activePlugins;
     expect(active).toContain(plugin);
     expect(active.filter((p) => p instanceof GroundConformPlugin)).toHaveLength(1);
+  });
+
+  it("declares the uniforms conformUniforms makes, by name and size, and binds each as the record has it", () => {
+    const plugin = pluginFor("conform_bound");
+    const made = conformUniforms();
+    expect(plugin.getUniforms().ubo.map((u) => [u.name, u.size])).toEqual(Object.entries(made).map(([name, v]) => [name, v.length]));
+    const writes: Record<string, number[]> = {};
+    const ubo = { updateFloat: (n: string, x: number) => { writes[n] = [x]; } } as unknown as UniformBuffer;
+    plugin.bindForSubMesh(ubo, scene, engine, null as never);
+    expect(writes).toEqual(made);
   });
 
   it("declares the per-instance gradient attribute", () => {
