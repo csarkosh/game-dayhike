@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CROWD_AHEAD_M, CROWD_APART_M, CROWD_BEHIND_M, CROWD_CLEAR_M, CROWD_FAR_BAND_M, CROWD_KEEP_M, CROWD_MOST, CROWD_NEAR_BAND_M, CROWD_NEAR_SHARE, CROWD_OFF_WAY_M,
-  CROWD_FADE_S, CROWD_MIST_M, CROWD_RISE_S, CROWD_TRIES_A_STEP, CROWD_VIEW_COS,
-  crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
+  CROWD_CHASE_MPS, CROWD_FADE_S, CROWD_MIST_M, CROWD_PACK, CROWD_PRESS_M, CROWD_RISE_S, CROWD_RUSH, CROWD_RUSH_M, CROWD_TRIES_A_STEP, CROWD_VIEW_COS,
+  crowdSpeed, crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
 } from "../../src/game/crowdField.js";
+import { SPRINT_SPEED, WALK_SPEED } from "../../src/sim/constants.js";
 import { WAY_RIM_M } from "../../src/sim/wayDown.js";
 
 /** A straight way along +x, 400 m long, and ground that admits everything but one square beside it. */
@@ -245,5 +246,114 @@ describe("the crowd, stepped", () => {
     };
     expect(run(5)).toEqual(run(5));
     expect(run(5)).not.toEqual(run(6));
+  });
+});
+
+describe("the crowd closing on its player", () => {
+  const DT = 1 / 60;
+  const living = (c: Crowd): CrowdFigure[] => c.figures.filter((f) => f.gone < 0);
+  const crowdOf = (...figures: CrowdFigure[]): Crowd => ({ ...newCrowd(1), figures, nextId: 1000 });
+
+  it("names its numbers", () => {
+    expect([CROWD_RUSH, CROWD_RUSH_M, CROWD_CHASE_MPS, CROWD_PACK, CROWD_PRESS_M]).toEqual([3.6, 22, 9, 10, 3]);
+  });
+
+  it("runs in from far off and stalks the last metres: a figure's own pace where it would go, several times it past 22 m, never slower for being further", () => {
+    for (const pace of [0.6, 1, 1.4]) {
+      expect(crowdSpeed(pace, CROWD_KEEP_M, false)).toBe(pace);
+      expect(crowdSpeed(pace, 2, false)).toBe(pace);
+      expect(crowdSpeed(pace, CROWD_RUSH_M, false)).toBeCloseTo(pace * CROWD_RUSH, 9);
+      expect(crowdSpeed(pace, 90, false)).toBeCloseTo(pace * CROWD_RUSH, 9);
+      for (let d = 0; d < 60; d += 0.5) {
+        expect(crowdSpeed(pace, d + 0.5, false)).toBeGreaterThanOrEqual(crowdSpeed(pace, d, false));
+        expect(crowdSpeed(pace, d + 0.5, true)).toBeGreaterThanOrEqual(crowdSpeed(pace, d, true));
+      }
+    }
+  });
+
+  it("gives chase faster than a player sprints, and holds off a runner's heels: what follows keeps its distance from one who runs and closes on one who stops", () => {
+    expect(CROWD_CHASE_MPS).toBeGreaterThan(SPRINT_SPEED + 1);
+    for (const pace of [0.6, 1.4]) {
+      expect(crowdSpeed(pace, CROWD_RUSH_M, true)).toBe(CROWD_CHASE_MPS);
+      for (const run of [WALK_SPEED, SPRINT_SPEED]) {
+        // The distance a chaser keeps behind a player moving at `run`: where its speed is theirs.
+        let held = CROWD_KEEP_M;
+        while (crowdSpeed(pace, held, true) < run) held += 0.1;
+        expect(held).toBeGreaterThan(CROWD_KEEP_M + 5);
+        expect(held).toBeLessThan(CROWD_RUSH_M - 2);
+      }
+    }
+  });
+
+  it("a figure deep in the woods ahead closes on a player at several metres a second", () => {
+    const world = straightWorld(), eye = { x: 200, z: 0, yaw: Math.PI / 2 };
+    const f = figureAt(1, 260, 30), crowd = crowdOf(f);
+    const from = Math.hypot(f.x - eye.x, f.z - eye.z);
+    for (let i = 0; i < 3 * 60; i++) stepCrowd(crowd, world, eye, 1, i * DT, DT);
+    const closed = from - Math.hypot(f.x - eye.x, f.z - eye.z);
+    expect(closed).toBeGreaterThan(f.pace * CROWD_RUSH * 3 * 0.95);
+    expect(closed).toBeGreaterThan(6);
+  });
+
+  it("one behind a sprinting player gives chase and keeps up, and never reaches them", () => {
+    const world = straightWorld(), f = figureAt(1, 75, 1), crowd = crowdOf(f);
+    let nearest = Infinity;
+    for (let i = 0; i < 12 * 60; i++) {
+      const eye = { x: 100 + SPRINT_SPEED * i * DT, z: 0, yaw: Math.PI / 2 };
+      stepCrowd(crowd, world, eye, 1, i * DT, DT);
+      if (f.gone < 0) nearest = Math.min(nearest, Math.hypot(f.x - eye.x, f.z - eye.z));
+    }
+    const eyeX = 100 + SPRINT_SPEED * 12;
+    expect(crowd.figures).toContain(f);
+    expect(f.gone).toBe(-1);
+    expect(eyeX - f.x).toBeLessThan(CROWD_RUSH_M);
+    expect(nearest).toBeGreaterThan(CROWD_KEEP_M + 4);
+  });
+
+  it("keeps a pack at a sprinter's back and the rest of the crowd ahead of them: ten behind at the most", () => {
+    const world = straightWorld(), crowd = newCrowd(8);
+    let leastAhead = Infinity, mostBehind = 0, packSeen = 0;
+    for (let i = 0; i < 40 * 60; i++) {
+      const eye = { x: 20 + SPRINT_SPEED * i * DT, z: 0, yaw: Math.PI / 2 };
+      stepCrowd(crowd, world, eye, 60, i * DT, DT);
+      if (i * DT < 10) continue;
+      const all = living(crowd), behind = all.filter((f) => f.x < eye.x).length;
+      mostBehind = Math.max(mostBehind, behind);
+      packSeen = Math.max(packSeen, behind);
+      leastAhead = Math.min(leastAhead, all.length - behind - (crowdTarget(eye.x / 400, 60) - CROWD_PACK));
+    }
+    expect(mostBehind).toBeLessThanOrEqual(CROWD_PACK + 1);
+    expect(packSeen).toBeGreaterThanOrEqual(CROWD_PACK - 2);
+    // Ahead of the runner: all the way wants but the pack, give or take the few being placed.
+    expect(leastAhead).toBeGreaterThanOrEqual(-10);
+  });
+
+  it("does not walk through one in front of it: the one behind waits at half the press's reach at the nearest", () => {
+    const world = straightWorld(), eye = { x: 200, z: 20, yaw: 0 };
+    // Both on the player's own line, off the way: the slow one in front, the fast one 4 m behind it.
+    const front = { ...figureAt(1, 200, 38), pace: 0.6 }, back = { ...figureAt(2, 200, 42), pace: 1.4 };
+    const crowd = crowdOf(front, back);
+    let least = Infinity;
+    for (let i = 0; i < 8 * 60 && front.gone < 0; i++) {
+      stepCrowd(crowd, world, eye, 2, i * DT, DT);
+      least = Math.min(least, Math.hypot(front.x - back.x, front.z - back.z));
+    }
+    expect(least).toBeGreaterThanOrEqual(CROWD_PRESS_M / 2 - 0.01);
+    expect(back.z).toBeLessThan(40);
+  });
+
+  it("a pack that follows spreads out behind its player: no two of it in one place", () => {
+    const world = straightWorld();
+    const pack = Array.from({ length: 8 }, (_, k) => figureAt(k + 1, 96 - 3.5 * k, k % 2 === 0 ? 1.5 : -1.5));
+    const crowd = crowdOf(...pack);
+    let eye = { x: 100, z: 0, yaw: Math.PI / 2 };
+    for (let i = 0; i < 15 * 60; i++) {
+      eye = { x: 100 + SPRINT_SPEED * i * DT, z: 0, yaw: Math.PI / 2 };
+      stepCrowd(crowd, world, eye, 8, i * DT, DT);
+    }
+    const left = pack.filter((f) => f.gone < 0 && crowd.figures.includes(f));
+    expect(left.length).toBeGreaterThanOrEqual(6);
+    for (const f of left) expect(eye.x - f.x).toBeLessThan(CROWD_BEHIND_M);
+    for (const a of left) for (const b of left) if (a.id < b.id) expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(CROWD_PRESS_M / 2);
   });
 });

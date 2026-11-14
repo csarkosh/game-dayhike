@@ -51,7 +51,8 @@ export function crowdTarget(progress: number, most: number): number {
 /**
  * A figure of the crowd. `size` is its share of a Hollow's; `eyes` how
  * bright its eyes are (0 to 1) and `warm` their colour, 0 pale to 1 a dull
- * ember (never the Hollow's red); `pace` the metres a second it walks at;
+ * ember (never the Hollow's red); `pace` the metres a second it stalks its
+ * player at over the last metres (crowdSpeed: it runs in from further off);
  * `born` the seconds it began to rise at, and `gone` the seconds it began to
  * go at, or -1; `rise` how it came, 0 out of the mist or 1 as a pair of eyes
  * opening far off.
@@ -80,6 +81,8 @@ export type CrowdWorld = {
 };
 
 const AT = { x: 0, z: 0 }, ALONG = { x: 0, z: 0 };
+/** The living figures at their player's back this step. */
+const BACK: CrowdFigure[] = [];
 
 /**
  * One try at a place for a new figure. Beside the way: a drawn side of it, a
@@ -116,6 +119,32 @@ export function placeCrowd(world: CrowdWorld, eye: { x: number; z: number; yaw: 
     if (dx * dx + dz * dz < CROWD_APART_M * CROWD_APART_M) return null;
   }
   return { x, z };
+}
+
+/**
+ * How the crowd closes on its player, so that the whole wood is felt to be
+ * coming for them. A figure runs in from far off and stalks the last metres:
+ * its own pace where it would go (CROWD_KEEP_M), CROWD_RUSH times that from
+ * CROWD_RUSH_M off and further. One the player has passed gives chase
+ * instead, to CROWD_CHASE_MPS from that far off: faster than a player
+ * sprints, so what follows holds a little way off a runner's heels and
+ * closes on one who slows. At a runner's back there are CROWD_PACK at the
+ * most, so the rest of the crowd is ahead of them, where they look. And no
+ * figure walks into another: within CROWD_PRESS_M of one it is turned aside,
+ * and directly behind one it waits.
+ */
+export const CROWD_RUSH = 3.6;
+export const CROWD_RUSH_M = 22;
+export const CROWD_CHASE_MPS = 9;
+export const CROWD_PACK = 10;
+export const CROWD_PRESS_M = 3;
+/** How hard a figure is turned from one inside the press's reach, against its own step toward the player: at half the reach the two are equal. */
+const PRESS_PUSH = 2;
+
+/** The metres a second a figure of this `pace` moves at, `d` metres from its player: giving chase (`chasing`, behind them) or coming in from the woods. */
+export function crowdSpeed(pace: number, d: number, chasing: boolean): number {
+  const far = smooth((d - CROWD_KEEP_M) / (CROWD_RUSH_M - CROWD_KEEP_M));
+  return pace + ((chasing ? CROWD_CHASE_MPS : pace * CROWD_RUSH) - pace) * far;
 }
 
 /** A screen's crowd: its figures, its own stream (never the sim's), the next figure's number, and the seed its figures' looks come from. */
@@ -198,13 +227,15 @@ export function presenceOf(f: CrowdFigure, seconds: number): number {
  * their look), `seconds` on the screen's clock, `dt` since the last step.
  *
  * With no world, or `most` at nothing, every figure begins to go. Otherwise
- * each figure walks toward the player at its own pace. One ahead of the
- * player's place on the way keeps clear of the channel as it comes, sliding
- * along beside it; one the player has passed is free to step in behind them.
+ * each figure comes for the player (crowdSpeed), turned aside from any
+ * other it would walk into. One ahead of the player's place on the way keeps
+ * clear of the channel as it comes, sliding along beside it; one the player
+ * has passed is free to step in behind them, and gives chase.
  * A figure goes when it has come within CROWD_KEEP_M of its player, has been
  * left CROWD_BEHIND_M behind, is too far down the way, or, round a player
- * who has left the way, is too far from them; at once where it is out of
- * their view, by fading where it is in it. And while there are fewer than
+ * who has left the way, is too far from them; and behind a player on the way
+ * the furthest goes while there are more than CROWD_PACK there. It goes at
+ * once where it is out of their view, by fading where it is in it. And while there are fewer than
  * the way wants, places are tried: one is kept only where it is out of the
  * player's view or past the mist's reach, so nothing appears in plain sight
  * (round a player off the way they rise close, and their rise is the fade).
@@ -222,6 +253,7 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
   const seen = (x: number, z: number, d: number): boolean => d > 0 && ((x - eye.x) * lookX + (z - eye.z) * lookZ) / d >= CROWD_VIEW_COS;
   const kept: CrowdFigure[] = [];
   let alive = 0;
+  BACK.length = 0;
   for (const f of figures) {
     if (f.gone >= 0) {
       if (seconds - f.gone < CROWD_FADE_S) kept.push(f);
@@ -231,17 +263,40 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
     const d = Math.sqrt(dx * dx + dz * dz);
     const at = world.project(f.x, f.z);
     const ahead = at.s > here.s;
-    // Its step toward the player; ahead of them, along beside the way where the step would take it into the channel.
+    // Its step toward the player, turned from any figure it presses on; ahead of them, along beside the way where the step would take it into the channel.
     if (d > 0) {
-      const step = Math.min(f.pace * dt, d);
-      let nx = f.x + (dx / d) * step, nz = f.z + (dz / d) * step;
-      if (ahead && world.project(nx, nz).d < WAY_RIM_M + CROWD_CLEAR_M) {
+      const step = Math.min(crowdSpeed(f.pace, d, offWay <= 0 && !ahead) * dt, d);
+      let ux = dx / d, uz = dz / d, px = 0, pz = 0;
+      for (const g of figures) {
+        if (g === f || g.gone >= 0) continue;
+        const ex = f.x - g.x, ez = f.z - g.z, e2 = ex * ex + ez * ez;
+        if (e2 >= CROWD_PRESS_M * CROWD_PRESS_M || e2 === 0) continue;
+        const e = Math.sqrt(e2), push = (1 - e / CROWD_PRESS_M) / e;
+        px += ex * push;
+        pz += ez * push;
+      }
+      if (px !== 0 || pz !== 0) {
+        ux += PRESS_PUSH * px;
+        uz += PRESS_PUSH * pz;
+        // Never faster for being pushed, and slower where the push is against its step: behind another it waits.
+        const n = Math.sqrt(ux * ux + uz * uz);
+        if (n > 1) {
+          ux /= n;
+          uz /= n;
+        }
+      }
+      let nx = f.x + ux * step, nz = f.z + uz * step;
+      let to = world.project(nx, nz);
+      if (ahead && to.d < WAY_RIM_M + CROWD_CLEAR_M) {
         world.direction(at.s, ALONG);
-        nx = f.x - ALONG.x * step;
-        nz = f.z - ALONG.z * step;
+        const along = (ux * ALONG.x + uz * ALONG.z) * step;
+        nx = f.x + ALONG.x * along;
+        nz = f.z + ALONG.z * along;
+        to = world.project(nx, nz);
       }
       if ((f.id + crowd.steps) % CROWD_ADMIT_EVERY === 0) f.held = !world.admit(nx, nz);
-      if (f.held !== true && (!ahead || world.project(nx, nz).d >= WAY_RIM_M + CROWD_CLEAR_M)) {
+      // Into the channel only behind the player's own place on the way, wherever the figure set out from.
+      if (f.held !== true && (to.s <= here.s || to.d >= WAY_RIM_M + CROWD_CLEAR_M)) {
         f.x = nx;
         f.z = nz;
       }
@@ -252,8 +307,22 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
       // Out of view it is simply gone. In view it fades.
       if (!seen(f.x, f.z, nd)) continue;
       f.gone = seconds;
-    } else alive++;
+    } else {
+      alive++;
+      if (!ahead) BACK.push(f);
+    }
     kept.push(f);
+  }
+  // More at the back of a player on the way than the pack: the last of them goes, so the crowd is where they look.
+  const away = (f: CrowdFigure): number => (eye.x - f.x) * (eye.x - f.x) + (eye.z - f.z) * (eye.z - f.z);
+  while (offWay <= 0 && BACK.length > CROWD_PACK) {
+    let at = 0;
+    for (let i = 1; i < BACK.length; i++) if (away(BACK[i] as CrowdFigure) > away(BACK[at] as CrowdFigure)) at = i;
+    const last = BACK[at] as CrowdFigure;
+    if (seen(last.x, last.z, Math.sqrt(away(last)))) last.gone = seconds;
+    else kept.splice(kept.indexOf(last), 1);
+    BACK.splice(at, 1);
+    alive--;
   }
   const want = crowdTarget(world.length > 0 ? here.s / world.length : 0, most);
   // More than the way wants now (the road is coming): the one furthest from the player goes.
