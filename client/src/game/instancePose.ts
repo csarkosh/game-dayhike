@@ -147,3 +147,21 @@ export function transformPoint(m: ArrayLike<number>, offset: number, x: number, 
   out.z = rz * rw;
   return out;
 }
+
+/**
+ * The product a·b of two such matrices, which applies `b` first, into the
+ * sixteen floats of `out`: a node's place in the world from its parent's and
+ * its own. Every float is computed before any is written, so `out` may be an
+ * operand.
+ */
+export function matrixMultiply(a: ArrayLike<number>, b: ArrayLike<number>, out: Float32Array | number[]): void {
+  const m = new Array<number>(16);
+  for (let column = 0; column < 4; column++) {
+    for (let row = 0; row < 4; row++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) sum += (a[k * 4 + row] as number) * (b[column * 4 + k] as number);
+      m[column * 4 + row] = sum;
+    }
+  }
+  for (let i = 0; i < 16; i++) out[i] = m[i] as number;
+}

@@ -1,0 +1,78 @@
+import { describe, expect, it } from "vitest";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { matrixMultiply } from "../../src/game/instancePose.js";
+import { bakeGeometry, boundsOf, chainMatrix, mirrors, type PlacedNode } from "../../src/game/modelBake.js";
+
+const node = (position: [number, number, number], euler: [number, number, number], scaling: [number, number, number]): PlacedNode => ({
+  position: { x: position[0], y: position[1], z: position[2] },
+  rotationQuaternion: Quaternion.FromEulerAngles(...euler),
+  scaling: { x: scaling[0], y: scaling[1], z: scaling[2] },
+});
+/** A glTF loader's root in a left-handed scene: the mirror across x. */
+const ROOT = node([0, 0, 0], [0, 0, 0], [-1, 1, 1]);
+
+/** One triangle in the plane z = 0 facing +z, with its normal and a tangent along +x. */
+const triangle = (): { positions: Float32Array; normals: Float32Array; tangents: Float32Array; indices: Uint32Array } => ({
+  positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 2, 0]),
+  normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+  tangents: new Float32Array([1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, -1]),
+  indices: new Uint32Array([0, 1, 2]),
+});
+
+describe("a loaded model's geometry stood where its nodes put it", () => {
+  it("multiplies a chain of nodes root first, as Babylon multiplies a child's matrix by its parent's", () => {
+    const chain = [ROOT, node([1, 2, 3], [0.2, -0.7, 0.4], [2, 2, 2]), node([-4, 0.5, 9], [1.1, 0.3, -0.2], [1, 1, 1])];
+    let want = Matrix.Identity();
+    for (const n of chain) {
+      const q = n.rotationQuaternion as Quaternion;
+      const local = Matrix.Compose(new Vector3(n.scaling.x, n.scaling.y, n.scaling.z), q, new Vector3(n.position.x, n.position.y, n.position.z));
+      // Babylon's row vectors: a child's world is its local times its parent's.
+      want = local.multiply(want);
+    }
+    const got = chainMatrix(chain);
+    for (let i = 0; i < 16; i++) expect(got[i], `float ${i}`).toBeCloseTo(want.m[i] as number, 4);
+  });
+
+  it("multiplies into either operand", () => {
+    const a = [...Matrix.Compose(new Vector3(1, 2, 3), Quaternion.FromEulerAngles(0.3, 0.2, 0.1), new Vector3(4, 5, 6)).m];
+    const b = [...Matrix.Compose(new Vector3(-1, 1, 1), Quaternion.FromEulerAngles(-0.5, 0.9, 0), new Vector3(0, 7, 0)).m];
+    const fresh = new Float32Array(16);
+    matrixMultiply(a, b, fresh);
+    const into = [...a];
+    matrixMultiply(into, b, into);
+    expect(into.map(Math.fround)).toEqual([...fresh]);
+  });
+
+  it("knows a mirror from a turn", () => {
+    expect(mirrors(chainMatrix([ROOT]))).toBe(true);
+    expect(mirrors(chainMatrix([node([3, 0, 0], [0.4, 2, 1], [2, 2, 2])]))).toBe(false);
+    expect(mirrors(chainMatrix([ROOT, ROOT]))).toBe(false);
+  });
+
+  it("under the root's mirror moves each vertex across x, turns its normal and tangent with it and leaves the triangles as they are", () => {
+    const g = triangle();
+    bakeGeometry(chainMatrix([ROOT]), g);
+    // A zero's sign means nothing to a shader: both are read as zero.
+    const plain = (floats: Float32Array): number[] => [...floats].map((v) => v + 0);
+    expect(plain(g.positions)).toEqual([0, 0, 0, -1, 0, 0, 0, 2, 0]);
+    expect(plain(g.normals)).toEqual([0, 0, 1, 0, 0, 1, 0, 0, 1]);
+    // The tangent's direction is mirrored, its handedness kept.
+    expect(plain(g.tangents)).toEqual([-1, 0, 0, 1, -1, 0, 0, 1, -1, 0, 0, -1]);
+    expect([...g.indices]).toEqual([0, 1, 2]);
+  });
+
+  it("under a transform that does not mirror turns each triangle over", () => {
+    const g = triangle();
+    bakeGeometry(chainMatrix([node([10, 0, 0], [0, 0, 0], [3, 3, 3])]), g);
+    expect([...g.positions]).toEqual([10, 0, 0, 13, 0, 0, 10, 6, 0]);
+    // A scaled normal is made a unit one again.
+    expect([...g.normals]).toEqual([0, 0, 1, 0, 0, 1, 0, 0, 1]);
+    expect([...g.indices]).toEqual([0, 2, 1]);
+  });
+
+  it("measures the box of the baked vertices", () => {
+    const g = triangle();
+    bakeGeometry(chainMatrix([ROOT]), g);
+    expect(boundsOf(g.positions)).toEqual({ min: { x: -1, y: 0, z: 0 }, max: { x: 0, y: 2, z: 0 } });
+  });
+});
