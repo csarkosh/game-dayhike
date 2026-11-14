@@ -17,6 +17,7 @@ import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTa
 import type { RenderingManager } from "@babylonjs/core/Rendering/renderingManager.js";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
+import type { EngineName } from "./engineChoice.js";
 import { engineOf, type EngineHandle } from "./engineHandle.js";
 
 import type { Level } from "../sim/level.js";
@@ -1692,6 +1693,9 @@ export function writeListenerPose(
 export type Renderer = {
   scene: Scene;
   engine: AbstractEngine;
+  /** Which engine the renderer draws with, for its life: WebGPU where it
+   * was given one (`RendererOptions.engine`, `engineChoice.ts`), else WebGL2. */
+  readonly engineName: EngineName;
   camera: UniversalCamera;
   views: EntityViews;
   /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
@@ -3294,6 +3298,7 @@ function buildRenderer(
   const renderer: Renderer = {
     scene,
     engine,
+    engineName: engine.isWebGPU ? "webgpu" : "webgl2",
     camera,
     views,
     // The signs: small casters, left out of the farthest cascade (`ShadowReach`).

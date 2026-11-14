@@ -232,7 +232,7 @@ describe("the start where the rule gives WebGL2", () => {
     // patch only to a renderer on one.
     const app = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
     expect(app.match(/\bholdReveal\(/g)).toEqual(["holdReveal("]);
-    expect(app).toContain("if (renderer.engine.isWebGPU && watchers !== null) {");
+    expect(app).toContain('if (renderer.engineName === "webgpu" && watchers !== null) {');
     // The hold gives way to a switch's own cover and to the game's end
     // (`revealHold.test.ts` shows what lifting it does; the app itself needs a
     // page to run).

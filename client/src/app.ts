@@ -507,7 +507,7 @@ function buildGame(
       compiledSinceFrame = true;
     };
     const observer = r.engine.onAfterShaderCompilationObservable.add(mark);
-    const stopPipelines = r.engine.isWebGPU && watchers !== null ? watchers.pipelines(r.engine, mark) : () => undefined;
+    const stopPipelines = r.engineName === "webgpu" && watchers !== null ? watchers.pipelines(r.engine, mark) : () => undefined;
     unwatchCompiles = () => {
       r.engine.onAfterShaderCompilationObservable.remove(observer);
       stopPipelines();
@@ -521,7 +521,7 @@ function buildGame(
   function tellCompiles(r: Renderer): void {
     untellCompiles?.();
     untellCompiles = null;
-    if (r.engine.isWebGPU) return;
+    if (r.engineName === "webgpu") return;
     const told = r.engine.onAfterShaderCompilationObservable.add(reportCompile);
     untellCompiles = () => r.engine.onAfterShaderCompilationObservable.remove(told);
   }
@@ -2436,7 +2436,7 @@ function buildGame(
   let endRevealHold = (): void => undefined;
   /** On WebGPU, the first frame that left no draw out; never, on WebGL2. */
   let firstWholeFrame: Promise<void> | null = null;
-  if (renderer.engine.isWebGPU && watchers !== null) {
+  if (renderer.engineName === "webgpu" && watchers !== null) {
     const held = canvas;
     const engine = renderer.engine;
     const gpu = watchers;
@@ -2515,7 +2515,7 @@ function buildGame(
   /** Stops the fetch ahead where the hike ends first. */
   let stopPrefetch = (): void => undefined;
   void ready.then(() => {
-    if (disposed || broken || !renderer.engine.isWebGPU) return;
+    if (disposed || broken || renderer.engineName !== "webgpu") return;
     stopPrefetch = prefetchWebGl2Shaders({ idle: pageIdle, load: () => loadWebGl2Shaders(), log: (line) => console.info(line) });
   });
   // A look named in the URL (`?cmd=seed hollow;time 22;escape`) is called once the world is in,
@@ -2700,7 +2700,7 @@ function buildGame(
       if (got.fellBack) options.onTierFallback({ attempted: target, built: tier, source });
       else tierSource = source;
       governor?.restart(performance.now());
-      console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engine.isWebGPU ? "webgpu" : "webgl2"}`);
+      console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engineName}`);
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
       const sceneFrom = performance.now();
@@ -2709,7 +2709,7 @@ function buildGame(
       // made, within what is left of the same bound: the cover lasts no
       // longer, and meshes do not appear after it lifts.
       const gpu = watchers;
-      if (renderer.engine.isWebGPU && gpu !== null) {
+      if (renderer.engineName === "webgpu" && gpu !== null) {
         const engine = renderer.engine;
         await whenFrameWhole((lift) => gpu.reveal(engine, lift), made.leftMs - (performance.now() - sceneFrom));
       }
@@ -2750,7 +2750,7 @@ function buildGame(
     serial,
     alive: () => !disposed && !broken && landingTimer === null,
     running: () => renderer.engine,
-    runningOnWebGpu: () => renderer.engine.isWebGPU,
+    runningOnWebGpu: () => renderer.engineName === "webgpu",
     unwatch: () => engineBindings.unwatch(),
     abandon: () => renderer.abandon(),
     record: (reason) => options.engineFailed(reason),
@@ -2864,7 +2864,7 @@ function buildGame(
       admission.attach(next);
     },
     graphics() {
-      return { tier, engine: renderer.engine.isWebGPU ? "webgpu" : "webgl2" };
+      return { tier, engine: renderer.engineName };
     },
     notify(line) {
       if (!disposed) hud.flash(line, FALLBACK_NOTICE_MS);

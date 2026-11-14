@@ -216,7 +216,7 @@ describe("layer boundaries", () => {
     expect(app).toContain("      const engine = r.engine;\n      stopWatching = detector(engine, (reason) => void answerFailure(engine, reason));");
     // The answer compares it with the engine the running renderer draws with.
     expect(app).toContain("    running: () => renderer.engine,");
-    expect(app).toContain("    runningOnWebGpu: () => renderer.engine.isWebGPU,");
+    expect(app).toContain('    runningOnWebGpu: () => renderer.engineName === "webgpu",');
     // The game records every WebGPU failure through the recorder
     // `startOnEngine` hands its start, which tells the start's from the hike's.
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
