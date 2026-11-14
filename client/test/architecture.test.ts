@@ -527,6 +527,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "sceneLights.ts"),
       join(SRC, "game", "gameLens.ts"),
       join(SRC, "game", "skyWait.ts"),
+      join(SRC, "game", "listenerPose.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files

@@ -159,6 +159,7 @@ import { createWildlifeMeshes } from "./wildlifeMeshes.js";
 import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
 import type { MatchState, View } from "./wildlifeDirector.js";
 import type { ListenerPose } from "./ambientAudio.js";
+import { writeListenerPose } from "./listenerPose.js";
 import { createMistMeshes, type MistMeshes } from "./mistMeshes.js";
 import { createRain, type Rain, type RainLamp } from "./rain.js";
 import { createRainMap } from "./rainMap.js";
@@ -1663,35 +1664,8 @@ export type EndSceneNow = {
  * now. Absent or null, the eye is drawn where the tick left it. */
 export type FrameView = { dt: number; sprinting: boolean; before?: EyePose | null };
 
-/**
- * Fills `out` with a camera pose for the audio listener, in Babylon's world.
- *
- * yaw 0 faces +Z and positive pitch looks DOWN — the same convention
- * `UniversalCamera.rotation` carries and `viewBob.ts`'s right vector already
- * assumes — so forward is (sin yaw·cos pitch, −sin pitch, cos yaw·cos pitch) and
- * up is world up. Roll (the walking cue's) is deliberately dropped: it tilts the
- * image, not the ears.
- *
- * Pulled out of the closure below so the trigonometry — the part a sign error
- * hides in, and which would otherwise need a real WebGL canvas to reach — is
- * unit-testable on its own.
- */
-export function writeListenerPose(
-  out: ListenerPose,
-  x: number, y: number, z: number,
-  yaw: number, pitch: number,
-): void {
-  const cp = Math.cos(pitch);
-  out.x = x;
-  out.y = y;
-  out.z = z;
-  out.fx = Math.sin(yaw) * cp;
-  out.fy = -Math.sin(pitch);
-  out.fz = Math.cos(yaw) * cp;
-  out.ux = 0;
-  out.uy = 1;
-  out.uz = 0;
-}
+// The audio listener's pose from a camera's is `listenerPose.ts`'s; named from here too.
+export { writeListenerPose };
 
 /**
  * The renderer as the hike holds it: what it is told, what it is asked, and
