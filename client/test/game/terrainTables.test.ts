@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  featurePaintTable, followRoadCentre, roadCentreTable, terrainTablesFor, trailPaintTable, trailTableInfo,
+  featurePaintTable, followRoadCentre, roadCentreTable, terrainTablesFor, trailPaintTable,
 } from "../../src/game/terrainTables.js";
 import { FEATURE_PAINT_MAX, FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTable, featureTableFor, paintedLakes } from "../../src/game/featureTable.js";
 import { ROAD_TABLE_N, ROAD_TABLE_RECENTRE, ROAD_TABLE_STEP, buildRoadTable, roadTableZ0 } from "../../src/game/roadPaint.js";
 import { bakeShoreAtlas } from "../../src/game/shoreAtlas.js";
-import {
-  TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, buildTrailTable, trailSegments,
-} from "../../src/game/trailPaint.js";
+import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, buildTrailTable, trailSegments } from "../../src/game/trailPaint.js";
 import type { Feature } from "../../src/sim/features.js";
 import "../../src/sim/passes/index.js";
 import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant } from "../../src/sim/terrain.js";
@@ -61,7 +59,6 @@ describe("the trail's table", () => {
     expect(table.data).toHaveLength(table.width * table.height * table.channels);
     expect(table.data).toEqual(built.data);
     expect([table.x0, table.z0, table.overflow]).toEqual([built.x0, built.z0, false]);
-    expect(trailTableInfo(table)).toEqual([built.x0, built.z0, 1 / TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID]);
   });
 });
 

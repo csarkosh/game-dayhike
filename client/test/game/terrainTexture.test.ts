@@ -38,6 +38,8 @@ import { FOLIAGE_LIGHT_INJECTION_POINT } from "../../src/game/foliageLightPlugin
 import { attachWet } from "../../src/game/wetPlugin.js";
 import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { featurePaintTable, roadCentreTable, trailPaintTable } from "../../src/game/terrainTables.js";
+import { terrainUniforms } from "../../src/game/terrainUniforms.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -1493,4 +1495,47 @@ vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
     );
     expect(renderer.split("setTerrainFarBand(").length - 1).toBe(1);
   }, timeLimit(5_000));
+});
+
+describe("the uniforms the plugin binds are the terrain's, made without it (terrainUniforms.ts)", () => {
+  const hook = (_seed: number, z: number): number => -300 + 0.25 * z;
+  const graph = {
+    nodes: [{ x: 0, z: 0, h: 0, u: 0 }, { x: 120, z: 40, h: 0, u: 0 }],
+    edges: [{ a: 0, b: 1, kind: "stem", profile: new Float64Array(2), progress0: 0, progress1: 1 }],
+    trailhead: { x: 0, z: 0, u: 0 }, summit: 1, stem: [0], loops: [], features: [], stemLen: 126, fallbacks: 0,
+  } as unknown as TrailGraph;
+
+  it("declares each by the record's name and size, in the record's order", () => {
+    const made = terrainUniforms({ eye: null, wetness: 0, rain: 0, seconds: 0, sward: true, relief: false, road: null, trail: null, features: null });
+    expect(pluginFor("tu1").getUniforms().ubo.map((u) => [u.name, u.size])).toEqual(Object.entries(made).map(([name, v]) => [name, v.length]));
+  });
+
+  it("writes every one as the record has it, in a world with a road, a trail and features, under rain", () => {
+    const plugin = pluginFor("tu2");
+    plugin.enableRoad(7, hook);
+    plugin.enableTrail(graph);
+    plugin.enableFeatures(testFeatures);
+    plugin.setWet(0.4);
+    plugin.setRain(0.5);
+    plugin.setTime(3601.25);
+    plugin.setSward(false);
+    const ubo = fakeUniformBuffer();
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    // The stub arrays are 1x1, the placeholders' size: the relief is off.
+    expect(ubo.values).toEqual(terrainUniforms({
+      eye: null, wetness: 0.4, rain: 0.5, seconds: 3601.25, sward: false, relief: false,
+      road: roadCentreTable(7, hook), trail: trailPaintTable(graph), features: featurePaintTable(testFeatures),
+    }));
+  });
+
+  it("leaves a paint's uniform unwritten in a world without it, and writes the rest as the record has them", () => {
+    const ubo = fakeUniformBuffer();
+    pluginFor("tu3").bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    const { roadTable, trailInfo, featureInfo, ...rest } = terrainUniforms({
+      eye: null, wetness: 0, rain: 0, seconds: 0, sward: true, relief: false, road: null, trail: null, features: null,
+    });
+    expect(ubo.values).toEqual(rest);
+    // What the buffer holds of a uniform never written: zero.
+    expect([roadTable, trailInfo, featureInfo]).toEqual([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]);
+  });
 });

@@ -73,7 +73,6 @@
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
-import { rippleTime } from "./rainParams.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -86,22 +85,15 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 
 import { activeTerrainVariant } from "../sim/terrain.js";
-import {
-  ROAD_FRAGMENT_DEFS, ROAD_FRAGMENT_PAINT, ROAD_TABLE_N, ROAD_TABLE_STEP, roadTableZ0, type RoadCenterX,
-} from "./roadPaint.js";
+import { ROAD_FRAGMENT_DEFS, ROAD_FRAGMENT_PAINT, type RoadCenterX } from "./roadPaint.js";
 import { TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT } from "./trailPaint.js";
 import { FEATURE_FRAGMENT_DEFS, FEATURE_FRAGMENT_PAINT, createFeatureTexture } from "./featurePaint.js";
-import {
-  featurePaintTable, followRoadCentre, roadCentreTable, trailPaintTable, trailTableInfo, type RoadCentreTable,
-} from "./terrainTables.js";
+import { featurePaintTable, followRoadCentre, roadCentreTable, trailPaintTable } from "./terrainTables.js";
+import { LAYER_F0, LAYER_ROUGHNESS, emptyTerrainUniforms, terrainUniforms, type TerrainUniformInputs } from "./terrainUniforms.js";
 import type { TrailGraph } from "../sim/trail.js";
 import type { Feature } from "../sim/features.js";
 import { loadGroundArrays, reportLayer, type GroundArrays, type GroundArraysFactory } from "./groundMaps.js";
-import {
-  DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
-  HORIZON, HORIZON_MAX, TUFT_ALBEDO,
-  SWARD_FLOOR, SWARD_MAX, SWARD_COVER, SWARD_FADE,
-  FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX, FAR_ROUGH_BAND } from "./groundHexParams.js";
+import { FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX, FAR_ROUGH_BAND } from "./groundHexParams.js";
 // The key of each light's plain diffuse line; the terrain never carries the
 // foliage light plugin, so the key is never applied twice.
 import { FOLIAGE_LIGHT_INJECTION_POINT } from "./foliageLightPlugin.js";
@@ -120,13 +112,6 @@ import rockUrl from "../../assets/textures/ground.rock.webp?url";
 import sandUrl from "../../assets/textures/ground.sand.webp?url";
 import pebbleUrl from "../../assets/textures/ground.pebble.webp?url";
 import asphaltUrl from "../../assets/textures/ground.asphalt.webp?url";
-
-/** Mean luminance every ground texture was normalised to when it was made.
- * Measured back off the five committed WebPs as
- * 0.4984 / 0.4985 / 0.4983 / 0.4980 / 0.4981 — the encode's rounding, not a
- * different target. Dividing the blend by this makes a flat texture exactly
- * neutral, so the palette keeps its tuning. */
-const TEXTURE_MEAN = 0.5;
 
 /**
  * Each ground albedo's own mean COLOUR, measured off the committed 512² WebPs
@@ -159,52 +144,8 @@ function meanInv(layer: keyof typeof LAYER_MEAN_RGB): string {
   return `vec3(${(1 / m[0]).toFixed(4)}, ${(1 / m[1]).toFixed(4)}, ${(1 / m[2]).toFixed(4)})`;
 }
 
-/**
- * Metres of world per texture repeat, per layer. These are each source
- * texture's own recorded real-world footprint (grass 2.00 m,
- * forest floor 2.07 m, sand 1.80 m, pebble 2.00 m): tiled at its
- * own size, each texture renders at that real-world size. Measured,
- * not guessed — the original 2/2/3/3/4 values were pre-survey estimates. Retuned by eye
- * in the running game.
- *
- * Rock is the exception: its source covers 1.80 m, but at that size the
- * steep faces read as a field of small cobbles over the relief's joints. It
- * repeats every 5.40 m, three times its footprint, so a stone is three times
- * larger: fewer, larger rocks on every face, the scree and the steep ground
- * alike, since the layer is one wherever it is drawn. The parallax keeps its
- * depth in metres (`ROCK_PARALLAX_DEPTH` is scaled to the repeat in the
- * shader), so the stones are as deep as before.
- *
- * `asphalt` is its own 3.00 m footprint. It tiles in the road's own (u, z) frame — signed u across the
- * centerline, world z along it — not world XZ like the five layers above.
- */
-const TILING_METRES = { grass: 2.0, floor: 2.07, rock: 5.4, sand: 1.8, pebble: 2.0, asphalt: 3.0 };
-
-/** Distance band (m) over which the detail fades to the flat palette colour.
- * Design values ("faded to the flat palette beyond ~80 m"), tuned
- * by eye in the running game; they buy back fragment cost at range where the
- * texture is below a pixel anyway. */
-const FADE_START = 80;
-const FADE_END = 140;
-
-/** Six values, grass/floor/rock/sand/pebble/asphalt in order — a fixed-length
- * tuple rather than a plain `readonly number[]` because this repo's
- * tsconfig sets `noUncheckedIndexedAccess`: a plain array's index type is
- * `number | undefined`, which would not typecheck at `bindForSubMesh`'s
- * `LAYER_ROUGHNESS[0..5]`. `toEqual` in the test does not care either way. */
-type LayerSix = readonly [number, number, number, number, number, number];
-/** Per-layer base roughness, grass, floor, rock, sand, pebble,
- * asphalt — the far-field value, and still the base near the eye: the RAH
- * map there is a MODULATION on top of it (map / 0.5, its neutral value),
- * not a replacement, so a flat 0.5 placeholder (or a failed decode) leaves
- * this table's value exactly as the near-field answer too (an earlier
- * R/0.95-replaces-R form flashed every layer to ~0.5
- * roughness until the WebPs decoded). */
-export const LAYER_ROUGHNESS: LayerSix = [1.0, 1.0, 0.85, 0.95, 0.9, 0.9];
-/** Per-layer F0 multiplier on the dielectric 4%: rough
- * vegetation and soil self-occlude grazing reflection; this is the sheen's
- * cure and it is NOT distance-faded. */
-export const LAYER_F0: LayerSix = [0.5, 0.5, 1.0, 0.7, 0.85, 1.0];
+// The per-layer roughness and F0 tables are the uniforms' (`terrainUniforms.ts`).
+export { LAYER_F0, LAYER_ROUGHNESS };
 /** Height-blend depth: how far below the tallest layer another still shows. */
 export const HEIGHT_BLEND_DEPTH = 0.2;
 /** Mirror of the GLSL height blend, for the test. `reliefOn` mirrors the
@@ -802,18 +743,19 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   private readonly _textures: readonly Texture[];
   private readonly _arrays: GroundArrays;
   private _roadCenter: RawTexture | null = null;
-  /** The road's centreline as numbers (`terrainTables.ts`): what `_roadCenter` holds, and where it is centred. */
-  private _road: RoadCentreTable | null = null;
   /** The trail's one table texture: the segment list and the bucket grid (trailPaint.ts). */
   private _trailTable: RawTexture | null = null;
-  private _trailInfo: [number, number, number, number] = [0, 0, 0, 0];
-  private _wet = 0;
-  private _rain = 0;
-  private _time = 0;
-  private _swardOn = true;
   private _farLow = false;
   private _featureTex: RawTexture | null = null;
-  private _featureInfo: [number, number, number, number] = [0, 0, 0, 0];
+  /** What the uniforms are made from (`terrainUniforms.ts`): the weather and
+   * the tier as the setters leave them, the world's tables as the three
+   * `enable…` calls make them (the road's is what `_roadCenter` holds, with
+   * where it is centred), and the eye and the relief maps as each bind finds them. */
+  private readonly _drawn: TerrainUniformInputs = {
+    eye: null, wetness: 0, rain: 0, seconds: 0, sward: true, relief: false, road: null, trail: null, features: null,
+  };
+  /** The uniforms of the last bind, filled again at each. */
+  private readonly _uniforms = emptyTerrainUniforms();
 
   constructor(material: PBRMaterial, scene: Scene, options: { groundArrays?: GroundArraysFactory } = {}) {
     // Priority 200, matching foliagePlugin/cel — after Babylon's own plugins. The
@@ -865,9 +807,10 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
    */
   enableRoad(seed: number, centerX: RoadCenterX): void {
     if (this._roadCenter !== null) return;
-    this._road = roadCentreTable(seed, centerX);
+    const road = roadCentreTable(seed, centerX);
+    this._drawn.road = road;
     const table = RawTexture.CreateRTexture(
-      this._road.data, this._road.width, this._road.height, this._scene,
+      road.data, road.width, road.height, this._scene,
       false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
     );
     table.name = "roadCenter";
@@ -891,24 +834,24 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     );
     tex.name = "trailTable"; tex.wrapU = Texture.CLAMP_ADDRESSMODE; tex.wrapV = Texture.CLAMP_ADDRESSMODE;
     this._trailTable = tex;
-    this._trailInfo = trailTableInfo(table);
+    this._drawn.trail = table;
     this.markAllDefinesAsDirty();
   }
 
   /** The weather's wetness in [0, 1]: the trail's core darkens, glosses and puddles with it. */
-  setWet(wetness: number): void { this._wet = Math.min(1, Math.max(0, wetness)); }
+  setWet(wetness: number): void { this._drawn.wetness = wetness; }
 
   /** The weather's rain in [0, 1]: the puddles' ripple layers blend in one
    * per quarter of it. */
-  setRain(rain: number): void { this._rain = Math.min(1, Math.max(0, rain)); }
+  setRain(rain: number): void { this._drawn.rain = rain; }
 
   /** The running time the ripples read, seconds, folded (`rippleTime`). */
-  setTime(seconds: number): void { this._time = rippleTime(seconds); }
+  setTime(seconds: number): void { this._drawn.seconds = seconds; }
 
   /** Whether the sward floor's pull runs: only where the blade field is drawn,
    * since the pull stands for the shaded ground between its blades. Off binds
    * the pull's strength as 0; the colour and bands stay bound. */
-  setSward(on: boolean): void { this._swardOn = on; }
+  setSward(on: boolean): void { this._drawn.sward = on; }
 
   /** Whether the far cover takes the low tier's band (TERRAINFARLOW): the low
    * tier draws every clutter class at 0.6 of its radius, so its cards dither
@@ -931,7 +874,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     this._featureTex.name = "featureTex";
     this._featureTex.wrapU = Texture.CLAMP_ADDRESSMODE;
     this._featureTex.wrapV = Texture.CLAMP_ADDRESSMODE;
-    this._featureInfo = [made.count, 0, 0, 0];
+    this._drawn.features = made;
     this.markAllDefinesAsDirty();
   }
 
@@ -1068,39 +1011,38 @@ uniform vec4 terrainSwardBand;
   // Babylon's contract. One line, for the eslint-disable reason above.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override bindForSubMesh(uniformBuffer: UniformBuffer, scene: Scene, _engine: AbstractEngine, _subMesh: SubMesh): void {
-    uniformBuffer.updateFloat4(
-      "terrainTiling",
-      1 / TILING_METRES.grass,
-      1 / TILING_METRES.floor,
-      1 / TILING_METRES.sand,
-      1 / TILING_METRES.pebble,
-    );
-    uniformBuffer.updateFloat2("terrainRock2", 1 / TILING_METRES.rock, TEXTURE_MEAN);
-    uniformBuffer.updateFloat2("terrainFade", FADE_START, FADE_END);
     // The eye position comes from the camera rather than a Babylon-internal
     // uniform name, so the fade cannot break on an engine rename. No camera
     // means nothing is being rendered; (0,0,0) keeps the shader well-defined.
-    const eye = scene.activeCamera?.globalPosition;
-    uniformBuffer.updateFloat3("terrainEye", eye?.x ?? 0, eye?.y ?? 0, eye?.z ?? 0);
-    uniformBuffer.updateFloat4(
-      "terrainLayerRough", LAYER_ROUGHNESS[0], LAYER_ROUGHNESS[1], LAYER_ROUGHNESS[2], LAYER_ROUGHNESS[3],
-    );
-    uniformBuffer.updateFloat2("terrainLayerRough2", LAYER_ROUGHNESS[4], LAYER_ROUGHNESS[5]);
-    uniformBuffer.updateFloat4("terrainLayerF0", LAYER_F0[0], LAYER_F0[1], LAYER_F0[2], LAYER_F0[3]);
-    uniformBuffer.updateFloat2("terrainLayerF02", LAYER_F0[4], LAYER_F0[5]);
+    const drawn = this._drawn;
+    drawn.eye = scene.activeCamera?.globalPosition;
     // 1x1 is the placeholder's signature (groundMaps.ts); anything wider is a
     // real decoded array. Read every bind, same reason as the textures below.
-    uniformBuffer.updateFloat("terrainReliefOn", this._arrays.rah.getSize().width > 1 ? 1.0 : 0.0);
-    uniformBuffer.updateFloat4("terrainDetail", 1 / DETAIL_TILING, DETAIL_FADE[0], DETAIL_FADE[1], DETAIL_NORMAL);
-    uniformBuffer.updateFloat3("terrainDetail2", DETAIL_AO, DETAIL_AO_RANGE[0], DETAIL_AO_RANGE[1]);
-    uniformBuffer.updateFloat("terrainMacroOn", 1);
-    uniformBuffer.updateFloat3("terrainHorizon", HORIZON[0], HORIZON[1], HORIZON_MAX);
-    uniformBuffer.updateFloat3("terrainTuft", TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b);
-    uniformBuffer.updateFloat4("terrainSward", SWARD_FLOOR.r, SWARD_FLOOR.g, SWARD_FLOOR.b, this._swardOn ? SWARD_MAX : 0);
-    uniformBuffer.updateFloat4("terrainSwardBand", SWARD_COVER[0], SWARD_COVER[1], SWARD_FADE[0], SWARD_FADE[1]);
-    uniformBuffer.updateFloat("terrainWet", this._wet);
-    uniformBuffer.updateFloat("terrainRain", this._rain);
-    uniformBuffer.updateFloat("terrainTime", this._time);
+    drawn.relief = this._arrays.rah.getSize().width > 1;
+    // The road's table follows the eye before the uniforms are made: they
+    // carry where it is centred. Its texture is written again below, where
+    // the road's own texture is bound.
+    const roadMoved = this._roadCenter !== null && drawn.road !== null && followRoadCentre(drawn.road, drawn.eye?.z ?? 0);
+    const u = terrainUniforms(drawn, this._uniforms);
+    uniformBuffer.updateFloat4("terrainTiling", u.terrainTiling[0], u.terrainTiling[1], u.terrainTiling[2], u.terrainTiling[3]);
+    uniformBuffer.updateFloat2("terrainRock2", u.terrainRock2[0], u.terrainRock2[1]);
+    uniformBuffer.updateFloat2("terrainFade", u.terrainFade[0], u.terrainFade[1]);
+    uniformBuffer.updateFloat3("terrainEye", u.terrainEye[0], u.terrainEye[1], u.terrainEye[2]);
+    uniformBuffer.updateFloat4("terrainLayerRough", u.terrainLayerRough[0], u.terrainLayerRough[1], u.terrainLayerRough[2], u.terrainLayerRough[3]);
+    uniformBuffer.updateFloat2("terrainLayerRough2", u.terrainLayerRough2[0], u.terrainLayerRough2[1]);
+    uniformBuffer.updateFloat4("terrainLayerF0", u.terrainLayerF0[0], u.terrainLayerF0[1], u.terrainLayerF0[2], u.terrainLayerF0[3]);
+    uniformBuffer.updateFloat2("terrainLayerF02", u.terrainLayerF02[0], u.terrainLayerF02[1]);
+    uniformBuffer.updateFloat("terrainReliefOn", u.terrainReliefOn[0]);
+    uniformBuffer.updateFloat4("terrainDetail", u.terrainDetail[0], u.terrainDetail[1], u.terrainDetail[2], u.terrainDetail[3]);
+    uniformBuffer.updateFloat3("terrainDetail2", u.terrainDetail2[0], u.terrainDetail2[1], u.terrainDetail2[2]);
+    uniformBuffer.updateFloat("terrainMacroOn", u.terrainMacroOn[0]);
+    uniformBuffer.updateFloat3("terrainHorizon", u.terrainHorizon[0], u.terrainHorizon[1], u.terrainHorizon[2]);
+    uniformBuffer.updateFloat3("terrainTuft", u.terrainTuft[0], u.terrainTuft[1], u.terrainTuft[2]);
+    uniformBuffer.updateFloat4("terrainSward", u.terrainSward[0], u.terrainSward[1], u.terrainSward[2], u.terrainSward[3]);
+    uniformBuffer.updateFloat4("terrainSwardBand", u.terrainSwardBand[0], u.terrainSwardBand[1], u.terrainSwardBand[2], u.terrainSwardBand[3]);
+    uniformBuffer.updateFloat("terrainWet", u.terrainWet[0]);
+    uniformBuffer.updateFloat("terrainRain", u.terrainRain[0]);
+    uniformBuffer.updateFloat("terrainTime", u.terrainTime[0]);
     uniformBuffer.setTexture("terrainGrass", this._grass);
     uniformBuffer.setTexture("terrainFloor", this._floor);
     uniformBuffer.setTexture("terrainRock", this._rock);
@@ -1111,20 +1053,20 @@ uniform vec4 terrainSwardBand;
     // uniform must pick up the real array the first bind after that happens.
     uniformBuffer.setTexture("terrainNormals", this._arrays.normals);
     uniformBuffer.setTexture("terrainRAH", this._arrays.rah);
-    if (this._roadCenter !== null && this._road !== null) {
-      if (followRoadCentre(this._road, eye?.z ?? 0)) this._roadCenter.update(this._road.data);
-      uniformBuffer.updateFloat4(
-        "roadTable", roadTableZ0(this._road.centreZ), ROAD_TABLE_STEP, ROAD_TABLE_N, 1 / TILING_METRES.asphalt,
-      );
+    // The paints' uniforms are written where their paint is compiled in: a
+    // world without one leaves its uniform as the buffer was made.
+    if (this._roadCenter !== null && drawn.road !== null) {
+      if (roadMoved) this._roadCenter.update(drawn.road.data);
+      uniformBuffer.updateFloat4("roadTable", u.roadTable[0], u.roadTable[1], u.roadTable[2], u.roadTable[3]);
       uniformBuffer.setTexture("roadCenter", this._roadCenter);
       uniformBuffer.setTexture("roadAsphalt", this._asphalt);
     }
     if (this._trailTable !== null) {
-      uniformBuffer.updateFloat4("trailInfo", ...this._trailInfo);
+      uniformBuffer.updateFloat4("trailInfo", u.trailInfo[0], u.trailInfo[1], u.trailInfo[2], u.trailInfo[3]);
       uniformBuffer.setTexture("trailTable", this._trailTable);
     }
     if (this._featureTex !== null) {
-      uniformBuffer.updateFloat4("featureInfo", ...this._featureInfo);
+      uniformBuffer.updateFloat4("featureInfo", u.featureInfo[0], u.featureInfo[1], u.featureInfo[2], u.featureInfo[3]);
       uniformBuffer.setTexture("featureTex", this._featureTex);
     }
   }

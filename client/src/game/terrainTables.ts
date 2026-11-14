@@ -6,9 +6,9 @@
  * by hand, the trail and the features fetch one), so a table is 32-bit float,
  * read at the nearest texel, clamped at its edges, one level and no mips.
  *
- * Babylon-free: `terrainTexture.ts` makes its textures from these, and binds
- * what each puts in the material's uniforms (the road's centre, `trailTableInfo`,
- * the features' `count`).
+ * Babylon-free: `terrainTexture.ts` makes its textures from these, and what
+ * each puts in the material's uniforms (where the road's is centred, where the
+ * trail's grid stands, how many features are painted) is `terrainUniforms.ts`'s.
  */
 import type { Feature } from "../sim/features.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
@@ -16,9 +16,7 @@ import type { TrailGraph } from "../sim/trail.js";
 import { FEATURE_PAINT_MAX, FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTable, paintedLakes } from "./featureTable.js";
 import { ROAD_TABLE_N, buildRoadTable, roadTableStale, type RoadCenterX } from "./roadPaint.js";
 import { bakeShoreAtlas } from "./shoreAtlas.js";
-import {
-  TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, buildTrailTable, trailSegments,
-} from "./trailPaint.js";
+import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, buildTrailTable, trailSegments } from "./trailPaint.js";
 
 /** A table as its texture is made: `width` × `height` texels of `channels`
  * floats each, row-major. */
@@ -79,11 +77,6 @@ export function trailPaintTable(graph: TrailGraph): TrailPaintTable {
     data: table.data, width: TRAIL_PAINT_MAX_SEGMENTS, height: TRAIL_PAINT_TABLE_ROWS, channels: 4,
     x0: table.x0, z0: table.z0, overflow: table.overflow,
   };
-}
-
-/** What `trailInfo` carries of the table: (x0, z0, 1 / bucket, grid). */
-export function trailTableInfo(table: TrailPaintTable): [number, number, number, number] {
-  return [table.x0, table.z0, 1 / TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID];
 }
 
 /**
