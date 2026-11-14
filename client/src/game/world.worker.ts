@@ -21,10 +21,15 @@
  * copied, and this thread does not touch them again. It finds the bowl the
  * first request made in this thread's own cache.
  *
+ * The ground is sampled here as on the page: through the field kernel
+ * (`sim/fieldKernel.ts`), which this thread instantiates for itself as it
+ * starts.
+ *
  * The sim's passes register as they are imported, so that import comes first.
  */
 import "../sim/passes/index.js";
 import { generateChunk, type Chunk } from "../sim/chunk.js";
+import { fieldKernelReady } from "../sim/fieldKernel.js";
 import { PLAYER_HALF } from "../sim/constants.js";
 import { passHash, passHashKey } from "../sim/forest.js";
 import { spawnChunkCells } from "../sim/spawn.js";
@@ -91,6 +96,9 @@ export function prepareSceneReply(
 // Only inside a worker: under Node, where a test imports `prepareWorld`, and
 // on a page, there is no WorkerGlobalScope.
 if (typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope === "function") {
+  // This thread's field kernel (`sim/fieldKernel.ts`), made as the worker starts: every sample of the ground the
+  // requests below take goes through it.
+  fieldKernelReady();
   self.onmessage = (event: MessageEvent<WorldPrepRequest | WorldSceneRequest>): void => {
     const request = event.data;
     if ("kind" in request) prepareSceneReply(request, (reply, transfer) => self.postMessage(reply, { transfer }));

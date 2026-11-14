@@ -25,10 +25,18 @@
  *    Weighting the guide would need third derivatives and recurse forever;
  *    the guide needs only the second derivatives `gradientNoise2` provides.
  *
+ * WHAT RUNS: a variant samples through the field kernel (fieldKernel.ts: this
+ * file's pipeline and field.ts compiled from Rust), which returns the doubles
+ * `sampleWith` returns, to the bit. `sampleWith` stays as the reference the
+ * kernel is held to (`montaneReference`, fieldKernel.test.ts) and as what runs
+ * where the platform has no WebAssembly. A change to the pipeline is made in
+ * both, and the test says when they part.
+ *
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  * Math.sqrt is IEEE-exact and allowed.
  */
 import { fbm2d, gradientNoise2 } from "./field.js";
+import { fieldKernelReady, kernelMontane, kernelMontaneConfig } from "./fieldKernel.js";
 import { registerTerrainVariant, type TerrainSample } from "./terrain.js";
 
 // ---- Tunables (starting points, not values to defend) ---------
@@ -346,35 +354,64 @@ function variantTunables(cfg: MontaneTunables, flags: Flags): Readonly<Record<st
   };
 }
 
-function defineVariant(name: string, cfg: MontaneTunables, flags: Flags): void {
+type Sampler = (seed: number, x: number, z: number) => TerrainSample;
+
+/** The pipeline in TypeScript, by the tunables record of the config it runs. */
+const REFERENCES = new Map<Readonly<Record<string, number>>, Sampler>();
+
+/**
+ * A config's pipeline as the game runs it. `tunables` is the config's record
+ * (`variantTunables`), which the kernel is handed as its config, so the
+ * numbers of a level id are the numbers sampled. The kernel is asked for on
+ * the first sample, not as this module loads; where there is none the
+ * TypeScript samples, and returns the same doubles.
+ */
+function sampler(cfg: MontaneTunables, flags: Flags, tunables: Readonly<Record<string, number>>): Sampler {
   const norm = reliefNormFor(cfg.RELIEF_OCTAVES);
-  registerTerrainVariant({
-    name,
-    tunables: variantTunables(cfg, flags),
-    sample: (seed, x, z) => sampleWith(cfg, norm, flags, seed, x, z),
-  });
+  const reference: Sampler = (seed, x, z) => sampleWith(cfg, norm, flags, seed, x, z);
+  REFERENCES.set(tunables, reference);
+  // The kernel's handle for this config; -1 before the first sample, -2 where there is no kernel.
+  let handle = -1;
+  return (seed, x, z) => {
+    if (handle === -1) handle = fieldKernelReady() ? kernelMontaneConfig(tunables) : -2;
+    return handle >= 0 ? kernelMontane(handle, seed, x, z) : reference(seed, x, z);
+  };
+}
+
+/**
+ * The pipeline in TypeScript for the config whose tunables record this is (a
+ * variant's `tunables`, `MONTANE_VARIANT_TUNABLES`, `DENSE_VARIANT_TUNABLES`):
+ * what the kernel is held to. Undefined for a record that is no config's.
+ */
+export function montaneReference(tunables: Readonly<Record<string, number>>): Sampler | undefined {
+  return REFERENCES.get(tunables);
+}
+
+function defineVariant(name: string, tunables: Readonly<Record<string, number>>, sample: Sampler): void {
+  registerTerrainVariant({ name, tunables, sample });
 }
 
 const MONTANE_FLAGS: Flags = { warp: 1, erosion: 1, talus: 1, upliftOverride: -1 };
-const MONTANE_NORM = reliefNormFor(MONTANE_TUNABLES.RELIEF_OCTAVES);
-
-/** The montane pipeline as a plain function — `olympic.ts` composes with it
- * and must get bit-identical answers to the registered variant. */
-export function montaneSample(seed: number, x: number, z: number): TerrainSample {
-  return sampleWith(MONTANE_TUNABLES, MONTANE_NORM, MONTANE_FLAGS, seed, x, z);
-}
 
 /** Montane's full tunables record — the olympic variant embeds these so its
  * level id moves whenever the underlying pipeline's constants do. */
 export const MONTANE_VARIANT_TUNABLES = variantTunables(MONTANE_TUNABLES, MONTANE_FLAGS);
 
+/** The montane pipeline as a plain function — `olympic.ts` composes with it
+ * and must get bit-identical answers to the registered variant. */
+export const montaneSample: Sampler = sampler(MONTANE_TUNABLES, MONTANE_FLAGS, MONTANE_VARIANT_TUNABLES);
+
 // `plain` is the control — stages 1–3 only, for seeing what the
 // erosion and talus stages actually contribute. `ridged` isolates the mountain
 // primitive at constant full uplift. `montane` is uplift-driven terrain with
 // stages 4–5 turned on.
-defineVariant("montane", MONTANE_TUNABLES, MONTANE_FLAGS);
-defineVariant("plain", MONTANE_TUNABLES, { warp: 1, erosion: 0, talus: 0, upliftOverride: -1 });
-defineVariant("ridged", MONTANE_TUNABLES, { warp: 0, erosion: 0, talus: 0, upliftOverride: 1 });
+defineVariant("montane", MONTANE_VARIANT_TUNABLES, montaneSample);
+const PLAIN_FLAGS: Flags = { warp: 1, erosion: 0, talus: 0, upliftOverride: -1 };
+const PLAIN_VARIANT_TUNABLES = variantTunables(MONTANE_TUNABLES, PLAIN_FLAGS);
+defineVariant("plain", PLAIN_VARIANT_TUNABLES, sampler(MONTANE_TUNABLES, PLAIN_FLAGS, PLAIN_VARIANT_TUNABLES));
+const RIDGED_FLAGS: Flags = { warp: 0, erosion: 0, talus: 0, upliftOverride: 1 };
+const RIDGED_VARIANT_TUNABLES = variantTunables(MONTANE_TUNABLES, RIDGED_FLAGS);
+defineVariant("ridged", RIDGED_VARIANT_TUNABLES, sampler(MONTANE_TUNABLES, RIDGED_FLAGS, RIDGED_VARIANT_TUNABLES));
 
 /** Amended by the measured PEAK result: ranges every ~1.8 km instead of ~4
  * (the view window spans four-plus uplift wavelengths, so several ranges are
@@ -400,15 +437,11 @@ export const DENSE_TUNABLES: MontaneTunables = Object.freeze({
   TALUS_STRENGTH: 0.7,
 });
 
-const DENSE_NORM = reliefNormFor(DENSE_TUNABLES.RELIEF_OCTAVES);
-
-/** The dense pipeline as a plain function — the olympic variant composes
- * its inland half with this. */
-export function denseSample(seed: number, x: number, z: number): TerrainSample {
-  return sampleWith(DENSE_TUNABLES, DENSE_NORM, MONTANE_FLAGS, seed, x, z);
-}
-
 /** Dense's full tunables record, for the olympic variant's registry entry. */
 export const DENSE_VARIANT_TUNABLES = variantTunables(DENSE_TUNABLES, MONTANE_FLAGS);
 
-defineVariant("dense", DENSE_TUNABLES, MONTANE_FLAGS);
+/** The dense pipeline as a plain function — the olympic variant composes
+ * its inland half with this. */
+export const denseSample: Sampler = sampler(DENSE_TUNABLES, MONTANE_FLAGS, DENSE_VARIANT_TUNABLES);
+
+defineVariant("dense", DENSE_VARIANT_TUNABLES, denseSample);

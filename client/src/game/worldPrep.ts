@@ -23,6 +23,7 @@
  * be had is a null, never a rejection, and the build samples as it always did.
  */
 import { installChunks } from "../sim/chunkGrid.js";
+import { fieldKernelReady } from "../sim/fieldKernel.js";
 import { installPassHash, passHashCachedFor } from "../sim/forest.js";
 import { terrainVariant } from "../sim/terrain.js";
 import type { PreparedScene } from "./preparedScene.js";
@@ -100,6 +101,9 @@ export function startWorldPrep(
 ): WorldPrep {
   const now = deps.now ?? ((): number => performance.now());
   const limit = deps.timeoutMs ?? WORLD_PREP_TIMEOUT_MS;
+  // The page's own field kernel (`sim/fieldKernel.ts`), made as the hike's route is entered and not inside the
+  // build's first sample of the ground. Where the page cannot have one the sim samples by its TypeScript.
+  fieldKernelReady();
   const from = now();
   const id = ++lastId;
   const installed = { prepared: false, passHash: false, chunks: 0 };

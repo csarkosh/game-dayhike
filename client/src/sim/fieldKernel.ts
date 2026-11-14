@@ -2,10 +2,13 @@
  * The field kernel: `field.ts` and the montane pipeline of `montane.ts` compiled from Rust (client/rust/field)
  * to WebAssembly, returning the same doubles to the bit (fieldKernel.test.ts holds every function here to its
  * TypeScript original, which stays the reference). About twice the TypeScript's speed on a montane sample.
+ * The terrain's variants sample through it (montane.ts), on the page and in the world's worker alike.
  *
  * The module is instantiated here, synchronously, the first time anything asks for it: its bytes are in
  * `kernel/fieldWasm.ts`, built and committed by `npm run kernel:build`, so nothing is fetched and a page, a
- * worker and a test under Node all get it the same way.
+ * worker and a test under Node all get it the same way. Where the platform has no WebAssembly, or refuses to
+ * compile it, `fieldKernelReady()` says so and montane.ts samples by its TypeScript: the same doubles, so a
+ * peer on either agrees on the ground.
  *
  * Nothing in the kernel is a tunable of its own. A montane config is written into it once
  * (`kernelMontaneConfig`) from the record the TypeScript already makes for the variant's level id
@@ -47,13 +50,30 @@ type Exports = {
 
 type Kernel = { ex: Exports; out: Float64Array; cfg: Float64Array; slots: number; samples: number; configs: Map<Readonly<Record<string, number>>, number> };
 let kernel: Kernel | null = null;
+/** Set once the platform has refused the module: it is not asked again. */
+let refused = false;
 
-function load(): Kernel {
-  if (kernel === null) {
+/** The module's exports, or null where the platform has no WebAssembly or will not compile the module (a page
+ * under a content policy without it, a browser with it turned off). */
+function instantiate(): Exports | null {
+  if (refused || typeof WebAssembly !== "object") return null;
+  try {
     const binary = atob(FIELD_WASM_BASE64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const ex = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports as unknown as Exports;
+    return new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports as unknown as Exports;
+  } catch {
+    return null;
+  }
+}
+
+function load(): Kernel {
+  if (kernel === null) {
+    const ex = instantiate();
+    if (ex === null) {
+      refused = true;
+      throw new Error("the field kernel cannot be had here: no WebAssembly, or the module was refused");
+    }
     if (ex.cfg_len() !== MONTANE_KERNEL_FIELDS.length) throw new Error("the field kernel and fieldKernel.ts disagree on a montane config's length");
     const samples = ex.out_samples(), slots = ex.cfg_slots();
     // The kernel never grows its memory, so these views stay valid for its life.
@@ -65,6 +85,24 @@ function load(): Kernel {
     };
   }
   return kernel;
+}
+
+/**
+ * Whether the kernel can be had on this thread. The first call instantiates the module, so a thread that asks
+ * as it starts has the kernel made before a sample wants it; the answer is kept. False where the platform has
+ * no WebAssembly or refuses the module, and every `kernel…` function throws there. A kernel that disagrees with
+ * this file on its config is a build's mistake, not a platform's: that throws here too.
+ */
+export function fieldKernelReady(): boolean {
+  if (kernel !== null) return true;
+  if (refused) return false;
+  try {
+    load();
+    return true;
+  } catch (error) {
+    if (refused) return false;
+    throw error;
+  }
 }
 
 /** `hash2` of field.ts. */

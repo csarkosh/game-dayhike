@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { fbm2, fbm2d, gradientNoise2, hash2, hash3, valueNoise2 } from "../../src/sim/field.js";
 import "../../src/sim/montane.js";
-import { DENSE_VARIANT_TUNABLES, MONTANE_VARIANT_TUNABLES, denseSample, montaneSample } from "../../src/sim/montane.js";
-import { terrainVariant } from "../../src/sim/terrain.js";
+import { DENSE_VARIANT_TUNABLES, MONTANE_VARIANT_TUNABLES, denseSample, montaneReference, montaneSample } from "../../src/sim/montane.js";
+import { terrainVariant, type TerrainSample } from "../../src/sim/terrain.js";
 import {
   MONTANE_KERNEL_FIELDS,
+  fieldKernelReady,
   kernelFbm2,
   kernelFbm2d,
   kernelGradientNoise2,
@@ -19,7 +20,16 @@ import {
 } from "../../src/sim/fieldKernel.js";
 
 // The kernel is held to the TypeScript bit for bit: `Object.is` on every double, so a -0 for a 0 or a different
-// NaN would fail as a different number does.
+// NaN would fail as a different number does. The game's variants sample through the kernel, so the TypeScript
+// side of every montane comparison is `montaneReference`: the pipeline as montane.ts writes it, never a variant's
+// own `sample`, which would hold the kernel to itself.
+
+/** The pipeline in TypeScript for a config's tunables record. */
+function reference(tunables: Readonly<Record<string, number>>): (seed: number, x: number, z: number) => TerrainSample {
+  const made = montaneReference(tunables);
+  if (made === undefined) throw new Error("no TypeScript pipeline for this record");
+  return made;
+}
 
 /** A fixed stream of numbers in [0, 1). */
 function stream(start: number): () => number {
@@ -106,11 +116,14 @@ describe("the field kernel against montane.ts", () => {
   it.each(["montane", "plain", "ridged", "dense"])("variant %s: the same height and gradient at every place", (name) => {
     const variant = terrainVariant(name);
     if (variant === undefined) throw new Error(`no terrain variant ${name}`);
-    const handle = kernelMontaneConfig(variant.tunables);
+    const handle = kernelMontaneConfig(variant.tunables), typescript = reference(variant.tunables);
     let differ = 0, steepest = 0;
     for (const seed of SEEDS) for (const [x, z] of places(1200, 0x4567)) {
-      const a = kernelMontane(handle, seed, x, z), b = variant.sample(seed, x, z);
+      const a = kernelMontane(handle, seed, x, z), b = typescript(seed, x, z);
       if (!same(a.h, b.h) || !same(a.dx, b.dx) || !same(a.dz, b.dz)) differ++;
+      // And what the variant itself hands the game, by whichever of the two it runs.
+      const c = variant.sample(seed, x, z);
+      if (!same(c.h, b.h) || !same(c.dx, b.dx) || !same(c.dz, b.dz)) differ++;
       steepest = Math.max(steepest, Math.abs(b.dx), Math.abs(b.dz));
     }
     expect(differ).toBe(0);
@@ -118,12 +131,21 @@ describe("the field kernel against montane.ts", () => {
     expect(steepest).toBeGreaterThan(0.3);
   });
 
+  it("is there under Node, and a record that is no config's has no TypeScript pipeline", () => {
+    expect(fieldKernelReady()).toBe(true);
+    expect(montaneReference({ ...DENSE_VARIANT_TUNABLES })).toBeUndefined();
+  });
+
   it("agrees with the plain functions the level composes with", () => {
     const montane = kernelMontaneConfig(MONTANE_VARIANT_TUNABLES), dense = kernelMontaneConfig(DENSE_VARIANT_TUNABLES);
+    const montaneTs = reference(MONTANE_VARIANT_TUNABLES), denseTs = reference(DENSE_VARIANT_TUNABLES);
     let differ = 0;
     const into = new Float64Array(5);
     for (const [x, z] of places(3000, 0x5678)) {
-      const a = montaneSample(0xbe4c4, x, z), b = denseSample(0xbe4c4, x, z);
+      const a = montaneTs(0xbe4c4, x, z), b = denseTs(0xbe4c4, x, z);
+      // The functions the level composes with return the TypeScript's doubles, by whichever of the two they run.
+      const ra = montaneSample(0xbe4c4, x, z), rb = denseSample(0xbe4c4, x, z);
+      if (!same(ra.h, a.h) || !same(ra.dx, a.dx) || !same(ra.dz, a.dz) || !same(rb.h, b.h) || !same(rb.dx, b.dx) || !same(rb.dz, b.dz)) differ++;
       const ka = kernelMontane(montane, 0xbe4c4, x, z);
       if (!same(ka.h, a.h) || !same(ka.dx, a.dx) || !same(ka.dz, a.dz)) differ++;
       kernelMontaneInto(dense, 0xbe4c4, x, z, into, 1);
@@ -135,13 +157,13 @@ describe("the field kernel against montane.ts", () => {
   });
 
   it("makes a grid's samples as one call a sample does, row by row along z", () => {
-    const dense = kernelMontaneConfig(DENSE_VARIANT_TUNABLES);
+    const dense = kernelMontaneConfig(DENSE_VARIANT_TUNABLES), denseTs = reference(DENSE_VARIANT_TUNABLES);
     const nx = 33, nz = 17, ox = -5123.25, oz = 880.5, step = 0.5;
     const grid = Float64Array.from(kernelMontaneGrid(dense, 7, ox, oz, step, nx, nz));
     expect(grid.length).toBe(nx * nz * 3);
     let differ = 0;
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-      const s = denseSample(7, ox + i * step, oz + j * step), at = 3 * (j * nx + i);
+      const s = denseTs(7, ox + i * step, oz + j * step), at = 3 * (j * nx + i);
       if (!same(grid[at] as number, s.h) || !same(grid[at + 1] as number, s.dx) || !same(grid[at + 2] as number, s.dz)) differ++;
     }
     expect(differ).toBe(0);
