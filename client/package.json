@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@babylonjs/core": "9.18.0",
+    "@babylonjs/lite": "github:csarkosh/babylon-lite#v1.39.3-dayhike.5",
     "@babylonjs/loaders": "9.18.0"
   },
   "devDependencies": {
