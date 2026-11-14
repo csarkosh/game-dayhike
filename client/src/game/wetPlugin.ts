@@ -60,106 +60,21 @@ import fragmentDefs from "./shaders/wet.fragment.fx?raw";
 import fragmentLights from "./shaders/wetLights.fragment.fx?raw";
 import fragmentWeather from "./shaders/wetWeather.fragment.fx?raw";
 import { clamp01 } from "./colour.js";
-import type { WaterBody } from "./waterShading.js";
-import { SWASH_COLUMNS, SWASH_STRIDE } from "./swashTable.js";
+import { WET_NO_COVE, WET_SWASH_VECS, emptyWetUniforms, wetUniforms, type WetState } from "./wetSurface.js";
 
-export const WET_ALBEDO = 0.4;
-export const WET_ROUGHNESS = 0.15;
-export const WET_BAND = 0.1;
-/** The still swash band above a body's level (spec §6.1). */
-export const WET_LINE_ABOVE = 0.3;
-
-/** Radius cap for the sea: 1e6 + 1 and 1e6 + 3 are distinct in fp32, 1e9 + 1 is not (smoothstep needs distinct edges). */
-export const WET_RADIUS_MAX = 1e6;
-
-/** The swash's damp ground: its albedo factor and the roughness it is held to at most. */
-export const WET_DAMP_ALBEDO = 0.7;
-export const WET_DAMP_ROUGHNESS = 0.5;
-/** The swash's ground dries over this (s): soaked for WET_SOAKED_S after a
- * sheet, damp by a third of it, dry by all of it (SWASH_DRY_S). */
-export const WET_DRY_S = 60;
-export const WET_SOAKED_S = 0.5;
-/** The foam speckle on the swash's band: its weight toward white, fading
- * over WET_SPECKLE_S after a sheet (SWASH_SPECKLE_S); the share of its
- * WET_SPECKLE_CELL cells it covers, faded to that share between
- * WET_SPECKLE_NEAR and WET_SPECKLE_FAR metres from the eye. */
-export const WET_SPECKLE = 0.2;
-export const WET_SPECKLE_S = 10;
-export const WET_SPECKLE_CELL = 0.05;
-export const WET_SPECKLE_COVER = 0.25;
-export const WET_SPECKLE_NEAR = 10;
-export const WET_SPECKLE_FAR = 25;
-/** The cove's swash fades into the bays' still line over ± this about each
- * of its ends, as its ground does (COVE_END_BLEND). */
-export const WET_COVE_END = 30;
-/** The vec4s of `wetSwash`: two columns of the swash's table each. */
-export const WET_SWASH_VECS = SWASH_COLUMNS / 2;
-/** No cove: a half-width so far below zero that the cove's share is 0 at every z. */
-export const WET_NO_COVE = -1e6;
+// The look's numbers, the page's wetness, cove and swash table, the wet line
+// and the look's TypeScript twins are `wetSurface.ts`'s, which loads no
+// Babylon; named from here too.
+export * from "./wetSurface.js";
 
 export const WET_ROUGHNESS_ANCHOR = "!float roughness=reflectivityOut\\.roughness;";
 export const WET_ROUGHNESS_CODE =
   "float roughness=mix(mix(reflectivityOut.roughness, min(reflectivityOut.roughness, WET_DAMP_ROUGHNESS), wetDamp), WET_ROUGHNESS, wetW);";
 
-/** The porosity cap of each kind of material the weather wets. */
-export const WET_CAP = {
-  bark: 1,
-  deadwood: 1,
-  duff: 1,
-  fungus: 1,
-  prop: 1,
-  rock: 0.5,
-  cliff: 0.5,
-  leaf: 0.3,
-} as const;
-
-// Module-level like the foliage plugin's wind: every plugin reads one
-// wetness, written once per frame by the renderer.
-let weatherWet = 0;
-
-/** Per frame: the weather's wetness in [0, 1], for every attached plugin. */
-export function setWetWeather(wetness: number): void {
-  weatherWet = clamp01(wetness);
-}
-
-// Module-level as the weather's wetness is: one cove and one table for the
-// page, bound by every plugin.
-const wetCove: [number, number, number, number] = [0, WET_NO_COVE, 0, 0];
-const wetSwash = new Float32Array(WET_SWASH_VECS * 4);
-for (let i = 1; i < wetSwash.length; i += 2) wetSwash[i] = WET_DRY_S;
-
-/** The cove the swash's table runs along, for every attached plugin: its
- * centre z, its half-width, the face's toe (signed coast distance, m) and the
- * face's grade. No cove when any is not finite. */
-export function setWetCove(z0: number, halfWidth: number, toeD: number, faceGrade: number): void {
-  const finite = Number.isFinite(z0) && Number.isFinite(halfWidth) && Number.isFinite(toeD) && Number.isFinite(faceGrade);
-  wetCove[0] = finite ? z0 : 0;
-  wetCove[1] = finite ? halfWidth : WET_NO_COVE;
-  wetCove[2] = finite ? toeD : 0;
-  wetCove[3] = finite ? faceGrade : 0;
-}
-
-/**
- * Per frame: the swash's table (`SwashTable.data`, (front, thickness, reach,
- * age) a column), packed for every attached plugin into the one array they
- * bind: (reach, age) of columns 2i and 2i + 1 in `wetSwash[i]`. A reach that
- * is not a finite number reads as none, an age as dry; nothing is made.
- */
-export function setWetSwash(data: Float32Array): void {
-  for (let c = 0; c < SWASH_COLUMNS; c++) {
-    const reach = data[c * SWASH_STRIDE + 2];
-    const age = data[c * SWASH_STRIDE + 3];
-    wetSwash[c * 2] = reach !== undefined && Number.isFinite(reach) ? Math.max(0, reach) : 0;
-    wetSwash[c * 2 + 1] = age !== undefined && Number.isFinite(age) ? Math.max(0, age) : WET_DRY_S;
-  }
-}
-
-/** A body as the wet line reads it: its centre, the disc every material
- * but the terrain is held to (a lake's farthest shore point), and how far
- * its ground reaches (a lake's bound; the sea's infinite). */
-export type WetBody = WaterBody & { x: number; z: number; radius: number; bound: number };
-
 const attached = new Set<WetPlugin>();
+
+/** The uniforms of the bind under way (`wetUniforms`), filled again at each: one record for every plugin. */
+const bound = emptyWetUniforms();
 
 export class WetPlugin extends MaterialPluginBase {
   line = -1e6;
@@ -217,21 +132,22 @@ export class WetPlugin extends MaterialPluginBase {
   }
 
   override bindForSubMesh(uniformBuffer: UniformBuffer): void {
-    uniformBuffer.updateFloat("wetLine", this.line);
-    uniformBuffer.updateFloat("wetLevel", this.level);
-    uniformBuffer.updateFloat2("wetCentre", this.centre[0], this.centre[1]);
-    uniformBuffer.updateFloat("wetRadius", Math.min(this.radius, WET_RADIUS_MAX));
-    uniformBuffer.updateFloat3("wetKd", this.kd[0], this.kd[1], this.kd[2]);
-    uniformBuffer.updateFloat("wetAttenuate", this.attenuate ? 1 : 0);
-    uniformBuffer.updateFloat("wetWeather", weatherWet);
-    uniformBuffer.updateFloat("wetCap", this.cap);
-    uniformBuffer.updateFloat4("wetCove", wetCove[0], wetCove[1], wetCove[2], wetCove[3]);
+    const u = wetUniforms(this, bound);
+    uniformBuffer.updateFloat("wetLine", u.wetLine[0]);
+    uniformBuffer.updateFloat("wetLevel", u.wetLevel[0]);
+    uniformBuffer.updateFloat2("wetCentre", u.wetCentre[0], u.wetCentre[1]);
+    uniformBuffer.updateFloat("wetRadius", u.wetRadius[0]);
+    uniformBuffer.updateFloat3("wetKd", u.wetKd[0], u.wetKd[1], u.wetKd[2]);
+    uniformBuffer.updateFloat("wetAttenuate", u.wetAttenuate[0]);
+    uniformBuffer.updateFloat("wetWeather", u.wetWeather[0]);
+    uniformBuffer.updateFloat("wetCap", u.wetCap[0]);
+    uniformBuffer.updateFloat4("wetCove", u.wetCove[0], u.wetCove[1], u.wetCove[2], u.wetCove[3]);
     // updateFloatArray, not updateArray: without uniform buffers the latter
     // sets the array as floats, the former as the vec4s it is. With no cove
     // the share is 0 at every z and the table is never read, so its 4 KB are
     // written once and then left.
-    if (wetCove[1] !== WET_NO_COVE || !this.swashWritten) {
-      uniformBuffer.updateFloatArray("wetSwash", wetSwash);
+    if (u.wetCove[1] !== WET_NO_COVE || !this.swashWritten) {
+      uniformBuffer.updateFloatArray("wetSwash", u.wetSwash);
       this.swashWritten = true;
     }
   }
@@ -268,116 +184,6 @@ export function attachWet(material: Material, cap?: number): WetPlugin | null {
 export function wetCapOf(material: Material): number {
   const plugin = material.pluginManager?.getPlugin("Wet");
   return plugin instanceof WetPlugin ? plugin.cap : 0;
-}
-
-function smoothstep(e0: number, e1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
-  return t * t * (3 - 2 * t);
-}
-
-/**
- * The medium and low tiers' per-channel darkening by the water above a point,
- * as wetLights.fragment.fx computes it: exp(−2·(kd − mean kd)·depth), capped
- * at 1, where the depth below `level` is held to the body's footprint (1 inside,
- * 0 from 3 m past the rim, blended from 1 m, `wetInside` in wet.fragment.fx).
- * `radius` is capped at WET_RADIUS_MAX as the uniform is.
- */
-export function wetResidual(
-  kd: readonly [number, number, number],
-  level: number,
-  y: number,
-  centre: readonly [number, number],
-  radius: number,
-  xz: readonly [number, number],
-): [number, number, number] {
-  const r = Math.min(radius, WET_RADIUS_MAX);
-  const inside = 1 - smoothstep(r + 1, r + 3, Math.hypot(xz[0] - centre[0], xz[1] - centre[1]));
-  const depth = Math.max(0, level - y) * inside;
-  const mean = (kd[0] + kd[1] + kd[2]) / 3;
-  const ch = (k: number): number => Math.min(1, Math.exp(-2 * (k - mean) * depth));
-  return [ch(kd[0]), ch(kd[1]), ch(kd[2])];
-}
-
-/** GLSL's mix: x · (1 − a) + y · a. */
-function mix(x: number, y: number, a: number): number {
-  return x * (1 - a) + y * a;
-}
-
-/** 1 below the line, 0 above it, blended over WET_BAND: `wetBelow` in wet.fragment.fx. */
-export function wetBelowLine(y: number, line: number): number {
-  return 1 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, y);
-}
-
-/** The wet look at a point, as wetLights.fragment.fx makes it: how wet (the
- * still line's weight, or the swash's soaked one where higher), how damp,
- * and the speckle's weight before its cells' mask. */
-export type WetLook = { wet: number; damp: number; speckle: number };
-
-/**
- * The wet look at height y and world z, as wetLights.fragment.fx makes it
- * from the still line `line`, the body's `level`, the footprint's `inside`
- * and the bound cove and table (`wetCove`, `wetSwash`, as `setWetCove` and
- * `setWetSwash` pack them): the TypeScript twin of `wetShore` and the lines
- * that take it. Refills `out`.
- */
-export function wetLookAt(
-  y: number, z: number, line: number, level: number, inside: number,
-  cove: readonly [number, number, number, number], swash: Float32Array, out: WetLook,
-): WetLook {
-  const share = 1 - smoothstep(cove[1] - WET_COVE_END, cove[1] + WET_COVE_END, Math.abs(z - cove[0]));
-  const c = Math.floor(Math.min(Math.max(z - cove[0] + SWASH_COLUMNS / 2, 0), SWASH_COLUMNS - 1) + 0.5);
-  const reach = swash[c * 2] as number;
-  const age = swash[c * 2 + 1] as number;
-  const band = wetBelowLine(y, level + reach * cove[3]) * share;
-  const soaked = 1 - smoothstep(WET_SOAKED_S, WET_DRY_S / 3, age);
-  const damp = smoothstep(WET_SOAKED_S, WET_DRY_S / 3, age) - smoothstep(WET_DRY_S / 3, WET_DRY_S, age);
-  const fresh = Math.min(1, Math.max(0, 1 - age / WET_SPECKLE_S));
-  const above = 1 - wetBelowLine(y, level);
-  const still = wetBelowLine(y, line) * inside;
-  out.wet = Math.max(still, soaked * band * inside);
-  out.damp = damp * band * inside * (1 - still);
-  out.speckle = WET_SPECKLE * fresh * above * band * inside;
-  return out;
-}
-
-/** The albedo factor a look gives (before the speckle and the water above): `mix(1, WET_ALBEDO, wet) · mix(1, WET_DAMP_ALBEDO, damp)`. */
-export function wetAlbedoFactor(look: WetLook): number {
-  return mix(1, WET_ALBEDO, look.wet) * mix(1, WET_DAMP_ALBEDO, look.damp);
-}
-
-/** The roughness a look gives a surface of roughness r, as WET_ROUGHNESS_CODE writes it. */
-export function wetRoughnessOf(r: number, look: WetLook): number {
-  return mix(mix(r, Math.min(r, WET_DAMP_ROUGHNESS), look.damp), WET_ROUGHNESS, look.wet);
-}
-
-/** How far past its bound a lake still claims the wet line over the sea, metres. */
-const POND_REACH = 40;
-
-/**
- * The nearest body's wet line and kd for a point. The sea (infinite radius) is
- * everywhere at distance zero, so it is the fallback: a lake wins only
- * within POND_REACH of its bound (spec §10.2), the nearest such lake.
- */
-export type WetState = {
-  line: number;
-  level: number;
-  kd: [number, number, number];
-  centre: [number, number];
-  radius: number;
-};
-
-export function wetLineFor(bodies: readonly WetBody[], x: number, z: number): WetState {
-  let best: WetBody | null = null;
-  let bestD = POND_REACH;
-  let fallback: WetBody | null = null;
-  for (const b of bodies) {
-    if (!Number.isFinite(b.radius)) { fallback ??= b; continue; }
-    const d = Math.max(0, Math.hypot(x - b.x, z - b.z) - b.bound);
-    if (d <= bestD) { bestD = d; best = b; }
-  }
-  const pick = best ?? fallback;
-  if (pick === null) return { line: -1e6, level: -1e6, kd: [0, 0, 0], centre: [0, 0], radius: 0 };
-  return { line: pick.level + WET_LINE_ABOVE, level: pick.level, kd: pick.kd, centre: [pick.x, pick.z], radius: Math.min(pick.radius, WET_RADIUS_MAX) };
 }
 
 /** Per frame: one wet line for every attached plugin. `attenuate` is false on the high tier. */

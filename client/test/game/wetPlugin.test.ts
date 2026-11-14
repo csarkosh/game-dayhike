@@ -14,6 +14,7 @@ import {
   WET_COVE_END, WET_DAMP_ALBEDO, WET_DAMP_ROUGHNESS, WET_DRY_S, WET_NO_COVE, WET_SOAKED_S, WET_SPECKLE, WET_SPECKLE_CELL,
   WET_SPECKLE_COVER, WET_SPECKLE_FAR, WET_SPECKLE_NEAR, WET_SPECKLE_S, WET_SWASH_VECS,
 } from "../../src/game/wetPlugin.js";
+import { wetUniforms } from "../../src/game/wetSurface.js";
 import { SWASH_COLUMNS, SWASH_DRY_S, SWASH_SPECKLE_S, SWASH_STRIDE } from "../../src/game/swashTable.js";
 import { COVE_END_BLEND } from "../../src/sim/olympic.js";
 import { WATER_ROWS } from "../../src/game/waterShading.js";
@@ -226,6 +227,32 @@ describe("the weather's wetting (wetWeather.fragment.fx)", () => {
     a.bindForSubMesh(ubo);
     expect(writes.wetWeather).toEqual([0]);
     setWetWeather(0);
+  });
+
+  it("declares the uniforms wetUniforms makes, by name and size, and binds each as the record has it", () => {
+    const p = attachWet(new PBRMaterial("w8", scene), 0.5)!;
+    const made = wetUniforms(p);
+    const sizes = Object.entries(made).map(([name, v]) => [name, name === "wetSwash" ? 4 : v.length]);
+    expect(p.getUniforms().ubo.map((u) => [u.name, u.size])).toEqual(sizes);
+    const writes: Record<string, number[]> = {};
+    let swash: Float32Array | null = null;
+    const ubo = {
+      updateFloat: (n: string, x: number) => { writes[n] = [x]; },
+      updateFloat2: (n: string, x: number, y: number) => { writes[n] = [x, y]; },
+      updateFloat3: (n: string, x: number, y: number, z: number) => { writes[n] = [x, y, z]; },
+      updateFloat4: (n: string, x: number, y: number, z: number, w: number) => { writes[n] = [x, y, z, w]; },
+      updateFloatArray: (_n: string, a: Float32Array) => { swash = a; },
+    } as unknown as UniformBuffer;
+    setWetWeather(0.75);
+    setWetLine({ line: 12.3, level: 12, kd: [1, 2, 3], centre: [4, 5], radius: Number.POSITIVE_INFINITY }, false);
+    p.bindForSubMesh(ubo);
+    const { wetSwash, ...rest } = wetUniforms(p);
+    expect(writes).toEqual(rest);
+    expect(writes.wetRadius).toEqual([WET_RADIUS_MAX]);
+    // The table is the page's one array, handed over as it is.
+    expect(swash).toBe(wetSwash);
+    setWetWeather(0);
+    setWetLine({ line: -1e6, level: -1e6, kd: [0, 0, 0], centre: [0, 0], radius: 0 }, true);
   });
 
   it("is Lagarde's rule on the block's final roughness, held to the cap", () => {
