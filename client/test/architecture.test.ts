@@ -294,9 +294,11 @@ describe("layer boundaries", () => {
     // The engine's making counts against the bound: the scene waits on what
     // is left of it (`engineWithinBound`).
     expect(app).toContain("const made = await engineWithinBound((wanted) => options.engineFor(target, wanted), readyMaxMs, ");
-    expect([...app.matchAll(/\bwhenSceneReady\([^;]*;/g)].map((m) => m[0])).toEqual([
-      "whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);",
-    ]);
+    expect([...app.matchAll(/\bwhenReady\([^;]*;/g)].map((m) => m[0])).toEqual(["whenReady(made.leftMs);"]);
+    // The renderer's wait is its scene's and its forest's layers', bounded by what it is passed alone.
+    expect(stripComments(readFileSync(join(SRC, "game/renderer.ts"), "utf8"))).toContain(
+      "    whenReady(maxMs) {\n      return whenSceneReady(scene, maxMs, renderer.forestReady);\n    },",
+    );
     expect(app).not.toMatch(/SWAP_READY_MAX_MS/);
   });
 

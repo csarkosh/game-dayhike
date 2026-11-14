@@ -165,7 +165,7 @@ import { createMotes, type Motes } from "./motes.js";
 import { createWaterLife, type WaterLife, type WaterLifeFrame } from "./waterLife.js";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
-import { buildOrUndo } from "./rendererSwap.js";
+import { buildOrUndo, whenSceneReady } from "./rendererSwap.js";
 import { calmShare, isRough, roughShare, smearPx, SLOPE_PAW_DEG } from "./lakeCalm.js";
 import { lakeSunShare } from "./lakeRipples.js";
 import { SUN_PEAK } from "./sky.js";
@@ -1721,6 +1721,12 @@ export type Renderer = {
    * billboard before it (`BakeOptions.sky`). Callers while it waits share
    * one wait; for a renderer disposed first it never resolves. */
   skyReady(): Promise<void>;
+  /** Resolves once the world is in: the scene ready with nothing still
+   * loading, and the forest's first fill drawn (`forestReady`), or after
+   * `maxMs`, the bound of whoever waits (`whenSceneReady`). */
+  whenReady(maxMs: number): Promise<void>;
+  /** How many of the scene's loads (models, textures) are still in flight. */
+  waitingItems(): number;
   /**
    * `frame` carries this frame's local, non-simulated view inputs — its
    * duration in seconds and whether sprint is held. Only the walking cue reads
@@ -3318,6 +3324,12 @@ function buildRenderer(
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
     firstSynced,
     skyReady,
+    whenReady(maxMs) {
+      return whenSceneReady(scene, maxMs, renderer.forestReady);
+    },
+    waitingItems() {
+      return scene.getWaitingItemsCount();
+    },
     gpuTime,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       if (renderScale !== null && renderScale.frame(frame.dt)) engine.setHardwareScalingLevel(baseScaling / renderScale.scale);

@@ -103,7 +103,6 @@ import {
   engineWithinBound,
   swapRenderer,
   switchOutcome,
-  whenSceneReady,
   whenStandingSkyHeld,
   type EngineOnCanvas,
   type EngineWatchers,
@@ -2493,8 +2492,7 @@ function buildGame(
   }
   const ready = firstBuild.then(() =>
     startReady({
-      scene: renderer.scene,
-      forestReady: renderer.forestReady,
+      renderer,
       reveal: firstWholeFrame,
       progress,
       maxMs: READY_MAX_MS,
@@ -2700,7 +2698,7 @@ function buildGame(
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
       const sceneFrom = performance.now();
-      await whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);
+      await renderer.whenReady(made.leftMs);
       // On WebGPU, then a frame that left no draw out while its pipeline was
       // made, within what is left of the same bound: the cover lasts no
       // longer, and meshes do not appear after it lifts.
@@ -2770,7 +2768,7 @@ function buildGame(
       menuOpen: menu.isOpen,
       barOpen: bar.isOpen,
       visible: document.visibilityState === "visible",
-      waitingItems: renderer.scene.getWaitingItemsCount(),
+      waitingItems: renderer.waitingItems(),
       compiled: compiledSinceFrame,
       switching,
       freecam: freecam !== null || freecamPending,

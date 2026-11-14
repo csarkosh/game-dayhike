@@ -3,8 +3,6 @@
  * the tier switch judges a renderer mid-hike (`rendererSwap.ts`), run once
  * at the start so the intro playing over it knows when the world is whole.
  */
-import type { Scene } from "@babylonjs/core/scene.js";
-import { whenSceneReady } from "./rendererSwap.js";
 import type { LoadProgress } from "./loadProgress.js";
 
 /** The longest the start waits for the world before it calls it ready anyway (ms). */
@@ -12,7 +10,7 @@ export const READY_MAX_MS = 60_000;
 
 /**
  * Resolves once the scene is ready with nothing in flight and the forest's
- * layers are in (`forestReady`), then, on WebGPU, once a whole frame has
+ * layers are in (`Renderer.whenReady`), then, on WebGPU, once a whole frame has
  * drawn with no draw left out (`reveal`); then the bar reads ready. Never
  * later than `maxMs` after the scene test began, whatever is still to come.
  * A start whose first builds are stepped under the intro's film
@@ -20,8 +18,8 @@ export const READY_MAX_MS = 60_000;
  * world must not be seen filling in by a player who skips the film.
  */
 export async function startReady(input: {
-  scene: Scene;
-  forestReady: Promise<unknown>;
+  /** The hike's renderer, asked when its world is in. */
+  renderer: { whenReady(maxMs: number): Promise<void> };
   reveal: Promise<void> | null;
   progress: LoadProgress | null;
   maxMs: number;
@@ -30,7 +28,7 @@ export async function startReady(input: {
   firstBuilds?: (() => Promise<void>) | null;
 }): Promise<void> {
   const began = Date.now();
-  await whenSceneReady(input.scene, input.maxMs, input.forestReady);
+  await input.renderer.whenReady(input.maxMs);
   // Each wait is bounded by what is left of the limit: a build that never ends, or a frame that
   // never comes whole (a pipeline that never lands), must not hold the intro past it.
   const left = (): number => input.maxMs - (Date.now() - began);

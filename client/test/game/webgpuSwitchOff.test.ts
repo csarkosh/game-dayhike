@@ -241,7 +241,7 @@ describe("the start where the rule gives WebGL2", () => {
     expect(switchNow.indexOf("swapRenderer(")).toBeGreaterThan(switchNow.indexOf("endRevealHold();"));
     // The switch's cover also waits for a frame that left nothing out, on
     // what is left of its bound, after the scene is ready.
-    const ready = switchNow.indexOf("await whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);");
+    const ready = switchNow.indexOf("await renderer.whenReady(made.leftMs);");
     expect(ready).toBeGreaterThan(0);
     expect(switchNow.indexOf("await whenFrameWhole(")).toBeGreaterThan(ready);
     const dispose = app.slice(app.lastIndexOf("    dispose() {\n      disposed = true;"));
