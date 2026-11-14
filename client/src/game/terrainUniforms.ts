@@ -18,6 +18,7 @@ import {
 } from "./groundHexParams.js";
 import { rippleTime } from "./rainParams.js";
 import { ROAD_TABLE_N, ROAD_TABLE_STEP, roadTableZ0 } from "./roadPaint.js";
+import type { QualityTier } from "./quality.js";
 import type { FeaturePaintTable, RoadCentreTable, TrailPaintTable } from "./terrainTables.js";
 import { TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID } from "./trailPaint.js";
 import { wetSurfaceUnder, type WeatherParams } from "./weather.js";
@@ -243,4 +244,19 @@ export function terrainSurfaceUnder(w: WeatherParams): TerrainSurface {
     roughness: TERRAIN_SURFACE.roughness * roughnessScale,
     metallic: TERRAIN_SURFACE.metallic,
   };
+}
+
+/**
+ * What of the terrain's material follows the quality tier's cover. `sward`:
+ * whether the sward floor is pulled, which stands for the shaded ground
+ * between the blades, so only on the tiers that draw the blade field
+ * (`TerrainUniformInputs.sward`). `farLow`: whether the far cover takes the
+ * low tier's band, [14.4, 18] m against [24, 30] m, since low draws every
+ * clutter class at 0.6 of its radius; it is a define of the fragment stage
+ * (`TERRAINFARLOW`), not a uniform.
+ */
+export type TerrainCover = { sward: boolean; farLow: boolean };
+
+export function terrainCoverFor(tier: QualityTier): TerrainCover {
+  return { sward: tier !== "low", farLow: tier === "low" };
 }

@@ -75,7 +75,7 @@ import {
 } from "./clipmap.js";
 import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, ringVertices } from "./terrainVertices.js";
 import { GAME_FOV, lensProjection } from "./gameLens.js";
-import { TERRAIN_SURFACE } from "./terrainUniforms.js";
+import { TERRAIN_SURFACE, terrainCoverFor } from "./terrainUniforms.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
 import { createLighting, DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "./lighting.js";
 import type { SkyState } from "./skyState.js";
@@ -2914,7 +2914,7 @@ function buildRenderer(
   if (forest !== null) setTerrainSward(scene, terrainMaterialFor(scene, "terrain"), bladeMeshes !== null);
   // The far cover's band follows the tier's clutter edges: on low, where every
   // class is drawn at 0.6 of its radius, it comes in at 0.6 of its distance.
-  if (forest !== null) setTerrainFarBand(scene, terrainMaterialFor(scene, "terrain"), tier === "low");
+  if (forest !== null) setTerrainFarBand(scene, terrainMaterialFor(scene, "terrain"), terrainCoverFor(tier).farLow);
   // The near field of dead leaves, twigs and small branches, on the same
   // tiers as the blades beside it: what the grass field thins out, this fills
   // in, so the ground reads full rather than bare. Low tier draws neither.

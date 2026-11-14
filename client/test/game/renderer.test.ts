@@ -187,7 +187,8 @@ import { skyStateFor } from "../../src/game/skyState.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { LakeCalmFrame } from "../../src/game/renderer.js";
 import { lensProjection } from "../../src/game/gameLens.js";
-import { TERRAIN_SURFACE, terrainSurfaceUnder } from "../../src/game/terrainUniforms.js";
+import { TERRAIN_SURFACE, terrainCoverFor, terrainSurfaceUnder, terrainUniforms } from "../../src/game/terrainUniforms.js";
+import { terrainTablesFor } from "../../src/game/terrainTables.js";
 import { FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS } from "../../src/game/facePatches.js";
 
 let engine: NullEngine | null = null;
@@ -1878,7 +1879,13 @@ describe("the sward floor follows the blade field's tiers", () => {
   const LEVEL: Level = { id: "sward-tier-test", brushes: [], playerSpawns: [], enemySpawns: [] };
   const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
 
-  function boundSward(tier: "low" | "medium" | "high"): { sward: number[]; band: number[] } {
+  type Bound = { values: Record<string, number[]>; farLow: boolean; eye: { x: number; y: number; z: number } };
+  /** A tier's renderer is built once: what one bind of its terrain material
+   * writes, the far band's define, and where its camera stood. */
+  const boundByTier = new Map<string, Bound>();
+  function bound(tier: "low" | "medium" | "high"): Bound {
+    const held = boundByTier.get(tier);
+    if (held !== undefined) return held;
     const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(388817), { tier });
     try {
       const scene = EngineStore.LastCreatedScene!;
@@ -1892,16 +1899,40 @@ describe("the sward floor follows the blade field's tiers", () => {
         setTexture: () => {},
       };
       plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
-      return { sward: values.terrainSward!, band: values.terrainSwardBand! };
+      const defines: Record<string, boolean> = {};
+      plugin.prepareDefines(defines as never, scene, undefined as never);
+      const at = scene.activeCamera!.globalPosition;
+      const made = { values, farLow: defines.TERRAINFARLOW === true, eye: { x: at.x, y: at.y, z: at.z } };
+      boundByTier.set(tier, made);
+      return made;
     } finally {
       renderer.dispose();
     }
+  }
+  function boundSward(tier: "low" | "medium" | "high"): { sward: number[]; band: number[] } {
+    const { values } = bound(tier);
+    return { sward: values.terrainSward!, band: values.terrainSwardBand! };
   }
 
   it("binds no pull on the low tier, which draws no blades, and the full pull on the others", () => {
     expect(boundSward("low")).toEqual({ sward: [0.047, 0.06, 0.036, 0], band: [0.05, 0.5, 12, 18] });
     expect(boundSward("medium")).toEqual({ sward: [0.047, 0.06, 0.036, 0.6], band: [0.05, 0.5, 12, 18] });
     expect(boundSward("high")).toEqual({ sward: [0.047, 0.06, 0.036, 0.6], band: [0.05, 0.5, 12, 18] });
+  }, timeLimit(60_000));
+
+  it("draws the ground with what the terrain's modules make for the tier and the world, with no engine (terrainUniforms.ts, terrainTables.ts)", () => {
+    // The world's tables from its seed alone, as the renderer's two ground materials each make them.
+    const tables = terrainTablesFor(388817);
+    expect([tables.road, tables.trail, tables.features].every((t) => t !== null)).toBe(true);
+    for (const tier of ["low", "medium", "high"] as const) {
+      const cover = terrainCoverFor(tier);
+      const { values, farLow, eye } = bound(tier);
+      // Before the first frame: dry, no rain, the clock at nothing, and the relief maps not landed.
+      expect(values, tier).toEqual(terrainUniforms({
+        eye, wetness: 0, rain: 0, seconds: 0, sward: cover.sward, relief: false, ...tables,
+      }));
+      expect(farLow, tier).toBe(cover.farLow);
+    }
   }, timeLimit(60_000));
 });
 

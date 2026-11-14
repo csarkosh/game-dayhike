@@ -1493,7 +1493,7 @@ vec3 terrainFarN = vec3(0.0, 1.0, 0.0);
       '  if (forest !== null) setTerrainSward(scene, terrainMaterialFor(scene, "terrain"), bladeMeshes !== null);\n' +
         "  // The far cover's band follows the tier's clutter edges: on low, where every\n" +
         "  // class is drawn at 0.6 of its radius, it comes in at 0.6 of its distance.\n" +
-        '  if (forest !== null) setTerrainFarBand(scene, terrainMaterialFor(scene, "terrain"), tier === "low");\n',
+        '  if (forest !== null) setTerrainFarBand(scene, terrainMaterialFor(scene, "terrain"), terrainCoverFor(tier).farLow);\n',
     );
     expect(renderer.split("setTerrainFarBand(").length - 1).toBe(1);
   }, timeLimit(5_000));

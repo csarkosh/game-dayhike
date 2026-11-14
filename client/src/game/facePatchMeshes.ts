@@ -52,6 +52,7 @@ import { createCrossing, crossingAt, finish, nextCrossing, type Slices, type Syn
 import type { FirstBuilds } from "./firstBuilds.js";
 import { enableFeaturePaint, enableRoadPaint, enableTrailPaint, setTerrainFarBand } from "./terrainTexture.js";
 import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, facePatchVertices } from "./terrainVertices.js";
+import { terrainCoverFor } from "./terrainUniforms.js";
 
 /** The patches' material's name in `terrainMaterialFor`'s cache. */
 export const FACE_PATCH_MATERIAL = "facePatch";
@@ -165,7 +166,7 @@ export function createFacePatches(
   enableRoadPaint(scene, material, seed);
   enableTrailPaint(scene, material, seed);
   enableFeaturePaint(scene, material, seed, options.featureTable);
-  setTerrainFarBand(scene, material, tier === "low");
+  setTerrainFarBand(scene, material, terrainCoverFor(tier).farLow);
 
   /** The cells drawn: the set last applied. */
   let cells = new Map<number, Entry>();

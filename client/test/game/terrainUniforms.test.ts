@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FADE_END, FADE_START, LAYER_F0, LAYER_ROUGHNESS, TEXTURE_MEAN, TILING_METRES,
-  TERRAIN_SURFACE, emptyTerrainUniforms, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs,
+  TERRAIN_SURFACE, emptyTerrainUniforms, terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs,
 } from "../../src/game/terrainUniforms.js";
 import { WEATHER_PRESETS, WET_ALBEDO_LOSS, WET_ROUGHNESS_LOSS } from "../../src/game/weather.js";
 import { featurePaintTable, followRoadCentre, roadCentreTable, trailPaintTable } from "../../src/game/terrainTables.js";
@@ -137,5 +137,13 @@ describe("the terrain material's own surface", () => {
     expect(half.roughness).toBe(0.95 * (1 - WET_ROUGHNESS_LOSS * 0.5));
     // A record of its own: the dry surface is left as it is.
     expect(terrainSurfaceUnder(WEATHER_PRESETS.clear).albedo).not.toBe(TERRAIN_SURFACE.albedo);
+  });
+});
+
+describe("what of the terrain's material follows the tier", () => {
+  it("pulls the sward floor where the blade field is drawn, and takes the far cover's low band where the clutter is drawn short", () => {
+    expect(terrainCoverFor("low")).toEqual({ sward: false, farLow: true });
+    expect(terrainCoverFor("medium")).toEqual({ sward: true, farLow: false });
+    expect(terrainCoverFor("high")).toEqual({ sward: true, farLow: false });
   });
 });
