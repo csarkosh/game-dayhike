@@ -177,6 +177,18 @@ export type ForestBands = {
 };
 
 /**
+ * Where the near band ends on a quality tier (m): `NEAR_RADIUS`, and on the
+ * low tier seven twelfths of it, 70 m at a radius of 120. A share of the
+ * radius and not a number of its own, so a retune of the radius carries the
+ * low tier's with it: a fixed 140 once drifted to sit above the default it
+ * was meant to shrink, and the low tier drew its trees farther than the full
+ * one.
+ */
+export function nearRadiusFor(tier: "low" | "medium" | "high"): number {
+  return tier === "low" ? Math.round(NEAR_RADIUS * (140 / 240)) : NEAR_RADIUS;
+}
+
+/**
  * The band a squared camera distance earns: 0..2 = near LOD ring,
  * BAND_IMPOSTOR, or BAND_BEYOND. Every ring edge is half-open — a tree
  * exactly on an edge belongs to the farther band — and this is the ONLY

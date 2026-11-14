@@ -33,6 +33,7 @@ import {
   SEAM_PAD,
   SEAM_LOD0,
   SEAM_LOD1,
+  nearRadiusFor,
   seamNear,
   type ForestBands,
 } from "../../src/game/forestField.js";
@@ -583,6 +584,17 @@ describe("understory membership is padded by SEAM_PAD", () => {
       if (d > UNDERSTORY_RADIUS) sawBeyondRadius = true;
     }
     expect(sawBeyondRadius).toBe(true);
+  });
+});
+
+describe("nearRadiusFor", () => {
+  it("is the near radius on the medium and high tiers, and seven twelfths of it on low", () => {
+    expect(nearRadiusFor("high")).toBe(NEAR_RADIUS);
+    expect(nearRadiusFor("medium")).toBe(NEAR_RADIUS);
+    expect(nearRadiusFor("low")).toBe(Math.round((NEAR_RADIUS * 140) / 240));
+    expect(nearRadiusFor("low")).toBe(70);
+    // The low tier's band is the shorter: the billboards take over nearer.
+    expect(nearRadiusFor("low")).toBeLessThan(NEAR_RADIUS);
   });
 });
 

@@ -148,7 +148,7 @@ import {
   type PreparedLakeSurface, type PreparedScene, type PreparedWaterRing,
 } from "./preparedScene.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
-import { NEAR_RADIUS } from "./forestField.js";
+import { nearRadiusFor } from "./forestField.js";
 import { CLUTTER_REACH } from "./clutterField.js";
 import { createClutterMeshes } from "./clutterMeshes.js";
 import type { CullPose } from "./grassCull.js";
@@ -2828,21 +2828,12 @@ function buildRenderer(
 
   // Trees ride the same guard as the clipmap and water: hand-authored levels
   // have no forest and get none. Low tier shrinks the near (full-geometry)
-  // band; the impostor annulus grows to match.
-  // NEAR_RADIUS · (140/240) — the low tier's ORIGINAL ratio against the near
-  // band, preserved
-  // rather than left as the stale literal 140: NEAR_RADIUS itself shrank
-  // 240→120 across two retunes, and a fixed 140 low-tier override had
-  // drifted to sit ABOVE the new default — an inversion where "low" quality
-  // rendered farther than full. Deriving it as a fraction of NEAR_RADIUS
-  // keeps the two coupled, so the next NEAR_RADIUS retune carries this along
-  // automatically instead of silently re-inverting it again. Still 70 at the
-  // current NEAR_RADIUS of 120.
-  const lowTierNearRadius = Math.round(NEAR_RADIUS * (140 / 240));
+  // band, to a share of the default radius (`nearRadiusFor`); the impostor
+  // annulus grows to match.
   const forestMeshes =
     forest !== null
       ? createForestMeshes(scene, forest.seed, {
-        nearRadius: tier === "low" ? lowTierNearRadius : undefined,
+        nearRadius: nearRadiusFor(tier),
         // The size of bark the trees wear (`barkParams.ts`).
         tier,
         pipelines: bakePipelines(pipelines, scope),
