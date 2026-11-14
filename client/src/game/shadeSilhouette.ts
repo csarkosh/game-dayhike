@@ -59,6 +59,12 @@ export type ShadeSilhouette = {
   readonly texture: RenderTargetTexture;
   /** One frame: the figures to draw into the mask, and which layer each is on. */
   sync(entries: readonly ShadeEntry[]): void;
+  /**
+   * The crowd's cards (crowdCards.ts): their one mesh, and how many are up
+   * this frame. Told before `sync`. While any is up the mesh is drawn into
+   * the mask and the mask is up, whether or not a figure of the sim's is.
+   */
+  setCards(mesh: AbstractMesh | null, count: number): void;
   /** Whether any figure is in the mask this frame, for the pass to skip its taps when none is. */
   any(): boolean;
   dispose(): void;
@@ -93,6 +99,8 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
   const started = performance.now();
   let current: readonly ShadeEntry[] = [];
   let anyNow = false;
+  let cards: AbstractMesh | null = null;
+  let cardsUp = false;
 
   function meshesOf(node: TransformNode): AbstractMesh[] {
     return node.getChildMeshes(false);
@@ -134,7 +142,7 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
         materials.delete(node);
         smokes.delete(node);
       }
-      anyNow = false;
+      anyNow = cardsUp;
       const seconds = ((performance.now() - started) / 1000) % SHADE_SMOKE_FOLD_S;
       for (const e of entries) {
         let material = materials.get(e.node);
@@ -178,6 +186,18 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
       }
       current = entries;
       texture.refreshRate = anyNow ? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME : RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+    },
+    setCards(mesh, count) {
+      const list = texture.renderList;
+      if (list === null) return;
+      const up = mesh !== null && count > 0;
+      if (cards !== null && (cards !== mesh || !up)) {
+        const at = list.indexOf(cards);
+        if (at >= 0) list.splice(at, 1);
+      }
+      if (up && !list.includes(mesh)) list.push(mesh);
+      cards = mesh;
+      cardsUp = up;
     },
     any() {
       return anyNow;

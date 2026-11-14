@@ -129,4 +129,27 @@ describe("the shade mask", () => {
     scene.dispose();
     engine.dispose();
   });
+
+  it("takes the crowd's cards into the mask while there are any, and is up for them alone", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const camera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
+    const mask = createShadeSilhouette(scene, camera);
+    const cards = MeshBuilder.CreateBox("cards", { size: 1 }, scene);
+    mask.setCards(cards, 3);
+    mask.sync([]);
+    // No shade of the sim's, and the mask is still drawn: the grade and the veil read it.
+    expect(mask.any()).toBe(true);
+    expect(mask.texture.renderList).toContain(cards);
+    mask.setCards(cards, 0);
+    mask.sync([]);
+    expect(mask.any()).toBe(false);
+    expect(mask.texture.renderList).not.toContain(cards);
+    // With neither, nothing: the passes skip their work.
+    mask.setCards(null, 0);
+    mask.sync([]);
+    expect(mask.any()).toBe(false);
+    scene.dispose();
+    engine.dispose();
+  });
 });
