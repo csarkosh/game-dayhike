@@ -1,16 +1,17 @@
 /**
- * The hike's renderer on Babylon Lite: the terrain and the forest's trees
- * under the atmosphere, lit by the sun and the sky's fill for the hour and
- * the weather, seen from the player's eye or the free camera. It answers the whole of `Renderer`
+ * The hike's renderer on Babylon Lite: the terrain, the forest's trees and
+ * the blade grass under the atmosphere, lit by the sun and the sky's fill
+ * for the hour and the weather, seen from the player's eye or the free camera. It answers the whole of `Renderer`
  * (`renderer.ts`), and what it does not draw yet it answers as nothing
  * (`notDrawn.ts` has the list).
  *
  * What it draws with is the game's own, computed with no engine: the
- * terrain's uniforms, tables, layers and vertex data, the forest's instance
- * lists and its materials' uniforms, the air's uniforms, the lights and the
- * lens. This module is where those meet Lite: an engine, a scene, a camera,
- * two lights, the terrain's two materials and their meshes, and the
- * forest's buckets (`forestMeshes.ts`), which land as their models do.
+ * terrain's uniforms, tables, layers and vertex data, the forest's and the
+ * grass's instance lists and their materials' uniforms, the air's uniforms,
+ * the lights and the lens. This module is where those meet Lite: an engine,
+ * a scene, a camera, two lights, the terrain's two materials and their
+ * meshes, the forest's buckets (`forestMeshes.ts`), which land as their
+ * models do, and the grass's (`bladeMeshes.ts`), on the tiers that draw it.
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -48,6 +49,7 @@ import { featureTableFor } from "../featureTable.js";
 import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../foliageUniforms.js";
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
+import type { CullPose } from "../grassCull.js";
 import { writeListenerPose } from "../listenerPose.js";
 import { sharedSeconds } from "../oceanWindSea.js";
 import { fittingFeatureTable, fittingRings } from "../preparedScene.js";
@@ -63,6 +65,7 @@ import { WATER_ROWS, lakeWaterRow } from "../waterShading.js";
 import { WET_CAP, emptyWetUniforms, setWetWeather, wetLineFor, wetUniforms, type WetBody } from "../wetSurface.js";
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
+import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
 import { cameraAxes, projectToCanvas, restAxes, type CameraPose } from "./cameraPose.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
@@ -111,6 +114,7 @@ type Standing = {
   terrain: TerrainMeshes | null;
   road: TableTexture | null;
   forest: ForestMeshes | null;
+  blades: BladeMeshes | null;
 };
 
 /**
@@ -142,8 +146,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const cover = terrainCoverFor(tier);
   const drawnWith: TerrainUniformInputs = {
     eye: null, wetness: 0, rain: 0, seconds: 0,
-    // The sward floor stands for the shaded ground between the blades, which are not drawn.
-    sward: false,
+    // The sward floor is the shaded ground between the blades: it runs on the tiers that draw them.
+    sward: tier !== "low",
     relief: true,
     road: tables.road, trail: tables.trail, features: tables.features,
   };
@@ -175,6 +179,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const pose: CameraPose = { x: 0, y: 2, z: 0, yaw: 0, pitch: 0, roll: 0 };
   const axes = restAxes();
   let fov = lens.fov;
+  /** The camera's pose as the grass is cut to it (`grassCull.ts`): filled in place a frame. */
+  const cullPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, fov: lens.fov, aspect: 1 };
   let freecam: FreecamView | null = null;
   const bob = createViewBob();
   const eyeScratch: EyePose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
@@ -203,6 +209,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.blades?.dispose();
     made.forest?.dispose();
     made.terrain?.dispose();
     disposeScene(made.scene);
@@ -248,6 +255,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     let terrain: TerrainMeshes | null = null;
     let road: TableTexture | null = null;
     let trees: ForestMeshes | null = null;
+    let blades: BladeMeshes | null = null;
     // The ground cloud's map, which every material's air reads.
     const cloudMap = forest === null ? null : cloudMapTexture(engine);
     if (forest !== null && cloudMap !== null) {
@@ -311,8 +319,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         wet: forestWet,
         air: () => atmospherePlugin(airValues, cloudMap),
       });
+      // The near field of blade grass, on the tiers that can afford it.
+      if (tier !== "low") {
+        blades = createBladeMeshes(engine, scene, forest.seed, { quality: tier, eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap) });
+      }
     }
-    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees };
+    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades };
     if (disposed) {
       release(made);
       return;
@@ -436,6 +448,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // The forest's materials read the wind, the eye, the frame's size, the wet line and the air: written again a frame.
     frameSize.height = canvas.height;
     made.forest?.frame();
+    made.blades?.frame();
   }
 
   let skyWait: Promise<void> | null = null;
@@ -544,7 +557,18 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         if (centre !== null) {
           standing.terrain?.update(centre.x, centre.z);
           standing.forest?.update(centre.x, centre.z);
+          standing.blades?.update(centre.x, centre.z);
         }
+        // The grass is cut to the view once the camera's pose for the frame is final.
+        cullPose.x = pose.x;
+        cullPose.y = pose.y;
+        cullPose.z = pose.z;
+        cullPose.yaw = pose.yaw;
+        cullPose.pitch = pose.pitch;
+        cullPose.roll = pose.roll;
+        cullPose.fov = fov;
+        cullPose.aspect = canvas.height > 0 ? canvas.width / canvas.height : 1;
+        standing.blades?.cull(cullPose);
         draw(standing, weather.wetness);
       }
       if (centre !== null) markSynced();
