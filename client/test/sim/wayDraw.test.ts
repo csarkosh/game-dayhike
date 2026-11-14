@@ -137,6 +137,24 @@ describe("drawing the way down", SUITE, () => {
   });
 });
 
+describe("a way that leaves its meander for one of its copies", SUITE, () => {
+  // On these two worlds something stands across the near ground, and the cheapest line crosses to a copy of the
+  // meander 80 m to the side and back. Each crossing was a straight diagonal, 62 m and 60 m by the rules' measure.
+  for (const token of ["hollow16", "hollow24"]) {
+    it(`bends every long straight stretch on ${token}: none measures over the design's 40 m and its give`, () => {
+      const w = createForestWorld(createForest(seedFromToken(token)));
+      const way = drawWayNow(w) as WayDown;
+      expect(way.fallback).toBe(false);
+      const r = wayRules(way, w.trail!.trailhead);
+      expect(r.longestStraight).toBeLessThanOrEqual(WAY_STRAIGHT_MAX_M + STRAIGHT_SLACK_M);
+      // And it is still a way of its length that never doubles on itself.
+      expect(r.length).toBeGreaterThan(r.target * 0.9);
+      expect(r.length).toBeLessThan(r.target * 1.25);
+      expect(r.closestApart).toBeGreaterThanOrEqual(WAY_APART_M);
+    }, timeLimit(120_000));
+  }
+});
+
 describe("the way's arithmetic", () => {
   it("is only what every browser rounds alike: no trig, no powers, no logs", () => {
     const text = readFileSync(clientFile("src/sim/wayDraw.ts"), "utf8") + readFileSync(clientFile("src/sim/wayDown.ts"), "utf8");

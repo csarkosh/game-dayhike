@@ -41,11 +41,21 @@ or twice the straight line from its start to the pad (`WAY_MAX_RATIO`), whicheve
 from a few hundred metres to over a kilometre: a line over 1,027 m winds less than that so as to
 stay under 1,150 m (`WAY_MAX_M`), and one over 1,095 m is 1.05 times itself (`WAY_LONG_RATIO`).
 
+On a short world, where the aim is over one and a half times the line, the way winds as much as
+its ground lets it: an aim of twice the line takes swings of 100 m and more to either side, and
+the steep ground round a crest that near the pad does not always allow them. Two worlds in the
+sweep's fifty come out 0.70 and 0.77 of their aim, 1.4 and 1.5 times their line.
+
 **Its shape.** No stretch runs straight for more than about 40 m (`WAY_STRAIGHT_MAX_M`), the
 distance to the pad never grows by more than about 10 m before it falls again
 (`WAY_BACK_MAX_M`), and no two stretches come within 25 m (`WAY_APART_M`). These two are the
 design's "about": the tests give a straight stretch 8 m and a way gone round a lake 5 m, and
-measure heading back past the way's first 60 m, which may be going round the crest.
+measure heading back past the way's first 60 m, which may be going round the crest. The draw
+holds the first itself: a stretch of the drawn line that measures straight for over 46 m
+(`WAY_STRAIGHT_MOST_M`) has the cells round its middle walled, as if a boulder stood there, and
+the search goes again and round them. Without it a line that left the meander for one of its
+copies, round a lake or a cliff band, crossed to it and back in straight diagonals of 60 m and
+more.
 
 **How it is drawn** (`drawWay`, a generator):
 

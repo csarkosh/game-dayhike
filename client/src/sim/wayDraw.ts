@@ -34,6 +34,17 @@ export const WAY_MAX_M = 1150;
 export const WAY_LONG_RATIO = 1.05;
 /** The shape's rules, held by the tests: the longest straight stretch, the most the distance to the car may grow, the least two stretches stand apart. */
 export const WAY_STRAIGHT_MAX_M = 40;
+/**
+ * The longest a drawn line's stretch may measure straight before the draw
+ * bends it, and the cells round the stretch's middle it walls to do so. A
+ * stretch is straight while its segments' headings all lie within 8 degrees
+ * of each other (STRAIGHT_COS is that angle's cosine): a line wound least
+ * measures 44 to 48 m by that, which stands; a line crossing from the meander
+ * to one of its copies, or back, ran straight for 60 m and more.
+ */
+export const WAY_STRAIGHT_MOST_M = 46;
+export const WAY_BEND_CELLS = 2;
+const STRAIGHT_COS = 0.9902680687415704;
 export const WAY_BACK_MAX_M = 10;
 export const WAY_APART_M = 25;
 /** Metres of a whole wave of the meander at its straightest (the least ratio), and at its widest (the most): wide waves keep a long way's bends gentle. */
@@ -112,6 +123,45 @@ function amplitudeFor(m: Meander, straight: number, target: number, most: number
     else hi = mid;
   }
   return (lo + hi) / 2;
+}
+
+/**
+ * The middle point of the line's longest straight stretch, where that
+ * stretch measures over WAY_STRAIGHT_MOST_M, or -1. Headings are compared as
+ * unit vectors (a square root is rounded alike everywhere, a tangent is not):
+ * a stretch holds while the two of its headings furthest apart are within
+ * the angle.
+ */
+function longStraightMiddle(way: WayDown): number {
+  const n = way.xs.length - 1;
+  const hx = new Float64Array(n), hz = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const dx = (way.xs[i + 1] as number) - (way.xs[i] as number), dz = (way.zs[i + 1] as number) - (way.zs[i] as number);
+    const len = Math.sqrt(dx * dx + dz * dz);
+    hx[i] = len > 0 ? dx / len : 0;
+    hz[i] = len > 0 ? dz / len : 0;
+  }
+  let longest = WAY_STRAIGHT_MOST_M, middle = -1;
+  for (let i = 0; i < n; i++) {
+    // The headings furthest to the left and to the right of the first's, by the sine of each one's turn from it.
+    let lo = i, hi = i, sLo = 0, sHi = 0, j = i;
+    while (j + 1 < n) {
+      const k = j + 1;
+      const turn = (hx[i] as number) * (hz[k] as number) - (hz[i] as number) * (hx[k] as number);
+      const nLo = turn < sLo ? k : lo, nHi = turn > sHi ? k : hi;
+      const ahead = (hx[i] as number) * (hx[k] as number) + (hz[i] as number) * (hz[k] as number);
+      if (ahead <= 0 || (hx[nLo] as number) * (hx[nHi] as number) + (hz[nLo] as number) * (hz[nHi] as number) < STRAIGHT_COS) break;
+      if (nLo === k) { lo = k; sLo = turn; }
+      if (nHi === k) { hi = k; sHi = turn; }
+      j = k;
+    }
+    const run = (way.cum[j + 1] as number) - (way.cum[i] as number);
+    if (run > longest) {
+      longest = run;
+      middle = (i + j + 1) >> 1;
+    }
+  }
+  return middle;
 }
 
 const SHORE = newLakeShore();
@@ -393,8 +443,29 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
         cost[c] = Infinity;
         slid++;
       }
+      // A stretch that runs straight for too long is bent: the cells round its middle are walled, as if a boulder
+      // stood there, and the search goes again and round them.
+      let bent = 0;
+      if (slid === 0) {
+        const middle = longStraightMiddle(drawn);
+        const c = middle < 0 ? -1 : cellOf(drawn.xs[middle] as number, drawn.zs[middle] as number);
+        if (c >= 0) {
+          const ci = c % cols, cj = (c - ci) / cols;
+          for (let dj = -WAY_BEND_CELLS; dj <= WAY_BEND_CELLS; dj++) {
+            for (let di = -WAY_BEND_CELLS; di <= WAY_BEND_CELLS; di++) {
+              const ni = ci + di, nj = cj + dj;
+              if (di * di + dj * dj > WAY_BEND_CELLS * WAY_BEND_CELLS || ni < 0 || ni >= cols || nj < 0 || nj >= rows) continue;
+              const b = nj * cols + ni;
+              if (b === from || b === to || walled[b] === 1) continue;
+              walled[b] = 1;
+              cost[b] = Infinity;
+              bent++;
+            }
+          }
+        }
+      }
       yield;
-      if (slid === 0 || boxRound === BOX_ROUNDS - 1) break;
+      if ((slid === 0 && bent === 0) || boxRound === BOX_ROUNDS - 1) break;
     }
     if (drawn === null) {
       // Nothing got through this much ground: more of it, or no more to try.
