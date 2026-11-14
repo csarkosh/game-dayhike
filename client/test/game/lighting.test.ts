@@ -59,6 +59,7 @@ import { QUALITY } from "../../src/game/quality.js";
 import { WEATHER_PRESETS, SUN_CLOUD_LOSS, fogDensityUnder, exposureUnder, ambientCollapseUnder } from "../../src/game/weather.js";
 import { SUN_PEAK } from "../../src/game/sky.js";
 import { skyFixture } from "./helpers/skyFixture.js";
+import { sceneLightsUnder } from "../../src/game/sceneLights.js";
 import { STARE_DIM } from "../../src/game/gradeParams.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { writeExposureSilently } from "../../src/game/lighting.js";
@@ -818,6 +819,33 @@ describe("weather in lighting", () => {
     lighting.setWeather(WEATHER_PRESETS.rain, 0);
     expect(dome.updates.at(-1)!.state.cloud).toBe(1);
     expect(dome.updates.at(-1)!.exposure).toBe(s.imageProcessingConfiguration.exposure);
+    lighting.dispose();
+  });
+
+  it("sets the sun, the fill, the image-based light and the air from the scene's lights, made without it (sceneLights.ts)", () => {
+    const s = scene();
+    const table = skyFixture();
+    const lighting = light(s, { hour: 8, weather: CLEAR, sky: table });
+    const rgb = (c: { r: number; g: number; b: number }): number[] => [c.r, c.g, c.b];
+    for (const [hour, w] of [[8, CLEAR], [18.25, WEATHER_PRESETS.overcast], [22, { ...WEATHER_PRESETS.eerie, dread: 1 }]] as const) {
+      lighting.setView(hour, w);
+      const want = sceneLightsUnder(w, skyStateFor(table, hour, w));
+      const sun = sunOf(s);
+      const fill = fillOf(s);
+      expect([sun.direction.x, sun.direction.y, sun.direction.z], `hour ${hour}`).toEqual([want.sun.direction.x, want.sun.direction.y, want.sun.direction.z]);
+      expect(sun.intensity).toBe(want.sun.intensity);
+      expect(rgb(sun.diffuse)).toEqual(rgb(want.sun.colour));
+      expect(rgb(sun.specular)).toEqual(rgb(want.sun.colour));
+      expect([fill.direction.x, fill.direction.y, fill.direction.z]).toEqual([want.fill.direction.x, want.fill.direction.y, want.fill.direction.z]);
+      expect(rgb(fill.diffuse)).toEqual(rgb(want.fill.colour));
+      expect(fill.intensity).toBe(want.fill.intensity);
+      // Never set by the lighting: Babylon's own, which are the ones the lights name.
+      expect(rgb(fill.groundColor)).toEqual(rgb(want.fill.groundColour));
+      expect(rgb(fill.specular)).toEqual(rgb(want.fill.specular));
+      expect(s.environmentIntensity).toBe(want.environmentIntensity);
+      expect(rgb(s.fogColor)).toEqual(rgb(want.air));
+      expect([...rgb(s.clearColor), s.clearColor.a]).toEqual([...rgb(want.air), 1]);
+    }
     lighting.dispose();
   });
 

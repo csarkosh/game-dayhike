@@ -25,7 +25,8 @@ import { ReflectionProbe } from "@babylonjs/core/Probes/reflectionProbe.js";
 import { QUALITY, type QualitySettings, type QualityTier } from "./quality.js";
 import { sunPositionAt } from "./sky.js";
 import { NOON_ALTITUDE_DEG, type SkyTable } from "./skyTable.js";
-import { SKY_IBL_SCALE, skyStateFor, type SkyState } from "./skyState.js";
+import { skyStateFor, type SkyState } from "./skyState.js";
+import { SHADOW_FLOOR, sceneLightsUnder, sunShadowDarkness, sunTravel } from "./sceneLights.js";
 import { createSkyDome } from "./skyDome.js";
 import { sightUnder } from "./gradeParams.js";
 import {
@@ -34,10 +35,12 @@ import {
   weatherFadeAt,
   type WeatherParams,
   fogDensityUnder,
-  shadowDarknessUnder,
   exposureUnder,
-  ambientCollapseUnder,
 } from "./weather.js";
+
+// The shadows' floor and the darkness held to it are the lights' numbers
+// (`sceneLights.ts`); named from here too.
+export { SHADOW_FLOOR, sunShadowDarkness };
 
 /** Matches the `/time` command's `defaultValue` in `commands.ts`. */
 export const DEFAULT_HOUR = 12;
@@ -251,22 +254,6 @@ export function cascadeCasters<T extends CasterLike>(
   return out;
 }
 
-/**
- * The least of the sun's light a cast shadow keeps: the shadow generator's
- * darkness (0 a black shadow, 1 none) never falls under this. With the
- * weather's own darkness at 0 under a clear sky, a shadowed face had only the
- * sky's light, and on the steep faces the shadows of the relief's joints
- * and slabs read as noise. Measured from the sky state, the image-based light
- * as the dome's irradiance over π and the sun as PBR's diffuse, a face
- * leaning 55° toward the sun, shadowed, kept 34 %, 36 % and 32 % of its lit
- * value at 08:00, noon and 15:00, and level ground 35 %, 25 % and 29 %; at
- * 0.17 the face keeps 45 %, 47 % and 43 %, the ground 46 %, 38 % and 41 %.
- * It is the generator's, so it holds for every receiver, not the faces
- * alone. Cloud lightens the shadows already: bright weather's 0.45 is above
- * it and keeps its own, as does every weather past it.
- */
-export const SHADOW_FLOOR = 0.17;
-
 /** The darkness (`sunShadowDarkness`) from which a cast shadow no longer shows: the shadow is the lit value times the darkness's complement. */
 export const SHADOW_INVISIBLE_DARKNESS = 0.999;
 /** The sun's intensity (`SkyState.sunIntensity`) at or under which a cast shadow no longer shows: the sun below the horizon. */
@@ -316,12 +303,6 @@ export function shadowMapDrawn(darkness: number, sunIntensity: number): boolean 
  */
 export function writeExposureSilently(image: ImageProcessingConfiguration, value: number): void {
   (image as unknown as { _exposure: number })._exposure = value === 1 ? 1 + 1e-6 : value;
-}
-
-/** The shadow generator's darkness under `w`: the weather's, held at
- * SHADOW_FLOOR or above. */
-export function sunShadowDarkness(w: WeatherParams): number {
-  return Math.max(SHADOW_FLOOR, shadowDarknessUnder(w));
 }
 
 export type LightingOptions = {
@@ -455,9 +436,10 @@ export type Lighting = {
  * curves on `"material"` — chosen by `postFeaturesFor` in postParams.ts.
  *
  * This is the Babylon shell. Every number it applies comes from the sky state
- * (`skyState.ts`, made from the table's slices), `weather.ts` and
- * `quality.ts`, which are pure and tested; what is left here is wiring, and
- * the traps are in the wiring rather than the arithmetic.
+ * (`skyState.ts`, made from the table's slices), the lights it gives under
+ * the weather (`sceneLights.ts`), `weather.ts` and `quality.ts`, which are
+ * pure and tested; what is left here is wiring, and the traps are in the
+ * wiring rather than the arithmetic.
  *
  * On the sky, there are two valid paths and this is the development
  * one: a dynamic sky captured to a reflection probe, which is what lets the sun
@@ -485,6 +467,8 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   let exposure = 1;
   /** What the stare leaves of it on the material path (`setStare`); 1 on the post path. */
   let sight = 1;
+  /** The way the sun's light travels at the hour last followed (`followHour`): one vector, filled again each frame. */
+  const followed = { x: 0, y: 0, z: 0 };
 
   scene.getEngine().setHardwareScalingLevel(settings.hardwareScaling);
 
@@ -707,12 +691,15 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     const s = skyStateFor(table, hour, weather);
     sky = s;
 
+    // The lights' numbers for this state and weather (`sceneLights.ts`).
+    const lights = sceneLightsUnder(weather, s);
+
     // A DirectionalLight's `direction` is the direction light TRAVELS, which is
     // the negation of the direction toward the sun. Backwards here lights the
     // world from underground at noon.
-    sun.direction.set(-s.sunDir.x, -s.sunDir.y, -s.sunDir.z);
-    sun.intensity = s.sunIntensity;
-    sun.diffuse = new Color3(s.sunColour.r, s.sunColour.g, s.sunColour.b);
+    sun.direction.set(lights.sun.direction.x, lights.sun.direction.y, lights.sun.direction.z);
+    sun.intensity = lights.sun.intensity;
+    sun.diffuse = new Color3(lights.sun.colour.r, lights.sun.colour.g, lights.sun.colour.b);
     // Specular defaults to white; without this, sunrise goes warm orange while
     // every highlight stays neutral, disagreeing about what colour the sun is.
     sun.specular = sun.diffuse;
@@ -721,22 +708,23 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // under the weather's mist (`SkyState.mistAir`), so the haze dissolves into
     // the sky it stands against. The clear colour matters even behind the
     // dome: it is what shows through on any frame the dome has not drawn.
-    scene.fogColor = new Color3(s.mistAir.r, s.mistAir.g, s.mistAir.b);
-    scene.clearColor = new Color4(s.mistAir.r, s.mistAir.g, s.mistAir.b, 1);
+    scene.fogColor = new Color3(lights.air.r, lights.air.g, lights.air.b);
+    scene.clearColor = new Color4(lights.air.r, lights.air.g, lights.air.b, 1);
 
     // The fill: the sky's light on level ground by day and moonlight by night,
     // weighed by the night factor (`skyState.ts`). By day the probe below does
-    // most of the ambient work; at night the fill is the light left.
-    fill.diffuse = new Color3(s.fillColour.r, s.fillColour.g, s.fillColour.b);
-    const collapse = ambientCollapseUnder(weather);
-    fill.intensity = s.fillIntensity * collapse;
+    // most of the ambient work; at night the fill is the light left. Its
+    // ground colour and its highlight stay Babylon's own, black and white,
+    // which are the ones the lights name.
+    fill.diffuse = new Color3(lights.fill.colour.r, lights.fill.colour.g, lights.fill.colour.b);
+    fill.intensity = lights.fill.intensity;
     // The probe's share of the ambient collapses with the fill, so the top
     // plateau reads as the light going, not the fill alone dimming.
-    scene.environmentIntensity = collapse * SKY_IBL_SCALE;
+    scene.environmentIntensity = lights.environmentIntensity;
 
     // Overcast has no directional shadows: fade them rather than reconfigure
     // the CSM. A clear sky's shadows keep SHADOW_FLOOR of the sun.
-    const darkness = sunShadowDarkness(weather);
+    const darkness = lights.sun.shadowDarkness;
     shadows?.setDarkness(darkness);
     // The map itself only while a shadow can show (`shadowMapDrawn`), at its
     // rate (`SHADOW_MAP_REFRESH_RATE`): drawn once more as the light goes, so
@@ -810,8 +798,8 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
       hour = next;
       if (waiting) return;
       // As `apply` sets it: the direction light travels, away from the sun.
-      const toSun = sunPositionAt(next);
-      sun.direction.set(-toSun.x, -toSun.y, -toSun.z);
+      const travel = sunTravel(sunPositionAt(next), followed);
+      sun.direction.set(travel.x, travel.y, travel.z);
     },
     setWeather(next, fadeSeconds = 3) {
       if (fadeSeconds <= 0) {
