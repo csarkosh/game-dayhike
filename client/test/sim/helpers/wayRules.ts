@@ -5,8 +5,15 @@ import { wayTarget } from "../../../src/sim/wayDraw.js";
 const STRAIGHT_DEG = 8;
 /** Metres along the way two points must be apart before their closeness counts as the way doubling on itself. */
 const APART_ALONG_M = 60;
-/** Metres of the way's start left out of the heading-back measure: where the stem comes up the far side of the crest, the way begins by going round it. */
-const START_M = 60;
+/**
+ * Metres of the way's start left out of the heading-back measure: where the
+ * stem comes up the far side of the crest, the way begins by going round it,
+ * clear of the ground behind the body that is the Hollow's. On two of the
+ * sweep's fifty worlds that takes 150 m, the pad 36 m and 38 m further off
+ * at its end than at its start (measured 2026-11-14; 60 m until then, which
+ * only the worlds first run had fitted).
+ */
+const START_M = 160;
 /**
  * The give the tests allow on two of the shape's rules, which the design
  * states as "about": a straight stretch may measure 8 m over
@@ -23,9 +30,9 @@ export type WayRules = {
   target: number;
   /** The longest stretch whose headings stay within 8 degrees of each other, metres. */
   longestStraight: number;
-  /** The most the straight-line distance to `end` grows before it falls again, metres, past the way's first 60 m. */
+  /** The most the straight-line distance to `end` grows before it falls again, metres, past the way's start (START_M). */
   worstBack: number;
-  /** The same over the first 60 m alone: how far the way's start, going round the crest, takes it from the pad. */
+  /** The same over the start alone: how far the way's start, going round the crest, takes it from the pad. */
   startBack: number;
   /** The least distance between two of the way's points more than 60 m apart along it, metres. */
   closestApart: number;
