@@ -96,8 +96,16 @@ describe("a chunk of the way's mist", () => {
   it("has 125 vertices a point: seven sheets of fifteen, and three veils and a fin a side", () => {
     expect(c.positions.length).toBe(11 * 125 * 3);
     expect(c.light.length).toBe(11 * 125 * 4);
-    // Between two points: 14 quads a sheet and a quad a veil; at every point, a fin a side.
-    expect(c.indices.length).toBe(10 * (14 * 7 + 2 * 3) * 6 + 11 * 2 * 6);
+    // Between two points: 14 quads a sheet and a quad a veil. At every point but the last, a fin a side: the next chunk begins on that point and draws its fin.
+    expect(c.indices.length).toBe(10 * (14 * 7 + 2 * 3) * 6 + 10 * 2 * 6);
+  });
+
+  it("draws every point's fins once over the whole way: the point two chunks share by the later one, the way's last by its own", () => {
+    const fins = (from: number, to: number): number => (wayChunk(way, flat, from, to).indices.length - (to - from) * (14 * 7 + 2 * 3) * 6) / 6;
+    expect(wayChunks(way)).toEqual([[0, 32], [32, 39]]);
+    expect(fins(0, 32)).toBe(32 * 2);
+    expect(fins(32, 39)).toBe(8 * 2);
+    expect(fins(0, 32) + fins(32, 39)).toBe(40 * 2);
   });
 
   it("the sheets lie across the whole width at their heights over the ground, each vertex knowing how far from the line it is", () => {

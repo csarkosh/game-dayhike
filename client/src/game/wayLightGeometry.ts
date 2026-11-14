@@ -221,7 +221,9 @@ export function wayChunk(way: WayShape, heightAt: (x: number, z: number) => numb
     }
   }
   const between = (WAY_ROW_VERTICES - 1) * WAY_SHEETS_M.length + 2 * WAY_VEILS.length;
-  const indices = new Uint32Array(((points - 1) * between + points * 2) * 6);
+  // A point's fins are drawn once over the whole way: the point two chunks share by the chunk that begins on it, the way's last by its own.
+  const finned = to === last ? points : points - 1;
+  const indices = new Uint32Array(((points - 1) * between + finned * 2) * 6);
   let n = 0;
   const quad = (a: number, b: number, c: number, d: number): void => {
     indices[n++] = a; indices[n++] = c; indices[n++] = b;
@@ -243,6 +245,7 @@ export function wayChunk(way: WayShape, heightAt: (x: number, z: number) => numb
         }
       }
     }
+    if (p >= finned) continue;
     for (let side = 0; side < 2; side++) {
       const a = at + WAY_SHEET_VERTICES + side * SIDE_VERTICES + WAY_VEILS.length * 2;
       quad(a, a + 1, a + 2, a + 3);
