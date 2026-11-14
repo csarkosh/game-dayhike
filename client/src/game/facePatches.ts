@@ -39,6 +39,13 @@ import type { QualityTier } from "./quality.js";
 import { classifySurface } from "./terrainSurface.js";
 import { waterGroundAt } from "./waterGround.js";
 
+/** The patches' depth offset: the slope's share and the constant share, as
+ * the board paint's (`boardPaint.ts`), so where the relief is nothing the
+ * patch is drawn over the ground it lies on rather than fighting it. Their
+ * material is the ground's in every other way. */
+export const FACE_PATCH_Z_OFFSET = -1;
+export const FACE_PATCH_Z_UNITS = -120;
+
 /** A patch cell's side, metres, on the world's lattice. */
 export const PATCH_CELL = 16;
 /** The most a patch vertex moves out along the ground's normal, metres: the

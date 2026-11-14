@@ -187,6 +187,8 @@ import { skyStateFor } from "../../src/game/skyState.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { LakeCalmFrame } from "../../src/game/renderer.js";
 import { lensProjection } from "../../src/game/gameLens.js";
+import { TERRAIN_SURFACE, terrainSurfaceUnder } from "../../src/game/terrainUniforms.js";
+import { FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS } from "../../src/game/facePatches.js";
 
 let engine: NullEngine | null = null;
 
@@ -813,6 +815,28 @@ describe("applyWetness", () => {
     applyWetness(s, WEATHER_PRESETS.clear); // wetness 0 — exact restore
     expect(wall.albedoColor.r).toBe(baseAlbedo);
     expect(terrain.roughness).toBe(baseRough);
+  });
+
+  it("leaves the ground's two materials on the terrain's surface for the weather, made without them (terrainUniforms.ts)", () => {
+    const s = scene();
+    const materials = [terrainMaterialFor(s, "terrain"), terrainMaterialFor(s, FACE_PATCH_MATERIAL)];
+    for (const mat of materials) {
+      expect([mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b, mat.roughness, mat.metallic]).toEqual([
+        ...TERRAIN_SURFACE.albedo, TERRAIN_SURFACE.roughness, TERRAIN_SURFACE.metallic,
+      ]);
+    }
+    for (const w of [WEATHER_PRESETS.rain, { ...WEATHER_PRESETS.clear, wetness: 0.37 }, WEATHER_PRESETS.mist, WEATHER_PRESETS.clear]) {
+      applyWetness(s, w);
+      const want = terrainSurfaceUnder(w);
+      for (const mat of materials) {
+        expect([mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b, mat.roughness, mat.metallic]).toEqual([
+          ...want.albedo, want.roughness, want.metallic,
+        ]);
+      }
+    }
+    // The patches' material is the ground's, a depth offset ahead of it.
+    expect([materials[1]!.zOffset, materials[1]!.zOffsetUnits]).toEqual([FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS]);
+    expect([materials[0]!.zOffset, materials[0]!.zOffsetUnits]).toEqual([0, 0]);
   });
 });
 

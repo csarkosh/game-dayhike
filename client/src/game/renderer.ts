@@ -75,6 +75,7 @@ import {
 } from "./clipmap.js";
 import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, ringVertices } from "./terrainVertices.js";
 import { GAME_FOV, lensProjection } from "./gameLens.js";
+import { TERRAIN_SURFACE } from "./terrainUniforms.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
 import { createLighting, DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "./lighting.js";
 import type { SkyState } from "./skyState.js";
@@ -200,8 +201,8 @@ const MATERIAL_COLORS: Record<string, [number, number, number]> = {
  * same projection as albedo.
  */
 const MATERIAL_ROUGHNESS: Record<string, number> = {
-  terrain: 0.95,
-  [FACE_PATCH_MATERIAL]: 0.95,
+  terrain: TERRAIN_SURFACE.roughness,
+  [FACE_PATCH_MATERIAL]: TERRAIN_SURFACE.roughness,
   default: 0.9,
 };
 
@@ -225,7 +226,8 @@ function materialCacheFor(scene: Scene): Map<string, PBRMaterial> {
  *
  * Terrain is the exception in the palette: its albedo stays white because the
  * mesh carries per-vertex colour, and PBR multiplies the two. Tinting the
- * material as well would apply the palette twice.
+ * material as well would apply the palette twice. Its surface's numbers are
+ * `TERRAIN_SURFACE` (`terrainUniforms.ts`).
  */
 export function terrainMaterialFor(scene: Scene, name: string): PBRMaterial {
   const cache = materialCacheFor(scene);
@@ -234,14 +236,14 @@ export function terrainMaterialFor(scene: Scene, name: string): PBRMaterial {
 
   const mat = new PBRMaterial(`mat_${name}`, scene);
   if (name === "terrain") {
-    mat.albedoColor = new Color3(1, 1, 1);
+    mat.albedoColor = new Color3(TERRAIN_SURFACE.albedo[0], TERRAIN_SURFACE.albedo[1], TERRAIN_SURFACE.albedo[2]);
     // Ground textures ride the terrain materials only.
     attachTerrainTexture(scene, mat);
   } else if (name === FACE_PATCH_MATERIAL) {
     // The steep ground's patches (`facePatchMeshes.ts`): the ground's
     // material again, binding the ground's own normal and RAH arrays rather
     // than loading them twice, a depth offset ahead of the ground it covers.
-    mat.albedoColor = new Color3(1, 1, 1);
+    mat.albedoColor = new Color3(TERRAIN_SURFACE.albedo[0], TERRAIN_SURFACE.albedo[1], TERRAIN_SURFACE.albedo[2]);
     attachTerrainTexture(scene, mat, { groundArrays: sharedGroundArrays(scene, terrainMaterialFor(scene, "terrain")) });
     mat.zOffset = FACE_PATCH_Z_OFFSET;
     mat.zOffsetUnits = FACE_PATCH_Z_UNITS;

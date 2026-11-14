@@ -31,6 +31,8 @@ import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { CoveredGround } from "./clipmap.js";
 import {
+  FACE_PATCH_Z_OFFSET,
+  FACE_PATCH_Z_UNITS,
   PATCH_CELL,
   PATCH_FAR_SPACING,
   PATCH_NEAR_SPACING,
@@ -53,11 +55,8 @@ import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, facePatchVertices } from "./t
 
 /** The patches' material's name in `terrainMaterialFor`'s cache. */
 export const FACE_PATCH_MATERIAL = "facePatch";
-/** The patches' depth offset: the slope's share and the constant share, as
- * the board paint's (`boardPaint.ts`), so where the relief is nothing the
- * patch is drawn over the ground it lies on rather than fighting it. */
-export const FACE_PATCH_Z_OFFSET = -1;
-export const FACE_PATCH_Z_UNITS = -120;
+// The patches' depth offset is the patches' (`facePatches.ts`); named from here too.
+export { FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS };
 
 /** A registry the patches enter as they are built and leave as they are
  * dropped: patches come and go with the camera, so both halves. */

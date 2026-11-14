@@ -20,6 +20,7 @@ import { rippleTime } from "./rainParams.js";
 import { ROAD_TABLE_N, ROAD_TABLE_STEP, roadTableZ0 } from "./roadPaint.js";
 import type { FeaturePaintTable, RoadCentreTable, TrailPaintTable } from "./terrainTables.js";
 import { TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID } from "./trailPaint.js";
+import { wetSurfaceUnder, type WeatherParams } from "./weather.js";
 
 /** Mean luminance every ground texture was normalised to when it was made.
  * Measured back off the five committed WebPs as
@@ -218,4 +219,28 @@ export function terrainUniforms(inputs: TerrainUniformInputs, out: TerrainUnifor
   set4(out.terrainSward, SWARD_FLOOR.r, SWARD_FLOOR.g, SWARD_FLOOR.b, inputs.sward ? SWARD_MAX : 0);
   set4(out.terrainSwardBand, SWARD_COVER[0], SWARD_COVER[1], SWARD_FADE[0], SWARD_FADE[1]);
   return out;
+}
+
+/**
+ * The material's own surface, under everything above: a white albedo, since
+ * a terrain mesh carries the palette's colour a vertex and the two are
+ * multiplied (a tint here would apply the palette twice); rough; and no
+ * metal, as nothing in this world is.
+ */
+export const TERRAIN_SURFACE = { albedo: [1, 1, 1], roughness: 0.95, metallic: 0 } as const;
+
+export type TerrainSurface = { albedo: [number, number, number]; roughness: number; metallic: number };
+
+/**
+ * The material's surface under `w`: wet ground reads darker and glossier, a
+ * luminance scale on the albedo and a scale on the roughness
+ * (`wetSurfaceUnder`), each from the dry value, never compounded.
+ */
+export function terrainSurfaceUnder(w: WeatherParams): TerrainSurface {
+  const { albedoScale, roughnessScale } = wetSurfaceUnder(w);
+  return {
+    albedo: [TERRAIN_SURFACE.albedo[0] * albedoScale, TERRAIN_SURFACE.albedo[1] * albedoScale, TERRAIN_SURFACE.albedo[2] * albedoScale],
+    roughness: TERRAIN_SURFACE.roughness * roughnessScale,
+    metallic: TERRAIN_SURFACE.metallic,
+  };
 }

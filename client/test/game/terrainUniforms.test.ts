@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   FADE_END, FADE_START, LAYER_F0, LAYER_ROUGHNESS, TEXTURE_MEAN, TILING_METRES,
-  emptyTerrainUniforms, terrainUniforms, type TerrainUniformInputs,
+  TERRAIN_SURFACE, emptyTerrainUniforms, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs,
 } from "../../src/game/terrainUniforms.js";
+import { WEATHER_PRESETS, WET_ALBEDO_LOSS, WET_ROUGHNESS_LOSS } from "../../src/game/weather.js";
 import { featurePaintTable, followRoadCentre, roadCentreTable, trailPaintTable } from "../../src/game/terrainTables.js";
 import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH } from "../../src/game/featureTable.js";
 import { ROAD_TABLE_HALF_SPAN, ROAD_TABLE_N, ROAD_TABLE_RECENTRE, ROAD_TABLE_STEP } from "../../src/game/roadPaint.js";
@@ -117,5 +118,24 @@ describe("the terrain's uniforms", () => {
     // A second fill leaves nothing of the first.
     terrainUniforms(BARE, out);
     expect(out).toEqual(terrainUniforms(BARE));
+  });
+});
+
+describe("the terrain material's own surface", () => {
+  it("is white, rough and no metal when dry", () => {
+    expect(TERRAIN_SURFACE).toEqual({ albedo: [1, 1, 1], roughness: 0.95, metallic: 0 });
+    expect(terrainSurfaceUnder(WEATHER_PRESETS.clear)).toEqual({ albedo: [1, 1, 1], roughness: 0.95, metallic: 0 });
+  });
+
+  it("darkens and glosses with the weather's wetness, from the dry value each time", () => {
+    const soaked = terrainSurfaceUnder(WEATHER_PRESETS.rain); // wetness 1
+    expect(soaked.albedo).toEqual([1 - WET_ALBEDO_LOSS, 1 - WET_ALBEDO_LOSS, 1 - WET_ALBEDO_LOSS]);
+    expect(soaked.roughness).toBe(0.95 * (1 - WET_ROUGHNESS_LOSS));
+    expect(soaked.metallic).toBe(0);
+    const half = terrainSurfaceUnder({ ...WEATHER_PRESETS.clear, wetness: 0.5 });
+    expect(half.albedo[0]).toBe(1 - WET_ALBEDO_LOSS * 0.5);
+    expect(half.roughness).toBe(0.95 * (1 - WET_ROUGHNESS_LOSS * 0.5));
+    // A record of its own: the dry surface is left as it is.
+    expect(terrainSurfaceUnder(WEATHER_PRESETS.clear).albedo).not.toBe(TERRAIN_SURFACE.albedo);
   });
 });
