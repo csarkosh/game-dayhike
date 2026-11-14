@@ -5,6 +5,9 @@
  * (via its memoizing `createBandCollector`, output-identical to the pure
  * `collectBands`); what lives here is buffers, materials and dispose — the
  * same split as `clipmap.ts`/`renderer.ts` and `water.ts`/`renderer.ts`.
+ * What each buffer holds is `forestInstances.ts`'s, which loads no engine:
+ * every bucket's matrices and per-instance attributes as typed arrays, its
+ * fade bands, and what is measured once from the models that land.
  *
  * Four cohorts, one shell: canopy giants and regeneration saplings both take
  * the full 3-LOD-plus-impostor treatment, and standing snags and fallen nurse
@@ -87,48 +90,22 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
+import { createBandCollector, bandsOrigin, type ForestBands, NEAR_RADIUS } from "./forestField.js";
 import {
-  createBandCollector,
-  bandsOrigin,
-  type ForestBands,
-  NEAR_RADIUS,
-  SEAM_LOD0,
-  SEAM_LOD1,
-  SEAM_FILL,
-  SEAM_FAR,
-  farTreeScale,
-  seamNear,
-  UNDERSTORY_RADIUS,
-} from "./forestField.js";
+  NURSE_BANDS, deadwoodMatrixBuffer, deadwoodMeasure, deadwoodRoleBuffer, fadeBandsBuffer, forestFadeBands, groundGradBuffer,
+  impostorFadeBuffer, impostorMatrixSlices, impostorQuad, nurseBuffers, partitionImpostors, snagImpostorQuad, treeFoliageBuffer,
+  treeMatrixBuffer, type DeadwoodMeasure,
+} from "./forestInstances.js";
 import { attachImpostorBake } from "./impostorBakePlugin.js";
 import { IMPOSTOR_FIELD_CUT, impostorFields } from "./impostorField.js";
 import { createFieldMaker, type FieldMaker } from "./impostorFieldWorker.js";
-import {
-  SPECIES_COUNT,
-  COHORT_GIANT,
-  COHORT_SAPLING,
-  COHORT_SNAG,
-  COHORT_LOG,
-  TREE_CELL,
-  forestDensity,
-  type TreeInstance,
-} from "../sim/vegetation.js";
-import { surfaceAlbedo } from "./terrainSurface.js";
-import { macroNoise, macroTint } from "./groundHexParams.js";
-import { elevationAt } from "../sim/terrain.js";
+import { SPECIES_COUNT, TREE_CELL, type TreeInstance } from "../sim/vegetation.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageEdges, foliageMatched } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { attachBarkShade } from "./barkShadePlugin.js";
-import { groundNormalTilt, groundNormalY, seatOnGround } from "./groundTilt.js";
-import { LOG_STATIONS, logStationOffsets, seatLog, trunkSeat, trunkTop, type TrunkSeat } from "./logSeat.js";
-import { NURSE_FERN, nursePlants, seedlingGeometry } from "./nurseLog.js";
+import { seedlingGeometry } from "./nurseLog.js";
 import { attachGroundConform } from "./groundConformPlugin.js";
-import {
-  attachDistanceFade,
-  fadeBands,
-  writeFadeBands,
-  type FadeBands,
-} from "./distanceFadePlugin.js";
+import { attachDistanceFade, type FadeBands } from "./distanceFadePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { attachMoss } from "./mossPlugin.js";
 import { attachDeadwood, DEADWOOD_ROLE_ATTRIBUTE, type DeadwoodPlugin } from "./deadwoodPlugin.js";
@@ -567,13 +544,6 @@ type SpeciesBuckets = {
   impostor: Impostor;
 };
 
-const UP = Vector3.Up();
-const scratchQ = new Quaternion();
-const scratchTiltQ = new Quaternion();
-const scratchScale = new Vector3();
-const scratchPos = new Vector3();
-const scratchMat = new Matrix();
-
 /** The node itself plus descendants, filtered to meshes that carry geometry. */
 function geometryMeshes(node: Node): Mesh[] {
   const out: Mesh[] = [];
@@ -637,14 +607,6 @@ function shadeTreeMaterial(material: Material): void {
   }
 }
 
-/** `count` copies of one band quad — every bucket but the impostor planes,
- * whose two lists carry different bands (see `fillImpostor`). */
-function fadeBandsBuffer(count: number, bands: FadeBands): Float32Array {
-  const buf = new Float32Array(4 * count);
-  for (let i = 0; i < count; i++) writeFadeBands(buf, i * 4, bands);
-  return buf;
-}
-
 /** What handing every bucket its new buffers is expected to take (ms), the
  * one step of a forest rebuild that cannot be sliced: an estimate — in a
  * browser profile of a walk the fill and the hand-over together took about
@@ -690,350 +652,12 @@ function applyBucketBuffer(
   }
 }
 
-/** World matrices for full-geometry trees and understory: scale and rotation
- * derived renderer-side — sim/ emits `hash`, never angles, so the trig lives
- * HERE (game/ is allowed trig; sim/ is not).
- *
- * `tilt` is the understory's flag and only the understory's. A shrub rests on
- * the ground and leans with it; a conifer grows plumb whatever the hillside
- * does, and its base is closed by the vertex-stage conform instead. */
-function treeMatrixBuffer(list: readonly TreeInstance[], tilt: boolean): Float32Array {
-  const buf = new Float32Array(16 * list.length);
-  for (let i = 0; i < list.length; i++) {
-    const t = list[i] as TreeInstance;
-    const yaw = t.hash * Math.PI * 2;
-    if (tilt) {
-      seatOnGround(yaw, t.groundDx, t.groundDz, scratchQ);
-    } else {
-      Quaternion.RotationAxisToRef(UP, yaw, scratchQ);
-    }
-    scratchScale.copyFromFloats(t.scale, t.scale, t.scale);
-    scratchPos.copyFromFloats(t.x, t.groundH, t.z);
-    Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchMat);
-    scratchMat.copyToArray(buf, i * 16);
-  }
-  return buf;
-}
-
-/** Per-instance ground gradient for the conform plugin's `groundGrad`
- * attribute: 8 bytes an instance against the matrix's 64. Built in the same
- * pass as the matrices, from the sample sim/ already took. */
-function groundGradBuffer(list: readonly TreeInstance[]): Float32Array {
-  const buf = new Float32Array(2 * list.length);
-  for (let i = 0; i < list.length; i++) {
-    const t = list[i] as TreeInstance;
-    buf[i * 2] = t.groundDx;
-    buf[i * 2 + 1] = t.groundDz;
-  }
-  return buf;
-}
-
-/** Per-instance ground colour and the sky's openness (`1 − canopy`) for the
- * understory's `foliage`
- * attribute — the four floats `writeFoliage` in clutterMeshes.ts writes for
- * ground cover, from the same palette, so a fern's base and the ground it
- * stands in can never disagree. Only the tinting profiles need it, which among
- * the forest buckets is the understory alone: the tree profile has no ground
- * tint and so never declares the attribute. Allocated with the matrix buffer,
- * on the same wholesale-replace discipline. */
-function treeFoliageBuffer(seed: number, list: readonly TreeInstance[]): Float32Array {
-  const buf = new Float32Array(4 * list.length);
-  for (let i = 0; i < list.length; i++) {
-    const t = list[i] as TreeInstance;
-    const canopy = forestDensity(seed, t.x, t.z);
-    const slope = Math.hypot(t.groundDx, t.groundDz);
-    const c = surfaceAlbedo(seed, t.x, t.z, t.groundH, slope, canopy);
-    // The floor applies the same tint in terrainTexture.ts, so a tuft and the
-    // ground under it agree where the ground is grass and inside the relief
-    // fade; on non-grass ground the card carries this tint alone, and past
-    // the fade the floor's tint has faded out while the card keeps its own.
-    const ny = 1 / Math.sqrt(1 + t.groundDx * t.groundDx + t.groundDz * t.groundDz);
-    const tint = macroTint(macroNoise(t.x, t.z), 1 - ny);
-    buf[i * 4] = c.r * tint.r;
-    buf[i * 4 + 1] = c.g * tint.g;
-    buf[i * 4 + 2] = c.b * tint.b;
-    buf[i * 4 + 3] = 1 - canopy;
-  }
-  return buf;
-}
-
-/** The log role's stations along its trunk and the ground under each, reused across instances. */
-const logOffsets: number[] = [];
-const logHeights: number[] = [];
-
-/**
- * World matrices for the one deadwood bucket, which rides two roles.
- * `deadwood.snag` is modelled LYING DOWN in its shipped file — its long axis
- * is local X (4.048 m of a 4.048 × 1.050 × 1.049 m bbox) — so the NURSE LOG
- * role is the asset's native orientation: only yaw varies (from the same
- * `hash` draw `treeMatrixBuffer` uses), so logs lie in varied directions
- * rather than all pointing one way. The STANDING SNAG role is the one that
- * needs rotating upright: a +90° roll (Z-axis) swings the local X axis onto
- * world Y, and — because that roll fixes the Y axis pointwise — the result
- * is exactly vertical for every yaw, so composing yaw and roll in either
- * order still lands the snag standing straight.
- *
- * The mesh origin is NOT at either end of the trunk: it sits at the asset's
- * own mesh origin (not re-centred), a deliberate departure from ARCHITECTURE.md,
- * Model conventions' base-of-object convention, and the shipped LOD2 mesh's local X extends from
- * roughly -1.9 to +2.07 m — the origin sits close to the middle of the
- * trunk's length, not its end. Placing that origin straight at `groundH`
- * (as an early version of this function did) buries a standing snag by
- * roughly half its length. Both roles therefore carry a base-to-ground
- * offset along whichever local axis becomes "up" for that role:
- *  - SNAG: the roll above maps local X to world Y, so the snag's base is
- *    the bucket's local X MINIMUM — a large offset, since it is close to
- *    half the trunk's ~4 m length.
- *  - LOG: the log's base is the UNDERSIDE OF ITS TRUNK, a line fitted through
- *    the loaded geometry (`trunkSeat`, logSeat.ts), not the bucket's local Y
- *    minimum: that minimum is the root flare, 0.3 to 0.6 m under the trunk
- *    over the rest of its length, and a log seated by it rests on the flare
- *    with its trunk in the air (up to 1.5 m at full scale).
- * Both offsets are measured from the ACTUAL loaded bucket geometry (see
- * `createForestMeshes`'s `unionBounds` call on the deadwood meshes at adopt
- * time) rather than hardcoded, so a future update to `deadwood.snag`
- * that shifts the mesh origin updates the offset instead of silently
- * reintroducing this bug.
- *
- * The SNAG role also TILTS onto the ground normal (`groundTilt.ts`),
- * composed AFTER the upright roll so the now-vertical trunk leans with the
- * hillside instead of the un-rolled model. Tilting swings the origin-relative
- * foot offset sideways as well as up/down, which the base-to-ground offset
- * below corrects for (see the inline comment at that offset).
- *
- * The LOG role also PITCHES. `t.groundH` is the terrain height at the
- * instance's ORIGIN x/z only; that is enough for a standing snag (narrow,
- * vertical, one sample covers it) but not for a log lying along its local X
- * axis, which at deadwood scale runs 6 to 10 m. A real fallen log follows the
- * ground along its own length and has settled into it, so this samples the
- * terrain at `LOG_STATIONS` places under the trunk (from its hashed yaw, so
- * logs still lie in varied directions, and its native length, taken from the
- * loaded geometry's bounds) and `seatLog` fits the ground's line through
- * them, pitches the trunk's underside onto it and sinks it a fifth of its
- * diameter: rotating about local Z (this file's "roll" parameter) tilts local
- * X toward Y without touching local Z, exactly like the snag's 90° roll above
- * but partial, so it is applied through the same Euler "roll" slot, with yaw
- * composed after it (Babylon's FromEulerAnglesToRef order) so the tilt
- * survives being pointed in the hashed direction.
- */
-function deadwoodMatrixBuffer(
-  seed: number,
-  list: readonly TreeInstance[],
-  snagBaseOffset: number,
-  logMinX: number,
-  logMaxX: number,
-  logSeat: TrunkSeat,
-): Float32Array {
-  const buf = new Float32Array(16 * list.length);
-  // The stations along the trunk's native length on local X, scale-independent
-  // (each instance multiplies by its own t.scale below).
-  logStationOffsets(logMinX, logMaxX, logOffsets);
-  for (let i = 0; i < list.length; i++) {
-    const t = list[i] as TreeInstance;
-    const isSnag = t.cohort === COHORT_SNAG;
-    const yaw = t.hash * Math.PI * 2;
-    // A log of the second draw (`TreeInstance.variant`) is the model mirrored
-    // across the trunk's own plane: the same trunk read the other way round,
-    // so two logs in one view share no silhouette. The mirror turns the
-    // winding, which the material's back faces drawn absorbs (`adopt`).
-    scratchScale.copyFromFloats(t.scale, t.scale, !isSnag && t.variant === 1 ? -t.scale : t.scale);
-    if (isSnag) {
-      Quaternion.FromEulerAnglesToRef(0, yaw, Math.PI / 2, scratchQ);
-      // Lay the standing trunk onto the ground normal, composed AFTER the
-      // upright roll (Hamilton a·b applies b first — see groundTilt.ts).
-      groundNormalTilt(t.groundDx, t.groundDz, scratchTiltQ);
-      scratchTiltQ.multiplyToRef(scratchQ, scratchQ);
-      // The tilt pivots on the instance ORIGIN, so the trunk's foot (local X
-      // minimum) swings SIDEWAYS as well as up/down as it leans — it lands
-      // snagBaseOffset·scale along the ground normal from the origin, not
-      // straight down (the roll+yaw above already put the trunk's local X
-      // exactly on that normal, independent of yaw — see the function
-      // comment). Sample the REAL terrain at that drifted x/z, the same
-      // trick the LOG role below uses for its own ends, rather than
-      // linear-approximating from t.groundH and the origin's own gradient:
-      // a linear correction is exact on the perfectly planar SLOPE_VARIANT
-      // test terrain but drifts off by the field's curvature on Olympic's
-      // fbm terrain, whereas sampling the real height at the real point has
-      // no such error.
-      const nY = groundNormalY(t.groundDx, t.groundDz);
-      const footOffset = snagBaseOffset * t.scale;
-      const footX = t.x + footOffset * t.groundDx * nY;
-      const footZ = t.z + footOffset * t.groundDz * nY;
-      const footH = elevationAt(seed, footX, footZ);
-      scratchPos.copyFromFloats(t.x, footH + footOffset * nY, t.z);
-    } else {
-      // The ground under the trunk at `LOG_STATIONS` places along it, from
-      // yaw and the native length alone (the pitch's own foreshortening is
-      // ignored: negligible at these grades, and what keeps this one pass):
-      // rotating local +X by yaw about world Y lands it on (cosYaw, -sinYaw) —
-      // the same convention `impostorMatrixSlices` documents for rotating
-      // local +Z by atan2(dx, dz) onto (dx, dz).
-      const cosYaw = Math.cos(yaw);
-      const sinYaw = Math.sin(yaw);
-      for (let k = 0; k < LOG_STATIONS; k++) {
-        const along = (logOffsets[k] as number) * t.scale;
-        logHeights[k] = elevationAt(seed, t.x + along * cosYaw, t.z - along * sinYaw);
-      }
-      // The pitch seats the trunk ALONG its spine. It leaves the other axis
-      // untouched, which is what makes a log lying across the fall line hang
-      // on one flank. Roll about the trunk's own axis closes it, from the
-      // analytic gradient resolved perpendicular to the spine. Rotating local
-      // +X by yaw lands it on (cosYaw, −sinYaw) in world xz, so the
-      // perpendicular horizontal direction is (sinYaw, cosYaw), and a positive
-      // roll about local +X carries local +Z downward — hence the negation.
-      const across = t.groundDx * sinYaw + t.groundDz * cosYaw;
-      const roll = -Math.atan(across);
-      // The trunk's underside onto the ground's line, sunk into the floor
-      // (`logSeat.ts`). The pitch is rotation about local Z, the Euler "roll"
-      // slot; `FromEulerAnglesToRef(roll, yaw, pitch)` composes as
-      // Ry(yaw)·Rx(roll)·Rz(pitch), so the roll is about the trunk's own axis
-      // only to first order, which `seatLog`'s cos(roll) allows for.
-      const seated = seatLog(logSeat, logOffsets, logHeights, t.scale, roll);
-      Quaternion.FromEulerAnglesToRef(roll, yaw, seated.pitch, scratchQ);
-      scratchPos.copyFromFloats(t.x, seated.y, t.z);
-    }
-    Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchMat);
-    scratchMat.copyToArray(buf, i * 16);
-  }
-  return buf;
-}
-
-/** What grows on a log is drawn to this distance and dithers out over the band (m). */
-const NURSE_BANDS: FadeBands = fadeBands(null, [60, 75]);
 /** Its albedo, of its texture's in the cover's green (`coverAlbedoTint`,
  * which the floor's own ferns carry too). The floor's ferns are shaded by
  * the canopy's density and tinted to the ground; a plant on a log is left at
  * the tinted colour, a little brighter than they are, so that it stands out
  * from the ferns behind the log and is not lost among them. */
 const NURSE_SHADE = 1;
-
-const scratchLog = new Matrix();
-const scratchLocal = new Vector3();
-const scratchWorld = new Vector3();
-/** A plant stands this far (m at the log's scale 1) under the trunk's top line, rooted in the moss. */
-const NURSE_ROOT = 0.03;
-
-/**
- * World matrices for what grows on the nurse logs (`nurseLog.ts`): each
- * plant's place on its log's top line, carried to the world by the log's own
- * matrix from `deadwood` (index-aligned with `list`), then stood plumb at its
- * own yaw and scale, since a fern or a seedling grows up whatever way the log
- * lies.
- */
-function nurseBuffers(
-  list: readonly TreeInstance[],
-  deadwood: Float32Array,
-  logMinX: number,
-  logMaxX: number,
-  top: { a: number; b: number },
-  diameter: number,
-): { ferns: Float32Array; seedlings: Float32Array } {
-  const ferns: number[] = [];
-  const seedlings: number[] = [];
-  for (let i = 0; i < list.length; i++) {
-    const t = list[i] as TreeInstance;
-    if (t.cohort !== COHORT_LOG) continue;
-    const plants = nursePlants(t.hash, logMinX, logMaxX);
-    if (plants.length === 0) continue;
-    Matrix.FromArrayToRef(deadwood, i * 16, scratchLog);
-    for (const plant of plants) {
-      scratchLocal.copyFromFloats(plant.along, top.a + top.b * plant.along - NURSE_ROOT, plant.side * diameter);
-      Vector3.TransformCoordinatesToRef(scratchLocal, scratchLog, scratchWorld);
-      Quaternion.RotationAxisToRef(UP, plant.yaw, scratchQ);
-      scratchScale.copyFromFloats(plant.scale, plant.scale, plant.scale);
-      Matrix.ComposeToRef(scratchScale, scratchQ, scratchWorld, scratchMat);
-      const out = plant.kind === NURSE_FERN ? ferns : seedlings;
-      for (let k = 0; k < 16; k++) out.push(scratchMat.m[k] as number);
-    }
-  }
-  return { ferns: new Float32Array(ferns), seedlings: new Float32Array(seedlings) };
-}
-
-/**
- * World matrices for impostor quads, each oriented toward the camera at
- * rebuild time. Babylon does NOT billboard thin instances (`billboardMode`
- * lives in the mesh world-matrix path, which instances bypass), so each
- * instance is yawed toward the camera when the buffer is built and the
- * between-rebuild error is accepted: a rebuild happens every tree-cell
- * crossing (12 m), and at ≥ 240 m an error of a few degrees is invisible.
- * The alternative — a custom billboard shader — is out of scope.
- *
- * The plane's two lists are written straight into one buffer, ON-LATTICE
- * FIRST — the order `fillImpostor` writes the matching `fadeBands` in, and
- * the only thing keeping the two per-instance buffers aligned. Taking them
- * as two arguments rather than one concatenated list keeps a ~7k-element
- * copy out of every rebuild.
- */
-function* impostorMatrixSlices(
-  lattice: readonly TreeInstance[],
-  fill: readonly TreeInstance[],
-  centreY: number,
-  camX: number,
-  camZ: number,
-): Slices<Float32Array> {
-  const buf = new Float32Array(16 * (lattice.length + fill.length));
-  let i = 0;
-  for (const list of [lattice, fill]) {
-    for (const t of list) {
-      // Thousands of billboards a bucket: a slice composes a share of them.
-      if (i > 0 && i % IMPOSTOR_SLICE === 0) yield;
-      // Yaw that points the quad's face (−Z, Babylon's plane; the material
-      // is two-sided for the frames a rebuild is stale) at the camera:
-      // rotating +Z by atan2(dx, dz) about Y lands it on (dx, dz), so −Z
-      // faces the camera half a turn on. The face, not the back: the bake's
-      // normal map is in the face's frame (`impostorBakePlugin.ts`).
-      Quaternion.RotationAxisToRef(UP, Math.atan2(camX - t.x, camZ - t.z) + Math.PI, scratchQ);
-      // A lattice card past the fill's seam grows (`farTreeScale`): the
-      // on-lattice list is the first of the two.
-      const [across, up] = list === lattice ? farTreeScale(Math.hypot(t.x - camX, t.z - camZ)) : [1, 1];
-      scratchScale.copyFromFloats(t.scale * across, t.scale * up, t.scale * across);
-      // The quad is centred on its origin while the tree origin sits at the
-      // footprint base, so the quad centre rides up by the scaled tree centre.
-      scratchPos.copyFromFloats(t.x, t.groundH + centreY * t.scale * up, t.z);
-      Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchMat);
-      scratchMat.copyToArray(buf, i * 16);
-      i++;
-    }
-  }
-  return buf;
-}
-
-/** Billboard matrices a slice composes: about a tenth of a millisecond. */
-const IMPOSTOR_SLICE = 512;
-
-/**
- * The impostor lists in ONE pass each, split into the buckets that will draw
- * them: giant bucket sets 0..n, then sapling species 0..n, then the one snag
- * slot. `bands.impostors`/`impostorsFill` interleave every cohort, and a
- * filter per plane meant ten passes over up to ~46k instances on every
- * tree-cell crossing — the rebuild this file already guards for cost.
- * COHORT_LOG never reaches these lists (a log is near-field only) and is
- * dropped here if it ever does.
- */
-function partitionImpostors(
-  list: readonly TreeInstance[],
-  giantSlot: (t: TreeInstance) => number,
-  giantCount: number,
-  saplingCount: number,
-): TreeInstance[][] {
-  const slots: TreeInstance[][] = [];
-  for (let i = 0; i <= giantCount + saplingCount; i++) slots.push([]);
-  const snagSlot = giantCount + saplingCount;
-  for (const t of list) {
-    if (t.cohort === COHORT_GIANT) {
-      // The giants' slots are their bucket sets (`GIANT_SETS`): a species
-      // with two barks has two, by the tree's variant; −1 is a species
-      // whose model has not loaded.
-      const slot = giantSlot(t);
-      if (slot >= 0) (slots[slot] as TreeInstance[]).push(t);
-    } else if (t.cohort === COHORT_SAPLING) {
-      if (t.species < saplingCount) (slots[giantCount + t.species] as TreeInstance[]).push(t);
-    } else if (t.cohort === COHORT_SNAG) {
-      (slots[snagSlot] as TreeInstance[]).push(t);
-    }
-  }
-  return slots;
-}
 
 /** Union of the buckets' local bounding boxes (call after any baking, when
  * local space is world space). */
@@ -1430,24 +1054,10 @@ export function createForestMeshes(
   const nearRadius = options.nearRadius ?? NEAR_RADIUS;
   const tier = options.tier ?? "medium";
   const loadTexture = options.loadTexture ?? defaultLoadBarkTexture;
-  // The near/impostor seam, tier-scaled — every LOD ring's own out-band gets
-  // clipped to it below. At the default
-  // NEAR_RADIUS every fixed seam (SEAM_LOD0, SEAM_LOD1) already ends inside
-  // it, so this only bites the low tier's shrunk nearRadius (70 m): ring 1's
-  // fixed out-band (SEAM_LOD1 = [76, 85] before 2026-10-18's tighter rings,
-  // [61, 70] since) stayed fully visible past 70 m while the impostor had
-  // already faded fully in over seamNear(70) = [50, 70], every such tree
-  // drawn twice from 70 to 85 m; the clip keeps that from coming back.
-  const nearSeamBand = seamNear(nearRadius);
-  /** A ring's own out-band, clipped to `nearSeamBand` when the ring's fixed
-   * edge reaches `nearRadius` or would sit past it (see the comment above):
-   * since 2026-10-18 ring 1 ends at 70 m, the low tier's near radius itself,
-   * where an unclipped [61, 70] would leave its trees whole from 50 to 61 m
-   * over the impostors fading in. A ring whose fixed edge is inside
-   * `nearRadius` is untouched — a no-op at the default tier, where every
-   * fixed seam clears it. */
-  const ringOutBand = (s: readonly [number, number]): readonly [number, number] =>
-    s[1] < nearRadius ? s : nearSeamBand;
+  // Every bucket's fade bands for this near radius (`forestFadeBands`): each
+  // ring's own out-band clipped to the near seam where the tier's radius
+  // reaches it.
+  const fades = forestFadeBands(nearRadius);
   const bakeImpostor = options.bakeImpostor ?? defaultBakeImpostor;
   // Memoizing collector, not the pure collectBands: a rebuild happens on every
   // 12 m tree-cell crossing, and re-sampling the whole ~112k-cell impostor
@@ -1491,18 +1101,10 @@ export function createForestMeshes(
   let saplingSpecies: SpeciesBuckets[] | null = null;
   let deadwoodBucket: Bucket | null = null;
   let snagImpostor: Impostor | null = null;
-  // Base-to-ground offset for the snag role, and the log role's local X
-  // bounds and its trunk's underside line (`trunkSeat`), measured
-  // once from the loaded bucket geometry (see `adoptSlices()`) — never hardcoded,
-  // so an updated `deadwood.snag` with different bounds updates these
-  // instead of silently reintroducing a half-buried snag or a floating log.
-  // See `deadwoodMatrixBuffer` for the derivation of which local axis each
-  // value is measured against.
-  let deadwoodSnagBaseOffset = 0;
-  let deadwoodLogMinX = 0;
-  let deadwoodLogMaxX = 0;
-  let deadwoodLogSeat: TrunkSeat = { a: 0, b: 0, diameter: 0 };
-  let deadwoodLogTop = { a: 0, b: 0 };
+  // The snag role's base-to-ground offset, and the log role's local X
+  // bounds and its trunk's underside and top lines, measured once from the
+  // loaded bucket geometry (`deadwoodMeasure`, see `adoptSlices()`).
+  let deadwood: DeadwoodMeasure = deadwoodMeasure([]);
   /** The ferns and the seedlings on the nurse logs, or null where the assets gave no source for them. */
   let nurseFernBucket: Bucket | null = null;
   let nurseSeedlingBucket: Bucket | null = null;
@@ -1627,7 +1229,7 @@ export function createForestMeshes(
       // never uploaded — it is the on-lattice bands, kept so the field means
       // the same thing on every bucket and a future constant-band caller is
       // not silently wrong.
-      bucket: { meshes: [plane], fade: fadeBands(seamNear(nearRadius), SEAM_FAR) },
+      bucket: { meshes: [plane], fade: fades.impostorLattice },
       centreY,
       bake: { name: plane.name, state: "baking", ms: null },
       bakeStartedAt: performance.now(),
@@ -1834,9 +1436,9 @@ export function createForestMeshes(
     // profile (whole-tree bend by height fraction squared, so trunks stay
     // planted). LOD2, the snag and the impostor plane stay rigid, and LOD1's
     // motion must reach zero no later than where its OWN bucket starts
-    // dissolving — `ringOutBand(SEAM_LOD1)`, not the fixed `SEAM_LOD1`: on a
+    // dissolving — ring 1's own out-band (`fades.lod1Out`), not the fixed `SEAM_LOD1`: on a
     // shrunk nearRadius (the low tier) that ring's out-band clips to
-    // `nearSeamBand`, ending well short of the fixed edge, and the motion
+    // the near seam, ending well short of the fixed edge, and the motion
     // weight has to clip with it or LOD1 would still be swaying at full
     // amplitude while its own instances are dissolving out. LOD0 sits
     // entirely inside that band either way, so sharing the one plugin
@@ -1853,7 +1455,7 @@ export function createForestMeshes(
         if (mesh.material) {
           mesh.refreshBoundingInfo();
           attachFoliage(mesh.material, FOLIAGE_PROFILES.TREE, mesh.getBoundingInfo().boundingBox.maximum.y);
-          if (lod === 1) setFoliageEdges(mesh.material, ringOutBand(SEAM_LOD1));
+          if (lod === 1) setFoliageEdges(mesh.material, fades.lod1Out);
         }
       }
     }
@@ -1909,18 +1511,17 @@ export function createForestMeshes(
       // an LOD0 fallback for stub assets that ship no LOD1 geometry): sizing
       // from a different LOD would stretch the bake across mismatched extents.
       const bounds = unionBounds(lods[1].length > 0 ? lods[1] : lods[0]);
-      const width = Math.max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z, 0.01);
-      const height = Math.max(bounds.max.y - bounds.min.y, 0.01);
+      const quad = impostorQuad(bounds.min, bounds.max);
       return {
         // Each ring fades in where the previous one fades out, and the last
-        // hands over to the billboard at the near seam.
-        // Each ring's OUT-band is clipped to the near seam (`ringOutBand`)
-        // when its own fixed edge would otherwise sit past `nearRadius` —
-        // shared by saplings below, the same code path.
+        // hands over to the billboard at the near seam; each ring's own
+        // out-band is clipped to that seam where its fixed edge would sit
+        // past `nearRadius` (`forestFadeBands`), for the saplings as for the
+        // giants: the same code path.
         lods: [
-          { meshes: lods[0], fade: fadeBands(null, ringOutBand(SEAM_LOD0)) },
-          { meshes: lods[1], fade: fadeBands(SEAM_LOD0, ringOutBand(SEAM_LOD1)) },
-          { meshes: lods[2], fade: fadeBands(SEAM_LOD1, nearSeamBand) },
+          { meshes: lods[0], fade: fades.lods[0] },
+          { meshes: lods[1], fade: fades.lods[1] },
+          { meshes: lods[2], fade: fades.lods[2] },
         ],
         // The understory pairs off the species, so the species' first set
         // takes it (the production forest has none).
@@ -1931,14 +1532,14 @@ export function createForestMeshes(
                 meshes: understory,
                 // Nothing takes over from ground cover at its disc edge, so it
                 // thins out over the last fifth of the radius.
-                fade: fadeBands(null, [UNDERSTORY_RADIUS * 0.8, UNDERSTORY_RADIUS]),
+                fade: fades.understory,
               },
         impostor: createImpostor(
           `${kind}_${index + k}`,
           bakes[k] as BakedImpostor | null | Promise<BakedImpostor | null>,
-          width,
-          height,
-          (bounds.min.y + bounds.max.y) / 2,
+          quad.width,
+          quad.height,
+          quad.centreY,
         ),
       };
     });
@@ -2067,29 +1668,16 @@ export function createForestMeshes(
     // Both dead-tree roles end at the near seam: the SNAG half cross-fades
     // into its billboard there, and a ~1 m log is sub-pixel beyond it and
     // simply thins out.
-    deadwoodBucket = adoptBucket(loaded.deadwood, fadeBands(null, seamNear(nearRadius)));
-    // Measured AFTER adoptBucket's prepBucketMesh (disabling doesn't affect
-    // bounding info — `adoptSpecies` already relies on the same ordering for
-    // its impostor-quad sizing) and BEFORE any thin instances exist, so this
-    // is purely the one base mesh's own local bounds.
-    const deadwoodBounds = unionBounds(loaded.deadwood);
-    // SNAG stands the trunk up by rolling local X onto world Y (see
-    // `deadwoodMatrixBuffer`), so its base is the local X minimum. Negated
-    // so adding `offset * scale` to groundH raises the origin until that
-    // minimum sits at ground level.
-    deadwoodSnagBaseOffset = -deadwoodBounds.min.x;
+    deadwoodBucket = adoptBucket(loaded.deadwood, fades.deadwood);
+    // Measured from the bucket's own vertices, before any thin instance
+    // exists (`deadwoodMeasure`): the snag's base (it stands the trunk up by
+    // rolling local X onto world Y, so its base is the local X minimum), the
+    // log's ends along local X, and its trunk's underside and top lines, not
+    // the box's local Y minimum, which is the root flare's.
+    deadwood = deadwoodMeasure(loaded.deadwood.flatMap((mesh) => Array.from(mesh.getVerticesData(VertexBuffer.PositionKind) ?? [])));
     // The plugin's moss band on a snag reads its height over this base: the
     // near material's and the bake clone's alike (the bake renders frames on).
-    for (const plugin of deadwoodPlugins) plugin.base = deadwoodSnagBaseOffset;
-    // LOG keeps local X as its trunk axis: its ends are the local X
-    // min/max, and its base is its trunk's underside, measured from the
-    // vertices themselves (`trunkSeat`), not the box's local Y minimum, which
-    // is the root flare's.
-    deadwoodLogMinX = deadwoodBounds.min.x;
-    deadwoodLogMaxX = deadwoodBounds.max.x;
-    const deadwoodPositions = loaded.deadwood.flatMap((mesh) => Array.from(mesh.getVerticesData(VertexBuffer.PositionKind) ?? []));
-    deadwoodLogSeat = trunkSeat(deadwoodPositions);
-    deadwoodLogTop = trunkTop(deadwoodPositions);
+    for (const plugin of deadwoodPlugins) plugin.base = deadwood.snagBaseOffset;
     yield;
     // What grows on a nurse log (`nurseLog.ts`): the fern and a seedling.
     // The fern wears a plain material made here from its model's textures,
@@ -2155,24 +1743,11 @@ export function createForestMeshes(
     prepBucketMesh(seedlingMesh);
     nurseSeedlingBucket = { meshes: [seedlingMesh], fade: NURSE_BANDS };
 
-    // The snag billboard's quad, in the ROLLED frame: local X becomes world Y
-    // (see `deadwoodMatrixBuffer`), so the trunk's length is the quad's
-    // height and its cross-section the quad's width. Its centre sits half a
-    // trunk above the foot — `deadwoodSnagBaseOffset` re-bases the local X
-    // midpoint onto the ground the way `adoptSpecies` relies on the tree
-    // models' origin already sitting at their footprint base.
-    const snagCross = Math.max(
-      deadwoodBounds.max.y - deadwoodBounds.min.y,
-      deadwoodBounds.max.z - deadwoodBounds.min.z,
-      0.01,
-    );
-    snagImpostor = createImpostor(
-      "snag",
-      snagBake,
-      snagCross,
-      Math.max(deadwoodBounds.max.x - deadwoodBounds.min.x, 0.01),
-      deadwoodSnagBaseOffset + (deadwoodBounds.min.x + deadwoodBounds.max.x) / 2,
-    );
+    // The snag billboard's quad, in the ROLLED frame (`snagImpostorQuad`):
+    // the trunk's length is the quad's height and its cross-section the
+    // quad's width, its centre half a trunk above the foot.
+    const snagQuad = snagImpostorQuad(deadwood);
+    snagImpostor = createImpostor("snag", snagBake, snagQuad.width, snagQuad.height, snagQuad.centreY);
 
     // Every species stands: an update that arrived while loading is honoured now.
     adopted = true;
@@ -2380,16 +1955,7 @@ export function createForestMeshes(
     x: number,
     z: number,
   ): Slices<() => void> {
-    const near = seamNear(nearRadius);
-    // Hoisted: a rebuild writes thousands of instances per bucket, and
-    // `fadeBands` allocates a quad each call.
-    const latticeBands = fadeBands(near, SEAM_FAR);
-    const fillBands = fadeBands(near, SEAM_FILL);
-    const fade = new Float32Array(4 * (lattice.length + fill.length));
-    for (let i = 0; i < lattice.length; i++) writeFadeBands(fade, i * 4, latticeBands);
-    for (let i = 0; i < fill.length; i++) {
-      writeFadeBands(fade, (lattice.length + i) * 4, fillBands);
-    }
+    const fade = impostorFadeBuffer(lattice.length, fill.length, fades);
     const matrices = yield* impostorMatrixSlices(lattice, fill, imp.centreY, x, z);
     return () => {
       applyBucketBuffer(imp.bucket, matrices, undefined, fade);
@@ -2441,22 +2007,11 @@ export function createForestMeshes(
     yield;
 
     // One bucket, both dead-tree roles — see `deadwoodMatrixBuffer`.
-    const deadwoodBuf = deadwoodMatrixBuffer(
-      seed,
-      bands.deadwood,
-      deadwoodSnagBaseOffset,
-      deadwoodLogMinX,
-      deadwoodLogMaxX,
-      deadwoodLogSeat,
-    );
+    const deadwoodBuf = deadwoodMatrixBuffer(seed, bands.deadwood, deadwood.snagBaseOffset, deadwood.logMinX, deadwood.logMaxX, deadwood.logSeat);
     // Each instance's role for the plugin: 1 a fallen log, 0 a standing snag.
-    const deadwoodRoles = new Float32Array(bands.deadwood.length);
-    bands.deadwood.forEach((t, i) => {
-      deadwoodRoles[i] = t.cohort === COHORT_LOG ? 1 : 0;
-    });
-    applies.push(bucketApply(deadwoodBucket as Bucket, deadwoodBuf, undefined, undefined, deadwoodRoles));
+    applies.push(bucketApply(deadwoodBucket as Bucket, deadwoodBuf, undefined, undefined, deadwoodRoleBuffer(bands.deadwood)));
     // What grows on the nurse logs, placed on each log's own matrix.
-    const nurse = nurseBuffers(bands.deadwood, deadwoodBuf, deadwoodLogMinX, deadwoodLogMaxX, deadwoodLogTop, deadwoodLogSeat.diameter);
+    const nurse = nurseBuffers(bands.deadwood, deadwoodBuf, deadwood.logMinX, deadwood.logMaxX, deadwood.logTop, deadwood.logSeat.diameter);
     if (nurseFernBucket !== null) applies.push(bucketApply(nurseFernBucket, nurse.ferns));
     if (nurseSeedlingBucket !== null) applies.push(bucketApply(nurseSeedlingBucket, nurse.seedlings));
     yield;
