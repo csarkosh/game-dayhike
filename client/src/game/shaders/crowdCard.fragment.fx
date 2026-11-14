@@ -1,6 +1,10 @@
-// The crowd's cards, built by crowdCards.ts: the figure's shape, written into
-// the shade mask's red as a shade is (shadeSilhouette.ts), which the grade or
-// the veil then blurs into a darkness in the mist. The shape is drawn here,
+// The crowd's cards, built by crowdCards.ts: the figure's shape, drawn twice.
+// In the shade mask (crowdPass 0) it is written into the mask's red as a shade
+// is (shadeSilhouette.ts), which the grade or the veil then blurs into a
+// darkness in the mist. In the frame (crowdPass 1) it is a dark body that
+// hides what is behind it, with a rim the mist lights (crowdTint), so a figure
+// shows against the pale mist and against the black woods alike: the blend is
+// premultiplied, as the way's mist is. The shape is drawn here,
 // in shares of the figure's height: a torso broader at the shoulders, a head,
 // long arms, legs, and the antlers, the same on both sides of its middle. It
 // leans a little on a slow beat of its own (vStir: its phase and its rate),
@@ -11,6 +15,8 @@
 // shaderHygiene test enforces both.
 
 uniform float crowdTime;
+uniform float crowdPass;
+uniform vec3 crowdTint;
 
 varying vec4 vCard;
 varying vec2 vStir;
@@ -32,7 +38,12 @@ void main(void) {
   d = min(d, limb(q, vec2(0.03, 0.79), vec2(0.085, 0.9)) - 0.011);
   d = min(d, limb(q, vec2(0.085, 0.9), vec2(0.07, 0.985)) - 0.008);
   d = min(d, limb(q, vec2(0.06, 0.85), vec2(0.125, 0.92)) - 0.008);
-  float body = 1.0 - smoothstep(-0.01, 0.03, d);
+  float body = 1.0 - smoothstep(-0.02, 0.045, d);
   float feet = smoothstep(0.0, 0.14, p.y);
-  gl_FragColor = vec4(1.0, 0.0, 0.0, body * feet * vCard.w);
+  float shape = body * feet * vCard.w;
+  // A faint, wide rim: the figure is a darkness the mist catches the edge of, never a drawn line.
+  float rim = 1.0 - smoothstep(0.0, 0.06, abs(d + 0.02));
+  vec4 inMask = vec4(1.0, 0.0, 0.0, shape);
+  vec4 inFrame = vec4(crowdTint * (0.05 + 0.2 * rim) * shape, shape * 0.75);
+  gl_FragColor = mix(inMask, inFrame, crowdPass);
 }

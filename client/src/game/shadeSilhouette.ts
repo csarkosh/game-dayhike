@@ -61,10 +61,11 @@ export type ShadeSilhouette = {
   sync(entries: readonly ShadeEntry[]): void;
   /**
    * The crowd's cards (crowdCards.ts): their one mesh, and how many are up
-   * this frame. Told before `sync`. While any is up the mesh is drawn into
+   * this frame, and the material it wears in the mask (it wears another in
+   * the frame). Told before `sync`. While any is up the mesh is drawn into
    * the mask and the mask is up, whether or not a figure of the sim's is.
    */
-  setCards(mesh: AbstractMesh | null, count: number): void;
+  setCards(mesh: AbstractMesh | null, count: number, material: Material | null): void;
   /** Whether any figure is in the mask this frame, for the pass to skip its taps when none is. */
   any(): boolean;
   dispose(): void;
@@ -187,15 +188,19 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
       current = entries;
       texture.refreshRate = anyNow ? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME : RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
     },
-    setCards(mesh, count) {
+    setCards(mesh, count, material) {
       const list = texture.renderList;
       if (list === null) return;
       const up = mesh !== null && count > 0;
       if (cards !== null && (cards !== mesh || !up)) {
         const at = list.indexOf(cards);
         if (at >= 0) list.splice(at, 1);
+        texture.setMaterialForRendering(cards, undefined);
       }
-      if (up && !list.includes(mesh)) list.push(mesh);
+      if (up) {
+        if (!list.includes(mesh)) list.push(mesh);
+        texture.setMaterialForRendering(mesh, material ?? undefined);
+      }
       cards = mesh;
       cardsUp = up;
     },

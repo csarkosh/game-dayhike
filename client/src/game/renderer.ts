@@ -41,6 +41,11 @@ import { createShadeVeil } from "./shadeVeil.js";
 import { CLOUD_GROUND_REBUILD_M, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudColourUnder, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
 import { createWayLight } from "./wayLight.js";
 import { createWayMistField } from "./wayMistField.js";
+import { createCrowdCards } from "./crowdCards.js";
+import { createCrowdEyes } from "./crowdEyes.js";
+import { CROWD_MOST, crowdHeights, type CrowdFigure, type CrowdGround } from "./crowdField.js";
+import { wayTint } from "./wayLightGeometry.js";
+import { CHASE_TINT } from "./gradeParams.js";
 import { wayDimAt } from "./wayLevel.js";
 import { wayDistanceWithin, type WayDown } from "../sim/wayDown.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
@@ -1692,6 +1697,13 @@ export function writeListenerPose(
   out.uz = 0;
 }
 
+/** The most figures of the crowd any tier keeps: what its drawers are made for. */
+const CROWD_MOST_ANY = Math.max(CROWD_MOST.low, CROWD_MOST.medium, CROWD_MOST.high);
+/** Metres from the eye a crowd shade is still a card in the mask: past the mist's reach (crowdField.ts CROWD_MIST_M, 30) by enough that the body is gone before the card is. */
+const CROWD_CARDS_TO_M = 36;
+/** No figure of the crowd is held by a model. */
+const CROWD_NONE_HELD: ReadonlySet<number> = new Set();
+
 export type Renderer = {
   scene: Scene;
   engine: AbstractEngine;
@@ -1800,6 +1812,8 @@ export type Renderer = {
    * ground map the mist thins over the way in place of the trail.
    */
   setWayLevel(level: number): void;
+  /** This screen's crowd for the frame (crowdField.ts), told before `sync`: its figures are drawn as cards in the shade mask and as eyes. */
+  setCrowd(figures: readonly CrowdFigure[], seconds: number): void;
   /** How far the mist has come in, 0 to 1 (acts.ts): the ground cloud rises by it, after the night. */
   setMistIn(level: number): void;
   /**
@@ -3027,6 +3041,14 @@ function buildRenderer(
   // every path (the grade reads it on the post tiers, the veil on the
   // material path, below).
   const silhouette = forest !== null ? createShadeSilhouette(scene, camera) : null;
+  // The crowd (crowdField.ts), for as many as any tier keeps: a card each in the shade mask out to where the mist
+  // has taken the body, and a pair of eyes each at every distance.
+  const crowdCards = silhouette === null ? null : createCrowdCards(scene, CROWD_MOST_ANY);
+  partOf(crowdCards);
+  const crowdEyes = silhouette === null ? null : createCrowdEyes(scene, CROWD_MOST_ANY);
+  partOf(crowdEyes);
+  const crowdGround: CrowdGround = new Map();
+  const crowdHeightsOut: number[] = [];
   partOf(silhouette);
   // The veil (shadeVeil.ts): the material path's quad that darkens the frame
   // by the mask and the stare, as the grade does with the chain.
@@ -3716,6 +3738,15 @@ function buildRenderer(
     setWayLevel(level) {
       wayLevel = Math.max(0, Math.min(1, level));
     },
+    setCrowd(figures, seconds) {
+      if (crowdCards === null || crowdEyes === null || silhouette === null) return;
+      const under = camera.position.y - 1.7;
+      const heights = crowdHeights(crowdGround, figures, wayHeightAt ?? (() => under), under, crowdHeightsOut);
+      // A figure's rim is lit by the way's mist: its colour this frame, as the mist itself is given it.
+      const crowdTint = wayTint(postFeatures.colourPath, cloudColourUnder(atmosphere.nearColour()), 1 / wayDimAt(wayLevel), chaseCast, CHASE_TINT);
+      silhouette.setCards(crowdCards.mesh, crowdCards.sync(figures, heights, camera.position, seconds, CROWD_NONE_HELD, 0, CROWD_CARDS_TO_M, crowdTint), crowdCards.maskMaterial);
+      crowdEyes.sync(figures, heights, camera.position, seconds, CROWD_NONE_HELD);
+    },
     setMist(density) {
       cloudHold = density === null ? null : Math.max(0, Math.min(1, density));
       return cloudHold ?? cloudDensity;
@@ -3825,6 +3856,8 @@ function buildRenderer(
       clipmap?.dispose();
       wayLight?.dispose();
       wayField?.dispose();
+      crowdCards?.dispose();
+      crowdEyes?.dispose();
       facePatches?.dispose();
       water?.dispose();
       waterPlants?.dispose();

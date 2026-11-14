@@ -136,17 +136,23 @@ describe("the shade mask", () => {
     const camera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
     const mask = createShadeSilhouette(scene, camera);
     const cards = MeshBuilder.CreateBox("cards", { size: 1 }, scene);
-    mask.setCards(cards, 3);
+    const maskMaterial = new StandardMaterial("cards_mask", scene);
+    const worn: unknown[] = [];
+    const wear = mask.texture.setMaterialForRendering.bind(mask.texture);
+    mask.texture.setMaterialForRendering = (mesh, material) => { worn.push(mesh, material); wear(mesh, material); };
+    mask.setCards(cards, 3, maskMaterial);
     mask.sync([]);
+    // In the mask the cards are drawn with their mask material, whatever they wear in the frame.
+    expect(worn).toEqual([cards, maskMaterial]);
     // No shade of the sim's, and the mask is still drawn: the grade and the veil read it.
     expect(mask.any()).toBe(true);
     expect(mask.texture.renderList).toContain(cards);
-    mask.setCards(cards, 0);
+    mask.setCards(cards, 0, maskMaterial);
     mask.sync([]);
     expect(mask.any()).toBe(false);
     expect(mask.texture.renderList).not.toContain(cards);
     // With neither, nothing: the passes skip their work.
-    mask.setCards(null, 0);
+    mask.setCards(null, 0, null);
     mask.sync([]);
     expect(mask.any()).toBe(false);
     scene.dispose();

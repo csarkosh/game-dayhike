@@ -122,6 +122,11 @@ import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/co
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
 import { stepWay, wayOf } from "./sim/wayDraw.js";
+import { wayDirection, wayPoint, wayProject } from "./sim/wayDown.js";
+import { groundSpawn } from "./sim/spawn.js";
+import { isOnCorridor } from "./sim/containment.js";
+import { WATCH_SLOPE_NY } from "./sim/watcher.js";
+import { CROWD_MOST, crowdOn, newCrowd, stepCrowd, type Crowd, type CrowdWorld } from "./game/crowdField.js";
 import { wayLevelFor } from "./game/wayLevel.js";
 import { hasLineOfSight } from "./sim/ai.js";
 import { isHollowState, playerSees } from "./sim/hollow.js";
@@ -143,6 +148,8 @@ const WAY_DRAW_LATE_MS = 4;
 /** The draw's slice while the summit scene's shots play: a find the draw was not done by (a console's `summit`, a peer admitted late) has until the threshold, where the player is turned to the way. */
 const WAY_DRAW_SCENE_MS = 10;
 const WAY_DRAW_FROM_TICK = 600;
+/** Where the crowd is stepped from with no local player: nowhere, and it has no world then either. */
+const CROWD_NOWHERE = { x: 0, z: 0, yaw: 0 };
 
 /** Seconds after the last howl ends before the voice answers it, and the milliseconds into the cap's scene its line comes. */
 const CRY_BEAT_S = 0.6;
@@ -596,6 +603,11 @@ function buildGame(
   let wayGivenTo: Renderer | null = null;
   let wayGiven: World["way"] = null;
   let wayReported = false;
+  /** This screen's crowd (crowdField.ts): the figures, the console's hold on their count (`crowd on|off|<count>`) or null, and the way its view of the world was made for. */
+  let crowd: Crowd | null = null;
+  let crowdHeld: number | null = null;
+  let crowdWayFor: World["way"] = null;
+  let crowdWorld: CrowdWorld | null = null;
   /** The explore day's clock (exploreDay.ts): seconds since the hike began, on a calm world. */
   let exploreClockS = 0;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
@@ -903,6 +915,10 @@ function buildGame(
       // The way down's light, held whole or out, or let go to the chase (wayLevel.ts).
       wayHeld = args.length === 0 ? null : args[0] === "on" ? 1 : 0;
       hud.setStatus(wayHeld === null ? "way: the chase's" : `way held ${wayHeld === 1 ? "on" : "off"}`);
+    } else if (name === "crowd") {
+      // This screen's crowd, held at a count or let go to the chase (crowdField.ts).
+      crowdHeld = args.length === 0 ? null : args[0] === "on" ? CROWD_MOST[tier] : args[0] === "off" ? 0 : Number(args[0]);
+      hud.setStatus(crowdHeld === null ? "crowd: the chase's" : `crowd held at ${crowdHeld}`);
     } else if (name === "summit") {
       // The summit scene for a look (cutscene.ts): the host's own player stands at the body, and the next tick is the find.
       if (summitPreview === null) hud.setStatus("summit: the host's to call");
@@ -1146,6 +1162,36 @@ function buildGame(
    * WebGPU swap or a lost device starts with none, and the way itself arrives when its draw ends), and the level
    * moves toward what the match asks, from the summit scene's threshold through the chase.
    */
+  /**
+   * This screen's crowd, a frame (crowdField.ts): stepped round the local player while the chase is on (or the
+   * console holds it), from the world's way and ground, and given to the renderer. It is dressing: nothing of
+   * it is the sim's, and each screen has its own.
+   */
+  function syncCrowd(world: World, state: WorldState, localId: number, dt: number): void {
+    crowd ??= newCrowd((seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0);
+    const way = world.way, ground = world.ground;
+    if (way !== crowdWayFor) {
+      crowdWayFor = way;
+      const normal = { x: 0, y: 0, z: 0 };
+      crowdWorld = way === null || ground === null ? null : {
+        length: way.length,
+        project: (x, z) => wayProject(way, x, z),
+        point: (s, out) => wayPoint(way, s, out),
+        direction: (s, out) => wayDirection(way, s, out),
+        // Dry ground a figure can stand on, off the road, with nothing solid in it: what a shade of the sim's needs.
+        admit: (x, z) => {
+          if (groundSpawn(world.boxes, seed, x, z, ENEMY_HALF) === null || isOnCorridor(world, x, z)) return false;
+          ground.normalAt(x, z, normal);
+          return normal.y >= WATCH_SLOPE_NY;
+        },
+      };
+    }
+    const me = state.players.get(localId);
+    const up = me !== undefined && (crowdHeld !== null ? crowdHeld > 0 : crowdOn(state.phase, state.outcome, wayShown));
+    const seconds = performance.now() / 1000;
+    stepCrowd(crowd, up ? crowdWorld : null, me === undefined ? CROWD_NOWHERE : { x: me.pos.x, z: me.pos.z, yaw: me.yaw }, crowdHeld ?? CROWD_MOST[tier], seconds, dt);
+    renderer.setCrowd(crowd.figures, seconds);
+  }
   function syncWayLight(world: World, dt: number): void {
     if (wayGivenTo !== renderer || wayGiven !== world.way) {
       const ground = world.ground;
@@ -2244,6 +2290,7 @@ function buildGame(
       const state: WorldState = host.world.state;
       const self = state.players.get(host.localEntityId);
       syncWayLight(host.world, dt);
+      syncCrowd(host.world, state, host.localEntityId, dt);
       syncWayDraw(host.world, state);
       syncAtmosphere(host.world, state, host.localEntityId, dt);
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
@@ -2401,6 +2448,7 @@ function buildGame(
       const state = client.renderState(performance.now());
       const self = state.players.get(client.localEntityId);
       syncWayLight(client.world, dt);
+      syncCrowd(client.world, state, client.localEntityId, dt);
       syncWayDraw(client.world, state);
       syncAtmosphere(client.world, state, client.localEntityId, dt);
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });

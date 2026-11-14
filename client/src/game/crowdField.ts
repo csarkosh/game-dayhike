@@ -12,7 +12,7 @@
  */
 import type { QualityTier } from "./quality.js";
 import { hash2 } from "../sim/field.js";
-import { nextRandom } from "../sim/types.js";
+import { Outcome, Phase, nextRandom } from "../sim/types.js";
 import { WAY_RIM_M } from "../sim/wayDown.js";
 
 /** The most figures a screen keeps at the crowd's thickest. */
@@ -56,7 +56,7 @@ export function crowdTarget(progress: number, most: number): number {
  * go at, or -1; `rise` how it came, 0 out of the mist or 1 as a pair of eyes
  * opening far off.
  */
-export type CrowdFigure = { id: number; x: number; z: number; size: number; eyes: number; warm: number; pace: number; born: number; gone: number; rise: 0 | 1 };
+export type CrowdFigure = { id: number; x: number; z: number; size: number; eyes: number; warm: number; pace: number; born: number; gone: number; rise: 0 | 1; /** Whether the ground last refused its step on: it stands until it is asked again. */ held?: boolean };
 
 /** A figure's look, from its own number: the same for as long as it lives. A fifth are small, one in seven large, the rest near a Hollow's size. */
 export function figureOf(id: number, seed: number): Pick<CrowdFigure, "size" | "eyes" | "warm" | "pace"> {
@@ -119,9 +119,55 @@ export function placeCrowd(world: CrowdWorld, eye: { x: number; z: number; yaw: 
 }
 
 /** A screen's crowd: its figures, its own stream (never the sim's), the next figure's number, and the seed its figures' looks come from. */
-export type Crowd = { figures: CrowdFigure[]; rng: { rngSeed: number }; nextId: number; seed: number };
+export type Crowd = { figures: CrowdFigure[]; rng: { rngSeed: number }; nextId: number; seed: number; steps: number };
 export function newCrowd(seed: number): Crowd {
-  return { figures: [], rng: { rngSeed: (seed ^ 0x2c0d) >>> 0 }, nextId: 1, seed };
+  return { figures: [], rng: { rngSeed: (seed ^ 0x2c0d) >>> 0 }, nextId: 1, seed, steps: 0 };
+}
+
+/** Whether the crowd is up: from the summit scene's turn to the way (the way's mist shown) through the chase, while the match is undecided. */
+export function crowdOn(phase: Phase, outcome: Outcome, wayShown: number): boolean {
+  return (phase === Phase.Chase || phase === Phase.Scene) && outcome === Outcome.Playing && wayShown > 0;
+}
+
+/**
+ * A walking figure's step on is put to the ground one step in this many (its
+ * own number sets which), and it stands where the ground last refused it
+ * until it is asked again: the ground's admission is several reads of the
+ * world a place, and sixty of them a frame would be the crowd's whole cost.
+ */
+export const CROWD_ADMIT_EVERY = 8;
+
+/** The ground's height is asked for this many figures a frame at the most, and again for one only once it has moved this many metres. */
+export const CROWD_HEIGHTS_A_FRAME = 8;
+export const CROWD_HEIGHT_STALE_M = 1;
+/** The ground under each figure, as last asked: where it stood then, and the height. */
+export type CrowdGround = Map<number, { x: number; z: number; h: number }>;
+
+/**
+ * The ground's height under each of `figures`, in step with them, written to
+ * `out`: kept from frame to frame in `ground`, asked of `heightAt` for a few
+ * figures a frame, the rest standing at what was last known of them or, new,
+ * at `fallback`. A figure gone is forgotten.
+ */
+export function crowdHeights(ground: CrowdGround, figures: readonly CrowdFigure[], heightAt: (x: number, z: number) => number, fallback: number, out: number[]): number[] {
+  out.length = figures.length;
+  let asked = 0;
+  for (let i = 0; i < figures.length; i++) {
+    const f = figures[i] as CrowdFigure;
+    let known = ground.get(f.id);
+    const stale = known === undefined || (f.x - known.x) * (f.x - known.x) + (f.z - known.z) * (f.z - known.z) > CROWD_HEIGHT_STALE_M * CROWD_HEIGHT_STALE_M;
+    if (stale && asked < CROWD_HEIGHTS_A_FRAME) {
+      asked++;
+      known = { x: f.x, z: f.z, h: heightAt(f.x, f.z) };
+      ground.set(f.id, known);
+    }
+    out[i] = known === undefined ? fallback : known.h;
+  }
+  if (ground.size > figures.length) {
+    const live = new Set(figures.map((f) => f.id));
+    for (const id of ground.keys()) if (!live.has(id)) ground.delete(id);
+  }
+  return out;
 }
 
 /**
@@ -194,7 +240,8 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
         nx = f.x - ALONG.x * step;
         nz = f.z - ALONG.z * step;
       }
-      if ((!ahead || world.project(nx, nz).d >= WAY_RIM_M + CROWD_CLEAR_M) && world.admit(nx, nz)) {
+      if ((f.id + crowd.steps) % CROWD_ADMIT_EVERY === 0) f.held = !world.admit(nx, nz);
+      if (f.held !== true && (!ahead || world.project(nx, nz).d >= WAY_RIM_M + CROWD_CLEAR_M)) {
         f.x = nx;
         f.z = nz;
       }
@@ -236,4 +283,5 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
     alive++;
   }
   crowd.figures = kept;
+  crowd.steps++;
 }

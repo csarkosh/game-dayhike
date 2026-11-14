@@ -342,6 +342,21 @@ const SPECS: readonly CommandSpec[] = [
     },
   },
   {
+    name: "crowd",
+    kind: "view",
+    // `crowd on` holds this screen's crowd (crowdField.ts) at its tier's most
+    // wherever the match is, `crowd off` holds it at none, `crowd <count>` at
+    // that many, for looking at it and for measuring what it costs; bare
+    // `crowd` lets the chase set it again. Not persisted: no `scriptValue`.
+    validate(args) {
+      if (args.length === 0) return null;
+      if (args.length === 1 && (args[0] === "on" || args[0] === "off")) return null;
+      const n = Number(args[0]);
+      if (args.length > 1 || !Number.isInteger(n) || n < 0 || n > 60) return 'crowd takes no argument, "on", "off", or a count from 0 to 60';
+      return null;
+    },
+  },
+  {
     name: "lamp",
     kind: "view",
     // The lamp is the host's player's, for a link's look at the night: `lamp`
