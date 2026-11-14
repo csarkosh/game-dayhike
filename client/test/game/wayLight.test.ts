@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -14,6 +15,9 @@ import {
   wayDrift, wayHeavePhases, wayMistColour, type WayShape,
 } from "../../src/game/wayLightGeometry.js";
 import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SIZE, CLOUD_NOISE_SMALL_M } from "../../src/game/cloudParams.js";
+
+/** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
+const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
 /** A straight way along +x, a point every 2 m, `n` points. */
 function straight(n: number): WayShape {
@@ -50,7 +54,7 @@ type Held = { _floats: Record<string, number>; _vectors3: Record<string, Vector3
 const four = (v: V4): number[] => [v.x, v.y, v.z, v.w];
 
 describe("the way's mist: its fragment stage", () => {
-  const fragment = readFileSync("src/game/shaders/wayLight.fragment.fx", "utf8");
+  const fragment = readFileSync(clientFile("src/game/shaders/wayLight.fragment.fx"), "utf8");
 
   it("reads the noise at the ground mist's two scales, which the drift's shares of a tile are of", () => {
     expect(fragment).toContain("plan * (1.0 / 11.0) + wayDrift.xy");
@@ -67,7 +71,7 @@ describe("the way's mist: its fragment stage", () => {
 
 describe("the way's mist: a face too small to have a lie", () => {
   it("is given none, never a division by nothing: a fragment against the eye must not put a NaN in the frame", () => {
-    const fragment = readFileSync("src/game/shaders/wayLight.fragment.fx", "utf8");
+    const fragment = readFileSync(clientFile("src/game/shaders/wayLight.fragment.fx"), "utf8");
     expect(fragment).not.toContain("normalize(cross(");
     expect(fragment).toContain("inversesqrt(max(dot(face, face), 1.0e-20))");
   });

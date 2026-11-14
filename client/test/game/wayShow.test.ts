@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createWorld, type World } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
@@ -7,6 +8,9 @@ import { makeWay } from "../../src/sim/wayDown.js";
 import { THRESHOLD_AT_S } from "../../src/game/cutscene.js";
 import { WAY_DIM, WAY_FADE_S, wayDimAt, wayLevelFor } from "../../src/game/wayLevel.js";
 import { CLOUD_TRAIL_EDGE_M, CLOUD_TRAIL_FADE_M, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudGroundMap } from "../../src/game/cloudParams.js";
+
+/** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
+const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
 const FLOOR = { min: [-300, -1, -300] as [number, number, number], max: [300, 0, 300] as [number, number, number], material: "concrete" };
 /** A flat world in `phase`, with a straight way or none. */
@@ -73,8 +77,8 @@ describe("the mist over the way", () => {
 });
 
 describe("the renderer and the app", () => {
-  const renderer = readFileSync("src/game/renderer.ts", "utf8");
-  const app = readFileSync("src/app.ts", "utf8");
+  const renderer = readFileSync(clientFile("src/game/renderer.ts"), "utf8");
+  const app = readFileSync(clientFile("src/app.ts"), "utf8");
 
   it("the renderer makes the light once, for a forest, registers it, and disposes it", () => {
     expect(renderer.match(/createWayLight\(/g)).toHaveLength(1);

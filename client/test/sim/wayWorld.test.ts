@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
@@ -9,6 +10,9 @@ import { DEFAULT_TERRAIN_VARIANT, elevationAt, setActiveTerrainVariant } from ".
 import { AiState, Phase } from "../../src/sim/types.js";
 import { drawWayNow, stepWay, wayOf } from "../../src/sim/wayDraw.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+
+/** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
+const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -91,7 +95,7 @@ describe("the world's way down", SUITE, () => {
   });
 
   it("the app steps the draw every frame on the host and on a client, from ten seconds in", () => {
-    const app = readFileSync("src/app.ts", "utf8");
+    const app = readFileSync(clientFile("src/app.ts"), "utf8");
     expect(app).toContain("      syncWayDraw(host.world, state);\n      syncAtmosphere(host.world, state, host.localEntityId, dt);");
     expect(app).toContain("      syncWayDraw(client.world, state);\n      syncAtmosphere(client.world, state, client.localEntityId, dt);");
     expect(app).toContain("if (world.wayDraw === null || state.tick < WAY_DRAW_FROM_TICK) return;");

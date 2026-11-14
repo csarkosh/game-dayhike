@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createForestWorld, type World } from "../../src/sim/world.js";
@@ -17,6 +18,9 @@ import {
 } from "../../src/sim/wayDraw.js";
 import { STRAIGHT_SLACK_M, wayRules } from "./helpers/wayRules.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+
+/** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
+const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -135,7 +139,7 @@ describe("drawing the way down", SUITE, () => {
 
 describe("the way's arithmetic", () => {
   it("is only what every browser rounds alike: no trig, no powers, no logs", () => {
-    const text = readFileSync("src/sim/wayDraw.ts", "utf8") + readFileSync("src/sim/wayDown.ts", "utf8");
+    const text = readFileSync(clientFile("src/sim/wayDraw.ts"), "utf8") + readFileSync(clientFile("src/sim/wayDown.ts"), "utf8");
     expect(text).not.toMatch(/Math\.(sin|cos|tan|atan2?|asin|acos|exp|pow|log\w*|hypot|cbrt)\b/);
     expect(text).not.toMatch(/[\w)\]]\s*\*\*\s*[\w(]/);
   });

@@ -1,10 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import {
   OFF_TRAIL_M, OFF_TRAIL_S, VOICE_FIRST_S, VOICE_GAP_S, returnScenario, stepInnerVoice, voiceRest, type VoiceInputs, type VoiceState,
 } from "../../src/game/innerVoice.js";
 import { INNER_LINES } from "../../src/game/innerLines.js";
 import { DeathCause } from "../../src/sim/types.js";
+
+/** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
+const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
 const DAY: VoiceInputs = {
   climb: 0.5, wet: 1, night: 0, mist: 0, chase: false, ended: false, offTrail: 0, lamp: false, stare: 0, moving: true,
@@ -262,10 +266,10 @@ describe("the chase's lines since the way down", () => {
 
   it("leave no clip that speaks a line's old words: a reworded line is a caption until its clip is made again", () => {
     for (const id of ["voice.chaseStart.3", "voice.chaseOffTrail.1", "voice.chaseOffTrail.2", "voice.chaseOffTrail.3"]) {
-      expect(existsSync(`assets/audio/${id}.mp3`), id).toBe(false);
-      expect(readFileSync("assets/catalog.json", "utf8"), id).not.toContain(`"${id}"`);
+      expect(existsSync(clientFile(`assets/audio/${id}.mp3`)), id).toBe(false);
+      expect(readFileSync(clientFile("assets/catalog.json"), "utf8"), id).not.toContain(`"${id}"`);
     }
     // The lines that kept their words kept their clips.
-    for (const id of ["voice.chaseStart.1", "voice.chaseStart.2", "voice.safe.1"]) expect(existsSync(`assets/audio/${id}.mp3`), id).toBe(true);
+    for (const id of ["voice.chaseStart.1", "voice.chaseStart.2", "voice.safe.1"]) expect(existsSync(clientFile(`assets/audio/${id}.mp3`)), id).toBe(true);
   });
 });
