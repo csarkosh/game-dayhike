@@ -74,6 +74,7 @@ import {
   type RingSamples,
 } from "./clipmap.js";
 import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, ringVertices } from "./terrainVertices.js";
+import { GAME_FOV, lensProjection } from "./gameLens.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
 import { createLighting, DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "./lighting.js";
 import type { SkyState } from "./skyState.js";
@@ -1632,8 +1633,8 @@ export function createWater(
  * shot's, absent for the game's own lens and no roll. */
 export type FreecamView = { x: number; y: number; z: number; yaw: number; pitch: number; fov?: number; roll?: number };
 
-/** The game's own lens (rad, vertical). */
-export const GAME_FOV = 1.4;
+// The game's own lens (rad, vertical) is `gameLens.ts`'s; named from here too.
+export { GAME_FOV };
 
 /** What the end scene (endScene.ts) is played over: the car's site and the way it faces, the road, the door spot, and the car as it stands each frame. */
 export type EndSceneSetup = {
@@ -2289,12 +2290,13 @@ function buildRenderer(
 
   // Never call attachControl: this camera is driven entirely by sim state.
   const camera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
-  camera.minZ = 0.05;
-  // Far plane moves with the fog: the outermost ring's corner is
-  // ~5.8 km out and the sky dome is 8 km across, so Babylon's default clips the
-  // entire distant view away.
-  camera.maxZ = 10000;
-  camera.fov = GAME_FOV;
+  // The game's own lens (`gameLens.ts`). Its far plane moves with the fog:
+  // the outermost ring's corner is ~5.8 km out and the sky dome is 8 km
+  // across, so Babylon's default clips the entire distant view away.
+  const lens = lensProjection();
+  camera.minZ = lens.near;
+  camera.maxZ = lens.far;
+  camera.fov = lens.fov;
 
   // The local player's headlamp, camera-parented so it needs no per-frame
   // position write: a child of the camera inherits its rotation, so +Z local

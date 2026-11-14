@@ -186,6 +186,7 @@ import { sightUnder } from "../../src/game/gradeParams.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { LakeCalmFrame } from "../../src/game/renderer.js";
+import { lensProjection } from "../../src/game/gameLens.js";
 
 let engine: NullEngine | null = null;
 
@@ -888,6 +889,16 @@ describe("the sea's clock", () => {
     } finally {
       stepped.dispose();
     }
+  });
+});
+
+describe("the renderer's camera", () => {
+  it("projects through the game's lens, made without it (gameLens.ts)", () => {
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture() });
+    const lens = lensProjection();
+    expect([renderer.camera.fov, renderer.camera.minZ, renderer.camera.maxZ]).toEqual([lens.fov, lens.near, lens.far]);
+    expect(GAME_FOV).toBe(lens.fov);
+    renderer.dispose();
   });
 });
 
