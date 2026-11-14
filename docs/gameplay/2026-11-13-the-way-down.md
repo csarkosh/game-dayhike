@@ -172,6 +172,15 @@ where the ground mist is thinned.
 the shot in which the player turns to run, holds through the chase, a death and the return to
 the crest, and falls once the match is decided. The console's `way on` and `way off` hold it.
 
+**The turn to it.** In the summit scene's last shot the player's eye is turned to the way and
+their legs run them down it before the controls are theirs (`cutscene.ts` `thresholdLook`). The
+way down from where they stand is asked for again every tick of that shot (`wayDownFrom`, 10 m
+down the line), so the run follows the way as it bends and never the trail beside it. A find the
+draw was not done by (a console's `summit`, a peer admitted late) gives the draw 10 ms a frame
+while the scene's shots play (`WAY_DRAW_SCENE_MS`) and finishes it at that shot's cut. Until
+2026-11-14 the look was taken once, at the find, and where the way was not yet drawn it was the
+trail's.
+
 **What is reported.** Each page sends one `way` telemetry event as its way settles: its length,
 its straight line, and whether it is the fallback.
 

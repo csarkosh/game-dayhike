@@ -121,7 +121,7 @@ import { extrasLater } from "./game/extrasLater.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
-import { stepWay } from "./sim/wayDraw.js";
+import { stepWay, wayOf } from "./sim/wayDraw.js";
 import { wayLevelFor } from "./game/wayLevel.js";
 import { hasLineOfSight } from "./sim/ai.js";
 import { isHollowState, playerSees } from "./sim/hollow.js";
@@ -130,7 +130,7 @@ import { AiState } from "./sim/types.js";
 import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState, type VoiceScene } from "./game/innerVoice.js";
 import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
 import { createVoiceClips } from "./game/voiceClips.js";
-import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt } from "./game/cutscene.js";
+import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt, thresholdLook } from "./game/cutscene.js";
 import { DIED_CLOSE_FROM_S } from "./game/ending.js";
 import { RETURN_LIFT_MS, causeName, createDeathReturn } from "./game/deathReturn.js";
 import { returnHollowAt } from "./sim/returns.js";
@@ -140,6 +140,8 @@ import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
 /** The way down's draw: milliseconds of it a frame through the climb, and once the scene or the chase is on; and the tick it starts at, ten seconds in, so nothing of it runs under the intro. */
 const WAY_DRAW_MS = 1.5;
 const WAY_DRAW_LATE_MS = 4;
+/** The draw's slice while the summit scene's shots play: a find the draw was not done by (a console's `summit`, a peer admitted late) has until the threshold, where the player is turned to the way. */
+const WAY_DRAW_SCENE_MS = 10;
 const WAY_DRAW_FROM_TICK = 600;
 
 /** Seconds after the last howl ends before the voice answers it, and the milliseconds into the cap's scene its line comes. */
@@ -674,7 +676,9 @@ function buildGame(
     const groundY = sim.ground?.heightAt(down.x, down.z) ?? eyeY;
     return { yaw: Math.atan2(down.x - me.pos.x, down.z - me.pos.z), pitch: Math.atan2(eyeY - groundY, Math.hypot(down.x - me.pos.x, down.z - me.pos.z)) };
   }
-  function stilled(cmd: InputCommand): InputCommand {
+  /** Whether the summit scene's threshold has begun on this screen: the shot in which the player is turned to the way down and run down it. */
+  const thresholdOn = (): boolean => downLook !== null && sceneOn() && SUMMIT_SCENE_S - (sceneUntil - performance.now()) / 1000 >= THRESHOLD_AT_S;
+  function stilled(cmd: InputCommand, me: PlayerState | undefined, sim: World): InputCommand {
     if (!sceneOn()) {
       lastLook = { yaw: cmd.yaw, pitch: cmd.pitch };
       return cmd;
@@ -685,13 +689,14 @@ function buildGame(
       // way down, then the legs: the player runs before the controls are theirs, and keeps the look.
       const stage = thresholdAt(into - THRESHOLD_AT_S);
       if (stage.stage === "look") return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: lastLook.yaw, pitch: lastLook.pitch };
-      let turn = downLook.yaw - lastLook.yaw;
-      turn = Math.atan2(Math.sin(turn), Math.cos(turn));
-      const yaw = stage.stage === "turn" ? lastLook.yaw + turn * stage.f : downLook.yaw;
-      const pitch = stage.stage === "turn" ? lastLook.pitch + (downLook.pitch - lastLook.pitch) * stage.f : downLook.pitch;
-      input.setLook(yaw, pitch);
-      if (stage.stage === "turn") return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw, pitch };
-      return { ...cmd, moveX: 0, moveZ: 1, buttons: Button.Sprint, yaw, pitch };
+      // The way down from where they are now, asked for every tick: a way the find came too soon for is
+      // turned to once it is drawn, and the run goes down it as it bends, never down the trail beside it.
+      const fresh = wayDownFrom(me, sim);
+      if (fresh !== null) downLook = fresh;
+      const look = thresholdLook(stage, lastLook, downLook);
+      input.setLook(look.yaw, look.pitch);
+      if (stage.stage === "turn") return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: look.yaw, pitch: look.pitch };
+      return { ...cmd, moveX: 0, moveZ: 1, buttons: Button.Sprint, yaw: look.yaw, pitch: look.pitch };
     }
     return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: lastLook.yaw, pitch: lastLook.pitch };
   }
@@ -1128,8 +1133,13 @@ function buildGame(
    * chase is on and it somehow is not (a console's `summit`, a peer admitted late).
    */
   function syncWayDraw(world: World, state: WorldState): void {
-    if (world.wayDraw === null || state.tick < WAY_DRAW_FROM_TICK) return;
-    stepWay(world, state.phase === Phase.Climb ? WAY_DRAW_MS : WAY_DRAW_LATE_MS, () => performance.now());
+    if (world.wayDraw === null || (state.phase === Phase.Climb && state.tick < WAY_DRAW_FROM_TICK)) return;
+    // The threshold turns the player to the way and runs them down it: what is left of the draw is done at its cut.
+    if (thresholdOn()) {
+      wayOf(world);
+      return;
+    }
+    stepWay(world, state.phase === Phase.Climb ? WAY_DRAW_MS : state.phase === Phase.Scene ? WAY_DRAW_SCENE_MS : WAY_DRAW_LATE_MS, () => performance.now());
   }
   /**
    * The way down's light, a frame: whatever renderer is drawing has the world's way (a renderer made again for the
@@ -2225,7 +2235,7 @@ function buildGame(
       escapeStep?.();
       for (let i = 0; i < ticks; i++) {
         const me = host.world.state.players.get(host.localEntityId);
-        cmd = ranToCar(stilled(input.sample(++seq)), me);
+        cmd = ranToCar(stilled(input.sample(++seq), me, host.world), me);
         if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
         host.tick(cmd);
       }
@@ -2382,7 +2392,7 @@ function buildGame(
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
         const me = client.world.state.players.get(client.localEntityId);
-        cmd = ranToCar(stilled(input.sample(++seq)), me);
+        cmd = ranToCar(stilled(input.sample(++seq), me, client.world), me);
         if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
         client.tick(cmd);
       }

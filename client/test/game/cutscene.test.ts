@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BODY_TOP_M, CAP_SCENE_IN_S, CAP_SCENE_OUT_FROM_S, CAP_SCENE_OUT_S, CAP_SCENE_S, CAP_SCENE_STEP_M, capPose, capStand, HOLLOW_HEAD_M, LENS_24, LENS_32, LENS_GAME, SCENE_IN_S, SCENE_OUT_FROM_S, SCENE_OUT_S, SCENE_STAND_M, SCENE_EYE_HEIGHT, SCENE_PITCH, sceneStand, REVEAL_PAN_S, SCENE_LOOK_S, SCENE_TURN_S, SHOTS, shotAt, SUMMIT_RISE_AT_S, SUMMIT_SCENE_S, summitPose, summitShot, THRESHOLD_AT_S, thresholdAt, type SceneContext } from "../../src/game/cutscene.js";
+import { BODY_TOP_M, CAP_SCENE_IN_S, CAP_SCENE_OUT_FROM_S, CAP_SCENE_OUT_S, CAP_SCENE_S, CAP_SCENE_STEP_M, capPose, capStand, HOLLOW_HEAD_M, LENS_24, LENS_32, LENS_GAME, SCENE_IN_S, SCENE_OUT_FROM_S, SCENE_OUT_S, SCENE_STAND_M, SCENE_EYE_HEIGHT, SCENE_PITCH, sceneStand, REVEAL_PAN_S, SCENE_LOOK_S, SCENE_TURN_S, SHOTS, shotAt, SUMMIT_RISE_AT_S, SUMMIT_SCENE_S, summitPose, summitShot, THRESHOLD_AT_S, thresholdLook, thresholdAt, type SceneContext } from "../../src/game/cutscene.js";
 import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
 import { SUMMIT_RISE_DELAY_S } from "../../src/game/entityViews.js";
 
@@ -129,6 +129,19 @@ describe("the summit's shots", () => {
     expect(last.live).toBe(true);
     expect(summitShot(1, ctx).live).toBe(false);
     expect(THRESHOLD_AT_S).toBe(SHOTS[0]! + SHOTS[1]! + SHOTS[2]! + SHOTS[3]!);
+  });
+
+  it("the threshold's look is held on the Hollow, turns the short way to the way down, and is the way down's from then on", () => {
+    const held = { yaw: 3, pitch: 0.1 }, down = { yaw: -3, pitch: 0.4 };
+    expect(thresholdLook({ stage: "look", f: 0.5 }, held, down)).toEqual(held);
+    // From 3 to -3 the short way is on through the back, 0.283 of a radian, not 6 back through the front.
+    const half = thresholdLook({ stage: "turn", f: 0.5 }, held, down);
+    expect(half.yaw).toBeCloseTo(3 + (2 * Math.PI - 6) / 2, 9);
+    expect(half.pitch).toBeCloseTo(0.25, 9);
+    expect(thresholdLook({ stage: "turn", f: 0 }, held, down)).toEqual(held);
+    expect(thresholdLook({ stage: "run", f: 0.2 }, held, down)).toEqual(down);
+    // The way down is asked for again every tick (app.ts), so a run follows it as it bends: whatever it is now.
+    expect(thresholdLook({ stage: "run", f: 0.9 }, held, { yaw: 1, pitch: 0 })).toEqual({ yaw: 1, pitch: 0 });
   });
 
   it("the threshold looks, then turns, then runs, each stage filling its seconds", () => {

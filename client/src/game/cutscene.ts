@@ -121,6 +121,20 @@ export function thresholdAt(into: number): Threshold {
   const last = SHOTS[SHOTS.length - 1] as number;
   return { stage: "run", f: Math.min(1, (turn - SCENE_TURN_S) / Math.max(1e-6, last - SCENE_LOOK_S - SCENE_TURN_S)) };
 }
+/** A look: where the eye is turned and tipped. */
+export type Look = { yaw: number; pitch: number };
+/**
+ * The threshold's look at `stage`: held where it was, on the Hollow; turned
+ * the short way to the way down; and the way down's from then on. `down` is
+ * where the way down lies now from where the player stands, which the app
+ * asks for again every tick: a way drawn after the find is turned to once it
+ * is there, and the run follows the way as it bends.
+ */
+export function thresholdLook(stage: Threshold, held: Look, down: Look): Look {
+  if (stage.stage === "look") return held;
+  if (stage.stage === "run") return down;
+  return { yaw: held.yaw + turn(held.yaw, down.yaw) * stage.f, pitch: held.pitch + (down.pitch - held.pitch) * stage.f };
+}
 /** The seconds into the scene at which the threshold begins. */
 export const THRESHOLD_AT_S = SHOTS.slice(0, -1).reduce((a, b) => a + b, 0);
 

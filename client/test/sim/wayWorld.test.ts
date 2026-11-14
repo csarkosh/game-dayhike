@@ -98,8 +98,22 @@ describe("the world's way down", SUITE, () => {
     const app = readFileSync(clientFile("src/app.ts"), "utf8");
     expect(app).toContain("      syncWayDraw(host.world, state);\n      syncAtmosphere(host.world, state, host.localEntityId, dt);");
     expect(app).toContain("      syncWayDraw(client.world, state);\n      syncAtmosphere(client.world, state, client.localEntityId, dt);");
-    expect(app).toContain("if (world.wayDraw === null || state.tick < WAY_DRAW_FROM_TICK) return;");
+    // Never under the intro: the climb's first ten seconds. A find before then (a console's `summit`) starts it at once.
+    expect(app).toContain("if (world.wayDraw === null || (state.phase === Phase.Climb && state.tick < WAY_DRAW_FROM_TICK)) return;");
     expect(app).toContain("const WAY_DRAW_FROM_TICK = 600;");
+  });
+
+  it("the app has the way drawn by the threshold, and turns the player to it and runs them down it, wherever it then lies", () => {
+    const app = readFileSync(clientFile("src/app.ts"), "utf8");
+    // A draw the find came too soon for takes most of a frame while the scene's shots play, and is finished at the threshold's cut.
+    expect(app).toContain("const WAY_DRAW_SCENE_MS = 10;");
+    expect(app).toContain("state.phase === Phase.Climb ? WAY_DRAW_MS : state.phase === Phase.Scene ? WAY_DRAW_SCENE_MS : WAY_DRAW_LATE_MS");
+    expect(app).toContain("    if (thresholdOn()) {\n      wayOf(world);\n      return;\n    }");
+    // The look is asked for again every tick of the threshold, from where the player is: a way that was not drawn at the find is turned to once it is, and the run follows it.
+    expect(app).toContain("      const fresh = wayDownFrom(me, sim);\n      if (fresh !== null) downLook = fresh;");
+    expect(app).toContain("cmd = ranToCar(stilled(input.sample(++seq), me, host.world), me);");
+    expect(app).toContain("cmd = ranToCar(stilled(input.sample(++seq), me, client.world), me);");
+    expect(app).toContain("const look = thresholdLook(stage, lastLook, downLook);");
   });
 
   it("a level with no forest has no way and no draw", () => {
