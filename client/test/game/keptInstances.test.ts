@@ -2,17 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
-import { Matrix } from "@babylonjs/core/Maths/math.vector.js";
 import "../../src/sim/passes/index.js";
 
 // Every call a rebuild makes to compute an instance's values is counted
-// through these two modules: the trample frame and the tint writer the blade
-// and duff shells import, and the ground colour inside the tint writer, which
-// the clutter shell reaches from its own module. The wrappers pass straight
-// through, so every value is the real one.
-vi.mock("../../src/game/clutterMeshes.js", async (importOriginal) => {
-  const m = await importOriginal<typeof import("../../src/game/clutterMeshes.js")>();
-  return { ...m, trampleFrame: vi.fn(m.trampleFrame), writeFoliage: vi.fn(m.writeFoliage) };
+// through these two modules: the trample frame, the matrix and the tint
+// writer every shell imports, and the ground colour inside the tint writer.
+// The wrappers pass straight through, so every value is the real one.
+vi.mock("../../src/game/clutterInstances.js", async (importOriginal) => {
+  const m = await importOriginal<typeof import("../../src/game/clutterInstances.js")>();
+  return { ...m, trampleFrame: vi.fn(m.trampleFrame), writeFoliage: vi.fn(m.writeFoliage), instanceMatrixFor: vi.fn(m.instanceMatrixFor) };
 });
 vi.mock("../../src/game/terrainSurface.js", async (importOriginal) => {
   const m = await importOriginal<typeof import("../../src/game/terrainSurface.js")>();
@@ -20,7 +18,8 @@ vi.mock("../../src/game/terrainSurface.js", async (importOriginal) => {
 });
 
 import { CLUTTER_GRASS_CELL, type ClutterInstance } from "../../src/sim/clutter.js";
-import { createClutterMeshes, trampleFrame, writeFoliage } from "../../src/game/clutterMeshes.js";
+import { createClutterMeshes } from "../../src/game/clutterMeshes.js";
+import { instanceMatrixFor, trampleFrame, writeFoliage } from "../../src/game/clutterInstances.js";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { BLADE_REBUILD_CELL, createBladeCollector, type BladeTiers } from "../../src/game/bladeField.js";
 import { createBladeMeshes } from "../../src/game/bladeMeshes.js";
@@ -263,11 +262,10 @@ describe("clutter shell: values computed once per instance", () => {
     step(CLUTTER_CAM.x, CLUTTER_CAM.z);
     const before = clutterUnique(ref.collect(CLUTTER_CAM.x, CLUTTER_CAM.z));
     const after = clutterUnique(ref.collect(CLUTTER_CAM.x + CLUTTER_GRASS_CELL, CLUTTER_CAM.z));
-    const compose = vi.spyOn(Matrix, "ComposeToRef");
+    vi.mocked(instanceMatrixFor).mockClear();
     vi.mocked(surfaceAlbedo).mockClear();
     step(CLUTTER_CAM.x + CLUTTER_GRASS_CELL, CLUTTER_CAM.z);
-    const matrices = compose.mock.calls.length;
-    compose.mockRestore();
+    const matrices = vi.mocked(instanceMatrixFor).mock.calls.length;
     const fresh = newIn(after, before);
     const freshTinted = newIn(tintedOf(after), tintedOf(before));
     expect([fresh, freshTinted]).toEqual([868, 853]);

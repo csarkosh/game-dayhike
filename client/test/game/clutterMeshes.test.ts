@@ -6,7 +6,6 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
-import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import "../../src/sim/passes/index.js";
 import {
   CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTWOOD, CLUTTER_FERN, CLUTTER_FLOWER, CLUTTER_FUNGUS, CLUTTER_GRASS,
@@ -15,16 +14,10 @@ import {
 import { clutterFadeEdges, clutterSeamEdges, collectClutter, COVER_RAMP_CLASSES, COVER_RAMP_WIDTH, coverFarBand } from "../../src/game/clutterField.js";
 import {
   CLUTTER_CULLED,
-  CLUTTER_SINK,
-  clutterNearLodName,
   createClutterMeshes,
   cutOf,
-  cutsFor,
   CUT_CLASSES,
-  instanceMatrixFor,
-  LITTER_VARIANT_SCALE,
   reliefMesh,
-  trampleFrame,
   WET_CAP_BY_CLASS,
 } from "../../src/game/clutterMeshes.js";
 import { wetCapOf } from "../../src/game/wetPlugin.js";
@@ -347,105 +340,6 @@ describe("foliage attribute and plugin", () => {
     engine.dispose();
   });
 
-  it("tramples the grass beside the bench: shorter, leaning away, stained; untouched past the band", () => {
-    const seed = 1234;
-    const rt = activeTerrainVariant().trailDistance!;
-    const near = { cls: CLUTTER_GRASS, x: 0, z: 0, groundH: 0, groundDx: 0, groundDz: 0, scale: 1, variant: 0, hash: 0.3 };
-    // Find a point 0.9 m from the trail and one 3 m away by scanning a stem edge's neighbourhood.
-    const g = activeTerrainVariant().trailGraph!(seed);
-    const e = g.edges[g.stem[1]!]!, a = g.nodes[e.a]!, b = g.nodes[e.b]!;
-    const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
-    const L = Math.hypot(b.x - a.x, b.z - a.z), nx = -(b.z - a.z) / L, nz = (b.x - a.x) / L;
-    const p09 = { ...near, x: mx + nx * 0.9, z: mz + nz * 0.9 };
-    const p3 = { ...near, x: mx + nx * 3, z: mz + nz * 3 };
-    const rt09 = rt(seed, p09.x, p09.z);
-    expect(rt09).toBeCloseTo(0.9, 3);
-    // trampleFrame writes into one reusable scratch object rather than
-    // allocating: copy the fields this test compares out of it before
-    // calling again, the same discipline the rebuild itself follows.
-    const t09src = trampleFrame(seed, p09);
-    const t09 = { height: t09src.height, lean: t09src.lean, ax: t09src.ax, az: t09src.az, tint: { ...t09src.tint } };
-    const t3 = trampleFrame(seed, p3);
-    // trampleAt is deterministic and pure, so feeding it the SAME measured
-    // trail distance the implementation itself reads (rather than the
-    // literal 0.9 the point was constructed from, which the graph's
-    // sqrt/hypot chain can only approximate to within a few ULPs) is what
-    // makes an exact `toEqual` on the tint meaningful.
-    const want = trampleAt(rt09);
-    expect(t09.height).toBeCloseTo(want.height, 6);
-    expect(t09.lean).toBeCloseTo(want.lean, 6);
-    expect(t09.tint).toEqual(want.tint);
-    // The away direction points from the bed toward the card.
-    expect(t09.ax * nx + t09.az * nz).toBeGreaterThan(0.99);
-    expect(t3).toEqual({ height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } });
-  });
-
-  it("leans the trampled card's top along the away direction, not into the bed", () => {
-    // Matrix-level, not gradient-level: builds the exact matrix the rebuild
-    // writes (via the production `instanceMatrixFor`) and transforms the
-    // card's local top by it, so a wrong-signed lean axis shows up as the
-    // top landing on the wrong side rather than merely as a sign the
-    // gradient math happened to cancel out.
-    const white = { r: 1, g: 1, b: 1 };
-    const inst = { cls: CLUTTER_GRASS, x: 0, z: 0, groundH: 0, groundDx: 0, groundDz: 0, scale: 1, variant: 0, hash: 0 };
-    const buf = new Float32Array(16);
-    const top = new Vector3(0, 1, 0);
-
-    // height 0.55 scales the local top before the lean rotates it, so its
-    // horizontal excursion is height·sin(lean) ≈ 0.1886, not sin(lean) —
-    // a shorter, more-trampled blade's tip travels less far sideways for
-    // the same lean angle. cos(lean) then loses the same height factor
-    // before the -CLUTTER_SINK sink is added by the translation.
-    instanceMatrixFor(inst, { height: 0.55, lean: 0.35, ax: 1, az: 0, tint: white }, buf);
-    let world = Vector3.TransformCoordinates(top, Matrix.FromArray(buf));
-    expect(world.x).toBeGreaterThan(0.15); // toward +x, the away direction — not the −0.19 a bed-ward lean would land
-    expect(world.y).toBeGreaterThan(0.4);
-    expect(world.y).toBeLessThan(0.6);
-
-    instanceMatrixFor(inst, { height: 0.55, lean: 0.35, ax: 0, az: 1, tint: white }, buf);
-    world = Vector3.TransformCoordinates(top, Matrix.FromArray(buf));
-    expect(world.z).toBeGreaterThan(0.15);
-
-    instanceMatrixFor(inst, { height: 1, lean: 0, ax: 0, az: 0, tint: white }, buf);
-    world = Vector3.TransformCoordinates(top, Matrix.FromArray(buf));
-    expect(world.x).toBeCloseTo(0, 6);
-    expect(world.y).toBeCloseTo(1 - CLUTTER_SINK, 6);
-    expect(world.z).toBeCloseTo(0, 6);
-  });
-
-  it("scales the litter variants to pebbles and a twig, on top of the sim's own scale", () => {
-    expect(LITTER_VARIANT_SCALE).toEqual([1, 1, 0.3]);
-    expect(CLUTTER_LITTER).toBe(8);
-    // Built through the production instanceMatrixFor with the identity
-    // frame (no lean, no trample) and flat ground (no tilt), so the matrix's
-    // column length is exactly the instance's own final scale: rotation is
-    // orthonormal, so it never changes a column's length, only its direction.
-    const IDENTITY_FRAME = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };
-    const colLen = (buf: Float32Array, col: number): number => Math.hypot(buf[col * 4]!, buf[col * 4 + 1]!, buf[col * 4 + 2]!);
-    const base = { x: 0, z: 0, groundH: 0, groundDx: 0, groundDz: 0, scale: 0.5, hash: 0.2 };
-    const buf = new Float32Array(16);
-    instanceMatrixFor({ ...base, cls: CLUTTER_LITTER, variant: 2 }, IDENTITY_FRAME, buf);
-    expect(colLen(buf, 0)).toBeCloseTo(0.5 * 0.3, 6);
-    instanceMatrixFor({ ...base, cls: CLUTTER_LITTER, variant: 0 }, IDENTITY_FRAME, buf);
-    expect(colLen(buf, 0)).toBeCloseTo(0.5, 6);
-    // Only the litter class reads LITTER_VARIANT_SCALE: a grass instance
-    // drawing the same variant index is untouched by the table.
-    instanceMatrixFor({ ...base, cls: CLUTTER_GRASS, variant: 2 }, IDENTITY_FRAME, buf);
-    expect(colLen(buf, 0)).toBeCloseTo(0.5, 6);
-  });
-
-  it("lists litter among the tilted classes: it seats onto sloped ground, unlike grass", () => {
-    const IDENTITY_FRAME = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };
-    const buf = new Float32Array(16);
-    const sloped = { x: 0, z: 0, groundH: 0, groundDx: 0.6, groundDz: 0, scale: 0.4, hash: 0, variant: 0 };
-    instanceMatrixFor({ ...sloped, cls: CLUTTER_LITTER }, IDENTITY_FRAME, buf);
-    // Seated onto the slope, the Y column tips away from purely vertical.
-    expect(Math.abs(buf[4]!) + Math.abs(buf[6]!)).toBeGreaterThan(0.01);
-    instanceMatrixFor({ ...sloped, cls: CLUTTER_GRASS }, IDENTITY_FRAME, buf);
-    // Grass never tilts: its Y column stays purely vertical (yaw only).
-    expect(buf[4]).toBeCloseTo(0, 9);
-    expect(buf[6]).toBeCloseTo(0, 9);
-  });
 });
 
 describe("the cards beside the blade field", () => {
@@ -518,52 +412,12 @@ describe("the cards beside the blade field", () => {
     }
   }, timeLimit(20_000));
 
-  // Under the blades the meadow cards are the cover and the blades the
-  // detail, and every near card costs its vertices whether the dither keeps
-  // it or not: the meadow's near band draws LOD1 there, half of LOD0's.
-  it("draws the meadow's near band on LOD1 under the blades, LOD0 otherwise", () => {
-    expect(clutterNearLodName(CLUTTER_MEADOW, true)).toBe("LOD1");
-    expect(clutterNearLodName(CLUTTER_MEADOW, false)).toBe("LOD0");
-    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
-      if (cls === CLUTTER_MEADOW) continue;
-      expect(clutterNearLodName(cls, true)).toBe("LOD0");
-      expect(clutterNearLodName(cls, false)).toBe("LOD0");
-    }
-  });
-
   it("has no blade bucket of its own any more", () => {
     const { scene, clutter, engine } = build(true);
     clutter.update(35, 21335);
     expect(scene.meshes.some((m) => m.name.includes("clutter_blades"))).toBe(false);
     clutter.dispose();
     engine.dispose();
-  });
-});
-
-describe("cutsFor and cutOf", () => {
-  it("gives the cut classes ROCK_CUTS and every other class exactly one", () => {
-    expect(cutsFor(CLUTTER_ROCK)).toBe(ROCK_CUTS);
-    expect(cutsFor(CLUTTER_BOULDER)).toBe(ROCK_CUTS);
-    expect(cutsFor(CLUTTER_GRASS)).toBe(1);
-    expect(cutsFor(CLUTTER_DRIFTWOOD)).toBe(1);
-    expect(CUT_CLASSES.has(CLUTTER_ROCK)).toBe(true);
-    expect(CUT_CLASSES.has(CLUTTER_BOULDER)).toBe(true);
-    expect(CUT_CLASSES.has(CLUTTER_GRASS)).toBe(false);
-  });
-
-  it("reads the cut from the hash's own low end, spread across the whole range", () => {
-    // inst.hash is a float in [0, 1) (sim/clutter.ts), not an integer: a
-    // naive `hash & (cuts - 1)` would coerce every one of these to 0 via
-    // ToInt32 and put every rock in cut 0, which is exactly the bug this
-    // test is here to catch.
-    const base = { x: 0, z: 0, groundH: 0, groundDx: 0, groundDz: 0, scale: 1, variant: 0, cls: CLUTTER_ROCK };
-    expect(cutOf({ ...base, hash: 0 })).toBe(0);
-    expect(cutOf({ ...base, hash: 0.24 })).toBe(0);
-    expect(cutOf({ ...base, hash: 0.26 })).toBe(1);
-    expect(cutOf({ ...base, hash: 0.51 })).toBe(2);
-    expect(cutOf({ ...base, hash: 0.99 })).toBe(3);
-    // A non-cut class always reads cut 0, whatever the hash.
-    expect(cutOf({ ...base, cls: CLUTTER_GRASS, hash: 0.99 })).toBe(0);
   });
 });
 

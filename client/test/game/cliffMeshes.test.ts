@@ -18,7 +18,7 @@ import {
 } from "../../src/sim/cliffField.js";
 import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs } from "../../src/game/cliffField.js";
 import { CLIFF_LOD_NODES, cliffMeshName, createCliffMeshes } from "../../src/game/cliffMeshes.js";
-import { trampleFrame, writeFoliage } from "../../src/game/clutterMeshes.js";
+import { trampleFrame, writeFoliage } from "../../src/game/clutterInstances.js";
 import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
 import { CliffTintPlugin } from "../../src/game/cliffTintPlugin.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
@@ -28,8 +28,8 @@ import { timeLimit } from "../helpers/timeLimit.js";
 /** Counts the shell's tint writes, so the per-instance memo is observable:
  * the wrapper stands between `cliffMeshes.ts` and the real writer. */
 const spied = vi.hoisted(() => ({ foliage: 0 }));
-vi.mock("../../src/game/clutterMeshes.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/game/clutterMeshes.js")>();
+vi.mock("../../src/game/clutterInstances.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/clutterInstances.js")>();
   return {
     ...actual,
     writeFoliage: (...args: Parameters<typeof actual.writeFoliage>) => {

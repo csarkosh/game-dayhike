@@ -27,7 +27,8 @@ import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, d
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliagePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
-import { CLUTTER_SINK, instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
+import { CLUTTER_SINK, instanceMatrixFor, trampleFrame, writeFoliage } from "./clutterInstances.js";
+import { prepBucketMesh } from "./clutterMeshes.js";
 import { createKeptValues } from "./keptValues.js";
 import { createCrossing, crossingAt, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
