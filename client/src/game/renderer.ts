@@ -38,7 +38,7 @@ import { stageCar } from "./scene/sceneStage.js";
 import type { TrailheadCar } from "./trailheadMeshes.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { createShadeVeil } from "./shadeVeil.js";
-import { CLOUD_GROUND_REBUILD_M, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
+import { CLOUD_GROUND_REBUILD_M, CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudColourUnder, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
 import { createWayLight } from "./wayLight.js";
 import { wayDimAt } from "./wayLevel.js";
 import { wayDistanceWithin, type WayDown } from "../sim/wayDown.js";
@@ -1794,7 +1794,7 @@ export type Renderer = {
   /** The way down to light in the chase (wayLight.ts), or none, and the ground its light stands on (the sim's field, as the players stand on it): the app gives every renderer the world's, when it has it. */
   setWay(way: WayDown | null, heightAt: (x: number, z: number) => number): void;
   /**
-   * The way's light, 0 to 1 (wayLevel.ts): the half pipe is drawn at it, the
+   * The way's light, 0 to 1 (wayLevel.ts): the way's mist is drawn at it, the
    * rest of the frame is dimmed by it (`wayDimAt`), and where the mist has a
    * ground map the mist thins over the way in place of the trail.
    */
@@ -2539,7 +2539,7 @@ function buildRenderer(
     : null;
   jobsReadout?.install();
   partOf(jobsReadout);
-  // The way down's light (wayLight.ts): the half pipe the chase shows, on every tier. A forest's alone.
+  // The way down's light (wayLight.ts): the channel of pale mist the chase shows, on every tier. A forest's alone.
   const wayLight = forest === null ? null : createWayLight(scene, postFeatures.colourPath, jobs);
   partOf(wayLight);
   let way: WayDown | null = null;
@@ -3349,7 +3349,7 @@ function buildRenderer(
         veil?.setShades(silhouette.texture, silhouette.any());
       }
       if (cloudSteps > 0 && forest !== null) {
-        // In the chase the mist thins over the way down, not the trail: the channel is clear air between its walls.
+        // In the chase the mist thins over the way down, not the trail: the way's own mist (wayLight.ts) stands there in its place, thin on the path and whole in its banks.
         const wayMist = way !== null && wayLevel > 0;
         if (cloudGroundAt === null || wayMist !== wayMistBuilt || Math.hypot(camera.position.x - cloudGroundAt.x, camera.position.z - cloudGroundAt.z) > CLOUD_GROUND_REBUILD_M) {
           cloudGroundAt = { x: camera.position.x, z: camera.position.z };
@@ -3477,7 +3477,7 @@ function buildRenderer(
       const wayDim = wayDimAt(wayLevel);
       lighting.setDim(wayDim);
       post.setDim(wayDim);
-      wayLight?.update(camera.position, wayLevel, 1 / wayDim);
+      wayLight?.update(camera.position, wayLevel, 1 / wayDim, cloudColourUnder(atmosphere.nearColour()), seconds);
       lighting.setStare(shown.level);
       post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, shown, lensStrength, chaseCast, endBlur);
       // The stare's closing darkness on the material path is the veil's.

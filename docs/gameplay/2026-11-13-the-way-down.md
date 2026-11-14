@@ -11,8 +11,8 @@ lines. The crowd of shades beside it, the obstacles on it and the whispers are l
 
 In the chase there is one way home and the player can see it. From the crest to the pad runs a
 drawn path, direct and never straight, that leaves the trail wherever that is shorter. It is
-shown as a half pipe of cold light: a floor faintly lit, a wall of lit mist curving up from either
-edge, and everything outside it about half as bright. The player may still go anywhere; the light,
+shown as a channel of pale ground mist: thin and low on the path, standing in tall banks either
+side of it, never still, and everything outside it about half as bright. The player may still go anywhere; the light,
 the dark, and what the chase does to a player off the way are what keep them in the channel.
 
 Before this the chase drew a hidden guide route down the trail's branches, one and a half to two
@@ -86,7 +86,7 @@ the forest's collision chunks along the way early.
 Once the scene or the chase is on and the world has its way (`onWay`), every rule that asked how
 far a player is from the trail asks how far they are from the way, through one function,
 `chaseLineDistance`. The channel is wider than the trail was, so 1.5 m (`WAY_SLACK_M`) is taken
-off the distance from the line: the walls' rim, 5.5 m out (`WAY_RIM_M`), reads as the trail's
+off the distance from the line: the far side of the mist banks, 5.5 m out (`WAY_RIM_M`), reads as the trail's
 4 m edge, and every threshold keeps its meaning. Before the find, and on any level with no way,
 it is the trail's distance as before. The place the party stood at the find, and 15 m round
 it (`CREST_GRACE_M`), is on the line whatever the way's distance: a player caught there, or just
@@ -107,26 +107,51 @@ hunts (`spawnHollowStepping`, once the forks' Hollow) is kept for what will step
 
 ## 3. The light (`game/wayLightGeometry.ts`, `game/wayLight.ts`, `game/wayLevel.ts`)
 
-**The shape.** A floor 4 m either side of the line, its light whole within 1.5 m and gone at the
-edge; and a wall each side that begins 2 m from the line and rises by a quarter circle of radius
-3.5 m, so its rim stands 5.5 m out and 3.5 m up. A wall is dark where it begins to rise, gathers
-light as it climbs, and fades to nothing at the rim. Every vertex stands on the ground the
-players stand on (the simulation's field, the walkable rock's rise with it), which the app gives
-the renderer with the way.
+**The shape.** Taller ground mist, not a wall. Across the way the mist is thin on the path
+(`WAY_PATH_SHARE`, 0.55 of the banks', standing to 1.7 m) and whole in a bank either side,
+filling between 1 m and 3.1 m from the line and gone between 4.6 m and 6.4 m, the banks standing
+2.3 to 3.5 m and taller and shorter as they go. Under it the ground glows faintly, a core on the
+path and a band under the banks. Every vertex stands on the ground the players stand on (the
+simulation's field, the walkable rock's rise with it), which the app gives the renderer with the
+way. (Until 2026-11-14 the way was a half pipe: a lit floor and a wall curving up a quarter
+circle from either edge. It read as a literal wall.)
 
-**How it is drawn.** As geometry with one additive material of its own (`wayLight`), a mesh every
-64 m of way, built a chunk a slice. A vertex's light is its profile times its kind's strength
-(the floor's 0.06, a wall's 0.3), falling off with the metres from the eye. No other material's
-shader knows of it, so it costs a few thousand vertices rather than work on every lit pixel, on
-every tier and both engines.
+**How it is drawn.** As sheets that all read one field of noise in the world, the ground mist's
+own map (`cloudNoiseMap`), so together they look like a volume: seven sheets that follow the
+ground across the whole width (`WAY_SHEETS_M`, to 1.6 m over it), the mist a plant on the path
+stands in; three veils a side along the way (`WAY_VEILS`), each wandering in and out; and a fin
+a side across the way at every point, which is what an eye looking down the way sees, where the
+veils are edge on. A fin fades as it turns edge on to the eye, and a sheet as the eye looks along
+it, judged from the face itself so a sheet on a slope is judged by its own lie. The way across at
+a point is taken over four points either side of it (`WAY_ACROSS_POINTS`): the drawn way has
+kinks, and a way across taken at the point alone folds the mist over itself inside a bend. One
+material of its own (`wayLight`), a mesh every 64 m of way, built a chunk a slice, 23 of the
+ground's heights a point. No other material's shader knows of it, so it costs geometry and its
+own pixels rather than work on every lit pixel, on every tier.
+
+**Its colour.** The ground mist's own (`cloudColourUnder` of the air's near colour, which every
+tier has), a quarter of the way toward a cold tint and lit to 8 times it before the tone map
+(`WAY_POST_LIFT`; 14 times in the frame's own terms on the low tier, `WAY_MATERIAL_LIFT`), so it
+belongs to the night it stands in and still reads as the lit way. The blend is premultiplied:
+the mist hides 0.85 of its amount of what is behind it (`WAY_HIDE_SHARE`) and adds its colour,
+so thin mist glows a little and thick mist settles at its own colour. Added light alone, as the
+half pipe was, went white wherever sheets piled up.
+
+**Its movement.** The shapes drift on the ground mist's wind, 2.2 times as fast
+(`WAY_WIND_SCALE`), the small shapes another way from the large and carried by them
+(`WAY_CURL`), so they curl and change and never only slide; and the banks' tops heave by up to
+three tenths of their height (`WAY_HEAVE`) on two crossed waves, a turn every 7 s and every
+11 s. Near the eye the shapes smooth out and the mist thins, so it hangs round a runner and
+does not rush past.
 
 **The dark round it.** While the light is up the rest of the frame is dimmed to half
 (`WAY_DIM`) through the frame's exposure, beside the stare's dimming: the lighting's on the tiers
-with no post chain, the grade's on the others. The light itself is exempt.
+with no post chain, the grade's on the others. The way's mist itself is exempt.
 
 **The mist.** Where the tier has ground mist, its map of "how far off the trail" is built over
-the way instead while the light is up: thin from the line to the walls' foot, whole by their rim
-(`wayDistanceWithin`: only the cells near a place are asked).
+the way instead while the light is up: thin from the line to where the way's banks begin, whole
+past them (`wayDistanceWithin`: only the cells near a place are asked). The way's own mist stands
+where the ground mist is thinned.
 
 **When.** The level (`wayLevelFor`) rises over two seconds from the summit scene's threshold,
 the shot in which the player turns to run, holds through the chase, a death and the return to
@@ -157,6 +182,7 @@ until they are made again.
   (`helpers/wayRunner.ts`), the crest's Hollow hunting behind. The runner reaches the road
   without stalling or leaving the channel, and the Hollow never comes within 3 m.
 - `test/sim/summitRun.test.ts`: one whole match on one world, the climb included.
-- `test/game/wayLightGeometry.test.ts`, `wayLight.test.ts`, `wayShow.test.ts`: the half pipe's
-  profiles and vertices, the mesh and its material, the level, the dim on both colour paths, the
+- `test/game/wayLightGeometry.test.ts`, `wayLight.test.ts`, `wayShow.test.ts`: the mist's
+  sheets, veils and fins, that it never folds at a kink, its colour, drift and heave, the mesh and
+  its material, the level, the dim on both colour paths, the
   mist's map, and the renderer's and the app's wiring.

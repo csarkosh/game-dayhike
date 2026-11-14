@@ -55,7 +55,7 @@ describe("the way's light, when", () => {
 });
 
 describe("the mist over the way", () => {
-  it("is thin from the line to the walls' foot and whole by their rim: wider than the trail's", () => {
+  it("is thin from the line to where the way's banks begin and whole past them: wider than the trail's", () => {
     expect([WAY_MIST_EDGE_M, WAY_MIST_FADE_M]).toEqual([2, 5.5]);
     expect(WAY_MIST_EDGE_M).toBeGreaterThan(CLOUD_TRAIL_EDGE_M);
     expect(WAY_MIST_FADE_M).toBeGreaterThan(CLOUD_TRAIL_FADE_M);
@@ -86,7 +86,8 @@ describe("the renderer and the app", () => {
     expect(renderer).toContain("const wayDim = wayDimAt(wayLevel);");
     expect(renderer).toContain("lighting.setDim(wayDim);");
     expect(renderer).toContain("post.setDim(wayDim);");
-    expect(renderer).toContain("wayLight?.update(camera.position, wayLevel, 1 / wayDim);");
+    // The way's mist is a shade of the ground mist's own colour, which every tier has (the low tier never sets the cloud's), and drifts on its clock.
+    expect(renderer).toContain("wayLight?.update(camera.position, wayLevel, 1 / wayDim, cloudColourUnder(atmosphere.nearColour()), seconds);");
   });
 
   it("the renderer feeds the mist's ground map the way in place of the trail while the light is up", () => {

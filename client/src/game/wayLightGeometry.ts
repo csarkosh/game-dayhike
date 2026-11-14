@@ -1,71 +1,167 @@
 /**
- * The half pipe's shape (docs/gameplay/2026-11-13-the-way-down.md): the way
- * down as the player sees it, a floor of faint cold light with a wall of lit
- * mist curving up from either edge. This file is the geometry and its
- * numbers, free of Babylon so it is tested as arithmetic; wayLight.ts makes
- * the meshes and the material from it.
+ * The way down's mist (docs/gameplay/2026-11-13-the-way-down.md): the way as
+ * the player sees it in the chase, a channel of pale ground mist that lies
+ * thin and low on the path and stands in tall banks either side of it. This
+ * file is the geometry and its numbers, free of Babylon so it is tested as
+ * arithmetic; wayLight.ts makes the meshes and the material from it.
+ *
+ * The mist is drawn as sheets that all read one field of noise in the
+ * world, so together they look like a volume and never like a surface:
+ *
+ * - **Sheets** lie across the whole width and follow the ground, one at each
+ *   of WAY_SHEETS_M over it. The lowest is the ground's own glow; the rest
+ *   are the mist a plant on the path stands in.
+ * - **Veils** stand along the way, WAY_VEILS a side, wandering in and out
+ *   and taller and shorter as they go: the banks seen from the side.
+ * - **Fins** stand across the way at every point, from the line outward: the
+ *   banks, and the path's own mist, seen by an eye looking down the way,
+ *   where the veils are edge on.
  *
  * A point of the way gives WAY_POINT_VERTICES vertices in a fixed order: the
- * floor's nine across the line (4 m to its left to 4 m to its right), then
- * the left wall's eleven from its foot to its rim, then the right wall's.
- * Each vertex carries two numbers for the shader: how much of its kind's
- * light it holds (the profile, 0 to 1), and its kind (0 the floor, 1 a wall).
+ * sheets, lowest first, each from its left edge to its right; then, a side
+ * at a time, each veil's foot and head, and the fin's inner foot and head
+ * and outer foot and head. Each vertex carries WAY_LIGHT_FLOATS numbers for
+ * the shader: its metres from the line, its metres over the ground, its
+ * kind, and the metres the mist stands to where it is.
  */
+import type { Rgb } from "./colour.js";
+import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M, CLOUD_WIND_MPS } from "./cloudParams.js";
 
-/** Metres from the line a wall's foot stands, the radius of the quarter circle it rises by (its rim is that far out again, and that high), and the strips it is drawn in. */
-export const WAY_WALL_FOOT_M = 2;
-export const WAY_WALL_RADIUS_M = 3.5;
-export const WAY_WALL_STEPS = 10;
-/** Metres from the line within which the floor's light is whole, and at which it is gone. */
-export const WAY_FLOOR_CORE_M = 1.5;
-export const WAY_FLOOR_EDGE_M = 4;
+/** Metres either side of the line the sheets reach, the metres over the ground each lies at, and the metres the banks stand to, which every sheet thins toward. */
+export const WAY_WIDTH_M = 7;
+export const WAY_SHEETS_M: readonly number[] = [0, 0.22, 0.45, 0.7, 0.95, 1.25, 1.6];
+export const WAY_SHEET_TOP_M = 3;
+/** The veils a side: the metres from the line each stands at and the metres it stands to, before its wandering. */
+export const WAY_VEILS: readonly { out: number; top: number }[] = [{ out: 2.7, top: 2.3 }, { out: 3.7, top: 3.5 }, { out: 4.9, top: 3.0 }];
+/** A fin: the metres from the line it reaches and the metres it stands to, before its wandering. */
+export const WAY_FIN_REACH_M = 6.4;
+export const WAY_FIN_TOP_M = 3.6;
+/**
+ * The way across at a point is square to the line from this many points
+ * behind it to this many ahead. The drawn way has kinks (a step in five
+ * turns on a radius under 7 m), and a way across taken at the point alone
+ * folds the mist over itself on the inside of one.
+ */
+export const WAY_ACROSS_POINTS = 4;
 /** Metres of way a mesh holds, and the metres every vertex stands over the ground under it. */
 export const WAY_CHUNK_M = 64;
 export const WAY_LIFT_M = 0.08;
-/** How strong the floor's light and a wall's are, and how fast each falls off with the metres from the eye (e^(-reach × d)). */
-export const WAY_FLOOR_STRENGTH = 0.06;
-export const WAY_WALL_STRENGTH = 0.3;
-export const WAY_FLOOR_REACH = 0.012;
-export const WAY_WALL_REACH = 0.016;
-/** The light's colour, linear: cold. */
-export const WAY_TINT: readonly [number, number, number] = [0.62, 0.7, 0.86];
 
-/** The floor's vertices across the line, a metre apart. */
-const FLOOR_VERTICES = 2 * WAY_FLOOR_EDGE_M + 1;
-const WALL_VERTICES = WAY_WALL_STEPS + 1;
-/** Vertices a point of the way gives. */
-export const WAY_POINT_VERTICES = FLOOR_VERTICES + 2 * WALL_VERTICES;
+/** A vertex's kind, as the shader reads it. */
+export const WAY_KIND_SHEET = 0;
+export const WAY_KIND_VEIL = 1;
+export const WAY_KIND_FIN = 2;
+/** Numbers a vertex carries for the shader. */
+export const WAY_LIGHT_FLOATS = 4;
+/** Vertices across a sheet (a metre apart), in all a point's sheets, a side's veils and fin, and a point's whole. */
+export const WAY_ROW_VERTICES = 2 * WAY_WIDTH_M + 1;
+export const WAY_SHEET_VERTICES = WAY_ROW_VERTICES * WAY_SHEETS_M.length;
+const SIDE_VERTICES = WAY_VEILS.length * 2 + 4;
+export const WAY_POINT_VERTICES = WAY_SHEET_VERTICES + 2 * SIDE_VERTICES;
+/** Places on the ground a point's vertices stand on (`wayGroundOf`): a sheet's row, and a side's veils and its fin's outer end. */
+export const WAY_POINT_GROUNDS = WAY_ROW_VERTICES + 2 * (WAY_VEILS.length + 1);
 /** Metres between the way's points (sim/wayDown.ts WAY_STEP_M; a test holds a chunk to 64 m by it). */
 const STEP_M = 2;
 
-const smooth = (r: number): number => r * r * (3 - 2 * r);
+// ---- The look, as the shader is given it (wayLight.ts sets each as a uniform). ----
+
+/** How much a veil veils at its thickest, a fin's share of that, a sheet's own, and the share of what is behind it the mist hides (the rest of it is light added, so thin mist glows and thick mist settles at its own colour and never whitens). */
+export const WAY_VEIL_STRENGTH = 0.3;
+export const WAY_FIN_SHARE = 0.7;
+export const WAY_SHEET_STRENGTH = 0.28;
+export const WAY_HIDE_SHARE = 0.85;
+/** The ground's glow under the banks and on the path, and how fast the ground's glow and the mist fall off with the metres from the eye (e^(-reach × d)). */
+export const WAY_GROUND_BAND = 0.14;
+export const WAY_GROUND_CORE = 0.04;
+export const WAY_GROUND_REACH = 0.012;
+export const WAY_MIST_REACH = 0.0144;
+/** The path's mist: its share of the banks' and the metres it stands to. Then the share of itself the mist keeps against the eye (it fills to whole by 10 m), and the least a wisp's gap thins it to. */
+export const WAY_PATH_SHARE = 0.55;
+export const WAY_PATH_TOP_M = 1.7;
+export const WAY_NEAR_DAMP = 0.3;
+export const WAY_DENSITY_FLOOR = 0.15;
+/**
+ * The mist's movement, so the banks are never still: how far their tops
+ * heave (a share of their height, on slow waves passing along them), how far
+ * the small shapes are carried by the large ones (a share of a tile: they
+ * curl and change, where a plain drift only slides), how many times the
+ * ground mist's wind the shapes drift at, and the metres of height a
+ * standing sheet's small shapes span.
+ */
+export const WAY_HEAVE = 0.3;
+/** The heave's two waves, in radians a second: a turn every 7 s and every 11 s, crossed, so the banks never repeat a beat a player could count. */
+export const WAY_HEAVE_RATES: readonly [number, number] = [0.9, 0.55];
+export const WAY_CURL = 0.12;
+export const WAY_WIND_SCALE = 2.2;
+export const WAY_STRATA_M = 4;
+/** The cold the mist's colour leans toward (linear), by how much, and how many times the ground mist's own colour it is lit to, on the post path (before the tone map) and on the material path (in the frame's own terms). */
+export const WAY_TINT: readonly [number, number, number] = [0.62, 0.7, 0.86];
+export const WAY_COLD_SHARE = 0.25;
+export const WAY_POST_LIFT = 8;
+export const WAY_MATERIAL_LIFT = 14;
+
+const weight = (r: number, g: number, b: number): number => 0.299 * r + 0.587 * g + 0.114 * b;
 
 /**
- * A wall's light at `t` of the way up it, 0 at its foot to 1 at its rim:
- * dark where it begins to rise, gathering light as it climbs, fading to
- * nothing at the rim.
+ * The mist's colour: the ground mist's own (`mist`, cloudParams.ts
+ * cloudColourUnder), so it belongs to the night it stands in, leant
+ * WAY_COLD_SHARE of the way toward the cold tint at the same weight, and
+ * `lift` times as bright, so it reads as the lit way.
  */
-export function wallProfile(t: number): number {
-  if (t <= 0 || t >= 1) return 0;
-  return Math.pow(smooth(Math.min(1, t / 0.6)), 1.6) * Math.pow(1 - t, 1.1);
+export function wayMistColour(mist: Rgb, lift: number): [number, number, number] {
+  const cold = weight(mist.r, mist.g, mist.b) / weight(WAY_TINT[0], WAY_TINT[1], WAY_TINT[2]);
+  return [
+    (mist.r + (cold * WAY_TINT[0] - mist.r) * WAY_COLD_SHARE) * lift,
+    (mist.g + (cold * WAY_TINT[1] - mist.g) * WAY_COLD_SHARE) * lift,
+    (mist.b + (cold * WAY_TINT[2] - mist.b) * WAY_COLD_SHARE) * lift,
+  ];
 }
 
-/** The floor's light `lateral` metres from the line: whole within WAY_FLOOR_CORE_M, gone by WAY_FLOOR_EDGE_M. */
-export function floorProfile(lateral: number): number {
-  const d = Math.abs(lateral);
-  if (d <= WAY_FLOOR_CORE_M) return 1;
-  if (d >= WAY_FLOOR_EDGE_M) return 0;
-  return 1 - smooth((d - WAY_FLOOR_CORE_M) / (WAY_FLOOR_EDGE_M - WAY_FLOOR_CORE_M));
+/** Where the shapes have drifted to at `seconds`: the large shapes' offset (x, y) and the small shapes' (z, w), each a share of its tile, the small going another way from the large. */
+export function wayDrift(seconds: number): [number, number, number, number] {
+  const large = (seconds * CLOUD_WIND_MPS * WAY_WIND_SCALE) / CLOUD_NOISE_LARGE_M;
+  const small = (seconds * CLOUD_WIND_MPS * WAY_WIND_SCALE) / CLOUD_NOISE_SMALL_M;
+  return [large % 1, (large * 0.6) % 1, (small * 0.6) % 1, small % 1];
 }
 
-/** The way as the light needs it: what sim/wayDown.ts's WayDown is, and all the renderer sees of it. */
+/** Where the heave's two waves are at `seconds`, each within a turn, so the shader's sines keep their precision however long the page has run. */
+export function wayHeavePhases(seconds: number): [number, number] {
+  const turn = 2 * Math.PI;
+  return [(seconds * WAY_HEAVE_RATES[0]) % turn, (seconds * WAY_HEAVE_RATES[1]) % turn];
+}
+
+/** Veil `k` on `side` (1 or -1) at `s` metres down the way: the metres from the line it stands at and the metres it stands to. It wanders, so no two lines of it run true. */
+export function wayVeilAt(k: number, side: number, s: number): { out: number; top: number } {
+  const veil = WAY_VEILS[k] as { out: number; top: number };
+  return {
+    out: veil.out + 0.45 * Math.sin(s * 0.13 + k * 2.1 + side) + 0.3 * Math.sin(s * 0.051 + k * 1.3 - side),
+    top: veil.top * (1 + 0.22 * Math.sin(s * 0.09 + k * 1.7 + side * 2) + 0.14 * Math.sin(s * 0.23 + k)),
+  };
+}
+
+/** The metres the fin on `side` (1 or -1) stands to at `s` metres down the way. */
+export function wayFinTop(side: number, s: number): number {
+  return WAY_FIN_TOP_M * (1 + 0.25 * Math.sin(s * 0.31 + side * 1.9) + 0.15 * Math.sin(s * 0.83 + side));
+}
+
+/**
+ * For vertex `j` of a point, the vertex of that point whose place on the
+ * ground it stands over (itself, where it is the first there): a sheet's
+ * vertex stands over the lowest sheet's, a head over its foot, and a fin's
+ * inner end over the line. The ground's height is the dear part of a build,
+ * and this is how it asks for WAY_POINT_GROUNDS of them a point.
+ */
+export function wayGroundOf(j: number): number {
+  if (j < WAY_SHEET_VERTICES) return j % WAY_ROW_VERTICES;
+  const r = (j - WAY_SHEET_VERTICES) % SIDE_VERTICES;
+  const veils = WAY_VEILS.length * 2;
+  if (r < veils) return j - (r % 2);
+  if (r < veils + 2) return WAY_WIDTH_M;
+  return j - (r - veils - 2);
+}
+
+/** The way as the mist needs it: what sim/wayDown.ts's WayDown is, and all the renderer sees of it. */
 export type WayShape = { readonly xs: Float32Array; readonly zs: Float32Array; readonly cum: Float32Array; readonly length: number };
-
-/** A wall's profile across its strips: metres out from the line, metres up, and its light, foot to rim. */
-const WALL: readonly { out: number; up: number; light: number }[] = Array.from({ length: WALL_VERTICES }, (_, k) => {
-  const t = k / WAY_WALL_STEPS, a = (t * Math.PI) / 2;
-  return { out: WAY_WALL_FOOT_M + WAY_WALL_RADIUS_M * Math.sin(a), up: WAY_WALL_RADIUS_M * (1 - Math.cos(a)), light: wallProfile(t) };
-});
 
 /** The way's points a chunk each, as [first, last] indices: WAY_CHUNK_M of way a chunk, neighbours sharing their end point. */
 export function wayChunks(way: WayShape): [number, number][] {
@@ -76,57 +172,81 @@ export function wayChunks(way: WayShape): [number, number][] {
 }
 
 /**
- * The half pipe over the way's points `from` to `to`: positions (three
- * floats a vertex, world space), `light` (two floats a vertex: the profile
- * and the kind) and the triangles' indices. Every vertex stands on
- * `heightAt` of its own place, WAY_LIFT_M over it, a wall's as high again as
- * its curve.
+ * The mist over the way's points `from` to `to`, standing on `heightAt`:
+ * positions, `light` (WAY_LIGHT_FLOATS a vertex) and the triangles' indices.
  */
 export function wayChunk(way: WayShape, heightAt: (x: number, z: number) => number, from: number, to: number): { positions: Float32Array; light: Float32Array; indices: Uint32Array } {
   const points = to - from + 1;
   const positions = new Float32Array(points * WAY_POINT_VERTICES * 3);
-  const light = new Float32Array(points * WAY_POINT_VERTICES * 2);
+  const light = new Float32Array(points * WAY_POINT_VERTICES * WAY_LIGHT_FLOATS);
   const last = way.xs.length - 1;
   let v = 0;
-  const put = (x: number, z: number, up: number, share: number, kind: number): void => {
+  const put = (x: number, z: number, up: number, lateral: number, kind: number, top: number): void => {
     positions[v * 3] = x;
     positions[v * 3 + 1] = heightAt(x, z) + WAY_LIFT_M + up;
     positions[v * 3 + 2] = z;
-    light[v * 2] = share;
-    light[v * 2 + 1] = kind;
+    light[v * WAY_LIGHT_FLOATS] = lateral;
+    light[v * WAY_LIGHT_FLOATS + 1] = up;
+    light[v * WAY_LIGHT_FLOATS + 2] = kind;
+    light[v * WAY_LIGHT_FLOATS + 3] = top;
     v++;
   };
   for (let i = from; i <= to; i++) {
     const x = way.xs[i] as number, z = way.zs[i] as number;
-    // The way's direction here, from the points either side, and the unit vector to its left.
-    const a = i > 0 ? i - 1 : i, b = i < last ? i + 1 : i;
+    const a = Math.max(0, i - WAY_ACROSS_POINTS), b = Math.min(last, i + WAY_ACROSS_POINTS);
     let tx = (way.xs[b] as number) - (way.xs[a] as number), tz = (way.zs[b] as number) - (way.zs[a] as number);
     const len = Math.hypot(tx, tz);
     tx = len > 0 ? tx / len : 1;
     tz = len > 0 ? tz / len : 0;
+    // The way across, to the line's left.
     const lx = -tz, lz = tx;
-    for (let k = 0; k < FLOOR_VERTICES; k++) {
-      const lateral = k - WAY_FLOOR_EDGE_M;
-      put(x + lx * lateral, z + lz * lateral, 0, floorProfile(lateral), 0);
+    const s = way.cum[i] as number;
+    for (const up of WAY_SHEETS_M) {
+      for (let k = 0; k < WAY_ROW_VERTICES; k++) {
+        const lateral = k - WAY_WIDTH_M;
+        put(x + lx * lateral, z + lz * lateral, up, Math.abs(lateral), WAY_KIND_SHEET, WAY_SHEET_TOP_M);
+      }
     }
     for (const side of [1, -1]) {
-      for (const w of WALL) put(x + lx * side * w.out, z + lz * side * w.out, w.up, w.light, 1);
+      for (let k = 0; k < WAY_VEILS.length; k++) {
+        const { out, top } = wayVeilAt(k, side, s);
+        put(x + lx * side * out, z + lz * side * out, 0, out, WAY_KIND_VEIL, top);
+        put(x + lx * side * out, z + lz * side * out, top, out, WAY_KIND_VEIL, top);
+      }
+      const top = wayFinTop(side, s);
+      put(x, z, 0, 0, WAY_KIND_FIN, top);
+      put(x, z, top, 0, WAY_KIND_FIN, top);
+      put(x + lx * side * WAY_FIN_REACH_M, z + lz * side * WAY_FIN_REACH_M, 0, WAY_FIN_REACH_M, WAY_KIND_FIN, top);
+      put(x + lx * side * WAY_FIN_REACH_M, z + lz * side * WAY_FIN_REACH_M, top, WAY_FIN_REACH_M, WAY_KIND_FIN, top);
     }
   }
-  const quads = (FLOOR_VERTICES - 1) + 2 * WAY_WALL_STEPS;
-  const indices = new Uint32Array((points - 1) * quads * 6);
+  const between = (WAY_ROW_VERTICES - 1) * WAY_SHEETS_M.length + 2 * WAY_VEILS.length;
+  const indices = new Uint32Array(((points - 1) * between + points * 2) * 6);
   let n = 0;
-  const strip = (p: number, first: number, count: number): void => {
-    for (let k = 0; k < count; k++) {
-      const a = p * WAY_POINT_VERTICES + first + k, b = a + 1, c = a + WAY_POINT_VERTICES, d = c + 1;
-      indices[n++] = a; indices[n++] = c; indices[n++] = b;
-      indices[n++] = b; indices[n++] = c; indices[n++] = d;
-    }
+  const quad = (a: number, b: number, c: number, d: number): void => {
+    indices[n++] = a; indices[n++] = c; indices[n++] = b;
+    indices[n++] = b; indices[n++] = c; indices[n++] = d;
   };
-  for (let p = 0; p + 1 < points; p++) {
-    strip(p, 0, FLOOR_VERTICES - 1);
-    strip(p, FLOOR_VERTICES, WAY_WALL_STEPS);
-    strip(p, FLOOR_VERTICES + WALL_VERTICES, WAY_WALL_STEPS);
+  for (let p = 0; p < points; p++) {
+    const at = p * WAY_POINT_VERTICES;
+    if (p + 1 < points) {
+      for (let l = 0; l < WAY_SHEETS_M.length; l++) {
+        for (let k = 0; k + 1 < WAY_ROW_VERTICES; k++) {
+          const a = at + l * WAY_ROW_VERTICES + k;
+          quad(a, a + 1, a + WAY_POINT_VERTICES, a + WAY_POINT_VERTICES + 1);
+        }
+      }
+      for (let side = 0; side < 2; side++) {
+        for (let k = 0; k < WAY_VEILS.length; k++) {
+          const a = at + WAY_SHEET_VERTICES + side * SIDE_VERTICES + k * 2;
+          quad(a, a + 1, a + WAY_POINT_VERTICES, a + WAY_POINT_VERTICES + 1);
+        }
+      }
+    }
+    for (let side = 0; side < 2; side++) {
+      const a = at + WAY_SHEET_VERTICES + side * SIDE_VERTICES + WAY_VEILS.length * 2;
+      quad(a, a + 1, a + 2, a + 3);
+    }
   }
   return { positions, light, indices };
 }

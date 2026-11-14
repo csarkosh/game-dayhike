@@ -11,7 +11,7 @@
 
 /** Metres between the way's points. */
 export const WAY_STEP_M = 2;
-/** Metres either side of the line that are the channel's floor, and to its walls' rims: within the rim a player is on the way. */
+/** Metres either side of the line that are the channel's floor, and to the far side of the mist banks beside it: within that a player is on the way. */
 export const WAY_FLOOR_M = 4;
 export const WAY_RIM_M = 5.5;
 
