@@ -523,6 +523,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "terrainUniforms.ts"),
       join(SRC, "game", "groundLayers.ts"),
       join(SRC, "game", "wetSurface.ts"),
+      join(SRC, "game", "terrainVertices.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -551,7 +552,7 @@ describe("layer boundaries", () => {
    * module are followed.
    */
   it("what the terrain is drawn with is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["terrainTables.ts", "terrainUniforms.ts", "groundLayers.ts", "wetSurface.ts"];
+    const ENGINE_FREE = ["terrainTables.ts", "terrainUniforms.ts", "groundLayers.ts", "wetSurface.ts", "terrainVertices.ts"];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();

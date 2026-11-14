@@ -29,7 +29,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { Scene } from "@babylonjs/core/scene.js";
-import { WEIGHTS2_STRIDE, type CoveredGround } from "./clipmap.js";
+import type { CoveredGround } from "./clipmap.js";
 import {
   PATCH_CELL,
   PATCH_FAR_SPACING,
@@ -49,6 +49,7 @@ import type { QualityTier } from "./quality.js";
 import { createCrossing, crossingAt, finish, nextCrossing, type Slices, type SyncJobs } from "./syncJobs.js";
 import type { FirstBuilds } from "./firstBuilds.js";
 import { enableFeaturePaint, enableRoadPaint, enableTrailPaint, setTerrainFarBand } from "./terrainTexture.js";
+import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, facePatchVertices } from "./terrainVertices.js";
 
 /** The patches' material's name in `terrainMaterialFor`'s cache. */
 export const FACE_PATCH_MATERIAL = "facePatch";
@@ -133,15 +134,16 @@ function stitchBits(s: PatchStitch): number {
  * it, with the clipmap's names and strides (`applyRingGeometry`).
  */
 export function applyFacePatch(mesh: Mesh, patch: FacePatch): void {
+  const vertices = facePatchVertices(patch);
   const data = new VertexData();
-  data.positions = patch.positions;
-  data.indices = patch.indices;
-  data.normals = patch.normals;
-  data.colors = patch.colors;
+  data.positions = vertices.positions;
+  data.indices = vertices.indices;
+  data.normals = vertices.normals;
+  data.colors = vertices.colors;
   data.applyToMesh(mesh, false);
-  mesh.setVerticesData("terrainWeights", patch.weights, false, 4);
-  mesh.setVerticesData("terrainWeights2", patch.weights2, false, WEIGHTS2_STRIDE);
-  mesh.setVerticesData("terrainCover", patch.cover, false, 1);
+  mesh.setVerticesData(TERRAIN_ATTRIBUTES.weights, vertices.weights, false, TERRAIN_VERTEX_SIZES.weights);
+  mesh.setVerticesData(TERRAIN_ATTRIBUTES.weights2, vertices.weights2, false, TERRAIN_VERTEX_SIZES.weights2);
+  mesh.setVerticesData(TERRAIN_ATTRIBUTES.cover, vertices.cover, false, TERRAIN_VERTEX_SIZES.cover);
 }
 
 export function createFacePatches(

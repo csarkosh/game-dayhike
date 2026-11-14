@@ -67,13 +67,13 @@ import {
   BASE_SPACING,
   BASE_SPACING_BY_TIER,
   RING_COUNT,
-  WEIGHTS2_STRIDE,
   type CoveredGround,
   type RingArrays,
   type RingGeometry,
   type RingMove,
   type RingSamples,
 } from "./clipmap.js";
+import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, ringVertices } from "./terrainVertices.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
 import { createLighting, DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "./lighting.js";
 import type { SkyState } from "./skyState.js";
@@ -313,6 +313,8 @@ export function createClipmapMesh(scene: Scene, name: string): Mesh {
  * colours never computed, and nothing in the frame reports it.
  */
 export function applyRingGeometry(mesh: Mesh, geometry: RingGeometry): void {
+  // The ring's arrays by attribute, its drawn indices alone (`terrainVertices.ts`).
+  const vertices = ringVertices(geometry);
   const data = new VertexData();
   // Typed arrays straight through, NOT via Array.from. `VertexData` fields are
   // `FloatArray` (`number[] | Float32Array`) and `IndicesArray` (which includes
@@ -320,17 +322,15 @@ export function applyRingGeometry(mesh: Mesh, geometry: RingGeometry): void {
   // converts a plain Array *back* to a Float32Array when `updatable` is set
   // (`geometry.js:185-188`). Going through Array.from would copy ~264k elements
   // per ring twice, once into boxed doubles, on the frame-sync path.
-  data.positions = geometry.positions;
+  data.positions = vertices.positions;
   // Smooth normals from the elevation field's analytic gradient, not Babylon's
   // per-face pass: `clipmap.ts` evaluates the same pure function on both sides
   // of every ring boundary, so shared edges match to the bit.
-  data.normals = geometry.normals;
+  data.normals = vertices.normals;
   // The drawn indices alone: a ring under covered ground leaves some out,
   // and its buffers are sized for all of them.
-  data.indices = geometry.indexCount === geometry.indices.length
-    ? geometry.indices
-    : geometry.indices.subarray(0, geometry.indexCount);
-  data.colors = geometry.colors;
+  data.indices = vertices.indices;
+  data.colors = vertices.colors;
   // `updatable` is a DYNAMIC_DRAW hint, nothing more — it does NOT make this
   // rewrite in place. `setVerticesData` builds a new VertexBuffer and disposes
   // the old one on every call, because that is the only path `applyToMesh`
@@ -343,9 +343,9 @@ export function applyRingGeometry(mesh: Mesh, geometry: RingGeometry): void {
   // MUST come after applyToMesh above: applyToMesh disposes and rebuilds the
   // mesh's vertex buffers, so a setVerticesData call placed before it would
   // be discarded rather than merged.
-  mesh.setVerticesData("terrainWeights", geometry.weights, true, 4);
-  mesh.setVerticesData("terrainWeights2", geometry.weights2, true, WEIGHTS2_STRIDE);
-  mesh.setVerticesData("terrainCover", geometry.cover, true, 1);
+  mesh.setVerticesData(TERRAIN_ATTRIBUTES.weights, vertices.weights, true, TERRAIN_VERTEX_SIZES.weights);
+  mesh.setVerticesData(TERRAIN_ATTRIBUTES.weights2, vertices.weights2, true, TERRAIN_VERTEX_SIZES.weights2);
+  mesh.setVerticesData(TERRAIN_ATTRIBUTES.cover, vertices.cover, true, TERRAIN_VERTEX_SIZES.cover);
 }
 
 export type Clipmap = {
