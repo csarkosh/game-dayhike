@@ -44,6 +44,9 @@ export const WAY_STRAIGHT_MAX_M = 40;
  */
 export const WAY_STRAIGHT_MOST_M = 46;
 export const WAY_BEND_CELLS = 2;
+/** Rounds of the search a bend earns over BOX_ROUNDS (one to go round it, more for what the new line meets), and the most all a line's bends may earn: in a thick wood the trunks on the line take the rounds there are. */
+const BEND_EARNS = 3;
+const BEND_ROUNDS_MOST = 18;
 const STRAIGHT_COS = 0.9902680687415704;
 export const WAY_BACK_MAX_M = 10;
 export const WAY_APART_M = 25;
@@ -126,13 +129,13 @@ function amplitudeFor(m: Meander, straight: number, target: number, most: number
 }
 
 /**
- * The middle point of the line's longest straight stretch, where that
- * stretch measures over WAY_STRAIGHT_MOST_M, or -1. Headings are compared as
- * unit vectors (a square root is rounded alike everywhere, a tangent is not):
- * a stretch holds while the two of its headings furthest apart are within
- * the angle.
+ * The middle point of each of the line's stretches that measures straight
+ * for over WAY_STRAIGHT_MOST_M, one after another down the line. Headings are
+ * compared as unit vectors (a square root is rounded alike everywhere, a
+ * tangent is not): a stretch holds while the two of its headings furthest
+ * apart are within the angle.
  */
-function longStraightMiddle(way: WayDown): number {
+function longStraightMiddles(way: WayDown): number[] {
   const n = way.xs.length - 1;
   const hx = new Float64Array(n), hz = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -141,7 +144,7 @@ function longStraightMiddle(way: WayDown): number {
     hx[i] = len > 0 ? dx / len : 0;
     hz[i] = len > 0 ? dz / len : 0;
   }
-  let longest = WAY_STRAIGHT_MOST_M, middle = -1;
+  const middles: number[] = [];
   for (let i = 0; i < n; i++) {
     // The headings furthest to the left and to the right of the first's, by the sine of each one's turn from it.
     let lo = i, hi = i, sLo = 0, sHi = 0, j = i;
@@ -155,13 +158,13 @@ function longStraightMiddle(way: WayDown): number {
       if (nHi === k) { hi = k; sHi = turn; }
       j = k;
     }
-    const run = (way.cum[j + 1] as number) - (way.cum[i] as number);
-    if (run > longest) {
-      longest = run;
-      middle = (i + j + 1) >> 1;
+    if ((way.cum[j + 1] as number) - (way.cum[i] as number) > WAY_STRAIGHT_MOST_M) {
+      middles.push((i + j + 1) >> 1);
+      // The next stretch begins where this one ended.
+      i = j;
     }
   }
-  return middle;
+  return middles;
 }
 
 const SHORE = newLakeShore();
@@ -285,7 +288,9 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
 
     const from = cellOf(S.x, S.z), to = cellOf(E.x, E.z);
     let drawn: WayDown | null = null;
-    for (let boxRound = 0; boxRound < BOX_ROUNDS; boxRound++) {
+    // The rounds this line may take: BOX_ROUNDS, and what its bends earn.
+    let rounds = BOX_ROUNDS;
+    for (let boxRound = 0; boxRound < rounds; boxRound++) {
       // A*: the cheapest line of cells from the crest's to the pad's.
       const gScore = new Float64Array(count).fill(Infinity);
       const parent = new Int32Array(count).fill(-1);
@@ -407,7 +412,7 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
         }
       }
       // The last round's line stands with whatever is still on it: a trunk to run round, never a reason for no way.
-      if (blocked > 0 && boxRound < BOX_ROUNDS - 1) continue;
+      if (blocked > 0 && boxRound < rounds - 1) continue;
 
       // The cells' centres, the ends the crest and the pad themselves, each averaged with its neighbours; a point
       // the averaging put on refused ground is its cell's own again.
@@ -431,12 +436,51 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
       });
       drawn = makeWay(smooth, straight, false);
       // The line's own points, between the cells' centres: one on ground a player could not stand on (a bank
-      // the centres straddle) walls its cell, and the search goes again.
+      // the centres straddle), or where something they could not step over stands (the averaging cuts corners
+      // the cells went round: a fallen trunk's end), walls its cell, and the search goes again. Where something
+      // stands on a point, the cell of the search's line nearest it is walled too: the line's points lie every
+      // 2 m between the cells' centres, and a point may stand in a cell the search never went through, which
+      // walling alone would not move it out of.
       let slid = 0;
       for (let k = 1; k + 1 < drawn.xs.length; k++) {
         const x = drawn.xs[k] as number, z = drawn.zs[k] as number;
         ground.normalAt(x, z, NORMAL);
-        if (NORMAL.y > (ground.standNormalY?.(x, z) ?? GROUND_NORMAL_Y) + STAND_MARGIN) continue;
+        let refused = NORMAL.y <= (ground.standNormalY?.(x, z) ?? GROUND_NORMAL_Y) + STAND_MARGIN;
+        let stoodOn = false;
+        if (!refused) {
+          const h = ground.heightAt(x, z);
+          BOX_MIN.x = x - PLAYER_HALF.x; BOX_MIN.y = h - 1; BOX_MIN.z = z - PLAYER_HALF.z;
+          BOX_MAX.x = x + PLAYER_HALF.x; BOX_MAX.y = h + 2 * PLAYER_HALF.y; BOX_MAX.z = z + PLAYER_HALF.z;
+          for (const box of boxesNear(world.boxes, BOX_MIN, BOX_MAX)) {
+            if (box.max.x < BOX_MIN.x || box.min.x > BOX_MAX.x || box.max.z < BOX_MIN.z || box.min.z > BOX_MAX.z) continue;
+            if (box.max.y - h <= STEP_HEIGHT || box.min.y > BOX_MAX.y) continue;
+            refused = true;
+            stoodOn = true;
+            break;
+          }
+          priced++;
+          if (priced - sliced >= SLICE_CELLS) {
+            sliced = priced;
+            yield;
+          }
+        }
+        if (!refused) continue;
+        if (stoodOn) {
+          let near = -1, least = Infinity;
+          for (let q = 1; q + 1 < cells.length; q++) {
+            const at = raw[q] as { x: number; z: number };
+            const d = (at.x - x) * (at.x - x) + (at.z - z) * (at.z - z);
+            if (d < least) {
+              least = d;
+              near = cells[q] as number;
+            }
+          }
+          if (near >= 0 && walled[near] === 0) {
+            walled[near] = 1;
+            cost[near] = Infinity;
+            slid++;
+          }
+        }
         const c = cellOf(x, z);
         if (c < 0 || c === from || c === to || walled[c] === 1) continue;
         walled[c] = 1;
@@ -444,11 +488,11 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
         slid++;
       }
       // A stretch that runs straight for too long is bent: the cells round its middle are walled, as if a boulder
-      // stood there, and the search goes again and round them.
+      // stood there, and the search goes again and round them. Every such stretch of the line at once, and
+      // whatever else this round found: a round spent on a trunk is not one a straight stretch waits behind.
       let bent = 0;
-      if (slid === 0) {
-        const middle = longStraightMiddle(drawn);
-        const c = middle < 0 ? -1 : cellOf(drawn.xs[middle] as number, drawn.zs[middle] as number);
+      for (const middle of longStraightMiddles(drawn)) {
+        const c = cellOf(drawn.xs[middle] as number, drawn.zs[middle] as number);
         if (c >= 0) {
           const ci = c % cols, cj = (c - ci) / cols;
           for (let dj = -WAY_BEND_CELLS; dj <= WAY_BEND_CELLS; dj++) {
@@ -464,8 +508,9 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
           }
         }
       }
+      if (bent > 0) rounds = Math.min(rounds + BEND_EARNS, BOX_ROUNDS + BEND_ROUNDS_MOST);
       yield;
-      if ((slid === 0 && bent === 0) || boxRound === BOX_ROUNDS - 1) break;
+      if ((slid === 0 && bent === 0) || boxRound === rounds - 1) break;
     }
     if (drawn === null) {
       // Nothing got through this much ground: more of it, or no more to try.

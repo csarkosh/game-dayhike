@@ -50,12 +50,16 @@ sweep's fifty come out 0.70 and 0.77 of their aim, 1.4 and 1.5 times their line.
 distance to the pad never grows by more than about 10 m before it falls again
 (`WAY_BACK_MAX_M`), and no two stretches come within 25 m (`WAY_APART_M`). These two are the
 design's "about": the tests give a straight stretch 8 m and a way gone round a lake 5 m, and
-measure heading back past the way's first 60 m, which may be going round the crest. The draw
+measure heading back past the way's first 160 m, which may be going round the crest (on two
+worlds in fifty the party stands on the crest's far side, and coming round it takes 150 m). The draw
 holds the first itself: a stretch of the drawn line that measures straight for over 46 m
 (`WAY_STRAIGHT_MOST_M`) has the cells round its middle walled, as if a boulder stood there, and
-the search goes again and round them. Without it a line that left the meander for one of its
+the search goes again and round them, every such stretch at once, each bend earning the line
+three more rounds of the search. Without it a line that left the meander for one of its
 copies, round a lake or a cliff band, crossed to it and back in straight diagonals of 60 m and
-more.
+more. The line's own points are checked as its cells are: where the smoothing cut a corner
+across something a runner cannot step over (a fallen trunk's end), that point's cell and the
+nearest cell of the search's line are walled, and the search goes again.
 
 **How it is drawn** (`drawWay`, a generator):
 
