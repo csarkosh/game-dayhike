@@ -109,6 +109,13 @@ export type PatchStitch = {
 
 export const NO_STITCH: PatchStitch = { west: false, east: false, north: false, south: false, open: 0 };
 
+/** A stitch as one number, for telling a cell built for one stitch from the
+ * same cell wanted with another: the four stitched edges in the low bits,
+ * the eight open neighbours above them. */
+export function patchStitchBits(s: PatchStitch): number {
+  return (s.west ? 1 : 0) | (s.east ? 2 : 0) | (s.south ? 4 : 0) | (s.north ? 8 : 0) | (s.open << 4);
+}
+
 export type FacePatch = {
   /** World-space positions, three a vertex. */
   positions: Float32Array;

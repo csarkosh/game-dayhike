@@ -42,6 +42,7 @@ import {
   facePatchGeometry,
   facePatchStitch,
   patchKey,
+  patchStitchBits as stitchBits,
   type FacePatch,
   type PatchCell,
   type PatchReach,
@@ -121,12 +122,6 @@ type Entry = { spacing: number; stitch: number; mesh: Mesh | null };
  * stitches as numbers, and the indices of those that the set drawn does not
  * hold as they are wanted, nearest the centre first. */
 type Wanted = { ci: number; cj: number; cells: PatchCell[]; stitches: PatchStitch[]; bits: number[]; changed: number[] };
-
-/** A stitch as one number for the rebuild key: the four stitched edges in the
- * low bits, the eight open neighbours above them. */
-function stitchBits(s: PatchStitch): number {
-  return (s.west ? 1 : 0) | (s.east ? 2 : 0) | (s.south ? 4 : 0) | (s.north ? 8 : 0) | (s.open << 4);
-}
 
 /**
  * Uploads a patch: positions, normals, colours and indices through
