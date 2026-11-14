@@ -24,15 +24,17 @@ describe("the hike's sky", () => {
   });
 
   it("hands its table to every renderer it builds: the first, and a swap's", () => {
-    expect(src.match(/\bcreateRenderer\(/g)).toHaveLength(2);
+    // Through the one way the hike has to a renderer (`createHikeRenderer`), which hands it over as the hike holds it.
+    expect(src.match(/\bcreateHikeRenderer\(/g)).toHaveLength(2);
+    expect(src).not.toMatch(/\bcreateRenderer\(/);
     expect(src).toContain(
       // The first renderer is also told where the hike starts (`start`), so its first terrain and water are built
       // there, handed what the world's worker sampled there (`prepared`, taken once), and given the loader of first
       // builds a start under a film has (`firstBuilds`).
-      "createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
+      "createHikeRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
     );
     expect(src).toContain(
-      "build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
+      "build: (next, target, engine) => createHikeRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
     );
   });
 

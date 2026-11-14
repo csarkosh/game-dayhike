@@ -1,6 +1,6 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
-import { createRenderer, type EndSceneSetup, type FreecamView, type Renderer } from "./game/renderer.js";
+import { createHikeRenderer, type EndSceneSetup, type FreecamView, type Renderer } from "./game/renderer.js";
 import type { AsyncPipelines } from "./game/asyncPipelines.js";
 import type { EngineHandle } from "./game/engineHandle.js";
 import { FALLBACK_NOTICE_MS, parseGpuTime } from "./game/engineChoice.js";
@@ -451,7 +451,7 @@ function buildGame(
     [options.tier, ...options.fallbackTiers],
     {
       build: (next, at, engine) =>
-        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+        createHikeRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
@@ -2493,7 +2493,7 @@ function buildGame(
     // The target's engine is made before the swap by the WebGPU rule
     // (`options.engineFor`), on the canvas `freshCanvas` hands out first;
     // null, the renderer makes WebGL2's.
-    build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+    build: (next, target, engine) => createHikeRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
     freshCanvas: () => document.createElement("canvas"),
     extras: { dispose: disposeExtras, build: buildExtras },
     rebind: (next) => {

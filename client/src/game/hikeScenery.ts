@@ -19,7 +19,7 @@ import { boardDrawingOf } from "./boardPaint.js";
 import { createBodyMesh } from "./bodyMesh.js";
 import { loadUntilAborted } from "./modelLoad.js";
 import { POSTER_LAST_SEEN } from "./posterPanel.js";
-import { terrainMaterialFor, type Renderer } from "./renderer.js";
+import { sceneRendererOf, terrainMaterialFor, type Renderer } from "./renderer.js";
 import { createSignMeshes, type SignMeshes } from "./signMeshes.js";
 import { defaultModelLoader, placeStaticModel } from "./staticModel.js";
 import { FILM_CAR_NAME, FILM_CAR_OUTPUT, createTrailheadMeshes, type CarHandle, type TrailheadMeshes } from "./trailheadMeshes.js";
@@ -46,6 +46,7 @@ const trailheads = new WeakMap<HikeSigns, TrailheadMeshes>();
  * for, no trail or no road.
  */
 export function createHikeSigns(renderer: Renderer, world: World, seed: number): HikeSigns | null {
+  const { scene, shadows, cover } = sceneRendererOf(renderer);
   const search = world.search;
   const variant = activeTerrainVariant();
   const graph = variant.trailGraph?.(seed);
@@ -58,17 +59,17 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
   const hikerFirst = search.hiker.name.split(" ")[0] as string;
   const sites = signSites(seed, graph.features, hikerFirst, search.body.pos);
   const posts: SignMeshes = createSignMeshes(
-    renderer.scene,
+    scene,
     signPosts(graph, sites),
     groundH,
-    { materialFor: (name) => terrainMaterialFor(renderer.scene, name), shadows: renderer.shadows, cover: renderer.cover },
+    { materialFor: (name) => terrainMaterialFor(scene, name), shadows, cover },
   );
   const trailhead = createTrailheadMeshes(
-    renderer.scene,
+    scene,
     { car: { site: places.car, trailhead: graph.trailhead }, board: places.board },
     groundH,
     {
-      materialFor: (name) => terrainMaterialFor(renderer.scene, name),
+      materialFor: (name) => terrainMaterialFor(scene, name),
       board: boardDrawingOf({
         seed,
         trailName: TRAIL_NAME,
@@ -80,8 +81,8 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
         roadCenterX,
         urls: BOARD_IMAGE_URLS,
       }),
-      shadows: renderer.shadows,
-      cover: renderer.cover,
+      shadows,
+      cover,
     },
   );
   const signs: HikeSigns = {
@@ -107,7 +108,8 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
 export function loadFilmCar(renderer: Renderer, signs: HikeSigns, signal: AbortSignal): void {
   const trailhead = trailheads.get(signs);
   if (trailhead === undefined) return;
-  loadUntilAborted(() => defaultModelLoader(renderer.scene)(FILM_CAR_OUTPUT), signal).then(
+  const { scene } = sceneRendererOf(renderer);
+  loadUntilAborted(() => defaultModelLoader(scene)(FILM_CAR_OUTPUT), signal).then(
     (container) => {
       if (signal.aborted) {
         container.dispose();
@@ -130,5 +132,6 @@ export function loadFilmCar(renderer: Renderer, signs: HikeSigns, signal: AbortS
  * shadowed with the rest of the scenery placed once.
  */
 export function createHikeBody(renderer: Renderer, body: { pos: Vec3; yaw: number }): { dispose(): void } {
-  return createBodyMesh(renderer.scene, body, { shadows: renderer.shadows });
+  const { scene, shadows } = sceneRendererOf(renderer);
+  return createBodyMesh(scene, body, { shadows });
 }

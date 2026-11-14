@@ -89,7 +89,7 @@ import { BLADE_MESH_PREFIX } from "../../src/game/bladeMeshes.js";
 import { PROBE_SEED_TOKEN, probePose } from "../../src/game/frameProbe.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
-import { createRenderer, type Renderer } from "../../src/game/renderer.js";
+import { createRenderer, type Renderer, type SceneRenderer } from "../../src/game/renderer.js";
 import { createBodyMesh } from "../../src/game/bodyMesh.js";
 import { createSignMeshes } from "../../src/game/signMeshes.js";
 import { createTrailheadMeshes } from "../../src/game/trailheadMeshes.js";
@@ -561,7 +561,7 @@ function census(scene: Scene) {
 function sceneExtras() {
   let live: { dispose(): void }[] = [];
   return {
-    build(r: Renderer) {
+    build(r: SceneRenderer) {
       live = [
         createBodyMesh(r.scene, BODY, { shadows: r.shadows, loader: never }),
         createSignMeshes(r.scene, POSTS, () => 2, {
@@ -603,7 +603,7 @@ describe("swapRenderer on NullEngine", () => {
     const extras = sceneExtras();
     let current = { renderer: createRenderer(nullCanvas(), LEVEL, forest, { tier: "medium" }), canvas: nullCanvas() };
     extras.build(current.renderer);
-    const bindings: SwapBindings = {
+    const bindings: SwapBindings<SceneRenderer> = {
       build: (canvas, tier) => createRenderer(canvas, LEVEL, forest, { tier }),
       freshCanvas: nullCanvas,
       extras,
@@ -644,7 +644,7 @@ describe("the grass cull after a swap, on NullEngine", () => {
     const pose = probePose();
     /** One frame at the canopy pose turned by `turn`: every thin-instanced
      * mesh and the instances it draws, which the cull hook cuts. */
-    const drawn = (r: Renderer, turn: number): string[] => {
+    const drawn = (r: SceneRenderer, turn: number): string[] => {
       r.setFreecam({ ...pose, yaw: pose.yaw + turn });
       r.sync(world.state, -1, 0);
       r.scene.render();
@@ -662,7 +662,7 @@ describe("the grass cull after a swap, on NullEngine", () => {
     expect(blades(want)).toBeGreaterThan(0);
 
     const current = { renderer: createRenderer(nullCanvas(), level, forest, { tier: "high" }), canvas: nullCanvas() };
-    const bindings: SwapBindings = {
+    const bindings: SwapBindings<SceneRenderer> = {
       build: (canvas, tier) => createRenderer(canvas, level, forest, { tier }),
       freshCanvas: nullCanvas,
       extras: { dispose: () => undefined, build: () => undefined },
@@ -733,7 +733,7 @@ describe("a swap and the lake's life, on NullEngine", () => {
     const midges = old.scene.meshes.filter((m) => m.material?.name === MIDGE_NAME);
     expect(midges).toHaveLength(1);
     const oldSound = old.waterLifeSound();
-    const bindings: SwapBindings = {
+    const bindings: SwapBindings<SceneRenderer> = {
       build: (canvas, tier) => createRenderer(canvas, LEVEL, forest, { tier }),
       freshCanvas: nullCanvas,
       extras: { dispose: () => undefined, build: () => undefined },
@@ -783,7 +783,7 @@ describe("a swap and the lake's reflections, on NullEngine", () => {
     lakeParts.length = 0;
     const made = (): string[] => lakeParts.map((p) => `${p.kind} ${p.disposed}`);
     let current = { renderer: createRenderer(nullCanvas(), LEVEL, forest, { tier: "high" }), canvas: nullCanvas() };
-    const bindings: SwapBindings = {
+    const bindings: SwapBindings<SceneRenderer> = {
       build: (canvas, tier) => createRenderer(canvas, LEVEL, forest, { tier }),
       freshCanvas: nullCanvas,
       extras: { dispose: () => undefined, build: () => undefined },
@@ -842,7 +842,7 @@ describe("a swap keeps the hike's sky", () => {
     };
     const current = { renderer: createRenderer(nullCanvas(), LEVEL, null, { tier: "medium", skyTable: table }), canvas: nullCanvas() };
     expect(listening).toBe(1);
-    const bindings: SwapBindings = {
+    const bindings: SwapBindings<SceneRenderer> = {
       build: (canvas, tier) => createRenderer(canvas, LEVEL, null, { tier, skyTable: table }),
       freshCanvas: nullCanvas,
       extras: { dispose: () => undefined, build: () => undefined },
@@ -883,7 +883,7 @@ describe("the hike's start across a swap, on NullEngine", () => {
       if (standing === first) first.engine.runRenderLoop(loop);
       ready = true;
     });
-    const bindings: SwapBindings = {
+    const bindings: SwapBindings<SceneRenderer> = {
       build: (canvas, tier) => {
         const made = createRenderer(canvas, LEVEL, null, { tier, skyTable: table });
         nextRuns = vi.spyOn(made.engine, "runRenderLoop").mockImplementation(() => undefined);
@@ -946,7 +946,7 @@ describe("a swap that fails at every tier, on NullEngine", () => {
     try {
       const forest = createForest(SEED);
       const current = { renderer: createRenderer(nullCanvas(), LEVEL, forest, { tier: "medium" }), canvas: nullCanvas() };
-      const bindings: SwapBindings = {
+      const bindings: SwapBindings<SceneRenderer> = {
         build: (canvas, tier) => createRenderer(canvas, LEVEL, forest, { tier }),
         freshCanvas: nullCanvas,
         extras: { dispose: () => undefined, build: () => undefined },

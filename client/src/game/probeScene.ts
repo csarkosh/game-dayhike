@@ -31,7 +31,7 @@ import { showProbeScreen, timeIdleCadence } from "./probeScreen.js";
 import type { EngineHandle } from "./engineHandle.js";
 import { containerPixels, type ProbeReading, type QualityTier, type VerdictEngine } from "./quality.js";
 import { sunAltitudeDeg } from "./lighting.js";
-import { createRenderer, type Renderer } from "./renderer.js";
+import { createRenderer, type SceneRenderer } from "./renderer.js";
 import { seedFromToken } from "./seed.js";
 import { startSkySource, type SkySource } from "./skyWorker.js";
 import type { SkyTable } from "./skyTable.js";
@@ -39,7 +39,7 @@ import { pageStorage } from "./tierChoice.js";
 import { WEATHER_PRESETS } from "./weather.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
-export type ProbeScene = { renderer: Renderer; frame(): void; dispose(): void };
+export type ProbeScene = { renderer: SceneRenderer; frame(): void; dispose(): void };
 
 /**
  * The engine a probe step draws with, and its canvas: WebGPU where the WebGPU

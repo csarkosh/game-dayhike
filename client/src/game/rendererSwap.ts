@@ -75,7 +75,10 @@ export const APPLY_SWAP_READY_MAX_MS = 20_000;
  */
 export const GOVERNOR_SWAP_READY_MAX_MS = 10_000;
 
-export type Swappable = { renderer: Renderer; canvas: HTMLCanvasElement };
+/** A renderer and the canvas it draws on. `R` is the renderer as the caller
+ * holds it: the hike's, or the game's own with its scene, which a swap hands
+ * back as it was built. */
+export type Swappable<R extends Renderer = Renderer> = { renderer: R; canvas: HTMLCanvasElement };
 
 /** Listens to a WebGPU engine for the failures the game answers
  * (`watchWebGpu`, `gpuEngine.ts`); the function returned stops listening. */
@@ -158,19 +161,19 @@ function ladderOf(first: Rung, later: readonly QualityTier[]): Rung[] {
 }
 
 /** What the game gives a swap: how to build, where, and what to put back. */
-export type SwapBindings = {
+export type SwapBindings<R extends Renderer = Renderer> = {
   /** A renderer at `tier` on `canvas`, on `engine` when one is given. */
-  build(canvas: HTMLCanvasElement, tier: QualityTier, engine: EngineHandle | null): Renderer;
+  build(canvas: HTMLCanvasElement, tier: QualityTier, engine: EngineHandle | null): R;
   /** A canvas not yet in the page. */
   freshCanvas(): HTMLCanvasElement;
   /** What the game builds into the scene outside the renderer (the signs, the
    * body at the crest): disposed with the old scene, built again in the new. */
-  extras: { dispose(): void; build(renderer: Renderer): void };
+  extras: { dispose(): void; build(renderer: R): void };
   /** Moves the canvas's listeners (input, touch) to the new canvas. */
   rebind(canvas: HTMLCanvasElement): void;
   /** Puts the view back: the hour, the weather, the console's toggles, the
    * free camera. */
-  restore(renderer: Renderer): void;
+  restore(renderer: R): void;
   /** The render loop, stopped on the old engine and run on the new once its
    * sky is held. */
   loop(): void;
@@ -178,7 +181,7 @@ export type SwapBindings = {
   unwatch(): void;
   /** Starts listening to a renderer's engine, given as its rung's, with that
    * engine's own detector, once the rung stands. */
-  watch(renderer: Renderer, detector: WatchEngine): void;
+  watch(renderer: R, detector: WatchEngine): void;
   /** A rung on a given engine failed: the engine's fault, for the caller to
    * remember. `error` is the rung's throw. */
   engineFailed(error: unknown): void;
@@ -209,11 +212,11 @@ const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium"
  * tier least likely to fail, the last two on WebGL2. Only when every rung
  * fails does the last throw go up, with nothing of any of them left alive.
  */
-export function swapRenderer(
-  current: Swappable,
+export function swapRenderer<R extends Renderer>(
+  current: Swappable<R>,
   target: { tier: QualityTier; engine: EngineHandle | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
-  bindings: SwapBindings,
-): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
+  bindings: SwapBindings<R>,
+): Swappable<R> & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
   // The engine made for the target is the swap's until its rung's build takes
   // it (`createRenderer` releases it if that throws): a throw before then (the
   // old renderer's dispose, a fresh canvas) disposes it here, once.
@@ -234,12 +237,12 @@ export function swapRenderer(
 
 /** `swapRenderer`'s steps; `taken` is called as the given engine's rung
  * hands it to the build. */
-function climb(
-  current: Swappable,
+function climb<R extends Renderer>(
+  current: Swappable<R>,
   target: { tier: QualityTier; engine: EngineHandle | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
-  bindings: SwapBindings,
+  bindings: SwapBindings<R>,
   taken: () => void,
-): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
+): Swappable<R> & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
   current.renderer.stopLoop(bindings.loop);
   bindings.unwatch();
   bindings.extras.dispose();
@@ -252,7 +255,7 @@ function climb(
   let engineThrow: { tier: QualityTier; error: unknown } | null = null;
   for (const { tier, engine, watch } of ladder) {
     canvas = replaceCanvas(canvas, bindings.freshCanvas());
-    let renderer: Renderer | null = null;
+    let renderer: R | null = null;
     /** Whether this rung stands: a throw after its loop is promised takes it down. */
     let stands = true;
     try {
@@ -302,7 +305,7 @@ function engineFaultShown(
  * given (`releaseEngine`, which waits for the scene's BRDF lookup texture), so
  * it is not disposed again here, which would be at once and bring back the
  * throw that wait prevents. Each on its own, so one failing keeps no other. */
-function takeDown(renderer: Renderer | null, bindings: SwapBindings): void {
+function takeDown<R extends Renderer>(renderer: R | null, bindings: SwapBindings<R>): void {
   if (renderer === null) return;
   const steps = [() => bindings.extras.dispose(), () => renderer.dispose()];
   for (const step of steps) {
@@ -342,12 +345,12 @@ export function switchOutcome(
  * (`engineFailed`) only once the tier stands there; where it stands, it is
  * listened to (`watch`).
  */
-export function buildFirstRenderer(
+export function buildFirstRenderer<R extends Renderer>(
   canvas: HTMLCanvasElement,
   tiers: readonly QualityTier[],
-  bindings: Pick<SwapBindings, "build" | "freshCanvas" | "watch" | "engineFailed">,
+  bindings: Pick<SwapBindings<R>, "build" | "freshCanvas" | "watch" | "engineFailed">,
   first: { engine: EngineHandle; watch: WatchEngine | null } | null = null,
-): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
+): Swappable<R> & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
   const [asked = "low", ...later] = tiers;
   const ladder = ladderOf({ tier: asked, engine: first?.engine ?? null, watch: first?.watch ?? null }, later);
   let current = canvas;

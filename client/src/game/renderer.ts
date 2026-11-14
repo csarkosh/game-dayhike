@@ -1690,21 +1690,22 @@ export function writeListenerPose(
   out.uz = 0;
 }
 
+/**
+ * The renderer as the hike holds it: what it is told, what it is asked, and
+ * what it reads back, in the game's own terms. Nothing here says what draws
+ * the world; the game's own modules that build into the scene, and the
+ * tests, hold it as a `SceneRenderer`.
+ */
 export type Renderer = {
-  scene: Scene;
-  engine: AbstractEngine;
+  /** The engine the renderer draws with, as the page holds one
+   * (`engineHandle.ts`): what a failure is reported against, what the WebGPU
+   * module's watchers are asked about, and what a hike's end keeps. */
+  readonly engine: EngineHandle;
   /** Which engine the renderer draws with, for its life: WebGPU where it
    * was given one (`RendererOptions.engine`, `engineChoice.ts`), else WebGL2. */
   readonly engineName: EngineName;
-  camera: UniversalCamera;
-  views: EntityViews;
-  /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
-  shadows: PropShadows;
   /** The measurement mode's readout (`?gpuTime`, `gpuTime.ts`); null without it. */
   gpuTime: { read(): GpuTimeReport } | null;
-  /** The rain's cover map, for the same scenery: a mesh added is hard cover
-   * (`rainMap.ts`); nothing on the tiers without a map. */
-  cover: MeshRegistry;
   /** Resolves once the forest's first fill, billboards included, is drawn
    * (`ForestMeshes.ready`); at once in a world without a forest. */
   readonly forestReady: Promise<void>;
@@ -1861,7 +1862,7 @@ export type Renderer = {
    * its render loop stopped, is handed back for the next hike on the page
    * (`keptEngine.ts`), with the shaders it compiled (`pinShaders`).
    */
-  retire(): AbstractEngine;
+  retire(): EngineHandle;
   setFreecam(view: FreecamView | null): void;
   setWireframe(on: boolean): void;
   setSkinShading(on: boolean): void;
@@ -1919,6 +1920,32 @@ export type Renderer = {
    * between its slices. */
   buildClipmapNow(): void;
 };
+
+/**
+ * The renderer as the game's own modules and the tests hold it: `Renderer`
+ * with what it draws with, for whatever builds into its scene, reads its
+ * camera or drives its engine. `createRenderer` makes one; a module handed a
+ * `Renderer` by the hike gets it through `sceneRendererOf`.
+ */
+export type SceneRenderer = Omit<Renderer, "engine" | "retire"> & {
+  scene: Scene;
+  engine: AbstractEngine;
+  camera: UniversalCamera;
+  views: EntityViews;
+  /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
+  shadows: PropShadows;
+  /** The rain's cover map, for the same scenery: a mesh added is hard cover
+   * (`rainMap.ts`); nothing on the tiers without a map. */
+  cover: MeshRegistry;
+  /** `Renderer.retire`, the engine handed back as the engine it is. */
+  retire(): AbstractEngine;
+};
+
+/** The renderer the hike holds, with its scene: every `Renderer` is one made
+ * by `createRenderer`. */
+export function sceneRendererOf(renderer: Renderer): SceneRenderer {
+  return renderer as SceneRenderer;
+}
 
 export type RendererOptions = {
   tier?: QualityTier;
@@ -2183,7 +2210,7 @@ export function createRenderer(
   level: Level,
   forest: Forest | null = null,
   options: RendererOptions = {},
-): Renderer {
+): SceneRenderer {
   // The context is lost when the engine is disposed, so a renderer that is
   // replaced (a live tier change, the landing's backdrop giving way to the
   // game) frees every GPU object of its scene at once, including any the
@@ -2209,13 +2236,28 @@ export function createRenderer(
   }
 }
 
+/**
+ * A hike's renderer, as the hike holds it: `createRenderer`'s, from the same
+ * canvas, world and options, handed over as a `Renderer`. The hike makes its
+ * first renderer and each one a swap builds through this, so nothing it
+ * holds names what draws the world.
+ */
+export function createHikeRenderer(
+  canvas: HTMLCanvasElement,
+  level: Level,
+  forest: Forest | null = null,
+  options: RendererOptions = {},
+): Renderer {
+  return createRenderer(canvas, level, forest, options);
+}
+
 function buildRenderer(
   engine: AbstractEngine,
   level: Level,
   forest: Forest | null,
   options: RendererOptions,
   made: (undo: () => void) => void,
-): Renderer {
+): SceneRenderer {
   const scene = new Scene(engine);
   /** Disposes `part` if a later part of the build throws. */
   const partOf = (part: { dispose(): void } | null): void => {
@@ -3312,7 +3354,7 @@ function buildRenderer(
   });
   // A renderer that goes before any such frame resolves it too: nothing waits on it for ever.
   scene.onDisposeObservable.addOnce(() => markSynced());
-  const renderer: Renderer = {
+  const renderer: SceneRenderer = {
     scene,
     engine,
     engineName: engine.isWebGPU ? "webgpu" : "webgl2",
