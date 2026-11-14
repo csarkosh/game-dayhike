@@ -1,0 +1,6 @@
+# The compiler the kernel is built with. The built module is committed (client/src/sim/kernel/fieldWasm.ts),
+# so a change of compiler changes it: move this on purpose, and build again (npm run kernel:build).
+[toolchain]
+channel = "1.99.0"
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

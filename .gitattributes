@@ -33,3 +33,10 @@
 client/shaders/corpus/**               linguist-generated=true -whitespace
 tools/wgsl/test/fixtures/node-corpus/** linguist-generated=true -whitespace
 tools/wgsl/test/fixtures/corpus/**      linguist-generated=true -whitespace
+
+# The simulation's field kernel as WebAssembly, in base64 (tools/rust/build.mjs writes it from client/rust/field):
+# generated, kept out of the host's language statistics, its diffs folded.
+client/src/sim/kernel/fieldWasm.ts linguist-generated=true
+*.rs   text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf

@@ -22,8 +22,8 @@ export const LIGHT_PATHS = Object.freeze([
   'LICENSE',
 ]);
 
-/** Under a light path, but feeding the shipped build (the WGSL maps): gated as the game is. */
-export const HEAVY_UNDER_LIGHT = Object.freeze(['tools/wgsl/']);
+/** Under a light path, but feeding the shipped build (the WGSL maps; the field kernel's committed module): gated as the game is. */
+export const HEAVY_UNDER_LIGHT = Object.freeze(['tools/wgsl/', 'tools/rust/']);
 
 const under = (path, prefix) => (prefix.endsWith('/') ? path.startsWith(prefix) : path === prefix);
 

@@ -1,0 +1,17 @@
+[package]
+name = "dayhike_field"
+version = "0.0.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+description = "Day Hike's field math (client/src/sim/field.ts and the montane pipeline of montane.ts), for WebAssembly."
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
