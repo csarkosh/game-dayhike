@@ -24,6 +24,14 @@ describe("the signs and the body of a hike the film covers", () => {
     expect(host).toContain("still: () => !disposed && !broken && renderer === asked && signs === null && body === null,");
   });
 
+  it("are built in the scene of the renderer they are asked for, which under a swap is not yet the one running", () => {
+    // `hikeScenery.ts` builds each into the renderer it is handed: `r`, never the hike's `renderer` binding.
+    expect(slice("  function buildExtras(r: Renderer): void {", "  function disposeExtras(): void {")).toContain(
+      "    signs = createHikeSigns(r, activeWorld, seed);\n    fetchFilmCar(r);\n    body = activeWorld.search === null ? null : createHikeBody(r, activeWorld.search.body);",
+    );
+    expect(slice("  function fetchFilmCar(r: Renderer): void {", "  /** What the end scene is played over")).toContain("loadFilmCar(r, signs, loads.signal);");
+  });
+
   it("are not built by a task still to come once they are disposed: a swap builds its own, and a hike left builds none", () => {
     const dispose = slice("  function disposeExtras(): void {", "  made(disposeExtras);");
     expect(dispose).toContain("    extrasToCome?.cancel();\n    extrasToCome = null;");

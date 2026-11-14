@@ -68,14 +68,19 @@ export type TrailheadDeps = {
 };
 
 /**
- * The car the end scene drives: the node it moves by, its parts where it
- * has them, `leave()`, which takes it out of the rain's cover as it drives
- * off (the cover map is drawn once for a place, and a car that has gone
- * would keep the rain off the pad it left; once is enough, again is
- * nothing), and `tailLamps(on)`, which lights and shows the film's car's
- * tail lamps at its rear, or hides them (the parked car has none).
+ * The car the end scene drives, as the hike passes it from its scenery to
+ * the renderer that plays the scene: `leave()`, which takes it out of the
+ * rain's cover as it drives off (the cover map is drawn once for a place,
+ * and a car that has gone would keep the rain off the pad it left; once is
+ * enough, again is nothing), and `tailLamps(on)`, which lights and shows the
+ * film's car's tail lamps at its rear, or hides them (the parked car has
+ * none).
  */
-export type TrailheadCar = { root: TransformNode; model: CarModel | null; leave(): void; tailLamps(on: boolean): void };
+export type CarHandle = { leave(): void; tailLamps(on: boolean): void };
+
+/** That car with what the scene moves it by: its node, and its parts where
+ * it has them. */
+export type TrailheadCar = CarHandle & { root: TransformNode; model: CarModel | null };
 
 /**
  * The film's car is drawn wherever it stands once swapped in, each mesh

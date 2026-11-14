@@ -37,7 +37,7 @@ import { CAR_HALF } from "../sim/trailhead.js";
 import type { CarPose } from "./scene/timeline.js";
 import type { Road } from "./scene/roadPath.js";
 import { stageCar } from "./scene/sceneStage.js";
-import type { TrailheadCar } from "./trailheadMeshes.js";
+import type { CarHandle, TrailheadCar } from "./trailheadMeshes.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { createShadeVeil } from "./shadeVeil.js";
 import { CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
@@ -1641,7 +1641,7 @@ export type EndSceneSetup = {
   direction: 1 | -1;
   road: Road;
   door: { x: number; z: number };
-  car: () => TrailheadCar | null;
+  car: () => CarHandle | null;
   /** The player whose run the scene shows, where it is not this screen's own (endScene.ts `endSceneRunner`): another's, who reached the car. */
   runner?: number;
 };
@@ -2426,7 +2426,7 @@ function buildRenderer(
     views.hideNear = e.hide;
     const after = ctx.arrival === null ? 0 : t - ctx.arrival;
     const car = endCar(after, ctx.road, ctx.site, ctx.direction);
-    const handle = e.setup.car();
+    const handle = e.setup.car() as TrailheadCar | null;
     if (handle !== null) {
       if (handle.model !== null) stageCar(car, handle.model);
       else {

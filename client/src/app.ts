@@ -1,6 +1,6 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
-import { createRenderer, terrainMaterialFor, type EndSceneSetup, type FreecamView, type Renderer } from "./game/renderer.js";
+import { createRenderer, type EndSceneSetup, type FreecamView, type Renderer } from "./game/renderer.js";
 import type { AsyncPipelines } from "./game/asyncPipelines.js";
 import type { EngineHandle } from "./game/engineHandle.js";
 import { FALLBACK_NOTICE_MS, parseGpuTime } from "./game/engineChoice.js";
@@ -12,8 +12,7 @@ import { createHud } from "./game/hud.js";
 import { LOADING_LINE } from "./game/frameProbe.js";
 import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
 import { RING_COUNT } from "./game/clipmap.js";
-import { loadUntilAborted, reportCompile, reportProgress } from "./game/modelLoad.js";
-import { defaultModelLoader, placeStaticModel } from "./game/staticModel.js";
+import { reportCompile, reportProgress } from "./game/modelLoad.js";
 import {
   endSceneRunner,
   END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, ESCAPE_SETTLE_S, ESCAPE_WAIT_S, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
@@ -77,19 +76,14 @@ import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
 import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
-import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
-import { createBodyMesh } from "./game/bodyMesh.js";
+import { createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_LANDING_MS, WON_LINE, WON_TITLE, atRoadWall } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
-import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
 import type { PreparedScene } from "./game/preparedScene.js";
-import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
+import { createHikeBody, createHikeSigns, loadFilmCar, type HikeSigns } from "./game/hikeScenery.js";
 import { carDirection, doorSpot, trailEntrance, trailheadPlaces } from "./sim/trailhead.js";
-import { BOARD_IMAGE_URLS } from "./game/boardImages.js";
-import { boardDrawingOf } from "./game/boardPaint.js";
-import { FILM_CAR_NAME, FILM_CAR_OUTPUT, createTrailheadMeshes, type TrailheadMeshes } from "./game/trailheadMeshes.js";
-import { placeNames, signSites } from "./sim/placeNames.js";
+import { placeNames } from "./sim/placeNames.js";
 import { createTrace, type Trace } from "./game/trace.js";
 import { afterNextPaint } from "./game/paint.js";
 import type { QualityTier } from "./game/quality.js";
@@ -1278,66 +1272,17 @@ function buildGame(
     ambient.setWeather(settled.weather);
   }
 
-  let signs: { trailhead: TrailheadMeshes; dispose(): void } | null = null;
+  /**
+   * The junction posts, and the trailhead's car and board (`hikeScenery.ts`),
+   * in the scene of the renderer they were built for; null until they are
+   * built, between a swap's two scenes, and on a world without them.
+   */
+  let signs: HikeSigns | null = null;
   /**
    * The crucified hiker at the crest, or null without a summit site. Lives and
    * dies with the signs: both are seeded scenery placed once and never moved.
    */
   let body: { dispose(): void } | null = null;
-  /**
-   * Junction posts, and the trailhead's car and board, from the same seed
-   * the sim used, in `r`'s
-   * scene: the renderer being built, which during a live tier change is not
-   * yet `renderer`.
-   */
-  function createSigns(world: World, r: Renderer): { trailhead: TrailheadMeshes; dispose(): void } | null {
-    const search = world.search;
-    const variant = activeTerrainVariant();
-    const graph = variant.trailGraph?.(seed);
-    const roadCenterX = variant.roadCenterX;
-    if (search === null || graph === undefined || roadCenterX === undefined) return null;
-    const places = trailheadPlaces(graph, roadCenterX, seed);
-    const groundH = (x: number, z: number): number => elevationAt(seed, x, z);
-    // The places the posts name: the summit where the body lies, and every
-    // pond and meadow, never under the missing hiker's own first name.
-    const hikerFirst = search.hiker.name.split(" ")[0] as string;
-    const sites = signSites(seed, graph.features, hikerFirst, search.body.pos);
-    const posts: SignMeshes = createSignMeshes(
-      r.scene,
-      signPosts(graph, sites),
-      groundH,
-      { materialFor: (name) => terrainMaterialFor(r.scene, name), shadows: r.shadows, cover: r.cover },
-    );
-    const trailhead = createTrailheadMeshes(
-      r.scene,
-      { car: { site: places.car, trailhead: graph.trailhead }, board: places.board },
-      groundH,
-      {
-        materialFor: (name) => terrainMaterialFor(r.scene, name),
-        board: boardDrawingOf({
-          seed,
-          trailName: TRAIL_NAME,
-          hikerName: search.hiker.name,
-          lastSeen: POSTER_LAST_SEEN,
-          graph,
-          places: sites,
-          summitName: SUMMIT_LABEL,
-          roadCenterX,
-          urls: BOARD_IMAGE_URLS,
-        }),
-        shadows: r.shadows,
-        cover: r.cover,
-      },
-    );
-    return {
-      trailhead,
-      dispose() {
-        posts.dispose();
-        trailhead.dispose();
-      },
-    };
-  }
-
   /**
    * The film's car (`trailheadMeshes.ts` `swapCar`), the parked car's double
    * with wheels and a door, for the end scene: fetched into the trailhead as
@@ -1355,25 +1300,9 @@ function buildGame(
   }
   function fetchFilmCar(r: Renderer): void {
     if (filmCarLoad !== null || signs === null) return;
-    const trailhead = signs.trailhead;
     const loads = new AbortController();
     filmCarLoad = loads;
-    loadUntilAborted(() => defaultModelLoader(r.scene)(FILM_CAR_OUTPUT), loads.signal).then(
-      (container) => {
-        if (loads.signal.aborted) {
-          container.dispose();
-          return;
-        }
-        try {
-          trailhead.swapCar(placeStaticModel(container, FILM_CAR_NAME, 0, 0, 0, 0));
-        } catch (error) {
-          console.warn(`end: the film's car could not be placed (${error instanceof Error ? error.message : String(error)}); the parked car stays`);
-        }
-      },
-      (error: unknown) => {
-        if (!loads.signal.aborted) console.warn(`end: the film's car did not load (${error instanceof Error ? error.message : String(error)}); the parked car stays`);
-      },
-    );
+    loadFilmCar(r, signs, loads.signal);
   }
 
   /** What the end scene is played over: the car's site and heading, the road, the door, and the trailhead's car as it stands; null on a world with no road. */
@@ -1389,7 +1318,7 @@ function buildGame(
       direction,
       road: { centerX: (z) => roadCenterX(seed, z), groundY: (x, z) => elevationAt(seed, x, z) },
       door: doorSpot(site, direction),
-      car: () => signs?.trailhead.car() ?? null,
+      car: () => signs?.car() ?? null,
     };
   }
 
@@ -1402,9 +1331,9 @@ function buildGame(
    * body at the crest, from the session's world, in `r`'s scene. */
   function buildExtras(r: Renderer): void {
     if (activeWorld === null) return;
-    signs = createSigns(activeWorld, r);
+    signs = createHikeSigns(r, activeWorld, seed);
     fetchFilmCar(r);
-    body = activeWorld.search === null ? null : createBodyMesh(r.scene, activeWorld.search.body, { shadows: r.shadows });
+    body = activeWorld.search === null ? null : createHikeBody(r, activeWorld.search.body);
   }
 
   function disposeExtras(): void {
@@ -2092,13 +2021,13 @@ function buildGame(
         return;
       }
       const now = performance.now();
-      const carIn = (signs?.trailhead.car()?.model ?? null) !== null;
+      const carIn = signs?.filmCarIn() ?? false;
       // A car that never lands: the scene on the parked one after ESCAPE_WAIT_S.
       if (!carIn && now - escapeFrom < ESCAPE_WAIT_S * 1000) return;
       if (carIn) {
         // Past its first frames, then its pipelines in flight landed (or, with none counted,
         // ESCAPE_SETTLE_S), at most ESCAPE_WAIT_S after those frames.
-        if (signs?.trailhead.warm() ?? false) return;
+        if (signs?.warm() ?? false) return;
         escapeWarmed ??= now;
         const pipelines = pipelinesFor(renderer.engine);
         const settled = pipelines !== undefined ? pipelines.pending() === 0 : now - escapeWarmed >= ESCAPE_SETTLE_S * 1000;
