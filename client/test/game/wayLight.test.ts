@@ -65,6 +65,14 @@ describe("the way's mist: its fragment stage", () => {
   });
 });
 
+describe("the way's mist: a face too small to have a lie", () => {
+  it("is given none, never a division by nothing: a fragment against the eye must not put a NaN in the frame", () => {
+    const fragment = readFileSync("src/game/shaders/wayLight.fragment.fx", "utf8");
+    expect(fragment).not.toContain("normalize(cross(");
+    expect(fragment).toContain("inversesqrt(max(dot(face, face), 1.0e-20))");
+  });
+});
+
 describe("the way's mist", () => {
   let engine: NullEngine, scene: Scene;
   const make = (colourPath: "post" | "material" = "post") => {

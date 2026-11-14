@@ -82,8 +82,9 @@ void main(void) {
   float sheet = wayMist.z * band * fall * mix(wayPath.w, 1.0, smoothstep(0.3, 0.75, small)) * close * far;
 
   // How squarely the eye looks at this face, from the face itself, so a sheet lying on a slope is judged by its own lie.
-  vec3 face = normalize(cross(dFdx(vPlace), dFdy(vPlace)));
-  float facing = abs(dot(face, (vPlace - wayEye) / max(d, 0.001)));
+  // A face too small to have a lie (a fragment against the eye) is given none, never a division by nothing.
+  vec3 face = cross(dFdx(vPlace), dFdy(vPlace));
+  float facing = abs(dot(face, vPlace - wayEye)) * inversesqrt(max(dot(face, face), 1.0e-20)) / max(d, 0.001);
   float edge = mix(mix(1.0, smoothstep(0.04, 0.25, facing), isSheet), smoothstep(0.04, 0.3, facing), isFin);
 
   float amount = clamp(mix(mix(ground, sheet, isSheet), veil, standing) * edge * smoothstep(0.3, 2.0, d) * wayGain, 0.0, 1.0);
