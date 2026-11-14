@@ -629,7 +629,7 @@ describe("layer boundaries", () => {
    */
   it("what the ground cover is drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
-      "clutterInstances.ts", "instanceLists.ts", "bladeInstances.ts", "clutterField.ts", "bladeField.ts", "bladeClump.ts", "duffField.ts", "duffClump.ts", "cliffField.ts",
+      "clutterInstances.ts", "clutterLists.ts", "instanceLists.ts", "bladeInstances.ts", "clutterField.ts", "bladeField.ts", "bladeClump.ts", "duffField.ts", "duffClump.ts", "cliffField.ts",
       "shrubClump.ts", "wetPlantClump.ts", "highPlantClump.ts", "rockRelief.ts", "grassCull.ts", "keptValues.ts",
     ];
     const loaded = (file: string): string[] =>

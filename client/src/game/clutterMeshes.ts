@@ -4,8 +4,9 @@
  * driftwood, fungus, bush, meadow, flower, litter, sword fern, shrub, drift log, wet plant, high plant — two LOD
  * levels deep. All band
  * math is `clutterField.ts` (via its memoizing `createClutterCollector`,
- * output-identical to the pure `collectClutter`); what lives here is buffers,
- * matrices and dispose — the same split as `forestField.ts`/`forestMeshes.ts`,
+ * output-identical to the pure `collectClutter`), and the lists the buckets
+ * draw are `clutterLists.ts`'s, made with no engine; what lives here is
+ * meshes, materials, uploads and dispose — the same split as `forestField.ts`/`forestMeshes.ts`,
  * whose idioms this file follows: `AssetContainer` loading, one bucket per
  * model per LOD, deferred update while the GLBs land, `setEnabled(count > 0)`,
  * dispose discipline.
@@ -35,8 +36,8 @@
  * `update` allocates NOTHING while the camera stays inside its 3 m grass cell,
  * which is the per-frame case; a rebuild reuses one `Float32Array` per bucket,
  * and one staging array beside it that a rebuild in slices writes first
- * (`Bucket.staged`), both grown geometrically and never shrunk, and composes
- * each matrix through module-level scratch objects. This is the one place
+ * (`instanceLists.ts`), both grown geometrically and never shrunk, and
+ * composes each matrix through module-level scratch objects. This is the one place
  * the file deliberately diverges from `forestMeshes.ts`, which allocates a
  * fresh buffer per rebuild:
  * clutter rebuilds on a 3 m crossing rather than the forest's 12 m, so its
@@ -68,15 +69,16 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
-import { CLUTTER_MEADOW_NEAR_IN, COVER_RAMP_CLASSES, clutterFadeEdges, clutterSeamEdges, coverBands, coverFarBand, coverWiden, createClutterCollector } from "./clutterField.js";
+import { clutterFadeEdges, coverWiden } from "./clutterField.js";
 import {
-  CLUTTER_CULLED, CLUTTER_MODEL_IDS, CUT_CLASSES, DRIFTLOG_BLEACH, FAR_LOD, FOLIAGE_BY_CLASS, LOD_NAMES, NEAR_LOD, SHRUB_F0, SHRUB_ROUGHNESS,
-  WET_CAP_BY_CLASS, clutterLodNames, clutterNearLodName, cutModel, cutOf, cutsFor, instanceMatrixFor, seatDriftLogs, trampleFrame, writeFoliage,
+  CLUTTER_MODEL_IDS, CUT_CLASSES, DRIFTLOG_BLEACH, FAR_LOD, FOLIAGE_BY_CLASS, LOD_NAMES, NEAR_LOD, SHRUB_F0, SHRUB_ROUGHNESS, WET_CAP_BY_CLASS,
+  clutterLodNames, clutterNearLodName, cutModel, seatDriftLogs,
 } from "./clutterInstances.js";
-import { CLUTTER_BOULDER, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTLOG, CLUTTER_GRASS_CELL, CLUTTER_HIGHPLANT, CLUTTER_MEADOW, CLUTTER_SHRUB, CLUTTER_WETPLANT, type ClutterInstance } from "../sim/clutter.js";
+import { createClutterLists, type ClutterBucket, type ClutterLists } from "./clutterLists.js";
+import { CLUTTER_BOULDER, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTLOG, CLUTTER_GRASS_CELL, CLUTTER_HIGHPLANT, CLUTTER_SHRUB, CLUTTER_WETPLANT } from "../sim/clutter.js";
 import { attachFoliage, setFoliageEdges, foliageMatched } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
-import { attachDistanceFade, fadeBands, setDistanceWiden, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
+import { attachDistanceFade, setDistanceWiden } from "./distanceFadePlugin.js";
 import { attachWet } from "./wetPlugin.js";
 import { modelUrl } from "./assetUrls.js";
 import { coverAlbedoTint, FOLIAGE_CARD_CONTRAST } from "./coverAlbedoParams.js";
@@ -84,9 +86,9 @@ import { SHRUB_CHARACTERS, shrubGeometry } from "./shrubClump.js";
 import { WET_PLANT_COUNT, wetPlantGeometry } from "./wetPlantClump.js";
 import { HIGH_PLANT_COUNT, highPlantGeometry } from "./highPlantClump.js";
 import { ROCK_CUTS, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.js";
-import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
+import type { CullPose } from "./grassCull.js";
+import type { InstanceList } from "./instanceLists.js";
 import { loadContainer, loadUntilAborted } from "./modelLoad.js";
-import { createKeptValues } from "./keptValues.js";
 import { createCrossing, crossingAt, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 
@@ -159,24 +161,6 @@ export function reliefMesh(source: Mesh, model: number, cut: number, planes: Roc
   return mesh;
 }
 
-
-/** The widened frustum's planes, rewritten by each cut. */
-const cullScratchPlanes = new Float32Array(20);
-/** All-zero planes, which `cullPrefix` passes every instance through. */
-const KEEP_ALL = new Float32Array(20);
-
-
-/** Instances a bucket's first real allocation covers. Sized so the sparse
- * classes (boulder ≤ 260, fungus ≤ 500 across two variants and two bands)
- * settle after one or two doublings, and grass — the only class that reaches
- * the high hundreds per bucket — after four. */
-const BUCKET_MIN_INSTANCES = 64;
-
-/** Shared zero-length placeholder for a bucket that has never held an
- * instance: `ensureCapacity` replaces it the first time one lands, and until
- * then nothing reads or writes it. */
-const EMPTY_BUFFER = new Float32Array(0);
-
 export type ClutterMeshesOptions = {
   /** Scales every class radius together — the quality-tier knob, passed
    * straight to the collector (low ≈ 60% radii). */
@@ -233,64 +217,10 @@ export type ClutterMeshes = {
 /**
  * One logical bucket: every geometry-bearing mesh of one model's one LOD
  * level (single-primitive for all nineteen clutter GLBs, so one mesh in practice)
- * sharing a single reused instance buffer.
+ * drawing one instance list (`clutterLists.ts`): the list's own buffers, or
+ * for a list filtered to the view its drawn ones.
  */
-type Bucket = {
-  meshes: Mesh[];
-  /** Matrix data, reused across rebuilds; capacity is `buf.length / 16`. */
-  buf: Float32Array;
-  /** Four floats per instance, `fadeBands` attribute; capacity tracks `buf`. */
-  bands: Float32Array;
-  /** Four floats per instance (ground colour rgb + the sky's openness,
-   * `1 − canopy`), the
-   * `foliage` attribute; capacity tracks `buf`. Only written and uploaded
-   * when `tints` is set — the classes without the foliage plugin never read
-   * this buffer, so it stays at `EMPTY_BUFFER`. */
-  foliage: Float32Array;
-  /** The constant every instance of this bucket carries, or on a ramped
-   * bucket (`COVER_RAMP_CLASSES`, the far level) the bands each instance's
-   * own are drawn from (`rampBands`). */
-  fade: FadeBands;
-  ramp: boolean;
-  /** The far band (`coverFarBand`) on the far level of a class that has one:
-   * a card not kept past it goes out across this band (`coverBands`). */
-  far: readonly [number, number] | null;
-  /** Set for the classes that wear the foliage plugin (`FOLIAGE_BY_CLASS`),
-   * which is exactly the classes whose `foliage` buffer this file writes and
-   * uploads. */
-  tints: boolean;
-  /** Instances this rebuild — counted in pass 1, then reused as the write
-   * cursor in pass 2, so it is the live count again when the fill ends. */
-  count: number;
-  /** Set when `buf` was replaced this rebuild: the mesh then needs a fresh
-   * `thinInstanceSetBuffer` (a new GPU buffer) rather than an in-place
-   * upload of the existing one. */
-  grown: boolean;
-  /** Filtered to the view: `buf`, `bands` and `foliage` are then the
-   * collected buffers, never uploaded, and the mesh holds `drawn`. */
-  culled: boolean;
-  /** The drawn buffers of a culled bucket, the collected ones' capacity each,
-   * the kept prefix at the front; empty for every other bucket. */
-  drawn: { buf: Float32Array; bands: Float32Array; foliage: Float32Array };
-  /** A culled bucket's card translations, x, y, z, written by the fill
-   * beside `buf`: what the cut tests. */
-  origins: Float32Array;
-  /** A culled bucket's collected and drawn buffers as `cullPrefix` walks
-   * them, with the last cut's indices; rebuilt only on growth. Null for every
-   * other bucket. */
-  cull: CullSet | null;
-  /** Where a rebuild in slices writes, so that nothing the mesh draws or
-   * `cull` reads changes until the rebuild's last slice copies it across:
-   * the same four buffers, grown the same way, never uploaded. */
-  staged: { buf: Float32Array; bands: Float32Array; foliage: Float32Array; origins: Float32Array };
-  /** Instances staged — counted, then the write cursor, as `count` is. */
-  stagedCount: number;
-};
-
-/** One matrix's worth of scratch floats, reused by `instanceMatrixFor` so
- * `computeInstance` can copy it into the kept values at any offset without
- * `Matrix.copyToArray` needing a per-instance subarray view. */
-const scratchMatBuf = new Float32Array(16);
+type Bucket = { meshes: Mesh[]; bucket: ClutterBucket };
 
 /** The node itself plus descendants, filtered to meshes that carry geometry —
  * `forestMeshes.ts`'s helper, which cannot be shared without exporting it from
@@ -329,78 +259,6 @@ export function prepBucketMesh(mesh: Mesh): void {
 }
 
 /**
- * Grows `bucket.buf` to hold `bucket.count` matrices if it does not already,
- * doubling from `BUCKET_MIN_INSTANCES` so a bucket allocates a bounded number
- * of times over a session and never per rebuild. The old contents are dropped
- * rather than copied: every live matrix is rewritten immediately afterwards.
- */
-function ensureCapacity(bucket: Bucket): void {
-  const needed = bucket.count * 16;
-  if (bucket.buf.length >= needed) {
-    bucket.grown = false;
-    return;
-  }
-  let capacity = Math.max(bucket.buf.length, BUCKET_MIN_INSTANCES * 16);
-  while (capacity < needed) capacity *= 2;
-  bucket.buf = new Float32Array(capacity);
-  // 16 floats of matrix per instance ↔ 4 floats of bands (or foliage) per instance.
-  bucket.bands = new Float32Array(capacity / 4);
-  bucket.foliage = new Float32Array(capacity / 4);
-  if (bucket.culled) {
-    bucket.drawn = { buf: new Float32Array(capacity), bands: new Float32Array(capacity / 4), foliage: new Float32Array(capacity / 4) };
-    bucket.origins = new Float32Array((capacity / 16) * 3);
-    const vec4 = [{ src: bucket.bands, dst: bucket.drawn.bands }];
-    if (bucket.tints) vec4.push({ src: bucket.foliage, dst: bucket.drawn.foliage });
-    bucket.cull = cullSet(capacity / 16, bucket.origins, { src: bucket.buf, dst: bucket.drawn.buf }, vec4, []);
-  }
-  bucket.grown = true;
-}
-
-/**
- * Grows a bucket's staging buffers to hold `bucket.stagedCount` instances, by
- * `ensureCapacity`'s doubling; old contents are dropped, as there.
- */
-function ensureStaging(bucket: Bucket): void {
-  const needed = bucket.stagedCount * 16;
-  if (bucket.staged.buf.length >= needed) return;
-  let capacity = Math.max(bucket.staged.buf.length, BUCKET_MIN_INSTANCES * 16);
-  while (capacity < needed) capacity *= 2;
-  bucket.staged = {
-    buf: new Float32Array(capacity),
-    bands: new Float32Array(capacity / 4),
-    foliage: new Float32Array(capacity / 4),
-    origins: bucket.culled ? new Float32Array((capacity / 16) * 3) : EMPTY_BUFFER,
-  };
-}
-
-/**
- * Copies a bucket's staged instances into the buffers its meshes draw from
- * (the collected ones, for a culled bucket), growing those first by
- * `ensureCapacity`: after this the bucket holds exactly what a rebuild writing
- * them directly would, the tail past `count` included.
- */
-function commitStaged(bucket: Bucket): void {
-  bucket.count = bucket.stagedCount;
-  ensureCapacity(bucket);
-  const n = bucket.count;
-  bucket.buf.set(bucket.staged.buf.subarray(0, n * 16));
-  bucket.bands.set(bucket.staged.bands.subarray(0, n * 4));
-  if (bucket.tints) bucket.foliage.set(bucket.staged.foliage.subarray(0, n * 4));
-  if (bucket.culled) bucket.origins.set(bucket.staged.origins.subarray(0, n * 3));
-}
-
-/** Instances' worth of work a slice of the clutter's fill does before it
- * yields: an instance whose values are copied counts 1, one computed for the
- * first time `FILL_NEW_COST` — its trample frame and ground tint are several
- * walks through the terrain's noise. About a tenth of a millisecond. */
-const FILL_SLICE = 1536;
-const FILL_NEW_COST = 16;
-
-/** What computing an instance's kept values ahead weighs on a slice of idle
- * work, in `prefetchWindow`'s units: about what sampling a cell does. */
-const KEPT_AHEAD_COST = 64;
-
-/**
  * Pushes a filled bucket to its meshes. A bucket whose buffer was just grown
  * needs the whole GPU buffer recreated; one that was written in place needs
  * only the live prefix re-uploaded, which is what `thinInstanceBufferUpdated`
@@ -417,26 +275,27 @@ const KEPT_AHEAD_COST = 64;
  * update — the exact per-rebuild allocation this file's buffer reuse exists
  * to avoid. Updatable from the start is both correct and cheap.
  */
-function applyBucket(bucket: Bucket): void {
-  if (bucket.culled) {
-    applyCulled(bucket);
+function applyBucket({ meshes, bucket: { list } }: Bucket): void {
+  if (list.culled) {
+    applyCulled(meshes, list);
     return;
   }
-  const count = bucket.count;
-  for (const mesh of bucket.meshes) {
-    if (bucket.grown) {
+  const count = list.count;
+  const tints = list.streams.foliage;
+  for (const mesh of meshes) {
+    if (list.grown) {
       // Sets `thinInstanceCount` to the full CAPACITY as a side effect, which
       // the assignment below immediately trims to the live count.
-      mesh.thinInstanceSetBuffer("matrix", bucket.buf, 16, false);
-      mesh.thinInstanceSetBuffer("fadeBands", bucket.bands, 4, false);
-      if (bucket.tints) mesh.thinInstanceSetBuffer("foliage", bucket.foliage, 4, false);
+      mesh.thinInstanceSetBuffer("matrix", list.buf, 16, false);
+      mesh.thinInstanceSetBuffer("fadeBands", list.bands, 4, false);
+      if (tints) mesh.thinInstanceSetBuffer("foliage", list.foliage, 4, false);
       mesh.thinInstanceCount = count;
     } else {
       mesh.thinInstanceCount = count;
       if (count > 0) {
         mesh.thinInstanceBufferUpdated("matrix");
         mesh.thinInstanceBufferUpdated("fadeBands");
-        if (bucket.tints) mesh.thinInstanceBufferUpdated("foliage");
+        if (tints) mesh.thinInstanceBufferUpdated("foliage");
       }
     }
     // A zero-count bucket must be disabled outright: with `instancesCount` 0
@@ -453,12 +312,12 @@ function applyBucket(bucket: Bucket): void {
  * One that grew hands its meshes fresh, empty drawn buffers (updatable, for
  * `applyBucket`'s reason) and draws nothing until then.
  */
-function applyCulled(bucket: Bucket): void {
-  if (!bucket.grown) return;
-  for (const mesh of bucket.meshes) {
-    mesh.thinInstanceSetBuffer("matrix", bucket.drawn.buf, 16, false);
-    mesh.thinInstanceSetBuffer("fadeBands", bucket.drawn.bands, 4, false);
-    if (bucket.tints) mesh.thinInstanceSetBuffer("foliage", bucket.drawn.foliage, 4, false);
+function applyCulled(meshes: readonly Mesh[], list: InstanceList): void {
+  if (!list.grown) return;
+  for (const mesh of meshes) {
+    mesh.thinInstanceSetBuffer("matrix", list.drawn.buf, 16, false);
+    mesh.thinInstanceSetBuffer("fadeBands", list.drawn.bands, 4, false);
+    if (list.streams.foliage) mesh.thinInstanceSetBuffer("foliage", list.drawn.foliage, 4, false);
     // Set to the whole capacity by the buffer above; zero, and disabled so the
     // bare mesh is not drawn once at the origin (`applyBucket`'s note).
     mesh.thinInstanceCount = 0;
@@ -472,40 +331,32 @@ function applyCulled(bucket: Bucket): void {
  * context restore the GPU buffers are rebuilt at the last prefix's size. The
  * bucket draws nothing until the next cut fills it again.
  */
-function rehandCulled(bucket: Bucket): void {
-  if (bucket.cull === null || bucket.drawn.buf.length === 0) return;
-  bucket.grown = true;
-  applyCulled(bucket);
-  bucket.grown = false;
-  cullInvalidate(bucket.cull);
+function rehandCulled({ meshes, bucket: { list } }: Bucket): void {
+  if (list.cull === null || list.drawn.buf.length === 0) return;
+  list.grown = true;
+  applyCulled(meshes, list);
+  list.grown = false;
 }
 
 /**
- * Cuts one culled bucket's collected set by `planes` into its drawn buffers,
- * sets its meshes' count to the kept cards and uploads only them (Babylon's
- * count form of `thinInstancePartialBufferUpdate`: `kept` strides from
- * offset 0). A bucket that keeps exactly the cards of its last cut is left as
- * it is: no copy, no upload.
+ * A culled bucket whose cut changed: its meshes' count set to the kept cards,
+ * and only them uploaded (Babylon's count form of
+ * `thinInstancePartialBufferUpdate`: `kept` strides from offset 0). A bucket
+ * that keeps exactly the cards of its last cut is never handed here: no
+ * copy, no upload.
  */
-function cutBucket(bucket: Bucket, planes: Float32Array): void {
-  if (bucket.cull === null || !cullPrefix(planes, bucket.count, bucket.cull)) return;
-  const kept = bucket.cull.kept;
-  for (const mesh of bucket.meshes) {
+function uploadCut({ meshes, bucket: { list } }: Bucket): void {
+  const kept = list.cull?.kept ?? 0;
+  for (const mesh of meshes) {
     mesh.thinInstanceCount = kept;
     if (kept > 0) {
       mesh.thinInstancePartialBufferUpdate("matrix", kept, 0);
       mesh.thinInstancePartialBufferUpdate("fadeBands", kept, 0);
-      if (bucket.tints) mesh.thinInstancePartialBufferUpdate("foliage", kept, 0);
+      if (list.streams.foliage) mesh.thinInstancePartialBufferUpdate("foliage", kept, 0);
     }
     mesh.setEnabled(kept > 0);
   }
 }
-
-
-/** Floats kept per instance: the matrix (16), then the tint (4), which only
- * the classes that wear the foliage plugin write and read. */
-const KEPT_STRIDE = 20;
-const KEPT_FOLIAGE = 16;
 
 /**
  * The clutter's Babylon shell. Production loads the nineteen shipped GLBs
@@ -521,55 +372,27 @@ export function createClutterMeshes(
   const radiusScale = options.radiusScale ?? 1;
   const nearBlades = options.nearBlades ?? false;
   const culling = options.cull ?? false;
-  /**
-   * An instance's matrix, and its tint for a class that wears the foliage
-   * plugin, computed the first time it is listed. Both are functions of the
-   * instance and the seed alone: the trample frame is the trail's, the tint
-   * the ground under it. The band an instance is listed in picks its bucket
-   * and its fade bands, both written per bucket at the fill, never its matrix
-   * or tint: a seam instance listed in both bands draws the same values in
-   * each. Nothing here depends on the eye, the tier's radius, the time or the
-   * wind.
-   */
-  function computeInstance(inst: ClutterInstance, out: Float32Array, offset: number): void {
-    const frame = trampleFrame(seed, inst);
-    instanceMatrixFor(inst, frame, scratchMatBuf);
-    out.set(scratchMatBuf, offset);
-    if (FOLIAGE_BY_CLASS.has(inst.cls)) writeFoliage(seed, inst, out, offset + KEPT_FOLIAGE, frame);
-  }
-  const kept = createKeptValues<ClutterInstance>(KEPT_STRIDE, computeInstance);
-  // Memoizing collector, not the pure `collectClutter`: a rebuild happens on
-  // every 3 m grass-cell crossing, and re-sampling all eight discs from cold
-  // each time would pay fresh density and terrain samples for thousands of
-  // cells that have not moved (see clutterField.ts). An instance it lets go
-  // takes its kept values with it.
-  const collector = createClutterCollector(seed, (inst) => kept.release(inst));
-
   const casterMeshes: Mesh[] = [];
   const containers: AssetContainer[] = [];
   /** The materials of the classes built in code, which no container owns. */
   const builtMaterials: PBRMaterial[] = [];
-  /** `buckets[class][variant * cutsFor(class) + cut][lod]`, or null until the
-   * GLBs land — plain `[class][variant][lod]` for every class outside
-   * `CUT_CLASSES`, where `cutsFor` is 1 and the cut is always 0. */
-  let buckets: Bucket[][][] | null = null;
-  /** The buckets `cull` filters, flattened once at adoption. */
-  let culledBuckets: Bucket[] = [];
+  /** The lists the buckets draw (`clutterLists.ts`: the instances collected,
+   * their kept matrices and tints, the buffers and the cut), and the buckets
+   * in the lists' own order; null until the GLBs land. */
+  let lists: ClutterLists | null = null;
+  let buckets: Bucket[] | null = null;
+  /** A list's bucket: the meshes that draw it. */
+  const bucketOf = new Map<ClutterBucket, Bucket>();
   let disposed = false;
   /** Aborted first thing in `dispose`: a GLB in flight then ends at once and
    * quietly, and none starts after it (`modelLoad.ts`). */
   const loads = new AbortController();
-  /** Set by a rebuild: the collected sets changed, so the next `cull` cuts
-   * whatever the pose. */
-  let dirty = false;
-  /** What the drawn buffers hold: nothing cut yet, every card
-   * (`cull(null)`), or the cut at `lastPose`. */
-  let cutMode: "none" | "all" | "pose" = "none";
-  const lastPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 0, aspect: 0 };
   const restoreObserver = scene.getEngine().onContextRestoredObservable.add(() => {
-    for (const bucket of culledBuckets) rehandCulled(bucket);
-    dirty = true;
+    if (buckets === null || lists === null) return;
+    for (const bucket of buckets) rehandCulled(bucket);
+    lists.forgetCuts();
   });
+  const uploadChanged = (changed: ClutterBucket): void => uploadCut(bucketOf.get(changed) as Bucket);
 
   // Last camera seen. An `update` that arrives while the GLBs are still
   // loading is honoured the moment they land.
@@ -577,112 +400,14 @@ export function createClutterMeshes(
   let camZ = NaN;
 
   /**
-   * The bucket an instance belongs in. Indexing by the sim's own `variant`
-   * draw is the whole variant mechanism; for the cut classes each model also
-   * spreads across `cutsFor(inst.cls)` fractures, so the bucket dimension is
-   * `variant * cuts + cut` (matching how `adopt` below lays the cut buckets
-   * out) — for every other class `cuts` is 1 and `cutOf` is always 0, so this
-   * collapses back to plain `variant` indexing. The `?? variants[0]`
-   * fallback covers only a model table that has fallen behind the sim's
-   * per-class `variants` count, where crashing the frame would be the worse
-   * failure.
-   */
-  function bucketFor(variants: Bucket[][], inst: ClutterInstance, lod: number): Bucket {
-    const cuts = cutsFor(inst.cls);
-    const perLod = variants[inst.variant * cuts + cutOf(inst)] ?? (variants[0] as Bucket[]);
-    return perLod[lod] as Bucket;
-  }
-
-  /** One instance at a bucket's staging cursor: its kept matrix (and the
-   * origin a culled bucket tests), the bucket's fade bands, and its kept tint
-   * where the bucket wears the foliage plugin. */
-  function stageInstance(bucket: Bucket, inst: ClutterInstance): void {
-    const at = kept.offsetOf(inst);
-    const data = kept.data;
-    const { buf, origins, bands, foliage } = bucket.staged;
-    const i = bucket.stagedCount;
-    const m = i * 16;
-    for (let k = 0; k < 16; k++) buf[m + k] = data[at + k]!;
-    if (bucket.culled) {
-      // The matrix's translation, which is what the cut tests.
-      origins[i * 3] = buf[m + 12]!;
-      origins[i * 3 + 1] = buf[m + 13]!;
-      origins[i * 3 + 2] = buf[m + 14]!;
-    }
-    writeFadeBands(bands, i * 4, coverBands(bucket.fade, bucket.ramp, bucket.far, inst.hash));
-    if (bucket.tints) {
-      const f = i * 4;
-      for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
-    }
-    bucket.stagedCount++;
-  }
-
-  /**
-   * Rebuild, as slices (`syncJobs.ts`): the bands collected, then two passes
-   * over them, so every bucket knows its size before a single matrix is
-   * written and no buffer has to grow mid-fill. Pass 1 counts, pass 2 writes
-   * each bucket's staging buffers (`stagedCount` the cursor), copying each
-   * instance's kept matrix and tint and computing them only for an instance
-   * listed for the first time (`computeInstance`), and yields by the work
-   * done (`FILL_SLICE`). The last slice copies every bucket's staged
-   * instances into the buffers it draws and pushes them (a culled bucket's by
-   * `cull`), all in one step, so no frame draws a bucket half rebuilt.
+   * Rebuild, as slices (`syncJobs.ts`): the lists' own, whose last slice
+   * copies every bucket's staged instances into the buffers it draws, and in
+   * that same step pushes them to the meshes (a culled bucket's by `cull`),
+   * so no frame draws a bucket half rebuilt.
    */
   function* rebuild(x: number, z: number): Slices {
-    const all = buckets as Bucket[][][];
-    const bands = yield* collector.collectSlices(x, z, radiusScale);
-    yield;
-
-    for (const variants of all) {
-      for (const perLod of variants) {
-        for (const bucket of perLod) bucket.stagedCount = 0;
-      }
-    }
-    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
-      const variants = all[cls] as Bucket[][];
-      const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      for (const inst of band.near) bucketFor(variants, inst, NEAR_LOD).stagedCount++;
-      for (const inst of band.far) bucketFor(variants, inst, FAR_LOD).stagedCount++;
-      // A class's count is a pass over its lists, the meadow's thousands long.
-      yield;
-    }
-    for (const variants of all) {
-      for (const perLod of variants) {
-        for (const bucket of perLod) {
-          ensureStaging(bucket);
-          bucket.stagedCount = 0;
-        }
-      }
-    }
-    let work = 0;
-    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
-      const variants = all[cls] as Bucket[][];
-      const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      for (let lod = NEAR_LOD; lod <= FAR_LOD; lod++) {
-        for (const inst of lod === NEAR_LOD ? band.near : band.far) {
-          const known = kept.size;
-          stageInstance(bucketFor(variants, inst, lod), inst);
-          work += kept.size > known ? FILL_NEW_COST : 1;
-          if (work >= FILL_SLICE) {
-            work = 0;
-            yield;
-          }
-        }
-      }
-    }
-
-    for (const variants of all) {
-      for (const perLod of variants) {
-        for (const bucket of perLod) {
-          commitStaged(bucket);
-          applyBucket(bucket);
-        }
-      }
-    }
-    // The collected buffers were rewritten: the last cuts' indices no longer
-    // name the same cards.
-    for (const bucket of culledBuckets) if (bucket.cull !== null) cullInvalidate(bucket.cull);
-    dirty = true;
+    yield* (lists as ClutterLists).rebuild(x, z);
+    for (const bucket of buckets as Bucket[]) applyBucket(bucket);
     view.x = x;
     view.z = z;
     aimed = false;
@@ -696,19 +421,12 @@ export function createClutterMeshes(
   /** Whether the idle work is aimed at the next crossings from where the
    * last rebuild left the bands, on the present heading. */
   let aimed = false;
-  /** An instance looked up ahead: its matrix and tint computed too, so the
-   * fill at the crossing only copies them. */
-  const ahead = (inst: ClutterInstance): number => {
-    const known = kept.size;
-    kept.offsetOf(inst);
-    return kept.size > known ? KEPT_AHEAD_COST : 1;
-  };
   /** Sets the idle work (`syncJobs.ts`) to look up the cells the next
    * crossings add, while no rebuild is pending. */
   function aim(): void {
     if (aimed || jobs === undefined || jobs.pending(owner)) return;
     aimed = true;
-    jobs.idle(owner, collector.prefetchSlices(camX, camZ, heading.x, heading.z, radiusScale, ahead));
+    jobs.idle(owner, (lists as ClutterLists).prefetch(camX, camZ, heading.x, heading.z));
   }
 
   /**
@@ -728,7 +446,7 @@ export function createClutterMeshes(
    * land, is always at once.
    */
   function maybeBuild(first: boolean): void {
-    if (buckets === null || Number.isNaN(camX)) return;
+    if (buckets === null || lists === null || Number.isNaN(camX)) return;
     const originX = Math.floor(camX / CLUTTER_GRASS_CELL) * CLUTTER_GRASS_CELL;
     const originZ = Math.floor(camZ / CLUTTER_GRASS_CELL) * CLUTTER_GRASS_CELL;
     const kind = crossingAt(
@@ -938,20 +656,21 @@ export function createClutterMeshes(
         }
       });
     });
-    buckets = loaded.map((variants, cls) =>
-      expandCutVariants(cls, nearLodVariants(cls, variants)).map((perLod) =>
-        perLod.map((meshes, lod) => {
+    const groups = loaded.map((variants, cls) => expandCutVariants(cls, nearLodVariants(cls, variants)));
+    lists = createClutterLists(seed, { radiusScale, nearBlades, cull: culling, rows: groups.map((rows) => rows.length) });
+    const made: Bucket[] = [];
+    groups.forEach((rows, cls) =>
+      rows.forEach((perLod, row) =>
+        perLod.forEach((meshes, lod) => {
           for (const mesh of meshes) prepBucketMesh(mesh);
           // Boulders are the only clutter that casts — see `casterMeshes`.
           // BOTH their LOD buckets do: a boulder crossing the near/far split
           // would otherwise drop its shadow mid-view.
           if (cls === CLUTTER_BOULDER) casterMeshes.push(...meshes);
-          // Every class dithers toward its disc edge, and across its near/far
-          // seam: the near LOD fades out over the seam, the
-          // far LOD in over the seam and out over the edge. Hoisted above the
-          // foliage block below, which also needs `edge`.
+          // The class's disc edge, where its far level's sway and sink end;
+          // the bands each bucket's instances fade across are the lists'
+          // (`clutterBucketFade`).
           const edge = clutterFadeEdges(cls, radiusScale);
-          const seam = clutterSeamEdges(cls, radiusScale);
           const profile = FOLIAGE_BY_CLASS.get(cls);
           if (profile !== undefined) {
             for (const mesh of meshes) {
@@ -978,22 +697,6 @@ export function createClutterMeshes(
               }
             }
           }
-          // The meadow's near cards stand under the blade field on the tiers
-          // that draw it, and dither in from the eye there so none stands as
-          // a flat plane at the feet. They do so on those tiers whether or not
-          // blades grow at a given spot, so where the grass gate sits under
-          // the field's floor the meadow cards thin inside 2.5 m and are gone
-          // inside 1 m with nothing in their place. Every other near bucket
-          // draws all the way in, as does the meadow's on the low tier, which
-          // has no blades. The grass class's near cards in particular are
-          // never cut: the blades only grow where the grass gate clears the
-          // field's floor, so an in-band there would take away the last
-          // cover standing. For the grass class the field may only ever ADD
-          // to the near field.
-          const nearIn = nearBlades && cls === CLUTTER_MEADOW ? CLUTTER_MEADOW_NEAR_IN : null;
-          const fade: FadeBands = lod === NEAR_LOD
-            ? fadeBands(nearIn, [seam.start, seam.end])
-            : fadeBands([seam.start, seam.end], [edge.start, edge.end]);
           // The far band's widening by eye distance, on the class's material
           // (the two levels share it; the near level ends inside the band).
           const widen = coverWiden(cls, radiusScale);
@@ -1004,30 +707,13 @@ export function createClutterMeshes(
               attachWet(mesh.material, WET_CAP_BY_CLASS.get(cls)!);
             }
           }
-          return {
-            meshes,
-            buf: EMPTY_BUFFER,
-            bands: EMPTY_BUFFER,
-            foliage: EMPTY_BUFFER,
-            count: 0,
-            grown: false,
-            fade,
-            ramp: lod === FAR_LOD && COVER_RAMP_CLASSES.has(cls),
-            far: lod === FAR_LOD ? coverFarBand(cls, radiusScale) : null,
-            tints: profile !== undefined,
-            culled: culling && CLUTTER_CULLED.has(cls),
-            drawn: { buf: EMPTY_BUFFER, bands: EMPTY_BUFFER, foliage: EMPTY_BUFFER },
-            origins: EMPTY_BUFFER,
-            cull: culling && CLUTTER_CULLED.has(cls)
-              ? cullSet(0, EMPTY_BUFFER, { src: EMPTY_BUFFER, dst: EMPTY_BUFFER }, [], [])
-              : null,
-            staged: { buf: EMPTY_BUFFER, bands: EMPTY_BUFFER, foliage: EMPTY_BUFFER, origins: EMPTY_BUFFER },
-            stagedCount: 0,
-          };
+          const bucket: Bucket = { meshes, bucket: ((lists as ClutterLists).buckets[cls] as ClutterBucket[][])[row]![lod] as ClutterBucket };
+          bucketOf.set(bucket.bucket, bucket);
+          made.push(bucket);
         }),
       ),
     );
-    culledBuckets = buckets.flat(2).filter((bucket) => bucket.culled);
+    buckets = made;
     maybeBuild(true);
   }
 
@@ -1084,23 +770,12 @@ export function createClutterMeshes(
       maybeBuild(false);
     },
     cull(pose) {
-      if (disposed || culledBuckets.length === 0) return;
-      if (!dirty && (pose === null ? cutMode === "all" : cutMode === "pose" && !needsCull(lastPose, pose))) return;
-      let planes = KEEP_ALL;
-      if (pose === null) {
-        cutMode = "all";
-      } else {
-        cullPlanes(pose, cullScratchPlanes);
-        planes = cullScratchPlanes;
-        Object.assign(lastPose, pose);
-        cutMode = "pose";
-      }
-      dirty = false;
-      for (const bucket of culledBuckets) cutBucket(bucket, planes);
+      if (disposed || lists === null) return;
+      lists.cut(pose, uploadChanged);
     },
     casterMeshes,
     get kept() {
-      return kept.size;
+      return lists?.kept ?? 0;
     },
     view,
     dispose() {
@@ -1113,12 +788,8 @@ export function createClutterMeshes(
       loads.abort();
       scene.getEngine().onContextRestoredObservable.remove(restoreObserver);
       if (buckets !== null) {
-        for (const variants of buckets) {
-          for (const perLod of variants) {
-            for (const bucket of perLod) {
-              for (const mesh of bucket.meshes) mesh.dispose();
-            }
-          }
+        for (const bucket of buckets) {
+          for (const mesh of bucket.meshes) mesh.dispose();
         }
       }
       // Containers own whatever the buckets did not adopt (materials, LOD2
@@ -1128,7 +799,8 @@ export function createClutterMeshes(
       for (const mat of builtMaterials) mat.dispose();
       casterMeshes.length = 0;
       buckets = null;
-      culledBuckets = [];
+      lists = null;
+      bucketOf.clear();
     },
   };
 }
