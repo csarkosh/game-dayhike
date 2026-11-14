@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import vertexDefs from "../../src/game/shaders/foliage.vertex.fx?raw";
 import vertexWorldPos from "../../src/game/shaders/foliageWorldPos.vertex.fx?raw";
@@ -14,6 +15,7 @@ import {
   FOLIAGE_TILT, FOLIAGE_BEND, FOLIAGE_BEND_R, FOLIAGE_SINK, FOLIAGE_CLUMP_LUMA, FOLIAGE_CLUMP_CELL,
   FOLIAGE_PLAYER_PARKED, FOLIAGE_BLADE_SOFT, FOLIAGE_CANOPY_SKY, FOLIAGE_CANOPY_SUN, foliageMatched,
 } from "../../src/game/foliagePlugin.js";
+import { emptyFoliageUniforms, foliageUniforms } from "../../src/game/foliageUniforms.js";
 import {
   WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_OMEGA_FLUTTER, WIND_K1, WIND_K2, WIND_RAGGED, WIND_RAGGED_CELL,
   windRecordUnder,
@@ -30,6 +32,32 @@ afterAll(() => { scene.dispose(); engine.dispose(); });
 function glslFloat(n: number): string { return Number.isInteger(n) ? `${n}.0` : `${n}`; }
 
 describe("foliage plugin", () => {
+  it("declares the uniforms foliageUniforms makes, by name and size, and binds each as the record has it", () => {
+    const mat = new PBRMaterial("foliage_bound", scene);
+    attachFoliage(mat, FOLIAGE_PROFILES.TREE, 11, { contrast: 0.6 });
+    setFoliageEdges(mat, [61, 70]);
+    const plugin = mat.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    const made = foliageUniforms(plugin.look, null, emptyFoliageUniforms());
+    const sizes = Object.entries(made).map(([name, v]) => [name, name === "windPlayers" ? 3 : v.length]);
+    expect(plugin.getUniforms().ubo.map((u) => [u.name, u.size])).toEqual(sizes);
+    const writes: Record<string, number[]> = {};
+    let players: Float32Array | null = null;
+    const ubo = {
+      updateFloat: (n: string, x: number) => { writes[n] = [x]; },
+      updateFloat2: (n: string, x: number, y: number) => { writes[n] = [x, y]; },
+      updateFloat3: (n: string, x: number, y: number, z: number) => { writes[n] = [x, y, z]; },
+      updateFloat4: (n: string, x: number, y: number, z: number, w: number) => { writes[n] = [x, y, z, w]; },
+      updateFloatArray: (_n: string, a: Float32Array) => { players = a; },
+    } as unknown as UniformBuffer;
+    plugin.bindForSubMesh(ubo, scene, engine, null as never);
+    const { windPlayers, ...rest } = foliageUniforms(plugin.look, scene.activeCamera?.globalPosition, emptyFoliageUniforms());
+    expect(writes).toEqual(rest);
+    expect(writes.foliageEdges).toEqual([61, 70]);
+    expect(writes.foliageContrast).toEqual([0.6]);
+    // The players are the page's one array, handed over as it is.
+    expect(players).toBe(windPlayers);
+  });
+
   it("FOLIAGE_PROFILES matches the spec's table exactly", () => {
     expect(FOLIAGE_PROFILES).toEqual({
       GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.6, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
