@@ -5,7 +5,8 @@
  * and the ground cloud marched through it, the rain with its drips, its
  * splashes and the cover it falls under, and in that world the other
  * hikers' bodies, the Hollows' eyes, the dropped cap, the animals and the
- * lakes' water with the reeds and the lilies that grow in it, lit by
+ * lakes' water with the reeds and the lilies that grow in it and the
+ * insects over it, lit by
  * the sun, the sky's fill and the sky's capture as the image-based light for
  * the hour and the weather, by the local player's headlamp and by the lamps
  * the other hikers wear, seen from the player's eye or the free camera. It
@@ -28,7 +29,8 @@
  * cover map of `rainMap.ts`), the hikers' bodies and the Hollows' eyes
  * (`entityMeshes.ts`), the lamps the other hikers wear (`wornLamps.ts`), the
  * dropped cap (`capMesh.ts`), the animals (`wildlifeMeshes.ts`), the
- * lakes' water (`lakeMeshes.ts`) and their plants (`waterPlantMeshes.ts`).
+ * lakes' water (`lakeMeshes.ts`), their plants (`waterPlantMeshes.ts`) and
+ * their life (`waterLifeMeshes.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -130,9 +132,16 @@
  * frame that draws the map where the view does not hold it. A murky lake's
  * reeds, cattails and lilies are five instanced draws, placed once, each
  * shown while the view holds a cell of its plants (`waterPlantMeshes.ts`). The
- * shore a lake reflects beyond that shade (the panorama, the mirror), the
- * tier that reads through the surface and the lakes' insects are not drawn
- * yet.
+ * shore a lake reflects beyond that shade (the panorama, the mirror) and the
+ * tier that reads through the surface are not drawn yet.
+ *
+ * **A lake's life is the game's, stepped for the lakes within the camera's
+ * reach** (`waterLifeMeshes.ts`, over `waterLifeScene.ts`): the midges one
+ * draw for every swarm, its frame one buffer written while the view holds
+ * a swarm in sight; the dragonflies a draw a kind with a unit in view,
+ * their matrices sent when one moved; the frogs heard. Out of view neither
+ * draws nor writes. Last of the see-through draws. The life
+ * heard is the nearest lake's, and silent on a frame that stepped none.
  *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
@@ -148,7 +157,7 @@ import {
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type PbrMaterialProps,
   type PluginUniformBlock, type SceneContext, type SpotLight,
 } from "@babylonjs/lite";
-import { PLAYER_EYE_OFFSET } from "../../sim/constants.js";
+import { MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../../sim/constants.js";
 import type { Forest } from "../../sim/forest.js";
 import { FOG_DISTANCE } from "../../sim/forestConstants.js";
 import type { Level } from "../../sim/level.js";
@@ -168,6 +177,7 @@ import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
 import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type LampState } from "../lampParams.js";
 import { createCalmFade } from "../lakeCalmFrame.js";
+import { createLakeChoice } from "../lakeChoice.js";
 import { createLensCanopy } from "../lensCanopy.js";
 import { droppedCapAt } from "../droppedCap.js";
 import type { CullPose } from "../grassCull.js";
@@ -189,6 +199,8 @@ import { createViewBob } from "../viewBob.js";
 import { createWildlifeInputs } from "../wildlifeInputs.js";
 import { wingTime } from "../wingParams.js";
 import { WATER_ROWS, lakeWaterRow } from "../waterShading.js";
+import { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf } from "../waterLifeInputs.js";
+import type { WaterLifeFrame } from "../waterLifeScene.js";
 import { emptyWaterFrameUniforms } from "../waterSurface.js";
 import { WET_CAP, emptyWetUniforms, setWetWeather, wetLineFor, wetUniforms, type WetBody, type WetUniforms } from "../wetSurface.js";
 import { windRecordUnder, type WindRecord } from "../windParams.js";
@@ -216,6 +228,7 @@ import { createSkinClock, type SkinClock } from "./skinnedModels.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
 import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
+import { createLiteWaterLife, type LiteWaterLife } from "./waterLifeMeshes.js";
 import { createLiteWaterPlants, type LiteWaterPlants } from "./waterPlantMeshes.js";
 import { createLiteWildlifeMeshes, type LiteWildlifeMeshes } from "./wildlifeMeshes.js";
 import { emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainWetPlugin } from "./terrainPlugins.js";
@@ -299,6 +312,8 @@ type Standing = {
   lakes: LiteLakes | null;
   /** The lakes' reeds and lilies (`waterPlantMeshes.ts`); null in a world with no lake. */
   waterPlants: LiteWaterPlants | null;
+  /** Each lake's midges, dragonflies and frogs (`waterLifeMeshes.ts`), by its place in the list; none in a world without them. */
+  waterLives: LiteWaterLife[];
 };
 
 /**
@@ -459,6 +474,21 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** What the wildlife is handed each frame (`wildlifeInputs.ts`), and whether this world has any. */
   const wildlifeInputs = createWildlifeInputs();
   const hasWildlife = forest !== null && options.wildlife !== false;
+  /** Whether this world has the lakes' insects and frogs: a forest world with a lake, the animals not turned off. */
+  const hasWaterLife = hasWildlife && lakes.length > 0;
+  /** The lake whose life is heard, and each lake's life's reach (`lakeChoice.ts`). */
+  const lakeChoice = createLakeChoice(lakes);
+  /** The players by the slots they keep, which a head swarm and a speed are kept by. */
+  const playerSlots = createPlayerSlots(MAX_PLAYERS);
+  /** What a frame hands the lakes' life, filled in place. */
+  const waterLifeFrame: WaterLifeFrame = {
+    camX: 0, camY: 0, camZ: 0, tick: 0, dt: 0, time: 0, players: [], weather: light.weather, hour: light.hour, wind: windRecordUnder(light.weather, 0),
+    sky: null, skyLuma: 0, pixelAt1m: 0, hollowDistance: Infinity,
+  };
+  /** Whether this frame's `sync` stepped the lakes' life: the sound of a frame that did not is silence. */
+  let waterLifeStepped = false;
+  /** The life heard: the lake nearest the camera's (`lakeChoice.ts`). */
+  let heardLife: LiteWaterLife | null = null;
   /** Where the hikers and the Hollows stand a frame, and how (`entityPoses.ts`). */
   const poses = createEntityPoses();
   /** The most hikers other than the local one the state has held at once: a lamp's light is made for each. */
@@ -478,6 +508,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    for (const life of made.waterLives) life.dispose();
     made.waterPlants?.dispose();
     made.lakes?.dispose();
     made.wildlife?.dispose();
@@ -712,6 +743,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // The lakes' water, each lake one surface, where the world has any.
     let lakeMeshes: LiteLakes | null = null;
     let waterPlants: LiteWaterPlants | null = null;
+    const waterLives: LiteWaterLife[] = [];
     if (forest !== null && cloudMap !== null && waterLevel !== undefined && lakes.length > 0 && !disposed) {
       const start = { x: options.start?.x ?? level.playerSpawns[0]?.x ?? 0, z: options.start?.z ?? level.playerSpawns[0]?.z ?? 0 };
       /** What the world's worker sampled for each lake, where it is that lake's. */
@@ -727,10 +759,19 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap, shared), ahead: depthAheadPlugin, shared,
         placements: pieces.map((piece) => piece?.plants ?? null), uploads,
       });
+      // The midges, the dragonflies and the frogs of every lake, each placed once and stepped only while the camera is
+      // within its lake's reach.
+      if (hasWaterLife) {
+        lakes.forEach((lake, i) => {
+          waterLives.push(createLiteWaterLife(engine, scene, forest.seed, lake, tier, {
+            air: () => atmospherePlugin(airValues, cloudMap, shared), shared, planes: () => planes, made: pieces[i]?.life, uploads,
+          }));
+        });
+      }
     }
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, splash, skinClock, entities, wornLamps, cap, wildlife, lakes: lakeMeshes, waterPlants,
+      rain, rainMap, splash, skinClock, entities, wornLamps, cap, wildlife, lakes: lakeMeshes, waterPlants, waterLives,
     };
     if (disposed) {
       release(made);
@@ -954,6 +995,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     wildlifeDirectorLog() {
       return standing?.wildlife?.directorLog() ?? [];
     },
+    hasWaterLife,
+    waterLifeSound() {
+      return heardLife !== null && waterLifeStepped ? heardLife.sound() : SILENT_WATER_LIFE;
+    },
     whenReady(maxMs) {
       return new Promise<void>((resolve) => {
         const bound = setTimeout(resolve, Math.max(0, maxMs));
@@ -1051,6 +1096,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       drawnWith.seconds = seconds;
       // The canopy over the lens, for whoever hears the drips by it: the forest's own, whatever is drawn.
       if (centre !== null) canopyRead?.over(pose.x, pose.z);
+      waterLifeStepped = false;
       if (standing !== null) {
         // The terrain first, then the shells in the order the game's are handed the view: a frame's jobs go oldest
         // first, and those begun in one frame in this order.
@@ -1166,6 +1212,32 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           if (local !== undefined) wildlifeInputs.look(state, local.pos.x, local.pos.y + PLAYER_EYE_OFFSET, local.pos.z, local.yaw, local.pitch, fov, aspect, light.hour, weather.mist);
           else wildlifeInputs.look(state, pose.x, pose.y, pose.z, pose.yaw, pose.pitch, fov, aspect, light.hour, weather.mist);
           standing.wildlife.update(centre.x, centre.z, state.tick, wildlifeInputs.players(state), weather, light.hour, wildlifeInputs.director, dt);
+        }
+        // The lakes' life, round the camera the frame is drawn from: stepped for a lake within reach, rested otherwise;
+        // the life heard is the nearest lake's.
+        if (standing.waterLives.length > 0 && centre !== null) {
+          const f = waterLifeFrame;
+          f.camX = pose.x;
+          f.camY = pose.y;
+          f.camZ = pose.z;
+          f.tick = state.tick;
+          f.dt = frame.dt;
+          f.time = sharedNow;
+          f.players = playerSlots.fill(state.players);
+          f.weather = weather;
+          f.hour = light.hour;
+          f.wind = wind;
+          f.sky = sky;
+          f.skyLuma = skyLumaOf(sky);
+          f.pixelAt1m = pixelAtOneMetre(fov, canvas.height);
+          f.hollowDistance = wildlifeInputs.director.match.hollowDistance;
+          const served = lakeChoice.choose(f.camX, f.camZ);
+          standing.waterLives.forEach((life, i) => {
+            if (lakeChoice.live[i] === 1) life.update(f, light.exposure, DISPLAY_CONTRAST);
+            else life.rest();
+          });
+          heardLife = served === null ? null : (standing.waterLives[served.index] ?? null);
+          waterLifeStepped = true;
         }
         // The ground cloud: the ground round the eye, built again at once as the eye leaves the last map's middle, as
         // the game builds it, and counted with what follows the camera; then its density for the frame, from the

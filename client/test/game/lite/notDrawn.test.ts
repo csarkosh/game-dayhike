@@ -13,22 +13,15 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lakes", "insects", "figure in the silhouette mask", "shadows", "rain on the lens", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of [ "sea", "lake", "figure in the silhouette mask", "shadows", "rain on the lens", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
       expect(all, word).toContain(word);
     }
   });
 
-  it("reads out nothing: no water to hear, no scene, no stare", () => {
+  it("reads out nothing: no sea to hear, no scene, no stare", () => {
     const { members } = notDrawnMembers();
     expect(members.hasSea).toBe(false);
     expect(members.surfSound()).toBe(SILENT_SURF_SOUND);
-    expect(members.hasWaterLife).toBe(false);
-    const life = members.waterLifeSound();
-    expect(life.hums_n).toBe(0);
-    expect(life.rustles).toEqual([]);
-    expect(life.frogCalls).toEqual([]);
-    expect(life.bed.level).toBe(0);
-    expect(members.waterLifeSound()).toBe(life);
     expect(members.endScene()).toBeNull();
     expect(members.stare()).toBe(STARE_LENS_REST);
     expect(members.gpuTime).toBeNull();
@@ -73,11 +66,12 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(rain[0]?.what).toContain("the post chain");
   });
 
-  it("leaves the lakes' water, its calm and its plants to the renderer: what is left of a lake is its reflections and the tier that reads through it", () => {
+  it("leaves the lakes' water, its calm, its plants and its life to the renderer: what is left of a lake is its reflections and the tier that reads through it", () => {
     const { members } = notDrawnMembers();
-    expect("setWeatherName" in members).toBe(false);
+    for (const name of ["setWeatherName", "hasWaterLife", "waterLifeSound"]) expect(name in members, name).toBe(false);
     const lakes = NOT_DRAWN.filter((part) => /lake/.test(part.what));
-    expect(lakes.map((part) => part.members)).toEqual([[], ["hasWaterLife", "waterLifeSound"]]);
+    expect(lakes.map((part) => part.members)).toEqual([[]]);
+    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/insects|frogs|midges|dragonfl/);
     expect(lakes[0]?.what).not.toMatch(/plants|reeds|lil/);
     expect(lakes[0]?.what).toMatch(/panorama/);
     expect(lakes[0]?.what).toMatch(/mirror/);
