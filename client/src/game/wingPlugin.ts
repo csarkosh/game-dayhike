@@ -46,9 +46,9 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
+import { wingHalfSpan, wingTime } from "./wingParams.js";
 
-/** Wrap period (s). Every ω handed to `attachWing` is 2π·n / WING_TIME_WRAP. */
-export const WING_TIME_WRAP = 300;
+export { WING_TIME_WRAP, wingAngle } from "./wingParams.js";
 
 const WING_DEFS = `
 #ifdef WING
@@ -72,10 +72,6 @@ positionUpdated.x = wingSide * (wingAbsX * wingC - wingY0 * wingS);
 #endif
 `;
 
-/** TS mirror of the shader's angle, for tests: amp·sin(ω·t + phase). */
-export function wingAngle(t: number, phase: number, amp: number, omega: number): number {
-  return amp * Math.sin((t % WING_TIME_WRAP) * omega + phase);
-}
 
 export class WingPlugin extends MaterialPluginBase {
   private readonly _halfSpan: number;
@@ -100,7 +96,7 @@ export class WingPlugin extends MaterialPluginBase {
     // A zero or negative half span would divide by zero in the shader and take
     // every vertex of the bird to NaN; a degenerate bucket mesh simply holds
     // its wings still instead.
-    this._halfSpan = halfSpan > 0 ? halfSpan : 1;
+    this._halfSpan = wingHalfSpan(halfSpan);
     this._omega = omega;
     this._enable(true);
   }
@@ -155,7 +151,7 @@ uniform float wingHalfSpan;
   // unsuppressed.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override bindForSubMesh(uniformBuffer: UniformBuffer, _scene: Scene, _engine: AbstractEngine, _subMesh: SubMesh): void {
-    uniformBuffer.updateFloat("wingTime", (this._now() / 1000) % WING_TIME_WRAP);
+    uniformBuffer.updateFloat("wingTime", wingTime(this._now()));
     uniformBuffer.updateFloat("wingOmega", this._omega);
     uniformBuffer.updateFloat("wingHalfSpan", this._halfSpan);
   }
@@ -183,7 +179,7 @@ uniform float wingHalfSpan;
 export function attachWing(material: Material, halfSpan: number, omega: number, now?: () => number): void {
   const existing = material.pluginManager?.getPlugin("Wing") as WingPlugin | undefined;
   if (existing) {
-    if (existing.halfSpan !== (halfSpan > 0 ? halfSpan : 1) || existing.omega !== omega) {
+    if (existing.halfSpan !== wingHalfSpan(halfSpan) || existing.omega !== omega) {
       throw new Error(
         `attachWing: material "${material.name}" already beats at halfSpan ` +
           `${existing.halfSpan}/ω ${existing.omega}; a second bucket asked for ` +
