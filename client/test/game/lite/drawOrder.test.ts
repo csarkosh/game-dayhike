@@ -46,6 +46,12 @@ describe("the places of the hike's meshes among the opaque draws on Babylon Lite
 });
 
 describe("the places of the hike's see-through draws on Babylon Lite", () => {
+  it("draws the motes before the mist banks, as Babylon.js draws a group's particles before its blended meshes", () => {
+    const places = Object.values(SEE_THROUGH_ORDER);
+    expect(new Set(places).size).toBe(places.length);
+    expect(SEE_THROUGH_ORDER.motes).toBeLessThan(SEE_THROUGH_ORDER.mist);
+  });
+
   it("names places of their own, apart from the opaque ones", () => {
     // Lite draws its blended meshes after every opaque one whatever their places; the names stay apart all the same.
     expect(Math.min(...Object.values(SEE_THROUGH_ORDER))).toBeGreaterThan(Math.max(...Object.values(DRAW_ORDER)));

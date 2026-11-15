@@ -7,7 +7,7 @@
  * with their bakes), the ground clutter (the cards, the plants and the
  * stones), the blade grass, the duff, the cliffs' rock walls where the
  * field lays any and the chunk props' boxes, under the atmosphere and the
- * sky's dome, with the valley mist banks standing in the air, lit by the sun, the sky's fill and the sky's capture as the
+ * sky's dome, with the valley mist banks and the motes in the air, lit by the sun, the sky's fill and the sky's capture as the
  * image-based light for the hour and the weather and by the local player's
  * headlamp, from the player's eye or the free camera. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
@@ -32,7 +32,7 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the animals", members: ["hasWildlife", "wildlifeEvents", "wildlifeDirectorLog"] },
   { what: "the players' bodies and the lamps they wear (the local player's lamp on the lens is lit), the Hollow and the dropped cap", members: ["setSkinShading"] },
   { what: "the sun's cast shadows", members: [] },
-  { what: "the motes, and the ground cloud that is the night's mist", members: ["setHaunt", "setMist", "setMistIn"] },
+  { what: "the ground cloud that is the night's mist", members: ["setHaunt", "setMist", "setMistIn"] },
   { what: "the rain, its splashes and its cover, and the lens's read of the canopy over it that keeps the rain off it", members: ["canopyWater", "canopyOver"] },
   { what: "the post chain: the grade and its palettes, the anti-aliasing, the far softening, the rain on the lens, the stare's shade, the chase's cast, depth of field", members: ["setPalette", "setChase", "setUnsettle", "setDepthOfField", "stare"] },
   { what: "the lakes' calm by the weather's name", members: ["setWeatherName"] },

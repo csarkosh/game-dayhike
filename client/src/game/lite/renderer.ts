@@ -1,7 +1,7 @@
 /**
  * The hike's renderer on Babylon Lite: the terrain, the forest's trees near
  * and far, the ground clutter, the blade grass, the duff and the cliffs under the
- * atmosphere and the sky's dome, the valley mist banks standing in the air, lit by the sun, the sky's fill and the sky's
+ * atmosphere and the sky's dome, the valley mist banks and the motes in the air, lit by the sun, the sky's fill and the sky's
  * capture as the image-based light for the hour and the weather and by the
  * local player's headlamp, seen from the player's eye or the free camera. It
  * answers the whole of `Renderer` (`renderer.ts`), and what it does not draw
@@ -18,7 +18,8 @@
  * clutter's (`clutterMeshes.ts`) and the cliffs' (`cliffMeshes.ts`), which
  * land as their models do, the grass's and the duff's
  * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them, the
- * chunk props' boxes (`propMeshes.ts`), and the mist banks (`mistMeshes.ts`).
+ * chunk props' boxes (`propMeshes.ts`), the mist banks (`mistMeshes.ts`) and
+ * the motes (`motes.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -58,15 +59,16 @@
  * (`skyProbeParams.ts`); at no other frame.
  *
  * **The see-through draws follow the opaque ones and the sky**, in the
- * places `drawOrder.ts` names for them. The mist banks are handed the
- * camera's place, the weather, the wind and the clock as the game's are,
+ * places `drawOrder.ts` names for them. The motes and the mist banks are
+ * handed the weather, the hour, the wind and the clock as the game's are,
  * once the sky has its first slices; what a frame writes for them is theirs
- * to decide (`mistMeshes.ts`: nothing where no bank has moved).
+ * to decide (`mistMeshes.ts`: nothing where no bank has moved; `motes.ts`:
+ * the clock while a mote is shown).
  *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
- * 1.1), under the weather's and the hour's exposure, and the dome's and the
- * mist banks' own stages the same. There is no post chain.
+ * 1.1), under the weather's and the hour's exposure, and the dome's, the
+ * mist banks' and the motes' own stages the same. There is no post chain.
  */
 import {
   NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
@@ -121,6 +123,7 @@ import { FRAME_BLOCK, FRAME_FIELDS, writeFrameBlock, type FrameValues } from "./
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
 import { createLiteMistMeshes, type LiteMistMeshes, type MistFrame } from "./mistMeshes.js";
+import { createLiteMotes, type LiteMotes, type MotesFrame } from "./motes.js";
 import { notDrawnMembers } from "./notDrawn.js";
 import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
@@ -184,6 +187,8 @@ type Standing = {
   props: PropMeshes | null;
   /** The valley mist banks (`mistMeshes.ts`). */
   mist: LiteMistMeshes | null;
+  /** The motes, on the tiers that draw them (`motes.ts`). */
+  motes: LiteMotes | null;
 };
 
 /**
@@ -302,6 +307,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** What a frame draws the mist banks with (`MistFrame`), and the sky's state their colour was last read for. */
   let mistFrame: MistFrame | null = null;
   let mistSky: SkyState | null = null;
+  /** What a frame draws the motes with beside the game's own arguments, and their colour, the gradient's near end. */
+  const motesFrame: MotesFrame = { seconds: 0, exposure: 0, contrast: DISPLAY_CONTRAST };
+  let motesColour = { r: 0, g: 0, b: 0 };
   /** The canvas's size the engine was last fitted to, CSS pixels. */
   let fittedWidth = -1;
   let fittedHeight = -1;
@@ -317,6 +325,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.motes?.dispose();
     made.mist?.dispose();
     made.props?.dispose();
     made.cliffs?.dispose();
@@ -392,6 +401,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     let props: PropMeshes | null = null;
     // The valley mist banks ride the same guard as the forest: a hand-authored level has no valley haze.
     const mist = forest === null ? null : createLiteMistMeshes(engine, scene, forest.seed, tier, uploads);
+    // The motes are the air's everywhere, on the tiers with the capacity for them.
+    const motes = createLiteMotes(engine, scene, tier, uploads);
     // The ground cloud's map, which every material's air reads.
     const cloudMap = forest === null ? null : cloudMapTexture(engine);
     if (forest !== null && cloudMap !== null) {
@@ -501,7 +512,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, firstBuilds: options.firstBuilds, uploads,
       });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props, mist };
+    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props, mist, motes };
     if (disposed) {
       release(made);
       return;
@@ -830,14 +841,19 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         // there is none of until the sky's first slices are in.
         const sky = light.sky;
         const air = light.air;
-        if (standing.mist !== null && centre !== null && sky !== null && air !== null) {
+        if (centre !== null && sky !== null && air !== null) {
           if (mistFrame === null || sky !== mistSky) {
             mistSky = sky;
             mistFrame = { eye: pose, yaw: 0, colour: fogGradientAt(sky, GRADIENT_MID_STEP), air, exposure: 0, contrast: DISPLAY_CONTRAST };
+            motesColour = fogGradientAt(sky, 0);
           }
           mistFrame.yaw = pose.yaw;
           mistFrame.exposure = light.exposure;
-          standing.mist.update(centre.x, centre.z, weather, wind, seconds, mistFrame);
+          standing.mist?.update(centre.x, centre.z, weather, wind, seconds, mistFrame);
+          // The motes, round the camera the frame is drawn from, in the gradient's near colour.
+          motesFrame.seconds = seconds;
+          motesFrame.exposure = light.exposure;
+          standing.motes?.update(weather, light.hour, motesColour, wind, motesFrame);
         }
         draw(standing, weather.wetness);
       }

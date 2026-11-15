@@ -38,10 +38,11 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * or a field round the eye, whose origin says nothing of where it is seen;
  * so each stands at the world's origin, all at one depth, and their places
  * alone order them, the same from every view. The order is the game's on
- * Babylon.js. The mist banks order themselves farthest first within their
- * one draw (`mistBanks.ts`).
+ * Babylon.js, which draws a rendering group's particles before its blended
+ * meshes: the motes, then the mist banks, which order themselves farthest
+ * first within their one draw (`mistBanks.ts`).
  */
-export const SEE_THROUGH_ORDER = { mist: 210 } as const;
+export const SEE_THROUGH_ORDER = { motes: 200, mist: 210 } as const;
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;
