@@ -543,6 +543,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "listenerPose.ts"),
       join(SRC, "game", "characterAssets.ts"),
       join(SRC, "game", "hollowLook.ts"),
+      join(SRC, "game", "entityPoses.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files

@@ -9,18 +9,24 @@ import type { Observer } from "@babylonjs/core/Misc/observable.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 
-import type { Vec3, WorldState } from "../sim/types.js";
-import { ENEMY_HALF, PLAYER_HALF, PLAYER_EYE_OFFSET, TELEPORT_M } from "../sim/constants.js";
-import { aimDirection } from "../sim/view.js";
+import type { WorldState } from "../sim/types.js";
+import { ENEMY_HALF, PLAYER_HALF } from "../sim/constants.js";
 import { HOLLOW_HEIGHT } from "../sim/hollow.js";
-import { createCharacterPool, variantForId, type CharacterInstance, type CharacterPool } from "./characterModel.js";
+import { createCharacterPool, type CharacterInstance, type CharacterPool } from "./characterModel.js";
+import { HOLLOW_MODEL, createEntityPoses, type EntityModels, type EntityPoses } from "./entityPoses.js";
 import { LAMP_ANGLE, LAMP_RANGE, createHeadlamp, setLamp } from "./headlamp.js";
 import { LAMP_DEFAULT, type LampState } from "./lampParams.js";
 import {
-  HOLLOW_ALBEDO, HOLLOW_EMISSIVE, HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_MATERIAL, HOLLOW_ROUGHNESS,
-  HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED,
+  HOLLOW_ALBEDO, HOLLOW_EMISSIVE, HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_MATERIAL, HOLLOW_ROUGHNESS, HOLLOW_SCALE,
 } from "./hollowLook.js";
-import { AiState, Phase } from "../sim/types.js";
+
+// Where the bodies stand and how, a frame, is worked out with no engine (`entityPoses.ts`): this file moves nodes.
+export {
+  CHARACTER_IDS, HOLLOW_MAX_MEASURED_SPEED, HOLLOW_MODEL, HOLLOW_SPEED_SMOOTHING, LUNGE_FADE_IN_S, RANGER_IDS, REACH_M, REACH_S,
+  SHADE_EYES_DULL, SHADE_EYES_FROM, SHADE_EYES_SHADE, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, SHADE_FAR_M, SHADE_FAR_SHARE, SHADE_NEAR_M,
+  SHADE_OPACITY_GAIN, SHADE_RESOLVE_M, SHADE_RESOLVE_S, SHADE_UNRESOLVE_S, SUMMIT_RISE_DELAY_S, WALK_RATIO_MAX, WALK_RATIO_MIN,
+  WALK_THRESHOLD, eyeLevelOf, opacityOf,
+} from "./entityPoses.js";
 
 /**
  * The local player's own body in its first frames (`warmLocal`): the metres
@@ -35,130 +41,20 @@ export const WARM_FRAMES_MIN = 30;
 export const WARM_MS = 8000;
 import type { ShadeEntry } from "./shadeSilhouette.js";
 
-/**
- * The rangers other hikers are drawn as, in a fixed order indexed by player
- * id, never by what loaded or by catalog order: every peer then sees the same
- * ranger for the same player, and a download that fails on one machine turns
- * that ranger into a capsule there rather than into a different ranger.
- */
-export const RANGER_IDS: readonly string[] = [
-  "ranger.nathan", "ranger.eric", "ranger.sophia", "ranger.carla", "ranger.claudia",
-];
-/** The Hollow's model. */
-export const HOLLOW_MODEL = "hollow.antlered";
-/** Every model this file draws, which is all `models.load` needs to fetch. */
-export const CHARACTER_IDS: readonly string[] = [...RANGER_IDS, HOLLOW_MODEL];
-
-/** Below this horizontal speed, m/s, a character stands; above it, it walks. */
-export const WALK_THRESHOLD = 0.3;
-/** The walk clip's playback rate never leaves this range, so a sprint or a lurch never shows a blur or a crawl. */
-export const WALK_RATIO_MIN = 0.5;
-export const WALK_RATIO_MAX = 2.5;
-/** Seconds over which the Hollow's measured speed settles, so one uneven frame does not flick its clip. */
-export const HOLLOW_SPEED_SMOOTHING = 0.25;
-/** The most, m/s, one frame's displacement may count for in the Hollow's pace. */
-export const HOLLOW_MAX_MEASURED_SPEED = 10;
-
-type View = { node: TransformNode; previous: Vector3; target: Vector3 };
-type ModelView = { instance: CharacterInstance; view: View };
 /** A Hollow's model, with the meshes that are its eyes (the glowing materials), which the shade mask lets onto the frame dulled. */
-type HollowView = ModelView & { pace: Pace; eyes: AbstractMesh[]; arms: { shoulder: TransformNode; elbow: TransformNode; wrist: TransformNode }[] };
-/** The Hollow's measured pace: where its feet were last frame, and a smoothed speed. */
-type Pace = { x: number; z: number; speed: number };
+type HollowView = { instance: CharacterInstance; eyes: AbstractMesh[]; arms: { shoulder: TransformNode; elbow: TransformNode; wrist: TransformNode }[] };
 
 /**
- * A view's first frame is drawn where the entity is, not on the way there.
- * `advance` below interpolates from the last position the entity held, and
- * `previous` only moves when `target` does, so a view whose two points
- * started at the origin stayed a fraction of the way from the origin to the
- * entity for as long as it stood still: a player who joined and did not walk
- * was drawn hundreds of metres away until their first step.
+ * The reaching arms are the model's shoulder, elbow and wrist joints
+ * (characterModel.ts `joint`), which the file names by number; `ARMS` names
+ * them for each side.
  */
-function placeView(node: TransformNode, x: number, y: number, z: number): View {
-  node.position.set(x, y, z);
-  return { node, previous: new Vector3(x, y, z), target: new Vector3(x, y, z) };
-}
-
-/** Walk or stand, and at what rate, for a character moving at `speed` m/s whose walk clip covers `clipSpeed` at rate 1. */
-function stride(instance: CharacterInstance, speed: number, clipSpeed: number): void {
-  if (speed > WALK_THRESHOLD) {
-    const ratio = speed / clipSpeed;
-    instance.setSpeed(ratio < WALK_RATIO_MIN ? WALK_RATIO_MIN : ratio > WALK_RATIO_MAX ? WALK_RATIO_MAX : ratio);
-    instance.play("walk");
-  } else {
-    instance.setSpeed(1);
-    instance.play("idle");
-  }
-}
-
-/**
- * Seconds a shade, or a Hollow stepping out, takes to come in from nothing,
- * and a lunge, which has metres to cover; and a shade or a lunge to go out.
- * Coming and going alike are the smoke's (shadeSmoke.ts): the figure stands
- * at its whole height throughout and comes up out of the mist, or goes back
- * into it, patch by patch (2026-10-20; before, it grew up out of the ground
- * over 2.4 s, a lunge over 1.2).
- */
-export const SHADE_FADE_IN_S = 2.4;
-export const LUNGE_FADE_IN_S = 1.2;
-export const SHADE_FADE_OUT_S = 2.6;
-/** The figure's opacity in the mask over how far in it is: whole by a third of the way, so the smoke, not a fade, is what brings it in. */
-export const SHADE_OPACITY_GAIN = 3;
-/** Seconds the Hollow stepping out at the crest, in the summit scene, waits before it comes in: the scene's first two shots and the reveal's first beat, the camera on its spot by then (cutscene.ts SUMMIT_RISE_AT_S). The chase's fork Hollows step out in the same state and never wait. */
-export const SUMMIT_RISE_DELAY_S = 8.8;
-/**
- * The eyes: the real one's, dulled to this share of their glow once it has
- * resolved; a shade's, fainter still. The share is the eye meshes' alpha over
- * an emissive of HOLLOW_EYE_INTENSITY (4), so a few hundredths is a solid
- * glow after the night's exposure and the halation; a shade's is near
- * nothing, a faint point.
- */
-export const SHADE_EYES_DULL = 0.55;
-export const SHADE_EYES_SHADE = 0.005;
-/** Metres from the local eye within which a lunge resolves from the mist into the Hollow, and the seconds that takes. */
-export const SHADE_RESOLVE_M = 24;
-export const SHADE_RESOLVE_S = 0.7;
-/** Seconds a gone lunge takes to be a shade again as it goes out. */
-export const SHADE_UNRESOLVE_S = 0.5;
-/** Metres within which a shade is whole in the mask, the metres at which it is SHADE_FAR_SHARE of itself, and that share. Whole to 20 m since the climb's shades stand 15 to 20 m off the trail (2026-10-20; 10 and 40 m before, when they stood from 7 m). */
-export const SHADE_NEAR_M = 20;
-export const SHADE_FAR_M = 50;
-export const SHADE_FAR_SHARE = 0.35;
-
-/** Writes `visibility` on every mesh under `node`: 1 is drawn as it is, under 1 is blended toward nothing. */
-/**
- * The reach: a lunge within REACH_M of the local eye, and the strike, hold
- * both arms out straight at the player's eyes, as if to take hold, the arms
- * turned from the idle's over REACH_S and back as fast. The arms are the
- * model's shoulder, elbow and wrist joints (characterModel.ts `joint`), which
- * the file names by number; `ARMS` names them for each side.
- */
-export const REACH_M = 6;
-export const REACH_S = 0.35;
 export const ARMS: readonly { shoulder: string; elbow: string; wrist: string }[] = [
   { shoulder: "hollow.antlered.node19", elbow: "hollow.antlered.node18", wrist: "hollow.antlered.node17" },
   { shoulder: "hollow.antlered.node38", elbow: "hollow.antlered.node37", wrist: "hollow.antlered.node36" },
 ];
 
-/** How far in a figure is when its eyes begin to come, and they are whole with it: the smoke brings the lower body first, so the eyes come last, with the head, and on the way out go first. */
-export const SHADE_EYES_FROM = 0.7;
-
-/**
- * The eyes' level on the frame: the real one's dulled glow, a shade's fainter, by the softness
- * between, and how far in the figure is, from SHADE_EYES_FROM. The level is the eye meshes' alpha,
- * and they glow at HOLLOW_EYE_INTENSITY, so the alpha is the level over that: never a glow that
- * saturates while the body is a veil, nor eyes in the mist before the head they are in.
- */
-export function eyeLevelOf(soft: number, presence: number): number {
-  const t = Math.max(0, Math.min(1, (presence - SHADE_EYES_FROM) / (1 - SHADE_EYES_FROM)));
-  return ((SHADE_EYES_SHADE * soft + SHADE_EYES_DULL * (1 - soft)) * t * t * (3 - 2 * t)) / HOLLOW_EYE_INTENSITY;
-}
-
-/** The figure's opacity in the mask for how far in it is, 0 to 1. */
-export function opacityOf(presence: number): number {
-  return Math.max(0, Math.min(1, presence * SHADE_OPACITY_GAIN));
-}
-
+/** Writes `visibility` on every mesh under `node`: 1 is drawn as it is, under 1 is blended toward nothing. */
 function setVisibility(node: TransformNode, level: number): void {
   const v = level < 0 ? 0 : level > 1 ? 1 : level;
   for (const m of node.getChildMeshes(false)) m.visibility = v;
@@ -167,15 +63,27 @@ function setVisibility(node: TransformNode, level: number): void {
 
 export class EntityViews {
   /** Capsules, drawn for a player or a Hollow whose model is not (yet) in the pool. */
-  private readonly players = new Map<number, View>();
-  private readonly enemies = new Map<number, View>();
-  private readonly playerModels = new Map<number, ModelView>();
+  private readonly players = new Map<number, Mesh>();
+  private readonly enemies = new Map<number, Mesh>();
+  /** The players whose model this file has placed, and the Hollows' models with their eyes and arms. */
+  private readonly playerModels = new Map<number, CharacterInstance>();
   private readonly enemyModels = new Map<number, HollowView>();
-  /** Each enemy's fade, 0 to 1 (`visibility`), and the state it was last seen in: a shade, a lunge or a Hollow stepping out comes in from nothing, and a shade or a lunge goes out to nothing after it is gone. */
+  /** Where every body stands and how, a frame (`entityPoses.ts`). */
+  private readonly poses: EntityPoses = createEntityPoses();
   /** Whether the local player's own body is drawn: a scene's camera stands elsewhere (renderer.ts). */
-  showLocal = false;
+  get showLocal(): boolean {
+    return this.poses.showLocal;
+  }
+  set showLocal(on: boolean) {
+    this.poses.showLocal = on;
+  }
   /** In the end scene, every other body within `radius` of this point (the car's door) is hidden: it is in the car. */
-  hideNear: { x: number; z: number; radius: number } | null = null;
+  get hideNear(): { x: number; z: number; radius: number } | null {
+    return this.poses.hideNear;
+  }
+  set hideNear(near: { x: number; z: number; radius: number } | null) {
+    this.poses.hideNear = near;
+  }
   /**
    * Where the local body's eyes are and the way they look, as this sync drew
    * it: null when it drew no local body. The body has no lamp of its own; a
@@ -184,18 +92,12 @@ export class EntityViews {
    */
   localEye: { x: number; y: number; z: number; dx: number; dy: number; dz: number } | null = null;
   private readonly eye = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1 };
-  private readonly fades = new Map<number, { level: number; ai: number; quick: boolean; delay: number }>();
-  /** Each enemy's reach, 0 to 1: how far its arms are turned out at the local player (REACH_S). */
-  private readonly reaches = new Map<number, number>();
   /** Where the reaching arms aim this frame: the local player's eyes, or null with no local player. */
   private reachAt: Vector3 | null = null;
   private readonly reachObserver: Observer<Scene> | null;
   private readonly warmObserver: Observer<Scene> | null;
-  /** Views of shades gone from the state, fading out: the model is held until the fade ends. */
-  private readonly fading = new Map<number, { entry: HollowView; level: number; soft: number; near: number }>();
-  /** Each shade's softness (shadeSilhouette.ts): 1 a blur in the mist, 0 the Hollow; a lunge resolves as it closes on the local eye. */
-  private readonly soft = new Map<number, number>();
-  private readonly near = new Map<number, number>();
+  /** Models of shades gone from the state, going out: held until the fade ends. */
+  private readonly fading = new Map<number, HollowView>();
   /** This frame's shades for the silhouette mask (shadeSilhouette.ts), which
    * sets their fade and softness and leaves their `visibility` and layer to
    * the mask on every path (the low tier's own fade by `visibility` went
@@ -204,6 +106,11 @@ export class EntityViews {
   private readonly lamps = new Map<number, SpotLight>();
   private readonly playerMaterial: PBRMaterial;
   private readonly hollowMaterial: PBRMaterial;
+  /** Which bodies are drawn as their models: a model the pool holds, made on the asking. */
+  private readonly modelled: EntityModels = {
+    player: (id, model) => this.models.acquire(id, model) !== null,
+    hollow: (id) => this.models.acquire(id, HOLLOW_MODEL) !== null,
+  };
 
   constructor(
     private readonly scene: Scene,
@@ -263,71 +170,68 @@ export class EntityViews {
     lampState: LampState = LAMP_DEFAULT,
     dt = 0,
   ): void {
-    const clamped = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
     this.localEye = null;
+    const frame = this.poses.step(state, localId, alpha, dt, this.modelled);
 
-    for (const [id, player] of state.players) {
+    for (const pose of frame.players) {
+      const id = pose.id;
       // The local player is the camera; drawing their own body would fill
       // the screen from the inside. In a scene (showLocal) the camera is
       // elsewhere and the body stands in the shot.
-      if (id === localId && !this.showLocal) {
+      if (pose.hidden === "lens") {
         // Its first frames: drawn out of sight, so the summit scene's first shot asks for nothing.
-        if (this.warmLocal(id, player.pos.x, player.pos.y - PLAYER_HALF.y, player.pos.z)) continue;
-        this.players.get(id)?.node.setEnabled(false);
-        this.playerModels.get(id)?.view.node.setEnabled(false);
+        if (this.warmLocal(id, pose.model, pose.x, pose.y, pose.z)) continue;
+        this.players.get(id)?.setEnabled(false);
+        this.playerModels.get(id)?.root.setEnabled(false);
         continue;
       }
-      const near = this.hideNear;
-      if (near !== null && id !== localId && Math.hypot(player.pos.x - near.x, player.pos.z - near.z) <= near.radius) {
-        this.players.get(id)?.node.setEnabled(false);
-        this.playerModels.get(id)?.view.node.setEnabled(false);
+      if (pose.hidden === "car") {
+        this.players.get(id)?.setEnabled(false);
+        this.playerModels.get(id)?.root.setEnabled(false);
         const lamp = this.lamps.get(id);
         if (lamp !== undefined) setLamp(lamp, false);
         continue;
       }
 
-      // The model's origin is at its feet (ARCHITECTURE.md, Model
-      // conventions), the sim's position at the centre of the hull.
-      const feet = player.pos.y - PLAYER_HALF.y;
       let node: TransformNode;
-      let feetY: number;
-      const instance = this.models.acquire(id, variantForId(RANGER_IDS, id) as string);
-      if (instance !== null) {
-        const entry = this.ensureModel(this.playerModels, id, instance, player.pos.x, feet, player.pos.z);
+      if (pose.modelled) {
+        const instance = this.models.acquire(id, pose.model) as CharacterInstance;
+        this.playerModels.set(id, instance);
         // Hide the fallback capsule if one was made before the model loaded.
-        this.players.get(id)?.node.setEnabled(false);
-        entry.view.node.setEnabled(true);
-        this.advance(entry.view, player.pos.x, feet, player.pos.z, clamped);
-        // Sprint reuses the walk clip, played faster; `vel` is on the wire,
-        // so every peer sees the same stride.
-        stride(instance, Math.sqrt(player.vel.x * player.vel.x + player.vel.z * player.vel.z), RANGER_WALK_CLIP_SPEED);
-        node = entry.view.node;
-        feetY = node.position.y;
+        this.players.get(id)?.setEnabled(false);
+        node = instance.root;
+        node.setEnabled(true);
+        if (pose.clip === "walk") {
+          instance.setSpeed(pose.rate);
+          instance.play("walk");
+        } else {
+          instance.setSpeed(1);
+          instance.play("idle");
+        }
       } else {
-        const view = this.ensure(this.players, id, player.pos, () =>
-          this.makeCapsule(`player_${id}`, this.playerMaterial),
-        );
-        view.node.setEnabled(true);
-        this.advance(view, player.pos.x, player.pos.y, player.pos.z, clamped);
-        node = view.node;
-        feetY = node.position.y - PLAYER_HALF.y;
+        let capsule = this.players.get(id);
+        if (capsule === undefined) {
+          capsule = this.makeCapsule(`player_${id}`, this.playerMaterial);
+          this.players.set(id, capsule);
+        }
+        capsule.setEnabled(true);
+        node = capsule;
       }
-      node.rotation.y = player.yaw;
+      node.position.set(pose.x, pose.y, pose.z);
+      node.rotation.y = pose.yaw;
 
-      const eyeY = feetY + PLAYER_HALF.y + PLAYER_EYE_OFFSET;
-      const d = aimDirection(player.yaw, player.pitch);
       // The local body wears the lens's lamp, which the renderer moves here: a lamp of its own was a
       // fourth light on every lit material (to 2026-11-09), so each needed its shader and its
       // pipeline again in the summit scene's first frame: the page held 18 of the scene's 21 seconds
       // for them on WebGPU, and drew five frames of it on WebGL2 (the rig's measure).
-      if (id === localId) {
+      if (pose.local) {
         const eye = this.eye;
-        eye.x = node.position.x;
-        eye.y = eyeY;
-        eye.z = node.position.z;
-        eye.dx = d.x;
-        eye.dy = d.y;
-        eye.dz = d.z;
+        eye.x = pose.eyeX;
+        eye.y = pose.eyeY;
+        eye.z = pose.eyeZ;
+        eye.dx = pose.aimX;
+        eye.dy = pose.aimY;
+        eye.dz = pose.aimZ;
         this.localEye = eye;
         continue;
       }
@@ -339,14 +243,20 @@ export class EntityViews {
         lamp = createHeadlamp(this.scene, `lamp_player_${id}`);
         this.lamps.set(id, lamp);
       }
-      lamp.position.set(node.position.x, eyeY, node.position.z);
-      lamp.direction.set(d.x, d.y, d.z);
+      lamp.position.set(pose.eyeX, pose.eyeY, pose.eyeZ);
+      lamp.direction.set(pose.aimX, pose.aimY, pose.aimZ);
       if (lamp.angle !== LAMP_ANGLE) lamp.angle = LAMP_ANGLE;
       if (lamp.range !== LAMP_RANGE) lamp.range = LAMP_RANGE;
-      setLamp(lamp, player.lamp.on, lampState);
+      setLamp(lamp, pose.lampOn, lampState);
     }
-    this.pruneModels(this.playerModels, state.players);
-    this.prune(this.players, state.players);
+    for (const id of frame.playersGone) {
+      this.models.release(id);
+      this.playerModels.delete(id);
+    }
+    for (const id of frame.capsulesGone) {
+      this.players.get(id)?.dispose();
+      this.players.delete(id);
+    }
     for (const [id, lamp] of this.lamps) {
       if (!state.players.has(id)) {
         lamp.dispose();
@@ -354,142 +264,66 @@ export class EntityViews {
       }
     }
 
-    // Every enemy the game spawns is a Hollow, so every enemy is drawn as one:
-    // there is no other shape to give an entity that can still collide. A
-    // shade, a lunge or a Hollow stepping out comes in from nothing over
-    // SHADE_FADE_IN_S (the shadow's look, haunt.ts); the rest stand at once.
     this.shadeList.length = 0;
-    {
-      const me = state.players.get(localId);
-      this.reachAt = me === undefined ? null : new Vector3(me.pos.x, me.pos.y - PLAYER_HALF.y + PLAYER_HALF.y + PLAYER_EYE_OFFSET, me.pos.z);
-    }
-    for (const [id, enemy] of state.enemies) {
-      const feet = enemy.pos.y - ENEMY_HALF.y;
-      let fade = this.fades.get(id);
-      if (fade === undefined) {
-        // A shade, a lunge and the Hollow stepping out come up out of the mist; a lunge quick; the rest stand at once.
-        const comesIn = enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike || enemy.ai === AiState.Emerge;
-        const quick = enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike;
-        // The Hollow stepping out at the crest, in the summit scene, waits SUMMIT_RISE_DELAY_S before it
-        // comes in: the scene's arrival and find come first. A fork's Hollow steps out in the same state in
-        // the chase, and comes in at once: held, it would reach its player before it had drawn.
-        fade = { level: comesIn ? 0 : 1, ai: enemy.ai, quick, delay: enemy.ai === AiState.Emerge && state.phase === Phase.Scene ? SUMMIT_RISE_DELAY_S : 0 };
-        this.fades.set(id, fade);
-      }
-      fade.ai = enemy.ai;
-      // The held wait spends the frame first; what is left of it begins the coming in, so it is not a frame late.
-      let step = dt;
-      if (fade.delay > 0) {
-        const held = Math.min(fade.delay, step);
-        fade.delay -= held;
-        step -= held;
-      }
-      // It comes up out of the mist at its whole height, the smoke bringing it in (shadeSmoke.ts).
-      if (step > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + step / (fade.quick ? LUNGE_FADE_IN_S : SHADE_FADE_IN_S));
-      // A lunge resolves from the mist as it closes on the local eye; a shade
-      // never does; a Hollow out in the open is the resolved form from the
-      // start, the same black figure with the dulled eyes.
-      if (enemy.ai === AiState.Shade || enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) {
-        const me = state.players.get(localId);
-        const d = me === undefined ? Infinity : Math.hypot(enemy.pos.x - me.pos.x, enemy.pos.z - me.pos.z);
-        const want = (enemy.ai === AiState.Lunge || enemy.ai === AiState.Strike) && d < SHADE_RESOLVE_M ? 0 : 1;
-        const was = this.soft.get(id) ?? 1;
-        const soft = dt > 0 ? was + (want - was) * Math.min(1, dt / SHADE_RESOLVE_S) : was;
-        this.soft.set(id, soft);
-        // Fainter with distance: whole within SHADE_NEAR_M, SHADE_FAR_SHARE of itself at SHADE_FAR_M.
-        const t = Math.max(0, Math.min(1, (d - SHADE_NEAR_M) / (SHADE_FAR_M - SHADE_NEAR_M)));
-        this.near.set(id, 1 - (1 - SHADE_FAR_SHARE) * t);
-      } else { this.soft.set(id, 0); this.near.set(id, 1); }
-      const instance = this.models.acquire(id, HOLLOW_MODEL);
-      if (instance !== null) {
-        const entry = this.ensureHollowModel(id, instance, enemy.pos.x, feet, enemy.pos.z);
-        this.enemies.get(id)?.node.setEnabled(false);
-        this.advance(entry.view, enemy.pos.x, feet, enemy.pos.z, clamped);
-        // Every Hollow and shade is drawn facing the local player, whatever
-        // way the sim has it going: the figure, and its head with it, is
-        // always turned to whoever is looking at it.
-        entry.view.node.rotation.y = this.facingOf(state, localId, enemy.pos.x, enemy.pos.z, enemy.yaw);
-        if (this.soft.has(id)) {
-          const soft = this.soft.get(id) as number;
-          this.shadeList.push({ node: entry.view.node, fade: opacityOf(fade.level), presence: fade.level, soft, near: this.near.get(id) ?? 1, eyes: entry.eyes, eyeLevel: eyeLevelOf(soft, fade.level) });
-        }
-        // Enemy velocity never reaches a client (it is zeroed there), so the
-        // pace is measured from how far the drawn body moved: the same on
-        // every peer, and it walks through Emerge as well as the hunt.
-        const pace = entry.pace;
-        const at = entry.view.node.position;
-        if (dt > 0) {
-          const dx = at.x - pace.x;
-          const dz = at.z - pace.z;
-          // Capped so a jump (a respawn, a snapshot catching up) reads as a
-          // brisk stride for a moment, not a full-rate walk for over a second.
-          const raw = Math.sqrt(dx * dx + dz * dz) / dt;
-          const measured = raw > HOLLOW_MAX_MEASURED_SPEED ? HOLLOW_MAX_MEASURED_SPEED : raw;
-          pace.speed += (measured - pace.speed) * (1 - Math.exp(-dt / HOLLOW_SPEED_SMOOTHING));
-        }
-        pace.x = at.x;
-        pace.z = at.z;
+    this.reachAt = frame.reachAt === null ? null : new Vector3(frame.reachAt.x, frame.reachAt.y, frame.reachAt.z);
+    for (const pose of frame.hollows) {
+      const id = pose.id;
+      if (pose.modelled) {
+        const instance = this.models.acquire(id, HOLLOW_MODEL) as CharacterInstance;
+        const entry = this.ensureHollowModel(id, instance);
+        this.enemies.get(id)?.setEnabled(false);
+        const node = instance.root;
+        node.position.set(pose.x, pose.y, pose.z);
+        node.rotation.y = pose.yaw;
+        const look = pose.shade;
+        this.shadeList.push({ node, fade: look.fade, presence: look.presence, soft: look.soft, near: look.near, eyes: entry.eyes, eyeLevel: look.eyeLevel });
         // A strike stands in the idle with its arms out (the reach, below); everything else walks or stands by its pace.
-        if (enemy.ai === AiState.Strike) instance.play("idle");
-        else stride(instance, pace.speed, HOLLOW_WALK_CLIP_SPEED * HOLLOW_SCALE);
-        // The reach: in the strike, and in a lunge's last metres.
-        const meFor = state.players.get(localId);
-        const dFor = meFor === undefined ? Infinity : Math.hypot(enemy.pos.x - meFor.pos.x, enemy.pos.z - meFor.pos.z);
-        const wantReach = enemy.ai === AiState.Strike || (enemy.ai === AiState.Lunge && dFor < REACH_M) ? 1 : 0;
-        const hadReach = this.reaches.get(id) ?? 0;
-        this.reaches.set(id, dt > 0 ? hadReach + Math.max(-dt / REACH_S, Math.min(dt / REACH_S, wantReach - hadReach)) : hadReach);
+        if (pose.rate === null) instance.play("idle");
+        else if (pose.clip === "walk") {
+          instance.setSpeed(pose.rate);
+          instance.play("walk");
+        } else {
+          instance.setSpeed(1);
+          instance.play("idle");
+        }
         continue;
       }
-
-      // The capsule is taller than the hull: lift it so both stand on the same feet.
-      const hollowY = feet + HOLLOW_HEIGHT / 2;
-      const view = this.ensure(
-        this.enemies,
-        id,
-        { x: enemy.pos.x, y: hollowY, z: enemy.pos.z },
-        () => this.makeHollow(`hollow_${id}`),
-      );
-      view.node.setEnabled(true);
-      this.advance(view, enemy.pos.x, hollowY, enemy.pos.z, clamped);
-      view.node.rotation.y = this.facingOf(state, localId, enemy.pos.x, enemy.pos.z, enemy.yaw);
-      setVisibility(view.node, fade.level);
+      let capsule = this.enemies.get(id);
+      if (capsule === undefined) {
+        capsule = this.makeHollow(`hollow_${id}`);
+        this.enemies.set(id, capsule);
+      }
+      capsule.setEnabled(true);
+      capsule.position.set(pose.x, pose.y, pose.z);
+      capsule.rotation.y = pose.yaw;
+      setVisibility(capsule, pose.level);
     }
     // A shade or a lunge gone from the state goes out to nothing over
     // SHADE_FADE_OUT_S: its model is held back from the prune until then.
-    for (const [id, fade] of this.fades) {
-      if (state.enemies.has(id)) continue;
-      const entry = this.enemyModels.get(id);
-      if (entry !== undefined && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge || fade.ai === AiState.Strike)) {
-        this.enemyModels.delete(id);
-        this.fading.set(id, { entry, level: fade.level, soft: this.soft.get(id) ?? 1, near: this.near.get(id) ?? 1 });
+    for (const out of frame.fading) {
+      let entry = this.fading.get(out.id);
+      if (entry === undefined) {
+        entry = this.enemyModels.get(out.id) as HollowView;
+        this.enemyModels.delete(out.id);
+        this.fading.set(out.id, entry);
       }
-      this.fades.delete(id);
-      this.soft.delete(id);
-      this.near.delete(id);
-      this.reaches.delete(id);
+      const look = out.shade;
+      this.shadeList.push({ node: entry.instance.root, fade: look.fade, presence: look.presence, soft: look.soft, near: look.near, eyes: entry.eyes, eyeLevel: look.eyeLevel });
     }
-    for (const [id, out] of this.fading) {
-      // Going, it is a shade again first: a resolved lunge goes back into
-      // the mist over SHADE_UNRESOLVE_S as it fades, not out of the frame.
-      if (dt > 0) {
-        out.level -= dt / SHADE_FADE_OUT_S;
-        out.soft = Math.min(1, out.soft + dt / SHADE_UNRESOLVE_S);
-      }
-      // It keeps its height: the going is the smoke's, patch by patch (shadeSmoke.ts).
-      if (out.level <= 0) {
-        this.models.release(id);
-        this.fading.delete(id);
-        continue;
-      }
-      this.shadeList.push({ node: out.entry.view.node, fade: opacityOf(out.level), presence: out.level, soft: out.soft, near: out.near, eyes: out.entry.eyes, eyeLevel: eyeLevelOf(out.soft, out.level) });
+    for (const id of frame.hollowsGone) {
+      this.models.release(id);
+      this.fading.delete(id);
+      this.enemyModels.delete(id);
     }
-    this.pruneModels(this.enemyModels, state.enemies);
-    this.prune(this.enemies, state.enemies);
+    for (const id of frame.hollowCapsulesGone) {
+      this.enemies.get(id)?.dispose();
+      this.enemies.delete(id);
+    }
   }
 
   /** How many enemies are fading out, for the tests. */
   fadingOut(): number {
-    return this.fading.size;
+    return this.poses.fadingOut();
   }
 
   /**
@@ -514,24 +348,29 @@ export class EntityViews {
    * them on WebGL2. Counted in frames the scene drew, from the first of them: a page still
    * holding its frames for the world's pipelines has drawn none. True while it draws.
    */
-  private warmLocal(id: number, x: number, feet: number, z: number): boolean {
+  private warmLocal(id: number, model: string, x: number, feet: number, z: number): boolean {
     const w = this.warm;
     if (w.done) return false;
-    const instance = this.models.acquire(id, variantForId(RANGER_IDS, id) as string);
+    const instance = this.models.acquire(id, model);
     if (instance === null) return false;
     const meshes = instance.root.getChildMeshes(false);
     if (w.frames >= WARM_FRAMES_MIN && w.last - w.since >= WARM_MS) {
       w.done = true;
       for (const m of meshes) m.alwaysSelectAsActiveMesh = false;
-      // Placed anew when a scene shows it: its view forgotten, the instance kept.
-      this.playerModels.get(id)?.view.node.setEnabled(false);
-      this.playerModels.delete(id);
+      // Placed anew when a scene shows it: its place forgotten, the instance kept.
+      if (this.playerModels.delete(id)) instance.root.setEnabled(false);
+      this.poses.forgetModel(id);
       return false;
     }
-    const entry = this.ensureModel(this.playerModels, id, instance, x, feet - WARM_DEPTH_M, z);
-    this.players.get(id)?.node.setEnabled(false);
-    entry.view.node.setEnabled(true);
-    entry.view.node.position.set(x, feet - WARM_DEPTH_M, z);
+    // Its track is its model's, drawn under the ground whatever the track says.
+    const track = this.poses.modelTrack(id, x, feet - WARM_DEPTH_M, z);
+    track.x = x;
+    track.y = feet - WARM_DEPTH_M;
+    track.z = z;
+    this.playerModels.set(id, instance);
+    this.players.get(id)?.setEnabled(false);
+    instance.root.setEnabled(true);
+    instance.root.position.set(x, feet - WARM_DEPTH_M, z);
     for (const m of meshes) m.alwaysSelectAsActiveMesh = true;
     w.placed = true;
     return true;
@@ -545,21 +384,6 @@ export class EntityViews {
   /** This frame's shades for the silhouette mask. */
   shades(): readonly ShadeEntry[] {
     return this.shadeList;
-  }
-
-  private ensureModel(
-    map: Map<number, ModelView>,
-    id: number,
-    instance: CharacterInstance,
-    x: number,
-    y: number,
-    z: number,
-  ): ModelView {
-    const existing = map.get(id);
-    if (existing !== undefined && existing.instance === instance) return existing;
-    const entry = { instance, view: placeView(instance.root, x, y, z) };
-    map.set(id, entry);
-    return entry;
   }
 
   /**
@@ -592,7 +416,7 @@ export class EntityViews {
   private applyReaches(): void {
     const at = this.reachAt;
     if (at === null) return;
-    for (const [id, reach] of this.reaches) {
+    for (const [id, reach] of this.poses.reaches()) {
       if (reach <= 0) continue;
       const entry = this.enemyModels.get(id);
       if (entry === undefined) continue;
@@ -603,20 +427,7 @@ export class EntityViews {
     }
   }
 
-  /** The yaw that turns a figure at (x, z) to the local player's position, or the sim's yaw when there is no local player. */
-  private facingOf(state: WorldState, localId: number, x: number, z: number, fallback: number): number {
-    const me = state.players.get(localId);
-    if (me === undefined) return fallback;
-    return Math.atan2(me.pos.x - x, me.pos.z - z);
-  }
-
-  private ensureHollowModel(
-    id: number,
-    instance: CharacterInstance,
-    x: number,
-    y: number,
-    z: number,
-  ): HollowView {
+  private ensureHollowModel(id: number, instance: CharacterInstance): HollowView {
     const existing = this.enemyModels.get(id);
     if (existing !== undefined && existing.instance === instance) return existing;
     // Only the picture grows: the hull, the stare and the contact are the sim's.
@@ -638,58 +449,14 @@ export class EntityViews {
       const shoulder = instance.joint(a.shoulder), elbow = instance.joint(a.elbow), wrist = instance.joint(a.wrist);
       if (shoulder !== null && elbow !== null && wrist !== null) arms.push({ shoulder, elbow, wrist });
     }
-    const entry = { instance, view: placeView(instance.root, x, y, z), pace: { x, z, speed: 0 }, eyes, arms };
+    const entry = { instance, eyes, arms };
     this.enemyModels.set(id, entry);
     return entry;
   }
 
-  private ensure(map: Map<number, View>, id: number, at: Vec3, make: () => Mesh): View {
-    const existing = map.get(id);
-    if (existing) return existing;
-    const view = placeView(make(), at.x, at.y, at.z);
-    map.set(id, view);
-    return view;
-  }
-
-  private readonly drawn = { x: 0, y: 0, z: 0 };
   /** Where player `id`'s body is drawn this frame: between its last two places, at its feet. Null for a player with no body drawn. One reused object. */
   drawnAt(id: number): { x: number; y: number; z: number } | null {
-    // A model stands on its origin; the capsule that stands in for one is placed by its middle.
-    const model = this.playerModels.get(id)?.view.node;
-    const node = model ?? this.players.get(id)?.node;
-    if (node === undefined) return null;
-    this.drawn.x = node.position.x;
-    this.drawn.y = model !== undefined ? node.position.y : node.position.y - PLAYER_HALF.y;
-    this.drawn.z = node.position.z;
-    return this.drawn;
-  }
-
-  private advance(view: View, x: number, y: number, z: number, alpha: number): void {
-    if (view.target.x !== x || view.target.y !== y || view.target.z !== z) {
-      view.previous.copyFrom(view.target);
-      view.target.set(x, y, z);
-      // A jump no walk makes (a return to the crest): drawn where it lands, not sliding there.
-      if (Vector3.DistanceSquared(view.previous, view.target) > TELEPORT_M * TELEPORT_M) view.previous.copyFrom(view.target);
-    }
-    Vector3.LerpToRef(view.previous, view.target, alpha, view.node.position);
-  }
-
-  private prune(map: Map<number, View>, live: Map<number, unknown>): void {
-    for (const [id, view] of map) {
-      if (!live.has(id)) {
-        view.node.dispose();
-        map.delete(id);
-      }
-    }
-  }
-
-  private pruneModels(map: Map<number, ModelView>, live: Map<number, unknown>): void {
-    for (const id of map.keys()) {
-      if (!live.has(id)) {
-        this.models.release(id);
-        map.delete(id);
-      }
-    }
+    return this.poses.drawnAt(id);
   }
 
   private makeCapsule(name: string, material: PBRMaterial): Mesh {
@@ -712,9 +479,9 @@ export class EntityViews {
     if (this.reachObserver !== null) this.scene.onBeforeRenderObservable.remove(this.reachObserver);
     if (this.warmObserver !== null) this.scene.onAfterRenderObservable.remove(this.warmObserver);
     this.fading.clear();
-    this.fades.clear();
-    for (const view of this.players.values()) view.node.dispose();
-    for (const view of this.enemies.values()) view.node.dispose();
+    this.poses.clear();
+    for (const capsule of this.players.values()) capsule.dispose();
+    for (const capsule of this.enemies.values()) capsule.dispose();
     for (const lamp of this.lamps.values()) lamp.dispose();
     this.players.clear();
     this.enemies.clear();
