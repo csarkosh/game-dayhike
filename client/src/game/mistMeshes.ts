@@ -7,56 +7,14 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Engine } from "@babylonjs/core/Engines/engine.js";
 
-import { clamp01, type Rgb } from "./colour.js";
-import {
-  collectMistBanks, MIST_CELL, MIST_RADIUS, MIST_TEX_SIZE, mistAlphaMap,
-  type MistBank,
-} from "./mistField.js";
-import { mistOpacityUnder, type WeatherParams } from "./weather.js";
+import type { Rgb } from "./colour.js";
+import { MIST_TEX_SIZE, mistAlphaMap } from "./mistField.js";
+import { createMistBanks, mistBankShown, type DrawnMistBank } from "./mistBanks.js";
+import type { WeatherParams } from "./weather.js";
 import type { QualityTier } from "./quality.js";
 import type { WindRecord } from "./windParams.js";
 
-/** Below this distance a bank fades out so the camera can pass through it. */
-export const MIST_NEAR_FADE_START = 25;
-export const MIST_NEAR_FADE_SPAN = 40;
-/** Fade span inside the collection radius so the 12th bank never pops. */
-export const MIST_EDGE_FADE_SPAN = 150;
-/** Drift speed, m/s, at wind speed 1. */
-export const MIST_DRIFT = 0.25;
-/** Span, metres, over which a bank dissolves as it nears its own wrap boundary. */
-export const MIST_WRAP_FADE = 8;
-
-/**
- * Wraps a drift offset into ±MIST_CELL/2 so a bank wanders but never leaves
- * its cell. Every bank rides the same drift distance (`off`, below); wrapping it
- * unmodified would put every bank's own wrap boundary at the same `off`
- * value, so all twelve would cross it — and teleport by a full MIST_CELL —
- * in the same frame. The update loop instead wraps `off + bank.hash *
- * MIST_CELL`: folding in a per-bank hash before the modulus staggers each
- * bank onto its own phase of the 96 m cycle, so they wrap one at a time; the
- * near-boundary fade below still hides the jump itself.
- */
-function wrap(v: number): number {
-  return ((v + MIST_CELL / 2) % MIST_CELL + MIST_CELL) % MIST_CELL - MIST_CELL / 2;
-}
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = clamp01((x - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
-
-/** Fades a bank to invisible as its wrapped offset nears ±MIST_CELL/2, so it
- * dissolves before it would otherwise snap back a cell. */
-function wrapFadeAt(offset: number): number {
-  return 1 - smoothstep(MIST_CELL / 2 - MIST_WRAP_FADE, MIST_CELL / 2, Math.abs(offset));
-}
-
-/**
- * Billboard quad cap by quality tier. `collectMistBanks` always
- * returns up to `MIST_CAP` banks nearest-first, so a lower cap here simply
- * drives fewer of the nearest banks — no change needed in `mistField.ts`.
- */
-export const MIST_CAP_BY_TIER: Record<QualityTier, number> = { low: 6, medium: 12, high: 12 };
+export { MIST_CAP_BY_TIER, MIST_DRIFT, MIST_EDGE_FADE_SPAN, MIST_NEAR_FADE_SPAN, MIST_NEAR_FADE_START, MIST_WRAP_FADE } from "./mistBanks.js";
 
 export type MistMeshes = {
   /** `seconds` is the raw render clock; the shell differences it itself to step
@@ -75,7 +33,7 @@ export type MistMeshes = {
  * rather than at its far end.
  */
 export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier): MistMeshes {
-  const cap = MIST_CAP_BY_TIER[tier];
+  const banks = createMistBanks(seed, tier);
   const data = mistAlphaMap();
   const tex = RawTexture.CreateRGBATexture(
     data, MIST_TEX_SIZE, MIST_TEX_SIZE, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE,
@@ -90,7 +48,7 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
   mat.backFaceCulling = false;
 
   const meshes: Mesh[] = [];
-  for (let i = 0; i < cap; i++) {
+  for (let i = 0; i < banks.drawn.length; i++) {
     const mesh = MeshBuilder.CreatePlane(`mist_${i}`, { size: 1 }, scene);
     mesh.billboardMode = Mesh.BILLBOARDMODE_Y;
     mesh.isPickable = false;
@@ -99,66 +57,25 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
     meshes.push(mesh);
   }
 
-  let banks: MistBank[] = [];
-  let lastCellX: number | null = null;
-  let lastCellZ: number | null = null;
-  /** Metres of drift accumulated so far, and the clock the last step ended at.
-   * INTEGRATED rather than read off the absolute clock: with `off = MIST_DRIFT
-   * · speed · seconds` a change of speed rescales the whole history at once, so
-   * clear turning to rain ten minutes in slid every bank about 97 m sideways in
-   * a single frame. */
-  let driftDistance = 0;
-  let lastSeconds = 0;
-
   return {
     meshes,
     update(camX, camZ, w, air, wind, seconds) {
-      // Stepped first, and before the early return below, so the clock is
-      // tracked whether or not there is mist to draw. At most one second of
-      // wind a step: a suspended tab (or a stalled first frame) resumes where
-      // it left off instead of lurching the whole gap downwind at once, and a
-      // clock that has not moved contributes nothing.
-      driftDistance += MIST_DRIFT * wind.speed * Math.min(1, Math.max(0, seconds - lastSeconds));
-      lastSeconds = seconds;
-      const opacity = mistOpacityUnder(w);
-      if (opacity <= 0) {
+      if (!banks.update(camX, camZ, w, wind, seconds)) {
         for (const m of meshes) m.setEnabled(false);
-        lastCellX = null; // force a recollect when mist returns
         return;
       }
-      const cellX = Math.floor(camX / MIST_CELL);
-      const cellZ = Math.floor(camZ / MIST_CELL);
-      if (cellX !== lastCellX || cellZ !== lastCellZ) {
-        banks = collectMistBanks(seed, camX, camZ);
-        lastCellX = cellX;
-        lastCellZ = cellZ;
-      }
       mat.emissiveColor.set(air.r, air.g, air.b);
-      const off = driftDistance;
       for (let i = 0; i < meshes.length; i++) {
         const mesh = meshes[i] as Mesh;
-        const bank = banks[i];
-        if (!bank) {
+        const bank = banks.drawn[i] as DrawnMistBank;
+        if (!bank.placed) {
           mesh.setEnabled(false);
           continue;
         }
-        const offset = wrap(off + bank.hash * MIST_CELL);
-        const drawnX = bank.x + offset * wind.dirX;
-        const drawnZ = bank.z + offset * wind.dirZ;
-        mesh.position.set(drawnX, bank.y, drawnZ);
+        mesh.position.set(bank.x, bank.y, bank.z);
         mesh.scaling.set(bank.width, bank.height, 1);
-        // From the DRAWN position, not the seeded one: a bank's own hash can
-        // phase it up to ±MIST_CELL/2 off its seeded spot even at rest (see
-        // wrap's comment), and MIST_NEAR_FADE_SPAN is narrower than that, so
-        // keying the fades off the seed would let a drifted bank sit inside
-        // the near-fade ring — or past the collection radius — unfaded.
-        const d = Math.sqrt((drawnX - camX) ** 2 + (drawnZ - camZ) ** 2);
-        const nearFade = clamp01((d - MIST_NEAR_FADE_START) / MIST_NEAR_FADE_SPAN);
-        const edgeFade = clamp01((MIST_RADIUS - d) / MIST_EDGE_FADE_SPAN);
-        const wrapFade = wrapFadeAt(offset);
-        const visibility = opacity * nearFade * edgeFade * wrapFade;
-        mesh.visibility = visibility;
-        mesh.setEnabled(visibility > 0.01);
+        mesh.visibility = bank.visibility;
+        mesh.setEnabled(mistBankShown(bank));
       }
     },
     dispose() {

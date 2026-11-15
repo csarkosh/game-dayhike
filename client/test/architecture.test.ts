@@ -448,6 +448,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "water.ts"),
       join(SRC, "game", "forestField.ts"),
       join(SRC, "game", "mistField.ts"),
+      join(SRC, "game", "mistBanks.ts"),
       join(SRC, "game", "weather.ts"),
       join(SRC, "game", "skinParams.ts"),
       join(SRC, "game", "viewBob.ts"),
@@ -555,7 +556,7 @@ describe("layer boundaries", () => {
   });
 
   /**
-   * What the ground, the air over it, the sky's dome and the scene's light
+   * What the ground, the air over it and the mist banks that stand in it, the sky's dome and the scene's light
    * are drawn with, and the lens they are seen through, is computed by modules that load no
    * Babylon at all: not by an import of
    * their own (the list above) and not through anything they import, so each
@@ -567,6 +568,7 @@ describe("layer boundaries", () => {
     const ENGINE_FREE = [
       "terrainTables.ts", "terrainUniforms.ts", "groundLayers.ts", "wetSurface.ts", "terrainVertices.ts",
       "atmosphereParams.ts", "cloudParams.ts", "skyState.ts", "skyDomeParams.ts", "skyProbeParams.ts", "weather.ts", "sceneLights.ts", "lampParams.ts", "gameLens.ts",
+      "mistField.ts", "mistBanks.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
