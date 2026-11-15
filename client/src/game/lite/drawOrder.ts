@@ -45,7 +45,7 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * the splashes, then the drips and the streaks, one draw whose instances
  * are in that order (`rainField.ts`).
  */
-export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, splashes: 220, rain: 230 } as const;
+export const SEE_THROUGH_ORDER = { eyes: 190, motes: 200, mist: 210, splashes: 220, rain: 230 } as const; // The Hollows' eyes first: the air's veils are laid over them (`entityMeshes.ts`).
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;
