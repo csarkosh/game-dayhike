@@ -3,10 +3,11 @@
  * and far, the ground clutter, the blade grass, the duff and the cliffs under the
  * atmosphere and the sky's dome, the valley mist banks and the motes in the air
  * and the ground cloud marched through it, the rain with its drips, its
- * splashes and the cover it falls under, lit by the sun, the sky's fill and
- * the sky's capture as the image-based light for the hour and the weather
- * and by the local player's headlamp, seen from the player's eye or the free
- * camera. It
+ * splashes and the cover it falls under, and in that world the other
+ * hikers' bodies, the Hollows' eyes, the dropped cap and the animals, lit by
+ * the sun, the sky's fill and the sky's capture as the image-based light for
+ * the hour and the weather, by the local player's headlamp and by the lamps
+ * the other hikers wear, seen from the player's eye or the free camera. It
  * answers the whole of `Renderer` (`renderer.ts`), and what it does not draw
  * yet it answers as nothing (`notDrawn.ts` has the list).
  *
@@ -23,7 +24,9 @@
  * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them, the
  * chunk props' boxes (`propMeshes.ts`), the mist banks (`mistMeshes.ts`), the
  * motes (`motes.ts`) and the rain (`rain.ts`, `rainSplash.ts`, under the
- * cover map of `rainMap.ts`).
+ * cover map of `rainMap.ts`), the hikers' bodies and the Hollows' eyes
+ * (`entityMeshes.ts`), the lamps the other hikers wear (`wornLamps.ts`), the
+ * dropped cap (`capMesh.ts`) and the animals (`wildlifeMeshes.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -89,6 +92,27 @@
  * canopy's water is the rain's own count, stepped every frame, and the
  * canopy over the lens is read from the forest's field (`lensCanopy.ts`),
  * for whoever hears the drips by them.
+ *
+ * **The hikers, the Hollows and the animals are instances.** Where each
+ * hiker and each Hollow stands, and how, is the game's own for the frame
+ * (`entityPoses.ts`), stepped by the page's frame as the game steps it, and
+ * the wildlife is the game's own too (`wildlifeScene.ts`), handed the
+ * simulation's tick, the players' places and the director's view as the
+ * game hands them (`wildlifeInputs.ts`): the animals are where and when the
+ * game puts them, with the same events for whoever voices them. A skinned
+ * model is baked once and every body of it is an instance of one draw a
+ * primitive (`skinnedModels.ts`), all read by one clock, which is run every
+ * frame and sent only on a frame that shows a skinned body: a ranger worn,
+ * a pair of eyes come, a ground animal in its disc. A part that shows
+ * nothing draws nothing and writes nothing: no other hiker, no ranger
+ * fetched and no light made; no bird of a model in the air, its mesh
+ * hidden. The local hiker's own body is not drawn: the camera is its eyes,
+ * and the scenes that show it are not drawn yet.
+ *
+ * **A lamp's light is made for a hiker, not for a seat** (`wornLamps.ts`):
+ * the scene holds the lens's lamp, the sun, the fill and a spot light for
+ * each other hiker there has been at once, made before the scene is
+ * registered for those already there, so a hike alone lights with three.
  *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast

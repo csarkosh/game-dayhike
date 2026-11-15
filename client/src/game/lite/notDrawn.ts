@@ -12,8 +12,10 @@
  * (its streaks, and on the tiers that draw them the drips under the canopy,
  * the splashes and the cover map they are drawn under), lit by the sun, the
  * sky's fill and the sky's capture as the image-based light for the hour and
- * the weather and by the local player's headlamp, from the player's eye or
- * the free camera. Every other part of the world is absent, and the
+ * the weather, by the local player's headlamp and by the lamps the other
+ * hikers wear, from the player's eye or the free camera; and in it the other
+ * hikers' bodies, the Hollows' eyes, the dropped cap and the animals, on the
+ * ground and in the air. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is
  * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
