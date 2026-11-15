@@ -2,9 +2,11 @@
  * The hike's renderer on Babylon Lite: the terrain, the forest's trees near
  * and far, the ground clutter, the blade grass, the duff and the cliffs under the
  * atmosphere and the sky's dome, the valley mist banks and the motes in the air
- * and the ground cloud marched through it, lit by the sun, the sky's fill and the sky's
- * capture as the image-based light for the hour and the weather and by the
- * local player's headlamp, seen from the player's eye or the free camera. It
+ * and the ground cloud marched through it, the rain with its drips, its
+ * splashes and the cover it falls under, lit by the sun, the sky's fill and
+ * the sky's capture as the image-based light for the hour and the weather
+ * and by the local player's headlamp, seen from the player's eye or the free
+ * camera. It
  * answers the whole of `Renderer` (`renderer.ts`), and what it does not draw
  * yet it answers as nothing (`notDrawn.ts` has the list).
  *
@@ -19,8 +21,9 @@
  * clutter's (`clutterMeshes.ts`) and the cliffs' (`cliffMeshes.ts`), which
  * land as their models do, the grass's and the duff's
  * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them, the
- * chunk props' boxes (`propMeshes.ts`), the mist banks (`mistMeshes.ts`) and
- * the motes (`motes.ts`).
+ * chunk props' boxes (`propMeshes.ts`), the mist banks (`mistMeshes.ts`), the
+ * motes (`motes.ts`) and the rain (`rain.ts`, `rainSplash.ts`, under the
+ * cover map of `rainMap.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -75,10 +78,23 @@
  * again at once when the eye has left the last one's middle, as the game
  * builds it, and counted with the streamed world.
  *
+ * **The rain is drawn while it falls, and costs nothing while it does
+ * not.** The streaks and the drips are one draw and the splashes another,
+ * last of the see-through draws, each hidden while it shows nothing; what a
+ * frame writes for them is their materials' uniforms, once each, while a
+ * drop or a ring is shown. On the tiers with a cover map (none on low) the
+ * map is a pass of the frame's own, drawn before it and only on a frame
+ * that wants it: the map has moved a step with the player, or the camera in
+ * freecam, since it was last drawn, and a drop or a ring reads it. The
+ * canopy's water is the rain's own count, stepped every frame, and the
+ * canopy over the lens is read from the forest's field (`lensCanopy.ts`),
+ * for whoever hears the drips by them.
+ *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
  * 1.1), under the weather's and the hour's exposure, and the dome's, the
- * mist banks' and the motes' own stages the same. There is no post chain.
+ * mist banks', the motes' and the rain's own stages the same. There is no
+ * post chain.
  */
 import {
   NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,

@@ -8,9 +8,12 @@
  * stones), the blade grass, the duff, the cliffs' rock walls where the
  * field lays any and the chunk props' boxes, under the atmosphere and the
  * sky's dome, with the valley mist banks and the motes in the air and the
- * ground cloud marched through it on the tiers that march it, lit by the sun, the sky's fill and the sky's capture as the
- * image-based light for the hour and the weather and by the local player's
- * headlamp, from the player's eye or the free camera. Every other part of the world is absent, and the
+ * ground cloud marched through it on the tiers that march it, and the rain
+ * (its streaks, and on the tiers that draw them the drips under the canopy,
+ * the splashes and the cover map they are drawn under), lit by the sun, the
+ * sky's fill and the sky's capture as the image-based light for the hour and
+ * the weather and by the local player's headlamp, from the player's eye or
+ * the free camera. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is
  * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
