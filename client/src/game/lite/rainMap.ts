@@ -34,7 +34,7 @@
  */
 import {
   addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createMeshFromData, createPbrMaterial, createRenderTargetTexture, createRenderTask,
-  disposeMeshGpu, enableOrthographicCamera, removeFromScene, removeMeshFromTask, removeTask, setMeshVisible, setThinInstances, vec3,
+  disposeMeshGpu, enableOrthographicCamera, removeFromScene, removeMeshFromTask, setMeshVisible, setThinInstances, vec3,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import type { QualityTier } from "../quality.js";
@@ -98,6 +98,7 @@ export type LiteRainMap = {
   readonly meshes: number;
   /** Times the map was drawn. */
   readonly draws: number;
+  /** Takes every mesh out of the map and its own out of the scene. The pass and its target go with the scene. */
   dispose(): void;
 };
 
@@ -196,7 +197,8 @@ export function createLiteRainMap(engine: EngineContext, scene: SceneContext, ti
       disposed = true;
       for (const mesh of registered) removeMeshFromTask(task, mesh);
       registered.clear();
-      removeTask(scene, task);
+      // The pass stays the scene's, closed: the scene lets it go with its target, as it does every task of its own.
+      task.enabled = false;
       removeFromScene(scene, seed);
       disposeMeshGpu(seed);
     },
