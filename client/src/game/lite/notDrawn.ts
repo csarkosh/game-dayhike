@@ -33,7 +33,6 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the animals", members: ["hasWildlife", "wildlifeEvents", "wildlifeDirectorLog"] },
   { what: "the players' bodies and the lamps they wear (the local player's lamp on the lens is lit), the Hollow and the dropped cap", members: ["setSkinShading"] },
   { what: "the sun's cast shadows", members: [] },
-  { what: "the rain, its splashes and its cover, and the lens's read of the canopy over it that keeps the rain off it", members: ["canopyWater", "canopyOver"] },
   { what: "the post chain: the grade and its palettes, the anti-aliasing, the far softening, the rain on the lens, the stare's shade, the chase's cast, depth of field", members: ["setPalette", "setChase", "setUnsettle", "setDepthOfField", "stare"] },
   { what: "the lakes' calm by the weather's name", members: ["setWeatherName"] },
   { what: "the scenes and the endings: their cameras, their stage and the end scene's car", members: ["setEnding", "endScene", "setScene", "clearEnding"] },
@@ -60,10 +59,9 @@ export type NotDrawnHeld = {
 /** The members answered as nothing: every member `NOT_DRAWN` names. */
 export type NotDrawnMembers = Pick<
   Renderer,
-  | "canopyOver"
   | "hasSea" | "surfSound" | "hasWaterLife" | "waterLifeSound"
   | "hasWildlife" | "wildlifeEvents" | "wildlifeDirectorLog"
-  | "setSkinShading" | "canopyWater"
+  | "setSkinShading"
   | "setPalette" | "setChase" | "setUnsettle" | "setDepthOfField" | "stare"
   | "setWeatherName" | "setEnding" | "endScene" | "setScene" | "clearEnding"
   | "setWireframe" | "onShaderCompiled" | "keepShaders" | "gpuTime"
@@ -97,7 +95,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
     wireframe: false, skinShading: true, depthOfField: false, ending: null, endScene: null, scene: null,
   };
   const members: NotDrawnMembers = {
-    canopyOver: () => 0,
     hasSea: false,
     surfSound: () => SILENT_SURF_SOUND,
     hasWaterLife: false,
@@ -108,7 +105,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
     setSkinShading(on) {
       held.skinShading = on;
     },
-    canopyWater: () => 0,
     setPalette(name) {
       held.palette = name;
     },

@@ -161,6 +161,18 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     expect(r.setMist(null)).toBe(0);
   });
 
+  it("answers the canopy's read-outs itself: no water while no rain is stepped, no canopy where no forest stands", () => {
+    const r = make();
+    expect(r.canopyWater()).toBe(0);
+    expect(r.canopyOver()).toBe(0);
+    r.setWeather(WEATHER_PRESETS.rain, 0);
+    r.setFreecam({ x: 0, y: 10, z: 0, yaw: 0, pitch: 0 });
+    r.sync(windTestState(), -1, 0);
+    // Nothing stands to step the rain, and a level with no forest has no canopy.
+    expect(r.canopyWater()).toBe(0);
+    expect(r.canopyOver()).toBe(0);
+  });
+
   it("has no bake to tell of, and ends none, while no forest stands", () => {
     const r = make();
     expect(r.impostorBakes()).toEqual([]);

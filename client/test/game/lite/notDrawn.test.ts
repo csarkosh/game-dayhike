@@ -13,12 +13,12 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lakes", "animals", "bodies", "shadows", "rain", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of [ "sea", "lakes", "animals", "bodies", "shadows", "rain on the lens", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
       expect(all, word).toContain(word);
     }
   });
 
-  it("reads out nothing: no animal, no water to hear, no scene, no stare, a canopy with no water", () => {
+  it("reads out nothing: no animal, no water to hear, no scene, no stare", () => {
     const { members } = notDrawnMembers();
     expect(members.hasWildlife).toBe(false);
     expect(members.wildlifeEvents()).toEqual([]);
@@ -34,8 +34,6 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(members.waterLifeSound()).toBe(life);
     expect(members.endScene()).toBeNull();
     expect(members.stare()).toBe(STARE_LENS_REST);
-    expect(members.canopyWater()).toBe(0);
-    expect(members.canopyOver()).toBe(0);
     expect(members.gpuTime).toBeNull();
   });
 
@@ -57,6 +55,15 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     const { members } = notDrawnMembers();
     for (const name of ["setHaunt", "setMist", "setMistIn"]) expect(name in members, name).toBe(false);
     expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/mist|motes|cloud/);
+  });
+
+  it("leaves the rain to the renderer: its streaks, drips, splashes and cover are drawn, and the canopy's read-outs are its own", () => {
+    const { members } = notDrawnMembers();
+    for (const name of ["canopyWater", "canopyOver"]) expect(name in members, name).toBe(false);
+    // The one rain still named is the post chain's, on the lens.
+    const rain = NOT_DRAWN.filter((part) => /rain|splash|drip|canopy/.test(part.what));
+    expect(rain).toHaveLength(1);
+    expect(rain[0]?.what).toContain("the post chain");
   });
 
   it("keeps the first ending it is told and lets a death be undone, and keeps the last scene", () => {

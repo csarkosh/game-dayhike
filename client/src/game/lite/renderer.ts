@@ -106,6 +106,7 @@ import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../folia
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
 import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type LampState } from "../lampParams.js";
+import { createLensCanopy } from "../lensCanopy.js";
 import type { CullPose } from "../grassCull.js";
 import { writeListenerPose } from "../listenerPose.js";
 import { sharedSeconds } from "../oceanWindSea.js";
@@ -346,8 +347,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** What a frame draws the rain and its splashes with; none before the sky's first slices, as the mist banks'. */
   let rainFrame: RainFrame | null = null;
   let splashFrame: SplashFrame | null = null;
-  /** The canopy's water as the rain last stepped it. */
+  /** The canopy's water as the rain last stepped it, and the canopy over the lens (`lensCanopy.ts`). */
   let canopyWater = 0;
+  const canopyRead = forest === null ? null : createLensCanopy(forest.seed);
   /** The fog gradient's near end, the motes' colour and the one the cloud's is made from: black until the sky's first slices. */
   let nearColour = { r: 0, g: 0, b: 0 };
   /** The canvas's size the engine was last fitted to, CSS pixels. */
@@ -875,6 +877,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       drawnWith.wetness = weather.wetness;
       drawnWith.rain = weather.rain;
       drawnWith.seconds = seconds;
+      // The canopy over the lens, for whoever hears the drips by it: the forest's own, whatever is drawn.
+      if (centre !== null) canopyRead?.over(pose.x, pose.z);
       if (standing !== null) {
         // The terrain first, then the shells in the order the game's are handed the view: a frame's jobs go oldest
         // first, and those begun in one frame in this order.
@@ -1049,6 +1053,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     canopyWater() {
       return canopyWater;
+    },
+    canopyOver() {
+      return canopyRead?.value ?? 0;
     },
     setWindOverride(next) {
       windOverride = next === null ? null : Math.min(1, Math.max(0, next));
