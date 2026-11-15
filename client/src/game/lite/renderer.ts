@@ -33,6 +33,13 @@
  * once every shell has seen the view, the terrain's first, in the order the
  * game's shells are handed it. A job's last slice shows its result whole.
  *
+ * **What a frame hands to the GPU is counted, and the streamed part of it
+ * bounded** (`frameUploads.ts`): every shell says what it hands to Lite,
+ * a job's hand-over waits for a frame whose budget has room for it, and
+ * the frame's record is closed once its jobs have run. In the measurement
+ * mode the record of the last frame is read out as
+ * `window.__frameUploads()`, beside the jobs' `window.__syncJobs()`.
+ *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
  * 1.1), under the weather's and the hour's exposure. There is no post chain.
@@ -83,6 +90,7 @@ import { createCliffMeshes, type CliffMeshes } from "./cliffMeshes.js";
 import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
 import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
+import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
 import { notDrawnMembers } from "./notDrawn.js";
 import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
@@ -225,8 +233,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const jobs = createSyncJobs(() => performance.now());
   // The measurement mode (`?gpuTime`): the jobs' record of the last frame, read out as `window.__syncJobs()` as the
   // renderer on Babylon.js gives it. A copy each time: the record is written in place every frame.
-  const measured = globalThis as { __syncJobs?: () => SyncJobs["last"] };
+  const measured = globalThis as { __syncJobs?: () => SyncJobs["last"]; __frameUploads?: () => FrameUploadCounts };
   if (options.gpuTime === true) measured.__syncJobs = () => ({ ...jobs.last, owners: { ...jobs.last.owners } });
+  // What each frame hands to the GPU, and the budget its streamed part is held to (`frameUploads.ts`); the last
+  // frame's record is read out beside the jobs', a copy each time too.
+  const uploads = createFrameUploads();
+  if (options.gpuTime === true) measured.__frameUploads = () => uploadCountsCopy(uploads.last);
 
   let disposed = false;
   /** The device has failed (`abandon`): the forest's bakes are ended, and a forest made after bakes none. */
@@ -352,6 +364,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           trail: activeTerrainVariant().trailGraph?.(forest.seed) ?? null,
           jobs,
           firstBuilds: options.firstBuilds,
+          uploads,
         },
       );
       if (options.deferClipmap !== true) finish(terrain.firstBuild());
@@ -370,12 +383,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         air: () => atmospherePlugin(airValues, cloudMap),
         jobs,
         firstBuilds: options.firstBuilds,
+        uploads,
       });
       if (abandoned) trees.abandon();
       // The near field of blade grass, on the tiers that can afford it.
       if (tier !== "low") {
         blades = createBladeMeshes(engine, scene, forest.seed, {
           quality: tier, eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap), jobs, firstBuilds: options.firstBuilds,
+          uploads,
         });
       }
       // The ground clutter, which lands as its models do. The tiers that draw the blade field draw it over the
@@ -390,23 +405,24 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         air: () => atmospherePlugin(airValues, cloudMap),
         jobs,
         firstBuilds: options.firstBuilds,
+        uploads,
       });
       // The near field of dead leaves, twigs and small branches, on the same tiers as the blades beside it.
       if (tier !== "low") {
         duff = createDuffMeshes(engine, scene, forest.seed, {
           quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.duff), air: () => atmospherePlugin(airValues, cloudMap),
-          jobs, firstBuilds: options.firstBuilds,
+          jobs, firstBuilds: options.firstBuilds, uploads,
         });
       }
       // Rock-wall modules on the faces too steep to stand on, on every tier. At the shipped density the field
       // lays none and no model is fetched.
       cliffs = createCliffMeshes(engine, scene, forest.seed, {
-        quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.cliff), air: () => atmospherePlugin(airValues, cloudMap),
+        quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.cliff), air: () => atmospherePlugin(airValues, cloudMap), uploads,
       });
       // Every chunk prop the simulation collides with that no other mesh draws, as its box. A world as the game makes
       // it today has none, and none is made.
       props = createPropMeshes(engine, scene, forest.grid, {
-        wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap), firstBuilds: options.firstBuilds,
+        wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap), firstBuilds: options.firstBuilds, uploads,
       });
     }
     const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props };
@@ -436,7 +452,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       markSynced();
       if (standing !== null) release(standing);
       standing = null;
-      if (options.gpuTime === true && measured.__syncJobs !== undefined) delete measured.__syncJobs;
+      if (options.gpuTime === true) {
+        if (measured.__syncJobs !== undefined) delete measured.__syncJobs;
+        if (measured.__frameUploads !== undefined) delete measured.__frameUploads;
+      }
     },
   };
 
@@ -505,7 +524,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     relight(made);
     scene.imageProcessing.exposure = light.exposure;
     // The road's table follows the eye before the uniforms are made: they carry where it is centred.
-    if (tables.road !== null && made.road !== null && followRoadCentre(tables.road, pose.z)) made.road.write();
+    if (tables.road !== null && made.road !== null && followRoadCentre(tables.road, pose.z)) {
+      made.road.write();
+      uploads.stream("textures", made.road.bytes);
+    }
     terrainUniforms(drawnWith, terrainValues);
     const surface = terrainSurfaceUnder(light.weather);
     terrainValues.terrainAlbedo[0] = surface.albedo[0];
@@ -529,6 +551,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       material.roughnessFactor = surface.roughness;
       markMaterialUboDirty(material);
     }
+    uploads.marked(made.materials.length);
     // The forest's materials read the wind, the eye, the frame's size, the wet line and the air: written again a frame.
     frameSize.height = canvas.height;
     made.forest?.frame();
@@ -669,6 +692,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       }
       // This frame's share of the rebuilds the updates above began, once every shell has seen the view.
       jobs.run();
+      // What the frame hands over is all said: its record is closed, and the next frame's budget is whole.
+      uploads.close();
       if (centre !== null) markSynced();
     },
     listener() {
