@@ -10,33 +10,10 @@ import { Engine } from "@babylonjs/core/Engines/engine.js";
 import type { Rgb } from "./colour.js";
 import type { QualityTier } from "./quality.js";
 import type { WeatherParams } from "./weather.js";
-import { MOTE_CAPACITY, MOTE_SHARES, MOTE_SPECIES, motesUnder } from "./motesParams.js";
+import { MOTE_ALPHA, MOTE_EMIT_BOX, MOTE_SPECIES, MOTE_TEX_SIZE, moteCapacity, moteDiscMap, moteVelocities, motesUnder } from "./motesParams.js";
 import type { WindRecord } from "./windParams.js";
 
-/** Emitter box half-width, metres, centred on the camera. */
-export const MOTE_BOX_HALF = 10;
-export const MOTE_TEX_SIZE = 16;
-/** Additive alpha per mote: faint alone, bright where many overlap in lit air. */
-const MOTE_ALPHA = 0.18;
-
-/** A soft disc: alpha 1 at the centre falling to 0 at the rim. */
-export function moteDiscMap(size: number = MOTE_TEX_SIZE): Uint8Array {
-  const data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = (x + 0.5) / size - 0.5;
-      const dy = (y + 0.5) / size - 0.5;
-      const r = Math.min(1, Math.hypot(dx, dy) * 2);
-      const a = 1 - r * r * (3 - 2 * r);
-      const i = (y * size + x) * 4;
-      data[i] = 255;
-      data[i + 1] = 255;
-      data[i + 2] = 255;
-      data[i + 3] = Math.round(255 * a);
-    }
-  }
-  return data;
-}
+export { MOTE_BOX_HALF, MOTE_TEX_SIZE, moteDiscMap } from "./motesParams.js";
 
 export type Motes = {
   update(camPos: { x: number; y: number; z: number }, w: WeatherParams, hour: number, air: Rgb, wind: WindRecord): void;
@@ -53,7 +30,7 @@ export type Motes = {
  * an idle system would still cost a draw.
  */
 export function createMotes(scene: Scene, tier: QualityTier): Motes | null {
-  const capacity = MOTE_CAPACITY[tier];
+  const capacity = moteCapacity(tier);
   if (capacity === 0) return null;
   const tex = RawTexture.CreateRGBATexture(
     moteDiscMap(), MOTE_TEX_SIZE, MOTE_TEX_SIZE, scene, true, false,
@@ -64,11 +41,11 @@ export function createMotes(scene: Scene, tier: QualityTier): Motes | null {
   const systems: ParticleSystem[] = [];
   const emitting: boolean[] = [];
   for (const name of MOTE_SPECIES) {
-    const system = new ParticleSystem(`motes_${name}`, Math.ceil(capacity / MOTE_SHARES), scene);
+    const system = new ParticleSystem(`motes_${name}`, capacity, scene);
     system.particleTexture = tex;
     system.emitter = emitter;
-    system.minEmitBox = new Vector3(-MOTE_BOX_HALF, -MOTE_BOX_HALF * 0.5, -MOTE_BOX_HALF);
-    system.maxEmitBox = new Vector3(MOTE_BOX_HALF, MOTE_BOX_HALF * 0.5, MOTE_BOX_HALF);
+    system.minEmitBox = new Vector3(...MOTE_EMIT_BOX.min);
+    system.maxEmitBox = new Vector3(...MOTE_EMIT_BOX.max);
     system.minEmitPower = 1;
     system.maxEmitPower = 1;
     system.blendMode = ParticleSystem.BLENDMODE_ADD;
@@ -91,8 +68,9 @@ export function createMotes(scene: Scene, tier: QualityTier): Motes | null {
         system.maxSize = s.maxSize;
         system.minLifeTime = s.minLife;
         system.maxLifeTime = s.maxLife;
-        system.direction1 = new Vector3(r.drift.x - s.jitter, s.rise - s.jitter * 0.5, r.drift.z - s.jitter);
-        system.direction2 = new Vector3(r.drift.x + s.jitter, s.rise + s.jitter * 0.5, r.drift.z + s.jitter);
+        const born = moteVelocities(r, name);
+        system.direction1 = new Vector3(...born.min);
+        system.direction2 = new Vector3(...born.max);
         system.color1 = colour;
         system.color2 = colour;
         system.colorDead = new Color4(r.colour.r, r.colour.g, r.colour.b, 0);
