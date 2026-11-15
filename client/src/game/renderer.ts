@@ -95,7 +95,7 @@ import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeatureP
 import { FACE_PATCH_MATERIAL, FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS, createFacePatches } from "./facePatchMeshes.js";
 import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { PAINT_PALETTES, type PaintPaletteName } from "./gradeParams.js";
-import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
+import { ambientCollapseUnder, wetSurfaceUnder } from "./weather.js";
 import { detectTier, QUALITY, type QualityTier } from "./quality.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../sim/terrain.js";
 import {
@@ -170,7 +170,7 @@ import type { WaterLifeSound } from "./waterLifeAudio.js";
 import { PROP_ROUGHNESS, propColour } from "./propBoxes.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo, whenSceneReady } from "./rendererSwap.js";
-import { calmShare, isRough, roughShare, smearPx, SLOPE_PAW_DEG } from "./lakeCalm.js";
+import { createCalmFade, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
 import { lakeSunShare } from "./lakeRipples.js";
 import { SUN_PEAK } from "./sky.js";
 import { createLakeMirror, createLakeMirrorTerrain, MIRROR_MOTION_SMEAR, mirrorMotion } from "./lakeMirror.js";
@@ -940,73 +940,6 @@ export function pixelAtOneMetre(fov: number, renderHeight: number): number {
   return (2 * Math.tan(fov / 2)) / Math.max(1, renderHeight);
 }
 
-/** The lake's surface as its calm leaves it this frame (`lakeCalmUnder`). */
-export type LakeCalmFrame = {
-  /** The glass's share of the lake, 0 to 1: the calm share at the hour,
-   * faded from one preset's to the next's, times what the rough leaves. */
-  share: number;
-  /** Past the rough's steps (`isRough`): rain, or a strong wind on an exposed lake. */
-  rough: boolean;
-  /** How rough the whole surface is, 0 to 1 (`roughShare`): the steps eased into ramps. */
-  roughShare: number;
-  /** How much of the lake the cat's-paws cover, 0 to 1: eased to 1 as it turns rough. */
-  cover: number;
-  /** The vertical smear (px) of the shore's image inside a full paw, for the frame's height and lens: the shader scales it by the paw mask. */
-  smearPx: number;
-};
-
-/** The shelter at which the cat's-paws cover everything the glass leaves:
- * the clear high lake's (`lakeWaterRow` at murk 0). A sheltered lake's
- * cover is scaled down by its own shelter over this. */
-export const PAW_COVER_SHELTER = 0.3;
-
-/**
- * The glass's share at `hour` faded from `from` to the preset `to` by `t` (0
- * to 1, a weather fade's progress; exact at the ends, as `lerpWeather` is,
- * and a progress that is not a number is the start): `from` is a preset, or
- * the share a fade began at when it took over from another mid-way.
- */
-export function fadedCalmShare(hour: number, from: WeatherPresetName | number, to: WeatherPresetName, t: number): number {
-  const k = t > 0 ? Math.min(1, t) : 0;
-  const a = typeof from === "number" ? from : calmShare(hour, from);
-  const b = calmShare(hour, to);
-  return k === 1 ? b : a + (b - a) * k;
-}
-
-/**
- * The lake's calm this frame into `out` (one record, refilled): the calm
- * share at `hour` faded from `from` (a preset, or the share a fade began at)
- * to the preset `to` by `t` (`fadedCalmShare`), the surface rough under `weather` and
- * the wind's 0..1 speed on a lake of `shelter`, the paws' cover
- * `(1 − share) · shelter / PAW_COVER_SHELTER`, and the smear of a paw's
- * slope for a frame `frameHeightPx` tall seen through `fov` (vertical,
- * radians). As the surface turns rough (`roughShare`, r) the share is
- * scaled by 1 − r and the cover eased to 1 by r: rough all over, the share
- * is 0 and the paws cover the lake.
- */
-export function lakeCalmUnder(
-  hour: number,
-  from: WeatherPresetName | number,
-  to: WeatherPresetName,
-  t: number,
-  weather: WeatherParams,
-  wind01: number,
-  shelter: number,
-  frameHeightPx: number,
-  fov: number,
-  out: LakeCalmFrame,
-): LakeCalmFrame {
-  const share = fadedCalmShare(hour, from, to, t);
-  const r = roughShare(weather, wind01, shelter);
-  const cover = Math.min(1, Math.max(0, ((1 - share) * shelter) / PAW_COVER_SHELTER));
-  out.rough = isRough(weather, wind01, shelter);
-  out.roughShare = r;
-  out.share = share * (1 - r);
-  out.cover = cover + (1 - cover) * r;
-  out.smearPx = smearPx(SLOPE_PAW_DEG, frameHeightPx, fov);
-  return out;
-}
-
 /**
  * The colour the lake's reflections light their ground with (the terrain's
  * stand-in, `lakeMirrorColour`), into `out`: the forest floor's needle bed
@@ -1116,6 +1049,7 @@ export function createPlayerSlots(count: number): PlayerSlots {
 }
 
 export { LAKE_SURFACE_SPACING, lakeSurfaceGrid };
+export { PAW_COVER_SHELTER, fadedCalmShare, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
 
 /**
  * One lake's surface: a flat grid every `LAKE_SURFACE_SPACING` metres over
@@ -3101,13 +3035,8 @@ function buildRenderer(
   const lastEye = new Vector3();
   let eyeSeen = false;
   let mirrorMotionM = 0;
-  /** What the calm fades from (a preset, or the share a fade took over at)
-   * and the preset it fades to, and the fade's length and progress (s):
-   * `setWeatherName`. */
-  let calmFrom: WeatherPresetName | number = DEFAULT_WEATHER;
-  let calmTo: WeatherPresetName = DEFAULT_WEATHER;
-  let calmFadeS = 0;
-  let calmElapsedS = 0;
+  /** The weather's preset as the calm follows it, through a fade (`lakeCalmFrame.ts`): `setWeatherName`. */
+  const calmFade = createCalmFade();
   /** The sky state the panorama was last armed under: the lighting makes a
    * new one at each apply that re-arms the sky's probe (`Lighting.sky`). */
   let panoramaSky: SkyState | null = null;
@@ -3151,14 +3080,7 @@ function buildRenderer(
    */
   function updateLake(weather: WeatherParams, sky: SkyState | null, eye: boolean): void {
     if (lakePlugins.length === 0) return;
-    if (calmFadeS > 0) {
-      calmElapsedS += engine.getDeltaTime() / 1000;
-      if (calmElapsedS >= calmFadeS) {
-        calmFrom = calmTo;
-        calmFadeS = 0;
-      }
-    }
-    const fade = calmFadeS > 0 ? calmElapsedS / calmFadeS : 1;
+    calmFade.step(engine.getDeltaTime() / 1000);
     // The lake the mirror and the panorama serve: the nearest past its bound,
     // held until another is 20 m nearer (`lakeChoice.ts`). On a move the old
     // lake's material lets go of both, and they follow to the new one.
@@ -3179,7 +3101,7 @@ function buildRenderer(
     for (let i = 0; i < lakePlugins.length; i++) {
       const plugin = lakePlugins[i] as WaterPlugin;
       const c = lakeCalmUnder(
-        lighting.hour, calmFrom, calmTo, fade, weather, wind.speed, lakeShelters[i] as number, engine.getRenderHeight(), camera.fov, lakeCalm,
+        lighting.hour, calmFade.from, calmFade.to, calmFade.progress, weather, wind.speed, lakeShelters[i] as number, engine.getRenderHeight(), camera.fov, lakeCalm,
       );
       // Without a mirror the weight is 1 until the surface is rough all over,
       // where the ramped share has already reached 0: no step in the image.
@@ -3829,18 +3751,7 @@ function buildRenderer(
       post.setPalette(PAINT_PALETTES[name], fadeSeconds);
     },
     setWeatherName(name, fadeSeconds = 3) {
-      if (fadeSeconds <= 0) {
-        calmFrom = name;
-        calmTo = name;
-        calmFadeS = 0;
-        calmElapsedS = 0;
-        return;
-      }
-      // A fade taken over mid-way starts from the share it had reached.
-      calmFrom = calmFadeS > 0 ? fadedCalmShare(lighting.hour, calmFrom, calmTo, calmElapsedS / calmFadeS) : calmTo;
-      calmTo = name;
-      calmFadeS = fadeSeconds;
-      calmElapsedS = 0;
+      calmFade.name(name, fadeSeconds, lighting.hour);
     },
     setBobScale(scale) {
       bob.setScale(scale);
