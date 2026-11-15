@@ -13,8 +13,9 @@
  * meet Lite: an engine, a scene, a camera, two lights, the terrain's two
  * materials and their meshes, the forest's buckets (`forestMeshes.ts`), the
  * clutter's (`clutterMeshes.ts`) and the cliffs' (`cliffMeshes.ts`), which
- * land as their models do, and the grass's and the duff's
- * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them.
+ * land as their models do, the grass's and the duff's
+ * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them, and the
+ * chunk props' boxes (`propMeshes.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -77,6 +78,7 @@ import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
 import { notDrawnMembers } from "./notDrawn.js";
+import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
 import { emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainWetPlugin } from "./terrainPlugins.js";
 import { createWorldLight } from "./worldLight.js";
@@ -125,6 +127,7 @@ type Standing = {
   clutter: ClutterMeshes | null;
   duff: DuffMeshes | null;
   cliffs: CliffMeshes | null;
+  props: PropMeshes | null;
 };
 
 /**
@@ -230,6 +233,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.props?.dispose();
     made.cliffs?.dispose();
     made.duff?.dispose();
     made.clutter?.dispose();
@@ -283,6 +287,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     let clutter: ClutterMeshes | null = null;
     let duff: DuffMeshes | null = null;
     let cliffs: CliffMeshes | null = null;
+    let props: PropMeshes | null = null;
     // The ground cloud's map, which every material's air reads.
     const cloudMap = forest === null ? null : cloudMapTexture(engine);
     if (forest !== null && cloudMap !== null) {
@@ -373,8 +378,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       cliffs = createCliffMeshes(engine, scene, forest.seed, {
         quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.cliff), air: () => atmospherePlugin(airValues, cloudMap),
       });
+      // Every chunk prop the simulation collides with that no other mesh draws, as its box. A world as the game makes
+      // it today has none, and none is made.
+      props = createPropMeshes(engine, scene, forest.grid, { wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap) });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs };
+    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props };
     if (disposed) {
       release(made);
       return;
@@ -500,6 +508,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.clutter?.frame();
     made.duff?.frame();
     made.cliffs?.frame();
+    made.props?.frame();
   }
 
   let skyWait: Promise<void> | null = null;
@@ -614,6 +623,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           standing.clutter?.update(centre.x, centre.z);
           standing.duff?.update(centre.x, centre.z);
           standing.cliffs?.update(centre.x, centre.z);
+          standing.props?.update(centre.x, centre.z);
         }
         // The blades and the grass class's cards are cut to the view once the camera's pose for the frame is final.
         cullPose.x = pose.x;
