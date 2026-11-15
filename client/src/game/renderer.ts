@@ -128,18 +128,8 @@ import { LIP_SPEED_MAX, LIP_SPEED_MIN, LipTracker, lipProfile } from "./oceanBre
 import { createOceanLip, type OceanLip } from "./oceanLip.js";
 import { SURF_SPRAY_BURSTS, SURF_SPRAY_RANGE_M, createSurfSpray, type SurfSpray } from "./surfSpray.js";
 import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "./surfSound.js";
-import {
-  BED_GRID,
-  bakeBed,
-  bakeRows,
-  bedNeedsRebake,
-  bedOutsideSquare,
-  bedSquareHasWater,
-  beginBake,
-  createBedGrid,
-  type BedBake,
-  type BedGrid,
-} from "./bedHeight.js";
+import { createBedFollow } from "./bedFollow.js";
+import type { BedGrid } from "./bedHeight.js";
 import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
 import { WATER_BUMP_SIZE, waterBumpData } from "./waterBump.js";
 import { featureTableFor } from "./featureTable.js";
@@ -800,9 +790,6 @@ function applyWaterGeometry(mesh: Mesh, geometry: WaterGeometry): void {
   mesh.setVerticesData("oceanCoarse", geometry.oceanCoarse, true, 2);
 }
 
-/** Rows of the bed grid baked per frame: a whole 256² grid measured 260 to 295 ms. */
-const BED_ROWS_PER_FRAME = 1;
-
 export type Water = {
   /** One mesh per ring, coarsening outward — seven draw calls, capped by design.
    * NEVER added to the shadow caster list: water neither casts nor receives. */
@@ -1242,18 +1229,13 @@ export function createWater(
     }
   });
 
-  const { texels, spacing } = BED_GRID[tier];
-  const bakedAhead = prepared?.bed ?? null;
-  let grid = bakedAhead ?? createBedGrid(texels, spacing);
-  let spare = createBedGrid(texels, spacing);
-  let bake: BedBake | null = null;
-  // The last square found out of every body's reach: not asked again until
-  // the camera's square changes.
-  let dryX = Number.NaN;
-  let dryZ = Number.NaN;
-  let firstUpdate = true;
+  // The bed's square follows the camera with no engine (`bedFollow.ts`): first
+  // filled at load, before any frame is shown, unless it came baked ahead.
+  const bed = createBedFollow(tier, seed, lakes, waterLevel, camX, camZ, prepared?.bed ?? null);
+  const { texels, spacing } = bed;
   let bedTexture: RawTexture | null = null;
   function uploadBed(): void {
+    const grid = bed.grid;
     if (bedTexture === null) {
       bedTexture = RawTexture.CreateRTexture(
         grid.heights,
@@ -1279,9 +1261,6 @@ export function createWater(
     }
   }
   for (const p of plugins) p.octaves = tier === "low" ? 1 : 2;
-  // The first fill is at load, before any frame is shown: the whole grid at
-  // once, unless it came baked ahead.
-  if (bakedAhead === null) bakeBed(grid, seed, camX, camZ);
   uploadBed();
 
   // The cove the sea's edge runs along (below), and the span of z its
@@ -1453,34 +1432,9 @@ export function createWater(
       for (let level = 0; level < WATER_RING_COUNT; level++) {
         if (moved[level] || (level > 0 && (moved[level - 1] as boolean))) emitRing(level);
       }
-      // The bed re-centres a row a frame into the spare grid (a whole 256²
-      // bake is 260 to 295 ms) and swaps in when complete.
-      if (firstUpdate) {
-        // The camera's real start is only known now: if it is outside the grid
-        // made at creation, fill the whole grid at once (at load, before the
-        // first frame is shown) rather than draw ~256 frames on the wrong bed.
-        firstUpdate = false;
-        if (bakeBed(grid, seed, camX, camZ)) uploadBed();
-      }
-      // A bake whose square the camera has already left (a teleport, a fast
-      // ride) would swap in a bed for somewhere else: start over. Only the
-      // whole square counts: leaving its inner half is what starts a bake, and
-      // dropping on that would never let steady motion finish one.
-      if (bake !== null && bedOutsideSquare(bake.originX, bake.originZ, texels, spacing, camX, camZ)) bake = null;
-      if (bake === null && bedNeedsRebake(grid, camX, camZ)) {
-        const next = beginBake(spare, camX, camZ);
-        // Where no body reaches the new square the current bed is kept: outside
-        // it the ring's per-vertex depth stands in, and there is no water there.
-        if (next.originX !== dryX || next.originZ !== dryZ) {
-          if (bedSquareHasWater(next, spare, lakes, waterLevel, seed)) bake = next;
-          else [dryX, dryZ] = [next.originX, next.originZ];
-        }
-      }
-      if (bake !== null && bakeRows(spare, seed, bake, BED_ROWS_PER_FRAME)) {
-        [grid, spare] = [spare, grid];
-        bake = null;
-        uploadBed();
-      }
+      // The bed re-centres a row a frame into its spare grid and swaps in when
+      // complete; a grid that has changed is uploaded with its origin.
+      if (bed.step(camX, camZ)) uploadBed();
       for (const p of plugins) p.advance(seconds);
       ocean.update(camX, camZ, seconds, seaWind, seaWindDir, hour, seaDrawn());
       // The sea's edge, on the same seconds and swell, under the onshore
