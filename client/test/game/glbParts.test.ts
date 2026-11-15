@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { glbParts } from "../../src/game/glbParts.js";
+import { glbEmissive, glbParts } from "../../src/game/glbParts.js";
 
 const MODELS = join(import.meta.dirname, "../../assets/models");
 
@@ -106,5 +106,15 @@ describe("what a model's file says of a named node's primitives", () => {
 
   it("refuses bytes that are not a binary glTF", () => {
     expect(() => glbParts(new ArrayBuffer(64), "LOD0")).toThrow(/not a binary glTF/);
+  });
+});
+
+describe("what a model's materials give off, read from its file", () => {
+  it("names the Hollow's eyes as the one material that glows, and no ranger's", () => {
+    const hollow = glbEmissive(model("hollow.antlered.glb"));
+    expect([...hollow.keys()].sort()).toEqual(["hollow.antlered.material0", "hollow.antlered.material1"]);
+    expect(hollow.get("hollow.antlered.material0")).toEqual([0, 0, 0]);
+    expect(hollow.get("hollow.antlered.material1")).toEqual([1, 0, 0]);
+    for (const [, emissive] of glbEmissive(model("ranger.nathan.glb"))) expect(emissive).toEqual([0, 0, 0]);
   });
 });

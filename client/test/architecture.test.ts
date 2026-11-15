@@ -548,6 +548,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "creatureAssets.ts"),
       join(SRC, "game", "wingParams.ts"),
       join(SRC, "game", "wildlifeScene.ts"),
+      join(SRC, "game", "skinInstances.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -679,7 +680,7 @@ describe("layer boundaries", () => {
   it("what the hikers, the Hollows, the cap and the animals are drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
       "characterAssets.ts", "entityPoses.ts", "hollowLook.ts", "lampParams.ts", "skinParams.ts", "droppedCap.ts", "creatureAssets.ts", "wingParams.ts",
-      "wildlifeScene.ts", "wildlifeField.ts", "wildlifeBehaviour.ts", "wildlifeDirector.ts", "groundTilt.ts",
+      "wildlifeScene.ts", "wildlifeField.ts", "wildlifeBehaviour.ts", "wildlifeDirector.ts", "groundTilt.ts", "skinInstances.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
@@ -731,7 +732,7 @@ describe("layer boundaries", () => {
     expect(lite.sort()).toEqual([
       "game/lite/bladeMeshes.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
       "game/lite/listMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/shaderUniforms.ts",
-      "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/terrainMeshes.ts",
+      "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/terrainMeshes.ts",
     ]);
     // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.
     const renderer = readFileSync(join(SRC, "game/renderer.ts"), "utf8");

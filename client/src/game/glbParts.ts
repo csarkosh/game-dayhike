@@ -35,6 +35,7 @@ type GltfNode = { name?: string; mesh?: number; children?: number[] };
 type GltfPrimitive = { attributes: Record<string, number>; material?: number };
 type GltfMaterial = {
   name?: string;
+  emissiveFactor?: number[];
   alphaMode?: string;
   alphaCutoff?: number;
   doubleSided?: boolean;
@@ -86,6 +87,21 @@ function vec4Floats(json: Gltf, bin: Uint8Array, index: number): Float32Array | 
   const out = new Float32Array(accessor.count * 4);
   for (let i = 0; i < accessor.count; i++) {
     for (let k = 0; k < 4; k++) out[i * 4 + k] = view.getFloat32(i * stride + k * 4, true);
+  }
+  return out;
+}
+
+/**
+ * What each material of `file` gives off, by the material's name: its
+ * emissive factor, black where the file gives none. A loader that keeps a
+ * material's emissive colour to itself leaves this to be read here.
+ */
+export function glbEmissive(file: ArrayBuffer): Map<string, readonly [number, number, number]> {
+  const out = new Map<string, readonly [number, number, number]>();
+  for (const material of chunks(file).json.materials ?? []) {
+    if (material.name === undefined) continue;
+    const e = material.emissiveFactor;
+    out.set(material.name, [e?.[0] ?? 0, e?.[1] ?? 0, e?.[2] ?? 0]);
   }
   return out;
 }
