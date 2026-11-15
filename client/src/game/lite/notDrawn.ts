@@ -8,8 +8,8 @@
  * stones), the blade grass, the duff, the cliffs' rock walls where the
  * field lays any and the chunk props' boxes, under the atmosphere and the
  * sky's dome, lit by the sun, the sky's fill and the sky's capture as the
- * image-based light for the hour and the weather, from the player's eye or
- * the free camera. Every other part of the world is absent, and the
+ * image-based light for the hour and the weather and by the local player's
+ * headlamp, from the player's eye or the free camera. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is
  * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
@@ -30,7 +30,7 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the sea, the lakes, their plants and reflections, the surf and its spray", members: ["hasSea", "surfSound"] },
   { what: "the lakes' insects and frogs", members: ["hasWaterLife", "waterLifeSound"] },
   { what: "the animals", members: ["hasWildlife", "wildlifeEvents", "wildlifeDirectorLog"] },
-  { what: "the players' bodies and lamps, the Hollow and the dropped cap", members: ["setSkinShading"] },
+  { what: "the players' bodies and the lamps they wear (the local player's lamp on the lens is lit), the Hollow and the dropped cap", members: ["setSkinShading"] },
   { what: "the sun's cast shadows", members: [] },
   { what: "the mist banks, the motes and the ground cloud", members: ["setHaunt", "setMist", "setMistIn"] },
   { what: "the rain, its splashes and its cover, and the lens's read of the canopy over it that keeps the rain off it", members: ["canopyWater", "canopyOver"] },

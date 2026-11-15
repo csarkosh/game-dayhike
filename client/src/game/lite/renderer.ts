@@ -2,8 +2,8 @@
  * The hike's renderer on Babylon Lite: the terrain, the forest's trees near
  * and far, the ground clutter, the blade grass, the duff and the cliffs under the
  * atmosphere and the sky's dome, lit by the sun, the sky's fill and the sky's
- * capture as the image-based light for the hour and the weather, seen from
- * the player's eye or the free camera. It
+ * capture as the image-based light for the hour and the weather and by the
+ * local player's headlamp, seen from the player's eye or the free camera. It
  * answers the whole of `Renderer` (`renderer.ts`), and what it does not draw
  * yet it answers as nothing (`notDrawn.ts` has the list).
  *
@@ -11,7 +11,7 @@
  * terrain's uniforms, tables, layers and vertex data, the forest's, the
  * clutter's and the grass's instance lists and their materials' uniforms,
  * the air's uniforms, the sky's, the lights and the lens. This module is
- * where those meet Lite: an engine, a scene, a camera, two lights, the
+ * where those meet Lite: an engine, a scene, a camera, three lights, the
  * sky's dome (`skyDome.ts`) and its capture as the scene's environment
  * (`skyCapture.ts`), the terrain's two materials and their meshes,
  * the forest's buckets (`forestMeshes.ts`), the
@@ -63,12 +63,12 @@
  * stage the same. There is no post chain.
  */
 import {
-  NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial,
+  NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
   createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrMaterialPluginVertexData,
   markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, resizeEngine, vec3,
   writePluginUniformBlock,
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type PbrMaterialProps,
-  type PluginUniformBlock, type SceneContext,
+  type PluginUniformBlock, type SceneContext, type SpotLight,
 } from "@babylonjs/lite";
 import { PLAYER_EYE_OFFSET } from "../../sim/constants.js";
 import type { Forest } from "../../sim/forest.js";
@@ -87,6 +87,7 @@ import { featureTableFor } from "../featureTable.js";
 import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../foliageUniforms.js";
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
+import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type LampState } from "../lampParams.js";
 import type { CullPose } from "../grassCull.js";
 import { writeListenerPose } from "../listenerPose.js";
 import { sharedSeconds } from "../oceanWindSea.js";
@@ -157,6 +158,8 @@ type Standing = {
   camera: BankedFreeCamera;
   sun: DirectionalLight;
   fill: HemisphericLight;
+  /** The local player's headlamp, on the lens (`headlamp.ts`). */
+  lamp: SpotLight;
   /** The sky's dome, drawn behind everything (`skyDome.ts`). */
   dome: LiteSkyDome;
   /** The dome's capture, the scene's image-based light (`skyCapture.ts`). */
@@ -281,6 +284,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let standing: Standing | null = null;
   /** The light's version the lights and the cleared frame were last written for. */
   let litVersion = -1;
+  /** The headlamp as the frame lights it: on while the local player's is and the camera is the eye, at the weather's
+   * state (`lampUnder`); and what the light was last written with. */
+  const lensLamp: { on: boolean; state: LampState } = { on: false, state: lampUnder(light.weather, 0) };
+  const lampWritten = { intensity: Number.NaN, r: 0, g: 0, b: 0, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0 };
   /** The sky's state the dome was last drawn for: the light makes a new one at each apply. */
   let domeSky: SkyState | null = null;
   /** The canvas's size the engine was last fitted to, CSS pixels. */
@@ -340,6 +347,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     addToScene(scene, camera);
     scene.camera = camera;
 
+    // The local player's headlamp, made first as the game makes it, and off until a frame lights it.
+    const lamp = createSpotLight([pose.x, pose.y, pose.z], [0, 0, 1], LAMP_ANGLE, LAMP_EXPONENT, 0);
+    lamp.range = LAMP_RANGE;
+    lamp.diffuse = [LAMP_COLOUR[0], LAMP_COLOUR[1], LAMP_COLOUR[2]];
+    lamp.specular = [LAMP_COLOUR[0], LAMP_COLOUR[1], LAMP_COLOUR[2]];
+    addToScene(scene, lamp);
     // The sun and the fill, set by the first frame's light.
     const sun = createDirectionalLight([0, -1, 0], 1);
     const fill = createHemisphericLight([0, 1, 0], 1);
@@ -473,7 +486,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, firstBuilds: options.firstBuilds, uploads,
       });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, dome, capture, shared, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props };
+    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props };
     if (disposed) {
       release(made);
       return;
@@ -574,6 +587,38 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     uploads.count("uniforms", SKY_CAPTURE_BYTES);
   }
 
+  /**
+   * The headlamp at the eye, along the view, at the frame's state, or at an intensity of 0: written only where any of
+   * it has moved, so a still frame writes nothing, and a lamp that is off is not moved.
+   */
+  function placeLamp(made: Standing): void {
+    const { lamp } = made;
+    const intensity = lensLamp.on ? lensLamp.state.intensity : 0;
+    const w = lampWritten;
+    const { r, g, b } = lensLamp.state.colour;
+    const lit = intensity > 0;
+    const moved = lit && (w.x !== pose.x || w.y !== pose.y || w.z !== pose.z || w.dx !== axes.fx || w.dy !== axes.fy || w.dz !== axes.fz);
+    const recoloured = lit && (w.r !== r || w.g !== g || w.b !== b);
+    if (intensity === w.intensity && !moved && !recoloured) return;
+    w.intensity = intensity;
+    lamp.intensity = intensity;
+    if (lit) {
+      w.x = lamp.position.x = pose.x;
+      w.y = lamp.position.y = pose.y;
+      w.z = lamp.position.z = pose.z;
+      w.dx = lamp.direction.x = axes.fx;
+      w.dy = lamp.direction.y = axes.fy;
+      w.dz = lamp.direction.z = axes.fz;
+      // Its highlight takes its own colour, as the game's lamp's does.
+      w.r = r;
+      w.g = g;
+      w.b = b;
+      lamp.diffuse = [r, g, b];
+      lamp.specular = [r, g, b];
+    }
+    markLightDirty(lamp);
+  }
+
   /** The frame's numbers into what stands: the camera, the lights, the exposure and the terrain's materials. */
   function draw(made: Standing, wetness: number): void {
     const { camera, scene } = made;
@@ -588,6 +633,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     camera.upVector.z = axes.uz;
     camera.fov = fov;
     relight(made);
+    placeLamp(made);
     redrawSky(made);
     scene.imageProcessing.exposure = light.exposure;
     // The road's table follows the eye before the uniforms are made: they carry where it is centred.
@@ -693,6 +739,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       }
       setFoliageWind(wind, windPlayers);
 
+      // The headlamp's state under the weather; lit below while the local player's is and the camera is the eye.
+      lensLamp.state = lampUnder(weather, seconds);
+      lensLamp.on = false;
       // The world follows the camera in freecam, the player otherwise.
       let centre: { x: number; z: number } | null = null;
       if (freecam !== null) {
@@ -710,6 +759,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         const local = state.players.get(localId);
         if (local !== undefined) {
           centre = local.pos;
+          lensLamp.on = local.lamp.on;
           const offset = bob.update(
             {
               x: local.pos.x,

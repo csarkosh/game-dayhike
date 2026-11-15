@@ -122,7 +122,7 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     const r = make();
     r.setBobScale(0);
     const player = {
-      id: 3, pos: { x: 5, y: 40, z: 9 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.3, pitch: 0.1, grounded: true,
+      id: 3, pos: { x: 5, y: 40, z: 9 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.3, pitch: 0.1, grounded: true, lamp: { on: true, charge: 1 },
     } as unknown as Parameters<typeof windTestState>[0];
     r.sync(windTestState(player), 3, 1);
     expect(r.cameraPosition()).toEqual({ x: 5, y: 40 + PLAYER_EYE_OFFSET, z: 9 });
