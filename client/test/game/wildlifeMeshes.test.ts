@@ -1510,9 +1510,16 @@ describe("an animal's clip runs only where someone could see it", () => {
   });
 
   it("is wired at the pose, after the clip is chosen, with the scene's own frustum", () => {
+    // The pose is the plain module's, judged where the body is drawn, at the height it is seated at.
+    const pose = readFileSync(new URL("../../src/game/wildlifeScene.ts", import.meta.url), "utf8");
+    expect(pose).toContain("g.clip = pose.clip;");
+    expect(pose).toContain("g.animate = creatureInView(ports.planes(), pose.x, g.y, pose.z, distance);");
+    expect(pose.indexOf("g.clip = pose.clip;")).toBeLessThan(pose.indexOf("g.animate = creatureInView("));
+    // The shell hands it the scene's own planes, and plays the clip before it says whether the clip runs.
     const source = readFileSync(new URL("../../src/game/wildlifeMeshes.ts", import.meta.url), "utf8");
-    expect(source).toContain("inst.play(pose.clip);");
-    expect(source).toContain("inst.animate?.(creatureInView(scene.frustumPlanes as Plane[] | undefined, pose.x, inst.root.position.y, pose.z, distance));");
-    expect(source.indexOf("inst.play(pose.clip);")).toBeLessThan(source.indexOf("inst.animate?.(creatureInView("));
+    expect(source).toContain("planes: () => scene.frustumPlanes as Plane[] | undefined,");
+    expect(source).toContain("inst.play(g.clip);");
+    expect(source).toContain("inst.animate?.(g.animate);");
+    expect(source.indexOf("inst.play(g.clip);")).toBeLessThan(source.indexOf("inst.animate?.(g.animate);"));
   });
 });
