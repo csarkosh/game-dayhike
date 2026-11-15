@@ -78,7 +78,6 @@ import { TERRAIN_SURFACE, terrainCoverFor } from "./terrainUniforms.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
 import { createLighting, DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "./lighting.js";
 import type { SkyState } from "./skyState.js";
-import { luma } from "./colour.js";
 import type { SkyTable } from "./skyTable.js";
 import { startSkySource, type SkySource } from "./skyWorker.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
@@ -157,6 +156,7 @@ import { createRainMap } from "./rainMap.js";
 import { createRainSplash, type RainSplash } from "./rainSplash.js";
 import { createMotes, type Motes } from "./motes.js";
 import { createWaterLife, type WaterLife, type WaterLifeFrame } from "./waterLife.js";
+import { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf } from "./waterLifeInputs.js";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
 import { PROP_ROUGHNESS, propColour } from "./propBoxes.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
@@ -908,25 +908,6 @@ export function setEffectsGroup(group: number, effects: SeeThroughEffects): void
 }
 
 /**
- * The sky behind a swarm seen level, 0 to 1, which the midges darken against
- * (`midgeSwarms.ts`): the luminance of the dome's horizon away from the sun
- * (`SkyState.horizonAway`), the side where a speck reads dark rather than
- * glinting. It is in the scene's adapted units with the cloud deck and the
- * night's floor already in it: 0.03 at night, 0.25 a quarter hour after
- * sunset, 0.53 at sunrise and sunset, 0.71 at clear noon, held at 1 in a clear
- * late afternoon (1.22 at 17:00). 0 before the sky's first slices.
- */
-export function skyLumaOf(sky: SkyState | null): number {
-  return sky === null ? 0 : Math.min(1, luma(sky.horizonAway));
-}
-
-/** The world size of one pixel a metre from the lens: the view's height at a
- * metre, `2·tan(fov / 2)`, over the render's height in pixels. */
-export function pixelAtOneMetre(fov: number, renderHeight: number): number {
-  return (2 * Math.tan(fov / 2)) / Math.max(1, renderHeight);
-}
-
-/**
  * The colour the lake's reflections light their ground with (the terrain's
  * stand-in, `lakeMirrorColour`), into `out`: the forest floor's needle bed
  * under the sun on level ground and the fill, as `lighting.ts` sets them
@@ -949,92 +930,11 @@ const CLIFF_FAR_SUFFIX = `_l${CLIFF_LOD_NODES.length - 1}`;
  * that holds a lake's shore stacks, which the high mirror draws as well. */
 const CLIFF_LOD1_SUFFIX = "_l1";
 
-/** `value` and every object it holds, frozen. */
-function frozenThrough<T extends object>(value: T): T {
-  for (const held of Object.values(value)) if (typeof held === "object" && held !== null) frozenThrough(held);
-  Object.freeze(value);
-  return value;
-}
-
-/** What a world without the lake's life sounds like, and a frame that did
- * not step it: nothing. Frozen through, as every caller is handed this one
- * object. */
-export const SILENT_WATER_LIFE: WaterLifeSound = frozenThrough({
-  hums: [], hums_n: 0, pitch: 0, rustles: [], frogCalls: [],
-  bed: { level: 0, duck: [1, 1], points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
-});
-
 /** The mean of the lip's throw over the wave's speed (`LIP_SPEED_MIN`..`LIP_SPEED_MAX`): the spray's launch. */
 const SPRAY_THROW = (LIP_SPEED_MIN + LIP_SPEED_MAX) / 2;
 
-/** A player's position in their slot: the sim's own, y the body's centre. */
-export type SlotPoint = { x: number; y: number; z: number };
-
-export type PlayerSlots = {
-  /**
-   * Seats `players` and returns each slot's player's position, undefined for
-   * an empty slot: one array, refilled in place by every call.
-   */
-  fill(players: ReadonlyMap<number, { readonly id: number; readonly pos: Vec3 }>): readonly (SlotPoint | undefined)[];
-};
-
-/**
- * `count` slots the players keep for as long as they are in the world, for
- * the lake's life, which keeps a head swarm and a speed by index: a list
- * rebuilt in the Map's order would close up when a player leaves and hand
- * theirs to the next. A player who leaves frees their slot; one who joins
- * takes the lowest slot free before this call, never one it freed, so a slot
- * stands empty for a frame between two players. Players past the last slot go
- * without. Allocates nothing per call beyond the Map's iterator.
- */
-export function createPlayerSlots(count: number): PlayerSlots {
-  const ids: number[] = new Array<number>(count).fill(0);
-  const taken: boolean[] = new Array<boolean>(count).fill(false);
-  const freed: boolean[] = new Array<boolean>(count).fill(false);
-  const points: SlotPoint[] = [];
-  for (let s = 0; s < count; s++) points.push({ x: 0, y: 0, z: 0 });
-  const out: (SlotPoint | undefined)[] = new Array<SlotPoint | undefined>(count).fill(undefined);
-  return {
-    fill(players) {
-      for (let s = 0; s < count; s++) {
-        freed[s] = false;
-        if (taken[s] && !players.has(ids[s]!)) {
-          taken[s] = false;
-          freed[s] = true;
-          out[s] = undefined;
-        }
-      }
-      for (const p of players.values()) {
-        let at = -1;
-        for (let s = 0; s < count; s++) {
-          if (taken[s] && ids[s] === p.id) {
-            at = s;
-            break;
-          }
-        }
-        if (at < 0) {
-          for (let s = 0; s < count; s++) {
-            if (!taken[s] && !freed[s]) {
-              at = s;
-              break;
-            }
-          }
-          if (at < 0) continue;
-          taken[at] = true;
-          ids[at] = p.id;
-        }
-        const q = points[at]!;
-        q.x = p.pos.x;
-        q.y = p.pos.y;
-        q.z = p.pos.z;
-        out[at] = q;
-      }
-      return out;
-    },
-  };
-}
-
 export { LAKE_SURFACE_SPACING, lakeSurfaceGrid };
+export { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf, type PlayerSlots, type SlotPoint } from "./waterLifeInputs.js";
 export { PAW_COVER_SHELTER, fadedCalmShare, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
 
 /**
