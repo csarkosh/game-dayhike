@@ -13,11 +13,20 @@
  * own draws read them: Babylon.js's cube target draws its faces in turn,
  * and nothing of the capture is spread over frames.
  *
- * **What.** Each face holds the dome's linear radiance toward its texels
- * (`domeRadiance` with the disc capped, `skyState.ts`), at the cube's top
- * level alone: Babylon.js reads a probe there whatever a material's
- * roughness. The probe gives no diffuse light: no irradiance is worked for
- * it.
+ * **What.** Each face holds the dome's linear radiance (`domeRadiance`
+ * with the disc capped, `skyState.ts`) as the probe sees it toward its
+ * texels, at the cube's top level alone: Babylon.js reads a probe there
+ * whatever a material's roughness. The probe gives no diffuse light: no
+ * irradiance is worked for it.
+ *
+ * **Where from.** The probe stands at the world's origin, where Babylon.js
+ * puts a reflection probe and the game leaves it, while the dome it
+ * captures is the box that rides with the eye (`SKY_DOME_SIZE` across). So
+ * the dome's direction a texel holds is not the texel's own: it is the way
+ * from the eye to where the texel's ray from the origin meets the box
+ * (`probeDomeDirection`). With the eye a few hundred metres from the
+ * origin, the captured horizon stands a few texels off the face's middle;
+ * the capture keeps the eye of the frame it was made in until the next.
  *
  * **Layout.** The cube map's own: layers +x, -x, +y, -y, +z, -z, a texel's
  * column across a face and its row down it, in the world's axes as they
@@ -26,6 +35,7 @@
  * Loads no engine.
  */
 import type { Vec3 } from "./sky.js";
+import { SKY_DOME_SIZE } from "./skyDomeParams.js";
 
 /** Texels a face of the probe's cube. */
 export const SKY_PROBE_SIZE = 128;
@@ -62,5 +72,27 @@ export function probeTexelDirection(face: number, x: number, y: number, size: nu
   out.x = dx / length;
   out.y = dy / length;
   out.z = dz / length;
+  return out;
+}
+
+/**
+ * The dome's direction the probe sees along the unit `ray` from its place,
+ * the world's origin, when the eye stands at `eye`: from the eye to where
+ * the ray meets the faces of the dome's box round the eye. Unit; along the
+ * ray itself when the eye is at the origin. Fills and returns `out` (a
+ * vector of its own when none is given).
+ */
+export function probeDomeDirection(ray: Vec3, eye: Vec3, out: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
+  const half = SKY_DOME_SIZE / 2;
+  // The nearest face ahead along each axis the ray moves on, as a distance along the ray.
+  const along = (r: number, e: number): number => (Math.abs(r) > 1e-8 ? (e + Math.sign(r) * half) / r : Number.POSITIVE_INFINITY);
+  const t = Math.min(along(ray.x, eye.x), along(ray.y, eye.y), along(ray.z, eye.z));
+  const x = ray.x * t - eye.x;
+  const y = ray.y * t - eye.y;
+  const z = ray.z * t - eye.z;
+  const length = Math.hypot(x, y, z);
+  out.x = x / length;
+  out.y = y / length;
+  out.z = z / length;
   return out;
 }
