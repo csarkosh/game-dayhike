@@ -1131,8 +1131,9 @@ describe("world shell wiring", () => {
   });
 
   it("draws the floor cover at CLUTTER_REACH of its radii on the tiers with the blades, the low tier at its own", () => {
+    // The share on each tier is the clutter field's (`clutterReachFor`, pinned in clutterField.test.ts).
     const creation = slice("const clutterMeshes =", "nearBlades:");
-    expect(creation).toContain('radiusScale: tier === "low" ? 0.6 : CLUTTER_REACH,');
+    expect(creation).toContain("radiusScale: clutterReachFor(tier),");
   });
 
   it("creates wildlife under the forest guard, at the low tier's radius, with both shadow hooks", () => {
