@@ -549,6 +549,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "wingParams.ts"),
       join(SRC, "game", "wildlifeScene.ts"),
       join(SRC, "game", "skinInstances.ts"),
+      join(SRC, "game", "wildlifeInputs.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -680,7 +681,7 @@ describe("layer boundaries", () => {
   it("what the hikers, the Hollows, the cap and the animals are drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
       "characterAssets.ts", "entityPoses.ts", "hollowLook.ts", "lampParams.ts", "skinParams.ts", "droppedCap.ts", "creatureAssets.ts", "wingParams.ts",
-      "wildlifeScene.ts", "wildlifeField.ts", "wildlifeBehaviour.ts", "wildlifeDirector.ts", "groundTilt.ts", "skinInstances.ts",
+      "wildlifeScene.ts", "wildlifeField.ts", "wildlifeBehaviour.ts", "wildlifeDirector.ts", "groundTilt.ts", "skinInstances.ts", "wildlifeInputs.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);

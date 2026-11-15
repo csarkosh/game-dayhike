@@ -1137,7 +1137,7 @@ describe("world shell wiring", () => {
   });
 
   it("creates wildlife under the forest guard, at the low tier's radius, with both shadow hooks", () => {
-    const creation = slice("const wildlife =", "const wildlifePlayerPool");
+    const creation = slice("const wildlife =", "const wildlifeInputs = createWildlifeInputs();");
     // Hand-authored levels have no forest and must get no animals; a renderer
     // asked for none (a scene recorded a frame at a time) gets none either.
     expect(creation).toMatch(/forest !== null && options\.wildlife !== false\s*\?\s*createWildlifeMeshes\(/);
@@ -1162,19 +1162,27 @@ describe("world shell wiring", () => {
     // exact trap in `wildlifeMeshes.ts`'s own `update`: without it the
     // director never runs at all, on that branch, for the life of the shell.
     expect(freecamBranch).toContain(
-      "wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);",
+      "wildlife?.update(freecam.x, freecam.z, state.tick, wildlifeInputs.players(state), weather, lighting.hour, wildlifeInputs.director);",
     );
     expect(playerBranch).toContain(
-      "wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);",
+      "wildlife?.update(local.pos.x, local.pos.z, state.tick, wildlifeInputs.players(state), weather, lighting.hour, wildlifeInputs.director);",
     );
-    // Each branch builds that argument's `view` from its own camera-to-be —
+    // Each branch fills that argument's `view` from its own camera-to-be —
     // the freecam's own fields, or the sim's local pos/yaw/pitch rather than
-    // `camera`'s still-stale-this-frame transform — and both look up the
-    // nearest Hollow before calling.
-    expect(freecamBranch).toContain("wildlifeView.x = freecam.x;");
-    expect(playerBranch).toContain("wildlifeView.x = local.pos.x;");
-    expect(freecamBranch).toContain("findHollow(state, freecam.x, freecam.z);");
-    expect(playerBranch).toContain("findHollow(state, local.pos.x, local.pos.z);");
+    // `camera`'s still-stale-this-frame transform — before calling, and the
+    // plain module that fills it looks up the nearest Hollow from the same
+    // point (`wildlifeInputs.ts`).
+    expect(freecamBranch).toContain(
+      "wildlifeInputs.look(state, freecam.x, freecam.y, freecam.z, freecam.yaw, freecam.pitch, camera.fov, engine.getAspectRatio(camera), lighting.hour, weather.mist);",
+    );
+    expect(playerBranch).toContain(
+      "wildlifeInputs.look(state, local.pos.x, local.pos.y + PLAYER_EYE_OFFSET, local.pos.z, local.yaw, local.pitch, camera.fov, engine.getAspectRatio(camera), lighting.hour, weather.mist);",
+    );
+    expect(freecamBranch.indexOf("wildlifeInputs.look(")).toBeLessThan(freecamBranch.indexOf("wildlife?.update("));
+    expect(playerBranch.indexOf("wildlifeInputs.look(")).toBeLessThan(playerBranch.indexOf("wildlife?.update("));
+    const inputs = readFileSync(new URL("../../src/game/wildlifeInputs.ts", import.meta.url), "utf8");
+    expect(inputs).toContain("view.x = x;");
+    expect(inputs).toContain("inputs.findHollow(state, x, z);");
     expect(src.match(/wildlife\?\.dispose\(\)/g)).toHaveLength(1);
   });
 
@@ -1184,11 +1192,15 @@ describe("world shell wiring", () => {
     // replay every call forever, which is inaudible in a unit test and deafening
     // in the game.
     const drain = slice("wildlifeEvents() {", "listener() {");
-    expect(drain).toContain("source.length = 0;");
-    expect(drain).toContain("wildlifeEventDrain[n++] = e;");
+    expect(drain).toContain("return wildlifeInputs.drain(wildlife?.events);");
+    // The drain itself is the plain module's (`wildlifeInputs.ts`).
+    const inputs = readFileSync(new URL("../../src/game/wildlifeInputs.ts", import.meta.url), "utf8");
+    const drained = inputs.slice(inputs.indexOf("drain(source) {"));
+    expect(drained).toContain("source.length = 0;");
+    expect(drained).toContain("drained[n++] = e;");
     // The reused array is truncated to this frame's count, not left holding the
     // previous frame's tail.
-    expect(drain).toContain("wildlifeEventDrain.length = n;");
+    expect(drained).toContain("drained.length = n;");
   });
 
   it("draws on an engine it is given, takes up a kept WebGL2 one, and makes WebGL2's own otherwise", () => {
