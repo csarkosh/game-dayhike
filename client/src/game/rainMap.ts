@@ -51,11 +51,10 @@ import "@babylonjs/core/Shaders/ShadersInclude/instancesDeclaration.js";
 import "@babylonjs/core/Shaders/ShadersInclude/instancesVertex.js";
 
 import type { QualityTier } from "./quality.js";
-import { RAIN_MAP, mapCentre, type Vec3 } from "./rainParams.js";
+import { RAIN_MAP_CAMERA, RAIN_MAP_CLEAR, createRainMapPlace, type RainMapKind } from "./rainCover.js";
+import { RAIN_MAP, type Vec3 } from "./rainParams.js";
 
-/** What a registered mesh is to the rain: ground that may carry canopy, a
- * roof that stops it, or a surface it lands on and falls through. */
-export type RainMapKind = "terrain" | "hard" | "water";
+export { RAIN_MAP_CLEAR, type RainMapKind };
 
 export type RainMap = {
   readonly texture: RenderTargetTexture;
@@ -130,9 +129,6 @@ void main(void) {
 }
 `;
 
-/** The clear colour: a height far below any world, open to the rain. */
-export const RAIN_MAP_CLEAR = { height: -1000, transmission: 1, lift: 0 } as const;
-
 /** Puts the height shader's stages in the store once. */
 function storeHeightShader(): void {
   const vertex = `${RAIN_HEIGHT_SHADER}VertexShader`;
@@ -176,15 +172,15 @@ export function createRainMap(scene: Scene, tier: QualityTier): RainMap | null {
   // rotation (without that it stays world up, along the view, and the view
   // matrix degenerates). Then the view's x is world x and its y is world z,
   // so the texture's u runs along x and its v along z.
-  const half = RAIN_MAP.extent / 2;
-  const camera = new TargetCamera("rain_map_cam", new Vector3(0, RAIN_MAP.height, 0), scene, false);
+  const { half, near, far, height } = RAIN_MAP_CAMERA;
+  const camera = new TargetCamera("rain_map_cam", new Vector3(0, height, 0), scene, false);
   camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
   camera.orthoLeft = -half;
   camera.orthoRight = half;
   camera.orthoBottom = -half;
   camera.orthoTop = half;
-  camera.minZ = 1;
-  camera.maxZ = 2 * RAIN_MAP.height;
+  camera.minZ = near;
+  camera.maxZ = far;
   camera.updateUpVectorFromRotation = true;
   camera.rotation.set(Math.PI / 2, 0, 0);
   texture.activeCamera = camera;
@@ -201,10 +197,9 @@ export function createRainMap(scene: Scene, tier: QualityTier): RainMap | null {
     materials[kind] = material;
   }
 
-  const centre: Vec3 = { x: Number.NaN, y: Number.NaN, z: Number.NaN };
-  const next: Vec3 = { x: 0, y: 0, z: 0 };
-  /** Set by `redraw`: the next `update` draws the map though it has not moved. */
-  let stale = false;
+  // Where the map stands and when it is drawn again (`rainCover.ts`).
+  const place = createRainMapPlace();
+  const centre: Readonly<Vec3> = place.centre;
 
   return {
     texture,
@@ -218,7 +213,7 @@ export function createRainMap(scene: Scene, tier: QualityTier): RainMap | null {
       texture.setMaterialForRendering(mesh, materials[kind]);
     },
     redraw() {
-      stale = true;
+      place.redraw();
     },
     unregister(mesh) {
       const list = texture.renderList;
@@ -228,19 +223,8 @@ export function createRainMap(scene: Scene, tier: QualityTier): RainMap | null {
       if (!mesh.isDisposed()) texture.setMaterialForRendering(mesh, undefined);
     },
     update(player) {
-      if (Number.isNaN(centre.x)) {
-        next.x = player.x;
-        next.y = player.y;
-        next.z = player.z;
-      } else {
-        mapCentre(centre, player, next);
-        if (next.x === centre.x && next.z === centre.z && !stale) return false;
-      }
-      stale = false;
-      centre.x = next.x;
-      centre.y = next.y;
-      centre.z = next.z;
-      camera.position.set(centre.x, centre.y + RAIN_MAP.height, centre.z);
+      if (!place.update(player)) return false;
+      camera.position.set(centre.x, centre.y + height, centre.z);
       texture.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
       return true;
     },
