@@ -26,6 +26,13 @@
  * renderer that cannot be made (no WebGPU device, a shader refused) says so
  * in the console and stays empty.
  *
+ * **The world changes under the game's scheduler** (`syncJobs.ts`), by the
+ * rules the renderer on Babylon.js gives it: a rebuild a crossing starts
+ * (the rings, the patches, the forest's lists, the ground cover's) is a job
+ * a shell begins in its `update`, and `sync` runs the frame's share of them
+ * once every shell has seen the view, the terrain's first, in the order the
+ * game's shells are handed it. A job's last slice shows its result whole.
+ *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
  * 1.1), under the weather's and the hour's exposure. There is no post chain.
@@ -62,7 +69,7 @@ import { QUALITY, detectTier } from "../quality.js";
 import type { FreecamView, Renderer, RendererOptions } from "../renderer.js";
 import { startSkySource, type SkySource } from "../skyWorker.js";
 import { DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "../skyWait.js";
-import { finish, stepSlices } from "../syncJobs.js";
+import { createSyncJobs, finish, stepSlices, type SyncJobs } from "../syncJobs.js";
 import { followRoadCentre, terrainTablesFor, type TerrainTables } from "../terrainTables.js";
 import { terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs } from "../terrainUniforms.js";
 import { createViewBob } from "../viewBob.js";
@@ -134,8 +141,9 @@ type Standing = {
  * A hike's renderer on `canvas` for `forest`'s world (null: a hand-authored
  * level, of which nothing is drawn yet). Of `options` it reads the tier, the
  * clock, the start, the prepared scene's rings and feature table, whether
- * the rings' first build is deferred, and the sky's table; the rest belong
- * to parts not drawn yet. It makes its own engine: one handed in is refused.
+ * the rings' first build is deferred, the loader of first builds, the
+ * measurement mode and the sky's table; the rest belong to parts not drawn
+ * yet. It makes its own engine: one handed in is refused.
  */
 export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, forest: Forest | null, options: RendererOptions = {}): Renderer {
   if (options.engine !== undefined) throw new Error("the hike's renderer makes its own engine from its canvas: none is handed to it");
@@ -211,6 +219,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let windOverride: number | null = null;
   /** When the weather's fade was last stepped, on the renderer's clock (ms). */
   let steppedAt: number | null = null;
+
+  // The rebuilds a crossing starts run as jobs over the frames after it, under the game's per-frame budget
+  // (`syncJobs.ts`): `sync` runs this frame's share once every shell has seen the view.
+  const jobs = createSyncJobs(() => performance.now());
+  // The measurement mode (`?gpuTime`): the jobs' record of the last frame, read out as `window.__syncJobs()` as the
+  // renderer on Babylon.js gives it. A copy each time: the record is written in place every frame.
+  const measured = globalThis as { __syncJobs?: () => SyncJobs["last"] };
+  if (options.gpuTime === true) measured.__syncJobs = () => ({ ...jobs.last, owners: { ...jobs.last.owners } });
 
   let disposed = false;
   /** The device has failed (`abandon`): the forest's bakes are ended, and a forest made after bakes none. */
@@ -334,6 +350,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           start: options.start,
           rings: fittingRings(prepared, forest.seed, options.start ?? { x: 0, z: 0 }, BASE_SPACING_BY_TIER[tier]),
           trail: activeTerrainVariant().trailGraph?.(forest.seed) ?? null,
+          jobs,
+          firstBuilds: options.firstBuilds,
         },
       );
       if (options.deferClipmap !== true) finish(terrain.firstBuild());
@@ -350,11 +368,15 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         frame: frameSize,
         wet: forestWet,
         air: () => atmospherePlugin(airValues, cloudMap),
+        jobs,
+        firstBuilds: options.firstBuilds,
       });
       if (abandoned) trees.abandon();
       // The near field of blade grass, on the tiers that can afford it.
       if (tier !== "low") {
-        blades = createBladeMeshes(engine, scene, forest.seed, { quality: tier, eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap) });
+        blades = createBladeMeshes(engine, scene, forest.seed, {
+          quality: tier, eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap), jobs, firstBuilds: options.firstBuilds,
+        });
       }
       // The ground clutter, which lands as its models do. The tiers that draw the blade field draw it over the
       // meadow's near cards and cut the grass class's cards to the view; low draws the cards alone, whole.
@@ -366,11 +388,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         frame: frameSize,
         wet: wetAt,
         air: () => atmospherePlugin(airValues, cloudMap),
+        jobs,
+        firstBuilds: options.firstBuilds,
       });
       // The near field of dead leaves, twigs and small branches, on the same tiers as the blades beside it.
       if (tier !== "low") {
         duff = createDuffMeshes(engine, scene, forest.seed, {
           quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.duff), air: () => atmospherePlugin(airValues, cloudMap),
+          jobs, firstBuilds: options.firstBuilds,
         });
       }
       // Rock-wall modules on the faces too steep to stand on, on every tier. At the shipped density the field
@@ -380,7 +405,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       });
       // Every chunk prop the simulation collides with that no other mesh draws, as its box. A world as the game makes
       // it today has none, and none is made.
-      props = createPropMeshes(engine, scene, forest.grid, { wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap) });
+      props = createPropMeshes(engine, scene, forest.grid, {
+        wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap), firstBuilds: options.firstBuilds,
+      });
     }
     const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props };
     if (disposed) {
@@ -409,6 +436,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       markSynced();
       if (standing !== null) release(standing);
       standing = null;
+      if (options.gpuTime === true && measured.__syncJobs !== undefined) delete measured.__syncJobs;
     },
   };
 
@@ -615,15 +643,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       drawnWith.rain = weather.rain;
       drawnWith.seconds = seconds;
       if (standing !== null) {
-        // The terrain first: the frame draws the ground where the view now is.
+        // The terrain first, then the shells in the order the game's are handed the view: a frame's jobs go oldest
+        // first, and those begun in one frame in this order.
         if (centre !== null) {
           standing.terrain?.update(centre.x, centre.z);
-          standing.forest?.update(centre.x, centre.z);
-          standing.blades?.update(centre.x, centre.z);
-          standing.clutter?.update(centre.x, centre.z);
-          standing.duff?.update(centre.x, centre.z);
-          standing.cliffs?.update(centre.x, centre.z);
           standing.props?.update(centre.x, centre.z);
+          standing.forest?.update(centre.x, centre.z);
+          standing.cliffs?.update(centre.x, centre.z);
+          standing.clutter?.update(centre.x, centre.z);
+          standing.blades?.update(centre.x, centre.z);
+          standing.duff?.update(centre.x, centre.z);
         }
         // The blades and the grass class's cards are cut to the view once the camera's pose for the frame is final.
         cullPose.x = pose.x;
@@ -638,6 +667,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         standing.clutter?.cull(cullPose);
         draw(standing, weather.wetness);
       }
+      // This frame's share of the rebuilds the updates above began, once every shell has seen the view.
+      jobs.run();
       if (centre !== null) markSynced();
     },
     listener() {
