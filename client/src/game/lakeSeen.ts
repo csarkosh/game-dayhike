@@ -2,8 +2,8 @@
  * Whether a lake's water is in a view, read by its shore and with no engine:
  * the points of the shore a view is tested against, the two cheap answers
  * (the eye over the water, the view's centre ray meeting the lake's level
- * over water), a shore point inside every plane of the view, and a box
- * against the planes. `lakeView.ts` asks these of a Babylon.js camera; a
+ * over water), a shore point inside every plane of the view, and a square,
+ * a box and a sphere against the planes. `lakeView.ts` asks these of a Babylon.js camera; a
  * renderer with planes of its own asks them directly (`lakeDrawnFrom`).
  *
  * Allocates nothing a call.
@@ -71,6 +71,26 @@ export function squareInPlanes(cx: number, y: number, cz: number, half: number, 
     const base = normal.x * cx + normal.y * y + normal.z * cz + d;
     // The corner farthest along the plane's normal: if that one is outside, all four are.
     if (base + Math.abs(normal.x) * half + Math.abs(normal.z) * half < 0) return false;
+  }
+  return true;
+}
+
+/** Whether the box from (minX, minY, minZ) to (maxX, maxY, maxZ) reaches inside every one of `planes`: false only where all of it lies outside one. */
+export function boxInPlanes(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, planes: readonly ViewPlane[]): boolean {
+  for (let p = 0; p < planes.length; p++) {
+    const { normal, d } = planes[p] as ViewPlane;
+    // The corner farthest along the plane's normal: if that one is outside, the whole box is.
+    const far = normal.x * (normal.x >= 0 ? maxX : minX) + normal.y * (normal.y >= 0 ? maxY : minY) + normal.z * (normal.z >= 0 ? maxZ : minZ) + d;
+    if (far < 0) return false;
+  }
+  return true;
+}
+
+/** Whether the sphere of `radius` about (x, y, z) reaches inside every one of `planes`. */
+export function sphereInPlanes(x: number, y: number, z: number, radius: number, planes: readonly ViewPlane[]): boolean {
+  for (let p = 0; p < planes.length; p++) {
+    const { normal, d } = planes[p] as ViewPlane;
+    if (normal.x * x + normal.y * y + normal.z * z + d < -radius) return false;
   }
   return true;
 }

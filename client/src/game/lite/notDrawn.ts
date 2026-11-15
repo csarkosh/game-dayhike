@@ -17,7 +17,8 @@
  * hikers' bodies, the Hollows' eyes, the dropped cap and the animals, on the
  * ground and in the air; and the lakes' water where a tier blends it over
  * what lies under it, calm by the hour and the weather's name, with the
- * skyline's shade for its shore. Every other part of the world is absent, and the
+ * skyline's shade for its shore, and the reeds and the lilies that grow in
+ * it. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is
  * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
@@ -35,7 +36,7 @@ export type NotDrawn = { readonly what: string; readonly members: readonly (keyo
 
 export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the sea, the surf and its spray", members: ["hasSea", "surfSound"] },
-  { what: "the lakes' plants, the shore a lake reflects beyond its skyline's shade (the panorama, the mirror), and a lake's water on the tier that reads what lies under it through the surface", members: [] },
+  { what: "the shore a lake reflects beyond its skyline's shade (the panorama, the mirror), and a lake's water on the tier that reads what lies under it through the surface", members: [] },
   { what: "the lakes' insects and frogs", members: ["hasWaterLife", "waterLifeSound"] },
   { what: "the Hollow's figure in the silhouette mask (its eyes are drawn), and with it the skin's shading, which has no other surface to show on", members: ["setSkinShading"] },
   { what: "the sun's cast shadows", members: [] },

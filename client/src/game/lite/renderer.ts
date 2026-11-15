@@ -5,7 +5,7 @@
  * and the ground cloud marched through it, the rain with its drips, its
  * splashes and the cover it falls under, and in that world the other
  * hikers' bodies, the Hollows' eyes, the dropped cap, the animals and the
- * lakes' water, lit by
+ * lakes' water with the reeds and the lilies that grow in it, lit by
  * the sun, the sky's fill and the sky's capture as the image-based light for
  * the hour and the weather, by the local player's headlamp and by the lamps
  * the other hikers wear, seen from the player's eye or the free camera. It
@@ -28,7 +28,7 @@
  * cover map of `rainMap.ts`), the hikers' bodies and the Hollows' eyes
  * (`entityMeshes.ts`), the lamps the other hikers wear (`wornLamps.ts`), the
  * dropped cap (`capMesh.ts`), the animals (`wildlifeMeshes.ts`), the
- * lakes' water (`lakeMeshes.ts`).
+ * lakes' water (`lakeMeshes.ts`) and their plants (`waterPlantMeshes.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -127,9 +127,11 @@
  * every lake reads alike rides in the frame's block; a lake's own buffer is
  * written when its calm, its shade or the bed's square moves. On the tiers
  * with a cover map the surface stands in it as open water, shown for the
- * frame that draws the map where the view does not hold it. The shore a
- * lake reflects beyond that shade (the panorama, the mirror), its plants,
- * its insects and the tier that reads through the surface are not drawn
+ * frame that draws the map where the view does not hold it. A murky lake's
+ * reeds, cattails and lilies are five instanced draws, placed once, each
+ * shown while the view holds a cell of its plants (`waterPlantMeshes.ts`). The
+ * shore a lake reflects beyond that shade (the panorama, the mirror), the
+ * tier that reads through the surface and the lakes' insects are not drawn
  * yet.
  *
  * **Colour** is the low tier's material path: Lite's display curve as
@@ -214,6 +216,7 @@ import { createSkinClock, type SkinClock } from "./skinnedModels.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
 import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
+import { createLiteWaterPlants, type LiteWaterPlants } from "./waterPlantMeshes.js";
 import { createLiteWildlifeMeshes, type LiteWildlifeMeshes } from "./wildlifeMeshes.js";
 import { emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainWetPlugin } from "./terrainPlugins.js";
 import { createWorldLight } from "./worldLight.js";
@@ -294,6 +297,8 @@ type Standing = {
   wildlife: LiteWildlifeMeshes | null;
   /** The lakes' water (`lakeMeshes.ts`); null in a world with no lake. */
   lakes: LiteLakes | null;
+  /** The lakes' reeds and lilies (`waterPlantMeshes.ts`); null in a world with no lake. */
+  waterPlants: LiteWaterPlants | null;
 };
 
 /**
@@ -473,6 +478,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.waterPlants?.dispose();
     made.lakes?.dispose();
     made.wildlife?.dispose();
     made.cap?.dispose();
@@ -705,6 +711,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       });
     // The lakes' water, each lake one surface, where the world has any.
     let lakeMeshes: LiteLakes | null = null;
+    let waterPlants: LiteWaterPlants | null = null;
     if (forest !== null && cloudMap !== null && waterLevel !== undefined && lakes.length > 0 && !disposed) {
       const start = { x: options.start?.x ?? level.playerSpawns[0]?.x ?? 0, z: options.start?.z ?? level.playerSpawns[0]?.z ?? 0 };
       /** What the world's worker sampled for each lake, where it is that lake's. */
@@ -715,10 +722,15 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         bump: fittingWaterBump(prepared, forest.seed), bed: fittingBed(prepared, forest.seed, tier, start.x, start.z),
         uploads, cover: coverAs("water"),
       });
+      // A murky lake's reeds, cattails and lilies: placed by the simulation, drawn once.
+      waterPlants = createLiteWaterPlants(engine, scene, forest.seed, lakes, {
+        eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap, shared), ahead: depthAheadPlugin, shared,
+        placements: pieces.map((piece) => piece?.plants ?? null), uploads,
+      });
     }
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, splash, skinClock, entities, wornLamps, cap, wildlife, lakes: lakeMeshes,
+      rain, rainMap, splash, skinClock, entities, wornLamps, cap, wildlife, lakes: lakeMeshes, waterPlants,
     };
     if (disposed) {
       release(made);
@@ -1118,6 +1130,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         // The view's planes for the frame, and the cap while they hold it.
         viewPlanes(pose, axes, fov, canvas.height > 0 ? canvas.width / canvas.height : 1, lens.near, lens.far, planes);
         standing.cap?.seen(planes);
+        standing.waterPlants?.seen(planes);
         // The lakes' water: the bed's square round the world's centre, each lake's calm and numbers, and each shown
         // while the view holds it. What every lake reads alike goes to the frame's block below.
         if (standing.lakes !== null && centre !== null) {
