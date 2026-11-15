@@ -168,6 +168,7 @@ import { createRainSplash, type RainSplash } from "./rainSplash.js";
 import { createMotes, type Motes } from "./motes.js";
 import { createWaterLife, type WaterLife, type WaterLifeFrame } from "./waterLife.js";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
+import { PROP_ROUGHNESS, propColour } from "./propBoxes.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo, whenSceneReady } from "./rendererSwap.js";
 import { calmShare, isRough, roughShare, smearPx, SLOPE_PAW_DEG } from "./lakeCalm.js";
@@ -180,21 +181,6 @@ import { lakeInView, lakeViewPoints, newLakeViewPlanes } from "./lakeView.js";
 import { SKYLINE_SHADE, skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { NEEDLE_BED } from "./terrainSurface.js";
 
-const MATERIAL_COLORS: Record<string, [number, number, number]> = {
-  concrete: [0.42, 0.44, 0.47],
-  wall: [0.3, 0.32, 0.38],
-  platform: [0.36, 0.42, 0.5],
-  step: [0.4, 0.46, 0.54],
-  crate: [0.55, 0.42, 0.26],
-  pillar: [0.48, 0.36, 0.36],
-  // The trailhead's car and kiosk, in the crate's and the pillar's colours
-  // wherever their boxes are drawn.
-  car: [0.55, 0.42, 0.26],
-  kiosk: [0.48, 0.36, 0.36],
-  signpost: [0.45, 0.33, 0.2],
-  default: [0.5, 0.5, 0.5],
-};
-
 /**
  * Roughness per material name. Ideally roughness would vary across a
  * surface, which needs a texture or a node material; this step ships one value
@@ -205,7 +191,7 @@ const MATERIAL_COLORS: Record<string, [number, number, number]> = {
 const MATERIAL_ROUGHNESS: Record<string, number> = {
   terrain: TERRAIN_SURFACE.roughness,
   [FACE_PATCH_MATERIAL]: TERRAIN_SURFACE.roughness,
-  default: 0.9,
+  default: PROP_ROUGHNESS,
 };
 
 /**
@@ -250,7 +236,8 @@ export function terrainMaterialFor(scene: Scene, name: string): PBRMaterial {
     mat.zOffset = FACE_PATCH_Z_OFFSET;
     mat.zOffsetUnits = FACE_PATCH_Z_UNITS;
   } else {
-    const rgb = MATERIAL_COLORS[name] ?? (MATERIAL_COLORS.default as [number, number, number]);
+    // A prop's colour by its material's name (`propBoxes.ts`).
+    const rgb = propColour(name);
     mat.albedoColor = new Color3(rgb[0], rgb[1], rgb[2]);
   }
   // Nothing in this world is metal. Terrain, bark, foliage and stone are all

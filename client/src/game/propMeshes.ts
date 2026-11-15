@@ -3,7 +3,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { ChunkGrid } from "../sim/chunkGrid.js";
-import { CHUNK_SIZE } from "../sim/forestConstants.js";
+import { chunkPropBoxes, propChunk, propChunkKey, propWindow } from "./propBoxes.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 import type { Slices } from "./syncJobs.js";
@@ -14,26 +14,12 @@ import type { Slices } from "./syncJobs.js";
  * collision box and never rendered. Boxes follow the player by chunk, like
  * the collision broadphase; the window is a square of chunks.
  *
- * Six materials are the exception, each already drawn by a mesh elsewhere:
- * `trunk` — the forest meshes draw the tree the box belongs to; `rock` — the
- * clutter meshes draw the boulder's own GLB (`clutterMeshes.ts`, sited by the
- * same deterministic function over the same seed); `cliff` — the cliff
- * meshes draw the rock-wall module a row of boxes belongs to
- * (`cliffMeshes.ts`, from the same `cliffCellRuns` the collider pass reads);
- * `car` and `kiosk` — the trailhead meshes draw the SUV and the kiosk standing
- * on those two boxes, and the box itself while a model is missing
- * (`trailheadMeshes.ts`); `signpost` — the sign meshes draw the fingerpost
- * that stands on it, and the box while the post model is missing
- * (`signMeshes.ts`).
- * Without this exception a `rock` box would paint a flat-topped grey slab
- * over every boulder in the game: the collider's square footprint and
- * peak-height top do not follow the mesh's true (round, often domed)
- * silhouette, so the box protrudes past the boulder's curved surface almost
- * everywhere except at the peak itself — and a `cliff` box, which bounds a
- * leaning wall, would stand as a grey block around every module.
+ * Which chunks are drawn round a place, which of a chunk's props are a box
+ * here and which another shell draws by a mesh of its own (the six
+ * materials of `PROP_DRAWN_ELSEWHERE`), and each box's place and size are
+ * `propBoxes.ts`'s, which loads no engine; this shell keeps the meshes.
  */
-export const PROP_MESH_RADIUS_CHUNKS = 3;
-export const PROP_DRAWN_ELSEWHERE: ReadonlySet<string> = new Set(["trunk", "rock", "cliff", "car", "kiosk", "signpost"]);
+export { PROP_DRAWN_ELSEWHERE, PROP_MESH_RADIUS_CHUNKS } from "./propBoxes.js";
 
 export type PropMeshes = {
   update(x: number, z: number): void;
@@ -74,20 +60,17 @@ export function createPropMeshes(
   /** The chunks named, made one a slice: a chunk is the sim's generation of it and its boxes. */
   function* fill(missing: readonly (readonly [number, number])[]): Slices {
     for (const [cx, cz] of missing) {
-      const key = `${cx},${cz}`;
+      const key = propChunkKey(cx, cz);
       if (want.has(key) && !live.has(key)) live.set(key, build(cx, cz));
       yield;
     }
   }
   function build(cx: number, cz: number): Mesh[] {
     const out: Mesh[] = [];
-    const chunk = grid.chunkAt(cx, cz);
-    for (const [i, p] of chunk.props.entries()) {
-      if (PROP_DRAWN_ELSEWHERE.has(p.material)) continue;
-      const sx = p.box.max.x - p.box.min.x, sy = p.box.max.y - p.box.min.y, sz = p.box.max.z - p.box.min.z;
-      const mesh = MeshBuilder.CreateBox(`prop_${cx}_${cz}_${i}_${p.material}`, { width: sx, height: sy, depth: sz }, scene);
-      mesh.position.set(p.box.min.x + sx / 2, p.box.min.y + sy / 2, p.box.min.z + sz / 2);
-      mesh.material = materialFor(p.material);
+    for (const box of chunkPropBoxes(grid, cx, cz)) {
+      const mesh = MeshBuilder.CreateBox(box.name, { width: box.width, height: box.height, depth: box.depth }, scene);
+      mesh.position.set(box.x, box.y, box.z);
+      mesh.material = materialFor(box.material);
       // The weather soaks a prop: the renderer's own wetness scale leaves a
       // material with a cap to this rule (`applyWetness`).
       attachWet(mesh.material, WET_CAP.prop);
@@ -101,17 +84,15 @@ export function createPropMeshes(
   }
   return {
     update(x, z) {
-      const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE);
+      const [cx, cz] = propChunk(x, z);
       if (cx === lastCx && cz === lastCz) return;
       lastCx = cx; lastCz = cz;
       want = new Set<string>();
       const missing: [number, number][] = [];
-      for (let i = -PROP_MESH_RADIUS_CHUNKS; i <= PROP_MESH_RADIUS_CHUNKS; i++) {
-        for (let j = -PROP_MESH_RADIUS_CHUNKS; j <= PROP_MESH_RADIUS_CHUNKS; j++) {
-          const key = `${cx + i},${cz + j}`;
-          want.add(key);
-          if (!live.has(key)) missing.push([cx + i, cz + j]);
-        }
+      for (const chunk of propWindow(cx, cz)) {
+        const key = propChunkKey(chunk[0], chunk[1]);
+        want.add(key);
+        if (!live.has(key)) missing.push(chunk);
       }
       // A fill still queued for the last place gives way to this one's.
       firstBuilds?.cancel(owner);

@@ -620,17 +620,17 @@ describe("layer boundaries", () => {
   });
 
   /**
-   * What the ground cover and the cliffs are drawn with is computed by
+   * What the ground cover, the cliffs and the chunk props are drawn with is computed by
    * modules that load no Babylon either: which model and LOD a clutter class draws, an instance's
    * matrix and ground tint, the lists a bucket is drawn from and their cut to
-   * the view, the fields that place the cover and the geometry of the clumps
-   * built in code. The shells that draw them on Babylon.js
+   * the view, the fields that place the cover, the geometry of the clumps
+   * built in code, and a prop's box and colour. The shells that draw them on Babylon.js
    * take their values from these.
    */
-  it("what the ground cover and the cliffs are drawn with is computed without loading Babylon, whatever it imports", () => {
+  it("what the ground cover, the cliffs and the chunk props are drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
       "clutterInstances.ts", "clutterLists.ts", "instanceLists.ts", "bladeInstances.ts", "duffInstances.ts", "cliffInstances.ts", "clutterField.ts", "bladeField.ts", "bladeClump.ts", "duffField.ts", "duffClump.ts", "cliffField.ts",
-      "shrubClump.ts", "wetPlantClump.ts", "highPlantClump.ts", "rockRelief.ts", "grassCull.ts", "keptValues.ts",
+      "shrubClump.ts", "wetPlantClump.ts", "highPlantClump.ts", "rockRelief.ts", "grassCull.ts", "keptValues.ts", "propBoxes.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
