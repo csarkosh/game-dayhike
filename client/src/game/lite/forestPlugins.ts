@@ -46,7 +46,7 @@
  * With them, the plugin a far tree's bake draws its two pictures with
  * (`impostorBakePlugin`), `impostorBakePlugin.ts`'s on Babylon.js.
  */
-import type { MaterialPlugin, Texture2D } from "@babylonjs/lite";
+import type { MaterialPlugin, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
 import { BLADE_SOFT } from "../bladeClump.js";
 import { COVER_GREEN, FOLIAGE_ALBEDO_FLOOR } from "../coverAlbedoParams.js";
 import { DEADWOOD_CONTACT, DEADWOOD_CONTACT_BAND, DEADWOOD_LOG_DRAW, DEADWOOD_UP, deadwoodUniforms, emptyDeadwoodUniforms } from "../deadwoodParams.js";
@@ -60,8 +60,12 @@ import { MOSS_AMOUNT, MOSS_BAND, MOSS_EDGE, MOSS_LUMA, MOSS_ROUGHNESS, MOSS_SIDE
 import type { ImpostorBakeMode } from "../impostorBake.js";
 import type { WetUniforms } from "../wetSurface.js";
 import { WIND_K1, WIND_K2, WIND_OMEGA_FLUTTER, WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_RAGGED, WIND_RAGGED_CELL } from "../windParams.js";
+import { FADE_ROWS_NAME, frameReads, ownFields, ownValues } from "./frameBlock.js";
 import { uniformFields, writeUniforms, type UniformField, type UniformRecord } from "./pluginUniforms.js";
 import { WET_FIELDS, WET_LIGHTS, WET_WGSL, writeWetUniforms } from "./wetWgsl.js";
+
+/** `wgsl` as a plugin given the frame's block reads it (`frameBlock.ts`), or as it is. */
+const reads = (wgsl: string, shared: PluginUniformBlock | undefined): string => (shared === undefined ? wgsl : frameReads(wgsl));
 
 /** A number as a WGSL float literal: a whole number takes its point. */
 export function wgslFloat(n: number): string {
@@ -97,6 +101,9 @@ export type Vegetation = {
   /** The share of the ground's colour under the instance mixed into the albedo (`cliffTintPlugin.ts`), by the
    * instance's `foliage`: a rock wall's, which wears no foliage. None when absent. */
   ground?: number;
+  /** The frame's block (`frameBlock.ts`): given it, the wind, the eye and the frame's height are read from it, and
+   * the material's own buffer holds only the look's numbers, which are written when it is made. */
+  shared?: PluginUniformBlock;
 };
 
 /** A per-instance attribute's place in the interleaved plugin instance data: the float it starts at, or -1 where the material reads none. */
@@ -326,7 +333,7 @@ export const FOLIAGE_FIELDS: readonly UniformField[] = (() => {
   return fields;
 })();
 /** The frame's height in pixels, which the fade's noise turns a fragment's row over by. */
-export const FADE_ROWS_FIELD: UniformField = { name: "fadeRows", type: "f32", visibility: BOTH };
+export const FADE_ROWS_FIELD: UniformField = { name: FADE_ROWS_NAME, type: "f32", visibility: BOTH };
 export const FADE_FIELDS: readonly UniformField[] = [...uniformFields(emptyFadeUniforms(), BOTH), FADE_ROWS_FIELD];
 export const CONFORM_FIELDS: readonly UniformField[] = uniformFields(conformUniforms(), BOTH);
 export const DEADWOOD_FIELDS: readonly UniformField[] = uniformFields(emptyDeadwoodUniforms(), BOTH);
@@ -343,12 +350,15 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
   const layout = vegetationInstanceLayout(v);
   const tint = v.foliage !== null && v.foliage.profile.groundTint > 0;
   const blades = v.foliage !== null && v.foliage.profile.blades;
-  const fields: UniformField[] = [
+  const every: UniformField[] = [
     ...(v.foliage !== null ? FOLIAGE_FIELDS : []),
     ...(v.fade ? FADE_FIELDS : []),
     ...(v.conform ? CONFORM_FIELDS : []),
     ...(v.deadwood !== null ? DEADWOOD_FIELDS : []),
   ];
+  const shared = v.shared;
+  // Given the frame's block, the material declares what is its own, and reads the rest from the block.
+  const fields = shared === undefined ? every : ownFields(every);
   const foliageValues = emptyFoliageUniforms();
   const fadeValues = emptyFadeUniforms();
   const conformValues = conformUniforms();
@@ -361,9 +371,9 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
       (v.fade ? "fn dfNoise(p:vec2<f32>)->f32{return fract(52.9829189*fract(0.06711056*p.x+0.00583715*p.y));}" : "") +
       (v.moss !== null ? `const MOSS_SIDE:vec3<f32>=vec3<f32>(${f(MOSS_SIDE.x)},${f(MOSS_SIDE.y)},${f(MOSS_SIDE.z)});` : ""),
   };
-  if (v.fade) fragment.CUSTOM_FRAGMENT_MAIN_BEGIN = FADE_MAIN_BEGIN;
-  if (v.foliage !== null || v.moss !== null || v.ground !== undefined) fragment.CUSTOM_FRAGMENT_BEFORE_LIGHTS = lightsCode(v);
-  if (v.light) fragment.CUSTOM_FRAGMENT_LIGHT = FOLIAGE_LIGHT;
+  if (v.fade) fragment.CUSTOM_FRAGMENT_MAIN_BEGIN = reads(FADE_MAIN_BEGIN, shared);
+  if (v.foliage !== null || v.moss !== null || v.ground !== undefined) fragment.CUSTOM_FRAGMENT_BEFORE_LIGHTS = reads(lightsCode(v), shared);
+  if (v.light) fragment.CUSTOM_FRAGMENT_LIGHT = reads(FOLIAGE_LIGHT, shared);
   if (v.foliage !== null && v.sky) fragment.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION = FOLIAGE_SKY;
 
   const stride = layout.floats * 4;
@@ -385,9 +395,10 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
     },
     getCustomCode: (stage) =>
       stage === "vertex"
-        ? { CUSTOM_VERTEX_DEFINITIONS: (v.foliage !== null ? GUST : "") + (v.moss !== null ? MOSS_HASH : ""), CUSTOM_VERTEX_MAIN_END: vertexCode(v) }
+        ? { CUSTOM_VERTEX_DEFINITIONS: reads((v.foliage !== null ? GUST : "") + (v.moss !== null ? MOSS_HASH : ""), shared), CUSTOM_VERTEX_MAIN_END: reads(vertexCode(v), shared) }
         : fragment,
-    getUniforms: () => ({ ubo: [...fields] }),
+    ...(fields.length > 0 ? { getUniforms: () => ({ ubo: [...fields] }) } : {}),
+    ...(shared === undefined ? {} : { getUniformBlocks: () => [shared] }),
     getVaryings: () => [
       ...(v.foliage !== null
         ? [{ name: "vFoliage", type: "vec4<f32>" as const }, { name: "vFoliageH", type: "f32" as const }, { name: "vFoliageClump", type: "f32" as const }, { name: "vFoliageDist", type: "f32" as const }]
@@ -398,6 +409,14 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
       ...(v.ground !== undefined ? [{ name: "vCliffTint", type: "vec4<f32>" as const }] : []),
     ],
     writeUbo(data, offsets) {
+      if (shared !== undefined) {
+        // The material's own: the look's numbers, the fade's widening, the conform's and the dead wood's.
+        if (v.foliage !== null) writeUniforms(data, offsets, ownValues(foliageScalars(foliageUniforms(v.foliage, v.eye, foliageValues))));
+        if (v.fade) writeUniforms(data, offsets, ownValues(fadeUniforms(v.eye, v.widen ?? WIDEN_NONE, fadeValues)));
+        if (v.conform) writeUniforms(data, offsets, conformValues);
+        if (v.deadwood !== null) writeUniforms(data, offsets, deadwoodUniforms(v.deadwood.base, deadwoodValues));
+        return;
+      }
       if (v.foliage !== null) {
         const u = foliageUniforms(v.foliage, v.eye, foliageValues);
         writeUniforms(data, offsets, foliageScalars(u));
@@ -523,17 +542,25 @@ export function baseColourPlugin(): MaterialPlugin {
  * reflectance colour is white, its weight whatever
  * `setPbrMetallicReflectance` was given).
  */
-export function surfaceWetPlugin(values: WetUniforms): MaterialPlugin {
+export function surfaceWetPlugin(values: WetUniforms, shared?: PluginUniformBlock): MaterialPlugin {
+  // Given the frame's block, the wet line and the weather are read from it: the material's own is its cap.
+  const fields = shared === undefined ? WET_FIELDS : ownFields(WET_FIELDS);
   return {
     name: "Wet",
     priority: 240,
     getCustomCode: (stage) =>
       stage === "fragment"
-        ? { CUSTOM_FRAGMENT_DEFINITIONS: WET_WGSL, CUSTOM_FRAGMENT_UPDATE_DIFFUSE: WET_WEATHER_KEPT, CUSTOM_FRAGMENT_BEFORE_LIGHTS: `${WET_LIGHTS}\n${SPLIT}` }
+        ? {
+          CUSTOM_FRAGMENT_DEFINITIONS: reads(WET_WGSL, shared),
+          CUSTOM_FRAGMENT_UPDATE_DIFFUSE: reads(WET_WEATHER_KEPT, shared),
+          CUSTOM_FRAGMENT_BEFORE_LIGHTS: reads(`${WET_LIGHTS}\n${SPLIT}`, shared),
+        }
         : null,
-    getUniforms: () => ({ ubo: [...WET_FIELDS] }),
+    getUniforms: () => ({ ubo: [...fields] }),
+    ...(shared === undefined ? {} : { getUniformBlocks: () => [shared] }),
     writeUbo(data, offsets) {
-      writeWetUniforms(data, offsets, values);
+      if (shared === undefined) writeWetUniforms(data, offsets, values);
+      else writeUniforms(data, offsets, { wetCap: values.wetCap });
     },
   };
 }

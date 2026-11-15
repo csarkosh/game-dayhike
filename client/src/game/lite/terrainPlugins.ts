@@ -29,10 +29,11 @@
  *   the derivative-uniformity diagnostic off for itself, as the game's
  *   translated stages do.
  */
-import type { MaterialPlugin, Texture2D, Texture2DArray } from "@babylonjs/lite";
+import type { MaterialPlugin, PluginUniformBlock, Texture2D, Texture2DArray } from "@babylonjs/lite";
 import { emptyTerrainUniforms, type TerrainUniforms } from "../terrainUniforms.js";
 import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, type TerrainVertices } from "../terrainVertices.js";
 import type { WetUniforms } from "../wetSurface.js";
+import { frameReads, ownFields } from "./frameBlock.js";
 import { uniformFields, writeUniforms, type UniformField } from "./pluginUniforms.js";
 import { WET_FIELDS, WET_WEATHER, WET_WGSL, writeWetUniforms } from "./wetWgsl.js";
 
@@ -683,10 +684,17 @@ const VERTEX_TYPES = ["f32", "vec2<f32>", "vec3<f32>", "vec4<f32>"] as const;
  * The terrain's plugin: the blend, the paints `paints` names, and the far
  * cover with its sun term, drawn by `values` (one record, filled in place
  * every frame and read whenever the material's uniforms are written) and
- * `textures`. `farLow`: the far cover takes the low tier's band.
+ * `textures`. `farLow`: the far cover takes the low tier's band. Given
+ * `shared`, the frame's block (`frameBlock.ts`), the whole record is read
+ * from it and the material carries none: the terrain's two materials are
+ * drawn by the one record, which the renderer writes to the block once a
+ * frame.
  */
-export function terrainPlugin(values: TerrainMaterialUniforms, textures: TerrainTextures, farLow: boolean, paints: TerrainPaints): MaterialPlugin {
+export function terrainPlugin(
+  values: TerrainMaterialUniforms, textures: TerrainTextures, farLow: boolean, paints: TerrainPaints, shared?: PluginUniformBlock,
+): MaterialPlugin {
   const before = BLEND + (paints.road ? ROAD : "") + (paints.features ? FEATURE : "") + (paints.trail ? TRAIL : "") + FAR_LIGHT;
+  const reads = (wgsl: string): string => (shared === undefined ? wgsl : frameReads(wgsl));
   const stride = TERRAIN_VERTEX_FLOATS * 4;
   return {
     name: "TerrainTexture",
@@ -696,10 +704,10 @@ export function terrainPlugin(values: TerrainMaterialUniforms, textures: Terrain
     getCustomCode: (stage) =>
       stage === "fragment"
         ? {
-            CUSTOM_FRAGMENT_DEFINITIONS: bind(DEFS.replace("FAR_BAND", farLow ? FAR_BAND_LOW : FAR_BAND_FULL)),
-            CUSTOM_FRAGMENT_MAIN_BEGIN: MAIN_BEGIN,
-            CUSTOM_FRAGMENT_BEFORE_LIGHTS: bind(before),
-            CUSTOM_FRAGMENT_LIGHT: SUN,
+            CUSTOM_FRAGMENT_DEFINITIONS: reads(bind(DEFS.replace("FAR_BAND", farLow ? FAR_BAND_LOW : FAR_BAND_FULL))),
+            CUSTOM_FRAGMENT_MAIN_BEGIN: reads(MAIN_BEGIN),
+            CUSTOM_FRAGMENT_BEFORE_LIGHTS: reads(bind(before)),
+            CUSTOM_FRAGMENT_LIGHT: reads(SUN),
           }
         : { CUSTOM_VERTEX_MAIN_END: TERRAIN_VERTEX_LAYOUT.map((part) => `out.${part.varying}=${part.name};`).join("") },
     getVertexAttributes: () =>
@@ -711,7 +719,7 @@ export function terrainPlugin(values: TerrainMaterialUniforms, textures: Terrain
         offset: part.offset * 4,
       })),
     getVaryings: () => TERRAIN_VERTEX_LAYOUT.map((part) => ({ name: part.varying, type: VERTEX_TYPES[part.floats - 1] as "f32" | "vec4<f32>" })),
-    getUniforms: () => ({ ubo: [...TERRAIN_FIELDS] }),
+    ...(shared === undefined ? { getUniforms: () => ({ ubo: [...TERRAIN_FIELDS] }) } : { getUniformBlocks: () => [shared] }),
     getSamplers: () =>
       TERRAIN_TEXTURE_ORDER.map(([name], i) => ({
         texture: name,
@@ -719,7 +727,7 @@ export function terrainPlugin(values: TerrainMaterialUniforms, textures: Terrain
         ...(i < TERRAIN_ARRAY_TEXTURES ? { textureType: "texture_2d_array<f32>" as const } : { sampleType: "unfilterable-float" as const }),
       })),
     writeUbo(data, offsets) {
-      writeUniforms(data, offsets, values);
+      if (shared === undefined) writeUniforms(data, offsets, values);
     },
     bindTextures(out) {
       TERRAIN_TEXTURE_ORDER.forEach(([, key], i) => out.push(i === 0 ? { texture: textures[key] } : { texture: textures[key], sampler: false }));
@@ -753,17 +761,26 @@ export const TERRAIN_WET_FIELDS: readonly UniformField[] = WET_FIELDS;
  * filled in place and read whenever the material's uniforms are written).
  * After the terrain's plugin, whose feature table it reads.
  */
-export function terrainWetPlugin(values: WetUniforms): MaterialPlugin {
+export function terrainWetPlugin(values: WetUniforms, shared?: PluginUniformBlock): MaterialPlugin {
+  const reads = (wgsl: string): string => (shared === undefined ? wgsl : frameReads(wgsl));
+  // Given the frame's block, the wet line and the weather are read from it: the material's own is its cap.
+  const fields = shared === undefined ? TERRAIN_WET_FIELDS : ownFields(TERRAIN_WET_FIELDS);
   return {
     name: "Wet",
     priority: 240,
     getCustomCode: (stage) =>
       stage === "fragment"
-        ? { CUSTOM_FRAGMENT_DEFINITIONS: WET_WGSL, CUSTOM_FRAGMENT_UPDATE_DIFFUSE: WET_WEATHER, CUSTOM_FRAGMENT_BEFORE_LIGHTS: WET_LIGHTS_TERRAIN }
+        ? {
+          CUSTOM_FRAGMENT_DEFINITIONS: reads(WET_WGSL),
+          CUSTOM_FRAGMENT_UPDATE_DIFFUSE: reads(WET_WEATHER),
+          CUSTOM_FRAGMENT_BEFORE_LIGHTS: reads(WET_LIGHTS_TERRAIN),
+        }
         : null,
-    getUniforms: () => ({ ubo: [...TERRAIN_WET_FIELDS] }),
+    getUniforms: () => ({ ubo: [...fields] }),
+    ...(shared === undefined ? {} : { getUniformBlocks: () => [shared] }),
     writeUbo(data, offsets) {
-      writeWetUniforms(data, offsets, values);
+      if (shared === undefined) writeWetUniforms(data, offsets, values);
+      else writeUniforms(data, offsets, { wetCap: values.wetCap });
     },
   };
 }

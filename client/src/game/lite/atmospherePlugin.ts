@@ -11,10 +11,13 @@
  * - The distance fog's density is a uniform of the plugin's
  *   (`atmBaseDensity`), where Babylon hands its scene's to the GLSL.
  * - The uniforms are read as `material.<name>`, under the names
- *   `atmosphereUniforms` gives them.
+ *   `atmosphereUniforms` gives them; or, given the frame's block
+ *   (`frameBlock.ts`), from the block, for the air is the same for every
+ *   material and moves with the frame.
  */
-import type { MaterialPlugin, Texture2D } from "@babylonjs/lite";
+import type { MaterialPlugin, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
 import type { AtmosphereUniforms } from "../atmosphereParams.js";
+import { frameReads } from "./frameBlock.js";
 import { uniformFields, writeUniforms } from "./pluginUniforms.js";
 
 const ATM_WGSL = /* wgsl */ `
@@ -93,21 +96,28 @@ export const ATMOSPHERE_PRIORITY = 900;
  * The plugin, drawing the air by `uniforms`: one record, filled in place
  * every frame (`atmosphereUniforms`) and read whenever the material's
  * uniforms are written. `cloudMap` is the ground cloud's map
- * (`cloudNoiseMap`), repeating, read bilinearly.
+ * (`cloudNoiseMap`), repeating, read bilinearly. Given `shared`, the frame's
+ * block, the air is read from it and the material carries none of it: the
+ * renderer writes the block once a frame from the same record.
  */
-export function atmospherePlugin(uniforms: AtmosphereUniforms, cloudMap: Texture2D): MaterialPlugin {
+export function atmospherePlugin(uniforms: AtmosphereUniforms, cloudMap: Texture2D, shared?: PluginUniformBlock): MaterialPlugin {
+  const definitions = shared === undefined ? ATM_WGSL : frameReads(ATM_WGSL);
   return {
     name: "Atmosphere",
     priority: ATMOSPHERE_PRIORITY,
     getCustomCode: (stage) =>
       stage === "fragment"
-        ? { CUSTOM_FRAGMENT_DEFINITIONS: ATM_WGSL, CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: "color=atmosphereFog(color,input.worldPos,scene.vEyePosition.xyz);" }
+        ? { CUSTOM_FRAGMENT_DEFINITIONS: definitions, CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: "color=atmosphereFog(color,input.worldPos,scene.vEyePosition.xyz);" }
         : null,
-    getUniforms: () => ({ ubo: uniformFields(uniforms) }),
+    ...(shared === undefined
+      ? {
+        getUniforms: () => ({ ubo: uniformFields(uniforms) }),
+        writeUbo(data: Float32Array, offsets: ReadonlyMap<string, number>) {
+          writeUniforms(data, offsets, uniforms);
+        },
+      }
+      : { getUniformBlocks: () => [shared] }),
     getSamplers: () => [{ texture: "atmCloudMap", sampler: "atmCloudMapSampler" }],
-    writeUbo(data, offsets) {
-      writeUniforms(data, offsets, uniforms);
-    },
     bindTextures(out) {
       out.push({ texture: cloudMap });
     },
