@@ -1,8 +1,8 @@
 /**
  * The hike's renderer on Babylon Lite: the terrain, the forest's trees, the
- * ground clutter and the blade grass under the atmosphere, lit by the sun
- * and the sky's fill for the hour and the weather, seen from the player's
- * eye or the free camera. It answers the whole of `Renderer`
+ * ground clutter, the blade grass and the duff under the atmosphere, lit by
+ * the sun and the sky's fill for the hour and the weather, seen from the
+ * player's eye or the free camera. It answers the whole of `Renderer`
  * (`renderer.ts`), and what it does not draw yet it answers as nothing
  * (`notDrawn.ts` has the list).
  *
@@ -13,7 +13,8 @@
  * meet Lite: an engine, a scene, a camera, two lights, the terrain's two
  * materials and their meshes, the forest's buckets (`forestMeshes.ts`) and
  * the clutter's (`clutterMeshes.ts`), which land as their models do, and the
- * grass's (`bladeMeshes.ts`), on the tiers that draw it.
+ * grass's and the duff's (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers
+ * that draw them.
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -71,6 +72,7 @@ import { atmospherePlugin } from "./atmospherePlugin.js";
 import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
 import { cameraAxes, projectToCanvas, restAxes, type CameraPose } from "./cameraPose.js";
 import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
+import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
 import { notDrawnMembers } from "./notDrawn.js";
@@ -120,6 +122,7 @@ type Standing = {
   forest: ForestMeshes | null;
   blades: BladeMeshes | null;
   clutter: ClutterMeshes | null;
+  duff: DuffMeshes | null;
 };
 
 /**
@@ -223,6 +226,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.duff?.dispose();
     made.clutter?.dispose();
     made.blades?.dispose();
     made.forest?.dispose();
@@ -272,6 +276,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     let trees: ForestMeshes | null = null;
     let blades: BladeMeshes | null = null;
     let clutter: ClutterMeshes | null = null;
+    let duff: DuffMeshes | null = null;
     // The ground cloud's map, which every material's air reads.
     const cloudMap = forest === null ? null : cloudMapTexture(engine);
     if (forest !== null && cloudMap !== null) {
@@ -350,8 +355,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         wet: wetAt,
         air: () => atmospherePlugin(airValues, cloudMap),
       });
+      // The near field of dead leaves, twigs and small branches, on the same tiers as the blades beside it.
+      if (tier !== "low") {
+        duff = createDuffMeshes(engine, scene, forest.seed, {
+          quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.duff), air: () => atmospherePlugin(airValues, cloudMap),
+        });
+      }
     }
-    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades, clutter };
+    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades, clutter, duff };
     if (disposed) {
       release(made);
       return;
@@ -475,6 +486,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.forest?.frame();
     made.blades?.frame();
     made.clutter?.frame();
+    made.duff?.frame();
   }
 
   let skyWait: Promise<void> | null = null;
@@ -587,6 +599,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           standing.forest?.update(centre.x, centre.z);
           standing.blades?.update(centre.x, centre.z);
           standing.clutter?.update(centre.x, centre.z);
+          standing.duff?.update(centre.x, centre.z);
         }
         // The blades and the grass class's cards are cut to the view once the camera's pose for the frame is final.
         cullPose.x = pose.x;
