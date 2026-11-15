@@ -1,10 +1,10 @@
 /**
  * The Babylon shell over `duffField.ts`: one thin-instance bucket per clump
- * character and distance tier, on one opaque material per tier, filled from
- * the field's tier lists with the cards' own matrix and tint writers
- * (clutterMeshes.ts) plus a per-instance strength. `bladeMeshes.ts`'s sibling:
- * same rebuild cadence, same two-pass fill, same buffer-reuse discipline, same
- * dispose. The differences are the field's own — two tiers, not three, since
+ * character and distance tier, on one opaque material per tier, drawn from
+ * the lists `duffInstances.ts` makes of the field's tiers with the cards'
+ * own matrix and tint writers plus a per-instance strength.
+ * `bladeMeshes.ts`'s sibling: same rebuild cadence, same two-pass fill, same
+ * buffer-reuse discipline, same dispose. The differences are the field's own — two tiers, not three, since
  * duff never grows fine detail the way a blade clump does, and no size axis,
  * since a duff cell's `strength` is already bounded to [0, 1] and never buys a
  * bigger clump the way a blade cell's boosted `cover` does.
@@ -20,16 +20,14 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
-import {
-  DUFF_REACH, DUFF_REBUILD_CELL, createDuffCollector, duffTierBands, type DuffCell, type DuffTiers,
-} from "./duffField.js";
+import { DUFF_REACH, DUFF_REBUILD_CELL, duffTierBands } from "./duffField.js";
 import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, duffClumpGeometry } from "./duffClump.js";
+import { DUFF_ROUGHNESS, DUFF_TIER_COUNT, createDuffLists } from "./duffInstances.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliagePlugin.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
-import { CLUTTER_SINK, instanceMatrixFor, trampleFrame, writeFoliage } from "./clutterInstances.js";
 import { prepBucketMesh } from "./clutterMeshes.js";
-import { createKeptValues } from "./keptValues.js";
+import type { InstanceList } from "./instanceLists.js";
 import { createCrossing, crossingAt, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 
@@ -37,10 +35,6 @@ export const DUFF_MESH_PREFIX = "duff_clumps";
 export function duffMeshName(character: number, tier: number): string {
   return `${DUFF_MESH_PREFIX}_c${character}_t${tier}`;
 }
-/** The material's roughness: duller than the blades' 0.8 — dead leaf litter
- * scatters light more diffusely than a living blade's waxy surface. */
-const DUFF_ROUGHNESS = 0.9;
-
 export type DuffMeshesOptions = {
   quality: "high" | "medium";
   /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
@@ -66,89 +60,17 @@ export type DuffMeshes = {
   dispose(): void;
 };
 
-/** One character bucket inside one tier: its mesh and the three buffers it
- * uploads, reused across rebuilds and grown geometrically. */
-type Bucket = {
-  mesh: Mesh;
-  /** Matrix data; capacity is `buf.length / 16`. */
-  buf: Float32Array;
-  /** Four floats per instance (ground colour rgb + the sky's openness,
-   * `1 − canopy`), the
-   * `foliage` attribute; capacity tracks `buf`. Every bucket wears the DUFF
-   * profile's tinting, so unlike the clutter shell there is no bucket that
-   * leaves this one empty. */
-  foliage: Float32Array;
-  /** One float per instance, the `bladeStrength` attribute the DUFF profile
-   * declares (`blades: true`): the cell's own `strength`, already bounded to
-   * [0, 1] by the ground-cover field, no separate clamp needed. Named for the
-   * GPU attribute it becomes rather than reusing the blade shell's `strength`
-   * field name, since duff has no unclamped `cover` for that name to
-   * disambiguate from. */
-  bladeStrength: Float32Array;
-  /** Instances this rebuild — counted in pass 1, then reused as the write
-   * cursor in pass 2, so it is the live count again when the fill ends. */
-  count: number;
-  /** Set when `buf` was replaced this rebuild: the mesh then needs a fresh
-   * `thinInstanceSetBuffer` (a new GPU buffer) rather than an in-place upload
-   * of the existing one. */
-  grown: boolean;
-};
-
-/** Instances a bucket's first real allocation covers — the blade shell's own
- * floor, sized the same way: duff's discs are smaller (12 m high, 8 m
- * medium) than a blade tier's, so every bucket settles within a doubling or
- * two of this floor. */
-const BUCKET_MIN_INSTANCES = 64;
-
-/** Shared zero-length placeholder for a bucket that has never held an
- * instance: `ensureCapacity` replaces it the first time one lands, and until
- * then nothing reads or writes it. */
-const EMPTY_BUFFER = new Float32Array(0);
-
-/** One matrix's worth of scratch floats, so a cell's matrix can be composed
- * and copied into the kept values at any offset without a per-instance
- * subarray view — `computeInstance`'s trick in the clutter shell. */
-const scratchMat = new Float32Array(16);
-/** The Y translation's index in a Babylon `Matrix`'s flat 16-float array
- * (`Matrix.copyToArray`'s own layout: translation occupies indices 12-14,
- * column-major). Verified directly against `Matrix.ComposeToRef`'s output
- * rather than assumed, since getting this wrong would silently move every
- * duff piece sideways instead of up. */
-const MATRIX_TY = 13;
-
-/**
- * Grows a bucket's buffers to hold `bucket.count` instances if they do not
- * already, doubling from `BUCKET_MIN_INSTANCES` so a bucket allocates a
- * bounded number of times over a session and never per rebuild. The old
- * contents are dropped rather than copied: every live instance is rewritten
- * immediately afterwards.
- */
-function ensureCapacity(bucket: Bucket): void {
-  const needed = bucket.count * 16;
-  if (bucket.buf.length >= needed) {
-    bucket.grown = false;
-    return;
-  }
-  let capacity = Math.max(bucket.buf.length, BUCKET_MIN_INSTANCES * 16);
-  while (capacity < needed) capacity *= 2;
-  bucket.buf = new Float32Array(capacity);
-  // 16 floats of matrix per instance ↔ 4 of foliage ↔ 1 of bladeStrength.
-  bucket.foliage = new Float32Array(capacity / 4);
-  bucket.bladeStrength = new Float32Array(capacity / 16);
-  bucket.grown = true;
-}
-
 /**
  * Pushes a filled bucket to its mesh — `bladeMeshes.ts`'s own `applyBucket`,
  * buffer names aside. See there for why the buffers are created UPDATABLE and
  * why the tail past `count` is re-uploaded whole on an in-place write.
  */
-function applyBucket(bucket: Bucket): void {
-  const { mesh, count } = bucket;
-  if (bucket.grown) {
-    mesh.thinInstanceSetBuffer("matrix", bucket.buf, 16, false);
-    mesh.thinInstanceSetBuffer("foliage", bucket.foliage, 4, false);
-    mesh.thinInstanceSetBuffer("bladeStrength", bucket.bladeStrength, 1, false);
+function applyBucket(list: InstanceList, mesh: Mesh): void {
+  const { count } = list;
+  if (list.grown) {
+    mesh.thinInstanceSetBuffer("matrix", list.buf, 16, false);
+    mesh.thinInstanceSetBuffer("foliage", list.foliage, 4, false);
+    mesh.thinInstanceSetBuffer("bladeStrength", list.strength, 1, false);
     mesh.thinInstanceCount = count;
   } else {
     mesh.thinInstanceCount = count;
@@ -212,64 +134,16 @@ function createClumpMesh(scene: Scene, character: number, tier: number, count: n
   return mesh;
 }
 
-/** Floats kept per cell: the matrix (16), then the tint (4). */
-const KEPT_STRIDE = 20;
-const KEPT_FOLIAGE = 16;
-
-/** What computing a cell's kept values ahead weighs on a slice of idle work,
- * in `prefetchWindow`'s units: about what sampling a cell does. */
-const KEPT_AHEAD_COST = 64;
-
 export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshesOptions): DuffMeshes {
   const reach = DUFF_REACH[options.quality];
-  /**
-   * A cell's matrix and tint, computed the first time it is listed: functions
-   * of the cell and the seed alone, the blade shell's own reasoning. The
-   * reach, the one thing the tier changes, decides only which cells are
-   * listed, never what a listed cell draws.
-   */
-  function computeCell(c: DuffCell, out: Float32Array, offset: number): void {
-    // The litter class is not in `TRAMPLED`, so this is always the identity
-    // frame for duff — called anyway, rather than skipped, so the fill
-    // walks the same path `bladeMeshes.ts` does and the two shells stay
-    // comparable; nobody later has to wonder whether duff is meant to
-    // flatten near the trail and does not.
-    const frame = trampleFrame(seed, c);
-    instanceMatrixFor(c, frame, scratchMat);
-    // `instanceMatrixFor` sinks every non-boulder instance CLUTTER_SINK
-    // (2 cm) below its sampled ground height, on the reasoning that "two
-    // centimetres is under a blade's width, so nothing visibly shortens"
-    // (clutterMeshes.ts). That holds for a blade root, a rock's flattened
-    // underside or a grass card's base edge, whose own root sits well
-    // clear of the ground it is meant to settle into — but not for duff,
-    // whose root ring is built to lie exactly at the sampled ground
-    // height, y = 0 (duffClump.ts: "Roots lie on a disc... at y = 0"), even
-    // though a piece's own far vertices rise well above that: the leaf
-    // character's own geometry rises to about 96 mm (80% of
-    // `DUFF_HEIGHT_MAX`, duffClump.ts). Sinking the root 2 cm would still
-    // settle it into the terrain rather than leave it lying on top, so the
-    // sink is cancelled here, per-instance, rather than by changing
-    // `instanceMatrixFor` itself, which every other clutter class still
-    // relies on. This restores the piece's root ring to sit exactly at the
-    // sampled ground height, the same plane its own vertices are built
-    // against.
-    scratchMat[MATRIX_TY] = scratchMat[MATRIX_TY]! + CLUTTER_SINK;
-    out.set(scratchMat, offset);
-    writeFoliage(seed, c, out, offset + KEPT_FOLIAGE, frame);
-  }
-  const kept = createKeptValues<DuffCell>(KEPT_STRIDE, computeCell);
-  // Memoizing collector, not the pure `collectDuffCells`: a rebuild happens on
-  // every 1 m crossing, and re-sampling the whole disc from cold each time
-  // would pay fresh gate, terrain and density samples for thousands of cells
-  // that have not moved (see duffField.ts). A cell it lets go takes its kept
-  // values with it.
-  const collector = createDuffCollector(seed, (c) => kept.release(c));
-  /** `buckets[tier][character]`. */
-  const buckets: Bucket[][] = [];
+  // The lists (`duffInstances.ts`): the cells collected, their kept matrices
+  // and tints, and the buffers. `lists.all` and `meshes` are in one order,
+  // tier then character.
+  const lists = createDuffLists(seed, reach);
   const materials: PBRMaterial[] = [];
   const meshes: Mesh[] = [];
-  for (let tier = 0; tier < 2; tier++) {
-    const row: Bucket[] = [];
+  for (let tier = 0; tier < DUFF_TIER_COUNT; tier++) {
+    const row: Mesh[] = [];
     // The tier's tallest clump sets the material's height uniform, the blade
     // shell's own reasoning: one material serves all three of the tier's
     // character buckets, so the tallest is the only choice that never drives
@@ -280,80 +154,39 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
       const count = DUFF_TIER_COUNTS[options.quality][tier]!;
       const mesh = createClumpMesh(scene, ch, tier, count);
       tallest = Math.max(tallest, mesh.getBoundingInfo().boundingBox.maximum.y);
-      row.push({ mesh, buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, bladeStrength: EMPTY_BUFFER, count: 0, grown: false });
+      row.push(mesh);
       meshes.push(mesh);
     }
     const mat = createTierMaterial(scene, tier, tallest, reach);
-    for (const bucket of row) bucket.mesh.material = mat;
+    for (const mesh of row) mesh.material = mat;
     materials.push(mat);
-    buckets.push(row);
   }
   let disposed = false;
   const jobs = options.jobs;
 
   /**
-   * One tier's fill: two passes over its list, so every bucket knows its size
-   * before a single matrix is written and no buffer has to grow mid-fill.
-   * The list arrives nearest-first from the field and is walked in order, so
-   * each bucket's instances stay sorted by distance. Pass 2 copies each
-   * cell's kept matrix and tint, computing them only for a cell listed for
-   * the first time (`computeCell`).
-   */
-  function fill(list: DuffCell[], row: Bucket[]): void {
-    for (const bucket of row) bucket.count = 0;
-    for (const c of list) row[c.character]!.count++;
-    for (const bucket of row) {
-      ensureCapacity(bucket);
-      bucket.count = 0;
-    }
-    for (const c of list) {
-      const bucket = row[c.character]!;
-      const at = kept.offsetOf(c);
-      const data = kept.data;
-      const { buf, foliage } = bucket;
-      const m = bucket.count * 16, f = bucket.count * 4;
-      for (let k = 0; k < 16; k++) buf[m + k] = data[at + k]!;
-      for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
-      bucket.bladeStrength[bucket.count] = c.strength;
-      bucket.count++;
-    }
-    for (const bucket of row) applyBucket(bucket);
-  }
-
-  /**
-   * The rebuild for an eye at (x, z), as slices (`syncJobs.ts`): the tier
-   * lists collected, then both fills in the last slice. The fills write the
-   * very buffers the meshes hold, so they run in one step.
+   * The rebuild for an eye at (x, z), as slices (`syncJobs.ts`): the lists'
+   * own, whose last slice fills the very buffers the meshes hold, and in
+   * that same step each bucket pushed to its mesh.
    */
   function* rebuild(x: number, z: number): Slices {
-    const tiers: DuffTiers = yield* collector.collectSlices(x, z, reach);
-    yield;
-    fill(tiers.near, buckets[0]!);
-    fill(tiers.far, buckets[1]!);
-    view.x = x;
-    view.z = z;
+    yield* lists.rebuild(x, z);
+    for (const [i, list] of lists.all.entries()) applyBucket(list, meshes[i] as Mesh);
     aimed = false;
   }
 
   const crossing = createCrossing();
-  const view = { x: NaN, z: NaN };
   const owner = {};
   const heading: Heading = { x: 0, z: 0 };
   /** Whether the idle work is aimed at the next crossings from where the
    * last rebuild left the field, on the present heading. */
   let aimed = false;
-  /** A cell looked up ahead: its matrix and tint computed too. */
-  const ahead = (c: DuffCell): number => {
-    const known = kept.size;
-    kept.offsetOf(c);
-    return kept.size > known ? KEPT_AHEAD_COST : 1;
-  };
   /** Sets the idle work (`syncJobs.ts`) to look up the cells the next
    * crossings add, while no rebuild is pending. */
   function aim(x: number, z: number): void {
     if (aimed || jobs === undefined || jobs.pending(owner)) return;
     aimed = true;
-    jobs.idle(owner, collector.prefetchSlices(x, z, heading.x, heading.z, reach, ahead));
+    jobs.idle(owner, lists.prefetch(x, z, heading.x, heading.z));
   }
 
   return {
@@ -381,10 +214,10 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
       jobs?.cancel(owner);
       buildAtOnce(options.firstBuilds, owner, rebuild(x, z), "duff");
     },
-    view,
+    view: lists.view,
     meshes,
     get kept() {
-      return kept.size;
+      return lists.kept;
     },
     dispose() {
       if (disposed) return;
