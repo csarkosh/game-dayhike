@@ -31,6 +31,7 @@ import type { QualityTier } from "../quality.js";
 import type { WetUniforms } from "../wetSurface.js";
 import { loadModel, type ModelPart } from "./forestModels.js";
 import { baseColourPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation } from "./forestPlugins.js";
+import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import { listMesh, showList, type ListMesh } from "./listMeshes.js";
 
 export function cliffMeshName(model: number, lod: number): string {
@@ -75,6 +76,8 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
   const materials: PbrMaterialProps[] = [];
   /** `buckets[model][lod]`; a slot is null where the model did not land or its file has no such root. */
   const buckets: (Bucket | null)[][] = CLIFF_MODELS.map(() => CLIFF_LOD_NODES.map(() => null));
+  /** Each material's place among the draws: a model's near ring's, then its far ring's. */
+  const orders = createDrawOrders(DRAW_ORDER.cliffs);
   let adopted = false;
   let disposed = false;
   let waiting = 0;
@@ -84,7 +87,7 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
   let builtZ = Number.NaN;
 
   /** A ring's material of a model: its maps and colour, the ground's tint, the far ring's dither, the wet look and the air. */
-  function material(part: ModelPart, far: boolean): { made: PbrMaterialProps; vegetation: Vegetation } {
+  function material(part: ModelPart, far: boolean, model: number): { made: PbrMaterialProps; vegetation: Vegetation } {
     const vegetation: Vegetation = {
       eye: options.eye, frame: options.frame, foliage: null, match: false, light: false, fade: far, conform: false, moss: null, deadwood: null, sky: false,
       ground: CLIFF_GROUND_TINT,
@@ -98,6 +101,7 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
     setPbrMetallicReflectance(made, { color: [1, 1, 1], f0Factor: part.facts.specularWeight ?? 1 });
     made.plugins = [baseColourPlugin(), vegetationPlugin(vegetation), surfaceWetPlugin(options.wet), options.air()];
     materials.push(made);
+    orders.put(made, model * 2 + (far ? 1 : 0));
     return { made, vegetation };
   }
 
@@ -144,14 +148,15 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
       }
       const first = roots.find((parts) => parts.length > 0)?.[0];
       if (first === undefined) return;
-      const near = material(first, false);
-      const far = material(first, true);
+      const near = material(first, false, model);
+      const far = material(first, true, model);
       roots.forEach((parts, lod) => {
         const part = parts[0];
         if (part === undefined) return;
         const { made, vegetation } = lod === CLIFF_FAR_LOD ? far : near;
         const mesh = createMeshFromData(engine, cliffMeshName(model, lod), part.positions, part.normals, part.indices, part.uvs, undefined, part.tangents ?? undefined);
         mesh.material = made;
+        mesh.renderOrder = orders.of(made);
         (buckets[model] as (Bucket | null)[])[lod] = {
           target: listMesh(scene, mesh, vegetationInstanceLayout(vegetation)),
           list: (lists.lists[model] as InstanceList[])[lod] as InstanceList,

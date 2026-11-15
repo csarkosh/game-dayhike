@@ -1,0 +1,44 @@
+import { describe, expect, it } from "vitest";
+import { DRAW_ORDER, DRAW_PLACES, createDrawOrders } from "../../../src/game/lite/drawOrder.js";
+
+describe("the places of the hike's meshes among the opaque draws on Babylon Lite", () => {
+  it("draws the terrain first, the rings before the patches, then each shell in turn, ahead of nothing Lite places itself", () => {
+    const firsts = Object.values(DRAW_ORDER);
+    expect([...firsts].sort((a, b) => a - b)).toEqual(firsts);
+    expect(new Set(firsts).size).toBe(firsts.length);
+    expect(DRAW_ORDER.rings).toBeLessThan(DRAW_ORDER.patches);
+    // Lite's own place for an opaque mesh is 100: nothing of the terrain's is drawn after an unplaced mesh.
+    expect(DRAW_ORDER.patches).toBeLessThan(100);
+  });
+
+  it("gives a shell's materials the places after its first, in the order they are taken, each within the shell's own run", () => {
+    const orders = createDrawOrders(DRAW_ORDER.forest);
+    const [a, b, c] = [{}, {}, {}];
+    orders.take(a);
+    orders.take(b);
+    orders.take(c);
+    expect(orders.of(a)).toBe(DRAW_ORDER.forest);
+    expect(orders.of(a)).toBeLessThan(orders.of(b) as number);
+    expect(orders.of(b)).toBeLessThan(orders.of(c) as number);
+    expect(orders.of(c)).toBeLessThan(DRAW_ORDER.clutter);
+    expect(orders.of({})).toBeUndefined();
+  });
+
+  it("puts a material made late at the place it is named, whatever was taken meanwhile", () => {
+    const first = createDrawOrders(DRAW_ORDER.forest);
+    const second = createDrawOrders(DRAW_ORDER.forest);
+    const card = {};
+    // One page's bake lands before a near material is made, another's after: the card's place is the same.
+    first.put(card, 512);
+    first.take({});
+    second.take({});
+    second.take({});
+    second.put(card, 512);
+    expect(first.of(card)).toBe(second.of(card));
+    expect(first.of(card)).toBe(DRAW_ORDER.forest + 512 / DRAW_PLACES);
+    // The last place is still short of the next shell's first.
+    first.put(card, DRAW_PLACES - 1);
+    expect(first.of(card)).toBeLessThan(DRAW_ORDER.clutter);
+    expect(() => first.put(card, DRAW_PLACES)).toThrow(/places among the draws/);
+  });
+});
