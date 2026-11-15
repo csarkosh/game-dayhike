@@ -124,6 +124,13 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     expect(r.wind()).toEqual(windRecordUnder(WEATHER_PRESETS.rain, 9));
   });
 
+  it("has no bake to tell of, and ends none, while no forest stands", () => {
+    const r = make();
+    expect(r.impostorBakes()).toEqual([]);
+    expect(() => r.abandon()).not.toThrow();
+    expect(r.impostorBakes()).toEqual([]);
+  });
+
   it("lets its engine go once, by dispose or by retire, and resolves what waited on its first frame", async () => {
     const r = make();
     const handle = r.retire();

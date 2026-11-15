@@ -1,15 +1,18 @@
 /**
  * The forest's trees on Babylon Lite: the near rings of full geometry, the
- * canopy giants and the saplings at three LODs each, and the dead trees, a
- * standing snag and a fallen log in one bucket. Every bucket is a mesh a
- * primitive (a tree's bark and its crown are two) drawn as thin instances.
+ * canopy giants and the saplings at three LODs each, the dead trees, a
+ * standing snag and a fallen log in one bucket, and past the near radius a
+ * billboard a tree. Every bucket is a mesh a primitive (a tree's bark and
+ * its crown are two) drawn as thin instances.
  *
  * What each bucket is drawn with is the game's own, made with no engine:
  * the bands `forestField.ts` collects round the camera, the matrices and the
  * per-instance attributes `forestInstances.ts` makes of them, the fade bands
  * of each ring, the bark each tree wears (`barkParams.ts`), each material's
- * share of the sky (`forestLookParams.ts`) and the foliage's numbers
- * (`foliageUniforms.ts`). This module is where those meet Lite: the models
+ * share of the sky (`forestLookParams.ts`), the foliage's numbers
+ * (`foliageUniforms.ts`), and a billboard's quad, its bake's pose and frame
+ * and its distance field (`impostorBake.ts`, `impostorField.ts`). This
+ * module is where those meet Lite: the models
  * and maps its loaders read (`forestModels.ts`), a PBR material a look with
  * the forest's plugins (`forestPlugins.ts`), and the instance lists written
  * into each mesh as the camera crosses a tree cell.
@@ -31,12 +34,28 @@
  * moss in its two forms and the contact band, drawn on both sides and lit
  * on one. Every material takes the wet look at its cap and the air.
  *
- * **Not drawn here:** the far billboards (their bake is a render of the
- * models the renderer does not make yet), and what grows on the nurse logs.
+ * **The billboards**, one a giant bucket set, one a sapling species and one
+ * for the snags: a quad the size of the tree's box, turned to the camera
+ * when its list is made, drawing both far lists (the lattice's and the
+ * fill's, which end at different ranges, so the bands are each instance's
+ * own). Its colour and its normal map are a bake: the tree's second LOD
+ * drawn side-on, once, when the models have landed (`impostorBake.ts` here;
+ * the snag stood up, for its model lies down), in the materials the near
+ * trees wear less what moves and what the weather does, the two pictures
+ * read back and made into a distance field off the page
+ * (`impostorFieldWorker.ts`). A billboard stands hidden until its bake has
+ * landed, and for good if it fails, which is said: an unbaked card would
+ * draw a grey quad a tree. The card lights the baked colour once, live, as
+ * a crown, through the baked normals, and tests the field at its rim.
+ * Nothing bakes again while the forest stands: the pictures are unlit, so
+ * neither the hour nor the weather is in them.
+ *
+ * **Not drawn here:** what grows on the nurse logs.
  */
 import {
-  addToScene, createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, markMaterialUboDirty, releaseTexture,
-  removeFromScene, setMeshVisible, setPbrAlphaCutoff, setPbrMetallicReflectance, setThinInstanceCount, setThinInstances,
+  acquireTexture, addToScene, createMeshFromData, createPbrMaterial, createTexture2DFromPixels, disposeMeshGpu, getOrCreateSampler, invalidateRenderBundles,
+  markMaterialUboDirty, releaseTexture, removeFromScene, setMeshVisible, setPbrAlphaCutoff, setPbrGammaAlbedo, setPbrMetallicReflectance, setThinInstanceCount,
+  setThinInstances,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import { TREE_CELL, type TreeInstance } from "../../sim/vegetation.js";
@@ -49,19 +68,29 @@ import type { FadeBands } from "../distanceFade.js";
 import { FOLIAGE_PROFILES, foliageLook, type FoliageLook } from "../foliageUniforms.js";
 import { NEAR_RADIUS, bandsOrigin, createBandCollector } from "../forestField.js";
 import {
-  deadwoodMatrixBuffer, deadwoodMeasure, deadwoodRoleBuffer, fadeBandsBuffer, forestFadeBands, groundGradBuffer, treeMatrixBuffer,
-  type DeadwoodMeasure,
+  deadwoodMatrixBuffer, deadwoodMeasure, deadwoodRoleBuffer, fadeBandsBuffer, forestFadeBands, groundGradBuffer, impostorFadeBuffer,
+  impostorMatrixSlices, impostorQuad, partitionImpostors, snagImpostorQuad, treeMatrixBuffer,
+  type DeadwoodMeasure, type ImpostorQuad,
 } from "../forestInstances.js";
-import { treeSkyLook } from "../forestLookParams.js";
+import { CROWN_SKY, TREE_SPECULAR_WEIGHT, treeSkyLook } from "../forestLookParams.js";
+import {
+  IMPOSTOR_BAKE_FAIL_MS, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_WARN_MS, SNAG_BAKE_ROLL, bakePoseMatrix, impostorBakeFrame, impostorName, posedBounds,
+  type ImpostorBake,
+} from "../impostorBake.js";
+import { IMPOSTOR_FIELD_CUT } from "../impostorField.js";
+import { createFieldMaker } from "../impostorFieldWorker.js";
+import type { Vec3 } from "../instancePose.js";
 import { MOSS_OUTPUT } from "../mossParams.js";
 import type { QualityTier } from "../quality.js";
 import { createCrossing, crossingAt, finish, type Slices } from "../syncJobs.js";
 import type { WetUniforms } from "../wetSurface.js";
 import { loadKtx2Map, loadModel, type LoadedModel, type ModelPart } from "./forestModels.js";
 import {
-  baseColourPlugin, directOcclusionPlugin, oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, writeVegetationInstances,
+  baseColourPlugin, directOcclusionPlugin, impostorBakePlugin, oneSidedLightPlugin, surfaceSplitPlugin, surfaceWetPlugin, vegetationInstanceLayout,
+  vegetationPlugin, writeVegetationInstances,
   type Vegetation, type VegetationInstanceLayout,
 } from "./forestPlugins.js";
+import { createImpostorBaker, type BakeMesh } from "./impostorBake.js";
 
 /** The canopy giants' models by `TreeInstance.species`: the fir, then the pine. */
 const GIANT_MODELS = ["models/tree.giant_fir.glb", "models/tree.giant_pine.glb"];
@@ -77,6 +106,10 @@ const reflectanceOf = (ior: number): number => ((ior - 1) / (ior + 1)) ** 2;
 /** Instances a bucket's arrays hold before its first list: a bucket in view of no tree still stands, hidden. */
 const FIRST_CAPACITY = 16;
 
+/** The anisotropy a billboard's two maps are sampled with: what Babylon.js gives a map filtered between its levels,
+ * which the game's cards are. Without it the far crowns are drawn a level softer than the game draws them. */
+const CARD_ANISOTROPY = 4;
+
 export type ForestMeshes = {
   /** Follows the camera: the lists are made again when it crosses a tree cell. Before the models have landed it only keeps where the camera is. */
   update(camX: number, camZ: number): void;
@@ -84,10 +117,17 @@ export type ForestMeshes = {
   frame(): void;
   /** Models and maps still being fetched or decoded. */
   waiting(): number;
-  /** Resolves once the models have landed and the first lists are drawn, or cannot be: a failure is said and costs the trees alone. */
+  /** Resolves once the models have landed, the first lists are drawn and every billboard's bake has settled, baked or
+   * given up, or cannot be: a failure is said and costs the trees alone. */
   readonly ready: Promise<void>;
   /** What is drawn now: the buckets' meshes with an instance, and their instances. */
   drawn(): { meshes: number; instances: number };
+  /** Every billboard's bake as it stands, in the order the billboards are made: the giants' sets, the saplings, the
+   * snag. Empty until the models have landed. */
+  impostorBakes(): readonly ImpostorBake[];
+  /** Ends the bakes still in flight and the models still loading, at once and without a word: a bake so ended stays as
+   * it stood. For a device that has failed; the forest stands until `dispose`. */
+  abandon(): void;
   dispose(): void;
 };
 
@@ -121,6 +161,66 @@ type Bucket = {
 /** A bark set's three maps. */
 type BarkMaps = { colour: Texture2D; normal: Texture2D; arm: Texture2D };
 
+/** One billboard: its quad, its bake as it stands, and its bucket once the bake has landed. */
+type Billboard = {
+  quad: ImpostorQuad;
+  bake: ImpostorBake;
+  /** When the bake was asked for (`performance.now()`), for its `ms`. */
+  startedAt: number;
+  /** Null until a bake lands, and for good if none does: the billboard is not drawn. */
+  bucket: Bucket | null;
+};
+
+/** The box of every part of a LOD. */
+function boxOf(parts: readonly ModelPart[]): { min: Vec3; max: Vec3 } {
+  const min: Vec3 = { x: Infinity, y: Infinity, z: Infinity };
+  const max: Vec3 = { x: -Infinity, y: -Infinity, z: -Infinity };
+  for (const part of parts) {
+    min.x = Math.min(min.x, part.min.x);
+    min.y = Math.min(min.y, part.min.y);
+    min.z = Math.min(min.z, part.min.z);
+    max.x = Math.max(max.x, part.max.x);
+    max.y = Math.max(max.y, part.max.y);
+    max.z = Math.max(max.z, part.max.z);
+  }
+  return { min, max };
+}
+
+/**
+ * A bake's normal map as the card's material reads it. The bake writes the
+ * map in the card's own frame, +x right and +y up (`impostorBakePlugin`).
+ * Lite reads a map with no vertex tangents in a frame made of the
+ * coordinates' derivatives, whose first axis runs against a card's u and
+ * whose second with its v; the card's v runs down, with the bake's rows. So
+ * both of the map's axes are turned over, and the z kept.
+ */
+export function cardNormals(normal: Uint8Array): Uint8Array {
+  const turned = new Uint8Array(normal.length);
+  for (let i = 0; i + 3 < normal.length; i += 4) {
+    turned[i] = 255 - (normal[i] as number);
+    turned[i + 1] = 255 - (normal[i + 1] as number);
+    turned[i + 2] = normal[i + 2] as number;
+    turned[i + 3] = normal[i + 3] as number;
+  }
+  return turned;
+}
+
+/**
+ * A billboard's quad as a mesh's data: `quad.width` by `quad.height` about
+ * its origin, facing -z, its coordinates laid as the bake's rows are, the
+ * first at the top.
+ */
+export function cardGeometry(quad: ImpostorQuad): { positions: Float32Array; normals: Float32Array; uvs: Float32Array; indices: Uint32Array } {
+  const x = quad.width / 2;
+  const y = quad.height / 2;
+  return {
+    positions: new Float32Array([-x, -y, 0, x, -y, 0, x, y, 0, -x, y, 0]),
+    normals: new Float32Array([0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+}
+
 export function createForestMeshes(engine: EngineContext, scene: SceneContext, seed: number, options: ForestMeshOptions): ForestMeshes {
   const nearRadius = options.nearRadius ?? NEAR_RADIUS;
   const fades = forestFadeBands(nearRadius);
@@ -132,6 +232,19 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   const giants: [Bucket, Bucket, Bucket][] = [];
   const saplings: ([Bucket, Bucket, Bucket] | null)[] = [];
   let deadwood: { bucket: Bucket; measure: DeadwoodMeasure } | null = null;
+  /** The billboards by the slot the far lists are split into (`partitionImpostors`): the giants' sets, the saplings'
+   * species, the snag. A slot with no billboard draws none of its trees. */
+  const billboards: (Billboard | null)[] = [];
+  /** Every bake still to settle. */
+  const bakes: Promise<void>[] = [];
+  /** The far lists as the last rebuild split them, and where the camera stood: a bake that lands later fills its billboard from them. */
+  let far: { lattice: TreeInstance[][]; fill: TreeInstance[][]; x: number; z: number } | null = null;
+  /** The bakes' maps: the forest's own, let go with it. */
+  const baked: Texture2D[] = [];
+  const baker = createImpostorBaker(engine);
+  // One maker of distance fields for the forest's bakes: a worker, started at the first.
+  const fieldMaker = createFieldMaker();
+  let abandoned = false;
   let disposed = false;
   let adopted = false;
   let waiting = GIANT_MODELS.length + SAPLING_MODELS.length + 1;
@@ -159,18 +272,27 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   /** The trunks' moss map, one for the forest, a colour map as the bark's is. */
   const moss = map(MOSS_OUTPUT, true);
 
-  /** A material of the forest's: Lite's PBR with `plugins`, the wet look at `wet` and the air, lit by the scene's lights as the terrain is. */
-  function material(props: Partial<PbrMaterialProps>, specularWeight: number, plugins: MaterialPlugin[], wet: WetUniforms): PbrMaterialProps {
+  /**
+   * A material of the forest's: Lite's PBR with `plugins`, the wet look at `wet` and the air, lit by the scene's lights
+   * as the terrain is. With no wet look (null) it is a bake's: dry, in no air, writing the bake's picture in place of
+   * its colour, and the frames write it nothing.
+   */
+  function material(props: Partial<PbrMaterialProps>, specularWeight: number, plugins: MaterialPlugin[], wet: WetUniforms | null): PbrMaterialProps {
     const made = createPbrMaterial({ usePhysicalLightFalloff: true, ...props });
     // The specular weight scales the reflectance at normal incidence and at grazing angles both.
     setPbrMetallicReflectance(made, { color: [1, 1, 1], f0Factor: specularWeight });
+    if (wet === null) {
+      made.plugins = [baseColourPlugin(), ...plugins, surfaceSplitPlugin(), impostorBakePlugin(baker.picture)];
+      return made;
+    }
     made.plugins = [baseColourPlugin(), ...plugins, surfaceWetPlugin(wet), options.air()];
     materials.push(made);
     return made;
   }
 
-  /** A crown's material: its file's cards, alpha-tested, under the crown's share of the sky. */
-  function crownMaterial(part: ModelPart, vegetation: Pick<Vegetation, "foliage">): PbrMaterialProps {
+  /** A crown's material: its file's cards, alpha-tested, under the crown's share of the sky. With no `vegetation` it is
+   * a bake's: the cards alone, still, whole and unconformed. */
+  function crownMaterial(part: ModelPart, vegetation: Pick<Vegetation, "foliage"> | null): PbrMaterialProps {
     const look = treeSkyLook(true, part.facts.specularWeight);
     const made = material(
       {
@@ -179,16 +301,19 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
         ...(part.facts.ior === null ? {} : { reflectance: reflectanceOf(part.facts.ior) }),
       },
       look.specularWeight,
-      [vegetationPlugin({ eye: options.eye, frame: options.frame, match: false, light: false, fade: true, conform: true, moss: null, deadwood: null, sky: false, ...vegetation })],
-      options.wet.leaf,
+      vegetation === null
+        ? []
+        : [vegetationPlugin({ eye: options.eye, frame: options.frame, match: false, light: false, fade: true, conform: true, moss: null, deadwood: null, sky: false, ...vegetation })],
+      vegetation === null ? null : options.wet.leaf,
     );
     setPbrAlphaCutoff(made, part.facts.alphaCutoff);
     return made;
   }
 
-  /** A bark's material: a bark set's three maps under its tone, the map's own occlusion, roughness and metalness, and the moss. */
+  /** A bark's material: a bark set's three maps under its tone, the map's own occlusion, roughness and metalness, and
+   * the moss. With no wet look it is a bake's (`material`): the far trees are mossed as the near ones. */
   function barkMaterial(
-    part: ModelPart, look: BarkLook, set: BarkMaps, mossMap: Texture2D, wet: WetUniforms,
+    part: ModelPart, look: BarkLook, set: BarkMaps, mossMap: Texture2D, wet: WetUniforms | null,
     vegetation: Pick<Vegetation, "foliage" | "fade" | "conform" | "deadwood">, more: MaterialPlugin[] = [],
   ): PbrMaterialProps {
     const sky = treeSkyLook(false, part.facts.specularWeight);
@@ -212,6 +337,20 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       if (texture === undefined || released.has(texture)) continue;
       released.add(texture);
       releaseTexture(texture);
+    }
+  }
+
+  /**
+   * The file's own maps a bake draws with (a crown's), held by the forest for as long as it stands. Lite's loader
+   * leaves a file's map to the draws that take it up and lets it go with the last of them, and a bake's draws are made
+   * and let go while the near crowns' may not have been made yet: unheld, the crown's maps would go with the bake.
+   */
+  const held = new Set<Texture2D>();
+  function holdFileMaps(part: ModelPart): void {
+    for (const texture of [part.colour, part.normal]) {
+      if (texture === undefined || held.has(texture)) continue;
+      held.add(texture);
+      acquireTexture(texture);
     }
   }
 
@@ -252,9 +391,17 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
    * wears: the sets share the crown's two materials (LOD0 and LOD1's with
    * the foliage, LOD2's without) and each wears its own bark's two.
    */
-  function adoptTrees(name: string, model: LoadedModel, barks: readonly { look: BarkLook; maps: BarkMaps }[], mossMap: Texture2D): [Bucket, Bucket, Bucket][] {
+  function adoptTrees(
+    name: string, model: LoadedModel, barks: readonly { look: BarkLook; maps: BarkMaps }[], mossMap: Texture2D, kind: "giant" | "sapling", slot: number,
+  ): [Bucket, Bucket, Bucket][] {
     const lods = TREE_LODS.map((lod) => model.get(lod) ?? []);
     const first = lods[0] as readonly ModelPart[];
+    // A set's billboard is baked from, and sized by, the second LOD: detail enough for the bake, cheaper than the first.
+    // A model with no second LOD bakes its first.
+    const second = lods[1] as readonly ModelPart[];
+    const source = second.length > 0 ? second : first;
+    const box = boxOf(source);
+    for (const part of source) if (part.facts.alphaMask) holdFileMaps(part);
     const crown = first.find((part) => part.facts.alphaMask);
     const bark = first.find((part) => !part.facts.alphaMask);
     // The foliage's height is the model's: its origin is at its footprint's base. Motion reaches zero where ring 1 has dissolved.
@@ -266,6 +413,15 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     const crownNear = crown === undefined ? null : crownMaterial(crown, { foliage: sway(crown) });
     const crownFar = crown === undefined ? null : crownMaterial(crown, { foliage: null });
     return barks.map((dressing, k) => {
+      // The set's billboard, its bake asked for now: the crown's cards and the set's bark under the moss, as the near
+      // trees wear them, with nothing that moves and nothing the weather does.
+      billboards.push(billboard(`${kind}_${slot + k}`, impostorQuad(box.min, box.max), box, bakePoseMatrix(0), () => source.map((part, p) => {
+        const isCrown = part.facts.alphaMask;
+        const made = isCrown
+          ? crownMaterial(part, null)
+          : barkMaterial(part, dressing.look, dressing.maps, mossMap, null, { foliage: null, fade: false, conform: false, deadwood: null });
+        return { mesh: bucketMesh(`forest_${name}_${k}_bake${p}`, part, isCrown ? part.uvs.slice() : barkUvs(part, dressing.look), isCrown ? part.tangents : null, made), instance: null };
+      })));
       const barkNear = bark === undefined ? null : barkMaterial(bark, dressing.look, dressing.maps, mossMap, options.wet.bark, { foliage: sway(bark), fade: false, conform: true, deadwood: null });
       const barkFar = bark === undefined ? null : barkMaterial(bark, dressing.look, dressing.maps, mossMap, options.wet.bark, { foliage: null, fade: false, conform: true, deadwood: null });
       return lods.map((parts, lod) => {
@@ -303,10 +459,132 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       releaseFileMaps(part);
     });
     deadwood = { bucket: bucket(meshes, layouts, fades.deadwood), measure };
+    // The snags' billboard, baked from the same LOD stood up: the model lies down, and a snag stands its trunk up by
+    // this roll. Each bake mesh is drawn as an instance that reads a snag's role, nothing. Its bark's normals are
+    // read turned over, as the game's own bake of the snag reads them (`oneSidedLightPlugin`).
+    const pose = bakePoseMatrix(SNAG_BAKE_ROLL);
+    const still = { foliage: null, fade: false, conform: false, deadwood: dressing };
+    billboards.push(billboard("snag", snagImpostorQuad(measure), posedBounds(pose, parts.map((part) => part.positions)), pose, () => parts.map((part, p) => {
+      const made = barkMaterial({ ...part, facts: { ...part.facts, doubleSided: true } }, look, set, mossMap, null, still, [oneSidedLightPlugin(true)]);
+      return { mesh: bucketMesh(`forest_deadwood_bake${p}`, part, part.uvs.slice(), null, made), instance: new Float32Array(vegetationInstanceLayout(still).floats) };
+    })));
   }
 
-  /** A bucket's new list: its matrices and what its materials read an instance, written over the old. */
-  function apply(target: Bucket, matrices: Float32Array, from: { groundGrad?: Float32Array; deadwoodRole?: Float32Array }): void {
+  /**
+   * One billboard, its bake asked for: `of` is its cohort and slot, `box` the box of what is baked as it is posed by
+   * `pose`, and `meshes` makes the bake's own meshes, in its own materials, when its turn comes.
+   */
+  function billboard(of: string, quad: ImpostorQuad, box: { min: Vec3; max: Vec3 }, pose: Float32Array, meshes: () => BakeMesh[]): Billboard {
+    const made: Billboard = { quad, bake: { name: impostorName(of), state: "baking", ms: null }, startedAt: performance.now(), bucket: null };
+    const slot = billboards.length;
+    bakes.push(bakeBillboard(made, slot, box, pose, meshes));
+    return made;
+  }
+
+  /**
+   * A billboard's bake, to its end: the two pictures drawn and read back, their distance field made, and the card
+   * dressed in them. It says once that it is still waiting at `IMPOSTOR_BAKE_WARN_MS` and gives up, saying so, at
+   * `IMPOSTOR_BAKE_FAIL_MS`; a bake that fails or gives up leaves its billboard undrawn and its record `failed`. One
+   * ended by the forest's leaving or by `abandon` says nothing and stays as it stood.
+   */
+  async function bakeBillboard(board: Billboard, slot: number, box: { min: Vec3; max: Vec3 }, pose: Float32Array, meshes: () => BakeMesh[]): Promise<void> {
+    const name = board.bake.name;
+    const fail = (): void => {
+      if (disposed || abandoned) return;
+      board.bake.state = "failed";
+      board.bake.ms = performance.now() - board.startedAt;
+      console.error(`forest impostor: no bake for ${name}`);
+    };
+    const frame = impostorBakeFrame(box.min, box.max);
+    if (frame === null) {
+      fail();
+      return;
+    }
+    const warned = setTimeout(() => {
+      if (!disposed && !abandoned) console.warn(`forest impostor bake still waiting after ${Math.round(IMPOSTOR_BAKE_WARN_MS / 1000)} s: ${name}`);
+    }, IMPOSTOR_BAKE_WARN_MS);
+    let bound: ReturnType<typeof setTimeout> | undefined;
+    const gaveUp = new Promise<"late">((resolve) => {
+      bound = setTimeout(() => resolve("late"), IMPOSTOR_BAKE_FAIL_MS);
+    });
+    try {
+      const made = baker
+        .bake(meshes, pose, frame)
+        .then((pictures) => (pictures === null ? null : fieldMaker.fields(pictures.albedo, pictures.normal, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE)));
+      const fields = await Promise.race([made, gaveUp]);
+      if (fields === "late") {
+        // What it makes after this is dropped: the card keeps nothing.
+        void made.catch(() => undefined);
+        if (!disposed && !abandoned) console.error(`forest impostor bake gave up after ${Math.round(IMPOSTOR_BAKE_FAIL_MS / 1000)} s: ${name}`);
+        fail();
+        return;
+      }
+      // No pictures or no fields: the baker or the maker of fields was ended, with the forest or by `abandon`.
+      if (fields === null || fields.normal === null || disposed || abandoned) {
+        fail();
+        return;
+      }
+      dress(board, fields.albedo, fields.normal);
+      board.bake.state = "ready";
+      board.bake.ms = performance.now() - board.startedAt;
+      // A rebuild may have split the far lists while the bake was drawn: the card takes its own now.
+      fillBillboard(slot);
+      invalidateRenderBundles(engine);
+    } catch (error) {
+      if (!disposed && !abandoned) console.error(`forest impostor bake failed: ${name}`, error);
+      fail();
+    } finally {
+      clearTimeout(warned);
+      clearTimeout(bound);
+    }
+  }
+
+  /**
+   * A billboard's card in its bake: the field's colour, kept in gamma space and decoded where it is read, as the game
+   * keeps it, with the field's signed distance as the alpha the card tests at the rim; the field's normals; lit once,
+   * live, as a crown, matt, on both of its sides by the one normal; glazed by the weather as a leaf.
+   */
+  function dress(board: Billboard, albedo: Uint8Array, normal: Uint8Array): void {
+    const colour = createTexture2DFromPixels(engine, albedo, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE, { mipMaps: true });
+    const normals = createTexture2DFromPixels(engine, cardNormals(normal), IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE, { mipMaps: true });
+    // Sampled as the game samples them: between levels, repeating, with the anisotropy Babylon.js gives such a map.
+    const sampler = getOrCreateSampler(engine, {
+      addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipmapFilter: "linear", maxAnisotropy: CARD_ANISOTROPY,
+    });
+    colour.sampler = sampler;
+    normals.sampler = sampler;
+    baked.push(colour, normals);
+    const fade = { foliage: null, fade: true, conform: false, deadwood: null };
+    const made = material(
+      { baseColorTexture: colour, normalTexture: normals, metallicFactor: 0, roughnessFactor: 1, doubleSided: true, environmentIntensity: CROWN_SKY },
+      TREE_SPECULAR_WEIGHT,
+      [oneSidedLightPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, match: false, light: false, moss: null, sky: false, ...fade })],
+      options.wet.leaf,
+    );
+    setPbrAlphaCutoff(made, IMPOSTOR_FIELD_CUT);
+    setPbrGammaAlbedo(made);
+    const card = cardGeometry(board.quad);
+    const mesh = createMeshFromData(engine, board.bake.name, card.positions, card.normals, card.indices, card.uvs);
+    mesh.material = made;
+    // The bands are each instance's own (`fillBillboard`): the bucket's are the lattice's, for a list that carries none.
+    board.bucket = bucket([mesh], [vegetationInstanceLayout(fade)], fades.impostorLattice);
+  }
+
+  /**
+   * A billboard's two lists onto its one card, the lattice's first and then the fill's, as the last rebuild split
+   * them: each quad turned to where the camera then stood, its bands those of its list.
+   */
+  function fillBillboard(slot: number): void {
+    const board = billboards[slot];
+    if (board === null || board === undefined || board.bucket === null || far === null) return;
+    const lattice = far.lattice[slot] ?? [];
+    const fill = far.fill[slot] ?? [];
+    const matrices = finish(impostorMatrixSlices(lattice, fill, board.quad.centreY, far.x, far.z));
+    apply(board.bucket, matrices, { fadeBands: impostorFadeBuffer(lattice.length, fill.length, fades) });
+  }
+
+  /** A bucket's new list: its matrices and what its materials read an instance (its own bands, where `from` carries them), written over the old. */
+  function apply(target: Bucket, matrices: Float32Array, from: { groundGrad?: Float32Array; deadwoodRole?: Float32Array; fadeBands?: Float32Array }): void {
     const count = matrices.length / 16;
     if (count > target.capacity) {
       // Outgrown: new arrays with room to spare, so a walk through thicker forest does not take new ones each cell.
@@ -322,11 +600,12 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     }
     target.matrices.set(matrices);
     target.count = count;
-    const fadeBands = fadeBandsBuffer(count, target.fade);
+    // A bucket's bands are one for its every instance, but a billboard's, whose two lists end at different ranges.
+    const fadeBands = from.fadeBands ?? fadeBandsBuffer(count, target.fade);
     target.meshes.forEach((mesh, i) => {
       const data = target.data[i];
       if (data !== null && data !== undefined) {
-        writeVegetationInstances(target.layouts[i] as VegetationInstanceLayout, count, { fadeBands, ...from }, data);
+        writeVegetationInstances(target.layouts[i] as VegetationInstanceLayout, count, { ...from, fadeBands }, data);
         const instances = mesh.thinInstances;
         if (instances !== undefined && instances !== null) instances.pluginVersion = (instances.pluginVersion ?? 0) + 1;
       }
@@ -353,6 +632,18 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     for (const [s, lods] of saplings.entries()) {
       if (lods === null) continue;
       lods.forEach((target, lod) => trees(target, (bands.saplings[lod] as TreeInstance[]).filter((t) => t.species === s)));
+      yield;
+    }
+    // The far trees: each list split in one pass by the billboard that draws the tree, a giant by its bucket set.
+    const giantSlot = (t: TreeInstance): number => (giants.length === 0 ? -1 : GIANT_SETS.findIndex((set) => inGiantSet(set, t.species, t.variant)));
+    far = {
+      lattice: partitionImpostors(bands.impostors, giantSlot, giants.length, saplings.length),
+      fill: partitionImpostors(bands.impostorsFill, giantSlot, giants.length, saplings.length),
+      x, z,
+    };
+    yield;
+    for (let slot = 0; slot < billboards.length; slot++) {
+      fillBillboard(slot);
       yield;
     }
     // Plugin instance data goes up as its draw is recorded again.
@@ -395,12 +686,17 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     const mossMap = await moss;
     for (const [species, pending] of giantModels.entries()) {
       const barks = await Promise.all(giantBarks.filter((_, i) => (GIANT_SETS[i] as (typeof GIANT_SETS)[number]).species === species));
-      giants.push(...adoptTrees(`giant_${species}`, await pending, barks, mossMap));
+      giants.push(...adoptTrees(`giant_${species}`, await pending, barks, mossMap, "giant", giants.length));
     }
     for (const [species, pending] of saplingModels.entries()) {
       const bark = saplingBarks[species];
-      // A sapling species the barks do not name has no dressing to wear, and is not drawn.
-      saplings.push(bark === undefined ? null : (adoptTrees(`sapling_${species}`, await pending, [await bark], mossMap)[0] ?? null));
+      // A sapling species the barks do not name has no dressing to wear, and is not drawn, near or far.
+      if (bark === undefined) {
+        saplings.push(null);
+        billboards.push(null);
+        continue;
+      }
+      saplings.push(adoptTrees(`sapling_${species}`, await pending, [await bark], mossMap, "sapling", species)[0] ?? null);
     }
     const dead = await deadwoodBark;
     adoptDeadwood((await deadwoodModel).get(deadwoodLod) ?? [], dead.look, dead.maps, mossMap);
@@ -409,10 +705,15 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     maybeBuild();
   }
 
-  const ready = load().catch((error: unknown) => {
+  const landed = load().catch((error: unknown) => {
     waiting = 0;
     // A missing or broken asset costs the trees, never the hike; a dispose mid-load ends here too, and says nothing.
-    if (!disposed) console.error("the forest's trees could not be made; none is drawn", error);
+    if (!disposed && !abandoned) console.error("the forest's trees could not be made; none is drawn", error);
+  });
+  // Every bake is asked for by the time the models are adopted; once the last has settled, what made them goes.
+  const ready = landed.then(() => Promise.all(bakes)).then(() => {
+    baker.dispose();
+    fieldMaker.dispose();
   });
 
   return {
@@ -439,10 +740,27 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       }
       return { meshes, instances };
     },
+    impostorBakes() {
+      return billboards.filter((board) => board !== null).map((board) => ({ ...board.bake }));
+    },
+    abandon() {
+      abandoned = true;
+      loads.abort();
+      baker.dispose();
+      fieldMaker.dispose();
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
       loads.abort();
+      // A bake in flight ends without its pictures, and one waiting on its fields is answered with none.
+      baker.dispose();
+      fieldMaker.dispose();
+      for (const texture of baked) releaseTexture(texture);
+      baked.length = 0;
+      for (const texture of held) releaseTexture(texture);
+      held.clear();
+      far = null;
       for (const made of buckets) {
         for (const mesh of made.meshes) {
           removeFromScene(scene, mesh);

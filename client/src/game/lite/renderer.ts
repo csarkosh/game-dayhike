@@ -1,6 +1,6 @@
 /**
- * The hike's renderer on Babylon Lite: the terrain, the forest's trees, the
- * ground clutter, the blade grass, the duff and the cliffs under the
+ * The hike's renderer on Babylon Lite: the terrain, the forest's trees near
+ * and far, the ground clutter, the blade grass, the duff and the cliffs under the
  * atmosphere, lit by the sun and the sky's fill for the hour and the weather,
  * seen from the player's eye or the free camera. It answers the whole of `Renderer`
  * (`renderer.ts`), and what it does not draw yet it answers as nothing
@@ -210,6 +210,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let steppedAt: number | null = null;
 
   let disposed = false;
+  /** The device has failed (`abandon`): the forest's bakes are ended, and a forest made after bakes none. */
+  let abandoned = false;
   let standing: Standing | null = null;
   /** The light's version the lights and the cleared frame were last written for. */
   let litVersion = -1;
@@ -344,6 +346,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         wet: forestWet,
         air: () => atmospherePlugin(airValues, cloudMap),
       });
+      if (abandoned) trees.abandon();
       // The near field of blade grass, on the tiers that can afford it.
       if (tier !== "low") {
         blades = createBladeMeshes(engine, scene, forest.seed, { quality: tier, eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap) });
@@ -645,7 +648,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     drawFrame() {
       if (standing === null) return;
       fit(standing);
-      renderFrame(standing.engine, 1000 / 60);
+      // The hike's own surface alone: a billboard's bake has another, drawn when the bake is (`impostorBake.ts`).
+      renderFrame(standing.engine, 1000 / 60, [standing.engine]);
     },
     runLoop(frame) {
       if (disposed) return;
@@ -656,6 +660,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     onFrameEnd(fn) {
       frameEnds.add(fn);
       return () => void frameEnds.delete(fn);
+    },
+    impostorBakes() {
+      return standing?.forest?.impostorBakes() ?? [];
+    },
+    abandon() {
+      abandoned = true;
+      standing?.forest?.abandon();
     },
     dispose() {
       handle.dispose();

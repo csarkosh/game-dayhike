@@ -13,12 +13,12 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of ["billboards", "nurse logs", "props", "sea", "lakes", "animals", "bodies", "dome", "shadows", "mist", "rain", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of ["nurse logs", "props", "sea", "lakes", "animals", "bodies", "dome", "shadows", "mist", "rain", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
       expect(all, word).toContain(word);
     }
   });
 
-  it("reads out nothing: no animal, no water to hear, no bake, no scene, no stare, a canopy with no water", () => {
+  it("reads out nothing: no animal, no water to hear, no scene, no stare, a canopy with no water", () => {
     const { members } = notDrawnMembers();
     expect(members.hasWildlife).toBe(false);
     expect(members.wildlifeEvents()).toEqual([]);
@@ -32,7 +32,6 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(life.frogCalls).toEqual([]);
     expect(life.bed.level).toBe(0);
     expect(members.waterLifeSound()).toBe(life);
-    expect(members.impostorBakes()).toEqual([]);
     expect(members.endScene()).toBeNull();
     expect(members.stare()).toBe(STARE_LENS_REST);
     expect(members.canopyWater()).toBe(0);
@@ -77,7 +76,6 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     let told = 0;
     const stop = members.onShaderCompiled(() => told++);
     members.keepShaders();
-    members.abandon();
     stop();
     expect(told).toBe(0);
   });

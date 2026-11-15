@@ -2,8 +2,8 @@
  * What the renderer built on Babylon Lite does not draw yet, in one list,
  * and what it answers the hike for each of them meanwhile.
  *
- * It draws the terrain, the forest's trees (the near rings of full geometry
- * and the dead trees), the ground clutter (the cards, the plants and the
+ * It draws the terrain, the forest's trees (the near rings of full geometry,
+ * the dead trees and the far billboards with their bakes), the ground clutter (the cards, the plants and the
  * stones), the blade grass, the duff and the cliffs' rock walls where the
  * field lays any, under the atmosphere, lit by the sun and the sky's fill
  * for the hour and the weather, from the player's eye or the free camera. Every other part of the world is absent, and the members of
@@ -24,7 +24,7 @@ import type { WeatherPresetName } from "../weather.js";
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };
 
 export const NOT_DRAWN: readonly NotDrawn[] = [
-  { what: "the forest's far billboards and their bakes, and what grows on its nurse logs", members: ["impostorBakes", "abandon"] },
+  { what: "what grows on the forest's nurse logs", members: [] },
   { what: "the chunk props the simulation collides with (`propMeshes.ts`)", members: ["canopyOver"] },
   { what: "the sea, the lakes, their plants and reflections, the surf and its spray", members: ["hasSea", "surfSound"] },
   { what: "the lakes' insects and frogs", members: ["hasWaterLife", "waterLifeSound"] },
@@ -61,7 +61,7 @@ export type NotDrawnHeld = {
 /** The members answered as nothing: every member `NOT_DRAWN` names. */
 export type NotDrawnMembers = Pick<
   Renderer,
-  | "impostorBakes" | "abandon" | "canopyOver"
+  | "canopyOver"
   | "hasSea" | "surfSound" | "hasWaterLife" | "waterLifeSound"
   | "hasWildlife" | "wildlifeEvents" | "wildlifeDirectorLog"
   | "setSkinShading" | "setHaunt" | "setMist" | "setMistIn" | "canopyWater"
@@ -98,8 +98,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
     wireframe: false, skinShading: true, depthOfField: false, ending: null, endScene: null, scene: null,
   };
   const members: NotDrawnMembers = {
-    impostorBakes: () => NO_EVENTS,
-    abandon: () => undefined,
     canopyOver: () => 0,
     hasSea: false,
     surfSound: () => SILENT_SURF_SOUND,
