@@ -140,6 +140,7 @@ import { notDrawnMembers } from "./notDrawn.js";
 import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { createLiteRain, type LiteRain, type RainFrame } from "./rain.js";
 import { createLiteRainMap, type CoverRegistry, type LiteRainMap } from "./rainMap.js";
+import { createLiteRainSplash, type LiteRainSplash, type SplashFrame } from "./rainSplash.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
 import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
@@ -207,8 +208,9 @@ type Standing = {
   motes: LiteMotes | null;
   /** The rain's streaks and drips (`rain.ts`). */
   rain: LiteRain;
-  /** The rain's cover map, on the tiers that draw one (`rainMap.ts`). */
+  /** The rain's cover map and the splashes that land on it, on the tiers that draw them (`rainMap.ts`, `rainSplash.ts`). */
   rainMap: LiteRainMap | null;
+  splash: LiteRainSplash | null;
 };
 
 /**
@@ -341,8 +343,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const motesFrame: MotesFrame = { seconds: 0, exposure: 0, contrast: DISPLAY_CONTRAST };
   /** The headlamp as the rain reads it: at the eye, along the view, at the frame's state, its intensity 0 while it is off. */
   const rainLamp: RainLamp = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, intensity: 0, angle: LAMP_ANGLE, r: 1, g: 1, b: 1 };
-  /** What a frame draws the rain with; none before the sky's first slices, as the mist banks'. */
+  /** What a frame draws the rain and its splashes with; none before the sky's first slices, as the mist banks'. */
   let rainFrame: RainFrame | null = null;
+  let splashFrame: SplashFrame | null = null;
   /** The canopy's water as the rain last stepped it. */
   let canopyWater = 0;
   /** The fog gradient's near end, the motes' colour and the one the cloud's is made from: black until the sky's first slices. */
@@ -362,6 +365,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.splash?.dispose();
     made.rain.dispose();
     made.rainMap?.dispose();
     made.motes?.dispose();
@@ -444,9 +448,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const motes = createLiteMotes(engine, scene, tier, uploads);
     // The rain's cover map, on the tiers that draw one, over the terrain the rings draw: the rings, the patches, the
     // props and the cliffs' near buckets stand in it as they are made. Then the rain, which is the weather's
-    // everywhere.
+    // everywhere, and the splashes, which land on the map.
     const rainMap = forest === null ? null : createLiteRainMap(engine, scene, tier);
     const rain = createLiteRain(engine, scene, tier, rainMap, uploads);
+    const splash = rainMap === null ? null : createLiteRainSplash(engine, scene, tier, rainMap, uploads);
     const coverAs = (kind: "terrain" | "hard"): CoverRegistry | undefined =>
       rainMap === null ? undefined : { add: (mesh) => rainMap.register(mesh, kind), remove: (mesh) => rainMap.unregister(mesh) };
     // The ground cloud's map, which every material's air reads.
@@ -562,7 +567,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         cover: coverAs("hard"),
       });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes, rain, rainMap };
+    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes, rain, rainMap, splash };
     if (disposed) {
       release(made);
       return;
@@ -902,6 +907,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           mistFrame = { eye: pose, yaw: 0, colour: fogGradientAt(sky, GRADIENT_MID_STEP), air, exposure: 0, contrast: DISPLAY_CONTRAST };
           nearColour = fogGradientAt(sky, 0);
           rainFrame = { eye: pose, yaw: 0, dt: 0, lamp: rainLamp, air, exposure: 0, contrast: DISPLAY_CONTRAST };
+          splashFrame = { eye: pose, seconds: 0, lamp: rainLamp, sunTravel: light.sunTravel, milk: standing.rain.milk, air, exposure: 0, contrast: DISPLAY_CONTRAST };
         }
         if (centre !== null && mistFrame !== null) {
           // The mist banks, round the camera's place and turned to its yaw.
@@ -913,7 +919,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           motesFrame.exposure = light.exposure;
           standing.motes?.update(weather, light.hour, nearColour, wind, motesFrame);
         }
-        if (coverAt !== null && rainFrame !== null) {
+        if (coverAt !== null && rainFrame !== null && splashFrame !== null) {
           // The headlamp as the rain reads it: the frame's, at the eye and along the view.
           rainLamp.x = pose.x;
           rainLamp.y = pose.y;
@@ -925,13 +931,17 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           rainLamp.r = lensLamp.state.colour.r;
           rainLamp.g = lensLamp.state.colour.g;
           rainLamp.b = lensLamp.state.colour.b;
-          // The cover map is drawn with this frame only if a drop reads it; then the rain.
+          // The cover map is drawn with this frame only if a drop or a ring reads it; then the rain, and the
+          // splashes on the map.
           standing.rainMap?.update(coverAt, standing.rain.reads(weather));
           rainFrame.yaw = pose.yaw;
           rainFrame.dt = dt;
           rainFrame.exposure = light.exposure;
           standing.rain.update(weather, wind, rainFrame);
           canopyWater = standing.rain.canopyWater;
+          splashFrame.seconds = seconds;
+          splashFrame.exposure = light.exposure;
+          standing.splash?.update(weather, splashFrame);
         }
         // The ground cloud: the ground round the eye, built again at once as the eye leaves the last map's middle, as
         // the game builds it, and counted with what follows the camera; then its density for the frame, from the

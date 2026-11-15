@@ -691,7 +691,7 @@ describe("layer boundaries", () => {
     // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
     expect(lite.sort()).toEqual([
       "game/lite/bladeMeshes.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
-      "game/lite/listMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/renderer.ts", "game/lite/shaderUniforms.ts",
+      "game/lite/listMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/shaderUniforms.ts",
       "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/terrainMeshes.ts",
     ]);
     // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.

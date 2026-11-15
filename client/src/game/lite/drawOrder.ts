@@ -42,10 +42,10 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * meshes: the motes, then the mist banks, which order themselves farthest
  * first within their one draw (`mistBanks.ts`), then the rain, which the
  * game puts last of its group as the nearest blended volume (`rain.ts`):
- * the drips and the streaks, one draw whose instances are in that order
- * (`rainField.ts`).
+ * the splashes, then the drips and the streaks, one draw whose instances
+ * are in that order (`rainField.ts`).
  */
-export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, rain: 230 } as const;
+export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, splashes: 220, rain: 230 } as const;
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;
