@@ -1,18 +1,20 @@
 /**
- * The forest's and the ground cover's materials as plugins on Babylon Lite's
- * PBR material: the foliage (the wind in the vertex stage, a blade clump's
- * collapse to its roots, the colour block, the canopy's cut of the sky and
- * the per-light term), the distance dither with its widening, the base
- * conform, the trunks' moss, the dead trees' dressing, the wet look, and two
- * corrections of how Lite lights a surface where the game lights it
- * otherwise. The numbers each is drawn with are the game's own,
- * computed with no engine (`foliageUniforms.ts`, `distanceFade.ts`,
- * `groundConform.ts`, `deadwoodParams.ts`, `mossParams.ts`,
+ * The forest's, the ground cover's and the cliffs' materials as plugins on
+ * Babylon Lite's PBR material: the foliage (the wind in the vertex stage, a
+ * blade clump's collapse to its roots, the colour block, the canopy's cut of
+ * the sky and the per-light term), the distance dither with its widening,
+ * the base conform, the trunks' moss, the dead trees' dressing, a rock
+ * wall's tint toward the ground under it, the wet look, and two corrections
+ * of how Lite lights a surface where the game lights it otherwise. The
+ * numbers each is drawn with are the game's own, computed with no engine
+ * (`foliageUniforms.ts`, `distanceFade.ts`, `groundConform.ts`,
+ * `deadwoodParams.ts`, `mossParams.ts`, `cliffInstances.ts`,
  * `wetSurface.ts`).
  *
  * The WGSL is, statement for statement, the GLSL of the game's plugins
  * (`shaders/foliage*.fx`, `distanceFadePlugin.ts`, `groundConformPlugin.ts`,
- * `shaders/moss*.fx`, `shaders/deadwood*.fx`, `shaders/wetLights.fragment.fx`).
+ * `shaders/moss*.fx`, `shaders/deadwood*.fx`, `shaders/cliffTint*.fx`,
+ * `shaders/wetLights.fragment.fx`).
  * What differs is where it goes into the material:
  *
  * - The foliage, the fade's widening and the conform are ONE plugin
@@ -88,13 +90,16 @@ export type Vegetation = {
   deadwood: { base: number } | null;
   /** Whether the scene has an image-based light, which the canopy cuts. */
   sky: boolean;
+  /** The share of the ground's colour under the instance mixed into the albedo (`cliffTintPlugin.ts`), by the
+   * instance's `foliage`: a rock wall's, which wears no foliage. None when absent. */
+  ground?: number;
 };
 
 /** A per-instance attribute's place in the interleaved plugin instance data: the float it starts at, or -1 where the material reads none. */
 export type VegetationInstanceLayout = { fadeBands: number; groundGrad: number; foliage: number; deadwoodRole: number; bladeStrength: number; floats: number };
 
 /** Where each per-instance attribute `v` reads sits in an instance's data, and the floats an instance. */
-export function vegetationInstanceLayout(v: Pick<Vegetation, "foliage" | "fade" | "conform" | "deadwood">): VegetationInstanceLayout {
+export function vegetationInstanceLayout(v: Pick<Vegetation, "foliage" | "fade" | "conform" | "deadwood" | "ground">): VegetationInstanceLayout {
   const layout: VegetationInstanceLayout = { fadeBands: -1, groundGrad: -1, foliage: -1, deadwoodRole: -1, bladeStrength: -1, floats: 0 };
   const take = (name: "fadeBands" | "groundGrad" | "foliage" | "deadwoodRole" | "bladeStrength", floats: number): void => {
     layout[name] = layout.floats;
@@ -102,7 +107,7 @@ export function vegetationInstanceLayout(v: Pick<Vegetation, "foliage" | "fade" 
   };
   if (v.fade) take("fadeBands", 4);
   if (v.conform) take("groundGrad", 2);
-  if (v.foliage !== null && v.foliage.profile.groundTint > 0) take("foliage", 4);
+  if ((v.foliage !== null && v.foliage.profile.groundTint > 0) || v.ground !== undefined) take("foliage", 4);
   if (v.deadwood !== null) take("deadwoodRole", 1);
   if (v.foliage !== null && v.foliage.profile.blades) take("bladeStrength", 1);
   return layout;
@@ -222,15 +227,19 @@ function vertexCode(v: Vegetation): string {
   let dwTiles=max(1.0,floor(6.283185307179586*material.deadwoodBark.z*dwScale*material.deadwoodBark.y+0.5));
   out.uv=vec2<f32>(dwTurn*dwTiles,dwAlong);
   out.vDeadwood=vec4<f32>(deadwoodRole,(position.x+material.deadwoodBark.w)*dwScale,position.y,mossHash(o));}`;
+  // cliffTintWorldPos.vertex.fx: the ground's colour under the instance, handed on untouched.
+  const ground = v.ground === undefined ? "" : `
+  out.vCliffTint=foliage;`;
   return `{
   var w=out.worldPos;
-  let o=finalWorld[3].xz;${foliage}${fade}${conform}${moss}
+  let o=finalWorld[3].xz;${foliage}${fade}${conform}${moss}${ground}
   out.clipPos=scene.viewProjection*vec4<f32>(w,1.0);
 }`;
 }
 
 /** The colour block before the lights: foliageLights.fragment.fx (with its match), then mossLights.fragment.fx or
- * deadwoodLights.fragment.fx with the moss's roughness, which the game sets where Babylon reads its own. */
+ * deadwoodLights.fragment.fx with the moss's roughness, which the game sets where Babylon reads its own, then a rock
+ * wall's tint toward the ground. */
 function lightsCode(v: Vegetation): string {
   const foliage = v.foliage === null ? "" : /* wgsl */ `{
   surfaceAlbedo=mix(FOLIAGE_CARD_GREEN,surfaceAlbedo,material.foliageContrast);
@@ -262,7 +271,9 @@ function lightsCode(v: Vegetation): string {
   roughness=mix(roughness,${f(MOSS_ROUGHNESS)},mossW);
   ${v.deadwood === null ? "" : `surfaceAlbedo*=mix(1.0,mix(${f(DEADWOOD_CONTACT)},1.0,smoothstep(${f(DEADWOOD_CONTACT_BAND[0])},${f(DEADWOOD_CONTACT_BAND[1])},input.vDeadwood.z)),dwLog);`}
 }`;
-  return foliage + moss;
+  // cliffTintLights.fragment.fx: the module's own colour and the ground's under it; a black tint is no tint.
+  const ground = v.ground === undefined ? "" : `{let cHas=step(1.0/255.0,max(input.vCliffTint.r,max(input.vCliffTint.g,input.vCliffTint.b)));surfaceAlbedo=mix(surfaceAlbedo,input.vCliffTint.rgb,${f(v.ground)}*cHas);}`;
+  return foliage + moss + ground;
 }
 
 // foliageLightPlugin.ts and foliageDiffuse.fragment.fx, inside the light loop: the directional light's Lambert term,
@@ -324,6 +335,7 @@ export const DEADWOOD_FIELDS: readonly UniformField[] = uniformFields(emptyDeadw
 export function vegetationPlugin(v: Vegetation): MaterialPlugin {
   if (v.deadwood !== null && v.moss === null) throw new Error("the dead trees' dressing needs the moss map");
   if (v.light && v.foliage === null) throw new Error("the foliage's light needs the foliage");
+  if (v.ground !== undefined && v.foliage !== null) throw new Error("the ground's tint is a wall's, which wears no foliage: both read the instance's `foliage`");
   const layout = vegetationInstanceLayout(v);
   const tint = v.foliage !== null && v.foliage.profile.groundTint > 0;
   const blades = v.foliage !== null && v.foliage.profile.blades;
@@ -346,7 +358,7 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
       (v.moss !== null ? `const MOSS_SIDE:vec3<f32>=vec3<f32>(${f(MOSS_SIDE.x)},${f(MOSS_SIDE.y)},${f(MOSS_SIDE.z)});` : ""),
   };
   if (v.fade) fragment.CUSTOM_FRAGMENT_MAIN_BEGIN = FADE_MAIN_BEGIN;
-  if (v.foliage !== null || v.moss !== null) fragment.CUSTOM_FRAGMENT_BEFORE_LIGHTS = lightsCode(v);
+  if (v.foliage !== null || v.moss !== null || v.ground !== undefined) fragment.CUSTOM_FRAGMENT_BEFORE_LIGHTS = lightsCode(v);
   if (v.light) fragment.CUSTOM_FRAGMENT_LIGHT = FOLIAGE_LIGHT;
   if (v.foliage !== null && v.sky) fragment.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION = FOLIAGE_SKY;
 
@@ -365,7 +377,7 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
     // What the plugin compiles differs by its parts alone; the look's numbers are uniforms.
     defines: {
       foliage: v.foliage !== null, tint, blades, match: v.match, light: v.light, fade: v.fade, conform: v.conform,
-      moss: v.moss !== null, deadwood: v.deadwood !== null, sky: v.sky,
+      moss: v.moss !== null, deadwood: v.deadwood !== null, sky: v.sky, ground: v.ground ?? -1,
     },
     getCustomCode: (stage) =>
       stage === "vertex"
@@ -379,6 +391,7 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
       ...(v.fade ? [{ name: "vFadeBands", type: "vec4<f32>" as const }, { name: "vFadeDist", type: "f32" as const }] : []),
       ...(v.moss !== null && v.deadwood === null ? [{ name: "vMoss", type: "vec2<f32>" as const }] : []),
       ...(v.deadwood !== null ? [{ name: "vDeadwood", type: "vec4<f32>" as const }] : []),
+      ...(v.ground !== undefined ? [{ name: "vCliffTint", type: "vec4<f32>" as const }] : []),
     ],
     writeUbo(data, offsets) {
       if (v.foliage !== null) {

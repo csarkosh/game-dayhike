@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MaterialPlugin } from "@babylonjs/lite";
 import { BLADE_SOFT } from "../../../src/game/bladeClump.js";
+import { CLIFF_GROUND_TINT } from "../../../src/game/cliffInstances.js";
 import { bladeTierBands } from "../../../src/game/bladeField.js";
 import { COVER_GREEN, FOLIAGE_ALBEDO_FLOOR } from "../../../src/game/coverAlbedoParams.js";
 import { DEADWOOD_CONTACT, DEADWOOD_LOG_DRAW, deadwoodUniforms, emptyDeadwoodUniforms } from "../../../src/game/deadwoodParams.js";
@@ -372,5 +373,34 @@ describe("the blade clumps' material on Babylon Lite", () => {
     expect(split.priority).toBe(surfaceWetPlugin(emptyWetUniforms()).priority);
     expect(vegetationPlugin(blades()).priority).toBeLessThan(split.priority as number);
     expect(split.priority).toBeLessThan(ATMOSPHERE_PRIORITY);
+  });
+});
+
+describe("a rock wall's material on Babylon Lite", () => {
+  const wall = (far: boolean): Vegetation => ({ ...NOTHING, fade: far, ground: CLIFF_GROUND_TINT });
+
+  it("reads the ground's colour under the module an instance, beside the far ring's bands", () => {
+    expect(vegetationInstanceLayout(wall(false))).toEqual({ fadeBands: -1, groundGrad: -1, foliage: 0, deadwoodRole: -1, bladeStrength: -1, floats: 4 });
+    expect(vegetationInstanceLayout(wall(true))).toEqual({ fadeBands: 0, groundGrad: -1, foliage: 4, deadwoodRole: -1, bladeStrength: -1, floats: 8 });
+    expect(vegetationPlugin(wall(true)).getInstanceAttributes?.().map((a) => [a.name, a.offset, a.stride])).toEqual([["fadeBands", 0, 32], ["foliage", 16, 32]]);
+  });
+
+  it("draws its colour half way to the ground's, and leaves it where the instance carries no tint", () => {
+    const plugin = vegetationPlugin(wall(false));
+    expect(code(plugin, "vertex")).toContain("out.vCliffTint=foliage;");
+    const lights = plugin.getCustomCode?.("fragment")?.CUSTOM_FRAGMENT_BEFORE_LIGHTS ?? "";
+    expect(lights).toContain("let cHas=step(1.0/255.0,max(input.vCliffTint.r,max(input.vCliffTint.g,input.vCliffTint.b)));");
+    expect(lights).toContain(`surfaceAlbedo=mix(surfaceAlbedo,input.vCliffTint.rgb,${CLIFF_GROUND_TINT}*cHas);`);
+    expect(plugin.getVaryings?.()).toEqual([{ name: "vCliffTint", type: "vec4<f32>" }]);
+    // No wind, no uniforms of its own; the far ring's adds the fade's alone.
+    expect(names(plugin)).toEqual([]);
+    expect(names(vegetationPlugin(wall(true)))).toEqual(FADE_FIELDS.map((field) => field.name));
+    // The share is the shader's text: it keys the pipeline.
+    expect(plugin.defines).toMatchObject({ ground: CLIFF_GROUND_TINT });
+    expect(vegetationPlugin(NOTHING).defines).toMatchObject({ ground: -1 });
+  });
+
+  it("is refused the foliage, which reads the same instance attribute for a card's own tint", () => {
+    expect(() => vegetationPlugin({ ...crownNear(), ground: CLIFF_GROUND_TINT })).toThrow(/wall/);
   });
 });
