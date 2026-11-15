@@ -112,6 +112,7 @@ import {
 import { SWASH_FACE_LIFT_M, SWASH_G } from "./swashRunUp.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater, type WaterPlugin } from "./waterPlugin.js";
+import { createBumpDrift } from "./waterSurface.js";
 import { createOcean } from "./oceanRender.js";
 import { createWaterPlants } from "./waterPlants.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
@@ -756,9 +757,7 @@ export function createClipmap(
   };
 }
 
-/** Bump-texture UV drift per second — u and v deliberately unequal so the
- * ripples drift diagonally instead of tracking an axis. */
-export const WATER_UV_SCROLL = [0.015, 0.011] as const;
+export { WATER_UV_SCROLL } from "./waterSurface.js";
 
 /**
  * The water's ripple normal map as a texture: `waterBumpData`'s picture, or
@@ -1217,8 +1216,8 @@ export function createWater(
   const lakeBump = tier === "low" && lakes.length > 0 ? createWaterBump(scene, bumpData) : bump;
   if (tier === "low") seaMat.bumpTexture = bump;
   for (const mat of lakeMats) mat.bumpTexture = lakeBump;
-  /** The scroll's speed, tiles a second: what a lake's ripple drifts at in a full wind. */
-  const lakeDrift = Math.hypot(WATER_UV_SCROLL[0], WATER_UV_SCROLL[1]);
+  /** How far each bump has slid, kept with no engine (`waterSurface.ts`). */
+  const drift = createBumpDrift();
 
   // Cosmetic drift: scroll the bump's UV offset each frame by the clock's
   // delta, not per-frame constants, so the ripple speed survives
@@ -1232,13 +1231,14 @@ export function createWater(
     const at = now();
     const dt = Math.max(0, at - last) / 1000;
     last = at;
+    drift.step(dt, seaWind, seaWindDir, tier === "low", lakes.length > 0);
     if (tier === "low") {
-      bump.uOffset += WATER_UV_SCROLL[0] * dt;
-      bump.vOffset += WATER_UV_SCROLL[1] * dt;
+      bump.uOffset = drift.sea[0];
+      bump.vOffset = drift.sea[1];
     }
     if (lakes.length > 0) {
-      lakeBump.uOffset -= seaWindDir[0] * seaWind * lakeDrift * dt;
-      lakeBump.vOffset -= seaWindDir[1] * seaWind * lakeDrift * dt;
+      lakeBump.uOffset = drift.lake[0];
+      lakeBump.vOffset = drift.lake[1];
     }
   });
 
