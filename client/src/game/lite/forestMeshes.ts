@@ -31,7 +31,8 @@
  * list in the last slice, so no frame draws one bucket moved on against
  * another that has not. Between crossings the bands of the cell the camera
  * reaches next are collected as idle work, and the rebuild for that cell
- * takes them made.
+ * takes them made. The hand-over waits for a frame whose upload budget
+ * has room for it (`frameUploads.ts`), and is counted there.
  *
  * **The materials**, as `forestMeshes.ts` dresses them on Babylon.js: a
  * crown is its file's alpha-tested cards with the foliage at the tree's
@@ -110,7 +111,9 @@ import {
   type Vegetation, type VegetationInstanceLayout,
 } from "./forestPlugins.js";
 import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
+import type { FrameUploads } from "./frameUploads.js";
 import { createImpostorBaker, type BakeMesh } from "./impostorBake.js";
+import { MATRIX_BYTES, listBytes, sentInstances } from "./listMeshes.js";
 import { createRebuilds } from "./rebuildJobs.js";
 
 /** The canopy giants' models by `TreeInstance.species`: the fir, then the pine. */
@@ -184,6 +187,8 @@ export type ForestMeshOptions = {
   jobs?: SyncJobs;
   /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
   firstBuilds?: FirstBuilds;
+  /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
+  uploads?: FrameUploads;
 };
 
 /** One bucket: the meshes of a LOD (a tree's bark and crown are two), one instance list for all of them. */
@@ -403,6 +408,8 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   function bucketMesh(name: string, part: ModelPart, uvs: Float32Array, tangents: Float32Array | null, made: PbrMaterialProps): Mesh {
     // The geometry is copied: a second bucket set of one model draws its own.
     const mesh = createMeshFromData(engine, name, part.positions.slice(), part.normals.slice(), part.indices.slice(), uvs, undefined, tangents ?? undefined);
+    options.uploads?.count("geometry", part.positions.byteLength + part.normals.byteLength + part.indices.byteLength + uvs.byteLength + (tangents?.byteLength ?? 0), tangents === null ? 4 : 5);
+    options.uploads?.made();
     mesh.material = made;
     mesh.renderOrder = orders.of(made);
     return mesh;
@@ -618,6 +625,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       // A rebuild may have split the far lists while the bake was drawn: the card takes its own now.
       fillBillboard(slot);
       invalidateRenderBundles(engine);
+      options.uploads?.recorded();
     } catch (error) {
       if (!disposed && !abandoned) console.error(`forest impostor bake failed: ${name}`, error);
       fail();
@@ -642,6 +650,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     colour.sampler = sampler;
     normals.sampler = sampler;
     baked.push(colour, normals);
+    options.uploads?.count("textures", albedo.byteLength + normal.byteLength, 2);
     const fade = { foliage: null, fade: true, conform: false, deadwood: null };
     const made = material(
       { baseColorTexture: colour, normalTexture: normals, metallicFactor: 0, roughnessFactor: 1, doubleSided: true, environmentIntensity: CROWN_SKY },
@@ -669,7 +678,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
    * slices: each quad turned to where the camera then stood, its bands those of its list. Returns the step that hands
    * them to the card, or null for a slot whose billboard is not drawn.
    */
-  function* billboardList(slot: number, lists: FarLists): Slices<(() => void) | null> {
+  function* billboardList(slot: number, lists: FarLists): Slices<{ show: () => void; bytes: number } | null> {
     const board = billboards[slot];
     if (board === null || board === undefined || board.bucket === null) return null;
     const target = board.bucket;
@@ -677,13 +686,21 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     const fill = lists.fill[slot] ?? [];
     const fadeBands = impostorFadeBuffer(lattice.length, fill.length, fades);
     const matrices = yield* impostorMatrixSlices(lattice, fill, board.quad.centreY, lists.x, lists.z);
-    return () => apply(target, matrices, { fadeBands });
+    return { show: () => apply(target, matrices, { fadeBands }), bytes: handOverBytes(target, lattice.length + fill.length) };
+  }
+
+  /** The bytes handing `target` a list of `count` instances sends: each of its meshes' matrices and plugin instance data. */
+  function handOverBytes(target: Bucket, count: number): number {
+    const capacity = count > target.capacity ? Math.ceil(count * 1.5) : target.capacity;
+    let bytes = 0;
+    for (const layout of target.layouts) bytes += listBytes(count, capacity, layout.floats);
+    return bytes;
   }
 
   /** A billboard's card filled at once from the far lists the last rebuild showed: for a bake that lands between rebuilds. */
   function fillBillboard(slot: number): void {
     if (far === null) return;
-    finish(billboardList(slot, far))?.();
+    finish(billboardList(slot, far))?.show();
   }
 
   /** A bucket's new list: its matrices and what its materials read an instance (its own bands, where `from` carries them), written over the old. */
@@ -708,19 +725,27 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     target.meshes.forEach((mesh, i) => {
       const data = target.data[i];
       if (data !== null && data !== undefined) {
-        writeVegetationInstances(target.layouts[i] as VegetationInstanceLayout, count, { ...from, fadeBands }, data);
+        const layout = target.layouts[i] as VegetationInstanceLayout;
+        writeVegetationInstances(layout, count, { ...from, fadeBands }, data);
         const instances = mesh.thinInstances;
-        if (instances !== undefined && instances !== null) instances.pluginVersion = (instances.pluginVersion ?? 0) + 1;
+        if (instances !== undefined && instances !== null) {
+          // Lite sends the whole of the array it is handed: a view of the instances shown, rounded up (`listMeshes.ts`).
+          instances.pluginData = data.subarray(0, sentInstances(count, target.capacity) * layout.floats);
+          instances.pluginVersion = (instances.pluginVersion ?? 0) + 1;
+          options.uploads?.stream("pluginInstances", instances.pluginData.byteLength);
+        }
       }
+      if (count > 0) options.uploads?.stream("instances", count * MATRIX_BYTES);
+      options.uploads?.composed(count);
       setThinInstanceCount(mesh, count);
       setMeshVisible(mesh, count > 0);
     });
   }
 
   /** A bucket's list made now, in arrays of its own, and the step that hands it to the bucket when the rebuild is whole. */
-  function listOf(target: Bucket, matrices: Float32Array, from: { groundGrad?: Float32Array; deadwoodRole?: Float32Array }): () => void {
+  function listOf(target: Bucket, matrices: Float32Array, from: { groundGrad?: Float32Array; deadwoodRole?: Float32Array }): { show: () => void; bytes: number } {
     const fadeBands = fadeBandsBuffer(matrices.length / 16, target.fade);
-    return () => apply(target, matrices, { ...from, fadeBands });
+    return { show: () => apply(target, matrices, { ...from, fadeBands }), bytes: handOverBytes(target, matrices.length / 16) };
   }
 
   /** Bands collected ahead, for the origin the camera is heading for. */
@@ -745,28 +770,35 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       x, z,
     };
     const shows: (() => void)[] = [];
+    /** The bytes the hand-over sends. */
+    let sending = 0;
+    const handOver = (list: { show: () => void; bytes: number }): void => {
+      shows.push(list.show);
+      sending += list.bytes;
+    };
     /** The billboards whose lists this rebuild made. */
     const filled = new Set<number>();
     const card = function* (slot: number): Slices {
-      const show = yield* billboardList(slot, lists);
-      if (show === null) return;
-      shows.push(show);
+      const list = yield* billboardList(slot, lists);
+      if (list === null) return;
+      handOver(list);
       filled.add(slot);
     };
     yield;
     if (deadwood !== null) {
       const { bucket: target, measure } = deadwood;
       const matrices = deadwoodMatrixBuffer(seed, bands.deadwood, measure.snagBaseOffset, measure.logMinX, measure.logMaxX, measure.logSeat);
-      shows.push(listOf(target, matrices, { deadwoodRole: deadwoodRoleBuffer(bands.deadwood) }));
+      handOver(listOf(target, matrices, { deadwoodRole: deadwoodRoleBuffer(bands.deadwood) }));
       if (nurse !== null) {
         // What grows on the logs, placed on each log's own matrix.
         const plants = nurseBuffers(bands.deadwood, matrices, measure.logMinX, measure.logMaxX, measure.logTop, measure.logSeat.diameter);
-        shows.push(listOf(nurse.ferns, plants.ferns, {}), listOf(nurse.seedlings, plants.seedlings, {}));
+        handOver(listOf(nurse.ferns, plants.ferns, {}));
+        handOver(listOf(nurse.seedlings, plants.seedlings, {}));
       }
     }
     yield;
     const trees = (target: Bucket, list: readonly TreeInstance[]): void => {
-      shows.push(listOf(target, treeMatrixBuffer(list, false), { groundGrad: groundGradBuffer(list) }));
+      handOver(listOf(target, treeMatrixBuffer(list, false), { groundGrad: groundGradBuffer(list) }));
     };
     for (const [s, lods] of giants.entries()) {
       const set = GIANT_SETS[s] as (typeof GIANT_SETS)[number];
@@ -793,6 +825,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
 
     // The hand-over is one step: every bucket's new list at once.
     yield FOREST_UPLOAD_MS;
+    if (options.uploads !== undefined) yield* options.uploads.hold(sending);
     if (disposed) return;
     far = lists;
     for (const show of shows) show();
@@ -800,6 +833,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     for (let slot = 0; slot < billboards.length; slot++) if (!filled.has(slot)) fillBillboard(slot);
     // Plugin instance data goes up as its draw is recorded again.
     invalidateRenderBundles(engine);
+    options.uploads?.recorded();
   }
 
   /** Idle work: the bands of the tree cell the camera reaches next. */
@@ -903,6 +937,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     },
     frame() {
       for (const made of materials) markMaterialUboDirty(made);
+      options.uploads?.marked(materials.length);
     },
     waiting() {
       return Math.max(0, waiting);

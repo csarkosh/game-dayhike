@@ -64,6 +64,8 @@ export type TableTexture = {
   readonly texture: Texture2D;
   /** Writes the table's floats as they now stand (the road's follows the eye). */
   write(): void;
+  /** The bytes a write sends. */
+  readonly bytes: number;
 };
 
 /**
@@ -81,7 +83,7 @@ export function tableTexture(engine: EngineContext, table: FloatTable | null): T
     updateTextureRegion(engine, texture, texels, { width, height, bytesPerRow: width * 16 });
   };
   write();
-  return { texture, write };
+  return { texture, write, bytes: width * height * 16 };
 }
 
 /** The ground cloud's map: its noise, repeating both ways, read bilinearly. */

@@ -67,7 +67,8 @@ import {
   baseColourPlugin, oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
 } from "./forestPlugins.js";
 import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
-import { listMesh, showList, type ListMesh } from "./listMeshes.js";
+import type { FrameUploads } from "./frameUploads.js";
+import { listBytes, listMesh, showList, type ListMesh } from "./listMeshes.js";
 import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
 
 export type ClutterMeshes = {
@@ -105,6 +106,8 @@ export type ClutterMeshOptions = {
   jobs?: SyncJobs;
   /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
   firstBuilds?: FirstBuilds;
+  /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
+  uploads?: FrameUploads;
 };
 
 /** One mesh's worth of geometry: a model's primitive, a cut of one, or a plant built in code. */
@@ -298,6 +301,9 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
     );
   }
 
+  /** A rebuild has filled the lists and waits to show them: no cut is made of them meanwhile, so the cut classes are
+   * not shown ahead of the rest. */
+  let holding = false;
   /** Whether a cut changed what a bucket's material reads an instance: the draws are then recorded again. */
   let cutResent = false;
   const showCut = (bucket: ClutterBucket): void => {
@@ -310,7 +316,7 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
     const from = list.culled ? list.drawn : list;
     const count = list.culled ? (list.cull?.kept ?? 0) : list.count;
     let resent = false;
-    for (const target of drawnBy.get(bucket) ?? []) resent = showList(target, from, count) || resent;
+    for (const target of drawnBy.get(bucket) ?? []) resent = showList(target, from, count, options.uploads) || resent;
     return resent;
   }
 
@@ -319,12 +325,30 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
     const made = lists;
     if (made === null) return;
     yield* made.rebuild(x, z);
+    // The lists are filled; the meshes go on drawing the last ones, and the cut waits, until the frame's upload
+    // budget has room for these.
+    if (options.uploads !== undefined) {
+      let sending = 0;
+      for (const bucket of made.all) {
+        if (bucket.list.culled) continue;
+        for (const target of drawnBy.get(bucket) ?? []) sending += listBytes(bucket.list.count, bucket.list.buf.length / 16, target.layout.floats);
+      }
+      holding = true;
+      try {
+        yield* options.uploads.hold(sending);
+      } finally {
+        holding = false;
+      }
+    }
     if (disposed) return;
     // A culled bucket goes on drawing its last cut until the next one.
     let resent = false;
     for (const bucket of made.all) if (!bucket.list.culled) resent = show(bucket) || resent;
     // Plugin instance data goes up as its draw is recorded again.
-    if (resent) invalidateRenderBundles(engine);
+    if (resent) {
+      invalidateRenderBundles(engine);
+      options.uploads?.recorded();
+    }
   }
   // One snap for every class, on the smallest cell.
   const rebuilds = createRebuilds({
@@ -388,14 +412,18 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
       maybeBuild();
     },
     cull(pose) {
-      if (disposed || lists === null) return;
+      if (disposed || lists === null || holding) return;
       cutResent = false;
       lists.cut(pose, showCut);
       // Plugin instance data goes up as its draw is recorded again.
-      if (cutResent) invalidateRenderBundles(engine);
+      if (cutResent) {
+        invalidateRenderBundles(engine);
+        options.uploads?.recorded();
+      }
     },
     frame() {
       for (const made of materials) markMaterialUboDirty(made);
+      options.uploads?.marked(materials.length);
     },
     waiting() {
       return Math.max(0, waiting);

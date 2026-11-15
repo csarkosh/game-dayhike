@@ -41,7 +41,8 @@ import {
   baseColourPlugin, oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
 } from "./forestPlugins.js";
 import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
-import { listMesh, showList, type ListMesh } from "./listMeshes.js";
+import type { FrameUploads } from "./frameUploads.js";
+import { listBytes, listMesh, showList, type ListMesh } from "./listMeshes.js";
 import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
 
 export function duffMeshName(character: number, tier: number): string {
@@ -73,6 +74,8 @@ export type DuffMeshOptions = {
   jobs?: SyncJobs;
   /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
   firstBuilds?: FirstBuilds;
+  /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
+  uploads?: FrameUploads;
 };
 
 /** The height of the tallest vertex of `positions` (xyz a vertex) over the clump's own ground. */
@@ -129,14 +132,26 @@ export function createDuffMeshes(engine: EngineContext, scene: SceneContext, see
   /** The rebuild for an eye at (x, z): the lists' own, whose last slice fills every list, and in that same step each bucket shown. */
   function* rebuild(x: number, z: number): Slices {
     yield* lists.rebuild(x, z);
+    // The lists are filled; the meshes go on drawing the last ones until the frame's upload budget has room for these.
+    if (options.uploads !== undefined) {
+      let sending = 0;
+      for (let i = 0; i < buckets.length; i++) {
+        const list = lists.all[i] as InstanceList;
+        sending += listBytes(list.count, list.buf.length / 16, (buckets[i] as ListMesh).layout.floats);
+      }
+      yield* options.uploads.hold(sending);
+    }
     if (disposed) return;
     let resent = false;
     for (let i = 0; i < buckets.length; i++) {
       const list = lists.all[i] as InstanceList;
-      resent = showList(buckets[i] as ListMesh, list, list.count) || resent;
+      resent = showList(buckets[i] as ListMesh, list, list.count, options.uploads) || resent;
     }
     // Plugin instance data goes up as its draw is recorded again.
-    if (resent) invalidateRenderBundles(engine);
+    if (resent) {
+      invalidateRenderBundles(engine);
+      options.uploads?.recorded();
+    }
   }
   const rebuilds = createRebuilds({
     name: "duff",
@@ -155,6 +170,7 @@ export function createDuffMeshes(engine: EngineContext, scene: SceneContext, see
     },
     frame() {
       for (const material of materials) markMaterialUboDirty(material);
+      options.uploads?.marked(materials.length);
     },
     drawn() {
       let meshes = 0;

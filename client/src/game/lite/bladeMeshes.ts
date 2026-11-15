@@ -43,6 +43,7 @@ import {
   baseColourPlugin, oneSidedLightPlugin, surfaceSplitPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
 } from "./forestPlugins.js";
 import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
+import type { FrameUploads } from "./frameUploads.js";
 import { listMesh, showList, type ListMesh } from "./listMeshes.js";
 import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
 
@@ -75,6 +76,8 @@ export type BladeMeshOptions = {
   jobs?: SyncJobs;
   /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
   firstBuilds?: FirstBuilds;
+  /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
+  uploads?: FrameUploads;
 };
 
 /** The height of the tallest vertex of `positions` (xyz a vertex) over the clump's own ground. */
@@ -142,7 +145,7 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
   /** Whether a cut changed what a bucket's material reads an instance: the draws are then recorded again. */
   let resent = false;
   const show = (list: InstanceList, index: number): void => {
-    if (showList(buckets[index] as ListMesh, list.drawn, list.cull?.kept ?? 0)) resent = true;
+    if (showList(buckets[index] as ListMesh, list.drawn, list.cull?.kept ?? 0, options.uploads)) resent = true;
   };
 
   return {
@@ -156,10 +159,14 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
       resent = false;
       lists.cut(pose, show);
       // Plugin instance data goes up as its draw is recorded again.
-      if (resent) invalidateRenderBundles(engine);
+      if (resent) {
+        invalidateRenderBundles(engine);
+        options.uploads?.recorded();
+      }
     },
     frame() {
       for (const material of materials) markMaterialUboDirty(material);
+      options.uploads?.marked(materials.length);
     },
     drawn() {
       let meshes = 0;

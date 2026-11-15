@@ -32,6 +32,7 @@ import type { WetUniforms } from "../wetSurface.js";
 import { loadModel, type ModelPart } from "./forestModels.js";
 import { baseColourPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation } from "./forestPlugins.js";
 import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
+import type { FrameUploads } from "./frameUploads.js";
 import { listMesh, showList, type ListMesh } from "./listMeshes.js";
 
 export function cliffMeshName(model: number, lod: number): string {
@@ -65,6 +66,8 @@ export type CliffMeshOptions = {
   wet: WetUniforms;
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
+  uploads?: FrameUploads;
 };
 
 /** A bucket: the mesh of one model's one LOD root, and the list it draws. */
@@ -115,10 +118,13 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
     lists.rebuild(camX, camZ, held);
     let resent = false;
     for (const row of buckets) {
-      for (const bucket of row) if (bucket !== null) resent = showList(bucket.target, bucket.list, bucket.list.count) || resent;
+      for (const bucket of row) if (bucket !== null) resent = showList(bucket.target, bucket.list, bucket.list.count, options.uploads) || resent;
     }
     // Plugin instance data goes up as its draw is recorded again.
-    if (resent) invalidateRenderBundles(engine);
+    if (resent) {
+      invalidateRenderBundles(engine);
+      options.uploads?.recorded();
+    }
     builtX = origin.x;
     builtZ = origin.z;
   }
@@ -182,6 +188,7 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
     },
     frame() {
       for (const made of materials) markMaterialUboDirty(made);
+      options.uploads?.marked(materials.length);
     },
     waiting() {
       return Math.max(0, waiting);

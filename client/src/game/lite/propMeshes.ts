@@ -24,6 +24,7 @@ import type { Slices } from "../syncJobs.js";
 import type { WetUniforms } from "../wetSurface.js";
 import { DRAW_ORDER } from "./drawOrder.js";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
+import type { FrameUploads } from "./frameUploads.js";
 
 export type PropMeshes = {
   /** Follows the camera: the chunks round it are made, and the ones left behind go, when it crosses into another chunk. */
@@ -42,6 +43,8 @@ export type PropMeshOptions = {
   air: () => MaterialPlugin;
   /** The loader of first builds, while the intro's film covers the hike: the chunks round a new place are made a chunk a slice by it. */
   firstBuilds?: FirstBuilds;
+  /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
+  uploads?: FrameUploads;
 };
 
 export function createPropMeshes(engine: EngineContext, scene: SceneContext, grid: ChunkGrid, options: PropMeshOptions): PropMeshes {
@@ -81,6 +84,8 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
     return chunkPropBoxes(grid, cx, cz).map((box) => {
       const geometry = propBoxGeometry(box);
       const mesh = createMeshFromData(engine, box.name, geometry.positions, geometry.normals, geometry.indices);
+      options.uploads?.stream("geometry", geometry.positions.byteLength + geometry.normals.byteLength + geometry.indices.byteLength, 3);
+      options.uploads?.made();
       mesh.material = materialFor(box.material);
       // The boxes' materials are one stack, drawn by one pipeline: they share a place.
       mesh.renderOrder = DRAW_ORDER.props;
@@ -93,6 +98,7 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
     for (const mesh of meshes) {
       removeFromScene(scene, mesh);
       disposeMeshGpu(mesh);
+      options.uploads?.dropped();
     }
   }
 
@@ -121,6 +127,7 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
     },
     frame() {
       for (const made of materials.values()) markMaterialUboDirty(made);
+      options.uploads?.marked(materials.size);
     },
     count() {
       let n = 0;
