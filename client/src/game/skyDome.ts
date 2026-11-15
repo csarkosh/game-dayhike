@@ -44,9 +44,9 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 
-import { NIGHT_SKY } from "./sky.js";
 import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "./skyModel.js";
 import type { SkyState } from "./skyState.js";
+import { SKY_DOME_SIZE, createSkyTableUploads, emptySkyDomeUniforms, skyDomeUniforms, type SkyDomeUniforms } from "./skyDomeParams.js";
 import { rgbToHalfRgba } from "./halfFloat.js";
 import skyDomeVertex from "./shaders/skyDome.vertex.fx?raw";
 import skyDomeFragment from "./shaders/skyDome.fragment.fx?raw";
@@ -70,11 +70,8 @@ export const SKY_DOME_UNIFORMS: readonly string[] = [
   ...SKY_DOME_IMAGE_UNIFORMS,
 ];
 
-/** Big enough to sit outside any view, small enough to stay inside the far plane. */
-const SKYBOX_SIZE = 8000;
-
 export type SkyDome = {
-  /** A box of SKYBOX_SIZE riding with the eye, never picked. */
+  /** A box of SKY_DOME_SIZE riding with the eye, never picked. */
   readonly mesh: Mesh;
   readonly material: ShaderMaterial;
   /** Sets every uniform from `s`, and uploads the clear slice times its scale
@@ -154,9 +151,8 @@ export function createSkyDome(scene: Scene, colourPath: "post" | "material"): Sk
   // WebGL2 and WebGPU both copy the data as the upload is made, so the next
   // packing cannot reach a texture already sent.
   const halves = new Uint16Array(SLICE_AZIMUTHS * SLICE_ELEVATIONS * 4);
-  /** The sun's altitude and the table's count the texture was last uploaded at. */
-  let uploadedAltitude = Number.NaN;
-  let uploadedCount = -1;
+  /** Whether a state's slice is to go up: its altitude or the table's count has moved (`skyDomeParams.ts`). */
+  const uploads = createSkyTableUploads();
   // Linear filtering where the engine filters half floats (WebGL2 and WebGPU
   // both do; RawTexture falls back to nearest where it does not), clamped so
   // the azimuth's ends and the zenith row never wrap.
@@ -175,26 +171,31 @@ export function createSkyDome(scene: Scene, colourPath: "post" | "material"): Sk
   table.wrapV = Texture.CLAMP_ADDRESSMODE;
   material.setTexture("skyTable", table);
 
-  const deckZenith = new Vector3();
-  const mistAir = new Vector3();
-  const sunDir = new Vector3(0, 1, 0);
-  const disc = new Vector3();
-  const night = new Vector3(NIGHT_SKY.r, NIGHT_SKY.g, NIGHT_SKY.b);
+  // The sky's uniforms by name (`skyDomeParams.ts`), set on the material from
+  // one record filled again at each update; a vector's through one Vector3 of
+  // its own.
+  const values = emptySkyDomeUniforms();
+  const vectors = new Map<string, Vector3>();
+  const setValues = (record: SkyDomeUniforms): void => {
+    for (const [name, value] of Object.entries(record) as [string, number[]][]) {
+      if (value.length === 1) {
+        material.setFloat(name, value[0] as number);
+        continue;
+      }
+      let vector = vectors.get(name);
+      if (vector === undefined) {
+        vector = new Vector3();
+        vectors.set(name, vector);
+      }
+      material.setVector3(name, vector.set(value[0] as number, value[1] as number, value[2] as number));
+    }
+  };
   // Until the first update the dome is the night sky alone.
-  material.setFloat("skyScale", 0);
-  material.setFloat("skyCloud", 0);
-  material.setVector3("skyDeckZenith", deckZenith);
-  material.setVector3("skyNight", night);
-  material.setVector3("skyMistAir", mistAir);
-  material.setFloat("skyMistWeight", 0);
-  material.setVector3("skySunDir", sunDir);
-  material.setVector3("skyDisc", disc);
+  setValues(values);
   material.setFloat("skyCapture", 0);
-  material.setFloat("skyExposure", 1);
   material.setFloat("skyToneMap", colourPath === "material" ? 1 : 0);
-  material.setFloat("skyContrast", 1);
 
-  const mesh = MeshBuilder.CreateBox(SKY_DOME_NAME, { size: SKYBOX_SIZE }, scene);
+  const mesh = MeshBuilder.CreateBox(SKY_DOME_NAME, { size: SKY_DOME_SIZE }, scene);
   mesh.material = material;
   mesh.infiniteDistance = true;
   mesh.isPickable = false;
@@ -223,22 +224,9 @@ export function createSkyDome(scene: Scene, colourPath: "post" | "material"): Sk
     mesh,
     material,
     update(s, exposure) {
-      if (s.clear.altitudeDeg !== uploadedAltitude || s.tableCount !== uploadedCount) {
-        table.update(rgbToHalfRgba(s.clear.texels, halves, s.scale));
-        uploadedAltitude = s.clear.altitudeDeg;
-        uploadedCount = s.tableCount;
-      }
+      if (uploads.due(s)) table.update(rgbToHalfRgba(s.clear.texels, halves, s.scale));
       // The texture holds the slice already scaled.
-      material.setFloat("skyScale", 1);
-      material.setFloat("skyCloud", s.cloud);
-      material.setVector3("skyNight", night.set(s.nightFloor.r, s.nightFloor.g, s.nightFloor.b));
-      material.setVector3("skyDeckZenith", deckZenith.set(s.deckZenith.r, s.deckZenith.g, s.deckZenith.b));
-      material.setVector3("skyMistAir", mistAir.set(s.mistAir.r, s.mistAir.g, s.mistAir.b));
-      material.setFloat("skyMistWeight", s.mistWeight);
-      material.setVector3("skySunDir", sunDir.set(s.sunDir.x, s.sunDir.y, s.sunDir.z));
-      material.setVector3("skyDisc", disc.set(s.discColour.r, s.discColour.g, s.discColour.b));
-      material.setFloat("skyExposure", exposure);
-      material.setFloat("skyContrast", scene.imageProcessingConfiguration.contrast);
+      setValues(skyDomeUniforms(s, exposure, scene.imageProcessingConfiguration.contrast, values));
     },
     setCapture(on) {
       material.setFloat("skyCapture", on ? 1 : 0);

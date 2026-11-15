@@ -507,6 +507,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "impostorField.worker.ts"),
       join(SRC, "game", "impostorFieldWorker.ts"),
       join(SRC, "game", "skyState.ts"),
+      join(SRC, "game", "skyDomeParams.ts"),
       join(SRC, "game", "halfFloat.ts"),
       join(SRC, "game", "waterLifeParams.ts"),
       join(SRC, "game", "waterLifeField.ts"),
@@ -553,8 +554,8 @@ describe("layer boundaries", () => {
   });
 
   /**
-   * What the ground, the air over it and the scene's light are drawn with,
-   * and the lens they are seen through, is computed by modules that load no
+   * What the ground, the air over it, the sky's dome and the scene's light
+   * are drawn with, and the lens they are seen through, is computed by modules that load no
    * Babylon at all: not by an import of
    * their own (the list above) and not through anything they import, so each
    * runs, and is tested, with no engine made. A type's import is erased when
@@ -564,7 +565,7 @@ describe("layer boundaries", () => {
   it("what the terrain, the air and the light are drawn with, and the lens, is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
       "terrainTables.ts", "terrainUniforms.ts", "groundLayers.ts", "wetSurface.ts", "terrainVertices.ts",
-      "atmosphereParams.ts", "cloudParams.ts", "skyState.ts", "weather.ts", "sceneLights.ts", "gameLens.ts",
+      "atmosphereParams.ts", "cloudParams.ts", "skyState.ts", "skyDomeParams.ts", "weather.ts", "sceneLights.ts", "gameLens.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
