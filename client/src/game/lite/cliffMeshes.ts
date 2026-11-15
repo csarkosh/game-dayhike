@@ -19,8 +19,8 @@
  * no bucket is made, and the faces are the terrain's own.
  */
 import {
-  createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, markMaterialUboDirty, removeFromScene, setPbrMetallicReflectance,
-  type EngineContext, type MaterialPlugin, type PbrMaterialProps, type SceneContext,
+  createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, removeFromScene, setPbrMetallicReflectance,
+  type EngineContext, type MaterialPlugin, type PluginUniformBlock, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
 import { CLIFF_DENSITY, CLIFF_MODELS } from "../../sim/cliffField.js";
 import { modelUrl } from "../assetUrls.js";
@@ -42,8 +42,6 @@ export function cliffMeshName(model: number, lod: number): string {
 export type CliffMeshes = {
   /** Follows the eye: the lists are made again when it crosses a cell of the field. Before the models have landed it only keeps where the eye is. */
   update(camX: number, camZ: number): void;
-  /** Once a frame: every material's uniforms are written again, for the eye moves. */
-  frame(): void;
   /** Models still being fetched or decoded. */
   waiting(): number;
   /** Resolves once the models have landed and the first lists are drawn, or at once where the field lays none. A model that fails is said and costs its own buckets alone. */
@@ -66,6 +64,8 @@ export type CliffMeshOptions = {
   wet: WetUniforms;
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The frame's block, which every material reads the wind, the eye, the wet line and the air from (`frameBlock.ts`). */
+  shared: PluginUniformBlock;
   /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
   uploads?: FrameUploads;
 };
@@ -92,7 +92,7 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
   /** A ring's material of a model: its maps and colour, the ground's tint, the far ring's dither, the wet look and the air. */
   function material(part: ModelPart, far: boolean, model: number): { made: PbrMaterialProps; vegetation: Vegetation } {
     const vegetation: Vegetation = {
-      eye: options.eye, frame: options.frame, foliage: null, match: false, light: false, fade: far, conform: false, moss: null, deadwood: null, sky: false,
+      eye: options.eye, frame: options.frame, shared: options.shared, foliage: null, match: false, light: false, fade: far, conform: false, moss: null, deadwood: null, sky: false,
       ground: CLIFF_GROUND_TINT,
     };
     const made = createPbrMaterial({
@@ -102,7 +102,7 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
       ...(part.normal === undefined ? {} : { normalTexture: part.normal }),
     });
     setPbrMetallicReflectance(made, { color: [1, 1, 1], f0Factor: part.facts.specularWeight ?? 1 });
-    made.plugins = [baseColourPlugin(), vegetationPlugin(vegetation), surfaceWetPlugin(options.wet), options.air()];
+    made.plugins = [baseColourPlugin(), vegetationPlugin(vegetation), surfaceWetPlugin(options.wet, options.shared), options.air()];
     materials.push(made);
     orders.put(made, model * 2 + (far ? 1 : 0));
     return { made, vegetation };
@@ -185,10 +185,6 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
       camX = x;
       camZ = z;
       maybeBuild();
-    },
-    frame() {
-      for (const made of materials) markMaterialUboDirty(made);
-      options.uploads?.marked(materials.length);
     },
     waiting() {
       return Math.max(0, waiting);

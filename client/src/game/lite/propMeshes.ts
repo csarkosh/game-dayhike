@@ -14,8 +14,8 @@
  * a chunk that has left the window goes with its meshes.
  */
 import {
-  addToScene, createMeshFromData, createPbrMaterial, disposeMeshGpu, markMaterialUboDirty, removeFromScene,
-  type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type SceneContext,
+  addToScene, createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene,
+  type EngineContext, type MaterialPlugin, type PluginUniformBlock, type Mesh, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
 import type { ChunkGrid } from "../../sim/chunkGrid.js";
 import { buildAtOnce, type FirstBuilds } from "../firstBuilds.js";
@@ -29,8 +29,6 @@ import type { FrameUploads } from "./frameUploads.js";
 export type PropMeshes = {
   /** Follows the camera: the chunks round it are made, and the ones left behind go, when it crosses into another chunk. */
   update(x: number, z: number): void;
-  /** Once a frame: every material's uniforms are written again, for the wet line and the air move. */
-  frame(): void;
   /** The boxes drawn now. */
   count(): number;
   dispose(): void;
@@ -41,6 +39,8 @@ export type PropMeshOptions = {
   wet: WetUniforms;
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The frame's block, which every material reads the wind, the eye, the wet line and the air from (`frameBlock.ts`). */
+  shared: PluginUniformBlock;
   /** The loader of first builds, while the intro's film covers the hike: the chunks round a new place are made a chunk a slice by it. */
   firstBuilds?: FirstBuilds;
   /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
@@ -74,7 +74,7 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
     if (made === undefined) {
       const colour = propColour(name);
       made = createPbrMaterial({ baseColorFactor: [colour[0], colour[1], colour[2], 1], metallicFactor: 0, roughnessFactor: PROP_ROUGHNESS, usePhysicalLightFalloff: true });
-      made.plugins = [baseColourPlugin(), surfaceWetPlugin(options.wet), options.air()];
+      made.plugins = [baseColourPlugin(), surfaceWetPlugin(options.wet, options.shared), options.air()];
       materials.set(name, made);
     }
     return made;
@@ -124,10 +124,6 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
         drop(meshes);
         live.delete(key);
       }
-    },
-    frame() {
-      for (const made of materials.values()) markMaterialUboDirty(made);
-      options.uploads?.marked(materials.size);
     },
     count() {
       let n = 0;

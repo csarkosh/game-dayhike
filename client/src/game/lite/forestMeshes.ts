@@ -71,9 +71,9 @@
  */
 import {
   acquireTexture, addToScene, createMeshFromData, createPbrMaterial, createTexture2DFromPixels, disposeMeshGpu, getOrCreateSampler, invalidateRenderBundles,
-  markMaterialUboDirty, releaseTexture, removeFromScene, setMeshVisible, setPbrAlphaCutoff, setPbrGammaAlbedo, setPbrMetallicReflectance, setThinInstanceCount,
+  releaseTexture, removeFromScene, setMeshVisible, setPbrAlphaCutoff, setPbrGammaAlbedo, setPbrMetallicReflectance, setThinInstanceCount,
   setThinInstances,
-  type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type SceneContext, type Texture2D,
+  type EngineContext, type MaterialPlugin, type PluginUniformBlock, type Mesh, type PbrMaterialProps, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import { TREE_CELL, type TreeInstance } from "../../sim/vegetation.js";
 import { modelUrl, textureUrl } from "../assetUrls.js";
@@ -152,8 +152,6 @@ const CARD_ANISOTROPY = 4;
 export type ForestMeshes = {
   /** Follows the camera: the lists are made again when it crosses a tree cell, at a walk over the frames after. Before the models have landed it only keeps where the camera is. */
   update(camX: number, camZ: number): void;
-  /** Once a frame: every material's uniforms are written again, for the wind and the eye move. */
-  frame(): void;
   /** Models and maps still being fetched or decoded. */
   waiting(): number;
   /** Resolves once the models have landed, the first lists are drawn and every billboard's bake has settled, baked or
@@ -183,6 +181,8 @@ export type ForestMeshOptions = {
   wet: { leaf: WetUniforms; bark: WetUniforms; deadwood: WetUniforms };
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The frame's block, which every material reads the wind, the eye, the wet line and the air from (`frameBlock.ts`). */
+  shared: PluginUniformBlock;
   /** The renderer's scheduler: given it, a crossing at a walk is a job. */
   jobs?: SyncJobs;
   /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
@@ -333,7 +333,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       made.plugins = [baseColourPlugin(), ...plugins, surfaceSplitPlugin(), impostorBakePlugin(baker.picture)];
       return made;
     }
-    made.plugins = [baseColourPlugin(), ...plugins, surfaceWetPlugin(wet), options.air()];
+    made.plugins = [baseColourPlugin(), ...plugins, surfaceWetPlugin(wet, options.shared), options.air()];
     materials.push(made);
     // The near trees' materials are made as the models are adopted, in the game's order whichever landed first.
     orders.take(made);
@@ -353,7 +353,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       look.specularWeight,
       vegetation === null
         ? []
-        : [vegetationPlugin({ eye: options.eye, frame: options.frame, match: false, light: false, fade: true, conform: true, moss: null, deadwood: null, sky: false, ...vegetation })],
+        : [vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, fade: true, conform: true, moss: null, deadwood: null, sky: false, ...vegetation })],
       vegetation === null ? null : options.wet.leaf,
     );
     setPbrAlphaCutoff(made, part.facts.alphaCutoff);
@@ -375,7 +375,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
         ...(part.facts.ior === null ? {} : { reflectance: reflectanceOf(part.facts.ior) }),
       },
       sky.specularWeight,
-      [...more, directOcclusionPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, match: false, light: false, moss: mossMap, sky: false, ...vegetation })],
+      [...more, directOcclusionPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: mossMap, sky: false, ...vegetation })],
       wet,
     );
   }
@@ -540,7 +540,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       const made = material(
         { ...plain, doubleSided: part.facts.doubleSided, baseColorTexture: part.colour, baseColorFactor: [tint.r, tint.g, tint.b, 1] },
         0,
-        [...(part.facts.doubleSided ? [oneSidedLightPlugin()] : []), vegetationPlugin({ eye: options.eye, frame: options.frame, match: false, light: false, moss: null, sky: false, ...still, foliage: look })],
+        [...(part.facts.doubleSided ? [oneSidedLightPlugin()] : []), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: null, sky: false, ...still, foliage: look })],
         options.wet.leaf,
       );
       if (part.facts.alphaMask) setPbrAlphaCutoff(made, part.facts.alphaCutoff);
@@ -557,7 +557,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     seedlingMesh.material = material(
       { ...plain, baseColorFactor: [1, 1, 1, 1] },
       0,
-      [oneSidedLightPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, match: false, light: false, moss: null, sky: false, ...still })],
+      [oneSidedLightPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: null, sky: false, ...still })],
       options.wet.leaf,
     );
     const layout = vegetationInstanceLayout(still);
@@ -655,7 +655,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     const made = material(
       { baseColorTexture: colour, normalTexture: normals, metallicFactor: 0, roughnessFactor: 1, doubleSided: true, environmentIntensity: CROWN_SKY },
       TREE_SPECULAR_WEIGHT,
-      [oneSidedLightPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, match: false, light: false, moss: null, sky: false, ...fade })],
+      [oneSidedLightPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: null, sky: false, ...fade })],
       options.wet.leaf,
     );
     setPbrAlphaCutoff(made, IMPOSTOR_FIELD_CUT);
@@ -934,10 +934,6 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       camX = x;
       camZ = z;
       maybeBuild();
-    },
-    frame() {
-      for (const made of materials) markMaterialUboDirty(made);
-      options.uploads?.marked(materials.length);
     },
     waiting() {
       return Math.max(0, waiting);

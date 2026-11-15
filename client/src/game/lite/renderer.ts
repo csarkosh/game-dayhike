@@ -40,16 +40,24 @@
  * mode the record of the last frame is read out as
  * `window.__frameUploads()`, beside the jobs' `window.__syncJobs()`.
  *
+ * **What every material reads alike is one block** (`frameBlock.ts`): the
+ * air, the wet line and the weather, the wind and the players, the eye and
+ * the frame's height, and the terrain's record are written once a frame to
+ * one uniform buffer every material's plugins name. A material's own
+ * uniforms are written when it is made, and again only when its own values
+ * change: the terrain's two when the weather moves the ground's colour.
+ *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
  * 1.1), under the weather's and the hour's exposure. There is no post chain.
  */
 import {
   NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial,
-  createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrMaterialPluginVertexData, markLightDirty,
-  markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, resizeEngine, vec3,
+  createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrMaterialPluginVertexData,
+  markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, resizeEngine, vec3,
+  writePluginUniformBlock,
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type PbrMaterialProps,
-  type SceneContext,
+  type PluginUniformBlock, type SceneContext,
 } from "@babylonjs/lite";
 import { PLAYER_EYE_OFFSET } from "../../sim/constants.js";
 import type { Forest } from "../../sim/forest.js";
@@ -90,6 +98,7 @@ import { createCliffMeshes, type CliffMeshes } from "./cliffMeshes.js";
 import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
 import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
+import { FRAME_BLOCK, FRAME_FIELDS, writeFrameBlock, type FrameValues } from "./frameBlock.js";
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
 import { notDrawnMembers } from "./notDrawn.js";
@@ -134,6 +143,8 @@ type Standing = {
   camera: BankedFreeCamera;
   sun: DirectionalLight;
   fill: HemisphericLight;
+  /** The frame's block: what every material reads alike, written once a frame (`frameBlock.ts`). */
+  shared: PluginUniformBlock;
   materials: PbrMaterialProps[];
   terrain: TerrainMeshes | null;
   road: TableTexture | null;
@@ -182,12 +193,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   };
   const terrainValues = emptyTerrainMaterialUniforms();
   const wetValues = emptyWetUniforms();
-  // The wet look on the scenery's materials, a record a porosity cap: every material at a cap reads the one.
+  // The wet look on the scenery's materials, a record a porosity cap: the cap is a material's own, and the rest of
+  // the look is the frame's (`frameBlock.ts`), written from the terrain's record above.
   const wetByCap = new Map<number, WetUniforms>();
   const wetAt = (cap: number): WetUniforms => {
     let record = wetByCap.get(cap);
     if (record === undefined) {
       record = emptyWetUniforms();
+      record.wetCap[0] = cap;
       wetByCap.set(cap, record);
     }
     return record;
@@ -199,6 +212,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const windPlayers = new Float32Array(FOLIAGE_PLAYERS * 3);
   const airValues = emptyAtmosphereUniforms();
   const cloud = noCloud();
+  /** What the frame's block is written from: the records above, the eye and the frame's height. */
+  const frameValues: FrameValues = { air: airValues, wet: wetValues, terrain: terrainValues, eye: { x: 0, y: 0, z: 0 }, rows: canvas.height };
+  /** The ground's colour and roughness the terrain's materials were last written with. */
+  const groundWritten = { r: Number.NaN, g: Number.NaN, b: Number.NaN, roughness: Number.NaN };
 
   // The wet line follows the nearest body, sea or lake, though no water is drawn.
   const wetBodies: WetBody[] = [];
@@ -287,6 +304,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // Its own letting go destroys the device too: only a loss it did not ask for is said.
       if (!disposed) console.error(`the hike's renderer lost its device (${info.reason === undefined ? "no reason given" : info.reason}): ${info.message}`);
     });
+    // The frame's block, before any material: every material's plugins name it.
+    const shared = createPluginUniformBlock(engine, FRAME_BLOCK, [...FRAME_FIELDS], "vertex-fragment");
     const scene = createSceneContext(engine);
     scene.imageProcessing.toneMappingEnabled = true;
     scene.imageProcessing.toneMapping = NeutralToneMapping;
@@ -344,10 +363,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           usePhysicalLightFalloff: true,
         });
         made.plugins = [
-          terrainPlugin(terrainValues, textures, cover.farLow, paints),
-          terrainWetPlugin(wetValues),
+          terrainPlugin(terrainValues, textures, cover.farLow, paints, shared),
+          terrainWetPlugin(wetValues, shared),
           terrainSplitPlugin(),
-          atmospherePlugin(airValues, cloudMap),
+          atmospherePlugin(airValues, cloudMap, shared),
           ...extra,
         ];
         materials.push(made);
@@ -380,7 +399,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         eye: pose,
         frame: frameSize,
         wet: forestWet,
-        air: () => atmospherePlugin(airValues, cloudMap),
+        air: () => atmospherePlugin(airValues, cloudMap, shared), shared,
         jobs,
         firstBuilds: options.firstBuilds,
         uploads,
@@ -389,7 +408,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // The near field of blade grass, on the tiers that can afford it.
       if (tier !== "low") {
         blades = createBladeMeshes(engine, scene, forest.seed, {
-          quality: tier, eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap), jobs, firstBuilds: options.firstBuilds,
+          quality: tier, eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap, shared), shared, jobs, firstBuilds: options.firstBuilds,
           uploads,
         });
       }
@@ -402,7 +421,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         eye: pose,
         frame: frameSize,
         wet: wetAt,
-        air: () => atmospherePlugin(airValues, cloudMap),
+        air: () => atmospherePlugin(airValues, cloudMap, shared), shared,
         jobs,
         firstBuilds: options.firstBuilds,
         uploads,
@@ -410,22 +429,22 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // The near field of dead leaves, twigs and small branches, on the same tiers as the blades beside it.
       if (tier !== "low") {
         duff = createDuffMeshes(engine, scene, forest.seed, {
-          quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.duff), air: () => atmospherePlugin(airValues, cloudMap),
+          quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.duff), air: () => atmospherePlugin(airValues, cloudMap, shared), shared,
           jobs, firstBuilds: options.firstBuilds, uploads,
         });
       }
       // Rock-wall modules on the faces too steep to stand on, on every tier. At the shipped density the field
       // lays none and no model is fetched.
       cliffs = createCliffMeshes(engine, scene, forest.seed, {
-        quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.cliff), air: () => atmospherePlugin(airValues, cloudMap), uploads,
+        quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.cliff), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, uploads,
       });
       // Every chunk prop the simulation collides with that no other mesh draws, as its box. A world as the game makes
       // it today has none, and none is made.
       props = createPropMeshes(engine, scene, forest.grid, {
-        wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap), firstBuilds: options.firstBuilds, uploads,
+        wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, firstBuilds: options.firstBuilds, uploads,
       });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props };
+    const made: Standing = { engine, scene, camera, sun, fill, shared, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props };
     if (disposed) {
       release(made);
       return;
@@ -534,32 +553,38 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     terrainValues.terrainAlbedo[1] = surface.albedo[1];
     terrainValues.terrainAlbedo[2] = surface.albedo[2];
     setWetWeather(wetness);
-    // Everywhere but under the water of the high tier's own path, the water above darkens what stands in it.
+    // Everywhere but under the water of the high tier's own path, the water above darkens what stands in it. The
+    // terrain's cap is none; every other material's is its own, and the rest of the look is this record's.
     const wetLine = wetLineFor(wetBodies, pose.x, pose.z);
     wetUniforms({ ...wetLine, attenuate: true, cap: 0 }, wetValues);
-    // The scenery's materials under the same wet line, each kind at its porosity cap.
-    for (const [cap, record] of wetByCap) wetUniforms({ ...wetLine, attenuate: true, cap }, record);
     // The ground cloud is not marched: no steps.
     atmosphereUniforms(light.air, cloud, 0, airValues);
-    for (const material of made.materials) {
-      const colour = material.baseColorFactor;
-      if (colour !== undefined) {
-        colour[0] = surface.albedo[0];
-        colour[1] = surface.albedo[1];
-        colour[2] = surface.albedo[2];
+    // The terrain's two materials carry the ground's colour and roughness under the weather: written again when it moves.
+    if (surface.albedo[0] !== groundWritten.r || surface.albedo[1] !== groundWritten.g || surface.albedo[2] !== groundWritten.b || surface.roughness !== groundWritten.roughness) {
+      groundWritten.r = surface.albedo[0];
+      groundWritten.g = surface.albedo[1];
+      groundWritten.b = surface.albedo[2];
+      groundWritten.roughness = surface.roughness;
+      for (const material of made.materials) {
+        const colour = material.baseColorFactor;
+        if (colour !== undefined) {
+          colour[0] = surface.albedo[0];
+          colour[1] = surface.albedo[1];
+          colour[2] = surface.albedo[2];
+        }
+        material.roughnessFactor = surface.roughness;
+        markMaterialUboDirty(material);
       }
-      material.roughnessFactor = surface.roughness;
-      markMaterialUboDirty(material);
+      uploads.marked(made.materials.length);
     }
-    uploads.marked(made.materials.length);
-    // The forest's materials read the wind, the eye, the frame's size, the wet line and the air: written again a frame.
+    // What every material reads alike, once: the air, the wet line, the wind and the players, the eye, the frame's
+    // height and the terrain's record.
     frameSize.height = canvas.height;
-    made.forest?.frame();
-    made.blades?.frame();
-    made.clutter?.frame();
-    made.duff?.frame();
-    made.cliffs?.frame();
-    made.props?.frame();
+    frameValues.eye = pose;
+    frameValues.rows = canvas.height;
+    writeFrameBlock(made.shared.data, made.shared.offsets, frameValues);
+    writePluginUniformBlock(made.engine, made.shared);
+    uploads.count("uniforms", made.shared.data.byteLength);
   }
 
   let skyWait: Promise<void> | null = null;

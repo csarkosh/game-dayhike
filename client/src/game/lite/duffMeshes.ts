@@ -26,8 +26,8 @@
  * the cells the next one adds are looked up as idle work.
  */
 import {
-  createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, markMaterialUboDirty, removeFromScene, setPbrMetallicReflectance,
-  type EngineContext, type MaterialPlugin, type PbrMaterialProps, type SceneContext,
+  createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, removeFromScene, setPbrMetallicReflectance,
+  type EngineContext, type MaterialPlugin, type PluginUniformBlock, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
 import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, duffClumpGeometry } from "../duffClump.js";
 import { DUFF_REACH, DUFF_REBUILD_CELL, duffTierBands } from "../duffField.js";
@@ -52,8 +52,6 @@ export function duffMeshName(character: number, tier: number): string {
 export type DuffMeshes = {
   /** Follows the eye: the lists are made again when it crosses a metre, at a walk over the frames after. */
   update(camX: number, camZ: number): void;
-  /** Once a frame: every material's uniforms are written again, for the eye moves. */
-  frame(): void;
   /** What is drawn now: the buckets' meshes with an instance, and their instances. */
   drawn(): { meshes: number; instances: number };
   dispose(): void;
@@ -70,6 +68,8 @@ export type DuffMeshOptions = {
   wet: WetUniforms;
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The frame's block, which every material reads the wind, the eye, the wet line and the air from (`frameBlock.ts`). */
+  shared: PluginUniformBlock;
   /** The renderer's scheduler: given it, a crossing at a walk is a job. */
   jobs?: SyncJobs;
   /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
@@ -107,14 +107,14 @@ export function createDuffMeshes(engine: EngineContext, scene: SceneContext, see
     const look = foliageLook(`duff_clumps_t${tier}_mat`, FOLIAGE_PROFILES.DUFF, tallest, { sunShadowed: true });
     look.bladeEdges = bands[tier] as (typeof bands)[number];
     const vegetation: Vegetation = {
-      eye: options.eye, frame: options.frame, foliage: look, match: false, light: true, fade: false, conform: false, moss: null, deadwood: null, sky: false,
+      eye: options.eye, frame: options.frame, shared: options.shared, foliage: look, match: false, light: true, fade: false, conform: false, moss: null, deadwood: null, sky: false,
     };
     const material = createPbrMaterial({
       baseColorFactor: [DUFF_ALBEDO.r, DUFF_ALBEDO.g, DUFF_ALBEDO.b, 1], metallicFactor: 0, roughnessFactor: DUFF_ROUGHNESS,
       doubleSided: true, usePhysicalLightFalloff: true,
     });
     setPbrMetallicReflectance(material, { color: [1, 1, 1], f0Factor: 1 });
-    material.plugins = [baseColourPlugin(), oneSidedLightPlugin(), vegetationPlugin(vegetation), surfaceWetPlugin(options.wet), options.air()];
+    material.plugins = [baseColourPlugin(), oneSidedLightPlugin(), vegetationPlugin(vegetation), surfaceWetPlugin(options.wet, options.shared), options.air()];
     materials.push(material);
     orders.take(material);
     const layout = vegetationInstanceLayout(vegetation);
@@ -167,10 +167,6 @@ export function createDuffMeshes(engine: EngineContext, scene: SceneContext, see
     update(x, z) {
       if (disposed) return;
       rebuilds.update(x, z);
-    },
-    frame() {
-      for (const material of materials) markMaterialUboDirty(material);
-      options.uploads?.marked(materials.length);
     },
     drawn() {
       let meshes = 0;

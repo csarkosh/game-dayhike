@@ -28,8 +28,8 @@
  * buckets draw the last cut of the last one.
  */
 import {
-  createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, markMaterialUboDirty, removeFromScene, setPbrMetallicReflectance,
-  type EngineContext, type MaterialPlugin, type PbrMaterialProps, type SceneContext,
+  createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, removeFromScene, setPbrMetallicReflectance,
+  type EngineContext, type MaterialPlugin, type PluginUniformBlock, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
 import { BLADE_ALBEDO, BLADE_CHARACTERS, bladeClumpGeometry, bladeCountFor, type BladeQuality } from "../bladeClump.js";
 import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, bladeTierBands } from "../bladeField.js";
@@ -56,8 +56,6 @@ export type BladeMeshes = {
   update(camX: number, camZ: number): void;
   /** Draws the cells inside the view of `pose` (`null`: every cell), cutting again only after a rebuild or once the view has moved past the thresholds. */
   cull(pose: CullPose | null): void;
-  /** Once a frame: every material's uniforms are written again, for the wind and the eye move. */
-  frame(): void;
   /** What is drawn now: the buckets' meshes with an instance, and their instances. */
   drawn(): { meshes: number; instances: number };
   dispose(): void;
@@ -72,6 +70,8 @@ export type BladeMeshOptions = {
   frame: { readonly height: number };
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The frame's block, which every material reads the wind, the eye, the wet line and the air from (`frameBlock.ts`). */
+  shared: PluginUniformBlock;
   /** The renderer's scheduler: given it, a crossing at a walk is a job. */
   jobs?: SyncJobs;
   /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
@@ -110,7 +110,7 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
     const look = foliageLook(`blade_clumps_t${tier}_mat`, FOLIAGE_PROFILES.BLADES, tallest, { sunShadowed: true });
     look.bladeEdges = bands[tier] as (typeof bands)[number];
     const vegetation: Vegetation = {
-      eye: options.eye, frame: options.frame, foliage: look, match: true, light: true, fade: false, conform: false, moss: null, deadwood: null, sky: false,
+      eye: options.eye, frame: options.frame, shared: options.shared, foliage: look, match: true, light: true, fade: false, conform: false, moss: null, deadwood: null, sky: false,
     };
     const material = createPbrMaterial({
       baseColorFactor: [BLADE_ALBEDO.r, BLADE_ALBEDO.g, BLADE_ALBEDO.b, 1], metallicFactor: 0, roughnessFactor: BLADE_ROUGHNESS,
@@ -163,10 +163,6 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
         invalidateRenderBundles(engine);
         options.uploads?.recorded();
       }
-    },
-    frame() {
-      for (const material of materials) markMaterialUboDirty(material);
-      options.uploads?.marked(materials.length);
     },
     drawn() {
       let meshes = 0;
