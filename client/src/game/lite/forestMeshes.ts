@@ -107,13 +107,13 @@ import type { WetUniforms } from "../wetSurface.js";
 import { loadKtx2Map, loadModel, type LoadedModel, type ModelPart } from "./forestModels.js";
 import {
   baseColourPlugin, directOcclusionPlugin, impostorBakePlugin, oneSidedLightPlugin, surfaceSplitPlugin, surfaceWetPlugin, vegetationInstanceLayout,
-  vegetationPlugin, writeVegetationInstances,
+  vegetationPlugin,
   type Vegetation, type VegetationInstanceLayout,
 } from "./forestPlugins.js";
 import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { createImpostorBaker, type BakeMesh } from "./impostorBake.js";
-import { MATRIX_BYTES, listBytes } from "./listMeshes.js";
+import { KEPT_INSTANCES, MATRIX_BYTES, listBytes, sameFloats, writeListData } from "./listMeshes.js";
 import { createRebuilds } from "./rebuildJobs.js";
 
 /** The canopy giants' models by `TreeInstance.species`: the fir, then the pine. */
@@ -716,7 +716,10 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
         if (mesh.thinInstances !== undefined && mesh.thinInstances !== null) mesh.thinInstances.pluginData = data;
       });
     }
-    target.matrices.set(matrices);
+    // A short list may be the one the bucket holds: what of it is the same is handed to no mesh again (`listMeshes.ts`).
+    const stands = !outgrown && count === target.count && count <= KEPT_INSTANCES;
+    const moved = !stands || !sameFloats(matrices, target.matrices, count * 16);
+    if (moved) target.matrices.set(matrices);
     target.count = count;
     // A bucket's bands are one for its every instance, but a billboard's, whose two lists end at different ranges.
     const fadeBands = from.fadeBands ?? fadeBandsBuffer(count, target.fade);
@@ -724,20 +727,24 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       const data = target.data[i];
       if (data !== null && data !== undefined) {
         const layout = target.layouts[i] as VegetationInstanceLayout;
-        writeVegetationInstances(layout, count, { ...from, fadeBands }, data);
+        const changed = writeListData(layout, count, { ...from, fadeBands }, data, stands);
         const instances = mesh.thinInstances;
         if (instances !== undefined && instances !== null) {
           // The mesh holds the whole array, and Lite sends the floats named, at the next frame (`listMeshes.ts`).
           // An array that has outgrown the mesh's buffer is sent whole.
           if (instances.pluginData !== data) instances.pluginData = data;
-          markThinInstancePluginData(mesh, 0, count * layout.floats);
-          if (outgrown) options.uploads?.stream("pluginInstances", data.byteLength);
-          else if (count > 0) options.uploads?.stream("pluginInstances", count * layout.floats * 4);
+          if (changed) {
+            markThinInstancePluginData(mesh, 0, count * layout.floats);
+            if (outgrown) options.uploads?.stream("pluginInstances", data.byteLength);
+            else if (count > 0) options.uploads?.stream("pluginInstances", count * layout.floats * 4);
+          }
         }
       }
-      if (count > 0) options.uploads?.stream("instances", count * MATRIX_BYTES);
-      options.uploads?.composed(count);
-      setThinInstanceCount(mesh, count);
+      if (moved) {
+        if (count > 0) options.uploads?.stream("instances", count * MATRIX_BYTES);
+        options.uploads?.composed(count);
+        setThinInstanceCount(mesh, count);
+      }
       setMeshVisible(mesh, count > 0);
     });
   }
