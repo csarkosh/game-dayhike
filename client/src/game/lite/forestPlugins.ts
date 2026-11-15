@@ -42,6 +42,9 @@
  *   data (`vegetationInstanceLayout`), declared only by a material whose
  *   plugin reads it; a blade's root and draw, a per-vertex attribute, in the
  *   mesh's plugin vertex data.
+ *
+ * With them, the plugin a far tree's bake draws its two pictures with
+ * (`impostorBakePlugin`), `impostorBakePlugin.ts`'s on Babylon.js.
  */
 import type { MaterialPlugin, Texture2D } from "@babylonjs/lite";
 import { BLADE_SOFT } from "../bladeClump.js";
@@ -54,6 +57,7 @@ import {
 } from "../foliageUniforms.js";
 import { conformUniforms } from "../groundConform.js";
 import { MOSS_AMOUNT, MOSS_BAND, MOSS_EDGE, MOSS_LUMA, MOSS_ROUGHNESS, MOSS_SIDE, MOSS_SIDE_EDGE, MOSS_TILE, MOSS_TINT } from "../mossParams.js";
+import type { ImpostorBakeMode } from "../impostorBake.js";
 import type { WetUniforms } from "../wetSurface.js";
 import { WIND_K1, WIND_K2, WIND_OMEGA_FLUTTER, WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_RAGGED, WIND_RAGGED_CELL } from "../windParams.js";
 import { uniformFields, writeUniforms, type UniformField, type UniformRecord } from "./pluginUniforms.js";
@@ -454,12 +458,27 @@ export function directOcclusionPlugin(): MaterialPlugin {
  * both, turning the normal over on a back face. The turn is undone where
  * Lite has just made it, before it reads the normal for anything. For the
  * dead trees, whose logs are mirrored by their draw.
+ *
+ * `turned` is for the snag's bake alone, whose bark wears a normal map with
+ * no vertex tangents. Babylon.js makes such a map's frame from the
+ * coordinates turned over on a face it takes for a back one, and in the
+ * game's bake of the snag it takes the faces the bake sees for back ones:
+ * the bake draws a new mesh under a material that is neither culled nor lit
+ * on two sides, and for such a material Babylon does not look up which way
+ * a mesh winds. So the far snags' bark is baked with both of the map's axes
+ * turned over, where the near snags' is not, and the bake here is the
+ * game's as it is. Both axes lie across the mesh's normal, so the turn is
+ * the shaded normal taken to the other side of the mesh's, on a front face.
  */
-export function oneSidedLightPlugin(): MaterialPlugin {
+export function oneSidedLightPlugin(turned = false): MaterialPlugin {
   return {
     name: "OneSidedLight",
     priority: 50,
-    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_UPDATE_DIFFUSE: `if(!frontFacing){N=-N;N_geom=-N_geom;}` } : null),
+    defines: { turned },
+    getCustomCode: (stage) =>
+      stage === "fragment"
+        ? { CUSTOM_FRAGMENT_UPDATE_DIFFUSE: `if(!frontFacing){N=-N;N_geom=-N_geom;}${turned ? "else{N=2.0*dot(N,N_geom)*N_geom-N;}" : ""}` }
+        : null,
   };
 }
 
@@ -530,5 +549,36 @@ export function surfaceSplitPlugin(): MaterialPlugin {
     name: "Split",
     priority: 240,
     getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_LIGHTS: SPLIT_DRY } : null),
+  };
+}
+
+/** The bake's one uniform: which picture the next draw writes (`ImpostorBakeMode`). */
+export const BAKE_MODE_FIELD: UniformField = { name: "bakeMode", type: "f32" };
+
+// impostorBakePlugin.ts: the two pictures, in place of the lit colour. The albedo is the surface's own after its maps
+// and its split, in gamma space as a colour map is stored; the normal is the shaded one in the world's frame, which is
+// the bake camera's (it looks along +z with +y up), written as a map of the card, whose face looks along -z. A
+// fragment the material's alpha test kept is whole, as it is on Babylon.js, which sets a tested alpha to one.
+const BAKE_PICTURES = `if(material.bakeMode>1.5){let bakeN=normalize(N);color=vec3<f32>(bakeN.x,bakeN.y,-bakeN.z)*0.5+0.5;alpha=1.0;}else if(material.bakeMode>0.5){color=pow(surfaceAlbedo,vec3<f32>(1.0/2.2));alpha=1.0;}`;
+
+/**
+ * What a far tree's bake writes in place of the lit colour, last in the
+ * fragment, after the display curve: by `picture.mode` the albedo (1) or the
+ * normal (2), and at 0 the material's own colour. `picture` is read whenever
+ * the material's uniforms are written, so a bake draws its second picture by
+ * setting the mode and marking its materials. On the bake's materials alone,
+ * never on one the scene draws.
+ */
+export function impostorBakePlugin(picture: { mode: ImpostorBakeMode }): MaterialPlugin {
+  return {
+    name: "ImpostorBake",
+    priority: 990,
+    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: BAKE_PICTURES } : null),
+    getUniforms: () => ({ ubo: [BAKE_MODE_FIELD] }),
+    writeUbo(data, offsets) {
+      const at = offsets.get(BAKE_MODE_FIELD.name);
+      if (at === undefined) throw new Error(`no uniform ${BAKE_MODE_FIELD.name} in the material's buffer`);
+      data[at / 4] = picture.mode;
+    },
   };
 }

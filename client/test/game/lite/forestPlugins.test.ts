@@ -11,10 +11,13 @@ import {
   setFoliageWind,
 } from "../../../src/game/foliageUniforms.js";
 import { conformUniforms } from "../../../src/game/groundConform.js";
+import { IMPOSTOR_BAKE_FRAGMENT, IMPOSTOR_BAKE_UNIFORM } from "../../../src/game/impostorBakePlugin.js";
+import type { ImpostorBakeMode } from "../../../src/game/impostorBake.js";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import {
-  CONFORM_FIELDS, DEADWOOD_FIELDS, FADE_FIELDS, FADE_ROWS_FIELD, FOLIAGE_FIELDS, PLAYERS_FIELD, baseColourPlugin, directOcclusionPlugin,
-  oneSidedLightPlugin, surfaceSplitPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, wgslFloat, writeVegetationInstances,
+  BAKE_MODE_FIELD, CONFORM_FIELDS, DEADWOOD_FIELDS, FADE_FIELDS, FADE_ROWS_FIELD, FOLIAGE_FIELDS, PLAYERS_FIELD, baseColourPlugin,
+  directOcclusionPlugin, impostorBakePlugin, oneSidedLightPlugin, surfaceSplitPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin,
+  wgslFloat, writeVegetationInstances,
   type Vegetation,
 } from "../../../src/game/lite/forestPlugins.js";
 import { WET_FIELDS } from "../../../src/game/lite/wetWgsl.js";
@@ -309,6 +312,22 @@ describe("how a forest material is lit and wetted on Babylon Lite", () => {
     expect(oneSidedLightPlugin().getCustomCode?.("fragment")).toEqual({ CUSTOM_FRAGMENT_UPDATE_DIFFUSE: "if(!frontFacing){N=-N;N_geom=-N_geom;}" });
     expect(oneSidedLightPlugin().getCustomCode?.("vertex")).toBeNull();
   });
+
+  it("reads the snag's bark for its bake with both of the map's axes turned over on a front face: the shaded normal taken across the mesh's", () => {
+    const text = oneSidedLightPlugin(true).getCustomCode?.("fragment")?.CUSTOM_FRAGMENT_UPDATE_DIFFUSE ?? "";
+    // A back face is as before; a front one is turned after it, never both.
+    expect(text).toBe("if(!frontFacing){N=-N;N_geom=-N_geom;}else{N=2.0*dot(N,N_geom)*N_geom-N;}");
+    // The turn is the shader's text: it keys the pipeline.
+    expect(oneSidedLightPlugin(true).defines).toEqual({ turned: true });
+    expect(oneSidedLightPlugin().defines).toEqual({ turned: false });
+    // What the turn does to a normal: its share along the mesh's kept, its share across it turned over.
+    const across = (n: [number, number, number], g: [number, number, number]): number[] => {
+      const d = 2 * (n[0] * g[0] + n[1] * g[1] + n[2] * g[2]);
+      return [d * g[0] - n[0], d * g[1] - n[1], d * g[2] - n[2]];
+    };
+    expect(across([0.6, 0, 0.8], [0, 0, 1])).toEqual([-0.6, 0, 0.8]);
+    expect(across([0, 0, 1], [0, 0, 1])).toEqual([0, 0, 1]);
+  });
 });
 
 describe("the blade clumps' material on Babylon Lite", () => {
@@ -402,5 +421,38 @@ describe("a rock wall's material on Babylon Lite", () => {
 
   it("is refused the foliage, which reads the same instance attribute for a card's own tint", () => {
     expect(() => vegetationPlugin({ ...crownNear(), ground: CLIFF_GROUND_TINT })).toThrow(/wall/);
+  });
+});
+
+describe("a far tree's bake on Babylon Lite", () => {
+  it("writes the albedo in gamma space or the shaded normal as the card's map, last in the fragment, and at no mode the material's own colour", () => {
+    const plugin = impostorBakePlugin({ mode: 1 });
+    const fragment = plugin.getCustomCode?.("fragment") ?? {};
+    expect(Object.keys(fragment)).toEqual(["CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR"]);
+    const text = fragment.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR ?? "";
+    // The game's own two pictures (`impostorBakePlugin.ts`): the same thresholds, the same albedo, the same turn of the normal's z.
+    expect(IMPOSTOR_BAKE_FRAGMENT).toContain("if (bakeMode > 1.5) {");
+    expect(text).toContain("if(material.bakeMode>1.5){let bakeN=normalize(N);color=vec3<f32>(bakeN.x,bakeN.y,-bakeN.z)*0.5+0.5;");
+    expect(IMPOSTOR_BAKE_FRAGMENT).toContain("} else if (bakeMode > 0.5) {");
+    expect(text).toContain("}else if(material.bakeMode>0.5){color=pow(surfaceAlbedo,vec3<f32>(1.0/2.2));");
+    // A fragment the alpha test kept is whole in both pictures.
+    expect(text.match(/alpha=1\.0;/g)).toHaveLength(2);
+    expect(plugin.getCustomCode?.("vertex")).toBeNull();
+    // After every other plugin of the material: nothing writes the colour after it.
+    expect(plugin.priority).toBeGreaterThan(ATMOSPHERE_PRIORITY);
+  });
+
+  it("declares the game's one uniform and writes the picture's mode as it then stands", () => {
+    const picture: { mode: ImpostorBakeMode } = { mode: 1 };
+    const plugin = impostorBakePlugin(picture);
+    expect(BAKE_MODE_FIELD.name).toBe(IMPOSTOR_BAKE_UNIFORM);
+    expect(plugin.getUniforms?.().ubo).toEqual([{ name: "bakeMode", type: "f32" }]);
+    const { data, offsets } = laidOut(plugin);
+    plugin.writeUbo?.(data, offsets);
+    expect(readUniform(data, offsets, "bakeMode", 1)).toEqual([1]);
+    picture.mode = 2;
+    plugin.writeUbo?.(data, offsets);
+    expect(readUniform(data, offsets, "bakeMode", 1)).toEqual([2]);
+    expect(() => plugin.writeUbo?.(data, new Map())).toThrow(/bakeMode/);
   });
 });
